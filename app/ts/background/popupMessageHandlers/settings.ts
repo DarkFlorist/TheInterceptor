@@ -8,7 +8,7 @@ import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.
 import { getPrimaryRpcForChain, getRpcList, setRpcList } from '../storageVariables.js'
 import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettings, getUseTabsInsteadOfPopup, importSettingsAndAddressBook, withSettingsImportRollback } from '../settings.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
-import { updateAllContentScriptConfigurationAndReloadTabsIfChanged } from '../contentScriptInjectionStrategy.js'
+import { updateAllContentScriptConfigurationAfterSettingsImport } from '../contentScriptInjectionStrategy.js'
 
 export async function settingsOpened() {
 	const useTabsInsteadOfPopupPromise = silenceChromeUnCaughtPromise(getUseTabsInsteadOfPopup())
@@ -38,7 +38,7 @@ export async function importSettings(settingsData: ImportSettings, websiteTabCon
 		return { method: 'popup_initiate_export_settings_reply', data: { success: false, errorMessage: 'Failed to read the file. It is not a valid interceptor settings file' } }
 	}
 	try {
-		await updateAllContentScriptConfigurationAndReloadTabsIfChanged(websiteTabConnections, async () => await importSettingsAndAddressBook(parsed.value), withSettingsImportRollback)
+		await updateAllContentScriptConfigurationAfterSettingsImport(websiteTabConnections, async () => await importSettingsAndAddressBook(parsed.value), withSettingsImportRollback)
 	} catch (error: unknown) {
 		return { method: 'popup_initiate_export_settings_reply', data: { success: false, errorMessage: error instanceof Error ? error.message : 'Failed to refresh content script registration.' } }
 	}

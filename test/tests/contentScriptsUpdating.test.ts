@@ -261,15 +261,9 @@ describe('content script injection strategy', () => {
 		declarativeNetRequestBlockMode: 'disabled',
 	}]
 
-	test('serializes malformed compatibility mode values as disabled MV2 bootstrap code', () => {
+	test('selects the disabled MV2 document-start artifact for malformed compatibility values', () => {
 		const maliciousValue = 'true); globalThis.unexpectedCodeExecution = true; Reflect.set(globalThis, Symbol.for("ignored"), (true'
-		const code = getManifestV2IsolatedWorldInjections(maliciousValue).find((injection) => 'code' in injection)?.code
-		if (code === undefined) throw new Error('Missing MV2 compatibility mode bootstrap code')
-		Function(code)()
-
-		assert.equal(Reflect.get(globalThis, Symbol.for('TheInterceptor.metamaskCompatibilityMode')), false)
-		assert.equal(Reflect.get(globalThis, 'unexpectedCodeExecution'), undefined)
-		Reflect.deleteProperty(globalThis, Symbol.for('TheInterceptor.metamaskCompatibilityMode'))
+		assert.equal(getManifestV2IsolatedWorldInjections(maliciousValue).at(-1)?.file, 'inpage/js/document_start.js')
 	})
 
 	test('creates valid manifest v3 exclusions without admitting malformed stored origins', async () => {
@@ -365,7 +359,7 @@ describe('content script injection strategy', () => {
 		assert.equal((await getLatestUnexpectedError())?.data.code, 'page_world_provider_bootstrap_refresh_failed')
 	})
 
-	test('compatibility setting changes remain saved when best-effort reload target lookup fails', async () => {
+	test('compatibility setting changes update registration before best-effort reload target lookup', async () => {
 		const tabLookupError = new Error('active tab lookup failed')
 		const { getRegisteredContentScripts, getReloadedTabs, getScriptingOperations, getStorageState } = installBrowserMock({
 			metamaskCompatibilityMode: false,
@@ -377,8 +371,8 @@ describe('content script injection strategy', () => {
 		await withSilencedConsole(async () => await setMetamaskCompatibilityMode(new Map([[42, { connections: {} }]]), true))
 
 		assert.equal(getStorageState().metamaskCompatibilityMode, true)
-		assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.js, ['/inpage/js/inpage.js'])
-		assert.deepEqual(getScriptingOperations(), [])
+		assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.js, ['/inpage/js/inpage-metamask-compatibility.js'])
+		assert.deepEqual(getScriptingOperations(), ['unregister', 'register', 'update'])
 		assert.deepEqual(getReloadedTabs(), [])
 	})
 
@@ -469,7 +463,7 @@ describe('content script injection strategy', () => {
 		assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.js, ['/inpage/js/inpage-metamask-compatibility.js'])
 	})
 
-	test('failed settings import rollback completes before a queued compatibility update', async () => {
+	test('settings import remains saved when its best-effort registration refresh fails', async () => {
 		const registrationError = new Error('delayed imported registration refresh failed')
 		const registrationStarted = createDeferred()
 		const releaseRegistration = createDeferred()
@@ -480,12 +474,12 @@ describe('content script injection strategy', () => {
 			onRegister: () => registrationStarted.resolve(),
 			registeredContentScriptIds: ['inpage', 'inpage2'],
 		})
-		const { updateAllContentScriptConfigurationAndReloadTabsIfChanged } = await import('../../app/ts/background/contentScriptInjectionStrategy.js')
+		const { updateAllContentScriptConfigurationAfterSettingsImport } = await import('../../app/ts/background/contentScriptInjectionStrategy.js')
 		const { persistMetamaskCompatibilityMode, withSettingsImportRollback } = await import('../../app/ts/background/settings.js')
 		const { setMetamaskCompatibilityMode } = await import('../../app/ts/background/metamaskCompatibilityMode.js')
 
 		await withSilencedConsole(async () => {
-			const failedImport = updateAllContentScriptConfigurationAndReloadTabsIfChanged(
+			const settingsImport = updateAllContentScriptConfigurationAfterSettingsImport(
 				new Map(),
 				async () => await persistMetamaskCompatibilityMode(true),
 				withSettingsImportRollback,
@@ -493,15 +487,15 @@ describe('content script injection strategy', () => {
 			await registrationStarted.promise
 			const queuedCompatibilityUpdate = setMetamaskCompatibilityMode(new Map(), true)
 			releaseRegistration.resolve()
-			await assert.rejects(failedImport, registrationError)
+			await settingsImport
 			await queuedCompatibilityUpdate
 		})
 
 		assert.equal(getStorageState().metamaskCompatibilityMode, true)
-		assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.js, ['/inpage/js/inpage-metamask-compatibility.js'])
+		assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.js, ['/inpage/js/inpage.js'])
 	})
 
-	test('failed settings import rollback completes before a queued disabled-site update', async () => {
+	test('queued disabled-site update reconciles registration after a best-effort import refresh failure', async () => {
 		const registrationError = new Error('delayed imported registration refresh failed')
 		const registrationStarted = createDeferred()
 		const releaseRegistration = createDeferred()
@@ -513,12 +507,12 @@ describe('content script injection strategy', () => {
 			registeredContentScriptIds: ['inpage', 'inpage2'],
 			websiteAccess: [],
 		})
-		const { updateAllContentScriptConfigurationAndReloadTabsIfChanged } = await import('../../app/ts/background/contentScriptInjectionStrategy.js')
+		const { updateAllContentScriptConfigurationAfterSettingsImport } = await import('../../app/ts/background/contentScriptInjectionStrategy.js')
 		const { persistMetamaskCompatibilityMode, withSettingsImportRollback } = await import('../../app/ts/background/settings.js')
 		const { updateWebsiteAccessAndContentScriptInjectionStrategy } = await import('../../app/ts/background/websiteAccessUpdating.js')
 
 		await withSilencedConsole(async () => {
-			const failedImport = updateAllContentScriptConfigurationAndReloadTabsIfChanged(
+			const settingsImport = updateAllContentScriptConfigurationAfterSettingsImport(
 				new Map(),
 				async () => await persistMetamaskCompatibilityMode(true),
 				withSettingsImportRollback,
@@ -526,7 +520,7 @@ describe('content script injection strategy', () => {
 			await registrationStarted.promise
 			const queuedWebsiteAccessUpdate = updateWebsiteAccessAndContentScriptInjectionStrategy(new Map(), () => disabledWebsiteAccess)
 			releaseRegistration.resolve()
-			await assert.rejects(failedImport, registrationError)
+			await settingsImport
 			await queuedWebsiteAccessUpdate
 		})
 
@@ -565,6 +559,69 @@ describe('content script injection strategy', () => {
 		assert.equal((await getLatestUnexpectedError())?.data.message, registrationError.message)
 	})
 
+	test('website access rollback restores every transaction field while preserving concurrent metadata', async () => {
+		const registrationError = new Error('delayed website access registration refresh failed')
+		const previousWebsiteAccess: WebsiteAccessArray = [{
+			website: { websiteOrigin: 'rollback.test', title: 'Before transaction', icon: undefined },
+			addressAccess: [],
+			access: true,
+			interceptorDisabled: true,
+			declarativeNetRequestBlockMode: 'disabled',
+		}]
+		const { getStorageState } = installBrowserMock({ websiteAccess: previousWebsiteAccess })
+		const { updateWebsiteAccess, withWebsiteAccessRollback } = await import('../../app/ts/background/settings.js')
+
+		await withSilencedConsole(async () => {
+			await assert.rejects(withWebsiteAccessRollback(
+				(entries) => entries.map((entry) => ({
+					...entry,
+					website: { ...entry.website, title: 'Transaction title' },
+					addressAccess: [{ address: 0x2222222222222222222222222222222222222222n, access: false }],
+					access: false,
+					interceptorDisabled: false,
+					declarativeNetRequestBlockMode: 'block-all',
+				})),
+				async () => {
+					await updateWebsiteAccess((entries) => entries.map((entry) => ({ ...entry, website: { ...entry.website, title: 'Concurrent title' } })))
+					throw registrationError
+				},
+			), registrationError)
+		})
+
+		assert.deepEqual(getStorageState().websiteAccess, [{ ...previousWebsiteAccess[0], website: { ...previousWebsiteAccess[0]?.website, title: 'Concurrent title' } }])
+	})
+
+	test('website access rollback snapshots after an already-running ordinary update', async () => {
+		const ordinaryUpdateStarted = createDeferred()
+		const releaseOrdinaryUpdate = createDeferred()
+		const previousWebsiteAccess: WebsiteAccessArray = [{
+			website: { websiteOrigin: 'queued-before.test', title: 'Before updates', icon: undefined },
+			addressAccess: [],
+			access: true,
+			interceptorDisabled: false,
+			declarativeNetRequestBlockMode: 'disabled',
+		}]
+		const { getStorageState } = installBrowserMock({
+			websiteAccess: previousWebsiteAccess,
+			storageGetWaits: [releaseOrdinaryUpdate.promise],
+			onStorageGet: () => ordinaryUpdateStarted.resolve(),
+		})
+		const { updateWebsiteAccess, withWebsiteAccessRollback } = await import('../../app/ts/background/settings.js')
+		const registrationError = new Error('registration failed after queued update')
+
+		const ordinaryUpdate = updateWebsiteAccess((entries) => entries.map((entry) => ({ ...entry, website: { ...entry.website, title: 'Ordinary update' }, access: false })))
+		await ordinaryUpdateStarted.promise
+		const failedTransaction = withWebsiteAccessRollback(
+			(entries) => entries.map((entry) => ({ ...entry, interceptorDisabled: true })),
+			async () => { throw registrationError },
+		)
+		releaseOrdinaryUpdate.resolve()
+		await ordinaryUpdate
+		await withSilencedConsole(async () => await assert.rejects(failedTransaction, registrationError))
+
+		assert.deepEqual(getStorageState().websiteAccess, [{ ...previousWebsiteAccess[0], website: { ...previousWebsiteAccess[0]?.website, title: 'Ordinary update' }, access: false }])
+	})
+
 	test('disabling the Interceptor preserves stored website metadata', async () => {
 		const storedWebsiteAccess: WebsiteAccessArray = [{
 			...disabledWebsiteAccess[0],
@@ -587,7 +644,7 @@ describe('content script injection strategy', () => {
 	})
 
 	test('exposes every manifest v2 injected file to Firefox', async () => {
-		const { getCommittedListener, getExecutedScriptCode, getExecutedScriptFiles } = installBrowserMock()
+		const { getCommittedListener, getExecutedScriptFiles } = installBrowserMock()
 		const { updateContentScriptInjectionStrategyManifestV2 } = await loadModules()
 
 		await updateContentScriptInjectionStrategyManifestV2()
@@ -599,8 +656,7 @@ describe('content script injection strategy', () => {
 			'/inpage/js/document_start.js',
 		]
 		assert.deepEqual(getExecutedScriptFiles(), injectedFiles)
-		assert.deepEqual(getExecutedScriptCode(), ['Reflect.set(globalThis, Symbol.for("TheInterceptor.metamaskCompatibilityMode"), false)'])
-		const configuredInjectedFiles = getManifestV2IsolatedWorldInjections(true).flatMap((injection) => 'file' in injection ? [injection.file] : [])
+		const configuredInjectedFiles = [false, true].flatMap((metamaskCompatibilityMode) => getManifestV2IsolatedWorldInjections(metamaskCompatibilityMode).map((injection) => injection.file))
 		const configuredPageWorldScripts = [...getPageWorldScriptPaths(false), ...getPageWorldScriptPaths(true)]
 		assert.deepEqual(getManifestV2WebAccessibleResources().sort(), [...new Set([...configuredInjectedFiles, ...configuredPageWorldScripts])].sort())
 	})
@@ -646,9 +702,9 @@ describe('content script injection strategy', () => {
 				{ id: 'inpage2', js: ['/vendor/webextension-polyfill/dist/browser-polyfill.js', '/inpage/js/listenContentScript.js', '/inpage/js/listenContentScriptBootstrap.js'] },
 			],
 		})
-		const { refreshContentScriptInjectionStrategyAndReloadConnectedTabs, getLatestUnexpectedError } = await loadModules()
+		const { updateContentScriptInjectionStrategyManifestV3, getLatestUnexpectedError } = await loadModules()
 
-		await withSilencedConsole(async () => await assert.rejects(refreshContentScriptInjectionStrategyAndReloadConnectedTabs(new Map()), registrationError))
+		await withSilencedConsole(async () => await assert.rejects(updateContentScriptInjectionStrategyManifestV3(), registrationError))
 
 		assert.deepEqual(getScriptingOperations(), ['unregister', 'register', 'unregister', 'register'])
 		assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage'), previousMainWorldRegistration)
@@ -657,9 +713,9 @@ describe('content script injection strategy', () => {
 		assert.equal(sentMessages.at(-1)?.method, 'popup_UnexpectedErrorOccured')
 	})
 
-	test('injects the Firefox compatibility prelude only when MetaMask compatibility mode is active', async () => {
+	test('injects the Firefox document-start artifact for the active compatibility mode', async () => {
 		for (const metamaskCompatibilityMode of [false, true]) {
-			const { getCommittedListener, getExecutedScriptCode, getExecutedScriptFiles } = installBrowserMock({ metamaskCompatibilityMode })
+			const { getCommittedListener, getExecutedScriptFiles } = installBrowserMock({ metamaskCompatibilityMode })
 			const { updateContentScriptInjectionStrategyManifestV2 } = await loadModules()
 
 			await updateContentScriptInjectionStrategyManifestV2()
@@ -668,9 +724,8 @@ describe('content script injection strategy', () => {
 			assert.deepEqual(getExecutedScriptFiles(), [
 				'/vendor/webextension-polyfill/dist/browser-polyfill.js',
 				'/inpage/js/listenContentScript.js',
-				'/inpage/js/document_start.js',
+				metamaskCompatibilityMode ? '/inpage/js/document_start-metamask-compatibility.js' : '/inpage/js/document_start.js',
 			])
-			assert.deepEqual(getExecutedScriptCode(), [`Reflect.set(globalThis, Symbol.for("TheInterceptor.metamaskCompatibilityMode"), ${ metamaskCompatibilityMode })`])
 		}
 	})
 

@@ -6,6 +6,7 @@ import type { PopupMessageDispatcherContext } from '../../app/ts/background/popu
 import type { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import type { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
 import type { Settings } from '../../app/ts/types/interceptor-messages.js'
+import { WebsiteAccessArray } from '../../app/ts/types/websiteAccessTypes.js'
 
 const storageState: Record<string, unknown> = {}
 const sentMessages: unknown[] = []
@@ -532,7 +533,7 @@ describe('popup message dispatcher seams', () => {
 		assert.deepEqual(reloadedTabs, [])
 	})
 
-	test('reports import failure and restores the full previous settings when content script registration fails', async () => {
+	test('keeps an imported settings transaction when its best-effort content script refresh fails', async () => {
 		const previousWebsiteAccess = [{
 			website: { websiteOrigin: 'existing.test', title: 'Existing website' },
 			addressAccess: [],
@@ -584,12 +585,12 @@ describe('popup message dispatcher seams', () => {
 		const messages = sentMessages.map((message) => MessageToPopup.parse(message))
 		const importReply = messages.find(({ method }) => method === 'popup_initiate_export_settings_reply')
 		assert.equal(importReply?.method, 'popup_initiate_export_settings_reply')
-		if (importReply?.method !== 'popup_initiate_export_settings_reply') throw new Error('Expected failed import broadcast.')
-		assert.deepEqual(importReply.data, { success: false, errorMessage: 'Content script registration unavailable' })
-		assert.equal(messages.some(({ method }) => method === 'popup_settingsUpdated'), false)
-		assert.equal(storageState.metamaskCompatibilityMode, false)
-		assert.deepEqual(storageState.websiteAccess, previousWebsiteAccess)
-		assert.notEqual(JSON.stringify(storageState.activeRpcNetwork)?.includes('https://example.test/rpc'), true)
+		if (importReply?.method !== 'popup_initiate_export_settings_reply') throw new Error('Expected import broadcast.')
+		assert.deepEqual(importReply.data, { success: true })
+		assert.equal(messages.some(({ method }) => method === 'popup_settingsUpdated'), true)
+		assert.equal(storageState.metamaskCompatibilityMode, true)
+		assert.equal(WebsiteAccessArray.parse(storageState.websiteAccess)[0]?.website.websiteOrigin, 'imported-disabled.test')
+		assert.equal(JSON.stringify(storageState.activeRpcNetwork)?.includes('https://example.test/rpc'), true)
 		assert.deepEqual(reloadedTabs, [])
 	})
 

@@ -2,7 +2,7 @@ import * as path from 'node:path'
 import * as url from 'node:url'
 import * as fs from 'node:fs'
 import * as ts from 'typescript'
-import { getPageWorldScriptPaths } from '../app/ts/config/contentScriptInjectionArtifacts.ts'
+import { getManifestV2DocumentStartScriptPath, getPageWorldScriptPaths } from '../app/ts/config/contentScriptInjectionArtifacts.ts'
 
 const directoryOfThisFile = path.dirname(url.fileURLToPath(import.meta.url))
 const appDirectory = path.join(directoryOfThisFile, '..', 'app')
@@ -369,7 +369,8 @@ function formatBunBuildLogs(logs: readonly BuildMessage[]) {
 }
 
 const inpageRuntimeEntrypointPaths = [
-	path.join(appDirectory, 'inpage', 'js', 'document_start.js'),
+	path.join(appDirectory, getManifestV2DocumentStartScriptPath(false)),
+	path.join(appDirectory, getManifestV2DocumentStartScriptPath(true)),
 	path.join(appDirectory, 'inpage', 'js', 'listenContentScript.js'),
 	path.join(appDirectory, 'inpage', 'js', 'listenContentScriptBootstrap.js'),
 	...getPageWorldScriptPaths(false).map((scriptPath) => path.join(appDirectory, scriptPath)),

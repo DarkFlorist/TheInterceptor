@@ -1,16 +1,9 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
 import * as ts from 'typescript'
-import { metamaskCompatibilityModeGlobalSymbolKey } from '../../app/ts/config/contentScriptInjectionArtifacts.js'
-import { metamaskCompatibilityModeAtPageLoadMarker, metamaskCompatibilityModeGlobalSymbolKeyMarker } from '../../scripts/content-script-injection-markers.mts'
-import { inlineContentScriptInjectionConfiguration, inlineDocumentStartInjectionConfiguration, inlineMetamaskCompatibilityModeAtPageLoad } from '../../scripts/inline-inpage-document-start.mts'
-
-test('generated isolated-world bootstrap uses the configured compatibility mode symbol key', async () => {
-	const source = await Bun.file(new URL('../../app/inpage/ts/document_start.ts', import.meta.url)).text()
-	const generatedSource = inlineContentScriptInjectionConfiguration(source, 'document_start.js')
-	assert.equal(generatedSource.includes(`Symbol.for(${ JSON.stringify(metamaskCompatibilityModeGlobalSymbolKey) })`), true)
-	assert.equal(generatedSource.includes(metamaskCompatibilityModeGlobalSymbolKeyMarker), false)
-})
+import { getPageWorldScriptPaths } from '../../app/ts/config/contentScriptInjectionArtifacts.js'
+import { metamaskCompatibilityModeAtPageLoadMarker, pageWorldProviderScriptPathMarker } from '../../scripts/content-script-injection-markers.mts'
+import { inlineDocumentStartInjectionConfiguration, inlineMetamaskCompatibilityModeAtPageLoad } from '../../scripts/inline-inpage-document-start.mts'
 
 test('page-world compatibility mode is embedded as a build-time boolean', async () => {
 	const source = await Bun.file(new URL('../../app/inpage/ts/inpage.ts', import.meta.url)).text()
@@ -28,28 +21,20 @@ test('page-world compatibility mode is embedded as a build-time boolean', async 
 	}
 })
 
-test('MV2 synchronously injects the configured page-world source in both compatibility modes', async () => {
+test('MV2 injects the configured external page-world artifact in both compatibility modes', async () => {
 	const documentStartTypeScript = await Bun.file(new URL('../../app/inpage/ts/document_start.ts', import.meta.url)).text()
-	const inpageTypeScript = await Bun.file(new URL('../../app/inpage/ts/inpage.ts', import.meta.url)).text()
 	const compiledDocumentStart = ts.transpileModule(documentStartTypeScript, {
 		compilerOptions: {
 			module: ts.ModuleKind.ESNext,
 			target: ts.ScriptTarget.ES2022,
 		},
 	}).outputText
-	const compiledInpage = ts.transpileModule(inpageTypeScript, {
-		compilerOptions: {
-			module: ts.ModuleKind.ESNext,
-			target: ts.ScriptTarget.ES2022,
-		},
-	}).outputText
-	const generatedDocumentStart = inlineDocumentStartInjectionConfiguration(compiledDocumentStart, compiledInpage)
 	for (const metamaskCompatibilityMode of [false, true]) {
-		type FakeScript = { textContent: string }
+		const generatedDocumentStart = inlineDocumentStartInjectionConfiguration(compiledDocumentStart, metamaskCompatibilityMode)
+		type FakeScript = { src: string }
 		const injectionEvents: { readonly type: 'insert' | 'remove', readonly script: FakeScript }[] = []
 		const fakeGlobalThis = {
 			[Symbol.for('TheInterceptor.listenContentScript')]: () => undefined,
-			[Symbol.for('TheInterceptor.metamaskCompatibilityMode')]: metamaskCompatibilityMode,
 		}
 		const scriptContainer = {
 			children: [{}, {}],
@@ -63,21 +48,35 @@ test('MV2 synchronously injects the configured page-world source in both compati
 		const fakeDocument = {
 			head: scriptContainer,
 			documentElement: scriptContainer,
-			createElement: () => ({ textContent: '' }),
+			createElement: () => ({ src: '' }),
 		}
 		const fakeBrowser = {
 			runtime: {
 				lastError: undefined,
+				getURL: (path: string) => `moz-extension://interceptor/${ path }`,
 			},
 		}
 
 		new Function('globalThis', 'browser', 'document', 'console', generatedDocumentStart)(fakeGlobalThis, fakeBrowser, fakeDocument, console)
 
-		const expectedSource = inlineMetamaskCompatibilityModeAtPageLoad(compiledInpage, metamaskCompatibilityMode)
 		assert.equal(injectionEvents.length, 2)
 		assert.equal(injectionEvents[0]?.type, 'insert')
-		assert.equal(injectionEvents[0]?.script.textContent, expectedSource)
+		assert.equal(injectionEvents[0]?.script.src, `moz-extension://interceptor/${ getPageWorldScriptPaths(metamaskCompatibilityMode)[0] }`)
 		assert.equal(injectionEvents[1]?.type, 'remove')
 		assert.strictEqual(injectionEvents[1]?.script, injectionEvents[0]?.script)
+		assert.equal(generatedDocumentStart.includes(pageWorldProviderScriptPathMarker), false)
 	}
+})
+
+test('MV2 leaves injection retryable when bootstrap prerequisites are missing', async () => {
+	const documentStartTypeScript = await Bun.file(new URL('../../app/inpage/ts/document_start.ts', import.meta.url)).text()
+	const compiledDocumentStart = ts.transpileModule(documentStartTypeScript, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText
+	const generatedDocumentStart = inlineDocumentStartInjectionConfiguration(compiledDocumentStart, false)
+	const fakeGlobalThis: { interceptorInjected?: boolean } = {}
+	const errors: unknown[] = []
+
+	new Function('globalThis', 'browser', 'document', 'console', generatedDocumentStart)(fakeGlobalThis, { runtime: { lastError: undefined, getURL: (path: string) => path } }, {}, { error: (...args: unknown[]) => errors.push(args) })
+
+	assert.equal(fakeGlobalThis.interceptorInjected, undefined)
+	assert.equal(errors.length, 1)
 })

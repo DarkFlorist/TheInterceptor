@@ -20,7 +20,6 @@ type ContentScriptMockState = {
 type ContentScriptSource = 'manifest-v2-document-start' | 'standalone-listener'
 let contentScriptMockImportId = 0
 const contentScriptListenerGlobalKey = Symbol.for('TheInterceptor.listenContentScript')
-const metamaskCompatibilityModeGlobalKey = Symbol.for('TheInterceptor.metamaskCompatibilityMode')
 
 async function withContentScriptMock(source: ContentScriptSource, run: (state: ContentScriptMockState) => Promise<void>, legacyListenerDescriptor: PropertyDescriptor | undefined = undefined, metamaskCompatibilityMode = false) {
 	const browserDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'browser')
@@ -28,7 +27,6 @@ async function withContentScriptMock(source: ContentScriptSource, run: (state: C
 	const documentDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'document')
 	const interceptorInjectedDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'interceptorInjected')
 	const contentScriptListenerDescriptor = Object.getOwnPropertyDescriptor(globalThis, contentScriptListenerGlobalKey)
-	const metamaskCompatibilityModeDescriptor = Object.getOwnPropertyDescriptor(globalThis, metamaskCompatibilityModeGlobalKey)
 	const backgroundMessageListeners: ((message: unknown) => void)[] = []
 	const runtimeMessageListeners: ((message: unknown) => unknown)[] = []
 	const disconnectListeners: (() => void)[] = []
@@ -68,7 +66,6 @@ async function withContentScriptMock(source: ContentScriptSource, run: (state: C
 	}
 	Object.defineProperty(globalThis, 'browser', { configurable: true, writable: true, value: browserMock })
 	Object.defineProperty(globalThis, 'addEventListener', { configurable: true, writable: true, value: addEventListener })
-	Reflect.set(globalThis, metamaskCompatibilityModeGlobalKey, metamaskCompatibilityMode)
 	if (legacyListenerDescriptor !== undefined) Object.defineProperty(globalThis, 'listenContentScript', legacyListenerDescriptor)
 	const scriptContainer = {
 		children: [{}, {}],
@@ -91,16 +88,12 @@ async function withContentScriptMock(source: ContentScriptSource, run: (state: C
 		contentScriptMockImportId += 1
 		await import(`../../app/inpage/ts/listenContentScript.js?shared-background-port-recovery-${ contentScriptMockImportId }`)
 		if (source === 'manifest-v2-document-start') {
-			const [documentStartTypeScript, inpageTypeScript] = await Promise.all([
-				Bun.file(new URL('../../app/inpage/ts/document_start.ts', import.meta.url)).text(),
-				Bun.file(new URL('../../app/inpage/ts/inpage.ts', import.meta.url)).text(),
-			])
+			const documentStartTypeScript = await Bun.file(new URL('../../app/inpage/ts/document_start.ts', import.meta.url)).text()
 			const compilerOptions = { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 }
 			const compiledDocumentStart = ts.transpileModule(documentStartTypeScript, {
 				compilerOptions,
 			}).outputText
-			const compiledInpage = ts.transpileModule(inpageTypeScript, { compilerOptions }).outputText
-			const generatedDocumentStart = inlineDocumentStartInjectionConfiguration(compiledDocumentStart, compiledInpage)
+			const generatedDocumentStart = inlineDocumentStartInjectionConfiguration(compiledDocumentStart, metamaskCompatibilityMode)
 			Function(generatedDocumentStart)()
 		}
 		else await import(`../../app/inpage/ts/listenContentScriptBootstrap.js?background-port-recovery-${ contentScriptMockImportId }`)
@@ -116,8 +109,6 @@ async function withContentScriptMock(source: ContentScriptSource, run: (state: C
 		else Object.defineProperty(globalThis, 'interceptorInjected', interceptorInjectedDescriptor)
 		if (contentScriptListenerDescriptor === undefined) Reflect.deleteProperty(globalThis, contentScriptListenerGlobalKey)
 		else Object.defineProperty(globalThis, contentScriptListenerGlobalKey, contentScriptListenerDescriptor)
-		if (metamaskCompatibilityModeDescriptor === undefined) Reflect.deleteProperty(globalThis, metamaskCompatibilityModeGlobalKey)
-		else Object.defineProperty(globalThis, metamaskCompatibilityModeGlobalKey, metamaskCompatibilityModeDescriptor)
 	}
 }
 
@@ -451,12 +442,11 @@ if (process.env.INTERCEPTOR_CONTENT_SCRIPT_RECONNECT_TEST_CHILD === 'true') {
 		await verifyContentScriptReconnect('manifest-v2-document-start')
 	})
 
-	test('manifest v2 document-start synchronously injects the provider with active compatibility mode embedded', async () => {
+	test('manifest v2 document-start injects the external provider artifact for active compatibility mode', async () => {
 		await withContentScriptMock('manifest-v2-document-start', async ({ injectedScripts }) => {
 			assert.equal(injectedScripts.length, 1)
-			assert.equal(injectedScripts[0]?.src, '')
-			assert.match(injectedScripts[0]?.textContent ?? '', /const metamaskCompatibilityModeAtPageLoad = true/u)
-			assert.match(injectedScripts[0]?.textContent ?? '', /InterceptorMessageListener/u)
+			assert.equal(injectedScripts[0]?.src, 'browser-extension://test/inpage/js/inpage-metamask-compatibility.js')
+			assert.equal(injectedScripts[0]?.textContent, '')
 		}, undefined, true)
 	})
 

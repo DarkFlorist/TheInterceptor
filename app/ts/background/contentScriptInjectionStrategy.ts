@@ -1,4 +1,5 @@
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
+import type { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { updateContentScriptInjectionStrategyManifestV2, updateContentScriptInjectionStrategyManifestV3 } from '../utils/contentScriptsUpdating.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 import { Semaphore } from '../utils/semaphore.js'
@@ -10,57 +11,56 @@ import { getMetamaskCompatibilityMode } from './settings.js'
 const contentScriptInjectionStrategySemaphore = new Semaphore(1)
 const contentScriptInjectionConfigurationSemaphore = new Semaphore(1)
 
-type ConfigurationUpdateTransaction = <T>(update: () => Promise<T>) => Promise<T>
+type WebsiteAccessUpdateTransaction = (update: (previousWebsiteAccess: WebsiteAccessArray) => WebsiteAccessArray, afterUpdate: (websiteAccess: WebsiteAccessArray) => Promise<void>) => Promise<WebsiteAccessArray>
 type HasSameConfiguration = (first: ContentScriptRegistrationConfiguration, second: ContentScriptRegistrationConfiguration) => boolean
 
-async function runConfigurationUpdate<T>(update: () => Promise<T>) {
-	return await update()
-}
+type ContentScriptInjectionStrategyRefresh =
+	| { readonly configurationSource: 'storage' }
+	| { readonly configurationSource: 'updated', readonly configuration: ContentScriptRegistrationConfiguration }
 
-async function refreshContentScriptInjectionStrategyManifestV3(configuration: ContentScriptRegistrationConfiguration) {
+async function applyContentScriptInjectionStrategy(refresh: ContentScriptInjectionStrategyRefresh) {
 	await contentScriptInjectionStrategySemaphore.execute(async () => {
+		if (browser.runtime.getManifest().manifest_version === 2) {
+			// MV2 installs a lazy reader because each navigation is injected through webNavigation.
+			await updateContentScriptInjectionStrategyManifestV2(getContentScriptInjectionConfiguration)
+			return
+		}
+		const configuration = refresh.configurationSource === 'storage' ? await getContentScriptInjectionConfiguration() : refresh.configuration
 		await updateContentScriptInjectionStrategyManifestV3(configuration)
-	})
-}
-
-async function refreshContentScriptInjectionStrategyManifestV2() {
-	await contentScriptInjectionStrategySemaphore.execute(async () => {
-		await updateContentScriptInjectionStrategyManifestV2(getContentScriptInjectionConfiguration)
 	})
 }
 
 export async function refreshContentScriptInjectionStrategy() {
 	await contentScriptInjectionConfigurationSemaphore.execute(async () => {
-		if (browser.runtime.getManifest().manifest_version === 3) await refreshContentScriptInjectionStrategyManifestV3(await getContentScriptInjectionConfiguration())
-		else await refreshContentScriptInjectionStrategyManifestV2()
+		await applyContentScriptInjectionStrategy({ configurationSource: 'storage' })
 	})
-}
-
-export async function refreshContentScriptInjectionStrategyAndReloadConnectedTabs(websiteTabConnections: WebsiteTabConnections) {
-	const tabIdsToReload = await getConnectedTabIdsToReload(websiteTabConnections)
-	await refreshContentScriptInjectionStrategy()
-	await reloadTabs(tabIdsToReload)
 }
 
 async function refreshUpdatedContentScriptInjectionStrategyAndReloadConnectedTabs(websiteTabConnections: WebsiteTabConnections, configuration: ContentScriptRegistrationConfiguration) {
 	const tabIdsToReload = await getConnectedTabIdsToReload(websiteTabConnections)
-	if (browser.runtime.getManifest().manifest_version === 3) await refreshContentScriptInjectionStrategyManifestV3(configuration)
-	else await refreshContentScriptInjectionStrategyManifestV2()
+	await applyContentScriptInjectionStrategy({ configurationSource: 'updated', configuration })
 	await reloadTabs(tabIdsToReload)
 }
 
-async function updateContentScriptInjectionConfigurationAndReloadTabsIfChanged<T>(websiteTabConnections: WebsiteTabConnections, update: () => Promise<T>, hasSameConfiguration: HasSameConfiguration, transaction: ConfigurationUpdateTransaction) {
-	return await contentScriptInjectionConfigurationSemaphore.execute(async () => await transaction(async () => {
-		const configurationBeforeUpdate = await getContentScriptInjectionConfiguration()
-		const result = await update()
-		const configurationAfterUpdate = await getContentScriptInjectionConfiguration()
-		if (hasSameConfiguration(configurationBeforeUpdate, configurationAfterUpdate)) return result
-		await refreshUpdatedContentScriptInjectionStrategyAndReloadConnectedTabs(websiteTabConnections, configurationAfterUpdate)
-		return result
-	}))
+async function refreshUpdatedPageWorldProviderBootstrapAndReloadConnectedTabs(websiteTabConnections: WebsiteTabConnections, configuration: ContentScriptRegistrationConfiguration) {
+	// Persisted compatibility preference must reach MV3 registration even when optional tab discovery fails.
+	await applyContentScriptInjectionStrategy({ configurationSource: 'updated', configuration })
+	const tabIdsToReload = await getConnectedTabIdsToReload(websiteTabConnections)
+	await reloadTabs(tabIdsToReload)
 }
 
-export async function updateContentScriptInjectionSitesAndReloadTabsIfChanged<T>(websiteTabConnections: WebsiteTabConnections, update: () => Promise<T>, transaction: ConfigurationUpdateTransaction) {
+async function updateContentScriptInjectionConfigurationAndReloadTabsIfChanged(websiteTabConnections: WebsiteTabConnections, update: (previousWebsiteAccess: WebsiteAccessArray) => WebsiteAccessArray, hasSameConfiguration: HasSameConfiguration, transaction: WebsiteAccessUpdateTransaction) {
+	return await contentScriptInjectionConfigurationSemaphore.execute(async () => {
+		const configurationBeforeUpdate = await getContentScriptInjectionConfiguration()
+		return await transaction(update, async () => {
+			const configurationAfterUpdate = await getContentScriptInjectionConfiguration()
+			if (hasSameConfiguration(configurationBeforeUpdate, configurationAfterUpdate)) return
+			await refreshUpdatedContentScriptInjectionStrategyAndReloadConnectedTabs(websiteTabConnections, configurationAfterUpdate)
+		})
+	})
+}
+
+export async function updateContentScriptInjectionSitesAndReloadTabsIfChanged(websiteTabConnections: WebsiteTabConnections, update: (previousWebsiteAccess: WebsiteAccessArray) => WebsiteAccessArray, transaction: WebsiteAccessUpdateTransaction) {
 	return await updateContentScriptInjectionConfigurationAndReloadTabsIfChanged(websiteTabConnections, update, (first, second) => hasSameContentScriptInjectionSitesConfiguration(first.injectionSites, second.injectionSites), transaction)
 }
 
@@ -71,7 +71,7 @@ export async function updatePageWorldProviderBootstrapAfterSettingsChange<T>(web
 		try {
 			const configurationAfterUpdate = await getContentScriptInjectionConfiguration()
 			if (!hasSamePageWorldProviderConfiguration(pageWorldProviderBeforeUpdate, configurationAfterUpdate.pageWorldProvider)) {
-				await refreshUpdatedContentScriptInjectionStrategyAndReloadConnectedTabs(websiteTabConnections, configurationAfterUpdate)
+				await refreshUpdatedPageWorldProviderBootstrapAndReloadConnectedTabs(websiteTabConnections, configurationAfterUpdate)
 			}
 		} catch (error: unknown) {
 			await reportUnexpectedError(error, { code: 'page_world_provider_bootstrap_refresh_failed' })
@@ -80,6 +80,18 @@ export async function updatePageWorldProviderBootstrapAfterSettingsChange<T>(web
 	})
 }
 
-export async function updateAllContentScriptConfigurationAndReloadTabsIfChanged<T>(websiteTabConnections: WebsiteTabConnections, update: () => Promise<T>, transaction: ConfigurationUpdateTransaction = runConfigurationUpdate) {
-	return await updateContentScriptInjectionConfigurationAndReloadTabsIfChanged(websiteTabConnections, update, hasSameContentScriptRegistrationConfiguration, transaction)
+export async function updateAllContentScriptConfigurationAfterSettingsImport<T>(websiteTabConnections: WebsiteTabConnections, update: () => Promise<T>, transaction: (update: () => Promise<T>) => Promise<T>) {
+	return await contentScriptInjectionConfigurationSemaphore.execute(async () => {
+		const configurationBeforeUpdate = await getContentScriptInjectionConfiguration()
+		const result = await transaction(update)
+		try {
+			const configurationAfterUpdate = await getContentScriptInjectionConfiguration()
+			if (!hasSameContentScriptRegistrationConfiguration(configurationBeforeUpdate, configurationAfterUpdate)) {
+				await refreshUpdatedPageWorldProviderBootstrapAndReloadConnectedTabs(websiteTabConnections, configurationAfterUpdate)
+			}
+		} catch (error: unknown) {
+			await reportUnexpectedError(error, { code: 'settings_import_content_script_refresh_failed' })
+		}
+		return result
+	})
 }

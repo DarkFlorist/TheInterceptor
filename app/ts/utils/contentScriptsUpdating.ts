@@ -129,8 +129,7 @@ const createInjectLogic = (getContentScriptInjectionConfiguration: GetContentScr
 	if (!noMatches) return false
 	try {
 		for (const injection of getManifestV2IsolatedWorldInjections(metamaskCompatibilityMode)) {
-			const script = 'file' in injection ? { file: `/${ injection.file }` } : { code: injection.code }
-			await browser.tabs.executeScript(content.tabId, { ...script, allFrames: false, runAt: 'document_start' })
+			await browser.tabs.executeScript(content.tabId, { file: `/${ injection.file }`, allFrames: false, runAt: 'document_start' })
 		}
 		checkAndThrowRuntimeLastError()
 	} catch(error) {
