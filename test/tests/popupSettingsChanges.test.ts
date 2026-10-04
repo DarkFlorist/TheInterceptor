@@ -121,7 +121,9 @@ describe('popup settings changes', () => {
 		} }]])
 		const settings = await getRequiredSettings()
 		const context = {
-			...createEthereumWithGetBlockCounter({ count: 0 }), settings, websiteTabConnections: connections,
+			...createEthereumWithGetBlockCounter({ count: 0 }), settings,
+			rpcConfiguration: { status: 'ready' as const, rpcEntries: [settings.activeRpcNetwork], activeRpcNetwork: settings.activeRpcNetwork },
+			websiteTabConnections: connections,
 			publishRpcConnectionStatus: async () => undefined,
 			simulationAbortController: new AbortController(), confirmTransactionAbortController: new AbortController(), resetSimulationState: async () => undefined,
 		}
@@ -197,6 +199,78 @@ describe('popup settings changes', () => {
 			assert.equal((await browser.storage.local.get('activeRpcNetwork')).activeRpcNetwork.httpsRpc, currentRpc.httpsRpc)
 		} finally {
 			console.warn = originalWarn
+		}
+	})
+
+	for (const failure of ['corrupt', 'unreadable'] as const) test(`returns a typed unavailable reply when disabling simulation with ${ failure } RPC storage`, async () => {
+		installBrowserMock()
+		const { changeSimulationMode, getRequiredSettings } = await loadModules()
+		const { dispatchPopupMessage } = await import('../../app/ts/background/popupMessageDispatcher.js')
+		await changeSimulationMode({ simulationMode: true })
+		const settings = await getRequiredSettings()
+		const services = createEthereumWithGetBlockCounter({ count: 0 })
+		const originalGet = browser.storage.local.get
+		const originalWarn = console.warn
+		if (failure === 'corrupt') await browser.storage.local.set({ rpcEntries: 'not-an-rpc-list' })
+		else Object.defineProperty(browser.storage.local, 'get', { configurable: true, value: async () => { throw new Error('Storage temporarily unavailable') } })
+		console.warn = () => undefined
+		try {
+			const result = await dispatchPopupMessage({
+				...services,
+				settings,
+				rpcConfiguration: { status: 'ready', rpcEntries: [settings.activeRpcNetwork], activeRpcNetwork: settings.activeRpcNetwork },
+				websiteTabConnections: new Map(),
+				publishRpcConnectionStatus: async () => undefined,
+				simulationAbortController: new AbortController(),
+				confirmTransactionAbortController: new AbortController(),
+				resetSimulationState: async () => undefined,
+			}, { method: 'popup_enableSimulationMode', data: false })
+			assert.deepEqual(result, {
+				type: 'PopupSettingsChangeReply',
+				ok: false,
+				message: 'Interceptor RPC configuration is unavailable. Network requests are paused until the user restores it.',
+			})
+		} finally {
+			console.warn = originalWarn
+			Object.defineProperty(browser.storage.local, 'get', { configurable: true, value: originalGet })
+		}
+	})
+
+	for (const enabled of [true, false] as const) for (const failure of ['corrupt', 'unreadable'] as const) test(`completes an ${ enabled ? 'enabling' : 'disabling' } transition when RPC storage becomes ${ failure } after admission`, async () => {
+		installBrowserMock()
+		const { changeSimulationMode, getRequiredSettings } = await loadModules()
+		const { dispatchPopupMessage } = await import('../../app/ts/background/popupMessageDispatcher.js')
+		await changeSimulationMode({ simulationMode: !enabled })
+		const settings = await getRequiredSettings()
+		const services = createEthereumWithGetBlockCounter({ count: 0 })
+		const originalGet = browser.storage.local.get
+		const originalWarn = console.warn
+		let rpcConfigurationReads = 0
+		Object.defineProperty(browser.storage.local, 'get', { configurable: true, value: async (...args: Parameters<typeof originalGet>) => {
+			const keys = args[0]
+			const readsRpcConfiguration = Array.isArray(keys) && keys.includes('rpcEntries')
+			if (!readsRpcConfiguration || ++rpcConfigurationReads === 1) return await originalGet(...args)
+			if (failure === 'unreadable') throw new Error('Storage became unavailable after admission')
+			return { ...await originalGet(...args), rpcEntries: 'not-an-rpc-list' }
+		} })
+		console.warn = () => undefined
+		try {
+			const result = await dispatchPopupMessage({
+				...services,
+				settings,
+				rpcConfiguration: { status: 'ready', rpcEntries: [settings.activeRpcNetwork], activeRpcNetwork: settings.activeRpcNetwork },
+				websiteTabConnections: new Map(),
+				publishRpcConnectionStatus: async () => undefined,
+				simulationAbortController: new AbortController(),
+				confirmTransactionAbortController: new AbortController(),
+				resetSimulationState: async () => undefined,
+			}, { method: 'popup_enableSimulationMode', data: enabled })
+			assert.deepEqual(result, { type: 'PopupSettingsChangeReply', ok: true })
+			assert.equal(rpcConfigurationReads >= 2, true)
+			assert.equal((await originalGet('simulationMode')).simulationMode, enabled)
+		} finally {
+			console.warn = originalWarn
+			Object.defineProperty(browser.storage.local, 'get', { configurable: true, value: originalGet })
 		}
 	})
 

@@ -6,7 +6,7 @@ import { getSimulationStackTargetHash } from '../utils/simulationStackTargets.js
 import { setLatestUnexpectedError } from './storageVariables.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { changeChainDialog, changePage, changePreSimulationBlockTimeManipulation, confirmDialog, fetchSimulationStackRequestConfirmation, forceSetGasLimitForTransaction, importSafeStack, importSimulationStack, openNewTab, openWebPage, popupReadyAndListening, refreshHomeData, refreshPopupConfirmTransactionMetadata, refreshPopupConfirmTransactionSimulation, removeTransactionOrSignedMessage, reportUnexpectedErrorInWindow, requestAccountsFromSigner, requestActiveAddresses, requestCompleteVisualizedSimulation, requestHomePageBootstrap, requestInterceptorSimulationInput, requestLatestUnexpectedError, requestMakeMeRichList, requestNewHomeData, requestSafeStackExport, requestSimulationMetadata, requestSimulationMode, setSafeSimulationSigner, setTransactionOrMessageBlockTimeManipulator, simulateGnosisSafeTransactionOnPass, simulateGovernanceContractExecutionOnPass, watchAssetDialog } from './popupMessageHandlers.js'
-import { popupRpcLifecycleMessageHandler, popupSnapshotMessageHandler, popupMessageHandler, type PopupMessageDispatcherContext, type PopupMessageHandlerMap } from './popupMessageHandlerRegistry.js'
+import { popupSnapshotMessageHandler, popupMessageHandler, type PopupMessageDispatcherContext, type PopupMessageHandlerMap } from './popupMessageHandlerRegistry.js'
 import { addressBookPopupMessageHandlers } from './popupMessageHandlerRegistries/addressBook.js'
 import { settingsPopupMessageHandlers } from './popupMessageHandlerRegistries/settings.js'
 import { safePopupMessageHandlers } from './popupMessageHandlerRegistries/safe.js'
@@ -18,7 +18,7 @@ const popupMessageHandlers = {
 	popup_confirmDialog: popupSnapshotMessageHandler('popup_confirmDialog', async (context, request) => await confirmDialog(context.services.ethereum, context.services.tokenPriceService, context.websiteTabConnections, request)),
 	popup_changePage: popupMessageHandler('popup_changePage', async (_context, request) => await changePage(request)),
 	popup_requestAccountsFromSigner: popupMessageHandler('popup_requestAccountsFromSigner', async (context, request) => await requestAccountsFromSigner(context.websiteTabConnections, request)),
-	popup_resetSimulation: popupRpcLifecycleMessageHandler('popup_resetSimulation', async (context) => await context.resetSimulationState()),
+	popup_resetSimulation: popupMessageHandler('popup_resetSimulation', async (context) => await context.resetSimulationState()),
 	popup_removeTransactionOrSignedMessage: popupSnapshotMessageHandler('popup_removeTransactionOrSignedMessage', async (context, request) => {
 		const { ethereum, tokenPriceService } = context.services
 		return await removeTransactionOrSignedMessage(ethereum, tokenPriceService, request)

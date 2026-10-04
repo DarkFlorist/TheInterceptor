@@ -137,8 +137,8 @@ export type SimulationSnapshot = {
 }
 
 // Capture selection and input at the storage boundary. An unreadable stack must abort before publishing any fallback.
-export async function captureSimulationSnapshot(): Promise<SimulationSnapshot> {
-	const settings = await getRequiredSettings()
+export async function captureSimulationSnapshot(settingsSnapshot?: Settings): Promise<SimulationSnapshot> {
+	const settings = settingsSnapshot ?? await getRequiredSettings()
 	const richAddresses = await getAddressesbeingMadeRich(settings)
 	return {
 		activeRpcNetwork: settings.activeRpcNetwork,

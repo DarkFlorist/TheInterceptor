@@ -4,21 +4,24 @@ import { popupSettingsOperations } from '../types/popupSettingsProtocol.js'
 import type { PopupSettingsRequest } from '../types/popupSettingsRequests.js'
 import type { PopupMessage } from '../types/interceptor-messages.js'
 import type { PopupReplyOption } from '../types/interceptor-reply-messages.js'
-import { popupMessageHandler, type PopupMessageHandlerMap, type PopupReadyMessageDispatcherContext, type PopupSettingsAdmissionMethod } from './popupMessageHandlerRegistry.js'
+import { admitPopupRequest, popupMessageHandler, type PopupMessageHandlerMap, type PopupReadyAdmissionMethod, type PopupReadyMessageDispatcherContext } from './popupMessageHandlerRegistry.js'
 import { getSettingsSnapshot, requireSettings } from './settings.js'
 import { changeActiveAddress, enableSimulationMode, modifyMakeMeRich, popupChangeActiveRpc } from './popupMessageHandlers.js'
 import { queuePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
-import { getRpcServicesAtAdmission } from './rpcConfigurationAvailability.js'
+import { getRpcServicesAtAdmission, rpcConfigurationIsReady } from './rpcConfigurationAvailability.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 
 const settingsCoordinator = createPopupSettingsCoordinator(async (data) => await sendPopupMessageToOpenWindows({ method: 'popup_settingsChangeStatus', data }))
 
-function settingsCommand<Method extends PopupSettingsRequest['method'] & PopupSettingsAdmissionMethod>(method: Method, action: (context: PopupReadyMessageDispatcherContext, request: Extract<PopupMessage, { method: Method }>) => Promise<PopupReplyOption | void>) {
+function settingsCommand<Method extends PopupSettingsRequest['method'] & PopupReadyAdmissionMethod>(method: Method, action: (context: PopupReadyMessageDispatcherContext, request: Extract<PopupMessage, { method: Method }>) => Promise<PopupReplyOption | void>) {
 	return popupMessageHandler(method, async (context, request) => {
 		const descriptor = popupSettingsOperations[method]
 		const admission = await settingsCoordinator.run(descriptor.operation, async () => {
 			const snapshot = await getSettingsSnapshot()
-			return await action({ ...context, settings: requireSettings(snapshot), rpcConfiguration: snapshot.rpcConfiguration }, request)
+			const refreshedContext = { ...context, settings: snapshot.settings, rpcConfiguration: snapshot.rpcConfiguration }
+			const refreshedAdmission = admitPopupRequest(refreshedContext, request)
+			if (refreshedAdmission.kind === 'rejected') return refreshedAdmission.reply
+			return await action({ ...refreshedContext, settings: requireSettings(snapshot) }, request)
 		})
 		return admission.accepted ? admission.result : {
 			type: descriptor.replyType,
@@ -34,7 +37,8 @@ export const popupSettingsCommandHandlers = {
 	popup_changeActiveAddress: settingsCommand('popup_changeActiveAddress', async (context, request) => await changeActiveAddress(context.simulationServicesOwner, context.websiteTabConnections, request)),
 	popup_changeActiveRpc: settingsCommand('popup_changeActiveRpc', async (context, request) => await popupChangeActiveRpc(context.simulationServicesOwner, context.websiteTabConnections, request)),
 	popup_enableSimulationMode: settingsCommand('popup_enableSimulationMode', async (context, request) => {
-		await enableSimulationMode(context.simulationServicesOwner, context.websiteTabConnections, request)
+		if (!rpcConfigurationIsReady(context.rpcConfiguration)) throw new Error('Popup RPC configuration admission invariant failed.')
+		await enableSimulationMode(context.simulationServicesOwner, context.websiteTabConnections, request, {}, { settings: context.settings, rpcConfiguration: context.rpcConfiguration })
 		return { type: 'PopupSettingsChangeReply', ok: true }
 	}),
 	popup_modifyMakeMeRich: settingsCommand('popup_modifyMakeMeRich', async (context, request) => {

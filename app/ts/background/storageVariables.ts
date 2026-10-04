@@ -1,19 +1,16 @@
-import { getRpcEntryIdentityKey } from '../utils/rpcNetworkChange.js'
-import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
+import { DEFAULT_TAB_CONNECTION } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
 import type { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, StoredWatchAssetRequest, TabState } from '../types/user-interface-types.js'
-import { type PartialIdsOfOpenedTabs, browserStorageLocalGet, browserStorageLocalGet2Result, browserStorageLocalRemove, browserStorageLocalSafeParseGet, browserStorageLocalSet, browserStorageLocalSet2, getTabStateFromStorage, parseTabStateItems, removeTabStateFromStorage, safeParseLocalStorageItems, setTabStateToStorage } from '../utils/storageUtils.js'
+import { type PartialIdsOfOpenedTabs, browserStorageLocalGet, browserStorageLocalGet2Result, browserStorageLocalRemove, browserStorageLocalSafeParseGet, browserStorageLocalSet, browserStorageLocalSet2, getTabStateFromStorage, parseTabStateItems, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
 import { CompleteVisualizedSimulation, type EthereumSubscriptionsAndFilters, InterceptorTransactionStack, createPassthroughCompleteVisualizedSimulation } from '../types/visualizer-types.js'
-import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_RPCS } from '../config/defaults.js'
+import { DEFAULT_ACTIVE_ADDRESSES } from '../config/defaults.js'
 import { type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
 import { AddressBookEntry, doAddressBookChainIdsMatch, LegacyErc20TokenEntry, type AddressBookEntries, type ChainIdWithUniversal } from '../types/addressBookTypes.js'
 import type { SignerName } from '../types/signerTypes.js'
 import type { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
-import type { RpcEntries, RpcNetwork } from '../types/rpc.js'
 import { replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
 import { keccak256, namehash, stringToBytes } from '../utils/ethereumPrimitives.js'
 import { isValidEnsName } from '../utils/ens.js'
-import { modifyObject } from '../utils/typescript.js'
 import type { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { getLargeStateValue, prepareLargeStateWrite, setLargeStateValue, setLargeStateValues } from '../utils/largeStateStore.js'
 import type { InterceptorErrorDiagnostic } from '../types/errorDiagnostics.js'
@@ -21,19 +18,14 @@ import { SafeTransactionStacks } from '../types/safeTypes.js'
 import { createStoredValueRepository } from '../utils/storedValue.js'
 import { isValidErc20Decimals } from '../utils/erc20.js'
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
-import { hasOwnKey } from '../utils/typescript.js'
-import { createRpcConfigurationUnavailableError } from '../utils/rpcConfigurationError.js'
 import { pendingRequestTerminalStateSemaphore } from './terminalStateSemaphore.js'
+
+export { getPrimaryRpcForChain, getRpcConfigurationState, getRpcConfigurationStateWithStorageSnapshot, getRpcList, getRpcNetworkForChain, promoteRpcAsPrimary, setRpcConfiguration, setRpcList, type RpcConfigurationState } from './rpcConfigurationStorage.js'
 
 const reportCorruptStoredValue = (label: string) => (failure: unknown) => {
 	console.warn(`${ label } was corrupt:`)
 	console.warn(failure)
 }
-
-export type RpcConfigurationState =
-	| { readonly status: 'ready', readonly rpcEntries: RpcEntries, readonly activeRpcNetwork: RpcNetwork }
-	| { readonly status: 'unavailable', readonly reason: 'empty', readonly activeRpcNetwork: RpcNetwork }
-	| { readonly status: 'unavailable', readonly reason: 'corrupt' | 'incomplete' | 'read-failed' | 'write-failed', readonly activeRpcNetwork?: RpcNetwork, readonly error?: unknown }
 
 const idsOfOpenedTabsRepository = createStoredValueRepository({
 	read: async () => (await browserStorageLocalGet('idsOfOpenedTabs')).idsOfOpenedTabs,
@@ -223,165 +215,9 @@ export async function updateEthereumSubscriptionsAndFilters(updateFunc: (prevSta
 	return { oldSubscriptions: previous, newSubscriptions: current }
 }
 
-const rpcConfigurationSemaphore = new Semaphore(1)
-
-type RpcConfigurationStorageItems = Readonly<Record<string, unknown>> & {
-	readonly rpcEntries?: unknown
-	readonly activeRpcNetwork?: unknown
-}
-
-const unavailableRpcConfiguration = (reason: Exclude<Exclude<RpcConfigurationState, { status: 'ready' }>['reason'], 'empty'>, activeRpcNetwork?: RpcNetwork, error?: unknown): RpcConfigurationState => ({
-	status: 'unavailable',
-	reason,
-	...(activeRpcNetwork === undefined ? {} : { activeRpcNetwork }),
-	...(error === undefined ? {} : { error }),
-})
-
-async function resolveRpcConfigurationStateWithoutLock(storedConfiguration: RpcConfigurationStorageItems): Promise<RpcConfigurationState> {
-	const hasRpcEntries = hasOwnKey(storedConfiguration, 'rpcEntries') && storedConfiguration.rpcEntries !== undefined
-	const hasActiveRpcNetwork = hasOwnKey(storedConfiguration, 'activeRpcNetwork') && storedConfiguration.activeRpcNetwork !== undefined
-	if (!hasRpcEntries && !hasActiveRpcNetwork) {
-		const initialRpc = DEFAULT_RPCS[0]
-		if (initialRpc === undefined) return unavailableRpcConfiguration('incomplete')
-		try {
-			await browserStorageLocalSet({ rpcEntries: DEFAULT_RPCS, activeRpcNetwork: initialRpc })
-			return { status: 'ready', rpcEntries: DEFAULT_RPCS, activeRpcNetwork: initialRpc }
-		} catch (error: unknown) {
-			return unavailableRpcConfiguration('write-failed', undefined, error)
-		}
-	}
-
-	let rpcEntries: RpcEntries | undefined
-	let rpcEntriesAreCorrupt = false
-	if (hasRpcEntries) {
-		const parsedRpcEntries = safeParseLocalStorageItems({ rpcEntries: storedConfiguration.rpcEntries })
-		if (!parsedRpcEntries.success || parsedRpcEntries.value.rpcEntries === undefined) {
-			reportCorruptStoredValue('Rpc entries')(parsedRpcEntries)
-			rpcEntriesAreCorrupt = true
-		} else {
-			rpcEntries = parsedRpcEntries.value.rpcEntries
-		}
-	}
-
-	let activeRpcNetwork: RpcNetwork | undefined
-	let activeRpcNetworkIsCorrupt = false
-	if (hasActiveRpcNetwork) {
-		const parsedActiveRpcNetwork = safeParseLocalStorageItems({ activeRpcNetwork: storedConfiguration.activeRpcNetwork })
-		if (!parsedActiveRpcNetwork.success || parsedActiveRpcNetwork.value.activeRpcNetwork === undefined) {
-			reportCorruptStoredValue('Active RPC network')(parsedActiveRpcNetwork)
-			activeRpcNetworkIsCorrupt = true
-		} else {
-			activeRpcNetwork = parsedActiveRpcNetwork.value.activeRpcNetwork
-		}
-	}
-	if (rpcEntriesAreCorrupt || activeRpcNetworkIsCorrupt) return unavailableRpcConfiguration('corrupt', activeRpcNetwork)
-
-	if (rpcEntries === undefined) {
-		if (activeRpcNetwork === undefined) return unavailableRpcConfiguration('incomplete')
-		rpcEntries = activeRpcNetwork.httpsRpc === undefined ? [] : [activeRpcNetwork]
-		try {
-			await browserStorageLocalSet({ rpcEntries })
-		} catch (error: unknown) {
-			return unavailableRpcConfiguration('write-failed', activeRpcNetwork, error)
-		}
-	}
-	if (rpcEntries.length === 0) {
-		if (activeRpcNetwork !== undefined && activeRpcNetwork.httpsRpc === undefined) return { status: 'ready', rpcEntries, activeRpcNetwork }
-		if (activeRpcNetwork === undefined) return unavailableRpcConfiguration('incomplete')
-		return { status: 'unavailable', reason: 'empty', activeRpcNetwork }
-	}
-	if (activeRpcNetwork === undefined) {
-		const selectedRpc = rpcEntries.find((entry) => entry.primary) ?? rpcEntries[0]
-		if (selectedRpc === undefined) return unavailableRpcConfiguration('incomplete')
-		activeRpcNetwork = selectedRpc
-		try {
-			await browserStorageLocalSet({ activeRpcNetwork })
-		} catch (error: unknown) {
-			return unavailableRpcConfiguration('write-failed', activeRpcNetwork, error)
-		}
-	}
-	return { status: 'ready', rpcEntries, activeRpcNetwork }
-}
-
-async function getRpcConfigurationStateWithoutLock(): Promise<RpcConfigurationState> {
-	let storedConfiguration: Readonly<Record<string, unknown>>
-	try {
-		storedConfiguration = await browser.storage.local.get(['rpcEntries', 'activeRpcNetwork'])
-	} catch (error: unknown) {
-		return unavailableRpcConfiguration('read-failed', undefined, error)
-	}
-	return await resolveRpcConfigurationStateWithoutLock(storedConfiguration)
-}
-
-export async function getRpcConfigurationState(): Promise<RpcConfigurationState> {
-	return await rpcConfigurationSemaphore.execute(getRpcConfigurationStateWithoutLock)
-}
-
-export async function getRpcConfigurationStateWithStorageSnapshot(keys: readonly string[]): Promise<{ readonly storedItems: Readonly<Record<string, unknown>>, readonly rpcConfiguration: RpcConfigurationState }> {
-	return await rpcConfigurationSemaphore.execute(async () => {
-		let storedItems: Readonly<Record<string, unknown>>
-		try {
-			storedItems = await browser.storage.local.get([...keys, 'rpcEntries', 'activeRpcNetwork'])
-		} catch (error: unknown) {
-			return { storedItems: {}, rpcConfiguration: unavailableRpcConfiguration('read-failed', undefined, error) }
-		}
-		return { storedItems, rpcConfiguration: await resolveRpcConfigurationStateWithoutLock(storedItems) }
-	})
-}
-
-export async function setRpcConfiguration(rpcEntries: RpcEntries, activeRpcNetwork: RpcNetwork) {
-	await rpcConfigurationSemaphore.execute(async () => await browserStorageLocalSet({ rpcEntries, activeRpcNetwork }))
-}
-
-export const setRpcList = async (rpcEntries: RpcEntries) => await rpcConfigurationSemaphore.execute(async () => await browserStorageLocalSet({ rpcEntries }))
-export async function getRpcList(): Promise<RpcEntries> {
-	const state = await getRpcConfigurationState()
-	if (state.status === 'ready') return state.rpcEntries
-	if ('error' in state && state.error !== undefined) throw state.error
-	throw createRpcConfigurationUnavailableError()
-}
-
 export const setInterceptorStartSleepingTimestamp = async(interceptorStartSleepingTimestamp: number) => await browserStorageLocalSet({ interceptorStartSleepingTimestamp })
 
 export const getInterceptorStartSleepingTimestamp = async () => (await browserStorageLocalGet('interceptorStartSleepingTimestamp'))?.interceptorStartSleepingTimestamp ?? 0
-
-export const promoteRpcAsPrimary = async (rpcNetwork: RpcNetwork) => {
-	await rpcConfigurationSemaphore.execute(async () => {
-		const state = await getRpcConfigurationStateWithoutLock()
-		if (state.status !== 'ready') {
-			if ('error' in state && state.error !== undefined) throw state.error
-			throw createRpcConfigurationUnavailableError()
-		}
-		const selectedIndex = state.rpcEntries.findIndex((rpc) => getRpcEntryIdentityKey(rpc) === getRpcEntryIdentityKey(rpcNetwork))
-		if (selectedIndex === -1) return
-		await browserStorageLocalSet({ rpcEntries: state.rpcEntries.map((rpc, index) => rpc.chainId === rpcNetwork.chainId ? modifyObject(rpc, { primary: index === selectedIndex }) : rpc) })
-	})
-}
-
-export const getPrimaryRpcForChain = async (chainId: bigint) => {
-	const rpcs = await getRpcList()
-	const primary = rpcs.find((rpc) => rpc.chainId === chainId && rpc.primary)
-	if (primary) return primary
-
-	// no primary was found, try to find what ever we have for that chain id
-	const nonPrimary = rpcs.find((rpc) => rpc.chainId === chainId)
-	if (nonPrimary) return nonPrimary
-	return undefined
-}
-
-export const getRpcNetworkForChain = async (chainId: bigint): Promise<RpcNetwork> => {
-	const rpc = await getPrimaryRpcForChain(chainId)
-	if (rpc !== undefined) return rpc
-	return {
-		chainId: chainId,
-		currencyName: 'Ether?',
-		currencyTicker: 'ETH?',
-		name: getChainName(chainId),
-		httpsRpc: undefined,
-		primary: false,
-		minimized: true,
-	}
-}
 
 export function repairLegacyAddressBookEntry(rawEntry: unknown): AddressBookEntry | undefined {
 	const parsedEntry = AddressBookEntry.safeParse(rawEntry)

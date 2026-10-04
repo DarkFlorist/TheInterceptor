@@ -10,8 +10,9 @@ import type { WebsiteAccessUpdate } from './accessManagement.js'
 import { reconcileWebsiteApprovalAccesses, finishWebsiteAccessUpdate, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts } from './accessManagement.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
-import { changeSimulationMode, getRequiredSettings, getSettingsSnapshot, requireSettings, setUseSignersAddressAsActiveAddress, trackPreviousActiveAddressForMakeMeRichList } from './settings.js'
-import { updateTransactionState } from './storageVariables.js'
+import { captureRpcNetwork, changeSimulationMode, getRequiredSettings, getSettingsForCapturedRpcNetwork, getSettingsSnapshot, requireSettings, setUseSignersAddressAsActiveAddress, trackPreviousActiveAddressForMakeMeRichList } from './settings.js'
+import { updateTransactionState, type RpcConfigurationState } from './storageVariables.js'
+import type { Settings } from '../types/interceptor-messages.js'
 import type { ActiveAddressSelection } from '../utils/activeAddressSelection.js'
 import { rememberSigningAddressSelection } from './signingAddressSelection.js'
 import { activeStackContextsEqual, getActiveStackContext, operationBelongsToActiveStackContext } from '../utils/activeStackContext.js'
@@ -52,10 +53,7 @@ export async function resetSimulationStateFromConfig(simulationServicesOwner: Si
 	await queuePopupSimulationRefresh({ ...simulationServicesOwner.requireCurrent(), invalidateOldState: true })
 }
 
-const keepTrackOfPreviousAddressForRichList = async () => {
-	const previousActiveAddress = (await getRequiredSettings()).activeSimulationAddress
-	await trackPreviousActiveAddressForMakeMeRichList(previousActiveAddress)
-}
+const keepTrackOfPreviousAddressForRichList = async (previousSettings: Settings) => await trackPreviousActiveAddressForMakeMeRichList(previousSettings.activeSimulationAddress)
 
 type ActiveAddressAndChainChange = {
 	simulationMode: boolean
@@ -69,6 +67,7 @@ type ActiveSettingsTransition = {
 	readonly change: ActiveAddressAndChainChange
 	readonly simulationSignerSelection?: { readonly useSignerAddress: boolean, readonly signerAddress: bigint | undefined }
 	readonly signingPreference?: SigningAddressPreference
+	readonly admittedSnapshot?: { readonly settings: Settings, readonly rpcConfiguration: RpcConfigurationState }
 }
 
 const changeActiveAddressAndChainSemaphore = new Semaphore(1)
@@ -101,9 +100,26 @@ async function publishCommittedSettingsTransition(
 		await sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
 	}
 	if (simulationServicesOwner.getCurrent() !== undefined && (updatedSettings.simulationMode || updatedSettings.activeSigningSafeAddress !== undefined) && (rpcEndpointChanged || !activeStackContextsEqual(getActiveStackContext(previousSettings), getActiveStackContext(updatedSettings)))) {
-		await queuePopupSimulationRefresh(simulationServicesOwner.requireCurrent())
+		await queuePopupSimulationRefresh({ ...simulationServicesOwner.requireCurrent(), settingsSnapshot: updatedSettings })
 	}
-	await sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await getRequiredSettings())
+	await sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, updatedSettings)
+}
+
+function applyActiveSettingsTransition(previousSettings: Settings, transition: ActiveSettingsTransition): Settings {
+	const { change, simulationSignerSelection } = transition
+	const selectsSafe = change.signingAddressSelection === 'safe'
+	return {
+		...previousSettings,
+		simulationMode: change.simulationMode,
+		...(change.rpcNetwork === undefined ? {} : { activeRpcNetwork: change.rpcNetwork }),
+		...(change.simulationMode && 'activeAddress' in change ? { activeSimulationAddress: change.activeAddress } : {}),
+		...(!change.simulationMode && !selectsSafe && 'activeAddress' in change ? { activeSigningAddress: change.activeAddress } : {}),
+		...(!change.simulationMode && 'activeAddress' in change ? { activeSigningSafeAddress: selectsSafe ? change.activeAddress : undefined } : {}),
+		...(simulationSignerSelection === undefined ? {} : {
+			useSignersAddressAsActiveAddress: simulationSignerSelection.useSignerAddress,
+			...(simulationSignerSelection.useSignerAddress ? { activeSigningAddress: simulationSignerSelection.signerAddress } : {}),
+		}),
+	}
 }
 
 export async function publishRpcConfigurationRecovery(
@@ -140,7 +156,7 @@ async function runActiveSettingsChange(
 	try {
 		// Settings, approvals, resets, notifications and selection preferences form one ordered transition.
 		await changeActiveAddressAndChainSemaphore.execute(async () => {
-			const previousSnapshot = await getSettingsSnapshot()
+			const previousSnapshot = transition.admittedSnapshot ?? await getSettingsSnapshot()
 			const previousSettings = requireSettings(previousSnapshot)
 			const rpcServicesOptional = rpcServicesAreOptional(previousSnapshot.rpcConfiguration)
 			const recoverServicesOnRpcSelection = simulationServicesOwner.getCurrent() === undefined && rpcServicesOptional
@@ -149,7 +165,7 @@ async function runActiveSettingsChange(
 				const { useSignerAddress, signerAddress } = transition.simulationSignerSelection
 				await setUseSignersAddressAsActiveAddress(useSignerAddress, signerAddress)
 			}
-			if (change.simulationMode && change.activeAddress !== undefined) await keepTrackOfPreviousAddressForRichList()
+			if (change.simulationMode && change.activeAddress !== undefined) await keepTrackOfPreviousAddressForRichList(previousSettings)
 
 			if (change.simulationMode) {
 				await changeSimulationMode({
@@ -168,7 +184,8 @@ async function runActiveSettingsChange(
 				})
 			}
 
-			const updatedSettings = await getRequiredSettings()
+			const expectedSettings = applyActiveSettingsTransition(previousSettings, transition)
+			const updatedSettings = await getSettingsForCapturedRpcNetwork(captureRpcNetwork(expectedSettings))
 			try {
 				// The preference belongs to the committed selection, even if later provider preparation fails.
 				if (transition.signingPreference !== undefined) await rememberSigningAddressSelection(transition.signingPreference)
@@ -202,8 +219,9 @@ export async function changeActiveAddressAndChain(
 	simulationServicesOwner: SimulationServicesOwner,
 	websiteTabConnections: WebsiteTabConnections,
 	change: ActiveAddressAndChainChange,
+	admittedSnapshot?: { readonly settings: Settings, readonly rpcConfiguration: RpcConfigurationState },
 ): Promise<void> {
-	return await runActiveSettingsChange(simulationServicesOwner, websiteTabConnections, { change })
+	return await runActiveSettingsChange(simulationServicesOwner, websiteTabConnections, { change, ...(admittedSnapshot === undefined ? {} : { admittedSnapshot }) })
 }
 
 export async function activateAddressSelection(
@@ -216,6 +234,7 @@ export async function activateAddressSelection(
 		readonly rpcNetwork?: RpcNetwork
 		readonly promptForAccessesIfNeeded?: boolean
 	},
+	admittedSnapshot?: { readonly settings: Settings, readonly rpcConfiguration: RpcConfigurationState },
 ): Promise<void> {
 	const selectedSafe = selection?.type === 'addressBookEntry' && selection.entry.type === 'safe' ? selection.entry : undefined
 	if (!options.simulationMode && selection?.type === 'addressBookEntry' && selectedSafe === undefined) throw new Error('Signing mode can only activate the external signer or an owned Gnosis Safe.')
@@ -238,5 +257,6 @@ export async function activateAddressSelection(
 			signerAddress: useSignerAddress ? selection?.type === 'signer' ? selection.address : options.signerAddress : undefined,
 		} } : {}),
 		...(signingPreference === undefined ? {} : { signingPreference }),
+		...(admittedSnapshot === undefined ? {} : { admittedSnapshot }),
 	})
 }

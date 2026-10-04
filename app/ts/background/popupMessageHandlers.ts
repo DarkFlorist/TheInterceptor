@@ -2,7 +2,7 @@ import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulat
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { captureSimulationSnapshot, getUpdatedSimulationStackSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
 import { captureRpcNetwork, getRequiredSettings, getSettingsForCapturedRpcNetwork, getSettingsSnapshot, requireSettings, setUseTabsInsteadOfPopup, setPage, getMakeCurrentAddressRich, setMetamaskCompatibilityMode, setSafeAppsCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, updateMakeCurrentAddressRich, updateFixedMakeMeRichList } from './settings.js'
-import { getPendingTransactionsAndMessages, getTabState, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests, updateTransactionState, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, getSafeTransactionStacks } from './storageVariables.js'
+import { getPendingTransactionsAndMessages, getTabState, getRpcList, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests, updateTransactionState, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, getSafeTransactionStacks } from './storageVariables.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
 import { type ChangeActiveAddress, type ModifyMakeMeRich, type ChangePage, type RemoveTransaction, type RequestAccountsFromSigner, type TransactionConfirmation, type InterceptorAccess, type ChangeInterceptorAccess, type ChainChangeConfirmation, type WatchAssetConfirmation, type EnableSimulationMode, type ChangeActiveChain, type AddOrEditAddressBookEntry, type GetAddressBookData, type RemoveAddressBookEntry, type InterceptorAccessRefresh, type InterceptorAccessChangeAddress, type Settings, type ChangeSettings, type UpdateHomePage, type SimulateGovernanceContractExecution, type ChangeAddOrModifyAddressWindowState, type OpenWebPage, type SetEnsNameForHash, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions, type ForceSetGasLimitForTransaction, type ChangePreSimulationBlockTimeManipulation, type SetTransactionOrMessageBlockTimeManipulator, type FetchSimulationStackRequestConfirmation, type ImportSimulationStack, type PopupReadyAndListeningPage } from '../types/interceptor-messages.js'
 import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransactionOrMessage, updateConfirmTransactionView, setGasLimitForTransaction, toPopupPendingTransactionOrSignableMessage } from './windows/confirmTransaction.js'
@@ -63,6 +63,7 @@ import { getLastKnownCurrentTabId } from './currentTab.js'
 import { reloadConnectedTabs } from './popupMessageHandlers/websiteAccess.js'
 import { updateWebsiteAccessAndContentScriptInjectionStrategy } from './websiteAccessUpdating.js'
 import { getConfiguredSigningSafeForChain } from './signingAddressSelection.js'
+import type { RpcConfigurationState } from './rpcConfigurationStorage.js'
 
 type TimestampedPopupVisualisation = {
 	data: {
@@ -685,16 +686,24 @@ export async function enableSimulationMode(
 	websiteTabConnections: WebsiteTabConnections,
 	params: EnableSimulationMode,
 	signerAccountRefreshOptions: SignerAccountRefreshOptions = {},
+	admitted?: { readonly settings: Settings, readonly rpcConfiguration: Extract<RpcConfigurationState, { readonly status: 'ready' }> },
 ) {
-	const settings = await getRequiredSettings()
+	const settings = admitted?.settings ?? await getRequiredSettings()
 	if (settings.simulationMode === params.data) return
+	const getAvailableRpcEntries = async () => admitted?.rpcConfiguration.rpcEntries ?? await getRpcList()
+	const getRpcForChain = async (chainId: bigint) => {
+		const rpcEntries = await getAvailableRpcEntries()
+		return rpcEntries.find((rpc) => rpc.chainId === chainId && rpc.primary) ?? rpcEntries.find((rpc) => rpc.chainId === chainId)
+	}
 	// if we are on unsupported chain, force change to a supported one
 	if (settings.useSignersAddressAsActiveAddress || params.data === false) {
 		const tabId = await getLastKnownCurrentTabId()
 		if (tabId !== undefined) await refreshSignerAccountsForTab(websiteTabConnections, tabId, false, signerAccountRefreshOptions)
 		if (tabId !== undefined) sendCallbackToConfirmedSignerOwner(websiteTabConnections, tabId, { method: 'request_signer_chainId', result: [] })
 		const chainToSwitch = tabId === undefined ? undefined : (await getTabState(tabId)).signerChain
-		const networkToSwitch = chainToSwitch === undefined ? (await getRpcList())[0] : await getPrimaryRpcForChain(chainToSwitch)
+		const networkToSwitch = chainToSwitch === undefined
+			? params.data ? (await getAvailableRpcEntries())[0] : undefined
+			: await getRpcForChain(chainToSwitch)
 		const signerAccount = await getSignerAccount()
 		if (!params.data) {
 			const targetChainId = networkToSwitch?.chainId ?? settings.activeRpcNetwork.chainId
@@ -711,20 +720,20 @@ export async function enableSimulationMode(
 				simulationMode: false,
 				signerAddress: signerAccount,
 				...(chainToSwitch === undefined || networkToSwitch === undefined ? {} : { rpcNetwork: networkToSwitch }),
-			})
+			}, admitted)
 			return
 		}
 		await changeActiveAddressAndChain(simulationServicesOwner, websiteTabConnections, {
 			simulationMode: params.data,
 			activeAddress: signerAccount,
 			...chainToSwitch === undefined ? {} : { rpcNetwork: networkToSwitch },
-		})
+		}, admitted)
 	} else {
-		const selectedNetworkToSwitch = settings.activeRpcNetwork.httpsRpc !== undefined ? settings.activeRpcNetwork : (await getRpcList())[0]
+		const selectedNetworkToSwitch = settings.activeRpcNetwork.httpsRpc !== undefined ? settings.activeRpcNetwork : (await getAvailableRpcEntries())[0]
 		await changeActiveAddressAndChain(simulationServicesOwner, websiteTabConnections, {
 			simulationMode: params.data,
 			...settings.activeRpcNetwork === selectedNetworkToSwitch ? {} : { rpcNetwork: selectedNetworkToSwitch }
-		})
+		}, admitted)
 	}
 }
 
