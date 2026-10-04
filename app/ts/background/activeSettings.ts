@@ -1,5 +1,6 @@
+import { startBackgroundTask } from './backgroundTasks.js'
 import { publishFailedPopupVisualisation } from './popupVisualisationUpdater.js'
-import { queuePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
+import { schedulePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import type { SigningAddressPreference } from '../types/signerTypes.js'
 import { getRpcNetworkChange } from '../utils/rpcNetworkChange.js'
@@ -47,7 +48,7 @@ async function clearSimulationStateFromConfig() {
 
 export async function resetSimulationStateFromConfig(simulationServicesOwner: SimulationServicesOwner) {
 	await clearSimulationStateFromConfig()
-	await queuePopupSimulationRefresh({ ...simulationServicesOwner.getCurrent(), invalidateOldState: true })
+	await schedulePopupSimulationRefresh({ ...simulationServicesOwner.getCurrent(), invalidateOldState: true })
 }
 
 const keepTrackOfPreviousAddressForRichList = async () => {
@@ -138,14 +139,15 @@ async function runActiveSettingsChange(
 			}
 			// External-wallet signing has no simulated stack; Safe signing retains its separate stack visualization.
 			if (!transition.skipSimulationRefresh && (updatedSettings.simulationMode || updatedSettings.activeSigningSafeAddress !== undefined) && (rpcEndpointChanged || !activeStackContextsEqual(getActiveStackContext(previousSettings), getActiveStackContext(updatedSettings)))) {
-				await queuePopupSimulationRefresh(simulationServicesOwner.getCurrent())
+				await schedulePopupSimulationRefresh(simulationServicesOwner.getCurrent())
 			}
 			await sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await getSettings())
 		})
 	} finally {
 		// Complete committed access updates after releasing the semaphore, even if a later reset or notification fails.
 		if (accessUpdate !== undefined) {
-			await finishWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, accessUpdate, change.promptForAccessesIfNeeded ?? true)
+			const update = accessUpdate
+			startBackgroundTask(async () => await finishWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, update, change.promptForAccessesIfNeeded ?? true))
 		}
 	}
 }

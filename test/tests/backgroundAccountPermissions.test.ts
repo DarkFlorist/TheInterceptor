@@ -1,3 +1,4 @@
+import { waitForBackgroundTasks } from '../../app/ts/background/backgroundTasks.js'
 import { notifyWebsiteLifecycle } from '../../app/ts/background/websiteLifecycle.js'
 import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
 import * as assert from 'assert'
@@ -2591,7 +2592,7 @@ describe('background eth_accounts', () => {
 		assert.equal((await getActiveAddress(settings, socket.tabId))?.address, signerAddress)
 	})
 
-	test('clears dapp accounts and finishes opening access approval when the active address is unapproved', async () => {
+	test('clears dapp accounts before deferred access approval opens for an unapproved address', async () => {
 		installBrowserMock()
 		const {
 			changeActiveAddressAndChain,
@@ -2631,6 +2632,7 @@ describe('background eth_accounts', () => {
 		assert.deepEqual(messages.map((message) => message.method), ['accountsChanged', 'disconnect'])
 		assert.deepEqual(messages[0]?.result, [])
 		assert.equal(websiteTabConnections.get(socket.tabId)?.connections[connectionKey]?.approved, false)
+		await waitForBackgroundTasks()
 		const pendingRequest = (await getPendingAccessRequests()).find((request) => request.requestAccessToAddress?.address === nextAccount)
 		if (pendingRequest === undefined) throw new Error('Missing address access request')
 		assert.equal(pendingRequest.requestAccessToAddress?.address, nextAccount)

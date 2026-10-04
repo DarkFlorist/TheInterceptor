@@ -4,7 +4,8 @@ import type { SimulationServices } from '../simulation/serviceLifecycle.js'
 import { captureSimulationSnapshot, getSimulationProviderForSnapshot, type SimulationSnapshot } from './simulationUpdating.js'
 import { getPopupVisualisationFingerprint } from './popupSimulationFingerprint.js'
 import { stringifyJSONWithBigInts } from '../utils/bigint.js'
-import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
+import { startBackgroundTask } from './backgroundTasks.js'
+import { capturePopupVisualisationGeneration, publishPendingPopupVisualisation, updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
 
 export type PopupSimulationRefresh = SimulationServices & { readonly invalidateOldState?: boolean }
 export type RevisionedPopupSimulationRefresh = PopupSimulationRefresh & { readonly revision: string | symbol }
@@ -56,12 +57,13 @@ export function createPopupSimulationRefresher<T extends RevisionedPopupSimulati
 	}
 }
 
-const refreshRevision = createPopupSimulationRefresher<RevisionedPopupSimulationRefresh & { readonly snapshot: SimulationSnapshot }>(async ({ ethereum, tokenPriceService, invalidateOldState = false, snapshot }) => {
-	const result = await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { invalidateOldState, skipIfUnchanged: !invalidateOldState, snapshot })
+const refreshRevision = createPopupSimulationRefresher<RevisionedPopupSimulationRefresh & { readonly snapshot: SimulationSnapshot, readonly isCurrent?: () => boolean, readonly invalidationGeneration: number }>(async ({ ethereum, tokenPriceService, invalidateOldState = false, snapshot, isCurrent, invalidationGeneration }) => {
+	const result = await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { invalidateOldState, skipIfUnchanged: !invalidateOldState, snapshot, isCurrent, invalidationGeneration })
 	return result.simulationUpdatingState !== 'failed' && result.simulationResultState !== 'invalid'
 })
 
 export async function queuePopupSimulationRefresh(services: PopupSimulationRefresh) {
+	const invalidationGeneration = capturePopupVisualisationGeneration()
 	const snapshot = await captureSimulationSnapshot()
 	const provider = getSimulationProviderForSnapshot(services.ethereum, snapshot)
 	const block = provider?.getCachedBlock()
@@ -71,6 +73,20 @@ export async function queuePopupSimulationRefresh(services: PopupSimulationRefre
 		block.hash,
 		snapshot.numberOfAddressesMadeRich,
 		snapshot.activeStackContext,
+		invalidationGeneration,
 	])
-	return await refreshRevision({ ...services, revision, snapshot })
+	return await refreshRevision({ ...services, revision, snapshot, invalidationGeneration })
+}
+
+let latestUiRefresh = 0
+
+// Await only local capture and invalidation. The queue owns execution after the UI edit is acknowledged.
+export async function schedulePopupSimulationRefresh(services: PopupSimulationRefresh) {
+	const generation = ++latestUiRefresh
+	const isCurrent = () => generation === latestUiRefresh
+	const snapshot = await captureSimulationSnapshot()
+	if (!isCurrent()) return
+	const invalidateOldState = services.invalidateOldState ?? true
+	const invalidationGeneration = await publishPendingPopupVisualisation(invalidateOldState)
+	startBackgroundTask(async () => await refreshRevision({ ...services, invalidateOldState, revision: Symbol('UI simulation edit'), snapshot, isCurrent, invalidationGeneration }))
 }

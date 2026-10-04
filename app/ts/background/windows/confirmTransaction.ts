@@ -1,3 +1,4 @@
+import { isPendingTransactionGasLimitCurrent } from '../../utils/pendingTransactionSimulation.js'
 import type { MessageConfirmationRequest, TransactionConfirmationRequest } from '../../types/confirmationRequest.js'
 import { SafeMessage } from '../../safe/safeMessage.js'
 import { isSafeMessageCoSignRequest } from '../../safe/safeRequestPolicy.js'
@@ -265,6 +266,7 @@ export const setGasLimitForTransaction = async (transactionIdentifier: bigint, g
 export async function resolvePendingTransactionOrMessage(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, refreshedSafeSignerSelection?: RefreshedSafeSignerSelection) {
 	let pendingTransactionOrMessage = await getPendingTransactionOrMessageByidentifier(confirmation.data.uniqueRequestIdentifier)
 	if (pendingTransactionOrMessage === undefined) return // no need to resolve as it doesn't exist anymore
+	if (confirmation.data.action !== 'reject' && !isPendingTransactionGasLimitCurrent(pendingTransactionOrMessage)) return false
 	if (
 		confirmation.data.action === 'accept'
 		&& refreshedSafeSignerSelection?.selectedSigner !== undefined

@@ -1,3 +1,4 @@
+import { startBackgroundTask } from './backgroundTasks.js'
 import { getActiveAddress, getActiveAddressesForAllTabs, getWebsiteSocketConnection, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
 import { getActiveAddressEntryForChain, getActiveAddresses } from './metadataUtils.js'
 import { requestAccessFromUser } from './windows/interceptorAccess.js'
@@ -454,9 +455,14 @@ export async function updateWebsiteApprovalAccesses(
 	settings: Settings,
 	promptForAccessesIfNeeded: boolean,
 	throwOnError = false,
+	options: { readonly deferUiUpdates?: boolean } = {},
 ): Promise<number> {
 	const update = await reconcileWebsiteApprovalAccesses(websiteTabConnections, settings, throwOnError)
-	await finishWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, update, promptForAccessesIfNeeded, throwOnError)
+	if (options.deferUiUpdates) {
+		startBackgroundTask(async () => await finishWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, update, promptForAccessesIfNeeded, throwOnError))
+	} else {
+		await finishWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, update, promptForAccessesIfNeeded, throwOnError)
+	}
 	return update.popupRefreshGeneration
 }
 

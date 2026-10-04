@@ -1,3 +1,5 @@
+import { startBackgroundTask } from './backgroundTasks.js'
+import { schedulePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
 import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { captureSimulationSnapshot, getUpdatedSimulationStackSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
@@ -21,7 +23,7 @@ import { isJSON } from '../utils/json.js'
 import { doAddressBookChainIdsMatch, type AddressBookEntry, type IncompleteAddressBookEntry } from '../types/addressBookTypes.js'
 import { EthereumAddress, serialize } from '../types/wire-types.js'
 import { fetchAbiFromBlockExplorer, isValidAbi } from '../simulation/services/EtherScanAbiFetcher.js'
-import { checksummedAddress, generate256BitRandomBigInt, stringToAddress } from '../utils/bigint.js'
+import { checksummedAddress, generate256BitRandomBigInt, stringToAddress, stringifyJSONWithBigInts } from '../utils/bigint.js'
 import { isAddress } from '../utils/ethereumPrimitives.js'
 import { getIssueWithAddressString } from '../utils/addressValidation.js'
 import type { Website } from '../types/websiteAccessTypes.js'
@@ -283,7 +285,7 @@ export async function removeAddressBookEntry(simulationServicesOwner: Simulation
 		&& (contact.chainId === removeAddressBookEntry.data.chainId || (contact.chainId === undefined && removeAddressBookEntry.data.chainId === 1n))))
 	)
 	if (removeAddressBookEntry.data.addressBookCategory === 'My Active Addresses' || removeAddressBookEntry.data.addressBookCategory === 'My Safes') {
-		await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
+		await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true, false, { deferUiUpdates: true })
 	}
 	await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 }
@@ -331,7 +333,7 @@ export async function addOrModifyAddressBookEntry(simulationServicesOwner: Simul
 			}
 			return previousContacts.concat([entryToStore])
 		})
-		if (entryToStore.useAsActiveAddress) await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true, true)
+		if (entryToStore.useAsActiveAddress) await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true, true, { deferUiUpdates: true })
 		void sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 		return { type: 'AddOrModifyAddressBookEntryReply' as const, ok: true as const }
 	} catch(error) {
@@ -409,7 +411,7 @@ export async function setSafeSimulationSigner(
 		}
 	}
 	if (updatedEntry.useAsActiveAddress) {
-		await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
+		await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true, false, { deferUiUpdates: true })
 	}
 	await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 	return { type: 'SetSafeSimulationSignerReply' as const, ok: true as const }
@@ -425,9 +427,12 @@ export async function changeInterceptorAccess(simulationServicesOwner: Simulatio
 		})
 	})
 
-	if (disabledSitesChanged) await reloadConnectedTabs(websiteTabConnections)
 
-	await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
+	await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true, false, { deferUiUpdates: true })
+	if (disabledSitesChanged) {
+		const origins = new Set(accessChange.data.map(change => change.newEntry.website.websiteOrigin))
+		startBackgroundTask(async () => await Promise.all([...origins].map(async origin => await reloadConnectedTabs(websiteTabConnections, origin))))
+	}
 	await sendPopupMessageToOpenWindows({ method: 'popup_interceptor_access_changed' })
 }
 
@@ -467,7 +472,7 @@ export async function removeTransactionOrSignedMessage(ethereum: EthereumClientS
 					},
 				}
 			})
-			await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { invalidateOldState: true })
+			await schedulePopupSimulationRefresh({ ethereum, tokenPriceService, invalidateOldState: true })
 			return
 		}
 	}
@@ -514,11 +519,12 @@ export async function removeTransactionOrSignedMessage(ethereum: EthereumClientS
 		}
 	})
 
-	await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { invalidateOldState: true })
+	await schedulePopupSimulationRefresh({ ethereum, tokenPriceService, invalidateOldState: true })
 }
 
 type ConfirmTransactionMetadataDependencies = {
 	readonly visualisation?: OpenConsumerVisualisationDependencies
+	readonly visualize?: typeof visualizeSimulatorState
 }
 
 export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, requestAbortController: AbortController | undefined, dependencies: ConfirmTransactionMetadataDependencies = {}) {
@@ -565,21 +571,18 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 		case 'Transaction': {
 			if (first.transactionOrMessageCreationStatus !== 'Simulated' || first.popupVisualisation.statusCode === 'failed') return
 			try {
-				const visualizedSimulationState = await visualizeSimulatorState(first.popupVisualisation.data.simulationState, ethereum, tokenPriceService, requestAbortController)
-				const updatedFirst = modifyObject(first,
-					{
-						popupVisualisation: {
-							statusCode: 'success',
-							data: modifyObject(first.popupVisualisation.data, { ...visualizedSimulationState })
-						}
-					})
-				await updatePendingTransactionOrMessage(first.uniqueRequestIdentifier, async () => updatedFirst)
+				const visualizedSimulationState = await (dependencies.visualize ?? visualizeSimulatorState)(first.popupVisualisation.data.simulationState, ethereum, tokenPriceService, requestAbortController)
+				await updatePendingTransactionOrMessage(first.uniqueRequestIdentifier, async current => {
+					if (current.type !== 'Transaction' || current.transactionOrMessageCreationStatus !== 'Simulated' || current.popupVisualisation.statusCode !== 'success') return current
+					// Metadata belongs to the captured request and simulation. Preserve edits and newer simulations.
+					if (stringifyJSONWithBigInts(current.originalRequestParameters) !== stringifyJSONWithBigInts(first.originalRequestParameters)
+						|| stringifyJSONWithBigInts(current.popupVisualisation) !== stringifyJSONWithBigInts(first.popupVisualisation)) return current
+					return { ...current, popupVisualisation: { statusCode: 'success', data: { ...current.popupVisualisation.data, ...visualizedSimulationState } } }
+				})
 				const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {
 					method: 'popup_update_confirm_transaction_dialog_pending_transactions' as const,
 					data: {
-						pendingTransactionAndSignableMessages: [
-							updatedFirst
-							, ...promises.slice(1)].map(toPopupPendingTransactionOrSignableMessage),
+						pendingTransactionAndSignableMessages: (await getPendingTransactionsAndMessages()).map(toPopupPendingTransactionOrSignableMessage),
 						currentBlockNumber: await currentBlockNumberPromise,
 						rpcConnectionStatus: await rpcConnectionStatusPromise,
 					}
@@ -639,6 +642,8 @@ export async function refreshPopupConfirmTransactionSimulation(ethereum: Ethereu
 			case 'SignableMessage': throw new Error('Tried to refresh simulation of a message')
 			case 'Transaction': {
 				if (transactionOrMessage.transactionOrMessageCreationStatus !== 'Simulated' && transactionOrMessage.transactionOrMessageCreationStatus !== 'FailedToSimulate') return transactionOrMessage
+				// A later gas edit must not be overwritten by the earlier refresh.
+				if (transactionOrMessage.originalRequestParameters.method === 'eth_sendTransaction' && firstTxn.originalRequestParameters.method === 'eth_sendTransaction' && transactionOrMessage.originalRequestParameters.params[0].gas !== firstTxn.originalRequestParameters.params[0].gas) return transactionOrMessage
 				const currentTimestamp = getSimulationConductedTimestamp(transactionOrMessage.popupVisualisation)
 				const nextTimestamp = getSimulationConductedTimestamp(refreshMessage)
 				if (currentTimestamp !== undefined && nextTimestamp !== undefined && nextTimestamp.getTime() < currentTimestamp.getTime()) return transactionOrMessage
@@ -998,17 +1003,23 @@ export async function setEnsNameForHash(parsedRequest: SetEnsNameForHash) {
 
 export async function forceSetGasLimitForTransaction(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, parsedRequest: ForceSetGasLimitForTransaction) {
 	await setGasLimitForTransaction(parsedRequest.data.transactionIdentifier, parsedRequest.data.gasLimit)
-	await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { invalidateOldState: true })
-	await refreshPopupConfirmTransactionSimulation(ethereum, tokenPriceService)
+	// Publish the saved request immediately so confirmation cannot use its previous simulation.
+	await sendPopupMessageToOpenWindows({ method: 'popup_update_confirm_transaction_dialog_pending_transactions', data: {
+		pendingTransactionAndSignableMessages: (await getPendingTransactionsAndMessages()).map(toPopupPendingTransactionOrSignableMessage),
+		currentBlockNumber: ethereum.getCachedBlock()?.number ?? 0n,
+		rpcConnectionStatus: await getRpcConnectionStatus(),
+	} }, 'confirmTransaction')
+	await schedulePopupSimulationRefresh({ ethereum, tokenPriceService, invalidateOldState: true })
+	startBackgroundTask(async () => await refreshPopupConfirmTransactionSimulation(ethereum, tokenPriceService))
 }
 
 export async function changePreSimulationBlockTimeManipulation(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, parsedRequest: ChangePreSimulationBlockTimeManipulation) {
 	await setPreSimulationBlockTimeManipulation(parsedRequest.data.blockTimeManipulation)
-	await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { invalidateOldState: true, onlyIfNotAlreadyUpdating: true })
+	await schedulePopupSimulationRefresh({ ethereum, tokenPriceService, invalidateOldState: true })
 }
 
 export async function setTransactionOrMessageBlockTimeManipulator(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, parsedRequest: SetTransactionOrMessageBlockTimeManipulator) {
-	const newStack = await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => {
+	await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => {
 		const normalizedPrevStack = { operations: normalizeConsecutiveTimeManipulations(prevStack.operations) }
 		const identifier = parsedRequest.data.transactionOrMessageIdentifier
 		const appendAfterIndex = normalizedPrevStack.operations.findIndex((operation) => {
@@ -1034,15 +1045,7 @@ export async function setTransactionOrMessageBlockTimeManipulator(ethereum: Ethe
 		const newManipulator = { type: 'TimeManipulation', blockTimeManipulation: parsedRequest.data.blockTimeManipulation } as const
 		return { operations: normalizeConsecutiveTimeManipulations([...normalizedPrevStack.operations.slice(0, indexOfMaybeManipulator), newManipulator, ...normalizedPrevStack.operations.slice(indexOfMaybeManipulator)]) }
 	})
-	const secondToLastOperation = newStack.operations[newStack.operations.length - 2]
-	if (secondToLastOperation === undefined || secondToLastOperation.type === 'TimeManipulation') {
-		await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { invalidateOldState: true, onlyIfNotAlreadyUpdating: true })
-		return
-	}
-	const appendIdentifier = parsedRequest.data.transactionOrMessageIdentifier.type === 'Transaction' ? parsedRequest.data.transactionOrMessageIdentifier.transactionIdentifier : parsedRequest.data.transactionOrMessageIdentifier.messageIdentifier
-	const operationIdentifier = secondToLastOperation.type === 'Transaction' ? secondToLastOperation.preSimulationTransaction.transactionIdentifier : secondToLastOperation.signedMessageTransaction.messageIdentifier
-	const appendedToEnd = appendIdentifier === operationIdentifier
-	await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { invalidateOldState: !appendedToEnd, onlyIfNotAlreadyUpdating: true })
+	await schedulePopupSimulationRefresh({ ethereum, tokenPriceService, invalidateOldState: true })
 }
 
 export async function requestMakeMeRichList(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined) {

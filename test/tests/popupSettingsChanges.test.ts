@@ -1,8 +1,11 @@
+import { waitForBackgroundTasks } from '../../app/ts/background/backgroundTasks.js'
 import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
-import { describe, test } from 'bun:test'
+import { afterEach, describe, test } from 'bun:test'
 import { getWalletSwitchRequestId, confirmedSignerOwnership, createDeferredValue, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
 import type { RevisionedPopupSimulationRefresh } from '../../app/ts/background/popupSimulationRefreshQueue.js'
+
+afterEach(waitForBackgroundTasks)
 
 describe('popup settings changes', () => {
 	for (const firstSucceeded of [true, false]) test(`keeps overlapping refresh outcomes independent (first=${ firstSucceeded })`, async () => {
@@ -316,6 +319,7 @@ describe('popup settings changes', () => {
 		const request = { method: 'popup_modifyMakeMeRich' as const, data: { address: 'CurrentAddress' as const, add: true } }
 		const initialCount = refreshRequests()
 		await dispatchPopupMessage(context, request)
+		await waitForBackgroundTasks()
 		assert.ok(refreshRequests() > initialCount)
 		const refreshedCount = refreshRequests()
 		await dispatchPopupMessage(context, request)

@@ -1,3 +1,4 @@
+import { waitForBackgroundTasks } from '../../app/ts/background/backgroundTasks.js'
 import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import * as funtypes from 'funtypes'
@@ -8,7 +9,7 @@ import type { RpcNetwork } from '../../app/ts/types/rpc.js'
 import { createSafeTx } from '../../app/ts/safe/safeCore.js'
 import { mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import type { PreSimulationTransaction } from '../../app/ts/types/visualizer-types.js'
-import { describe, test } from 'bun:test'
+import { afterEach, describe, test } from 'bun:test'
 
 type RuntimeMessage = {
 	method?: string
@@ -392,6 +393,8 @@ const stalePopupVisualisation = buildStalePopupVisualisationState(rpcNetwork, DE
 const fakeEthereum = createFakeEthereum(rpcNetwork) as never as Parameters<typeof updatePopupVisualisationIfNeeded>[0]
 const fakeTokenPriceService = {} as never as Parameters<typeof updatePopupVisualisationIfNeeded>[1]
 
+afterEach(waitForBackgroundTasks)
+
 describe('popup clear reset', () => {
 	for (const captured of [false, true]) test(`signer-only snapshots publish passthrough without reading the previous provider (captured=${ captured })`, async () => {
 		browserMock.reset()
@@ -440,6 +443,100 @@ describe('popup clear reset', () => {
 			assert.equal(snapshot.numberOfAddressesMadeRich, 1)
 			assert.deepEqual(snapshot.simulationStateInput.flatMap(block => Object.keys(block.stateOverrides)), [`0x${ activeAddress.toString(16).padStart(40, '0') }`])
 		} finally { browser.storage.local.get = originalGet }
+	})
+
+	test.each(['scheduled', 'direct consumer'] as const)('a later UI edit invalidates an in-flight %s RPC refresh', async entryPoint => {
+		browserMock.reset()
+		await browserStorageLocalSet({ activeRpcNetwork: rpcNetwork, independentActiveSimulationAddress: activeAddress, simulationMode: true, makeCurrentAddressRich: false, popupVisualisation: stalePopupVisualisation, interceptorTransactionStack: { operations: [] } })
+		const { schedulePopupSimulationRefresh } = await import('../../app/ts/background/popupSimulationRefreshQueue.js')
+		const { createDeferredSignal } = await import('./backgroundEthAccountsTestHarness.js')
+		const modules = await modulesPromise
+		const entered = createDeferredSignal()
+		const release = createDeferredSignal()
+		const originalGetBlock = fakeEthereum.getBlock
+		let held = false
+		fakeEthereum.getBlock = async (...args) => {
+			if (!held) { held = true; entered.resolve(); await release.promise }
+			return await originalGetBlock(...args)
+		}
+		const nextTime = { type: 'AddToTimestamp', deltaToAdd: 600n, deltaUnit: 'Seconds' } as const
+		let directRefresh: Promise<unknown> | undefined
+		try {
+			if (entryPoint === 'scheduled') await schedulePopupSimulationRefresh({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService })
+			else directRefresh = (await import('../../app/ts/background/popupVisualisationUpdater.js')).refreshPopupVisualisationForOpenConsumer(fakeEthereum, fakeTokenPriceService)
+			await entered.promise
+			await modules.setPreSimulationBlockTimeManipulation(nextTime)
+			await schedulePopupSimulationRefresh({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService })
+			release.resolve()
+			await directRefresh
+			await waitForBackgroundTasks()
+			const publications = getSimulationStateChangedMessages(browserMock.sentMessages).flatMap(message => {
+				const parsed = PopupSimulationChangedMessage.safeParse(message)
+				return parsed.success ? [parsed.value.data.visualizedSimulatorState] : []
+			})
+			const completed = publications.filter(state => state.simulationUpdatingState === 'done')
+			assert.equal(completed.length, 1)
+			const final = completed[0]
+			assert.ok(final?.simulationState.kind === 'simulated')
+			assert.equal(final.simulationUpdatingState, 'done')
+			assert.deepEqual(await modules.getPreSimulationBlockTimeManipulation(), nextTime)
+		} finally {
+			release.resolve()
+			await directRefresh
+			await waitForBackgroundTasks()
+			fakeEthereum.getBlock = originalGetBlock
+		}
+	})
+
+	test('a UI edit retires an explicit refresh paused before execution', async () => {
+		browserMock.reset()
+		await browserStorageLocalSet({ activeRpcNetwork: rpcNetwork, independentActiveSimulationAddress: activeAddress, simulationMode: true, makeCurrentAddressRich: false, popupVisualisation: stalePopupVisualisation, interceptorTransactionStack: { operations: [] } })
+		const { queuePopupSimulationRefresh, schedulePopupSimulationRefresh } = await import('../../app/ts/background/popupSimulationRefreshQueue.js')
+		const { createDeferredSignal } = await import('./backgroundEthAccountsTestHarness.js')
+		const entered = createDeferredSignal()
+		const release = createDeferredSignal()
+		const originalSend = browser.runtime.sendMessage
+		let held = false
+		browser.runtime.sendMessage = async message => {
+			if (typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_isSimulationVisualizerOpen' && !held) {
+				held = true
+				entered.resolve()
+				await release.promise
+			}
+			return await originalSend(message)
+		}
+		const explicit = queuePopupSimulationRefresh({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService, invalidateOldState: true })
+		try {
+			await entered.promise
+			await (await modulesPromise).setPreSimulationBlockTimeManipulation({ type: 'AddToTimestamp', deltaToAdd: 600n, deltaUnit: 'Seconds' })
+			await schedulePopupSimulationRefresh({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService })
+			release.resolve()
+			await explicit
+			await waitForBackgroundTasks()
+			const completed = getSimulationStateChangedMessages(browserMock.sentMessages).filter(message => {
+				const parsed = PopupSimulationChangedMessage.safeParse(message)
+				return parsed.success && parsed.value.data.visualizedSimulatorState.simulationUpdatingState === 'done'
+			})
+			assert.equal(completed.length, 1, 'Only the current UI snapshot may complete')
+		} finally {
+			release.resolve()
+			await explicit
+			await waitForBackgroundTasks()
+			browser.runtime.sendMessage = originalSend
+		}
+	})
+
+	test('default UI invalidation completes even when the cached simulation input matches', async () => {
+		browserMock.reset()
+		await browserStorageLocalSet({ activeRpcNetwork: rpcNetwork, independentActiveSimulationAddress: activeAddress, simulationMode: true, makeCurrentAddressRich: false, interceptorTransactionStack: { operations: [] } })
+		await updatePopupVisualisationIfNeeded(fakeEthereum, fakeTokenPriceService)
+		const { schedulePopupSimulationRefresh } = await import('../../app/ts/background/popupSimulationRefreshQueue.js')
+		await schedulePopupSimulationRefresh({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService })
+		await waitForBackgroundTasks()
+		const result = (await browserStorageLocalGet('popupVisualisation')).popupVisualisation
+		assert.ok(result)
+		assert.equal(result.simulationUpdatingState, 'done')
+		assert.equal(result.simulationResultState, 'done')
 	})
 
 	test('complete visualization requests do not join a held interactive queue entry', async () => {
@@ -616,6 +713,7 @@ describe('popup clear reset', () => {
 		})
 
 		await resetSimulationStateFromConfig(createTestSimulationServicesOwner({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService }))
+		await waitForBackgroundTasks()
 
 		const interceptorTransactionStack = (await browserStorageLocalGet('interceptorTransactionStack')).interceptorTransactionStack
 		const popupVisualisation = (await browserStorageLocalGet('popupVisualisation')).popupVisualisation
@@ -663,6 +761,7 @@ describe('popup clear reset', () => {
 		})
 
 		await resetSimulationStateFromConfig(createTestSimulationServicesOwner({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService }))
+		await waitForBackgroundTasks()
 
 		const storedStack = (await browserStorageLocalGet('interceptorTransactionStack')).interceptorTransactionStack
 		assert.deepEqual(storedStack.operations.map((operation) => operation.preSimulationTransaction.transactionIdentifier), [1n, 3n, 4n])
@@ -697,9 +796,10 @@ describe('popup clear reset', () => {
 		const popupVisualisation = (await browserStorageLocalGet('popupVisualisation')).popupVisualisation
 		assert.deepEqual(updatedSettings.activeRpcNetwork, sameChainRpcNetwork)
 		assert.deepEqual(storedInterceptorTransactionStack, interceptorTransactionStack)
-		assert.deepEqual(popupVisualisation, stalePopupVisualisation)
+		assert.equal(popupVisualisation.simulationUpdatingState, 'updating')
+		assert.equal(popupVisualisation.simulationResultState, 'invalid')
 		assert.deepEqual(resets, [sameChainRpcNetwork])
-		assert.equal(getSimulationStateChangedMessages(browserMock.sentMessages).length, 0)
+		assert.equal(getSimulationStateChangedMessages(browserMock.sentMessages).length, 1)
 	})
 
 	test('clears the interceptor stack when changing rpc to another chain', async () => {
@@ -718,6 +818,7 @@ describe('popup clear reset', () => {
 		})
 
 		await changeActiveRpc(simulationServicesOwner, new Map(), otherChainRpcNetwork, { source: 'dapp', simulationMode: true, signerTabId: undefined })
+		await waitForBackgroundTasks()
 
 		const modules = await modulesPromise
 		const updatedSettings = await modules.getSettings()
