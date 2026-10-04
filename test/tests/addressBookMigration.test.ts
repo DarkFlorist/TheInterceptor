@@ -42,7 +42,7 @@ describe('address book migration', () => {
 		let storageSetCount = 0
 		const storageState = installBrowserMock(() => { storageSetCount++ })
 		const { migrateAddressBook } = await import('../../app/ts/background/addressBookMigration.js')
-		const { getUserAddressBookEntries } = await import('../../app/ts/background/storageVariables.js')
+		const { getUserAddressBookEntries } = await import('../../app/ts/background/addressBookStore.js')
 		const legacySigner = '0x0000000000000000000000000000000000005678'
 		storageState.userAddressBookEntriesV3 = [
 			{
