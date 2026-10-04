@@ -1,5 +1,5 @@
 import type { StateOverrides } from '../types/ethSimulate-types.js'
-import type { DelegateClearingPreferences } from '../types/delegationSimulation.js'
+import type { DelegateClearingPreferences } from '../types/delegateClearing.js'
 import { addressString } from './bigint.js'
 
 export function hasDelegateClearingPreference(preferences: DelegateClearingPreferences | undefined, address: bigint | undefined, chainId: bigint | undefined): boolean {

@@ -14,7 +14,7 @@ import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { mergeStoredWebsiteMetadata, sanitizeWebsiteAccess } from '../utils/websiteIcons.js'
 import type { SigningAddressPreference, SigningAddressPreferences } from '../types/signerTypes.js'
 import { hasOwnKey } from '../utils/typescript.js'
-import type { DelegateClearingPreferences } from '../types/delegationSimulation.js'
+import type { DelegateClearingPreferences } from '../types/delegateClearing.js'
 import { hasDelegateClearingPreference } from '../utils/delegateClearingState.js'
 
 export const defaultActiveAddresses = DEFAULT_ACTIVE_ADDRESSES

@@ -3,8 +3,8 @@ import { afterEach, describe, test } from 'bun:test'
 import { signal } from '@preact/signals'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
-import { DelegationSimulationOption } from '../../app/ts/components/subcomponents/DelegationSimulationOption.js'
-import type { DelegateClearingPreferences } from '../../app/ts/types/delegationSimulation.js'
+import { DelegateClearingOption } from '../../app/ts/components/subcomponents/DelegateClearingOption.js'
+import type { DelegateClearingPreferences } from '../../app/ts/types/delegateClearing.js'
 import { PopupRequestsReplies } from '../../app/ts/types/interceptor-reply-messages.js'
 import { findRenderedElement, installDomMock } from './domMock.js'
 
@@ -29,16 +29,16 @@ Object.defineProperty(globalThis, 'browser', {
 		runtime: {
 			lastError: undefined,
 			sendMessage: async (request: { method: string, data?: { enabled?: boolean } }) => {
-				if (request.method === 'popup_requestDelegationSimulation') {
+				if (request.method === 'popup_requestDelegateClearing') {
 					lookups += 1
 					if (pendingLookupReply !== undefined) return await pendingLookupReply
-					return PopupRequestsReplies.popup_requestDelegationSimulation.serialize({ method: 'popup_requestDelegationSimulation', data: { address, chainId, status } })
+					return PopupRequestsReplies.popup_requestDelegateClearing.serialize({ method: 'popup_requestDelegateClearing', data: { address, chainId, status } })
 				}
-				if (request.method === 'popup_setDelegationSimulation' && request.data?.enabled !== undefined) {
+				if (request.method === 'popup_setDelegateClearing' && request.data?.enabled !== undefined) {
 					requestedEnabled = request.data.enabled
 					if (pendingSetReply !== undefined) return await pendingSetReply
 					preferences.value = requestedEnabled ? [{ address, chainId }] : []
-					return PopupRequestsReplies.popup_setDelegationSimulation.serialize({ method: 'popup_setDelegationSimulation', data: { ok: true, address, chainId, enabled: requestedEnabled } })
+					return PopupRequestsReplies.popup_setDelegateClearing.serialize({ method: 'popup_setDelegateClearing', data: { ok: true, address, chainId, enabled: requestedEnabled } })
 				}
 				throw new Error(`Unexpected request ${ request.method }`)
 			},
@@ -59,7 +59,7 @@ afterEach(() => {
 })
 
 function option() {
-	return h(DelegationSimulationOption, { activeAddress, rpcNetwork, simulationMode, preferences, currentBlockNumber })
+	return h(DelegateClearingOption, { activeAddress, rpcNetwork, simulationMode, preferences, currentBlockNumber })
 }
 
 function checkbox(root: Parameters<typeof findRenderedElement>[0]) {
@@ -85,7 +85,7 @@ async function flush() {
 	await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
 }
 
-describe('delegation simulation option', () => {
+describe('delegate clearing option', () => {
 	test('rechecks a visible delegated account on new blocks and stops after no delegate is found', async () => {
 		const dom = installDomMock()
 		try {
@@ -185,7 +185,7 @@ describe('delegation simulation option', () => {
 			await act(() => { preferences.value = [{ address, chainId }]; preferences.value = [] })
 			assert.equal(checkboxChecked(first), false)
 			assert.equal(checkboxChecked(second), false)
-			resolveSetReply(PopupRequestsReplies.popup_setDelegationSimulation.serialize({ method: 'popup_setDelegationSimulation', data: { ok: true, address, chainId, enabled: true } }))
+			resolveSetReply(PopupRequestsReplies.popup_setDelegateClearing.serialize({ method: 'popup_setDelegateClearing', data: { ok: true, address, chainId, enabled: true } }))
 			await flush()
 			assert.equal(checkboxChecked(first), false)
 			assert.equal(checkboxChecked(second), false)

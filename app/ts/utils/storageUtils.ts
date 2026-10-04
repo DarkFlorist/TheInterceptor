@@ -12,7 +12,7 @@ import { ENSLabelHashes, ENSNameHashes } from '../types/ens.js'
 import { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { InterceptorErrorDiagnostic } from '../types/errorDiagnostics.js'
 import { InterceptedRequestForward } from '../types/interceptor-messages.js'
-import { DelegateClearingPreferences } from '../types/delegationSimulation.js'
+import { DelegateClearingPreferences } from '../types/delegateClearing.js'
 import { ICON_ACCESS_DENIED } from './constants.js'
 import { hasOwnKey } from './typescript.js'
 

@@ -91,9 +91,9 @@ function getHintCache(ethereum: EthereumClientService) {
 	return created
 }
 
-export const getCachedDelegationHint = (ethereum: EthereumClientService, address: bigint, abortController?: AbortController) =>
+export const getCachedDelegateClearingHint = (ethereum: EthereumClientService, address: bigint, abortController?: AbortController) =>
 	getHintCache(ethereum).get(address, abortController)
 
-export const clearDelegationHintCache = (ethereum: EthereumClientService) => hintCaches.get(ethereum)?.clear()
+export const clearDelegateClearingHintCache = (ethereum: EthereumClientService) => hintCaches.get(ethereum)?.clear()
 
-export const invalidateDelegatedHintsForNewBlock = (ethereum: EthereumClientService, now = Date.now()) => hintCaches.get(ethereum)?.invalidateDelegatedForNewBlock(now)
+export const invalidateDelegateClearingHintsForNewBlock = (ethereum: EthereumClientService, now = Date.now()) => hintCaches.get(ethereum)?.invalidateDelegatedForNewBlock(now)

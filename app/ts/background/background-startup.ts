@@ -1,7 +1,7 @@
 import { createSafeAppsCompatibilityFeature, initializeSafeAppsCompatibility } from './safeAppsCompatibilityCoordinator.js'
 import 'webextension-polyfill'
 import { getSettings, updateKnownWebsiteMetadata } from './settings.js'
-import { invalidateDelegatedHintsForNewBlock } from './delegationHintCache.js'
+import { invalidateDelegateClearingHintsForNewBlock } from './delegateClearingHintCache.js'
 import { DEFAULT_RPCS } from '../config/defaults.js'
 import { handleInterceptedRequest } from './background.js'
 import { captureWhatIfSimulationSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
@@ -231,7 +231,7 @@ async function newBlockAttemptCallback(blockheader: EthereumBlockHeader, ethereu
 	if (ethereumClientService !== getSimulationServices().ethereum) return
 	if (blockheader === null) throw new Error('The latest block is null')
 	try {
-		if (isNewBlock) invalidateDelegatedHintsForNewBlock(ethereumClientService)
+		if (isNewBlock) invalidateDelegateClearingHintsForNewBlock(ethereumClientService)
 		const rpcConnectionStatus = {
 			isConnected: true,
 			lastConnnectionAttempt: new Date(),

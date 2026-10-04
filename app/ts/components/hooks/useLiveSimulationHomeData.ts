@@ -14,7 +14,7 @@ import { DEFAULT_TAB_CONNECTION } from '../../utils/constants.js'
 import { useSignal } from '@preact/signals'
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../../utils/popupPerformance.js'
 import { activeStackContextsEqual, getActiveStackContext } from '../../utils/activeStackContext.js'
-import type { DelegateClearingPreferences } from '../../types/delegationSimulation.js'
+import type { DelegateClearingPreferences } from '../../types/delegateClearing.js'
 
 type LiveSimulationHomeDataOptions = {
 	answerMainPopupOpen: boolean

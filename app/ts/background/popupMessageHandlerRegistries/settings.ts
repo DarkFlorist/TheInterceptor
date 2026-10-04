@@ -1,7 +1,7 @@
 import { updateWebsiteApprovalAccesses } from '../accessManagement.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { popupMessageHandler, popupSnapshotMessageHandler, type PopupMessageHandlerMap } from '../popupMessageHandlerRegistry.js'
-import { changeSettings, exportSettings, importSettings, openNewTab, setDelegationSimulation, setNewRpcList, settingsOpened } from '../popupMessageHandlers.js'
+import { changeSettings, exportSettings, importSettings, openNewTab, setDelegateClearing, setNewRpcList, settingsOpened } from '../popupMessageHandlers.js'
 import { getSettings } from '../settings.js'
 
 export const settingsPopupMessageHandlers = {
@@ -18,5 +18,5 @@ export const settingsPopupMessageHandlers = {
 	}),
 	popup_get_export_settings: popupMessageHandler('popup_get_export_settings', async () => await exportSettings()),
 	popup_set_rpc_list: popupMessageHandler('popup_set_rpc_list', async (context, request) => await setNewRpcList(context.simulationServicesOwner, request, context.settings)),
-	popup_setDelegationSimulation: popupSnapshotMessageHandler('popup_setDelegationSimulation', async (context, request) => await setDelegationSimulation(context.settings, context.services, request.data.address, request.data.chainId, request.data.enabled)),
+	popup_setDelegateClearing: popupSnapshotMessageHandler('popup_setDelegateClearing', async (context, request) => await setDelegateClearing(context.settings, context.services, request.data.address, request.data.chainId, request.data.enabled)),
 } satisfies Partial<PopupMessageHandlerMap>

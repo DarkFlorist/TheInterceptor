@@ -291,9 +291,9 @@ export const ResolvedSimulationInput = funtypes.Union(
 )
 
 export const toResolvedSimulationState = (value: SimulationState): ResolvedSimulationState => ({ kind: 'simulated', value })
-export const createSimulatedInput = <TInput extends SimulationStateInputMinimalData>(value: TInput, simulationOverrides: StateOverrides): SimulatedInput<TInput> => ({ kind: 'simulated', value, simulationOverrides })
+export const createSimulatedInput = <TInput extends SimulationStateInputMinimalData>(value: TInput, simulationOverrides: StateOverrides = {}): SimulatedInput<TInput> => ({ kind: 'simulated', value, simulationOverrides })
 // Reconstruct the exact captured input for a persisted result, independent of later preference changes.
-export const getSimulationInputFromState = (state: Pick<SimulationState, 'simulationStateInput' | 'simulationOverrides'>): SimulationInput => createSimulatedInput(state.simulationStateInput, state.simulationOverrides ?? {})
+export const getSimulationInputFromState = (state: Pick<SimulationState, 'simulationStateInput' | 'simulationOverrides'>): SimulationInput => createSimulatedInput(state.simulationStateInput, state.simulationOverrides)
 
 type SuccessfulSimulationState = Extract<SimulationState, { success: true }>
 export type ExecutionSimulatedTransaction = Omit<SimulatedTransaction, 'tokenBalancesAfter'>

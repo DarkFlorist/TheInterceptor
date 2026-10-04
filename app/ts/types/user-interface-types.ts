@@ -16,7 +16,7 @@ import type { ReadonlySignal, Signal } from '@preact/signals'
 import { SimulationStackVersion, WalletWatchAssetParameters } from './JsonRpc-types.js'
 import type { EnrichedRichListElement } from './interceptor-reply-messages.js'
 import { ErrorWithCodeAndOptionalData } from './error.js'
-import type { DelegateClearingPreferences } from './delegationSimulation.js'
+import type { DelegateClearingPreferences } from './delegateClearing.js'
 
 export type InterceptorAccessListParams = {
 	goHome: () => void,

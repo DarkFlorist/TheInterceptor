@@ -16,7 +16,7 @@ import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from 
 import { GetSimulationStackReplyV1, GetSimulationStackReplyV2 } from './simulationStackTypes.js'
 import { EnrichedRichListElement, PopupMessageReplyRequests, UnexpectedErrorOccured } from './interceptor-reply-messages.js'
 import { ErrorWithCodeAndOptionalData } from './error.js'
-import { DelegateClearingPreferences } from './delegationSimulation.js'
+import { DelegateClearingPreferences } from './delegateClearing.js'
 import { SimulateExecutionReply as SharedSimulateExecutionReply, SimulateExecutionReplyData as SharedSimulateExecutionReplyData } from './simulateExecutionReply.js'
 import { SimulateGnosisSafeTransaction as SharedSimulateGnosisSafeTransaction, SimulateGovernanceContractExecution as SharedSimulateGovernanceContractExecution } from './simulateExecutionRequests.js'
 import { EthSimulateV1Result } from './ethSimulate-types.js'

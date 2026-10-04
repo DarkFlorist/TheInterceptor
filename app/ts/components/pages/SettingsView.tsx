@@ -1,7 +1,7 @@
 
 import { sendPopupMessageToBackgroundPage, sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport, sendPopupMessageWithReply } from '../../background/backgroundUtils.js'
 import { MessageToPopup, type ImportSettingsReply } from '../../types/interceptor-messages.js'
-import type { DelegateClearingPreferences } from '../../types/delegationSimulation.js'
+import type { DelegateClearingPreferences } from '../../types/delegateClearing.js'
 import { type RpcEntries, RpcEntry } from '../../types/rpc.js'
 import { useEffect } from 'preact/hooks'
 import { ErrorComponent } from '../subcomponents/Error.js'
@@ -203,7 +203,7 @@ export function SettingsView() {
 		removingDelegateClearing.value = key
 		delegateClearingError.value = undefined
 		try {
-			const reply = await sendPopupMessageWithReply({ method: 'popup_setDelegationSimulation', data: { address, chainId, enabled: false } })
+			const reply = await sendPopupMessageWithReply({ method: 'popup_setDelegateClearing', data: { address, chainId, enabled: false } })
 			if (reply === undefined) throw new Error('Interceptor did not reply while disabling delegate clearing.')
 			if (!reply.data.ok) throw new Error(reply.data.message)
 		} catch (error) {

@@ -244,18 +244,18 @@ const RequestSafeContractStateReply = funtypes.ReadonlyObject({
 	}),
 }).asReadonly()
 
-export const RequestDelegationSimulation = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_requestDelegationSimulation'),
+export const RequestDelegateClearing = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_requestDelegateClearing'),
 	data: funtypes.ReadonlyObject({ address: EthereumAddress, chainId: EthereumQuantity }),
 }).asReadonly()
 
-export const SetDelegationSimulation = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_setDelegationSimulation'),
+export const SetDelegateClearing = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_setDelegateClearing'),
 	data: funtypes.ReadonlyObject({ address: EthereumAddress, chainId: EthereumQuantity, enabled: funtypes.Boolean }),
 }).asReadonly()
 
-const RequestDelegationSimulationReply = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_requestDelegationSimulation'),
+const RequestDelegateClearingReply = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_requestDelegateClearing'),
 	data: funtypes.ReadonlyObject({
 		address: EthereumAddress,
 		chainId: EthereumQuantity,
@@ -267,13 +267,13 @@ const RequestDelegationSimulationReply = funtypes.ReadonlyObject({
 	}),
 }).asReadonly()
 
-const SetDelegationSimulationReply = funtypes.Union(
+const SetDelegateClearingReply = funtypes.Union(
 	funtypes.ReadonlyObject({
-		method: funtypes.Literal('popup_setDelegationSimulation'),
+		method: funtypes.Literal('popup_setDelegateClearing'),
 		data: funtypes.ReadonlyObject({ ok: funtypes.Literal(true), address: EthereumAddress, chainId: EthereumQuantity, enabled: funtypes.Boolean }),
 	}),
 	funtypes.ReadonlyObject({
-		method: funtypes.Literal('popup_setDelegationSimulation'),
+		method: funtypes.Literal('popup_setDelegateClearing'),
 		data: funtypes.ReadonlyObject({ ok: funtypes.Literal(false), message: funtypes.String }),
 	}),
 )
@@ -337,8 +337,8 @@ type PopupRequestsRepliesMap = PopupSettingsRepliesMap & {
 	popup_requestAbiAndNameFromBlockExplorer: typeof RequestAbiAndNameFromBlockExplorerReply
 	popup_requestIdentifyAddress: typeof RequestIdentifyAddressReply
 	popup_requestSafeContractState: typeof RequestSafeContractStateReply
-	popup_requestDelegationSimulation: typeof RequestDelegationSimulationReply
-	popup_setDelegationSimulation: typeof SetDelegationSimulationReply
+	popup_requestDelegateClearing: typeof RequestDelegateClearingReply
+	popup_setDelegateClearing: typeof SetDelegateClearingReply
 	popup_simulateGovernanceContractExecution: typeof PopupSimulateExecutionReply
 	popup_simulateGnosisSafeTransaction: typeof PopupSimulateExecutionReply
 	popup_isMainPopupWindowOpen: typeof RequestIsMainWindowOpen
@@ -366,8 +366,8 @@ export const PopupRequestsReplies: PopupRequestsRepliesMap = {
 	popup_requestAbiAndNameFromBlockExplorer: RequestAbiAndNameFromBlockExplorerReply,
 	popup_requestIdentifyAddress: RequestIdentifyAddressReply,
 	popup_requestSafeContractState: RequestSafeContractStateReply,
-	popup_requestDelegationSimulation: RequestDelegationSimulationReply,
-	popup_setDelegationSimulation: SetDelegationSimulationReply,
+	popup_requestDelegateClearing: RequestDelegateClearingReply,
+	popup_setDelegateClearing: SetDelegateClearingReply,
 	popup_simulateGovernanceContractExecution: PopupSimulateExecutionReply,
 	popup_simulateGnosisSafeTransaction: PopupSimulateExecutionReply,
 	popup_isMainPopupWindowOpen: RequestIsMainWindowOpen,
@@ -389,8 +389,8 @@ export const PopupMessageReplyRequests = funtypes.Union(
 	RequestAbiAndNameFromBlockExplorer,
 	RequestIdentifyAddress,
 	RequestSafeContractState,
-	RequestDelegationSimulation,
-	SetDelegationSimulation,
+	RequestDelegateClearing,
+	SetDelegateClearing,
 	RequestSimulateGovernanceContractExecution,
 	RequestSimulateGnosisSafeTransaction,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestMakeMeRichData') }),
@@ -446,8 +446,8 @@ export type PopupReplyOption =
 	| RequestAbiAndNameFromBlockExplorerReply
 	| RequestIdentifyAddressReply
 	| RequestSafeContractStateReply
-	| funtypes.Static<typeof RequestDelegationSimulationReply>
-	| funtypes.Static<typeof SetDelegationSimulationReply>
+	| funtypes.Static<typeof RequestDelegateClearingReply>
+	| funtypes.Static<typeof SetDelegateClearingReply>
 	| funtypes.Static<typeof PopupSimulateExecutionReply>
 	| RequestIsMainWindowOpen
 	| RequestIsSimulationVisualizerOpen
@@ -472,8 +472,8 @@ export const PopupReplyOption: funtypes.Codec<PopupReplyOption> = funtypes.Union
 	RequestAbiAndNameFromBlockExplorerReply,
 	RequestIdentifyAddressReply,
 	RequestSafeContractStateReply,
-	RequestDelegationSimulationReply,
-	SetDelegationSimulationReply,
+	RequestDelegateClearingReply,
+	SetDelegateClearingReply,
 	PopupSimulateExecutionReply,
 	RequestIsMainWindowOpen,
 	RequestIsSimulationVisualizerOpen,

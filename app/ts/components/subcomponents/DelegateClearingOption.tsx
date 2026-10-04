@@ -2,7 +2,7 @@ import { useEffect } from 'preact/hooks'
 import { useSignal, type ReadonlySignal } from '@preact/signals'
 import { sendPopupMessageWithReply } from '../../background/backgroundUtils.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
-import type { DelegateClearingPreferences } from '../../types/delegationSimulation.js'
+import type { DelegateClearingPreferences } from '../../types/delegateClearing.js'
 import type { RpcNetwork } from '../../types/rpc.js'
 import { checksummedAddress } from '../../utils/bigint.js'
 import { hasDelegateClearingPreference } from '../../utils/delegateClearingState.js'
@@ -10,7 +10,7 @@ import { hasDelegateClearingPreference } from '../../utils/delegateClearingState
 type DelegationStatus = { type: 'delegated', delegate: bigint } | { type: 'none' } | { type: 'unknown' }
 type DelegationOption = { address: bigint, chainId: bigint, status: DelegationStatus }
 
-export function DelegationSimulationOption({ activeAddress, rpcNetwork, simulationMode, preferences, currentBlockNumber }: {
+export function DelegateClearingOption({ activeAddress, rpcNetwork, simulationMode, preferences, currentBlockNumber }: {
 	activeAddress: ReadonlySignal<AddressBookEntry | undefined>
 	rpcNetwork: ReadonlySignal<RpcNetwork | undefined>
 	simulationMode: ReadonlySignal<boolean>
@@ -29,7 +29,7 @@ export function DelegationSimulationOption({ activeAddress, rpcNetwork, simulati
 		if (!simulationMode.value || address === undefined || chainId === undefined || typeof browser === 'undefined' || browser.runtime?.sendMessage === undefined) return
 		let disposed = false
 		void (async () => {
-			const reply = await sendPopupMessageWithReply({ method: 'popup_requestDelegationSimulation', data: { address, chainId } })
+			const reply = await sendPopupMessageWithReply({ method: 'popup_requestDelegateClearing', data: { address, chainId } })
 			if (disposed || reply?.data.address !== address || reply.data.chainId !== chainId) return
 			delegationOption.value = { address, chainId, status: reply.data.status }
 		})()
@@ -42,7 +42,7 @@ export function DelegationSimulationOption({ activeAddress, rpcNetwork, simulati
 			|| current?.address !== address || current.chainId !== chainId || current.status.type !== 'delegated') return
 		let disposed = false
 		void (async () => {
-			const reply = await sendPopupMessageWithReply({ method: 'popup_requestDelegationSimulation', data: { address, chainId } })
+			const reply = await sendPopupMessageWithReply({ method: 'popup_requestDelegateClearing', data: { address, chainId } })
 			if (disposed || reply?.data.address !== address || reply.data.chainId !== chainId) return
 			delegationOption.value = { address, chainId, status: reply.data.status }
 		})()
@@ -58,11 +58,11 @@ export function DelegationSimulationOption({ activeAddress, rpcNetwork, simulati
 		pending.value = true
 		errorText.value = undefined
 		try {
-			const reply = await sendPopupMessageWithReply({ method: 'popup_setDelegationSimulation', data: { address, chainId, enabled } })
-			if (reply === undefined) throw new Error('Interceptor did not reply while updating the delegation simulation option.')
+			const reply = await sendPopupMessageWithReply({ method: 'popup_setDelegateClearing', data: { address, chainId, enabled } })
+			if (reply === undefined) throw new Error('Interceptor did not reply while updating the delegate clearing option.')
 			if (!reply.data.ok) throw new Error(reply.data.message)
 		} catch (error) {
-			errorText.value = error instanceof Error ? error.message : 'Could not update the delegation simulation option.'
+			errorText.value = error instanceof Error ? error.message : 'Could not update the delegate clearing option.'
 		} finally {
 			pending.value = false
 		}

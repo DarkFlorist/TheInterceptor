@@ -5,7 +5,7 @@ import { AddressBookEntries, ContactEntries } from './addressBookTypes.js'
 import { WebsiteAccessArray } from './websiteAccessTypes.js'
 import { EditEnsNamedHashWindowState, ModifyAddressWindowState } from './visualizer-types.js'
 import { SigningAddressPreferences } from './signerTypes.js'
-import { DelegateClearingPreferences } from './delegationSimulation.js'
+import { DelegateClearingPreferences } from './delegateClearing.js'
 
 export type Page = funtypes.Static<typeof Page>
 export const Page = funtypes.Union(

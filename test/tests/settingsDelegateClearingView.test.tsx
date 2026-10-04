@@ -45,7 +45,7 @@ test('a delayed disable reply does not hide a newer saved delegate clearing choi
 					},
 				},
 				async sendMessage(message: { method: string }) {
-					if (message.method !== 'popup_setDelegationSimulation') return undefined
+					if (message.method !== 'popup_setDelegateClearing') return undefined
 					return await new Promise<unknown>((resolve) => { resolveDisable = resolve })
 				},
 			},
@@ -78,7 +78,7 @@ test('a delayed disable reply does not hide a newer saved delegate clearing choi
 		await act(() => { button.dispatchEvent?.(new Event('Click', { bubbles: true })) })
 		assert.ok(resolveDisable !== undefined)
 		await act(() => { dispatch(settingsReply(3, [{ address, chainId }])) })
-		resolveDisable(serialize(PopupRequestsReplies.popup_setDelegationSimulation, { method: 'popup_setDelegationSimulation', data: { ok: true, address, chainId, enabled: false } }))
+		resolveDisable(serialize(PopupRequestsReplies.popup_setDelegateClearing, { method: 'popup_setDelegateClearing', data: { ok: true, address, chainId, enabled: false } }))
 		await act(async () => { await Promise.resolve() })
 		assert.ok(findDisableButton(dom.document.body) !== undefined)
 		await act(() => { dispatch(settingsReply(2, [])) })
