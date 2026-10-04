@@ -422,7 +422,7 @@ export class EthereumClientService {
 							state: stateSets,
 						}
 					} : {},
-					...getEffectiveStateOverrides(block.stateOverrides, simulationOverrides, blockIndex),
+					...getEffectiveStateOverrides(block.stateOverrides, simulationOverrides, { precedingSimulatedBlockCount: blockIndex }),
 				}
 			}
 		}

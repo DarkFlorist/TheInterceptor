@@ -75,8 +75,7 @@ type PreparedSimulationExecutionBlock = {
 }
 
 type PreparedSimulationExecutionContext = {
-	simulationStateInput: SimulationStateInputMinimalData
-	simulationOverrides: StateOverrides
+	simulationInput: SimulatedInput<SimulationStateInputMinimalData>
 	parentBlock: NonNullable<EthereumBlockHeader>
 	prepared: PreparedEthSimulateV1Input
 	executionBlocks: readonly PreparedSimulationExecutionBlock[]
@@ -152,14 +151,12 @@ const createPreparedSimulationExecutionContext = async (
 ): Promise<PreparedSimulationExecutionContext | undefined> => {
 	if (simulationStateInput === undefined || simulationStateInput.kind === 'passthrough' || !hasSimulationContext(simulationStateInput)) return undefined
 	const resolvedSimulationInput = simulationStateInput.value
-	const simulationOverrides = simulationStateInput.simulationOverrides
 	const parentBlock = await ethereumClientService.getBlock(requestAbortController, baseBlockTag)
 	if (parentBlock === null) throw new Error('The latest block is null')
 	if (!hasSimulationBlocks(resolvedSimulationInput)) {
 		// Simulation-wide overrides can affect the next DApp call without an empty prefix RPC block.
 		return {
-			simulationStateInput: resolvedSimulationInput,
-			simulationOverrides,
+			simulationInput: simulationStateInput,
 			parentBlock,
 			prepared: { request: { method: 'eth_simulateV1', params: [{ blockStateCalls: [] }] }, inputBlocks: [], rpcBlocks: [], blockOverrides: [] },
 			executionBlocks: [],
@@ -196,8 +193,7 @@ const createPreparedSimulationExecutionContext = async (
 		return executionBlock
 	})
 	return {
-		simulationStateInput: resolvedSimulationInput,
-		simulationOverrides,
+		simulationInput: simulationStateInput,
 		parentBlock,
 		prepared,
 		executionBlocks,
@@ -368,7 +364,7 @@ const simulateBlockCallWithPreparedInputContext = async (
 				baseFeePerGas: simulateWithZeroBaseFee ? 0n : baseFeePerGas,
 				time: getNextBlockTimeStampOverride(previousBlockTime, DEFAULT_BLOCK_MANIPULATION),
 			},
-			stateOverrides: getEffectiveStateOverrides(extraOverrides, context?.simulationOverrides ?? {}, simulationPrefixBlockCount),
+			stateOverrides: getEffectiveStateOverrides(extraOverrides, context?.simulationInput.simulationOverrides ?? {}, { precedingSimulatedBlockCount: simulationPrefixBlockCount }),
 		},
 	]
 	const simulationResult = await ethereumClientService.ethSimulateV1(blockStateCalls, parentBlock.number, requestAbortController)
@@ -508,7 +504,7 @@ const inspectSimulationInput = async (
 
 const getExecutionSimulationStateBlockBase = (callResult: GroupedEthSimulateV1BlockResult, initialOverrides: StateOverrides, blockIndex: number) => ({
 	signedMessages: callResult.inputBlock.signedMessages || [],
-	stateOverrides: getEffectiveStateOverrides(callResult.inputBlock.stateOverrides, initialOverrides, blockIndex),
+	stateOverrides: getEffectiveStateOverrides(callResult.inputBlock.stateOverrides, initialOverrides, { precedingSimulatedBlockCount: blockIndex }),
 	blockTimestamp: bigintSecondsToDate(callResult.timestamp),
 	blockTimeManipulation: callResult.inputBlock.blockTimeManipulation || DEFAULT_BLOCK_MANIPULATION,
 	blockBaseFeePerGas: callResult.baseFeePerGas,
@@ -751,7 +747,7 @@ const getBalanceBeforeSimulationInputTransaction = async (
 	transactionsBefore: readonly PreSimulationTransaction[],
 	address: bigint,
 ) => {
-	const overrideBalance = getEffectiveStateOverrides(currentBlock.stateOverrides, simulationInputBeforeBlock.simulationOverrides, simulationInputBeforeBlock.value.length)[addressString(address)]?.balance
+	const overrideBalance = getEffectiveStateOverrides(currentBlock.stateOverrides, simulationInputBeforeBlock.simulationOverrides, { precedingSimulatedBlockCount: simulationInputBeforeBlock.value.length })[addressString(address)]?.balance
 	if (transactionsBefore.length === 0 && overrideBalance !== undefined) return overrideBalance
 	if (simulationInputBeforeBlock.value.length === 0 && transactionsBefore.length === 0) return await ethereumClientService.getBalance(address, parentBlock.number, requestAbortController)
 	const simulationInputBeforeTransaction = [
@@ -939,16 +935,16 @@ export const getSimulatedBalance = async (ethereumClientService: EthereumClientS
 	return await ethereumClientService.getBalance(address, blockTag, requestAbortController)
 }
 
-const getIdleSimulationCodeOverride = (simulationStateInput: SimulationStateInput | SimulationStateInputMinimalData, simulationOverrides: StateOverrides, address: bigint, blockTag: EthereumBlockTag, baseBlockNumber: bigint) => {
-	if (hasSimulationBlocks(simulationStateInput)) return undefined
+const getIdleSimulationCodeOverride = (simulationInput: SimulatedInput, address: bigint, blockTag: EthereumBlockTag, baseBlockNumber: bigint) => {
+	if (hasSimulationBlocks(simulationInput.value)) return undefined
 	if (blockTag !== 'latest' && blockTag !== 'pending' && (typeof blockTag !== 'bigint' || blockTag <= baseBlockNumber)) return undefined
 	// With no simulated block, the next pending block is the first block that sees initial overrides.
-	return getEffectiveStateOverrides({}, simulationOverrides, 0)[addressString(address)]?.code
+	return getEffectiveStateOverrides({}, simulationInput.simulationOverrides, { precedingSimulatedBlockCount: 0 })[addressString(address)]?.code
 }
 
 export const getSimulatedCode = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: ResolvedSimulationState, address: bigint, blockTag: EthereumBlockTag = 'latest') => {
 	if (simulationState.kind === 'simulated' && simulationState.value.success) {
-		const codeOverride = getIdleSimulationCodeOverride(simulationState.value.simulationStateInput, simulationState.value.simulationOverrides ?? {}, address, blockTag, simulationState.value.blockNumber)
+		const codeOverride = getIdleSimulationCodeOverride(getSimulationInputFromState(simulationState.value), address, blockTag, simulationState.value.blockNumber)
 		if (codeOverride !== undefined) return { statusCode: 'success', getCodeReturn: codeOverride } as const
 	}
 	if (simulationState.kind === 'passthrough' || await canQueryNodeDirectly(simulationState.value, blockTag)) {
@@ -1142,10 +1138,10 @@ const withEthSimulateV1VisibleParentHash = (
 	return [{ ...firstResultBlock, parentHash }, ...remainingResultBlocks]
 }
 
-const withInitialSimulationOverrides = (request: EthSimulateV1Params, simulationOverrides: StateOverrides, precedingSimulatedBlockCount: number): EthSimulateV1Params => {
+const withInitialSimulationOverrides = (request: EthSimulateV1Params, simulationInput: SimulatedInput, { precedingSimulatedBlockCount }: { precedingSimulatedBlockCount: number }): EthSimulateV1Params => {
 	const [firstBlock, ...remainingBlocks] = request.params[0].blockStateCalls
 	if (firstBlock === undefined) return request
-	const stateOverrides = getEffectiveStateOverrides(firstBlock.stateOverrides ?? {}, simulationOverrides, precedingSimulatedBlockCount)
+	const stateOverrides = getEffectiveStateOverrides(firstBlock.stateOverrides ?? {}, simulationInput.simulationOverrides, { precedingSimulatedBlockCount })
 	if (stateOverrides === firstBlock.stateOverrides || (firstBlock.stateOverrides === undefined && Object.keys(stateOverrides).length === 0)) return request
 	const payload = {
 		...request.params[0],
@@ -1167,8 +1163,7 @@ export const ethSimulateV1FromInput = async (
 	request: EthSimulateV1Params,
 ): Promise<EthSimulateV1Result> => {
 	if (simulationStateInput.kind === 'passthrough' || !hasSimulationContext(simulationStateInput)) return await ethereumClientService.ethSimulateV1Request(request, requestAbortController)
-	const simulationOverrides = simulationStateInput.simulationOverrides
-	const sendWithoutSimulationPrefix = async () => await ethereumClientService.ethSimulateV1Request(withInitialSimulationOverrides(request, simulationOverrides, 0), requestAbortController)
+	const sendWithoutSimulationPrefix = async () => await ethereumClientService.ethSimulateV1Request(withInitialSimulationOverrides(request, simulationStateInput, { precedingSimulatedBlockCount: 0 }), requestAbortController)
 
 	const parentBlockTag = getEthSimulateV1ParentBlockTag(request)
 	let shouldPrepareSimulationContext: boolean
@@ -1198,7 +1193,7 @@ export const ethSimulateV1FromInput = async (
 	if (request.params[0].validation === true) throwEthSimulateV1ValidationWithSimulationStackError()
 
 	const simulationPrefixBlockStateCalls = context.prepared.request.params[0].blockStateCalls.slice(0, simulationPrefixBlockCount)
-	const requestWithOverrides = withInitialSimulationOverrides(request, context.simulationOverrides, simulationPrefixBlockCount)
+	const requestWithOverrides = withInitialSimulationOverrides(request, context.simulationInput, { precedingSimulatedBlockCount: simulationPrefixBlockCount })
 	const payload: EthSimulateV1Params['params'][0] = {
 		...requestWithOverrides.params[0],
 		blockStateCalls: [
@@ -1337,7 +1332,7 @@ export const getSimulatedCodeFromInput = async (
 ) => {
 	const context = await createPreparedSimulationExecutionContext(ethereumClientService, requestAbortController, simulationStateInput)
 	if (context !== undefined) {
-		const codeOverride = getIdleSimulationCodeOverride(context.simulationStateInput, context.simulationOverrides, address, blockTag, context.parentBlock.number)
+		const codeOverride = getIdleSimulationCodeOverride(context.simulationInput, address, blockTag, context.parentBlock.number)
 		if (codeOverride !== undefined) return { statusCode: 'success', getCodeReturn: codeOverride } as const
 	}
 	if (context === undefined || canQueryNodeDirectlyFromInput(context.parentBlock.number, context.executionBlocks.length, blockTag)) {
@@ -1450,7 +1445,7 @@ export const getSimulatedBalanceFromInput = async (
 	const tokenBalances = await getSimulatedTokenBalances(
 		ethereumClientService,
 		requestAbortController,
-		createSimulatedInput(executionBlocksToApply.map((block) => block.inputBlock), context.simulationOverrides),
+		createSimulatedInput(executionBlocksToApply.map((block) => block.inputBlock), context.simulationInput.simulationOverrides),
 		[{ token: ETHEREUM_LOGS_LOGGER_ADDRESS, owner: address, type: 'ERC20' }],
 	)
 	const balance = last(tokenBalances)?.balance

@@ -110,8 +110,8 @@ describe('delegate clearing in simulation', () => {
 	test('applies initial state only to the first block and preserves per-block state later', () => {
 		const initial = { [addressString(activeAddress)]: { code: new Uint8Array() } }
 		const block = { [addressString(activeAddress)]: { balance: 5n } }
-		assert.deepEqual(getEffectiveStateOverrides(block, initial, 0), { [addressString(activeAddress)]: { balance: 5n, code: new Uint8Array() } })
-		assert.equal(getEffectiveStateOverrides(block, initial, 1), block)
+		assert.deepEqual(getEffectiveStateOverrides(block, initial, { precedingSimulatedBlockCount: 0 }), { [addressString(activeAddress)]: { balance: 5n, code: new Uint8Array() } })
+		assert.equal(getEffectiveStateOverrides(block, initial, { precedingSimulatedBlockCount: 1 }), block)
 	})
 
 	test('keeps the idle stack empty and clears the first appended transaction and RPC call', async () => {

@@ -11,6 +11,6 @@ export function mergeStateOverrides(baseOverrides: StateOverrides, overridingOve
 }
 
 /** Initial overrides describe state before the first simulated block. Later blocks inherit its result. */
-export function getEffectiveStateOverrides(blockOverrides: StateOverrides, initialOverrides: StateOverrides, precedingSimulatedBlockCount: number): StateOverrides {
+export function getEffectiveStateOverrides(blockOverrides: StateOverrides, initialOverrides: StateOverrides, { precedingSimulatedBlockCount }: { precedingSimulatedBlockCount: number }): StateOverrides {
 	return precedingSimulatedBlockCount === 0 ? mergeStateOverrides(blockOverrides, initialOverrides) : blockOverrides
 }

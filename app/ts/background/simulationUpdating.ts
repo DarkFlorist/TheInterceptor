@@ -131,23 +131,22 @@ export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[
 	return inputBlocks
 }
 
-function getSimulationOverridesForPurpose(settings: Settings, purpose: 'what-if' | 'signing'): StateOverrides {
-	// Delegate clearing is a hypothetical overlay. Signing projections must use the code on chain.
-	if (purpose === 'signing') return {}
+export function getWhatIfSimulationOverrides(settings: Settings): StateOverrides {
 	const address = settings.simulationMode && hasDelegateClearingPreference(settings.delegateClearingPreferences, settings.activeSimulationAddress, settings.activeRpcNetwork.chainId)
 		? settings.activeSimulationAddress : undefined
 	return withDelegateCleared({}, address)
 }
 
-export const getWhatIfSimulationOverrides = (settings: Settings): StateOverrides => getSimulationOverridesForPurpose(settings, 'what-if')
 export const getSigningSimulationOverrides = (): StateOverrides => ({})
 
-async function getSimulationInputForPurpose(settings: Settings, purpose: 'what-if' | 'signing', richAddresses?: readonly bigint[]): Promise<SimulationInput> {
-	return createSimulatedInput(await getCurrentSimulationInput(richAddresses, settings), getSimulationOverridesForPurpose(settings, purpose))
-}
+export const getWhatIfSimulationInput = async (settings: Settings, richAddresses?: readonly bigint[]): Promise<SimulationInput> =>
+	createSimulatedInput(await getCurrentSimulationInput(richAddresses, settings), getWhatIfSimulationOverrides(settings))
 
-export const getWhatIfSimulationInput = async (settings: Settings, richAddresses?: readonly bigint[]) => await getSimulationInputForPurpose(settings, 'what-if', richAddresses)
-export const getSimulationInputForCurrentMode = async (settings: Settings, richAddresses?: readonly bigint[]) => await getSimulationInputForPurpose(settings, settings.simulationMode ? 'what-if' : 'signing', richAddresses)
+const getSigningSimulationInput = async (settings: Settings, richAddresses?: readonly bigint[]): Promise<SimulationInput> =>
+	createSimulatedInput(await getCurrentSimulationInput(richAddresses, settings), getSigningSimulationOverrides())
+
+export const getSimulationInputForCurrentMode = async (settings: Settings, richAddresses?: readonly bigint[]): Promise<SimulationInput> =>
+	settings.simulationMode ? await getWhatIfSimulationInput(settings, richAddresses) : await getSigningSimulationInput(settings, richAddresses)
 
 export type SimulationSnapshot = {
 	readonly activeRpcNetwork: RpcNetwork
@@ -157,21 +156,21 @@ export type SimulationSnapshot = {
 }
 
 // Capture selection and input at the storage boundary. An unreadable stack must abort before publishing any fallback.
-async function captureSimulationSnapshotForSettings(settings: Settings, purpose: 'what-if' | 'signing'): Promise<SimulationSnapshot> {
+async function captureSimulationSnapshotForSettings(settings: Settings, getInput: typeof getWhatIfSimulationInput): Promise<SimulationSnapshot> {
 	const richAddresses = await getAddressesbeingMadeRich(settings)
 	return {
 		activeRpcNetwork: settings.activeRpcNetwork,
 		activeStackContext: getActiveStackContext(settings),
-		simulationInput: await getSimulationInputForPurpose(settings, purpose, richAddresses),
+		simulationInput: await getInput(settings, richAddresses),
 		numberOfAddressesMadeRich: richAddresses.length,
 	}
 }
 
-export const captureWhatIfSimulationSnapshot = async () => await captureSimulationSnapshotForSettings(await getSettings(), 'what-if')
-export const captureSigningSimulationSnapshot = async () => await captureSimulationSnapshotForSettings(await getSettings(), 'signing')
+export const captureWhatIfSimulationSnapshot = async () => await captureSimulationSnapshotForSettings(await getSettings(), getWhatIfSimulationInput)
+export const captureSigningSimulationSnapshot = async () => await captureSimulationSnapshotForSettings(await getSettings(), getSigningSimulationInput)
 export const captureCurrentModeSimulationSnapshot = async () => {
 	const settings = await getSettings()
-	return await captureSimulationSnapshotForSettings(settings, settings.simulationMode ? 'what-if' : 'signing')
+	return await captureSimulationSnapshotForSettings(settings, getSimulationInputForCurrentMode)
 }
 
 export const getSimulationProviderForSnapshot = (ethereum: EthereumClientService, snapshot: SimulationSnapshot) => (
@@ -359,7 +358,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 			simulatedBlocks: [{
 				signedMessages: [],
 				// This visualization contains only the standalone execution block.
-				stateOverrides: getEffectiveStateOverrides(governanceExecutionBlock.stateOverrides, simulationOverrides, 0),
+				stateOverrides: getEffectiveStateOverrides(governanceExecutionBlock.stateOverrides, simulationOverrides, { precedingSimulatedBlockCount: 0 }),
 				blockTimestamp: contractExecutionResult.executionTimestamp,
 				blockTimeManipulation: { type: 'SetTimetamp', timeToSet: dateToBigintSeconds(contractExecutionResult.executionTimestamp) },
 				simulatedTransactions: [{
