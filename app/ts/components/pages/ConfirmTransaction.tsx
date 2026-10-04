@@ -23,7 +23,7 @@ import type { EthereumBytes32 } from '../../types/wire-types.js'
 import type { OriginalSendRequestParameters } from '../../types/JsonRpc-types.js'
 import { getWebsiteWarningMessage } from '../../utils/websiteData.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
-import { checkAndThrowRuntimeLastError } from '../../utils/requests.js'
+import { checkAndThrowRuntimeLastError, doesUniqueRequestIdentifiersMatch } from '../../utils/requests.js'
 import { Link } from '../subcomponents/link.js'
 import { NetworkErrors } from '../subcomponents/NetworkErrors.js'
 import { identifySignature } from '../simulationExplaining/identifySignature.js'
@@ -106,8 +106,10 @@ export function shouldDisableSignableMessageConfirm(params: {
 	canSignMessage: boolean
 	forceSendEnabled: boolean
 	hasSupportedRpc: boolean
+	quarantined: boolean
 }) {
 	if (!params.isValidMessage) return true
+	if (params.quarantined && !params.forceSendEnabled) return true
 	return !params.canSignMessage && !params.forceSendEnabled && !params.hasSupportedRpc
 }
 
@@ -810,6 +812,10 @@ export function ConfirmTransaction() {
 		if (previousPendingTransactions.length > 0 && pendingTransactions.length > previousPendingTransactions.length) pendingTransactionAddedNotification.value = true
 		const firstMessage = pendingTransactions[0]
 		if (firstMessage === undefined) return
+		const previousMessage = currentPendingTransactionOrSignableMessage.value
+		if (previousMessage === undefined || !doesUniqueRequestIdentifiersMatch(previousMessage.uniqueRequestIdentifier, firstMessage.uniqueRequestIdentifier)) {
+			forceSend.value = false
+		}
 		currentPendingTransactionOrSignableMessage.value = firstMessage
 		if (firstMessage.type === 'Transaction' && firstMessage.transactionOrMessageCreationStatus === 'Simulating') {
 			markPerformanceOnce(POPUP_PERFORMANCE_MARKS.confirmTransactionSimulationStarted)
@@ -927,7 +933,11 @@ export function ConfirmTransaction() {
 		const currentWindow = await browser.windows.getCurrent()
 		checkAndThrowRuntimeLastError()
 		if (currentWindow.id === undefined) throw new Error('could not get our own Id!')
-		const deliveryError = await sendConfirmDialogMessage({ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: currentPendingTransactionOrSignableMessage.value.uniqueRequestIdentifier, action: 'accept' } })
+		const deliveryError = await sendConfirmDialogMessage({ method: 'popup_confirmDialog', data: {
+			uniqueRequestIdentifier: currentPendingTransactionOrSignableMessage.value.uniqueRequestIdentifier,
+			action: 'accept',
+			forceSend: forceSend.value,
+		} })
 		if (deliveryError !== undefined) unexpectedError.value = deliveryError
 	}
 	async function rejectTransaction() {
@@ -1002,6 +1012,7 @@ export function ConfirmTransaction() {
 				canSignMessage: isPossibleToSignMessage(currentPendingTransactionOrSignableMessage.value.visualizedPersonalSignRequest, currentPendingTransactionOrSignableMessage.value.activeAddress),
 				forceSendEnabled: forceSend.value,
 				hasSupportedRpc: currentPendingTransactionOrSignableMessage.value.visualizedPersonalSignRequest.rpcNetwork.httpsRpc !== undefined,
+				quarantined: currentPendingTransactionOrSignableMessage.value.visualizedPersonalSignRequest.quarantine,
 			})
 		}
 		if (forceSend.value) return false
