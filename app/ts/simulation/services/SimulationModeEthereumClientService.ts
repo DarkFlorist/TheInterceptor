@@ -935,16 +935,16 @@ export const getSimulatedBalance = async (ethereumClientService: EthereumClientS
 	return await ethereumClientService.getBalance(address, blockTag, requestAbortController)
 }
 
-const getIdleSimulationCodeOverride = (simulationInput: SimulatedInput, address: bigint, blockTag: EthereumBlockTag, baseBlockNumber: bigint) => {
+const getIdleSimulationCodeOverride = (simulationInput: SimulatedInput, address: bigint, blockTag: EthereumBlockTag) => {
 	if (hasSimulationBlocks(simulationInput.value)) return undefined
-	if (blockTag !== 'latest' && blockTag !== 'pending' && (typeof blockTag !== 'bigint' || blockTag <= baseBlockNumber)) return undefined
+	if (blockTag !== 'latest' && blockTag !== 'pending') return undefined
 	// With no simulated block, the next pending block is the first block that sees initial overrides.
 	return getEffectiveStateOverrides({}, simulationInput.simulationOverrides, { precedingSimulatedBlockCount: 0 })[addressString(address)]?.code
 }
 
 export const getSimulatedCode = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: ResolvedSimulationState, address: bigint, blockTag: EthereumBlockTag = 'latest') => {
 	if (simulationState.kind === 'simulated' && simulationState.value.success) {
-		const codeOverride = getIdleSimulationCodeOverride(getSimulationInputFromState(simulationState.value), address, blockTag, simulationState.value.blockNumber)
+		const codeOverride = getIdleSimulationCodeOverride(getSimulationInputFromState(simulationState.value), address, blockTag)
 		if (codeOverride !== undefined) return { statusCode: 'success', getCodeReturn: codeOverride } as const
 	}
 	if (simulationState.kind === 'passthrough' || await canQueryNodeDirectly(simulationState.value, blockTag)) {
@@ -1332,7 +1332,7 @@ export const getSimulatedCodeFromInput = async (
 ) => {
 	const context = await createPreparedSimulationExecutionContext(ethereumClientService, requestAbortController, simulationStateInput)
 	if (context !== undefined) {
-		const codeOverride = getIdleSimulationCodeOverride(context.simulationInput, address, blockTag, context.parentBlock.number)
+		const codeOverride = getIdleSimulationCodeOverride(context.simulationInput, address, blockTag)
 		if (codeOverride !== undefined) return { statusCode: 'success', getCodeReturn: codeOverride } as const
 	}
 	if (context === undefined || canQueryNodeDirectlyFromInput(context.parentBlock.number, context.executionBlocks.length, blockTag)) {

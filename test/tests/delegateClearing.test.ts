@@ -1,8 +1,9 @@
 import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
 import { EthereumClientService, getNextBlockTimeStampOverride } from '../../app/ts/simulation/services/EthereumClientService.js'
-import { captureSigningSimulationSnapshot, captureWhatIfSimulationSnapshot, getCurrentSimulationInput, getGovernanceExecutionSimulationInput, getSigningSimulationOverrides, getWhatIfSimulationOverrides, prepareSimulationInputForRpc } from '../../app/ts/background/simulationUpdating.js'
-import { clearDelegateClearingHintCache, getCachedDelegateClearingHint, invalidateDelegateClearingHintsForNewBlock } from '../../app/ts/background/delegateClearingHintCache.js'
+import { captureSigningSimulationSnapshot, captureWhatIfSimulationSnapshot, getCurrentSimulationInput, getGovernanceExecutionSimulationInput, getSigningSimulationOverrides, prepareSimulationInputForRpc } from '../../app/ts/background/simulationUpdating.js'
+import { getWhatIfSimulationOverrides } from '../../app/ts/background/delegateClearingPolicy.js'
+import { clearDelegateClearingHintCache, getCachedDelegateClearingHint, invalidateDelegateClearingHintsForNewBlock, withDelegateClearingHintInvalidation } from '../../app/ts/background/delegateClearingHintCache.js'
 import { requestDelegateClearing, setDelegateClearing } from '../../app/ts/background/popupMessageHandlers/delegateClearing.js'
 import { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
 import { changeSimulationMode, isDelegateClearingEnabled, setDelegateClearingEnabled, setMakeCurrentAddressRich } from '../../app/ts/background/settings.js'
@@ -125,6 +126,8 @@ describe('delegate clearing in simulation', () => {
 		if ('error' in parentBlockResponse) throw new Error(parentBlockResponse.error.message)
 		const parentBlock = EthereumBlockHeader.parse(parentBlockResponse.result)
 		if (parentBlock === null) throw new Error('Expected a parent block')
+		const numberedBlockTag = parentBlock.number + 1n
+		let numberedCodeRequests = 0
 		const ethSimulateRequests: EthSimulateV1Params[] = []
 		const ethereum = new EthereumClientService({
 			rpcUrl: rpcEntry.httpsRpc,
@@ -133,6 +136,11 @@ describe('delegate clearing in simulation', () => {
 				if (request.method === 'eth_getBlockByNumber') return parentBlockResponse.result
 				if (request.method === 'eth_blockNumber') return `0x${ parentBlock.number.toString(16) }`
 				if (request.method === 'eth_getTransactionCount') return '0x0'
+				if (request.method === 'eth_getCode') {
+					assert.equal(request.params[1], numberedBlockTag)
+					numberedCodeRequests += 1
+					return '0x6000'
+				}
 				if (request.method === 'eth_simulateV1') {
 					ethSimulateRequests.push(request)
 					throw new Error('Captured simulation request')
@@ -150,6 +158,11 @@ describe('delegate clearing in simulation', () => {
 		const popupCode = await getSimulatedCode(ethereum, undefined, { kind: 'simulated', value: idleState }, activeAddress)
 		assert.equal(popupCode.statusCode, 'success')
 		if (popupCode.statusCode === 'success') assert.equal(popupCode.getCodeReturn.length, 0)
+		const numberedInputCode = await getSimulatedCodeFromInput(ethereum, undefined, createSimulatedInput(input, simulationOverrides), activeAddress, numberedBlockTag)
+		const numberedPopupCode = await getSimulatedCode(ethereum, undefined, { kind: 'simulated', value: idleState }, activeAddress, numberedBlockTag)
+		assert.deepEqual(numberedInputCode, { statusCode: 'success', getCodeReturn: new Uint8Array([0x60, 0x00]) })
+		assert.deepEqual(numberedPopupCode, numberedInputCode)
+		assert.equal(numberedCodeRequests, 2)
 		if (!idleState.success) throw new Error('Expected an idle simulation state')
 		const { simulatedBlocks: _simulatedBlocks, ...failedBase } = idleState
 		const failedState: SimulationState = {
@@ -407,7 +420,11 @@ describe('delegate clearing in simulation', () => {
 		}, async () => undefined, async () => undefined, rpcEntry)
 		const pendingHint = getCachedDelegateClearingHint(ethereum, activeAddress)
 		await firstStarted
-		invalidateDelegateClearingHintsForNewBlock(ethereum)
+		const parentBlockResponse = JsonRpcResponse.parse(JSON.parse(eth_getBlockByNumber_goerli_8443561_true))
+		if ('error' in parentBlockResponse) throw new Error(parentBlockResponse.error.message)
+		const parentBlock = EthereumBlockHeader.parse(parentBlockResponse.result)
+		if (parentBlock === null) throw new Error('Expected a parent block')
+		await withDelegateClearingHintInvalidation(async () => undefined)(parentBlock, ethereum, true)
 		await secondStarted
 		releaseStaleCode(`0xef0100${ addressString(staleDelegate).slice(2) }`)
 		assert.equal(await pendingHint, undefined)

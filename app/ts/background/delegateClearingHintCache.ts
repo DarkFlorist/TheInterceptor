@@ -1,4 +1,5 @@
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
+import type { NewBlockAttemptCallback } from '../simulation/serviceLifecycle.js'
 import { addressString } from '../utils/bigint.js'
 import { NEW_BLOCK_ABORT } from '../utils/constants.js'
 
@@ -99,3 +100,8 @@ export const getCachedDelegateClearingHint = (ethereum: EthereumClientService, a
 export const clearDelegateClearingHintCache = (ethereum: EthereumClientService) => hintCaches.get(ethereum)?.clear()
 
 export const invalidateDelegateClearingHintsForNewBlock = (ethereum: EthereumClientService, now = Date.now()) => hintCaches.get(ethereum)?.invalidateDelegatedForNewBlock(now)
+
+export const withDelegateClearingHintInvalidation = (onBlock: NewBlockAttemptCallback): NewBlockAttemptCallback => async (blockHeader, ethereum, isNewBlock) => {
+	if (isNewBlock) invalidateDelegateClearingHintsForNewBlock(ethereum)
+	await onBlock(blockHeader, ethereum, isNewBlock)
+}

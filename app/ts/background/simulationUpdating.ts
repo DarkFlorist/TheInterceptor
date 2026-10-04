@@ -34,8 +34,9 @@ import * as funtypes from 'funtypes'
 import { decodeCallDataLoose, encodeFunctionCall } from '../utils/abiRuntime.js'
 import type { StateOverrides } from '../types/ethSimulate-types.js'
 import { getActiveStackContext, getOperationsForActiveStackContext } from '../utils/activeStackContext.js'
-import { hasDelegateClearingPreference, isCodeClearedBySimulationOverrides, withDelegateCleared } from '../utils/delegateClearingState.js'
+import { isCodeClearedBySimulationOverrides } from '../utils/delegateClearingState.js'
 import { getEffectiveStateOverrides } from '../utils/simulationStateOverrides.js'
+import { getWhatIfSimulationOverrides } from './delegateClearingPolicy.js'
 
 const getMakeCurrentAddressRichStateOverride = (addressesToMakeRich: readonly bigint[]) => {
 	if (addressesToMakeRich.length === 0) return {}
@@ -129,12 +130,6 @@ export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[
 		})
 	}
 	return inputBlocks
-}
-
-export function getWhatIfSimulationOverrides(settings: Settings): StateOverrides {
-	const address = settings.simulationMode && hasDelegateClearingPreference(settings.delegateClearingPreferences, settings.activeSimulationAddress, settings.activeRpcNetwork.chainId)
-		? settings.activeSimulationAddress : undefined
-	return withDelegateCleared({}, address)
 }
 
 export const getSigningSimulationOverrides = (): StateOverrides => ({})
