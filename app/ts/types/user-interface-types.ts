@@ -1,3 +1,4 @@
+import type { WebsiteLifecycleCallbacks } from './websiteLifecycle.js'
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumBlockHeader, EthereumQuantity, EthereumTimestamp, OptionalEthereumAddress } from './wire-types.js'
 import type { SimulatedAndVisualizedTransaction, ResolvedSimulationResults, SimulationUpdatingState, SimulationResultState, ModifyAddressWindowState, BlockTimeManipulation } from './visualizer-types.js'
@@ -32,17 +33,23 @@ export type AddAddressParam = {
 }
 
 export type HomeParams = {
+	isActiveAddressChanging: Signal<boolean>
+	isActiveAddressChangePending: ReadonlySignal<boolean>
+	isSettingsChangePending: ReadonlySignal<boolean>
+	setSimulationMode: (enabled: boolean) => Promise<void>
+	setRichState: (enabled: boolean, address: bigint | 'CurrentAddress') => Promise<void>
 	changeActiveAddress: () => void
 	makeCurrentAddressRich: Signal<boolean>
 	activeAddresses: Signal<AddressBookEntries>
 	walletSelectedAddressBookEntry: Signal<AddressBookEntry | undefined>
 	tabState: Signal<TabState | undefined>
 	activeSimulationAddress: Signal<bigint | undefined>
-	activeSigningAddress: Signal<bigint | undefined>
+	activeSigningSafeAddress: Signal<bigint | undefined>
+	displayedSigningAddress: Signal<bigint | undefined>
 	useSignersAddressAsActiveAddress: Signal<boolean>
 	simVisResults: Signal<ResolvedSimulationResults>
 	rpcNetwork: Signal<RpcNetwork | undefined>
-	setActiveRpcAndInformAboutIt: (entry: RpcEntry) => void
+	setActiveRpcAndInformAboutIt: (entry: RpcEntry) => Promise<void>
 	simulationMode: Signal<boolean>
 	tabIconDetails: Signal<TabIconDetails>
 	currentBlockNumber: Signal<bigint | undefined>
@@ -72,11 +79,16 @@ export type ChangeActiveAddressParam = {
 }
 
 export type FirstCardParams = {
+	isActiveAddressChanging: Signal<boolean>
+	isActiveAddressChangePending: ReadonlySignal<boolean>
+	isSettingsChangePending: ReadonlySignal<boolean>
+	setSimulationMode: (enabled: boolean) => Promise<void>
+	setRichState: (enabled: boolean, address: bigint | 'CurrentAddress') => Promise<void>
 	activeAddress: Signal<AddressBookEntry | undefined>
 	useSignersAddressAsActiveAddress: Signal<boolean>
 	activeAddresses: Signal<AddressBookEntries | undefined>
 	walletSelectedAddressBookEntry: Signal<AddressBookEntry | undefined>
-	changeActiveRpc: (rpcEntry: RpcEntry) => void
+	changeActiveRpc: (rpcEntry: RpcEntry) => Promise<void>
 	rpcNetwork: Signal<RpcNetwork | undefined>
 	simulationMode: Signal<boolean>
 	changeActiveAddress: () => void
@@ -92,10 +104,11 @@ export type FirstCardParams = {
 }
 
 export type SimulationStateParam = {
+	simulationMode: ReadonlySignal<boolean>
 	simulationAndVisualisationResults: ReadonlySignal<ResolvedSimulationResults>
 	removeTransactionOrSignedMessage: (transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void
 	currentBlockNumber: Signal<bigint | undefined>
-	activeSimulationAddress: Signal<bigint | undefined>
+	visualizedAddress: ReadonlySignal<bigint | undefined>
 	renameAddressCallBack: RenameAddressCallBack
 	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
 	disableReset: ReadonlySignal<boolean>
@@ -106,8 +119,6 @@ export type SimulationStateParam = {
 	simulationResultState: Signal<SimulationResultState | undefined>
 	openSimulationStack: (target?: TransactionOrMessageIdentifier) => void
 	numberOfAddressesMadeRich: Signal<number>
-	hasSafeTransactionsToExport: ReadonlySignal<boolean>
-	safeSigningMode: boolean
 }
 
 export type LogAnalysisParams = {
@@ -175,7 +186,8 @@ export type TabConnection = {
 	signerStateOwner?: SignerStateOwner
 }
 
-export type WebsiteTabConnections = Map<number, TabConnection>
+// Scope observers to their connection collection so asynchronous mutations cannot notify another collection; feature state and configuration belong to the observer.
+export type WebsiteTabConnections = Map<number, TabConnection> & { readonly lifecycle?: WebsiteLifecycleCallbacks }
 
 export type TabState = funtypes.Static<typeof TabState>
 export const TabState = funtypes.ReadonlyObject({

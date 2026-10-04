@@ -1,10 +1,7 @@
-import type { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
-import type { TokenPriceService } from '../../simulation/services/priceEstimator.js'
-import type { ResetSimulationServices } from '../../simulation/serviceLifecycle.js'
+import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
 import type { AllowOrPreventAddressAccessForWebsite, BlockOrAllowExternalRequests, DisableInterceptor, RemoveWebsiteAccess, RemoveWebsiteAddressAccess, RetrieveWebsiteAccess } from '../../types/interceptor-messages.js'
 import type { EthereumAddress } from '../../types/wire-types.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
-import { updateContentScriptInjectionStrategyManifestV2, updateContentScriptInjectionStrategyManifestV3 } from '../../utils/contentScriptsUpdating.js'
 import { getErrorMessage, reportUnexpectedError } from '../../utils/errors.js'
 import { checkAndThrowRuntimeLastError } from '../../utils/requests.js'
 import { modifyObject } from '../../utils/typescript.js'
@@ -15,6 +12,7 @@ import { getSettings, updateWebsiteAccess } from '../settings.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { getAddressMetadataForAccess } from '../windows/interceptorAccess.js'
 import { searchWebsiteAccess } from '../websiteAccessSearch.js'
+import { updateWebsiteAccessAndContentScriptInjectionStrategy } from '../websiteAccessUpdating.js'
 
 const isMissingTabReloadError = (error: unknown) => {
 	const message = getErrorMessage(error)
@@ -38,21 +36,19 @@ export async function reloadConnectedTabs(websiteTabConnections: WebsiteTabConne
 
 export const disableInterceptorForPage = async (websiteTabConnections: WebsiteTabConnections, website: Website, interceptorDisabled: boolean) => {
 	await setInterceptorDisabledForWebsite(website, interceptorDisabled)
-	if (browser.runtime.getManifest().manifest_version === 3) await updateContentScriptInjectionStrategyManifestV3()
-	else await updateContentScriptInjectionStrategyManifestV2()
 	await reloadConnectedTabs(websiteTabConnections)
 }
 
-export async function disableInterceptor(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, parsedRequest: DisableInterceptor) {
+export async function disableInterceptor(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: DisableInterceptor) {
 	await disableInterceptorForPage(websiteTabConnections, parsedRequest.data.website, parsedRequest.data.interceptorDisabled)
-	await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, await getSettings(), true)
+	await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
 	await sendPopupMessageToOpenWindows({ method: 'popup_setDisableInterceptorReply' as const, data: parsedRequest.data })
 }
 
 export async function retrieveWebsiteAccess(parsedRequest: RetrieveWebsiteAccess) {
 	const settings = await getSettings()
 	const websiteAccess = searchWebsiteAccess(parsedRequest.data.query, settings.websiteAccess)
-	const addressAccessMetadata = await getAddressMetadataForAccess(websiteAccess)
+	const addressAccessMetadata = await getAddressMetadataForAccess(websiteAccess, settings.activeRpcNetwork.chainId)
 	await sendPopupMessageToOpenWindows({ method: 'popup_retrieveWebsiteAccessReply', data: { websiteAccess, addressAccessMetadata } })
 }
 
@@ -64,9 +60,9 @@ const blockOrAllowWebsiteExternalRequests = async (websiteTabConnections: Websit
 	await reloadConnectedTabs(websiteTabConnections)
 }
 
-export async function blockOrAllowExternalRequests(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, parsedRequest: BlockOrAllowExternalRequests) {
+export async function blockOrAllowExternalRequests(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: BlockOrAllowExternalRequests) {
 	await blockOrAllowWebsiteExternalRequests(websiteTabConnections, parsedRequest.data.website, parsedRequest.data.shouldBlock)
-	await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, await getSettings(), true)
+	await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }
 
@@ -77,10 +73,10 @@ const removeAddressAccessByAddress = async (websiteOrigin: string, address: Ethe
 	}))
 }
 
-export async function removeWebsiteAddressAccess(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, parsedRequest: RemoveWebsiteAddressAccess) {
+export async function removeWebsiteAddressAccess(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: RemoveWebsiteAddressAccess) {
 	await removeAddressAccessByAddress(parsedRequest.data.websiteOrigin, parsedRequest.data.address)
 	await reloadConnectedTabs(websiteTabConnections)
-	await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, await getSettings(), true)
+	await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }
 
@@ -99,8 +95,8 @@ export async function allowOrPreventAddressAccessForWebsite(websiteTabConnection
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }
 
-export async function removeWebsiteAccess(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, parsedRequest: RemoveWebsiteAccess) {
-	await updateWebsiteAccess((previousAccess) => previousAccess.filter((access) => access.website.websiteOrigin !== parsedRequest.data.websiteOrigin))
-	await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, await getSettings(), true)
+export async function removeWebsiteAccess(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: RemoveWebsiteAccess) {
+	await updateWebsiteAccessAndContentScriptInjectionStrategy((previousAccess) => previousAccess.filter((access) => access.website.websiteOrigin !== parsedRequest.data.websiteOrigin))
+	await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }

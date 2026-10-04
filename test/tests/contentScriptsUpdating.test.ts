@@ -195,6 +195,15 @@ describe('content script injection strategy', () => {
 		])
 	})
 
+	test('excludes an exact file and its query variants without excluding path suffixes', async () => {
+		installBrowserMock()
+		const { getManifestV3ExcludeMatches } = await loadModules()
+		assert.deepEqual(getManifestV3ExcludeMatches(['file:///tmp/dapp.html']), [
+			'file:///tmp/dapp.html',
+			'file:///tmp/dapp.html?*',
+		])
+	})
+
 	test('preserves legacy manifest v2 interceptor-disabled behavior without treating it as an access grant', async () => {
 		const { getCommittedListener, getExecuteScriptCalls, storageState } = installBrowserMock()
 		const { updateContentScriptInjectionStrategyManifestV2 } = await loadModules()

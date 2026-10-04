@@ -1,7 +1,9 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { EthereumJsonRpcRequest, FeeHistory, EthGetLogsRequest, EthNewFilter } from '../../app/ts/types/JsonRpc-types.js'
-import { CanonicalEthereumQuantity, EthereumAddress, EthereumBlockTag, EthereumBytes16, EthereumBytes256, EthereumBytes32, EthereumQuantity, serialize } from '../../app/ts/types/wire-types.js'
+import { CanonicalEthereumQuantity, EthereumAddress, EthereumBlockHeader, EthereumBlockTag, EthereumBytes16, EthereumBytes256, EthereumBytes32, EthereumQuantity, EthereumSignedTransactionWithBlockData, serialize } from '../../app/ts/types/wire-types.js'
+import { assertIsObject } from '../../app/ts/utils/typescript.js'
+import { eth_getBlockByNumber_goerli_8443561_true } from '../RPCResponses.js'
 
 const blockHash = `0x${ '12'.repeat(32) }`
 
@@ -60,5 +62,69 @@ describe('JSON-RPC boundary validation', () => {
 		assert.equal(FeeHistory.safeParse({ method: 'eth_feeHistory', params: ['0x5', 'latest', [-1]] }).success, false)
 		assert.equal(FeeHistory.safeParse({ method: 'eth_feeHistory', params: ['0x5', 'latest', [101]] }).success, false)
 		assert.equal(FeeHistory.safeParse({ method: 'eth_feeHistory', params: ['0x5', 'latest', [75, 25]] }).success, false)
+	})
+
+	for (const data of [undefined, '0x1234']) {
+		test(`preserves calldata and optional data alias through full-block and transaction round trips (${ data })`, () => {
+			const response = JSON.parse(eth_getBlockByNumber_goerli_8443561_true)
+			assertIsObject(response)
+			assertIsObject(response.result)
+			if (!Array.isArray(response.result.transactions)) throw new Error('full block transactions missing')
+			const original = response.result.transactions[0]
+			assertIsObject(original)
+			const { data: _data, ...withoutData } = original
+			const transaction = { ...withoutData, input: '0x1234', ...(data === undefined ? {} : { data }) }
+			const block = EthereumBlockHeader.parse({ ...response.result, transactions: [transaction] })
+			const serializedBlock = serialize(EthereumBlockHeader, block)
+			if (serializedBlock === null) throw new Error('full block missing')
+			const serializedTransaction = serialize(EthereumSignedTransactionWithBlockData, EthereumSignedTransactionWithBlockData.parse(transaction))
+			for (const result of [serializedBlock.transactions[0], serializedTransaction]) {
+				if (result === undefined || !('input' in result)) throw new Error('known transaction missing')
+				assert.equal(result.input, '0x1234')
+				assert.equal(result.data, data)
+				if (data === undefined) assert.equal(Object.hasOwn(JSON.parse(JSON.stringify(result)), 'data'), false)
+			}
+		})
+	}
+
+	test('requires block data on known transactions in full block responses', () => {
+		const response = JSON.parse(eth_getBlockByNumber_goerli_8443561_true)
+		assertIsObject(response)
+		assertIsObject(response.result)
+		if (!Array.isArray(response.result.transactions)) throw new Error('full block transactions missing')
+		const transaction = response.result.transactions[0]
+		assertIsObject(transaction)
+		const { blockHash: _blockHash, blockNumber: _blockNumber, transactionIndex: _transactionIndex, data: _data, ...transactionWithoutBlockData } = transaction
+
+		assert.equal(EthereumBlockHeader.safeParse({ ...response.result, transactions: [transactionWithoutBlockData] }).success, false)
+	})
+
+	test('keeps Optimism deposits and unknown future full block transactions compatible', () => {
+		const response = JSON.parse(eth_getBlockByNumber_goerli_8443561_true)
+		assertIsObject(response)
+		assertIsObject(response.result)
+		const parsedBlock = EthereumBlockHeader.parse({
+			...response.result,
+			transactions: [{
+				type: '0x7e',
+				sourceHash: blockHash,
+				from: '0x0000000000000000000000000000000000000001',
+				to: null,
+				mint: null,
+				value: '0x0',
+				gas: '0x5208',
+				data: '0x',
+				hash: `0x${ '34'.repeat(32) }`,
+				gasPrice: '0x1',
+				nonce: '0x0',
+			}, {
+				hash: `0x${ '56'.repeat(32) }`,
+				type: '0x5',
+			}],
+		})
+		if (parsedBlock === null) throw new Error('full block was null')
+
+		assert.equal(parsedBlock.transactions[0]?.type, 'optimismDeposit')
+		assert.equal(parsedBlock.transactions[1]?.type, '0x5')
 	})
 })

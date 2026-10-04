@@ -22,14 +22,31 @@ import { getFilledInContactEntry } from '../utils/addressBookEntries.js'
 import { JsonRpcResponseError, reportLocalRecoveryBestEffort } from '../utils/errors.js'
 import { getDeployedContractAddress } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { isValidErc20Decimals } from '../utils/erc20.js'
+import { findActiveAddressBookEntryForChain } from '../utils/activeAddressSelection.js'
 
 const pathJoin = (parts: string[], sep = '/') => parts.join(sep).replace(new RegExp(sep + '{1,}', 'g'), sep)
 
 export const getFullLogoUri = (logoURI: string) => pathJoin([LOGO_URI_PREFIX, logoURI])
 
-export async function getActiveAddressEntry(address: bigint): Promise<AddressBookEntry> {
-	const identifiedAddress = await identifyAddressWithoutNode(address, undefined)
-	if (identifiedAddress?.useAsActiveAddress) return identifiedAddress
+/**
+ * Resolves metadata for an address being surfaced as an active account. This
+ * intentionally accepts metadata only from entries marked `useAsActiveAddress`;
+ * static contract/token metadata and non-active address-book entries must not
+ * supply active-account access policy.
+ */
+export async function getActiveAddressEntryForChain(address: bigint, chainId: bigint): Promise<AddressBookEntry> {
+	const identifiedAddress = findActiveAddressBookEntryForChain(await getActiveAddresses(), address, chainId, 'any')
+	if (identifiedAddress !== undefined) return identifiedAddress
+	return getUnknownActiveAddressEntry(address)
+}
+
+export async function getWalletActiveAddressEntryForChain(address: bigint, chainId: bigint): Promise<AddressBookEntry> {
+	const identifiedAddress = findActiveAddressBookEntryForChain(await getActiveAddresses(), address, chainId, 'walletAccount')
+	if (identifiedAddress !== undefined) return identifiedAddress
+	return getUnknownActiveAddressEntry(address)
+}
+
+function getUnknownActiveAddressEntry(address: bigint): AddressBookEntry {
 	return {
 		...getFilledInContactEntry(address),
 		useAsActiveAddress: true,

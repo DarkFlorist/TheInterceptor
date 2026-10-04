@@ -212,16 +212,12 @@ describe('narrow text layout CSS', () => {
 		assert.match(simulationStackHeader, /padding\s*:\s*1rem clamp\(0\.75rem,\s*2vw,\s*1\.5rem\)\s*;/)
 		assert.match(simulationStackHeader, /display\s*:\s*grid\s*;/)
 
-		const simulationStackActions = expectRule(css, '.simulation-stack-page-actions')
-		assert.match(simulationStackActions, /border-radius\s*:\s*8px\s*;/)
-		assert.match(simulationStackActions, /display\s*:\s*grid\s*;/)
-
-		const simulationStackActionGroup = expectRule(css, '.simulation-stack-action-group')
-		assert.match(simulationStackActionGroup, /display\s*:\s*flex\s*;/)
-		assert.match(simulationStackActionGroup, /flex-wrap\s*:\s*wrap\s*;/)
-
-		const simulationStackActionControls = expectRule(css, '.simulation-stack-action-controls')
-		assert.match(simulationStackActionControls, /flex-wrap\s*:\s*wrap\s*;/)
+		const simulationStackControls = expectRule(css, '.simulation-stack-page-controls')
+		assert.match(simulationStackControls, /display\s*:\s*flex\s*;/)
+		assert.match(simulationStackControls, /flex-wrap\s*:\s*wrap\s*;/)
+		assert.match(simulationStackControls, /justify-content\s*:\s*flex-end\s*;/)
+		assert.doesNotMatch(css, /\.simulation-stack-page-actions\s*\{/)
+		assert.doesNotMatch(css, /\.simulation-stack-action-group\s*\{/)
 		assert.match(css, /\.simulation-stack-page-clear > \.simulation-stack-clear-label\s*\{[\s\S]*?display\s*:\s*none\s*;/)
 		assert.doesNotMatch(css, /\.simulation-stack-page-clear > span:last-child/)
 
@@ -256,7 +252,7 @@ describe('narrow text layout CSS', () => {
 		assert.match(simulationStackContentRow, /margin\s*:\s*10px 0\s*;/)
 	})
 
-	test('uses flexible button height and stacks address book card actions at ultra-narrow widths', async () => {
+	test('uses flexible button height and stacks address book navigation and card actions before text wraps', async () => {
 		const css = await readInterceptorAppCss()
 
 		const button = expectRule(css, ':where(.btn)')
@@ -265,7 +261,8 @@ describe('narrow text layout CSS', () => {
 		assert.match(button, /min-height\s*:\s*2\.25em\s*;/)
 		assert.match(button, /line-height\s*:\s*1\.2\s*;/)
 
-		assert.match(css, /@media screen and \(max-width:\s*220px\)\s*\{[\s\S]*?\.address-book-entry-media\s*\{[\s\S]*?flex-direction\s*:\s*column\s*;/)
-		assert.match(css, /@media screen and \(max-width:\s*220px\)\s*\{[\s\S]*?\.address-book-entry-actions\s*\{[\s\S]*?flex-direction\s*:\s*row\s*;/)
+		assert.match(css, /@media screen and \(max-width:\s*360px\)\s*\{[\s\S]*?\.address-book-sidebar \.menu\s*\{[\s\S]*?grid-template-columns\s*:\s*minmax\(0,\s*1fr\)\s*;/)
+		assert.match(css, /@media screen and \(max-width:\s*360px\)\s*\{[\s\S]*?\.address-book-entry-media\s*\{[\s\S]*?flex-direction\s*:\s*column\s*;/)
+		assert.match(css, /@media screen and \(max-width:\s*360px\)\s*\{[\s\S]*?\.address-book-entry-actions\s*\{[\s\S]*?flex-direction\s*:\s*row\s*;/)
 	})
 })

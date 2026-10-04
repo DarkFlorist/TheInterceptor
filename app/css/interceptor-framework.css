@@ -481,13 +481,13 @@ fieldset[disabled] .button.is-light.is-outlined {
 }
 
 .button.is-primary {
-  background-color: var(--primary-color);
+  background-color: var(--primary-action-color);
   border-color: transparent;
   color: #fff;
 }
 
 .button.is-primary:hover, .button.is-primary.is-hovered {
-  background-color: #6aaebb;
+  background-color: var(--highlighted-primary-action-color);
   border-color: transparent;
   color: #fff;
 }
@@ -498,19 +498,19 @@ fieldset[disabled] .button.is-light.is-outlined {
 }
 
 .button.is-primary:focus:not(:active), .button.is-primary.is-focused:not(:active) {
-  box-shadow: 0 0 0 0.125em rgba(0, 209, 178, 0.25);
+  box-shadow: 0 0 0 0.125em color-mix(in srgb, var(--primary-action-color) 25%, transparent);
 }
 
 .button.is-primary:active, .button.is-primary.is-active {
-  background-color: #4c98a6;
+  background-color: var(--highlighted-primary-action-color);
   border-color: transparent;
   color: #fff;
 }
 
 .button.is-primary[disabled],
 fieldset[disabled] .button.is-primary {
-  background-color: var(--primary-color);
-  border-color: var(--primary-color);
+  background-color: var(--primary-action-color);
+  border-color: var(--primary-action-color);
   box-shadow: none;
 }
 
@@ -520,18 +520,18 @@ fieldset[disabled] .button.is-primary {
 
 .button.is-primary.is-outlined {
   background-color: transparent;
-  border-color: var(--primary-color);
-  color: var(--primary-color);
+  border-color: var(--primary-action-color);
+  color: var(--primary-action-color);
 }
 
 .button.is-primary.is-outlined:hover, .button.is-primary.is-outlined.is-hovered, .button.is-primary.is-outlined:focus, .button.is-primary.is-outlined.is-focused {
-  background-color: var(--primary-color);
-  border-color: var(--primary-color);
+  background-color: var(--primary-action-color);
+  border-color: var(--primary-action-color);
   color: #fff;
 }
 
 .button.is-primary.is-outlined.is-loading::after {
-  border-color: transparent transparent var(--primary-color) var(--primary-color) !important;
+  border-color: transparent transparent var(--primary-action-color) var(--primary-action-color) !important;
 }
 
 .button.is-primary.is-outlined.is-loading:hover::after, .button.is-primary.is-outlined.is-loading.is-hovered::after, .button.is-primary.is-outlined.is-loading:focus::after, .button.is-primary.is-outlined.is-loading.is-focused::after {
@@ -541,9 +541,9 @@ fieldset[disabled] .button.is-primary {
 .button.is-primary.is-outlined[disabled],
 fieldset[disabled] .button.is-primary.is-outlined {
   background-color: transparent;
-  border-color: var(--primary-color);
+  border-color: var(--primary-action-color);
   box-shadow: none;
-  color: var(--primary-color);
+  color: var(--primary-action-color);
 }
 
 .button.is-primary.is-light {
@@ -896,13 +896,13 @@ fieldset[disabled] .button.is-warning.is-outlined {
 }
 
 .button.is-danger {
-  background-color: var(--negative-color);
+  background-color: var(--destructive-action-color);
   border-color: transparent;
   color: #fff;
 }
 
 .button.is-danger:hover, .button.is-danger.is-hovered {
-  background-color: var(--highlighted-negative-color);
+  background-color: var(--highlighted-destructive-action-color);
   border-color: transparent;
   color: #fff;
 }
@@ -913,19 +913,19 @@ fieldset[disabled] .button.is-warning.is-outlined {
 }
 
 .button.is-danger:focus:not(:active), .button.is-danger.is-focused:not(:active) {
-  box-shadow: 0 0 0 0.125em rgba(241, 70, 104, 0.25);
+  box-shadow: 0 0 0 0.125em color-mix(in srgb, var(--destructive-action-color) 25%, transparent);
 }
 
 .button.is-danger:active, .button.is-danger.is-active {
-  background-color: var(--highlighted-negative-color);
+  background-color: var(--highlighted-destructive-action-color);
   border-color: transparent;
   color: #fff;
 }
 
 .button.is-danger[disabled],
 fieldset[disabled] .button.is-danger {
-  background-color: var(--negative-color);
-  border-color: var(--negative-color);
+  background-color: var(--destructive-action-color);
+  border-color: var(--destructive-action-color);
   box-shadow: none;
 }
 
@@ -935,18 +935,18 @@ fieldset[disabled] .button.is-danger {
 
 .button.is-danger.is-outlined {
   background-color: transparent;
-  border-color: var(--negative-color);
-  color: var(--negative-color);
+  border-color: var(--destructive-action-color);
+  color: var(--destructive-action-color);
 }
 
 .button.is-danger.is-outlined:hover, .button.is-danger.is-outlined.is-hovered, .button.is-danger.is-outlined:focus, .button.is-danger.is-outlined.is-focused {
-  background-color: var(--negative-color);
-  border-color: var(--negative-color);
+  background-color: var(--destructive-action-color);
+  border-color: var(--destructive-action-color);
   color: #fff;
 }
 
 .button.is-danger.is-outlined.is-loading::after {
-  border-color: transparent transparent var(--negative-color) var(--negative-color) !important;
+  border-color: transparent transparent var(--destructive-action-color) var(--destructive-action-color) !important;
 }
 
 .button.is-danger.is-outlined.is-loading:hover::after, .button.is-danger.is-outlined.is-loading.is-hovered::after, .button.is-danger.is-outlined.is-loading:focus::after, .button.is-danger.is-outlined.is-loading.is-focused::after {
@@ -956,9 +956,9 @@ fieldset[disabled] .button.is-danger {
 .button.is-danger.is-outlined[disabled],
 fieldset[disabled] .button.is-danger.is-outlined {
   background-color: transparent;
-  border-color: var(--negative-color);
+  border-color: var(--destructive-action-color);
   box-shadow: none;
-  color: var(--negative-color);
+  color: var(--destructive-action-color);
 }
 
 .button.is-danger.is-light {
@@ -1278,7 +1278,7 @@ fieldset[disabled] .button {
 }
 
 .notification.is-primary {
-  background-color: var(--primary-color);
+  background-color: var(--accent-color);
   color: #fff;
 }
 
@@ -1328,7 +1328,7 @@ fieldset[disabled] .button {
 }
 
 .notification.is-danger {
-  background-color: var(--negative-color);
+  background-color: var(--danger-color);
   color: #fff;
 }
 
@@ -1377,8 +1377,8 @@ fieldset[disabled] .button {
 
 .table td.is-primary,
 .table th.is-primary {
-  background-color: var(--primary-color);
-  border-color: var(--primary-color);
+  background-color: var(--accent-color);
+  border-color: var(--accent-color);
   color: #fff;
 }
 
@@ -1412,8 +1412,8 @@ fieldset[disabled] .button {
 
 .table td.is-danger,
 .table th.is-danger {
-  background-color: var(--negative-color);
-  border-color: var(--negative-color);
+  background-color: var(--danger-color);
+  border-color: var(--danger-color);
   color: #fff;
 }
 
@@ -1474,7 +1474,7 @@ fieldset[disabled] .button {
 }
 
 .tag:not(body).is-primary {
-  background-color: var(--primary-color);
+  background-color: var(--accent-color);
   color: #fff;
 }
 
@@ -1524,7 +1524,7 @@ fieldset[disabled] .button {
 }
 
 .tag:not(body).is-danger {
-  background-color: var(--negative-color);
+  background-color: var(--danger-color);
   color: #fff;
 }
 

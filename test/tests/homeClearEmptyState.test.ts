@@ -254,17 +254,23 @@ const createPendingSignedMessageSimulationResults = (): SimulationAndVisualisati
 
 function createHomeParams(overrides: Partial<HomeParams> = {}): HomeParams {
 	return {
+		isActiveAddressChanging: new Signal(false),
+		isActiveAddressChangePending: new Signal(false),
+		isSettingsChangePending: new Signal(false),
+		setSimulationMode: async () => undefined,
+		setRichState: async () => undefined,
 		changeActiveAddress: () => undefined,
 		makeCurrentAddressRich: new Signal(false),
 		activeAddresses: new Signal([activeAddressEntry]),
 		walletSelectedAddressBookEntry: new Signal(undefined),
 		tabState: new Signal<TabState | undefined>(undefined),
 		activeSimulationAddress: new Signal<bigint | undefined>(ACTIVE_ADDRESS),
-		activeSigningAddress: new Signal<bigint | undefined>(undefined),
+		activeSigningSafeAddress: new Signal<bigint | undefined>(undefined),
+		displayedSigningAddress: new Signal<bigint | undefined>(undefined),
 		useSignersAddressAsActiveAddress: new Signal(false),
 		simVisResults: new Signal<ResolvedSimulationResults>(toResolvedSimulationResults(createSimulationResults())),
 		rpcNetwork: new Signal(rpcNetwork),
-		setActiveRpcAndInformAboutIt: () => undefined,
+		setActiveRpcAndInformAboutIt: async () => undefined,
 		simulationMode: new Signal(true),
 		tabIconDetails: new Signal({ icon: ICON_SIMULATING, iconReason: 'Simulating transactions.' }),
 		currentBlockNumber: new Signal<bigint | undefined>(101n),
@@ -356,7 +362,8 @@ function installBrowserMock(replyToMessage?: (message: unknown) => unknown) {
 			runtime: {
 				lastError: null,
 				async sendMessage(message: unknown) {
-					sentMessages.push(message)
+					// Browser messaging clones serialized records into ordinary objects.
+					sentMessages.push(structuredClone(message))
 					return replyToMessage?.(message)
 				},
 			},
@@ -401,6 +408,182 @@ function getMessageWithMethod(messages: readonly unknown[], method: string) {
 }
 
 describe('Home popup clear empty state', () => {
+	test('keeps mode switching busy after the saved mode arrives and exposes failures', async () => {
+		const dom = installDomMock()
+		let rejectChange: ((error: Error) => void) | undefined
+		const change = new Promise<void>((_resolve, reject) => { rejectChange = reject })
+		const params = createHomeParams({ setSimulationMode: async () => { await change } })
+		try {
+			await act(() => { render(h(Home, params), dom.document.body) })
+			await act(async () => { await clickElement(getButtonByText(dom.document.body, 'Signing')) })
+			assert.equal(getButtonByText(dom.document.body, 'Signing').getAttribute?.('aria-busy'), true)
+			await act(() => { params.simulationMode.value = false })
+			assert.equal(getButtonByText(dom.document.body, 'Signing').getAttribute?.('aria-busy'), true)
+			assert.equal(String(getButtonByText(dom.document.body, 'Simulating').getAttribute?.('disabled')), 'true')
+			await act(async () => {
+				if (rejectChange === undefined) throw new Error('Expected pending change')
+				rejectChange(new Error('Unable to refresh mode'))
+				await new Promise((resolve) => setTimeout(resolve, 0))
+			})
+			assert.equal(dom.document.body.textContent?.includes('Unable to refresh mode'), true)
+			assert.equal(getButtonByText(dom.document.body, 'Simulating').getAttribute?.('disabled'), undefined)
+		} finally {
+			render(undefined, dom.document.body)
+			dom.restore()
+		}
+	})
+
+	for (const selection of ['other chain', 'metadata edit'] as const) test(`selects an RPC with the same URL and a different ${ selection }`, async () => {
+		const dom = installDomMock()
+		const nextRpc = { ...rpcNetwork, name: 'Requested network', chainId: selection === 'other chain' ? rpcNetwork.chainId + 1n : rpcNetwork.chainId }
+		const requests: RpcEntry[] = []
+		const params = createHomeParams({ rpcEntries: new Signal([rpcNetwork, nextRpc]), setActiveRpcAndInformAboutIt: async (entry) => { requests.push(entry) } })
+		try {
+			await act(() => { render(h(Home, params), dom.document.body) })
+			await act(async () => { await clickElement(getButtonByText(dom.document.body, 'Requested network')) })
+			assert.deepEqual(requests, [nextRpc])
+		} finally {
+			render(undefined, dom.document.body)
+			dom.restore()
+		}
+	})
+
+	test('shows wallet approval progress for RPC changes and keeps the old network on rejection', async () => {
+		const dom = installDomMock()
+		const nextRpc = { ...rpcNetwork, name: 'Other network', chainId: 2n, httpsRpc: 'https://other.example.test' }
+		let rejectChange: ((error: Error) => void) | undefined
+		const change = new Promise<void>((_resolve, reject) => { rejectChange = reject })
+		const params = createHomeParams({ simulationMode: new Signal(false), rpcEntries: new Signal([rpcNetwork, nextRpc]), setActiveRpcAndInformAboutIt: async () => { await change } })
+		try {
+			await act(() => { render(h(Home, params), dom.document.body) })
+			const liveStatus = collectElements(dom.document.body, 'span').find(element => element.getAttribute?.('class') === 'dropdown-status-text')
+			assert.ok(liveStatus !== undefined)
+			assert.equal(liveStatus.textContent, '')
+			await act(async () => { await clickElement(getButtonByText(dom.document.body, 'Other network')) })
+			const status = collectElements(dom.document.body, 'span').find(element => element.getAttribute?.('role') === 'status' && element.textContent === 'Waiting for wallet to switch network...')
+			assert.ok(status !== undefined)
+			assert.equal(status, liveStatus)
+			const selector = getButtonByText(dom.document.body, rpcNetwork.name)
+			assert.equal(String(selector.getAttribute?.('aria-busy')), 'true')
+			assert.equal(status.parentNode, selector.parentNode, 'Live text must be outside the busy button')
+			assert.equal(status.getAttribute?.('class'), 'dropdown-status-text')
+			assert.ok(collectElements(selector, 'span').some(element => element.getAttribute?.('title') === 'Waiting for wallet to switch network...'))
+			assert.equal(params.rpcNetwork.value?.httpsRpc, rpcNetwork.httpsRpc)
+			await act(async () => {
+				if (rejectChange === undefined) throw new Error('Expected pending change')
+				rejectChange(new Error('Wallet rejected network change'))
+				await new Promise((resolve) => setTimeout(resolve, 0))
+			})
+			assert.equal(dom.document.body.textContent?.includes('Wallet rejected network change'), true)
+			assert.equal(dom.document.body.textContent?.includes('Waiting for wallet to switch network...'), false)
+			assert.equal(params.rpcNetwork.value?.httpsRpc, rpcNetwork.httpsRpc)
+		} finally {
+			render(undefined, dom.document.body)
+			dom.restore()
+		}
+	})
+
+	test('shows progress for a rich toggle and reconciles persisted settings after a refresh failure', async () => {
+		const dom = installDomMock()
+		const previousInputElement = globalThis.HTMLInputElement
+		Object.defineProperty(globalThis, 'HTMLInputElement', { configurable: true, writable: true, value: globalThis.Element })
+		const browserMock = installBrowserMock()
+		let rejectChange: ((error: Error) => void) | undefined
+		const change = new Promise<void>((_resolve, reject) => { rejectChange = reject })
+		const params = createHomeParams({ setRichState: async (enabled, address) => {
+			assert.equal(enabled, true)
+			assert.equal(address, 'CurrentAddress')
+			await change
+		} })
+		try {
+			await act(() => { render(h(Home, params), dom.document.body) })
+			const checkbox = collectElements(dom.document.body, 'input').find((element) => element.getAttribute?.('type') === 'checkbox')
+			if (checkbox === undefined) throw new Error('Expected rich checkbox')
+			const handler = Object.entries(checkbox.l ?? {}).find(([key]) => key.toLowerCase().startsWith('input'))?.[1]
+			if (handler === undefined) throw new Error('Expected rich toggle handler')
+			Reflect.set(checkbox, 'checked', true)
+			await act(async () => { await handler({ target: checkbox }) })
+			assert.equal(params.makeCurrentAddressRich.value, true)
+			assert.equal(dom.document.body.textContent?.includes('Updating balances...'), true)
+			assert.equal(String(checkbox.getAttribute?.('disabled')), 'true')
+			await act(async () => {
+				if (rejectChange === undefined) throw new Error('Expected pending change')
+				rejectChange(new Error('Balances could not be refreshed'))
+				await new Promise((resolve) => setTimeout(resolve, 0))
+			})
+			assert.equal(dom.document.body.textContent?.includes('Balances could not be refreshed'), true)
+			assert.equal(dom.document.body.textContent?.includes('Updating balances...'), false)
+			assert.ok(getMessageWithMethod(browserMock.sentMessages, 'popup_requestNewHomeData'))
+		} finally {
+			render(undefined, dom.document.body)
+			globalThis.HTMLInputElement = previousInputElement
+			browserMock.restore()
+			dom.restore()
+		}
+	})
+
+	test('disables wallet, mode, RPC and rich controls during another settings change', async () => {
+		const dom = installDomMock()
+		const params = createHomeParams({ isSettingsChangePending: new Signal(true) })
+		try {
+			await act(() => { render(h(Home, params), dom.document.body) })
+			assert.equal(String(getButtonByText(dom.document.body, 'Signing').getAttribute?.('disabled')), 'true')
+			assert.equal(String(getButtonByText(dom.document.body, 'Change').getAttribute?.('disabled')), 'true')
+			for (const input of collectElements(dom.document.body, 'input').filter((element) => element.getAttribute?.('type') === 'checkbox')) {
+				assert.equal(String(input.getAttribute?.('disabled')), 'true')
+			}
+		} finally {
+			render(undefined, dom.document.body)
+			dom.restore()
+		}
+	})
+
+	for (const succeeds of [true, false]) {
+		test(`shows the address shimmer during a switch and restores the address after ${ succeeds ? 'success' : 'failure' }`, async () => {
+			const dom = installDomMock()
+			const params = createHomeParams()
+			const addressRow = () => collectElements(dom.document.body, 'div').find((element) => element.getAttribute?.('class')?.split(/\s+/).includes('active-address-row'))
+			try {
+				await act(() => { render(h(Home, params), dom.document.body) })
+				assert.equal(addressRow()?.getAttribute?.('aria-busy'), undefined)
+				await act(() => { params.isActiveAddressChanging.value = true })
+				assert.equal(addressRow()?.getAttribute?.('aria-label'), 'Switching active address')
+				assert.equal(String(addressRow()?.getAttribute?.('aria-busy')), 'true')
+				assert.equal(collectElements(addressRow(), 'button').every((button) => button.getAttribute?.('disabled') !== undefined), true)
+				await act(() => {
+					if (succeeds) {
+						params.activeAddresses.value = [{ ...activeAddressEntry, address: 2n, name: 'New wallet' }]
+						params.activeSimulationAddress.value = 2n
+					}
+					params.isActiveAddressChanging.value = false
+				})
+				assert.equal(addressRow()?.getAttribute?.('aria-busy'), undefined)
+				assert.equal(addressRow()?.textContent?.includes(succeeds ? 'New wallet' : activeAddressEntry.name ?? ''), true)
+			} finally {
+				render(undefined, dom.document.body)
+				dom.restore()
+			}
+		})
+	}
+
+	test('shows the committed wallet while keeping further selections disabled until the request finishes', async () => {
+		const dom = installDomMock()
+		const pending = new Signal(true)
+		try {
+			await act(() => { render(h(Home, createHomeParams({ isActiveAddressChangePending: pending })), dom.document.body) })
+			const addressRow = () => collectElements(dom.document.body, 'div').find((element) => element.getAttribute?.('class')?.split(/\s+/).includes('active-address-row'))
+			assert.equal(addressRow()?.getAttribute?.('aria-busy'), undefined)
+			assert.equal(addressRow()?.textContent?.includes(activeAddressEntry.name ?? ''), true)
+			const changeButton = () => collectElements(addressRow(), 'button').find((button) => button.textContent === 'Change')
+			assert.equal(String(changeButton()?.getAttribute?.('disabled')), 'true')
+			await act(() => { pending.value = false })
+			assert.equal(changeButton()?.getAttribute?.('disabled'), undefined)
+		} finally {
+			render(undefined, dom.document.body)
+			dom.restore()
+		}
+	})
+
 	test('shows a skeleton until initial simulation status is known', async () => {
 		const dom = installDomMock()
 		const simulationUpdatingState = new Signal<'done' | 'updating' | 'failed' | undefined>(undefined)
@@ -718,8 +901,8 @@ describe('Home popup clear empty state', () => {
 				render(h(Home, createHomeParams({ simVisResults })), dom.document.body)
 			})
 
-			const viewStackButton = getButtonByText(dom.document.body, 'View stack details')
-			assert.equal(viewStackButton.getAttribute?.('aria-label'), 'Open simulation stack details in a new tab')
+			const viewStackButton = getButtonByText(dom.document.body, 'View & operate stack')
+			assert.equal(viewStackButton.getAttribute?.('aria-label'), 'View and operate the transaction stack in a new tab')
 			assert.equal(collectElements(dom.document.body, 'button').some((button) => button.textContent?.replace(/\s+/g, ' ').trim() === 'Import'), false)
 			assert.equal(dom.document.body.textContent?.includes('Export Simulation Stack'), false)
 
@@ -755,7 +938,7 @@ describe('Home popup clear empty state', () => {
 						activeSigningAddress: ACTIVE_ADDRESS,
 					}),
 					activeSimulationAddress: new Signal<bigint | undefined>(undefined),
-					activeSigningAddress: new Signal<bigint | undefined>(ACTIVE_ADDRESS),
+					displayedSigningAddress: new Signal<bigint | undefined>(ACTIVE_ADDRESS),
 					useSignersAddressAsActiveAddress: new Signal(true),
 					simVisResults,
 					simulationMode: new Signal(false),
@@ -789,7 +972,7 @@ describe('Home popup clear empty state', () => {
 						activeSigningAddress: undefined,
 					}),
 					activeSimulationAddress: new Signal<bigint | undefined>(undefined),
-					activeSigningAddress: new Signal<bigint | undefined>(undefined),
+					displayedSigningAddress: new Signal<bigint | undefined>(undefined),
 					simulationMode: new Signal(false),
 					tabIconDetails: new Signal({ icon: ICON_SIGNING, iconReason: 'No signer wallet detected.' }),
 				})), dom.document.body)
@@ -825,7 +1008,8 @@ describe('Home popup clear empty state', () => {
 						activeSigningAddress: SAFE_SIGNER_ADDRESS,
 					}),
 					activeSimulationAddress: new Signal<bigint | undefined>(undefined),
-					activeSigningAddress: new Signal<bigint | undefined>(SAFE_SIGNER_ADDRESS),
+					activeSigningSafeAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
+					displayedSigningAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
 					useSignersAddressAsActiveAddress: new Signal(true),
 					simulationMode: new Signal(false),
 					tabIconDetails: new Signal({ icon: ICON_SIGNING, iconReason: 'Connected through MetaMask.' }),
@@ -881,7 +1065,8 @@ describe('Home popup clear empty state', () => {
 						activeSigningAddress: SAFE_SIGNER_ADDRESS,
 					}),
 					activeSimulationAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
-					activeSigningAddress: new Signal<bigint | undefined>(SAFE_SIGNER_ADDRESS),
+					activeSigningSafeAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
+					displayedSigningAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
 					simulationMode: new Signal(false),
 					tabIconDetails: new Signal({ icon: ICON_SIGNING, iconReason: 'Signing through MetaMask.' }),
 				})), dom.document.body)
@@ -940,7 +1125,8 @@ describe('Home popup clear empty state', () => {
 						activeSigningAddress: undefined,
 					}),
 					activeSimulationAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
-					activeSigningAddress: new Signal<bigint | undefined>(undefined),
+					activeSigningSafeAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
+					displayedSigningAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
 					simulationMode: new Signal(false),
 					tabIconDetails: new Signal({ icon: ICON_SIGNING, iconReason: 'Signing through MetaMask.' }),
 				})), dom.document.body)
@@ -1012,8 +1198,8 @@ test('changes the Safe simulation signer from the popup in simulation mode', asy
 						activeSigningAddress: SAFE_SIGNER_ADDRESS,
 					}),
 					activeSimulationAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
-					activeSigningAddress: new Signal<bigint | undefined>(SAFE_SIGNER_ADDRESS),
-				simulationMode: new Signal(true),
+					displayedSigningAddress: new Signal<bigint | undefined>(SAFE_SIGNER_ADDRESS),
+					simulationMode: new Signal(true),
 					tabIconDetails: new Signal({ icon: ICON_SIGNING, iconReason: 'Signing through MetaMask.' }),
 				})), dom.document.body)
 			})
@@ -1087,8 +1273,8 @@ test('rolls back only the simulation signer when optimistic persistence fails', 
 						activeSigningAddress: SAFE_SIGNER_ADDRESS,
 					}),
 					activeSimulationAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
-					activeSigningAddress: new Signal<bigint | undefined>(SAFE_SIGNER_ADDRESS),
-				simulationMode: new Signal(true),
+					displayedSigningAddress: new Signal<bigint | undefined>(SAFE_SIGNER_ADDRESS),
+					simulationMode: new Signal(true),
 					tabIconDetails: new Signal({ icon: ICON_SIGNING, iconReason: 'Signing through MetaMask.' }),
 				})), dom.document.body)
 			})
@@ -1166,8 +1352,8 @@ test('shows the selected Safe simulation signer and retrieves missing owner choi
 						activeSigningAddress: SAFE_SIGNER_ADDRESS,
 					}),
 					activeSimulationAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
-					activeSigningAddress: new Signal<bigint | undefined>(SAFE_SIGNER_ADDRESS),
-				simulationMode: new Signal(true),
+					displayedSigningAddress: new Signal<bigint | undefined>(SAFE_SIGNER_ADDRESS),
+					simulationMode: new Signal(true),
 					tabIconDetails: new Signal({ icon: ICON_SIGNING, iconReason: 'Signing through MetaMask.' }),
 				})), dom.document.body)
 			})
@@ -1327,7 +1513,7 @@ test('shows the selected Safe simulation signer and retrieves missing owner choi
 		}
 	})
 
-test('warns when the wallet-selected account is not among the known Safe owners', async () => {
+	test('presents the wallet account instead of a stale unowned Safe as the current signing account', async () => {
 		const dom = installDomMock()
 		try {
 			await act(() => {
@@ -1338,69 +1524,56 @@ test('warns when the wallet-selected account is not among the known Safe owners'
 						website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
 						signerConnected: true,
 						signerName: 'MetaMask',
-					signerAccounts: [0x6000000000000000000000000000000000000006n, SAFE_SIGNER_ADDRESS],
+						signerAccounts: [0x6000000000000000000000000000000000000006n, SAFE_SIGNER_ADDRESS],
 						signerAccountError: undefined,
 						signerChain: 1n,
 						tabIconDetails: { icon: ICON_SIGNING, iconReason: 'Signing through MetaMask.' },
-					activeSigningAddress: 0x6000000000000000000000000000000000000006n,
+						activeSigningAddress: 0x6000000000000000000000000000000000000006n,
 					}),
 					activeSimulationAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
-				activeSigningAddress: new Signal<bigint | undefined>(0x6000000000000000000000000000000000000006n),
+					activeSigningSafeAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
+					displayedSigningAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
 					simulationMode: new Signal(false),
 					tabIconDetails: new Signal({ icon: ICON_SIGNING, iconReason: 'Signing through MetaMask.' }),
 				})), dom.document.body)
 			})
 
 			const popupText = dom.document.body.textContent ?? ''
+			assert.equal(popupText.includes('0x6000000000000000000000000000000000000006'), true)
 			assert.equal(popupText.includes('Gnosis Safe signers'), false)
 			assert.equal(popupText.includes('CONNECTED'), true)
 			assert.equal(popupText.includes('NOT CONNECTED'), false)
-			assert.equal(popupText.includes('MetaMask has'), true)
-			assert.equal(popupText.includes('0x6000000000000000000000000000000000000006'), true)
-			assert.equal(popupText.includes('selected. You cannot sign the current Gnosis Safe with it.'), true)
-			const selectedSignerCard = collectElements(dom.document.body, 'span').find((element) =>
-				element.getAttribute?.('class') === 'inline-card' && element.getAttribute?.('title') === '0x6000000000000000000000000000000000000006'
-			)
-			if (selectedSignerCard === undefined) throw new Error('Missing unknown wallet-selected signer address card')
-			assert.equal(collectElements(selectedSignerCard, 'svg').length > 0, true)
-			assert.equal(collectElements(dom.document.body, 'img').some((element) =>
-				element.getAttribute?.('src') === '../img/warning-sign-black.svg'
-			), true)
-			const retrievalStatus = collectElements(dom.document.body, 'p').find((element) =>
-				element.getAttribute?.('class') === 'popup-home-retrieval-status'
-			)
-			if (retrievalStatus === undefined) throw new Error('Missing aligned wallet retrieval status')
-			assert.equal(collectElements(retrievalStatus, 'span').some((element) => element.getAttribute?.('class') === 'popup-home-retrieval-source'), true)
+			assert.equal(popupText.includes('MetaMask has'), false)
+			assert.equal(popupText.includes('selected. You cannot sign the current Gnosis Safe with it.'), false)
 		} finally {
 			render(null, dom.document.body)
 			dom.restore()
 		}
 	})
 
-	test('places the Gnosis Safe transaction copy action between stack details and clear', () => {
+	test('places stack operation and clear actions together without a Safe export action', () => {
 		const headerStart = homeSource.indexOf('function SimulationResultsHeader(')
 		const headerEnd = homeSource.indexOf('function PopupVisualisation(', headerStart)
 		const headerSource = homeSource.slice(headerStart, headerEnd)
 		const viewPosition = headerSource.indexOf('<OpenSimulationStackButtonContent')
-		const copyPosition = headerSource.indexOf('<CopySafeTransactionsButton')
 		const clearPosition = headerSource.indexOf('<AsyncActionButton')
 
 		assert.notEqual(viewPosition, -1)
-		assert.notEqual(copyPosition, -1)
 		assert.notEqual(clearPosition, -1)
-		assert.equal(viewPosition < copyPosition && copyPosition < clearPosition, true)
+		assert.equal(viewPosition < clearPosition, true)
+		assert.equal(headerSource.includes('CopySafeTransactionsButton'), false)
 	})
 
-	test('disables the Home Gnosis Safe export when the selected chain has no stored proposals', async () => {
+	test('does not expose Gnosis Safe export from the Home results header', async () => {
 		const dom = installDomMock()
 		const browserMock = installBrowserMock()
-		const hasSafeTransactionsToExport = new Signal(false)
 		try {
 			await act(async () => {
 				render(h(Home, createHomeParams({
 					activeAddresses: new Signal([safeEntry, safeSignerEntry]),
 					activeSimulationAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
-					activeSigningAddress: new Signal<bigint | undefined>(SAFE_SIGNER_ADDRESS),
+					activeSigningSafeAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
+					displayedSigningAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
 					simulationMode: new Signal(false),
 					tabState: new Signal<TabState | undefined>({
 						tabId: 1,
@@ -1414,22 +1587,57 @@ test('warns when the wallet-selected account is not among the known Safe owners'
 						activeSigningAddress: SAFE_SIGNER_ADDRESS,
 					}),
 					simVisResults: new Signal<ResolvedSimulationResults>(toResolvedSimulationResults(createSafeSimulationResults())),
-					hasSafeTransactionsToExport,
+					hasSafeTransactionsToExport: new Signal(true),
 				})), dom.document.body)
 				await new Promise((resolve) => setTimeout(resolve, 40))
 			})
 
-			const safeExportButton = getButtonByText(dom.document.body, 'Copy Gnosis Safe transactions')
-			assert.notEqual(safeExportButton.getAttribute?.('disabled'), null)
-			assert.equal(safeExportButton.getAttribute?.('title'), 'There are no Gnosis Safe proposals to export on the selected chain.')
+			assert.equal(dom.document.body.textContent?.includes('Copy Gnosis Safe transactions'), false)
+			assert.equal(dom.document.body.textContent?.includes('View & operate stack'), true)
+			assert.equal(dom.document.body.textContent?.includes('Clear'), true)
+			assert.equal(dom.document.body.textContent?.includes('Simulate delay'), false)
+			assert.equal(getButtonByText(dom.document.body, 'View & operate stack').parentNode, getButtonByText(dom.document.body, 'Clear').parentNode)
 			assert.equal(browserMock.sentMessages.some((message) => hasMethod(message, 'popup_requestSafeStackExport')), false)
-
-			await act(() => { hasSafeTransactionsToExport.value = true })
-			assert.equal(getButtonByText(dom.document.body, 'Copy Gnosis Safe transactions').getAttribute?.('disabled'), null)
+			assert.equal(browserMock.sentMessages.some((message) => hasMethod(message, 'popup_setTransactionOrMessageBlockTimeManipulator')), false)
 		} finally {
 			render(null, dom.document.body)
 			dom.restore()
 			browserMock.restore()
+		}
+	})
+
+	test('keeps the configured Safe stack visible when the current tab displays the wallet owner', async () => {
+		const dom = installDomMock()
+		try {
+			await act(async () => {
+				render(h(Home, createHomeParams({
+					activeAddresses: new Signal([safeEntry, safeSignerEntry]),
+					activeSigningSafeAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
+					displayedSigningAddress: new Signal<bigint | undefined>(SAFE_SIGNER_ADDRESS),
+					simulationMode: new Signal(false),
+					tabState: new Signal<TabState | undefined>({
+						tabId: 1,
+						website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
+						signerConnected: true,
+						signerName: 'MetaMask',
+						signerAccounts: [SAFE_SIGNER_ADDRESS],
+						signerAccountError: undefined,
+						signerChain: 1n,
+						tabIconDetails: { icon: ICON_SIGNING, iconReason: 'Signing through MetaMask.' },
+						activeSigningAddress: SAFE_SIGNER_ADDRESS,
+					}),
+					simVisResults: new Signal<ResolvedSimulationResults>(toResolvedSimulationResults(createSafeSimulationResults())),
+					hasSafeTransactionsToExport: new Signal(true),
+				})), dom.document.body)
+				await new Promise((resolve) => setTimeout(resolve, 40))
+			})
+
+			assert.equal(dom.document.body.textContent?.includes('Simulation Results'), true)
+			assert.equal(dom.document.body.textContent?.includes('View & operate stack'), true)
+			assert.equal(dom.document.body.textContent?.includes('Copy Gnosis Safe transactions'), false)
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
 		}
 	})
 })

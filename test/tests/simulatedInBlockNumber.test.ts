@@ -17,7 +17,7 @@ describe('SimulatedInBlockNumber', () => {
 		assert.equal(getSimulationFreshnessColor(124n, 123n, undefined), 'var(--positive-color)')
 		assert.equal(getSimulationFreshnessColor(124n, 124n, undefined), 'var(--positive-color)')
 		assert.equal(getSimulationFreshnessColor(124n, 125n, undefined), 'var(--warning-color)')
-		assert.equal(getSimulationFreshnessColor(124n, 126n, undefined), 'var(--negative-color)')
+		assert.equal(getSimulationFreshnessColor(124n, 126n, undefined), 'var(--danger-color)')
 	})
 
 	test('updates the rendered age when the simulation timestamp changes', async () => {

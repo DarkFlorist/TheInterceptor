@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
+import { getWalletSwitchRequestId, confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
 
 describe('background eth_accounts', () => {
 	test('awaits retry-state publishing before replying to a waking RPC request', async () => {
@@ -19,7 +19,7 @@ describe('background eth_accounts', () => {
 		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
-		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 }, { initialBlockPolling: false })
+		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 }, { initialBlockPolling: false })
 		const rpcNetwork = ethereum.getRpcEntry()
 		await setRpcConnectionStatus({
 			isConnected: false,
@@ -41,7 +41,7 @@ describe('background eth_accounts', () => {
 			method: 'eth_chainId',
 		}
 
-		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections, publishRpcConnectionStatus)
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, request, websiteTabConnections, publishRpcConnectionStatus)
 
 		assert.deepEqual(publishedRetryStates, [true])
 		assert.equal((await getRpcConnectionStatus())?.retrying, true)
@@ -65,7 +65,7 @@ describe('background eth_accounts', () => {
 		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
-		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 }, { initialBlockPolling: false })
+		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 }, { initialBlockPolling: false })
 		await setRpcConnectionStatus({
 			isConnected: false,
 			lastConnnectionAttempt: new Date('2024-01-01T00:00:00.000Z'),
@@ -85,7 +85,7 @@ describe('background eth_accounts', () => {
 			method: 'eth_requestAccounts',
 		}
 
-		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections, publishRpcConnectionStatus)
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, request, websiteTabConnections, publishRpcConnectionStatus)
 
 		assert.equal(publishCalls, 0)
 		const requestAccountsReplies = messages.filter((message) => message.method === 'eth_accounts' && message.requestId === 15)
@@ -125,7 +125,7 @@ describe('background eth_accounts', () => {
 		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
-		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 		const request = {
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,
@@ -133,7 +133,7 @@ describe('background eth_accounts', () => {
 			method: 'eth_accounts',
 		}
 
-		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
 
 		assert.equal(messages.filter((message) => message.method === 'request_signer_to_eth_accounts').length, 1)
 		assert.equal(messages.some((message) => message.method === 'request_signer_to_eth_requestAccounts'), false)
@@ -175,9 +175,9 @@ describe('background eth_accounts', () => {
 		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
-		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 
-		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,
 			uniqueRequestIdentifier: { requestId: 8, requestSocket: socket },
@@ -225,9 +225,9 @@ describe('background eth_accounts', () => {
 			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 			[childConnectionKey]: { port: childPort, socket: childSocket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
-		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 		const replyWithSignerAccounts = async (requestId: number, requestAccounts: boolean, accounts: readonly string[]) => {
-			await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+			await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 				interceptorRequest: true,
 				interceptorInternalRequest: true,
 				usingInterceptorWithoutSigner: false,
@@ -240,7 +240,7 @@ describe('background eth_accounts', () => {
 		const passiveRequest = refreshSignerAccountsFromApprovedWebsitePorts(websiteTabConnections, false)
 		await waitForPortMessageCount(messages, 'request_signer_to_eth_accounts', 1)
 
-		const interactiveRequest = handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+		const interactiveRequest = handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,
 			uniqueRequestIdentifier: { requestId: 71, requestSocket: socket },
@@ -257,7 +257,7 @@ describe('background eth_accounts', () => {
 		assert.equal(interactiveRequestsBeforePassiveReply, 0)
 		assert.equal(childMessages.some((message) => message.method === 'request_signer_to_eth_accounts' || message.method === 'request_signer_to_eth_requestAccounts'), false)
 		assert.deepEqual(messages.filter((message) => message.method === 'eth_accounts' && message.requestId === 71).at(-1)?.result, [accountString])
-		const signerStateToken = sendCallbackToConfirmedSignerOwner(websiteTabConnections, socket.tabId, { method: 'request_signer_to_wallet_switchEthereumChain', result: 2n })
+		const signerStateToken = sendCallbackToConfirmedSignerOwner(websiteTabConnections, socket.tabId, { method: 'request_signer_to_wallet_switchEthereumChain', result: 2n, walletSwitchRequestId: 'test-switch' })
 		assert.notEqual(signerStateToken, false)
 		if (signerStateToken === false) throw new Error('Expected a confirmed signer owner')
 		assert.equal(signerStateToken.port, port)
@@ -286,14 +286,14 @@ describe('background eth_accounts', () => {
 			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: false, wantsToConnect: false },
 			[websiteSocketToString(childSocket)]: { port: childPort, socket: childSocket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
-		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 		const account = '0x2424242424242424242424242424242424242424'
 		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: undefined, activeSigningAddress: undefined })
 		await setUseSignersAddressAsActiveAddress(false)
 
 		const refresh = refreshSignerAccountsFromApprovedWebsitePorts(websiteTabConnections, false)
 		await waitForPortMessageCount(messages, 'request_signer_to_eth_accounts', 1)
-		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 			interceptorRequest: true,
 			interceptorInternalRequest: true,
 			usingInterceptorWithoutSigner: false,
@@ -305,11 +305,11 @@ describe('background eth_accounts', () => {
 
 		assert.deepEqual((await getTabState(socket.tabId)).signerAccounts, [0x2424242424242424242424242424242424242424n])
 		assert.equal(childMessages.some((message) => message.method === 'request_signer_to_eth_accounts'), false)
-		const signerStateToken = sendCallbackToConfirmedSignerOwner(websiteTabConnections, socket.tabId, { method: 'request_signer_to_wallet_switchEthereumChain', result: 2n })
+		const signerStateToken = sendCallbackToConfirmedSignerOwner(websiteTabConnections, socket.tabId, { method: 'request_signer_to_wallet_switchEthereumChain', result: 2n, walletSwitchRequestId: 'test-switch' })
 		assert.notEqual(signerStateToken, false)
 		assert.equal(messages.filter((message) => message.method === 'request_signer_to_wallet_switchEthereumChain').length, 1)
 		assert.equal(childMessages.some((message) => message.method === 'request_signer_to_wallet_switchEthereumChain'), false)
-		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 			interceptorRequest: true,
 			interceptorInternalRequest: true,
 			usingInterceptorWithoutSigner: false,
@@ -338,7 +338,7 @@ describe('background eth_accounts', () => {
 			connectionName: expectedSocket.connectionName,
 			ownerGeneration: 1,
 			signerProviderGeneration: 1,
-		}, { method: 'request_signer_to_wallet_switchEthereumChain', result: 2n })
+		}, { method: 'request_signer_to_wallet_switchEthereumChain', result: 2n, walletSwitchRequestId: 'test-switch' })
 
 		assert.equal(result, false)
 		assert.equal(currentSignerMessages.length, 0)
@@ -397,8 +397,8 @@ describe('background eth_accounts', () => {
 			rpcNetwork: requestedRpcNetwork,
 			simulationMode: false,
 		})
-		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
-		const resolution = resolveChainChange(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
+		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		const resolution = resolveChainChange(simulationServicesOwner, websiteTabConnections, {
 			method: 'popup_changeChainDialog',
 			data: { rpcNetwork: requestedRpcNetwork, uniqueRequestIdentifier, accept: true },
 		})
@@ -469,8 +469,8 @@ describe('background eth_accounts', () => {
 			rpcNetwork: requestedRpcNetwork,
 			simulationMode: false,
 		})
-		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
-		const resolution = resolveChainChange(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
+		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		const resolution = resolveChainChange(simulationServicesOwner, websiteTabConnections, {
 			method: 'popup_changeChainDialog',
 			data: { rpcNetwork: requestedRpcNetwork, uniqueRequestIdentifier, accept: true },
 		})
@@ -478,13 +478,13 @@ describe('background eth_accounts', () => {
 		await new Promise((resolve) => setTimeout(resolve, 0))
 
 		await removeWebsiteTabConnection(websiteTabConnections, approvingSocket, approvingPort)
-		await handleInterceptedRequest(ownerPort, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, ownerSocket, {
+		await handleInterceptedRequest(ownerPort, websiteOrigin, website, simulationServicesOwner, ownerSocket, {
 			interceptorRequest: true,
 			interceptorInternalRequest: true,
 			usingInterceptorWithoutSigner: false,
 			uniqueRequestIdentifier: { requestId: 96, requestSocket: ownerSocket },
 			method: 'wallet_switchEthereumChain_reply',
-			params: [{ accept: true, chainId: '0xaa36a7', signerProviderGeneration: 1 }],
+			params: [{ accept: true, chainId: '0xaa36a7', signerProviderGeneration: 1, walletSwitchRequestId: getWalletSwitchRequestId(ownerMessages) }],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 		await Promise.race([
 			resolution,
@@ -495,7 +495,7 @@ describe('background eth_accounts', () => {
 		assert.equal(reply?.result, null)
 	})
 
-	test('does not let another tab chain reply settle the pending dapp switch', async () => {
+	test('rejects a conflicting popup switch and ignores another tab reply while a dapp switch is pending', async () => {
 		installBrowserMock()
 		const {
 			changeSimulationMode,
@@ -564,9 +564,9 @@ describe('background eth_accounts', () => {
 			rpcNetwork: requestedRpcNetwork,
 			simulationMode: false,
 		})
-		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 		let requestSettled = false
-		const resolution = resolveChainChange(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
+		const resolution = resolveChainChange(simulationServicesOwner, websiteTabConnections, {
 			method: 'popup_changeChainDialog',
 			data: { rpcNetwork: requestedRpcNetwork, uniqueRequestIdentifier, accept: true },
 		}).then(() => { requestSettled = true })
@@ -574,29 +574,30 @@ describe('background eth_accounts', () => {
 		await new Promise((resolve) => setTimeout(resolve, 0))
 
 		await saveCurrentTabId(popupSocket.tabId)
-		await popupChangeActiveRpc(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
+		const popupReply = await popupChangeActiveRpc(simulationServicesOwner, websiteTabConnections, {
 			method: 'popup_changeActiveRpc',
 			data: popupRpcNetwork,
-		}, await getSettings())
-		await waitForPortMessageCount(popupMessages, 'request_signer_to_wallet_switchEthereumChain', 1)
-		await handleInterceptedRequest(popupPort, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, popupSocket, {
+		})
+		assert.deepEqual(popupReply, { type: 'PopupSettingsChangeReply', ok: false, message: 'A network switch is already waiting for your wallet.' })
+		assert.equal(popupMessages.some((message) => message.method === 'request_signer_to_wallet_switchEthereumChain'), false)
+		await handleInterceptedRequest(popupPort, websiteOrigin, website, simulationServicesOwner, popupSocket, {
 			interceptorRequest: true,
 			interceptorInternalRequest: true,
 			usingInterceptorWithoutSigner: false,
 			uniqueRequestIdentifier: { requestId: 98, requestSocket: popupSocket },
 			method: 'wallet_switchEthereumChain_reply',
-			params: [{ accept: false, chainId: '0x4268', error: { code: 4001, message: 'Popup tab rejected' }, signerProviderGeneration: 1 }],
+			params: [{ accept: false, chainId: '0x4268', error: { code: 4001, message: 'Popup tab rejected' }, walletSwitchRequestId: getWalletSwitchRequestId(requestMessages), signerProviderGeneration: 1 }],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 		await new Promise((resolve) => setTimeout(resolve, 0))
 		assert.equal(requestSettled, false)
 
-		await handleInterceptedRequest(requestPort, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, requestSocket, {
+		await handleInterceptedRequest(requestPort, websiteOrigin, website, simulationServicesOwner, requestSocket, {
 			interceptorRequest: true,
 			interceptorInternalRequest: true,
 			usingInterceptorWithoutSigner: false,
 			uniqueRequestIdentifier: { requestId: 99, requestSocket },
 			method: 'wallet_switchEthereumChain_reply',
-			params: [{ accept: false, chainId: '0xaa36a7', error: { code: 4001, message: 'Dapp tab rejected' }, signerProviderGeneration: 1 }],
+			params: [{ accept: false, chainId: '0xaa36a7', error: { code: 4001, message: 'Dapp tab rejected' }, walletSwitchRequestId: getWalletSwitchRequestId(requestMessages), signerProviderGeneration: 1 }],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 		await resolution
 
@@ -666,11 +667,9 @@ describe('background eth_accounts', () => {
 			params: [{ chainId: secondRpcNetwork.chainId }],
 		}
 		await changeSimulationMode({ simulationMode: false, rpcNetwork: currentRpcNetwork, activeSimulationAddress: undefined, activeSigningAddress: undefined })
-		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 		const firstResolution = openChangeChainDialog(
-			ethereum,
-			tokenPriceService,
-			resetSimulationServices,
+			simulationServicesOwner,
 			websiteTabConnections,
 			firstRequest,
 			false,
@@ -684,7 +683,7 @@ describe('background eth_accounts', () => {
 			pendingChainChange = await getChainChangeConfirmationPromise()
 		}
 		if (pendingChainChange === undefined) throw new Error('Missing production chain-change dialog state')
-		await resolveChainChange(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
+		await resolveChainChange(simulationServicesOwner, websiteTabConnections, {
 			method: 'popup_changeChainDialog',
 			data: { rpcNetwork: requestedRpcNetwork, uniqueRequestIdentifier: firstUniqueRequestIdentifier, accept: true },
 		})
@@ -696,9 +695,7 @@ describe('background eth_accounts', () => {
 
 		const secondResolution = await Promise.race([
 			openChangeChainDialog(
-				ethereum,
-				tokenPriceService,
-				resetSimulationServices,
+				simulationServicesOwner,
 				websiteTabConnections,
 				secondRequest,
 				false,
@@ -711,13 +708,13 @@ describe('background eth_accounts', () => {
 
 		releaseDeferredChainChangeRemoval()
 		await waitForPortMessageCount(messages, 'request_signer_to_wallet_switchEthereumChain', 1)
-		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 			interceptorRequest: true,
 			interceptorInternalRequest: true,
 			usingInterceptorWithoutSigner: false,
 			uniqueRequestIdentifier: { requestId: 102, requestSocket: socket },
 			method: 'wallet_switchEthereumChain_reply',
-			params: [{ accept: false, chainId: '0xaa36a7', error: { code: 4001, message: 'First signer rejected' }, signerProviderGeneration: 1 }],
+			params: [{ accept: false, chainId: '0xaa36a7', error: { code: 4001, message: 'First signer rejected' }, walletSwitchRequestId: getWalletSwitchRequestId(messages), signerProviderGeneration: 1 }],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 		const firstResult = await Promise.race([
 			firstResolution,
@@ -749,7 +746,7 @@ describe('background eth_accounts', () => {
 		const stateAtDappReply: Array<bigint | undefined> = []
 		const { port: createdPort, messages } = createPort(socket.tabId, (message) => {
 			if (message.method === 'request_signer_to_eth_requestAccounts') {
-				void handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+				void handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 					interceptorRequest: true,
 					interceptorInternalRequest: true,
 					usingInterceptorWithoutSigner: false,
@@ -772,7 +769,7 @@ describe('background eth_accounts', () => {
 			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 			[siblingConnectionKey]: { port: siblingPort, socket: siblingSocket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
-		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 		const request = {
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,
@@ -780,7 +777,7 @@ describe('background eth_accounts', () => {
 			method: 'eth_requestAccounts',
 		}
 
-		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
 
 		assert.equal(messages.filter((message) => message.method === 'request_signer_to_eth_requestAccounts').length, 1)
 		await new Promise((resolve) => setTimeout(resolve, 0))
@@ -832,7 +829,7 @@ describe('background eth_accounts', () => {
 		const siblingSocket = { tabId: 1, connectionName: 1n }
 		const { port: createdPort, messages } = createPort(socket.tabId, (message) => {
 			if (message.method !== 'request_signer_to_eth_requestAccounts') return
-			void handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+			void handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 				interceptorRequest: true,
 				interceptorInternalRequest: true,
 				usingInterceptorWithoutSigner: false,
@@ -849,7 +846,7 @@ describe('background eth_accounts', () => {
 			[connectionKey]: { port, socket, websiteOrigin, approved: false, wantsToConnect: true },
 			[siblingConnectionKey]: { port: siblingPort, socket: siblingSocket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
-		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 		const request = {
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,
@@ -857,7 +854,7 @@ describe('background eth_accounts', () => {
 			method: 'eth_requestAccounts',
 		}
 
-		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
 
 		assert.equal(messages.some((message) => message.method === 'connect'), false)
 		assert.deepEqual(messages.filter((message) => message.method === 'accountsChanged').map((message) => message.requestId), [17])
@@ -889,7 +886,7 @@ describe('background eth_accounts', () => {
 			const socket = { tabId: 1, connectionName: 0n }
 			const { port: createdPort, messages } = createPort(socket.tabId, (message) => {
 				if (message.method !== 'request_signer_to_eth_requestAccounts') return
-				void handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+				void handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 					interceptorRequest: true,
 					interceptorInternalRequest: true,
 					usingInterceptorWithoutSigner: false,
@@ -904,7 +901,7 @@ describe('background eth_accounts', () => {
 				[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 			} }]])
 			await updateDeclarativeNetRequestBlocks(websiteTabConnections)
-			const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+			const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 			const request = {
 				interceptorRequest: true,
 				usingInterceptorWithoutSigner: false,
@@ -913,7 +910,7 @@ describe('background eth_accounts', () => {
 				params: [{ eth_accounts: {} }],
 			}
 
-			await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
+			await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
 
 			const permissionResult = [{
 				parentCapability: 'eth_accounts',

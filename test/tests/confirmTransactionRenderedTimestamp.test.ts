@@ -3,9 +3,11 @@ import { encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { describe, test } from 'bun:test'
-import { installDateMock, installDomMock } from './domMock.js'
-import { createSafeTx } from '../../app/ts/safe/safeCore.js'
+import { clickRenderedElement, findRenderedElement, installDateMock, installDomMock } from './domMock.js'
+import { createSafeTx, getSafeTxSigningHashes } from '../../app/ts/safe/safeCore.js'
 import { getSafeTxHash } from '../../app/ts/utils/eip712.js'
+import { bytes32String } from '../../app/ts/utils/bigint.js'
+import { getNativeTokenErc20 } from '../../app/ts/background/metadataUtils.js'
 
 type RuntimeMessageListener = (message: unknown) => unknown
 const hexToBytes = (hex: string) => Uint8Array.from(Buffer.from(hex.slice(2), 'hex'))
@@ -169,6 +171,113 @@ function makePendingTransaction(simulationConductedTimestamp: Date, value?: bigi
 	return pendingTransaction
 }
 
+const SAFE_SIGNING_REQUEST_CARD_TITLE = 'Gnosis Safe signing request (EIP-712)'
+
+function makeSafeProposal<T extends ReturnType<typeof makePendingTransaction> | ReturnType<typeof makeSimulatedPendingTransaction>>(pending: T) {
+	const transaction = pending.originalRequestParameters.params[0]
+	const safeTx = createSafeTx(1n, pending.activeAddress, {
+		to: transaction.to,
+		value: transaction.value ?? 0n,
+		input: transaction.input,
+	}, 3n)
+	return {
+		...pending,
+		safeTransaction: {
+			safeAddress: pending.activeAddress,
+			safeSignerAddress: transaction.to,
+			safeVersion: '1.4.1' as const,
+			threshold: 1n,
+			reviewedSafeState: { version: '1.4.1' as const, nonce: 3n, owners: [transaction.to], threshold: 1n },
+			safeTxHash: BigInt(getSafeTxHash(safeTx)),
+			safeTx,
+			executionGasLimit: 21_000n,
+		},
+	}
+}
+
+function makeSimulatedPendingTransaction(value: bigint) {
+	const failed = makePendingTransaction(new Date('2024-01-01T00:00:05.000Z'), value)
+	const requested = failed.originalRequestParameters.params[0]
+	const rpcNetwork = { name: 'Ethereum Mainnet', chainId: 1n, httpsRpc: 'https://rpc.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
+	const safeEntry = { type: 'contact' as const, name: 'Test Safe', address: failed.activeAddress, entrySource: 'User' as const, chainId: 1n }
+	const recipientEntry = { type: 'contact' as const, name: 'Recipient', address: requested.to, entrySource: 'User' as const, chainId: 1n }
+	const transaction = {
+		type: '1559' as const,
+		from: requested.from,
+		nonce: 0n,
+		maxFeePerGas: requested.maxFeePerGas,
+		maxPriorityFeePerGas: requested.maxPriorityFeePerGas,
+		gas: requested.gas,
+		to: requested.to,
+		value,
+		input: requested.input,
+		chainId: 1n,
+		accessList: [],
+	}
+	const transactionToSimulate = {
+		website: failed.website,
+		created: failed.created,
+		originalRequestParameters: failed.originalRequestParameters,
+		transactionIdentifier: failed.transactionIdentifier,
+		success: true as const,
+		transaction,
+	}
+	const simulatedTransaction = {
+		website: failed.website,
+		created: failed.created,
+		parsedInputData: { type: 'NonParsed' as const, input: requested.input },
+		transactionIdentifier: failed.transactionIdentifier,
+		originalRequestParameters: failed.originalRequestParameters,
+		tokenBalancesAfter: [],
+		tokenPriceEstimates: [],
+		tokenPriceQuoteToken: undefined,
+		gasSpent: 21_000n,
+		realizedGasPrice: 1n,
+		quarantine: false,
+		quarantineReasons: [],
+		transactionStatus: 'Transaction Succeeded' as const,
+		transaction: { ...transaction, from: safeEntry, to: recipientEntry, rpcNetwork, hash: 1n },
+		events: [],
+	}
+	return {
+		...failed,
+		transactionOrMessageCreationStatus: 'Simulated' as const,
+		transactionToSimulate,
+		popupVisualisation: {
+			statusCode: 'success' as const,
+			data: {
+				activeAddress: failed.activeAddress,
+				simulationMode: true,
+				simulationStartedTimestamp: failed.created,
+				uniqueRequestIdentifier: failed.uniqueRequestIdentifier,
+				transactionToSimulate,
+				signerName: 'NoSignerDetected' as const,
+				addressBookEntries: [safeEntry, recipientEntry, getNativeTokenErc20(rpcNetwork)],
+				tokenPriceEstimates: [],
+				namedTokenIds: [],
+				simulationState: {
+					success: true as const,
+					simulationStateInput: [],
+					simulatedBlocks: [],
+					blockNumber: 123n,
+					blockTimestamp: failed.created,
+					baseFeePerGas: 0n,
+					simulationConductedTimestamp: new Date('2024-01-01T00:00:05.000Z'),
+					rpcNetwork,
+				},
+				visualizedSimulationState: {
+					success: true as const,
+					visualizedBlocks: [{
+						simulatedAndVisualizedTransactions: [simulatedTransaction],
+						visualizedPersonalSignRequests: [],
+						blockTimeManipulation: { type: 'AddToTimestamp' as const, deltaToAdd: 0n, deltaUnit: 'Seconds' as const },
+					}],
+				},
+			},
+		},
+	}
+}
+
 const { UpdateConfirmTransactionDialogPendingTransactions } = await import('../../app/ts/types/interceptor-messages.js')
 const { serialize } = await import('../../app/ts/types/wire-types.js')
 const { ConfirmTransaction } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
@@ -220,6 +329,103 @@ describe('ConfirmTransaction', () => {
 			safeExecutionOriginalRequestParameters: proposal.originalRequestParameters,
 		})
 		assert.equal(dom.document.body.textContent?.includes('wrapped as Gnosis Safe transaction nonce 3'), false)
+
+		await unmountConfirmTransaction(dom)
+		dom.restore()
+	})
+
+	test('shows the EIP-712 signing request for a Safe proposal so it can be compared with a hardware signer', async () => {
+		const dom = installDomMock()
+		const browser = createBrowserMock()
+		const pending = makePendingTransaction(new Date('2024-01-01T00:00:05.000Z'), 1_250_000_000_000_000_000n)
+		const proposal = makeSafeProposal(pending)
+		const safeTx = proposal.safeTransaction.safeTx
+		const findSigningRequestCardHeader = () => findRenderedElement(dom.document.body, (node) => node.tagName === 'HEADER' && node.textContent?.includes(SAFE_SIGNING_REQUEST_CARD_TITLE) === true)
+
+		await act(() => {
+			render(h(ConfirmTransaction, {}), dom.document.body)
+		})
+		const dispatchPending = async (pendingTransaction: typeof proposal) => await act(() => {
+			browser.dispatch({
+				role: 'all',
+				...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
+					method: 'popup_update_confirm_transaction_dialog_pending_transactions',
+					data: {
+						pendingTransactionAndSignableMessages: [pendingTransaction],
+						currentBlockNumber: 123n,
+						rpcConnectionStatus: undefined,
+					},
+				}),
+			})
+		})
+
+		await dispatchPending(proposal)
+		const cardHeader = findSigningRequestCardHeader()
+		assert.notEqual(cardHeader, undefined, 'expected the Safe signing request card for a proposal')
+		if (cardHeader === undefined) throw new Error('unreachable')
+		const { domainHash, messageHash } = getSafeTxSigningHashes(safeTx)
+		assert.equal(dom.document.body.textContent?.includes(domainHash), false, 'the hashes are collapsed until the card is opened')
+
+		await act(async () => { await clickRenderedElement(cardHeader) })
+		const renderedText = dom.document.body.textContent ?? ''
+		assert.equal(renderedText.includes('Domain Hash'), true)
+		assert.equal(renderedText.includes(domainHash), true)
+		assert.equal(renderedText.includes('Message Hash'), true)
+		assert.equal(renderedText.includes(messageHash), true)
+		assert.equal(renderedText.includes('Gnosis Safe Transaction Hash'), true)
+		assert.equal(renderedText.includes(bytes32String(proposal.safeTransaction.safeTxHash)), true)
+		assert.equal(renderedText.includes('Nonce: 3'), true)
+		assert.equal(renderedText.includes('Operation: 0'), true)
+		// The failed-simulation view has no network, so the value has no token symbol; the raw attoeth value is what a hardware signer shows.
+		assert.equal(renderedText.includes('Value: 1.25 (native token)'), true)
+		assert.equal(renderedText.includes('Value (attoeth)1250000000000000000'), true)
+
+		await dispatchPending({
+			...proposal,
+			safeExecutionOriginalRequestParameters: proposal.originalRequestParameters,
+		})
+		assert.equal(findSigningRequestCardHeader(), undefined, 'direct Safe executions are signed as normal transactions and have no EIP-712 request')
+
+		await unmountConfirmTransaction(dom)
+		dom.restore()
+	})
+
+	test('shows the EIP-712 signing request with the simulated network for a successfully simulated Safe proposal', async () => {
+		const dom = installDomMock()
+		const browser = createBrowserMock()
+		const proposal = makeSafeProposal(makeSimulatedPendingTransaction(1_250_000_000_000_000_000n))
+		const { domainHash, messageHash } = getSafeTxSigningHashes(proposal.safeTransaction.safeTx)
+
+		await act(() => {
+			render(h(ConfirmTransaction, {}), dom.document.body)
+		})
+		await act(() => {
+			browser.dispatch({
+				role: 'all',
+				...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
+					method: 'popup_update_confirm_transaction_dialog_pending_transactions',
+					data: {
+						pendingTransactionAndSignableMessages: [proposal],
+						currentBlockNumber: 123n,
+						rpcConnectionStatus: undefined,
+					},
+				}),
+			})
+		})
+		const cardHeader = findRenderedElement(dom.document.body, (node) => node.tagName === 'HEADER' && node.textContent?.includes(SAFE_SIGNING_REQUEST_CARD_TITLE) === true)
+		assert.notEqual(cardHeader, undefined, 'expected the Safe signing request card below the simulated transaction')
+		if (cardHeader === undefined) throw new Error('unreachable')
+		await act(async () => { await clickRenderedElement(cardHeader) })
+
+		const renderedText = dom.document.body.textContent ?? ''
+		assert.equal(renderedText.includes(domainHash), true)
+		assert.equal(renderedText.includes(messageHash), true)
+		assert.equal(renderedText.includes(bytes32String(proposal.safeTransaction.safeTxHash)), true)
+		assert.equal(renderedText.includes('Chain: Ethereum Mainnet (1)'), true)
+		assert.equal(renderedText.includes('Value: 1.25ETH'), true, renderedText)
+		assert.equal(renderedText.includes('Value (attoeth)1250000000000000000'), true)
+		assert.equal(renderedText.includes('Gnosis Safe: Test Safe'), true, 'address-book entries from the simulation name the Safe')
+		assert.equal(renderedText.includes('To: Recipient'), true)
 
 		await unmountConfirmTransaction(dom)
 		dom.restore()

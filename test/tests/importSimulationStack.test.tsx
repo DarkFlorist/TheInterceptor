@@ -289,17 +289,28 @@ describe('import simulation stack', () => {
 		assert.equal('safeTransactionStacks' in storageState, false)
 	})
 
-	test('refuses generic simulation export when synchronized Safe proposals are present', async () => {
+	test('excludes synchronized Safe proposals from simulation-mode export', async () => {
 		const modules = await modulesPromise
 		resetEnvironment()
 		const safeExport = createSafeSimulationExportPayload()
 		storageState.interceptorTransactionStack = InterceptorTransactionStack.serialize(safeExport.interceptorSimulateStack)
+		storageState.simulationMode = true
+		let exportedSimulationInput: unknown
+		const ethereum = {
+			async getBlockNumber() { return 1n },
+			async ethSimulateV1Input(simulationInput: unknown) {
+				exportedSimulationInput = simulationInput
+				return { method: 'eth_simulateV1' as const, params: [{ blockStateCalls: [], traceTransfers: true, validation: true }, 'latest' as const] }
+			},
+		}
 
-		const reply = await modules.requestInterceptorSimulationInput({} as never)
+		const reply = await modules.requestInterceptorSimulationInput(ethereum as never)
 
-		assert.equal(reply.ok, false)
-		if (reply.ok) throw new Error('Expected Safe-aware export refusal')
-		assert.match(reply.message, /Use Copy Gnosis Safe transactions/u)
+		assert.equal(reply.ok, true)
+		if (!reply.ok) throw new Error(reply.message)
+		const exported = InterceptorSimulationExport.parse(JSON.parse(reply.ethSimulateV1InputString))
+		assert.deepEqual(exported.interceptorSimulateStack.operations, [])
+		assert.deepEqual(exportedSimulationInput, [])
 	})
 
 	test('preserves EIP-7702 authorization signatures when importing an exported stack', async () => {

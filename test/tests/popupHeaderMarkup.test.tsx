@@ -4,7 +4,7 @@ import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { describe, test } from 'bun:test'
 import { SignatureHeader } from '../../app/ts/components/pages/PersonalSign.js'
-import { CheckBoxes, ConfirmationActionButtons } from '../../app/ts/components/pages/ConfirmTransaction.js'
+import { CheckBoxes, ConfirmationActionButtons, shouldDisableConfirmForApprovalStatus } from '../../app/ts/components/pages/ConfirmTransaction.js'
 import { TransactionHeader } from '../../app/ts/components/simulationExplaining/SimulationSummary.js'
 import { PendingStackHeader } from '../../app/ts/components/simulationExplaining/Transactions.js'
 import { identifyTransaction } from '../../app/ts/components/simulationExplaining/identifyTransaction.js'
@@ -163,6 +163,12 @@ function assertClasses(node: TestNode | undefined, expectedClasses: string[]) {
 }
 
 describe('popup header markup', () => {
+	test('allows user-triggered retries after signer errors while blocking duplicate pending requests', () => {
+		assert.equal(shouldDisableConfirmForApprovalStatus({ status: 'WaitingForUser' }), false)
+		assert.equal(shouldDisableConfirmForApprovalStatus({ status: 'WaitingForSigner' }), true)
+		assert.equal(shouldDisableConfirmForApprovalStatus({ status: 'SignerError', code: -32603, message: 'Signer request failed.' }), false)
+	})
+
 	test('TransactionHeader renders the fallback title inside the ellipsis target and composes the flush website class', async () => {
 		const dom = installDomMock()
 
@@ -206,11 +212,17 @@ describe('popup header markup', () => {
 				approve: () => undefined,
 				approveButtonState: 'inactive',
 				confirmDisabled: false,
+				addToSafeStack: () => undefined,
+				addToSafeStackButtonState: 'inactive',
+				addToSafeStackDisabled: false,
 			}), dom.document.body)
 		})
 
 		assert.equal(dom.document.body.textContent?.includes(`Reject ${ abiFunctionName }`), true)
-		assert.equal(dom.document.body.textContent?.includes(`Sign ${ abiFunctionName }`), true)
+		assert.equal(dom.document.body.textContent?.includes('Sign & add'), true)
+		assert.equal(dom.document.body.textContent?.includes('Add unsigned'), true)
+		assert.notEqual(findFirstByClass(dom.document.body, 'confirmation-action-buttons-container'), undefined)
+		assert.notEqual(findFirstByClass(dom.document.body, 'confirmation-action-buttons--safe'), undefined)
 
 		await act(() => {
 			render(h(ConfirmationActionButtons, {
@@ -227,6 +239,7 @@ describe('popup header markup', () => {
 		})
 
 		assert.equal(dom.document.body.textContent?.includes(`Simulate ${ abiFunctionName }!`), true)
+		assert.equal(findFirstByClass(dom.document.body, 'confirmation-action-buttons--safe'), undefined)
 
 		await act(() => {
 			render(h(ConfirmationActionButtons, {

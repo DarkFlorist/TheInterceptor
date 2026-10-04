@@ -4,6 +4,9 @@ import { test } from 'bun:test'
 const backgroundSource = await Bun.file(new URL('../../app/ts/background/background.ts', import.meta.url)).text()
 const confirmTransactionSource = await Bun.file(new URL('../../app/ts/background/windows/confirmTransaction.ts', import.meta.url)).text()
 const popupMessageHandlersSource = await Bun.file(new URL('../../app/ts/background/popupMessageHandlers.ts', import.meta.url)).text()
+const activeSettingsSource = await Bun.file(new URL('../../app/ts/background/activeSettings.ts', import.meta.url)).text()
+const simulationUpdatingSource = await Bun.file(new URL('../../app/ts/background/simulationUpdating.ts', import.meta.url)).text()
+const safeTransactionConfirmationSource = await Bun.file(new URL('../../app/ts/background/safeTransactionConfirmation.ts', import.meta.url)).text()
 const confirmTransactionComponentSource = await Bun.file(new URL('../../app/ts/components/pages/ConfirmTransaction.tsx', import.meta.url)).text()
 const safeSourceDirectory = new URL('../../app/ts/safe/', import.meta.url).pathname
 const safeSourceFiles: string[] = []
@@ -31,11 +34,81 @@ test('popup message handlers delegate Gnosis Safe stack import and export', () =
 	assert.doesNotMatch(popupMessageHandlersSource, /function validateSafeTransactionStackForCurrentContract/u)
 })
 
+test('Safe transaction confirmation owns stored stack reconciliation', () => {
+	assert.match(safeTransactionConfirmationSource, /from '\.\/safeStackState\.js'/u)
+	assert.match(safeTransactionConfirmationSource, /reconcileStoredSafeState\(/u)
+})
+
 test('the Gnosis Safe domain layer does not import background orchestration', () => {
 	for (const safeSource of safeSources) assert.doesNotMatch(safeSource, /from '\.\.\/background\//u)
+})
+
+test('general simulation orchestration gets active stack policy from the shared utility layer', () => {
+	assert.match(activeSettingsSource, /from '\.\.\/utils\/activeStackContext\.js'/u)
+	assert.match(simulationUpdatingSource, /from '\.\.\/utils\/activeStackContext\.js'/u)
+	assert.match(activeSettingsSource, /!activeStackContextsEqual\(getActiveStackContext\(previousSettings\), getActiveStackContext\(updatedSettings\)\)/u)
+	assert.doesNotMatch(activeSettingsSource, /from '\.\.\/safe\/safeStack\.js'/u)
+	assert.doesNotMatch(activeSettingsSource, /previousSettings\.activeSigningSafeAddress !== updatedSettings\.activeSigningSafeAddress/u)
+	assert.doesNotMatch(simulationUpdatingSource, /from '\.\.\/safe\/safeStack\.js'/u)
+	assert.doesNotMatch(simulationUpdatingSource, /if \(!settings\.simulationMode\) break/u)
 })
 
 test('the confirmation presentation imports shared Safe flow policy from the domain layer', () => {
 	assert.match(confirmTransactionComponentSource, /from '\.\.\/\.\.\/safe\/safePendingFlow\.js'/u)
 	assert.doesNotMatch(confirmTransactionComponentSource, /from '\.\.\/\.\.\/background\/safePendingFlow\.js'/u)
+})
+
+
+test('shared dispatch and confirmation APIs depend on operation models, not frontend admission types', async () => {
+	const simulationHandlers = await Bun.file(new URL('../../app/ts/background/simulationModeHandlers.ts', import.meta.url)).text()
+	for (const source of [backgroundSource, simulationHandlers, confirmTransactionSource, safeTransactionConfirmationSource]) {
+		assert.doesNotMatch(source, /SafeReviewInput|safeReview[?:,]/u)
+	}
+	assert.match(simulationHandlers, /confirmation: TransactionConfirmationRequest/u)
+	assert.match(simulationHandlers, /confirmation: MessageConfirmationRequest/u)
+})
+
+test('signer ownership and Safe Apps eligibility use the same top-frame predicate', async () => {
+	const provider = await Bun.file(new URL('../../app/ts/background/providerMessageHandlers.ts', import.meta.url)).text()
+	const safeApps = await Bun.file(new URL('../../app/ts/background/safeAppsCompatibilityCoordinator.ts', import.meta.url)).text()
+	const startup = await Bun.file(new URL('../../app/ts/background/background-startup.ts', import.meta.url)).text()
+	for (const source of [provider, safeApps, startup]) {
+		assert.match(source, /isTopFramePort/u)
+		assert.doesNotMatch(source, /frameId ===/u)
+	}
+})
+
+
+test('dialog and RPC delegate simulation share state-override construction', async () => {
+	const safeSimulation = await Bun.file(new URL('../../app/ts/safe/safeSimulation.ts', import.meta.url)).text()
+	assert.match(simulationUpdatingSource, /return prepareSafeDelegateStateOverrides\(/u)
+	assert.match(safeSimulation, /stateOverrides: prepareSafeDelegateStateOverrides\(/u)
+	assert.doesNotMatch(simulationUpdatingSource, /code: getGnosisSafeProxyProxy\(\)/u)
+})
+
+test('the content-script router delegates Safe Apps admission and error mapping to its feature handler', async () => {
+	const handler = await Bun.file(new URL('../../app/ts/background/safeAppsRequestHandler.ts', import.meta.url)).text()
+	assert.match(backgroundSource, /await prepareSafeAppsRequest\(/u)
+	assert.doesNotMatch(backgroundSource, /getSafeAppsCompatibilityMode|isSafeAppsConnectionEligible|getSafeAppsExecution|getSafeAppsRequestCommand|isSafeAppsRequestPolicyError/u)
+	assert.match(handler, /isSafeAppsConnectionEligible\(/u)
+	assert.match(handler, /isSafeAppsRequestPolicyError\(/u)
+	assert.doesNotMatch(handler, /handleRPCRequest|openConfirmTransactionDialogFor/u)
+})
+
+test('Safe Apps request policy receives gateway operations through injected services', async () => {
+	const policy = await Bun.file(new URL('../../app/ts/background/safeAppsRequestPolicy.ts', import.meta.url)).text()
+	assert.doesNotMatch(policy, /from '\.\/safeApps(?:Balances|Transactions|Gateway)\.js'|\bfetch\(/u)
+	assert.match(policy, /services\.getBalances\(/u)
+	assert.match(policy, /services\.getTransaction\(/u)
+	assert.match(policy, /services\.messages\./u)
+})
+
+test('Safe message approval encoding and review matching have domain owners', async () => {
+	const policy = await Bun.file(new URL('../../app/ts/background/safeAppsRequestPolicy.ts', import.meta.url)).text()
+	const details = await Bun.file(new URL('../../app/ts/components/pages/SafeProposalDetails.tsx', import.meta.url)).text()
+	const delegates = await Bun.file(new URL('../../app/ts/safe/safeDelegateCalls.ts', import.meta.url)).text()
+	assert.match(policy, /buildSafeMessageApproval\(/u)
+	for (const source of [safeTransactionConfirmationSource, details]) assert.match(source, /matchesSafeMessageApproval\(/u)
+	assert.match(delegates, /decodeSafeMessageApproval\(/u)
+	for (const source of [policy, safeTransactionConfirmationSource, details]) assert.doesNotMatch(source, /SAFE_SIGN_MESSAGE_ABI|getSafeMessageDigest/u)
 })

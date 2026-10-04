@@ -176,8 +176,8 @@ export const getWebsiteOriginForDisplay = (websiteOrigin: string): string => {
 	}
 }
 
-export const silenceChromeUnCaughtPromise = async <ReturnValue>(maybeAwaitedFunction: Promise<ReturnValue>) => {
-	maybeAwaitedFunction.catch(() => undefined)
+export const silenceChromeUnCaughtPromise = <ReturnValue>(maybeAwaitedFunction: Promise<ReturnValue>) => {
+	void maybeAwaitedFunction.catch(() => undefined)
 	return maybeAwaitedFunction
 }
 

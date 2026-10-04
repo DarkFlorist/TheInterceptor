@@ -1,7 +1,8 @@
+import { getRpcEntryIdentityKey } from '../utils/rpcNetworkChange.js'
 import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
 import type { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, StoredWatchAssetRequest, TabState } from '../types/user-interface-types.js'
-import { type PartialIdsOfOpenedTabs, browserStorageLocalGet, browserStorageLocalGet2, browserStorageLocalRemove, browserStorageLocalSet, browserStorageLocalSet2, getTabStateFromStorage, parseTabStateItems, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
+import { type PartialIdsOfOpenedTabs, browserStorageLocalGet, browserStorageLocalGet2Result, browserStorageLocalRemove, browserStorageLocalSet, browserStorageLocalSet2, getTabStateFromStorage, parseTabStateItems, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
 import { CompleteVisualizedSimulation, type EthereumSubscriptionsAndFilters, InterceptorTransactionStack, createPassthroughCompleteVisualizedSimulation } from '../types/visualizer-types.js'
 import { browserStorageLocalSafeParseGet } from '../utils/storageUtils.js'
 import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_RPCS } from '../config/defaults.js'
@@ -20,6 +21,7 @@ import type { InterceptorErrorDiagnostic } from '../types/errorDiagnostics.js'
 import { SafeTransactionStacks } from '../types/safeTypes.js'
 import { createStoredValueRepository } from '../utils/storedValue.js'
 import { isValidErc20Decimals } from '../utils/erc20.js'
+import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
 
 const reportCorruptStoredValue = (label: string) => async (error: unknown) => {
 	console.warn(`${ label } was corrupt:`)
@@ -36,21 +38,31 @@ export const getIdsOfOpenedTabs = idsOfOpenedTabsRepository.get
 export const setIdsOfOpenedTabs = async (ids: PartialIdsOfOpenedTabs) => { await idsOfOpenedTabsRepository.update((previous) => ({ ...previous, ...ids })) }
 
 const pendingTransactionsSemaphore = new Semaphore(1)
+async function readPendingTransactionsAndMessages() {
+	const result = await browserStorageLocalGet2Result('pendingTransactionsAndMessages')
+	if (!result.success) return result
+	return { success: true as const, value: result.value.pendingTransactionsAndMessages ?? [] }
+}
+
+async function readPendingTransactionsAndMessagesWithRecovery(): Promise<readonly PendingTransactionOrSignableMessage[]> {
+	const result = await readPendingTransactionsAndMessages()
+	if (result.success) return result.value
+	console.warn('Pending transactions were corrupt:')
+	console.warn(result.error)
+	await browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	return []
+}
+
 export async function getPendingTransactionsAndMessages(): Promise<readonly PendingTransactionOrSignableMessage[]> {
-	try {
-		return (await browserStorageLocalGet2('pendingTransactionsAndMessages'))?.pendingTransactionsAndMessages ?? []
-	} catch(e) {
-		console.warn('Pending transactions were corrupt:')
-		console.warn(e)
-		await pendingTransactionsSemaphore.execute(async () => await browserStorageLocalSet2({ pendingTransactionsAndMessages: [] }))
-		return []
-	}
+	const result = await readPendingTransactionsAndMessages()
+	if (result.success) return result.value
+	return await pendingTransactionsSemaphore.execute(readPendingTransactionsAndMessagesWithRecovery)
 }
 
 export const clearPendingTransactions = async () => await updatePendingTransactionOrMessages(async () => [])
 async function updatePendingTransactionOrMessages(update: (pendingTransactionsOrMessages: readonly PendingTransactionOrSignableMessage[]) => Promise<readonly PendingTransactionOrSignableMessage[]>) {
 	return await pendingTransactionsSemaphore.execute(async () => {
-		const pendingTransactionsAndMessages = await update(await getPendingTransactionsAndMessages())
+		const pendingTransactionsAndMessages = await update(await readPendingTransactionsAndMessagesWithRecovery())
 		await browserStorageLocalSet2({ pendingTransactionsAndMessages })
 	})
 }
@@ -109,17 +121,11 @@ const popupRefreshGenerationRepository = createStoredValueRepository({
 export const getPopupRefreshGeneration = popupRefreshGenerationRepository.get
 export const setPopupRefreshGeneration = popupRefreshGenerationRepository.set
 
+// Large-state getters share getLargeStateValue's failure contract: defaults apply only to successful absent/invalid reads. Rejections abort updates and reach the owning request/task boundary (e.g. catchAllErrorsAndCall in background-startup.ts), which reports the error; recovery is a later retry, never an empty-state write.
 const simulationResultsSemaphore = new Semaphore(1)
 export async function getPopupVisualisationState() {
 	const emptyResults = createPassthroughCompleteVisualizedSimulation()
-	try {
-		return await getLargeStateValue('popupVisualisation', CompleteVisualizedSimulation) ?? emptyResults
-	} catch (error) {
-		console.warn('Simulation results were corrupt:')
-		console.warn(error)
-		await setLargeStateValue('popupVisualisation', CompleteVisualizedSimulation, emptyResults)
-		return emptyResults
-	}
+	return await getLargeStateValue('popupVisualisation', CompleteVisualizedSimulation) ?? emptyResults
 }
 
 export const setPopupVisualisationState = async (newResults: CompleteVisualizedSimulation) => await updatePopupVisualisationWithCallBack(async () => newResults)
@@ -226,9 +232,11 @@ export const setInterceptorStartSleepingTimestamp = async(interceptorStartSleepi
 export const getInterceptorStartSleepingTimestamp = async () => (await browserStorageLocalGet('interceptorStartSleepingTimestamp'))?.interceptorStartSleepingTimestamp ?? 0
 
 export const promoteRpcAsPrimary = async (rpcNetwork: RpcNetwork) => {
-	if (rpcNetwork.primary) return
-	const rpcs = await getRpcList()
-	await setRpcList(rpcs.map((rpc) => rpc.chainId === rpcNetwork.chainId ? modifyObject(rpc, { primary: rpc.httpsRpc === rpcNetwork.httpsRpc }) : rpc))
+	await rpcListRepository.update((rpcs) => {
+		const selectedIndex = rpcs.findIndex((rpc) => getRpcEntryIdentityKey(rpc) === getRpcEntryIdentityKey(rpcNetwork))
+		if (selectedIndex === -1) return rpcs
+		return rpcs.map((rpc, index) => rpc.chainId === rpcNetwork.chainId ? modifyObject(rpc, { primary: index === selectedIndex }) : rpc)
+	})
 }
 
 export const getPrimaryRpcForChain = async (chainId: bigint) => {
@@ -288,18 +296,6 @@ export async function getUserAddressBookEntries(): Promise<AddressBookEntries> {
 	return DEFAULT_ACTIVE_ADDRESSES
 }
 export const getUserAddressBookEntriesForChainId = async (chainId: ChainIdWithUniversal) => (await getUserAddressBookEntries()).filter((entry) => entry.chainId === chainId || (entry.chainId === undefined && chainId === 1n) || entry.chainId === 'AllChains')
-export function getAddressBookEntriesForChainIdMorePreciseFirst(addressBookEntries: AddressBookEntries, chainId: ChainIdWithUniversal) {
-	const entries = addressBookEntries.filter((entry) => entry.chainId === chainId || (entry.chainId === undefined && chainId === 1n) || entry.chainId === 'AllChains')
-	// sort more precise entries first (one with accurate chain id)
-	entries.sort((x, y) => {
-		if (x.entrySource === 'OnChain' && y.entrySource !== 'OnChain') return 1
-		if (x.entrySource !== 'OnChain' && y.entrySource === 'OnChain') return -1
-		if (typeof x.chainId === 'bigint' && typeof y.chainId !== 'bigint') return -1
-		if (typeof x.chainId !== 'bigint' && typeof y.chainId === 'bigint') return 1
-		return 0
-	})
-	return entries
-}
 export const getUserAddressBookEntriesForChainIdMorePreciseFirst = async (chainId: ChainIdWithUniversal) => getAddressBookEntriesForChainIdMorePreciseFirst(await getUserAddressBookEntries(), chainId)
 
 const userAddressBookEntriesSemaphore = new Semaphore(1)

@@ -2,6 +2,7 @@ import * as assert from 'assert'
 import { test } from 'bun:test'
 import { activeAddress, createSafeStackFixture, createSafeStackTransactionFixture, createSafeTx, EIP712Message, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, modules, pendingTransaction, recipientAddress, resetFakeSafeContractState, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, signedTransaction, simulator, } from './confirmTransactionTestHarness.js'
 import { ensureHex } from '../../app/ts/utils/ethereumBytes.js'
+import { SafeStackExport } from '../../app/ts/types/safeTypes.js'
 
 test('extension Safe stack import merges owner signatures into proposal and optimistic metadata', async () => {
 	const ownerAccount = safeTestOwnerAccount
@@ -20,6 +21,7 @@ test('extension Safe stack import merges owner signatures into proposal and opti
 			preSimulationTransaction: {
 				...pendingTransaction.transactionToSimulate,
 				signedTransaction,
+				simulationOptions: { requiredChainId: fakeRpcNetwork.chainId, simulateWithZeroBaseFee: true },
 				safeTransaction: localTransaction,
 			},
 		}],
@@ -50,11 +52,135 @@ test('extension Safe stack import merges owner signatures into proposal and opti
 	if (optimisticOperation?.type !== 'Transaction') throw new Error('Missing imported optimistic Safe transaction')
 	assert.equal(optimisticOperation.preSimulationTransaction.safeTransaction?.signatures[0]?.signer, ownerAddress)
 	assert.equal(optimisticOperation.preSimulationTransaction.safeTransaction?.signatures[0]?.signature, signature)
-	const exportReply = await modules.requestSafeStackExport(simulator.ethereum, simulator.tokenPriceService)
+	const exportReply = await modules.requestSafeStackExport(simulator.ethereum)
 	assert.equal(exportReply.ok, true)
 	if (!exportReply.ok) throw new Error(exportReply.message)
 	assert.equal(exportReply.safeStackJson.includes(`\"signature\": \"${ signature }\"`), true)
 	assert.equal(exportReply.safeStackJson.includes(`\"signature\": \"${ nonCanonicalSignature }\"`), false)
+})
+
+test('extension Safe stack export and import roundtrip leaves the local stack unchanged', async () => {
+	fakeSafeContract.owners = [safeTestOwnerAddress]
+	const unsignedLocalTransaction = createSafeStackTransactionFixture()
+	const signature = await safeTestOwnerAccount.signTypedData(EIP712Message.parse(safeTxToTypedDataJson(unsignedLocalTransaction.safeTx)))
+	const localTransaction = {
+		...unsignedLocalTransaction,
+		signatures: [{ signer: safeTestOwnerAddress, signature }],
+	}
+	await modules.updateSafeTransactionStacks(() => [createSafeStackFixture([localTransaction])])
+	await modules.updateInterceptorTransactionStack(() => ({
+		operations: [{
+			type: 'Transaction',
+			preSimulationTransaction: {
+				...pendingTransaction.transactionToSimulate,
+				signedTransaction,
+				simulationOptions: { requiredChainId: fakeRpcNetwork.chainId, simulateWithZeroBaseFee: true },
+				safeTransaction: localTransaction,
+			},
+		}],
+	}))
+
+	const exportReply = await modules.requestSafeStackExport(simulator.ethereum)
+	assert.equal(exportReply.ok, true)
+	if (!exportReply.ok) throw new Error(exportReply.message)
+	const safeStacksBeforeImport = await modules.getSafeTransactionStacks()
+	const simulationStackBeforeImport = await modules.getInterceptorTransactionStack()
+	const exportedStack = SafeStackExport.parse(JSON.parse(exportReply.safeStackJson))
+
+	const importReply = await modules.importSafeStack(simulator.ethereum, simulator.tokenPriceService, { data: exportedStack })
+
+	assert.deepEqual(importReply, { type: 'ImportSafeStackReply', ok: true })
+	assert.deepEqual(await modules.getSafeTransactionStacks(), safeStacksBeforeImport)
+	assert.deepEqual(await modules.getInterceptorTransactionStack(), simulationStackBeforeImport)
+})
+
+test('extension Safe stack import recovers a missing Safe index from locally created stack operations', async () => {
+	const localTransaction = createSafeStackTransactionFixture()
+	await modules.updateSafeTransactionStacks(() => [createSafeStackFixture([localTransaction])])
+	await modules.updateInterceptorTransactionStack(() => ({
+		operations: [{
+			type: 'Transaction',
+			preSimulationTransaction: {
+				...pendingTransaction.transactionToSimulate,
+				signedTransaction,
+				simulationOptions: { requiredChainId: fakeRpcNetwork.chainId, simulateWithZeroBaseFee: true },
+				safeTransaction: localTransaction,
+			},
+		}],
+	}))
+
+	const exportReply = await modules.requestSafeStackExport(simulator.ethereum)
+	assert.equal(exportReply.ok, true)
+	if (!exportReply.ok) throw new Error(exportReply.message)
+	const exportedStack = SafeStackExport.parse(JSON.parse(exportReply.safeStackJson))
+	const secondSafeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
+		to: recipientAddress,
+		value: 1n,
+		input: new Uint8Array(),
+	}, 1n)
+	const secondTransaction = {
+		...localTransaction,
+		safeTx: secondSafeTx,
+		safeTxHash: BigInt(getSafeTxHash(secondSafeTx)),
+		transactionIdentifier: 74n,
+		websiteOrigin: 'https://later-proposal.example',
+	}
+	await modules.updateInterceptorTransactionStack((stack) => ({
+		operations: [...stack.operations, {
+			type: 'Transaction',
+			preSimulationTransaction: {
+				...pendingTransaction.transactionToSimulate,
+				transactionIdentifier: secondTransaction.transactionIdentifier,
+				signedTransaction,
+				simulationOptions: { requiredChainId: fakeRpcNetwork.chainId, simulateWithZeroBaseFee: true },
+				safeTransaction: secondTransaction,
+			},
+		}],
+	}))
+	await modules.updateSafeTransactionStacks(() => [])
+
+	const importReply = await modules.importSafeStack(simulator.ethereum, simulator.tokenPriceService, { data: exportedStack })
+
+	assert.deepEqual(importReply, { type: 'ImportSafeStackReply', ok: true })
+	assert.deepEqual((await modules.getSafeTransactionStacks())[0]?.transactions, [localTransaction, secondTransaction])
+})
+
+test('extension Safe stack import does not recover its index from a different local proposal', async () => {
+	const exportedTransaction = createSafeStackTransactionFixture()
+	await modules.updateSafeTransactionStacks(() => [createSafeStackFixture([exportedTransaction])])
+	const exportReply = await modules.requestSafeStackExport(simulator.ethereum)
+	assert.equal(exportReply.ok, true)
+	if (!exportReply.ok) throw new Error(exportReply.message)
+	const exportedStack = SafeStackExport.parse(JSON.parse(exportReply.safeStackJson))
+	const differentSafeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
+		to: recipientAddress,
+		value: 1n,
+		input: new Uint8Array(),
+	}, 0n)
+	const differentLocalTransaction = {
+		...exportedTransaction,
+		safeTx: differentSafeTx,
+		safeTxHash: BigInt(getSafeTxHash(differentSafeTx)),
+	}
+	await modules.updateSafeTransactionStacks(() => [])
+	await modules.updateInterceptorTransactionStack(() => ({
+		operations: [{
+			type: 'Transaction',
+			preSimulationTransaction: {
+				...pendingTransaction.transactionToSimulate,
+				signedTransaction,
+				simulationOptions: { requiredChainId: fakeRpcNetwork.chainId, simulateWithZeroBaseFee: true },
+				safeTransaction: differentLocalTransaction,
+			},
+		}],
+	}))
+
+	const importReply = await modules.importSafeStack(simulator.ethereum, simulator.tokenPriceService, { data: exportedStack })
+
+	assert.equal(importReply.ok, false)
+	if (importReply.ok) throw new Error('Expected mismatched local proposal failure')
+	assert.match(importReply.message, /does not match a locally created Interceptor Gnosis Safe stack/u)
+	assert.deepEqual(await modules.getSafeTransactionStacks(), [])
 })
 
 test('Safe stack import preserves a proposal appended while live validation is pending', async () => {
@@ -221,13 +347,13 @@ test('extension Safe stack import reconciles executed transactions and rejects a
 	}]))
 	assert.equal(delegateCallReply.ok, false)
 	if (delegateCallReply.ok) throw new Error('Expected delegatecall Safe stack failure')
-	assert.match(delegateCallReply.message, /CALL operations only/u)
+	assert.match(delegateCallReply.message, /DELEGATECALL is supported only/u)
 })
 
 test('extension Safe stack export rejects an empty selected-chain stack', async () => {
 	await modules.updateSafeTransactionStacks(() => [])
 
-	const emptyReply = await modules.requestSafeStackExport(simulator.ethereum, simulator.tokenPriceService)
+	const emptyReply = await modules.requestSafeStackExport(simulator.ethereum)
 
 	assert.equal(emptyReply.ok, false)
 	if (emptyReply.ok) throw new Error('Expected empty Safe export failure')
@@ -241,13 +367,13 @@ test('extension Safe stack export rejects an empty selected-chain stack', async 
 		threshold: 2n,
 		transactions: [],
 	}])
-	const emptyRecordReply = await modules.requestSafeStackExport(simulator.ethereum, simulator.tokenPriceService)
+	const emptyRecordReply = await modules.requestSafeStackExport(simulator.ethereum)
 	assert.equal(emptyRecordReply.ok, false)
 	if (emptyRecordReply.ok) throw new Error('Expected empty Safe record export failure')
 	assert.match(emptyRecordReply.message, /no Gnosis Safe proposals to export/u)
 })
 
-test('extension Safe stack export revalidates current Safe state before returning JSON', async () => {
+test('extension Safe stack export preserves and includes already executed transactions', async () => {
 	const ownerAccount = safeTestOwnerAccount
 	const ownerAddress = safeTestOwnerAddress
 	fakeSafeContract.owners = [ownerAddress]
@@ -260,7 +386,7 @@ test('extension Safe stack export revalidates current Safe state before returnin
 	}
 	await modules.updateSafeTransactionStacks(() => [createSafeStackFixture([signedStackTransaction])])
 
-	const validReply = await modules.requestSafeStackExport(simulator.ethereum, simulator.tokenPriceService)
+	const validReply = await modules.requestSafeStackExport(simulator.ethereum)
 	assert.equal(validReply.ok, true)
 	if (!validReply.ok) throw new Error('Expected valid Safe export')
 	assert.equal(JSON.parse(validReply.safeStackJson).stacks.length, 1)
@@ -282,10 +408,10 @@ test('extension Safe stack export revalidates current Safe state before returnin
 			signatures: [{ signer: ownerAddress, signature: secondSignature }],
 		}],
 	})))
-	const [stackBeforeReconciliation] = await modules.getSafeTransactionStacks()
-	if (stackBeforeReconciliation === undefined) throw new Error('Missing Safe stack before export reconciliation')
+	const [stackBeforeExport] = await modules.getSafeTransactionStacks()
+	if (stackBeforeExport === undefined) throw new Error('Missing Safe stack before export')
 	await modules.updateInterceptorTransactionStack(() => ({
-		operations: stackBeforeReconciliation.transactions.map((safeTransaction) => ({
+		operations: stackBeforeExport.transactions.map((safeTransaction) => ({
 			type: 'Transaction' as const,
 			preSimulationTransaction: {
 				...pendingTransaction.transactionToSimulate,
@@ -295,44 +421,22 @@ test('extension Safe stack export revalidates current Safe state before returnin
 			},
 		})),
 	}))
-	fakeSafeContract.nonce = 1n
-	const reconciledReply = await modules.requestSafeStackExport(simulator.ethereum, simulator.tokenPriceService)
-	assert.equal(reconciledReply.ok, true)
-	if (!reconciledReply.ok) throw new Error('Expected reconciled Safe export')
-	const reconciledExport = JSON.parse(reconciledReply.safeStackJson)
-	assert.equal(reconciledExport.stacks[0]?.baseNonce, '0x1')
-	assert.equal(reconciledExport.stacks[0]?.transactions.length, 1)
-	assert.equal(reconciledExport.stacks[0]?.transactions[0]?.safeTx.message.nonce, '1')
-	const [storedReconciledStack] = await modules.getSafeTransactionStacks()
-	assert.equal(storedReconciledStack?.baseNonce, 1n)
-	assert.deepEqual(storedReconciledStack?.transactions.map(({ transactionIdentifier }) => transactionIdentifier), [74n])
-	const reconciledOperations = (await modules.getInterceptorTransactionStack()).operations
-	assert.deepEqual(reconciledOperations.map((operation) => operation.type === 'Transaction' ? operation.preSimulationTransaction.transactionIdentifier : undefined), [74n])
-
-	fakeSafeContract.nonce = 0n
-	await modules.updateSafeTransactionStacks(() => [createSafeStackFixture([signedStackTransaction])])
-	fakeSafeContract.ownerCode = '0x6000'
-	const contractOwnerReply = await modules.requestSafeStackExport(simulator.ethereum, simulator.tokenPriceService)
-	assert.equal(contractOwnerReply.ok, false)
-	if (contractOwnerReply.ok) throw new Error('Expected contract-owner Safe export failure')
-	assert.match(contractOwnerReply.message, /supports EOA owners only/u)
-
-	fakeSafeContract.ownerCode = '0x'
-	const delegateCallSafeTx = {
-		...safeTx,
-		message: { ...safeTx.message, operation: 1n },
+	const transactionStateBeforeExport = {
+		safeTransactionStacks: await modules.getSafeTransactionStacks(),
+		interceptorTransactionStack: await modules.getInterceptorTransactionStack(),
 	}
-	await modules.updateSafeTransactionStacks((stacks) => stacks.map((stack) => ({
-		...stack,
-		transactions: stack.transactions.map((transaction) => ({
-			...transaction,
-			safeTx: delegateCallSafeTx,
-			safeTxHash: BigInt(getSafeTxHash(delegateCallSafeTx)),
-			signatures: [],
-		})),
-	})))
-	const delegateCallReply = await modules.requestSafeStackExport(simulator.ethereum, simulator.tokenPriceService)
-	assert.equal(delegateCallReply.ok, false)
-	if (delegateCallReply.ok) throw new Error('Expected delegatecall Safe export failure')
-	assert.match(delegateCallReply.message, /CALL operations only/u)
+	fakeSafeContract.nonce = 1n
+	let liveSafeStateQueried = false
+	fakeSafeContract.beforeVersionResponse = async () => { liveSafeStateQueried = true }
+	const exportReply = await modules.requestSafeStackExport(simulator.ethereum)
+	fakeSafeContract.beforeVersionResponse = undefined
+	assert.equal(exportReply.ok, true)
+	if (!exportReply.ok) throw new Error('Expected read-only Safe export')
+	assert.equal(liveSafeStateQueried, false)
+	const exportedStack = JSON.parse(exportReply.safeStackJson).stacks[0]
+	assert.equal(exportedStack?.baseNonce, '0x0')
+	assert.equal(exportedStack?.transactions.length, 2)
+	assert.deepEqual(exportedStack?.transactions.map((transaction: { safeTx: { message: { nonce: string } } }) => transaction.safeTx.message.nonce), ['0', '1'])
+	assert.deepEqual(await modules.getSafeTransactionStacks(), transactionStateBeforeExport.safeTransactionStacks)
+	assert.deepEqual(await modules.getInterceptorTransactionStack(), transactionStateBeforeExport.interceptorTransactionStack)
 })

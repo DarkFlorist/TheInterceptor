@@ -2,12 +2,12 @@ import { Signal, useComputed, useSignal, useSignalEffect } from '@preact/signals
 import type { JSX } from 'preact'
 import { requestPopupInterceptorSimulationInput, sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import type { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
-import { getSafeSigningEntry, type AddressBookEntries, type AddressBookEntry } from '../../types/addressBookTypes.js'
+import type { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
 import type { EditEnsNamedHashWindowState, ModifyAddressWindowState, SimulationAndVisualisationResults } from '../../types/visualizer-types.js'
 import { addressEditEntry } from '../ui-utils.js'
 import { ErrorBoundary, ErrorComponent, UnexpectedError } from '../subcomponents/Error.js'
 import { CenterToPageTextSpinner } from '../subcomponents/Spinner.js'
-import { BroomIcon, ChevronIcon, CopyIcon, ExportIcon, ImportIcon } from '../subcomponents/icons.js'
+import { BroomIcon, ChevronIcon, ExportIcon, ImportIcon } from '../subcomponents/icons.js'
 import { clipboardCopy } from '../subcomponents/clipboardcopy.js'
 import { DinoSays } from '../subcomponents/DinoSays.js'
 import { TransactionsAndSignedMessages } from '../simulationExplaining/Transactions.js'
@@ -29,6 +29,7 @@ import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 import { CopySafeTransactionsButton } from '../subcomponents/CopySafeTransactionsButton.js'
 import { Tooltip } from '../subcomponents/Tooltip.js'
 import { useCopyFeedback } from '../hooks/useCopyFeedback.js'
+import { useModeActiveAddress } from '../hooks/useModeActiveAddress.js'
 
 type ModalState =
 	{ page: 'modifyAddress', state: Signal<ModifyAddressWindowState> } |
@@ -44,19 +45,21 @@ function isEmptySimulation(simulationAndVisualisationResults: SimulationAndVisua
 function getMadeRichAddressBookEntries(
 	richList: readonly EnrichedRichListElement[],
 	makeCurrentAddressRich: boolean,
-	activeSimulationAddress: bigint | undefined,
+	activeAddress: bigint | undefined,
 	activeAddresses: AddressBookEntries,
+	activeChainId: bigint | undefined,
 ) {
 	const entries = richList.filter((element) => element.makingRich).map((element) => element.addressBookEntry)
-	if (!makeCurrentAddressRich || activeSimulationAddress === undefined || entries.some((entry) => entry.address === activeSimulationAddress)) return entries
-	return [...entries, getActiveAddressEntry(activeSimulationAddress, activeAddresses)]
+	if (!makeCurrentAddressRich || activeAddress === undefined || entries.some((entry) => entry.address === activeAddress)) return entries
+	return [...entries, getActiveAddressEntry(activeAddress, activeAddresses, activeChainId)]
 }
 
-function SimulationStackToolbar({ openImportSimulation, openImportSafe, resetSimulation, disableReset, showSafeSigningActions, hasSafeTransactionsToExport }: {
+function SimulationStackToolbar({ openImportSimulation, openImportSafe, resetSimulation, disableReset, simulationMode, showSafeSigningActions, hasSafeTransactionsToExport }: {
 	openImportSimulation: () => void
 	openImportSafe: () => void
 	resetSimulation: () => Promise<void>
 	disableReset: Signal<boolean>
+	simulationMode: boolean
 	showSafeSigningActions: boolean
 	hasSafeTransactionsToExport: boolean
 }) {
@@ -67,7 +70,7 @@ function SimulationStackToolbar({ openImportSimulation, openImportSafe, resetSim
 	const { coolingDown: simulationExportCoolingDown, tooltip: simulationExportTooltip, showCopied: showSimulationExportCopied } = useCopyFeedback()
 	const exportError = latestExportType.value === 'safe'
 		? showSafeSigningActions ? safeCopyError.value : undefined
-		: latestExportType.value === 'simulation' && exportSimulationStackState.value.state === 'rejected'
+		: latestExportType.value === 'simulation' && simulationMode && exportSimulationStackState.value.state === 'rejected'
 			? exportSimulationStackState.value.error.message
 			: undefined
 
@@ -88,74 +91,51 @@ function SimulationStackToolbar({ openImportSimulation, openImportSafe, resetSim
 	const clearStack = () => {
 		void waitForClearSimulationStack(resetSimulation)
 	}
+	const stackName = showSafeSigningActions ? 'Gnosis Safe stack' : 'simulation stack'
 
 	return <header class = 'simulation-stack-page-header'>
 		<div class = 'simulation-stack-page-heading'>
 			<div class = 'simulation-stack-page-title'>
-				<h1>Simulation Stack</h1>
-				<p>Import, export, and adjust the simulation stack.</p>
+				<h1>{ showSafeSigningActions ? 'Gnosis Safe Stack' : 'Simulation Stack' }</h1>
+				<p>{ showSafeSigningActions ? 'Import, export, and review Gnosis Safe proposals.' : 'Import, export, and adjust the simulation stack.' }</p>
 			</div>
-			<AsyncActionButton
-				class = 'btn btn--outline simulation-stack-page-clear'
-				type = 'button'
-				ariaLabel = 'Clear simulation stack'
-				pendingAriaLabel = 'Clearing simulation stack...'
-				title = 'Clear simulation stack'
-				state = { clearSimulationStackState.value.state }
-				disabled = { disableReset.value }
-				onClick = { clearStack }
-				text = { <>
-					<span class = 'simulation-stack-action-icon'><BroomIcon /></span>
-					<span class = 'simulation-stack-clear-label'>Clear stack</span>
-				</> }
-				pendingText = 'Clearing simulation stack...'
-			/>
-		</div>
-		<nav class = 'simulation-stack-page-actions' aria-label = 'Simulation stack actions'>
-			<div class = 'simulation-stack-action-group'>
-				<div class = 'simulation-stack-action-label'>
-					<strong>Simulation</strong>
-					<span>Entire stack</span>
-				</div>
-				<div class = 'simulation-stack-action-controls'>
+			<nav class = 'simulation-stack-page-controls' aria-label = { `${ stackName } actions` }>
+				{ simulationMode ? <>
 					<button class = 'btn btn--outline' type = 'button' onClick = { openImportSimulation } title = 'Import simulation stack' aria-label = 'Import simulation stack'>
 						<span class = 'simulation-stack-action-icon'><ImportIcon/></span>
-						<span>Import simulation</span>
+						<span>Import</span>
 					</button>
 					<AsyncActionButton
 						class = 'btn btn--outline'
 						type = 'button'
 						state = { exportSimulationStackState.value.state }
 						disabled = { simulationExportCoolingDown.value }
+						ariaLabel = 'Export simulation stack'
 						onClick = { exportStack }
 						text = { <>
 							<span class = 'simulation-stack-action-icon'><ExportIcon/></span>
-							<span>Export simulation</span>
+							<span>Export</span>
 						</> }
 						pendingText = 'Exporting simulation stack...'
 						keepTextWhilePending = { true }
 						pendingIndicatorPlacement = 'overlay'
 					/>
 					<Tooltip config = { simulationExportTooltip } />
-				</div>
-			</div>
-			{ showSafeSigningActions ? <div class = 'simulation-stack-action-group'>
-				<div class = 'simulation-stack-action-label'>
-					<strong>Gnosis Safe</strong>
-					<span>Proposals and signatures</span>
-				</div>
-				<div class = 'simulation-stack-action-controls'>
-					<button class = 'btn btn--outline' type = 'button' onClick = { openImportSafe }>
+				</> : <></> }
+				{ showSafeSigningActions ? <>
+					<button class = 'btn btn--outline' type = 'button' onClick = { openImportSafe } title = 'Import Gnosis Safe stack' aria-label = 'Import Gnosis Safe stack'>
 						<span class = 'simulation-stack-action-icon'><ImportIcon/></span>
-						<span>Import Gnosis Safe transactions</span>
+						<span>Import</span>
 					</button>
 					<CopySafeTransactionsButton
 						class = 'btn btn--outline'
 						disabled = { !hasSafeTransactionsToExport }
 						disabledTitle = 'There are no Gnosis Safe proposals to export on the selected chain.'
+						ariaLabel = 'Export Gnosis Safe stack'
+						pendingText = 'Exporting Gnosis Safe stack...'
 						text = { <>
-							<span class = 'simulation-stack-action-icon'><CopyIcon/></span>
-							<span>Copy Gnosis Safe transactions</span>
+							<span class = 'simulation-stack-action-icon'><ExportIcon/></span>
+							<span>Export</span>
 						</> }
 						onCopyStart = { () => {
 							latestExportType.value = 'safe'
@@ -163,9 +143,24 @@ function SimulationStackToolbar({ openImportSimulation, openImportSafe, resetSim
 						} }
 						onCopyError = { (message) => { safeCopyError.value = message } }
 					/>
-				</div>
-			</div> : <></> }
-		</nav>
+				</> : <></> }
+			<AsyncActionButton
+				class = 'btn btn--outline simulation-stack-page-clear'
+				type = 'button'
+				ariaLabel = { `Clear ${ stackName }` }
+				pendingAriaLabel = { `Clearing ${ stackName }...` }
+				title = { `Clear ${ stackName }` }
+				state = { clearSimulationStackState.value.state }
+				disabled = { disableReset.value }
+				onClick = { clearStack }
+				text = { <>
+					<span class = 'simulation-stack-action-icon'><BroomIcon /></span>
+					<span class = 'simulation-stack-clear-label'>Clear stack</span>
+				</> }
+				pendingText = { `Clearing ${ stackName }...` }
+			/>
+			</nav>
+		</div>
 		{ exportError === undefined ? <></> :
 			<div class = 'simulation-stack-page-action-error'>
 				<ErrorComponent text = { exportError } containerStyle = { { margin: '0' } }/>
@@ -277,6 +272,8 @@ function scheduleStackTargetTimeout(callback: () => void, delayMs: number) {
 export function SimulationStackPage() {
 	const {
 		activeSimulationAddress,
+		activeSigningSafeAddress,
+		displayedSigningAddress,
 		activeAddresses,
 		simVisResults,
 		rpcNetwork,
@@ -292,13 +289,13 @@ export function SimulationStackPage() {
 		numberOfAddressesMadeRich,
 		hasSafeTransactionsToExport,
 		simulationMode,
-		useSignersAddressAsActiveAddress,
+		tabState,
 	} = useLiveSimulationHomeData({
 		answerMainPopupOpen: false,
 		answerSimulationDataConsumerOpen: true,
 		requestFreshHomeDataOnMount: true,
 		filterByTabId: false,
-		requireActiveSimulationAddress: false,
+		requireActiveModeAddress: false,
 		requestHomeDataOnSimulationStateChange: true,
 	})
 	const { disableReset, resetSimulation, markSimulationDataReceived } = useResetSimulation()
@@ -307,24 +304,22 @@ export function SimulationStackPage() {
 	const highlightedStackTargetId = useSignal<string | undefined>(undefined)
 	const handledStackTargetHash = useSignal<string | undefined>(undefined)
 	const addressMetaData = useComputed(() => simVisResults.value.kind === 'simulated' ? simVisResults.value.value.addressBookEntries : [])
+	const modeActiveAddress = useModeActiveAddress({ activeAddresses, simulationMode, activeSimulationAddress, activeSigningSafeAddress, displayedSigningAddress, rpcNetwork, tabState })
+	const visualizedAddress = useComputed(() => simulationMode.value ? modeActiveAddress.value.activeAddress : activeSigningSafeAddress.value)
 	const madeRichAddressBookEntries = useComputed(() => getMadeRichAddressBookEntries(
 		fixedAddressRichList.value,
 		makeCurrentAddressRich.value,
-		activeSimulationAddress.value,
+		visualizedAddress.value,
 		activeAddresses.value,
+		rpcNetwork.value?.chainId,
 	))
 	const isEmpty = useComputed(() => {
 		if (numberOfAddressesMadeRich.value > 0) return false
 		if (simVisResults.value.kind === 'passthrough') return true
 		return isEmptySimulation(simVisResults.value.value)
 	})
-	// Safe import and copy are signing-mode controls: intentionally hide both unless a Safe is the active account on this chain.
-	const showSafeSigningActions = useComputed(() => getSafeSigningEntry(activeAddresses.value, {
-		simulationMode: simulationMode.value,
-		useSignersAddressAsActiveAddress: useSignersAddressAsActiveAddress.value,
-		activeSimulationAddress: activeSimulationAddress.value,
-		chainId: rpcNetwork.value?.chainId,
-	}) !== undefined)
+	const safeStackMode = useComputed(() => !simulationMode.value && activeSigningSafeAddress.value !== undefined)
+	const stackModeActive = useComputed(() => simulationMode.value || safeStackMode.value)
 
 	useSignalEffect(() => {
 		simVisResults.value
@@ -416,14 +411,15 @@ export function SimulationStackPage() {
 				: <></> }
 				<CenterToPageTextSpinner/>
 			</> : <>
-				<SimulationStackToolbar
+				{ stackModeActive.value ? <SimulationStackToolbar
 					openImportSimulation = { () => { modalState.value = { page: 'importSimulation', state: new Signal('') } } }
 					openImportSafe = { () => { modalState.value = { page: 'importSafe', state: new Signal('') } } }
 					resetSimulation = { resetSimulation }
 					disableReset = { disableReset }
-					showSafeSigningActions = { showSafeSigningActions.value }
+					simulationMode = { simulationMode.value }
+					showSafeSigningActions = { safeStackMode.value }
 					hasSafeTransactionsToExport = { hasSafeTransactionsToExport.value }
-				/>
+				/> : <></> }
 				<div class = 'simulation-stack-page-body'>
 					<UnexpectedError close = { clearUnexpectedError } error = { unexpectedError.value === undefined ? undefined : unexpectedError.value.data }/>
 					<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
@@ -431,7 +427,9 @@ export function SimulationStackPage() {
 						<ErrorComponent text = { `${ rpcNetwork.value.name } is not a supported network. The Interceptor is disabled while you are using ${ rpcNetwork.value.name }.` }/>
 					: <></> }
 					<ErrorBoundary key = { boundaryResetKey.value } onError = { onRenderError }>
-					{ isEmpty.value ?
+					{ !stackModeActive.value ?
+						<article class = 'simulation-stack-page-content'><DinoSays text = { 'Select simulation mode or a Gnosis Safe to view a transaction stack.' } /></article>
+					: isEmpty.value ?
 						<article class = 'simulation-stack-page-content'><DinoSays text = { 'Give me some transactions to munch on!' } /></article>
 					: currentResults.kind === 'passthrough' ?
 						<article class = 'simulation-stack-page-content'><RichAddressesTitleCard numberOfAddressesMadeRich = { numberOfAddressesMadeRich.value } madeRichAddressBookEntries = { madeRichAddressBookEntries.value } renameAddressCallBack = { renameAddressCallBack } /></article>
@@ -442,16 +440,17 @@ export function SimulationStackPage() {
 							<TransactionsAndSignedMessages
 								simulationAndVisualisationResults = { simVisResults }
 								removeTransactionOrSignedMessage = { removeTransactionOrSignedMessage }
-								activeAddress = { activeSimulationAddress }
+								activeAddress = { visualizedAddress }
 								renameAddressCallBack = { renameAddressCallBack }
 								editEnsNamedHashCallBack = { editEnsNamedHashCallBack }
 								addressMetaData = { addressMetaData }
 								highlightedStackTargetId = { highlightedStackTargetId }
+								showTimePicker = { simulationMode.value }
 							/>
 							<SimulationSummary
 								simulationAndVisualisationResults = { simVisResults }
 								currentBlockNumber = { currentBlockNumber }
-								activeAddress = { activeSimulationAddress }
+								activeAddress = { visualizedAddress }
 								renameAddressCallBack = { renameAddressCallBack }
 								editEnsNamedHashCallBack = { editEnsNamedHashCallBack }
 								rpcConnectionStatus = { rpcConnectionStatus }
@@ -469,7 +468,7 @@ export function SimulationStackPage() {
 						setActiveAddressAndInformAboutIt = { undefined }
 						modifyAddressWindowState = { modalState.value.state }
 						close = { () => { modalState.value = { page: 'noModal' } } }
-						activeAddress = { activeSimulationAddress.value }
+						activeAddress = { visualizedAddress.value }
 						rpcEntries = { rpcEntries }
 					/>
 				</ErrorBoundary>

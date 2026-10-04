@@ -120,7 +120,7 @@ const resetStack = async () => {
 	delete mockBrowser.__storage.makeCurrentAddressRich
 	delete mockBrowser.__storage.fixedAddressRichList
 	delete mockBrowser.__storage.simulationMode
-	delete mockBrowser.__storage.activeSimulationAddress
+	delete mockBrowser.__storage.independentActiveSimulationAddress
 	delete mockBrowser.__storage.activeRpcNetwork
 }
 
@@ -142,7 +142,7 @@ describe('simulate delay editor', () => {
 		assert.equal(stack.operations[1]?.type, 'TimeManipulation')
 		assert.equal(stack.operations[2]?.type, 'Transaction')
 		if (stack.operations[1]?.type !== 'TimeManipulation') throw new Error('missing time manipulation')
-		assert.deepStrictEqual(stack.operations[1].blockTimeManipulation, newDelay)
+		assert.deepStrictEqual({ ...stack.operations[1].blockTimeManipulation }, newDelay)
 	})
 
 	test('getCurrentSimulationInput produces one block transition per remaining delay', async () => {
@@ -158,13 +158,13 @@ describe('simulate delay editor', () => {
 
 		const simulationInput = await getCurrentSimulationInput()
 		assert.equal(simulationInput.length, 2)
-		assert.deepStrictEqual(simulationInput.map((block) => block.blockTimeManipulation), [
+		assert.deepStrictEqual(simulationInput.map((block) => ({ ...block.blockTimeManipulation })), [
 			{ type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' },
 			newDelay,
 		])
 	})
 
-	test('signing mode ignores the pre-simulation first-transaction delay', async () => {
+	test('signing mode excludes the simulation-mode transaction and delay stack', async () => {
 		await resetStack()
 		await browserStorageLocalSet({
 			simulationMode: false,
@@ -180,11 +180,7 @@ describe('simulate delay editor', () => {
 		})
 
 		const simulationInput = await getCurrentSimulationInput()
-		assert.equal(simulationInput.length, 2)
-		assert.deepStrictEqual(simulationInput.map((block) => block.blockTimeManipulation), [
-			DEFAULT_BLOCK_MANIPULATION,
-			newDelay,
-		])
+		assert.deepStrictEqual(simulationInput, [])
 	})
 
 	test('excludes transactions whose simulation options require another chain', async () => {

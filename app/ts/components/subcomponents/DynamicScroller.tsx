@@ -56,7 +56,8 @@ export const DynamicScroller = <T extends {}>({ items, renderItem, }: DynamicScr
 	useSignalEffect(() => {
 		if (!scrollViewRef.current) return
 		const containerObserver = new ResizeObserver(([entry]) => {
-			maxItems.value = itemHeight.value <= 0 ? 0 : Math.ceil(entry!.contentRect.height / itemHeight.value)
+			if (entry === undefined) return
+			maxItems.value = itemHeight.value <= 0 ? 0 : Math.ceil(entry.contentRect.height / itemHeight.value)
 		})
 		containerObserver.observe(scrollViewRef.current)
 		return () => { containerObserver.disconnect() }

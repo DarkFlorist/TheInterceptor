@@ -30,7 +30,7 @@ export function AsyncStatusIcon({ state, size = '1em' }: AsyncStatusIconProps) {
 	switch (state) {
 		case 'inactive': return <></>
 		case 'pending': return <SpinnerIcon size = { size } />
-		case 'rejected': return <span aria-hidden = 'true' style = { { color: 'var(--negative-color)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: size, height: size, lineHeight: 0 } }><XMarkIcon /></span>
+		case 'rejected': return <span aria-hidden = 'true' style = { { color: 'var(--danger-color)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: size, height: size, lineHeight: 0 } }><XMarkIcon /></span>
 		case 'resolved': return <CheckIcon size = { size } />
 	}
 }

@@ -1,5 +1,6 @@
-import { getInterceptorDisabledSites, getSettings } from '../background/settings.js'
-import { checkAndThrowRuntimeLastError, getTabIfExists, getWebsiteOrigin, isMissingBrowserTargetError } from './requests.js'
+import { getSettings } from '../background/settings.js'
+import type { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
+import { checkAndThrowRuntimeLastError, getWebsiteOrigin, getTabIfExists, isMissingBrowserTargetError } from './requests.js'
 import { reportLocalRecoveryBestEffort, reportUnexpectedError } from './errors.js'
 import { getLegacyWebsiteOriginForCanonicalOrigin, isCanonicalWebsiteOrigin, normalizeStoredWebsiteOrigin } from '../background/websiteAccessMigration.js'
 
@@ -10,6 +11,7 @@ const otherExtensionInjectionTargetErrorMessage = 'Cannot access a chrome-extens
 const extensionGalleryInjectionTargetErrorMessage = 'The extensions gallery cannot be scripted.'
 const isInjectableSite = (url: string) => injectableSitesRegexp.some((regexpPattern) => regexpPattern.test(url)) && !extensionGallerySitesRegexp.some((regexpPattern) => regexpPattern.test(url))
 const isExpectedManifestV2InjectionTargetError = (error: unknown) => error instanceof Error && (error.message === otherExtensionInjectionTargetErrorMessage || error.message === extensionGalleryInjectionTargetErrorMessage)
+export const getInterceptorDisabledSites = (websiteAccess: WebsiteAccessArray) => websiteAccess.filter((entry) => entry.interceptorDisabled === true).map((entry) => entry.website.websiteOrigin)
 
 function getManifestV3ExcludeMatchesForOrigin(origin: string) {
 	if (/^https?:\/\//iu.test(origin)) {
@@ -25,7 +27,8 @@ function getManifestV3ExcludeMatchesForOrigin(origin: string) {
 	if (normalizedOrigin === '') return ['file:///*']
 	if (!isCanonicalWebsiteOrigin(normalizedOrigin)) return [`*://${ normalizedOrigin }/*`]
 	const url = new URL(normalizedOrigin)
-	if (url.protocol === 'file:') return [`${ normalizedOrigin }*`]
+	// Match patterns include the query string, while file identity uses only the path.
+	if (url.protocol === 'file:') return [normalizedOrigin, `${ normalizedOrigin }?*`]
 	return [`${ url.protocol }//${ url.host }/*`]
 }
 
@@ -38,7 +41,7 @@ export function getManifestV3ExcludeMatches(origins: readonly string[]) {
 }
 
 export const updateContentScriptInjectionStrategyManifestV3 = async () => {
-	const excludeMatches = getManifestV3ExcludeMatches(getInterceptorDisabledSites(await getSettings()))
+	const excludeMatches = getManifestV3ExcludeMatches(getInterceptorDisabledSites((await getSettings()).websiteAccess))
 	try {
 		type RegisteredContentScript = Parameters<typeof browser.scripting.registerContentScripts>[0][0]
 		// The browser polyfill types do not expose Chrome's MAIN world or matchOriginAsFallback options.
@@ -77,7 +80,7 @@ export const updateContentScriptInjectionStrategyManifestV3 = async () => {
 
 const injectLogic = async (content: browser.webNavigation._OnCommittedDetails) => {
 	if (!isInjectableSite(content.url)) return false
-	const disabledSites = getInterceptorDisabledSites(await getSettings())
+	const disabledSites = getInterceptorDisabledSites((await getSettings()).websiteAccess)
 	// The tab can navigate while settings are loading, including to another extension page where injection is prohibited.
 	const thisTab = await getTabIfExists(content.tabId)
 	if (thisTab?.url === undefined || !isInjectableSite(thisTab.url)) return false
@@ -103,4 +106,9 @@ const injectLogic = async (content: browser.webNavigation._OnCommittedDetails) =
 export const updateContentScriptInjectionStrategyManifestV2 = async () => {
 	browser.webNavigation.onCommitted.removeListener(injectLogic)
 	browser.webNavigation.onCommitted.addListener(injectLogic, { url: injectableSitesWildcard.map((urlMatches) => ({ urlMatches })) })
+}
+
+export const updateContentScriptInjectionStrategy = async () => {
+	if (browser.runtime.getManifest().manifest_version === 3) await updateContentScriptInjectionStrategyManifestV3()
+	else await updateContentScriptInjectionStrategyManifestV2()
 }

@@ -91,7 +91,7 @@ fieldset[disabled] .select select:-ms-input-placeholder,
 }
 
 .is-primary.input, .is-primary.textarea {
-  border-color: var(--primary-color);
+  border-color: var(--accent-color);
 }
 
 .is-primary.input:focus, .is-primary.textarea:focus, .is-primary.is-focused.input, .is-primary.is-focused.textarea, .is-primary.input:active, .is-primary.textarea:active, .is-primary.is-active.input, .is-primary.is-active.textarea {
@@ -131,7 +131,7 @@ fieldset[disabled] .select select:-ms-input-placeholder,
 }
 
 .is-danger.input, .is-danger.textarea {
-  border-color: var(--negative-color);
+  border-color: var(--danger-color);
 }
 
 .is-danger.input:focus, .is-danger.textarea:focus, .is-danger.is-focused.input, .is-danger.is-focused.textarea, .is-danger.input:active, .is-danger.textarea:active, .is-danger.is-active.input, .is-danger.is-active.textarea {
@@ -261,11 +261,11 @@ fieldset[disabled] .select select:hover {
 }
 
 .select.is-primary:not(:hover)::after {
-  border-color: var(--primary-color);
+  border-color: var(--accent-color);
 }
 
 .select.is-primary select {
-  border-color: var(--primary-color);
+  border-color: var(--accent-color);
 }
 
 .select.is-primary select:hover, .select.is-primary select.is-hovered {
@@ -341,19 +341,19 @@ fieldset[disabled] .select select:hover {
 }
 
 .select.is-danger:not(:hover)::after {
-  border-color: var(--negative-color);
+  border-color: var(--danger-color);
 }
 
 .select.is-danger select {
-  border-color: var(--negative-color);
+  border-color: var(--danger-color);
 }
 
 .select.is-danger select:hover, .select.is-danger select.is-hovered {
-  border-color: var(--highlighted-negative-color);
+  border-color: var(--highlighted-danger-color);
 }
 
 .select.is-danger select:focus, .select.is-danger select.is-focused, .select.is-danger select:active, .select.is-danger select.is-active {
-  box-shadow: 0 0 0 0.125em var(--highlighted-negative-color);
+  box-shadow: 0 0 0 0.125em var(--highlighted-danger-color);
 }
 
 .select.is-small {
@@ -418,7 +418,7 @@ fieldset[disabled] .select select:hover {
 }
 
 .help.is-primary {
-  color: var(--primary-color);
+  color: var(--accent-color);
 }
 
 .help.is-link {
@@ -438,7 +438,7 @@ fieldset[disabled] .select select:hover {
 }
 
 .help.is-danger {
-  color: var(--negative-color);
+  color: var(--danger-color);
 }
 
 .field:not(:last-child) {
@@ -727,7 +727,7 @@ button.dropdown-item.is-active {
 }
 
 .menu-list a:hover {
-  background-color: var(--highlighted-primary-color);
+  background-color: var(--highlighted-accent-color);
   color: var(--text-color);
 }
 
@@ -891,7 +891,7 @@ button.dropdown-item.is-active {
 }
 
 .navbar.is-primary {
-  background-color: var(--primary-color);
+  background-color: var(--accent-color);
   color: #fff;
 }
 
@@ -961,7 +961,7 @@ button.dropdown-item.is-active {
 }
 
 .navbar.is-danger {
-  background-color: var(--negative-color);
+  background-color: var(--danger-color);
   color: #fff;
 }
 
@@ -970,7 +970,7 @@ button.dropdown-item.is-active {
 }
 
 .navbar.is-danger .navbar-brand > a.navbar-item:focus, .navbar.is-danger .navbar-brand > a.navbar-item:hover, .navbar.is-danger .navbar-brand > a.navbar-item.is-active {
-  background-color: var(--highlighted-negative-color);
+  background-color: var(--highlighted-danger-color);
   color: #fff;
 }
 

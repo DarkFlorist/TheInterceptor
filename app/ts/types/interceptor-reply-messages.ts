@@ -1,4 +1,5 @@
-
+import { ModifyMakeMeRich, EnableSimulationMode, ChangeActiveChain, ChangeActiveAddress } from './popupSettingsRequests.js'
+import type { popupSettingsOperations } from './popupSettingsProtocol.js'
 import * as funtypes from 'funtypes'
 import { AddressBookEntry, ChainIdWithUniversal } from '../types/addressBookTypes.js'
 import { PopupOrTabId } from './websiteAccessTypes.js'
@@ -92,6 +93,12 @@ export const AddOrModifyAddressBookEntryReply = funtypes.Union(
 		ok: funtypes.Literal(false),
 		message: funtypes.String,
 	}),
+)
+
+export type PopupSettingsChangeReply = funtypes.Static<typeof PopupSettingsChangeReply>
+export const PopupSettingsChangeReply = funtypes.Union(
+	funtypes.ReadonlyObject({ type: funtypes.Literal('PopupSettingsChangeReply'), ok: funtypes.Literal(true) }),
+	funtypes.ReadonlyObject({ type: funtypes.Literal('PopupSettingsChangeReply'), ok: funtypes.Literal(false), message: funtypes.String }),
 )
 
 export type ChangeActiveAddressReply = funtypes.Static<typeof ChangeActiveAddressReply>
@@ -270,7 +277,17 @@ const PopupReadyAndListeningReply = funtypes.ReadonlyObject({
 	}),
 }).asReadonly()
 
-type PopupRequestsRepliesMap = {
+type PopupSettingsReplyCodecs = {
+	ChangeActiveAddressReply: typeof ChangeActiveAddressReply
+	PopupSettingsChangeReply: typeof PopupSettingsChangeReply
+}
+
+// Every registered settings operation must provide the reply codec declared by its descriptor.
+type PopupSettingsRepliesMap = {
+	[Method in keyof typeof popupSettingsOperations]: PopupSettingsReplyCodecs[typeof popupSettingsOperations[Method]['replyType']]
+}
+
+type PopupRequestsRepliesMap = PopupSettingsRepliesMap & {
 	popup_requestMakeMeRichData: typeof RequestMakeMeRichDataReply
 	popup_requestActiveAddresses: typeof RequestActiveAddressesReply
 	popup_requestSimulationMode: typeof RequestSimulationModeReply
@@ -278,7 +295,6 @@ type PopupRequestsRepliesMap = {
 	popup_requestInterceptorSimulationInput: typeof RequestInterceptorSimulationInputReply
 	popup_importSimulationStack: typeof ImportSimulationStackReply
 	popup_addOrModifyAddressBookEntry: typeof AddOrModifyAddressBookEntryReply
-	popup_changeActiveAddress: typeof ChangeActiveAddressReply
 	popup_setSafeSimulationSigner: typeof SetSafeSimulationSignerReply
 	popup_requestSafeStackExport: typeof RequestSafeStackExportReply
 	popup_importSafeStack: typeof ImportSafeStackReply
@@ -303,6 +319,9 @@ export const PopupRequestsReplies: PopupRequestsRepliesMap = {
 	popup_importSimulationStack: ImportSimulationStackReply,
 	popup_addOrModifyAddressBookEntry: AddOrModifyAddressBookEntryReply,
 	popup_changeActiveAddress: ChangeActiveAddressReply,
+	popup_enableSimulationMode: PopupSettingsChangeReply,
+	popup_changeActiveRpc: PopupSettingsChangeReply,
+	popup_modifyMakeMeRich: PopupSettingsChangeReply,
 	popup_setSafeSimulationSigner: SetSafeSimulationSignerReply,
 	popup_requestSafeStackExport: RequestSafeStackExportReply,
 	popup_importSafeStack: ImportSafeStackReply,
@@ -341,13 +360,10 @@ export const PopupMessageReplyRequests = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestInterceptorSimulationInput') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_importSimulationStack'), data: InterceptorSimulationExport }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_addOrModifyAddressBookEntry'), data: AddressBookEntry }),
-	funtypes.ReadonlyObject({
-		method: funtypes.Literal('popup_changeActiveAddress'),
-		data: funtypes.ReadonlyObject({
-			activeAddress: funtypes.Union(EthereumAddress, funtypes.Literal('signer')),
-			simulationMode: funtypes.Boolean,
-		}),
-	}),
+	ChangeActiveAddress,
+	EnableSimulationMode,
+	ChangeActiveChain,
+	ModifyMakeMeRich,
 	SetSafeSimulationSigner,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestSafeStackExport') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_importSafeStack'), data: SafeStackExport }),
@@ -380,6 +396,7 @@ export type PopupReplyOption =
 	| RequestInterceptorSimulationInputReply
 	| ImportSimulationStackReply
 	| AddOrModifyAddressBookEntryReply
+	| PopupSettingsChangeReply
 	| ChangeActiveAddressReply
 	| SetSafeSimulationSignerReply
 	| RequestSafeStackExportReply
@@ -403,6 +420,7 @@ export const PopupReplyOption: funtypes.Codec<PopupReplyOption> = funtypes.Union
 	RequestInterceptorSimulationInputReply,
 	ImportSimulationStackReply,
 	AddOrModifyAddressBookEntryReply,
+	PopupSettingsChangeReply,
 	ChangeActiveAddressReply,
 	SetSafeSimulationSignerReply,
 	RequestSafeStackExportReply,

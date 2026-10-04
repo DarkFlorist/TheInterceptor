@@ -1,3 +1,4 @@
+import { createDeferredValue, createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import { test } from 'bun:test'
 import { getLatestUnexpectedError } from '../../app/ts/background/storageVariables.js'
@@ -27,6 +28,7 @@ test('recovers a Safe proposal after the wallet switches from a non-owner to a c
 	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({
 		simulationMode: false,
 		rpcNetwork: fakeRpcNetwork,
+		activeSigningSafeAddress: activeAddress,
 	})
 	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({
 		safeSimulationSignerAddress: activeAddress,
@@ -82,7 +84,7 @@ test('recovers a Safe proposal after the wallet switches from a non-owner to a c
 		simulator.ethereum,
 		simulator.tokenPriceService,
 		request,
-		transactionParams,
+		{ kind: 'transaction', parameters: transactionParams },
 		false,
 		activeAddress,
 		{ websiteOrigin: 'https://example.com', icon: undefined, title: undefined },
@@ -155,7 +157,7 @@ test('keeps a disconnected Safe proposal reviewable and attaches the owner after
 		input: new Uint8Array(),
 	}, 0n)
 	fakeSafeContract.transactionHash = BigInt(getSafeTxHash(safeTx))
-	const preparation = await prepareSafeTransactionConfirmation(simulator.ethereum, transactionParams, false, activeAddress, undefined)
+	const preparation = await prepareSafeTransactionConfirmation(simulator.ethereum, { kind: 'transaction', parameters: transactionParams }, false, activeAddress, undefined)
 	const website = { websiteOrigin: 'https://disconnected-safe.example', icon: undefined, title: 'Disconnected Safe' }
 	const transactionToSimulate = await modules.formEthSendTransaction(
 		simulator.ethereum,
@@ -625,7 +627,7 @@ test('keeps signer refresh failures visible in the Safe proposal instead of abor
 	assert.equal(await getLatestUnexpectedError(), undefined)
 })
 
-test('refreshes the selected signer before forwarding a Safe transaction', async () => {
+test('refreshes the selected signer and uses services installed during the wallet wait', async () => {
 	const configuredSigner = recipientAddress
 	const freshlySelectedSigner = activeAddress
 	fakeSafeContract.owners = [configuredSigner]
@@ -662,6 +664,21 @@ test('refreshes the selected signer before forwarding a Safe transaction', async
 	})
 	const postedMessages: unknown[] = []
 	const socket = uniqueRequestIdentifier.requestSocket
+	const accountRequestEntered = createDeferredValue<void>()
+	const releaseAccountReply = createDeferredValue<void>()
+	let retiredClientRequests = 0
+	const retiredEthereum = new modules.EthereumClientService({
+		rpcUrl: fakeRpcNetwork.httpsRpc,
+		clearCache() { return undefined },
+		async jsonRpcRequest() {
+			retiredClientRequests++
+			throw new Error('Confirmation used services captured before the wallet refresh')
+		},
+	}, async () => undefined, async () => undefined, fakeRpcNetwork)
+	const owner = createTestSimulationServicesOwner({
+		ethereum: retiredEthereum,
+		tokenPriceService: new modules.TokenPriceService(retiredEthereum, 60_000),
+	}, () => simulator)
 	let accountReply: Promise<unknown> | undefined
 	let websiteTabConnections: Map<number, {
 		signerStateOwner: {
@@ -681,10 +698,9 @@ test('refreshes the selected signer before forwarding a Safe transaction', async
 	let port: browser.runtime.Port
 	port = createWebsitePort(socket, 0, postedMessages, (message) => {
 		if (!isRecord(message) || message.method !== 'request_signer_to_eth_accounts') return
-		accountReply = modules.ethAccountsReply(
-			simulator.ethereum,
-			simulator.tokenPriceService,
-			() => undefined,
+		accountRequestEntered.resolve(undefined)
+		accountReply = releaseAccountReply.promise.then(async () => await modules.ethAccountsReply(
+			createTestSimulationServicesOwner({ ethereum: simulator.ethereum, tokenPriceService: simulator.tokenPriceService }),
 			websiteTabConnections,
 			port,
 			{
@@ -698,7 +714,7 @@ test('refreshes the selected signer before forwarding a Safe transaction', async
 			},
 			'hasAccess',
 			activeAddress,
-		)
+		))
 	})
 	websiteTabConnections = new Map([[socket.tabId, {
 		signerStateOwner: {
@@ -719,11 +735,16 @@ test('refreshes the selected signer before forwarding a Safe transaction', async
 		},
 	}]])
 
-	await modules.confirmDialog(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+	const confirmation = modules.confirmDialog(owner, websiteTabConnections, {
 		method: 'popup_confirmDialog',
 		data: { action: 'accept', uniqueRequestIdentifier, quarantineAccepted: false },
 	})
+	await accountRequestEntered.promise
+	owner.reset(fakeRpcNetwork)
+	releaseAccountReply.resolve(undefined)
+	await confirmation
 	await accountReply
+	assert.equal(retiredClientRequests, 0)
 
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.method === 'request_signer_to_eth_accounts'), true)
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
@@ -733,9 +754,7 @@ test('refreshes the selected signer before forwarding a Safe transaction', async
 	assert.match(refreshedMismatch.approvalStatus.message.toLowerCase(), new RegExp(addressString(freshlySelectedSigner).toLowerCase(), 'u'))
 
 	await modules.ethAccountsReply(
-		simulator.ethereum,
-		simulator.tokenPriceService,
-		() => undefined,
+		createTestSimulationServicesOwner({ ethereum: simulator.ethereum, tokenPriceService: simulator.tokenPriceService }),
 		websiteTabConnections,
 		port,
 		{
@@ -971,6 +990,7 @@ test('persists and simulates a valid Safe owner signature before replying with t
 	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({
 		simulationMode: false,
 		rpcNetwork: fakeRpcNetwork,
+		activeSigningSafeAddress: activeAddress,
 	})
 	await modules.browserStorageLocalSet2({
 		pendingTransactionsAndMessages: [{
@@ -1018,6 +1038,7 @@ test('persists and simulates a valid Safe owner signature before replying with t
 		requiredChainId: fakeRpcNetwork.chainId,
 		simulateWithZeroBaseFee: true,
 	})
+	assert.equal((await (await import('../../app/ts/background/settings.js')).getSettings()).activeSigningSafeAddress, activeAddress)
 	const simulationInput = await (await import('../../app/ts/background/simulationUpdating.js')).getCurrentSimulationInput()
 	const safeSimulationBlock = simulationInput.find((block) => block.transactions.some((transaction) =>
 		transaction.safeTransaction?.safeTxHash === safeTxHash
@@ -1029,6 +1050,91 @@ test('persists and simulates a valid Safe owner signature before replying with t
 	)
 	if (!isRecord(dappReply)) throw new Error('Missing Safe transaction dapp reply')
 	assert.equal(dappReply.result, modules.EthereumBytes32.serialize(safeTxHash))
+})
+
+test('adds an unsigned Safe proposal and merges a later owner signature into both stack representations', async () => {
+	const safeSignerAddress = safeTestOwnerAddress
+	fakeSafeContract.owners = [safeSignerAddress]
+	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
+		to: recipientAddress,
+		value: 0n,
+		input: new Uint8Array(),
+	}, 0n)
+	const safeTxHash = BigInt(getSafeTxHash(safeTx))
+	const postedMessages: unknown[] = []
+	const socket = uniqueRequestIdentifier.requestSocket
+	const port = createWebsitePort(socket, 0, postedMessages)
+	const websiteTabConnections = new Map([[socket.tabId, {
+		connections: {
+			[modules.websiteSocketToString(socket)]: {
+				port,
+				socket,
+				websiteOrigin: 'https://example.com',
+				approved: true,
+				wantsToConnect: true,
+			},
+		},
+	}]])
+	await modules.updateSafeTransactionStacks(() => [])
+	await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
+	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({
+		simulationMode: false,
+		rpcNetwork: fakeRpcNetwork,
+		activeSigningSafeAddress: activeAddress,
+	})
+	const safePending = {
+		...pendingTransaction,
+		simulationMode: false as const,
+		approvalStatus: { status: 'WaitingForUser' as const },
+		safeTransaction: {
+			safeAddress: activeAddress,
+			safeSignerAddress,
+			safeVersion: '1.4.1',
+			threshold: 2n,
+			reviewedSafeState: {
+				version: '1.4.1' as const,
+				nonce: 0n,
+				owners: [safeSignerAddress],
+				threshold: 2n,
+			},
+			safeTxHash,
+			safeTx,
+		},
+	}
+	await modules.browserStorageLocalSet2({
+		pendingTransactionsAndMessages: [safePending],
+	})
+
+	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+		method: 'popup_confirmDialog',
+		data: { action: 'addToSafeStack', uniqueRequestIdentifier },
+	}), true)
+
+	const [storedStack] = await modules.getSafeTransactionStacks()
+	assert.equal(storedStack?.transactions[0]?.safeTxHash, safeTxHash)
+	assert.deepEqual(storedStack?.transactions[0]?.signatures, [])
+	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
+	const dappReply = postedMessages.find((message) =>
+		isRecord(message) && message.method === 'eth_sendTransaction' && message.requestId === uniqueRequestIdentifier.requestId
+	)
+	if (!isRecord(dappReply)) throw new Error('Missing unsigned Safe transaction dapp reply')
+	assert.equal(dappReply.result, modules.EthereumBytes32.serialize(safeTxHash))
+
+	const signature = await safeTestOwnerAccount.signTypedData(EIP712Message.parse(safeTxToTypedDataJson(safeTx)))
+	const signedResolution = await modules.resolveSafeSignerReply(
+		simulator.ethereum,
+		simulator.tokenPriceService,
+		{ ...safePending, approvalStatus: { status: 'WaitingForSigner' } },
+		signature,
+	)
+	assert.equal(signedResolution.status, 'success')
+	const [signedStack] = await modules.getSafeTransactionStacks()
+	assert.equal(signedStack?.transactions[0]?.signatures[0]?.signer, safeSignerAddress)
+	const mirroredProposal = (await modules.getInterceptorTransactionStack()).operations.find((operation) =>
+		operation.type === 'Transaction' && operation.preSimulationTransaction.safeTransaction?.safeTxHash === safeTxHash
+	)
+	if (mirroredProposal?.type !== 'Transaction') throw new Error('Missing optimistic Safe transaction mirror')
+	assert.equal(mirroredProposal.preSimulationTransaction.safeTransaction?.signatures[0]?.signer, safeSignerAddress)
 })
 
 test('invalid Safe owner signatures retain the request as a signer error without creating a Safe stack', async () => {

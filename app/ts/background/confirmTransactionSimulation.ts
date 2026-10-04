@@ -2,7 +2,7 @@ import type { EthereumClientService } from '../simulation/services/EthereumClien
 import { appendTransactionsToInput } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { getSignedTransactionForSimulation } from '../simulation/services/simulationTransactionSigning.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
-import { createSafeExecutionPreSimulationTransaction } from '../safe/safeSimulation.js'
+import { createSafeExecutionPreSimulationTransaction, createSafeSigningSimulationInput } from '../safe/safeSimulation.js'
 import type { ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
 import type { SafeTransactionSigningRequest } from '../types/safeTypes.js'
 import type { WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
@@ -15,7 +15,7 @@ import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { identifyAddress } from './metadataUtils.js'
 import { getSimulationErrorAbis } from './simulationErrorAbi.js'
 import { createSimulationStateWithNonceAndBaseFeeFixing, getCurrentSimulationInput, visualizeSimulatorState } from './simulationUpdating.js'
-import { getTabState } from './storageVariables.js'
+import { getInterceptorTransactionStack, getTabState } from './storageVariables.js'
 
 let confirmTransactionAbortController = new AbortController()
 export const getConfirmTransactionAbortController = () => confirmTransactionAbortController
@@ -42,7 +42,9 @@ export async function refreshConfirmTransactionSimulation(
 	confirmTransactionAbortController = new AbortController()
 	const thisConfirmTransactionAbortController = confirmTransactionAbortController
 	const simulationStartedTimestamp = new Date()
-	const simulationInput = await getCurrentSimulationInput()
+	const simulationInput = safeSigningRequest === undefined
+		? await getCurrentSimulationInput()
+		: createSafeSigningSimulationInput(await getInterceptorTransactionStack(), safeSigningRequest)
 	try {
 		const getNewVisualizedSimulationState = async () => {
 			const preSimulationTransaction = transactionToSimulate.success

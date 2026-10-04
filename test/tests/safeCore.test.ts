@@ -4,11 +4,11 @@ import { AddressBookEntry, getSafeSignerAddresses } from '../../app/ts/types/add
 import { EIP712Message } from '../../app/ts/types/eip721.js'
 import { SafeTx } from '../../app/ts/types/personal-message-definitions.js'
 import { SafeStackExport } from '../../app/ts/types/safeTypes.js'
-import { SAFE_ABI, assertInterceptorSafeTransactionPolicy, createSafeOwnerValidator, createSafeTx, getSafeContractSnapshot, getSafeContractState, isSafeContractValidationFailure, isSafeOwnerValidationFailure, normalizeSafeSignature, recoverSafeSignatureOwner, safeTxToTypedDataJson, validateSafeOwnerIsEoa, validateSafeTransactionForSigning } from '../../app/ts/safe/safeCore.js'
+import { SAFE_ABI, assertInterceptorSafeTransactionPolicy, createSafeOwnerValidator, createSafeTx, getSafeContractSnapshot, getSafeContractState, getSafeTxSignerFacingTypedData, getSafeTxSigningHashes, isSafeContractValidationFailure, isSafeOwnerValidationFailure, normalizeSafeSignature, recoverSafeSignatureOwner, safeTxToTypedDataJson, validateSafeOwnerIsEoa, validateSafeTransactionForSigning } from '../../app/ts/safe/safeCore.js'
 import { completeSafeExecutionWithConfiguredSigner, SAFE_EXECUTION_ABI } from '../../app/ts/safe/safeExecution.js'
-import { getSafeTxHash } from '../../app/ts/utils/eip712.js'
+import { getMessageAndDomainHash, getSafeTxHash } from '../../app/ts/utils/eip712.js'
 import { privateKeyToAccount } from '../../app/ts/utils/ethereumPrimitives.js'
-import { bytesFromHex, bytesToHex } from '../../app/ts/utils/ethereumBytes.js'
+import { bytesFromHex, bytesToHex, concat, ensureHex, keccak256 } from '../../app/ts/utils/ethereumBytes.js'
 import { decodeFunctionDataStrict, encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 
 const privateKey = '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
@@ -30,7 +30,25 @@ describe('Safe transaction support', () => {
 		assert.equal(BigInt(getSafeTxHash(safeTx)), BigInt(getSafeTxHash(SafeTx.parse(parsedJson))))
 	})
 
-	test('allows only CALL transactions without gas reimbursement fields', () => {
+	test('derives the signer-facing EIP-712 hashes that combine into the validated Safe transaction hash', () => {
+		const safeTx = createSafeTx(1n, 0x1234n, {
+			to: 0x5678n,
+			value: 42n,
+			input: new Uint8Array([0xde, 0xad, 0xbe, 0xef]),
+		}, 7n)
+		const { domainHash, messageHash } = getSafeTxSigningHashes(safeTx)
+
+		// The hashes must describe the exact eth_signTypedData_v4 payload the signer wallet receives, regardless of which owner signs.
+		const signerFacingTypedData = getSafeTxSignerFacingTypedData(safeTx)
+		assert.deepEqual(signerFacingTypedData, EIP712Message.parse(safeTxToTypedDataJson(safeTx)))
+		assert.deepEqual({ domainHash, messageHash }, getMessageAndDomainHash({ method: 'eth_signTypedData_v4', params: [0xabcdn, signerFacingTypedData] }))
+		// A hardware signer derives the signed digest as keccak256(0x1901 ‖ domainHash ‖ messageHash); it must equal the contract-validated hash.
+		const signedDigest = keccak256(concat(['0x1901', ensureHex(domainHash), ensureHex(messageHash)]))
+		assert.equal(BigInt(signedDigest), BigInt(getSafeTxHash(safeTx)))
+		assert.notEqual(getSafeTxSigningHashes(createSafeTx(1n, 0x1234n, { to: 0x5678n, value: 42n, input: new Uint8Array([0xde, 0xad, 0xbe, 0xef]) }, 8n)).messageHash, messageHash)
+	})
+
+	test('rejects arbitrary delegate calls and gas reimbursement fields', () => {
 		const safeTx = createSafeTx(1n, 0x1234n, {
 			to: 0x5678n,
 			value: 0n,
@@ -41,7 +59,7 @@ describe('Safe transaction support', () => {
 		assert.throws(() => assertInterceptorSafeTransactionPolicy({
 			...safeTx,
 			message: { ...safeTx.message, operation: 1n },
-		}), (error) => isSafeContractValidationFailure(error) && /CALL operations only/u.test(error.message))
+		}), (error) => isSafeContractValidationFailure(error) && /DELEGATECALL is supported only/u.test(error.message))
 		assert.throws(() => assertInterceptorSafeTransactionPolicy({
 			...safeTx,
 			message: { ...safeTx.message, safeTxGas: 1n },

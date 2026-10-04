@@ -146,6 +146,7 @@ function ImportExport() {
 export function SettingsView() {
 	const useTabsInsteadOfPopup = useSignal<boolean>(false)
 	const metamaskCompatibilityMode = useSignal<boolean>(false)
+	const safeAppsCompatibilityMode = useSignal<boolean>(false)
 
 	useEffect(() => {
 		const popupMessageListener = (msg: unknown): false => {
@@ -158,6 +159,7 @@ export function SettingsView() {
 			}
 			if (parsed.method !== 'popup_requestSettingsReply') return false
 			metamaskCompatibilityMode.value = parsed.data.metamaskCompatibilityMode
+			safeAppsCompatibilityMode.value = parsed.data.safeAppsCompatibilityMode
 			useTabsInsteadOfPopup.value = parsed.data.useTabsInsteadOfPopup
 			return false
 		}
@@ -177,6 +179,12 @@ export function SettingsView() {
 		await sendPopupMessageToBackgroundPage({
 			method: 'popup_ChangeSettings',
 			data: { metamaskCompatibilityMode: checked }
+		})
+	}
+	async function requestToSafeAppsCompatibilityMode(checked: boolean) {
+		await sendPopupMessageToBackgroundPage({
+			method: 'popup_ChangeSettings',
+			data: { safeAppsCompatibilityMode: checked }
 		})
 	}
 
@@ -207,6 +215,11 @@ export function SettingsView() {
 							text = { 'Metamask compatibility mode (mimics Metamask\'s behaviour on websites). After enabling or disabling this, please refresh the active tab to switch the behaviour on the site' }
 							checked = { metamaskCompatibilityMode.value }
 							onInput = { requestToMetamaskCompatibilityMode }
+						/>
+						<CheckBoxSetting
+							text = { 'Advertise as a Gnosis Safe wallet to Safe Apps (experimental).' }
+							checked = { safeAppsCompatibilityMode.value }
+							onInput = { requestToSafeAppsCompatibilityMode }
 						/>
 					</li>
 					<li>
@@ -264,7 +277,7 @@ const RpcSummary = ({ info }: { info: SignalOrValue<RpcEntry | undefined> }) => 
 	const infoKey = JSON.stringify(serialize(RpcEntry, currentInfo))
 
 	return (
-		<li class = 'grid brief'>
+		<li class = 'grid brief rpc-summary'>
 			<div class = 'grid rpc-summary-details'>
 				<div class = 'truncate' title = { currentInfo.name }><strong>{ currentInfo.name }</strong></div>
 				<div class = 'truncate' title = { networkName }>{ networkName }</div>
