@@ -1,5 +1,21 @@
 # Popup Benchmark Setup
 
+## Firefox denied-request CPU reproduction
+
+```bash
+bun run install-firefox
+bun run setup-firefox
+bun run benchmark:rpc-rejection:firefox
+```
+
+This uses a fresh Firefox profile and a local page whose wallet access is explicitly denied. It sends three rounds of 500 balance requests through the real injected provider without restarting the extension. Every request must settle with authorization error 4100 within 60 seconds per round. The output reports end-to-end duration; it does not enforce machine-dependent performance thresholds. The package command enables Firefox automation access to extension pages using `MOZ_REMOTE_ALLOW_SYSTEM_ACCESS=1`, as required by current Firefox versions.
+
+Set `RPC_REJECTION_REQUEST_COUNT` to change the workload, or `RPC_REJECTION_EXTENSION_DIR=/absolute/path/to/app` to compare a separately built baseline extension with the same harness. Build that extension with `setup-firefox` first. To capture the real Firefox profiler stacks, add `MOZ_PROFILER_STARTUP=1 MOZ_PROFILER_SHUTDOWN=/absolute/path/profile.json` before the benchmark command and open the resulting profile in Firefox Profiler.
+
+On Firefox 153.4.0, the original extension took 4.51 / 3.83 / 3.96 seconds for the three rounds; the fixed extension took 2.37 / 1.90 / 2.42 seconds. Startup profiler captures showed the same `handleInterceptedRequest -> refuseAccess -> replyToInterceptedRequest` stack as the client screenshot. Samples containing `refuseAccess` fell from 5,398 to 117. These captures include startup and use separate fresh browser sessions; they demonstrate the expensive rejection path, rather than establishing the client's unknown site or restart-specific trigger.
+
+Deterministic unit regressions avoid timing assertions: error serialization must never inspect success results, and settings must validate each website once. Both fail against the original source. Additional settings tests cover explicit address clears and isolated corruption repair.
+
 The real-Chrome popup benchmark needs a browser binary. On Debian 12 in this workspace, the repo ships a command for that:
 
 ```bash

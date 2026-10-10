@@ -1,10 +1,11 @@
-import type { ActiveAddress, ExportedSettings, Page } from '../types/exportedSettingsTypes.js'
+import * as funtypes from 'funtypes'
+import { type ActiveAddress, type ExportedSettings, Page } from '../types/exportedSettingsTypes.js'
 import type { Settings } from '../types/interceptor-messages.js'
 import { Semaphore } from '../utils/semaphore.js'
-import type { EthereumAddress } from '../types/wire-types.js'
-import type { Website, WebsiteAccessArray } from '../types/websiteAccessTypes.js'
-import type { BlockExplorer, RpcNetwork } from '../types/rpc.js'
-import { type RichListElement, browserStorageLocalGet, browserStorageLocalSafeParse, browserStorageLocalSet } from '../utils/storageUtils.js'
+import { type EthereumAddress, EthereumAddressOrMissing } from '../types/wire-types.js'
+import { type Website, WebsiteAccessArray } from '../types/websiteAccessTypes.js'
+import { type BlockExplorer, RpcNetwork } from '../types/rpc.js'
+import { RichListElement, browserStorageLocalGet, browserStorageLocalSet } from '../utils/storageUtils.js'
 import { getUserAddressBookEntries, updateUserAddressBookEntries } from './storageVariables.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
@@ -12,7 +13,7 @@ import type { BlockTimeManipulation } from '../types/visualizer-types.js'
 import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_BLOCK_MANIPULATION, DEFAULT_RPCS } from '../config/defaults.js'
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { mergeStoredWebsiteMetadata, sanitizeWebsiteAccess } from '../utils/websiteIcons.js'
-import type { SigningAddressPreference, SigningAddressPreferences } from '../types/signerTypes.js'
+import { type SigningAddressPreference, SigningAddressPreferences } from '../types/signerTypes.js'
 import { hasOwnKey } from '../utils/typescript.js'
 
 export const defaultActiveAddresses = DEFAULT_ACTIVE_ADDRESSES
@@ -55,15 +56,28 @@ type StartupStorageDefaults = {
 	signingAddressPreferences: SigningAddressPreferences
 }
 
+// Validate only the requested setting; the complete storage schema includes unrelated simulation and request unions.
+const startupStorageCodecs: { [Key in keyof StartupStorageDefaults]: funtypes.Codec<StartupStorageDefaults[Key]> } = {
+	independentActiveSimulationAddress: EthereumAddressOrMissing,
+	activeSigningSafeAddress: EthereumAddressOrMissing,
+	openedPageV2: Page,
+	useSignersAddressAsActiveAddress: funtypes.Boolean,
+	websiteAccess: WebsiteAccessArray,
+	simulationMode: funtypes.Boolean,
+	activeRpcNetwork: RpcNetwork,
+	makeCurrentAddressRich: funtypes.Boolean,
+	fixedAddressRichList: funtypes.ReadonlyArray(RichListElement),
+	signingAddressPreferences: SigningAddressPreferences,
+}
+
 async function getParsedStorageValueOrDefaultFromItems<Key extends keyof StartupStorageDefaults>(storedItems: Readonly<Record<string, unknown>>, key: Key, defaultValue: StartupStorageDefaults[Key]): Promise<StartupStorageDefaults[Key]> {
 	const rawValue = storedItems[key]
-	const storedItem = hasOwnKey(storedItems, key) ? { [key]: rawValue } : {}
-	const parsedValue: Readonly<Partial<StartupStorageDefaults>> | undefined = browserStorageLocalSafeParse(storedItem)
-	if (parsedValue !== undefined && key in parsedValue) return parsedValue[key] as StartupStorageDefaults[Key]
-	if (rawValue === undefined) return defaultValue
+	if (!hasOwnKey(storedItems, key) || rawValue === undefined) return defaultValue
+	const parsedValue = startupStorageCodecs[key].safeParse(rawValue)
+	if (parsedValue.success) return parsedValue.value
 	console.warn(`${ key } was corrupt:`)
 	console.warn(rawValue)
-	await browserStorageLocalSet({ [key]: defaultValue } as unknown as Parameters<typeof browserStorageLocalSet>[0])
+	await browser.storage.local.set({ [key]: startupStorageCodecs[key].serialize(defaultValue) })
 	return defaultValue
 }
 
