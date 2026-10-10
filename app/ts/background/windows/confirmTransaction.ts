@@ -46,10 +46,10 @@ import { getSafePendingFlow } from '../../safe/safePendingFlow.js'
 import { persistUnsignedSafeTransaction, resolveSafeSignerReply } from '../safeConfirmationPersistence.js'
 import { getWalletSelectedAccount } from '../../utils/activeAddressSelection.js'
 import { createSafeSignerErrorStatus } from '../safeSignerErrors.js'
+import { createBackoffRetryScheduler } from '../../utils/retryScheduler.js'
 
 const pendingConfirmationSemaphore = new Semaphore(1)
-const pendingNoResponseRetryTimers = new Map<string, ReturnType<typeof setTimeout>>()
-const NO_RESPONSE_RETRY_DELAY_MS = 50
+const pendingNoResponseRetries = new Map<string, ReturnType<typeof createBackoffRetryScheduler>>()
 
 async function refreshDirectSafeExecutionSimulation(
 	ethereum: EthereumClientService,
@@ -452,6 +452,7 @@ const resolveAllPendingTransactionsAndMessageAsNoResponse = async (transactions:
 	for (const transaction of transactions) {
 		try {
 			await resolvePendingTransactionOrMessage(ethereum, tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: transaction.uniqueRequestIdentifier, action: 'noResponse' } })
+			clearPendingNoResponseRetry(transaction)
 		} catch(e) {
 			await reportLocalRecovery(e, { code: 'pending_request_no_response_resolution_failed', message: 'Failed to resolve a pending request as no-response after a popup closed.' })
 			schedulePendingNoResponseRetry(transaction, ethereum, tokenPriceService, websiteTabConnections)
@@ -459,21 +460,30 @@ const resolveAllPendingTransactionsAndMessageAsNoResponse = async (transactions:
 	}
 }
 
+function clearPendingNoResponseRetry(transaction: PendingTransactionOrSignableMessage) {
+	const identifier = getUniqueRequestIdentifierString(transaction.uniqueRequestIdentifier)
+	pendingNoResponseRetries.get(identifier)?.reset()
+	pendingNoResponseRetries.delete(identifier)
+}
+
 function schedulePendingNoResponseRetry(transaction: PendingTransactionOrSignableMessage, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections) {
 	const identifier = getUniqueRequestIdentifierString(transaction.uniqueRequestIdentifier)
-	if (pendingNoResponseRetryTimers.has(identifier)) return
-	const retryTimer = setTimeout(() => {
-		pendingNoResponseRetryTimers.delete(identifier)
+	let retry = pendingNoResponseRetries.get(identifier)
+	if (retry === undefined) {
+		retry = createBackoffRetryScheduler(50)
+		pendingNoResponseRetries.set(identifier, retry)
+	}
+	retry.schedule(() => {
 		void (async () => {
 			try {
 				await resolvePendingTransactionOrMessage(ethereum, tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: transaction.uniqueRequestIdentifier, action: 'noResponse' } })
+				clearPendingNoResponseRetry(transaction)
 			} catch (error) {
 				await reportLocalRecovery(error, { code: 'pending_request_no_response_retry_failed', message: 'Retrying a pending popup-close rejection after a transient failure.' })
 				schedulePendingNoResponseRetry(transaction, ethereum, tokenPriceService, websiteTabConnections)
 			}
 		})()
-	}, NO_RESPONSE_RETRY_DELAY_MS)
-	pendingNoResponseRetryTimers.set(identifier, retryTimer)
+	})
 }
 
 const formRejectMessage = (code: number, errorString: string) => {
