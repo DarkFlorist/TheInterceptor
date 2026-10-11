@@ -15,6 +15,7 @@ type PendingCommand = {
 
 export type FirefoxPage = {
 	evaluate: <T = unknown>(expression: string) => Promise<T | undefined>
+	reload: () => Promise<void>
 	setViewport: (width: number, height: number) => Promise<void>
 	captureScreenshot: () => Promise<string>
 	close: () => Promise<void>
@@ -290,6 +291,7 @@ export async function launchFirefoxSession(extensionDirectory = DEFAULT_EXTENSIO
 					target: { context },
 					awaitPromise: true,
 				})),
+				reload: async () => { await activeBidi.send('browsingContext.reload', { context, wait: 'complete' }) },
 				setViewport: async (width: number, height: number) => {
 					await activeBidi.send('browsingContext.setViewport', {
 						context,

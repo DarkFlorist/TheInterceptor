@@ -1,9 +1,9 @@
 type RetryTimer = ReturnType<typeof setTimeout>
 type ScheduleRetry = (retry: () => void, delayMs: number) => RetryTimer
 
-const MAX_RECOVERY_RETRY_DELAY_MS = 30_000
+const MAX_RECOVERY_RETRY_DELAY_MS = 5_000
 
-// Keep transient recovery fast, but do not repeatedly hammer storage or messaging while a failure persists.
+// Keep transient recovery fast and limit persistent failures to one retry every five seconds (formerly every 50–100 ms).
 export function createBackoffRetryScheduler(initialDelayMs: number, scheduleRetry: ScheduleRetry = (retry, delayMs) => setTimeout(retry, delayMs)) {
 	let timer: RetryTimer | undefined
 	let nextDelayMs = initialDelayMs

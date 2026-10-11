@@ -22,7 +22,7 @@ function createScheduledRetries() {
 	}
 }
 
-test('persistent recovery failures back off to 30 seconds without duplicating pending retries', () => {
+test('persistent recovery failures back off to five seconds without duplicating pending retries', () => {
 	const timers = createScheduledRetries()
 	const scheduler = createBackoffRetryScheduler(50, timers.schedule)
 	let attempts = 0
@@ -35,7 +35,7 @@ test('persistent recovery failures back off to 30 seconds without duplicating pe
 			assert.equal(timers.scheduled.length, 1)
 			delays.push(timers.fireNext())
 		}
-		assert.deepEqual(delays, [50, 100, 200, 400, 800, 1600, 3200, 6400, 12800, 25600, 30000, 30000, 30000])
+		assert.deepEqual(delays, [50, 100, 200, 400, 800, 1600, 3200, 5000, 5000, 5000, 5000, 5000, 5000])
 		assert.equal(attempts, 13)
 	} finally {
 		scheduler.reset()

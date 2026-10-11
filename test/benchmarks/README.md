@@ -16,6 +16,12 @@ On Firefox 153.4.0, the original extension took 4.51 / 3.83 / 3.96 seconds for t
 
 Deterministic unit regressions avoid timing assertions: error serialization must never inspect success results, and settings must validate each website once. Both fail against the original source. Additional settings tests cover explicit address clears and isolated corruption repair.
 
+For a longer mixed workload, run `bun run benchmark:rpc-soak:firefox` after building Firefox. It performs 30 rounds of 500 denied balance requests plus 1,000 successful public requests per round, checks empty accounts and chain ID `0x1`, and reloads the page after every five rounds to replace the content port. The extension stays running throughout. Ten-second idle periods before and after the workload include `interceptor:rpc-load:idle-before-start/end` and `interceptor:rpc-load:idle-after-start/end` performance marks for comparison in Firefox Profiler. These marks do not assert that CPU is idle; inspect the extension process's profile in those intervals.
+
+The same harness accepts `RPC_REJECTION_ROUNDS`, `RPC_REJECTION_MIXED=true`, `RPC_REJECTION_RELOAD_EVERY`, and `RPC_REJECTION_IDLE_MS` for customized runs. The short reproduction keeps its original default workload. To profile the soak, use `MOZ_PROFILER_STARTUP=1 MOZ_PROFILER_SHUTDOWN=/absolute/path/soak.json bun run benchmark:rpc-soak:firefox`.
+
+Persistent recovery retries cap at five seconds. This shortens the previous 30-second maximum interval while retaining 50–100 times fewer scheduled attempts than the original 50–100 ms loops once backoff reaches the cap. An attempt's execution time and browser timer throttling can add further delay; this is an interval cap, not a completion deadline.
+
 The real-Chrome popup benchmark needs a browser binary. On Debian 12 in this workspace, the repo ships a command for that:
 
 ```bash
