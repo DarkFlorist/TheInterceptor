@@ -430,6 +430,32 @@ svg[role="img"] {
 	border: 1px solid var(--layout-line-color);
 }
 
+/* Same 1em box as the Blockie, the letters come from data-ticker-text so they stay out of the copyable label text */
+.token-ticker-icon {
+	border-radius: 50%;
+	box-sizing: border-box;
+	color: var(--black-color);
+	display: inline-block;
+	font-weight: 700;
+	height: 1em;
+	line-height: 1em;
+	overflow: hidden;
+	text-align: center;
+	white-space: nowrap;
+	width: 1em;
+}
+
+/* A block pseudo element inherits the absolute 1em line height of the icon, which centers the smaller letters vertically */
+.token-ticker-icon::before {
+	content: attr(data-ticker-text);
+	display: block;
+	font-size: 0.44em;
+}
+
+.token-ticker-icon--single-character::before {
+	font-size: 0.625em;
+}
+
 .address-editor-address-input {
 	field-sizing: content;
 	font-family: monospace;
