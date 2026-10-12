@@ -12,7 +12,8 @@ import { verifyAccess, withSuppressedUnscopedConnectionEventsForSocketAsync } fr
 import type { ProviderMessage } from '../utils/requests.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import { reportUnexpectedError } from '../utils/errors.js'
-import { refreshPendingSafeSignerSelectionErrors, resolvePendingTransactionOrMessage, updateConfirmTransactionView } from './windows/confirmTransaction.js'
+import { refreshPendingSafeSignerSelectionErrors, rejectForwardedTransactionBatch, resolvePendingTransactionOrMessage, updateConfirmTransactionView } from './windows/confirmTransaction.js'
+import { isSignerMethodUnsupportedError } from './walletSendCalls.js'
 import { resolveWatchAssetSignerReply } from './windows/watchAsset.js'
 import { modifyObject } from '../utils/typescript.js'
 import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
@@ -317,7 +318,8 @@ export async function signerReply(simulationServicesOwner: SimulationServicesOwn
 			case 'eth_signTypedData_v3':
 			case 'eth_signTypedData_v4':
 			case 'eth_sendRawTransaction':
-			case 'eth_sendTransaction': {
+			case 'eth_sendTransaction':
+			case 'wallet_sendCalls': {
 				if (params.success) {
 					try {
 						await resolvePendingTransactionOrMessage(ethereum, tokenPriceService, websiteTabConnections, {
@@ -336,6 +338,11 @@ export async function signerReply(simulationServicesOwner: SimulationServicesOwn
 				if (params.error.code === METAMASK_ERROR_USER_REJECTED_REQUEST) {
 					await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'WaitingForUser' } }))
 					await updateConfirmTransactionView(ethereum, tokenPriceService)
+					return doNotReply
+				}
+				// Retrying cannot help a wallet that does not support batches, so the website receives the wallet's error and can fall back to single transactions.
+				if (params.forwardRequest.method === 'wallet_sendCalls' && isSignerMethodUnsupportedError(params.error)) {
+					await rejectForwardedTransactionBatch(ethereum, tokenPriceService, websiteTabConnections, uniqueRequestIdentifier, params.error)
 					return doNotReply
 				}
 				await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'SignerError', ...params.error } }))

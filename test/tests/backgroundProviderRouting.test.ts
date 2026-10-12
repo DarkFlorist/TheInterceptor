@@ -134,14 +134,16 @@ describe('background eth_accounts', () => {
 			params: [accountString, ['0x2105']],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 
+		// Signing mode no longer forwards capability discovery, so the signer's batching capabilities are never advertised for calls the Interceptor would not review.
 		assert.deepEqual(messages.find((message) => message.requestId === 3), {
 			interceptorApproved: true,
 			requestId: 3,
-			type: 'forwardToSigner',
-			replyWithSignersReply: true,
+			bridgeRequestSettled: true,
+			type: 'result',
 			method: 'wallet_getCapabilities',
-			params: [accountString, ['0x2105']],
+			result: {},
 		})
+		assert.equal(messages.some((message) => message.type === 'forwardToSigner'), false)
 	})
 
 	test('answers Sealwort Safe code and storage inspection without forwarding storage to the signer', async () => {
@@ -263,6 +265,108 @@ describe('background eth_accounts', () => {
 			method: 'eth_getStorageAt',
 			params: ['0xe592427a0aece92de3edee1f18e0157c05861564', '0x0', 'latest'],
 		})
+	})
+
+	test('intercepts EIP-5792 batch requests instead of forwarding them to the signer as unknown methods', async () => {
+		installBrowserMock()
+		const { handleInterceptedRequest, websiteSocketToString, updateWebsiteAccess, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateTabState } = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const account = 0x1111111111111111111111111111111111111111n
+		const accountString = '0x1111111111111111111111111111111111111111'
+		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: account })
+		await setUseSignersAddressAsActiveAddress(true)
+		await updateTabState(1, (previousState) => ({ ...previousState, signerAccounts: [account], activeSigningAddress: account }))
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
+
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		const request = async (requestId: number, method: string, params: readonly unknown[]) => await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId, requestSocket: socket },
+			method,
+			params: [...params],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		const batch = (overrides: Record<string, unknown>) => [{ version: '2.0.0', chainId: '0x1', atomicRequired: false, calls: [{ to: '0x2222222222222222222222222222222222222222', value: '0x1' }], ...overrides }]
+
+		const rejectedBatches = [
+			{ requestId: 1, params: batch({ version: '1.0' }), code: -32602 },
+			{ requestId: 2, params: batch({ calls: [{ to: '0x2222222222222222222222222222222222222222', gas: '0x5208' }] }), code: -32602 },
+			{ requestId: 3, params: batch({ atomicRequired: true }), code: 5760 },
+			{ requestId: 4, params: batch({ chainId: '0x2105' }), code: 5710 },
+			{ requestId: 5, params: batch({ from: '0x3333333333333333333333333333333333333333' }), code: 4100 },
+			{ requestId: 6, params: batch({ from: accountString, capabilities: { paymasterService: { url: 'https://paymaster.example' } } }), code: 5700 },
+		]
+		for (const rejectedBatch of rejectedBatches) await request(rejectedBatch.requestId, 'wallet_sendCalls', rejectedBatch.params)
+		for (const rejectedBatch of rejectedBatches) {
+			const reply = messages.find((message) => message.requestId === rejectedBatch.requestId)
+			assert.equal(reply?.type, 'result')
+			assert.equal(reply?.error?.code, rejectedBatch.code)
+		}
+
+		// Status lookups are read-only and refer to bundles that the signer itself submitted, so signing mode passes them through.
+		await request(7, 'wallet_getCallsStatus', ['0x01'])
+		await request(8, 'wallet_showCallsStatus', ['0x01'])
+		assert.deepEqual(messages.filter((message) => message.type === 'forwardToSigner'), [
+			{ interceptorApproved: true, requestId: 7, type: 'forwardToSigner', replyWithSignersReply: true, method: 'wallet_getCallsStatus', params: ['0x01'] },
+			{ interceptorApproved: true, requestId: 8, type: 'forwardToSigner', replyWithSignersReply: true, method: 'wallet_showCallsStatus', params: ['0x01'] },
+		])
+
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: account })
+		await setUseSignersAddressAsActiveAddress(false)
+		await request(9, 'wallet_showCallsStatus', ['0x01'])
+		assert.equal(messages.find((message) => message.requestId === 9)?.error?.code, 4200)
+	})
+
+	test('keeps forwarding EIP-5792 requests unchanged on networks without an Interceptor RPC', async () => {
+		installBrowserMock()
+		const { handleInterceptedRequest, websiteSocketToString, updateWebsiteAccess, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateTabState } = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const account = 0x1111111111111111111111111111111111111111n
+		await changeSimulationMode({
+			simulationMode: false,
+			rpcNetwork: { name: 'Signer only', chainId: 1n, httpsRpc: undefined, currencyName: 'Ether?', currencyTicker: 'ETH?', primary: false, minimized: true },
+			activeSigningAddress: account,
+		})
+		await setUseSignersAddressAsActiveAddress(true)
+		await updateTabState(1, (previousState) => ({ ...previousState, signerAccounts: [account], activeSigningAddress: account, signerChain: 1n }))
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
+
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		const forwardedRequests = [
+			{ requestId: 1, method: 'wallet_sendCalls', params: [{ version: '2.0.0', chainId: '0x1', atomicRequired: false, calls: [{ to: '0x2222222222222222222222222222222222222222', value: '0x1' }] }] },
+			{ requestId: 2, method: 'wallet_sendCalls', params: [{ version: '1.0', chainId: '0x1', from: '0x1111111111111111111111111111111111111111', calls: [{ to: '0x2222222222222222222222222222222222222222', value: '0x1' }] }] },
+			{ requestId: 3, method: 'wallet_getCallsStatus', params: [5] },
+			// The signer handles batches unreviewed on these networks, so its own capabilities are the accurate answer.
+			{ requestId: 4, method: 'wallet_getCapabilities', params: ['0x1111111111111111111111111111111111111111', ['0x1']] },
+		]
+		for (const forwardedRequest of forwardedRequests) {
+			await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
+				interceptorRequest: true,
+				usingInterceptorWithoutSigner: false,
+				uniqueRequestIdentifier: { requestId: forwardedRequest.requestId, requestSocket: socket },
+				method: forwardedRequest.method,
+				params: forwardedRequest.params,
+			}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		}
+
+		assert.deepEqual(messages.filter((message) => message.requestId !== undefined), forwardedRequests.map((forwardedRequest) => ({
+			interceptorApproved: true,
+			type: 'forwardToSigner',
+			replyWithSignersReply: true,
+			...forwardedRequest,
+		})))
 	})
 
 	test('preserves transaction-free overlays without running transaction preparation', async () => {
