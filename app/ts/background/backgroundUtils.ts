@@ -316,6 +316,13 @@ export const websiteSocketToString = (socket: WebsiteSocket) => `${ socket.tabId
 
 export const getWebsiteSocketConnection = (websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) => websiteTabConnections.get(socket.tabId)?.connections[websiteSocketToString(socket)]
 
+// `Website.websiteOrigin` only keeps the host and port, so the scheme of the requesting frame (for example 'https') is read from the URL of its content script port.
+export const getWebsiteSocketScheme = (websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) => {
+	const senderUrl = getWebsiteSocketConnection(websiteTabConnections, socket)?.port.sender?.url
+	if (senderUrl === undefined) return undefined
+	return new URL(senderUrl).protocol.replace(/:$/u, '')
+}
+
 export const getSocketFromPort = (port: browser.runtime.Port) => {
 	if (port.sender?.tab?.id === undefined) return undefined
 	return { tabId: port.sender?.tab?.id, connectionName: EthereumQuantity.parse(port.name) }

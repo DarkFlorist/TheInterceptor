@@ -383,6 +383,37 @@ const VisualizedPersonalSignRequestNotParsed = funtypes.Intersect(
 	})
 )
 
+// The fields of an EIP-4361 Sign-In with Ethereum message. Date-times keep their exact RFC 3339 text from the signed message; `parseSiweDateTime` converts them.
+export type SiweMessage = funtypes.Static<typeof SiweMessage>
+export const SiweMessage = funtypes.ReadonlyObject({
+	scheme: funtypes.Union(funtypes.String, funtypes.Undefined),
+	domain: funtypes.String,
+	address: EthereumAddress,
+	statement: funtypes.Union(funtypes.String, funtypes.Undefined),
+	uri: funtypes.String,
+	version: funtypes.Literal('1'),
+	chainId: EthereumQuantity,
+	nonce: funtypes.String,
+	issuedAt: funtypes.String,
+	expirationTime: funtypes.Union(funtypes.String, funtypes.Undefined),
+	notBefore: funtypes.Union(funtypes.String, funtypes.Undefined),
+	requestId: funtypes.Union(funtypes.String, funtypes.Undefined),
+	resources: funtypes.ReadonlyArray(funtypes.String),
+})
+
+export type VisualizedPersonalSignRequestSignInWithEthereum = funtypes.Static<typeof VisualizedPersonalSignRequestSignInWithEthereum>
+export const VisualizedPersonalSignRequestSignInWithEthereum = funtypes.Intersect(
+	PersonalSignRequestBase,
+	funtypes.ReadonlyObject({
+		method: funtypes.Literal('personal_sign'),
+		type: funtypes.Literal('SignInWithEthereum'),
+		message: SiweMessage,
+		// The account named in the message, which can differ from the `account` asked to sign it.
+		signInAccount: AddressBookEntry,
+		messageHash: funtypes.String,
+	})
+)
+
 type EthSignTyped = funtypes.Static<typeof EthSignTyped>
 const EthSignTyped = funtypes.Union(
 	funtypes.Literal('eth_signTypedData_v1'),
@@ -522,6 +553,7 @@ export const VisualizedPersonalSignRequestSafeTx = funtypes.Intersect(
 export type VisualizedPersonalSignRequest = funtypes.Static<typeof VisualizedPersonalSignRequest>
 export const VisualizedPersonalSignRequest = funtypes.Union(
 	VisualizedPersonalSignRequestNotParsed,
+	VisualizedPersonalSignRequestSignInWithEthereum,
 	VisualizedPersonalSignRequestEIP712,
 	VisualizedPersonalSignRequestSafeMessage,
 	VisualizedPersonalSignRequestPermit,
