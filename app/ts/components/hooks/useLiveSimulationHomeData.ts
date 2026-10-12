@@ -86,6 +86,11 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 		}
 		await requestCachedHomeData(CACHED_HOME_DATA_REQUESTS[updateKind])
 	}
+	const refreshAfterAddressBookChange = async () => {
+		// Address-book edits only change names, ABIs and token metadata, so the stored simulation is re-labelled instead of simulated again before the home data is read.
+		await sendPopupMessageToBackgroundPage({ method: 'popup_refreshSimulationMetadata' })
+		await requestHomeDataForLiveUpdate('metadata')
+	}
 
 	useEffect(() => {
 		let activeStackRefreshId = 0
@@ -267,6 +272,8 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 					requestHomeDataForLiveUpdate('signer-state')
 					return undefined
 				case 'popup_addressBookEntriesChanged':
+					void refreshAfterAddressBookChange()
+					return undefined
 				case 'popup_interceptor_access_changed':
 				case 'popup_websiteAccess_changed':
 				case 'popup_setDisableInterceptorReply':

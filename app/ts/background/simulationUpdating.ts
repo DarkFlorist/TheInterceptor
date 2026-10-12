@@ -417,7 +417,8 @@ export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: Visua
 	}
 }
 
-export const updateSimulationMetadata = async (ethereum: EthereumClientService, requestAbortController: AbortController | undefined) => {
+// Partial refresh used by refreshHomeData: recomputes only the stored visualisation's top-level address-book entries, named token ids and ENS hashes, not the names, parsed input or warnings inside visualised transactions. Address-book edits use refreshPopupVisualisationMetadataForOpenConsumer, which re-labels everything.
+export const updateTopLevelSimulationMetadata = async (ethereum: EthereumClientService, requestAbortController: AbortController | undefined) => {
 	return await updatePopupVisualisationWithCallBack(async (prevState) => {
 		if (prevState.simulationState.kind === 'passthrough') return prevState
 		if (prevState.simulationState.value.success === false) return prevState
@@ -604,4 +605,10 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 		simulationState: refreshedSimulationState,
 		visualizedSimulationState: { success: true, visualizedBlocks },
 	}
+}
+
+// Metadata-only refresh for an existing simulation: re-runs only the visualisation step (address-book names, ABI-parsed input, token metadata and prices, and protector warnings such as send-to-non-contact) without simulating again. The simulation state is left out of the result so callers keep their stored one, including its conducted timestamp.
+export async function revisualizeSimulationMetadata(simulationState: SimulationState, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, requestAbortController: AbortController | undefined) {
+	const { simulationState: _revisualizedSimulationState, ...simulationMetadata } = await visualizeSimulatorState(simulationState, ethereum, tokenPriceService, requestAbortController)
+	return simulationMetadata
 }

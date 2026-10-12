@@ -365,6 +365,11 @@ const RefreshSimulation = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_refreshSimulation')
 }).asReadonly()
 
+type RefreshSimulationMetadata = funtypes.Static<typeof RefreshSimulationMetadata>
+const RefreshSimulationMetadata = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_refreshSimulationMetadata')
+}).asReadonly()
+
 export type ChangeInterceptorAccess = funtypes.Static<typeof ChangeInterceptorAccess>
 export const ChangeInterceptorAccess = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_changeInterceptorAccess'),
@@ -1021,6 +1026,7 @@ const PopupMessageRuntype = funtypes.Union(
 	RemoveTransaction,
 	ResetSimulation,
 	RefreshSimulation,
+	RefreshSimulationMetadata,
 	ModifyMakeMeRich,
 	ChangeActiveAddress,
 	ChangePage,

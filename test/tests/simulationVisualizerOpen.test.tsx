@@ -906,6 +906,44 @@ describe('simulation visualizer open replies', () => {
 		}
 	})
 
+	test('stack visualizer re-labels the stored simulation before reading home data after an address-book change', async () => {
+		const dom = installDomMock()
+		let finishMetadataRefresh: (() => void) | undefined
+		const metadataRefresh = new Promise<void>((resolve) => { finishMetadataRefresh = resolve })
+		const { dispatchMessage: listener, sentMessages } = installBrowserMock(async (message) => {
+			if (typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_refreshSimulationMetadata') await metadataRefresh
+			return undefined
+		})
+		const getSentMethods = () => sentMessages.map((message) => typeof message === 'object' && message !== null && 'method' in message ? message.method : undefined)
+		try {
+			await act(() => {
+				render(h(SimulationStackPage, {}), dom.document.body)
+			})
+			await act(() => {
+				listener({ role: 'all', ...serialize(UpdateHomePage, createSimulationStackHomePageUpdate(19, 1, 'Stack tab')) }, {}, () => undefined)
+			})
+			sentMessages.splice(0)
+
+			await act(async () => {
+				listener(serialize(MessageToPopup, { role: 'all', method: 'popup_addressBookEntriesChanged' }), {}, () => undefined)
+				await new Promise((resolve) => setTimeout(resolve, 0))
+			})
+
+			// Home data is read only after the background has re-labelled the stored simulation, so it cannot return the old names.
+			assert.deepEqual(getSentMethods(), ['popup_refreshSimulationMetadata'])
+
+			await act(async () => {
+				finishMetadataRefresh?.()
+				await new Promise((resolve) => setTimeout(resolve, 0))
+			})
+
+			assert.deepEqual(getSentMethods(), ['popup_refreshSimulationMetadata', 'popup_requestNewHomeData'])
+			assert.equal(isHomeDataRequest(sentMessages[1], false, true), true)
+		} finally {
+			dom.restore()
+		}
+	})
+
 	test('stack visualizer failure banner stays readable outside blurred simulation content', async () => {
 		const dom = installDomMock()
 		const { dispatchMessage: listener } = installBrowserMock()

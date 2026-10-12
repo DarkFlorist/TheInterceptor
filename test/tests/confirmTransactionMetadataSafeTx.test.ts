@@ -160,7 +160,7 @@ async function loadModules() {
 		browserStorageLocalSet: storageUtils.browserStorageLocalSet,
 		browserStorageLocalSet2: storageUtils.browserStorageLocalSet2,
 		getPopupVisualisationState: storageVariables.getPopupVisualisationState,
-		refreshPopupVisualisationForOpenConsumer: popupVisualisationUpdater.refreshPopupVisualisationForOpenConsumer,
+		refreshPopupVisualisationMetadataForOpenConsumer: popupVisualisationUpdater.refreshPopupVisualisationMetadataForOpenConsumer,
 		serialize: wireTypes.serialize,
 		EthereumBlockHeader: wireTypes.EthereumBlockHeader,
 		EthereumQuantity: wireTypes.EthereumQuantity,
@@ -407,7 +407,7 @@ describe('SafeTx confirm transaction metadata', () => {
 		const refreshError = new Error('Unexpected visualizer failure')
 		let reportedError: unknown
 
-		const result = await modules.refreshPopupVisualisationForOpenConsumer(ethereum, tokenPriceService, {
+		const result = await modules.refreshPopupVisualisationMetadataForOpenConsumer(ethereum, tokenPriceService, {
 			async update() { throw refreshError },
 			async getStored() { return storedVisualisation },
 			async reportError(error) {
@@ -523,7 +523,8 @@ describe('SafeTx confirm transaction metadata', () => {
 		await modules.refreshPopupConfirmTransactionMetadata(ethereum, tokenPriceService, undefined)
 
 		assertPopupPendingSafeTxShape(browserMock.sentMessages)
-		assert.equal((await modules.getPopupVisualisationState()).simulationId, 1)
+		// A metadata refresh re-labels the stored stack simulation and never stores a new simulation.
+		assert.equal((await modules.getPopupVisualisationState()).simulationId, 0)
 		assert.equal(browserMock.sentMessages.some((message) => message.method === 'popup_isSimulationVisualizerOpen'), false)
 	})
 
