@@ -483,6 +483,14 @@ const NewHeadsSubscription = funtypes.ReadonlyObject({
 	subscriptionCreatorSocket: WebsiteSocket,
 })
 
+type SyncingSubscription = funtypes.Static<typeof SyncingSubscription>
+const SyncingSubscription = funtypes.ReadonlyObject({
+	type: funtypes.Literal('syncing'),
+	subscriptionOrFilterId: funtypes.String,
+	params: EthSubscribeParams,
+	subscriptionCreatorSocket: WebsiteSocket,
+})
+
 type NewEthfilter = funtypes.Static<typeof NewEthfilter>
 const NewEthfilter = funtypes.ReadonlyObject({
 	type: funtypes.Literal('eth_newFilter'),
@@ -493,7 +501,7 @@ const NewEthfilter = funtypes.ReadonlyObject({
 })
 
 export type EthereumSubscriptionsAndFilters = funtypes.Static<typeof EthereumSubscriptionsAndFilters>
-export const EthereumSubscriptionsAndFilters = funtypes.ReadonlyArray(funtypes.Union(NewEthfilter, NewHeadsSubscription))
+export const EthereumSubscriptionsAndFilters = funtypes.ReadonlyArray(funtypes.Union(NewEthfilter, NewHeadsSubscription, SyncingSubscription))
 
 export type VisualizedSimulatorState = funtypes.Static<typeof VisualizedSimulatorState>
 export const VisualizedSimulatorState = funtypes.ReadonlyObject({

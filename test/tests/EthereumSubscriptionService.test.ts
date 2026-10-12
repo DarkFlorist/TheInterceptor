@@ -53,6 +53,21 @@ function createMockEthSimulateV1Result(blockStateCallCount: number, aggregate3Ba
 	return [...nonAggregateBlocks, buildAggregate3BalanceBlock(aggregate3BalanceQueryCount)]
 }
 
+function createRecordingPort(postedMessages: unknown[]): browser.runtime.Port {
+	const event = {
+		addListener() { return undefined },
+		removeListener() { return undefined },
+		hasListener() { return false },
+	}
+	return {
+		name: 'recording-test-port',
+		disconnect() { return undefined },
+		postMessage(message: unknown) { postedMessages.push(message) },
+		onMessage: event,
+		onDisconnect: event,
+	}
+}
+
 function installBrowserMock() {
 	const storageState: Record<string, unknown> = {}
 	globalThis.browser = {
@@ -171,7 +186,7 @@ const blockNumber = 8443561n
 			const { createEthereumSubscription } = await loadModules()
 			const socket = { tabId: 1, connectionName: 1n }
 
-			for (const subscriptionType of ['logs', 'newPendingTransactions', 'syncing'] as const) {
+			for (const subscriptionType of ['logs', 'newPendingTransactions'] as const) {
 				await assert.rejects(
 					createEthereumSubscription({ method: 'eth_subscribe', params: [subscriptionType] }, socket),
 					(error: unknown) => error instanceof JsonRpcResponseError
@@ -179,6 +194,38 @@ const blockNumber = 8443561n
 						&& error.message.includes(subscriptionType),
 				)
 			}
+		})
+
+		test('syncing subscriptions are stored, never emit and can be unsubscribed', async () => {
+			installBrowserMock()
+			const { createEthereumSubscription, getEthereumSubscriptionsAndFilters, removeEthereumSubscription, sendSubscriptionMessagesForNewBlock, updateEthereumSubscriptionsAndFilters } = await loadModules()
+			const ethereum = createEthereum()
+			const socket = { tabId: 3, connectionName: 1n } as const
+			const postedMessages: unknown[] = []
+			const websiteTabConnections = new Map([
+				[3, {
+					connections: {
+						'3-0x1': {
+							port: createRecordingPort(postedMessages),
+							socket,
+							websiteOrigin: 'test',
+							approved: true,
+							wantsToConnect: false,
+						},
+					},
+				}],
+			])
+
+			await updateEthereumSubscriptionsAndFilters(() => [])
+			const subscriptionId = await createEthereumSubscription({ method: 'eth_subscribe', params: ['syncing'] }, socket)
+			assert.deepEqual((await getEthereumSubscriptionsAndFilters()).map((subscription) => [subscription.type, subscription.subscriptionOrFilterId]), [['syncing', subscriptionId]])
+
+			await sendSubscriptionMessagesForNewBlock(blockNumber, ethereum, false, websiteTabConnections, async () => PASSTHROUGH_STATE)
+			assert.deepEqual(postedMessages, [])
+			assert.deepEqual((await getEthereumSubscriptionsAndFilters()).map((subscription) => subscription.subscriptionOrFilterId), [subscriptionId])
+
+			assert.equal(await removeEthereumSubscription(socket, subscriptionId), true)
+			assert.deepEqual(await getEthereumSubscriptionsAndFilters(), [])
 		})
 
 		test('removeEthereumSubscription only removes the matching socket subscription', async () => {

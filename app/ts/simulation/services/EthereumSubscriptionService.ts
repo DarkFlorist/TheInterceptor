@@ -115,6 +115,8 @@ export async function sendSubscriptionMessagesForNewBlock(
 				break
 			}
 			case 'eth_newFilter': break
+			// Nodes differ here: Nethermind sends nothing to `syncing` subscribers while synced, whereas geth sends new subscribers a single `false` once it has finished a sync. The Interceptor follows Nethermind and never emits, because it treats its RPC node as always synced and has no sync transition to report.
+			case 'syncing': break
 			default: assertNever(subscriptionOrFilter)
 		}
 	}
@@ -122,16 +124,17 @@ export async function sendSubscriptionMessagesForNewBlock(
 }
 export async function createEthereumSubscription(params: EthSubscribeParams, subscriptionCreatorSocket: WebsiteSocket) {
 	switch(params.params[0]) {
-		case 'newHeads': {
+		case 'newHeads':
+		case 'syncing': {
+			const type = params.params[0]
 			const subscriptionOrFilterId = generateId(40)
 			await updateEthereumSubscriptionsAndFilters((subscriptionsAndfilters: EthereumSubscriptionsAndFilters) => {
-				return subscriptionsAndfilters.concat({ type: 'newHeads', subscriptionOrFilterId, params, subscriptionCreatorSocket })
+				return subscriptionsAndfilters.concat({ type, subscriptionOrFilterId, params, subscriptionCreatorSocket })
 			})
 			return subscriptionOrFilterId
 		}
 		case 'logs':
 		case 'newPendingTransactions':
-		case 'syncing':
 			throw new JsonRpcResponseError({
 				jsonrpc: '2.0',
 				id: 1,
