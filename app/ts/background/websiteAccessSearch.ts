@@ -1,6 +1,7 @@
 import type { WebsiteAccessArray, WebsiteAccess, WebsiteAddressAccess } from '../types/websiteAccessTypes.js'
 import { addressString } from '../utils/bigint.js'
 import { createFuzzySearchPattern } from '../utils/fuzzySearch.js'
+import { removeEip3770ChainShortNameFromSearchQuery } from '../utils/addressValidation.js'
 
 type SearchMatch = {
 	length: number
@@ -54,8 +55,9 @@ export const searchWebsiteAccess = (query: string, websiteAccess: WebsiteAccessA
 	// return everything if query is empty or whitespace
 	if (query.trim() === '') return websiteAccess
 
+	const searchQuery = removeEip3770ChainShortNameFromSearchQuery(query)
 	return websiteAccess
-		.map(entry => calculateWebsiteAccessScore(entry, query))
+		.map(entry => calculateWebsiteAccessScore(entry, searchQuery))
 		.filter(result => Number.isFinite(result.match.length))
 		.sort((a, b) => a.match.length - b.match.length || a.match.location - b.match.location)
 		.map(result => result.entry)
