@@ -150,6 +150,9 @@ class TestElement extends TestNode {
 	showPopover() { return undefined }
 	hidePopover() { return undefined }
 	togglePopover() { return undefined }
+	setCustomValidity() { return undefined }
+	reportValidity() { return true }
+	reset() { return undefined }
 	getBoundingClientRect() { return { height: this.clientHeight, width: 100, x: 0, y: 0, top: 0, right: 100, bottom: this.clientHeight, left: 0 } }
 
 	getAttribute(name: string) {

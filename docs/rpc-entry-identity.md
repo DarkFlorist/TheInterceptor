@@ -28,6 +28,6 @@ If a feature needs identity that survives renames, credential rotation, reorderi
 
 ## Display labels
 
-`ChainSelector.getRpcEntryLabel` uses name, endpoint/chain differences, and currency metadata to distinguish options. When otherwise identical visible labels remain, it appends `connection N` according to the current list order instead of displaying secret-bearing metadata.
+`ChainSelector.getRpcEntryLabel` uses name, endpoint/chain differences, and currency metadata to distinguish options. When otherwise identical visible labels remain, it appends `connection N` according to the current list order instead of displaying secret-bearing metadata. Endpoints are displayed through `redactRpcUrlCredentials`, so entries whose URLs differ only in embedded credentials also fall back to `connection N`.
 
 Those numbers are temporary presentation disambiguators. Removing or reordering entries can renumber them, and a lone remaining variant loses the suffix. Selection and mutation use the entry key, never the number or label. Features requiring a stable user-facing connection name should use explicit user-provided names or a persisted identity model, not rely on these ordinals.
