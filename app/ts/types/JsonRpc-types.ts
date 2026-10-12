@@ -521,11 +521,19 @@ export const EthereumJsonRpcRequest = funtypes.Union(
 	InterceptorError,
 )
 
-// Methods accepted by the provider. This mirrors EthereumJsonRpcRequest, plus methods handled before normal RPC dispatch such as wallet_revokePermissions.
-export type SupportedEthereumJsonRpcRequestMethods = funtypes.Static<typeof SupportedEthereumJsonRpcRequestMethods>
-export const SupportedEthereumJsonRpcRequestMethods = funtypes.ReadonlyObject({
-	method: funtypes.Union(WalletRevokePermissions.fields.method, EthereumJsonRpcRequest.alternatives[0].fields.method, ...EthereumJsonRpcRequest.alternatives.map(x => x.fields.method)),
-})
+type EthereumJsonRpcRequestCodec = typeof EthereumJsonRpcRequest.alternatives[number]
+// Codec of one method accepted by the provider: an EthereumJsonRpcRequest member, or a method handled before normal RPC dispatch such as wallet_revokePermissions.
+export type SupportedEthereumJsonRpcRequestCodec = EthereumJsonRpcRequestCodec | typeof WalletRevokePermissions
+
+const getRequestCodecMethods = (requestCodec: SupportedEthereumJsonRpcRequestCodec): readonly string[] => {
+	const methodCodec = requestCodec.fields.method
+	return methodCodec.tag === 'literal' ? [methodCodec.value] : methodCodec.alternatives.map((alternative) => alternative.value)
+}
+
+const ethereumJsonRpcRequestCodecsByMethod = new Map(EthereumJsonRpcRequest.alternatives.flatMap((requestCodec) => getRequestCodecMethods(requestCodec).map((method): [string, EthereumJsonRpcRequestCodec] => [method, requestCodec])))
+
+// The EthereumJsonRpcRequest member for a method. Parsing with it directly avoids building validation failures for every unrelated union member.
+export const findEthereumJsonRpcRequestCodec = (method: string) => ethereumJsonRpcRequestCodecsByMethod.get(method)
 
 export type OriginalSendRequestParameters = funtypes.Static<typeof OriginalSendRequestParameters>
 export const OriginalSendRequestParameters = funtypes.Union(SendTransactionParams, SendRawTransactionParams)
