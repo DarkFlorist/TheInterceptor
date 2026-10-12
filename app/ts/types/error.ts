@@ -16,3 +16,10 @@ export const DecodedError = funtypes.Intersect(
 	ErrorWithCodeAndOptionalData,
 	funtypes.ReadonlyObject({ decodedErrorMessage: funtypes.String })
 )
+
+// The decoded message is optional so failed transactions stored before this field existed still parse.
+export type ErrorWithOptionalDecodedMessage = funtypes.Static<typeof ErrorWithOptionalDecodedMessage>
+export const ErrorWithOptionalDecodedMessage = funtypes.Intersect(
+	ErrorWithCodeAndOptionalData,
+	funtypes.ReadonlyPartial({ decodedErrorMessage: funtypes.String })
+)

@@ -96,7 +96,8 @@ export async function refreshConfirmTransactionSimulation(
 						} }
 					: { error: {
 						...transactionToSimulate.error,
-						decodedErrorMessage: decodeEthereumError(availableAbis, transactionToSimulate.error).reason
+						// Keep the message chosen when the failure was created, such as an insufficient balance explanation that replaces the token's raw revert reason.
+						decodedErrorMessage: transactionToSimulate.error.decodedErrorMessage ?? decodeEthereumError(availableAbis, transactionToSimulate.error).reason
 					} }
 				}
 			}

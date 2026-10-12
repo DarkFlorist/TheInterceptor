@@ -1,5 +1,6 @@
 import * as assert from 'assert'
-import { encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
+import { encodeAbiValues, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
+import { decodeEthereumError } from '../../app/ts/utils/errorDecoding.js'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { describe, test } from 'bun:test'
@@ -278,6 +279,36 @@ function makeSimulatedPendingTransaction(value: bigint) {
 	}
 }
 
+function makeGasEstimationFailedPendingTransaction(revertReason: string, requestId: number) {
+	const simulated = makeSimulatedPendingTransaction(0n)
+	const uniqueRequestIdentifier = { ...simulated.uniqueRequestIdentifier, requestId }
+	const transactionIdentifier = BigInt(requestId)
+	const gasEstimationError = {
+		code: -32000,
+		message: 'execution reverted',
+		data: `0x08c379a0${ encodeAbiValues(['string'], [revertReason]).slice(2) }`,
+	}
+	const transactionToSimulate = {
+		website: simulated.website,
+		created: simulated.created,
+		originalRequestParameters: simulated.originalRequestParameters,
+		transactionIdentifier,
+		success: false as const,
+		error: { ...gasEstimationError, decodedErrorMessage: decodeEthereumError([], gasEstimationError).reason },
+	}
+	return {
+		...simulated,
+		uniqueRequestIdentifier,
+		transactionIdentifier,
+		transactionOrMessageCreationStatus: 'FailedToSimulate' as const,
+		transactionToSimulate,
+		popupVisualisation: {
+			...simulated.popupVisualisation,
+			data: { ...simulated.popupVisualisation.data, uniqueRequestIdentifier, transactionToSimulate },
+		},
+	}
+}
+
 const { UpdateConfirmTransactionDialogPendingTransactions } = await import('../../app/ts/types/interceptor-messages.js')
 const { serialize } = await import('../../app/ts/types/wire-types.js')
 const { ConfirmTransaction } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
@@ -525,6 +556,39 @@ describe('ConfirmTransaction', () => {
 			})
 		})
 		assert.equal(dom.document.body.textContent?.includes('1.25 ether'), true)
+
+		await unmountConfirmTransaction(dom)
+		clock.restore()
+		dom.restore()
+	})
+
+	test('shows decoded revert reasons for gas estimation failures in the current card and the stacked header', async () => {
+		const dom = installDomMock()
+		const clock = installDateMock('2024-01-01T00:00:10.000Z')
+		const browser = createBrowserMock()
+
+		await act(() => {
+			render(h(ConfirmTransaction, {}), dom.document.body)
+		})
+
+		await act(() => {
+			browser.dispatch({
+				role: 'all',
+				...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
+					method: 'popup_update_confirm_transaction_dialog_pending_transactions',
+					data: {
+						pendingTransactionAndSignableMessages: [makeGasEstimationFailedPendingTransaction('STF', 1), makeGasEstimationFailedPendingTransaction('SPL', 2)],
+						currentBlockNumber: 123n,
+						rpcConnectionStatus: undefined,
+					},
+				}),
+			})
+		})
+
+		const text = dom.document.body.textContent ?? ''
+		assert.equal(text.includes('Gas estimation error'), true)
+		assert.equal(text.includes('STF - possible Uniswap V3 error: Token transfer from the sender via safeTransferFrom failed'), true)
+		assert.equal(text.includes('SPL - possible Uniswap V3 error: The swap price limit is on the wrong side of the current price'), true)
 
 		await unmountConfirmTransaction(dom)
 		clock.restore()
