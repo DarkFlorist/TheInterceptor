@@ -21,6 +21,7 @@ import { SmallAddress } from '../subcomponents/address.js'
 import { TransactionInput } from '../subcomponents/ParsedInputData.js'
 import type { EthereumBytes32 } from '../../types/wire-types.js'
 import type { OriginalSendRequestParameters } from '../../types/JsonRpc-types.js'
+import type { EnrichedEthereumInputData } from '../../types/EnrichedEthereumData.js'
 import { getWebsiteWarningMessage } from '../../utils/websiteData.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
 import { checkAndThrowRuntimeLastError } from '../../utils/requests.js'
@@ -243,6 +244,7 @@ function FailedTransactionPreviewDetails({
 	transactionIdentifier,
 	originalRequestParameters,
 	addressMetaData,
+	parsedInputData,
 	created,
 	errorMessage,
 	isGasEstimationError,
@@ -256,6 +258,7 @@ function FailedTransactionPreviewDetails({
 	transactionIdentifier: bigint
 	originalRequestParameters: OriginalSendRequestParameters
 	addressMetaData: readonly AddressBookEntry[]
+	parsedInputData: EnrichedEthereumInputData | undefined
 	created: Date
 	errorMessage: string
 	isGasEstimationError: boolean
@@ -305,7 +308,7 @@ function FailedTransactionPreviewDetails({
 			<div style = 'margin-top: 10px;'>
 				<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Transaction Input</p>
 				{ rawRequest === undefined
-					? <TransactionInput parsedInputData = { undefined } input = { input } to = { to } addressMetaData = { addressMetaData } renameAddressCallBack = { renameAddressCallBack } />
+					? <TransactionInput parsedInputData = { parsedInputData } input = { input } to = { to } addressMetaData = { addressMetaData } renameAddressCallBack = { renameAddressCallBack } />
 					: <div class = 'textbox'><pre>{ dataStringWith0xStart(rawRequest) }</pre></div>
 				}
 			</div>
@@ -372,7 +375,8 @@ function TransactionCardContent(param: TransactionCardContentParams) {
 		return 'Unknown error'
 	}
 	if (popupVisualisation.statusCode === 'failed' || popupVisualisation.data.transactionToSimulate.success === false) {
-		const addressMetaData = popupVisualisation.statusCode === 'success' ? popupVisualisation.data.addressBookEntries : []
+		const failedTransactionPreview = popupVisualisation.data.failedTransactionPreview
+		const addressMetaData = failedTransactionPreview?.addressBookEntries ?? []
 		const safeFlow = getSafeTransactionPendingFlow(currentPendingTransaction)
 		return <>
 			<FailedTransactionPreviewDetails
@@ -380,6 +384,7 @@ function TransactionCardContent(param: TransactionCardContentParams) {
 				transactionIdentifier = { currentPendingTransaction.transactionIdentifier }
 				originalRequestParameters = { currentPendingTransaction.originalRequestParameters }
 				addressMetaData = { addressMetaData }
+				parsedInputData = { failedTransactionPreview?.parsedInputData }
 				created = { currentPendingTransaction.created }
 				errorMessage = { getErrorMesssage() }
 				isGasEstimationError = { !popupVisualisation.data.transactionToSimulate.success }

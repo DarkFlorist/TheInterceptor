@@ -531,6 +531,63 @@ describe('ConfirmTransaction', () => {
 		dom.restore()
 	})
 
+	test('names failed transaction addresses and shows calldata parsed with the recipient ABI', async () => {
+		const dom = installDomMock()
+		const clock = installDateMock('2024-01-01T00:00:10.000Z')
+		const browser = createBrowserMock()
+		const pending = makePendingTransaction(new Date('2024-01-01T00:00:05.000Z'))
+		const { from: senderAddress, to: tokenAddress } = pending.originalRequestParameters.params[0]
+		const supplierAddress = 0x3333333333333333333333333333333333333333n
+		const failedTransactionPreview = {
+			addressBookEntries: [
+				{ type: 'contact' as const, name: 'Invoice Payer', address: senderAddress, entrySource: 'User' as const },
+				{ type: 'ERC20' as const, name: 'USD Coin', symbol: 'USDC', decimals: 6n, address: tokenAddress, entrySource: 'DarkFloristMetadata' as const },
+				{ type: 'contact' as const, name: 'Supplier', address: supplierAddress, entrySource: 'User' as const },
+			],
+			parsedInputData: {
+				type: 'Parsed' as const,
+				input: new Uint8Array(),
+				name: 'transfer',
+				args: [
+					{ paramName: 'dst', typeValue: { type: 'address' as const, value: supplierAddress } },
+					{ paramName: 'wad', typeValue: { type: 'unsignedInteger' as const, value: 2_500_000n } },
+				],
+			},
+		}
+		const pendingWithPreview = {
+			...pending,
+			popupVisualisation: { ...pending.popupVisualisation, data: { ...pending.popupVisualisation.data, failedTransactionPreview } },
+		}
+
+		await act(() => {
+			render(h(ConfirmTransaction, {}), dom.document.body)
+		})
+		await act(() => {
+			browser.dispatch({
+				role: 'all',
+				...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
+					method: 'popup_update_confirm_transaction_dialog_pending_transactions',
+					data: {
+						pendingTransactionAndSignableMessages: [pendingWithPreview],
+						currentBlockNumber: 123n,
+						rpcConnectionStatus: undefined,
+					},
+				}),
+			})
+		})
+
+		const renderedText = dom.document.body.textContent ?? ''
+		assert.equal(renderedText.includes('Invoice Payer'), true, renderedText)
+		assert.equal(renderedText.includes('USD Coin'), true, renderedText)
+		assert.equal(renderedText.includes('transfer('), true, renderedText)
+		assert.equal(renderedText.includes('Supplier'), true, renderedText)
+		assert.equal(renderedText.includes('No ABI available'), false, renderedText)
+
+		await unmountConfirmTransaction(dom)
+		clock.restore()
+		dom.restore()
+	})
+
 	test('updates the simulation age when the real refresh flow runs', { timeout: 15_000 }, async () => {
 		const dom = installDomMock()
 		const clock = installDateMock('2024-01-01T00:00:10.000Z')
