@@ -123,7 +123,7 @@ const createTransferEvent = ({
 })
 
 const getWarning = async (transaction: EthereumUnsignedTransaction, events: EnrichedEthereumEvents) => (
-	await getSendToNonContactWarning(transaction, events, identifyAddress)
+	await getSendToNonContactWarning(transaction, events, identifyAddress, async () => [])
 )
 
 describe('sendToNonContact proxy transfers', () => {
