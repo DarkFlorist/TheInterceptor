@@ -305,15 +305,15 @@ header:has(form[role='search']) h1 {
 		}
 	}
 
-	> [role=img] {
+	> [role=img]:not(.inline-card-warning-sign) {
 		grid-area: start / start / end / copy;
-		:focus-within > &, :hover > & { opacity: 0 }
+		:has(> .inline-card-actions:focus-within) > &, :hover > & { opacity: 0 }
 	}
 
 	> data {
 		grid-area: start / copy / end / end;
 		font-size: var(--text-size);
-		:focus-within > &, :hover > & { opacity: 0 }
+		:has(> .inline-card-actions:focus-within) > &, :hover > & { opacity: 0 }
 	}
 
 	> .inline-card-actions {
@@ -327,7 +327,8 @@ header:has(form[role='search']) h1 {
 		}
 
 		opacity: 0;
-		:hover > &, :focus-within > & { opacity: 1 }
+		/* Focus on the copy and edit buttons reveals them; focus left on the warning sign after a click does not keep them shown */
+		:hover > &, &:focus-within { opacity: 1 }
 
 		> :is(button, .inline-card-static-action) {
 			font: inherit;
@@ -399,18 +400,18 @@ header:has(form[role='search']) h1 {
 		}
 	}
 
-	&:has([role=alert]) {
+	&:has(.inline-card-warning-sign) {
 		--bg-status-color: var(--status-dimmed-bg-color); /* dark red */
 		min-width: calc(var(--image-size) + var(--min-text-width) + (var(--bg-inline-padding) * 2) + 4ch);
 
 	}
 
-	[role=alert] {
+	.inline-card-warning-sign {
 		color: var(--status-alert-text-color); /* bright yellow */
-		cursor: pointer;
+		cursor: help;
 
 		&:has(+ *) { margin-right: 0.25em }
-		&:is(* + [role=alert]) { margin-left: 0.25em }
+		&:is(* + .inline-card-warning-sign) { margin-left: 0.25em }
 	}
 }
 

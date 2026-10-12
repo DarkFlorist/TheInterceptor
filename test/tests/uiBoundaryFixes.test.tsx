@@ -343,12 +343,22 @@ describe('UI boundary fixes', () => {
 		const dom = installDomMock()
 		try {
 			await act(() => {
-				render(<InlineCard icon = { () => <span>Token</span> } label = 'TKN' warningMessage = 'Untrusted address' noCopy noExpandButtons />, dom.document.body)
+				render(<InlineCard icon = { () => <span>Token</span> } label = 'TKN' warningMessage = 'Token warning details' noCopy noExpandButtons />, dom.document.body)
 			})
 
-			const warningSigns = collectElements(dom.document.body, 'span').filter((element) => element.getAttribute?.('role') === 'alert')
+			const warningSigns = collectElements(dom.document.body, 'span').filter((element) => element.getAttribute?.('class') === 'inline-card-warning-sign')
 			assert.equal(warningSigns.length, 2)
-			assert.equal(warningSigns.every((warningSign) => warningSign.getAttribute?.('title') === 'Untrusted address'), true)
+			assert.equal(warningSigns.every((warningSign) => warningSign.getAttribute?.('data-tooltip') === 'Token warning details'), true)
+			assert.equal(warningSigns.every((warningSign) => warningSign.getAttribute?.('title') === ''), true)
+			assert.equal(warningSigns.some((warningSign) => warningSign.getAttribute?.('role') === 'alert' || warningSign.getAttribute?.('aria-live') !== null), false)
+			const [leadingSign, trailingSign] = warningSigns
+			assert.equal(leadingSign?.getAttribute?.('role'), 'img')
+			assert.equal(leadingSign?.getAttribute?.('aria-label'), 'Token warning details')
+			assert.equal(leadingSign?.getAttribute?.('tabIndex'), 0)
+			assert.equal(trailingSign?.getAttribute?.('role'), null)
+			assert.equal(trailingSign?.getAttribute?.('aria-label'), null)
+			assert.equal(trailingSign?.getAttribute?.('aria-hidden'), true)
+			assert.equal(trailingSign?.getAttribute?.('tabIndex'), null)
 		} finally {
 			render(null, dom.document.body)
 			dom.restore()

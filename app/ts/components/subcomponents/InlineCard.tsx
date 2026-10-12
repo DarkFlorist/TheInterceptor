@@ -37,7 +37,7 @@ export const InlineCard = (props: InlineCardProps) => {
 
 	return (
 		<span class = 'inline-card' role = 'figure' style = { props.style } title = { props.label }>
-			{ props.warningMessage ? <WarningSign message = { props.warningMessage } /> : <></> }
+			{ props.warningMessage ? <WarningSign message = { props.warningMessage } isTrailingSign = { false } /> : <></> }
 			<span role = 'img'><Icon /></span>
 			<data class = 'truncate text-legible' style = { props.style } value = { props.label }>{ props.label }</data>
 			<span class = 'inline-card-actions' role = { hasAction ? 'group' : undefined } aria-hidden = { props.nonInteractive || !hasAction } aria-label = { props.noExpandButtons || props.nonInteractive || !hasAction ? undefined : 'Spell-out actions' }>
@@ -80,12 +80,27 @@ export const InlineCard = (props: InlineCardProps) => {
 					</button>
 				) : <></> }
 			</span>
-			{ props.warningMessage ? <WarningSign message = { props.warningMessage } /> : <></> }
+			{ props.warningMessage ? <WarningSign message = { props.warningMessage } isTrailingSign = { true } /> : <></> }
 			<Tooltip config = { tooltip } />
 		</span>
 	)
 }
 
-const WarningSign = ({ message = 'Warning' }: { message?: string }) => {
-	return <span role = 'alert' title = { message }>⚠</span>
+type WarningSignProps = {
+	message: string
+	// The card shows a sign on both sides of its label; only the leading sign is focusable and announced, so keyboard and screen reader users meet the warning once.
+	isTrailingSign: boolean
+}
+
+const WarningSign = ({ message, isTrailingSign }: WarningSignProps) => {
+	// The surrounding Hint container shows data-tooltip on hover and keyboard focus. The empty title stops the card's label title from also appearing as a native tooltip over the sign. The sign is a named image rather than an alert, because an alert is a live region that would read the whole warning aloud every time a token card renders.
+	return <span
+		class = 'inline-card-warning-sign'
+		role = { isTrailingSign ? undefined : 'img' }
+		data-tooltip = { message }
+		title = ''
+		aria-label = { isTrailingSign ? undefined : message }
+		aria-hidden = { isTrailingSign ? true : undefined }
+		tabIndex = { isTrailingSign ? undefined : 0 }
+	>⚠</span>
 }

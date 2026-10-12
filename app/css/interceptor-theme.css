@@ -866,7 +866,6 @@ input[type=checkbox]:not([role=switch]):checked::before {
 	cursor: default;
 	border: 1px solid var(--white-color);
 	background-color: var(--card-bg-color);
-	max-width: 100%;
 	font-size: 0.75rem;
 }
 

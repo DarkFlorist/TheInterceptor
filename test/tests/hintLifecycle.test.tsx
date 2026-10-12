@@ -8,13 +8,25 @@ import { installDomMock } from './domMock.js'
 type TestNode = {
 	readonly childNodes?: readonly TestNode[]
 	readonly dispatchEvent?: (event: Event) => boolean
+	readonly getAttribute?: (name: string) => unknown
+	readonly style?: Record<string, unknown>
 	readonly tagName?: string
+	readonly textContent?: string
 }
 
 function findElement(node: TestNode | undefined, tagName: string): TestNode | undefined {
 	if (node?.tagName === tagName.toUpperCase()) return node
 	for (const child of node?.childNodes ?? []) {
 		const match = findElement(child, tagName)
+		if (match !== undefined) return match
+	}
+	return undefined
+}
+
+function findElementByClass(node: TestNode | undefined, className: string): TestNode | undefined {
+	if (node?.getAttribute?.('class') === className) return node
+	for (const child of node?.childNodes ?? []) {
+		const match = findElementByClass(child, className)
 		if (match !== undefined) return match
 	}
 	return undefined
@@ -56,6 +68,50 @@ describe('Hint lifecycle', () => {
 		} finally {
 			globalThis.setTimeout = originalSetTimeout
 			globalThis.clearTimeout = originalClearTimeout
+			render(null, dom.document.body)
+			dom.restore()
+		}
+	})
+
+	test('shows the tooltip of a focused element until it loses focus', async () => {
+		const dom = installDomMock()
+		try {
+			await act(() => {
+				render(<Hint>
+					<span data-tooltip = 'Focused explanation' tabIndex = { 0 }>Warning</span>
+					<div data-tooltip = 'Wrapper tooltip'><button>Nested control</button></div>
+				</Hint>, dom.document.body)
+			})
+			const focusableTooltip = findElement(dom.document.body, 'span')
+			const nestedButton = findElement(dom.document.body, 'button')
+			if (focusableTooltip?.dispatchEvent === undefined || nestedButton?.dispatchEvent === undefined) throw new Error('tooltip targets were not rendered')
+
+			await act(() => { focusableTooltip.dispatchEvent?.(new Event('focusin', { bubbles: true })) })
+			assert.equal(findElementByClass(dom.document.body, 'preact-hint__content')?.textContent, 'Focused explanation')
+
+			await act(() => { focusableTooltip.dispatchEvent?.(new Event('focusout', { bubbles: true })) })
+			assert.equal(findElementByClass(dom.document.body, 'preact-hint__content'), undefined)
+
+			await act(() => { nestedButton.dispatchEvent?.(new Event('focusin', { bubbles: true })) })
+			assert.equal(findElementByClass(dom.document.body, 'preact-hint__content'), undefined)
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+		}
+	})
+
+	test('keeps wrapped hints narrower than the viewport by the positioning padding on both sides', async () => {
+		const dom = installDomMock()
+		try {
+			await act(() => {
+				render(<Hint><span>Hint target</span></Hint>, dom.document.body)
+			})
+			const hintTarget = findElement(dom.document.body, 'span')
+			if (hintTarget?.dispatchEvent === undefined) throw new Error('hint target was not rendered')
+
+			await act(() => { showHint(hintTarget, { content: 'A long explanation that wraps', delay: 60_000, x: 0, y: 0 }) })
+			assert.equal(findElementByClass(dom.document.body, 'preact-hint')?.style?.['maxWidth'], 'calc(100% - 60px)')
+		} finally {
 			render(null, dom.document.body)
 			dom.restore()
 		}

@@ -10,6 +10,9 @@ interface Props {
 
 const timerAttribute = 'data-hint-clickable-hide-timer-ms'
 const showHintEventName = 'interceptor:show-hint'
+const viewportBorderPadding = 30
+// Wrapped hints stay narrower than the viewport by the padding calculatePosition keeps on both sides, so clamping their position never pushes them off screen.
+const hintMaxWidth = `calc(100% - ${ 2 * viewportBorderPadding }px)`
 
 type ShowHintEventDetail = {
 	content: string
@@ -113,9 +116,20 @@ export default function Container(props: Props) {
 			}, 250)
 		}
 
+		// Only a focused element that carries the tooltip itself shows it, so focusable controls nested inside a tooltip wrapper such as CopyToClipboard keep their current behavior.
+		const focusin = (event: FocusEvent) => {
+			const targetElement = event.target
+			if (!(targetElement instanceof Element) || !targetElement.hasAttribute(toolTipAttribute) || !containerElement.contains(targetElement)) return
+			clearTimeout(toolTipTimeoutIdRef.current ?? undefined)
+			const targetBounds = targetElement.getBoundingClientRect()
+			content.value = targetElement.getAttribute(toolTipAttribute) || ''
+			clickPosition.value = { x: targetBounds.left + targetBounds.width / 2, y: targetBounds.bottom }
+		}
+
 		containerElement.addEventListener('click', click)
 		containerElement.addEventListener('mouseover', mouseover)
 		containerElement.addEventListener('mouseout', hide)
+		containerElement.addEventListener('focusin', focusin)
 		containerElement.addEventListener('focusout', hide)
 		containerElement.addEventListener(showHintEventName, show)
 
@@ -126,6 +140,7 @@ export default function Container(props: Props) {
 			containerElement.removeEventListener('click', click)
 			containerElement.removeEventListener('mouseover', mouseover)
 			containerElement.removeEventListener('mouseout', hide)
+			containerElement.removeEventListener('focusin', focusin)
 			containerElement.removeEventListener('focusout', hide)
 			containerElement.removeEventListener(showHintEventName, show)
 		}
@@ -154,10 +169,9 @@ interface HintProps {
 function calculatePosition(clickPositionX: number, clickPositionY: number, hintWidth: number) {
 	const positionX = clickPositionX - hintWidth / 2
 	const positionY = clickPositionY + 10
-	const borderPadding = 30
 
 	return {
-		left: positionX + hintWidth > globalThis.innerWidth - borderPadding ? globalThis.innerWidth - borderPadding - hintWidth : (positionX < borderPadding ? borderPadding : positionX),
+		left: positionX + hintWidth > globalThis.innerWidth - viewportBorderPadding ? globalThis.innerWidth - viewportBorderPadding - hintWidth : (positionX < viewportBorderPadding ? viewportBorderPadding : positionX),
 		top: positionY,
 	}
 }
@@ -174,7 +188,7 @@ function Hint(props: HintProps) {
 	})
 
 	return (
-		<div class = 'preact-hint' style = { dialogPosition.value }>
+		<div class = 'preact-hint' style = { { ...dialogPosition.value, maxWidth: hintMaxWidth } }>
 			<span class = 'preact-hint__content' ref = { hintElementRef }>
 				{ props.template ? props.template(props.content.value) : props.content.value }
 			</span>
