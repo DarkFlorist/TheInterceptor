@@ -1,7 +1,7 @@
 import { SafeMessage } from '../../safe/safeMessage.js'
 import type { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
 import { stringifyJSONWithBigInts } from '../../utils/bigint.js'
-import { type OpenSeaOrderMessage, PersonalSignRequestIdentifiedEIP712Message, type VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
+import { type OpenSeaOrderMessage, type Permit2SignatureTransfer, type Permit2Witness, PersonalSignRequestIdentifiedEIP712Message, type VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
 import { assertNever } from '../../utils/typescript.js'
 import { extractEIP712Message, validateEIP712Types } from '../../utils/eip712Parsing.js'
 import { getRpcNetworkForChain, getTabState } from '../storageVariables.js'
@@ -13,6 +13,7 @@ import { parseInputData } from '../../simulation/parsing.js'
 import { getMessageHashForPersonalSign } from '../../simulation/services/simulationPersonalSigning.js'
 import { getMessageAndDomainHash, getSafeTxHash, isValidMessage } from '../../utils/eip712.js'
 import { promiseAllMapAbortSafe } from '../../utils/requests.js'
+import type { EIP712Message } from '../../types/eip721.js'
 
 async function addMetadataToOpenSeaOrder(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, openSeaOrder: OpenSeaOrderMessage) {
 	return {
@@ -22,6 +23,43 @@ async function addMetadataToOpenSeaOrder(ethereumClientService: EthereumClientSe
 		offer: await promiseAllMapAbortSafe(openSeaOrder.offer, async (offer) => ({ ...offer, token: await identifyAddress(ethereumClientService, requestAbortController, offer.token) })),
 		consideration: await promiseAllMapAbortSafe(openSeaOrder.consideration, async (offer) => ({ ...offer, token: await identifyAddress(ethereumClientService, requestAbortController, offer.token), recipient: await identifyAddress(ethereumClientService, requestAbortController, offer.recipient) }))
 	 }
+}
+
+async function identifyPermitToken(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, tokenAddress: bigint) {
+	const token = await identifyAddress(ethereumClientService, requestAbortController, tokenAddress)
+	if (token.type === 'ERC721') throw new Error('Attempted to perform Permit to an ERC721')
+	if (token.type === 'ERC1155') throw new Error('Attempted to perform Permit to an ERC1155')
+	return token
+}
+
+function getPermit2SignatureTransferTokenPermissions(permit: Permit2SignatureTransfer) {
+	switch (permit.primaryType) {
+		case 'PermitTransferFrom':
+		case 'PermitWitnessTransferFrom': return [permit.message.permitted]
+		case 'PermitBatchTransferFrom':
+		case 'PermitBatchWitnessTransferFrom': return permit.message.permitted
+		default: assertNever(permit)
+	}
+}
+
+function getPermit2WitnessTypeField(permit: Permit2SignatureTransfer) {
+	switch (permit.primaryType) {
+		case 'PermitTransferFrom':
+		case 'PermitBatchTransferFrom': return undefined
+		case 'PermitWitnessTransferFrom': return permit.types.PermitWitnessTransferFrom[4]
+		case 'PermitBatchWitnessTransferFrom': return permit.types.PermitBatchWitnessTransferFrom[4]
+		default: assertNever(permit)
+	}
+}
+
+async function extractPermit2Witness(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, typedData: EIP712Message, permit: Permit2SignatureTransfer): Promise<Permit2Witness | undefined> {
+	const witnessTypeField = getPermit2WitnessTypeField(permit)
+	if (witnessTypeField === undefined) return undefined
+	// The witness struct is integrator defined, so it is enriched with the generic EIP-712 extractor from the original request instead of a dedicated runtime type.
+	const enrichedTypedData = await extractEIP712Message(ethereumClientService, requestAbortController, typedData)
+	const witnessValue = enrichedTypedData.message[witnessTypeField.name]
+	if (witnessValue === undefined) throw new Error(`Permit2 witness field "${ witnessTypeField.name }" is missing from the message`)
+	return { fieldName: witnessTypeField.name, typeName: witnessTypeField.type, value: witnessValue }
 }
 
 export function getSigningQuarantineCodes(messageChainId: bigint | undefined, activeChainId: bigint, accountAddress: bigint, activeAddress: bigint, ownerAddress: bigint | undefined): { quarantine: boolean, quarantineReasons: readonly string[] } {
@@ -126,10 +164,8 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 	const parsed = maybeParsed.value
 	switch (parsed.primaryType) {
 		case 'Permit': {
-			const token = await identifyAddress(ethereumClientService, requestAbortController, parsed.domain.verifyingContract)
+			const token = await identifyPermitToken(ethereumClientService, requestAbortController, parsed.domain.verifyingContract)
 			const owner = await identifyAddress(ethereumClientService, requestAbortController, parsed.message.owner)
-			if (token.type === 'ERC721') throw 'Attempted to perform Permit to an ERC721'
-			if (token.type === 'ERC1155') throw 'Attempted to perform Permit to an ERC1155'
 			return {
 				method: originalParams.originalRequestParameters.method,
 				...basicParams,
@@ -148,9 +184,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			}
 		}
 		case 'PermitSingle': {
-			const token = await identifyAddress(ethereumClientService, requestAbortController, parsed.message.details.token)
-			if (token.type === 'ERC721') throw 'Attempted to perform Permit to an ERC721'
-			if (token.type === 'ERC1155') throw 'Attempted to perform Permit to an ERC1155'
+			const token = await identifyPermitToken(ethereumClientService, requestAbortController, parsed.message.details.token)
 			return {
 				method: originalParams.originalRequestParameters.method,
 				...basicParams,
@@ -167,6 +201,43 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 				isValidMessage: isValid.valid,
 				...hashes,
 			}
+		}
+		case 'PermitBatch': return {
+			method: originalParams.originalRequestParameters.method,
+			...basicParams,
+			rpcNetwork: rpcNetwork.chainId !== parsed.domain.chainId ? await getRpcNetworkForChain(parsed.domain.chainId) : rpcNetwork,
+			type: 'Permit2Batch' as const,
+			message: parsed,
+			account,
+			details: await promiseAllMapAbortSafe(parsed.message.details, async (details) => ({ ...details, token: await identifyPermitToken(ethereumClientService, requestAbortController, details.token) })),
+			spender: await identifyAddress(ethereumClientService, requestAbortController, parsed.message.spender),
+			verifyingContract: await identifyAddress(ethereumClientService, requestAbortController, parsed.domain.verifyingContract),
+			...getSigningQuarantineCodes(parsed.domain.chainId, rpcNetwork.chainId, account.address, activeAddressWithMetadata.address, undefined),
+			stringifiedMessage: stringifyJSONWithBigInts(parsed, 4),
+			rawMessage: stringifyJSONWithBigInts(parsed),
+			isValidMessage: isValid.valid,
+			...hashes,
+		}
+		case 'PermitTransferFrom':
+		case 'PermitBatchTransferFrom':
+		case 'PermitWitnessTransferFrom':
+		case 'PermitBatchWitnessTransferFrom': return {
+			method: originalParams.originalRequestParameters.method,
+			...basicParams,
+			rpcNetwork: rpcNetwork.chainId !== parsed.domain.chainId ? await getRpcNetworkForChain(parsed.domain.chainId) : rpcNetwork,
+			type: 'Permit2SignatureTransfer' as const,
+			message: parsed,
+			account,
+			permitted: await promiseAllMapAbortSafe(getPermit2SignatureTransferTokenPermissions(parsed), async (permission) => ({ ...permission, token: await identifyPermitToken(ethereumClientService, requestAbortController, permission.token) })),
+			spender: await identifyAddress(ethereumClientService, requestAbortController, parsed.message.spender),
+			verifyingContract: await identifyAddress(ethereumClientService, requestAbortController, parsed.domain.verifyingContract),
+			witness: await extractPermit2Witness(ethereumClientService, requestAbortController, namedParams.param, parsed),
+			...getSigningQuarantineCodes(parsed.domain.chainId, rpcNetwork.chainId, account.address, activeAddressWithMetadata.address, undefined),
+			// The parsed message drops the witness and its struct types, so show the original request like the generic EIP-712 path does.
+			stringifiedMessage: stringifyJSONWithBigInts(namedParams.param, 4),
+			rawMessage: stringifyJSONWithBigInts(namedParams.param),
+			isValidMessage: isValid.valid,
+			...hashes,
 		}
 		case 'SafeTx': {
 			const addresses = {

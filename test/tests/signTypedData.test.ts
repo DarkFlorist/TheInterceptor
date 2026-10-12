@@ -1,4 +1,4 @@
-import { Permit2, SafeTx } from '../../app/ts/types/personal-message-definitions.js'
+import { Permit2, PersonalSignRequestIdentifiedEIP712Message, SafeTx } from '../../app/ts/types/personal-message-definitions.js'
 import { describe, test } from 'bun:test'
 import { extractEIP712Message, validateEIP712Types } from '../../app/ts/utils/eip712Parsing.js'
 import * as assert from 'assert'
@@ -8,7 +8,7 @@ import { EthereumClientService } from '../../app/ts/simulation/services/Ethereum
 import { EIP712Message, EnrichedEIP712 } from '../../app/ts/types/eip721.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
 import { getMessageAndDomainHash, verifyEip712Message } from '../../app/ts/utils/eip712.js'
-import { canVerifyStructArray, chainIdIsNotDefined, chainIdOverFlow, d2Array, d2ArrayFixed, d3ArrayFixed, duplicateType, eip712Example, eip721DomainMissing, extraType, fixedArrayOverload, hasArray, hasFixedArray, hasTooLongFixedArray, missingChainId, openSeaWithTotalOriginalConsiderationItems, permit2Message, permit2MessageHexChainId, permit2MessageNumberChainId, primarytypeIsWrong, safeTx, smallOverFlow, structNotDefined, tupleSupport, typeMissmatch, unknownExtraField, unknownExtraField2 } from './data/eip712Data.js'
+import { canVerifyStructArray, chainIdIsNotDefined, chainIdOverFlow, d2Array, d2ArrayFixed, d3ArrayFixed, duplicateType, eip712Example, eip721DomainMissing, extraType, fixedArrayOverload, hasArray, hasFixedArray, hasTooLongFixedArray, missingChainId, openSeaWithTotalOriginalConsiderationItems, permit2BatchTransferFromMessage, permit2BatchWitnessTransferFromMessage, permit2Message, permit2MessageHexChainId, permit2MessageNumberChainId, permit2PermitBatchMessage, permit2TransferFromMessage, permit2UniswapXWitnessTransferFromMessage, permit2WitnessTransferFromWitnessNotLastMessage, primarytypeIsWrong, safeTx, smallOverFlow, structNotDefined, tupleSupport, typeMissmatch, unknownExtraField, unknownExtraField2 } from './data/eip712Data.js'
 import { jsonParserWithNumbersAsStringsConverter } from '../../app/ts/utils/json.js'
 
 
@@ -33,6 +33,51 @@ describe('EIP712', () => {
 	})
 	test('can parse Permit2 message', () => {
 		Permit2.parse(JSON.parse(permit2Message))
+	})
+	test('identifies every Permit2 AllowanceTransfer and SignatureTransfer message kind', () => {
+		for (const [typedData, primaryType] of [
+			[permit2Message, 'PermitSingle'],
+			[permit2PermitBatchMessage, 'PermitBatch'],
+			[permit2TransferFromMessage, 'PermitTransferFrom'],
+			[permit2BatchTransferFromMessage, 'PermitBatchTransferFrom'],
+			[permit2UniswapXWitnessTransferFromMessage, 'PermitWitnessTransferFrom'],
+			[permit2BatchWitnessTransferFromMessage, 'PermitBatchWitnessTransferFrom'],
+		] as const) {
+			const parsed = EIP712Message.parse(typedData)
+			assert.deepEqual(verifyEip712Message(parsed), { valid: true }, primaryType)
+			assert.equal(PersonalSignRequestIdentifiedEIP712Message.parse(parsed).primaryType, primaryType)
+		}
+	})
+	test('keeps the integrator defined Permit2 witness field name and type', () => {
+		const uniswapX = PersonalSignRequestIdentifiedEIP712Message.parse(EIP712Message.parse(permit2UniswapXWitnessTransferFromMessage))
+		if (uniswapX.primaryType !== 'PermitWitnessTransferFrom') throw new Error('Expected a Permit2 witness transfer')
+		assert.deepEqual(uniswapX.types.PermitWitnessTransferFrom[4], { name: 'witness', type: 'ExclusiveDutchOrder' })
+		assert.equal(uniswapX.message.permitted.amount, 1000000000n)
+
+		const settler = PersonalSignRequestIdentifiedEIP712Message.parse(EIP712Message.parse(permit2BatchWitnessTransferFromMessage))
+		if (settler.primaryType !== 'PermitBatchWitnessTransferFrom') throw new Error('Expected a Permit2 batch witness transfer')
+		assert.deepEqual(settler.types.PermitBatchWitnessTransferFrom[4], { name: 'slippageAndActions', type: 'SlippageAndActions' })
+		assert.equal(settler.message.permitted.length, 2)
+	})
+	test('does not identify valid EIP712 messages that deviate from the Permit2 types', () => {
+		const witnessNotLast = EIP712Message.parse(permit2WitnessTransferFromWitnessNotLastMessage)
+		assert.deepEqual(verifyEip712Message(witnessNotLast), { valid: true })
+		assert.equal(validateEIP712Types(witnessNotLast), true)
+		assert.equal(PersonalSignRequestIdentifiedEIP712Message.safeParse(witnessNotLast).success, false)
+
+		const notPermit2Domain = JSON.parse(permit2BatchTransferFromMessage)
+		notPermit2Domain.domain.name = 'Permit3'
+		assert.equal(PersonalSignRequestIdentifiedEIP712Message.safeParse(EIP712Message.parse(JSON.stringify(notPermit2Domain))).success, false)
+
+		const wrongAmountType = JSON.parse(permit2TransferFromMessage)
+		wrongAmountType.types.TokenPermissions[1].type = 'uint160'
+		assert.deepEqual(verifyEip712Message(EIP712Message.parse(JSON.stringify(wrongAmountType))), { valid: true })
+		assert.equal(PersonalSignRequestIdentifiedEIP712Message.safeParse(EIP712Message.parse(JSON.stringify(wrongAmountType))).success, false)
+
+		const singleDetailsInBatch = JSON.parse(permit2PermitBatchMessage)
+		singleDetailsInBatch.types.PermitBatch[0].type = 'PermitDetails'
+		singleDetailsInBatch.message.details = singleDetailsInBatch.message.details[0]
+		assert.equal(PersonalSignRequestIdentifiedEIP712Message.safeParse(EIP712Message.parse(JSON.stringify(singleDetailsInBatch))).success, false)
 	})
 	test('can parse safeTx message', () => {
 		SafeTx.parse(JSON.parse(safeTx))
