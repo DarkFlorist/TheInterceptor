@@ -1,19 +1,16 @@
-import { getActiveAddress, getActiveAddressesForAllTabs, getWebsiteSocketConnection, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
+import { getActiveAddress, getWebsiteSocketConnection, websiteSocketToString } from './backgroundUtils.js'
 import { getActiveAddressEntryForChain, getActiveAddresses } from './metadataUtils.js'
-import { requestAccessFromUser } from './windows/interceptorAccess.js'
-import { retrieveWebsiteDetails, updateExtensionIcon } from './iconHandler.js'
+import { updateExtensionIcon } from './iconHandler.js'
 import type { TabConnection, WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { InpageScriptCallBack, Settings } from '../types/interceptor-messages.js'
-import { getSettings, getWebsiteAccess, updateWebsiteAccess } from './settings.js'
+import { updateWebsiteAccess } from './settings.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
-import { type WebsiteSocket, getHostWithPort } from '../utils/requests.js'
+import type { WebsiteSocket } from '../utils/requests.js'
 import { getAllTabStates } from './storageVariables.js'
 import type { Website, WebsiteAccessArray, WebsiteAddressAccess } from '../types/websiteAccessTypes.js'
 import { getUniqueItemsByProperties, replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
 import { modifyObject } from '../utils/typescript.js'
 import type { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
-import { Semaphore } from '../utils/semaphore.js'
-import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { mergeStoredWebsiteMetadata } from '../utils/websiteIcons.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
@@ -23,6 +20,8 @@ import { notifyWebsiteLifecycle } from './websiteLifecycle.js'
 import { hasAccess, hasAddressAccess, type ApprovalState } from './websiteAccessPolicy.js'
 import { getWebsiteActiveAddress } from './websiteActiveAddress.js'
 import { updateWebsiteAccessAndContentScriptInjectionStrategy } from './websiteAccessUpdating.js'
+import { updateDeclarativeNetRequestBlocks } from './websiteRequestBlocking.js'
+import type { LockedSettings } from './settingsTransitionLock.js'
 
 function setWebsitePortApproval(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, approved: boolean) {
 	const connection = getWebsiteSocketConnection(websiteTabConnections, socket)
@@ -231,21 +230,13 @@ export async function getAssociatedAddresses(settings: Settings, websiteOrigin: 
 	return getUniqueItemsByProperties(all, ['address'])
 }
 
-async function askUserForAccessOnConnectionUpdate(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string, activeAddress: AddressBookEntry | undefined, settings: Settings) {
-	const details = getWebsiteSocketConnection(websiteTabConnections, socket)
-	if (details === undefined) return
-
-	const website = { websiteOrigin, ...await retrieveWebsiteDetails(socket.tabId, websiteOrigin) }
-	await requestAccessFromUser(simulationServicesOwner, websiteTabConnections, socket, website, undefined, activeAddress, settings, activeAddress, undefined)
-}
-
 function addIconRefreshTarget(iconRefreshTargets: Map<string, { tabId: number, websiteOrigin: string }>, tabId: number, websiteOrigin: string) {
 	const key = `${ tabId }-${ websiteOrigin }`
 	if (iconRefreshTargets.has(key)) return
 	iconRefreshTargets.set(key, { tabId, websiteOrigin })
 }
 
-async function getConnectionAccess(websiteTabConnections: WebsiteTabConnections, connection: TabConnection['connections'][string], settings: Settings) {
+export async function getConnectionAccess(websiteTabConnections: WebsiteTabConnections, connection: TabConnection['connections'][string], settings: Settings) {
 	const activeAddress = await getActiveAddressForCurrentSignerState(websiteTabConnections, settings, connection.socket.tabId, async () => await getActiveAddress(settings, connection.socket.tabId))
 	const access = activeAddress ? hasAddressAccess(settings.websiteAccess, connection.websiteOrigin, activeAddress) : hasAccess(settings.websiteAccess, connection.websiteOrigin)
 	return { activeAddress, access }
@@ -272,130 +263,19 @@ async function updateTabConnections(
 	return iconRefreshTargets
 }
 
-async function promptForWebsiteAccesses(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, throwOnError = false) {
-	for (const tabConnection of websiteTabConnections.values()) {
-		for (const connection of Object.values(tabConnection.connections)) {
-			if (!connection.wantsToConnect) continue
-			try {
-				// Reconciliation uses the committed snapshot; deferred prompts must recheck the latest settings.
-				const settings = await getSettings()
-				const { activeAddress, access } = await getConnectionAccess(websiteTabConnections, connection, settings)
-				if (access !== 'askAccess') continue
-				await askUserForAccessOnConnectionUpdate(simulationServicesOwner, websiteTabConnections, connection.socket, connection.websiteOrigin, activeAddress, settings)
-			} catch (error) {
-				if (throwOnError) throw error
-				await reportUnexpectedError(error)
-			}
-		}
-	}
-}
-
-const getApprovedTabs = (websiteTabConnections: WebsiteTabConnections) => {
-	const approvedTabs = new Set<number>()
-	for (const [tab, tabConnection] of websiteTabConnections.entries()) {
-		for (const key in tabConnection.connections) {
-			const connection = tabConnection.connections[key]
-			if (connection?.approved) {
-				approvedTabs.add(tab)
-				continue
-			}
-		}
-	}
-	return approvedTabs
-}
-const getTabsAndAddressesToBlock = async (websiteTabConnections: WebsiteTabConnections) => {
-	const approvedTabIds = getApprovedTabs(websiteTabConnections)
-	const tabIdsToBlock = (await getActiveAddressesForAllTabs(await getSettings())).filter((tabData) => approvedTabIds.has(tabData.tabId)).filter((tabData) => tabData.activeAddress?.declarativeNetRequestBlockMode === 'block-all').map((tabData) => tabData.tabId)
-	const sitesToBlock = (await getWebsiteAccess()).filter((access) => access.declarativeNetRequestBlockMode === 'block-all').map((acccess) => acccess.website.websiteOrigin)
-	return {
-		tabIdsToBlock,
-		sitesToBlock
-	}
-}
-
-let webRequestListener: (details: browser.webRequest._OnBeforeRequestDetails) => void = () => undefined
-let previousDecralativeNetRequestBlockIdentifier = ''
-const updateDeclarativeNetRequestBlocksSemaphore = new Semaphore(1)
-export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: WebsiteTabConnections) {
-	return await updateDeclarativeNetRequestBlocksSemaphore.execute(async () => {
-		const { tabIdsToBlock, sitesToBlock } = await getTabsAndAddressesToBlock(websiteTabConnections)
-		// check if the rules would change, if not, just bail out
-		const decralativeNetRequestBlockIdentifier = `${ tabIdsToBlock.join('|') }|a|${ sitesToBlock.join('|') }`
-		if (decralativeNetRequestBlockIdentifier === previousDecralativeNetRequestBlockIdentifier) return
-
-		if (browser.runtime.getManifest().manifest_version === 3) {
-			const dynamicRuleIds = (await browser.declarativeNetRequest.getDynamicRules()).map((rule) => rule.id)
-			const sessionRuleIds = (await browser.declarativeNetRequest.getSessionRules()).map((rule) => rule.id)
-			if (sitesToBlock.length !== 0) {
-				await browser.declarativeNetRequest.updateDynamicRules({
-					removeRuleIds: dynamicRuleIds,
-					addRules: [{
-						id: dynamicRuleIds.length === 0 ? 1 : Math.max.apply(null, dynamicRuleIds) + 1,
-						priority: 1,
-						action : { type: 'block' as const },
-						condition: { initiatorDomains: sitesToBlock, domainType: 'thirdParty' as const }
-					}]
-				})
-			} else {
-				await browser.declarativeNetRequest.updateDynamicRules({ removeRuleIds: dynamicRuleIds })
-			}
-			if (tabIdsToBlock.length !== 0) {
-				await browser.declarativeNetRequest.updateSessionRules({
-					removeRuleIds: sessionRuleIds,
-					addRules: [{
-						id: sessionRuleIds.length === 0 ? 1 : Math.max.apply(null, sessionRuleIds) + 1,
-						priority: 2,
-						action : { type: 'block' as const },
-						condition: { tabIds: tabIdsToBlock, domainType: 'thirdParty' as const }
-					}]
-				})
-			} else {
-				await browser.declarativeNetRequest.updateSessionRules({ removeRuleIds: sessionRuleIds })
-			}
-			// enable `declarativeNetRequestFeedback` permission to manifest and uncomment to enable debugging
-			// const a = (data: any) => { console.log(data) }
-			// (browser.declarativeNetRequest as any).onRuleMatchedDebug.addListener(a)
-			previousDecralativeNetRequestBlockIdentifier = decralativeNetRequestBlockIdentifier
-		} else {
-			browser.webRequest.onBeforeRequest.removeListener(webRequestListener)
-			webRequestListener = (details: browser.webRequest._OnBeforeRequestDetails) => {
-				if (tabIdsToBlock.find((tabId) => tabId === details.tabId) !== undefined) return { cancel: true }
-				if (details.originUrl === undefined) return {}
-				if (details.type === 'main_frame') return {}
-				const websiteOrigin = getHostWithPort(details.originUrl)
-				const destinationHost = getHostWithPort(details.url)
-				if (destinationHost === websiteOrigin) return {}
-				if (sitesToBlock.find((blockUrl) => blockUrl === websiteOrigin) !== undefined) return { cancel: true }
-				return {}
-			}
-			if (sitesToBlock.length === 0 && tabIdsToBlock.length === 0) {
-				previousDecralativeNetRequestBlockIdentifier = decralativeNetRequestBlockIdentifier
-				return
-			}
-			browser.webRequest.onBeforeRequest.addListener(webRequestListener, { urls: ['<all_urls>'] }, ['blocking'])
-			previousDecralativeNetRequestBlockIdentifier = decralativeNetRequestBlockIdentifier
-		}
-	})
-}
-
-export const areWeBlocking = async (websiteTabConnections: WebsiteTabConnections, tabId: number, websiteOrigin: string) => {
-	const { tabIdsToBlock, sitesToBlock } = await getTabsAndAddressesToBlock(websiteTabConnections)
-	if (sitesToBlock.find((blockUrl) => blockUrl === websiteOrigin) !== undefined) return true
-	if (tabIdsToBlock.find((blockTab) => blockTab === tabId) !== undefined) return true
-	return false
-}
-
 export type WebsiteAccessUpdate = {
 	readonly popupRefreshGeneration: number
 	readonly iconRefreshTargets: readonly { readonly tabId: number, readonly websiteOrigin: string }[]
+	readonly reconciledSettings: Settings
 }
 
-// Reconcile approvals with the committed settings while the caller owns the settings lock.
+// Requiring LockedSettings makes callers hold the settings transition lock, so reconciliation never interleaves with a settings change.
 export async function reconcileWebsiteApprovalAccesses(
 	websiteTabConnections: WebsiteTabConnections,
-	settings: Settings,
+	lockedSettings: LockedSettings,
 	throwOnError = false,
 ): Promise<WebsiteAccessUpdate> {
+	const { settings } = lockedSettings
 	const popupRefreshGeneration = bumpPopupRefreshGeneration()
 	const iconRefreshTargets = new Map<string, { tabId: number, websiteOrigin: string }>()
 
@@ -417,22 +297,17 @@ export async function reconcileWebsiteApprovalAccesses(
 	}
 
 	notifyWebsiteLifecycle(websiteTabConnections.lifecycle?.accessReconciled)
-	return { popupRefreshGeneration, iconRefreshTargets: [...iconRefreshTargets.values()] }
+	return { popupRefreshGeneration, iconRefreshTargets: [...iconRefreshTargets.values()], reconciledSettings: settings }
 }
 
-// Call after releasing the settings lock: access dialogs can activate another address.
-export async function finishWebsiteAccessUpdate(
-	simulationServicesOwner: SimulationServicesOwner | undefined,
+// Refresh every tab icon touched by a reconciliation, plus stored tabs without a live connection. Call after any access prompts so icons show pending requests.
+export async function refreshIconsAfterWebsiteAccessUpdate(
 	websiteTabConnections: WebsiteTabConnections,
 	update: WebsiteAccessUpdate,
-	promptForAccessesIfNeeded: boolean,
 	throwOnError = false,
 ) {
 	const iconRefreshTargets = new Map<string, { tabId: number, websiteOrigin: string }>()
 	for (const target of update.iconRefreshTargets) addIconRefreshTarget(iconRefreshTargets, target.tabId, target.websiteOrigin)
-	if (promptForAccessesIfNeeded && simulationServicesOwner !== undefined) {
-		await promptForWebsiteAccesses(simulationServicesOwner, websiteTabConnections, throwOnError)
-	}
 	try {
 		for (const tabState of await getAllTabStates()) {
 			if (websiteTabConnections.has(tabState.tabId)) continue
@@ -446,49 +321,4 @@ export async function finishWebsiteAccessUpdate(
 		if (throwOnError) throw error
 		await reportUnexpectedError(error)
 	}
-}
-
-export async function updateWebsiteApprovalAccesses(
-	simulationServicesOwner: SimulationServicesOwner | undefined,
-	websiteTabConnections: WebsiteTabConnections,
-	settings: Settings,
-	promptForAccessesIfNeeded: boolean,
-	throwOnError = false,
-): Promise<number> {
-	const update = await reconcileWebsiteApprovalAccesses(websiteTabConnections, settings, throwOnError)
-	await finishWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, update, promptForAccessesIfNeeded, throwOnError)
-	return update.popupRefreshGeneration
-}
-
-export async function finalizeWebsiteAccessChange(
-	simulationServicesOwner: SimulationServicesOwner | undefined,
-	websiteTabConnections: WebsiteTabConnections,
-	settings: Settings,
-	promptForAccessesIfNeeded: boolean,
-): Promise<Settings> {
-	await updateWebsiteApprovalAccesses(
-		simulationServicesOwner,
-		websiteTabConnections,
-		settings,
-		promptForAccessesIfNeeded,
-	)
-	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
-	return settings
-}
-
-export async function persistWebsiteAccessChange(
-	simulationServicesOwner: SimulationServicesOwner | undefined,
-	websiteTabConnections: WebsiteTabConnections,
-	website: Website,
-	access: boolean,
-	address: bigint | undefined,
-	promptForAccessesIfNeeded: boolean,
-): Promise<Settings> {
-	await setAccess(website, access, address)
-	return await finalizeWebsiteAccessChange(
-		simulationServicesOwner,
-		websiteTabConnections,
-		await getSettings(),
-		promptForAccessesIfNeeded,
-	)
 }

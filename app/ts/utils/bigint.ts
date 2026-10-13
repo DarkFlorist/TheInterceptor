@@ -75,11 +75,12 @@ export function dataStringWith0xStart(data: Uint8Array | null): `0x${ string }` 
 }
 
 export function bigintToUint8Array(value: bigint, numberOfBytes: number) {
-	if (typeof value === 'number') value = BigInt(value)
-	if (value >= 2n ** BigInt(numberOfBytes * 8) || value < 0n) throw new Error(`Cannot fit ${ value } into a ${ numberOfBytes }-byte unsigned integer.`)
+	// Untyped callers can still pass a number at runtime, so normalize it before the bigint-only range check and shifts.
+	const bigintValue = typeof value === 'number' ? BigInt(value) : value
+	if (bigintValue >= 2n ** BigInt(numberOfBytes * 8) || bigintValue < 0n) throw new Error(`Cannot fit ${ bigintValue } into a ${ numberOfBytes }-byte unsigned integer.`)
 	const result = new Uint8Array(numberOfBytes)
 	for (let i = 0; i < result.length; ++i) {
-		result[i] = Number((value >> BigInt(numberOfBytes - i - 1) * 8n) & 0xffn)
+		result[i] = Number((bigintValue >> BigInt(numberOfBytes - i - 1) * 8n) & 0xffn)
 	}
 	return result
 }

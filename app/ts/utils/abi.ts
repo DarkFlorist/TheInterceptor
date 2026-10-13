@@ -304,9 +304,9 @@ export const Erc1155ABI = [
 		type: 'event',
 		name: 'TransferSingle',
 		inputs: [
-			{ name: 'operator', type: 'address' },
-			{ name: 'from', type: 'address' },
-			{ name: 'to', type: 'address' },
+			{ name: 'operator', type: 'address', indexed: true },
+			{ name: 'from', type: 'address', indexed: true },
+			{ name: 'to', type: 'address', indexed: true },
 			{ name: 'id', type: 'uint256' },
 			{ name: 'value', type: 'uint256' },
 		],

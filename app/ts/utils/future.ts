@@ -4,15 +4,15 @@ export class Future<T> implements PromiseLike<T> {
 	private rejectFunction: (reason: Error) => void
 
 	constructor() {
-		let resolveFunction: (value: T | PromiseLike<T>) => void
-		let rejectFunction: (reason: Error) => void
+		const promiseSettlers: { resolve?: (value: T | PromiseLike<T>) => void, reject?: (reason: Error) => void } = {}
 		this.promise = new Promise((resolve: (value: T | PromiseLike<T>) => void, reject: (reason: Error) => void) => {
-			resolveFunction = resolve
-			rejectFunction = reject
+			promiseSettlers.resolve = resolve
+			promiseSettlers.reject = reject
 		})
-		// the function passed to the Promise constructor is called before the constructor returns, so we can be sure the resolve and reject functions have been set by here even if the compiler can't verify
-		this.resolveFunction = resolveFunction!
-		this.rejectFunction = rejectFunction!
+		// The Promise constructor calls its executor before returning, so both settlers are set here even though the compiler cannot verify it.
+		if (promiseSettlers.resolve === undefined || promiseSettlers.reject === undefined) throw new Error('Promise executor did not run synchronously')
+		this.resolveFunction = promiseSettlers.resolve
+		this.rejectFunction = promiseSettlers.reject
 	}
 
 	public get asPromise() { return this.promise }
@@ -24,6 +24,6 @@ export class Future<T> implements PromiseLike<T> {
 		return this.promise.then(onfulfilled, onrejected)
 	}
 
-	public readonly resolve = (value: T | PromiseLike<T>) => this.resolveFunction!(value)
-	public readonly reject = (reason: Error) => this.rejectFunction!(reason)
+	public readonly resolve = (value: T | PromiseLike<T>) => this.resolveFunction(value)
+	public readonly reject = (reason: Error) => this.rejectFunction(reason)
 }

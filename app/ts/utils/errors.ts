@@ -1,5 +1,5 @@
-import { sendPopupMessageToOpenWindowsWithoutUnexpectedErrorReport } from '../background/backgroundUtils.js'
-import { appendInterceptorErrorDiagnostic, setLatestUnexpectedError } from '../background/storageVariables.js'
+import { sendPopupMessageToOpenWindowsWithoutUnexpectedErrorReport } from './extensionMessaging.js'
+import { appendInterceptorErrorDiagnostic, setLatestUnexpectedError } from './unexpectedErrorStorage.js'
 import { InterceptorError, type JsonRpcErrorResponse } from '../types/JsonRpc-types.js'
 import type { InterceptorErrorCategory, InterceptorErrorDiagnostic, InterceptorErrorSeverity } from '../types/errorDiagnostics.js'
 import type { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
@@ -60,7 +60,7 @@ export class ErrorWithData extends Error {
 export class JsonRpcResponseError extends Error {
 	public readonly id: string | number
 	public readonly code: number
-	public readonly data: string | undefined
+	public readonly data: unknown
 	public constructor(jsonRpcResponse: JsonRpcErrorResponse) {
 		super(jsonRpcResponse.error.message)
 		this.code = jsonRpcResponse.error.code

@@ -1,14 +1,11 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { describe, test } from 'bun:test'
 import * as ts from 'typescript'
+import { isRecord } from '../harness/assertions.js'
 
 const repositoryRoot = process.cwd()
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
 
 function getPackageJson() {
 	const packageJsonPath = path.join(repositoryRoot, 'package.json')
@@ -22,8 +19,7 @@ function getAppSource(relativePath: string) {
 }
 
 function getPackageScripts() {
-	const packageJson = getPackageJson()
-	const scripts = packageJson.scripts
+	const { scripts } = getPackageJson()
 	if (!isRecord(scripts)) throw new Error('package.json scripts must be an object')
 	return scripts
 }
@@ -35,8 +31,7 @@ function getScript(scripts: Record<string, unknown>, scriptName: string) {
 }
 
 function getDependencyVersion(packageJson: Record<string, unknown>, dependencyName: string) {
-	const dependencies = packageJson.dependencies
-	const devDependencies = packageJson.devDependencies
+	const { dependencies, devDependencies } = packageJson
 	const version = isRecord(dependencies) && typeof dependencies[dependencyName] === 'string'
 		? dependencies[dependencyName]
 		: isRecord(devDependencies) && typeof devDependencies[dependencyName] === 'string'
@@ -56,12 +51,12 @@ function parseExactMajorMinor(version: string) {
 }
 
 describe('package scripts', () => {
-	test('test script compiles Solidity contracts and uses the CI-safe timeout before starting the test runner', () => {
+	test('test script compiles Solidity contracts, isolates test files and uses the CI-safe timeout before starting the test runner', () => {
 		const scripts = getPackageScripts()
 
 		assert.deepEqual(getScript(scripts, 'test').split(' && '), [
 			'bun run compile-contracts',
-			'bun test --timeout 60000',
+			'bun test --isolate --timeout 60000',
 		])
 	})
 
@@ -95,8 +90,9 @@ describe('package scripts', () => {
 		for (const dependencyGroup of ['dependencies', 'devDependencies'] as const) {
 			const dependencies = packageJson[dependencyGroup]
 			assert.ok(isRecord(dependencies))
-			assert.equal(dependencies.bulma, undefined)
-			assert.equal(dependencies.purgecss, undefined)
+			const { bulma, purgecss } = dependencies
+			assert.equal(bulma, undefined)
+			assert.equal(purgecss, undefined)
 		}
 		const removedCssToolingPattern = /(?:bulma|purgecss|generate-interceptor-framework|check-interceptor-framework)/u
 		assert.doesNotMatch(JSON.stringify(getPackageScripts()), removedCssToolingPattern)
@@ -148,15 +144,16 @@ describe('package scripts', () => {
 		const configFile = ts.readConfigFile(path.join(repositoryRoot, 'tsconfig.json'), ts.sys.readFile)
 		assert.equal(configFile.error, undefined)
 		assert.ok(isRecord(configFile.config))
-		const compilerOptions = configFile.config.compilerOptions
+		const { compilerOptions } = configFile.config
 		assert.ok(isRecord(compilerOptions))
+		const { declaration, declarationMap } = compilerOptions
 
 		assert.deepEqual(getScript(scripts, 'compile-app').split(' && '), [
 			'bun run compile-contracts',
 			'bun run clean-js-output',
 			'bun --bun tsc --project tsconfig.json',
 		])
-		assert.equal(compilerOptions.declaration, true)
-		assert.equal(compilerOptions.declarationMap, true)
+		assert.equal(declaration, true)
+		assert.equal(declarationMap, true)
 	})
 })

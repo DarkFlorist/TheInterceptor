@@ -1,12 +1,17 @@
-import type { ImportSettings, ImportSettingsReply, SetRpcList, Settings } from '../../types/interceptor-messages.js'
+import type { ChangeActiveChain, ChangeSettings, ImportSettings, ImportSettingsReply, SetRpcList, Settings } from '../../types/interceptor-messages.js'
+import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { ExportedSettings } from '../../types/exportedSettingsTypes.js'
 import { serialize } from '../../types/wire-types.js'
 import { isJSON } from '../../utils/json.js'
 import { silenceChromeUnCaughtPromise } from '../../utils/requests.js'
 import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
 import { getPrimaryRpcForChain, getRpcList, setRpcList } from '../storageVariables.js'
-import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettings, getUseTabsInsteadOfPopup, importSettingsAndAddressBook } from '../settings.js'
+import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettings, getUseTabsInsteadOfPopup, importSettingsAndAddressBook, setMetamaskCompatibilityMode, setSafeAppsCompatibilityMode, setUseTabsInsteadOfPopup } from '../settings.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
+import { getLastKnownCurrentTabId } from '../currentTab.js'
+import { bumpPopupRefreshGeneration } from '../popupRefreshGeneration.js'
+import { changeActiveRpc } from '../walletSwitch.js'
+import { requestNewHomeData } from './home.js'
 
 export async function settingsOpened() {
 	const useTabsInsteadOfPopupPromise = silenceChromeUnCaughtPromise(getUseTabsInsteadOfPopup())
@@ -52,4 +57,19 @@ export async function setNewRpcList(simulationServicesOwner: SimulationServicesO
 	await sendPopupMessageToOpenWindows({ method: 'popup_update_rpc_list', data: request.data })
 	const primary = await getPrimaryRpcForChain(settings.activeRpcNetwork.chainId)
 	if (primary !== undefined) simulationServicesOwner.reset(primary)
+}
+
+export async function changeSettings(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: ChangeSettings, requestAbortController: AbortController | undefined) {
+	if (parsedRequest.data.useTabsInsteadOfPopup !== undefined) await setUseTabsInsteadOfPopup(parsedRequest.data.useTabsInsteadOfPopup)
+	if (parsedRequest.data.metamaskCompatibilityMode !== undefined) await setMetamaskCompatibilityMode(parsedRequest.data.metamaskCompatibilityMode)
+	if (parsedRequest.data.safeAppsCompatibilityMode !== undefined) {
+		await setSafeAppsCompatibilityMode(parsedRequest.data.safeAppsCompatibilityMode)
+	}
+	return await requestNewHomeData(simulationServicesOwner.getCurrent().ethereum, websiteTabConnections, false, true, requestAbortController, bumpPopupRefreshGeneration())
+}
+
+export async function popupChangeActiveRpc(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, params: ChangeActiveChain) {
+	const result = await changeActiveRpc(simulationServicesOwner, websiteTabConnections, params.data, { source: 'popup', signerTabId: await getLastKnownCurrentTabId() })
+	if (result.error !== undefined) return { type: 'PopupSettingsChangeReply', ok: false, message: result.error.message } as const
+	return { type: 'PopupSettingsChangeReply', ok: true } as const
 }
