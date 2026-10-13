@@ -1,4 +1,4 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { Signal } from '@preact/signals'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
@@ -257,6 +257,7 @@ describe('LogSummarizer fallback metadata', () => {
 			blockNumber: 1n,
 			blockTimestamp: new Date('2024-01-01T00:00:00.000Z'),
 			simulationConductedTimestamp: new Date('2024-01-01T00:00:00.000Z'),
+			simulationStateInput: [],
 			addressBookEntries: [tokenEntry, senderEntry],
 			rpcNetwork,
 			tokenPriceEstimates: [],

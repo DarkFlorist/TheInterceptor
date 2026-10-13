@@ -1,4 +1,4 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { Signal } from '@preact/signals'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
@@ -8,33 +8,18 @@ import { getNativeTokenErc20 } from '../../app/ts/background/metadataUtils.js'
 import { mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import type { AddressBookEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { EnsEvent } from '../../app/ts/types/EnrichedEthereumData.js'
-import type { SimulationAndVisualisationResults, SimulatedAndVisualizedTransaction } from '../../app/ts/types/visualizer-types.js'
+import type { SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
+import type { RpcEntry } from '../../app/ts/types/rpc.js'
+import type { PreSimulationTransaction, SimulationAndVisualisationResults, SimulatedAndVisualizedTransaction } from '../../app/ts/types/visualizer-types.js'
+import { DEFAULT_BLOCK_MANIPULATION } from '../../app/ts/config/defaults.js'
 import { installDomMock } from './domMock.js'
-
-type TestDomNode = {
-	readonly tagName?: string
-	readonly childNodes?: readonly TestDomNode[]
-	readonly getAttribute?: (name: string) => string | null
-	readonly l?: Record<string, (event: unknown) => unknown>
-}
-
-function collectElements(node: TestDomNode | undefined, tagName: string, results: TestDomNode[] = []) {
-	if (node?.tagName === tagName.toUpperCase()) results.push(node)
-	for (const child of node?.childNodes ?? []) collectElements(child, tagName, results)
-	return results
-}
-
-async function clickElement(element: TestDomNode) {
-	const clickHandler = element.l === undefined ? undefined : Object.entries(element.l).find(([key]) => key.startsWith('Click'))?.[1]
-	if (clickHandler === undefined) throw new Error('Expected click handler')
-	await clickHandler({ currentTarget: element })
-}
+import { clickElement, collectElements, getElementByClass } from './domQueries.js'
 
 const signerAddress = 0x1111111111111111111111111111111111111111n
 const contractAddress = 0x2222222222222222222222222222222222222222n
 const nameHash = 0x1234n
 const labelHash = 0x5678n
-const rpcNetwork = {
+const rpcNetwork: RpcEntry = {
 	name: 'Ethereum',
 	chainId: 1n,
 	httpsRpc: 'https://example.invalid',
@@ -60,8 +45,8 @@ const contractEntry: AddressBookEntry = {
 	chainId: 1n,
 }
 const nativeTokenEntry = getNativeTokenErc20(rpcNetwork)
-const originalRequestParameters = {
-	method: 'eth_sendTransaction' as const,
+const originalRequestParameters: SendTransactionParams = {
+	method: 'eth_sendTransaction',
 	params: [{
 		from: signerAddress,
 		to: contractAddress,
@@ -84,7 +69,7 @@ const transaction = {
 	chainId: 1n,
 	accessList: [],
 }
-const preSimulationTransaction = {
+const preSimulationTransaction: PreSimulationTransaction = {
 	signedTransaction: mockSignTransaction(transaction),
 	website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
 	created,
@@ -161,7 +146,7 @@ const simulatedTransaction: SimulatedAndVisualizedTransaction = {
 	},
 	events: [ensEvent],
 }
-const blockTimeManipulation = { type: 'No Delay' as const }
+const blockTimeManipulation = DEFAULT_BLOCK_MANIPULATION
 const simulationResults: SimulationAndVisualisationResults = {
 	blockNumber: 100n,
 	blockTimestamp: created,
@@ -221,8 +206,7 @@ async function renderAndOpenEnsEditor(event: EnsEvent) {
 		), dom.document.body)
 	})
 
-	const renameEnsButton = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('class')?.split(/\s+/).includes('rename-address-button'))
-	if (renameEnsButton === undefined) throw new Error('Expected ENS rename button')
+	const renameEnsButton = getElementByClass(dom.document.body, 'rename-address-button')
 
 	await act(async () => {
 		await clickElement(renameEnsButton)
@@ -232,7 +216,7 @@ async function renderAndOpenEnsEditor(event: EnsEvent) {
 }
 
 async function closeEnsEditor(dom: ReturnType<typeof installDomMock>, modalState: Signal<FetchSimulationStackModalState>) {
-	const closeEditorButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.trim() === 'Ok')
+	const closeEditorButton = collectElements(dom.document.body, 'button').find((button) => button.textContent.trim() === 'Ok')
 	if (closeEditorButton === undefined) throw new Error('Expected ENS editor close button')
 
 	await act(async () => {
@@ -241,7 +225,7 @@ async function closeEnsEditor(dom: ReturnType<typeof installDomMock>, modalState
 
 	assert.deepEqual(modalState.value, { page: 'noModal' })
 	await act(() => {
-		render(null, dom.document.body)
+		render(undefined, dom.document.body)
 	})
 	dom.restore()
 }

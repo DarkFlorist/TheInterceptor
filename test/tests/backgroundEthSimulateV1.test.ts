@@ -1,76 +1,21 @@
-import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
+import type { IEthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
 import { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
 import { EthereumJsonRpcRequest, JsonRpcResponse } from '../../app/ts/types/JsonRpc-types.js'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
 import { eth_getBlockByNumber_goerli_8443561_true, eth_simulateV1_dummy_call_result } from '../RPCResponses.js'
+import { createPort, createRestoringBrowserMockInstaller, createTestSimulationServicesOwner, noopPublishRpcConnectionStatus } from './backgroundEthAccountsTestHarness.js'
+import { readProperty } from '../harness/assertions.js'
 
-type Listener = () => void
-type PortMessage = { method?: unknown, result?: unknown, requestId?: unknown, error?: { code?: unknown, message?: unknown } }
+const installBrowserMock = createRestoringBrowserMockInstaller()
 
-function parseRpcResult(data: string) {
+function parseRpcResult(data: string): unknown {
 	const response = JsonRpcResponse.parse(JSON.parse(data))
 	if ('error' in response) throw Error(`Ethereum Client Error: ${ response.error.message }`)
 	return response.result
-}
-
-function installBrowserMock() {
-	const storageState: Record<string, unknown> = {}
-	;(globalThis as typeof globalThis & { browser: typeof globalThis.browser }).browser = {
-		runtime: {
-			lastError: null,
-			async sendMessage() {
-				return undefined
-			},
-			getManifest: () => ({ manifest_version: 3 }),
-			onMessage: { addListener: (_listener: Listener) => undefined, removeListener: (_listener: Listener) => undefined },
-			onConnect: { addListener: (_listener: Listener) => undefined, removeListener: (_listener: Listener) => undefined },
-		},
-		storage: {
-			local: {
-				async get(keys?: string | string[] | Record<string, unknown> | null) {
-					if (keys === undefined || keys === null) return { ...storageState }
-					if (Array.isArray(keys)) return Object.fromEntries(keys.filter((key) => key in storageState).map((key) => [key, storageState[key]]))
-					if (typeof keys === 'string') return keys in storageState ? { [keys]: storageState[keys] } : {}
-					return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
-				},
-				async set(items: Record<string, unknown>) {
-					Object.assign(storageState, items)
-				},
-				async remove(keys: string | string[]) {
-					for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
-				},
-			},
-		},
-		tabs: {
-			async query() { return [] },
-			async get() { return undefined },
-			async update() { return undefined },
-			onUpdated: { addListener: (_listener: Listener) => undefined, removeListener: (_listener: Listener) => undefined },
-			onRemoved: { addListener: (_listener: Listener) => undefined, removeListener: (_listener: Listener) => undefined },
-		},
-		windows: {
-			async get() { return undefined },
-			async update() { return undefined },
-		},
-		action: {
-			async setIcon() { return undefined },
-			async setTitle() { return undefined },
-			async setBadgeText() { return undefined },
-			async setBadgeBackgroundColor() { return undefined },
-		},
-		browserAction: {
-			async setIcon() { return undefined },
-			async setTitle() { return undefined },
-			async setBadgeText() { return undefined },
-			async setBadgeBackgroundColor() { return undefined },
-		},
-	} as unknown as typeof globalThis.browser
-	;(globalThis as typeof globalThis & { chrome: { runtime: { id: string } } }).chrome = { runtime: { id: 'test-extension' } }
-	;(globalThis as typeof globalThis & { location: Location }).location = { origin: '' } as unknown as Location
 }
 
 async function loadModules() {
@@ -81,42 +26,27 @@ async function loadModules() {
 	}
 }
 
-function createPort(tabId: number) {
-	const messages: PortMessage[] = []
-	const port = {
-		name: '0x0',
-		sender: { tab: { id: tabId } },
-		postMessage(message: unknown) {
-			messages.push(message as PortMessage)
+// Answers eth_getBlockByNumber with a Goerli block fixture and eth_simulateV1 with ethSimulateV1Result, and records every request the background forwards to the RPC.
+function createRecordingRequestHandler(rpcEntry: RpcEntry, ethSimulateV1Result: unknown = parseRpcResult(eth_simulateV1_dummy_call_result)) {
+	const forwardedRequests: EthereumJsonRpcRequest[] = []
+	const requestHandler = {
+		rpcUrl: rpcEntry.httpsRpc,
+		clearCache: () => undefined,
+		getChainId: async () => rpcEntry.chainId,
+		jsonRpcRequest: async (rpcRequest: EthereumJsonRpcRequest) => {
+			forwardedRequests.push(rpcRequest)
+			switch (rpcRequest.method) {
+				case 'eth_getBlockByNumber': return parseRpcResult(eth_getBlockByNumber_goerli_8443561_true)
+				case 'eth_simulateV1': return ethSimulateV1Result
+				default: throw new Error(`unsupported method ${ rpcRequest.method }`)
+			}
 		},
-	} as unknown as browser.runtime.Port
-	return { port, messages }
-}
-
-class MockEthereumJSONRpcRequestHandler {
-	public rpcUrl: string
-	public requests: EthereumJsonRpcRequest[] = []
-	private readonly ethSimulateV1Result: unknown
-
-	constructor(rpcUrl: string, ethSimulateV1Result: unknown = parseRpcResult(eth_simulateV1_dummy_call_result)) {
-		this.rpcUrl = rpcUrl
-		this.ethSimulateV1Result = ethSimulateV1Result
-	}
-
-	public clearCache = () => undefined
-
-	public readonly jsonRpcRequest = async (rpcRequest: EthereumJsonRpcRequest) => {
-		this.requests.push(rpcRequest)
-		switch (rpcRequest.method) {
-			case 'eth_getBlockByNumber': return parseRpcResult(eth_getBlockByNumber_goerli_8443561_true)
-			case 'eth_simulateV1': return this.ethSimulateV1Result
-			default: throw new Error(`unsupported method ${ rpcRequest.method }`)
-		}
-	}
+	} satisfies IEthereumJSONRpcRequestHandler
+	return { requestHandler, forwardedRequests }
 }
 
 function createEthereum(rpcEntry: RpcEntry, ethSimulateV1Result?: unknown) {
-	const requestHandler = new MockEthereumJSONRpcRequestHandler(rpcEntry.httpsRpc, ethSimulateV1Result)
+	const { requestHandler, forwardedRequests } = createRecordingRequestHandler(rpcEntry, ethSimulateV1Result)
 	const ethereum = new Proxy(
 		new EthereumClientService(
 			requestHandler,
@@ -134,9 +64,7 @@ function createEthereum(rpcEntry: RpcEntry, ethSimulateV1Result?: unknown) {
 	)
 	const tokenPriceService = new TokenPriceService(ethereum, 60_000)
 	return {
-		ethereum,
-		requestHandler,
-		tokenPriceService,
+		forwardedRequests,
 		simulationServicesOwner: createTestSimulationServicesOwner({ ethereum, tokenPriceService }, (() => ({ ethereum, tokenPriceService }))),
 	}
 }
@@ -158,13 +86,13 @@ async function createApprovedDappHarness(ethSimulateV1Result?: unknown) {
 	const websiteTabConnections = new Map([[socket.tabId, { connections: {
 		[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 	} }]])
-	const { ethereum, requestHandler, tokenPriceService, simulationServicesOwner } = createEthereum(rpcEntry, ethSimulateV1Result)
-	return { handleInterceptedRequest, websiteOrigin, website, socket, port, messages, websiteTabConnections, ethereum, requestHandler, tokenPriceService, simulationServicesOwner }
+	const { forwardedRequests, simulationServicesOwner } = createEthereum(rpcEntry, ethSimulateV1Result)
+	return { handleInterceptedRequest, websiteOrigin, website, socket, port, messages, websiteTabConnections, forwardedRequests, simulationServicesOwner }
 }
 
 describe('background eth_simulateV1', () => {
 	test('replies to approved dapp eth_simulateV1 requests', async () => {
-		const { handleInterceptedRequest, websiteOrigin, website, socket, port, messages, websiteTabConnections, ethereum, requestHandler, tokenPriceService, simulationServicesOwner } = await createApprovedDappHarness()
+		const { handleInterceptedRequest, websiteOrigin, website, socket, port, messages, websiteTabConnections, forwardedRequests, simulationServicesOwner } = await createApprovedDappHarness()
 		const parentBlockHash = '0x000000000000000000000000000000000000000000000000000000000000abcd'
 
 		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
@@ -190,10 +118,10 @@ describe('background eth_simulateV1', () => {
 					}],
 				}],
 			}, parentBlockHash],
-		}, websiteTabConnections)
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 
 		const reply = messages.find((message) => message.method === 'eth_simulateV1' && message.requestId === 42)
-		const forwardedRequest = requestHandler.requests.at(-1)
+		const forwardedRequest = forwardedRequests.at(-1)
 		if (forwardedRequest?.method !== 'eth_simulateV1') throw new Error('expected eth_simulateV1 to be forwarded')
 		const forwardedCall = forwardedRequest.params[0].blockStateCalls[0]?.calls[0]
 		if (forwardedCall === undefined) throw new Error('missing forwarded eth_simulateV1 call')
@@ -202,7 +130,7 @@ describe('background eth_simulateV1', () => {
 		assert.equal(forwardedRequest.params[0].traceTransfers, undefined)
 		assert.equal(forwardedRequest.params[0].validation, undefined)
 		assert.equal(forwardedRequest.params[1], parentBlockHash)
-		const serializedForwardedRequest = serialize(EthereumJsonRpcRequest, forwardedRequest)
+		const serializedForwardedRequest = serialize<EthereumJsonRpcRequest, typeof EthereumJsonRpcRequest>(EthereumJsonRpcRequest, forwardedRequest)
 		if (serializedForwardedRequest.method !== 'eth_simulateV1') throw new Error('expected serialized eth_simulateV1 request')
 		assert.equal(serializedForwardedRequest.params[1], parentBlockHash)
 		assert.equal(reply?.error, undefined)
@@ -210,7 +138,7 @@ describe('background eth_simulateV1', () => {
 	})
 
 	test('preserves blob transaction fields in dapp eth_simulateV1 requests', async () => {
-		const { handleInterceptedRequest, websiteOrigin, website, socket, port, messages, websiteTabConnections, ethereum, requestHandler, tokenPriceService, simulationServicesOwner } = await createApprovedDappHarness()
+		const { handleInterceptedRequest, websiteOrigin, website, socket, port, messages, websiteTabConnections, forwardedRequests, simulationServicesOwner } = await createApprovedDappHarness()
 		const blobVersionedHash = '0x01'.padEnd(66, '0')
 
 		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
@@ -238,17 +166,17 @@ describe('background eth_simulateV1', () => {
 					}],
 				}],
 			}, '0x1'],
-		}, websiteTabConnections)
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 
 		const reply = messages.find((message) => message.method === 'eth_simulateV1' && message.requestId === 44)
-		const forwardedRequest = requestHandler.requests.at(-1)
+		const forwardedRequest = forwardedRequests.at(-1)
 		if (forwardedRequest?.method !== 'eth_simulateV1') throw new Error('expected eth_simulateV1 to be forwarded')
 		const forwardedCall = forwardedRequest.params[0].blockStateCalls[0]?.calls[0]
 		if (forwardedCall === undefined) throw new Error('missing forwarded eth_simulateV1 call')
 		assert.equal(forwardedCall.maxFeePerBlobGas, 3n)
 		assert.deepEqual(forwardedCall.blobVersionedHashes, [BigInt(blobVersionedHash)])
 		assert.deepEqual((forwardedCall.blobs ?? []).map((blob) => Array.from(blob)), [[0x12, 0x34]])
-		const serializedForwardedRequest = serialize(EthereumJsonRpcRequest, forwardedRequest)
+		const serializedForwardedRequest = serialize<EthereumJsonRpcRequest, typeof EthereumJsonRpcRequest>(EthereumJsonRpcRequest, forwardedRequest)
 		if (serializedForwardedRequest.method !== 'eth_simulateV1') throw new Error('expected serialized eth_simulateV1 request')
 		const serializedCall = serializedForwardedRequest.params[0].blockStateCalls[0]?.calls[0]
 		if (serializedCall === undefined) throw new Error('missing serialized eth_simulateV1 call')
@@ -260,7 +188,7 @@ describe('background eth_simulateV1', () => {
 	})
 
 	test('accepts one-parameter eth_simulateV1 requests and preserves blobBaseFee', async () => {
-		const { handleInterceptedRequest, websiteOrigin, website, socket, port, messages, websiteTabConnections, ethereum, requestHandler, tokenPriceService, simulationServicesOwner } = await createApprovedDappHarness()
+		const { handleInterceptedRequest, websiteOrigin, website, socket, port, messages, websiteTabConnections, forwardedRequests, simulationServicesOwner } = await createApprovedDappHarness()
 
 		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 			interceptorRequest: true,
@@ -285,16 +213,16 @@ describe('background eth_simulateV1', () => {
 					}],
 				}],
 			}],
-		}, websiteTabConnections)
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 
 		const reply = messages.find((message) => message.method === 'eth_simulateV1' && message.requestId === 43)
-		const forwardedRequest = requestHandler.requests.at(-1)
+		const forwardedRequest = forwardedRequests.at(-1)
 		if (forwardedRequest?.method !== 'eth_simulateV1') throw new Error('expected eth_simulateV1 to be forwarded')
 		const forwardedBlock = forwardedRequest.params[0].blockStateCalls.at(-1)
 		if (forwardedBlock === undefined) throw new Error('missing forwarded eth_simulateV1 block')
 		assert.equal(forwardedBlock.blockOverrides?.blobBaseFee, 7n)
 		assert.equal(forwardedRequest.params.length, 1)
-		const serializedForwardedRequest = serialize(EthereumJsonRpcRequest, forwardedRequest)
+		const serializedForwardedRequest = serialize<EthereumJsonRpcRequest, typeof EthereumJsonRpcRequest>(EthereumJsonRpcRequest, forwardedRequest)
 		if (serializedForwardedRequest.method !== 'eth_simulateV1') throw new Error('expected serialized eth_simulateV1 request')
 		assert.equal(serializedForwardedRequest.params.length, 1)
 		const serializedBlock = serializedForwardedRequest.params[0].blockStateCalls.at(-1)
@@ -307,13 +235,13 @@ describe('background eth_simulateV1', () => {
 	test('preserves current eth_simulateV1 result fields in dapp replies', async () => {
 		const result = parseRpcResult(eth_simulateV1_dummy_call_result)
 		if (!Array.isArray(result)) throw new Error('expected eth_simulateV1 fixture array')
-		const block = result[0]
+		const block: unknown = result[0]
 		if (typeof block !== 'object' || block === null) throw new Error('missing eth_simulateV1 fixture block')
-		const calls = 'calls' in block && Array.isArray(block.calls) ? block.calls : undefined
-		const call = calls?.[0]
+		const calls = readProperty(block, 'calls')
+		const call: unknown = Array.isArray(calls) ? calls[0] : undefined
 		if (typeof call !== 'object' || call === null) throw new Error('missing eth_simulateV1 fixture call')
-		const logs = 'logs' in call && Array.isArray(call.logs) ? call.logs : undefined
-		const log = logs?.[0]
+		const logs = readProperty(call, 'logs')
+		const log: unknown = Array.isArray(logs) ? logs[0] : undefined
 		if (typeof log !== 'object' || log === null) throw new Error('missing eth_simulateV1 fixture log')
 		const ethSimulateV1Result = [{
 			...block,
@@ -331,7 +259,7 @@ describe('background eth_simulateV1', () => {
 				}],
 			}],
 		}]
-		const { handleInterceptedRequest, websiteOrigin, website, socket, port, messages, websiteTabConnections, ethereum, tokenPriceService, simulationServicesOwner } = await createApprovedDappHarness(ethSimulateV1Result)
+		const { handleInterceptedRequest, websiteOrigin, website, socket, port, messages, websiteTabConnections, simulationServicesOwner } = await createApprovedDappHarness(ethSimulateV1Result)
 
 		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 			interceptorRequest: true,
@@ -355,25 +283,26 @@ describe('background eth_simulateV1', () => {
 					}],
 				}],
 			}, '0x1'],
-		}, websiteTabConnections)
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 
 		const reply = messages.find((message) => message.method === 'eth_simulateV1' && message.requestId === 45)
-		if (!Array.isArray(reply?.result)) throw new Error('expected eth_simulateV1 result reply')
-		const replyBlock = reply.result[0]
+		const replyBlocks = reply?.result
+		if (!Array.isArray(replyBlocks)) throw new Error('expected eth_simulateV1 result reply')
+		const replyBlock: unknown = replyBlocks[0]
 		if (typeof replyBlock !== 'object' || replyBlock === null) throw new Error('missing reply block')
-		assert.equal(replyBlock.blockAccessListHash, '0x1111111111111111111111111111111111111111111111111111111111111111')
-		assert.equal(replyBlock.requestsHash, '0x2222222222222222222222222222222222222222222222222222222222222222')
-		assert.deepEqual(replyBlock.clientBlockExtension, { keep: true })
-		const replyCalls = 'calls' in replyBlock && Array.isArray(replyBlock.calls) ? replyBlock.calls : undefined
-		const replyCall = replyCalls?.[0]
+		assert.equal(readProperty(replyBlock, 'blockAccessListHash'), '0x1111111111111111111111111111111111111111111111111111111111111111')
+		assert.equal(readProperty(replyBlock, 'requestsHash'), '0x2222222222222222222222222222222222222222222222222222222222222222')
+		assert.deepEqual(readProperty(replyBlock, 'clientBlockExtension'), { keep: true })
+		const replyCalls = readProperty(replyBlock, 'calls')
+		const replyCall: unknown = Array.isArray(replyCalls) ? replyCalls[0] : undefined
 		if (typeof replyCall !== 'object' || replyCall === null) throw new Error('missing reply call')
-		assert.equal(replyCall.maxUsedGas, '0x5300')
-		assert.equal(replyCall.clientCallExtension, 'keep-call-extension')
-		const replyLogs = 'logs' in replyCall && Array.isArray(replyCall.logs) ? replyCall.logs : undefined
-		const replyLog = replyLogs?.[0]
+		assert.equal(readProperty(replyCall, 'maxUsedGas'), '0x5300')
+		assert.equal(readProperty(replyCall, 'clientCallExtension'), 'keep-call-extension')
+		const replyLogs = readProperty(replyCall, 'logs')
+		const replyLog: unknown = Array.isArray(replyLogs) ? replyLogs[0] : undefined
 		if (typeof replyLog !== 'object' || replyLog === null) throw new Error('missing reply log')
-		assert.equal(replyLog.blockTimestamp, '0x675964eb')
-		assert.equal(replyLog.removed, false)
+		assert.equal(readProperty(replyLog, 'blockTimestamp'), '0x675964eb')
+		assert.equal(readProperty(replyLog, 'removed'), false)
 		assert.equal(reply?.error, undefined)
 	})
 })

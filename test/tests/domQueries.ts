@@ -10,7 +10,7 @@ import { act } from 'preact/test-utils'
 import { flushMicrotasks, waitFor, type WaitOptions } from '../harness/async.js'
 import { isMockElement, type MockElement, type MockNode } from './domMock.js'
 
-const normalizeWhitespace = (text: string) => text.replace(/\s+/gu, ' ').trim()
+export const normalizeWhitespace = (text: string) => text.replace(/\s+/gu, ' ').trim()
 
 export const getNormalizedText = (node: MockNode) => normalizeWhitespace(node.textContent)
 
@@ -42,6 +42,10 @@ const getClassNames = (element: MockElement) => (element.getAttribute('class') ?
 
 export const hasClass = (element: MockElement, className: string) => getClassNames(element).includes(className)
 
+export const findElementByClass = (root: MockNode, className: string) => findElement(root, (element) => hasClass(element, className))
+
+export const getElementByClass = (root: MockNode, className: string) => getElement(root, (element) => hasClass(element, className), `element with class "${ className }"`)
+
 export const getButtonByText = (root: MockNode, text: string) => getElement(root, (element) => element.tagName === 'BUTTON' && getNormalizedText(element) === text, `button with text "${ text }"`)
 
 export const getButtonByAriaLabel = (root: MockNode, ariaLabel: string) => getElement(root, (element) => element.tagName === 'BUTTON' && element.getAttribute('aria-label') === ariaLabel, `button with aria-label "${ ariaLabel }"`)
@@ -57,6 +61,8 @@ export function findAncestor(element: MockElement, matches: (ancestor: MockEleme
 	}
 	return undefined
 }
+
+export const hasAncestorWithClass = (element: MockElement, className: string) => findAncestor(element, (ancestor) => hasClass(ancestor, className)) !== undefined
 
 // Returns the handler Preact registered for an on* prop, for example getPreactEventHandler(button, 'Click') for onClick.
 export function getPreactEventHandler(element: MockElement, eventName: string) {

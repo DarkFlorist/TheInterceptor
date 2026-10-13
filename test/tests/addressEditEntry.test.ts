@@ -1,4 +1,4 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
 import { addressEditEntry } from '../../app/ts/components/ui-utils.js'
 import { getAddressBookEntryForEdit } from '../../app/ts/components/pages/ConfirmTransaction.js'
