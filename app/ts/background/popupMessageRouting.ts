@@ -8,6 +8,7 @@ import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
 import { dispatchPopupMessage } from './popupMessageDispatcher.js'
 import { getConfirmTransactionAbortController } from './confirmTransactionSimulation.js'
 import { resetSimulationStateFromConfig } from './activeSettings.js'
+import type { RpcConfigurationState } from './storageVariables.js'
 
 const simulationAbortController = new AbortController()
 
@@ -15,7 +16,8 @@ export async function popupMessageHandler(
 	websiteTabConnections: WebsiteTabConnections,
 	simulationServicesOwner: SimulationServicesOwner,
 	request: unknown,
-	settings: Settings,
+	settings: Settings | undefined,
+	rpcConfiguration: RpcConfigurationState,
 	publishRpcConnectionStatus: PublishRpcConnectionStatus,
 ) {
 	const maybeParsedRequest = PopupMessage.safeParse(request)
@@ -34,6 +36,7 @@ export async function popupMessageHandler(
 			websiteTabConnections,
 			simulationServicesOwner,
 			settings,
+			rpcConfiguration,
 			publishRpcConnectionStatus,
 			simulationAbortController,
 			confirmTransactionAbortController: getConfirmTransactionAbortController(),

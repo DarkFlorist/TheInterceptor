@@ -143,6 +143,7 @@ function createDispatcherContext(resetSimulationState: () => Promise<void>): Pop
 		websiteTabConnections: new Map(),
 		simulationServicesOwner: createTestSimulationServicesOwner({ ethereum, tokenPriceService }, () => ({ ethereum, tokenPriceService })),
 		settings,
+		rpcConfiguration: { status: 'ready', rpcEntries: [settings.activeRpcNetwork], activeRpcNetwork: settings.activeRpcNetwork },
 		publishRpcConnectionStatus: async () => undefined,
 		simulationAbortController: new AbortController(),
 		confirmTransactionAbortController: new AbortController(),
@@ -210,12 +211,89 @@ describe('popup message dispatcher seams', () => {
 		])
 	})
 
+	test('reconciles an access-editor revocation against the committed permissions', async () => {
+		const grantedAccess = { ...disabledWebsiteAccess, access: true, interceptorDisabled: false }
+		const revokedAccess = { ...grantedAccess, access: false }
+		storageState.websiteAccess = [grantedAccess]
+		const portMessages: { readonly method?: string, readonly result?: unknown }[] = []
+		const socket = { tabId: 1, connectionName: 0n }
+		const connection = {
+			port: { postMessage: (message: { readonly method?: string, readonly result?: unknown }) => portMessages.push(message) } as browser.runtime.Port,
+			socket,
+			websiteOrigin: grantedAccess.website.websiteOrigin,
+			approved: true,
+			wantsToConnect: false,
+		}
+		const context = createDispatcherContext(async () => undefined)
+		context.settings = { ...settings, websiteAccess: [grantedAccess] }
+		context.websiteTabConnections.set(socket.tabId, { connections: { '1-0x0': connection } })
+
+		await dispatchPopupMessage(context, {
+			method: 'popup_changeInterceptorAccess',
+			data: [{ oldEntry: grantedAccess, newEntry: revokedAccess, removed: false }],
+		})
+
+		assert.deepEqual(storageState.websiteAccess, [revokedAccess])
+		assert.equal(connection.approved, false)
+		assert.deepEqual(portMessages.map(({ method, result }) => ({ method, result })), [
+			{ method: 'accountsChanged', result: [] },
+			{ method: 'disconnect', result: [] },
+		])
+	})
+
+	test('routes recovery handlers through the registry when settings are unavailable', async () => {
+		const context = createDispatcherContext(async () => undefined)
+		context.settings = undefined
+		context.rpcConfiguration = { status: 'unavailable', reason: 'read-failed', error: new Error('Storage unavailable') }
+
+		assert.deepEqual(await dispatchPopupMessage(context, { method: 'popup_requestSimulationMode' }), {
+			error: {
+				code: 4900,
+				message: 'Interceptor RPC configuration is unavailable. Network requests are paused until the user restores it.',
+			},
+		})
+		await dispatchPopupMessage(context, { method: 'popup_requestSettings' })
+		assert.equal(sentMessages.some((message) => {
+			const parsed = MessageToPopup.safeParse(message)
+			return parsed.success && parsed.value.method === 'popup_requestSettingsReply'
+		}), true)
+	})
+
+	test('keeps Safe failures typed and local contact writes available when settings are unavailable', async () => {
+		const context = createDispatcherContext(async () => undefined)
+		context.settings = undefined
+		context.rpcConfiguration = { status: 'unavailable', reason: 'read-failed', error: new Error('Storage unavailable') }
+		const message = 'Interceptor RPC configuration is unavailable. Network requests are paused until the user restores it.'
+
+		assert.deepEqual(await dispatchPopupMessage(context, {
+			method: 'popup_setSafeSimulationSigner',
+			data: { chainId: 1n, safeAddress: 2n, safeSimulationSignerAddress: 3n },
+		}), { type: 'SetSafeSimulationSignerReply', ok: false, message })
+		assert.deepEqual(await dispatchPopupMessage(context, {
+			method: 'popup_addOrModifyAddressBookEntry',
+			data: {
+				type: 'safe',
+				name: 'Unavailable Safe',
+				address: 2n,
+				chainId: 1n,
+				entrySource: 'User',
+				useAsActiveAddress: false,
+				safeSimulationSignerAddress: 3n,
+			},
+		}), { type: 'AddOrModifyAddressBookEntryReply', ok: false, message })
+		assert.deepEqual(await dispatchPopupMessage(context, {
+			method: 'popup_addOrModifyAddressBookEntry',
+			data: { type: 'contact', name: 'Offline contact', address: 4n, entrySource: 'User' },
+		}), { type: 'AddOrModifyAddressBookEntryReply', ok: true })
+		assert.equal(storageState.userAddressBookEntriesV3?.some((entry) => entry.address === '0x0000000000000000000000000000000000000004'), true)
+	})
+
 	test('snapshot registration captures at invocation and keeps one pair across awaits', async () => {
 		const { popupSnapshotMessageHandler } = await import('../../app/ts/background/popupMessageHandlerRegistry.js')
 		const context = createDispatcherContext(async () => undefined)
-		const initial = context.simulationServicesOwner.getCurrent()
-		const replacement = createDispatcherContext(async () => undefined).simulationServicesOwner.getCurrent()
-		const last = createDispatcherContext(async () => undefined).simulationServicesOwner.getCurrent()
+		const initial = context.simulationServicesOwner.requireCurrent()
+		const replacement = createDispatcherContext(async () => undefined).simulationServicesOwner.requireCurrent()
+		const last = createDispatcherContext(async () => undefined).simulationServicesOwner.requireCurrent()
 		let next = replacement
 		context.simulationServicesOwner = createTestSimulationServicesOwner(initial, () => next)
 		const entered = createDeferredValue<void>()
@@ -240,6 +318,66 @@ describe('popup message dispatcher seams', () => {
 		await handler(context, { method: 'popup_requestSimulationMetadata' })
 		assert.equal(observed.length, 4)
 		for (const [index, expected] of [replacement, replacement, last, last].entries()) assert.strictEqual(observed[index], expected)
+	})
+
+	test.each(['unavailable', 'signer-only'] as const)('RPC-backed popup handlers stop at the shared boundary for %s configuration', async (configurationKind) => {
+		const context = createDispatcherContext(async () => { throw new Error('reset must not run') })
+		if (configurationKind === 'unavailable') {
+			context.rpcConfiguration = { status: 'unavailable', reason: 'corrupt' }
+		} else {
+			const signerOnlyNetwork = { ...context.settings.activeRpcNetwork, httpsRpc: undefined, currencyName: 'Ether?' as const, currencyTicker: 'ETH?' as const, primary: false as const }
+			context.settings = { ...context.settings, activeRpcNetwork: signerOnlyNetwork }
+			context.rpcConfiguration = { status: 'ready', rpcEntries: [], activeRpcNetwork: signerOnlyNetwork }
+			context.simulationServicesOwner.clear()
+		}
+		const ownerWasAvailable = context.simulationServicesOwner.getCurrent() !== undefined
+		const unavailableReply = {
+			error: {
+				code: 4900,
+				message: 'Interceptor RPC configuration is unavailable. Network requests are paused until the user restores it.',
+			},
+		}
+
+		assert.deepEqual(await dispatchPopupMessage(context, { method: 'popup_refreshSimulation' }), unavailableReply)
+		assert.deepEqual(await dispatchPopupMessage(context, {
+			method: 'popup_confirmDialog',
+			data: {
+				action: 'reject',
+				errorString: undefined,
+				uniqueRequestIdentifier: { requestId: 1, requestSocket: { tabId: 1, connectionName: 1n } },
+			},
+		}), unavailableReply)
+		assert.deepEqual(await dispatchPopupMessage(context, { method: 'popup_resetSimulation' }), unavailableReply)
+		assert.deepEqual(await dispatchPopupMessage(context, {
+			method: 'popup_setSafeSimulationSigner',
+			data: { chainId: 1n, safeAddress: 2n, safeSimulationSignerAddress: 3n },
+		}), {
+			type: 'SetSafeSimulationSignerReply',
+			ok: false,
+			message: 'Interceptor RPC configuration is unavailable. Network requests are paused until the user restores it.',
+		})
+		assert.deepEqual(await dispatchPopupMessage(context, {
+			method: 'popup_addOrModifyAddressBookEntry',
+			data: {
+				type: 'safe',
+				name: 'Unavailable Safe',
+				address: 2n,
+				chainId: 1n,
+				entrySource: 'User',
+				useAsActiveAddress: false,
+				safeSimulationSignerAddress: 3n,
+			},
+		}), {
+			type: 'AddOrModifyAddressBookEntryReply',
+			ok: false,
+			message: 'Interceptor RPC configuration is unavailable. Network requests are paused until the user restores it.',
+		})
+		assert.deepEqual(await dispatchPopupMessage(context, {
+			method: 'popup_addOrModifyAddressBookEntry',
+			data: { type: 'contact', name: 'Offline contact', address: 4n, entrySource: 'User' },
+		}), { type: 'AddOrModifyAddressBookEntryReply', ok: true })
+		assert.equal(Array.isArray(storageState.userAddressBookEntriesV3), true)
+		assert.equal(context.simulationServicesOwner.getCurrent() !== undefined, ownerWasAvailable)
 	})
 
 	test('returns a save failure when address-book persistence fails', async () => {
@@ -379,7 +517,7 @@ describe('popup message dispatcher seams', () => {
 
 	test('does not identify an address using a different active chain', async () => {
 		const context = createDispatcherContext(async () => undefined)
-		Object.defineProperty(context.simulationServicesOwner.getCurrent().ethereum, 'getChainId', { value: () => 1n })
+		Object.defineProperty(context.simulationServicesOwner.requireCurrent().ethereum, 'getChainId', { value: () => 1n })
 
 		assert.deepEqual(await dispatchPopupMessage(context, {
 			method: 'popup_requestIdentifyAddress',
@@ -448,6 +586,7 @@ describe('popup message dispatcher seams', () => {
 					website: { websiteOrigin: 'success-refresh.test', title: 'Imported blocked website' },
 					addressAccess: [],
 					access: true,
+					interceptorDisabled: true,
 					declarativeNetRequestBlockMode: 'block-all',
 				}],
 				simulationMode: false,
@@ -473,6 +612,10 @@ describe('popup message dispatcher seams', () => {
 		assert.equal(messages[1].data.activeSimulationAddress, 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n)
 		assert.equal(messages[1].data.activeRpcNetwork.httpsRpc, 'https://example.test/rpc')
 		assert.equal(messages[1].data.simulationMode, false)
+		assert.deepEqual(contentScriptUpdateBatches.at(-1)?.map(({ id, excludeMatches }) => ({ id, excludeMatches })), [
+			{ id: 'inpage2', excludeMatches: ['*://*.success-refresh.test/*'] },
+			{ id: 'inpage', excludeMatches: ['*://*.success-refresh.test/*'] },
+		])
 		assert.deepEqual(dynamicRuleUpdates, [{
 			removeRuleIds: [],
 			addRules: [{
