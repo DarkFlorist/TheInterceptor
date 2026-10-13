@@ -1,4 +1,4 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
 import { getAddressesToIdentifyForVisualiserFromTransactions } from '../../app/ts/background/metadataUtils.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../app/ts/utils/constants.js'
@@ -119,6 +119,7 @@ describe('getAddressesToIdentifyForVisualiserFromTransactions', () => {
 			type: 'NonParsed',
 			address: TOKEN_ADDRESS,
 			isParsed: 'NonParsed',
+			loggersAddressBookEntry: { type: 'ERC20', name: 'Token', symbol: 'TOK', decimals: 18n, address: TOKEN_ADDRESS, entrySource: 'User' },
 			data: new Uint8Array(),
 			topics: [],
 		}, DELEGATE_ADDRESS)

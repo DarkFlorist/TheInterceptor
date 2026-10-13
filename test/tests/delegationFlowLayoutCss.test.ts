@@ -1,23 +1,15 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
-import { readInterceptorAppCss } from './cssTestUtils.js'
+import { matchCssBlock, readInterceptorAppCss } from './cssTestUtils.js'
 
 describe('delegation flow layout CSS', () => {
 	async function getDelegationFlowCss() {
 		const css = await readInterceptorAppCss()
-		const rowMatch = css.match(/\.delegation-flow-row\s*\{([\s\S]*?)\n\}/)
-		const connectorMatch = css.match(/\.delegation-flow-connector\s*\{([\s\S]*?)\n\}/)
-		const targetsMatch = css.match(/\.delegation-flow-targets\s*\{([\s\S]*?)\n\}/)
-		const buttonMatch = css.match(/\.delegation-flow-address-button\s*\{([\s\S]*?)\n\}/)
-		assert.ok(rowMatch)
-		assert.ok(connectorMatch)
-		assert.ok(targetsMatch)
-		assert.ok(buttonMatch)
 		return {
-			rowCss: rowMatch[1],
-			connectorCss: connectorMatch[1],
-			targetsCss: targetsMatch[1],
-			buttonCss: buttonMatch[1],
+			rowCss: matchCssBlock(css, /\.delegation-flow-row\s*\{([\s\S]*?)\n\}/),
+			connectorCss: matchCssBlock(css, /\.delegation-flow-connector\s*\{([\s\S]*?)\n\}/),
+			targetsCss: matchCssBlock(css, /\.delegation-flow-targets\s*\{([\s\S]*?)\n\}/),
+			buttonCss: matchCssBlock(css, /\.delegation-flow-address-button\s*\{([\s\S]*?)\n\}/),
 		}
 	}
 

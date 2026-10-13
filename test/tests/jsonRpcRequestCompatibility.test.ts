@@ -1,4 +1,4 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
 import { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 
@@ -13,7 +13,7 @@ describe('JSON-RPC request compatibility', () => {
 			params: [{ to: address, data: '0x' }],
 		})
 
-		assert.equal(request.method, 'eth_call')
+		assert.ok(request.method === 'eth_call')
 		assert.equal(request.params.length, 1)
 	})
 
@@ -27,7 +27,7 @@ describe('JSON-RPC request compatibility', () => {
 			}],
 		})
 
-		assert.equal(request.method, 'eth_sendTransaction')
+		assert.ok(request.method === 'eth_sendTransaction')
 		assert.deepEqual(request.params[0].accessList, [{
 			address: BigInt(secondAddress),
 			storageKeys: [BigInt(storageKey)],
@@ -44,9 +44,9 @@ describe('JSON-RPC request compatibility', () => {
 			params: [{ address: null }],
 		})
 
-		assert.equal(arrayRequest.method, 'eth_newFilter')
+		assert.ok(arrayRequest.method === 'eth_newFilter')
 		assert.deepEqual(arrayRequest.params[0].address, [BigInt(address), BigInt(secondAddress)])
-		assert.equal(nullRequest.method, 'eth_newFilter')
+		assert.ok(nullRequest.method === 'eth_newFilter')
 		assert.equal(nullRequest.params[0].address, null)
 	})
 
@@ -56,7 +56,7 @@ describe('JSON-RPC request compatibility', () => {
 			params: ['0x1', 'latest', [0.5, 25.25, 99.999]],
 		})
 
-		assert.equal(request.method, 'eth_feeHistory')
+		assert.ok(request.method === 'eth_feeHistory')
 		assert.deepEqual(request.params[2], [0.5, 25.25, 99.999])
 	})
 })

@@ -1,41 +1,34 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
 import { replyToInterceptedRequest, replyToInterceptedRequestAfterManifestV2Reconnect, sendSubscriptionReplyOrCallBack, sendSubscriptionReplyOrCallBackAfterManifestV2Reconnect, sendSubscriptionReplyOrCallBackToPort } from '../../app/ts/background/messageSending.js'
 import { websiteSocketToString } from '../../app/ts/background/backgroundUtils.js'
+import type { InterceptedRequestForward, SubscriptionReplyOrCallBack } from '../../app/ts/types/interceptor-messages.js'
+import type { TabConnection, WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
+import type { WebsiteSocket } from '../../app/ts/utils/requests.js'
+import { createMockPort } from '../harness/browserMock.js'
+import { replaceProperty } from '../harness/globals.js'
+import { createPerTestBrowserMockInstaller } from '../harness/perTest.js'
 
-function installBrowserMock() {
-	globalThis.browser = {
-		runtime: {
-			lastError: undefined,
-		},
-	} as unknown as typeof globalThis.browser
-}
+const installTestBrowserMock = createPerTestBrowserMockInstaller()
 
-function createPort(postMessage: (message: unknown) => void): browser.runtime.Port {
-	const event = {
-		addListener() { return undefined },
-		removeListener() { return undefined },
-		hasListener() { return false },
-	}
-	return {
-		name: 'test-port',
-		disconnect() { return undefined },
-		postMessage,
-		onMessage: event,
-		onDisconnect: event,
-	}
-}
+const createDisconnectedPort = () => createMockPort({ onPostMessage: () => { throw new Error('Attempting to use a disconnected port object') } })
+
+const createTabConnection = (socket: WebsiteSocket, port: browser.runtime.Port): TabConnection => ({ connections: {
+	[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true },
+} })
+
+const createWebsiteTabConnections = (socket: WebsiteSocket, port: browser.runtime.Port): WebsiteTabConnections => new Map([[socket.tabId, createTabConnection(socket, port)]])
 
 describe('background messageSending port lifecycle', () => {
 	test('ignores disconnected runtime lastError after posting to a content-script port', () => {
-		installBrowserMock()
+		const { browser } = installTestBrowserMock()
 		let postedMessages = 0
-		const port = {
-			postMessage() {
+		const { port } = createMockPort({
+			onPostMessage: () => {
 				postedMessages += 1
-				globalThis.browser.runtime.lastError = { message: 'Attempting to use a disconnected port object' }
+				browser.runtime.lastError = { message: 'Attempting to use a disconnected port object' }
 			},
-		} as unknown as browser.runtime.Port
+		})
 
 		assert.doesNotThrow(() => {
 			sendSubscriptionReplyOrCallBackToPort(port, { type: 'result', method: 'accountsChanged', result: [] })
@@ -44,12 +37,8 @@ describe('background messageSending port lifecycle', () => {
 	})
 
 	test('ignores disconnected content-script ports that throw during postMessage', () => {
-		installBrowserMock()
-		const port = {
-			postMessage() {
-				throw new Error('Could not establish connection. Receiving end does not exist.')
-			},
-		} as unknown as browser.runtime.Port
+		installTestBrowserMock()
+		const { port } = createMockPort({ onPostMessage: () => { throw new Error('Could not establish connection. Receiving end does not exist.') } })
 
 		assert.doesNotThrow(() => {
 			sendSubscriptionReplyOrCallBackToPort(port, { type: 'result', method: 'accountsChanged', result: [] })
@@ -57,12 +46,8 @@ describe('background messageSending port lifecycle', () => {
 	})
 
 	test('ignores invalid tab target errors after posting to a content-script port', () => {
-		installBrowserMock()
-		const port = {
-			postMessage() {
-				throw new Error('Invalid tab ID: 12')
-			},
-		} as unknown as browser.runtime.Port
+		installTestBrowserMock()
+		const { port } = createMockPort({ onPostMessage: () => { throw new Error('Invalid tab ID: 12') } })
 
 		assert.doesNotThrow(() => {
 			sendSubscriptionReplyOrCallBackToPort(port, { type: 'result', method: 'accountsChanged', result: [] })
@@ -70,41 +55,27 @@ describe('background messageSending port lifecycle', () => {
 	})
 
 	test('reports whether a request reached its exact content-script connection', () => {
-		installBrowserMock()
+		installTestBrowserMock()
 		const socket = { tabId: 1, connectionName: 0n }
-		const connectionKey = websiteSocketToString(socket)
-		const connectedPort = createPort(() => {
-				return undefined
-		})
-		const disconnectedPort = createPort(() => {
-				throw new Error('Attempting to use a disconnected port object')
-		})
-		const createConnections = (port: browser.runtime.Port) => new Map([[socket.tabId, { connections: {
-			[connectionKey]: { port, socket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true },
-		} }]])
-		const message = {
-			type: 'forwardToSigner' as const,
-			method: 'eth_sendTransaction' as const,
+		const connectedPort = createMockPort().port
+		const disconnectedPort = createDisconnectedPort().port
+		const message: InterceptedRequestForward = {
+			type: 'forwardToSigner',
+			method: 'eth_sendTransaction',
 			params: [{ from: 0x1111111111111111111111111111111111111111n }],
 			uniqueRequestIdentifier: { requestId: 7, requestSocket: socket },
 		}
 
-		assert.equal(replyToInterceptedRequest(createConnections(connectedPort), message), true)
-		assert.equal(replyToInterceptedRequest(createConnections(disconnectedPort), message), false)
+		assert.equal(replyToInterceptedRequest(createWebsiteTabConnections(socket, connectedPort), message), true)
+		assert.equal(replyToInterceptedRequest(createWebsiteTabConnections(socket, disconnectedPort), message), false)
 		assert.equal(replyToInterceptedRequest(new Map(), message), false)
 		assert.equal(replyToInterceptedRequest(new Map([[socket.tabId, { connections: {} }]]), message), false)
 	})
 
 	test('reports when a signer account request misses a disconnected content-script port', () => {
-		installBrowserMock()
+		installTestBrowserMock()
 		const socket = { tabId: 1, connectionName: 0x123n }
-		const connectionKey = websiteSocketToString(socket)
-		const disconnectedPort = createPort(() => {
-			throw new Error('Attempting to use a disconnected port object')
-		})
-		const websiteTabConnections = new Map([[socket.tabId, { connections: {
-			[connectionKey]: { port: disconnectedPort, socket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true },
-		} }]])
+		const websiteTabConnections = createWebsiteTabConnections(socket, createDisconnectedPort().port)
 
 		assert.equal(sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, {
 			type: 'result',
@@ -115,118 +86,90 @@ describe('background messageSending port lifecycle', () => {
 
 	test('requests an MV2 content-script reconnect and retries the exact signing route', async () => {
 		const socket = { tabId: 1, connectionName: 0x123n }
-		const connectionKey = websiteSocketToString(socket)
-		const postedMessages: unknown[] = []
-		const port = createPort((message) => { postedMessages.push(message) })
+		const reconnectedPort = createMockPort()
 		let disconnectedPostAttempts = 0
-		const disconnectedPort = createPort(() => {
-			disconnectedPostAttempts += 1
-			throw new Error('Attempting to use a disconnected port object')
-		})
-		const websiteTabConnections = new Map<number, { connections: Record<string, { port: browser.runtime.Port, socket: typeof socket, websiteOrigin: string, approved: boolean, wantsToConnect: boolean }> }>([[socket.tabId, { connections: {
-			[connectionKey]: { port: disconnectedPort, socket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true },
-		} }]])
-		const reconnectMessages: unknown[] = []
-		globalThis.browser = {
-			runtime: {
-				lastError: undefined,
-				getManifest: () => ({ manifest_version: 2 }),
+		const disconnectedPort = createMockPort({
+			onPostMessage: () => {
+				disconnectedPostAttempts += 1
+				throw new Error('Attempting to use a disconnected port object')
 			},
-			tabs: {
-				async sendMessage(_tabId: number, message: unknown) {
-					reconnectMessages.push(message)
+		})
+		const websiteTabConnections = createWebsiteTabConnections(socket, disconnectedPort.port)
+		const { calls } = installTestBrowserMock({
+			manifestVersion: 2,
+			tabs: [{ id: socket.tabId }],
+			handlers: {
+				tabMessage: () => {
+					// The replacement port registers after the reconnect request resolves, so the background has to wait for it.
 					setTimeout(() => {
-						websiteTabConnections.set(socket.tabId, { connections: {
-							[connectionKey]: { port, socket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true },
-						} })
-					}, 100)
+						websiteTabConnections.set(socket.tabId, createTabConnection(socket, reconnectedPort.port))
+					}, 0)
 					return { reconnected: true }
 				},
 			},
-		} as unknown as typeof globalThis.browser
-		const message = {
-			type: 'forwardToSigner' as const,
-			method: 'eth_sendTransaction' as const,
+		})
+		const message: InterceptedRequestForward = {
+			type: 'forwardToSigner',
+			method: 'eth_sendTransaction',
 			params: [{ from: 0x1111111111111111111111111111111111111111n }],
 			uniqueRequestIdentifier: { requestId: 7, requestSocket: socket },
 		}
 
 		assert.equal(await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, message), true)
-		assert.deepEqual(reconnectMessages, [{ method: 'interceptor_reconnect_content_script_port', connectionName: '0x123' }])
+		assert.deepEqual(calls.tabsSendMessage.map(({ message: reconnectMessage }) => reconnectMessage), [{ method: 'interceptor_reconnect_content_script_port', connectionName: '0x123' }])
 		assert.equal(disconnectedPostAttempts, 1)
-		assert.equal(postedMessages.length, 1)
+		assert.equal(reconnectedPort.postedMessages.length, 1)
 	})
 
 	test('reconnects an MV2 content-script port before requesting signer accounts', async () => {
 		const socket = { tabId: 1, connectionName: 0x123n }
-		const connectionKey = websiteSocketToString(socket)
-		const postedMessages: unknown[] = []
-		const connectedPort = createPort((message) => { postedMessages.push(message) })
-		const disconnectedPort = createPort(() => {
-			throw new Error('Attempting to use a disconnected port object')
-		})
-		const websiteTabConnections = new Map<number, { connections: Record<string, { port: browser.runtime.Port, socket: typeof socket, websiteOrigin: string, approved: boolean, wantsToConnect: boolean }> }>([[socket.tabId, { connections: {
-			[connectionKey]: { port: disconnectedPort, socket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true },
-		} }]])
-		const reconnectMessages: unknown[] = []
-		globalThis.browser = {
-			runtime: {
-				lastError: undefined,
-				getManifest: () => ({ manifest_version: 2 }),
-			},
-			tabs: {
-				async sendMessage(_tabId: number, message: unknown) {
-					reconnectMessages.push(message)
+		const reconnectedPort = createMockPort()
+		const websiteTabConnections = createWebsiteTabConnections(socket, createDisconnectedPort().port)
+		const { calls } = installTestBrowserMock({
+			manifestVersion: 2,
+			tabs: [{ id: socket.tabId }],
+			handlers: {
+				tabMessage: () => {
+					// The replacement port registers after the reconnect request resolves, so the background has to wait for it.
 					setTimeout(() => {
-						websiteTabConnections.set(socket.tabId, { connections: {
-							[connectionKey]: { port: connectedPort, socket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true },
-						} })
-					}, 100)
+						websiteTabConnections.set(socket.tabId, createTabConnection(socket, reconnectedPort.port))
+					}, 0)
 					return { reconnected: true }
 				},
 			},
-		} as unknown as typeof globalThis.browser
-		const message = {
-			type: 'result' as const,
-			method: 'request_signer_to_eth_requestAccounts' as const,
-			result: [] as const,
+		})
+		const message: SubscriptionReplyOrCallBack = {
+			type: 'result',
+			method: 'request_signer_to_eth_requestAccounts',
+			result: [],
 		}
 
 		assert.equal(await sendSubscriptionReplyOrCallBackAfterManifestV2Reconnect(websiteTabConnections, socket, message), true)
-		assert.deepEqual(reconnectMessages, [{ method: 'interceptor_reconnect_content_script_port', connectionName: '0x123' }])
-		assert.equal(postedMessages.length, 1)
+		assert.deepEqual(calls.tabsSendMessage.map(({ message: reconnectMessage }) => reconnectMessage), [{ method: 'interceptor_reconnect_content_script_port', connectionName: '0x123' }])
+		assert.equal(reconnectedPort.postedMessages.length, 1)
 	})
 
 	test('keeps request-scoped lifecycle bridge messages free of console warnings', () => {
-		installBrowserMock()
+		installTestBrowserMock()
 		const warnings: unknown[][] = []
-		const originalWarn = console.warn
-		console.warn = (...args: unknown[]) => { warnings.push(args) }
+		const restoreWarn = replaceProperty(console, 'warn', (...args: unknown[]) => { warnings.push(args) })
 		try {
-			const port = {
-				postMessage() {
-					return undefined
-				},
-			} as unknown as browser.runtime.Port
+			const { port } = createMockPort()
 
 			sendSubscriptionReplyOrCallBackToPort(port, { type: 'result', method: 'connect', result: [1n], requestId: 7 })
 			sendSubscriptionReplyOrCallBackToPort(port, { type: 'result', method: 'accountsChanged', result: [], requestId: 7 })
 
 			assert.equal(warnings.length, 0)
 		} finally {
-			console.warn = originalWarn
+			restoreWarn()
 		}
 	})
 
 	test('marks direct result replies as bridge settlements but not request-scoped callbacks', () => {
-		installBrowserMock()
+		installTestBrowserMock()
 		const socket = { tabId: 1, connectionName: 0n }
-		const postedMessages: unknown[] = []
-		const port = createPort((message) => postedMessages.push(message))
-		const connectionKey = websiteSocketToString(socket)
-		const websiteTabConnections = new Map([[socket.tabId, { connections: {
-			[connectionKey]: { port, socket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true },
-		} }]])
+		const { port, postedMessages } = createMockPort()
+		const websiteTabConnections = createWebsiteTabConnections(socket, port)
 
 		replyToInterceptedRequest(websiteTabConnections, {
 			type: 'result',
@@ -248,21 +191,12 @@ describe('background messageSending port lifecycle', () => {
 	})
 
 	test('keeps standalone eth_accounts bridge replies free of console warnings', () => {
-		installBrowserMock()
+		installTestBrowserMock()
 		const warnings: unknown[][] = []
-		const originalWarn = console.warn
-		console.warn = (...args: unknown[]) => { warnings.push(args) }
+		const restoreWarn = replaceProperty(console, 'warn', (...args: unknown[]) => { warnings.push(args) })
 		try {
 			const socket = { tabId: 1, connectionName: 0n }
-			const port = {
-				postMessage() {
-					return undefined
-				},
-			} as unknown as browser.runtime.Port
-			const connectionKey = websiteSocketToString(socket)
-			const websiteTabConnections = new Map([[socket.tabId, { connections: {
-				[connectionKey]: { port, socket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true },
-			} }]])
+			const websiteTabConnections = createWebsiteTabConnections(socket, createMockPort().port)
 
 			replyToInterceptedRequest(websiteTabConnections, {
 				type: 'result',
@@ -273,7 +207,7 @@ describe('background messageSending port lifecycle', () => {
 
 			assert.equal(warnings.length, 0)
 		} finally {
-			console.warn = originalWarn
+			restoreWarn()
 		}
 	})
 })
