@@ -115,7 +115,7 @@ export async function sendSubscriptionMessagesForNewBlock(
 				break
 			}
 			case 'eth_newFilter': break
-			// Nodes differ here: Nethermind sends nothing to `syncing` subscribers while synced, whereas geth sends new subscribers a single `false` once it has finished a sync. The Interceptor follows Nethermind and never emits, because it treats its RPC node as always synced and has no sync transition to report.
+			// No per-block notifications; see sendInitialSubscriptionMessages.
 			case 'syncing': break
 			default: assertNever(subscriptionOrFilter)
 		}
@@ -143,6 +143,28 @@ export async function createEthereumSubscription(params: EthSubscribeParams, sub
 					message: `Dapp requested for '${ params.params[0] }' subscription but it's not implemented`,
 				},
 			})
+	}
+}
+
+// Must run only after the eth_subscribe reply carrying `subscriptionId` has been posted to the page; both messages travel on the same port, so this ordering lets the page match the notification to a subscription id it already knows. For `syncing`, geth immediately sends a new subscriber its current sync status, and because the Interceptor treats its RPC node as always synced it sends one `false` here and never notifies the subscriber again, as new blocks cannot change that status.
+export function sendInitialSubscriptionMessages(websiteTabConnections: WebsiteTabConnections, subscriptionCreatorSocket: WebsiteSocket, params: EthSubscribeParams, subscriptionId: string) {
+	const subscriptionType = params.params[0]
+	switch (subscriptionType) {
+		case 'syncing': {
+			sendSubscriptionReplyOrCallBack(websiteTabConnections, subscriptionCreatorSocket, {
+				type: 'result',
+				method: 'syncing',
+				result: { subscription: subscriptionId, result: false },
+				subscription: subscriptionId,
+			})
+			return
+		}
+		// newHeads subscribers are only notified about blocks that arrive after they subscribed.
+		case 'newHeads': return
+		// createEthereumSubscription rejects these, so no subscription id is ever replied for them.
+		case 'logs':
+		case 'newPendingTransactions': return
+		default: assertNever(subscriptionType)
 	}
 }
 
