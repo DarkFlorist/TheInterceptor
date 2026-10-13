@@ -5,7 +5,7 @@ import { act } from 'preact/test-utils'
 import { describe, test } from 'bun:test'
 import { TokenSymbol } from '../../app/ts/components/subcomponents/coins.js'
 import { SmallAddress } from '../../app/ts/components/subcomponents/address.js'
-import type { AddressBookEntry, Erc20TokenEntry, Erc721Entry } from '../../app/ts/types/addressBookTypes.js'
+import type { Erc20TokenEntry } from '../../app/ts/types/addressBookTypes.js'
 import { readInterceptorAppCss } from './cssTestUtils.js'
 import { installDomMock } from './domMock.js'
 
@@ -18,13 +18,13 @@ type RenderTreeNode = {
 }
 
 type RenderedIcon =
-	| { readonly kind: 'ticker', readonly text: string | undefined, readonly backgroundColor: string | undefined, readonly className: string | undefined }
-	| { readonly kind: 'blockie' }
+	| { readonly kind: 'curatedTicker', readonly text: string | undefined, readonly backgroundColor: string | undefined, readonly className: string | undefined }
+	| { readonly kind: 'blockieWithTicker', readonly text: string | undefined, readonly blockiePixels: string }
+	| { readonly kind: 'blockie', readonly blockiePixels: string }
 	| { readonly kind: 'logo', readonly src: string | undefined }
 
 const USDC_ADDRESS = 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48n
 const SAME_SYMBOL_TOKEN_ADDRESS = 0x1111111111111111111111111111111111111111n
-const NFT_COLLECTION_ADDRESS = 0x2222222222222222222222222222222222222222n
 
 const collectElements = (node: RenderTreeNode, tagName: string): readonly RenderTreeNode[] => [
 	...(node.tagName === tagName.toUpperCase() ? [node] : []),
@@ -41,21 +41,29 @@ const createErc20Entry = (overrides: Partial<Erc20TokenEntry> = {}): Erc20TokenE
 	...overrides,
 })
 
+const findSpanWithClass = (container: RenderTreeNode, className: string) => collectElements(container, 'span').find((element) => element.getAttribute?.('class')?.split(' ').includes(className) === true)
+
+// The fill of every Blockie pixel in order, which is the address fingerprint the Blockie shows
+const readBlockiePixels = (container: RenderTreeNode) => collectElements(container, 'rect').map((pixel) => pixel.getAttribute?.('fill') ?? '').join(' ')
+
 function readFirstIcon(container: RenderTreeNode): RenderedIcon {
 	const iconSlot = collectElements(container, 'span').find((element) => element.getAttribute?.('role') === 'img')
 	if (iconSlot === undefined) throw new Error('Expected an icon slot')
 	const [image] = collectElements(iconSlot, 'img')
 	if (image !== undefined) return { kind: 'logo', src: image.getAttribute?.('src') ?? undefined }
-	const tickerIcon = collectElements(iconSlot, 'span').find((element) => element.getAttribute?.('class')?.split(' ').includes('token-ticker-icon') === true)
-	if (tickerIcon !== undefined) {
+	const curatedTickerIcon = findSpanWithClass(iconSlot, 'token-ticker-icon')
+	if (curatedTickerIcon !== undefined) {
 		return {
-			kind: 'ticker',
-			text: tickerIcon.getAttribute?.('data-ticker-text') ?? undefined,
-			backgroundColor: tickerIcon.style?.['backgroundColor'],
-			className: tickerIcon.getAttribute?.('class') ?? undefined,
+			kind: 'curatedTicker',
+			text: curatedTickerIcon.getAttribute?.('data-ticker-text') ?? undefined,
+			backgroundColor: curatedTickerIcon.style?.['backgroundColor'],
+			className: curatedTickerIcon.getAttribute?.('class') ?? undefined,
 		}
 	}
-	if (collectElements(iconSlot, 'rect').length > 0) return { kind: 'blockie' }
+	const blockieWithTicker = findSpanWithClass(iconSlot, 'blockie-with-ticker')
+	if (blockieWithTicker !== undefined) return { kind: 'blockieWithTicker', text: blockieWithTicker.getAttribute?.('data-ticker-text') ?? undefined, blockiePixels: readBlockiePixels(blockieWithTicker) }
+	const blockiePixels = readBlockiePixels(iconSlot)
+	if (blockiePixels !== '') return { kind: 'blockie', blockiePixels }
 	throw new Error('Expected a logo, ticker icon or Blockie')
 }
 
@@ -76,63 +84,58 @@ const renderFirstIcon = async (element: JSX.Element) => await renderIntoDom(elem
 const createTokenSymbol = (tokenEntry: Erc20TokenEntry) => <TokenSymbol tokenEntry = { tokenEntry } renameAddressCallBack = { () => undefined } fontSize = 'normal' />
 const renderTokenSymbolIcon = async (tokenEntry: Erc20TokenEntry) => await renderFirstIcon(createTokenSymbol(tokenEntry))
 
+// Which entry gets which icon kind is tested in addressBookEntryIconChoice.test.ts, these tests check how each kind is rendered
 describe('address book entry icons', () => {
-	test('shows an address-colored ticker icon for trusted tokens without a logo', async () => {
-		for (const entrySource of ['DarkFloristMetadata', 'User', 'Interceptor'] as const) {
-			const icon = await renderTokenSymbolIcon(createErc20Entry({ entrySource }))
-			assert.equal(icon.kind, 'ticker', entrySource)
-			if (icon.kind !== 'ticker') continue
-			assert.equal(icon.text, 'US')
-			assert.match(icon.backgroundColor ?? '', /^hsl\(\d+, 60%, 75%\)$/u)
-		}
+	test('renders the logo of an entry that has one', async () => {
+		assert.deepEqual(await renderTokenSymbolIcon(createErc20Entry({ logoUri: 'https://logo.example/usdc.png' })), { kind: 'logo', src: 'https://logo.example/usdc.png' })
 	})
 
-	test('gives tokens with the same symbol different ticker colors when their addresses differ', async () => {
+	test('renders a curated ticker as an address-colored circle with a size class for single characters', async () => {
+		const icon = await renderTokenSymbolIcon(createErc20Entry())
+		const singleCharacterIcon = await renderTokenSymbolIcon(createErc20Entry({ symbol: 'u' }))
+		if (icon.kind !== 'curatedTicker' || singleCharacterIcon.kind !== 'curatedTicker') throw new Error('Expected curated ticker icons')
+		assert.equal(icon.text, 'US')
+		assert.equal(icon.className, 'token-ticker-icon')
+		assert.match(icon.backgroundColor ?? '', /^hsl\(\d+, 60%, 75%\)$/u)
+		assert.equal(singleCharacterIcon.text, 'U')
+		assert.equal(singleCharacterIcon.className, 'token-ticker-icon token-ticker-icon--single-character')
+	})
+
+	test('gives curated tokens with the same symbol different ticker colors when their addresses differ', async () => {
 		const usdcIcon = await renderTokenSymbolIcon(createErc20Entry())
-		const sameSymbolIcon = await renderTokenSymbolIcon(createErc20Entry({ address: SAME_SYMBOL_TOKEN_ADDRESS, entrySource: 'User' }))
+		const sameSymbolIcon = await renderTokenSymbolIcon(createErc20Entry({ address: SAME_SYMBOL_TOKEN_ADDRESS, entrySource: 'Interceptor' }))
 		const usdcIconAgain = await renderTokenSymbolIcon(createErc20Entry())
-		if (usdcIcon.kind !== 'ticker' || sameSymbolIcon.kind !== 'ticker' || usdcIconAgain.kind !== 'ticker') throw new Error('Expected ticker icons')
+		if (usdcIcon.kind !== 'curatedTicker' || sameSymbolIcon.kind !== 'curatedTicker' || usdcIconAgain.kind !== 'curatedTicker') throw new Error('Expected curated ticker icons')
 		assert.equal(usdcIcon.text, sameSymbolIcon.text)
 		assert.notEqual(usdcIcon.backgroundColor, sameSymbolIcon.backgroundColor)
 		assert.equal(usdcIcon.backgroundColor, usdcIconAgain.backgroundColor)
 	})
 
-	test('keeps the address-derived Blockie for untrusted on-chain and filled-in tokens', async () => {
-		assert.deepEqual(await renderTokenSymbolIcon(createErc20Entry({ entrySource: 'OnChain' })), { kind: 'blockie' })
-		assert.deepEqual(await renderTokenSymbolIcon(createErc20Entry({ entrySource: 'FilledIn' })), { kind: 'blockie' })
+	test('draws a user token ticker over the same plain Blockie that an on-chain token at that address gets', async () => {
+		const userTokenIcon = await renderTokenSymbolIcon(createErc20Entry({ address: SAME_SYMBOL_TOKEN_ADDRESS, entrySource: 'User' }))
+		const plainBlockieIcon = await renderTokenSymbolIcon(createErc20Entry({ address: SAME_SYMBOL_TOKEN_ADDRESS, entrySource: 'OnChain' }))
+		if (userTokenIcon.kind !== 'blockieWithTicker' || plainBlockieIcon.kind !== 'blockie') throw new Error('Expected a Blockie with a ticker and a plain Blockie')
+		assert.equal(userTokenIcon.text, 'US')
+		assert.equal(userTokenIcon.blockiePixels, plainBlockieIcon.blockiePixels)
 	})
 
-	test('keeps showing the logo for tokens that have one', async () => {
-		for (const entrySource of ['DarkFloristMetadata', 'OnChain'] as const) {
-			assert.deepEqual(await renderTokenSymbolIcon(createErc20Entry({ entrySource, logoUri: 'https://logo.example/usdc.png' })), { kind: 'logo', src: 'https://logo.example/usdc.png' })
-		}
-	})
-
-	test('falls back to the Blockie when the symbol has no letters or digits to show', async () => {
-		for (const symbol of ['', '   ', '???', '🦄', '$.-', 'ΞΞ', '\u212A', '\u017F']) {
-			assert.deepEqual(await renderTokenSymbolIcon(createErc20Entry({ symbol })), { kind: 'blockie' }, JSON.stringify(symbol))
-		}
-	})
-
-	test('shows at most two uppercase ASCII letters or digits from the symbol', async () => {
-		const tickerTextBySymbol = { ' $wstETH ': 'WS', '1INCH': '1I', 'u': 'U', '🦄UNI': 'UN', 'VERYLONGTOKENSYMBOL': 'VE' }
-		for (const [symbol, expectedText] of Object.entries(tickerTextBySymbol)) {
-			const icon = await renderTokenSymbolIcon(createErc20Entry({ symbol }))
-			assert.equal(icon.kind === 'ticker' ? icon.text : icon.kind, expectedText, JSON.stringify(symbol))
-		}
-		const singleCharacterIcon = await renderTokenSymbolIcon(createErc20Entry({ symbol: 'u' }))
-		const twoCharacterIcon = await renderTokenSymbolIcon(createErc20Entry({ symbol: 'UNI' }))
-		assert.equal(singleCharacterIcon.kind === 'ticker' ? singleCharacterIcon.className : singleCharacterIcon.kind, 'token-ticker-icon token-ticker-icon--single-character')
-		assert.equal(twoCharacterIcon.kind === 'ticker' ? twoCharacterIcon.className : twoCharacterIcon.kind, 'token-ticker-icon')
+	test('gives user tokens with the same symbol different Blockies when their addresses differ', async () => {
+		const userUsdcIcon = await renderTokenSymbolIcon(createErc20Entry({ entrySource: 'User' }))
+		const sameSymbolIcon = await renderTokenSymbolIcon(createErc20Entry({ address: SAME_SYMBOL_TOKEN_ADDRESS, entrySource: 'User' }))
+		if (userUsdcIcon.kind !== 'blockieWithTicker' || sameSymbolIcon.kind !== 'blockieWithTicker') throw new Error('Expected Blockies with a ticker')
+		assert.equal(userUsdcIcon.text, sameSymbolIcon.text)
+		assert.notEqual(userUsdcIcon.blockiePixels, sameSymbolIcon.blockiePixels)
 	})
 
 	test('keeps ticker letters out of the rendered text so copied labels stay unchanged', async () => {
-		const iconSlotTexts = await renderIntoDom(createTokenSymbol(createErc20Entry()), (container) => collectElements(container, 'span').filter((element) => element.getAttribute?.('role') === 'img').map((element) => element.textContent))
-		assert.ok(iconSlotTexts.length > 0)
-		assert.deepEqual(iconSlotTexts.filter((text) => text !== ''), [])
+		for (const entrySource of ['DarkFloristMetadata', 'User'] as const) {
+			const iconSlotTexts = await renderIntoDom(createTokenSymbol(createErc20Entry({ entrySource })), (container) => collectElements(container, 'span').filter((element) => element.getAttribute?.('role') === 'img').map((element) => element.textContent))
+			assert.ok(iconSlotTexts.length > 0, entrySource)
+			assert.deepEqual(iconSlotTexts.filter((text) => text !== ''), [], entrySource)
+		}
 	})
 
-	test('draws the ticker letters from the data attribute inside a 1em circle', async () => {
+	test('draws the curated ticker letters from the data attribute inside a 1em circle', async () => {
 		const css = await readInterceptorAppCss()
 		const iconRule = css.match(/\.token-ticker-icon \{([\s\S]*?)\n\}/u)?.[1] ?? ''
 		assert.match(iconRule, /border-radius: 50%;/u)
@@ -142,20 +145,24 @@ describe('address book entry icons', () => {
 		assert.match(css, /\.token-ticker-icon::before \{[^}]*content: attr\(data-ticker-text\);/u)
 	})
 
-	test('shows a ticker icon for trusted NFT collections', async () => {
-		const nftEntry: Erc721Entry = { type: 'ERC721', name: 'Example Collection', symbol: 'EXC', address: NFT_COLLECTION_ADDRESS, entrySource: 'User' }
-		const nftIcon = await renderFirstIcon(<TokenSymbol tokenEntry = { nftEntry } tokenId = { 1n } renameAddressCallBack = { () => undefined } fontSize = 'normal' />)
-		assert.equal(nftIcon.kind === 'ticker' ? nftIcon.text : nftIcon.kind, 'EX')
+	test('draws the user token ticker letters from the data attribute on a dark pill inside the 1em Blockie', async () => {
+		const css = await readInterceptorAppCss()
+		const overlayRule = css.match(/\.blockie-with-ticker \{([\s\S]*?)\n\}/u)?.[1] ?? ''
+		assert.match(overlayRule, /width: 1em;/u)
+		assert.match(overlayRule, /height: 1em;/u)
+		assert.match(overlayRule, /overflow: hidden;/u)
+		const tickerRule = css.match(/\.blockie-with-ticker::after \{([\s\S]*?)\n\}/u)?.[1] ?? ''
+		assert.match(tickerRule, /content: attr\(data-ticker-text\);/u)
+		assert.match(tickerRule, /background-color: var\(--black-alpha-d6\);/u)
+		assert.match(tickerRule, /color: var\(--text-color\);/u)
+		assert.match(css, /\.blockie-with-ticker:is\(\[data-ticker-text\*="M"\], \[data-ticker-text\*="W"\]\)::after \{[^}]*font-size: 0\.34em;/u)
 	})
 
 	test('uses the same token icon in address cards as in token symbols', async () => {
-		const tokenSymbolIcon = await renderTokenSymbolIcon(createErc20Entry())
-		const smallAddressIcon = await renderFirstIcon(<SmallAddress addressBookEntry = { createErc20Entry() } renameAddressCallBack = { () => undefined } />)
-		assert.deepEqual(smallAddressIcon, tokenSymbolIcon)
-	})
-
-	test('keeps the Blockie for contacts in address cards', async () => {
-		const contactEntry: AddressBookEntry = { type: 'contact', name: 'Friend', address: USDC_ADDRESS, entrySource: 'User' }
-		assert.deepEqual(await renderFirstIcon(<SmallAddress addressBookEntry = { contactEntry } renameAddressCallBack = { () => undefined } />), { kind: 'blockie' })
+		for (const entrySource of ['DarkFloristMetadata', 'User', 'OnChain'] as const) {
+			const tokenSymbolIcon = await renderTokenSymbolIcon(createErc20Entry({ entrySource }))
+			const smallAddressIcon = await renderFirstIcon(<SmallAddress addressBookEntry = { createErc20Entry({ entrySource }) } renameAddressCallBack = { () => undefined } />)
+			assert.deepEqual(smallAddressIcon, tokenSymbolIcon, entrySource)
+		}
 	})
 })
