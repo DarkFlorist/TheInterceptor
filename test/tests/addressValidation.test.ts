@@ -1,4 +1,4 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
 import { getIssueWithAddressString } from '../../app/ts/utils/addressValidation.js'
 

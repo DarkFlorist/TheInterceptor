@@ -1,145 +1,20 @@
-import * as assert from 'assert'
-import { describe, test } from 'bun:test'
+import * as assert from 'node:assert'
+import { beforeEach, describe, test } from 'bun:test'
+import type { IEthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
 import type { SafeTx, VisualizedPersonalSignRequestSafeTx } from '../../app/ts/types/personal-message-definitions.js'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
+import type { InterceptorTransactionStack } from '../../app/ts/types/visualizer-types.js'
 import { EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
 import { EthereumBlockHeader, EthereumQuantity } from '../../app/ts/types/wire-types.js'
 import { addressString, stringifyJSONWithBigInts, stringToUint8Array } from '../../app/ts/utils/bigint.js'
 import { MULTICALL3, Multicall3ABI } from '../../app/ts/utils/constants.js'
 import { encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { encodeAbiParameters } from '../../app/ts/utils/ethereumPrimitives.js'
+import { createPerTestBrowserMockInstaller } from '../harness/perTest.js'
 
-type RuntimeMessage = {
-	method?: string
-	type?: string
-	data?: unknown
-}
-
-type BrowserMockGlobals = {
-	runtime: {
-		lastError: { message?: string } | null | undefined
-		sendMessage: (message: RuntimeMessage) => Promise<unknown>
-		getManifest: () => { manifest_version: number }
-		onMessage: { addListener: () => undefined; removeListener: () => undefined }
-		onConnect: { addListener: () => undefined; removeListener: () => undefined }
-	}
-	storage: {
-		local: {
-			get: (keys?: string | string[] | Record<string, unknown> | null) => Promise<Record<string, unknown>>
-			set: (items: Record<string, unknown>) => Promise<void>
-			remove: (keys: string | string[]) => Promise<void>
-		}
-	}
-	tabs: {
-		query: () => Promise<unknown[]>
-		get: () => Promise<undefined>
-		update: () => Promise<undefined>
-		onUpdated: { addListener: () => undefined; removeListener: () => undefined }
-		onRemoved: { addListener: () => undefined; removeListener: () => undefined }
-	}
-	windows: {
-		get: () => Promise<undefined>
-		update: () => Promise<undefined>
-	}
-	action: {
-		setIcon: () => Promise<undefined>
-		setTitle: () => Promise<undefined>
-		setBadgeText: () => Promise<undefined>
-		setBadgeBackgroundColor: () => Promise<undefined>
-	}
-	browserAction: {
-		setIcon: () => Promise<undefined>
-		setTitle: () => Promise<undefined>
-		setBadgeText: () => Promise<undefined>
-		setBadgeBackgroundColor: () => Promise<undefined>
-	}
-}
-
-type BrowserMock = {
-	reset: () => Promise<void>
-	sentMessages: RuntimeMessage[]
-}
-
-const serializeForRpc = (runtype: { serialize: (value: unknown) => unknown }, value: unknown) => runtype.serialize(value)
-
-function createBrowserMock(): BrowserMock {
-	const storageState: Record<string, unknown> = {}
-	const sentMessages: RuntimeMessage[] = []
-
-	const getItems = (keys?: string | string[] | Record<string, unknown> | null) => {
-		if (keys === undefined || keys === null) return { ...storageState }
-		if (Array.isArray(keys)) return Object.fromEntries(keys.map((key) => [key, storageState[key]]))
-		if (typeof keys === 'string') return { [keys]: storageState[keys] }
-		return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
-	}
-
-	const removeItems = (keys: string | string[]) => {
-		const entries = Array.isArray(keys) ? keys : [keys]
-		for (const key of entries) delete storageState[key]
-	}
-
-	const browserMock = {
-		runtime: {
-			lastError: null,
-			async sendMessage(message: RuntimeMessage) {
-				sentMessages.push(message)
-				return undefined
-			},
-			getManifest: () => ({ manifest_version: 3 }),
-			onMessage: { addListener: () => undefined, removeListener: () => undefined },
-			onConnect: { addListener: () => undefined, removeListener: () => undefined },
-		},
-		storage: {
-			local: {
-				async get(keys?: string | string[] | Record<string, unknown> | null) { return getItems(keys) },
-				async set(items: Record<string, unknown>) { Object.assign(storageState, items) },
-				async remove(keys: string | string[]) { removeItems(keys) },
-			},
-		},
-		tabs: {
-			async query() { return [] },
-			async get() { return undefined },
-			async update() { return undefined },
-			onUpdated: { addListener: () => undefined, removeListener: () => undefined },
-			onRemoved: { addListener: () => undefined, removeListener: () => undefined },
-		},
-		windows: {
-			async get() { return undefined },
-			async update() { return undefined },
-		},
-		action: {
-			async setIcon() { return undefined },
-			async setTitle() { return undefined },
-			async setBadgeText() { return undefined },
-			async setBadgeBackgroundColor() { return undefined },
-		},
-		browserAction: {
-			async setIcon() { return undefined },
-			async setTitle() { return undefined },
-			async setBadgeText() { return undefined },
-			async setBadgeBackgroundColor() { return undefined },
-		},
-	} satisfies BrowserMockGlobals
-
-	const installBrowserGlobals = () => {
-		Object.defineProperty(globalThis, 'browser', { value: browserMock, configurable: true, writable: true })
-		Object.defineProperty(globalThis, 'chrome', { value: { runtime: { id: 'test-extension' } }, configurable: true, writable: true })
-	}
-
-	installBrowserGlobals()
-
-	return {
-		sentMessages,
-		async reset() {
-			for (const key of Object.keys(storageState)) delete storageState[key]
-			sentMessages.length = 0
-			installBrowserGlobals()
-			browserMock.runtime.lastError = null
-		},
-	}
-}
-
-const browserMock = createBrowserMock()
+// Each test starts from empty extension storage.
+const installBrowserMock = createPerTestBrowserMockInstaller()
+beforeEach(() => { installBrowserMock() })
 
 async function loadModules() {
 	const simulationUpdating = await import('../../app/ts/background/simulationUpdating.js')
@@ -161,6 +36,36 @@ async function loadModules() {
 
 const modulesPromise = loadModules()
 type TestModules = Awaited<ReturnType<typeof loadModules>>
+
+function getDefaultTestAddresses(modules: TestModules) {
+	const [activeAddress, stackRecipient] = modules.defaultActiveAddresses
+	if (activeAddress === undefined || stackRecipient === undefined) throw new Error('missing default test addresses')
+	return { activeAddress, stackRecipient }
+}
+
+const fakeRpcNetwork: RpcEntry = {
+	name: 'Test Chain',
+	chainId: 1337n,
+	httpsRpc: 'https://example.invalid',
+	currencyName: 'Ether',
+	currencyTicker: 'ETH',
+	currencyLogoUri: undefined,
+	primary: true,
+	minimized: true,
+}
+
+// The fake RPC inspects eth_simulateV1 payloads structurally, so it reads every request as a method name with untyped params.
+type InspectedRpcRequest = { readonly method: string, readonly params?: readonly unknown[] }
+const isUnknownArray = (value: unknown): value is readonly unknown[] => Array.isArray(value)
+
+function createFakeRequestHandler(respond: (rpcRequest: InspectedRpcRequest) => Promise<unknown>): IEthereumJSONRpcRequestHandler {
+	return {
+		rpcUrl: fakeRpcNetwork.httpsRpc,
+		clearCache() { return undefined },
+		async getChainId() { return fakeRpcNetwork.chainId },
+		jsonRpcRequest: respond,
+	}
+}
 
 function makeFakeBlock(number: bigint) {
 	return {
@@ -192,7 +97,7 @@ function makeFakeBlock(number: bigint) {
 }
 
 function makeEthSimulateBlocks(callCount: number, lastReturnData = new Uint8Array()) {
-	return serializeForRpc(EthSimulateV1Result, Array.from({ length: callCount }, (_, index) => ({
+	return EthSimulateV1Result.serialize(Array.from({ length: callCount }, (_, index): EthSimulateV1Result[number] => ({
 		number: 123n + BigInt(index),
 		hash: 0x2000n + BigInt(index),
 		timestamp: 0x65920080n + BigInt(index),
@@ -288,63 +193,45 @@ function createSafeMessage(fakeRpcNetwork: RpcEntry, activeAddress: TestModules[
 
 describe('Gnosis Safe stack simulation', () => {
 	test('governance execution token balances are queried on top of stack plus execution transaction', async () => {
-		await browserMock.reset()
 		const modules = await modulesPromise
-		const activeAddress = modules.defaultActiveAddresses[0]
-		const stackRecipient = modules.defaultActiveAddresses[1]
-		if (activeAddress === undefined || stackRecipient === undefined) throw new Error('missing default test addresses')
-
-		const fakeRpcNetwork: RpcEntry = {
-			name: 'Test Chain',
-			chainId: 1337n,
-			httpsRpc: 'https://example.invalid',
-			currencyName: 'Ether',
-			currencyTicker: 'ETH',
-			currencyLogoUri: undefined,
-			primary: true,
-			minimized: true,
-		}
+		const { activeAddress, stackRecipient } = getDefaultTestAddresses(modules)
 
 		const fakeBlock = makeFakeBlock(123n)
-		let aggregate3BlockStateCallCount: number | undefined 
-		const fakeRequestHandler = {
-			rpcUrl: fakeRpcNetwork.httpsRpc,
-			clearCache() { return undefined },
-			async jsonRpcRequest(rpcRequest: { method: string, params?: readonly unknown[] }) {
-				switch (rpcRequest.method) {
-					case 'eth_getBlockByNumber':
-						return serializeForRpc(EthereumBlockHeader, fakeBlock)
-					case 'eth_blockNumber':
-						return serializeForRpc(EthereumQuantity, fakeBlock.number)
-					case 'eth_simulateV1': {
-						const firstParam = rpcRequest.params?.[0]
-						if (typeof firstParam !== 'object' || firstParam === null || !('blockStateCalls' in firstParam) || !Array.isArray(firstParam.blockStateCalls)) {
-							throw new Error('Missing blockStateCalls in eth_simulateV1 request')
-						}
-						const callCount = firstParam.blockStateCalls.length
-						const lastBlock = firstParam.blockStateCalls[callCount - 1]
-						if (typeof lastBlock !== 'object' || lastBlock === null || !('calls' in lastBlock) || !Array.isArray(lastBlock.calls)) {
-							throw new Error('Missing calls in eth_simulateV1 block')
-						}
-						const lastCall = lastBlock.calls[lastBlock.calls.length - 1]
-						const isAggregate3BalanceCall = typeof lastCall === 'object'
-							&& lastCall !== null
-							&& 'to' in lastCall
-							&& lastCall.to === MULTICALL3
-						if (!isAggregate3BalanceCall) throw new Error(`Unexpected eth_simulateV1 payload with ${ String(callCount) } blockStateCalls`)
-						aggregate3BlockStateCallCount = callCount
-
-						const aggregate3ReturnData = encodeFunctionReturn(Multicall3ABI, 'aggregate3', [[{
-							success: true,
-							returnData: encodeAbiParameters([{ type: 'uint256' }], [0n]),
-						}]])
-						return makeEthSimulateBlocks(callCount, stringToUint8Array(aggregate3ReturnData))
+		let aggregate3BlockStateCallCount: number | undefined
+		const fakeRequestHandler = createFakeRequestHandler(async (rpcRequest) => {
+			switch (rpcRequest.method) {
+				case 'eth_getBlockByNumber':
+					return EthereumBlockHeader.serialize(fakeBlock)
+				case 'eth_blockNumber':
+					return EthereumQuantity.serialize(fakeBlock.number)
+				case 'eth_simulateV1': {
+					const firstParam = rpcRequest.params?.[0]
+					if (typeof firstParam !== 'object' || firstParam === null || !('blockStateCalls' in firstParam) || !isUnknownArray(firstParam.blockStateCalls)) {
+						throw new Error('Missing blockStateCalls in eth_simulateV1 request')
 					}
-					default:
-						throw new Error(`Unexpected RPC method: ${ rpcRequest.method }`)
+					const callCount = firstParam.blockStateCalls.length
+					const lastBlock = firstParam.blockStateCalls[callCount - 1]
+					if (typeof lastBlock !== 'object' || lastBlock === null || !('calls' in lastBlock) || !isUnknownArray(lastBlock.calls)) {
+						throw new Error('Missing calls in eth_simulateV1 block')
+					}
+					const lastCall = lastBlock.calls[lastBlock.calls.length - 1]
+					const isAggregate3BalanceCall = typeof lastCall === 'object'
+						&& lastCall !== null
+						&& 'to' in lastCall
+						&& lastCall.to === MULTICALL3
+					if (!isAggregate3BalanceCall) throw new Error(`Unexpected eth_simulateV1 payload with ${ String(callCount) } blockStateCalls`)
+					aggregate3BlockStateCallCount = callCount
+
+					const aggregate3ReturnData = encodeFunctionReturn(Multicall3ABI, 'aggregate3', [[{
+						success: true,
+						returnData: encodeAbiParameters([{ type: 'uint256' }], [0n]),
+					}]])
+					return makeEthSimulateBlocks(callCount, stringToUint8Array(aggregate3ReturnData))
 				}
-			},
-		}
+				default:
+					throw new Error(`Unexpected RPC method: ${ rpcRequest.method }`)
+			}
+		})
 
 		const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
 		const currentStackTransaction = modules.mockSignTransaction({
@@ -435,111 +322,94 @@ describe('Gnosis Safe stack simulation', () => {
 	] as const
 
 	for (const { name, operation, seedStack } of safeSimulationCases) test(name, async () => {
-		await browserMock.reset()
 		const modules = await modulesPromise
-		const activeAddress = modules.defaultActiveAddresses[0]
-		const stackRecipient = modules.defaultActiveAddresses[1]
-		if (activeAddress === undefined || stackRecipient === undefined) throw new Error('missing default test addresses')
-
-		const fakeRpcNetwork: RpcEntry = {
-			name: 'Test Chain',
-			chainId: 1337n,
-			httpsRpc: 'https://example.invalid',
-			currencyName: 'Ether',
-			currencyTicker: 'ETH',
-			currencyLogoUri: undefined,
-			primary: true,
-			minimized: true,
-		}
+		const { activeAddress, stackRecipient } = getDefaultTestAddresses(modules)
 
 		const fakeBlock = makeFakeBlock(123n)
 		let gasEstimationCount = 0
 		let delegateCallSimulationCount = 0
-		const fakeRequestHandler = {
-			rpcUrl: fakeRpcNetwork.httpsRpc,
-			clearCache() { return undefined },
-			async jsonRpcRequest(rpcRequest: { method: string, params?: readonly unknown[] }) {
-				switch (rpcRequest.method) {
-					case 'eth_getBlockByNumber':
-						return serializeForRpc(EthereumBlockHeader, fakeBlock)
-					case 'eth_getTransactionCount':
-						return serializeForRpc(EthereumQuantity, 0n)
-					case 'eth_getBalance':
-						return serializeForRpc(EthereumQuantity, 0n)
-					case 'eth_getCode':
-						return '0x6000'
-					case 'eth_gasPrice':
-						return serializeForRpc(EthereumQuantity, 1n)
-					case 'eth_blockNumber':
-						return serializeForRpc(EthereumQuantity, fakeBlock.number)
-					case 'eth_simulateV1': {
-						const firstParam = rpcRequest.params?.[0]
-						if (typeof firstParam !== 'object' || firstParam === null || !('blockStateCalls' in firstParam) || !Array.isArray(firstParam.blockStateCalls)) {
-							throw new Error('Missing blockStateCalls in eth_simulateV1 request')
-						}
-						const callCount = firstParam.blockStateCalls.length
-						if (callCount !== 1 && callCount !== 2 && callCount !== 3) throw new Error(`Unexpected call count: ${ String(callCount) }`)
-						const lastBlock = firstParam.blockStateCalls[callCount - 1]
-						if (typeof lastBlock !== 'object' || lastBlock === null || !('calls' in lastBlock) || !Array.isArray(lastBlock.calls)) {
-							throw new Error('Missing calls in eth_simulateV1 block')
-						}
-						const lastCall = lastBlock.calls[lastBlock.calls.length - 1]
-						const stateOverrides = 'stateOverrides' in lastBlock ? lastBlock.stateOverrides : undefined
-						const hasSafeDelegateCallTarget = typeof lastCall === 'object'
-							&& lastCall !== null
-							&& 'to' in lastCall
-							&& lastCall.to === activeAddress.address
-						if (hasSafeDelegateCallTarget) {
-							delegateCallSimulationCount += 1
-							if (typeof stateOverrides !== 'object' || stateOverrides === null) throw new Error('Missing Safe state overrides during delegatecall simulation')
-							const safeOverride = Object.entries(stateOverrides).find(([address]) => address === addressString(activeAddress.address))?.[1]
-							if (typeof safeOverride !== 'object' || safeOverride === null || !('code' in safeOverride) || !(safeOverride.code instanceof Uint8Array) || safeOverride.code.length === 0) {
-								throw new Error('Missing Safe wrapper code during delegatecall simulation')
-							}
-							const relocatedSafeOverride = Object.entries(stateOverrides).find(([address]) => address === '0x0000000000000000000000000000000000920515')?.[1]
-							if (typeof relocatedSafeOverride !== 'object' || relocatedSafeOverride === null || !('code' in relocatedSafeOverride) || !(relocatedSafeOverride.code instanceof Uint8Array) || relocatedSafeOverride.code.length === 0) {
-								throw new Error('Missing relocated Safe code during delegatecall simulation')
-							}
-						}
-						const blockOverrides = 'blockOverrides' in lastBlock ? lastBlock.blockOverrides : undefined
-						const isGasEstimation = typeof lastCall === 'object'
-							&& lastCall !== null
-							&& 'to' in lastCall
-							&& lastCall.to === (operation === 1n ? activeAddress.address : stackRecipient.address)
-							&& typeof blockOverrides === 'object'
-							&& blockOverrides !== null
-							&& 'baseFeePerGas' in blockOverrides
-							&& blockOverrides.baseFeePerGas === 0n
-						if (isGasEstimation) {
-							gasEstimationCount += 1
-							if (operation === 0n && typeof stateOverrides === 'object' && stateOverrides !== null && Object.keys(stateOverrides).length !== 0) {
-								throw new Error('Normal Safe call gas estimation received unexpected state overrides')
-							}
-						}
-						const isGetCodeCall = typeof lastCall === 'object'
-							&& lastCall !== null
-							&& 'to' in lastCall
-							&& lastCall.to === 0x1ce438391307f908756fefe0fe220c0f0d51508an
-						if (isGetCodeCall) {
-							return makeEthSimulateBlocks(callCount, stringToUint8Array(encodeAbiParameters([{ type: 'bytes' }], ['0x6000'])))
-						}
-						const isAggregate3BalanceCall = typeof lastCall === 'object'
-							&& lastCall !== null
-							&& 'to' in lastCall
-							&& lastCall.to === MULTICALL3
-						if (!isAggregate3BalanceCall) return makeEthSimulateBlocks(callCount)
-
-						const aggregate3ReturnData = encodeFunctionReturn(Multicall3ABI, 'aggregate3', [[{
-							success: true,
-							returnData: encodeAbiParameters([{ type: 'uint256' }], [0n]),
-						}]])
-						return makeEthSimulateBlocks(callCount, stringToUint8Array(aggregate3ReturnData))
+		const fakeRequestHandler = createFakeRequestHandler(async (rpcRequest) => {
+			switch (rpcRequest.method) {
+				case 'eth_getBlockByNumber':
+					return EthereumBlockHeader.serialize(fakeBlock)
+				case 'eth_getTransactionCount':
+					return EthereumQuantity.serialize(0n)
+				case 'eth_getBalance':
+					return EthereumQuantity.serialize(0n)
+				case 'eth_getCode':
+					return '0x6000'
+				case 'eth_gasPrice':
+					return EthereumQuantity.serialize(1n)
+				case 'eth_blockNumber':
+					return EthereumQuantity.serialize(fakeBlock.number)
+				case 'eth_simulateV1': {
+					const firstParam = rpcRequest.params?.[0]
+					if (typeof firstParam !== 'object' || firstParam === null || !('blockStateCalls' in firstParam) || !isUnknownArray(firstParam.blockStateCalls)) {
+						throw new Error('Missing blockStateCalls in eth_simulateV1 request')
 					}
-					default:
-						throw new Error(`Unexpected RPC method: ${ rpcRequest.method }`)
+					const callCount = firstParam.blockStateCalls.length
+					if (callCount !== 1 && callCount !== 2 && callCount !== 3) throw new Error(`Unexpected call count: ${ String(callCount) }`)
+					const lastBlock = firstParam.blockStateCalls[callCount - 1]
+					if (typeof lastBlock !== 'object' || lastBlock === null || !('calls' in lastBlock) || !isUnknownArray(lastBlock.calls)) {
+						throw new Error('Missing calls in eth_simulateV1 block')
+					}
+					const lastCall = lastBlock.calls[lastBlock.calls.length - 1]
+					const stateOverrides = 'stateOverrides' in lastBlock ? lastBlock.stateOverrides : undefined
+					const hasSafeDelegateCallTarget = typeof lastCall === 'object'
+						&& lastCall !== null
+						&& 'to' in lastCall
+						&& lastCall.to === activeAddress.address
+					if (hasSafeDelegateCallTarget) {
+						delegateCallSimulationCount += 1
+						if (typeof stateOverrides !== 'object' || stateOverrides === null) throw new Error('Missing Safe state overrides during delegatecall simulation')
+						const stateOverrideEntries: [string, unknown][] = Object.entries(stateOverrides)
+						const safeOverride = stateOverrideEntries.find(([address]) => address === addressString(activeAddress.address))?.[1]
+						if (typeof safeOverride !== 'object' || safeOverride === null || !('code' in safeOverride) || !(safeOverride.code instanceof Uint8Array) || safeOverride.code.length === 0) {
+							throw new Error('Missing Safe wrapper code during delegatecall simulation')
+						}
+						const relocatedSafeOverride = stateOverrideEntries.find(([address]) => address === '0x0000000000000000000000000000000000920515')?.[1]
+						if (typeof relocatedSafeOverride !== 'object' || relocatedSafeOverride === null || !('code' in relocatedSafeOverride) || !(relocatedSafeOverride.code instanceof Uint8Array) || relocatedSafeOverride.code.length === 0) {
+							throw new Error('Missing relocated Safe code during delegatecall simulation')
+						}
+					}
+					const blockOverrides = 'blockOverrides' in lastBlock ? lastBlock.blockOverrides : undefined
+					const isGasEstimation = typeof lastCall === 'object'
+						&& lastCall !== null
+						&& 'to' in lastCall
+						&& lastCall.to === (operation === 1n ? activeAddress.address : stackRecipient.address)
+						&& typeof blockOverrides === 'object'
+						&& blockOverrides !== null
+						&& 'baseFeePerGas' in blockOverrides
+						&& blockOverrides.baseFeePerGas === 0n
+					if (isGasEstimation) {
+						gasEstimationCount += 1
+						if (operation === 0n && typeof stateOverrides === 'object' && stateOverrides !== null && Object.keys(stateOverrides).length !== 0) {
+							throw new Error('Normal Safe call gas estimation received unexpected state overrides')
+						}
+					}
+					const isGetCodeCall = typeof lastCall === 'object'
+						&& lastCall !== null
+						&& 'to' in lastCall
+						&& lastCall.to === 0x1ce438391307f908756fefe0fe220c0f0d51508an
+					if (isGetCodeCall) {
+						return makeEthSimulateBlocks(callCount, stringToUint8Array(encodeAbiParameters([{ type: 'bytes' }], ['0x6000'])))
+					}
+					const isAggregate3BalanceCall = typeof lastCall === 'object'
+						&& lastCall !== null
+						&& 'to' in lastCall
+						&& lastCall.to === MULTICALL3
+					if (!isAggregate3BalanceCall) return makeEthSimulateBlocks(callCount)
+
+					const aggregate3ReturnData = encodeFunctionReturn(Multicall3ABI, 'aggregate3', [[{
+						success: true,
+						returnData: encodeAbiParameters([{ type: 'uint256' }], [0n]),
+					}]])
+					return makeEthSimulateBlocks(callCount, stringToUint8Array(aggregate3ReturnData))
 				}
-			},
-		}
+				default:
+					throw new Error(`Unexpected RPC method: ${ rpcRequest.method }`)
+			}
+		})
 
 		const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
 		const tokenPriceService = new modules.TokenPriceService(ethereum, 0)
@@ -558,13 +428,13 @@ describe('Gnosis Safe stack simulation', () => {
 			accessList: [],
 		})
 
-		const stackOperations = seedStack ? [{
-			type: 'Transaction' as const,
+		const stackOperations: InterceptorTransactionStack['operations'] = seedStack ? [{
+			type: 'Transaction',
 			preSimulationTransaction: {
 				signedTransaction: currentStackTransaction,
 				website: { websiteOrigin: 'https://stack.example', icon: undefined, title: undefined },
 				created: new Date('2024-01-01T00:00:00.000Z'),
-				originalRequestParameters: { method: 'eth_sendTransaction' as const, params: [{}] },
+				originalRequestParameters: { method: 'eth_sendTransaction', params: [{}] },
 				transactionIdentifier: 1n,
 			},
 		}] : []

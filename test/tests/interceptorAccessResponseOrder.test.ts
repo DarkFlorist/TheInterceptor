@@ -1,4 +1,4 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
 import type { PendingAccessRequest } from '../../app/ts/types/accessRequest.js'
 
@@ -44,6 +44,7 @@ describe('respondToAccessRequest', () => {
 			'Approved',
 			1,
 			async (message) => {
+				if (message.method !== 'popup_interceptorAccess') throw new Error(`Unexpected popup message ${ message.method }`)
 				operations.push(`send:${ message.method }:${ message.data.userReply }`)
 			},
 			async (popupOrTabId) => {

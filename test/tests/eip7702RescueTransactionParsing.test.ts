@@ -1,14 +1,17 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
+import * as funtypes from 'funtypes'
 import { addr, authorization as eip7702Authorization, Transaction } from 'micro-eth-signer'
 import { type EthereumJsonRpcRequest, SendRawTransactionParams, SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
 import type { WebsiteCreatedEthereumTransaction } from '../../app/ts/types/visualizer-types.js'
-import { PendingTransactionOrSignableMessage, type PendingTransactionOrSignableMessage as PendingTransactionOrSignableMessageType } from '../../app/ts/types/accessRequest.js'
+import { PendingTransaction } from '../../app/ts/types/accessRequest.js'
+import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
 import { EthereumAddress, EthereumBlockHeader, EthereumBytes32, EthereumQuantity, serialize } from '../../app/ts/types/wire-types.js'
 import { keccak256 } from '../../app/ts/utils/ethereumPrimitives.js'
 import { dataStringWith0xStart, stringToUint8Array } from '../../app/ts/utils/bigint.js'
 import { parseSendRawTransaction } from '../../app/ts/utils/sendRawTransactionParsing.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
+import { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
 import { normalizeEip7702AuthorizationList } from '../../app/ts/utils/eip7702Authorization.js'
 import { EthereumSignedTransactionToSignedTransaction, serializeSignedTransactionToBytes } from '../../app/ts/utils/ethereum.js'
@@ -16,6 +19,7 @@ import { EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
 import { encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { Erc20ABI } from '../../app/ts/utils/abi.js'
 import { NEW_BLOCK_ABORT } from '../../app/ts/utils/constants.js'
+import { createMockPort, installBrowserMock } from '../harness/browserMock.js'
 
 const zeroAddress = '0x0000000000000000000000000000000000000000'
 const recipientAddress = '0x0000000000000000000000000000000000000002'
@@ -70,7 +74,7 @@ const rpcNetwork: RpcEntry = {
 	minimized: true,
 }
 
-function makeFakeBlock(number: bigint) {
+function makeFakeBlock(number: bigint): EthereumBlockHeader {
 	return {
 		author: 0n,
 		difficulty: 0n,
@@ -130,7 +134,7 @@ const createFailedGasEstimationRequestHandler = (balance: bigint | Error, tokenB
 				return serialize(EthereumQuantity, balance)
 			}
 			if (rpcRequest.method !== 'eth_simulateV1') return await baseHandler.jsonRpcRequest(rpcRequest)
-			return serialize(EthSimulateV1Result, rpcRequest.params[0].blockStateCalls.map((blockStateCall) => ({
+			const simulationResult: EthSimulateV1Result = rpcRequest.params[0].blockStateCalls.map((blockStateCall) => ({
 				number: 2n,
 				hash: 0x1236n,
 				timestamp: 0x6592008cn,
@@ -154,14 +158,15 @@ const createFailedGasEstimationRequestHandler = (balance: bigint | Error, tokenB
 						error: { code: -32000, message: 'execution reverted', data: undefined },
 					}
 				}),
-			})))
+			}))
+			return serialize(EthSimulateV1Result, simulationResult)
 		},
 	}
 }
 
 type SignedAuthorizationForRpc = {
 	readonly chainId: number | bigint
-	readonly address: `0x${ string }`
+	readonly address: string
 	readonly nonce: number | bigint
 	readonly yParity: number
 	readonly r: `0x${ string }` | bigint
@@ -177,99 +182,38 @@ const signedAuthorizationToRpc = (authorization: SignedAuthorizationForRpc) => (
 	s: typeof authorization.s === 'bigint' ? `0x${ authorization.s.toString(16) }` : authorization.s,
 })
 
-function restoreGlobalProperty(key: 'browser' | 'chrome', descriptor: PropertyDescriptor | undefined) {
-	if (descriptor === undefined) {
-		Reflect.deleteProperty(globalThis, key)
-		return
-	}
-	Object.defineProperty(globalThis, key, descriptor)
-}
+const IsMainPopupWindowOpenRequest = funtypes.ReadonlyObject({ method: funtypes.Literal('popup_isMainPopupWindowOpen') })
 
-function installBrowserMock() {
-	const browserDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'browser')
-	const chromeDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'chrome')
-	const storageState: Record<string, unknown> = {}
-	const postedMessages: unknown[] = []
-	const browserMock = {
-		runtime: {
-			lastError: null,
-			getManifest: () => ({ manifest_version: 3 }),
-			async sendMessage(message: unknown) {
-				if (typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_isMainPopupWindowOpen') {
-					return { method: 'popup_isMainPopupWindowOpen', data: { isOpen: false } }
-				}
-				return undefined
+// No extension popup is open in these tests, so the background's "is the main popup open?" question gets the popup's negative answer.
+const replyToRuntimeMessage = (message: unknown) => IsMainPopupWindowOpenRequest.safeParse(message).success
+	? { method: 'popup_isMainPopupWindowOpen', data: { isOpen: false } }
+	: undefined
+
+// No browser tabs or windows exist, so the confirmation popup a pending transaction references (window 1) is already closed and accepting only replies through the website's port.
+function installRescueTransactionBrowserMock() {
+	const browserMock = installBrowserMock({ windows: [], handlers: { runtimeMessage: replyToRuntimeMessage } })
+	const websitePort = createMockPort({ name: 'test' })
+	const websiteTabConnections: WebsiteTabConnections = new Map([[1, {
+		connections: {
+			'1-0x0': {
+				port: websitePort.port,
+				socket: { tabId: 1, connectionName: 0n },
+				websiteOrigin: 'https://example.com',
+				approved: true,
+				wantsToConnect: false,
 			},
 		},
-		storage: {
-			local: {
-				async get(keys?: string | string[] | Record<string, unknown> | null) {
-					if (keys === undefined || keys === null) return { ...storageState }
-					if (Array.isArray(keys)) return Object.fromEntries(keys.filter((key) => key in storageState).map((key) => [key, storageState[key]]))
-					if (typeof keys === 'string') return keys in storageState ? { [keys]: storageState[keys] } : {}
-					return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
-				},
-				async set(items: Record<string, unknown>) {
-					Object.assign(storageState, items)
-				},
-				async remove(keys: string | string[]) {
-					for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
-				},
-			},
-		},
-		tabs: {
-			async get() { return undefined },
-			async update() { return undefined },
-			onRemoved: { addListener: () => undefined },
-		},
-		windows: {
-			async get() { return undefined },
-			async update() { return undefined },
-			onRemoved: { addListener: () => undefined },
-		},
-	}
-	Object.defineProperty(globalThis, 'browser', {
-		value: browserMock,
-		configurable: true,
-		writable: true,
-	})
-	Object.defineProperty(globalThis, 'chrome', {
-		value: { runtime: { id: 'test-extension' } },
-		configurable: true,
-		writable: true,
-	})
+	}]])
 	return {
-		postedMessages,
-		storageState,
-		websiteTabConnections: new Map([[1, {
-			connections: {
-				'1-0x0': {
-					port: {
-						name: 'test',
-						disconnect: () => undefined,
-						postMessage: (message: unknown) => {
-							postedMessages.push(message)
-						},
-						onDisconnect: { addListener: () => undefined, removeListener: () => undefined },
-						onMessage: { addListener: () => undefined, removeListener: () => undefined },
-					},
-					socket: { tabId: 1, connectionName: 0n },
-					websiteOrigin: 'https://example.com',
-					approved: true,
-					wantsToConnect: false,
-				},
-			},
-		}]]),
-		restore() {
-			restoreGlobalProperty('browser', browserDescriptor)
-			restoreGlobalProperty('chrome', chromeDescriptor)
-		},
+		postedMessages: websitePort.postedMessages,
+		websiteTabConnections,
+		restore: browserMock.restore,
 	}
 }
 
 function makeSimulatedPendingRawTransaction(transactionToSimulate: WebsiteCreatedEthereumTransaction) {
 	const uniqueRequestIdentifier = { requestId: 1, requestSocket: { tabId: 1, connectionName: 0n } }
-	const pendingTransaction: PendingTransactionOrSignableMessageType = {
+	const pendingTransaction: PendingTransaction = {
 		type: 'Transaction',
 		transactionOrMessageCreationStatus: 'Simulated',
 		popupOrTabId: { type: 'popup', id: 1 },
@@ -293,7 +237,6 @@ function makeSimulatedPendingRawTransaction(transactionToSimulate: WebsiteCreate
 				signerName: 'NoSignerDetected',
 				addressBookEntries: [],
 				tokenPriceEstimates: [],
-				tokenPriceQuoteToken: undefined,
 				namedTokenIds: [],
 				simulationState: {
 					success: true,
@@ -312,11 +255,11 @@ function makeSimulatedPendingRawTransaction(transactionToSimulate: WebsiteCreate
 			},
 		},
 	}
-	return PendingTransactionOrSignableMessage.parse(serialize(PendingTransactionOrSignableMessage, pendingTransaction))
+	return PendingTransaction.parse(serialize<PendingTransaction, typeof PendingTransaction>(PendingTransaction, pendingTransaction))
 }
 
 async function assertAcceptPreservesRawSignedTransaction(signedTransactionBytes: Uint8Array) {
-	const browserMock = installBrowserMock()
+	const browserMock = installRescueTransactionBrowserMock()
 	try {
 		const [
 			{ browserStorageLocalSet2 },
@@ -343,9 +286,10 @@ async function assertAcceptPreservesRawSignedTransaction(signedTransactionBytes:
 		const pendingTransaction = makeSimulatedPendingRawTransaction(transactionToSimulate)
 		await browserStorageLocalSet2({ pendingTransactionsAndMessages: [pendingTransaction] })
 
+		const confirmingEthereum = new EthereumClientService(createEip7702TransactionParsingRequestHandler(), async () => undefined, async () => undefined, rpcNetwork)
 		await resolvePendingTransactionOrMessage(
-			new EthereumClientService(createEip7702TransactionParsingRequestHandler(), async () => undefined, async () => undefined, rpcNetwork),
-			{} as never,
+			confirmingEthereum,
+			new TokenPriceService(confirmingEthereum, 60_000),
 			browserMock.websiteTabConnections,
 			{ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: pendingTransaction.uniqueRequestIdentifier, action: 'accept' } },
 		)
@@ -427,7 +371,7 @@ describe('EIP-7702 rescue transaction parsing', () => {
 				authorizationList: [signedAuthorizationToRpc(clearDelegationAuthorization)],
 			}],
 		})
-		const browserMock = installBrowserMock()
+		const browserMock = installRescueTransactionBrowserMock()
 		try {
 			const { formEthSendTransaction } = await import('../../app/ts/background/windows/confirmTransaction.js')
 			const transaction = await formEthSendTransaction(
@@ -488,7 +432,7 @@ describe('EIP-7702 rescue transaction parsing', () => {
 		const [parsedAuthorization] = params.params[0].authorizationList ?? []
 		if (parsedAuthorization === undefined) throw new Error('Expected authorization to be parsed')
 		assert.equal('authority' in parsedAuthorization, false)
-		const browserMock = installBrowserMock()
+		const browserMock = installRescueTransactionBrowserMock()
 		try {
 			const { formEthSendTransaction } = await import('../../app/ts/background/windows/confirmTransaction.js')
 			const transaction = await formEthSendTransaction(
@@ -517,7 +461,7 @@ describe('EIP-7702 rescue transaction parsing', () => {
 	})
 
 	test('formEthSendTransaction explains omitted-gas native balance shortfalls and preserves unrelated failures', async () => {
-		const browserMock = installBrowserMock()
+		const browserMock = installRescueTransactionBrowserMock()
 		try {
 			const { formEthSendTransaction } = await import('../../app/ts/background/windows/confirmTransaction.js')
 			const sender = 0x0000000000000000000000000000000000000001n

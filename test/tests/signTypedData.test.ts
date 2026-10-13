@@ -1,9 +1,9 @@
 import { Permit2, SafeTx } from '../../app/ts/types/personal-message-definitions.js'
 import { describe, test } from 'bun:test'
 import { extractEIP712Message, validateEIP712Types } from '../../app/ts/utils/eip712Parsing.js'
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { stringifyJSONWithBigInts } from '../../app/ts/utils/bigint.js'
-import { MockRequestHandler } from '../MockRequestHandler.js'
+import { createMockRequestHandler } from '../MockRequestHandler.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { EIP712Message, EnrichedEIP712 } from '../../app/ts/types/eip721.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
@@ -22,7 +22,7 @@ const rpcEntry = {
 	minimized: true,
 }
 
-const ethereum = new EthereumClientService(new MockRequestHandler(), async () => undefined, async () => undefined, rpcEntry)
+const ethereum = new EthereumClientService(createMockRequestHandler(), async () => undefined, async () => undefined, rpcEntry)
 
 describe('EIP712', () => {
 	test('can convert oversized number to bigint', () => {
@@ -279,7 +279,8 @@ describe('EIP712', () => {
 		const enrichedMessage = await extractEIP712Message(ethereum, undefined, parsed, false)
 		const serializedMessage = serialize(EnrichedEIP712, enrichedMessage)
 		assert.deepEqual(EnrichedEIP712.parse(serializedMessage), enrichedMessage)
-		assert.deepEqual(enrichedMessage.message.contents, {
+		const { contents } = enrichedMessage.message
+		assert.deepEqual(contents, {
 			type: 'nestedArray',
 			value: [
 				{ type: 'string[]', value: ['Hello, Bob!'] },

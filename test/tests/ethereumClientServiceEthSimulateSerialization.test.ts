@@ -1,10 +1,11 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
-import { type EthereumJsonRpcRequest, JsonRpcResponse } from '../../app/ts/types/JsonRpc-types.js'
+import type { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import { EthSimulateV1Params } from '../../app/ts/types/ethSimulate-types.js'
 import { serialize, type EthereumSendableSignedTransaction } from '../../app/ts/types/wire-types.js'
 import { eth_getBlockByNumber_goerli_8443561_true } from '../RPCResponses.js'
+import { readJsonRpcResult } from './rpcResponseParsing.js'
 
 const rpcEntry = {
 	name: 'Testnet',
@@ -15,12 +16,6 @@ const rpcEntry = {
 	primary: true,
 	minimized: true,
 } as const
-
-function parseRpcResult<T>(data: string): T {
-	const response = JsonRpcResponse.parse(JSON.parse(data))
-	if ('error' in response) throw new Error(`Ethereum Client Error: ${ response.error.message }`)
-	return response.result as T
-}
 
 const fromAddress = 0x1111111111111111111111111111111111111111n
 const toAddress = 0x2222222222222222222222222222222222222222n
@@ -174,7 +169,7 @@ function getSignedTransactionVariants(): readonly {
 	]
 }
 
-function getSerializedCall(serializedRequest: ReturnType<typeof serialize<typeof EthSimulateV1Params>>) {
+function getSerializedCall(serializedRequest: ReturnType<typeof serialize<EthSimulateV1Params, typeof EthSimulateV1Params>>) {
 	return serializedRequest.params[0].blockStateCalls[0]?.calls[0]
 }
 
@@ -187,7 +182,7 @@ describe('EthereumClientService eth_simulateV1 serialization', () => {
 				async getChainId() { return rpcEntry.chainId },
 				async jsonRpcRequest(request) {
 					if (request.method !== 'eth_getBlockByNumber') throw new Error(`Unexpected RPC method: ${ request.method }`)
-					return parseRpcResult(eth_getBlockByNumber_goerli_8443561_true)
+					return readJsonRpcResult(eth_getBlockByNumber_goerli_8443561_true)
 				},
 			},
 			async () => undefined,
