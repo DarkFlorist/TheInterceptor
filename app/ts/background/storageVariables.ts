@@ -97,16 +97,25 @@ export async function setChainChangeConfirmationPromise(chainChangeConfirmationP
 	return await browserStorageLocalSet({ chainChangeConfirmationPromise })
 }
 
-export const getFetchSimulationStackRequestPromise = async() => (await browserStorageLocalGet('fetchSimulationStackRequestPromise'))?.fetchSimulationStackRequestPromise ?? undefined
-export async function setFetchSimulationStackRequestPromise(fetchSimulationStackRequestPromise: PendingFetchSimulationStackRequestPromise | undefined) {
-	if (fetchSimulationStackRequestPromise === undefined) return await browserStorageLocalRemove('fetchSimulationStackRequestPromise')
-	return await browserStorageLocalSet({ fetchSimulationStackRequestPromise })
-}
+// A request stored by an earlier version may no longer match the request type. It is reported and treated as absent, so it cannot block every later request; the next write replaces it.
+const fetchSimulationStackRequestRepository = createStoredValueRepository<PendingFetchSimulationStackRequestPromise | undefined>({
+	read: async () => (await browserStorageLocalGet('fetchSimulationStackRequestPromise')).fetchSimulationStackRequestPromise,
+	write: async (fetchSimulationStackRequestPromise) => {
+		if (fetchSimulationStackRequestPromise === undefined) return await browserStorageLocalRemove('fetchSimulationStackRequestPromise')
+		await browserStorageLocalSet({ fetchSimulationStackRequestPromise })
+	},
+	getDefault: () => undefined,
+	recover: reportCorruptStoredValue('Simulation stack request'),
+})
+export const getFetchSimulationStackRequestPromise = fetchSimulationStackRequestRepository.get
+export const setFetchSimulationStackRequestPromise = fetchSimulationStackRequestRepository.set
 
 const pendingWatchAssetRequestsRepository = createStoredValueRepository<readonly StoredWatchAssetRequest[]>({
 	read: async () => (await browserStorageLocalGet('pendingWatchAssetRequests')).pendingWatchAssetRequests,
 	write: async (pendingWatchAssetRequests) => { await browserStorageLocalSet({ pendingWatchAssetRequests }) },
 	getDefault: () => [],
+	// Requests queued by an earlier version may no longer match the request type; they are reported and dropped so later requests still queue.
+	recover: reportCorruptStoredValue('Pending watch asset requests'),
 })
 export const getPendingWatchAssetRequests = pendingWatchAssetRequestsRepository.get
 export async function updatePendingWatchAssetRequests(update: (requests: readonly StoredWatchAssetRequest[]) => readonly StoredWatchAssetRequest[]) {

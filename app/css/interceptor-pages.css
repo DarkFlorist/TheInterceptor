@@ -157,16 +157,18 @@ header:has(form[role='search']) h1 {
 
 [role=option]:has([type=radio]) {
 	--heading-color: var(--text-color);
-	--heading-weight: normal;
+	--heading-weight: 600;
 	--subheading-color: var(--disabled-text-color);
 	margin: 0;
-	border-bottom: 1px solid var(--white-alpha-10);
+	border-bottom: 1px solid var(--hairline-color);
+	border-radius: var(--radius-medium);
+	padding-inline: 12px;
 	position: relative;
 }
 
 [role=option]:has([type=radio]):focus-within,
 [role=option]:has([type=radio]):hover {
-	background: linear-gradient(to right, transparent 0%, var(--white-alpha-08) 50%, transparent 100%);
+	background: var(--surface-raised-color);
 }
 
 [role=option] [type=radio] {
@@ -183,18 +185,10 @@ header:has(form[role='search']) h1 {
 	z-index: 10;
 }
 
-.input::-webkit-outer-spin-button {
-    -webkit-appearance: none;
-    -moz-appearance: none;
-    appearance: none;
-    margin: 0;
-}
-
+.input::-webkit-outer-spin-button,
 .input::-webkit-inner-spin-button {
-    -webkit-appearance: none;
-    -moz-appearance: none;
-    appearance: none;
-    margin: 0;
+	appearance: none;
+	margin: 0;
 }
 
 .autosizing-span,
@@ -262,7 +256,6 @@ header:has(form[role='search']) h1 {
 
 .inline-card {
 	--bg-color: transparent;
-	--highlighted-inline-action-color: white;
 	--bg-inline-padding: 4px;
 	--bg-block-padding: 1px;
 	--image-size: 1em;
@@ -375,7 +368,7 @@ header:has(form[role='search']) h1 {
 				}
 
 				&:is(:is(:hover,:focus) > *) {
-					color: black;
+					color: var(--highlighted-inline-action-text-color);
 					background: var(--highlighted-inline-action-color);
 					outline: none;
 
@@ -512,8 +505,8 @@ header:has(form[role='search']) h1 {
 
 			&:hover, &:focus {
 				> span {
-					background: var(--white-color);
-					color: var(--black-color);
+					background: var(--highlighted-inline-action-color);
+					color: var(--highlighted-inline-action-text-color);
 
 					span { display: inline }
 					svg { display: none }
@@ -580,10 +573,10 @@ header:has(form[role='search']) h1 {
 
 .tooltip {
 	background: var(--tooltip-color);
-	color: var(--white-color);
+	color: var(--tooltip-text-color);
 	padding: 0.3125rem 0.6875rem;
 	border: 0 none;
-	border-radius: 4px;
+	border-radius: var(--radius-tiny);
 	font-size: 0.8125rem;
 	white-space: nowrap;
 	pointer-events: none;
@@ -594,7 +587,7 @@ header:has(form[role='search']) h1 {
 	background: unset;
 	color: var(--text-color);
 	border: 1px solid var(--white-alpha-20);
-	border-radius: 4px;
+	border-radius: var(--radius-tiny);
 }
 
 .chainSelector {
@@ -629,14 +622,14 @@ header:has(form[role='search']) h1 {
 	align-items: center;
 }
 
+/* The stack request panel is a centred column that follows the window width up to a comfortable reading width. */
 .simulation-stack-view {
 	gap: 10px;
 	display: flex;
 	flex-direction: column;
-	align-items: center;
-	justify-self: center;
+	margin-inline: auto;
 	padding: 10px;
-	max-width: min-content;
+	max-width: 40rem;
 }
 
 .btn.is-small {
@@ -683,8 +676,8 @@ header:has(form[role='search']) h1 {
 .card-content-header {
 	padding-left: 10px;
 	background-color: var(--card-content-bg-color);
-	border-bottom-left-radius: 0.25rem;
-	border-bottom-right-radius: 0.25rem;
+	border-bottom-left-radius: var(--radius-tiny);
+	border-bottom-right-radius: var(--radius-tiny);
 	border-left: 1px solid var(--white-alpha-20);
 	border-right: 1px solid var(--white-alpha-20);
 	border-bottom: 1px solid var(--white-alpha-20);
@@ -709,8 +702,7 @@ input[type="number"]:focus {
 	--btn-brightness: 1;
 }
 
-.btn.is-primary:not(:disabled):active,
-.btn.is-primary.is-active {
+.btn.is-primary:not(:disabled):active {
 	background-color: var(--highlighted-primary-action-color);
 	color: var(--white-color);
 }
@@ -723,9 +715,7 @@ input[type="number"]:focus {
 	background-color: var(--highlighted-destructive-action-color);
 }
 
-.button.is-primary.is-danger:not(:disabled):active,
-.button.is-primary.is-danger.is-active,
-.button.is-primary.is-danger.is-hovered {
+.button.is-primary.is-danger:not(:disabled):active {
 	background-color: var(--highlighted-destructive-action-color);
 	color: var(--white-color);
 }

@@ -32,6 +32,30 @@ export function clickOutsideAlerter(ref: RefObject<HTMLDivElement>, callback: ()
 	}, [ref, callback]);
 }
 
+// The four meanings a status colour can carry anywhere in the UI.
+export type StatusTone = 'positive' | 'neutral' | 'warning' | 'negative'
+
+// The styled families and the tones each one has a `family--tone` rule for. Adding a tone here without its rule, or the other way round, fails the stylesheet test.
+export const toneClassFamilies = {
+	'transaction-check': ['positive', 'neutral', 'warning', 'negative'],
+	'outcome-chip': ['positive', 'neutral', 'warning', 'negative'],
+	'result-notice': ['positive', 'warning', 'negative'],
+	'connection-chip': ['positive', 'negative'],
+	'coin-text': ['positive', 'negative'],
+} as const satisfies Record<string, readonly StatusTone[]>
+
+type ToneClassFamily = keyof typeof toneClassFamilies
+
+// The only place a tone is turned into a class name, so a family can only be given a tone it has a rule for.
+export function getToneClass<Family extends ToneClassFamily>(family: Family, tone: (typeof toneClassFamilies)[Family][number]) {
+	return `${ family }--${ tone }`
+}
+
+// Pages add this class to their root so the stylesheet can tint the accent by mode: calm teal while simulating, amber while signing for real.
+export function getInterceptorModeClass(simulationMode: boolean) {
+	return simulationMode ? 'interceptor-mode-simulating' : 'interceptor-mode-signing'
+}
+
 export function upperCaseFirstCharacter(text: string) {
 	if (text.length === 0) return text
 	return text.charAt(0).toUpperCase() + text.slice(1)
@@ -61,9 +85,12 @@ export function humanReadableDateFromSeconds(timeInSeconds: bigint) {
 	return humanReadableDate(bigintSecondsToDate(timeInSeconds))
 }
 
+// Appends an optional modifier class, such as a tone passed by a caller, to an element's own classes.
+export const withModifierClass = (baseClass: string, modifierClass: string | undefined) => modifierClass === undefined ? baseClass : `${ baseClass } ${ modifierClass }`
+
 export const CellElement = (param: { text: ComponentChildren, useLegibleFont?: boolean }) => {
-	return <div class = 'log-cell' style = 'justify-content: right;'>
-		<p class = { `paragraph${ param.useLegibleFont ? ' text-legible' : '' }` } style = 'color: var(--subtitle-text-color); text-overflow: ellipsis; overflow: hidden;'>{ param.text }</p>
+	return <div class = 'log-cell log-cell--right'>
+		<p class = { `paragraph${ param.useLegibleFont ? ' text-legible' : '' } log-cell-text` }>{ param.text }</p>
 	</div>
 }
 

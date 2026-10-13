@@ -141,14 +141,13 @@ type AddressInputParams = {
 function AddressInput({ disabled, addressInput, setAddress, ariaLabel = 'Address' }: AddressInputParams) {
 	return <textarea
 		disabled = { disabled }
-		class = 'input address-editor-address-input'
+		class = { `input address-editor-address-input${ addressInput === undefined || isAddress(addressInput.trim()) ? '' : ' address-editor-input--invalid' }` }
 		rows = { 1 }
 		spellcheck = { false }
 		aria-label = { ariaLabel }
 		value = { addressInput }
 		placeholder = { '0x0...' }
 		onInput = { e => setAddress(e.currentTarget.value.replaceAll('\n', '').replaceAll('\r', '')) }
-		style = { addressInput === undefined || isAddress(addressInput.trim()) ? undefined : 'color: var(--danger-color);' }
 	/>
 }
 
@@ -171,14 +170,13 @@ type AbiInputParams = {
 
 function AbiInput({ abiInput, setAbiInput, disabled }: AbiInputParams) {
 	return <input
-		class = 'input address-editor-abi-input'
+		class = { `input address-editor-abi-input${ abiInput === undefined || isValidAbi(abiInput.trim()) ? '' : ' address-editor-input--invalid' }` }
 		type = 'text'
 		aria-label = 'ABI'
 		value = { abiInput }
 		placeholder = { 'no abi' }
 		onInput = { e => setAbiInput(e.currentTarget.value) }
 		disabled = { disabled }
-		style = { abiInput === undefined || isValidAbi(abiInput.trim()) ? undefined : 'color: var(--danger-color);' }
 	/>
 }
 

@@ -39,9 +39,9 @@ export function ImportSafeStack({ close, safeStackInput }: {
 				<button class = 'card-header-icon' aria-label = 'close' onClick = { close } disabled = { importState.value.state === 'pending' }><XMarkIcon /></button>
 			</header>
 			<section class = 'modal-card-body'>
-				<div class = 'card' style = 'margin: 10px;'>
+				<div class = 'card import-stack-card'>
 					<div class = 'card-content'>
-						<p class = 'paragraph' style = 'color: var(--subtitle-text-color);'>Paste the stack returned by the Gnosis Safe co-signer application. Transaction fields must match the local stack; only valid owner signatures are merged.</p>
+						<p class = 'paragraph text-subtitle'>Paste the stack returned by the Gnosis Safe co-signer application. Transaction fields must match the local stack; only valid owner signatures are merged.</p>
 						<textarea
 							class = { `simulation-stack-import-input${ inputError.value === undefined ? '' : ' simulation-stack-import-input-invalid' }` }
 							value = { safeStackInput.value }
@@ -55,7 +55,7 @@ export function ImportSafeStack({ close, safeStackInput }: {
 			</section>
 			<footer class = 'modal-card-foot window-footer'>
 				<AsyncActionButton
-					class = 'button is-success is-primary'
+					class = 'button is-primary'
 					state = { importState.value.state }
 					text = 'Import signatures'
 					pendingText = 'Validating...'

@@ -3,6 +3,7 @@ import { describe, test } from 'bun:test'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { AsyncActionButton } from '../../app/ts/components/subcomponents/AsyncAction.js'
+import { readInterceptorAppCss } from './cssTestUtils.js'
 import { installDomMock } from './domMock.js'
 
 type TestNode = {
@@ -82,9 +83,10 @@ describe('AsyncActionButton', () => {
 			const inactiveContent = findByClass(dom.document.body, 'async-action-button__stable-content')
 			const inactiveSlot = findByClass(dom.document.body, 'async-action-button__status-slot')
 			assert.notEqual(inactiveContent, undefined)
-			assert.equal(inactiveContent?.style?.position, 'relative')
-			assert.equal(inactiveSlot?.style?.position, 'absolute')
-			assert.equal(inactiveSlot?.style?.right, 'calc(100% + 0.125em)')
+			// The slot is positioned by its class, outside the text flow, so showing the indicator never moves the text.
+			const css = await readInterceptorAppCss()
+			assert.match(css, /\.async-action-button__stable-content\s*\{[^}]*position:\s*relative;/)
+			assert.match(css, /\.async-action-button__status-slot\s*\{[^}]*position:\s*absolute;[^}]*right:\s*calc\(100% \+ 0\.125em\);/)
 			assert.equal(inactiveSlot?.style?.width, '0.75em')
 			assert.equal(inactiveSlot?.style?.visibility, 'hidden')
 			assert.equal(collectElements(inactiveSlot, 'svg').length, 0)
@@ -103,8 +105,6 @@ describe('AsyncActionButton', () => {
 
 			const pendingContent = findByClass(dom.document.body, 'async-action-button__stable-content')
 			const pendingSlot = findByClass(dom.document.body, 'async-action-button__status-slot')
-			assert.equal(pendingSlot?.style?.position, 'absolute')
-			assert.equal(pendingSlot?.style?.right, 'calc(100% + 0.125em)')
 			assert.equal(pendingSlot?.style?.width, '0.75em')
 			assert.equal(pendingSlot?.style?.visibility, 'visible')
 			assert.equal(collectElements(pendingSlot, 'svg').length, 1)
@@ -130,7 +130,7 @@ describe('AsyncActionButton', () => {
 
 			const overlayContent = findByClass(dom.document.body, 'async-action-button__stable-content')
 			assert.equal(overlayContent?.textContent, 'Importing...')
-			assert.equal(findByClass(dom.document.body, 'async-action-button__status-slot')?.style?.position, 'absolute')
+			assert.notEqual(findByClass(dom.document.body, 'async-action-button__status-slot'), undefined)
 
 			await act(() => {
 				render(h(AsyncActionButton, {

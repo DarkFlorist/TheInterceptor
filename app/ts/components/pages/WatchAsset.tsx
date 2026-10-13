@@ -9,19 +9,20 @@ import { sanitizeStoredWebsiteIcon } from '../../utils/websiteIcons.js'
 import { SignerLogoText, getPrettySignerName } from '../subcomponents/signers.js'
 import { SmallAddress } from '../subcomponents/address.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
+import { getInterceptorModeClass, getToneClass } from '../ui-utils.js'
 
 export const WATCH_ASSET_TITLE = 'Add to Address Book Edit Request'
 
 function AssetField({ label, value }: { label: string, value: ComponentChildren }) {
 	return <>
-		<span style = 'color: var(--subtitle-text-color)'>{ label }</span>
-		<span style = 'color: var(--text-color); overflow-wrap: anywhere; text-align: right'>{ value }</span>
+		<span class = 'text-subtitle'>{ label }</span>
+		<span class = 'watch-asset-field-value'>{ value }</span>
 	</>
 }
 
 function TokenImageValue({ uri, alt }: { uri: string | undefined, alt: string }) {
 	if (uri === undefined) return <>Not set</>
-	return <img src = { uri } alt = { alt } width = '32' height = '32' style = 'width: 32px; height: 32px; object-fit: contain'/>
+	return <img src = { uri } alt = { alt } width = '32' height = '32' class = 'watch-asset-token-image'/>
 }
 
 function ProposedAssetField({ label, currentValue, proposedValue, changes }: {
@@ -31,16 +32,16 @@ function ProposedAssetField({ label, currentValue, proposedValue, changes }: {
 	changes: boolean,
 }) {
 	return <tr>
-		<th style = 'color: var(--subtitle-text-color); font-weight: 400'>{ label }</th>
-		<td style = 'color: var(--text-color); overflow-wrap: anywhere'>{ currentValue }</td>
-		<td style = 'color: var(--text-color); overflow-wrap: anywhere'>{ proposedValue }</td>
-		<td>{ changes ? <span class = 'tag is-warning' style = 'white-space: nowrap'>Will change</span> : <span style = 'color: var(--disabled-text-color); white-space: nowrap'>No change</span> }</td>
+		<th class = 'watch-asset-row-label'>{ label }</th>
+		<td class = 'watch-asset-row-value'>{ currentValue }</td>
+		<td class = 'watch-asset-row-value'>{ proposedValue }</td>
+		<td>{ changes ? <span class = 'tag is-warning'>Will change</span> : <span class = 'watch-asset-no-change'>No change</span> }</td>
 	</tr>
 }
 
 function ProposedTokenImage({ pendingRequest }: { pendingRequest: PendingWatchAssetRequest }) {
 	if (pendingRequest.selectedImageUri !== undefined) return <TokenImageValue uri = { pendingRequest.selectedImageUri } alt = 'Proposed token image'/>
-	if (pendingRequest.imageDownloadError !== undefined) return <small style = 'display: block; color: var(--danger-color)'>{ pendingRequest.imageDownloadError }</small>
+	if (pendingRequest.imageDownloadError !== undefined) return <small class = 'watch-asset-image-error'>{ pendingRequest.imageDownloadError }</small>
 	return <TokenImageValue uri = { pendingRequest.currentToken.logoUri } alt = 'Current token image'/>
 }
 
@@ -54,17 +55,17 @@ export function WatchAssetDetails({ pendingRequest }: { pendingRequest: PendingW
 	const proposedTokenIds = token.type === 'ERC20' ? undefined : token.watchedTokenIds ?? []
 	const formatTokenIds = (tokenIds: readonly bigint[] | undefined) => tokenIds === undefined || tokenIds.length === 0 ? 'None' : tokenIds.map((tokenId) => tokenId.toString()).join(', ')
 	return <>
-		<p style = 'color: var(--text-color); text-align: center; margin-bottom: 12px'>
+		<p class = 'watch-asset-intro'>
 			<b>{ website.websiteOrigin }</b> wants to add an asset.
 		</p>
-		<section style = 'background-color: var(--alpha-005); border-radius: 4px; padding: 10px; margin-bottom: 12px'>
-			<h2 style = 'color: var(--text-color); font-weight: 600; margin-bottom: 7px'>Asset proposal</h2>
-			<div style = 'display: grid; grid-template-columns: max-content minmax(0, 1fr); column-gap: 12px; row-gap: 5px; font-size: 0.85rem'>
-				<AssetField label = 'Contract' value = { <span style = 'display: inline-flex; justify-content: flex-end'><SmallAddress addressBookEntry = { currentToken } renameAddressCallBack = { () => undefined } noEditAddress = { true }/></span> }/>
+		<section class = 'watch-asset-proposal'>
+			<h2 class = 'watch-asset-proposal-title'>Asset proposal</h2>
+			<div class = 'watch-asset-fields'>
+				<AssetField label = 'Contract' value = { <span class = 'watch-asset-contract-address'><SmallAddress addressBookEntry = { currentToken } renameAddressCallBack = { () => undefined } noEditAddress = { true }/></span> }/>
 			</div>
-			<div style = 'overflow-x: auto; margin-top: 10px'>
-				<table class = 'table is-fullwidth' style = 'background: transparent; font-size: 0.8rem'>
-					<thead><tr><th style = 'color: var(--text-color); background-color: var(--alpha-015)'>Field</th><th style = 'color: var(--text-color); background-color: var(--alpha-015)'>Current</th><th style = 'color: var(--text-color); background-color: var(--alpha-015)'>If accepted</th><th style = 'color: var(--text-color); background-color: var(--alpha-015)'>Change</th></tr></thead>
+			<div class = 'watch-asset-table-scroll'>
+				<table class = 'table is-fullwidth watch-asset-table'>
+					<thead><tr><th class = 'watch-asset-column-heading'>Field</th><th class = 'watch-asset-column-heading'>Current</th><th class = 'watch-asset-column-heading'>If accepted</th><th class = 'watch-asset-column-heading'>Change</th></tr></thead>
 					<tbody>
 						<ProposedAssetField label = 'Request type' currentValue = '—' proposedValue = { pendingRequest.requestedAsset.type } changes = { false }/>
 						<ProposedAssetField label = 'Asset type' currentValue = { currentToken.type } proposedValue = { token.type } changes = { currentToken.type !== token.type }/>
@@ -86,8 +87,8 @@ export function WalletForwardingResult({ pendingRequest }: { pendingRequest: Pen
 	const status = pendingRequest.forwardingStatus
 	if (status === undefined || status.status === 'pending') return <></>
 	const walletName = pendingRequest.forwardToSigner === undefined ? 'The wallet' : getPrettySignerName(pendingRequest.forwardToSigner.signerName)
-	if (status.status === 'error') return <div class = 'notification is-danger is-light' role = 'alert' style = 'padding: 8px; margin-bottom: 12px'>{ status.message }</div>
-	return <div class = { `notification ${ status.accepted ? 'is-success' : 'is-warning' } is-light` } role = 'status' style = 'padding: 8px; margin-bottom: 12px'>
+	if (status.status === 'error') return <div class = { `notification result-notice ${ getToneClass('result-notice', 'negative') }` } role = 'alert'>{ status.message }</div>
+	return <div class = { `notification result-notice ${ getToneClass('result-notice', status.accepted ? 'positive' : 'warning') }` } role = 'status'>
 		{ status.accepted ? `${ walletName } added the asset.` : `${ walletName } did not add the asset.` }
 	</div>
 }
@@ -101,10 +102,10 @@ export function WatchAssetActions({ forwardToSigner, forwardingStatus, submittin
 	const waitingForWallet = forwardingStatus?.status === 'pending'
 	const actionsDisabled = submitting || waitingForWallet
 	const signerName = forwardToSigner?.signerName
-	return <div style = 'display: flex; gap: 8px; justify-content: center; flex-wrap: wrap'>
-		<button class = 'button is-danger' disabled = { actionsDisabled } onClick = { () => choose('reject') }>Don't add</button>
+	return <div class = 'watch-asset-actions'>
+		<button class = 'button button--secondary' disabled = { actionsDisabled } onClick = { () => choose('reject') }>Don't add</button>
 		<AsyncActionButton
-			class = 'button is-link'
+			class = 'button button--secondary'
 			state = { waitingForWallet ? 'pending' : 'inactive' }
 			disabled = { actionsDisabled || forwardToSigner === undefined }
 			onClick = { () => choose('forward') }
@@ -151,13 +152,13 @@ export function WatchAsset() {
 	if (request.value === undefined) return <main></main>
 	const { website, forwardToSigner } = request.value
 	const websiteIcon = sanitizeStoredWebsiteIcon(website.icon)
-	return <main>
-		<div class = 'block' style = 'margin-bottom: 0px; margin: 10px'>
+	return <main class = { getInterceptorModeClass(request.value.simulationMode) }>
+		<div class = 'block watch-asset-window'>
 			<header class = 'card-header window-header'>
 				<div class = 'card-header-title'><p class = 'paragraph'>{ WATCH_ASSET_TITLE }</p></div>
 			</header>
-			<div class = 'card-content' style = 'padding: 14px'>
-				{ websiteIcon === undefined ? <></> : <figure class = 'image is-64x64' style = 'margin: 10px auto 20px'>
+			<div class = 'card-content watch-asset-content'>
+				{ websiteIcon === undefined ? <></> : <figure class = 'image is-64x64 watch-asset-website-icon'>
 					<img src = { websiteIcon } width = '64' height = '64'/>
 				</figure> }
 				<WatchAssetDetails pendingRequest = { request.value }/>

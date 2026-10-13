@@ -31,10 +31,13 @@ import type { VisualizedPersonalSignRequest } from '../../types/personal-message
 import { identifySignature } from './identifySignature.js'
 import { Collapsible } from '../subcomponents/Collapsible.js'
 import { EnsEventsExplainer, getVisibleEnsEvents } from './customExplainers/EnsEventExplainer.js'
+import { grantsSpendingRights } from '../../utils/approvals.js'
+import { isUnlimitedErc20Approval } from '../../utils/erc20.js'
+import { getSignatureVerdict, getTransactionVerdict, type SimulationVerdict } from '../../utils/simulationVerdict.js'
 
 type Erc20BalanceChangeParams = {
 	erc20TokenBalanceChanges: Erc20TokenBalanceChange[]
-	textColor: string,
+	positiveColor: string,
 	negativeColor: string,
 	isImportant: ReadonlySignal<boolean>,
 	renameAddressCallBack: RenameAddressCallBack
@@ -49,9 +52,9 @@ function Erc20BalanceChange(param: Erc20BalanceChangeParams) {
 	if ( param.erc20TokenBalanceChanges.length === 0 ) return <></>
 	return <>
 		{ Array.from(param.erc20TokenBalanceChanges).map((erc20TokenBalanceChange, index) => {
-			const style =  { color: erc20TokenBalanceChange.changeAmount > 0n ? param.textColor : param.negativeColor }
-			return <div key = { `${ erc20TokenBalanceChange.address.toString() }-${ index }-${ erc20TokenBalanceChange.changeAmount.toString() }` } class = 'vertical-center' style = 'display: flex'>
-				<div class = { param.isImportant.value ? `box token-box ${ erc20TokenBalanceChange.changeAmount < 0n ? 'negative-box' : 'positive-box' }`: '' } style = 'display: flex' >
+			const style =  { color: erc20TokenBalanceChange.changeAmount > 0n ? param.positiveColor : param.negativeColor }
+			return <div key = { `${ erc20TokenBalanceChange.address.toString() }-${ index }-${ erc20TokenBalanceChange.changeAmount.toString() }` } class = 'vertical-center summary-token-change'>
+				<div class = { param.isImportant.value ? `summary-token-change-box box token-box ${ erc20TokenBalanceChange.changeAmount < 0n ? 'negative-box' : 'positive-box' }`: 'summary-token-change-box' }>
 					<TokenWithAmount
 						tokenEntry = { erc20TokenBalanceChange }
 						amount = { erc20TokenBalanceChange.changeAmount }
@@ -81,38 +84,39 @@ function Erc20BalanceChange(param: Erc20BalanceChangeParams) {
 type Erc20ApprovalChangeParams = Erc20TokenEntry & {
 	change: bigint,
 	entryToApprove: AddressBookEntry,
-	textColor: string,
+	positiveColor: string,
 	negativeColor: string,
 	isImportant: ReadonlySignal<boolean>,
 	renameAddressCallBack: RenameAddressCallBack,
 }
 
 function Erc20ApprovalChange(param: Erc20ApprovalChangeParams) {
-	const textColor = param.change > 0 ? param.negativeColor : param.textColor
+	const grantsAllowance = grantsSpendingRights({ kind: 'erc20Allowance', allowance: param.change })
+	const approvalColor = grantsAllowance ? param.negativeColor : param.positiveColor
 
-	return <div class = { param.isImportant.value ? `box token-box ${ param.change > 0 ? 'negative-box' : 'positive-box' }`: '' } style = 'display: inline-flex'>
+	return <div class = { param.isImportant.value ? `summary-approval-change box token-box ${ grantsAllowance ? 'negative-box' : 'positive-box' }`: 'summary-approval-change' }>
 		<table class = 'log-table'>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis' style = { `color: ${ textColor };` }> Allow</p>
+				<p class = 'ellipsis' style = { `color: ${ approvalColor };` }> Allow</p>
 			</div>
 			<div class = 'log-cell'>
 				<SmallAddress
 					addressBookEntry = { param.entryToApprove }
-					textColor = { textColor }
+					textColor = { approvalColor }
 					renameAddressCallBack = { param.renameAddressCallBack }
 				/>
 			</div>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis' style = { `color: ${ textColor };` }> to spend </p>
+				<p class = 'ellipsis' style = { `color: ${ approvalColor };` }> to spend </p>
 			</div>
-			<div class = 'log-cell' style = 'justify-content: right;'>
-				{ param.change > 2n ** 100n ?
-					<p class = 'ellipsis' style = { `color: ${ textColor };` }> <b>ALL</b></p>
+			<div class = 'log-cell log-cell--right'>
+				{ isUnlimitedErc20Approval(param.change) ?
+					<p class = 'ellipsis' style = { `color: ${ approvalColor };` }> <b>ALL</b></p>
 					:
 					<TokenAmount
 						tokenEntry = { param }
 						amount = { param.change }
-						style = { { color: textColor } }
+						style = { { color: approvalColor } }
 						fontSize = 'normal'
 					/>
 				}
@@ -120,7 +124,7 @@ function Erc20ApprovalChange(param: Erc20ApprovalChangeParams) {
 			<div class = 'log-cell'>
 				<TokenSymbol
 					tokenEntry = { param }
-					style = { { color: textColor } }
+					style = { { color: approvalColor } }
 					useFullTokenName = { true }
 					renameAddressCallBack = { param.renameAddressCallBack }
 					fontSize = 'normal'
@@ -132,7 +136,7 @@ function Erc20ApprovalChange(param: Erc20ApprovalChangeParams) {
 
 type Erc20ApprovalChangesParams = {
 	erc20TokenApprovalChanges: ERC20TokenApprovalChange[]
-	textColor: string,
+	positiveColor: string,
 	negativeColor: string,
 	isImportant: ReadonlySignal<boolean>,
 	renameAddressCallBack: RenameAddressCallBack,
@@ -148,7 +152,7 @@ export function Erc20ApprovalChanges(param: Erc20ApprovalChangesParams ) {
 					entryToApprove: entryToApprove,
 					change: entryToApprove.change,
 					address: token.address,
-					textColor: param.textColor,
+					positiveColor: param.positiveColor,
 					negativeColor: param.negativeColor,
 					isImportant: param.isImportant,
 					renameAddressCallBack: param.renameAddressCallBack,
@@ -162,7 +166,7 @@ type Erc721TokenBalanceChange = (Erc721Entry & { received: boolean, tokenId: big
 
 type Erc721TokenChangesParams = {
 	Erc721TokenBalanceChanges: Erc721TokenBalanceChange[],
-	textColor: string,
+	positiveColor: string,
 	negativeColor: string,
 	isImportant: ReadonlySignal<boolean>,
 	renameAddressCallBack: RenameAddressCallBack,
@@ -172,15 +176,15 @@ function Erc721TokenChanges(param: Erc721TokenChangesParams ) {
 	if ( param.Erc721TokenBalanceChanges.length === 0 ) return <></>
 	return <>
 		{ param.Erc721TokenBalanceChanges.map((tokenChange) => (
-			<div key = { `${ tokenChange.address.toString() }-${ tokenChange.tokenId.toString() }` } class = 'vertical-center' style = 'display: flex'>
-				<div class = { param.isImportant.value ? `box token-box ${ !tokenChange.received ? 'negative-box' : 'positive-box' }`: '' } style = 'display: flex'>
-					<p class = 'noselect nopointer' style = { `color: ${ param.textColor }; align-items: center` }>
+			<div key = { `${ tokenChange.address.toString() }-${ tokenChange.tokenId.toString() }` } class = 'vertical-center summary-token-change'>
+				<div class = { param.isImportant.value ? `summary-token-change-box box token-box ${ !tokenChange.received ? 'negative-box' : 'positive-box' }`: 'summary-token-change-box' }>
+					<p class = 'noselect nopointer summary-token-change-sign' style = { `color: ${ tokenChange.received ? param.positiveColor : param.negativeColor }` }>
 						&nbsp;{ `${ tokenChange.received ? '+' : '-' }` }&nbsp;
 					</p>
 					<TokenOrEth
 						tokenEntry = { tokenChange }
 						tokenId = { tokenChange.tokenId }
-						style = { { color: param.textColor } }
+						style = { { color: tokenChange.received ? param.positiveColor : param.negativeColor } }
 						useFullTokenName = { true }
 						showSign = { true }
 						renameAddressCallBack = { param.renameAddressCallBack }
@@ -197,7 +201,7 @@ export type Erc1155OperatorChange = (Erc1155Entry & { operator: AddressBookEntry
 
 type Erc721Or1155OperatorChangesParams = {
 	erc721or1155OperatorChanges: Erc721and1155OperatorChange[]
-	textColor: string,
+	positiveColor: string,
 	negativeColor: string,
 	isImportant: ReadonlySignal<boolean>,
 	renameAddressCallBack: RenameAddressCallBack,
@@ -207,9 +211,9 @@ export function Erc721or1155OperatorChanges(param: Erc721Or1155OperatorChangesPa
 	if (param.erc721or1155OperatorChanges.length === 0) return <></>
 	return <>
 		{ param.erc721or1155OperatorChanges.map((token, index) => (
-			<div key = { `${ token.address.toString() }-${ token.operator?.address.toString() ?? 'none' }-${ index }` } class = 'vertical-center' style = 'display: flex'>
+			<div key = { `${ token.address.toString() }-${ token.operator?.address.toString() ?? 'none' }-${ index }` } class = 'vertical-center summary-token-change'>
 				{ token.operator !== undefined ?
-					<div class = { param.isImportant.value ? 'box token-box negative-box': '' } style = 'display: flex'>
+					<div class = { param.isImportant.value ? 'summary-token-change-box box token-box negative-box': 'summary-token-change-box' }>
 						<table class = 'log-table'>
 							<div class = 'log-cell'>
 								<p class = 'ellipsis' style = { `color: ${ param.negativeColor }` }> Allow</p>
@@ -240,13 +244,13 @@ export function Erc721or1155OperatorChanges(param: Erc721Or1155OperatorChangesPa
 					<div class = { param.isImportant.value ? 'box token-box positive-box': '' } >
 						<table class = 'log-table'>
 							<div class = 'log-cell'>
-								<p class = 'ellipsis' style = { `color: ${ param.textColor };` }> to NOT spend ANY</p>
+								<p class = 'ellipsis' style = { `color: ${ param.positiveColor };` }> to NOT spend ANY</p>
 							</div>
 							<div class = 'log-cell'>
 								<TokenSymbol
 									tokenEntry = { token }
 									tokenId = { undefined }
-									style = { { color: param.textColor } }
+									style = { { color: param.positiveColor } }
 									useFullTokenName = { true }
 									renameAddressCallBack = { param.renameAddressCallBack }
 									fontSize = 'normal'
@@ -262,7 +266,7 @@ export function Erc721or1155OperatorChanges(param: Erc721Or1155OperatorChangesPa
 
 type Erc721TokenIdApprovalChangesParams = {
 	Erc721TokenIdApprovalChanges: Erc721TokenApprovalChange[]
-	textColor: string,
+	positiveColor: string,
 	negativeColor: string,
 	isImportant: ReadonlySignal<boolean>,
 	renameAddressCallBack: RenameAddressCallBack,
@@ -271,9 +275,29 @@ type Erc721TokenIdApprovalChangesParams = {
 export function Erc721TokenIdApprovalChanges(param: Erc721TokenIdApprovalChangesParams ) {
 	return <> { param.Erc721TokenIdApprovalChanges.length > 0 ?
 		<>
-			{ param.Erc721TokenIdApprovalChanges.map( (approvalsChange) => (
-				<div key = { `${ approvalsChange.tokenEntry.address.toString() }-${ approvalsChange.tokenId.toString() }-${ approvalsChange.approvedEntry.address.toString() }` } class = 'vertical-center' style = 'display: flex'>
-					<div class = { param.isImportant.value ? 'box token-box negative-box': '' } style = 'display: flex'>
+			{ param.Erc721TokenIdApprovalChanges.map( (approvalsChange) => !grantsSpendingRights({ kind: 'tokenId', approvedAddress: approvalsChange.approvedEntry.address }) ? (
+				<div key = { `${ approvalsChange.tokenEntry.address.toString() }-${ approvalsChange.tokenId.toString() }-removed` } class = 'vertical-center summary-token-change'>
+					<div class = { param.isImportant.value ? 'summary-token-change-box box token-box positive-box': 'summary-token-change-box' }>
+						<table class = 'log-table'>
+							<div class = 'log-cell'>
+								<p class = 'ellipsis' style = { `color: ${ param.positiveColor }` }> Remove approval for</p>
+							</div>
+							<div class = 'log-cell'>
+								<TokenOrEth
+									tokenEntry = { approvalsChange.tokenEntry }
+									tokenId = { approvalsChange.tokenId }
+									style = { { color: param.positiveColor } }
+									useFullTokenName = { true }
+									renameAddressCallBack = { param.renameAddressCallBack }
+									fontSize = 'normal'
+								/>
+							</div>
+						</table>
+					</div>
+				</div>
+			) : (
+				<div key = { `${ approvalsChange.tokenEntry.address.toString() }-${ approvalsChange.tokenId.toString() }-${ approvalsChange.approvedEntry.address.toString() }` } class = 'vertical-center summary-token-change'>
+					<div class = { param.isImportant.value ? 'summary-token-change-box box token-box negative-box': 'summary-token-change-box' }>
 						<table class = 'log-table'>
 							<div class = 'log-cell'>
 								<p class = 'ellipsis' style = { `color: ${ param.negativeColor }` }> Approve</p>
@@ -309,7 +333,7 @@ export function Erc721TokenIdApprovalChanges(param: Erc721TokenIdApprovalChanges
 
 type Erc1155TokenChangesParams = {
 	Erc1155TokenBalanceChanges: Erc1155TokenBalanceChange[],
-	textColor: string,
+	positiveColor: string,
 	negativeColor: string,
 	isImportant: ReadonlySignal<boolean>,
 	renameAddressCallBack: RenameAddressCallBack,
@@ -321,14 +345,14 @@ function Erc1155TokenChanges(param: Erc1155TokenChangesParams ) {
 
 	return <>
 		{ param.Erc1155TokenBalanceChanges.map((tokenChange) => (
-			<div key = { `${ tokenChange.address.toString() }-${ tokenChange.tokenId.toString() }` } class = 'vertical-center' style = 'display: flex'>
-				<div class = { param.isImportant.value ? `box token-box ${ tokenChange.changeAmount < 0n ? 'negative-box' : 'positive-box' }`: '' } style = 'display: flex'>
+			<div key = { `${ tokenChange.address.toString() }-${ tokenChange.tokenId.toString() }` } class = 'vertical-center summary-token-change'>
+				<div class = { param.isImportant.value ? `summary-token-change-box box token-box ${ tokenChange.changeAmount < 0n ? 'negative-box' : 'positive-box' }`: 'summary-token-change-box' }>
 					<TokenWithAmount
 						tokenEntry = { tokenChange }
 						tokenId = { tokenChange.tokenId }
 						tokenIdName = { param.namedTokenIds.find((namedTokenId) => namedTokenId.tokenAddress === tokenChange.address && namedTokenId.tokenId === tokenChange.tokenId)?.tokenIdName }
 						amount = { tokenChange.changeAmount }
-						style = { { color: param.textColor } }
+						style = { { color: tokenChange.changeAmount < 0n ? param.negativeColor : param.positiveColor } }
 						useFullTokenName = { true }
 						showSign = { true }
 						renameAddressCallBack = { param.renameAddressCallBack }
@@ -350,13 +374,14 @@ type SummarizeAddressParams = {
 
 function SummarizeAddress(param: SummarizeAddressParams) {
 	const isOwnAddress = useComputed(() => param.balanceSummary.summaryFor.useAsActiveAddress || param.balanceSummary.summaryFor.address === param.activeAddress.value)
+	// positiveColor paints gains and neutral rows, negativeColor paints losses and newly granted approvals.
 	const positiveNegativeColors = isOwnAddress.value
 		? {
-			textColor: 'var(--text-color)',
-			negativeColor: 'var(--text-color)'
+			positiveColor: 'var(--positive-color)',
+			negativeColor: 'var(--danger-color)'
 		}
 		: {
-			textColor: 'var(--disabled-text-color)',
+			positiveColor: 'var(--disabled-text-color)',
 			negativeColor: 'var(--danger-dim-color)'
 		}
 
@@ -365,54 +390,54 @@ function SummarizeAddress(param: SummarizeAddressParams) {
 			<BigAddress
 				addressBookEntry = { param.balanceSummary.summaryFor }
 				renameAddressCallBack = { param.renameAddressCallBack }
-				style = { { '--bg-color': 'var(--importance-box-color)' } }
+				class = 'multiline-card--importance'
 			/> :
 			<SmallAddress
-				textColor = { positiveNegativeColors.textColor }
+				textColor = { positiveNegativeColors.positiveColor }
 				addressBookEntry = { param.balanceSummary.summaryFor }
 				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
 		}
 
-		<div class = 'content' style = 'margin-bottom: 0px;'>
+		<div class = 'content'>
 			<Erc20BalanceChange
 				erc20TokenBalanceChanges = { param.balanceSummary.erc20TokenBalanceChanges }
-				textColor = { positiveNegativeColors.textColor }
+				positiveColor = { positiveNegativeColors.positiveColor }
 				negativeColor = { positiveNegativeColors.negativeColor }
 				isImportant = { isOwnAddress }
 				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
 			<Erc20ApprovalChanges
 				erc20TokenApprovalChanges = { param.balanceSummary.erc20TokenApprovalChanges }
-				textColor = { positiveNegativeColors.textColor }
+				positiveColor = { positiveNegativeColors.positiveColor }
 				negativeColor = { positiveNegativeColors.negativeColor }
 				isImportant = { isOwnAddress }
 				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
 			<Erc721TokenChanges
 				Erc721TokenBalanceChanges = { param.balanceSummary.erc721TokenBalanceChanges }
-				textColor = { positiveNegativeColors.textColor }
+				positiveColor = { positiveNegativeColors.positiveColor }
 				negativeColor = { positiveNegativeColors.negativeColor }
 				isImportant = { isOwnAddress }
 				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
 			<Erc721or1155OperatorChanges
 				erc721or1155OperatorChanges = { param.balanceSummary.erc721and1155OperatorChanges }
-				textColor = { positiveNegativeColors.textColor }
+				positiveColor = { positiveNegativeColors.positiveColor }
 				negativeColor = { positiveNegativeColors.negativeColor }
 				isImportant = { isOwnAddress }
 				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
 			<Erc721TokenIdApprovalChanges
 				Erc721TokenIdApprovalChanges = { param.balanceSummary.erc721TokenIdApprovalChanges }
-				textColor = { positiveNegativeColors.textColor }
+				positiveColor = { positiveNegativeColors.positiveColor }
 				negativeColor = { positiveNegativeColors.negativeColor }
 				isImportant = { isOwnAddress }
 				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
 			<Erc1155TokenChanges
 				Erc1155TokenBalanceChanges = { param.balanceSummary.erc1155TokenBalanceChanges }
-				textColor = { positiveNegativeColors.textColor }
+				positiveColor = { positiveNegativeColors.positiveColor }
 				negativeColor = { positiveNegativeColors.negativeColor }
 				isImportant = { isOwnAddress }
 				renameAddressCallBack = { param.renameAddressCallBack }
@@ -435,9 +460,9 @@ export function TokenLogAnalysisCard({ simTx, renameAddressCallBack }: TokenLogA
 	const tokenEventsSingular = 'One token event or an ETH transaction'
 	const tokenResults = extractTokenEvents(simTx.events)
 	return <>
-		<div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
-			<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => { showLogs.value = !showLogs.value } }>
-				<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em;'>
+		<div class = 'card collapsible-card'>
+			<header class = 'card-header noselect collapsible-card-header' onClick = { () => { showLogs.value = !showLogs.value } }>
+				<p class = 'card-header-title collapsible-card-title'>
 					{ tokenResults.length === 0 ? `No ${ tokenEventsPlural }` : `${ tokenResults.length > 1 ? `${ upperCaseFirstCharacter(convertNumberToCharacterRepresentationIfSmallEnough(tokenResults.length)) } ${ tokenEventsPlural }` : tokenEventsSingular }` }
 				</p>
 				<div class = 'card-header-icon'>
@@ -446,7 +471,7 @@ export function TokenLogAnalysisCard({ simTx, renameAddressCallBack }: TokenLogA
 			</header>
 			{ !showLogs.value
 				? <></>
-				: <div class = 'card-content' style = 'border-bottom-left-radius: 0.25rem; border-bottom-right-radius: 0.25rem; border-left: 2px solid var(--card-bg-color); border-right: 2px solid var(--card-bg-color); border-bottom: 2px solid var(--card-bg-color);'>
+				: <div class = 'card-content collapsible-card-content'>
 					<TokenLogAnalysis
 						simulatedAndVisualizedTransaction = { simTx }
 						identifiedSwap = { identifiedSwap }
@@ -470,9 +495,9 @@ export function NonTokenLogAnalysisCard({ simTx, addressMetaData, renameAddressC
 	if (simTx === undefined) return <></>
 	const nonTokenLogs = simTx.events.filter((event) => event.type !== 'TokenEvent')
 	return <>
-		<div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
-			<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => { showLogs.value = !showLogs.value } }>
-				<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em;'>
+		<div class = 'card collapsible-card'>
+			<header class = 'card-header noselect collapsible-card-header' onClick = { () => { showLogs.value = !showLogs.value } }>
+				<p class = 'card-header-title collapsible-card-title'>
 					{ nonTokenLogs.length === 0 ? 'No non-token events' : `${ upperCaseFirstCharacter(convertNumberToCharacterRepresentationIfSmallEnough(nonTokenLogs.length)) } non-token event${ nonTokenLogs.length > 1 ? 's' : '' }` }
 				</p>
 				<div class = 'card-header-icon'>
@@ -481,7 +506,7 @@ export function NonTokenLogAnalysisCard({ simTx, addressMetaData, renameAddressC
 			</header>
 			{ !showLogs.value
 				? <></>
-				: <div class = 'card-content' style = 'border-bottom-left-radius: 0.25rem; border-bottom-right-radius: 0.25rem; border-left: 2px solid var(--card-bg-color); border-right: 2px solid var(--card-bg-color); border-bottom: 2px solid var(--card-bg-color);'>
+				: <div class = 'card-content collapsible-card-content'>
 					<NonTokenLogAnalysis nonTokenLogs = { nonTokenLogs } addressMetaData = { addressMetaData } renameAddressCallBack = { renameAddressCallBack } editEnsNamedHashCallBack = { editEnsNamedHashCallBack }/>
 				</div>
 			}
@@ -516,9 +541,9 @@ export function TransactionsAccountChangesCard({ simTx, renameAddressCallBack, a
 	if (notOwnAddresses === undefined || ownAddresses === undefined) throw new Error('addresses were undefined')
 	const numberOfChanges = notOwnAddresses.length + ownAddresses.length
 
-	return <div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
-		<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => { showSummary.value = !showSummary.value } }>
-			<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em;'>
+	return <div class = 'card collapsible-card'>
+		<header class = 'card-header noselect collapsible-card-header' onClick = { () => { showSummary.value = !showSummary.value } }>
+			<p class = 'card-header-title collapsible-card-title'>
 				{ numberOfChanges === 0 ? 'No changes in accounts' : `${  upperCaseFirstCharacter(convertNumberToCharacterRepresentationIfSmallEnough(numberOfChanges)) } account${ numberOfChanges > 1 ? 's' : '' } changing` }
 			</p>
 			<div class = 'card-header-icon'>
@@ -528,7 +553,7 @@ export function TransactionsAccountChangesCard({ simTx, renameAddressCallBack, a
 		{ !showSummary.value
 			? <></>
 			: <div class = 'card-content'>
-				<div class = 'container' style = 'margin-bottom: 10px;'>
+				<div class = 'container summary-own-account-changes'>
 					{ ownAddresses.length === 0 ? <p class = 'paragraph'> No changes to your accounts </p>
 						: <div class = 'notification transaction-importance-box'>
 							{ ownAddresses.map( ([_index, balanceSummary], index) => <>
@@ -538,7 +563,7 @@ export function TransactionsAccountChangesCard({ simTx, renameAddressCallBack, a
 									activeAddress = { activeAddress }
 									renameAddressCallBack = { renameAddressCallBack }
 								/>
-								{ index + 1 !== ownAddresses.length ? <div class = 'is-divider' style = 'margin-top: 8px; margin-bottom: 8px'/> : <></> }
+								{ index + 1 !== ownAddresses.length ? <div class = 'is-divider summary-address-divider'/> : <></> }
 							</> ) }
 						</div>
 					}
@@ -555,7 +580,7 @@ export function TransactionsAccountChangesCard({ simTx, renameAddressCallBack, a
 									activeAddress = { activeAddress }
 									renameAddressCallBack = { renameAddressCallBack }
 								/>
-								<div class = 'is-divider' style = 'margin-top: 8px; margin-bottom: 8px'/>
+								<div class = 'is-divider summary-address-divider'/>
 							</>
 						})}
 					</div>
@@ -570,18 +595,18 @@ export type TransactionGasses = TransactionGasAccounting
 export function GasFee({ tx, rpcNetwork }: { tx: TransactionGasses, rpcNetwork: SignalOrValue<RpcNetwork> } ) {
 	return <>
 		<div class = 'log-cell'>
-			<p class = 'ellipsis' style = { 'color: var(--subtitle-text-color); margin-bottom: 0px' }> { tx.safeTransaction === undefined ? 'Gas fee:' : 'Gnosis Safe gas reimbursement:' }</p>
+			<p class = 'ellipsis summary-gas-fee-label'> { tx.safeTransaction === undefined ? 'Gas fee:' : 'Gnosis Safe gas reimbursement:' }</p>
 		</div>
 		<div class = 'log-cell'>
 			<EtherAmount
 				amount = { getGasFeePaidByTransactionSender(tx) }
-				style = { { color: 'var(--subtitle-text-color)' } }
+				class = 'coin-text--subtitle'
 				fontSize = 'normal'
 			/>
 		</div>
 		<div class = 'log-cell'>
 			<EtherSymbol
-				style = { { color: 'var(--subtitle-text-color)' } }
+				class = 'coin-text--subtitle'
 				rpcNetwork = { rpcNetwork }
 				fontSize = 'normal'
 			/>
@@ -597,11 +622,11 @@ type TransactionHeaderParams = {
 	ariaExpanded?: boolean
 }
 
+const verdictIcons = { succeeded: '../img/success-icon.svg', flagged: '../img/warning-sign.svg', failed: '../img/error-icon.svg' } as const satisfies Record<SimulationVerdict, string>
+
 export function TransactionHeader({ simTx, removeTransactionOrSignedMessage, onHeaderClick, headerActionLabel, ariaExpanded } : TransactionHeaderParams) {
 	const icon = useComputed(() => {
-		if (simTx.transactionStatus === 'Failed To Simulate' || simTx.transactionStatus === 'Transaction Failed') return '../img/error-icon.svg'
-		if (simTx.quarantine) return '../img/warning-sign.svg'
-		return '../img/success-icon.svg'
+		return verdictIcons[getTransactionVerdict(simTx)]
 	})
 	const actionLabel = headerActionLabel ?? 'Open this transaction in the full simulation stack'
 	return <header
@@ -624,7 +649,7 @@ export function TransactionHeader({ simTx, removeTransactionOrSignedMessage, onH
 				<img src = { icon.value } width = '24' height = '24' />
 			</span>
 		</div>
-		<p class = 'card-header-title' style = 'white-space: nowrap;'>
+		<p class = 'card-header-title'>
 			<span class = 'card-header-title-text'>{ identifyTransaction(simTx).title }</span>
 		</p>
 		{ simTx.transaction.to === undefined
@@ -666,13 +691,13 @@ export function TransactionHeaderForFailedToSimulate({ website, onHeaderClick, h
 				<img src = { '../img/error-icon.svg' } width = '24' height = '24' />
 			</span>
 		</div>
-		<p class = 'card-header-title' style = 'white-space: nowrap;'> Not simulated </p>
+		<p class = 'card-header-title'> Not simulated </p>
 		<WebsiteOriginText website = { website } class = 'card-header-website' />
 	</header>
 }
 
 export function TransactionCreated({ created } : { created: EthereumTimestamp }) {
-	return <p style = 'color: var(--subtitle-text-color); text-align: right; display: inline; text-overflow: ellipsis; overflow: hidden;'>
+	return <p class = 'summary-meta-text'>
 		{ 'Created ' }
 		<SomeTimeAgo priorTimestamp = { created } diffToText = { humanReadableDateDeltaLessDetailed }/>
 	</p>
@@ -695,9 +720,9 @@ export function SimulatedInBlockNumber({ simulationBlockNumber, currentBlockNumb
 		contentDisplayOverride = { `Simulated in block number ${ simulationBlockNumber }` }
 		copyMessage = 'Block number copied!'
 	>
-		<p style = 'color: var(--subtitle-text-color); text-align: right; display: inline; text-overflow: ellipsis; overflow: hidden;'>
+		<p class = 'summary-meta-text'>
 			{ 'Simulated ' }
-			<span style = { `font-weight: bold; font-family: monospace; color: ${ getSimulationFreshnessColor(simulationBlockNumber, currentBlockNumber.value, rpcConnectionStatus.value) } ` }>
+			<span class = 'summary-freshness-age' style = { `color: ${ getSimulationFreshnessColor(simulationBlockNumber, currentBlockNumber.value, rpcConnectionStatus.value) }` }>
 				<SomeTimeAgo priorTimestamp = { simulationConductedTimestamp }/>
 			</span>
 			{ ' ago' }
@@ -737,14 +762,15 @@ function getSuccessfulSimulationSummaryEntries(visualizedSimulationState: Extrac
 }
 
 function getSimulatedSignatureSummaryStatus(signature: VisualizedPersonalSignRequest) {
-	if (signature.isValidMessage === false) {
+	const verdict = getSignatureVerdict(signature)
+	if (verdict === 'failed') {
 		return {
 			icon: '../img/error-icon.svg',
 			label: 'Invalid message format',
 			modifier: 'invalid',
 		}
 	}
-	if (signature.quarantine) {
+	if (verdict === 'flagged') {
 		return {
 			icon: '../img/warning-sign.svg',
 			label: signature.quarantineReasons.length === 0 ? 'Flagged for review' : `Flagged: ${ signature.quarantineReasons.join('; ') }`,
@@ -772,6 +798,7 @@ function SimulatedSignaturesSummary({ simulatedSignatures, renameAddressCallBack
 			<ul class = 'simulation-summary-signature-list'>
 				{ simulatedSignatures.map((signature) => {
 					const status = getSimulatedSignatureSummaryStatus(signature)
+					// The modifier is the signature's simulation state (simulated, warning or invalid), not one of the shared status tones.
 					return <li
 						key = { signature.messageIdentifier.toString() }
 						class = { `simulation-summary-signature simulation-summary-signature--${ status.modifier }` }
@@ -809,12 +836,11 @@ function EnsChangesSummary({ ensEvents, editEnsNamedHashCallBack, renameAddressC
 	return <Collapsible
 		summary = { `ENS changes (${ visibleEnsEvents.length })` }
 		defaultOpen
-		class = 'card simulation-summary-section-card simulation-summary-ens-changes'
+		class = 'card simulation-summary-section-card'
 	>
 		<div class = 'card-content simulation-summary-section-content'>
 			<EnsEventsExplainer
 				ensEvents = { visibleEnsEvents }
-				textColor = 'var(--text-color)'
 				editEnsNamedHashCallBack = { editEnsNamedHashCallBack }
 				renameAddressCallBack = { renameAddressCallBack }
 				rpcNetwork = { rpcNetwork }
@@ -837,16 +863,12 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 
 	if (ownAddresses === undefined || notOwnAddresses === undefined) throw new Error('addresses were undefined')
 
-	const icon = simulatedTransactions.some((transaction) => transaction.transactionStatus !== 'Transaction Succeeded')
-		|| simulatedSignatures.some((signature) => signature.isValidMessage === false)
-		? '../img/error-icon.svg'
-		: simulatedTransactions.some((transaction) => transaction.quarantine)
-			|| simulatedSignatures.some((signature) => signature.quarantine)
-			? '../img/warning-sign.svg'
-			: '../img/success-icon.svg'
+	// The summary shows the worst verdict among everything it summarises.
+	const verdicts = [...simulatedTransactions.map(getTransactionVerdict), ...simulatedSignatures.map(getSignatureVerdict)]
+	const icon = verdictIcons[verdicts.includes('failed') ? 'failed' : verdicts.includes('flagged') ? 'flagged' : 'succeeded']
 
 	return (
-		<div class = 'card simulation-summary-card' style = 'background-color: var(--card-bg-color);'>
+		<div class = 'card simulation-summary-card'>
 			<header class = 'card-header'>
 				<div class = 'card-header-icon unset-cursor'>
 					<span class = 'icon'>
@@ -868,7 +890,7 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 					renameAddressCallBack = { param.renameAddressCallBack }
 					rpcNetwork = { simulationAndVisualisationResults.rpcNetwork }
 				/>
-				<div class = 'container' style = 'margin-bottom: 10px'>
+				<div class = 'container summary-own-account-changes'>
 					{ ownAddresses.length === 0 ? <p class = 'paragraph'> No changes to your accounts </p>
 						: <div class = 'notification transaction-importance-box'>
 							{ ownAddresses.map( ([_index, balanceSummary], index) => <>
@@ -878,14 +900,14 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 									activeAddress = { param.activeAddress }
 									renameAddressCallBack = { param.renameAddressCallBack }
 								/>
-								{ index + 1 !== ownAddresses.length ? <div class = 'is-divider' style = 'margin-top: 8px; margin-bottom: 8px'/> : <></> }
+								{ index + 1 !== ownAddresses.length ? <div class = 'is-divider summary-address-divider'/> : <></> }
 							</> ) }
 						</div>
 					}
 				</div>
 				<div class = 'card'>
-					<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => { showOtherAccountChanges.value = !showOtherAccountChanges.value } }>
-						<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em;'>
+					<header class = 'card-header noselect collapsible-card-header' onClick = { () => { showOtherAccountChanges.value = !showOtherAccountChanges.value } }>
+						<p class = 'card-header-title collapsible-card-title'>
 							{ notOwnAddresses.length === 0 ? 'No changes in other accounts' : `${ upperCaseFirstCharacter(convertNumberToCharacterRepresentationIfSmallEnough(notOwnAddresses.length)) } other account${ notOwnAddresses.length > 1 ? 's' : '' } changing` }
 						</p>
 						<div class = 'card-header-icon'>
@@ -903,15 +925,15 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 										activeAddress = { param.activeAddress }
 										renameAddressCallBack = { param.renameAddressCallBack }
 									/>
-									<div class = 'is-divider' style = 'margin-top: 8px; margin-bottom: 8px'/>
+									<div class = 'is-divider summary-address-divider'/>
 								</>) ) }
 							</div>
 						</div>
 					}
 				</div>
 
-				<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: auto;'>
-					<div class = 'log-cell' style = 'justify-content: right;'>
+				<span class = 'log-table transaction-meta-row simulation-summary-meta-row'>
+					<div class = 'log-cell log-cell--right'>
 						<SimulatedInBlockNumber
 							simulationBlockNumber = { getSimulationDisplayBlockNumber(simulationAndVisualisationResults.blockNumber, simulationAndVisualisationResults.visualizedSimulationState.visualizedBlocks.length) }
 							currentBlockNumber = { param.currentBlockNumber }
@@ -956,7 +978,7 @@ export function GasLimitEditor({ transactionIdentifier, initialGasLimit, isRawTr
 	)
 
 	return <>
-		<span style = 'padding: 2px; background: rgba(255, 255, 255, 0.1); border-bottom: 1.5px solid var(--text-color);'>
+		<span class = 'summary-gas-limit-field'>
 			<IntegerInput
 				autoSize = { true }
 				value = { gasLimit }
@@ -979,9 +1001,9 @@ export function GasLimitEditor({ transactionIdentifier, initialGasLimit, isRawTr
 export function RawTransactionDetailsCard({ isRawTransaction, transaction, renameAddressCallBack, gasSpent, parsedInputData, addressMetaData, transactionIdentifier }: RawTransactionDetailsCardParams) {
 	const showSummary = useSignal<boolean>(false)
 
-	return <div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
-		<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => { showSummary.value = !showSummary.value } }>
-			<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em;'>
+	return <div class = 'card collapsible-card'>
+		<header class = 'card-header noselect collapsible-card-header' onClick = { () => { showSummary.value = !showSummary.value } }>
+			<p class = 'card-header-title collapsible-card-title'>
 				Raw transaction information
 			</p>
 			<div class = 'card-header-icon'>
@@ -991,7 +1013,7 @@ export function RawTransactionDetailsCard({ isRawTransaction, transaction, renam
 		{ !showSummary.value
 			? <></>
 			: <div class = 'card-content'>
-				<div style = { { display: 'flex', flexDirection: 'column', rowGap: '1rem' } } >
+				<div class = 'summary-raw-transaction'>
 					<dl class = 'grid key-value-pair'>
 						<dt>Transaction type</dt>
 						<dd>{ transaction.type }</dd>
@@ -1006,7 +1028,7 @@ export function RawTransactionDetailsCard({ isRawTransaction, transaction, renam
 							<dd>{ getGasUsageText(gasSpent, transaction.gas) }</dd>
 						</> }
 						<dt>Gas limit </dt>
-						<dd style = 'display: flex; align-items: center; justify-content: center;'>
+						<dd class = 'summary-gas-limit-value'>
 							<GasLimitEditor transactionIdentifier = { transactionIdentifier } initialGasLimit = { transaction.gas } isRawTransaction = { isRawTransaction } />
 						</dd>
 						<dt>Nonce: </dt>
@@ -1029,7 +1051,7 @@ export function RawTransactionDetailsCard({ isRawTransaction, transaction, renam
 					</dl>
 
 					<div>
-						<p class = 'paragraph' style = { {  color: 'var(--subtitle-text-color)', marginBottom: '0.25rem'} }>Transaction Input</p>
+						<p class = 'paragraph summary-transaction-input-label'>Transaction Input</p>
 						<TransactionInput parsedInputData = { parsedInputData } input = { transaction.input } to = { transaction.to } addressMetaData = { addressMetaData } renameAddressCallBack = { renameAddressCallBack } />
 					</div>
 				</div>
