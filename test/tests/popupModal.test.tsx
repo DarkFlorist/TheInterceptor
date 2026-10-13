@@ -1,6 +1,6 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
-import { type ComponentProps, h, render } from 'preact'
+import { type ComponentProps, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { signal } from '@preact/signals'
 import { createLazyPage, PopupModal, type PopupPage } from '../../app/ts/components/PopupModal.js'
@@ -8,33 +8,14 @@ import { ErrorBoundary } from '../../app/ts/components/subcomponents/Error.js'
 import type { AddressBookEntries } from '../../app/ts/types/addressBookTypes.js'
 import type { RpcEntries } from '../../app/ts/types/rpc.js'
 import type { WebsiteAccessArray } from '../../app/ts/types/websiteAccessTypes.js'
-import { installDomMock } from './domMock.js'
+import { installDomMock, type MockElement } from './domMock.js'
+import { findElementByClass, waitForRender } from './domQueries.js'
+import { replaceProperty } from '../harness/globals.js'
+import { createPerTestBrowserMockInstaller } from '../harness/perTest.js'
 
-type TestNode = {
-	readonly childNodes?: readonly TestNode[]
-	readonly getAttribute?: (name: string) => string | null
-}
-
-function findByClass(node: TestNode | undefined, className: string): TestNode | undefined {
-	if (node?.getAttribute?.('class')?.split(/\s+/).includes(className)) return node
-	for (const child of node?.childNodes ?? []) {
-		const match = findByClass(child, className)
-		if (match !== undefined) return match
-	}
-	return undefined
-}
-
-async function settleLazyPage() {
-	await Promise.resolve()
-	await Promise.resolve()
-	await new Promise((resolve) => setTimeout(resolve, 0))
-}
-
-async function waitForRealLazyPage(isLoaded: () => boolean) {
-	for (let attempt = 0; attempt < 20; attempt++) {
-		if (isLoaded()) return
-		await new Promise((resolve) => setTimeout(resolve, 0))
-	}
+const findActiveModal = (root: MockElement) => {
+	const modal = findElementByClass(root, 'modal')
+	return modal === undefined ? undefined : findElementByClass(modal, 'is-active')
 }
 
 function createPopupModalProps(page: PopupPage): ComponentProps<typeof PopupModal> {
@@ -57,34 +38,7 @@ function createPopupModalProps(page: PopupPage): ComponentProps<typeof PopupModa
 	}
 }
 
-function installBrowserExtensionGlobals() {
-	const browserDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'browser')
-	const chromeDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'chrome')
-	Object.defineProperty(globalThis, 'browser', {
-		configurable: true,
-		writable: true,
-		value: {
-			runtime: {
-				lastError: undefined,
-				getManifest: () => ({ manifest_version: 3 }),
-				sendMessage: async () => undefined,
-				onMessage: { addListener: () => undefined, removeListener: () => undefined },
-				onConnect: { addListener: () => undefined, removeListener: () => undefined },
-			},
-		},
-	})
-	Object.defineProperty(globalThis, 'chrome', {
-		configurable: true,
-		writable: true,
-		value: { runtime: { id: 'test-extension' } },
-	})
-	return () => {
-		if (browserDescriptor === undefined) Reflect.deleteProperty(globalThis, 'browser')
-		else Object.defineProperty(globalThis, 'browser', browserDescriptor)
-		if (chromeDescriptor === undefined) Reflect.deleteProperty(globalThis, 'chrome')
-		else Object.defineProperty(globalThis, 'chrome', chromeDescriptor)
-	}
-}
+const installBrowserMock = createPerTestBrowserMockInstaller()
 
 describe('lazy popup pages', () => {
 	test('renders a page after its module loads', async () => {
@@ -97,10 +51,10 @@ describe('lazy popup pages', () => {
 			await act(() => {
 				render(<LazyPage label = 'Loaded popup page' />, dom.document.body)
 			})
-			await act(settleLazyPage)
+			await waitForRender(() => dom.document.body.textContent === 'Loaded popup page', { description: 'the lazy page to render' })
 			assert.equal(dom.document.body.textContent, 'Loaded popup page')
 		} finally {
-			render(null, dom.document.body)
+			render(undefined, dom.document.body)
 			dom.restore()
 		}
 	})
@@ -112,52 +66,50 @@ describe('lazy popup pages', () => {
 			async () => await Promise.reject(loadError),
 			'TestPage',
 		)
-		let caughtError: Error | undefined
-		const originalConsoleError = console.error
-		console.error = () => undefined
+		const errorBoundary: { caughtError?: Error } = {}
+		const restoreConsoleError = replaceProperty(console, 'error', () => undefined)
 		try {
 			await act(() => {
 				render(
-					<ErrorBoundary onError = { (error) => { caughtError = error } }>
+					<ErrorBoundary onError = { (error) => { errorBoundary.caughtError = error } }>
 						<LazyPage label = 'unused' />
 					</ErrorBoundary>,
 					dom.document.body,
 				)
 			})
-			await act(settleLazyPage)
-			assert.equal(caughtError, loadError)
+			await waitForRender(() => errorBoundary.caughtError !== undefined, { description: 'the error boundary to catch the load failure' })
+			assert.equal(errorBoundary.caughtError, loadError)
 		} finally {
-			console.error = originalConsoleError
-			render(null, dom.document.body)
+			restoreConsoleError()
+			render(undefined, dom.document.body)
 			dom.restore()
 		}
 	})
 
 	test('keeps Home inactive and renders the selected real modal route', async () => {
 		const dom = installDomMock()
-		const restoreBrowserGlobals = installBrowserExtensionGlobals()
+		installBrowserMock()
 		try {
 			await act(() => {
 				render(<PopupModal { ...createPopupModalProps({ page: 'Home' }) } />, dom.document.body)
 			})
-			assert.equal(findByClass(findByClass(dom.document.body, 'modal'), 'is-active'), undefined)
+			assert.equal(findActiveModal(dom.document.body), undefined)
 
 			await act(() => {
 				render(<PopupModal { ...createPopupModalProps({ page: 'ImportSimulation', state: signal('') }) } />, dom.document.body)
 			})
-			await act(async () => await waitForRealLazyPage(() => dom.document.body.textContent.includes('Import Interceptor Simulation Stack')))
-			assert.notEqual(findByClass(findByClass(dom.document.body, 'modal'), 'is-active'), undefined)
+			await waitForRender(() => dom.document.body.textContent.includes('Import Interceptor Simulation Stack'), { description: 'the import page to load' })
+			assert.notEqual(findActiveModal(dom.document.body), undefined)
 			assert.match(dom.document.body.textContent, /Import Interceptor Simulation Stack/u)
 		} finally {
-			render(null, dom.document.body)
-			restoreBrowserGlobals()
+			render(undefined, dom.document.body)
 			dom.restore()
 		}
 	})
 
 	test('hides create-and-switch actions when signing mode restricts address selection', async () => {
 		const dom = installDomMock()
-		const restoreBrowserGlobals = installBrowserExtensionGlobals()
+		installBrowserMock()
 		const state = signal({
 			windowStateId: 'signing-address-create',
 			errorState: undefined,
@@ -181,11 +133,10 @@ describe('lazy popup pages', () => {
 			await act(() => {
 				render(<PopupModal { ...createPopupModalProps({ page: 'AddNewAddress', state }) } allowCreateAndSwitch = { false } />, dom.document.body)
 			})
-			await act(async () => await waitForRealLazyPage(() => dom.document.body.textContent.includes('Create address')))
+			await waitForRender(() => dom.document.body.textContent.includes('Create address'), { description: 'the address page to load' })
 			assert.equal(dom.document.body.textContent.includes('Create and switch'), false)
 		} finally {
-			render(null, dom.document.body)
-			restoreBrowserGlobals()
+			render(undefined, dom.document.body)
 			dom.restore()
 		}
 	})

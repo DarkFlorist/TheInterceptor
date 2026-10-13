@@ -43,7 +43,7 @@ const vendorTypeShims = [
 	},
 ] as const
 
-const getPackageRoot = (packageName: string) => packageName.startsWith('@') ? packageName.split('/').slice(0, 2).join('/') : packageName.split('/')[0]!
+const getPackageRoot = (packageName: string) => packageName.startsWith('@') ? packageName.split('/').slice(0, 2).join('/') : packageName.split('/')[0] ?? packageName
 
 const vendoredPackageRoots = [...new Set([
 	...vendoredDependencies.map(getPackageRoot),
@@ -146,11 +146,11 @@ async function rewriteSourceMapSourcePath(packageName: string, sourcePath: strin
 	const fileExtension = path.extname(sourcePath)
 	if (fileExtension !== '.map') return
 	const fileContents = JSON.parse(await fs.readFile(sourcePath, 'utf-8')) as { sources: string[] }
-	for (let i = 0; i < fileContents.sources.length; ++i) {
+	fileContents.sources = fileContents.sources.map((source) => {
 		// we want to ensure all source files show up in the appropriate directory and don't leak out of our directory tree, so we strip leading '../' references
-		const sourcePath = fileContents.sources[i].replace(/^(?:.\/)*/, '').replace(/^(?:..\/)*/, '')
-		fileContents.sources[i] = ['dependencies://dependencies', packageName, sourcePath].join('/')
-	}
+		const sourcePath = source.replace(/^(?:.\/)*/, '').replace(/^(?:..\/)*/, '')
+		return ['dependencies://dependencies', packageName, sourcePath].join('/')
+	})
 	await fs.writeFile(destinationPath, JSON.stringify(fileContents))
 }
 

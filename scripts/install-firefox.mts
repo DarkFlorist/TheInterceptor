@@ -6,7 +6,7 @@ const GECKODRIVER_VERSION = '0.36.0'
 
 async function runCommand(command: readonly string[], quiet = false) {
 	const subprocess = Bun.spawn({
-		cmd: command,
+		cmd: [...command],
 		stdin: 'inherit',
 		stdout: quiet ? 'ignore' : 'inherit',
 		stderr: quiet ? 'ignore' : 'inherit',
@@ -68,10 +68,10 @@ async function main() {
 	const firefoxPath = Bun.which('firefox')
 	const geckodriverPath = Bun.which('geckodriver')
 	if (firefoxPath === null || geckodriverPath === null) throw new Error('Firefox installation completed without exposing firefox and geckodriver on PATH.')
-	console.log(`Firefox is installed at: ${ firefoxPath }`)
-	console.log(`geckodriver is installed at: ${ geckodriverPath }`)
-	console.log('Run the Firefox visual regression suite with:')
-	console.log('  bun run screenshots:safe-ui:firefox')
+	console.info(`Firefox is installed at: ${ firefoxPath }`)
+	console.info(`geckodriver is installed at: ${ geckodriverPath }`)
+	console.info('Run the Firefox visual regression suite with:')
+	console.info('  bun run screenshots:safe-ui:firefox')
 }
 
 await main().catch((error: unknown) => {

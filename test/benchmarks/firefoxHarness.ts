@@ -4,6 +4,7 @@ import * as fsConstants from 'node:fs'
 import { createServer } from 'node:net'
 import * as path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { readProperty } from '../harness/assertions.js'
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const DEFAULT_EXTENSION_DIRECTORY = path.join(REPO_ROOT, 'app')
@@ -14,7 +15,7 @@ type PendingCommand = {
 }
 
 export type FirefoxPage = {
-	evaluate: <T = unknown>(expression: string) => Promise<T | undefined>
+	evaluate: (expression: string) => Promise<unknown>
 	setViewport: (width: number, height: number) => Promise<void>
 	captureScreenshot: () => Promise<string>
 	close: () => Promise<void>
@@ -36,17 +37,12 @@ async function stopDriverProcess(driverProcess: ReturnType<typeof spawn>) {
 	if (driverProcess.exitCode === null && driverProcess.signalCode === null) driverProcess.kill('SIGKILL')
 }
 
-function readProperty(value: unknown, property: string) {
-	if (typeof value !== 'object' || value === null) return undefined
-	return Reflect.get(value, property) as unknown
-}
-
 function readStringProperty(value: unknown, property: string) {
 	const propertyValue = readProperty(value, property)
 	return typeof propertyValue === 'string' ? propertyValue : undefined
 }
 
-function protocolErrorMessage(value: unknown) {
+function protocolErrorMessage(value: unknown): string | undefined {
 	const message = readStringProperty(value, 'message')
 	if (message !== undefined) return message
 	const error = readProperty(value, 'error')
@@ -104,14 +100,15 @@ async function waitForWebDriver(port: number, processOutput: () => string) {
 }
 
 async function createWebDriverSession(port: number) {
-	const firefoxOptions: Record<string, unknown> = {
+	const firefoxBinary = process.env.FIREFOX_BIN
+	const firefoxOptions = {
 		args: ['-headless'],
 		prefs: {
 			'browser.shell.checkDefaultBrowser': false,
 			'browser.startup.page': 0,
 		},
+		...firefoxBinary !== undefined && firefoxBinary.length > 0 ? { binary: firefoxBinary } : {},
 	}
-	if (process.env.FIREFOX_BIN !== undefined && process.env.FIREFOX_BIN.length > 0) firefoxOptions.binary = process.env.FIREFOX_BIN
 	const response = await fetch(`http://127.0.0.1:${ port }/session`, {
 		method: 'POST',
 		headers: { 'content-type': 'application/json' },
@@ -221,13 +218,13 @@ async function readExtensionUuid(profileDirectory: string, extensionId: string) 
 	throw new Error(`Firefox did not persist an internal UUID for extension ${ extensionId }.`)
 }
 
-function remoteValue<T>(evaluationResult: unknown) {
+function remoteValue(evaluationResult: unknown) {
 	if (readStringProperty(evaluationResult, 'type') === 'exception') {
 		const exceptionDetails = readProperty(evaluationResult, 'exceptionDetails')
 		throw new Error(`${ readStringProperty(exceptionDetails, 'text') ?? 'Firefox script evaluation failed.' } Details: ${ JSON.stringify(exceptionDetails) }`)
 	}
 	const result = readProperty(evaluationResult, 'result')
-	return readProperty(result, 'value') as T | undefined
+	return readProperty(result, 'value')
 }
 
 async function ensureExtensionReady(extensionDirectory: string) {
@@ -274,6 +271,7 @@ export async function launchFirefoxSession(extensionDirectory = DEFAULT_EXTENSIO
 		const extensionUuid = await readExtensionUuid(webDriverSession.profileDirectory, extensionId)
 		const extensionOrigin = `moz-extension://${ extensionUuid }`
 		const activeBidi = bidi
+		const activeSessionId = webDriverSession.sessionId
 		return {
 			browserVersion: webDriverSession.browserVersion,
 			openExtensionPage: async (pagePath: string) => {
@@ -286,7 +284,7 @@ export async function launchFirefoxSession(extensionDirectory = DEFAULT_EXTENSIO
 					wait: 'complete',
 				})
 				return {
-					evaluate: async <T = unknown>(expression: string) => remoteValue<T>(await activeBidi.send('script.evaluate', {
+					evaluate: async (expression: string) => remoteValue(await activeBidi.send('script.evaluate', {
 						expression,
 						target: { context },
 						awaitPromise: true,
@@ -315,7 +313,7 @@ export async function launchFirefoxSession(extensionDirectory = DEFAULT_EXTENSIO
 			},
 			close: async () => {
 				activeBidi.close()
-				await fetch(`http://127.0.0.1:${ port }/session/${ webDriverSession.sessionId }`, { method: 'DELETE' }).catch(() => undefined)
+				await fetch(`http://127.0.0.1:${ port }/session/${ activeSessionId }`, { method: 'DELETE' }).catch(() => undefined)
 				await stopDriverProcess(driverProcess)
 			},
 		}

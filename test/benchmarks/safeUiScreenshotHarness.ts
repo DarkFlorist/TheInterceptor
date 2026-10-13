@@ -4,11 +4,13 @@ import * as path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { closeTarget, connectTarget, createTargetPage, launchChromeSession, waitForInterceptorExtensionServiceWorker } from './chromeHarness.js'
 import { launchFirefoxSession } from './firefoxHarness.js'
+import * as funtypes from 'funtypes'
 
 export type SafeUiPageName = 'addressBook' | 'popup' | 'confirmTransaction' | 'simulationStack' | 'settingsView'
 
 export type SafeUiScreenshotPage = {
-	evaluate: <T = unknown>(expression: string) => Promise<T | undefined>
+	// Evaluated values are not validated, so callers receive unknown and must check the shape they expect.
+	evaluate: (expression: string) => Promise<unknown>
 	setViewport: (width: number, height: number) => Promise<void>
 	captureScreenshot: () => Promise<string>
 	close: () => Promise<void>
@@ -23,6 +25,7 @@ export type SafeUiScreenshotBrowser = {
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const DEFAULT_EXTENSION_DIRECTORY = path.join(REPO_ROOT, 'app')
+const CaptureScreenshotResponse = funtypes.ReadonlyObject({ data: funtypes.String })
 
 async function launchChromiumScreenshotBrowser(extensionDirectory: string | undefined): Promise<SafeUiScreenshotBrowser> {
 	const session = extensionDirectory === undefined ? await launchChromeSession() : await launchChromeSession(extensionDirectory)
@@ -36,17 +39,17 @@ async function launchChromiumScreenshotBrowser(extensionDirectory: string | unde
 			const connection = await connectTarget(session.browserDebugPort, targetId)
 			if (initializationExpression !== undefined) await connection.evaluate(initializationExpression)
 			return {
-				evaluate: async <T = unknown>(expression: string) => await connection.evaluate<T>(expression),
+				evaluate: async (expression: string) => await connection.evaluate(expression),
 				setViewport: async (width: number, height: number) => {
 					await connection.send('Page.enable')
 					await connection.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false })
 				},
 				captureScreenshot: async () => {
-					const screenshot = await connection.send<{ data: string }>('Page.captureScreenshot', {
+					const screenshot = CaptureScreenshotResponse.parse(await connection.send('Page.captureScreenshot', {
 						format: 'png',
 						captureBeyondViewport: true,
 						fromSurface: true,
-					})
+					}))
 					return screenshot.data
 				},
 				close: async () => {

@@ -210,7 +210,7 @@ function getPackageDirectoryCandidates(baseFilePath: string, packageRootName: st
 	return candidates
 }
 
-function resolvePackageTarget(packageDirectory: string, packageTarget: string, baseFilePath: string) {
+function resolvePackageTarget(packageDirectory: string, packageTarget: string, baseFilePath: string): string | undefined {
 	if (isBareSpecifier(packageTarget)) return resolvePackageSpecifierFromNodeModules(packageTarget, baseFilePath)
 	const normalizedTarget = packageTarget.startsWith('./') || packageTarget.startsWith('../')
 		? packageTarget
@@ -218,7 +218,7 @@ function resolvePackageTarget(packageDirectory: string, packageTarget: string, b
 	return resolveExistingModuleFile(path.resolve(packageDirectory, normalizedTarget))
 }
 
-function resolvePackageSpecifierFromNodeModules(specifier: string, baseFilePath: string) {
+function resolvePackageSpecifierFromNodeModules(specifier: string, baseFilePath: string): string | undefined {
 	const packageRootName = getPackageRootName(specifier)
 	const packageSubpath = getPackageSubpath(specifier, packageRootName)
 	for (const packageDirectory of getPackageDirectoryCandidates(baseFilePath, packageRootName)) {
@@ -361,7 +361,7 @@ function ensureDirectoryExists(dir: string) {
 	fs.mkdirSync(dir, { recursive: true })
 }
 
-function formatBunBuildLogs(logs: readonly BuildMessage[]) {
+function formatBunBuildLogs(logs: readonly (BuildMessage | ResolveMessage)[]) {
 	return logs
 		.map((log) => log.message)
 		.join('\n')

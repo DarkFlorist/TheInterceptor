@@ -1,36 +1,36 @@
 import * as assert from 'node:assert'
 import { beforeEach, describe, test } from 'bun:test'
+import { getRpcList, promoteRpcAsPrimary, setRpcList } from '../../app/ts/background/storageVariables.js'
 import type { RpcEntries } from '../../app/ts/types/rpc.js'
+import type { StorageKeys } from '../harness/browserMock.js'
+import { createPerTestBrowserMockInstaller } from '../harness/perTest.js'
 
-const storedItems: Record<string, unknown> = {}
-let blockNextRpcListRead = false
-let releaseBlockedRead = () => undefined
-let signalBlockedReadStarted = () => undefined
-let blockedReadStarted = Promise.resolve()
+const installBrowserMock = createPerTestBrowserMockInstaller()
 
-Object.defineProperty(globalThis, 'browser', {
-	configurable: true,
-	writable: true,
-	value: {
-		storage: {
-			local: {
-				get: async (keys: string | readonly string[]) => {
-					const requestedKeys = Array.isArray(keys) ? keys : [keys]
-					const snapshot = Object.fromEntries(requestedKeys.filter((key) => key in storedItems).map((key) => [key, storedItems[key]]))
-					if (!blockNextRpcListRead || !requestedKeys.includes('rpcEntries')) return snapshot
-					blockNextRpcListRead = false
-					signalBlockedReadStarted()
-					await new Promise<void>((resolve) => { releaseBlockedRead = resolve })
-					return snapshot
-				},
-				set: async (items: Record<string, unknown>) => { Object.assign(storedItems, items) },
-				remove: async () => undefined,
-			},
+const requestsRpcEntries = (keys: StorageKeys) => (typeof keys === 'string' ? [keys] : Array.isArray(keys) ? keys : []).includes('rpcEntries')
+
+// Lets a test hold the next rpcEntries read after it has taken its storage snapshot, so another writer can run while the first read-modify-write is paused.
+function installBrowserMockWithBlockableRpcListRead() {
+	const browserMock = installBrowserMock()
+	const readStorage = browserMock.browser.storage.local.get
+	let nextBlockedRead: { readonly started: PromiseWithResolvers<void>, readonly released: PromiseWithResolvers<void> } | undefined
+	browserMock.browser.storage.local.get = async (keys) => {
+		const snapshot = await readStorage(keys)
+		if (nextBlockedRead === undefined || !requestsRpcEntries(keys)) return snapshot
+		const { started, released } = nextBlockedRead
+		nextBlockedRead = undefined
+		started.resolve()
+		await released.promise
+		return snapshot
+	}
+	return {
+		blockNextRpcListRead: () => {
+			const blockedRead = { started: Promise.withResolvers<void>(), released: Promise.withResolvers<void>() }
+			nextBlockedRead = blockedRead
+			return { started: blockedRead.started.promise, release: () => { blockedRead.released.resolve() } }
 		},
-	},
-})
-
-const { getRpcList, promoteRpcAsPrimary, setRpcList } = await import('../../app/ts/background/storageVariables.js')
+	}
+}
 
 const existingRpcEntries = [
 	{
@@ -67,23 +67,20 @@ const editedRpcEntries = [
 ] as const satisfies RpcEntries
 
 describe('RPC list concurrency', () => {
+	let rpcListStorage: ReturnType<typeof installBrowserMockWithBlockableRpcListRead>
+
 	beforeEach(async () => {
-		for (const key of Object.keys(storedItems)) delete storedItems[key]
-		blockNextRpcListRead = false
-		releaseBlockedRead = () => undefined
-		signalBlockedReadStarted = () => undefined
-		blockedReadStarted = Promise.resolve()
+		rpcListStorage = installBrowserMockWithBlockableRpcListRead()
 		await setRpcList(existingRpcEntries)
 	})
 
 	test('does not let primary promotion overwrite a later settings save', async () => {
-		blockNextRpcListRead = true
-		blockedReadStarted = new Promise<void>((resolve) => { signalBlockedReadStarted = resolve })
+		const blockedRead = rpcListStorage.blockNextRpcListRead()
 		const promotionPromise = promoteRpcAsPrimary(existingRpcEntries[1])
-		await blockedReadStarted
+		await blockedRead.started
 
 		const settingsSavePromise = setRpcList(editedRpcEntries)
-		releaseBlockedRead()
+		blockedRead.release()
 		await Promise.all([promotionPromise, settingsSavePromise])
 
 		assert.deepEqual(await getRpcList(), editedRpcEntries)

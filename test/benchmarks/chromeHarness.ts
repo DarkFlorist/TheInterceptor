@@ -1,9 +1,10 @@
-import { spawn } from 'child_process'
-import { access, mkdir, mkdtemp, readFile, rm } from 'fs/promises'
-import * as fsConstants from 'fs'
-import * as os from 'os'
-import * as path from 'path'
-import { fileURLToPath } from 'url'
+import { spawn } from 'node:child_process'
+import { access, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
+import * as fsConstants from 'node:fs'
+import * as os from 'node:os'
+import * as path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import * as funtypes from 'funtypes'
 
 export type TargetInfo = {
 	id: string
@@ -13,15 +14,16 @@ export type TargetInfo = {
 	webSocketDebuggerUrl?: string
 }
 
-export type PerformanceMarkSnapshot = {
-	timeOrigin: number
-	marks: readonly {
-		name: string
-		startTime: number
-		duration: number
-		entryType: string
-	}[]
-}
+const PerformanceMarkSnapshot = funtypes.ReadonlyObject({
+	timeOrigin: funtypes.Number,
+	marks: funtypes.ReadonlyArray(funtypes.ReadonlyObject({
+		name: funtypes.String,
+		startTime: funtypes.Number,
+		duration: funtypes.Number,
+		entryType: funtypes.String,
+	})),
+})
+export type PerformanceMarkSnapshot = funtypes.Static<typeof PerformanceMarkSnapshot>
 
 export type ChromeSession = {
 	profileDir: string
@@ -38,6 +40,36 @@ export type LaunchChromeOptions = {
 	cleanupProfile?: boolean
 }
 
+const DevToolsTarget = funtypes.ReadonlyPartial({
+	id: funtypes.String,
+	targetId: funtypes.String,
+	type: funtypes.String,
+	url: funtypes.String,
+	title: funtypes.String,
+	webSocketDebuggerUrl: funtypes.String,
+})
+type DevToolsTarget = funtypes.Static<typeof DevToolsTarget>
+const DevToolsTargetList = funtypes.ReadonlyArray(DevToolsTarget)
+const DevToolsVersion = funtypes.ReadonlyPartial({ webSocketDebuggerUrl: funtypes.String })
+
+const CdpMessage = funtypes.ReadonlyPartial({
+	id: funtypes.Number,
+	method: funtypes.String,
+	params: funtypes.Unknown,
+	result: funtypes.Unknown,
+	error: funtypes.ReadonlyPartial({ message: funtypes.String, code: funtypes.Number }),
+})
+const RuntimeEvaluateResponse = funtypes.ReadonlyObject({
+	result: funtypes.ReadonlyPartial({ value: funtypes.Unknown }),
+}).And(funtypes.ReadonlyPartial({
+	exceptionDetails: funtypes.ReadonlyPartial({
+		text: funtypes.String,
+		exception: funtypes.ReadonlyPartial({ description: funtypes.String }),
+	}),
+}))
+const CreateTargetResponse = funtypes.ReadonlyObject({ targetId: funtypes.String })
+const RegisteredContentScripts = funtypes.ReadonlyArray(funtypes.ReadonlyPartial({ id: funtypes.String }))
+
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const EXTENSION_DIR = path.join(REPO_ROOT, 'app')
 
@@ -47,7 +79,7 @@ function sleep(ms: number) {
 	})
 }
 
-function normalizeTargetInfo(target: Partial<TargetInfo> & { targetId?: string, id?: string }): TargetInfo | undefined {
+function normalizeTargetInfo(target: DevToolsTarget): TargetInfo | undefined {
 	const id = target.targetId ?? target.id
 	if (id === undefined) return undefined
 	const url = target.url ?? ''
@@ -67,13 +99,19 @@ function normalizeTargetInfo(target: Partial<TargetInfo> & { targetId?: string, 
 	return normalized
 }
 
-async function waitForCondition(condition: () => Promise<boolean> | boolean, timeoutMs: number, label: string) {
+export async function waitForCondition(condition: () => Promise<boolean> | boolean, timeoutMs: number, label: string) {
 	const start = Date.now()
 	while (true) {
 		if (await condition()) return
 		if (Date.now() - start > timeoutMs) throw new Error(`Timed out waiting for ${ label } after ${ timeoutMs }ms`)
 		await sleep(50)
 	}
+}
+
+function decodeWebSocketMessageData(data: unknown) {
+	if (typeof data === 'string') return data
+	if (data instanceof ArrayBuffer || ArrayBuffer.isView(data)) return new TextDecoder().decode(data)
+	throw new Error(`Unsupported CDP websocket message payload type: ${ typeof data }`)
 }
 
 export class CdpConnection {
@@ -114,8 +152,8 @@ export class CdpConnection {
 	}
 
 	private handleMessage(event: MessageEvent) {
-		const data = typeof event.data === 'string' ? event.data : new TextDecoder().decode(event.data as ArrayBuffer)
-		const message = JSON.parse(data) as { id?: number, method?: string, params?: unknown, result?: unknown, error?: { message?: string, code?: number } }
+		const decodedMessage: unknown = JSON.parse(decodeWebSocketMessageData(event.data))
+		const message = CdpMessage.parse(decodedMessage)
 		if (message.id !== undefined) {
 			const pending = this.pending.get(message.id)
 			if (pending === undefined) return
@@ -133,17 +171,14 @@ export class CdpConnection {
 		for (const listener of listeners) listener(message.params)
 	}
 
-	public async send<T = unknown>(method: string, params: Record<string, unknown> = {}): Promise<T> {
+	public async send(method: string, params: Record<string, unknown> = {}): Promise<unknown> {
 		await this.connect()
 		const socket = this.socket
 		if (socket === undefined) throw new Error(`CDP websocket ${ this.url } is not connected`)
 		const id = this.nextId
 		this.nextId += 1
-		const promise = new Promise<T>((resolve, reject) => {
-			this.pending.set(id, {
-				resolve: resolve as (value: unknown) => void,
-				reject,
-			})
+		const promise = new Promise<unknown>((resolve, reject) => {
+			this.pending.set(id, { resolve, reject })
 		})
 		socket.send(JSON.stringify({ id, method, params }))
 		return await promise
@@ -162,16 +197,14 @@ export class CdpConnection {
 		if (listeners.size === 0) this.eventListeners.delete(eventName)
 	}
 
-	public async evaluate<T = unknown>(expression: string, options: { awaitPromise?: boolean, userGesture?: boolean } = {}) {
-		const result = await this.send<{
-			result: { value?: T, type?: string, description?: string, unserializableValue?: string }
-			exceptionDetails?: { text?: string, exception?: { description?: string } }
-		}>('Runtime.evaluate', {
+	// Returns the JSON-serializable evaluation result unvalidated; callers parse it into the shape they expect.
+	public async evaluate(expression: string, options: { awaitPromise?: boolean, userGesture?: boolean } = {}): Promise<unknown> {
+		const result = RuntimeEvaluateResponse.parse(await this.send('Runtime.evaluate', {
 			expression,
 			awaitPromise: options.awaitPromise ?? true,
 			returnByValue: true,
 			userGesture: options.userGesture ?? false,
-		})
+		}))
 		if (result.exceptionDetails !== undefined) {
 			throw new Error(result.exceptionDetails.text ?? result.exceptionDetails.exception?.description ?? 'Runtime.evaluate failed')
 		}
@@ -187,14 +220,14 @@ export class CdpConnection {
 async function readTargets(browserDebugPort: number) {
 	const response = await fetch(`http://127.0.0.1:${ browserDebugPort }/json/list`)
 	if (!response.ok) throw new Error(`Failed to query Chrome targets on port ${ browserDebugPort }: ${ response.status } ${ response.statusText }`)
-	const parsed = await response.json() as readonly (TargetInfo & { targetId?: string })[]
+	const parsed = DevToolsTargetList.parse(await response.json())
 	return parsed.map((target) => normalizeTargetInfo(target)).filter((target): target is TargetInfo => target !== undefined)
 }
 
 async function readVersion(browserDebugPort: number) {
 	const response = await fetch(`http://127.0.0.1:${ browserDebugPort }/json/version`)
 	if (!response.ok) throw new Error(`Failed to query Chrome version on port ${ browserDebugPort }: ${ response.status } ${ response.statusText }`)
-	return await response.json() as { webSocketDebuggerUrl?: string }
+	return DevToolsVersion.parse(await response.json())
 }
 
 async function waitForTarget(browserDebugPort: number, predicate: (target: TargetInfo) => boolean, timeoutMs: number, label: string) {
@@ -339,16 +372,10 @@ export async function waitForPopupTarget(browserDebugPort: number, extensionId: 
 	return await waitForTarget(browserDebugPort, (target) => target.url.startsWith(`chrome-extension://${ extensionId }/html3/popupV3.html`), timeoutMs, `popup target for extension ${ extensionId }`)
 }
 
-async function startWorker(browserConnection: CdpConnection, scopeURL: string) {
-	await browserConnection.send('ServiceWorker.startWorker', { scopeURL })
-}
-
 export async function createTargetPage(browserConnection: CdpConnection, url: string) {
-	const result = await browserConnection.send<{ targetId: string }>('Target.createTarget', {
-		url,
-	})
-	await browserConnection.send('Target.activateTarget', { targetId: result.targetId })
-	return result.targetId
+	const { targetId } = CreateTargetResponse.parse(await browserConnection.send('Target.createTarget', { url }))
+	await browserConnection.send('Target.activateTarget', { targetId })
+	return targetId
 }
 
 export async function closeTarget(browserConnection: CdpConnection, targetId: string) {
@@ -356,7 +383,7 @@ export async function closeTarget(browserConnection: CdpConnection, targetId: st
 }
 
 async function snapshotPerformance(connection: CdpConnection): Promise<PerformanceMarkSnapshot> {
-	const snapshot = await connection.evaluate<PerformanceMarkSnapshot>(`(() => {
+	const snapshot = PerformanceMarkSnapshot.safeParse(await connection.evaluate(`(() => {
 		const marks = performance.getEntriesByType('mark').map((entry) => ({
 			name: entry.name,
 			startTime: entry.startTime,
@@ -364,9 +391,9 @@ async function snapshotPerformance(connection: CdpConnection): Promise<Performan
 			entryType: entry.entryType,
 		}))
 		return { timeOrigin: performance.timeOrigin, marks }
-	})()`)
-	if (snapshot === undefined) throw new Error('Failed to snapshot performance marks')
-	return snapshot
+	})()`))
+	if (!snapshot.success) throw new Error(`Failed to snapshot performance marks: ${ snapshot.message }`)
+	return snapshot.value
 }
 
 export async function waitForPerformanceMark(connection: CdpConnection, markName: string, timeoutMs = 30_000) {
@@ -386,16 +413,15 @@ export async function waitForPerformanceMarks(connection: CdpConnection, markNam
 }
 
 export async function waitForRegisteredContentScripts(connection: CdpConnection, expectedIds: readonly string[], timeoutMs = 30_000) {
-	type RegisteredContentScript = { readonly id?: string }
 	await waitForCondition(async () => {
-		const scripts = await connection.evaluate<readonly RegisteredContentScript[] | undefined>('(async () => await browser.scripting.getRegisteredContentScripts())()').catch(() => undefined)
-		if (scripts === undefined) return false
-		return expectedIds.every((expectedId) => scripts.some((script) => script.id === expectedId))
+		const scripts = RegisteredContentScripts.safeParse(await connection.evaluate('(async () => await browser.scripting.getRegisteredContentScripts())()').catch(() => undefined))
+		if (!scripts.success) return false
+		return expectedIds.every((expectedId) => scripts.value.some((script) => script.id === expectedId))
 	}, timeoutMs, `registered content scripts ${ expectedIds.join(', ') }`)
 }
 
-export async function readExtensionLargeStateValue<T = unknown>(connection: CdpConnection, key: 'interceptorTransactionStack' | 'popupVisualisation' | 'safeTransactionStacks'): Promise<T | undefined> {
-	return await connection.evaluate<T | undefined>(`(async () => {
+export async function readExtensionLargeStateValue(connection: CdpConnection, key: 'interceptorTransactionStack' | 'popupVisualisation' | 'safeTransactionStacks'): Promise<unknown> {
+	return await connection.evaluate(`(async () => {
 		const key = ${ JSON.stringify(key) }
 		if (typeof indexedDB !== 'undefined') {
 			const indexedDbValue = await new Promise((resolve, reject) => {

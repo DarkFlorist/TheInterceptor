@@ -1,6 +1,7 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { test } from 'bun:test'
 import { createRetriableTerminalStateRecovery } from '../../app/ts/background/terminalStateRecovery.js'
+import { flushMicrotasks } from '../harness/async.js'
 
 test('startup terminal recovery failure does not block readiness and the scheduled retry succeeds', async () => {
 	let recoveryAttempts = 0
@@ -27,6 +28,6 @@ test('startup terminal recovery failure does not block readiness and the schedul
 
 	if (scheduledTimer !== undefined) clearTimeout(scheduledTimer)
 	scheduledRetry()
-	await new Promise((resolve) => setTimeout(resolve, 0))
+	await flushMicrotasks()
 	assert.equal(recoveryAttempts, 2)
 })

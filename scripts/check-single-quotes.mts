@@ -30,7 +30,7 @@ const escapeForSingleQuotedString = (value: string) => {
 	let escaped = ''
 
 	for (let index = 0; index < value.length; index += 1) {
-		const character = value[index]
+		const character = value.charAt(index)
 		switch (character) {
 			case '\\':
 				escaped += '\\\\'
@@ -125,7 +125,7 @@ for (const path of await collectFilePaths(filePatterns)) {
 }
 
 if (shouldWrite) {
-	if (updatedFiles > 0) console.log(`Rewrote ${ updatedLiterals } string literals across ${ updatedFiles } files.`)
+	if (updatedFiles > 0) console.info(`Rewrote ${ updatedLiterals } string literals across ${ updatedFiles } files.`)
 	process.exit(0)
 }
 

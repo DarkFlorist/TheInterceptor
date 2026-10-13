@@ -55,9 +55,9 @@ describe('wallet_getCapabilities', () => {
 	})
 
 	test('serializes capability maps in provider replies', () => {
-		const reply = {
-			type: 'result' as const,
-			method: 'wallet_getCapabilities' as const,
+		const reply: RPCReply = {
+			type: 'result',
+			method: 'wallet_getCapabilities',
 			result: {
 				'0x2105': {
 					atomic: { supported: 'supported' },
@@ -82,12 +82,13 @@ describe('wallet_getCapabilities', () => {
 	})
 
 	test('does not interfere with typed-array replies from unrelated RPC methods', () => {
-		const reply = {
-			type: 'result' as const,
-			method: 'eth_call' as const,
+		const reply: RPCReply = {
+			type: 'result',
+			method: 'eth_call',
 			result: new Uint8Array([0x12, 0x34]),
 		}
-		expect(serialize(RPCReply, reply)).toEqual({
+		const serializedReply = serialize<RPCReply, typeof RPCReply>(RPCReply, reply)
+		expect(serializedReply).toEqual({
 			type: 'result',
 			method: 'eth_call',
 			result: '0x1234',

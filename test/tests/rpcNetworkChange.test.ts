@@ -1,5 +1,5 @@
 import { describe, test } from 'bun:test'
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { getRpcNetworkChange, getRpcChangeRoute, isSignerOnlyNetwork } from '../../app/ts/utils/rpcNetworkChange.js'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
 

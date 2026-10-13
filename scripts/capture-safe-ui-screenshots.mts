@@ -1,13 +1,12 @@
-import { mkdir, writeFile } from 'fs/promises'
-import { tmpdir } from 'os'
-import * as path from 'path'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import * as path from 'node:path'
 import { createSafeTx } from '../app/ts/safe/safeCore.js'
-import { PendingTransactionOrSignableMessage } from '../app/ts/types/accessRequest.js'
-import { serialize } from '../app/ts/types/wire-types.js'
+import { PendingTransaction } from '../app/ts/types/accessRequest.js'
 import { getSafeTxHash } from '../app/ts/utils/eip712.js'
 import { getNativeTokenErc20 } from '../app/ts/background/metadataUtils.js'
 import { privateKeyToAccount } from '../app/ts/utils/ethereumPrimitives.js'
-import { launchSafeUiScreenshotBrowser, SafeUiScreenshotPage } from '../test/benchmarks/safeUiScreenshotHarness.js'
+import { launchSafeUiScreenshotBrowser, type SafeUiScreenshotPage } from '../test/benchmarks/safeUiScreenshotHarness.js'
 
 const outputDirectory = path.resolve(process.env.SAFE_UI_SCREENSHOT_OUTPUT_DIRECTORY ?? path.join(tmpdir(), 'interceptor-safe-wallet-screenshots'))
 
@@ -23,21 +22,21 @@ let capturedScenarioCount = 0
 
 async function waitForSelector(connection: SafeUiScreenshotPage, selector: string) {
 	for (let attempt = 0; attempt < 200; attempt += 1) {
-		const found = await connection.evaluate<boolean>(`document.querySelector(${ JSON.stringify(selector) }) !== null`)
-		if (found) return
+		const found = await connection.evaluate(`document.querySelector(${ JSON.stringify(selector) }) !== null`)
+		if (found === true) return
 		await Bun.sleep(50)
 	}
-	const bodyText = await connection.evaluate<string>('document.body.textContent ?? ""')
+	const bodyText = await connection.evaluate('document.body.textContent ?? ""')
 	throw new Error(`Timed out waiting for ${ selector }. Page text: ${ bodyText ?? '' }`)
 }
 
 async function waitForText(connection: SafeUiScreenshotPage, expectedText: string) {
 	for (let attempt = 0; attempt < 200; attempt += 1) {
-		const found = await connection.evaluate<boolean>(`document.body.textContent?.includes(${ JSON.stringify(expectedText) }) === true`)
-		if (found) return
+		const found = await connection.evaluate(`document.body.textContent?.includes(${ JSON.stringify(expectedText) }) === true`)
+		if (found === true) return
 		await Bun.sleep(50)
 	}
-	const bodyText = await connection.evaluate<string>('document.body.textContent ?? ""')
+	const bodyText = await connection.evaluate('document.body.textContent ?? ""')
 	throw new Error(`Timed out waiting for text: ${ expectedText }. Page text: ${ bodyText ?? '' }`)
 }
 
@@ -60,7 +59,7 @@ async function capture(connection: SafeUiScreenshotPage, filename: string, width
 	await prepareForDeterministicCapture(connection)
 	if (scrollExpression !== undefined) await connection.evaluate(scrollExpression)
 	await Bun.sleep(250)
-	const clippedAddress = await connection.evaluate<string>(`(() => {
+	const clippedAddress = await connection.evaluate(`(() => {
 		const addresses = document.querySelectorAll('.modal.is-active .address-editor-address-input, .modal.is-active .address-editor-readonly-address')
 		for (const address of addresses) {
 			if (!(address instanceof HTMLElement)) continue
@@ -180,7 +179,7 @@ try {
 			}],
 		})`
 	await addressBook.evaluate(setSafeAddressFixture)
-	await addressBook.evaluate(`browser.storage.local.set({ simulationMode: true })`)
+	await addressBook.evaluate('browser.storage.local.set({ simulationMode: true })')
 	await addressBook.close()
 
 	const openSafeEditorFixture = `(() => {
@@ -271,7 +270,7 @@ try {
 	await waitForText(popup, 'Safe signer in simulation')
 	await Bun.sleep(500)
 	await captureScenario(popup, 'safe-simulation-mode')
-	await popup.evaluate(`browser.storage.local.set({ simulationMode: false }).then(() => location.reload())`)
+	await popup.evaluate('browser.storage.local.set({ simulationMode: false }).then(() => location.reload())')
 	await waitForSelector(popup, '.popup-home-card')
 	await waitForText(popup, 'Treasury Safe')
 	await waitForText(popup, 'Connect a browser wallet to sign with the selected address.')
@@ -284,17 +283,18 @@ try {
 	const destinationAddress = 0x9876543210987654321098765432109876543210n
 	const created = new Date('2026-07-28T00:00:00.000Z')
 	const uniqueRequestIdentifier = { requestId: 42, requestSocket: { tabId: 7, connectionName: 0n } }
+	const sentTransaction = {
+		from: safeAddress,
+		to: destinationAddress,
+		value: 500000000000000000n,
+		gas: 21_000n,
+		maxFeePerGas: 2_000_000_000n,
+		maxPriorityFeePerGas: 1_000_000_000n,
+		input: new Uint8Array(),
+	}
 	const originalRequestParameters = {
 		method: 'eth_sendTransaction' as const,
-		params: [{
-			from: safeAddress,
-			to: destinationAddress,
-			value: 500000000000000000n,
-			gas: 21_000n,
-			maxFeePerGas: 2_000_000_000n,
-			maxPriorityFeePerGas: 1_000_000_000n,
-			input: new Uint8Array(),
-		}],
+		params: [sentTransaction] as const,
 	}
 	const failedTransaction = {
 		website: { websiteOrigin: 'https://app.uniswap.org', icon: undefined, title: 'Uniswap' },
@@ -305,11 +305,11 @@ try {
 		error: { code: -32000, message: 'Screenshot fixture intentionally skips RPC simulation.' },
 	}
 	const safeTx = createSafeTx(1n, safeAddress, {
-		to: originalRequestParameters.params[0].to,
-		value: originalRequestParameters.params[0].value,
-		input: originalRequestParameters.params[0].input,
+		to: sentTransaction.to,
+		value: sentTransaction.value,
+		input: sentTransaction.input,
 	}, 7n)
-	const pendingSafeTransaction: PendingTransactionOrSignableMessage = {
+	const pendingSafeTransaction: PendingTransaction = {
 		type: 'Transaction',
 		popupOrTabId: { type: 'popup', id: 1 },
 		originalRequestParameters,
@@ -351,7 +351,7 @@ try {
 			safeTx,
 		},
 	}
-	const serializedPendingTransactions = serialize(PendingTransactionOrSignableMessage, pendingSafeTransaction)
+	const serializedPendingTransactions = PendingTransaction.serialize(pendingSafeTransaction)
 	const setPendingTransactionFixture = `browser.storage.local.set({
 			pendingTransactionsAndMessages: [${ JSON.stringify(serializedPendingTransactions) }],
 		})`
@@ -371,7 +371,7 @@ try {
 	const mainnet = { name: 'Ethereum Mainnet', chainId: 1n, httpsRpc: 'https://rpc.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
 	const safeEntry = { type: 'contact' as const, name: 'Treasury Safe', address: safeAddress, entrySource: 'User' as const, chainId: 1n }
 	const destinationEntry = { type: 'contact' as const, name: 'Uniswap Router', address: destinationAddress, entrySource: 'User' as const, chainId: 1n }
-	const unsignedTransaction = { type: '1559' as const, nonce: 0n, chainId: 1n, accessList: [], ...originalRequestParameters.params[0] }
+	const unsignedTransaction = { type: '1559' as const, nonce: 0n, chainId: 1n, accessList: [], ...sentTransaction }
 	const simulatedTransactionToSimulate = {
 		website: failedTransaction.website,
 		created,
@@ -380,7 +380,7 @@ try {
 		success: true as const,
 		transaction: unsignedTransaction,
 	}
-	const simulatedProposal: PendingTransactionOrSignableMessage = {
+	const simulatedProposal: PendingTransaction = {
 		...pendingSafeTransaction,
 		transactionOrMessageCreationStatus: 'Simulated',
 		transactionToSimulate: simulatedTransactionToSimulate,
@@ -434,7 +434,7 @@ try {
 		},
 	}
 	const setSimulatedProposalFixture = `browser.storage.local.set({
-			pendingTransactionsAndMessages: [${ JSON.stringify(serialize(PendingTransactionOrSignableMessage, simulatedProposal)) }],
+			pendingTransactionsAndMessages: [${ JSON.stringify(PendingTransaction.serialize(simulatedProposal)) }],
 		})`
 	const simulatedConfirm = await browser.openPage('confirmTransaction', `(async () => {
 		await ${ setSafeAddressFixture }
