@@ -3,7 +3,7 @@ import * as assert from 'assert'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import type { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
-import { toResolvedSimulationInput } from '../../app/ts/types/visualizer-types.js'
+import { createSimulatedInput } from '../../app/ts/types/visualizer-types.js'
 import { bytes32String } from '../../app/ts/utils/bigint.js'
 
 Object.defineProperty(globalThis, 'chrome', {
@@ -44,7 +44,7 @@ describe('simulation mode handlers', () => {
 
 		const reply = await getStorageAt(
 			ethereumClientService,
-			toResolvedSimulationInput([]),
+			createSimulatedInput([], {}),
 			request,
 		)
 

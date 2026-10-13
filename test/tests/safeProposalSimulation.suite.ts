@@ -2,6 +2,65 @@ import * as assert from 'assert'
 import { test } from 'bun:test'
 import { activeAddress, addressString, browserMock, created, createSafeAddressBookEntry, createSafeTx, createWebsitePort, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, hexToBytes, isRecord, modules, pendingTransaction, recipientAddress, signedTransaction, simulator, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
 
+test('uses delegate clearing for a local transaction preview and on-chain code for signing', async () => {
+	const { changeSimulationMode, setDelegateClearingEnabled } = await import('../../app/ts/background/settings.js')
+	await changeSimulationMode({ simulationMode: true, activeSimulationAddress: activeAddress, rpcNetwork: fakeRpcNetwork })
+	await setDelegateClearingEnabled(activeAddress, fakeRpcNetwork.chainId, true)
+	try {
+		const refreshConfirmTransactionSimulation = (await import('../../app/ts/background/confirmTransactionSimulation.js')).refreshConfirmTransactionSimulation
+		const preview = await refreshConfirmTransactionSimulation(
+			simulator.ethereum,
+			simulator.tokenPriceService,
+			activeAddress,
+			true,
+			uniqueRequestIdentifier,
+			pendingTransaction.transactionToSimulate,
+		)
+		assert.equal(preview?.statusCode, 'success')
+		if (preview?.statusCode !== 'success') throw new Error('Transaction approval preview failed')
+		assert.deepEqual(preview.data.simulationState.simulationOverrides[addressString(activeAddress)]?.code, new Uint8Array())
+		const signingPreview = await refreshConfirmTransactionSimulation(
+			simulator.ethereum,
+			simulator.tokenPriceService,
+			activeAddress,
+			false,
+			uniqueRequestIdentifier,
+			pendingTransaction.transactionToSimulate,
+		)
+		assert.equal(signingPreview?.statusCode, 'success')
+		if (signingPreview?.statusCode !== 'success') throw new Error('Signing preview failed')
+		assert.deepEqual(signingPreview.data.simulationState.simulationOverrides, {})
+	} finally {
+		await setDelegateClearingEnabled(activeAddress, fakeRpcNetwork.chainId, false)
+	}
+})
+
+test('prepares a local transaction against the cleared-code simulation state', async () => {
+	const { changeSimulationMode, setDelegateClearingEnabled } = await import('../../app/ts/background/settings.js')
+	const { SendTransactionParams } = await import('../../app/ts/types/JsonRpc-types.js')
+	await changeSimulationMode({ simulationMode: true, activeSimulationAddress: activeAddress, rpcNetwork: fakeRpcNetwork })
+	await setDelegateClearingEnabled(activeAddress, fakeRpcNetwork.chainId, true)
+	try {
+		const params = SendTransactionParams.parse({
+			method: 'eth_sendTransaction',
+			params: [{ from: addressString(activeAddress), to: addressString(recipientAddress), value: '0x0' }],
+		})
+		await modules.formEthSendTransaction(simulator.ethereum, undefined, activeAddress,
+			{ websiteOrigin: 'https://example.com', icon: undefined, title: undefined }, params, created, 1n, true)
+		assert.equal(fakeSafeContract.simulatedRequests.some((request) => {
+			const params = request.params?.[0]
+			if (!isRecord(params) || !Array.isArray(params.blockStateCalls)) return false
+			return params.blockStateCalls.some((block) => {
+				if (!isRecord(block) || !isRecord(block.stateOverrides)) return false
+				const override = block.stateOverrides[addressString(activeAddress)]
+				return isRecord(override) && override.code instanceof Uint8Array && override.code.length === 0
+			})
+		}), true)
+	} finally {
+		await setDelegateClearingEnabled(activeAddress, fakeRpcNetwork.chainId, false)
+	}
+})
+
 test('rejects EIP-7702 authorization lists before creating a Safe proposal', async () => {
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 	await modules.updateSafeTransactionStacks(() => [])
