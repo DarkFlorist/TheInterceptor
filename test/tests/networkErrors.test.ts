@@ -1,63 +1,13 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { Signal } from '@preact/signals'
 import { describe, test } from 'bun:test'
 import { NetworkErrors } from '../../app/ts/components/subcomponents/NetworkErrors.js'
 import { installDateMock, installDomMock } from './domMock.js'
+import { createPerTestBrowserMockInstaller } from '../harness/perTest.js'
 
-function installBrowserMock() {
-	Object.defineProperty(globalThis, 'browser', {
-		configurable: true,
-		writable: true,
-		value: {
-			runtime: {
-				lastError: null,
-				async sendMessage() {
-					return undefined
-				},
-				getManifest: () => ({ manifest_version: 3 }),
-				onMessage: { addListener: () => undefined, removeListener: () => undefined },
-				onConnect: { addListener: () => undefined, removeListener: () => undefined },
-			},
-			storage: {
-				local: {
-					async get() { return {} },
-					async set() { return undefined },
-					async remove() { return undefined },
-				},
-			},
-			tabs: {
-				async query() { return [] },
-				async get() { return undefined },
-				async update() { return undefined },
-				onUpdated: { addListener: () => undefined, removeListener: () => undefined },
-				onRemoved: { addListener: () => undefined, removeListener: () => undefined },
-			},
-			windows: {
-				async get() { return undefined },
-				async update() { return undefined },
-			},
-			action: {
-				async setIcon() { return undefined },
-				async setTitle() { return undefined },
-				async setBadgeText() { return undefined },
-				async setBadgeBackgroundColor() { return undefined },
-			},
-			browserAction: {
-				async setIcon() { return undefined },
-				async setTitle() { return undefined },
-				async setBadgeText() { return undefined },
-				async setBadgeBackgroundColor() { return undefined },
-			},
-		},
-	})
-	Object.defineProperty(globalThis, 'chrome', {
-		configurable: true,
-		writable: true,
-		value: { runtime: { id: 'test-extension' } },
-	})
-}
+const installBrowserMock = createPerTestBrowserMockInstaller()
 
 const rpcNetwork = {
 	name: 'Test Chain',
@@ -72,7 +22,7 @@ const rpcNetwork = {
 
 describe('NetworkErrors', () => {
 	test('shows a paused disconnect immediately on first render', async () => {
-		installBrowserMock()
+		installBrowserMock({ extensionId: 'test-extension' })
 		const dom = installDomMock()
 
 		await act(() => {
@@ -92,7 +42,7 @@ describe('NetworkErrors', () => {
 	})
 
 	test('shows countdown copy while an active retry is pending', async () => {
-		installBrowserMock()
+		installBrowserMock({ extensionId: 'test-extension' })
 		const dom = installDomMock()
 		const clock = installDateMock('2024-01-01T00:00:00.000Z')
 
@@ -114,7 +64,7 @@ describe('NetworkErrors', () => {
 	})
 
 	test('shows slow request copy when the active RPC request exceeds its expected duration', async () => {
-		installBrowserMock()
+		installBrowserMock({ extensionId: 'test-extension' })
 		const dom = installDomMock()
 		const clock = installDateMock('2024-01-01T00:00:12.000Z')
 		const { NetworkErrors } = await import('../../app/ts/components/App.js')

@@ -1,15 +1,10 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
-import { JsonRpcResponse } from '../../app/ts/types/JsonRpc-types.js'
+import { EthereumBlockHeader } from '../../app/ts/types/wire-types.js'
 import { TIME_BETWEEN_BLOCKS, MAX_BLOCK_CACHE } from '../../app/ts/utils/constants.js'
 import { eth_getBlockByNumber_goerli_8443561_true } from '../RPCResponses.js'
-
-function parseRequest<T>(data: string): T {
-	const jsonRpcResponse = JsonRpcResponse.parse(JSON.parse(data))
-	if ('error' in jsonRpcResponse) throw Error(`Ethereum Client Error: ${ jsonRpcResponse.error.message }`)
-	return jsonRpcResponse.result as T
-}
+import { parseJsonRpcResult, readJsonRpcResult } from './rpcResponseParsing.js'
 
 const rpcNetwork = {
 	name: 'Goerli',
@@ -29,14 +24,15 @@ describe('EthereumClientService cache expiry', () => {
 				rpcUrl: rpcNetwork.httpsRpc,
 				clearCache: () => undefined,
 				getChainId: async () => rpcNetwork.chainId,
-				jsonRpcRequest: async () => parseRequest(eth_getBlockByNumber_goerli_8443561_true),
+				jsonRpcRequest: async () => readJsonRpcResult(eth_getBlockByNumber_goerli_8443561_true),
 			},
 			async () => undefined,
 			async () => undefined,
 			rpcNetwork,
 		)
 
-		const block = parseRequest<NonNullable<ReturnType<typeof service.getCachedBlock>>>(eth_getBlockByNumber_goerli_8443561_true)
+		const block = parseJsonRpcResult(eth_getBlockByNumber_goerli_8443561_true, EthereumBlockHeader)
+		assert.ok(block !== null, 'the block fixture must contain a block')
 		Reflect.set(service, 'cachedBlock', {
 			...block,
 			timestamp: new Date(Date.now() - (TIME_BETWEEN_BLOCKS * MAX_BLOCK_CACHE + 1) * 1000),

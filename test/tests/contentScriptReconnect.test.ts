@@ -1,17 +1,29 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { test } from 'bun:test'
 import { acknowledgeAndTrackBridgeRequest, INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE } from '../../app/ts/background/bridgeRequestDelivery.js'
+import { flushMicrotasks } from '../harness/async.js'
+import { createMockEvent, installBrowserMock } from '../harness/browserMock.js'
+import { replaceGlobal, replaceProperty } from '../harness/globals.js'
+import { installManualTimers, type ManualTimers } from '../harness/timers.js'
+
+type ContentScriptPortControls = {
+	// Delivers a message from the background end. Unlike harness ports, it still delivers after a disconnect, so scenarios can model replies that a replaced background port sends late.
+	readonly receive: (message: unknown) => void
+	// Fires the content script's onDisconnect listeners, as if the background end had disconnected.
+	readonly disconnect: () => void
+}
 
 type ContentScriptMockState = {
-	readonly backgroundMessageListeners: ((message: unknown) => void)[]
-	readonly runtimeMessageListeners: ((message: unknown) => unknown)[]
-	readonly disconnectListeners: (() => void)[]
+	readonly port: (index: number) => ContentScriptPortControls
 	readonly eventListeners: Map<string, EventListenerOrEventListenerObject[]>
 	readonly postedMessages: unknown[]
-	readonly connectionNames: string[]
-	readonly runtime: { lastError: { message?: string } | undefined }
+	readonly connectionNames: () => string[]
 	readonly getConnectionCount: () => number
+	readonly disconnectListenerCount: () => number
+	readonly setLastError: (lastError: browser.runtime._LastError | undefined) => void
+	readonly sendRuntimeMessage: (message: unknown) => Promise<unknown>
 	readonly failNextPost: () => void
+	readonly timers: Pick<ManualTimers, 'pendingCount' | 'runPending'>
 }
 
 type ContentScriptSource = 'manifest-v2-document-start' | 'standalone-listener'
@@ -19,82 +31,88 @@ let contentScriptMockImportId = 0
 const contentScriptListenerGlobalKey = Symbol.for('TheInterceptor.listenContentScript')
 
 async function withContentScriptMock(source: ContentScriptSource, run: (state: ContentScriptMockState) => Promise<void>, legacyListenerDescriptor: PropertyDescriptor | undefined = undefined) {
-	const browserDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'browser')
-	const addEventListenerDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'addEventListener')
-	const documentDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'document')
-	const interceptorInjectedDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'interceptorInjected')
-	const contentScriptListenerDescriptor = Object.getOwnPropertyDescriptor(globalThis, contentScriptListenerGlobalKey)
-	const backgroundMessageListeners: ((message: unknown) => void)[] = []
-	const runtimeMessageListeners: ((message: unknown) => unknown)[] = []
-	const disconnectListeners: (() => void)[] = []
+	const browserMock = installBrowserMock()
+	// The reconnect delay is a fixed timer inside listenContentScript.ts, so scenarios decide when pending timers run instead of sleeping past the delay.
+	const timers = installManualTimers()
 	const eventListeners = new Map<string, EventListenerOrEventListenerObject[]>()
 	const postedMessages: unknown[] = []
-	const connectionNames: string[] = []
-	const runtime: { lastError: { message?: string } | undefined } = { lastError: undefined }
-	let connectionCount = 0
+	const ports: { readonly port: browser.runtime.Port, readonly controls: ContentScriptPortControls, readonly hasDisconnectListener: () => boolean }[] = []
 	let shouldFailNextPost = false
 
-	const browserMock = {
-		runtime: {
-			get lastError() { return runtime.lastError },
-			getURL: (path: string) => `browser-extension://test/${ path }`,
-			connect: ({ name }: { name: string }) => {
-				connectionCount += 1
-				connectionNames.push(name)
-				return {
-					disconnect: () => undefined,
-					onDisconnect: { addListener: (listener: () => void) => { disconnectListeners.push(listener) } },
-					onMessage: { addListener: (listener: (message: unknown) => void) => { backgroundMessageListeners.push(listener) } },
-					postMessage: (message: unknown) => {
-						if (shouldFailNextPost) {
-							shouldFailNextPost = false
-							throw new Error('Attempting to use a disconnected port object')
-						}
-						postedMessages.push(message)
-					},
+	// Content scripts connect through browser.runtime.connect; these ports are built from harness events so they can keep delivering after a disconnect.
+	browserMock.browser.runtime.connect = (connectInfo = {}) => {
+		const onMessage = createMockEvent<[message: unknown]>()
+		const onDisconnect = createMockEvent<[port: browser.runtime.Port]>()
+		const port: browser.runtime.Port = {
+			name: connectInfo.name ?? '',
+			disconnect: () => undefined,
+			onMessage,
+			onDisconnect,
+			postMessage: (message: unknown) => {
+				if (shouldFailNextPost) {
+					shouldFailNextPost = false
+					throw new Error('Attempting to use a disconnected port object')
 				}
+				postedMessages.push(message)
 			},
-			onMessage: { addListener: (listener: (message: unknown) => unknown) => { runtimeMessageListeners.push(listener) } },
-		},
+		}
+		ports.push({
+			port,
+			controls: { receive: (message) => { onMessage.dispatch(message) }, disconnect: () => { onDisconnect.dispatch(port) } },
+			hasDisconnectListener: onDisconnect.hasListeners,
+		})
+		return port
 	}
 	const addEventListener = (type: string, listener: EventListenerOrEventListenerObject) => {
 		eventListeners.set(type, [...eventListeners.get(type) ?? [], listener])
 	}
-	Object.defineProperty(globalThis, 'browser', { configurable: true, writable: true, value: browserMock })
-	Object.defineProperty(globalThis, 'addEventListener', { configurable: true, writable: true, value: addEventListener })
-	if (legacyListenerDescriptor !== undefined) Object.defineProperty(globalThis, 'listenContentScript', legacyListenerDescriptor)
 	const scriptContainer = {
 		children: [{}, {}],
 		insertBefore: () => undefined,
 		removeChild: () => undefined,
 	}
-	Object.defineProperty(globalThis, 'document', { configurable: true, writable: true, value: {
-		head: scriptContainer,
-		documentElement: scriptContainer,
-		createElement: () => ({
-			setAttribute: () => undefined,
-			src: '',
-			textContent: '',
+	const restoreGlobals = [
+		browserMock.restore,
+		timers.restore,
+		replaceGlobal('addEventListener', addEventListener),
+		replaceGlobal('document', {
+			head: scriptContainer,
+			documentElement: scriptContainer,
+			createElement: () => ({
+				setAttribute: () => undefined,
+				src: '',
+				textContent: '',
+			}),
 		}),
-	} })
+		// The content scripts define these globals; replacing them first makes the restore below remove what each scenario defined.
+		replaceGlobal('interceptorInjected', undefined),
+		replaceGlobal(contentScriptListenerGlobalKey, undefined),
+	]
+	if (legacyListenerDescriptor !== undefined) Object.defineProperty(globalThis, 'listenContentScript', legacyListenerDescriptor)
 
 	try {
 		contentScriptMockImportId += 1
 		await import(`../../app/inpage/ts/listenContentScript.js?shared-background-port-recovery-${ contentScriptMockImportId }`)
 		if (source === 'manifest-v2-document-start') await import(`../../app/inpage/ts/document_start.js?manifest-v2-background-port-recovery-${ contentScriptMockImportId }`)
 		else await import(`../../app/inpage/ts/listenContentScriptBootstrap.js?background-port-recovery-${ contentScriptMockImportId }`)
-		await run({ backgroundMessageListeners, runtimeMessageListeners, disconnectListeners, eventListeners, postedMessages, connectionNames, runtime, getConnectionCount: () => connectionCount, failNextPost: () => { shouldFailNextPost = true } })
+		await run({
+			port: (index) => {
+				const contentScriptPort = ports[index]
+				if (contentScriptPort === undefined) throw new Error(`The content script has not opened background port ${ index }`)
+				return contentScriptPort.controls
+			},
+			eventListeners,
+			postedMessages,
+			connectionNames: () => ports.map(({ port }) => port.name),
+			getConnectionCount: () => ports.length,
+			disconnectListenerCount: () => ports.filter(({ hasDisconnectListener }) => hasDisconnectListener()).length,
+			setLastError: (lastError) => { browserMock.browser.runtime.lastError = lastError },
+			sendRuntimeMessage: async (message) => await browserMock.dispatchRuntimeMessage(message),
+			failNextPost: () => { shouldFailNextPost = true },
+			timers,
+		})
 	} finally {
-		if (browserDescriptor === undefined) Reflect.deleteProperty(globalThis, 'browser')
-		else Object.defineProperty(globalThis, 'browser', browserDescriptor)
-		if (addEventListenerDescriptor === undefined) Reflect.deleteProperty(globalThis, 'addEventListener')
-		else Object.defineProperty(globalThis, 'addEventListener', addEventListenerDescriptor)
-		if (documentDescriptor === undefined) Reflect.deleteProperty(globalThis, 'document')
-		else Object.defineProperty(globalThis, 'document', documentDescriptor)
-		if (interceptorInjectedDescriptor === undefined) Reflect.deleteProperty(globalThis, 'interceptorInjected')
-		else Object.defineProperty(globalThis, 'interceptorInjected', interceptorInjectedDescriptor)
-		if (contentScriptListenerDescriptor === undefined) Reflect.deleteProperty(globalThis, contentScriptListenerGlobalKey)
-		else Object.defineProperty(globalThis, contentScriptListenerGlobalKey, contentScriptListenerDescriptor)
+		for (const restoreGlobal of restoreGlobals.reverse()) restoreGlobal()
 	}
 }
 
@@ -103,6 +121,11 @@ function dispatchWindowMessage(eventListeners: Map<string, EventListenerOrEventL
 		if (typeof listener === 'function') listener(event)
 		else listener.handleEvent(event)
 	}
+}
+
+// Bun delivers queued MessagePort messages before setImmediate callbacks run, so flushing lets the content script and the inpage bridge receive what was posted. Scenarios replace setTimeout, so this cannot sleep on a timer.
+async function waitForMessagePortDelivery() {
+	await flushMicrotasks()
 }
 
 function getPostedBridgeRequestId(value: unknown) {
@@ -125,7 +148,7 @@ async function dispatchBridgeRequest(eventListeners: Map<string, EventListenerOr
 		requestId: 1,
 		...(replayOnDisconnect ? { replayOnDisconnect: true } : {}),
 	})
-	await new Promise((resolve) => setTimeout(resolve, 0))
+	await waitForMessagePortDelivery()
 	const close = () => {
 		channel.port1.close()
 		channel.port2.close()
@@ -135,73 +158,75 @@ async function dispatchBridgeRequest(eventListeners: Map<string, EventListenerOr
 }
 
 async function verifyContentScriptReconnect(source: ContentScriptSource) {
-	await withContentScriptMock(source, async ({ backgroundMessageListeners, runtimeMessageListeners, disconnectListeners, eventListeners, postedMessages, connectionNames, runtime, getConnectionCount, failNextPost }) => {
+	await withContentScriptMock(source, async ({ port, sendRuntimeMessage, disconnectListenerCount, eventListeners, postedMessages, connectionNames, setLastError, getConnectionCount, failNextPost, timers }) => {
 		assert.equal(getConnectionCount(), 1)
-		assert.equal(disconnectListeners.length, 1)
+		assert.equal(disconnectListenerCount(), 1)
 
-		disconnectListeners[0]?.()
+		port(0).disconnect()
 
 		assert.equal(getConnectionCount(), 2)
-		assert.equal(disconnectListeners.length, 2)
+		assert.equal(disconnectListenerCount(), 2)
 
 		failNextPost()
 		await dispatchBridgeRequest(eventListeners)
 
 		assert.equal(getConnectionCount(), 3)
 		assert.equal(postedMessages.length, 1)
-		assert.equal(disconnectListeners.length, 3)
-		backgroundMessageListeners[2]?.({ type: INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, requestId: 1 })
+		assert.equal(disconnectListenerCount(), 3)
+		port(2).receive({ type: INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, requestId: 1 })
 
-		disconnectListeners[1]?.()
+		port(1).disconnect()
 		assert.equal(getConnectionCount(), 3)
 
-		const originalConsoleError = console.error
-		console.error = () => undefined
+		const restoreConsoleError = replaceProperty(console, 'error', () => undefined)
 		try {
 			failNextPost()
-			backgroundMessageListeners[2]?.({ malformed: true })
+			port(2).receive({ malformed: true })
 		} finally {
-			console.error = originalConsoleError
+			restoreConsoleError()
 		}
 		assert.equal(getConnectionCount(), 4)
 		assert.equal(postedMessages.length, 1)
-		assert.deepEqual(await runtimeMessageListeners[0]?.({
+		assert.deepEqual(await sendRuntimeMessage({
 			method: 'interceptor_reconnect_content_script_port',
-			connectionName: connectionNames[0],
+			connectionName: connectionNames()[0],
 		}), { reconnected: true })
 		assert.equal(getConnectionCount(), 5)
-		assert.equal(new Set(connectionNames).size, 1)
+		assert.equal(new Set(connectionNames()).size, 1)
 
-		runtime.lastError = { message: 'Could not establish connection. Receiving end does not exist.' }
-		disconnectListeners[4]?.()
+		setLastError({ message: 'Could not establish connection. Receiving end does not exist.' })
+		port(4).disconnect()
 
+		// A missing receiver reconnects after a delay instead of immediately.
 		assert.equal(getConnectionCount(), 5)
-		await new Promise((resolve) => setTimeout(resolve, 300))
+		assert.equal(timers.pendingCount(), 1)
+		timers.runPending()
 		assert.equal(getConnectionCount(), 6)
-		assert.equal(disconnectListeners.length, 6)
-		assert.equal(new Set(connectionNames).size, 1)
+		assert.equal(disconnectListenerCount(), 6)
+		assert.equal(new Set(connectionNames()).size, 1)
 
-		runtime.lastError = { message: 'Extension context invalidated' }
-		disconnectListeners[5]?.()
-		await new Promise((resolve) => setTimeout(resolve, 150))
+		// An invalidated extension context is terminal, so no reconnect is attempted or scheduled.
+		setLastError({ message: 'Extension context invalidated' })
+		port(5).disconnect()
+		assert.equal(timers.pendingCount(), 0)
 
 		assert.equal(getConnectionCount(), 6)
 	})
 }
 
 async function verifyRequestQueuedDuringReconnect(source: ContentScriptSource) {
-	await withContentScriptMock(source, async ({ disconnectListeners, eventListeners, postedMessages, runtimeMessageListeners, connectionNames, runtime, getConnectionCount }) => {
-		runtime.lastError = { message: 'Could not establish connection. Receiving end does not exist.' }
-		disconnectListeners[0]?.()
+	await withContentScriptMock(source, async ({ port, eventListeners, postedMessages, sendRuntimeMessage, connectionNames, setLastError, getConnectionCount }) => {
+		setLastError({ message: 'Could not establish connection. Receiving end does not exist.' })
+		port(0).disconnect()
 		assert.equal(getConnectionCount(), 1)
 
 		await dispatchBridgeRequest(eventListeners)
 		assert.deepEqual(postedMessages, [])
 
-		runtime.lastError = undefined
-		assert.deepEqual(await runtimeMessageListeners[0]?.({
+		setLastError(undefined)
+		assert.deepEqual(await sendRuntimeMessage({
 			method: 'interceptor_reconnect_content_script_port',
-			connectionName: connectionNames[0],
+			connectionName: connectionNames()[0],
 		}), { reconnected: true })
 		assert.equal(getConnectionCount(), 2)
 		assert.equal(postedMessages.length, 1)
@@ -216,25 +241,25 @@ async function verifyRequestQueuedDuringReconnect(source: ContentScriptSource) {
 }
 
 async function verifyUnacknowledgedRequestReplayedAfterDisconnect(source: ContentScriptSource) {
-	await withContentScriptMock(source, async ({ backgroundMessageListeners, disconnectListeners, eventListeners, postedMessages, getConnectionCount }) => {
+	await withContentScriptMock(source, async ({ port, eventListeners, postedMessages, getConnectionCount }) => {
 		await dispatchBridgeRequest(eventListeners)
 		assert.equal(postedMessages.length, 1)
 
-		disconnectListeners[0]?.()
+		port(0).disconnect()
 
 		assert.equal(getConnectionCount(), 2)
 		assert.equal(postedMessages.length, 2)
 		assert.deepEqual(postedMessages[1], postedMessages[0])
 
-		backgroundMessageListeners[1]?.({ type: INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, requestId: 1 })
-		disconnectListeners[1]?.()
+		port(1).receive({ type: INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, requestId: 1 })
+		port(1).disconnect()
 		assert.equal(getConnectionCount(), 3)
 		assert.equal(postedMessages.length, 2)
 	})
 }
 
 async function verifyAcknowledgedReplayableRequestReplayedUntilMarkedSettled(source: ContentScriptSource) {
-	await withContentScriptMock(source, async ({ backgroundMessageListeners, disconnectListeners, eventListeners, postedMessages, getConnectionCount }) => {
+	await withContentScriptMock(source, async ({ port, eventListeners, postedMessages, getConnectionCount }) => {
 		const inpageBridge = await dispatchBridgeRequest(eventListeners, 'example_replayableMethod', true, true)
 		assert.equal(postedMessages.length, 1)
 		assert.deepEqual(postedMessages[0], { data: {
@@ -244,16 +269,16 @@ async function verifyAcknowledgedReplayableRequestReplayedUntilMarkedSettled(sou
 			usingInterceptorWithoutSigner: false,
 			requestId: 1,
 		} })
-		backgroundMessageListeners[0]?.({ type: INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, requestId: 1 })
-		backgroundMessageListeners[0]?.({ interceptorApproved: true, type: 'result', method: 'example_intermediateEvent', requestId: 1, result: [] })
+		port(0).receive({ type: INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, requestId: 1 })
+		port(0).receive({ interceptorApproved: true, type: 'result', method: 'example_intermediateEvent', requestId: 1, result: [] })
 
-		disconnectListeners[0]?.()
+		port(0).disconnect()
 
 		assert.equal(getConnectionCount(), 2)
 		assert.equal(postedMessages.length, 2)
 		assert.deepEqual(postedMessages[1], postedMessages[0])
-		backgroundMessageListeners[1]?.({ type: INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, requestId: 1 })
-		backgroundMessageListeners[1]?.({
+		port(1).receive({ type: INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, requestId: 1 })
+		port(1).receive({
 			interceptorApproved: true,
 			type: 'result',
 			method: 'example_terminalReply',
@@ -261,7 +286,7 @@ async function verifyAcknowledgedReplayableRequestReplayedUntilMarkedSettled(sou
 			result: [],
 			bridgeRequestSettled: true,
 		})
-		await new Promise((resolve) => setTimeout(resolve, 0))
+		await waitForMessagePortDelivery()
 		assert.deepEqual(inpageBridge.receivedMessages.at(-1), {
 			interceptorApproved: true,
 			type: 'result',
@@ -270,7 +295,7 @@ async function verifyAcknowledgedReplayableRequestReplayedUntilMarkedSettled(sou
 			result: [],
 		})
 
-		disconnectListeners[1]?.()
+		port(1).disconnect()
 
 		assert.equal(getConnectionCount(), 3)
 		assert.equal(postedMessages.length, 2)
@@ -279,12 +304,12 @@ async function verifyAcknowledgedReplayableRequestReplayedUntilMarkedSettled(sou
 }
 
 async function verifyRpcMethodDoesNotImplicitlyEnableReplay(source: ContentScriptSource) {
-	await withContentScriptMock(source, async ({ backgroundMessageListeners, disconnectListeners, eventListeners, postedMessages, getConnectionCount }) => {
+	await withContentScriptMock(source, async ({ port, eventListeners, postedMessages, getConnectionCount }) => {
 		await dispatchBridgeRequest(eventListeners, 'eth_requestAccounts')
 		assert.equal(postedMessages.length, 1)
-		backgroundMessageListeners[0]?.({ type: INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, requestId: 1 })
+		port(0).receive({ type: INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, requestId: 1 })
 
-		disconnectListeners[0]?.()
+		port(0).disconnect()
 
 		assert.equal(getConnectionCount(), 2)
 		assert.equal(postedMessages.length, 1)
@@ -292,7 +317,7 @@ async function verifyRpcMethodDoesNotImplicitlyEnableReplay(source: ContentScrip
 }
 
 async function verifyRetainedRequestsReplayBeforeNewerPendingRequests(source: ContentScriptSource) {
-	await withContentScriptMock(source, async ({ backgroundMessageListeners, disconnectListeners, eventListeners, postedMessages }) => {
+	await withContentScriptMock(source, async ({ port, eventListeners, postedMessages }) => {
 		const channel = new MessageChannel()
 		dispatchWindowMessage(eventListeners, new MessageEvent('message', { data: { type: 'interceptor_bridge_port' }, ports: [channel.port2] }))
 		channel.port1.postMessage({
@@ -303,8 +328,8 @@ async function verifyRetainedRequestsReplayBeforeNewerPendingRequests(source: Co
 			requestId: 1,
 			replayOnDisconnect: true,
 		})
-		await new Promise((resolve) => setTimeout(resolve, 0))
-		backgroundMessageListeners[0]?.({ type: INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, requestId: 1 })
+		await waitForMessagePortDelivery()
+		port(0).receive({ type: INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, requestId: 1 })
 		channel.port1.postMessage({
 			type: 'interceptor_bridge_request',
 			method: 'example_pendingMethod',
@@ -312,13 +337,13 @@ async function verifyRetainedRequestsReplayBeforeNewerPendingRequests(source: Co
 			usingInterceptorWithoutSigner: false,
 			requestId: 2,
 		})
-		await new Promise((resolve) => setTimeout(resolve, 0))
+		await waitForMessagePortDelivery()
 		assert.deepEqual(postedMessages.map(getPostedBridgeRequestId), [1, 2])
 
-		disconnectListeners[0]?.()
+		port(0).disconnect()
 
 		assert.deepEqual(postedMessages.map(getPostedBridgeRequestId), [1, 2, 1])
-		backgroundMessageListeners[1]?.({ type: INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, requestId: 1 })
+		port(1).receive({ type: INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, requestId: 1 })
 		assert.deepEqual(postedMessages.map(getPostedBridgeRequestId), [1, 2, 1, 2])
 
 		const latestReceivedRequestIds = new Map<string, number>()
@@ -334,14 +359,14 @@ async function verifyRetainedRequestsReplayBeforeNewerPendingRequests(source: Co
 }
 
 async function verifySettlementRemovesInFlightReplay(source: ContentScriptSource, settleFromStalePort: boolean) {
-	await withContentScriptMock(source, async ({ backgroundMessageListeners, disconnectListeners, eventListeners, postedMessages, getConnectionCount }) => {
+	await withContentScriptMock(source, async ({ port, eventListeners, postedMessages, getConnectionCount }) => {
 		await dispatchBridgeRequest(eventListeners, 'example_replayableMethod', true)
-		backgroundMessageListeners[0]?.({ type: INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, requestId: 1 })
-		disconnectListeners[0]?.()
+		port(0).receive({ type: INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, requestId: 1 })
+		port(0).disconnect()
 		assert.equal(postedMessages.length, 2)
 
 		const settlementPortIndex = settleFromStalePort ? 0 : 1
-		backgroundMessageListeners[settlementPortIndex]?.({
+		port(settlementPortIndex).receive({
 			interceptorApproved: true,
 			type: 'result',
 			method: 'example_terminalReply',
@@ -349,7 +374,7 @@ async function verifySettlementRemovesInFlightReplay(source: ContentScriptSource
 			result: [],
 			bridgeRequestSettled: true,
 		})
-		disconnectListeners[1]?.()
+		port(1).disconnect()
 
 		assert.equal(getConnectionCount(), 3)
 		assert.equal(postedMessages.length, 2)
@@ -357,7 +382,7 @@ async function verifySettlementRemovesInFlightReplay(source: ContentScriptSource
 }
 
 async function verifyAcknowledgementAdvancesQueuedRequests(source: ContentScriptSource) {
-	await withContentScriptMock(source, async ({ backgroundMessageListeners, disconnectListeners, eventListeners, postedMessages, getConnectionCount }) => {
+	await withContentScriptMock(source, async ({ port, eventListeners, postedMessages, getConnectionCount }) => {
 		const channel = new MessageChannel()
 		dispatchWindowMessage(eventListeners, new MessageEvent('message', { data: { type: 'interceptor_bridge_port' }, ports: [channel.port2] }))
 		for (const requestId of [1, 2]) {
@@ -369,7 +394,7 @@ async function verifyAcknowledgementAdvancesQueuedRequests(source: ContentScript
 				requestId,
 			})
 		}
-		await new Promise((resolve) => setTimeout(resolve, 0))
+		await waitForMessagePortDelivery()
 
 		assert.equal(postedMessages.length, 1)
 		assert.deepEqual(postedMessages[0], { data: {
@@ -379,9 +404,9 @@ async function verifyAcknowledgementAdvancesQueuedRequests(source: ContentScript
 			usingInterceptorWithoutSigner: false,
 			requestId: 1,
 		} })
-		backgroundMessageListeners[0]?.({ type: INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, requestId: 2 })
+		port(0).receive({ type: INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, requestId: 2 })
 		assert.equal(postedMessages.length, 1)
-		backgroundMessageListeners[0]?.({ type: INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, requestId: 1 })
+		port(0).receive({ type: INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, requestId: 1 })
 		assert.equal(postedMessages.length, 2)
 		assert.deepEqual(postedMessages[1], { data: {
 			interceptorRequest: true,
@@ -390,9 +415,9 @@ async function verifyAcknowledgementAdvancesQueuedRequests(source: ContentScript
 			usingInterceptorWithoutSigner: false,
 			requestId: 2,
 		} })
-		backgroundMessageListeners[0]?.({ type: INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, requestId: 2 })
+		port(0).receive({ type: INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, requestId: 2 })
 
-		disconnectListeners[0]?.()
+		port(0).disconnect()
 		assert.equal(getConnectionCount(), 2)
 		assert.equal(postedMessages.length, 2)
 		channel.port1.close()
@@ -401,17 +426,16 @@ async function verifyAcknowledgementAdvancesQueuedRequests(source: ContentScript
 }
 
 async function verifyStalePortAcknowledgementIsIgnored(source: ContentScriptSource) {
-	await withContentScriptMock(source, async ({ backgroundMessageListeners, disconnectListeners, postedMessages, getConnectionCount }) => {
-		disconnectListeners[0]?.()
+	await withContentScriptMock(source, async ({ port, postedMessages, getConnectionCount }) => {
+		port(0).disconnect()
 		assert.equal(getConnectionCount(), 2)
 
-		const originalConsoleError = console.error
 		const consoleErrors: unknown[][] = []
-		console.error = (...args: unknown[]) => consoleErrors.push(args)
+		const restoreConsoleError = replaceProperty(console, 'error', (...args: unknown[]) => { consoleErrors.push(args) })
 		try {
-			backgroundMessageListeners[0]?.({ type: INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, requestId: 1 })
+			port(0).receive({ type: INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, requestId: 1 })
 		} finally {
-			console.error = originalConsoleError
+			restoreConsoleError()
 		}
 
 		assert.deepEqual(consoleErrors, [])

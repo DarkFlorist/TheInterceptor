@@ -1,4 +1,4 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { test } from 'bun:test'
 import { createMethodHandlerFor } from '../../app/ts/utils/methodHandlers.js'
 

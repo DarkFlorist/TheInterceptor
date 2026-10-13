@@ -1,10 +1,10 @@
 import { identifyAddress } from '../../app/ts/background/metadataUtils.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { describe, test } from 'bun:test'
-import * as assert from 'assert'
-import { MockRequestHandler } from '../MockRequestHandler.js'
+import * as assert from 'node:assert'
+import { createMockRequestHandler } from '../MockRequestHandler.js'
 
-const requestHandler = new MockRequestHandler()
+const requestHandler = createMockRequestHandler()
 
 const rpcEntry = {
 	name: 'Goerli',
