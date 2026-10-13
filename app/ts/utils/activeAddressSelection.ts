@@ -1,3 +1,4 @@
+import type { Settings } from '../types/interceptor-messages.js'
 import { doAddressBookChainIdsMatch, type AddressBookEntries, type AddressBookEntry } from '../types/addressBookTypes.js'
 import type { TabState } from '../types/user-interface-types.js'
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from './addressBook.js'
@@ -86,7 +87,7 @@ export function getDisplayedSigningAddressSelection(displayedSigningAddress: big
 export function resolveSigningSafe(configuredSafeAddress: bigint | undefined, activeChainId: bigint | undefined, signerAccounts: readonly bigint[], activeAddresses: AddressBookEntries) {
 	if (configuredSafeAddress === undefined || activeChainId === undefined) return undefined
 	return getSelectableActiveAddresses(activeAddresses, false, activeChainId, signerAccounts)
-		.find((entry) => entry.address === configuredSafeAddress)
+		.find((entry) => entry.type === 'safe' && entry.address === configuredSafeAddress)
 }
 
 export function isActiveSigningSafe(activeAddress: AddressBookEntry | undefined, simulationMode: boolean, configuredSafeAddress: bigint | undefined, activeChainId: bigint | undefined, signerAccounts: readonly bigint[], activeAddresses: AddressBookEntries) {
@@ -123,12 +124,12 @@ export function includePersistedAddressBookEntry(activeAddresses: AddressBookEnt
 export function getSelectableActiveAddresses(activeAddresses: AddressBookEntries, simulationMode: boolean, activeChainId: bigint | undefined, signerAccounts: readonly bigint[]) {
 	if (simulationMode) return activeAddresses.filter((entry) => entry.type !== 'safe' || entry.chainId === activeChainId)
 
+	// Selection is a display preference, not signing authority; admission rejects unbound contacts and revalidates wallet revisions.
 	const selectedSignerAddress = signerAccounts[0]
-	if (selectedSignerAddress === undefined) return []
 	return activeAddresses.filter((entry) =>
-		entry.type === 'safe'
+		entry.type !== 'safe' ? entry.chainId === 'AllChains' || (entry.chainId ?? 1n) === activeChainId : entry.type === 'safe'
 		&& entry.chainId === activeChainId
-		&& entry.safeSignerAddresses?.includes(selectedSignerAddress) === true
+		&& (entry.safeSigningSignerAddress !== undefined && entry.safeSignerAddresses?.includes(entry.safeSigningSignerAddress) === true || selectedSignerAddress !== undefined && entry.safeSignerAddresses?.includes(selectedSignerAddress) === true)
 	)
 }
 
@@ -157,4 +158,10 @@ export function assertActiveAddressSelectionAllowed(address: bigint | 'signer', 
 	throw new Error(simulationMode
 		? 'The selected address is not available for simulation.'
 		: 'The selected address is not available for the current signing wallet.')
+}
+
+/** Explicit selection wins; display callers supply an eligible Safe and live account instead of the configured Safe candidate. */
+export function getActiveSigningAddress(settings: Pick<Settings, 'selectedSigningAddress' | 'activeSigningSafeAddress'>, eligibleState?: { readonly safeAddress: bigint | undefined, readonly signerAddress: bigint | undefined }) {
+	const safeAddress = eligibleState === undefined ? settings.activeSigningSafeAddress : eligibleState.safeAddress
+	return settings.selectedSigningAddress ?? safeAddress ?? eligibleState?.signerAddress
 }

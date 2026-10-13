@@ -1,3 +1,4 @@
+import { SigningWalletBinding } from './signingWallet.js'
 import * as funtypes from 'funtypes'
 import { PopupOrTabId, Website } from './websiteAccessTypes.js'
 import { AddressBookEntry } from './addressBookTypes.js'
@@ -100,6 +101,8 @@ const SimulatedPendingTransactionBase = funtypes.ReadonlyObject({
 	website: Website,
 	approvalStatus: PendingTransactionApprovalStatus,
 }).And(funtypes.ReadonlyPartial({
+	// Immutable admission snapshot; direct-signing revision, readiness and phase live only in DirectSigningRecord.
+	signingWalletBinding: SigningWalletBinding, signingChainId: EthereumQuantity,
 	safeTransaction: SafeTransactionSigningRequest,
 	safeExecutionSignerAddress: EthereumAddress,
 	safeExecutionOriginalRequestParameters: SendTransactionParams,
@@ -153,7 +156,7 @@ const PendingSignableMessage = funtypes.Intersect(
 		website: Website,
 		activeAddress: EthereumAddress,
 		approvalStatus: PendingTransactionApprovalStatus,
-	}).And(funtypes.ReadonlyPartial({ safeMessageCoSignSnapshot: SafeMessageCoSignSnapshot })),
+	}).And(funtypes.ReadonlyPartial({ signingWalletBinding: SigningWalletBinding, signingChainId: EthereumQuantity, safeMessageCoSignSnapshot: SafeMessageCoSignSnapshot })),
 	funtypes.Union(
 		funtypes.ReadonlyObject({ transactionOrMessageCreationStatus: funtypes.Literal('Simulated'), visualizedPersonalSignRequest: VisualizedPersonalSignRequest }),
 		funtypes.ReadonlyObject({ transactionOrMessageCreationStatus: funtypes.Union(funtypes.Literal('Crafting'), funtypes.Literal('Simulating')) })
@@ -171,7 +174,7 @@ const PopupPendingSignableMessageBase = funtypes.ReadonlyObject({
 	website: Website,
 	activeAddress: EthereumAddress,
 	approvalStatus: PendingTransactionApprovalStatus,
-})
+}).And(funtypes.ReadonlyPartial({ signingWalletBinding: SigningWalletBinding, signingChainId: EthereumQuantity }))
 
 export type PopupPendingSignableMessage = funtypes.Static<typeof PopupPendingSignableMessage>
 export const PopupPendingSignableMessage = funtypes.Intersect(

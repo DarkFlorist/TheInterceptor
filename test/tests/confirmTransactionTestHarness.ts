@@ -240,7 +240,7 @@ export async function loadModules() {
 		getSafeTransactionStacks: storageVariables.getSafeTransactionStacks,
 		getInterceptorTransactionStack: storageVariables.getInterceptorTransactionStack,
 		setFetchSimulationStackRequestPromise: storageVariables.setFetchSimulationStackRequestPromise,
-		getUserAddressBookEntries: storageVariables.getUserAddressBookEntries,
+		getUserAddressBookEntries: (await import('../../app/ts/background/addressBookStore.js')).getUserAddressBookEntries,
 		appendPendingTransactionOrMessage: storageVariables.appendPendingTransactionOrMessage,
 		getPendingTerminalReplies: pendingTerminalReplies.getPendingTerminalReplies,
 		prunePendingTerminalRepliesForMissingTabs: pendingTerminalReplies.prunePendingTerminalRepliesForMissingTabs,
@@ -254,7 +254,7 @@ export async function loadModules() {
 			return updated.safeTransactionStacks
 		},
 		updateTabState: storageVariables.updateTabState,
-		updateUserAddressBookEntries: storageVariables.updateUserAddressBookEntries,
+		updateAddressBookAndSigningWalletBindings: (await import('../../app/ts/background/signingAddressBookCoordinator.js')).updateAddressBookAndSigningWalletBindings,
 		flushPendingTerminalRepliesForSocket,
 		flushPendingTerminalRepliesForConnectedPortWithRetry: terminalReplyDelivery.flushPendingTerminalRepliesForConnectedPortWithRetry,
 		queueTerminalReply: terminalReplyDelivery.queueTerminalReply,

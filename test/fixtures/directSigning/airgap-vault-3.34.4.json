@@ -1,0 +1,73 @@
+{
+  "vault": "3.34.4",
+  "versions": {
+    "@airgap/ethereum": "0.13.46",
+    "@airgap/coinlib-core": "0.13.46",
+    "@airgap/crypto": "0.13.46",
+    "@airgap/module-kit": "0.13.46",
+    "@airgap/serializer": "0.13.46",
+    "@keystonehq/bc-ur-registry-eth": "0.19.1",
+    "@ngraveio/bc-ur": "1.1.6",
+    "@ethereumjs/tx": "3.4.0"
+  },
+  "accountExport": "0xa503582103bf3ceb2338048af51d420c251618c163f70b9c0f65917612607d8f6a47a15058045820b7af3b0710f62509668a737f2ee45beb0d59bc370a18c08df19b6267b75bd07d06d90130a20186182cf5183cf500f5021a02b11960081a3442193e0972416972476170202d205265666572656e6365",
+  "account": {
+    "address": "0x022b971dFF0C43305e691DEd7a14367AF19D6407",
+    "publicKey": "0x03844a5d329470697de9926c9c98839ea33b6dd9507a896194ae2b91d71faa16d6",
+    "derivationPath": "m/44'/60'/0'/0/0",
+    "sourceFingerprint": 45160800
+  },
+  "requestId": "11111111-1111-4111-8111-111111111111",
+  "vectors": [
+    {
+      "method": "eth_sendTransaction",
+      "data": "0x02ef0107843b9aca008506fc23ac0082520894022b971dff0c43305e691ded7a14367af19d640787038d7ea4c6800080c0",
+      "request": "0xa701d825501111111111114111811111111111111102583102ef0107843b9aca008506fc23ac0082520894022b971dff0c43305e691ded7a14367af19d640787038d7ea4c6800080c00304040105d90130a2018a182cf5183cf500f500f400f4021a02b119600654022b971dff0c43305e691ded7a14367af19d6407076b496e746572636570746f72",
+      "response": "0xa201d82550111111111111411181111111111111110258418bee60fb2e049e39f8075ac469b016fbe9b70d2153b4cfc125465286a4080b60390e60177ecf4f6f674559c328d09f561f9a68a5adf82fbc37c16877c92d74d600",
+      "responseFrames": [
+        "ur:eth-signature/1-3/lpadaxcshkcyfzmkieoyhdckoeadtpdagdbybybybybybyfpbylybybybybybybybyaohdfpluwyhnzodmaavllgsbws",
+        "ur:eth-signature/2-3/lpaoaxcshkcyfzmkieoyhdcknnesyaathtssinpfcmzowlrlbtclguqztksedafggmlnoxaybdhnesbahnchfllndmdm",
+        "ur:eth-signature/3-3/lpaxaxcshkcyfzmkieoyhdckkbtkgwjliofehksrdetinehfctnyisonpmyadlrfemseisktsodpjytbaeaekpwevteo",
+        "ur:eth-signature/4-3/lpaaaxcshkcyfzmkieoyhdckkbtkgwjliofehksrdetinehfctnyisonpmyadlrfemseisktsodpjytbaeaelacscfms",
+        "ur:eth-signature/5-3/lpahaxcshkcyfzmkieoyhdcknnesyaathtssinpfcmzowlrlbtclguqztksedafggmlnoxaybdhnesbahnchprjktsle",
+        "ur:eth-signature/6-3/lpamaxcshkcyfzmkieoyhdcknnesyaathtssinpfcmzowlrlbtclguqztksedafggmlnoxaybdhnesbahnchgyfthnde",
+        "ur:eth-signature/7-3/lpataxcshkcyfzmkieoyhdcknnesyaathtssinpfcmzowlrlbtclguqztksedafggmlnoxaybdhnesbahnchrhdpwtld",
+        "ur:eth-signature/8-3/lpayaxcshkcyfzmkieoyhdckkbtkgwjliofehksrdetinehfctnyisonpmyadlrfemseisktsodpjytbaeaerkuosbnt",
+        "ur:eth-signature/9-3/lpasaxcshkcyfzmkieoyhdcknnesyaathtssinpfcmzowlrlbtclguqztksedafggmlnoxaybdhnesbahnchldrlahla",
+        "ur:eth-signature/10-3/lpbkaxcshkcyfzmkieoyhdckoeadtpdagdbybybybybybyfpbylybybybybybybybyaohdfpluwyhnzodmaadprfvtfp"
+      ],
+      "verified": "0x02f8720107843b9aca008506fc23ac0082520894022b971dff0c43305e691ded7a14367af19d640787038d7ea4c6800080c080a08bee60fb2e049e39f8075ac469b016fbe9b70d2153b4cfc125465286a4080b60a0390e60177ecf4f6f674559c328d09f561f9a68a5adf82fbc37c16877c92d74d6"
+    },
+    {
+      "method": "personal_sign",
+      "data": "0x000affc3a948656c6c6f",
+      "request": "0xa701d8255011111111111141118111111111111111024a000affc3a948656c6c6f0303040105d90130a2018a182cf5183cf500f500f400f4021a02b119600654022b971dff0c43305e691ded7a14367af19d6407076b496e746572636570746f72",
+      "response": "0xa201d8255011111111111141118111111111111111025841401b6e3a39410b1a6326e0db839cd535b8de852c74db6273cb7b5767239c33631a58882d13867a245fd9428c845e92bc0df33aceae6b8641a1ff8c24ae9ab37601",
+      "responseFrames": [
+        "ur:eth-signature/1-3/lpadaxcshkcydpoypajlhdckoeadtpdagdbybybybybybyfpbylybybybybybybybyaohdfpfzcwjtftesfpsokiaork",
+        "ur:eth-signature/2-3/lpaoaxcshkcydpoypajlhdckbdcyiadsvtuylsnstlecrouelpdwjyuyidjksbkghgiocnnseoiacyhdlodpfniypfws",
+        "ur:eth-signature/3-3/lpaxaxcshkcydpoypajlhdckbwlnkndkhetafwlklrhymorfbtwffttopljelnfpoyzmlkdkplnyqdkoadaemyskeomo",
+        "ur:eth-signature/4-3/lpaaaxcshkcydpoypajlhdckbdcyiadsvtuylsnstlecrouelpdwjyuyidjksbkghgiocnnseoiacyhdlodpcllrtawd",
+        "ur:eth-signature/5-3/lpahaxcshkcydpoypajlhdckrdntsediwsbwtiadfzknfrcnnlhyheaautashhdnvdnyylytutvostbbpfjzlrkphehs",
+        "ur:eth-signature/6-3/lpamaxcshkcydpoypajlhdckoeadtpdagdbybybybybybyfpbylybybybybybybybyaohdfpfzcwjtftesfpfnlozoct"
+      ],
+      "verified": "0x401b6e3a39410b1a6326e0db839cd535b8de852c74db6273cb7b5767239c33631a58882d13867a245fd9428c845e92bc0df33aceae6b8641a1ff8c24ae9ab37601"
+    },
+    {
+      "method": "eth_signTypedData_v4",
+      "data": "{\"types\":{\"EIP712Domain\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"chainId\",\"type\":\"uint256\"}],\"Message\":[{\"name\":\"values\",\"type\":\"uint256[]\"},{\"name\":\"contents\",\"type\":\"string\"}]},\"primaryType\":\"Message\",\"domain\":{\"name\":\"Interceptor\",\"chainId\":1},\"message\":{\"values\":[\"1\",\"2\",\"9007199254740993\"],\"contents\":\"AirGap reference\"}}",
+      "request": "0xa701d8255011111111111141118111111111111111025901497b227479706573223a7b22454950373132446f6d61696e223a5b7b226e616d65223a226e616d65222c2274797065223a22737472696e67227d2c7b226e616d65223a22636861696e4964222c2274797065223a2275696e74323536227d5d2c224d657373616765223a5b7b226e616d65223a2276616c756573222c2274797065223a2275696e743235365b5d227d2c7b226e616d65223a22636f6e74656e7473222c2274797065223a22737472696e67227d5d7d2c227072696d61727954797065223a224d657373616765222c22646f6d61696e223a7b226e616d65223a22496e746572636570746f72222c22636861696e4964223a317d2c226d657373616765223a7b2276616c756573223a5b2231222c2232222c2239303037313939323534373430393933225d2c22636f6e74656e7473223a22416972476170207265666572656e6365227d7d0302040105d90130a2018a182cf5183cf500f500f400f4021a02b119600654022b971dff0c43305e691ded7a14367af19d6407076b496e746572636570746f72",
+      "response": "0xa201d8255011111111111141118111111111111111025841f28db86f550a48740393c380db4a945f71e66002f3d5a958a9e697a222e507ee74b907ff7c48152b1048eedcac85450e02162a9ec98c0c8a41bea7028a674b431c",
+      "responseFrames": [
+        "ur:eth-signature/1-3/lpadaxcshkcywkwkluaehdckoeadtpdagdbybybybybybyfpbylybybybybybybybyaohdfpwzlgrojlgobkpffyfsjp",
+        "ur:eth-signature/2-3/lpaoaxcshkcywkwkluaehdckfdjyaxmusrlauygemwhejsvahnaowftlpthdptvamsoecpvwatwyjyrhatzmcpoxpsmk",
+        "ur:eth-signature/3-3/lpaxaxcshkcywkwkluaehdckkefdbzdnbefdwyuopslpfebaaocmdrnnsolkbnlefprnosaoleiogrfxceaelewlvsyn",
+        "ur:eth-signature/4-3/lpaaaxcshkcywkwkluaehdckeefncmrotespecmtettneevsidbbtagrhntyonjztbcelpvdlgldfhzscwzmhkeczmde",
+        "ur:eth-signature/5-3/lpahaxcshkcywkwkluaehdckfdjyaxmusrlauygemwhejsvahnaowftlpthdptvamsoecpvwatwyjyrhatzmtsgygofn",
+        "ur:eth-signature/6-3/lpamaxcshkcywkwkluaehdckkefdbzdnbefdwyuopslpfebaaocmdrnnsolkbnlefprnosaoleiogrfxceaejyfwengy",
+        "ur:eth-signature/7-3/lpataxcshkcywkwkluaehdckuegasnbafzhkzmsnrymwghgwbwmsfrmytpntcandgdrfzmfxkswdwfdwgabksbtljtsa"
+      ],
+      "verified": "0xf28db86f550a48740393c380db4a945f71e66002f3d5a958a9e697a222e507ee74b907ff7c48152b1048eedcac85450e02162a9ec98c0c8a41bea7028a674b431c"
+    }
+  ]
+}

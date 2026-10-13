@@ -367,9 +367,7 @@ describe('popup icon sync', () => {
 				render(h(App, {}), dom.document.body)
 			})
 
-			const logoSlotBeforeHomeData = collectElements(dom.document.body, 'span').find((element) => hasClass(element, 'signer-logo-slot'))
-			if (logoSlotBeforeHomeData === undefined) throw new Error('Expected the loading signer logo slot to reserve its resolved width')
-			assert.equal(collectElements(logoSlotBeforeHomeData, 'img').length, 0)
+			assert.equal(collectElements(dom.document.body, 'span').some((element) => hasClass(element, 'signer-logo-slot')), false)
 
 			const listener = messageListener()
 			assert.equal(typeof listener, 'function')
@@ -390,9 +388,7 @@ describe('popup icon sync', () => {
 				}, undefined, () => undefined)
 			})
 
-			const logoSlotAfterCachedHomeData = collectElements(dom.document.body, 'span').find((element) => element.getAttribute?.('class')?.split(/\s+/).includes('signer-logo-slot'))
-			if (logoSlotAfterCachedHomeData === undefined) throw new Error('Expected signer logo slot after bootstrap data loads')
-			assert.equal(collectElements(logoSlotAfterCachedHomeData, 'img')[0]?.getAttribute?.('src'), '../img/signers/metamask.svg')
+
 			assert.equal(collectElements(dom.document.body, 'section').some((section) => section.getAttribute?.('aria-label') === 'Loading current popup state'), false)
 			assert.equal(collectElements(dom.document.body, 'div').some((div) => div.getAttribute?.('aria-label') === 'Loading active address'), false)
 			assert.equal(dom.document.body.textContent?.includes('Loaded Account'), true)

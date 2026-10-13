@@ -1,3 +1,5 @@
+import { getBrowserProviderId, isUuidV4, isProviderRdns } from '../../ts/utils/browserProviderIdentity.js'
+
 const SAFE_APPS_RESPONSE_VERSION = '9.1.0'
 const SAFE_APPS_PENDING_REQUEST_LIMIT = 32
 
@@ -290,7 +292,7 @@ type InterceptedRequestForwardWithError = InterceptedRequestBase & {
 	}
 }
 
-type InterceptedRequestForwardToSigner = InterceptedRequestBase & { readonly type: 'forwardToSigner', readonly replyWithSignersReply?: true }
+type InterceptedRequestForwardToSigner = InterceptedRequestBase & { readonly type: 'forwardToSigner', readonly replyWithSignersReply?: true, readonly expectedProviderId?: string }
 
 type InterceptedRequestForward = InterceptedRequestForwardWithResult | InterceptedRequestForwardWithError | InterceptedRequestForwardToSigner
 
@@ -308,6 +310,7 @@ function chainIdToNetworkVersion(chainId: string) {
 }
 
 type InterceptorApprovedMessageCandidate = {
+	readonly expectedProviderId?: unknown
 	readonly walletSwitchRequestId?: unknown
 	readonly interceptorApproved?: unknown
 	readonly method?: unknown
@@ -356,8 +359,7 @@ const isEip6963MetaMaskInfo = (value: unknown): value is EIP6963ProviderInfo & {
 	return typeof value === 'object'
 		&& value !== null
 		&& 'uuid' in value
-		&& typeof value.uuid === 'string'
-		&& /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.uuid)
+		&& isUuidV4(value.uuid)
 		&& 'name' in value
 		&& value.name === 'MetaMask'
 		&& 'icon' in value
@@ -406,6 +408,7 @@ function parseInterceptorApprovedMessage(data: unknown): InterceptedRequestForwa
 		...base,
 		type: 'forwardToSigner',
 		...(data.replyWithSignersReply === true ? { replyWithSignersReply: true as const } : {}),
+		...(typeof data.expectedProviderId === 'string' ? { expectedProviderId: data.expectedProviderId } : {}),
 	}
 	const hasResult = 'result' in data
 	const maybeError = data.error
@@ -862,11 +865,39 @@ class InterceptorMessageListener {
 		}
 	}
 
+	private readonly pendingBridgeDiagnostics: string[] = []
+
+	private readonly bridgeReady = new InterceptorFuture<boolean>()
+
 	private readonly connectToContentScript = () => {
-		const channel = new MessageChannel()
-		this.extensionMessagePort = channel.port1
-		channel.port1.onmessage = (messageEvent: MessageEvent<unknown>) => { void this.onMessage(messageEvent) }
-		window.postMessage({ type: INTERCEPTOR_BRIDGE_PORT_MESSAGE }, '*', [channel.port2])
+		const bootstrap = new MessageChannel()
+		let handshakeFinished = false
+		// Fail closed rather than re-exposing bootstrap ports after page scripts have started.
+		const handshakeTimeout = setTimeout(() => {
+			handshakeFinished = true
+			bootstrap.port1.close()
+			this.pendingBridgeDiagnostics.length = 0
+			this.bridgeReady.resolve(false)
+		}, 3000)
+		bootstrap.port1.addEventListener('message', (event: MessageEvent<unknown>) => {
+			// Native MessagePort delivery is trusted; dispatchEvent(new MessageEvent(...)) is not. The browser harness verifies both.
+			if (!event.isTrusted || handshakeFinished || event.data !== 'interceptor_bridge_ready') return
+			const port = event.ports[0]
+			if (port === undefined) return
+			handshakeFinished = true
+			clearTimeout(handshakeTimeout)
+			this.extensionMessagePort = port
+			port.addEventListener('message', (messageEvent: MessageEvent<unknown>) => {
+				if (messageEvent.isTrusted) void this.onMessage(messageEvent)
+			})
+			port.start()
+			bootstrap.port1.close()
+			this.bridgeReady.resolve(true)
+			for (const diagnostics of this.pendingBridgeDiagnostics.splice(0)) this.reportInterceptorError(diagnostics)
+		})
+		bootstrap.port1.start()
+		// Only bootstrap crosses window; the isolated listener returns a fresh channel through this private endpoint before page listeners can use the exposed end.
+		window.postMessage({ type: INTERCEPTOR_BRIDGE_PORT_MESSAGE }, '*', [bootstrap.port2])
 	}
 
 	private readonly sendMessageToBackgroundPage = async (messageMethodAndParams: MessageMethodAndParams) => {
@@ -880,7 +911,7 @@ class InterceptorMessageListener {
 			requestScopedProviderEventCallbacks: [],
 		})
 		try {
-			if (this.extensionMessagePort === undefined) throw new Error('Interceptor content script bridge is not connected')
+			if (!await this.bridgeReady || this.extensionMessagePort === undefined) throw new EthereumJsonRpcError(METAMASK_ERROR_PROVIDER_DISCONNECTED, 'Interceptor content script bridge did not connect. Reload the page and try again.')
 			const message: BridgeRequest = {
 				type: INTERCEPTOR_BRIDGE_REQUEST_MESSAGE,
 				method: messageMethodAndParams.method,
@@ -924,7 +955,10 @@ class InterceptorMessageListener {
 
 	private readonly reportInterceptorError = (diagnostics: string) => {
 		try {
-			if (this.extensionMessagePort === undefined) return
+			if (this.extensionMessagePort === undefined) {
+				if (this.pendingBridgeDiagnostics.length < 32) this.pendingBridgeDiagnostics.push(diagnostics)
+				return
+			}
 			const message: BridgeRequest = {
 				type: INTERCEPTOR_BRIDGE_REQUEST_MESSAGE,
 				method: 'InterceptorError',
@@ -1046,6 +1080,47 @@ class InterceptorMessageListener {
 		}
 	}
 
+	private readonly ownProviderAnnouncements = new WeakSet<Event>()
+	private readonly providerIdentities = new Map<WindowEthereum, { rdns: string, uuid: string, ambiguous: boolean }>()
+	private providerIdentityLimitExceeded = false
+
+	private readonly getSignerProviderIdentity = () => {
+		if (this.providerIdentityLimitExceeded) return { ambiguous: true }
+		const identity = this.signerWindowEthereumProvider === undefined ? undefined : this.providerIdentities.get(this.signerWindowEthereumProvider)
+		return identity === undefined ? undefined : { rdns: identity.rdns, ambiguous: identity.ambiguous }
+	}
+
+	private readonly observeProviderIdentity = (event: Event) => {
+		try {
+			if (!this.acceptingAnnouncedMetaMaskProviders || this.ownProviderAnnouncements.has(event) || !('detail' in event) || !isEip6963AnnouncementDetail(event.detail)) return
+			const { provider, info } = event.detail
+			if (!InterceptorMessageListener.hasUsableSignerInterface(provider) || provider.isInterceptor && provider !== this.signerWindowEthereumProvider) return
+			if (typeof info !== 'object' || info === null || !('rdns' in info) || !('uuid' in info)) return
+			const { rdns: announcedRdns, uuid: announcedUuid } = info
+			const rdns = typeof announcedRdns === 'string' ? announcedRdns.toLowerCase() : announcedRdns
+			const uuid = typeof announcedUuid === 'string' ? announcedUuid.toLowerCase() : announcedUuid
+			if (!isProviderRdns(rdns)) return
+			if (!isUuidV4(uuid)) return
+			const existing = this.providerIdentities.get(provider)
+			if (existing === undefined && this.providerIdentities.size >= 64) this.providerIdentityLimitExceeded = true
+			else {
+				const identity = existing ?? { rdns, uuid, ambiguous: false }
+				// UUIDs describe announcements, not a persistent wallet identity.
+				if (identity.rdns !== rdns) identity.ambiguous = true
+				identity.uuid = uuid
+				for (const [otherProvider, other] of this.providerIdentities) {
+					if (otherProvider !== provider && (other.rdns === rdns || other.uuid === uuid)) {
+						other.ambiguous = true
+						identity.ambiguous = true
+					}
+				}
+				this.providerIdentities.set(provider, identity)
+			}
+		} catch (error: unknown) {
+			this.reportSignerDiscoveryError('read provider identity', error)
+		}
+	}
+
 	private readonly setSignerProvider = (provider: WindowEthereum | undefined, request: EthereumRequest | undefined, fallbackRequest: EthereumRequest | undefined = undefined) => {
 		if (this.signerWindowEthereumProvider !== provider) this.advanceSignerProviderGeneration()
 		this.signerWindowEthereumProvider = provider
@@ -1062,6 +1137,10 @@ class InterceptorMessageListener {
 
 	private readonly discoverAnnouncedMetaMaskProvider = () => {
 		if (this.acceptingAnnouncedMetaMaskProviders) return
+		const previousProvider = this.signerWindowEthereumProvider
+		const previousIdentity = JSON.stringify(this.getSignerProviderIdentity())
+		// EIP-6963 metadata is self-reported; accept it only during our synchronous discovery, never as page authentication.
+		window.addEventListener('eip6963:announceProvider', this.observeProviderIdentity)
 		window.addEventListener('eip6963:announceProvider', this.useAnnouncedMetaMaskProvider)
 		this.acceptingAnnouncedMetaMaskProviders = true
 		try {
@@ -1071,7 +1150,9 @@ class InterceptorMessageListener {
 		} finally {
 			this.acceptingAnnouncedMetaMaskProviders = false
 			window.removeEventListener('eip6963:announceProvider', this.useAnnouncedMetaMaskProvider)
+			window.removeEventListener('eip6963:announceProvider', this.observeProviderIdentity)
 		}
+		if (previousProvider !== this.signerWindowEthereumProvider || previousIdentity !== JSON.stringify(this.getSignerProviderIdentity())) void this.connectToSigner(this.signerName)
 	}
 
 	private readonly stopSignerDiscoveryRetries = () => {
@@ -1169,7 +1250,7 @@ class InterceptorMessageListener {
 		this.announcedMetaMaskUuid = info.uuid
 		this.setSignerProvider(preparedSigner.provider, preparedSigner.request)
 		this.connected = preparedSigner.connected
-		this.connectToSigner('MetaMask')
+		this.signerName = 'MetaMask'
 	}
 
 	private readonly WindowEthereumSend = (payload: { readonly id: string | number | null, readonly method: string, readonly params: readonly unknown[] } | string, maybeCallBack: undefined | LegacyJsonRpcCallback) => {
@@ -1726,6 +1807,11 @@ class InterceptorMessageListener {
 			if (this.signerWindowEthereumRequest === undefined) throw new Error('Interceptor is in wallet mode and should not forward to an external wallet')
 
 			const sendToSignerWithCatchError = async () => {
+				const identity = this.getSignerProviderIdentity()
+				const providerId = getBrowserProviderId(this.signerName, identity)
+				if (forwardRequest.expectedProviderId !== undefined && (providerId === undefined || forwardRequest.expectedProviderId !== providerId)) {
+					return { success: false as const, forwardRequest, error: { code: 4100, message: 'Select the expected saved browser wallet before continuing. Provider identity is different or ambiguous.' }, signerProviderGeneration: this.signerProviderGeneration }
+				}
 				const outcome = await this.requestFromCurrentSigner({ method: forwardRequest.method, params: 'params' in forwardRequest ? forwardRequest.params : [] })
 				if (outcome.type === 'success') return { success: true as const, forwardRequest, reply: outcome.reply, signerProviderGeneration: outcome.signerProviderGeneration }
 				if (outcome.type === 'error') return { success: false as const, forwardRequest, error: this.normalizeSignerErrorForBackground(outcome.error), signerProviderGeneration: outcome.signerProviderGeneration }
@@ -1798,7 +1884,9 @@ class InterceptorMessageListener {
 		}
 		const selectionGeneration = ++this.signerSelectionGeneration
 		const connectToSigner = async (): Promise<{ metamaskCompatibilityMode: boolean }> => {
-			const connectSignerReply = await this.sendInternalMessageToBackgroundPage({ method: 'connected_to_signer', params: [signerName !== 'NoSigner', signerName, signerProviderGeneration] })
+			const providerIdentity = this.getSignerProviderIdentity()
+			const params = providerIdentity === undefined ? [signerName !== 'NoSigner', signerName, signerProviderGeneration] : [signerName !== 'NoSigner', signerName, signerProviderGeneration, providerIdentity]
+			const connectSignerReply = await this.sendInternalMessageToBackgroundPage({ method: 'connected_to_signer', params })
 			if (typeof connectSignerReply === 'object' && connectSignerReply !== null
 				&& 'metamaskCompatibilityMode' in connectSignerReply && connectSignerReply.metamaskCompatibilityMode !== null
 				&& connectSignerReply.metamaskCompatibilityMode !== undefined && typeof connectSignerReply.metamaskCompatibilityMode === 'boolean') {
@@ -1874,7 +1962,9 @@ class InterceptorMessageListener {
 			if (inpageWindow.ethereum === undefined || !inpageWindow.ethereum.isInterceptor) interceptorMessageListener.injectEthereumIntoWindow()
 			const provider = inpageWindow.ethereum
 			if (provider === undefined) throw new Error('The Interceptor provider was not initialized')
-			window.dispatchEvent(new CustomEvent('eip6963:announceProvider', { detail: Object.freeze({ info, provider }) }))
+			const announcement = new CustomEvent('eip6963:announceProvider', { detail: Object.freeze({ info, provider }) })
+			interceptorMessageListener.ownProviderAnnouncements.add(announcement)
+			window.dispatchEvent(announcement)
 		}
 		window.addEventListener('eip6963:requestProvider', () => { announceProvider() } )
 		announceProvider()
