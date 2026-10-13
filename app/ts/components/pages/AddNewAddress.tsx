@@ -475,7 +475,7 @@ export function AddNewAddress(param: AddAddressParam) {
 		lastSuccessfulSafeIdentification.value = undefined
 	}
 
-	// A block explorer lookup belongs to one window, address and chain, so changing any of them (or the active address) discards it; edits to other fields keep it.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: a block explorer lookup belongs to one window, address and chain, so changing any of them (or the active address) discards it, while edits to other fields of the window state keep it.
 	useEffect(() => {
 		activeAddress.value = param.activeAddress
 		if (param.modifyAddressWindowState.value !== undefined) {

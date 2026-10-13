@@ -137,7 +137,7 @@ export function GnosisSafeVisualizer(param: GnosisSafeVisualizerParams) {
 		})
 	}
 
-	// Restart only when the simulated account or message identity changes; re-renders with an equal message object keep the current simulation.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: restart only when the simulated account or message identity changes, not when requestToSimulate is recreated on a render or the parent passes an equal message object.
 	useEffect(() => {
 		activeAddress.value = param.activeAddress
 		simulateExecutionReply.value = undefined

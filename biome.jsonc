@@ -6,7 +6,7 @@
 		"useIgnoreFile": true
 	},
 	"files": {
-		"includes": ["app/**/*.ts", "app/**/*.tsx", "app/css/interceptor-*.css", "test/**/*.ts", "build/**/*.mts"],
+		"includes": ["app/**/*.ts", "app/**/*.tsx", "app/css/interceptor-*.css", "test/**/*.ts", "test/**/*.tsx", "build/**/*.mts", "scripts/**/*.mts"],
 		"ignoreUnknown": true
 	},
 	"formatter": {
@@ -31,21 +31,48 @@
 				"useOptionalChain": "error"
 			},
 			"correctness": {
+				"noConstantCondition": "error",
+				"noSwitchDeclarations": "error",
+				"noUnreachable": "error",
+				"noUnsafeFinally": "error",
+				"noUnusedFunctionParameters": "error",
 				"noUnusedImports": "error",
+				"noUnusedVariables": "error",
+				"useExhaustiveDependencies": {
+					"level": "error",
+					"options": {
+						"reportMissingDependenciesArray": true,
+						// Biome already knows the built-in preact/hooks; these Preact signal hooks return the same signal object on every render, like useRef.
+						// useSignalEffect has no dependency array because it tracks the signals it reads, so it is intentionally not listed.
+						"hooks": [
+							{ "name": "useSignal", "stableResult": true },
+							{ "name": "useComputed", "stableResult": true },
+							{ "name": "useOptionalSignal", "stableResult": true },
+							{ "name": "useOptionalComputed", "stableResult": true },
+							// useAsyncState memoizes the functions it returns, so they keep their identity across renders.
+							{ "name": "useAsyncState", "stableResult": true }
+						]
+					}
+				},
+				"useHookAtTopLevel": "error",
 				"useImageSize": "error",
 				"useJsxKeyInIterable": "error"
 			},
 			"style": {
 				"noInferrableTypes": "error",
+				"noNonNullAssertion": "error",
+				"noParameterAssign": "error",
 				"noUnusedTemplateLiteral": "error",
 				"noUselessElse": "error",
 				"useConsistentArrayType": "error",
 				"useConst": "error",
 				"useDefaultParameterLast": "error",
-				"useImportType": "error"
+				"useImportType": "error",
+				"useNodejsImportProtocol": "error"
 			},
 			"suspicious": {
 				"noAssignInExpressions": "error",
+				"noAsyncPromiseExecutor": "error",
 				"noConsole": {
 					"level": "error",
 					"options": {
@@ -54,9 +81,15 @@
 				},
 				"noDebugger": "error",
 				"noDoubleEquals": "error",
+				"noDuplicateTestHooks": "error",
 				"noEmptyBlockStatements": "error",
 				"noExplicitAny": "error",
+				"noFallthroughSwitchClause": "error",
+				"noFocusedTests": "error",
+				"noImplicitAnyLet": "error",
 				"noReactSpecificProps": "error",
+				"noSkippedTests": "error",
+				"noTsIgnore": "error",
 				"useIterableCallbackReturn": "error"
 			}
 		}

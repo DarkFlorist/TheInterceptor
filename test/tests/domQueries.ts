@@ -14,8 +14,10 @@ export const normalizeWhitespace = (text: string) => text.replace(/\s+/gu, ' ').
 
 export const getNormalizedText = (node: MockNode) => normalizeWhitespace(node.textContent)
 
+export const getElementChildren = (node: MockNode) => node.childNodes.filter(isMockElement)
+
 // Returns root and its descendant elements that match, in document order.
-function findAllElements(root: MockNode, matches: (element: MockElement) => boolean): MockElement[] {
+export function findAllElements(root: MockNode, matches: (element: MockElement) => boolean): MockElement[] {
 	const matchingRoot = isMockElement(root) && matches(root) ? [root] : []
 	return [...matchingRoot, ...root.childNodes.flatMap((child) => findAllElements(child, matches))]
 }
@@ -43,6 +45,8 @@ const getClassNames = (element: MockElement) => (element.getAttribute('class') ?
 export const hasClass = (element: MockElement, className: string) => getClassNames(element).includes(className)
 
 export const findElementByClass = (root: MockNode, className: string) => findElement(root, (element) => hasClass(element, className))
+
+export const findElementByTagAndClass = (root: MockNode, tagName: string, className: string) => collectElements(root, tagName).find((element) => hasClass(element, className))
 
 export const getElementByClass = (root: MockNode, className: string) => getElement(root, (element) => hasClass(element, className), `element with class "${ className }"`)
 

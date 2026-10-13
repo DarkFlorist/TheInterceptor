@@ -1,4 +1,4 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
 import { getSimulatedStackV1 } from '../../app/ts/simulation/SimulationStackExtraction.js'
 import { mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
@@ -71,13 +71,14 @@ describe('simulation stack extraction', () => {
 		const payload = getSimulatedStackV1(simulationStateWithBalanceBelowBaseFee, undefined, '1.0.1')
 		assert.equal(payload[0]?.balanceChanges[0]?.after, 0n)
 
-		assert.doesNotThrow(() => serialize(InterceptorMessageToInpage, {
+		const simulationStackReply: InterceptorMessageToInpage = {
 			type: 'result',
 			interceptorApproved: true,
 			bridgeRequestSettled: true,
 			requestId: 1,
 			method: 'interceptor_getSimulationStack',
 			result: { version: '1.0.1', payload },
-		}))
+		}
+		assert.doesNotThrow(() => serialize<InterceptorMessageToInpage, typeof InterceptorMessageToInpage>(InterceptorMessageToInpage, simulationStackReply))
 	})
 })

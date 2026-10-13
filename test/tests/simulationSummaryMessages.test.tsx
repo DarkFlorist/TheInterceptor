@@ -1,16 +1,17 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { Signal } from '@preact/signals'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { describe, test } from 'bun:test'
-import { getGasUsageText, SimulationSummary } from '../../app/ts/components/simulationExplaining/SimulationSummary.js'
+import { GasLimitEditor, getGasUsageText, SimulationSummary, TransactionHeader } from '../../app/ts/components/simulationExplaining/SimulationSummary.js'
 import type { ContactEntry, Erc20TokenEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { EnsEvent, TokenEvent } from '../../app/ts/types/EnrichedEthereumData.js'
 import type { VisualizedPersonalSignRequest } from '../../app/ts/types/personal-message-definitions.js'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
 import { toResolvedSimulationResults } from '../../app/ts/types/visualizer-types.js'
-import type { BlockTimeManipulation, SimulationAndVisualisationResults, SimulatedAndVisualizedTransaction } from '../../app/ts/types/visualizer-types.js'
-import { installDomMock } from './domMock.js'
+import type { BlockTimeManipulation, SimulationAndVisualisationResults, SimulatedAndVisualizedTransaction, VisualizedSimulationState } from '../../app/ts/types/visualizer-types.js'
+import { installDomMock, type MockElement } from './domMock.js'
+import { collectElements, findAllElements, findElement, getElementByClass, isDisabled } from './domQueries.js'
 
 const SIGNER_ADDRESS = 0x1000000000000000000000000000000000000001n
 const RECIPIENT_ADDRESS = 0x2000000000000000000000000000000000000002n
@@ -166,7 +167,9 @@ const simulatedTransaction: SimulatedAndVisualizedTransaction = {
 	events: [transferEvent],
 }
 
-function makeResults(blocks: SimulationAndVisualisationResults['visualizedSimulationState']['visualizedBlocks']): SimulationAndVisualisationResults {
+type SuccessfulVisualizedBlocks = Extract<VisualizedSimulationState, { success: true }>['visualizedBlocks']
+
+function makeResults(blocks: SuccessfulVisualizedBlocks): SimulationAndVisualisationResults {
 	return {
 		blockNumber: 100n,
 		blockTimestamp: new Date('2024-01-01T00:00:00.000Z'),
@@ -193,24 +196,7 @@ function renderSummary(simulationAndVisualisationResults: SimulationAndVisualisa
 	return dom
 }
 
-type TestNode = {
-	childNodes?: readonly TestNode[]
-	getAttribute?: (name: string) => string | null
-	tagName?: string
-}
-
-function collectAttributeValues(node: TestNode, attributeName: string): string[] {
-	const currentValue = node.getAttribute?.(attributeName)
-	const descendantValues = (node.childNodes ?? []).flatMap((child) => collectAttributeValues(child, attributeName))
-	return currentValue === undefined || currentValue === null ? descendantValues : [currentValue, ...descendantValues]
-}
-
-function collectElements(node: TestNode, tagName: string): TestNode[] {
-	return [
-		...(node.tagName === tagName.toUpperCase() ? [node] : []),
-		...(node.childNodes ?? []).flatMap((child) => collectElements(child, tagName)),
-	]
-}
+const collectAttributeValues = (root: MockElement, attributeName: string) => findAllElements(root, (element) => element.hasAttribute(attributeName)).map((element) => element.getAttribute(attributeName))
 
 describe('SimulationSummary aggregate changes', () => {
 	test('renders zero gas limits without dividing by zero', () => {
@@ -245,9 +231,9 @@ describe('SimulationSummary aggregate changes', () => {
 			assert.equal(summaryText.indexOf('First App') < summaryText.indexOf('Second App'), true)
 			assert.equal(summaryText.includes('No changes to your accounts'), true)
 			assert.equal(collectAttributeValues(dom.document.body, 'src').filter((src) => src === '../img/warning-sign.svg').length, 2)
-			assert.notEqual(collectElements(dom.document.body, 'details')[0]?.getAttribute?.('open'), null)
+			assert.notEqual(collectElements(dom.document.body, 'details')[0]?.getAttribute('open'), null)
 		} finally {
-			render(null, dom.document.body)
+			render(undefined, dom.document.body)
 			dom.restore()
 		}
 	})
@@ -269,7 +255,7 @@ describe('SimulationSummary aggregate changes', () => {
 			assert.equal(dom.document.body.textContent.includes('Invalid message format'), true)
 			assert.equal(collectAttributeValues(dom.document.body, 'src').filter((src) => src === '../img/error-icon.svg').length, 2)
 		} finally {
-			render(null, dom.document.body)
+			render(undefined, dom.document.body)
 			dom.restore()
 		}
 	})
@@ -290,7 +276,7 @@ describe('SimulationSummary aggregate changes', () => {
 			assert.equal(summaryText.includes('Summary Token'), true)
 			assert.equal(summaryText.includes('Included in this simulation'), true)
 		} finally {
-			render(null, dom.document.body)
+			render(undefined, dom.document.body)
 			dom.restore()
 		}
 	})
@@ -307,7 +293,7 @@ describe('SimulationSummary aggregate changes', () => {
 			assert.equal(dom.document.body.textContent.includes('Simulated signatures'), false)
 			assert.equal(dom.document.body.textContent.includes('Summary Token'), true)
 		} finally {
-			render(null, dom.document.body)
+			render(undefined, dom.document.body)
 			dom.restore()
 		}
 	})
@@ -332,9 +318,101 @@ describe('SimulationSummary aggregate changes', () => {
 			assert.equal(summaryText.includes('avatar'), true)
 			assert.equal(summaryText.includes('ipfs://updated-avatar'), true)
 			assert.equal(summaryText.includes('Simulated signatures'), false)
-			assert.notEqual(collectElements(dom.document.body, 'details')[0]?.getAttribute?.('open'), null)
+			assert.notEqual(collectElements(dom.document.body, 'details')[0]?.getAttribute('open'), null)
 		} finally {
-			render(null, dom.document.body)
+			render(undefined, dom.document.body)
+			dom.restore()
+		}
+	})
+})
+
+describe('SummarizeAddress', () => {
+	// The own-account row is keyed by address, so the same SummarizeAddress instance receives the new balance summary.
+	test('follows the balance summary of a kept account row when the simulation results change', async () => {
+		const dom = installDomMock()
+		const renamedSigner: ContactEntry = { ...signerEntry, name: 'Renamed signer' }
+		const renderResults = async (signer: ContactEntry, amount: bigint) => {
+			const transferFromSigner: TokenEvent = { ...transferEvent, logInformation: { type: 'ERC20', logObject: undefined, from: signer, to: recipientEntry, token: tokenEntry, amount, isApproval: false } }
+			const transaction: SimulatedAndVisualizedTransaction = { ...simulatedTransaction, transaction: { ...simulatedTransaction.transaction, from: signer }, events: [transferFromSigner] }
+			const results = { ...makeResults([{ simulatedAndVisualizedTransactions: [transaction], visualizedPersonalSignRequests: [], blockTimeManipulation }]), addressBookEntries: [signer, recipientEntry, tokenEntry] }
+			await act(() => {
+				render(h(SimulationSummary, {
+					simulationAndVisualisationResults: new Signal(toResolvedSimulationResults(results)),
+					currentBlockNumber: new Signal<bigint | undefined>(100n),
+					activeAddress: new Signal<bigint | undefined>(SIGNER_ADDRESS),
+					renameAddressCallBack: () => undefined,
+					editEnsNamedHashCallBack: () => undefined,
+					rpcConnectionStatus: new Signal(undefined),
+				}), dom.document.body)
+			})
+		}
+		const ownAccountChangesText = () => getElementByClass(dom.document.body, 'transaction-importance-box').textContent
+		try {
+			await renderResults(signerEntry, 5n * 10n ** 18n)
+			assert.equal(ownAccountChangesText().includes('Simulation signer'), true)
+			assert.equal(ownAccountChangesText().includes('- 5Summary Token'), true)
+
+			await renderResults(renamedSigner, 7n * 10n ** 18n)
+			assert.equal(ownAccountChangesText().includes('Renamed signer'), true)
+			assert.equal(ownAccountChangesText().includes('Simulation signer'), false)
+			assert.equal(ownAccountChangesText().includes('- 7Summary Token'), true)
+		} finally {
+			render(undefined, dom.document.body)
+			dom.restore()
+		}
+	})
+})
+
+describe('TransactionHeader', () => {
+	test('updates the status icon when a kept row is re-rendered with a re-simulated transaction', async () => {
+		const dom = installDomMock()
+		const failedTransaction: SimulatedAndVisualizedTransaction = {
+			...simulatedTransaction,
+			transactionStatus: 'Transaction Failed',
+			error: { code: 3, message: 'execution reverted', decodedErrorMessage: 'execution reverted' },
+		}
+		try {
+			await act(() => {
+				render(h(TransactionHeader, { simTx: simulatedTransaction }), dom.document.body)
+			})
+			assert.deepEqual(collectAttributeValues(dom.document.body, 'src'), ['../img/success-icon.svg'])
+
+			await act(() => {
+				render(h(TransactionHeader, { simTx: failedTransaction }), dom.document.body)
+			})
+			assert.deepEqual(collectAttributeValues(dom.document.body, 'src'), ['../img/error-icon.svg'])
+
+			await act(() => {
+				render(h(TransactionHeader, { simTx: { ...simulatedTransaction, quarantine: true, quarantineReasons: ['Suspicious recipient'] } }), dom.document.body)
+			})
+			assert.deepEqual(collectAttributeValues(dom.document.body, 'src'), ['../img/warning-sign.svg'])
+		} finally {
+			render(undefined, dom.document.body)
+			dom.restore()
+		}
+	})
+})
+
+describe('GasLimitEditor', () => {
+	test('follows a changed transaction gas limit so the Change button stays disabled for an untouched draft', async () => {
+		const dom = installDomMock()
+		const isChangeButtonDisabled = () => {
+			const changeButton = findElement(dom.document.body, (element) => element.tagName === 'BUTTON' && element.textContent.includes('Change'))
+			if (changeButton === undefined) throw new Error('Expected the Change button')
+			return isDisabled(changeButton)
+		}
+		try {
+			await act(() => {
+				render(h(GasLimitEditor, { transactionIdentifier: 1n, initialGasLimit: 21_000n, isRawTransaction: false }), dom.document.body)
+			})
+			assert.equal(isChangeButtonDisabled(), true)
+
+			await act(() => {
+				render(h(GasLimitEditor, { transactionIdentifier: 1n, initialGasLimit: 50_000n, isRawTransaction: false }), dom.document.body)
+			})
+			assert.equal(isChangeButtonDisabled(), true)
+		} finally {
+			render(undefined, dom.document.body)
 			dom.restore()
 		}
 	})

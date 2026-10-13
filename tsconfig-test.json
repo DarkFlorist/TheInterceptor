@@ -1,14 +1,23 @@
 {
+	// Typechecks Bun-executed TypeScript (tests, test harnesses, benchmarks and scripts) with the app's strictness flags. The build tooling has its own project in build/tsconfig.json because it runs without the DOM and WebExtension globals; a build file a test imports (bundlerImportRewrite.test.ts imports build/bundler.mts) is still checked here as that test's dependency, while build/tsconfig.json enforces the build environment.
+	// Scripts share this project because some of them import app code and test benchmark harnesses, which need the DOM and WebExtension globals.
+	// Run through `bun run typecheck:test`; nothing is emitted because Bun executes the TypeScript directly.
 	"extends": "./tsconfig.json",
 	"compilerOptions": {
-		// Tests run under Bun, so they need Bun's globals next to the WebExtension globals that tsconfig.json limits the app to.
+		"target": "ESNext",
+		"lib": ["ESNext", "DOM", "DOM.Iterable"],
 		"types": ["bun", "firefox-webext-browser"],
 		"rootDir": ".",
-		"outDir": "test/js",
+		"noEmit": true,
+		"allowImportingTsExtensions": true,
+		"sourceMap": false,
+		"inlineSources": false,
+		"declaration": false,
+		"declarationMap": false,
 	},
 	"include": [
-		"./app/ts/**/*.ts",
-		"./app/ts/**/*.tsx",
 		"./test/**/*.ts",
-	]
+		"./test/**/*.tsx",
+		"./scripts/*.mts",
+	],
 }

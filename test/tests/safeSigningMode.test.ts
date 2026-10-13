@@ -1,19 +1,20 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
+import type { SafeEntry } from '../../app/ts/types/addressBookTypes.js'
 import { isActiveSigningSafe, resolveSigningSafe } from '../../app/ts/utils/activeAddressSelection.js'
 
 const ownerAddress = 0x5678n
 
 const safeEntry = {
-	type: 'safe' as const,
+	type: 'safe',
 	name: 'Treasury',
 	address: 0x1234n,
 	chainId: 1n,
-	entrySource: 'User' as const,
+	entrySource: 'User',
 	useAsActiveAddress: true,
 	safeSimulationSignerAddress: ownerAddress,
 	safeSignerAddresses: [ownerAddress],
-}
+} satisfies SafeEntry
 
 describe('Gnosis Safe signing-mode selection', () => {
 	test('selects the configured Safe only for an owner on its recorded chain', () => {

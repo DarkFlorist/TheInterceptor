@@ -1,4 +1,4 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { Signal } from '@preact/signals'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
@@ -16,14 +16,8 @@ import type { SimulatedAndVisualizedTransaction } from '../../app/ts/types/visua
 import type { PopupPendingSignableMessage } from '../../app/ts/types/accessRequest.js'
 import { encodeFunctionCall } from '../../app/ts/utils/abiRuntime.js'
 import { bytesFromHex } from '../../app/ts/utils/ethereumBytes.js'
-import { installDomMock } from './domMock.js'
-
-type TestNode = {
-	nodeType?: number
-	textContent?: string | null
-	childNodes?: readonly TestNode[]
-	getAttribute?: (name: string) => string | null
-}
+import { installDomMock, type MockElement } from './domMock.js'
+import { findElementByClass, hasClass } from './domQueries.js'
 
 const website: Website = {
 	websiteOrigin: 'https://example.com',
@@ -128,8 +122,8 @@ const personalSignRequest: VisualizedPersonalSignRequest = {
 	messageHash: '0x1',
 	simulationMode: false,
 	signerName: 'NoSigner',
-	requestAccessToAddress: false,
-	activeAddress: fromEntry.address,
+	activeAddress: fromEntry,
+	rpcNetwork,
 	quarantineReasons: [],
 	quarantine: false,
 	account: fromEntry,
@@ -140,25 +134,10 @@ const personalSignRequest: VisualizedPersonalSignRequest = {
 	messageIdentifier: 2n,
 }
 
-function hasClass(node: TestNode | undefined, className: string) {
-	const classes = node?.getAttribute?.('class')?.split(/\s+/).filter((value) => value !== '') ?? []
-	return classes.includes(className)
-}
-
-function findFirstByClass(node: TestNode | undefined, className: string): TestNode | undefined {
-	if (node === undefined) return undefined
-	if (hasClass(node, className)) return node
-	for (const child of node.childNodes ?? []) {
-		const match = findFirstByClass(child, className)
-		if (match !== undefined) return match
-	}
-	return undefined
-}
-
-function assertClasses(node: TestNode | undefined, expectedClasses: string[]) {
-	assert.notEqual(node, undefined)
+function assertClasses(element: MockElement | undefined, expectedClasses: readonly string[]) {
+	assert.ok(element !== undefined)
 	for (const expectedClass of expectedClasses) {
-		assert.equal(hasClass(node, expectedClass), true, `expected class ${ expectedClass }`)
+		assert.equal(hasClass(element, expectedClass), true, `expected class ${ expectedClass }`)
 	}
 }
 
@@ -179,9 +158,9 @@ describe('popup header markup', () => {
 			}), dom.document.body)
 		})
 
-		const titleText = findFirstByClass(dom.document.body, 'card-header-title-text')
+		const titleText = findElementByClass(dom.document.body, 'card-header-title-text')
 		assert.equal(titleText?.textContent, 'Contract Fallback Method')
-		assertClasses(findFirstByClass(dom.document.body, 'card-header-website'), ['card-header-website', 'card-header-website--flush'])
+		assertClasses(findElementByClass(dom.document.body, 'card-header-website'), ['card-header-website', 'card-header-website--flush'])
 
 		dom.restore()
 	})
@@ -199,7 +178,7 @@ describe('popup header markup', () => {
 			}), dom.document.body)
 		})
 
-		assert.equal(findFirstByClass(dom.document.body, 'card-header-title-text')?.textContent, abiFunctionName)
+		assert.equal(findElementByClass(dom.document.body, 'card-header-title-text')?.textContent, abiFunctionName)
 
 		await act(() => {
 			render(h(ConfirmationActionButtons, {
@@ -218,11 +197,11 @@ describe('popup header markup', () => {
 			}), dom.document.body)
 		})
 
-		assert.equal(dom.document.body.textContent?.includes(`Reject ${ abiFunctionName }`), true)
-		assert.equal(dom.document.body.textContent?.includes('Sign & add'), true)
-		assert.equal(dom.document.body.textContent?.includes('Add unsigned'), true)
-		assert.notEqual(findFirstByClass(dom.document.body, 'confirmation-action-buttons-container'), undefined)
-		assert.notEqual(findFirstByClass(dom.document.body, 'confirmation-action-buttons--safe'), undefined)
+		assert.equal(dom.document.body.textContent.includes(`Reject ${ abiFunctionName }`), true)
+		assert.equal(dom.document.body.textContent.includes('Sign & add'), true)
+		assert.equal(dom.document.body.textContent.includes('Add unsigned'), true)
+		assert.notEqual(findElementByClass(dom.document.body, 'confirmation-action-buttons-container'), undefined)
+		assert.notEqual(findElementByClass(dom.document.body, 'confirmation-action-buttons--safe'), undefined)
 
 		await act(() => {
 			render(h(ConfirmationActionButtons, {
@@ -238,8 +217,8 @@ describe('popup header markup', () => {
 			}), dom.document.body)
 		})
 
-		assert.equal(dom.document.body.textContent?.includes(`Simulate ${ abiFunctionName }!`), true)
-		assert.equal(findFirstByClass(dom.document.body, 'confirmation-action-buttons--safe'), undefined)
+		assert.equal(dom.document.body.textContent.includes(`Simulate ${ abiFunctionName }!`), true)
+		assert.equal(findElementByClass(dom.document.body, 'confirmation-action-buttons--safe'), undefined)
 
 		await act(() => {
 			render(h(ConfirmationActionButtons, {
@@ -255,10 +234,10 @@ describe('popup header markup', () => {
 			}), dom.document.body)
 		})
 
-		const waitingLabel = findFirstByClass(dom.document.body, 'confirmation-waiting-for-signer')
-		assert.notEqual(waitingLabel, undefined)
-		assert.equal(waitingLabel?.textContent, 'Waiting for MetaMask')
-		assert.notEqual(findFirstByClass(waitingLabel, 'spinner'), undefined)
+		const waitingLabel = findElementByClass(dom.document.body, 'confirmation-waiting-for-signer')
+		assert.ok(waitingLabel !== undefined)
+		assert.equal(waitingLabel.textContent, 'Waiting for MetaMask')
+		assert.notEqual(findElementByClass(waitingLabel, 'spinner'), undefined)
 
 		dom.restore()
 	})
@@ -273,9 +252,9 @@ describe('popup header markup', () => {
 			}), dom.document.body)
 		})
 
-		const titleText = findFirstByClass(dom.document.body, 'card-header-title-text')
+		const titleText = findElementByClass(dom.document.body, 'card-header-title-text')
 		assert.notEqual(titleText?.textContent?.length, 0)
-		assertClasses(findFirstByClass(dom.document.body, 'card-header-website'), ['card-header-website', 'card-header-website--flush'])
+		assertClasses(findElementByClass(dom.document.body, 'card-header-website'), ['card-header-website', 'card-header-website--flush'])
 
 		dom.restore()
 	})
@@ -304,7 +283,7 @@ describe('popup header markup', () => {
 			}), dom.document.body)
 		})
 
-		assert.match(dom.document.body.textContent ?? '', /request reached your wallet/)
+		assert.match(dom.document.body.textContent, /request reached your wallet/)
 		dom.restore()
 	})
 
@@ -344,11 +323,11 @@ describe('popup header markup', () => {
 			}), dom.document.body)
 		})
 
-		const details = findFirstByClass(dom.document.body, 'safe-signer-error-details')
-		assert.notEqual(details, undefined)
-		assert.match(details?.textContent ?? '', /Signing accountReceiver/)
-		assert.match(details?.textContent ?? '', /Active SafeSender/)
-		assert.match(details?.textContent ?? '', /Safe ownersReceiver/)
+		const details = findElementByClass(dom.document.body, 'safe-signer-error-details')
+		assert.ok(details !== undefined)
+		assert.match(details.textContent, /Signing accountReceiver/)
+		assert.match(details.textContent, /Active SafeSender/)
+		assert.match(details.textContent, /Safe ownersReceiver/)
 		dom.restore()
 	})
 
@@ -382,7 +361,7 @@ describe('popup header markup', () => {
 			}), dom.document.body)
 		})
 
-		const details = findFirstByClass(dom.document.body, 'safe-signer-error-details')
+		const details = findElementByClass(dom.document.body, 'safe-signer-error-details')
 		assert.match(details?.textContent ?? '', /Expected ownerSender/)
 		assert.match(details?.textContent ?? '', /Wallet accountReceiver/)
 		assert.doesNotMatch(message, /0x[0-9a-f]/iu)
@@ -400,7 +379,7 @@ describe('popup header markup', () => {
 			}), dom.document.body)
 		})
 
-		const titleText = findFirstByClass(dom.document.body, 'card-header-title-text')
+		const titleText = findElementByClass(dom.document.body, 'card-header-title-text')
 		assert.equal(titleText?.textContent, 'Pending stack row title')
 
 		dom.restore()

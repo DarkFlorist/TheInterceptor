@@ -1,8 +1,13 @@
 import { fetchSafeAppsBalances } from '../../app/ts/background/safeAppsBalances.js'
-import * as assert from 'assert'
-import { describe, test } from 'bun:test'
+import * as assert from 'node:assert'
+import { beforeEach, describe, test } from 'bun:test'
 import { getSafeAppsRequestCommand } from '../../app/ts/background/safeAppsRequestPolicy.js'
 import { JsonRpcResponseError } from '../../app/ts/utils/errors.js'
+import { replaceGlobal } from '../harness/globals.js'
+import { createPerTestRestorer } from '../harness/perTest.js'
+
+type FetchResponder = (input: RequestInfo | URL, init: RequestInit | undefined) => Promise<Response>
+const rejectUnexpectedFetch: FetchResponder = async () => { throw new Error('Unexpected fetch') }
 
 const safeAddress = 0x1111111111111111111111111111111111111111n
 const network = { name: 'Ethereum', chainId: 1n, httpsRpc: 'https://rpc.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: false, minimized: false }
@@ -17,70 +22,60 @@ const balances = {
 }
 
 describe('Safe Apps indexed balances', () => {
+	// Every test installs a fetch global that forwards to fetchResponder, swaps fetchResponder to script the balance service, and restores fetch afterwards.
+	let fetchResponder = rejectUnexpectedFetch
+	const { restoreAfterTest } = createPerTestRestorer()
+	beforeEach(() => {
+		fetchResponder = rejectUnexpectedFetch
+		restoreAfterTest(replaceGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => await fetchResponder(input, init)))
+	})
+
 	test('uses the selected Safe and chain, defaults to USD, and returns SDK token and fiat fields', async () => {
-		const originalFetch = globalThis.fetch
 		const urls: string[] = []
-		globalThis.fetch = async (input, init) => {
+		fetchResponder = async (input, init) => {
 			urls.push(String(input))
 			assert.equal(init?.credentials, 'omit')
 			assert.equal(init?.redirect, 'error')
 			assert.ok(init?.signal)
 			return Response.json(balances)
 		}
-		try {
-			assert.deepEqual(await requestBalances(), { kind: 'result', value: balances })
-			assert.deepEqual(await requestBalances({ currency: 'EUR', safeAddress: '0x3333333333333333333333333333333333333333', chainId: 137 }), { kind: 'result', value: balances })
-			assert.deepEqual(urls, [
-				'https://safe-client.safe.global/v1/chains/1/safes/0x1111111111111111111111111111111111111111/balances/usd',
-				'https://safe-client.safe.global/v1/chains/1/safes/0x1111111111111111111111111111111111111111/balances/eur',
-			])
-		} finally {
-			globalThis.fetch = originalFetch
-		}
+		assert.deepEqual(await requestBalances(), { kind: 'result', value: balances })
+		assert.deepEqual(await requestBalances({ currency: 'EUR', safeAddress: '0x3333333333333333333333333333333333333333', chainId: 137 }), { kind: 'result', value: balances })
+		assert.deepEqual(urls, [
+			'https://safe-client.safe.global/v1/chains/1/safes/0x1111111111111111111111111111111111111111/balances/usd',
+			'https://safe-client.safe.global/v1/chains/1/safes/0x1111111111111111111111111111111111111111/balances/eur',
+		])
 	})
 
 	test('preserves the SDK native balance shape with a null logo URI', async () => {
-		const originalFetch = globalThis.fetch
+		// The Safe client gateway reports a missing native-token logo as JSON null, so the fixture mirrors that external response.
 		const nativeBalance = { fiatTotal: '23.50', items: [{ tokenInfo: { type: 'ETHER', address: '0x0000000000000000000000000000000000000000', decimals: 18, name: 'Ether', symbol: 'ETH', logoUri: null }, balance: '10000000000000000', fiatBalance: '23.50', fiatConversion: '2350' }] }
-		globalThis.fetch = async () => Response.json(nativeBalance)
-		try {
-			assert.deepEqual(await requestBalances(), { kind: 'result', value: nativeBalance })
-		} finally {
-			globalThis.fetch = originalFetch
-		}
+		fetchResponder = async () => Response.json(nativeBalance)
+		assert.deepEqual(await requestBalances(), { kind: 'result', value: nativeBalance })
 	})
 
 	test('rejects malformed currency params before contacting the service', async () => {
-		const originalFetch = globalThis.fetch
 		let calls = 0
-		globalThis.fetch = async () => { calls++; throw new Error('Unexpected fetch') }
-		try {
-			for (const params of [null, [], 'usd', { currency: 123 }, { currency: '../usd' }, { currency: '' }]) {
-				await assert.rejects(requestBalances(params), /fiat currency code/)
-			}
-			assert.equal(calls, 0)
-		} finally {
-			globalThis.fetch = originalFetch
+		fetchResponder = async () => { calls++; throw new Error('Unexpected fetch') }
+		// Safe Apps send untrusted params, so a JSON null is one of the malformed inputs.
+		for (const params of [null, [], 'usd', { currency: 123 }, { currency: '../usd' }, { currency: '' }]) {
+			await assert.rejects(requestBalances(params), /fiat currency code/)
 		}
+		assert.equal(calls, 0)
 	})
 
 	test('preserves service failures as actionable errors rather than empty balances', async () => {
-		const originalFetch = globalThis.fetch
-		try {
-			globalThis.fetch = async () => new Response('Unavailable', { status: 503 })
-			await assert.rejects(requestBalances(), (error: unknown) => error instanceof JsonRpcResponseError && error.code === -32000 && /HTTP 503/.test(error.message))
-			globalThis.fetch = async () => Response.json({ fiatTotal: '0', items: [{ balance: '0' }] })
-			await assert.rejects(requestBalances(), /invalid balance response/)
-			globalThis.fetch = async () => new Response('not json')
-			await assert.rejects(requestBalances(), /invalid JSON/)
-			globalThis.fetch = async () => { throw new TypeError('Failed to fetch') }
-			await assert.rejects(requestBalances(), /balance service could not be reached/)
-			globalThis.fetch = async () => { throw new Error('Unexpected programmer error') }
-			await assert.rejects(requestBalances(), /Unexpected programmer error/)
-			globalThis.fetch = async () => Response.json({ fiatTotal: '0', items: [] })
-			assert.deepEqual(await requestBalances(), { kind: 'result', value: { fiatTotal: '0', items: [] } })
-		} finally {
-			globalThis.fetch = originalFetch
-		}
+		fetchResponder = async () => new Response('Unavailable', { status: 503 })
+		await assert.rejects(requestBalances(), (error: unknown) => error instanceof JsonRpcResponseError && error.code === -32000 && /HTTP 503/.test(error.message))
+		fetchResponder = async () => Response.json({ fiatTotal: '0', items: [{ balance: '0' }] })
+		await assert.rejects(requestBalances(), /invalid balance response/)
+		fetchResponder = async () => new Response('not json')
+		await assert.rejects(requestBalances(), /invalid JSON/)
+		fetchResponder = async () => { throw new TypeError('Failed to fetch') }
+		await assert.rejects(requestBalances(), /balance service could not be reached/)
+		fetchResponder = async () => { throw new Error('Unexpected programmer error') }
+		await assert.rejects(requestBalances(), /Unexpected programmer error/)
+		fetchResponder = async () => Response.json({ fiatTotal: '0', items: [] })
+		assert.deepEqual(await requestBalances(), { kind: 'result', value: { fiatTotal: '0', items: [] } })
 	})
 })

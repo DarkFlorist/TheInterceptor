@@ -1,12 +1,14 @@
 import { describe, test } from 'bun:test'
-import * as assert from 'assert'
-import { JsonRpcResponse, type EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
+import * as assert from 'node:assert'
+import type { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import { Erc20ABI } from '../../app/ts/utils/abi.js'
 import { itentifyAddressViaOnChainInformation } from '../../app/ts/utils/tokenIdentification.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
+import type { IEthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
 import { encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { eth_getBlockByNumber_goerli_8443561_true } from '../RPCResponses.js'
+import { readJsonRpcResult } from './rpcResponseParsing.js'
 
 const tokenAddress = 0x1234567890123456789012345678901234567890n
 const invalidBooleanReturnData = `0x${ '0'.repeat(63) }2` as const
@@ -23,34 +25,24 @@ const rpcEntry = {
 	minimized: true,
 }
 
-function parseRpcResult(data: string) {
-	const response = JsonRpcResponse.parse(JSON.parse(data))
-	if ('error' in response) throw Error(`Ethereum Client Error: ${ response.error.message }`)
-	return response.result
-}
-
-class TokenIdentificationRequestHandler {
-	public rpcUrl = rpcEntry.httpsRpc
-
-	public constructor(private readonly ethSimulateV1Result: unknown, private readonly onEthSimulateV1Request: ((request: EthereumJsonRpcRequest) => void) | undefined = undefined) {}
-
-	public readonly jsonRpcRequest = async (rpcEntry: EthereumJsonRpcRequest) => {
-		if (rpcEntry.method === 'eth_getCode') return '0x01'
-		if (rpcEntry.method === 'eth_getBlockByNumber') return parseRpcResult(eth_getBlockByNumber_goerli_8443561_true)
-		if (rpcEntry.method === 'eth_simulateV1') {
-			this.onEthSimulateV1Request?.(rpcEntry)
-			return this.ethSimulateV1Result
+// Answers the requests token identification makes: the probed address has code, blocks come from the Goerli fixture, and eth_simulateV1 returns the given wire result.
+const createTokenIdentificationRequestHandler = (ethSimulateV1Result: unknown, onEthSimulateV1Request?: (request: EthereumJsonRpcRequest) => void): IEthereumJSONRpcRequestHandler => ({
+	rpcUrl: rpcEntry.httpsRpc,
+	jsonRpcRequest: async (rpcRequest: EthereumJsonRpcRequest) => {
+		if (rpcRequest.method === 'eth_getCode') return '0x01'
+		if (rpcRequest.method === 'eth_getBlockByNumber') return readJsonRpcResult(eth_getBlockByNumber_goerli_8443561_true)
+		if (rpcRequest.method === 'eth_simulateV1') {
+			onEthSimulateV1Request?.(rpcRequest)
+			return ethSimulateV1Result
 		}
-		throw new Error(`Unexpected RPC method ${ rpcEntry.method }`)
-	}
-
-	public readonly clearCache = () => undefined
-
-	public readonly getChainId = async () => 5n
-}
+		throw new Error(`Unexpected RPC method ${ rpcRequest.method }`)
+	},
+	clearCache: () => undefined,
+	getChainId: async () => 5n,
+})
 
 const createEthereum = (ethSimulateV1Result: unknown, onEthSimulateV1Request?: (request: EthereumJsonRpcRequest) => void) => new EthereumClientService(
-	new TokenIdentificationRequestHandler(ethSimulateV1Result, onEthSimulateV1Request),
+	createTokenIdentificationRequestHandler(ethSimulateV1Result, onEthSimulateV1Request),
 	async () => undefined,
 	async () => undefined,
 	rpcEntry,

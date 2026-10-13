@@ -1,4 +1,4 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
 import { DEFAULT_BLOCK_MANIPULATION } from '../../app/ts/config/defaults.js'
 import { createSafeTx } from '../../app/ts/safe/safeCore.js'

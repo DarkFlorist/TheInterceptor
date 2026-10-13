@@ -1,4 +1,4 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
 import { signal } from '@preact/signals'
 import { h, render } from 'preact'
@@ -33,7 +33,7 @@ describe('provider account errors', () => {
 			tabState.value = createTabState('NoSignerDetected')
 			assert.equal(dom.document.body.textContent, '')
 		} finally {
-			render(null, dom.document.body)
+			render(undefined, dom.document.body)
 			dom.restore()
 		}
 	})
@@ -45,7 +45,7 @@ describe('provider account errors', () => {
 			render(h(ProviderErrors, { tabState }), dom.document.body)
 			assert.match(dom.document.body.textContent, /MetaMask returned error: "Signer unavailable"/)
 		} finally {
-			render(null, dom.document.body)
+			render(undefined, dom.document.body)
 			dom.restore()
 		}
 	})

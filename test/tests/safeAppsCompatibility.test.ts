@@ -1,6 +1,6 @@
 import { getSafeAppsExecution } from '../../app/ts/safe/safeAppsExecution.js'
 import { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
 import { getSafeAppsChainInfo, getSafeAppsRequestCommand, isSafeAppsRequestPolicyError } from '../../app/ts/background/safeAppsRequestPolicy.js'
@@ -9,6 +9,7 @@ import { decodeSafeBatch, SAFE_MULTI_SEND_CALL_ONLY } from '../../app/ts/safe/sa
 import { addressString, dataStringWith0xStart, stringToUint8Array } from '../../app/ts/utils/bigint.js'
 import { SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
+import { requireDefined } from '../harness/assertions.js'
 
 const activeAddress = 0x1111111111111111111111111111111111111111n
 const safeState = {
@@ -18,6 +19,7 @@ const safeState = {
 	threshold: 2n,
 }
 const getSafeState = async () => safeState
+
 const rpcNetwork: RpcNetwork = {
 	name: 'Polygon',
 	chainId: 137n,
@@ -32,7 +34,8 @@ const rpcNetwork: RpcNetwork = {
 
 describe('Safe Apps compatibility policy', () => {
 	test('preserves Safe Apps errors at the background-to-inpage wire boundary', () => {
-		assert.deepEqual(serialize(InterceptorMessageToInpage, {
+		// Explicit type arguments check the literal against the whole message union; inference would otherwise widen its literal fields.
+		assert.deepEqual(serialize<InterceptorMessageToInpage, typeof InterceptorMessageToInpage>(InterceptorMessageToInpage, {
 			interceptorApproved: true,
 			requestId: 7,
 			bridgeRequestSettled: true,
@@ -217,7 +220,7 @@ describe('Safe Apps compatibility policy', () => {
 	})
 })
 
- test('Safe SDK settings select off-chain signing or one on-chain message proposal', async () => {
+test('Safe SDK settings select off-chain signing or one on-chain message proposal', async () => {
 	for (const offChainSigning of [true, false]) {
 		assert.deepEqual(await getSafeAppsRequestCommand({ method: 'rpcCall', params: { call: 'safe_setSettings', params: [{ offChainSigning }] } }, 'app.example', activeAddress, rpcNetwork, getSafeState), { kind: 'settings', offChainSigning })
 		const command = await getSafeAppsRequestCommand({ method: 'signMessage', params: { message: 'Hello' }, offChainSigning }, 'app.example', activeAddress, rpcNetwork, getSafeState)
@@ -228,7 +231,7 @@ describe('Safe Apps compatibility policy', () => {
 			const request = SendTransactionParams.parse({ method: command.method, params: command.params })
 			assert.equal(command.safeRequestContext?.operation, 1)
 			assert.equal(command.safeRequestContext?.message?.text, 'Hello')
-			assert.equal(addressString(request.params[0].from), addressString(activeAddress))
+			assert.equal(addressString(requireDefined(request.params[0].from, 'Safe message proposal sender')), addressString(activeAddress))
 			// Literal contract ABI vector, independent of the production ABI encoder; payload is the EIP-191 digest of Hello.
 			const expected = '0x85a5affe' + '0'.repeat(62) + '20' + '0'.repeat(62) + '20' + 'aa744ba2ca576ec62ca0045eca00ad3917fdf7ffa34fbbae50828a5a69c1580e'
 			assert.equal(dataStringWith0xStart(request.params[0].data ?? new Uint8Array()), expected)
@@ -238,7 +241,6 @@ describe('Safe Apps compatibility policy', () => {
 		await assert.rejects(getSafeAppsRequestCommand({ method: 'rpcCall', params: { call: 'safe_setSettings', params } }, 'app.example', activeAddress, rpcNetwork, getSafeState), /settings object/)
 	}
 })
-
 
 test('Safe Apps execution normalizes transaction and message commands for the ordinary RPC pipeline', async () => {
 	const uniqueRequestIdentifier = { requestId: 1, requestSocket: { tabId: 1, connectionName: 0n } }

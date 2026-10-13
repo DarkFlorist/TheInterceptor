@@ -14,3 +14,18 @@ export function getMessageWithMethod(messages: readonly unknown[], method: strin
 	if (message === undefined) throw new Error(`Expected a message with method "${ method }"`)
 	return message
 }
+
+// Matches the popup's popup_requestNewHomeData request with the given refresh options.
+export function isHomeDataRequest(message: unknown, refreshSignerAccounts: boolean, includeWebsiteAccessAddressMetadata: boolean) {
+	return typeof message === 'object'
+		&& message !== null
+		&& 'method' in message
+		&& message.method === 'popup_requestNewHomeData'
+		&& 'data' in message
+		&& typeof message.data === 'object'
+		&& message.data !== null
+		&& 'refreshSignerAccounts' in message.data
+		&& message.data.refreshSignerAccounts === refreshSignerAccounts
+		&& 'includeWebsiteAccessAddressMetadata' in message.data
+		&& message.data.includeWebsiteAccessAddressMetadata === includeWebsiteAccessAddressMetadata
+}
