@@ -39,8 +39,6 @@ import { parseSendRawTransaction } from '../../utils/sendRawTransactionParsing.j
 import { createEip1559Or7702Transaction } from '../../utils/eip7702Authorization.js'
 import { identifyAddress } from '../metadataUtils.js'
 import { resolveInsufficientBalanceMessage } from '../../utils/insufficientBalance.js'
-import { decodeEthereumError } from '../../utils/errorDecoding.js'
-import type { ErrorWithCodeAndOptionalData } from '../../types/error.js'
 import { prepareSafeTransactionConfirmation } from '../safeTransactionConfirmation.js'
 import { createSafeMessageCoSignSnapshot, getPendingSafeSignerAddress, getSafeSignerMismatchApprovalStatus, isExpectedSafeMessageCoSignSnapshotFailure, isSafeMessageAccountMismatchFailure, isSafeSignerSelectionFailure, resolveSafeConfirmation, SAFE_SIGNER_SELECTION_ERROR_CODE, type RefreshedSafeSignerSelection } from '../safeConfirmationResolver.js'
 import { createSafeOffChainMessageSnapshot, refreshAndPersistSafeSignerSelection } from '../safeSignerSelectionRefresh.js'
@@ -485,9 +483,6 @@ const formRejectMessage = (code: number, errorString: string) => {
 	}
 }
 
-// Error(string) and Panic(uint256) reasons decode without an ABI, so gas-estimation failures carry a readable message even before the confirmation simulation runs.
-const withDecodedErrorMessage = (error: ErrorWithCodeAndOptionalData) => ({ ...error, decodedErrorMessage: decodeEthereumError([], error).reason })
-
 const resolveInsufficientBalanceMessageForTransaction = async (
 	ethereumClientService: EthereumClientService,
 	requestAbortController: AbortController | undefined,
@@ -601,16 +596,14 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 					: await resolveInsufficientBalanceMessageForTransaction(ethereumClientService, requestAbortController, simulationState, transactionWithoutGas, balancePromise)
 				return {
 					...extraParams,
-					error: insufficientBalanceMessage === undefined
-						? withDecodedErrorMessage(estimateGas.error)
-						: { ...estimateGas.error, message: insufficientBalanceMessage, decodedErrorMessage: insufficientBalanceMessage },
+					error: insufficientBalanceMessage === undefined ? estimateGas.error : { ...estimateGas.error, insufficientBalanceMessage },
 					success: false,
 				}
 			}
 			return { transaction: { ...transactionWithoutGas, ...await getFeePerGas(estimateGas.gas), gas: estimateGas.gas }, ...extraParams, success: true }
 		} catch(error: unknown) {
 			if (isNewBlockAbort(error)) throw error
-			if (error instanceof JsonRpcResponseError) return { ...extraParams, error: withDecodedErrorMessage({ code: error.code, message: error.message, data: typeof error.data === 'string' ? error.data : '0x' }), success: false }
+			if (error instanceof JsonRpcResponseError) return { ...extraParams, error: { code: error.code, message: error.message, data: typeof error.data === 'string' ? error.data : '0x' }, success: false }
 			await reportLocalRecovery(error, { code: 'transaction_gas_estimation_failed', message: 'Returning a typed RPC error to the requesting page.' })
 			if (error instanceof Error) return { ...extraParams, error: { code: 123456, message: error.message, data: 'data' in error && typeof error.data === 'string' ? error.data : '0x' }, success: false }
 			return { ...extraParams, error: { code: 123456, message: 'Unknown Error', data: '0x' }, success: false }

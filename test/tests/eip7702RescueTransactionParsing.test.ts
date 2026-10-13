@@ -13,9 +13,10 @@ import type { RpcEntry } from '../../app/ts/types/rpc.js'
 import { normalizeEip7702AuthorizationList } from '../../app/ts/utils/eip7702Authorization.js'
 import { EthereumSignedTransactionToSignedTransaction, serializeSignedTransactionToBytes } from '../../app/ts/utils/ethereum.js'
 import { EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
-import { encodeAbiValues, encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
+import { encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { Erc20ABI } from '../../app/ts/utils/abi.js'
 import { NEW_BLOCK_ABORT } from '../../app/ts/utils/constants.js'
+import { encodeErrorString } from './errorDataFixtures.js'
 
 const zeroAddress = '0x0000000000000000000000000000000000000000'
 const recipientAddress = '0x0000000000000000000000000000000000000002'
@@ -544,12 +545,14 @@ describe('EIP-7702 rescue transaction parsing', () => {
 			const insufficientBalanceTransaction = await createTransaction(10n ** 18n)
 			assert.equal(insufficientBalanceTransaction.success, false)
 			if (insufficientBalanceTransaction.success === true) throw new Error('transaction creation unexpectedly succeeded')
-			assert.equal(insufficientBalanceTransaction.error.message, 'Insufficient ETH balance. Available: 1 ETH. Attempting to send: 2 ETH.')
+			assert.equal(insufficientBalanceTransaction.error.insufficientBalanceMessage, 'Insufficient ETH balance. Available: 1 ETH. Attempting to send: 2 ETH.')
+			assert.equal(insufficientBalanceTransaction.error.message, 'execution reverted')
 
 			const unrelatedFailureTransaction = await createTransaction(3n * 10n ** 18n)
 			assert.equal(unrelatedFailureTransaction.success, false)
 			if (unrelatedFailureTransaction.success === true) throw new Error('transaction creation unexpectedly succeeded')
 			assert.equal(unrelatedFailureTransaction.error.message, 'execution reverted')
+			assert.equal(unrelatedFailureTransaction.error.insufficientBalanceMessage, undefined)
 
 			const tokenTransferParams = SendTransactionParams.parse({
 				method: 'eth_sendTransaction',
@@ -624,20 +627,20 @@ describe('EIP-7702 rescue transaction parsing', () => {
 			)
 			assert.equal(insufficientTokenBalanceTransaction.success, false)
 			if (insufficientTokenBalanceTransaction.success === true) throw new Error('transaction creation unexpectedly succeeded')
-			assert.equal(insufficientTokenBalanceTransaction.error.message, 'Insufficient USDC balance. Available: 1 USDC. Attempting to send: 2 USDC.')
+			assert.equal(insufficientTokenBalanceTransaction.error.insufficientBalanceMessage, 'Insufficient USDC balance. Available: 1 USDC. Attempting to send: 2 USDC.')
+			assert.equal(insufficientTokenBalanceTransaction.error.message, 'execution reverted')
 		} finally {
 			browserMock.restore()
 		}
 	})
 
-	test('formEthSendTransaction carries decoded revert reasons for gas estimation failures', async () => {
+	test('formEthSendTransaction persists raw gas estimation errors with only an explicit insufficient balance override', async () => {
 		const browserMock = installBrowserMock()
 		try {
 			const { formEthSendTransaction } = await import('../../app/ts/background/windows/confirmTransaction.js')
 			const sender = 0x0000000000000000000000000000000000000001n
-			const encodeErrorString = (reason: string) => stringToUint8Array(`0x08c379a0${ encodeAbiValues(['string'], [reason]).slice(2) }`)
 			const createTransaction = async (input: `0x${ string }`, to: string, revertReason: string, tokenBalance?: bigint) => await formEthSendTransaction(
-				new EthereumClientService(createFailedGasEstimationRequestHandler(3n * 10n ** 18n, tokenBalance, encodeErrorString(revertReason)), async () => undefined, async () => undefined, rpcNetwork),
+				new EthereumClientService(createFailedGasEstimationRequestHandler(3n * 10n ** 18n, tokenBalance, stringToUint8Array(encodeErrorString(revertReason))), async () => undefined, async () => undefined, rpcNetwork),
 				undefined,
 				sender,
 				{ websiteOrigin: 'test', icon: undefined, title: undefined },
@@ -653,14 +656,18 @@ describe('EIP-7702 rescue transaction parsing', () => {
 			const uniswapFailureTransaction = await createTransaction('0x', recipientAddress, 'STF')
 			assert.equal(uniswapFailureTransaction.success, false)
 			if (uniswapFailureTransaction.success === true) throw new Error('transaction creation unexpectedly succeeded')
-			assert.equal(uniswapFailureTransaction.error.message, 'execution reverted')
-			assert.equal(uniswapFailureTransaction.error.decodedErrorMessage, 'STF - possible Uniswap V3 error: Token transfer from the sender via safeTransferFrom failed, usually due to insufficient token balance or allowance')
+			assert.deepEqual(uniswapFailureTransaction.error, { code: -32000, message: 'execution reverted', data: encodeErrorString('STF') })
 
 			const usdcTransferInput = encodeFunctionCall(Erc20ABI, 'transfer', [recipientAddress, 2_000_000n])
 			const insufficientTokenBalanceTransaction = await createTransaction(usdcTransferInput, '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', 'ERC20: transfer amount exceeds balance', 1_000_000n)
 			assert.equal(insufficientTokenBalanceTransaction.success, false)
 			if (insufficientTokenBalanceTransaction.success === true) throw new Error('transaction creation unexpectedly succeeded')
-			assert.equal(insufficientTokenBalanceTransaction.error.decodedErrorMessage, 'Insufficient USDC balance. Available: 1 USDC. Attempting to send: 2 USDC.')
+			assert.deepEqual(insufficientTokenBalanceTransaction.error, {
+				code: -32000,
+				message: 'execution reverted',
+				data: encodeErrorString('ERC20: transfer amount exceeds balance'),
+				insufficientBalanceMessage: 'Insufficient USDC balance. Available: 1 USDC. Attempting to send: 2 USDC.',
+			})
 		} finally {
 			browserMock.restore()
 		}

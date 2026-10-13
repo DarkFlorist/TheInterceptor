@@ -17,9 +17,9 @@ export const DecodedError = funtypes.Intersect(
 	funtypes.ReadonlyObject({ decodedErrorMessage: funtypes.String })
 )
 
-// The decoded message is optional so failed transactions stored before this field existed still parse.
-export type ErrorWithOptionalDecodedMessage = funtypes.Static<typeof ErrorWithOptionalDecodedMessage>
-export const ErrorWithOptionalDecodedMessage = funtypes.Intersect(
+// Keeps the raw RPC error because the displayed reason is computed when the confirmation visualisation is built, where the ABIs are known; insufficientBalanceMessage is a deliberate override of that reason for balance shortfalls and is optional so failures stored before it existed still parse.
+export type TransactionCreationError = funtypes.Static<typeof TransactionCreationError>
+export const TransactionCreationError = funtypes.Intersect(
 	ErrorWithCodeAndOptionalData,
-	funtypes.ReadonlyPartial({ decodedErrorMessage: funtypes.String })
+	funtypes.ReadonlyPartial({ insufficientBalanceMessage: funtypes.String })
 )
