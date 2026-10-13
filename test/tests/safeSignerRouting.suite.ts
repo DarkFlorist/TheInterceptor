@@ -223,6 +223,7 @@ test('forwards a Safe transaction to the wallet-selected Safe owner as EIP-712 t
 	const signerRequest = postedMessages.find((message) => isRecord(message) && message.type === 'forwardToSigner')
 	if (!isRecord(signerRequest) || !Array.isArray(signerRequest.params)) throw new Error('Missing Safe signer request')
 	assert.equal(signerRequest.method, 'eth_signTypedData_v4')
+	assert.deepEqual(signerRequest.authorizedRequestMethods, ['safe_apps_request', 'eth_sendTransaction'])
 	assert.equal(signerRequest.params[0], addressString(recipientAddress))
 	assert.equal(typeof signerRequest.params[1], 'string')
 	const typedData = JSON.parse(String(signerRequest.params[1]))
@@ -389,6 +390,7 @@ test('routes a Safe co-signing request through the wallet-selected owner', async
 
 	const signerRequest = postedMessages.find((message) => isRecord(message) && message.type === 'forwardToSigner')
 	if (!isRecord(signerRequest) || !Array.isArray(signerRequest.params)) throw new Error('Missing Safe co-signer request')
+	assert.deepEqual(signerRequest.authorizedRequestMethods, ['safe_apps_request', 'personal_sign'])
 	assert.equal(signerRequest.method, 'eth_signTypedData_v4')
 	assert.equal(signerRequest.params[0], addressString(alternateOwnerAddress))
 	assert.equal(JSON.parse(String(signerRequest.params[1])).domain.verifyingContract.toLowerCase(), addressString(activeAddress).toLowerCase())
@@ -1302,6 +1304,7 @@ test('routes a completed active Safe execution through its configured signer and
 	), true)
 	const signerRequest = postedMessages.find((message) => isRecord(message) && message.type === 'forwardToSigner')
 	if (!isRecord(signerRequest) || !Array.isArray(signerRequest.params)) throw new Error('Missing direct Safe execution signer request')
+	assert.deepEqual(signerRequest.authorizedRequestMethods, ['safe_apps_request'])
 	const signerTransaction = signerRequest.params[0]
 	if (!isRecord(signerTransaction)) throw new Error('Missing direct Safe execution transaction parameters')
 	assert.equal(signerRequest.method, 'eth_sendTransaction')

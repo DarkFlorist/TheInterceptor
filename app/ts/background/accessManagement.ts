@@ -6,7 +6,8 @@ import type { TabConnection, WebsiteTabConnections } from '../types/user-interfa
 import type { InpageScriptCallBack, Settings } from '../types/interceptor-messages.js'
 import { getSettings, getWebsiteAccess, updateWebsiteAccess } from './settings.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
-import { type WebsiteSocket, getHostWithPort } from '../utils/requests.js'
+import type { WebsiteSocket } from '../utils/requests.js'
+import { getWebsiteHostname, haveSameHostForNetworkBlocking } from '../utils/websiteOrigin.js'
 import { getAllTabStates } from './storageVariables.js'
 import type { Website, WebsiteAccessArray, WebsiteAddressAccess } from '../types/websiteAccessTypes.js'
 import { getUniqueItemsByProperties, replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
@@ -323,17 +324,19 @@ export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: W
 		const decralativeNetRequestBlockIdentifier = `${ tabIdsToBlock.join('|') }|a|${ sitesToBlock.join('|') }`
 		if (decralativeNetRequestBlockIdentifier === previousDecralativeNetRequestBlockIdentifier) return
 
+		const blockedDomains = [...new Set(sitesToBlock.map(getWebsiteHostname).filter((hostname) => hostname !== undefined))]
 		if (browser.runtime.getManifest().manifest_version === 3) {
 			const dynamicRuleIds = (await browser.declarativeNetRequest.getDynamicRules()).map((rule) => rule.id)
 			const sessionRuleIds = (await browser.declarativeNetRequest.getSessionRules()).map((rule) => rule.id)
-			if (sitesToBlock.length !== 0) {
+			if (blockedDomains.length !== 0) {
 				await browser.declarativeNetRequest.updateDynamicRules({
 					removeRuleIds: dynamicRuleIds,
 					addRules: [{
 						id: dynamicRuleIds.length === 0 ? 1 : Math.max.apply(null, dynamicRuleIds) + 1,
 						priority: 1,
 						action : { type: 'block' as const },
-						condition: { initiatorDomains: sitesToBlock, domainType: 'thirdParty' as const }
+						// DNR accepts hostnames, not permission-origin URLs. Network blocking remains a domain-wide policy.
+						condition: { initiatorDomains: blockedDomains, domainType: 'thirdParty' as const }
 					}]
 				})
 			} else {
@@ -362,10 +365,9 @@ export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: W
 				if (tabIdsToBlock.find((tabId) => tabId === details.tabId) !== undefined) return { cancel: true }
 				if (details.originUrl === undefined) return {}
 				if (details.type === 'main_frame') return {}
-				const websiteOrigin = getHostWithPort(details.originUrl)
-				const destinationHost = getHostWithPort(details.url)
-				if (destinationHost === websiteOrigin) return {}
-				if (sitesToBlock.find((blockUrl) => blockUrl === websiteOrigin) !== undefined) return { cancel: true }
+				const hostname = getWebsiteHostname(details.originUrl)
+				if (haveSameHostForNetworkBlocking(details.originUrl, details.url)) return {}
+				if (hostname !== undefined && blockedDomains.includes(hostname)) return { cancel: true }
 				return {}
 			}
 			if (sitesToBlock.length === 0 && tabIdsToBlock.length === 0) {
@@ -380,7 +382,8 @@ export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: W
 
 export const areWeBlocking = async (websiteTabConnections: WebsiteTabConnections, tabId: number, websiteOrigin: string) => {
 	const { tabIdsToBlock, sitesToBlock } = await getTabsAndAddressesToBlock(websiteTabConnections)
-	if (sitesToBlock.find((blockUrl) => blockUrl === websiteOrigin) !== undefined) return true
+	const hostname = getWebsiteHostname(websiteOrigin)
+	if (hostname !== undefined && sitesToBlock.some((blockUrl) => getWebsiteHostname(blockUrl) === hostname)) return true
 	if (tabIdsToBlock.find((blockTab) => blockTab === tabId) !== undefined) return true
 	return false
 }

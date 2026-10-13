@@ -43,3 +43,33 @@ describe('website access migration', () => {
 		assert.equal(storageState.websiteAccess[1]?.website.icon, 'data:image/png;base64,Y2FjaGVk')
 	})
 })
+
+test('persists explicit alias permissions independently of legacy entry ordering', async () => {
+	const { migrateWebsiteAccess } = await import('../../app/ts/background/websiteAccessMigration.js')
+	const legacy = { website: { websiteOrigin: 'example.test', icon: undefined, title: 'Legacy' }, access: false }
+	const alias = { website: { websiteOrigin: 'https://example.test/path', icon: undefined, title: 'Explicit' }, access: true, addressAccess: [{ address: '0x0000000000000000000000000000000000000001', access: true }], interceptorDisabled: true }
+	for (const entries of [[alias, legacy], [legacy, alias]]) {
+		const storage = installBrowserMock()
+		storage.websiteAccess = entries
+		await migrateWebsiteAccess()
+		const expected = [{ ...alias, website: { ...alias.website, websiteOrigin: 'https://example.test' } }]
+		assert.deepEqual(storage.websiteAccess, expected)
+		await migrateWebsiteAccess()
+		assert.deepEqual(storage.websiteAccess, expected)
+	}
+})
+
+test('persists legacy hostname blocks alongside explicit origin consent', async () => {
+	const { migrateWebsiteAccess } = await import('../../app/ts/background/websiteAccessMigration.js')
+	const legacy = { website: { websiteOrigin: 'example.test', icon: undefined, title: 'Legacy' }, access: false, interceptorDisabled: true, declarativeNetRequestBlockMode: 'block-all' }
+	const explicit = { website: { ...legacy.website, websiteOrigin: 'https://example.test', title: 'Explicit' }, access: true, interceptorDisabled: false }
+	for (const entries of [[legacy, explicit], [explicit, legacy]]) {
+		const storage = installBrowserMock()
+		storage.websiteAccess = entries
+		await migrateWebsiteAccess()
+		const expected = [{ ...explicit, declarativeNetRequestBlockMode: 'block-all' }]
+		assert.deepEqual(storage.websiteAccess, expected)
+		await migrateWebsiteAccess()
+		assert.deepEqual(storage.websiteAccess, expected)
+	}
+})

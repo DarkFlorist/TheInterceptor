@@ -1,11 +1,10 @@
 {
 	"compilerOptions": {
 		"target": "ES2021",
-		"module": "none",
-		"moduleResolution": "classic",
-		"outDir": "app/inpage/js/",
+		"module": "ESNext",
+		"moduleResolution": "Bundler",
 		"rootDir": "app/inpage/ts/",
-		"noEmit": false,
+		"noEmit": true,
 		"sourceMap": false,
 		"inlineSources": false,
 		"strict": true,
