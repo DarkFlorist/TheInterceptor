@@ -1,4 +1,6 @@
 import type { PersonalSignParams, SignMessageParams } from '../../types/jsonRpc-signing-types.js'
+import { RecoverableMessageSignature } from '../../types/JsonRpc-types.js'
+import type { SignedMessageTransaction } from '../../types/visualizer-types.js'
 import type { EthereumAddress } from '../../types/wire-types.js'
 import { bytes32String, stringToUint8Array } from '../../utils/bigint.js'
 import { hashMessage, hashTypedData, privateKeyToAccount } from '../../utils/ethereumPrimitives.js'
@@ -28,4 +30,18 @@ export const simulatePersonalSign = async (params: SignMessageParams, signingAdd
 		}
 		default: assertNever(params)
 	}
+}
+
+const areSameSignatures = (first: RecoverableMessageSignature, second: RecoverableMessageSignature) => first.r === second.r && first.s === second.s && first.yParity === second.yParity
+
+// Simulated personal_sign replies are signed with mock keys, so recovering them must resolve to the simulated signer like the ecRecover precompile override does during simulation.
+export const findSimulatedPersonalSignSigner = async (signedMessages: readonly SignedMessageTransaction[], messageHash: string, signature: RecoverableMessageSignature) => {
+	// Newest first: one message signed for different simulated signers yields a single shared mock-key signature, so the most recent signing wins.
+	for (const signedMessage of [...signedMessages].reverse()) {
+		const signRequest = signedMessage.originalRequestParameters
+		if (signRequest.method !== 'personal_sign' || getMessageHashForPersonalSign(signRequest) !== messageHash) continue
+		const simulatedSignature = RecoverableMessageSignature.parse((await simulatePersonalSign(signRequest, signedMessage.fakeSignedFor)).signature)
+		if (areSameSignatures(simulatedSignature, signature)) return signedMessage.fakeSignedFor
+	}
+	return undefined
 }
