@@ -1,5 +1,5 @@
 import { describe, test } from 'bun:test'
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { hasOwnKey, isNumberOrBigint } from '../../app/ts/utils/typescript.js'
 
 describe('typescript utils', () => {

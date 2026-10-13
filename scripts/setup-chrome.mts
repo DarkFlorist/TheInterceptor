@@ -26,11 +26,11 @@ async function runPackageScript(scriptName: string) {
 }
 
 function printProfile(results: readonly PhaseResult[], totalDurationMilliseconds: number) {
-	console.log('\nsetup-chrome profile')
+	console.info('\nsetup-chrome profile')
 	for (const result of results) {
-		console.log(`${ result.name.padEnd(20) }${ (result.durationMilliseconds / 1000).toFixed(2).padStart(8) } s`)
+		console.info(`${ result.name.padEnd(20) }${ (result.durationMilliseconds / 1000).toFixed(2).padStart(8) } s`)
 	}
-	console.log(`${ 'total'.padEnd(20) }${ (totalDurationMilliseconds / 1000).toFixed(2).padStart(8) } s`)
+	console.info(`${ 'total'.padEnd(20) }${ (totalDurationMilliseconds / 1000).toFixed(2).padStart(8) } s`)
 }
 
 async function setupChrome(profile: boolean) {

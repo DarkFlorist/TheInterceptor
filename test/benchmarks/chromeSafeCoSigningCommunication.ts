@@ -1,11 +1,12 @@
 import { mkdir, mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
+import * as funtypes from 'funtypes'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { Multicall3ABI } from '../../app/ts/utils/constants.js'
 import { SAFE_ABI, createSafeTx, safeTxToTypedDataJson } from '../../app/ts/safe/safeCore.js'
 import { EIP712Message } from '../../app/ts/types/eip721.js'
 import { EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
-import { SafeStackExport, SafeTransactionStacks } from '../../app/ts/types/safeTypes.js'
+import { SafeStackExport, type SafeTransactionStack, SafeTransactionStacks } from '../../app/ts/types/safeTypes.js'
 import { InterceptorTransactionStack } from '../../app/ts/types/visualizer-types.js'
 import { EthereumBlockHeader, EthereumQuantity, serialize } from '../../app/ts/types/wire-types.js'
 import { encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
@@ -14,8 +15,9 @@ import { getSafeTxHash } from '../../app/ts/utils/eip712.js'
 import { createSafeMessageTypedData, SAFE_MESSAGE_ABI } from '../../app/ts/safe/safeMessage.js'
 import { hashTypedData, privateKeyToAccount } from '../../app/ts/utils/ethereumPrimitives.js'
 import { encodeStorageReaderCall, STORAGE_READER_ABI } from '../../app/ts/simulation/storageReader.js'
-import { closeTarget, connectTarget, createTargetPage, launchChromeSession, readExtensionLargeStateValue, waitForInterceptorExtensionServiceWorker, waitForPerformanceMarks, waitForRegisteredContentScripts, waitForTargetByUrl, waitForTargetGone } from './chromeHarness.js'
+import { closeTarget, connectTarget, createTargetPage, launchChromeSession, readExtensionLargeStateValue, waitForCondition, waitForInterceptorExtensionServiceWorker, waitForPerformanceMarks, waitForRegisteredContentScripts, waitForTargetByUrl, waitForTargetGone } from './chromeHarness.js'
 import type { CdpConnection } from './chromeHarness.js'
+import { isRecord } from '../harness/assertions.js'
 
 const safeAppsTypedMessage = process.argv.includes('--safe-apps-typed-message')
 const safeAppsMessage = process.argv.includes('--safe-apps-message') || safeAppsTypedMessage
@@ -50,7 +52,7 @@ const SAFE_MESSAGE_HASH = hashTypedData(SAFE_MESSAGE_DATA)
 const SAFE_MESSAGE_SIGNATURE = await OWNER_ACCOUNT.signTypedData(SAFE_MESSAGE_DATA)
 const SAFE_MESSAGE_SIGNER_DATA = JSON.stringify({ types: SAFE_MESSAGE_DATA.types, primaryType: SAFE_MESSAGE_DATA.primaryType, domain: SAFE_MESSAGE_DATA.domain, message: SAFE_MESSAGE_DATA.message })
 const SAFE_SIGNATURE = await OWNER_ACCOUNT.signTypedData(EIP712Message.parse(SAFE_TYPED_DATA))
-const UNSIGNED_STACK = {
+const UNSIGNED_STACK: SafeTransactionStack = {
 	chainId: 1n,
 	safeAddress: SAFE_ADDRESS,
 	safeVersion: '1.4.1',
@@ -65,13 +67,14 @@ const UNSIGNED_STACK = {
 		signatures: [],
 	}],
 }
+const UNSIGNED_STACKS: SafeTransactionStacks = [UNSIGNED_STACK]
 const UNSIGNED_STACK_EXPORT = {
 	name: 'Interceptor Safe Stack' as const,
 	version: '1.0.0' as const,
-	stacks: [UNSIGNED_STACK],
+	stacks: UNSIGNED_STACKS,
 }
 const UNSIGNED_STACK_JSON = JSON.stringify(SafeStackExport.serialize(UNSIGNED_STACK_EXPORT), undefined, '\t')
-const SIGNED_MESSAGE_STACK = {
+const SIGNED_MESSAGE_STACK: InterceptorTransactionStack = {
 	operations: [{
 		type: 'Message' as const,
 		signedMessageTransaction: {
@@ -93,20 +96,22 @@ const SIGNED_MESSAGE_STACK = {
 	}],
 }
 const STORAGE_READER_CALL = dataStringWith0xStart(encodeStorageReaderCall(0n))
+const DomGetDocumentResponse = funtypes.ReadonlyObject({ root: funtypes.ReadonlyObject({ nodeId: funtypes.Number }) })
+const DomNodeResponse = funtypes.ReadonlyObject({ nodeId: funtypes.Number })
+const RpcSwitchResult = funtypes.ReadonlyPartial({ error: funtypes.String })
+const SafeSettingsReply = funtypes.ReadonlyObject({ success: funtypes.Boolean }).And(funtypes.ReadonlyPartial({ data: funtypes.ReadonlyPartial({ offChainSigning: funtypes.Boolean }) }))
+const SafeAppsMessageReplies = funtypes.ReadonlyObject({
+	message: funtypes.ReadonlyObject({ success: funtypes.Boolean }).And(funtypes.ReadonlyPartial({ data: funtypes.ReadonlyPartial({ messageHash: funtypes.String }) })),
+	balances: funtypes.ReadonlyObject({ success: funtypes.Boolean }).And(funtypes.ReadonlyPartial({ data: funtypes.ReadonlyPartial({ fiatTotal: funtypes.String }) })),
+})
+const SafeAppsPendingSignatureReply = funtypes.ReadonlyObject({ success: funtypes.Boolean }).And(funtypes.ReadonlyPartial({ data: funtypes.Unknown }))
+const SafeAppsTransactionReply = funtypes.ReadonlyObject({ success: funtypes.Boolean }).And(funtypes.ReadonlyPartial({
+	data: funtypes.ReadonlyPartial({ txStatus: funtypes.String, detailedExecutionInfo: funtypes.ReadonlyPartial({ safeTxHash: funtypes.String }) }),
+}))
+const SafeMessageSubmissions = funtypes.ReadonlyArray(funtypes.ReadonlyObject({ message: funtypes.Unknown, signature: funtypes.String }))
+const FakeSignerRequest = funtypes.ReadonlyObject({ method: funtypes.String }).And(funtypes.ReadonlyPartial({ params: funtypes.ReadonlyArray(funtypes.Unknown) }))
+const SigningResult = funtypes.ReadonlyPartial({ status: funtypes.String, result: funtypes.String })
 const STORAGE_READER_RESULT = encodeFunctionReturn(STORAGE_READER_ABI, 'readSlot', [bytes32String(SAFE_SINGLETON_ADDRESS)])
-
-function sleep(ms: number) {
-	return new Promise<void>((resolve) => setTimeout(resolve, ms))
-}
-
-async function waitForCondition(condition: () => Promise<boolean> | boolean, timeoutMs: number, label: string) {
-	const start = Date.now()
-	while (true) {
-		if (await condition()) return
-		if (Date.now() - start > timeoutMs) throw new Error(`Timed out waiting for ${ label } after ${ timeoutMs }ms`)
-		await sleep(50)
-	}
-}
 
 function extractExtensionId(url: string) {
 	const match = /^chrome-extension:\/\/([^/]+)/.exec(url)
@@ -115,10 +120,10 @@ function extractExtensionId(url: string) {
 }
 
 async function waitForButtonEnabled(connection: CdpConnection, selector: string, timeoutMs: number) {
-	await waitForCondition(async () => await connection.evaluate<boolean>(`(() => {
+	await waitForCondition(async () => (await connection.evaluate(`(() => {
 		const element = document.querySelector(${ JSON.stringify(selector) })
 		return element instanceof HTMLButtonElement && element.disabled === false
-	})()`).catch(() => false), timeoutMs, `button ${ selector } to be enabled`).catch(async (error: unknown) => {
+	})()`).catch(() => false)) === true, timeoutMs, `button ${ selector } to be enabled`).catch(async (error: unknown) => {
 		const body = await connection.evaluate('document.body.textContent')
 		throw new Error(`Button ${ selector } did not become enabled: ${ body }`, { cause: error })
 	})
@@ -143,23 +148,23 @@ async function clickButtonWithText(connection: CdpConnection, text: string) {
 
 async function waitForText(connection: CdpConnection, text: string, timeoutMs = 30_000) {
 	await waitForCondition(
-		async () => await connection.evaluate<boolean>(`document.body.textContent?.includes(${ JSON.stringify(text) }) === true`).catch(() => false),
+		async () => (await connection.evaluate(`document.body.textContent?.includes(${ JSON.stringify(text) }) === true`).catch(() => false)) === true,
 		timeoutMs,
 		`text ${ text }`,
 	)
 }
 
 async function setFileInput(connection: CdpConnection, selector: string, filePath: string) {
-	const document = await connection.send<{ root: { nodeId: number } }>('DOM.getDocument')
-	const input = await connection.send<{ nodeId: number }>('DOM.querySelector', {
+	const document = DomGetDocumentResponse.parse(await connection.send('DOM.getDocument'))
+	const input = DomNodeResponse.parse(await connection.send('DOM.querySelector', {
 		nodeId: document.root.nodeId,
 		selector,
-	})
+	}))
 	if (input.nodeId === 0) throw new Error(`Could not find file input ${ selector }`)
 	await connection.send('DOM.setFileInputFiles', { nodeId: input.nodeId, files: [filePath] })
 }
 
-function makeFakeBlock() {
+function makeFakeBlock(): EthereumBlockHeader {
 	return {
 		author: 0n,
 		difficulty: 0n,
@@ -199,8 +204,8 @@ function makeFakeEthSimulateResult(calls: readonly unknown[]) {
 		gasUsed: 21_000n,
 		baseFeePerGas: 1n,
 		calls: calls.map((call) => {
-			const input = isRecord(call) && typeof call.input === 'string' ? call.input : undefined
-			const to = isRecord(call) && typeof call.to === 'string' ? call.to : undefined
+			const input = isSimulationCallCandidate(call) && typeof call.input === 'string' ? call.input : undefined
+			const to = isSimulationCallCandidate(call) && typeof call.to === 'string' ? call.to : undefined
 			const safeResult = to !== undefined && BigInt(to) === GET_CODE_CONTRACT
 				? encodeFunctionReturn(GET_CODE_ABI, 'at', ['0x01'])
 				: input === STORAGE_READER_CALL && to !== undefined && BigInt(to) === SAFE_ADDRESS
@@ -225,7 +230,7 @@ const safeStateReadCalls = [
 	encodeFunctionCall(SAFE_ABI, 'getOwners', []),
 	encodeFunctionCall(SAFE_ABI, 'getThreshold', []),
 ] as const
-const safeCallResults = new Map([
+const safeCallResults = new Map<string, string>([
 	[encodeFunctionCall(SAFE_MESSAGE_ABI, 'getMessageHash', [SAFE_MESSAGE_DATA.message.message]), encodeFunctionReturn(SAFE_MESSAGE_ABI, 'getMessageHash', [SAFE_MESSAGE_HASH])],
 	[safeStateReadCalls[0], encodeFunctionReturn(SAFE_ABI, 'VERSION', ['1.4.1'])],
 	[safeStateReadCalls[1], encodeFunctionReturn(SAFE_ABI, 'nonce', [7n])],
@@ -245,14 +250,28 @@ const safeCallResults = new Map([
 	]), encodeFunctionReturn(SAFE_ABI, 'getTransactionHash', [bytes32String(SAFE_TX_HASH)])],
 ])
 
-type JsonRpcRequest = {
-	readonly id: number
-	readonly method: string
-	readonly params?: readonly unknown[]
-}
+const JsonRpcRequest = funtypes.ReadonlyObject({
+	id: funtypes.Number,
+	method: funtypes.String,
+}).And(funtypes.ReadonlyPartial({
+	params: funtypes.ReadonlyArray(funtypes.Unknown),
+}))
+type JsonRpcRequest = funtypes.Static<typeof JsonRpcRequest>
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === 'object' && value !== null && !Array.isArray(value)
+type EthCallCandidate = { readonly data?: unknown }
+type SimulationPayloadCandidate = { readonly blockStateCalls?: unknown }
+type BlockStateCallCandidate = { readonly calls?: unknown }
+type SimulationCallCandidate = { readonly input?: unknown, readonly to?: unknown }
+
+const isEthCallCandidate = (value: unknown): value is EthCallCandidate => isRecord(value)
+const isSimulationPayloadCandidate = (value: unknown): value is SimulationPayloadCandidate => isRecord(value)
+const isBlockStateCallCandidate = (value: unknown): value is BlockStateCallCandidate => isRecord(value)
+const isSimulationCallCandidate = (value: unknown): value is SimulationCallCandidate => isRecord(value)
+
+// Returns the calls of each eth_simulateV1 block state, or undefined for a malformed payload or block state.
+function simulatedBlockCalls(payload: unknown): readonly (readonly unknown[] | undefined)[] | undefined {
+	if (!isSimulationPayloadCandidate(payload) || !Array.isArray(payload.blockStateCalls)) return undefined
+	return payload.blockStateCalls.map((blockStateCall: unknown) => isBlockStateCallCandidate(blockStateCall) && Array.isArray(blockStateCall.calls) ? blockStateCall.calls : undefined)
 }
 
 async function handleRpcRequest(request: JsonRpcRequest) {
@@ -275,16 +294,14 @@ async function handleRpcRequest(request: JsonRpcRequest) {
 		}
 		case 'eth_call': {
 			const [call] = request.params ?? []
-			if (!isRecord(call) || typeof call.data !== 'string') throw new Error('Malformed eth_call')
+			if (!isEthCallCandidate(call) || typeof call.data !== 'string') throw new Error('Malformed eth_call')
 			return safeCallResults.get(call.data) ?? '0x'
 		}
 		case 'eth_getLogs': return []
 		case 'eth_simulateV1': {
 			const [payload] = request.params ?? []
-			const blockStateCalls = isRecord(payload) && Array.isArray(payload.blockStateCalls) ? payload.blockStateCalls : []
-			return serialize(EthSimulateV1Result, blockStateCalls.map((blockStateCall) =>
-				makeFakeEthSimulateResult(isRecord(blockStateCall) && Array.isArray(blockStateCall.calls) ? blockStateCall.calls : [])
-			))
+			const simulationResult: EthSimulateV1Result = (simulatedBlockCalls(payload) ?? []).map((calls) => makeFakeEthSimulateResult(calls ?? []))
+			return serialize(EthSimulateV1Result, simulationResult)
 		}
 		default: throw new Error(`Unsupported test RPC method: ${ request.method }`)
 	}
@@ -309,7 +326,7 @@ const server = Bun.serve({
 	async fetch(request) {
 		const url = new URL(request.url)
 		if (request.method === 'POST' && url.pathname === '/rpc') {
-			const rpcRequest = await request.json() as JsonRpcRequest
+			const rpcRequest = JsonRpcRequest.parse(await request.json())
 			rpcRequests.push(rpcRequest)
 			try {
 				return Response.json({ jsonrpc: '2.0', id: rpcRequest.id, result: await handleRpcRequest(rpcRequest) }, {
@@ -442,11 +459,11 @@ async function main() {
 		const rpcSwitchConnection = await connectTarget(chrome.browserDebugPort, rpcSwitchTargetId)
 		try {
 			await waitForCondition(
-				async () => await rpcSwitchConnection.evaluate<boolean>(`typeof chrome !== 'undefined' && typeof chrome.runtime?.sendMessage === 'function'`).catch(() => false),
+				async () => (await rpcSwitchConnection.evaluate(`typeof chrome !== 'undefined' && typeof chrome.runtime?.sendMessage === 'function'`).catch(() => false)) === true,
 				10_000,
 				'extension popup runtime',
 			)
-			const rpcSwitchResult = await rpcSwitchConnection.evaluate<{ error?: string }>(`(async () => {
+			const rpcSwitchResult = RpcSwitchResult.parse(await rpcSwitchConnection.evaluate(`(async () => {
 				try {
 					const reply = await chrome.runtime.sendMessage({
 						method: 'popup_changeActiveRpc',
@@ -457,7 +474,7 @@ async function main() {
 				} catch (error) {
 					return { error: error instanceof Error ? error.message : String(error) }
 				}
-			})()`)
+			})()`))
 			if (rpcSwitchResult.error !== undefined) throw new Error(`Failed to switch to Safe co-signing test RPC: ${ rpcSwitchResult.error }`)
 		} finally {
 			rpcSwitchConnection.close()
@@ -471,7 +488,7 @@ async function main() {
 			await pageConnection.send('Page.addScriptToEvaluateOnNewDocument', { source: fakeSignerPreload })
 			await pageConnection.send('Page.navigate', { url: `http://127.0.0.1:${ server.port }/${ safeAppsOnly ? '?safe-probe=early&safe-only=true' : '' }` })
 			try {
-				await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__interceptorChromeCommunicationState?.phase === '${ safeAppsOnly ? 'requesting-safe-only' : 'requesting-access' }'`).catch(() => false), 30_000, 'Safe access request')
+				await waitForCondition(async () => (await pageConnection.evaluate(`globalThis.__interceptorChromeCommunicationState?.phase === '${ safeAppsOnly ? 'requesting-safe-only' : 'requesting-access' }'`).catch(() => false)) === true, 30_000, 'Safe access request')
 			} catch (error) {
 				const accessDiagnostics = await pageConnection.evaluate('({ state: globalThis.__interceptorChromeCommunicationState, signerRequests: globalThis.__fakeSafeSignerRequests, url: location.href, body: document.body.textContent })')
 				throw new Error(`Safe access request did not open: ${ JSON.stringify(accessDiagnostics) }`, { cause: error })
@@ -491,29 +508,29 @@ async function main() {
 			}
 
 			try {
-				await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__interceptorChromeCommunicationState?.phase === '${ safeAppsOnly ? 'safe-only-granted' : 'access-granted' }'`).catch(() => false), 30_000, 'Safe access approval')
+				await waitForCondition(async () => (await pageConnection.evaluate(`globalThis.__interceptorChromeCommunicationState?.phase === '${ safeAppsOnly ? 'safe-only-granted' : 'access-granted' }'`).catch(() => false)) === true, 30_000, 'Safe access approval')
 			} catch (error) {
 				const pageDiagnostics = await pageConnection.evaluate('({ state: globalThis.__interceptorChromeCommunicationState, signerRequests: globalThis.__fakeSafeSignerRequests })')
 				throw new Error(`Safe access approval failed: ${ JSON.stringify(pageDiagnostics) }`, { cause: error })
 			}
-			const grantedAccounts = await pageConnection.evaluate<readonly string[]>('globalThis.__interceptorChromeCommunicationState.accounts')
+			const grantedAccounts = funtypes.ReadonlyArray(funtypes.String).parse(await pageConnection.evaluate('globalThis.__interceptorChromeCommunicationState.accounts'))
 			if (grantedAccounts[0]?.toLowerCase() !== addressString(SAFE_ADDRESS).toLowerCase()) {
 				throw new Error(`Dapp received ${ grantedAccounts[0] ?? 'no account' } instead of the Safe address`)
 			}
 			if (safeAppsOnly && !safeAppsMessage) {
-				const accountRequests = await pageConnection.evaluate<number>(`globalThis.__fakeSafeSignerRequests.filter(request => request.method === 'eth_requestAccounts').length`)
+				const accountRequests = await pageConnection.evaluate(`globalThis.__fakeSafeSignerRequests.filter(request => request.method === 'eth_requestAccounts').length`)
 				if (accountRequests !== 1) throw new Error(`Expected one MetaMask connection prompt, received ${ accountRequests }`)
 				await pageConnection.evaluate(`sessionStorage.setItem('fake-signer-block-chain', 'true')`)
 				for (let reload = 0; reload < 3; reload += 1) {
 					await pageConnection.evaluate('globalThis.__interceptorChromeCommunicationState = undefined')
 					await pageConnection.send('Page.reload')
 					try {
-						await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__interceptorChromeCommunicationState?.phase === 'safe-only-granted'`).catch(() => false), 30_000, 'Safe discovery after reload')
+						await waitForCondition(async () => (await pageConnection.evaluate(`globalThis.__interceptorChromeCommunicationState?.phase === 'safe-only-granted'`).catch(() => false)) === true, 30_000, 'Safe discovery after reload')
 					} catch (error) {
 						const diagnostics = await pageConnection.evaluate('({ state: globalThis.__interceptorChromeCommunicationState, requests: globalThis.__fakeSafeSignerRequests })')
 						throw new Error(`Safe discovery stalled after reload: ${ JSON.stringify(diagnostics) }`, { cause: error })
 					}
-					const prompts = await pageConnection.evaluate<number>(`globalThis.__fakeSafeSignerRequests.filter(request => request.method === 'eth_requestAccounts').length`)
+					const prompts = await pageConnection.evaluate(`globalThis.__fakeSafeSignerRequests.filter(request => request.method === 'eth_requestAccounts').length`)
 					if (prompts !== 0) throw new Error(`Reload requested signer access ${ prompts } times`)
 				}
 				console.warn('Safe Apps discovery connected an initially unauthorized signer and survived three reloads with stalled signer chain queries without prompting.')
@@ -542,13 +559,13 @@ async function main() {
 						}
 					})()`)
 					for (const offChainSigning of [false, true]) {
-						const settingsReply = await pageConnection.evaluate<{ success: boolean, data?: { offChainSigning: boolean } }>(`new Promise((resolve, reject) => {
+						const settingsReply = SafeSettingsReply.parse(await pageConnection.evaluate(`new Promise((resolve, reject) => {
 							const id = crypto.randomUUID()
 							const listener = ({ data }) => { if (data?.id === id && typeof data.success === 'boolean') { clearTimeout(timer); window.removeEventListener('message', listener); resolve(data) } }
 							const timer = setTimeout(() => { window.removeEventListener('message', listener); reject(new Error('Safe SDK settings acknowledgement timed out after 10s')) }, 10000)
 							window.addEventListener('message', listener)
 							window.postMessage({ id, method: 'rpcCall', params: { call: 'safe_setSettings', params: [{ offChainSigning: ${ offChainSigning } }] }, env: { sdkVersion: '9.0.0' } }, location.origin)
-						})`)
+						})`))
 						if (!settingsReply.success || settingsReply.data?.offChainSigning !== offChainSigning) throw new Error('Safe SDK settings were not acknowledged')
 					}
 					await pageConnection.evaluate(`(() => {
@@ -565,24 +582,27 @@ async function main() {
 					const connection = await connectTarget(chrome.browserDebugPort, confirmation.id)
 					try {
 						await waitForButtonEnabled(connection, CONFIRM_APPROVE_BUTTON_SELECTOR, 30_000)
-						const text = await connection.evaluate<string>('document.body.textContent')
-						if (!text.includes(SAFE_MESSAGE_TEXT) || !text.includes('publish this message')) throw new Error('Safe message review did not disclose the text and publication')
+						const text = await connection.evaluate('document.body.textContent')
+						if (typeof text !== 'string' || !text.includes(SAFE_MESSAGE_TEXT) || !text.includes('publish this message')) throw new Error('Safe message review did not disclose the text and publication')
 						await clickButton(connection, CONFIRM_APPROVE_BUTTON_SELECTOR)
 					} finally {
 						connection.close()
 					}
-					await waitForCondition(async () => await pageConnection.evaluate('globalThis.__safeAppsReplies.message !== undefined'), 15_000, 'Safe Apps signed-message reply')
-					const result = await pageConnection.evaluate<{ message: { success: boolean, data?: { messageHash: string } }, balances: { success: boolean, data?: { fiatTotal: string } } }>('globalThis.__safeAppsReplies')
-					if (!result.message.success || result.message.data?.messageHash !== SAFE_MESSAGE_HASH || !result.balances.success || result.balances.data?.fiatTotal !== '42') throw new Error(`Unexpected Safe Apps replies: ${ JSON.stringify(result) }`)
-					const submissions = await gatewayConnection.evaluate<readonly { message: string, signature: string }[]>('globalThis.__safeMessageSubmissions')
+					await waitForCondition(async () => (await pageConnection.evaluate('globalThis.__safeAppsReplies.message !== undefined')) === true, 15_000, 'Safe Apps signed-message reply')
+					const rawReplies = await pageConnection.evaluate('globalThis.__safeAppsReplies')
+					const result = SafeAppsMessageReplies.parse(rawReplies)
+					if (!result.message.success || result.message.data?.messageHash !== SAFE_MESSAGE_HASH || !result.balances.success || result.balances.data?.fiatTotal !== '42') throw new Error(`Unexpected Safe Apps replies: ${ JSON.stringify(rawReplies) }`)
+					const submissions = SafeMessageSubmissions.parse(await gatewayConnection.evaluate('globalThis.__safeMessageSubmissions'))
 					if (submissions.length !== 1 || JSON.stringify(submissions[0]?.message) !== JSON.stringify(SERVICE_MESSAGE) || submissions[0]?.signature !== SAFE_MESSAGE_SIGNATURE) throw new Error('The reviewed Safe signature was not submitted exactly once')
 					await pageConnection.evaluate(`window.postMessage({ id: 'pending-signature', method: 'getOffChainSignature', params: ${ JSON.stringify(SAFE_MESSAGE_HASH) }, env: { sdkVersion: '9.0.0' } }, location.origin)`)
-					await waitForCondition(async () => await pageConnection.evaluate('globalThis.__safeAppsReplies["pending-signature"] !== undefined'), 15_000, 'pending Safe signature polling reply')
-					const pending = await pageConnection.evaluate<{ success: boolean, data?: string }>('globalThis.__safeAppsReplies["pending-signature"]')
-					if (!pending.success || pending.data !== '') throw new Error(`A pending Safe signature must be a successful empty response: ${ JSON.stringify(pending) }`)
-					await waitForCondition(async () => await pageConnection.evaluate('globalThis.__safeAppsReplies.transaction !== undefined'), 15_000, 'Safe transaction lookup reply')
-					const transaction = await pageConnection.evaluate<{ success: boolean, data?: { txStatus: string, detailedExecutionInfo: { safeTxHash: string } } }>('globalThis.__safeAppsReplies.transaction')
-					if (!transaction.success || transaction.data?.txStatus !== 'AWAITING_CONFIRMATIONS' || transaction.data.detailedExecutionInfo.safeTxHash !== bytes32String(SAFE_TX_HASH)) throw new Error(`Unexpected Safe transaction lookup: ${ JSON.stringify(transaction) }`)
+					await waitForCondition(async () => (await pageConnection.evaluate('globalThis.__safeAppsReplies["pending-signature"] !== undefined')) === true, 15_000, 'pending Safe signature polling reply')
+					const rawPending = await pageConnection.evaluate('globalThis.__safeAppsReplies["pending-signature"]')
+					const pending = SafeAppsPendingSignatureReply.parse(rawPending)
+					if (!pending.success || pending.data !== '') throw new Error(`A pending Safe signature must be a successful empty response: ${ JSON.stringify(rawPending) }`)
+					await waitForCondition(async () => (await pageConnection.evaluate('globalThis.__safeAppsReplies.transaction !== undefined')) === true, 15_000, 'Safe transaction lookup reply')
+					const rawTransaction = await pageConnection.evaluate('globalThis.__safeAppsReplies.transaction')
+					const transaction = SafeAppsTransactionReply.parse(rawTransaction)
+					if (!transaction.success || transaction.data?.txStatus !== 'AWAITING_CONFIRMATIONS' || transaction.data.detailedExecutionInfo?.safeTxHash !== bytes32String(SAFE_TX_HASH)) throw new Error(`Unexpected Safe transaction lookup: ${ JSON.stringify(rawTransaction) }`)
 					console.warn('Safe Apps transaction lookup, balances and off-chain message signing passed through the real extension confirmation and signer bridge.')
 					return
 				} finally {
@@ -633,7 +653,7 @@ async function main() {
 			}
 
 			try {
-				await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__fakeSafeSignerRequests?.some(({ method }) => method === 'eth_signTypedData_v4')`).catch(() => false), 10_000, 'configured EOA signer request')
+				await waitForCondition(async () => (await pageConnection.evaluate(`globalThis.__fakeSafeSignerRequests?.some(({ method }) => method === 'eth_signTypedData_v4')`).catch(() => false)) === true, 10_000, 'configured EOA signer request')
 			} catch (error) {
 				const pageDiagnostics = await pageConnection.evaluate('({ result: globalThis.__safeCoSigningResult, signerRequests: globalThis.__fakeSafeSignerRequests })')
 				const confirmDiagnosticsConnection = await connectTarget(chrome.browserDebugPort, confirmTarget.id)
@@ -641,12 +661,12 @@ async function main() {
 				confirmDiagnosticsConnection.close()
 				throw new Error(`Safe signer forwarding failed. Page: ${ JSON.stringify(pageDiagnostics) }. Confirmation: ${ JSON.stringify(confirmText) }. RPC: ${ JSON.stringify(rpcRequests) }`, { cause: error })
 			}
-			const signerRequest = await pageConnection.evaluate<{ method: string, params?: readonly unknown[] }>(`globalThis.__fakeSafeSignerRequests.find(({ method }) => method === 'eth_signTypedData_v4')`)
+			const signerRequest = FakeSignerRequest.parse(await pageConnection.evaluate(`globalThis.__fakeSafeSignerRequests.find(({ method }) => method === 'eth_signTypedData_v4')`))
 			if (typeof signerRequest.params?.[0] !== 'string' || signerRequest.params[0].toLowerCase() !== addressString(OWNER_ADDRESS).toLowerCase()) {
 				throw new Error(`Interceptor did not substitute the wallet-selected Safe owner: expected ${ addressString(OWNER_ADDRESS) }, received ${ JSON.stringify(signerRequest.params?.[0]) }`)
 			}
-			await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__safeCoSigningResult?.status === 'fulfilled'`).catch(() => false), 10_000, 'Safe co-signature result')
-			const signingResult = await pageConnection.evaluate<{ status?: string, result?: string }>('globalThis.__safeCoSigningResult')
+			await waitForCondition(async () => (await pageConnection.evaluate(`globalThis.__safeCoSigningResult?.status === 'fulfilled'`).catch(() => false)) === true, 10_000, 'Safe co-signature result')
+			const signingResult = SigningResult.parse(await pageConnection.evaluate('globalThis.__safeCoSigningResult'))
 			if (signingResult.result !== SAFE_SIGNATURE) throw new Error(`Unexpected Safe co-signature result: ${ signingResult.result ?? 'missing' }`)
 			await waitForTargetGone(chrome.browserDebugPort, (target) => target.id === confirmTarget.id, 10_000, 'initial Safe confirmation window')
 			confirmTargetId = undefined
@@ -654,7 +674,7 @@ async function main() {
 			const stackSeedConnection = await connectTarget(chrome.browserDebugPort, workerTarget.id)
 			try {
 				await stackSeedConnection.evaluate(`browser.storage.local.set({
-					safeTransactionStacks: ${ JSON.stringify(serialize(SafeTransactionStacks, [UNSIGNED_STACK])) },
+					safeTransactionStacks: ${ JSON.stringify(serialize(SafeTransactionStacks, UNSIGNED_STACKS)) },
 					interceptorTransactionStack: ${ JSON.stringify(serialize(InterceptorTransactionStack, SIGNED_MESSAGE_STACK)) },
 				})`)
 			} finally {
@@ -669,7 +689,7 @@ async function main() {
 			await pageConnection.send('Page.navigate', { url: `http://127.0.0.1:${ server.port }/sealwort/` })
 			await waitForText(pageConnection, 'Review. Verify. Sign. Return.')
 			await waitForCondition(
-				async () => await pageConnection.evaluate<boolean>('typeof globalThis.__sealwortFixture?.connect === "function"').catch(() => false),
+				async () => (await pageConnection.evaluate('typeof globalThis.__sealwortFixture?.connect === "function"').catch(() => false)) === true,
 				10_000,
 				'Safe co-signer fixture API',
 			)
@@ -695,16 +715,16 @@ async function main() {
 			const sealwortSimulationRequests = sealwortInspectionRpcRequests.filter((rpcRequest) => rpcRequest.method === 'eth_simulateV1')
 			const hasTransactionPreparationSimulation = sealwortSimulationRequests.some((rpcRequest) => {
 				const [payload] = rpcRequest.params ?? []
-				if (!isRecord(payload) || !Array.isArray(payload.blockStateCalls)) return false
-				return payload.blockStateCalls.every((blockStateCall) => isRecord(blockStateCall) && Array.isArray(blockStateCall.calls) && blockStateCall.calls.length === 0)
+				const blockCalls = simulatedBlockCalls(payload)
+				if (blockCalls === undefined) return false
+				return blockCalls.every((calls) => calls !== undefined && calls.length === 0)
 			})
 			if (hasTransactionPreparationSimulation) throw new Error('Sealwort Safe inspection ran transaction preparation for a transaction-free overlay')
 			const simulatedStorageLookup = sealwortSimulationRequests.some((rpcRequest) => {
 				const [payload] = rpcRequest.params ?? []
-				if (!isRecord(payload) || !Array.isArray(payload.blockStateCalls)) return false
-				return payload.blockStateCalls.some((blockStateCall) => isRecord(blockStateCall)
-					&& Array.isArray(blockStateCall.calls)
-					&& blockStateCall.calls.some((call) => isRecord(call) && call.input === STORAGE_READER_CALL))
+				const blockCalls = simulatedBlockCalls(payload)
+				if (blockCalls === undefined) return false
+				return blockCalls.some((calls) => calls?.some((call: unknown) => isSimulationCallCandidate(call) && call.input === STORAGE_READER_CALL) === true)
 			})
 			// SIGNED_MESSAGE_STACK belongs to simulation mode; Safe signing inspection must not replay that unrelated overlay.
 			const liveStorageLookup = sealwortInspectionRpcRequests.some((request) => request.method === 'eth_getStorageAt' && request.params?.[0] === addressString(SAFE_ADDRESS) && request.params?.[1] === '0x0')
@@ -775,9 +795,9 @@ async function main() {
 				throw new Error(`Sealwort signing failed. Page: ${ JSON.stringify(sealwortDiagnostics) }. RPC: ${ JSON.stringify(rpcRequests) }`, { cause: error })
 			}
 			await waitForText(pageConnection, 'Signature added')
-			const safeSignerRequests = await pageConnection.evaluate<readonly { method: string, params?: readonly unknown[] }[]>(
+			const safeSignerRequests = funtypes.ReadonlyArray(FakeSignerRequest).parse(await pageConnection.evaluate(
 				`globalThis.__fakeSafeSignerRequests.filter(({ method }) => method === 'eth_signTypedData_v4')`
-			)
+			))
 			if (safeSignerRequests.length !== 1) {
 				throw new Error(`Sealwort forwarded ${ safeSignerRequests.length.toString() } Safe signing requests instead of one`)
 			}
@@ -796,7 +816,7 @@ async function main() {
 			}
 
 			const preImportStackConnection = await connectTarget(chrome.browserDebugPort, workerTarget.id)
-			const preImportStacks = await readExtensionLargeStateValue<unknown>(preImportStackConnection, 'safeTransactionStacks')
+			const preImportStacks = await readExtensionLargeStateValue(preImportStackConnection, 'safeTransactionStacks')
 				.finally(() => { preImportStackConnection.close() })
 			const parsedPreImportStacks = SafeTransactionStacks.parse(preImportStacks)
 			if (parsedPreImportStacks[0]?.transactions[0]?.signatures.length !== 0) {
@@ -817,7 +837,7 @@ async function main() {
 				})()`)
 				await clickButtonWithText(simulationStackConnection, 'Import signatures')
 				await waitForCondition(
-					async () => await simulationStackConnection.evaluate<boolean>(`document.body.textContent?.includes('Import Interceptor Gnosis Safe Stack') === false`).catch(() => false),
+					async () => (await simulationStackConnection.evaluate(`document.body.textContent?.includes('Import Interceptor Gnosis Safe Stack') === false`).catch(() => false)) === true,
 					30_000,
 					'Safe import modal to close',
 				)
@@ -827,7 +847,7 @@ async function main() {
 			}
 
 			const stackReadConnection = await connectTarget(chrome.browserDebugPort, workerTarget.id)
-			const importedStacks = await readExtensionLargeStateValue<unknown>(stackReadConnection, 'safeTransactionStacks')
+			const importedStacks = await readExtensionLargeStateValue(stackReadConnection, 'safeTransactionStacks')
 				.finally(() => { stackReadConnection.close() })
 			const parsedImportedStacks = SafeTransactionStacks.parse(importedStacks)
 			const importedSignature = parsedImportedStacks[0]?.transactions[0]?.signatures[0]

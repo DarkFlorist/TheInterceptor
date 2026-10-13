@@ -1,6 +1,6 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
-import { encodeAbiParameters, formatAbiItem, toEventSelector, type Abi, type AbiEvent, type AbiParameter } from '../../app/ts/utils/ethereumPrimitives.js'
+import { encodeAbiParameters, formatAbiItem, toEventSelector, type Abi, type AbiEvent, type AbiParameter, type Hex } from '../../app/ts/utils/ethereumPrimitives.js'
 import { parseAbiParametersToSolidityVariables } from '../../app/ts/utils/solidityTypes.js'
 import { decodeEventLoose } from '../../app/ts/utils/abiRuntime.js'
 import { encodeFunctionCall } from '../../app/ts/utils/abiRuntime.js'
@@ -10,6 +10,7 @@ import { EthereumClientService } from '../../app/ts/simulation/services/Ethereum
 import type { IEthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
 import { EthereumData } from '../../app/ts/types/wire-types.js'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
+import { installBrowserMock } from '../harness/browserMock.js'
 
 const OWNER_ADDRESS = 0x1000000000000000000000000000000000000001n
 const TOKEN_ADDRESS = 0x2000000000000000000000000000000000000002n
@@ -167,37 +168,8 @@ const indexedTupleArrayEvent = {
 	}],
 } as const satisfies AbiEvent
 
-const toIndexedAddressTopic = (address: string) => `0x${ address.slice(2).padStart(64, '0') }`
+const toIndexedAddressTopic = (address: string): Hex => `0x${ address.slice(2).padStart(64, '0') }`
 const toAddressHex = (address: bigint) => `0x${ address.toString(16).padStart(40, '0') }`
-
-const installBrowserStorageMock = (storageState: Record<string, unknown>) => {
-	const previousBrowser = globalThis.browser
-	Object.defineProperty(globalThis, 'browser', {
-		value: {
-			storage: {
-				local: {
-					async get(keys?: string | string[] | Record<string, unknown> | null) {
-						if (keys === undefined || keys === null) return { ...storageState }
-						if (Array.isArray(keys)) return Object.fromEntries(keys.map((key) => [key, storageState[key]]))
-						if (typeof keys === 'string') return { [keys]: storageState[keys] }
-						return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
-					},
-					async set(items: Record<string, unknown>) {
-						Object.assign(storageState, items)
-					},
-					async remove(keys: string | string[]) {
-						for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
-					},
-				},
-			},
-		},
-		configurable: true,
-		writable: true,
-	})
-	return () => {
-		Object.defineProperty(globalThis, 'browser', { value: previousBrowser, configurable: true, writable: true })
-	}
-}
 
 const testRpcEntry = {
 	name: 'Ethereum',
@@ -227,7 +199,7 @@ const encodeEventData = (event: AbiEvent, values: readonly unknown[]) => {
 	return encodeAbiParameters(unindexedInputs, unindexedValues)
 }
 
-const parseDecodedEvent = (event: AbiEvent, values: readonly unknown[], indexedTopics: readonly string[]) => {
+const parseDecodedEvent = (event: AbiEvent, values: readonly unknown[], indexedTopics: readonly Hex[]) => {
 	const selector = toEventSelector(formatAbiItem(event))
 	const decoded = decodeEventLoose([event], { data: encodeEventData(event, values), topics: [selector, ...indexedTopics] })
 	if (decoded === undefined) throw new Error('failed to decode event')
@@ -325,7 +297,7 @@ describe('parseAbiParametersToSolidityVariables', () => {
 				},
 			],
 		}
-		const restoreBrowser = installBrowserStorageMock(storageState)
+		const browserMock = installBrowserMock({ storage: { local: storageState } })
 		try {
 			const input = encodeFunctionCall(tupleInputFunctionAbi, 'fulfill', [
 				{ owner: toAddressHex(OWNER_ADDRESS), amount: 5n },
@@ -363,7 +335,7 @@ describe('parseAbiParametersToSolidityVariables', () => {
 				},
 			])
 		} finally {
-			restoreBrowser()
+			browserMock.restore()
 		}
 	})
 

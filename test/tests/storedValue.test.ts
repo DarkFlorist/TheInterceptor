@@ -1,4 +1,4 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
 import { createStoredValueRepository } from '../../app/ts/utils/storedValue.js'
 
@@ -35,10 +35,8 @@ describe('stored value repository', () => {
 
 	test('serializes direct writes behind an in-flight read-modify-write update', async () => {
 		let storedValue = 1
-		let releaseUpdate = () => undefined
-		let signalUpdateStarted = () => undefined
-		const updateStarted = new Promise<void>((resolve) => { signalUpdateStarted = resolve })
-		const continueUpdate = new Promise<void>((resolve) => { releaseUpdate = resolve })
+		const updateStarted = Promise.withResolvers<void>()
+		const continueUpdate = Promise.withResolvers<void>()
 		const repository = createStoredValueRepository({
 			read: async () => storedValue,
 			write: async (value: number) => { storedValue = value },
@@ -46,13 +44,13 @@ describe('stored value repository', () => {
 		})
 
 		const updatePromise = repository.update(async (previous) => {
-			signalUpdateStarted()
-			await continueUpdate
+			updateStarted.resolve()
+			await continueUpdate.promise
 			return previous + 1
 		})
-		await updateStarted
+		await updateStarted.promise
 		const setPromise = repository.set(10)
-		releaseUpdate()
+		continueUpdate.resolve()
 		await Promise.all([updatePromise, setPromise])
 
 		assert.equal(storedValue, 10)

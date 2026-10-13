@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'bun:test'
+import * as funtypes from 'funtypes'
 import { type EthereumJsonRpcRequest as EthereumJsonRpcRequestType, EthereumJsonRpcRequest, WalletWatchAsset } from '../../app/ts/types/JsonRpc-types.js'
 import { enqueueStoredWatchAssetRequest, handleWatchAssetRequest, MAX_PENDING_WATCH_ASSET_REQUESTS, MAX_PENDING_WATCH_ASSET_REQUESTS_PER_ORIGIN, processWatchAssetQueue, replaceAddressBookEntryWithAsset, resolveWatchAsset, resolveWatchAssetSignerReply, settlePendingWatchAssetForReplacedSigner, updateWatchAssetViewWithPendingRequest, validateWatchAssetParameters } from '../../app/ts/background/windows/watchAsset.js'
 import { getWatchAssetRpcParseFailureReply } from '../../app/ts/background/watchAssetRpc.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
+import type { IEthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
 import { StoredWatchAssetRequest, type WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
 import type { AddressBookEntries } from '../../app/ts/types/addressBookTypes.js'
 
@@ -17,14 +19,14 @@ const rpcEntry = {
 	minimized: true,
 }
 
-class UnusedRequestHandler {
-	public rpcUrl = rpcEntry.httpsRpc
-	public readonly jsonRpcRequest = async (request: EthereumJsonRpcRequestType) => { throw new Error(`Unexpected RPC method ${ request.method }`) }
-	public readonly clearCache = () => undefined
-	public readonly getChainId = async () => 1n
-}
+const createUnusedRequestHandler = (): IEthereumJSONRpcRequestHandler => ({
+	rpcUrl: rpcEntry.httpsRpc,
+	jsonRpcRequest: async (request: EthereumJsonRpcRequestType) => { throw new Error(`Unexpected RPC method ${ request.method }`) },
+	clearCache: () => undefined,
+	getChainId: async () => 1n,
+})
 
-const ethereum = new EthereumClientService(new UnusedRequestHandler(), async () => undefined, async () => undefined, rpcEntry)
+const ethereum = new EthereumClientService(createUnusedRequestHandler(), async () => undefined, async () => undefined, rpcEntry)
 const websiteTabConnections: WebsiteTabConnections = new Map()
 const website = { websiteOrigin: 'https://dapp.example', title: 'Dapp', icon: undefined }
 const interceptedRequest = {
@@ -35,7 +37,15 @@ const interceptedRequest = {
 	uniqueRequestIdentifier: { requestId: 1, requestSocket: { tabId: 2, connectionName: 3n } },
 }
 
-function createStoredRequest(requestId: number, websiteOrigin = website.websiteOrigin): StoredWatchAssetRequest {
+type Erc20WatchAssetParameters = Extract<StoredWatchAssetRequest['requestedAsset'], { readonly type: 'ERC20' }>
+type StoredErc20WatchAssetRequest = StoredWatchAssetRequest & { readonly requestedAsset: Erc20WatchAssetParameters }
+
+// Only the signer connection name of a serialized request is inspected, so this codec checks just that wire field.
+const SerializedForwardToSignerConnectionName = funtypes.ReadonlyObject({
+	forwardToSigner: funtypes.ReadonlyObject({ connectionName: funtypes.String }),
+})
+
+function createStoredRequest(requestId: number, websiteOrigin = website.websiteOrigin): StoredErc20WatchAssetRequest {
 	const address = BigInt(tokenAddress) + BigInt(requestId)
 	return {
 		website: { ...website, websiteOrigin },
@@ -44,7 +54,7 @@ function createStoredRequest(requestId: number, websiteOrigin = website.websiteO
 			...interceptedRequest,
 			uniqueRequestIdentifier: { ...interceptedRequest.uniqueRequestIdentifier, requestId },
 		},
-		requestedAsset: { ...WalletWatchAsset.parse(interceptedRequest).params[0], options: { address, chainId: 1 } },
+		requestedAsset: { type: 'ERC20', options: { address, chainId: 1 } },
 		currentToken: {
 			type: 'ERC20',
 			name: `Current ${ requestId }`,
@@ -90,7 +100,7 @@ describe('wallet_watchAsset', () => {
 			...createStoredRequest(0),
 			forwardToSigner: { signerName: 'MetaMask', connectionName: 0n, ownerGeneration: 3, signerProviderGeneration: 1 },
 		})
-		expect(serialized.forwardToSigner?.connectionName).toBe('0x0')
+		expect(SerializedForwardToSignerConnectionName.parse(serialized).forwardToSigner.connectionName).toBe('0x0')
 	})
 
 	test('is accepted as a supported ERC20 RPC request', () => {
@@ -157,7 +167,7 @@ describe('wallet_watchAsset', () => {
 			const parsed = WalletWatchAsset.parse(requestWithInvalidDecimals)
 			let identifyCount = 0
 			const reply = await handleWatchAssetRequest(ethereum, websiteTabConnections, requestWithInvalidDecimals, website, parsed, {
-				identifyAddress: async (_ethereum, _abortController, address) => { identifyCount += 1; return { type: 'ERC20', address, name: 'Unexpected', symbol: 'NO', decimals: 18n } },
+				identifyAddress: async (_ethereum, _abortController, address) => { identifyCount += 1; return { type: 'ERC20', address, name: 'Unexpected', symbol: 'NO', decimals: 18n, entrySource: 'OnChain' } },
 				getAddressBookEntries: async () => [],
 				scheduleDialog: () => { throw new Error('Invalid request must not schedule a dialog') },
 			})
@@ -352,7 +362,7 @@ describe('wallet_watchAsset', () => {
 		const existingAddressBook: AddressBookEntries = [{ type: 'contract', address: BigInt(tokenAddress), name: 'Unidentified contract', entrySource: 'User', chainId: 1n, logoUri: 'data:image/png;base64,c2F2ZWQ=' }]
 		const queuedRequests: StoredWatchAssetRequest[] = []
 		const reply = await handleWatchAssetRequest(ethereum, websiteTabConnections, interceptedRequest, website, parsed, {
-			identifyAddress: async (_ethereum, _abortController, address) => ({ type: 'ERC20', address, name: 'Identified', symbol: 'CHAIN', decimals: 18n }),
+			identifyAddress: async (_ethereum, _abortController, address) => ({ type: 'ERC20', address, name: 'Identified', symbol: 'CHAIN', decimals: 18n, entrySource: 'OnChain' }),
 			getAddressBookEntries: async () => existingAddressBook,
 			enqueueRequest: async (request) => { queuedRequests.push(request) },
 			scheduleDialog: () => undefined,

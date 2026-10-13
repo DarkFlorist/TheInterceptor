@@ -1,4 +1,4 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { Signal } from '@preact/signals'

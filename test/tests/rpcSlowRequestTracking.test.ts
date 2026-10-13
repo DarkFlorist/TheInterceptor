@@ -1,4 +1,4 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
 import { createRpcConnectionStatusPublisher, slowRpcRequestKey, type DefinedRpcConnectionStatus, type RpcStatusEthereumClient } from '../../app/ts/background/rpcSlowRequestTracking.js'
 import type { SlowRpcRequest } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
@@ -32,20 +32,6 @@ function makeSlowRpcRequest(requestId: number, method: string, startedAt: string
 	}
 }
 
-function createDeferred() {
-	let resolvePromise: (() => void) | undefined
-	const promise = new Promise<void>((resolve) => {
-		resolvePromise = resolve
-	})
-	return {
-		promise,
-		resolve() {
-			if (resolvePromise === undefined) throw new Error('Deferred promise was not initialized')
-			resolvePromise()
-		},
-	}
-}
-
 function createFakeEthereumClient(): RpcStatusEthereumClient {
 	return {
 		getRpcEntry: () => rpcNetwork,
@@ -61,8 +47,8 @@ describe('rpc slow request tracking', () => {
 		slowRpcRequests.set(slowRpcRequestKey(request), request)
 		let currentStatus: RpcConnectionStatus = baseRpcConnectionStatus
 		const published: DefinedRpcConnectionStatus[] = []
-		const firstPublishStarted = createDeferred()
-		const releaseFirstPublish = createDeferred()
+		const firstPublishStarted = Promise.withResolvers<void>()
+		const releaseFirstPublish = Promise.withResolvers<void>()
 		let publishCalls = 0
 		const publisher = createRpcConnectionStatusPublisher({
 			getEthereumClientService: createFakeEthereumClient,
@@ -125,8 +111,8 @@ describe('rpc slow request tracking', () => {
 		slowRpcRequests.set(slowRpcRequestKey(request), request)
 		let currentStatus: RpcConnectionStatus = baseRpcConnectionStatus
 		const published: DefinedRpcConnectionStatus[] = []
-		const firstPublishStarted = createDeferred()
-		const releaseFirstPublish = createDeferred()
+		const firstPublishStarted = Promise.withResolvers<void>()
+		const releaseFirstPublish = Promise.withResolvers<void>()
 		let publishCalls = 0
 		const publisher = createRpcConnectionStatusPublisher({
 			getEthereumClientService: createFakeEthereumClient,

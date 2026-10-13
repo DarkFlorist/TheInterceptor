@@ -1,53 +1,20 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { describe, test } from 'bun:test'
 import { WalletForwardingResult, WATCH_ASSET_TITLE, WatchAssetActions, WatchAssetDetails } from '../../app/ts/components/pages/WatchAsset.js'
 import type { PendingWatchAssetRequest } from '../../app/ts/types/user-interface-types.js'
-import { installDomMock } from './domMock.js'
+import { installDomMock, isMockElement, type MockElement } from './domMock.js'
+import { collectElements, findElement, isDisabled } from './domQueries.js'
 
-type TestNode = {
-	textContent?: string | null
-	childNodes?: readonly TestNode[]
-	parentNode?: TestNode | null
-	getAttribute?: (name: string) => string | null
-	style?: Record<string, string>
-	tagName?: string
-	disabled?: boolean
-}
+const findElementByExactText = (root: MockElement, text: string) => findElement(root, (element) => element.textContent === text)
 
-function findNodeByExactText(node: TestNode, text: string): TestNode | undefined {
-	if (node.getAttribute !== undefined && node.textContent === text) return node
-	for (const child of node.childNodes ?? []) {
-		const match = findNodeByExactText(child, text)
-		if (match !== undefined) return match
-	}
-	return undefined
-}
+const findElementByAttribute = (root: MockElement, name: string, value: string) => findElement(root, (element) => element.getAttribute(name) === value)
 
-function findFirstByTag(node: TestNode, tagName: string): TestNode | undefined {
-	if (node.tagName === tagName.toUpperCase()) return node
-	for (const child of node.childNodes ?? []) {
-		const match = findFirstByTag(child, tagName)
-		if (match !== undefined) return match
-	}
-	return undefined
-}
-
-function findAllByTag(node: TestNode, tagName: string): TestNode[] {
-	return [
-		...(node.tagName === tagName.toUpperCase() ? [node] : []),
-		...(node.childNodes ?? []).flatMap((child) => findAllByTag(child, tagName)),
-	]
-}
-
-function findNodeByAttribute(node: TestNode, name: string, value: string): TestNode | undefined {
-	if (node.getAttribute?.(name) === value) return node
-	for (const child of node.childNodes ?? []) {
-		const match = findNodeByAttribute(child, name, value)
-		if (match !== undefined) return match
-	}
-	return undefined
+function getAssetProposalSection(root: MockElement) {
+	const section = findElementByExactText(root, 'Asset proposal')?.parentNode
+	assert.ok(isMockElement(section), 'Expected the asset proposal section')
+	return section
 }
 
 const pendingRequest: PendingWatchAssetRequest = {
@@ -112,14 +79,14 @@ describe('watch asset proposal rendering', () => {
 			const dom = installDomMock()
 			try {
 				await act(() => { render(h(WatchAssetDetails, { pendingRequest: nftRequest }), dom.document.body) })
-				const text = dom.document.body.textContent ?? ''
+				const text = dom.document.body.textContent
 				assert.match(text, new RegExp(`${ type }.*Token IDs.*7.*7, 42.*Will change`, 's'))
 				assert.match(text, new RegExp(`Name${ currentToken.name }${ currentToken.name }No change`, 's'))
 				assert.equal(text.includes('Token metadata'), false)
 				assert.equal(text.includes('Description'), false)
 				assert.equal(text.includes('Decimals'), false)
 			} finally {
-				render(null, dom.document.body)
+				render(undefined, dom.document.body)
 				dom.restore()
 			}
 		}
@@ -132,9 +99,8 @@ describe('watch asset proposal rendering', () => {
 				render(h(WatchAssetDetails, { pendingRequest }), dom.document.body)
 			})
 
-			const requestSection = findNodeByExactText(dom.document.body, 'Asset proposal')?.parentNode
-			assert.notEqual(requestSection, undefined)
-			assert.equal(dom.document.body.textContent?.includes('on-chain'), false)
+			const requestSection = getAssetProposalSection(dom.document.body)
+			assert.equal(dom.document.body.textContent.includes('on-chain'), false)
 			for (const expected of [
 				'https://dapp.example',
 			]) assert.match(dom.document.body.textContent, new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
@@ -157,14 +123,14 @@ describe('watch asset proposal rendering', () => {
 				'6',
 				'8',
 				'Token image',
-			]) assert.match(requestSection?.textContent ?? '', new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
-			assert.equal(requestSection?.textContent?.includes('https://dapp.example/token.png'), false)
-			assert.notEqual(findNodeByAttribute(requestSection ?? {}, 'src', 'data:image/png;base64,b2xk'), undefined)
-			assert.notEqual(findNodeByAttribute(requestSection ?? {}, 'src', 'data:image/png;base64,dG9rZW4='), undefined)
-			assert.notEqual(findNodeByAttribute(requestSection ?? {}, 'value', '0x1111111111111111111111111111111111111111'), undefined)
-			assert.equal(requestSection?.textContent?.includes('Fields marked'), false)
+			]) assert.match(requestSection.textContent, new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+			assert.equal(requestSection.textContent.includes('https://dapp.example/token.png'), false)
+			assert.notEqual(findElementByAttribute(requestSection, 'src', 'data:image/png;base64,b2xk'), undefined)
+			assert.notEqual(findElementByAttribute(requestSection, 'src', 'data:image/png;base64,dG9rZW4='), undefined)
+			assert.notEqual(findElementByAttribute(requestSection, 'value', '0x1111111111111111111111111111111111111111'), undefined)
+			assert.equal(requestSection.textContent.includes('Fields marked'), false)
 		} finally {
-			render(null, dom.document.body)
+			render(undefined, dom.document.body)
 			dom.restore()
 		}
 	})
@@ -183,13 +149,12 @@ describe('watch asset proposal rendering', () => {
 				render(h(WatchAssetDetails, { pendingRequest: requestWithoutHints }), dom.document.body)
 			})
 
-			const requestSection = findNodeByExactText(dom.document.body, 'Asset proposal')?.parentNode
-			const requestText = requestSection?.textContent ?? ''
+			const requestText = getAssetProposalSection(dom.document.body).textContent
 			assert.match(requestText, /SymbolOLDOLDNo change/)
 			assert.match(requestText, /Decimals66No change/)
 			assert.equal(requestText.includes('Download image'), false)
 		} finally {
-			render(null, dom.document.body)
+			render(undefined, dom.document.body)
 			dom.restore()
 		}
 	})
@@ -202,12 +167,12 @@ describe('watch asset proposal rendering', () => {
 				render(h(WatchAssetDetails, { pendingRequest: requestWithImage }), dom.document.body)
 			})
 
-			assert.equal(findNodeByExactText(dom.document.body, 'Remove'), undefined)
-			assert.equal(dom.document.body.textContent?.includes('https://dapp.example/token.png'), false)
-			assert.notEqual(findNodeByAttribute(dom.document.body, 'src', 'data:image/png;base64,dG9rZW4='), undefined)
-			assert.notEqual(findNodeByAttribute(dom.document.body, 'src', 'data:image/png;base64,b2xk'), undefined)
+			assert.equal(findElementByExactText(dom.document.body, 'Remove'), undefined)
+			assert.equal(dom.document.body.textContent.includes('https://dapp.example/token.png'), false)
+			assert.notEqual(findElementByAttribute(dom.document.body, 'src', 'data:image/png;base64,dG9rZW4='), undefined)
+			assert.notEqual(findElementByAttribute(dom.document.body, 'src', 'data:image/png;base64,b2xk'), undefined)
 		} finally {
-			render(null, dom.document.body)
+			render(undefined, dom.document.body)
 			dom.restore()
 		}
 	})
@@ -220,11 +185,11 @@ describe('watch asset proposal rendering', () => {
 				render(h(WatchAssetDetails, { pendingRequest: failedRequest }), dom.document.body)
 			})
 
-			assert.equal(dom.document.body.textContent?.includes('https://dapp.example/token.png'), false)
-			assert.notEqual(findNodeByExactText(dom.document.body, 'The proposed image could not be downloaded or decoded.'), undefined)
-			assert.equal(findNodeByExactText(dom.document.body, 'Download image'), undefined)
+			assert.equal(dom.document.body.textContent.includes('https://dapp.example/token.png'), false)
+			assert.notEqual(findElementByExactText(dom.document.body, 'The proposed image could not be downloaded or decoded.'), undefined)
+			assert.equal(findElementByExactText(dom.document.body, 'Download image'), undefined)
 		} finally {
-			render(null, dom.document.body)
+			render(undefined, dom.document.body)
 			dom.restore()
 		}
 	})
@@ -235,12 +200,12 @@ describe('watch asset proposal rendering', () => {
 			await act(() => {
 				render(h(WatchAssetActions, { forwardToSigner: undefined, forwardingStatus: undefined, submitting: false, choose: () => undefined }), dom.document.body)
 			})
-			const forwardButton = findNodeByExactText(dom.document.body, 'Forward to wallet')
-			assert.notEqual(forwardButton, undefined)
-			assert.equal(forwardButton?.disabled === true || forwardButton?.getAttribute?.('disabled') !== null, true)
-			assert.notEqual(findFirstByTag(forwardButton ?? {}, 'svg'), undefined)
+			const forwardButton = findElementByExactText(dom.document.body, 'Forward to wallet')
+			assert.ok(forwardButton !== undefined)
+			assert.equal(isDisabled(forwardButton), true)
+			assert.notEqual(collectElements(forwardButton, 'svg')[0], undefined)
 		} finally {
-			render(null, dom.document.body)
+			render(undefined, dom.document.body)
 			dom.restore()
 		}
 	})
@@ -256,12 +221,12 @@ describe('watch asset proposal rendering', () => {
 					choose: () => undefined,
 				}), dom.document.body)
 			})
-			const forwardButton = findNodeByExactText(dom.document.body, 'Forward to MetaMask')
-			assert.notEqual(forwardButton, undefined)
-			assert.equal(forwardButton?.disabled === true || forwardButton?.getAttribute?.('disabled') !== null, false)
-			assert.equal(findFirstByTag(forwardButton ?? {}, 'img')?.getAttribute?.('src'), '../img/signers/metamask.svg')
+			const forwardButton = findElementByExactText(dom.document.body, 'Forward to MetaMask')
+			assert.ok(forwardButton !== undefined)
+			assert.equal(isDisabled(forwardButton), false)
+			assert.equal(collectElements(forwardButton, 'img')[0]?.getAttribute('src'), '../img/signers/metamask.svg')
 		} finally {
-			render(null, dom.document.body)
+			render(undefined, dom.document.body)
 			dom.restore()
 		}
 	})
@@ -277,14 +242,14 @@ describe('watch asset proposal rendering', () => {
 					choose: () => undefined,
 				}), dom.document.body)
 			})
-			assert.notEqual(findNodeByExactText(dom.document.body, 'Waiting for MetaMask...'), undefined)
-			const buttons = findAllByTag(dom.document.body, 'button')
+			assert.notEqual(findElementByExactText(dom.document.body, 'Waiting for MetaMask...'), undefined)
+			const buttons = collectElements(dom.document.body, 'button')
 			assert.equal(buttons.length, 3)
 			for (const button of buttons) {
-				assert.equal(button?.disabled === true || button?.getAttribute?.('disabled') !== null, true)
+				assert.equal(isDisabled(button), true)
 			}
 		} finally {
-			render(null, dom.document.body)
+			render(undefined, dom.document.body)
 			dom.restore()
 		}
 	})
@@ -304,12 +269,12 @@ describe('watch asset proposal rendering', () => {
 					/>
 				</>, dom.document.body)
 			})
-			assert.notEqual(findNodeByExactText(dom.document.body, 'MetaMask added the asset.'), undefined)
-			const addButton = findNodeByExactText(dom.document.body, 'Add to address book')
-			assert.notEqual(addButton, undefined)
-			assert.equal(addButton?.disabled === true || addButton?.getAttribute?.('disabled') !== null, false)
+			assert.notEqual(findElementByExactText(dom.document.body, 'MetaMask added the asset.'), undefined)
+			const addButton = findElementByExactText(dom.document.body, 'Add to address book')
+			assert.ok(addButton !== undefined)
+			assert.equal(isDisabled(addButton), false)
 		} finally {
-			render(null, dom.document.body)
+			render(undefined, dom.document.body)
 			dom.restore()
 		}
 	})

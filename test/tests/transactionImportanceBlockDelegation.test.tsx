@@ -1,4 +1,4 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { Signal } from '@preact/signals'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
@@ -9,7 +9,8 @@ import { installDomMock } from './domMock.js'
 import type { AddressBookEntry, Erc20TokenEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { TokenEvent } from '../../app/ts/types/EnrichedEthereumData.js'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
-import type { MaybeSimulatedTransaction, TokenBalancesAfter } from '../../app/ts/types/visualizer-types.js'
+import type { SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
+import type { MaybeSimulatedTransaction, SimulatedAndVisualizedTransaction, TokenBalancesAfter } from '../../app/ts/types/visualizer-types.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../app/ts/utils/constants.js'
 import { encodeFunctionCall } from '../../app/ts/utils/abiRuntime.js'
 import { Erc20ABI } from '../../app/ts/utils/abi.js'
@@ -122,25 +123,26 @@ function create7702Transaction({
 	authorizationAddresses: readonly bigint[]
 	events?: readonly TokenEvent[]
 }): MaybeSimulatedTransaction {
+	const originalRequestParameters: SendTransactionParams = {
+		method: 'eth_sendTransaction',
+		params: [{
+			from: senderEntry.address,
+			to: senderEntry.address,
+			value: 0n,
+			input: new Uint8Array(),
+			gas: 21_000n,
+			maxFeePerGas: 1n,
+			maxPriorityFeePerGas: 1n,
+			type: '7702',
+			authorizationList: authorizationAddresses.map((address, index) => createAuthorization(address, BigInt(index + 1))),
+		}],
+	}
 	const base = {
 		website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
 		created: new Date('2024-01-01T00:00:00.000Z'),
 		parsedInputData: { type: 'NonParsed' as const, input: new Uint8Array() },
 		transactionIdentifier: 1n,
-		originalRequestParameters: {
-			method: 'eth_sendTransaction' as const,
-			params: [{
-				from: senderEntry.address,
-				to: senderEntry.address,
-				value: 0n,
-				input: new Uint8Array(),
-				gas: 21_000n,
-				maxFeePerGas: 1n,
-				maxPriorityFeePerGas: 1n,
-				type: '0x4' as const,
-				authorizationList: authorizationAddresses.map((address, index) => createAuthorization(address, BigInt(index + 1))),
-			}],
-		},
+		originalRequestParameters,
 		transaction: {
 			from: senderEntry,
 			to: senderEntry,
@@ -224,7 +226,7 @@ function createDelegatedSelfCallTransaction({
 				gas: 21_000n,
 				maxFeePerGas: 1n,
 				maxPriorityFeePerGas: 1n,
-				type: '0x2',
+				type: '1559',
 			}],
 		},
 		transaction: {
@@ -269,7 +271,7 @@ function createContractDeploymentTransaction(): MaybeSimulatedTransaction {
 				gas: 100_000n,
 				maxFeePerGas: 1n,
 				maxPriorityFeePerGas: 1n,
-				type: '0x2',
+				type: '1559',
 			}],
 		},
 		transaction: {
@@ -323,7 +325,7 @@ function createProxyPaymentTransaction({
 				gas: 21_000n,
 				maxFeePerGas: 1n,
 				maxPriorityFeePerGas: 1n,
-				type: '0x2',
+				type: '1559',
 			}],
 		},
 		transaction: {
@@ -398,7 +400,7 @@ function createFailedTransfer({
 	value: bigint
 	input?: Uint8Array
 	tokenBalancesAfter: TokenBalancesAfter
-}): MaybeSimulatedTransaction {
+}): SimulatedAndVisualizedTransaction {
 	return {
 		website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
 		created: new Date('2024-01-01T00:00:00.000Z'),
@@ -453,7 +455,7 @@ async function renderImportanceBlock(simTx: MaybeSimulatedTransaction, addressMe
 	return dom
 }
 
-const renderedText = (dom: ReturnType<typeof installDomMock>) => dom.document.body.textContent?.replace(/\s+/g, '') ?? ''
+const renderedText = (dom: ReturnType<typeof installDomMock>) => dom.document.body.textContent.replace(/\s+/g, '')
 
 describe('TransactionImportanceBlock delegation notice', () => {
 	test('shows authorization flow details for failed-to-simulate 7702 transactions', async () => {
@@ -462,10 +464,10 @@ describe('TransactionImportanceBlock delegation notice', () => {
 			[senderEntry, delegateEntry],
 		)
 
-		assert.equal(dom.document.body.textContent?.includes('Delegated execution'), true)
-		assert.equal(dom.document.body.textContent?.includes('delegated to'), true)
-		assert.equal(dom.document.body.textContent?.includes('Delegated Executor'), true)
-		assert.equal(dom.document.body.textContent?.includes('Failed to simulate this transaction.'), true)
+		assert.equal(dom.document.body.textContent.includes('Delegated execution'), true)
+		assert.equal(dom.document.body.textContent.includes('delegated to'), true)
+		assert.equal(dom.document.body.textContent.includes('Delegated Executor'), true)
+		assert.equal(dom.document.body.textContent.includes('Failed to simulate this transaction.'), true)
 
 		dom.restore()
 	})
@@ -476,9 +478,9 @@ describe('TransactionImportanceBlock delegation notice', () => {
 			[senderEntry, delegateEntry],
 		)
 
-		assert.equal(dom.document.body.textContent?.includes('Delegated execution'), true)
-		assert.equal(dom.document.body.textContent?.includes('delegated to'), true)
-		assert.equal(dom.document.body.textContent?.includes('execution reverted'), true)
+		assert.equal(dom.document.body.textContent.includes('Delegated execution'), true)
+		assert.equal(dom.document.body.textContent.includes('delegated to'), true)
+		assert.equal(dom.document.body.textContent.includes('execution reverted'), true)
 
 		dom.restore()
 	})
@@ -489,9 +491,9 @@ describe('TransactionImportanceBlock delegation notice', () => {
 			[senderEntry, delegateEntry],
 		)
 
-		assert.equal(dom.document.body.textContent?.includes('Delegated execution'), true)
-		assert.equal(dom.document.body.textContent?.includes('delegated to'), true)
-		assert.equal(dom.document.body.textContent?.includes('The transaction does no visible important changes to your accounts.'), true)
+		assert.equal(dom.document.body.textContent.includes('Delegated execution'), true)
+		assert.equal(dom.document.body.textContent.includes('delegated to'), true)
+		assert.equal(dom.document.body.textContent.includes('The transaction does no visible important changes to your accounts.'), true)
 
 		dom.restore()
 	})
@@ -502,9 +504,9 @@ describe('TransactionImportanceBlock delegation notice', () => {
 			[senderEntry, delegateEntry, secondDelegateEntry],
 		)
 
-		assert.equal(dom.document.body.textContent?.includes('delegated to'), true)
-		assert.equal(dom.document.body.textContent?.includes('Delegated Executor'), true)
-		assert.equal(dom.document.body.textContent?.includes('Delegated Executor 2'), true)
+		assert.equal(dom.document.body.textContent.includes('delegated to'), true)
+		assert.equal(dom.document.body.textContent.includes('Delegated Executor'), true)
+		assert.equal(dom.document.body.textContent.includes('Delegated Executor 2'), true)
 
 		dom.restore()
 	})
@@ -515,9 +517,9 @@ describe('TransactionImportanceBlock delegation notice', () => {
 			[senderEntry],
 		)
 
-		assert.equal(dom.document.body.textContent?.includes('Delegated execution'), true)
-		assert.equal(dom.document.body.textContent?.includes('cleared delegate'), true)
-		assert.equal(dom.document.body.textContent?.includes('delegated to'), false)
+		assert.equal(dom.document.body.textContent.includes('Delegated execution'), true)
+		assert.equal(dom.document.body.textContent.includes('cleared delegate'), true)
+		assert.equal(dom.document.body.textContent.includes('delegated to'), false)
 
 		dom.restore()
 	})
@@ -532,11 +534,11 @@ describe('TransactionImportanceBlock delegation notice', () => {
 			[senderEntry, delegateEntry, recipientEntry, nativeTokenEntry],
 		)
 
-		assert.equal(dom.document.body.textContent?.includes('Delegated execution'), true)
-		assert.equal(dom.document.body.textContent?.includes('delegated to'), true)
-		assert.equal(dom.document.body.textContent?.includes('Send'), true)
-		assert.equal(dom.document.body.textContent?.includes('Funds sent to'), true)
-		assert.equal(dom.document.body.textContent?.includes('Actual recipient'), true)
+		assert.equal(dom.document.body.textContent.includes('Delegated execution'), true)
+		assert.equal(dom.document.body.textContent.includes('delegated to'), true)
+		assert.equal(dom.document.body.textContent.includes('Send'), true)
+		assert.equal(dom.document.body.textContent.includes('Funds sent to'), true)
+		assert.equal(dom.document.body.textContent.includes('Actual recipient'), true)
 
 		dom.restore()
 	})
@@ -549,11 +551,11 @@ describe('TransactionImportanceBlock delegation notice', () => {
 			[senderEntry, recipientEntry, nativeTokenEntry],
 		)
 
-		assert.equal(dom.document.body.textContent?.includes('Delegated execution'), true)
-		assert.equal(dom.document.body.textContent?.includes('Funds sent to'), true)
-		assert.equal(dom.document.body.textContent?.includes('Delegated Executor'), true)
-		assert.equal(dom.document.body.textContent?.includes('Actual recipient'), true)
-		assert.equal(dom.document.body.textContent?.includes('Send'), true)
+		assert.equal(dom.document.body.textContent.includes('Delegated execution'), true)
+		assert.equal(dom.document.body.textContent.includes('Funds sent to'), true)
+		assert.equal(dom.document.body.textContent.includes('Delegated Executor'), true)
+		assert.equal(dom.document.body.textContent.includes('Actual recipient'), true)
+		assert.equal(dom.document.body.textContent.includes('Send'), true)
 
 		dom.restore()
 	})
@@ -574,10 +576,10 @@ describe('TransactionImportanceBlock insufficient balance errors', () => {
 			[senderEntry, recipientEntry, nativeTokenEntry],
 		)
 
-		assert.equal(dom.document.body.textContent?.includes('Insufficient ETH balance.'), true)
-		assert.equal(dom.document.body.textContent?.includes('Available: 1 ETH.'), true)
-		assert.equal(dom.document.body.textContent?.includes('Attempting to send: 2 ETH.'), true)
-		assert.equal(dom.document.body.textContent?.includes('execution reverted'), false)
+		assert.equal(dom.document.body.textContent.includes('Insufficient ETH balance.'), true)
+		assert.equal(dom.document.body.textContent.includes('Available: 1 ETH.'), true)
+		assert.equal(dom.document.body.textContent.includes('Attempting to send: 2 ETH.'), true)
+		assert.equal(dom.document.body.textContent.includes('execution reverted'), false)
 
 		dom.restore()
 	})
@@ -597,10 +599,10 @@ describe('TransactionImportanceBlock insufficient balance errors', () => {
 			[senderEntry, erc20TokenEntry],
 		)
 
-		assert.equal(dom.document.body.textContent?.includes('Insufficient MOCK balance.'), true)
-		assert.equal(dom.document.body.textContent?.includes('Available: 1 MOCK.'), true)
-		assert.equal(dom.document.body.textContent?.includes('Attempting to send: 2 MOCK.'), true)
-		assert.equal(dom.document.body.textContent?.includes('execution reverted'), false)
+		assert.equal(dom.document.body.textContent.includes('Insufficient MOCK balance.'), true)
+		assert.equal(dom.document.body.textContent.includes('Available: 1 MOCK.'), true)
+		assert.equal(dom.document.body.textContent.includes('Attempting to send: 2 MOCK.'), true)
+		assert.equal(dom.document.body.textContent.includes('execution reverted'), false)
 
 		dom.restore()
 	})
@@ -620,8 +622,8 @@ describe('TransactionImportanceBlock insufficient balance errors', () => {
 			[senderEntry, erc20TokenEntry],
 		)
 
-		assert.equal(dom.document.body.textContent?.includes('execution reverted'), true)
-		assert.equal(dom.document.body.textContent?.includes('Insufficient MOCK balance.'), false)
+		assert.equal(dom.document.body.textContent.includes('execution reverted'), true)
+		assert.equal(dom.document.body.textContent.includes('Insufficient MOCK balance.'), false)
 
 		dom.restore()
 	})
@@ -639,8 +641,8 @@ describe('TransactionImportanceBlock contract deployment', () => {
 		}
 		const dom = await renderImportanceBlock(transaction, [senderEntry, deployedContractEntry])
 
-		assert.equal(dom.document.body.textContent?.includes('A contract is deployed to address'), true)
-		assert.equal(dom.document.body.textContent?.includes('My deployed contract'), true)
+		assert.equal(dom.document.body.textContent.includes('A contract is deployed to address'), true)
+		assert.equal(dom.document.body.textContent.includes('My deployed contract'), true)
 
 		dom.restore()
 	})
