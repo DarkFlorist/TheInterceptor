@@ -51,6 +51,13 @@ export default function Container(props: Props) {
 			return element
 		}
 
+		// Cancels both the copy message and tooltip timers, so a stale copy message timer can neither clear a newly shown hint nor stop hide from clearing it.
+		const cancelPendingHintTimeouts = () => {
+			clearHintTimeouts([copyMessageTimeoutIdRef.current, toolTipTimeoutIdRef.current])
+			copyMessageTimeoutIdRef.current = null
+			toolTipTimeoutIdRef.current = null
+		}
+
 		const hide = (event: Event) => {
 			if (getHintElement(event.target, toolTipAttribute) === undefined) return
 
@@ -93,9 +100,7 @@ export default function Container(props: Props) {
 			if (!('delay' in detail) || typeof detail.delay !== 'number' || !Number.isFinite(detail.delay) || detail.delay < 0) return
 			if (!('x' in detail) || typeof detail.x !== 'number' || !('y' in detail) || typeof detail.y !== 'number') return
 
-			clearHintTimeouts([copyMessageTimeoutIdRef.current, toolTipTimeoutIdRef.current])
-			copyMessageTimeoutIdRef.current = null
-			toolTipTimeoutIdRef.current = null
+			cancelPendingHintTimeouts()
 			content.value = detail.content
 			clickPosition.value = { x: detail.x, y: detail.y }
 			copyMessageTimeoutIdRef.current = setTimeout(() => {
@@ -120,7 +125,7 @@ export default function Container(props: Props) {
 		const focusin = (event: FocusEvent) => {
 			const targetElement = event.target
 			if (!(targetElement instanceof Element) || !targetElement.hasAttribute(toolTipAttribute) || !containerElement.contains(targetElement)) return
-			clearTimeout(toolTipTimeoutIdRef.current ?? undefined)
+			cancelPendingHintTimeouts()
 			const targetBounds = targetElement.getBoundingClientRect()
 			content.value = targetElement.getAttribute(toolTipAttribute) || ''
 			clickPosition.value = { x: targetBounds.left + targetBounds.width / 2, y: targetBounds.bottom }
@@ -134,9 +139,7 @@ export default function Container(props: Props) {
 		containerElement.addEventListener(showHintEventName, show)
 
 		return () => {
-			clearHintTimeouts([copyMessageTimeoutIdRef.current, toolTipTimeoutIdRef.current])
-			copyMessageTimeoutIdRef.current = null
-			toolTipTimeoutIdRef.current = null
+			cancelPendingHintTimeouts()
 			containerElement.removeEventListener('click', click)
 			containerElement.removeEventListener('mouseover', mouseover)
 			containerElement.removeEventListener('mouseout', hide)

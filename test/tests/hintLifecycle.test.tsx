@@ -100,6 +100,43 @@ describe('Hint lifecycle', () => {
 		}
 	})
 
+	const renderAndFocusTooltipWhileCopyMessageIsPending = async (dom: ReturnType<typeof installDomMock>, copyMessageDelay: number) => {
+		await act(() => {
+			render(<Hint><span data-tooltip = 'Focused explanation' tabIndex = { 0 }>Warning</span></Hint>, dom.document.body)
+		})
+		const focusableTooltip = findElement(dom.document.body, 'span')
+		if (focusableTooltip?.dispatchEvent === undefined) throw new Error('tooltip target was not rendered')
+		await act(() => { showHint(focusableTooltip, { content: 'Copied', delay: copyMessageDelay, x: 0, y: 0 }) })
+		assert.equal(findElementByClass(dom.document.body, 'preact-hint__content')?.textContent, 'Copied')
+		await act(() => { focusableTooltip.dispatchEvent?.(new Event('focusin', { bubbles: true })) })
+		return focusableTooltip
+	}
+
+	test('keeps a focused tooltip after the replaced copy message timer would have fired', async () => {
+		const dom = installDomMock()
+		try {
+			await renderAndFocusTooltipWhileCopyMessageIsPending(dom, 20)
+			await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)) })
+			assert.equal(findElementByClass(dom.document.body, 'preact-hint__content')?.textContent, 'Focused explanation')
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+		}
+	})
+
+	test('hides a focused tooltip on focusout even if a copy message was pending when focus arrived', async () => {
+		const dom = installDomMock()
+		try {
+			const focusableTooltip = await renderAndFocusTooltipWhileCopyMessageIsPending(dom, 60_000)
+			assert.equal(findElementByClass(dom.document.body, 'preact-hint__content')?.textContent, 'Focused explanation')
+			await act(() => { focusableTooltip.dispatchEvent?.(new Event('focusout', { bubbles: true })) })
+			assert.equal(findElementByClass(dom.document.body, 'preact-hint__content'), undefined)
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+		}
+	})
+
 	test('keeps wrapped hints narrower than the viewport by the positioning padding on both sides', async () => {
 		const dom = installDomMock()
 		try {
