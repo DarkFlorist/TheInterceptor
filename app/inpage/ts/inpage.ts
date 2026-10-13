@@ -1,52 +1,14 @@
-const SAFE_APPS_RESPONSE_VERSION = '9.1.0'
-const SAFE_APPS_PENDING_REQUEST_LIMIT = 32
-
-type SafeAppsWindow = {
-	readonly location: { readonly origin: string }
-	addEventListener(type: 'message', listener: (event: Event) => void): void
-	removeEventListener(type: 'message', listener: (event: Event) => void): void
-	postMessage(message: unknown, targetOrigin: string): void
-}
-
-type SafeAppsRequest = {
-	readonly id: string
-	readonly method: string
-	readonly params?: unknown
-}
-
-type ParsedSafeAppsRequest =
-	| { readonly id: string, readonly request: SafeAppsRequest }
-	| { readonly id: string, readonly error: string }
-
-type SafeAppsMessageEvent = { readonly data: unknown, readonly origin: string, readonly source: unknown }
+import { SAFE_APPS_REQUEST_TIMEOUT_MS, SAFE_APPS_RESPONSE_VERSION, createSafeAppsErrorResponse, isSafeAppsCancellation, parseSafeAppsRequest, type ParsedSafeAppsRequest, type SafeAppsRequest } from './safeAppsProtocol.js'
+import { createSafeAppsRequestQueue } from './safeAppsRequestQueue.js'
+import { createSafeAppsTransport, type SafeAppsWindow } from './safeAppsTransport.js'
 
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> => typeof value === 'object' && value !== null
 
-type SafeAppsRequestCandidate = { readonly id?: unknown, readonly method?: unknown, readonly env?: unknown, readonly params?: unknown }
-type SafeAppsEnvironmentCandidate = { readonly sdkVersion?: unknown }
 type SafeAppsCompatibilityCandidate = { readonly enabled?: unknown, readonly canRequestAccess?: unknown }
 type SafeAppsCommandCandidate = { readonly kind?: unknown, readonly value?: unknown, readonly method?: unknown, readonly params?: unknown, readonly mapResult?: unknown, readonly message?: unknown, readonly isTypedData?: unknown, readonly safeAddress?: unknown, readonly chainId?: unknown, readonly safeRequestContext?: unknown }
 
-const isSafeAppsRequestCandidate = (value: unknown): value is SafeAppsRequestCandidate => isRecord(value)
-const isSafeAppsEnvironmentCandidate = (value: unknown): value is SafeAppsEnvironmentCandidate => isRecord(value)
 const isSafeAppsCompatibilityCandidate = (value: unknown): value is SafeAppsCompatibilityCandidate => isRecord(value)
 const isSafeAppsCommandCandidate = (value: unknown): value is SafeAppsCommandCandidate => isRecord(value)
-
-function parseSafeAppsMessageEvent(event: Event): SafeAppsMessageEvent | undefined {
-	if (!('data' in event) || !('origin' in event) || !('source' in event) || typeof event.origin !== 'string') return undefined
-	return { data: event.data, origin: event.origin, source: event.source }
-}
-
-function parseSafeAppsRequest(data: unknown): ParsedSafeAppsRequest | undefined {
-	if (!isSafeAppsRequestCandidate(data) || typeof data.id !== 'string') return undefined
-	// The SDK envelope distinguishes Safe Apps requests from unrelated page postMessage protocols.
-	if (!isSafeAppsEnvironmentCandidate(data.env)) return undefined
-	if (typeof data.env.sdkVersion !== 'string' || !/^[1-9][0-9]*\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$/.test(data.env.sdkVersion)) {
-		return { id: data.id, error: 'Safe Apps env.sdkVersion must be a supported semantic version.' }
-	}
-	if (typeof data.method !== 'string') return { id: data.id, error: 'Safe Apps method must be a string.' }
-	return { id: data.id, request: { id: data.id, method: data.method, ...(data.params === undefined ? {} : { params: data.params }) } }
-}
 
 function parseSafeAppsCompatibility(value: unknown) {
 	if (!isSafeAppsCompatibilityCandidate(value) || typeof value.enabled !== 'boolean') return undefined
@@ -96,49 +58,75 @@ function createSafeAppsRequestHandler(requestBackground: (request: unknown) => P
 }
 
 function createSafeAppsBridge(windowObject: SafeAppsWindow, requestSafeApps: (request: Pick<SafeAppsRequest, 'method' | 'params'>) => Promise<unknown>, requestAccess: () => Promise<void>) {
+	const transport = createSafeAppsTransport(windowObject)
 	let enabled = false
 	let enablementGeneration = 0
 	let canRequestAccess = false
 	let accessRequested = false
 	let accessFailure: string | undefined
-	const pendingRequests: { readonly parsedRequest: ParsedSafeAppsRequest, readonly origin: string }[] = []
+	type DiscoveryLifecycle = { readonly id: string, readonly bridgeToken?: string, cancelled: boolean, timeoutId?: number }
+	const activeDiscoveries = new Set<DiscoveryLifecycle>()
+	const releaseDiscovery = (discovery: DiscoveryLifecycle) => {
+		activeDiscoveries.delete(discovery)
+		if (discovery.timeoutId !== undefined) window.clearTimeout(discovery.timeoutId)
+	}
+	const cancelDiscovery = (discovery: DiscoveryLifecycle) => {
+		discovery.cancelled = true
+		releaseDiscovery(discovery)
+	}
+	const pendingRequests = createSafeAppsRequestQueue<{ readonly id: string, readonly method: string, readonly parsedRequest: ParsedSafeAppsRequest, readonly origin: string, readonly bridgeToken?: string }>({
+		timers: { setTimeout: window.setTimeout.bind(window), clearTimeout: window.clearTimeout.bind(window) },
+		onRejected: (pending, error, reason) => {
+			// Startup discovery stays silent until the background determines access eligibility.
+			if (reason === 'capacity' && !canRequestAccess) return
+			transport.post(createSafeAppsErrorResponse(pending, error), pending.origin)
+		},
+	})
+	const queueDiscovery = (parsedRequest: ParsedSafeAppsRequest, origin: string) => {
+		if ('request' in parsedRequest && pendingRequests.add({ id: parsedRequest.id, method: parsedRequest.request.method, parsedRequest, origin, bridgeToken: parsedRequest.request.bridgeToken })) requestAccessForDiscovery()
+	}
 	const answerRequest = (parsedRequest: ParsedSafeAppsRequest, origin: string) => {
 		if ('error' in parsedRequest) {
-			windowObject.postMessage({ id: parsedRequest.id, success: false, error: parsedRequest.error, version: SAFE_APPS_RESPONSE_VERSION }, origin)
+			transport.post({ id: parsedRequest.id, success: false, error: parsedRequest.error, version: SAFE_APPS_RESPONSE_VERSION }, origin)
 			return
 		}
 		const request = parsedRequest.request
+		const requestLifecycle: DiscoveryLifecycle = { id: request.id, bridgeToken: request.bridgeToken, cancelled: false }
+		if (isSafeAppsDiscoveryRequest(parsedRequest)) {
+			activeDiscoveries.add(requestLifecycle)
+			requestLifecycle.timeoutId = window.setTimeout(() => cancelDiscovery(requestLifecycle), SAFE_APPS_REQUEST_TIMEOUT_MS)
+		}
 		const requestEnablementGeneration = enablementGeneration
 		const isCurrentResponse = () => {
+			if (requestLifecycle.cancelled) return false
 			if (enabled && requestEnablementGeneration === enablementGeneration) return true
 			// Startup queries must survive a temporary loss of eligibility, but their old account data must never be published.
 			if (isSafeAppsDiscoveryRequest(parsedRequest)) {
 				if (enabled) answerRequest(parsedRequest, origin)
-				else if (pendingRequests.length < SAFE_APPS_PENDING_REQUEST_LIMIT) {
-					pendingRequests.push({ parsedRequest, origin })
-					requestAccessForDiscovery()
-				}
+				else queueDiscovery(parsedRequest, origin)
 			}
 			return false
 		}
 		void requestSafeApps(request).then(
 			(data) => {
+				if (activeDiscoveries.has(requestLifecycle)) releaseDiscovery(requestLifecycle)
 				if (!isCurrentResponse()) return
-				windowObject.postMessage({ id: request.id, success: true, data, version: SAFE_APPS_RESPONSE_VERSION }, origin)
+				transport.post({ id: request.id, success: true, data, version: SAFE_APPS_RESPONSE_VERSION, ...(request.bridgeToken === undefined ? {} : { bridgeToken: request.bridgeToken }) }, origin)
 			},
 			(error: unknown) => {
+				if (activeDiscoveries.has(requestLifecycle)) releaseDiscovery(requestLifecycle)
 				if (!isCurrentResponse()) return
-				windowObject.postMessage({ id: request.id, success: false, error: error instanceof Error ? error.message : 'Safe Apps request failed.', version: SAFE_APPS_RESPONSE_VERSION }, origin)
+				transport.post({ id: request.id, success: false, error: error instanceof Error ? error.message : 'Safe Apps request failed.', version: SAFE_APPS_RESPONSE_VERSION, ...(request.bridgeToken === undefined ? {} : { bridgeToken: request.bridgeToken }) }, origin)
 			},
 		)
 	}
 	const rejectPendingDiscovery = (message: string) => {
-		for (const { parsedRequest, origin } of pendingRequests.splice(0)) {
-			windowObject.postMessage({ id: parsedRequest.id, success: false, error: message, version: SAFE_APPS_RESPONSE_VERSION }, origin)
+		for (const { parsedRequest, origin } of pendingRequests.drain()) {
+			transport.post(createSafeAppsErrorResponse('request' in parsedRequest ? parsedRequest.request : parsedRequest, message), origin)
 		}
 	}
 	const requestAccessForDiscovery = () => {
-		if (enabled || !canRequestAccess || !pendingRequests.some(({ parsedRequest }) => isSafeAppsDiscoveryRequest(parsedRequest))) return
+		if (enabled || !canRequestAccess || !pendingRequests.values().some(({ parsedRequest }) => isSafeAppsDiscoveryRequest(parsedRequest))) return
 		if (accessFailure !== undefined) {
 			rejectPendingDiscovery(accessFailure)
 			return
@@ -151,42 +139,40 @@ function createSafeAppsBridge(windowObject: SafeAppsWindow, requestSafeApps: (re
 			rejectPendingDiscovery(accessFailure)
 		})
 	}
-	const onMessage = (event: Event) => {
-		const messageEvent = parseSafeAppsMessageEvent(event)
-		if (messageEvent === undefined) return
-		if (messageEvent.source !== windowObject || messageEvent.origin !== windowObject.location.origin) return
+	const unsubscribe = transport.subscribe((messageEvent) => {
+		if (isSafeAppsCancellation(messageEvent.data)) {
+			const cancellation = messageEvent.data
+			const pending = pendingRequests.values().find((request) => request.id === cancellation.id && request.bridgeToken === cancellation.bridgeToken)
+			if (pending !== undefined) pendingRequests.take(pending.id)
+			for (const discovery of activeDiscoveries) if (discovery.id === cancellation.id && discovery.bridgeToken === cancellation.bridgeToken) cancelDiscovery(discovery)
+			return
+		}
+		pendingRequests.expire()
 		const parsedRequest = parseSafeAppsRequest(messageEvent.data)
 		if (parsedRequest === undefined) return
 		if (!enabled && isSafeAppsDiscoveryRequest(parsedRequest)) {
-			if (pendingRequests.length >= SAFE_APPS_PENDING_REQUEST_LIMIT) {
-				if (enabled === false && !canRequestAccess) return
-				windowObject.postMessage({ id: parsedRequest.id, success: false, error: 'Interceptor Safe Apps request queue is full. Retry after the connection finishes initializing.', version: SAFE_APPS_RESPONSE_VERSION }, messageEvent.origin)
-				return
-			}
-			pendingRequests.push({ parsedRequest, origin: messageEvent.origin })
-			requestAccessForDiscovery()
+			queueDiscovery(parsedRequest, messageEvent.origin)
 			return
 		}
 		if (enabled) answerRequest(parsedRequest, messageEvent.origin)
-	}
-	windowObject.addEventListener('message', onMessage)
+	})
 	return {
 		setEnabled(nextEnabled: boolean, nextCanRequestAccess = false) {
+			pendingRequests.expire()
 			canRequestAccess = nextCanRequestAccess
 			if (enabled !== nextEnabled) enablementGeneration += 1
 			enabled = nextEnabled
-			const queuedRequests = pendingRequests.splice(0)
 			if (nextEnabled) {
-				for (const { parsedRequest, origin } of queuedRequests) answerRequest(parsedRequest, origin)
+				for (const { parsedRequest, origin } of pendingRequests.drain()) answerRequest(parsedRequest, origin)
 			} else {
-				// Never defer signing or transaction requests across a disabled state.
-				pendingRequests.push(...queuedRequests.filter(({ parsedRequest }) => isSafeAppsDiscoveryRequest(parsedRequest)))
+				// Only discovery enters the queue; leave it there for re-enablement without replaying signing or transactions.
 				requestAccessForDiscovery()
 			}
 		},
 		dispose() {
-			pendingRequests.splice(0)
-			windowObject.removeEventListener('message', onMessage)
+			for (const discovery of activeDiscoveries) cancelDiscovery(discovery)
+			pendingRequests.drain()
+			unsubscribe()
 		},
 	}
 }

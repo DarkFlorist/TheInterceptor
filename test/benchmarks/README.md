@@ -92,3 +92,25 @@ The transient RPC failure scenario expects the rich setting to be saved while th
 The wallet-response deadline and a later dapp request on the same signer connection are covered by focused tests using a shortened timeout. Per-command IDs prevent expired or reordered wallet replies from completing another switch; the browser fixture holds and releases replies explicitly rather than waiting two minutes. Timing samples cover ten scenarios; popup lifecycle/conflict and RPC-recovery assertions run alongside them without speed thresholds.
 
 For comparisons, build each revision and run the same command with the same browser, delays, iteration count, and host load. Compare feedback and selected-value timings separately from total completion time. Fixture setup is excluded from sample timings.
+
+The communication check also registers an IPv6 Safe Apps host through real Chrome, corrupts the persisted hosting selection, verifies that base provider injection is restored and the registration error is recorded, then completes the ordinary approval flow.
+
+## Request Finance Safe discovery
+
+After `bun run setup-chrome`, run:
+
+```bash
+bun run test:chrome-request-finance-discovery
+```
+
+This scenario reuses the Safe co-signing harness with a test signer, a configured Safe, and a local RPC fixture. CDP serves a local HTML fixture at the Request Finance HTTPS origin so the extension injects its real Safe host shim. The page reproduces the SDK's parent-message checks and the site's 200 ms discovery race. The test explicitly opts into this origin, keeps the real access popup open for 11 seconds, and verifies that the site's own 200 ms discovery deadline fires unchanged. After approval, the Settings authorize-and-reload action prepares the connection; the reloaded page receives the expected address, chain, owner, and threshold with no repeated signer prompt. Its 200 ms discovery race may still time out during extension initialization; the fixture checks that a late SDK reply does not undo that outcome.
+
+By default, the browser starts with a temporary profile. This check does not load the live Request Finance app or use a real wallet. `CHROME_BIN` selects the browser binary as described above.
+
+## Safe Apps hosting on selected websites
+
+Run `bun run test:chrome-safe-apps-host` after `bun run setup-chrome`. The existing Safe co-signing harness serves a bundled fixture containing Safe Apps SDK 9.1.0, Wagmi's Safe connector, and Web3-Onboard's Safe connector on HTTP and HTTPS origins. It checks real extension access approvals, the Settings “Authorize and reload open tab” action using bundled page scripts targeted to a verified document, independent authorization and preparation cancellation on the second origin, unapproved cross-origin iframe requests to both the fake parent and top window, and isolation of unselected origins and ports. The signer and RPC are local test doubles.
+
+In Settings, enable Safe Apps compatibility and add the website URL. Hosting applies to its exact HTTP(S) origin, including scheme and port; refresh an already open page to install or remove it. No websites are hosted by default; add Request Finance explicitly if needed. Select a Safe in signing mode, open the app, and authorize and reload its tab before connecting. Preparation has a 30-second deadline and a Cancel connection action; cancellation releases the pending page probe without reloading. Website access still requires the ordinary Interceptor approval.
+
+The shared host supports parent-based SDK discovery and leaves every website timer and discovery deadline unchanged. Authorize the Safe and reload before connecting. Short probes such as Request Finance's 200 ms race can still time out after approval; preparation removes the interactive approval delay but does not guarantee a response within the site's deadline. Wagmi's default 10 ms deadline can be too short for extension communication, so the browser fixture uses its documented `unstable_getInfoTimeout` option with 5 seconds. Apps with such deadlines need connector configuration or a discovery change in the app. Web3-Onboard's stricter `self !== top` iframe check and trusted parent-origin requirements are intentionally preserved; a real iframe launcher is a separate extension of this design.
