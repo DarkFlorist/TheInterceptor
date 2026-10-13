@@ -1,7 +1,7 @@
 import { addressString, addressStringWithout0x } from '../utils/bigint.js'
 import type { AddressBookEntries, AddressBookEntry, Erc20TokenEntry } from '../types/addressBookTypes.js'
 import type { NamedTokenId, SimulationStateInput } from '../types/visualizer-types.js'
-import { tokenMetadata, contractMetadata, erc721Metadata, erc1155Metadata } from '@darkflorist/address-metadata'
+import { bundledContractMetadata, bundledErc1155Metadata, bundledErc721Metadata, bundledTokenMetadata } from './bundledAddressMetadata.js'
 import { getAddress, keccak256, stringToBytes } from '../utils/ethereumPrimitives.js'
 import { ENS_ADDR_REVERSE_NODE, ENS_TOKEN_WRAPPER, ETHEREUM_COIN_ICON, ETHEREUM_LOGS_LOGGER_ADDRESS, MOCK_ADDRESS } from '../utils/constants.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
@@ -80,7 +80,7 @@ async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork 
 		if (userEntry !== undefined) return userEntry
 	}
 	const addrString = addressString(address)
-	const addressData = contractMetadata.get(addrString)
+	const addressData = bundledContractMetadata.get(addrString)
 	if (addressData) {
 		const { logoUri, ...rest } = addressData
 		return {
@@ -93,7 +93,7 @@ async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork 
 		}
 	}
 
-	const tokenData = tokenMetadata.get(addrString)
+	const tokenData = bundledTokenMetadata.get(addrString)
 	if (tokenData) {
 		const { logoUri, ...rest } = tokenData
 		return {
@@ -106,7 +106,7 @@ async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork 
 		}
 	}
 
-	const erc721TokenData = erc721Metadata.get(addrString)
+	const erc721TokenData = bundledErc721Metadata.get(addrString)
 	if (erc721TokenData) {
 		const { logoUri, ...rest } = erc721TokenData
 		return {
@@ -119,7 +119,7 @@ async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork 
 		}
 	}
 
-	const erc1155TokenData = erc1155Metadata.get(addrString)
+	const erc1155TokenData = bundledErc1155Metadata.get(addrString)
 	if (erc1155TokenData) {
 		const { logoUri, ...rest } = erc1155TokenData
 		return {
