@@ -2,18 +2,22 @@ import { mkdir } from 'node:fs/promises'
 import { closeTarget, connectTarget, createTargetPage, launchChromeSession, waitForInterceptorExtensionServiceWorker, waitForPerformanceMarks, waitForRegisteredContentScripts } from './chromeHarness.js'
 import { startDispatchEventReloadPageServer } from './dispatchEventReloadPageServer.js'
 import type { CdpConnection } from './chromeHarness.js'
+import * as funtypes from 'funtypes'
 
-type ReproState = {
-	phase?: 'booting' | 'reloading' | 'stable' | 'detected-bug'
-	reloadCount?: number
-	dispatchOwn?: boolean
-	dispatchSource?: string
-	dispatchNative?: boolean
-	dispatchReturned?: boolean
-	hasEthereum?: string
-	isInterceptor?: boolean
-	reason?: string
-}
+const ReproState = funtypes.ReadonlyPartial({
+	phase: funtypes.Union(funtypes.Literal('booting'), funtypes.Literal('reloading'), funtypes.Literal('stable'), funtypes.Literal('detected-bug')),
+	reloadCount: funtypes.Number,
+	dispatchOwn: funtypes.Boolean,
+	dispatchSource: funtypes.String,
+	dispatchNative: funtypes.Boolean,
+	dispatchReturned: funtypes.Boolean,
+	hasEthereum: funtypes.String,
+	isInterceptor: funtypes.Boolean,
+	reason: funtypes.String,
+})
+type ReproState = funtypes.Static<typeof ReproState>
+const OptionalReproState = funtypes.Union(funtypes.Undefined, ReproState)
+const FrameNavigatedParams = funtypes.ReadonlyPartial({ frame: funtypes.ReadonlyPartial({ url: funtypes.String }) })
 
 type ScenarioResult = {
 	label: string
@@ -36,7 +40,7 @@ async function waitForFinalState(connection: CdpConnection, timeoutMs: number) {
 	const start = Date.now()
 	while (Date.now() - start < timeoutMs) {
 		try {
-			const state = await connection.evaluate<ReproState | undefined>(`(() => globalThis[${ JSON.stringify(STATE_GLOBAL) }] ?? undefined)()`)
+			const state = OptionalReproState.parse(await connection.evaluate(`(() => globalThis[${ JSON.stringify(STATE_GLOBAL) }] ?? undefined)()`))
 			if (state?.phase === 'stable' || state?.phase === 'detected-bug') return state
 		} catch {
 			await sleep(100)
@@ -77,7 +81,7 @@ async function runScenario(label: string, extensionDir: string, pageUrl: string,
 		try {
 			const navigations: string[] = []
 			connection.on('Page.frameNavigated', (params: unknown) => {
-				const frameNavigatedParams = params as { frame?: { url?: string } }
+				const frameNavigatedParams = FrameNavigatedParams.parse(params)
 				if (frameNavigatedParams.frame?.url !== undefined) navigations.push(frameNavigatedParams.frame.url)
 			})
 

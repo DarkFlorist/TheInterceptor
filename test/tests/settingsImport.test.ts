@@ -1,93 +1,65 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { beforeEach, describe, test } from 'bun:test'
 import type { ExportedSettings } from '../../app/ts/types/exportedSettingsTypes.js'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
 import { browserStorageLocalSet } from '../../app/ts/utils/storageUtils.js'
+import { type BrowserMock, installBrowserMock } from '../harness/browserMock.js'
 
-type StorageKeyInput = string | string[] | Record<string, unknown> | undefined | null
+type StorageWriteGate = {
+	readonly started: PromiseWithResolvers<void>
+	readonly released: PromiseWithResolvers<void>
+}
+
+const createStorageWriteGate = (): StorageWriteGate => ({ started: Promise.withResolvers<void>(), released: Promise.withResolvers<void>() })
+const getStorageWriteGateControls = (gate: StorageWriteGate) => ({ started: gate.started.promise, release: () => { gate.released.resolve() } })
+const holdUntilReleased = async (gate: StorageWriteGate) => {
+	gate.started.resolve()
+	await gate.released.promise
+}
 
 function createBrowserStorageMock() {
-	const storageState: Record<string, unknown> = {}
-	let signingPreferenceWriteGate: { started: () => void, waitForRelease: Promise<void> } | undefined
-	let addressBookWriteGate: { started: () => void, waitForRelease: Promise<void> } | undefined
+	let installedBrowserMock: BrowserMock | undefined
+	let signingPreferenceWriteGate: StorageWriteGate | undefined
+	let addressBookWriteGate: StorageWriteGate | undefined
 
-	const getItems = (keys?: StorageKeyInput) => {
-		if (keys === undefined || keys === null) return { ...storageState }
-		if (Array.isArray(keys)) return Object.fromEntries(keys.filter((key) => key in storageState).map((key) => [key, storageState[key]]))
-		if (typeof keys === 'string') return keys in storageState ? { [keys]: storageState[keys] } : {}
-		return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
+	// Each install starts from empty storage; gated writes pause before reaching storage until the test releases them.
+	const installFreshBrowserMock = () => {
+		installedBrowserMock?.restore()
+		const browserMock = installBrowserMock()
+		const setStorageItems = browserMock.browser.storage.local.set
+		browserMock.browser.storage.local.set = async (items) => {
+			if ('userAddressBookEntriesV3' in items && addressBookWriteGate !== undefined) {
+				const gate = addressBookWriteGate
+				addressBookWriteGate = undefined
+				await holdUntilReleased(gate)
+			}
+			if ('signingAddressPreferences' in items && signingPreferenceWriteGate !== undefined) {
+				const gate = signingPreferenceWriteGate
+				signingPreferenceWriteGate = undefined
+				await holdUntilReleased(gate)
+			}
+			await setStorageItems(items)
+		}
+		installedBrowserMock = browserMock
 	}
 
-	const removeItems = (keys: string | string[]) => {
-		for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
-	}
-
-	const browserMock = {
-		runtime: {
-			lastError: undefined,
-			async sendMessage() {
-				return undefined
-			},
-			getManifest: () => ({ manifest_version: 3 }),
-			onMessage: { addListener: () => undefined, removeListener: () => undefined },
-			onConnect: { addListener: () => undefined, removeListener: () => undefined },
-		},
-		storage: {
-			local: {
-				async get(keys?: StorageKeyInput) {
-					return getItems(keys)
-				},
-				async set(items: Record<string, unknown>) {
-					if ('userAddressBookEntriesV3' in items && addressBookWriteGate !== undefined) {
-						const gate = addressBookWriteGate
-						addressBookWriteGate = undefined
-						gate.started()
-						await gate.waitForRelease
-					}
-					if ('signingAddressPreferences' in items && signingPreferenceWriteGate !== undefined) {
-						const gate = signingPreferenceWriteGate
-						signingPreferenceWriteGate = undefined
-						gate.started()
-						await gate.waitForRelease
-					}
-					Object.assign(storageState, items)
-				},
-				async remove(keys: string | string[]) {
-					removeItems(keys)
-				},
-			},
-		},
-	}
-
-	const installGlobals = () => {
-		Object.defineProperty(globalThis, 'browser', { value: browserMock, configurable: true, writable: true })
-		Object.defineProperty(globalThis, 'chrome', { value: { runtime: { id: 'test-extension' } }, configurable: true, writable: true })
-	}
-
-	installGlobals()
+	installFreshBrowserMock()
 
 	return {
 		blockNextAddressBookWrite() {
-			let markStarted: () => void = () => undefined
-			let release: () => void = () => undefined
-			const started = new Promise<void>((resolve) => { markStarted = resolve })
-			const waitForRelease = new Promise<void>((resolve) => { release = resolve })
-			addressBookWriteGate = { started: markStarted, waitForRelease }
-			return { started, release }
+			const gate = createStorageWriteGate()
+			addressBookWriteGate = gate
+			return getStorageWriteGateControls(gate)
 		},
 		blockNextSigningPreferenceWrite() {
-			let markStarted: () => void = () => undefined
-			let release: () => void = () => undefined
-			const started = new Promise<void>((resolve) => { markStarted = resolve })
-			const waitForRelease = new Promise<void>((resolve) => { release = resolve })
-			signingPreferenceWriteGate = { started: markStarted, waitForRelease }
-			return { started, release }
+			const gate = createStorageWriteGate()
+			signingPreferenceWriteGate = gate
+			return getStorageWriteGateControls(gate)
 		},
 		reset() {
-			for (const key of Object.keys(storageState)) delete storageState[key]
 			addressBookWriteGate = undefined
 			signingPreferenceWriteGate = undefined
-			installGlobals()
+			installFreshBrowserMock()
 		},
 	}
 }
@@ -457,11 +429,11 @@ describe('settings import', () => {
 	test('sanitizes imported website access icons before persisting them', async () => {
 		const { getWebsiteAccess, importSettingsAndAddressBook } = await settingsModulePromise
 		await importSettingsAndAddressBook(buildVersion14Import(false, false, [
-			{ website: { websiteOrigin: 'remote.example', icon: 'https://remote.example/favicon.png', title: 'Remote' }, access: true },
-			{ website: { websiteOrigin: 'cached.example', icon: 'data:image/png;base64,Y2FjaGVk', title: 'Cached' }, access: true },
+			{ website: { websiteOrigin: 'remote.example', icon: 'https://remote.example/favicon.png', title: 'Remote' }, addressAccess: undefined, access: true },
+			{ website: { websiteOrigin: 'cached.example', icon: 'data:image/png;base64,Y2FjaGVk', title: 'Cached' }, addressAccess: undefined, access: true },
 		]))
 
-		const storedWebsiteAccess = (await browser.storage.local.get('websiteAccess')).websiteAccess
+		const { websiteAccess: storedWebsiteAccess } = await browser.storage.local.get('websiteAccess')
 		assert.equal(Array.isArray(storedWebsiteAccess), true)
 		if (!Array.isArray(storedWebsiteAccess)) throw new Error('Expected imported websiteAccess to be stored as an array')
 		assert.equal(storedWebsiteAccess[0]?.website.icon, undefined)

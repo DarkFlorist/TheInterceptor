@@ -1,24 +1,13 @@
-import { closeTarget, connectTarget, createTargetPage, launchChromeSession, waitForInterceptorExtensionServiceWorker, waitForPerformanceMarks, waitForRegisteredContentScripts, waitForTargetByUrl, waitForTargetGone } from './chromeHarness.js'
+import { closeTarget, connectTarget, createTargetPage, launchChromeSession, waitForCondition, waitForInterceptorExtensionServiceWorker, waitForPerformanceMarks, waitForRegisteredContentScripts, waitForTargetByUrl, waitForTargetGone } from './chromeHarness.js'
 import { startChromeCommunicationPageServer } from './chromeCommunicationPageServer.js'
 import type { CdpConnection } from './chromeHarness.js'
+import * as funtypes from 'funtypes'
 
 const ACCESS_APPROVE_BUTTON_SELECTOR = 'nav.popup-button-row button.is-primary:not(.is-danger)'
 const CONFIRM_APPROVE_BUTTON_SELECTOR = 'nav.popup-button-row button.dialog-action-button.is-primary:not(.is-danger)'
 const FAKE_SIGNER_ADDRESS = '0xd8da6bf26964af9d7eed9e03e53415d37aa96045'
 const FAKE_SIGNED_TRANSACTION_HASH = '0x1111111111111111111111111111111111111111111111111111111111111111'
-
-function sleep(ms: number) {
-	return new Promise<void>((resolve) => setTimeout(resolve, ms))
-}
-
-async function waitForCondition(condition: () => Promise<boolean> | boolean, timeoutMs: number, label: string) {
-	const start = Date.now()
-	while (true) {
-		if (await condition()) return
-		if (Date.now() - start > timeoutMs) throw new Error(`Timed out waiting for ${ label } after ${ timeoutMs }ms`)
-		await sleep(50)
-	}
-}
+const SigningResult = funtypes.ReadonlyPartial({ status: funtypes.String, result: funtypes.String, code: funtypes.Number })
 
 function extractExtensionId(url: string) {
 	const match = /^chrome-extension:\/\/([^/]+)/.exec(url)
@@ -27,10 +16,10 @@ function extractExtensionId(url: string) {
 }
 
 async function waitForButtonEnabled(connection: CdpConnection, selector: string, timeoutMs: number) {
-	await waitForCondition(async () => await connection.evaluate<boolean>(`(() => {
+	await waitForCondition(async () => (await connection.evaluate(`(() => {
 		const element = document.querySelector(${ JSON.stringify(selector) })
 		return element instanceof HTMLButtonElement && element.disabled === false
-	})()`).catch(() => false), timeoutMs, `button ${ selector } to be enabled`)
+	})()`).catch(() => false)) === true, timeoutMs, `button ${ selector } to be enabled`)
 }
 
 async function clickButton(connection: CdpConnection, selector: string) {
@@ -115,7 +104,7 @@ async function main() {
 			await pageConnection.send('Page.enable')
 			await pageConnection.send('Page.addScriptToEvaluateOnNewDocument', { source: fakeSignerPreload })
 			await pageConnection.send('Page.navigate', { url: server.baseUrl })
-			await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__interceptorChromeCommunicationState?.phase === 'requesting-access'`).catch(() => false), 30_000, 'access request')
+			await waitForCondition(async () => (await pageConnection.evaluate(`globalThis.__interceptorChromeCommunicationState?.phase === 'requesting-access'`).catch(() => false)) === true, 30_000, 'access request')
 
 			const accessTarget = await waitForTargetByUrl(chrome.browserDebugPort, `chrome-extension://${ extensionId }/html3/interceptorAccessV3.html`, 30_000)
 			accessTargetId = accessTarget.id
@@ -127,7 +116,7 @@ async function main() {
 				accessConnection.close()
 			}
 			try {
-				await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__interceptorChromeCommunicationState?.phase === 'access-granted'`).catch(() => false), 30_000, 'access approval')
+				await waitForCondition(async () => (await pageConnection.evaluate(`globalThis.__interceptorChromeCommunicationState?.phase === 'access-granted'`).catch(() => false)) === true, 30_000, 'access approval')
 			} catch (error) {
 				const accessState = await pageConnection.evaluate('({ state: globalThis.__interceptorChromeCommunicationState, preloadStarted: globalThis.__fakeSignerPreloadStarted, signerRequests: globalThis.__fakeSignerRequests, aggregateRequests: globalThis.__aggregateSignerRequests, ethereumType: typeof globalThis.ethereum, isBraveWallet: globalThis.ethereum?.isBraveWallet, isMetaMask: globalThis.ethereum?.isMetaMask })')
 				throw new Error(`Access approval failed with page state ${ JSON.stringify(accessState) }`, { cause: error })
@@ -150,12 +139,12 @@ async function main() {
 				confirmConnection.close()
 			}
 
-			await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__fakeSignerRequests?.includes('eth_sendTransaction')`).catch(() => false), 10_000, 'signer eth_sendTransaction request')
-			await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__signingResult?.status === 'fulfilled'`).catch(() => false), 10_000, 'signing result')
-			const signingResult = await pageConnection.evaluate<{ status?: string, result?: string }>('globalThis.__signingResult')
+			await waitForCondition(async () => (await pageConnection.evaluate(`globalThis.__fakeSignerRequests?.includes('eth_sendTransaction')`).catch(() => false)) === true, 10_000, 'signer eth_sendTransaction request')
+			await waitForCondition(async () => (await pageConnection.evaluate(`globalThis.__signingResult?.status === 'fulfilled'`).catch(() => false)) === true, 10_000, 'signing result')
+			const signingResult = SigningResult.parse(await pageConnection.evaluate('globalThis.__signingResult'))
 			if (signingResult.result !== FAKE_SIGNED_TRANSACTION_HASH) throw new Error(`Unexpected signing result: ${ signingResult.result ?? 'missing' }`)
-			const aggregateReceivedSigningRequest = await pageConnection.evaluate<boolean>(`globalThis.__aggregateSignerRequests?.includes('eth_sendTransaction')`)
-			if (aggregateReceivedSigningRequest) throw new Error('Signing request was sent to Brave instead of its EIP-6963 MetaMask provider')
+			const aggregateReceivedSigningRequest = await pageConnection.evaluate(`globalThis.__aggregateSignerRequests?.includes('eth_sendTransaction')`)
+			if (aggregateReceivedSigningRequest === true) throw new Error('Signing request was sent to Brave instead of its EIP-6963 MetaMask provider')
 
 			await waitForTargetGone(chrome.browserDebugPort, (target) => target.id === confirmTargetId, 10_000, 'completed confirmation popup')
 			confirmTargetId = undefined
@@ -169,8 +158,8 @@ async function main() {
 			confirmTargetId = confirmationToClose.id
 			await closeTarget(chrome.browserConnection, confirmationToClose.id)
 			confirmTargetId = undefined
-			await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__signingResult?.status === 'rejected'`).catch(() => false), 10_000, 'closed-popup transaction rejection')
-			const rejectedSigningResult = await pageConnection.evaluate<{ status?: string, code?: number }>('globalThis.__signingResult')
+			await waitForCondition(async () => (await pageConnection.evaluate(`globalThis.__signingResult?.status === 'rejected'`).catch(() => false)) === true, 10_000, 'closed-popup transaction rejection')
+			const rejectedSigningResult = SigningResult.parse(await pageConnection.evaluate('globalThis.__signingResult'))
 			if (rejectedSigningResult.code !== 4001) throw new Error(`Unexpected closed-popup rejection code: ${ rejectedSigningResult.code ?? 'missing' }`)
 			console.warn('Interceptor Chrome signing communication test passed.')
 		} finally {

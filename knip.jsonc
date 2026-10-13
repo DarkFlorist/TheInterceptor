@@ -21,8 +21,8 @@
 				"app/inpage/ts/listenContentScript.ts",
 				"app/inpage/ts/listenContentScriptBootstrap.ts",
 				"app/ts/simulationStack.ts",
-				"test/tests/*.test.ts",
-				"test/tests/*.ts"
+				// test files only: shared test helpers are reached through their importers, so their unused exports are reported
+				"test/**/*.test.{ts,tsx}"
 			],
 			"project": [
 				"app/ts/**/*.{ts,tsx}",
@@ -31,8 +31,7 @@
 				"test/**/*.{ts,tsx}"
 			],
 			"ignoreDependencies": [
-				// browser globals and transformed vendor imports are not regular source imports
-				"@types/firefox-webext-browser",
+				// transformed vendor imports are not regular source imports
 				"@noble/curves",
 
 				// compileSolidityContracts.mts belongs to the isolated build workspace but resolves this root dependency

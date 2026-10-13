@@ -1,20 +1,28 @@
 {
+	// Typechecks the build tooling, which Bun runs directly (for example `bun ./build/bundler.mts`), with Bun and Node built-in types only: the extension's DOM and WebExtension globals do not exist here.
+	// Run through `bun run typecheck:build`; nothing is emitted because Bun executes the TypeScript directly.
+	// typeRoots points at the root node_modules because this workspace's own @types/node is older than the root TypeScript that runs this check.
 	"compilerOptions": {
-		"target": "ES2022",
-		"module": "Node16",
-		"moduleResolution": "node16",
-		"noEmit": false,
+		"target": "ESNext",
+		"module": "ESNext",
+		"moduleResolution": "Bundler",
+		"noEmit": true,
 		"rootDir": ".",
-		"inlineSourceMap": true,
 		"strict": true,
 		"noUnusedLocals": true,
 		"noUnusedParameters": true,
+		"noFallthroughCasesInSwitch": true,
 		"noImplicitReturns": true,
 		"noImplicitThis": true,
-		"lib": [ "ES2021" ],
-		"typeRoots": [ "./node_modules/@types" ],
+		"noImplicitOverride": true,
+		"noPropertyAccessFromIndexSignature": true,
+		"noUncheckedIndexedAccess": true,
+		"skipLibCheck": false,
+		"lib": ["ESNext"],
+		"types": ["bun"],
+		"typeRoots": ["../node_modules/@types"],
 	},
 	"include": [
-		"./*.mts"
+		"./*.mts",
 	],
 }

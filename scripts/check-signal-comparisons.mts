@@ -50,7 +50,7 @@ const isPreactSignalType = (type: ts.Type): boolean => {
 	if (valueProperty === undefined) return false
 
 	const declarations = valueProperty.getDeclarations()
-	return declarations !== undefined && declarations.some(isPreactSignalDeclaration)
+	return declarations?.some(isPreactSignalDeclaration) === true
 }
 
 const expressionText = (sourceFile: ts.SourceFile, node: ts.Node) => {

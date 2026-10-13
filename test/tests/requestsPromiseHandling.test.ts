@@ -1,6 +1,7 @@
 import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
 import { silenceChromeUnCaughtPromise } from '../../app/ts/utils/requests.js'
+import { flushMicrotasks } from '../harness/async.js'
 
 describe('request promise handling', () => {
 	test('silences a rejected promise without creating another rejecting promise', async () => {
@@ -22,7 +23,7 @@ describe('request promise handling', () => {
 		process.on('unhandledRejection', onUnhandledRejection)
 		try {
 			silenceChromeUnCaughtPromise(Promise.reject(expectedError))
-			await new Promise((resolve) => setTimeout(resolve, 0))
+			await flushMicrotasks()
 			assert.equal(emittedExpectedRejection, false)
 		} finally {
 			process.off('unhandledRejection', onUnhandledRejection)

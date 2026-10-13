@@ -11,6 +11,7 @@ The Interceptor is a Bun-managed TypeScript browser extension. Main extension so
   bun run typecheck
   bun run lint
   ```
+- `bun run typecheck` also typechecks tests, benchmarks and `scripts` through `tsconfig-test.json` and the `build` tooling through `build/tsconfig.json`, and `bun run lint` ends with knip, so unused exports, files and dependencies fail validation.
 - Run that full validation suite after the whole task is complete, not after every intermediate edit.
 - Before handing off to the user, those tools should report no errors and no test failures.
 - If any of those tools report an error or test failure, fix the issue and rerun the required validation before handing off.

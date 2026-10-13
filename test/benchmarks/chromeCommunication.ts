@@ -1,24 +1,37 @@
-import { closeTarget, connectTarget, createTargetPage, launchChromeSession, waitForInterceptorExtensionServiceWorker, waitForPerformanceMarks, waitForRegisteredContentScripts, waitForTargetByUrl } from './chromeHarness.js'
+import { closeTarget, connectTarget, createTargetPage, launchChromeSession, waitForCondition, waitForInterceptorExtensionServiceWorker, waitForPerformanceMarks, waitForRegisteredContentScripts, waitForTargetByUrl } from './chromeHarness.js'
 import { startChromeCommunicationPageServer } from './chromeCommunicationPageServer.js'
 import type { CdpConnection } from './chromeHarness.js'
 import { authorization as eip7702Authorization, Transaction } from 'micro-eth-signer'
+import * as funtypes from 'funtypes'
 
-type CommunicationPageState = {
-	phase: 'loading' | 'provider-ready' | 'requesting-access' | 'access-granted' | 'error'
-	accounts?: readonly string[]
-	error?: string
-	errorCode?: number
-	connectEvents: number
-	accountsChangedEvents: number
-	eventOrder: readonly string[]
-}
+const CommunicationPageState = funtypes.ReadonlyObject({
+	phase: funtypes.Union(
+		funtypes.Literal('loading'),
+		funtypes.Literal('provider-ready'),
+		funtypes.Literal('requesting-safe-only'),
+		funtypes.Literal('safe-only-granted'),
+		funtypes.Literal('requesting-access'),
+		funtypes.Literal('access-granted'),
+		funtypes.Literal('error'),
+	),
+	connectEvents: funtypes.Number,
+	accountsChangedEvents: funtypes.Number,
+	eventOrder: funtypes.ReadonlyArray(funtypes.String),
+}).And(funtypes.ReadonlyPartial({
+	accounts: funtypes.ReadonlyArray(funtypes.String),
+	error: funtypes.String,
+	errorCode: funtypes.Number,
+}))
+type CommunicationPageState = funtypes.Static<typeof CommunicationPageState>
+const OptionalCommunicationPageState = funtypes.Union(funtypes.Undefined, CommunicationPageState)
 
-type SafeAppsInfoResult = {
-	status: 'fulfilled' | 'pending' | 'rejected'
-	data?: { readonly safeAddress?: string, readonly chainId?: number }
-	error?: string
-	elapsedMs?: number
-}
+const SafeAppsInfoResult = funtypes.ReadonlyObject({
+	status: funtypes.Union(funtypes.Literal('fulfilled'), funtypes.Literal('pending'), funtypes.Literal('rejected')),
+}).And(funtypes.ReadonlyPartial({
+	data: funtypes.ReadonlyPartial({ safeAddress: funtypes.String, chainId: funtypes.Number }),
+	error: funtypes.String,
+	elapsedMs: funtypes.Number,
+}))
 
 const COMMUNICATION_PAGE_STATE_GLOBAL = '__interceptorChromeCommunicationState' as const
 const ACCESS_APPROVE_BUTTON_SELECTOR = 'nav.popup-button-row button.is-primary:not(.is-danger)'
@@ -51,15 +64,6 @@ function sleep(ms: number) {
 	})
 }
 
-async function waitForCondition(condition: () => Promise<boolean> | boolean, timeoutMs: number, label: string) {
-	const start = Date.now()
-	while (true) {
-		if (await condition()) return
-		if (Date.now() - start > timeoutMs) throw new Error(`Timed out waiting for ${ label } after ${ timeoutMs }ms`)
-		await sleep(50)
-	}
-}
-
 function extractExtensionId(url: string) {
 	const match = /^chrome-extension:\/\/([^/]+)/.exec(url)
 	if (match?.[1] === undefined) throw new Error(`Could not determine extension id from ${ url }`)
@@ -67,7 +71,7 @@ function extractExtensionId(url: string) {
 }
 
 async function getCommunicationPageState(connection: CdpConnection): Promise<CommunicationPageState | undefined> {
-	return await connection.evaluate<CommunicationPageState | undefined>(`(() => globalThis[${ JSON.stringify(COMMUNICATION_PAGE_STATE_GLOBAL) }] ?? undefined)()`)
+	return OptionalCommunicationPageState.parse(await connection.evaluate(`(() => globalThis[${ JSON.stringify(COMMUNICATION_PAGE_STATE_GLOBAL) }] ?? undefined)()`))
 }
 
 async function waitForCommunicationPagePhase(connection: CdpConnection, phase: CommunicationPageState['phase'], timeoutMs: number) {
@@ -88,10 +92,11 @@ async function waitForCommunicationPageError(connection: CdpConnection, timeoutM
 
 async function waitForButtonEnabled(connection: CdpConnection, selector: string, timeoutMs: number) {
 	await waitForCondition(async () => {
-		return Boolean(await connection.evaluate<boolean>(`(() => {
+		const enabled = await connection.evaluate(`(() => {
 			const element = document.querySelector(${ JSON.stringify(selector) })
 			return element instanceof HTMLButtonElement && element.disabled === false
-		})()`).catch(() => false))
+		})()`).catch(() => false)
+		return enabled === true
 	}, timeoutMs, `button ${ selector } to be enabled`)
 }
 
@@ -126,8 +131,8 @@ async function main() {
 		const pageConnection = await connectTarget(chrome.browserDebugPort, pageTargetId)
 		try {
 			await waitForCommunicationPagePhase(pageConnection, 'requesting-access', 30_000)
-			const preApprovalSafeProbeStatus = await pageConnection.evaluate<string | undefined>('globalThis.__earlySafeAppsInfoResult?.status')
-			if (preApprovalSafeProbeStatus !== 'pending') throw new Error(`Safe Apps advertised before website approval with status ${ preApprovalSafeProbeStatus ?? 'missing' }`)
+			const preApprovalSafeProbeStatus = await pageConnection.evaluate('globalThis.__earlySafeAppsInfoResult?.status')
+			if (preApprovalSafeProbeStatus !== 'pending') throw new Error(`Safe Apps advertised before website approval with status ${ typeof preApprovalSafeProbeStatus === 'string' ? preApprovalSafeProbeStatus : 'missing' }`)
 			const accessTarget = await waitForTargetByUrl(chrome.browserDebugPort, `chrome-extension://${ extensionId }/html3/interceptorAccessV3.html`, 30_000)
 			accessTargetId = accessTarget.id
 			const accessConnection = await connectTarget(chrome.browserDebugPort, accessTarget.id)
@@ -159,9 +164,9 @@ async function main() {
 				globalThis.postMessage({ id, method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } }, globalThis.location.origin)
 			})()`)
 			await sleep(250)
-			const safeAppsInfoResult = await pageConnection.evaluate<SafeAppsInfoResult>('globalThis.__safeAppsInfoResult')
+			const safeAppsInfoResult = SafeAppsInfoResult.parse(await pageConnection.evaluate('globalThis.__safeAppsInfoResult'))
 			if (safeAppsInfoResult.status !== 'pending') throw new Error(`Safe Apps advertised the approved EOA with status ${ safeAppsInfoResult.status }`)
-			const earlySafeAppsInfoResult = await pageConnection.evaluate<SafeAppsInfoResult>('globalThis.__earlySafeAppsInfoResult')
+			const earlySafeAppsInfoResult = SafeAppsInfoResult.parse(await pageConnection.evaluate('globalThis.__earlySafeAppsInfoResult'))
 			if (earlySafeAppsInfoResult.status !== 'pending') throw new Error(`Queued Safe Apps discovery advertised the approved EOA with status ${ earlySafeAppsInfoResult.status }`)
 
 			await pageConnection.evaluate(`(() => {
@@ -174,17 +179,17 @@ async function main() {
 			confirmTargetId = confirmTarget.id
 			const rawTransactionWorkerConnection = await connectTarget(chrome.browserDebugPort, workerTarget.id)
 			try {
-				await waitForCondition(async () => await rawTransactionWorkerConnection.evaluate<boolean>(`(async () => {
+				await waitForCondition(async () => (await rawTransactionWorkerConnection.evaluate(`(async () => {
 					const stored = await browser.storage.local.get('pendingTransactionsAndMessages')
 					const serialized = JSON.stringify(stored.pendingTransactionsAndMessages ?? [])
 					return serialized.includes('authorizationList') && (serialized.includes('"type":"0x4"') || serialized.includes('"type":"7702"'))
-				})()`), 30_000, 'parsed EIP-7702 raw transaction in extension storage')
+				})()`)) === true, 30_000, 'parsed EIP-7702 raw transaction in extension storage')
 			} finally {
 				rawTransactionWorkerConnection.close()
 			}
 			await closeTarget(chrome.browserConnection, confirmTarget.id)
 			confirmTargetId = undefined
-			await waitForCondition(async () => await pageConnection.evaluate<boolean>(`globalThis.__raw7702Result?.status === 'rejected'`), 10_000, 'raw EIP-7702 popup-close rejection')
+			await waitForCondition(async () => (await pageConnection.evaluate(`globalThis.__raw7702Result?.status === 'rejected'`)) === true, 10_000, 'raw EIP-7702 popup-close rejection')
 
 			const signingModeWorkerConnection = await connectTarget(chrome.browserDebugPort, workerTarget.id)
 			try {

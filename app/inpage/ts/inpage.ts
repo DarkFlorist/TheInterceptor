@@ -1255,7 +1255,7 @@
 			}
 		}
 
-		const useAnnouncedMetaMaskProvider = (event: Event) => {
+		const adoptAnnouncedMetaMaskProvider = (event: Event) => {
 			if (!acceptingAnnouncedMetaMaskProviders) return
 			let announcement: ReturnType<typeof getEip6963MetaMaskAnnouncement>
 			try {
@@ -1279,7 +1279,7 @@
 
 		const discoverAnnouncedMetaMaskProvider = () => {
 			if (acceptingAnnouncedMetaMaskProviders) return
-			window.addEventListener('eip6963:announceProvider', useAnnouncedMetaMaskProvider)
+			window.addEventListener('eip6963:announceProvider', adoptAnnouncedMetaMaskProvider)
 			acceptingAnnouncedMetaMaskProviders = true
 			try {
 				window.dispatchEvent(new Event('eip6963:requestProvider'))
@@ -1287,7 +1287,7 @@
 				reportSignerDiscoveryError('request EIP-6963 signer providers', error)
 			} finally {
 				acceptingAnnouncedMetaMaskProviders = false
-				window.removeEventListener('eip6963:announceProvider', useAnnouncedMetaMaskProvider)
+				window.removeEventListener('eip6963:announceProvider', adoptAnnouncedMetaMaskProvider)
 			}
 		}
 
@@ -2004,7 +2004,7 @@
 				return
 			}
 			const injectedWindowEthereum = inpageWindow.ethereum
-			const useNoSigner = () => {
+			const fallBackToNoSigner = () => {
 				inpageWindow.ethereum = providerMethods.createInterceptorProvider(undefined)
 				providerState.connected = true
 				selection.setSignerProvider(undefined, undefined)
@@ -2042,7 +2042,7 @@
 				const preparedRootSigner = preparedMapSigner === undefined ? signerConnection.prepareSignerProvider(injectedWindowEthereum, rootSignerName, false, false) : undefined
 				const preparedSigner = preparedMapSigner ?? preparedRootSigner
 				if (preparedSigner === undefined) {
-					useNoSigner()
+					fallBackToNoSigner()
 					return
 				}
 				const signerName = preparedMapSigner === undefined ? rootSignerName : 'CoinbaseWallet'
@@ -2059,7 +2059,7 @@
 			}
 			const preparedRootSigner = preparedMetaMaskProvider ?? signerConnection.prepareSignerProvider(injectedWindowEthereum, rootSignerName, false, false)
 			if (preparedRootSigner === undefined) {
-				useNoSigner()
+				fallBackToNoSigner()
 				return
 			}
 			const fallbackSignerWindowEthereum = preparedRootSigner.provider
