@@ -1,9 +1,8 @@
 import { type Erc1155OperatorChange, Erc20ApprovalChanges, type Erc721OperatorChange, Erc721TokenIdApprovalChanges, Erc721or1155OperatorChanges } from '../SimulationSummary.js'
 import type { Erc721TokenApprovalChange, ERC20TokenApprovalChange, SimulatedAndVisualizedTransaction } from '../../../types/visualizer-types.js'
-import { TokenSymbol, TokenAmount } from '../../subcomponents/coins.js'
+import { TokenSymbol, TokenAmount, tokenEventToTokenSymbolParams } from '../../subcomponents/coins.js'
 import type { RenameAddressCallBack } from '../../../types/user-interface-types.js'
 import { BigAddress, SmallAddress } from '../../subcomponents/address.js'
-import { assertNever } from '../../../utils/typescript.js'
 import { getDeployedContractAddress } from '../../../simulation/services/SimulationModeEthereumClientService.js'
 import { addressString } from '../../../utils/bigint.js'
 import { extractEnsEvents, extractTokenEvents } from '../../../background/metadataUtils.js'
@@ -11,7 +10,7 @@ import { EnsEventsExplainer } from './EnsEventExplainer.js'
 import type { TokenVisualizerErc20Event, TokenVisualizerErc721Event, TokenVisualizerNFTAllApprovalEvent, TokenVisualizerResultWithMetadata } from '../../../types/EnrichedEthereumData.js'
 import { deduplicateByFunction } from '../../../utils/array.js'
 import type { AddressBookEntry } from '../../../types/addressBookTypes.js'
-import { type ReadonlySignal, useComputed } from '@preact/signals'
+import type { ReadonlySignal } from '@preact/signals'
 import type { EditEnsNamedHashCallBack } from '../../subcomponents/ens.js'
 import type { RpcNetwork } from '../../../types/rpc.js'
 import { getAddressBookEntryOrAFiller } from '../../ui-utils.js'
@@ -21,19 +20,6 @@ type SendOrReceiveTokensImportanceBoxParams = {
 	tokenVisualizerResults: TokenVisualizerResultWithMetadata[],
 	textColor: string,
 	renameAddressCallBack: RenameAddressCallBack,
-}
-
-export function tokenEventToTokenSymbolParams(tokenEvent: TokenVisualizerResultWithMetadata){
-	switch(tokenEvent.type) {
-		case 'ERC1155': return { tokenEntry: tokenEvent.token, tokenId: tokenEvent.tokenId, tokenIdName: tokenEvent.tokenIdName }
-		case 'ERC20': return { tokenEntry: tokenEvent.token }
-		case 'ERC721': return  { tokenEntry: tokenEvent.token, tokenId: tokenEvent.tokenId }
-		case 'NFT All approval':  {
-			if (tokenEvent.token.type === 'ERC1155') return { tokenEntry: tokenEvent.token, tokenId: undefined, tokenIdName: undefined }
-			return { tokenEntry: tokenEvent.token, tokenId: undefined }
-		}
-		default: assertNever(tokenEvent)
-	}
 }
 
 function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBoxParams) {
@@ -190,7 +176,7 @@ export function CatchAllVisualizer(param: CatchAllVisualizerParams) {
 						erc20TokenApprovalChanges = { eventsGrouped.erc20TokenApprovalChanges }
 						textColor = { textColor }
 						negativeColor = { textColor }
-						isImportant = { useComputed(() => true) }
+						isImportant = { true }
 						renameAddressCallBack = { param.renameAddressCallBack }
 					/>
 				</div>
@@ -199,7 +185,7 @@ export function CatchAllVisualizer(param: CatchAllVisualizerParams) {
 						erc721or1155OperatorChanges = { eventsGrouped.operatorChanges }
 						textColor = { textColor }
 						negativeColor = { textColor }
-						isImportant = { useComputed(() => true) }
+						isImportant = { true }
 						renameAddressCallBack = { param.renameAddressCallBack }
 					/>
 				</div>
@@ -208,7 +194,7 @@ export function CatchAllVisualizer(param: CatchAllVisualizerParams) {
 						Erc721TokenIdApprovalChanges = { eventsGrouped.tokenIdApprovalChanges }
 						textColor = { textColor }
 						negativeColor = { textColor }
-						isImportant = { useComputed(() => true) }
+						isImportant = { true }
 						renameAddressCallBack = { param.renameAddressCallBack }
 					/>
 				</div>

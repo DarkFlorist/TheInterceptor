@@ -2,7 +2,8 @@ import type { EnrichedEthereumInputData } from '../../types/EnrichedEthereumData
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
 import type { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { dataStringWith0xStart } from '../../utils/bigint.js'
-import { ParsedInputData } from '../simulationExplaining/Transactions.js'
+import { insertBetweenElements } from './misc.js'
+import { EnrichedSolidityTypeComponentWithAddressBook } from './solidityType.js'
 import { ViewSelector } from './ViewSelector.js'
 import { SmallAddress } from './address.js'
 import { resolveSignal, type SignalOrValue } from '../../utils/signals.js'
@@ -20,6 +21,33 @@ export function NoParsedAvailable({ to, renameAddressCallBack }: { to: AddressBo
 	return <p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Unable to parse input data with the available ABI for&nbsp;
 		<SmallAddress addressBookEntry = { to } renameAddressCallBack = { renameAddressCallBack } />
 	</p>
+}
+
+type ParsedInputDataParams = {
+	inputData: EnrichedEthereumInputData
+	addressMetaData: SignalOrValue<readonly AddressBookEntry[]>
+	renameAddressCallBack: RenameAddressCallBack
+}
+
+function ParsedInputData(params: ParsedInputDataParams) {
+	const textStyle = 'text-overflow: ellipsis; overflow: hidden;'
+	if (params.inputData.type === 'NonParsed') {
+		return <div class = 'textbox'>
+			<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ dataStringWith0xStart(params.inputData.input) }</p>
+		</div>
+	}
+	return <>
+		<div class = 'log-cell' style = { { 'grid-column-start': 2, 'grid-column-end': 4, display: 'flex', 'flex-wrap': 'wrap' } }>
+			<p class = 'paragraph' style = { textStyle }> { `${ params.inputData.name }(` } </p>
+			{ insertBetweenElements(params.inputData.args.map((arg) => {
+				return <>
+					<p style = { textStyle } class = 'paragraph'> { `${ arg.paramName } =` }&nbsp;</p>
+					<EnrichedSolidityTypeComponentWithAddressBook valueType = { arg.typeValue } addressMetaData = { params.addressMetaData } renameAddressCallBack = { params.renameAddressCallBack } />
+				</>
+			}), <p style = { textStyle } class = 'paragraph'>,&nbsp;</p>) }
+			<p class = 'paragraph' style = { textStyle }> { ')' } </p>
+		</div>
+	</>
 }
 
 type TransactionInputParams = {

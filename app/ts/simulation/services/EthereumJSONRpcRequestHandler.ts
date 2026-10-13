@@ -3,7 +3,6 @@ import { ErrorWithData, JsonRpcResponseError } from '../../utils/errors.js'
 import { EthereumQuantity, serialize } from '../../types/wire-types.js'
 import { stringToBytes, keccak256 } from '../../utils/ethereumPrimitives.js'
 import { fetchWithTimeout } from '../../utils/requests.js'
-import { Future } from '../../utils/future.js'
 import { recordBenchmarkRpcRequest } from '../../utils/benchmarking.js'
 import { HTTP_STATUS_REQUEST_TIMEOUT, HTTP_STATUS_SERVER_ERROR_RANGE_START, HTTP_STATUS_TOO_EARLY, HTTP_STATUS_TOO_MANY_REQUESTS, JSON_RPC_ERROR_CODE_INTERNAL_ERROR, JSON_RPC_ERROR_CODE_LIMIT_EXCEEDED, JSON_RPC_ERROR_CODE_RESOURCE_UNAVAILABLE, TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
 
@@ -64,24 +63,74 @@ function assertMatchingJsonRpcResponseId(response: ResolvedResponse, requestId: 
 
 const DEFAULT_RPC_QUERY_EXPECTED_DURATION_MS = TIME_BETWEEN_BLOCKS * 1000
 
+// Identical requests share one fetch only within a cache generation (clearCache starts a new one on every block). The shared fetch has its own AbortController: each caller races it against the caller's own abort signal, so one caller's abort never fails another caller, and the fetch is cancelled once every waiter has aborted.
+type SharedRpcRequest = {
+	readonly response: Promise<ResolvedResponse>
+	readonly fetchAbortController: AbortController
+	waiterCount: number
+}
+
+type RpcCacheGeneration = {
+	readonly responses: Map<string, ResolvedResponse>
+	readonly pendingRequests: Map<string, SharedRpcRequest>
+}
+
+const createRpcCacheGeneration = (): RpcCacheGeneration => ({ responses: new Map(), pendingRequests: new Map() })
+
+const forgetPendingRequest = (generation: RpcCacheGeneration, hash: string, sharedRequest: SharedRpcRequest) => {
+	if (generation.pendingRequests.get(hash) === sharedRequest) generation.pendingRequests.delete(hash)
+}
+
+const createRequestAbortError = (signal: AbortSignal) => new Error(signal.reason)
+
+const toRequestError = (error: unknown) => error instanceof Error ? error : new ErrorWithData('Unknown error', error)
+
+const waitForSharedRequest = async (generation: RpcCacheGeneration, hash: string, sharedRequest: SharedRpcRequest, abortSignal: AbortSignal | undefined) => await new Promise<ResolvedResponse>((resolve, reject) => {
+	let isWaiting = true
+	const stopWaiting = () => {
+		if (!isWaiting) return false
+		isWaiting = false
+		sharedRequest.waiterCount -= 1
+		abortSignal?.removeEventListener('abort', abortWaiting)
+		return true
+	}
+	const abortWaiting = () => {
+		if (abortSignal === undefined || !stopWaiting()) return
+		if (sharedRequest.waiterCount === 0) {
+			forgetPendingRequest(generation, hash, sharedRequest)
+			sharedRequest.fetchAbortController.abort(abortSignal.reason)
+		}
+		reject(createRequestAbortError(abortSignal))
+	}
+	sharedRequest.waiterCount += 1
+	if (abortSignal?.aborted === true) {
+		abortWaiting()
+		return
+	}
+	abortSignal?.addEventListener('abort', abortWaiting)
+	sharedRequest.response.then((response) => {
+		if (stopWaiting()) resolve(response)
+	}, (error: unknown) => {
+		if (stopWaiting()) reject(toRequestError(error))
+	})
+})
+
 export type IEthereumJSONRpcRequestHandler = Pick<EthereumJSONRpcRequestHandler, keyof EthereumJSONRpcRequestHandler>
 export class EthereumJSONRpcRequestHandler {
 	private nextRequestId = 1
 	private caching: boolean
-	private pendingCache: Map<string, Future<ResolvedResponse>>
-	private cache: Map<string, ResolvedResponse>
+	private cacheGeneration: RpcCacheGeneration
 	private rpcRequestLifecycleCallbacks: RpcRequestLifecycleCallbacks
 	public rpcUrl: string
 
 	constructor(rpcUrl: string, caching = false, rpcRequestLifecycleCallbacks: RpcRequestLifecycleCallbacks = {}) {
 		this.rpcUrl = rpcUrl
 		this.caching = caching
-		this.cache = new Map()
-		this.pendingCache = new Map()
+		this.cacheGeneration = createRpcCacheGeneration()
 		this.rpcRequestLifecycleCallbacks = rpcRequestLifecycleCallbacks
 	}
 
-	public readonly clearCache = () => { this.cache = new Map() }
+	public readonly clearCache = () => { this.cacheGeneration = createRpcCacheGeneration() }
 
 	private readonly resolveResponse = async (response: Response): Promise<ResolvedResponse> => {
 		if (response.ok) return { responseState: 'success', response: await response.json() }
@@ -159,36 +208,32 @@ export class EthereumJSONRpcRequestHandler {
 			}
 		}
 		const hash = keccak256(stringToBytes(JSON.stringify(serialized)))
+		const generation = this.cacheGeneration
 		if (bypassCache === false) {
-			const cacheValue = this.cache.get(hash)
+			const cacheValue = generation.responses.get(hash)
 			if (cacheValue !== undefined) return cacheValue
-			const pendingCacheValue = this.pendingCache.get(hash)
-			// we have already requested this, wait for it to resolve and then resolve this as well
-			if (pendingCacheValue !== undefined) return await pendingCacheValue
+			const pendingRequest = generation.pendingRequests.get(hash)
+			if (pendingRequest !== undefined) return await waitForSharedRequest(generation, hash, pendingRequest, requestAbortController?.signal)
 		}
-		const future = new Future<ResolvedResponse>()
-		this.pendingCache.set(hash, future)
-		const startedAt = performance.now()
-		try {
-			const response = await this.fetchWithSlowRequestWarning(request, requestId, payload, timeoutMs, requestAbortController)
-			const responseObject = await this.resolveResponse(response)
-			assertMatchingJsonRpcResponseId(responseObject, requestId)
-			if (shouldCacheResponse(responseObject)) this.cache.set(hash, responseObject)
-			future.resolve(responseObject)
-		} catch(error: unknown) {
-			if (requestAbortController?.signal.aborted) {
-				future.reject(new Error(requestAbortController.signal.reason))
+		if (requestAbortController?.signal.aborted === true) throw createRequestAbortError(requestAbortController.signal)
+		const fetchAbortController = new AbortController()
+		const fetchResponse = async () => {
+			const startedAt = performance.now()
+			try {
+				const response = await this.fetchWithSlowRequestWarning(request, requestId, payload, timeoutMs, fetchAbortController)
+				const responseObject = await this.resolveResponse(response)
+				assertMatchingJsonRpcResponseId(responseObject, requestId)
+				if (shouldCacheResponse(responseObject)) generation.responses.set(hash, responseObject)
+				return responseObject
+			} finally {
+				recordBenchmarkRpcRequest(request.method, performance.now() - startedAt)
 			}
-			else if (error instanceof Error) {
-				future.reject(error)
-			} else {
-				future.reject(new ErrorWithData('Unknown error', error))
-			}
-		} finally {
-			recordBenchmarkRpcRequest(request.method, performance.now() - startedAt)
-			this.pendingCache.delete(hash)
 		}
-		return await future
+		const sharedRequest: SharedRpcRequest = { response: fetchResponse(), fetchAbortController, waiterCount: 0 }
+		generation.pendingRequests.set(hash, sharedRequest)
+		const forgetSettledRequest = () => forgetPendingRequest(generation, hash, sharedRequest)
+		void sharedRequest.response.then(forgetSettledRequest, forgetSettledRequest)
+		return await waitForSharedRequest(generation, hash, sharedRequest, requestAbortController?.signal)
 	}
 
 	public getChainId = async () => {

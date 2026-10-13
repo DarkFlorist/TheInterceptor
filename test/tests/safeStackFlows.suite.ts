@@ -1,15 +1,37 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { test } from 'bun:test'
-import { activeAddress, createSafeStackFixture, createSafeStackTransactionFixture, createSafeTx, EIP712Message, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, modules, pendingTransaction, recipientAddress, resetFakeSafeContractState, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, signedTransaction, simulator, } from './confirmTransactionTestHarness.js'
+import * as funtypes from 'funtypes'
+import { activeAddress, createSafeStackFixture, createSafeStackTransactionFixture, createSafeTx, EIP712Message, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, modules, pendingTransaction, recipientAddress, resetFakeSafeContractState, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, signedTransaction, simulator } from './confirmTransactionTestHarness.js'
 import { ensureHex } from '../../app/ts/utils/ethereumBytes.js'
 import { SafeStackExport } from '../../app/ts/types/safeTypes.js'
+import { requireDefined } from '../harness/assertions.js'
+
+// The exported JSON as written to disk: quantities stay in their wire encoding.
+const ExportedSafeStackJson = funtypes.ReadonlyObject({
+	stacks: funtypes.ReadonlyArray(funtypes.ReadonlyObject({
+		baseNonce: funtypes.String,
+		transactions: funtypes.ReadonlyArray(funtypes.ReadonlyObject({
+			safeTx: funtypes.ReadonlyObject({ message: funtypes.ReadonlyObject({ nonce: funtypes.String }) }),
+		})),
+	})),
+})
+
+const parseExportedSafeStackJson = (safeStackJson: string) => {
+	const exportedJson: unknown = JSON.parse(safeStackJson)
+	return ExportedSafeStackJson.parse(exportedJson)
+}
+
+const parseSafeStackExport = (safeStackJson: string) => {
+	const exportedJson: unknown = JSON.parse(safeStackJson)
+	return SafeStackExport.parse(exportedJson)
+}
 
 test('extension Safe stack import merges owner signatures into proposal and optimistic metadata', async () => {
 	const ownerAccount = safeTestOwnerAccount
 	const ownerAddress = safeTestOwnerAddress
 	fakeSafeContract.owners = [ownerAddress]
 	const localTransaction = createSafeStackTransactionFixture()
-	const { safeTx, safeTxHash } = localTransaction
+	const { safeTx } = localTransaction
 	const signature = await ownerAccount.signTypedData(EIP712Message.parse(safeTxToTypedDataJson(safeTx)))
 	const recoveryByte = Number.parseInt(signature.slice(-2), 16)
 	const nonCanonicalSignature = ensureHex(`${ signature.slice(0, -2) }${ (recoveryByte - 27).toString(16).padStart(2, '0') }`, 'test Gnosis Safe signature')
@@ -85,7 +107,7 @@ test('extension Safe stack export and import roundtrip leaves the local stack un
 	if (!exportReply.ok) throw new Error(exportReply.message)
 	const safeStacksBeforeImport = await modules.getSafeTransactionStacks()
 	const simulationStackBeforeImport = await modules.getInterceptorTransactionStack()
-	const exportedStack = SafeStackExport.parse(JSON.parse(exportReply.safeStackJson))
+	const exportedStack = parseSafeStackExport(exportReply.safeStackJson)
 
 	const importReply = await modules.importSafeStack(simulator.ethereum, simulator.tokenPriceService, { data: exportedStack })
 
@@ -112,7 +134,7 @@ test('extension Safe stack import recovers a missing Safe index from locally cre
 	const exportReply = await modules.requestSafeStackExport(simulator.ethereum)
 	assert.equal(exportReply.ok, true)
 	if (!exportReply.ok) throw new Error(exportReply.message)
-	const exportedStack = SafeStackExport.parse(JSON.parse(exportReply.safeStackJson))
+	const exportedStack = parseSafeStackExport(exportReply.safeStackJson)
 	const secondSafeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
 		to: recipientAddress,
 		value: 1n,
@@ -151,7 +173,7 @@ test('extension Safe stack import does not recover its index from a different lo
 	const exportReply = await modules.requestSafeStackExport(simulator.ethereum)
 	assert.equal(exportReply.ok, true)
 	if (!exportReply.ok) throw new Error(exportReply.message)
-	const exportedStack = SafeStackExport.parse(JSON.parse(exportReply.safeStackJson))
+	const exportedStack = parseSafeStackExport(exportReply.safeStackJson)
 	const differentSafeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
 		to: recipientAddress,
 		value: 1n,
@@ -194,17 +216,11 @@ test('Safe stack import preserves a proposal appended while live validation is p
 	await modules.updateSafeTransactionStacks(() => [localStack])
 	await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
 
-	let signalValidationStarted: (() => void) | undefined
-	const validationStarted = new Promise<void>((resolve) => {
-		signalValidationStarted = resolve
-	})
-	let resumeValidation: (() => void) | undefined
-	const validationMayResume = new Promise<void>((resolve) => {
-		resumeValidation = resolve
-	})
+	const validationStarted = Promise.withResolvers<void>()
+	const validationMayResume = Promise.withResolvers<void>()
 	fakeSafeContract.beforeVersionResponse = async () => {
-		signalValidationStarted?.()
-		await validationMayResume
+		validationStarted.resolve()
+		await validationMayResume.promise
 	}
 	const importPromise = modules.importSafeStack(simulator.ethereum, simulator.tokenPriceService, {
 		data: {
@@ -221,7 +237,7 @@ test('Safe stack import preserves a proposal appended while live validation is p
 	})
 
 	try {
-		await validationStarted
+		await validationStarted.promise
 		const secondSafeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
 			to: recipientAddress,
 			value: 1n,
@@ -237,7 +253,7 @@ test('Safe stack import preserves a proposal appended while live validation is p
 			...stack,
 			transactions: [...stack.transactions, secondTransaction],
 		})))
-		resumeValidation?.()
+		validationMayResume.resolve()
 		const reply = await importPromise
 		assert.deepEqual(reply, { type: 'ImportSafeStackReply', ok: true })
 
@@ -246,7 +262,7 @@ test('Safe stack import preserves a proposal appended while live validation is p
 		assert.equal(storedTransactions?.[0]?.signatures[0]?.signer, ownerAddress)
 		assert.equal(storedTransactions?.[1]?.safeTxHash, secondTransaction.safeTxHash)
 	} finally {
-		resumeValidation?.()
+		validationMayResume.resolve()
 		fakeSafeContract.beforeVersionResponse = undefined
 	}
 })
@@ -389,7 +405,7 @@ test('extension Safe stack export preserves and includes already executed transa
 	const validReply = await modules.requestSafeStackExport(simulator.ethereum)
 	assert.equal(validReply.ok, true)
 	if (!validReply.ok) throw new Error('Expected valid Safe export')
-	assert.equal(JSON.parse(validReply.safeStackJson).stacks.length, 1)
+	assert.equal(parseExportedSafeStackJson(validReply.safeStackJson).stacks.length, 1)
 
 	const secondSafeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
 		to: recipientAddress,
@@ -401,7 +417,7 @@ test('extension Safe stack export preserves and includes already executed transa
 	await modules.updateSafeTransactionStacks((stacks) => stacks.map((stack) => ({
 		...stack,
 		transactions: [...stack.transactions, {
-			...stack.transactions[0],
+			...requireDefined(stack.transactions[0], 'first Safe stack transaction'),
 			safeTx: secondSafeTx,
 			safeTxHash: secondSafeTxHash,
 			transactionIdentifier: 74n,
@@ -433,10 +449,10 @@ test('extension Safe stack export preserves and includes already executed transa
 	assert.equal(exportReply.ok, true)
 	if (!exportReply.ok) throw new Error('Expected read-only Safe export')
 	assert.equal(liveSafeStateQueried, false)
-	const exportedStack = JSON.parse(exportReply.safeStackJson).stacks[0]
+	const exportedStack = parseExportedSafeStackJson(exportReply.safeStackJson).stacks[0]
 	assert.equal(exportedStack?.baseNonce, '0x0')
 	assert.equal(exportedStack?.transactions.length, 2)
-	assert.deepEqual(exportedStack?.transactions.map((transaction: { safeTx: { message: { nonce: string } } }) => transaction.safeTx.message.nonce), ['0', '1'])
+	assert.deepEqual(exportedStack?.transactions.map((transaction) => transaction.safeTx.message.nonce), ['0', '1'])
 	assert.deepEqual(await modules.getSafeTransactionStacks(), transactionStateBeforeExport.safeTransactionStacks)
 	assert.deepEqual(await modules.getInterceptorTransactionStack(), transactionStateBeforeExport.interceptorTransactionStack)
 })

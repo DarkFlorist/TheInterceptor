@@ -23,6 +23,7 @@ import { getConfiguredSigningSafe, getSigningAddressSelectionTransition } from '
 import { getWalletSelectedAccount } from '../utils/activeAddressSelection.js'
 import { getActiveAddressEntryForChain } from './metadataUtils.js'
 import { notifyWebsiteLifecycle } from './websiteLifecycle.js'
+import { FORWARDED_METHODS_SETTLED_BY_BACKGROUND } from './forwardedRequestSettlement.js'
 import type { ApprovalState } from './websiteAccessPolicy.js'
 
 function getSignerCallbackToken(websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, signerProviderGeneration: number) {
@@ -60,7 +61,8 @@ function hasSignerCallbackAccess(websiteTabConnections: WebsiteTabConnections, t
 	return approval === 'hasAccess' || tabHasApprovedWebsiteConnection(websiteTabConnections, tabId)
 }
 
-export async function ethAccountsReply(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState, _activeAddress: bigint | undefined) {
+// Only the signer's accounts reply in `params` is read; the tab and signer identity come from the port.
+export async function ethAccountsReply(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: { readonly params?: readonly unknown[] | undefined }, approval: ApprovalState, _activeAddress: bigint | undefined) {
 	const returnValue = { type: 'result' as const, method: 'eth_accounts_reply' as const, result: '0x' as const }
 	if (!('params' in request)) return returnValue
 	if (port.sender?.tab?.id === undefined) return returnValue
@@ -284,7 +286,8 @@ export async function signerReply(simulationServicesOwner: SimulationServicesOwn
 	if (socket === undefined) return doNotReply
 	return await runSignerStateOperation(websiteTabConnections, socket.tabId, async () => {
 		const { ethereum, tokenPriceService } = simulationServicesOwner.getCurrent()
-		if (params.forwardRequest.method === 'wallet_watchAsset') {
+		const backgroundSettlement = FORWARDED_METHODS_SETTLED_BY_BACKGROUND.get(params.forwardRequest.method)
+		if (backgroundSettlement === 'watchAssetQueue') {
 			const context = WatchAssetSignerRequest.parse(params.forwardRequest.params)
 			if (context.uniqueRequestIdentifier.requestSocket.tabId !== socket.tabId || context.signerIdentity.tabId !== socket.tabId) return doNotReply
 			const currentSigner = getSignerCallbackToken(websiteTabConnections, port, params.signerProviderGeneration)
@@ -305,44 +308,38 @@ export async function signerReply(simulationServicesOwner: SimulationServicesOwn
 		if (!isCurrentWebsiteConnection(tabConnection, socket, port)
 			|| requestSocket.tabId !== socket.tabId
 			|| requestSocket.connectionName !== socket.connectionName) {
+			// A method the background does not settle still has the inpage signer_reply request waiting for this answer, so doNotReply would leave the page request pending forever.
+			if (backgroundSettlement === undefined) return { type: 'result' as const, method: 'signer_reply' as const, error: signerConnectionReplacedError }
 			await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'SignerError', ...signerConnectionReplacedError } }))
 			await updateConfirmTransactionView(ethereum, tokenPriceService)
 			return doNotReply
 		}
-		switch(params.forwardRequest.method) {
-			case 'personal_sign':
-			case 'eth_signTypedData':
-			case 'eth_signTypedData_v1':
-			case 'eth_signTypedData_v2':
-			case 'eth_signTypedData_v3':
-			case 'eth_signTypedData_v4':
-			case 'eth_sendRawTransaction':
-			case 'eth_sendTransaction': {
-				if (params.success) {
-					try {
-						await resolvePendingTransactionOrMessage(ethereum, tokenPriceService, websiteTabConnections, {
-							method: 'popup_confirmDialog',
-							data: {
-								uniqueRequestIdentifier,
-								action: 'signerIncluded',
-								signerReply: params.reply,
-							}
-						})
-					} catch(e) {
-						await reportUnexpectedError(e)
-					}
-					return doNotReply
+		if (backgroundSettlement === 'confirmationFlow') {
+			if (params.success) {
+				try {
+					await resolvePendingTransactionOrMessage(ethereum, tokenPriceService, websiteTabConnections, {
+						method: 'popup_confirmDialog',
+						data: {
+							uniqueRequestIdentifier,
+							action: 'signerIncluded',
+							signerReply: params.reply,
+						}
+					})
+				} catch(e) {
+					await reportUnexpectedError(e)
 				}
-				if (params.error.code === METAMASK_ERROR_USER_REJECTED_REQUEST) {
-					await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'WaitingForUser' } }))
-					await updateConfirmTransactionView(ethereum, tokenPriceService)
-					return doNotReply
-				}
-				await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'SignerError', ...params.error } }))
+				return doNotReply
+			}
+			if (params.error.code === METAMASK_ERROR_USER_REJECTED_REQUEST) {
+				await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'WaitingForUser' } }))
 				await updateConfirmTransactionView(ethereum, tokenPriceService)
 				return doNotReply
 			}
+			await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'SignerError', ...params.error } }))
+			await updateConfirmTransactionView(ethereum, tokenPriceService)
+			return doNotReply
 		}
+		// Not settled by the background: the inpage provider waits for this answer on its signer_reply request.
 		if (params.success) return { type: 'result' as const, method: 'signer_reply' as const, result: params.reply }
 		return { type: 'result' as const, method: 'signer_reply' as const, error: params.error }
 	})

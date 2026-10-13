@@ -5,30 +5,32 @@ import * as simulationPersonalSigning from '../../app/ts/simulation/services/sim
 import * as simulationTransactionSigning from '../../app/ts/simulation/services/simulationTransactionSigning.js'
 import { getPopupMessageDomain, isPopupMessageMethod, popupMessageProtocol } from '../../app/ts/types/popupMessageProtocol.js'
 
+const popupMessageHandlerRegistriesDirectory = new URL('../../app/ts/background/popupMessageHandlerRegistries/', import.meta.url)
+const popupMessageHandlersDirectory = new URL('../../app/ts/background/popupMessageHandlers/', import.meta.url)
+const popupHandlerRegistryFileNames: string[] = []
+for await (const file of new Bun.Glob('*.ts').scan({ cwd: popupMessageHandlerRegistriesDirectory.pathname })) popupHandlerRegistryFileNames.push(file)
 const popupHandlerRegistrySources = [
 	Bun.file(new URL('../../app/ts/background/popupMessageDispatcher.ts', import.meta.url)),
-	Bun.file(new URL('../../app/ts/background/popupMessageHandlerRegistries/addressBook.ts', import.meta.url)),
-	Bun.file(new URL('../../app/ts/background/popupMessageHandlerRegistries/settings.ts', import.meta.url)),
-	Bun.file(new URL('../../app/ts/background/popupMessageHandlerRegistries/websiteAccess.ts', import.meta.url)),
-	Bun.file(new URL('../../app/ts/background/popupMessageHandlerRegistries/safe.ts', import.meta.url)),
-	Bun.file(new URL('../../app/ts/background/popupSettingsCommands.ts', import.meta.url)),
+	...popupHandlerRegistryFileNames.map((file) => Bun.file(new URL(file, popupMessageHandlerRegistriesDirectory))),
 ]
+const popupMessageHandlerFileNames: string[] = []
+for await (const file of new Bun.Glob('*.ts').scan({ cwd: popupMessageHandlersDirectory.pathname })) popupMessageHandlerFileNames.push(file)
 const safeConfirmationResolverSource = await Bun.file(new URL('../../app/ts/background/safeConfirmationResolver.ts', import.meta.url)).text()
 const safeConfirmationPersistenceSource = await Bun.file(new URL('../../app/ts/background/safeConfirmationPersistence.ts', import.meta.url)).text()
 const safeTransactionConfirmationSource = await Bun.file(new URL('../../app/ts/background/safeTransactionConfirmation.ts', import.meta.url)).text()
 const safeSignerSelectionRefreshSource = await Bun.file(new URL('../../app/ts/background/safeSignerSelectionRefresh.ts', import.meta.url)).text()
 const safePendingFlowSource = await Bun.file(new URL('../../app/ts/safe/safePendingFlow.ts', import.meta.url)).text()
 const confirmTransactionSource = await Bun.file(new URL('../../app/ts/background/windows/confirmTransaction.ts', import.meta.url)).text()
-const popupMessageHandlersSource = await Bun.file(new URL('../../app/ts/background/popupMessageHandlers.ts', import.meta.url)).text()
+const popupMessageHandlersSource = (await Promise.all(popupMessageHandlerFileNames.map(async (file) => await Bun.file(new URL(file, popupMessageHandlersDirectory)).text()))).join('\n')
+const confirmationPopupMessageHandlersSource = await Bun.file(new URL('confirmation.ts', popupMessageHandlersDirectory)).text()
 const confirmTransactionPageSource = await Bun.file(new URL('../../app/ts/components/pages/ConfirmTransaction.tsx', import.meta.url)).text()
 const safeAppsCompatibilityCoordinatorSource = await Bun.file(new URL('../../app/ts/background/safeAppsCompatibilityCoordinator.ts', import.meta.url)).text()
 const accessManagementSource = await Bun.file(new URL('../../app/ts/background/accessManagement.ts', import.meta.url)).text()
 const backgroundUtilsSource = await Bun.file(new URL('../../app/ts/background/backgroundUtils.ts', import.meta.url)).text()
 const websiteActiveAddressSource = await Bun.file(new URL('../../app/ts/background/websiteActiveAddress.ts', import.meta.url)).text()
 const websiteTabConnectionsSource = await Bun.file(new URL('../../app/ts/background/websiteTabConnections.ts', import.meta.url)).text()
-const refreshPopupSimulationSource = popupMessageHandlersSource.slice(
-	popupMessageHandlersSource.indexOf('export async function refreshPopupConfirmTransactionSimulation'),
-	popupMessageHandlersSource.indexOf('export async function popupChangeActiveRpc'),
+const refreshPopupSimulationSource = confirmationPopupMessageHandlersSource.slice(
+	confirmationPopupMessageHandlersSource.indexOf('export async function refreshPopupConfirmTransactionSimulation'),
 )
 
 const hasDuplicatedSafePendingFlowDiscriminant = (source: string) => {
@@ -38,11 +40,12 @@ const hasDuplicatedSafePendingFlowDiscriminant = (source: string) => {
 	))
 	const resolveAlias = (identifier: string) => {
 		const visited = new Set<string>()
-		while (aliases.has(identifier) && !visited.has(identifier)) {
-			visited.add(identifier)
-			identifier = aliases.get(identifier) ?? identifier
+		let resolvedIdentifier = identifier
+		while (aliases.has(resolvedIdentifier) && !visited.has(resolvedIdentifier)) {
+			visited.add(resolvedIdentifier)
+			resolvedIdentifier = aliases.get(resolvedIdentifier) ?? resolvedIdentifier
 		}
-		return identifier
+		return resolvedIdentifier
 	}
 	const normalizedSource = source.replace(/\s+/gu, ' ')
 	return [
@@ -86,16 +89,24 @@ test('Safe Apps compatibility lifecycle has a peer-level coordinator', () => {
 })
 
 test('popup handler registries agree with the protocol domain inventory', () => {
-	const expectedRegistryDomains = [
-		{ source: popupHandlerRegistrySources[1], domains: new Set(['address-book', 'navigation']) },
-		{ source: popupHandlerRegistrySources[2], domains: new Set(['settings', 'navigation']) },
-		{ source: popupHandlerRegistrySources[3], domains: new Set(['website-access', 'navigation']) },
-		{ source: popupHandlerRegistrySources[4], domains: new Set(['safe']) },
-		{ source: popupHandlerRegistrySources[5], domains: new Set(['home', 'settings', 'simulation']) },
-	]
-	return Promise.all(expectedRegistryDomains.map(async ({ source, domains }) => {
-		if (source === undefined) throw new Error('Popup handler registry source is missing')
-		const methods = await getDeclaredPopupHandlerMethods(source)
+	// Each registry owns one protocol domain; page openers may sit with the domain whose page they open, and settings commands share one admission coordinator.
+	const expectedRegistryDomains: Record<string, ReadonlySet<string>> = {
+		'addressBook.ts': new Set(['address-book', 'navigation']),
+		'confirmation.ts': new Set(['confirmation']),
+		'diagnostics.ts': new Set(['diagnostics']),
+		'home.ts': new Set(['home']),
+		'navigation.ts': new Set(['navigation']),
+		'safe.ts': new Set(['safe']),
+		'settings.ts': new Set(['settings', 'navigation']),
+		'settingsCommands.ts': new Set(['home', 'settings', 'simulation']),
+		'simulation.ts': new Set(['simulation']),
+		'websiteAccess.ts': new Set(['website-access', 'navigation']),
+	}
+	assert.deepEqual([...popupHandlerRegistryFileNames].sort(), Object.keys(expectedRegistryDomains).sort())
+	return Promise.all(popupHandlerRegistryFileNames.map(async (file) => {
+		const domains = expectedRegistryDomains[file]
+		if (domains === undefined) throw new Error(`Popup handler registry ${ file } has no expected domains`)
+		const methods = await getDeclaredPopupHandlerMethods(Bun.file(new URL(file, popupMessageHandlerRegistriesDirectory)))
 		assert.notEqual(methods.length, 0)
 		for (const method of methods) {
 			assert.equal(isPopupMessageMethod(method), true, `${ method } is missing from the popup protocol`)
@@ -103,6 +114,17 @@ test('popup handler registries agree with the protocol domain inventory', () => 
 			assert.equal(domains.has(getPopupMessageDomain(method)), true, `${ method } is assigned to the wrong domain`)
 		}
 	}))
+})
+
+test('the dispatcher only combines domain registries', async () => {
+	const dispatcherSource = await Bun.file(new URL('../../app/ts/background/popupMessageDispatcher.ts', import.meta.url)).text()
+	assert.deepEqual(await getDeclaredPopupHandlerMethods(Bun.file(new URL('../../app/ts/background/popupMessageDispatcher.ts', import.meta.url))), [])
+	for (const file of popupHandlerRegistryFileNames) assert.match(dispatcherSource, new RegExp(`from '\\./popupMessageHandlerRegistries/${ file.replace('.ts', '\\.js') }'`, 'u'))
+})
+
+test('each popup handler implementation file is wired by the registry of the same domain', async () => {
+	assert.equal(await Bun.file(new URL('../../app/ts/background/popupMessageHandlers.ts', import.meta.url)).exists(), false)
+	for (const file of popupMessageHandlerFileNames) assert.ok(popupHandlerRegistryFileNames.includes(file), `popupMessageHandlers/${ file } has no popupMessageHandlerRegistries/${ file }`)
 })
 
 test('each popup method has exactly one handler owner', async () => {

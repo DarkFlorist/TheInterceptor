@@ -20,7 +20,7 @@ export const RawInterceptedRequest = funtypes.Intersect(
 	funtypes.Union(
 		funtypes.ReadonlyObject({
 			method: funtypes.String,
-			params: funtypes.Union(funtypes.Array(funtypes.Unknown), funtypes.Undefined)
+			params: funtypes.Union(funtypes.ReadonlyArray(funtypes.Unknown), funtypes.Undefined)
 		}).asReadonly(),
 		funtypes.ReadonlyObject({ method: funtypes.String }).asReadonly()
 	),
@@ -39,7 +39,7 @@ export const InterceptedRequest = funtypes.Intersect(
 	funtypes.Union(
 		funtypes.ReadonlyObject({
 			method: funtypes.String,
-			params: funtypes.Union(funtypes.Array(funtypes.Unknown), funtypes.Undefined)
+			params: funtypes.Union(funtypes.ReadonlyArray(funtypes.Unknown), funtypes.Undefined)
 		}).asReadonly(),
 		funtypes.ReadonlyObject({ method: funtypes.String }).asReadonly()
 	),

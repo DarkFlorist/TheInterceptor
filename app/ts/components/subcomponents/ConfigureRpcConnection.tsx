@@ -1,6 +1,6 @@
 import { getRpcEntryIdentityKey } from '../../utils/rpcNetworkChange.js'
 import { createContext, type ComponentChildren } from 'preact'
-import { useComputed, useSignal, useSignalEffect } from '@preact/signals'
+import { useSignal, useSignalEffect } from '@preact/signals'
 import { useContext, useRef } from 'preact/hooks'
 import { useAsyncState } from '../../utils/preact-utilities.js'
 import { TextInput } from './TextField.js'
@@ -8,7 +8,7 @@ import type { RpcEntries, RpcEntry, RpcNetwork } from '../../types/rpc.js'
 import { sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport } from '../../background/backgroundUtils.js'
 import { getSettings } from '../../background/settings.js'
 import { getChainName } from '../../utils/constants.js'
-import { useRpcConnectionsList } from '../pages/SettingsView.js'
+import { useRpcConnectionsList } from '../hooks/useRpcConnectionsList.js'
 import { EthereumJSONRpcRequestHandler } from '../../simulation/services/EthereumJSONRpcRequestHandler.js'
 import { type EthSimulateV1Params, EthSimulateV1Result } from '../../types/ethSimulate-types.js'
 import { JsonRpcResponseError } from '../../utils/errors.js'
@@ -236,28 +236,14 @@ const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: Configu
 		}
 	}
 
-	const chainIdDefault = useComputed(() => {
-		if (rpcQuery.value.state === 'resolved') return BigInt(rpcQuery.value.value.chainId).toString()
-		return defaultValues?.chainId?.toString() || ''
-	})
-
-	const networkNameDefault = useComputed(() => {
-		if (rpcQuery.value.state !== 'resolved') return defaultValues?.name || ''
-		return getChainName(rpcQuery.value.value.chainId)
-	})
-
-	const currencyTickerDefault = useComputed(() => {
-		if (rpcQuery.value.state === 'resolved') return defaultValues?.currencyTicker || 'ETH'
-		return defaultValues?.currencyTicker || ''
-	})
-
-	const currencyNameDefault = useComputed(() => {
-		if (rpcQuery.value.state === 'resolved') return defaultValues?.currencyName || 'Ether'
-		return defaultValues?.currencyName || ''
-	})
-
-	const blockExplorerUrlDefault = useComputed(() => defaultValues?.blockExplorer?.apiUrl || '')
-	const blockExplorerApiKeyDefault = useComputed(() => defaultValues?.blockExplorer?.apiKey || '')
+	// Derived during render: defaultValues is a plain prop, which a cached useComputed would not track.
+	const resolvedRpcQuery = rpcQuery.value.state === 'resolved' ? rpcQuery.value.value : undefined
+	const chainIdDefault = resolvedRpcQuery === undefined ? defaultValues?.chainId?.toString() || '' : BigInt(resolvedRpcQuery.chainId).toString()
+	const networkNameDefault = resolvedRpcQuery === undefined ? defaultValues?.name || '' : getChainName(resolvedRpcQuery.chainId)
+	const currencyTickerDefault = defaultValues?.currencyTicker || (resolvedRpcQuery === undefined ? '' : 'ETH')
+	const currencyNameDefault = defaultValues?.currencyName || (resolvedRpcQuery === undefined ? '' : 'Ether')
+	const blockExplorerUrlDefault = defaultValues?.blockExplorer?.apiUrl || ''
+	const blockExplorerApiKeyDefault = defaultValues?.blockExplorer?.apiKey || ''
 
 	return (
 		<form method = 'dialog' class = 'grid' style = '--gap-y: 1.5rem' onSubmit = { handleFormSubmit }>
@@ -272,12 +258,12 @@ const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: Configu
 				<p>Interceptor will automatically verify the RPC URL you provide and attempt to fill relevant information. Adjust the pre-populated details to your liking.</p>
 				<div class = 'grid' style = '--grid-cols: 1fr 1fr; --gap-x: 1rem; --gap-y: 0' >
 					<RpcUrlField { ...(defaultValues?.httpsRpc !== undefined ? { defaultValue: defaultValues.httpsRpc } : {}) } />
-					<TextInput label = 'RPC Connection Name *' name = 'name' defaultValue = { networkNameDefault.value } style = '--area: 5 / span 1' required autoFocus />
-					<TextInput label = 'Chain ID' name = 'chainId' style = '--area: 5 / span 1' defaultValue = { chainIdDefault.value } required readOnly />
-					<TextInput label = 'Currency Name *' name = 'currencyName' defaultValue = { currencyNameDefault.value } style = '--area: 7 / span 1' required />
-					<TextInput label = 'Currency Ticker *' name = 'currencyTicker' defaultValue = { currencyTickerDefault.value } style = '--area: 7 / span 1' required />
-					<TextInput label = 'Block Explorer Url' name = 'blockExplorerUrl' defaultValue = { blockExplorerUrlDefault.value } style = '--area: 8 / span 1' />
-					<TextInput label = 'Block Explorer Api Key' name = 'blockExplorerApiKey' defaultValue = { blockExplorerApiKeyDefault.value } style = '--area: 8 / span 1' />
+					<TextInput label = 'RPC Connection Name *' name = 'name' defaultValue = { networkNameDefault } style = '--area: 5 / span 1' required autoFocus />
+					<TextInput label = 'Chain ID' name = 'chainId' style = '--area: 5 / span 1' defaultValue = { chainIdDefault } required readOnly />
+					<TextInput label = 'Currency Name *' name = 'currencyName' defaultValue = { currencyNameDefault } style = '--area: 7 / span 1' required />
+					<TextInput label = 'Currency Ticker *' name = 'currencyTicker' defaultValue = { currencyTickerDefault } style = '--area: 7 / span 1' required />
+					<TextInput label = 'Block Explorer Url' name = 'blockExplorerUrl' defaultValue = { blockExplorerUrlDefault } style = '--area: 8 / span 1' />
+					<TextInput label = 'Block Explorer Api Key' name = 'blockExplorerApiKey' defaultValue = { blockExplorerApiKeyDefault } style = '--area: 8 / span 1' />
 				</div>
 			</main>
 			{ mutationState.value.state === 'rejected' ? <ErrorComponent text = { mutationState.value.error.message } containerStyle = { { margin: '0' } } /> : <></> }

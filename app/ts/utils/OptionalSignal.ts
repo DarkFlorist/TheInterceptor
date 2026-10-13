@@ -1,5 +1,5 @@
 import { type ReadonlySignal, Signal, batch, useSignalEffect } from '@preact/signals'
-import { useMemo } from 'preact/hooks'
+import { useState } from 'preact/hooks'
 
 export class OptionalSignal<T> extends Signal<Signal<T> | undefined> implements ReadonlySignal<Signal<T> | undefined> {
 	private inner: Signal<T> | undefined
@@ -40,8 +40,10 @@ export class OptionalSignal<T> extends Signal<Signal<T> | undefined> implements 
 	public set(newValue: T | undefined) { this.deepValue = newValue }
 }
 
-export function useOptionalSignal<T>(value: Signal<T> | T | undefined, startUndefined?: boolean) {
-	return useMemo(() => new OptionalSignal<T>(value, startUndefined), [])
+// Like useSignal, the arguments only seed the signal on the first render; later values are ignored and callers update the returned signal instead.
+export function useOptionalSignal<T>(initialValue: Signal<T> | T | undefined, startUndefined?: boolean) {
+	const [optionalSignal] = useState(() => new OptionalSignal<T>(initialValue, startUndefined))
+	return optionalSignal
 }
 
 export const useOptionalComputed = <T>(computeFn: () => T | undefined) => {

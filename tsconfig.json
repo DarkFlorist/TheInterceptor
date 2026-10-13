@@ -21,7 +21,8 @@
 		"skipLibCheck": false,
 		"jsx": "react-jsx",
 		"jsxImportSource": "preact",
-		"lib": ["ES2021", "DOM"]
+		"lib": ["ES2021", "DOM"],
+		"types": ["firefox-webext-browser"]
 	},
 	"include": [
 		"./app/ts/**/*.ts",

@@ -18,11 +18,20 @@ async function reportPopupMessageListenerError(error: unknown) {
 	}
 }
 
-export const noReplyExpectingBrowserRuntimeOnMessageListener = (callback: (msg: unknown) => false | Promise<false>) => {
-	return browser.runtime.onMessage.addListener((message: unknown) => {
-		void Promise.resolve(callback(message)).catch((error: unknown) => {
-			void reportPopupMessageListenerError(error)
-		})
+async function handleMessageAndReportFailures(handleMessage: (message: unknown) => void | Promise<void>, message: unknown) {
+	try {
+		await handleMessage(message)
+	} catch (error: unknown) {
+		await reportPopupMessageListenerError(error)
+	}
+}
+
+// Registers a runtime message listener that never replies and returns the function that removes exactly that listener.
+export const noReplyExpectingBrowserRuntimeOnMessageListener = (handleMessage: (message: unknown) => void | Promise<void>) => {
+	const listener = (message: unknown) => {
+		void handleMessageAndReportFailures(handleMessage, message)
 		return undefined
-	})
+	}
+	browser.runtime.onMessage.addListener(listener)
+	return () => browser.runtime.onMessage.removeListener(listener)
 }
