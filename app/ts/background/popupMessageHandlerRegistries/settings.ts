@@ -9,7 +9,7 @@ export const settingsPopupMessageHandlers = {
 	popup_ChangeSettings: popupMessageHandler('popup_ChangeSettings', async (context, request) => await changeSettings(context.simulationServicesOwner, context.websiteTabConnections, request, context.simulationAbortController)),
 	popup_openSettings: popupMessageHandler('popup_openSettings', async () => await openNewTab('settingsView')),
 	popup_import_settings: popupMessageHandler('popup_import_settings', async (context, request) => {
-		const importSettingsReply = await importSettings(request)
+		const importSettingsReply = await importSettings(request, context.websiteTabConnections)
 		await sendPopupMessageToOpenWindows(importSettingsReply)
 		if (!importSettingsReply.data.success) return
 		const importedSettings = await getSettings()
