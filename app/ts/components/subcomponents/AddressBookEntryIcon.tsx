@@ -1,5 +1,5 @@
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
-import { chooseAddressBookEntryIcon } from '../../utils/addressBook.js'
+import { chooseAddressBookEntryIcon } from './addressBookEntryIconChoice.js'
 import { addressString } from '../../utils/bigint.js'
 import { keccak256 } from '../../utils/ethereumPrimitives.js'
 import { assertNever } from '../../utils/typescript.js'

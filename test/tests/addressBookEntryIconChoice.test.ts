@@ -1,7 +1,7 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { EntrySource, type AddressBookEntry } from '../../app/ts/types/addressBookTypes.js'
-import { chooseAddressBookEntryIcon } from '../../app/ts/utils/addressBook.js'
+import { chooseAddressBookEntryIcon } from '../../app/ts/components/subcomponents/addressBookEntryIconChoice.js'
 
 const TOKEN_ADDRESS = 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48n
 const ALL_ENTRY_SOURCES = EntrySource.alternatives.map((alternative) => alternative.value)

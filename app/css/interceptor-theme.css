@@ -430,7 +430,7 @@ svg[role="img"] {
 	border: 1px solid var(--layout-line-color);
 }
 
-/* Icon for the chooseAddressBookEntryIcon 'curatedTicker' kind (see utils/addressBook.ts), in the same 1em box as the Blockie */
+/* Icon for the chooseAddressBookEntryIcon 'curatedTicker' kind (see components/subcomponents/addressBookEntryIconChoice.ts), in the same 1em box as the Blockie */
 .token-ticker-icon {
 	border-radius: 50%;
 	box-sizing: border-box;
@@ -456,7 +456,7 @@ svg[role="img"] {
 	font-size: 0.625em;
 }
 
-/* Icon for the chooseAddressBookEntryIcon 'blockieWithTicker' kind (see utils/addressBook.ts), the letters are drawn over the Blockie */
+/* Icon for the chooseAddressBookEntryIcon 'blockieWithTicker' kind (see components/subcomponents/addressBookEntryIconChoice.ts), the letters are drawn over the Blockie */
 .blockie-with-ticker {
 	display: inline-block;
 	height: 1em;
