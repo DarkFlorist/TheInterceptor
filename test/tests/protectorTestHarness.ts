@@ -40,7 +40,7 @@ export const installBrowserStorageMock = () => {
 	return { readStorageKeys }
 }
 
-export const mainnetRpcEntry = {
+const mainnetRpcEntry = {
 	name: 'Ethereum Mainnet',
 	chainId: 1n,
 	httpsRpc: 'https://ethereum.dark.florist',

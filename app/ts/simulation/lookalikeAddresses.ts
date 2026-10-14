@@ -52,18 +52,9 @@ export const getKnownAddressIndexes = (addressBookEntriesForChain: AddressBookEn
 	...(chainId === 1n ? [getBundledMetadataIndex()] : []),
 ]
 
-const loadKnownAddressIndexes = async (chainId: bigint) => getKnownAddressIndexes(await getUserAddressBookEntriesForChainId(chainId), chainId)
+export const loadKnownAddressIndexesForChain = async (chainId: bigint) => getKnownAddressIndexes(await getUserAddressBookEntriesForChainId(chainId), chainId)
 
 export type KnownAddressIndexesLoader = () => Promise<readonly KnownAddressIndex[]>
-
-// The protector runner creates one loader per transaction and shares it between protectors, so the address book is read at most once per transaction and only when a protector needs it.
-export const createKnownAddressIndexesLoader = (chainId: bigint): KnownAddressIndexesLoader => {
-	let knownAddressIndexesPromise: Promise<readonly KnownAddressIndex[]> | undefined
-	return async () => {
-		if (knownAddressIndexesPromise === undefined) knownAddressIndexesPromise = loadKnownAddressIndexes(chainId)
-		return await knownAddressIndexesPromise
-	}
-}
 
 // Some bundled tokens exist only under checksummed keys that identifyAddress does not recognize, so an exact match with a known address must also rule out a lookalike.
 const findLookalikeKnownAddress = (destination: AddressBookEntry, knownAddressIndexes: readonly KnownAddressIndex[]) => {
@@ -75,7 +66,7 @@ const findLookalikeKnownAddress = (destination: AddressBookEntry, knownAddressIn
 
 export type LookalikeDestination = { readonly destination: AddressBookEntry, readonly lookalikeOf: KnownAddress }
 
-// Recognized destinations are never lookalikes, so the known addresses are only loaded when some destination is unrecognized.
+// Recognized destinations are never lookalikes, so the known addresses are loaded once, and only when some destination is unrecognized.
 export async function findLookalikeDestinations(destinations: readonly AddressBookEntry[], loadKnownAddressIndexes: KnownAddressIndexesLoader): Promise<readonly LookalikeDestination[]> {
 	const unrecognizedDestinations = destinations.filter((destination) => !isRecognizedAddressBookEntry(destination))
 	if (unrecognizedDestinations.length === 0) return []

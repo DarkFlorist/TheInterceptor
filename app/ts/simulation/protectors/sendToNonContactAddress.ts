@@ -4,8 +4,19 @@ import type { EthereumClientService } from '../services/EthereumClientService.js
 import { identifyAddress } from '../../background/metadataUtils.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
 import type { EnrichedEthereumEvents } from '../../types/EnrichedEthereumData.js'
+import { checksummedAddress } from '../../utils/bigint.js'
 import { getFundsDestinations, type IdentifyAddress } from '../fundsDestinations.js'
-import { findLookalikeDestinations, type KnownAddressIndexesLoader } from '../lookalikeAddresses.js'
+import { findLookalikeDestinations, loadKnownAddressIndexesForChain, type KnownAddressIndexesLoader, type LookalikeDestination } from '../lookalikeAddresses.js'
+
+const ADDRESS_POISONING_EXPLANATION = 'Scammers create addresses that share the first and last characters of addresses you use, hoping you copy the wrong one (address poisoning). Verify the full address before continuing.'
+
+const describeLookalikeDestination = ({ destination, lookalikeOf }: LookalikeDestination) => `${ checksummedAddress(destination.address) }, which looks like the address book entry "${ lookalikeOf.name }" (${ checksummedAddress(lookalikeOf.address) })`
+
+const getLookalikeAddressWarning = (lookalikeDestinations: readonly LookalikeDestination[]) => {
+	if (lookalikeDestinations.length === 0) return undefined
+	const differentAddressNote = lookalikeDestinations.length === 1 ? 'but is a different address' : 'but these are different addresses'
+	return `This transaction sends funds to ${ lookalikeDestinations.map(describeLookalikeDestination).join('; and to ') } ${ differentAddressNote }. ${ ADDRESS_POISONING_EXPLANATION }`
+}
 
 const getNotInAddressBookWarning = (destinations: readonly AddressBookEntry[]) => {
 	const unknownDestinations = destinations.filter((destination) => destination.entrySource === 'OnChain')
@@ -19,14 +30,17 @@ const getNotInAddressBookWarning = (destinations: readonly AddressBookEntry[]) =
 	return `This transaction sends funds to ${ destinationNames }, which are not in the addressbook. Please add the addresses to addressbook to dismiss this error in the future.`
 }
 
-export async function getSendToNonContactWarning(transaction: EthereumUnsignedTransaction, events: EnrichedEthereumEvents, identify: IdentifyAddress, loadKnownAddressIndexes: KnownAddressIndexesLoader) {
+// Both warnings are decided here from one list of destinations: lookalikes get only the address poisoning warning, because advising to add a poisoning address to the address book would help the scam, and every other destination is checked for the address book warning.
+export async function getSendToNonContactWarnings(transaction: EthereumUnsignedTransaction, events: EnrichedEthereumEvents, identify: IdentifyAddress, loadKnownAddressIndexes: KnownAddressIndexesLoader): Promise<readonly string[]> {
 	const destinations = await getFundsDestinations(transaction, events, identify)
-	// Lookalike destinations are skipped because the sendToLookalikeAddress protector (registered next to this one in protectorRunner.ts) warns about them, and advising to add a poisoning address to the address book would help the scam.
-	const lookalikeAddresses = new Set((await findLookalikeDestinations(destinations, loadKnownAddressIndexes)).map(({ destination }) => destination.address))
-	return getNotInAddressBookWarning(destinations.filter((destination) => !lookalikeAddresses.has(destination.address)))
+	const lookalikeDestinations = await findLookalikeDestinations(destinations, loadKnownAddressIndexes)
+	const lookalikeAddresses = new Set(lookalikeDestinations.map(({ destination }) => destination.address))
+	const nonLookalikeDestinations = destinations.filter((destination) => !lookalikeAddresses.has(destination.address))
+	const warnings = [getLookalikeAddressWarning(lookalikeDestinations), getNotInAddressBookWarning(nonLookalikeDestinations)]
+	return warnings.filter((warning) => warning !== undefined)
 }
 
-export async function sendToNonContact(transaction: EthereumUnsignedTransaction, ethereum: EthereumClientService, requestAbortController: AbortController | undefined, _simulationState: SimulationState, eventsPromise: Promise<EnrichedEthereumEvents>, loadKnownAddressIndexes: KnownAddressIndexesLoader) {
+export async function sendToNonContact(transaction: EthereumUnsignedTransaction, ethereum: EthereumClientService, requestAbortController: AbortController | undefined, _simulationState: SimulationState, eventsPromise: Promise<EnrichedEthereumEvents>) {
 	const events = await eventsPromise
-	return await getSendToNonContactWarning(transaction, events, async (address) => await identifyAddress(ethereum, requestAbortController, address), loadKnownAddressIndexes)
+	return await getSendToNonContactWarnings(transaction, events, async (address) => await identifyAddress(ethereum, requestAbortController, address), async () => await loadKnownAddressIndexesForChain(ethereum.getChainId()))
 }
