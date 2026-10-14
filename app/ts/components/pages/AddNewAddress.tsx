@@ -22,7 +22,7 @@ import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 import { type AsyncStates, useAsyncState } from '../../utils/preact-utilities.js'
 import { isValidAddressBookEntryName, MAX_ADDRESS_BOOK_ENTRY_NAME_LENGTH } from '../../utils/addressBookValidation.js'
 import { isValidErc20Decimals } from '../../utils/erc20.js'
-import { getOnChainTokenMetadataWarning } from '../../utils/addressBook.js'
+import { ON_CHAIN_TOKEN_METADATA_WARNING, requiresOnChainTokenMetadataConfirmation } from '../subcomponents/onChainTokenWarnings.js'
 
 export function mergeAddressWindowErrorState(
 	currentErrorState: ModifyAddressWindowState['errorState'],
@@ -660,13 +660,13 @@ export function AddNewAddress(param: AddAddressParam) {
 		})
 	}
 
-	const onChainTokenMetadataWarning = useComputed(() => getOnChainTokenMetadataWarning(param.modifyAddressWindowState.value.incompleteAddressBookEntry))
+	const requiresOnChainTokenMetadataVerification = useComputed(() => requiresOnChainTokenMetadataConfirmation(param.modifyAddressWindowState.value.incompleteAddressBookEntry))
 
 	const isSubmitButtonDisabled = useComputed(() => {
 		return saveEntryState.value.state === 'pending' || !isCurrentSafeLookupComplete.value || isAddressBookSubmissionDisabled({
 			areInputsValid: areInputsValid.value,
 			blockEditing: param.modifyAddressWindowState.value.errorState?.blockEditing === true,
-			requiresOnChainVerification: onChainTokenMetadataWarning.value !== undefined,
+			requiresOnChainVerification: requiresOnChainTokenMetadataVerification.value,
 			isOnChainInformationVerified: onChainInformationVerifiedByUser.value,
 			isBlockExplorerLookupPending: isBlockExplorerLookupPending.value,
 		})
@@ -704,9 +704,9 @@ export function AddNewAddress(param: AddAddressParam) {
 
 					{ param.modifyAddressWindowState.value.errorState === undefined ? <></> : <ErrorText text = { param.modifyAddressWindowState.value.errorState.message } /> }
 					{ saveEntryState.value.state === 'rejected' ? <ErrorText text = { saveEntryState.value.error.message } /> : <></> }
-					{ onChainTokenMetadataWarning.value === undefined ? <></> :
+					{ !requiresOnChainTokenMetadataVerification.value ? <></> :
 						<ErrorCheckBox
-							text = { onChainTokenMetadataWarning.value }
+							text = { ON_CHAIN_TOKEN_METADATA_WARNING }
 							checked = { onChainInformationVerifiedByUser }
 						/>
 					}

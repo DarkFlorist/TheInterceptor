@@ -307,14 +307,17 @@ header:has(form[role='search']) h1 {
 
 	> [role=img]:not(.inline-card-warning-sign) {
 		grid-area: start / start / end / copy;
-		:has(> .inline-card-actions:focus-within) > &, :hover > & { opacity: 0 }
+		:hover > & { opacity: 0 }
 	}
 
 	> data {
 		grid-area: start / copy / end / end;
 		font-size: var(--text-size);
-		:has(> .inline-card-actions:focus-within) > &, :hover > & { opacity: 0 }
+		:hover > & { opacity: 0 }
 	}
+
+	/* Keyboard focus on the copy and edit buttons hides the card's own icon and label behind the actions, while focus left on the warning sign does not */
+	&:has(> .inline-card-actions:focus-within) > :is([role=img]:not(.inline-card-warning-sign), data) { opacity: 0 }
 
 	> .inline-card-actions {
 		background: var(--bg-status-color, var(--bg-color));

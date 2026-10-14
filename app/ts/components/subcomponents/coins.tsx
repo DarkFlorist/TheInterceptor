@@ -14,7 +14,7 @@ import { AbbreviatedValue } from './AbbreviatedValue.js'
 import { InlineCard } from './InlineCard.js'
 import { getNativeTokenErc20 } from '../../background/metadataUtils.js'
 import { resolveSignal, type SignalOrValue } from '../../utils/signals.js'
-import { getOnChainTokenWarning } from '../../utils/addressBook.js'
+import { getOnChainTokenWarning } from './onChainTokenWarnings.js'
 
 type EtherParams = {
 	amount: SignalOrValue<bigint>

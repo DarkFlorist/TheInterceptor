@@ -35,6 +35,7 @@ describe('inline card action layout CSS', () => {
 		const inlineCardCss = await readInlineCardCss()
 		assert.doesNotMatch(inlineCardCss, /:focus-within > &/)
 		assert.match(inlineCardCss, /:hover > &, &:focus-within \{ opacity: 1 \}/)
-		assert.equal((inlineCardCss.match(/:has\(> \.inline-card-actions:focus-within\) > &, :hover > & \{ opacity: 0 \}/g) ?? []).length, 2)
+		assert.equal((inlineCardCss.match(/^\t\t:hover > & \{ opacity: 0 \}$/gm) ?? []).length, 2)
+		assert.match(inlineCardCss, /&:has\(> \.inline-card-actions:focus-within\) > :is\(\[role=img\]:not\(\.inline-card-warning-sign\), data\) \{ opacity: 0 \}/)
 	})
 })

@@ -7,7 +7,7 @@ import { AddNewAddress } from '../../app/ts/components/pages/AddNewAddress.js'
 import { TokenSymbol } from '../../app/ts/components/subcomponents/coins.js'
 import type { Erc1155Entry, Erc20TokenEntry, Erc721Entry, EntrySource } from '../../app/ts/types/addressBookTypes.js'
 import type { ModifyAddressWindowState } from '../../app/ts/types/visualizer-types.js'
-import { getOnChainTokenMetadataWarning, getOnChainTokenWarning, ON_CHAIN_TOKEN_IDENTITY_WARNING, ON_CHAIN_TOKEN_METADATA_WARNING } from '../../app/ts/utils/addressBook.js'
+import { getOnChainTokenWarning, ON_CHAIN_TOKEN_IDENTITY_WARNING, ON_CHAIN_TOKEN_METADATA_WARNING, requiresOnChainTokenMetadataConfirmation } from '../../app/ts/components/subcomponents/onChainTokenWarnings.js'
 import { installBrowserMock } from './backgroundEthAccountsTestHarness.js'
 import { installDomMock } from './domMock.js'
 
@@ -85,12 +85,13 @@ async function renderEditDialogText(type: 'ERC20' | 'ERC1155', entrySource: Entr
 }
 
 describe('on-chain token warnings', () => {
-	test('explains token-provided names only for the token types the edit dialog asks the user to verify', () => {
-		assert.equal(getOnChainTokenMetadataWarning(createErc20Entry('OnChain')), ON_CHAIN_TOKEN_METADATA_WARNING)
-		assert.equal(getOnChainTokenMetadataWarning(createErc721Entry('OnChain')), ON_CHAIN_TOKEN_METADATA_WARNING)
-		assert.equal(getOnChainTokenMetadataWarning(createErc1155Entry('OnChain')), undefined)
-		assert.equal(getOnChainTokenMetadataWarning({ type: 'contract', entrySource: 'OnChain' }), undefined)
-		assert.equal(getOnChainTokenMetadataWarning({ type: 'contact', entrySource: 'OnChain' }), undefined)
+	test('asks the user to confirm token-provided names only for on-chain ERC20 and ERC721 entries', () => {
+		assert.equal(requiresOnChainTokenMetadataConfirmation(createErc20Entry('OnChain')), true)
+		assert.equal(requiresOnChainTokenMetadataConfirmation(createErc721Entry('OnChain')), true)
+		assert.equal(requiresOnChainTokenMetadataConfirmation(createErc1155Entry('OnChain')), false)
+		assert.equal(requiresOnChainTokenMetadataConfirmation({ type: 'contract', entrySource: 'OnChain' }), false)
+		assert.equal(requiresOnChainTokenMetadataConfirmation({ type: 'contact', entrySource: 'OnChain' }), false)
+		for (const entrySource of ['User', 'DarkFloristMetadata', 'Interceptor', 'FilledIn'] as const) assert.equal(requiresOnChainTokenMetadataConfirmation(createErc20Entry(entrySource)), false)
 	})
 
 	test('picks a warning sign message that matches what each on-chain token type displays', () => {
