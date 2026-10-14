@@ -417,7 +417,7 @@ export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: Visua
 	}
 }
 
-// Partial refresh used by refreshHomeData: recomputes only the stored visualisation's top-level address-book entries, named token ids and ENS hashes, not the names, parsed input or warnings inside visualised transactions. Address-book edits use refreshPopupVisualisationMetadataForOpenConsumer, which re-labels everything.
+// Partial refresh used by refreshHomeData: recomputes only the stored visualisation's top-level address-book entries, named token ids and ENS hashes, not the names, parsed input or warnings inside visualised transactions. Address-book edits use publishAddressBookChangeAndRelabelSimulations, which re-labels everything.
 export const updateTopLevelSimulationMetadata = async (ethereum: EthereumClientService, requestAbortController: AbortController | undefined) => {
 	return await updatePopupVisualisationWithCallBack(async (prevState) => {
 		if (prevState.simulationState.kind === 'passthrough') return prevState
@@ -612,3 +612,8 @@ export async function revisualizeSimulationMetadata(simulationState: SimulationS
 	const { simulationState: _revisualizedSimulationState, ...simulationMetadata } = await visualizeSimulatorState(simulationState, ethereum, tokenPriceService, requestAbortController)
 	return simulationMetadata
 }
+
+// A re-label may only replace the simulation run it was computed from. Every new stack or confirmation simulation run stores a new simulationId, so a run stored during the re-label's lookups never matches, even on the same block within the same second. The id alone does not prove the stored result is still finished (a stack invalidation can be stored under the id of the run it raced with), so callers also re-check that before writing. A result stored without an id by an older version cannot be identified, so it never matches.
+export const isSameSimulationRun = (current: { readonly simulationId?: number }, relabelled: { readonly simulationId?: number }) => (
+	relabelled.simulationId !== undefined && current.simulationId === relabelled.simulationId
+)

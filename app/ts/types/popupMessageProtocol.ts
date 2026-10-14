@@ -18,7 +18,6 @@ export const popupMessageProtocol = {
 	popup_resetSimulation: { domain: 'simulation' },
 	popup_removeTransactionOrSignedMessage: { domain: 'simulation' },
 	popup_refreshSimulation: { domain: 'simulation' },
-	popup_refreshSimulationMetadata: { domain: 'simulation' },
 	popup_refreshConfirmTransactionDialogSimulation: { domain: 'confirmation' },
 	popup_refreshConfirmTransactionMetadata: { domain: 'confirmation' },
 	popup_interceptorAccess: { domain: 'website-access' },

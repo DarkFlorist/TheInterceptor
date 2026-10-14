@@ -11,7 +11,7 @@ import { modifyObject } from '../utils/typescript.js'
 import { captureSimulationSnapshot, getSimulationProviderForSnapshot, type SimulationSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
 import { requestIsSimulationDataConsumerOpen, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getPopupVisualisationFingerprint } from './popupSimulationFingerprint.js'
-import { revisualizeSimulationMetadata, visualizeSimulatorState } from './simulationUpdating.js'
+import { isSameSimulationRun, revisualizeSimulationMetadata, visualizeSimulatorState } from './simulationUpdating.js'
 import { getPopupVisualisationState, setPopupVisualisationState, updatePopupVisualisationWithCallBack } from './storageVariables.js'
 
 let abortController = new AbortController()
@@ -65,7 +65,7 @@ export type PopupVisualisationOptions = {
 export const updatePopupVisualisationIfNeeded = async (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, { invalidateOldState = false, onlyIfNotAlreadyUpdating = false, skipIfUnchanged = false, snapshot }: PopupVisualisationOptions = {}) => {
 	try {
 		const popupVisualisation = await getPopupVisualisationState()
-		if (onlyIfNotAlreadyUpdating && updateSimulationVisualisationSemaphore.getPermits() === 0) return popupVisualisation
+		if (onlyIfNotAlreadyUpdating && runningSimulations > 0) return popupVisualisation
 		if (onlyIfNotAlreadyUpdating && popupVisualisation.simulationState.kind === 'simulated') {
 			const ageSeconds = (Date.now()- popupVisualisation.simulationState.value.simulationConductedTimestamp.getTime()) / 1000
 			if (ageSeconds < TIME_BETWEEN_BLOCKS) return popupVisualisation
@@ -100,23 +100,26 @@ export const updatePopupVisualisationIfNeeded = async (ethereum: EthereumClientS
 	return await getPopupVisualisationState()
 }
 
-export type OpenConsumerVisualisationDependencies = {
-	readonly update?: typeof updatePopupVisualisationMetadata
-	readonly getStored?: typeof getPopupVisualisationState
-	readonly reportError?: typeof reportUnexpectedError
-}
-
-// An open consumer saw a metadata-only change (address-book or ENS edit): re-label the stored simulation without simulating again, and retain the stored fallback on reported errors so its other data can still load.
-export async function refreshPopupVisualisationMetadataForOpenConsumer(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, dependencies: OpenConsumerVisualisationDependencies = {}) {
-	try {
-		await (dependencies.update ?? updatePopupVisualisationMetadata)(ethereum, tokenPriceService)
-	} catch (error) {
-		if (!isExpectedInfrastructureError(error)) await (dependencies.reportError ?? reportUnexpectedError)(error)
-	}
-	return await (dependencies.getStored ?? getPopupVisualisationState)()
-}
-
 const updateSimulationVisualisationSemaphore = new Semaphore(1)
+
+// Counts only real simulations running under the semaphore. Metadata re-labels and the failure write in publishFailedPopupVisualisation hold the semaphore too but are not counted, so onlyIfNotAlreadyUpdating callers still refresh while only those run, queueing behind them (and aborting a re-label).
+let runningSimulations = 0
+async function countAsRunningSimulation(simulate: () => Promise<void>) {
+	runningSimulations += 1
+	try {
+		await simulate()
+	} finally {
+		runningSimulations -= 1
+	}
+}
+
+// Serializes visualisation work with every other refresh. Work whose captured abort controller was aborted while it waited is skipped, because the refresh that aborted it stores its own result.
+async function executeVisualisationUpdate(capturedAbortController: AbortController | undefined, update: () => Promise<void>) {
+	await updateSimulationVisualisationSemaphore.execute(async () => {
+		if (capturedAbortController?.signal.aborted) return
+		await update()
+	})
+}
 
 // Only a finished simulation with operations on the services' chain can be re-labelled: empty states show no operations, another chain's simulation must not get this chain's metadata, and pending, invalidated or failed states are about to be replaced by a simulation that resolves the current metadata itself.
 function getSimulationStateWithRefreshableMetadata(visualisation: CompleteVisualizedSimulation, chainId: bigint) {
@@ -133,19 +136,21 @@ function getUncancelledAbortController() {
 	return abortController
 }
 
-// Runs under the simulation semaphore so it never interleaves with a simulation refresh. The shared abort controller is captured when the re-label is requested, so a newer block, stack or failure refresh cancels it both while it waits for the semaphore and while it runs. The relabelled state keeps the simulation and its simulationId, and is stored only if no newer simulation or invalidation was stored meanwhile. It is deliberately not published as popup_simulation_state_changed: each consumer reacting to an address-book change reads the relabelled state itself, while FetchSimulationStack answers that message by requesting new simulations.
-async function updatePopupVisualisationMetadata(ethereum: EthereumClientService, tokenPriceService: TokenPriceService) {
+// Re-labels the stored stack simulation without simulating or publishing popup_simulation_state_changed; see "Address-book re-labels" in docs/popup-simulation-refresh.md.
+export async function relabelPopupVisualisation(ethereum: EthereumClientService, tokenPriceService: TokenPriceService) {
+	// Captured at request time, so a newer block, stack or failure refresh also cancels a re-label still waiting for the semaphore.
 	const thisAbortController = getUncancelledAbortController()
-	await updateSimulationVisualisationSemaphore.execute(async () => {
-		if (thisAbortController.signal.aborted) return
+	await executeVisualisationUpdate(thisAbortController, async () => {
 		const storedVisualisation = await getPopupVisualisationState()
-		const simulationState = getSimulationStateWithRefreshableMetadata(storedVisualisation, ethereum.getChainId())
+		const chainId = ethereum.getChainId()
+		const simulationState = getSimulationStateWithRefreshableMetadata(storedVisualisation, chainId)
 		if (simulationState === undefined) return
 		const simulationMetadata = await revisualizeSimulationMetadata(simulationState, ethereum, tokenPriceService, thisAbortController)
 		// Lookups that made no further RPC request do not notice an abort; the refresh that aborted this re-label stores its own result instead.
 		if (thisAbortController.signal.aborted) return
 		await updatePopupVisualisationWithCallBack(async (currentVisualisation) => {
-			if (currentVisualisation.simulationId !== storedVisualisation.simulationId || currentVisualisation.simulationUpdatingState !== 'done') return undefined
+			// updatePopupVisualisationIfNeeded can store an invalidation under the id of the run it raced with, so the stored state must also still be finished.
+			if (!isSameSimulationRun(currentVisualisation, storedVisualisation) || getSimulationStateWithRefreshableMetadata(currentVisualisation, chainId) === undefined) return undefined
 			return { ...currentVisualisation, ...simulationMetadata }
 		})
 	})
@@ -167,8 +172,7 @@ export async function publishFailedPopupVisualisation() {
 // Serialized execution without a visibility probe; persistence callers can require unexpected errors to propagate.
 export async function updatePopupVisualisationState(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, abortController: AbortController | undefined, throwOnUnexpectedError = false, snapshot?: SimulationSnapshot) {
 	try {
-		return await updateSimulationVisualisationSemaphore.execute(async () => {
-			if (abortController?.signal.aborted) return
+		await executeVisualisationUpdate(abortController, async () => await countAsRunningSimulation(async () => {
 			const popupVisualisation = await getPopupVisualisationState()
 			const simulationId = popupVisualisation.simulationId + 1
 			const capturedSnapshot = snapshot ?? await captureSimulationSnapshot()
@@ -214,7 +218,7 @@ export async function updatePopupVisualisationState(ethereum: EthereumClientServ
 				await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState: state }  })
 				await reportUnexpectedError(error)
 			}
-		})
+		}))
 	} catch (error) {
 		if (throwOnUnexpectedError) throw error
 		if (isExpectedInfrastructureError(error)) return

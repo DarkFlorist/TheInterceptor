@@ -906,15 +906,9 @@ describe('simulation visualizer open replies', () => {
 		}
 	})
 
-	test('stack visualizer re-labels the stored simulation before reading home data after an address-book change', async () => {
+	test('stack visualizer only reads cached home data after an address-book change and after the stored simulation is re-labelled', async () => {
 		const dom = installDomMock()
-		let finishMetadataRefresh: (() => void) | undefined
-		const metadataRefresh = new Promise<void>((resolve) => { finishMetadataRefresh = resolve })
-		const { dispatchMessage: listener, sentMessages } = installBrowserMock(async (message) => {
-			if (typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_refreshSimulationMetadata') await metadataRefresh
-			return undefined
-		})
-		const getSentMethods = () => sentMessages.map((message) => typeof message === 'object' && message !== null && 'method' in message ? message.method : undefined)
+		const { dispatchMessage: listener, sentMessages } = installBrowserMock()
 		try {
 			await act(() => {
 				render(h(SimulationStackPage, {}), dom.document.body)
@@ -922,23 +916,40 @@ describe('simulation visualizer open replies', () => {
 			await act(() => {
 				listener({ role: 'all', ...serialize(UpdateHomePage, createSimulationStackHomePageUpdate(19, 1, 'Stack tab')) }, {}, () => undefined)
 			})
+
+			// The background broadcasts the change at once and re-labels the stored simulation afterwards, announcing it with popup_simulationsRelabelled; the view neither re-labels nor simulates and only reads cached home data each time.
+			for (const method of ['popup_addressBookEntriesChanged', 'popup_simulationsRelabelled'] as const) {
+				sentMessages.splice(0)
+				await act(async () => {
+					listener(serialize(MessageToPopup, { role: 'all', method }), {}, () => undefined)
+					await new Promise((resolve) => setTimeout(resolve, 0))
+				})
+
+				assert.equal(sentMessages.length, 1, method)
+				assert.equal(isHomeDataRequest(sentMessages[0], false, true), true, method)
+			}
+		} finally {
+			dom.restore()
+		}
+	})
+
+	test('stack visualizer asks for fresh home data when the stored simulation is re-labelled before its first fresh home data', async () => {
+		const dom = installDomMock()
+		const { dispatchMessage: listener, sentMessages } = installBrowserMock()
+		const getSentMethods = () => sentMessages.map((message) => typeof message === 'object' && message !== null && 'method' in message ? message.method : undefined)
+		try {
+			await act(() => {
+				render(h(SimulationStackPage, {}), dom.document.body)
+			})
 			sentMessages.splice(0)
 
 			await act(async () => {
-				listener(serialize(MessageToPopup, { role: 'all', method: 'popup_addressBookEntriesChanged' }), {}, () => undefined)
+				listener(serialize(MessageToPopup, { role: 'all', method: 'popup_simulationsRelabelled' }), {}, () => undefined)
 				await new Promise((resolve) => setTimeout(resolve, 0))
 			})
 
-			// Home data is read only after the background has re-labelled the stored simulation, so it cannot return the old names.
-			assert.deepEqual(getSentMethods(), ['popup_refreshSimulationMetadata'])
-
-			await act(async () => {
-				finishMetadataRefresh?.()
-				await new Promise((resolve) => setTimeout(resolve, 0))
-			})
-
-			assert.deepEqual(getSentMethods(), ['popup_refreshSimulationMetadata', 'popup_requestNewHomeData'])
-			assert.equal(isHomeDataRequest(sentMessages[1], false, true), true)
+			// Cached replies are discarded until the first fresh home data arrives, so only a fresh request can show the re-labelled names.
+			assert.deepEqual(getSentMethods(), ['popup_refreshHomeData'])
 		} finally {
 			dom.restore()
 		}
