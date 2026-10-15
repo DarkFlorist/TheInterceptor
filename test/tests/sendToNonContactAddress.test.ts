@@ -1,24 +1,10 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { getSendToNonContactWarning } from '../../app/ts/simulation/protectors/sendToNonContactAddress.js'
-import type { AddressBookEntry, Erc20TokenEntry } from '../../app/ts/types/addressBookTypes.js'
-import type { EnrichedEthereumEvent, EnrichedEthereumEvents } from '../../app/ts/types/EnrichedEthereumData.js'
+import { getSendToNonContactWarnings } from '../../app/ts/simulation/protectors/sendToNonContactAddress.js'
+import type { AddressBookEntry } from '../../app/ts/types/addressBookTypes.js'
+import type { EnrichedEthereumEvents } from '../../app/ts/types/EnrichedEthereumData.js'
 import type { EthereumUnsignedTransaction } from '../../app/ts/types/wire-types.js'
-import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../app/ts/utils/constants.js'
-
-const sender: AddressBookEntry = {
-	type: 'contact',
-	name: 'Sender',
-	address: 0x1111111111111111111111111111111111111111n,
-	entrySource: 'User',
-}
-
-const proxy: AddressBookEntry = {
-	type: 'contract',
-	name: 'Unknown proxy',
-	address: 0x2222222222222222222222222222222222222222n,
-	entrySource: 'OnChain',
-}
+import { createIdentifyAddress, createTransaction, createTransferEvent, erc20Token, nativeToken, proxy, sender } from './sendToNonContactFixtures.js'
 
 const knownRecipient: AddressBookEntry = {
 	type: 'contact',
@@ -48,83 +34,14 @@ const knownNonContractIntermediate: AddressBookEntry = {
 	entrySource: 'User',
 }
 
-const nativeToken: Erc20TokenEntry = {
-	type: 'ERC20',
-	name: 'Ether',
-	symbol: 'ETH',
-	decimals: 18n,
-	address: ETHEREUM_LOGS_LOGGER_ADDRESS,
-	entrySource: 'Interceptor',
+const identifyAddress = createIdentifyAddress([sender, proxy, knownRecipient, unknownRecipient, secondUnknownRecipient, knownNonContractIntermediate, nativeToken, erc20Token])
+
+// No known addresses are loaded, so no destination is a lookalike and the protector reports at most the not in address book warning.
+const getWarning = async (transaction: EthereumUnsignedTransaction, events: EnrichedEthereumEvents) => {
+	const warnings = await getSendToNonContactWarnings(transaction, events, identifyAddress, async () => [])
+	assert.deepEqual(warnings.slice(1), [], `expected at most one warning, got ${ JSON.stringify(warnings) }`)
+	return warnings[0]
 }
-
-const erc20Token: Erc20TokenEntry = {
-	type: 'ERC20',
-	name: 'Token',
-	symbol: 'TKN',
-	decimals: 18n,
-	address: 0x7777777777777777777777777777777777777777n,
-	entrySource: 'User',
-}
-
-const allEntries = [sender, proxy, knownRecipient, unknownRecipient, secondUnknownRecipient, knownNonContractIntermediate, nativeToken, erc20Token]
-const entriesByAddress = new Map(allEntries.map((entry) => [entry.address, entry]))
-
-const identifyAddress = async (address: bigint) => {
-	const entry = entriesByAddress.get(address)
-	if (entry === undefined) throw new Error(`Missing test address ${ address }`)
-	return entry
-}
-
-const createTransaction = ({ input = new Uint8Array(), value = 100n, to = proxy.address }: {
-	input?: Uint8Array
-	value?: bigint
-	to?: bigint
-} = {}): EthereumUnsignedTransaction => ({
-	type: '1559',
-	from: sender.address,
-	nonce: 1n,
-	maxFeePerGas: 1n,
-	maxPriorityFeePerGas: 1n,
-	gas: 100_000n,
-	to,
-	value,
-	input,
-	chainId: 1n,
-})
-
-const createTransferEvent = ({
-	from,
-	to,
-	amount,
-	token = nativeToken,
-}: {
-	from: AddressBookEntry
-	to: AddressBookEntry
-	amount: bigint
-	token?: Erc20TokenEntry
-}): EnrichedEthereumEvent => ({
-	type: 'TokenEvent',
-	isParsed: 'Parsed',
-	name: 'Transfer',
-	signature: 'Transfer(address,address,uint256)',
-	args: [],
-	address: token.address,
-	loggersAddressBookEntry: token,
-	data: new Uint8Array(),
-	topics: [],
-	logInformation: {
-		type: 'ERC20',
-		from: from.address,
-		to: to.address,
-		tokenAddress: token.address,
-		amount,
-		isApproval: false,
-	},
-})
-
-const getWarning = async (transaction: EthereumUnsignedTransaction, events: EnrichedEthereumEvents) => (
-	await getSendToNonContactWarning(transaction, events, identifyAddress)
-)
 
 describe('sendToNonContact proxy transfers', () => {
 	test('does not warn about an unknown proxy when the final recipient is known', async () => {

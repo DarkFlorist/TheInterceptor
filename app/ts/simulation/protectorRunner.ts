@@ -11,13 +11,16 @@ import { chainIdMismatch } from './protectors/chainIdMismatch.js'
 import { promiseAllMapAbortSafe } from '../utils/requests.js'
 import type { EnrichedEthereumEvents } from '../types/EnrichedEthereumData.js'
 
+// A protector that finds several distinct problems returns one reason per problem, so the UI shows each in its own box.
+type ProtectorReasons = string | readonly string[] | undefined
+
 type Protector = (
 	transaction: WebsiteCreatedEthereumTransaction['transaction'],
 	ethereum: EthereumClientService,
 	requestAbortController: AbortController | undefined,
 	simulationState: SimulationState,
 	eventsPromise: Promise<EnrichedEthereumEvents>,
-) => Promise<string | undefined>
+) => Promise<ProtectorReasons>
 
 const PROTECTORS: readonly Protector[] = [
 	selfTokenOops,
@@ -31,10 +34,10 @@ const PROTECTORS: readonly Protector[] = [
 ]
 
 export const runProtectorsForTransaction = async (simulationState: SimulationState, transaction: WebsiteCreatedEthereumTransaction, ethereum: EthereumClientService, requestAbortController: AbortController | undefined, eventsPromise: Promise<EnrichedEthereumEvents>) => {
-	const reasons = await promiseAllMapAbortSafe(PROTECTORS, async (protectorMethod) => await protectorMethod(transaction.transaction, ethereum, requestAbortController, simulationState, eventsPromise))
-	const filteredReasons = reasons.filter((reason): reason is string => reason !== undefined)
+	const reasonsByProtector = await promiseAllMapAbortSafe(PROTECTORS, async (protectorMethod) => await protectorMethod(transaction.transaction, ethereum, requestAbortController, simulationState, eventsPromise))
+	const reasons = reasonsByProtector.flatMap((protectorReasons) => protectorReasons ?? [])
 	return {
-		quarantine: filteredReasons.length > 0,
-		quarantineReasons: Array.from(new Set<string>(filteredReasons)),
+		quarantine: reasons.length > 0,
+		quarantineReasons: Array.from(new Set<string>(reasons)),
 	}
 }
