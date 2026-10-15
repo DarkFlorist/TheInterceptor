@@ -241,7 +241,7 @@ describe('active settings concurrency', () => {
 		const selectedAddress = { ...secondAddress, askForAddressAccess: true }
 		await updateUserAddressBookEntries(() => [originalAddress, selectedAddress])
 		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: originalAddress.address })
-		const websiteOrigin = 'example.test'
+		const websiteOrigin = 'https://example.test'
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port } = createPort(socket.tabId)
 		const connections: WebsiteTabConnections = new Map([[socket.tabId, { connections: {

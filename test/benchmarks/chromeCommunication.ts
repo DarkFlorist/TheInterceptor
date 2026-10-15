@@ -1,6 +1,11 @@
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
+import { getManifestV3ExcludeMatches } from '../../app/ts/utils/contentScriptsUpdating.js'
 import { closeTarget, connectTarget, createTargetPage, launchChromeSession, waitForInterceptorExtensionServiceWorker, waitForPerformanceMarks, waitForRegisteredContentScripts, waitForTargetByUrl } from './chromeHarness.js'
 import { startChromeCommunicationPageServer } from './chromeCommunicationPageServer.js'
-import type { CdpConnection } from './chromeHarness.js'
+import type { CdpConnection, ChromeSession } from './chromeHarness.js'
 import { authorization as eip7702Authorization, Transaction } from 'micro-eth-signer'
 
 type CommunicationPageState = {
@@ -104,6 +109,57 @@ async function clickButton(connection: CdpConnection, selector: string) {
 	})()`)
 }
 
+async function verifyExactFileExclusions(chrome: ChromeSession, extensionId: string) {
+	const fileDirectory = await mkdtemp(join(tmpdir(), 'interceptor-file-exclusions-'))
+	const filePath = join(fileDirectory, 'dapp.html')
+	const siblingPath = `${ filePath }.backup.html`
+	const fileUrl = pathToFileURL(filePath).href
+	const excludeMatches = getManifestV3ExcludeMatches([fileUrl])
+	const workerTarget = await waitForInterceptorExtensionServiceWorker(chrome.browserDebugPort, 30_000)
+	const workerConnection = await connectTarget(chrome.browserDebugPort, workerTarget.id)
+	try {
+		await Promise.all([writeFile(filePath, '<!doctype html><title>Disabled file</title>'), writeFile(siblingPath, '<!doctype html><title>Enabled sibling</title>')])
+		const settingsTargetId = await createTargetPage(chrome.browserConnection, 'chrome://extensions/')
+		try {
+			const settingsConnection = await connectTarget(chrome.browserDebugPort, settingsTargetId)
+			try {
+				await settingsConnection.evaluate(`new Promise((resolve) => chrome.developerPrivate.updateExtensionConfiguration({ extensionId: ${ JSON.stringify(extensionId) }, fileAccess: true }, resolve))`)
+			} finally {
+				settingsConnection.close()
+			}
+		} finally {
+			await closeTarget(chrome.browserConnection, settingsTargetId)
+		}
+		// Apply production patterns to the real registered provider scripts, then test Chromium's URL matching.
+		await workerConnection.evaluate(`browser.scripting.updateContentScripts(['inpage', 'inpage2'].map((id) => ({ id, excludeMatches: ${ JSON.stringify(excludeMatches) } })))`)
+		for (const [url, shouldInject] of [[fileUrl, false], [`${ fileUrl }?variant=1`, false], [pathToFileURL(siblingPath).href, true]] as const) {
+			const targetId = await createTargetPage(chrome.browserConnection, url)
+			try {
+				const connection = await connectTarget(chrome.browserDebugPort, targetId)
+				try {
+					await waitForCondition(async () => await connection.evaluate<boolean>(`document.readyState === 'complete'`), 10_000, 'file document load')
+					if (shouldInject) {
+						await waitForCondition(async () => await connection.evaluate<boolean>('globalThis.ethereum?.isInterceptor === true'), 10_000, 'sibling file provider injection')
+					} else if (await connection.evaluate<boolean>('globalThis.ethereum?.isInterceptor === true')) {
+						throw new Error(`Interceptor injected into disabled file ${ url }`)
+					}
+				} finally {
+					connection.close()
+				}
+			} finally {
+				await closeTarget(chrome.browserConnection, targetId)
+			}
+		}
+	} finally {
+		try {
+			await workerConnection.evaluate(`browser.scripting.updateContentScripts(['inpage', 'inpage2'].map((id) => ({ id, excludeMatches: [] })))`)
+		} finally {
+			workerConnection.close()
+			await rm(fileDirectory, { recursive: true, force: true })
+		}
+	}
+}
+
 async function main() {
 	const server = await startChromeCommunicationPageServer()
 	const chrome = await launchChromeSession()
@@ -121,6 +177,8 @@ async function main() {
 		} finally {
 			workerConnection.close()
 		}
+
+		await verifyExactFileExclusions(chrome, extensionId)
 
 		pageTargetId = await createTargetPage(chrome.browserConnection, `${ server.baseUrl }?flow=wallet-request-permissions&safe-probe=early`)
 		const pageConnection = await connectTarget(chrome.browserDebugPort, pageTargetId)

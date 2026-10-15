@@ -35,3 +35,16 @@ export const SignTypedDataParams = funtypes.ReadonlyObject({
 
 export type SignMessageParams = funtypes.Static<typeof SignMessageParams>
 export const SignMessageParams = funtypes.Union(PersonalSignParams, SignTypedDataParams, OldSignTypedDataParams)
+
+export function getRequestedSignMessageAccount(request: SignMessageParams): bigint {
+	switch (request.method) {
+		case 'personal_sign':
+		case 'eth_signTypedData':
+			return request.params[1]
+		case 'eth_signTypedData_v1':
+		case 'eth_signTypedData_v2':
+		case 'eth_signTypedData_v3':
+		case 'eth_signTypedData_v4':
+			return request.params[0]
+	}
+}

@@ -6,15 +6,13 @@ import type { TabConnection, WebsiteTabConnections } from '../types/user-interfa
 import type { InpageScriptCallBack, Settings } from '../types/interceptor-messages.js'
 import { getSettings, getWebsiteAccess, updateWebsiteAccess } from './settings.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
-import { type WebsiteSocket, getHostWithPort } from '../utils/requests.js'
+import type { WebsiteSocket } from '../utils/requests.js'
 import { getAllTabStates } from './storageVariables.js'
 import type { Website, WebsiteAccessArray, WebsiteAddressAccess } from '../types/websiteAccessTypes.js'
-import { getUniqueItemsByProperties, replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
-import { modifyObject } from '../utils/typescript.js'
+import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import type { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
 import { Semaphore } from '../utils/semaphore.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
-import { mergeStoredWebsiteMetadata } from '../utils/websiteIcons.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { getActiveAddressForCurrentSignerState } from './signerStateOwnership.js'
@@ -23,12 +21,15 @@ import { notifyWebsiteLifecycle } from './websiteLifecycle.js'
 import { hasAccess, hasAddressAccess, type ApprovalState } from './websiteAccessPolicy.js'
 import { getWebsiteActiveAddress } from './websiteActiveAddress.js'
 import { updateWebsiteAccessAndContentScriptInjectionStrategy } from './websiteAccessUpdating.js'
+import { getHostWithPort, getWebsiteHostWithPortFromStoredOrigin } from '../utils/websiteOrigin.js'
+import { applyInterceptorDisabledDecision, applyWebsiteAccessDecision } from './websiteAccessDecision.js'
 
-function setWebsitePortApproval(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, approved: boolean) {
+function setWebsitePortApproval(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, approved: boolean, approvedAddress?: bigint) {
 	const connection = getWebsiteSocketConnection(websiteTabConnections, socket)
 	if (connection === undefined) return
 	if (approved) connection.wantsToConnect = true
 	connection.approved = approved
+	connection.approvedAddress = approved ? approvedAddress : undefined
 }
 
 export function clearWebsiteConnectionIntent(websiteTabConnections: WebsiteTabConnections, websiteOrigin: string) {
@@ -87,7 +88,8 @@ type VerifyAccessOptions = {
 
 export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, askAccessIfUnknown: boolean, websiteOrigin: string, requestAccessForAddress: AddressBookEntry | undefined, settings: Settings, options: VerifyAccessOptions = {}): ApprovalState {
 	const connection = getWebsiteSocketConnection(websiteTabConnections, socket)
-	if (connection?.approved && options.ignoreConnectionApproval !== true) return 'hasAccess'
+	if (connection?.approved && options.ignoreConnectionApproval !== true
+		&& (requestAccessForAddress === undefined || connection.approvedAddress === requestAccessForAddress.address)) return 'hasAccess'
 	const access = requestAccessForAddress !== undefined ? hasAddressAccess(settings.websiteAccess, websiteOrigin, requestAccessForAddress) : hasAccess(settings.websiteAccess, websiteOrigin)
 	if (access === 'hasAccess') {
 		const popupRefreshGeneration = bumpPopupRefreshGeneration()
@@ -148,33 +150,11 @@ function getAddressesThatDoNotNeedIndividualAccesses(activeAddressEntries: Addre
 }
 
 export async function setInterceptorDisabledForWebsite(website: Website, interceptorDisabled: boolean) {
-	return await updateWebsiteAccessAndContentScriptInjectionStrategy((previousWebsiteAccess) => {
-		const index = previousWebsiteAccess.findIndex((entry) => entry.website.websiteOrigin === website.websiteOrigin)
-		const previousAccess = index !== -1 ? previousWebsiteAccess[index] : undefined;
-		if (previousAccess === undefined) return [...previousWebsiteAccess, { website, addressAccess: [], interceptorDisabled } ]
-		return replaceElementInReadonlyArray(previousWebsiteAccess, index, { ...previousAccess, interceptorDisabled })
-	})
+	return await updateWebsiteAccessAndContentScriptInjectionStrategy((previousWebsiteAccess) => applyInterceptorDisabledDecision(previousWebsiteAccess, website, interceptorDisabled))
 }
 
 export async function setAccess(website: Website, access: boolean, address: bigint | undefined) {
-	return await updateWebsiteAccess((previousWebsiteAccess) => {
-		const foundEntry = previousWebsiteAccess.find((entry) => entry.website.websiteOrigin === website.websiteOrigin)
-		if (foundEntry === undefined) return [...previousWebsiteAccess, { website, access, addressAccess: address === undefined || !access ? undefined : [ { address, access } ] }]
-		return previousWebsiteAccess.map((prevAccess) => {
-			if (prevAccess.website.websiteOrigin === website.websiteOrigin) {
-				const websiteData = mergeStoredWebsiteMetadata(prevAccess.website, website)
-				if (address === undefined) return modifyObject(prevAccess, { website: websiteData, access })
-				const addressAccess = { address, access }
-				const updatedEntry = modifyObject(prevAccess, { website: websiteData, access: prevAccess.access ? prevAccess.access : access })
-				if (prevAccess.addressAccess === undefined) return modifyObject(updatedEntry, { addressAccess: [addressAccess] })
-				if (prevAccess.addressAccess.find((x) => x.address === address) === undefined) {
-					return modifyObject(updatedEntry, { addressAccess: [ ...prevAccess.addressAccess, addressAccess ] })
-				}
-				return modifyObject(updatedEntry, { addressAccess: prevAccess.addressAccess.map((x) => (x.address === address ? addressAccess : x)) })
-			}
-			return prevAccess
-		})
-	})
+	return await updateWebsiteAccess((previousWebsiteAccess) => applyWebsiteAccessDecision(previousWebsiteAccess, website, access, address))
 }
 
 function connectToPort(
@@ -184,7 +164,7 @@ function connectToPort(
 	connectWithActiveAddress: bigint | undefined,
 ): true {
 	const wasApproved = getWebsiteSocketConnection(websiteTabConnections, socket)?.approved === true
-	setWebsitePortApproval(websiteTabConnections, socket, true)
+	setWebsitePortApproval(websiteTabConnections, socket, true, connectWithActiveAddress)
 	if (!wasApproved) notifyWebsiteLifecycle(websiteTabConnections.lifecycle?.approvalChanged, socket, true)
 	if (!shouldSendUnscopedConnectionEvents(socket)) return true
 	sendProviderConnectionEventsToPort(websiteTabConnections, socket, settings, connectWithActiveAddress === undefined ? [] : [connectWithActiveAddress])
@@ -221,6 +201,15 @@ function disconnectFromPort(
 	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'accountsChanged', result: [] })
 	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'disconnect', result: [] })
 	return false
+}
+
+export function suspendWebsitePortApprovalsForTab(websiteTabConnections: WebsiteTabConnections, tabId: number) {
+	const tabConnection = websiteTabConnections.get(tabId)
+	if (tabConnection === undefined) return
+	for (const connection of Object.values(tabConnection.connections)) {
+		if (!connection.approved) continue
+		disconnectFromPort(websiteTabConnections, connection.socket)
+	}
 }
 
 export async function getAssociatedAddresses(settings: Settings, websiteOrigin: string, activeAddress: AddressBookEntry | undefined) : Promise<AddressBookEntries> {
@@ -306,7 +295,12 @@ const getApprovedTabs = (websiteTabConnections: WebsiteTabConnections) => {
 const getTabsAndAddressesToBlock = async (websiteTabConnections: WebsiteTabConnections) => {
 	const approvedTabIds = getApprovedTabs(websiteTabConnections)
 	const tabIdsToBlock = (await getActiveAddressesForAllTabs(await getSettings())).filter((tabData) => approvedTabIds.has(tabData.tabId)).filter((tabData) => tabData.activeAddress?.declarativeNetRequestBlockMode === 'block-all').map((tabData) => tabData.tabId)
-	const sitesToBlock = (await getWebsiteAccess()).filter((access) => access.declarativeNetRequestBlockMode === 'block-all').map((acccess) => acccess.website.websiteOrigin)
+	const sitesToBlock = (await getWebsiteAccess())
+		.filter((access) => access.declarativeNetRequestBlockMode === 'block-all')
+		.flatMap((access) => {
+			const host = getWebsiteHostWithPortFromStoredOrigin(access.website.websiteOrigin)
+			return host === undefined ? [] : [host]
+		})
 	return {
 		tabIdsToBlock,
 		sitesToBlock
@@ -380,7 +374,8 @@ export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: W
 
 export const areWeBlocking = async (websiteTabConnections: WebsiteTabConnections, tabId: number, websiteOrigin: string) => {
 	const { tabIdsToBlock, sitesToBlock } = await getTabsAndAddressesToBlock(websiteTabConnections)
-	if (sitesToBlock.find((blockUrl) => blockUrl === websiteOrigin) !== undefined) return true
+	const websiteHost = getWebsiteHostWithPortFromStoredOrigin(websiteOrigin)
+	if (websiteHost !== undefined && sitesToBlock.includes(websiteHost)) return true
 	if (tabIdsToBlock.find((blockTab) => blockTab === tabId) !== undefined) return true
 	return false
 }

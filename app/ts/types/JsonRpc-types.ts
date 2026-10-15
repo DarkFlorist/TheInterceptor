@@ -77,6 +77,8 @@ export const PartialEthereumTransaction = funtypes.ReadonlyPartial({
 		funtypes.Literal('0x4').withParser(LiteralConverterParserFactory('0x4', '7702' as const)),
 	),
 	from: EthereumAddress,
+	chainId: EthereumQuantity,
+	nonce: EthereumQuantity,
 	gas: EthereumQuantity,
 	value: EthereumQuantity,
 	to: funtypes.Union(EthereumAddress, funtypes.Null),
@@ -86,6 +88,8 @@ export const PartialEthereumTransaction = funtypes.ReadonlyPartial({
 	data: EthereumData,
 	input: EthereumData,
 	accessList: EthereumAccessList,
+	maxFeePerBlobGas: EthereumQuantity,
+	blobVersionedHashes: funtypes.ReadonlyArray(EthereumBytes32),
 	authorizationList: funtypes.ReadonlyArray(funtypes.ReadonlyObject({
 		chainId: EthereumQuantity,
 		address: EthereumAddress,

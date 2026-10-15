@@ -10,6 +10,7 @@ import { askForSignerAccountsFromSignerIfNotAvailable, getAddressMetadataForAcce
 import { resolveChainChange } from './windows/changeChain.js'
 import { changeActiveRpc } from './walletSwitch.js'
 import { updateWebsiteApprovalAccesses } from './accessManagement.js'
+import { isInterceptorDisabledForWebsiteOrigin } from './websiteAccessDecision.js'
 import { getActiveOrFirstSignerAddress, getHtmlFile, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getActiveAddressForCurrentSignerState, sendCallbackToAllConfirmedSignerOwners, sendCallbackToConfirmedSignerOwner } from './signerStateOwnership.js'
 import { findEntryWithSymbolOrName, getMetadataForAddressBookData } from './metadataSearch.js'
@@ -79,7 +80,7 @@ const importSimulationStackFailure = (message: string): ImportSimulationStackRep
 
 function isInterceptorDisabledForWebsite(settings: Settings, websiteOrigin: string | undefined) {
 	if (websiteOrigin === undefined) return false
-	return settings.websiteAccess.some((entry) => entry.website.websiteOrigin === websiteOrigin && entry.interceptorDisabled === true)
+	return isInterceptorDisabledForWebsiteOrigin(settings.websiteAccess, websiteOrigin)
 }
 
 async function refreshSignerAccountsForTabIfNeeded(websiteTabConnections: WebsiteTabConnections, tabId: number | undefined, tabState: TabState, shouldRefreshSignerAccounts: boolean) {
@@ -645,6 +646,7 @@ export async function refreshPopupConfirmTransactionSimulation(ethereum: Ethereu
 				if (transactionToSimulate.success) {
 					return {
 						...transactionOrMessage,
+						originalRequestParameters: transactionToSimulate.originalRequestParameters,
 						transactionToSimulate,
 						popupVisualisation: refreshMessage,
 						transactionOrMessageCreationStatus: 'Simulated' as const,
