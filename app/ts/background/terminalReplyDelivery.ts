@@ -7,13 +7,13 @@ import { websiteSocketToString } from './backgroundUtils.js'
 import { replyToInterceptedRequest } from './messageSending.js'
 import { attemptDeliveryAfterManifestV2Reconnect } from './manifestV2Reconnect.js'
 import { appendPendingTerminalReply, getPendingTerminalReplies, removePendingTerminalReply } from './pendingTerminalReplies.js'
+import { createBackoffRetryScheduler } from '../utils/retryScheduler.js'
 
 const terminalReplyProductions = new Map<string, Promise<boolean | undefined>>()
 const terminalReplyReservations = new Set<string>()
 const completedTerminalReplies = new Set<string>()
 const terminalReplySemaphore = new Semaphore(1)
-const terminalReplyFlushRetryTimers = new Map<string, ReturnType<typeof setTimeout>>()
-const TERMINAL_REPLY_FLUSH_RETRY_DELAY_MS = 50
+const terminalReplyFlushRetries = new Map<string, { port: browser.runtime.Port, scheduler: ReturnType<typeof createBackoffRetryScheduler> }>()
 
 async function finishPreviouslyDeliveredTerminalReply(identifier: string, message: InterceptedRequestForward) {
 	if (!completedTerminalReplies.has(identifier)) return false
@@ -90,26 +90,43 @@ export async function flushPendingTerminalRepliesForSocket(websiteTabConnections
 
 export async function flushPendingTerminalRepliesForConnectedPortWithRetry(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, port: browser.runtime.Port) {
 	const socketIdentifier = websiteSocketToString(socket)
-	const existingRetryTimer = terminalReplyFlushRetryTimers.get(socketIdentifier)
-	if (existingRetryTimer !== undefined) {
-		clearTimeout(existingRetryTimer)
-		terminalReplyFlushRetryTimers.delete(socketIdentifier)
+	if (websiteTabConnections.get(socket.tabId)?.connections[socketIdentifier]?.port !== port) return 0
+	const existingRetry = terminalReplyFlushRetries.get(socketIdentifier)
+	if (existingRetry !== undefined && existingRetry.port !== port) {
+		existingRetry.scheduler.reset()
+		terminalReplyFlushRetries.delete(socketIdentifier)
 	}
 	try {
-		return await flushPendingTerminalRepliesForSocket(websiteTabConnections, socket)
+		const deliveredReplies = await flushPendingTerminalRepliesForSocket(websiteTabConnections, socket)
+		const retry = terminalReplyFlushRetries.get(socketIdentifier)
+		if (retry?.port === port) {
+			retry.scheduler.reset()
+			terminalReplyFlushRetries.delete(socketIdentifier)
+		}
+		return deliveredReplies
 	} catch (error) {
 		await reportLocalRecovery(error, {
 			source: 'pending_terminal_replies',
 			code: 'pending_terminal_reply_socket_flush_failed',
 			message: 'Retrying terminal reply delivery while the website connection remains active.',
 		})
-		const retryTimer = setTimeout(() => {
-			terminalReplyFlushRetryTimers.delete(socketIdentifier)
+		if (websiteTabConnections.get(socket.tabId)?.connections[socketIdentifier]?.port !== port) return 0
+		let retry = terminalReplyFlushRetries.get(socketIdentifier)
+		if (retry === undefined) {
+			retry = { port, scheduler: createBackoffRetryScheduler(50) }
+			terminalReplyFlushRetries.set(socketIdentifier, retry)
+		}
+		const scheduledRetry = retry
+		retry.scheduler.schedule(() => {
+			if (terminalReplyFlushRetries.get(socketIdentifier) !== scheduledRetry) return
 			const currentPort = websiteTabConnections.get(socket.tabId)?.connections[socketIdentifier]?.port
-			if (currentPort !== port) return
+			if (currentPort !== port) {
+				scheduledRetry.scheduler.reset()
+				terminalReplyFlushRetries.delete(socketIdentifier)
+				return
+			}
 			void flushPendingTerminalRepliesForConnectedPortWithRetry(websiteTabConnections, socket, port)
-		}, TERMINAL_REPLY_FLUSH_RETRY_DELAY_MS)
-		terminalReplyFlushRetryTimers.set(socketIdentifier, retryTimer)
+		})
 		return 0
 	}
 }
