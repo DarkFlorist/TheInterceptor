@@ -1,7 +1,7 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import type { InterceptorErrorDiagnostic } from '../../app/ts/types/errorDiagnostics.js'
-import { formatDiagnosticsForClipboard, summarizeDiagnostics } from '../../app/ts/utils/diagnostics.js'
+import { DIAGNOSTIC_UNTRUSTED_TEXT_WARNING, formatDiagnosticsForClipboard, summarizeDiagnostics } from '../../app/ts/utils/diagnostics.js'
 
 const diagnostic = (severity: InterceptorErrorDiagnostic['severity'], index: number): InterceptorErrorDiagnostic => ({
 	timestamp: new Date(`2026-01-0${ index }T00:00:00.000Z`),
@@ -32,5 +32,6 @@ describe('diagnostics view data', () => {
 		assert.match(parsed[0].timestamp, /^0x[0-9a-f]+$/)
 		assert.equal(parsed[0].cause, 'root failure')
 		assert.equal(parsed[0].rawError, 'Error: root failure\n    at render')
+		assert.equal(parsed[0].untrustedTextWarning, DIAGNOSTIC_UNTRUSTED_TEXT_WARNING)
 	})
 })

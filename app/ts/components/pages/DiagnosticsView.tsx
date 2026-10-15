@@ -6,7 +6,7 @@ import { useAsyncState } from '../../utils/preact-utilities.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
 import { clipboardCopy } from '../subcomponents/clipboardcopy.js'
-import { formatDiagnosticsForClipboard, summarizeDiagnostics } from '../../utils/diagnostics.js'
+import { DIAGNOSTIC_UNTRUSTED_TEXT_WARNING, formatDiagnosticsForClipboard, summarizeDiagnostics } from '../../utils/diagnostics.js'
 
 function DiagnosticCard({ diagnostic }: { diagnostic: InterceptorErrorDiagnostic }) {
 	const metadata = [diagnostic.source, diagnostic.code, diagnostic.category].join(' · ')
@@ -24,6 +24,7 @@ function DiagnosticCard({ diagnostic }: { diagnostic: InterceptorErrorDiagnostic
 		{ diagnostic.cause === undefined && diagnostic.rawError === undefined && diagnostic.details === undefined && diagnostic.debugId === undefined ? <></> :
 			<details class = 'diagnostics-details'>
 				<summary>Technical details</summary>
+				<p>{ DIAGNOSTIC_UNTRUSTED_TEXT_WARNING }</p>
 				{ diagnostic.cause === undefined ? <></> : <div><strong>Cause</strong><pre>{ diagnostic.cause }</pre></div> }
 				{ diagnostic.rawError === undefined ? <></> : <div><strong>Raw error</strong><pre>{ diagnostic.rawError }</pre></div> }
 				{ diagnostic.details === undefined ? <></> : <div><strong>Context</strong><pre>{ diagnostic.details }</pre></div> }
@@ -68,7 +69,8 @@ export function DiagnosticsView() {
 		<header class = 'diagnostics-header'>
 			<div>
 				<h1>Diagnostics</h1>
-				<p>The latest internal errors and recovered failures. Open Technical details for raw error data and context when available. The Interceptor retains up to 50 records.</p>
+					<p>The latest internal errors and recovered failures. The Interceptor retains up to 50 records.</p>
+					<p>{ DIAGNOSTIC_UNTRUSTED_TEXT_WARNING }</p>
 			</div>
 			<div class = 'diagnostics-actions'>
 				<AsyncActionButton class = 'btn btn--outline' state = { loadState.value.state } onClick = { () => { void waitForLoad(loadDiagnostics) } } text = 'Refresh' pendingText = 'Refreshing...' />

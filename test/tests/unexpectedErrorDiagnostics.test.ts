@@ -303,19 +303,22 @@ describe('unexpected error diagnostics', () => {
 	test('shows a storage-budget record instead of writing one oversized raw error', async () => {
 		browserMock.reset()
 		const { appendInterceptorErrorDiagnostic, getInterceptorErrorDiagnostics } = await modulesPromise
+		await appendInterceptorErrorDiagnostic(storageDiagnostic(1, 'earlier error'))
 		let largestWrite = 0
 		browserMock.setStorageSet(async (items) => {
 			largestWrite = Math.max(largestWrite, JSON.stringify(items).length)
 			await browserMock.writeStorage(items)
 		})
 
-		await appendInterceptorErrorDiagnostic(storageDiagnostic(1, 'x'.repeat(600_000)))
-		const [fallback] = await getInterceptorErrorDiagnostics()
-		assert.equal(fallback?.code, 'storage_1')
+		await appendInterceptorErrorDiagnostic(storageDiagnostic(2, 'x'.repeat(600_000)))
+		const retained = await getInterceptorErrorDiagnostics()
+		assert.deepEqual(retained.map((record) => record.code), ['storage_1', 'storage_2'])
+		const fallback = retained.at(-1)
+		assert.equal(fallback?.code, 'storage_2')
 		assert.match(fallback?.rawError ?? '', /diagnostic storage budget/u)
 		assert.equal(largestWrite < 512_000, true)
 
-		await appendInterceptorErrorDiagnostic(storageDiagnostic(2, 'next error'))
+		await appendInterceptorErrorDiagnostic(storageDiagnostic(3, 'next error'))
 		assert.equal((await getInterceptorErrorDiagnostics()).at(-1)?.rawError, 'next error')
 	})
 
@@ -330,8 +333,9 @@ describe('unexpected error diagnostics', () => {
 		assert.deepEqual((await getInterceptorErrorDiagnostics()).map((diagnostic) => diagnostic.code), ['storage_2', 'storage_3'])
 
 		await appendInterceptorErrorDiagnostic(storageDiagnostic(4, 'x'.repeat(2_000)))
-		const [fallback] = await getInterceptorErrorDiagnostics()
-		assert.equal(fallback?.code, 'storage_4')
+		const retained = await getInterceptorErrorDiagnostics()
+		assert.deepEqual(retained.map((record) => record.code), ['storage_3', 'storage_4'])
+		const fallback = retained.at(-1)
 		assert.match(fallback?.message ?? '', /could not be stored/u)
 		assert.match(fallback?.rawError ?? '', /storage quota/u)
 
@@ -434,8 +438,8 @@ describe('unexpected error diagnostics', () => {
 
 		const diagnostics = await getInterceptorErrorDiagnostics()
 		assert.deepEqual(diagnostics.map((diagnostic) => diagnostic.message), ['unreadable code', 'unreadable classification'])
-		assert.match(diagnostics[0]?.rawError ?? '', /Unreadable property: code getter failed/u)
-		assert.match(diagnostics[1]?.rawError ?? '', /Unreadable property: classification getter failed/u)
+		assert.doesNotMatch(diagnostics[0]?.rawError ?? '', /code getter failed/u)
+		assert.doesNotMatch(diagnostics[1]?.rawError ?? '', /classification getter failed/u)
 		assert.match(diagnostics[0]?.rawError ?? '', /"stack":/u)
 		assert.match(diagnostics[1]?.rawError ?? '', /"stack":/u)
 	})
@@ -536,7 +540,7 @@ describe('unexpected error diagnostics', () => {
 		assert.equal(diagnostics[0]?.rawError, diagnosticsMessage)
 	})
 
-	test('preserves an unexpected error stack, cause, and custom data in Diagnostics', async () => {
+	test('preserves an unexpected error stack and cause without custom data in Diagnostics', async () => {
 		browserMock.reset()
 		const { getInterceptorErrorDiagnostics, reportUnexpectedError, getLatestUnexpectedError } = await modulesPromise
 		const error = Object.assign(new Error('plain error'), { cause: new Error('root failure'), code: 'E_RENDER', data: { requestId: 17 } })
@@ -564,8 +568,8 @@ describe('unexpected error diagnostics', () => {
 		const rawError = JSON.parse(diagnostic.rawError)
 		assert.equal(rawError.stack, error.stack)
 		assert.equal(rawError.cause.message, 'root failure')
-		assert.equal(rawError.code, 'E_RENDER')
-		assert.deepEqual(rawError.data, { requestId: 17 })
+		assert.equal(rawError.code, undefined)
+		assert.equal(rawError.data, undefined)
 	})
 
 	test('logs user-facing unexpected errors to the extension console with their diagnostic metadata and cause', async () => {
@@ -653,10 +657,10 @@ describe('unexpected error diagnostics', () => {
 
 		const [diagnostic] = await getInterceptorErrorDiagnostics()
 		assert.equal(diagnostic?.message, 'cause 499')
-		assert.match(diagnostic?.rawError ?? '', /Maximum diagnostic depth reached/u)
+		assert.match(diagnostic?.rawError ?? '', /Maximum error cause depth reached/u)
 	})
 
-	test('marks oversized raw errors and details as truncated', async () => {
+	test('omits oversized custom error data and truncates details', async () => {
 		browserMock.reset()
 		const { getInterceptorErrorDiagnostics, reportUnexpectedError } = await modulesPromise
 		const error = Object.assign(new Error('large error'), { data: 'x'.repeat(100_000) })
@@ -665,18 +669,18 @@ describe('unexpected error diagnostics', () => {
 
 		const [diagnostic] = await getInterceptorErrorDiagnostics()
 		assert.ok((diagnostic?.rawError?.length ?? 0) <= 64_000)
-		assert.equal(diagnostic?.details?.length, 64_000)
-		assert.match(diagnostic?.rawError ?? '', /\[Diagnostic value truncated\]/u)
+		assert.equal(diagnostic?.details?.length, 16_000)
+		assert.doesNotMatch(diagnostic?.rawError ?? '', /"data":/u)
 		assert.match(diagnostic?.details ?? '', /\[Diagnostic text truncated\]$/u)
 	})
 
-	test('falls back to readable text when a value prevents inspection', async () => {
+	test('uses a fixed fallback when a value prevents inspection', async () => {
 		const { stringifyDiagnosticDetails } = await import('../../app/ts/utils/diagnosticSerialization.js')
 		const unreadable = new Proxy({}, { getPrototypeOf: () => { throw new Error('prototype inaccessible') } })
-		assert.match(stringifyDiagnosticDetails(unreadable) ?? '', /Diagnostic inspection failed: prototype inaccessible/u)
+		assert.equal(stringifyDiagnosticDetails(unreadable), '[Error details could not be inspected]')
 	})
 
-	test('bounds inspection of shared nested values before they expand', async () => {
+	test('omits arbitrary nested context without invoking getters', async () => {
 		const { stringifyDiagnosticDetails } = await import('../../app/ts/utils/diagnosticSerialization.js')
 		let leafReads = 0
 		let branch: unknown = { get value() { leafReads += 1; return 'leaf' } }
@@ -685,7 +689,31 @@ describe('unexpected error diagnostics', () => {
 		const diagnostic = stringifyDiagnosticDetails(branch)
 
 		assert.ok(leafReads < 1_000)
-		assert.match(diagnostic ?? '', /Diagnostic inspection limit reached|more properties omitted/u)
+		assert.equal(diagnostic, '[Structured diagnostic context omitted]')
+		assert.equal(leafReads, 0)
+	})
+
+	test('bounds repeated and distinct AggregateError children before serializing them', async () => {
+		const { stringifyDiagnosticDetails } = await import('../../app/ts/utils/diagnosticSerialization.js')
+		let descriptorReads = 0
+		let shared: Error = new Proxy(new Error('shared leaf'), {
+			getOwnPropertyDescriptor(target, key) {
+				descriptorReads += 1
+				return Reflect.getOwnPropertyDescriptor(target, key)
+			},
+		})
+		for (let depth = 0; depth < 4; depth++) shared = new AggregateError(Array(10).fill(shared), `level ${ depth }`)
+
+		const sharedText = stringifyDiagnosticDetails(shared)
+		assert.ok(descriptorReads < 20)
+		assert.ok((sharedText?.length ?? 0) <= 16_000)
+		assert.match(sharedText ?? '', /Repeated or circular error reference/u)
+
+		const manyErrors = new AggregateError(Array.from({ length: 10 }, (_, branch) =>
+			new AggregateError(Array.from({ length: 10 }, (_, index) => new Error(`${ branch }-${ index }: ${ 'x'.repeat(8_000) }`)), 'branch')), 'root')
+		const distinctText = stringifyDiagnosticDetails(manyErrors)
+		assert.ok((distinctText?.length ?? 0) <= 16_000)
+		assert.match(distinctText ?? '', /Remaining errors omitted/u)
 	})
 
 	test('persists a report when the original error cannot be inspected for console details', async () => {
@@ -696,16 +724,17 @@ describe('unexpected error diagnostics', () => {
 		await withSilencedConsole(async () => await reportUnexpectedError(unreadable))
 
 		const [diagnostic] = await getInterceptorErrorDiagnostics()
-		assert.match(diagnostic?.rawError ?? '', /Diagnostic inspection failed: prototype inaccessible/u)
+		assert.equal(diagnostic?.rawError, '[Error details could not be inspected]')
 		assert.equal(diagnostic?.code, 'unexpected_error')
 	})
 
-	test('preserves hidden and nested error fields when another field is unreadable', async () => {
+	test('keeps standard AggregateError fields without inspecting hidden or custom fields', async () => {
 		browserMock.reset()
 		const { getInterceptorErrorDiagnostics, reportUnexpectedError } = await modulesPromise
 		const error = new AggregateError([new Error('first failure')], 'batch failed')
+		let getterReads = 0
 		Object.defineProperty(error, 'hiddenCode', { value: 'E_BATCH' })
-		Object.defineProperty(error, 'unreadable', { enumerable: true, get: () => { throw new Error('getter failed') } })
+		Object.defineProperty(error, 'unreadable', { enumerable: true, get: () => { getterReads += 1; throw new Error('getter failed') } })
 		Object.defineProperty(error, 'data', { value: { value: 'kept', toJSON: () => { throw new Error('toJSON failed') } } })
 
 		await withSilencedConsole(async () => await reportUnexpectedError(error))
@@ -716,10 +745,10 @@ describe('unexpected error diagnostics', () => {
 		assert.equal(rawError.message, 'batch failed')
 		assert.match(rawError.stack, /AggregateError: batch failed/u)
 		assert.equal(rawError.errors[0].message, 'first failure')
-		assert.equal(rawError.hiddenCode, 'E_BATCH')
-		assert.equal(rawError.unreadable, '[Unreadable property: getter failed]')
-		assert.equal(rawError.data.value, 'kept')
-		assert.equal(rawError.data.toJSON, '[Function toJSON]')
+		assert.equal(rawError.hiddenCode, undefined)
+		assert.equal(rawError.unreadable, undefined)
+		assert.equal(rawError.data, undefined)
+		assert.equal(getterReads, 0)
 	})
 
 	test('records a raw error even when its message getter throws', async () => {
@@ -734,7 +763,7 @@ describe('unexpected error diagnostics', () => {
 		const diagnostic = (await getInterceptorErrorDiagnostics())[0]
 		if (diagnostic?.rawError === undefined) throw new Error('missing raw error')
 		const rawError = JSON.parse(diagnostic.rawError)
-		assert.equal(rawError.message, '[Unreadable property: message getter failed]')
+		assert.equal(rawError.message, undefined)
 		assert.equal(rawError.stack, error.stack)
 		assert.equal((await getLatestUnexpectedError())?.data.message, GENERIC_UNEXPECTED_ERROR_MESSAGE)
 	})
@@ -771,7 +800,7 @@ describe('unexpected error diagnostics', () => {
 		assert.equal(diagnostic?.debugId, 'popup-1234')
 	})
 
-	test('forwards popup listener stack, cause, and custom fields into stored diagnostics', async () => {
+	test('forwards popup listener stack and cause without custom fields', async () => {
 		browserMock.reset()
 		const { noReplyExpectingBrowserRuntimeOnMessageListener } = await import('../../app/ts/utils/browser.js')
 		const { UnexpectedErrorOccured } = await import('../../app/ts/types/interceptor-reply-messages.js')
@@ -791,7 +820,7 @@ describe('unexpected error diagnostics', () => {
 		const rawError = JSON.parse(diagnostic.rawError)
 		assert.equal(rawError.stack, error.stack)
 		assert.equal(rawError.cause.message, 'root failure')
-		assert.equal(rawError.code, 'E_POPUP')
+		assert.equal(rawError.code, undefined)
 		assert.equal(diagnostic.cause, 'Popup listener failed')
 	})
 

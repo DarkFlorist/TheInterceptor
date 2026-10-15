@@ -1,5 +1,4 @@
 import { getRpcEntryIdentityKey } from '../utils/rpcNetworkChange.js'
-import { getErrorMessage } from '../utils/caughtErrors.js'
 import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
 import type { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, StoredWatchAssetRequest, TabState } from '../types/user-interface-types.js'
@@ -18,7 +17,7 @@ import { isValidEnsName } from '../utils/ens.js'
 import { modifyObject } from '../utils/typescript.js'
 import type { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { getLargeStateValue, prepareLargeStateWrite, setLargeStateValue, setLargeStateValues } from '../utils/largeStateStore.js'
-import type { InterceptorErrorDiagnostic } from '../types/errorDiagnostics.js'
+export { appendInterceptorErrorDiagnostic, clearInterceptorErrorDiagnostics, getInterceptorErrorDiagnostics } from './diagnosticStorage.js'
 import { SafeTransactionStacks } from '../types/safeTypes.js'
 import { createStoredValueRepository } from '../utils/storedValue.js'
 import { isValidErc20Decimals } from '../utils/erc20.js'
@@ -338,79 +337,6 @@ export async function getLatestUnexpectedError(): Promise<UnexpectedErrorOccured
 	console.warn(rawError)
 	await browserStorageLocalRemove('latestUnexpectedError')
 	return undefined
-}
-
-const MAX_INTERCEPTOR_ERROR_DIAGNOSTICS = 50
-const MAX_INTERCEPTOR_ERROR_DIAGNOSTICS_BYTES = 512_000
-const interceptorErrorDiagnosticsSemaphore = new Semaphore(1)
-
-function isDiagnosticStorageQuotaError(error: unknown) {
-	return getErrorMessage(error)?.toLowerCase().includes('quota') ?? false
-}
-
-function diagnosticStorageBytes(diagnostics: readonly InterceptorErrorDiagnostic[]) {
-	return new TextEncoder().encode(JSON.stringify(diagnostics)).length
-}
-
-function diagnosticStorageFailureRecord(diagnostic: InterceptorErrorDiagnostic): InterceptorErrorDiagnostic {
-	return {
-		...diagnostic,
-		message: 'Full diagnostic could not be stored. See the extension console for the raw error.',
-		cause: undefined,
-		rawError: 'The raw error exceeded the diagnostic storage budget or available storage quota.',
-		details: undefined,
-	}
-}
-
-async function storeDiagnosticStorageFailureRecord(diagnostic: InterceptorErrorDiagnostic): Promise<'stored' | 'storage-full'> {
-	try {
-		await browserStorageLocalSet({ interceptorErrorDiagnostics: [diagnosticStorageFailureRecord(diagnostic)] })
-		return 'stored'
-	} catch (error) {
-		if (!isDiagnosticStorageQuotaError(error)) throw error
-		return 'storage-full'
-	}
-}
-
-export async function getInterceptorErrorDiagnostics(): Promise<readonly InterceptorErrorDiagnostic[]> {
-	try {
-		return (await browserStorageLocalGet('interceptorErrorDiagnostics'))?.interceptorErrorDiagnostics ?? []
-	} catch (error) {
-		console.warn('interceptorErrorDiagnostics were corrupt:')
-		console.warn(error)
-		await browserStorageLocalRemove('interceptorErrorDiagnostics')
-		return []
-	}
-}
-
-export async function appendInterceptorErrorDiagnostic(diagnostic: InterceptorErrorDiagnostic): Promise<'stored' | 'storage-full'> {
-	return await interceptorErrorDiagnosticsSemaphore.execute(async () => {
-		const diagnostics = await getInterceptorErrorDiagnostics()
-		const retained = [...diagnostics, diagnostic].slice(-MAX_INTERCEPTOR_ERROR_DIAGNOSTICS)
-		while (retained.length > 1 && diagnosticStorageBytes(retained) > MAX_INTERCEPTOR_ERROR_DIAGNOSTICS_BYTES) retained.shift()
-		if (diagnosticStorageBytes(retained) > MAX_INTERCEPTOR_ERROR_DIAGNOSTICS_BYTES) {
-			return await storeDiagnosticStorageFailureRecord(diagnostic)
-		}
-		while (true) {
-			try {
-				await browserStorageLocalSet({ interceptorErrorDiagnostics: retained })
-				return 'stored'
-			} catch (error) {
-				if (!isDiagnosticStorageQuotaError(error)) throw error
-				if (retained.length > 1) {
-					retained.shift()
-					continue
-				}
-				return await storeDiagnosticStorageFailureRecord(diagnostic)
-			}
-		}
-	})
-}
-
-export async function clearInterceptorErrorDiagnostics() {
-	await interceptorErrorDiagnosticsSemaphore.execute(async () => {
-		await browserStorageLocalRemove('interceptorErrorDiagnostics')
-	})
 }
 
 export const getEnsNodeHashes = async () => (await browserStorageLocalGet('ensNameHashes'))?.ensNameHashes ?? []

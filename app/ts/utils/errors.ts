@@ -1,12 +1,13 @@
 import { sendPopupMessageToOpenWindowsWithoutUnexpectedErrorReport } from '../background/backgroundUtils.js'
 import { appendInterceptorErrorDiagnostic, setLatestUnexpectedError } from '../background/storageVariables.js'
 import type { JsonRpcErrorResponse } from '../types/JsonRpc-types.js'
+import { InterceptorError } from '../types/JsonRpc-types.js'
 import type { InterceptorErrorCategory, InterceptorErrorDiagnostic, InterceptorErrorSeverity } from '../types/errorDiagnostics.js'
 import type { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { getErrorMessage, getInterceptorInternalErrorClassification, isBrowserFetchTransportError } from './caughtErrors.js'
 import { NEW_BLOCK_ABORT } from './constants.js'
 import { createErrorDebugId, createUnexpectedErrorPopupMessage } from './unexpectedErrorPopupMessage.js'
-import { stringifyDiagnosticDetails } from './diagnosticSerialization.js'
+import { stringifyDiagnosticDetails, stringifyErrorForDiagnostic } from './diagnosticSerialization.js'
 export { createInterceptorInternalError, getErrorMessage, hasInterceptorInternalErrorCode } from './caughtErrors.js'
 
 export const GENERIC_UNEXPECTED_ERROR_MESSAGE = 'An internal Interceptor error occurred. Please see The Interceptor console for technical details.'
@@ -116,12 +117,11 @@ function getForwardedDiagnostics(error: unknown): string | undefined {
 	if (typeof error !== 'object' || error === null) return undefined
 	try {
 		if (Object.getOwnPropertyDescriptor(error, 'method')?.value !== 'InterceptorError') return undefined
-		const params = Object.getOwnPropertyDescriptor(error, 'params')?.value
-		if (!Array.isArray(params) || params.length !== 1) return undefined
-		const message = Object.getOwnPropertyDescriptor(params, '0')?.value
-		return typeof message === 'string' ? message : undefined
+		if (!Array.isArray(Object.getOwnPropertyDescriptor(error, 'params')?.value)) return undefined
+		const parsed = InterceptorError.safeParse(error)
+		return parsed.success ? parsed.value.params[0] : undefined
 	} catch {
-		// A hostile descriptor cannot prevent the raw error from being recorded.
+		// A hostile object cannot prevent the original error from being recorded.
 		return undefined
 	}
 }
@@ -159,7 +159,7 @@ function createErrorReport(error: unknown, metadata: ErrorReportMetadata, policy
 		timestamp: new Date(),
 		message,
 		cause: getErrorMessage(error),
-		rawError: stringifyDiagnosticDetails(metadata.rawError ?? getForwardedDiagnostics(error) ?? stringifyDiagnosticDetails(error)),
+		rawError: stringifyDiagnosticDetails(metadata.rawError ?? getForwardedDiagnostics(error) ?? stringifyErrorForDiagnostic(error)),
 		source,
 		code: metadata.code ?? defaultCode,
 		category: metadata.category ?? policy.category,
