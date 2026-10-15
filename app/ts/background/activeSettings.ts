@@ -1,4 +1,3 @@
-import { startBackgroundTask } from './backgroundTasks.js'
 import { publishFailedPopupVisualisation } from './popupVisualisationUpdater.js'
 import { schedulePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
@@ -8,7 +7,7 @@ import type { RpcNetwork } from '../types/rpc.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { Semaphore } from '../utils/semaphore.js'
 import type { WebsiteAccessUpdate } from './accessManagement.js'
-import { reconcileWebsiteApprovalAccesses, finishWebsiteAccessUpdate, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts } from './accessManagement.js'
+import { reconcileWebsiteApprovalAccesses, scheduleWebsiteAccessUiUpdate, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts } from './accessManagement.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { changeSimulationMode, getSettings, setUseSignersAddressAsActiveAddress, trackPreviousActiveAddressForMakeMeRichList } from './settings.js'
@@ -68,7 +67,6 @@ type ActiveSettingsTransition = {
 	readonly change: ActiveAddressAndChainChange
 	readonly simulationSignerSelection?: { readonly useSignerAddress: boolean, readonly signerAddress: bigint | undefined }
 	readonly signingPreference?: SigningAddressPreference
-	readonly skipSimulationRefresh?: boolean
 }
 
 const changeActiveAddressAndChainSemaphore = new Semaphore(1)
@@ -138,7 +136,7 @@ async function runActiveSettingsChange(
 				await sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
 			}
 			// External-wallet signing has no simulated stack; Safe signing retains its separate stack visualization.
-			if (!transition.skipSimulationRefresh && (updatedSettings.simulationMode || updatedSettings.activeSigningSafeAddress !== undefined) && (rpcEndpointChanged || !activeStackContextsEqual(getActiveStackContext(previousSettings), getActiveStackContext(updatedSettings)))) {
+			if ((updatedSettings.simulationMode || updatedSettings.activeSigningSafeAddress !== undefined) && (rpcEndpointChanged || !activeStackContextsEqual(getActiveStackContext(previousSettings), getActiveStackContext(updatedSettings)))) {
 				await schedulePopupSimulationRefresh(simulationServicesOwner.getCurrent())
 			}
 			await sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await getSettings())
@@ -147,7 +145,7 @@ async function runActiveSettingsChange(
 		// Complete committed access updates after releasing the semaphore, even if a later reset or notification fails.
 		if (accessUpdate !== undefined) {
 			const update = accessUpdate
-			startBackgroundTask(async () => await finishWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, update, change.promptForAccessesIfNeeded ?? true))
+			scheduleWebsiteAccessUiUpdate(simulationServicesOwner, websiteTabConnections, update, change.promptForAccessesIfNeeded ?? true)
 		}
 	}
 }
@@ -169,7 +167,6 @@ export async function activateAddressSelection(
 		readonly signerAddress: bigint | undefined
 		readonly rpcNetwork?: RpcNetwork
 		readonly promptForAccessesIfNeeded?: boolean
-		readonly skipSimulationRefresh?: boolean
 	},
 ): Promise<void> {
 	const selectedSafe = selection?.type === 'addressBookEntry' && selection.entry.type === 'safe' ? selection.entry : undefined
@@ -181,7 +178,6 @@ export async function activateAddressSelection(
 			? { signerAddress: options.signerAddress, selection: 'signer' }
 			: { signerAddress: options.signerAddress, selection: 'safe', safeAddress: selectedSafe.address, chainId: selectedSafe.chainId }
 	return await runActiveSettingsChange(simulationServicesOwner, websiteTabConnections, {
-		skipSimulationRefresh: options.skipSimulationRefresh,
 		change: {
 			simulationMode: options.simulationMode,
 			activeAddress: selection?.type === 'signer' ? selection.address : selection?.entry.address,

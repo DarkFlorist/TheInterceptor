@@ -29,7 +29,7 @@ async function completesPromptly<T>(result: Promise<T>) {
 
 describe('UI mutation completion', () => {
 	test.each(['rich', 'reset', 'remove', 'time', 'transaction time', 'gas', 'network', 'mode', 'safe'] as const)('%s edit completes while its simulation refresh is pending', async operation => {
-		installBrowserMock()
+		const { runtimeMessages } = installBrowserMock()
 		const modules = await loadModules()
 		const handlers = await import('../../app/ts/background/popupMessageHandlers.js')
 		const { dispatchPopupMessage } = await import('../../app/ts/background/popupMessageDispatcher.js')
@@ -78,6 +78,7 @@ describe('UI mutation completion', () => {
 				const saved = (await modules.getInterceptorTransactionStack()).operations[0]
 				assert.ok(saved?.type === 'Transaction')
 				assert.equal(saved.preSimulationTransaction.signedTransaction.gas, 30_000n)
+				assert.equal(runtimeMessages.some(message => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions'), false, 'Stack-only gas edits must not broadcast an empty confirmation list')
 			}
 			// The settings coordinator must be available even while the earlier refresh is blocked.
 			const next = await completesPromptly(dispatchPopupMessage(context, { method: 'popup_modifyMakeMeRich', data: { address: 'CurrentAddress', add: false } }))
@@ -191,7 +192,7 @@ describe('UI mutation completion', () => {
 	test.each([false, true])('access UI failure is awaited only by the synchronous API (deferred=%s)', async deferred => {
 		installBrowserMock()
 		const modules = await loadModules()
-		const { reconcileWebsiteAccessAndScheduleUiUpdates, updateWebsiteApprovalAccesses } = await import('../../app/ts/background/accessManagement.js')
+		const { reconcileWebsiteApprovalAccesses, scheduleWebsiteAccessUiUpdate, updateWebsiteApprovalAccesses } = await import('../../app/ts/background/accessManagement.js')
 		const { ethereum, tokenPriceService } = createEthereumWithGetBlockCounter({ count: 0 })
 		const owner = createTestSimulationServicesOwner({ ethereum, tokenPriceService })
 		const settings = await modules.getSettings()
@@ -205,7 +206,8 @@ describe('UI mutation completion', () => {
 			return await originalGet(keys)
 		} })
 		if (deferred) {
-			await reconcileWebsiteAccessAndScheduleUiUpdates(owner, connections, settings, false, true)
+			const update = await reconcileWebsiteApprovalAccesses(connections, settings, true)
+			scheduleWebsiteAccessUiUpdate(owner, connections, update, false)
 			await waitForBackgroundTasks()
 			assert.equal((await modules.getLatestUnexpectedError())?.data.message, 'Cannot read access icon targets')
 		} else {
@@ -216,13 +218,18 @@ describe('UI mutation completion', () => {
 	test('reports follow-up failures after a local command has completed', async () => {
 		installBrowserMock()
 		const modules = await loadModules()
-		const { startBackgroundTask } = await import('../../app/ts/background/backgroundTasks.js')
+		const { backgroundTaskSupervisor } = await import('../../app/ts/background/backgroundTasks.js')
 		const release = createDeferredSignal()
-		startBackgroundTask(async () => { await release.promise; throw new Error('Deferred UI work failed') })
+		const completion = backgroundTaskSupervisor.start({ source: 'test_deferred_ui', details: { address: 42n } }, async () => { await release.promise; throw new Error('Deferred UI work failed') })
 		assert.equal(await modules.getLatestUnexpectedError(), undefined)
+		assert.ok(backgroundTaskSupervisor.getPendingTasks().some(task => task.source === 'test_deferred_ui'))
 		release.resolve()
 		await waitForBackgroundTasks()
-		assert.equal((await modules.getLatestUnexpectedError())?.data.message, 'Deferred UI work failed')
+		assert.equal((await completion).status, 'failed')
+		const reported = await modules.getLatestUnexpectedError()
+		assert.equal(reported?.data.message, 'Deferred UI work failed')
+		assert.equal(reported?.data.source, 'test_deferred_ui')
+		assert.deepEqual(backgroundTaskSupervisor.getPendingTasks(), [])
 	})
 
 	test.each([false, true])('superseded visualization errors are reported or propagated (throw=%s)', async throwOnUnexpectedError => {

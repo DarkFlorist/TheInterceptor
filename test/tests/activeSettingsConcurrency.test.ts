@@ -1,6 +1,6 @@
 import { waitForBackgroundTasks } from './backgroundTasksTestHarness.js'
 import * as assert from 'node:assert'
-import { afterEach, describe, expect, spyOn, test } from 'bun:test'
+import { afterEach, describe, expect, test } from 'bun:test'
 import type { ContactEntry, SafeEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { TabConnection, WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
 import { ICON_NOT_ACTIVE } from '../../app/ts/utils/constants.js'
@@ -31,7 +31,7 @@ function pauseAfterFirstStorageWrite(key: string) {
 afterEach(waitForBackgroundTasks)
 
 describe('active settings concurrency', () => {
-	test('grants access to a new Safe and replies without scheduling a simulation refresh', async () => {
+	test('grants access to a new Safe while its background simulation refresh is pending', async () => {
 		const { runtimeMessages } = installBrowserMock()
 		const { changeSimulationMode, updateUserAddressBookEntries, updatePendingAccessRequests, resolveInterceptorAccess, getPendingAccessRequests, getSettings, updateTabState, websiteSocketToString } = await loadModules()
 		await changeSimulationMode({ simulationMode: false, activeSigningAddress: firstAddress.address })
@@ -45,7 +45,7 @@ describe('active settings concurrency', () => {
 			[websiteSocketToString(socket)]: { port, socket, websiteOrigin: website.websiteOrigin, approved: false, wantsToConnect: true },
 		} }]])
 		await updatePendingAccessRequests(async () => [{
-			website, socket, accessRequestId: 'access-without-refresh', simulationMode: false,
+			website, socket, accessRequestId: 'access-with-background-refresh', simulationMode: false,
 			requestAccessToAddress: selectedAddress, originalRequestAccessToAddress: firstAddress,
 			associatedAddresses: [], signerAccounts: [firstAddress.address], signerName: 'MetaMask',
 			popupOrTabId: { type: 'popup', id: 1 }, activeAddress: firstAddress.address,
@@ -53,22 +53,38 @@ describe('active settings concurrency', () => {
 		}])
 		const getBlockCalls = { count: 0 }
 		const { ethereum, simulationServicesOwner } = createEthereumWithGetBlockCounter(getBlockCalls)
-		const cachedBlock = spyOn(ethereum, 'getCachedBlock')
+		const refreshStarted = createDeferredSignal()
+		const releaseRefresh = createDeferredSignal()
+		const originalSend = browser.runtime.sendMessage.bind(browser.runtime)
+		Object.defineProperty(browser.runtime, 'sendMessage', { configurable: true, value: async (message: { method?: string }) => {
+			if (message.method === 'popup_isSimulationVisualizerOpen') {
+				refreshStarted.resolve()
+				await releaseRefresh.promise
+			}
+			return await originalSend(message)
+		} })
 		const approval = resolveInterceptorAccess(simulationServicesOwner, connections, {
-			userReply: 'Approved', accessRequestId: 'access-without-refresh',
+			userReply: 'Approved', accessRequestId: 'access-with-background-refresh',
 			requestAccessToAddress: secondAddress.address, originalRequestAccessToAddress: firstAddress.address,
 		}, noopPublishRpcConnectionStatus)
+		let approvalTimeout: ReturnType<typeof setTimeout> | undefined
 		try {
-			await approval
+			await Promise.race([approval, new Promise<never>((_, reject) => {
+				approvalTimeout = setTimeout(() => reject(new Error('Grant Access waited for simulation')), 1000)
+			})])
+			await refreshStarted.promise
 			assert.equal((await getPendingAccessRequests()).length, 0)
 			assert.equal((await getSettings()).activeSigningSafeAddress, secondAddress.address)
 			assert.deepEqual((await getSettings()).websiteAccess[0]?.addressAccess, [{ address: secondAddress.address, access: true }])
 			assert.deepEqual(messages.filter(message => message.method === 'eth_accounts' && message.requestId === 10).map(message => message.result), [['0x0000000000000000000000000000000000000002']])
-			assert.equal(cachedBlock.mock.calls.length, 0, 'Approval must not enqueue a refresh')
-			assert.equal(getBlockCalls.count, 0, 'Approval must not request simulation blocks')
-			assert.equal(runtimeMessages.some(message => message.method === 'popup_isSimulationVisualizerOpen'), false)
+			assert.equal(getBlockCalls.count, 0, 'Approval must not wait for simulation blocks')
+			const { getPopupVisualisationState } = await import('../../app/ts/background/storageVariables.js')
+			assert.equal((await getPopupVisualisationState()).simulationResultState, 'invalid')
+			assert.ok(runtimeMessages.some(message => message.method === 'popup_simulation_state_changed'))
 		} finally {
-			cachedBlock.mockRestore()
+			clearTimeout(approvalTimeout)
+			releaseRefresh.resolve()
+			await waitForBackgroundTasks()
 		}
 	})
 

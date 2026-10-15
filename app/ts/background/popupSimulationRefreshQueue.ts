@@ -1,7 +1,7 @@
 // Coalesce interactive requests only; popupVisualisationUpdater owns execution, cancellation and stored state. See docs/popup-simulation-refresh.md.
 import { Future } from '../utils/future.js'
 import type { SimulationServices } from '../simulation/serviceLifecycle.js'
-import { startBackgroundTask } from './backgroundTasks.js'
+import { backgroundTaskSupervisor } from './backgroundTasks.js'
 import { preparePopupVisualisationRefresh, type PopupVisualisationRefreshRequest } from './popupVisualisationUpdater.js'
 
 export type PopupSimulationRefresh = SimulationServices & { readonly invalidateOldState?: boolean }
@@ -65,5 +65,5 @@ export async function queuePopupSimulationRefresh(services: PopupSimulationRefre
 export async function schedulePopupSimulationRefresh(services: PopupSimulationRefresh) {
 	const request = await preparePopupVisualisationRefresh(services, true)
 	if (request === undefined) return
-	startBackgroundTask(async () => await refreshRevision(request))
+	backgroundTaskSupervisor.start({ source: 'popup_simulation_refresh' }, async () => await refreshRevision(request))
 }

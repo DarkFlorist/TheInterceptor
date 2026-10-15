@@ -1,4 +1,4 @@
-import { startBackgroundTask } from './backgroundTasks.js'
+import { backgroundTaskSupervisor } from './backgroundTasks.js'
 import { schedulePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
 import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
@@ -11,7 +11,7 @@ import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransacti
 import { askForSignerAccountsFromSignerIfNotAvailable, getAddressMetadataForAccess, refreshSignerAccountsForTab, refreshSignerAccountsFromApprovedWebsitePorts, requestAddressChange, resolveInterceptorAccess, type SignerAccountRefreshOptions } from './windows/interceptorAccess.js'
 import { resolveChainChange } from './windows/changeChain.js'
 import { changeActiveRpc } from './walletSwitch.js'
-import { reconcileWebsiteAccessAndScheduleUiUpdates } from './accessManagement.js'
+import { reconcileWebsiteApprovalAccesses, scheduleWebsiteAccessUiUpdate } from './accessManagement.js'
 import { getActiveOrFirstSignerAddress, getHtmlFile, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getActiveAddressForCurrentSignerState, sendCallbackToAllConfirmedSignerOwners, sendCallbackToConfirmedSignerOwner } from './signerStateOwnership.js'
 import { findEntryWithSymbolOrName, getMetadataForAddressBookData } from './metadataSearch.js'
@@ -285,7 +285,8 @@ export async function removeAddressBookEntry(simulationServicesOwner: Simulation
 		&& (contact.chainId === removeAddressBookEntry.data.chainId || (contact.chainId === undefined && removeAddressBookEntry.data.chainId === 1n))))
 	)
 	if (removeAddressBookEntry.data.addressBookCategory === 'My Active Addresses' || removeAddressBookEntry.data.addressBookCategory === 'My Safes') {
-		await reconcileWebsiteAccessAndScheduleUiUpdates(simulationServicesOwner, websiteTabConnections, await getSettings(), true, false)
+		const accessUpdate = await reconcileWebsiteApprovalAccesses(websiteTabConnections, await getSettings(), false)
+		scheduleWebsiteAccessUiUpdate(simulationServicesOwner, websiteTabConnections, accessUpdate, true)
 	}
 	await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 }
@@ -333,7 +334,10 @@ export async function addOrModifyAddressBookEntry(simulationServicesOwner: Simul
 			}
 			return previousContacts.concat([entryToStore])
 		})
-		if (entryToStore.useAsActiveAddress) await reconcileWebsiteAccessAndScheduleUiUpdates(simulationServicesOwner, websiteTabConnections, await getSettings(), true, true)
+		if (entryToStore.useAsActiveAddress) {
+			const accessUpdate = await reconcileWebsiteApprovalAccesses(websiteTabConnections, await getSettings(), true)
+			scheduleWebsiteAccessUiUpdate(simulationServicesOwner, websiteTabConnections, accessUpdate, true)
+		}
 		void sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 		return { type: 'AddOrModifyAddressBookEntryReply' as const, ok: true as const }
 	} catch(error) {
@@ -411,7 +415,8 @@ export async function setSafeSimulationSigner(
 		}
 	}
 	if (updatedEntry.useAsActiveAddress) {
-		await reconcileWebsiteAccessAndScheduleUiUpdates(simulationServicesOwner, websiteTabConnections, await getSettings(), true, false)
+		const accessUpdate = await reconcileWebsiteApprovalAccesses(websiteTabConnections, await getSettings(), false)
+		scheduleWebsiteAccessUiUpdate(simulationServicesOwner, websiteTabConnections, accessUpdate, true)
 	}
 	await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 	return { type: 'SetSafeSimulationSignerReply' as const, ok: true as const }
@@ -428,10 +433,11 @@ export async function changeInterceptorAccess(simulationServicesOwner: Simulatio
 	})
 
 
-	await reconcileWebsiteAccessAndScheduleUiUpdates(simulationServicesOwner, websiteTabConnections, await getSettings(), true, false)
+	const accessUpdate = await reconcileWebsiteApprovalAccesses(websiteTabConnections, await getSettings(), false)
+	scheduleWebsiteAccessUiUpdate(simulationServicesOwner, websiteTabConnections, accessUpdate, true)
 	if (disabledSitesChanged) {
 		const origins = new Set(accessChange.data.map(change => change.newEntry.website.websiteOrigin))
-		startBackgroundTask(async () => await Promise.all([...origins].map(async origin => await reloadConnectedTabs(websiteTabConnections, origin))))
+		backgroundTaskSupervisor.start({ source: 'popup_changeInterceptorAccess', details: { websiteOrigins: [...origins] } }, async () => await Promise.all([...origins].map(async origin => await reloadConnectedTabs(websiteTabConnections, origin))))
 	}
 	await sendPopupMessageToOpenWindows({ method: 'popup_interceptor_access_changed' })
 }
@@ -1002,14 +1008,17 @@ export async function setEnsNameForHash(parsedRequest: SetEnsNameForHash) {
 
 export async function forceSetGasLimitForTransaction(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, parsedRequest: ForceSetGasLimitForTransaction) {
 	await setGasLimitForTransaction(parsedRequest.data.transactionIdentifier, parsedRequest.data.gasLimit)
-	// Publish the saved request immediately so confirmation cannot use its previous simulation.
-	await sendPopupMessageToOpenWindows({ method: 'popup_update_confirm_transaction_dialog_pending_transactions', data: {
-		pendingTransactionAndSignableMessages: (await getPendingTransactionsAndMessages()).map(toPopupPendingTransactionOrSignableMessage),
-		currentBlockNumber: ethereum.getCachedBlock()?.number ?? 0n,
-		rpcConnectionStatus: await getRpcConnectionStatus(),
-	} }, 'confirmTransaction')
+	// Stack-only edits have no confirmation request to update; never broadcast an empty confirmation list.
+	const pending = await getPendingTransactionsAndMessages()
+	if (pending.length > 0) {
+		await sendPopupMessageToOpenWindows({ method: 'popup_update_confirm_transaction_dialog_pending_transactions', data: {
+			pendingTransactionAndSignableMessages: pending.map(toPopupPendingTransactionOrSignableMessage),
+			currentBlockNumber: ethereum.getCachedBlock()?.number ?? 0n,
+			rpcConnectionStatus: await getRpcConnectionStatus(),
+		} }, 'confirmTransaction')
+	}
 	await schedulePopupSimulationRefresh({ ethereum, tokenPriceService, invalidateOldState: true })
-	startBackgroundTask(async () => await refreshPopupConfirmTransactionSimulation(ethereum, tokenPriceService))
+	backgroundTaskSupervisor.start({ source: 'popup_forceSetGasLimitForTransaction', details: parsedRequest.data }, async () => await refreshPopupConfirmTransactionSimulation(ethereum, tokenPriceService))
 }
 
 export async function changePreSimulationBlockTimeManipulation(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, parsedRequest: ChangePreSimulationBlockTimeManipulation) {

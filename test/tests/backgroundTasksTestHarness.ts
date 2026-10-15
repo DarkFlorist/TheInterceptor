@@ -1,17 +1,4 @@
-import { mock } from 'bun:test'
-import { startBackgroundTask } from '../../app/ts/background/backgroundTasks.js'
+import { backgroundTaskSupervisor } from '../../app/ts/background/backgroundTasks.js'
 
-// Keep test teardown bookkeeping out of the production background process.
-const runBackgroundTask = startBackgroundTask
-const pendingTasks = new Set<Promise<void>>()
-mock.module('../../app/ts/background/backgroundTasks.js', () => ({
-	startBackgroundTask: (task: () => Promise<unknown>) => {
-		const completion = runBackgroundTask(task).finally(() => { pendingTasks.delete(completion) })
-		pendingTasks.add(completion)
-		return completion
-	},
-}))
-
-export async function waitForBackgroundTasks() {
-	while (pendingTasks.size > 0) await Promise.all([...pendingTasks])
-}
+// Observe the same supervisor and completions used by the extension; no test execution wrapper.
+export const waitForBackgroundTasks = backgroundTaskSupervisor.waitForIdle

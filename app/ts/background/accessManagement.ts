@@ -1,4 +1,4 @@
-import { startBackgroundTask } from './backgroundTasks.js'
+import { backgroundTaskSupervisor } from './backgroundTasks.js'
 import { getActiveAddress, getActiveAddressesForAllTabs, getWebsiteSocketConnection, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
 import { getActiveAddressEntryForChain, getActiveAddresses } from './metadataUtils.js'
 import { requestAccessFromUser } from './windows/interceptorAccess.js'
@@ -285,7 +285,7 @@ async function promptForWebsiteAccesses(simulationServicesOwner: SimulationServi
 				await askUserForAccessOnConnectionUpdate(simulationServicesOwner, websiteTabConnections, connection.socket, connection.websiteOrigin, activeAddress, settings)
 			} catch (error) {
 				if (throwOnError) throw error
-				await reportUnexpectedError(error)
+				await reportUnexpectedError(error, { source: 'website_access_prompt', details: { websiteOrigin: connection.websiteOrigin, socket: connection.socket } })
 			}
 		}
 	}
@@ -445,7 +445,7 @@ export async function finishWebsiteAccessUpdate(
 		))
 	} catch (error) {
 		if (throwOnError) throw error
-		await reportUnexpectedError(error)
+		await reportUnexpectedError(error, { source: 'website_access_icons', details: { popupRefreshGeneration: update.popupRefreshGeneration } })
 	}
 }
 
@@ -461,17 +461,15 @@ export async function updateWebsiteApprovalAccesses(
 	return update.popupRefreshGeneration
 }
 
-// Acknowledgement covers permissions, blocking rules and provider notifications; reported prompt/icon failures cannot turn a committed save into a failed save.
-export async function reconcileWebsiteAccessAndScheduleUiUpdates(
+// Schedule only after reconciliation; save success covers committed permissions, while this completion covers prompt/icon work.
+export function scheduleWebsiteAccessUiUpdate(
 	simulationServicesOwner: SimulationServicesOwner | undefined,
 	websiteTabConnections: WebsiteTabConnections,
-	settings: Settings,
+	update: WebsiteAccessUpdate,
 	promptForAccessesIfNeeded: boolean,
-	throwOnReconciliationError = false,
-): Promise<number> {
-	const update = await reconcileWebsiteApprovalAccesses(websiteTabConnections, settings, throwOnReconciliationError)
-	startBackgroundTask(async () => await finishWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, update, promptForAccessesIfNeeded))
-	return update.popupRefreshGeneration
+) {
+	return backgroundTaskSupervisor.start({ source: 'website_access_ui', details: { popupRefreshGeneration: update.popupRefreshGeneration } },
+		async () => await finishWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, update, promptForAccessesIfNeeded))
 }
 
 export async function finalizeWebsiteAccessChange(
