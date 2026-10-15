@@ -106,6 +106,8 @@ class MockEthereumJSONRpcRequestHandler {
 	public balance = 0n
 	public storageResponse = testBytes32('beef')
 	public maxPriorityFeePerGasResponse = '0x3b9aca00'
+	public syncingResponse: unknown = false
+	public readonly ethSyncingBypassCacheArguments: boolean[] = []
 	public ethFeeHistoryCalls: EthereumJsonRpcRequest[] = []
 	public ethGetBalanceCalls: EthereumJsonRpcRequest[] = []
 	public ethGetStorageAtCalls: EthereumJsonRpcRequest[] = []
@@ -117,9 +119,12 @@ class MockEthereumJSONRpcRequestHandler {
 
 	public getChainId = async () => 5n
 
-	public readonly jsonRpcRequest = async (rpcRequest: EthereumJsonRpcRequest) => {
+	public readonly jsonRpcRequest = async (rpcRequest: EthereumJsonRpcRequest, _requestAbortController: AbortController | undefined = undefined, bypassCache = false) => {
 		switch (rpcRequest.method) {
 			case 'eth_blockNumber': return `0x${ blockNumber.toString(16) }`
+			case 'eth_syncing':
+				this.ethSyncingBypassCacheArguments.push(bypassCache)
+				return this.syncingResponse
 			case 'eth_getTransactionCount': return '0x0'
 			case 'eth_getBalance':
 				this.ethGetBalanceCalls.push(rpcRequest)
@@ -1647,6 +1652,41 @@ describe('SimulationModeEthereumClientService', () => {
 				await assert.rejects(async () => await ethereum.getMaxPriorityFeePerGas(undefined))
 			} finally {
 				requestHandler.maxPriorityFeePerGasResponse = '0x3b9aca00'
+			}
+		})
+
+		test('Ethereum client reads eth_syncing from the RPC node without the block cache and keeps client-specific progress fields', async () => {
+			assert.equal(EthereumJsonRpcRequest.parse({ method: 'eth_syncing', params: [] }).method, 'eth_syncing')
+			requestHandler.ethSyncingBypassCacheArguments.splice(0)
+			const syncingProgress = {
+				startingBlock: '0x0',
+				currentBlock: '0x80d5a9',
+				highestBlock: '0x80d5b0',
+				knownStates: '0x2a',
+				pulledStates: '0x29',
+				stages: [{ stage_name: 'Headers', block_number: '0x80d5b0' }],
+			}
+			try {
+				const syncedStatus = await ethereum.getSyncingStatus(undefined)
+				assert.equal(syncedStatus, false)
+				const syncedReply: RPCReply = { type: 'result', method: 'eth_syncing', result: syncedStatus }
+				assert.deepEqual(serialize(RPCReply, syncedReply), { type: 'result', method: 'eth_syncing', result: false })
+
+				requestHandler.syncingResponse = syncingProgress
+				const syncingStatus = await ethereum.getSyncingStatus(undefined)
+				assert.deepEqual(syncingStatus, { ...syncingProgress, startingBlock: 0n, currentBlock: 0x80d5a9n, highestBlock: 0x80d5b0n })
+				const syncingReply: RPCReply = { type: 'result', method: 'eth_syncing', result: syncingStatus }
+				const serializedReply = serialize(RPCReply, syncingReply)
+				assert.deepEqual(serializedReply, { type: 'result', method: 'eth_syncing', result: syncingProgress })
+				assert.deepEqual(RPCReply.parse(serializedReply), syncingReply)
+				assert.deepEqual(requestHandler.ethSyncingBypassCacheArguments, [true, true])
+
+				for (const malformedResponse of [true, null, { ...syncingProgress, currentBlock: '80d5a9' }, { startingBlock: '0x0', currentBlock: '0x80d5a9' }]) {
+					requestHandler.syncingResponse = malformedResponse
+					await assert.rejects(async () => await ethereum.getSyncingStatus(undefined))
+				}
+			} finally {
+				requestHandler.syncingResponse = false
 			}
 		})
 
