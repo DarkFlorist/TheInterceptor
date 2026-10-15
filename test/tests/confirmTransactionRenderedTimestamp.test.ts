@@ -1,5 +1,7 @@
 import * as assert from 'assert'
 import { encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
+import { encodeErrorString } from './errorDataFixtures.js'
+import { getFailureReasonForDisplay } from '../../app/ts/simulation/failureReasons.js'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { describe, test } from 'bun:test'
@@ -278,6 +280,37 @@ function makeSimulatedPendingTransaction(value: bigint) {
 	}
 }
 
+function makeGasEstimationFailedPendingTransaction(requestId: number, gasEstimationError: { code: number, message: string, data: string, insufficientBalanceMessage?: string }, transactionCreationFailureReason: string | undefined) {
+	const simulated = makeSimulatedPendingTransaction(0n)
+	const uniqueRequestIdentifier = { ...simulated.uniqueRequestIdentifier, requestId }
+	const transactionIdentifier = BigInt(requestId)
+	const transactionToSimulate = {
+		website: simulated.website,
+		created: simulated.created,
+		originalRequestParameters: simulated.originalRequestParameters,
+		transactionIdentifier,
+		success: false as const,
+		error: gasEstimationError,
+	}
+	return {
+		...simulated,
+		uniqueRequestIdentifier,
+		transactionIdentifier,
+		transactionOrMessageCreationStatus: 'FailedToSimulate' as const,
+		transactionToSimulate,
+		popupVisualisation: {
+			...simulated.popupVisualisation,
+			data: { ...simulated.popupVisualisation.data, uniqueRequestIdentifier, transactionToSimulate, transactionCreationFailureReason },
+		},
+	}
+}
+
+// Mirrors the background, which persists the raw gas estimation error and computes the displayed reason when it builds the popup visualisation.
+function makeRevertedGasEstimationPendingTransaction(revertReason: string, requestId: number) {
+	const gasEstimationError = { code: -32000, message: 'execution reverted', data: encodeErrorString(revertReason) }
+	return makeGasEstimationFailedPendingTransaction(requestId, gasEstimationError, getFailureReasonForDisplay([], gasEstimationError))
+}
+
 const { UpdateConfirmTransactionDialogPendingTransactions } = await import('../../app/ts/types/interceptor-messages.js')
 const { serialize } = await import('../../app/ts/types/wire-types.js')
 const { ConfirmTransaction } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
@@ -525,6 +558,133 @@ describe('ConfirmTransaction', () => {
 			})
 		})
 		assert.equal(dom.document.body.textContent?.includes('1.25 ether'), true)
+
+		await unmountConfirmTransaction(dom)
+		clock.restore()
+		dom.restore()
+	})
+
+	test('shows the visualised gas estimation failure reason in the current card and the stacked header', async () => {
+		const dom = installDomMock()
+		const clock = installDateMock('2024-01-01T00:00:10.000Z')
+		const browser = createBrowserMock()
+
+		await act(() => {
+			render(h(ConfirmTransaction, {}), dom.document.body)
+		})
+
+		await act(() => {
+			browser.dispatch({
+				role: 'all',
+				...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
+					method: 'popup_update_confirm_transaction_dialog_pending_transactions',
+					data: {
+						pendingTransactionAndSignableMessages: [makeRevertedGasEstimationPendingTransaction('STF', 1), makeRevertedGasEstimationPendingTransaction('SPL', 2)],
+						currentBlockNumber: 123n,
+						rpcConnectionStatus: undefined,
+					},
+				}),
+			})
+		})
+
+		const stfReason = 'STF - possible Uniswap V3 error: Token transfer from the sender via safeTransferFrom failed'
+		const splReason = 'SPL - possible Uniswap V3 error: The swap price limit is on the wrong side of the current price'
+		const stackedHeader = findRenderedElement(dom.document.body, (node) => node.tagName === 'HEADER' && node.textContent?.includes(splReason) === true)
+		const text = dom.document.body.textContent ?? ''
+		assert.equal(text.includes('Gas estimation error'), true)
+		assert.equal(text.includes(stfReason), true)
+		assert.notEqual(stackedHeader, undefined)
+		assert.equal(stackedHeader?.textContent?.includes(stfReason), false)
+
+		await unmountConfirmTransaction(dom)
+		clock.restore()
+		dom.restore()
+	})
+
+	test('shows the gas estimation failure reason instead of the simulation error when both failed', async () => {
+		const dom = installDomMock()
+		const clock = installDateMock('2024-01-01T00:00:10.000Z')
+		const browser = createBrowserMock()
+
+		await act(() => {
+			render(h(ConfirmTransaction, {}), dom.document.body)
+		})
+
+		const failedPendingTransaction = makePendingTransaction(new Date('2024-01-01T00:00:05.000Z'))
+		const transactionToSimulate = { ...failedPendingTransaction.transactionToSimulate, error: { code: -32000, message: 'execution reverted', data: encodeErrorString('STF') } }
+		const stfReason = getFailureReasonForDisplay([], transactionToSimulate.error)
+		const pendingTransaction = {
+			...failedPendingTransaction,
+			transactionToSimulate,
+			popupVisualisation: {
+				...failedPendingTransaction.popupVisualisation,
+				data: {
+					...failedPendingTransaction.popupVisualisation.data,
+					transactionToSimulate,
+					transactionCreationFailureReason: stfReason,
+					error: { code: -32000, message: 'eth_simulateV1 rejected the stack', decodedErrorMessage: 'eth_simulateV1 rejected the stack' },
+				},
+			},
+		}
+		await act(() => {
+			browser.dispatch({
+				role: 'all',
+				...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
+					method: 'popup_update_confirm_transaction_dialog_pending_transactions',
+					data: {
+						pendingTransactionAndSignableMessages: [pendingTransaction],
+						currentBlockNumber: 123n,
+						rpcConnectionStatus: undefined,
+					},
+				}),
+			})
+		})
+
+		const text = dom.document.body.textContent ?? ''
+		assert.equal(stfReason.startsWith('STF - possible Uniswap V3 error'), true)
+		assert.equal(text.includes('Gas estimation error'), true)
+		assert.equal(text.includes(stfReason), true)
+		assert.equal(text.includes('eth_simulateV1 rejected the stack'), false)
+
+		await unmountConfirmTransaction(dom)
+		clock.restore()
+		dom.restore()
+	})
+
+	test('falls back to the stored error for gas estimation failures visualised without a failure reason', async () => {
+		const dom = installDomMock()
+		const clock = installDateMock('2024-01-01T00:00:10.000Z')
+		const browser = createBrowserMock()
+
+		await act(() => {
+			render(h(ConfirmTransaction, {}), dom.document.body)
+		})
+
+		// Older versions replaced the raw message with the insufficient balance explanation and stored no separate failure reason.
+		const legacyInsufficientBalanceMessage = 'Insufficient USDC balance. Available: 1 USDC. Attempting to send: 2 USDC.'
+		const legacyPendingTransaction = makeGasEstimationFailedPendingTransaction(1, { code: -32000, message: legacyInsufficientBalanceMessage, data: encodeErrorString('ERC20: transfer amount exceeds balance') }, undefined)
+		// A current transaction keeps the raw message and an explicit override, which still wins if its visualisation lacks the computed reason.
+		const overrideInsufficientBalanceMessage = 'Insufficient ETH balance. Available: 1 ETH. Attempting to send: 2 ETH.'
+		const overridePendingTransaction = makeGasEstimationFailedPendingTransaction(2, { code: -32000, message: 'execution reverted', data: '0x', insufficientBalanceMessage: overrideInsufficientBalanceMessage }, undefined)
+		await act(() => {
+			browser.dispatch({
+				role: 'all',
+				...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
+					method: 'popup_update_confirm_transaction_dialog_pending_transactions',
+					data: {
+						pendingTransactionAndSignableMessages: [legacyPendingTransaction, overridePendingTransaction],
+						currentBlockNumber: 123n,
+						rpcConnectionStatus: undefined,
+					},
+				}),
+			})
+		})
+
+		const stackedHeader = findRenderedElement(dom.document.body, (node) => node.tagName === 'HEADER' && node.textContent?.includes(overrideInsufficientBalanceMessage) === true)
+		const text = dom.document.body.textContent ?? ''
+		assert.equal(text.includes('Gas estimation error'), true)
+		assert.equal(text.includes(legacyInsufficientBalanceMessage), true)
+		assert.notEqual(stackedHeader, undefined)
 
 		await unmountConfirmTransaction(dom)
 		clock.restore()
