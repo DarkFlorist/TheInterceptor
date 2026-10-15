@@ -1,3 +1,5 @@
+import { isSignerIndependentRpcMethod } from './signerRequestPolicy.js'
+import { isTopFrameId } from '../utils/requests.js'
 import { prepareSafeAppsRequest } from './safeAppsRequestHandler.js'
 import type { RpcRequestContext } from '../types/confirmationRequest.js'
 import type { InpageScriptRequest, RPCReply, Settings } from '../types/interceptor-messages.js'
@@ -26,6 +28,8 @@ import { buildExecutionSimulationStateFromPreparedInput, getCurrentSimulationInp
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { getWalletSelectedAccount, isActiveSigningSafe } from '../utils/activeAddressSelection.js'
 import { isAccountConnectionMethod, isAccountOnlyMethod } from './accountRequestMethods.js'
+import { beginSignerProviderSelection, finishSignerProviderSelection, signerProviderSelected, signerProvidersChanged } from './signerProviderSelection.js'
+import { isAuthoritativeTopSocket, socketCanExecuteWithSelectedSigner } from './signerExecutionAuthority.js'
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
 import { getActiveAddressForCurrentSignerState, getConfirmedSignerStateToken, isSignerStateTokenCurrent } from './signerStateOwnership.js'
@@ -52,6 +56,10 @@ const INTERNAL_PROVIDER_METHODS = [
 	'safe_apps_request',
 	'signer_chainChanged',
 	'signer_reply',
+	'signer_provider_selected',
+	'signer_providers_changed',
+	'begin_signer_provider_selection',
+	'finish_signer_provider_selection',
 	'wallet_switchEthereumChain_reply',
 ] as const
 
@@ -403,7 +411,44 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 		return replyToInterceptedRequest(websiteTabConnections, { ...getRequestWithDefinedParams(request), ...result })
 	}
 	const initialActiveAddress = await getActiveAddressForRequest(initialSettings, websiteTabConnections, socket.tabId)
+	const signerIndependentRpc = initialSettings.activeRpcNetwork.httpsRpc !== undefined
+		&& isSignerIndependentRpcMethod(request.method)
+	const requestCanReachSigner = (!initialSettings.simulationMode && !signerIndependentRpc)
+		|| request.method === 'wallet_watchAsset'
+		|| (initialSettings.useSignersAddressAsActiveAddress && (isAccountConnectionMethod(request.method) || isAccountOnlyMethod(request.method)))
 	if (request.interceptorInternalRequest !== true && isInternalProviderMethod(request.method)) return refusePublicInternalProviderMethod(websiteTabConnections, request)
+	const isTopFrame = port !== undefined && isTopFrameId(port.sender?.frameId) && isAuthoritativeTopSocket(socket)
+	if (request.method === 'signer_providers_changed') {
+		const result = await signerProvidersChanged(request, websiteOrigin, isTopFrame, port?.sender?.frameId)
+		return replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'signer_providers_changed', result, uniqueRequestIdentifier: request.uniqueRequestIdentifier })
+	}
+	if (request.method === 'signer_provider_selected') {
+		await signerProviderSelected(request, websiteOrigin, isTopFrame, port?.sender?.frameId, websiteTabConnections)
+		return replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'signer_provider_selected', result: '0x', uniqueRequestIdentifier: request.uniqueRequestIdentifier })
+	}
+	if (request.method === 'begin_signer_provider_selection') {
+		const result = await beginSignerProviderSelection(request, websiteOrigin, isTopFrame, port?.sender?.frameId)
+		return replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'begin_signer_provider_selection', result, uniqueRequestIdentifier: request.uniqueRequestIdentifier })
+	}
+	if (request.method === 'finish_signer_provider_selection') {
+		finishSignerProviderSelection(request)
+		return replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'finish_signer_provider_selection', result: '0x', uniqueRequestIdentifier: request.uniqueRequestIdentifier })
+	}
+	if (request.interceptorInternalRequest !== true
+		&& requestCanReachSigner
+		&& !request.usingInterceptorWithoutSigner
+		&& !(isAccountConnectionMethod(request.method)
+			&& (initialActiveAddress !== undefined || getWebsiteAccessApprovalState(initialSettings.websiteAccess, websiteOrigin) !== 'hasAccess'))
+		&& !socketCanExecuteWithSelectedSigner(request.uniqueRequestIdentifier.requestSocket)) {
+		return replyToInterceptedRequest(websiteTabConnections, {
+			type: 'result',
+			...getRequestWithDefinedParams(request),
+			error: {
+				code: METAMASK_ERROR_NOT_AUTHORIZED,
+				message: 'The selected signer provider is not ready for this frame. Retry the request after wallet synchronization completes.',
+			},
+		})
+	}
 	const providerHandler = getProviderHandler(request.method)
 	const identifiedMethod = providerHandler.method
 	if (identifiedMethod !== 'notProviderMethod') {

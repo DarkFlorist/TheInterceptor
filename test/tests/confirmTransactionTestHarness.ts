@@ -1,3 +1,4 @@
+import { authorizeLegacySignerSocket } from './backgroundEthAccountsTestHarness.js'
 import multiSendLibrary from '../fixtures/safe-libraries/MultiSendCallOnly.json'
 import signMessageLibrary from '../fixtures/safe-libraries/SignMessageLib.json'
 import { SAFE_MULTI_SEND_CALL_ONLY, SAFE_SIGN_MESSAGE_LIB } from '../../app/ts/safe/safeDelegateCalls.js'
@@ -611,6 +612,8 @@ export function createRecordingPort(postedMessages: unknown[]): browser.runtime.
 }
 
 export function createWebsitePort(socket: { readonly tabId: number, readonly connectionName: bigint }, frameId: number, postedMessages: unknown[], onPostMessage?: (message: unknown) => void): browser.runtime.Port {
+	// These fixtures model a wallet whose initial provider catalog has already reconciled.
+	if (frameId === 0) authorizeLegacySignerSocket(socket)
 	return {
 		...createRecordingPort(postedMessages),
 		name: `0x${ socket.connectionName.toString(16) }`,

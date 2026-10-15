@@ -1,3 +1,4 @@
+import { authorizeLegacySignerSocket } from './backgroundEthAccountsTestHarness.js'
 import { notifyWebsiteLifecycle } from '../../app/ts/background/websiteLifecycle.js'
 import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
 import * as assert from 'assert'
@@ -613,6 +614,7 @@ describe('background eth_accounts', () => {
 		const safeAddress = signerAddress
 		const formerOwner = 0x4747474747474747474747474747474747474747n
 		const socket = { tabId: 197, connectionName: 0n }
+		authorizeLegacySignerSocket(socket)
 		await changeSimulationMode({ simulationMode: false, activeSigningAddress: signerAddress, activeSigningSafeAddress: safeAddress })
 		await updateUserAddressBookEntries(() => [{
 			type: 'safe',

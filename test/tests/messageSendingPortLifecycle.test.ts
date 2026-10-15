@@ -2,6 +2,7 @@ import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { replyToInterceptedRequest, replyToInterceptedRequestAfterManifestV2Reconnect, sendSubscriptionReplyOrCallBack, sendSubscriptionReplyOrCallBackAfterManifestV2Reconnect, sendSubscriptionReplyOrCallBackToPort } from '../../app/ts/background/messageSending.js'
 import { websiteSocketToString } from '../../app/ts/background/backgroundUtils.js'
+import { allowLegacySignerExecution, clearSignerExecutionAuthorityForTab, reconcileSignerExecutionDocument, registerAuthoritativeTopSocket } from '../../app/ts/background/signerExecutionAuthority.js'
 
 function installBrowserMock() {
 	globalThis.browser = {
@@ -159,6 +160,10 @@ describe('background messageSending port lifecycle', () => {
 
 	test('reconnects an MV2 content-script port before requesting signer accounts', async () => {
 		const socket = { tabId: 1, connectionName: 0x123n }
+		clearSignerExecutionAuthorityForTab(socket.tabId)
+		registerAuthoritativeTopSocket(socket, 'https://example.test')
+		reconcileSignerExecutionDocument(socket, 'https://example.test', '11111111-1111-4111-8111-111111111111', true, 0)
+		allowLegacySignerExecution(socket, 'https://example.test')
 		const connectionKey = websiteSocketToString(socket)
 		const postedMessages: unknown[] = []
 		const connectedPort = createPort((message) => { postedMessages.push(message) })

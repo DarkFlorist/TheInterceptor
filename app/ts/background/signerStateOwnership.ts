@@ -7,6 +7,7 @@ import { sendInternalWindowMessage, websiteSocketToString } from './backgroundUt
 import { updateTabState } from './storageVariables.js'
 import { METAMASK_ERROR_PROVIDER_DISCONNECTED } from '../utils/constants.js'
 import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
+import { socketCanExecuteWithSelectedSigner } from './signerExecutionAuthority.js'
 
 const SIGNER_STATE_CONFIRMATION_TIMEOUT_MS = 3_000
 const serializeSignerStateOperation = createScopedKeyedSerialExecutor<WebsiteTabConnections, number>()
@@ -202,7 +203,9 @@ export function sendCallbackToConfirmedSignerOwner(websiteTabConnections: Websit
 function sendCallbackToSignerStateToken(websiteTabConnections: WebsiteTabConnections, signerStateToken: SignerStateToken, message: InpageScriptCallBack) {
 	const tabConnection = websiteTabConnections.get(signerStateToken.socket.tabId)
 	const ownerConnection = tabConnection?.connections[websiteSocketToString(signerStateToken.socket)]
-	if (!tabHasApprovedWebsiteConnection(websiteTabConnections, signerStateToken.socket.tabId) || ownerConnection?.port !== signerStateToken.port) return false
+	if (!tabHasApprovedWebsiteConnection(websiteTabConnections, signerStateToken.socket.tabId)
+		|| ownerConnection?.port !== signerStateToken.port
+		|| !socketCanExecuteWithSelectedSigner(signerStateToken.socket)) return false
 	return sendSubscriptionReplyOrCallBackToPort(signerStateToken.port, { type: 'result', ...message }) ? signerStateToken : false
 }
 

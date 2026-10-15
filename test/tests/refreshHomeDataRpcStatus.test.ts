@@ -1,6 +1,7 @@
 import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
+import { allowLegacySignerExecution, clearSignerExecutionAuthorityForTab, reconcileSignerExecutionDocument, registerAuthoritativeTopSocket } from '../../app/ts/background/signerExecutionAuthority.js'
 import { createSafeTx } from '../../app/ts/safe/safeCore.js'
 
 type RuntimeMessage = {
@@ -32,6 +33,11 @@ type PortMessage = {
 }
 
 function installBrowserMock() {
+	const signerSocket = { tabId: 1, connectionName: 0n }
+	clearSignerExecutionAuthorityForTab(signerSocket.tabId)
+	registerAuthoritativeTopSocket(signerSocket, 'https://example.com')
+	reconcileSignerExecutionDocument(signerSocket, 'https://example.com', '11111111-1111-4111-8111-111111111111', true, 0)
+	allowLegacySignerExecution(signerSocket, 'https://example.com')
 	const storageState: Record<string, unknown> = {}
 	const sentMessages: RuntimeMessage[] = []
 

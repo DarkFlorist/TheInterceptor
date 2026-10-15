@@ -1,3 +1,4 @@
+import { authorizeSocketForSignerExecution, reconcileSignerExecutionDocument, registerAuthoritativeTopSocket, registerCurrentChildSignerSocket, setSignerExecutionTarget } from '../../app/ts/background/signerExecutionAuthority.js'
 import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import { test } from 'bun:test'
@@ -24,6 +25,14 @@ test('accepts a signer reply from the current approved child-frame port', async 
 	const topPort = createWebsitePort(topSocket, 0, topMessages)
 	const childPort = createWebsitePort(childSocket, 2, childMessages)
 	const websiteOrigin = 'https://example.com'
+	const documentGeneration = '11111111-1111-4111-8111-111111111111'
+	const providerUuid = '22222222-2222-4222-8222-222222222222'
+	registerAuthoritativeTopSocket(topSocket, websiteOrigin)
+	registerCurrentChildSignerSocket(childSocket, 2)
+	reconcileSignerExecutionDocument(topSocket, websiteOrigin, documentGeneration, true, 0)
+	reconcileSignerExecutionDocument(childSocket, websiteOrigin, documentGeneration, false, 2)
+	setSignerExecutionTarget(topSocket.tabId, providerUuid, websiteOrigin)
+	authorizeSocketForSignerExecution(childSocket, providerUuid, websiteOrigin)
 	const websiteTabConnections = new Map([[topSocket.tabId, {
 		signerStateOwner: {
 			connectionName: topSocket.connectionName,
