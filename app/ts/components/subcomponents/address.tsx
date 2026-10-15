@@ -8,6 +8,7 @@ import { resolveSignal, type SignalOrValue } from '../../utils/signals.js'
 import { sanitizeStoredWebsiteIcon } from '../../utils/websiteIcons.js'
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../../utils/addressBook.js'
 import { Blockie } from './SVGBlockie.js'
+import { AddressBookEntryIcon } from './AddressBookEntryIcon.js'
 import { InlineCard } from './InlineCard.js'
 import { EditIcon } from './icons.js'
 import { type ActionableIconProps, type ActionableTextProps, MultilineCard } from './MultilineCard.js'
@@ -159,10 +160,7 @@ export function SmallAddress({ addressBookEntry, renameAddressCallBack, noCopyin
 	if (currentAddressBookEntry === undefined) return <></>
 	const addressString = checksummedAddress(currentAddressBookEntry.address)
 
-	const generateIcon = () => {
-		if (currentAddressBookEntry?.logoUri !== undefined) return <img src = { currentAddressBookEntry.logoUri } width = '16' height = '16' style = { { minWidth: '1em', minHeight: '1em' } } />
-		return <Blockie address = { currentAddressBookEntry.address } />
-	}
+	const generateIcon = () => <AddressBookEntryIcon addressBookEntry = { currentAddressBookEntry } />
 
 	return <InlineCard label = { currentAddressBookEntry.name } copyValue = { addressString } icon = { generateIcon } noCopy = { noCopying } onEditClicked = { noEditAddress ? undefined : () => renameAddressCallBack(currentAddressBookEntry) } nonInteractive = { nonInteractive } copyOnActionOnly = { copyOnActionOnly } style = { style } />
 }
