@@ -1,10 +1,20 @@
 import { type Signal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
 import type { ComponentChild } from 'preact'
-import { useRef } from 'preact/hooks'
+import { useLayoutEffect, useRef } from 'preact/hooks'
 
 interface DynamicScrollerProps<T extends {}> {
 	items: Signal<Readonly<T[]>>
 	renderItem: (item: T) => ComponentChild
+}
+
+function isPositiveFinite(value: number) {
+	return Number.isFinite(value) && value > 0
+}
+
+export function calculateMaxVisibleItems(containerHeight: number, itemHeight: number) {
+	if (!isPositiveFinite(containerHeight) || !isPositiveFinite(itemHeight)) return 0
+	const maxItems = Math.ceil(containerHeight / itemHeight)
+	return Number.isFinite(maxItems) ? maxItems : 0
 }
 
 export const getDynamicScrollOffset = (startIndex: number, itemHeight: number, itemCount: number, maximumVisibleItems: number) => {
@@ -22,17 +32,18 @@ export const getClampedDynamicScrollStartIndex = (startIndex: number, itemCount:
 
 export const DynamicScroller = <T extends {}>({ items, renderItem, }: DynamicScrollerProps<T>) => {
 	const startIndex = useSignal(0)
-	const maxItems = useSignal(0)
+	const containerHeight = useSignal(0)
 	const itemHeight = useSignal(0)
 	const scrollViewRef = useRef<HTMLDivElement>(null)
 	const itemRef = useRef<HTMLDivElement>(null)
 
 	const recalculateStartIndex = (event: Event) => {
 		if (!(event.currentTarget instanceof HTMLDivElement)) return
-		if (itemHeight.value <= 0) return
+		if (!isPositiveFinite(itemHeight.peek())) return
 		startIndex.value = Math.floor(event.currentTarget.scrollTop / itemHeight.value)
 	}
 
+	const maxItems = useComputed(() => calculateMaxVisibleItems(containerHeight.value, itemHeight.value))
 	const scrollAreaHeight = useComputed(() => items.value.length * itemHeight.value)
 	const clampedStartIndex = useComputed(() => getClampedDynamicScrollStartIndex(startIndex.value, items.value.length, maxItems.value))
 	const visibleItems = useComputed(() => items.value.slice(clampedStartIndex.value, clampedStartIndex.value + maxItems.value + 1))
@@ -45,19 +56,23 @@ export const DynamicScroller = <T extends {}>({ items, renderItem, }: DynamicScr
 		if (scrollViewRef.current !== null) scrollViewRef.current.scrollTop = getDynamicScrollOffset(synchronizedStartIndex, itemHeight.value, items.value.length, maxItems.value)
 	})
 
-	// calculate item height
-	useSignalEffect(() => {
-		if (!itemRef.current || itemHeight.value > itemRef.current.clientHeight) return
-		const { height } = itemRef.current.getBoundingClientRect()
-		itemHeight.value = height
-	})
+	// Remeasure the first visible row after scrolling or revealing a hidden tab.
+	useLayoutEffect(() => {
+		if (itemRef.current === null) return
+		const observer = new ResizeObserver(([entry]) => {
+			if (entry === undefined || !isPositiveFinite(entry.contentRect.height)) return
+			itemHeight.value = entry.contentRect.height
+		})
+		observer.observe(itemRef.current)
+		return () => { observer.disconnect() }
+	}, [clampedStartIndex.value, items.value.length])
 
 	// scroll view occupies the same height as parent
-	useSignalEffect(() => {
-		if (!scrollViewRef.current) return
+	useLayoutEffect(() => {
+		if (scrollViewRef.current === null) return
 		const containerObserver = new ResizeObserver(([entry]) => {
-			if (entry === undefined) return
-			maxItems.value = itemHeight.value <= 0 ? 0 : Math.ceil(entry.contentRect.height / itemHeight.value)
+			if (entry === undefined || !isPositiveFinite(entry.contentRect.height)) return
+			containerHeight.value = entry.contentRect.height
 		})
 		containerObserver.observe(scrollViewRef.current)
 		return () => { containerObserver.disconnect() }
@@ -67,7 +82,7 @@ export const DynamicScroller = <T extends {}>({ items, renderItem, }: DynamicScr
 		<div ref = { scrollViewRef } style = { { overflowY: 'scroll', maxHeight: '100%' } } onScroll = { recalculateStartIndex }>
 			<div style = { { height: `${ scrollAreaHeight }px`, '--virtual-scroll-offset': `${ scrollOffset }px` } }>
 				{ visibleItems.value.map((item, index) => (
-					<div key = { clampedStartIndex.value + index } ref = { itemRef } style = { {  contain: 'layout', transform: 'translateY(var(--virtual-scroll-offset))' } }>
+					<div key = { clampedStartIndex.value + index } ref = { index === 0 ? itemRef : undefined } style = { {  contain: 'layout', transform: 'translateY(var(--virtual-scroll-offset))' } }>
 						{ renderItem(item) }
 					</div>
 				)) }

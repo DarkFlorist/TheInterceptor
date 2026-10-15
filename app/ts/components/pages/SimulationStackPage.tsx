@@ -30,6 +30,7 @@ import { CopySafeTransactionsButton } from '../subcomponents/CopySafeTransaction
 import { Tooltip } from '../subcomponents/Tooltip.js'
 import { useCopyFeedback } from '../hooks/useCopyFeedback.js'
 import { useModeActiveAddress } from '../hooks/useModeActiveAddress.js'
+import Hint from '../subcomponents/Hint.js'
 
 type ModalState =
 	{ page: 'modifyAddress', state: Signal<ModifyAddressWindowState> } |
@@ -350,7 +351,7 @@ export function SimulationStackPage() {
 	useEffect(() => {
 		const scrollOnHashChange = () => {
 			handledStackTargetHash.value = undefined
-			scrollToRequestedStackRow()
+			scheduleStackTargetFrame(scrollToRequestedStackRow)
 		}
 		const browserWindow = globalThis.window
 		if (browserWindow === undefined || typeof browserWindow.addEventListener !== 'function' || typeof browserWindow.removeEventListener !== 'function') {
@@ -499,4 +500,8 @@ export function SimulationStackPage() {
 			: <></> }
 		</div>
 	</main>
+}
+
+export function SimulationStackView() {
+	return <Hint><SimulationStackPage /></Hint>
 }

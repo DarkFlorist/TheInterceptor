@@ -28,4 +28,7 @@ export const InterceptorErrorDiagnostic = funtypes.ReadonlyObject({
 	userVisible: funtypes.Boolean,
 	debugId: funtypes.Union(funtypes.String, funtypes.Undefined),
 	details: funtypes.Union(funtypes.String, funtypes.Undefined),
-})
+}).And(funtypes.ReadonlyPartial({
+	// Records written before raw diagnostics were introduced do not contain this key.
+	rawError: funtypes.String,
+}))

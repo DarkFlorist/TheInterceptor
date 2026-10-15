@@ -1,6 +1,9 @@
 import * as preact from 'preact'
 import { WebsiteAccessView } from './components/pages/WebsiteAccess.js'
 import { ErrorBoundary } from './components/subcomponents/Error.js'
+import { installLegacyManagementHashRedirect } from './utils/legacyManagementHashes.js'
+
+installLegacyManagementHashRedirect()
 
 function rerender() {
 	const body = document.body

@@ -1,13 +1,19 @@
 import { updateWebsiteApprovalAccesses } from '../accessManagement.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { popupMessageHandler, type PopupMessageHandlerMap } from '../popupMessageHandlerRegistry.js'
-import { changeSettings, exportSettings, importSettings, openNewTab, setNewRpcList, settingsOpened } from '../popupMessageHandlers.js'
+import { changeSettings, exportSettings, importSettings, setNewRpcList, settingsOpened } from '../popupMessageHandlers.js'
 import { getSettings } from '../settings.js'
+import { openManagementPage } from '../managementNavigation.js'
 
 export const settingsPopupMessageHandlers = {
 	popup_requestSettings: popupMessageHandler('popup_requestSettings', async () => await settingsOpened()),
 	popup_ChangeSettings: popupMessageHandler('popup_ChangeSettings', async (context, request) => await changeSettings(context.simulationServicesOwner, context.websiteTabConnections, request, context.simulationAbortController)),
-	popup_openSettings: popupMessageHandler('popup_openSettings', async () => await openNewTab('settingsView')),
+	popup_openManagement: popupMessageHandler('popup_openManagement', async () => {
+		return await openManagementPage('home')
+	}),
+	popup_openSettings: popupMessageHandler('popup_openSettings', async () => {
+		return await openManagementPage('settings')
+	}),
 	popup_import_settings: popupMessageHandler('popup_import_settings', async (context, request) => {
 		const importSettingsReply = await importSettings(request)
 		await sendPopupMessageToOpenWindows(importSettingsReply)

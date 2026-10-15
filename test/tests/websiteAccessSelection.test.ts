@@ -5,6 +5,7 @@ import { Signal } from '@preact/signals'
 import { act } from 'preact/test-utils'
 import { installDomMock } from './domMock.js'
 import type { WebsiteAccess } from '../../app/ts/types/websiteAccessTypes.js'
+import { getWebsiteOriginHash } from '../../app/ts/utils/websiteAccessRoutes.js'
 
 type RuntimeMessageListener = (message: unknown) => unknown
 type RuntimeMessage = {
@@ -220,7 +221,7 @@ const modulesPromise = import('../../app/ts/components/pages/WebsiteAccess.js')
 
 describe('WebsiteAccessView selection', () => {
 	test('binds the checked radio to the selected domain from the URL hash', async () => {
-		const dom = installWindowHashMock('#origin:beta.example')
+		const dom = installWindowHashMock(getWebsiteOriginHash('beta.example'))
 		const { WebsiteAccessView } = await modulesPromise
 
 		await act(() => {
@@ -247,7 +248,7 @@ describe('WebsiteAccessView selection', () => {
 		assert.equal(isChecked(betaRadio), true)
 
 		await act(() => {
-			dom.setHash('#origin:alpha.example')
+			dom.setHash(getWebsiteOriginHash('alpha.example'))
 		})
 
 		assert.equal(isChecked(alphaRadio), true)
@@ -337,7 +338,7 @@ describe('WebsiteAccessView selection', () => {
 		dom.restore()
 	})
 
-	test('clears the selected website even when the URL hash is already empty', async () => {
+	test('returns to the Websites tab when the selected website is cleared', async () => {
 		const { clearSelectedWebsite } = await modulesPromise
 		const selectedDomain = new Signal<string | undefined>('app.sablier.com')
 		const location = { hash: '' }
@@ -345,6 +346,6 @@ describe('WebsiteAccessView selection', () => {
 		clearSelectedWebsite({ location }, selectedDomain)
 
 		assert.equal(selectedDomain.value, undefined)
-		assert.equal(location.hash, '')
+		assert.equal(location.hash, '#websites')
 	})
 })
