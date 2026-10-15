@@ -1,3 +1,4 @@
+import { backgroundTaskSupervisor } from './backgroundTasks.js'
 import { getActiveAddress, getActiveAddressesForAllTabs, getWebsiteSocketConnection, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
 import { getActiveAddressEntryForChain, getActiveAddresses } from './metadataUtils.js'
 import { requestAccessFromUser } from './windows/interceptorAccess.js'
@@ -284,7 +285,7 @@ async function promptForWebsiteAccesses(simulationServicesOwner: SimulationServi
 				await askUserForAccessOnConnectionUpdate(simulationServicesOwner, websiteTabConnections, connection.socket, connection.websiteOrigin, activeAddress, settings)
 			} catch (error) {
 				if (throwOnError) throw error
-				await reportUnexpectedError(error)
+				await reportUnexpectedError(error, { source: 'website_access_prompt', details: { websiteOrigin: connection.websiteOrigin, socket: connection.socket } })
 			}
 		}
 	}
@@ -444,7 +445,7 @@ export async function finishWebsiteAccessUpdate(
 		))
 	} catch (error) {
 		if (throwOnError) throw error
-		await reportUnexpectedError(error)
+		await reportUnexpectedError(error, { source: 'website_access_icons', details: { popupRefreshGeneration: update.popupRefreshGeneration } })
 	}
 }
 
@@ -458,6 +459,17 @@ export async function updateWebsiteApprovalAccesses(
 	const update = await reconcileWebsiteApprovalAccesses(websiteTabConnections, settings, throwOnError)
 	await finishWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, update, promptForAccessesIfNeeded, throwOnError)
 	return update.popupRefreshGeneration
+}
+
+// Schedule only after reconciliation; save success covers committed permissions, while this completion covers prompt/icon work.
+export function scheduleWebsiteAccessUiUpdate(
+	simulationServicesOwner: SimulationServicesOwner | undefined,
+	websiteTabConnections: WebsiteTabConnections,
+	update: WebsiteAccessUpdate,
+	promptForAccessesIfNeeded: boolean,
+) {
+	return backgroundTaskSupervisor.start({ source: 'website_access_ui', details: { popupRefreshGeneration: update.popupRefreshGeneration } },
+		async () => await finishWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, update, promptForAccessesIfNeeded))
 }
 
 export async function finalizeWebsiteAccessChange(
