@@ -15,6 +15,7 @@ import { RpcEntries, RpcNetwork } from './rpc.js'
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './jsonRpc-signing-types.js'
 import { GetSimulationStackReplyV1, GetSimulationStackReplyV2 } from './simulationStackTypes.js'
 import { EnrichedRichListElement, PopupMessageReplyRequests, UnexpectedErrorOccured } from './interceptor-reply-messages.js'
+import { RichAccountBalances, RichTokenOptions } from './richMode.js'
 import { ErrorWithCodeAndOptionalData } from './error.js'
 import { SimulateExecutionReply as SharedSimulateExecutionReply, SimulateExecutionReplyData as SharedSimulateExecutionReplyData } from './simulateExecutionReply.js'
 import { SimulateGnosisSafeTransaction as SharedSimulateGnosisSafeTransaction, SimulateGovernanceContractExecution as SharedSimulateGovernanceContractExecution } from './simulateExecutionRequests.js'
@@ -633,6 +634,9 @@ export const UpdateHomePage = funtypes.ReadonlyObject({
 		interceptorDisabled: funtypes.Boolean,
 		preSimulationBlockTimeManipulation: BlockTimeManipulation,
 	}).And(funtypes.ReadonlyPartial({
+		richTokenOptions: RichTokenOptions,
+		richNativeAmount: EthereumQuantity,
+		richAccountBalances: RichAccountBalances,
 		walletSelectedAddressBookEntry: AddressBookEntry,
 	}))
 })

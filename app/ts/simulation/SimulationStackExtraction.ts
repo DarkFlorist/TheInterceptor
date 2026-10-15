@@ -48,7 +48,7 @@ export const getSimulatedStackV2 = (simulationState: ResolvedSimulationState): G
 	}
 }
 
-export const getSimulatedStackV1 = (simulationState: ResolvedSimulationState, addressToMakeRich: EthereumAddress | undefined, version: '1.0.0' | '1.0.1'): GetSimulationStackReplyV1 => {
+export const getSimulatedStackV1 = (simulationState: ResolvedSimulationState, addressToMakeRich: EthereumAddress | undefined, richNativeAmount: bigint, version: '1.0.0' | '1.0.1'): GetSimulationStackReplyV1 => {
 	if (simulationState.kind === 'passthrough' || simulationState.value.success === false) return []
 	const simulatedTransactions = simulationState.value.simulatedBlocks.flatMap((simulatedBlock) => simulatedBlock.simulatedTransactions).map((transaction) => {
 		const ethLogs = transaction.ethSimulateV1CallResult.status === 'failure' ? [] : transaction.ethSimulateV1CallResult.logs.filter((log) => log.address === ETHEREUM_LOGS_LOGGER_ADDRESS)
@@ -103,13 +103,14 @@ export const getSimulatedStackV1 = (simulationState: ResolvedSimulationState, ad
 			nonce: 0n,
 			to: addressToMakeRich,
 			...MAKE_YOU_RICH_TRANSACTION.transaction,
+			value: richNativeAmount,
 			statusCode: 'success' as const,
 			gasSpent: MAKE_YOU_RICH_TRANSACTION.transaction.gas,
 			realizedGasPrice: 0n,
 			gasLimit: MAKE_YOU_RICH_TRANSACTION.transaction.gas,
 			returnValue: new Uint8Array(),
 			events: [],
-			balanceChanges: [{ address: addressToMakeRich, before: 0n, after: MAKE_YOU_RICH_TRANSACTION.transaction.value }]
+			balanceChanges: [{ address: addressToMakeRich, before: 0n, after: richNativeAmount }]
 		}, ...simulatedTransactions
 	]
 }

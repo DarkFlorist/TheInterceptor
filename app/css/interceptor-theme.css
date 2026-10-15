@@ -27,6 +27,10 @@ body { font-family: "Inter", sans-serif; }
 	--window-header-bg-color: #606060;
 	--surface-mid-color: #3e3e3e;
 	--surface-dark-color: #222222;
+	--dialog-header-color: #383838;
+	--dialog-body-color: #292929;
+	--dialog-panel-color: #363636;
+	--dialog-footer-color: #343434;
 	--layout-line-color: #505050;
 	--address-muted-bg-color: #757575;
 

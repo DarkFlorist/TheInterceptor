@@ -1,3 +1,4 @@
+import { mutateRichMode } from './richModeSettings.js'
 import { getRpcEntryIdentityKey } from '../utils/rpcNetworkChange.js'
 import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
@@ -300,10 +301,7 @@ export const getUserAddressBookEntriesForChainIdMorePreciseFirst = async (chainI
 
 const userAddressBookEntriesSemaphore = new Semaphore(1)
 export async function updateUserAddressBookEntries(updateFunc: (prevState: AddressBookEntries) => AddressBookEntries) {
-	await userAddressBookEntriesSemaphore.execute(async () => {
-		const entries = await getUserAddressBookEntries()
-		return await browserStorageLocalSet({ userAddressBookEntriesV3: updateFunc(entries) })
-	})
+	await mutateRichMode(async (store) => { await store.updateAddressBook(updateFunc) })
 }
 
 export async function updateUserAddressBookEntriesV2Old(updateFunc: (prevState: AddressBookEntries) => AddressBookEntries) {
@@ -314,12 +312,7 @@ export async function updateUserAddressBookEntriesV2Old(updateFunc: (prevState: 
 }
 
 export async function addUserAddressBookEntryIfItDoesNotExist(newEntry: AddressBookEntry) {
-	await userAddressBookEntriesSemaphore.execute(async () => {
-		const entries = await getUserAddressBookEntries()
-		const existingEntry = entries.find((entry) => entry.address === newEntry.address && doAddressBookChainIdsMatch(entry.chainId, newEntry.chainId))
-		if (existingEntry !== undefined) return
-		return await browserStorageLocalSet({ userAddressBookEntriesV3: entries.concat(newEntry) })
-	})
+	await updateUserAddressBookEntries((entries) => entries.some((entry) => entry.address === newEntry.address && doAddressBookChainIdsMatch(entry.chainId, newEntry.chainId)) ? entries : entries.concat(newEntry))
 }
 
 export async function setLatestUnexpectedError(latestUnexpectedError: UnexpectedErrorOccured | undefined) {
