@@ -11,7 +11,6 @@ import { SmallAddress } from '../subcomponents/address.js'
 import { AddNewAddress } from './AddNewAddress.js'
 import Hint from '../subcomponents/Hint.js'
 import type { RpcEntries } from '../../types/rpc.js'
-import type { SimulationMetadata } from '../../types/interceptor-reply-messages.js'
 import { CenterToPageTextSpinner } from '../subcomponents/Spinner.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../utils/constants.js'
 import { SimulationStackRows } from '../simulationExplaining/Transactions.js'
@@ -84,7 +83,7 @@ export function FetchSimulationStack() {
 	const modalState = useSignal<FetchSimulationStackModalState>({ page: 'noModal' })
 
 	const completeVisualizedSimulation = useSignal<CompleteVisualizedSimulation>(createPassthroughCompleteVisualizedSimulation())
-	const simulationMetadata = useSignal<SimulationMetadata | undefined>(undefined)
+	const simulationAddressBookEntries = useSignal<readonly AddressBookEntry[] | undefined>(undefined)
 	const rpcEntries = useSignal<RpcEntries>([])
 	const { value: rejectRequestState, waitFor: waitForRejectRequest } = useAsyncState<void>()
 	const { value: allowRequestState, waitFor: waitForAllowRequest } = useAsyncState<void>()
@@ -99,8 +98,8 @@ export function FetchSimulationStack() {
 			if (!maybeParsed.success) return false // not a message we are interested in
 			const parsed = maybeParsed.value
 			if (parsed.method === 'popup_simulation_state_changed') {
-				updateSimulation()
-				updateMetaData()
+				// Requesting the visualisation again here would simulate and publish this message again while the home popup or simulation stack page is open.
+				applyPublishedSimulation(parsed.data.visualizedSimulatorState)
 				return false
 			}
 			if (parsed.method === 'popup_requestSettingsReply') {
@@ -115,15 +114,21 @@ export function FetchSimulationStack() {
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	}, [])
 
+	const applyPublishedSimulation = (visualizedSimulatorState: CompleteVisualizedSimulation) => {
+		completeVisualizedSimulation.value = visualizedSimulatorState
+		// Only a finished refresh reflects the current stack; updating, invalidated and failed states carry earlier or no addresses, so the last finished references stay.
+		if (visualizedSimulatorState.simulationUpdatingState === 'done') simulationAddressBookEntries.value = visualizedSimulatorState.addressBookEntries
+	}
 	const updateSimulation = async () => {
 		const simulationStack = await requestPopupCompleteVisualizedSimulation()
 		if (simulationStack === undefined) return
 		completeVisualizedSimulation.value = simulationStack.visualizedSimulatorState
 	}
+	// Without an open home popup or simulation stack page the stored visualisation is not refreshed, so in simulation mode opening this page simulates the current stack once for its address references.
 	const updateMetaData = async () => {
 		const data = await requestPopupSimulationMetadata()
 		if (data === undefined) return
-		simulationMetadata.value = data.metadata
+		simulationAddressBookEntries.value = data.metadata.addressBookEntries
 	}
 
 	useEffect(() => {
@@ -176,14 +181,11 @@ export function FetchSimulationStack() {
 		return stackResults.simulationStateInput.some((block) => block.transactions.length > 0 || block.signedMessages.length > 0) || completeVisualizedSimulation.value?.numberOfAddressesMadeRich !== 0
 	})
 
-	const addressReferences = useComputed(() => {
-		if (simulationMetadata.value === undefined) return []
-		return simulationMetadata.value.addressBookEntries.filter((address) => address.address !== ETHEREUM_LOGS_LOGGER_ADDRESS)
-	})
+	const addressMetaData = useComputed(() => simulationAddressBookEntries.value ?? [])
+	const addressReferences = useComputed(() => addressMetaData.value.filter((address) => address.address !== ETHEREUM_LOGS_LOGGER_ADDRESS))
 	const activeAddress = useSignal<bigint | undefined>(undefined)
-	const addressMetaData = useComputed(() => simulationMetadata.value?.addressBookEntries ?? [])
 
-	if (changeRequest.value === undefined || simulationMetadata.value === undefined) return <main> <CenterToPageTextSpinner text = { 'Getting simulation stack...'  }/></main>
+	if (changeRequest.value === undefined || simulationAddressBookEntries.value === undefined) return <main> <CenterToPageTextSpinner text = { 'Getting simulation stack...'  }/></main>
 	const websiteIcon = sanitizeStoredWebsiteIcon(changeRequest.value.website.icon)
 	return (
 		<main>
