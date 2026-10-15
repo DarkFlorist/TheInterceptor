@@ -1,4 +1,6 @@
 // Shared execution layer for popup visualization refreshes; the optional interactive queue adds caller-local scheduling, not global ordering. See docs/popup-simulation-refresh.md.
+import type { SimulationServices } from '../simulation/serviceLifecycle.js'
+import { stringifyJSONWithBigInts } from '../utils/bigint.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import type { CompleteVisualizedSimulation, SimulationState } from '../types/visualizer-types.js'
@@ -18,7 +20,10 @@ let abortController = new AbortController()
 // Local invalidation retires every execution path, including direct consumer/bootstrap refreshes.
 let publicationGeneration = 0
 
-export function capturePopupVisualisationGeneration() { return publicationGeneration }
+function invalidatePopupVisualisation() {
+	abortController.abort(NEW_BLOCK_ABORT)
+	return ++publicationGeneration
+}
 
 function buildPassthroughVisualizedState(
 	simulationId: number,
@@ -63,14 +68,15 @@ export type PopupVisualisationOptions = {
 	readonly onlyIfNotAlreadyUpdating?: boolean
 	readonly skipIfUnchanged?: boolean
 	readonly snapshot?: SimulationSnapshot
-	readonly isCurrent?: () => boolean
-	readonly invalidationGeneration?: number
 }
 
 // Visibility/throttle-aware execution: callers such as block updates can replace obsolete work without entering the interactive queue.
-export const updatePopupVisualisationIfNeeded = async (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, { invalidateOldState = false, onlyIfNotAlreadyUpdating = false, skipIfUnchanged = false, snapshot, isCurrent: isCurrentRequest, invalidationGeneration = publicationGeneration }: PopupVisualisationOptions = {}) => {
-	let generation = invalidationGeneration
-	const isCurrent = () => generation === publicationGeneration && isCurrentRequest?.() !== false
+export const updatePopupVisualisationIfNeeded = async (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, options: PopupVisualisationOptions = {}) =>
+	await executePopupVisualisationIfNeeded(ethereum, tokenPriceService, options, publicationGeneration)
+
+async function executePopupVisualisationIfNeeded(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, { invalidateOldState = false, onlyIfNotAlreadyUpdating = false, skipIfUnchanged = false, snapshot }: PopupVisualisationOptions, expectedGeneration: number) {
+	let generation = expectedGeneration
+	const isCurrent = () => generation === publicationGeneration
 	try {
 		const popupVisualisation = await getPopupVisualisationState()
 		if (onlyIfNotAlreadyUpdating && updateSimulationVisualisationSemaphore.getPermits() === 0) return popupVisualisation
@@ -95,12 +101,15 @@ export const updatePopupVisualisationIfNeeded = async (ethereum: EthereumClientS
 			if (currentFingerprint === cachedFingerprint && (capturedSnapshot.numberOfAddressesMadeRich === popupVisualisation.numberOfAddressesMadeRich)) return popupVisualisation
 		}
 		if (!isCurrent()) return await getPopupVisualisationState()
-		if (invalidateOldState) generation = await publishPendingPopupVisualisation(true)
+		if (invalidateOldState) {
+			generation = invalidatePopupVisualisation()
+			await publishUpdatingPopupVisualisation(true, generation)
+		}
 		if (!isCurrent()) return await getPopupVisualisationState()
 		abortController.abort(NEW_BLOCK_ABORT)
 		abortController = new AbortController()
 		const thisAbortController = abortController
-		await updatePopupVisualisationState(ethereum, tokenPriceService, thisAbortController, false, capturedSnapshot, isCurrent)
+		await executePopupVisualisationState(ethereum, tokenPriceService, thisAbortController, false, capturedSnapshot, generation)
 	} catch(error: unknown) {
 		if (isExpectedInfrastructureError(error)) return await getPopupVisualisationState()
 		await reportUnexpectedError(error)
@@ -126,23 +135,61 @@ export async function refreshPopupVisualisationForOpenConsumer(ethereum: Ethereu
 
 // Publish progress using the storage lock, without waiting for an in-flight RPC simulation.
 export async function publishPendingPopupVisualisation(invalidateOldState: boolean) {
-	const generation = ++publicationGeneration
-	abortController.abort(NEW_BLOCK_ABORT)
-	const pending = await updatePopupVisualisationWithCallBack(async previous => ({
+	await publishUpdatingPopupVisualisation(invalidateOldState, invalidatePopupVisualisation())
+}
+
+async function publishUpdatingPopupVisualisation(invalidateOldState: boolean, generation: number) {
+	const pending = await updatePopupVisualisationWithCallBack(async previous => generation !== publicationGeneration ? undefined : ({
 		...previous,
 		simulationId: previous.simulationId + 1,
 		simulationUpdatingState: 'updating',
 		simulationResultState: invalidateOldState ? 'invalid' : previous.simulationResultState,
 	}))
-	await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState: pending } })
-	return generation
+	if (generation === publicationGeneration) await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState: pending } })
+}
+
+export type PopupVisualisationRefreshRequest = SimulationServices & {
+	readonly revision: string | symbol
+	readonly invalidateOldState?: boolean
+	readonly execute: (invalidateOldState: boolean) => Promise<boolean>
+}
+
+// The queue receives only an identity and executable request; validity and snapshot ownership stay here.
+export async function preparePopupVisualisationRefresh(services: SimulationServices & { readonly invalidateOldState?: boolean }, publishUpdatingState = false): Promise<PopupVisualisationRefreshRequest | undefined> {
+	const generation = publishUpdatingState ? invalidatePopupVisualisation() : publicationGeneration
+	const snapshot = await captureSimulationSnapshot()
+	if (generation !== publicationGeneration) return undefined
+	const invalidateOldState = services.invalidateOldState ?? publishUpdatingState
+	if (publishUpdatingState) await publishUpdatingPopupVisualisation(invalidateOldState, generation)
+	if (generation !== publicationGeneration) return undefined
+	const provider = getSimulationProviderForSnapshot(services.ethereum, snapshot)
+	const block = publishUpdatingState ? undefined : provider?.getCachedBlock()
+	// Without a cached head we cannot prove equivalence; keep the follow-up refresh.
+	const revision = publishUpdatingState || block === undefined ? Symbol('UI simulation refresh') : stringifyJSONWithBigInts([
+		getPopupVisualisationFingerprint(snapshot.simulationStateInput, services.ethereum.getRpcEntry(), block.number),
+		block.hash,
+		snapshot.numberOfAddressesMadeRich,
+		snapshot.activeStackContext,
+		generation,
+	])
+	return {
+		...services, invalidateOldState, revision,
+		execute: async invalidateOldState => {
+			const result = await executePopupVisualisationIfNeeded(services.ethereum, services.tokenPriceService, {
+				// Scheduled edits already published their invalidation before acknowledgement.
+				invalidateOldState: invalidateOldState && !publishUpdatingState,
+				skipIfUnchanged: !invalidateOldState,
+				snapshot,
+			}, generation)
+			return result.simulationUpdatingState !== 'failed' && result.simulationResultState !== 'invalid'
+		},
+	}
 }
 
 const updateSimulationVisualisationSemaphore = new Semaphore(1)
 // Failed provider preparation must retire old results without executing the retained provider.
 export async function publishFailedPopupVisualisation() {
-	publicationGeneration++
-	abortController.abort(NEW_BLOCK_ABORT)
+	invalidatePopupVisualisation()
 	await updateSimulationVisualisationSemaphore.execute(async () => {
 		const previous = await getPopupVisualisationState()
 		const failed = await setPopupVisualisationState({
@@ -159,9 +206,12 @@ export type PopupVisualisationExecutionDependencies = {
 }
 
 // Serialized execution without a visibility probe; persistence callers can require unexpected errors to propagate.
-export async function updatePopupVisualisationState(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, abortController: AbortController | undefined, throwOnUnexpectedError = false, snapshot?: SimulationSnapshot, isCurrentRequest?: () => boolean, dependencies: PopupVisualisationExecutionDependencies = {}) {
-	const generation = publicationGeneration
-	const isCurrent = () => generation === publicationGeneration && !abortController?.signal.aborted && isCurrentRequest?.() !== false
+export async function updatePopupVisualisationState(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, abortController: AbortController | undefined, throwOnUnexpectedError = false, snapshot?: SimulationSnapshot, dependencies: PopupVisualisationExecutionDependencies = {}) {
+	return await executePopupVisualisationState(ethereum, tokenPriceService, abortController, throwOnUnexpectedError, snapshot, publicationGeneration, dependencies)
+}
+
+async function executePopupVisualisationState(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, abortController: AbortController | undefined, throwOnUnexpectedError: boolean, snapshot: SimulationSnapshot | undefined, generation: number, dependencies: PopupVisualisationExecutionDependencies = {}) {
+	const isCurrent = () => generation === publicationGeneration && !abortController?.signal.aborted
 	// Check inside the storage lock as well as after remote work: invalidation can arrive while a write waits.
 	const storeCurrentState = async (state: CompleteVisualizedSimulation) => {
 		await updatePopupVisualisationWithCallBack(async () => isCurrent() ? state : undefined)

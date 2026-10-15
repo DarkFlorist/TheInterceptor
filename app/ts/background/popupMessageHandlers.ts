@@ -11,11 +11,11 @@ import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransacti
 import { askForSignerAccountsFromSignerIfNotAvailable, getAddressMetadataForAccess, refreshSignerAccountsForTab, refreshSignerAccountsFromApprovedWebsitePorts, requestAddressChange, resolveInterceptorAccess, type SignerAccountRefreshOptions } from './windows/interceptorAccess.js'
 import { resolveChainChange } from './windows/changeChain.js'
 import { changeActiveRpc } from './walletSwitch.js'
-import { updateWebsiteApprovalAccesses } from './accessManagement.js'
+import { reconcileWebsiteAccessAndScheduleUiUpdates } from './accessManagement.js'
 import { getActiveOrFirstSignerAddress, getHtmlFile, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getActiveAddressForCurrentSignerState, sendCallbackToAllConfirmedSignerOwners, sendCallbackToConfirmedSignerOwner } from './signerStateOwnership.js'
 import { findEntryWithSymbolOrName, getMetadataForAddressBookData } from './metadataSearch.js'
-import { getActiveAddressEntryForChain, getActiveAddresses, identifyAddress, identifyAddressFromLocalMetadata } from './metadataUtils.js'
+import { getActiveAddressEntryForChain, getActiveAddresses, identifyAddress, hasAddressBookDuplicate } from './metadataUtils.js'
 import type { TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { type CompleteVisualizedSimulation, InterceptorSimulationExport, type InterceptorStackOperation, InterceptorTransactionStack, type ModifyAddressWindowState, createPassthroughCompleteVisualizedSimulation } from '../types/visualizer-types.js'
@@ -285,7 +285,7 @@ export async function removeAddressBookEntry(simulationServicesOwner: Simulation
 		&& (contact.chainId === removeAddressBookEntry.data.chainId || (contact.chainId === undefined && removeAddressBookEntry.data.chainId === 1n))))
 	)
 	if (removeAddressBookEntry.data.addressBookCategory === 'My Active Addresses' || removeAddressBookEntry.data.addressBookCategory === 'My Safes') {
-		await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true, false, { deferUiUpdates: true })
+		await reconcileWebsiteAccessAndScheduleUiUpdates(simulationServicesOwner, websiteTabConnections, await getSettings(), true, false)
 	}
 	await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 }
@@ -333,7 +333,7 @@ export async function addOrModifyAddressBookEntry(simulationServicesOwner: Simul
 			}
 			return previousContacts.concat([entryToStore])
 		})
-		if (entryToStore.useAsActiveAddress) await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true, true, { deferUiUpdates: true })
+		if (entryToStore.useAsActiveAddress) await reconcileWebsiteAccessAndScheduleUiUpdates(simulationServicesOwner, websiteTabConnections, await getSettings(), true, true)
 		void sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 		return { type: 'AddOrModifyAddressBookEntryReply' as const, ok: true as const }
 	} catch(error) {
@@ -411,7 +411,7 @@ export async function setSafeSimulationSigner(
 		}
 	}
 	if (updatedEntry.useAsActiveAddress) {
-		await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true, false, { deferUiUpdates: true })
+		await reconcileWebsiteAccessAndScheduleUiUpdates(simulationServicesOwner, websiteTabConnections, await getSettings(), true, false)
 	}
 	await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 	return { type: 'SetSafeSimulationSignerReply' as const, ok: true as const }
@@ -428,7 +428,7 @@ export async function changeInterceptorAccess(simulationServicesOwner: Simulatio
 	})
 
 
-	await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true, false, { deferUiUpdates: true })
+	await reconcileWebsiteAccessAndScheduleUiUpdates(simulationServicesOwner, websiteTabConnections, await getSettings(), true, false)
 	if (disabledSitesChanged) {
 		const origins = new Set(accessChange.data.map(change => change.newEntry.website.websiteOrigin))
 		startBackgroundTask(async () => await Promise.all([...origins].map(async origin => await reloadConnectedTabs(websiteTabConnections, origin))))
@@ -917,8 +917,7 @@ const getErrorIfAnyWithIncompleteAddressBookEntry = async (ethereum: EthereumCli
 		if (isAddress(trimmed)) {
 			const address = EthereumAddress.parse(trimmed)
 			if (incompleteAddressBookEntry.addingAddress) {
-				const identifiedAddress = await identifyAddressFromLocalMetadata(address, ethereum.getRpcEntry())
-				if (identifiedAddress !== undefined && identifiedAddress.entrySource !== 'OnChain' && identifiedAddress.entrySource !== 'FilledIn') {
+				if (await hasAddressBookDuplicate(address, ethereum.getRpcEntry())) {
 					return 'The address already exists. Edit the existing record instead trying to add it again.'
 				}
 			}

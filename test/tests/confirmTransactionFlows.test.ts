@@ -5,4 +5,4 @@ import './safeStackFlows.suite.js'
 import './terminalReplyDelivery.suite.js'
 
 beforeEach(resetConfirmTransactionTestState)
-afterEach(async () => await (await import('../../app/ts/background/backgroundTasks.js')).waitForBackgroundTasks())
+afterEach(async () => await (await import('./backgroundTasksTestHarness.js')).waitForBackgroundTasks())

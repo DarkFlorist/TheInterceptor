@@ -1,4 +1,4 @@
-import { waitForBackgroundTasks } from '../../app/ts/background/backgroundTasks.js'
+import { waitForBackgroundTasks } from './backgroundTasksTestHarness.js'
 import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import * as funtypes from 'funtypes'

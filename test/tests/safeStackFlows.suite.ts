@@ -6,7 +6,7 @@ import { SafeStackExport } from '../../app/ts/types/safeTypes.js'
 
 test('Safe signature import waits for validation but acknowledges before refreshing simulation', async () => {
 	const { createDeferredSignal } = await import('./backgroundEthAccountsTestHarness.js')
-	const { waitForBackgroundTasks } = await import('../../app/ts/background/backgroundTasks.js')
+	const { waitForBackgroundTasks } = await import('./backgroundTasksTestHarness.js')
 	const localTransaction = createSafeStackTransactionFixture()
 	const localStack = createSafeStackFixture([localTransaction])
 	await modules.updateSafeTransactionStacks(() => [localStack])

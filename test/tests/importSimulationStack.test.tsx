@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { afterEach, describe, test } from 'bun:test'
-import { waitForBackgroundTasks } from '../../app/ts/background/backgroundTasks.js'
+import { waitForBackgroundTasks } from './backgroundTasksTestHarness.js'
 
 afterEach(waitForBackgroundTasks)
 import { h, render } from 'preact'

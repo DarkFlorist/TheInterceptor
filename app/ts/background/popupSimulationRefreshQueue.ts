@@ -1,11 +1,8 @@
 // Coalesce interactive requests only; popupVisualisationUpdater owns execution, cancellation and stored state. See docs/popup-simulation-refresh.md.
 import { Future } from '../utils/future.js'
 import type { SimulationServices } from '../simulation/serviceLifecycle.js'
-import { captureSimulationSnapshot, getSimulationProviderForSnapshot, type SimulationSnapshot } from './simulationUpdating.js'
-import { getPopupVisualisationFingerprint } from './popupSimulationFingerprint.js'
-import { stringifyJSONWithBigInts } from '../utils/bigint.js'
 import { startBackgroundTask } from './backgroundTasks.js'
-import { capturePopupVisualisationGeneration, publishPendingPopupVisualisation, updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
+import { preparePopupVisualisationRefresh, type PopupVisualisationRefreshRequest } from './popupVisualisationUpdater.js'
 
 export type PopupSimulationRefresh = SimulationServices & { readonly invalidateOldState?: boolean }
 export type RevisionedPopupSimulationRefresh = PopupSimulationRefresh & { readonly revision: string | symbol }
@@ -57,36 +54,16 @@ export function createPopupSimulationRefresher<T extends RevisionedPopupSimulati
 	}
 }
 
-const refreshRevision = createPopupSimulationRefresher<RevisionedPopupSimulationRefresh & { readonly snapshot: SimulationSnapshot, readonly isCurrent?: () => boolean, readonly invalidationGeneration: number }>(async ({ ethereum, tokenPriceService, invalidateOldState = false, snapshot, isCurrent, invalidationGeneration }) => {
-	const result = await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { invalidateOldState, skipIfUnchanged: !invalidateOldState, snapshot, isCurrent, invalidationGeneration })
-	return result.simulationUpdatingState !== 'failed' && result.simulationResultState !== 'invalid'
-})
+const refreshRevision = createPopupSimulationRefresher<PopupVisualisationRefreshRequest>(async request => await request.execute(request.invalidateOldState ?? false))
 
 export async function queuePopupSimulationRefresh(services: PopupSimulationRefresh) {
-	const invalidationGeneration = capturePopupVisualisationGeneration()
-	const snapshot = await captureSimulationSnapshot()
-	const provider = getSimulationProviderForSnapshot(services.ethereum, snapshot)
-	const block = provider?.getCachedBlock()
-	// Without a cached head we cannot prove that two requests cover the same block; keep the follow-up refresh.
-	const revision = block === undefined ? Symbol('uncached block') : stringifyJSONWithBigInts([
-		getPopupVisualisationFingerprint(snapshot.simulationStateInput, services.ethereum.getRpcEntry(), block.number),
-		block.hash,
-		snapshot.numberOfAddressesMadeRich,
-		snapshot.activeStackContext,
-		invalidationGeneration,
-	])
-	return await refreshRevision({ ...services, revision, snapshot, invalidationGeneration })
+	const request = await preparePopupVisualisationRefresh(services)
+	return request === undefined ? { status: 'superseded' } as const : await refreshRevision(request)
 }
 
-let latestUiRefresh = 0
-
-// Await only local capture and invalidation. The queue owns execution after the UI edit is acknowledged.
+// Await local invalidation and capture; the executor owns validity after acknowledgement.
 export async function schedulePopupSimulationRefresh(services: PopupSimulationRefresh) {
-	const generation = ++latestUiRefresh
-	const isCurrent = () => generation === latestUiRefresh
-	const snapshot = await captureSimulationSnapshot()
-	if (!isCurrent()) return
-	const invalidateOldState = services.invalidateOldState ?? true
-	const invalidationGeneration = await publishPendingPopupVisualisation(invalidateOldState)
-	startBackgroundTask(async () => await refreshRevision({ ...services, invalidateOldState, revision: Symbol('UI simulation edit'), snapshot, isCurrent, invalidationGeneration }))
+	const request = await preparePopupVisualisationRefresh(services, true)
+	if (request === undefined) return
+	startBackgroundTask(async () => await refreshRevision(request))
 }

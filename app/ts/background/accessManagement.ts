@@ -455,14 +455,22 @@ export async function updateWebsiteApprovalAccesses(
 	settings: Settings,
 	promptForAccessesIfNeeded: boolean,
 	throwOnError = false,
-	options: { readonly deferUiUpdates?: boolean } = {},
 ): Promise<number> {
 	const update = await reconcileWebsiteApprovalAccesses(websiteTabConnections, settings, throwOnError)
-	if (options.deferUiUpdates) {
-		startBackgroundTask(async () => await finishWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, update, promptForAccessesIfNeeded, throwOnError))
-	} else {
-		await finishWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, update, promptForAccessesIfNeeded, throwOnError)
-	}
+	await finishWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, update, promptForAccessesIfNeeded, throwOnError)
+	return update.popupRefreshGeneration
+}
+
+// Acknowledgement covers permissions, blocking rules and provider notifications; reported prompt/icon failures cannot turn a committed save into a failed save.
+export async function reconcileWebsiteAccessAndScheduleUiUpdates(
+	simulationServicesOwner: SimulationServicesOwner | undefined,
+	websiteTabConnections: WebsiteTabConnections,
+	settings: Settings,
+	promptForAccessesIfNeeded: boolean,
+	throwOnReconciliationError = false,
+): Promise<number> {
+	const update = await reconcileWebsiteApprovalAccesses(websiteTabConnections, settings, throwOnReconciliationError)
+	startBackgroundTask(async () => await finishWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, update, promptForAccessesIfNeeded))
 	return update.popupRefreshGeneration
 }
 

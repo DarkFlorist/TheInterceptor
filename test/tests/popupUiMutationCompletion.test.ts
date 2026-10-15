@@ -3,7 +3,7 @@ import { afterEach, describe, test } from 'bun:test'
 import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
 import type { ModifyAddressWindowState, PreSimulationTransaction } from '../../app/ts/types/visualizer-types.js'
 import { createTestSimulationServicesOwner, createDeferredSignal, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules } from './backgroundEthAccountsTestHarness.js'
-import { waitForBackgroundTasks } from '../../app/ts/background/backgroundTasks.js'
+import { waitForBackgroundTasks } from './backgroundTasksTestHarness.js'
 import { pendingTransaction, signedTransaction } from './confirmTransactionTestHarness.js'
 import { isPendingTransactionGasLimitCurrent } from '../../app/ts/utils/pendingTransactionSimulation.js'
 
@@ -174,6 +174,45 @@ describe('UI mutation completion', () => {
 		} finally { release.resolve(); await waitForBackgroundTasks() }
 	})
 
+	test('address-book save reports permission reconciliation failures before acknowledgement', async () => {
+		installBrowserMock()
+		const modules = await loadModules()
+		const { addOrModifyAddressBookEntry } = await import('../../app/ts/background/popupMessageHandlers.js')
+		await modules.updateWebsiteAccess(() => [{ website: { websiteOrigin: 'https://blocked.invalid' }, access: true, declarativeNetRequestBlockMode: 'block-all' }])
+		Object.defineProperty(browser.declarativeNetRequest, 'getDynamicRules', { configurable: true, value: async () => { throw new Error('Cannot reconcile request blocking rules') } })
+		const { ethereum, tokenPriceService } = createEthereumWithGetBlockCounter({ count: 0 })
+		const reply = await addOrModifyAddressBookEntry(createTestSimulationServicesOwner({ ethereum, tokenPriceService }), new Map(), {
+			method: 'popup_addOrModifyAddressBookEntry', data: { type: 'contact', address: 42n, name: 'Saved account', entrySource: 'User', useAsActiveAddress: true },
+		})
+		assert.equal(reply.ok, false)
+		assert.match('message' in reply ? reply.message : '', /Cannot reconcile request blocking rules/)
+	})
+
+	test.each([false, true])('access UI failure is awaited only by the synchronous API (deferred=%s)', async deferred => {
+		installBrowserMock()
+		const modules = await loadModules()
+		const { reconcileWebsiteAccessAndScheduleUiUpdates, updateWebsiteApprovalAccesses } = await import('../../app/ts/background/accessManagement.js')
+		const { ethereum, tokenPriceService } = createEthereumWithGetBlockCounter({ count: 0 })
+		const owner = createTestSimulationServicesOwner({ ethereum, tokenPriceService })
+		const settings = await modules.getSettings()
+		let reconciliationCompleted = false
+		const connections: WebsiteTabConnections = Object.assign(new Map(), {
+			lifecycle: { accessReconciled: () => { reconciliationCompleted = true } },
+		})
+		const originalGet = browser.storage.local.get.bind(browser.storage.local)
+		Object.defineProperty(browser.storage.local, 'get', { configurable: true, value: async (keys?: string | string[] | Record<string, unknown>) => {
+			if (reconciliationCompleted && keys === undefined) throw new Error('Cannot read access icon targets')
+			return await originalGet(keys)
+		} })
+		if (deferred) {
+			await reconcileWebsiteAccessAndScheduleUiUpdates(owner, connections, settings, false, true)
+			await waitForBackgroundTasks()
+			assert.equal((await modules.getLatestUnexpectedError())?.data.message, 'Cannot read access icon targets')
+		} else {
+			await assert.rejects(updateWebsiteApprovalAccesses(owner, connections, settings, false, true), /Cannot read access icon targets/)
+		}
+	})
+
 	test('reports follow-up failures after a local command has completed', async () => {
 		installBrowserMock()
 		const modules = await loadModules()
@@ -198,7 +237,7 @@ describe('UI mutation completion', () => {
 		const release = createDeferredSignal()
 		const error = new Error('Superseded visualization failed unexpectedly')
 		const { ethereum, tokenPriceService } = createEthereumWithGetBlockCounter({ count: 0 })
-		const refresh = updatePopupVisualisationState(ethereum, tokenPriceService, undefined, throwOnUnexpectedError, snapshot, undefined, {
+		const refresh = updatePopupVisualisationState(ethereum, tokenPriceService, undefined, throwOnUnexpectedError, snapshot, {
 			getUpdatedState: async () => ({ kind: 'simulated', value: { ...pendingTransaction.popupVisualisation.data.simulationState, rpcNetwork: ethereum.getRpcEntry(), simulationStateInput: snapshot.simulationStateInput } }),
 			visualize: async () => { started.resolve(); await release.promise; throw error },
 		}).then(() => undefined, caught => caught)

@@ -1,4 +1,4 @@
-import { waitForBackgroundTasks } from '../../app/ts/background/backgroundTasks.js'
+import { waitForBackgroundTasks } from './backgroundTasksTestHarness.js'
 import { notifyWebsiteLifecycle } from '../../app/ts/background/websiteLifecycle.js'
 import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
 import * as assert from 'assert'

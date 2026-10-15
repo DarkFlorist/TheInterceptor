@@ -355,7 +355,8 @@ describe('add new address save flow', () => {
 	})
 
 	test('keeps Safe contract retrieval separate from generic address identification', () => {
-		assert.doesNotMatch(metadataUtilsSource, /getSafeContractSnapshot|validateSafeOwnerIsEoa/)
+		assert.match(metadataUtilsSource, /async function identifyAddressWithoutNode/)
+		assert.doesNotMatch(metadataUtilsSource, /export (?:async function|\{[^}]*)(?:identifyAddressWithoutNode|identifyAddressFromLocalMetadata)/)
 		assert.doesNotMatch(popupMessageHandlersSource, /safeContractState|includeSafeContractState/)
 		assert.match(replyMessagesSource, /method: funtypes\.Literal\('popup_requestSafeContractState'\)/)
 		assert.doesNotMatch(replyMessagesSource, /RequestIdentifyAddress[\s\S]{0,500}includeSafeContractState/)

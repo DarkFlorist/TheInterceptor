@@ -1,4 +1,4 @@
-import { waitForBackgroundTasks } from '../../app/ts/background/backgroundTasks.js'
+import { waitForBackgroundTasks } from './backgroundTasksTestHarness.js'
 import * as assert from 'node:assert'
 import { afterEach, describe, expect, spyOn, test } from 'bun:test'
 import type { ContactEntry, SafeEntry } from '../../app/ts/types/addressBookTypes.js'

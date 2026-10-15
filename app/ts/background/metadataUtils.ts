@@ -72,8 +72,7 @@ export function getNativeTokenErc20(rpcEntry: RpcNetwork | undefined): Erc20Toke
 	}
 }
 
-// Stored and bundled metadata are sufficient for duplicate checks; optional enrichment owns RPC lookups.
-export async function identifyAddressFromLocalMetadata(address: bigint, rpcEntry: RpcNetwork | undefined, useLocalStorage = true) : Promise<AddressBookEntry | undefined> {
+async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork | undefined, useLocalStorage = true) : Promise<AddressBookEntry | undefined> {
 	if (address === ETHEREUM_LOGS_LOGGER_ADDRESS) return getNativeTokenErc20(rpcEntry)
 
 	if (useLocalStorage) {
@@ -152,8 +151,14 @@ export async function identifyAddressFromLocalMetadata(address: bigint, rpcEntry
 	return undefined
 }
 
+// Duplicate form validation needs only existence, never a locally inferred contract type or Safe owners.
+export async function hasAddressBookDuplicate(address: bigint, rpcEntry: RpcNetwork | undefined): Promise<boolean> {
+	const entry = await identifyAddressWithoutNode(address, rpcEntry)
+	return entry !== undefined && entry.entrySource !== 'OnChain' && entry.entrySource !== 'FilledIn'
+}
+
 export async function identifyAddress(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, address: bigint, useLocalStorage = true) : Promise<AddressBookEntry> {
-	const identifiedAddress = await identifyAddressFromLocalMetadata(address, ethereumClientService.getRpcEntry(), useLocalStorage)
+	const identifiedAddress = await identifyAddressWithoutNode(address, ethereumClientService.getRpcEntry(), useLocalStorage)
 	if (identifiedAddress !== undefined) return identifiedAddress
 	const addrString = addressString(address)
 	const chainId = ethereumClientService.getChainId()
