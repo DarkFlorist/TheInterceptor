@@ -1,6 +1,5 @@
-import { useEffect } from 'preact/hooks'
 import type { RenameAddressCallBack } from './types/user-interface-types.js'
-import { GetAddressBookDataReply, MessageToPopup } from './types/interceptor-messages.js'
+import type { GetAddressBookDataReply } from './types/interceptor-messages.js'
 import { AddNewAddress } from './components/pages/AddNewAddress.js'
 import { BigAddress } from './components/subcomponents/address.js'
 import Hint from './components/subcomponents/Hint.js'
@@ -11,9 +10,10 @@ import type { ModifyAddressWindowState } from './types/visualizer-types.js'
 import { XMarkIcon } from './components/subcomponents/icons.js'
 import { DynamicScroller } from './components/subcomponents/DynamicScroller.js'
 import { Signal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
-import type { ChainEntry, RpcEntries } from './types/rpc.js'
+import type { ChainEntry } from './types/rpc.js'
 import { ChainSelector } from './components/subcomponents/ChainSelector.js'
-import { noReplyExpectingBrowserRuntimeOnMessageListener } from './utils/browser.js'
+import { usePopupMessage } from './components/hooks/usePopupMessage.js'
+import { usePopupSettingsSnapshot } from './components/hooks/usePopupSettingsSnapshot.js'
 import { addressEditEntry } from './components/ui-utils.js'
 import { createAsyncActionRunner, useAsyncState } from './utils/preact-utilities.js'
 import { AsyncActionButton } from './components/subcomponents/AsyncAction.js'
@@ -210,7 +210,8 @@ export function AddressBook() {
 	const addressBookEntries = useComputed(() => addressBookEntriesWithFilter.value.addressBookEntries || [])
 	const activeChain = useSignal<ChainEntry | undefined>(undefined)
 	const activeChainId = useComputed(() => activeChain.value?.chainId ?? 1n)
-	const rpcEntries = useSignal<RpcEntries>([])
+	const settingsSnapshot = usePopupSettingsSnapshot()
+	const rpcEntries = useComputed(() => settingsSnapshot.value?.rpcEntries ?? [])
 	const viewFilter = useSignal<ViewFilter>({ activeFilter: 'My Active Addresses', searchString: '', chain: undefined })
 	const modalState = useSignal<Modals>({ page: 'noModal' })
 	function sendQuery() {
@@ -224,44 +225,32 @@ export function AddressBook() {
 	}
 	useSignalEffect(sendQuery)
 
-	useEffect(() => {
-		const popupMessageListener = (msg: unknown): false => {
-			const maybeParsed = MessageToPopup.safeParse(msg)
-			if (!maybeParsed.success) return false // not a message we are interested in
-			const parsed = maybeParsed.value
-			if (parsed.method === 'popup_addressBookEntriesChanged') {
-				const chainId = activeChain.peek()?.chainId
-				if (chainId !== undefined) sendQuery()
-				return false
-			}
-			if (parsed.method === 'popup_settingsUpdated') {
-				sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
-				return false
-			}
-			if (parsed.method === 'popup_requestSettingsReply') {
-				rpcEntries.value = parsed.data.rpcEntries
-				const prevActiveNetwork = activeChain.peek()
-				if (prevActiveNetwork === undefined || prevActiveNetwork.chainId === parsed.data.activeRpcNetwork.chainId) {
-					activeChain.value = parsed.data.activeRpcNetwork
-					if (prevActiveNetwork === undefined || viewFilter.value.chain === undefined) {
-						viewFilter.value = { ...viewFilter.value, chain: activeChain.value === undefined ? undefined : { name: activeChain.value.name, chainId: activeChain.value.chainId } }
-					}
-				}
-			}
-			if (parsed.method !== 'popup_getAddressBookDataReply') return false
-			const reply = GetAddressBookDataReply.parse(msg)
-			if (doesReplyMatchViewFilter(viewFilter.peek(), reply.data.data)) {
-				addressBookEntriesWithFilter.value = {
-					addressBookEntries: reply.data.entries,
-					activeFilter: reply.data.data.filter,
-				}
-			}
-			return false
+	// Adopt the active network on first load; later settings replies only refresh the entry of the chain already being shown.
+	useSignalEffect(() => {
+		const activeRpcNetwork = settingsSnapshot.value?.activeRpcNetwork
+		if (activeRpcNetwork === undefined) return
+		const prevActiveNetwork = activeChain.peek()
+		if (prevActiveNetwork !== undefined && prevActiveNetwork.chainId !== activeRpcNetwork.chainId) return
+		activeChain.value = activeRpcNetwork
+		const currentViewFilter = viewFilter.peek()
+		if (prevActiveNetwork === undefined || currentViewFilter.chain === undefined) {
+			viewFilter.value = { ...currentViewFilter, chain: { name: activeRpcNetwork.name, chainId: activeRpcNetwork.chainId } }
 		}
-		sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
-		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
-		return () => { browser.runtime.onMessage.removeListener(popupMessageListener) }
-	}, [])
+	})
+
+	usePopupMessage((message) => {
+		if (message.method === 'popup_addressBookEntriesChanged') {
+			const chainId = activeChain.peek()?.chainId
+			if (chainId !== undefined) sendQuery()
+			return
+		}
+		if (message.method !== 'popup_getAddressBookDataReply') return
+		if (!doesReplyMatchViewFilter(viewFilter.peek(), message.data.data)) return
+		addressBookEntriesWithFilter.value = {
+			addressBookEntries: message.data.entries,
+			activeFilter: message.data.data.filter,
+		}
+	})
 
 	function changeFilter(activeFilter: FilterKey) {
 		viewFilter.value = { ...viewFilter.peek(), activeFilter }

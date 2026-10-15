@@ -1,16 +1,13 @@
 import { describe, test } from 'bun:test'
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import type { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
 import { toResolvedSimulationInput } from '../../app/ts/types/visualizer-types.js'
 import { bytes32String } from '../../app/ts/utils/bigint.js'
+import { replaceGlobal } from '../harness/globals.js'
 
-Object.defineProperty(globalThis, 'chrome', {
-	value: { runtime: { id: 'test-extension' } },
-	configurable: true,
-	writable: true,
-})
+replaceGlobal('chrome', { runtime: { id: 'test-extension' } })
 
 const { getStorageAt } = await import('../../app/ts/background/simulationModeHandlers.js')
 

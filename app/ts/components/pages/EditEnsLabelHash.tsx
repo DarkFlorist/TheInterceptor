@@ -2,8 +2,8 @@
 import { Notice } from '../subcomponents/Error.js'
 import { bytes32String } from '../../utils/bigint.js'
 import type { EditEnsNamedHashWindowState } from '../../types/visualizer-types.js'
-import { type ComponentChildren, createRef } from 'preact'
-import { useEffect } from 'preact/hooks'
+import type { ComponentChildren } from 'preact'
+import { useEffect, useRef } from 'preact/hooks'
 import { useSignal } from '@preact/signals'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { keccak256, namehash, stringToBytes } from '../../utils/ethereumPrimitives.js'
@@ -21,23 +21,41 @@ const CellElement = (param: { element: ComponentChildren }) => {
 	</div>
 }
 
+const Text = (param: { text: ComponentChildren }) => {
+	return <p class = 'paragraph' style = 'color: var(--subtitle-text-color); text-overflow: ellipsis; overflow: hidden; width: 100%'>
+		{ param.text }
+	</p>
+}
+
+type TextInputParams = {
+	value: string | undefined
+	setInput: (input: string) => void
+	disabled: boolean,
+	placeholder: string,
+}
+
+// Declared at module level so the input keeps its DOM element across parent rerenders and only grabs focus when it first mounts.
+function TextInput({ value, setInput, disabled, placeholder }: TextInputParams) {
+	const ref = useRef<HTMLInputElement>(null)
+	useEffect(() => { ref.current?.focus() }, [])
+	return <input
+		class = 'input title is-5 is-spaced'
+		type = 'text'
+		value = { value }
+		placeholder = { placeholder }
+		onInput = { e => setInput((e.target as HTMLInputElement).value) }
+		maxLength = { 42 }
+		ref = { ref }
+		style = { 'width: 100%' }
+		disabled = { disabled }
+	/>
+}
+
 export function EditEnsLabelHash(param: EditEnsNamedHashParams) {
 	const inputDisabled = useSignal<boolean>(false)
 	const name = useSignal<string | undefined>(undefined)
 	const errorString = useSignal<string>('')
 
-	const Text = (param: { text: ComponentChildren }) => {
-		return <p class = 'paragraph' style = 'color: var(--subtitle-text-color); text-overflow: ellipsis; overflow: hidden; width: 100%'>
-			{ param.text }
-		</p>
-	}
-
-	type TextInputParams = {
-		value: string | undefined
-		setInput: (input: string) => void
-		disabled: boolean,
-		placeholder: string,
-	}
 	async function validateAndSetName(nameInput: string) {
 		name.value = nameInput
 		if (param.editEnsNamedHashWindowState.type === 'labelHash') {
@@ -61,22 +79,6 @@ export function EditEnsLabelHash(param: EditEnsNamedHashParams) {
 		}
 		inputDisabled.value = true
 		await sendPopupMessageToBackgroundPage({ method: 'popup_setEnsNameForHash', data: { ...param.editEnsNamedHashWindowState, name: nameInput } } )
-	}
-
-	function TextInput({ value, setInput, disabled, placeholder }: TextInputParams) {
-		const ref = createRef<HTMLInputElement>()
-		useEffect(() => { ref.current?.focus() }, [])
-		return <input
-			class = 'input title is-5 is-spaced'
-			type = 'text'
-			value = { value }
-			placeholder = { placeholder }
-			onInput = { e => setInput((e.target as HTMLInputElement).value) }
-			maxLength = { 42 }
-			ref = { ref }
-			style = { 'width: 100%' }
-			disabled = { disabled }
-		/>
 	}
 
 	return ( <>

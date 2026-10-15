@@ -36,7 +36,6 @@ const erc20andErc721FunctionSignatures = [
 	},
 ] as const satisfies Abi
 
-type CallDataType = funtypes.Static<typeof CallDataType>
 const CallDataType = funtypes.Union(
 	funtypes.ReadonlyObject({
 		name: funtypes.Literal('transfer'),

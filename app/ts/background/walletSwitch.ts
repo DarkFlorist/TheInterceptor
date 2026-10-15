@@ -85,7 +85,7 @@ function resolveSignerChainChange(signerStateToken: SignerStateToken, confirmati
 	return true
 }
 
-export type RpcSwitchResult = { readonly result: null, readonly error?: undefined } | { readonly error: { readonly code: number, readonly message: string, readonly data?: string }, readonly result?: undefined }
+export type RpcSwitchResult = { readonly result: null, readonly error?: undefined } | { readonly error: { readonly code: number, readonly message: string, readonly data?: unknown }, readonly result?: undefined }
 
 export type RpcSwitchRequest =
 	| { readonly source: 'popup', readonly signerTabId: number | undefined }

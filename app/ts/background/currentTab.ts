@@ -1,4 +1,4 @@
-import { getCurrentTabId, saveCurrentTabId } from './storageVariables.js'
+import { getCurrentTabId, getTabState, saveCurrentTabId } from './storageVariables.js'
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 
 const isExtensionPageUrl = (urlString: string) => {
@@ -22,4 +22,10 @@ export async function getLastKnownCurrentTabId() {
 	if (isExtensionPageUrl(tabs[0].url)) return tabId
 	if (tabId !== tabs[0].id) await saveCurrentTabId(tabs[0].id)
 	return tabs[0].id
+}
+
+export async function getCurrentTabSignerAccount() {
+	const tabId = await getLastKnownCurrentTabId()
+	const signerAccounts = tabId === undefined ? undefined : (await getTabState(tabId)).signerAccounts
+	return signerAccounts !== undefined && signerAccounts.length > 0 ? signerAccounts[0] : undefined
 }

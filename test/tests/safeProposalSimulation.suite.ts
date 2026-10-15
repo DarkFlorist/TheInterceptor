@@ -1,6 +1,20 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { test } from 'bun:test'
-import { activeAddress, addressString, browserMock, created, createSafeAddressBookEntry, createSafeTx, createWebsitePort, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, hexToBytes, isRecord, modules, pendingTransaction, recipientAddress, signedTransaction, simulator, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
+import * as funtypes from 'funtypes'
+import type { EthereumUnsignedTransaction } from '../../app/ts/types/wire-types.js'
+import { activeAddress, addressString, browserMock, connectWebsite, created, createInterceptedRequest, createSafeAddressBookEntry, createSafeTx, fakeRpcNetwork, fakeSafeContract, findPostedMessageWithMethod, getSafeTxHash, getSentConfirmTransactionDialogUpdates, getSentPendingTransactionDialogUpdates, hasForwardedSignerRequest, hexToBytes, interceptStorageSet, modules, oldTimestamp, pendingTransaction, recipientAddress, signedTransaction, simulator, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
+
+// Legacy and EIP-2930 transactions have no EIP-1559 fee fields; reading them as undefined keeps the zero-fee assertions meaningful for every transaction type.
+const getEip1559Fees = (transaction: EthereumUnsignedTransaction) => ({
+	maxFeePerGas: 'maxFeePerGas' in transaction ? transaction.maxFeePerGas : undefined,
+	maxPriorityFeePerGas: 'maxPriorityFeePerGas' in transaction ? transaction.maxPriorityFeePerGas : undefined,
+})
+
+const SimulationStackReply = funtypes.ReadonlyObject({
+	result: funtypes.ReadonlyObject({
+		payload: funtypes.ReadonlyObject({ transactions: funtypes.ReadonlyArray(funtypes.Unknown) }),
+	}),
+})
 
 test('rejects EIP-7702 authorization lists before creating a Safe proposal', async () => {
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
@@ -27,30 +41,12 @@ test('rejects EIP-7702 authorization lists before creating a Safe proposal', asy
 			}],
 		}],
 	})
-	const postedMessages: unknown[] = []
-	const port = createWebsitePort(uniqueRequestIdentifier.requestSocket, 0, postedMessages)
-	const websiteTabConnections = new Map([[uniqueRequestIdentifier.requestSocket.tabId, {
-		connections: {
-			[modules.websiteSocketToString(uniqueRequestIdentifier.requestSocket)]: {
-				port,
-				socket: uniqueRequestIdentifier.requestSocket,
-				websiteOrigin: 'https://example.com',
-				approved: true,
-				wantsToConnect: true,
-			},
-		},
-	}]])
+	const { postedMessages, websiteTabConnections } = connectWebsite()
 
 	const reply = await modules.openConfirmTransactionDialogForTransaction(
 		simulator.ethereum,
 		simulator.tokenPriceService,
-		{
-			interceptorRequest: true,
-			usingInterceptorWithoutSigner: false,
-			uniqueRequestIdentifier,
-			method: transactionParams.method,
-			params: transactionParams.params,
-		},
+		createInterceptedRequest(transactionParams),
 		{ kind: 'transaction', parameters: transactionParams },
 		false,
 		activeAddress,
@@ -63,7 +59,7 @@ test('rejects EIP-7702 authorization lists before creating a Safe proposal', asy
 	assert.match('error' in reply ? reply.error.message : '', /do not support EIP-7702 authorization lists/u)
 	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
 	assert.deepEqual(await modules.getSafeTransactionStacks(), [])
-	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
+	assert.equal(hasForwardedSignerRequest(postedMessages), false)
 	await modules.updateUserAddressBookEntries(() => modules.defaultActiveAddresses)
 })
 
@@ -92,30 +88,12 @@ test('shows stale local Safe stack failures in the transaction confirmation', as
 			data: '0x',
 		}],
 	})
-	const postedMessages: unknown[] = []
-	const port = createWebsitePort(uniqueRequestIdentifier.requestSocket, 0, postedMessages)
-	const websiteTabConnections = new Map([[uniqueRequestIdentifier.requestSocket.tabId, {
-		connections: {
-			[modules.websiteSocketToString(uniqueRequestIdentifier.requestSocket)]: {
-				port,
-				socket: uniqueRequestIdentifier.requestSocket,
-				websiteOrigin: 'https://example.com',
-				approved: true,
-				wantsToConnect: true,
-			},
-		},
-	}]])
+	const { postedMessages, websiteTabConnections } = connectWebsite()
 
 	const reply = await withSilencedConsole(async () => await modules.openConfirmTransactionDialogForTransaction(
 		simulator.ethereum,
 		simulator.tokenPriceService,
-		{
-			interceptorRequest: true,
-			usingInterceptorWithoutSigner: false,
-			uniqueRequestIdentifier,
-			method: transactionParams.method,
-			params: transactionParams.params,
-		},
+		createInterceptedRequest(transactionParams),
 		{ kind: 'transaction', parameters: transactionParams },
 		false,
 		activeAddress,
@@ -130,12 +108,12 @@ test('shows stale local Safe stack failures in the transaction confirmation', as
 	assert.equal(pendingFailure.transactionToSimulate.success, false)
 	if (pendingFailure.transactionToSimulate.success) throw new Error('Expected Safe preparation failure')
 	assert.match(pendingFailure.transactionToSimulate.error.message, /current Gnosis Safe nonce 1 is beyond this stack's final nonce 0/u)
-	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
+	assert.equal(hasForwardedSignerRequest(postedMessages), false)
 	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
 		data: { action: 'accept', uniqueRequestIdentifier },
 	}), false)
-	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
+	assert.equal(hasForwardedSignerRequest(postedMessages), false)
 	assert.equal((await modules.getPendingTransactionsAndMessages())[0]?.transactionOrMessageCreationStatus, 'FailedToSimulate')
 
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
@@ -222,29 +200,12 @@ test('reconciles executed Safe operations before simulating the next proposal', 
 		value: 2n,
 		input: new Uint8Array(),
 	}, 2n)))
-	const port = createWebsitePort(uniqueRequestIdentifier.requestSocket, 0, [])
-	const websiteTabConnections = new Map([[uniqueRequestIdentifier.requestSocket.tabId, {
-		connections: {
-			[modules.websiteSocketToString(uniqueRequestIdentifier.requestSocket)]: {
-				port,
-				socket: uniqueRequestIdentifier.requestSocket,
-				websiteOrigin: 'https://example.com',
-				approved: true,
-				wantsToConnect: true,
-			},
-		},
-	}]])
+	const { websiteTabConnections } = connectWebsite()
 
 	assert.deepEqual(await modules.openConfirmTransactionDialogForTransaction(
 		simulator.ethereum,
 		simulator.tokenPriceService,
-		{
-			interceptorRequest: true,
-			usingInterceptorWithoutSigner: false,
-			uniqueRequestIdentifier,
-			method: transactionParams.method,
-			params: transactionParams.params,
-		},
+		createInterceptedRequest(transactionParams),
 		{ kind: 'transaction', parameters: transactionParams },
 		false,
 		activeAddress,
@@ -260,7 +221,7 @@ test('reconciles executed Safe operations before simulating the next proposal', 
 	const pendingProposal = (await modules.getPendingTransactionsAndMessages()).find((pending) =>
 		pending.uniqueRequestIdentifier.requestId === uniqueRequestIdentifier.requestId
 	)
-	assert.equal(pendingProposal?.safeTransaction?.safeTx.message.nonce, 2n)
+	assert.equal(pendingProposal?.type === 'Transaction' ? pendingProposal.safeTransaction?.safeTx.message.nonce : undefined, 2n)
 })
 
 test('uses zero-reimbursement Safe semantics in the pre-sign confirmation simulation', async () => {
@@ -332,7 +293,7 @@ test('isolates Safe signing previews from the simulation-mode transaction stack'
 		safeTx: pendingSafeTx,
 	}
 	const previousSafeTransaction = modules.createSafeExecutionPreSimulationTransaction(
-		{ ...pendingTransaction.transactionToSimulate, transactionIdentifier: 71n },
+		{ ...pendingTransaction.transactionToSimulate, signedTransaction, transactionIdentifier: 71n },
 		previousSafeRequest,
 	)
 	const isolatedInput = modules.createSafeSigningSimulationInput({
@@ -340,6 +301,7 @@ test('isolates Safe signing previews from the simulation-mode transaction stack'
 			type: 'Transaction',
 			preSimulationTransaction: {
 				...pendingTransaction.transactionToSimulate,
+				signedTransaction,
 				transactionIdentifier: 70n,
 			},
 		}, {
@@ -384,14 +346,12 @@ test('does not show simulation-mode stack setup in a Safe signing confirmation',
 			},
 		}],
 	})
-	browserMock.sentMessages.length = 0
+	browserMock.calls.runtimeSendMessage.length = 0
 
 	await modules.updateConfirmTransactionView(simulator.ethereum, simulator.tokenPriceService)
 
-	const dialogUpdate = browserMock.sentMessages.find((message) => isRecord(message) && message.method === 'popup_update_confirm_transaction_dialog')
-	if (!isRecord(dialogUpdate) || !isRecord(dialogUpdate.data) || !isRecord(dialogUpdate.data.visualizedSimulatorState)) {
-		throw new Error('Missing Safe confirmation simulation-state update')
-	}
+	const [dialogUpdate] = getSentConfirmTransactionDialogUpdates()
+	if (dialogUpdate === undefined) throw new Error('Missing Safe confirmation simulation-state update')
 	const visualizedSimulatorState = dialogUpdate.data.visualizedSimulatorState
 	assert.equal(visualizedSimulatorState.numberOfAddressesMadeRich, 0)
 	assert.deepEqual(visualizedSimulatorState.simulationState, { kind: 'passthrough' })
@@ -433,19 +393,7 @@ test('returns the current Safe overlay when a simulation-stack request is confir
 		simulationStackVersion: '2.0.0',
 		uniqueRequestIdentifier,
 	})
-	const postedMessages: unknown[] = []
-	const port = createWebsitePort(uniqueRequestIdentifier.requestSocket, 0, postedMessages)
-	const websiteTabConnections = new Map([[uniqueRequestIdentifier.requestSocket.tabId, {
-		connections: {
-			[modules.websiteSocketToString(uniqueRequestIdentifier.requestSocket)]: {
-				port,
-				socket: uniqueRequestIdentifier.requestSocket,
-				websiteOrigin: 'https://example.com',
-				approved: true,
-				wantsToConnect: true,
-			},
-		},
-	}]])
+	const { postedMessages, websiteTabConnections } = connectWebsite()
 
 	await modules.fetchSimulationStackRequestConfirmation(simulator.ethereum, websiteTabConnections, {
 		method: 'popup_fetchSimulationStackRequestConfirmation',
@@ -456,10 +404,9 @@ test('returns the current Safe overlay when a simulation-stack request is confir
 		},
 	})
 
-	const reply = postedMessages.find((message) => isRecord(message) && message.method === 'interceptor_getSimulationStack')
-	if (!isRecord(reply) || !isRecord(reply.result) || !isRecord(reply.result.payload)) throw new Error('Missing simulation stack reply')
-	assert.equal(Array.isArray(reply.result.payload.transactions), true)
-	assert.equal(Array.isArray(reply.result.payload.transactions) ? reply.result.payload.transactions.length : 0, 1)
+	const reply = SimulationStackReply.safeParse(findPostedMessageWithMethod(postedMessages, 'interceptor_getSimulationStack'))
+	if (!reply.success) throw new Error('Missing simulation stack reply')
+	assert.equal(reply.value.result.payload.transactions.length, 1)
 	await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
 	await modules.setFetchSimulationStackRequestPromise(undefined)
 })
@@ -497,8 +444,7 @@ test('prepares Safe transaction intent without charging gas to the Safe', async 
 	assert.equal(prepared.transaction.value, 0n)
 	assert.deepEqual(prepared.transaction.input, hexToBytes('0xa9059cbb'))
 	assert.equal(prepared.transaction.gas, 32_813n)
-	assert.equal(prepared.transaction.maxFeePerGas, 0n)
-	assert.equal(prepared.transaction.maxPriorityFeePerGas, 0n)
+	assert.deepEqual(getEip1559Fees(prepared.transaction), { maxFeePerGas: 0n, maxPriorityFeePerGas: 0n })
 	assert.equal(fakeSafeContract.requestedRpcMethods.includes('eth_getBalance'), false)
 	assert.equal(fakeSafeContract.requestedRpcMethods.includes('eth_estimateGas'), false)
 	assert.equal(fakeSafeContract.requestedRpcMethods.includes('eth_simulateV1'), true)
@@ -567,7 +513,7 @@ test('propagates unexpected Safe proposal RPC and reconciliation storage failure
 	} finally {
 		fakeSafeContract.safeOwnerLookupFailure = undefined
 	}
-	browserMock.setStorageSetHandler(async () => {
+	const restoreStorageSet = interceptStorageSet(async () => {
 		throw new Error('Safe reconciliation storage unavailable')
 	})
 	try {
@@ -576,7 +522,7 @@ test('propagates unexpected Safe proposal RPC and reconciliation storage failure
 			/Safe reconciliation storage unavailable/u,
 		)
 	} finally {
-		browserMock.setStorageSetHandler(undefined)
+		restoreStorageSet()
 	}
 })
 
@@ -639,6 +585,17 @@ test('reserves proposal nonces without counting overlapping direct Safe executio
 	assert.equal(finalized.safeTransaction?.safeTx.message.nonce, 1n)
 })
 
+test('refreshing confirm transaction updates the persisted simulation timestamp', async () => {
+	browserMock.calls.runtimeSendMessage.length = 0
+	await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
+	const [refreshedPending] = await modules.getPendingTransactionsAndMessages()
+	if (refreshedPending?.type !== 'Transaction' || !('popupVisualisation' in refreshedPending)) throw new Error('missing refreshed pending transaction')
+	if (refreshedPending.popupVisualisation.statusCode !== 'success') throw new Error('unexpected popup visualisation state')
+	const refreshedTimestamp = refreshedPending.popupVisualisation.data.simulationState.simulationConductedTimestamp
+	assert.ok(refreshedTimestamp.getTime() > oldTimestamp.getTime())
+	assert.equal(getSentPendingTransactionDialogUpdates().length > 0, true)
+})
+
 test('refreshes pending Safe intent without charging gas to the Safe', async () => {
 	await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
 	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({
@@ -696,8 +653,7 @@ test('refreshes pending Safe intent without charging gas to the Safe', async () 
 	if (refreshed?.type !== 'Transaction' || refreshed.transactionOrMessageCreationStatus !== 'Simulated') {
 		throw new Error('Pending Safe transaction was not refreshed')
 	}
-	assert.equal(refreshed.transactionToSimulate.transaction.maxFeePerGas, 0n)
-	assert.equal(refreshed.transactionToSimulate.transaction.maxPriorityFeePerGas, 0n)
+	assert.deepEqual(getEip1559Fees(refreshed.transactionToSimulate.transaction), { maxFeePerGas: 0n, maxPriorityFeePerGas: 0n })
 	assert.equal(refreshed.safeTransaction?.executionGasLimit, 32_813n)
 	assert.deepEqual(refreshed.transactionToSimulate.transaction.input, hexToBytes('0xa9059cbb'))
 	assert.equal(fakeSafeContract.requestedRpcMethods.includes('eth_getBalance'), false)
@@ -759,8 +715,7 @@ test('refreshes direct Safe execution without charging gas to the signer', async
 	if (refreshed?.type !== 'Transaction' || refreshed.transactionOrMessageCreationStatus !== 'Simulated') {
 		throw new Error('Direct Safe execution was not refreshed')
 	}
-	assert.equal(refreshed.transactionToSimulate.transaction.maxFeePerGas, 0n)
-	assert.equal(refreshed.transactionToSimulate.transaction.maxPriorityFeePerGas, 0n)
+	assert.deepEqual(getEip1559Fees(refreshed.transactionToSimulate.transaction), { maxFeePerGas: 0n, maxPriorityFeePerGas: 0n })
 	assert.deepEqual(refreshed.transactionToSimulate.transaction.input, new Uint8Array())
 	assert.equal(fakeSafeContract.requestedRpcMethods.includes('eth_getBalance'), false)
 	assert.equal(fakeSafeContract.requestedRpcMethods.includes('eth_estimateGas'), false)

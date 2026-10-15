@@ -1,10 +1,9 @@
 import { useEffect } from 'preact/hooks'
 import type { ComponentChildren } from 'preact'
 import { useSignal } from '@preact/signals'
-import { MessageToPopup } from '../../types/interceptor-messages.js'
 import type { PendingWatchAssetRequest } from '../../types/user-interface-types.js'
 import { sendPopupMessageToBackgroundPage, sendPopupReadyAndListening } from '../../background/backgroundUtils.js'
-import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
+import { usePopupMessage } from '../hooks/usePopupMessage.js'
 import { sanitizeStoredWebsiteIcon } from '../../utils/websiteIcons.js'
 import { SignerLogoText, getPrettySignerName } from '../subcomponents/signers.js'
 import { SmallAddress } from '../subcomponents/address.js'
@@ -121,17 +120,11 @@ export function WatchAsset() {
 	const request = useSignal<PendingWatchAssetRequest | undefined>(undefined)
 	const submitting = useSignal(false)
 
-	useEffect(() => {
-		function popupMessageListener(message: unknown): false {
-			const parsed = MessageToPopup.safeParse(message)
-			if (!parsed.success || parsed.value.method !== 'popup_WatchAssetRequest') return false
-			request.value = parsed.value.data
-			submitting.value = false
-			return false
-		}
-		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
-		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
-	}, [])
+	usePopupMessage((message) => {
+		if (message.method !== 'popup_WatchAssetRequest') return
+		request.value = message.data
+		submitting.value = false
+	})
 
 	useEffect(() => { void sendPopupReadyAndListening('watchAsset') }, [])
 
