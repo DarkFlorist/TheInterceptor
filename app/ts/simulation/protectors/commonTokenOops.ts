@@ -1,6 +1,6 @@
 import { UNISWAP_V2_ROUTER_ADDRESS, SUSHISWAP_V2_ROUTER_ADDRESS, UNISWAP_V3_ROUTER } from '../../utils/constants.js'
 import type { EthereumAddress, EthereumUnsignedTransaction } from '../../types/wire-types.js'
-import { erc1155Metadata, erc721Metadata, tokenMetadata } from '@darkflorist/address-metadata'
+import { bundledErc1155Metadata, bundledErc721Metadata, bundledTokenMetadata } from '../../background/bundledAddressMetadata.js'
 import { addressString } from '../../utils/bigint.js'
 import { parseTransaction } from '../../utils/calldata.js'
 import { type SimulationState, toResolvedSimulationState } from '../../types/visualizer-types.js'
@@ -16,7 +16,7 @@ const ADDITIONAL_BAD_TRANSFER_TARGETS = new Set<bigint>([
 
 const hasKnownCommonTokenMetadata = (address: EthereumAddress) => {
 	const normalizedAddress = addressString(address)
-	return tokenMetadata.has(normalizedAddress) || erc721Metadata.has(normalizedAddress) || erc1155Metadata.has(normalizedAddress)
+	return bundledTokenMetadata.has(normalizedAddress) || bundledErc721Metadata.has(normalizedAddress) || bundledErc1155Metadata.has(normalizedAddress)
 }
 
 export async function getCodeOrError(ethereum: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: SimulationState, address: EthereumAddress) {
