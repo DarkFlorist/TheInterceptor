@@ -37,7 +37,7 @@ export const InlineCard = (props: InlineCardProps) => {
 
 	return (
 		<span class = 'inline-card' role = 'figure' style = { props.style } title = { props.label }>
-			{ props.warningMessage ? <WarningSign message = { props.warningMessage } /> : <></> }
+			{ props.warningMessage ? <WarningSign message = { props.warningMessage } isTrailingSign = { false } /> : <></> }
 			<span role = 'img'><Icon /></span>
 			<data class = 'truncate text-legible' style = { props.style } value = { props.label }>{ props.label }</data>
 			<span class = 'inline-card-actions' role = { hasAction ? 'group' : undefined } aria-hidden = { props.nonInteractive || !hasAction } aria-label = { props.noExpandButtons || props.nonInteractive || !hasAction ? undefined : 'Spell-out actions' }>
@@ -80,12 +80,27 @@ export const InlineCard = (props: InlineCardProps) => {
 					</button>
 				) : <></> }
 			</span>
-			{ props.warningMessage ? <WarningSign message = { props.warningMessage } /> : <></> }
+			{ props.warningMessage ? <WarningSign message = { props.warningMessage } isTrailingSign = { true } /> : <></> }
 			<Tooltip config = { tooltip } />
 		</span>
 	)
 }
 
-const WarningSign = ({ message = 'Warning' }: { message?: string }) => {
-	return <span role = 'alert' title = { message }>⚠</span>
+type WarningSignProps = {
+	message: string
+	// The card shows a sign on both sides of its label; only the leading sign is an alert and focusable, so screen reader and keyboard users meet the warning once per card.
+	isTrailingSign: boolean
+}
+
+const WarningSign = ({ message, isTrailingSign }: WarningSignProps) => {
+	// The leading sign is an alert so screen readers proactively announce this anti-phishing warning, such as a token impersonating a well-known one, as soon as the card renders; its aria-label makes that announcement and its reading-order name carry the full explanation. The trailing sign is aria-hidden so the warning is announced once per card instead of twice. The native title tooltip is intentionally suppressed: the surrounding Hint container shows data-tooltip with the full explanation on hover and on keyboard focus of the leading sign, and the empty title stops the card's label title from appearing as a native tooltip over the sign instead.
+	return <span
+		class = 'inline-card-warning-sign'
+		role = { isTrailingSign ? undefined : 'alert' }
+		data-tooltip = { message }
+		title = ''
+		aria-label = { isTrailingSign ? undefined : message }
+		aria-hidden = { isTrailingSign ? true : undefined }
+		tabIndex = { isTrailingSign ? undefined : 0 }
+	>⚠</span>
 }
