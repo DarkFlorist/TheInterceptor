@@ -1,6 +1,7 @@
 import * as assert from 'assert'
 import { describe, spyOn, test } from 'bun:test'
 import { getInvalidRpcParamsReply, getMethodSpecificParseFailureReply } from '../../app/ts/background/rpcParseFailureReply.js'
+import { EIP712MessageUnderlying } from '../../app/ts/types/eip721.js'
 import { EthereumJsonRpcRequest, findEthereumJsonRpcRequestCodec, WalletRevokePermissions } from '../../app/ts/types/JsonRpc-types.js'
 import type { InterceptedRequest } from '../../app/ts/utils/requests.js'
 
@@ -20,26 +21,27 @@ type ParseableCodec = { safeParse(value: unknown): unknown }
 
 const isParseableCodec = (value: unknown): value is ParseableCodec => typeof value === 'object' && value !== null && 'safeParse' in value && typeof value.safeParse === 'function'
 
-// Collects a codec and every codec nested in it through the funtypes reflection members.
+// Collects a codec and every codec nested in it through the funtypes reflection members. Lazy codecs store a function that returns the underlying codec.
 function collectNestedCodecs(codec: unknown, collected = new Set<ParseableCodec>()) {
 	if (!isParseableCodec(codec) || collected.has(codec)) return collected
 	collected.add(codec)
 	for (const member of ['underlying', 'element', 'value', 'alternatives', 'components', 'intersectees', 'fields']) {
-		const child: unknown = Reflect.get(codec, member)
+		const memberValue: unknown = Reflect.get(codec, member)
+		const child: unknown = member === 'underlying' && typeof memberValue === 'function' ? memberValue() : memberValue
 		const children: unknown[] = Array.isArray(child) ? child : member === 'fields' && typeof child === 'object' && child !== null ? Object.values(child) : [child]
 		for (const nestedCodec of children) collectNestedCodecs(nestedCodec, collected)
 	}
 	return collected
 }
 
-// Counts how often each codec nested in the request codec is validated while the readable message is built.
+// Counts how often each codec nested in the request codec or in the EIP-712 typed data document codec is validated while the readable message is built. The request codec reaches the document codec only inside its string parser.
 function getReadableMessageWithParseCounts(method: string, params: unknown[]) {
 	const request = createRequest(method, params)
 	const requestCodec = findEthereumJsonRpcRequestCodec(method)
 	if (requestCodec === undefined) throw new Error(`Unsupported method ${ method }`)
 	const parseResult = requestCodec.safeParse(request)
 	if (parseResult.success) throw new Error(`${ method } request should fail to parse`)
-	const parseSpies = [...collectNestedCodecs(requestCodec)].map((codec) => spyOn(codec, 'safeParse'))
+	const parseSpies = [...collectNestedCodecs(EIP712MessageUnderlying, collectNestedCodecs(requestCodec))].map((codec) => spyOn(codec, 'safeParse'))
 	try {
 		const reply = getInvalidRpcParamsReply(request, requestCodec, parseResult)
 		if (reply.type !== 'result' || !('error' in reply)) throw new Error(`Expected an error reply for ${ method }`)
@@ -48,6 +50,11 @@ function getReadableMessageWithParseCounts(method: string, params: unknown[]) {
 		for (const parseSpy of parseSpies) parseSpy.mockRestore()
 	}
 }
+
+const sumParseCounts = (parseCounts: readonly number[]) => parseCounts.reduce((total, count) => total + count, 0)
+
+// EIP-712 typed data whose message nests `depth` objects in each other through their `next` field, ending in a JSON null that EIP-712 messages do not accept.
+const createNestedTypedData = (depth: number) => `{"types":{"EIP712Domain":[]},"primaryType":"EIP712Domain","domain":{},"message":${ '{"next":'.repeat(depth) }null${ '}'.repeat(depth) }}`
 
 const getMethodNames = (requestCodec: typeof supportedRequestCodecs[number]) => {
 	const methodCodec = requestCodec.fields.method
@@ -190,7 +197,27 @@ describe('readable RPC parse failure replies', () => {
 		const { message, parseCounts } = getReadableMessageWithParseCounts('eth_sendTransaction', [{ from: address, to: '0x1234', data: `0x${ 'ab'.repeat(1000) }` }])
 		assert.equal(message, 'Invalid eth_sendTransaction parameter 1 (transaction object) field "to": expected a 20-byte hex address, but received "0x1234".')
 		// Only the 20-byte address check of the failing `to` value runs.
-		assert.equal(parseCounts.reduce((total, count) => total + count, 0), 1)
+		assert.equal(sumParseCounts(parseCounts), 1)
+	})
+
+	test('explains a value nested in recursive typed data with one validation per nesting level', () => {
+		const { message, parseCounts } = getReadableMessageWithParseCounts('eth_signTypedData_v4', [address, createNestedTypedData(3)])
+		assert.equal(
+			message,
+			'Invalid eth_signTypedData_v4 parameter 2 (typed data): the JSON string is not valid EIP-712 typed data (field "message.next.next.next" must be a string, a boolean, a number, an array or an object, but received null); EIP-712 typed data must be a JSON object with types, primaryType, domain and message.',
+		)
+		// The typed data document is validated once, then the record holding each further `next` object once.
+		assert.equal(sumParseCounts(parseCounts), 3)
+	})
+
+	test('bounds the validations spent explaining deeply nested typed data and falls back to the method codec failure', () => {
+		const shallowlyNested = getReadableMessageWithParseCounts('eth_signTypedData_v4', [address, createNestedTypedData(100)])
+		const deeplyNested = getReadableMessageWithParseCounts('eth_signTypedData_v4', [address, createNestedTypedData(400)])
+		// Without the budget every nesting level validates the remaining levels again, so the validations would grow with the depth.
+		assert.equal(sumParseCounts(deeplyNested.parseCounts), sumParseCounts(shallowlyNested.parseCounts))
+		for (const { message } of [shallowlyNested, deeplyNested]) {
+			assert.ok(message.startsWith('Invalid eth_signTypedData_v4 parameters at params.[1]: '), message)
+		}
 	})
 
 	test('falls back to the method codec failure when every field is valid on its own', () => {

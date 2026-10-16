@@ -68,6 +68,8 @@ const KNOWN_CODEC_DESCRIPTIONS = new Map<ReflectedCodec, KnownCodecDescription>(
 const WRAPPER_CODEC_TAGS = new Set(['constraint', 'parsed', 'sealed', 'named', 'lazy'])
 const MAX_ECHOED_STRING_LENGTH = 80
 const MAX_REASON_LENGTH = 200
+// funtypes drops the failure key at unions, so every union the explanation descends into validates the remaining subtree again, which is quadratic in the nesting depth of recursive values such as EIP-712 messages. Capping the validations keeps an explanation within a fixed multiple of one parse of the request.
+const MAX_EXPLANATION_VALIDATIONS = 16
 
 const isReflectedCodec = (value: unknown): value is ReflectedCodec => typeof value === 'object'
 	&& value !== null
@@ -218,6 +220,19 @@ type ValueNode = {
 	readonly path: ValuePath
 }
 
+// Counts the validations one explanation has requested, including those skipped after the budget ran out. Only getFailureWithinBudget increments it.
+type ValidationBudget = { validationCount: number }
+
+const isBudgetExhausted = (budget: ValidationBudget) => budget.validationCount > MAX_EXPLANATION_VALIDATIONS
+
+// The failure of a value, or undefined when it is valid. Once the budget is exhausted the value is not validated and undefined is returned so that the explanation stops descending; describeParamsProblem then discards the explanation.
+function getFailureWithinBudget(budget: ValidationBudget, codec: ReflectedCodec, value: unknown): ValueFailure | undefined {
+	budget.validationCount += 1
+	if (isBudgetExhausted(budget)) return undefined
+	const parseResult = codec.safeParse(value)
+	return parseResult.success ? undefined : parseResult
+}
+
 // Message text is derived from these problems only for the one problem that is reported.
 type ValueProblem =
 	| { readonly kind: 'missing', readonly path: ValuePath }
@@ -239,21 +254,21 @@ function splitFailureKey(key: string | undefined) {
 }
 
 // Picks the intersectee that produced a failure at this segment. Several intersectees can accept the segment, for example an open record next to an object with declared fields; the first one that rejects its child value is the one funtypes reported.
-function getIntersectChildNode(intersectCodec: ReflectedCodec, node: ValueNode, segment: string | number) {
+function getIntersectChildNode(budget: ValidationBudget, intersectCodec: ReflectedCodec, node: ValueNode, segment: string | number) {
 	const candidates = getChildCodecs(intersectCodec, 'intersectees').flatMap((intersectee) => {
-		const child = getChildNode({ ...node, codec: intersectee }, segment)
+		const child = getChildNode(budget, { ...node, codec: intersectee }, segment)
 		return child === undefined ? [] : [child]
 	})
 	if (candidates.length <= 1) return candidates[0]
-	return candidates.find((candidate) => !candidate.codec.safeParse(candidate.value).success) ?? candidates[0]
+	return candidates.find((candidate) => getFailureWithinBudget(budget, candidate.codec, candidate.value) !== undefined) ?? candidates[0]
 }
 
-// The child of a node addressed by one failure key segment, without validating any value.
-function getChildNode(node: ValueNode, segment: string | number): ValueNode | undefined {
+// The child of a node addressed by one failure key segment. Only intersections with several candidate children validate them.
+function getChildNode(budget: ValidationBudget, node: ValueNode, segment: string | number): ValueNode | undefined {
 	const codec = unwrapCodec(node.codec)
 	const { value, path } = node
 	switch (codec.tag) {
-		case 'intersect': return getIntersectChildNode(codec, node, segment)
+		case 'intersect': return getIntersectChildNode(budget, codec, node, segment)
 		case 'object': {
 			if (typeof segment !== 'string' || typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
 			const fieldCodec = getFieldCodec(codec, segment)
@@ -282,64 +297,66 @@ function getChildNode(node: ValueNode, segment: string | number): ValueNode | un
 }
 
 // funtypes does not escape '.' in record keys and reports the first failing entry in key order, so when several own keys prefix the failure key the first one whose entry fails is the reported one.
-function splitRecordFailureKey(recordCodec: ReflectedCodec, recordValue: object, key: string) {
+function splitRecordFailureKey(budget: ValidationBudget, recordCodec: ReflectedCodec, recordValue: object, key: string) {
 	const candidateKeys = Object.keys(recordValue).filter((ownKey) => key === ownKey || key.startsWith(`${ ownKey }.`))
 	const entryCodec = getChildCodec(recordCodec, 'value')
 	const recordKey = candidateKeys.length <= 1 || entryCodec === undefined
 		? candidateKeys[0]
-		: candidateKeys.find((candidateKey) => !entryCodec.safeParse(getOwnProperty(recordValue, candidateKey)).success) ?? candidateKeys[0]
+		: candidateKeys.find((candidateKey) => getFailureWithinBudget(budget, entryCodec, getOwnProperty(recordValue, candidateKey)) !== undefined) ?? candidateKeys[0]
 	if (recordKey === undefined) return undefined
 	return { segment: recordKey, remainingKey: key.length === recordKey.length ? undefined : key.slice(recordKey.length + 1) }
 }
 
-function splitNodeFailureKey(node: ValueNode, key: string | undefined) {
+function splitNodeFailureKey(budget: ValidationBudget, node: ValueNode, key: string | undefined) {
 	const codec = unwrapCodec(node.codec)
-	if (key !== undefined && codec.tag === 'record' && typeof node.value === 'object' && node.value !== null) return splitRecordFailureKey(codec, node.value, key)
+	if (key !== undefined && codec.tag === 'record' && typeof node.value === 'object' && node.value !== null) return splitRecordFailureKey(budget, codec, node.value, key)
 	return splitFailureKey(key)
 }
 
 // Walks the failure key down to the innermost failing value without validating the values in between, then explains the failure there.
-function locateValueProblem(node: ValueNode, failure: ValueFailure): ValueProblem {
+function locateValueProblem(budget: ValidationBudget, node: ValueNode, failure: ValueFailure): ValueProblem {
 	let failingNode = node
 	let remainingKey = failure.key
-	for (let split = splitNodeFailureKey(failingNode, remainingKey); split !== undefined; split = splitNodeFailureKey(failingNode, remainingKey)) {
-		const child = getChildNode(failingNode, split.segment)
+	for (let split = splitNodeFailureKey(budget, failingNode, remainingKey); split !== undefined; split = splitNodeFailureKey(budget, failingNode, remainingKey)) {
+		const child = getChildNode(budget, failingNode, split.segment)
 		if (child === undefined) break
 		failingNode = child
 		remainingKey = split.remainingKey
 	}
 	// funtypes keeps the innermost message while prefixing the key, so the message also describes the failure of the innermost node.
-	return explainFailure(failingNode, { message: failure.message, key: remainingKey })
+	return explainFailure(budget, failingNode, { message: failure.message, key: remainingKey })
 }
 
-const locateProblemIfInvalid = (node: ValueNode) => {
-	const parseResult = node.codec.safeParse(node.value)
-	return parseResult.success ? undefined : locateValueProblem(node, parseResult)
+const locateProblemIfInvalid = (budget: ValidationBudget, node: ValueNode) => {
+	const failure = getFailureWithinBudget(budget, node.codec, node.value)
+	return failure === undefined ? undefined : locateValueProblem(budget, node, failure)
 }
 
-function explainJsonDocumentFailure(node: ValueNode, text: string, document: JsonDocumentDescription, failure: ValueFailure): ValueProblem {
+function explainJsonDocumentFailure(budget: ValidationBudget, node: ValueNode, text: string, document: JsonDocumentDescription, failure: ValueFailure): ValueProblem {
 	const decodedDocument = decodeJsonDocument(text)
 	if (!decodedDocument.success) return { kind: 'invalidJsonDocument', path: node.path, document, documentProblem: undefined }
-	const documentProblem = locateProblemIfInvalid({ codec: document.codec, value: decodedDocument.value, path: [] })
+	const documentProblem = locateProblemIfInvalid(budget, { codec: document.codec, value: decodedDocument.value, path: [] })
 	if (documentProblem === undefined) return { kind: 'rejected', path: node.path, reason: failure.message }
 	return { kind: 'invalidJsonDocument', path: node.path, document, documentProblem }
 }
 
 // Explains why a node failed when its failure key cannot be followed any further. Only codecs that may contain the cause are validated, each at most once.
-function explainFailure(node: ValueNode, failure: ValueFailure): ValueProblem {
+function explainFailure(budget: ValidationBudget, node: ValueNode, failure: ValueFailure): ValueProblem {
 	const { codec, value, path } = node
 	if (value === undefined) return { kind: 'missing', path }
 	const knownDescription = KNOWN_CODEC_DESCRIPTIONS.get(codec)
-	if (knownDescription?.jsonDocument !== undefined && typeof value === 'string') return explainJsonDocumentFailure(node, value, knownDescription.jsonDocument, failure)
+	if (knownDescription?.jsonDocument !== undefined && typeof value === 'string') return explainJsonDocumentFailure(budget, node, value, knownDescription.jsonDocument, failure)
 	const wrongFormat: ValueProblem = { kind: 'wrongFormat', path, codec, received: value }
 	if (knownDescription?.expected !== undefined || !acceptsValueShape(codec, value)) return wrongFormat
 	const rejected: ValueProblem = { kind: 'rejected', path, reason: failure.message }
 	const underlying = getUnderlyingCodec(codec)
-	if (underlying !== undefined) return locateProblemIfInvalid({ codec: underlying, value, path }) ?? rejected
+	// A lazy codec validates with its underlying codec and has no check of its own, so this failure already is the failure of the underlying codec.
+	if (underlying !== undefined && codec.tag === 'lazy') return explainFailure(budget, { codec: underlying, value, path }, failure)
+	if (underlying !== undefined) return locateProblemIfInvalid(budget, { codec: underlying, value, path }) ?? rejected
 	switch (codec.tag) {
 		case 'intersect': {
 			for (const intersectee of getChildCodecs(codec, 'intersectees')) {
-				const problem = locateProblemIfInvalid({ codec: intersectee, value, path })
+				const problem = locateProblemIfInvalid(budget, { codec: intersectee, value, path })
 				if (problem !== undefined) return problem
 			}
 			return rejected
@@ -349,7 +366,7 @@ function explainFailure(node: ValueNode, failure: ValueFailure): ValueProblem {
 			const candidates = getChildCodecs(codec, 'alternatives').filter((alternative) => acceptsValueShape(alternative, value))
 			const [onlyCandidate] = candidates
 			if (candidates.length !== 1 || onlyCandidate === undefined) return wrongFormat
-			return locateProblemIfInvalid({ codec: onlyCandidate, value, path }) ?? wrongFormat
+			return locateProblemIfInvalid(budget, { codec: onlyCandidate, value, path }) ?? wrongFormat
 		}
 		case 'object':
 		case 'record':
@@ -444,7 +461,10 @@ function describeParamsProblem(request: InterceptedRequest, requestCodec: Reflec
 		if (firstMissingParameter === undefined) return `${ method } expects ${ expectation }.`
 		return `${ method } is missing required ${ formatParameterName(params.length, firstMissingParameter) }: expected ${ expectation }.`
 	}
-	const problem = locateValueProblem({ codec: requestCodec, value: request, path: [] }, requestCodecFailure)
+	const budget: ValidationBudget = { validationCount: 0 }
+	const problem = locateValueProblem(budget, { codec: requestCodec, value: request, path: [] }, requestCodecFailure)
+	// Skipped validations may have left the explanation pointing at a valid value, so fall back to the concise method codec failure instead.
+	if (isBudgetExhausted(budget)) return undefined
 	const [requestField, parameterIndex, ...parameterPath] = problem.path
 	const parameterCodec = typeof parameterIndex === 'number' ? matchingVariant[parameterIndex] : undefined
 	if (requestField !== 'params' || typeof parameterIndex !== 'number' || parameterCodec === undefined) return undefined
