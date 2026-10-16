@@ -2,7 +2,7 @@ import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { render } from 'preact'
 import { act } from 'preact/test-utils'
-import Hint, { showHint } from '../../app/ts/components/subcomponents/Hint.js'
+import Hint, { calculateHintPosition, showHint } from '../../app/ts/components/subcomponents/Hint.js'
 import { installDomMock } from './domMock.js'
 
 type TestNode = {
@@ -33,6 +33,53 @@ function findElementByClass(node: TestNode | undefined, className: string): Test
 	}
 	return undefined
 }
+
+const findDisplayedHintText = (dom: ReturnType<typeof installDomMock>) => findElementByClass(dom.document.body, 'preact-hint__content')?.textContent
+
+const setBoundingClientRect = (element: TestNode, bounds: { left: number, top: number, width: number, height: number }) => {
+	Object.defineProperty(element, 'getBoundingClientRect', { configurable: true, value: () => ({ ...bounds, right: bounds.left + bounds.width, bottom: bounds.top + bounds.height, x: bounds.left, y: bounds.top }) })
+}
+
+// Bun has no viewport, so positioning tests define the one Hint places hints within and restore the previous globals afterwards.
+function installViewportSize(width: number, height: number) {
+	const previousWidth = Object.getOwnPropertyDescriptor(globalThis, 'innerWidth')
+	const previousHeight = Object.getOwnPropertyDescriptor(globalThis, 'innerHeight')
+	Object.defineProperty(globalThis, 'innerWidth', { configurable: true, writable: true, value: width })
+	Object.defineProperty(globalThis, 'innerHeight', { configurable: true, writable: true, value: height })
+	const restoreProperty = (name: string, previousDescriptor: PropertyDescriptor | undefined) => {
+		if (previousDescriptor === undefined) Reflect.deleteProperty(globalThis, name)
+		else Object.defineProperty(globalThis, name, previousDescriptor)
+	}
+	return () => {
+		restoreProperty('innerWidth', previousWidth)
+		restoreProperty('innerHeight', previousHeight)
+	}
+}
+
+describe('calculateHintPosition', () => {
+	const viewportSize = { width: 400, height: 600 }
+	const hintSize = { width: 100, height: 40 }
+
+	test('places the hint below its anchor when it fits there', () => {
+		assert.deepEqual(calculateHintPosition({ x: 200, top: 100, bottom: 116 }, hintSize, viewportSize), { left: 150, top: 126 })
+	})
+
+	test('places the hint above its anchor when the viewport has no room below it', () => {
+		// Below a warning whose bottom is at 596 pixels, the hint would start at 606 pixels, outside the 600 pixel viewport.
+		assert.deepEqual(calculateHintPosition({ x: 200, top: 580, bottom: 596 }, hintSize, viewportSize), { left: 150, top: 530 })
+		assert.deepEqual(calculateHintPosition({ x: 200, top: 560, bottom: 560 }, hintSize, viewportSize), { left: 150, top: 510 })
+	})
+
+	test('keeps the hint within the viewport border padding when neither side of its anchor fits it', () => {
+		assert.deepEqual(calculateHintPosition({ x: 200, top: 200, bottom: 216 }, { width: 100, height: 500 }, viewportSize), { left: 150, top: 70 })
+		assert.deepEqual(calculateHintPosition({ x: 200, top: 200, bottom: 216 }, { width: 100, height: 700 }, viewportSize), { left: 150, top: 30 })
+	})
+
+	test('clamps the hint horizontally within the viewport border padding', () => {
+		assert.deepEqual(calculateHintPosition({ x: 390, top: 100, bottom: 100 }, hintSize, viewportSize), { left: 270, top: 110 })
+		assert.deepEqual(calculateHintPosition({ x: 10, top: 100, bottom: 100 }, hintSize, viewportSize), { left: 30, top: 110 })
+	})
+})
 
 describe('Hint lifecycle', () => {
 	test('clears pending timers and removes event listeners on unmount', async () => {
@@ -169,6 +216,165 @@ describe('Hint lifecycle', () => {
 		} finally {
 			render(null, dom.document.body)
 			dom.restore()
+		}
+	})
+
+	for (const eventType of ['focusin', 'focusout', 'mouseover', 'mouseout', 'click']) {
+		test(`dismisses the tooltip of a removed focused element on the next ${ eventType } in the container`, async () => {
+			const dom = installDomMock()
+			try {
+				const renderTooltips = (isRemovableTooltipShown: boolean) => render(<Hint>
+					{ isRemovableTooltipShown ? <span class = 'removable-tooltip' data-tooltip = 'Removed explanation' tabIndex = { 0 }>Warning</span> : <></> }
+					<button class = 'plain-control'>Plain control</button>
+				</Hint>, dom.document.body)
+				await act(() => { renderTooltips(true) })
+				await act(() => {
+					const removableTooltip = findElementByClass(dom.document.body, 'removable-tooltip')
+					removableTooltip?.focus?.()
+					removableTooltip?.dispatchEvent?.(new Event('focusin', { bubbles: true }))
+				})
+				await act(() => { renderTooltips(false) })
+				// The removal itself fires no event, so the tooltip stays until Hint sees the next event, even one on a control without a tooltip.
+				assert.equal(findDisplayedHintText(dom), 'Removed explanation')
+				await act(() => { findElementByClass(dom.document.body, 'plain-control')?.dispatchEvent?.(new Event(eventType, { bubbles: true })) })
+				assert.equal(findDisplayedHintText(dom), undefined)
+			} finally {
+				render(null, dom.document.body)
+				dom.restore()
+			}
+		})
+	}
+
+	test('dismisses the tooltip of a removed hovered element on the next pointer event in the container', async () => {
+		const dom = installDomMock()
+		try {
+			const renderTooltips = (isRemovableTooltipShown: boolean) => render(<Hint>
+				{ isRemovableTooltipShown ? <span class = 'removable-tooltip' data-tooltip = 'Removed explanation'>Hovered</span> : <></> }
+				<button class = 'plain-control'>Plain control</button>
+			</Hint>, dom.document.body)
+			await act(() => { renderTooltips(true) })
+			await act(() => { findElementByClass(dom.document.body, 'removable-tooltip')?.dispatchEvent?.(new Event('mouseover', { bubbles: true })) })
+			await act(async () => { await new Promise((resolve) => setTimeout(resolve, 300)) })
+			assert.equal(findDisplayedHintText(dom), 'Removed explanation')
+			await act(() => { renderTooltips(false) })
+			assert.equal(findDisplayedHintText(dom), 'Removed explanation')
+			await act(() => { findElementByClass(dom.document.body, 'plain-control')?.dispatchEvent?.(new Event('mouseover', { bubbles: true })) })
+			assert.equal(findDisplayedHintText(dom), undefined)
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+		}
+	})
+
+	test('dismisses the tooltip of a focused element whose node Preact reuses for content without that tooltip', async () => {
+		const dom = installDomMock()
+		try {
+			const renderTooltips = (isWarningShown: boolean) => render(<Hint>
+				{ isWarningShown ? <span class = 'warning' data-tooltip = 'Removed explanation' tabIndex = { 0 }>Warning</span> : <></> }
+				<span class = 'label'>Label</span>
+				<button class = 'plain-control'>Plain control</button>
+			</Hint>, dom.document.body)
+			await act(() => { renderTooltips(true) })
+			const warning = findElementByClass(dom.document.body, 'warning')
+			await act(() => {
+				warning?.focus?.()
+				warning?.dispatchEvent?.(new Event('focusin', { bubbles: true }))
+			})
+			// The pointer also moves onto the warning, starting its delayed hover tooltip.
+			await act(() => { warning?.dispatchEvent?.(new Event('mouseover', { bubbles: true })) })
+			await act(() => { renderTooltips(false) })
+			// Like the leading warning sign of a card, the removed warning is followed by a sibling of the same tag, so Preact keeps the focused node in the container as the label.
+			assert.equal(findElementByClass(dom.document.body, 'label'), warning)
+			assert.equal(findDisplayedHintText(dom), 'Removed explanation')
+			await act(() => { findElementByClass(dom.document.body, 'plain-control')?.dispatchEvent?.(new Event('focusin', { bubbles: true })) })
+			assert.equal(findDisplayedHintText(dom), undefined)
+			// The hover tooltip that was pending for the reused node does not bring the explanation back.
+			await act(async () => { await new Promise((resolve) => setTimeout(resolve, 300)) })
+			assert.equal(findDisplayedHintText(dom), undefined)
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+		}
+	})
+
+	test('keeps a copy message until its own timer ends when the element of an earlier tooltip is removed', async () => {
+		const dom = installDomMock()
+		try {
+			const renderTooltips = (isRemovableTooltipShown: boolean) => render(<Hint>
+				{ isRemovableTooltipShown ? <span class = 'removable-tooltip' data-tooltip = 'Removed explanation' tabIndex = { 0 }>Warning</span> : <></> }
+				<button class = 'plain-control'>Plain control</button>
+			</Hint>, dom.document.body)
+			await act(() => { renderTooltips(true) })
+			await act(() => {
+				const removableTooltip = findElementByClass(dom.document.body, 'removable-tooltip')
+				removableTooltip?.focus?.()
+				removableTooltip?.dispatchEvent?.(new Event('focusin', { bubbles: true }))
+			})
+			const plainControl = findElementByClass(dom.document.body, 'plain-control')
+			if (plainControl?.dispatchEvent === undefined) throw new Error('plain control was not rendered')
+			await act(() => { showHint(plainControl, { content: 'Copied', delay: 30, x: 0, y: 0 }) })
+			await act(() => { renderTooltips(false) })
+			await act(() => { plainControl.dispatchEvent?.(new Event('focusin', { bubbles: true })) })
+			assert.equal(findDisplayedHintText(dom), 'Copied')
+			await act(async () => { await new Promise((resolve) => setTimeout(resolve, 60)) })
+			assert.equal(findDisplayedHintText(dom), undefined)
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+		}
+	})
+
+	test('opens the tooltip of a focused element above it when the viewport has no room below it', async () => {
+		const dom = installDomMock()
+		const restoreViewportSize = installViewportSize(400, 600)
+		try {
+			await act(() => {
+				render(<Hint><span data-tooltip = 'Focused explanation' tabIndex = { 0 }>Warning</span></Hint>, dom.document.body)
+			})
+			const focusableTooltip = findElement(dom.document.body, 'span')
+			if (focusableTooltip?.dispatchEvent === undefined) throw new Error('tooltip target was not rendered')
+			// The DOM mock measures every hint as 100 by 40 pixels, so below this warning the hint would start at 606 pixels, outside the 600 pixel viewport.
+			setBoundingClientRect(focusableTooltip, { left: 192, top: 580, width: 16, height: 16 })
+
+			await act(() => { focusableTooltip.dispatchEvent?.(new Event('focusin', { bubbles: true })) })
+			const hintStyle = findElementByClass(dom.document.body, 'preact-hint')?.style
+			assert.equal(hintStyle?.['top'], '530px')
+			assert.equal(hintStyle?.['left'], '150px')
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+			restoreViewportSize()
+		}
+	})
+
+	test('places a hint whose text changes while it is shown by the size of its new text', async () => {
+		const dom = installDomMock()
+		const restoreViewportSize = installViewportSize(400, 600)
+		try {
+			// The focused explanation renders 200 pixels tall and every other text 40 pixels, so placing the explanation by the size of the copy message shown before it would put it below the warning, where it does not fit.
+			Object.defineProperty(globalThis.Element.prototype, 'getBoundingClientRect', {
+				configurable: true,
+				value: function (this: TestNode) {
+					const height = this.textContent === 'Focused explanation' ? 200 : 40
+					return { left: 0, top: 0, width: 100, height, right: 100, bottom: height, x: 0, y: 0 }
+				},
+			})
+			await act(() => {
+				render(<Hint><span data-tooltip = 'Focused explanation' tabIndex = { 0 }>Warning</span></Hint>, dom.document.body)
+			})
+			const focusableTooltip = findElement(dom.document.body, 'span')
+			if (focusableTooltip?.dispatchEvent === undefined) throw new Error('tooltip target was not rendered')
+			setBoundingClientRect(focusableTooltip, { left: 192, top: 470, width: 16, height: 16 })
+
+			await act(() => { showHint(focusableTooltip, { content: 'Copied', delay: 60_000, x: 200, y: 100 }) })
+			assert.equal(findDisplayedHintText(dom), 'Copied')
+			await act(() => { focusableTooltip.dispatchEvent?.(new Event('focusin', { bubbles: true })) })
+			assert.equal(findDisplayedHintText(dom), 'Focused explanation')
+			assert.equal(findElementByClass(dom.document.body, 'preact-hint')?.style?.['top'], '260px')
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+			restoreViewportSize()
 		}
 	})
 
