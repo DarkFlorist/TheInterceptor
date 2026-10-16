@@ -2,6 +2,7 @@
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import type { SimulationState } from '../types/visualizer-types.js'
+import { isExpectedInfrastructureError, reportUnexpectedError } from '../utils/errors.js'
 import { visualizeSimulatorState } from './simulationUpdating.js'
 
 type SimulationMetadata = Omit<Awaited<ReturnType<typeof visualizeSimulatorState>>, 'simulationState'>
@@ -22,8 +23,8 @@ type StoredSimulationRelabel<Stored> = {
 	readonly getRunToRelabel: (stored: Stored) => SimulationRunToRelabel<Stored> | undefined
 	// Atomically replaces the stored result with relabel(current), or keeps it when relabel returns undefined.
 	readonly updateStored: (relabel: (current: Stored) => Stored | undefined) => Promise<unknown>
-	// Aborted by newer work that replaces the stored result and stores its own.
-	readonly abortController: AbortController
+	// Aborted by newer work that replaces the stored result and stores its own. Undefined for a re-label that nothing cancels, which relies on the write guard alone.
+	readonly abortController: AbortController | undefined
 }
 
 // Re-runs only the visualisation step (address-book names, ABI-parsed input, token metadata and prices, and protector warnings such as send-to-non-contact) for a stored run without simulating again, then writes the new metadata only onto that same run.
@@ -33,11 +34,20 @@ export async function relabelStoredSimulation<Stored>(ethereum: EthereumClientSe
 	// The re-visualised simulation state is dropped so the stored one, including its conducted timestamp, is kept.
 	const { simulationState: _revisualizedSimulationState, ...metadata } = await visualizeSimulatorState(runToRelabel.simulationState, ethereum, tokenPriceService, abortController)
 	// Lookups that made no further RPC request do not notice an abort; the newer work that aborted this re-label stores its own result instead.
-	if (abortController.signal.aborted) return
+	if (abortController?.signal.aborted) return
 	await updateStored((current) => {
 		// The stale-write guard: a newer run stored meanwhile has another id, and a result stored under the same id that can no longer be re-labelled (a stack invalidation keeps the id of the run it raced with) is left alone.
 		const currentRun = getRunToRelabel(current)
 		if (currentRun === undefined || currentRun.simulationId !== runToRelabel.simulationId) return undefined
 		return currentRun.withMetadata(metadata)
 	})
+}
+
+// A re-label only replaces names on a result that is already stored, so its failure is reported without failing the address-book change or the confirmation run that requested it.
+export async function relabelReportingUnexpectedErrors(relabel: Promise<void>) {
+	try {
+		await relabel
+	} catch (error: unknown) {
+		if (!isExpectedInfrastructureError(error)) await reportUnexpectedError(error)
+	}
 }
