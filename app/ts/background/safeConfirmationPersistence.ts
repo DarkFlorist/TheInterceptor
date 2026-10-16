@@ -15,6 +15,7 @@ import { mapSafeTransactionMetadata, mergeSafeOwnerSignatures, reconcileSafeTran
 import { isSafeSignerSelectionFailure, validateSafeMessageCoSignature } from './safeConfirmationResolver.js'
 import { createSafeSignerErrorStatus, type SafeSignerErrorStatus } from './safeSignerErrors.js'
 import { getSafePendingFlow } from '../safe/safePendingFlow.js'
+import { commitOnRequestedNetwork } from './transactionNetwork.js'
 
 export type SafeSignerReplyResolution =
 	| { readonly status: 'not-safe' }
@@ -126,7 +127,8 @@ async function persistSafeTransaction(
 		safeTransaction: stackTransaction,
 	}
 	try {
-		await updateTransactionState((previousState) => {
+		// The proposal goes to the Gnosis Safe stack of this client's network, so the network check runs as the last step after the Gnosis Safe contract was validated, and also covers the proposal's signing domain.
+		const persistence = await commitOnRequestedNetwork(ethereum, pendingTransaction, async () => await updateTransactionState((previousState) => {
 			const reconciledState = reconcileSafeTransactionState(
 				previousState,
 				ethereum.getChainId(),
@@ -182,7 +184,8 @@ async function persistSafeTransaction(
 					preSimulationTransaction: { ...transaction, safeTransaction: persistedStackTransaction },
 				}] }
 			return { safeTransactionStacks, interceptorTransactionStack }
-		})
+		}))
+		if (!persistence.committed) return { status: 'error', approvalStatus: persistence.networkError }
 	} catch (error) {
 		if (!isSafeContractValidationFailure(error)) throw error
 		return signerError(`Gnosis Safe proposal could not be persisted: ${ getErrorMessage(error) ?? 'The local Gnosis Safe proposal stack changed.' }`)
