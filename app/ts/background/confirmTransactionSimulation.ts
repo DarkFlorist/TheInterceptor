@@ -28,6 +28,13 @@ export const toPreSimulationTransaction = (transaction: WebsiteCreatedEthereumTr
 let confirmTransactionAbortController = new AbortController()
 export const getConfirmTransactionAbortController = () => confirmTransactionAbortController
 
+let latestConfirmationSimulationId = 0
+// Every confirmation simulation run gets a new id, which the confirmation metadata refresh uses to tell the run it re-visualized from a newer one, and which keeps a newer stored run from being replaced by an older run that finishes later; stored timestamps keep only whole seconds, so they cannot. A run takes its id right before startConfirmTransactionSimulation aborts the run it supersedes, so the superseding run always has the newer id. As in bumpPopupRefreshGeneration, the id is the millisecond clock bumped past the previous id, so ids increase within a background session and ids stored before a background restart are not handed out again unless the system clock went backwards.
+function getNextConfirmationSimulationId() {
+	latestConfirmationSimulationId = Math.max(latestConfirmationSimulationId + 1, Date.now())
+	return latestConfirmationSimulationId
+}
+
 // Each confirmation simulation supersedes the one still running, whose results would be stale by the time they arrive.
 function startConfirmTransactionSimulation() {
 	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' }, 'confirmTransaction')
@@ -52,6 +59,7 @@ export async function refreshConfirmTransactionSimulation(
 		activeAddress,
 		signerName: (await getTabState(uniqueRequestIdentifier.requestSocket.tabId)).signerName,
 		tabIdOpenedFrom: uniqueRequestIdentifier.requestSocket.tabId,
+		simulationId: getNextConfirmationSimulationId(),
 	}
 	const thisConfirmTransactionAbortController = startConfirmTransactionSimulation()
 	const simulationStartedTimestamp = new Date()
@@ -151,6 +159,7 @@ export async function simulateConfirmTransactionBatch(
 		activeAddress,
 		signerName: (await getTabState(uniqueRequestIdentifier.requestSocket.tabId)).signerName,
 		simulationStartedTimestamp: new Date(),
+		simulationId: getNextConfirmationSimulationId(),
 	}
 	const thisConfirmTransactionAbortController = startConfirmTransactionSimulation()
 	try {

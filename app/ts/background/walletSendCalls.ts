@@ -104,12 +104,13 @@ export const getWalletSendCallTransactionIdentifier = (uniqueRequestIdentifier: 
 
 // Simulation-mode batch ids must be unique per website, because wallet_getCallsStatus looks them up by id and origin.
 export async function isWalletSendCallsIdInUse(websiteOrigin: string, id: string) {
+	// Approval appends a batch to the simulation stack before removing it from the confirmation queue, so reading the queue first cannot miss a batch that moves between the two reads.
+	const inConfirmationQueue = (await getPendingTransactionsAndMessages()).some((pending) => pending.type === 'TransactionBatch' && pending.batchId === id && pending.website.websiteOrigin === websiteOrigin)
+	if (inConfirmationQueue) return true
 	const stack = await getInterceptorTransactionStack()
-	const inStack = stack.operations.some((operation) => operation.type === 'Transaction'
+	return stack.operations.some((operation) => operation.type === 'Transaction'
 		&& operation.preSimulationTransaction.walletSendCallsBatchId === id
 		&& operation.preSimulationTransaction.website.websiteOrigin === websiteOrigin)
-	if (inStack) return true
-	return (await getPendingTransactionsAndMessages()).some((pending) => pending.type === 'TransactionBatch' && pending.batchId === id && pending.website.websiteOrigin === websiteOrigin)
 }
 
 // Wallets on the earlier EIP-5792 draft return the bundle id as a bare string instead of { id }.
@@ -153,12 +154,26 @@ export function getWalletSendCallsSignerBinding(websiteTabConnections: WebsiteTa
 
 const approvalInvalidated = (code: number, reason: string): WalletSendCallsError => ({ code, message: `${ reason } Reject this batch and send the request again.` })
 
+// A batch is only prepared, simulated and visualized with the client of the network it was requested for. After a network switch its preview is kept unchanged, and approval is refused until the user switches back.
+export const isEthereumClientOnBatchChain = (ethereum: EthereumClientService, pendingBatch: PendingTransactionBatch) => ethereum.getChainId() === pendingBatch.binding.chainId
+
+type SimulatedPendingTransactionBatch = Exclude<PendingTransactionBatch, { readonly transactionOrMessageCreationStatus: 'Crafting' }>
+
+// The same contract address can behave differently on another network, so every prepared call and the visualized simulation must come from the network of the canonical request. A failed batch simulation records no network, so it cannot be approved.
+function isTransactionBatchPreviewOnRequestedChain(pendingBatch: SimulatedPendingTransactionBatch) {
+	const requestedChainId = pendingBatch.originalRequestParameters.params[0].chainId
+	const { popupVisualisation } = pendingBatch
+	return requestedChainId === pendingBatch.binding.chainId
+		&& popupVisualisation.statusCode === 'success'
+		&& popupVisualisation.data.simulationState.rpcNetwork.chainId === requestedChainId
+		&& pendingBatch.transactionsToSimulate.every((transactionToSimulate) => transactionToSimulate.success && transactionToSimulate.transaction.chainId === requestedChainId)
+}
+
 // Re-checks the admission binding at approval time. Any change to the network, account, website access, signer connection or batch payload invalidates the approval.
 export async function getWalletSendCallsApprovalError(
 	websiteTabConnections: WebsiteTabConnections,
 	ethereum: EthereumClientService,
-	pendingBatch: PendingTransactionBatch,
-	transactionsToSimulate: readonly WebsiteCreatedEthereumTransactionOrFailed[],
+	pendingBatch: SimulatedPendingTransactionBatch,
 ): Promise<WalletSendCallsError | undefined> {
 	const { binding } = pendingBatch
 	const requestSocket = pendingBatch.uniqueRequestIdentifier.requestSocket
@@ -180,7 +195,8 @@ export async function getWalletSendCallsApprovalError(
 	const connection = getWebsiteSocketConnection(websiteTabConnections, requestSocket)
 	const connectionApproved = connection?.approved === true && connection.websiteOrigin === binding.websiteOrigin
 	if (!connectionApproved && hasAddressAccess(settings.websiteAccess, binding.websiteOrigin, activeAddress) !== 'hasAccess') return approvalInvalidated(METAMASK_ERROR_NOT_AUTHORIZED, 'This website is no longer authorized to use the active account.')
-	if (!doWalletSendCallsMatchSimulatedTransactions(pendingBatch.originalRequestParameters, binding.account, transactionsToSimulate)) return approvalInvalidated(JSON_RPC_ERROR_CODE_INVALID_PARAMS, 'The batch calls no longer match the simulated transactions.')
+	if (!isTransactionBatchPreviewOnRequestedChain(pendingBatch)) return approvalInvalidated(EIP5792_ERROR_UNSUPPORTED_CHAIN_ID, 'The batch preview was not simulated on the network the batch was requested for.')
+	if (!doWalletSendCallsMatchSimulatedTransactions(pendingBatch.originalRequestParameters, binding.account, pendingBatch.transactionsToSimulate)) return approvalInvalidated(JSON_RPC_ERROR_CODE_INVALID_PARAMS, 'The batch calls no longer match the simulated transactions.')
 	return undefined
 }
 

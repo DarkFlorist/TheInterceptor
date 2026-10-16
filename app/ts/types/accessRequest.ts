@@ -37,7 +37,10 @@ const ConfirmationSimulationCommonData = funtypes.ReadonlyObject({
 	simulationStartedTimestamp: EthereumTimestamp,
 	uniqueRequestIdentifier: UniqueRequestIdentifier,
 	signerName: SignerName,
-})
+}).And(funtypes.ReadonlyPartial({
+	// Identifies the confirmation simulation run that produced this visualisation; confirmations stored by older versions have none.
+	simulationId: funtypes.Number,
+}))
 
 type ConfirmTransactionSimulationBaseData = funtypes.Static<typeof ConfirmTransactionSimulationBaseData>
 const ConfirmTransactionSimulationBaseData = funtypes.Intersect(

@@ -1,9 +1,10 @@
 import * as assert from 'assert'
-import { test } from 'bun:test'
-import { activeAddress, addressString, browserMock, createWebsitePort, fakeRpcNetwork, fakeSafeContract, isRecord, modules, recipientAddress, simulator, withSilencedConsole } from './confirmTransactionTestHarness.js'
-import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
+import { setSystemTime, test } from 'bun:test'
+import { activeAddress, addressString, browserMock, createWebsitePort, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, isRecord, modules, recipientAddress, simulator, withSilencedConsole } from './confirmTransactionTestHarness.js'
+import { createDeferredValue, createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import type { PendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
 import { WalletSendCalls } from '../../app/ts/types/JsonRpc-types.js'
+import { JsonRpcResponseError } from '../../app/ts/utils/errors.js'
 
 const website = { websiteOrigin: 'https://example.com', icon: undefined, title: undefined }
 const socket = { tabId: 1, connectionName: 0n }
@@ -41,13 +42,13 @@ async function setUpWalletSendCallsTest(simulationMode: boolean) {
 
 type BatchTestConnections = Awaited<ReturnType<typeof setUpWalletSendCallsTest>>['websiteTabConnections']
 
-async function requestBatch(websiteTabConnections: BatchTestConnections, simulationMode: boolean, request: unknown = walletSendCallsRequest) {
+async function requestBatch(websiteTabConnections: BatchTestConnections, simulationMode: boolean, request: unknown = walletSendCallsRequest, uniqueRequestIdentifier = batchRequestIdentifier) {
 	const { sendCalls } = await import('../../app/ts/background/simulationModeHandlers.js')
 	const walletSendCalls = WalletSendCalls.parse(request)
 	return await sendCalls(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, activeAddress, walletSendCalls, {
 		interceptorRequest: true,
 		usingInterceptorWithoutSigner: false,
-		uniqueRequestIdentifier: batchRequestIdentifier,
+		uniqueRequestIdentifier,
 		method: 'wallet_sendCalls',
 		params: walletSendCalls.params,
 	}, website, simulationMode)
@@ -102,6 +103,40 @@ const getWalletSendCallsReply = (postedMessages: readonly unknown[]) => postedMe
 async function updatePendingBatch(update: (pending: PendingTransactionOrSignableMessage) => PendingTransactionOrSignableMessage) {
 	await modules.updatePendingTransactionOrMessage(batchRequestIdentifier, async (pending) => update(pending))
 }
+
+const otherNetwork = { ...fakeRpcNetwork, name: 'Other Test Chain', chainId: 8453n }
+
+// Services for another network that record their RPC requests, so a test can tell whether a batch preview was produced on that network.
+function createOtherNetworkServices() {
+	const requestedRpcMethods: string[] = []
+	const otherNetworkEthereum = new modules.EthereumClientService({
+		...fakeRequestHandler,
+		async jsonRpcRequest(rpcRequest: { method: string, params?: readonly unknown[] }) {
+			requestedRpcMethods.push(rpcRequest.method)
+			return await fakeRequestHandler.jsonRpcRequest(rpcRequest)
+		},
+	}, async () => undefined, async () => undefined, otherNetwork)
+	return { requestedRpcMethods, ethereum: otherNetworkEthereum, tokenPriceService: new modules.TokenPriceService(otherNetworkEthereum, 60_000) }
+}
+
+type RpcRequest = { method: string, params?: readonly unknown[] }
+
+// Preparing each call simulates it on its own; only the simulation of the whole batch contains both calls.
+function isWholeBatchSimulation(rpcRequest: RpcRequest) {
+	const blockStateCalls = rpcRequest.params?.[0]
+	if (rpcRequest.method !== 'eth_simulateV1' || !isRecord(blockStateCalls) || !Array.isArray(blockStateCalls.blockStateCalls)) return false
+	return blockStateCalls.blockStateCalls.some((block) => isRecord(block) && Array.isArray(block.calls) && block.calls.some((call) => isRecord(call) && call.to === recipientAddress) && block.calls.some((call) => isRecord(call) && call.to === tokenAddress))
+}
+
+// Fails only the simulation of the whole batch, so the calls are still prepared and the failure reaches the batch simulation itself.
+const failWholeBatchSimulationWith = (error: Error) => (rpcRequest: RpcRequest) => isWholeBatchSimulation(rpcRequest) ? error : undefined
+
+const executionRevertedError = () => new JsonRpcResponseError({ jsonrpc: '2.0', id: 1, error: { code: -32000, message: 'execution reverted' } })
+
+const getPreviewChainIds = (pending: Awaited<ReturnType<typeof getPendingBatch>>) => ({
+	transactions: pending.transactionsToSimulate.map((transaction) => transaction.success ? transaction.transaction.chainId : undefined),
+	visualization: pending.popupVisualisation.statusCode === 'success' ? pending.popupVisualisation.data.simulationState.rpcNetwork.chainId : undefined,
+})
 
 test('simulates a wallet_sendCalls batch and only forwards it to the signer after Interceptor approval', async () => {
 	const { postedMessages, websiteTabConnections } = await setUpWalletSendCallsTest(false)
@@ -228,6 +263,76 @@ test('a metadata refresh that finishes after the batch was approved keeps it wai
 	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
 })
 
+test('a metadata refresh of an older batch simulation does not replace a newer simulation started in the same second', async () => {
+	// Stored simulation timestamps keep only whole seconds, so with a stopped clock both simulations are stored with the same start time.
+	setSystemTime(new Date('2026-01-01T00:00:00.000Z'))
+	try {
+		const { websiteTabConnections } = await setUpWalletSendCallsTest(false)
+		await requestBatch(websiteTabConnections, false)
+		const { refreshPopupConfirmTransactionMetadata, refreshPopupConfirmTransactionSimulation } = await import('../../app/ts/background/popupMessageHandlers.js')
+		let newerSimulation: Promise<void> | undefined
+		// The metadata refresh reads the settings while it re-visualizes its snapshot of the batch, so a simulation run there is stored between the snapshot and the metadata write.
+		browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+			if (newerSimulation === undefined && Array.isArray(keys) && keys.includes('simulationMode')) {
+				fakeSafeContract.getEthSimulateFailure = failWholeBatchSimulationWith(executionRevertedError())
+				newerSimulation = refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
+				await newerSimulation
+			}
+			return readStoredItems()
+		})
+
+		await refreshPopupConfirmTransactionMetadata(simulator.ethereum, simulator.tokenPriceService, undefined)
+		browserMock.setStorageGetHandler(undefined)
+
+		assert.ok(newerSimulation !== undefined)
+		const pending = await getPendingBatch()
+		assert.deepEqual([pending.transactionOrMessageCreationStatus, pending.popupVisualisation.statusCode], ['Simulated', 'failed'])
+		assert.equal(await approveBatch(websiteTabConnections), false)
+	} finally {
+		setSystemTime()
+	}
+})
+
+test('an older batch simulation that fails after a newer one was stored does not replace it, even within the same second', async () => {
+	// Stored simulation timestamps keep only whole seconds, so with a stopped clock both simulations are stored with the same start time.
+	setSystemTime(new Date('2026-01-01T00:00:00.000Z'))
+	try {
+		const { websiteTabConnections } = await setUpWalletSendCallsTest(false)
+		await requestBatch(websiteTabConnections, false)
+		const olderSimulationWaiting = createDeferredValue<void>()
+		const olderSimulationReleased = createDeferredValue<void>()
+		let olderSimulationHeld = false
+		// The older run's first simulation of the whole batch waits until the newer run has stored its result, then fails. Superseding a run aborts its visualization, but not this simulation.
+		const overlappingEthereum = new modules.EthereumClientService({
+			...fakeRequestHandler,
+			async jsonRpcRequest(rpcRequest: RpcRequest) {
+				if (isWholeBatchSimulation(rpcRequest) && !olderSimulationHeld) {
+					olderSimulationHeld = true
+					olderSimulationWaiting.resolve()
+					await olderSimulationReleased.promise
+					throw executionRevertedError()
+				}
+				return await fakeRequestHandler.jsonRpcRequest(rpcRequest)
+			},
+		}, async () => undefined, async () => undefined, fakeRpcNetwork)
+		const overlappingTokenPriceService = new modules.TokenPriceService(overlappingEthereum, 60_000)
+		const { refreshPopupConfirmTransactionSimulation } = await import('../../app/ts/background/popupMessageHandlers.js')
+
+		const olderRefresh = refreshPopupConfirmTransactionSimulation(overlappingEthereum, overlappingTokenPriceService)
+		await olderSimulationWaiting.promise
+		await refreshPopupConfirmTransactionSimulation(overlappingEthereum, overlappingTokenPriceService)
+		const newerRun = await getPendingBatch()
+		olderSimulationReleased.resolve()
+		await olderRefresh
+
+		assert.equal(newerRun.popupVisualisation.statusCode, 'success')
+		assert.deepEqual(await getPendingBatch(), newerRun)
+		assert.equal(await approveBatch(websiteTabConnections), true)
+	} finally {
+		setSystemTime()
+	}
+})
+
 test('returns the error of a signer without wallet_sendCalls support to the website so it can fall back', async () => {
 	const { postedMessages, websiteTabConnections, port } = await setUpWalletSendCallsTest(false)
 	await requestBatch(websiteTabConnections, false)
@@ -285,18 +390,64 @@ test('only one of two concurrent simulation-mode batches can claim the same id',
 	assert.equal((await modules.getPendingTransactionsAndMessages()).length, 1)
 })
 
+// The duplicate check reads the confirmation queue and the simulation stack one after the other. The approval of the first batch appends it to the stack and then removes it from the queue; landing right before or right after the queue read puts that move on either side of the read.
+async function expectBatchIdClaimedWhenApprovedAroundQueueRead(approval: 'beforeQueueRead' | 'afterQueueRead') {
+	const { websiteTabConnections } = await setUpWalletSendCallsTest(true)
+	const requestWithId = { ...walletSendCallsRequest, params: [{ ...walletSendCallsRequest.params[0], id: '0x01' }] }
+	await requestBatch(websiteTabConnections, true, requestWithId)
+	let approvalStarted = false
+	let approvalDuringDuplicateCheck: Promise<boolean | undefined> | undefined
+	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+		// The approval's own reads, which start before its promise is assigned, pass straight through.
+		if (approvalStarted || !Array.isArray(keys) || !keys.includes('pendingTransactionsAndMessages')) return readStoredItems()
+		approvalStarted = true
+		const queueBeforeApproval = readStoredItems()
+		approvalDuringDuplicateCheck = approveBatch(websiteTabConnections)
+		await approvalDuringDuplicateCheck
+		return approval === 'beforeQueueRead' ? readStoredItems() : queueBeforeApproval
+	})
+
+	const duplicate = await requestBatch(websiteTabConnections, true, requestWithId, { requestId: 78, requestSocket: socket })
+	browserMock.setStorageGetHandler(undefined)
+
+	assert.equal(await approvalDuringDuplicateCheck, true)
+	assert.equal('error' in duplicate ? duplicate.error.code : undefined, 5720)
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	const stackBatchIds = (await modules.getInterceptorTransactionStack()).operations.map((operation) => operation.type === 'Transaction' ? operation.preSimulationTransaction.walletSendCallsBatchId : undefined)
+	assert.deepEqual(stackBatchIds, ['0x01', '0x01'])
+}
+
+test('approving a simulation-mode batch adds it to the simulation stack before removing it from the confirmation queue', async () => {
+	const { websiteTabConnections } = await setUpWalletSendCallsTest(true)
+	await requestBatch(websiteTabConnections, true)
+	const storageWrites: ('stackUpdated' | 'removedFromQueue')[] = []
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		if ('interceptorTransactionStack' in items) storageWrites.push('stackUpdated')
+		if (Array.isArray(items.pendingTransactionsAndMessages) && items.pendingTransactionsAndMessages.length === 0) storageWrites.push('removedFromQueue')
+		writeStoredItems()
+	})
+
+	assert.equal(await approveBatch(websiteTabConnections), true)
+	browserMock.setStorageSetHandler(undefined)
+
+	// The duplicate batch id check reads the queue before the stack and relies on this order.
+	assert.deepEqual(storageWrites, ['stackUpdated', 'removedFromQueue'])
+})
+
+test('a batch id stays claimed when its batch is approved right before the duplicate check reads the confirmation queue', async () => {
+	await expectBatchIdClaimedWhenApprovedAroundQueueRead('beforeQueueRead')
+})
+
+test('a batch id stays claimed when its batch is approved right after the duplicate check reads the confirmation queue', async () => {
+	await expectBatchIdClaimedWhenApprovedAroundQueueRead('afterQueueRead')
+})
+
 test('an RPC failure while refreshing a batch keeps its previous simulation', async () => {
 	const { websiteTabConnections } = await setUpWalletSendCallsTest(false)
 	await requestBatch(websiteTabConnections, false)
 	const before = await getPendingBatch()
 	const { getTransactionBatchApprovalBlocker } = await import('../../app/ts/components/pages/ConfirmTransactionBatch.js')
-	// Only the simulation of the whole batch fails, so the calls are still prepared and the failure reaches the batch simulation itself.
-	fakeSafeContract.getEthSimulateFailure = (rpcRequest) => {
-		const blockStateCalls = rpcRequest.params?.[0]
-		if (!isRecord(blockStateCalls) || !Array.isArray(blockStateCalls.blockStateCalls)) return undefined
-		const simulatesWholeBatch = blockStateCalls.blockStateCalls.some((block) => isRecord(block) && Array.isArray(block.calls) && block.calls.some((call) => isRecord(call) && call.to === recipientAddress) && block.calls.some((call) => isRecord(call) && call.to === tokenAddress))
-		return simulatesWholeBatch ? new TypeError('Failed to fetch') : undefined
-	}
+	fakeSafeContract.getEthSimulateFailure = failWholeBatchSimulationWith(new TypeError('Failed to fetch'))
 	const { refreshPopupConfirmTransactionSimulation } = await import('../../app/ts/background/popupMessageHandlers.js')
 
 	await refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
@@ -353,6 +504,72 @@ test('a network change after the batch was requested invalidates its approval', 
 	await modules.browserStorageLocalSet({ activeRpcNetwork: { ...fakeRpcNetwork, chainId: fakeRpcNetwork.chainId + 1n } })
 
 	await expectApprovalToBeInvalidated(websiteTabConnections, postedMessages, 5710)
+})
+
+test('a network round trip keeps the batch preview of the network the batch was requested for', async () => {
+	const { postedMessages, websiteTabConnections } = await setUpWalletSendCallsTest(false)
+	await requestBatch(websiteTabConnections, false)
+	const otherNetworkServices = createOtherNetworkServices()
+	const { refreshPopupConfirmTransactionMetadata, refreshPopupConfirmTransactionSimulation } = await import('../../app/ts/background/popupMessageHandlers.js')
+
+	await modules.browserStorageLocalSet({ activeRpcNetwork: otherNetwork })
+	await refreshPopupConfirmTransactionSimulation(otherNetworkServices.ethereum, otherNetworkServices.tokenPriceService)
+	await refreshPopupConfirmTransactionMetadata(otherNetworkServices.ethereum, otherNetworkServices.tokenPriceService, undefined)
+	await modules.browserStorageLocalSet({ activeRpcNetwork: fakeRpcNetwork })
+
+	// The metadata refresh still reads the other network's block number for the popup, but nothing about the batch is prepared, simulated or visualized there.
+	assert.deepEqual(otherNetworkServices.requestedRpcMethods.filter((method) => method !== 'eth_blockNumber'), [])
+	assert.deepEqual(getPreviewChainIds(await getPendingBatch()), { transactions: [fakeRpcNetwork.chainId, fakeRpcNetwork.chainId], visualization: fakeRpcNetwork.chainId })
+	assert.equal(await approveBatch(websiteTabConnections), true)
+	const [forwardedRequest] = getForwardedSignerRequests(postedMessages)
+	assert.ok(isRecord(forwardedRequest) && Array.isArray(forwardedRequest.params) && isRecord(forwardedRequest.params[0]))
+	assert.equal(forwardedRequest.params[0].chainId, `0x${ fakeRpcNetwork.chainId.toString(16) }`)
+})
+
+test('a batch preview from another network cannot be approved', async () => {
+	const { postedMessages, websiteTabConnections } = await setUpWalletSendCallsTest(false)
+	await requestBatch(websiteTabConnections, false)
+	const original = await getPendingBatch()
+	const storePreview = async (preview: Partial<Pick<typeof original, 'transactionsToSimulate' | 'popupVisualisation'>>) => await updatePendingBatch(() => ({ ...original, ...preview, approvalStatus: { status: 'WaitingForUser' } }))
+	if (original.popupVisualisation.statusCode !== 'success') throw new Error('Missing batch simulation')
+	const originalVisualization = original.popupVisualisation
+
+	await storePreview({ transactionsToSimulate: original.transactionsToSimulate.map((transaction) => transaction.success ? { ...transaction, transaction: { ...transaction.transaction, chainId: otherNetwork.chainId } } : transaction) })
+	await expectApprovalToBeInvalidated(websiteTabConnections, postedMessages, 5710)
+
+	await storePreview({ popupVisualisation: { ...originalVisualization, data: { ...originalVisualization.data, simulationState: { ...originalVisualization.data.simulationState, rpcNetwork: otherNetwork } } } })
+	await expectApprovalToBeInvalidated(websiteTabConnections, postedMessages, 5710)
+
+	// A failed batch simulation records no network, so it cannot show that the preview belongs to the requested network.
+	await storePreview({ popupVisualisation: { statusCode: 'failed', data: { ...originalVisualization.data, error: { code: -32603, message: 'failed', decodedErrorMessage: 'failed' }, simulationState: { blockNumber: 1n, simulationConductedTimestamp: new Date() } } } })
+	await expectApprovalToBeInvalidated(websiteTabConnections, postedMessages, 5710)
+
+	await storePreview({})
+	assert.equal(await approveBatch(websiteTabConnections), true)
+	assert.equal(getForwardedSignerRequests(postedMessages).length, 1)
+})
+
+test('concurrent approvals forward a batch to the signer only once', async () => {
+	const { postedMessages, websiteTabConnections } = await setUpWalletSendCallsTest(false)
+	await requestBatch(websiteTabConnections, false)
+
+	const approvals = await Promise.all([approveBatch(websiteTabConnections), approveBatch(websiteTabConnections)])
+
+	assert.deepEqual(approvals, [true, false])
+	assert.equal(getForwardedSignerRequests(postedMessages).length, 1)
+	assert.equal((await getPendingBatch()).approvalStatus.status, 'WaitingForSigner')
+})
+
+test('concurrent approvals add a simulation-mode batch to the simulation stack only once', async () => {
+	const { postedMessages, websiteTabConnections } = await setUpWalletSendCallsTest(true)
+	await requestBatch(websiteTabConnections, true)
+
+	const approvals = await Promise.all([approveBatch(websiteTabConnections), approveBatch(websiteTabConnections)])
+
+	assert.deepEqual(approvals, [true, undefined])
+	assert.equal((await modules.getInterceptorTransactionStack()).operations.length, 2)
+	assert.equal(postedMessages.filter((message) => isRecord(message) && message.type === 'result' && message.method === 'wallet_sendCalls').length, 1)
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
 })
 
 test('a signer connection change after the batch was requested invalidates its approval', async () => {

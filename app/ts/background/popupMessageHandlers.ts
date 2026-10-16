@@ -6,6 +6,7 @@ import { getPendingTransactionsAndMessages, getTabState, getRpcList, getPrimaryR
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
 import type { ChangeActiveAddress, ModifyMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, WatchAssetConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, ChangeSettings, UpdateHomePage, SimulateGovernanceContractExecution, ChangeAddOrModifyAddressWindowState, OpenWebPage, SetEnsNameForHash, ForceSetGasLimitForTransaction, ChangePreSimulationBlockTimeManipulation, SetTransactionOrMessageBlockTimeManipulator, FetchSimulationStackRequestConfirmation, ImportSimulationStack, PopupReadyAndListeningPage } from '../types/interceptor-messages.js'
 import { formEthSendTransaction, formSendRawTransaction, refreshPendingTransactionBatchSimulation, resolvePendingTransactionOrMessage, sendConfirmTransactionDialogUpdates, updateConfirmTransactionView, setGasLimitForTransaction, toPopupPendingTransactionOrSignableMessage } from './windows/confirmTransaction.js'
+import { isEthereumClientOnBatchChain } from './walletSendCalls.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, getAddressMetadataForAccess, refreshSignerAccountsForTab, refreshSignerAccountsFromApprovedWebsitePorts, requestAddressChange, resolveInterceptorAccess, type SignerAccountRefreshOptions } from './windows/interceptorAccess.js'
 import { resolveChainChange } from './windows/changeChain.js'
 import { changeActiveRpc } from './walletSwitch.js'
@@ -522,7 +523,8 @@ type ConfirmTransactionMetadataDependencies = {
 	readonly visualisation?: OpenConsumerVisualisationDependencies
 }
 
-const isSameConfirmationSimulation = (current: { readonly data: { readonly simulationStartedTimestamp: Date } }, refreshed: { readonly data: { readonly simulationStartedTimestamp: Date } }) => current.data.simulationStartedTimestamp.getTime() === refreshed.data.simulationStartedTimestamp.getTime()
+// A visualisation stored without a simulationId by an older version cannot be told apart from a newer run, so it never matches.
+const isSameConfirmationSimulation = (current: { readonly data: { readonly simulationId?: number } }, refreshed: { readonly data: { readonly simulationId?: number } }) => current.data.simulationId !== undefined && current.data.simulationId === refreshed.data.simulationId
 
 // Re-reads the stored request so that only its visualisation is replaced. Approval changes made while the metadata was refreshed, and newer simulations, are kept.
 async function storeRefreshedConfirmationMetadata(uniqueRequestIdentifier: UniqueRequestIdentifier, withRefreshedVisualisation: (current: PendingTransactionOrSignableMessage) => PendingTransactionOrSignableMessage | undefined) {
@@ -577,7 +579,8 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 			}
 		}
 		case 'TransactionBatch': {
-			if (first.transactionOrMessageCreationStatus === 'Crafting' || first.popupVisualisation.statusCode === 'failed') return
+			// Protectors and metadata of another network would describe different contracts, so a batch is only re-visualized on the network it was requested for.
+			if (first.transactionOrMessageCreationStatus === 'Crafting' || first.popupVisualisation.statusCode === 'failed' || !isEthereumClientOnBatchChain(ethereum, first)) return
 			const refreshedVisualisation = first.popupVisualisation
 			try {
 				const visualizedSimulationState = await visualizeSimulatorState(refreshedVisualisation.data.simulationState, ethereum, tokenPriceService, requestAbortController)

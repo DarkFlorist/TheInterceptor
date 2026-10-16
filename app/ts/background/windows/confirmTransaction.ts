@@ -7,7 +7,7 @@ import { simulatePersonalSign } from '../../simulation/services/simulationPerson
 import { getSignedTransactionForSimulation } from '../../simulation/services/simulationTransactionSigning.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS, METAMASK_ERROR_BLANKET_ERROR, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { type TransactionConfirmation, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
-import { Semaphore } from '../../utils/semaphore.js'
+import { createScopedKeyedSerialExecutor, Semaphore } from '../../utils/semaphore.js'
 import type { RpcConnectionStatus, WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { type CompleteVisualizedSimulation, type InterceptorTransactionStack, PASSTHROUGH_STATE, type PreSimulationTransaction, type ResolvedSimulationState, type SimulationStateInput, type WebsiteCreatedEthereumTransaction, type WebsiteCreatedEthereumTransactionOrFailed, createPassthroughCompleteVisualizedSimulation, toResolvedSimulationState } from '../../types/visualizer-types.js'
 import type { SendRawTransactionParams, SendTransactionParams, WalletSendCalls, WalletSendCallsResult } from '../../types/JsonRpc-types.js'
@@ -47,7 +47,7 @@ import { getSafePendingFlow } from '../../safe/safePendingFlow.js'
 import { persistUnsignedSafeTransaction, resolveSafeSignerReply } from '../safeConfirmationPersistence.js'
 import { getWalletSelectedAccount } from '../../utils/activeAddressSelection.js'
 import { createSafeSignerErrorStatus } from '../safeSignerErrors.js'
-import { getWalletSendCallsApprovalError, getWalletSendCallsTransactionParams, getWalletSendCallTransactionIdentifier, isWalletSendCallsIdInUse, parseWalletSendCallsSignerResult, walletSendCallsIdInUseError } from '../walletSendCalls.js'
+import { getWalletSendCallsApprovalError, getWalletSendCallsTransactionParams, getWalletSendCallTransactionIdentifier, isEthereumClientOnBatchChain, isWalletSendCallsIdInUse, parseWalletSendCallsSignerResult, walletSendCallsIdInUseError } from '../walletSendCalls.js'
 
 const pendingConfirmationSemaphore = new Semaphore(1)
 const pendingNoResponseRetryTimers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -132,6 +132,7 @@ type TimestampedPopupVisualisation = {
 	statusCode: 'success' | 'failed'
 	data: {
 		simulationStartedTimestamp: Date
+		simulationId?: number
 		simulationState: {
 			simulationConductedTimestamp: Date
 		}
@@ -140,14 +141,16 @@ type TimestampedPopupVisualisation = {
 
 const getSimulationStartedTimestamp = (popupVisualisation: TimestampedPopupVisualisation) => popupVisualisation.data.simulationStartedTimestamp
 
-const shouldReplacePopupVisualisation = (
+// A stored simulation run is only replaced by the same or a newer run, whether either run succeeded or failed. Stored start timestamps keep only whole seconds, so runs are ordered by simulationId when both have one, and by start time only when a run was stored by an older version without an id.
+export const shouldReplacePopupVisualisation = (
 	currentPopupVisualisation: TimestampedPopupVisualisation | undefined,
 	nextPopupVisualisation: TimestampedPopupVisualisation,
 ) => {
-	const currentTimestamp = currentPopupVisualisation === undefined ? undefined : getSimulationStartedTimestamp(currentPopupVisualisation)
-	const nextTimestamp = getSimulationStartedTimestamp(nextPopupVisualisation)
-	if (currentTimestamp === undefined || nextTimestamp === undefined) return true
-	return nextTimestamp.getTime() >= currentTimestamp.getTime()
+	if (currentPopupVisualisation === undefined) return true
+	const currentSimulationId = currentPopupVisualisation.data.simulationId
+	const nextSimulationId = nextPopupVisualisation.data.simulationId
+	if (currentSimulationId !== undefined && nextSimulationId !== undefined) return nextSimulationId >= currentSimulationId
+	return getSimulationStartedTimestamp(nextPopupVisualisation).getTime() >= getSimulationStartedTimestamp(currentPopupVisualisation).getTime()
 }
 
 export function toPopupPendingTransactionOrSignableMessage(pending: PendingTransactionOrSignableMessage): PopupPendingTransactionOrSignableMessage {
@@ -294,11 +297,24 @@ async function replyToTransactionBatchRequest(ethereum: EthereumClientService, t
 	return await attemptQueuedTerminalReplyDelivery(websiteTabConnections, terminalReply)
 }
 
+const transactionBatchResolutionScope = {}
+const serializeTransactionBatchResolution = createScopedKeyedSerialExecutor<typeof transactionBatchResolutionScope, string>()
+
+// Resolutions of one batch can overlap, for example when duplicate confirmation windows both approve it. They run one at a time on freshly read state, so a later approval sees that the first one already forwarded the batch, or added it to the simulation stack and removed it.
+async function resolveTransactionBatchSerially<T>(uniqueRequestIdentifier: UniqueRequestIdentifier, resolve: (pendingBatch: PendingTransactionBatch) => Promise<T>) {
+	return await serializeTransactionBatchResolution(transactionBatchResolutionScope, getUniqueRequestIdentifierString(uniqueRequestIdentifier), async () => {
+		const pendingBatch = await getPendingTransactionOrMessageByidentifier(uniqueRequestIdentifier)
+		if (pendingBatch?.type !== 'TransactionBatch') return undefined
+		return await resolve(pendingBatch)
+	})
+}
+
 // A signer without wallet_sendCalls support cannot complete the batch. Its error ends the request so the website can fall back to sending each call with eth_sendTransaction, which the Interceptor reviews again.
 export async function rejectForwardedTransactionBatch(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, uniqueRequestIdentifier: UniqueRequestIdentifier, signerError: ErrorWithCodeAndOptionalData) {
-	const pending = await getPendingTransactionOrMessageByidentifier(uniqueRequestIdentifier)
-	if (pending?.type !== 'TransactionBatch' || pending.approvalStatus.status !== 'WaitingForSigner') return false
-	return await replyToTransactionBatchRequest(ethereum, tokenPriceService, websiteTabConnections, pending, { type: 'result', error: signerError })
+	return await resolveTransactionBatchSerially(uniqueRequestIdentifier, async (pendingBatch) => {
+		if (pendingBatch.approvalStatus.status !== 'WaitingForSigner') return false
+		return await replyToTransactionBatchRequest(ethereum, tokenPriceService, websiteTabConnections, pendingBatch, { type: 'result', error: signerError })
+	})
 }
 
 // A batch is approved or rejected as a whole. Approval re-validates the admission binding, then either forwards the canonical request to the signer or adds every call to the simulation stack.
@@ -330,7 +346,7 @@ async function resolvePendingTransactionBatch(ethereum: EthereumClientService, t
 		}
 		case 'accept': {
 			if (pendingBatch.transactionOrMessageCreationStatus !== 'Simulated' || pendingBatch.approvalStatus.status === 'WaitingForSigner') return false
-			const approvalError = await getWalletSendCallsApprovalError(websiteTabConnections, ethereum, pendingBatch, pendingBatch.transactionsToSimulate)
+			const approvalError = await getWalletSendCallsApprovalError(websiteTabConnections, ethereum, pendingBatch)
 			if (approvalError !== undefined) {
 				await setPendingApprovalStatus(ethereum, tokenPriceService, uniqueRequestIdentifier, { status: 'SignerError', ...approvalError })
 				return false
@@ -349,6 +365,7 @@ async function resolvePendingTransactionBatch(ethereum: EthereumClientService, t
 			const batchOperations = pendingBatch.transactionsToSimulate
 				.filter((transaction): transaction is WebsiteCreatedEthereumTransaction => transaction.success)
 				.map((transaction) => ({ type: 'Transaction' as const, preSimulationTransaction: { ...toPreSimulationTransaction(transaction), walletSendCallsBatchId: pendingBatch.batchId } }))
+			// The batch reaches the simulation stack before replyToWebsite removes it from the confirmation queue; isWalletSendCallsIdInUse relies on this order.
 			await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => ({ operations: [...prevStack.operations, ...batchOperations] }))
 			await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService)
 			return await replyToWebsite({ type: 'result', result: { id: pendingBatch.batchId } })
@@ -360,7 +377,7 @@ async function resolvePendingTransactionBatch(ethereum: EthereumClientService, t
 export async function resolvePendingTransactionOrMessage(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, refreshedSafeSignerSelection?: RefreshedSafeSignerSelection) {
 	const storedPending = await getPendingTransactionOrMessageByidentifier(confirmation.data.uniqueRequestIdentifier)
 	if (storedPending === undefined) return // no need to resolve as it doesn't exist anymore
-	if (storedPending.type === 'TransactionBatch') return await resolvePendingTransactionBatch(ethereum, tokenPriceService, websiteTabConnections, confirmation, storedPending)
+	if (storedPending.type === 'TransactionBatch') return await resolveTransactionBatchSerially(confirmation.data.uniqueRequestIdentifier, async (pendingBatch) => await resolvePendingTransactionBatch(ethereum, tokenPriceService, websiteTabConnections, confirmation, pendingBatch))
 	let pendingTransactionOrMessage: PendingTransactionOrSignableMessageWithoutBatch = storedPending
 	if (
 		confirmation.data.action === 'accept'
@@ -994,6 +1011,8 @@ async function storeTransactionBatchSimulation(uniqueRequestIdentifier: UniqueRe
 }
 
 export async function refreshPendingTransactionBatchSimulation(ethereumClientService: EthereumClientService, tokenPriceService: TokenPriceService, pendingBatch: PendingTransactionBatch) {
+	// The same calls can do something else on another network, so after a network switch the batch keeps the preview of the network it was requested for. A client serves one network for its whole lifetime, so a refresh that passes this check only stores results from that network, even if the user switches networks while it runs.
+	if (!isEthereumClientOnBatchChain(ethereumClientService, pendingBatch)) return
 	try {
 		await storeTransactionBatchSimulation(pendingBatch.uniqueRequestIdentifier, await simulatePendingTransactionBatch(ethereumClientService, tokenPriceService, pendingBatch))
 	} catch(error: unknown) {
