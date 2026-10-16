@@ -272,6 +272,7 @@ export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> 
 			openedPage: settings.openedPage,
 			useSignersAddressAsActiveAddress: settings.useSignersAddressAsActiveAddress,
 			websiteAccess: settings.websiteAccess,
+			// Exports are user backups, so RPC URL credentials are kept just like block explorer API keys.
 			rpcNetwork: settings.activeRpcNetwork,
 			simulationMode: settings.simulationMode,
 			addressBookEntries: await getUserAddressBookEntries(),

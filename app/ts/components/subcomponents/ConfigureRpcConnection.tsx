@@ -18,6 +18,7 @@ import { AsyncStatusIcon } from './AsyncAction.js'
 import { parseRpcFormData } from '../../utils/rpcFormData.js'
 import { requestPopupSettingsChange } from '../popupSettingsChange.js'
 import { ErrorComponent } from './Error.js'
+import { redactRpcUrlCredentials } from '../../utils/rpcUrlCredentials.js'
 
 type RpcProbeResult = {
 	chainId: bigint
@@ -33,13 +34,13 @@ const ConfigureRpcContext = createContext<ConfigureRpcContext | undefined>(undef
 
 const throwImprovedError = (error: unknown, url: string, fallbackMessage: string) => {
 	const message = error instanceof Error ? error.message : undefined
-	if (message?.startsWith('unsupported protocol')) throw new Error(`Unsupported protocol, did you mean https://${ url }?`)
+	if (message?.startsWith('unsupported protocol')) throw new Error(`Unsupported protocol, did you mean ${ redactRpcUrlCredentials(`https://${ url }`) }?`)
 	if (isBrowserFetchTransportError(error)) throw new Error('Failed to connect to the RPC.')
 	if (!(error instanceof Error)) throw new Error(fallbackMessage)
 	throw error
 }
 
-const RpcQueryProvider = ({ children }: { children: ComponentChildren }) => {
+export const RpcQueryProvider = ({ children }: { children: ComponentChildren }) => {
 	const { value: rpcQuery, waitFor, reset: resetRpcQuery } = useAsyncState<RpcProbeResult>()
 
 	const checkServerAvailability = async (url: string) => {
@@ -189,7 +190,7 @@ export async function completeRpcFormMutation(mutation: () => Promise<void>, onS
 	onSuccess()
 }
 
-const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: ConfigureRpcFormProps) => {
+export const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: ConfigureRpcFormProps) => {
 	const confirmRemoval = useSignal(false)
 	const { rpcQuery, resetRpcQuery } = useQueryRpc()
 	const { value: mutationState, waitFor: waitForMutation } = useAsyncState<void>()
@@ -227,7 +228,7 @@ const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: Configu
 
 				case 'save':
 					void waitForMutation(async () => await completeRpcFormMutation(async () => {
-						const parsedData = parseRpcFormData(new FormData(form))
+						const parsedData = parseRpcFormData(new FormData(form), defaultValues?.httpsRpc)
 						if (!parsedData.success) throw new Error(parsedData.message)
 						await onSave(parsedData.value)
 					}, () => completeForm(form)))
@@ -313,6 +314,9 @@ const RpcUrlField = ({ defaultValue }: { defaultValue?: string }) => {
 	const { rpcQuery, queryRpcInfo } = useQueryRpc()
 	const inputRef = useRef<HTMLInputElement>(null)
 	const timeout = useSignal<ReturnType<typeof setTimeout> | undefined>(undefined)
+	// Editing shows the stored URL redacted in a read-only field without a form name, so saving uses the stored URL instead of this text.
+	const displayedDefaultValue = defaultValue === undefined ? undefined : redactRpcUrlCredentials(defaultValue)
+	const formFieldName = defaultValue === undefined ? 'httpsRpc' : undefined
 
 	const deferredQueryAnRpcUrl = (url: string) => {
 		if (timeout.value) clearTimeout(timeout.value)
@@ -342,7 +346,7 @@ const RpcUrlField = ({ defaultValue }: { defaultValue?: string }) => {
 		}
 	})
 
-	return <TextInput ref = { inputRef } label = 'RPC URL *' name = 'httpsRpc' defaultValue = { defaultValue } onInput = { (e) => deferredQueryAnRpcUrl(e.currentTarget.value) } statusIcon = { <AsyncStatusIcon state = { rpcQuery.value.state } /> } style = '--area: 1 / span 2' required autoComplete = 'off' autoFocus = { defaultValue === undefined } readOnly = { defaultValue !== undefined } />
+	return <TextInput ref = { inputRef } label = 'RPC URL *' name = { formFieldName } defaultValue = { displayedDefaultValue } onInput = { (e) => deferredQueryAnRpcUrl(e.currentTarget.value) } statusIcon = { <AsyncStatusIcon state = { rpcQuery.value.state } /> } style = '--area: 1 / span 2' required autoComplete = 'off' autoFocus = { defaultValue === undefined } readOnly = { defaultValue !== undefined } />
 }
 
 const Trash = () => (
