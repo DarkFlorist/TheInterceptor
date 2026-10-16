@@ -8,6 +8,7 @@ import type { PersonalSignParams } from '../../app/ts/types/jsonRpc-signing-type
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
 import type { SignedMessageTransaction } from '../../app/ts/types/visualizer-types.js'
 import { encodeAbiValues } from '../../app/ts/utils/abiRuntime.js'
+import { bytesFromHex } from '../../app/ts/utils/ethereumBytes.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
 import { hashMessage, keccak256, privateKeyToAccount, recoverAddress, type Hex } from '../../app/ts/utils/ethereumPrimitives.js'
 import { decodePersonalSignMessage } from '../../app/ts/utils/personalSignMessage.js'
@@ -93,6 +94,13 @@ describe('personal_sign message bytes', () => {
 })
 
 describe('personal_sign message display', () => {
+	// What you see is what you sign: the popup shows exactly the bytes the signature covers. This replaces main's check that unprefixed hex such as 6869 is shown as the literal text 6869, which MetaMask instead signs as the bytes of 'hi'.
+	test('shows the text of exactly the bytes personal_sign signs', () => {
+		for (const { message, signedBytes } of personalSignCases) {
+			assert.equal(decodePersonalSignMessage(message), new TextDecoder().decode(bytesFromHex(signedBytes)), JSON.stringify(message))
+		}
+	})
+
 	test('decodes the bytes a hex personal_sign message signs', () => {
 		assert.equal(decodePersonalSignMessage('0x6869'), 'hi')
 		assert.equal(decodePersonalSignMessage('0X6869'), 'hi')
