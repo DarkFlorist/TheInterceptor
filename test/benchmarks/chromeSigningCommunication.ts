@@ -1,4 +1,4 @@
-import { closeTarget, connectTarget, createTargetPage, launchChromeSession, waitForInterceptorExtensionServiceWorker, waitForPerformanceMarks, waitForRegisteredContentScripts, waitForTargetByUrl, waitForTargetGone } from './chromeHarness.js'
+import { closeTarget, connectTarget, createTargetPage, launchChromeSession, waitForBrowserTargets, waitForInterceptorExtensionServiceWorker, waitForPerformanceMarks, waitForRegisteredContentScripts, waitForTargetByUrl, waitForTargetGone } from './chromeHarness.js'
 import { startChromeCommunicationPageServer } from './chromeCommunicationPageServer.js'
 import type { CdpConnection } from './chromeHarness.js'
 
@@ -6,7 +6,6 @@ const ACCESS_APPROVE_BUTTON_SELECTOR = 'nav.popup-button-row button.is-primary:n
 const CONFIRM_APPROVE_BUTTON_SELECTOR = 'nav.popup-button-row button.dialog-action-button.is-primary:not(.is-danger)'
 const FAKE_SIGNER_ADDRESS = '0xd8da6bf26964af9d7eed9e03e53415d37aa96045'
 const FAKE_SIGNED_TRANSACTION_HASH = '0x1111111111111111111111111111111111111111111111111111111111111111'
-const FAKE_CALLS_BUNDLE_ID = '0x2222'
 
 function sleep(ms: number) {
 	return new Promise<void>((resolve) => setTimeout(resolve, ms))
@@ -51,16 +50,13 @@ const fakeSignerPreload = `(() => {
 		isMetaMask: true,
 		selectedAddress: ${ JSON.stringify(FAKE_SIGNER_ADDRESS) },
 		isConnected: () => true,
-		request: async ({ method, params }) => {
+		request: async ({ method }) => {
 			requests.push(method)
 			switch (method) {
 				case 'eth_chainId': return '0x1'
 				case 'eth_accounts':
 				case 'eth_requestAccounts': return [${ JSON.stringify(FAKE_SIGNER_ADDRESS) }]
 				case 'eth_sendTransaction': return ${ JSON.stringify(FAKE_SIGNED_TRANSACTION_HASH) }
-				case 'wallet_sendCalls':
-					globalThis.__fakeSignerSendCallsParams = params
-					return { id: ${ JSON.stringify(FAKE_CALLS_BUNDLE_ID) } }
 				default: throw Object.assign(new Error('Unsupported fake signer method: ' + method), { code: -32601 })
 			}
 		},
@@ -170,24 +166,14 @@ async function main() {
 					.then((result) => { globalThis.__sendCallsResult = { status: 'fulfilled', result } })
 					.catch((error) => { globalThis.__sendCallsResult = { status: 'rejected', error: error instanceof Error ? error.message : String(error), code: typeof error?.code === 'number' ? error.code : undefined } })
 			})()`)
-			const batchConfirmTarget = await waitForTargetByUrl(chrome.browserDebugPort, `chrome-extension://${ extensionId }/html3/confirmTransactionV3.html`, 30_000)
-			confirmTargetId = batchConfirmTarget.id
-			const batchConfirmConnection = await connectTarget(chrome.browserDebugPort, batchConfirmTarget.id)
-			try {
-				await waitForButtonEnabled(batchConfirmConnection, CONFIRM_APPROVE_BUTTON_SELECTOR, 30_000)
-				const batchReachedSignerBeforeApproval = await pageConnection.evaluate<boolean>(`globalThis.__fakeSignerRequests?.includes('wallet_sendCalls')`)
-				if (batchReachedSignerBeforeApproval) throw new Error('wallet_sendCalls reached the signer before the Interceptor confirmation was approved')
-				await clickButton(batchConfirmConnection, CONFIRM_APPROVE_BUTTON_SELECTOR)
-			} finally {
-				batchConfirmConnection.close()
-			}
+			// Signing mode refuses wallet_sendCalls without a confirmation, because a wallet may execute the batch atomically, unlike the separate transactions the Interceptor would preview.
 			await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__sendCallsResult?.status !== 'pending'`).catch(() => false), 10_000, 'wallet_sendCalls result')
-			const sendCallsResult = await pageConnection.evaluate<{ status?: string, result?: { id?: string } }>('globalThis.__sendCallsResult')
-			if (sendCallsResult.result?.id !== FAKE_CALLS_BUNDLE_ID) throw new Error(`Unexpected wallet_sendCalls result: ${ JSON.stringify(sendCallsResult) }`)
-			const forwardedBatch = await pageConnection.evaluate<readonly { readonly from?: string, readonly atomicRequired?: boolean, readonly calls?: readonly unknown[] }[]>('globalThis.__fakeSignerSendCallsParams')
-			if (forwardedBatch[0]?.from !== FAKE_SIGNER_ADDRESS || forwardedBatch[0].atomicRequired !== false || forwardedBatch[0].calls?.length !== 2) throw new Error(`Unexpected forwarded wallet_sendCalls request: ${ JSON.stringify(forwardedBatch) }`)
-			await waitForTargetGone(chrome.browserDebugPort, (target) => target.id === confirmTargetId, 10_000, 'completed batch confirmation popup')
-			confirmTargetId = undefined
+			const sendCallsResult = await pageConnection.evaluate<{ status?: string, code?: number }>('globalThis.__sendCallsResult')
+			if (sendCallsResult.status !== 'rejected' || sendCallsResult.code !== 4200) throw new Error(`Unexpected wallet_sendCalls result in signing mode: ${ JSON.stringify(sendCallsResult) }`)
+			const batchReachedSigner = await pageConnection.evaluate<boolean>(`globalThis.__fakeSignerRequests?.includes('wallet_sendCalls')`)
+			if (batchReachedSigner) throw new Error('wallet_sendCalls reached the signer in signing mode')
+			const confirmationTargets = (await waitForBrowserTargets(chrome.browserDebugPort)).filter((target) => target.url.startsWith(`chrome-extension://${ extensionId }/html3/confirmTransactionV3.html`))
+			if (confirmationTargets.length > 0) throw new Error('A confirmation window opened for wallet_sendCalls in signing mode')
 
 			await pageConnection.evaluate(`(() => {
 				globalThis.__signingResult = { status: 'pending' }

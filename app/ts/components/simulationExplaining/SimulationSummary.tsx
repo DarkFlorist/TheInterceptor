@@ -933,7 +933,7 @@ type RawTransactionDetailsCardParams = {
 	gasSpent: bigint | undefined
 	transactionIdentifier: bigint
 	isRawTransaction: boolean,
-	// Gas limits can only be changed for single transactions; wallet_sendCalls batches leave gas to the wallet.
+	// Gas limits can only be changed for single transactions; each call of a wallet_sendCalls batch keeps the gas limit estimated for it within the batch.
 	gasLimitEditable?: boolean
 }
 

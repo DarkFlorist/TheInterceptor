@@ -387,9 +387,6 @@ export const WalletShowCallsStatus = funtypes.ReadonlyObject({
 	params: funtypes.ReadonlyTuple(WalletCallsId),
 }).asReadonly()
 
-// EIP-5792 call bundle methods, which the Interceptor routes itself instead of treating them as unknown signer methods.
-export const WALLET_CALLS_METHODS: ReadonlySet<string> = new Set(['wallet_sendCalls', 'wallet_getCallsStatus', 'wallet_showCallsStatus'])
-
 export type WalletCallsReceipt = funtypes.Static<typeof WalletCallsReceipt>
 const WalletCallsReceipt = funtypes.ReadonlyObject({
 	logs: funtypes.ReadonlyArray(funtypes.ReadonlyObject({

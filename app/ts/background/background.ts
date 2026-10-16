@@ -16,7 +16,7 @@ import { assertNever, hasOwnKey } from '../utils/typescript.js'
 import { JsonRpcResponseError, reportUnexpectedError, isFailedToFetchError } from '../utils/errors.js'
 import { InterceptedRequest, type WebsiteSocket } from '../utils/requests.js'
 import { replyToInterceptedRequest } from './messageSending.js'
-import { EthereumJsonRpcRequest, type EthGetStorageAtParams, type SendRawTransactionParams, type SendTransactionParams, SupportedEthereumJsonRpcRequestMethods, WALLET_CALLS_METHODS, type WalletAddEthereumChain, WalletRevokePermissions } from '../types/JsonRpc-types.js'
+import { EthereumJsonRpcRequest, type EthGetStorageAtParams, type SendRawTransactionParams, type SendTransactionParams, SupportedEthereumJsonRpcRequestMethods, type WalletAddEthereumChain, WalletRevokePermissions } from '../types/JsonRpc-types.js'
 import type { Website } from '../types/websiteAccessTypes.js'
 import { serialize } from '../types/wire-types.js'
 import { connectedToSigner, ethAccountsReply, signerChainChanged, signerReply, walletSwitchEthereumChainReply } from './providerMessageHandlers.js'
@@ -35,7 +35,7 @@ import { getWatchAssetRpcParseFailureReply } from './watchAssetRpc.js'
 import { createMethodHandlerFor } from '../utils/methodHandlers.js'
 import { getWalletCapabilities } from './walletCapabilities.js'
 import { getWalletGetCapabilitiesParseFailureReply } from './walletGetCapabilitiesRpc.js'
-import { getSimulatedCallsStatus, getSimulatedShowCallsStatusReply, getWalletSendCallsParseFailureReply } from './walletSendCalls.js'
+import { getSigningModeWalletCallsReply, getSimulatedCallsStatus, getSimulatedShowCallsStatusReply, getWalletSendCallsParseFailureReply } from './walletSendCalls.js'
 import { hasAccess as getWebsiteAccessApprovalState, hasAddressAccess as getWebsiteAddressAccessApprovalState } from './websiteAccessPolicy.js'
 
 if (initializeWatchAssetWindowListeners()) {
@@ -97,15 +97,14 @@ async function handleRPCRequest(
 		if (!forwardToSigner) throw new Error('Should not forward to signer')
 		return { type: 'forwardToSigner' as const, ...request }
 	}
+	// Signing mode refuses EIP-5792 batches on every network: the preview simulates separate transactions, but a wallet may execute them atomically, where transient storage carries over.
+	const signingModeWalletCallsReply = settings.simulationMode ? undefined : getSigningModeWalletCallsReply(request)
+	if (signingModeWalletCallsReply !== undefined) return signingModeWalletCallsReply
 
 	if (maybeParsedRequest.success === false) {
-		// Networks without an Interceptor RPC forward every non-account request to the signer, including EIP-5792 requests the Interceptor cannot parse.
-		const forwardUnparsedWalletCallsRequest = forwardToSigner && settings.activeRpcNetwork.httpsRpc === undefined && WALLET_CALLS_METHODS.has(request.method)
-		if (!forwardUnparsedWalletCallsRequest) {
-			for (const getMethodSpecificReply of RPC_PARSE_FAILURE_HANDLERS) {
-				const methodSpecificReply = getMethodSpecificReply(request)
-				if (methodSpecificReply !== undefined) return methodSpecificReply
-			}
+		for (const getMethodSpecificReply of RPC_PARSE_FAILURE_HANDLERS) {
+			const methodSpecificReply = getMethodSpecificReply(request)
+			if (methodSpecificReply !== undefined) return methodSpecificReply
 		}
 		const safePolicyReply = getSafeModeRpcPolicyReply({
 			rawRequest: request,
@@ -122,7 +121,7 @@ async function handleRPCRequest(
 		console.warn(maybeParsedRequest.fullError)
 		const maybePartiallyParsedRequest = SupportedEthereumJsonRpcRequestMethods.safeParse(request)
 		// the method is some method that we are not supporting, forward it to the wallet if signer is available
-		if ((maybePartiallyParsedRequest.success === false || forwardUnparsedWalletCallsRequest) && forwardToSigner) return { type: 'forwardToSigner' as const, replyWithSignersReply: true, ...request }
+		if (maybePartiallyParsedRequest.success === false && forwardToSigner) return { type: 'forwardToSigner' as const, replyWithSignersReply: true, ...request }
 		return {
 			type: 'result' as const,
 			method: request.method,
@@ -184,24 +183,15 @@ async function handleRPCRequest(
 		wallet_watchAsset: rpcRequestHandler('wallet_watchAsset', async (_context, rpcRequest) => await handleWatchAssetRequest(ethereum, websiteTabConnections, request, website, rpcRequest, {}, activeAddress)),
 		wallet_requestPermissions: rpcRequestHandler('wallet_requestPermissions', async () => await requestPermissions(activeAddress, website)),
 		wallet_getPermissions: rpcRequestHandler('wallet_getPermissions', async () => await getPermissions(activeAddress, website)),
-		wallet_getCapabilities: rpcRequestHandler('wallet_getCapabilities', async (_context, rpcRequest) => {
-			// Networks without an Interceptor RPC forward wallet_sendCalls to the signer unreviewed, so only there do the signer's own capabilities describe what happens. Elsewhere forwarding would advertise capabilities, such as atomic batching, that the Interceptor does not review.
-			const signerHandlesBatches = settings.activeRpcNetwork.httpsRpc === undefined && forwardToSigner && !safeSigningMode && activeSafeSigner === undefined
-			if (rpcRequest.params[0] === activeAddress && signerHandlesBatches) return { type: 'forwardToSigner', replyWithSignersReply: true, ...request }
-			return getWalletCapabilities(rpcRequest, activeAddress, settings.activeRpcNetwork.chainId, activeSafeSigner)
-		}),
+		// Answered locally in every mode, so websites are never offered the signer's batch capabilities, such as atomic execution, while signing mode refuses wallet_sendCalls.
+		wallet_getCapabilities: rpcRequestHandler('wallet_getCapabilities', async (_context, rpcRequest) => getWalletCapabilities(rpcRequest, activeAddress, settings.activeRpcNetwork.chainId, activeSafeSigner)),
+		// Only simulation mode reaches the EIP-5792 handlers; signing mode refused these methods above.
 		wallet_sendCalls: rpcRequestHandler('wallet_sendCalls', async (_context, rpcRequest) => {
 			if (settings.activeRpcNetwork.httpsRpc === undefined) return { type: 'result' as const, method: rpcRequest.method, error: { code: METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER, message: 'wallet_sendCalls batches are simulated before approval, which requires an Interceptor RPC connection for this network.' } }
-			return await sendCalls(ethereum, tokenPriceService, websiteTabConnections, activeAddress, rpcRequest, request, website, !forwardToSigner)
+			return await sendCalls(ethereum, tokenPriceService, websiteTabConnections, activeAddress, rpcRequest, request, website)
 		}),
-		wallet_getCallsStatus: rpcRequestHandler('wallet_getCallsStatus', async (_context, rpcRequest) => {
-			if (forwardToSigner) return { type: 'forwardToSigner' as const, replyWithSignersReply: true as const, method: rpcRequest.method, params: rpcRequest.params }
-			return await withExecutionSimulationState((simulationState) => getSimulatedCallsStatus(ethereum, simulationState, rpcRequest, website.websiteOrigin))
-		}),
-		wallet_showCallsStatus: rpcRequestHandler('wallet_showCallsStatus', async (_context, rpcRequest) => {
-			if (forwardToSigner) return { type: 'forwardToSigner' as const, replyWithSignersReply: true as const, method: rpcRequest.method, params: rpcRequest.params }
-			return getSimulatedShowCallsStatusReply(rpcRequest)
-		}),
+		wallet_getCallsStatus: rpcRequestHandler('wallet_getCallsStatus', async (_context, rpcRequest) => await withExecutionSimulationState((simulationState) => getSimulatedCallsStatus(ethereum, simulationState, rpcRequest, website.websiteOrigin))),
+		wallet_showCallsStatus: rpcRequestHandler('wallet_showCallsStatus', async (_context, rpcRequest) => getSimulatedShowCallsStatusReply(rpcRequest)),
 		eth_accounts: rpcRequestHandler('eth_accounts', async () => await getAccounts(activeAddress)),
 		eth_requestAccounts: rpcRequestHandler('eth_requestAccounts', async () => await getAccounts(activeAddress)),
 		eth_gasPrice: rpcRequestHandler('eth_gasPrice', async () => await gasPrice(ethereum)),

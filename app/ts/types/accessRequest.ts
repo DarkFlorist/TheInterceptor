@@ -161,34 +161,29 @@ const WaitingForSimulationPendingTransaction = funtypes.Intersect(
 export type PendingTransaction = funtypes.Static<typeof PendingTransaction>
 export const PendingTransaction = funtypes.Union(CraftingTransactionPendingTransaction, WaitingForSimulationPendingTransaction, SimulatedPendingTransaction)
 
-// Captured when wallet_sendCalls is admitted and re-checked on approval, so a batch is only ever approved for the website, account, network and signer connection it was simulated for.
+// Captured when wallet_sendCalls is admitted and re-checked on approval, so a batch is only ever approved for the website, account and network it was simulated for.
 export type WalletSendCallsBinding = funtypes.Static<typeof WalletSendCallsBinding>
 export const WalletSendCallsBinding = funtypes.ReadonlyObject({
 	websiteOrigin: funtypes.String,
 	account: EthereumAddress,
 	chainId: EthereumQuantity,
-}).And(funtypes.ReadonlyPartial({
-	signer: funtypes.ReadonlyObject({
-		connectionName: EthereumQuantity,
-		ownerGeneration: funtypes.Number,
-		signerProviderGeneration: funtypes.Number,
-	}),
-}))
+})
 
 type PendingTransactionBatchBase = funtypes.Static<typeof PendingTransactionBatchBase>
 const PendingTransactionBatchBase = funtypes.ReadonlyObject({
 	type: funtypes.Literal('TransactionBatch'),
 	popupOrTabId: PopupOrTabId,
-	// The canonical request rebuilt from the validated calls. The same calls are simulated, shown, approved and forwarded to the signer.
+	// The canonical request rebuilt from the validated calls. The same calls are simulated, shown, approved and added to the simulation stack.
 	originalRequestParameters: WalletSendCalls,
 	uniqueRequestIdentifier: UniqueRequestIdentifier,
-	simulationMode: funtypes.Boolean,
+	// Signing mode refuses wallet_sendCalls (see getSigningModeWalletCallsReply), so every batch belongs to simulation mode.
+	simulationMode: funtypes.Literal(true),
 	activeAddress: EthereumAddress,
 	created: EthereumTimestamp,
 	website: Website,
 	approvalStatus: PendingTransactionApprovalStatus,
 	binding: WalletSendCallsBinding,
-	// Returned to the website when the batch is added to the simulation stack; signing mode returns the signer's id instead.
+	// Returned to the website when the batch is added to the simulation stack.
 	batchId: funtypes.String,
 })
 
@@ -202,6 +197,8 @@ export const PendingTransactionBatch = funtypes.Intersect(
 			transactionOrMessageCreationStatus: funtypes.Union(funtypes.Literal('Simulated'), funtypes.Literal('FailedToSimulate')),
 			transactionsToSimulate: funtypes.ReadonlyArray(WebsiteCreatedEthereumTransactionOrFailed),
 			popupVisualisation: ConfirmTransactionBatchVisualization,
+			// Identifies everything the preview was simulated from: the stack and the settings, time manipulation and rich addresses its input depends on. Approval refuses the batch once any of them changed (see getStackSimulationContextFingerprint).
+			simulatedContextFingerprint: funtypes.String,
 		}),
 	),
 )

@@ -12,8 +12,7 @@ import type { EthSimulateV1Params } from '../types/ethSimulate-types.js'
 import type { Website } from '../types/websiteAccessTypes.js'
 import { METAMASK_ERROR_BLANKET_ERROR } from '../utils/constants.js'
 import { openConfirmTransactionDialogForMessage, openConfirmTransactionDialogForTransaction, openConfirmTransactionDialogForTransactionBatch } from './windows/confirmTransaction.js'
-import { canonicalizeWalletSendCalls, getWalletSendCallsBatchId, getWalletSendCallsSignerBinding } from './walletSendCalls.js'
-import { signerUnavailableError } from './signerStateOwnership.js'
+import { canonicalizeWalletSendCalls, getWalletSendCallsBatchId } from './walletSendCalls.js'
 import { printError } from '../utils/errors.js'
 import { openFetchSimulationStackDialogOrGetCachedResult, type SimulationStackSnapshot } from './windows/fetchSimulationStack.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerformance.js'
@@ -55,7 +54,7 @@ export async function sendTransaction(
 	return { method: confirmation.parameters.method, ...action }
 }
 
-// wallet_sendCalls is bound to the website, account and chain (and in signing mode the signer connection) that admitted it, and is only forwarded or added to the simulation stack after the user approves the simulated batch.
+// Simulation mode only: wallet_sendCalls is bound to the website, account and chain that admitted it, and its calls are only added to the simulation stack after the user approves the simulated batch.
 export async function sendCalls(
 	ethereumClientService: EthereumClientService,
 	tokenPriceService: TokenPriceService,
@@ -64,17 +63,14 @@ export async function sendCalls(
 	walletSendCalls: WalletSendCalls,
 	request: InterceptedRequest,
 	website: Website,
-	simulationMode: boolean,
 ) {
 	if (activeAddress === undefined) return { type: 'result' as const, method: walletSendCalls.method, ...ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS }
 	const chainId = ethereumClientService.getChainId()
 	const canonicalWalletSendCalls = canonicalizeWalletSendCalls(walletSendCalls, activeAddress, chainId)
 	if (!canonicalWalletSendCalls.success) return { type: 'result' as const, method: walletSendCalls.method, error: canonicalWalletSendCalls.error }
-	const signer = simulationMode ? undefined : getWalletSendCallsSignerBinding(websiteTabConnections, request.uniqueRequestIdentifier.requestSocket.tabId)
-	if (!simulationMode && signer === undefined) return { type: 'result' as const, method: walletSendCalls.method, error: signerUnavailableError }
-	const binding = { websiteOrigin: website.websiteOrigin, account: activeAddress, chainId, ...(signer === undefined ? {} : { signer }) }
+	const binding = { websiteOrigin: website.websiteOrigin, account: activeAddress, chainId }
 	const batchId = canonicalWalletSendCalls.value.params[0].id ?? getWalletSendCallsBatchId(request.uniqueRequestIdentifier)
-	const action = await openConfirmTransactionDialogForTransactionBatch(ethereumClientService, tokenPriceService, request, canonicalWalletSendCalls.value, binding, batchId, simulationMode, website, websiteTabConnections)
+	const action = await openConfirmTransactionDialogForTransactionBatch(ethereumClientService, tokenPriceService, request, canonicalWalletSendCalls.value, binding, batchId, website, websiteTabConnections)
 	if (action.type === 'doNotReply') return action
 	return { method: walletSendCalls.method, ...action }
 }

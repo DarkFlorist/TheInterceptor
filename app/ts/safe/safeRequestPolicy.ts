@@ -1,7 +1,7 @@
 import type { SafeMessageReview } from '../types/safeReview.js'
 import type { ConfirmationRequest } from '../types/confirmationRequest.js'
 import type { RPCReply } from '../types/interceptor-messages.js'
-import { type EthereumJsonRpcRequest, WALLET_CALLS_METHODS } from '../types/JsonRpc-types.js'
+import type { EthereumJsonRpcRequest } from '../types/JsonRpc-types.js'
 import type { InterceptedRequest } from '../utils/requests.js'
 import { isValidMessage } from '../utils/eip712.js'
 import { SafeMessage } from './safeMessage.js'
@@ -51,10 +51,6 @@ export function getSafeModeRpcPolicyReply(options: {
 				'This RPC method is not supported while a Gnosis Safe is the active signing account.',
 			)
 			: undefined
-	}
-	// Gnosis Safe proposals are reviewed one transaction at a time, so EIP-5792 call batches are not offered while a Safe is the active signing account.
-	if (WALLET_CALLS_METHODS.has(options.parsedRequest.method)) {
-		return safeModeUnsupportedMethod(options.parsedRequest.method, 'Batched calls are not supported while a Gnosis Safe is the active signing account. Send the transactions one at a time instead.')
 	}
 	if (
 		SAFE_MESSAGE_SIGNING_METHODS.has(options.parsedRequest.method)

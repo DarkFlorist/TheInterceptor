@@ -1,28 +1,28 @@
 import * as funtypes from 'funtypes'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { getSimulatedTransactionReceipt } from '../simulation/services/SimulationModeEthereumClientService.js'
+import type { AddressBookEntry } from '../types/addressBookTypes.js'
 import type { PendingTransactionBatch, WalletSendCallsBinding } from '../types/accessRequest.js'
-import type { RPCReply } from '../types/interceptor-messages.js'
-import { type SendTransactionParams, WALLET_SEND_CALLS_VERSION, type WalletCallsReceipt, type WalletGetCallsStatus, type WalletSendCalls, type WalletSendCallsCapabilities, WalletSendCallsResult, type WalletShowCallsStatus } from '../types/JsonRpc-types.js'
+import type { RPCReply, Settings } from '../types/interceptor-messages.js'
+import { type SendTransactionParams, WALLET_SEND_CALLS_VERSION, type WalletCallsReceipt, type WalletGetCallsStatus, type WalletSendCalls, type WalletSendCallsCapabilities, type WalletShowCallsStatus } from '../types/JsonRpc-types.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { ResolvedExecutionSimulationState, WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
-import { EIP5792_ERROR_ATOMICITY_NOT_SUPPORTED, EIP5792_ERROR_BUNDLE_TOO_LARGE, EIP5792_ERROR_DUPLICATE_ID, EIP5792_ERROR_UNKNOWN_BUNDLE_ID, EIP5792_ERROR_UNSUPPORTED_CHAIN_ID, EIP5792_ERROR_UNSUPPORTED_NON_OPTIONAL_CAPABILITY, JSON_RPC_ERROR_CODE_INVALID_PARAMS, JSON_RPC_ERROR_CODE_METHOD_NOT_FOUND, JSON_RPC_ERROR_CODE_METHOD_NOT_SUPPORTED, METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_PROVIDER_DISCONNECTED } from '../utils/constants.js'
+import { EIP5792_ERROR_ATOMICITY_NOT_SUPPORTED, EIP5792_ERROR_BUNDLE_TOO_LARGE, EIP5792_ERROR_DUPLICATE_ID, EIP5792_ERROR_UNKNOWN_BUNDLE_ID, EIP5792_ERROR_UNSUPPORTED_CHAIN_ID, EIP5792_ERROR_UNSUPPORTED_NON_OPTIONAL_CAPABILITY, JSON_RPC_ERROR_CODE_INVALID_PARAMS, METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER, METAMASK_ERROR_NOT_AUTHORIZED } from '../utils/constants.js'
 import { JsonRpcResponseError } from '../utils/errors.js'
 import { keccak256, stringToBytes } from '../utils/ethereumPrimitives.js'
 import { getUniqueRequestIdentifierString, type InterceptedRequest, type UniqueRequestIdentifier } from '../utils/requests.js'
 import { areEqualUint8Arrays } from '../utils/typed-arrays.js'
-import { getActiveAddress, getWebsiteSocketConnection } from './backgroundUtils.js'
+import { getActiveAddress } from './backgroundUtils.js'
 import { getSettings } from './settings.js'
-import { getActiveAddressForCurrentSignerState, getConfirmedSignerStateToken } from './signerStateOwnership.js'
+import { getActiveAddressForCurrentSignerState } from './signerStateOwnership.js'
 import { getInterceptorTransactionStack, getPendingTransactionsAndMessages } from './storageVariables.js'
 import { hasAddressAccess } from './websiteAccessPolicy.js'
 
-// EIP-5792 method classification on networks with an Interceptor RPC:
-// - wallet_sendCalls is intercepted: validated, canonicalized, simulated and confirmed before it reaches the signer or the simulation stack.
-// - wallet_getCallsStatus is read-only. Signing mode passes it through to the signer that owns the bundle; simulation mode answers it from the simulation stack.
-// - wallet_showCallsStatus only opens wallet UI. Signing mode passes it through to the signer; simulation mode has no bundle status UI, so it is unsupported.
-// - wallet_getCapabilities is answered locally (see walletCapabilities.ts), so dapps are not offered signer capabilities that the Interceptor does not review.
-// On networks without an Interceptor RPC, signing mode forwards all of these methods to the signer, like every other non-account method. A Gnosis Safe signing account rejects all of them (see safeRequestPolicy.ts).
+// EIP-5792 call batches are only supported in simulation mode, where an approved batch becomes separate transactions on the simulation stack, exactly as it was simulated:
+// - wallet_sendCalls is validated, canonicalized, simulated and confirmed before its calls are added to the simulation stack. Simulation mode needs an Interceptor RPC to simulate the calls.
+// - wallet_getCallsStatus is answered from the simulation stack. wallet_showCallsStatus would open bundle status UI, which the Interceptor does not have.
+// - Signing mode refuses all three without forwarding them to the signer (see getSigningModeWalletCallsReply), so websites send each call with eth_sendTransaction, which the Interceptor reviews on its own.
+// - wallet_getCapabilities is answered locally in every mode (see walletCapabilities.ts), so websites are never offered the signer's batch capabilities.
 
 // Every call is prepared and simulated sequentially before the batch can be approved, so the batch size is kept to what wallets typically accept.
 export const WALLET_SEND_CALLS_MAX_CALLS = 10
@@ -31,6 +31,22 @@ type WalletSendCallsError = { readonly code: number, readonly message: string }
 type CanonicalWalletSendCalls = { readonly success: true, readonly value: WalletSendCalls } | { readonly success: false, readonly error: WalletSendCallsError }
 
 const errorReply = (method: string, error: WalletSendCallsError): RPCReply => ({ type: 'result', method, error })
+
+const unknownBundleIdError: WalletSendCallsError = { code: EIP5792_ERROR_UNKNOWN_BUNDLE_ID, message: 'This wallet_sendCalls bundle id is unknown to the Interceptor.' }
+
+// The Interceptor simulates each call as a separate transaction, but a wallet may execute an atomicRequired: false batch atomically in one transaction, where state such as transient storage carries over between the calls. Such a preview cannot be bound to what the wallet executes, so signing mode refuses the batch and knows no bundles.
+export function getSigningModeWalletCallsReply(request: InterceptedRequest): RPCReply | undefined {
+	switch (request.method) {
+		// viem falls back to eth_sendTransaction when the error message contains MetaMask's "does not exist / is not available" wording for unsupported methods; the 4200 code alone does not trigger its fallback.
+		case 'wallet_sendCalls': return errorReply(request.method, {
+			code: METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER,
+			message: 'wallet_sendCalls does not exist / is not available in Interceptor signing mode. The Interceptor reviews each call as a separate transaction, but a wallet may execute a batch atomically, where state such as transient storage carries over between the calls. Send each call with eth_sendTransaction instead.',
+		})
+		case 'wallet_getCallsStatus':
+		case 'wallet_showCallsStatus': return errorReply(request.method, unknownBundleIdError)
+		default: return undefined
+	}
+}
 
 const RequestedWalletSendCallsVersion = funtypes.ReadonlyObject({ params: funtypes.ReadonlyTuple(funtypes.ReadonlyObject({ version: funtypes.String })) })
 
@@ -102,7 +118,7 @@ export const getWalletSendCallsBatchId = (uniqueRequestIdentifier: UniqueRequest
 
 export const getWalletSendCallTransactionIdentifier = (uniqueRequestIdentifier: UniqueRequestIdentifier, callIndex: number) => BigInt(getWalletSendCallsIdentifierHash(uniqueRequestIdentifier, `call:${ callIndex }`))
 
-// Simulation-mode batch ids must be unique per website, because wallet_getCallsStatus looks them up by id and origin.
+// Batch ids must be unique per website, because wallet_getCallsStatus looks them up by id and origin.
 export async function isWalletSendCallsIdInUse(websiteOrigin: string, id: string) {
 	// Approval appends a batch to the simulation stack before removing it from the confirmation queue, so reading the queue first cannot miss a batch that moves between the two reads.
 	const inConfirmationQueue = (await getPendingTransactionsAndMessages()).some((pending) => pending.type === 'TransactionBatch' && pending.batchId === id && pending.website.websiteOrigin === websiteOrigin)
@@ -112,18 +128,6 @@ export async function isWalletSendCallsIdInUse(websiteOrigin: string, id: string
 		&& operation.preSimulationTransaction.walletSendCallsBatchId === id
 		&& operation.preSimulationTransaction.website.websiteOrigin === websiteOrigin)
 }
-
-// Wallets on the earlier EIP-5792 draft return the bundle id as a bare string instead of { id }.
-export function parseWalletSendCallsSignerResult(signerReply: unknown): WalletSendCallsResult | undefined {
-	const result = WalletSendCallsResult.safeParse(signerReply)
-	if (result.success) return result.value
-	const bareId = WalletSendCallsResult.fields.id.safeParse(signerReply)
-	return bareId.success ? { id: bareId.value } : undefined
-}
-
-// Wallets without EIP-5792 support answer wallet_sendCalls with one of these codes, which websites use to fall back to sending each call with eth_sendTransaction.
-const SIGNER_METHOD_UNSUPPORTED_ERROR_CODES: ReadonlySet<number> = new Set([JSON_RPC_ERROR_CODE_METHOD_NOT_FOUND, JSON_RPC_ERROR_CODE_METHOD_NOT_SUPPORTED, METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER])
-export const isSignerMethodUnsupportedError = (error: { readonly code: number }) => SIGNER_METHOD_UNSUPPORTED_ERROR_CODES.has(error.code)
 
 export const walletSendCallsIdInUseError: WalletSendCallsError = { code: EIP5792_ERROR_DUPLICATE_ID, message: 'A wallet_sendCalls bundle with this id was already submitted by this website.' }
 
@@ -142,17 +146,9 @@ export function doWalletSendCallsMatchSimulatedTransactions(request: WalletSendC
 	})
 }
 
-export function getWalletSendCallsSignerBinding(websiteTabConnections: WebsiteTabConnections, tabId: number): WalletSendCallsBinding['signer'] {
-	const signerStateToken = getConfirmedSignerStateToken(websiteTabConnections, tabId)
-	if (signerStateToken === undefined) return undefined
-	return {
-		connectionName: signerStateToken.socket.connectionName,
-		ownerGeneration: signerStateToken.ownerGeneration,
-		signerProviderGeneration: signerStateToken.signerProviderGeneration,
-	}
-}
-
 const approvalInvalidated = (code: number, reason: string): WalletSendCallsError => ({ code, message: `${ reason } Reject this batch and send the request again.` })
+
+const activeAccountChangedError = approvalInvalidated(METAMASK_ERROR_NOT_AUTHORIZED, 'The active account changed after this batch was requested.')
 
 // A batch is only prepared, simulated and visualized with the client of the network it was requested for. After a network switch its preview is kept unchanged, and approval is refused until the user switches back.
 export const isEthereumClientOnBatchChain = (ethereum: EthereumClientService, pendingBatch: PendingTransactionBatch) => ethereum.getChainId() === pendingBatch.binding.chainId
@@ -169,34 +165,53 @@ function isTransactionBatchPreviewOnRequestedChain(pendingBatch: SimulatedPendin
 		&& pendingBatch.transactionsToSimulate.every((transactionToSimulate) => transactionToSimulate.success && transactionToSimulate.transaction.chainId === requestedChainId)
 }
 
-// Re-checks the admission binding at approval time. Any change to the network, account, website access, signer connection or batch payload invalidates the approval.
+const getModeOrNetworkBindingError = (settings: Settings, binding: WalletSendCallsBinding) => {
+	if (settings.activeRpcNetwork.chainId !== binding.chainId) return approvalInvalidated(EIP5792_ERROR_UNSUPPORTED_CHAIN_ID, 'The active network changed after this batch was requested.')
+	// Batches are only added to the simulation stack, which signing mode does not use, and signing mode refuses new batches.
+	if (!settings.simulationMode) return approvalInvalidated(METAMASK_ERROR_NOT_AUTHORIZED, 'The Interceptor switched to signing mode after this batch was requested.')
+	return undefined
+}
+
+// The settings that decide which account is active (see getActiveAddress).
+const haveSameActiveAddressSettings = (settings: Settings, latestSettings: Settings) => settings.simulationMode === latestSettings.simulationMode
+	&& settings.activeRpcNetwork.chainId === latestSettings.activeRpcNetwork.chainId
+	&& settings.useSignersAddressAsActiveAddress === latestSettings.useSignersAddressAsActiveAddress
+	&& settings.activeSimulationAddress === latestSettings.activeSimulationAddress
+	&& settings.activeSigningSafeAddress === latestSettings.activeSigningSafeAddress
+
+export type WalletSendCallsAccountLookup = { readonly settings: Settings, readonly activeAddress: AddressBookEntry | undefined }
+
+// Looks up the active account with the current settings. getWalletSendCallsBindingError then confirms against a later settings snapshot that those settings still hold.
+export async function lookUpWalletSendCallsAccount(websiteTabConnections: WebsiteTabConnections, pendingBatch: PendingTransactionBatch): Promise<WalletSendCallsAccountLookup> {
+	const tabId = pendingBatch.uniqueRequestIdentifier.requestSocket.tabId
+	const settings = await getSettings()
+	return { settings, activeAddress: await getActiveAddressForCurrentSignerState(websiteTabConnections, settings, tabId, async () => await getActiveAddress(settings, tabId)) }
+}
+
+// Checks the admission binding (network, simulation mode, active account and website access) against one settings snapshot, read after the account lookup. It awaits nothing, so a caller can write right after reading the snapshot, which makes the snapshot the point the approval takes effect: a change saved later counts as made after approval. The signer's accounts in the tab state are only read during the account lookup, which is acceptable because the wallet reports them on its own schedule, so a change landing just after that lookup cannot be told apart from one landing just after approval.
+export function getWalletSendCallsBindingError(pendingBatch: PendingTransactionBatch, accountLookup: WalletSendCallsAccountLookup, latestSettings: Settings): WalletSendCallsError | undefined {
+	const { binding } = pendingBatch
+	const settingsError = getModeOrNetworkBindingError(latestSettings, binding)
+	if (settingsError !== undefined) return settingsError
+	const { activeAddress } = accountLookup
+	if (activeAddress === undefined || activeAddress.address !== binding.account || !haveSameActiveAddressSettings(accountLookup.settings, latestSettings)) return activeAccountChangedError
+	// The persisted website access decides alone. A connection's approval only mirrors it and is reconciled after an access change is saved, so it could still allow a website whose access was just revoked.
+	if (hasAddressAccess(latestSettings.websiteAccess, binding.websiteOrigin, activeAddress) !== 'hasAccess') return approvalInvalidated(METAMASK_ERROR_NOT_AUTHORIZED, 'This website is no longer authorized to use the active account.')
+	return undefined
+}
+
+// Re-checks the admission binding at approval time. Any change to the network, mode, account, website access or batch payload invalidates the approval.
 export async function getWalletSendCallsApprovalError(
 	websiteTabConnections: WebsiteTabConnections,
 	ethereum: EthereumClientService,
 	pendingBatch: SimulatedPendingTransactionBatch,
 ): Promise<WalletSendCallsError | undefined> {
-	const { binding } = pendingBatch
-	const requestSocket = pendingBatch.uniqueRequestIdentifier.requestSocket
-	const settings = await getSettings()
-	if (settings.activeRpcNetwork.chainId !== binding.chainId || ethereum.getChainId() !== binding.chainId) return approvalInvalidated(EIP5792_ERROR_UNSUPPORTED_CHAIN_ID, 'The active network changed after this batch was requested.')
-	// Switching modes would change what approval does: sign the batch with the wallet, or only add it to the simulation stack.
-	if (pendingBatch.simulationMode !== settings.simulationMode) return approvalInvalidated(METAMASK_ERROR_NOT_AUTHORIZED, 'The Interceptor mode changed after this batch was requested.')
-	if (!pendingBatch.simulationMode) {
-		const currentSigner = getWalletSendCallsSignerBinding(websiteTabConnections, requestSocket.tabId)
-		if (binding.signer === undefined
-			|| currentSigner === undefined
-			|| currentSigner.connectionName !== binding.signer.connectionName
-			|| currentSigner.ownerGeneration !== binding.signer.ownerGeneration
-			|| currentSigner.signerProviderGeneration !== binding.signer.signerProviderGeneration
-		) return approvalInvalidated(METAMASK_ERROR_PROVIDER_DISCONNECTED, 'The signer wallet connection changed after this batch was requested.')
-	}
-	const activeAddress = await getActiveAddressForCurrentSignerState(websiteTabConnections, settings, requestSocket.tabId, async () => await getActiveAddress(settings, requestSocket.tabId))
-	if (activeAddress === undefined || activeAddress.address !== binding.account) return approvalInvalidated(METAMASK_ERROR_NOT_AUTHORIZED, 'The active account changed after this batch was requested.')
-	const connection = getWebsiteSocketConnection(websiteTabConnections, requestSocket)
-	const connectionApproved = connection?.approved === true && connection.websiteOrigin === binding.websiteOrigin
-	if (!connectionApproved && hasAddressAccess(settings.websiteAccess, binding.websiteOrigin, activeAddress) !== 'hasAccess') return approvalInvalidated(METAMASK_ERROR_NOT_AUTHORIZED, 'This website is no longer authorized to use the active account.')
+	if (ethereum.getChainId() !== pendingBatch.binding.chainId) return approvalInvalidated(EIP5792_ERROR_UNSUPPORTED_CHAIN_ID, 'The active network changed after this batch was requested.')
+	const accountLookup = await lookUpWalletSendCallsAccount(websiteTabConnections, pendingBatch)
+	const bindingError = getWalletSendCallsBindingError(pendingBatch, accountLookup, await getSettings())
+	if (bindingError !== undefined) return bindingError
 	if (!isTransactionBatchPreviewOnRequestedChain(pendingBatch)) return approvalInvalidated(EIP5792_ERROR_UNSUPPORTED_CHAIN_ID, 'The batch preview was not simulated on the network the batch was requested for.')
-	if (!doWalletSendCallsMatchSimulatedTransactions(pendingBatch.originalRequestParameters, binding.account, pendingBatch.transactionsToSimulate)) return approvalInvalidated(JSON_RPC_ERROR_CODE_INVALID_PARAMS, 'The batch calls no longer match the simulated transactions.')
+	if (!doWalletSendCallsMatchSimulatedTransactions(pendingBatch.originalRequestParameters, pendingBatch.binding.account, pendingBatch.transactionsToSimulate)) return approvalInvalidated(JSON_RPC_ERROR_CODE_INVALID_PARAMS, 'The batch calls no longer match the simulated transactions.')
 	return undefined
 }
 
@@ -206,8 +221,6 @@ const getCallsStatusCode = (receipts: readonly WalletCallsReceipt[]) => {
 	if (receipts.every((receipt) => receipt.status === 'failure')) return 500
 	return 600
 }
-
-const unknownBundleIdError: WalletSendCallsError = { code: EIP5792_ERROR_UNKNOWN_BUNDLE_ID, message: 'This wallet_sendCalls bundle id is unknown to the Interceptor.' }
 
 // Answers wallet_getCallsStatus for batches that an approved simulation-mode wallet_sendCalls added to the simulation stack.
 export async function getSimulatedCallsStatus(ethereum: EthereumClientService, simulationState: ResolvedExecutionSimulationState, request: WalletGetCallsStatus, websiteOrigin: string): Promise<RPCReply> {

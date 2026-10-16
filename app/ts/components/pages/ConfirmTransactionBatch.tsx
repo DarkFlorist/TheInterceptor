@@ -81,11 +81,7 @@ export function TransactionBatchCard(param: TransactionBatchCardParams) {
 			<WebsiteOriginText website = { currentBatch.website } class = 'card-header-website' />
 		</header>
 		<div class = 'card-content' style = 'padding-bottom: 5px;'>
-			<p class = 'paragraph' style = 'margin-bottom: 10px;'>
-				{ currentBatch.simulationMode
-					? 'Approving adds all of these calls, in this order, to the simulation stack.'
-					: `Approving sends all of these calls, in this order, to ${ popupVisualisation.data.signerName } as one wallet_sendCalls request. The Interceptor simulated them as separate sequential transactions.` }
-			</p>
+			<p class = 'paragraph' style = 'margin-bottom: 10px;'>Approving adds all of these calls, in this order, to the simulation stack as separate transactions.</p>
 			{ popupVisualisation.statusCode === 'failed' ? <ErrorComponent text = { `The batch could not be simulated: ${ popupVisualisation.data.error.decodedErrorMessage }` } containerStyle = { { margin: '0px', marginBottom: '10px' } } /> : <></> }
 			{ currentBatch.transactionsToSimulate.map((transactionToSimulate, callIndex) => {
 				const callLabel = `Call ${ callIndex + 1 } of ${ callCount }`

@@ -1,6 +1,7 @@
 import * as assert from 'assert'
 import { setSystemTime, test } from 'bun:test'
-import { browserMock, fakeRpcNetwork, fakeSafeContract, modules, popupVisualisation, simulator, uniqueRequestIdentifier } from './confirmTransactionTestHarness.js'
+import { activeAddress, browserMock, created, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, modules, popupVisualisation, signedTransaction, simulator, uniqueRequestIdentifier } from './confirmTransactionTestHarness.js'
+import { createDeferredValue } from './backgroundEthAccountsTestHarness.js'
 import { JsonRpcResponseError } from '../../app/ts/utils/errors.js'
 
 async function getStoredTransactionPreview() {
@@ -54,4 +55,42 @@ test('a stored simulation run is only replaced by a newer run, ordered by simula
 	const nextSecond = new Date('2026-01-01T00:00:01.000Z')
 	assert.equal(shouldReplacePopupVisualisation(run('success', nextSecond), run('failed', sameSecond, 1)), false)
 	assert.equal(shouldReplacePopupVisualisation(run('success', sameSecond), run('failed', nextSecond, 1)), true)
+})
+
+test('an older transaction refresh that finishes preparing after a newer refresh stored its preview does not replace it', async () => {
+	await modules.browserStorageLocalSet({ simulationMode: true, activeRpcNetwork: fakeRpcNetwork, useSignersAddressAsActiveAddress: false, independentActiveSimulationAddress: activeAddress })
+	const stackTransaction = { signedTransaction, website: popupVisualisation.data.transactionToSimulate.website, created, originalRequestParameters: popupVisualisation.data.transactionToSimulate.originalRequestParameters, transactionIdentifier: 99n }
+	await modules.updateInterceptorTransactionStack(() => ({ operations: [{ type: 'Transaction', preSimulationTransaction: stackTransaction }] }))
+	const { refreshPopupConfirmTransactionSimulation } = await import('../../app/ts/background/popupMessageHandlers.js')
+	const getPreparedNonce = async () => {
+		const pending = (await modules.getPendingTransactionsAndMessages()).find((entry) => entry.type === 'Transaction')
+		return pending?.type === 'Transaction' && pending.transactionOrMessageCreationStatus !== 'Crafting' && pending.transactionToSimulate.success ? pending.transactionToSimulate.transaction.nonce : undefined
+	}
+	await refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
+	// The pending transaction is first prepared after the stack transaction of the same account.
+	assert.equal(await getPreparedNonce(), 1n)
+	const olderRefreshPaused = createDeferredValue<void>()
+	const olderRefreshReleased = createDeferredValue<void>()
+	let olderRefreshHeld = false
+	// The older refresh reads the simulation stack and then pauses at its first RPC request while preparing the transaction.
+	const olderEthereum = new modules.EthereumClientService({
+		...fakeRequestHandler,
+		async jsonRpcRequest(rpcRequest: { method: string, params?: readonly unknown[] }) {
+			if (!olderRefreshHeld) {
+				olderRefreshHeld = true
+				olderRefreshPaused.resolve()
+				await olderRefreshReleased.promise
+			}
+			return await fakeRequestHandler.jsonRpcRequest(rpcRequest)
+		},
+	}, async () => undefined, async () => undefined, fakeRpcNetwork)
+	const olderRefresh = refreshPopupConfirmTransactionSimulation(olderEthereum, new modules.TokenPriceService(olderEthereum, 60_000))
+	await olderRefreshPaused.promise
+
+	await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
+	await refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
+	olderRefreshReleased.resolve()
+	await olderRefresh
+
+	assert.equal(await getPreparedNonce(), 0n)
 })

@@ -40,7 +40,7 @@ export function getSafeTransactionPendingFlow(pending: PendingTransaction): Dire
 
 export function getSafePendingFlow(pending: PendingTransactionOrSignableMessage): SafePendingFlow | undefined {
 	if (pending.type === 'Transaction') return getSafeTransactionPendingFlow(pending)
-	// wallet_sendCalls batches are rejected while a Gnosis Safe is the active signing account.
+	// wallet_sendCalls batches only exist in simulation mode, where no Gnosis Safe signs.
 	if (pending.type === 'TransactionBatch') return undefined
 	if (pending.safeMessageCoSignSnapshot === undefined) return undefined
 	return {
