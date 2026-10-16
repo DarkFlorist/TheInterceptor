@@ -906,6 +906,55 @@ describe('simulation visualizer open replies', () => {
 		}
 	})
 
+	test('stack visualizer only reads cached home data after an address-book change and after the stored simulation is re-labelled', async () => {
+		const dom = installDomMock()
+		const { dispatchMessage: listener, sentMessages } = installBrowserMock()
+		try {
+			await act(() => {
+				render(h(SimulationStackPage, {}), dom.document.body)
+			})
+			await act(() => {
+				listener({ role: 'all', ...serialize(UpdateHomePage, createSimulationStackHomePageUpdate(19, 1, 'Stack tab')) }, {}, () => undefined)
+			})
+
+			// The background broadcasts the change at once and re-labels the stored simulation afterwards, announcing it with popup_simulationsRelabelled; the view neither re-labels nor simulates and only reads cached home data each time.
+			for (const method of ['popup_addressBookEntriesChanged', 'popup_simulationsRelabelled'] as const) {
+				sentMessages.splice(0)
+				await act(async () => {
+					listener(serialize(MessageToPopup, { role: 'all', method }), {}, () => undefined)
+					await new Promise((resolve) => setTimeout(resolve, 0))
+				})
+
+				assert.equal(sentMessages.length, 1, method)
+				assert.equal(isHomeDataRequest(sentMessages[0], false, true), true, method)
+			}
+		} finally {
+			dom.restore()
+		}
+	})
+
+	test('stack visualizer asks for fresh home data when the stored simulation is re-labelled before its first fresh home data', async () => {
+		const dom = installDomMock()
+		const { dispatchMessage: listener, sentMessages } = installBrowserMock()
+		const getSentMethods = () => sentMessages.map((message) => typeof message === 'object' && message !== null && 'method' in message ? message.method : undefined)
+		try {
+			await act(() => {
+				render(h(SimulationStackPage, {}), dom.document.body)
+			})
+			sentMessages.splice(0)
+
+			await act(async () => {
+				listener(serialize(MessageToPopup, { role: 'all', method: 'popup_simulationsRelabelled' }), {}, () => undefined)
+				await new Promise((resolve) => setTimeout(resolve, 0))
+			})
+
+			// Cached replies are discarded until the first fresh home data arrives, so only a fresh request can show the re-labelled names.
+			assert.deepEqual(getSentMethods(), ['popup_refreshHomeData'])
+		} finally {
+			dom.restore()
+		}
+	})
+
 	test('stack visualizer failure banner stays readable outside blurred simulation content', async () => {
 		const dom = installDomMock()
 		const { dispatchMessage: listener } = installBrowserMock()

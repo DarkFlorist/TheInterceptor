@@ -853,7 +853,8 @@ export function ConfirmTransaction() {
 				unexpectedError.value = parsed.data
 				return false
 			}
-			if (parsed.method === 'popup_addressBookEntriesChanged') {
+			// The address-book change re-visualises a pending signable message at once; the re-label notification brings the re-labelled stored confirmation and stack.
+			if (parsed.method === 'popup_addressBookEntriesChanged' || parsed.method === 'popup_simulationsRelabelled') {
 				refreshMetadata()
 				return false
 			}

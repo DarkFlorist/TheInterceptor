@@ -526,6 +526,7 @@ const MessageToPopupSimple = funtypes.ReadonlyObject({
 		funtypes.Literal('popup_confirm_transaction_simulation_started'),
 		funtypes.Literal('popup_accounts_update'),
 		funtypes.Literal('popup_addressBookEntriesChanged'),
+		funtypes.Literal('popup_simulationsRelabelled'),
 		funtypes.Literal('popup_interceptor_access_changed'),
 		funtypes.Literal('popup_notification_removed'),
 		funtypes.Literal('popup_signer_name_changed'),

@@ -20,6 +20,14 @@ import { getInterceptorTransactionStack, getTabState } from './storageVariables.
 let confirmTransactionAbortController = new AbortController()
 export const getConfirmTransactionAbortController = () => confirmTransactionAbortController
 
+let latestConfirmationSimulationId = 0
+// Every confirmation simulation run gets a new id, which relabelStoredSimulation uses to tell a re-labelled run from a newer one. As in bumpPopupRefreshGeneration, the id is the millisecond clock bumped past the previous id, so ids increase within a background session and ids stored before a background restart are not handed out again unless the system clock went backwards.
+function getNextConfirmationSimulationId() {
+	latestConfirmationSimulationId = Math.max(latestConfirmationSimulationId + 1, Date.now())
+	return latestConfirmationSimulationId
+}
+
+// Returns the run without storing it; the confirmation workflows store it through simulateAndStoreConfirmationWithAddressBookCatchUp in confirmationRelabel.ts.
 export async function refreshConfirmTransactionSimulation(
 	ethereum: EthereumClientService,
 	tokenPriceService: TokenPriceService,
@@ -36,6 +44,7 @@ export async function refreshConfirmTransactionSimulation(
 		activeAddress,
 		signerName: (await getTabState(uniqueRequestIdentifier.requestSocket.tabId)).signerName,
 		tabIdOpenedFrom: uniqueRequestIdentifier.requestSocket.tabId,
+		simulationId: getNextConfirmationSimulationId(),
 	}
 	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' }, 'confirmTransaction')
 	confirmTransactionAbortController.abort(NEW_BLOCK_ABORT)

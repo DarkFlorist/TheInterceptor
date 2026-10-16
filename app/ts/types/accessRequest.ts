@@ -38,7 +38,10 @@ const ConfirmTransactionSimulationBaseData = funtypes.ReadonlyObject({
 	uniqueRequestIdentifier: UniqueRequestIdentifier,
 	transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed,
 	signerName: SignerName,
-})
+}).And(funtypes.ReadonlyPartial({
+	// Identifies the confirmation simulation run that produced this visualisation; confirmations stored by older versions have none.
+	simulationId: funtypes.Number,
+}))
 
 type ConfirmTransactionDialogState = funtypes.Static<typeof ConfirmTransactionDialogState>
 const ConfirmTransactionDialogState = funtypes.Intersect(

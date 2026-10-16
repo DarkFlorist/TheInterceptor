@@ -417,7 +417,8 @@ export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: Visua
 	}
 }
 
-export const updateSimulationMetadata = async (ethereum: EthereumClientService, requestAbortController: AbortController | undefined) => {
+// Partial refresh used by refreshHomeData: recomputes only the stored visualisation's top-level address-book entries, named token ids and ENS hashes, not the names, parsed input or warnings inside visualised transactions. Address-book edits use publishAddressBookChangeAndRelabelSimulations, which re-labels everything.
+export const updateTopLevelSimulationMetadata = async (ethereum: EthereumClientService, requestAbortController: AbortController | undefined) => {
 	return await updatePopupVisualisationWithCallBack(async (prevState) => {
 		if (prevState.simulationState.kind === 'passthrough') return prevState
 		if (prevState.simulationState.value.success === false) return prevState

@@ -266,6 +266,8 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 				case 'popup_signer_name_changed':
 					requestHomeDataForLiveUpdate('signer-state')
 					return undefined
+				// The re-labelled stored simulation is read like any other metadata update: cached once fresh home data has arrived, fresh before that, because cached replies are discarded until then.
+				case 'popup_simulationsRelabelled':
 				case 'popup_addressBookEntriesChanged':
 				case 'popup_interceptor_access_changed':
 				case 'popup_websiteAccess_changed':
