@@ -51,15 +51,12 @@ export default function Container(props: Props) {
 			return element
 		}
 
-		// Cancels both the copy message and tooltip timers, so a stale copy message timer can neither clear a newly shown hint nor stop hide from clearing it.
+		// Cancels both the copy message and tooltip timers, so a stale copy message timer can neither clear a newly shown hint nor stop leaveTooltip from clearing it.
 		const cancelPendingHintTimeouts = () => {
 			clearHintTimeouts([copyMessageTimeoutIdRef.current, toolTipTimeoutIdRef.current])
 			copyMessageTimeoutIdRef.current = null
 			toolTipTimeoutIdRef.current = null
 		}
-
-		// The element carrying a tooltip that has keyboard focus; its tooltip stays shown until it loses focus.
-		let focusedTooltipElement: Element | undefined
 
 		const showTooltipBelow = (targetElement: Element) => {
 			const targetBounds = targetElement.getBoundingClientRect()
@@ -67,32 +64,32 @@ export default function Container(props: Props) {
 			clickPosition.value = { x: targetBounds.left + targetBounds.width / 2, y: targetBounds.bottom }
 		}
 
-		const hide = (event: Event) => {
+		// Read from the document when needed rather than remembered, so it can never point at an element that lost focus or was removed: a removed element is no longer the active element or inside the container.
+		const getFocusedTooltipElement = () => {
+			const focusedElement = containerElement.ownerDocument.activeElement
+			if (!(focusedElement instanceof Element) || !focusedElement.hasAttribute(toolTipAttribute) || !containerElement.contains(focusedElement)) return undefined
+			return focusedElement
+		}
+
+		// Ends the tooltip of the element the event left, unless a copy message is still showing, and shows tooltipToShowInstead if there is one.
+		const leaveTooltip = (event: Event, tooltipToShowInstead: Element | undefined) => {
 			if (getHintElement(event.target, toolTipAttribute) === undefined) return
 
 			clearTimeout(toolTipTimeoutIdRef.current ?? undefined)
 
 			if (copyMessageTimeoutIdRef.current !== null) return
 
-			// The pointer leaving any tooltip, including the focused one, falls back to the focused element's tooltip, so mouse movement does not hide the explanation a keyboard user opened.
-			if (focusedTooltipElement !== undefined) {
-				showTooltipBelow(focusedTooltipElement)
+			if (tooltipToShowInstead !== undefined) {
+				showTooltipBelow(tooltipToShowInstead)
 				return
 			}
-
 			content.value = ''
 			clickPosition.value = null
 		}
 
-		// Firefox fires no focusout when the focused element is removed, so removal is detected here instead: the removed element's tooltip is hidden unless a newer copy message is showing. Observer callbacks run before the next event, so hide never falls back to a removed element.
-		const focusedTooltipRemovalObserver = new MutationObserver(() => {
-			if (focusedTooltipElement === undefined || containerElement.contains(focusedTooltipElement)) return
-			focusedTooltipElement = undefined
-			if (copyMessageTimeoutIdRef.current !== null) return
-			content.value = ''
-			clickPosition.value = null
-		})
-		focusedTooltipRemovalObserver.observe(containerElement, { childList: true, subtree: true })
+		// The pointer leaving any tooltip falls back to the tooltip of the element with keyboard focus, so mouse movement does not hide the explanation a keyboard user opened. Hint reacts only to events: as with a hovered element, which fires no mouseout when removed, a focused element removed without a focusout keeps its tooltip shown until the next pointer or focus event.
+		const mouseout = (event: MouseEvent) => leaveTooltip(event, getFocusedTooltipElement())
+		const focusout = (event: FocusEvent) => leaveTooltip(event, undefined)
 
 		const click = (event: MouseEvent) => {
 			const targetElement = getHintElement(event.target, copyAttribute)
@@ -153,28 +150,21 @@ export default function Container(props: Props) {
 			const targetElement = event.target
 			if (!(targetElement instanceof Element) || !targetElement.hasAttribute(toolTipAttribute) || !containerElement.contains(targetElement)) return
 			cancelPendingHintTimeouts()
-			focusedTooltipElement = targetElement
 			showTooltipBelow(targetElement)
-		}
-
-		const focusout = (event: FocusEvent) => {
-			if (event.target === focusedTooltipElement) focusedTooltipElement = undefined
-			hide(event)
 		}
 
 		containerElement.addEventListener('click', click)
 		containerElement.addEventListener('mouseover', mouseover)
-		containerElement.addEventListener('mouseout', hide)
+		containerElement.addEventListener('mouseout', mouseout)
 		containerElement.addEventListener('focusin', focusin)
 		containerElement.addEventListener('focusout', focusout)
 		containerElement.addEventListener(showHintEventName, show)
 
 		return () => {
 			cancelPendingHintTimeouts()
-			focusedTooltipRemovalObserver.disconnect()
 			containerElement.removeEventListener('click', click)
 			containerElement.removeEventListener('mouseover', mouseover)
-			containerElement.removeEventListener('mouseout', hide)
+			containerElement.removeEventListener('mouseout', mouseout)
 			containerElement.removeEventListener('focusin', focusin)
 			containerElement.removeEventListener('focusout', focusout)
 			containerElement.removeEventListener(showHintEventName, show)

@@ -8,6 +8,8 @@ import { installDomMock } from './domMock.js'
 type TestNode = {
 	readonly childNodes?: readonly TestNode[]
 	readonly dispatchEvent?: (event: Event) => boolean
+	readonly focus?: () => void
+	readonly blur?: () => void
 	readonly getAttribute?: (name: string) => unknown
 	readonly style?: Record<string, unknown>
 	readonly tagName?: string
@@ -100,7 +102,7 @@ describe('Hint lifecycle', () => {
 		}
 	})
 
-	test('keeps the tooltip of a focused element when the pointer leaves it or another tooltip', async () => {
+	test('keeps the tooltip of the focused element when the pointer leaves it or another tooltip', async () => {
 		const dom = installDomMock()
 		try {
 			await act(() => {
@@ -113,15 +115,22 @@ describe('Hint lifecycle', () => {
 			const otherTooltip = findElementByClass(dom.document.body, 'other-tooltip')
 			if (focusableTooltip?.dispatchEvent === undefined || otherTooltip?.dispatchEvent === undefined) throw new Error('tooltip targets were not rendered')
 
-			await act(() => { focusableTooltip.dispatchEvent?.(new Event('focusin', { bubbles: true })) })
+			await act(() => {
+				focusableTooltip.focus?.()
+				focusableTooltip.dispatchEvent?.(new Event('focusin', { bubbles: true }))
+			})
 			await act(() => { focusableTooltip.dispatchEvent?.(new Event('mouseout', { bubbles: true })) })
 			assert.equal(findElementByClass(dom.document.body, 'preact-hint__content')?.textContent, 'Focused explanation')
 
 			await act(() => { otherTooltip.dispatchEvent?.(new Event('mouseout', { bubbles: true })) })
 			assert.equal(findElementByClass(dom.document.body, 'preact-hint__content')?.textContent, 'Focused explanation')
 
-			await act(() => { focusableTooltip.dispatchEvent?.(new Event('focusout', { bubbles: true })) })
-			await act(() => { focusableTooltip.dispatchEvent?.(new Event('mouseout', { bubbles: true })) })
+			await act(() => {
+				focusableTooltip.blur?.()
+				focusableTooltip.dispatchEvent?.(new Event('focusout', { bubbles: true }))
+			})
+			assert.equal(findElementByClass(dom.document.body, 'preact-hint__content'), undefined)
+			await act(() => { otherTooltip.dispatchEvent?.(new Event('mouseout', { bubbles: true })) })
 			assert.equal(findElementByClass(dom.document.body, 'preact-hint__content'), undefined)
 		} finally {
 			render(null, dom.document.body)
@@ -129,61 +138,34 @@ describe('Hint lifecycle', () => {
 		}
 	})
 
-	test('hides the tooltip of a focused element that is removed without a focusout', async () => {
+	test('does not show the tooltip of a focused or hovered element after it is removed', async () => {
 		const dom = installDomMock()
 		try {
-			const renderTooltips = (isFocusableTooltipShown: boolean) => render(<Hint>
-				{ isFocusableTooltipShown ? <span data-tooltip = 'Focused explanation' tabIndex = { 0 }>Warning</span> : <></> }
+			const renderTooltips = (isRemovableTooltipShown: boolean) => render(<Hint>
+				{ isRemovableTooltipShown ? <span class = 'removable-tooltip' data-tooltip = 'Removed explanation' tabIndex = { 0 }>Warning</span> : <></> }
 				<div class = 'other-tooltip' data-tooltip = 'Hovered tooltip'>Other</div>
 			</Hint>, dom.document.body)
+			const otherTooltip = () => findElementByClass(dom.document.body, 'other-tooltip')
+			const removableTooltip = () => findElementByClass(dom.document.body, 'removable-tooltip')
+
+			// Hovered: the delayed tooltip of an element removed before it appears never appears, since the removal fires no mouseout.
 			await act(() => { renderTooltips(true) })
-			const focusableTooltip = findElement(dom.document.body, 'span')
-			const otherTooltip = findElementByClass(dom.document.body, 'other-tooltip')
-			if (focusableTooltip?.dispatchEvent === undefined || otherTooltip?.dispatchEvent === undefined) throw new Error('tooltip targets were not rendered')
-			await act(() => { focusableTooltip.dispatchEvent?.(new Event('focusin', { bubbles: true })) })
-			assert.equal(findElementByClass(dom.document.body, 'preact-hint__content')?.textContent, 'Focused explanation')
-			// The pointer also moves onto the element, starting its delayed hover tooltip.
-			await act(() => { focusableTooltip.dispatchEvent?.(new Event('mouseover', { bubbles: true })) })
-
-			// Like Firefox, the DOM mock fires no focusout when the focused element is removed.
-			await act(async () => {
-				renderTooltips(false)
-				await Promise.resolve()
-			})
-			assert.equal(findElement(dom.document.body, 'span'), undefined)
-			assert.equal(findElementByClass(dom.document.body, 'preact-hint__content'), undefined)
-
-			// The hover tooltip that was pending when the element was removed does not bring it back.
+			await act(() => { removableTooltip()?.dispatchEvent?.(new Event('mouseover', { bubbles: true })) })
+			await act(() => { renderTooltips(false) })
 			await act(async () => { await new Promise((resolve) => setTimeout(resolve, 300)) })
 			assert.equal(findElementByClass(dom.document.body, 'preact-hint__content'), undefined)
 
-			await act(() => { otherTooltip.dispatchEvent?.(new Event('mouseout', { bubbles: true })) })
-			assert.equal(findElementByClass(dom.document.body, 'preact-hint__content'), undefined)
-		} finally {
-			render(null, dom.document.body)
-			dom.restore()
-		}
-	})
-
-	test('keeps a newer copy message when the focused element is removed', async () => {
-		const dom = installDomMock()
-		try {
-			const renderTooltips = (isFocusableTooltipShown: boolean) => render(<Hint>
-				{ isFocusableTooltipShown ? <span data-tooltip = 'Focused explanation' tabIndex = { 0 }>Warning</span> : <></> }
-				<div class = 'copy-target'>Copy</div>
-			</Hint>, dom.document.body)
+			// Focused: the removal fires no focusout, and the DOM mock keeps the removed element as the active element. Leaving another tooltip then clears the tooltip instead of falling back to the removed element.
 			await act(() => { renderTooltips(true) })
-			const focusableTooltip = findElement(dom.document.body, 'span')
-			const copyTarget = findElementByClass(dom.document.body, 'copy-target')
-			if (focusableTooltip?.dispatchEvent === undefined || copyTarget?.dispatchEvent === undefined) throw new Error('hint targets were not rendered')
-			await act(() => { focusableTooltip.dispatchEvent?.(new Event('focusin', { bubbles: true })) })
-			await act(() => { showHint(copyTarget, { content: 'Copied', delay: 60_000, x: 0, y: 0 }) })
-
-			await act(async () => {
-				renderTooltips(false)
-				await Promise.resolve()
+			await act(() => {
+				removableTooltip()?.focus?.()
+				removableTooltip()?.dispatchEvent?.(new Event('focusin', { bubbles: true }))
 			})
-			assert.equal(findElementByClass(dom.document.body, 'preact-hint__content')?.textContent, 'Copied')
+			assert.equal(findElementByClass(dom.document.body, 'preact-hint__content')?.textContent, 'Removed explanation')
+			await act(() => { renderTooltips(false) })
+			assert.equal(removableTooltip(), undefined)
+			await act(() => { otherTooltip()?.dispatchEvent?.(new Event('mouseout', { bubbles: true })) })
+			assert.equal(findElementByClass(dom.document.body, 'preact-hint__content'), undefined)
 		} finally {
 			render(null, dom.document.body)
 			dom.restore()
