@@ -11,7 +11,7 @@ import { checksummedAddress } from '../../app/ts/utils/bigint.js'
 import { EthereumAddress } from '../../app/ts/types/wire-types.js'
 import { MockRequestHandler } from '../MockRequestHandler.js'
 import { clickRenderedElement, findRenderedElement, installDomMock } from './domMock.js'
-import { permit2BatchTransferFromMessage, permit2BatchWitnessTransferFromMessage, permit2Message, permit2PermitBatchMessage, permit2Signer, permit2TransferFromMessage, permit2UniswapXWitnessTransferFromMessage, permit2WitnessTransferFromWitnessNotLastMessage, uniswapXExclusiveDutchOrderReactor } from './data/eip712Data.js'
+import { permit2BatchTransferFromMessage, permit2BatchWitnessTransferFromMessage, permit2Message, permit2PermitBatchMessage, permit2Signer, permit2TransferFromMessage, permit2UniswapXWitnessTransferFromMessage, permit2WitnessTransferFromWitnessNotLastMessage, uniswapUniversalRouter, uniswapXExclusiveDutchOrderReactor } from './data/eip712Data.js'
 
 // Address metadata, tab state and RPC lookups read extension storage, which is empty for these requests.
 Object.defineProperty(globalThis, 'browser', {
@@ -19,7 +19,7 @@ Object.defineProperty(globalThis, 'browser', {
 	writable: true,
 	value: {
 		runtime: {
-			lastError: null,
+			lastError: undefined,
 			getManifest: () => ({ manifest_version: 3 }),
 			sendMessage: async () => undefined,
 			onMessage: { addListener: () => undefined, removeListener: () => undefined },
@@ -80,6 +80,8 @@ const visualizeTypedData = async (typedData: string, rpcNetwork: RpcEntry = main
 
 // The address metadata identifies this MetaSamurai collection as an ERC721 token.
 const erc721TokenAddress = '0x79f1c4cf7266746698e91034d658e56913e6644f'
+// No address metadata or on-chain code exists for this address, so it is not identified as an ERC20 token.
+const unidentifiedTokenAddress = '0x1111111111111111111111111111111111111111'
 
 type RenderedElement = {
 	readonly tagName?: string
@@ -117,17 +119,32 @@ async function renderExpandedSignatureCard<Inspection>(visualizedPersonalSignReq
 
 const renderSignatureCardText = async (visualizedPersonalSignRequest: VisualizedPersonalSignRequest) => await renderExpandedSignatureCard(visualizedPersonalSignRequest, (body) => body.textContent ?? '')
 
+// Named addresses render their name as text, while the copy button keeps the checksummed address.
+const getCopyableAddresses = (body: RenderedElement) => collectRenderedElements(body, (node) => node.tagName === 'BUTTON' && node.attributes?.value !== undefined).map((button) => button.attributes?.value)
+
 // Each PermitBatch token gets a nonce row and an expiration row whose label shows the token card with its copyable address and untrusted marker.
 function getPermit2BatchTokenRows(body: RenderedElement) {
 	const tokenRowLabels = collectRenderedElements(body, (node) => node.tagName === 'P' && /(?: nonce: |^Spender can spend .* for: )$/u.test(node.textContent ?? ''))
 	return tokenRowLabels.map((label) => ({
-		tokenAddress: collectRenderedElements(label, (node) => node.tagName === 'BUTTON' && node.attributes?.value !== undefined)[0]?.attributes?.value,
+		tokenAddress: getCopyableAddresses(label)[0],
 		untrusted: collectRenderedElements(label, (node) => node.attributes?.role === 'alert' && node.attributes.title === 'Untrusted address').length > 0,
 	}))
 }
 
 function assertIncludesAll(text: string, expectedSnippets: readonly string[]) {
 	for (const expected of expectedSnippets) assert.equal(text.includes(expected), true, `expected "${ expected }" in "${ text }"`)
+}
+
+async function assertShowsUnidentifiedTokenApproval(visualizedPersonalSignRequest: VisualizedPersonalSignRequest, rawAmount: string) {
+	const { text, copyableAddresses } = await renderExpandedSignatureCard(visualizedPersonalSignRequest, (body) => ({ text: body.textContent ?? '', copyableAddresses: getCopyableAddresses(body) }))
+	assertIncludesAll(text, [
+		'The permitted token is not an identified ERC20 token',
+		'Spender: Uniswap Universal Router',
+		`Token: ${ checksummedAddress(EthereumAddress.parse(unidentifiedTokenAddress)) }`,
+		`Raw amount: ${ rawAmount }`,
+	])
+	assert.equal(copyableAddresses.includes(checksummedAddress(EthereumAddress.parse(uniswapUniversalRouter))), true)
+	return text
 }
 
 function getTokenSymbols(visualizedPersonalSignRequest: VisualizedPersonalSignRequest) {
@@ -301,6 +318,33 @@ describe('Permit2 signature requests', () => {
 			message: { owner: permit2Signer, spender: '0x5555555555555555555555555555555555555555', value: '1', nonce: 0, deadline: 1700000000 },
 		}
 		await assert.rejects(visualizeParsedTypedData(erc721Eip2612Permit), { message: 'Attempted to perform Permit to an ERC721' })
+	})
+
+	test('keeps the spender and raw amount visible when a Permit2 token is not an identified ERC20 token', async () => {
+		const unidentifiedTokenTransfer = JSON.parse(permit2TransferFromMessage)
+		unidentifiedTokenTransfer.message.permitted.token = unidentifiedTokenAddress
+		const visualized = await visualizeTypedData(JSON.stringify(unidentifiedTokenTransfer))
+		if (visualized.type !== 'Permit2SignatureTransfer') throw new Error(`Expected a Permit2 signature transfer, got ${ visualized.type }`)
+		await assertShowsUnidentifiedTokenApproval(visualized, '1000000')
+	})
+
+	test('keeps the identified tokens of a PermitBatch formatted when another token is not an identified ERC20 token', async () => {
+		const usdcAmount = '1461501637330902918203684832716283019655932542975'
+		const batchWithUnidentifiedToken = JSON.parse(permit2PermitBatchMessage)
+		batchWithUnidentifiedToken.message.details[1].token = unidentifiedTokenAddress
+		const visualized = await visualizeTypedData(JSON.stringify(batchWithUnidentifiedToken))
+		if (visualized.type !== 'Permit2Batch') throw new Error(`Expected a Permit2 batch, got ${ visualized.type }`)
+
+		const text = await assertShowsUnidentifiedTokenApproval(visualized, '5000000')
+		assertIncludesAll(text, ['Allow', 'To Spend', 'ALL', 'USDC'])
+		assert.equal(text.includes(`Raw amount: ${ usdcAmount }`), false)
+
+		const allTokensUnidentified = JSON.parse(permit2PermitBatchMessage)
+		allTokensUnidentified.message.details[0].token = unidentifiedTokenAddress
+		allTokensUnidentified.message.details[1].token = unidentifiedTokenAddress
+		const allUnidentifiedText = await renderSignatureCardText(await visualizeTypedData(JSON.stringify(allTokensUnidentified)))
+		assertIncludesAll(allUnidentifiedText, ['These permitted tokens are not identified ERC20 tokens', 'Spender: Uniswap Universal Router', `Raw amount: ${ usdcAmount }`, 'Raw amount: 5000000'])
+		assert.equal(allUnidentifiedText.includes('To Spend'), false)
 	})
 
 	test('quarantines Permit2 transfers for a different chain than the active one', async () => {

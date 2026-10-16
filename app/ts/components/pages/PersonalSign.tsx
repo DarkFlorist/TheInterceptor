@@ -109,24 +109,56 @@ function isNinetyFivePercentNumbersOrASCII(input: string): boolean {
 	return validCount / input.length >= 0.95
 }
 
-type Permit2TokenApprovalsParams = {
+type PermitTokenAmount = { token: AddressBookEntry, amount: bigint }
+
+type PermitTokenApprovalsParams = {
 	owner: AddressBookEntry
 	spender: AddressBookEntry
-	tokenAmounts: readonly { token: AddressBookEntry, amount: bigint }[]
+	tokenAmounts: readonly PermitTokenAmount[]
 	rpcNetwork: RpcNetwork
 	renameAddressCallBack: RenameAddressCallBack
 }
 
-function Permit2TokenApprovals({ owner, spender, tokenAmounts, rpcNetwork, renameAddressCallBack }: Permit2TokenApprovalsParams) {
+type UnidentifiedPermitTokenApprovalsParams = {
+	spender: AddressBookEntry
+	tokenAmounts: readonly PermitTokenAmount[]
+	renameAddressCallBack: RenameAddressCallBack
+}
+
+// A token can be unidentified when it has no code on the active chain or its metadata lookup failed, and the spender and amounts must stay visible even then.
+function UnidentifiedPermitTokenApprovals({ spender, tokenAmounts, renameAddressCallBack }: UnidentifiedPermitTokenApprovalsParams) {
+	const errorText = tokenAmounts.length === 1
+		? 'The permitted token is not an identified ERC20 token, so its amount is shown as a raw value without decimals.'
+		: 'These permitted tokens are not identified ERC20 tokens, so their amounts are shown as raw values without decimals.'
+	return <>
+		<ErrorComponent text = { errorText }/>
+		<span class = 'log-table' style = 'justify-content: center; column-gap: 5px; grid-template-columns: auto auto'>
+			<CellElement text = 'Spender: '/>
+			<CellElement text = { <SmallAddress addressBookEntry = { spender } renameAddressCallBack = { renameAddressCallBack }/> }/>
+			{ tokenAmounts.map(({ token, amount }, index) => <Fragment key = { index }>
+				<CellElement text = 'Token: '/>
+				<CellElement text = { <SmallAddress addressBookEntry = { token } renameAddressCallBack = { renameAddressCallBack }/> }/>
+				<CellElement text = 'Raw amount: '/>
+				<CellElement text = { amount.toString(10) }/>
+			</Fragment>) }
+		</span>
+	</>
+}
+
+// Identified ERC20 tokens keep their decimal adjusted approval display even when other tokens of the same batch are unidentified.
+function PermitTokenApprovals({ owner, spender, tokenAmounts, rpcNetwork, renameAddressCallBack }: PermitTokenApprovalsParams) {
 	const approvals = tokenAmounts.flatMap(({ token, amount }) => token.type === 'ERC20' ? [{ type: 'ERC20' as const, token, amount, from: owner, to: spender, isApproval: true, logObject: undefined }] : [])
-	if (approvals.length !== tokenAmounts.length) return <ErrorComponent text = { 'Malformed Permit2 request. The tokentype is not ERC20' }/>
-	return <TokenApprovalsVisualisation
-		spender = { spender }
-		approvals = { approvals }
-		transactionGasses = { { gasSpent: 0n, realizedGasPrice: 0n } }
-		rpcNetwork = { rpcNetwork }
-		renameAddressCallBack = { renameAddressCallBack }
-	/>
+	const unidentifiedTokenAmounts = tokenAmounts.filter(({ token }) => token.type !== 'ERC20')
+	return <>
+		{ approvals.length === 0 ? <></> : <TokenApprovalsVisualisation
+			spender = { spender }
+			approvals = { approvals }
+			transactionGasses = { { gasSpent: 0n, realizedGasPrice: 0n } }
+			rpcNetwork = { rpcNetwork }
+			renameAddressCallBack = { renameAddressCallBack }
+		/> }
+		{ unidentifiedTokenAmounts.length === 0 ? <></> : <UnidentifiedPermitTokenApprovals spender = { spender } tokenAmounts = { unidentifiedTokenAmounts } renameAddressCallBack = { renameAddressCallBack }/> }
+	</>
 }
 
 function Permit2WitnessDetails({ witness, renameAddressCallBack }: { witness: Permit2Witness, renameAddressCallBack: RenameAddressCallBack }) {
@@ -193,14 +225,14 @@ function SignRequest({ visualizedPersonalSignRequest, renameAddressCallBack, edi
 				renameAddressCallBack = { renameAddressCallBack }
 			/>
 		}
-		case 'Permit2': return <Permit2TokenApprovals
+		case 'Permit2': return <PermitTokenApprovals
 			owner = { visualizedPersonalSignRequest.account }
 			spender = { visualizedPersonalSignRequest.spender }
 			tokenAmounts = { [{ token: visualizedPersonalSignRequest.token, amount: visualizedPersonalSignRequest.message.message.details.amount }] }
 			rpcNetwork = { visualizedPersonalSignRequest.rpcNetwork }
 			renameAddressCallBack = { renameAddressCallBack }
 		/>
-		case 'Permit2Batch': return <Permit2TokenApprovals
+		case 'Permit2Batch': return <PermitTokenApprovals
 			owner = { visualizedPersonalSignRequest.account }
 			spender = { visualizedPersonalSignRequest.spender }
 			tokenAmounts = { visualizedPersonalSignRequest.details }
@@ -208,7 +240,7 @@ function SignRequest({ visualizedPersonalSignRequest, renameAddressCallBack, edi
 			renameAddressCallBack = { renameAddressCallBack }
 		/>
 		case 'Permit2SignatureTransfer': return <>
-			<Permit2TokenApprovals
+			<PermitTokenApprovals
 				owner = { visualizedPersonalSignRequest.account }
 				spender = { visualizedPersonalSignRequest.spender }
 				tokenAmounts = { visualizedPersonalSignRequest.permitted }
