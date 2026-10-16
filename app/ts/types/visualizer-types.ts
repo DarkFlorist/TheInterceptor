@@ -475,13 +475,15 @@ export const createPassthroughCompleteVisualizedSimulation = (
 	numberOfAddressesMadeRich,
 })
 
-type NewHeadsSubscription = funtypes.Static<typeof NewHeadsSubscription>
-const NewHeadsSubscription = funtypes.ReadonlyObject({
-	type: funtypes.Literal('newHeads'),
+// Every stored eth_subscribe record shares this shape; only the `type` literal differs, which keeps the persisted union discriminated for exhaustive switches.
+const createStoredEthSubscriptionRuntype = <SubscriptionType extends EthSubscribeParams['params'][0]>(type: SubscriptionType) => funtypes.ReadonlyObject({
+	type: funtypes.Literal(type),
 	subscriptionOrFilterId: funtypes.String,
 	params: EthSubscribeParams,
 	subscriptionCreatorSocket: WebsiteSocket,
 })
+const NewHeadsSubscription = createStoredEthSubscriptionRuntype('newHeads')
+const SyncingSubscription = createStoredEthSubscriptionRuntype('syncing')
 
 type NewEthfilter = funtypes.Static<typeof NewEthfilter>
 const NewEthfilter = funtypes.ReadonlyObject({
@@ -493,7 +495,7 @@ const NewEthfilter = funtypes.ReadonlyObject({
 })
 
 export type EthereumSubscriptionsAndFilters = funtypes.Static<typeof EthereumSubscriptionsAndFilters>
-export const EthereumSubscriptionsAndFilters = funtypes.ReadonlyArray(funtypes.Union(NewEthfilter, NewHeadsSubscription))
+export const EthereumSubscriptionsAndFilters = funtypes.ReadonlyArray(funtypes.Union(NewEthfilter, NewHeadsSubscription, SyncingSubscription))
 
 export type VisualizedSimulatorState = funtypes.Static<typeof VisualizedSimulatorState>
 export const VisualizedSimulatorState = funtypes.ReadonlyObject({
