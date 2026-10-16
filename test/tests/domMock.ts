@@ -3,6 +3,48 @@ import type { render } from 'preact'
 type AttributeMap = Record<string, string | undefined>
 type RenderContainer = Parameters<typeof render>[1]
 
+// The connected observers of every installed MutationObserver mock; nodes report their childList changes here.
+const childListObservers = new Set<TestMutationObserver>()
+
+// Reports only childList changes, to observers of the changed node or any of its ancestors, as if every observe call passed subtree: true. Like the real observer, it batches the changes of one task into one callback that runs in a microtask.
+class TestMutationObserver {
+	readonly callback: () => void
+	observedNodes: TestNode[] = []
+	isNotificationQueued = false
+
+	constructor(callback: () => void) {
+		this.callback = callback
+	}
+
+	observe(target: TestNode) {
+		this.observedNodes.push(target)
+		childListObservers.add(this)
+	}
+
+	disconnect() {
+		this.observedNodes = []
+		childListObservers.delete(this)
+	}
+
+	queueNotification(changedNode: TestNode) {
+		if (this.isNotificationQueued || !this.isObserving(changedNode)) return
+		this.isNotificationQueued = true
+		queueMicrotask(() => {
+			this.isNotificationQueued = false
+			if (childListObservers.has(this)) this.callback()
+		})
+	}
+
+	isObserving(node: TestNode | null): boolean {
+		if (node === null) return false
+		return this.observedNodes.includes(node) || this.isObserving(node.parentNode)
+	}
+}
+
+function notifyChildListChange(changedNode: TestNode) {
+	for (const observer of childListObservers) observer.queueNotification(changedNode)
+}
+
 class TestNode {
 	readonly nodeType: number = 0
 	parentNode: TestNode | null = null
@@ -18,6 +60,7 @@ class TestNode {
 		if (node.parentNode !== null) node.parentNode.removeChild(node)
 		node.parentNode = this
 		this.childNodes.push(node)
+		notifyChildListChange(this)
 		return node
 	}
 
@@ -30,6 +73,7 @@ class TestNode {
 		const index = this.childNodes.indexOf(before)
 		if (index < 0) return this.appendChild(node)
 		this.childNodes.splice(index, 0, node)
+		notifyChildListChange(this)
 		return node
 	}
 
@@ -38,6 +82,7 @@ class TestNode {
 		const index = this.childNodes.indexOf(node)
 		if (index >= 0) this.childNodes.splice(index, 1)
 		node.parentNode = null
+		notifyChildListChange(this)
 		return node
 	}
 
@@ -50,6 +95,7 @@ class TestNode {
 		node.parentNode = this
 		this.childNodes[index] = node
 		oldNode.parentNode = null
+		notifyChildListChange(this)
 		return oldNode
 	}
 
@@ -64,6 +110,7 @@ class TestNode {
 	set textContent(value: string) {
 		this.childNodes = value === '' ? [] : [new TestTextNode(this.ownerDocument, value)]
 		for (const node of this.childNodes) node.parentNode = this
+		notifyChildListChange(this)
 	}
 
 	contains(node: RenderContainer | null): boolean {
@@ -254,6 +301,7 @@ type DomMockState = {
 	previousHtmlDialogElement: unknown
 	previousHtmlDivElement: unknown
 	previousElement: unknown
+	previousMutationObserver: unknown
 }
 
 const fallbackDocument = new TestDocument()
@@ -286,6 +334,7 @@ function restoreOwnedGlobal(name: string, isOwnedByThisMock: boolean, previousVa
 
 export function installDomMock() {
 	class OwnedTestElement extends TestElement {}
+	class OwnedTestMutationObserver extends TestMutationObserver {}
 	class OwnedTestDialogElement extends OwnedTestElement {
 		open = false
 		returnValue = ''
@@ -322,6 +371,7 @@ export function installDomMock() {
 	const previousHtmlDialogElement = globalThis.HTMLDialogElement
 	const previousHtmlDivElement = globalThis.HTMLDivElement
 	const previousElement = globalThis.Element
+	const previousMutationObserver = globalThis.MutationObserver
 	const state: DomMockState = {
 		restored: false,
 		previousDocument,
@@ -333,8 +383,9 @@ export function installDomMock() {
 		previousHtmlDialogElement,
 		previousHtmlDivElement,
 		previousElement,
+		previousMutationObserver,
 	}
-	for (const ownedValue of [document, window, setIntervalMock, clearIntervalMock, requestAnimationFrameMock, cancelAnimationFrameMock, OwnedTestDialogElement, OwnedTestElement]) domMockOwners.set(ownedValue, state)
+	for (const ownedValue of [document, window, setIntervalMock, clearIntervalMock, requestAnimationFrameMock, cancelAnimationFrameMock, OwnedTestDialogElement, OwnedTestElement, OwnedTestMutationObserver]) domMockOwners.set(ownedValue, state)
 
 	defineGlobalValue('document', document)
 	defineGlobalValue('window', window)
@@ -345,6 +396,7 @@ export function installDomMock() {
 	defineGlobalValue('HTMLDialogElement', OwnedTestDialogElement)
 	defineGlobalValue('HTMLDivElement', OwnedTestElement)
 	defineGlobalValue('Element', OwnedTestElement)
+	defineGlobalValue('MutationObserver', OwnedTestMutationObserver)
 
 	return {
 		document,
@@ -360,6 +412,7 @@ export function installDomMock() {
 			restoreOwnedGlobal('HTMLDialogElement', globalThis.HTMLDialogElement === OwnedTestDialogElement, previousHtmlDialogElement, undefined, (owner) => owner.previousHtmlDialogElement)
 			restoreOwnedGlobal('HTMLDivElement', globalThis.HTMLDivElement === OwnedTestElement, previousHtmlDivElement, undefined, (owner) => owner.previousHtmlDivElement)
 			restoreOwnedGlobal('Element', globalThis.Element === OwnedTestElement, previousElement, undefined, (owner) => owner.previousElement)
+			restoreOwnedGlobal('MutationObserver', globalThis.MutationObserver === OwnedTestMutationObserver, previousMutationObserver, undefined, (owner) => owner.previousMutationObserver)
 		},
 	}
 }
