@@ -23,6 +23,13 @@ import { getInterceptorTransactionStack, getTabState } from './storageVariables.
 let confirmTransactionAbortController = new AbortController()
 export const getConfirmTransactionAbortController = () => confirmTransactionAbortController
 
+let latestConfirmationSimulationId = 0
+// Every confirmation simulation run gets a new id, which refreshPopupConfirmTransactionMetadata uses to tell the run whose metadata it refreshed from a newer one. As in bumpPopupRefreshGeneration, the id is the millisecond clock bumped past the previous id, so ids increase within a background session and ids stored before a background restart are not handed out again unless the system clock went backwards.
+function getNextConfirmationSimulationId() {
+	latestConfirmationSimulationId = Math.max(latestConfirmationSimulationId + 1, Date.now())
+	return latestConfirmationSimulationId
+}
+
 // The formed transaction when there is one, otherwise the website's request, which may lack the sender and cannot name the contract a creation would deploy.
 const getFailedTransactionContents = (transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed) => {
 	if (transactionToSimulate.success) return { call: transactionToSimulate.transaction, addresses: getTransactionAddresses(transactionToSimulate.transaction) }
@@ -81,14 +88,16 @@ const getMetadataResolvedBySimulation = (
 	return { addressBookEntries: visualizedSimulatorState.addressBookEntries, parsedInputData: visualizedTransaction?.parsedInputData }
 }
 
+type FailedTransactionPreviewFields = { readonly failedTransactionPreview?: FailedTransactionPreview }
+
 // Missing names or ABIs must not hide why the transaction failed, so the failure view is shown without a preview when the metadata lookup fails.
-async function getFailedTransactionPreviewFields(
+async function tryGetFailedTransactionPreviewFields(
 	ethereum: EthereumClientService,
 	requestAbortController: AbortController,
 	transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed,
 	safeSigningRequest: SafeTransactionSigningRequest | undefined,
-	resolvedMetadata = NO_RESOLVED_METADATA,
-) {
+	resolvedMetadata: ResolvedTransactionMetadata,
+): Promise<FailedTransactionPreviewFields> {
 	try {
 		return { failedTransactionPreview: await getFailedTransactionPreview(ethereum, requestAbortController, transactionToSimulate, safeSigningRequest, resolvedMetadata) }
 	} catch (error: unknown) {
@@ -96,6 +105,18 @@ async function getFailedTransactionPreviewFields(
 		await reportUnexpectedError(error, { code: 'failed_transaction_preview_failed' })
 		return {}
 	}
+}
+
+// Undefined when a newer refresh aborted this one, so the caller drops this outdated failure like any cancelled refresh instead of letting it replace the newer refresh's stored result. The signal is checked rather than the lookup error because the lookup can also finish from cached metadata without noticing the abort.
+async function getFailedTransactionPreviewFieldsUnlessCancelled(
+	ethereum: EthereumClientService,
+	requestAbortController: AbortController,
+	transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed,
+	safeSigningRequest: SafeTransactionSigningRequest | undefined,
+	resolvedMetadata = NO_RESOLVED_METADATA,
+): Promise<FailedTransactionPreviewFields | undefined> {
+	const previewFields = await tryGetFailedTransactionPreviewFields(ethereum, requestAbortController, transactionToSimulate, safeSigningRequest, resolvedMetadata)
+	return requestAbortController.signal.aborted ? undefined : previewFields
 }
 
 export async function refreshConfirmTransactionSimulation(
@@ -114,6 +135,7 @@ export async function refreshConfirmTransactionSimulation(
 		activeAddress,
 		signerName: (await getTabState(uniqueRequestIdentifier.requestSocket.tabId)).signerName,
 		tabIdOpenedFrom: uniqueRequestIdentifier.requestSocket.tabId,
+		simulationId: getNextConfirmationSimulationId(),
 	}
 	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' }, 'confirmTransaction')
 	confirmTransactionAbortController.abort(NEW_BLOCK_ABORT)
@@ -148,9 +170,11 @@ export async function refreshConfirmTransactionSimulation(
 			.map((entry) => 'abi' in entry && entry.abi !== undefined ? entry.abi : undefined)
 			.filter((abiOrUndefined): abiOrUndefined is string => abiOrUndefined !== undefined)
 		if (visualizedSimulatorState.visualizedSimulationState.success === false) {
+			const previewFields = await getFailedTransactionPreviewFieldsUnlessCancelled(ethereum, thisConfirmTransactionAbortController, transactionToSimulate, safeSigningRequest, getMetadataResolvedBySimulation(visualizedSimulatorState, transactionToSimulate, safeSigningRequest))
+			if (previewFields === undefined) return undefined
 			return { statusCode: 'failed', data: {
 				...info,
-				...await getFailedTransactionPreviewFields(ethereum, thisConfirmTransactionAbortController, transactionToSimulate, safeSigningRequest, getMetadataResolvedBySimulation(visualizedSimulatorState, transactionToSimulate, safeSigningRequest)),
+				...previewFields,
 				simulationStartedTimestamp,
 				error: { ...visualizedSimulatorState.visualizedSimulationState.jsonRpcError.error, decodedErrorMessage: visualizedSimulatorState.visualizedSimulationState.jsonRpcError.error.message },
 				simulationState: {
@@ -161,13 +185,15 @@ export async function refreshConfirmTransactionSimulation(
 		}
 		const blocks = visualizedSimulatorState.visualizedSimulationState.visualizedBlocks
 		const lastTransaction = last(last(blocks)?.simulatedAndVisualizedTransactions ?? [])
+		const previewFields = transactionToSimulate.success ? {} : await getFailedTransactionPreviewFieldsUnlessCancelled(ethereum, thisConfirmTransactionAbortController, transactionToSimulate, safeSigningRequest, { addressBookEntries: visualizedSimulatorState.addressBookEntries, parsedInputData: undefined })
+		if (previewFields === undefined) return undefined
 		return {
 			statusCode: 'success',
 			data: {
 				...info,
 				simulationStartedTimestamp,
 				...visualizedSimulatorState,
-				...transactionToSimulate.success ? {} : await getFailedTransactionPreviewFields(ethereum, thisConfirmTransactionAbortController, transactionToSimulate, safeSigningRequest, { addressBookEntries: visualizedSimulatorState.addressBookEntries, parsedInputData: undefined }),
+				...previewFields,
 				transactionToSimulate: {
 					...transactionToSimulate,
 					...transactionToSimulate.success ? {
@@ -198,11 +224,15 @@ export async function refreshConfirmTransactionSimulation(
 			const recipient = params.to
 			return await getSimulationErrorAbis(baseError.data, async () => await identifyAddress(ethereum, thisConfirmTransactionAbortController, recipient))
 		}
+		const decodedErrorMessage = isJsonRpcResponseError ? decodeEthereumError(await extractToAbi(), baseError).reason : baseError.message
+		// Looked up last so its cancellation check also covers a newer refresh that started during the error ABI lookup.
+		const previewFields = await getFailedTransactionPreviewFieldsUnlessCancelled(ethereum, thisConfirmTransactionAbortController, transactionToSimulate, safeSigningRequest)
+		if (previewFields === undefined) return undefined
 		return { statusCode: 'failed', data: {
 			...info,
-			...await getFailedTransactionPreviewFields(ethereum, thisConfirmTransactionAbortController, transactionToSimulate, safeSigningRequest),
+			...previewFields,
 			simulationStartedTimestamp,
-			error: { ...baseError, decodedErrorMessage: isJsonRpcResponseError ? decodeEthereumError(await extractToAbi(), baseError).reason : baseError.message },
+			error: { ...baseError, decodedErrorMessage },
 			simulationState: {
 				blockNumber: 0n,
 				simulationConductedTimestamp: new Date()

@@ -581,8 +581,8 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 					}
 				await updatePendingTransactionOrMessage(first.uniqueRequestIdentifier, async (current) => {
 					if (current.type !== 'Transaction' || (current.transactionOrMessageCreationStatus !== 'Simulated' && current.transactionOrMessageCreationStatus !== 'FailedToSimulate')) return current
-					// A simulation refresh stored during the metadata lookups is newer, so the metadata of the older simulation must not replace it.
-					if (getSimulationConductedTimestamp(current.popupVisualisation).getTime() !== getSimulationConductedTimestamp(popupVisualisation).getTime()) return current
+					// A simulation run stored during the metadata lookups has another id even within the same second, so the metadata of the older run must not replace it. A run stored by an older version has no id and is never replaced.
+					if (popupVisualisation.data.simulationId === undefined || current.popupVisualisation.data.simulationId !== popupVisualisation.data.simulationId) return current
 					return modifyObject(current, { popupVisualisation: refreshedPopupVisualisation })
 				})
 				const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {

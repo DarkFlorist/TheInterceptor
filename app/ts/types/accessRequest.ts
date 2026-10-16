@@ -46,6 +46,8 @@ const ConfirmTransactionSimulationBaseData = funtypes.ReadonlyObject({
 	transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed,
 	signerName: SignerName,
 }).And(funtypes.ReadonlyPartial({
+	// Identifies the confirmation simulation run that produced this visualisation; confirmations stored by older versions have none.
+	simulationId: funtypes.Number,
 	// Present when the transaction has no simulation results, so the failure view can still show its address-book names and parsed input.
 	failedTransactionPreview: FailedTransactionPreview,
 }))
