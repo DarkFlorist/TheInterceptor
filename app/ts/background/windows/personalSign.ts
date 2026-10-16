@@ -14,7 +14,7 @@ import { getMessageHashForPersonalSign } from '../../simulation/services/simulat
 import { getMessageAndDomainHash, getSafeTxHash, isValidMessage } from '../../utils/eip712.js'
 import { promiseAllMapAbortSafe } from '../../utils/requests.js'
 import { decodePersonalSignMessage } from '../../utils/personalSignMessage.js'
-import { getSiweDomainAsWebsiteOrigin, getSiweScheme, looksLikeSiweMessage, parseSiweDateTime, parseSiweMessage } from '../../utils/siwe.js'
+import { getSiweDomainAsWebsiteOrigin, getSiweScheme, looksLikeSiweMessage, parseSiweMessage } from '../../utils/siwe.js'
 
 async function addMetadataToOpenSeaOrder(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, openSeaOrder: OpenSeaOrderMessage) {
 	return {
@@ -41,8 +41,8 @@ type SiweRequestOrigin = {
 	readonly websiteScheme: string | undefined
 }
 
-// The EIP-4361 wallet checks that are specific to sign-in messages: the message must be for the website that sent the request, and it must be valid when it is signed. The account and chain checks are shared with other signatures through getSigningQuarantineCodes.
-export function getSiweQuarantineReasons(siweMessage: SiweMessage, requestOrigin: SiweRequestOrigin, now: Date): readonly string[] {
+// The EIP-4361 wallet check that is specific to sign-in messages: the message must be for the website that sent the request. The account and chain checks are shared with other signatures through getSigningQuarantineCodes. The validity window (Expiration Time and Not Before) is not checked here because a pending request is not re-crafted as time passes; the dialog checks it against the clock with getSiweValidityWarnings instead.
+export function getSiweQuarantineReasons(siweMessage: SiweMessage, requestOrigin: SiweRequestOrigin): readonly string[] {
 	const quarantineReasons: string[] = []
 	const siweScheme = getSiweScheme(siweMessage)
 	// Hosts and ports are compared exactly, so a subdomain or a parent domain of the requesting website does not match either.
@@ -53,10 +53,6 @@ export function getSiweQuarantineReasons(siweMessage: SiweMessage, requestOrigin
 		const impliedSchemeNote = !schemeMatches && siweMessage.scheme === undefined ? ' (a sign-in message that names no scheme is for https)' : ''
 		quarantineReasons.push(`This sign-in message is for ${ siweScheme }://${ siweMessage.domain }${ impliedSchemeNote }, but it was requested by ${ requestingWebsite }. A website asking you to sign in to a different website is a common phishing attack.`)
 	}
-	const expirationTime = siweMessage.expirationTime === undefined ? undefined : parseSiweDateTime(siweMessage.expirationTime)
-	if (expirationTime !== undefined && expirationTime.getTime() <= now.getTime()) quarantineReasons.push(`This sign-in message expired at ${ expirationTime.toISOString() }.`)
-	const notBefore = siweMessage.notBefore === undefined ? undefined : parseSiweDateTime(siweMessage.notBefore)
-	if (notBefore !== undefined && notBefore.getTime() > now.getTime()) quarantineReasons.push(`This sign-in message is not valid until ${ notBefore.toISOString() }, so signing it now gives the website a sign-in it can use later.`)
 	return quarantineReasons
 }
 
@@ -110,7 +106,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 		if (siweMessage !== undefined) {
 			const requestOrigin = { websiteOrigin: signedMessageTransaction.website.websiteOrigin, websiteScheme: signedMessageTransaction.websiteScheme }
 			const quarantineReasons = [
-				...getSiweQuarantineReasons(siweMessage, requestOrigin, new Date()),
+				...getSiweQuarantineReasons(siweMessage, requestOrigin),
 				...getSigningQuarantineCodes(siweMessage.chainId, rpcNetwork.chainId, account.address, activeAddressWithMetadata.address, siweMessage.address).quarantineReasons,
 			]
 			return {

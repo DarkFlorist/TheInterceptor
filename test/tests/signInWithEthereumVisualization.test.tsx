@@ -5,7 +5,6 @@ import { act } from 'preact/test-utils'
 import { getWebsiteSocketScheme, websiteSocketToString } from '../../app/ts/background/backgroundUtils.js'
 import { craftPersonalSignPopupMessage, SIWE_LOOKALIKE_QUARANTINE_REASON } from '../../app/ts/background/windows/personalSign.js'
 import { SignatureCard } from '../../app/ts/components/pages/PersonalSign.js'
-import { SignInWithEthereumVisualizer } from '../../app/ts/components/simulationExplaining/customExplainers/SignInWithEthereumVisualizer.js'
 import { identifySignature } from '../../app/ts/components/simulationExplaining/identifySignature.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { VisualizedPersonalSignRequest } from '../../app/ts/types/personal-message-definitions.js'
@@ -165,12 +164,6 @@ describe('Sign-In with Ethereum personal_sign visualization', () => {
 		assert.deepEqual(visualized.quarantineReasons, ['The signature request is for a different chain (Goerli) than what is currently active (Ethereum Mainnet).'])
 	})
 
-	test('flags an expired sign-in message', async () => {
-		const visualized = await visualizeSignIn(siweText({ optionalFields: ['Expiration Time: 2021-09-30T16:35:24Z'] }))
-		assert.equal(visualized.quarantine, true)
-		assert.deepEqual(visualized.quarantineReasons, ['This sign-in message expired at 2021-09-30T16:35:24.000Z.'])
-	})
-
 	test('keeps ordinary messages on the unparsed path without quarantine', async () => {
 		const visualized = await visualize('Welcome! Sign this message to continue.')
 		assert.equal(visualized.type, 'NotParsed')
@@ -192,24 +185,47 @@ describe('Sign-In with Ethereum personal_sign visualization', () => {
 		assert.deepEqual(visualized.quarantineReasons, [SIWE_LOOKALIKE_QUARANTINE_REASON])
 	})
 
-	test('switches the expiry label from "in" to "ago" when the expiry passes while it is shown', async () => {
-		const visualized = await visualizeSignIn(siweText({ optionalFields: ['Expiration Time: 2026-01-01T00:00:30Z'] }))
+	test('updates the validity warnings and the relative times as the clock passes the validity window while the card is shown', async () => {
+		const visualized = await visualizeSignIn(siweText({ optionalFields: ['Expiration Time: 2026-01-01T00:00:30Z', 'Not Before: 2026-01-01T00:00:10Z'] }))
+		// The window has long passed when the request is crafted, but time-dependent warnings are not stored with it; the card checks them against its own clock.
+		assert.equal(visualized.quarantine, false)
+		assert.deepEqual(visualized.quarantineReasons, [])
+		const notValidYetWarning = 'This sign-in message is not valid until 2026-01-01T00:00:10.000Z, so signing it now gives the website a sign-in it can use later.'
+		const expiredWarning = 'This sign-in message expired at 2026-01-01T00:00:30.000Z.'
 		const dom = installDomMock()
 		const clock = installDateMock('2026-01-01T00:00:00.000Z')
-		// The DOM mock stubs setInterval out, so capture the once-a-second refresh of SomeTimeAgo and tick it by hand.
+		// The DOM mock stubs setInterval out, so capture the once-a-second refreshes of the card and tick them by hand.
 		const domMockSetInterval = globalThis.setInterval
 		const intervalCallbacks: (() => void)[] = []
 		Object.defineProperty(globalThis, 'setInterval', { value: (callback: () => void) => intervalCallbacks.push(callback), configurable: true, writable: true })
+		const renderedText = () => dom.document.body.textContent ?? ''
+		const advanceClockTo = async (now: string) => {
+			clock.setNow(now)
+			await act(() => { for (const tick of intervalCallbacks) tick() })
+		}
 		try {
 			await act(() => {
-				render(h(SignInWithEthereumVisualizer, { signInRequest: visualized, renameAddressCallBack: () => undefined }), dom.document.body)
+				render(h(SignatureCard, {
+					visualizedPersonalSignRequest: visualized,
+					renameAddressCallBack: () => undefined,
+					removeTransactionOrSignedMessage: undefined,
+					numberOfUnderTransactions: 0,
+					editEnsNamedHashCallBack: () => undefined,
+				}), dom.document.body)
 			})
-			assert.equal(dom.document.body.textContent?.includes('Expires at: 2026-01-01T00:00:30.000Z (in 30s)'), true, dom.document.body.textContent)
 			assert.notEqual(intervalCallbacks.length, 0)
+			assert.equal(renderedText().includes('Expires at: 2026-01-01T00:00:30.000Z (in 30s)'), true, renderedText())
+			assert.equal(renderedText().includes(notValidYetWarning), true, renderedText())
+			assert.equal(renderedText().includes(expiredWarning), false, renderedText())
 
-			clock.setNow('2026-01-01T00:01:00.000Z')
-			await act(() => { for (const tick of intervalCallbacks) tick() })
-			assert.equal(dom.document.body.textContent?.includes('Expires at: 2026-01-01T00:00:30.000Z (30s ago)'), true, dom.document.body.textContent)
+			await advanceClockTo('2026-01-01T00:00:20.000Z')
+			assert.equal(renderedText().includes(notValidYetWarning), false, renderedText())
+			assert.equal(renderedText().includes(expiredWarning), false, renderedText())
+
+			await advanceClockTo('2026-01-01T00:01:00.000Z')
+			assert.equal(renderedText().includes('Expires at: 2026-01-01T00:00:30.000Z (30s ago)'), true, renderedText())
+			assert.equal(renderedText().includes(notValidYetWarning), false, renderedText())
+			assert.equal(renderedText().includes(expiredWarning), true, renderedText())
 		} finally {
 			await act(() => { render(null, dom.document.body) })
 			Object.defineProperty(globalThis, 'setInterval', { value: domMockSetInterval, configurable: true, writable: true })

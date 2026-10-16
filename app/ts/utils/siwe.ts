@@ -1,4 +1,4 @@
-import type { SiweMessage } from '../types/personal-message-definitions.js'
+import { SiweMessage } from '../types/personal-message-definitions.js'
 import { isAddress } from './ethereumBytes.js'
 import { getHostWithPort } from './requests.js'
 
@@ -100,7 +100,7 @@ export function parseSiweMessage(message: string): SiweMessage | undefined {
 	if (!STATEMENT_PATTERN.test(statementLine)) return undefined
 	if (!resources.every((resource) => URI_PATTERN.test(resource))) return undefined
 
-	return {
+	const parsedMessage: SiweMessage = {
 		scheme: header[1],
 		domain,
 		address: BigInt(addressText),
@@ -115,9 +115,21 @@ export function parseSiweMessage(message: string): SiweMessage | undefined {
 		requestId,
 		resources,
 	}
+	// The parsed message is stored with the pending request, so it must fit its storage schema. The patterns above already keep the text fields and the address within it, but a chain ID of 2^256 or more does not fit an EthereumQuantity; such a message is left unparsed like any other message that does not conform.
+	return SiweMessage.safeSerialize(parsedMessage).success ? parsedMessage : undefined
 }
 
 export const looksLikeSiweMessage = (message: string) => SIWE_PHRASE_PATTERN.test(message)
+
+// Advisory warnings for a sign-in message outside its validity window: EIP-4361 leaves enforcing the window to the relying party that verifies the signature, so these warn the user but neither quarantine the request nor block signing. The result depends on the current time, so it is not stored with the request (and so adds no confirmation checkbox or Flagged badge): the confirmation dialog re-evaluates it while it is shown.
+export function getSiweValidityWarnings(message: SiweMessage, now: Date): readonly string[] {
+	const warnings: string[] = []
+	const expirationTime = message.expirationTime === undefined ? undefined : parseSiweDateTime(message.expirationTime)
+	if (expirationTime !== undefined && expirationTime.getTime() <= now.getTime()) warnings.push(`This sign-in message expired at ${ expirationTime.toISOString() }.`)
+	const notBefore = message.notBefore === undefined ? undefined : parseSiweDateTime(message.notBefore)
+	if (notBefore !== undefined && notBefore.getTime() > now.getTime()) warnings.push(`This sign-in message is not valid until ${ notBefore.toISOString() }, so signing it now gives the website a sign-in it can use later.`)
+	return warnings
+}
 
 // The scheme and domain exactly as the message states them, which is what the user is asked to sign in to.
 export const getSiweOriginText = (message: SiweMessage) => message.scheme === undefined ? message.domain : `${ message.scheme }://${ message.domain }`

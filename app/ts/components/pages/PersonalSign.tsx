@@ -7,7 +7,7 @@ import { assertNever } from '../../utils/typescript.js'
 import { SimpleTokenApprovalVisualisation } from '../simulationExplaining/customExplainers/SimpleTokenApprovalVisualisation.js'
 import { SmallAddress, WebsiteOriginText } from '../subcomponents/address.js'
 import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
-import type { VisualizedPersonalSignRequest, VisualizedPersonalSignRequestPermit, VisualizedPersonalSignRequestPermit2, VisualizedPersonalSignRequestSafeTx } from '../../types/personal-message-definitions.js'
+import type { SiweMessage, VisualizedPersonalSignRequest, VisualizedPersonalSignRequestPermit, VisualizedPersonalSignRequestPermit2, VisualizedPersonalSignRequestSafeTx } from '../../types/personal-message-definitions.js'
 import { OrderComponents, OrderComponentsExtraDetails } from '../simulationExplaining/customExplainers/OpenSeaOrder.js'
 import { humanReadableDateFromSeconds, CellElement } from '../ui-utils.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
@@ -23,10 +23,12 @@ import { TransactionInput } from '../subcomponents/ParsedInputData.js'
 import { SafeTxSigningDetails } from '../subcomponents/SafeTxSigningDetails.js'
 import { CollapsibleCard } from '../subcomponents/CollapsibleCard.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
-import type { ReadonlySignal } from '@preact/signals'
+import { type ReadonlySignal, useSignal } from '@preact/signals'
+import { useEffect } from 'preact/hooks'
 import type { PopupPendingTransactionOrSignableMessage as PendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
 import { identifySignature } from '../simulationExplaining/identifySignature.js'
 import { SignInWithEthereumVisualizer } from '../simulationExplaining/customExplainers/SignInWithEthereumVisualizer.js'
+import { getSiweValidityWarnings } from '../../utils/siwe.js'
 
 type SignatureCardParams = {
 	visualizedPersonalSignRequest: VisualizedPersonalSignRequest
@@ -373,6 +375,17 @@ function Signer({ signer, renameAddressCallBack }: { signer: AddressBookEntry, r
 
 const HALF_HEADER_HEIGHT = 48 / 2
 
+// A sign-in message can expire or become valid while its confirmation is open, and a pending request is not re-crafted as time passes, so its validity window is checked against the clock every second here instead of being stored in `quarantineReasons`. Approving a signature never depends on its warnings or its `quarantine` flag (see shouldDisableSignableMessageConfirm), so keeping the shown warning current is all that an approval-time recheck could add.
+function SiweValidityWarnings({ message }: { message: SiweMessage }) {
+	const now = useSignal(Date.now())
+	useEffect(() => {
+		now.value = Date.now()
+		const id = setInterval(() => { now.value = Date.now() }, 1000)
+		return () => clearInterval(id)
+	}, [])
+	return <QuarantineReasons quarantineReasons = { getSiweValidityWarnings(message, new Date(now.value)) }/>
+}
+
 export function SignatureCard(params: SignatureCardParams) {
 	const headerActionLabel = params.collapsed === undefined ? undefined : params.collapsed ? 'Expand signature details' : 'Collapse signature details'
 	return <div class = 'card' style = { `top: ${ params.numberOfUnderTransactions * -HALF_HEADER_HEIGHT }px` }>
@@ -382,6 +395,7 @@ export function SignatureCard(params: SignatureCardParams) {
 				<SignRequest { ...params }/>
 			</div>
 			<QuarantineReasons quarantineReasons = { params.visualizedPersonalSignRequest.quarantineReasons }/>
+			{ params.visualizedPersonalSignRequest.type === 'SignInWithEthereum' ? <SiweValidityWarnings message = { params.visualizedPersonalSignRequest.message }/> : <></> }
 			<ExtraDetails { ...params }/>
 			{ params.visualizedPersonalSignRequest.type === 'NotParsed' ? <></> : <RawMessage { ...params }/> }
 

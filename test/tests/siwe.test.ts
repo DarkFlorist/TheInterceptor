@@ -1,6 +1,8 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { getSiweDomainAsWebsiteOrigin, getSiweOriginText, looksLikeSiweMessage, parseSiweDateTime, parseSiweMessage } from '../../app/ts/utils/siwe.js'
+import { SiweMessage } from '../../app/ts/types/personal-message-definitions.js'
+import { serialize } from '../../app/ts/types/wire-types.js'
+import { getSiweDomainAsWebsiteOrigin, getSiweOriginText, getSiweValidityWarnings, looksLikeSiweMessage, parseSiweDateTime, parseSiweMessage } from '../../app/ts/utils/siwe.js'
 
 const CHECKSUMMED_ADDRESS = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
 const HEADER = 'example.com wants you to sign in with your Ethereum account:'
@@ -16,6 +18,8 @@ const REQUIRED_FIELDS = [
 const siweMessage = ({ header = HEADER, address = CHECKSUMMED_ADDRESS, statementLines = [''], fields = REQUIRED_FIELDS }: { header?: string, address?: string, statementLines?: readonly string[], fields?: readonly string[] } = {}) => [header, address, '', ...statementLines, ...fields].join('\n')
 
 const minimalMessage = siweMessage()
+
+const withChainId = (chainId: string) => siweMessage({ fields: REQUIRED_FIELDS.map((field) => field === 'Chain ID: 1' ? `Chain ID: ${ chainId }` : field) })
 
 // The EIP-4361 example with an explicit scheme, extended with every optional field.
 const fullMessage = siweMessage({
@@ -108,7 +112,8 @@ describe('Sign-In with Ethereum message parsing', () => {
 		['a nonce shorter than eight characters', siweMessage({ fields: REQUIRED_FIELDS.map((field) => field.startsWith('Nonce: ') ? 'Nonce: 1234567' : field) })],
 		['an unsupported version', siweMessage({ fields: REQUIRED_FIELDS.map((field) => field === 'Version: 1' ? 'Version: 2' : field) })],
 		['a field tag in the wrong case', siweMessage({ fields: REQUIRED_FIELDS.map((field) => field.replace('URI: ', 'uri: ')) })],
-		['a hexadecimal chain ID', siweMessage({ fields: REQUIRED_FIELDS.map((field) => field === 'Chain ID: 1' ? 'Chain ID: 0x1' : field) })],
+		['a hexadecimal chain ID', withChainId('0x1')],
+		['a chain ID of 2^256, which the stored message cannot hold', withChainId((2n ** 256n).toString())],
 		['a URI without a scheme', siweMessage({ fields: REQUIRED_FIELDS.map((field) => field.startsWith('URI: ') ? 'URI: example.com/login' : field) })],
 		['an impossible date', siweMessage({ fields: REQUIRED_FIELDS.map((field) => field.startsWith('Issued At: ') ? 'Issued At: 2021-02-30T16:25:24Z' : field) })],
 		['a date with a space instead of "T"', siweMessage({ fields: REQUIRED_FIELDS.map((field) => field.startsWith('Issued At: ') ? 'Issued At: 2021-09-30 16:25:24Z' : field) })],
@@ -127,6 +132,13 @@ describe('Sign-In with Ethereum message parsing', () => {
 			assert.equal(looksLikeSiweMessage(message), true)
 		})
 	}
+
+	test('parses the largest chain ID the stored message can hold, and the result serializes', () => {
+		const parsed = parseSiweMessage(withChainId((2n ** 256n - 1n).toString()))
+		if (parsed === undefined) throw new Error('expected a chain ID of 2^256 - 1 to parse')
+		assert.equal(parsed.chainId, 2n ** 256n - 1n)
+		assert.deepEqual(SiweMessage.parse(serialize(SiweMessage, parsed)), parsed)
+	})
 
 	test('leaves ordinary messages unparsed and does not mistake them for sign-in messages', () => {
 		for (const message of ['', 'hello', 'Please sign in to continue', '{"action":"login","account":"0x1"}', 'Sign this message to prove you own your Ethereum account']) {
@@ -156,6 +168,27 @@ describe('Sign-In with Ethereum date-times', () => {
 		for (const text of ['2023-02-29T00:00:00Z', '2021-04-31T00:00:00Z', '2021-13-01T00:00:00Z', '2021-09-30T24:00:00Z', '2021-09-30T16:25:24', '2021-9-30T16:25:24Z', '2021-09-30T16:25:24+0200', '1633019124']) {
 			assert.equal(parseSiweDateTime(text), undefined, text)
 		}
+	})
+})
+
+describe('Sign-In with Ethereum validity window', () => {
+	const parsedMinimalMessage = parseSiweMessage(minimalMessage)
+	if (parsedMinimalMessage === undefined) throw new Error('expected the minimal message to parse')
+	const now = new Date('2026-01-01T00:05:00Z')
+
+	test('warns about an expired sign-in message and one that is not valid yet', () => {
+		assert.deepEqual(getSiweValidityWarnings({ ...parsedMinimalMessage, expirationTime: '2026-01-01T00:04:59Z' }, now), ['This sign-in message expired at 2026-01-01T00:04:59.000Z.'])
+		assert.deepEqual(getSiweValidityWarnings({ ...parsedMinimalMessage, notBefore: '2026-01-01T01:00:00+00:00' }, now), ['This sign-in message is not valid until 2026-01-01T01:00:00.000Z, so signing it now gives the website a sign-in it can use later.'])
+	})
+
+	test('treats the expiration time as already expired and the not-before time as already valid', () => {
+		assert.deepEqual(getSiweValidityWarnings({ ...parsedMinimalMessage, expirationTime: '2026-01-01T00:05:00Z' }, now), ['This sign-in message expired at 2026-01-01T00:05:00.000Z.'])
+		assert.deepEqual(getSiweValidityWarnings({ ...parsedMinimalMessage, notBefore: '2026-01-01T00:05:00Z' }, now), [])
+	})
+
+	test('does not warn about a sign-in message inside its validity window or without one', () => {
+		assert.deepEqual(getSiweValidityWarnings({ ...parsedMinimalMessage, expirationTime: '2026-01-01T00:10:00Z', notBefore: '2026-01-01T00:04:00Z' }, now), [])
+		assert.deepEqual(getSiweValidityWarnings(parsedMinimalMessage, now), [])
 	})
 })
 
