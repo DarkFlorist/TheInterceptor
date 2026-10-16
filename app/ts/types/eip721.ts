@@ -9,7 +9,7 @@ export const EIP712Types = funtypes.Record(funtypes.String, funtypes.ReadonlyArr
 ))
 
 type EIP712MessageUnderlying = funtypes.Static<typeof EIP712MessageUnderlying>
-const EIP712MessageUnderlying = funtypes.ReadonlyObject({
+export const EIP712MessageUnderlying = funtypes.ReadonlyObject({
 	types: EIP712Types,
 	primaryType: funtypes.String,
 	domain: JSONEncodeableObject,
