@@ -305,7 +305,7 @@ header:has(form[role='search']) h1 {
 		}
 	}
 
-	> [role=img]:not(.inline-card-warning-sign) {
+	> [role=img] {
 		grid-area: start / start / end / copy;
 		:hover > & { opacity: 0 }
 	}
@@ -317,7 +317,7 @@ header:has(form[role='search']) h1 {
 	}
 
 	/* Keyboard focus on the copy and edit buttons hides the card's own icon and label behind the actions, while focus left on the warning sign does not */
-	&:has(> .inline-card-actions:focus-within) > :is([role=img]:not(.inline-card-warning-sign), data) { opacity: 0 }
+	&:has(> .inline-card-actions:focus-within) > :is([role=img], data) { opacity: 0 }
 
 	> .inline-card-actions {
 		background: var(--bg-status-color, var(--bg-color));
@@ -403,6 +403,7 @@ header:has(form[role='search']) h1 {
 		}
 	}
 
+	/* Warning signs are matched by class rather than by the alert role, because only the leading sign is an alert and the trailing one is aria-hidden without a role */
 	&:has(.inline-card-warning-sign) {
 		--bg-status-color: var(--status-dimmed-bg-color); /* dark red */
 		min-width: calc(var(--image-size) + var(--min-text-width) + (var(--bg-inline-padding) * 2) + 4ch);

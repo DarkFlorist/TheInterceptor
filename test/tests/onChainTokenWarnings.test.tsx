@@ -107,7 +107,7 @@ describe('on-chain token warnings', () => {
 		}
 	})
 
-	test('shows the explanation as a tooltip and accessible label on warning signs of on-chain tokens', async () => {
+	test('announces the explanation as an alert once and shows it as a tooltip on warning signs of on-chain tokens', async () => {
 		const expectedMessages = [
 			[createErc20Entry('OnChain'), ON_CHAIN_TOKEN_METADATA_WARNING],
 			[createErc721Entry('OnChain'), ON_CHAIN_TOKEN_METADATA_WARNING],
@@ -117,10 +117,11 @@ describe('on-chain token warnings', () => {
 			const warningSigns = await renderTokenSymbolWarningSigns(tokenEntry)
 			assert.equal(warningSigns.length, 2)
 			assert.equal(warningSigns.every((warningSign) => warningSign.getAttribute?.('data-tooltip') === expectedMessage), true)
-			assert.equal(warningSigns.some((warningSign) => warningSign.getAttribute?.('role') === 'alert' || warningSign.getAttribute?.('aria-live') !== null), false)
-			const labelledSigns = warningSigns.filter((warningSign) => warningSign.getAttribute?.('aria-label') === expectedMessage)
-			assert.equal(labelledSigns.length, 1)
-			assert.equal(labelledSigns[0]?.getAttribute?.('role'), 'img')
+			const [leadingSign, trailingSign] = warningSigns
+			assert.equal(leadingSign?.getAttribute?.('role'), 'alert')
+			assert.equal(leadingSign?.getAttribute?.('aria-label'), expectedMessage)
+			assert.equal(trailingSign?.getAttribute?.('role'), null)
+			assert.equal(trailingSign?.getAttribute?.('aria-hidden'), true)
 		}
 	})
 

@@ -88,15 +88,15 @@ export const InlineCard = (props: InlineCardProps) => {
 
 type WarningSignProps = {
 	message: string
-	// The card shows a sign on both sides of its label; only the leading sign is focusable and announced, so keyboard and screen reader users meet the warning once.
+	// The card shows a sign on both sides of its label; only the leading sign is an alert and focusable, so screen reader and keyboard users meet the warning once per card.
 	isTrailingSign: boolean
 }
 
 const WarningSign = ({ message, isTrailingSign }: WarningSignProps) => {
-	// The surrounding Hint container shows data-tooltip on hover and keyboard focus. The empty title stops the card's label title from also appearing as a native tooltip over the sign. The sign is a named image rather than an alert, because an alert is a live region that would read the whole warning aloud every time a token card renders.
+	// The leading sign is an alert so screen readers proactively announce this anti-phishing warning, such as a token impersonating a well-known one, as soon as the card renders; its aria-label makes that announcement and its reading-order name carry the full explanation. The trailing sign is aria-hidden so the warning is announced once per card instead of twice. The native title tooltip is intentionally suppressed: the surrounding Hint container shows data-tooltip with the full explanation on hover and on keyboard focus of the leading sign, and the empty title stops the card's label title from appearing as a native tooltip over the sign instead.
 	return <span
 		class = 'inline-card-warning-sign'
-		role = { isTrailingSign ? undefined : 'img' }
+		role = { isTrailingSign ? undefined : 'alert' }
 		data-tooltip = { message }
 		title = ''
 		aria-label = { isTrailingSign ? undefined : message }

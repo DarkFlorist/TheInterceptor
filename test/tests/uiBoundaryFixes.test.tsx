@@ -350,9 +350,9 @@ describe('UI boundary fixes', () => {
 			assert.equal(warningSigns.length, 2)
 			assert.equal(warningSigns.every((warningSign) => warningSign.getAttribute?.('data-tooltip') === 'Token warning details'), true)
 			assert.equal(warningSigns.every((warningSign) => warningSign.getAttribute?.('title') === ''), true)
-			assert.equal(warningSigns.some((warningSign) => warningSign.getAttribute?.('role') === 'alert' || warningSign.getAttribute?.('aria-live') !== null), false)
 			const [leadingSign, trailingSign] = warningSigns
-			assert.equal(leadingSign?.getAttribute?.('role'), 'img')
+			// The leading sign must stay an alert so screen readers proactively announce the warning, named by the full explanation; the trailing sign stays silent so it is announced once.
+			assert.equal(leadingSign?.getAttribute?.('role'), 'alert')
 			assert.equal(leadingSign?.getAttribute?.('aria-label'), 'Token warning details')
 			assert.equal(leadingSign?.getAttribute?.('tabIndex'), 0)
 			assert.equal(trailingSign?.getAttribute?.('role'), null)
