@@ -1,4 +1,3 @@
-import { isAddress } from '../../utils/ethereumPrimitives.js'
 import { useEffect } from 'preact/hooks'
 import type { AddAddressParam } from '../../types/user-interface-types.js'
 import { ErrorCheckBox, ErrorText } from '../subcomponents/Error.js'
@@ -21,6 +20,7 @@ import { NonHexBigInt } from '../../types/wire-types.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 import { type AsyncStates, useAsyncState } from '../../utils/preact-utilities.js'
 import { isValidAddressBookEntryName, MAX_ADDRESS_BOOK_ENTRY_NAME_LENGTH } from '../../utils/addressBookValidation.js'
+import { parseUserEnteredAddress } from '../../utils/addressValidation.js'
 import { isValidErc20Decimals } from '../../utils/erc20.js'
 
 export function mergeAddressWindowErrorState(
@@ -65,7 +65,7 @@ export type AddressIdentificationKey = {
 
 export function getAddressIdentificationKey(state: ModifyAddressWindowState): AddressIdentificationKey | undefined {
 	if (!state.incompleteAddressBookEntry.addingAddress && state.incompleteAddressBookEntry.type !== 'safe') return undefined
-	const address = stringToAddress(state.incompleteAddressBookEntry.address)
+	const address = parseUserEnteredAddress(state.incompleteAddressBookEntry.address)
 	if (address === undefined) return undefined
 	return { address, chainId: state.incompleteAddressBookEntry.chainId, windowStateId: state.windowStateId, requestSafeContractState: state.incompleteAddressBookEntry.type === 'safe' }
 }
@@ -148,7 +148,7 @@ function AddressInput({ disabled, addressInput, setAddress, ariaLabel = 'Address
 		value = { addressInput }
 		placeholder = { '0x0...' }
 		onInput = { e => setAddress(e.currentTarget.value.replaceAll('\n', '').replaceAll('\r', '')) }
-		style = { addressInput === undefined || isAddress(addressInput.trim()) ? undefined : 'color: var(--danger-color);' }
+		style = { addressInput === undefined || parseUserEnteredAddress(addressInput) !== undefined ? undefined : 'color: var(--danger-color);' }
 	/>
 }
 
@@ -268,7 +268,7 @@ function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries
 			<div class = 'address-editor-identity'>
 				<div class = 'address-editor-primary-identity'>
 					<div class = 'address-editor-address-icon'>
-						<AddressIcon address = { stringToAddress(entry.address) } logoUri = { logoUri } isBig = { true } backgroundColor = 'var(--text-color)'/>
+						<AddressIcon address = { parseUserEnteredAddress(entry.address) } logoUri = { logoUri } isBig = { true } backgroundColor = 'var(--text-color)'/>
 					</div>
 					<div class = 'address-editor-identity-controls'>
 						<label class = 'address-editor-field address-editor-name-field'>
@@ -301,7 +301,7 @@ function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries
 						state = { safeSignerLookupState }
 						text = 'Refresh owners'
 						pendingText = { hasSafeSigners ? 'Refreshing...' : 'Retrieving...' }
-						disabled = { disableDueToSource || stringToAddress(entry.address) === undefined }
+						disabled = { disableDueToSource || parseUserEnteredAddress(entry.address) === undefined }
 						onClick = { refreshSafeSigners }
 					/>
 				</div>
@@ -346,7 +346,7 @@ function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries
 							state = { blockExplorerLookupState }
 							text = 'Fetch from Block Explorer'
 							pendingText = 'Fetching...'
-							disabled = { stringToAddress(modifyAddressWindowState.value.incompleteAddressBookEntry.address) === undefined || !canFetchFromEtherScan.value || !blockExplorerAvailable.value }
+							disabled = { parseUserEnteredAddress(modifyAddressWindowState.value.incompleteAddressBookEntry.address) === undefined || !canFetchFromEtherScan.value || !blockExplorerAvailable.value }
 							onClick = { fetchAbiAndNameFromBlockExplorer }
 						/>
 					</div>
@@ -489,7 +489,7 @@ export function AddNewAddress(param: AddAddressParam) {
 	useEffect(() => {
 		activeAddress.value = param.activeAddress
 		if (param.modifyAddressWindowState.value !== undefined) {
-			canFetchFromEtherScan.value = stringToAddress(param.modifyAddressWindowState.value.incompleteAddressBookEntry.address) !== undefined
+			canFetchFromEtherScan.value = parseUserEnteredAddress(param.modifyAddressWindowState.value.incompleteAddressBookEntry.address) !== undefined
 		}
 		resetBlockExplorerLookup()
 	}, [
@@ -501,7 +501,7 @@ export function AddNewAddress(param: AddAddressParam) {
 
 	function getCompleteAddressBookEntry(): AddressBookEntry | { type: 'error', error: string } {
 		const incompleteAddressBookEntry = param.modifyAddressWindowState.peek().incompleteAddressBookEntry
-		const inputedAddressBigInt = stringToAddress(incompleteAddressBookEntry.address)
+		const inputedAddressBigInt = parseUserEnteredAddress(incompleteAddressBookEntry.address)
 		if (inputedAddressBigInt === undefined) return { type: 'error', error: 'Address is not valid' }
 		const safeSimulationSignerAddressStrings = (incompleteAddressBookEntry.safeSignerAddresses ?? [])
 			.map((address) => address.trim())
@@ -617,12 +617,12 @@ export function AddNewAddress(param: AddAddressParam) {
 	})
 
 	async function fetchAbiAndNameFromBlockExplorer() {
-		const address = stringToAddress(param.modifyAddressWindowState.value.incompleteAddressBookEntry.address)
+		const address = parseUserEnteredAddress(param.modifyAddressWindowState.value.incompleteAddressBookEntry.address)
 		if (address === undefined) return
 		const requestedChainId = param.modifyAddressWindowState.peek().incompleteAddressBookEntry.chainId
 		const isCurrentLookup = () => {
 			const currentEntry = param.modifyAddressWindowState.peek().incompleteAddressBookEntry
-			return stringToAddress(currentEntry.address) === address && currentEntry.chainId === requestedChainId
+			return parseUserEnteredAddress(currentEntry.address) === address && currentEntry.chainId === requestedChainId
 		}
 		waitForBlockExplorerLookup(async () => {
 			const reply = await requestPopupAbiAndNameFromBlockExplorer({
@@ -716,7 +716,7 @@ export function AddNewAddress(param: AddAddressParam) {
 			</section>
 				<footer class = 'modal-card-foot window-footer address-editor-footer'>
 					<button class = 'btn btn--outline' onClick = { param.close } disabled = { isBlockExplorerLookupPending.value }>Cancel</button>
-					{ param.setActiveAddressAndInformAboutIt === undefined || param.modifyAddressWindowState.value.incompleteAddressBookEntry === undefined || activeAddress.value === stringToAddress(param.modifyAddressWindowState.value.incompleteAddressBookEntry.address) ? <></> : <AsyncActionButton class = 'btn btn--outline' state = { saveEntryState.value.state } onClick = { createAndSwitch } disabled = { isSubmitButtonDisabled.value } text = { param.modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress ? 'Create and switch' : 'Modify and switch' } pendingText = { param.modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress ? 'Creating and switching...' : 'Modifying and switching...' } /> }
+					{ param.setActiveAddressAndInformAboutIt === undefined || param.modifyAddressWindowState.value.incompleteAddressBookEntry === undefined || activeAddress.value === parseUserEnteredAddress(param.modifyAddressWindowState.value.incompleteAddressBookEntry.address) ? <></> : <AsyncActionButton class = 'btn btn--outline' state = { saveEntryState.value.state } onClick = { createAndSwitch } disabled = { isSubmitButtonDisabled.value } text = { param.modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress ? 'Create and switch' : 'Modify and switch' } pendingText = { param.modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress ? 'Creating and switching...' : 'Modifying and switching...' } /> }
 					<AsyncActionButton class = 'btn btn--primary' state = { saveEntryState.value.state } onClick = { modifyOrAddEntry } disabled = { isSubmitButtonDisabled.value } text = { param.modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress ? 'Create address' : 'Save changes' } pendingText = { param.modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress ? 'Creating...' : 'Saving...' } />
 				</footer>
 		</div>
