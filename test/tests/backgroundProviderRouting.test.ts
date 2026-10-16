@@ -134,14 +134,16 @@ describe('background eth_accounts', () => {
 			params: [accountString, ['0x2105']],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 
+		// Signing mode no longer forwards capability discovery, so the signer's batching capabilities are never advertised for calls the Interceptor would not review.
 		assert.deepEqual(messages.find((message) => message.requestId === 3), {
 			interceptorApproved: true,
 			requestId: 3,
-			type: 'forwardToSigner',
-			replyWithSignersReply: true,
+			bridgeRequestSettled: true,
+			type: 'result',
 			method: 'wallet_getCapabilities',
-			params: [accountString, ['0x2105']],
+			result: {},
 		})
+		assert.equal(messages.some((message) => message.type === 'forwardToSigner'), false)
 	})
 
 	test('answers Sealwort Safe code and storage inspection without forwarding storage to the signer', async () => {
@@ -263,6 +265,81 @@ describe('background eth_accounts', () => {
 			method: 'eth_getStorageAt',
 			params: ['0xe592427a0aece92de3edee1f18e0157c05861564', '0x0', 'latest'],
 		})
+	})
+
+	// A wallet may execute a batch atomically, so a signing-mode preview of separate transactions could not be bound to what the wallet runs. Signing mode therefore refuses wallet_sendCalls, with the wording viem matches to fall back to eth_sendTransaction, and knows no bundles.
+	const expectSigningModeToRefuseCallBatches = async (rpcNetwork: { readonly name: string, readonly chainId: bigint, readonly httpsRpc: string | undefined, readonly currencyName: string, readonly currencyTicker: string, readonly primary: boolean, readonly minimized: boolean } | undefined) => {
+		const { readStoredValue } = installBrowserMock()
+		let openedWindowsOrTabs = 0
+		const createWindow = globalThis.browser.windows.create
+		const createTab = globalThis.browser.tabs.create
+		globalThis.browser.windows.create = async (createData) => {
+			openedWindowsOrTabs += 1
+			return await createWindow(createData)
+		}
+		globalThis.browser.tabs.create = async (createProperties) => {
+			openedWindowsOrTabs += 1
+			return await createTab(createProperties)
+		}
+		const { handleInterceptedRequest, websiteSocketToString, updateWebsiteAccess, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateTabState } = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const account = 0x1111111111111111111111111111111111111111n
+		const accountString = '0x1111111111111111111111111111111111111111'
+		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: account, ...(rpcNetwork === undefined ? {} : { rpcNetwork }) })
+		await setUseSignersAddressAsActiveAddress(true)
+		await updateTabState(1, (previousState) => ({ ...previousState, signerAccounts: [account], activeSigningAddress: account, signerChain: 1n }))
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
+
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		const request = async (requestId: number, method: string, params: readonly unknown[]) => await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId, requestSocket: socket },
+			method,
+			params: [...params],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		const batch = (overrides: Record<string, unknown>) => [{ version: '2.0.0', chainId: '0x1', atomicRequired: false, calls: [{ to: '0x2222222222222222222222222222222222222222', value: '0x1' }], ...overrides }]
+
+		// Valid, malformed and atomic batches are all refused before they are parsed, reviewed or shown.
+		await request(1, 'wallet_sendCalls', batch({}))
+		await request(2, 'wallet_sendCalls', batch({ version: '1.0' }))
+		await request(3, 'wallet_sendCalls', batch({ atomicRequired: true }))
+		await request(4, 'wallet_getCallsStatus', ['0x01'])
+		await request(5, 'wallet_showCallsStatus', ['0x01'])
+		await request(6, 'wallet_getCapabilities', [accountString, ['0x1']])
+
+		const replyTo = (requestId: number) => messages.find((message) => message.requestId === requestId)
+		for (const requestId of [1, 2, 3]) {
+			assert.equal(replyTo(requestId)?.error?.code, 4200)
+			assert.match(replyTo(requestId)?.error?.message ?? '', /does not exist \/ is not available/u)
+		}
+		assert.equal(replyTo(4)?.error?.code, 5730)
+		assert.equal(replyTo(5)?.error?.code, 5730)
+		assert.deepEqual(replyTo(6)?.result, {})
+		assert.equal(messages.some((message) => message.type === 'forwardToSigner'), false)
+		assert.equal(readStoredValue('pendingTransactionsAndMessages'), undefined)
+		assert.equal(openedWindowsOrTabs, 0)
+		return { changeSimulationMode, setUseSignersAddressAsActiveAddress, request, replyTo, account }
+	}
+
+	test('refuses EIP-5792 call batches in signing mode before opening a confirmation, and answers bundle status locally', async () => {
+		const { changeSimulationMode, setUseSignersAddressAsActiveAddress, request, replyTo, account } = await expectSigningModeToRefuseCallBatches(undefined)
+
+		// Simulation mode adds approved batches to the simulation stack, which has no bundle status UI.
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: account })
+		await setUseSignersAddressAsActiveAddress(false)
+		await request(7, 'wallet_showCallsStatus', ['0x01'])
+		assert.equal(replyTo(7)?.error?.code, 4200)
+	})
+
+	test('refuses EIP-5792 call batches in signing mode on networks without an Interceptor RPC too', async () => {
+		await expectSigningModeToRefuseCallBatches({ name: 'Signer only', chainId: 1n, httpsRpc: undefined, currencyName: 'Ether?', currencyTicker: 'ETH?', primary: false, minimized: true })
 	})
 
 	test('preserves transaction-free overlays without running transaction preparation', async () => {

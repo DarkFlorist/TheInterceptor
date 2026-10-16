@@ -141,7 +141,7 @@ describe('background eth_accounts', () => {
 		assert.deepEqual(ethAccountsReplies.at(-1)?.result, ['0x2222222222222222222222222222222222222222'])
 	})
 
-	test('refreshes an approved signer account before forwarding wallet_getCapabilities', async () => {
+	test('refreshes an approved signer account before answering wallet_getCapabilities locally', async () => {
 		installBrowserMock()
 		const {
 			handleInterceptedRequest,
@@ -189,11 +189,12 @@ describe('background eth_accounts', () => {
 		assert.deepEqual(messages.find((message) => message.method === 'wallet_getCapabilities'), {
 			interceptorApproved: true,
 			requestId: 8,
-			type: 'forwardToSigner',
-			replyWithSignersReply: true,
+			bridgeRequestSettled: true,
+			type: 'result',
 			method: 'wallet_getCapabilities',
-			params: [accountString, ['0x2105']],
+			result: {},
 		})
+		assert.equal(messages.some((message) => message.type === 'forwardToSigner'), false)
 	})
 
 	test('routes one tab-wide signer refresh while serializing passive and interactive discovery', async () => {

@@ -1,5 +1,5 @@
 import * as funtypes from 'funtypes'
-import { CanonicalEthereumQuantity, EthereumAccessList, EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumBlockTag, EthereumBytes256, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumSignatureParity, LiteralConverterParserFactory } from './wire-types.js'
+import { BytesParser, CanonicalEthereumQuantity, EthereumAccessList, EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumBlockTag, EthereumBytes256, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumSignatureParity, LiteralConverterParserFactory } from './wire-types.js'
 import { areEqualUint8Arrays } from '../utils/typed-arrays.js'
 import { EthSimulateV1Params } from './ethSimulate-types.js'
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './jsonRpc-signing-types.js'
@@ -334,6 +334,86 @@ export const WalletGetCapabilities = funtypes.ReadonlyObject({
 	),
 }).asReadonly()
 
+export const WALLET_SEND_CALLS_VERSION = '2.0.0'
+
+// EIP-5792 call bundle identifiers are at most 4096 bytes, which is 8194 characters including the 0x prefix.
+const WalletCallsId = funtypes.String.withConstraint((id) => id.length > 0 && id.length <= 8194)
+
+// Capability payloads are wallet-specific. Only the `optional` marker matters here because the Interceptor implements no wallet_sendCalls capabilities.
+export type WalletSendCallsCapabilities = funtypes.Static<typeof WalletSendCallsCapabilities>
+const WalletSendCallsCapabilities = funtypes.ReadonlyRecord(funtypes.String, funtypes.ReadonlyPartial({ optional: funtypes.Boolean }))
+
+// EIP-5792 call data must be 0x-prefixed, unlike the lenient transaction data parser.
+const PrefixedEthereumData = funtypes.String.withParser({
+	...BytesParser,
+	parse: (data) => /^0x(?:[a-fA-F0-9]{2})*$/.test(data) ? BytesParser.parse(data) : { success: false, message: `${ data } is not 0x-prefixed hex encoded data.` },
+})
+
+// Sealed so unknown call fields, such as gas or from, are rejected instead of being silently dropped from what the user reviews.
+const WalletSendCallsCall = funtypes.Sealed(funtypes.ReadonlyPartial({
+	to: EthereumAddress,
+	data: PrefixedEthereumData,
+	value: EthereumQuantity,
+	capabilities: WalletSendCallsCapabilities,
+}))
+
+export type WalletSendCalls = funtypes.Static<typeof WalletSendCalls>
+export const WalletSendCalls = funtypes.ReadonlyObject({
+	method: funtypes.Literal('wallet_sendCalls'),
+	params: funtypes.ReadonlyTuple(funtypes.Sealed(funtypes.ReadonlyObject({
+		version: funtypes.Literal(WALLET_SEND_CALLS_VERSION),
+		chainId: CanonicalEthereumQuantity,
+		atomicRequired: funtypes.Boolean,
+		calls: funtypes.ReadonlyArray(WalletSendCallsCall),
+	}).And(funtypes.ReadonlyPartial({
+		id: WalletCallsId,
+		from: EthereumAddress,
+		capabilities: WalletSendCallsCapabilities,
+	})))),
+}).asReadonly()
+
+export type WalletSendCallsResult = funtypes.Static<typeof WalletSendCallsResult>
+export const WalletSendCallsResult = funtypes.ReadonlyObject({ id: WalletCallsId })
+
+export type WalletGetCallsStatus = funtypes.Static<typeof WalletGetCallsStatus>
+export const WalletGetCallsStatus = funtypes.ReadonlyObject({
+	method: funtypes.Literal('wallet_getCallsStatus'),
+	params: funtypes.ReadonlyTuple(WalletCallsId),
+}).asReadonly()
+
+export type WalletShowCallsStatus = funtypes.Static<typeof WalletShowCallsStatus>
+export const WalletShowCallsStatus = funtypes.ReadonlyObject({
+	method: funtypes.Literal('wallet_showCallsStatus'),
+	params: funtypes.ReadonlyTuple(WalletCallsId),
+}).asReadonly()
+
+export type WalletCallsReceipt = funtypes.Static<typeof WalletCallsReceipt>
+const WalletCallsReceipt = funtypes.ReadonlyObject({
+	logs: funtypes.ReadonlyArray(funtypes.ReadonlyObject({
+		address: EthereumAddress,
+		data: EthereumInput,
+		topics: funtypes.ReadonlyArray(EthereumBytes32),
+	})),
+	status: funtypes.Union(
+		funtypes.Literal('0x0').withParser(LiteralConverterParserFactory('0x0', 'failure' as const)),
+		funtypes.Literal('0x1').withParser(LiteralConverterParserFactory('0x1', 'success' as const)),
+	),
+	blockHash: EthereumBytes32,
+	blockNumber: EthereumQuantity,
+	gasUsed: EthereumQuantity,
+	transactionHash: EthereumBytes32,
+})
+
+export type WalletGetCallsStatusResult = funtypes.Static<typeof WalletGetCallsStatusResult>
+export const WalletGetCallsStatusResult = funtypes.ReadonlyObject({
+	version: funtypes.Literal(WALLET_SEND_CALLS_VERSION),
+	id: WalletCallsId,
+	chainId: EthereumQuantity,
+	status: funtypes.Number,
+	atomic: funtypes.Boolean,
+	receipts: funtypes.ReadonlyArray(WalletCallsReceipt),
+})
+
 export type GetTransactionCount = funtypes.Static<typeof GetTransactionCount>
 export const GetTransactionCount = funtypes.ReadonlyObject({
 	method: funtypes.Literal('eth_getTransactionCount'),
@@ -500,6 +580,9 @@ export const EthereumJsonRpcRequest = funtypes.Union(
 	RequestPermissions,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_getPermissions') }),
 	WalletGetCapabilities,
+	WalletSendCalls,
+	WalletGetCallsStatus,
+	WalletShowCallsStatus,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_accounts') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_requestAccounts') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_gasPrice') }),

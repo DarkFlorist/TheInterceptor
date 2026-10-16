@@ -133,6 +133,8 @@ export const PreSimulationTransaction = funtypes.ReadonlyObject({
 		requiredChainId: EthereumQuantity,
 		simulateWithZeroBaseFee: funtypes.Boolean,
 	}),
+	// Set on calls added by an approved simulation-mode wallet_sendCalls so wallet_getCallsStatus can find them.
+	walletSendCallsBatchId: funtypes.String,
 }))
 
 export type SimulatedTransaction = funtypes.Static<typeof SimulatedTransaction>

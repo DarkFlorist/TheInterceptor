@@ -3,22 +3,52 @@ import { appendTransactionsToInput } from '../simulation/services/SimulationMode
 import { getSignedTransactionForSimulation } from '../simulation/services/simulationTransactionSigning.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { createSafeExecutionPreSimulationTransaction, createSafeSigningSimulationInput } from '../safe/safeSimulation.js'
-import type { ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
+import type { ConfirmTransactionBatchVisualization, ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
 import type { SafeTransactionSigningRequest } from '../types/safeTypes.js'
-import type { WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
+import type { PreSimulationTransaction, SimulationStateInput, WebsiteCreatedEthereumTransaction, WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
 import { last } from '../utils/array.js'
 import { NEW_BLOCK_ABORT, JSON_RPC_ERROR_CODE_INTERNAL_ERROR } from '../utils/constants.js'
 import { decodeEthereumError } from '../utils/errorDecoding.js'
-import { JsonRpcResponseError, reportUnexpectedError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
-import type { UniqueRequestIdentifier } from '../utils/requests.js'
+import { JsonRpcResponseError, reportUnexpectedError, isExpectedInfrastructureError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
+import { doesUniqueRequestIdentifiersMatch, type UniqueRequestIdentifier } from '../utils/requests.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { identifyAddress } from './metadataUtils.js'
 import { getSimulationErrorAbis } from './simulationErrorAbi.js'
 import { createSimulationStateWithNonceAndBaseFeeFixing, getCurrentSimulationInput, visualizeSimulatorState } from './simulationUpdating.js'
 import { getInterceptorTransactionStack, getTabState } from './storageVariables.js'
 
+export const toPreSimulationTransaction = (transaction: WebsiteCreatedEthereumTransaction): PreSimulationTransaction => ({
+	signedTransaction: getSignedTransactionForSimulation(transaction),
+	website: transaction.website,
+	created: transaction.created,
+	originalRequestParameters: transaction.originalRequestParameters,
+	transactionIdentifier: transaction.transactionIdentifier,
+})
+
 let confirmTransactionAbortController = new AbortController()
 export const getConfirmTransactionAbortController = () => confirmTransactionAbortController
+// The confirmation simulation run that started simulating last, which owns confirmTransactionAbortController.
+let runningConfirmationSimulation: { readonly uniqueRequestIdentifier: UniqueRequestIdentifier, readonly simulationId: number } | undefined
+
+let latestConfirmationSimulationId = 0
+// Every confirmation simulation run gets a new id, which the confirmation metadata refresh uses to tell the run it re-visualized from a newer one, and which keeps a newer stored run from being replaced by an older run that finishes later; stored timestamps keep only whole seconds, so they cannot. Callers take the id before the run reads the simulation stack or prepares its transactions, so a run with a newer id never works from older inputs. As in bumpPopupRefreshGeneration, the id is the millisecond clock bumped past the previous id, so ids increase within a background session and ids stored before a background restart are not handed out again unless the system clock went backwards.
+export function getNextConfirmationSimulationId() {
+	latestConfirmationSimulationId = Math.max(latestConfirmationSimulationId + 1, Date.now())
+	return latestConfirmationSimulationId
+}
+
+// Each confirmation simulation supersedes the one still running, whose results would be stale by the time they arrive. A run is superseded itself when a newer run of the same confirmation has already started simulating, for example because this run's preparation took longer: it then starts nothing, aborts nothing and returns undefined.
+function startConfirmTransactionSimulation(uniqueRequestIdentifier: UniqueRequestIdentifier, simulationId: number) {
+	if (runningConfirmationSimulation !== undefined
+		&& runningConfirmationSimulation.simulationId > simulationId
+		&& doesUniqueRequestIdentifiersMatch(runningConfirmationSimulation.uniqueRequestIdentifier, uniqueRequestIdentifier)
+	) return undefined
+	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' }, 'confirmTransaction')
+	confirmTransactionAbortController.abort(NEW_BLOCK_ABORT)
+	confirmTransactionAbortController = new AbortController()
+	runningConfirmationSimulation = { uniqueRequestIdentifier, simulationId }
+	return confirmTransactionAbortController
+}
 
 export async function refreshConfirmTransactionSimulation(
 	ethereum: EthereumClientService,
@@ -26,6 +56,7 @@ export async function refreshConfirmTransactionSimulation(
 	activeAddress: bigint,
 	simulationMode: boolean,
 	uniqueRequestIdentifier: UniqueRequestIdentifier,
+	simulationId: number,
 	transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed,
 	safeSigningRequest?: SafeTransactionSigningRequest,
 ): Promise<ConfirmTransactionTransactionSingleVisualization | undefined> {
@@ -36,11 +67,10 @@ export async function refreshConfirmTransactionSimulation(
 		activeAddress,
 		signerName: (await getTabState(uniqueRequestIdentifier.requestSocket.tabId)).signerName,
 		tabIdOpenedFrom: uniqueRequestIdentifier.requestSocket.tabId,
+		simulationId,
 	}
-	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' }, 'confirmTransaction')
-	confirmTransactionAbortController.abort(NEW_BLOCK_ABORT)
-	confirmTransactionAbortController = new AbortController()
-	const thisConfirmTransactionAbortController = confirmTransactionAbortController
+	const thisConfirmTransactionAbortController = startConfirmTransactionSimulation(uniqueRequestIdentifier, simulationId)
+	if (thisConfirmTransactionAbortController === undefined) return undefined
 	const simulationStartedTimestamp = new Date()
 	const simulationInput = safeSigningRequest === undefined
 		? await getCurrentSimulationInput()
@@ -49,13 +79,7 @@ export async function refreshConfirmTransactionSimulation(
 		const getNewVisualizedSimulationState = async () => {
 			const preSimulationTransaction = transactionToSimulate.success
 				? safeSigningRequest === undefined
-					? {
-						signedTransaction: getSignedTransactionForSimulation(transactionToSimulate),
-						website: transactionToSimulate.website,
-						created: transactionToSimulate.created,
-						originalRequestParameters: transactionToSimulate.originalRequestParameters,
-						transactionIdentifier: transactionToSimulate.transactionIdentifier
-					}
+					? toPreSimulationTransaction(transactionToSimulate)
 					: createSafeExecutionPreSimulationTransaction(transactionToSimulate, safeSigningRequest)
 				: undefined
 			const simulationStateWithNewTransaction = preSimulationTransaction === undefined
@@ -126,5 +150,41 @@ export async function refreshConfirmTransactionSimulation(
 				simulationConductedTimestamp: new Date()
 			}
 		} }
+	}
+}
+
+// Simulates and visualizes a simulation input that already contains every prepared batch call. Protectors run over each call while the simulation is visualized. Like the single-transaction simulation, it returns undefined when it was superseded or the RPC was unreachable, so the previous results stay in place.
+export async function simulateConfirmTransactionBatch(
+	ethereum: EthereumClientService,
+	tokenPriceService: TokenPriceService,
+	activeAddress: bigint,
+	simulationMode: boolean,
+	uniqueRequestIdentifier: UniqueRequestIdentifier,
+	simulationId: number,
+	simulationInputWithBatch: SimulationStateInput,
+): Promise<ConfirmTransactionBatchVisualization | undefined> {
+	const info = {
+		uniqueRequestIdentifier,
+		simulationMode,
+		activeAddress,
+		signerName: (await getTabState(uniqueRequestIdentifier.requestSocket.tabId)).signerName,
+		simulationStartedTimestamp: new Date(),
+		simulationId,
+	}
+	const thisConfirmTransactionAbortController = startConfirmTransactionSimulation(uniqueRequestIdentifier, simulationId)
+	if (thisConfirmTransactionAbortController === undefined) return undefined
+	try {
+		const visualizedSimulatorState = await visualizeSimulatorState(await createSimulationStateWithNonceAndBaseFeeFixing(simulationInputWithBatch, ethereum), ethereum, tokenPriceService, thisConfirmTransactionAbortController)
+		if (visualizedSimulatorState.visualizedSimulationState.success === false) {
+			const error = visualizedSimulatorState.visualizedSimulationState.jsonRpcError.error
+			return { statusCode: 'failed', data: { ...info, error: { ...error, decodedErrorMessage: error.message }, simulationState: { blockNumber: visualizedSimulatorState.simulationState.blockNumber, simulationConductedTimestamp: new Date() } } }
+		}
+		return { statusCode: 'success', data: { ...info, ...visualizedSimulatorState } }
+	} catch (error) {
+		if (isExpectedInfrastructureError(error)) return undefined
+		if (!(error instanceof JsonRpcResponseError)) await reportUnexpectedError(error, { code: 'confirm_transaction_batch_simulation_failed' })
+		const message = error instanceof Error ? error.message : 'Unknown simulation error'
+		const code = error instanceof JsonRpcResponseError ? error.code : JSON_RPC_ERROR_CODE_INTERNAL_ERROR
+		return { statusCode: 'failed', data: { ...info, error: { code, message, decodedErrorMessage: message }, simulationState: { blockNumber: 0n, simulationConductedTimestamp: new Date() } } }
 	}
 }

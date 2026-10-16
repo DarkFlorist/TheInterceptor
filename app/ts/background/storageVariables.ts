@@ -402,6 +402,19 @@ export async function updateInterceptorTransactionStack(updateFunc: (prevStack: 
 	})
 }
 
+// Reads the stack, then asks getRefusal about it as the last step before writing, all inside the stack's write lock, and writes nothing when it returns a refusal. No other stack update can come between, and nothing is awaited between getRefusal's last read and the write.
+export async function updateInterceptorTransactionStackUnlessRefused<Refusal>(getRefusal: (currentStack: InterceptorTransactionStack) => Promise<Refusal | undefined>, updateFunc: (prevStack: InterceptorTransactionStack) => InterceptorTransactionStack): Promise<Refusal | undefined> {
+	return await transactionStateSemaphore.execute(async () => {
+		const prevStack = await getInterceptorTransactionStack()
+		const refusal = await getRefusal(prevStack)
+		if (refusal !== undefined) return refusal
+		const interceptorTransactionStack = updateFunc(prevStack)
+		assertUniqueInterceptorTransactionIds(interceptorTransactionStack)
+		await setLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack, interceptorTransactionStack)
+		return undefined
+	})
+}
+
 export const getSafeTransactionStacks = async () => await getLargeStateValue('safeTransactionStacks', SafeTransactionStacks) ?? []
 
 function assertUniqueInterceptorTransactionIds(interceptorTransactionStack: InterceptorTransactionStack) {
