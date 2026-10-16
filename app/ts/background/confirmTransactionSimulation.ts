@@ -38,6 +38,7 @@ const getFailedTransactionContents = (transactionToSimulate: WebsiteCreatedEther
 	const transaction = request.params[0]
 	const requestedAddresses = [transaction.from, transaction.to, ...(transaction.authorizationList ?? []).map((authorization) => authorization.address)]
 	return {
+		// Request validation (JsonRpc-types) rejects a transaction whose input and data both exist but differ, so this preview and the dialog's raw input view show the same calldata whichever field they read first.
 		call: { to: transaction.to, value: transaction.value ?? 0n, input: getInputFieldFromDataOrInput(transaction) },
 		addresses: requestedAddresses.filter((address): address is bigint => address !== undefined && address !== null),
 	}
