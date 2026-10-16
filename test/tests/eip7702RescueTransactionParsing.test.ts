@@ -279,6 +279,7 @@ function makeSimulatedPendingRawTransaction(transactionToSimulate: WebsiteCreate
 		activeAddress: transactionToSimulate.transaction.from,
 		created: transactionToSimulate.created,
 		transactionIdentifier: transactionToSimulate.transactionIdentifier,
+		requestedChainId: rpcNetwork.chainId,
 		transactionToSimulate,
 		website: transactionToSimulate.website,
 		approvalStatus: { status: 'WaitingForUser' },

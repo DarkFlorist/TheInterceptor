@@ -562,6 +562,7 @@ export const pendingTransaction = {
 		activeAddress,
 		created,
 		transactionIdentifier: 1n,
+		requestedChainId: fakeRpcNetwork.chainId,
 		website: popupVisualisation.data.transactionToSimulate.website,
 		approvalStatus: { status: 'WaitingForUser' },
 		popupVisualisation,
@@ -573,6 +574,7 @@ export async function resetConfirmTransactionTestState() {
 	browserMock.reset()
 	resetFakeSafeContractState()
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [pendingTransaction] })
+	await modules.browserStorageLocalSet({ activeRpcNetwork: fakeRpcNetwork })
 	await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
 }
 export function createDisconnectedPort() {

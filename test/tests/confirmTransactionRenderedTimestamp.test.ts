@@ -629,7 +629,7 @@ describe('ConfirmTransaction', () => {
 		}
 
 		await browserStorageLocalSet2({
-			pendingTransactionsAndMessages: [olderPendingTransaction],
+			pendingTransactionsAndMessages: [{ ...olderPendingTransaction, requestedChainId: fakeRpcNetwork.chainId }],
 		})
 		await updateInterceptorTransactionStack(() => ({ operations: [] }))
 
