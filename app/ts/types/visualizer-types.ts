@@ -182,6 +182,8 @@ export const SignedMessageTransaction = funtypes.ReadonlyObject({
 	safeMessageReview: SafeMessageReview,
 	// Older persisted stacks predate the distinction between the active Safe and its simulation signer.
 	activeAddress: EthereumAddress,
+	// URL scheme (for example 'https') of the frame that requested the signature, since `website.websiteOrigin` only keeps the host and port. Older persisted stacks predate it.
+	websiteScheme: funtypes.String,
 }))
 
 export type SimulationStateInputBlock = funtypes.Static<typeof SimulationStateInputBlock>

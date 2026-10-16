@@ -67,6 +67,20 @@ export const CellElement = (param: { text: ComponentChildren, useLegibleFont?: b
 	</div>
 }
 
+// Values that must be read or compared character by character are wrapped instead of truncated, so they stay complete in narrow popups.
+export function ExactValue({ label, value }: { label: string, value: string }) {
+	return <>
+		<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ label }</p>
+		<p class = 'paragraph text-legible' style = 'overflow-wrap: anywhere'>{ value }</p>
+	</>
+}
+
+// Signers and signed messages show the numeric chain id, so keep it visible next to the human-readable name.
+export function getChainNameWithId(chainId: bigint) {
+	const chainName = CHAIN_NAMES.get(chainId.toString(10))
+	return chainName === undefined ? chainId.toString(10) : `${ chainName } (${ chainId.toString(10) })`
+}
+
 export const getAddressBookEntryOrAFiller = (addressMetaData: readonly AddressBookEntry[], addressToFind: EthereumAddress) => {
 	const foundEntry = addressMetaData.find((entry) => entry.address === addressToFind)
 	if (foundEntry !== undefined) return foundEntry
