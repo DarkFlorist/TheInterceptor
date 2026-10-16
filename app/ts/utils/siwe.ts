@@ -9,8 +9,12 @@ const HEADER_PATTERN = /^(?:([A-Za-z][A-Za-z0-9+.-]*):\/\/)?(\S+) wants you to s
 const AUTHORITY_PATTERN = /^(?:[A-Za-z0-9\-._~!$&'()*+,;=:]*@)?(?:\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9\-._~!$&'()*+,;=]+)(?::[0-9]*)?$/u
 // RFC 3986 reserved and unreserved characters plus space, which excludes line breaks.
 const STATEMENT_PATTERN = /^[A-Za-z0-9\-._~:/?#[\]@!$&'()*+,;= ]*$/u
-// A character level RFC 3986 URI check: a scheme followed by URI characters, with valid percent-encoding and at most one fragment.
-const URI_PATTERN = /^[A-Za-z][A-Za-z0-9+.-]*:(?:[A-Za-z0-9\-._~:/?[\]@!$&'()*+,;=]|%[0-9A-Fa-f]{2})*(?:#(?:[A-Za-z0-9\-._~:/?@!$&'()*+,;=]|%[0-9A-Fa-f]{2})*)?$/u
+// RFC 3986 `pchar`: the characters of a path segment, also used by queries and fragments.
+const URI_PCHAR = /(?:[A-Za-z0-9\-._~!$&'()*+,;=:@]|%[0-9A-Fa-f]{2})/u
+// RFC 3986 `authority = [ userinfo "@" ] host [ ":" port ]`. The characters of an IP literal are checked here and its exact IPv6 syntax by the URL parser in isSiweUri.
+const URI_AUTHORITY = /(?:(?:[A-Za-z0-9\-._~!$&'()*+,;=:]|%[0-9A-Fa-f]{2})*@)?(?:\[[0-9A-Fa-f:.]+\]|(?:[A-Za-z0-9\-._~!$&'()*+,;=]|%[0-9A-Fa-f]{2})*)(?::[0-9]*)?/u
+// RFC 3986 `URI = scheme ":" hier-part [ "?" query ] [ "#" fragment ]`, where `hier-part` is "//" with an authority and an absolute path, or a path that does not start with "//". It covers opaque URIs such as `did:` and `urn:` as well as `https://` and `ipfs://` ones.
+const URI_PATTERN = new RegExp(`^[A-Za-z][A-Za-z0-9+.-]*:(?://${ URI_AUTHORITY.source }(?:/${ URI_PCHAR.source }*)*|/?(?:${ URI_PCHAR.source }+(?:/${ URI_PCHAR.source }*)*)?)(?:[?](?:${ URI_PCHAR.source }|[/?])*)?(?:#(?:${ URI_PCHAR.source }|[/?])*)?$`, 'u')
 const CHAIN_ID_PATTERN = /^[0-9]+$/u
 const NONCE_PATTERN = /^[A-Za-z0-9]{8,}$/u
 // RFC 3986 pchar.
@@ -49,6 +53,20 @@ export function parseSiweDateTime(text: string): Date | undefined {
 	date.setUTCHours(hour, minute, second, Number(fraction.padEnd(3, '0').slice(0, 3)))
 	return new Date(date.getTime() - offsetSign * (offsetHours * 60 + offsetMinutes) * 60_000)
 }
+
+// Undefined means the text is not a URL, so the domain never matches the requesting website and a URI field does not conform.
+function parseUrl(text: string) {
+	try {
+		return new URL(text)
+	} catch (error: unknown) {
+		// `new URL` reports unparseable input with a TypeError; anything else is unexpected and propagates.
+		if (error instanceof TypeError) return undefined
+		throw error
+	}
+}
+
+// The `URI:` field and each resource must be RFC 3986 URIs. The grammar check is completed by the URL parser, which rejects malformed IP literals such as `[abc]`; it is slightly stricter than RFC 3986, for example about ports above 65535, and such a message only falls back to the look-alike warning.
+const isSiweUri = (text: string) => URI_PATTERN.test(text) && parseUrl(text) !== undefined
 
 export function parseSiweMessage(message: string): SiweMessage | undefined {
 	const lines = message.split('\n')
@@ -89,7 +107,7 @@ export function parseSiweMessage(message: string): SiweMessage | undefined {
 	// Fields are only read in the order the ABNF lists them, so a field out of order, an unknown line or a trailing line break is left over here.
 	if (lineIndex !== lines.length) return undefined
 
-	if (uri === undefined || !URI_PATTERN.test(uri)) return undefined
+	if (uri === undefined || !isSiweUri(uri)) return undefined
 	if (version !== '1') return undefined
 	if (chainIdText === undefined || !CHAIN_ID_PATTERN.test(chainIdText)) return undefined
 	if (nonce === undefined || !NONCE_PATTERN.test(nonce)) return undefined
@@ -98,7 +116,7 @@ export function parseSiweMessage(message: string): SiweMessage | undefined {
 	if (notBefore !== undefined && parseSiweDateTime(notBefore) === undefined) return undefined
 	if (requestId !== undefined && !REQUEST_ID_PATTERN.test(requestId)) return undefined
 	if (!STATEMENT_PATTERN.test(statementLine)) return undefined
-	if (!resources.every((resource) => URI_PATTERN.test(resource))) return undefined
+	if (!resources.every(isSiweUri)) return undefined
 
 	const parsedMessage: SiweMessage = {
 		scheme: header[1],
@@ -135,17 +153,6 @@ export function getSiweValidityWarnings(message: SiweMessage, now: Date): readon
 export const getSiweOriginText = (message: SiweMessage) => message.scheme === undefined ? message.domain : `${ message.scheme }://${ message.domain }`
 
 export const getSiweScheme = (message: SiweMessage) => (message.scheme ?? SIWE_DEFAULT_SCHEME).toLowerCase()
-
-// Undefined means the text is not a URL, so the domain never matches the requesting website.
-function parseUrl(text: string) {
-	try {
-		return new URL(text)
-	} catch (error: unknown) {
-		// `new URL` reports unparseable input with a TypeError; anything else is unexpected and propagates.
-		if (error instanceof TypeError) return undefined
-		throw error
-	}
-}
 
 // Normalizes the domain the way `Website.websiteOrigin` is built: lowercase host, and no port when it is the default port of the message scheme. Returns undefined when the domain carries userinfo (`user@host`), which websites never have and which can be used to disguise the real host, or when it is not a valid URL authority. Userinfo is detected from the raw text because URL parsing reports an empty userinfo (`@host`, `:@host`) as no userinfo at all.
 export function getSiweDomainAsWebsiteOrigin(message: SiweMessage) {

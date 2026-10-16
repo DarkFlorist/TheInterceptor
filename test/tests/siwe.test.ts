@@ -20,6 +20,8 @@ const siweMessage = ({ header = HEADER, address = CHECKSUMMED_ADDRESS, statement
 const minimalMessage = siweMessage()
 
 const withChainId = (chainId: string) => siweMessage({ fields: REQUIRED_FIELDS.map((field) => field === 'Chain ID: 1' ? `Chain ID: ${ chainId }` : field) })
+const withUri = (uri: string) => siweMessage({ fields: REQUIRED_FIELDS.map((field) => field.startsWith('URI: ') ? `URI: ${ uri }` : field) })
+const withResource = (resource: string) => siweMessage({ fields: [...REQUIRED_FIELDS, 'Resources:', `- ${ resource }`] })
 
 // The EIP-4361 example with an explicit scheme, extended with every optional field.
 const fullMessage = siweMessage({
@@ -114,7 +116,13 @@ describe('Sign-In with Ethereum message parsing', () => {
 		['a field tag in the wrong case', siweMessage({ fields: REQUIRED_FIELDS.map((field) => field.replace('URI: ', 'uri: ')) })],
 		['a hexadecimal chain ID', withChainId('0x1')],
 		['a chain ID of 2^256, which the stored message cannot hold', withChainId((2n ** 256n).toString())],
-		['a URI without a scheme', siweMessage({ fields: REQUIRED_FIELDS.map((field) => field.startsWith('URI: ') ? 'URI: example.com/login' : field) })],
+		['a URI without a scheme', withUri('example.com/login')],
+		['a URI with a port that is not a number', withUri('https://example.com:abc/login')],
+		['a URI with a bracketed host that is not an IP address', withUri('https://[not-an-ip]/login')],
+		['a URI with a bracketed host made of IPv6 characters that is not an IPv6 address', withUri('https://[abc]/login')],
+		['a URI with brackets outside its host', withUri('https://example.com/login[1]')],
+		['a resource with a port that is not a number', withResource('https://example.com:abc/claim.json')],
+		['a resource with a bracketed host that is not an IP address', withResource('https://[not-an-ip]/claim.json')],
 		['an impossible date', siweMessage({ fields: REQUIRED_FIELDS.map((field) => field.startsWith('Issued At: ') ? 'Issued At: 2021-02-30T16:25:24Z' : field) })],
 		['a date with a space instead of "T"', siweMessage({ fields: REQUIRED_FIELDS.map((field) => field.startsWith('Issued At: ') ? 'Issued At: 2021-09-30 16:25:24Z' : field) })],
 		['an unknown field', siweMessage({ fields: [...REQUIRED_FIELDS, 'Wallet: anything'] })],
@@ -132,6 +140,22 @@ describe('Sign-In with Ethereum message parsing', () => {
 			assert.equal(looksLikeSiweMessage(message), true)
 		})
 	}
+
+	test('accepts the URI forms sign-in messages use, both as the URI and as a resource', () => {
+		for (const uri of [
+			'https://example.com',
+			'http://localhost:3000/login',
+			'https://user@example.com:3388/login?next=%2F&lang=en#top',
+			'https://[2001:db8::1]:8443/login',
+			'ipfs://bafybeiemxf5abjwjbikoz4mc3a3dla6ual3jsgpdr4cjr3oz3evfyavhwq/',
+			'did:pkh:eip155:1:0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+			'urn:recap:eyJhdHQiOnsiaHR0cHM6Ly9leGFtcGxlLmNvbSI6e319fQ',
+			'mailto:user@example.com',
+		]) {
+			assert.equal(parseSiweMessage(withUri(uri))?.uri, uri, uri)
+			assert.deepEqual(parseSiweMessage(withResource(uri))?.resources, [uri], uri)
+		}
+	})
 
 	test('parses the largest chain ID the stored message can hold, and the result serializes', () => {
 		const parsed = parseSiweMessage(withChainId((2n ** 256n - 1n).toString()))

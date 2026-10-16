@@ -63,13 +63,13 @@ const installBrowserStorageMock = () => {
 	return () => { Object.defineProperty(globalThis, 'browser', { value: previousBrowser, configurable: true, writable: true }) }
 }
 
-const siweText = ({ domain = 'example.com', address = VITALIK_CHECKSUMMED, chainId = '1', optionalFields = [] }: { domain?: string, address?: string, chainId?: string, optionalFields?: readonly string[] } = {}) => [
+const siweText = ({ domain = 'example.com', address = VITALIK_CHECKSUMMED, uri = 'https://example.com/login', chainId = '1', optionalFields = [] }: { domain?: string, address?: string, uri?: string, chainId?: string, optionalFields?: readonly string[] } = {}) => [
 	`${ domain } wants you to sign in with your Ethereum account:`,
 	address,
 	'',
 	'I accept the ExampleOrg Terms of Service: https://example.com/tos',
 	'',
-	'URI: https://example.com/login',
+	`URI: ${ uri }`,
 	'Version: 1',
 	`Chain ID: ${ chainId }`,
 	'Nonce: 32891756',
@@ -176,6 +176,20 @@ describe('Sign-In with Ethereum personal_sign visualization', () => {
 		assert.equal(visualized.type, 'NotParsed')
 		assert.equal(visualized.quarantine, true)
 		assert.deepEqual(visualized.quarantineReasons, [SIWE_LOOKALIKE_QUARANTINE_REASON])
+	})
+
+	test('quarantines a message with a malformed URI or resource even when its website, account and chain match', async () => {
+		for (const text of [
+			siweText({ uri: 'https://example.com:abc/login' }),
+			siweText({ uri: 'https://[not-an-ip]/login' }),
+			siweText({ optionalFields: ['Resources:', '- https://example.com:abc/claim.json'] }),
+			siweText({ optionalFields: ['Resources:', '- https://[not-an-ip]/claim.json'] }),
+		]) {
+			const visualized = await visualize(text)
+			assert.equal(visualized.type, 'NotParsed', text)
+			assert.equal(visualized.quarantine, true, text)
+			assert.deepEqual(visualized.quarantineReasons, [SIWE_LOOKALIKE_QUARANTINE_REASON], text)
+		}
 	})
 
 	test('quarantines a percent-encoded domain instead of matching its decoded host', async () => {
