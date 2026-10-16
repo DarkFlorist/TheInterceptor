@@ -3,47 +3,29 @@ import { appendTransactionsToInput } from '../simulation/services/SimulationMode
 import { getSignedTransactionForSimulation } from '../simulation/services/simulationTransactionSigning.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { createSafeExecutionPreSimulationTransaction, createSafeSigningSimulationInput } from '../safe/safeSimulation.js'
-import type { ConfirmTransactionTransactionSingleVisualization, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
+import type { ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
 import type { SafeTransactionSigningRequest } from '../types/safeTypes.js'
-import type { SimulationState, WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
+import type { WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
 import { last } from '../utils/array.js'
 import { NEW_BLOCK_ABORT, JSON_RPC_ERROR_CODE_INTERNAL_ERROR } from '../utils/constants.js'
 import { decodeEthereumError } from '../utils/errorDecoding.js'
 import { JsonRpcResponseError, reportUnexpectedError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
-import { doesUniqueRequestIdentifiersMatch, type UniqueRequestIdentifier } from '../utils/requests.js'
-import { Semaphore } from '../utils/semaphore.js'
-import { modifyObject } from '../utils/typescript.js'
+import type { UniqueRequestIdentifier } from '../utils/requests.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
+import { cancelConfirmationRelabel, visualizeConfirmationWithLatestAddressBook } from './confirmationRelabel.js'
 import { identifyAddress } from './metadataUtils.js'
 import { getSimulationErrorAbis } from './simulationErrorAbi.js'
-import { createSimulationStateWithNonceAndBaseFeeFixing, getCurrentSimulationInput, isSameSimulationRun, revisualizeSimulationMetadata, visualizeSimulatorState } from './simulationUpdating.js'
-import { getInterceptorTransactionStack, getPendingTransactionsAndMessages, getTabState, updatePendingTransactionOrMessage } from './storageVariables.js'
+import { createSimulationStateWithNonceAndBaseFeeFixing, getCurrentSimulationInput, visualizeSimulatorState } from './simulationUpdating.js'
+import { getInterceptorTransactionStack, getTabState } from './storageVariables.js'
 
 let confirmTransactionAbortController = new AbortController()
 export const getConfirmTransactionAbortController = () => confirmTransactionAbortController
 
 let latestConfirmationSimulationId = 0
-// Every confirmation simulation run gets a new id (see isSameSimulationRun). As in bumpPopupRefreshGeneration, the id is the millisecond clock bumped past the previous id, so ids increase within a background session and ids stored before a background restart are not handed out again unless the system clock went backwards.
+// Every confirmation simulation run gets a new id, which relabelStoredSimulation uses to tell a re-labelled run from a newer one. As in bumpPopupRefreshGeneration, the id is the millisecond clock bumped past the previous id, so ids increase within a background session and ids stored before a background restart are not handed out again unless the system clock went backwards.
 function getNextConfirmationSimulationId() {
 	latestConfirmationSimulationId = Math.max(latestConfirmationSimulationId + 1, Date.now())
 	return latestConfirmationSimulationId
-}
-
-// Counts requested confirmation re-labels, one per address-book change (see relabelDisplayedConfirmationSimulation).
-let confirmationRelabelRequests = 0
-
-// The confirmation re-label in progress; only a new simulation of the same request cancels it.
-let runningConfirmationRelabel: { readonly uniqueRequestIdentifier: UniqueRequestIdentifier, readonly abortController: AbortController } | undefined
-
-// A run whose name lookups overlap a re-label request may have read the old address book, and that re-label cannot see the run before it is stored, so the run labels itself again.
-async function visualizeConfirmationWithLatestAddressBook(simulationState: SimulationState, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, abortController: AbortController) {
-	let relabelRequestsBeforeLookups: number
-	let visualizedSimulatorState: Awaited<ReturnType<typeof visualizeSimulatorState>>
-	do {
-		relabelRequestsBeforeLookups = confirmationRelabelRequests
-		visualizedSimulatorState = await visualizeSimulatorState(simulationState, ethereum, tokenPriceService, abortController)
-	} while (relabelRequestsBeforeLookups !== confirmationRelabelRequests)
-	return visualizedSimulatorState
 }
 
 export async function refreshConfirmTransactionSimulation(
@@ -66,7 +48,8 @@ export async function refreshConfirmTransactionSimulation(
 	}
 	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' }, 'confirmTransaction')
 	confirmTransactionAbortController.abort(NEW_BLOCK_ABORT)
-	if (runningConfirmationRelabel !== undefined && doesUniqueRequestIdentifiersMatch(runningConfirmationRelabel.uniqueRequestIdentifier, uniqueRequestIdentifier)) runningConfirmationRelabel.abortController.abort(NEW_BLOCK_ABORT)
+	// This run replaces the stored run of its request, so an address-book re-label of that stored run is obsolete.
+	cancelConfirmationRelabel(uniqueRequestIdentifier)
 	confirmTransactionAbortController = new AbortController()
 	const thisConfirmTransactionAbortController = confirmTransactionAbortController
 	const simulationStartedTimestamp = new Date()
@@ -90,7 +73,8 @@ export async function refreshConfirmTransactionSimulation(
 				? simulationInput
 				: appendTransactionsToInput(simulationInput, [preSimulationTransaction], undefined, {}, safeSigningRequest !== undefined)
 			const updatedSimulationState = await createSimulationStateWithNonceAndBaseFeeFixing(simulationStateWithNewTransaction, ethereum)
-			return await visualizeConfirmationWithLatestAddressBook(updatedSimulationState, ethereum, tokenPriceService, thisConfirmTransactionAbortController)
+			// Address-book re-labels reach only stored confirmations, so name lookups that overlap a published address-book change are done again before this run is returned.
+			return await visualizeConfirmationWithLatestAddressBook(async () => await visualizeSimulatorState(updatedSimulationState, ethereum, tokenPriceService, thisConfirmTransactionAbortController))
 		}
 		const visualizedSimulatorState = await getNewVisualizedSimulationState()
 		const availableAbis = visualizedSimulatorState.addressBookEntries
@@ -155,39 +139,4 @@ export async function refreshConfirmTransactionSimulation(
 			}
 		} }
 	}
-}
-
-// Only a successful simulation of the displayed transaction, made on the services' chain by a version that identifies its runs, can be re-labelled; failed or still pending simulations show no names to re-label.
-function getConfirmationVisualisationToRelabel(pending: PendingTransactionOrSignableMessage | undefined, chainId: bigint) {
-	if (pending?.type !== 'Transaction' || pending.transactionOrMessageCreationStatus !== 'Simulated' || pending.popupVisualisation.statusCode !== 'success') return undefined
-	const visualisation = pending.popupVisualisation
-	if (visualisation.data.simulationId === undefined || visualisation.data.simulationState.rpcNetwork.chainId !== chainId) return undefined
-	return visualisation
-}
-
-// One re-label at a time, so the last one requested reads the latest address book.
-const confirmationRelabelSemaphore = new Semaphore(1)
-
-// Re-labels the stored run of the confirmation the dialog displays without simulating; see "Address-book re-labels" in docs/popup-simulation-refresh.md for its ordering, cancellation and known limitation.
-export async function relabelDisplayedConfirmationSimulation(ethereum: EthereumClientService, tokenPriceService: TokenPriceService) {
-	confirmationRelabelRequests += 1
-	await confirmationRelabelSemaphore.execute(async () => {
-		const [displayed] = await getPendingTransactionsAndMessages()
-		const visualisationToRelabel = getConfirmationVisualisationToRelabel(displayed, ethereum.getChainId())
-		if (displayed === undefined || visualisationToRelabel === undefined) return
-		const relabel = { uniqueRequestIdentifier: displayed.uniqueRequestIdentifier, abortController: new AbortController() }
-		runningConfirmationRelabel = relabel
-		try {
-			const simulationMetadata = await revisualizeSimulationMetadata(visualisationToRelabel.data.simulationState, ethereum, tokenPriceService, relabel.abortController)
-			// Lookups that made no further RPC request do not notice an abort; the newer run of this request labels itself instead.
-			if (relabel.abortController.signal.aborted) return
-			await updatePendingTransactionOrMessage(displayed.uniqueRequestIdentifier, async (current) => {
-				if (current.type !== 'Transaction' || current.transactionOrMessageCreationStatus !== 'Simulated' || current.popupVisualisation.statusCode !== 'success') return undefined
-				if (!isSameSimulationRun(current.popupVisualisation.data, visualisationToRelabel.data)) return undefined
-				return modifyObject(current, { popupVisualisation: { statusCode: 'success', data: modifyObject(current.popupVisualisation.data, simulationMetadata) } })
-			})
-		} finally {
-			runningConfirmationRelabel = undefined
-		}
-	})
 }

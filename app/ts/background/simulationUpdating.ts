@@ -606,14 +606,3 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 		visualizedSimulationState: { success: true, visualizedBlocks },
 	}
 }
-
-// Metadata-only refresh for an existing simulation: re-runs only the visualisation step (address-book names, ABI-parsed input, token metadata and prices, and protector warnings such as send-to-non-contact) without simulating again. The simulation state is left out of the result so callers keep their stored one, including its conducted timestamp.
-export async function revisualizeSimulationMetadata(simulationState: SimulationState, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, requestAbortController: AbortController | undefined) {
-	const { simulationState: _revisualizedSimulationState, ...simulationMetadata } = await visualizeSimulatorState(simulationState, ethereum, tokenPriceService, requestAbortController)
-	return simulationMetadata
-}
-
-// A re-label may only replace the simulation run it was computed from. Every new stack or confirmation simulation run stores a new simulationId, so a run stored during the re-label's lookups never matches, even on the same block within the same second. The id alone does not prove the stored result is still finished (a stack invalidation can be stored under the id of the run it raced with), so callers also re-check that before writing. A result stored without an id by an older version cannot be identified, so it never matches.
-export const isSameSimulationRun = (current: { readonly simulationId?: number }, relabelled: { readonly simulationId?: number }) => (
-	relabelled.simulationId !== undefined && current.simulationId === relabelled.simulationId
-)

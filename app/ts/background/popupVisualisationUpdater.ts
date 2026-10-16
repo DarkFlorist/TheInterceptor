@@ -11,7 +11,8 @@ import { modifyObject } from '../utils/typescript.js'
 import { captureSimulationSnapshot, getSimulationProviderForSnapshot, type SimulationSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
 import { requestIsSimulationDataConsumerOpen, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getPopupVisualisationFingerprint } from './popupSimulationFingerprint.js'
-import { isSameSimulationRun, revisualizeSimulationMetadata, visualizeSimulatorState } from './simulationUpdating.js'
+import { visualizeSimulatorState } from './simulationUpdating.js'
+import { relabelStoredSimulation, type SimulationRunToRelabel } from './simulationRelabel.js'
 import { getPopupVisualisationState, setPopupVisualisationState, updatePopupVisualisationWithCallBack } from './storageVariables.js'
 
 let abortController = new AbortController()
@@ -122,12 +123,12 @@ async function executeVisualisationUpdate(capturedAbortController: AbortControll
 }
 
 // Only a finished simulation with operations on the services' chain can be re-labelled: empty states show no operations, another chain's simulation must not get this chain's metadata, and pending, invalidated or failed states are about to be replaced by a simulation that resolves the current metadata itself.
-function getSimulationStateWithRefreshableMetadata(visualisation: CompleteVisualizedSimulation, chainId: bigint) {
+function getStackRunToRelabel(visualisation: CompleteVisualizedSimulation, chainId: bigint): SimulationRunToRelabel<CompleteVisualizedSimulation> | undefined {
 	if (visualisation.simulationUpdatingState !== 'done' || visualisation.simulationResultState !== 'done') return undefined
 	if (visualisation.simulationState.kind !== 'simulated') return undefined
 	const simulationState = visualisation.simulationState.value
 	if (simulationState.rpcNetwork.chainId !== chainId || !hasSimulationInputOperations(simulationState)) return undefined
-	return simulationState
+	return { simulationId: visualisation.simulationId, simulationState, withMetadata: (metadata) => ({ ...visualisation, ...metadata }) }
 }
 
 // publishFailedPopupVisualisation aborts the shared controller without replacing it, and direct refreshes such as imports do not replace it either. A re-label requested afterwards must not inherit that stale cancellation, while any later refresh still aborts the controller returned here.
@@ -141,17 +142,12 @@ export async function relabelPopupVisualisation(ethereum: EthereumClientService,
 	// Captured at request time, so a newer block, stack or failure refresh also cancels a re-label still waiting for the semaphore.
 	const thisAbortController = getUncancelledAbortController()
 	await executeVisualisationUpdate(thisAbortController, async () => {
-		const storedVisualisation = await getPopupVisualisationState()
 		const chainId = ethereum.getChainId()
-		const simulationState = getSimulationStateWithRefreshableMetadata(storedVisualisation, chainId)
-		if (simulationState === undefined) return
-		const simulationMetadata = await revisualizeSimulationMetadata(simulationState, ethereum, tokenPriceService, thisAbortController)
-		// Lookups that made no further RPC request do not notice an abort; the refresh that aborted this re-label stores its own result instead.
-		if (thisAbortController.signal.aborted) return
-		await updatePopupVisualisationWithCallBack(async (currentVisualisation) => {
-			// updatePopupVisualisationIfNeeded can store an invalidation under the id of the run it raced with, so the stored state must also still be finished.
-			if (!isSameSimulationRun(currentVisualisation, storedVisualisation) || getSimulationStateWithRefreshableMetadata(currentVisualisation, chainId) === undefined) return undefined
-			return { ...currentVisualisation, ...simulationMetadata }
+		await relabelStoredSimulation(ethereum, tokenPriceService, {
+			stored: await getPopupVisualisationState(),
+			getRunToRelabel: (visualisation) => getStackRunToRelabel(visualisation, chainId),
+			updateStored: async (relabel) => await updatePopupVisualisationWithCallBack(async (current) => relabel(current)),
+			abortController: thisAbortController,
 		})
 	})
 }

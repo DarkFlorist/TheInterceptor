@@ -1,6 +1,7 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
 import { publishFailedPopupVisualisation, relabelPopupVisualisation, updatePopupVisualisationIfNeeded, updatePopupVisualisationState } from '../../app/ts/background/popupVisualisationUpdater.js'
+import type { SimulationRunToRelabel } from '../../app/ts/background/simulationRelabel.js'
 import { getPopupVisualisationState, removePendingTransactionOrMessage, updatePopupVisualisationWithCallBack } from '../../app/ts/background/storageVariables.js'
 import type { SimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
 import type { SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
@@ -13,6 +14,7 @@ import type { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js
 import { UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../app/ts/types/interceptor-messages.js'
 import { last } from '../../app/ts/utils/array.js'
 import type { UniqueRequestIdentifier } from '../../app/ts/utils/requests.js'
+import { NEW_BLOCK_ABORT } from '../../app/ts/utils/constants.js'
 import { isNewBlockAbort } from '../../app/ts/utils/errors.js'
 import { keccak256, stringToBytes } from '../../app/ts/utils/ethereumPrimitives.js'
 import { activeAddress, browserMock, created, createSafeAddressBookEntry, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, isRecord, modules, oldTimestamp, recipientAddress, simulator, uniqueRequestIdentifier, withSilencedConsole, type RuntimeMessage, type StorageKeys } from './confirmTransactionTestHarness.js'
@@ -20,7 +22,9 @@ import { activeAddress, browserMock, created, createSafeAddressBookEntry, fakeRe
 // Loaded after the harness installs the extension globals that the popup handler dependencies require at import time.
 const { addOrModifyAddressBookEntry, changePreSimulationBlockTimeManipulation, refreshPopupConfirmTransactionMetadata, removeAddressBookEntry, setEnsNameForHash } = await import('../../app/ts/background/popupMessageHandlers.js')
 const { publishAddressBookChangeAndRelabelSimulations } = await import('../../app/ts/background/addressBookChangePublication.js')
-const { refreshConfirmTransactionSimulation, relabelDisplayedConfirmationSimulation } = await import('../../app/ts/background/confirmTransactionSimulation.js')
+const { refreshConfirmTransactionSimulation } = await import('../../app/ts/background/confirmTransactionSimulation.js')
+const { relabelDisplayedConfirmationSimulation } = await import('../../app/ts/background/confirmationRelabel.js')
+const { relabelStoredSimulation } = await import('../../app/ts/background/simulationRelabel.js')
 const { createWatchAssetResolutionDependencies } = await import('../../app/ts/background/windows/watchAsset.js')
 const { craftPersonalSignPopupMessage } = await import('../../app/ts/background/windows/personalSign.js')
 
@@ -725,29 +729,106 @@ async function countAddressBookReadsOfConfirmationSimulation() {
 	return addressBookReads
 }
 
-test('a confirmation simulation whose name lookups overlap an address-book change returns its run with the new names', async () => {
-	await openSimulationModeConfirmationSendingEther()
+// Stores the settings, the stack and the displayed confirmation before its first simulation, so there is no finished run to re-label yet.
+async function openSimulationModeConfirmationNotSimulatedYet() {
+	await storeSimulationModeSettings([senderAddressBookEntry])
+	await storeStackSendingEtherToRecipient()
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [sendEtherPendingTransaction] })
+}
+
+// Simulates the displayed confirmation and runs duringLastLookup while the simulation does its last address-book lookup, which still returns the address book from before. Returns the simulated run and how often the address book was read during it.
+async function simulateDisplayedConfirmationRunningDuringLastLookup(duringLastLookup: () => Promise<void>) {
+	// A first simulation also caches the metadata it looks up, which later simulations read instead.
+	await simulateDisplayedConfirmation()
 	const addressBookReadsPerSimulation = await countAddressBookReadsOfConfirmationSimulation()
 	assert.equal(await countAddressBookReadsOfConfirmationSimulation(), addressBookReadsPerSimulation, 'a confirmation simulation must read the address book a fixed number of times')
-	let relabel: Promise<void> | undefined
 	let addressBookReads = 0
-	// Every lookup of the simulation reads the address book from before the change, which is stored and re-labelled during the last lookup while the simulation still runs; the re-label cannot see that run until its caller stores it.
 	browserMock.setStorageGetHandler(async (keys: StorageKeys, readStoredItems) => {
 		if (!requestsStorageKey(keys, 'userAddressBookEntriesV3')) return readStoredItems()
 		addressBookReads += 1
 		if (addressBookReads !== addressBookReadsPerSimulation) return readStoredItems()
-		const addressBookBeforeChange = readStoredItems()
-		await addRecipientContactWithoutBroadcast()
-		relabel = relabelDisplayedConfirmationSimulation(simulator.ethereum, simulator.tokenPriceService)
-		return addressBookBeforeChange
+		const addressBookBeforeLastLookup = readStoredItems()
+		await duringLastLookup()
+		return addressBookBeforeLastLookup
+	})
+	const simulatedRun = await simulateDisplayedConfirmation()
+	browserMock.setStorageGetHandler(undefined)
+	if (simulatedRun?.statusCode !== 'success') throw new Error('Expected a successful confirmation simulation')
+	return { simulatedRun: simulatedRun.data, addressBookReads, addressBookReadsPerSimulation }
+}
+
+// The re-label that follows the change cannot reach a run before its caller stores it, and before the first run of a request there is not even a stored run to re-label.
+test('a confirmation simulation whose name lookups overlap a published address-book change returns its run with the new names', async () => {
+	const confirmationStates = [
+		{ description: 'with a finished run stored', open: async () => await openSimulationModeConfirmationSendingEther() },
+		{ description: 'before its first run is stored', open: openSimulationModeConfirmationNotSimulatedYet },
+	]
+	for (const { description, open } of confirmationStates) {
+		await open()
+		browserMock.sentMessages.length = 0
+
+		const { simulatedRun } = await simulateDisplayedConfirmationRunningDuringLastLookup(async () => {
+			await addRecipientContactWithoutBroadcast()
+			await publishAddressBookChangeAndRelabelSimulations(simulator)
+		})
+		await waitUntil(() => countSentMessages('popup_simulationsRelabelled') >= 1, 'the re-label notification')
+
+		assert.equal(getRecipientName(simulatedRun.visualizedSimulationState), recipientContact.name, description)
+	}
+})
+
+test('a re-label without an address-book change does not make an overlapping confirmation simulation look up names again', async () => {
+	await openSimulationModeConfirmationNotSimulatedYet()
+
+	// Neither re-label finds a finished simulation to re-label, the case where a re-label returns at once.
+	const { addressBookReads, addressBookReadsPerSimulation } = await simulateDisplayedConfirmationRunningDuringLastLookup(async () => {
+		await Promise.all([relabelStoredStack(), relabelDisplayedConfirmationSimulation(simulator.ethereum, simulator.tokenPriceService)])
 	})
 
-	const simulatedRun = await simulateDisplayedConfirmation()
-	await relabel
-	browserMock.setStorageGetHandler(undefined)
+	assert.equal(addressBookReads, addressBookReadsPerSimulation)
+})
 
-	if (simulatedRun?.statusCode !== 'success') throw new Error('Expected a successful confirmation simulation')
-	assert.equal(getRecipientName(simulatedRun.data.visualizedSimulationState), recipientContact.name)
+// Stands in for a stored stack or confirmation result, so the shared re-label is checked apart from their storage.
+type StoredRunStandIn = { readonly simulationId: number, readonly canBeRelabelled: boolean, readonly recipientName: string | undefined }
+const storedRunStandIn: StoredRunStandIn = { simulationId: 1, canBeRelabelled: true, recipientName: undefined }
+
+// Re-labels storedRunStandIn through the shared re-label with the stored stack's simulation. While the re-label looks up names, duringLookups returns the stand-in stored from then on and may abort the re-label. Returns the stand-in stored at the end.
+async function relabelStoredRunStandIn(duringLookups: (stored: StoredRunStandIn, abortController: AbortController) => StoredRunStandIn) {
+	const { simulationState } = await getStoredStackVisualisation()
+	const getRunToRelabel = (stored: StoredRunStandIn): SimulationRunToRelabel<StoredRunStandIn> | undefined => stored.canBeRelabelled
+		? { simulationId: stored.simulationId, simulationState, withMetadata: (metadata) => ({ ...stored, recipientName: getRecipientName(metadata.visualizedSimulationState) }) }
+		: undefined
+	const abortController = new AbortController()
+	let stored = storedRunStandIn
+	runOnceDuringAddressBookLookup(async () => {
+		stored = duringLookups(stored, abortController)
+	})
+	try {
+		await relabelStoredSimulation(simulator.ethereum, simulator.tokenPriceService, {
+			stored,
+			getRunToRelabel,
+			updateStored: async (relabel) => { stored = relabel(stored) ?? stored },
+			abortController,
+		})
+	} catch (error: unknown) {
+		if (!isNewBlockAbort(error)) throw error
+	}
+	browserMock.setStorageGetHandler(undefined)
+	return stored
+}
+
+test('the shared re-label writes the new metadata only onto the same run while it can still be re-labelled', async () => {
+	const relabelOutcomes: readonly { description: string, duringLookups: (stored: StoredRunStandIn, abortController: AbortController) => StoredRunStandIn, expected: StoredRunStandIn }[] = [
+		{ description: 'the same run is still stored', duringLookups: (stored) => stored, expected: { ...storedRunStandIn, recipientName: recipientContact.name } },
+		{ description: 'a newer run is stored', duringLookups: (stored) => ({ ...stored, simulationId: stored.simulationId + 1 }), expected: { ...storedRunStandIn, simulationId: storedRunStandIn.simulationId + 1 } },
+		{ description: 'the same run can no longer be re-labelled', duringLookups: (stored) => ({ ...stored, canBeRelabelled: false }), expected: { ...storedRunStandIn, canBeRelabelled: false } },
+		{ description: 'newer work aborts the re-label', duringLookups: (stored, abortController) => { abortController.abort(NEW_BLOCK_ABORT); return stored }, expected: storedRunStandIn },
+	]
+	await openSimulationModeConfirmationSendingEther()
+	await addRecipientContactWithoutBroadcast()
+	for (const { description, duringLookups, expected } of relabelOutcomes) {
+		assert.deepEqual(await relabelStoredRunStandIn(duringLookups), expected, description)
+	}
 })
 
 function recordPendingConfirmationWrites() {
