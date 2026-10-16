@@ -1,4 +1,4 @@
-import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
+import { refreshConfirmTransactionSimulation, simulateAndStoreConfirmationRun } from './confirmTransactionSimulation.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { captureSimulationSnapshot, getUpdatedSimulationStackSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
 import { getSettings, setUseTabsInsteadOfPopup, setPage, getMakeCurrentAddressRich, setMetamaskCompatibilityMode, setSafeAppsCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, updateMakeCurrentAddressRich, updateFixedMakeMeRichList } from './settings.js'
@@ -595,42 +595,48 @@ export async function refreshPopupConfirmTransactionSimulation(ethereum: Ethereu
 			safeFlow === undefined ? 'transaction-sender' : 'external-executor',
 		)
 		: await formSendRawTransaction(ethereum, firstTxn.originalRequestParameters, firstTxn.transactionToSimulate.website, firstTxn.created, firstTxn.transactionIdentifier)
-	const refreshMessage = await refreshConfirmTransactionSimulation(
-		ethereum,
-		tokenPriceService,
-		firstTxn.activeAddress,
-		firstTxn.simulationMode,
-		firstTxn.uniqueRequestIdentifier,
-		transactionToSimulate,
-		proposalSafeTransaction,
-	)
-	if (refreshMessage === undefined) return
-	await updatePendingTransactionOrMessage(firstTxn.uniqueRequestIdentifier, async (transactionOrMessage) => {
-		switch (transactionOrMessage.type) {
-			case 'SignableMessage': throw new Error('Tried to refresh simulation of a message')
-			case 'Transaction': {
-				if (transactionOrMessage.transactionOrMessageCreationStatus !== 'Simulated' && transactionOrMessage.transactionOrMessageCreationStatus !== 'FailedToSimulate') return transactionOrMessage
-				const currentTimestamp = getSimulationConductedTimestamp(transactionOrMessage.popupVisualisation)
-				const nextTimestamp = getSimulationConductedTimestamp(refreshMessage)
-				if (currentTimestamp !== undefined && nextTimestamp !== undefined && nextTimestamp.getTime() < currentTimestamp.getTime()) return transactionOrMessage
-				if (transactionToSimulate.success) {
+	const refreshedRun = await simulateAndStoreConfirmationRun(ethereum, tokenPriceService, async () => {
+		const refreshMessage = await refreshConfirmTransactionSimulation(
+			ethereum,
+			tokenPriceService,
+			firstTxn.activeAddress,
+			firstTxn.simulationMode,
+			firstTxn.uniqueRequestIdentifier,
+			transactionToSimulate,
+			proposalSafeTransaction,
+		)
+		if (refreshMessage === undefined) return { storedRun: false, result: undefined }
+		let storedRun = false
+		await updatePendingTransactionOrMessage(firstTxn.uniqueRequestIdentifier, async (transactionOrMessage) => {
+			switch (transactionOrMessage.type) {
+				case 'SignableMessage': throw new Error('Tried to refresh simulation of a message')
+				case 'Transaction': {
+					if (transactionOrMessage.transactionOrMessageCreationStatus !== 'Simulated' && transactionOrMessage.transactionOrMessageCreationStatus !== 'FailedToSimulate') return transactionOrMessage
+					const currentTimestamp = getSimulationConductedTimestamp(transactionOrMessage.popupVisualisation)
+					const nextTimestamp = getSimulationConductedTimestamp(refreshMessage)
+					if (currentTimestamp !== undefined && nextTimestamp !== undefined && nextTimestamp.getTime() < currentTimestamp.getTime()) return transactionOrMessage
+					storedRun = true
+					if (transactionToSimulate.success) {
+						return {
+							...transactionOrMessage,
+							transactionToSimulate,
+							popupVisualisation: refreshMessage,
+							transactionOrMessageCreationStatus: 'Simulated' as const,
+						}
+					}
 					return {
 						...transactionOrMessage,
 						transactionToSimulate,
 						popupVisualisation: refreshMessage,
-						transactionOrMessageCreationStatus: 'Simulated' as const,
+						transactionOrMessageCreationStatus: 'FailedToSimulate' as const,
 					}
 				}
-				return {
-					...transactionOrMessage,
-					transactionToSimulate,
-					popupVisualisation: refreshMessage,
-					transactionOrMessageCreationStatus: 'FailedToSimulate' as const,
-				}
+				default: assertNever(transactionOrMessage)
 			}
-			default: assertNever(transactionOrMessage)
-		}
+		})
+		return { storedRun, result: refreshMessage }
 	})
+	if (refreshedRun === undefined) return
 	await updateConfirmTransactionView(ethereum, tokenPriceService, true)
 }
 

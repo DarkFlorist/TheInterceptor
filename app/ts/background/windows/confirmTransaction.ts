@@ -11,7 +11,7 @@ import { Semaphore } from '../../utils/semaphore.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { type InterceptorTransactionStack, PASSTHROUGH_STATE, type WebsiteCreatedEthereumTransaction, type WebsiteCreatedEthereumTransactionOrFailed, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
 import type { SendRawTransactionParams, SendTransactionParams } from '../../types/JsonRpc-types.js'
-import { refreshConfirmTransactionSimulation } from '../confirmTransactionSimulation.js'
+import { refreshConfirmTransactionSimulation, simulateAndStoreConfirmationRun } from '../confirmTransactionSimulation.js'
 import { captureSimulationSnapshot, getUpdatedSimulationState } from '../simulationUpdating.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getRpcConnectionStatus, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
@@ -86,6 +86,27 @@ async function refreshDirectSafeExecutionSimulation(
 		: { ...pending, transactionToSimulate, popupVisualisation, transactionOrMessageCreationStatus: 'FailedToSimulate' }
 }
 
+const getConfirmationRunId = (pending: PendingTransactionOrSignableMessage) => pending.type === 'Transaction' && (pending.transactionOrMessageCreationStatus === 'Simulated' || pending.transactionOrMessageCreationStatus === 'FailedToSimulate')
+	? pending.popupVisualisation.data.simulationId
+	: undefined
+
+// A signer change simulates a direct Safe execution again and persists that run with the new signer, so the refresh stores it through simulateAndStoreConfirmationRun.
+async function refreshAndPersistSafeSignerSelectionAndSimulation(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, pending: PendingTransactionOrSignableMessage, selectedSigner: bigint) {
+	return await simulateAndStoreConfirmationRun(ethereum, tokenPriceService, async () => {
+		let simulatedRunId: number | undefined
+		const refresh = await refreshAndPersistSafeSignerSelection(ethereum, pending, selectedSigner, async (refreshedPending) => {
+			const simulated = await refreshDirectSafeExecutionSimulation(ethereum, tokenPriceService, refreshedPending)
+			// Every new confirmation run has a new id, while an execution that is not simulated again keeps the run it had.
+			const runId = getConfirmationRunId(simulated)
+			if (runId !== getConfirmationRunId(refreshedPending)) simulatedRunId = runId
+			return simulated
+		})
+		// A blocked refresh persists only its approval error, possibly onto a run another call stored meanwhile, so only the run this call simulated counts as stored.
+		const storedRun = simulatedRunId !== undefined && refresh.persistedPending !== undefined && getConfirmationRunId(refresh.persistedPending) === simulatedRunId
+		return { storedRun, result: refresh }
+	})
+}
+
 export async function refreshPendingSafeSignerSelectionErrors(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, tabId: number) {
 	const tabState = await getTabState(tabId)
 	const refreshedSelection = {
@@ -97,12 +118,7 @@ export async function refreshPendingSafeSignerSelectionErrors(ethereum: Ethereum
 		const safeSignerAddress = getPendingSafeSignerAddress(pending)
 		if (pending.uniqueRequestIdentifier.requestSocket.tabId !== tabId) continue
 		if (refreshedSelection.selectedSigner !== undefined) {
-			const refresh = await refreshAndPersistSafeSignerSelection(
-				ethereum,
-				pending,
-				refreshedSelection.selectedSigner,
-				async (refreshedPending) => await refreshDirectSafeExecutionSimulation(ethereum, tokenPriceService, refreshedPending),
-			)
+			const refresh = await refreshAndPersistSafeSignerSelectionAndSimulation(ethereum, tokenPriceService, pending, refreshedSelection.selectedSigner)
 			if (refresh.persisted) pendingStateChanged = true
 			if (refresh.refreshRequired && refresh.refreshResult.status !== 'unchanged') continue
 		}
@@ -271,12 +287,7 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 		&& refreshedSafeSignerSelection.verificationError === undefined
 	) {
 		const directSafeExecution = getSafePendingFlow(pendingTransactionOrMessage)?.kind === 'directExecution'
-		const refresh = await refreshAndPersistSafeSignerSelection(
-			ethereum,
-			pendingTransactionOrMessage,
-			refreshedSafeSignerSelection.selectedSigner,
-			async (refreshedPending) => await refreshDirectSafeExecutionSimulation(ethereum, tokenPriceService, refreshedPending),
-		)
+		const refresh = await refreshAndPersistSafeSignerSelectionAndSimulation(ethereum, tokenPriceService, pendingTransactionOrMessage, refreshedSafeSignerSelection.selectedSigner)
 		const refreshResult = refresh.refreshResult
 		if (refresh.refreshRequired && refreshResult.status !== 'unchanged' && !refresh.persisted) {
 			await updateConfirmTransactionView(ethereum, tokenPriceService)
@@ -818,29 +829,34 @@ export async function openConfirmTransactionDialogForTransaction(
 			await appendPendingTransactionOrMessage(pendingTransaction)
 			await updateConfirmTransactionView(ethereumClientService, tokenPriceService)
 			markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionSimulationStart)
-			const simulationResultsPromise = silenceChromeUnCaughtPromise(refreshConfirmTransactionSimulation(
-				ethereumClientService,
-				tokenPriceService,
-				transactionExecutor,
-				simulationMode,
-				request.uniqueRequestIdentifier,
-				transactionToSimulate,
-				safeTransaction,
-			))
-			if (transactionToSimulate.success) {
-				await updatePendingTransactionOrMessage(pendingTransaction.uniqueRequestIdentifier, async (transaction) => ({ ...transaction, transactionToSimulate: transactionToSimulate, transactionOrMessageCreationStatus: 'Simulating' as const }))
-				await updateConfirmTransactionView(ethereumClientService, tokenPriceService)
-			}
-			const popupVisualisation = await simulationResultsPromise
-			markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionSimulationEnd)
-			await updatePendingTransactionOrMessage(pendingTransaction.uniqueRequestIdentifier, async (transaction) => {
-				if (transaction.type !== 'Transaction') return transaction
-				if (popupVisualisation === undefined) return transaction
-				if (transaction.transactionOrMessageCreationStatus === 'Simulated' || transaction.transactionOrMessageCreationStatus === 'FailedToSimulate') {
-					if ('popupVisualisation' in transaction && !shouldReplacePopupVisualisation(transaction.popupVisualisation, popupVisualisation)) return transaction
+			await simulateAndStoreConfirmationRun(ethereumClientService, tokenPriceService, async () => {
+				const simulationResultsPromise = silenceChromeUnCaughtPromise(refreshConfirmTransactionSimulation(
+					ethereumClientService,
+					tokenPriceService,
+					transactionExecutor,
+					simulationMode,
+					request.uniqueRequestIdentifier,
+					transactionToSimulate,
+					safeTransaction,
+				))
+				if (transactionToSimulate.success) {
+					await updatePendingTransactionOrMessage(pendingTransaction.uniqueRequestIdentifier, async (transaction) => ({ ...transaction, transactionToSimulate: transactionToSimulate, transactionOrMessageCreationStatus: 'Simulating' as const }))
+					await updateConfirmTransactionView(ethereumClientService, tokenPriceService)
 				}
-				if (transactionToSimulate.success) return { ...transaction, transactionToSimulate, popupVisualisation, transactionOrMessageCreationStatus: 'Simulated' }
-				return { ...transaction, transactionToSimulate, popupVisualisation, transactionOrMessageCreationStatus: 'FailedToSimulate' }
+				const popupVisualisation = await simulationResultsPromise
+				markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionSimulationEnd)
+				let storedRun = false
+				await updatePendingTransactionOrMessage(pendingTransaction.uniqueRequestIdentifier, async (transaction) => {
+					if (transaction.type !== 'Transaction') return transaction
+					if (popupVisualisation === undefined) return transaction
+					if (transaction.transactionOrMessageCreationStatus === 'Simulated' || transaction.transactionOrMessageCreationStatus === 'FailedToSimulate') {
+						if ('popupVisualisation' in transaction && !shouldReplacePopupVisualisation(transaction.popupVisualisation, popupVisualisation)) return transaction
+					}
+					storedRun = true
+					if (transactionToSimulate.success) return { ...transaction, transactionToSimulate, popupVisualisation, transactionOrMessageCreationStatus: 'Simulated' }
+					return { ...transaction, transactionToSimulate, popupVisualisation, transactionOrMessageCreationStatus: 'FailedToSimulate' }
+				})
+				return { storedRun, result: undefined }
 			})
 			await updateConfirmTransactionView(ethereumClientService, tokenPriceService)
 			await tryFocusingTabOrWindow(openedDialog)

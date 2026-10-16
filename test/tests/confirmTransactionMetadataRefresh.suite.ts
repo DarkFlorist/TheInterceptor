@@ -12,17 +12,18 @@ import type { Website } from '../../app/ts/types/websiteAccessTypes.js'
 import type { EthereumUnsignedTransaction } from '../../app/ts/types/wire-types.js'
 import type { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import { UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../app/ts/types/interceptor-messages.js'
+import { encodeFunctionCall } from '../../app/ts/utils/abiRuntime.js'
 import { last } from '../../app/ts/utils/array.js'
 import type { UniqueRequestIdentifier } from '../../app/ts/utils/requests.js'
 import { NEW_BLOCK_ABORT } from '../../app/ts/utils/constants.js'
 import { isNewBlockAbort } from '../../app/ts/utils/errors.js'
 import { keccak256, stringToBytes } from '../../app/ts/utils/ethereumPrimitives.js'
-import { activeAddress, browserMock, created, createSafeAddressBookEntry, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, isRecord, modules, oldTimestamp, recipientAddress, simulator, uniqueRequestIdentifier, withSilencedConsole, type RuntimeMessage, type StorageKeys } from './confirmTransactionTestHarness.js'
+import { activeAddress, addressString, browserMock, created, createSafeAddressBookEntry, createSafeTx, EIP712Message, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, isRecord, modules, oldTimestamp, recipientAddress, SAFE_EXECUTION_ABI, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, simulator, uniqueRequestIdentifier, withSilencedConsole, type RuntimeMessage, type StorageKeys } from './confirmTransactionTestHarness.js'
 
 // Loaded after the harness installs the extension globals that the popup handler dependencies require at import time.
 const { addOrModifyAddressBookEntry, changePreSimulationBlockTimeManipulation, refreshPopupConfirmTransactionMetadata, removeAddressBookEntry, setEnsNameForHash } = await import('../../app/ts/background/popupMessageHandlers.js')
 const { publishAddressBookChangeAndRelabelSimulations } = await import('../../app/ts/background/addressBookChangePublication.js')
-const { refreshConfirmTransactionSimulation } = await import('../../app/ts/background/confirmTransactionSimulation.js')
+const { getConfirmTransactionAbortController, refreshConfirmTransactionSimulation } = await import('../../app/ts/background/confirmTransactionSimulation.js')
 const { relabelDisplayedConfirmationSimulation } = await import('../../app/ts/background/confirmationRelabel.js')
 const { relabelStoredSimulation } = await import('../../app/ts/background/simulationRelabel.js')
 const { createWatchAssetResolutionDependencies } = await import('../../app/ts/background/windows/watchAsset.js')
@@ -716,76 +717,267 @@ test('a confirmation re-label requested while another one is running waits for i
 	assert.equal(getRecipientName((await getStoredPendingTransactionVisualisation()).visualizedSimulationState), renamedRecipient)
 })
 
+// Returns the run without storing it, as a newer simulation of the displayed request does while it is still running.
 const simulateDisplayedConfirmation = async () => await refreshConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService, sender, true, uniqueRequestIdentifier, sendEtherWebsiteTransaction)
 
-async function countAddressBookReadsOfConfirmationSimulation() {
+async function countAddressBookReads(read: () => Promise<unknown>) {
 	let addressBookReads = 0
 	browserMock.setStorageGetHandler(async (keys: StorageKeys, readStoredItems) => {
 		if (requestsStorageKey(keys, 'userAddressBookEntriesV3')) addressBookReads += 1
 		return readStoredItems()
 	})
-	await simulateDisplayedConfirmation()
+	await read()
 	browserMock.setStorageGetHandler(undefined)
 	return addressBookReads
 }
 
-// Stores the settings, the stack and the displayed confirmation before its first simulation, so there is no finished run to re-label yet.
-async function openSimulationModeConfirmationNotSimulatedYet() {
+const countAddressBookReadsOfDisplayedConfirmationRelabel = async () => await countAddressBookReads(async () => await relabelDisplayedConfirmationSimulation(simulator.ethereum, simulator.tokenPriceService))
+
+// Stores the settings and the stack without a confirmation, so the request's confirmation is opened by its first simulation run.
+async function storeSimulationModeStackWithoutConfirmation() {
 	await storeSimulationModeSettings([senderAddressBookEntry])
 	await storeStackSendingEtherToRecipient()
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [sendEtherPendingTransaction] })
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 }
 
-// Simulates the displayed confirmation and runs duringLastLookup while the simulation does its last address-book lookup, which still returns the address book from before. Returns the simulated run and how often the address book was read during it.
-async function simulateDisplayedConfirmationRunningDuringLastLookup(duringLastLookup: () => Promise<void>) {
-	// A first simulation also caches the metadata it looks up, which later simulations read instead.
-	await simulateDisplayedConfirmation()
-	const addressBookReadsPerSimulation = await countAddressBookReadsOfConfirmationSimulation()
-	assert.equal(await countAddressBookReadsOfConfirmationSimulation(), addressBookReadsPerSimulation, 'a confirmation simulation must read the address book a fixed number of times')
+// Opens the request's confirmation as a website's eth_sendTransaction does, which stores the request's first simulation run; a confirmation of the request left by an earlier call is resolved first.
+async function openConfirmationThroughFirstRun() {
+	await removePendingTransactionOrMessage(uniqueRequestIdentifier)
+	const reply = await modules.openConfirmTransactionDialogForTransaction(
+		simulator.ethereum,
+		simulator.tokenPriceService,
+		{ interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier, ...sendEtherRequestParameters },
+		{ kind: 'transaction', parameters: sendEtherRequestParameters },
+		true,
+		sender,
+		website,
+		new Map(),
+	)
+	assert.deepEqual(reply, { type: 'doNotReply' })
+}
+
+const resimulateDisplayedConfirmation = async () => await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
+
+// The confirmation runs that are stored once simulated: a request's first run, which no re-label can reach before it is stored, and a re-simulation of a confirmation whose earlier run is stored. open stores the state the run starts from.
+const storedConfirmationRuns = [
+	{ kind: 'a request\'s first confirmation run', open: storeSimulationModeStackWithoutConfirmation, simulateAndStore: openConfirmationThroughFirstRun },
+	{ kind: 'a confirmation re-simulation', open: async () => await openSimulationModeConfirmationSendingEther(), simulateAndStore: resimulateDisplayedConfirmation },
+]
+
+// Runs simulateAndStore, which simulates the displayed confirmation and stores the run, while duringLastLookup runs inside the run's last address-book lookup, which still returns the address book from before. Returns how often the address book was read after that lookup returned: the run looks up nothing more, so these are the lookups of a catch-up re-label.
+async function simulateAndStoreRunningDuringLastLookup(simulateAndStore: () => Promise<void>, duringLastLookup: () => Promise<void>) {
+	// A first run also caches the metadata it looks up, which later runs read instead.
+	await simulateAndStore()
+	const lookupsPerRun = await countAddressBookReads(simulateAndStore)
+	assert.equal(await countAddressBookReads(simulateAndStore), lookupsPerRun, 'a confirmation run must read the address book a fixed number of times')
 	let addressBookReads = 0
+	let addressBookReadsAfterLastLookup: number | undefined
 	browserMock.setStorageGetHandler(async (keys: StorageKeys, readStoredItems) => {
 		if (!requestsStorageKey(keys, 'userAddressBookEntriesV3')) return readStoredItems()
+		if (addressBookReadsAfterLastLookup !== undefined) {
+			addressBookReadsAfterLastLookup += 1
+			return readStoredItems()
+		}
 		addressBookReads += 1
-		if (addressBookReads !== addressBookReadsPerSimulation) return readStoredItems()
+		if (addressBookReads !== lookupsPerRun) return readStoredItems()
 		const addressBookBeforeLastLookup = readStoredItems()
 		await duringLastLookup()
+		addressBookReadsAfterLastLookup = 0
 		return addressBookBeforeLastLookup
 	})
-	const simulatedRun = await simulateDisplayedConfirmation()
+	await simulateAndStore()
 	browserMock.setStorageGetHandler(undefined)
-	if (simulatedRun?.statusCode !== 'success') throw new Error('Expected a successful confirmation simulation')
-	return { simulatedRun: simulatedRun.data, addressBookReads, addressBookReadsPerSimulation }
+	return getDefined(addressBookReadsAfterLastLookup, 'the last address-book lookup of the run')
 }
 
-// The re-label that follows the change cannot reach a run before its caller stores it, and before the first run of a request there is not even a stored run to re-label.
-test('a confirmation simulation whose name lookups overlap a published address-book change returns its run with the new names', async () => {
-	const confirmationStates = [
-		{ description: 'with a finished run stored', open: async () => await openSimulationModeConfirmationSendingEther() },
-		{ description: 'before its first run is stored', open: openSimulationModeConfirmationNotSimulatedYet },
-	]
-	for (const { description, open } of confirmationStates) {
+// Stores an address-book change and publishes it as the popup handlers do, then waits until the re-label that follows it has settled.
+async function changeAddressBookAndWaitForItsRelabel(change: () => Promise<unknown>) {
+	const relabelsBefore = countSentMessages('popup_simulationsRelabelled')
+	await change()
+	await publishAddressBookChangeAndRelabelSimulations(simulator)
+	await waitUntil(() => countSentMessages('popup_simulationsRelabelled') > relabelsBefore, 'the re-label notification')
+}
+
+const nameRecipient = async (name: string) => await modules.updateUserAddressBookEntries((entries) => [...entries.filter((entry) => entry.address !== recipient), { ...recipientContact, name }])
+
+const getStoredConfirmationRecipientName = async () => getRecipientName((await getStoredPendingTransactionVisualisation()).visualizedSimulationState)
+
+for (const { kind, open, simulateAndStore } of storedConfirmationRuns) {
+	// The re-label that follows the change reaches only stored runs: it re-labels the run stored before, which the new run replaces, and before a request's first run is stored there is no run to re-label at all.
+	test(`${ kind } that looked up names before an address-book change was published ends with the new names once stored`, async () => {
 		await open()
-		browserMock.sentMessages.length = 0
 
-		const { simulatedRun } = await simulateDisplayedConfirmationRunningDuringLastLookup(async () => {
-			await addRecipientContactWithoutBroadcast()
-			await publishAddressBookChangeAndRelabelSimulations(simulator)
-		})
-		await waitUntil(() => countSentMessages('popup_simulationsRelabelled') >= 1, 'the re-label notification')
+		await simulateAndStoreRunningDuringLastLookup(simulateAndStore, async () => await changeAddressBookAndWaitForItsRelabel(addRecipientContactWithoutBroadcast))
 
-		assert.equal(getRecipientName(simulatedRun.visualizedSimulationState), recipientContact.name, description)
-	}
-})
-
-test('a re-label without an address-book change does not make an overlapping confirmation simulation look up names again', async () => {
-	await openSimulationModeConfirmationNotSimulatedYet()
-
-	// Neither re-label finds a finished simulation to re-label, the case where a re-label returns at once.
-	const { addressBookReads, addressBookReadsPerSimulation } = await simulateDisplayedConfirmationRunningDuringLastLookup(async () => {
-		await Promise.all([relabelStoredStack(), relabelDisplayedConfirmationSimulation(simulator.ethereum, simulator.tokenPriceService)])
+		assert.equal(await getStoredConfirmationRecipientName(), recipientContact.name)
 	})
 
-	assert.equal(addressBookReads, addressBookReadsPerSimulation)
+	test(`a burst of address-book changes during ${ kind } is caught up with a single re-label once the run is stored`, async () => {
+		const recipientNames = ['Renamed once', 'Renamed twice', 'Renamed three times']
+		await open()
+
+		const addressBookReadsAfterRun = await simulateAndStoreRunningDuringLastLookup(simulateAndStore, async () => {
+			for (const name of recipientNames) await changeAddressBookAndWaitForItsRelabel(async () => await nameRecipient(name))
+		})
+
+		assert.equal(await getStoredConfirmationRecipientName(), last(recipientNames))
+		const lookupsPerRelabel = await countAddressBookReadsOfDisplayedConfirmationRelabel()
+		assert.notEqual(lookupsPerRelabel, 0)
+		// The run looked up names once, and the changes add one re-label after it, not a re-label or a visualisation per change.
+		assert.equal(addressBookReadsAfterRun, lookupsPerRelabel)
+	})
+
+	test(`${ kind } during which no address-book change was published is not re-labelled after it is stored`, async () => {
+		const runsWithoutChange = [
+			{ description: 'nothing else runs', duringLastLookup: async () => undefined },
+			// Re-labels also run without a newly published change, such as another confirmation run's catch-up re-label.
+			{ description: 're-labels run without an address-book change', duringLastLookup: async () => { await Promise.all([relabelStoredStack(), relabelDisplayedConfirmationSimulation(simulator.ethereum, simulator.tokenPriceService)]) } },
+		]
+		for (const { description, duringLastLookup } of runsWithoutChange) {
+			await open()
+
+			assert.equal(await simulateAndStoreRunningDuringLastLookup(simulateAndStore, duringLastLookup), 0, description)
+		}
+	})
+}
+
+test('a request\'s first run that finished its lookups before an address-book change was published, but is stored after the re-label ran, ends with the new names', async () => {
+	await storeSimulationModeStackWithoutConfirmation()
+	let isChangePublished = false
+	// The change is published just before the first run is written to storage, so the re-label that follows it reads the confirmation still waiting for that run and has nothing to re-label.
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		const { pendingTransactionsAndMessages } = items
+		if (!isChangePublished && Array.isArray(pendingTransactionsAndMessages) && pendingTransactionsAndMessages.some((pending) => isRecord(pending) && pending.transactionOrMessageCreationStatus === 'Simulated')) {
+			isChangePublished = true
+			await changeAddressBookAndWaitForItsRelabel(addRecipientContactWithoutBroadcast)
+		}
+		writeStoredItems()
+	})
+
+	await openConfirmationThroughFirstRun()
+	browserMock.setStorageSetHandler(undefined)
+
+	assert.equal(isChangePublished, true)
+	assert.equal(await getStoredConfirmationRecipientName(), recipientContact.name)
+})
+
+test('a confirmation re-simulation aborted by a newer simulation is not re-labelled for an address-book change published during it', async () => {
+	await openSimulationModeConfirmationSendingEther()
+	const storedRunBefore = await getStoredPendingTransactionVisualisation()
+	let isRunAborted = false
+	// Rejects requests whose abort controller was aborted, as the extension's RPC request handler does. At the run's first request made with its abort controller, an address-book change is published and a newer confirmation simulation aborts the run, as each new one aborts the shared controller.
+	const abortingEthereum = new modules.EthereumClientService({
+		rpcUrl: fakeRpcNetwork.httpsRpc,
+		clearCache() { return undefined },
+		async jsonRpcRequest(rpcRequest: EthereumJsonRpcRequest, requestAbortController?: AbortController) {
+			if (!isRunAborted && requestAbortController !== undefined && requestAbortController === getConfirmTransactionAbortController()) {
+				await changeAddressBookAndWaitForItsRelabel(addRecipientContactWithoutBroadcast)
+				requestAbortController.abort(NEW_BLOCK_ABORT)
+				isRunAborted = true
+			}
+			if (requestAbortController?.signal.aborted) throw new Error(NEW_BLOCK_ABORT)
+			return await fakeRequestHandler.jsonRpcRequest(rpcRequest)
+		},
+	}, async () => undefined, async () => undefined, fakeRpcNetwork)
+	let addressBookReadsAfterAbort = 0
+	browserMock.setStorageGetHandler(async (keys: StorageKeys, readStoredItems) => {
+		if (isRunAborted && requestsStorageKey(keys, 'userAddressBookEntriesV3')) addressBookReadsAfterAbort += 1
+		return readStoredItems()
+	})
+
+	await modules.refreshPopupConfirmTransactionSimulation(abortingEthereum, simulator.tokenPriceService)
+	browserMock.setStorageGetHandler(undefined)
+
+	assert.equal(isRunAborted, true)
+	assert.equal((await getStoredPendingTransactionVisualisation()).simulationId, storedRunBefore.simulationId)
+	assert.equal(addressBookReadsAfterAbort, 0)
+})
+
+test('a confirmation re-simulation that a newer stored run supersedes is not re-labelled for an address-book change published during it', async () => {
+	await openSimulationModeConfirmationSendingEther()
+	// Stands in for a newer run of the request that was stored first: no run in this test is handed its id, and its later conducted timestamp makes the store keep it.
+	const newerRunId = Number.MAX_SAFE_INTEGER
+
+	const addressBookReadsAfterRun = await simulateAndStoreRunningDuringLastLookup(resimulateDisplayedConfirmation, async () => {
+		await changeAddressBookAndWaitForItsRelabel(addRecipientContactWithoutBroadcast)
+		await updateStoredConfirmationVisualisation((data) => ({ ...data, simulationId: newerRunId, simulationState: { ...data.simulationState, simulationConductedTimestamp: new Date('2100-01-01T00:00:00.000Z') } }))
+	})
+
+	assert.equal(addressBookReadsAfterRun, 0)
+	assert.equal((await getStoredPendingTransactionVisualisation()).simulationId, newerRunId)
+})
+
+test('a Safe signer refresh blocked while a newer run is stored and an address-book change is published is not re-labelled for that change', async () => {
+	const { SendTransactionParams } = await import('../../app/ts/types/JsonRpc-types.js')
+	const safeSignerAddress = recipient
+	const safeTx = createSafeTx(fakeRpcNetwork.chainId, sender, { to: recipient, value: 0n, input: new Uint8Array() }, fakeSafeContract.nonce)
+	const existingSignature = await safeTestOwnerAccount.signTypedData(EIP712Message.parse(safeTxToTypedDataJson(safeTx)))
+	fakeSafeContract.owners = [safeTestOwnerAddress, safeSignerAddress]
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeSignerAddresses: [safeSignerAddress] })])
+	const tabId = uniqueRequestIdentifier.requestSocket.tabId
+	await modules.updateTabState(tabId, (state) => ({ ...state, signerAccounts: [], activeSigningAddress: undefined, signerChain: fakeRpcNetwork.chainId }))
+	// Executes the Safe transaction with one owner's signature, which the Safe's signer completes; with no signer connected, the confirmation opens blocked on it.
+	const executionParameters = SendTransactionParams.parse({
+		method: 'eth_sendTransaction',
+		params: [{
+			from: addressString(sender),
+			to: addressString(sender),
+			value: '0x0',
+			data: encodeFunctionCall(SAFE_EXECUTION_ABI, 'execTransaction', [addressString(recipient), 0n, '0x', 0n, 0n, 0n, 0n, addressString(0n), addressString(0n), existingSignature]),
+		}],
+	})
+	assert.deepEqual(await modules.openConfirmTransactionDialogForTransaction(
+		simulator.ethereum,
+		simulator.tokenPriceService,
+		{ interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier, ...executionParameters },
+		{ kind: 'transaction', parameters: executionParameters },
+		false,
+		sender,
+		website,
+		new Map(),
+	), { type: 'doNotReply' })
+	// Stands in for a newer run of the request that another call stores while the signer is validated; unlike a direct Safe execution in this harness, it visualises successfully, so a re-label of it would look up names.
+	const newerRun = await simulateDisplayedConfirmation()
+	if (newerRun?.statusCode !== 'success') throw new Error('Expected a successful confirmation simulation')
+	// The signer connects, but its validation fails on the Safe's version, so the refresh persists only a new approval error.
+	await modules.updateTabState(tabId, (state) => ({ ...state, signerAccounts: [safeSignerAddress], activeSigningAddress: safeSignerAddress }))
+	fakeSafeContract.version = 'invalid-version'
+	let isValidationOverlapped = false
+	let isRefreshPersisted = false
+	let addressBookReadsAfterPersist = 0
+	fakeSafeContract.beforeVersionResponse = async () => {
+		if (isValidationOverlapped) return
+		await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (current) => {
+			if (current.type !== 'Transaction') throw new Error('Expected a pending direct Safe execution')
+			return { ...current, transactionOrMessageCreationStatus: 'Simulated', transactionToSimulate: sendEtherWebsiteTransaction, popupVisualisation: newerRun }
+		})
+		await changeAddressBookAndWaitForItsRelabel(addRecipientContactWithoutBroadcast)
+		isValidationOverlapped = true
+	}
+	// After the overlap, the refresh writes the pending confirmation only to persist its approval error.
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		writeStoredItems()
+		if (isValidationOverlapped && 'pendingTransactionsAndMessages' in items) isRefreshPersisted = true
+	})
+	browserMock.setStorageGetHandler(async (keys: StorageKeys, readStoredItems) => {
+		if (isRefreshPersisted && requestsStorageKey(keys, 'userAddressBookEntriesV3')) addressBookReadsAfterPersist += 1
+		return readStoredItems()
+	})
+
+	await modules.refreshPendingSafeSignerSelectionErrors(simulator.ethereum, simulator.tokenPriceService, tabId)
+	browserMock.setStorageGetHandler(undefined)
+	browserMock.setStorageSetHandler(undefined)
+
+	assert.equal(isRefreshPersisted, true)
+	const [refreshedExecution] = await modules.getPendingTransactionsAndMessages()
+	if (refreshedExecution?.type !== 'Transaction' || refreshedExecution.transactionOrMessageCreationStatus !== 'Simulated') throw new Error('Expected the direct Safe execution with the newer run')
+	// The persisted entry carries the newer run, which a re-label could reach.
+	assert.equal(refreshedExecution.popupVisualisation.data.simulationId, newerRun.data.simulationId)
+	assert.equal(refreshedExecution.popupVisualisation.statusCode, 'success')
+	assert.equal(refreshedExecution.approvalStatus.status === 'SignerError' && refreshedExecution.approvalStatus.message.includes('could not be prepared'), true)
+	// The refresh simulated no run of its own, so it requests no re-label after persisting, although the change was published during it.
+	assert.equal(addressBookReadsAfterPersist, 0)
 })
 
 // Stands in for a stored stack or confirmation result, so the shared re-label is checked apart from their storage.

@@ -12,7 +12,8 @@ import { decodeEthereumError } from '../utils/errorDecoding.js'
 import { JsonRpcResponseError, reportUnexpectedError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
 import type { UniqueRequestIdentifier } from '../utils/requests.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
-import { cancelConfirmationRelabel, visualizeConfirmationWithLatestAddressBook } from './confirmationRelabel.js'
+import { getPublishedAddressBookRevision, relabelReportingUnexpectedErrors } from './addressBookChangePublication.js'
+import { cancelConfirmationRelabel, relabelDisplayedConfirmationSimulation } from './confirmationRelabel.js'
 import { identifyAddress } from './metadataUtils.js'
 import { getSimulationErrorAbis } from './simulationErrorAbi.js'
 import { createSimulationStateWithNonceAndBaseFeeFixing, getCurrentSimulationInput, visualizeSimulatorState } from './simulationUpdating.js'
@@ -28,6 +29,24 @@ function getNextConfirmationSimulationId() {
 	return latestConfirmationSimulationId
 }
 
+type ConfirmationRunStoreOutcome<Result> = {
+	// Whether this call stored a new confirmation run. An aborted run returns no run to store, and a run superseded by a newer stored run or by the request's resolution is not stored.
+	readonly storedRun: boolean
+	readonly result: Result
+}
+
+// Every caller that stores a confirmation simulation run stores it through this. The re-label that follows an address-book change reaches only stored runs, so a run whose lookups overlapped a published change would otherwise keep the old names once stored, as would a request's first run, which no re-label can reach before it is stored. After storing such a run, this re-labels the displayed confirmation once; see "Address-book re-labels" in docs/popup-simulation-refresh.md.
+export async function simulateAndStoreConfirmationRun<Result>(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, simulateAndStore: () => Promise<ConfirmationRunStoreOutcome<Result>>) {
+	// Read before the run's first lookup, so a change published at any point until the run is stored is caught up.
+	const addressBookRevisionBeforeRun = getPublishedAddressBookRevision()
+	const { storedRun, result } = await simulateAndStore()
+	if (storedRun && getPublishedAddressBookRevision() !== addressBookRevisionBeforeRun) {
+		await relabelReportingUnexpectedErrors(relabelDisplayedConfirmationSimulation(ethereum, tokenPriceService))
+	}
+	return result
+}
+
+// Returns the run without storing it; callers store it through simulateAndStoreConfirmationRun.
 export async function refreshConfirmTransactionSimulation(
 	ethereum: EthereumClientService,
 	tokenPriceService: TokenPriceService,
@@ -73,8 +92,7 @@ export async function refreshConfirmTransactionSimulation(
 				? simulationInput
 				: appendTransactionsToInput(simulationInput, [preSimulationTransaction], undefined, {}, safeSigningRequest !== undefined)
 			const updatedSimulationState = await createSimulationStateWithNonceAndBaseFeeFixing(simulationStateWithNewTransaction, ethereum)
-			// Address-book re-labels reach only stored confirmations, so name lookups that overlap a published address-book change are done again before this run is returned.
-			return await visualizeConfirmationWithLatestAddressBook(async () => await visualizeSimulatorState(updatedSimulationState, ethereum, tokenPriceService, thisConfirmTransactionAbortController))
+			return await visualizeSimulatorState(updatedSimulationState, ethereum, tokenPriceService, thisConfirmTransactionAbortController)
 		}
 		const visualizedSimulatorState = await getNewVisualizedSimulationState()
 		const availableAbis = visualizedSimulatorState.addressBookEntries

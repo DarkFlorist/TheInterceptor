@@ -1,4 +1,4 @@
-// Address-book re-labels of the displayed confirmation and their coordination with confirmation simulation runs; see "Address-book re-labels" in docs/popup-simulation-refresh.md.
+// Address-book re-labels of the displayed confirmation; see "Address-book re-labels" in docs/popup-simulation-refresh.md.
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import type { PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
@@ -52,21 +52,4 @@ export async function relabelDisplayedConfirmationSimulation(ethereum: EthereumC
 			runningConfirmationRelabel = undefined
 		}
 	})
-}
-
-// Counts address-book changes published in this background session; only publishAddressBookChangeAndRelabelSimulations records one, never a re-label.
-let publishedAddressBookChanges = 0
-export function recordPublishedAddressBookChange() {
-	publishedAddressBookChanges += 1
-}
-
-// The re-label that follows an address-book change reaches only stored confirmations, and a confirmation run is stored by its caller after it returns. A run whose lookups overlap a published change may have read the old address book, so it does its lookups again; this also covers a request's first run, when there is no stored run to re-label yet.
-export async function visualizeConfirmationWithLatestAddressBook<Visualized>(visualize: () => Promise<Visualized>) {
-	let changesBeforeLookups: number
-	let visualized: Visualized
-	do {
-		changesBeforeLookups = publishedAddressBookChanges
-		visualized = await visualize()
-	} while (changesBeforeLookups !== publishedAddressBookChanges)
-	return visualized
 }
