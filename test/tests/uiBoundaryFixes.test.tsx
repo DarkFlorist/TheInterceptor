@@ -34,26 +34,25 @@ function collectElements(node: TestNode | undefined, tagName: string, results: T
 	return results
 }
 
-// Bun's FormData ignores form elements, and the DOM mock keeps Preact's defaultValue prop as an attribute, so collect named inputs like a browser would.
-class RenderedFormData extends FormData {
-	constructor(form?: TestNode) {
-		super()
-		for (const input of collectElements(form, 'input')) {
-			const name = input.getAttribute?.('name')
-			if (name === null || name === undefined) continue
-			this.set(name, input.value ?? input.getAttribute?.('defaultValue') ?? '')
-		}
+const NativeFormData = globalThis.FormData
+
+// Stands in for the FormData global while the RPC form is rendered: Bun's FormData ignores form elements, and the DOM mock keeps Preact's defaultValue prop as an attribute, so this collects the named inputs like a browser would. The form calls it with `new`, which returns the native FormData built here.
+function formDataFromRenderedInputs(form?: TestNode) {
+	const formData = new NativeFormData()
+	for (const input of collectElements(form, 'input')) {
+		const name = input.getAttribute?.('name')
+		if (name === null || name === undefined) continue
+		formData.set(name, input.value ?? input.getAttribute?.('defaultValue') ?? '')
 	}
+	return formData
 }
 
-class TestSubmitEvent extends Event {
-	readonly submitter: TestNode
-
-	constructor(form: TestNode, submitter: TestNode) {
-		super('submit', { cancelable: true })
-		Object.defineProperty(this, 'target', { configurable: true, value: form })
-		this.submitter = submitter
-	}
+// A native submit event carrying the form as its target and the clicked button as its submitter; the SubmitEvent global is the native Event while the form is rendered, so the form's instanceof check accepts it.
+function createSubmitEvent(form: TestNode, submitter: TestNode) {
+	const event = new Event('submit', { cancelable: true })
+	Object.defineProperty(event, 'target', { configurable: true, value: form })
+	Object.defineProperty(event, 'submitter', { configurable: true, value: submitter })
+	return event
 }
 
 async function withGlobalValues(values: Record<string, unknown>, run: () => Promise<void>) {
@@ -81,7 +80,7 @@ async function renderAndSaveRpcForm(defaultValues: RpcEntry | undefined, prepare
 	const savedEntries: RpcEntry[] = []
 	let formClosed = false
 	try {
-		await withGlobalValues({ SubmitEvent: TestSubmitEvent, HTMLFormElement: globalThis.Element, HTMLButtonElement: globalThis.Element, FormData: RenderedFormData }, async () => {
+		await withGlobalValues({ SubmitEvent: Event, HTMLFormElement: globalThis.Element, HTMLButtonElement: globalThis.Element, FormData: formDataFromRenderedInputs }, async () => {
 			await act(() => render(<RpcQueryProvider><ConfigureRpcForm defaultValues = { defaultValues } onCancel = { () => { formClosed = true } } onSave = { async (entry) => { savedEntries.push(entry) } } /></RpcQueryProvider>, dom.document.body))
 			prepareInputs(collectElements(dom.document.body, 'input'))
 
@@ -92,7 +91,7 @@ async function renderAndSaveRpcForm(defaultValues: RpcEntry | undefined, prepare
 			// The DOM mock keeps Preact's value prop as an attribute; expose it as the button property the submit handler reads.
 			saveButton.value = saveButton.getAttribute?.('value') ?? undefined
 
-			await act(async () => { submitHandler(new TestSubmitEvent(form, saveButton)) })
+			await act(async () => { submitHandler(createSubmitEvent(form, saveButton)) })
 			for (let attempt = 0; attempt < 20 && !formClosed; attempt += 1) await act(async () => await new Promise((resolve) => setTimeout(resolve, 0)))
 		})
 		return { savedEntries, formClosed }
