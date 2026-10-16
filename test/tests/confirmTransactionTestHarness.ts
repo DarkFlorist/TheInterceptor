@@ -183,6 +183,7 @@ export async function loadModules() {
 		safeSimulation,
 		safeCore,
 		safeConfirmationPersistence,
+		errors,
 	] = await Promise.all([
 		import('../../app/ts/simulation/services/EthereumClientService.js'),
 		import('../../app/ts/simulation/services/priceEstimator.js'),
@@ -205,6 +206,7 @@ export async function loadModules() {
 		import('../../app/ts/safe/safeSimulation.js'),
 		import('../../app/ts/safe/safeCore.js'),
 		import('../../app/ts/background/safeConfirmationPersistence.js'),
+		import('../../app/ts/utils/errors.js'),
 	])
 	const flushPendingTerminalRepliesForSocket: typeof flushPendingTerminalRepliesForSocketType = terminalReplyDelivery.flushPendingTerminalRepliesForSocket
 
@@ -270,6 +272,7 @@ export async function loadModules() {
 		EthereumBlockHeader: wireTypes.EthereumBlockHeader,
 		EthereumQuantity: wireTypes.EthereumQuantity,
 		EthSimulateV1Result: ethSimulateTypes.EthSimulateV1Result,
+		JsonRpcResponseError: errors.JsonRpcResponseError,
 	}
 }
 
@@ -450,6 +453,47 @@ export const ethereum = new modules.EthereumClientService(fakeRequestHandler, as
 export const simulator = {
 	ethereum,
 	tokenPriceService: new modules.TokenPriceService(ethereum, 60_000),
+}
+
+const FEE_VALIDATING_BASE_FEE_PER_GAS = 100_000_000_000n
+// Pays for a transfer only with a fee cap far below the fee-validating block base fee.
+export const TOO_LITTLE_ETH_FOR_FEES = 1_000_000_000_000n
+
+// Like geth's eth_simulateV1 without validation, a call that pays fees must cover the block base fee while a zero-fee call skips the check. Every account holds the given balance.
+export function createFeeValidatingSimulator(accountBalance: bigint) {
+	const block = { ...fakeBlock, baseFeePerGas: FEE_VALIDATING_BASE_FEE_PER_GAS }
+	const requestHandler = {
+		rpcUrl: fakeRpcNetwork.httpsRpc,
+		clearCache() { return undefined },
+		async jsonRpcRequest(rpcRequest: { method: string, params?: readonly unknown[] }) {
+			switch (rpcRequest.method) {
+				case 'eth_getBlockByNumber': return modules.serialize(modules.EthereumBlockHeader, block)
+				case 'eth_getBalance': return modules.serialize(modules.EthereumQuantity, accountBalance)
+				case 'eth_simulateV1': {
+					const simulationParams = rpcRequest.params?.[0]
+					const blockStateCalls = isRecord(simulationParams) && Array.isArray(simulationParams.blockStateCalls) ? simulationParams.blockStateCalls : []
+					return modules.serialize(modules.EthSimulateV1Result, blockStateCalls.map((blockStateCall) => {
+						const blockBaseFeePerGas = BigInt(blockStateCall.blockOverrides?.baseFeePerGas ?? block.baseFeePerGas)
+						for (const call of blockStateCall.calls) {
+							const maxFeePerGas = BigInt(call.maxFeePerGas ?? 0n)
+							if (maxFeePerGas === 0n || maxFeePerGas >= blockBaseFeePerGas) continue
+							throw new modules.JsonRpcResponseError({ jsonrpc: '2.0', id: 1, error: {
+								code: -32000,
+								message: `err: max fee per gas less than block base fee: address ${ addressString(BigInt(call.from)) }, maxFeePerGas: ${ maxFeePerGas }, baseFee: ${ blockBaseFeePerGas }`,
+							} })
+						}
+						return { ...makeFakeEthSimulateResult(accountBalance, modules.Multicall3ABI, blockStateCall.calls.length), baseFeePerGas: blockBaseFeePerGas }
+					}))
+				}
+				default: return await fakeRequestHandler.jsonRpcRequest(rpcRequest)
+			}
+		},
+	}
+	const feeValidatingEthereum = new modules.EthereumClientService(requestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
+	return {
+		ethereum: feeValidatingEthereum,
+		tokenPriceService: new modules.TokenPriceService(feeValidatingEthereum, 60_000),
+	}
 }
 
 export const activeAddress = modules.defaultActiveAddresses[0]?.address

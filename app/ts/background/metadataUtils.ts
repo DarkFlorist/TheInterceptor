@@ -250,6 +250,20 @@ export const getAddressesForSolidityTypes = (variables: readonly SolidityVariabl
 	return variables.flatMap((argumentVariable) => getAddressesForSolidityType(argumentVariable.typeValue))
 }
 
+type TransactionAddressFields = {
+	readonly from: bigint
+	readonly to: bigint | null
+	readonly nonce: bigint
+	readonly authorizationList?: readonly { readonly address: bigint }[]
+}
+
+// The sender, the recipient or the contract the transaction deploys, and the EIP-7702 delegation targets it authorizes.
+export const getTransactionAddresses = (transaction: TransactionAddressFields) => [
+	transaction.from,
+	transaction.to ?? getDeployedContractAddress(transaction.from, transaction.nonce),
+	...(transaction.authorizationList ?? []).map((authorization) => authorization.address),
+]
+
 export function getAddressesToIdentifyForVisualiserFromTransactions(events: EnrichedEthereumEvents, inputData: readonly EnrichedEthereumInputData[], simulationStateInput: SimulationStateInput) {
 	const addressesToFetchMetadata = [
 		...events.flatMap((event) => [event.address, ...(event.type === 'NonParsed' ? [] : getAddressesForSolidityTypes(event.args))]),
@@ -257,9 +271,7 @@ export function getAddressesToIdentifyForVisualiserFromTransactions(events: Enri
 	]
 
 	for (const tx of simulationStateInput.flatMap((block) => block.transactions)) {
-		addressesToFetchMetadata.push(tx.signedTransaction.from)
-		addressesToFetchMetadata.push(tx.signedTransaction.to ?? getDeployedContractAddress(tx.signedTransaction.from, tx.signedTransaction.nonce))
-		if (tx.signedTransaction.type === '7702') addressesToFetchMetadata.push(...tx.signedTransaction.authorizationList.map((authorization) => authorization.address))
+		addressesToFetchMetadata.push(...getTransactionAddresses(tx.signedTransaction))
 	}
 
 	return Array.from(new Set<bigint>([...addressesToFetchMetadata, ETHEREUM_LOGS_LOGGER_ADDRESS]).values())
