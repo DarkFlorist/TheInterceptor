@@ -134,8 +134,11 @@ export function calculateWeightedPercentile(data: readonly { dataPoint: bigint, 
 	return sortedData[sortedData.length - 1]?.dataPoint ?? 0n
 }
 
+// JavaScript dates can represent at most 8.64e15 milliseconds from the epoch.
+export const MAX_DATE_SECONDS = 8640000000000n
+
 export const bigintSecondsToDate = (seconds: bigint) => {
-	if (seconds > 8640000000000n) throw new Error(`Too big seconds value: ${ seconds }`)
+	if (seconds > MAX_DATE_SECONDS) throw new Error(`Too big seconds value: ${ seconds }`)
 	if (seconds < 0) throw new Error(`Got negative seconds: ${ seconds }`)
 	return new Date(Number(seconds) * 1000)
 }

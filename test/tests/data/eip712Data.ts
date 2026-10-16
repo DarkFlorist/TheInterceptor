@@ -1828,3 +1828,214 @@ export const d3ArrayFixed = `{
 	}
 }`
 
+
+const permit2Domain = { name: 'Permit2', chainId: '1', verifyingContract: '0x000000000022d473030f116ddee9f6b43ac78ba3' }
+const permit2DomainTypes = [
+	{ name: 'name', type: 'string' },
+	{ name: 'chainId', type: 'uint256' },
+	{ name: 'verifyingContract', type: 'address' },
+]
+const permit2DetailsTypes = [
+	{ name: 'token', type: 'address' },
+	{ name: 'amount', type: 'uint160' },
+	{ name: 'expiration', type: 'uint48' },
+	{ name: 'nonce', type: 'uint48' },
+]
+const permit2TokenPermissionsTypes = [
+	{ name: 'token', type: 'address' },
+	{ name: 'amount', type: 'uint256' },
+]
+const permit2SignatureTransferTypes = (permittedType: string, witnessType?: { name: string, type: string }) => [
+	{ name: 'permitted', type: permittedType },
+	{ name: 'spender', type: 'address' },
+	{ name: 'nonce', type: 'uint256' },
+	{ name: 'deadline', type: 'uint256' },
+	...(witnessType === undefined ? [] : [witnessType]),
+]
+
+const usdcAddress = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'
+const usdtAddress = '0xdac17f958d2ee523a2206206994597c13d831ec7'
+const wethAddress = '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2'
+export const uniswapUniversalRouter = '0x3fc91a3afd70395cd496c647d5a6cc9d4b2b7fad'
+const maxUint256 = '115792089237316195423570985008687907853269984665640564039457584007913129639935'
+export const permit2Signer = '0x7a16ff8270133f063aab6c9977183d9e72835428'
+export const uniswapXExclusiveDutchOrderReactor = '0x6000da47483062a0d734ba3dc7576ce6a0b645c4'
+
+export const permit2PermitBatchMessage = JSON.stringify({
+	types: {
+		PermitBatch: [
+			{ name: 'details', type: 'PermitDetails[]' },
+			{ name: 'spender', type: 'address' },
+			{ name: 'sigDeadline', type: 'uint256' },
+		],
+		PermitDetails: permit2DetailsTypes,
+		EIP712Domain: permit2DomainTypes,
+	},
+	domain: permit2Domain,
+	primaryType: 'PermitBatch',
+	message: {
+		details: [
+			{ token: usdcAddress, amount: '1461501637330902918203684832716283019655932542975', expiration: '281474976710655', nonce: '0' },
+			{ token: usdtAddress, amount: '5000000', expiration: '1700000000', nonce: '3' },
+		],
+		spender: uniswapUniversalRouter,
+		sigDeadline: '1700000000',
+	},
+})
+
+export const permit2TransferFromMessage = JSON.stringify({
+	types: {
+		PermitTransferFrom: permit2SignatureTransferTypes('TokenPermissions'),
+		TokenPermissions: permit2TokenPermissionsTypes,
+		EIP712Domain: permit2DomainTypes,
+	},
+	domain: permit2Domain,
+	primaryType: 'PermitTransferFrom',
+	message: {
+		permitted: { token: usdtAddress, amount: '1000000' },
+		spender: uniswapUniversalRouter,
+		nonce: '7',
+		deadline: '1700000000',
+	},
+})
+
+export const permit2BatchTransferFromMessage = JSON.stringify({
+	types: {
+		PermitBatchTransferFrom: permit2SignatureTransferTypes('TokenPermissions[]'),
+		TokenPermissions: permit2TokenPermissionsTypes,
+		EIP712Domain: permit2DomainTypes,
+	},
+	domain: permit2Domain,
+	primaryType: 'PermitBatchTransferFrom',
+	message: {
+		permitted: [
+			{ token: usdcAddress, amount: maxUint256 },
+			{ token: wethAddress, amount: '2500000000000000000' },
+		],
+		spender: '0x5555555555555555555555555555555555555555',
+		nonce: '0',
+		deadline: maxUint256,
+	},
+})
+
+const uniswapXOrderNonce = '1993353164669688581970088190602701610528397285201889446578254799128576197633'
+
+// Shaped like the UniswapX ExclusiveDutchOrder that app.uniswap.org asks to be signed when swapping 1000 USDC to ether.
+export const permit2UniswapXWitnessTransferFromMessage = JSON.stringify({
+	types: {
+		EIP712Domain: permit2DomainTypes,
+		PermitWitnessTransferFrom: permit2SignatureTransferTypes('TokenPermissions', { name: 'witness', type: 'ExclusiveDutchOrder' }),
+		TokenPermissions: permit2TokenPermissionsTypes,
+		ExclusiveDutchOrder: [
+			{ name: 'info', type: 'OrderInfo' },
+			{ name: 'decayStartTime', type: 'uint256' },
+			{ name: 'decayEndTime', type: 'uint256' },
+			{ name: 'exclusiveFiller', type: 'address' },
+			{ name: 'exclusivityOverrideBps', type: 'uint256' },
+			{ name: 'inputToken', type: 'address' },
+			{ name: 'inputStartAmount', type: 'uint256' },
+			{ name: 'inputEndAmount', type: 'uint256' },
+			{ name: 'outputs', type: 'DutchOutput[]' },
+		],
+		OrderInfo: [
+			{ name: 'reactor', type: 'address' },
+			{ name: 'swapper', type: 'address' },
+			{ name: 'nonce', type: 'uint256' },
+			{ name: 'deadline', type: 'uint256' },
+			{ name: 'additionalValidationContract', type: 'address' },
+			{ name: 'additionalValidationData', type: 'bytes' },
+		],
+		DutchOutput: [
+			{ name: 'token', type: 'address' },
+			{ name: 'startAmount', type: 'uint256' },
+			{ name: 'endAmount', type: 'uint256' },
+			{ name: 'recipient', type: 'address' },
+		],
+	},
+	domain: permit2Domain,
+	primaryType: 'PermitWitnessTransferFrom',
+	message: {
+		permitted: { token: usdcAddress, amount: '1000000000' },
+		spender: uniswapXExclusiveDutchOrderReactor,
+		nonce: uniswapXOrderNonce,
+		deadline: '1700000060',
+		witness: {
+			info: {
+				reactor: uniswapXExclusiveDutchOrderReactor,
+				swapper: permit2Signer,
+				nonce: uniswapXOrderNonce,
+				deadline: '1700000060',
+				additionalValidationContract: '0x0000000000000000000000000000000000000000',
+				additionalValidationData: '0x',
+			},
+			decayStartTime: '1700000000',
+			decayEndTime: '1700000060',
+			exclusiveFiller: '0xff8ba4d1fc3762f6154cc942ccf30049a2a0cec6',
+			exclusivityOverrideBps: '100',
+			inputToken: usdcAddress,
+			inputStartAmount: '1000000000',
+			inputEndAmount: '1000000000',
+			outputs: [
+				{ token: '0x0000000000000000000000000000000000000000', startAmount: '495000000000000000', endAmount: '490000000000000000', recipient: permit2Signer },
+				{ token: '0x0000000000000000000000000000000000000000', startAmount: '1240000000000000', endAmount: '1228000000000000', recipient: '0x000000fee13a103a10d593b9ae06b3e05f2e7e1c' },
+			],
+		},
+	},
+})
+
+// The witness field name is integrator defined too, this one follows the 0x Settler `SlippageAndActions slippageAndActions` witness.
+export const permit2BatchWitnessTransferFromMessage = JSON.stringify({
+	types: {
+		EIP712Domain: permit2DomainTypes,
+		PermitBatchWitnessTransferFrom: permit2SignatureTransferTypes('TokenPermissions[]', { name: 'slippageAndActions', type: 'SlippageAndActions' }),
+		SlippageAndActions: [
+			{ name: 'recipient', type: 'address' },
+			{ name: 'buyToken', type: 'address' },
+			{ name: 'minAmountOut', type: 'uint256' },
+			{ name: 'actions', type: 'bytes[]' },
+		],
+		TokenPermissions: permit2TokenPermissionsTypes,
+	},
+	domain: permit2Domain,
+	primaryType: 'PermitBatchWitnessTransferFrom',
+	message: {
+		permitted: [
+			{ token: usdcAddress, amount: '1000000000' },
+			{ token: usdtAddress, amount: '2000000' },
+		],
+		spender: '0x5555555555555555555555555555555555555555',
+		nonce: '11',
+		deadline: '1700000000',
+		slippageAndActions: {
+			recipient: permit2Signer,
+			buyToken: wethAddress,
+			minAmountOut: '400000000000000000',
+			actions: ['0xdeadbeef'],
+		},
+	},
+})
+
+// A valid EIP-712 message that is not a Permit2 witness transfer, as Permit2 requires the witness to be the last field.
+export const permit2WitnessTransferFromWitnessNotLastMessage = JSON.stringify({
+	types: {
+		EIP712Domain: permit2DomainTypes,
+		PermitWitnessTransferFrom: [
+			{ name: 'permitted', type: 'TokenPermissions' },
+			{ name: 'spender', type: 'address' },
+			{ name: 'witness', type: 'MockWitness' },
+			{ name: 'nonce', type: 'uint256' },
+			{ name: 'deadline', type: 'uint256' },
+		],
+		MockWitness: [{ name: 'value', type: 'uint256' }],
+		TokenPermissions: permit2TokenPermissionsTypes,
+	},
+	domain: permit2Domain,
+	primaryType: 'PermitWitnessTransferFrom',
+	message: {
+		permitted: { token: usdcAddress, amount: '1000000000' },
+		spender: '0x5555555555555555555555555555555555555555',
+		witness: { value: '1' },
+		nonce: '0',
+		deadline: '1700000000',
+	},
+})
