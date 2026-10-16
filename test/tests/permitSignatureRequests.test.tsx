@@ -19,7 +19,7 @@ Object.defineProperty(globalThis, 'browser', {
 	writable: true,
 	value: {
 		runtime: {
-			lastError: null,
+			lastError: undefined,
 			getManifest: () => ({ manifest_version: 3 }),
 			sendMessage: async () => undefined,
 			onMessage: { addListener: () => undefined, removeListener: () => undefined },
