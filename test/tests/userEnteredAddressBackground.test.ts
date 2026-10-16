@@ -26,7 +26,7 @@ function installBrowserMock() {
 	const sentRuntimeMessages: unknown[] = []
 	defineGlobal('browser', {
 		runtime: {
-			lastError: null,
+			lastError: undefined,
 			async sendMessage(message: unknown) {
 				sentRuntimeMessages.push(message)
 				return undefined
