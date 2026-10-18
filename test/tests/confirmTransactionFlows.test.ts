@@ -5,3 +5,5 @@ import './safeStackFlows.suite.js'
 import './terminalReplyDelivery.suite.js'
 
 beforeEach(resetConfirmTransactionTestState)
+
+import './transactionSenderRefresh.suite.js'
