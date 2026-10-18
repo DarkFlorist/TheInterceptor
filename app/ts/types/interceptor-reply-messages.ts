@@ -10,6 +10,7 @@ import { RpcConnectionStatus } from './user-interface-types.js'
 import { SimulateExecutionReply as PopupSimulateExecutionReply } from './simulateExecutionReply.js'
 import { SimulateGnosisSafeTransaction as RequestSimulateGnosisSafeTransaction, SimulateGovernanceContractExecution as RequestSimulateGovernanceContractExecution } from './simulateExecutionRequests.js'
 import { SafeStackExport } from './safeTypes.js'
+import { SafeAppsHostOrigin } from './safeAppsHosting.js'
 
 export type UnexpectedErrorOccured = funtypes.Static<typeof UnexpectedErrorOccured>
 export const UnexpectedErrorOccured = funtypes.ReadonlyObject({
@@ -277,6 +278,29 @@ const PopupReadyAndListeningReply = funtypes.ReadonlyObject({
 	}),
 }).asReadonly()
 
+export type PrepareSafeAppReply = funtypes.Static<typeof PrepareSafeAppReply>
+const PrepareSafeAppReply = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_prepareSafeApp'),
+	data: funtypes.Union(
+		funtypes.ReadonlyObject({ success: funtypes.Literal(true) }),
+		funtypes.ReadonlyObject({ success: funtypes.Literal(false), errorMessage: funtypes.String }),
+	),
+})
+
+const PrepareSafeApp = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_prepareSafeApp'),
+	data: funtypes.ReadonlyObject({ origin: SafeAppsHostOrigin }),
+})
+
+const CancelPrepareSafeApp = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_cancelPrepareSafeApp'),
+	data: funtypes.ReadonlyObject({ origin: SafeAppsHostOrigin }),
+})
+const CancelPrepareSafeAppReply = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_cancelPrepareSafeApp'),
+	data: funtypes.ReadonlyObject({ success: funtypes.Literal(true) }),
+})
+
 type PopupSettingsReplyCodecs = {
 	ChangeActiveAddressReply: typeof ChangeActiveAddressReply
 	PopupSettingsChangeReply: typeof PopupSettingsChangeReply
@@ -288,6 +312,8 @@ type PopupSettingsRepliesMap = {
 }
 
 type PopupRequestsRepliesMap = PopupSettingsRepliesMap & {
+	popup_prepareSafeApp: typeof PrepareSafeAppReply
+	popup_cancelPrepareSafeApp: typeof CancelPrepareSafeAppReply
 	popup_requestMakeMeRichData: typeof RequestMakeMeRichDataReply
 	popup_requestActiveAddresses: typeof RequestActiveAddressesReply
 	popup_requestSimulationMode: typeof RequestSimulationModeReply
@@ -311,6 +337,8 @@ type PopupRequestsRepliesMap = PopupSettingsRepliesMap & {
 }
 
 export const PopupRequestsReplies: PopupRequestsRepliesMap = {
+	popup_prepareSafeApp: PrepareSafeAppReply,
+	popup_cancelPrepareSafeApp: CancelPrepareSafeAppReply,
 	popup_requestMakeMeRichData: RequestMakeMeRichDataReply,
 	popup_requestActiveAddresses: RequestActiveAddressesReply,
 	popup_requestSimulationMode: RequestSimulationModeReply,
@@ -348,6 +376,8 @@ export const RequestAbiAndNameFromBlockExplorer = funtypes.ReadonlyObject({
 }).asReadonly()
 
 export const PopupMessageReplyRequests = funtypes.Union(
+	PrepareSafeApp,
+	CancelPrepareSafeApp,
 	RequestAbiAndNameFromBlockExplorer,
 	RequestIdentifyAddress,
 	RequestSafeContractState,
@@ -389,6 +419,8 @@ export type PopupRequests = funtypes.Static<typeof PopupMessageReplyRequests>
 export type PopupRequestsReplyReturn<Request extends PopupRequests> = Request['method'] extends keyof typeof PopupRequestsReplies ? funtypes.Static<(typeof PopupRequestsReplies)[Request['method']]> : undefined
 
 export type PopupReplyOption =
+	| PrepareSafeAppReply
+	| funtypes.Static<typeof CancelPrepareSafeAppReply>
 	| RequestMakeMeRichDataReply
 	| RequestActiveAddressesReply
 	| RequestSimulationModeReply
@@ -413,6 +445,8 @@ export type PopupReplyOption =
 	| undefined
 
 export const PopupReplyOption: funtypes.Codec<PopupReplyOption> = funtypes.Union(
+	PrepareSafeAppReply,
+	CancelPrepareSafeAppReply,
 	RequestMakeMeRichDataReply,
 	RequestActiveAddressesReply,
 	RequestSimulationModeReply,

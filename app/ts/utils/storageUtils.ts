@@ -1,10 +1,10 @@
 import * as funtypes from 'funtypes'
+import { ContentScriptSettings } from '../types/contentScriptSettings.js'
 import { EthereumAddress, EthereumAddressOrMissing, LiteralConverterParserFactory, serialize } from '../types/wire-types.js'
 import { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, StoredWatchAssetRequest, TabState } from '../types/user-interface-types.js'
 import { BlockTimeManipulation, CompleteVisualizedSimulation, EthereumSubscriptionsAndFilters, InterceptorTransactionStack } from '../types/visualizer-types.js'
 import { AddressBookEntries, AddressBookEntry, EntrySource } from '../types/addressBookTypes.js'
 import { Page } from '../types/exportedSettingsTypes.js'
-import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { SignerName, SigningAddressPreferences } from '../types/signerTypes.js'
 import { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import { RpcEntries, RpcNetwork } from '../types/rpc.js'
@@ -64,7 +64,6 @@ const OptionalIndependentActiveSimulationAddressStorageProperty = presenceAwareO
 const LocalStorageItemsRuntype = funtypes.Intersect(funtypes.ReadonlyPartial({
 	openedPageV2: Page,
 	useSignersAddressAsActiveAddress: funtypes.Boolean,
-	websiteAccess: WebsiteAccessArray,
 	activeRpcNetwork: RpcNetwork,
 	simulationMode: funtypes.Boolean,
 	pendingInterceptorAccessRequests: PendingAccessRequests,
@@ -80,7 +79,7 @@ const LocalStorageItemsRuntype = funtypes.Intersect(funtypes.ReadonlyPartial({
 	useTabsInsteadOfPopup: funtypes.Boolean,
 	rpcEntries: RpcEntries,
 	metamaskCompatibilityMode: funtypes.Boolean,
-	safeAppsCompatibilityMode: funtypes.Boolean,
+	...ContentScriptSettings.fields,
 	userAddressBookEntries: funtypes.ReadonlyArray(funtypes.Union(AddressBookEntry, OldActiveAddressEntry)),
 	userAddressBookEntriesV2: AddressBookEntries,
 	userAddressBookEntriesV3: AddressBookEntries,
@@ -125,6 +124,7 @@ const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('rpcEntries'),
 	funtypes.Literal('metamaskCompatibilityMode'),
 	funtypes.Literal('safeAppsCompatibilityMode'),
+	funtypes.Literal('safeAppsHostOrigins'),
 	funtypes.Literal('userAddressBookEntries'),
 	funtypes.Literal('userAddressBookEntriesV2'),
 	funtypes.Literal('userAddressBookEntriesV3'),
