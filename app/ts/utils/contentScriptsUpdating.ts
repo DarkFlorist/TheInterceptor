@@ -1,7 +1,7 @@
-import { getSettings } from '../background/settings.js'
-import type { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { checkAndThrowRuntimeLastError, getHostWithPort, getTabIfExists, isMissingBrowserTargetError } from './requests.js'
 import { reportLocalRecoveryBestEffort, reportUnexpectedError } from './errors.js'
+import { getManifestV2IsolatedWorldInjections, getPageWorldScriptPaths } from '../config/contentScriptInjectionArtifacts.js'
+import type { ContentScriptRegistrationConfiguration } from '../config/contentScriptInjectionConfiguration.js'
 
 const injectableSitesWildcard = ['file://*/*', 'http://*/*', 'https://*/*']
 const injectableSitesRegexp = [/^file:\/\/.*/, /^http:\/\/.*/, /^https:\/\/.*/]
@@ -10,7 +10,11 @@ const otherExtensionInjectionTargetErrorMessage = 'Cannot access a chrome-extens
 const extensionGalleryInjectionTargetErrorMessage = 'The extensions gallery cannot be scripted.'
 const isInjectableSite = (url: string) => injectableSitesRegexp.some((regexpPattern) => regexpPattern.test(url)) && !extensionGallerySitesRegexp.some((regexpPattern) => regexpPattern.test(url))
 const isExpectedManifestV2InjectionTargetError = (error: unknown) => error instanceof Error && (error.message === otherExtensionInjectionTargetErrorMessage || error.message === extensionGalleryInjectionTargetErrorMessage)
-export const getInterceptorDisabledSites = (websiteAccess: WebsiteAccessArray) => websiteAccess.filter((entry) => entry.interceptorDisabled === true).map((entry) => entry.website.websiteOrigin)
+const asRootRelativePaths = (paths: readonly string[]) => paths.map((scriptPath) => `/${ scriptPath }`)
+const haveSameScriptFiles = (first: readonly string[] | undefined, second: readonly string[] | undefined) => {
+	if (first === undefined || second === undefined) return first === second
+	return first.length === second.length && first.every((scriptPath, index) => scriptPath === second[index])
+}
 
 function getManifestV3ExcludeMatchesForOrigin(origin: string) {
 	if (origin === '') return ['file:///*']
@@ -40,10 +44,12 @@ export function getManifestV3ExcludeMatches(origins: readonly string[]) {
 	return [...patterns]
 }
 
-export const updateContentScriptInjectionStrategyManifestV3 = async () => {
-	const excludeMatches = getManifestV3ExcludeMatches(getInterceptorDisabledSites((await getSettings()).websiteAccess))
+export const updateContentScriptInjectionStrategyManifestV3 = async ({ injectionSites: { interceptorDisabledSites }, pageWorldProvider: { metamaskCompatibilityMode } }: ContentScriptRegistrationConfiguration) => {
+	const excludeMatches = getManifestV3ExcludeMatches(interceptorDisabledSites)
+	type RegisteredContentScript = Parameters<typeof browser.scripting.registerContentScripts>[0][0]
+	let previousRegisteredContentScripts: RegisteredContentScript[] | undefined
+	let registrationMutationStarted = false
 	try {
-		type RegisteredContentScript = Parameters<typeof browser.scripting.registerContentScripts>[0][0]
 		// The browser polyfill types do not expose Chrome's MAIN world or matchOriginAsFallback options.
 		type FixedContentScript = RegisteredContentScript & { world?: 'MAIN' | 'ISOLATED', matchOriginAsFallback: boolean }
 		const contentScripts: FixedContentScript[] = [{
@@ -59,39 +65,72 @@ export const updateContentScriptInjectionStrategyManifestV3 = async () => {
 			allFrames: true,
 			matches: injectableSitesWildcard,
 			excludeMatches,
-			js: ['/inpage/js/inpage.js'],
+			js: asRootRelativePaths(getPageWorldScriptPaths(metamaskCompatibilityMode)),
 			runAt: 'document_start',
 			world: 'MAIN',
 			matchOriginAsFallback: true
 		}]
 		const registeredContentScripts = await browser.scripting.getRegisteredContentScripts()
-		const registeredContentScriptIds = new Set(registeredContentScripts.map(({ id }) => id))
+		previousRegisteredContentScripts = registeredContentScripts
+		const registeredContentScriptsById = new Map(registeredContentScripts.map((registration) => [registration.id, registration]))
 		const desiredContentScriptIds = new Set(contentScripts.map(({ id }) => id))
-		const missingContentScripts = contentScripts.filter(({ id }) => !registeredContentScriptIds.has(id))
-		const existingContentScripts = contentScripts.filter(({ id }) => registeredContentScriptIds.has(id))
+		const replacementContentScripts = contentScripts.filter(({ id, js }) => {
+			const registered = registeredContentScriptsById.get(id)
+			return registered !== undefined && !haveSameScriptFiles(registered.js, js)
+		})
+		const replacementContentScriptIds = new Set(replacementContentScripts.map(({ id }) => id))
+		const missingContentScripts = contentScripts.filter(({ id }) => !registeredContentScriptsById.has(id) || replacementContentScriptIds.has(id))
+		const existingContentScripts = contentScripts.filter(({ id }) => registeredContentScriptsById.has(id) && !replacementContentScriptIds.has(id))
 		const obsoleteContentScriptIds = registeredContentScripts.map(({ id }) => id).filter((id) => !desiredContentScriptIds.has(id))
-		if (missingContentScripts.length > 0) await browser.scripting.registerContentScripts(missingContentScripts)
-		if (existingContentScripts.length > 0) await browser.scripting.updateContentScripts(existingContentScripts)
-		if (obsoleteContentScriptIds.length > 0) await browser.scripting.unregisterContentScripts({ ids: obsoleteContentScriptIds })
+		if (replacementContentScriptIds.size > 0) {
+			registrationMutationStarted = true
+			await browser.scripting.unregisterContentScripts({ ids: [...replacementContentScriptIds] })
+		}
+		if (missingContentScripts.length > 0) {
+			registrationMutationStarted = true
+			await browser.scripting.registerContentScripts(missingContentScripts)
+		}
+		if (existingContentScripts.length > 0) {
+			registrationMutationStarted = true
+			await browser.scripting.updateContentScripts(existingContentScripts)
+		}
+		if (obsoleteContentScriptIds.length > 0) {
+			registrationMutationStarted = true
+			await browser.scripting.unregisterContentScripts({ ids: obsoleteContentScriptIds })
+		}
+		return true
 	} catch (error: unknown) {
+		if (registrationMutationStarted && previousRegisteredContentScripts !== undefined) {
+			try {
+				const currentRegisteredContentScripts = await browser.scripting.getRegisteredContentScripts()
+				const currentRegisteredContentScriptIds = currentRegisteredContentScripts.map(({ id }) => id)
+				if (currentRegisteredContentScriptIds.length > 0) await browser.scripting.unregisterContentScripts({ ids: currentRegisteredContentScriptIds })
+				if (previousRegisteredContentScripts.length > 0) await browser.scripting.registerContentScripts(previousRegisteredContentScripts)
+			} catch (rollbackError) {
+				await reportUnexpectedError(rollbackError, { code: 'content_script_registration_rollback_failed' })
+			}
+		}
 		await reportUnexpectedError(error, { code: 'content_script_registration_failed' })
+		throw error
 	}
 }
 
-const injectLogic = async (content: browser.webNavigation._OnCommittedDetails) => {
+type GetContentScriptInjectionConfiguration = () => Promise<ContentScriptRegistrationConfiguration>
+
+const createInjectLogic = (getContentScriptInjectionConfiguration: GetContentScriptInjectionConfiguration) => async (content: browser.webNavigation._OnCommittedDetails) => {
 	if (!isInjectableSite(content.url)) return false
-	const disabledSites = getInterceptorDisabledSites((await getSettings()).websiteAccess)
+	const { injectionSites: { interceptorDisabledSites }, pageWorldProvider: { metamaskCompatibilityMode } } = await getContentScriptInjectionConfiguration()
 	// The tab can navigate while settings are loading, including to another extension page where injection is prohibited.
 	const thisTab = await getTabIfExists(content.tabId)
 	if (thisTab?.url === undefined || !isInjectableSite(thisTab.url)) return false
 	const urls = [content.url, thisTab.url]
 	const hostnames = urls.map((url) => getHostWithPort(url))
-	const noMatches = disabledSites.every(excludeMatch => !hostnames.includes(excludeMatch))
+	const noMatches = interceptorDisabledSites.every(excludeMatch => !hostnames.includes(excludeMatch))
 	if (!noMatches) return false
 	try {
-		await browser.tabs.executeScript(content.tabId, { file: '/vendor/webextension-polyfill/dist/browser-polyfill.js', allFrames: false, runAt: 'document_start' })
-		await browser.tabs.executeScript(content.tabId, { file: '/inpage/js/listenContentScript.js', allFrames: false, runAt: 'document_start' })
-		await browser.tabs.executeScript(content.tabId, { file: '/inpage/js/document_start.js', allFrames: false, runAt: 'document_start' })
+		for (const injection of getManifestV2IsolatedWorldInjections(metamaskCompatibilityMode)) {
+			await browser.tabs.executeScript(content.tabId, { file: `/${ injection.file }`, allFrames: false, runAt: 'document_start' })
+		}
 		checkAndThrowRuntimeLastError()
 	} catch(error) {
 		if (isMissingBrowserTargetError(error) || isExpectedManifestV2InjectionTargetError(error)) return false
@@ -100,12 +139,10 @@ const injectLogic = async (content: browser.webNavigation._OnCommittedDetails) =
 	return false
 }
 
-export const updateContentScriptInjectionStrategyManifestV2 = async () => {
-	browser.webNavigation.onCommitted.removeListener(injectLogic)
-	browser.webNavigation.onCommitted.addListener(injectLogic, { url: injectableSitesWildcard.map((urlMatches) => ({ urlMatches })) })
-}
+let registeredManifestV2InjectLogic: ReturnType<typeof createInjectLogic> | undefined
 
-export const updateContentScriptInjectionStrategy = async () => {
-	if (browser.runtime.getManifest().manifest_version === 3) await updateContentScriptInjectionStrategyManifestV3()
-	else await updateContentScriptInjectionStrategyManifestV2()
+export const updateContentScriptInjectionStrategyManifestV2 = async (getContentScriptInjectionConfiguration: GetContentScriptInjectionConfiguration) => {
+	if (registeredManifestV2InjectLogic !== undefined) browser.webNavigation.onCommitted.removeListener(registeredManifestV2InjectLogic)
+	registeredManifestV2InjectLogic = createInjectLogic(getContentScriptInjectionConfiguration)
+	browser.webNavigation.onCommitted.addListener(registeredManifestV2InjectLogic, { url: injectableSitesWildcard.map((urlMatches) => ({ urlMatches })) })
 }
