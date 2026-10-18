@@ -5,8 +5,9 @@ import { captureSimulationSnapshot, getSimulationProviderForSnapshot, type Simul
 import { getPopupVisualisationFingerprint } from './popupSimulationFingerprint.js'
 import { stringifyJSONWithBigInts } from '../utils/bigint.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
+import type { Settings } from '../types/interceptor-messages.js'
 
-export type PopupSimulationRefresh = SimulationServices & { readonly invalidateOldState?: boolean }
+export type PopupSimulationRefresh = SimulationServices & { readonly invalidateOldState?: boolean, readonly settingsSnapshot?: Settings }
 export type RevisionedPopupSimulationRefresh = PopupSimulationRefresh & { readonly revision: string | symbol }
 
 export type PopupSimulationRefreshOutcome = { readonly status: 'superseded' } | { readonly status: 'observed', readonly available: boolean }
@@ -62,7 +63,7 @@ const refreshRevision = createPopupSimulationRefresher<RevisionedPopupSimulation
 })
 
 export async function queuePopupSimulationRefresh(services: PopupSimulationRefresh) {
-	const snapshot = await captureSimulationSnapshot()
+	const snapshot = await captureSimulationSnapshot(services.settingsSnapshot)
 	const provider = getSimulationProviderForSnapshot(services.ethereum, snapshot)
 	const block = provider?.getCachedBlock()
 	// Without a cached head we cannot prove that two requests cover the same block; keep the follow-up refresh.

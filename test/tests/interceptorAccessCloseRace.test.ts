@@ -160,7 +160,7 @@ async function loadModules() {
 describe('interceptor access close handling', () => {
 	test('does not emit pre-response connection events when eth_requestAccounts already has access', async () => {
 		const browserMock = installBrowserMock()
-		const { requestAccessFromUser, websiteSocketToString, changeSimulationMode, updateWebsiteAccess, getSettings } = await loadModules()
+		const { requestAccessFromUser, websiteSocketToString, changeSimulationMode, updateWebsiteAccess, getRequiredSettings } = await loadModules()
 		const website = { websiteOrigin: 'https://example.test', icon: undefined, title: undefined }
 		const account = 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n
 		const socket: WebsiteSocket = { tabId: 1, connectionName: 0n }
@@ -179,7 +179,7 @@ describe('interceptor access close handling', () => {
 		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 
 		const { getActiveAddressEntryForChain } = await import('../../app/ts/background/metadataUtils.js')
-		await requestAccessFromUser(simulationServicesOwner, websiteTabConnections, socket, website, request, undefined, await getSettings(), await getActiveAddressEntryForChain(account, 1n), async () => undefined)
+		await requestAccessFromUser(simulationServicesOwner, websiteTabConnections, socket, website, request, undefined, await getRequiredSettings(), await getActiveAddressEntryForChain(account, 1n), async () => undefined)
 
 		const postedMessages = browserMock.postedMessages as Array<{ method?: string, result?: unknown, requestId?: number }>
 		const providerRequestMessages = postedMessages

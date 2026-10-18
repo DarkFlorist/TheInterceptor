@@ -43,6 +43,8 @@ export const popupMessageProtocol = {
 	popup_openSettings: { domain: 'navigation' },
 	popup_import_settings: { domain: 'settings', legacyWireName: true },
 	popup_get_export_settings: { domain: 'settings', legacyWireName: true },
+	popup_retryRpcConfiguration: { domain: 'settings' },
+	popup_restoreDefaultRpcConfiguration: { domain: 'settings' },
 	popup_set_rpc_list: { domain: 'settings', legacyWireName: true },
 	popup_simulateGovernanceContractExecution: { domain: 'simulation' },
 	popup_simulateGnosisSafeTransaction: { domain: 'safe' },

@@ -692,7 +692,7 @@ describe('popup clear reset', () => {
 		await changeActiveRpc(simulationServicesOwner, new Map(), sameChainRpcNetwork, { source: 'dapp', simulationMode: true, signerTabId: undefined })
 
 		const modules = await modulesPromise
-		const updatedSettings = await modules.getSettings()
+		const updatedSettings = await modules.getRequiredSettings()
 		const storedInterceptorTransactionStack = (await browserStorageLocalGet('interceptorTransactionStack')).interceptorTransactionStack
 		const popupVisualisation = (await browserStorageLocalGet('popupVisualisation')).popupVisualisation
 		assert.deepEqual(updatedSettings.activeRpcNetwork, sameChainRpcNetwork)
@@ -720,7 +720,7 @@ describe('popup clear reset', () => {
 		await changeActiveRpc(simulationServicesOwner, new Map(), otherChainRpcNetwork, { source: 'dapp', simulationMode: true, signerTabId: undefined })
 
 		const modules = await modulesPromise
-		const updatedSettings = await modules.getSettings()
+		const updatedSettings = await modules.getRequiredSettings()
 		const interceptorTransactionStack = (await browserStorageLocalGet('interceptorTransactionStack')).interceptorTransactionStack
 		const popupVisualisation = (await browserStorageLocalGet('popupVisualisation')).popupVisualisation
 		assert.deepEqual(updatedSettings.activeRpcNetwork, otherChainRpcNetwork)
@@ -743,11 +743,13 @@ describe('popup clear reset', () => {
 		})
 
 		const modules = await modulesPromise
+		const settingsSnapshot = await modules.getSettingsSnapshot()
 		const reply = await modules.popupMessageHandler(
 			new Map(),
 			createTestSimulationServicesOwner({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService }),
 			{ method: 'popup_requestCompleteVisualizedSimulation' },
-			await modules.getSettings(),
+			settingsSnapshot.settings,
+			settingsSnapshot.rpcConfiguration,
 			async () => undefined,
 		)
 

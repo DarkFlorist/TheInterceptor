@@ -10,6 +10,13 @@ import { RpcConnectionStatus } from './user-interface-types.js'
 import { SimulateExecutionReply as PopupSimulateExecutionReply } from './simulateExecutionReply.js'
 import { SimulateGnosisSafeTransaction as RequestSimulateGnosisSafeTransaction, SimulateGovernanceContractExecution as RequestSimulateGovernanceContractExecution } from './simulateExecutionRequests.js'
 import { SafeStackExport } from './safeTypes.js'
+import { METAMASK_ERROR_PROVIDER_DISCONNECTED } from '../utils/constants.js'
+import { RPC_CONFIGURATION_UNAVAILABLE_MESSAGE } from '../utils/rpcConfigurationError.js'
+
+export const RPC_CONFIGURATION_UNAVAILABLE_ERROR = {
+	code: METAMASK_ERROR_PROVIDER_DISCONNECTED,
+	message: RPC_CONFIGURATION_UNAVAILABLE_MESSAGE,
+}
 
 export type UnexpectedErrorOccured = funtypes.Static<typeof UnexpectedErrorOccured>
 export const UnexpectedErrorOccured = funtypes.ReadonlyObject({
@@ -21,6 +28,14 @@ export const UnexpectedErrorOccured = funtypes.ReadonlyObject({
 		code: funtypes.String,
 		debugId: funtypes.Union(funtypes.String, funtypes.Undefined),
 	})
+})
+
+export type RpcConfigurationUnavailableReply = funtypes.Static<typeof RpcConfigurationUnavailableReply>
+export const RpcConfigurationUnavailableReply = funtypes.ReadonlyObject({
+	error: funtypes.ReadonlyObject({
+		code: funtypes.Number,
+		message: funtypes.String,
+	}),
 })
 
 export type EnrichedRichListElement = funtypes.Static<typeof EnrichedRichListElement>
@@ -389,6 +404,7 @@ export type PopupRequests = funtypes.Static<typeof PopupMessageReplyRequests>
 export type PopupRequestsReplyReturn<Request extends PopupRequests> = Request['method'] extends keyof typeof PopupRequestsReplies ? funtypes.Static<(typeof PopupRequestsReplies)[Request['method']]> : undefined
 
 export type PopupReplyOption =
+	| RpcConfigurationUnavailableReply
 	| RequestMakeMeRichDataReply
 	| RequestActiveAddressesReply
 	| RequestSimulationModeReply
@@ -413,6 +429,7 @@ export type PopupReplyOption =
 	| undefined
 
 export const PopupReplyOption: funtypes.Codec<PopupReplyOption> = funtypes.Union(
+	RpcConfigurationUnavailableReply,
 	RequestMakeMeRichDataReply,
 	RequestActiveAddressesReply,
 	RequestSimulationModeReply,

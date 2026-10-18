@@ -424,7 +424,7 @@ test('returns the current Safe overlay when a simulation-stack request is confir
 	await modules.updateInterceptorTransactionStack(() => ({
 		operations: [{ type: 'Transaction', preSimulationTransaction }],
 	}))
-	assert.equal((await (await import('../../app/ts/background/settings.js')).getSettings()).activeSigningSafeAddress, activeAddress)
+	assert.equal((await (await import('../../app/ts/background/settings.js')).getRequiredSettings()).activeSigningSafeAddress, activeAddress)
 	assert.equal((await (await import('../../app/ts/background/simulationUpdating.js')).getCurrentSimulationInput())[0]?.transactions.length, 1)
 	await modules.setFetchSimulationStackRequestPromise({
 		website: { websiteOrigin: 'https://example.com', icon: undefined, title: undefined },

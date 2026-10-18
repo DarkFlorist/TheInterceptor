@@ -29,6 +29,7 @@ function installBrowserMock({ registerError, updateError, executeScriptError, ta
 	const executedScriptFiles: string[] = []
 	const registeredContentScripts = new Map(registeredContentScriptIds.map((id) => [id, { id }]))
 	let executeScriptCalls = 0
+	let reloadCalls = 0
 	const scriptingOperations: string[] = []
 	const unregisteredContentScriptIdBatches: string[][] = []
 	let currentTabUrl = tabUrl
@@ -89,6 +90,7 @@ function installBrowserMock({ registerError, updateError, executeScriptError, ta
 			tabs: {
 				async query() { return [{ id: 42, url: currentTabUrl }] },
 				async get() { return hasVisibleTabUrl ? { id: 42, url: currentTabUrl } : { id: 42 } },
+				async reload() { reloadCalls += 1 },
 				async update() { return undefined },
 				async executeScript(_tabId: number, injection: { readonly file?: string }) {
 					executeScriptCalls++
@@ -98,6 +100,12 @@ function installBrowserMock({ registerError, updateError, executeScriptError, ta
 				},
 				onUpdated: { addListener: () => undefined, removeListener: () => undefined },
 				onRemoved: { addListener: () => undefined, removeListener: () => undefined },
+			},
+			declarativeNetRequest: {
+				async getDynamicRules() { return [] },
+				async getSessionRules() { return [] },
+				async updateDynamicRules() { return undefined },
+				async updateSessionRules() { return undefined },
 			},
 			windows: {
 				async get() { return undefined },
@@ -133,6 +141,7 @@ function installBrowserMock({ registerError, updateError, executeScriptError, ta
 		getScriptingOperations() { return [...scriptingOperations] },
 		getUnregisteredContentScriptIdBatches() { return unregisteredContentScriptIdBatches.map((ids) => [...ids]) },
 		getExecuteScriptCalls() { return executeScriptCalls },
+		getReloadCalls() { return reloadCalls },
 		getExecutedScriptFiles() { return [...executedScriptFiles] },
 		getCommittedListener() {
 			if (committedListener === undefined) throw new Error('webNavigation listener was not registered')
@@ -156,6 +165,9 @@ async function loadModules() {
 	return {
 		...await import('../../app/ts/utils/contentScriptsUpdating.js'),
 		...await import('../../app/ts/background/storageVariables.js'),
+		...await import('../../app/ts/background/websiteAccessUpdating.js'),
+		...await import('../../app/ts/background/popupMessageHandlers.js'),
+		...await import('../../app/ts/simulation/serviceLifecycle.js'),
 	}
 }
 
@@ -236,6 +248,56 @@ describe('content script injection strategy', () => {
 		assert.equal(getRegisteredContentScripts().every(({ excludeMatches }) => excludeMatches?.length === 0), true)
 		assert.deepEqual(getScriptingOperations(), ['register', 'update', 'unregister'])
 		assert.deepEqual(getUnregisteredContentScriptIdBatches(), [['obsolete-inpage']])
+	})
+
+	test('removing a disabled website removes its origin from registered script exclusions', async () => {
+		const websiteOrigin = 'https://disabled.example'
+		const { getRegisteredContentScripts } = installBrowserMock()
+		const { updateContentScriptInjectionStrategyManifestV3, updateWebsiteAccessAndContentScriptInjectionStrategy } = await loadModules()
+		await browser.storage.local.set({ websiteAccess: [{
+			website: { websiteOrigin, icon: undefined, title: undefined },
+			interceptorDisabled: true,
+		}] })
+
+		await updateContentScriptInjectionStrategyManifestV3()
+		assert.equal(getRegisteredContentScripts().every(({ excludeMatches }) => excludeMatches?.includes('https://*.disabled.example/*') === true), true)
+
+		await updateWebsiteAccessAndContentScriptInjectionStrategy((websiteAccess) => websiteAccess.filter((entry) => entry.website.websiteOrigin !== websiteOrigin))
+		assert.equal(getRegisteredContentScripts().every(({ excludeMatches }) => excludeMatches?.length === 0), true)
+	})
+
+	test('bulk access edits reconcile exclusions when disabling, enabling, and removing a website', async () => {
+		const website = { websiteOrigin: 'https://bulk-disabled.example', icon: undefined, title: undefined }
+		const enabledEntry = { website, addressAccess: [], interceptorDisabled: false }
+		const disabledEntry = { ...enabledEntry, interceptorDisabled: true }
+		const { getRegisteredContentScripts, getReloadCalls } = installBrowserMock()
+		const { changeInterceptorAccess, createSimulationServicesOwner } = await loadModules()
+		const simulationServicesOwner = createSimulationServicesOwner(undefined, async () => undefined, async (_ethereum, error) => { throw error })
+		const websiteTabConnections = new Map()
+		await browser.storage.local.set({ websiteAccess: [enabledEntry] })
+
+		await changeInterceptorAccess(simulationServicesOwner, websiteTabConnections, {
+			method: 'popup_changeInterceptorAccess',
+			data: [{ removed: false, oldEntry: enabledEntry, newEntry: disabledEntry }],
+		})
+		assert.equal(getRegisteredContentScripts().every(({ excludeMatches }) => excludeMatches?.includes('https://*.bulk-disabled.example/*') === true), true)
+
+		await changeInterceptorAccess(simulationServicesOwner, websiteTabConnections, {
+			method: 'popup_changeInterceptorAccess',
+			data: [{ removed: false, oldEntry: disabledEntry, newEntry: enabledEntry }],
+		})
+		assert.equal(getRegisteredContentScripts().every(({ excludeMatches }) => excludeMatches?.length === 0), true)
+
+		await changeInterceptorAccess(simulationServicesOwner, websiteTabConnections, {
+			method: 'popup_changeInterceptorAccess',
+			data: [{ removed: false, oldEntry: enabledEntry, newEntry: disabledEntry }],
+		})
+		await changeInterceptorAccess(simulationServicesOwner, websiteTabConnections, {
+			method: 'popup_changeInterceptorAccess',
+			data: [{ removed: true, oldEntry: disabledEntry, newEntry: disabledEntry }],
+		})
+		assert.equal(getRegisteredContentScripts().every(({ excludeMatches }) => excludeMatches?.length === 0), true)
+		assert.equal(getReloadCalls(), 4)
 	})
 
 	test('keeps existing and obsolete manifest v3 content scripts registered when an update fails', async () => {
