@@ -1,6 +1,7 @@
 
-import { sendPopupMessageToBackgroundPage, sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport } from '../../background/backgroundUtils.js'
+import { sendPopupMessageToBackgroundPage, sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport, sendPopupMessageWithReply } from '../../background/backgroundUtils.js'
 import { MessageToPopup, type ImportSettingsReply } from '../../types/interceptor-messages.js'
+import type { DelegateClearingPreferences } from '../../types/delegateClearing.js'
 import { type RpcEntries, RpcEntry } from '../../types/rpc.js'
 import { useEffect } from 'preact/hooks'
 import { ErrorComponent } from '../subcomponents/Error.js'
@@ -18,6 +19,7 @@ import { useAsyncState } from '../../utils/preact-utilities.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 import { shouldApplyInitialRpcEntries, shouldOfferBundledRpcReset } from '../../utils/rpcConnectionUi.js'
 import { reportUnexpectedError } from '../../utils/errors.js'
+import { checksummedAddress } from '../../utils/bigint.js'
 
 type CheckBoxSettingParam = {
 	text: string
@@ -147,20 +149,29 @@ export function SettingsView() {
 	const useTabsInsteadOfPopup = useSignal<boolean>(false)
 	const metamaskCompatibilityMode = useSignal<boolean>(false)
 	const safeAppsCompatibilityMode = useSignal<boolean>(false)
+	const delegateClearingPreferences = useSignal<DelegateClearingPreferences>([])
+	const removingDelegateClearing = useSignal<string | undefined>(undefined)
+	const delegateClearingError = useSignal<string | undefined>(undefined)
 
 	useEffect(() => {
+		let latestSettingsGeneration = 0
 		const popupMessageListener = (msg: unknown): false => {
 			const maybeParsed = MessageToPopup.safeParse(msg)
 			if (!maybeParsed.success) return false // not a message we are interested in
 			const parsed = maybeParsed.value
 			if (parsed.method === 'popup_settingsUpdated') {
+				if (parsed.popupRefreshGeneration < latestSettingsGeneration) return false
+				latestSettingsGeneration = parsed.popupRefreshGeneration
 				sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
 				return false
 			}
 			if (parsed.method !== 'popup_requestSettingsReply') return false
+			if (parsed.popupRefreshGeneration < latestSettingsGeneration) return false
+			latestSettingsGeneration = parsed.popupRefreshGeneration
 			metamaskCompatibilityMode.value = parsed.data.metamaskCompatibilityMode
 			safeAppsCompatibilityMode.value = parsed.data.safeAppsCompatibilityMode
 			useTabsInsteadOfPopup.value = parsed.data.useTabsInsteadOfPopup
+			delegateClearingPreferences.value = parsed.data.delegateClearingPreferences
 			return false
 		}
 		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
@@ -186,6 +197,20 @@ export function SettingsView() {
 			method: 'popup_ChangeSettings',
 			data: { safeAppsCompatibilityMode: checked }
 		})
+	}
+	async function removeDelegateClearing(address: bigint, chainId: bigint) {
+		const key = `${ chainId.toString() }:${ address.toString() }`
+		removingDelegateClearing.value = key
+		delegateClearingError.value = undefined
+		try {
+			const reply = await sendPopupMessageWithReply({ method: 'popup_setDelegateClearing', data: { address, chainId, enabled: false } })
+			if (reply === undefined) throw new Error('Interceptor did not reply while disabling delegate clearing.')
+			if (!reply.data.ok) throw new Error(reply.data.message)
+		} catch (error) {
+			delegateClearingError.value = error instanceof Error ? error.message : 'Could not disable delegate clearing.'
+		} finally {
+			removingDelegateClearing.value = undefined
+		}
 	}
 
 	return <main style = 'padding: 10px'>
@@ -226,6 +251,21 @@ export function SettingsView() {
 						<p class = 'paragraph'>Export & Import</p>
 						<ImportExport/>
 					</li>
+					{ delegateClearingPreferences.value.length === 0 ? <></> : <li>
+						<Collapsible summary = 'Saved delegate clearing choices' class = 'settings-delegate-clearing'>
+							<p class = 'paragraph'>These choices affect simulations only.</p>
+							<ul class = 'settings-delegate-clearing-list'>
+								{ delegateClearingPreferences.value.map((entry) => {
+									const key = `${ entry.chainId.toString() }:${ entry.address.toString() }`
+									return <li key = { key }>
+										<span>{ checksummedAddress(entry.address) } on { getChainName(entry.chainId) }</span>
+										<button class = 'btn btn--outline' type = 'button' disabled = { removingDelegateClearing.value !== undefined } onClick = { () => { void removeDelegateClearing(entry.address, entry.chainId) } }>Disable</button>
+									</li>
+								}) }
+							</ul>
+							{ delegateClearingError.value === undefined ? <></> : <ErrorComponent text = { delegateClearingError.value } /> }
+						</Collapsible>
+					</li> }
 					<li>
 						<Collapsible summary = 'RPC Connections' defaultOpen = { true }>
 							<div class = 'grid' style = '--gap-y: 0.5rem; padding: 0.5rem 0'>

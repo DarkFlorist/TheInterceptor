@@ -14,7 +14,9 @@ import type { UniqueRequestIdentifier } from '../utils/requests.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { identifyAddress } from './metadataUtils.js'
 import { getSimulationErrorAbis } from './simulationErrorAbi.js'
+import { getWhatIfSimulationOverrides } from './delegateClearingPolicy.js'
 import { createSimulationStateWithNonceAndBaseFeeFixing, getCurrentSimulationInput, visualizeSimulatorState } from './simulationUpdating.js'
+import { getSettings } from './settings.js'
 import { getInterceptorTransactionStack, getTabState } from './storageVariables.js'
 
 let confirmTransactionAbortController = new AbortController()
@@ -42,9 +44,12 @@ export async function refreshConfirmTransactionSimulation(
 	confirmTransactionAbortController = new AbortController()
 	const thisConfirmTransactionAbortController = confirmTransactionAbortController
 	const simulationStartedTimestamp = new Date()
+	const settings = await getSettings()
 	const simulationInput = safeSigningRequest === undefined
-		? await getCurrentSimulationInput()
+		? await getCurrentSimulationInput(undefined, settings)
 		: createSafeSigningSimulationInput(await getInterceptorTransactionStack(), safeSigningRequest)
+	// A local simulation preview follows Home; Safe and signing previews retain on-chain code.
+	const simulationOverrides = simulationMode && safeSigningRequest === undefined ? getWhatIfSimulationOverrides(settings) : {}
 	try {
 		const getNewVisualizedSimulationState = async () => {
 			const preSimulationTransaction = transactionToSimulate.success
@@ -61,7 +66,7 @@ export async function refreshConfirmTransactionSimulation(
 			const simulationStateWithNewTransaction = preSimulationTransaction === undefined
 				? simulationInput
 				: appendTransactionsToInput(simulationInput, [preSimulationTransaction], undefined, {}, safeSigningRequest !== undefined)
-			const updatedSimulationState = await createSimulationStateWithNonceAndBaseFeeFixing(simulationStateWithNewTransaction, ethereum)
+			const updatedSimulationState = await createSimulationStateWithNonceAndBaseFeeFixing({ kind: 'simulated', value: simulationStateWithNewTransaction, simulationOverrides }, ethereum)
 			return await visualizeSimulatorState(updatedSimulationState, ethereum, tokenPriceService, thisConfirmTransactionAbortController)
 		}
 		const visualizedSimulatorState = await getNewVisualizedSimulationState()

@@ -233,7 +233,10 @@ const SimulationStateSuccess = funtypes.ReadonlyObject({
 	baseFeePerGas: EthereumQuantity,
 	simulationConductedTimestamp: EthereumTimestamp,
 	rpcNetwork: RpcNetwork,
-})
+}).And(funtypes.ReadonlyPartial({
+	// Captured initial account state for replay, separate from live preferences; older results mean no initial overrides.
+	simulationOverrides: StateOverrides,
+}))
 
 export type SimulationState = funtypes.Static<typeof SimulationState>
 export const SimulationState = funtypes.Union(
@@ -251,7 +254,7 @@ export const SimulationState = funtypes.Union(
 		baseFeePerGas: EthereumQuantity,
 		simulationConductedTimestamp: EthereumTimestamp,
 		rpcNetwork: RpcNetwork,
-	})
+	}).And(funtypes.ReadonlyPartial({ simulationOverrides: StateOverrides }))
 )
 
 export type PassthroughState = funtypes.Static<typeof PassthroughState>
@@ -270,17 +273,27 @@ export const ResolvedSimulationState = funtypes.Union(
 	})
 )
 
-export type ResolvedSimulationInput = funtypes.Static<typeof ResolvedSimulationInput>
+export type SimulatedInput<TInput extends SimulationStateInputMinimalData = SimulationStateInputMinimalData> = {
+	readonly kind: 'simulated'
+	readonly value: TInput
+	/** Generic account state applied before the first simulated block. Callers decide how to construct it. */
+	readonly simulationOverrides: StateOverrides
+}
+export type SimulationInput = SimulatedInput<SimulationStateInput>
+export type ResolvedSimulationInput = PassthroughState | SimulationInput
 export const ResolvedSimulationInput = funtypes.Union(
 	PassthroughState,
 	funtypes.ReadonlyObject({
 		kind: funtypes.Literal('simulated'),
 		value: SimulationStateInput,
+		simulationOverrides: StateOverrides,
 	})
 )
 
 export const toResolvedSimulationState = (value: SimulationState): ResolvedSimulationState => ({ kind: 'simulated', value })
-export const toResolvedSimulationInput = (value: SimulationStateInput): ResolvedSimulationInput => ({ kind: 'simulated', value })
+export const createSimulatedInput = <TInput extends SimulationStateInputMinimalData>(value: TInput, simulationOverrides: StateOverrides = {}): SimulatedInput<TInput> => ({ kind: 'simulated', value, simulationOverrides })
+// Reconstruct the exact captured input for a persisted result, independent of later preference changes.
+export const getSimulationInputFromState = (state: Pick<SimulationState, 'simulationStateInput' | 'simulationOverrides'>): SimulationInput => createSimulatedInput(state.simulationStateInput, state.simulationOverrides)
 
 type SuccessfulSimulationState = Extract<SimulationState, { success: true }>
 export type ExecutionSimulatedTransaction = Omit<SimulatedTransaction, 'tokenBalancesAfter'>

@@ -14,6 +14,7 @@ import { DEFAULT_TAB_CONNECTION } from '../../utils/constants.js'
 import { useSignal } from '@preact/signals'
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../../utils/popupPerformance.js'
 import { activeStackContextsEqual, getActiveStackContext } from '../../utils/activeStackContext.js'
+import type { DelegateClearingPreferences } from '../../types/delegateClearing.js'
 
 type LiveSimulationHomeDataOptions = {
 	answerMainPopupOpen: boolean
@@ -70,6 +71,7 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 	const makeCurrentAddressRich = useSignal<boolean>(false)
 	const hasSafeTransactionsToExport = useSignal<boolean>(false)
 	const simulationMode = useSignal<boolean>(false)
+	const delegateClearingPreferences = useSignal<DelegateClearingPreferences>([])
 	const numberOfAddressesMadeRich = useSignal(0)
 
 	const requestFreshHomeData = async () => {
@@ -137,6 +139,7 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 			activeSigningSafeAddress.value = settings.activeSigningSafeAddress
 			useSignersAddressAsActiveAddress.value = settings.useSignersAddressAsActiveAddress
 			websiteAccess.value = settings.websiteAccess
+			delegateClearingPreferences.value = settings.delegateClearingPreferences ?? []
 			simulationMode.value = settings.simulationMode
 		}
 		const getCurrentActiveStackContext = () => rpcNetwork.value === undefined
@@ -350,6 +353,7 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 		makeCurrentAddressRich,
 		hasSafeTransactionsToExport,
 		simulationMode,
+		delegateClearingPreferences,
 		numberOfAddressesMadeRich,
 	}
 }
