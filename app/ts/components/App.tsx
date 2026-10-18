@@ -12,7 +12,7 @@ import type { EthereumBytes32 } from '../types/wire-types.js'
 import { checksummedAddress } from '../utils/bigint.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
 import { UnexpectedError } from './subcomponents/Error.js'
-import { addressEditEntry } from './ui-utils.js'
+import { addressEditEntry, getInterceptorModeClass } from './ui-utils.js'
 import { Signal, useComputed, useSignal } from '@preact/signals'
 import { POPUP_PERFORMANCE_MARKS, markPerformanceOnce } from '../utils/popupPerformance.js'
 import { createUnexpectedErrorPopupMessage } from '../utils/unexpectedErrorPopupMessage.js'
@@ -200,23 +200,29 @@ export function App() {
 	)
 
 	return (
-		<main>
+		<main class = { isSettingsLoaded.value ? getInterceptorModeClass(simulationMode.value) : undefined }>
 			<Hint>
 				<PasteCatcher enabled = { isSettingsLoaded.value && (appPage.value.page === 'Unknown' || appPage.value.page === 'Home') } onPaste = { addressPaste } />
-				<div style = { `background-color: var(--bg-color); width: 520px; height: 600px; ${ appPage.value.page !== 'Unknown' && appPage.value.page !== 'Home' ? 'overflow: hidden;' : 'overflow-y: auto; overflow-x: hidden' }` }>
+				<div class = 'popup-frame' style = { appPage.value.page !== 'Unknown' && appPage.value.page !== 'Home' ? 'overflow: hidden;' : 'overflow-y: auto; overflow-x: hidden' }>
 					<nav class = 'navbar window-header' role = 'navigation' aria-label = 'main navigation'>
 						<div class = 'navbar-brand'>
-							<a class = 'navbar-item' style = 'cursor: unset'>
+							<a class = 'navbar-item popup-brand'>
 								<img src = '../img/LOGOA.svg' alt = 'Logo' width = '32' height = '32'/>
-								<p style = 'color: var(--text-color); padding-left: 5px;'>THE INTERCEPTOR
-									<span style = 'color: var(--unimportant-text-color); font-size: 0.8em; padding-left: 5px;' > { `${ version } - ${ gitCommitSha.slice(0, 8) }`  } </span>
+								<p class = 'navbar-title'>THE INTERCEPTOR
+									<span class = 'navbar-version' title = { `${ version } - ${ gitCommitSha }` }>{ `${ version } - ${ gitCommitSha.slice(0, 8) }` }</span>
 								</p>
 							</a>
-							<a class = 'navbar-item' style = 'margin-left: auto; margin-right: 0;'>
-								<img src = '../img/internet.svg' width = '32' height = '32' onClick = { openWebsiteAccess }/>
-								<img src = '../img/address-book.svg' width = '32' height = '32' onClick = { openAddressBook }/>
-								<img src = '../img/settings.svg' width = '32' height = '32' onClick = { openSettings }/>
-							</a>
+							<div class = 'navbar-item navbar-actions popup-navbar-actions'>
+								<button type = 'button' class = 'btn btn--ghost navbar-action' title = 'Website access' aria-label = 'Website access' onClick = { openWebsiteAccess }>
+									<img src = '../img/internet.svg' alt = '' width = '32' height = '32'/>
+								</button>
+								<button type = 'button' class = 'btn btn--ghost navbar-action' title = 'Address book' aria-label = 'Address book' onClick = { openAddressBook }>
+									<img src = '../img/address-book.svg' alt = '' width = '32' height = '32'/>
+								</button>
+								<button type = 'button' class = 'btn btn--ghost navbar-action' title = 'Settings' aria-label = 'Settings' onClick = { openSettings }>
+									<img src = '../img/settings.svg' alt = '' width = '32' height = '32'/>
+								</button>
+							</div>
 						</div>
 					</nav>
 

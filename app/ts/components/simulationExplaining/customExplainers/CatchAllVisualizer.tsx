@@ -7,7 +7,7 @@ import { assertNever } from '../../../utils/typescript.js'
 import { getDeployedContractAddress } from '../../../simulation/services/SimulationModeEthereumClientService.js'
 import { addressString } from '../../../utils/bigint.js'
 import { extractEnsEvents, extractTokenEvents } from '../../../background/metadataUtils.js'
-import { EnsEventsExplainer } from './EnsEventExplainer.js'
+import { EnsEventsExplainer, getVisibleEnsEvents } from './EnsEventExplainer.js'
 import type { TokenVisualizerErc20Event, TokenVisualizerErc721Event, TokenVisualizerNFTAllApprovalEvent, TokenVisualizerResultWithMetadata } from '../../../types/EnrichedEthereumData.js'
 import { deduplicateByFunction } from '../../../utils/array.js'
 import type { AddressBookEntry } from '../../../types/addressBookTypes.js'
@@ -15,6 +15,7 @@ import { type ReadonlySignal, useComputed } from '@preact/signals'
 import type { EditEnsNamedHashCallBack } from '../../subcomponents/ens.js'
 import type { RpcNetwork } from '../../../types/rpc.js'
 import { getAddressBookEntryOrAFiller } from '../../ui-utils.js'
+import { tokenEventGrantsSpendingRights } from '../../../utils/approvals.js'
 
 type SendOrReceiveTokensImportanceBoxParams = {
 	sending: boolean,
@@ -40,10 +41,10 @@ function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBo
 	return <>
 		{ param.tokenVisualizerResults.filter((tokenEvent) => !tokenEvent.isApproval).map((tokenEvent, index) => (
 			<div key = { `${ tokenEvent.token.address.toString() }-${ index }` } class = 'vertical-center'>
-				<div class = { `box token-box ${ param.sending ? 'negative-box' : 'positive-box' } vertical-center` } style = 'display: inline-block'>
+				<div class = { `box token-box ${ param.sending ? 'negative-box' : 'positive-box' } vertical-center` }>
 					<table class = 'log-table'>
 						<div class = 'log-cell'>
-							<p class = 'ellipsis paragraph' style = { `color: ${ param.textColor }; margin-bottom: 0px; display: inline-block` }>
+							<p class = 'ellipsis paragraph catch-all-event-text' style = { `color: ${ param.textColor }` }>
 								{ param.sending ? 'Send' : 'Receive' }
 							</p>
 						</div>
@@ -68,7 +69,7 @@ function SendOrReceiveTokensImportanceBox(param: SendOrReceiveTokensImportanceBo
 							/>
 						</div>
 						<div class = 'log-cell'>
-							<p class = 'ellipsis paragraph' style = { `color: ${ param.textColor }; margin-bottom: 0px; display: inline-block` }>
+							<p class = 'ellipsis paragraph catch-all-event-text' style = { `color: ${ param.textColor }` }>
 								{ param.sending ? 'to' : 'from' }
 							</p>
 						</div>
@@ -110,7 +111,7 @@ export function CatchAllVisualizer(param: CatchAllVisualizerParams) {
 		})
 
 		const operatorChanges: (Erc721OperatorChange | Erc1155OperatorChange)[] = sendingTokenResults.filter((x): x is TokenVisualizerNFTAllApprovalEvent => x.type === 'NFT All approval').map((entry) => {
-			return { ...entry.token, operator: 'allApprovalAdded' in entry && entry.allApprovalAdded ? entry.to : undefined }
+			return { ...entry.token, operator: tokenEventGrantsSpendingRights(entry) ? entry.to : undefined }
 		})
 
 		// token address, tokenId, approved address
@@ -146,9 +147,9 @@ export function CatchAllVisualizer(param: CatchAllVisualizerParams) {
 		: getAddressBookEntryOrAFiller(param.addressMetadata.value, deployedContractAddress)
 
 	return <div class = 'notification transaction-importance-box'>
-		<div style = 'display: grid; grid-template-rows: max-content max-content' >
+		<div class = 'catch-all-sections'>
 			{ /* contract creation */}
-			<div class = 'log-cell' style = 'justify-content: left; display: grid;'>
+			<div class = 'log-cell catch-all-section'>
 				{ deployedContractEntry === undefined ? <></> :
 					<p class = 'paragraph'>
 						A contract is deployed to address
@@ -157,25 +158,25 @@ export function CatchAllVisualizer(param: CatchAllVisualizerParams) {
 				}
 			</div>
 			{ /* ENS events */ }
-			<div class = 'log-cell' style = 'justify-content: left; display: grid;'>
+			<div>
+				{ getVisibleEnsEvents(ensEvents).length === 0 ? <></> : <p class = 'summary-label'>ENS changes</p> }
 				<EnsEventsExplainer
 					ensEvents = { ensEvents }
-					textColor = { textColor }
 					renameAddressCallBack = { param.renameAddressCallBack }
 					editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
 					rpcNetwork = { param.rpcNetwork.value }
 				/>
 			</div>
 		</div>
-		{ (param.simTx.transaction.to === undefined || ensEvents.length > 0) && eventTypesForEachAccount.length > 0 ? <div class = 'is-divider' style = 'margin-top: 8px; margin-bottom: 8px'/> : <></> }
+		{ (param.simTx.transaction.to === undefined || ensEvents.length > 0) && eventTypesForEachAccount.length > 0 ? <div class = 'is-divider catch-all-divider'/> : <></> }
 		{ eventTypesForEachAccount.map((eventsGrouped, index) => <div key = { addressString(eventsGrouped.currentAddress.address) }>
 			<BigAddress
 				addressBookEntry = { eventsGrouped.currentAddress }
 				renameAddressCallBack = { param.renameAddressCallBack }
-				style = { { '--bg-color': 'var(--importance-box-color)' } }
+				class = 'multiline-card--importance'
 			/>
-			<div style = 'display: grid; grid-template-rows: max-content max-content' >
-				<div class = 'log-cell' style = 'justify-content: left; display: grid;'>
+			<div class = 'catch-all-sections'>
+				<div class = 'log-cell catch-all-section'>
 					<SendOrReceiveTokensImportanceBox
 						tokenVisualizerResults = { eventsGrouped.sendingTokenResults.filter((x) => !x.isApproval) }
 						sending = { true }
@@ -185,28 +186,28 @@ export function CatchAllVisualizer(param: CatchAllVisualizerParams) {
 				</div>
 
 				{ /* us approving other addresses */ }
-				<div class = 'log-cell' style = 'justify-content: left; display: grid;'>
+				<div class = 'log-cell catch-all-section'>
 					<Erc20ApprovalChanges
 						erc20TokenApprovalChanges = { eventsGrouped.erc20TokenApprovalChanges }
-						textColor = { textColor }
+						positiveColor = { textColor }
 						negativeColor = { textColor }
 						isImportant = { useComputed(() => true) }
 						renameAddressCallBack = { param.renameAddressCallBack }
 					/>
 				</div>
-				<div class = 'log-cell' style = 'justify-content: left; display: grid;'>
+				<div class = 'log-cell catch-all-section'>
 					<Erc721or1155OperatorChanges
 						erc721or1155OperatorChanges = { eventsGrouped.operatorChanges }
-						textColor = { textColor }
+						positiveColor = { textColor }
 						negativeColor = { textColor }
 						isImportant = { useComputed(() => true) }
 						renameAddressCallBack = { param.renameAddressCallBack }
 					/>
 				</div>
-				<div class = 'log-cell' style = 'justify-content: left; display: grid;'>
+				<div class = 'log-cell catch-all-section'>
 					<Erc721TokenIdApprovalChanges
 						Erc721TokenIdApprovalChanges = { eventsGrouped.tokenIdApprovalChanges }
-						textColor = { textColor }
+						positiveColor = { textColor }
 						negativeColor = { textColor }
 						isImportant = { useComputed(() => true) }
 						renameAddressCallBack = { param.renameAddressCallBack }
@@ -214,7 +215,7 @@ export function CatchAllVisualizer(param: CatchAllVisualizerParams) {
 				</div>
 
 				{ /* receiving tokens */ }
-				<div class = 'log-cell' style = 'justify-content: left; display: grid;'>
+				<div class = 'log-cell catch-all-section'>
 					<SendOrReceiveTokensImportanceBox
 						tokenVisualizerResults = { eventsGrouped.receivingTokenResults.filter((x) => !x.isApproval) }
 						sending = { false }
@@ -223,7 +224,7 @@ export function CatchAllVisualizer(param: CatchAllVisualizerParams) {
 					/>
 				</div>
 			</div>
-			{ index + 1 !== eventTypesForEachAccount.length ? <div class = 'is-divider' style = 'margin-top: 8px; margin-bottom: 8px'/> : <></> }
+			{ index + 1 !== eventTypesForEachAccount.length ? <div class = 'is-divider catch-all-divider'/> : <></> }
 		</div> ) }
 	</div>
 }

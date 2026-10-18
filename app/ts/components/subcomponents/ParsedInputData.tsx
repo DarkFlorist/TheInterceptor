@@ -9,15 +9,15 @@ import { resolveSignal, type SignalOrValue } from '../../utils/signals.js'
 
 export function NoParsedAvailable({ to, renameAddressCallBack }: { to: AddressBookEntry | undefined, renameAddressCallBack: RenameAddressCallBack }) {
 	if (to?.abi === undefined) {
-		if (to === undefined) return <p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>No ABI available</p>
-		return <div style = 'display: flex; align-items: center; flex-wrap: wrap; gap: 0.25rem;'>
-			<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>No ABI available for&nbsp;</p>
+		if (to === undefined) return <p class = 'paragraph text-subtitle'>No ABI available</p>
+		return <div class = 'parsed-input-missing-abi'>
+			<p class = 'paragraph text-subtitle'>No ABI available for&nbsp;</p>
 			<SmallAddress addressBookEntry = { to } renameAddressCallBack = { renameAddressCallBack } />
 			<button type = 'button' class = 'button is-primary is-small' onClick = { () => renameAddressCallBack(to) }>Add ABI</button>
 		</div>
 	}
-	if (to === undefined) return <p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Unable to parse input data with the available ABI</p>
-	return <p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Unable to parse input data with the available ABI for&nbsp;
+	if (to === undefined) return <p class = 'paragraph text-subtitle'>Unable to parse input data with the available ABI</p>
+	return <p class = 'paragraph text-subtitle'>Unable to parse input data with the available ABI for&nbsp;
 		<SmallAddress addressBookEntry = { to } renameAddressCallBack = { renameAddressCallBack } />
 	</p>
 }
@@ -45,7 +45,7 @@ export function TransactionInput({ parsedInputData, input, to, addressMetaData, 
 		</> ) : <>
 			<ViewSelector.List>
 				<ViewSelector.View title = 'View Parsed' value = 'parsed' isActive = { false }>
-					<div style = 'display: flex;'>
+					<div class = 'parsed-input-unavailable'>
 						<NoParsedAvailable to = { to } renameAddressCallBack = { renameAddressCallBack } />
 					</div>
 				</ViewSelector.View>

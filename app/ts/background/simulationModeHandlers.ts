@@ -212,6 +212,6 @@ export async function handleInterceptorError(request: InterceptorError) {
 	return { type: 'doNotReply' as const }
 }
 
-export async function requestInterceptorSimulatorStack(snapshot: SimulationStackSnapshot, simulationOverlayEnabled: boolean, websiteTabConnections: WebsiteTabConnections, params: GetSimulationStack, website: Website, request: InterceptedRequest, socket: WebsiteSocket) {
-	return await openFetchSimulationStackDialogOrGetCachedResult(snapshot, simulationOverlayEnabled, websiteTabConnections, params, website, request, socket)
+export async function requestInterceptorSimulatorStack(snapshot: SimulationStackSnapshot, simulationMode: boolean, simulationOverlayEnabled: boolean, websiteTabConnections: WebsiteTabConnections, params: GetSimulationStack, website: Website, request: InterceptedRequest, socket: WebsiteSocket) {
+	return await openFetchSimulationStackDialogOrGetCachedResult(snapshot, simulationMode, simulationOverlayEnabled, websiteTabConnections, params, website, request, socket)
 }
