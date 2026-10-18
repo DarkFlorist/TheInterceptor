@@ -157,7 +157,7 @@ test('forwards a Safe transaction to the wallet-selected Safe owner as EIP-712 t
 	const safeAddressBookEntry = createSafeAddressBookEntry({
 		safeSimulationSignerAddress: 0x2222222222222222222222222222222222222222n,
 	})
-	await modules.updateUserAddressBookEntries(() => [safeAddressBookEntry])
+	await modules.updateAddressBookAndSigningWalletBindings(() => [safeAddressBookEntry])
 	const postedMessages: unknown[] = []
 	const socket = uniqueRequestIdentifier.requestSocket
 	const port = createWebsitePort(socket, 0, postedMessages)
@@ -198,7 +198,7 @@ test('forwards a Safe transaction to the wallet-selected Safe owner as EIP-712 t
 		}],
 	})
 
-	await modules.updateUserAddressBookEntries(() => [{ ...safeAddressBookEntry, safeSimulationSignerAddress: activeAddress }])
+	await modules.updateAddressBookAndSigningWalletBindings(() => [{ ...safeAddressBookEntry, safeSimulationSignerAddress: activeAddress }])
 	fakeSafeContract.owners = [0x1111111111111111111111111111111111111111n]
 	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
@@ -245,7 +245,7 @@ test('routes a Safe co-signing request through the wallet-selected owner', async
 	fakeSafeContract.owners = [safeSignerAddress, alternateOwnerAddress]
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 	await modules.updateSafeTransactionStacks(() => [])
-	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({
+	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry({
 		safeSimulationSignerAddress: recipientAddress,
 		safeVersion: '1.4.1',
 	})])
@@ -394,7 +394,7 @@ test('routes a Safe co-signing request through the wallet-selected owner', async
 	assert.equal(JSON.parse(String(signerRequest.params[1])).domain.verifyingContract.toLowerCase(), addressString(activeAddress).toLowerCase())
 
 	const signature = await alternateOwnerAccount.signTypedData(EIP712Message.parse(safeTxToTypedDataJson(safeTx)))
-	await modules.updateUserAddressBookEntries((entries) => entries.map((entry) =>
+	await modules.updateAddressBookAndSigningWalletBindings((entries) => entries.map((entry) =>
 		entry.type === 'safe' && entry.address === activeAddress
 			? { ...entry, safeSimulationSignerAddress: 0x2222222222222222222222222222222222222222n }
 			: entry
@@ -423,7 +423,7 @@ test('returns a Safe signer error when the wallet-selected co-signer is not a cu
 		input: new Uint8Array(),
 	}, 0n)
 	fakeSafeContract.owners = [currentOwner]
-	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({
+	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry({
 		safeSignerAddresses: [safeSignerAddress],
 		safeVersion: '1.4.1',
 	})])
@@ -475,7 +475,7 @@ test('returns a Safe signer error when the wallet-selected co-signer is not a cu
 
 test('treats a missing Safe version as an expected co-signing validation failure', async () => {
 	fakeSafeContract.owners = [recipientAddress]
-	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeVersion: undefined })])
+	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry({ safeVersion: undefined })])
 	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
 		to: recipientAddress,
 		value: 0n,
@@ -495,7 +495,7 @@ test('treats a missing Safe version as an expected co-signing validation failure
 test('rejects non-v4 Safe co-signing as a handled signer-selection failure', async () => {
 	fakeSafeContract.owners = [recipientAddress]
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
-	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' })])
+	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' })])
 	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({
 		...state,
 		signerAccounts: [recipientAddress],
@@ -540,7 +540,7 @@ test('rejects non-v4 Safe co-signing as a handled signer-selection failure', asy
 test('shows Safe transaction context failures in the co-signing dialog without reporting them as unexpected', async () => {
 	fakeSafeContract.owners = [recipientAddress]
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
-	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' })])
+	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' })])
 	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({
 		...state,
 		signerAccounts: [recipientAddress],
@@ -599,7 +599,7 @@ test('shows a Safe signing-account mismatch in the confirmation dialog without r
 		chainId: fakeRpcNetwork.chainId,
 		entrySource: 'User' as const,
 	}
-	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({
+	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry({
 		safeSignerAddresses: [walletOwner],
 		safeVersion: '1.4.1',
 	}), walletOwnerEntry])
@@ -717,7 +717,7 @@ test('signs Safe transaction typed data normally when the active signing address
 	fakeSafeContract.owners = [eoaAddress]
 	fakeSafeContract.transactionHash = BigInt(getSafeTxHash(safeTx))
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
-	await modules.updateUserAddressBookEntries(() => [
+	await modules.updateAddressBookAndSigningWalletBindings(() => [
 		createSafeAddressBookEntry({ safeSignerAddresses: [eoaAddress], safeVersion: '1.4.1' }),
 		{ type: 'contact', name: 'Sealwort signer', address: eoaAddress, chainId: fakeRpcNetwork.chainId, entrySource: 'User' },
 	])
@@ -786,7 +786,7 @@ test('uses the configured Safe simulation signer without changing the active Saf
 	}, 0n)
 	fakeSafeContract.owners = [simulationSignerAddress]
 	fakeSafeContract.transactionHash = BigInt(getSafeTxHash(safeTx))
-	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({
+	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry({
 		safeSimulationSignerAddress: simulationSignerAddress,
 		safeSignerAddresses: [simulationSignerAddress],
 		safeVersion: '1.4.1',
@@ -836,7 +836,7 @@ test('uses the configured Safe simulation signer without changing the active Saf
 test('requires an explicit Safe simulation signer instead of using the first cached owner', async () => {
 	const cachedOwner = 0x4444444444444444444444444444444444444444n
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
-	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({
+	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry({
 		safeSimulationSignerAddress: undefined,
 		safeSignerAddresses: [cachedOwner],
 		safeVersion: '1.4.1',
@@ -958,7 +958,7 @@ test('recognizes only execTransaction calls to the active Safe for direct signer
 test('changes the Safe simulation signer only after validating current on-chain ownership', async () => {
 	const alternateSigner = 0x1234567890123456789012345678901234567890n
 	fakeSafeContract.owners = [recipientAddress, alternateSigner]
-	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({
+	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry({
 		useAsActiveAddress: false,
 		safeSimulationSignerAddress: recipientAddress,
 		safeSignerAddresses: [recipientAddress, alternateSigner],
@@ -1024,7 +1024,7 @@ test('changes the Safe simulation signer only after validating current on-chain 
 test('refreshes Safe owner metadata and clears a stale simulation signer without choosing a replacement', async () => {
 	const staleSigner = 0x1234567890123456789012345678901234567890n
 	fakeSafeContract.owners = [recipientAddress]
-	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({
+	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry({
 		useAsActiveAddress: false,
 		safeSimulationSignerAddress: staleSigner,
 		safeSignerAddresses: [staleSigner],
@@ -1067,7 +1067,7 @@ test('routes a completed active Safe execution through its configured signer and
 	fakeSafeContract.owners = [existingOwnerAddress, safeSignerAddress, alternateSignerAddress]
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 	await modules.updateSafeTransactionStacks(() => [])
-	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({
+	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry({
 		safeSignerAddresses: [safeSignerAddress],
 	})])
 	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({
@@ -1357,7 +1357,7 @@ test('blocks direct Safe execution when the configured signer cannot satisfy the
 	fakeSafeContract.owners = [existingOwnerAddress, configuredSigner, 0x1111111111111111111111111111111111111111n]
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 	await modules.updateSafeTransactionStacks(() => [])
-	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({
+	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry({
 		safeSimulationSignerAddress: configuredSigner,
 	})])
 	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({

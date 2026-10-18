@@ -5,7 +5,7 @@ import { activeAddress, addressString, browserMock, created, createSafeAddressBo
 test('rejects EIP-7702 authorization lists before creating a Safe proposal', async () => {
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 	await modules.updateSafeTransactionStacks(() => [])
-	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({
+	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry({
 		safeSimulationSignerAddress: recipientAddress,
 		safeVersion: '1.4.1',
 	})])
@@ -64,7 +64,7 @@ test('rejects EIP-7702 authorization lists before creating a Safe proposal', asy
 	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
 	assert.deepEqual(await modules.getSafeTransactionStacks(), [])
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
-	await modules.updateUserAddressBookEntries(() => modules.defaultActiveAddresses)
+	await modules.updateAddressBookAndSigningWalletBindings(() => modules.defaultActiveAddresses)
 })
 
 test('shows stale local Safe stack failures in the transaction confirmation', async () => {
@@ -78,7 +78,7 @@ test('shows stale local Safe stack failures in the transaction confirmation', as
 		threshold: 2n,
 		transactions: [],
 	}])
-	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({
+	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry({
 		safeSimulationSignerAddress: recipientAddress,
 		safeVersion: '1.4.1',
 	})])
@@ -140,7 +140,7 @@ test('shows stale local Safe stack failures in the transaction confirmation', as
 
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 	await modules.updateSafeTransactionStacks(() => [])
-	await modules.updateUserAddressBookEntries(() => modules.defaultActiveAddresses)
+	await modules.updateAddressBookAndSigningWalletBindings(() => modules.defaultActiveAddresses)
 })
 
 test('reconciles executed Safe operations before simulating the next proposal', async () => {
@@ -202,7 +202,7 @@ test('reconciles executed Safe operations before simulating the next proposal', 
 			},
 		})),
 	}))
-	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({
+	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry({
 		safeSimulationSignerAddress: recipientAddress,
 		safeVersion: '1.4.1',
 	})])
@@ -538,7 +538,7 @@ test('does not fall back to ordinary gas estimation when Safe simulation state i
 
 test('propagates unexpected Safe proposal RPC and reconciliation storage failures', async () => {
 	await modules.updateSafeTransactionStacks(() => [])
-	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' })])
+	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' })])
 	const { SendTransactionParams } = await import('../../app/ts/types/JsonRpc-types.js')
 	const { prepareSafeTransactionConfirmation } = await import('../../app/ts/background/safeTransactionConfirmation.js')
 	const transactionParams = SendTransactionParams.parse({
@@ -582,7 +582,7 @@ test('propagates unexpected Safe proposal RPC and reconciliation storage failure
 
 test('reserves proposal nonces without counting overlapping direct Safe execution metadata', async () => {
 	await modules.updateSafeTransactionStacks(() => [])
-	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' })])
+	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' })])
 	fakeSafeContract.nonce = 0n
 	fakeSafeContract.owners = [recipientAddress]
 	const { SendTransactionParams } = await import('../../app/ts/types/JsonRpc-types.js')
@@ -775,7 +775,7 @@ test('atomic Safe batch preparation and simulation preserve one nonce and delega
 	const { SendTransactionParams } = await import('../../app/ts/types/JsonRpc-types.js')
 	await modules.updateSafeTransactionStacks(() => [])
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
-	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' })])
+	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' })])
 	fakeSafeContract.owners = [recipientAddress]
 	const input = encodeSafeBatch([{ to: recipientAddress, value: 0n, data: new Uint8Array([1]) }, { to: recipientAddress, value: 5n, data: new Uint8Array([2]) }])
 	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, { to: SAFE_MULTI_SEND_CALL_ONLY, operation: 1n, value: 0n, input }, 0n)
@@ -806,7 +806,7 @@ test('on-chain Safe message review context is bound to calldata and stays outsid
 	const { prepareSafeTransactionConfirmation } = await import('../../app/ts/background/safeTransactionConfirmation.js')
 	await modules.updateSafeTransactionStacks(() => [])
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
-	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' })])
+	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' })])
 	fakeSafeContract.owners = [recipientAddress]
 	const review = { text: 'Approve this Safe message', isTypedData: false }
 	const data = encodeFunctionCall(SAFE_SIGN_MESSAGE_ABI, 'signMessage', [getSafeMessageDigest(review.text)])

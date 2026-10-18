@@ -6,7 +6,7 @@ import type { PopupSettingsRequestWithSharedReply } from '../../types/popupSetti
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
 import type { RpcEntry } from '../../types/rpc.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
-import { includePersistedAddressBookEntry, isActiveAddressSelectionAllowed } from '../../utils/activeAddressSelection.js'
+import { getActiveSigningAddress, includePersistedAddressBookEntry, isActiveAddressSelectionAllowed } from '../../utils/activeAddressSelection.js'
 import { requestActiveAddressChange } from '../activeAddressChange.js'
 import { requestPopupSettingsChange } from '../popupSettingsChange.js'
 import type { useLiveSimulationHomeData } from './useLiveSimulationHomeData.js'
@@ -88,9 +88,9 @@ export function usePopupSettingsChanges({ isSettingsLoaded, activeAddresses, sim
 			const settings = update.data
 			if (settings.simulationMode !== pending.simulationMode) return
 			// Reveal canonical settings as soon as they match the selection; the request reply still owns completion and errors.
-			const selectedAddress = settings.simulationMode ? settings.activeSimulationAddress : settings.activeSigningSafeAddress
+			const selectedAddress = settings.simulationMode ? settings.activeSimulationAddress : getActiveSigningAddress(settings)
 			const matchesSelection = pending.address === 'signer'
-				? settings.simulationMode ? settings.useSignersAddressAsActiveAddress : settings.activeSigningSafeAddress === undefined
+				? settings.simulationMode ? settings.useSignersAddressAsActiveAddress : settings.activeSigningSafeAddress === undefined && settings.selectedSigningAddress === undefined
 				: selectedAddress === pending.address
 			if (!matchesSelection) return
 			isActiveAddressChanging.value = false

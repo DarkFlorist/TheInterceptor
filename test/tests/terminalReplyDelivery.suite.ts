@@ -1,6 +1,38 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
-import { browserMock, createDisconnectedPort, createRecordingPort, isRecord, modules, pendingTransaction, signedTransaction, simulator, uniqueRequestIdentifier, waitForPendingTransactionsToClear, withSilencedConsole } from './confirmTransactionTestHarness.js'
+import { activeAddress, browserMock, createDisconnectedPort, createRecordingPort, isRecord, modules, pendingTransaction, signedTransaction, simulator, uniqueRequestIdentifier, waitForPendingTransactionsToClear, withSilencedConsole } from './confirmTransactionTestHarness.js'
+
+test('closing a newly opened confirmation waits for its pending request to be persisted', async () => {
+	let releaseWrite: (() => void) | undefined
+	let notifyWriteStarted: (() => void) | undefined
+	const writeBlocked = new Promise<void>((resolve) => { releaseWrite = resolve })
+	const writeStarted = new Promise<void>((resolve) => { notifyWriteStarted = resolve })
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		if ('pendingTransactionsAndMessages' in items && Array.isArray(items.pendingTransactionsAndMessages) && items.pendingTransactionsAndMessages.length > 0) {
+			notifyWriteStarted?.()
+			await writeBlocked
+		}
+		writeStoredItems()
+	})
+	const signRequest = { method: 'personal_sign' as const, params: ['0x01', activeAddress] as const }
+	const creation = modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, {
+		...signRequest, interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier,
+	}, { kind: 'message', parameters: signRequest }, false, activeAddress, { websiteOrigin: 'https://example.com' }, new Map())
+	try {
+		await writeStarted
+		const closing = modules.onCloseWindowOrTab({ type: 'popup', id: 99 }, simulator.ethereum, simulator.tokenPriceService, new Map())
+		await new Promise((resolve) => setTimeout(resolve, 10))
+		releaseWrite?.()
+		await creation
+		await closing
+		assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+		assert.equal((await modules.getPendingTerminalReplies()).length, 1)
+	} finally {
+		releaseWrite?.()
+		browserMock.setStorageSetHandler(undefined)
+	}
+})
 
 test('failed signer delivery keeps the request and replaces the waiting spinner with a wallet-neutral error', async () => {
 	await browser.storage.local.set({ simulationMode: false })
@@ -713,3 +745,29 @@ test('startup pruning removes terminal replies for missing tabs and preserves li
 })
 
 await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
+
+for (const signerReply of ['0x1234', 42, new Error('Unexpected verifier failure')]) test(`invalid browser message signature becomes an actionable signer error (${ typeof signerReply })`, async () => {
+	const { saveAddressSigningWallet } = await import('../../app/ts/background/signingAddressBookCoordinator.js')
+	await saveAddressSigningWallet(activeAddress, { type: 'browser', address: activeAddress, label: 'Browser account', signerName: 'MetaMask', providerId: 'legacy:MetaMask' }, undefined, 'Browser account')
+	const parameters = { method: 'personal_sign' as const, params: ['0x01', activeAddress] as const }
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, {
+		...parameters, interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier,
+	}, { kind: 'message', parameters }, false, activeAddress, { websiteOrigin: 'https://example.com' }, new Map())
+	await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => ({ ...pending, approvalStatus: { status: 'WaitingForSigner' } }))
+	const verify = async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, new Map(), {
+		method: 'popup_confirmDialog', data: { action: 'signerIncluded', uniqueRequestIdentifier, signerReply: signerReply instanceof Error ? '0x1234' : signerReply },
+	})
+	if (signerReply instanceof Error) {
+		const { spyOn } = await import('bun:test')
+		const backend = await import('../../app/ts/signing/backend.js')
+		const verifier = spyOn(backend, 'verifyDirectResult').mockRejectedValue(signerReply)
+		try { await assert.rejects(verify(), (error: unknown) => error === signerReply) }
+		finally { verifier.mockRestore() }
+	} else assert.equal(await verify(), false)
+	const pending = (await modules.getPendingTransactionsAndMessages())[0]
+	assert.equal(pending?.approvalStatus.status, 'SignerError')
+	if (pending?.approvalStatus.status !== 'SignerError') throw new Error('Missing signature verification error')
+	assert.equal(pending.approvalStatus.code, 4100)
+	assert.ok(pending.approvalStatus.message.length > 0)
+})

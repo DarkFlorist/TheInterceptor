@@ -63,7 +63,7 @@ const hasRawSafeFieldAfterTransactionNarrowing = (source: string) => {
 
 const getDeclaredPopupHandlerMethods = async (source: Bun.BunFile) => {
 	const contents = await source.text()
-	return Array.from(contents.matchAll(/^\s*(popup_[A-Za-z0-9_]+):/gmu), (match) => match[1]).filter((method) => method !== undefined)
+	return Array.from(contents.matchAll(/^\s*((?:popup|signing)_[A-Za-z0-9_]+):/gmu), (match) => match[1]).filter((method) => method !== undefined)
 }
 
 test('simulation service keeps compatibility exports backed by focused signing modules', () => {

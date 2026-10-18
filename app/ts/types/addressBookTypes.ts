@@ -117,6 +117,8 @@ export const SafeEntry = funtypes.ReadonlyObject({
 	useAsActiveAddress: funtypes.Boolean,
 }).And(funtypes.Partial({
 	safeSimulationSignerAddress: EthereumAddress,
+	safeSigningSignerAddress: EthereumAddress,
+	safeExecutionAddress: EthereumAddress,
 	safeSignerAddresses: funtypes.ReadonlyArray(EthereumAddress),
 	safeVersion: funtypes.String,
 	logoUri: funtypes.String,
