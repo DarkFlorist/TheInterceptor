@@ -36,24 +36,36 @@ async function renderWarningSigns(dom: ReturnType<typeof installDomMock>, isInsi
 	return { leadingSign, trailingSign }
 }
 
-// The card is a grid whose spacing rules see each sign's Hint container as the card's child, so that container must be a span without the page container's layout styles.
-test('wraps each InlineCard warning sign in an unstyled inline Hint container directly inside the card', async () => {
+// The card's spacing rules expect the signs to be its direct children, and its parent's layout expects the card's own box, so the single Hint around a warning card must be a container that adds no box.
+test('wraps a warning card in one inline Hint container that adds no box and keeps the signs direct children of the card', async () => {
 	const dom = installDomMock()
 	try {
-		const warningSigns = Object.values(await renderWarningSigns(dom, false))
-		for (const warningSign of warningSigns) {
-			const hintContainer = warningSign.parentNode
-			assert.equal(hintContainer?.tagName, 'SPAN')
-			assert.equal(hintContainer?.style?.['cssText'], undefined)
-			assert.equal(hintContainer?.parentNode?.getAttribute?.('class'), 'inline-card')
-		}
+		const { leadingSign, trailingSign } = await renderWarningSigns(dom, false)
+		const card = leadingSign.parentNode
+		assert.equal(card?.getAttribute?.('class'), 'inline-card')
+		assert.equal(trailingSign.parentNode, card)
+		const hintContainer = card?.parentNode
+		assert.equal(hintContainer?.tagName, 'SPAN')
+		assert.equal(hintContainer?.style?.['cssText'], 'display: contents;')
+		assert.equal(hintContainer?.parentNode, dom.document.body)
 	} finally {
 		render(null, dom.document.body)
 		dom.restore()
 	}
 })
 
-// The warning signs bring their own Hint, so the explanation must appear without a page Hint around the card, and only once inside one.
+test('leaves a card without a warning unwrapped', async () => {
+	const dom = installDomMock()
+	try {
+		await act(() => { render(<InlineCard icon = { () => <span>Address</span> } label = 'Alice' noCopy noExpandButtons />, dom.document.body) })
+		assert.equal(findElementsByClass(dom.document.body, 'inline-card')[0]?.parentNode, dom.document.body)
+	} finally {
+		render(null, dom.document.body)
+		dom.restore()
+	}
+})
+
+// A warning card brings its own Hint, so the explanation must appear without a page Hint around the card, and only once inside one.
 for (const isInsidePageHint of [false, true]) {
 	describe(`InlineCard warning sign ${ isInsidePageHint ? 'inside' : 'without' } a page Hint container`, () => {
 		test('shows the explanation once while the pointer is over either warning sign', async () => {
@@ -67,6 +79,31 @@ for (const isInsidePageHint of [false, true]) {
 					await act(() => { warningSign.dispatchEvent?.(new Event('mouseout', { bubbles: true })) })
 					assert.deepEqual(findDisplayedHintTexts(dom), [])
 				}
+			} finally {
+				render(null, dom.document.body)
+				dom.restore()
+			}
+		})
+
+		test('shows the explanation once while the leading sign has keyboard focus and the pointer is over the trailing sign', async () => {
+			const dom = installDomMock()
+			try {
+				const { leadingSign, trailingSign } = await renderWarningSigns(dom, isInsidePageHint)
+				await act(() => {
+					leadingSign.focus?.()
+					leadingSign.dispatchEvent?.(new Event('focusin', { bubbles: true }))
+				})
+				await act(() => { trailingSign.dispatchEvent?.(new Event('mouseover', { bubbles: true })) })
+				await act(async () => { await new Promise((resolve) => setTimeout(resolve, 300)) })
+				assert.deepEqual(findDisplayedHintTexts(dom), [warningMessage])
+				// Leaving the trailing sign returns the explanation to the focused leading sign instead of hiding it.
+				await act(() => { trailingSign.dispatchEvent?.(new Event('mouseout', { bubbles: true })) })
+				assert.deepEqual(findDisplayedHintTexts(dom), [warningMessage])
+				await act(() => {
+					leadingSign.blur?.()
+					leadingSign.dispatchEvent?.(new Event('focusout', { bubbles: true }))
+				})
+				assert.deepEqual(findDisplayedHintTexts(dom), [])
 			} finally {
 				render(null, dom.document.body)
 				dom.restore()

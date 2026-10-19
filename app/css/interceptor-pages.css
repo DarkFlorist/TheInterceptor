@@ -414,9 +414,8 @@ header:has(form[role='search']) h1 {
 		color: var(--status-alert-text-color); /* bright yellow */
 		cursor: help;
 
-		/* Each sign sits in its own inline Hint container, so its spacing follows where that container is among the card's children */
-		:has(+ *) > & { margin-right: 0.25em }
-		:is(* + *) > & { margin-left: 0.25em }
+		&:has(+ *) { margin-right: 0.25em }
+		&:is(* + .inline-card-warning-sign) { margin-left: 0.25em }
 	}
 }
 

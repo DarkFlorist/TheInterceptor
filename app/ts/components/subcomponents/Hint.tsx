@@ -6,7 +6,7 @@ interface Props {
 	children: ComponentChild | ComponentChild[]
 	attribute?: string
 	template?: (content: string) => ComponentChildren
-	// Renders the container as a span without the page container's layout styles, so a Hint can wrap phrasing content such as a warning sign inside a card.
+	// Renders the container as a span with display: contents instead of the page container's styled div, so wrapping phrasing content such as a card in a Hint leaves that content's own box in its parent's layout.
 	inline?: boolean
 }
 
@@ -215,7 +215,7 @@ export default function Container(props: Props) {
 		/>
 	)
 
-	if (props.inline === true) return <span ref = { setContainerElement }>{ hint }{ props.children }</span>
+	if (props.inline === true) return <span ref = { setContainerElement } style = 'display: contents;'>{ hint }{ props.children }</span>
 	return (
 		<div ref = { setContainerElement } style = 'position: relative; overflow-x: hidden;'>
 			{ hint }
