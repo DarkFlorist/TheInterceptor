@@ -3,7 +3,7 @@ import type { RpcNetwork } from '../types/rpc.js'
 import { isSignerOnlyNetwork } from '../utils/rpcNetworkChange.js'
 import { prepareSafeDelegateSimulationInput, prepareSafeDelegateStateOverrides, ORIGINAL_GNOSIS_SAFE, SAFE_DELEGATE_EXECUTE_ABI } from '../safe/safeSimulation.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { appendTransactionToInputAndSimulate, createExecutionSimulationState, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustmentBalances, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfterForTransaction, getWebsiteCreatedEthereumTransactions, simulateEstimateGasFromInput, sliceSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { appendTransactionToInputAndSimulate, createExecutionSimulationState, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustmentBalances, getInputFieldFromDataOrInput, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfterForTransaction, getWebsiteCreatedEthereumTransactions, simulateEstimateGasFromInput, sliceSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { calculateRealizedEffectiveGasPrice } from '../simulation/services/simulationBlockParameters.js'
 import { mockSignTransaction } from '../simulation/services/simulationTransactionSigning.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../config/defaults.js'
@@ -11,14 +11,14 @@ import type { TokenPriceService } from '../simulation/services/priceEstimator.js
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
 import { runProtectorsForTransaction } from '../simulation/protectorRunner.js'
 import type { EnrichedEthereumEvents, EnrichedEthereumInputData } from '../types/EnrichedEthereumData.js'
-import type { PendingTransaction } from '../types/accessRequest.js'
+import type { FailedTransactionPreview, PendingTransaction } from '../types/accessRequest.js'
 import type { AddressBookEntry, Erc20TokenEntry } from '../types/addressBookTypes.js'
 import type { SimulateExecutionReplyData } from '../types/interceptor-messages.js'
-import { PASSTHROUGH_STATE, type BlockTimeManipulation, type ExecutionSimulationState, type NonSimulatedAndVisualizedTransaction, type PreSimulationTransaction, type SignedMessageTransaction, type SimulationState, type SimulationStateInput, type SimulationStateInputBlock, type VisualizedSimulatorState, toResolvedSimulationInput, toResolvedSimulationState } from '../types/visualizer-types.js'
+import { PASSTHROUGH_STATE, type BlockTimeManipulation, type ExecutionSimulationState, type NonSimulatedAndVisualizedTransaction, type PreSimulationTransaction, type SignedMessageTransaction, type SimulationState, type SimulationStateInput, type SimulationStateInputBlock, type VisualizedSimulatorState, type WebsiteCreatedEthereumTransactionOrFailed, toResolvedSimulationInput, toResolvedSimulationState } from '../types/visualizer-types.js'
 import { get4Byte, get4ByteString } from '../utils/calldata.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS, FourByteExplanations, MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
 import { type DistributiveOmit, assertNever, modifyObject } from '../utils/typescript.js'
-import { getAddressBookEntriesForVisualiserFromTransactions, identifyAddress, nameTokenIds, retrieveEnsNodeAndLabelHashes } from './metadataUtils.js'
+import { getAddressBookEntriesForTransactionWithoutSimulation, getAddressBookEntriesForVisualiserFromTransactions, identifyAddress, nameTokenIds, retrieveEnsNodeAndLabelHashes } from './metadataUtils.js'
 import { getFixedAddressRichList, getPreSimulationBlockTimeManipulation, getSettings, getWethForChainId } from './settings.js'
 import { addressString, dataStringWith0xStart, dateToBigintSeconds, stringToUint8Array } from '../utils/bigint.js'
 import { simulateCompoundGovernanceExecution } from '../simulation/compoundGovernanceFaking.js'
@@ -193,6 +193,34 @@ export async function getMetadataForSimulation(
 		ens: await ensPromise
 	}
 }
+
+// The failure view shows the formed transaction when there is one, otherwise the website's request.
+const getFailedTransactionFields = (transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed) => {
+	if (transactionToSimulate.success) return { call: transactionToSimulate.transaction, addressFields: transactionToSimulate.transaction }
+	const request = transactionToSimulate.originalRequestParameters
+	if (request.method !== 'eth_sendTransaction') return undefined
+	const transaction = request.params[0]
+	return {
+		// Request validation (JsonRpc-types) rejects a transaction whose input and data both exist but differ, so this preview and the dialog's raw input view show the same calldata whichever field they read first.
+		call: { to: transaction.to, value: transaction.value ?? 0n, input: getInputFieldFromDataOrInput(transaction) },
+		addressFields: transaction,
+	}
+}
+
+/** The failure view's counterpart of getMetadataForSimulation for a transaction without simulation results: parses its calldata and names its addresses with the address collection and lookups metadataUtils shares with simulated transactions. Like getMetadataForSimulation it lives here because it also parses calldata, and the parser already depends on metadataUtils. */
+export async function getFailedTransactionPreview(ethereum: EthereumClientService, requestAbortController: AbortController | undefined, transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed): Promise<FailedTransactionPreview> {
+	const fields = getFailedTransactionFields(transactionToSimulate)
+	const parsedInputData: EnrichedEthereumInputData = fields === undefined
+		? { type: 'NonParsed', input: new Uint8Array() }
+		: await parseInputData(fields.call, ethereum, requestAbortController)
+	const addressBookEntries = await getAddressBookEntriesForTransactionWithoutSimulation(ethereum, requestAbortController, fields?.addressFields, parsedInputData)
+	return { addressBookEntries, parsedInputData }
+}
+
+export const withFailedTransactionPreview = <Visualisation extends { readonly data: object }>(visualisation: Visualisation, failedTransactionPreview: FailedTransactionPreview): Visualisation => ({
+	...visualisation,
+	data: { ...visualisation.data, failedTransactionPreview },
+})
 
 async function getDelegationAddressesForSimulation(
 	simulationStateInput: SimulationStateInput,

@@ -2,9 +2,10 @@ import * as assert from 'assert'
 import { setSystemTime, test } from 'bun:test'
 import { Erc20ABI } from '../../app/ts/utils/abi.js'
 import { encodeFunctionCall } from '../../app/ts/utils/abiRuntime.js'
-import { NEW_BLOCK_ABORT } from '../../app/ts/utils/constants.js'
+import { ETHEREUM_LOGS_LOGGER_ADDRESS, NEW_BLOCK_ABORT } from '../../app/ts/utils/constants.js'
+import type { SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
 import type { WebsiteCreatedEthereumTransaction, WebsiteCreatedEthereumTransactionOrFailed } from '../../app/ts/types/visualizer-types.js'
-import { activeAddress, addressString, created, createFeeValidatingSimulator, createSafeAddressBookEntry, createSafeTx, createWebsitePort, fakeRequestHandler, fakeRpcNetwork, getSafeTxHash, modules, recipientAddress, simulator, TOO_LITTLE_ETH_FOR_FEES, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
+import { activeAddress, addressString, created, createFeeValidatingSimulator, createWebsitePort, fakeRequestHandler, fakeRpcNetwork, modules, recipientAddress, simulator, TOO_LITTLE_ETH_FOR_FEES, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
 
 const USDC_ADDRESS = 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48n
 const TRANSFERRED_USDC = 2_500_000n
@@ -85,7 +86,7 @@ async function createUnformedUsdcTransfer(transactionIdentifier: bigint): Promis
 type SupersededLookupOutcome = 'rejects' | 'resolves'
 const SUPERSEDED_LOOKUP_OUTCOMES: readonly SupersededLookupOutcome[] = ['rejects', 'resolves']
 
-// Runs a newer refresh the first time the address is looked up on chain, while the superseded refresh resolves its failure preview. Afterwards the lookup either rejects the way the RPC request handler rejects an aborted request, or resolves the way a cached lookup does.
+// Runs a newer refresh the first time the address is looked up on chain, while the superseded refresh resolves its metadata. Afterwards the lookup either rejects the way the RPC request handler rejects an aborted request, or resolves the way a cached lookup does.
 function supersedeDuringAddressLookup(ethereum: InstanceType<typeof modules.EthereumClientService>, lookedUpAddress: bigint, supersededLookupOutcome: SupersededLookupOutcome, runNewerRefresh: () => Promise<void>) {
 	let newerRefreshStarted = false
 	return new Proxy(ethereum, {
@@ -103,10 +104,10 @@ function supersedeDuringAddressLookup(ethereum: InstanceType<typeof modules.Ethe
 	})
 }
 
-async function openUsdcTransferConfirmation(confirmationSimulator: ReturnType<typeof createFeeValidatingSimulator>) {
+// Opens the confirmation dialog the way a website's eth_sendTransaction does, and checks that the website's request is left waiting for the user instead of being rejected.
+async function openTransactionConfirmation(confirmationSimulator: ReturnType<typeof createFeeValidatingSimulator>, transactionParams: SendTransactionParams) {
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({ simulationMode: true, rpcNetwork: fakeRpcNetwork, activeSimulationAddress: activeAddress })
-	const transactionParams = await getUsdcTransferParams()
 	const websiteTabConnections = new Map([[uniqueRequestIdentifier.requestSocket.tabId, {
 		connections: {
 			[modules.websiteSocketToString(uniqueRequestIdentifier.requestSocket)]: {
@@ -135,6 +136,8 @@ async function openUsdcTransferConfirmation(confirmationSimulator: ReturnType<ty
 		websiteTabConnections,
 	)), { type: 'doNotReply' })
 }
+
+const openUsdcTransferConfirmation = async (confirmationSimulator: ReturnType<typeof createFeeValidatingSimulator>) => await openTransactionConfirmation(confirmationSimulator, await getUsdcTransferParams())
 
 async function getPendingFailedTransactionVisualisation() {
 	const [pending] = await modules.getPendingTransactionsAndMessages()
@@ -274,108 +277,72 @@ test('resolves address-book names and parses calldata when the confirmation simu
 	assertUsdcTransferPreview(popupVisualisation.data.failedTransactionPreview)
 })
 
-const SAFE_REFUND_RECEIVER_ADDRESS = 0x5555555555555555555555555555555555555555n
-const createRevertingSafeProposalSimulator = () => createSimulatorWithRpcFailure((rpcRequest) => rpcRequest.method === 'eth_simulateV1' ? createRpcError('execution reverted: GS013') : undefined)
+test('collects the failure view addresses with the simulation view rules for the same transaction', async () => {
+	await useInvoiceAddressBook()
+	const { getFailedTransactionPreview } = await import('../../app/ts/background/simulationUpdating.js')
+	const { getAddressesToIdentifyForVisualiserFromTransactions } = await import('../../app/ts/background/metadataUtils.js')
+	const { getDeployedContractAddress } = await import('../../app/ts/simulation/services/SimulationModeEthereumClientService.js')
+	const transfer = await createFormedUsdcTransfer(15n)
+	const contractCreation = { ...transfer, transaction: { ...transfer.transaction, to: null } }
+	for (const transactionToSimulate of [transfer, contractCreation]) {
+		const failedTransactionPreview = await getFailedTransactionPreview(simulator.ethereum, undefined, transactionToSimulate)
+		const simulationViewAddresses = getAddressesToIdentifyForVisualiserFromTransactions([], [failedTransactionPreview.parsedInputData], [{
+			stateOverrides: {},
+			signedMessages: [],
+			blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 0n, deltaUnit: 'Seconds' },
+			simulateWithZeroBaseFee: false,
+			transactions: [{
+				signedTransaction: modules.mockSignTransaction(transactionToSimulate.transaction),
+				website,
+				created,
+				originalRequestParameters: transactionToSimulate.originalRequestParameters,
+				transactionIdentifier: transactionToSimulate.transactionIdentifier,
+			}],
+		}])
+		const failureViewAddresses = new Set(failedTransactionPreview.addressBookEntries.map((entry) => entry.address))
+		assert.deepEqual(failureViewAddresses, new Set(simulationViewAddresses))
+		assert.equal(failureViewAddresses.has(ETHEREUM_LOGS_LOGGER_ADDRESS), true)
+	}
+	const contractCreationPreview = await getFailedTransactionPreview(simulator.ethereum, undefined, contractCreation)
+	assert.equal(contractCreationPreview.addressBookEntries.some((entry) => entry.address === getDeployedContractAddress(activeAddress, 0n)), true)
+})
 
-// Refreshes a Gnosis Safe proposal whose gas refund in USDC goes to a receiver that only the Safe signing request names.
-async function refreshSafeProposalSimulation(ethereum: InstanceType<typeof modules.EthereumClientService>) {
-	const proposedSafeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, { to: recipientAddress, value: 0n, input: new Uint8Array() }, 0n)
-	const safeTx = { ...proposedSafeTx, message: { ...proposedSafeTx.message, gasToken: USDC_ADDRESS, refundReceiver: SAFE_REFUND_RECEIVER_ADDRESS } }
-	const { SendTransactionParams } = await import('../../app/ts/types/JsonRpc-types.js')
-	const transactionParams = SendTransactionParams.parse({
-		method: 'eth_sendTransaction',
-		params: [{ from: addressString(activeAddress), to: addressString(recipientAddress), value: '0x0', data: '0x' }],
+const failedPreviewLookups = [
+	{ description: 'an RPC failure', createLookupError: async () => (await import('../../app/ts/utils/errors.js')).createInterceptorInternalError('Failed to fetch', 'fetch_transport_failed', 'failedToFetch'), isDefect: false },
+	{ description: 'a defect', createLookupError: async () => new Error('address probe decoder defect'), isDefect: true },
+]
+
+for (const { description, createLookupError, isDefect } of failedPreviewLookups) {
+	test(`stores and shows the transaction's own failure without a preview when the preview lookup hits ${ description }`, async () => {
+		const unknownContractAddress = 0x4444444444444444444444444444444444444444n
+		const lookupError = await createLookupError()
+		const { SendTransactionParams } = await import('../../app/ts/types/JsonRpc-types.js')
+		const { getInterceptorErrorDiagnostics, getLatestUnexpectedError } = await import('../../app/ts/background/storageVariables.js')
+		let failedLookups = 0
+		// Simulation mode estimates gas with eth_simulateV1, so failing it leaves the transaction unformed, and only its failure preview looks up the unknown contract.
+		const confirmationSimulator = createSimulatorWithRpcFailure((rpcRequest) => {
+			if (rpcRequest.method === 'eth_simulateV1') return createRpcError('execution reverted')
+			if (rpcRequest.method !== 'eth_getCode' || rpcRequest.params?.[0] !== unknownContractAddress) return undefined
+			failedLookups += 1
+			return lookupError
+		})
+
+		await openTransactionConfirmation(confirmationSimulator, SendTransactionParams.parse({
+			method: 'eth_sendTransaction',
+			params: [{ from: addressString(activeAddress), to: addressString(unknownContractAddress), value: '0x0', data: '0x' }],
+		}))
+
+		assert.equal(failedLookups > 0, true, 'the failure preview looked up the unknown contract')
+		const popupVisualisation = await getPendingFailedTransactionVisualisation()
+		const { transactionToSimulate } = popupVisualisation.data
+		if (transactionToSimulate.success) throw new Error('Expected the transaction to stay unformed')
+		assert.equal(transactionToSimulate.error.message, 'execution reverted')
+		assert.equal(popupVisualisation.data.failedTransactionPreview, undefined)
+		const previewFailureReports = (await getInterceptorErrorDiagnostics()).filter((diagnostic) => diagnostic.code === 'failed_transaction_preview_failed')
+		assert.equal(previewFailureReports.length, isDefect ? 1 : 0, 'a defect is reported once and an RPC failure is not reported')
+		assert.equal((await getLatestUnexpectedError())?.data.message, isDefect ? 'address probe decoder defect' : undefined)
 	})
-	const { refreshConfirmTransactionSimulation } = await import('../../app/ts/background/confirmTransactionSimulation.js')
-	return await refreshConfirmTransactionSimulation(
-		ethereum,
-		simulator.tokenPriceService,
-		activeAddress,
-		false,
-		uniqueRequestIdentifier,
-		{
-			website,
-			created,
-			originalRequestParameters: transactionParams,
-			transactionIdentifier: 10n,
-			success: true,
-			transaction: {
-				type: '1559',
-				from: activeAddress,
-				chainId: fakeRpcNetwork.chainId,
-				nonce: 0n,
-				maxFeePerGas: 0n,
-				maxPriorityFeePerGas: 0n,
-				gas: 21_000n,
-				to: recipientAddress,
-				value: 0n,
-				input: new Uint8Array(),
-				accessList: [],
-			},
-		},
-		{
-			safeAddress: activeAddress,
-			safeSignerAddress: recipientAddress,
-			safeVersion: '1.4.1',
-			threshold: 2n,
-			safeTxHash: BigInt(getSafeTxHash(safeTx)),
-			safeTx,
-			executionGasLimit: 21_000n,
-		},
-	)
 }
-
-test('resolves the Gnosis Safe signing request addresses when a Safe proposal simulation fails', async () => {
-	await modules.updateUserAddressBookEntries(() => [
-		createSafeAddressBookEntry(),
-		{ type: 'contact', name: 'Supplier', address: recipientAddress, entrySource: 'User', chainId: fakeRpcNetwork.chainId },
-		{ type: 'contact', name: 'Refund Desk', address: SAFE_REFUND_RECEIVER_ADDRESS, entrySource: 'User', chainId: fakeRpcNetwork.chainId },
-	])
-	const popupVisualisation = await withSilencedConsole(async () => await refreshSafeProposalSimulation(createRevertingSafeProposalSimulator().ethereum))
-
-	if (popupVisualisation?.statusCode !== 'failed') throw new Error('Expected the Safe proposal simulation to fail')
-	const entries = popupVisualisation.data.failedTransactionPreview?.addressBookEntries ?? []
-	const findName = (address: bigint) => entries.find((entry) => entry.address === address)?.name
-	assert.equal(findName(activeAddress), 'Treasury Safe')
-	assert.equal(findName(recipientAddress), 'Supplier')
-	assert.equal(findName(USDC_ADDRESS), 'USDC')
-	assert.equal(findName(SAFE_REFUND_RECEIVER_ADDRESS), 'Refund Desk')
-})
-
-test('reports an unexpected failure preview error and still returns the failure view', async () => {
-	const unknownContractAddress = 0x4444444444444444444444444444444444444444n
-	const { SendTransactionParams } = await import('../../app/ts/types/JsonRpc-types.js')
-	const { refreshConfirmTransactionSimulation } = await import('../../app/ts/background/confirmTransactionSimulation.js')
-	const { getLatestUnexpectedError } = await import('../../app/ts/background/storageVariables.js')
-	const brokenMetadataSimulator = createSimulatorWithRpcFailure((rpcRequest) => (
-		rpcRequest.method === 'eth_getCode' && rpcRequest.params?.[0] === unknownContractAddress ? new Error('address probe decoder defect') : undefined
-	))
-	const popupVisualisation = await withSilencedConsole(async () => await refreshConfirmTransactionSimulation(
-		brokenMetadataSimulator.ethereum,
-		brokenMetadataSimulator.tokenPriceService,
-		activeAddress,
-		true,
-		uniqueRequestIdentifier,
-		{
-			website,
-			created,
-			originalRequestParameters: SendTransactionParams.parse({
-				method: 'eth_sendTransaction',
-				params: [{ from: addressString(activeAddress), to: addressString(unknownContractAddress), value: '0x0', data: '0x' }],
-			}),
-			transactionIdentifier: 11n,
-			success: false,
-			error: { code: -32000, message: 'execution reverted' },
-		},
-	))
-
-	assert.equal(popupVisualisation?.statusCode, 'success')
-	assert.equal(popupVisualisation?.data.transactionToSimulate.success, false)
-	assert.equal(popupVisualisation?.data.failedTransactionPreview, undefined)
-	const unexpectedError = await getLatestUnexpectedError()
-	assert.equal(unexpectedError?.data.code, 'failed_transaction_preview_failed')
-	assert.equal(unexpectedError?.data.message, 'address probe decoder defect')
-})
 
 test('keeps the newer stored simulation when a refresh is superseded during its failure preview lookup', async () => {
 	await useInvoiceAddressBook()
@@ -417,41 +384,38 @@ const refreshUsdcTransferSimulation = async (ethereum: InstanceType<typeof modul
 	return await refreshConfirmTransactionSimulation(ethereum, simulator.tokenPriceService, activeAddress, true, uniqueRequestIdentifier, transactionToSimulate)
 }
 
-// Each scenario reaches a different failure branch, and its failure preview looks up an address that the empty address book does not name and the simulation did not already resolve.
+// Each scenario reaches a different failure branch with the transfer recipient missing from the empty address book. The recipient is first looked up on chain by the failure preview, except after a failed simulation, whose own visualisation looks it up and saves it, so its failure preview then finds it locally without noticing an abort.
 const supersededFailurePreviewScenarios = [
 	{
-		scenario: 'a Safe proposal simulation fails',
-		lookedUpAddress: SAFE_REFUND_RECEIVER_ADDRESS,
-		createSimulator: createRevertingSafeProposalSimulator,
-		refresh: refreshSafeProposalSimulation,
+		scenario: 'the confirmation simulation fails',
+		createSimulator: () => createFeeValidatingSimulator(TOO_LITTLE_ETH_FOR_FEES),
+		refresh: async (ethereum: InstanceType<typeof modules.EthereumClientService>) => await refreshUsdcTransferSimulation(ethereum, await createFormedUsdcTransfer(14n)),
 	},
 	{
 		scenario: 'the transaction could not be formed',
-		lookedUpAddress: recipientAddress,
 		createSimulator: () => simulator,
 		refresh: async (ethereum: InstanceType<typeof modules.EthereumClientService>) => await refreshUsdcTransferSimulation(ethereum, await createUnformedUsdcTransfer(12n)),
 	},
 	{
 		scenario: 'the confirmation simulation throws',
-		lookedUpAddress: recipientAddress,
 		createSimulator: () => createSimulatorWithRpcFailure((rpcRequest) => rpcRequest.method === 'eth_getBalance' ? createRpcError('balance lookup unavailable') : undefined),
 		refresh: async (ethereum: InstanceType<typeof modules.EthereumClientService>) => await refreshUsdcTransferSimulation(ethereum, await createFormedUsdcTransfer(13n)),
 	},
 ]
 
-for (const { scenario, lookedUpAddress, createSimulator, refresh } of supersededFailurePreviewScenarios) {
+for (const { scenario, createSimulator, refresh } of supersededFailurePreviewScenarios) {
 	for (const supersededLookupOutcome of SUPERSEDED_LOOKUP_OUTCOMES) {
-		test(`returns no result from a refresh superseded during its failure preview lookup when ${ scenario } and the lookup ${ supersededLookupOutcome }`, async () => {
+		test(`returns no result from a refresh superseded during its recipient lookup when ${ scenario } and the lookup ${ supersededLookupOutcome }`, async () => {
 			await modules.updateUserAddressBookEntries(() => [])
 			const failingSimulator = createSimulator()
 			let newerRefreshResult: Awaited<ReturnType<typeof refresh>>
-			const ethereumSupersededDuringPreview = supersedeDuringAddressLookup(failingSimulator.ethereum, lookedUpAddress, supersededLookupOutcome, async () => {
+			const ethereumSupersededDuringLookup = supersedeDuringAddressLookup(failingSimulator.ethereum, recipientAddress, supersededLookupOutcome, async () => {
 				newerRefreshResult = await refresh(failingSimulator.ethereum)
 			})
 
-			const supersededRefreshResult = await withSilencedConsole(async () => await refresh(ethereumSupersededDuringPreview))
+			const supersededRefreshResult = await withSilencedConsole(async () => await refresh(ethereumSupersededDuringLookup))
 
-			assert.notEqual(newerRefreshResult, undefined, 'the newer refresh runs during the failure preview lookup and completes')
+			assert.notEqual(newerRefreshResult, undefined, 'the newer refresh runs during the recipient lookup and completes')
 			assert.equal(supersededRefreshResult, undefined)
 		})
 	}

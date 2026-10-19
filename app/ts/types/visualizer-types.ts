@@ -120,12 +120,6 @@ export const ProtectorResults = funtypes.ReadonlyObject( {
 	quarantineReasons: funtypes.ReadonlyArray(funtypes.String),
 })
 
-export type TransactionSimulationOptions = funtypes.Static<typeof TransactionSimulationOptions>
-const TransactionSimulationOptions = funtypes.ReadonlyObject({
-	requiredChainId: EthereumQuantity,
-	simulateWithZeroBaseFee: funtypes.Boolean,
-})
-
 export type PreSimulationTransaction = funtypes.Static<typeof PreSimulationTransaction>
 export const PreSimulationTransaction = funtypes.ReadonlyObject({
 	signedTransaction: EthereumSendableSignedTransaction,
@@ -135,7 +129,10 @@ export const PreSimulationTransaction = funtypes.ReadonlyObject({
 	transactionIdentifier: EthereumQuantity,
 }).And(funtypes.ReadonlyPartial({
 	safeTransaction: SafeStackTransaction,
-	simulationOptions: TransactionSimulationOptions,
+	simulationOptions: funtypes.ReadonlyObject({
+		requiredChainId: EthereumQuantity,
+		simulateWithZeroBaseFee: funtypes.Boolean,
+	}),
 }))
 
 export type SimulatedTransaction = funtypes.Static<typeof SimulatedTransaction>
@@ -156,8 +153,6 @@ export const WebsiteCreatedEthereumTransaction = funtypes.ReadonlyObject({
 	transaction: EthereumUnsignedTransaction,
 }).And(funtypes.ReadonlyPartial({
 	signedTransaction: EthereumSendableSignedTransaction,
-	// Carried into the pre-simulation transaction for both the confirmation simulation and the simulation stack.
-	simulationOptions: TransactionSimulationOptions,
 }))
 
 export type FailedToCreateWebsiteCreatedEthereumTransaction = funtypes.Static<typeof FailedToCreateWebsiteCreatedEthereumTransaction>

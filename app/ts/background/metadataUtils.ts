@@ -250,36 +250,46 @@ export const getAddressesForSolidityTypes = (variables: readonly SolidityVariabl
 	return variables.flatMap((argumentVariable) => getAddressesForSolidityType(argumentVariable.typeValue))
 }
 
+// A formed transaction, or a website's eth_sendTransaction request that could not be formed into one: such a request may omit the sender, and without a nonce the contract a creation would deploy is unknown.
 type TransactionAddressFields = {
-	readonly from: bigint
-	readonly to: bigint | null
-	readonly nonce: bigint
+	readonly from?: bigint
+	readonly to?: bigint | null
+	readonly nonce?: bigint
 	readonly authorizationList?: readonly { readonly address: bigint }[]
 }
 
 // The sender, the recipient or the contract the transaction deploys, and the EIP-7702 delegation targets it authorizes.
-export const getTransactionAddresses = (transaction: TransactionAddressFields) => [
-	transaction.from,
-	transaction.to ?? getDeployedContractAddress(transaction.from, transaction.nonce),
-	...(transaction.authorizationList ?? []).map((authorization) => authorization.address),
-]
+const getTransactionAddresses = ({ from, to, nonce, authorizationList }: TransactionAddressFields) => {
+	const recipientOrDeployedContract = to ?? (from === undefined || nonce === undefined ? undefined : getDeployedContractAddress(from, nonce))
+	return [from, recipientOrDeployedContract, ...(authorizationList ?? []).map((authorization) => authorization.address)]
+		.filter((address): address is bigint => address !== undefined)
+}
 
-export function getAddressesToIdentifyForVisualiserFromTransactions(events: EnrichedEthereumEvents, inputData: readonly EnrichedEthereumInputData[], simulationStateInput: SimulationStateInput) {
-	const addressesToFetchMetadata = [
+// Which addresses the visualiser names for transactions, their calldata and the events they emitted. Both the simulation view and the failure view of a transaction without simulation results collect their addresses here.
+function getAddressesToIdentifyForVisualiser(events: EnrichedEthereumEvents, inputData: readonly EnrichedEthereumInputData[], transactions: readonly TransactionAddressFields[]) {
+	return Array.from(new Set<bigint>([
 		...events.flatMap((event) => [event.address, ...(event.type === 'NonParsed' ? [] : getAddressesForSolidityTypes(event.args))]),
 		...getAddressesForSolidityTypes(inputData.flatMap((event) => event.type !== 'NonParsed' ? event.args : [])),
-	]
+		...transactions.flatMap(getTransactionAddresses),
+		ETHEREUM_LOGS_LOGGER_ADDRESS,
+	]).values())
+}
 
-	for (const tx of simulationStateInput.flatMap((block) => block.transactions)) {
-		addressesToFetchMetadata.push(...getTransactionAddresses(tx.signedTransaction))
-	}
+export function getAddressesToIdentifyForVisualiserFromTransactions(events: EnrichedEthereumEvents, inputData: readonly EnrichedEthereumInputData[], simulationStateInput: SimulationStateInput) {
+	return getAddressesToIdentifyForVisualiser(events, inputData, simulationStateInput.flatMap((block) => block.transactions.map((transaction) => transaction.signedTransaction)))
+}
 
-	return Array.from(new Set<bigint>([...addressesToFetchMetadata, ETHEREUM_LOGS_LOGGER_ADDRESS]).values())
+async function identifyAddresses(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, addresses: readonly bigint[]): Promise<AddressBookEntry[]> {
+	return await promiseAllMapAbortSafe(addresses, async (address) => await identifyAddress(ethereumClientService, requestAbortController, address))
 }
 
 export async function getAddressBookEntriesForVisualiserFromTransactions(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, events: EnrichedEthereumEvents, inputData: readonly EnrichedEthereumInputData[], simulationStateInput: SimulationStateInput): Promise<AddressBookEntry[]> {
-	const addressesToIdentify = getAddressesToIdentifyForVisualiserFromTransactions(events, inputData, simulationStateInput)
-	return await promiseAllMapAbortSafe(addressesToIdentify, async (address) => await identifyAddress(ethereumClientService, requestAbortController, address))
+	return await identifyAddresses(ethereumClientService, requestAbortController, getAddressesToIdentifyForVisualiserFromTransactions(events, inputData, simulationStateInput))
+}
+
+// Names the addresses of a transaction that has no simulation results, such as one whose simulation failed, with the same collection and lookups as getAddressBookEntriesForVisualiserFromTransactions.
+export async function getAddressBookEntriesForTransactionWithoutSimulation(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, transaction: TransactionAddressFields | undefined, inputData: EnrichedEthereumInputData): Promise<AddressBookEntry[]> {
+	return await identifyAddresses(ethereumClientService, requestAbortController, getAddressesToIdentifyForVisualiser([], [inputData], transaction === undefined ? [] : [transaction]))
 }
 
 export async function nameTokenIds(ethereumClientService: EthereumClientService, events: EnrichedEthereumEvents) {

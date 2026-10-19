@@ -1,6 +1,6 @@
-import { getFailedTransactionPreview, refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
+import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
-import { captureSimulationSnapshot, getUpdatedSimulationStackSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
+import { captureSimulationSnapshot, getFailedTransactionPreview, getUpdatedSimulationStackSnapshot, getUpdatedSimulationState, withFailedTransactionPreview } from './simulationUpdating.js'
 import { getSettings, setUseTabsInsteadOfPopup, setPage, getMakeCurrentAddressRich, setMetamaskCompatibilityMode, setSafeAppsCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, updateMakeCurrentAddressRich, updateFixedMakeMeRichList } from './settings.js'
 import { getPendingTransactionsAndMessages, getTabState, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests, updateTransactionState, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, getSafeTransactionStacks } from './storageVariables.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
@@ -15,7 +15,7 @@ import { getActiveAddressForCurrentSignerState, sendCallbackToAllConfirmedSigner
 import { findEntryWithSymbolOrName, getMetadataForAddressBookData } from './metadataSearch.js'
 import { getActiveAddressEntryForChain, getActiveAddresses, identifyAddress } from './metadataUtils.js'
 import type { TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
-import type { ConfirmTransactionTransactionSingleVisualization, FailedTransactionPreview } from '../types/accessRequest.js'
+import type { ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { CompleteVisualizedSimulation, InterceptorSimulationExport, type InterceptorStackOperation, InterceptorTransactionStack, type ModifyAddressWindowState, createPassthroughCompleteVisualizedSimulation } from '../types/visualizer-types.js'
 import { isJSON } from '../utils/json.js'
@@ -62,7 +62,6 @@ import { getLastKnownCurrentTabId } from './currentTab.js'
 import { reloadConnectedTabs } from './popupMessageHandlers/websiteAccess.js'
 import { updateWebsiteAccessAndContentScriptInjectionStrategy } from './websiteAccessUpdating.js'
 import { getConfiguredSigningSafeForChain } from './signingAddressSelection.js'
-import { getSimulationModeFeePayment, type TransactionFeePayment } from './safeTransactionConfirmation.js'
 
 type TimestampedPopupVisualisation = {
 	data: {
@@ -523,11 +522,6 @@ type ConfirmTransactionMetadataDependencies = {
 	readonly visualisation?: OpenConsumerVisualisationDependencies
 }
 
-const withFailedTransactionPreview = <Visualisation extends { readonly data: object }>(visualisation: Visualisation, failedTransactionPreview: FailedTransactionPreview): Visualisation => ({
-	...visualisation,
-	data: { ...visualisation.data, failedTransactionPreview },
-})
-
 export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, requestAbortController: AbortController | undefined, dependencies: ConfirmTransactionMetadataDependencies = {}) {
 	const promises = await getPendingTransactionsAndMessages()
 	const first = promises[0]
@@ -574,7 +568,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 			const popupVisualisation = first.popupVisualisation
 			try {
 				const refreshedPopupVisualisation: ConfirmTransactionTransactionSingleVisualization = popupVisualisation.statusCode === 'failed' || popupVisualisation.data.transactionToSimulate.success === false
-					? withFailedTransactionPreview(popupVisualisation, await getFailedTransactionPreview(ethereum, requestAbortController, first.transactionToSimulate, first.safeTransaction))
+					? withFailedTransactionPreview(popupVisualisation, await getFailedTransactionPreview(ethereum, requestAbortController, first.transactionToSimulate))
 					: {
 						statusCode: 'success',
 						data: modifyObject(popupVisualisation.data, { ...await visualizeSimulatorState(popupVisualisation.data.simulationState, ethereum, tokenPriceService, requestAbortController) })
@@ -620,9 +614,6 @@ export async function refreshPopupConfirmTransactionSimulation(ethereum: Ethereu
 	if (firstTxn === undefined || firstTxn.type !== 'Transaction' || (firstTxn.transactionOrMessageCreationStatus !== 'Simulated' && firstTxn.transactionOrMessageCreationStatus !== 'FailedToSimulate')) return
 	const safeFlow = getSafePendingFlow(firstTxn)
 	const proposalSafeTransaction = safeFlow?.kind === 'proposal' ? safeFlow.pending.safeTransaction : undefined
-	const feePayment: TransactionFeePayment = firstTxn.simulationMode
-		? await getSimulationModeFeePayment(ethereum.getChainId(), firstTxn.originalRequestParameters, firstTxn.activeAddress)
-		: { gasPayment: safeFlow === undefined ? 'transaction-sender' : 'external-executor', simulationOptions: undefined }
 	const transactionToSimulate = firstTxn.originalRequestParameters.method === 'eth_sendTransaction'
 		? await formEthSendTransaction(
 			ethereum,
@@ -633,8 +624,7 @@ export async function refreshPopupConfirmTransactionSimulation(ethereum: Ethereu
 			firstTxn.created,
 			firstTxn.transactionIdentifier,
 			firstTxn.simulationMode,
-			feePayment.gasPayment,
-			feePayment.simulationOptions,
+			safeFlow === undefined ? 'transaction-sender' : 'external-executor',
 		)
 		: await formSendRawTransaction(ethereum, firstTxn.originalRequestParameters, firstTxn.transactionToSimulate.website, firstTxn.created, firstTxn.transactionIdentifier)
 	const refreshMessage = await refreshConfirmTransactionSimulation(

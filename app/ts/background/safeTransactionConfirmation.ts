@@ -4,7 +4,7 @@ import type { EthereumClientService } from '../simulation/services/EthereumClien
 import type { SendRawTransactionParams, SendTransactionParams } from '../types/JsonRpc-types.js'
 import type { SafeEntry } from '../types/addressBookTypes.js'
 import type { SafeTransactionSigningRequest } from '../types/safeTypes.js'
-import type { TransactionSimulationOptions, WebsiteCreatedEthereumTransaction, WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
+import type { WebsiteCreatedEthereumTransaction, WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
 import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER } from '../utils/constants.js'
 import { getErrorMessage, reportLocalRecovery } from '../utils/errors.js'
 import { getPendingTransactionsAndMessages, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
@@ -17,17 +17,10 @@ import { getSafePendingFlow } from '../safe/safePendingFlow.js'
 
 type SafeExecutionSignerRoute = NonNullable<Awaited<ReturnType<typeof prepareSafeExecutionSignerRoute>>>
 
-export type TransactionFeePayment = {
-	readonly gasPayment: 'transaction-sender' | 'external-executor'
-	// Only set in simulation mode, where the formed transaction is simulated and stacked itself instead of through the Gnosis Safe signing flow.
-	readonly simulationOptions: TransactionSimulationOptions | undefined
-}
-
-const SENDER_PAID_FEES: TransactionFeePayment = { gasPayment: 'transaction-sender', simulationOptions: undefined }
-
-export type SafeTransactionConfirmationPreparation = TransactionFeePayment & {
+export type SafeTransactionConfirmationPreparation = {
 	readonly effectiveTransactionParams: SendTransactionParams | SendRawTransactionParams
 	readonly transactionExecutor: bigint
+	readonly gasPayment: 'transaction-sender' | 'external-executor'
 	readonly preparationMessage: string | undefined
 	readonly rejection: {
 		readonly code: number
@@ -48,22 +41,6 @@ export type SafeTransactionConfirmationPreparation = TransactionFeePayment & {
 	}>
 }
 
-/**
- * Simulation mode stacks Gnosis Safe transactions without the Safe signing flow, but a Safe still never pays for its own execution. Like a Safe proposal,
- * its transaction is simulated without fees in a zero base fee block, because base fee fixing would otherwise re-price its fee cap from the Safe's own balance.
- */
-export async function getSimulationModeFeePayment(
-	chainId: bigint,
-	transactionParams: SendTransactionParams | SendRawTransactionParams,
-	activeAddress: bigint,
-): Promise<TransactionFeePayment> {
-	if (transactionParams.method !== 'eth_sendTransaction') return SENDER_PAID_FEES
-	const sender = transactionParams.params[0].from ?? activeAddress
-	const userAddressBookEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(chainId)
-	if (!userAddressBookEntries.some((entry) => entry.type === 'safe' && entry.address === sender)) return SENDER_PAID_FEES
-	return { gasPayment: 'external-executor', simulationOptions: { requiredChainId: chainId, simulateWithZeroBaseFee: true } }
-}
-
 export async function prepareSafeTransactionConfirmation(
 	ethereum: EthereumClientService,
 	confirmation: TransactionConfirmationRequest,
@@ -72,11 +49,10 @@ export async function prepareSafeTransactionConfirmation(
 	walletSignerAddress: bigint | undefined,
 ): Promise<SafeTransactionConfirmationPreparation> {
 	const transactionParams = confirmation.parameters
-	if (simulationMode) {
-		return createUnwrappedPreparation(activeAddress, transactionParams, await getSimulationModeFeePayment(ethereum.getChainId(), transactionParams, activeAddress), undefined)
-	}
-	const configuredSafeEntry = (await getUserAddressBookEntriesForChainIdMorePreciseFirst(ethereum.getChainId()))
-		.find((entry): entry is SafeEntry => entry.type === 'safe' && entry.address === activeAddress)
+	const configuredSafeEntry = simulationMode
+		? undefined
+		: (await getUserAddressBookEntriesForChainIdMorePreciseFirst(ethereum.getChainId()))
+			.find((entry): entry is SafeEntry => entry.type === 'safe' && entry.address === activeAddress)
 	if (configuredSafeEntry !== undefined) {
 		if (transactionParams.method === 'eth_sendRawTransaction') {
 			return createRejectedPreparation(activeAddress, transactionParams, 'Gnosis Safe wallets do not support eth_sendRawTransaction.')
@@ -145,7 +121,6 @@ export async function prepareSafeTransactionConfirmation(
 		effectiveTransactionParams: safeExecutionSignerRoute?.transactionParams ?? transactionParams,
 		transactionExecutor: safeExecutionSignerRoute?.executor ?? activeAddress,
 		gasPayment: safeEntry === undefined && !isDirectSafeExecution ? 'transaction-sender' : 'external-executor',
-		simulationOptions: undefined,
 		preparationMessage: directSignerSelectionMessage ?? executionPreparationMessage ?? reconciliationMessage,
 		rejection: undefined,
 		async finalize(transactionToSimulate, tabId) {
@@ -243,22 +218,12 @@ function createRejectedPreparation(
 	transactionParams: SendTransactionParams | SendRawTransactionParams,
 	message: string,
 ): SafeTransactionConfirmationPreparation {
-	return createUnwrappedPreparation(activeAddress, transactionParams, SENDER_PAID_FEES, { code: METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER, message })
-}
-
-// Prepares the request as sent by the website, without a Gnosis Safe signing request or execution route.
-function createUnwrappedPreparation(
-	activeAddress: bigint,
-	transactionParams: SendTransactionParams | SendRawTransactionParams,
-	feePayment: TransactionFeePayment,
-	rejection: SafeTransactionConfirmationPreparation['rejection'],
-): SafeTransactionConfirmationPreparation {
 	return {
-		...feePayment,
 		effectiveTransactionParams: transactionParams,
 		transactionExecutor: activeAddress,
+		gasPayment: 'transaction-sender',
 		preparationMessage: undefined,
-		rejection,
+		rejection: { code: METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER, message },
 		async finalize(transactionToSimulate) {
 			return {
 				transactionToSimulate,
