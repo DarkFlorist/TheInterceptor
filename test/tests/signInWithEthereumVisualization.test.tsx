@@ -2,7 +2,7 @@ import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
-import { getWebsiteSocketOrigin, websiteSocketToString } from '../../app/ts/background/backgroundUtils.js'
+import { getWebsiteSocketRequestOrigin, websiteSocketToString } from '../../app/ts/background/backgroundUtils.js'
 import { craftPersonalSignPopupMessage } from '../../app/ts/background/windows/personalSign.js'
 import { SignatureCard } from '../../app/ts/components/pages/PersonalSign.js'
 import { identifySignature } from '../../app/ts/components/simulationExplaining/identifySignature.js'
@@ -13,6 +13,7 @@ import type { SignedMessageTransaction } from '../../app/ts/types/visualizer-typ
 import { serialize } from '../../app/ts/types/wire-types.js'
 import { MOCK_PRIVATE_KEYS_ADDRESS } from '../../app/ts/utils/constants.js'
 import { bytesToHex, stringToBytes } from '../../app/ts/utils/ethereumBytes.js'
+import { getFrameOrigins } from '../../app/ts/utils/requests.js'
 import { SIWE_LOOKALIKE_QUARANTINE_REASON } from '../../app/ts/utils/siwe.js'
 import { clickRenderedElement, findRenderedElement, installDateMock, installDomMock } from './domMock.js'
 
@@ -120,12 +121,15 @@ async function visualizeSignIn(message: string, requester?: Requester) {
 }
 
 describe('Sign-In with Ethereum personal_sign visualization', () => {
-	test('reads the full origin of the requesting frame from its content script port', () => {
+	test('reads the request origin from the same content script port URL as the connection website origin', () => {
 		const socket = { tabId: 7, connectionName: 3n }
 		const port = { name: '0x3', sender: { url: 'http://localhost:3000/login?next=%2F' } }
-		const websiteTabConnections = new Map([[socket.tabId, { connections: { [websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'localhost:3000', approved: true, wantsToConnect: false } } }]])
-		assert.equal(getWebsiteSocketOrigin(websiteTabConnections, socket), 'http://localhost:3000')
-		assert.equal(getWebsiteSocketOrigin(websiteTabConnections, { tabId: socket.tabId, connectionName: 4n }), undefined)
+		// The connection is registered the way onContentScriptConnected does it, with its website origin from getFrameOrigins.
+		const { websiteOrigin } = getFrameOrigins(port.sender.url)
+		const websiteTabConnections = new Map([[socket.tabId, { connections: { [websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: false } } }]])
+		assert.equal(websiteOrigin, 'localhost:3000')
+		assert.equal(getWebsiteSocketRequestOrigin(websiteTabConnections, socket), `http://${ websiteOrigin }`)
+		assert.equal(getWebsiteSocketRequestOrigin(websiteTabConnections, { tabId: socket.tabId, connectionName: 4n }), undefined)
 	})
 
 	test('visualizes a sign-in message from the website it names without quarantine', async () => {

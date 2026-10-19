@@ -159,7 +159,7 @@ export const getSiweOriginText = (message: SiweMessage) => message.scheme === un
 
 export const getSiweScheme = (message: SiweMessage) => (message.scheme ?? SIWE_DEFAULT_SCHEME).toLowerCase()
 
-// The origin the message signs in to, normalized the same way as the recorded origin of the requesting frame: lowercase, and no port when it is the default port of the scheme. Returns undefined when the domain carries userinfo (`user@host`), which websites never have and which can be used to disguise the real host, or when it is not a valid URL authority. Userinfo is detected from the raw text because URL parsing reports an empty userinfo (`@host`, `:@host`) as no userinfo at all.
+// The origin the message signs in to, normalized with getSchemeAndHostWithPort exactly like the recorded origin of a requesting frame (getFrameOrigins): for http and https the host is lowercased and a default port is dropped. Returns undefined when the domain carries userinfo (`user@host`), which websites never have and which can be used to disguise the real host, or when it is not a valid URL authority. Userinfo is detected from the raw text because URL parsing reports an empty userinfo (`@host`, `:@host`) as no userinfo at all.
 export function getSiweMessageOrigin(message: SiweMessage) {
 	if (message.domain.includes('@')) return undefined
 	const url = parseUrl(`${ getSiweScheme(message) }://${ message.domain }`)

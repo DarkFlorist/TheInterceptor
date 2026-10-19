@@ -159,8 +159,11 @@ export const getHostWithPort = (urlString: string): string => {
 	return url.port ? `${ url.hostname }:${ url.port }` : url.hostname
 }
 
-// The scheme, host and port of a URL as one comparable value, such as `https://example.com:8443` (default ports are omitted and hosts lowercased). Unlike `URL.origin`, URLs without a tuple origin do not all collapse to the same 'null', so two different origins never compare equal.
-export const getSchemeAndHostWithPort = (urlString: string): string => `${ new URL(urlString).protocol }//${ getHostWithPort(urlString) }`.toLowerCase()
+// `getHostWithPort` with the scheme of the URL in front, such as `https://example.com:8443`, so the host and port are normalized in one place. Unlike `URL.origin`, URLs without a tuple origin do not all collapse to the same 'null', so two different origins never compare equal.
+export const getSchemeAndHostWithPort = (urlString: string): string => `${ new URL(urlString).protocol }//${ getHostWithPort(urlString) }`
+
+// Both origins of a requesting frame, derived from its URL in one place: `websiteOrigin` is the scheme-less host and port that website access settings are keyed by, and `requestOrigin` is the same host and port with the frame's scheme.
+export const getFrameOrigins = (frameUrl: string) => ({ websiteOrigin: getHostWithPort(frameUrl), requestOrigin: getSchemeAndHostWithPort(frameUrl) })
 
 export const silenceChromeUnCaughtPromise = <ReturnValue>(maybeAwaitedFunction: Promise<ReturnValue>) => {
 	void maybeAwaitedFunction.catch(() => undefined)
