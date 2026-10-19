@@ -10,14 +10,14 @@ import { chainIdMismatch } from './protectors/chainIdMismatch.js'
 import { promiseAllMapAbortSafe } from '../utils/requests.js'
 import type { EnrichedEthereumEvents } from '../types/EnrichedEthereumData.js'
 import type { ProtectorChainReads } from './protectorChainReads.js'
-import type { IdentifyAddress } from '../background/metadataUtils.js'
+import type { IdentifyAddress } from '../types/metadataLookups.js'
 
-// A protector reads chain state only through chainReads, so the type keeps every chain read recorded with the run and replayable by an address-book re-label; the connected chain id is a plain value.
+// A protector reads chain state only through chainReads, so the type keeps every chain read recorded with the run and replayable by an address-book re-label; the connected chain id is a plain value. A protector leaves off the trailing parameters it does not use, so identify comes after chainReads, which more protectors use without identifying an address.
 type Protector = (
 	transaction: WebsiteCreatedEthereumTransaction['transaction'],
 	connectedChainId: bigint,
-	identify: IdentifyAddress,
 	chainReads: ProtectorChainReads,
+	identify: IdentifyAddress,
 	eventsPromise: Promise<EnrichedEthereumEvents>,
 ) => Promise<string | undefined>
 
@@ -33,7 +33,7 @@ const PROTECTORS: readonly Protector[] = [
 ]
 
 export const runProtectorsForTransaction = async (chainReads: ProtectorChainReads, transaction: WebsiteCreatedEthereumTransaction, connectedChainId: bigint, identify: IdentifyAddress, eventsPromise: Promise<EnrichedEthereumEvents>) => {
-	const reasons = await promiseAllMapAbortSafe(PROTECTORS, async (protectorMethod) => await protectorMethod(transaction.transaction, connectedChainId, identify, chainReads, eventsPromise))
+	const reasons = await promiseAllMapAbortSafe(PROTECTORS, async (protectorMethod) => await protectorMethod(transaction.transaction, connectedChainId, chainReads, identify, eventsPromise))
 	const filteredReasons = reasons.filter((reason): reason is string => reason !== undefined)
 	return {
 		quarantine: filteredReasons.length > 0,

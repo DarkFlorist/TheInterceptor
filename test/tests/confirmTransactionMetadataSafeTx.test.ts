@@ -220,8 +220,9 @@ function assertWireSafe(value: unknown, seen = new Set<unknown>()) {
 	for (const nestedValue of Object.values(value)) assertWireSafe(nestedValue, seen)
 }
 
+// A view update sends the pending confirmations on their own; a metadata request sends them with the stack in a metadata update.
 function getPendingTransactionsUpdateMessage(sentMessages: readonly RuntimeMessage[]) {
-	const message = sentMessages.find((entry) => entry.method === 'popup_update_confirm_transaction_dialog_pending_transactions')
+	const message = sentMessages.find((entry) => entry.method === 'popup_update_confirm_transaction_dialog_pending_transactions' || entry.method === 'popup_update_confirm_transaction_dialog_metadata')
 	if (message === undefined) throw new Error('Expected confirm transaction update message')
 	if (!isRecord(message.data)) throw new Error('Expected confirm transaction message data')
 	assert.equal(message.role, 'confirmTransaction')
@@ -418,8 +419,8 @@ describe('SafeTx confirm transaction metadata', () => {
 
 		await modules.refreshPopupConfirmTransactionMetadata(ethereum)
 
-		const dialogUpdate = browserMock.sentMessages.find((message) => message.method === 'popup_update_confirm_transaction_dialog')
-		if (!isRecord(dialogUpdate?.data)) throw new Error('Missing confirm transaction dialog update')
+		const dialogUpdate = browserMock.sentMessages.find((message) => message.method === 'popup_update_confirm_transaction_dialog_metadata')
+		if (!isRecord(dialogUpdate?.data)) throw new Error('Missing confirm transaction dialog metadata update')
 		const visualizedSimulatorState = dialogUpdate.data.visualizedSimulatorState
 		if (!isRecord(visualizedSimulatorState)) throw new Error('Missing stored visualisation in confirm transaction dialog update')
 		assert.equal(visualizedSimulatorState.simulationId, 77)

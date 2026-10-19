@@ -1,6 +1,6 @@
 import { SafeProposalDetails, SafeProposalSigningRequestCard } from './SafeProposalDetails.js'
 import { useEffect } from 'preact/hooks'
-import { MessageToPopup, type TransactionConfirmation, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
+import { MessageToPopup, type TransactionConfirmation, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogMetadata, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
 import { type CompleteVisualizedSimulation, type EditEnsNamedHashWindowState, type MaybeSimulatedTransaction, type ModifyAddressWindowState, type VisualizedSimulationState, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
 import Hint from '../subcomponents/Hint.js'
 import { GasLimitEditor, RawTransactionDetailsCard, GasFee, TokenLogAnalysisCard, SimulatedInBlockNumber, TransactionCreated, TransactionHeader, TransactionHeaderForFailedToSimulate, TransactionsAccountChangesCard, NonTokenLogAnalysisCard, getSimulationDisplayBlockNumber } from '../simulationExplaining/SimulationSummary.js'
@@ -828,14 +828,20 @@ export function ConfirmTransaction() {
 		currentBlockNumber.value = blockNumber
 		rpcConnectionStatus.value = status
 	}
-	// A dialog update omits the block number when none is known without an RPC request, as after an address-book re-label, so the block already shown, such as the simulation's, is kept.
-	const applyDialogUpdateNetworkData = (blockNumber: bigint | undefined, status: RpcConnectionStatus) => applyNetworkData(blockNumber ?? currentBlockNumber.value, status, CONFIRM_TRANSACTION_DATA_PRIORITY.push)
+	const applySimulationStack = (visualizedSimulatorState: CompleteVisualizedSimulation, priority: number) => {
+		if (priority < simulationDataPriority.value) return
+		simulationDataPriority.value = priority
+		completeVisualizedSimulation.value = visualizedSimulatorState
+	}
 
 	const updatePendingTransactionsAndSignableMessages = (message: UpdateConfirmTransactionDialog) => {
-		if (CONFIRM_TRANSACTION_DATA_PRIORITY.push < simulationDataPriority.value) return
-		simulationDataPriority.value = CONFIRM_TRANSACTION_DATA_PRIORITY.push
-		completeVisualizedSimulation.value = message.data.visualizedSimulatorState
-		applyDialogUpdateNetworkData(message.data.currentBlockNumber, message.data.rpcConnectionStatus)
+		applySimulationStack(message.data.visualizedSimulatorState, CONFIRM_TRANSACTION_DATA_PRIORITY.push)
+		applyNetworkData(message.data.currentBlockNumber, message.data.rpcConnectionStatus, CONFIRM_TRANSACTION_DATA_PRIORITY.push)
+	}
+	// A metadata update carries no block number or connection status, so the ones shown stay; like every pending-confirmations update it only raises a shown block older than the displayed simulation's own block.
+	const applyMetadataUpdate = (message: UpdateConfirmTransactionDialogMetadata) => {
+		applySimulationStack(message.data.visualizedSimulatorState, CONFIRM_TRANSACTION_DATA_PRIORITY.push)
+		applyPendingTransactions(message.data.pendingTransactionAndSignableMessages, CONFIRM_TRANSACTION_DATA_PRIORITY.push)
 	}
 	useEffect(() => {
 		function popupMessageListener(msg: unknown): false {
@@ -885,10 +891,14 @@ export function ConfirmTransaction() {
 			if (parsed.method === 'popup_update_confirm_transaction_dialog_pending_transactions') {
 				const { role: _role, ...popupUpdateConfirmTransactionDialogPendingTransactions } = parsed
 				const updateConfirmTransactionDialogPendingTransactions = UpdateConfirmTransactionDialogPendingTransactions.parse(popupUpdateConfirmTransactionDialogPendingTransactions)
-				applyDialogUpdateNetworkData(updateConfirmTransactionDialogPendingTransactions.data.currentBlockNumber, updateConfirmTransactionDialogPendingTransactions.data.rpcConnectionStatus)
+				applyNetworkData(updateConfirmTransactionDialogPendingTransactions.data.currentBlockNumber, updateConfirmTransactionDialogPendingTransactions.data.rpcConnectionStatus, CONFIRM_TRANSACTION_DATA_PRIORITY.push)
 				const firstMessage = updateConfirmTransactionDialogPendingTransactions.data.pendingTransactionAndSignableMessages[0]
 				if (firstMessage === undefined) throw new Error('message data was undefined')
 				applyPendingTransactions(updateConfirmTransactionDialogPendingTransactions.data.pendingTransactionAndSignableMessages, CONFIRM_TRANSACTION_DATA_PRIORITY.push)
+			}
+			if (parsed.method === 'popup_update_confirm_transaction_dialog_metadata') {
+				const { role: _role, ...popupUpdateConfirmTransactionDialogMetadata } = parsed
+				applyMetadataUpdate(UpdateConfirmTransactionDialogMetadata.parse(popupUpdateConfirmTransactionDialogMetadata))
 			}
 			return false
 		}
@@ -901,10 +911,7 @@ export function ConfirmTransaction() {
 		const applyBootstrapData = (bootstrapData: ConfirmTransactionBootstrapData) => {
 			if (cancelled) return
 			applyPendingTransactions(bootstrapData.pendingTransactionAndSignableMessages, CONFIRM_TRANSACTION_DATA_PRIORITY.bootstrap)
-			if (CONFIRM_TRANSACTION_DATA_PRIORITY.bootstrap >= simulationDataPriority.value) {
-				simulationDataPriority.value = CONFIRM_TRANSACTION_DATA_PRIORITY.bootstrap
-				completeVisualizedSimulation.value = bootstrapData.visualizedSimulatorState
-			}
+			applySimulationStack(bootstrapData.visualizedSimulatorState, CONFIRM_TRANSACTION_DATA_PRIORITY.bootstrap)
 			applyNetworkData(bootstrapData.currentBlockNumber, bootstrapData.rpcConnectionStatus, CONFIRM_TRANSACTION_DATA_PRIORITY.bootstrap)
 		}
 		void hydratePendingTransactionsFromStorage().then((pendingTransactions) => {

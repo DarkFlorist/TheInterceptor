@@ -1,4 +1,4 @@
-import type { IdentifyAddress } from '../background/metadataUtils.js'
+import type { IdentifyAddress } from '../types/metadataLookups.js'
 import { JSONEncodeableObject } from '../utils/json.js'
 import type { EIP712Message, EnrichedEIP712, EnrichedEIP712Message, EnrichedEIP712MessageRecord } from '../types/eip721.js'
 import { parseSolidityValueByTypeEnriched } from './solidityTypes.js'

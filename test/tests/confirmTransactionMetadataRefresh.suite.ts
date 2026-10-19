@@ -11,7 +11,7 @@ import { CompleteVisualizedSimulation, type SignedMessageTransaction, type Simul
 import type { Website } from '../../app/ts/types/websiteAccessTypes.js'
 import type { EthereumUnsignedTransaction } from '../../app/ts/types/wire-types.js'
 import type { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
-import { UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../app/ts/types/interceptor-messages.js'
+import { UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogMetadata, UpdateConfirmTransactionDialogPendingTransactions } from '../../app/ts/types/interceptor-messages.js'
 import { encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { checksummedAddress, stringifyJSONWithBigInts, stringToUint8Array } from '../../app/ts/utils/bigint.js'
 import { permit2Message } from './data/eip712Data.js'
@@ -683,21 +683,34 @@ test('adding a watched asset publishes the change at once, then announces the re
 	assert.deepEqual(namesAtRelabel, [relabelledNames])
 })
 
+// A view update sends the dialog its pending confirmations and its stack in two messages; a metadata update after an address-book change sends both in one.
+const isPendingConfirmationsUpdate = (message: RuntimeMessage) => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions' || message.method === 'popup_update_confirm_transaction_dialog_metadata'
+const isStackUpdate = (message: RuntimeMessage) => message.method === 'popup_update_confirm_transaction_dialog' || message.method === 'popup_update_confirm_transaction_dialog_metadata'
+
+function parsePendingConfirmationsUpdate(message: RuntimeMessage | undefined) {
+	if (message?.method === 'popup_update_confirm_transaction_dialog_metadata') return UpdateConfirmTransactionDialogMetadata.parse({ method: message.method, data: message.data }).data.pendingTransactionAndSignableMessages
+	return UpdateConfirmTransactionDialogPendingTransactions.parse({ method: message?.method, data: message?.data }).data.pendingTransactionAndSignableMessages
+}
+
+function parseStackUpdate(message: RuntimeMessage | undefined) {
+	if (message?.method === 'popup_update_confirm_transaction_dialog_metadata') return UpdateConfirmTransactionDialogMetadata.parse({ method: message.method, data: message.data }).data.visualizedSimulatorState
+	return UpdateConfirmTransactionDialog.parse({ method: message?.method, data: message?.data }).data.visualizedSimulatorState
+}
+
 function getLastConfirmationDialogUpdates(sentMessages: readonly RuntimeMessage[]) {
-	const pendingTransactionsUpdate = sentMessages.findLast((message) => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions')
-	const dialogUpdate = sentMessages.findLast((message) => message.method === 'popup_update_confirm_transaction_dialog')
 	return {
-		pendingTransactions: UpdateConfirmTransactionDialogPendingTransactions.parse({ method: pendingTransactionsUpdate?.method, data: pendingTransactionsUpdate?.data }).data.pendingTransactionAndSignableMessages,
-		visualizedSimulatorState: UpdateConfirmTransactionDialog.parse({ method: dialogUpdate?.method, data: dialogUpdate?.data }).data.visualizedSimulatorState,
+		pendingTransactions: parsePendingConfirmationsUpdate(sentMessages.findLast(isPendingConfirmationsUpdate)),
+		visualizedSimulatorState: parseStackUpdate(sentMessages.findLast(isStackUpdate)),
 	}
 }
 
 // The displayed entry of every pending-confirmations update sent to the dialog, in the order sent.
 function getDisplayedEntriesSentToDialog() {
-	return browserMock.sentMessages
-		.filter((message) => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions')
-		.map((message) => UpdateConfirmTransactionDialogPendingTransactions.parse({ method: message.method, data: message.data }).data.pendingTransactionAndSignableMessages[0])
+	return browserMock.sentMessages.filter(isPendingConfirmationsUpdate).map((message) => parsePendingConfirmationsUpdate(message)[0])
 }
+
+// The methods of the confirmation dialog updates sent after the first sentMessageCount messages.
+const getDialogUpdateMethodsSentSince = (sentMessageCount: number) => browserMock.sentMessages.slice(sentMessageCount).filter((message) => isPendingConfirmationsUpdate(message) || isStackUpdate(message)).map((message) => message.method)
 
 // Answers eth_blockNumber only once released, as when no block is cached and the RPC is slow; requested resolves when it is asked.
 function createEthereumStallingBlockNumber() {
@@ -765,18 +778,25 @@ test('an open confirmation dialog and home popup get renamed and removed names w
 		viewUpdates.push(refreshPopupConfirmTransactionMetadata(ethereumWithoutCachedBlock), requestNewHomeData(ethereumWithoutCachedBlock, new Map(), false, true, undefined, 1))
 		return undefined
 	})
-	const changeAddressBookAndWaitForViewUpdates = async (change: () => Promise<unknown>) => await getRpcMethodsRequestedWhileEveryRequestFails(async () => {
-		await changeAddressBookAndWaitForItsRelabel(change)
-		await Promise.all(viewUpdates)
-	})
+	// Returns the RPC methods requested and the kinds of dialog update sent while the views answer the change.
+	const changeAddressBookAndWaitForViewUpdates = async (change: () => Promise<unknown>) => {
+		const sentMessageCount = browserMock.sentMessages.length
+		const requestedRpcMethods = await getRpcMethodsRequestedWhileEveryRequestFails(async () => {
+			await changeAddressBookAndWaitForItsRelabel(change)
+			await Promise.all(viewUpdates)
+		})
+		return { requestedRpcMethods, dialogUpdateKinds: [...new Set(getDialogUpdateMethodsSentSince(sentMessageCount))] }
+	}
+	// Every dialog update the dialog's metadata requests get is a metadata update, which carries no block number.
+	const viewUpdatesWithoutRpc = { requestedRpcMethods: [], dialogUpdateKinds: ['popup_update_confirm_transaction_dialog_metadata'] }
 
-	assert.deepEqual(await changeAddressBookAndWaitForViewUpdates(async () => await nameRecipient('Newest name')), [])
+	assert.deepEqual(await changeAddressBookAndWaitForViewUpdates(async () => await nameRecipient('Newest name')), viewUpdatesWithoutRpc)
 	assert.deepEqual(getRecipientNamesInLastViewUpdates(), { dialogConfirmation: 'Newest name', dialogStack: 'Newest name', homeStack: 'Newest name' })
 
 	assert.deepEqual(await changeAddressBookAndWaitForViewUpdates(async () => await removeAddressBookEntry(simulationServicesOwner, new Map(), {
 		method: 'popup_removeAddressBookEntry',
 		data: { address: recipient, addressBookCategory: 'My Contacts', chainId: fakeRpcNetwork.chainId },
-	})), [])
+	})), viewUpdatesWithoutRpc)
 	const bareRecipient = checksummedAddress(recipient)
 	assert.deepEqual(getRecipientNamesInLastViewUpdates(), { dialogConfirmation: bareRecipient, dialogStack: bareRecipient, homeStack: bareRecipient })
 	browserMock.setRuntimeMessageHandler(undefined)
@@ -786,22 +806,27 @@ test('a confirmation dialog refresh started before the re-label but sent last st
 	await openSimulationModeConfirmationSendingEther()
 	await addRecipientContactWithoutBroadcast()
 	clearObservedRpcMethodsAndMessages()
-	// The refresh answering the address-book change waits for its connection-status read until the refresh answering the re-label has been sent.
-	const connectionStatusReadReleased = createDeferred()
-	let isConnectionStatusReadHeld = false
+	// The refresh answering the address-book change reads the displayed confirmation from before the re-label, and that read returns only once the refresh answering the re-label has been sent.
+	const displayedConfirmationReadReleased = createDeferred()
+	let holdsNextPendingConfirmationsRead = false
+	let isDisplayedConfirmationReadHeld = false
 	browserMock.setStorageGetHandler(async (keys: StorageKeys, readStoredItems) => {
-		if (!isConnectionStatusReadHeld && requestsStorageKey(keys, 'rpcConnectionStatus')) {
-			isConnectionStatusReadHeld = true
-			await connectionStatusReadReleased.promise
-		}
-		return readStoredItems()
+		if (!holdsNextPendingConfirmationsRead || !requestsStorageKey(keys, 'pendingTransactionsAndMessages')) return readStoredItems()
+		holdsNextPendingConfirmationsRead = false
+		isDisplayedConfirmationReadHeld = true
+		const storedStateBeforeRelabel = readStoredItems()
+		await displayedConfirmationReadReleased.promise
+		return storedStateBeforeRelabel
 	})
 	let refreshAfterAddressBookChange: Promise<void> | undefined
 	browserMock.setRuntimeMessageHandler(async (message) => {
-		if (message.method === 'popup_addressBookEntriesChanged') refreshAfterAddressBookChange = refreshPopupConfirmTransactionMetadata(simulator.ethereum)
+		if (message.method === 'popup_addressBookEntriesChanged') {
+			holdsNextPendingConfirmationsRead = true
+			refreshAfterAddressBookChange = refreshPopupConfirmTransactionMetadata(simulator.ethereum)
+		}
 		if (message.method === 'popup_simulationsRelabelled') {
 			await refreshPopupConfirmTransactionMetadata(simulator.ethereum)
-			connectionStatusReadReleased.resolve()
+			displayedConfirmationReadReleased.resolve()
 		}
 		return undefined
 	})
@@ -810,9 +835,9 @@ test('a confirmation dialog refresh started before the re-label but sent last st
 	await refreshAfterAddressBookChange
 	browserMock.setRuntimeMessageHandler(undefined)
 	browserMock.setStorageGetHandler(undefined)
-	assert.equal(isConnectionStatusReadHeld, true)
+	assert.equal(isDisplayedConfirmationReadHeld, true)
 
-	assert.equal(countSentMessages('popup_update_confirm_transaction_dialog_pending_transactions'), 2)
+	assert.equal(countSentMessages('popup_update_confirm_transaction_dialog_metadata'), 2)
 	const { pendingTransactions, visualizedSimulatorState } = getLastConfirmationDialogUpdates(browserMock.sentMessages)
 	assert.equal(getRecipientName(getSimulatedPendingTransaction(pendingTransactions[0]).visualizedSimulationState), recipientContact.name)
 	assert.equal(getRecipientName(visualizedSimulatorState.visualizedSimulationState), recipientContact.name)
@@ -847,7 +872,7 @@ test('a confirmation dialog refresh whose stored-state read returns after a late
 	browserMock.setStorageGetHandler(undefined)
 
 	assert.equal(await getStoredConfirmationRecipientName(), recipientContact.name)
-	assert.equal(countSentMessages('popup_update_confirm_transaction_dialog_pending_transactions'), 2)
+	assert.equal(countSentMessages('popup_update_confirm_transaction_dialog_metadata'), 2)
 	const { pendingTransactions } = getLastConfirmationDialogUpdates(browserMock.sentMessages)
 	assert.equal(getRecipientName(getSimulatedPendingTransaction(pendingTransactions[0]).visualizedSimulationState), recipientContact.name)
 })
@@ -984,7 +1009,7 @@ test('a signable-message dialog refresh that fails to read the stored stack neit
 	// The first stack read after the earlier refresh has sent is the later refresh's, which fails.
 	let hasEarlierRefreshSent = false
 	browserMock.setRuntimeMessageHandler(async (message) => {
-		if (!hasEarlierRefreshSent && message.method === 'popup_update_confirm_transaction_dialog_pending_transactions') {
+		if (!hasEarlierRefreshSent && message.method === 'popup_update_confirm_transaction_dialog_metadata') {
 			hasEarlierRefreshSent = true
 			isStackReadFailing = true
 		}

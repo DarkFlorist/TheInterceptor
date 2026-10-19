@@ -12,6 +12,7 @@ import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import { getEnsReverseNodeHash, getEthereumNameServiceNameFromTokenId } from '../utils/ethereumNameService.js'
 import { DEFAULT_ACTIVE_ADDRESSES } from '../config/defaults.js'
 import type { RpcNetwork } from '../types/rpc.js'
+import type { IdentifyAddress, LookUpEnsName, MetadataLookups } from '../types/metadataLookups.js'
 import type { EthereumAddress, EthereumBytes32 } from '../types/wire-types.js'
 import type { ENSNameHashes } from '../types/ens.js'
 const LOGO_URI_PREFIX = '../vendor/@darkflorist/address-metadata'
@@ -222,17 +223,6 @@ export async function identifyAddress(ethereumClientService: EthereumClientServi
 	const entry = getEntry(tokenIdentification)
 	if (useLocalStorage) await addUserAddressBookEntryIfItDoesNotExist(entry)
 	return entry
-}
-
-// Resolves an address to the address-book entry a visualisation shows for it.
-export type IdentifyAddress = (address: EthereumAddress) => Promise<AddressBookEntry>
-// Resolves the ENS name of a name hash that the stored ENS names do not know, or undefined.
-type LookUpEnsName = (nameHash: EthereumBytes32) => Promise<string | undefined>
-
-// How a visualisation looks up the metadata it does not take from the simulation.
-export type MetadataLookups = {
-	readonly identifyAddress: IdentifyAddress
-	readonly lookUpEnsName: LookUpEnsName
 }
 
 // Identifies addresses as identifyAddress does: from the address book and bundled metadata, else on chain, caching what it finds in the address book.

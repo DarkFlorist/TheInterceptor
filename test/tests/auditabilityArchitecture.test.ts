@@ -137,6 +137,16 @@ test('Safe signer refresh persistence is isolated from confirmation resolution',
 	assert.doesNotMatch(confirmTransactionSource, /function persistSafeSignerSelectionRefresh/u)
 })
 
+test('the simulation and utils layers take the metadata lookup types from types/, not from the background', async () => {
+	const appSourceDirectory = new URL('../../app/ts/', import.meta.url).pathname
+	const importsLookupTypeFromBackground = /import\s+(?:type\s+)?\{[^}]*\b(?:IdentifyAddress|LookUpEnsName|MetadataLookups)\b[^}]*\}\s+from\s+'[^']*\/background\//u
+	const offendingFiles: string[] = []
+	for await (const file of new Bun.Glob('{simulation,utils}/**/*.ts').scan({ cwd: appSourceDirectory })) {
+		if (importsLookupTypeFromBackground.test(await Bun.file(`${ appSourceDirectory }${ file }`).text())) offendingFiles.push(file)
+	}
+	assert.deepEqual(offendingFiles, [])
+})
+
 test('Safe pending flow discrimination has one owner', () => {
 	assert.match(safePendingFlowSource, /kind: 'directExecution'/u)
 	assert.match(safePendingFlowSource, /kind: 'messageCoSign'/u)

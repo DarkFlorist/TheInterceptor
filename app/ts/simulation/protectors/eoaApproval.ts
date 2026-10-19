@@ -1,10 +1,10 @@
 import type { EthereumUnsignedTransaction } from '../../types/wire-types.js'
 import { parseTransaction } from '../../utils/calldata.js'
 import type { ProtectorChainReads } from '../protectorChainReads.js'
-import type { IdentifyAddress } from '../../background/metadataUtils.js'
+import type { IdentifyAddress } from '../../types/metadataLookups.js'
 import { getCodeOrError } from './commonTokenOops.js'
 
-export async function eoaApproval(transaction: EthereumUnsignedTransaction, _connectedChainId: bigint, identify: IdentifyAddress, chainReads: ProtectorChainReads) {
+export async function eoaApproval(transaction: EthereumUnsignedTransaction, _connectedChainId: bigint, chainReads: ProtectorChainReads, identify: IdentifyAddress) {
 	const approvalInfo = parseTransaction(transaction)
 	if (approvalInfo === undefined) return
 	if (approvalInfo.name === 'approve') {

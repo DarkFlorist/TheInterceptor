@@ -1,6 +1,6 @@
 import { EthereumAddress, EthereumData, EthereumQuantity, NonHexBigInt } from '../types/wire-types.js'
 import * as funtypes from 'funtypes'
-import type { IdentifyAddress } from '../background/metadataUtils.js'
+import type { IdentifyAddress } from '../types/metadataLookups.js'
 import { type EnrichedGroupedSolidityType, type PureFlatGroupedSolidityType, type PureGroupedSolidityType, SignedBigInt, SolidityType, type SolidityVariable } from '../types/solidityType.js'
 import { promiseAllMapAbortSafe } from './requests.js'
 import type { AbiParameter } from './ethereumPrimitives.js'
