@@ -1,5 +1,5 @@
-import type { ComponentChild, ComponentChildren } from 'preact'
-import { useEffect, useRef } from 'preact/hooks'
+import { type ComponentChild, type ComponentChildren, createContext } from 'preact'
+import { useContext, useEffect, useRef } from 'preact/hooks'
 import { type Signal, useSignal, useSignalEffect } from '@preact/signals'
 
 interface Props {
@@ -27,6 +27,9 @@ type ShowHintEventDetail = {
 	y: number
 }
 
+// True inside a Hint container that shows the data-tooltip attribute, so an element carrying it can leave its native title empty instead of showing the same explanation twice; elsewhere it needs the native title to show its explanation at all.
+export const HintTooltipContext = createContext(false)
+
 export const showHint = (target: HTMLElement, detail: ShowHintEventDetail) => {
 	target.dispatchEvent(new CustomEvent(showHintEventName, { bubbles: true, detail }))
 }
@@ -38,6 +41,8 @@ export const clearHintTimeouts = (timeoutIds: readonly (ReturnType<typeof setTim
 export default function Container(props: Props) {
 	const copyAttribute = props.attribute || 'data-hint'
 	const toolTipAttribute = props.attribute || 'data-tooltip'
+	// A Hint watching another attribute does not show data-tooltip itself, but an enclosing Hint still does.
+	const isDataTooltipShown = useContext(HintTooltipContext) || toolTipAttribute === 'data-tooltip'
 
 	const content = useSignal('')
 	const anchor = useSignal<HintAnchor | undefined>(undefined)
@@ -212,7 +217,7 @@ export default function Container(props: Props) {
 					anchor = { anchor }
 				/>
 			) }
-			{ props.children }
+			<HintTooltipContext.Provider value = { isDataTooltipShown }>{ props.children }</HintTooltipContext.Provider>
 		</div>
 	)
 }
