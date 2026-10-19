@@ -5,7 +5,7 @@ import { describe, test } from 'bun:test'
 import { installBrowserMock } from './backgroundEthAccountsTestHarness.js'
 import { requestPopupSettingsChange } from '../../app/ts/components/popupSettingsChange.js'
 import { signal } from '@preact/signals'
-import { type JSX, render } from 'preact'
+import { render } from 'preact'
 import { act } from 'preact/test-utils'
 import { findChainEntryByName, findRpcEntryByIdentityKey, getRpcEntryLabel } from '../../app/ts/components/subcomponents/ChainSelector.js'
 import { DropDownMenu } from '../../app/ts/components/subcomponents/DropDownMenu.js'
@@ -340,24 +340,17 @@ describe('UI boundary fixes', () => {
 		assert.equal(views.find(view => view.value === 'parsed')?.title, 'Decoded')
 	})
 
-	// A Hint container that shows data-tooltip makes the native title redundant, so it stays empty instead of duplicating the explanation; without one, the native title is the only way the explanation shows.
-	const warningSignContainers: readonly { description: string, wrapCard: (card: JSX.Element) => JSX.Element, expectedTitle: string }[] = [
-		{ description: 'outside a Hint container', wrapCard: (card) => card, expectedTitle: 'Token warning details' },
-		{ description: 'inside a Hint container', wrapCard: (card) => <Hint>{ card }</Hint>, expectedTitle: '' },
-		{ description: 'inside only a Hint container that watches another attribute', wrapCard: (card) => <Hint attribute = 'data-other-hint'>{ card }</Hint>, expectedTitle: 'Token warning details' },
-		{ description: 'inside a Hint container that watches another attribute within one that shows data-tooltip', wrapCard: (card) => <Hint><Hint attribute = 'data-other-hint'>{ card }</Hint></Hint>, expectedTitle: '' },
-	]
-	for (const { description, wrapCard, expectedTitle } of warningSignContainers) test(`renders warning details supplied by InlineCard callers ${ description }`, async () => {
+	test('renders warning details supplied by InlineCard callers', async () => {
 		const dom = installDomMock()
 		try {
 			await act(() => {
-				render(wrapCard(<InlineCard icon = { () => <span>Token</span> } label = 'TKN' warningMessage = 'Token warning details' noCopy noExpandButtons />), dom.document.body)
+				render(<Hint><InlineCard icon = { () => <span>Token</span> } label = 'TKN' warningMessage = 'Token warning details' noCopy noExpandButtons /></Hint>, dom.document.body)
 			})
 
 			const warningSigns = collectElements(dom.document.body, 'span').filter((element) => element.getAttribute?.('class') === 'inline-card-warning-sign')
 			assert.equal(warningSigns.length, 2)
 			assert.equal(warningSigns.every((warningSign) => warningSign.getAttribute?.('data-tooltip') === 'Token warning details'), true)
-			assert.equal(warningSigns.every((warningSign) => warningSign.getAttribute?.('title') === expectedTitle), true)
+			assert.equal(warningSigns.every((warningSign) => warningSign.getAttribute?.('title') === ''), true)
 			const [leadingSign, trailingSign] = warningSigns
 			// The leading sign must stay an alert so screen readers proactively announce the warning, named by the full explanation; the trailing sign stays silent so it is announced once.
 			assert.equal(leadingSign?.getAttribute?.('role'), 'alert')

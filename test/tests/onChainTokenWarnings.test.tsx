@@ -5,9 +5,11 @@ import { render } from 'preact'
 import { act } from 'preact/test-utils'
 import { AddNewAddress } from '../../app/ts/components/pages/AddNewAddress.js'
 import { TokenSymbol } from '../../app/ts/components/subcomponents/coins.js'
+import Hint from '../../app/ts/components/subcomponents/Hint.js'
 import type { Erc1155Entry, Erc20TokenEntry, Erc721Entry, EntrySource } from '../../app/ts/types/addressBookTypes.js'
 import type { ModifyAddressWindowState } from '../../app/ts/types/visualizer-types.js'
-import { getOnChainTokenWarning, ON_CHAIN_TOKEN_IDENTITY_WARNING, ON_CHAIN_TOKEN_METADATA_WARNING, requiresOnChainTokenMetadataConfirmation } from '../../app/ts/components/subcomponents/onChainTokenWarnings.js'
+import { getOnChainTokenWarning, ON_CHAIN_TOKEN_IDENTITY_WARNING, ON_CHAIN_TOKEN_METADATA_WARNING } from '../../app/ts/components/subcomponents/onChainTokenWarnings.js'
+import { getUnverifiedOnChainTokenLabel, requiresOnChainTokenMetadataConfirmation } from '../../app/ts/utils/onChainTokenMetadata.js'
 import { installBrowserMock } from './backgroundEthAccountsTestHarness.js'
 import { installDomMock } from './domMock.js'
 
@@ -33,9 +35,9 @@ async function renderTokenSymbolWarningSigns(tokenEntry: Erc20TokenEntry | Erc72
 	const dom = installDomMock()
 	try {
 		await act(() => {
-			render(tokenEntry.type === 'ERC20'
+			render(<Hint>{ tokenEntry.type === 'ERC20'
 				? <TokenSymbol tokenEntry = { tokenEntry } renameAddressCallBack = { () => undefined } fontSize = 'normal' />
-				: <TokenSymbol tokenEntry = { tokenEntry } tokenId = { undefined } renameAddressCallBack = { () => undefined } fontSize = 'normal' />, dom.document.body)
+				: <TokenSymbol tokenEntry = { tokenEntry } tokenId = { undefined } renameAddressCallBack = { () => undefined } fontSize = 'normal' /> }</Hint>, dom.document.body)
 		})
 		return collectWarningSigns(dom.document.body)
 	} finally {
@@ -85,6 +87,14 @@ async function renderEditDialogText(type: 'ERC20' | 'ERC1155', entrySource: Entr
 }
 
 describe('on-chain token warnings', () => {
+	test('classifies what labels each on-chain token entry without verification', () => {
+		assert.equal(getUnverifiedOnChainTokenLabel(createErc20Entry('OnChain')), 'tokenProvidedNameAndSymbol')
+		assert.equal(getUnverifiedOnChainTokenLabel(createErc721Entry('OnChain')), 'tokenProvidedNameAndSymbol')
+		assert.equal(getUnverifiedOnChainTokenLabel(createErc1155Entry('OnChain')), 'addressOnly')
+		for (const type of ['contact', 'contract', 'safe'] as const) assert.equal(getUnverifiedOnChainTokenLabel({ type, entrySource: 'OnChain' }), undefined)
+		for (const entrySource of ['User', 'DarkFloristMetadata', 'Interceptor', 'FilledIn'] as const) assert.equal(getUnverifiedOnChainTokenLabel(createErc1155Entry(entrySource)), undefined)
+	})
+
 	test('asks the user to confirm token-provided names only for on-chain ERC20 and ERC721 entries', () => {
 		assert.equal(requiresOnChainTokenMetadataConfirmation(createErc20Entry('OnChain')), true)
 		assert.equal(requiresOnChainTokenMetadataConfirmation(createErc721Entry('OnChain')), true)

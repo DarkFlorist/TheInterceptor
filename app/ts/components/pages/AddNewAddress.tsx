@@ -22,7 +22,8 @@ import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 import { type AsyncStates, useAsyncState } from '../../utils/preact-utilities.js'
 import { isValidAddressBookEntryName, MAX_ADDRESS_BOOK_ENTRY_NAME_LENGTH } from '../../utils/addressBookValidation.js'
 import { isValidErc20Decimals } from '../../utils/erc20.js'
-import { ON_CHAIN_TOKEN_METADATA_WARNING, requiresOnChainTokenMetadataConfirmation } from '../subcomponents/onChainTokenWarnings.js'
+import { ON_CHAIN_TOKEN_METADATA_WARNING } from '../subcomponents/onChainTokenWarnings.js'
+import { requiresOnChainTokenMetadataConfirmation } from '../../utils/onChainTokenMetadata.js'
 
 export function mergeAddressWindowErrorState(
 	currentErrorState: ModifyAddressWindowState['errorState'],
