@@ -5,7 +5,6 @@ import { render } from 'preact'
 import { act } from 'preact/test-utils'
 import { AddNewAddress } from '../../app/ts/components/pages/AddNewAddress.js'
 import { TokenSymbol } from '../../app/ts/components/subcomponents/coins.js'
-import Hint from '../../app/ts/components/subcomponents/Hint.js'
 import type { Erc1155Entry, Erc20TokenEntry, Erc721Entry, EntrySource } from '../../app/ts/types/addressBookTypes.js'
 import type { ModifyAddressWindowState } from '../../app/ts/types/visualizer-types.js'
 import { getOnChainTokenWarning, ON_CHAIN_TOKEN_IDENTITY_WARNING, ON_CHAIN_TOKEN_METADATA_WARNING } from '../../app/ts/components/subcomponents/onChainTokenWarnings.js'
@@ -35,9 +34,9 @@ async function renderTokenSymbolWarningSigns(tokenEntry: Erc20TokenEntry | Erc72
 	const dom = installDomMock()
 	try {
 		await act(() => {
-			render(<Hint>{ tokenEntry.type === 'ERC20'
+			render(tokenEntry.type === 'ERC20'
 				? <TokenSymbol tokenEntry = { tokenEntry } renameAddressCallBack = { () => undefined } fontSize = 'normal' />
-				: <TokenSymbol tokenEntry = { tokenEntry } tokenId = { undefined } renameAddressCallBack = { () => undefined } fontSize = 'normal' /> }</Hint>, dom.document.body)
+				: <TokenSymbol tokenEntry = { tokenEntry } tokenId = { undefined } renameAddressCallBack = { () => undefined } fontSize = 'normal' />, dom.document.body)
 		})
 		return collectWarningSigns(dom.document.body)
 	} finally {
@@ -126,7 +125,7 @@ describe('on-chain token warnings', () => {
 		for (const [tokenEntry, expectedMessage] of expectedMessages) {
 			const warningSigns = await renderTokenSymbolWarningSigns(tokenEntry)
 			assert.equal(warningSigns.length, 2)
-			assert.equal(warningSigns.every((warningSign) => warningSign.getAttribute?.('data-tooltip') === expectedMessage), true)
+			assert.equal(warningSigns.every((warningSign) => warningSign.getAttribute?.('data-warning-tooltip') === expectedMessage), true)
 			const [leadingSign, trailingSign] = warningSigns
 			assert.equal(leadingSign?.getAttribute?.('role'), 'alert')
 			assert.equal(leadingSign?.getAttribute?.('aria-label'), expectedMessage)

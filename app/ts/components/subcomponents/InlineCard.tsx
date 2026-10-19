@@ -1,6 +1,7 @@
 import type { JSX } from 'preact/jsx-runtime'
 import { useSignal } from '@preact/signals'
 import { clipboardCopy } from './clipboardcopy.js'
+import Hint from './Hint.js'
 import { CopyIcon, EditIcon } from './icons.js'
 import { Tooltip, type TooltipConfig } from './Tooltip.js'
 
@@ -12,7 +13,7 @@ type InlineCardProps = {
 	style?: JSX.CSSProperties
 	onEditClicked?: JSX.MouseEventHandler<HTMLButtonElement>
 	statusMessageDuration?: number
-	// Shown on warning signs only through their data-tooltip, so a card with a warning must render inside a Hint container that shows data-tooltip (the default attribute); every extension page root that can show a warning sign wraps its content in one.
+	// Explained on hover and keyboard focus by the warning signs' own Hint, so the card needs no Hint container around it.
 	warningMessage?: string
 	noExpandButtons?: boolean
 	nonInteractive?: boolean
@@ -94,14 +95,16 @@ type WarningSignProps = {
 }
 
 const WarningSign = ({ message, isTrailingSign }: WarningSignProps) => {
-	// The leading sign is an alert so screen readers proactively announce this anti-phishing warning, such as a token impersonating a well-known one, as soon as the card renders; its aria-label makes that announcement and its reading-order name carry the full explanation. The trailing sign is aria-hidden so the warning is announced once per card instead of twice. The native title tooltip is intentionally suppressed: the surrounding Hint container shows data-tooltip with the full explanation on hover and on keyboard focus of the leading sign, and the empty title stops the card's label title from appearing as a native tooltip over the sign instead.
-	return <span
-		class = 'inline-card-warning-sign'
-		role = { isTrailingSign ? undefined : 'alert' }
-		data-tooltip = { message }
-		title = ''
-		aria-label = { isTrailingSign ? undefined : message }
-		aria-hidden = { isTrailingSign ? true : undefined }
-		tabIndex = { isTrailingSign ? undefined : 0 }
-	>⚠</span>
+	// The leading sign is an alert so screen readers proactively announce this anti-phishing warning, such as a token impersonating a well-known one, as soon as the card renders; its aria-label makes that announcement and its reading-order name carry the full explanation. The trailing sign is aria-hidden so the warning is announced once per card instead of twice. Each sign brings its own inline Hint watching data-warning-tooltip, which shows the explanation on hover and on keyboard focus of the leading sign wherever the card renders; a page Hint watches data-tooltip and ignores the sign, so the explanation appears once. The empty title stops the card's label title from appearing as a native tooltip over the sign.
+	return <Hint attribute = 'data-warning-tooltip' inline>
+		<span
+			class = 'inline-card-warning-sign'
+			role = { isTrailingSign ? undefined : 'alert' }
+			data-warning-tooltip = { message }
+			title = ''
+			aria-label = { isTrailingSign ? undefined : message }
+			aria-hidden = { isTrailingSign ? true : undefined }
+			tabIndex = { isTrailingSign ? undefined : 0 }
+		>⚠</span>
+	</Hint>
 }

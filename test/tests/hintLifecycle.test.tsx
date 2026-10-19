@@ -415,6 +415,32 @@ describe('Hint lifecycle', () => {
 		}
 	})
 
+	test('opens each hint as a manual popover in the top layer before measuring it', async () => {
+		const dom = installDomMock()
+		try {
+			// A closed popover is not rendered, so measuring the hint before opening it would place it by a zero size.
+			const hintCalls: string[] = []
+			Object.defineProperty(globalThis.Element.prototype, 'showPopover', { configurable: true, value: function (this: TestNode) { hintCalls.push(`open ${ this.getAttribute?.('class') }`) } })
+			Object.defineProperty(globalThis.Element.prototype, 'getBoundingClientRect', {
+				configurable: true,
+				value: function (this: TestNode) {
+					hintCalls.push(`measure ${ this.getAttribute?.('class') }`)
+					return { left: 0, top: 0, width: 100, height: 40, right: 100, bottom: 40, x: 0, y: 0 }
+				},
+			})
+			await act(() => {
+				render(<Hint><span data-tooltip = 'Focused explanation' tabIndex = { 0 }>Warning</span></Hint>, dom.document.body)
+			})
+			await act(() => { findElement(dom.document.body, 'span')?.dispatchEvent?.(new Event('focusin', { bubbles: true })) })
+
+			assert.equal(findElementByClass(dom.document.body, 'preact-hint')?.getAttribute?.('popover'), 'manual')
+			assert.deepEqual(hintCalls.filter((call) => call.includes('preact-hint')), ['open preact-hint', 'measure preact-hint__content'])
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+		}
+	})
+
 	test('keeps wrapped hints narrower than the viewport by the positioning padding on both sides', async () => {
 		const dom = installDomMock()
 		try {

@@ -1,11 +1,13 @@
 import type { ComponentChild, ComponentChildren } from 'preact'
-import { useEffect, useRef } from 'preact/hooks'
+import { useCallback, useEffect, useRef } from 'preact/hooks'
 import { type Signal, useSignal, useSignalEffect } from '@preact/signals'
 
 interface Props {
 	children: ComponentChild | ComponentChild[]
 	attribute?: string
 	template?: (content: string) => ComponentChildren
+	// Renders the container as a span without the page container's layout styles, so a Hint can wrap phrasing content such as a warning sign inside a card.
+	inline?: boolean
 }
 
 const timerAttribute = 'data-hint-clickable-hide-timer-ms'
@@ -42,7 +44,9 @@ export default function Container(props: Props) {
 	const content = useSignal('')
 	const anchor = useSignal<HintAnchor | undefined>(undefined)
 
-	const containerElementRef = useRef<HTMLDivElement | null>(null)
+	const containerElementRef = useRef<HTMLElement | null>(null)
+	// One callback ref serves both the inline span and the page div container, whose element types differ.
+	const setContainerElement = useCallback((element: HTMLElement | null) => { containerElementRef.current = element }, [])
 	const copyMessageTimeoutIdRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 	const toolTipTimeoutIdRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 	// The element whose tooltip is displayed, kept only so a later event can tell that it no longer carries that tooltip. It is undefined while a copy message or nothing is displayed.
@@ -201,17 +205,20 @@ export default function Container(props: Props) {
 		}
 	}, [copyAttribute, toolTipAttribute])
 
+	const hint = content.value && anchor.value && (
+		// Keyed by content because a shown Hint measures itself as soon as its anchor changes, before Preact renders the new text, so reusing it would place new text by the size of the previous one; a fresh Hint is measured after its text renders.
+		<Hint
+			key = { content.value }
+			content = { content }
+			template = { props.template }
+			anchor = { anchor }
+		/>
+	)
+
+	if (props.inline === true) return <span ref = { setContainerElement }>{ hint }{ props.children }</span>
 	return (
-		<div ref = { containerElementRef } style = 'position: relative; overflow-x: hidden;'>
-			{ content.value && anchor.value && (
-				// Keyed by content because a shown Hint measures itself as soon as its anchor changes, before Preact renders the new text, so reusing it would place new text by the size of the previous one; a fresh Hint is measured after its text renders.
-				<Hint
-					key = { content.value }
-					content = { content }
-					template = { props.template }
-					anchor = { anchor }
-				/>
-			) }
+		<div ref = { setContainerElement } style = 'position: relative; overflow-x: hidden;'>
+			{ hint }
 			{ props.children }
 		</div>
 	)
@@ -240,8 +247,12 @@ export function calculateHintPosition(anchor: HintAnchor, hintSize: Size, viewpo
 }
 
 function Hint(props: HintProps) {
+	const popoverElementRef = useRef<HTMLSpanElement>(null)
 	const hintElementRef = useRef<HTMLSpanElement>(null)
 	const dialogPosition = useSignal({ left: -1000, top: -1000 })
+
+	// A manual popover in the top layer, so neither a transformed or filtered ancestor, which would become the containing block of a fixed element, nor a modal dialog can misplace or cover a Hint rendered inside a card. It opens before the effect below measures it, because a closed popover is not rendered.
+	useEffect(() => { popoverElementRef.current?.showPopover() }, [])
 
 	useSignalEffect(() => {
 		const anchor = props.anchor.value
@@ -250,11 +261,12 @@ function Hint(props: HintProps) {
 		dialogPosition.value = calculateHintPosition(anchor, { width, height }, { width: globalThis.innerWidth, height: globalThis.innerHeight })
 	})
 
+	// A span, so the hint is valid inside the phrasing content an inline Hint wraps; being positioned, it is laid out as a block either way.
 	return (
-		<div class = 'preact-hint' style = { { ...dialogPosition.value, maxWidth: hintMaxWidth } }>
+		<span ref = { popoverElementRef } class = 'preact-hint' popover = 'manual' style = { { ...dialogPosition.value, maxWidth: hintMaxWidth } }>
 			<span class = 'preact-hint__content' ref = { hintElementRef }>
 				{ props.template ? props.template(props.content.value) : props.content.value }
 			</span>
-		</div>
+		</span>
 	)
 }
