@@ -1,4 +1,4 @@
-// Browsers reject fetch URLs with embedded credentials, so configured `https://user:password@host` RPC URLs are sent as Basic auth instead.
+// Browsers reject fetch URLs with embedded credentials, so configured `https://user:password@host` RPC URLs are sent as Basic auth instead, but only over https or loopback http.
 export type RpcFetchTarget = {
 	readonly url: string
 	readonly headers: Readonly<Record<string, string>>
@@ -18,6 +18,22 @@ function parseUrlOrUndefined(url: string) {
 
 const hasUrlCredentials = (url: URL) => url.username !== '' || url.password !== ''
 
+// The URL parser serializes every IPv4 host as four canonical decimal octets (`127.1` becomes `127.0.0.1`), so names such as `127.evil.com` never match.
+function isIpv4LoopbackHostname(hostname: string) {
+	const octets = hostname.split('.')
+	if (octets.length !== 4 || !octets.every((octet) => /^\d{1,3}$/.test(octet) && Number(octet) <= 255)) return false
+	return Number(octets[0]) === 127
+}
+
+// Parsed hostnames are lowercase and IPv6 hosts keep their brackets, so `[::1]` is the only IPv6 loopback spelling.
+const isLoopbackHostname = (hostname: string) => hostname === 'localhost' || hostname === '[::1]' || isIpv4LoopbackHostname(hostname)
+
+// Basic auth over plaintext HTTP exposes reusable credentials to anyone on the network path, while loopback traffic never leaves the machine.
+export function canSendRpcUrlCredentials(url: URL) {
+	if (url.protocol === 'https:') return true
+	return url.protocol === 'http:' && isLoopbackHostname(url.hostname)
+}
+
 // Parsed URL credentials are ASCII with UTF-8 bytes percent-encoded; malformed escapes stay literal, as in WHATWG percent-decode.
 function percentDecodeToBytes(urlComponent: string) {
 	return Array.from(urlComponent.matchAll(PERCENT_ESCAPE_OR_CHARACTER), ([token]) => token.length === 3 ? Number.parseInt(token.slice(1), 16) : token.charCodeAt(0))
@@ -28,10 +44,21 @@ const encodeBytesAsBase64 = (bytes: readonly number[]) => btoa(bytes.map((byte) 
 // Like browsers, an encoded `%3A` in the username decodes to a colon that servers read as the separator; RFC 7617 forbids colons in user-ids.
 const getBasicAuthorizationHeaderValue = (url: URL) => `Basic ${ encodeBytesAsBase64(percentDecodeToBytes(`${ url.username }:${ url.password }`)) }`
 
+const getUnprotectedRpcUrlCredentialsMessage = (rpcUrl: string) => `Credentials in RPC URL ${ redactRpcUrlCredentials(rpcUrl) } can only be sent over https, or over http to localhost.`
+
+// Returns why the URL's credentials must not be sent, or undefined when it is unparseable, credential-free, or uses a transport that protects them.
+export function getRpcUrlCredentialsTransportError(rpcUrl: string) {
+	const parsedUrl = parseUrlOrUndefined(rpcUrl)
+	if (parsedUrl === undefined || !hasUrlCredentials(parsedUrl) || canSendRpcUrlCredentials(parsedUrl)) return undefined
+	return getUnprotectedRpcUrlCredentialsMessage(rpcUrl)
+}
+
 // Unparseable or credential-free URLs are returned unchanged so fetch keeps its existing behavior and errors.
 export function getRpcFetchTarget(rpcUrl: string): RpcFetchTarget {
 	const parsedUrl = parseUrlOrUndefined(rpcUrl)
 	if (parsedUrl === undefined || !hasUrlCredentials(parsedUrl)) return { url: rpcUrl, headers: {} }
+	// The RPC form rejects these URLs, but imported settings bypass it; throwing instead of dropping the credentials makes the misconfiguration visible.
+	if (!canSendRpcUrlCredentials(parsedUrl)) throw new Error(getUnprotectedRpcUrlCredentialsMessage(rpcUrl))
 	const authorization = getBasicAuthorizationHeaderValue(parsedUrl)
 	parsedUrl.username = ''
 	parsedUrl.password = ''

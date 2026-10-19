@@ -18,6 +18,8 @@ The tradeoff is intentional: renaming an entry or rotating its explorer API key 
 
 Keys can contain credentials, including explorer API keys and credential-bearing RPC URLs. They are internal comparison values: do not log them, render them as labels, or use them as public identifiers. Hashing this serialization would conceal its literal contents but would not make its identity stable across edits.
 
+Credential-bearing RPC URLs are only usable over https, or over http to a loopback host (`localhost`, `127.0.0.0/8`, or `[::1]`), because Basic auth over plaintext http exposes reusable credentials to the network. The RPC form rejects other credential URLs, and `getRpcFetchTarget` fails requests for those that arrive through imported settings instead of sending their credentials.
+
 ## Schema evolution
 
 `RpcNetwork.serialize` currently canonicalizes property order for comparisons within one schema. It is not a promise that keys remain byte-identical after a codec change. Adding fields, changing defaults, or reordering codec fields requires reviewing the shared helpers and their consumers. No persisted key migration is needed today, because keys are recomputed from values; persisted active selections and list entries still need compatible field/default migrations so equivalent configurations continue to match.

@@ -26,6 +26,7 @@ type TestNode = {
 	readonly tagName?: string
 	readonly l?: Record<string, (event: unknown) => unknown>
 	value?: string
+	setCustomValidity?: (message: string) => void
 }
 
 function collectElements(node: TestNode | undefined, tagName: string, results: TestNode[] = []) {
@@ -74,15 +75,37 @@ function findInput(inputs: readonly TestNode[], attributeName: string, attribute
 	return input
 }
 
-// Renders the RPC form, lets the test inspect and fill its inputs, then submits it through the rendered Save button.
-async function renderAndSaveRpcForm(defaultValues: RpcEntry | undefined, prepareInputs: (inputs: readonly TestNode[]) => void) {
+// Calls the input listener Preact registered, as typing would; the RPC URL field debounces this into an RPC probe. TextInput renders through preact/compat, which registers onInput under its lowercase name.
+async function typeIntoInput(input: TestNode, value: string) {
+	input.value = value
+	const inputHandler = input.l?.['inputfalse']
+	if (inputHandler === undefined) throw new Error('Expected an input listener')
+	await act(async () => { inputHandler({ currentTarget: input }) })
+}
+
+async function waitForRenderedState(condition: () => boolean, timeoutMs = 3000) {
+	const startedAt = Date.now()
+	while (!condition()) {
+		if (Date.now() - startedAt > timeoutMs) throw new Error('Timed out waiting for the rendered state')
+		await act(async () => await new Promise((resolve) => setTimeout(resolve, 10)))
+	}
+}
+
+// Renders the RPC form, lets the test inspect and fill its inputs, then submits it through the rendered Save button. Network requests are counted instead of sent.
+async function renderAndSaveRpcForm(defaultValues: RpcEntry | undefined, prepareInputs: (inputs: readonly TestNode[]) => void | Promise<void>) {
 	const dom = installDomMock()
 	const savedEntries: RpcEntry[] = []
 	let formClosed = false
+	let fetchCalls = 0
+	let renderedText = ''
+	const countingFetch = async () => {
+		fetchCalls += 1
+		throw new Error('The RPC form test does not serve network requests')
+	}
 	try {
-		await withGlobalValues({ SubmitEvent: Event, HTMLFormElement: globalThis.Element, HTMLButtonElement: globalThis.Element, FormData: formDataFromRenderedInputs }, async () => {
+		await withGlobalValues({ SubmitEvent: Event, HTMLFormElement: globalThis.Element, HTMLButtonElement: globalThis.Element, FormData: formDataFromRenderedInputs, fetch: countingFetch }, async () => {
 			await act(() => render(<RpcQueryProvider><ConfigureRpcForm defaultValues = { defaultValues } onCancel = { () => { formClosed = true } } onSave = { async (entry) => { savedEntries.push(entry) } } /></RpcQueryProvider>, dom.document.body))
-			prepareInputs(collectElements(dom.document.body, 'input'))
+			await prepareInputs(collectElements(dom.document.body, 'input'))
 
 			const form = collectElements(dom.document.body, 'form')[0]
 			const saveButton = collectElements(form, 'button').find((button) => button.getAttribute?.('value') === 'save')
@@ -93,8 +116,9 @@ async function renderAndSaveRpcForm(defaultValues: RpcEntry | undefined, prepare
 
 			await act(async () => { submitHandler(createSubmitEvent(form, saveButton)) })
 			for (let attempt = 0; attempt < 20 && !formClosed; attempt += 1) await act(async () => await new Promise((resolve) => setTimeout(resolve, 0)))
+			renderedText = dom.document.body.textContent
 		})
-		return { savedEntries, formClosed }
+		return { savedEntries, formClosed, fetchCalls, renderedText }
 	} finally {
 		render(null, dom.document.body)
 		dom.restore()
@@ -499,6 +523,41 @@ describe('UI boundary fixes', () => {
 
 		assert.equal(formClosed, true)
 		assert.deepEqual(savedEntries.map((entry) => ({ name: entry.name, chainId: entry.chainId, httpsRpc: entry.httpsRpc })), [{ name: 'Private node', chainId: 1n, httpsRpc: typedRpcUrl }])
+	})
+
+	test('rejects saving a typed credential URL that would be sent over plaintext http to a remote host', async () => {
+		const typedRpcUrl = 'http://alice:s3cret@remote-node:8545'
+		const expectedError = 'Credentials in RPC URL http://***@remote-node:8545/ can only be sent over https, or over http to localhost.'
+		const urlFieldValidityMessages: string[] = []
+		const { savedEntries, formClosed, fetchCalls, renderedText } = await renderAndSaveRpcForm(undefined, async (inputs) => {
+			const urlInput = findInput(inputs, 'placeholder', 'RPC URL *')
+			urlInput.setCustomValidity = (message) => { urlFieldValidityMessages.push(message) }
+			await typeIntoInput(urlInput, typedRpcUrl)
+			await waitForRenderedState(() => urlFieldValidityMessages.at(-1) === expectedError)
+			// Filling every other field, as a probe of a previously typed URL would, leaves the credential check as the only reason not to save.
+			findInput(inputs, 'name', 'name').value = 'Private node'
+			findInput(inputs, 'name', 'chainId').value = '1'
+			findInput(inputs, 'name', 'currencyName').value = 'Ether'
+			findInput(inputs, 'name', 'currencyTicker').value = 'ETH'
+		})
+
+		assert.equal(urlFieldValidityMessages.at(-1), expectedError)
+		assert.equal(fetchCalls, 0)
+		assert.equal(formClosed, false)
+		assert.deepEqual(savedEntries, [])
+		assert.equal(renderedText.includes(expectedError), true)
+		assert.equal(renderedText.includes('s3cret'), false)
+	})
+
+	test('rejects saving an edited entry whose stored URL would send credentials over plaintext http to a remote host', async () => {
+		const importedEntry: RpcEntry = { name: 'Imported node', chainId: 1n, httpsRpc: 'http://alice:s3cret@remote-node:8545', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
+		const { savedEntries, formClosed, renderedText } = await renderAndSaveRpcForm(importedEntry, (inputs) => {
+			findInput(inputs, 'name', 'name').value = 'Renamed node'
+		})
+
+		assert.equal(formClosed, false)
+		assert.deepEqual(savedEntries, [])
+		assert.equal(renderedText.includes('Credentials in RPC URL http://***@remote-node:8545/ can only be sent over https, or over http to localhost.'), true)
 	})
 
 	test('keeps a block explorer URL when its API key is empty', () => {

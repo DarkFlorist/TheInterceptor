@@ -18,7 +18,7 @@ import { AsyncStatusIcon } from './AsyncAction.js'
 import { parseRpcFormData } from '../../utils/rpcFormData.js'
 import { requestPopupSettingsChange } from '../popupSettingsChange.js'
 import { ErrorComponent } from './Error.js'
-import { redactRpcUrlCredentials } from '../../utils/rpcUrlCredentials.js'
+import { getRpcUrlCredentialsTransportError, redactRpcUrlCredentials } from '../../utils/rpcUrlCredentials.js'
 
 type RpcProbeResult = {
 	chainId: bigint
@@ -99,6 +99,9 @@ export const RpcQueryProvider = ({ children }: { children: ComponentChildren }) 
 	}
 
 	const queryRpcInfo = (url: string) => waitFor(async () => {
+		// The request handler would also refuse these credentials; rejecting before probing reports why on the URL field, like other probe failures.
+		const credentialsTransportError = getRpcUrlCredentialsTransportError(url.trim())
+		if (credentialsTransportError !== undefined) throw new Error(credentialsTransportError)
 		const network = await checkServerAvailability(url.trim())
 		await validateEthSimulateSupport(url.trim())
 		return network
