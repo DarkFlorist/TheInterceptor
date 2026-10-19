@@ -1,4 +1,4 @@
-import type { VisualizedPersonalSignRequest, VisualizedPersonalSignRequestPermit2SignatureTransfer } from '../../types/personal-message-definitions.js'
+import { type VisualizedPersonalSignRequest, type VisualizedPersonalSignRequestPermit2SignatureTransfer, getPermit2SignatureTransferKind } from '../../types/personal-message-definitions.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { addressString } from '../../utils/bigint.js'
 import { assertNever } from '../../utils/typescript.js'
@@ -12,16 +12,9 @@ function getPermitTokenLabel(entry: AddressBookEntry) {
 }
 
 function getPermit2SignatureTransferName(data: VisualizedPersonalSignRequestPermit2SignatureTransfer) {
-	switch (data.message.primaryType) {
-		case 'PermitBatchTransferFrom':
-		case 'PermitBatchWitnessTransferFrom': return 'Permit2 batch transfer'
-		case 'PermitTransferFrom':
-		case 'PermitWitnessTransferFrom': {
-			const [permitted] = data.permitted
-			return permitted === undefined ? 'Permit2 transfer' : `${ getPermitTokenLabel(permitted.token) } Permit2 transfer`
-		}
-		default: assertNever(data.message)
-	}
+	if (getPermit2SignatureTransferKind(data.message).isBatch) return 'Permit2 batch transfer'
+	const [permitted] = data.permitted
+	return permitted === undefined ? 'Permit2 transfer' : `${ getPermitTokenLabel(permitted.token) } Permit2 transfer`
 }
 
 export function identifySignature(data: VisualizedPersonalSignRequest) {

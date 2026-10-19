@@ -5,7 +5,7 @@ import { act } from 'preact/test-utils'
 import { EIP712Message } from '../../app/ts/types/eip721.js'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
 import type { SignedMessageTransaction } from '../../app/ts/types/visualizer-types.js'
-import { VisualizedPersonalSignRequest } from '../../app/ts/types/personal-message-definitions.js'
+import { findPermit2WitnessField, getPermit2SignatureTransferKind, VisualizedPersonalSignRequest } from '../../app/ts/types/personal-message-definitions.js'
 import type { AddressBookEntry } from '../../app/ts/types/addressBookTypes.js'
 import { checksummedAddress, stringifyJSONWithBigInts } from '../../app/ts/utils/bigint.js'
 import { EthereumAddress } from '../../app/ts/types/wire-types.js'
@@ -367,6 +367,40 @@ describe('Permit2 signature requests', () => {
 		if (visualized.type !== 'EIP712') throw new Error(`Expected a generic EIP712 message, got ${ visualized.type }`)
 		assert.equal(identifySignature(visualized).title, 'Permit2 - PermitWitnessTransferFrom signing request')
 		assert.deepEqual(Object.keys(visualized.message.message), ['permitted', 'spender', 'witness', 'nonce', 'deadline'])
+	})
+
+	test('classifies every SignatureTransfer primary type the same way for token grouping, witness lookup and naming', async () => {
+		const expectedKinds = [
+			{ typedData: permit2TransferFromMessage, primaryType: 'PermitTransferFrom', isBatch: false, hasWitness: false, tokenCount: 1 },
+			{ typedData: permit2BatchTransferFromMessage, primaryType: 'PermitBatchTransferFrom', isBatch: true, hasWitness: false, tokenCount: 2 },
+			{ typedData: permit2UniswapXWitnessTransferFromMessage, primaryType: 'PermitWitnessTransferFrom', isBatch: false, hasWitness: true, tokenCount: 1 },
+			{ typedData: permit2BatchWitnessTransferFromMessage, primaryType: 'PermitBatchWitnessTransferFrom', isBatch: true, hasWitness: true, tokenCount: 2 },
+		]
+		for (const { typedData, ...expected } of expectedKinds) {
+			const visualized = await visualizeTypedData(typedData)
+			if (visualized.type !== 'Permit2SignatureTransfer') throw new Error(`Expected a Permit2 signature transfer, got ${ visualized.type }`)
+			const { isBatch, hasWitness, permitted } = getPermit2SignatureTransferKind(visualized.message)
+			assert.deepEqual({ primaryType: visualized.message.primaryType, isBatch, hasWitness, tokenCount: permitted.length }, expected)
+			assert.deepEqual(visualized.permitted.map(({ token, amount }) => ({ token: token.address, amount })), permitted)
+			assert.equal(visualized.witness !== undefined, hasWitness)
+			assert.equal(identifySignature(visualized).title === 'Permit2 batch transfer', isBatch)
+		}
+	})
+
+	test('finds the Permit2 witness field by name wherever it is declared and never takes a Permit2 field instead', () => {
+		const permitted = { name: 'permitted', type: 'TokenPermissions' }
+		const spender = { name: 'spender', type: 'address' }
+		const nonce = { name: 'nonce', type: 'uint256' }
+		const deadline = { name: 'deadline', type: 'uint256' }
+		const witness = { name: 'witness', type: 'ExclusiveDutchOrder' }
+		assert.deepEqual(findPermit2WitnessField([permitted, spender, nonce, deadline, witness]), witness)
+		// The deadline is the fifth field in both of these, so a lookup by position would show the deadline as the witness.
+		assert.deepEqual(findPermit2WitnessField([witness, permitted, spender, nonce, deadline]), witness)
+		assert.deepEqual(findPermit2WitnessField([permitted, spender, nonce, witness, deadline]), witness)
+		// A missing witness, an extra field that makes the witness ambiguous, or a witness named like a Permit2 field yields no witness instead of a guess.
+		assert.equal(findPermit2WitnessField([permitted, spender, nonce, deadline]), undefined)
+		assert.equal(findPermit2WitnessField([permitted, spender, nonce, deadline, witness, { name: 'salt', type: 'bytes32' }]), undefined)
+		assert.equal(findPermit2WitnessField([permitted, spender, nonce, deadline, { name: 'deadline', type: 'uint256' }]), undefined)
 	})
 })
 
