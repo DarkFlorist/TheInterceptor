@@ -5,13 +5,13 @@ import { act } from 'preact/test-utils'
 import { EIP712Message } from '../../app/ts/types/eip721.js'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
 import type { SignedMessageTransaction } from '../../app/ts/types/visualizer-types.js'
-import { findPermit2WitnessField, getPermit2SignatureTransferKind, type VisualizedPersonalSignRequest } from '../../app/ts/types/personal-message-definitions.js'
+import { findPermit2WitnessField, getPermit2SignatureTransferKind, VisualizedPersonalSignRequest } from '../../app/ts/types/personal-message-definitions.js'
 import type { AddressBookEntry } from '../../app/ts/types/addressBookTypes.js'
-import { checksummedAddress } from '../../app/ts/utils/bigint.js'
+import { checksummedAddress, stringifyJSONWithBigInts } from '../../app/ts/utils/bigint.js'
 import { EthereumAddress } from '../../app/ts/types/wire-types.js'
 import { MockRequestHandler } from '../MockRequestHandler.js'
 import { clickRenderedElement, findRenderedElement, installDomMock } from './domMock.js'
-import { permit2BatchTransferFromMessage, permit2BatchWitnessTransferFromMessage, permit2Message, permit2PermitBatchMessage, permit2Signer, permit2TransferFromMessage, permit2UniswapXWitnessTransferFromMessage, permit2WitnessTransferFromWitnessNotLastMessage, uniswapUniversalRouter, uniswapXExclusiveDutchOrderReactor } from './data/eip712Data.js'
+import { daiPermitMessage, eip2612UsdcPermitMessage, eip712Example, maxUint256, permit2BatchTransferFromMessage, permit2BatchWitnessTransferFromMessage, permit2Message, permit2PermitBatchMessage, permit2Signer, permit2TransferFromMessage, permit2UniswapXWitnessTransferFromMessage, permit2WitnessTransferFromWitnessNotLastMessage, uniswapUniversalRouter, uniswapXExclusiveDutchOrderReactor, usdcAddress } from './data/eip712Data.js'
 
 // Address metadata, tab state and RPC lookups read extension storage, which is empty for these requests.
 Object.defineProperty(globalThis, 'browser', {
@@ -71,12 +71,11 @@ function createSignedTypedDataTransaction(typedData: EIP712Message): SignedMessa
 	}
 }
 
-async function visualizeParsedTypedData(typedData: EIP712Message, rpcNetwork: RpcEntry = mainnet) {
+// Decodes the typed data JSON string the same way an eth_signTypedData_v4 request is decoded before it is visualized.
+async function visualizeTypedData(typedData: string, rpcNetwork: RpcEntry = mainnet) {
 	const ethereum = new EthereumClientService(new MockRequestHandler(), async () => undefined, async () => undefined, rpcNetwork)
-	return await craftPersonalSignPopupMessage(ethereum, undefined, createSignedTypedDataTransaction(typedData), rpcNetwork)
+	return await craftPersonalSignPopupMessage(ethereum, undefined, createSignedTypedDataTransaction(EIP712Message.parse(typedData)), rpcNetwork)
 }
-
-const visualizeTypedData = async (typedData: string, rpcNetwork: RpcEntry = mainnet) => await visualizeParsedTypedData(EIP712Message.parse(typedData), rpcNetwork)
 
 // The address metadata identifies this MetaSamurai collection as an ERC721 token.
 const erc721TokenAddress = '0x79f1c4cf7266746698e91034d658e56913e6644f'
@@ -151,6 +150,18 @@ function getTokenSymbols(visualizedPersonalSignRequest: VisualizedPersonalSignRe
 	if (visualizedPersonalSignRequest.type === 'Permit2Batch') return visualizedPersonalSignRequest.details.map(({ token }) => token.type === 'ERC20' ? token.symbol : token.name)
 	if (visualizedPersonalSignRequest.type === 'Permit2SignatureTransfer') return visualizedPersonalSignRequest.permitted.map(({ token }) => token.type === 'ERC20' ? token.symbol : token.name)
 	throw new Error(`Expected a Permit2 batch or signature transfer, got ${ visualizedPersonalSignRequest.type }`)
+}
+
+function modifyUsdcPermit(modify: (permit: { domain: Record<string, unknown>, message: Record<string, unknown> }) => void) {
+	const permit = JSON.parse(eip2612UsdcPermitMessage)
+	modify(permit)
+	return JSON.stringify(permit)
+}
+
+async function visualizeEip2612Permit(typedData: string, rpcNetwork: RpcEntry = mainnet) {
+	const visualized = await visualizeTypedData(typedData, rpcNetwork)
+	if (visualized.type !== 'Permit') throw new Error(`Expected an EIP-2612 permit, got ${ visualized.type }`)
+	return visualized
 }
 
 describe('Permit2 signature requests', () => {
@@ -247,6 +258,10 @@ describe('Permit2 signature requests', () => {
 	test('visualizes an AllowanceTransfer PermitBatch with per token expirations', async () => {
 		const visualized = await visualizeTypedData(permit2PermitBatchMessage)
 		if (visualized.type !== 'Permit2Batch') throw new Error(`Expected a Permit2 batch, got ${ visualized.type }`)
+		// The raw message shows the request as the dapp sent it, not re-encoded hex values.
+		assertIncludesAll(visualized.rawMessage, ['"amount":"5000000"', '"sigDeadline":"1700000000"'])
+		assert.equal(visualized.rawMessage.includes('0x4c4b40'), false)
+		assert.equal(visualized.stringifiedMessage, stringifyJSONWithBigInts(EIP712Message.parse(permit2PermitBatchMessage), 4))
 		assert.deepEqual(getTokenSymbols(visualized), ['USDC', 'USDT'])
 		assert.deepEqual(visualized.details.map(({ nonce, expiration }) => ({ nonce, expiration })), [{ nonce: 0n, expiration: 281474976710655n }, { nonce: 3n, expiration: 1700000000n }])
 		assert.deepEqual(identifySignature(visualized), {
@@ -290,6 +305,10 @@ describe('Permit2 signature requests', () => {
 		const visualized = await visualizeTypedData(JSON.stringify(maxExpirationPermit))
 		if (visualized.type !== 'Permit2') throw new Error(`Expected a Permit2 PermitSingle, got ${ visualized.type }`)
 		assert.equal(identifySignature(visualized).title, 'USDT Permit')
+		// The raw message shows the request as the dapp sent it, not re-encoded hex values.
+		assertIncludesAll(visualized.rawMessage, ['"expiration":"281474976710655"', '"sigDeadline":"1674745207"'])
+		assert.equal(visualized.rawMessage.includes('0x63d29577'), false)
+		assert.equal(visualized.stringifiedMessage, stringifyJSONWithBigInts(EIP712Message.parse(JSON.stringify(maxExpirationPermit)), 4))
 
 		assertIncludesAll(await renderSignatureCardText(visualized), [
 			'USDT Permit',
@@ -302,22 +321,10 @@ describe('Permit2 signature requests', () => {
 		])
 	})
 
-	test('rejects EIP-2612 and Permit2 permits for an ERC721 token', async () => {
+	test('rejects Permit2 permits for an ERC721 token', async () => {
 		const erc721Permit2Transfer = JSON.parse(permit2TransferFromMessage)
 		erc721Permit2Transfer.message.permitted.token = erc721TokenAddress
 		await assert.rejects(visualizeTypedData(JSON.stringify(erc721Permit2Transfer)), { message: 'Attempted to perform Permit to an ERC721' })
-
-		// Request parsing turns every JSON number into a string, which the EIP-2612 runtime type does not accept for its nonce and deadline, so the EIP-2612 branch is reached with an already parsed request.
-		const erc721Eip2612Permit: EIP712Message = {
-			types: {
-				EIP712Domain: [{ name: 'name', type: 'string' }, { name: 'version', type: 'string' }, { name: 'chainId', type: 'uint256' }, { name: 'verifyingContract', type: 'address' }],
-				Permit: [{ name: 'owner', type: 'address' }, { name: 'spender', type: 'address' }, { name: 'value', type: 'uint256' }, { name: 'nonce', type: 'uint256' }, { name: 'deadline', type: 'uint256' }],
-			},
-			primaryType: 'Permit',
-			domain: { name: 'MetaSamurai - OFFICIAL', version: '1', chainId: '1', verifyingContract: erc721TokenAddress },
-			message: { owner: permit2Signer, spender: '0x5555555555555555555555555555555555555555', value: '1', nonce: 0, deadline: 1700000000 },
-		}
-		await assert.rejects(visualizeParsedTypedData(erc721Eip2612Permit), { message: 'Attempted to perform Permit to an ERC721' })
 	})
 
 	test('keeps the spender and raw amount visible when a Permit2 token is not an identified ERC20 token', async () => {
@@ -394,5 +401,120 @@ describe('Permit2 signature requests', () => {
 		assert.equal(findPermit2WitnessField([permitted, spender, nonce, deadline]), undefined)
 		assert.equal(findPermit2WitnessField([permitted, spender, nonce, deadline, witness, { name: 'salt', type: 'bytes32' }]), undefined)
 		assert.equal(findPermit2WitnessField([permitted, spender, nonce, deadline, { name: 'deadline', type: 'uint256' }]), undefined)
+	})
+})
+
+describe('EIP-2612 permit signature requests', () => {
+	test('visualizes a USDC permit sent as an eth_signTypedData_v4 JSON string', async () => {
+		const visualized = await visualizeEip2612Permit(eip2612UsdcPermitMessage)
+		if (visualized.verifyingContract.type !== 'ERC20') throw new Error(`Expected the USDC token, got ${ visualized.verifyingContract.type }`)
+		assert.equal(visualized.verifyingContract.symbol, 'USDC')
+		assert.equal(visualized.owner.address, signer)
+		assert.equal(visualized.spender.address, EthereumAddress.parse(uniswapUniversalRouter))
+		assert.deepEqual(visualized.message.domain, { name: 'USD Coin', version: '2', chainId: 1n, verifyingContract: EthereumAddress.parse(usdcAddress) })
+		assert.deepEqual(visualized.message.message, { owner: signer, spender: EthereumAddress.parse(uniswapUniversalRouter), value: 1000000000n, nonce: 3n, deadline: 1700000000n })
+		// The raw message shows the request as the dapp sent it instead of re-encoding the parsed numbers as hex.
+		assertIncludesAll(visualized.rawMessage, ['"value":"1000000000"', `"spender":"${ uniswapUniversalRouter }"`])
+		assert.equal(visualized.rawMessage.includes('0x3b9aca00'), false)
+		assert.equal(visualized.stringifiedMessage, stringifyJSONWithBigInts(EIP712Message.parse(eip2612UsdcPermitMessage), 4))
+		// The USDC contract on Ethereum Mainnet reports this value as its DOMAIN_SEPARATOR.
+		assert.equal(visualized.domainHash, '0x06c37168a7db5138defc7866392bb87a741f9b3d104deb5094588ce041cae335')
+		assert.deepEqual({ quarantine: visualized.quarantine, quarantineReasons: visualized.quarantineReasons }, { quarantine: false, quarantineReasons: [] })
+		assert.deepEqual(identifySignature(visualized), {
+			title: 'USDC Permit',
+			signingAction: 'Sign USDC Permit',
+			simulationAction: 'Simulate USDC Permit',
+			rejectAction: 'Reject USDC Permit',
+			to: visualized.spender,
+		})
+
+		assertIncludesAll(await renderSignatureCardText(visualized), [
+			'USDC Permit',
+			'Allow',
+			'To Spend',
+			'1000',
+			'USDC',
+			'Chain: Ethereum Mainnet',
+			'Verifying contract: USDC',
+			`Owner: ${ checksummedAddress(signer) }`,
+			'Nonce: 3',
+			'Signature expires in: ',
+			'(until 2023-11-14T22:13:20.000Z)',
+			`Domain Hash: ${ visualized.domainHash }`,
+			`Message Hash: ${ visualized.messageHash }`,
+		])
+	})
+
+	test('identifies a permit whose nonce and deadline are sent as JSON numbers', async () => {
+		const decimalStringPermit = await visualizeEip2612Permit(eip2612UsdcPermitMessage)
+		const jsonNumberPermit = await visualizeEip2612Permit(modifyUsdcPermit((permit) => {
+			permit.message.nonce = 3
+			permit.message.deadline = 1700000000
+		}))
+		assert.deepEqual(jsonNumberPermit.message, decimalStringPermit.message)
+		assert.equal(jsonNumberPermit.messageHash, decimalStringPermit.messageHash)
+	})
+
+	test('shows an unlimited deadline and an ALL amount for a max uint256 permit', async () => {
+		const visualized = await visualizeEip2612Permit(modifyUsdcPermit((permit) => {
+			permit.message.value = maxUint256
+			permit.message.deadline = maxUint256
+		}))
+		assert.equal(visualized.message.message.value, BigInt(maxUint256))
+		assert.equal(visualized.message.message.deadline, BigInt(maxUint256))
+
+		assertIncludesAll(await renderSignatureCardText(visualized), [
+			'USDC Permit',
+			'ALL',
+			'Signature expires in: unlimited',
+		])
+	})
+
+	test('quarantines a permit for a different chain than the active one', async () => {
+		const visualized = await visualizeEip2612Permit(eip2612UsdcPermitMessage, { ...mainnet, name: 'Goerli', chainId: 5n })
+		assert.equal(visualized.quarantine, true)
+		assert.equal(visualized.rpcNetwork.chainId, 1n)
+		assert.deepEqual(visualized.quarantineReasons, ['The signature request is for a different chain (Ethereum Mainnet) than what is currently active (Goerli).'])
+	})
+
+	test('rejects a permit whose verifying contract is an ERC721 token', async () => {
+		const erc721Permit = modifyUsdcPermit((permit) => { permit.domain.verifyingContract = erc721TokenAddress })
+		await assert.rejects(visualizeTypedData(erc721Permit), { message: 'Attempted to perform Permit to an ERC721' })
+	})
+
+	test('keeps the spender and raw amount visible when the permit token is not an identified ERC20 token', async () => {
+		const visualized = await visualizeEip2612Permit(modifyUsdcPermit((permit) => { permit.domain.verifyingContract = unidentifiedTokenAddress }))
+		assert.notEqual(visualized.verifyingContract.type, 'ERC20')
+		await assertShowsUnidentifiedTokenApproval(visualized, '1000000000')
+	})
+
+	test('identifies a permit whose domain version is not an integer', async () => {
+		const visualized = await visualizeEip2612Permit(modifyUsdcPermit((permit) => { permit.domain.version = '1.0' }))
+		assert.equal(visualized.message.domain.version, '1.0')
+	})
+
+	test('quarantines a permit whose owner is not the signing account', async () => {
+		const visualized = await visualizeEip2612Permit(modifyUsdcPermit((permit) => { permit.message.owner = '0x5555555555555555555555555555555555555555' }))
+		assert.equal(visualized.quarantine, true)
+		assert.deepEqual(visualized.quarantineReasons, ['The signature request is for an account that is different from your active address.'])
+	})
+
+	test('renders a permit after it is serialized for the popup and the simulation stack', async () => {
+		const visualized = await visualizeEip2612Permit(modifyUsdcPermit((permit) => { permit.message.deadline = maxUint256 }))
+		const received = VisualizedPersonalSignRequest.parse(JSON.parse(JSON.stringify(VisualizedPersonalSignRequest.serialize(visualized))))
+		assert.deepEqual(received, visualized)
+		assert.equal(identifySignature(received).title, 'USDC Permit')
+		assertIncludesAll(await renderSignatureCardText(received), ['USDC Permit', 'Nonce: 3', 'Signature expires in: unlimited'])
+	})
+
+	test('falls back to the generic EIP712 view for messages that are not EIP-2612 permits', async () => {
+		const daiPermit = await visualizeTypedData(daiPermitMessage)
+		if (daiPermit.type !== 'EIP712') throw new Error(`Expected a generic EIP712 message, got ${ daiPermit.type }`)
+		assert.equal(daiPermit.isValidMessage, true)
+		assert.equal(identifySignature(daiPermit).title, 'Dai Stablecoin - Permit signing request')
+
+		const mail = await visualizeTypedData(eip712Example)
+		if (mail.type !== 'EIP712') throw new Error(`Expected a generic EIP712 message, got ${ mail.type }`)
+		assert.equal(identifySignature(mail).title, 'Ether Mail - Mail signing request')
 	})
 })
