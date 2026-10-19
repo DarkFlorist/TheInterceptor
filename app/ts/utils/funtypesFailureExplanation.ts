@@ -186,14 +186,6 @@ export const getTupleVariants = (codec: ReflectedCodec): readonly (readonly Refl
 	return getChildCodecs(codec, 'alternatives').filter((alternative) => alternative.tag === 'tuple').map((alternative) => getChildCodecs(alternative, 'components'))
 }
 
-// The values a literal codec, or a union of literal codecs, accepts, such as the method names of an RPC request codec. Any other codec accepts more than a list of values, so it has none.
-export function getLiteralValues(codec: ReflectedCodec): readonly unknown[] {
-	if (codec.tag === 'literal') return [Reflect.get(codec, 'value')]
-	if (codec.tag !== 'union') return []
-	const alternativeValues = getChildCodecs(codec, 'alternatives').map(getLiteralValues)
-	return alternativeValues.some((values) => values.length === 0) ? [] : alternativeValues.flat()
-}
-
 export const indexCodecDescriptions = (descriptions: readonly CodecDescription[]): CodecDescriptions => new Map(descriptions.map((description) => [description.codec, description]))
 
 const isBudgetExhausted = (budget: ValidationBudget) => budget.validationCount > MAX_EXPLANATION_VALIDATIONS

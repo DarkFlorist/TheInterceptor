@@ -1,7 +1,7 @@
 import * as assert from 'assert'
 import { describe, spyOn, test } from 'bun:test'
 import * as funtypes from 'funtypes'
-import { type CodecDescriptions, describeJsonDocument, explainValueFailure, getCodecLabel, getLiteralValues, getObjectFieldCodec, getTupleVariants, indexCodecDescriptions, type ReflectedCodec } from '../../app/ts/utils/funtypesFailureExplanation.js'
+import { type CodecDescriptions, describeJsonDocument, explainValueFailure, getCodecLabel, getObjectFieldCodec, getTupleVariants, indexCodecDescriptions, type ReflectedCodec } from '../../app/ts/utils/funtypesFailureExplanation.js'
 
 // These tests pin the funtypes internals the adapter reads, so a funtypes upgrade that changes them fails here instead of silently degrading invalid-params errors.
 
@@ -97,14 +97,6 @@ describe('funtypes failure explanation', () => {
 		}
 		assert.equal(getObjectFieldCodec(funtypes.ReadonlyRecord(funtypes.String, NameCodec), 'name'), undefined)
 		assert.equal(getObjectFieldCodec(funtypes.ReadonlyTuple(NameCodec), '0'), undefined)
-	})
-
-	test('lists the values of literal codecs and unions of literal codecs', () => {
-		assert.deepEqual(getLiteralValues(funtypes.Literal('eth_chainId')), ['eth_chainId'])
-		assert.deepEqual(getLiteralValues(funtypes.Union(funtypes.Literal('eth_sign'), funtypes.Literal('personal_sign'), funtypes.Literal(1))), ['eth_sign', 'personal_sign', 1])
-		assert.deepEqual(getLiteralValues(funtypes.Union(funtypes.Literal('eth_sign'), funtypes.String)), [])
-		assert.deepEqual(getLiteralValues(funtypes.String), [])
-		assert.deepEqual(getLiteralValues(funtypes.ReadonlyObject({ method: funtypes.Literal('eth_chainId') })), [])
 	})
 
 	test('explains strings that hold a JSON document inside the decoded document', () => {

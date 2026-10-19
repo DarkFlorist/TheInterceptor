@@ -15,7 +15,7 @@ const createRequest = (method: string, params?: unknown[]): InterceptedRequest =
 	uniqueRequestIdentifier: { requestId: 1, requestSocket: { tabId: 1, connectionName: 0n } },
 })
 
-// These tests read request codecs and their method literals through the typed funtypes API instead of funtypesFailureExplanation.ts on purpose, so the method lookup is checked against an independent reading rather than against its own implementation.
+// These tests read request codecs and their method literals through the typed funtypes API, so the explicit method map behind findEthereumJsonRpcRequestCodec is cross-checked against the codecs themselves.
 const supportedRequestCodecs = [WalletRevokePermissions, ...EthereumJsonRpcRequest.alternatives]
 
 type ParseableCodec = { safeParse(value: unknown): unknown }
@@ -246,6 +246,8 @@ describe('readable RPC parse failure replies', () => {
 	test('leaves unsupported methods to the caller', () => {
 		assert.equal(getMethodSpecificParseFailureReply(createRequest('eth_unsupportedMethod', [1])), undefined)
 		assert.equal(findEthereumJsonRpcRequestCodec('eth_unsupportedMethod'), undefined)
+		// Inherited object keys are not methods.
+		for (const inheritedKey of ['toString', 'constructor', '__proto__']) assert.equal(findEthereumJsonRpcRequestCodec(inheritedKey), undefined, inheritedKey)
 	})
 
 	test('finds the request union member for every supported method', () => {

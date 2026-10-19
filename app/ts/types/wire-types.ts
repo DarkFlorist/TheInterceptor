@@ -190,7 +190,7 @@ export type NonHexBigInt = funtypes.Static<typeof NonHexBigInt>
 
 export const EthereumQuantity = funtypes.String.withParser(BigIntParser)
 export type EthereumQuantity = funtypes.Static<typeof EthereumQuantity>
-// How invalid-params errors name and describe EthereumQuantity values.
+// Invalid-params error descriptions live beside the codec they describe so that each type's meaning is stated in exactly one place; rpcParseFailureReply.ts only lists which descriptions it uses.
 export const EthereumQuantityDescription: CodecDescription = { codec: EthereumQuantity, label: 'quantity', expected: 'a hex quantity' }
 
 export const EthereumQuantityUint8 = EthereumQuantity.withConstraint(isValidErc20Decimals)
