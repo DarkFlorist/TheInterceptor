@@ -32,7 +32,7 @@ export function getSigningQuarantineCodes(messageChainId: bigint | undefined, ac
 	return { quarantine: quarantineReasons.length > 0, quarantineReasons }
 }
 
-const WALLET_DEPENDENT_PERSONAL_SIGN_REASON = 'Wallets disagree on whether this message is hex-encoded bytes or text, and The Interceptor cannot tell which wallet will sign it. The message is shown exactly as written, but your wallet may sign different bytes.'
+const WALLET_DEPENDENT_PERSONAL_SIGN_REASON = 'Wallets may read this message differently, as hex-encoded bytes or text. The message is shown exactly as written, but your wallet may sign different bytes.'
 
 // Adds a reason when the bytes a personal_sign signature covers depend on which wallet signs the message.
 function getPersonalSignQuarantineCodes(signingQuarantineCodes: { quarantine: boolean, quarantineReasons: readonly string[] }, signedBytes: Uint8Array | undefined) {

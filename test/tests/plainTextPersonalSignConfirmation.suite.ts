@@ -231,3 +231,20 @@ test('accepts a request id again once the request pending under it is resolved',
 	const pendingAfterReuse = await getPendingMessages()
 	assert.deepEqual(pendingAfterReuse.map(({ visualized }) => [visualized.message, visualized.quarantine]), [[plainTextMessage, false]])
 })
+
+test('flags a 0x-prefixed message with invalid hex digits, shows it as written without a hash and requires an acknowledgement', async () => {
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	const { requestSignature } = createPersonalSignRequester([])
+	// A permissive hex converter could sign this as the bytes 0x686900 while a strict wallet signs its text.
+	const malformedHexMessage = '0x6869zz'
+	assert.deepEqual(await requestSignature(malformedHexMessage, -4), { type: 'doNotReply' })
+
+	const [pending] = await modules.getPendingTransactionsAndMessages()
+	if (pending?.type !== 'SignableMessage' || pending.transactionOrMessageCreationStatus !== 'Simulated' || pending.visualizedPersonalSignRequest.type !== 'NotParsed') throw new Error('Missing visualized personal_sign request')
+	const visualized = pending.visualizedPersonalSignRequest
+	assert.equal(visualized.quarantine, true)
+	assert.equal(visualized.messageHash, undefined)
+	assert.equal(decodePersonalSignMessage(visualized.message, visualized.simulationMode), malformedHexMessage)
+	const { getApprovalAcknowledgement } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
+	assert.notEqual(getApprovalAcknowledgement(pending), undefined)
+})

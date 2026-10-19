@@ -1,4 +1,5 @@
-import { bytesFromHex, bytesToHex, isHexString, stringToBytes } from './ethereumBytes.js'
+import { bytesFromHex, isHexString, stringToBytes } from './ethereumBytes.js'
+import { assertNever } from './typescript.js'
 
 const HEX_DIGITS_REGEX = /^[0-9a-fA-F]+$/u
 
@@ -15,14 +16,32 @@ export const getMetaMaskPersonalSignMessageBytes = (message: string) => {
 // Mirrors MetaMask personal_ecRecover: eth-json-rpc-middleware passes the message straight to eth-sig-util recoverPersonalSignature, whose legacyToBuffer reads a 0x-prefixed hex string as bytes, left-padded to whole bytes, and any other string as UTF-8 text.
 export const getPersonalEcRecoverMessageBytes = (message: string) => isHexString(message) ? hexDigitsToLeftPaddedBytes(message.slice(2)) : stringToBytes(message)
 
-// Mirrors Rabby personal_sign, which reads the message like personal_ecRecover above: its provider controller passes a message matching /^0x[0-9A-Fa-f]*$/ (@ethereumjs/util isHexString, so a lowercase 0x only, and a bare 0x is no bytes) to the keyring as hex and converts anything else to its UTF-8 bytes, then the keyring signs with eth-sig-util personalSign, whose legacyToBuffer left-pads odd-length hex. So unlike MetaMask, Rabby signs '12' and '0X12' as their text and '0x' as no bytes. Source: personalSign in https://github.com/RabbyHub/Rabby/blob/c3aed73f4c5f1e7c88c31331b0b0b72c6e8f2f4a/src/background/controller/provider/controller.ts#L1475-L1482
-const getRabbyPersonalSignMessageBytes = getPersonalEcRecoverMessageBytes
+// How a personal_sign message reads, judged only by its form. Canonical hex data is the execution-apis `bytes` encoding (lowercase 0x prefix and an even, non-zero number of lowercase hex digits) that viem, ethers and web3.js send for every byte message, so any wallet that read it as text would break those dapps. Anything else that a wallet might read as hex is wallet-dependent, because wallets decide hex versus text in different ways: MetaMask signs '6869' and '0X6869' as the bytes of 'hi' and '0x' as its text (sourced above), while Rabby signs '6869' and '0X6869' as their text and '0x' as no bytes (personalSign in https://github.com/RabbyHub/Rabby/blob/c3aed73f4c5f1e7c88c31331b0b0b72c6e8f2f4a/src/background/controller/provider/controller.ts#L1475-L1482 converts anything not matching /^0x[0-9A-Fa-f]*$/ to its UTF-8 bytes). A 0x or 0X prefix alone is enough, whatever follows: the prefix is where wallets' checks differ (MetaMask accepts 0X, Rabby accepts odd lengths and uppercase digits), and Ambire's toPersonalSignHex (https://github.com/AmbireTech/ambire-common/blob/e6eda4c3638473f88a2e319c73346c92c67bc006/src/libs/signMessage/utils.ts) feeds anything ethers isHexString accepts to a hardware converter that parses digit pairs with parseInt (src/utils/hexStringToUint8Array.ts there). The wallets above read a prefixed message with non-hex characters such as '0x6869zz' as text, but no dapp library sends one, so flagging it costs nothing and does not depend on every wallet rejecting its digits. Plain text is everything else. The rule depends neither on how many wallets are supported nor on which one signs.
+export type PersonalSignMessageForm = 'canonicalHexData' | 'plainText' | 'walletDependent'
 
-// The bytes a personal_sign signature covers, or undefined when they depend on which wallet signs. Simulation mode signs locally with MetaMask's reading. Signing mode forwards the message unchanged, and MetaMask and Rabby (sourced above) sign hex-like messages such as '6869', '0X6869' and '0x' as different bytes; the Interceptor cannot reliably tell which wallet, or which frame's wallet, will sign, so it does not guess and the popup shows such a message as written, without a message hash, and flags it.
+const CANONICAL_HEX_DATA_REGEX = /^0x(?:[0-9a-f]{2})+$/u
+// Both patterns run on the trimmed message, so surrounding whitespace never changes the form; trimming instead of \s* runs avoids quadratic backtracking on long website-chosen whitespace, and trim strips the same WhiteSpace and LineTerminator characters that \s matches.
+const HEX_PREFIX_REGEX = /^0x/iu
+const HEX_DIGITS_ONLY_REGEX = /^[0-9a-f]*$/iu
+
+export const classifyPersonalSignMessage = (message: string): PersonalSignMessageForm => {
+	if (CANONICAL_HEX_DATA_REGEX.test(message)) return 'canonicalHexData'
+	// An empty message is zero bytes whether a wallet reads it as text or as hex.
+	if (message === '') return 'plainText'
+	const trimmed = message.trim()
+	return HEX_PREFIX_REGEX.test(trimmed) || HEX_DIGITS_ONLY_REGEX.test(trimmed) ? 'walletDependent' : 'plainText'
+}
+
+// The bytes a personal_sign signature covers, or undefined when they depend on which wallet signs. Simulation mode signs locally with MetaMask's reading. Signing mode forwards the message unchanged to whichever wallet the page uses, so it only shows and hashes messages whose bytes every wallet agrees on (see classifyPersonalSignMessage); the popup shows any other message as written, without a message hash, and flags it.
 export const getPersonalSignMessageBytes = (message: string, simulationMode: boolean) => {
-	const metaMaskBytes = getMetaMaskPersonalSignMessageBytes(message)
-	if (simulationMode) return metaMaskBytes
-	return bytesToHex(metaMaskBytes) === bytesToHex(getRabbyPersonalSignMessageBytes(message)) ? metaMaskBytes : undefined
+	if (simulationMode) return getMetaMaskPersonalSignMessageBytes(message)
+	const form = classifyPersonalSignMessage(message)
+	switch (form) {
+		case 'canonicalHexData': return hexDigitsToLeftPaddedBytes(message.slice(2))
+		case 'plainText': return stringToBytes(message)
+		case 'walletDependent': return undefined
+		default: return assertNever(form)
+	}
 }
 
 // The bytes the signature covers as UTF-8 text, with replacement characters for bytes that are not valid UTF-8, or the message exactly as written when those bytes depend on which wallet signs.

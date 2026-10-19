@@ -95,7 +95,7 @@ const website = { websiteOrigin: 'https://example.test', icon: undefined, title:
 const rpcNetwork = { name: 'Ethereum Mainnet', chainId: 1n, httpsRpc: 'https://rpc.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
 const signerEntry = { type: 'contact' as const, name: 'Signer', address: signerAddress, entrySource: 'User' as const, chainId: 1n }
 const recipientEntry = { type: 'contact' as const, name: 'Recipient', address: recipientAddress, entrySource: 'User' as const, chainId: 1n }
-const walletDependentReason = 'Wallets disagree on whether this message is hex-encoded bytes or text.'
+const walletDependentReason = 'Wallets may read this message differently, as hex-encoded bytes or text.'
 const uniqueRequestIdentifier = (requestId: number) => ({ requestId, requestSocket: { tabId: 1, connectionName: 0n } })
 // The extension generates one instance id per pending request; a refreshed request keeps it.
 const instanceIdFor = (requestId: number, payload: string) => `instance ${ requestId } ${ payload }`
@@ -237,6 +237,7 @@ const renderConfirmTransaction = async () => {
 	return {
 		pushPendingRequests,
 		isCheckBoxShown: () => findCheckBox() !== undefined,
+		isTextShown: (text: string) => dom.document.body.textContent?.includes(text) === true,
 		isApproveDisabled: () => getAttribute(findApproveButton(), 'disabled') !== undefined,
 		// The DOM mock does not synthesize input events, so this calls the handler Preact registered, as a user tick would.
 		acknowledge: async () => {
@@ -443,5 +444,16 @@ test('does not send a rejection when the clicked request is replaced under the s
 	// Rejecting the replacement names its own instance.
 	await popup.reject()
 	assert.deepEqual(getConfirmDialogDecisions('reject').filter(({ requestId }) => requestId === 500), [{ requestId: 500, instanceId: 'replacement instance' }])
+	await popup.unmount()
+})
+
+test('shows a wallet-dependent message as written and requires an acknowledgement before approving it', async () => {
+	const popup = await renderConfirmTransaction()
+	await popup.pushPendingRequests([makeQuarantinedMessage(9, '0x6869zz')])
+	assert.equal(popup.isTextShown('0x6869zz'), true)
+	assert.equal(popup.isCheckBoxShown(), true)
+	assert.equal(popup.isApproveDisabled(), true)
+	await popup.acknowledge()
+	assert.equal(popup.isApproveDisabled(), false)
 	await popup.unmount()
 })

@@ -534,6 +534,8 @@ function SuccessfulTransactionCardContent(param: SuccessfulTransactionCardConten
 
 type CheckBoxesParams = {
 	currentPendingTransactionOrSignableMessage: ReadonlySignal<PendingTransactionOrSignableMessage | undefined>,
+	// Derived once by ConfirmTransaction, so the checkbox and the approval gate read the same acknowledgement.
+	approvalAcknowledgement: ReadonlySignal<ApprovalAcknowledgement | undefined>,
 	acknowledgedApprovalKey: Signal<string | undefined>,
 	addressBookEntries?: readonly AddressBookEntry[],
 }
@@ -592,7 +594,7 @@ export const CheckBoxes = (params: CheckBoxesParams) => {
 		]
 		: []
 	const addressBookEntries = [...visualizedAddressBookEntries, ...(params.addressBookEntries ?? [])]
-	const acknowledgement = getApprovalAcknowledgement(current)
+	const acknowledgement = params.approvalAcknowledgement.value
 	// Rendered with signer errors too, so a request that failed in the wallet can be acknowledged again and retried.
 	const acknowledgementCheckBox = acknowledgement === undefined ? <></> : <ErrorCheckBox
 		text = { acknowledgement.text }
@@ -1159,7 +1161,7 @@ export function ConfirmTransaction() {
 							</> }
 						</div>
 						<nav class = 'window-footer popup-button-row' style = 'position: sticky; bottom: 0; width: 100%;'>
-							<CheckBoxes currentPendingTransactionOrSignableMessage = { currentPendingTransactionOrSignableMessage } acknowledgedApprovalKey = { acknowledgedApprovalKey } addressBookEntries = { completeVisualizedSimulation.value.addressBookEntries } />
+							<CheckBoxes currentPendingTransactionOrSignableMessage = { currentPendingTransactionOrSignableMessage } approvalAcknowledgement = { approvalAcknowledgement } acknowledgedApprovalKey = { acknowledgedApprovalKey } addressBookEntries = { completeVisualizedSimulation.value.addressBookEntries } />
 					<ConfirmationButtons
 						currentPendingTransactionOrSignableMessage = { currentPendingTransactionOrSignableMessage.value }
 						reject = { reject }
