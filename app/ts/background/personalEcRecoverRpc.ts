@@ -4,11 +4,8 @@ import type { SignedMessageTransaction } from '../types/visualizer-types.js'
 import type { InterceptedRequest } from '../utils/requests.js'
 import { JSON_RPC_ERROR_CODE_INVALID_PARAMS } from '../utils/constants.js'
 import { isHexString } from '../utils/ethereumBytes.js'
-import { hashMessage, recoverAddress, type Hex } from '../utils/ethereumPrimitives.js'
+import { hashMessage, tryRecoverAddress, type Hex } from '../utils/ethereumPrimitives.js'
 import { findSimulatedPersonalSignSigner } from '../simulation/services/simulationPersonalSigning.js'
-
-// The micro-eth-signer @noble/curves build throws these (including its 'infinify' typo) when caller-supplied r and s cannot be recovered: r or s outside 1..n-1, an r that is not a curve x-coordinate, or a recovery that lands on the point at infinity.
-const UNRECOVERABLE_SIGNATURE_ERROR_PREFIXES = ['invalid signature r: ', 'invalid signature s: ', 'bad point: is not on curve', 'invalid recovery: point at infinify'] as const
 
 const invalidPersonalEcRecoverRequest = (message: string): RPCReply => ({
 	type: 'result',
@@ -27,15 +24,9 @@ const hashPersonalEcRecoverMessage = (message: string) => {
 	return hashMessage({ raw: message.length % 2 === 0 ? message : `0x0${ message.slice(2) }` })
 }
 
-const isUnrecoverableSignatureError = (error: unknown) => error instanceof Error && UNRECOVERABLE_SIGNATURE_ERROR_PREFIXES.some((prefix) => error.message.startsWith(prefix))
-
 const recoverSigner = async (messageHash: Hex, signature: RecoverableMessageSignature) => {
-	try {
-		return BigInt(await recoverAddress({ hash: messageHash, signature }))
-	} catch (error: unknown) {
-		if (isUnrecoverableSignatureError(error)) return undefined
-		throw error
-	}
+	const recovery = await tryRecoverAddress({ hash: messageHash, signature })
+	return recovery.type === 'recovered' ? BigInt(recovery.address) : undefined
 }
 
 // Answered locally in every mode: recovery is pure computation. Signatures the simulation handed out for personal_sign resolve to their simulated signer instead of the mock signing key.
