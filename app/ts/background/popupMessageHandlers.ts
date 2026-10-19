@@ -1,6 +1,6 @@
 import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
-import { captureSimulationSnapshot, getFailedTransactionPreview, getUpdatedSimulationStackSnapshot, getUpdatedSimulationState, withFailedTransactionPreview } from './simulationUpdating.js'
+import { captureSimulationSnapshot, getUpdatedSimulationStackSnapshot, getUpdatedSimulationState, withFailedTransactionPreviewUnlessCancelled } from './simulationUpdating.js'
 import { getSettings, setUseTabsInsteadOfPopup, setPage, getMakeCurrentAddressRich, setMetamaskCompatibilityMode, setSafeAppsCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, updateMakeCurrentAddressRich, updateFixedMakeMeRichList } from './settings.js'
 import { getPendingTransactionsAndMessages, getTabState, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests, updateTransactionState, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, getSafeTransactionStacks } from './storageVariables.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
@@ -567,16 +567,17 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 			if (first.transactionOrMessageCreationStatus !== 'Simulated' && first.transactionOrMessageCreationStatus !== 'FailedToSimulate') return
 			const popupVisualisation = first.popupVisualisation
 			try {
-				const refreshedPopupVisualisation: ConfirmTransactionTransactionSingleVisualization = popupVisualisation.statusCode === 'failed' || popupVisualisation.data.transactionToSimulate.success === false
-					? withFailedTransactionPreview(popupVisualisation, await getFailedTransactionPreview(ethereum, requestAbortController, first.transactionToSimulate))
+				const refreshedPopupVisualisation: ConfirmTransactionTransactionSingleVisualization | undefined = popupVisualisation.statusCode === 'failed' || popupVisualisation.data.transactionToSimulate.success === false
+					? await withFailedTransactionPreviewUnlessCancelled(ethereum, requestAbortController, first.transactionToSimulate, popupVisualisation)
 					: {
 						statusCode: 'success',
 						data: modifyObject(popupVisualisation.data, { ...await visualizeSimulatorState(popupVisualisation.data.simulationState, ethereum, tokenPriceService, requestAbortController) })
 					}
+				if (refreshedPopupVisualisation === undefined) return
 				await updatePendingTransactionOrMessage(first.uniqueRequestIdentifier, async (current) => {
 					if (current.type !== 'Transaction' || (current.transactionOrMessageCreationStatus !== 'Simulated' && current.transactionOrMessageCreationStatus !== 'FailedToSimulate')) return current
-					// A simulation run stored during the metadata lookups has another id even within the same second, so the metadata of the older run must not replace it. A run stored by an older version has no id and is never replaced.
-					if (popupVisualisation.data.simulationId === undefined || current.popupVisualisation.data.simulationId !== popupVisualisation.data.simulationId) return current
+					// A simulation run stored during the metadata lookups has another id even within the same second, so the metadata of the older run must not replace it.
+					if (current.popupVisualisation.data.simulationId !== popupVisualisation.data.simulationId) return current
 					return modifyObject(current, { popupVisualisation: refreshedPopupVisualisation })
 				})
 				const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {

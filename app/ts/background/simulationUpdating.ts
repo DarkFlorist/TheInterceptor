@@ -217,10 +217,31 @@ export async function getFailedTransactionPreview(ethereum: EthereumClientServic
 	return { addressBookEntries, parsedInputData }
 }
 
-export const withFailedTransactionPreview = <Visualisation extends { readonly data: object }>(visualisation: Visualisation, failedTransactionPreview: FailedTransactionPreview): Visualisation => ({
-	...visualisation,
-	data: { ...visualisation.data, failedTransactionPreview },
-})
+// Missing names or ABIs must not hide why the transaction failed, so an RPC failure or a newer refresh interrupting the lookup leaves the failure as it is. Any other error is a defect and propagates to withFailedTransactionPreviewUnlessCancelled.
+async function tryGetFailedTransactionPreview(ethereum: EthereumClientService, requestAbortController: AbortController | undefined, transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed): Promise<FailedTransactionPreview | undefined> {
+	try {
+		return await getFailedTransactionPreview(ethereum, requestAbortController, transactionToSimulate)
+	} catch (error: unknown) {
+		if (isExpectedInfrastructureError(error)) return undefined
+		throw error
+	}
+}
+
+/**
+ * Attaches a freshly resolved failure preview to a confirmation that shows a transaction failure. Both the confirmation simulation and the confirmation metadata refresh attach previews only through this, so they share one error policy.
+ * Undefined when a newer refresh aborted this one, so the caller drops this outdated failure like any cancelled refresh instead of letting it replace the newer refresh's stored result. The signal is checked rather than the lookup error because the lookup can also finish from cached metadata without noticing the abort.
+ */
+export async function withFailedTransactionPreviewUnlessCancelled<Failure extends { readonly data: object }>(ethereum: EthereumClientService, requestAbortController: AbortController | undefined, transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed, failure: Failure): Promise<Failure | undefined> {
+	try {
+		const failedTransactionPreview = await tryGetFailedTransactionPreview(ethereum, requestAbortController, transactionToSimulate)
+		if (requestAbortController?.signal.aborted) return undefined
+		return failedTransactionPreview === undefined ? failure : { ...failure, data: { ...failure.data, failedTransactionPreview } }
+	} catch (error: unknown) {
+		// Callers store the failure returned here, and the dialog opener turns any thrown error into a rejection of the website's request, so a defective preview is reported at this boundary, as refreshConfirmTransactionSimulation reports unexpected simulation errors, and the transaction's own failure is kept.
+		await reportUnexpectedError(error, { code: 'failed_transaction_preview_failed' })
+		return requestAbortController?.signal.aborted ? undefined : failure
+	}
+}
 
 async function getDelegationAddressesForSimulation(
 	simulationStateInput: SimulationStateInput,

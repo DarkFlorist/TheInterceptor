@@ -37,6 +37,12 @@ const FailedTransactionPreview = funtypes.ReadonlyObject({
 	parsedInputData: EnrichedEthereumInputData,
 })
 
+// Confirmations stored by versions without run ids parse as run 0, which is older than any run because getNextConfirmationSimulationId hands out ids from 1 upwards: a metadata refresh still refreshes such a confirmation, and its result never replaces a newer run.
+const ConfirmationSimulationId = funtypes.Union(funtypes.Number, funtypes.Undefined).withParser({
+	parse: (simulationId) => ({ success: true, value: simulationId ?? 0 }),
+	serialize: (simulationId) => ({ success: true, value: simulationId }),
+})
+
 type ConfirmTransactionSimulationBaseData = funtypes.Static<typeof ConfirmTransactionSimulationBaseData>
 const ConfirmTransactionSimulationBaseData = funtypes.ReadonlyObject({
 	activeAddress: EthereumAddress,
@@ -45,9 +51,9 @@ const ConfirmTransactionSimulationBaseData = funtypes.ReadonlyObject({
 	uniqueRequestIdentifier: UniqueRequestIdentifier,
 	transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed,
 	signerName: SignerName,
+	// Identifies the confirmation simulation run that produced this visualisation. Unlike CompleteVisualizedSimulation.simulationId, which counts refreshes of the simulation stack, it names one confirmation simulation run of this pending transaction.
+	simulationId: ConfirmationSimulationId,
 }).And(funtypes.ReadonlyPartial({
-	// Identifies the confirmation simulation run that produced this visualisation; confirmations stored by older versions have none.
-	simulationId: funtypes.Number,
 	// Present when the transaction has no simulation results, so the failure view can still show its address-book names and parsed input.
 	failedTransactionPreview: FailedTransactionPreview,
 }))

@@ -5,7 +5,7 @@ import { encodeFunctionCall } from '../../app/ts/utils/abiRuntime.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS, NEW_BLOCK_ABORT } from '../../app/ts/utils/constants.js'
 import type { SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
 import type { WebsiteCreatedEthereumTransaction, WebsiteCreatedEthereumTransactionOrFailed } from '../../app/ts/types/visualizer-types.js'
-import { activeAddress, addressString, created, createFeeValidatingSimulator, createWebsitePort, fakeRequestHandler, fakeRpcNetwork, modules, recipientAddress, simulator, TOO_LITTLE_ETH_FOR_FEES, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
+import { activeAddress, addressString, browserMock, created, createFeeValidatingSimulator, createWebsitePort, fakeRequestHandler, fakeRpcNetwork, isRecord, modules, recipientAddress, simulator, TOO_LITTLE_ETH_FOR_FEES, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
 
 const USDC_ADDRESS = 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48n
 const TRANSFERRED_USDC = 2_500_000n
@@ -205,16 +205,24 @@ test('refreshes the failed transaction preview when the address book changes', a
 	assertUsdcTransferPreview(popupVisualisation.data.failedTransactionPreview, 'Circle USD')
 })
 
-test('does not refresh the metadata of a confirmation stored without a simulation run id', async () => {
+// Rewrites the stored confirmations the way versions without simulation run ids stored them.
+async function forgetStoredSimulationRunIds() {
+	const { pendingTransactionsAndMessages } = await browser.storage.local.get('pendingTransactionsAndMessages')
+	if (!Array.isArray(pendingTransactionsAndMessages)) throw new Error('Missing stored pending transactions')
+	await browser.storage.local.set({ pendingTransactionsAndMessages: pendingTransactionsAndMessages.map((pending: unknown) => {
+		if (!isRecord(pending) || !isRecord(pending.popupVisualisation) || !isRecord(pending.popupVisualisation.data)) return pending
+		const { simulationId: _simulationId, ...dataWithoutSimulationId } = pending.popupVisualisation.data
+		return { ...pending, popupVisualisation: { ...pending.popupVisualisation, data: dataWithoutSimulationId } }
+	}) })
+}
+
+test('refreshes the metadata of a confirmation stored without a simulation run id as older than any run', async () => {
 	await useInvoiceAddressBook()
 	const confirmationSimulator = createFeeValidatingSimulator(TOO_LITTLE_ETH_FOR_FEES)
 	await openUsdcTransferConfirmation(confirmationSimulator)
-	// Stores the confirmation the way versions without simulation run ids did, which a metadata refresh cannot tell apart from a newer run.
-	await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => {
-		if (pending.type !== 'Transaction' || pending.transactionOrMessageCreationStatus !== 'Simulated' || pending.popupVisualisation.statusCode !== 'failed') return pending
-		const { simulationId: _simulationId, ...dataWithoutSimulationId } = pending.popupVisualisation.data
-		return { ...pending, popupVisualisation: { statusCode: 'failed', data: dataWithoutSimulationId } }
-	})
+	const runId = (await getPendingFailedTransactionVisualisation()).data.simulationId
+	await forgetStoredSimulationRunIds()
+	assert.equal((await getPendingFailedTransactionVisualisation()).data.simulationId < runId, true, 'a confirmation stored without a run id parses as older than any run')
 	await modules.updateUserAddressBookEntries((entries) => [
 		...entries,
 		{ type: 'ERC20', name: 'Circle USD', symbol: 'USDC', decimals: 6n, address: USDC_ADDRESS, entrySource: 'User', chainId: fakeRpcNetwork.chainId },
@@ -223,9 +231,7 @@ test('does not refresh the metadata of a confirmation stored without a simulatio
 	const { refreshPopupConfirmTransactionMetadata } = await import('../../app/ts/background/popupMessageHandlers.js')
 	await withSilencedConsole(async () => await refreshPopupConfirmTransactionMetadata(confirmationSimulator.ethereum, confirmationSimulator.tokenPriceService, undefined))
 
-	const popupVisualisation = await getPendingFailedTransactionVisualisation()
-	assert.equal(popupVisualisation.data.simulationId, undefined)
-	assertUsdcTransferPreview(popupVisualisation.data.failedTransactionPreview, 'USDC')
+	assertUsdcTransferPreview((await getPendingFailedTransactionVisualisation()).data.failedTransactionPreview, 'Circle USD')
 })
 
 test('keeps a newer simulation run stored during the failure preview metadata refresh even when both runs share a timestamp', async () => {
@@ -341,6 +347,37 @@ for (const { description, createLookupError, isDefect } of failedPreviewLookups)
 		const previewFailureReports = (await getInterceptorErrorDiagnostics()).filter((diagnostic) => diagnostic.code === 'failed_transaction_preview_failed')
 		assert.equal(previewFailureReports.length, isDefect ? 1 : 0, 'a defect is reported once and an RPC failure is not reported')
 		assert.equal((await getLatestUnexpectedError())?.data.message, isDefect ? 'address probe decoder defect' : undefined)
+	})
+}
+
+for (const { description, createLookupError, isDefect } of failedPreviewLookups) {
+	test(`keeps the stored failure and still updates the dialog when the metadata refresh's preview lookup hits ${ description }`, async () => {
+		await useInvoiceAddressBook()
+		const confirmationSimulator = createFeeValidatingSimulator(TOO_LITTLE_ETH_FOR_FEES)
+		await openUsdcTransferConfirmation(confirmationSimulator)
+		const storedFailure = await getPendingFailedTransactionVisualisation()
+		// Forgetting the supplier makes the metadata refresh look it up on chain, where the lookup fails.
+		await modules.updateUserAddressBookEntries((entries) => entries.filter((entry) => entry.address !== recipientAddress))
+		const lookupError = await createLookupError()
+		const ethereumFailingRecipientLookup = new Proxy(confirmationSimulator.ethereum, {
+			get(target, property, receiver) {
+				if (property !== 'getCode') return Reflect.get(target, property, receiver)
+				return async (...getCodeArguments: Parameters<typeof target.getCode>) => {
+					if (getCodeArguments[0] === recipientAddress) throw lookupError
+					return await target.getCode(...getCodeArguments)
+				}
+			},
+		})
+		const { getInterceptorErrorDiagnostics } = await import('../../app/ts/background/storageVariables.js')
+		const { refreshPopupConfirmTransactionMetadata } = await import('../../app/ts/background/popupMessageHandlers.js')
+		browserMock.sentMessages.length = 0
+
+		await withSilencedConsole(async () => await refreshPopupConfirmTransactionMetadata(ethereumFailingRecipientLookup, confirmationSimulator.tokenPriceService, undefined))
+
+		assert.deepEqual(await getPendingFailedTransactionVisualisation(), storedFailure)
+		assert.equal(browserMock.sentMessages.some((message) => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions'), true, 'the rest of the dialog metadata is still refreshed')
+		const previewFailureReports = (await getInterceptorErrorDiagnostics()).filter((diagnostic) => diagnostic.code === 'failed_transaction_preview_failed')
+		assert.equal(previewFailureReports.length, isDefect ? 1 : 0, 'a defect is reported once and an RPC failure is not reported')
 	})
 }
 

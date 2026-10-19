@@ -3,18 +3,18 @@ import { appendTransactionsToInput } from '../simulation/services/SimulationMode
 import { getSignedTransactionForSimulation } from '../simulation/services/simulationTransactionSigning.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { createSafeExecutionPreSimulationTransaction, createSafeSigningSimulationInput } from '../safe/safeSimulation.js'
-import type { ConfirmTransactionTransactionSingleVisualization, FailedTransactionPreview } from '../types/accessRequest.js'
+import type { ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
 import type { SafeTransactionSigningRequest } from '../types/safeTypes.js'
 import type { WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
 import { last } from '../utils/array.js'
 import { NEW_BLOCK_ABORT, JSON_RPC_ERROR_CODE_INTERNAL_ERROR } from '../utils/constants.js'
 import { decodeEthereumError } from '../utils/errorDecoding.js'
-import { JsonRpcResponseError, reportUnexpectedError, isExpectedInfrastructureError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
+import { JsonRpcResponseError, reportUnexpectedError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
 import type { UniqueRequestIdentifier } from '../utils/requests.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { identifyAddress } from './metadataUtils.js'
 import { getSimulationErrorAbis } from './simulationErrorAbi.js'
-import { createSimulationStateWithNonceAndBaseFeeFixing, getCurrentSimulationInput, getFailedTransactionPreview, visualizeSimulatorState, withFailedTransactionPreview } from './simulationUpdating.js'
+import { createSimulationStateWithNonceAndBaseFeeFixing, getCurrentSimulationInput, visualizeSimulatorState, withFailedTransactionPreviewUnlessCancelled } from './simulationUpdating.js'
 import { getInterceptorTransactionStack, getTabState } from './storageVariables.js'
 
 let confirmTransactionAbortController = new AbortController()
@@ -25,38 +25,6 @@ let latestConfirmationSimulationId = 0
 function getNextConfirmationSimulationId() {
 	latestConfirmationSimulationId = Math.max(latestConfirmationSimulationId + 1, Date.now())
 	return latestConfirmationSimulationId
-}
-
-// Missing names or ABIs must not hide why the transaction failed, so an RPC failure or a newer refresh interrupting the lookup leaves the failure view without a preview. Any other error is a defect and propagates.
-async function tryGetFailedTransactionPreview(
-	ethereum: EthereumClientService,
-	requestAbortController: AbortController,
-	transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed,
-): Promise<FailedTransactionPreview | undefined> {
-	try {
-		return await getFailedTransactionPreview(ethereum, requestAbortController, transactionToSimulate)
-	} catch (error: unknown) {
-		if (isExpectedInfrastructureError(error)) return undefined
-		throw error
-	}
-}
-
-// Undefined when a newer refresh aborted this one, so the caller drops this outdated failure like any cancelled refresh instead of letting it replace the newer refresh's stored result. The signal is checked rather than the lookup error because the lookup can also finish from cached metadata without noticing the abort.
-async function withFailedTransactionPreviewUnlessCancelled(
-	ethereum: EthereumClientService,
-	requestAbortController: AbortController,
-	transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed,
-	failure: ConfirmTransactionTransactionSingleVisualization,
-): Promise<ConfirmTransactionTransactionSingleVisualization | undefined> {
-	try {
-		const failedTransactionPreview = await tryGetFailedTransactionPreview(ethereum, requestAbortController, transactionToSimulate)
-		if (requestAbortController.signal.aborted) return undefined
-		return failedTransactionPreview === undefined ? failure : withFailedTransactionPreview(failure, failedTransactionPreview)
-	} catch (error: unknown) {
-		// Every caller stores the failure returned here and none can store one that throws (the dialog opener turns any error into a rejection of the website's request), so a defective preview is reported at this boundary, as the catch below reports unexpected simulation errors, and the transaction's own failure is kept.
-		await reportUnexpectedError(error, { code: 'failed_transaction_preview_failed' })
-		return requestAbortController.signal.aborted ? undefined : failure
-	}
 }
 
 export async function refreshConfirmTransactionSimulation(
