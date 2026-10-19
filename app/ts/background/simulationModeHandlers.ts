@@ -11,7 +11,8 @@ import type { EstimateGasParams, EthBalanceParams, EthBlockByHashParams, EthBloc
 import type { EthSimulateV1Params } from '../types/ethSimulate-types.js'
 import type { Website } from '../types/websiteAccessTypes.js'
 import { METAMASK_ERROR_BLANKET_ERROR } from '../utils/constants.js'
-import { openConfirmTransactionDialogForMessage, openConfirmTransactionDialogForTransaction, openConfirmTransactionDialogForTransactionBatch } from './windows/confirmTransaction.js'
+import { answerRequestsOfClosedConfirmationWindow, openConfirmTransactionDialogForMessage, openConfirmTransactionDialogForTransaction } from './windows/confirmTransaction.js'
+import { openConfirmTransactionDialogForTransactionBatch } from './walletSendCallsConfirmation.js'
 import { canonicalizeWalletSendCalls, getWalletSendCallsBatchId } from './walletSendCalls.js'
 import { printError } from '../utils/errors.js'
 import { openFetchSimulationStackDialogOrGetCachedResult, type SimulationStackSnapshot } from './windows/fetchSimulationStack.js'
@@ -70,7 +71,7 @@ export async function sendCalls(
 	if (!canonicalWalletSendCalls.success) return { type: 'result' as const, method: walletSendCalls.method, error: canonicalWalletSendCalls.error }
 	const binding = { websiteOrigin: website.websiteOrigin, account: activeAddress, chainId }
 	const batchId = canonicalWalletSendCalls.value.params[0].id ?? getWalletSendCallsBatchId(request.uniqueRequestIdentifier)
-	const action = await openConfirmTransactionDialogForTransactionBatch(ethereumClientService, tokenPriceService, request, canonicalWalletSendCalls.value, binding, batchId, website, websiteTabConnections)
+	const action = await openConfirmTransactionDialogForTransactionBatch(ethereumClientService, tokenPriceService, request, canonicalWalletSendCalls.value, binding, batchId, website, websiteTabConnections, answerRequestsOfClosedConfirmationWindow(ethereumClientService, tokenPriceService, websiteTabConnections))
 	if (action.type === 'doNotReply') return action
 	return { method: walletSendCalls.method, ...action }
 }

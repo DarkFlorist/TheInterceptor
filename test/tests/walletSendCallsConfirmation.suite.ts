@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { setSystemTime, test } from 'bun:test'
-import { activeAddress, addressString, browserMock, createWebsitePort, fakeBlock, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, isRecord, modules, recipientAddress, simulator, withSilencedConsole } from './confirmTransactionTestHarness.js'
+import { activeAddress, addressString, browserMock, createDisconnectedPort, createWebsitePort, fakeBlock, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, isRecord, modules, recipientAddress, simulator, withSilencedConsole } from './confirmTransactionTestHarness.js'
 import { createDeferredValue } from './backgroundEthAccountsTestHarness.js'
 import type { PendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
 import type { InterceptorStackOperation } from '../../app/ts/types/visualizer-types.js'
@@ -79,6 +79,18 @@ async function approveBatch(websiteTabConnections: BatchTestConnections, uniqueR
 const getWalletSendCallsReply = (postedMessages: readonly unknown[]) => postedMessages.find((message) => isRecord(message) && message.type === 'result' && message.method === 'wallet_sendCalls')
 
 const getStackBatchTransactions = async () => (await modules.getInterceptorTransactionStack()).operations.flatMap((operation) => operation.type === 'Transaction' ? [operation.preSimulationTransaction] : [])
+
+const getBatchIdRecords = async () => {
+	const { getWalletSendCallsBatchIds } = await import('../../app/ts/background/storageVariables.js')
+	return await getWalletSendCallsBatchIds()
+}
+
+const isBatchIdInUse = async (batchId: string) => {
+	const { isWalletSendCallsIdInUse } = await import('../../app/ts/background/walletSendCalls.js')
+	return await isWalletSendCallsIdInUse(website.websiteOrigin, batchId)
+}
+
+const withBatchId = (batchId: string) => ({ ...walletSendCallsRequest, params: [{ ...walletSendCallsRequest.params[0], id: batchId }] })
 
 async function expectApprovalToBeInvalidated(websiteTabConnections: BatchTestConnections, postedMessages: readonly unknown[], expectedCode: number) {
 	assert.equal(await approveBatch(websiteTabConnections), false)
@@ -174,7 +186,8 @@ test('simulates a wallet_sendCalls batch and only adds it to the simulation stac
 
 	assert.equal(await approveBatch(websiteTabConnections), true)
 
-	assert.deepEqual((await getStackBatchTransactions()).map((transaction) => [transaction.transactionIdentifier, transaction.walletSendCallsBatchId]), pending.transactionsToSimulate.map((transaction) => [transaction.transactionIdentifier, pending.batchId]))
+	assert.deepEqual((await getStackBatchTransactions()).map((transaction) => transaction.transactionIdentifier), pending.transactionsToSimulate.map((transaction) => transaction.transactionIdentifier))
+	assert.deepEqual(await getBatchIdRecords(), [{ websiteOrigin: website.websiteOrigin, batchId: pending.batchId, transactionIdentifiers: pending.transactionsToSimulate.map((transaction) => transaction.transactionIdentifier) }])
 	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
 	const reply = getWalletSendCallsReply(postedMessages)
 	assert.ok(isRecord(reply))
@@ -432,56 +445,339 @@ test('only one of two concurrent batches can claim the same id', async () => {
 	assert.equal((await modules.getPendingTransactionsAndMessages()).length, 1)
 })
 
-// The duplicate check reads the confirmation queue and the simulation stack one after the other. The approval of the first batch appends it to the stack and then removes it from the queue; landing right before or right after the queue read puts that move on either side of the read.
-async function expectBatchIdClaimedWhenApprovedAroundQueueRead(approval: 'beforeQueueRead' | 'afterQueueRead') {
+// The duplicate check reads the confirmation queue and the batch id records together, and then the simulation stack. The approval of the first batch adds its calls to the stack and then removes the batch from the queue; landing right before or right after the first read puts that move on either side of it.
+async function expectBatchIdClaimedWhenApprovedAroundRecordRead(approval: 'beforeRecordRead' | 'afterRecordRead') {
 	const { websiteTabConnections } = await setUpWalletSendCallsTest()
-	const requestWithId = { ...walletSendCallsRequest, params: [{ ...walletSendCallsRequest.params[0], id: '0x01' }] }
-	await requestBatch(websiteTabConnections, requestWithId)
+	await requestBatch(websiteTabConnections, withBatchId('0x01'))
+	const pending = await getPendingBatch()
 	let approvalStarted = false
 	let approvalDuringDuplicateCheck: Promise<boolean | undefined> | undefined
 	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
 		// The approval's own reads, which start before its promise is assigned, pass straight through.
-		if (approvalStarted || !Array.isArray(keys) || !keys.includes('pendingTransactionsAndMessages')) return readStoredItems()
+		if (approvalStarted || !Array.isArray(keys) || !keys.includes('pendingTransactionsAndMessages') || !keys.includes('walletSendCallsBatchIds')) return readStoredItems()
 		approvalStarted = true
-		const queueBeforeApproval = readStoredItems()
+		const recordsBeforeApproval = readStoredItems()
 		approvalDuringDuplicateCheck = approveBatch(websiteTabConnections)
 		await approvalDuringDuplicateCheck
-		return approval === 'beforeQueueRead' ? readStoredItems() : queueBeforeApproval
+		return approval === 'beforeRecordRead' ? readStoredItems() : recordsBeforeApproval
 	})
 
-	const duplicate = await requestBatch(websiteTabConnections, requestWithId, { requestId: 78, requestSocket: socket })
+	const duplicate = await requestBatch(websiteTabConnections, withBatchId('0x01'), { requestId: 78, requestSocket: socket })
 	browserMock.setStorageGetHandler(undefined)
 
 	assert.equal(await approvalDuringDuplicateCheck, true)
 	assert.equal('error' in duplicate ? duplicate.error.code : undefined, 5720)
 	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
-	const stackBatchIds = (await modules.getInterceptorTransactionStack()).operations.map((operation) => operation.type === 'Transaction' ? operation.preSimulationTransaction.walletSendCallsBatchId : undefined)
-	assert.deepEqual(stackBatchIds, ['0x01', '0x01'])
+	assert.deepEqual((await getStackBatchTransactions()).map((transaction) => transaction.transactionIdentifier), pending.transactionsToSimulate.map((transaction) => transaction.transactionIdentifier))
+	assert.deepEqual((await getBatchIdRecords()).map((record) => record.batchId), ['0x01'])
 }
 
-test('approving a batch adds it to the simulation stack before removing it from the confirmation queue', async () => {
+test('a batch id stays claimed when its batch is approved right before the duplicate check reads the confirmation queue and the batch id records', async () => {
+	await expectBatchIdClaimedWhenApprovedAroundRecordRead('beforeRecordRead')
+})
+
+test('a batch id stays claimed when its batch is approved right after the duplicate check reads the confirmation queue and the batch id records', async () => {
+	await expectBatchIdClaimedWhenApprovedAroundRecordRead('afterRecordRead')
+})
+
+test('a batch id is in use after every storage write of its approval, whatever order the confirmation queue and the simulation stack are written in', async () => {
 	const { websiteTabConnections } = await setUpWalletSendCallsTest()
-	await requestBatch(websiteTabConnections)
-	const storageWrites: ('stackUpdated' | 'removedFromQueue')[] = []
-	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
-		if ('interceptorTransactionStack' in items) storageWrites.push('stackUpdated')
-		if (Array.isArray(items.pendingTransactionsAndMessages) && items.pendingTransactionsAndMessages.length === 0) storageWrites.push('removedFromQueue')
+	await requestBatch(websiteTabConnections, withBatchId('0x01'))
+	// Storage is copied after each write and checked once the approval finished, because the check cannot read the simulation stack while a write to it holds the large-state lock.
+	const storageAfterEachWrite: Record<string, unknown>[] = []
+	browserMock.setStorageSetHandler(async (_items, writeStoredItems) => {
 		writeStoredItems()
+		storageAfterEachWrite.push(structuredClone(browserMock.storageState))
 	})
 
 	assert.equal(await approveBatch(websiteTabConnections), true)
 	browserMock.setStorageSetHandler(undefined)
 
-	// The duplicate batch id check reads the queue before the stack and relies on this order.
-	assert.deepEqual(storageWrites, ['stackUpdated', 'removedFromQueue'])
+	const inUseAfterEachWrite: boolean[] = []
+	for (const storedItems of storageAfterEachWrite) {
+		for (const key of Object.keys(browserMock.storageState)) delete browserMock.storageState[key]
+		Object.assign(browserMock.storageState, storedItems)
+		inUseAfterEachWrite.push(await isBatchIdInUse('0x01'))
+	}
+	assert.ok(storageAfterEachWrite.some((storedItems) => 'interceptorTransactionStack' in storedItems))
+	assert.deepEqual(inUseAfterEachWrite.filter((inUse) => !inUse), [])
 })
 
-test('a batch id stays claimed when its batch is approved right before the duplicate check reads the confirmation queue', async () => {
-	await expectBatchIdClaimedWhenApprovedAroundQueueRead('beforeQueueRead')
+test('a batch id is recorded in the storage write that queues its batch and released in the storage write that removes a rejected batch', async () => {
+	const { websiteTabConnections } = await setUpWalletSendCallsTest()
+	const queueWrites: { readonly queuedBatchIds: readonly unknown[], readonly recordedBatchIds: readonly unknown[] | undefined }[] = []
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		writeStoredItems()
+		if (!Array.isArray(items.pendingTransactionsAndMessages)) return
+		queueWrites.push({
+			queuedBatchIds: items.pendingTransactionsAndMessages.flatMap((pending) => isRecord(pending) && pending.type === 'TransactionBatch' ? [pending.batchId] : []),
+			recordedBatchIds: Array.isArray(items.walletSendCallsBatchIds) ? items.walletSendCallsBatchIds.map((record) => isRecord(record) ? record.batchId : undefined) : undefined,
+		})
+	})
+
+	assert.deepEqual(await requestBatch(websiteTabConnections, withBatchId('0x01')), { type: 'doNotReply' })
+	await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+		method: 'popup_confirmDialog',
+		data: { action: 'reject', uniqueRequestIdentifier: batchRequestIdentifier, errorString: undefined },
+	})
+	browserMock.setStorageSetHandler(undefined)
+
+	assert.deepEqual(queueWrites[0], { queuedBatchIds: ['0x01'], recordedBatchIds: ['0x01'] })
+	assert.deepEqual(queueWrites.at(-1), { queuedBatchIds: [], recordedBatchIds: [] })
+	assert.equal(await isBatchIdInUse('0x01'), false)
+	assert.deepEqual(await requestBatch(websiteTabConnections, withBatchId('0x01'), { requestId: 78, requestSocket: socket }), { type: 'doNotReply' })
 })
 
-test('a batch id stays claimed when its batch is approved right after the duplicate check reads the confirmation queue', async () => {
-	await expectBatchIdClaimedWhenApprovedAroundQueueRead('afterQueueRead')
+test('a batch whose preparation fails releases its id', async () => {
+	const { websiteTabConnections } = await setUpWalletSendCallsTest()
+	let failedPreparation = false
+	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+		// The first simulation settings snapshot is the one the batch preparation takes.
+		if (failedPreparation || !Array.isArray(keys) || !keys.includes('fixedAddressRichList') || !keys.includes('websiteAccess')) return readStoredItems()
+		failedPreparation = true
+		throw new Error('Storage read failed')
+	})
+
+	const reply = await withSilencedConsole(async () => await requestBatch(websiteTabConnections, withBatchId('0x01')))
+	browserMock.setStorageGetHandler(undefined)
+
+	assert.equal(failedPreparation, true)
+	assert.equal('error' in reply ? reply.error.code : undefined, -32603)
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	assert.deepEqual(await getBatchIdRecords(), [])
+	assert.deepEqual(await requestBatch(websiteTabConnections, withBatchId('0x01'), { requestId: 78, requestSocket: socket }), { type: 'doNotReply' })
+})
+
+test('an approved batch keeps its id until its calls leave the simulation stack, and the next batch drops its record', async () => {
+	const { websiteTabConnections } = await setUpWalletSendCallsTest()
+	await requestBatch(websiteTabConnections, withBatchId('0x01'))
+	assert.equal(await approveBatch(websiteTabConnections), true)
+	assert.equal(await isBatchIdInUse('0x01'), true)
+
+	await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
+
+	assert.equal(await isBatchIdInUse('0x01'), false)
+	assert.deepEqual(await requestBatch(websiteTabConnections, withBatchId('0x02'), { requestId: 78, requestSocket: socket }), { type: 'doNotReply' })
+	assert.deepEqual((await getBatchIdRecords()).map((record) => record.batchId), ['0x02'])
+})
+
+test('resetting a corrupt confirmation queue frees the ids of its batches, and the next batch drops their records', async () => {
+	const { websiteTabConnections } = await setUpWalletSendCallsTest()
+	await requestBatch(websiteTabConnections, withBatchId('0x01'))
+	browserMock.storageState.pendingTransactionsAndMessages = [{ type: 'corrupt' }]
+
+	assert.deepEqual(await withSilencedConsole(async () => await modules.getPendingTransactionsAndMessages()), [])
+
+	assert.equal(await isBatchIdInUse('0x01'), false)
+	assert.deepEqual(await requestBatch(websiteTabConnections, withBatchId('0x01'), { requestId: 78, requestSocket: socket }), { type: 'doNotReply' })
+	assert.deepEqual((await getBatchIdRecords()).map((record) => record.transactionIdentifiers), [(await getPendingBatch({ requestId: 78, requestSocket: socket })).transactionsToSimulate.map((transaction) => transaction.transactionIdentifier)])
+})
+
+// Answers the batch while focusing the website's tab, which the confirmation window does once its queue is empty, fails. The answer must not depend on that view work, which reports its failure instead.
+async function answerBatchWhileFocusingTheWebsiteTabFails(answer: (websiteTabConnections: BatchTestConnections) => Promise<unknown>) {
+	const { postedMessages, websiteTabConnections } = await setUpWalletSendCallsTest()
+	await requestBatch(websiteTabConnections, withBatchId('0x01'))
+	browserMock.setLiveTabIds([socket.tabId])
+	const updateTab = browser.tabs.update
+	browser.tabs.update = async () => { throw new Error('Transient browser tab update failure') }
+	try {
+		await withSilencedConsole(async () => await answer(websiteTabConnections))
+	} finally {
+		browser.tabs.update = updateTab
+	}
+	const { getPendingTerminalReplies } = await import('../../app/ts/background/pendingTerminalReplies.js')
+	const { getLatestUnexpectedError } = await import('../../app/ts/background/storageVariables.js')
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	assert.deepEqual(await getPendingTerminalReplies(), [])
+	assert.equal((await getLatestUnexpectedError())?.data.code, 'wallet_send_calls_confirmation_view_update_failed')
+	const reply = getWalletSendCallsReply(postedMessages)
+	assert.ok(isRecord(reply))
+	return reply
+}
+
+test('an approved batch is answered even when the confirmation window work after its approval fails', async () => {
+	const reply = await answerBatchWhileFocusingTheWebsiteTabFails(async (websiteTabConnections) => assert.equal(await approveBatch(websiteTabConnections), true))
+
+	assert.deepEqual(reply.result, { id: '0x01' })
+	assert.equal((await getStackBatchTransactions()).length, 2)
+	assert.equal(await isBatchIdInUse('0x01'), true)
+})
+
+test('a rejected batch is answered even when the confirmation window work after its rejection fails', async () => {
+	const reply = await answerBatchWhileFocusingTheWebsiteTabFails(async (websiteTabConnections) => assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+		method: 'popup_confirmDialog',
+		data: { action: 'reject', uniqueRequestIdentifier: batchRequestIdentifier, errorString: undefined },
+	}), true))
+
+	assert.ok(isRecord(reply.error))
+	assert.equal(reply.error.code, 4001)
+	assert.deepEqual(await getStackBatchTransactions(), [])
+	assert.equal(await isBatchIdInUse('0x01'), false)
+})
+
+// Approves the batch while its admission focuses the confirmation window, after the preview was stored, and then fails that focus, so the admission's cleanup runs after the approval already answered the website. With an interrupted delivery, the approval's answer stays queued until the website's connection is flushed.
+async function approveWhileAdmissionFocusesItsWindow(delivery: 'delivered' | 'interrupted') {
+	const { postedMessages, websiteTabConnections } = await setUpWalletSendCallsTest()
+	const connection = websiteTabConnections.get(socket.tabId)?.connections[modules.websiteSocketToString(socket)]
+	if (connection === undefined) throw new Error('Missing website connection')
+	const websitePort = connection.port
+	let approvalStarted = false
+	const updateWindow = browser.windows.update
+	browser.windows.update = async (...parameters: Parameters<typeof browser.windows.update>) => {
+		if (approvalStarted || await getStoredPreviewSimulationId(batchRequestIdentifier) === undefined) return await updateWindow(...parameters)
+		approvalStarted = true
+		if (delivery === 'interrupted') connection.port = createDisconnectedPort().port
+		assert.equal(await approveBatch(websiteTabConnections), delivery === 'delivered')
+		connection.port = websitePort
+		throw new Error('Transient window focus failure')
+	}
+	let admissionReply: unknown
+	try {
+		admissionReply = await withSilencedConsole(async () => await requestBatch(websiteTabConnections, withBatchId('0x01')))
+	} finally {
+		browser.windows.update = updateWindow
+	}
+
+	assert.equal(approvalStarted, true)
+	assert.deepEqual(admissionReply, { type: 'doNotReply' })
+	if (delivery === 'interrupted') assert.equal(await modules.flushPendingTerminalRepliesForSocket(websiteTabConnections, socket), 1)
+	const replies = postedMessages.filter((message) => isRecord(message) && message.type === 'result' && message.method === 'wallet_sendCalls')
+	assert.deepEqual(replies.map((reply) => isRecord(reply) ? [reply.result, reply.error] : undefined), [[{ id: '0x01' }, undefined]])
+	assert.equal((await getStackBatchTransactions()).length, 2)
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	assert.equal(await isBatchIdInUse('0x01'), true)
+}
+
+test('a batch approved while its admission focuses the confirmation window is not rejected when that focus fails', async () => {
+	await approveWhileAdmissionFocusesItsWindow('delivered')
+})
+
+test('a batch approved while its admission focuses the confirmation window is answered only by its queued approval when that focus fails', async () => {
+	await approveWhileAdmissionFocusesItsWindow('interrupted')
+})
+
+const getCallsStatus = async (batchId: string) => {
+	const { getSimulatedCallsStatus } = await import('../../app/ts/background/walletSendCalls.js')
+	const { getCurrentSimulationInput, buildExecutionSimulationStateFromPreparedInput, prepareSimulationInputForRpc } = await import('../../app/ts/background/simulationUpdating.js')
+	const executionState = await buildExecutionSimulationStateFromPreparedInput(await prepareSimulationInputForRpc(await getCurrentSimulationInput(), simulator.ethereum), simulator.ethereum)
+	return await getSimulatedCallsStatus(simulator.ethereum, { kind: 'simulated', value: executionState }, { method: 'wallet_getCallsStatus', params: [batchId] }, website.websiteOrigin)
+}
+
+const getCallsStatusCode = async (batchId: string) => {
+	const status = await getCallsStatus(batchId)
+	if (status.type !== 'result') return undefined
+	if ('error' in status) return status.error.code
+	return isRecord(status.result) ? status.result.status : undefined
+}
+
+// Approves a batch, then restores storage as it was right after the approval added the calls to the simulation stack, as a restart at that point leaves it: the calls are on the stack and the batch is still in the confirmation queue, unanswered.
+async function restoreApprovalInterruptedAfterItsCommit() {
+	const { postedMessages, websiteTabConnections } = await setUpWalletSendCallsTest()
+	await requestBatch(websiteTabConnections, withBatchId('0x01'))
+	let storageAfterCommit: Record<string, unknown> | undefined
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		writeStoredItems()
+		if ('interceptorTransactionStack' in items && storageAfterCommit === undefined) storageAfterCommit = structuredClone(browserMock.storageState)
+	})
+	assert.equal(await approveBatch(websiteTabConnections), true)
+	browserMock.setStorageSetHandler(undefined)
+	if (storageAfterCommit === undefined) throw new Error('The approval did not write the simulation stack')
+	for (const key of Object.keys(browserMock.storageState)) delete browserMock.storageState[key]
+	Object.assign(browserMock.storageState, storageAfterCommit)
+	postedMessages.length = 0
+	assert.equal((await getStackBatchTransactions()).length, 2)
+	assert.equal((await modules.getPendingTransactionsAndMessages()).length, 1)
+	return { postedMessages, websiteTabConnections }
+}
+
+async function expectInterruptedApprovalToBeFinished(websiteTabConnections: BatchTestConnections, postedMessages: readonly unknown[]) {
+	const reply = getWalletSendCallsReply(postedMessages)
+	assert.ok(isRecord(reply))
+	assert.deepEqual(reply.result, { id: '0x01' })
+	assert.equal(reply.error, undefined)
+	assert.equal((await getStackBatchTransactions()).length, 2)
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	assert.equal(await isBatchIdInUse('0x01'), true)
+	assert.equal(await getCallsStatusCode('0x01'), 200)
+	const duplicate = await requestBatch(websiteTabConnections, withBatchId('0x01'), { requestId: 78, requestSocket: socket })
+	assert.equal('error' in duplicate ? duplicate.error.code : undefined, 5720)
+}
+
+test('an approval interrupted after its commit is finished as approved when its missing window is answered at startup', async () => {
+	const { postedMessages, websiteTabConnections } = await restoreApprovalInterruptedAfterItsCommit()
+
+	await modules.resolvePendingRequestsForMissingConfirmationWindows(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections)
+
+	await expectInterruptedApprovalToBeFinished(websiteTabConnections, postedMessages)
+})
+
+test('approving again after an approval was interrupted after its commit finishes it without adding its calls twice', async () => {
+	const { postedMessages, websiteTabConnections } = await restoreApprovalInterruptedAfterItsCommit()
+
+	assert.equal(await approveBatch(websiteTabConnections), true)
+
+	await expectInterruptedApprovalToBeFinished(websiteTabConnections, postedMessages)
+})
+
+test('rejecting a batch whose approval was interrupted after its commit finishes it as approved', async () => {
+	const { postedMessages, websiteTabConnections } = await restoreApprovalInterruptedAfterItsCommit()
+
+	await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+		method: 'popup_confirmDialog',
+		data: { action: 'reject', uniqueRequestIdentifier: batchRequestIdentifier, errorString: undefined },
+	})
+
+	await expectInterruptedApprovalToBeFinished(websiteTabConnections, postedMessages)
+})
+
+test('refreshing the preview of a batch whose approval was interrupted after its commit leaves it as it is', async () => {
+	const { websiteTabConnections } = await restoreApprovalInterruptedAfterItsCommit()
+	const storedBatch = await getPendingBatch()
+
+	await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
+
+	assert.deepEqual(await getPendingBatch(), storedBatch)
+	assert.equal(await approveBatch(websiteTabConnections), true)
+	assert.equal((await getStackBatchTransactions()).length, 2)
+})
+
+// After an interrupted approval the user can still remove the batch's calls from the simulation stack. Nothing was executed in simulation mode, so the batch is then resolved as not approved.
+async function resolveInterruptedApprovalAfterItsCallsWereRemoved(action: 'reject' | 'noResponse') {
+	const { postedMessages, websiteTabConnections } = await restoreApprovalInterruptedAfterItsCommit()
+	await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
+
+	await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+		method: 'popup_confirmDialog',
+		data: action === 'reject' ? { action, uniqueRequestIdentifier: batchRequestIdentifier, errorString: undefined } : { action, uniqueRequestIdentifier: batchRequestIdentifier },
+	})
+
+	const reply = getWalletSendCallsReply(postedMessages)
+	assert.ok(isRecord(reply) && isRecord(reply.error))
+	assert.equal(reply.error.code, 4001)
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	assert.deepEqual(await getStackBatchTransactions(), [])
+	assert.deepEqual(await getBatchIdRecords(), [])
+	assert.equal(await isBatchIdInUse('0x01'), false)
+}
+
+test('rejecting a batch whose interrupted approval had its calls removed from the simulation stack answers 4001 and releases its id', async () => {
+	await resolveInterruptedApprovalAfterItsCallsWereRemoved('reject')
+})
+
+test('no response to a batch whose interrupted approval had its calls removed from the simulation stack answers 4001 and releases its id', async () => {
+	await resolveInterruptedApprovalAfterItsCallsWereRemoved('noResponse')
+})
+
+test('resetting a corrupt confirmation queue keeps the id of a batch whose interrupted approval was committed', async () => {
+	await restoreApprovalInterruptedAfterItsCommit()
+	browserMock.storageState.pendingTransactionsAndMessages = [{ type: 'corrupt' }]
+
+	assert.deepEqual(await withSilencedConsole(async () => await modules.getPendingTransactionsAndMessages()), [])
+
+	assert.equal((await getStackBatchTransactions()).length, 2)
+	assert.deepEqual((await getBatchIdRecords()).map((record) => record.batchId), ['0x01'])
+	assert.equal(await isBatchIdInUse('0x01'), true)
+	assert.equal(await getCallsStatusCode('0x01'), 200)
 })
 
 test('an RPC failure while refreshing a batch keeps its previous simulation', async () => {
@@ -968,9 +1264,9 @@ test('approving a batch adds every call to the simulation stack and answers wall
 	const reply = getWalletSendCallsReply(postedMessages)
 	assert.ok(isRecord(reply))
 	assert.deepEqual(reply.result, { id: '0x01' })
-	assert.deepEqual((await getStackBatchTransactions()).map((transaction) => [transaction.transactionIdentifier, transaction.walletSendCallsBatchId, transaction.signedTransaction.to]), [
-		[pending.transactionsToSimulate[0]?.transactionIdentifier, '0x01', recipientAddress],
-		[pending.transactionsToSimulate[1]?.transactionIdentifier, '0x01', tokenAddress],
+	assert.deepEqual((await getStackBatchTransactions()).map((transaction) => [transaction.transactionIdentifier, transaction.signedTransaction.to]), [
+		[pending.transactionsToSimulate[0]?.transactionIdentifier, recipientAddress],
+		[pending.transactionsToSimulate[1]?.transactionIdentifier, tokenAddress],
 	])
 
 	const { getSimulatedCallsStatus } = await import('../../app/ts/background/walletSendCalls.js')

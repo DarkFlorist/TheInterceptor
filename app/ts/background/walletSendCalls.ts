@@ -2,20 +2,20 @@ import * as funtypes from 'funtypes'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { getSimulatedTransactionReceipt } from '../simulation/services/SimulationModeEthereumClientService.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
-import type { PendingTransactionBatch, WalletSendCallsBinding } from '../types/accessRequest.js'
+import type { PendingTransactionBatch, PendingTransactionOrSignableMessage, WalletSendCallsBatchIdRecord, WalletSendCallsBinding } from '../types/accessRequest.js'
 import type { RPCReply, Settings } from '../types/interceptor-messages.js'
 import { type SendTransactionParams, WALLET_SEND_CALLS_VERSION, type WalletCallsReceipt, type WalletGetCallsStatus, type WalletSendCalls, type WalletSendCallsCapabilities, type WalletShowCallsStatus } from '../types/JsonRpc-types.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
-import type { ResolvedExecutionSimulationState, WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
+import type { InterceptorTransactionStack, ResolvedExecutionSimulationState, WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
 import { EIP5792_ERROR_ATOMICITY_NOT_SUPPORTED, EIP5792_ERROR_BUNDLE_TOO_LARGE, EIP5792_ERROR_DUPLICATE_ID, EIP5792_ERROR_UNKNOWN_BUNDLE_ID, EIP5792_ERROR_UNSUPPORTED_CHAIN_ID, EIP5792_ERROR_UNSUPPORTED_NON_OPTIONAL_CAPABILITY, JSON_RPC_ERROR_CODE_INVALID_PARAMS, METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER, METAMASK_ERROR_NOT_AUTHORIZED } from '../utils/constants.js'
 import { JsonRpcResponseError } from '../utils/errors.js'
 import { keccak256, stringToBytes } from '../utils/ethereumPrimitives.js'
-import { getUniqueRequestIdentifierString, type InterceptedRequest, type UniqueRequestIdentifier } from '../utils/requests.js'
+import { doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, type InterceptedRequest, type UniqueRequestIdentifier } from '../utils/requests.js'
 import { areEqualUint8Arrays } from '../utils/typed-arrays.js'
 import { getActiveAddress } from './backgroundUtils.js'
 import { getSettings } from './settings.js'
 import { getActiveAddressForCurrentSignerState } from './signerStateOwnership.js'
-import { getInterceptorTransactionStack, getPendingTransactionsAndMessages } from './storageVariables.js'
+import { getInterceptorTransactionStack, getPendingTransactionsAndWalletSendCallsBatchIds, getWalletSendCallsBatchIds, updatePendingTransactionsAndWalletSendCallsBatchIds } from './storageVariables.js'
 import { hasAddressAccess } from './websiteAccessPolicy.js'
 
 // EIP-5792 call batches are only supported in simulation mode, where an approved batch becomes separate transactions on the simulation stack, exactly as it was simulated:
@@ -118,15 +118,56 @@ export const getWalletSendCallsBatchId = (uniqueRequestIdentifier: UniqueRequest
 
 export const getWalletSendCallTransactionIdentifier = (uniqueRequestIdentifier: UniqueRequestIdentifier, callIndex: number) => BigInt(getWalletSendCallsIdentifierHash(uniqueRequestIdentifier, `call:${ callIndex }`))
 
-// Batch ids must be unique per website, because wallet_getCallsStatus looks them up by id and origin.
-export async function isWalletSendCallsIdInUse(websiteOrigin: string, id: string) {
-	// Approval appends a batch to the simulation stack before removing it from the confirmation queue, so reading the queue first cannot miss a batch that moves between the two reads.
-	const inConfirmationQueue = (await getPendingTransactionsAndMessages()).some((pending) => pending.type === 'TransactionBatch' && pending.batchId === id && pending.website.websiteOrigin === websiteOrigin)
-	if (inConfirmationQueue) return true
+// Batch ids must be unique per website, because wallet_getCallsStatus looks them up by id and origin. One store of records answers both whether an id is in use and which calls wallet_getCallsStatus reports for it. A record is added in the storage write that adds its batch to the confirmation queue, and removed in the write that removes a batch that was not approved. Approval adds the batch's calls to the simulation stack, and that stack write alone commits it: a batch whose calls are on the stack is approved even if a restart interrupted the approval before it answered the website, so nothing has to be written atomically with the stack. A record is therefore in use while its batch is in the queue or any of its calls is on the stack, and each admission drops the records that are neither, so the store holds no more batches than the queue and the stack.
+const isRecordOfBatchId = (websiteOrigin: string, batchId: string) => (record: WalletSendCallsBatchIdRecord) => record.websiteOrigin === websiteOrigin && record.batchId === batchId
+
+const hasTransactionOnStack = (transactionIdentifiers: readonly bigint[], stack: InterceptorTransactionStack) => stack.operations.some((operation) => operation.type === 'Transaction' && transactionIdentifiers.includes(operation.preSimulationTransaction.transactionIdentifier))
+
+const getWalletSendCallTransactionIdentifiers = (pendingBatch: PendingTransactionBatch) => pendingBatch.originalRequestParameters.params[0].calls.map((_call, callIndex) => getWalletSendCallTransactionIdentifier(pendingBatch.uniqueRequestIdentifier, callIndex))
+
+// Whether the batch's approval was committed, that is, its calls are on the simulation stack.
+export const isTransactionBatchOnStack = (pendingBatch: PendingTransactionBatch, stack: InterceptorTransactionStack) => hasTransactionOnStack(getWalletSendCallTransactionIdentifiers(pendingBatch), stack)
+
+const isWalletSendCallsBatchIdRecordInUse = (record: WalletSendCallsBatchIdRecord, pendingTransactionsAndMessages: readonly PendingTransactionOrSignableMessage[], stack: InterceptorTransactionStack) =>
+	pendingTransactionsAndMessages.some((pending) => pending.type === 'TransactionBatch' && isRecordOfBatchId(pending.website.websiteOrigin, pending.batchId)(record))
+	|| hasTransactionOnStack(record.transactionIdentifiers, stack)
+
+// Only admissions add records, and they run one at a time while holding the confirmation lock, so an id found free here stays free until the caller adds its batch.
+export async function isWalletSendCallsIdInUse(websiteOrigin: string, batchId: string) {
+	const { pendingTransactionsAndMessages, walletSendCallsBatchIds } = await getPendingTransactionsAndWalletSendCallsBatchIds()
+	// Read after the queue: an approval adds a batch's calls to the stack before it removes the batch from the queue, so a batch that left the queue since the first read is on the stack.
 	const stack = await getInterceptorTransactionStack()
-	return stack.operations.some((operation) => operation.type === 'Transaction'
-		&& operation.preSimulationTransaction.walletSendCallsBatchId === id
-		&& operation.preSimulationTransaction.website.websiteOrigin === websiteOrigin)
+	return walletSendCallsBatchIds.some((record) => isRecordOfBatchId(websiteOrigin, batchId)(record) && isWalletSendCallsBatchIdRecordInUse(record, pendingTransactionsAndMessages, stack))
+}
+
+export async function addPendingTransactionBatch(pendingBatch: PendingTransactionBatch) {
+	const record = { websiteOrigin: pendingBatch.website.websiteOrigin, batchId: pendingBatch.batchId, transactionIdentifiers: getWalletSendCallTransactionIdentifiers(pendingBatch) }
+	await updatePendingTransactionsAndWalletSendCallsBatchIds(async ({ pendingTransactionsAndMessages, walletSendCallsBatchIds }) => {
+		const stack = await getInterceptorTransactionStack()
+		return {
+			pendingTransactionsAndMessages: [...pendingTransactionsAndMessages, pendingBatch],
+			walletSendCallsBatchIds: [...walletSendCallsBatchIds.filter((existingRecord) => isWalletSendCallsBatchIdRecordInUse(existingRecord, pendingTransactionsAndMessages, stack)), record],
+		}
+	})
+}
+
+const withoutPendingBatch = (pendingTransactionsAndMessages: readonly PendingTransactionOrSignableMessage[], pendingBatch: PendingTransactionBatch) => pendingTransactionsAndMessages.filter((pending) => !doesUniqueRequestIdentifiersMatch(pending.uniqueRequestIdentifier, pendingBatch.uniqueRequestIdentifier))
+
+// Removes a batch that was not approved from the confirmation queue and releases its id.
+export async function releasePendingTransactionBatch(pendingBatch: PendingTransactionBatch) {
+	const isRecordOfThisBatch = isRecordOfBatchId(pendingBatch.website.websiteOrigin, pendingBatch.batchId)
+	await updatePendingTransactionsAndWalletSendCallsBatchIds(async ({ pendingTransactionsAndMessages, walletSendCallsBatchIds }) => ({
+		pendingTransactionsAndMessages: withoutPendingBatch(pendingTransactionsAndMessages, pendingBatch),
+		walletSendCallsBatchIds: walletSendCallsBatchIds.filter((record) => !isRecordOfThisBatch(record)),
+	}))
+}
+
+// Removes an approved batch, whose calls are on the simulation stack, from the confirmation queue. Its id stays in use while its calls are on the stack.
+export async function removeApprovedTransactionBatch(pendingBatch: PendingTransactionBatch) {
+	await updatePendingTransactionsAndWalletSendCallsBatchIds(async ({ pendingTransactionsAndMessages, walletSendCallsBatchIds }) => ({
+		pendingTransactionsAndMessages: withoutPendingBatch(pendingTransactionsAndMessages, pendingBatch),
+		walletSendCallsBatchIds,
+	}))
 }
 
 export const walletSendCallsIdInUseError: WalletSendCallsError = { code: EIP5792_ERROR_DUPLICATE_ID, message: 'A wallet_sendCalls bundle with this id was already submitted by this website.' }
@@ -228,10 +269,12 @@ export async function getSimulatedCallsStatus(ethereum: EthereumClientService, s
 	if (simulationState.kind === 'passthrough') return errorReply(request.method, unknownBundleIdError)
 	const currentState = simulationState.value
 	if (currentState.success === false) throw new JsonRpcResponseError(currentState.jsonRpcError)
+	const batchIdRecord = (await getWalletSendCallsBatchIds()).find(isRecordOfBatchId(websiteOrigin, id))
+	if (batchIdRecord === undefined) return errorReply(request.method, unknownBundleIdError)
 	const batchTransactions = currentState.simulatedBlocks
 		.flatMap((block) => block.simulatedTransactions)
 		.map((simulatedTransaction) => simulatedTransaction.preSimulationTransaction)
-		.filter((transaction) => transaction.walletSendCallsBatchId === id && transaction.website.websiteOrigin === websiteOrigin)
+		.filter((transaction) => batchIdRecord.transactionIdentifiers.includes(transaction.transactionIdentifier))
 	const [firstTransaction] = batchTransactions
 	if (firstTransaction === undefined) return errorReply(request.method, unknownBundleIdError)
 	const receipts: WalletCallsReceipt[] = []

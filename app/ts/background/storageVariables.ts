@@ -9,7 +9,7 @@ import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_RPCS } from '../config/defaults.js'
 import { type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
 import { AddressBookEntry, doAddressBookChainIdsMatch, LegacyErc20TokenEntry, type AddressBookEntries, type ChainIdWithUniversal } from '../types/addressBookTypes.js'
 import type { SignerName } from '../types/signerTypes.js'
-import type { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
+import type { PendingAccessRequests, PendingTransactionOrSignableMessage, PendingTransactionOrSignableMessageExceptBatch, WalletSendCallsBatchIdRecord } from '../types/accessRequest.js'
 import type { RpcEntries, RpcNetwork } from '../types/rpc.js'
 import { replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
 import { keccak256, namehash, stringToBytes } from '../utils/ethereumPrimitives.js'
@@ -53,10 +53,42 @@ async function readPendingTransactionsAndMessagesWithRecovery(): Promise<readonl
 	return []
 }
 
+// Corrupt records are dropped, which only releases the ids they held.
+export async function getWalletSendCallsBatchIds(): Promise<readonly WalletSendCallsBatchIdRecord[]> {
+	const result = await browserStorageLocalGet2Result('walletSendCallsBatchIds')
+	return result.success ? result.value.walletSendCallsBatchIds ?? [] : []
+}
+
+type PendingTransactionsAndWalletSendCallsBatchIds = {
+	readonly pendingTransactionsAndMessages: readonly PendingTransactionOrSignableMessage[]
+	readonly walletSendCallsBatchIds: readonly WalletSendCallsBatchIdRecord[]
+}
+
+// The confirmation queue and the wallet_sendCalls batch id records as of one storage read.
+export async function getPendingTransactionsAndWalletSendCallsBatchIds(): Promise<PendingTransactionsAndWalletSendCallsBatchIds> {
+	const result = await browserStorageLocalGet2Result(['pendingTransactionsAndMessages', 'walletSendCallsBatchIds'])
+	if (result.success) return { pendingTransactionsAndMessages: result.value.pendingTransactionsAndMessages ?? [], walletSendCallsBatchIds: result.value.walletSendCallsBatchIds ?? [] }
+	// Either value is corrupt: both are read again while no write can come between, recovering a corrupt queue as getPendingTransactionsAndMessages does.
+	return await pendingTransactionsSemaphore.execute(async () => ({ pendingTransactionsAndMessages: await readPendingTransactionsAndMessagesWithRecovery(), walletSendCallsBatchIds: await getWalletSendCallsBatchIds() }))
+}
+
+// Updates the confirmation queue and the wallet_sendCalls batch id records in one storage write, so a batch and its id record are added and removed together (see walletSendCalls.ts).
+export async function updatePendingTransactionsAndWalletSendCallsBatchIds(update: (current: PendingTransactionsAndWalletSendCallsBatchIds) => Promise<PendingTransactionsAndWalletSendCallsBatchIds>) {
+	await pendingTransactionsSemaphore.execute(async () => {
+		const pendingTransactionsAndMessages = await readPendingTransactionsAndMessagesWithRecovery()
+		await browserStorageLocalSet2(await update({ pendingTransactionsAndMessages, walletSendCallsBatchIds: await getWalletSendCallsBatchIds() }))
+	})
+}
+
 export async function getPendingTransactionsAndMessages(): Promise<readonly PendingTransactionOrSignableMessage[]> {
 	const result = await readPendingTransactionsAndMessages()
 	if (result.success) return result.value
 	return await pendingTransactionsSemaphore.execute(readPendingTransactionsAndMessagesWithRecovery)
+}
+
+// The confirmations of the single-transaction, message and Gnosis Safe flows, without wallet_sendCalls batches.
+export async function getPendingTransactionsAndMessagesExceptBatches(): Promise<readonly PendingTransactionOrSignableMessageExceptBatch[]> {
+	return (await getPendingTransactionsAndMessages()).filter((pending): pending is PendingTransactionOrSignableMessageExceptBatch => pending.type !== 'TransactionBatch')
 }
 
 export const clearPendingTransactions = async () => await updatePendingTransactionOrMessages(async () => [])

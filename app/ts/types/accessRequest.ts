@@ -203,6 +203,14 @@ export const PendingTransactionBatch = funtypes.Intersect(
 	),
 )
 
+// One wallet_sendCalls batch id that a website uses, with the calls that approving its batch adds to the simulation stack (see walletSendCalls.ts for when records are added and removed).
+export type WalletSendCallsBatchIdRecord = funtypes.Static<typeof WalletSendCallsBatchIdRecord>
+export const WalletSendCallsBatchIdRecord = funtypes.ReadonlyObject({
+	websiteOrigin: funtypes.String,
+	batchId: funtypes.String,
+	transactionIdentifiers: funtypes.ReadonlyArray(EthereumQuantity),
+})
+
 type PendingSignableMessage = funtypes.Static<typeof PendingSignableMessage>
 const PendingSignableMessage = funtypes.Intersect(
 	funtypes.ReadonlyObject({
@@ -246,6 +254,8 @@ export const PopupPendingSignableMessage = funtypes.Intersect(
 )
 
 export type PendingTransactionOrSignableMessage = PendingSignableMessage | PendingTransaction | PendingTransactionBatch
+// The confirmations that the single-transaction, message and Gnosis Safe flows handle. wallet_sendCalls batches are confirmed by walletSendCallsConfirmation.ts.
+export type PendingTransactionOrSignableMessageExceptBatch = PendingSignableMessage | PendingTransaction
 const PendingTransactionOrSignableMessageRuntype: funtypes.Runtype<PendingTransactionOrSignableMessage> = funtypes.Union(PendingSignableMessage, PendingTransaction, PendingTransactionBatch)
 export const PendingTransactionOrSignableMessage: typeof PendingTransactionOrSignableMessageRuntype = PendingTransactionOrSignableMessageRuntype
 
