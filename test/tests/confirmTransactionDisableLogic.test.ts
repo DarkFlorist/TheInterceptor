@@ -56,6 +56,7 @@ describe('ConfirmTransaction signable message disable logic', () => {
 			canSignMessage: false,
 			forceSendEnabled: false,
 			hasSupportedRpc: false,
+			requiresAcknowledgement: false,
 		}), true)
 	})
 
@@ -67,7 +68,17 @@ describe('ConfirmTransaction signable message disable logic', () => {
 			canSignMessage: false,
 			forceSendEnabled: true,
 			hasSupportedRpc: false,
+			requiresAcknowledgement: false,
 		}), false)
+	})
+
+	test('disables a signable message with a warning to acknowledge until the user acknowledges it', async () => {
+		;(globalThis as typeof globalThis & { chrome: { runtime: { id: string } } }).chrome = { runtime: { id: 'test-extension' } }
+		const { shouldDisableSignableMessageConfirm } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
+		const quarantinedSignableMessage = { isValidMessage: true, canSignMessage: true, hasSupportedRpc: true, requiresAcknowledgement: true }
+		assert.equal(shouldDisableSignableMessageConfirm({ ...quarantinedSignableMessage, forceSendEnabled: false }), true)
+		assert.equal(shouldDisableSignableMessageConfirm({ ...quarantinedSignableMessage, forceSendEnabled: true }), false)
+		assert.equal(shouldDisableSignableMessageConfirm({ ...quarantinedSignableMessage, requiresAcknowledgement: false, forceSendEnabled: false }), false)
 	})
 
 	test('formats confirm dialog delivery failures for centralized reporting', async () => {

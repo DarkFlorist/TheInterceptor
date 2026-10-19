@@ -1,5 +1,4 @@
 import { Component, type ComponentChild, type ComponentChildren, type JSX } from 'preact'
-import type { Signal } from '@preact/signals'
 import { SomeTimeAgo } from './SomeTimeAgo.js'
 import { resolveSignal, type SignalOrValue } from '../../utils/signals.js'
 
@@ -46,7 +45,8 @@ export function Notice(props: ErrorProps) {
 
 interface ErrorCheckboxProps {
 	text: SignalOrValue<string>
-	checked: Signal<boolean>
+	checked: SignalOrValue<boolean>
+	onChange: (checked: boolean) => void
 	warning?: boolean,
 }
 
@@ -58,8 +58,8 @@ export function ErrorCheckBox(props: ErrorCheckboxProps) {
 			<div class = 'notification' style = { `background-color: ${ boxColor }; padding: 10px;` }>
 				<label class = 'form-control' style = { `color: ${ textColor }; font-size: 1em;` }>
 					<input type = 'checkbox'
-						checked = { props.checked.value }
-						onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { props.checked.value = e.target.checked } } }
+						checked = { resolveSignal(props.checked) }
+						onInput = { event => props.onChange(event.currentTarget.checked) }
 					/>
 					<p class = 'paragraph checkbox-text' style = { `color: ${ textColor };` }> { resolveSignal(props.text) } </p>
 				</label>

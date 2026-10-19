@@ -250,6 +250,10 @@ export const TransactionConfirmation = funtypes.ReadonlyObject({
 			funtypes.ReadonlyObject({
 				uniqueRequestIdentifier: UniqueRequestIdentifier,
 			}),
+			// The pending request instance the user decided on in the popup; the page-chosen request id can be reused by a replacement request.
+			funtypes.ReadonlyPartial({
+				instanceId: funtypes.String,
+			}),
 			funtypes.Union(
 				funtypes.ReadonlyObject({
 					action: funtypes.Literal('signerIncluded'),

@@ -102,8 +102,8 @@ function isNinetyFivePercentNumbersOrASCII(input: string): boolean {
 function SignRequest({ visualizedPersonalSignRequest, renameAddressCallBack, editEnsNamedHashCallBack }: SignRequestParams) {
 	switch (visualizedPersonalSignRequest.type) {
 		case 'NotParsed': {
-			// Unparsed typed data is already readable JSON; only personal_sign messages carry bytes to decode.
-			const decoded = visualizedPersonalSignRequest.method === 'personal_sign' ? decodePersonalSignMessage(visualizedPersonalSignRequest.message) : visualizedPersonalSignRequest.message
+			// Unparsed typed data is already readable JSON; only personal_sign messages carry bytes to decode, read the same way as the message hash.
+			const decoded = visualizedPersonalSignRequest.method === 'personal_sign' ? decodePersonalSignMessage(visualizedPersonalSignRequest.message, visualizedPersonalSignRequest.simulationMode) : visualizedPersonalSignRequest.message
 			const isDecodedAsciiOrNumbers = isNinetyFivePercentNumbersOrASCII(decoded)
 			return <Viewer id = 'personal_sign'>
 				<Viewer.List>

@@ -4,14 +4,15 @@ import type { SignedMessageTransaction } from '../../types/visualizer-types.js'
 import type { EthereumAddress } from '../../types/wire-types.js'
 import { bytes32String } from '../../utils/bigint.js'
 import { hashMessage, hashTypedData, privateKeyToAccount } from '../../utils/ethereumPrimitives.js'
-import { getPersonalSignMessageBytes } from '../../utils/personalSignMessage.js'
+import { getMetaMaskPersonalSignMessageBytes } from '../../utils/personalSignMessage.js'
 import { assertNever } from '../../utils/typescript.js'
 
 const MOCK_PUBLIC_PRIVATE_KEY = 0x1n
 const MOCK_SIMULATION_PRIVATE_KEY = 0x2n
 const ADDRESS_FOR_PRIVATE_KEY_ONE = 0x7E5F4552091A69125d5DfCb7b8C2659029395Bdfn
 
-export const getMessageHashForPersonalSign = (params: PersonalSignParams) => hashMessage({ raw: getPersonalSignMessageBytes(params.params[0]) })
+// The Interceptor signs simulated personal_sign requests itself, so it reads every message one way, as MetaMask does, and the simulation-mode popup shows that same reading.
+export const getMessageHashForPersonalSign = (params: PersonalSignParams) => hashMessage({ raw: getMetaMaskPersonalSignMessageBytes(params.params[0]) })
 
 export const simulatePersonalSign = async (params: SignMessageParams, signingAddress: EthereumAddress) => {
 	const account = privateKeyToAccount(bytes32String(signingAddress === ADDRESS_FOR_PRIVATE_KEY_ONE ? MOCK_PUBLIC_PRIVATE_KEY : MOCK_SIMULATION_PRIVATE_KEY))
@@ -26,7 +27,7 @@ export const simulatePersonalSign = async (params: SignMessageParams, signingAdd
 			return { signature, messageHash }
 		}
 		case 'personal_sign': return {
-			signature: await account.signMessage({ message: { raw: getPersonalSignMessageBytes(params.params[0]) } }),
+			signature: await account.signMessage({ message: { raw: getMetaMaskPersonalSignMessageBytes(params.params[0]) } }),
 			messageHash: getMessageHashForPersonalSign(params)
 		}
 		default: assertNever(params)

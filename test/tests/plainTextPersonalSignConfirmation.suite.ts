@@ -3,14 +3,16 @@ import { test } from 'bun:test'
 import { personalEcRecover } from '../../app/ts/background/personalEcRecoverRpc.js'
 import { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
+import { decodePersonalSignMessage } from '../../app/ts/utils/personalSignMessage.js'
 import { hashMessage } from '../../app/ts/utils/ethereumPrimitives.js'
-import { activeAddress, createWebsitePort, isRecord, modules, simulator, uniqueRequestIdentifier } from './confirmTransactionTestHarness.js'
+import { activeAddress, browserMock, createWebsitePort, isRecord, modules, simulator, uniqueRequestIdentifier as defaultUniqueRequestIdentifier } from './confirmTransactionTestHarness.js'
 
 const plainTextMessage = 'Hello world'
 const website = { websiteOrigin: 'https://plain-text.example', icon: undefined, title: 'Plain text' }
 
-const openPlainTextPersonalSign = async (simulationMode: boolean, postedMessages: unknown[]) => {
+const openPlainTextPersonalSign = async (simulationMode: boolean, postedMessages: unknown[], requestId = defaultUniqueRequestIdentifier.requestId) => {
 	if (activeAddress === undefined) throw new Error('Missing default active address')
+	const uniqueRequestIdentifier = { ...defaultUniqueRequestIdentifier, requestId }
 	const signRequest = { method: 'personal_sign' as const, params: [plainTextMessage, activeAddress] as const }
 	const request = { interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier, ...signRequest }
 	const websiteTabConnections = new Map([[uniqueRequestIdentifier.requestSocket.tabId, { connections: {
@@ -35,7 +37,12 @@ const openPlainTextPersonalSign = async (simulationMode: boolean, postedMessages
 		method: 'popup_confirmDialog',
 		data: { action: 'accept', uniqueRequestIdentifier },
 	})
-	return { signerAddress: activeAddress, accept }
+	// A popup decision names the pending request instance the user saw.
+	const decide = async (decision: { readonly action: 'accept' } | { readonly action: 'reject', readonly errorString: undefined }, instanceId: string) => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+		method: 'popup_confirmDialog',
+		data: { ...decision, uniqueRequestIdentifier, instanceId },
+	})
+	return { signerAddress: activeAddress, accept, decide, instanceId: pendingMessage.instanceId, pendingMessage, websiteTabConnections }
 }
 
 test('forwards an accepted plain-text personal_sign request to the signer with its original parameters', async () => {
@@ -62,4 +69,165 @@ test('answers an accepted plain-text personal_sign request in simulation mode wi
 	const ecRecoverRequest = EthereumJsonRpcRequest.parse({ method: 'personal_ecRecover', params: [plainTextMessage, reply.result] })
 	if (ecRecoverRequest.method !== 'personal_ecRecover') throw new Error('Expected a personal_ecRecover request')
 	assert.deepEqual(await personalEcRecover(ecRecoverRequest, stackMessages), { type: 'result', method: 'personal_ecRecover', result: signerAddress })
+})
+
+test('ignores a popup decision made for another instance of the same request id', async () => {
+	const postedMessages: unknown[] = []
+	const { signerAddress, decide, instanceId } = await openPlainTextPersonalSign(false, postedMessages)
+
+	// The page can reuse a request id, so a decision on a replaced request must not resolve the request now pending under that id.
+	assert.equal(await decide({ action: 'accept' }, 'replaced instance'), false)
+	assert.equal(await decide({ action: 'reject', errorString: undefined }, 'replaced instance'), false)
+	const [stillPending] = await modules.getPendingTransactionsAndMessages()
+	assert.equal(stillPending?.instanceId, instanceId)
+	assert.equal(stillPending?.approvalStatus.status, 'WaitingForUser')
+	assert.equal(postedMessages.some((message) => isRecord(message) && (message.type === 'forwardToSigner' || message.method === 'personal_sign')), false)
+
+	assert.equal(await decide({ action: 'accept' }, instanceId), true)
+	const forwarded = postedMessages.find((message) => isRecord(message) && message.type === 'forwardToSigner')
+	if (!isRecord(forwarded)) throw new Error('Missing forwarded personal_sign request')
+	assert.deepEqual(forwarded.params, [plainTextMessage, addressString(signerAddress)])
+})
+
+const isForwardToSigner = (message: unknown) => isRecord(message) && message.type === 'forwardToSigner'
+const waitUntil = async (condition: () => boolean) => {
+	const deadline = Date.now() + 2_000
+	while (!condition()) {
+		if (Date.now() > deadline) throw new Error('Timed out waiting for the test condition')
+		await new Promise((resolve) => setTimeout(resolve, 5))
+	}
+}
+
+test('resolves popup decisions on a request stored before instance ids existed', async () => {
+	for (const decision of [{ action: 'accept' as const }, { action: 'reject' as const, errorString: undefined }]) {
+		const postedMessages: unknown[] = []
+		const { pendingMessage, decide, websiteTabConnections } = await openPlainTextPersonalSign(false, postedMessages)
+		// Pending storage written before this change has no instance id.
+		const storedPending = browserMock.storageState.pendingTransactionsAndMessages
+		if (!Array.isArray(storedPending) || !isRecord(storedPending[0])) throw new Error('Missing stored pending request')
+		delete storedPending[0].instanceId
+
+		// Startup recovery keeps the request because its confirmation window is still open, then the popup is refreshed.
+		browserMock.setLiveWindowIds([pendingMessage.popupOrTabId.id])
+		browserMock.setLiveTabIds([pendingMessage.popupOrTabId.id])
+		await modules.resolvePendingRequestsForMissingConfirmationWindows(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections)
+		browserMock.sentMessages.length = 0
+		await modules.updateConfirmTransactionView(simulator.ethereum, simulator.tokenPriceService)
+		const popupUpdate = browserMock.sentMessages.find((message) => isRecord(message) && message.method === 'popup_update_confirm_transaction_dialog_pending_transactions')
+		const displayedRequests = isRecord(popupUpdate) && isRecord(popupUpdate.data) ? popupUpdate.data.pendingTransactionAndSignableMessages : undefined
+		const displayedInstanceId = Array.isArray(displayedRequests) && isRecord(displayedRequests[0]) ? displayedRequests[0].instanceId : undefined
+		if (typeof displayedInstanceId !== 'string') throw new Error('Missing displayed instance id')
+
+		const resolution = await decide(decision, displayedInstanceId)
+		if (decision.action === 'accept') {
+			assert.equal(resolution, true)
+			assert.equal(postedMessages.some(isForwardToSigner), true)
+			continue
+		}
+		assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+		assert.equal(postedMessages.some((message) => isRecord(message) && message.method === 'personal_sign' && 'error' in message), true)
+	}
+})
+
+test('forwards the approved request, not a replacement that reuses its request id while the approval is held', async () => {
+	const postedMessages: unknown[] = []
+	const { signerAddress, pendingMessage, decide, instanceId, websiteTabConnections } = await openPlainTextPersonalSign(false, postedMessages, -2)
+	let waitingForSignerWritten = false
+	let approvalPaused = false
+	let resumeApproval: () => void = () => undefined
+	const approvalResumed = new Promise<undefined>((resolve) => { resumeApproval = () => resolve(undefined) })
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		writeStoredItems()
+		const stored = items.pendingTransactionsAndMessages
+		if (Array.isArray(stored) && stored.some((pending) => isRecord(pending) && isRecord(pending.approvalStatus) && pending.approvalStatus.status === 'WaitingForSigner')) waitingForSignerWritten = true
+	})
+	// Holds the first storage read after approval marked the request as waiting for the signer, which is the popup update just before forwarding.
+	browserMock.setStorageGetHandler(async (_keys, readStoredItems) => {
+		if (waitingForSignerWritten && !approvalPaused) {
+			approvalPaused = true
+			await approvalResumed
+		}
+		return readStoredItems()
+	})
+	try {
+		const approval = decide({ action: 'accept' }, instanceId)
+		await waitUntil(() => approvalPaused)
+
+		// The user closes the confirmation window, which rejects the approved request, and the page sends a different message under the same id.
+		await modules.onCloseWindowOrTab(pendingMessage.popupOrTabId, simulator.ethereum, simulator.tokenPriceService, websiteTabConnections)
+		const replacementParameters = { method: 'personal_sign' as const, params: ['Replacement message', signerAddress] as const }
+		await modules.appendPendingTransactionOrMessage({ ...pendingMessage, instanceId: 'replacement instance', originalRequestParameters: replacementParameters, signedMessageTransaction: { ...pendingMessage.signedMessageTransaction, originalRequestParameters: replacementParameters } })
+		resumeApproval()
+		await approval
+
+		const forwardedParameters = postedMessages.filter(isForwardToSigner).map((message) => isRecord(message) ? message.params : undefined)
+		assert.ok(forwardedParameters.length > 0)
+		for (const parameters of forwardedParameters) assert.deepEqual(parameters, [plainTextMessage, addressString(signerAddress)])
+	} finally {
+		resumeApproval()
+		browserMock.setStorageGetHandler(undefined)
+		browserMock.setStorageSetHandler(undefined)
+	}
+})
+
+// Opens personal_sign requests through the real creation path on one website connection.
+const createPersonalSignRequester = (postedMessages: unknown[]) => {
+	if (activeAddress === undefined) throw new Error('Missing default active address')
+	const signerAddress = activeAddress
+	const socket = defaultUniqueRequestIdentifier.requestSocket
+	const websiteTabConnections = new Map([[socket.tabId, { connections: {
+		[modules.websiteSocketToString(socket)]: { port: createWebsitePort(socket, 0, postedMessages), socket, websiteOrigin: website.websiteOrigin, approved: true, wantsToConnect: true },
+	} }]])
+	const requestSignature = async (message: string, requestId: number) => {
+		const signRequest = { method: 'personal_sign' as const, params: [message, signerAddress] as const }
+		const uniqueRequestIdentifier = { requestId, requestSocket: socket }
+		return await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, { interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier, ...signRequest }, { kind: 'message', parameters: signRequest }, false, signerAddress, website, websiteTabConnections)
+	}
+	const decide = async (decision: { readonly action: 'accept' } | { readonly action: 'reject', readonly errorString: undefined }, requestId: number, instanceId: string) => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+		method: 'popup_confirmDialog',
+		data: { ...decision, uniqueRequestIdentifier: { requestId, requestSocket: socket }, instanceId },
+	})
+	// The confirmation window the mock opens stays open, so later requests join it instead of resolving the earlier ones as abandoned.
+	browserMock.setLiveWindowIds([99])
+	browserMock.setLiveTabIds([99])
+	const getPendingMessages = async () => (await modules.getPendingTransactionsAndMessages()).flatMap((pending) => pending.type === 'SignableMessage' && pending.transactionOrMessageCreationStatus === 'Simulated' && pending.visualizedPersonalSignRequest.type === 'NotParsed' ? [{ instanceId: pending.instanceId, visualized: pending.visualizedPersonalSignRequest }] : [])
+	return { signerAddress, requestSignature, decide, getPendingMessages }
+}
+
+const duplicateIdError = { type: 'result', error: { code: -32600, message: 'A request with this id is already awaiting confirmation.' } }
+// Unprefixed hex that MetaMask signs as the bytes of 'Sign all assets away', so signing mode flags it and shows it as written.
+const walletDependentMessage = '5369676e20616c6c206173736574732061776179'
+
+test('refuses a second request under a pending request id, so the reviewed message, its warnings and the forwarded request stay together', async () => {
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	const postedMessages: unknown[] = []
+	const { signerAddress, requestSignature, decide, getPendingMessages } = createPersonalSignRequester(postedMessages)
+	assert.deepEqual(await requestSignature(walletDependentMessage, -2), { type: 'doNotReply' })
+	assert.deepEqual(await requestSignature(plainTextMessage, -2), duplicateIdError)
+
+	const [reviewed, ...otherPending] = await getPendingMessages()
+	if (reviewed === undefined) throw new Error('Missing reviewed request')
+	assert.deepEqual(otherPending, [])
+	assert.equal(reviewed.visualized.message, walletDependentMessage)
+	assert.equal(decodePersonalSignMessage(reviewed.visualized.message, reviewed.visualized.simulationMode), walletDependentMessage)
+	assert.equal(reviewed.visualized.quarantine, true)
+
+	assert.equal(await decide({ action: 'accept' }, -2, reviewed.instanceId), true)
+	const forwarded = postedMessages.filter(isForwardToSigner)
+	assert.deepEqual(forwarded.map((message) => isRecord(message) ? message.params : undefined), [[walletDependentMessage, addressString(signerAddress)]])
+})
+
+test('accepts a request id again once the request pending under it is resolved', async () => {
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	const postedMessages: unknown[] = []
+	const { requestSignature, decide, getPendingMessages } = createPersonalSignRequester(postedMessages)
+	assert.deepEqual(await requestSignature(walletDependentMessage, -3), { type: 'doNotReply' })
+	assert.deepEqual(await requestSignature(plainTextMessage, -3), duplicateIdError)
+	const [first] = await getPendingMessages()
+	if (first === undefined) throw new Error('Missing first request')
+	await decide({ action: 'reject', errorString: undefined }, -3, first.instanceId)
+
+	assert.deepEqual(await requestSignature(plainTextMessage, -3), { type: 'doNotReply' })
+	const pendingAfterReuse = await getPendingMessages()
+	assert.deepEqual(pendingAfterReuse.map(({ visualized }) => [visualized.message, visualized.quarantine]), [[plainTextMessage, false]])
 })

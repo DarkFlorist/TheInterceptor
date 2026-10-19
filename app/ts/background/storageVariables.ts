@@ -79,8 +79,15 @@ export async function updatePendingTransactionOrMessage(uniqueRequestIdentifier:
 	})
 }
 
+// Returns false without appending when a request with the same id is already pending. Pages choose request ids and the bridge does not deduplicate negative ones, so refusing duplicates here, atomically with the append, keeps every lookup of a pending request by id unambiguous.
 export async function appendPendingTransactionOrMessage(pendingTransactionOrMessage: PendingTransactionOrSignableMessage) {
-	await updatePendingTransactionOrMessages(async (pendingTransactionsOrMessages) => [...pendingTransactionsOrMessages, pendingTransactionOrMessage])
+	let appended = false
+	await updatePendingTransactionOrMessages(async (pendingTransactionsOrMessages) => {
+		if (pendingTransactionsOrMessages.some((pending) => doesUniqueRequestIdentifiersMatch(pending.uniqueRequestIdentifier, pendingTransactionOrMessage.uniqueRequestIdentifier))) return pendingTransactionsOrMessages
+		appended = true
+		return [...pendingTransactionsOrMessages, pendingTransactionOrMessage]
+	})
+	return appended
 }
 
 export async function removePendingTransactionOrMessage(uniqueRequestIdentifier: UniqueRequestIdentifier) {

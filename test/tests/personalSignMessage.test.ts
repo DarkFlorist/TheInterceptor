@@ -6,12 +6,13 @@ import { getMessageHashForPersonalSign, simulatePersonalSign } from '../../app/t
 import { EthereumJsonRpcRequest, JsonRpcResponse } from '../../app/ts/types/JsonRpc-types.js'
 import type { PersonalSignParams } from '../../app/ts/types/jsonRpc-signing-types.js'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
+import type { SignerName } from '../../app/ts/types/signerTypes.js'
 import type { SignedMessageTransaction } from '../../app/ts/types/visualizer-types.js'
 import { encodeAbiValues } from '../../app/ts/utils/abiRuntime.js'
 import { bytesFromHex } from '../../app/ts/utils/ethereumBytes.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
 import { hashMessage, keccak256, privateKeyToAccount, recoverAddress, type Hex } from '../../app/ts/utils/ethereumPrimitives.js'
-import { decodePersonalSignMessage } from '../../app/ts/utils/personalSignMessage.js'
+import { decodePersonalSignMessage, getPersonalSignMessageBytes } from '../../app/ts/utils/personalSignMessage.js'
 import { eth_getBlockByNumber_goerli_8443561_true } from '../RPCResponses.js'
 import { createEthereumWithGetBlockCounter, installBrowserMock, loadModules } from './backgroundEthAccountsTestHarness.js'
 
@@ -20,6 +21,10 @@ const mockSimulationKeyAddress = 0x2B5AD5c4795c026514f8317c7a215E218DcCD6cFn
 const plainTextMessage = 'Hello world'
 // The UTF-8 bytes of plainTextMessage, as viem and ethers send them.
 const hexEncodedPlainTextMessage = '0x48656c6c6f20776f726c64'
+// Unprefixed hex digits that MetaMask signs as the bytes of 'Sign in' while Rabby signs the digits themselves as text.
+const unprefixedHexMessage = '5369676e20696e'
+// Unprefixed hex digits that MetaMask signs as the bytes of 'hi' while Rabby signs the text 6869.
+const shortUnprefixedHexMessage = '6869'
 const website = { websiteOrigin: 'https://example.test', icon: undefined, title: undefined }
 
 const personalSign = (message: string): PersonalSignParams => ({ method: 'personal_sign', params: [message, signerAddress] })
@@ -43,8 +48,10 @@ const createSignedMessage = (message: string, simulationMode: boolean): SignedMe
 	}
 }
 
-// Each message next to the bytes MetaMask signs for personal_sign: SignatureController normalizePersonalMessageData, then the keyring's legacyToBuffer.
-const personalSignCases: readonly { readonly message: string, readonly signedBytes: Hex }[] = [
+type SignedBytesCase = { readonly message: string, readonly signedBytes: Hex }
+
+// Each message next to the bytes MetaMask signs for personal_sign: SignatureController normalizePersonalMessageData, then the keyring's legacyToBuffer. The simulation signs these bytes too.
+const metaMaskPersonalSignCases: readonly SignedBytesCase[] = [
 	{ message: '', signedBytes: '0x' },
 	{ message: '0x', signedBytes: '0x3078' },
 	{ message: '12', signedBytes: '0x12' },
@@ -56,10 +63,33 @@ const personalSignCases: readonly { readonly message: string, readonly signedByt
 	{ message: '0xhello', signedBytes: '0x307868656c6c6f' },
 	{ message: plainTextMessage, signedBytes: hexEncodedPlainTextMessage },
 	{ message: hexEncodedPlainTextMessage, signedBytes: hexEncodedPlainTextMessage },
+	{ message: unprefixedHexMessage, signedBytes: '0x5369676e20696e' },
+	{ message: shortUnprefixedHexMessage, signedBytes: '0x6869' },
 ]
 
+// Each message next to the bytes Rabby signs for personal_sign: its provider controller keeps lowercase 0x-prefixed hex and converts anything else to UTF-8 hex, then the keyring's legacyToBuffer reads it.
+const rabbyPersonalSignCases: readonly SignedBytesCase[] = [
+	{ message: '', signedBytes: '0x' },
+	{ message: '0x', signedBytes: '0x' },
+	{ message: '12', signedBytes: '0x3132' },
+	{ message: '12345678', signedBytes: '0x3132333435363738' },
+	{ message: 'cafe', signedBytes: '0x63616665' },
+	{ message: '0X6869', signedBytes: '0x305836383639' },
+	{ message: '0x123', signedBytes: '0x0123' },
+	{ message: '0xFF00', signedBytes: '0xff00' },
+	{ message: '0xhello', signedBytes: '0x307868656c6c6f' },
+	{ message: plainTextMessage, signedBytes: hexEncodedPlainTextMessage },
+	{ message: hexEncodedPlainTextMessage, signedBytes: hexEncodedPlainTextMessage },
+	{ message: unprefixedHexMessage, signedBytes: '0x3533363936373665323036393665' },
+	{ message: shortUnprefixedHexMessage, signedBytes: '0x36383639' },
+]
+
+// Messages MetaMask and Rabby sign as different bytes, so in signing mode the signed bytes depend on the wallet.
+const ambiguousMessages = ['0x', '12', '12345678', 'cafe', '0X6869', unprefixedHexMessage, shortUnprefixedHexMessage]
+const isAmbiguous = (message: string) => ambiguousMessages.includes(message)
+
 // Each message next to the bytes MetaMask recovers for personal_ecRecover: eth-sig-util recoverPersonalSignature reads the message with legacyToBuffer.
-const personalEcRecoverCases: readonly { readonly message: string, readonly signedBytes: Hex }[] = [
+const personalEcRecoverCases: readonly SignedBytesCase[] = [
 	{ message: '', signedBytes: '0x' },
 	{ message: '0x', signedBytes: '0x' },
 	{ message: '12', signedBytes: '0x3132' },
@@ -75,7 +105,7 @@ const personalEcRecoverCases: readonly { readonly message: string, readonly sign
 
 describe('personal_sign message bytes', () => {
 	test('hashes and simulates personal_sign messages over the bytes MetaMask signs', async () => {
-		for (const { message, signedBytes } of personalSignCases) {
+		for (const { message, signedBytes } of metaMaskPersonalSignCases) {
 			const expectedHash = hashMessage({ raw: signedBytes })
 			assert.equal(getMessageHashForPersonalSign(personalSign(message)), expectedHash, JSON.stringify(message))
 			const { signature } = await simulatePersonalSign(personalSign(message), signerAddress)
@@ -93,54 +123,129 @@ describe('personal_sign message bytes', () => {
 	})
 })
 
+const decodeBytes = (bytes: Hex) => new TextDecoder().decode(bytesFromHex(bytes))
+
 describe('personal_sign message display', () => {
-	// What you see is what you sign: the popup shows exactly the bytes the signature covers. This replaces main's check that unprefixed hex such as 6869 is shown as the literal text 6869, which MetaMask instead signs as the bytes of 'hi'.
-	test('shows the text of exactly the bytes personal_sign signs', () => {
-		for (const { message, signedBytes } of personalSignCases) {
-			assert.equal(decodePersonalSignMessage(message), new TextDecoder().decode(bytesFromHex(signedBytes)), JSON.stringify(message))
+	test('lists exactly the messages MetaMask and Rabby sign as different bytes as ambiguous', () => {
+		const rabbySignedBytes = new Map(rabbyPersonalSignCases.map(({ message, signedBytes }) => [message, signedBytes]))
+		assert.deepEqual(metaMaskPersonalSignCases.map(({ message }) => message), rabbyPersonalSignCases.map(({ message }) => message))
+		assert.deepEqual(metaMaskPersonalSignCases.filter(({ message, signedBytes }) => rabbySignedBytes.get(message) !== signedBytes).map(({ message }) => message).sort(), [...ambiguousMessages].sort())
+	})
+
+	// What you see is what you sign: the popup shows exactly the bytes the signature covers. Simulation mode signs MetaMask's reading itself, so unprefixed hex such as 6869 shows as 'hi'.
+	test('shows simulation-mode messages as the text of the bytes the simulation signs', () => {
+		for (const { message, signedBytes } of metaMaskPersonalSignCases) {
+			assert.deepEqual(getPersonalSignMessageBytes(message, true), bytesFromHex(signedBytes), JSON.stringify(message))
+			assert.equal(decodePersonalSignMessage(message, true), decodeBytes(signedBytes), JSON.stringify(message))
 		}
 	})
 
+	// In signing mode the wallet signs, and MetaMask and Rabby disagree on hex-like messages, so those are shown exactly as written instead of guessing a reading.
+	test('shows signing-mode messages as the text every wallet signs, or as written when wallets disagree', () => {
+		for (const { message, signedBytes } of metaMaskPersonalSignCases) {
+			assert.deepEqual(getPersonalSignMessageBytes(message, false), isAmbiguous(message) ? undefined : bytesFromHex(signedBytes), JSON.stringify(message))
+			assert.equal(decodePersonalSignMessage(message, false), isAmbiguous(message) ? message : decodeBytes(signedBytes), JSON.stringify(message))
+		}
+		assert.equal(decodePersonalSignMessage(unprefixedHexMessage, false), unprefixedHexMessage)
+		assert.equal(decodePersonalSignMessage(shortUnprefixedHexMessage, false), shortUnprefixedHexMessage)
+	})
+
 	test('decodes the bytes a hex personal_sign message signs', () => {
-		assert.equal(decodePersonalSignMessage('0x6869'), 'hi')
-		assert.equal(decodePersonalSignMessage('0X6869'), 'hi')
-		// MetaMask signs hex digits without a 0x prefix as bytes too.
-		assert.equal(decodePersonalSignMessage('6869'), 'hi')
-		// Bytes that are not valid UTF-8 show as replacement characters, and the raw view still shows the hex.
-		assert.equal(decodePersonalSignMessage('0xff68'), '\ufffdh')
-		// Odd-length hex is left-padded with a zero nibble, so 0x96869 signs the bytes 0x096869 and 0xabc signs 0x0abc.
-		assert.equal(decodePersonalSignMessage('0x96869'), '\thi')
-		assert.equal(decodePersonalSignMessage('0xabc'), '\n\ufffd')
+		for (const simulationMode of [true, false]) {
+			assert.equal(decodePersonalSignMessage('0x6869', simulationMode), 'hi')
+			// Bytes that are not valid UTF-8 show as replacement characters, and the raw view still shows the hex.
+			assert.equal(decodePersonalSignMessage('0xff68', simulationMode), '\ufffdh')
+			// Odd-length hex is left-padded with a zero nibble, so 0x96869 signs the bytes 0x096869 and 0xabc signs 0x0abc.
+			assert.equal(decodePersonalSignMessage('0x96869', simulationMode), '\thi')
+			assert.equal(decodePersonalSignMessage('0xabc', simulationMode), '\n\ufffd')
+		}
+		// The simulation signs hex digits with a 0X prefix or none as bytes, like MetaMask.
+		assert.equal(decodePersonalSignMessage('0X6869', true), 'hi')
+		assert.equal(decodePersonalSignMessage('6869', true), 'hi')
 	})
 
 	test('shows plain-text personal_sign messages as the text they sign', () => {
-		assert.equal(decodePersonalSignMessage(plainTextMessage), plainTextMessage)
-		assert.equal(decodePersonalSignMessage('Grüße, 世界 🦊\nline two'), 'Grüße, 世界 🦊\nline two')
-		assert.equal(decodePersonalSignMessage(''), '')
-		// A bare 0x has no hex digits, so MetaMask signs it as the text 0x.
-		assert.equal(decodePersonalSignMessage('0x'), '0x')
-		assert.equal(decodePersonalSignMessage('0xhello'), '0xhello')
+		for (const simulationMode of [true, false]) {
+			assert.equal(decodePersonalSignMessage(plainTextMessage, simulationMode), plainTextMessage)
+			assert.equal(decodePersonalSignMessage('Grüße, 世界 🦊\nline two', simulationMode), 'Grüße, 世界 🦊\nline two')
+			assert.equal(decodePersonalSignMessage('', simulationMode), '')
+			assert.equal(decodePersonalSignMessage('0xhello', simulationMode), '0xhello')
+		}
+		// A bare 0x has no hex digits, so the simulation signs it as the text 0x, like MetaMask.
+		assert.equal(decodePersonalSignMessage('0x', true), '0x')
 	})
 })
 
+const loadPersonalSignVisualization = async () => {
+	installBrowserMock()
+	const { updateUserAddressBookEntries, updateTabState } = await loadModules()
+	const { craftPersonalSignPopupMessage } = await import('../../app/ts/background/windows/personalSign.js')
+	await updateUserAddressBookEntries(() => [{ type: 'contact', name: 'Signer', address: signerAddress, entrySource: 'User', chainId: 1n }])
+	const { ethereum } = createEthereumWithGetBlockCounter({ count: 0 })
+	return {
+		setSignerName: async (signerName: SignerName) => { await updateTabState(1, (tabState) => ({ ...tabState, signerName })) },
+		visualize: async (message: string, simulationMode: boolean) => {
+			const visualized = await craftPersonalSignPopupMessage(ethereum, undefined, createSignedMessage(message, simulationMode), ethereum.getRpcEntry())
+			if (visualized.type !== 'NotParsed') throw new Error(`Expected an unparsed personal_sign visualization for ${ message }`)
+			return { ...visualized, shownText: decodePersonalSignMessage(visualized.message, visualized.simulationMode) }
+		},
+	}
+}
+
+// The reading must not depend on the detected wallet, which can change while the popup is open and may not be the wallet of the requesting frame.
+const signerNames: readonly SignerName[] = ['MetaMask', 'Rabby', 'NoSignerDetected']
+
 describe('personal_sign visualization', () => {
 	test('shows plain-text and hex messages as their text with the hash of the signed bytes in signing and simulation mode', async () => {
-		installBrowserMock()
-		const { updateUserAddressBookEntries } = await loadModules()
-		const { craftPersonalSignPopupMessage } = await import('../../app/ts/background/windows/personalSign.js')
-		await updateUserAddressBookEntries(() => [{ type: 'contact', name: 'Signer', address: signerAddress, entrySource: 'User', chainId: 1n }])
-		const { ethereum } = createEthereumWithGetBlockCounter({ count: 0 })
-
+		const { visualize } = await loadPersonalSignVisualization()
 		for (const simulationMode of [false, true]) {
 			for (const message of [plainTextMessage, hexEncodedPlainTextMessage]) {
-				const visualized = await craftPersonalSignPopupMessage(ethereum, undefined, createSignedMessage(message, simulationMode), ethereum.getRpcEntry())
-				if (visualized.type !== 'NotParsed') throw new Error(`Expected an unparsed personal_sign visualization for ${ message }`)
+				const visualized = await visualize(message, simulationMode)
 				assert.equal(visualized.simulationMode, simulationMode)
 				assert.equal(visualized.message, message)
 				assert.equal(visualized.rawMessage, message)
 				assert.equal(visualized.messageHash, hashMessage(plainTextMessage))
-				assert.equal(decodePersonalSignMessage(visualized.message), plainTextMessage)
+				assert.equal(visualized.shownText, plainTextMessage)
 				assert.equal(visualized.quarantine, false)
+			}
+		}
+	})
+
+	test('flags signing-mode messages that wallets sign as different bytes, whichever wallet is detected', async () => {
+		const { setSignerName, visualize } = await loadPersonalSignVisualization()
+		for (const signerName of signerNames) {
+			await setSignerName(signerName)
+			for (const { message, signedBytes } of metaMaskPersonalSignCases) {
+				const label = `${ signerName } ${ JSON.stringify(message) }`
+				const visualized = await visualize(message, false)
+				if (isAmbiguous(message)) {
+					assert.equal(visualized.quarantine, true, label)
+					assert.equal(visualized.quarantineReasons.length, 1, label)
+					assert.match(visualized.quarantineReasons[0] ?? '', /hex-encoded bytes or text/u, label)
+					assert.equal(visualized.messageHash, undefined, label)
+					assert.equal(visualized.shownText, message, label)
+					continue
+				}
+				assert.equal(visualized.quarantine, false, label)
+				assert.equal(visualized.messageHash, hashMessage({ raw: signedBytes }), label)
+				assert.equal(visualized.shownText, decodeBytes(signedBytes), label)
+			}
+		}
+	})
+
+	test('shows, hashes and signs MetaMask\'s reading in simulation mode, whichever wallet is detected', async () => {
+		const { setSignerName, visualize } = await loadPersonalSignVisualization()
+		for (const signerName of signerNames) {
+			await setSignerName(signerName)
+			for (const { message, signedBytes } of metaMaskPersonalSignCases) {
+				const label = `${ signerName } ${ JSON.stringify(message) }`
+				const visualized = await visualize(message, true)
+				const signedHash = hashMessage({ raw: signedBytes })
+				assert.equal(visualized.quarantine, false, label)
+				assert.equal(visualized.messageHash, signedHash, label)
+				assert.equal(visualized.shownText, decodeBytes(signedBytes), label)
+				const { signature } = await simulatePersonalSign(personalSign(message), signerAddress)
+				assert.equal(BigInt(await recoverAddress({ hash: signedHash, signature })), mockSimulationKeyAddress, label)
 			}
 		}
 	})
