@@ -1,8 +1,8 @@
 import * as assert from 'assert'
 import { describe, spyOn, test } from 'bun:test'
 import { getInvalidRpcParamsReply, getMethodSpecificParseFailureReply } from '../../app/ts/background/rpcParseFailureReply.js'
-import { EIP712MessageUnderlying } from '../../app/ts/types/eip721.js'
 import { EthereumJsonRpcRequest, findEthereumJsonRpcRequestCodec, WalletRevokePermissions } from '../../app/ts/types/JsonRpc-types.js'
+import { JSONEncodeableObject } from '../../app/ts/utils/json.js'
 import type { InterceptedRequest } from '../../app/ts/utils/requests.js'
 
 const address = '0x1111111111111111111111111111111111111111'
@@ -15,13 +15,14 @@ const createRequest = (method: string, params?: unknown[]): InterceptedRequest =
 	uniqueRequestIdentifier: { requestId: 1, requestSocket: { tabId: 1, connectionName: 0n } },
 })
 
+// These tests read request codecs and their method literals through the typed funtypes API instead of funtypesFailureExplanation.ts on purpose, so the method lookup is checked against an independent reading rather than against its own implementation.
 const supportedRequestCodecs = [WalletRevokePermissions, ...EthereumJsonRpcRequest.alternatives]
 
 type ParseableCodec = { safeParse(value: unknown): unknown }
 
 const isParseableCodec = (value: unknown): value is ParseableCodec => typeof value === 'object' && value !== null && 'safeParse' in value && typeof value.safeParse === 'function'
 
-// Collects a codec and every codec nested in it through the funtypes reflection members. Lazy codecs store a function that returns the underlying codec.
+// Test instrumentation that collects a codec and every codec nested in it through the funtypes reflection members, so their validations can be counted. Lazy codecs store a function that returns the underlying codec.
 function collectNestedCodecs(codec: unknown, collected = new Set<ParseableCodec>()) {
 	if (!isParseableCodec(codec) || collected.has(codec)) return collected
 	collected.add(codec)
@@ -34,14 +35,14 @@ function collectNestedCodecs(codec: unknown, collected = new Set<ParseableCodec>
 	return collected
 }
 
-// Counts how often each codec nested in the request codec or in the EIP-712 typed data document codec is validated while the readable message is built. The request codec reaches the document codec only inside its string parser.
+// Counts how often each codec nested in the request codec, or in the JSON object codec of EIP-712 messages, is validated while the readable message is built. The typed data document codec itself is private to eip721.ts and reached only inside the EIP712Message string parser, so its validations are not counted.
 function getReadableMessageWithParseCounts(method: string, params: unknown[]) {
 	const request = createRequest(method, params)
 	const requestCodec = findEthereumJsonRpcRequestCodec(method)
 	if (requestCodec === undefined) throw new Error(`Unsupported method ${ method }`)
 	const parseResult = requestCodec.safeParse(request)
 	if (parseResult.success) throw new Error(`${ method } request should fail to parse`)
-	const parseSpies = [...collectNestedCodecs(EIP712MessageUnderlying, collectNestedCodecs(requestCodec))].map((codec) => spyOn(codec, 'safeParse'))
+	const parseSpies = [...collectNestedCodecs(JSONEncodeableObject, collectNestedCodecs(requestCodec))].map((codec) => spyOn(codec, 'safeParse'))
 	try {
 		const reply = getInvalidRpcParamsReply(request, requestCodec, parseResult)
 		if (reply.type !== 'result' || !('error' in reply)) throw new Error(`Expected an error reply for ${ method }`)
@@ -206,8 +207,8 @@ describe('readable RPC parse failure replies', () => {
 			message,
 			'Invalid eth_signTypedData_v4 parameter 2 (typed data): the JSON string is not valid EIP-712 typed data (field "message.next.next.next" must be a string, a boolean, a number, an array or an object, but received null); EIP-712 typed data must be a JSON object with types, primaryType, domain and message.',
 		)
-		// The typed data document is validated once, then the record holding each further `next` object once.
-		assert.equal(sumParseCounts(parseCounts), 3)
+		// Besides the uncounted validation of the whole document, only the record holding each further `next` object is validated, once.
+		assert.equal(sumParseCounts(parseCounts), 2)
 	})
 
 	test('bounds the validations spent explaining deeply nested typed data and falls back to the method codec failure', () => {

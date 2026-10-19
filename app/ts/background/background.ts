@@ -101,12 +101,6 @@ async function handleRPCRequest(
 	if (maybeParsedRequest.success === false) {
 		const methodSpecificReply = getMethodSpecificParseFailureReply(request)
 		if (methodSpecificReply !== undefined) return methodSpecificReply
-		if (requestCodec !== undefined) {
-			// Supported methods get a readable invalid-params error before the Safe signing-mode fallback. The logged failure is from this method's codec only, not from the whole request union.
-			console.warn({ request })
-			console.warn(maybeParsedRequest.fullError)
-			return getInvalidRpcParamsReply(request, requestCodec, maybeParsedRequest)
-		}
 		const safePolicyReply = getSafeModeRpcPolicyReply({
 			rawRequest: request,
 			confirmation,
@@ -120,6 +114,8 @@ async function handleRPCRequest(
 		if (safePolicyReply !== undefined) return safePolicyReply
 		console.warn({ request })
 		console.warn(maybeParsedRequest.fullError)
+		// The Safe signing-mode policy above decides first, so a readable invalid-params error never reveals which methods are supported while a Safe is signing. The logged failure of a supported method is from its own codec only, not from the whole request union.
+		if (requestCodec !== undefined) return getInvalidRpcParamsReply(request, requestCodec, maybeParsedRequest)
 		// Without a method codec the method is not supported here (wallet_revokePermissions is handled before handleRPCRequest), so forward it to the wallet if a signer is available
 		if (forwardToSigner) return { type: 'forwardToSigner' as const, replyWithSignersReply: true, ...request }
 		return {

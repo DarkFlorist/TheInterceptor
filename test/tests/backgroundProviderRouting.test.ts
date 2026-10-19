@@ -356,7 +356,7 @@ describe('background eth_accounts', () => {
 		})
 	})
 
-	test('returns invalid params errors before the Safe signing-mode fallback', async () => {
+	test('returns method-specific parse errors before the Safe signing-mode fallback and the Safe policy before invalid params errors', async () => {
 		installBrowserMock()
 		const {
 			handleInterceptedRequest,
@@ -415,34 +415,26 @@ describe('background eth_accounts', () => {
 			error: { code: -32602, message: 'Invalid wallet_watchAsset parameters.' },
 		})
 
-		await withSilencedConsole(async () => await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
-			interceptorRequest: true,
-			usingInterceptorWithoutSigner: false,
-			uniqueRequestIdentifier: { requestId: 3, requestSocket: socket },
-			method: 'eth_getBalance',
-			params: ['0x1111111111111111111111111111111111111111'],
-		}, websiteTabConnections, noopPublishRpcConnectionStatus))
+		// Malformed supported methods, including Safe message signing and transaction methods, get the Safe signing-mode policy reply exactly like unsupported methods, so a page cannot tell them apart.
+		for (const [requestId, method, params] of [
+			[3, 'eth_getBalance', ['0x1111111111111111111111111111111111111111']],
+			[4, 'personal_sign', ['0xdeadbeef', '0x1234']],
+			[5, 'eth_sendTransaction', [{ from: '0x1111111111111111111111111111111111111111', to: '0x1234' }]],
+			[6, 'eth_unsupportedMethod', ['0x1']],
+		] as const) {
+			await withSilencedConsole(async () => await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
+				interceptorRequest: true,
+				usingInterceptorWithoutSigner: false,
+				uniqueRequestIdentifier: { requestId, requestSocket: socket },
+				method,
+				params: [...params],
+			}, websiteTabConnections, noopPublishRpcConnectionStatus))
 
-		assert.deepEqual(messages.at(-1), {
-			interceptorApproved: true,
-			requestId: 3,
-			bridgeRequestSettled: true,
-			type: 'result',
-			method: 'eth_getBalance',
-			error: { code: -32602, message: 'eth_getBalance is missing required parameter 2 (block tag): expected 2 parameters (address, block tag), but received 1.' },
-		})
-
-		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
-			interceptorRequest: true,
-			usingInterceptorWithoutSigner: false,
-			uniqueRequestIdentifier: { requestId: 4, requestSocket: socket },
-			method: 'eth_unsupportedMethod',
-			params: ['0x1'],
-		}, websiteTabConnections, noopPublishRpcConnectionStatus)
-
-		const unsupportedMethodReply = messages.at(-1)
-		assert.equal(unsupportedMethodReply?.requestId, 4)
-		assert.deepEqual(unsupportedMethodReply?.error, { code: 4200, message: 'This RPC method is not supported while a Gnosis Safe is the active signing account.' })
+			const safePolicyReply = messages.at(-1)
+			assert.equal(safePolicyReply?.requestId, requestId, method)
+			assert.equal(safePolicyReply?.method, method)
+			assert.deepEqual(safePolicyReply?.error, { code: 4200, message: 'This RPC method is not supported while a Gnosis Safe is the active signing account.' }, method)
+		}
 		assert.equal(messages.some((message) => message.type === 'forwardToSigner'), false)
 	})
 
