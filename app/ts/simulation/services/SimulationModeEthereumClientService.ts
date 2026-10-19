@@ -456,10 +456,13 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 	return inLastRpcBlock
 }
 
+// The rule for funding the current account: only in simulation mode, and only while the make-me-rich option is on. Both the simulation input and the exported simulation stack use it.
+export const selectAddressToMakeRich = (settings: Settings, makeCurrentAddressRich: boolean) => settings.simulationMode && makeCurrentAddressRich ? settings.activeSimulationAddress : undefined
+
 export const getAddressToMakeRich = async (settingsSnapshot?: Settings) => {
 	const settings = settingsSnapshot ?? await getSettings()
 	if (!settings.simulationMode) return undefined
-	return await getMakeCurrentAddressRich() ? settings.activeSimulationAddress : undefined
+	return selectAddressToMakeRich(settings, await getMakeCurrentAddressRich())
 }
 
 export const groupEthSimulateV1ResultByInputBlocks = (prepared: PreparedEthSimulateV1Input, result: EthSimulateV1Result): GroupedEthSimulateV1Result => {
