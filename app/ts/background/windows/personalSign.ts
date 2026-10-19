@@ -1,7 +1,7 @@
 import { SafeMessage } from '../../safe/safeMessage.js'
 import type { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
 import { stringifyJSONWithBigInts } from '../../utils/bigint.js'
-import { type OpenSeaOrderMessage, PersonalSignRequestIdentifiedEIP712Message, type SiweMessage, type VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
+import { type OpenSeaOrderMessage, PersonalSignRequestIdentifiedEIP712Message, type VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
 import { assertNever } from '../../utils/typescript.js'
 import { extractEIP712Message, validateEIP712Types } from '../../utils/eip712Parsing.js'
 import { getRpcNetworkForChain, getTabState } from '../storageVariables.js'
@@ -14,7 +14,7 @@ import { getMessageHashForPersonalSign } from '../../simulation/services/simulat
 import { getMessageAndDomainHash, getSafeTxHash, isValidMessage } from '../../utils/eip712.js'
 import { promiseAllMapAbortSafe } from '../../utils/requests.js'
 import { decodePersonalSignMessage } from '../../utils/personalSignMessage.js'
-import { getSiweDomainAsWebsiteOrigin, getSiweScheme, looksLikeSiweMessage, parseSiweMessage } from '../../utils/siwe.js'
+import { getSiweLookalikeQuarantineReasons, getSiweQuarantineReasons, parseSiweMessage } from '../../utils/siwe.js'
 
 async function addMetadataToOpenSeaOrder(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, openSeaOrder: OpenSeaOrderMessage) {
 	return {
@@ -31,29 +31,6 @@ export function getSigningQuarantineCodes(messageChainId: bigint | undefined, ac
 	if (messageChainId !== undefined && messageChainId !== activeChainId) quarantineReasons.push(`The signature request is for a different chain (${ getChainName(messageChainId) }) than what is currently active (${ getChainName(activeChainId) }).`)
 	if (accountAddress !== activeAddress || (ownerAddress !== undefined && accountAddress !== ownerAddress)) quarantineReasons.push('The signature request is for an account that is different from your active address.')
 	return { quarantine: quarantineReasons.length > 0, quarantineReasons }
-}
-
-export const SIWE_LOOKALIKE_QUARANTINE_REASON = 'This message looks like a Sign-In with Ethereum request but does not follow the EIP-4361 format, so the Interceptor cannot check which website it signs you in to.'
-
-type SiweRequestOrigin = {
-	readonly websiteOrigin: string
-	// Undefined when the scheme of the requesting frame is not known, such as for messages stored before it was recorded.
-	readonly websiteScheme: string | undefined
-}
-
-// The EIP-4361 wallet check that is specific to sign-in messages: the message must be for the website that sent the request. The account and chain checks are shared with other signatures through getSigningQuarantineCodes. The validity window (Expiration Time and Not Before) is not checked here because a pending request is not re-crafted as time passes; the dialog checks it against the clock with getSiweValidityWarnings instead.
-export function getSiweQuarantineReasons(siweMessage: SiweMessage, requestOrigin: SiweRequestOrigin): readonly string[] {
-	const quarantineReasons: string[] = []
-	const siweScheme = getSiweScheme(siweMessage)
-	// Hosts and ports are compared exactly, so a subdomain or a parent domain of the requesting website does not match either.
-	const domainMatches = getSiweDomainAsWebsiteOrigin(siweMessage) === requestOrigin.websiteOrigin
-	const schemeMatches = requestOrigin.websiteScheme === undefined || siweScheme === requestOrigin.websiteScheme
-	if (!domainMatches || !schemeMatches) {
-		const requestingWebsite = requestOrigin.websiteScheme === undefined ? requestOrigin.websiteOrigin : `${ requestOrigin.websiteScheme }://${ requestOrigin.websiteOrigin }`
-		const impliedSchemeNote = !schemeMatches && siweMessage.scheme === undefined ? ' (a sign-in message that names no scheme is for https)' : ''
-		quarantineReasons.push(`This sign-in message is for ${ siweScheme }://${ siweMessage.domain }${ impliedSchemeNote }, but it was requested by ${ requestingWebsite }. A website asking you to sign in to a different website is a common phishing attack.`)
-	}
-	return quarantineReasons
 }
 
 export const getSignedMessageActiveAddress = (signedMessageTransaction: SignedMessageTransaction) =>
@@ -104,9 +81,8 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			messageHash: getMessageHashForPersonalSign(originalParams.originalRequestParameters),
 		}
 		if (siweMessage !== undefined) {
-			const requestOrigin = { websiteOrigin: signedMessageTransaction.website.websiteOrigin, websiteScheme: signedMessageTransaction.websiteScheme }
 			const quarantineReasons = [
-				...getSiweQuarantineReasons(siweMessage, requestOrigin),
+				...getSiweQuarantineReasons(siweMessage, signedMessageTransaction.requestOrigin),
 				...getSigningQuarantineCodes(siweMessage.chainId, rpcNetwork.chainId, account.address, activeAddressWithMetadata.address, siweMessage.address).quarantineReasons,
 			]
 			return {
@@ -120,8 +96,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			}
 		}
 		const signingQuarantineReasons = getSigningQuarantineCodes(undefined, rpcNetwork.chainId, account.address, activeAddressWithMetadata.address, undefined).quarantineReasons
-		// A message that reads like a sign-in request but does not conform skips the website check above, so it is flagged instead of passing as an ordinary message.
-		const quarantineReasons = looksLikeSiweMessage(decodedMessage) ? [SIWE_LOOKALIKE_QUARANTINE_REASON, ...signingQuarantineReasons] : signingQuarantineReasons
+		const quarantineReasons = [...getSiweLookalikeQuarantineReasons(decodedMessage), ...signingQuarantineReasons]
 		return {
 			...personalSignParams,
 			type: 'NotParsed' as const,

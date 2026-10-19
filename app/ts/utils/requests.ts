@@ -159,6 +159,9 @@ export const getHostWithPort = (urlString: string): string => {
 	return url.port ? `${ url.hostname }:${ url.port }` : url.hostname
 }
 
+// The scheme, host and port of a URL as one comparable value, such as `https://example.com:8443` (default ports are omitted and hosts lowercased). Unlike `URL.origin`, URLs without a tuple origin do not all collapse to the same 'null', so two different origins never compare equal.
+export const getSchemeAndHostWithPort = (urlString: string): string => `${ new URL(urlString).protocol }//${ getHostWithPort(urlString) }`.toLowerCase()
+
 export const silenceChromeUnCaughtPromise = <ReturnValue>(maybeAwaitedFunction: Promise<ReturnValue>) => {
 	void maybeAwaitedFunction.catch(() => undefined)
 	return maybeAwaitedFunction

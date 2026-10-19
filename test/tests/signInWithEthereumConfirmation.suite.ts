@@ -2,6 +2,7 @@ import * as assert from 'assert'
 import { test } from 'bun:test'
 import { checksummedAddress } from '../../app/ts/utils/bigint.js'
 import { bytesToHex, stringToBytes } from '../../app/ts/utils/ethereumBytes.js'
+import { SIWE_LOOKALIKE_QUARANTINE_REASON } from '../../app/ts/utils/siwe.js'
 import { activeAddress, createWebsitePort, fakeRpcNetwork, modules, simulator, uniqueRequestIdentifier } from './confirmTransactionTestHarness.js'
 
 // A sign-in message without a scheme, which means https, for the local dapp at localhost:3000.
@@ -60,10 +61,10 @@ async function openSimulatedSignInConfirmation(siweMessage: string, pageUrl: str
 	return pendingMessage
 }
 
-test('records the requesting frame scheme so a sign-in message without a scheme is checked against an http page', async () => {
+test('records the full origin of the requesting frame so a sign-in message without a scheme is checked against an http page', async () => {
 	// No scheme in the message means https, while the request comes from an http page on the same host.
 	const pendingMessage = await openSimulatedSignInConfirmation(localDappSiweMessage(fakeRpcNetwork.chainId), 'http://localhost:3000/login')
-	assert.equal(pendingMessage.signedMessageTransaction.websiteScheme, 'http')
+	assert.equal(pendingMessage.signedMessageTransaction.requestOrigin, 'http://localhost:3000')
 	assert.equal(pendingMessage.visualizedPersonalSignRequest.type, 'SignInWithEthereum')
 	assert.equal(pendingMessage.visualizedPersonalSignRequest.quarantine, true)
 	assert.deepEqual(pendingMessage.visualizedPersonalSignRequest.quarantineReasons, [
@@ -81,5 +82,5 @@ test('quarantines a sign-in message whose chain ID a stored request cannot hold 
 	const pendingMessage = await openSimulatedSignInConfirmation(localDappSiweMessage(2n ** 256n), 'https://localhost:3000/login')
 	assert.equal(pendingMessage.visualizedPersonalSignRequest.type, 'NotParsed')
 	assert.equal(pendingMessage.visualizedPersonalSignRequest.quarantine, true)
-	assert.deepEqual(pendingMessage.visualizedPersonalSignRequest.quarantineReasons, [modules.SIWE_LOOKALIKE_QUARANTINE_REASON])
+	assert.deepEqual(pendingMessage.visualizedPersonalSignRequest.quarantineReasons, [SIWE_LOOKALIKE_QUARANTINE_REASON])
 })

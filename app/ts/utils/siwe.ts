@@ -1,6 +1,6 @@
 import { SiweMessage } from '../types/personal-message-definitions.js'
 import { isAddress } from './ethereumBytes.js'
-import { getHostWithPort } from './requests.js'
+import { getSchemeAndHostWithPort } from './requests.js'
 
 // EIP-4361 Sign-In with Ethereum. The parser follows the EIP's ABNF line by line and returns undefined for anything that does not conform exactly, so near-misses keep being shown as plain messages.
 
@@ -139,6 +139,11 @@ export function parseSiweMessage(message: string): SiweMessage | undefined {
 
 export const looksLikeSiweMessage = (message: string) => SIWE_PHRASE_PATTERN.test(message)
 
+export const SIWE_LOOKALIKE_QUARANTINE_REASON = 'This message looks like a Sign-In with Ethereum request but does not follow the EIP-4361 format, so the Interceptor cannot check which website it signs you in to.'
+
+// For a message that parseSiweMessage leaves unparsed: one that still reads like a sign-in request cannot get the website check of getSiweQuarantineReasons, so it is flagged instead of passing as an ordinary message.
+export const getSiweLookalikeQuarantineReasons = (message: string): readonly string[] => looksLikeSiweMessage(message) ? [SIWE_LOOKALIKE_QUARANTINE_REASON] : []
+
 // Advisory warnings for a sign-in message outside its validity window: EIP-4361 leaves enforcing the window to the relying party that verifies the signature, so these warn the user but neither quarantine the request nor block signing. The result depends on the current time, so it is not stored with the request (and so adds no confirmation checkbox or Flagged badge): the confirmation dialog re-evaluates it while it is shown.
 export function getSiweValidityWarnings(message: SiweMessage, now: Date): readonly string[] {
 	const warnings: string[] = []
@@ -154,10 +159,20 @@ export const getSiweOriginText = (message: SiweMessage) => message.scheme === un
 
 export const getSiweScheme = (message: SiweMessage) => (message.scheme ?? SIWE_DEFAULT_SCHEME).toLowerCase()
 
-// Normalizes the domain the way `Website.websiteOrigin` is built: lowercase host, and no port when it is the default port of the message scheme. Returns undefined when the domain carries userinfo (`user@host`), which websites never have and which can be used to disguise the real host, or when it is not a valid URL authority. Userinfo is detected from the raw text because URL parsing reports an empty userinfo (`@host`, `:@host`) as no userinfo at all.
-export function getSiweDomainAsWebsiteOrigin(message: SiweMessage) {
+// The origin the message signs in to, normalized the same way as the recorded origin of the requesting frame: lowercase, and no port when it is the default port of the scheme. Returns undefined when the domain carries userinfo (`user@host`), which websites never have and which can be used to disguise the real host, or when it is not a valid URL authority. Userinfo is detected from the raw text because URL parsing reports an empty userinfo (`@host`, `:@host`) as no userinfo at all.
+export function getSiweMessageOrigin(message: SiweMessage) {
 	if (message.domain.includes('@')) return undefined
 	const url = parseUrl(`${ getSiweScheme(message) }://${ message.domain }`)
 	if (url === undefined) return undefined
-	return getHostWithPort(url.href).toLowerCase()
+	return getSchemeAndHostWithPort(url.href)
+}
+
+// The EIP-4361 wallet check that is specific to sign-in messages: the message must be for the website that sent the request. `requestOrigin` is the full origin of the requesting frame (`SignedMessageTransaction.requestOrigin`), and the two are compared exactly, so an http page cannot ask for an https sign-in and a subdomain or a parent domain does not match either. The account and chain checks are shared with other signatures through getSigningQuarantineCodes, and the validity window is checked by the dialog with getSiweValidityWarnings because it changes while a request is pending.
+export function getSiweQuarantineReasons(siweMessage: SiweMessage, requestOrigin: string | undefined): readonly string[] {
+	const messageOriginText = `${ getSiweScheme(siweMessage) }://${ siweMessage.domain }`
+	// A request without a recorded origin (stored before origins were recorded, or whose frame had already disconnected) is flagged rather than compared by host alone, which would let an http page pass for an https sign-in.
+	if (requestOrigin === undefined) return [`This sign-in message is for ${ messageOriginText }, but the Interceptor did not record the full origin of the website that requested it, so it cannot check that they match.`]
+	if (getSiweMessageOrigin(siweMessage) === requestOrigin) return []
+	const impliedSchemeNote = siweMessage.scheme === undefined && !requestOrigin.startsWith(`${ SIWE_DEFAULT_SCHEME }://`) ? ` (a sign-in message that names no scheme is for ${ SIWE_DEFAULT_SCHEME })` : ''
+	return [`This sign-in message is for ${ messageOriginText }${ impliedSchemeNote }, but it was requested by ${ requestOrigin }. A website asking you to sign in to a different website is a common phishing attack.`]
 }

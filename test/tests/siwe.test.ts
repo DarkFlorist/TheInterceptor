@@ -2,7 +2,8 @@ import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { SiweMessage } from '../../app/ts/types/personal-message-definitions.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
-import { getSiweDomainAsWebsiteOrigin, getSiweOriginText, getSiweValidityWarnings, looksLikeSiweMessage, parseSiweDateTime, parseSiweMessage } from '../../app/ts/utils/siwe.js'
+import { getSchemeAndHostWithPort } from '../../app/ts/utils/requests.js'
+import { getSiweLookalikeQuarantineReasons, getSiweMessageOrigin, getSiweOriginText, getSiweQuarantineReasons, getSiweValidityWarnings, looksLikeSiweMessage, parseSiweDateTime, parseSiweMessage, SIWE_LOOKALIKE_QUARANTINE_REASON } from '../../app/ts/utils/siwe.js'
 
 const CHECKSUMMED_ADDRESS = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
 const HEADER = 'example.com wants you to sign in with your Ethereum account:'
@@ -216,24 +217,86 @@ describe('Sign-In with Ethereum validity window', () => {
 	})
 })
 
-describe('Sign-In with Ethereum domain normalization', () => {
+describe('Sign-In with Ethereum origin normalization', () => {
 	const parsedMinimalMessage = parseSiweMessage(minimalMessage)
 	if (parsedMinimalMessage === undefined) throw new Error('expected the minimal message to parse')
 	const withDomain = (domain: string, scheme?: string) => ({ ...parsedMinimalMessage, domain, scheme })
 
-	test('normalizes the domain to the host and port form of website origins', () => {
-		assert.equal(getSiweDomainAsWebsiteOrigin(withDomain('Example.COM')), 'example.com')
-		assert.equal(getSiweDomainAsWebsiteOrigin(withDomain('example.com:443')), 'example.com')
-		assert.equal(getSiweDomainAsWebsiteOrigin(withDomain('example.com:80', 'http')), 'example.com')
-		assert.equal(getSiweDomainAsWebsiteOrigin(withDomain('example.com:80')), 'example.com:80')
-		assert.equal(getSiweDomainAsWebsiteOrigin(withDomain('localhost:3000', 'http')), 'localhost:3000')
-		assert.equal(getSiweDomainAsWebsiteOrigin(withDomain('[::1]:3000')), '[::1]:3000')
+	test('normalizes the message origin the way the origin of a requesting frame is recorded', () => {
+		assert.equal(getSiweMessageOrigin(withDomain('Example.COM')), 'https://example.com')
+		assert.equal(getSiweMessageOrigin(withDomain('example.com', 'HTTPS')), 'https://example.com')
+		assert.equal(getSiweMessageOrigin(withDomain('example.com:443')), 'https://example.com')
+		assert.equal(getSiweMessageOrigin(withDomain('example.com:80', 'http')), 'http://example.com')
+		assert.equal(getSiweMessageOrigin(withDomain('example.com:80')), 'https://example.com:80')
+		assert.equal(getSiweMessageOrigin(withDomain('localhost:3000', 'http')), 'http://localhost:3000')
+		assert.equal(getSiweMessageOrigin(withDomain('[::1]:3000')), 'https://[::1]:3000')
+		for (const frameUrl of ['https://Example.COM:443/login?next=%2F', 'http://localhost:3000/', 'https://[::1]:3000/app']) {
+			const frameOrigin = getSchemeAndHostWithPort(frameUrl)
+			const [scheme, domain] = frameOrigin.split('://')
+			if (scheme === undefined || domain === undefined) throw new Error(`unexpected origin ${ frameOrigin }`)
+			assert.equal(getSiweMessageOrigin(withDomain(domain, scheme)), frameOrigin, frameUrl)
+		}
 	})
 
 	test('refuses a domain with userinfo, which can disguise the real host', () => {
-		assert.equal(getSiweDomainAsWebsiteOrigin(withDomain('example.com@evil.example')), undefined)
-		assert.equal(getSiweDomainAsWebsiteOrigin(withDomain('user:password@example.com')), undefined)
-		assert.equal(getSiweDomainAsWebsiteOrigin(withDomain('@example.com')), undefined)
-		assert.equal(getSiweDomainAsWebsiteOrigin(withDomain(':@example.com')), undefined)
+		assert.equal(getSiweMessageOrigin(withDomain('example.com@evil.example')), undefined)
+		assert.equal(getSiweMessageOrigin(withDomain('user:password@example.com')), undefined)
+		assert.equal(getSiweMessageOrigin(withDomain('@example.com')), undefined)
+		assert.equal(getSiweMessageOrigin(withDomain(':@example.com')), undefined)
+	})
+})
+
+describe('Sign-In with Ethereum website check', () => {
+	const parsedMinimalMessage = parseSiweMessage(minimalMessage)
+	if (parsedMinimalMessage === undefined) throw new Error('expected the minimal message to parse')
+	const fromEvilExample = 'This sign-in message is for https://example.com, but it was requested by https://evil.example. A website asking you to sign in to a different website is a common phishing attack.'
+
+	test('does not flag a sign-in message from the origin it names', () => {
+		assert.deepEqual(getSiweQuarantineReasons(parsedMinimalMessage, 'https://example.com'), [])
+		assert.deepEqual(getSiweQuarantineReasons({ ...parsedMinimalMessage, scheme: 'https', domain: 'EXAMPLE.com:443' }, 'https://example.com'), [])
+		assert.deepEqual(getSiweQuarantineReasons({ ...parsedMinimalMessage, scheme: 'http', domain: 'localhost:3000' }, 'http://localhost:3000'), [])
+	})
+
+	test('flags a sign-in message for a different website as phishing', () => {
+		assert.deepEqual(getSiweQuarantineReasons(parsedMinimalMessage, 'https://evil.example'), [fromEvilExample])
+	})
+
+	test('compares hosts and ports exactly, so subdomains, parent domains and other ports do not match', () => {
+		for (const requestOrigin of ['https://app.example.com', 'https://com', 'https://example.com:8443', 'https://example.com.evil.example']) {
+			assert.equal(getSiweQuarantineReasons(parsedMinimalMessage, requestOrigin).length, 1, requestOrigin)
+		}
+		assert.equal(getSiweQuarantineReasons({ ...parsedMinimalMessage, domain: 'app.example.com' }, 'https://example.com').length, 1)
+	})
+
+	test('flags a domain that hides the real host behind userinfo', () => {
+		for (const domain of ['example.com@evil.example', '@evil.example', ':@evil.example']) {
+			assert.equal(getSiweQuarantineReasons({ ...parsedMinimalMessage, domain }, 'https://evil.example').length, 1, domain)
+		}
+	})
+
+	test('flags a scheme mismatch, assuming https when the message names no scheme', () => {
+		assert.deepEqual(getSiweQuarantineReasons(parsedMinimalMessage, 'http://example.com'), [
+			'This sign-in message is for https://example.com (a sign-in message that names no scheme is for https), but it was requested by http://example.com. A website asking you to sign in to a different website is a common phishing attack.',
+		])
+		assert.deepEqual(getSiweQuarantineReasons({ ...parsedMinimalMessage, scheme: 'http' }, 'https://example.com'), [
+			'This sign-in message is for http://example.com, but it was requested by https://example.com. A website asking you to sign in to a different website is a common phishing attack.',
+		])
+	})
+
+	test('flags a sign-in message whose request has no recorded origin instead of comparing hosts alone', () => {
+		for (const [message, messageOrigin] of [[parsedMinimalMessage, 'https://example.com'], [{ ...parsedMinimalMessage, scheme: 'http' }, 'http://example.com']] as const) {
+			assert.deepEqual(getSiweQuarantineReasons(message, undefined), [
+				`This sign-in message is for ${ messageOrigin }, but the Interceptor did not record the full origin of the website that requested it, so it cannot check that they match.`,
+			])
+		}
+	})
+
+	test('leaves the validity window to the dialog, which checks it against the clock while it is shown', () => {
+		assert.deepEqual(getSiweQuarantineReasons({ ...parsedMinimalMessage, expirationTime: '2000-01-01T00:00:00Z', notBefore: '2100-01-01T00:00:00Z' }, 'https://example.com'), [])
+	})
+
+	test('flags only unparsed messages that still read like a sign-in request', () => {
+		assert.deepEqual(getSiweLookalikeQuarantineReasons(`${ minimalMessage }\n`), [SIWE_LOOKALIKE_QUARANTINE_REASON])
+		assert.deepEqual(getSiweLookalikeQuarantineReasons('Welcome! Sign this message to continue.'), [])
 	})
 })

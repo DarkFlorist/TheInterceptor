@@ -2,8 +2,8 @@ import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
-import { getWebsiteSocketScheme, websiteSocketToString } from '../../app/ts/background/backgroundUtils.js'
-import { craftPersonalSignPopupMessage, SIWE_LOOKALIKE_QUARANTINE_REASON } from '../../app/ts/background/windows/personalSign.js'
+import { getWebsiteSocketOrigin, websiteSocketToString } from '../../app/ts/background/backgroundUtils.js'
+import { craftPersonalSignPopupMessage } from '../../app/ts/background/windows/personalSign.js'
 import { SignatureCard } from '../../app/ts/components/pages/PersonalSign.js'
 import { identifySignature } from '../../app/ts/components/simulationExplaining/identifySignature.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
@@ -13,6 +13,7 @@ import type { SignedMessageTransaction } from '../../app/ts/types/visualizer-typ
 import { serialize } from '../../app/ts/types/wire-types.js'
 import { MOCK_PRIVATE_KEYS_ADDRESS } from '../../app/ts/utils/constants.js'
 import { bytesToHex, stringToBytes } from '../../app/ts/utils/ethereumBytes.js'
+import { SIWE_LOOKALIKE_QUARANTINE_REASON } from '../../app/ts/utils/siwe.js'
 import { clickRenderedElement, findRenderedElement, installDateMock, installDomMock } from './domMock.js'
 
 // vitalik.eth is in the default address book, so identifying it needs no RPC.
@@ -63,8 +64,8 @@ const installBrowserStorageMock = () => {
 	return () => { Object.defineProperty(globalThis, 'browser', { value: previousBrowser, configurable: true, writable: true }) }
 }
 
-const siweText = ({ domain = 'example.com', address = VITALIK_CHECKSUMMED, uri = 'https://example.com/login', chainId = '1', optionalFields = [] }: { domain?: string, address?: string, uri?: string, chainId?: string, optionalFields?: readonly string[] } = {}) => [
-	`${ domain } wants you to sign in with your Ethereum account:`,
+const siweText = ({ scheme, domain = 'example.com', address = VITALIK_CHECKSUMMED, uri = 'https://example.com/login', chainId = '1', optionalFields = [] }: { scheme?: string, domain?: string, address?: string, uri?: string, chainId?: string, optionalFields?: readonly string[] } = {}) => [
+	`${ scheme === undefined ? '' : `${ scheme }://` }${ domain } wants you to sign in with your Ethereum account:`,
 	address,
 	'',
 	'I accept the ExampleOrg Terms of Service: https://example.com/tos',
@@ -77,11 +78,16 @@ const siweText = ({ domain = 'example.com', address = VITALIK_CHECKSUMMED, uri =
 	...optionalFields,
 ].join('\n')
 
-function createSignedMessageTransaction(message: string, website: { websiteOrigin: string, websiteScheme: string } = { websiteOrigin: 'example.com', websiteScheme: 'https' }): SignedMessageTransaction {
+// The requesting website: its host and port as `Website.websiteOrigin` keeps them, and the full origin recorded with the request, which records stored before it was recorded lack.
+type Requester = { readonly websiteOrigin: string, readonly requestOrigin: string | undefined }
+const FROM_EXAMPLE_COM: Requester = { websiteOrigin: 'example.com', requestOrigin: 'https://example.com' }
+const FROM_EVIL_EXAMPLE: Requester = { websiteOrigin: 'evil.example', requestOrigin: 'https://evil.example' }
+
+function createSignedMessageTransaction(message: string, requester: Requester = FROM_EXAMPLE_COM): SignedMessageTransaction {
 	const params: readonly [string, bigint] = [bytesToHex(stringToBytes(message)), VITALIK_ADDRESS]
 	return {
-		website: { websiteOrigin: website.websiteOrigin, icon: undefined, title: undefined },
-		websiteScheme: website.websiteScheme,
+		website: { websiteOrigin: requester.websiteOrigin, icon: undefined, title: undefined },
+		...(requester.requestOrigin === undefined ? {} : { requestOrigin: requester.requestOrigin }),
 		created: new Date('2026-01-01T00:00:00.000Z'),
 		activeAddress: VITALIK_ADDRESS,
 		fakeSignedFor: VITALIK_ADDRESS,
@@ -98,28 +104,28 @@ function createSignedMessageTransaction(message: string, website: { websiteOrigi
 	}
 }
 
-async function visualize(message: string, website?: { websiteOrigin: string, websiteScheme: string }) {
+async function visualize(message: string, requester?: Requester) {
 	const restoreBrowser = installBrowserStorageMock()
 	try {
-		return await craftPersonalSignPopupMessage(ethereum, undefined, createSignedMessageTransaction(message, website), rpcEntry)
+		return await craftPersonalSignPopupMessage(ethereum, undefined, createSignedMessageTransaction(message, requester), rpcEntry)
 	} finally {
 		restoreBrowser()
 	}
 }
 
-async function visualizeSignIn(message: string, website?: { websiteOrigin: string, websiteScheme: string }) {
-	const visualized = await visualize(message, website)
+async function visualizeSignIn(message: string, requester?: Requester) {
+	const visualized = await visualize(message, requester)
 	if (visualized.type !== 'SignInWithEthereum') throw new Error(`expected a Sign-In with Ethereum visualization, got ${ visualized.type }`)
 	return visualized
 }
 
 describe('Sign-In with Ethereum personal_sign visualization', () => {
-	test('reads the scheme of the requesting frame from its content script port', () => {
+	test('reads the full origin of the requesting frame from its content script port', () => {
 		const socket = { tabId: 7, connectionName: 3n }
 		const port = { name: '0x3', sender: { url: 'http://localhost:3000/login?next=%2F' } }
 		const websiteTabConnections = new Map([[socket.tabId, { connections: { [websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'localhost:3000', approved: true, wantsToConnect: false } } }]])
-		assert.equal(getWebsiteSocketScheme(websiteTabConnections, socket), 'http')
-		assert.equal(getWebsiteSocketScheme(websiteTabConnections, { tabId: socket.tabId, connectionName: 4n }), undefined)
+		assert.equal(getWebsiteSocketOrigin(websiteTabConnections, socket), 'http://localhost:3000')
+		assert.equal(getWebsiteSocketOrigin(websiteTabConnections, { tabId: socket.tabId, connectionName: 4n }), undefined)
 	})
 
 	test('visualizes a sign-in message from the website it names without quarantine', async () => {
@@ -146,9 +152,17 @@ describe('Sign-In with Ethereum personal_sign visualization', () => {
 	})
 
 	test('quarantines a sign-in message for a different website', async () => {
-		const visualized = await visualizeSignIn(siweText({ domain: 'example.com' }), { websiteOrigin: 'evil.example', websiteScheme: 'https' })
+		const visualized = await visualizeSignIn(siweText({ domain: 'example.com' }), FROM_EVIL_EXAMPLE)
 		assert.equal(visualized.quarantine, true)
 		assert.deepEqual(visualized.quarantineReasons, ['This sign-in message is for https://example.com, but it was requested by https://evil.example. A website asking you to sign in to a different website is a common phishing attack.'])
+	})
+
+	test('flags a sign-in message from a record without a requesting origin instead of checking its host alone', async () => {
+		// An http page on the named host asking for an http sign-in: comparing hosts alone would pass it, so a record that cannot tell its scheme apart is flagged.
+		const visualized = await visualizeSignIn(siweText({ scheme: 'http' }), { websiteOrigin: 'example.com', requestOrigin: undefined })
+		assert.equal(visualized.message.scheme, 'http')
+		assert.equal(visualized.quarantine, true)
+		assert.deepEqual(visualized.quarantineReasons, ['This sign-in message is for http://example.com, but the Interceptor did not record the full origin of the website that requested it, so it cannot check that they match.'])
 	})
 
 	test('flags a sign-in message for an account other than the signing account', async () => {
@@ -172,7 +186,7 @@ describe('Sign-In with Ethereum personal_sign visualization', () => {
 	})
 
 	test('quarantines a message that reads like a sign-in request but does not conform to EIP-4361', async () => {
-		const visualized = await visualize(`${ siweText() }\n`, { websiteOrigin: 'evil.example', websiteScheme: 'https' })
+		const visualized = await visualize(`${ siweText() }\n`, FROM_EVIL_EXAMPLE)
 		assert.equal(visualized.type, 'NotParsed')
 		assert.equal(visualized.quarantine, true)
 		assert.deepEqual(visualized.quarantineReasons, [SIWE_LOOKALIKE_QUARANTINE_REASON])
@@ -193,7 +207,7 @@ describe('Sign-In with Ethereum personal_sign visualization', () => {
 	})
 
 	test('quarantines a percent-encoded domain instead of matching its decoded host', async () => {
-		const visualized = await visualize(siweText({ domain: '%65vil.example' }), { websiteOrigin: 'evil.example', websiteScheme: 'https' })
+		const visualized = await visualize(siweText({ domain: '%65vil.example' }), FROM_EVIL_EXAMPLE)
 		assert.equal(visualized.type, 'NotParsed')
 		assert.equal(visualized.quarantine, true)
 		assert.deepEqual(visualized.quarantineReasons, [SIWE_LOOKALIKE_QUARANTINE_REASON])
@@ -249,7 +263,7 @@ describe('Sign-In with Ethereum personal_sign visualization', () => {
 	})
 
 	test('shows the sign-in fields, the warning and the raw message in the signature card', async () => {
-		const visualized = await visualizeSignIn(siweText({ optionalFields: ['Request ID: request-1', 'Resources:', '- ipfs://bafybeiemxf5abjwjbikoz4mc3a3dla6ual3jsgpdr4cjr3oz3evfyavhwq/'] }), { websiteOrigin: 'evil.example', websiteScheme: 'https' })
+		const visualized = await visualizeSignIn(siweText({ optionalFields: ['Request ID: request-1', 'Resources:', '- ipfs://bafybeiemxf5abjwjbikoz4mc3a3dla6ual3jsgpdr4cjr3oz3evfyavhwq/'] }), FROM_EVIL_EXAMPLE)
 		const dom = installDomMock()
 		try {
 			await act(() => {
