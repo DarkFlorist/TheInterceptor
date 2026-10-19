@@ -7,6 +7,7 @@ import { Website } from './websiteAccessTypes.js'
 import { SignerName } from './signerTypes.js'
 import { EnrichedEIP712, EnrichedEIP712MessageRecord } from './eip721.js'
 import { EnrichedEthereumInputData } from './EnrichedEthereumData.js'
+import { assertNever } from '../utils/typescript.js'
 
 type EIP2612Message = funtypes.Static<typeof EIP2612Message>
 const EIP2612Message = funtypes.ReadonlyObject({
@@ -219,6 +220,36 @@ const Permit2BatchWitnessTransferFrom = funtypes.ReadonlyObject({
 
 export type Permit2SignatureTransfer = funtypes.Static<typeof Permit2SignatureTransfer>
 export const Permit2SignatureTransfer = funtypes.Union(Permit2TransferFrom, Permit2BatchTransferFrom, Permit2WitnessTransferFrom, Permit2BatchWitnessTransferFrom)
+
+type Permit2StructField = { readonly name: string, readonly type: string }
+
+export type Permit2SignatureTransferKind = {
+	readonly isBatch: boolean
+	readonly hasWitness: boolean
+	// Single token transfers are listed as a one element array so single and batch transfers are handled the same way.
+	readonly permitted: readonly funtypes.Static<typeof Permit2TokenPermissions>[]
+	readonly structFields: readonly Permit2StructField[]
+}
+
+// The only place that tells the SignatureTransfer primary types apart, so token grouping, witness lookup and naming always agree on the kind.
+export function getPermit2SignatureTransferKind(permit: Permit2SignatureTransfer): Permit2SignatureTransferKind {
+	switch (permit.primaryType) {
+		case 'PermitTransferFrom': return { isBatch: false, hasWitness: false, permitted: [permit.message.permitted], structFields: permit.types.PermitTransferFrom }
+		case 'PermitBatchTransferFrom': return { isBatch: true, hasWitness: false, permitted: permit.message.permitted, structFields: permit.types.PermitBatchTransferFrom }
+		case 'PermitWitnessTransferFrom': return { isBatch: false, hasWitness: true, permitted: [permit.message.permitted], structFields: permit.types.PermitWitnessTransferFrom }
+		case 'PermitBatchWitnessTransferFrom': return { isBatch: true, hasWitness: true, permitted: permit.message.permitted, structFields: permit.types.PermitBatchWitnessTransferFrom }
+		default: return assertNever(permit)
+	}
+}
+
+// Permit2 itself defines these SignatureTransfer fields, while the integrator names the witness field, for example `witness` in UniswapX.
+const permit2SignatureTransferFieldNames: readonly string[] = ['permitted', 'spender', 'nonce', 'deadline']
+
+// Finds the witness by name instead of by position, and returns undefined unless exactly one field is not a Permit2 field, so a Permit2 field is never taken as the witness.
+export function findPermit2WitnessField(structFields: readonly Permit2StructField[]) {
+	const witnessFields = structFields.filter(({ name }) => !permit2SignatureTransferFieldNames.includes(name))
+	return witnessFields.length === 1 ? witnessFields[0] : undefined
+}
 
 type SeaPortItemType = funtypes.Static<typeof SeaPortItemType>
 const SeaPortItemType = funtypes.Union(
