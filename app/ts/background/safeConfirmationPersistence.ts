@@ -128,7 +128,7 @@ async function persistSafeTransaction(
 	}
 	try {
 		// The proposal goes to the Gnosis Safe stack of this client's network, so the network check runs as the last step after the Gnosis Safe contract was validated, and also covers the proposal's signing domain.
-		const persistence = await commitOnRequestedNetwork(ethereum, pendingTransaction, async () => await updateTransactionState((previousState) => {
+		const persistence = await commitOnRequestedNetwork(ethereum, pendingTransaction, () => ({ started: updateTransactionState((previousState) => {
 			const reconciledState = reconcileSafeTransactionState(
 				previousState,
 				ethereum.getChainId(),
@@ -184,8 +184,8 @@ async function persistSafeTransaction(
 					preSimulationTransaction: { ...transaction, safeTransaction: persistedStackTransaction },
 				}] }
 			return { safeTransactionStacks, interceptorTransactionStack }
-		}))
-		if (!persistence.committed) return { status: 'error', approvalStatus: persistence.networkError }
+		}) }))
+		if (!persistence.committed) return { status: 'error', approvalStatus: persistence.refusal }
 	} catch (error) {
 		if (!isSafeContractValidationFailure(error)) throw error
 		return signerError(`Gnosis Safe proposal could not be persisted: ${ getErrorMessage(error) ?? 'The local Gnosis Safe proposal stack changed.' }`)

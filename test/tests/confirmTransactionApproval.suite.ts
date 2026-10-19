@@ -571,3 +571,22 @@ test('a network switch while the website connection is re-established keeps the 
 	if (pending.approvalStatus.status !== 'SignerError') throw new Error(`Expected an invalidated approval, got ${ pending.approvalStatus.status }`)
 	assert.equal(pending.approvalStatus.code, METAMASK_ERROR_NOT_CONNECTED_TO_APPROPRIATE_CHAIN)
 })
+
+test('a network-checked commit starts in the same turn as its network check', async () => {
+	const { commitOnRequestedNetwork } = await import('../../app/ts/background/transactionNetwork.js')
+	let microtaskQueuedByCheckRan = false
+	// The network check reads the requested network, so this queues a microtask at the check; any await before the commit starts would let it run first.
+	const pending = { ...pendingTransaction, get requestedChainId() {
+		queueMicrotask(() => { microtaskQueuedByCheckRan = true })
+		return fakeRpcNetwork.chainId
+	} }
+	let startedAfterAnAwait: boolean | undefined
+
+	const commit = await commitOnRequestedNetwork(simulator.ethereum, pending, () => {
+		startedAfterAnAwait = microtaskQueuedByCheckRan
+		return { started: 'stored' }
+	})
+
+	assert.deepEqual(commit, { committed: true, result: 'stored' })
+	assert.equal(startedAfterAnAwait, false)
+})

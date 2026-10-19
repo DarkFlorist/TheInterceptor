@@ -1,10 +1,6 @@
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { PendingTransaction, PendingTransactionOrSignableMessage, SimulatedPendingTransaction } from '../types/accessRequest.js'
-import type { InterceptedRequestForward } from '../types/interceptor-messages.js'
-import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { METAMASK_ERROR_NOT_CONNECTED_TO_APPROPRIATE_CHAIN } from '../utils/constants.js'
-import { attemptDeliveryAfterManifestV2Reconnect } from './manifestV2Reconnect.js'
-import { replyToInterceptedRequest } from './messageSending.js'
 import { getSettings } from './settings.js'
 
 // A transaction is only prepared, simulated and visualized with the client of the network it was requested for. After a network switch its preview is kept unchanged, and approval is refused until the user switches back.
@@ -33,26 +29,15 @@ function getTransactionNetworkError(activeChainId: bigint, ethereum: EthereumCli
 
 export const getTransactionNetworkApprovalError = async (ethereum: EthereumClientService, pendingTransaction: PendingTransaction) => getTransactionNetworkError((await getSettings()).activeRpcNetwork.chainId, ethereum, pendingTransaction)
 
-type NetworkCheckedCommit<T> = { readonly committed: true, readonly result: T } | { readonly committed: false, readonly networkError: TransactionNetworkError }
+type NetworkCheckedCommit<T> = { readonly committed: true, readonly result: T } | { readonly committed: false, readonly refusal: TransactionNetworkError }
 
-// The last step before a transaction is forwarded to the signer, added to the simulation stack or stored in a Gnosis Safe stack, started with nothing awaited after the network check, so a network switch either finished before the check or applies after the commit posted its request or queued its storage update. This guarantees that the Interceptor's active network, its client and the stored preview match the requested network at every commit or delivery attempt; it cannot guarantee the network an external wallet signs on, because the forwarded request carries no chain id and a wallet can switch networks before the Interceptor learns of it. Signable messages carry no requested network, so they are committed unchecked.
-export async function commitOnRequestedNetwork<T>(ethereum: EthereumClientService, pending: PendingTransactionOrSignableMessage, commit: () => Promise<T>): Promise<NetworkCheckedCommit<T>> {
+// The write or delivery a commit already started. It is returned from a synchronous function, which cannot await, so the commit begins in the same turn as the network check before it.
+export type StartedCommit<T> = { readonly started: Promise<T> | T }
+
+// The last step before a transaction is forwarded to the signer, added to the simulation stack or stored in a Gnosis Safe stack, so a network switch either finished before the check or applies after the commit posted its request or queued its storage update. This guarantees that the Interceptor's active network, its client and the stored preview match the requested network at every commit or delivery attempt; it cannot guarantee the network an external wallet signs on, because the forwarded request carries no chain id and a wallet can switch networks before the Interceptor learns of it. Signable messages carry no requested network, so they are committed unchecked.
+export async function commitOnRequestedNetwork<T>(ethereum: EthereumClientService, pending: PendingTransactionOrSignableMessage, startCommit: () => StartedCommit<T>): Promise<NetworkCheckedCommit<T>> {
 	const activeChainId = (await getSettings()).activeRpcNetwork.chainId
-	const networkError = pending.type === 'Transaction' ? getTransactionNetworkError(activeChainId, ethereum, pending) : undefined
-	if (networkError !== undefined) return { committed: false, networkError }
-	return { committed: true, result: await commit() }
-}
-
-// Forwards an approved request to the signer with the network checked right before every delivery attempt, including the retry after a Manifest V2 content script reconnect, which can outlast a network switch.
-export async function forwardOnRequestedNetwork(ethereum: EthereumClientService, websiteTabConnections: WebsiteTabConnections, pending: PendingTransactionOrSignableMessage, message: InterceptedRequestForward): Promise<NetworkCheckedCommit<boolean | undefined>> {
-	const refusedAttempts: TransactionNetworkError[] = []
-	const delivered = await attemptDeliveryAfterManifestV2Reconnect(websiteTabConnections, message, async () => {
-		const attempt = await commitOnRequestedNetwork(ethereum, pending, async () => replyToInterceptedRequest(websiteTabConnections, message))
-		if (attempt.committed) return attempt.result
-		refusedAttempts.push(attempt.networkError)
-		// Only a false result makes the reconnect helper retry, so a refused attempt ends the delivery.
-		return undefined
-	})
-	const [networkError] = refusedAttempts
-	return networkError === undefined ? { committed: true, result: delivered } : { committed: false, networkError }
+	const refusal = pending.type === 'Transaction' ? getTransactionNetworkError(activeChainId, ethereum, pending) : undefined
+	if (refusal !== undefined) return { committed: false, refusal }
+	return { committed: true, result: await startCommit().started }
 }

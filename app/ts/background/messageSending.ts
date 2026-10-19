@@ -42,6 +42,22 @@ export async function replyToInterceptedRequestAfterManifestV2Reconnect(websiteT
 	return await attemptDeliveryAfterManifestV2Reconnect(websiteTabConnections, message, () => replyToInterceptedRequest(websiteTabConnections, message))
 }
 
+type GuardedDeliveryAttempt<Refusal> = { readonly committed: true, readonly result: boolean | undefined } | { readonly committed: false, readonly refusal: Refusal }
+
+// Delivers like replyToInterceptedRequestAfterManifestV2Reconnect, but runs every delivery attempt, including the retry after a Manifest V2 reconnect, through guardAttempt, which either makes the attempt or refuses it. A refused attempt ends the delivery and its refusal is returned.
+export async function replyToInterceptedRequestAfterManifestV2ReconnectWithGuard<Refusal>(websiteTabConnections: WebsiteTabConnections, message: InterceptedRequestForward, guardAttempt: (deliver: () => boolean | undefined) => Promise<GuardedDeliveryAttempt<Refusal>>): Promise<GuardedDeliveryAttempt<Refusal>> {
+	const refusals: Refusal[] = []
+	const delivered = await attemptDeliveryAfterManifestV2Reconnect(websiteTabConnections, message, async () => {
+		const attempt = await guardAttempt(() => replyToInterceptedRequest(websiteTabConnections, message))
+		if (attempt.committed) return attempt.result
+		refusals.push(attempt.refusal)
+		// Only a false result makes the reconnect helper retry, so a refused attempt ends the delivery.
+		return undefined
+	})
+	const [refusal] = refusals
+	return refusal === undefined ? { committed: true, result: delivered } : { committed: false, refusal }
+}
+
 export function sendSubscriptionReplyOrCallBackToPort(port: browser.runtime.Port, message: SubscriptionReplyOrCallBack) {
 	return postMessageToPortIfConnected(port, {...message, interceptorApproved: true })
 }
