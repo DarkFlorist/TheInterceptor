@@ -4,7 +4,7 @@ import { Semaphore } from '../utils/semaphore.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { captureSimulationSnapshot, getUpdatedSimulationStackSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
 import { getSettings, setUseTabsInsteadOfPopup, setPage, getMakeCurrentAddressRich, setMetamaskCompatibilityMode, setSafeAppsCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, updateMakeCurrentAddressRich, updateFixedMakeMeRichList } from './settings.js'
-import { getPendingTransactionsAndMessages, getTabState, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests, updateTransactionState, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, getSafeTransactionStacks } from './storageVariables.js'
+import { getPendingTransactionsAndMessages, getTabState, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, setIdsOfOpenedTabs, getIdsOfOpenedTabs, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests, updateTransactionState, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, getSafeTransactionStacks } from './storageVariables.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
 import type { ChangeActiveAddress, ModifyMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, WatchAssetConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, ChangeSettings, UpdateHomePage, SimulateGovernanceContractExecution, ChangeAddOrModifyAddressWindowState, OpenWebPage, SetEnsNameForHash, ForceSetGasLimitForTransaction, ChangePreSimulationBlockTimeManipulation, SetTransactionOrMessageBlockTimeManipulator, FetchSimulationStackRequestConfirmation, ImportSimulationStack, PopupReadyAndListeningPage } from '../types/interceptor-messages.js'
 import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransactionOrMessage, updateConfirmTransactionView, setGasLimitForTransaction, toPopupPendingTransactionOrSignableMessage, sendStoredStateToConfirmTransactionDialog } from './windows/confirmTransaction.js'
@@ -590,7 +590,7 @@ export async function refreshPopupConfirmTransactionSimulation(ethereum: Ethereu
 			safeFlow === undefined ? 'transaction-sender' : 'external-executor',
 		)
 		: await formSendRawTransaction(ethereum, firstTxn.originalRequestParameters, firstTxn.transactionToSimulate.website, firstTxn.created, firstTxn.transactionIdentifier)
-	const refreshedRun = await simulateAndStoreConfirmationWithAddressBookCatchUp(ethereum, async () => {
+	const refreshedRun = await simulateAndStoreConfirmationWithAddressBookCatchUp(ethereum.getRpcEntry(), async (storeRun) => {
 		const refreshMessage = await refreshConfirmTransactionSimulation(
 			ethereum,
 			tokenPriceService,
@@ -600,9 +600,8 @@ export async function refreshPopupConfirmTransactionSimulation(ethereum: Ethereu
 			transactionToSimulate,
 			proposalSafeTransaction,
 		)
-		if (refreshMessage === undefined) return { storedNewRun: false, result: undefined }
-		let storedNewRun = false
-		await updatePendingTransactionOrMessage(firstTxn.uniqueRequestIdentifier, async (transactionOrMessage) => {
+		if (refreshMessage === undefined) return undefined
+		await storeRun(firstTxn.uniqueRequestIdentifier, async (transactionOrMessage) => {
 			switch (transactionOrMessage.type) {
 				case 'SignableMessage': throw new Error('Tried to refresh simulation of a message')
 				case 'Transaction': {
@@ -610,7 +609,6 @@ export async function refreshPopupConfirmTransactionSimulation(ethereum: Ethereu
 					const currentTimestamp = getSimulationConductedTimestamp(transactionOrMessage.popupVisualisation)
 					const nextTimestamp = getSimulationConductedTimestamp(refreshMessage)
 					if (currentTimestamp !== undefined && nextTimestamp !== undefined && nextTimestamp.getTime() < currentTimestamp.getTime()) return transactionOrMessage
-					storedNewRun = true
 					if (transactionToSimulate.success) {
 						return {
 							...transactionOrMessage,
@@ -629,7 +627,7 @@ export async function refreshPopupConfirmTransactionSimulation(ethereum: Ethereu
 				default: assertNever(transactionOrMessage)
 			}
 		})
-		return { storedNewRun, result: refreshMessage }
+		return refreshMessage
 	})
 	if (refreshedRun === undefined) return
 	await updateConfirmTransactionView(ethereum, tokenPriceService, true)
@@ -1278,7 +1276,7 @@ export async function requestSimulationMetadata(ethereumClientService: EthereumC
 	const events = (await eventsForEachBlockAndTransactionPromise).flat()
 	const inputData = (await parsedInputDataForEachBlockAndTransactionPromise).flat()
 
-	const metadata = await getMetadataForSimulation(simulationState.value, ethereumClientService, lookUpMetadataOnChain(ethereumClientService, undefined), events, inputData)
+	const metadata = await getMetadataForSimulation(simulationState.value, ethereumClientService.getChainId(), lookUpMetadataOnChain(ethereumClientService, undefined), events, inputData)
 	return { method: 'popup_requestSimulationMetadata' as const, metadata }
 }
 

@@ -4,7 +4,6 @@ import { erc1155Metadata, erc721Metadata, tokenMetadata } from '@darkflorist/add
 import { addressString } from '../../utils/bigint.js'
 import { parseTransaction } from '../../utils/calldata.js'
 import type { ProtectorChainReads } from '../protectorChainReads.js'
-import type { EthereumClientService } from '../services/EthereumClientService.js'
 import type { IdentifyAddress } from '../../background/metadataUtils.js'
 
 const ADDITIONAL_BAD_TRANSFER_TARGETS = new Set<bigint>([
@@ -24,7 +23,7 @@ export async function getCodeOrError(chainReads: ProtectorChainReads, identify: 
 	const identifiedAddress = await identify(address)
 	return { statusCode: 'failure' as const, message: `Failed to verify whether address ${ identifiedAddress.address }(${ identifiedAddress.name }) contains code or not.` }
 }
-export async function commonTokenOops(transaction: EthereumUnsignedTransaction, _ethereum: EthereumClientService, identify: IdentifyAddress, _chainReads: ProtectorChainReads) {
+export async function commonTokenOops(transaction: EthereumUnsignedTransaction, _connectedChainId: bigint, identify: IdentifyAddress, _chainReads: ProtectorChainReads) {
 	const transferInfo = parseTransaction(transaction)
 	if (transferInfo === undefined) return
 	if (transaction.to === null) return

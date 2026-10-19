@@ -7,7 +7,7 @@ import { relabelReportingUnexpectedErrors } from './simulationRelabel.js'
 // Notifies even when there was nothing to re-label, so the notification always marks the end of the re-label.
 async function relabelStoredSimulationsAndNotify({ ethereum }: SimulationServices, displayedConfirmationRelabel: Promise<void>) {
 	await Promise.all([
-		relabelReportingUnexpectedErrors(relabelPopupVisualisation(ethereum)),
+		relabelReportingUnexpectedErrors(relabelPopupVisualisation(ethereum.getRpcEntry())),
 		relabelReportingUnexpectedErrors(displayedConfirmationRelabel),
 	])
 	await sendPopupMessageToOpenWindows({ method: 'popup_simulationsRelabelled' })
@@ -16,7 +16,7 @@ async function relabelStoredSimulationsAndNotify({ ethereum }: SimulationService
 // Callers wait only for the address-book change broadcast, never for the background re-label; see "Address-book re-labels" in docs/popup-simulation-refresh.md.
 export async function publishAddressBookChangeAndRelabelSimulations(services: SimulationServices) {
 	// The confirmation coordinator is told of the change before anything is awaited, so a confirmation run that started its lookups earlier catches the change up once it has stored its run.
-	const displayedConfirmationRelabel = relabelDisplayedConfirmationAfterAddressBookChange(services.ethereum)
+	const displayedConfirmationRelabel = relabelDisplayedConfirmationAfterAddressBookChange(services.ethereum.getRpcEntry())
 	const addressBookChangeBroadcast = sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 	void relabelStoredSimulationsAndNotify(services, displayedConfirmationRelabel)
 	await addressBookChangeBroadcast

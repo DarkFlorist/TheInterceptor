@@ -1166,6 +1166,7 @@ test('routes a completed active Safe execution through its configured signer and
 			pendingExecution,
 			alternateSignerAddress,
 			async () => { throw new Error('Direct Safe simulation refresh unavailable') },
+			async () => { throw new Error('A failed direct Safe simulation refresh must not be persisted') },
 		),
 		/Direct Safe simulation refresh unavailable/u,
 	)

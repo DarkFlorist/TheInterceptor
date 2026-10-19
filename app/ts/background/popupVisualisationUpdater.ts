@@ -1,5 +1,6 @@
 // Shared execution layer for popup visualization refreshes; the optional interactive queue adds caller-local scheduling, not global ordering. See docs/popup-simulation-refresh.md.
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
+import type { RpcNetwork } from '../types/rpc.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import type { CompleteVisualizedSimulation, SimulationState } from '../types/visualizer-types.js'
 import { createPassthroughCompleteVisualizedSimulation, toResolvedSimulationState } from '../types/visualizer-types.js'
@@ -138,14 +139,13 @@ function getUncancelledAbortController() {
 }
 
 // Re-labels the stored stack simulation without simulating or publishing popup_simulation_state_changed; see "Address-book re-labels" in docs/popup-simulation-refresh.md.
-export async function relabelPopupVisualisation(ethereum: EthereumClientService) {
+export async function relabelPopupVisualisation(rpcNetwork: RpcNetwork) {
 	// Captured at request time, so a newer block, stack or failure refresh also cancels a re-label still waiting for the semaphore.
 	const thisAbortController = getUncancelledAbortController()
 	await executeVisualisationUpdate(thisAbortController, async () => {
-		const chainId = ethereum.getChainId()
-		await relabelStoredSimulation(ethereum, {
+		await relabelStoredSimulation(rpcNetwork, {
 			stored: await getPopupVisualisationState(),
-			getRunToRelabel: (visualisation) => getStackRunToRelabel(visualisation, chainId),
+			getRunToRelabel: (visualisation) => getStackRunToRelabel(visualisation, rpcNetwork.chainId),
 			updateStored: async (relabel) => await updatePopupVisualisationWithCallBack(async (current) => relabel(current)),
 			abortController: thisAbortController,
 		})

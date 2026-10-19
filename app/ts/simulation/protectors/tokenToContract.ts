@@ -1,11 +1,10 @@
 import type { EthereumUnsignedTransaction } from '../../types/wire-types.js'
 import { parseTransaction } from '../../utils/calldata.js'
 import type { ProtectorChainReads } from '../protectorChainReads.js'
-import type { EthereumClientService } from '../services/EthereumClientService.js'
 import { getCodeOrError } from './commonTokenOops.js'
 import type { IdentifyAddress } from '../../background/metadataUtils.js'
 
-export async function tokenToContract(transaction: EthereumUnsignedTransaction, _ethereum: EthereumClientService, identify: IdentifyAddress, chainReads: ProtectorChainReads) {
+export async function tokenToContract(transaction: EthereumUnsignedTransaction, _connectedChainId: bigint, identify: IdentifyAddress, chainReads: ProtectorChainReads) {
 	const transferInfo = parseTransaction(transaction)
 	if (transferInfo === undefined) return
 	if (transferInfo.name !== 'transfer' && transferInfo.name !== 'transferFrom') return

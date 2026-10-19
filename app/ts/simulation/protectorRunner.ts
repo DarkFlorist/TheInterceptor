@@ -1,4 +1,3 @@
-import type { EthereumClientService } from './services/EthereumClientService.js'
 import { selfTokenOops } from './protectors/selfTokenOops.js'
 import { feeOops } from './protectors/feeOops.js'
 import { commonTokenOops } from './protectors/commonTokenOops.js'
@@ -13,9 +12,10 @@ import type { EnrichedEthereumEvents } from '../types/EnrichedEthereumData.js'
 import type { ProtectorChainReads } from './protectorChainReads.js'
 import type { IdentifyAddress } from '../background/metadataUtils.js'
 
+// A protector reads chain state only through chainReads, so the type keeps every chain read recorded with the run and replayable by an address-book re-label; the connected chain id is a plain value.
 type Protector = (
 	transaction: WebsiteCreatedEthereumTransaction['transaction'],
-	ethereum: EthereumClientService,
+	connectedChainId: bigint,
 	identify: IdentifyAddress,
 	chainReads: ProtectorChainReads,
 	eventsPromise: Promise<EnrichedEthereumEvents>,
@@ -32,8 +32,8 @@ const PROTECTORS: readonly Protector[] = [
 	chainIdMismatch,
 ]
 
-export const runProtectorsForTransaction = async (chainReads: ProtectorChainReads, transaction: WebsiteCreatedEthereumTransaction, ethereum: EthereumClientService, identify: IdentifyAddress, eventsPromise: Promise<EnrichedEthereumEvents>) => {
-	const reasons = await promiseAllMapAbortSafe(PROTECTORS, async (protectorMethod) => await protectorMethod(transaction.transaction, ethereum, identify, chainReads, eventsPromise))
+export const runProtectorsForTransaction = async (chainReads: ProtectorChainReads, transaction: WebsiteCreatedEthereumTransaction, connectedChainId: bigint, identify: IdentifyAddress, eventsPromise: Promise<EnrichedEthereumEvents>) => {
+	const reasons = await promiseAllMapAbortSafe(PROTECTORS, async (protectorMethod) => await protectorMethod(transaction.transaction, connectedChainId, identify, chainReads, eventsPromise))
 	const filteredReasons = reasons.filter((reason): reason is string => reason !== undefined)
 	return {
 		quarantine: filteredReasons.length > 0,

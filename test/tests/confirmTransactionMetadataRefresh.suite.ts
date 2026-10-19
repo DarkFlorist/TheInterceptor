@@ -36,7 +36,7 @@ const { identifyAddressWith, recordIdentifiedAddresses } = await import('../../a
 const simulationServicesOwner: SimulationServicesOwner = { getCurrent: () => simulator, reset: () => simulator }
 
 // The displayed confirmation's re-label as an address-book change requests it, without the stack re-label and the notifications.
-const relabelDisplayedConfirmation = async () => await relabelDisplayedConfirmationAfterAddressBookChange(simulator.ethereum)
+const relabelDisplayedConfirmation = async () => await relabelDisplayedConfirmationAfterAddressBookChange(fakeRpcNetwork)
 
 function getDefined<Value>(value: Value | undefined, description: string): Value {
 	if (value === undefined) throw new Error(`Missing ${ description }`)
@@ -268,9 +268,9 @@ async function changeAddressBookWhileRelabelIsStalled(change: () => Promise<unkn
 const hasNotInAddressBookWarning = (transaction: SimulatedAndVisualizedTransaction) => transaction.quarantineReasons.some((reason) => reason.includes(NOT_IN_ADDRESS_BOOK_WARNING))
 
 // The stack re-label as publishAddressBookChangeAndRelabelSimulations runs it, where cancellation by a newer refresh is expected.
-async function relabelStoredStack(ethereum = simulator.ethereum) {
+async function relabelStoredStack() {
 	try {
-		await relabelPopupVisualisation(ethereum)
+		await relabelPopupVisualisation(fakeRpcNetwork)
 	} catch (error: unknown) {
 		if (!isNewBlockAbort(error)) throw error
 	}
@@ -1537,7 +1537,7 @@ async function relabelStoredRunStandIn(duringLookups: (stored: StoredRunStandIn,
 		stored = duringLookups(stored, abortController)
 	})
 	try {
-		await relabelStoredSimulation(simulator.ethereum, {
+		await relabelStoredSimulation(fakeRpcNetwork, {
 			stored,
 			getRunToRelabel,
 			updateStored: async (relabel) => { stored = relabel(stored) ?? stored },
@@ -1699,16 +1699,6 @@ test('a stack re-label after a failed refresh aborted the shared controller stil
 test('a stack re-label waiting for the simulation semaphore is cancelled by a failure refresh requested meanwhile', async () => {
 	await openSimulationModeConfirmationSendingEther()
 	await addRecipientContactWithoutBroadcast()
-	const queuedRelabelRpcMethods: string[] = []
-	const queuedRelabelEthereum = new modules.EthereumClientService({
-		rpcUrl: fakeRpcNetwork.httpsRpc,
-		clearCache() { return undefined },
-		async getChainId() { return fakeRpcNetwork.chainId },
-		async jsonRpcRequest(rpcRequest: EthereumJsonRpcRequest) {
-			queuedRelabelRpcMethods.push(rpcRequest.method)
-			return await fakeRequestHandler.jsonRpcRequest(rpcRequest)
-		},
-	}, async () => undefined, async () => undefined, fakeRpcNetwork)
 	const storedVisualisationWrites = recordStoredVisualisationWrites()
 	const runningRelabelReachedLookup = createDeferred()
 	const runningRelabelLookupReleased = createDeferred()
@@ -1720,7 +1710,7 @@ test('a stack re-label waiting for the simulation semaphore is cancelled by a fa
 	// The first re-label holds the simulation semaphore inside its address-book lookup while the second one queues behind it.
 	const runningRelabel = relabelStoredStack()
 	await runningRelabelReachedLookup.promise
-	const queuedRelabel = relabelStoredStack(queuedRelabelEthereum)
+	const queuedRelabel = relabelStoredStack()
 	const failureRefresh = publishFailedPopupVisualisation()
 	runningRelabelLookupReleased.resolve()
 	await Promise.all([runningRelabel, queuedRelabel, failureRefresh])
@@ -1728,7 +1718,6 @@ test('a stack re-label waiting for the simulation semaphore is cancelled by a fa
 	browserMock.setStorageSetHandler(undefined)
 
 	assert.deepEqual(storedVisualisationWrites.map((write) => CompleteVisualizedSimulation.parse(write).simulationUpdatingState), ['failed'])
-	assert.deepEqual(queuedRelabelRpcMethods, [])
 })
 
 test('a block-time manipulation change during a stack re-label still simulates the stack again', async () => {

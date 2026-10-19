@@ -177,14 +177,14 @@ export async function getUpdatedSimulationStackSnapshot(ethereum: EthereumClient
 
 export async function getMetadataForSimulation(
 	simulationState: SimulationState,
-	ethereum: EthereumClientService,
+	chainId: bigint,
 	lookups: MetadataLookups,
 	eventsForEachTransaction: readonly EnrichedEthereumEvents[],
 	inputData: readonly EnrichedEthereumInputData[],
 ) {
 	const allEvents = eventsForEachTransaction.flat()
 	const addressBookEntryPromises = silenceChromeUnCaughtPromise(getAddressBookEntriesForVisualiserFromTransactions(lookups.identifyAddress, allEvents, inputData, simulationState.simulationStateInput))
-	const namedTokenIdPromises = silenceChromeUnCaughtPromise(nameTokenIds(ethereum.getChainId(), lookups.lookUpEnsName, allEvents))
+	const namedTokenIdPromises = silenceChromeUnCaughtPromise(nameTokenIds(chainId, lookups.lookUpEnsName, allEvents))
 	const addressBookEntries = await addressBookEntryPromises
 	const ensPromise = silenceChromeUnCaughtPromise(retrieveEnsNodeAndLabelHashes(lookups.lookUpEnsName, allEvents, addressBookEntries))
 	const namedTokenIds = await namedTokenIdPromises
@@ -443,7 +443,7 @@ export const updateTopLevelSimulationMetadata = async (ethereum: EthereumClientS
 			const events = (await eventsForEachBlockAndTransactionPromise).flat()
 			const inputData = (await parsedInputDataForEachBlockAndTransactionPromise).flat()
 
-			const metadata = await getMetadataForSimulation(prevState.simulationState.value, ethereum, lookUpMetadataOnChain(ethereum, requestAbortController), events, inputData)
+			const metadata = await getMetadataForSimulation(prevState.simulationState.value, ethereum.getChainId(), lookUpMetadataOnChain(ethereum, requestAbortController), events, inputData)
 			return { ...prevState, ...metadata }
 		} catch (error) {
 			if (isExpectedInfrastructureError(error)) return prevState
@@ -499,7 +499,7 @@ type VisualisationLookups = MetadataLookups & {
 export async function visualizeSimulatorState(simulationState: SimulationState, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, requestAbortController: AbortController | undefined) {
 	const onChainLookups = lookUpMetadataOnChain(ethereum, requestAbortController)
 	const identification = recordIdentifiedAddresses(onChainLookups.identifyAddress)
-	return await visualizeSimulatorStateWithLookups(simulationState, ethereum, {
+	return await visualizeSimulatorStateWithLookups(simulationState, ethereum.getRpcEntry(), {
 		identifyAddress: identification.identifyAddress,
 		lookUpEnsName: onChainLookups.lookUpEnsName,
 		getDelegationAddressBySender: async (simulationStateInput) => await getDelegationAddressesForSimulation(simulationStateInput, ethereum, requestAbortController, identification.identifyAddress),
@@ -529,10 +529,10 @@ export type RecordedVisualisationLookups = {
 	readonly identifiedAddressBookEntries: readonly AddressBookEntry[]
 }
 
-// An address-book re-label visualises a stored run again without any RPC request, so it can neither simulate nor fail with the node: addresses are named from the address book, bundled metadata and the entries the run identified (lookUpMetadataForRelabel), and the delegations, token prices and protector chain reads are those stored with the run.
-export async function visualizeStoredRunWithoutNode(simulationState: SimulationState, storedMetadata: StoredSimulationMetadata, recorded: RecordedVisualisationLookups, ethereum: EthereumClientService) {
-	const metadataLookups = lookUpMetadataForRelabel(recorded.identifiedAddressBookEntries, ethereum.getRpcEntry())
-	return await visualizeSimulatorStateWithLookups(simulationState, ethereum, {
+// An address-book re-label visualises a stored run again without any RPC request, so it can neither simulate nor fail with the node: it gets the services' network as plain data, not a client, addresses are named from the address book, bundled metadata and the entries the run identified (lookUpMetadataForRelabel), and the delegations, token prices and protector chain reads are those stored with the run.
+export async function visualizeStoredRunWithoutNode(simulationState: SimulationState, storedMetadata: StoredSimulationMetadata, recorded: RecordedVisualisationLookups, rpcNetwork: RpcNetwork) {
+	const metadataLookups = lookUpMetadataForRelabel(recorded.identifiedAddressBookEntries, rpcNetwork)
+	return await visualizeSimulatorStateWithLookups(simulationState, rpcNetwork, {
 		...metadataLookups,
 		getDelegationAddressBySender: async () => {
 			const storedDelegations = Array.from(getStoredDelegationAddressBySender(storedMetadata.visualizedSimulationState))
@@ -550,9 +550,10 @@ export async function visualizeStoredRunWithoutNode(simulationState: SimulationS
 	})
 }
 
-async function visualizeSimulatorStateWithLookups(simulationState: SimulationState, ethereum: EthereumClientService, lookups: VisualisationLookups): Promise<VisualizedSimulatorState> {
+// Every lookup goes through lookups, so the visualisation itself reads nothing from the node; rpcNetwork is the services' network.
+async function visualizeSimulatorStateWithLookups(simulationState: SimulationState, rpcNetwork: RpcNetwork, lookups: VisualisationLookups): Promise<VisualizedSimulatorState> {
 	const getWeth = async (): Promise<Erc20TokenEntry | undefined> => {
-		const wethAddr = getWethForChainId(ethereum.getRpcEntry().chainId)
+		const wethAddr = getWethForChainId(rpcNetwork.chainId)
 		if (wethAddr === undefined) return undefined
 		const entry = await lookups.identifyAddress(wethAddr)
 		if (entry.type !== 'ERC20') return undefined
@@ -572,7 +573,7 @@ async function visualizeSimulatorStateWithLookups(simulationState: SimulationSta
 
 	if (simulationState.success === false) {
 		const parsedInputDataForEachBlockAndTransaction = await parsedInputDataForEachBlockAndTransactionPromise
-		const updatedMetadata = await getMetadataForSimulation(simulationState, ethereum, lookups, [], parsedInputDataForEachBlockAndTransaction.flat())
+		const updatedMetadata = await getMetadataForSimulation(simulationState, rpcNetwork.chainId, lookups, [], parsedInputDataForEachBlockAndTransaction.flat())
 		const refreshedSimulationState = modifyObject(simulationState, { simulationConductedTimestamp: new Date() })
 
 		const visualizedBlocks = await promiseAllMapAbortSafe(simulationState.simulationStateInput, async (block, blockIndex) => {
@@ -638,7 +639,7 @@ async function visualizeSimulatorStateWithLookups(simulationState: SimulationSta
 					return eventsForTransaction
 				})
 				const { chainReads, getRecord } = lookups.getProtectorChainReads(slicedSimulationState, blockIndex, transactionIndex)
-				const protectorResults = await runProtectorsForTransaction(chainReads, transaction, ethereum, lookups.identifyAddress, eventsForTransactionPromise)
+				const protectorResults = await runProtectorsForTransaction(chainReads, transaction, rpcNetwork.chainId, lookups.identifyAddress, eventsForTransactionPromise)
 				return { ...protectorResults, protectorChainReads: getRecord() }
 			})
 		}
@@ -646,7 +647,7 @@ async function visualizeSimulatorStateWithLookups(simulationState: SimulationSta
 
 	const eventsForEachBlockAndTransaction = await eventsForEachBlockAndTransactionPromise
 	const parsedInputDataForEachBlockAndTransaction = await parsedInputDataForEachBlockAndTransactionPromise
-	const updatedMetadata = await getMetadataForSimulation(simulationState, ethereum, lookups, eventsForEachBlockAndTransaction.flat(), parsedInputDataForEachBlockAndTransaction.flat())
+	const updatedMetadata = await getMetadataForSimulation(simulationState, rpcNetwork.chainId, lookups, eventsForEachBlockAndTransaction.flat(), parsedInputDataForEachBlockAndTransaction.flat())
 
 	const tokenPriceEstimatesPromise = weth === undefined ? [] : silenceChromeUnCaughtPromise(lookups.estimateTokenPrices(weth, updatedMetadata.addressBookEntries.filter(onlyTokensAndTokensWithKnownDecimals).map(metadataRestructure)))
 

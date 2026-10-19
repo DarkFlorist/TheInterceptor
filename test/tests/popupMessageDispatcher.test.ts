@@ -153,8 +153,8 @@ async function waitForPopupMessage(method: string) {
 const waitForAddressBookChangeToSettle = async () => await waitForPopupMessage('popup_simulationsRelabelled')
 
 function createDispatcherContext(resetSimulationState: () => Promise<void>): PopupMessageDispatcherContext {
-	// After broadcasting an address-book change, the background re-labels stored simulations of the services' chain; nothing is stored here, so it only reads the chain id.
-	const ethereum: EthereumClientService = Object.assign(Object.create(EthereumClientServiceConstructor.prototype), { getChainId: () => settings.activeRpcNetwork.chainId })
+	// After broadcasting an address-book change, the background re-labels stored simulations of the services' network; nothing is stored here, so it only reads the network.
+	const ethereum: EthereumClientService = Object.assign(Object.create(EthereumClientServiceConstructor.prototype), { getChainId: () => settings.activeRpcNetwork.chainId, getRpcEntry: () => settings.activeRpcNetwork })
 	const tokenPriceService: TokenPriceService = Object.create(TokenPriceServiceConstructor.prototype)
 	return {
 		websiteTabConnections: new Map(),

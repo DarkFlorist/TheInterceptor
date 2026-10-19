@@ -1,5 +1,5 @@
 // The one metadata re-label of a stored simulation result, shared by the stack re-label (relabelPopupVisualisation) and the displayed confirmation re-label (relabelDisplayedConfirmationSimulation); see "Address-book re-labels" in docs/popup-simulation-refresh.md.
-import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
+import type { RpcNetwork } from '../types/rpc.js'
 import type { RecordedProtectorChainReads, SimulationState, VisualizedSimulationState } from '../types/visualizer-types.js'
 import { isExpectedInfrastructureError, reportUnexpectedError } from '../utils/errors.js'
 import { type StoredSimulationMetadata, visualizeStoredRunWithoutNode } from './simulationUpdating.js'
@@ -44,7 +44,7 @@ function getRecordedProtectorChainReads(visualizedSimulationState: VisualizedSim
 }
 
 // Re-runs only the visualisation step (address-book names, ABI-parsed input, token metadata, and protector warnings such as send-to-non-contact) for a stored run, without any RPC request (see visualizeStoredRunWithoutNode), then writes the new metadata only onto that same run.
-export async function relabelStoredSimulation<Stored>(ethereum: EthereumClientService, { stored, getRunToRelabel, updateStored, abortController }: StoredSimulationRelabel<Stored>) {
+export async function relabelStoredSimulation<Stored>(rpcNetwork: RpcNetwork, { stored, getRunToRelabel, updateStored, abortController }: StoredSimulationRelabel<Stored>) {
 	const runToRelabel = getRunToRelabel(stored)
 	if (runToRelabel === undefined) return
 	// A run stored by a version that did not record its protectors' chain reads or the entries its address lookups resolved could only be visualised again by simulating, so it keeps its names until it is simulated again.
@@ -52,7 +52,7 @@ export async function relabelStoredSimulation<Stored>(ethereum: EthereumClientSe
 	const protectorChainReads = getRecordedProtectorChainReads(storedVisualisation)
 	if (protectorChainReads === undefined || storedVisualisation.identifiedAddressBookEntries === undefined) return
 	// The re-visualised simulation state is dropped so the stored one, including its conducted timestamp, is kept.
-	const { simulationState: _revisualizedSimulationState, ...metadata } = await visualizeStoredRunWithoutNode(runToRelabel.simulationState, runToRelabel.storedMetadata, { protectorChainReads, identifiedAddressBookEntries: storedVisualisation.identifiedAddressBookEntries }, ethereum)
+	const { simulationState: _revisualizedSimulationState, ...metadata } = await visualizeStoredRunWithoutNode(runToRelabel.simulationState, runToRelabel.storedMetadata, { protectorChainReads, identifiedAddressBookEntries: storedVisualisation.identifiedAddressBookEntries }, rpcNetwork)
 	// Newer work that aborted this re-label while it visualised stores its own result instead.
 	if (abortController?.signal.aborted) return
 	await updateStored((current) => {
