@@ -12,27 +12,31 @@ import type { Website } from '../../app/ts/types/websiteAccessTypes.js'
 import type { EthereumUnsignedTransaction } from '../../app/ts/types/wire-types.js'
 import type { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import { UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../app/ts/types/interceptor-messages.js'
-import { encodeFunctionCall } from '../../app/ts/utils/abiRuntime.js'
+import { encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
+import { checksummedAddress, stringifyJSONWithBigInts, stringToUint8Array } from '../../app/ts/utils/bigint.js'
+import { permit2Message } from './data/eip712Data.js'
 import { last } from '../../app/ts/utils/array.js'
 import type { UniqueRequestIdentifier } from '../../app/ts/utils/requests.js'
-import { NEW_BLOCK_ABORT } from '../../app/ts/utils/constants.js'
+import { NEW_BLOCK_ABORT, TRANSFER_LOG } from '../../app/ts/utils/constants.js'
 import { isNewBlockAbort } from '../../app/ts/utils/errors.js'
 import { keccak256, stringToBytes } from '../../app/ts/utils/ethereumPrimitives.js'
-import { activeAddress, addressString, browserMock, created, createSafeAddressBookEntry, createSafeTx, EIP712Message, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, isRecord, modules, oldTimestamp, recipientAddress, SAFE_EXECUTION_ABI, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, simulator, uniqueRequestIdentifier, withSilencedConsole, type RuntimeMessage, type StorageKeys } from './confirmTransactionTestHarness.js'
+import { activeAddress, addressString, browserMock, hexToBytes, created, createSafeAddressBookEntry, createSafeTx, EIP712Message, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, isRecord, modules, oldTimestamp, recipientAddress, SAFE_EXECUTION_ABI, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, simulator, uniqueRequestIdentifier, withSilencedConsole, type RuntimeMessage, type StorageKeys } from './confirmTransactionTestHarness.js'
 
 // Loaded after the harness installs the extension globals that the popup handler dependencies require at import time.
-const { addOrModifyAddressBookEntry, changePreSimulationBlockTimeManipulation, refreshPopupConfirmTransactionMetadata, removeAddressBookEntry, setEnsNameForHash } = await import('../../app/ts/background/popupMessageHandlers.js')
+const { addOrModifyAddressBookEntry, changePreSimulationBlockTimeManipulation, refreshPopupConfirmTransactionMetadata, removeAddressBookEntry, requestNewHomeData, setEnsNameForHash } = await import('../../app/ts/background/popupMessageHandlers.js')
 const { publishAddressBookChangeAndRelabelSimulations } = await import('../../app/ts/background/addressBookChangePublication.js')
 const { getConfirmTransactionAbortController, refreshConfirmTransactionSimulation } = await import('../../app/ts/background/confirmTransactionSimulation.js')
 const { relabelDisplayedConfirmationAfterAddressBookChange } = await import('../../app/ts/background/confirmationRelabel.js')
 const { relabelStoredSimulation } = await import('../../app/ts/background/simulationRelabel.js')
+const { visualizeSimulatorState } = await import('../../app/ts/background/simulationUpdating.js')
 const { createWatchAssetResolutionDependencies } = await import('../../app/ts/background/windows/watchAsset.js')
 const { craftPersonalSignPopupMessage } = await import('../../app/ts/background/windows/personalSign.js')
+const { identifyAddressWith, recordIdentifiedAddresses } = await import('../../app/ts/background/metadataUtils.js')
 
 const simulationServicesOwner: SimulationServicesOwner = { getCurrent: () => simulator, reset: () => simulator }
 
 // The displayed confirmation's re-label as an address-book change requests it, without the stack re-label and the notifications.
-const relabelDisplayedConfirmation = async () => await relabelDisplayedConfirmationAfterAddressBookChange(simulator.ethereum, simulator.tokenPriceService)
+const relabelDisplayedConfirmation = async () => await relabelDisplayedConfirmationAfterAddressBookChange(simulator.ethereum)
 
 function getDefined<Value>(value: Value | undefined, description: string): Value {
 	if (value === undefined) throw new Error(`Missing ${ description }`)
@@ -53,86 +57,68 @@ const recipientContact: AddressBookEntry = {
 }
 const website: Website = { websiteOrigin: 'https://example.com', icon: undefined, title: undefined }
 
-const sendEtherRequestParameters: SendTransactionParams = {
-	method: 'eth_sendTransaction',
-	params: [{
-		from: sender,
-		to: recipient,
-		value: sentEther,
-		gas: 21_000n,
-		maxFeePerGas: 1n,
-		maxPriorityFeePerGas: 1n,
-		input: new Uint8Array(),
-	}],
-}
+type SentCall = { readonly to: bigint, readonly value: bigint, readonly input: Uint8Array, readonly gas: bigint }
 
-const sendEtherTransaction: EthereumUnsignedTransaction = {
-	type: '1559',
-	from: sender,
-	chainId: fakeRpcNetwork.chainId,
-	nonce: 0n,
-	maxFeePerGas: 1n,
-	maxPriorityFeePerGas: 1n,
-	gas: 21_000n,
-	to: recipient,
-	value: sentEther,
-	input: new Uint8Array(),
-	accessList: [],
-}
-
-const sendEtherWebsiteTransaction: WebsiteCreatedEthereumTransaction = {
-	website,
-	created,
-	originalRequestParameters: sendEtherRequestParameters,
-	transactionIdentifier: 1n,
-	success: true,
-	transaction: sendEtherTransaction,
-}
-
-// The placeholder visualisation is older than any simulation, so the first confirmation simulation replaces it.
-const sendEtherPendingTransaction: PendingTransactionOrSignableMessage = {
-	type: 'Transaction',
-	popupOrTabId: { type: 'popup', id: 1 },
-	originalRequestParameters: sendEtherRequestParameters,
-	uniqueRequestIdentifier,
-	simulationMode: true,
-	activeAddress: sender,
-	created,
-	transactionIdentifier: sendEtherWebsiteTransaction.transactionIdentifier,
-	website,
-	approvalStatus: { status: 'WaitingForUser' },
-	transactionOrMessageCreationStatus: 'Simulated',
-	transactionToSimulate: sendEtherWebsiteTransaction,
-	popupVisualisation: {
-		statusCode: 'failed',
-		data: {
-			activeAddress: sender,
-			simulationMode: true,
-			simulationStartedTimestamp: oldTimestamp,
-			uniqueRequestIdentifier,
-			transactionToSimulate: sendEtherWebsiteTransaction,
-			signerName: 'NoSignerDetected',
-			error: { code: -1, message: 'Not simulated yet', decodedErrorMessage: 'Not simulated yet' },
-			simulationState: { blockNumber: 0n, simulationConductedTimestamp: oldTimestamp },
+// A website's eth_sendTransaction of the call from the sender, with the pending confirmation that waits for its first simulation.
+function createSentTransaction({ to, value, input, gas }: SentCall) {
+	const requestParameters: SendTransactionParams = {
+		method: 'eth_sendTransaction',
+		params: [{ from: sender, to, value, gas, maxFeePerGas: 1n, maxPriorityFeePerGas: 1n, input }],
+	}
+	const transaction: EthereumUnsignedTransaction = { type: '1559', from: sender, chainId: fakeRpcNetwork.chainId, nonce: 0n, maxFeePerGas: 1n, maxPriorityFeePerGas: 1n, gas, to, value, input, accessList: [] }
+	const websiteTransaction: WebsiteCreatedEthereumTransaction = { website, created, originalRequestParameters: requestParameters, transactionIdentifier: 1n, success: true, transaction }
+	// The placeholder visualisation is older than any simulation, so the first confirmation simulation replaces it.
+	const pendingTransaction: PendingTransactionOrSignableMessage = {
+		type: 'Transaction',
+		popupOrTabId: { type: 'popup', id: 1 },
+		originalRequestParameters: requestParameters,
+		uniqueRequestIdentifier,
+		simulationMode: true,
+		activeAddress: sender,
+		created,
+		transactionIdentifier: websiteTransaction.transactionIdentifier,
+		website,
+		approvalStatus: { status: 'WaitingForUser' },
+		transactionOrMessageCreationStatus: 'Simulated',
+		transactionToSimulate: websiteTransaction,
+		popupVisualisation: {
+			statusCode: 'failed',
+			data: {
+				activeAddress: sender,
+				simulationMode: true,
+				simulationStartedTimestamp: oldTimestamp,
+				uniqueRequestIdentifier,
+				transactionToSimulate: websiteTransaction,
+				signerName: 'NoSignerDetected',
+				error: { code: -1, message: 'Not simulated yet', decodedErrorMessage: 'Not simulated yet' },
+				simulationState: { blockNumber: 0n, simulationConductedTimestamp: oldTimestamp },
+			},
 		},
-	},
+	}
+	return { requestParameters, websiteTransaction, pendingTransaction }
 }
 
+type SentTransaction = ReturnType<typeof createSentTransaction>
 
-async function storeStackSendingEtherToRecipient() {
+const sendEther = createSentTransaction({ to: recipient, value: sentEther, input: new Uint8Array(), gas: 21_000n })
+const { requestParameters: sendEtherRequestParameters, websiteTransaction: sendEtherWebsiteTransaction } = sendEther
+
+async function storeStackSending({ requestParameters, websiteTransaction }: SentTransaction) {
 	await modules.updateInterceptorTransactionStack(() => ({
 		operations: [{
 			type: 'Transaction',
 			preSimulationTransaction: {
-				signedTransaction: modules.mockSignTransaction(sendEtherTransaction),
+				signedTransaction: modules.mockSignTransaction(websiteTransaction.transaction),
 				website,
 				created,
-				originalRequestParameters: sendEtherRequestParameters,
+				originalRequestParameters: requestParameters,
 				transactionIdentifier: 2n,
 			},
 		}],
 	}))
 }
+
+const storeStackSendingEtherToRecipient = async () => await storeStackSending(sendEther)
 
 async function storeSimulationModeSettings(userAddressBookEntries: readonly AddressBookEntry[]) {
 	await modules.browserStorageLocalSet({
@@ -143,14 +129,17 @@ async function storeSimulationModeSettings(userAddressBookEntries: readonly Addr
 	})
 }
 
-// Simulates the stack and a pending confirmation that both send ether to the recipient, which is not in the address book unless given.
-async function openSimulationModeConfirmationSendingEther(userAddressBookEntries: readonly AddressBookEntry[] = [senderAddressBookEntry]) {
+// Simulates the stack and a pending confirmation that both send the transaction.
+async function openSimulationModeConfirmation(sentTransaction: SentTransaction, userAddressBookEntries: readonly AddressBookEntry[]) {
 	await storeSimulationModeSettings(userAddressBookEntries)
-	await storeStackSendingEtherToRecipient()
+	await storeStackSending(sentTransaction)
 	await updatePopupVisualisationState(simulator.ethereum, simulator.tokenPriceService, undefined, true)
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [sendEtherPendingTransaction] })
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [sentTransaction.pendingTransaction] })
 	await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
 }
+
+// Both send ether to the recipient, which is not in the address book unless given.
+const openSimulationModeConfirmationSendingEther = async (userAddressBookEntries: readonly AddressBookEntry[] = [senderAddressBookEntry]) => await openSimulationModeConfirmation(sendEther, userAddressBookEntries)
 
 const addRecipientContactWithoutBroadcast = async () => await modules.updateUserAddressBookEntries((entries) => [...entries, recipientContact])
 
@@ -281,7 +270,7 @@ const hasNotInAddressBookWarning = (transaction: SimulatedAndVisualizedTransacti
 // The stack re-label as publishAddressBookChangeAndRelabelSimulations runs it, where cancellation by a newer refresh is expected.
 async function relabelStoredStack(ethereum = simulator.ethereum) {
 	try {
-		await relabelPopupVisualisation(ethereum, simulator.tokenPriceService)
+		await relabelPopupVisualisation(ethereum)
 	} catch (error: unknown) {
 		if (!isNewBlockAbort(error)) throw error
 	}
@@ -327,6 +316,297 @@ test('adding the recipient to the address book clears the send-to-non-contact wa
 	const stackTransactionAfter = getLastVisualizedTransaction((await getStoredStackVisualisation()).stored.visualizedSimulationState)
 	assert.equal(hasNotInAddressBookWarning(stackTransactionAfter), false)
 	assert.equal(stackTransactionAfter.quarantine, false)
+})
+
+// A contract call: ether sent to the recipient with calldata. The recipient has no code on the fake chain, so its protectors read the recipient's code and warn about calldata sent to an externally owned account; for the confirmation, which runs after the stack's transaction, that code read takes a simulation.
+const callRecipientWithCalldata = createSentTransaction({ to: recipient, value: sentEther, input: new Uint8Array([0x12, 0x34, 0x56, 0x78]), gas: 21_000n })
+const EOA_CALLDATA_WARNING = 'Transaction to an Externally Owned Account contains calldata.'
+
+const GET_CODE_HELPER_CONTRACT = 0x1ce438391307f908756fefe0fe220c0f0d51508an
+const getCodeHelperAbi = [{ type: 'function', name: 'at', stateMutability: 'view', inputs: [{ name: 'target', type: 'address' }], outputs: [{ name: 'code', type: 'bytes' }] }] as const
+const isGetCodeHelperCall = (call: unknown) => isRecord(call) && (typeof call.to === 'string' || typeof call.to === 'bigint') && BigInt(call.to) === GET_CODE_HELPER_CONTRACT
+
+// The fake chain answers every eth_simulateV1 call with a multicall result, which a simulated code read cannot decode. While run runs, code reads, calls to the get-code helper contract, are answered with no code instead.
+async function withSimulatedCodeReadsAnsweredWithNoCode(run: () => Promise<void>) {
+	const answerRpcRequest = fakeRequestHandler.jsonRpcRequest
+	fakeRequestHandler.jsonRpcRequest = async (rpcRequest) => {
+		const result = await answerRpcRequest(rpcRequest)
+		const request = rpcRequest.params?.[0]
+		if (rpcRequest.method !== 'eth_simulateV1' || !isRecord(request) || !Array.isArray(request.blockStateCalls) || !Array.isArray(result)) return result
+		const blockStateCalls: unknown[] = request.blockStateCalls
+		return result.map((block: unknown, blockIndex) => {
+			const blockStateCall = blockStateCalls[blockIndex]
+			if (!isRecord(block) || !Array.isArray(block.calls) || !isRecord(blockStateCall) || !Array.isArray(blockStateCall.calls)) return block
+			const requestedCalls: unknown[] = blockStateCall.calls
+			return { ...block, calls: block.calls.map((call: unknown, callIndex) => isGetCodeHelperCall(requestedCalls[callIndex]) && isRecord(call) ? { ...call, returnData: encodeFunctionReturn(getCodeHelperAbi, 'at', ['0x']) } : call) }
+		})
+	}
+	try {
+		await run()
+	} finally {
+		fakeRequestHandler.jsonRpcRequest = answerRpcRequest
+	}
+}
+
+const openConfirmationCallingRecipientWithCalldata = async () => await withSimulatedCodeReadsAnsweredWithNoCode(async () => await openSimulationModeConfirmation(callRecipientWithCalldata, [senderAddressBookEntry]))
+
+async function getStoredWarningsOfLastTransactions() {
+	return {
+		stack: getLastVisualizedTransaction((await getStoredStackVisualisation()).stored.visualizedSimulationState).quarantineReasons,
+		confirmation: getLastVisualizedTransaction((await getStoredPendingTransactionVisualisation()).visualizedSimulationState).quarantineReasons,
+	}
+}
+
+const relabelledNamesWithCalldataWarnings = { names: { stack: recipientContact.name, confirmation: recipientContact.name }, warnings: { stack: [EOA_CALLDATA_WARNING], confirmation: [EOA_CALLDATA_WARNING] } }
+
+const getStoredNamesAndWarnings = async () => ({ names: await getStoredRecipientNames(), warnings: await getStoredWarningsOfLastTransactions() })
+
+test('a re-label of a contract call replays the code reads recorded with the stored runs instead of simulating', async () => {
+	await openConfirmationCallingRecipientWithCalldata()
+	const before = await getStoredNamesAndWarnings()
+	assert.notDeepEqual(before.names, relabelledNamesWithCalldataWarnings.names)
+	assert.deepEqual(before.warnings, relabelledNamesWithCalldataWarnings.warnings)
+	await addRecipientContactWithoutBroadcast()
+	clearObservedRpcMethodsAndMessages()
+
+	await publishAddressBookChangeAndWaitForRelabel()
+
+	assert.deepEqual(fakeSafeContract.requestedRpcMethods.filter((method) => method === 'eth_simulateV1'), [])
+	// The names follow the address book, while the warning that depends on the recipient's code is kept from the stored runs.
+	assert.deepEqual(await getStoredNamesAndWarnings(), relabelledNamesWithCalldataWarnings)
+})
+
+test('a re-label of a contract call still updates its names while eth_simulateV1 fails', async () => {
+	await openConfirmationCallingRecipientWithCalldata()
+	await addRecipientContactWithoutBroadcast()
+	fakeSafeContract.failEthSimulate = true
+
+	await publishAddressBookChangeAndWaitForRelabel()
+
+	assert.deepEqual(await getStoredNamesAndWarnings(), relabelledNamesWithCalldataWarnings)
+})
+
+// Fails every RPC request in transport while run runs, as when the node is unreachable, and returns the methods that were requested.
+async function getRpcMethodsRequestedWhileEveryRequestFails(run: () => Promise<unknown>) {
+	const answerRpcRequest = fakeRequestHandler.jsonRpcRequest
+	const requestedMethods: string[] = []
+	fakeRequestHandler.jsonRpcRequest = async (rpcRequest) => {
+		requestedMethods.push(rpcRequest.method)
+		throw new TypeError('Failed to fetch')
+	}
+	try {
+		await run()
+	} finally {
+		fakeRequestHandler.jsonRpcRequest = answerRpcRequest
+	}
+	return requestedMethods
+}
+
+const removeAddressBookEntryAndWaitForItsRelabel = async (address: bigint, addressBookCategory: 'My Contacts' | 'Other contracts') => await changeAddressBookAndWaitForItsRelabel(async () => await removeAddressBookEntry(simulationServicesOwner, new Map(), {
+	method: 'popup_removeAddressBookEntry',
+	data: { address, addressBookCategory, chainId: fakeRpcNetwork.chainId },
+}))
+
+const hasRecipientNotInAddressBookWarning = (warnings: readonly string[]) => warnings.some((warning) => warning.includes(NOT_IN_ADDRESS_BOOK_WARNING))
+
+// Whether the stored stack and confirmation warn that funds go to an address that is not in the address book.
+async function getStoredNotInAddressBookWarnings() {
+	const { stack, confirmation } = await getStoredWarningsOfLastTransactions()
+	return { stack: hasRecipientNotInAddressBookWarning(stack), confirmation: hasRecipientNotInAddressBookWarning(confirmation) }
+}
+
+test('a re-label applies renamed and removed address-book names without any RPC request while every RPC request fails', async () => {
+	await openSimulationModeConfirmationSendingEther([senderAddressBookEntry, { ...recipientContact, name: 'Older name' }])
+
+	assert.deepEqual(await getRpcMethodsRequestedWhileEveryRequestFails(async () => await changeAddressBookAndWaitForItsRelabel(async () => await nameRecipient('Newest name'))), [])
+	assert.deepEqual(await getStoredRecipientNames(), { stack: 'Newest name', confirmation: 'Newest name' })
+	assert.deepEqual(await getStoredNotInAddressBookWarnings(), { stack: false, confirmation: false })
+
+	assert.deepEqual(await getRpcMethodsRequestedWhileEveryRequestFails(async () => await removeAddressBookEntryAndWaitForItsRelabel(recipient, 'My Contacts')), [])
+	// The removed contact shows its bare address and, as after a simulation, is flagged as not in the address book.
+	assert.deepEqual(await getStoredRecipientNames(), { stack: checksummedAddress(recipient), confirmation: checksummedAddress(recipient) })
+	assert.deepEqual(await getStoredNotInAddressBookWarnings(), { stack: true, confirmation: true })
+})
+
+test('removing a contract that bundled metadata does not know re-labels it to its bare address without identifying it on chain', async () => {
+	const contract = 0x111122223333444455556666777788889999aaaan
+	await openSimulationModeConfirmation(createSentTransaction({ to: contract, value: 0n, input: new Uint8Array(), gas: 21_000n }), [senderAddressBookEntry, { type: 'contract', address: contract, name: 'Deleted contract name', entrySource: 'User', chainId: fakeRpcNetwork.chainId }])
+	assert.deepEqual(await getStoredRecipientNames(), { stack: 'Deleted contract name', confirmation: 'Deleted contract name' })
+	// Identifying a contract on chain would read its code and probe its token metadata with eth_simulateV1.
+	fakeSafeContract.ownerCode = '0x01'
+
+	assert.deepEqual(await getRpcMethodsRequestedWhileEveryRequestFails(async () => await removeAddressBookEntryAndWaitForItsRelabel(contract, 'Other contracts')), [])
+
+	assert.deepEqual(await getStoredRecipientNames(), { stack: checksummedAddress(contract), confirmation: checksummedAddress(contract) })
+})
+
+const removedToken = 0x70c070c070c070c070c070c070c070c070c070c0n
+const transferredTokenAmount = 1_500_000n
+
+// Stores the confirmation's run as if its simulation had emitted an ERC20 Transfer of the token from the sender to the recipient, visualised as a simulation run visualises it, which records the entries its address lookups resolve.
+async function storeConfirmationRunTransferringToken() {
+	const transferLog = { address: removedToken, topics: [BigInt(TRANSFER_LOG), sender, recipient], data: hexToBytes(`0x${ transferredTokenAmount.toString(16).padStart(64, '0') }`), logIndex: 0n, blockHash: null, blockNumber: 123n }
+	const storedRun = await getStoredPendingTransactionVisualisation()
+	if (storedRun.simulationState.success === false) throw new Error('Expected a successful confirmation simulation')
+	const simulationState = { ...storedRun.simulationState, simulatedBlocks: storedRun.simulationState.simulatedBlocks.map((block) => ({
+		...block,
+		simulatedTransactions: block.simulatedTransactions.map((transaction, index) => index !== block.simulatedTransactions.length - 1 || transaction.ethSimulateV1CallResult.status === 'failure'
+			? transaction
+			: { ...transaction, ethSimulateV1CallResult: { ...transaction.ethSimulateV1CallResult, logs: [transferLog] } }),
+	})) }
+	const { simulationState: _visualisedSimulationState, ...visualisedMetadata } = await visualizeSimulatorState(simulationState, simulator.ethereum, simulator.tokenPriceService, undefined)
+	await updateStoredConfirmationVisualisation((data) => ({ ...data, ...visualisedMetadata, simulationState }))
+}
+
+async function getStoredConfirmationTokenTransfer() {
+	const tokenEvent = getLastVisualizedTransaction((await getStoredPendingTransactionVisualisation()).visualizedSimulationState).events.find((event) => event.type === 'TokenEvent')
+	if (tokenEvent?.type !== 'TokenEvent' || tokenEvent.logInformation.type !== 'ERC20') throw new Error('Expected an ERC20 token transfer')
+	const { token, amount } = tokenEvent.logInformation
+	return { token: { type: token.type, name: token.name, symbol: token.symbol, decimals: token.decimals }, amount }
+}
+
+const removedTokenEntry: AddressBookEntry = { type: 'ERC20', address: removedToken, name: 'Removed token', symbol: 'RMV', decimals: 6n, entrySource: 'User', chainId: fakeRpcNetwork.chainId }
+// The removed token as a re-label shows it once its entry is removed: its bare address, with the kind and decimals the run's amounts need.
+const removedTokenAsBareAddress = { type: 'ERC20', name: checksummedAddress(removedToken), symbol: '???', decimals: 6n }
+
+test('a token whose user entry was removed keeps its kind and decimals in a re-label, so its transfer amount still renders under its bare address', async () => {
+	await openSimulationModeConfirmationSendingEther([senderAddressBookEntry, removedTokenEntry])
+	await storeConfirmationRunTransferringToken()
+	assert.deepEqual(await getStoredConfirmationTokenTransfer(), { token: { type: 'ERC20', name: 'Removed token', symbol: 'RMV', decimals: 6n }, amount: transferredTokenAmount })
+	await modules.updateUserAddressBookEntries((entries) => entries.filter((entry) => entry.address !== removedToken))
+
+	assert.deepEqual(await getRpcMethodsRequestedWhileEveryRequestFails(relabelDisplayedConfirmation), [])
+
+	assert.deepEqual(await getStoredConfirmationTokenTransfer(), { token: removedTokenAsBareAddress, amount: transferredTokenAmount })
+	// Only the run's record of what its lookups identified keeps the removed entry, for its kind and decimals; nothing the dialog shows names it.
+	const { addressBookEntries, visualizedSimulationState: { identifiedAddressBookEntries: _identifiedAddressBookEntries, ...shownVisualisation } } = await getStoredPendingTransactionVisualisation()
+	assert.equal(stringifyJSONWithBigInts([addressBookEntries, shownVisualisation]).includes('Removed token'), false)
+})
+
+// The typed-data message as the sender signs it for a website.
+function createSignedTypedData(typedData: unknown): SignedMessageTransaction {
+	const originalRequestParameters = { method: 'eth_signTypedData_v4' as const, params: [sender, EIP712Message.parse(JSON.stringify(typedData))] as const }
+	return {
+		website,
+		created,
+		fakeSignedFor: sender,
+		activeAddress: sender,
+		originalRequestParameters,
+		request: { ...originalRequestParameters, interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier },
+		simulationMode: true,
+		messageIdentifier: 1n,
+	}
+}
+
+// A Permit2 approval of the removed token on the fake chain.
+function createPermit2OfRemovedToken() {
+	const permit2 = JSON.parse(permit2Message)
+	return { ...permit2, domain: { ...permit2.domain, chainId: fakeRpcNetwork.chainId.toString() }, message: { ...permit2.message, details: { ...permit2.message.details, token: addressString(removedToken) } } }
+}
+
+// Simulates a stack holding only the typed-data message, signed by the sender, while the removed token is still in the address book.
+async function storeStackSigningOnly(typedData: unknown) {
+	await storeSimulationModeSettings([senderAddressBookEntry, removedTokenEntry])
+	const signedMessageTransaction = createSignedTypedData(typedData)
+	await modules.updateInterceptorTransactionStack(() => ({ operations: [{ type: 'Message', signedMessageTransaction }] }))
+	await updatePopupVisualisationState(simulator.ethereum, simulator.tokenPriceService, undefined, true)
+}
+
+async function getStoredStackSignedMessage() {
+	const signedMessage = (await getStoredStackVisualisation()).stored.visualizedSimulationState.visualizedBlocks[0]?.visualizedPersonalSignRequests[0]
+	if (signedMessage === undefined) throw new Error('Expected a signed message in the stored stack')
+	return signedMessage
+}
+
+const describeTokenEntry = (entry: AddressBookEntry) => ({ type: entry.type, name: entry.name, symbol: 'symbol' in entry ? entry.symbol : undefined, decimals: 'decimals' in entry ? entry.decimals : undefined })
+
+// Removes the token's entry and re-labels the stored stack while every RPC request fails, checking that the re-label requested none.
+async function removeTokenAndRelabelStoredStack() {
+	await modules.updateUserAddressBookEntries((entries) => entries.filter((entry) => entry.address !== removedToken))
+	assert.deepEqual(await getRpcMethodsRequestedWhileEveryRequestFails(relabelStoredStack), [])
+}
+
+// The PersonalSign page shows a Permit2 approval amount only for an ERC20 token, and 'Malformed Permit2 request' otherwise.
+test('a token whose user entry was removed keeps its kind and decimals in a re-labelled Permit2 message that only the stack signs', async () => {
+	await storeStackSigningOnly(createPermit2OfRemovedToken())
+	const signedBefore = await getStoredStackSignedMessage()
+	if (signedBefore.type !== 'Permit2') throw new Error('Expected a Permit2 message')
+	assert.deepEqual(describeTokenEntry(signedBefore.token), { type: 'ERC20', name: 'Removed token', symbol: 'RMV', decimals: 6n })
+	// The token is held only by the visualised message, not by the stack's metadata list.
+	assert.equal((await getStoredStackVisualisation()).stored.addressBookEntries.some((entry) => entry.address === removedToken), false)
+
+	await removeTokenAndRelabelStoredStack()
+
+	const signedAfter = await getStoredStackSignedMessage()
+	if (signedAfter.type !== 'Permit2') throw new Error('Expected a Permit2 message')
+	assert.deepEqual(describeTokenEntry(signedAfter.token), removedTokenAsBareAddress)
+})
+
+test('a token whose user entry was removed keeps its kind and decimals in an address field of a re-labelled EIP-712 message that only the stack signs', async () => {
+	await storeStackSigningOnly({
+		types: { EIP712Domain: [{ name: 'chainId', type: 'uint256' }], Order: [{ name: 'token', type: 'address' }] },
+		primaryType: 'Order',
+		domain: { chainId: fakeRpcNetwork.chainId.toString() },
+		message: { token: addressString(removedToken) },
+	})
+	const getOrderToken = async () => {
+		const signedMessage = await getStoredStackSignedMessage()
+		if (signedMessage.type !== 'EIP712') throw new Error('Expected an EIP-712 message')
+		const tokenField = signedMessage.message.message.token
+		if (tokenField?.type !== 'address') throw new Error('Expected an address field')
+		return describeTokenEntry(tokenField.value)
+	}
+	assert.deepEqual(await getOrderToken(), { type: 'ERC20', name: 'Removed token', symbol: 'RMV', decimals: 6n })
+
+	await removeTokenAndRelabelStoredStack()
+
+	assert.deepEqual(await getOrderToken(), removedTokenAsBareAddress)
+})
+
+const setOperatorAbi = [{ type: 'function', name: 'setOperator', stateMutability: 'nonpayable', inputs: [{ name: 'operator', type: 'address' }], outputs: [] }] as const
+
+// A website can put any JSON into a typed-data message, including an object shaped like a trusted address-book entry for an address of its choosing.
+test('an address-book-entry-shaped object in a signed typed-data message never names an address in a re-label', async () => {
+	const registry = 0x0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0cn
+	const plantedAddress = 0xbadbadbadbadbadbadbadbadbadbadbadbadbadbn
+	const plantedEntry = { type: 'contract', name: 'Uniswap Router', address: addressString(plantedAddress), entrySource: 'OnChain' }
+	await storeSimulationModeSettings([senderAddressBookEntry])
+	// The registry call names the planted address only in calldata, which the run cannot parse without the registry's ABI, so the run never resolves that address.
+	const callRegistry = createSentTransaction({ to: registry, value: 0n, input: stringToUint8Array(encodeFunctionCall(setOperatorAbi, 'setOperator', [addressString(plantedAddress)])), gas: 60_000n })
+	const typedData = {
+		types: { EIP712Domain: [{ name: 'chainId', type: 'uint256' }], Listing: [{ name: 'operator', type: 'Operator' }], Operator: [{ name: 'type', type: 'string' }, { name: 'name', type: 'string' }, { name: 'address', type: 'string' }, { name: 'entrySource', type: 'string' }] },
+		primaryType: 'Listing',
+		domain: { chainId: fakeRpcNetwork.chainId.toString() },
+		message: { operator: plantedEntry },
+	}
+	const originalRequestParameters = { method: 'eth_signTypedData_v4' as const, params: [sender, EIP712Message.parse(JSON.stringify(typedData))] as const }
+	const signedMessageTransaction: SignedMessageTransaction = { website, created, fakeSignedFor: sender, activeAddress: sender, originalRequestParameters, request: { ...originalRequestParameters, interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier }, simulationMode: true, messageIdentifier: 1n }
+	await modules.updateInterceptorTransactionStack(() => ({ operations: [
+		{ type: 'Transaction', preSimulationTransaction: { signedTransaction: modules.mockSignTransaction(callRegistry.websiteTransaction.transaction), website, created, originalRequestParameters: callRegistry.requestParameters, transactionIdentifier: 2n } },
+		{ type: 'Message', signedMessageTransaction },
+	] }))
+	await withSimulatedCodeReadsAnsweredWithNoCode(async () => { await updatePopupVisualisationState(simulator.ethereum, simulator.tokenPriceService, undefined, true) })
+	const getStoredPlantedAddressEntry = async () => (await getStoredStackVisualisation()).stored.addressBookEntries.find((entry) => entry.address === plantedAddress)
+	assert.equal(await getStoredPlantedAddressEntry(), undefined)
+	// The stored message keeps the planted object as wrapped string fields. A message kind that stored such website values as an entry would put it where entries go, so the planted object is stored there too: only what the run's own lookups resolved may name an address.
+	await updatePopupVisualisationWithCallBack(async (stored) => {
+		if (stored.visualizedSimulationState.success === false) throw new Error('Expected a successful stack simulation')
+		return { ...stored, visualizedSimulationState: { ...stored.visualizedSimulationState, visualizedBlocks: stored.visualizedSimulationState.visualizedBlocks.map((block) => ({
+			...block,
+			visualizedPersonalSignRequests: block.visualizedPersonalSignRequests.map((signedMessage) => {
+				const operator = signedMessage.type === 'EIP712' ? signedMessage.message.message.operator : undefined
+				if (signedMessage.type !== 'EIP712' || operator?.type !== 'record') return signedMessage
+				const operatorAsEntry = { type: 'address' as const, value: { type: 'contract' as const, name: plantedEntry.name, address: plantedAddress, entrySource: 'OnChain' as const } }
+				return { ...signedMessage, message: { ...signedMessage.message, message: { ...signedMessage.message.message, operator: { type: 'record' as const, value: { ...operator.value, address: operatorAsEntry } } } } }
+			}),
+		})) } }
+	})
+
+	// Adding the registry's ABI makes the re-label parse the calldata and name the planted address.
+	await modules.updateUserAddressBookEntries((entries) => [...entries, { type: 'contract', address: registry, name: 'Operator registry', entrySource: 'User', chainId: fakeRpcNetwork.chainId, abi: JSON.stringify(setOperatorAbi) }])
+	assert.deepEqual(await getRpcMethodsRequestedWhileEveryRequestFails(relabelStoredStack), [])
+
+	assert.deepEqual(await getStoredPlantedAddressEntry(), { address: plantedAddress, name: checksummedAddress(plantedAddress), type: 'contact', entrySource: 'OnChain', chainId: fakeRpcNetwork.chainId })
 })
 
 const relabelledNames = { stack: recipientContact.name, confirmation: recipientContact.name }
@@ -443,7 +723,7 @@ test('a confirmation dialog answering the change and re-label notifications ends
 	clearObservedRpcMethodsAndMessages()
 	// As ConfirmTransaction.tsx does, the open dialog asks for its metadata on both notifications.
 	browserMock.setRuntimeMessageHandler(async (message) => {
-		if (message.method === 'popup_addressBookEntriesChanged' || message.method === 'popup_simulationsRelabelled') await refreshPopupConfirmTransactionMetadata(simulator.ethereum, undefined)
+		if (message.method === 'popup_addressBookEntriesChanged' || message.method === 'popup_simulationsRelabelled') await refreshPopupConfirmTransactionMetadata(simulator.ethereum)
 		return undefined
 	})
 
@@ -457,18 +737,71 @@ test('a confirmation dialog answering the change and re-label notifications ends
 	assert.equal(browserMock.sentMessages.some((message) => message.method === 'popup_simulation_state_changed'), false)
 })
 
+// The recipient's name in the last updates the open confirmation dialog and home popup received: the dialog's confirmation and stack, and the home popup's stack.
+function getRecipientNamesInLastViewUpdates() {
+	const { pendingTransactions, visualizedSimulatorState } = getLastConfirmationDialogUpdates(browserMock.sentMessages)
+	const homeUpdate = browserMock.sentMessages.findLast((message) => message.method === 'popup_UpdateHomePage')
+	if (!isRecord(homeUpdate?.data)) throw new Error('Expected a home page update')
+	return {
+		dialogConfirmation: getRecipientName(getSimulatedPendingTransaction(pendingTransactions[0]).visualizedSimulationState),
+		dialogStack: getRecipientName(visualizedSimulatorState.visualizedSimulationState),
+		homeStack: getRecipientName(CompleteVisualizedSimulation.parse(homeUpdate.data.visualizedSimulatorState).visualizedSimulationState),
+	}
+}
+
+test('an open confirmation dialog and home popup get renamed and removed names without any RPC request, with no cached block and every RPC request failing', async () => {
+	await openSimulationModeConfirmationSendingEther([senderAddressBookEntry, { ...recipientContact, name: 'Older name' }])
+	// A new client has no cached block, so asking it for the current block would request eth_blockNumber.
+	const ethereumWithoutCachedBlock = new modules.EthereumClientService({
+		rpcUrl: fakeRpcNetwork.httpsRpc,
+		clearCache() { return undefined },
+		async jsonRpcRequest(rpcRequest: EthereumJsonRpcRequest) { return await fakeRequestHandler.jsonRpcRequest(rpcRequest) },
+	}, async () => undefined, async () => undefined, fakeRpcNetwork)
+	assert.equal(ethereumWithoutCachedBlock.getCachedBlock(), undefined)
+	// As ConfirmTransaction.tsx and the home popup do, the open views ask for their data on both notifications: the dialog for its metadata, the home popup, which already shows its first fresh home data, for cached home data.
+	const viewUpdates: Promise<void>[] = []
+	browserMock.setRuntimeMessageHandler(async (message) => {
+		if (message.method !== 'popup_addressBookEntriesChanged' && message.method !== 'popup_simulationsRelabelled') return undefined
+		viewUpdates.push(refreshPopupConfirmTransactionMetadata(ethereumWithoutCachedBlock), requestNewHomeData(ethereumWithoutCachedBlock, new Map(), false, true, undefined, 1))
+		return undefined
+	})
+	const changeAddressBookAndWaitForViewUpdates = async (change: () => Promise<unknown>) => await getRpcMethodsRequestedWhileEveryRequestFails(async () => {
+		await changeAddressBookAndWaitForItsRelabel(change)
+		await Promise.all(viewUpdates)
+	})
+
+	assert.deepEqual(await changeAddressBookAndWaitForViewUpdates(async () => await nameRecipient('Newest name')), [])
+	assert.deepEqual(getRecipientNamesInLastViewUpdates(), { dialogConfirmation: 'Newest name', dialogStack: 'Newest name', homeStack: 'Newest name' })
+
+	assert.deepEqual(await changeAddressBookAndWaitForViewUpdates(async () => await removeAddressBookEntry(simulationServicesOwner, new Map(), {
+		method: 'popup_removeAddressBookEntry',
+		data: { address: recipient, addressBookCategory: 'My Contacts', chainId: fakeRpcNetwork.chainId },
+	})), [])
+	const bareRecipient = checksummedAddress(recipient)
+	assert.deepEqual(getRecipientNamesInLastViewUpdates(), { dialogConfirmation: bareRecipient, dialogStack: bareRecipient, homeStack: bareRecipient })
+	browserMock.setRuntimeMessageHandler(undefined)
+})
+
 test('a confirmation dialog refresh started before the re-label but sent last still shows the re-labelled names', async () => {
 	await openSimulationModeConfirmationSendingEther()
 	await addRecipientContactWithoutBroadcast()
 	clearObservedRpcMethodsAndMessages()
-	// The refresh answering the address-book change waits for an eth_blockNumber reply until the refresh answering the re-label has been sent.
-	const { ethereum: stallingEthereum, releaseBlockNumber } = createEthereumStallingBlockNumber()
+	// The refresh answering the address-book change waits for its connection-status read until the refresh answering the re-label has been sent.
+	const connectionStatusReadReleased = createDeferred()
+	let isConnectionStatusReadHeld = false
+	browserMock.setStorageGetHandler(async (keys: StorageKeys, readStoredItems) => {
+		if (!isConnectionStatusReadHeld && requestsStorageKey(keys, 'rpcConnectionStatus')) {
+			isConnectionStatusReadHeld = true
+			await connectionStatusReadReleased.promise
+		}
+		return readStoredItems()
+	})
 	let refreshAfterAddressBookChange: Promise<void> | undefined
 	browserMock.setRuntimeMessageHandler(async (message) => {
-		if (message.method === 'popup_addressBookEntriesChanged') refreshAfterAddressBookChange = refreshPopupConfirmTransactionMetadata(stallingEthereum, undefined)
+		if (message.method === 'popup_addressBookEntriesChanged') refreshAfterAddressBookChange = refreshPopupConfirmTransactionMetadata(simulator.ethereum)
 		if (message.method === 'popup_simulationsRelabelled') {
-			await refreshPopupConfirmTransactionMetadata(simulator.ethereum, undefined)
-			releaseBlockNumber()
+			await refreshPopupConfirmTransactionMetadata(simulator.ethereum)
+			connectionStatusReadReleased.resolve()
 		}
 		return undefined
 	})
@@ -476,6 +809,8 @@ test('a confirmation dialog refresh started before the re-label but sent last st
 	await publishAddressBookChangeAndWaitForRelabel()
 	await refreshAfterAddressBookChange
 	browserMock.setRuntimeMessageHandler(undefined)
+	browserMock.setStorageGetHandler(undefined)
+	assert.equal(isConnectionStatusReadHeld, true)
 
 	assert.equal(countSentMessages('popup_update_confirm_transaction_dialog_pending_transactions'), 2)
 	const { pendingTransactions, visualizedSimulatorState } = getLastConfirmationDialogUpdates(browserMock.sentMessages)
@@ -501,10 +836,10 @@ test('a confirmation dialog refresh whose stored-state read returns after a late
 		return storedStateBeforeRelabel
 	})
 
-	const earlierRefresh = refreshPopupConfirmTransactionMetadata(simulator.ethereum, undefined)
+	const earlierRefresh = refreshPopupConfirmTransactionMetadata(simulator.ethereum)
 	await earlierRefreshReadStoredState.promise
 	await relabelDisplayedConfirmation()
-	const laterRefresh = refreshPopupConfirmTransactionMetadata(simulator.ethereum, undefined)
+	const laterRefresh = refreshPopupConfirmTransactionMetadata(simulator.ethereum)
 	// Gives the later refresh time to send its reply before the earlier refresh's read returns.
 	await settlesWithin(laterRefresh, 100)
 	earlierRefreshReadReleased.resolve()
@@ -534,7 +869,7 @@ test('a confirmation view update that read the confirmation before a rename and 
 	browserMock.setStorageGetHandler(undefined)
 	await nameRecipient('Newest name')
 	await relabelDisplayedConfirmation()
-	await refreshPopupConfirmTransactionMetadata(simulator.ethereum, undefined)
+	await refreshPopupConfirmTransactionMetadata(simulator.ethereum)
 	viewUpdateServices.releaseBlockNumber()
 	assert.equal(await viewUpdate, true)
 
@@ -556,6 +891,8 @@ async function storeSimulatedPersonalSignMessages(requestIdentifiers: readonly U
 			simulationMode: true,
 			messageIdentifier: BigInt(index + 1),
 		}
+		// Recorded as when the message arrives, so a dialog refresh names its addresses without the chain.
+		const identification = recordIdentifiedAddresses(identifyAddressWith(simulator.ethereum, undefined))
 		return {
 			type: 'SignableMessage' as const,
 			popupOrTabId: { type: 'popup' as const, id: 1 },
@@ -568,7 +905,8 @@ async function storeSimulatedPersonalSignMessages(requestIdentifiers: readonly U
 			activeAddress: sender,
 			approvalStatus: { status: 'WaitingForUser' as const },
 			transactionOrMessageCreationStatus: 'Simulated' as const,
-			visualizedPersonalSignRequest: await craftPersonalSignPopupMessage(simulator.ethereum, undefined, signedMessageTransaction, fakeRpcNetwork),
+			visualizedPersonalSignRequest: await craftPersonalSignPopupMessage(identification.identifyAddress, signedMessageTransaction, fakeRpcNetwork),
+			identifiedAddressBookEntries: identification.getIdentifiedEntries(),
 		}
 	}))
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: pendingMessages })
@@ -592,7 +930,7 @@ test('a confirmation dialog refresh sends a displayed signable message visualise
 	await addRecipientContactWithoutBroadcast()
 	clearObservedRpcMethodsAndMessages()
 
-	await refreshPopupConfirmTransactionMetadata(simulator.ethereum, undefined)
+	await refreshPopupConfirmTransactionMetadata(simulator.ethereum)
 
 	const { pendingTransactions } = getLastConfirmationDialogUpdates(browserMock.sentMessages)
 	assert.equal(getSignedAccountName(pendingTransactions[0]), recipientContact.name)
@@ -604,7 +942,7 @@ test('signable-message dialog refreshes that overlap a rename send their visuali
 	await storeSimulationModeSettings([senderAddressBookEntry])
 	await nameRecipient('Older name')
 	await storeSimulatedPersonalSignMessages([uniqueRequestIdentifier])
-	const refreshDialog = async () => await refreshPopupConfirmTransactionMetadata(simulator.ethereum, undefined)
+	const refreshDialog = async () => await refreshPopupConfirmTransactionMetadata(simulator.ethereum)
 	// A first refresh caches the metadata it looks up, which later refreshes read instead.
 	await refreshDialog()
 	const lookupsPerRefresh = await countAddressBookReads(refreshDialog)
@@ -652,22 +990,60 @@ test('a signable-message dialog refresh that fails to read the stored stack neit
 		}
 		return undefined
 	})
-	const earlierRefreshServices = createEthereumStallingBlockNumber()
 
-	// The later refresh is requested while the earlier one waits for its eth_blockNumber reply.
-	const earlierRefresh = refreshPopupConfirmTransactionMetadata(earlierRefreshServices.ethereum, undefined)
-	await earlierRefreshServices.blockNumberRequested
-	const laterRefresh = refreshPopupConfirmTransactionMetadata(simulator.ethereum, undefined)
-	earlierRefreshServices.releaseBlockNumber()
+	// The later refresh is requested while the earlier one runs, and waits for it.
+	const earlierRefresh = refreshPopupConfirmTransactionMetadata(simulator.ethereum)
+	const laterRefresh = refreshPopupConfirmTransactionMetadata(simulator.ethereum)
 	await earlierRefresh
 	await assert.rejects(laterRefresh, /Stack storage unavailable/)
 	browserMock.setRuntimeMessageHandler(undefined)
 	browserMock.setStorageGetHandler(undefined)
 
 	assert.equal(await settlesWithin(modules.updateConfirmTransactionView(simulator.ethereum, simulator.tokenPriceService), 1_000), true)
-	assert.equal(await settlesWithin(refreshPopupConfirmTransactionMetadata(simulator.ethereum, undefined), 1_000), true)
+	assert.equal(await settlesWithin(refreshPopupConfirmTransactionMetadata(simulator.ethereum), 1_000), true)
 	// The earlier refresh, the view update and the last refresh each sent the message.
 	assert.deepEqual(getDisplayedEntriesSentToDialog().map(getSignedAccountName), ['Older name', 'Older name', 'Older name'])
+})
+
+test('a confirmation dialog refresh visualises a displayed signable message whose signer entry was removed without any RPC request', async () => {
+	await storeSimulationModeSettings([senderAddressBookEntry])
+	await nameRecipient('Older name')
+	await storeSimulatedPersonalSignMessages([uniqueRequestIdentifier])
+	await modules.updateUserAddressBookEntries((entries) => entries.filter((entry) => entry.address !== recipient))
+	clearObservedRpcMethodsAndMessages()
+
+	assert.deepEqual(await getRpcMethodsRequestedWhileEveryRequestFails(async () => await refreshPopupConfirmTransactionMetadata(simulator.ethereum)), [])
+
+	assert.deepEqual(getDisplayedEntriesSentToDialog().map(getSignedAccountName), [checksummedAddress(recipient)])
+})
+
+test('a confirmation dialog refresh keeps the stored visualisation of a pending signable message stored without the entries its visualisation identified', async () => {
+	await storeSimulationModeSettings([senderAddressBookEntry, removedTokenEntry])
+	const signedMessageTransaction = createSignedTypedData(createPermit2OfRemovedToken())
+	// Stored by a version that did not record the entries the message's visualisation identified, so a refresh could not name the token as the token it was once its entry is removed.
+	const pendingMessage: PendingTransactionOrSignableMessage = {
+		type: 'SignableMessage',
+		popupOrTabId: { type: 'popup', id: 1 },
+		originalRequestParameters: signedMessageTransaction.originalRequestParameters,
+		simulationMode: true,
+		uniqueRequestIdentifier,
+		signedMessageTransaction,
+		created,
+		website,
+		activeAddress: sender,
+		approvalStatus: { status: 'WaitingForUser' },
+		transactionOrMessageCreationStatus: 'Simulated',
+		visualizedPersonalSignRequest: await craftPersonalSignPopupMessage(identifyAddressWith(simulator.ethereum, undefined), signedMessageTransaction, fakeRpcNetwork),
+	}
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [pendingMessage] })
+	const [storedMessage] = await modules.getPendingTransactionsAndMessages()
+	await modules.updateUserAddressBookEntries((entries) => entries.filter((entry) => entry.address !== removedToken))
+	clearObservedRpcMethodsAndMessages()
+
+	assert.deepEqual(await getRpcMethodsRequestedWhileEveryRequestFails(async () => await refreshPopupConfirmTransactionMetadata(simulator.ethereum)), [])
+
+	const [sentMessage] = getDisplayedEntriesSentToDialog()
+	assert.deepEqual(getSimulatedSignableMessage(sentMessage).visualizedPersonalSignRequest, getSimulatedSignableMessage(storedMessage).visualizedPersonalSignRequest)
 })
 
 test('a signable message resolved while the dialog refresh visualises it leaves the next pending message unchanged', async () => {
@@ -680,7 +1056,7 @@ test('a signable message resolved while the dialog refresh visualises it leaves 
 		await removePendingTransactionOrMessage(uniqueRequestIdentifier)
 	})
 
-	await refreshPopupConfirmTransactionMetadata(simulator.ethereum, undefined)
+	await refreshPopupConfirmTransactionMetadata(simulator.ethereum)
 	browserMock.setStorageGetHandler(undefined)
 
 	const { pendingTransactions } = getLastConfirmationDialogUpdates(browserMock.sentMessages)
@@ -819,9 +1195,26 @@ async function updateStoredConfirmationVisualisation(update: (data: ReturnType<t
 	return await modules.getPendingTransactionsAndMessages()
 }
 
-test('confirmations without a simulation run id or simulated on another chain are not re-labelled', async () => {
+// A transaction stored by a version that did not record the chain reads of its protectors.
+function withoutRecordedProtectorChainReads(visualizedSimulationState: VisualizedSimulationState): VisualizedSimulationState {
+	if (visualizedSimulationState.success === false) return visualizedSimulationState
+	return {
+		...visualizedSimulationState,
+		visualizedBlocks: visualizedSimulationState.visualizedBlocks.map((block) => ({
+			...block,
+			simulatedAndVisualizedTransactions: block.simulatedAndVisualizedTransactions.map(({ protectorChainReads: _protectorChainReads, ...transaction }) => transaction),
+		})),
+	}
+}
+
+// A visualisation stored by a version that did not record the entries its address lookups resolved.
+const withoutIdentifiedAddressBookEntries = ({ identifiedAddressBookEntries: _identifiedAddressBookEntries, ...visualizedSimulationState }: VisualizedSimulationState): VisualizedSimulationState => visualizedSimulationState
+
+test('confirmations without a simulation run id or recorded lookups, or simulated on another chain, are not re-labelled', async () => {
 	const unprovableConfirmations: readonly { description: string, update: (data: ReturnType<typeof getSimulatedPendingTransaction>) => ReturnType<typeof getSimulatedPendingTransaction> }[] = [
 		{ description: 'stored by a version without simulation run ids', update: ({ simulationId: _simulationId, ...data }) => data },
+		{ description: 'stored by a version without recorded protector chain reads, which only a simulation could provide', update: (data) => ({ ...data, visualizedSimulationState: withoutRecordedProtectorChainReads(data.visualizedSimulationState) }) },
+		{ description: 'stored by a version without recorded identified address-book entries', update: (data) => ({ ...data, visualizedSimulationState: withoutIdentifiedAddressBookEntries(data.visualizedSimulationState) }) },
 		{ description: 'simulated on another chain', update: (data) => ({ ...data, simulationState: { ...data.simulationState, rpcNetwork: { ...data.simulationState.rpcNetwork, chainId: fakeRpcNetwork.chainId + 1n } } }) },
 	]
 	for (const { description, update } of unprovableConfirmations) {
@@ -1134,9 +1527,9 @@ const storedRunStandIn: StoredRunStandIn = { simulationId: 1, canBeRelabelled: t
 
 // Re-labels storedRunStandIn through the shared re-label with the stored stack's simulation. While the re-label looks up names, duringLookups returns the stand-in stored from then on and may abort the re-label. Returns the stand-in stored at the end.
 async function relabelStoredRunStandIn(duringLookups: (stored: StoredRunStandIn, abortController: AbortController) => StoredRunStandIn) {
-	const { simulationState } = await getStoredStackVisualisation()
+	const { stored: storedStack, simulationState } = await getStoredStackVisualisation()
 	const getRunToRelabel = (stored: StoredRunStandIn): SimulationRunToRelabel<StoredRunStandIn> | undefined => stored.canBeRelabelled
-		? { simulationId: stored.simulationId, simulationState, withMetadata: (metadata) => ({ ...stored, recipientName: getRecipientName(metadata.visualizedSimulationState) }) }
+		? { simulationId: stored.simulationId, simulationState, storedMetadata: storedStack, withMetadata: (metadata) => ({ ...stored, recipientName: getRecipientName(metadata.visualizedSimulationState) }) }
 		: undefined
 	const abortController = new AbortController()
 	let stored = storedRunStandIn
@@ -1144,7 +1537,7 @@ async function relabelStoredRunStandIn(duringLookups: (stored: StoredRunStandIn,
 		stored = duringLookups(stored, abortController)
 	})
 	try {
-		await relabelStoredSimulation(simulator.ethereum, simulator.tokenPriceService, {
+		await relabelStoredSimulation(simulator.ethereum, {
 			stored,
 			getRunToRelabel,
 			updateStored: async (relabel) => { stored = relabel(stored) ?? stored },
@@ -1229,6 +1622,20 @@ test('a stack simulation of another chain is not re-labelled with the current ch
 	await relabelStoredStack()
 
 	assert.deepEqual(await getPopupVisualisationState(), otherChainVisualisation)
+})
+
+test('a stack simulation stored without recorded protector chain reads or identified address-book entries is not re-labelled', async () => {
+	for (const withoutRecord of [withoutRecordedProtectorChainReads, withoutIdentifiedAddressBookEntries]) {
+		await openSimulationModeConfirmationSendingEther()
+		const visualisationWithoutRecord = await updateStoredStackVisualisation((stored) => ({ ...stored, visualizedSimulationState: withoutRecord(stored.visualizedSimulationState) }))
+		await addRecipientContactWithoutBroadcast()
+		clearObservedRpcMethodsAndMessages()
+
+		await relabelStoredStack()
+
+		assert.deepEqual(await getPopupVisualisationState(), visualisationWithoutRecord, withoutRecord.name)
+		assert.equal(fakeSafeContract.requestedRpcMethods.includes('eth_simulateV1'), false)
+	}
 })
 
 test('pending, failed and invalidated stack visualisations are not re-labelled', async () => {

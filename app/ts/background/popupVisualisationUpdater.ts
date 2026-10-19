@@ -128,7 +128,7 @@ function getStackRunToRelabel(visualisation: CompleteVisualizedSimulation, chain
 	if (visualisation.simulationState.kind !== 'simulated') return undefined
 	const simulationState = visualisation.simulationState.value
 	if (simulationState.rpcNetwork.chainId !== chainId || !hasSimulationInputOperations(simulationState)) return undefined
-	return { simulationId: visualisation.simulationId, simulationState, withMetadata: (metadata) => ({ ...visualisation, ...metadata }) }
+	return { simulationId: visualisation.simulationId, simulationState, storedMetadata: visualisation, withMetadata: (metadata) => ({ ...visualisation, ...metadata }) }
 }
 
 // publishFailedPopupVisualisation aborts the shared controller without replacing it, and direct refreshes such as imports do not replace it either. A re-label requested afterwards must not inherit that stale cancellation, while any later refresh still aborts the controller returned here.
@@ -138,12 +138,12 @@ function getUncancelledAbortController() {
 }
 
 // Re-labels the stored stack simulation without simulating or publishing popup_simulation_state_changed; see "Address-book re-labels" in docs/popup-simulation-refresh.md.
-export async function relabelPopupVisualisation(ethereum: EthereumClientService, tokenPriceService: TokenPriceService) {
+export async function relabelPopupVisualisation(ethereum: EthereumClientService) {
 	// Captured at request time, so a newer block, stack or failure refresh also cancels a re-label still waiting for the semaphore.
 	const thisAbortController = getUncancelledAbortController()
 	await executeVisualisationUpdate(thisAbortController, async () => {
 		const chainId = ethereum.getChainId()
-		await relabelStoredSimulation(ethereum, tokenPriceService, {
+		await relabelStoredSimulation(ethereum, {
 			stored: await getPopupVisualisationState(),
 			getRunToRelabel: (visualisation) => getStackRunToRelabel(visualisation, chainId),
 			updateStored: async (relabel) => await updatePopupVisualisationWithCallBack(async (current) => relabel(current)),

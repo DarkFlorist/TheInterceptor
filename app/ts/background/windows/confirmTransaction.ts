@@ -38,7 +38,7 @@ import { closePopupOrTabById, getPopupOrTabById, openPopupOrTab, tryFocusingTabO
 import { getDesiredMaxFeePerGasForBaseFee, getTransactionFeesForBaseFee, hasExplicitMaxFeePerGas } from '../../utils/transactionFees.js'
 import { parseSendRawTransaction } from '../../utils/sendRawTransactionParsing.js'
 import { createEip1559Or7702Transaction } from '../../utils/eip7702Authorization.js'
-import { identifyAddress } from '../metadataUtils.js'
+import { identifyAddress, identifyAddressWith, recordIdentifiedAddresses } from '../metadataUtils.js'
 import { resolveInsufficientBalanceMessage } from '../../utils/insufficientBalance.js'
 import { prepareSafeTransactionConfirmation } from '../safeTransactionConfirmation.js'
 import { createSafeMessageCoSignSnapshot, getPendingSafeSignerAddress, getSafeSignerMismatchApprovalStatus, isExpectedSafeMessageCoSignSnapshotFailure, isSafeMessageAccountMismatchFailure, isSafeSignerSelectionFailure, resolveSafeConfirmation, SAFE_SIGNER_SELECTION_ERROR_CODE, type RefreshedSafeSignerSelection } from '../safeConfirmationResolver.js'
@@ -93,7 +93,7 @@ const getConfirmationRunId = (pending: PendingTransactionOrSignableMessage) => p
 
 // A signer change simulates a direct Safe execution again and persists that run with the new signer, so the refresh stores it through simulateAndStoreConfirmationWithAddressBookCatchUp.
 async function refreshAndPersistSafeSignerSelectionAndSimulation(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, pending: PendingTransactionOrSignableMessage, selectedSigner: bigint) {
-	return await simulateAndStoreConfirmationWithAddressBookCatchUp(ethereum, tokenPriceService, async () => {
+	return await simulateAndStoreConfirmationWithAddressBookCatchUp(ethereum, async () => {
 		let simulatedRunId: number | undefined
 		const refresh = await refreshAndPersistSafeSignerSelection(ethereum, pending, selectedSigner, async (refreshedPending) => {
 			const simulated = await refreshDirectSafeExecutionSimulation(ethereum, tokenPriceService, refreshedPending)
@@ -699,7 +699,8 @@ export async function openConfirmTransactionDialogForMessage(
 		...(safeMessage === undefined ? {} : { safeMessageReview: safeMessage.review }),
 	}
 	try {
-		const visualizedPersonalSignRequest = await craftPersonalSignPopupMessage(ethereumClientService, undefined, signedMessageTransaction, ethereumClientService.getRpcEntry())
+		const identification = recordIdentifiedAddresses(identifyAddressWith(ethereumClientService, undefined))
+		const visualizedPersonalSignRequest = await craftPersonalSignPopupMessage(identification.identifyAddress, signedMessageTransaction, ethereumClientService.getRpcEntry())
 		const walletSignerAddress = getWalletSelectedAccount(signerTabState)
 		let safeMessageCoSignSnapshot: Awaited<ReturnType<typeof createSafeMessageCoSignSnapshot | typeof createSafeOffChainMessageSnapshot>> | undefined
 			let safeMessageValidationError: string | undefined
@@ -746,7 +747,7 @@ export async function openConfirmTransactionDialogForMessage(
 
 			await updatePendingTransactionOrMessage(pendingMessage.uniqueRequestIdentifier, async (message) => {
 				if (message.type !== 'SignableMessage') return message
-				return { ...message, visualizedPersonalSignRequest, transactionOrMessageCreationStatus: 'Simulated' as const }
+				return { ...message, visualizedPersonalSignRequest, identifiedAddressBookEntries: identification.getIdentifiedEntries(), transactionOrMessageCreationStatus: 'Simulated' as const }
 			})
 			await updateConfirmTransactionView(ethereumClientService, tokenPriceService)
 
@@ -854,7 +855,7 @@ export async function openConfirmTransactionDialogForTransaction(
 			await appendPendingTransactionOrMessage(pendingTransaction)
 			await updateConfirmTransactionView(ethereumClientService, tokenPriceService)
 			markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionSimulationStart)
-			await simulateAndStoreConfirmationWithAddressBookCatchUp(ethereumClientService, tokenPriceService, async () => {
+			await simulateAndStoreConfirmationWithAddressBookCatchUp(ethereumClientService, async () => {
 				const simulationResultsPromise = silenceChromeUnCaughtPromise(refreshConfirmTransactionSimulation(
 					ethereumClientService,
 					tokenPriceService,

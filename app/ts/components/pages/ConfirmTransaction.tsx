@@ -828,12 +828,14 @@ export function ConfirmTransaction() {
 		currentBlockNumber.value = blockNumber
 		rpcConnectionStatus.value = status
 	}
+	// A dialog update omits the block number when none is known without an RPC request, as after an address-book re-label, so the block already shown, such as the simulation's, is kept.
+	const applyDialogUpdateNetworkData = (blockNumber: bigint | undefined, status: RpcConnectionStatus) => applyNetworkData(blockNumber ?? currentBlockNumber.value, status, CONFIRM_TRANSACTION_DATA_PRIORITY.push)
 
 	const updatePendingTransactionsAndSignableMessages = (message: UpdateConfirmTransactionDialog) => {
 		if (CONFIRM_TRANSACTION_DATA_PRIORITY.push < simulationDataPriority.value) return
 		simulationDataPriority.value = CONFIRM_TRANSACTION_DATA_PRIORITY.push
 		completeVisualizedSimulation.value = message.data.visualizedSimulatorState
-		applyNetworkData(message.data.currentBlockNumber, message.data.rpcConnectionStatus, CONFIRM_TRANSACTION_DATA_PRIORITY.push)
+		applyDialogUpdateNetworkData(message.data.currentBlockNumber, message.data.rpcConnectionStatus)
 	}
 	useEffect(() => {
 		function popupMessageListener(msg: unknown): false {
@@ -883,7 +885,7 @@ export function ConfirmTransaction() {
 			if (parsed.method === 'popup_update_confirm_transaction_dialog_pending_transactions') {
 				const { role: _role, ...popupUpdateConfirmTransactionDialogPendingTransactions } = parsed
 				const updateConfirmTransactionDialogPendingTransactions = UpdateConfirmTransactionDialogPendingTransactions.parse(popupUpdateConfirmTransactionDialogPendingTransactions)
-				applyNetworkData(updateConfirmTransactionDialogPendingTransactions.data.currentBlockNumber, updateConfirmTransactionDialogPendingTransactions.data.rpcConnectionStatus, CONFIRM_TRANSACTION_DATA_PRIORITY.push)
+				applyDialogUpdateNetworkData(updateConfirmTransactionDialogPendingTransactions.data.currentBlockNumber, updateConfirmTransactionDialogPendingTransactions.data.rpcConnectionStatus)
 				const firstMessage = updateConfirmTransactionDialogPendingTransactions.data.pendingTransactionAndSignableMessages[0]
 				if (firstMessage === undefined) throw new Error('message data was undefined')
 				applyPendingTransactions(updateConfirmTransactionDialogPendingTransactions.data.pendingTransactionAndSignableMessages, CONFIRM_TRANSACTION_DATA_PRIORITY.push)

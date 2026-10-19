@@ -539,7 +539,8 @@ export const UpdateConfirmTransactionDialog = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_update_confirm_transaction_dialog'),
 	data: funtypes.ReadonlyObject({
 		visualizedSimulatorState: CompleteVisualizedSimulation,
-		currentBlockNumber: EthereumQuantity,
+		// Undefined when no block is known without an RPC request, as for an update after an address-book re-label; the dialog then keeps showing the simulation's block.
+		currentBlockNumber: funtypes.Union(EthereumQuantity, funtypes.Undefined),
 		rpcConnectionStatus: funtypes.Union(RpcConnectionStatus, funtypes.Undefined),
 	})
 }).asReadonly()
@@ -560,7 +561,7 @@ export type UpdateConfirmTransactionDialogPendingTransactions = {
 	readonly method: 'popup_update_confirm_transaction_dialog_pending_transactions'
 	readonly data: {
 		readonly pendingTransactionAndSignableMessages: readonly PopupPendingTransactionOrSignableMessage[]
-		readonly currentBlockNumber: funtypes.Static<typeof EthereumQuantity>
+		readonly currentBlockNumber: funtypes.Static<typeof EthereumQuantity> | undefined
 		readonly rpcConnectionStatus: funtypes.Static<typeof RpcConnectionStatus>
 	}
 }
@@ -568,7 +569,7 @@ const createUpdateConfirmTransactionDialogPendingTransactionsRuntype = () => fun
 	method: funtypes.Literal('popup_update_confirm_transaction_dialog_pending_transactions'),
 	data: funtypes.ReadonlyObject({
 		pendingTransactionAndSignableMessages: funtypes.ReadonlyArray(PopupPendingTransactionOrSignableMessage),
-		currentBlockNumber: EthereumQuantity,
+		currentBlockNumber: funtypes.Union(EthereumQuantity, funtypes.Undefined),
 		rpcConnectionStatus: funtypes.Union(RpcConnectionStatus, funtypes.Undefined),
 	})
 }).asReadonly()

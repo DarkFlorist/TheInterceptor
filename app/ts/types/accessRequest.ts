@@ -158,7 +158,10 @@ const PendingSignableMessage = funtypes.Intersect(
 		approvalStatus: PendingTransactionApprovalStatus,
 	}).And(funtypes.ReadonlyPartial({ safeMessageCoSignSnapshot: SafeMessageCoSignSnapshot })),
 	funtypes.Union(
-		funtypes.ReadonlyObject({ transactionOrMessageCreationStatus: funtypes.Literal('Simulated'), visualizedPersonalSignRequest: VisualizedPersonalSignRequest }),
+		funtypes.ReadonlyObject({ transactionOrMessageCreationStatus: funtypes.Literal('Simulated'), visualizedPersonalSignRequest: VisualizedPersonalSignRequest }).And(funtypes.ReadonlyPartial({
+			// Every entry the visualisation's address lookups resolved, so a dialog refresh after an address-book change can visualise the message again without identifying addresses on chain.
+			identifiedAddressBookEntries: funtypes.ReadonlyArray(AddressBookEntry),
+		})),
 		funtypes.ReadonlyObject({ transactionOrMessageCreationStatus: funtypes.Union(funtypes.Literal('Crafting'), funtypes.Literal('Simulating')) })
 	)
 )

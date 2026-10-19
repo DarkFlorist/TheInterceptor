@@ -144,6 +144,7 @@ export function formSimulatedAndVisualizedTransactions(simulatedTransactions: re
 			tokenPriceEstimates,
 			tokenPriceQuoteToken,
 			quarantineReasons: protectorResult.quarantineReasons,
+			protectorChainReads: protectorResult.protectorChainReads,
 			...(simulatedTx.ethSimulateV1CallResult.status === 'failure'
 				? {
 					error: {

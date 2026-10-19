@@ -1,17 +1,18 @@
 // The one metadata re-label of a stored simulation result, shared by the stack re-label (relabelPopupVisualisation) and the displayed confirmation re-label (relabelDisplayedConfirmationSimulation); see "Address-book re-labels" in docs/popup-simulation-refresh.md.
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
-import type { SimulationState } from '../types/visualizer-types.js'
+import type { RecordedProtectorChainReads, SimulationState, VisualizedSimulationState } from '../types/visualizer-types.js'
 import { isExpectedInfrastructureError, reportUnexpectedError } from '../utils/errors.js'
-import { visualizeSimulatorState } from './simulationUpdating.js'
+import { type StoredSimulationMetadata, visualizeStoredRunWithoutNode } from './simulationUpdating.js'
 
-type SimulationMetadata = Omit<Awaited<ReturnType<typeof visualizeSimulatorState>>, 'simulationState'>
+type SimulationMetadata = Omit<Awaited<ReturnType<typeof visualizeStoredRunWithoutNode>>, 'simulationState'>
 
 // A stored simulation run whose metadata a re-label may replace.
 export type SimulationRunToRelabel<Stored> = {
 	// Every new stack or confirmation simulation run stores a new id, so a run stored during the re-label's lookups has another id even on the same block within the same second.
 	readonly simulationId: number
 	readonly simulationState: SimulationState
+	// The metadata stored with the run: the names, prices and delegations the re-label starts from, the chain reads its protectors recorded and the entries its address lookups resolved.
+	readonly storedMetadata: StoredSimulationMetadata
 	// The stored result with only its metadata replaced, keeping the simulation, its id, its timestamps and any approval status.
 	readonly withMetadata: (metadata: SimulationMetadata) => Stored
 }
@@ -27,13 +28,32 @@ type StoredSimulationRelabel<Stored> = {
 	readonly abortController: AbortController | undefined
 }
 
-// Re-runs only the visualisation step (address-book names, ABI-parsed input, token metadata and prices, and protector warnings such as send-to-non-contact) for a stored run without simulating again, then writes the new metadata only onto that same run.
-export async function relabelStoredSimulation<Stored>(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, { stored, getRunToRelabel, updateStored, abortController }: StoredSimulationRelabel<Stored>) {
+// The protector chain reads recorded with each transaction of a stored visualisation, by block, or undefined when a transaction was stored by a version that did not record them. A failed simulation ran no protectors, so it needs none.
+function getRecordedProtectorChainReads(visualizedSimulationState: VisualizedSimulationState) {
+	if (visualizedSimulationState.success === false) return []
+	const recordedByBlock: RecordedProtectorChainReads[][] = []
+	for (const block of visualizedSimulationState.visualizedBlocks) {
+		const recordedForBlock: RecordedProtectorChainReads[] = []
+		for (const transaction of block.simulatedAndVisualizedTransactions) {
+			if (transaction.protectorChainReads === undefined) return undefined
+			recordedForBlock.push(transaction.protectorChainReads)
+		}
+		recordedByBlock.push(recordedForBlock)
+	}
+	return recordedByBlock
+}
+
+// Re-runs only the visualisation step (address-book names, ABI-parsed input, token metadata, and protector warnings such as send-to-non-contact) for a stored run, without any RPC request (see visualizeStoredRunWithoutNode), then writes the new metadata only onto that same run.
+export async function relabelStoredSimulation<Stored>(ethereum: EthereumClientService, { stored, getRunToRelabel, updateStored, abortController }: StoredSimulationRelabel<Stored>) {
 	const runToRelabel = getRunToRelabel(stored)
 	if (runToRelabel === undefined) return
+	// A run stored by a version that did not record its protectors' chain reads or the entries its address lookups resolved could only be visualised again by simulating, so it keeps its names until it is simulated again.
+	const storedVisualisation = runToRelabel.storedMetadata.visualizedSimulationState
+	const protectorChainReads = getRecordedProtectorChainReads(storedVisualisation)
+	if (protectorChainReads === undefined || storedVisualisation.identifiedAddressBookEntries === undefined) return
 	// The re-visualised simulation state is dropped so the stored one, including its conducted timestamp, is kept.
-	const { simulationState: _revisualizedSimulationState, ...metadata } = await visualizeSimulatorState(runToRelabel.simulationState, ethereum, tokenPriceService, abortController)
-	// Lookups that made no further RPC request do not notice an abort; the newer work that aborted this re-label stores its own result instead.
+	const { simulationState: _revisualizedSimulationState, ...metadata } = await visualizeStoredRunWithoutNode(runToRelabel.simulationState, runToRelabel.storedMetadata, { protectorChainReads, identifiedAddressBookEntries: storedVisualisation.identifiedAddressBookEntries }, ethereum)
+	// Newer work that aborted this re-label while it visualised stores its own result instead.
 	if (abortController?.signal.aborted) return
 	await updateStored((current) => {
 		// The stale-write guard: a newer run stored meanwhile has another id, and a result stored under the same id that can no longer be re-labelled (a stack invalidation keeps the id of the run it raced with) is left alone.

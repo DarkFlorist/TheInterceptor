@@ -416,7 +416,7 @@ describe('SafeTx confirm transaction metadata', () => {
 		await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [createPendingSafeTxMessage(modules, fakeRpcNetwork)] })
 		const storedVisualisation = await modules.setPopupVisualisationState({ ...await modules.getPopupVisualisationState(), simulationId: 77 })
 
-		await modules.refreshPopupConfirmTransactionMetadata(ethereum, undefined)
+		await modules.refreshPopupConfirmTransactionMetadata(ethereum)
 
 		const dialogUpdate = browserMock.sentMessages.find((message) => message.method === 'popup_update_confirm_transaction_dialog')
 		if (!isRecord(dialogUpdate?.data)) throw new Error('Missing confirm transaction dialog update')
@@ -467,7 +467,7 @@ describe('SafeTx confirm transaction metadata', () => {
 			pendingTransactionsAndMessages: [createPendingSafeTxMessage(modules, fakeRpcNetwork)],
 		})
 
-		await modules.refreshPopupConfirmTransactionMetadata(ethereum, undefined)
+		await modules.refreshPopupConfirmTransactionMetadata(ethereum)
 
 		assertPopupPendingSafeTxShape(browserMock.sentMessages)
 		// A metadata request reads the stored stack simulation, which address-book changes re-label beforehand, and never stores a new simulation.

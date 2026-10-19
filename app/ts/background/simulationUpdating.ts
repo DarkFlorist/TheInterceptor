@@ -10,15 +10,16 @@ import { DEFAULT_BLOCK_MANIPULATION } from '../config/defaults.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
 import { runProtectorsForTransaction } from '../simulation/protectorRunner.js'
+import { readAndRecordProtectorChainReads, replayRecordedProtectorChainReads } from '../simulation/protectorChainReads.js'
 import type { EnrichedEthereumEvents, EnrichedEthereumInputData } from '../types/EnrichedEthereumData.js'
 import type { PendingTransaction } from '../types/accessRequest.js'
 import type { AddressBookEntry, Erc20TokenEntry } from '../types/addressBookTypes.js'
 import type { SimulateExecutionReplyData } from '../types/interceptor-messages.js'
-import { PASSTHROUGH_STATE, type BlockTimeManipulation, type ExecutionSimulationState, type NonSimulatedAndVisualizedTransaction, type PreSimulationTransaction, type SignedMessageTransaction, type SimulationState, type SimulationStateInput, type SimulationStateInputBlock, type VisualizedSimulatorState, toResolvedSimulationInput, toResolvedSimulationState } from '../types/visualizer-types.js'
+import { PASSTHROUGH_STATE, type BlockTimeManipulation, type ExecutionSimulationState, type NonSimulatedAndVisualizedTransaction, type PreSimulationTransaction, type RecordedProtectorChainReads, type TokenPriceEstimate, type VisualizedSimulationState, type SignedMessageTransaction, type SimulationState, type SimulationStateInput, type SimulationStateInputBlock, type VisualizedSimulatorState, toResolvedSimulationInput, toResolvedSimulationState } from '../types/visualizer-types.js'
 import { get4Byte, get4ByteString } from '../utils/calldata.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS, FourByteExplanations, MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
 import { type DistributiveOmit, assertNever, modifyObject } from '../utils/typescript.js'
-import { getAddressBookEntriesForVisualiserFromTransactions, identifyAddress, nameTokenIds, retrieveEnsNodeAndLabelHashes } from './metadataUtils.js'
+import { getAddressBookEntriesForVisualiserFromTransactions, recordIdentifiedAddresses, identifyAddress, identifyAddressWith, lookUpMetadataForRelabel, lookUpMetadataOnChain, type IdentifyAddress, type MetadataLookups, nameTokenIds, retrieveEnsNodeAndLabelHashes } from './metadataUtils.js'
 import { getFixedAddressRichList, getPreSimulationBlockTimeManipulation, getSettings, getWethForChainId } from './settings.js'
 import { addressString, dataStringWith0xStart, dateToBigintSeconds, stringToUint8Array } from '../utils/bigint.js'
 import { simulateCompoundGovernanceExecution } from '../simulation/compoundGovernanceFaking.js'
@@ -177,15 +178,15 @@ export async function getUpdatedSimulationStackSnapshot(ethereum: EthereumClient
 export async function getMetadataForSimulation(
 	simulationState: SimulationState,
 	ethereum: EthereumClientService,
-	requestAbortController: AbortController | undefined,
+	lookups: MetadataLookups,
 	eventsForEachTransaction: readonly EnrichedEthereumEvents[],
 	inputData: readonly EnrichedEthereumInputData[],
 ) {
 	const allEvents = eventsForEachTransaction.flat()
-	const addressBookEntryPromises = silenceChromeUnCaughtPromise(getAddressBookEntriesForVisualiserFromTransactions(ethereum, requestAbortController, allEvents, inputData, simulationState.simulationStateInput))
-	const namedTokenIdPromises = silenceChromeUnCaughtPromise(nameTokenIds(ethereum, allEvents))
+	const addressBookEntryPromises = silenceChromeUnCaughtPromise(getAddressBookEntriesForVisualiserFromTransactions(lookups.identifyAddress, allEvents, inputData, simulationState.simulationStateInput))
+	const namedTokenIdPromises = silenceChromeUnCaughtPromise(nameTokenIds(ethereum.getChainId(), lookups.lookUpEnsName, allEvents))
 	const addressBookEntries = await addressBookEntryPromises
-	const ensPromise = silenceChromeUnCaughtPromise(retrieveEnsNodeAndLabelHashes(ethereum, allEvents, addressBookEntries))
+	const ensPromise = silenceChromeUnCaughtPromise(retrieveEnsNodeAndLabelHashes(lookups.lookUpEnsName, allEvents, addressBookEntries))
 	const namedTokenIds = await namedTokenIdPromises
 	return {
 		namedTokenIds,
@@ -198,7 +199,8 @@ async function getDelegationAddressesForSimulation(
 	simulationStateInput: SimulationStateInput,
 	ethereum: EthereumClientService,
 	requestAbortController: AbortController | undefined,
-) {
+	identify: IdentifyAddress,
+): Promise<ReadonlyMap<string, AddressBookEntry>> {
 	const uniqueSenders = Array.from(new Set(simulationStateInput.flatMap((block) => block.transactions.map((transaction) => transaction.signedTransaction.from))))
 	const resolvedDelegations = await promiseAllMapAbortSafe(uniqueSenders, async (senderAddress) => {
 		try {
@@ -206,7 +208,7 @@ async function getDelegationAddressesForSimulation(
 			if (delegationAddress === undefined) return undefined
 			return {
 				senderAddress,
-				delegationEntry: await identifyAddress(ethereum, requestAbortController, delegationAddress),
+				delegationEntry: await identify(delegationAddress),
 			}
 		} catch(error: unknown) {
 			if (isExpectedInfrastructureError(error)) throw error
@@ -426,7 +428,7 @@ export const updateTopLevelSimulationMetadata = async (ethereum: EthereumClientS
 			const eventsForEachBlockAndTransactionPromise = silenceChromeUnCaughtPromise(promiseAllMapAbortSafe(
 				prevState.simulationState.value.simulatedBlocks, async (block) =>
 					promiseAllMapAbortSafe(block.simulatedTransactions,
-						async (simulatedTransaction) => simulatedTransaction.ethSimulateV1CallResult.status === 'failure' ? [] : await parseEvents(simulatedTransaction.ethSimulateV1CallResult.logs, ethereum, requestAbortController)
+						async (simulatedTransaction) => simulatedTransaction.ethSimulateV1CallResult.status === 'failure' ? [] : await parseEvents(simulatedTransaction.ethSimulateV1CallResult.logs, identifyAddressWith(ethereum, requestAbortController))
 					)
 				)
 			)
@@ -434,14 +436,14 @@ export const updateTopLevelSimulationMetadata = async (ethereum: EthereumClientS
 				prevState.simulationState.value.simulatedBlocks, async (block) => {
 					const transactions = getWebsiteCreatedEthereumTransactions(block.simulatedTransactions)
 					return promiseAllMapAbortSafe(transactions, (transaction) =>
-						parseInputData({ to: transaction.transaction.to, input: transaction.transaction.input, value: transaction.transaction.value }, ethereum, requestAbortController)
+						parseInputData({ to: transaction.transaction.to, input: transaction.transaction.input, value: transaction.transaction.value }, identifyAddressWith(ethereum, requestAbortController))
 					)
 				}
 			))
 			const events = (await eventsForEachBlockAndTransactionPromise).flat()
 			const inputData = (await parsedInputDataForEachBlockAndTransactionPromise).flat()
 
-			const metadata = await getMetadataForSimulation(prevState.simulationState.value, ethereum, requestAbortController, events, inputData)
+			const metadata = await getMetadataForSimulation(prevState.simulationState.value, ethereum, lookUpMetadataOnChain(ethereum, requestAbortController), events, inputData)
 			return { ...prevState, ...metadata }
 		} catch (error) {
 			if (isExpectedInfrastructureError(error)) return prevState
@@ -482,29 +484,95 @@ export const createSimulationStateWithNonceAndBaseFeeFixing = async (simulationI
 	return await buildSimulationStateFromPreparedInput(await prepareSimulationInputForRpc(simulationInput, ethereum), ethereum)
 }
 
-export async function visualizeSimulatorState(simulationState: SimulationState, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, requestAbortController: AbortController | undefined): Promise<VisualizedSimulatorState> {
+type GetProtectorChainReads = (slicedSimulationState: SimulationState, blockIndex: number, transactionIndex: number) => ReturnType<typeof readAndRecordProtectorChainReads>
+
+// The lookups a visualisation makes besides the simulation result.
+type VisualisationLookups = MetadataLookups & {
+	readonly getDelegationAddressBySender: (simulationStateInput: SimulationStateInput) => Promise<ReadonlyMap<string, AddressBookEntry>>
+	readonly estimateTokenPrices: (quoteToken: Erc20TokenEntry, tokens: { address: bigint, decimals: bigint }[]) => Promise<readonly TokenPriceEstimate[]>
+	readonly getProtectorChainReads: GetProtectorChainReads
+	// The entries to store with the run as its identifiedAddressBookEntries.
+	readonly getIdentifiedAddressBookEntries: () => readonly AddressBookEntry[]
+}
+
+// A simulation run makes the lookups on the node, and records the protectors' chain reads with the run.
+export async function visualizeSimulatorState(simulationState: SimulationState, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, requestAbortController: AbortController | undefined) {
+	const onChainLookups = lookUpMetadataOnChain(ethereum, requestAbortController)
+	const identification = recordIdentifiedAddresses(onChainLookups.identifyAddress)
+	return await visualizeSimulatorStateWithLookups(simulationState, ethereum, {
+		identifyAddress: identification.identifyAddress,
+		lookUpEnsName: onChainLookups.lookUpEnsName,
+		getDelegationAddressBySender: async (simulationStateInput) => await getDelegationAddressesForSimulation(simulationStateInput, ethereum, requestAbortController, identification.identifyAddress),
+		estimateTokenPrices: async (quoteToken, tokens) => await tokenPriceService.estimateEthereumPricesForTokens(requestAbortController, quoteToken, tokens),
+		getProtectorChainReads: (slicedSimulationState) => readAndRecordProtectorChainReads(ethereum, requestAbortController, slicedSimulationState),
+		getIdentifiedAddressBookEntries: identification.getIdentifiedEntries,
+	})
+}
+
+// The parts of a run's stored visualisation that an address-book re-label starts from.
+export type StoredSimulationMetadata = Pick<VisualizedSimulatorState, 'addressBookEntries' | 'tokenPriceEstimates' | 'visualizedSimulationState'>
+
+// The delegation each sender had when the run was visualised, by sender.
+function getStoredDelegationAddressBySender(visualizedSimulationState: VisualizedSimulationState) {
+	const delegationAddressBySender = new Map<string, bigint>()
+	for (const block of visualizedSimulationState.visualizedBlocks) {
+		for (const { transaction } of block.simulatedAndVisualizedTransactions) {
+			if (transaction.delegationAddress !== undefined) delegationAddressBySender.set(addressString(transaction.from.address), transaction.delegationAddress.address)
+		}
+	}
+	return delegationAddressBySender
+}
+
+// What a simulation run recorded of its lookups, which an address-book re-label replays instead of making them: the protector chain reads per block and transaction, and every address-book entry its address lookups resolved.
+export type RecordedVisualisationLookups = {
+	readonly protectorChainReads: readonly (readonly RecordedProtectorChainReads[])[]
+	readonly identifiedAddressBookEntries: readonly AddressBookEntry[]
+}
+
+// An address-book re-label visualises a stored run again without any RPC request, so it can neither simulate nor fail with the node: addresses are named from the address book, bundled metadata and the entries the run identified (lookUpMetadataForRelabel), and the delegations, token prices and protector chain reads are those stored with the run.
+export async function visualizeStoredRunWithoutNode(simulationState: SimulationState, storedMetadata: StoredSimulationMetadata, recorded: RecordedVisualisationLookups, ethereum: EthereumClientService) {
+	const metadataLookups = lookUpMetadataForRelabel(recorded.identifiedAddressBookEntries, ethereum.getRpcEntry())
+	return await visualizeSimulatorStateWithLookups(simulationState, ethereum, {
+		...metadataLookups,
+		getDelegationAddressBySender: async () => {
+			const storedDelegations = Array.from(getStoredDelegationAddressBySender(storedMetadata.visualizedSimulationState))
+			return new Map(await Promise.all(storedDelegations.map(async ([sender, delegationAddress]) => [sender, await metadataLookups.identifyAddress(delegationAddress)] as const)))
+		},
+		// A token keeps the stored price only while it is still known with the decimals that price was estimated for.
+		estimateTokenPrices: async (quoteToken, tokens) => storedMetadata.tokenPriceEstimates.filter((estimate) => estimate.quoteToken.address === quoteToken.address && tokens.some((token) => token.address === estimate.token.address && token.decimals === estimate.token.decimals)),
+		getProtectorChainReads: (_slicedSimulationState, blockIndex, transactionIndex) => {
+			const record = recorded.protectorChainReads[blockIndex]?.[transactionIndex]
+			if (record === undefined) throw new Error('The stored simulation run has no recorded protector chain reads for this transaction')
+			return replayRecordedProtectorChainReads(record)
+		},
+		// The re-label keeps the run's record, as it identifies nothing new on chain.
+		getIdentifiedAddressBookEntries: () => recorded.identifiedAddressBookEntries,
+	})
+}
+
+async function visualizeSimulatorStateWithLookups(simulationState: SimulationState, ethereum: EthereumClientService, lookups: VisualisationLookups): Promise<VisualizedSimulatorState> {
 	const getWeth = async (): Promise<Erc20TokenEntry | undefined> => {
 		const wethAddr = getWethForChainId(ethereum.getRpcEntry().chainId)
 		if (wethAddr === undefined) return undefined
-		const entry = await identifyAddress(ethereum, requestAbortController, wethAddr)
+		const entry = await lookups.identifyAddress(wethAddr)
 		if (entry.type !== 'ERC20') return undefined
 		return entry
 	}
 	const weth = await getWeth()
 	const settings = await getSettings()
-	const delegationAddressBySender = await getDelegationAddressesForSimulation(simulationState.simulationStateInput, ethereum, requestAbortController)
+	const delegationAddressBySender = await lookups.getDelegationAddressBySender(simulationState.simulationStateInput)
 
 	const parsedInputDataForEachBlockAndTransactionPromise = promiseAllMapAbortSafe(
 		simulationState.simulationStateInput, async (block) => {
 			return await promiseAllMapAbortSafe(block.transactions, async (transaction) =>
-				await parseInputData({ to: transaction.signedTransaction.to, input: transaction.signedTransaction.input, value: transaction.signedTransaction.value }, ethereum, requestAbortController)
+				await parseInputData({ to: transaction.signedTransaction.to, input: transaction.signedTransaction.input, value: transaction.signedTransaction.value }, lookups.identifyAddress)
 			)
 		}
 	)
 
 	if (simulationState.success === false) {
 		const parsedInputDataForEachBlockAndTransaction = await parsedInputDataForEachBlockAndTransactionPromise
-		const updatedMetadata = await getMetadataForSimulation(simulationState, ethereum, requestAbortController, [], parsedInputDataForEachBlockAndTransaction.flat())
+		const updatedMetadata = await getMetadataForSimulation(simulationState, ethereum, lookups, [], parsedInputDataForEachBlockAndTransaction.flat())
 		const refreshedSimulationState = modifyObject(simulationState, { simulationConductedTimestamp: new Date() })
 
 		const visualizedBlocks = await promiseAllMapAbortSafe(simulationState.simulationStateInput, async (block, blockIndex) => {
@@ -512,7 +580,7 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 			if (parsedInputDataForBlock === undefined) throw new Error('Block index overflow')
 
 			return {
-				visualizedPersonalSignRequests: await promiseAllMapAbortSafe(block.signedMessages, (signedMessage) => silenceChromeUnCaughtPromise(craftPersonalSignPopupMessage(ethereum, requestAbortController, signedMessage, settings.activeRpcNetwork))),
+				visualizedPersonalSignRequests: await promiseAllMapAbortSafe(block.signedMessages, (signedMessage) => silenceChromeUnCaughtPromise(craftPersonalSignPopupMessage(lookups.identifyAddress, signedMessage, settings.activeRpcNetwork))),
 				simulatedAndVisualizedTransactions: block.transactions.map((transaction, index): NonSimulatedAndVisualizedTransaction => {
 					const removeFromAndToFromSignedTransaction = () => {
 						const { from, to, ...otherFields } = transaction.signedTransaction
@@ -544,7 +612,7 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 			tokenPriceQuoteToken: weth,
 			namedTokenIds: updatedMetadata.namedTokenIds,
 			simulationState: refreshedSimulationState,
-			visualizedSimulationState: { success: false, jsonRpcError: simulationState.jsonRpcError, visualizedBlocks }
+			visualizedSimulationState: { success: false, jsonRpcError: simulationState.jsonRpcError, visualizedBlocks, identifiedAddressBookEntries: lookups.getIdentifiedAddressBookEntries() }
 		}
 	}
 
@@ -555,7 +623,7 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 
 	const eventsForEachBlockAndTransactionPromise = promiseAllMapAbortSafe(simulationState.simulatedBlocks, async (block) =>
 		await promiseAllMapAbortSafe(block.simulatedTransactions,
-			async (simulatedTransaction) => simulatedTransaction.ethSimulateV1CallResult.status === 'failure' ? [] : await parseEvents(simulatedTransaction.ethSimulateV1CallResult.logs, ethereum, requestAbortController)
+			async (simulatedTransaction) => simulatedTransaction.ethSimulateV1CallResult.status === 'failure' ? [] : await parseEvents(simulatedTransaction.ethSimulateV1CallResult.logs, lookups.identifyAddress)
 		)
 	)
 	const protectorsForEachBlockAndTransactionPromise = promiseAllMapAbortSafe(
@@ -569,16 +637,18 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 					if (eventsForTransaction === undefined) throw new Error('Transaction event index overflow')
 					return eventsForTransaction
 				})
-				return await runProtectorsForTransaction(slicedSimulationState, transaction, ethereum, requestAbortController, eventsForTransactionPromise)
+				const { chainReads, getRecord } = lookups.getProtectorChainReads(slicedSimulationState, blockIndex, transactionIndex)
+				const protectorResults = await runProtectorsForTransaction(chainReads, transaction, ethereum, lookups.identifyAddress, eventsForTransactionPromise)
+				return { ...protectorResults, protectorChainReads: getRecord() }
 			})
 		}
 	)
 
 	const eventsForEachBlockAndTransaction = await eventsForEachBlockAndTransactionPromise
 	const parsedInputDataForEachBlockAndTransaction = await parsedInputDataForEachBlockAndTransactionPromise
-	const updatedMetadata = await getMetadataForSimulation(simulationState, ethereum, requestAbortController, eventsForEachBlockAndTransaction.flat(), parsedInputDataForEachBlockAndTransaction.flat())
+	const updatedMetadata = await getMetadataForSimulation(simulationState, ethereum, lookups, eventsForEachBlockAndTransaction.flat(), parsedInputDataForEachBlockAndTransaction.flat())
 
-	const tokenPriceEstimatesPromise = weth === undefined ? [] : silenceChromeUnCaughtPromise(tokenPriceService.estimateEthereumPricesForTokens(requestAbortController, weth, updatedMetadata.addressBookEntries.filter(onlyTokensAndTokensWithKnownDecimals).map(metadataRestructure)))
+	const tokenPriceEstimatesPromise = weth === undefined ? [] : silenceChromeUnCaughtPromise(lookups.estimateTokenPrices(weth, updatedMetadata.addressBookEntries.filter(onlyTokensAndTokensWithKnownDecimals).map(metadataRestructure)))
 
 	const protectorsForEachBlockAndTransaction = await protectorsForEachBlockAndTransactionPromise
 
@@ -591,7 +661,7 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 		const protectorsForBlock = protectorsForEachBlockAndTransaction[blockIndex]
 		if (eventsForEachTransaction === undefined || parsedInputDataForBlock === undefined || protectorsForBlock === undefined) throw new Error('Block index overflow')
 		return {
-			visualizedPersonalSignRequests: await promiseAllMapAbortSafe(block.signedMessages, (signedMessage) => silenceChromeUnCaughtPromise(craftPersonalSignPopupMessage(ethereum, requestAbortController, signedMessage, settings.activeRpcNetwork))),
+			visualizedPersonalSignRequests: await promiseAllMapAbortSafe(block.signedMessages, (signedMessage) => silenceChromeUnCaughtPromise(craftPersonalSignPopupMessage(lookups.identifyAddress, signedMessage, settings.activeRpcNetwork))),
 			simulatedAndVisualizedTransactions: formSimulatedAndVisualizedTransactions(block.simulatedTransactions, eventsForEachTransaction, simulationState.rpcNetwork, parsedInputDataForBlock, protectorsForBlock, updatedMetadata.addressBookEntries, updatedMetadata.namedTokenIds, updatedMetadata.ens, tokenPriceEstimates, weth, delegationAddressBySender),
 			blockTimeManipulation: block.blockTimeManipulation,
 		}
@@ -603,6 +673,6 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 		tokenPriceEstimates,
 		tokenPriceQuoteToken: weth,
 		simulationState: refreshedSimulationState,
-		visualizedSimulationState: { success: true, visualizedBlocks },
+		visualizedSimulationState: { success: true, visualizedBlocks, identifiedAddressBookEntries: lookups.getIdentifiedAddressBookEntries() },
 	}
 }

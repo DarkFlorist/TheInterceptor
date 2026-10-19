@@ -1,6 +1,5 @@
 // Coordinates the address-book re-labels of the displayed confirmation: the re-label each published address-book change requests, and the catch-up re-label of a confirmation run whose lookups overlapped a change; see "Address-book re-labels" in docs/popup-simulation-refresh.md.
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import type { PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { modifyObject } from '../utils/typescript.js'
@@ -15,6 +14,7 @@ function getConfirmationRunToRelabel(pending: PendingTransactionOrSignableMessag
 	return {
 		simulationId: visualisation.simulationId,
 		simulationState: visualisation.simulationState,
+		storedMetadata: visualisation,
 		withMetadata: (metadata) => modifyObject(pending, { popupVisualisation: { statusCode: 'success', data: modifyObject(visualisation, metadata) } }),
 	}
 }
@@ -23,12 +23,12 @@ function getConfirmationRunToRelabel(pending: PendingTransactionOrSignableMessag
 const confirmationRelabelSemaphore = new Semaphore(1)
 
 // Re-labels the stored run of the confirmation the dialog displays without simulating. A newer simulation run of the request does not cancel it: the write guard in relabelStoredSimulation keeps it from replacing a run stored meanwhile, and a newer run that stores nothing, because it was aborted or its RPC request failed, leaves the re-labelled run in place.
-async function relabelDisplayedConfirmationSimulation(ethereum: EthereumClientService, tokenPriceService: TokenPriceService) {
+async function relabelDisplayedConfirmationSimulation(ethereum: EthereumClientService) {
 	await confirmationRelabelSemaphore.execute(async () => {
 		const [displayed] = await getPendingTransactionsAndMessages()
 		if (displayed === undefined) return
 		const chainId = ethereum.getChainId()
-		await relabelStoredSimulation(ethereum, tokenPriceService, {
+		await relabelStoredSimulation(ethereum, {
 			stored: displayed,
 			getRunToRelabel: (pending) => getConfirmationRunToRelabel(pending, chainId),
 			updateStored: async (relabel) => await updatePendingTransactionOrMessage(displayed.uniqueRequestIdentifier, async (current) => relabel(current)),
@@ -41,9 +41,9 @@ async function relabelDisplayedConfirmationSimulation(ethereum: EthereumClientSe
 let publishedAddressBookChanges = 0
 
 // The address-book publication's one notification of a published change. The change is counted before this returns, so a confirmation run whose lookups are still running catches it up once stored; the returned promise re-labels the displayed confirmation's stored run.
-export function relabelDisplayedConfirmationAfterAddressBookChange(ethereum: EthereumClientService, tokenPriceService: TokenPriceService) {
+export function relabelDisplayedConfirmationAfterAddressBookChange(ethereum: EthereumClientService) {
 	publishedAddressBookChanges += 1
-	return relabelDisplayedConfirmationSimulation(ethereum, tokenPriceService)
+	return relabelDisplayedConfirmationSimulation(ethereum)
 }
 
 type ConfirmationRunStoreOutcome<Result> = {
@@ -53,12 +53,12 @@ type ConfirmationRunStoreOutcome<Result> = {
 }
 
 // Every confirmation workflow that stores a confirmation simulation run simulates and stores it through this. The re-label a published change requests reaches only stored runs, so a run whose lookups overlapped the change would otherwise keep the old names once stored, as would a request's first run, which no re-label can reach before it is stored. After storing such a run, this re-labels the displayed confirmation once, however many changes were published during the run.
-export async function simulateAndStoreConfirmationWithAddressBookCatchUp<Result>(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, simulateAndStore: () => Promise<ConfirmationRunStoreOutcome<Result>>) {
+export async function simulateAndStoreConfirmationWithAddressBookCatchUp<Result>(ethereum: EthereumClientService, simulateAndStore: () => Promise<ConfirmationRunStoreOutcome<Result>>) {
 	// Read before the run's first lookup, so a change published at any point until the run is stored is caught up.
 	const publishedAddressBookChangesBeforeRun = publishedAddressBookChanges
 	const { storedNewRun, result } = await simulateAndStore()
 	if (storedNewRun && publishedAddressBookChanges !== publishedAddressBookChangesBeforeRun) {
-		await relabelReportingUnexpectedErrors(relabelDisplayedConfirmationSimulation(ethereum, tokenPriceService))
+		await relabelReportingUnexpectedErrors(relabelDisplayedConfirmationSimulation(ethereum))
 	}
 	return result
 }

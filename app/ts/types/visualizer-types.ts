@@ -84,6 +84,17 @@ export const NonSimulatedAndVisualizedTransactionBase = funtypes.ReadonlyObject(
 	safeTransaction: SafeStackTransaction,
 }))
 
+// The chain state the protectors read for a simulated transaction besides its simulation result: whether an address had code where the transaction ran ('unverified' when that read failed), and the node's gas price. Recorded with the run, so an address-book re-label can run the protectors again without simulating.
+export type RecordedProtectorChainReads = funtypes.Static<typeof RecordedProtectorChainReads>
+export const RecordedProtectorChainReads = funtypes.ReadonlyObject({
+	addressCode: funtypes.ReadonlyArray(funtypes.ReadonlyObject({
+		address: EthereumAddress,
+		code: funtypes.Union(funtypes.Literal('present'), funtypes.Literal('absent'), funtypes.Literal('unverified')),
+	})),
+}).And(funtypes.ReadonlyPartial({
+	gasPrice: EthereumQuantity,
+}))
+
 export type SimulatedAndVisualizedTransactionBase = funtypes.Static<typeof SimulatedAndVisualizedTransactionBase>
 export const SimulatedAndVisualizedTransactionBase = funtypes.Intersect(
 	funtypes.ReadonlyObject({
@@ -102,6 +113,8 @@ export const SimulatedAndVisualizedTransactionBase = funtypes.Intersect(
 		events: funtypes.ReadonlyArray(EnrichedEthereumEventWithMetadata),
 	}).And(funtypes.ReadonlyPartial({
 		safeTransaction: SafeStackTransaction,
+		// Missing on transactions stored by versions that did not record them.
+		protectorChainReads: RecordedProtectorChainReads,
 	})),
 	funtypes.Union(
 		funtypes.ReadonlyObject({
@@ -118,6 +131,7 @@ export type ProtectorResults = funtypes.Static<typeof ProtectorResults>
 export const ProtectorResults = funtypes.ReadonlyObject( {
 	quarantine: funtypes.Boolean,
 	quarantineReasons: funtypes.ReadonlyArray(funtypes.String),
+	protectorChainReads: RecordedProtectorChainReads,
 })
 
 export type PreSimulationTransaction = funtypes.Static<typeof PreSimulationTransaction>
@@ -410,6 +424,11 @@ export type MaybeSimulatedTransaction = funtypes.Static<typeof MaybeSimulatedTra
 export const MaybeSimulatedTransaction = funtypes.Union(NonSimulatedAndVisualizedTransaction, SimulatedAndVisualizedTransaction)
 
 export type VisualizedSimulationState = funtypes.Static<typeof VisualizedSimulationState>
+// Every entry the run's address lookups resolved from the address book, bundled metadata or the chain, recorded so an address-book re-label can stand in for an entry the address book no longer has. Missing on visualisations stored by versions that did not record them.
+const RecordedIdentifiedAddressBookEntries = funtypes.ReadonlyPartial({
+	identifiedAddressBookEntries: funtypes.ReadonlyArray(AddressBookEntry),
+})
+
 export const VisualizedSimulationState = funtypes.Union(
 	funtypes.ReadonlyObject({
 		success: funtypes.Literal(true),
@@ -418,7 +437,7 @@ export const VisualizedSimulationState = funtypes.Union(
 			visualizedPersonalSignRequests: funtypes.ReadonlyArray(VisualizedPersonalSignRequest),
 			blockTimeManipulation: BlockTimeManipulation
 		}))
-	}),
+	}).And(RecordedIdentifiedAddressBookEntries),
 	funtypes.ReadonlyObject({
 		success: funtypes.Literal(false),
 		jsonRpcError: JsonRpcErrorResponse,
@@ -427,7 +446,7 @@ export const VisualizedSimulationState = funtypes.Union(
 			visualizedPersonalSignRequests: funtypes.ReadonlyArray(VisualizedPersonalSignRequest),
 			blockTimeManipulation: BlockTimeManipulation
 		}))
-	})
+	}).And(RecordedIdentifiedAddressBookEntries),
 )
 
 const hasVisualizedSimulationOperations = (visualizedSimulationState: VisualizedSimulationState) => (
