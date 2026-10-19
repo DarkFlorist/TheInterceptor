@@ -12,9 +12,9 @@ import { JsonRpcResponseError } from '../utils/errors.js'
 import { keccak256, stringToBytes } from '../utils/ethereumPrimitives.js'
 import { doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, type InterceptedRequest, type UniqueRequestIdentifier } from '../utils/requests.js'
 import { areEqualUint8Arrays } from '../utils/typed-arrays.js'
-import { getActiveAddress } from './backgroundUtils.js'
+import { haveSameActiveAddressSettings } from './backgroundUtils.js'
 import { getSettings } from './settings.js'
-import { getActiveAddressForCurrentSignerState } from './signerStateOwnership.js'
+import { getActiveAddressForRequest } from './websiteActiveAddress.js'
 import { getInterceptorTransactionStack, getPendingTransactionsAndWalletSendCallsBatchIds, getWalletSendCallsBatchIds, updatePendingTransactionsAndWalletSendCallsBatchIds } from './storageVariables.js'
 import { hasAddressAccess } from './websiteAccessPolicy.js'
 
@@ -213,20 +213,13 @@ const getModeOrNetworkBindingError = (settings: Settings, binding: WalletSendCal
 	return undefined
 }
 
-// The settings that decide which account is active (see getActiveAddress).
-const haveSameActiveAddressSettings = (settings: Settings, latestSettings: Settings) => settings.simulationMode === latestSettings.simulationMode
-	&& settings.activeRpcNetwork.chainId === latestSettings.activeRpcNetwork.chainId
-	&& settings.useSignersAddressAsActiveAddress === latestSettings.useSignersAddressAsActiveAddress
-	&& settings.activeSimulationAddress === latestSettings.activeSimulationAddress
-	&& settings.activeSigningSafeAddress === latestSettings.activeSigningSafeAddress
-
 export type WalletSendCallsAccountLookup = { readonly settings: Settings, readonly activeAddress: AddressBookEntry | undefined }
 
 // Looks up the active account with the current settings. getWalletSendCallsBindingError then confirms against a later settings snapshot that those settings still hold.
 export async function lookUpWalletSendCallsAccount(websiteTabConnections: WebsiteTabConnections, pendingBatch: PendingTransactionBatch): Promise<WalletSendCallsAccountLookup> {
 	const tabId = pendingBatch.uniqueRequestIdentifier.requestSocket.tabId
 	const settings = await getSettings()
-	return { settings, activeAddress: await getActiveAddressForCurrentSignerState(websiteTabConnections, settings, tabId, async () => await getActiveAddress(settings, tabId)) }
+	return { settings, activeAddress: await getActiveAddressForRequest(settings, websiteTabConnections, tabId) }
 }
 
 // Checks the admission binding (network, simulation mode, active account and website access) against one settings snapshot, read after the account lookup. It awaits nothing, so a caller can write right after reading the snapshot, which makes the snapshot the point the approval takes effect: a change saved later counts as made after approval. The signer's accounts in the tab state are only read during the account lookup, which is acceptable because the wallet reports them on its own schedule, so a change landing just after that lookup cannot be told apart from one landing just after approval.

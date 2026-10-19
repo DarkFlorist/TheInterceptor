@@ -254,8 +254,8 @@ export const PopupPendingSignableMessage = funtypes.Intersect(
 )
 
 export type PendingTransactionOrSignableMessage = PendingSignableMessage | PendingTransaction | PendingTransactionBatch
-// The confirmations that the single-transaction, message and Gnosis Safe flows handle. wallet_sendCalls batches are confirmed by walletSendCallsConfirmation.ts.
-export type PendingTransactionOrSignableMessageExceptBatch = PendingSignableMessage | PendingTransaction
+// The confirmations that the single-transaction, message and Gnosis Safe flows handle: every kind except wallet_sendCalls batches, which walletSendCallsConfirmation.ts confirms.
+export type PendingTransactionOrSignableMessageExceptBatch = Exclude<PendingTransactionOrSignableMessage, { readonly type: 'TransactionBatch' }>
 const PendingTransactionOrSignableMessageRuntype: funtypes.Runtype<PendingTransactionOrSignableMessage> = funtypes.Union(PendingSignableMessage, PendingTransaction, PendingTransactionBatch)
 export const PendingTransactionOrSignableMessage: typeof PendingTransactionOrSignableMessageRuntype = PendingTransactionOrSignableMessageRuntype
 

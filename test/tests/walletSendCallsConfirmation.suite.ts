@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { setSystemTime, test } from 'bun:test'
-import { activeAddress, addressString, browserMock, createDisconnectedPort, createWebsitePort, fakeBlock, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, isRecord, modules, recipientAddress, simulator, withSilencedConsole } from './confirmTransactionTestHarness.js'
+import { activeAddress, addressString, browserMock, createDisconnectedPort, createWebsitePort, fakeBlock, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, isRecord, modules, pendingTransaction, recipientAddress, simulator, withSilencedConsole } from './confirmTransactionTestHarness.js'
 import { createDeferredValue } from './backgroundEthAccountsTestHarness.js'
 import type { PendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
 import type { InterceptorStackOperation } from '../../app/ts/types/visualizer-types.js'
@@ -194,6 +194,18 @@ test('simulates a wallet_sendCalls batch and only adds it to the simulation stac
 	assert.deepEqual(reply.result, { id: pending.batchId })
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
 	assert.equal(await approveBatch(websiteTabConnections), undefined)
+})
+
+test('the confirmation queue of the transaction, message and Gnosis Safe flows leaves out wallet_sendCalls batches', async () => {
+	const { websiteTabConnections } = await setUpWalletSendCallsTest()
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [pendingTransaction] })
+	// The transaction's confirmation window stays open, so the batch joins it instead of answering the transaction as unanswered.
+	browserMock.setLiveWindowIds([pendingTransaction.popupOrTabId.id])
+	await requestBatch(websiteTabConnections)
+	const { getPendingTransactionsAndMessagesExceptBatches } = await import('../../app/ts/background/storageVariables.js')
+
+	assert.deepEqual((await modules.getPendingTransactionsAndMessages()).map((pending) => pending.type), ['Transaction', 'TransactionBatch'])
+	assert.deepEqual((await getPendingTransactionsAndMessagesExceptBatches()).map((pending) => pending.type), ['Transaction'])
 })
 
 test('a batch whose calls cannot be simulated cannot be approved', async () => {

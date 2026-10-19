@@ -14,7 +14,7 @@ import type { RpcEntries, RpcNetwork } from '../types/rpc.js'
 import { replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
 import { keccak256, namehash, stringToBytes } from '../utils/ethereumPrimitives.js'
 import { isValidEnsName } from '../utils/ens.js'
-import { modifyObject } from '../utils/typescript.js'
+import { assertNever, modifyObject } from '../utils/typescript.js'
 import type { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { getLargeStateValue, prepareLargeStateWrite, setLargeStateValue, setLargeStateValues } from '../utils/largeStateStore.js'
 import type { InterceptorErrorDiagnostic } from '../types/errorDiagnostics.js'
@@ -86,9 +86,16 @@ export async function getPendingTransactionsAndMessages(): Promise<readonly Pend
 	return await pendingTransactionsSemaphore.execute(readPendingTransactionsAndMessagesWithRecovery)
 }
 
-// The confirmations of the single-transaction, message and Gnosis Safe flows, without wallet_sendCalls batches.
+// The confirmations of the single-transaction, message and Gnosis Safe flows, without wallet_sendCalls batches. Every kind of confirmation is sorted here, so a new kind does not compile until it is.
 export async function getPendingTransactionsAndMessagesExceptBatches(): Promise<readonly PendingTransactionOrSignableMessageExceptBatch[]> {
-	return (await getPendingTransactionsAndMessages()).filter((pending): pending is PendingTransactionOrSignableMessageExceptBatch => pending.type !== 'TransactionBatch')
+	return (await getPendingTransactionsAndMessages()).flatMap((pending): readonly PendingTransactionOrSignableMessageExceptBatch[] => {
+		switch (pending.type) {
+			case 'Transaction':
+			case 'SignableMessage': return [pending]
+			case 'TransactionBatch': return []
+			default: return assertNever(pending)
+		}
+	})
 }
 
 export const clearPendingTransactions = async () => await updatePendingTransactionOrMessages(async () => [])

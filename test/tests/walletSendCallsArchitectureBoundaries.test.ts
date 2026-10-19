@@ -9,6 +9,9 @@ const walletSendCallsConfirmationSource = await readSource('background/walletSen
 const walletSendCallsSource = await readSource('background/walletSendCalls.ts')
 const confirmationWindowSupportSource = await readSource('background/confirmationWindowSupport.ts')
 const transactionPreparationSource = await readSource('background/transactionPreparation.ts')
+const accessRequestTypesSource = await readSource('types/accessRequest.ts')
+const storageVariablesSource = await readSource('background/storageVariables.ts')
+const backgroundSource = await readSource('background/background.ts')
 const visualizerTypesSource = await readSource('types/visualizer-types.ts')
 const safeConfirmationSources = await Promise.all([
 	'background/safeConfirmationResolver.ts',
@@ -75,4 +78,16 @@ test('batch ids are looked up only in the batch id records, not on simulation st
 	assert.doesNotMatch(visualizerTypesSource, /walletSendCallsBatchId/u)
 	assert.match(walletSendCallsSource, /updatePendingTransactionsAndWalletSendCallsBatchIds\(/u)
 	assert.doesNotMatch(walletSendCallsSource, /getPendingTransactionsAndMessages\(/u)
+})
+
+test('the batch-free confirmation type is derived from the full union, and the queue is sorted into it exhaustively', () => {
+	assert.match(accessRequestTypesSource, /type PendingTransactionOrSignableMessageExceptBatch = Exclude<PendingTransactionOrSignableMessage, \{ readonly type: 'TransactionBatch' \}>/u)
+	assert.doesNotMatch(storageVariablesSource, /pending is PendingTransactionOrSignableMessageExceptBatch/u)
+})
+
+test('wallet_sendCalls resolves and compares the active account with the shared rule', () => {
+	assert.equal(importsFrom(walletSendCallsSource, 'websiteActiveAddress.js'), true)
+	assert.match(walletSendCallsSource, /import \{ haveSameActiveAddressSettings \} from '\.\/backgroundUtils\.js'/u)
+	assert.doesNotMatch(walletSendCallsSource, /getActiveAddressForCurrentSignerState|const haveSameActiveAddressSettings|activeSimulationAddress/u)
+	assert.doesNotMatch(backgroundSource, /function getActiveAddressForRequest/u)
 })
