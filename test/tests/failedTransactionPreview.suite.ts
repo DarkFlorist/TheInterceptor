@@ -265,7 +265,7 @@ test('keeps a newer simulation run stored during the failure preview metadata re
 	assert.deepEqual(await getPendingFailedTransactionVisualisation(), newerVisualisation, 'the metadata of the initial run replaced the newer run')
 })
 
-test('keeps the names of a newer metadata refresh when an older refresh of the same failed confirmation finishes last', async () => {
+test('keeps and shows the names of a newer metadata refresh when an older refresh of the same failed confirmation finishes last', async () => {
 	await useInvoiceAddressBook()
 	const confirmationSimulator = createFeeValidatingSimulator(TOO_LITTLE_ETH_FOR_FEES)
 	await openUsdcTransferConfirmation(confirmationSimulator)
@@ -273,17 +273,23 @@ test('keeps the names of a newer metadata refresh when an older refresh of the s
 	await modules.updateUserAddressBookEntries((entries) => entries.filter((entry) => entry.address !== recipientAddress))
 	const { refreshPopupConfirmTransactionMetadata } = await import('../../app/ts/background/popupMessageHandlers.js')
 	const getStoredPayerName = async () => (await getPendingFailedTransactionVisualisation()).data.failedTransactionPreview?.addressBookEntries.find((entry) => entry.address === activeAddress)?.name
+	const isDialogUpdate = (message: unknown) => isRecord(message) && message.method === 'popup_update_confirm_transaction_dialog_pending_transactions'
 	let payerNameAfterNewerRefresh: string | undefined
+	let messagesSentBeforeOlderRefreshResumes = 0
 	const ethereumRefreshingAgainDuringLookup = supersedeDuringAddressLookup(confirmationSimulator.ethereum, recipientAddress, 'resolves', async () => {
 		await modules.updateUserAddressBookEntries((entries) => entries.map((entry) => entry.address === activeAddress ? { ...entry, name: 'Renamed Payer' } : entry))
 		await refreshPopupConfirmTransactionMetadata(confirmationSimulator.ethereum, confirmationSimulator.tokenPriceService, undefined)
 		payerNameAfterNewerRefresh = await getStoredPayerName()
+		messagesSentBeforeOlderRefreshResumes = browserMock.sentMessages.length
 	})
+	browserMock.sentMessages.length = 0
 
 	await withSilencedConsole(async () => await refreshPopupConfirmTransactionMetadata(ethereumRefreshingAgainDuringLookup, confirmationSimulator.tokenPriceService, undefined))
 
 	assert.equal(payerNameAfterNewerRefresh, 'Renamed Payer', 'the newer refresh runs during the older refresh and stores the new name')
+	assert.equal(browserMock.sentMessages.slice(0, messagesSentBeforeOlderRefreshResumes).some(isDialogUpdate), true, 'the newer refresh updates the dialog')
 	assert.equal(await getStoredPayerName(), 'Renamed Payer', 'the older refresh replaced the newer names')
+	assert.equal(browserMock.sentMessages.slice(messagesSentBeforeOlderRefreshResumes).some(isDialogUpdate), false, 'the older refresh sent the dialog an update after the newer one')
 })
 
 test('resolves address-book names and parses calldata when the confirmation simulation throws', async () => {

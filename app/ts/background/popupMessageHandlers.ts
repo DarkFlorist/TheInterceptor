@@ -523,14 +523,13 @@ type ConfirmTransactionMetadataDependencies = {
 	readonly visualisation?: OpenConsumerVisualisationDependencies
 }
 
-// Counts started confirmation metadata refreshes, so only the latest started one stores its lookups; see refreshPopupConfirmTransactionMetadata.
+// Counts started confirmation metadata refreshes, so only the latest started one stores and sends its lookups; see refreshPopupConfirmTransactionMetadata.
 let latestConfirmationMetadataRefresh = 0
 
 export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, requestAbortController: AbortController | undefined, dependencies: ConfirmTransactionMetadataDependencies = {}) {
 	latestConfirmationMetadataRefresh += 1
 	const thisConfirmationMetadataRefresh = latestConfirmationMetadataRefresh
-	const promises = await getPendingTransactionsAndMessages()
-	const first = promises[0]
+	const [first] = await getPendingTransactionsAndMessages()
 	if (first === undefined) return
 	const currentBlockNumberPromise = ethereum.getBlockNumber(requestAbortController)
 	silenceChromeUnCaughtPromise(currentBlockNumberPromise)
@@ -551,16 +550,21 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 					rpcConnectionStatus: await rpcConnectionStatusPromise,
 				}
 			}
+			const visualizedPersonalSignRequest = await visualizedPersonalSignRequestPromise
+			// Read after every await, so the dialog is sent the pending requests as stored now. A newer metadata refresh that started meanwhile sends its own update, which this older one must not follow.
+			const [currentFirst, ...otherPendingRequests] = await getPendingTransactionsAndMessages()
+			if (thisConfirmationMetadataRefresh !== latestConfirmationMetadataRefresh) return
+			if (currentFirst?.type !== 'SignableMessage' || !doesUniqueRequestIdentifiersMatch(currentFirst.uniqueRequestIdentifier, first.uniqueRequestIdentifier)) return
 			const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {
 				method: 'popup_update_confirm_transaction_dialog_pending_transactions' as const,
 				data: {
 					pendingTransactionAndSignableMessages: [{
-						...first,
-						visualizedPersonalSignRequest: await visualizedPersonalSignRequestPromise,
+						...currentFirst,
+						visualizedPersonalSignRequest,
 						transactionOrMessageCreationStatus: 'Simulated' as const
-					}, ...promises.slice(1)].map(toPopupPendingTransactionOrSignableMessage),
-					currentBlockNumber: await currentBlockNumberPromise,
-					rpcConnectionStatus: await rpcConnectionStatusPromise,
+					}, ...otherPendingRequests].map(toPopupPendingTransactionOrSignableMessage),
+					currentBlockNumber: message.data.currentBlockNumber,
+					rpcConnectionStatus: message.data.rpcConnectionStatus,
 				}
 			}
 			await Promise.all([
@@ -588,20 +592,24 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 					if (thisConfirmationMetadataRefresh !== latestConfirmationMetadataRefresh) return current
 					return modifyObject(current, { popupVisualisation: refreshedPopupVisualisation })
 				})
-				const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {
-					method: 'popup_update_confirm_transaction_dialog_pending_transactions' as const,
-					data: {
-						pendingTransactionAndSignableMessages: (await getPendingTransactionsAndMessages()).map(toPopupPendingTransactionOrSignableMessage),
-						currentBlockNumber: await currentBlockNumberPromise,
-						rpcConnectionStatus: await rpcConnectionStatusPromise,
-					}
-				}
 				const message: UpdateConfirmTransactionDialog = {
 					method: 'popup_update_confirm_transaction_dialog' as const,
 					data: {
 						visualizedSimulatorState: await visualizedSimulatorStatePromise,
 						currentBlockNumber: await currentBlockNumberPromise,
 						rpcConnectionStatus: await rpcConnectionStatusPromise,
+					}
+				}
+				// Read after every await, so the dialog is sent the pending requests as stored now. A newer metadata refresh that started meanwhile sends its own update, which this older one must not follow.
+				const pendingTransactionAndSignableMessages = await getPendingTransactionsAndMessages()
+				if (thisConfirmationMetadataRefresh !== latestConfirmationMetadataRefresh) return
+				if (pendingTransactionAndSignableMessages.length === 0) return // the dialog expects at least one pending request, as in updateConfirmTransactionView
+				const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {
+					method: 'popup_update_confirm_transaction_dialog_pending_transactions' as const,
+					data: {
+						pendingTransactionAndSignableMessages: pendingTransactionAndSignableMessages.map(toPopupPendingTransactionOrSignableMessage),
+						currentBlockNumber: message.data.currentBlockNumber,
+						rpcConnectionStatus: message.data.rpcConnectionStatus,
 					}
 				}
 				await Promise.all([
