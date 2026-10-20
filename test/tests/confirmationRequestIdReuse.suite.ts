@@ -22,17 +22,17 @@ async function startPageConnection() {
 
 type PageConnections = Awaited<ReturnType<typeof startPageConnection>>
 
-async function sendTransactionFromPage(connections: PageConnections, value: bigint) {
+async function sendTransactionFromPage(connections: PageConnections, value: bigint, simulationMode = false) {
 	const parameters = { method: 'eth_sendTransaction' as const, params: [{ from: activeAddress, to: recipientAddress, value, gas: 21_000n, maxFeePerGas: 1n, maxPriorityFeePerGas: 1n, input: new Uint8Array() }] as const }
 	const request = { ...parameters, interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier: pageRequestIdentifier }
-	const reply = await modules.openConfirmTransactionDialogForTransaction(simulator.ethereum, simulator.tokenPriceService, request, { kind: 'transaction', parameters }, false, activeAddress, pageWebsite, connections)
+	const reply = await modules.openConfirmTransactionDialogForTransaction(simulator.ethereum, simulator.tokenPriceService, request, { kind: 'transaction', parameters }, simulationMode, activeAddress, pageWebsite, connections)
 	assert.deepEqual(reply, { type: 'doNotReply' })
 }
 
-async function sendPersonalSignFromPage(connections: PageConnections, message: string) {
+async function sendPersonalSignFromPage(connections: PageConnections, message: string, simulationMode = false) {
 	const parameters = { method: 'personal_sign' as const, params: [message, activeAddress] as const }
 	const request = { ...parameters, interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier: pageRequestIdentifier }
-	const reply = await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, request, { kind: 'message', parameters }, false, activeAddress, pageWebsite, connections)
+	const reply = await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, request, { kind: 'message', parameters }, simulationMode, activeAddress, pageWebsite, connections)
 	assert.deepEqual(reply, { type: 'doNotReply' })
 }
 
@@ -42,6 +42,12 @@ async function getOnlyPendingRequest() {
 	const [request] = pending
 	if (request === undefined) throw new Error('Expected one pending request')
 	return request
+}
+
+// In simulation mode an accepted request joins the simulation stack under its transaction or message identifier.
+async function acceptPendingRequest(connections: PageConnections) {
+	await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, connections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier: pageRequestIdentifier } })
+	assert.equal((await modules.getPendingTransactionsAndMessages()).length, 0)
 }
 
 async function closeConfirmationPopup(connections: PageConnections) {
@@ -294,4 +300,55 @@ test('a second request under a still-pending request id does not store its simul
 	assert.deepEqual(getSimulatedValues(first), { transactionToSimulate: ONE_ETHER, visualised: [ONE_ETHER] })
 	assert.equal(getRequestedValue(second), 0n)
 	assert.deepEqual(getSimulatedValues(second), { transactionToSimulate: 0n, visualised: [0n] })
+})
+
+test('a transaction reusing the request id of one already in the simulation stack is shown its own simulation', async () => {
+	const connections = await startPageConnection()
+	await sendTransactionFromPage(connections, 0n, true)
+	await acceptPendingRequest(connections)
+	await sendTransactionFromPage(connections, ONE_ETHER, true)
+	await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
+
+	const [stacked] = (await modules.getInterceptorTransactionStack()).operations
+	const replacement = await getOnlyPendingRequest()
+	if (stacked?.type !== 'Transaction' || replacement.type !== 'Transaction' || replacement.transactionOrMessageCreationStatus !== 'Simulated' || replacement.popupVisualisation.statusCode !== 'success') throw new Error('Expected a stacked transaction and a simulated replacement')
+	assert.equal(stacked.preSimulationTransaction.signedTransaction.value, 0n)
+	const { getResultsForTransaction } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
+	const shownSimulation = getResultsForTransaction(replacement.popupVisualisation.data.visualizedSimulationState, replacement.transactionIdentifier)
+	assert.equal(shownSimulation?.transaction.value, ONE_ETHER)
+	assert.notEqual(replacement.transactionIdentifier, stacked.preSimulationTransaction.transactionIdentifier)
+})
+
+test('a message reusing the request id of one already in the simulation stack is removed from the stack on its own', async () => {
+	const connections = await startPageConnection()
+	await sendPersonalSignFromPage(connections, FIRST_MESSAGE, true)
+	await acceptPendingRequest(connections)
+	await sendPersonalSignFromPage(connections, REPLACEMENT_MESSAGE, true)
+	await acceptPendingRequest(connections)
+
+	const getStackedMessages = async () => (await modules.getInterceptorTransactionStack()).operations.flatMap((operation) => operation.type === 'Message' ? [operation.signedMessageTransaction] : [])
+	const [first, second] = await getStackedMessages()
+	if (first === undefined || second === undefined) throw new Error('Expected both messages in the simulation stack')
+	await modules.removeTransactionOrSignedMessage(simulator.ethereum, simulator.tokenPriceService, { method: 'popup_removeTransactionOrSignedMessage', data: { type: 'Message', messageIdentifier: second.messageIdentifier } })
+	assert.deepEqual((await getStackedMessages()).map((message) => message.originalRequestParameters.params[0]), [FIRST_MESSAGE])
+	assert.notEqual(second.messageIdentifier, first.messageIdentifier)
+})
+
+test('a governance execution request for a closed request does not simulate or answer for a replacement that reused its request id', async () => {
+	const connections = await startPageConnection()
+	await sendTransactionFromPage(connections, 0n)
+	const closed = await getOnlyPendingRequest()
+	if (closed.type !== 'Transaction') throw new Error('Expected a pending transaction')
+	await closeConfirmationPopup(connections)
+	await sendTransactionFromPage(connections, ONE_ETHER)
+	const replacement = await getOnlyPendingRequest()
+	if (replacement.type !== 'Transaction') throw new Error('Expected a pending transaction')
+	const messagesBeforeRequest = browserMock.sentMessages.length
+
+	await assert.rejects(
+		modules.simulateGovernanceContractExecutionOnPass(simulator.ethereum, simulator.tokenPriceService, { method: 'popup_simulateGovernanceContractExecution', data: { transactionIdentifier: closed.transactionIdentifier } }),
+		/Could not find transactionIdentifier/u,
+	)
+	assert.notEqual(replacement.transactionIdentifier, closed.transactionIdentifier)
+	assert.equal(browserMock.sentMessages.slice(messagesBeforeRequest).some((message) => message.method === 'popup_simulateExecutionReply'), false)
 })
