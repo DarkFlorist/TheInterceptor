@@ -1,6 +1,9 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
-import { browserMock, createDisconnectedPort, createRecordingPort, isRecord, modules, pendingTransaction, signedTransaction, simulator, uniqueRequestIdentifier, waitForPendingTransactionsToClear, withSilencedConsole } from './confirmTransactionTestHarness.js'
+import { getLatestUnexpectedError } from '../../app/ts/background/storageVariables.js'
+import { addressString } from '../../app/ts/utils/bigint.js'
+import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../app/ts/utils/constants.js'
+import { activeAddress, browserMock, createDisconnectedPort, createRecordingPort, isRecord, modules, pendingTransaction, signedTransaction, simulator, uniqueRequestIdentifier, waitForPendingTransactionsToClear, withSilencedConsole } from './confirmTransactionTestHarness.js'
 
 test('failed signer delivery keeps the request and replaces the waiting spinner with a wallet-neutral error', async () => {
 	await browser.storage.local.set({ simulationMode: false })
@@ -710,6 +713,112 @@ test('startup pruning removes terminal replies for missing tabs and preserves li
 	assert.equal(remainingReplies[0]?.uniqueRequestIdentifier.requestSocket.tabId, liveTabId)
 	assert.equal(browserMock.storageState.popupRefreshGeneration, 23)
 	delete browserMock.storageState.pendingTerminalReplies
+})
+
+
+// Chrome refuses to focus or close tabs and windows while the user drags a tab. Missing tabs and windows are already ignored by the browser helpers, so a failure like this is what reaches the confirmation window cleanup.
+const TAB_DRAG_ERROR_MESSAGE = 'Tabs cannot be edited right now (user may be dragging a tab).'
+
+function connectRequestingWebsite() {
+	const postedMessages: unknown[] = []
+	const socket = uniqueRequestIdentifier.requestSocket
+	const websiteTabConnections = new Map([[socket.tabId, { connections: {
+		[modules.websiteSocketToString(socket)]: { port: createRecordingPort(postedMessages), socket, websiteOrigin: 'https://example.com', approved: true, wantsToConnect: true },
+	} }]])
+	return { postedMessages, websiteTabConnections }
+}
+
+const getRepliesToWebsite = (postedMessages: readonly unknown[]) => postedMessages.filter((message) => isRecord(message) && message.type === 'result')
+
+// Fails focusing the website's tab, which the cleanup does once the confirmation queue is empty, and records how many replies the website had received by then.
+function failFocusingTheWebsiteTab(postedMessages: readonly unknown[]) {
+	const repliesReceivedBeforeCleanup: number[] = []
+	browserMock.setLiveTabIds([uniqueRequestIdentifier.requestSocket.tabId])
+	browserMock.setTabUpdateHandler(async () => {
+		repliesReceivedBeforeCleanup.push(getRepliesToWebsite(postedMessages).length)
+		throw new Error(TAB_DRAG_ERROR_MESSAGE)
+	})
+	return repliesReceivedBeforeCleanup
+}
+
+async function assertConfirmationViewFailureWasReported() {
+	const reportedError = await getLatestUnexpectedError()
+	assert.equal(reportedError?.data.code, 'confirm_transaction_view_update_failed')
+	assert.equal(reportedError?.data.message, TAB_DRAG_ERROR_MESSAGE)
+}
+
+test('approving a simulated transaction answers the website before the window cleanup, whose failure is reported', async () => {
+	const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
+	const repliesReceivedBeforeCleanup = failFocusingTheWebsiteTab(postedMessages)
+
+	const delivered = await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+		method: 'popup_confirmDialog',
+		data: { action: 'accept', uniqueRequestIdentifier },
+	}))
+
+	assert.equal(delivered, true)
+	assert.deepEqual(repliesReceivedBeforeCleanup, [1])
+	const [reply] = getRepliesToWebsite(postedMessages)
+	if (!isRecord(reply)) throw new Error('Missing reply to the website')
+	assert.equal(reply.method, 'eth_sendTransaction')
+	assert.equal(reply.result, modules.EthereumBytes32.serialize(signedTransaction.hash))
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+	assert.equal((await modules.getInterceptorTransactionStack()).operations.length, 1)
+	await assertConfirmationViewFailureWasReported()
+})
+
+test('rejecting a transaction answers the website before the window cleanup, whose failure is reported', async () => {
+	const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
+	const repliesReceivedBeforeCleanup: number[] = []
+	browserMock.setLiveWindowIds([pendingTransaction.popupOrTabId.id])
+	browserMock.setWindowRemoveHandler(async () => {
+		repliesReceivedBeforeCleanup.push(getRepliesToWebsite(postedMessages).length)
+		throw new Error(TAB_DRAG_ERROR_MESSAGE)
+	})
+
+	const delivered = await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+		method: 'popup_confirmDialog',
+		data: { action: 'reject', errorString: undefined, uniqueRequestIdentifier },
+	}))
+
+	assert.equal(delivered, true)
+	assert.deepEqual(repliesReceivedBeforeCleanup, [1])
+	const [reply] = getRepliesToWebsite(postedMessages)
+	if (!isRecord(reply) || !isRecord(reply.error)) throw new Error('Missing rejection sent to the website')
+	assert.equal(reply.method, 'eth_sendTransaction')
+	assert.equal(reply.error.code, METAMASK_ERROR_USER_REJECTED_REQUEST)
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+	assert.deepEqual((await modules.getInterceptorTransactionStack()).operations, [])
+	await assertConfirmationViewFailureWasReported()
+})
+
+test('approving a simulated message signature answers the website before the window cleanup, whose failure is reported', async () => {
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
+	const message = '0x68656c6c6f'
+	const request = { method: 'personal_sign', params: [message, addressString(activeAddress)], interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier }
+	const signRequest = { method: 'personal_sign' as const, params: [message, activeAddress] as const }
+	const website = { websiteOrigin: 'https://example.com', icon: undefined, title: undefined }
+	assert.deepEqual(await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, request, { kind: 'message', parameters: signRequest }, true, activeAddress, website, websiteTabConnections), { type: 'doNotReply' })
+	const repliesReceivedBeforeCleanup = failFocusingTheWebsiteTab(postedMessages)
+
+	const delivered = await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+		method: 'popup_confirmDialog',
+		data: { action: 'accept', uniqueRequestIdentifier },
+	}))
+
+	assert.equal(delivered, true)
+	assert.deepEqual(repliesReceivedBeforeCleanup, [1])
+	const [reply] = getRepliesToWebsite(postedMessages)
+	if (!isRecord(reply)) throw new Error('Missing reply to the website')
+	assert.equal(reply.method, 'personal_sign')
+	assert.equal(typeof reply.result, 'string')
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+	assert.deepEqual((await modules.getInterceptorTransactionStack()).operations.map((operation) => operation.type), ['Message'])
+	await assertConfirmationViewFailureWasReported()
 })
 
 await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
