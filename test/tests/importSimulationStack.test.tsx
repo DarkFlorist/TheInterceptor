@@ -427,6 +427,49 @@ describe('import simulation stack', () => {
 		assert.deepEqual(visualizedCrafted.quarantineReasons, [modules.IMPORTED_SIGNATURE_QUARANTINE_REASON])
 	})
 
+	test('marks every imported message whatever the export file says about it', async () => {
+		resetEnvironment()
+		const withMarker = createMessageOperation(1n, personalSignRequest())
+		const markedExport = InterceptorSimulationExport.serialize({ ...exportPayload, interceptorSimulateStack: { operations: [{ ...withMarker, signedMessageTransaction: { ...withMarker.signedMessageTransaction, importedFromExport: true } }] } })
+		// The marker can only be `true`, so an export claiming `false` is not a valid export and never reaches the import.
+		const [markedOperation] = markedExport.interceptorSimulateStack.operations
+		if (markedOperation?.type !== 'Message') throw new Error('Expected the exported message')
+		assert.equal(InterceptorSimulationExport.safeParse({ ...markedExport, interceptorSimulateStack: { operations: [{ ...markedOperation, signedMessageTransaction: { ...markedOperation.signedMessageTransaction, importedFromExport: false } }] } }).success, false)
+		// Without the marker or with it already set, the import marks the message.
+		const importedMessages = await importMessageOperations([createMessageOperation(2n, personalSignRequest()), { ...withMarker, signedMessageTransaction: { ...withMarker.signedMessageTransaction, importedFromExport: true } }])
+		assert.deepEqual(importedMessages.map((message) => message.importedFromExport), [true, true])
+	})
+
+	test('drops the simulation options an imported transaction claims, while a transaction already in the stack keeps its own', async () => {
+		const modules = await modulesPromise
+		resetEnvironment()
+		const withSimulationOptions = (transactionIdentifier: bigint, simulationOptions: { readonly requiredChainId: bigint, readonly simulateWithZeroBaseFee: boolean }) => {
+			const [operation] = create7702ExportPayload().interceptorSimulateStack.operations
+			if (operation === undefined) throw new Error('Expected transaction fixture')
+			return { ...operation, preSimulationTransaction: { ...operation.preSimulationTransaction, transactionIdentifier, simulationOptions } }
+		}
+		storageState.interceptorTransactionStack = InterceptorTransactionStack.serialize({ operations: [withSimulationOptions(1n, { requiredChainId: 1n, simulateWithZeroBaseFee: true })] })
+		const parsedExport = InterceptorSimulationExport.parse(InterceptorSimulationExport.serialize({
+			...exportPayload,
+			interceptorSimulateStack: { operations: [
+				// A zero base fee lets a contract notice it is being simulated and behave differently there.
+				withSimulationOptions(2n, { requiredChainId: 1n, simulateWithZeroBaseFee: true }),
+				// A required chain decides on which chain the transaction is simulated at all.
+				withSimulationOptions(3n, { requiredChainId: 5n, simulateWithZeroBaseFee: false }),
+			] },
+		}))
+
+		const reply = await modules.importSimulationStack(expectedInfrastructureEthereum as never, {} as never, { method: 'popup_importSimulationStack', data: parsedExport })
+
+		assert.equal(reply.ok, true)
+		const storedTransactions = InterceptorTransactionStack.parse(storageState.interceptorTransactionStack).operations.map((operation) => {
+			if (operation.type !== 'Transaction') throw new Error('Expected only transaction operations')
+			return operation.preSimulationTransaction
+		})
+		assert.deepEqual(storedTransactions.map((transaction) => transaction.simulationOptions), [{ requiredChainId: 1n, simulateWithZeroBaseFee: true }, undefined, undefined])
+		assert.equal(storedTransactions.every((transaction) => transaction.signedTransaction.type === '7702'), true)
+	})
+
 	test('preserves EIP-7702 authorization signatures when importing an exported stack', async () => {
 		const modules = await modulesPromise
 		resetEnvironment()

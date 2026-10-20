@@ -1241,10 +1241,18 @@ export async function importSimulationStack(ethereum: EthereumClientService, tok
 		return websiteData ?? website
 	}
 
-	// An imported message was never requested through this extension, so the active address and simulation signer it carries are only the export file's claim. Neither can be re-derived from the message (for a Safe, an owner rather than the Safe signs), so they are kept for the simulation but the message is marked as imported, and craftPersonalSignPopupMessage flags it instead of trusting its account check. `safeMessageReview` stays, because a Safe message is only shown with its review when the review text hashes to the digest it signs. Operations already in the stack keep what this extension recorded for them.
-	const importedOperations = parsedRequest.data.interceptorSimulateStack.operations.map((operation) => operation.type === 'Message'
-		? modifyObject(operation, { signedMessageTransaction: modifyObject(operation.signedMessageTransaction, { importedFromExport: true }) })
-		: operation)
+	// Imported operations were never requested through this extension, so nothing they claim about how they were requested is trusted; operations already in the stack keep what this extension recorded for them. A message's active address and simulation signer cannot be re-derived from the message (for a Safe, an owner rather than the Safe signs), so they are kept for the simulation, but the message is marked as imported and craftPersonalSignPopupMessage flags it instead of trusting its account check. Its `safeMessageReview` stays, because a Safe message is only shown with its review when the review text hashes to the digest it signs. A transaction's `simulationOptions` are dropped: only Safe proposals, which cannot be imported here, set them, and a claimed `requiredChainId` decides on which chain the transaction is simulated at all while a claimed zero base fee lets a contract detect the simulation (`block.basefee == 0`) and behave differently in it.
+	const importedOperations = parsedRequest.data.interceptorSimulateStack.operations.map((operation) => {
+		switch (operation.type) {
+			case 'Message': return modifyObject(operation, { signedMessageTransaction: modifyObject(operation.signedMessageTransaction, { importedFromExport: true }) })
+			case 'Transaction': {
+				const { simulationOptions: _unobservedSimulationOptions, ...preSimulationTransaction } = operation.preSimulationTransaction
+				return modifyObject(operation, { preSimulationTransaction })
+			}
+			case 'TimeManipulation': return operation
+			default: return assertNever(operation)
+		}
+	})
 
 	let updatedStack: InterceptorTransactionStack
 	try {
