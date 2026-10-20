@@ -192,23 +192,27 @@ export async function updateConfirmTransactionView(ethereum: EthereumClientServi
 		const settingsPromise = getSettings()
 		const currentBlockNumberPromise = silenceChromeUnCaughtPromise(ethereum.getBlockNumber(undefined))
 		const rpcConnectionStatusPromise = silenceChromeUnCaughtPromise(getRpcConnectionStatus())
-		const pendingTransactionAndSignableMessages = await getPendingTransactionsAndMessages()
-		if (pendingTransactionAndSignableMessages.length === 0) return false
+		if ((await getPendingTransactionsAndMessages()).length === 0) return false // skips the visualisation work below; the requests sent are read after it
 		const settings = await settingsPromise
 		const visualizedSimulatorState = settings.simulationMode
 			? await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { onlyIfNotAlreadyUpdating })
 			: createPassthroughCompleteVisualizedSimulation()
+		const currentBlockNumber = await currentBlockNumberPromise
+		const rpcConnectionStatus = await rpcConnectionStatusPromise
+		// Read again after every await: a request read before them may have been resolved, or replaced by a new request under the same request id, and the dialog must not be shown it.
+		const pendingTransactionAndSignableMessages = await getPendingTransactionsAndMessages()
+		if (pendingTransactionAndSignableMessages.length === 0) return false
 		const message: UpdateConfirmTransactionDialog = { method: 'popup_update_confirm_transaction_dialog', data: {
-			currentBlockNumber: await currentBlockNumberPromise,
-			rpcConnectionStatus: await rpcConnectionStatusPromise,
+			currentBlockNumber,
+			rpcConnectionStatus,
 			visualizedSimulatorState,
 		} }
 		const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {
 			method: 'popup_update_confirm_transaction_dialog_pending_transactions' as const,
 			data: {
 				pendingTransactionAndSignableMessages: pendingTransactionAndSignableMessages.map(toPopupPendingTransactionOrSignableMessage),
-				currentBlockNumber: await currentBlockNumberPromise,
-				rpcConnectionStatus: await rpcConnectionStatusPromise,
+				currentBlockNumber,
+				rpcConnectionStatus,
 			}
 		}
 		await Promise.all([

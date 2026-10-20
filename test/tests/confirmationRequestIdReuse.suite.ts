@@ -1,7 +1,7 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
 import { UpdateConfirmTransactionDialogPendingTransactions } from '../../app/ts/types/interceptor-messages.js'
-import type { PendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
+import type { PendingTransactionOrSignableMessage, PopupPendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
 import { activeAddress, browserMock, createWebsitePort, fakeRequestHandler, modules, recipientAddress, type RuntimeMessage, simulator } from './confirmTransactionTestHarness.js'
 
 // A page chooses its own JSON-RPC request ids, so it can send a new request under the id of one whose popup was just closed, or of one that is still pending.
@@ -50,8 +50,8 @@ async function closeConfirmationPopup(connections: PageConnections) {
 	assert.equal((await modules.getPendingTransactionsAndMessages()).length, 0)
 }
 
-// Holds the first request for the given RPC method until released, so a test can replace the pending request while a refresh is mid-flight.
-function pauseFirstRpcRequest(method: string) {
+// Holds the first request for the given RPC method, made while shouldPause holds, until released, so a test can replace the pending request while a refresh is mid-flight.
+function pauseFirstRpcRequest(method: string, shouldPause: () => boolean = () => true) {
 	const originalJsonRpcRequest = fakeRequestHandler.jsonRpcRequest
 	let markReached: () => void = () => undefined
 	let release: () => void = () => undefined
@@ -59,7 +59,7 @@ function pauseFirstRpcRequest(method: string) {
 	const released = new Promise<void>((resolve) => { release = () => { resolve() } })
 	let paused = false
 	fakeRequestHandler.jsonRpcRequest = async (rpcRequest) => {
-		if (!paused && rpcRequest.method === method) {
+		if (!paused && rpcRequest.method === method && shouldPause()) {
 			paused = true
 			markReached()
 			await released
@@ -69,19 +69,22 @@ function pauseFirstRpcRequest(method: string) {
 	return { reached, release, restore: () => { fakeRequestHandler.jsonRpcRequest = originalJsonRpcRequest } }
 }
 
-function waitForNextPendingRequestsWrite() {
+function watchPendingRequestsWrites() {
+	let hasWritten = false
 	let markWritten: () => void = () => undefined
 	const written = new Promise<void>((resolve) => { markWritten = () => { resolve() } })
 	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
 		writeStoredItems()
-		if ('pendingTransactionsAndMessages' in items) markWritten()
+		if (!('pendingTransactionsAndMessages' in items)) return
+		hasWritten = true
+		markWritten()
 	})
-	return written
+	return { written, hasWritten: () => hasWritten }
 }
 
-// Fails instead of hanging when the refresh finishes before reaching the step a test waits for.
-async function waitForRefreshToReach(step: Promise<void>, refresh: Promise<unknown>, stepDescription: string) {
-	await Promise.race([step, refresh.then(() => { throw new Error(`The refresh finished before ${ stepDescription }`) })])
+// Fails instead of hanging when the work finishes before reaching the step a test waits for.
+async function waitUntilReached(step: Promise<void>, work: Promise<unknown>, stepDescription: string) {
+	await Promise.race([step, work.then(() => { throw new Error(`The work finished before ${ stepDescription }`) })])
 }
 
 const getRequestedValue = (pending: PendingTransactionOrSignableMessage) => {
@@ -89,7 +92,7 @@ const getRequestedValue = (pending: PendingTransactionOrSignableMessage) => {
 	return pending.originalRequestParameters.params[0].value
 }
 
-const getSimulatedValues = (pending: PendingTransactionOrSignableMessage) => {
+const getSimulatedValues = (pending: PendingTransactionOrSignableMessage | PopupPendingTransactionOrSignableMessage) => {
 	if (pending.type !== 'Transaction' || pending.transactionOrMessageCreationStatus !== 'Simulated' || pending.popupVisualisation.statusCode !== 'success') throw new Error('Expected a simulated transaction')
 	return {
 		transactionToSimulate: pending.transactionToSimulate.transaction.value,
@@ -108,7 +111,7 @@ test('a simulation refresh that outlives its request does not store into a repla
 	const pause = pauseFirstRpcRequest('eth_getTransactionCount')
 	try {
 		const refresh = modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
-		await waitForRefreshToReach(pause.reached, refresh, 'reaching the paused RPC request')
+		await waitUntilReached(pause.reached, refresh, 'reaching the paused RPC request')
 		await closeConfirmationPopup(connections)
 		await sendTransactionFromPage(connections, ONE_ETHER)
 		const replacement = await getOnlyPendingRequest()
@@ -128,6 +131,80 @@ test('a simulation refresh that outlives its request does not store into a repla
 	}
 })
 
+test('a simulation refresh that stored its result shows the dialog only a replacement sent under the same request id before its dialog update', async () => {
+	const connections = await startPageConnection()
+	await sendTransactionFromPage(connections, 0n)
+	const replaced = await getOnlyPendingRequest()
+	const pendingRequestsWrites = watchPendingRequestsWrites()
+	const pause = pauseFirstRpcRequest('eth_blockNumber', pendingRequestsWrites.hasWritten)
+	try {
+		const refresh = modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
+		await waitUntilReached(pause.reached, refresh, 'updating the dialog after storing its result')
+		browserMock.setStorageSetHandler(undefined)
+		await closeConfirmationPopup(connections)
+		await sendTransactionFromPage(connections, ONE_ETHER)
+		const replacement = await getOnlyPendingRequest()
+		const dialogUpdatesBeforeRefreshFinished = browserMock.sentMessages.length
+		pause.release()
+		await refresh
+
+		assert.notEqual(replacement.instanceId, replaced.instanceId)
+		assert.equal((await getOnlyPendingRequest()).instanceId, replacement.instanceId)
+		const shownPendingRequests = getPendingRequestsSentToDialog(browserMock.sentMessages.slice(dialogUpdatesBeforeRefreshFinished))
+		assert.equal(shownPendingRequests.length, 1)
+		const shown = shownPendingRequests.flat()
+		assert.deepEqual(shown.map((pending) => pending.type === 'Transaction' ? pending.instanceId : undefined), [replacement.instanceId])
+		for (const pending of shown) assert.deepEqual(getSimulatedValues(pending), { transactionToSimulate: ONE_ETHER, visualised: [ONE_ETHER] })
+	} finally {
+		browserMock.setStorageSetHandler(undefined)
+		pause.restore()
+	}
+})
+
+test('a simulation refresh that stored its result does not show the dialog its request once that request is resolved before its dialog update', async () => {
+	const connections = await startPageConnection()
+	await sendTransactionFromPage(connections, 0n)
+	const pendingRequestsWrites = watchPendingRequestsWrites()
+	const pause = pauseFirstRpcRequest('eth_blockNumber', pendingRequestsWrites.hasWritten)
+	try {
+		const refresh = modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
+		await waitUntilReached(pause.reached, refresh, 'updating the dialog after storing its result')
+		browserMock.setStorageSetHandler(undefined)
+		await closeConfirmationPopup(connections)
+		const dialogUpdatesBeforeRefreshFinished = browserMock.sentMessages.length
+		pause.release()
+		await refresh
+
+		assert.equal((await modules.getPendingTransactionsAndMessages()).length, 0)
+		assert.deepEqual(getPendingRequestsSentToDialog(browserMock.sentMessages.slice(dialogUpdatesBeforeRefreshFinished)), [])
+	} finally {
+		browserMock.setStorageSetHandler(undefined)
+		pause.restore()
+	}
+})
+
+test('a confirmation dialog bootstrap carries only a replacement sent under the same request id while it awaited', async () => {
+	const connections = await startPageConnection()
+	await sendTransactionFromPage(connections, 0n)
+	const replaced = await getOnlyPendingRequest()
+	const pause = pauseFirstRpcRequest('eth_blockNumber')
+	try {
+		const bootstrap = modules.popupReadyAndListening(simulator.ethereum, connections, 'confirmTransaction')
+		await waitUntilReached(pause.reached, bootstrap, 'reaching the paused RPC request')
+		await closeConfirmationPopup(connections)
+		await sendTransactionFromPage(connections, ONE_ETHER)
+		const replacement = await getOnlyPendingRequest()
+		pause.release()
+		const reply = await bootstrap
+
+		assert.notEqual(replacement.instanceId, replaced.instanceId)
+		const bootstrapped = reply?.data.confirmTransactionBootstrap?.pendingTransactionAndSignableMessages ?? []
+		assert.deepEqual(bootstrapped.map((pending) => pending.type === 'Transaction' ? pending.instanceId : undefined), [replacement.instanceId])
+	} finally {
+		pause.restore()
+	}
+})
+
 test('a transaction metadata refresh that outlives its request does not store into a replacement under the same request id', async () => {
 	const connections = await startPageConnection()
 	await sendTransactionFromPage(connections, 0n)
@@ -135,7 +212,7 @@ test('a transaction metadata refresh that outlives its request does not store in
 	const pause = pauseFirstRpcRequest('eth_getCode')
 	try {
 		const refresh = modules.refreshPopupConfirmTransactionMetadata(simulator.ethereum, simulator.tokenPriceService, undefined)
-		await waitForRefreshToReach(pause.reached, refresh, 'reaching the paused RPC request')
+		await waitUntilReached(pause.reached, refresh, 'reaching the paused RPC request')
 		await closeConfirmationPopup(connections)
 		await sendTransactionFromPage(connections, ONE_ETHER)
 		const replacement = await getOnlyPendingRequest()
@@ -160,10 +237,10 @@ test('a transaction metadata refresh sends the dialog the pending requests store
 	const replaced = await getOnlyPendingRequest()
 	const pause = pauseFirstRpcRequest('eth_blockNumber')
 	try {
-		const metadataStored = waitForNextPendingRequestsWrite()
+		const pendingRequestsWrites = watchPendingRequestsWrites()
 		const refresh = modules.refreshPopupConfirmTransactionMetadata(simulator.ethereum, simulator.tokenPriceService, undefined)
-		await waitForRefreshToReach(pause.reached, refresh, 'reaching the paused RPC request')
-		await waitForRefreshToReach(metadataStored, refresh, 'storing its visualisation')
+		await waitUntilReached(pause.reached, refresh, 'reaching the paused RPC request')
+		await waitUntilReached(pendingRequestsWrites.written, refresh, 'storing its visualisation')
 		browserMock.setStorageSetHandler(undefined)
 		await closeConfirmationPopup(connections)
 		await sendTransactionFromPage(connections, ONE_ETHER)
@@ -189,7 +266,7 @@ test('a message metadata refresh that outlives its request does not show the dia
 	const pause = pauseFirstRpcRequest('eth_blockNumber')
 	try {
 		const refresh = modules.refreshPopupConfirmTransactionMetadata(simulator.ethereum, simulator.tokenPriceService, undefined)
-		await waitForRefreshToReach(pause.reached, refresh, 'reaching the paused RPC request')
+		await waitUntilReached(pause.reached, refresh, 'reaching the paused RPC request')
 		await closeConfirmationPopup(connections)
 		await sendPersonalSignFromPage(connections, REPLACEMENT_MESSAGE)
 		const dialogUpdatesBeforeRefreshFinished = browserMock.sentMessages.length

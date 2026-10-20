@@ -162,12 +162,14 @@ export async function popupReadyAndListening(ethereum: EthereumClientService, we
 			}
 		}
 		case 'confirmTransaction': {
-			const pendingTransactions = await getPendingTransactionsAndMessages()
-			const firstPendingTransaction = pendingTransactions[0]
-			if (firstPendingTransaction === undefined) return undefined
+			if ((await getPendingTransactionsAndMessages()).length === 0) return undefined // skips the RPC request below; the requests sent are read after it
 			const currentBlockNumber = await ethereum.getBlockNumber(undefined)
 			const rpcConnectionStatus = await getRpcConnectionStatus()
 			const visualizedSimulatorState = await getPopupVisualisationState()
+			// Read after every await, so the dialog is never bootstrapped with a request resolved, or replaced under the same request id, meanwhile.
+			const pendingTransactions = await getPendingTransactionsAndMessages()
+			const firstPendingTransaction = pendingTransactions[0]
+			if (firstPendingTransaction === undefined) return undefined
 			return {
 				method: 'popup_readyAndListening' as const,
 				data: {
