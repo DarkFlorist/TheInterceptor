@@ -19,8 +19,8 @@ import { get4Byte, get4ByteString } from '../utils/calldata.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS, FourByteExplanations, MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
 import { type DistributiveOmit, assertNever, modifyObject } from '../utils/typescript.js'
 import { getAddressBookEntriesForVisualiserFromTransactions, identifyAddress, nameTokenIds, retrieveEnsNodeAndLabelHashes } from './metadataUtils.js'
-import { getFixedAddressRichList, getMakeCurrentAddressRich, getPreSimulationBlockTimeManipulation, getSettings, getWethForChainId, type SimulationSettingsSnapshot } from './settings.js'
-import { addressString, dataStringWith0xStart, dateToBigintSeconds, stringToUint8Array } from '../utils/bigint.js'
+import { getSettings, getSimulationSettingsSnapshot, getWethForChainId, type SimulationSettingsSnapshot } from './settings.js'
+import { addressString, dataStringWith0xStart, dateToBigintSeconds, stringifyJSONWithBigInts, stringToUint8Array } from '../utils/bigint.js'
 import { simulateCompoundGovernanceExecution } from '../simulation/compoundGovernanceFaking.js'
 import { CompoundGovernanceAbi } from '../utils/abi.js'
 import type { VisualizedPersonalSignRequestSafeTx } from '../types/personal-message-definitions.js'
@@ -35,7 +35,7 @@ import { promiseAllMapAbortSafe, silenceChromeUnCaughtPromise } from '../utils/r
 import * as funtypes from 'funtypes'
 import { decodeCallDataLoose, encodeFunctionCall } from '../utils/abiRuntime.js'
 import type { StateOverrides } from '../types/ethSimulate-types.js'
-import { getActiveStackContext, getOperationsForActiveStackContext } from '../utils/activeStackContext.js'
+import { type ActiveStackContext, getActiveStackContext, getOperationsForActiveStackContext } from '../utils/activeStackContext.js'
 
 const getMakeCurrentAddressRichStateOverride = (addressesToMakeRich: readonly bigint[]) => {
 	if (addressesToMakeRich.length === 0) return {}
@@ -53,60 +53,41 @@ const selectAddressesBeingMadeRich = (settings: Settings, makeCurrentAddressRich
 	return [...fixedAddressRichList.filter((x) => x.makingRich).map((x) => x.address), ...currentAddressBeingRich === undefined ? [] : [currentAddressBeingRich]]
 }
 
-export const getAddressesbeingMadeRich = async (settingsSnapshot?: Settings) => {
-	const settings = settingsSnapshot ?? await getSettings()
-	if (!settings.simulationMode) return []
-	return selectAddressesBeingMadeRich(settings, await getMakeCurrentAddressRich(), await getFixedAddressRichList())
-}
-
-// The context getSimulationInputForStack needs, built from one settings snapshot.
-export const toStackSimulationContext = (snapshot: SimulationSettingsSnapshot, stack: InterceptorTransactionStack): StackSimulationContext => ({
-	stack,
-	settings: snapshot.settings,
-	preSimulationBlockTimeManipulation: snapshot.preSimulationBlockTimeManipulation,
-	richAddresses: selectAddressesBeingMadeRich(snapshot.settings, snapshot.makeCurrentAddressRich, snapshot.fixedAddressRichList),
-})
-
-// The stack together with the settings-derived values getSimulationInputForStack needs, read once so several inputs can be derived from one snapshot.
+// Everything getSimulationInputForStack reads: the stack and the values derived from one settings snapshot that decide the input. It holds nothing else, so unrelated settings such as website access stay out of it, and its fingerprint covers every field it has.
 export type StackSimulationContext = {
 	readonly stack: InterceptorTransactionStack
-	readonly settings: Settings
+	readonly chainId: bigint
+	readonly activeStackContext: ActiveStackContext
 	readonly preSimulationBlockTimeManipulation: BlockTimeManipulation
 	readonly richAddresses: readonly bigint[]
 }
 
-export const captureStackSimulationContext = async (richAddresses?: readonly bigint[], settingsSnapshot?: Settings): Promise<StackSimulationContext> => {
-	const [settings, preSimulationBlockTimeManipulation] = await Promise.all([
-		settingsSnapshot ?? getSettings(),
-		getPreSimulationBlockTimeManipulation()
-	])
-	const richListPromise = silenceChromeUnCaughtPromise(richAddresses === undefined ? getAddressesbeingMadeRich(settings) : Promise.resolve(richAddresses))
-	const stack = await getInterceptorTransactionStack()
-	return { stack, settings, preSimulationBlockTimeManipulation, richAddresses: await richListPromise }
+export const toStackSimulationContext = (snapshot: SimulationSettingsSnapshot, stack: InterceptorTransactionStack): StackSimulationContext => ({
+	stack,
+	chainId: snapshot.settings.activeRpcNetwork.chainId,
+	activeStackContext: getActiveStackContext(snapshot.settings),
+	preSimulationBlockTimeManipulation: snapshot.preSimulationBlockTimeManipulation,
+	richAddresses: selectAddressesBeingMadeRich(snapshot.settings, snapshot.makeCurrentAddressRich, snapshot.fixedAddressRichList),
+})
+
+// Every simulation input is built this way: the settings in one storage call, then the stack. The snapshot is returned too, for callers that need more of the settings than the input does.
+export const captureStackSimulationContext = async () => {
+	const snapshot = await getSimulationSettingsSnapshot()
+	return { snapshot, context: toStackSimulationContext(snapshot, await getInterceptorTransactionStack()) }
 }
 
-// Covers exactly what getSimulationInputForStack reads from the context, so it changes whenever the input simulated from the context could change, and not when unrelated settings such as website access do.
+// Hashes every field of the context, so it changes whenever the input simulated from the context could change, including through a field added to the context later.
 export function getStackSimulationContextFingerprint(context: StackSimulationContext) {
-	const { settings } = context
-	const bigintsAsStrings = (_key: string, value: unknown) => typeof value === 'bigint' ? value.toString() : value
-	return keccak256(stringToBytes(JSON.stringify({
-		stack: serialize(InterceptorTransactionStack, context.stack),
-		simulationMode: settings.simulationMode,
-		chainId: settings.activeRpcNetwork.chainId,
-		activeSigningSafeAddress: settings.activeSigningSafeAddress,
-		preSimulationBlockTimeManipulation: context.preSimulationBlockTimeManipulation,
-		richAddresses: context.richAddresses,
-	}, bigintsAsStrings)))
+	return keccak256(stringToBytes(stringifyJSONWithBigInts({ ...context, stack: serialize(InterceptorTransactionStack, context.stack) })))
 }
 
 // Converts the stack, followed by appendedOperations, into simulation input: consecutive transactions share a block until a message, a time manipulation or a change of base fee mode starts the next one. Operations previewed as appendedOperations therefore land exactly where approval adds them to the stack. With openBlockForNextTransaction the input ends with the block that a further transaction would join, even while that block is still empty, so the transaction can be estimated where approval would add it.
 export function getSimulationInputForStack(context: StackSimulationContext, appendedOperations: readonly InterceptorStackOperation[] = [], openBlockForNextTransaction = false): SimulationStateInput {
-	const { settings } = context
 	const inputBlocks: SimulationStateInputBlock[] = []
 	let currentBlockTransactions: PreSimulationTransaction[] = []
 	let currentBlockSignedMessages: SignedMessageTransaction[] = []
 	let currentBlockStateOverrides = getMakeCurrentAddressRichStateOverride(context.richAddresses)
-	let previousBlockTimeManipulation = settings.simulationMode ? context.preSimulationBlockTimeManipulation : DEFAULT_BLOCK_MANIPULATION
+	let previousBlockTimeManipulation = context.activeStackContext.simulationMode ? context.preSimulationBlockTimeManipulation : DEFAULT_BLOCK_MANIPULATION
 	let currentBlockSimulateWithZeroBaseFee = false
 
 	const pushBlock = (blockTimeManipulation: BlockTimeManipulation) => {
@@ -124,14 +105,14 @@ export function getSimulationInputForStack(context: StackSimulationContext, appe
 		currentBlockSimulateWithZeroBaseFee = false
 	}
 
-	const operations = getOperationsForActiveStackContext({ operations: [...context.stack.operations, ...appendedOperations] }, getActiveStackContext(settings))
+	const operations = getOperationsForActiveStackContext({ operations: [...context.stack.operations, ...appendedOperations] }, context.activeStackContext)
 	for (const operation of operations) {
 		switch(operation.type) {
 			case 'Transaction': {
 				const simulationOptions = operation.preSimulationTransaction.simulationOptions
 				if (
 					simulationOptions?.requiredChainId !== undefined
-					&& simulationOptions.requiredChainId !== settings.activeRpcNetwork.chainId
+					&& simulationOptions.requiredChainId !== context.chainId
 				) break
 				const simulateWithZeroBaseFee = simulationOptions?.simulateWithZeroBaseFee ?? false
 				if (currentBlockTransactions.length > 0 && currentBlockSimulateWithZeroBaseFee !== simulateWithZeroBaseFee) {
@@ -174,7 +155,7 @@ export function getSimulationInputForStack(context: StackSimulationContext, appe
 	return inputBlocks
 }
 
-export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[], settingsSnapshot?: Settings): Promise<SimulationStateInput> => getSimulationInputForStack(await captureStackSimulationContext(richAddresses, settingsSnapshot))
+export const getCurrentSimulationInput = async (): Promise<SimulationStateInput> => getSimulationInputForStack((await captureStackSimulationContext()).context)
 
 export type SimulationSnapshot = {
 	readonly activeRpcNetwork: RpcNetwork
@@ -185,13 +166,12 @@ export type SimulationSnapshot = {
 
 // Capture selection and input at the storage boundary. An unreadable stack must abort before publishing any fallback.
 export async function captureSimulationSnapshot(): Promise<SimulationSnapshot> {
-	const settings = await getSettings()
-	const richAddresses = await getAddressesbeingMadeRich(settings)
+	const { snapshot, context } = await captureStackSimulationContext()
 	return {
-		activeRpcNetwork: settings.activeRpcNetwork,
-		activeStackContext: getActiveStackContext(settings),
-		simulationStateInput: await getCurrentSimulationInput(richAddresses, settings),
-		numberOfAddressesMadeRich: richAddresses.length,
+		activeRpcNetwork: snapshot.settings.activeRpcNetwork,
+		activeStackContext: context.activeStackContext,
+		simulationStateInput: getSimulationInputForStack(context),
+		numberOfAddressesMadeRich: context.richAddresses.length,
 	}
 }
 

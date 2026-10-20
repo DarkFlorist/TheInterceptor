@@ -13,7 +13,7 @@ import { keccak256, stringToBytes } from '../utils/ethereumPrimitives.js'
 import { doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, type InterceptedRequest, type UniqueRequestIdentifier } from '../utils/requests.js'
 import { areEqualUint8Arrays } from '../utils/typed-arrays.js'
 import { haveSameActiveAddressSettings } from './backgroundUtils.js'
-import { getSettings } from './settings.js'
+import { getSimulationSettingsSnapshot, type SimulationSettingsSnapshot } from './settings.js'
 import { getActiveAddressForRequest } from './websiteActiveAddress.js'
 import { getInterceptorTransactionStack, getPendingTransactionsAndWalletSendCallsBatchIds, getWalletSendCallsBatchIds, updatePendingTransactionsAndWalletSendCallsBatchIds } from './storageVariables.js'
 import { hasAddressAccess } from './websiteAccessPolicy.js'
@@ -213,22 +213,23 @@ const getModeOrNetworkBindingError = (settings: Settings, binding: WalletSendCal
 	return undefined
 }
 
-export type WalletSendCallsAccountLookup = { readonly settings: Settings, readonly activeAddress: AddressBookEntry | undefined }
+export type WalletSendCallsAccountLookup = { readonly snapshot: SimulationSettingsSnapshot, readonly activeAddress: AddressBookEntry | undefined }
 
-// Looks up the active account with the current settings. getWalletSendCallsBindingError then confirms against a later settings snapshot that those settings still hold.
+// Looks up the active account with the settings of one snapshot. getWalletSendCallsBindingError then confirms against a later snapshot that those settings still hold.
 export async function lookUpWalletSendCallsAccount(websiteTabConnections: WebsiteTabConnections, pendingBatch: PendingTransactionBatch): Promise<WalletSendCallsAccountLookup> {
 	const tabId = pendingBatch.uniqueRequestIdentifier.requestSocket.tabId
-	const settings = await getSettings()
-	return { settings, activeAddress: await getActiveAddressForRequest(settings, websiteTabConnections, tabId) }
+	const snapshot = await getSimulationSettingsSnapshot()
+	return { snapshot, activeAddress: await getActiveAddressForRequest(snapshot.settings, websiteTabConnections, tabId) }
 }
 
 // Checks the admission binding (network, simulation mode, active account and website access) against one settings snapshot, read after the account lookup. It awaits nothing, so a caller can write right after reading the snapshot, which makes the snapshot the point the approval takes effect: a change saved later counts as made after approval. The signer's accounts in the tab state are only read during the account lookup, which is acceptable because the wallet reports them on its own schedule, so a change landing just after that lookup cannot be told apart from one landing just after approval.
-export function getWalletSendCallsBindingError(pendingBatch: PendingTransactionBatch, accountLookup: WalletSendCallsAccountLookup, latestSettings: Settings): WalletSendCallsError | undefined {
+export function getWalletSendCallsBindingError(pendingBatch: PendingTransactionBatch, accountLookup: WalletSendCallsAccountLookup, latestSnapshot: SimulationSettingsSnapshot): WalletSendCallsError | undefined {
 	const { binding } = pendingBatch
+	const latestSettings = latestSnapshot.settings
 	const settingsError = getModeOrNetworkBindingError(latestSettings, binding)
 	if (settingsError !== undefined) return settingsError
 	const { activeAddress } = accountLookup
-	if (activeAddress === undefined || activeAddress.address !== binding.account || !haveSameActiveAddressSettings(accountLookup.settings, latestSettings)) return activeAccountChangedError
+	if (activeAddress === undefined || activeAddress.address !== binding.account || !haveSameActiveAddressSettings(accountLookup.snapshot.settings, latestSettings)) return activeAccountChangedError
 	// The persisted website access decides alone. A connection's approval only mirrors it and is reconciled after an access change is saved, so it could still allow a website whose access was just revoked.
 	if (hasAddressAccess(latestSettings.websiteAccess, binding.websiteOrigin, activeAddress) !== 'hasAccess') return approvalInvalidated(METAMASK_ERROR_NOT_AUTHORIZED, 'This website is no longer authorized to use the active account.')
 	return undefined
@@ -242,7 +243,7 @@ export async function getWalletSendCallsApprovalError(
 ): Promise<WalletSendCallsError | undefined> {
 	if (ethereum.getChainId() !== pendingBatch.binding.chainId) return approvalInvalidated(EIP5792_ERROR_UNSUPPORTED_CHAIN_ID, 'The active network changed after this batch was requested.')
 	const accountLookup = await lookUpWalletSendCallsAccount(websiteTabConnections, pendingBatch)
-	const bindingError = getWalletSendCallsBindingError(pendingBatch, accountLookup, await getSettings())
+	const bindingError = getWalletSendCallsBindingError(pendingBatch, accountLookup, await getSimulationSettingsSnapshot())
 	if (bindingError !== undefined) return bindingError
 	if (!isTransactionBatchPreviewOnRequestedChain(pendingBatch)) return approvalInvalidated(EIP5792_ERROR_UNSUPPORTED_CHAIN_ID, 'The batch preview was not simulated on the network the batch was requested for.')
 	if (!doWalletSendCallsMatchSimulatedTransactions(pendingBatch.originalRequestParameters, pendingBatch.binding.account, pendingBatch.transactionsToSimulate)) return approvalInvalidated(JSON_RPC_ERROR_CODE_INVALID_PARAMS, 'The batch calls no longer match the simulated transactions.')

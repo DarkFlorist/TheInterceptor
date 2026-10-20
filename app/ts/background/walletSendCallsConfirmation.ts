@@ -16,7 +16,7 @@ import { assertNever, modifyObject } from '../utils/typescript.js'
 import { getNextConfirmationSimulationId, startConfirmTransactionSimulation, toPreSimulationTransaction } from './confirmTransactionSimulation.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
 import { getSimulationSettingsSnapshot } from './settings.js'
-import { createSimulationStateWithNonceAndBaseFeeFixing, getSimulationInputForStack, getStackSimulationContextFingerprint, type StackSimulationContext, toStackSimulationContext, visualizeSimulatorState } from './simulationUpdating.js'
+import { captureStackSimulationContext, createSimulationStateWithNonceAndBaseFeeFixing, getSimulationInputForStack, getStackSimulationContextFingerprint, type StackSimulationContext, toStackSimulationContext, visualizeSimulatorState } from './simulationUpdating.js'
 import { getInterceptorTransactionStack, getPendingTransactionsAndMessages, getTabState, updateInterceptorTransactionStackUnlessRefused, updatePendingTransactionOrMessage } from './storageVariables.js'
 import { attemptQueuedTerminalReplyDelivery, queueTerminalReply, queueTerminalReplyAndAttemptDelivery } from './terminalReplyDelivery.js'
 import { addPendingTransactionBatch, getWalletSendCallsApprovalError, getWalletSendCallsBindingError, getWalletSendCallsTransactionParams, getWalletSendCallTransactionIdentifier, isEthereumClientOnBatchChain, isTransactionBatchOnStack, isWalletSendCallsIdInUse, lookUpWalletSendCallsAccount, releasePendingTransactionBatch, removeApprovedTransactionBatch, walletSendCallsIdInUseError } from './walletSendCalls.js'
@@ -82,7 +82,7 @@ async function simulateConfirmTransactionBatch(
 async function simulatePendingTransactionBatch(ethereumClientService: EthereumClientService, tokenPriceService: TokenPriceService, pendingBatch: PendingTransactionBatch) {
 	// Taken before the simulation stack is read, so a run that prepared the calls from an older stack always has an older id, however long its preparation takes.
 	const simulationId = getNextConfirmationSimulationId()
-	const stackContext = toStackSimulationContext(await getSimulationSettingsSnapshot(), await getInterceptorTransactionStack())
+	const { context: stackContext } = await captureStackSimulationContext()
 	const { transactionsToSimulate, simulationInputWithBatch } = await formWalletSendCallsTransactions(ethereumClientService, pendingBatch, stackContext)
 	const popupVisualisation = await simulateConfirmTransactionBatch(ethereumClientService, tokenPriceService, pendingBatch.activeAddress, pendingBatch.simulationMode, pendingBatch.uniqueRequestIdentifier, simulationId, simulationInputWithBatch)
 	if (popupVisualisation === undefined) return undefined
@@ -290,7 +290,7 @@ async function resolveUnapprovedTransactionBatch(ethereum: EthereumClientService
 					// The commit boundary. Settings writers do not wait for stack writes, so everything the binding and the preview depend on besides the stack (settings, website access, time manipulation and rich addresses) is taken from this one storage read, after every other lookup, and nothing is awaited between it and the write: a change saved after this read counts as made after approval.
 					const snapshot = await getSimulationSettingsSnapshot()
 					// A changed binding means the batch cannot be approved at all, so it takes precedence over a preview that only needs simulating again.
-					const bindingError = getWalletSendCallsBindingError(pendingBatch, accountLookup, snapshot.settings)
+					const bindingError = getWalletSendCallsBindingError(pendingBatch, accountLookup, snapshot)
 					if (bindingError !== undefined) return { reason: 'bindingChanged' as const, error: bindingError }
 					// Another approval, or a change to the time manipulation or rich addresses, may have changed what the batch would run on since the preview.
 					return getStackSimulationContextFingerprint(toStackSimulationContext(snapshot, currentStack)) === pendingBatch.simulatedContextFingerprint ? undefined : { reason: 'simulationContextChanged' as const }
