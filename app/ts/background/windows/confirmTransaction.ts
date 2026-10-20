@@ -12,7 +12,7 @@ import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { type CompleteVisualizedSimulation, type InterceptorTransactionStack, PASSTHROUGH_STATE, type WebsiteCreatedEthereumTransaction, type WebsiteCreatedEthereumTransactionOrFailed, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
 import type { SendRawTransactionParams, SendTransactionParams } from '../../types/JsonRpc-types.js'
 import { refreshConfirmTransactionSimulation } from '../confirmTransactionSimulation.js'
-import { simulateAndStoreConfirmationWithAddressBookCatchUp } from '../confirmationRelabel.js'
+import { simulateAndStoreConfirmationRun } from '../confirmationRunStorage.js'
 import { captureSimulationSnapshot, getUpdatedSimulationState } from '../simulationUpdating.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getPopupVisualisationState, getRpcConnectionStatus, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
@@ -87,17 +87,6 @@ async function refreshDirectSafeExecutionSimulation(
 		: { ...pending, transactionToSimulate, popupVisualisation, transactionOrMessageCreationStatus: 'FailedToSimulate' }
 }
 
-// A signer change simulates a direct Safe execution again and persists that run with the new signer, so the refresh persists through the run writer simulateAndStoreConfirmationWithAddressBookCatchUp hands it.
-async function refreshAndPersistSafeSignerSelectionAndSimulation(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, pending: PendingTransactionOrSignableMessage, selectedSigner: bigint) {
-	return await simulateAndStoreConfirmationWithAddressBookCatchUp(ethereum.getRpcEntry(), async (storeRun) => await refreshAndPersistSafeSignerSelection(
-		ethereum,
-		pending,
-		selectedSigner,
-		async (refreshedPending) => await refreshDirectSafeExecutionSimulation(ethereum, tokenPriceService, refreshedPending),
-		storeRun,
-	))
-}
-
 export async function refreshPendingSafeSignerSelectionErrors(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, tabId: number) {
 	const tabState = await getTabState(tabId)
 	const refreshedSelection = {
@@ -109,7 +98,12 @@ export async function refreshPendingSafeSignerSelectionErrors(ethereum: Ethereum
 		const safeSignerAddress = getPendingSafeSignerAddress(pending)
 		if (pending.uniqueRequestIdentifier.requestSocket.tabId !== tabId) continue
 		if (refreshedSelection.selectedSigner !== undefined) {
-			const refresh = await refreshAndPersistSafeSignerSelectionAndSimulation(ethereum, tokenPriceService, pending, refreshedSelection.selectedSigner)
+			const refresh = await refreshAndPersistSafeSignerSelection(
+				ethereum,
+				pending,
+				refreshedSelection.selectedSigner,
+				async (refreshedPending) => await refreshDirectSafeExecutionSimulation(ethereum, tokenPriceService, refreshedPending),
+			)
 			if (refresh.persisted) pendingStateChanged = true
 			if (refresh.refreshRequired && refresh.refreshResult.status !== 'unchanged') continue
 		}
@@ -311,7 +305,12 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 		&& refreshedSafeSignerSelection.verificationError === undefined
 	) {
 		const directSafeExecution = getSafePendingFlow(pendingTransactionOrMessage)?.kind === 'directExecution'
-		const refresh = await refreshAndPersistSafeSignerSelectionAndSimulation(ethereum, tokenPriceService, pendingTransactionOrMessage, refreshedSafeSignerSelection.selectedSigner)
+		const refresh = await refreshAndPersistSafeSignerSelection(
+			ethereum,
+			pendingTransactionOrMessage,
+			refreshedSafeSignerSelection.selectedSigner,
+			async (refreshedPending) => await refreshDirectSafeExecutionSimulation(ethereum, tokenPriceService, refreshedPending),
+		)
 		const refreshResult = refresh.refreshResult
 		if (refresh.refreshRequired && refreshResult.status !== 'unchanged' && !refresh.persisted) {
 			await updateConfirmTransactionView(ethereum, tokenPriceService)
@@ -854,7 +853,7 @@ export async function openConfirmTransactionDialogForTransaction(
 			await appendPendingTransactionOrMessage(pendingTransaction)
 			await updateConfirmTransactionView(ethereumClientService, tokenPriceService)
 			markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionSimulationStart)
-			await simulateAndStoreConfirmationWithAddressBookCatchUp(ethereumClientService.getRpcEntry(), async (storeRun) => {
+			await simulateAndStoreConfirmationRun(async (storeRun) => {
 				const simulationResultsPromise = silenceChromeUnCaughtPromise(refreshConfirmTransactionSimulation(
 					ethereumClientService,
 					tokenPriceService,

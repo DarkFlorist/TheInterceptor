@@ -476,8 +476,10 @@ describe('popup message dispatcher seams', () => {
 			{ method: 'popup_import_settings', data: { fileContents: importedSettings } },
 		)
 
+		await waitForAddressBookChangeToSettle()
 		const messages = sentMessages.map((message) => MessageToPopup.parse(message))
-		assert.equal(messages.length, 2)
+		// The imported address book is published as any address-book change is, after the imported settings.
+		assert.deepEqual(messages.slice(2).map((message) => message.method), ['popup_addressBookEntriesChanged', 'popup_simulationsRelabelled'])
 		const importSuccess = messages[0]
 		assert.equal(importSuccess?.method, 'popup_initiate_export_settings_reply')
 		if (importSuccess?.method !== 'popup_initiate_export_settings_reply') throw new Error('Expected successful import broadcast.')

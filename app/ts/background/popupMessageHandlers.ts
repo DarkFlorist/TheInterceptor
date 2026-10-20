@@ -1,5 +1,5 @@
 import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
-import { simulateAndStoreConfirmationWithAddressBookCatchUp } from './confirmationRelabel.js'
+import { simulateAndStoreConfirmationRun } from './confirmationRunStorage.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { captureSimulationSnapshot, getUpdatedSimulationStackSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
@@ -577,7 +577,7 @@ export async function refreshPopupConfirmTransactionSimulation(ethereum: Ethereu
 			safeFlow === undefined ? 'transaction-sender' : 'external-executor',
 		)
 		: await formSendRawTransaction(ethereum, firstTxn.originalRequestParameters, firstTxn.transactionToSimulate.website, firstTxn.created, firstTxn.transactionIdentifier)
-	const refreshedRun = await simulateAndStoreConfirmationWithAddressBookCatchUp(ethereum.getRpcEntry(), async (storeRun) => {
+	const refreshedRun = await simulateAndStoreConfirmationRun(async (storeRun) => {
 		const refreshMessage = await refreshConfirmTransactionSimulation(
 			ethereum,
 			tokenPriceService,

@@ -26,7 +26,7 @@ import { activeAddress, addressString, browserMock, hexToBytes, created, createS
 const { addOrModifyAddressBookEntry, changePreSimulationBlockTimeManipulation, refreshPopupConfirmTransactionMetadata, removeAddressBookEntry, requestNewHomeData, setEnsNameForHash } = await import('../../app/ts/background/popupMessageHandlers.js')
 const { publishAddressBookChangeAndRelabelSimulations } = await import('../../app/ts/background/addressBookChangePublication.js')
 const { getConfirmTransactionAbortController, refreshConfirmTransactionSimulation } = await import('../../app/ts/background/confirmTransactionSimulation.js')
-const { relabelDisplayedConfirmationAfterAddressBookChange } = await import('../../app/ts/background/confirmationRelabel.js')
+const { relabelDisplayedConfirmationSimulation } = await import('../../app/ts/background/confirmationRelabel.js')
 const { relabelStoredSimulation } = await import('../../app/ts/background/simulationRelabel.js')
 const { visualizeSimulatorState } = await import('../../app/ts/background/simulationUpdating.js')
 const { createWatchAssetResolutionDependencies } = await import('../../app/ts/background/windows/watchAsset.js')
@@ -36,7 +36,7 @@ const { identifyAddressWith, recordIdentifiedAddresses } = await import('../../a
 const simulationServicesOwner: SimulationServicesOwner = { getCurrent: () => simulator, reset: () => simulator }
 
 // The displayed confirmation's re-label as an address-book change requests it, without the stack re-label and the notifications.
-const relabelDisplayedConfirmation = async () => await relabelDisplayedConfirmationAfterAddressBookChange(fakeRpcNetwork)
+const relabelDisplayedConfirmation = async () => await relabelDisplayedConfirmationSimulation(fakeRpcNetwork)
 
 function getDefined<Value>(value: Value | undefined, description: string): Value {
 	if (value === undefined) throw new Error(`Missing ${ description }`)
@@ -290,7 +290,7 @@ test('address-book changes re-label the stored confirmation and stack without si
 	assert.equal(fakeSafeContract.requestedRpcMethods.includes('eth_simulateV1'), false)
 	const pendingAfter = await getStoredPendingTransactionVisualisation()
 	assert.equal(getRecipientName(pendingAfter.visualizedSimulationState), recipientContact.name)
-	assert.equal(pendingAfter.simulationId, pendingBefore.simulationId)
+	assert.equal(pendingAfter.confirmationRunId, pendingBefore.confirmationRunId)
 	assert.equal(pendingAfter.simulationState.simulationConductedTimestamp.getTime(), pendingBefore.simulationState.simulationConductedTimestamp.getTime())
 	const stackAfter = await getStoredStackVisualisation()
 	assert.equal(getRecipientName(stackAfter.stored.visualizedSimulationState), recipientContact.name)
@@ -1115,7 +1115,7 @@ test('real simulation refreshes still simulate the confirmation and the stack ag
 	await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
 
 	assert.equal(fakeSafeContract.requestedRpcMethods.includes('eth_simulateV1'), true)
-	assert.notEqual((await getStoredPendingTransactionVisualisation()).simulationId, pendingBefore.simulationId)
+	assert.notEqual((await getStoredPendingTransactionVisualisation()).confirmationRunId, pendingBefore.confirmationRunId)
 	fakeSafeContract.requestedRpcMethods.length = 0
 
 	await updatePopupVisualisationState(simulator.ethereum, simulator.tokenPriceService, undefined, true)
@@ -1136,18 +1136,18 @@ function runOnceDuringAddressBookLookup(concurrentWrite: () => Promise<void>) {
 	})
 }
 
-// Stored timestamps have second precision, so a re-simulation on the same block within the same second, such as after a gas limit edit, keeps both the block number and the conducted timestamp; only its simulation run id tells it apart.
+// Stored timestamps have second precision, so a re-simulation on the same block within the same second, such as after a gas limit edit, keeps both the block number and the conducted timestamp; only its confirmation run id tells it apart.
 test('a confirmation re-simulated on the same block within the same second during a re-label is not replaced by the re-labelled older run', async () => {
 	await openSimulationModeConfirmationSendingEther()
 	await addRecipientContactWithoutBroadcast()
 	const relabelledRun = await getStoredPendingTransactionVisualisation()
-	const newerRunId = getDefined(relabelledRun.simulationId, 'confirmation simulation id') + 1
+	const newerRunId = getDefined(relabelledRun.confirmationRunId, 'confirmation run id') + 1
 	const editedGasLimit = 30_000n
 	runOnceDuringAddressBookLookup(async () => {
 		await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (current) => {
 			if (current.type !== 'Transaction' || current.transactionOrMessageCreationStatus !== 'Simulated' || current.popupVisualisation.statusCode !== 'success') return undefined
 			const transactionToSimulate = { ...current.transactionToSimulate, transaction: { ...current.transactionToSimulate.transaction, gas: editedGasLimit } }
-			return { ...current, transactionToSimulate, popupVisualisation: { ...current.popupVisualisation, data: { ...current.popupVisualisation.data, simulationId: newerRunId, transactionToSimulate } } }
+			return { ...current, transactionToSimulate, popupVisualisation: { ...current.popupVisualisation, data: { ...current.popupVisualisation.data, confirmationRunId: newerRunId, transactionToSimulate } } }
 		})
 	})
 
@@ -1157,7 +1157,7 @@ test('a confirmation re-simulated on the same block within the same second durin
 	const storedRun = await getStoredPendingTransactionVisualisation()
 	assert.equal(storedRun.simulationState.blockNumber, relabelledRun.simulationState.blockNumber)
 	assert.equal(storedRun.simulationState.simulationConductedTimestamp.getTime(), relabelledRun.simulationState.simulationConductedTimestamp.getTime())
-	assert.equal(storedRun.simulationId, newerRunId)
+	assert.equal(storedRun.confirmationRunId, newerRunId)
 	assert.equal(storedRun.transactionToSimulate.success && storedRun.transactionToSimulate.transaction.gas, editedGasLimit)
 	assert.notEqual(getRecipientName(storedRun.visualizedSimulationState), recipientContact.name)
 })
@@ -1235,9 +1235,9 @@ function withoutRecordedProtectorChainReads(visualizedSimulationState: Visualize
 // A visualisation stored by a version that did not record the entries its address lookups resolved.
 const withoutIdentifiedAddressBookEntries = ({ identifiedAddressBookEntries: _identifiedAddressBookEntries, ...visualizedSimulationState }: VisualizedSimulationState): VisualizedSimulationState => visualizedSimulationState
 
-test('confirmations without a simulation run id or recorded lookups, or simulated on another chain, are not re-labelled', async () => {
+test('confirmations without a confirmation run id or recorded lookups, or simulated on another chain, are not re-labelled', async () => {
 	const unprovableConfirmations: readonly { description: string, update: (data: ReturnType<typeof getSimulatedPendingTransaction>) => ReturnType<typeof getSimulatedPendingTransaction> }[] = [
-		{ description: 'stored by a version without simulation run ids', update: ({ simulationId: _simulationId, ...data }) => data },
+		{ description: 'stored by a version without confirmation run ids', update: ({ confirmationRunId: _confirmationRunId, ...data }) => data },
 		{ description: 'stored by a version without recorded protector chain reads, which only a simulation could provide', update: (data) => ({ ...data, visualizedSimulationState: withoutRecordedProtectorChainReads(data.visualizedSimulationState) }) },
 		{ description: 'stored by a version without recorded identified address-book entries', update: (data) => ({ ...data, visualizedSimulationState: withoutIdentifiedAddressBookEntries(data.visualizedSimulationState) }) },
 		{ description: 'simulated on another chain', update: (data) => ({ ...data, simulationState: { ...data.simulationState, rpcNetwork: { ...data.simulationState.rpcNetwork, chainId: fakeRpcNetwork.chainId + 1n } } }) },
@@ -1455,7 +1455,7 @@ test('a confirmation re-simulation aborted by a newer simulation is not re-label
 	browserMock.setStorageGetHandler(undefined)
 
 	assert.equal(isRunAborted, true)
-	assert.equal((await getStoredPendingTransactionVisualisation()).simulationId, storedRunBefore.simulationId)
+	assert.equal((await getStoredPendingTransactionVisualisation()).confirmationRunId, storedRunBefore.confirmationRunId)
 	assert.equal(addressBookReadsAfterAbort, 0)
 })
 
@@ -1466,11 +1466,11 @@ test('a confirmation re-simulation that a newer stored run supersedes is not re-
 
 	const addressBookReadsAfterRun = await simulateAndStoreRunningDuringLastLookup(resimulateDisplayedConfirmation, async () => {
 		await changeAddressBookAndWaitForItsRelabel(addRecipientContactWithoutBroadcast)
-		await updateStoredConfirmationVisualisation((data) => ({ ...data, simulationId: newerRunId, simulationState: { ...data.simulationState, simulationConductedTimestamp: new Date('2100-01-01T00:00:00.000Z') } }))
+		await updateStoredConfirmationVisualisation((data) => ({ ...data, confirmationRunId: newerRunId, simulationState: { ...data.simulationState, simulationConductedTimestamp: new Date('2100-01-01T00:00:00.000Z') } }))
 	})
 
 	assert.equal(addressBookReadsAfterRun, 0)
-	assert.equal((await getStoredPendingTransactionVisualisation()).simulationId, newerRunId)
+	assert.equal((await getStoredPendingTransactionVisualisation()).confirmationRunId, newerRunId)
 })
 
 test('a Safe signer refresh blocked while a newer run is stored and an address-book change is published is not re-labelled for that change', async () => {
@@ -1539,7 +1539,7 @@ test('a Safe signer refresh blocked while a newer run is stored and an address-b
 	const [refreshedExecution] = await modules.getPendingTransactionsAndMessages()
 	if (refreshedExecution?.type !== 'Transaction' || refreshedExecution.transactionOrMessageCreationStatus !== 'Simulated') throw new Error('Expected the direct Safe execution with the newer run')
 	// The persisted entry carries the newer run, which a re-label could reach.
-	assert.equal(refreshedExecution.popupVisualisation.data.simulationId, newerRun.data.simulationId)
+	assert.equal(refreshedExecution.popupVisualisation.data.confirmationRunId, newerRun.data.confirmationRunId)
 	assert.equal(refreshedExecution.popupVisualisation.statusCode, 'success')
 	assert.equal(refreshedExecution.approvalStatus.status === 'SignerError' && refreshedExecution.approvalStatus.message.includes('could not be prepared'), true)
 	// The refresh simulated no run of its own, so it requests no re-label after persisting, although the change was published during it.
@@ -1547,14 +1547,14 @@ test('a Safe signer refresh blocked while a newer run is stored and an address-b
 })
 
 // Stands in for a stored stack or confirmation result, so the shared re-label is checked apart from their storage.
-type StoredRunStandIn = { readonly simulationId: number, readonly canBeRelabelled: boolean, readonly recipientName: string | undefined }
-const storedRunStandIn: StoredRunStandIn = { simulationId: 1, canBeRelabelled: true, recipientName: undefined }
+type StoredRunStandIn = { readonly runId: number, readonly canBeRelabelled: boolean, readonly recipientName: string | undefined }
+const storedRunStandIn: StoredRunStandIn = { runId: 1, canBeRelabelled: true, recipientName: undefined }
 
 // Re-labels storedRunStandIn through the shared re-label with the stored stack's simulation. While the re-label looks up names, duringLookups returns the stand-in stored from then on and may abort the re-label. Returns the stand-in stored at the end.
 async function relabelStoredRunStandIn(duringLookups: (stored: StoredRunStandIn, abortController: AbortController) => StoredRunStandIn) {
 	const { stored: storedStack, simulationState } = await getStoredStackVisualisation()
 	const getRunToRelabel = (stored: StoredRunStandIn): SimulationRunToRelabel<StoredRunStandIn> | undefined => stored.canBeRelabelled
-		? { simulationId: stored.simulationId, simulationState, storedMetadata: storedStack, withMetadata: (metadata) => ({ ...stored, recipientName: getRecipientName(metadata.visualizedSimulationState) }) }
+		? { runId: stored.runId, simulationState, storedMetadata: storedStack, withMetadata: (metadata) => ({ ...stored, recipientName: getRecipientName(metadata.visualizedSimulationState) }) }
 		: undefined
 	const abortController = new AbortController()
 	let stored = storedRunStandIn
@@ -1578,7 +1578,7 @@ async function relabelStoredRunStandIn(duringLookups: (stored: StoredRunStandIn,
 test('the shared re-label writes the new metadata only onto the same run while it can still be re-labelled', async () => {
 	const relabelOutcomes: readonly { description: string, duringLookups: (stored: StoredRunStandIn, abortController: AbortController) => StoredRunStandIn, expected: StoredRunStandIn }[] = [
 		{ description: 'the same run is still stored', duringLookups: (stored) => stored, expected: { ...storedRunStandIn, recipientName: recipientContact.name } },
-		{ description: 'a newer run is stored', duringLookups: (stored) => ({ ...stored, simulationId: stored.simulationId + 1 }), expected: { ...storedRunStandIn, simulationId: storedRunStandIn.simulationId + 1 } },
+		{ description: 'a newer run is stored', duringLookups: (stored) => ({ ...stored, runId: stored.runId + 1 }), expected: { ...storedRunStandIn, runId: storedRunStandIn.runId + 1 } },
 		{ description: 'the same run can no longer be re-labelled', duringLookups: (stored) => ({ ...stored, canBeRelabelled: false }), expected: { ...storedRunStandIn, canBeRelabelled: false } },
 		{ description: 'newer work aborts the re-label', duringLookups: (stored, abortController) => { abortController.abort(NEW_BLOCK_ABORT); return stored }, expected: storedRunStandIn },
 	]
@@ -1617,7 +1617,7 @@ test('a confirmation simulation that stores no run during a re-label does not st
 		browserMock.setStorageGetHandler(undefined)
 
 		const storedRunAfter = await getStoredPendingTransactionVisualisation()
-		assert.equal(storedRunAfter.simulationId, storedRunBefore.simulationId, description)
+		assert.equal(storedRunAfter.confirmationRunId, storedRunBefore.confirmationRunId, description)
 		assert.equal(getRecipientName(storedRunAfter.visualizedSimulationState), recipientContact.name, description)
 	}
 })

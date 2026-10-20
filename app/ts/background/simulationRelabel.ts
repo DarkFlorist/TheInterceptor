@@ -8,8 +8,8 @@ type SimulationMetadata = Omit<Awaited<ReturnType<typeof visualizeStoredRunWitho
 
 // A stored simulation run whose metadata a re-label may replace.
 export type SimulationRunToRelabel<Stored> = {
-	// Every new stack or confirmation simulation run stores a new id, so a run stored during the re-label's lookups has another id even on the same block within the same second.
-	readonly simulationId: number
+	// The stack's simulationId or the confirmation's confirmationRunId. Every new stack or confirmation simulation run stores a new id, so a run stored during the re-label's lookups has another id even on the same block within the same second.
+	readonly runId: number
 	readonly simulationState: SimulationState
 	// The metadata stored with the run: the names, prices and delegations the re-label starts from, the chain reads its protectors recorded and the entries its address lookups resolved.
 	readonly storedMetadata: StoredSimulationMetadata
@@ -58,7 +58,7 @@ export async function relabelStoredSimulation<Stored>(rpcNetwork: RpcNetwork, { 
 	await updateStored((current) => {
 		// The stale-write guard: a newer run stored meanwhile has another id, and a result stored under the same id that can no longer be re-labelled (a stack invalidation keeps the id of the run it raced with) is left alone.
 		const currentRun = getRunToRelabel(current)
-		if (currentRun === undefined || currentRun.simulationId !== runToRelabel.simulationId) return undefined
+		if (currentRun === undefined || currentRun.runId !== runToRelabel.runId) return undefined
 		return currentRun.withMetadata(metadata)
 	})
 }

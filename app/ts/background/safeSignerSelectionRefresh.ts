@@ -14,7 +14,7 @@ import { areEqualUint8Arrays } from '../utils/typed-arrays.js'
 import { assertSafeContractStateUnchanged, createSafeContractValidationFailure, createSafeTransactionSigningRequest, getSafeTxSignerFacingTypedData, isSafeContractValidationFailure, isSafeOwnerValidationFailure, validateSafeTransactionForSigning, type SafeOwnerValidator } from '../safe/safeCore.js'
 import { areSafeExecutionSignerRequestsEqual, prepareSafeExecutionSignerRoute } from '../safe/safeExecutionRouting.js'
 import { getUserAddressBookEntriesForChainIdMorePreciseFirst, updatePendingTransactionOrMessage } from './storageVariables.js'
-import type { StoreConfirmationRun } from './confirmationRelabel.js'
+import { simulateAndStoreConfirmationRun, type StoreConfirmationRun } from './confirmationRunStorage.js'
 import { createSafeSignerErrorStatus, type SafeSignerErrorStatus } from './safeSignerErrors.js'
 import { getSafePendingFlow, type DirectSafeExecutionFlow, type SafeMessageCoSignFlow, type SafePendingFlow, type SafeProposalFlow } from '../safe/safePendingFlow.js'
 
@@ -435,12 +435,11 @@ async function recoverSafeMessageReview(ethereum: EthereumClientService, pending
 	return { refreshRequired: true, refreshResult, persisted: persistedPending !== undefined, persistedPending }
 }
 
-export async function refreshAndPersistSafeSignerSelection(
+async function refreshAndStoreSafeSignerSelection(
 	ethereum: EthereumClientService,
 	pending: PendingTransactionOrSignableMessage,
 	selectedSigner: bigint,
 	refreshDirectSafeExecutionSimulation: RefreshDirectSafeExecutionSimulation,
-	// A refreshed direct Safe execution carries a new run, so the refresh persists only through the run writer simulateAndStoreConfirmationWithAddressBookCatchUp hands out; the type admits no other writer.
 	storeRun: StoreConfirmationRun,
 ): Promise<SafeSignerSelectionRefreshPersistence> {
 	const recoveredMessage = await recoverSafeMessageReview(ethereum, pending, selectedSigner)
@@ -485,4 +484,14 @@ export async function refreshAndPersistSafeSignerSelection(
 		return persistedPending
 	})
 	return { refreshRequired: true, refreshResult, persisted: persistedPending !== undefined, persistedPending }
+}
+
+// A refreshed direct Safe execution carries a new confirmation run, so the refresh is simulated and stored as a confirmation run.
+export async function refreshAndPersistSafeSignerSelection(
+	ethereum: EthereumClientService,
+	pending: PendingTransactionOrSignableMessage,
+	selectedSigner: bigint,
+	refreshDirectSafeExecutionSimulation: RefreshDirectSafeExecutionSimulation,
+): Promise<SafeSignerSelectionRefreshPersistence> {
+	return await simulateAndStoreConfirmationRun(async (storeRun) => await refreshAndStoreSafeSignerSelection(ethereum, pending, selectedSigner, refreshDirectSafeExecutionSimulation, storeRun))
 }

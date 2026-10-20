@@ -1,6 +1,7 @@
 import type { SimulationServices } from '../simulation/serviceLifecycle.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
-import { relabelDisplayedConfirmationAfterAddressBookChange } from './confirmationRelabel.js'
+import { relabelDisplayedConfirmationSimulation } from './confirmationRelabel.js'
+import { markConfirmationRunsInFlightStale } from './confirmationRunStorage.js'
 import { relabelPopupVisualisation } from './popupVisualisationUpdater.js'
 import { relabelReportingUnexpectedErrors } from './simulationRelabel.js'
 
@@ -13,10 +14,12 @@ async function relabelStoredSimulationsAndNotify({ ethereum }: SimulationService
 	await sendPopupMessageToOpenWindows({ method: 'popup_simulationsRelabelled' })
 }
 
-// Callers wait only for the address-book change broadcast, never for the background re-label; see "Address-book re-labels" in docs/popup-simulation-refresh.md.
+// Publishes an address-book change that is already stored. Callers wait only for the address-book change broadcast, never for the background re-label; see "Address-book re-labels" in docs/popup-simulation-refresh.md.
 export async function publishAddressBookChangeAndRelabelSimulations(services: SimulationServices) {
-	// The confirmation coordinator is told of the change before anything is awaited, so a confirmation run that started its lookups earlier catches the change up once it has stored its run.
-	const displayedConfirmationRelabel = relabelDisplayedConfirmationAfterAddressBookChange(services.ethereum.getRpcEntry())
+	const rpcNetwork = services.ethereum.getRpcEntry()
+	// The re-label below reaches only stored runs, so a confirmation run in flight, whose lookups may have read the address book from before this change, re-labels the displayed confirmation once it has stored its run. Marked before anything is awaited, so no run that started before the change is missed.
+	markConfirmationRunsInFlightStale(async () => await relabelReportingUnexpectedErrors(relabelDisplayedConfirmationSimulation(rpcNetwork)))
+	const displayedConfirmationRelabel = relabelDisplayedConfirmationSimulation(rpcNetwork)
 	const addressBookChangeBroadcast = sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 	void relabelStoredSimulationsAndNotify(services, displayedConfirmationRelabel)
 	await addressBookChangeBroadcast
