@@ -24,11 +24,11 @@ const recoverSigner = async (messageHash: Hex, signature: RecoverableMessageSign
 }
 
 // Answered locally in every mode: recovery is pure computation. Signatures the simulation handed out for personal_sign resolve to their simulated signer instead of the mock signing key.
-export async function personalEcRecover(request: PersonalEcRecover, simulatedSignedMessages: readonly SignedMessageTransaction[]): Promise<RPCReply> {
+export async function personalEcRecover(request: PersonalEcRecover, simulatedSignedMessages: readonly SignedMessageTransaction[], requestingWebsiteOrigin: string): Promise<RPCReply> {
 	const [message, signature] = request.params
 	// The simulated signer lookup compares message hashes, so it matches whichever encoding the dapp uses for the bytes simulated personal_sign signed. Like MetaMask, personal_ecRecover('12', signature) hashes the text '12', so it does not match a personal_sign('12') signature, which signed the byte 0x12.
 	const messageHash = hashMessage({ raw: getPersonalEcRecoverMessageBytes(message) })
-	const signer = await findSimulatedPersonalSignSigner(simulatedSignedMessages, messageHash, signature) ?? await recoverSigner(messageHash, signature)
+	const signer = await findSimulatedPersonalSignSigner(simulatedSignedMessages, messageHash, signature, requestingWebsiteOrigin) ?? await recoverSigner(messageHash, signature)
 	if (signer === undefined) return invalidPersonalEcRecoverRequest('Invalid personal_ecRecover signature. The signature does not recover to any address.')
 	return { type: 'result', method: request.method, result: signer }
 }

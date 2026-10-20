@@ -69,7 +69,7 @@ test('answers an accepted plain-text personal_sign request in simulation mode wi
 	const stackMessages = (await modules.getInterceptorTransactionStack()).operations.flatMap((operation) => operation.type === 'Message' ? [operation.signedMessageTransaction] : [])
 	const ecRecoverRequest = EthereumJsonRpcRequest.parse({ method: 'personal_ecRecover', params: [plainTextMessage, reply.result] })
 	if (ecRecoverRequest.method !== 'personal_ecRecover') throw new Error('Expected a personal_ecRecover request')
-	assert.deepEqual(await personalEcRecover(ecRecoverRequest, stackMessages), { type: 'result', method: 'personal_ecRecover', result: signerAddress })
+	assert.deepEqual(await personalEcRecover(ecRecoverRequest, stackMessages, website.websiteOrigin), { type: 'result', method: 'personal_ecRecover', result: signerAddress })
 })
 
 test('requires every popup decision to name the request instance it decides on', () => {

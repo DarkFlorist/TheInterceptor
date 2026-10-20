@@ -18,3 +18,8 @@ export function isAccountConnectionMethod(method: string) {
 export function isAccountOnlyMethod(method: string) {
 	return ACCOUNT_ONLY_METHODS.has(method)
 }
+
+// personal_ecRecover is pure computation, so like account-only methods it never needs the Interceptor RPC and stays local even on signer-only networks.
+export function isAnsweredWithoutInterceptorRpc(method: string) {
+	return isAccountOnlyMethod(method) || method === 'personal_ecRecover'
+}

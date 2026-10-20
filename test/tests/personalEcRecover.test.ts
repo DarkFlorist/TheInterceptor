@@ -110,20 +110,20 @@ describe('personal_ecRecover parameters', () => {
 describe('personal_ecRecover recovery', () => {
 	test('recovers the signer of hex and plain text messages like MetaMask', async () => {
 		const recoveredSigner = { type: 'result', method: 'personal_ecRecover', result: signerAddress }
-		assert.deepEqual(await personalEcRecover(parsePersonalEcRecover([helloMessage, helloSignature]), []), recoveredSigner)
-		assert.deepEqual(await personalEcRecover(parsePersonalEcRecover(['hello', helloSignature]), []), recoveredSigner)
+		assert.deepEqual(await personalEcRecover(parsePersonalEcRecover([helloMessage, helloSignature]), [], websiteOrigin), recoveredSigner)
+		assert.deepEqual(await personalEcRecover(parsePersonalEcRecover(['hello', helloSignature]), [], websiteOrigin), recoveredSigner)
 		const account = privateKeyToAccount(privateKey)
 		const bytesMessage = '0x00ff4578616d706c65'
-		assert.deepEqual(await personalEcRecover(parsePersonalEcRecover([bytesMessage, await account.signMessage({ message: { raw: bytesMessage } })]), []), recoveredSigner)
+		assert.deepEqual(await personalEcRecover(parsePersonalEcRecover([bytesMessage, await account.signMessage({ message: { raw: bytesMessage } })]), [], websiteOrigin), recoveredSigner)
 		// Odd-length hex is left-padded to whole bytes, and strings that are not 0x-prefixed hex are UTF-8 text.
-		assert.deepEqual(await personalEcRecover(parsePersonalEcRecover(['0x123', await account.signMessage({ message: { raw: '0x0123' } })]), []), recoveredSigner)
-		assert.deepEqual(await personalEcRecover(parsePersonalEcRecover(['68656c6c6f', await account.signMessage({ message: '68656c6c6f' })]), []), recoveredSigner)
+		assert.deepEqual(await personalEcRecover(parsePersonalEcRecover(['0x123', await account.signMessage({ message: { raw: '0x0123' } })]), [], websiteOrigin), recoveredSigner)
+		assert.deepEqual(await personalEcRecover(parsePersonalEcRecover(['68656c6c6f', await account.signMessage({ message: '68656c6c6f' })]), [], websiteOrigin), recoveredSigner)
 	})
 
 	test('recovers the EIP-2098 test vectors in full and compact form', async () => {
 		for (const { message, signature, compactSignature } of eip2098Vectors) {
 			for (const encodedSignature of [signature, compactSignature]) {
-				assert.deepEqual(await personalEcRecover(parsePersonalEcRecover([message, encodedSignature]), []), { type: 'result', method: 'personal_ecRecover', result: eip2098Signer }, encodedSignature)
+				assert.deepEqual(await personalEcRecover(parsePersonalEcRecover([message, encodedSignature]), [], websiteOrigin), { type: 'result', method: 'personal_ecRecover', result: eip2098Signer }, encodedSignature)
 			}
 		}
 	})
@@ -138,7 +138,7 @@ describe('personal_ecRecover recovery', () => {
 			toSignatureHex(5n, helloS, 0),
 			getSignatureRecoveringToInfinity(helloMessage),
 		]) {
-			assert.deepEqual(await personalEcRecover(parsePersonalEcRecover([helloMessage, signature]), []), invalidSignatureReply, signature)
+			assert.deepEqual(await personalEcRecover(parsePersonalEcRecover([helloMessage, signature]), [], websiteOrigin), invalidSignatureReply, signature)
 		}
 	})
 
@@ -147,10 +147,10 @@ describe('personal_ecRecover recovery', () => {
 		const signedMessage = createSignedMessage(simulatedSigner, helloMessage, socket)
 		const request = parsePersonalEcRecover([helloMessage, await getSimulatedSignature(signedMessage)])
 
-		assert.deepEqual(await personalEcRecover(request, [signedMessage]), { type: 'result', method: 'personal_ecRecover', result: simulatedSigner })
-		assert.deepEqual(await personalEcRecover(parsePersonalEcRecover(['hello', await getSimulatedSignature(signedMessage)]), [signedMessage]), { type: 'result', method: 'personal_ecRecover', result: simulatedSigner })
-		assert.deepEqual(await personalEcRecover(request, []), { type: 'result', method: 'personal_ecRecover', result: mockSimulationKeyAddress })
-		const otherMessageReply = await personalEcRecover(parsePersonalEcRecover(['0x00', await getSimulatedSignature(signedMessage)]), [signedMessage])
+		assert.deepEqual(await personalEcRecover(request, [signedMessage], websiteOrigin), { type: 'result', method: 'personal_ecRecover', result: simulatedSigner })
+		assert.deepEqual(await personalEcRecover(parsePersonalEcRecover(['hello', await getSimulatedSignature(signedMessage)]), [signedMessage], websiteOrigin), { type: 'result', method: 'personal_ecRecover', result: simulatedSigner })
+		assert.deepEqual(await personalEcRecover(request, [], websiteOrigin), { type: 'result', method: 'personal_ecRecover', result: mockSimulationKeyAddress })
+		const otherMessageReply = await personalEcRecover(parsePersonalEcRecover(['0x00', await getSimulatedSignature(signedMessage)]), [signedMessage], websiteOrigin)
 		assert.ok(otherMessageReply.type === 'result' && 'result' in otherMessageReply)
 		assert.notEqual(otherMessageReply.result, simulatedSigner)
 	})
@@ -161,13 +161,13 @@ describe('personal_ecRecover recovery', () => {
 		for (const message of ['Hello world', 'Grüße 🦊', '']) {
 			const signedMessage = createSignedMessage(simulatedSigner, message, socket)
 			const signature = await getSimulatedSignature(signedMessage)
-			assert.deepEqual(await personalEcRecover(parsePersonalEcRecover([message, signature]), [signedMessage]), recoveredSimulatedSigner, JSON.stringify(message))
-			assert.deepEqual(await personalEcRecover(parsePersonalEcRecover([bytesToHex(stringToBytes(message)), signature]), [signedMessage]), recoveredSimulatedSigner, JSON.stringify(message))
-			assert.deepEqual(await personalEcRecover(parsePersonalEcRecover([message, signature]), []), { type: 'result', method: 'personal_ecRecover', result: mockSimulationKeyAddress }, JSON.stringify(message))
+			assert.deepEqual(await personalEcRecover(parsePersonalEcRecover([message, signature]), [signedMessage], websiteOrigin), recoveredSimulatedSigner, JSON.stringify(message))
+			assert.deepEqual(await personalEcRecover(parsePersonalEcRecover([bytesToHex(stringToBytes(message)), signature]), [signedMessage], websiteOrigin), recoveredSimulatedSigner, JSON.stringify(message))
+			assert.deepEqual(await personalEcRecover(parsePersonalEcRecover([message, signature]), [], websiteOrigin), { type: 'result', method: 'personal_ecRecover', result: mockSimulationKeyAddress }, JSON.stringify(message))
 		}
 		// Odd-length hex signs its left-padded bytes, so the even-length form of the same bytes finds the same simulated signer.
 		const oddLengthHexMessage = createSignedMessage(simulatedSigner, '0x123', socket)
-		assert.deepEqual(await personalEcRecover(parsePersonalEcRecover(['0x0123', await getSimulatedSignature(oddLengthHexMessage)]), [oddLengthHexMessage]), recoveredSimulatedSigner)
+		assert.deepEqual(await personalEcRecover(parsePersonalEcRecover(['0x0123', await getSimulatedSignature(oddLengthHexMessage)]), [oddLengthHexMessage], websiteOrigin), recoveredSimulatedSigner)
 	})
 
 	test('reads unprefixed hex as text like MetaMask personal_ecRecover, unlike personal_sign which signs it as bytes', async () => {
@@ -175,8 +175,8 @@ describe('personal_ecRecover recovery', () => {
 		const signedMessage = createSignedMessage(simulatedSigner, '12', socket)
 		const signature = await getSimulatedSignature(signedMessage)
 		// personal_sign('12') signed the byte 0x12, which personal_ecRecover only reads from the 0x-prefixed form.
-		assert.deepEqual(await personalEcRecover(parsePersonalEcRecover(['0x12', signature]), [signedMessage]), { type: 'result', method: 'personal_ecRecover', result: simulatedSigner })
-		const textReply = await personalEcRecover(parsePersonalEcRecover(['12', signature]), [signedMessage])
+		assert.deepEqual(await personalEcRecover(parsePersonalEcRecover(['0x12', signature]), [signedMessage], websiteOrigin), { type: 'result', method: 'personal_ecRecover', result: simulatedSigner })
+		const textReply = await personalEcRecover(parsePersonalEcRecover(['12', signature]), [signedMessage], websiteOrigin)
 		assert.ok(textReply.type === 'result' && 'result' in textReply)
 		assert.notEqual(textReply.result, simulatedSigner)
 		assert.notEqual(textReply.result, mockSimulationKeyAddress)
@@ -189,7 +189,16 @@ describe('personal_ecRecover recovery', () => {
 		const sharedSignature = await getSimulatedSignature(laterSignedMessage)
 		assert.equal(await getSimulatedSignature(earlierSignedMessage), sharedSignature)
 
-		assert.deepEqual(await personalEcRecover(parsePersonalEcRecover([helloMessage, sharedSignature]), [earlierSignedMessage, laterSignedMessage]), { type: 'result', method: 'personal_ecRecover', result: simulatedSigner })
+		assert.deepEqual(await personalEcRecover(parsePersonalEcRecover([helloMessage, sharedSignature]), [earlierSignedMessage, laterSignedMessage], websiteOrigin), { type: 'result', method: 'personal_ecRecover', result: simulatedSigner })
+	})
+
+	test('maps a simulated signature back to its simulated signer only for the website that requested the signing', async () => {
+		const socket = { tabId: 1, connectionName: 0n }
+		const signedMessage = createSignedMessage(simulatedSigner, helloMessage, socket)
+		// The mock keys are public, so another page can compute this signature for a message it guesses.
+		const request = parsePersonalEcRecover([helloMessage, await getSimulatedSignature(signedMessage)])
+		assert.deepEqual(await personalEcRecover(request, [signedMessage], 'https://other.example'), { type: 'result', method: 'personal_ecRecover', result: mockSimulationKeyAddress })
+		assert.deepEqual(await personalEcRecover(request, [signedMessage], websiteOrigin), { type: 'result', method: 'personal_ecRecover', result: simulatedSigner })
 	})
 })
 
