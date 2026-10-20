@@ -3,7 +3,7 @@ import { test } from 'bun:test'
 import { getLatestUnexpectedError } from '../../app/ts/background/storageVariables.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../app/ts/utils/constants.js'
-import { activeAddress, browserMock, createDisconnectedPort, createRecordingPort, createSafeAddressBookEntry, createSafeTx, EIP712Message, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, pendingTransaction, recipientAddress, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, signedTransaction, simulator, uniqueRequestIdentifier, waitForPendingTransactionsToClear, withSilencedConsole } from './confirmTransactionTestHarness.js'
+import { activeAddress, browserMock, bytes32String, createDisconnectedPort, createRecordingPort, createSafeAddressBookEntry, createSafeTx, EIP712Message, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, pendingTransaction, privateKeyToAccount, recipientAddress, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, signedTransaction, simulator, uniqueRequestIdentifier, waitForPendingTransactionsToClear, withSilencedConsole } from './confirmTransactionTestHarness.js'
 
 test('failed signer delivery keeps the request and replaces the waiting spinner with a wallet-neutral error', async () => {
 	await browser.storage.local.set({ simulationMode: false })
@@ -798,6 +798,8 @@ test('approving a simulated message signature answers the website before the win
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 	const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
 	const message = '0x68656c6c6f'
+	// Simulation mode signs for addresses it holds no key for, such as the default active address, with the mock private key 2.
+	const expectedSignature = await privateKeyToAccount(bytes32String(2n)).signMessage({ message: 'hello' })
 	const request = { method: 'personal_sign', params: [message, addressString(activeAddress)], interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier }
 	const signRequest = { method: 'personal_sign' as const, params: [message, activeAddress] as const }
 	const website = { websiteOrigin: 'https://example.com', icon: undefined, title: undefined }
@@ -814,10 +816,15 @@ test('approving a simulated message signature answers the website before the win
 	const [reply] = getRepliesToWebsite(postedMessages)
 	if (!isRecord(reply)) throw new Error('Missing reply to the website')
 	assert.equal(reply.method, 'personal_sign')
-	assert.equal(typeof reply.result, 'string')
+	assert.equal(reply.result, expectedSignature)
 	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
 	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
-	assert.deepEqual((await modules.getInterceptorTransactionStack()).operations.map((operation) => operation.type), ['Message'])
+	const stackOperations = (await modules.getInterceptorTransactionStack()).operations
+	assert.equal(stackOperations.length, 1)
+	const [signedMessage] = stackOperations
+	if (signedMessage?.type !== 'Message') throw new Error('Missing signed message on the simulation stack')
+	assert.equal(signedMessage.signedMessageTransaction.fakeSignedFor, activeAddress)
+	assert.deepEqual(signedMessage.signedMessageTransaction.originalRequestParameters, signRequest)
 	await assertConfirmationViewFailureWasReported()
 })
 
@@ -855,17 +862,23 @@ async function storeSafeProposalRequest(approvalStatus: { readonly status: 'Wait
 	return { safeTx, safeTxHash }
 }
 
-async function assertSafeProposalWasStoredAndAnswered(postedMessages: readonly unknown[], safeTxHash: bigint) {
+// The proposal is stored once in its Gnosis Safe stack and mirrored once on the simulation stack, both with the expected owner signatures, even though opening the stack window failed afterwards.
+async function assertSafeProposalWasStoredAndAnswered(postedMessages: readonly unknown[], safeTxHash: bigint, expectedSignatures: readonly { readonly signer: bigint, readonly signature: string }[]) {
 	const [reply] = getRepliesToWebsite(postedMessages)
 	if (!isRecord(reply)) throw new Error('Missing reply to the website')
 	assert.equal(reply.method, 'eth_sendTransaction')
 	assert.equal(reply.result, modules.EthereumBytes32.serialize(safeTxHash))
 	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
 	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
-	const [storedStack] = await modules.getSafeTransactionStacks()
-	assert.equal(storedStack?.transactions[0]?.safeTxHash, safeTxHash)
+	const safeStacks = await modules.getSafeTransactionStacks()
+	assert.equal(safeStacks.length, 1)
+	assert.deepEqual(safeStacks[0]?.transactions.map((transaction) => ({ safeTxHash: transaction.safeTxHash, signatures: transaction.signatures })), [{ safeTxHash, signatures: expectedSignatures }])
+	const mirroredProposals = (await modules.getInterceptorTransactionStack()).operations.flatMap((operation) =>
+		operation.type === 'Transaction' && operation.preSimulationTransaction.safeTransaction?.safeTxHash === safeTxHash ? [operation.preSimulationTransaction.safeTransaction] : []
+	)
+	assert.equal(mirroredProposals.length, 1)
+	assert.deepEqual(mirroredProposals[0]?.signatures, expectedSignatures)
 	await assertConfirmationViewFailureWasReported()
-	return storedStack?.transactions[0]
 }
 
 test('adding a Gnosis Safe proposal to its stack answers the website with the proposal hash before opening the stack window, whose failure is reported', async () => {
@@ -880,8 +893,7 @@ test('adding a Gnosis Safe proposal to its stack answers the website with the pr
 
 	assert.equal(delivered, true)
 	assert.deepEqual(repliesReceivedBeforeCleanup, [1])
-	const storedProposal = await assertSafeProposalWasStoredAndAnswered(postedMessages, safeTxHash)
-	assert.deepEqual(storedProposal?.signatures, [])
+	await assertSafeProposalWasStoredAndAnswered(postedMessages, safeTxHash, [])
 })
 
 test('a Gnosis Safe owner signature answers the website with the proposal hash before opening the stack window, whose failure is reported', async () => {
@@ -898,8 +910,7 @@ test('a Gnosis Safe owner signature answers the website with the proposal hash b
 
 	assert.equal(delivered, true)
 	assert.deepEqual(repliesReceivedBeforeCleanup, [1])
-	const storedProposal = await assertSafeProposalWasStoredAndAnswered(postedMessages, safeTxHash)
-	assert.equal(storedProposal?.signatures[0]?.signer, safeTestOwnerAddress)
+	await assertSafeProposalWasStoredAndAnswered(postedMessages, safeTxHash, [{ signer: safeTestOwnerAddress, signature }])
 })
 
 await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
