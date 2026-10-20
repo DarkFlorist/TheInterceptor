@@ -18,6 +18,7 @@ type FakeWindowOptions = {
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null
+const BRIDGE_SECRET = 'a'.repeat(64)
 const CONTENT_SCRIPT_CAPABILITY = '22222222-2222-4222-8222-222222222222'
 
 function sendSafeAppsCompatibility(sendBackgroundMessage: (data: unknown) => void, enabled: boolean) {
@@ -49,7 +50,7 @@ function parseInpageRequest(value: unknown): InpageRequest | undefined {
 		method: value.method,
 		requestId: value.requestId,
 		...(Array.isArray(value.params) ? { params: value.params } : {}),
-		...(value.internal === true ? { internal: true as const } : {}),
+		internal: value.internal === true ? true : undefined,
 		...(value.replayOnDisconnect === true ? { replayOnDisconnect: true as const } : {}),
 	}
 }
@@ -66,6 +67,7 @@ function createFakeWindow({ onConnectedToSignerRequest, handleRequest, handleSig
 	let rejectPendingRequestAccounts: ((error: { code: number, message: string }) => void) | undefined
 	let resolvePendingRequestAccounts: ((accounts: string[]) => void) | undefined
 	let bridgePort: MessagePort | undefined
+	let postBridgeReply: ((message: unknown) => void) | undefined
 	let bridgeCapability: string | undefined
 
 	const fakeSigner = {
@@ -109,7 +111,12 @@ function createFakeWindow({ onConnectedToSignerRequest, handleRequest, handleSig
 		},
 	}
 
+	const bridgeRoot = new EventTarget()
 	const fakeWindow = {
+		document: {
+			createElement: () => ({ hidden: false, setAttribute: () => undefined, attachShadow: () => bridgeRoot, remove: () => undefined }),
+			documentElement: { appendChild: () => undefined },
+		},
 		ethereum: fakeSigner,
 		location: { origin: 'https://safe-app.example' },
 		...(signerInitialSelectedAddress === undefined ? {} : { web3: { accounts: [signerInitialSelectedAddress], currentProvider: fakeSigner } }),
@@ -138,6 +145,7 @@ function createFakeWindow({ onConnectedToSignerRequest, handleRequest, handleSig
 			if (port === undefined) throw new Error('missing bridge port')
 			bridgeCapability = data.bridgeCapability
 			bridgePort = port
+			postBridgeReply = port.postMessage.bind(port)
 			bridgePort.onmessage = (event: MessageEvent<unknown>) => handleInpageRequest(event.data)
 			bridgePort.postMessage({
 				type: 'interceptor_bridge_initialized',
@@ -147,15 +155,24 @@ function createFakeWindow({ onConnectedToSignerRequest, handleRequest, handleSig
 		},
 	}
 
+	bridgeRoot.addEventListener('interceptor_private_bridge', (event) => {
+		if (!('data' in event) || typeof event.data !== 'string' || !('ports' in event) || !Array.isArray(event.ports)) return
+		const [bootstrapSecret, bridgeCapability] = event.data.split(':')
+		const port: unknown = event.ports[0]
+		if (bootstrapSecret !== BRIDGE_SECRET || !(port instanceof MessagePort)) return
+		fakeWindow.postMessage({ type: 'interceptor_bridge_port', bridgeCapability }, '*', [port])
+		event.preventDefault()
+	})
+
 	Object.defineProperty(fakeWindow, 'top', { configurable: true, value: fakeWindow })
 
 	const sendBackgroundMessage = (data: unknown) => {
-		if (bridgePort === undefined) throw new Error('bridge port is not connected')
+		if (postBridgeReply === undefined) throw new Error('bridge port is not connected')
 		if (isRecord(data)) {
-			bridgePort.postMessage({ ...data, contentScriptCapability: CONTENT_SCRIPT_CAPABILITY })
+			postBridgeReply({ ...data, contentScriptCapability: CONTENT_SCRIPT_CAPABILITY })
 			return
 		}
-		bridgePort.postMessage(data)
+		postBridgeReply(data)
 	}
 
 	const handleInpageRequest = (data: unknown) => {
@@ -344,6 +361,9 @@ async function withFakeInpageWindow<T>(fakeWindow: ReturnType<typeof createFakeW
 	}
 	try {
 		await import(importPath)
+		const initializeBridge = Reflect.get(fakeWindow, '__interceptorInitializeBridge')
+		if (typeof initializeBridge !== 'function') throw new Error('Missing inpage initializer')
+		initializeBridge(BRIDGE_SECRET)
 		return await runTest()
 	} finally {
 		;(globalThis as { window?: unknown }).window = previousWindow
@@ -972,8 +992,12 @@ describe('inpage signer bridge', () => {
 		})
 	})
 
-	test('returns bridge transport failures through the sendAsync error argument', async () => {
-		const { fakeWindow, signerRequests } = createFakeWindow()
+	test('keeps native bridge delivery when a page replaces MessagePort.postMessage', async () => {
+		const { fakeWindow, signerRequests } = createFakeWindow({ handleRequest: (request, sendReply) => {
+			if (request.method !== 'eth_chainId' || request.internal === true) return false
+			sendReply({ interceptorApproved: true, type: 'result', method: request.method, requestId: request.requestId, result: '0x1' })
+			return true
+		} })
 
 		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?send-async-transport-error', async () => {
 			await waitFor(() => signerRequests.includes('eth_chainId'))
@@ -995,10 +1019,8 @@ describe('inpage signer bridge', () => {
 				Object.defineProperty(MessagePort.prototype, 'postMessage', postMessageDescriptor)
 			}
 
-			assert.equal(callbackArguments[0] instanceof Error, true)
-			if (!(callbackArguments[0] instanceof Error)) throw new Error('Expected a transport Error')
-			assert.equal(callbackArguments[0].message, 'bridge transport failed')
-			assert.equal(callbackArguments[1], null)
+			assert.equal(callbackArguments[0], null)
+			assert.deepEqual(callbackArguments[1], { id: 72, jsonrpc: '2.0', result: '0x1' })
 		})
 	})
 
@@ -1259,6 +1281,73 @@ describe('inpage signer bridge', () => {
 			notifyBridgeReconnected()
 			await waitFor(() => catalogRequestCount >= 2 && publicRequestForwarded)
 			assert.equal(await publicRequest, '0x1111111111111111111111111111111111111111111111111111111111111111')
+		})
+	})
+
+	test('public methods are snapshotted and cannot inherit internal transport authority', async () => {
+		const forwarded: InpageRequest[] = []
+		const { fakeWindow } = createFakeWindow({ handleRequest: (request, reply) => {
+			if (request.internal === true) return false
+			forwarded.push(request)
+			reply({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: [] })
+			return true
+		} })
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?public-authority-prototype-attack', async () => {
+			await fakeWindow.ethereum.request({ method: 'eth_accounts' })
+			const previousInternal = Object.getOwnPropertyDescriptor(Object.prototype, 'internal')
+			const nativeSome = Array.prototype.some
+			let methodReads = 0
+			try {
+				Object.defineProperty(Object.prototype, 'internal', { configurable: true, value: true })
+				Array.prototype.some = () => false
+				await fakeWindow.ethereum.request({ get method() { return ++methodReads === 1 ? 'eth_accounts' : 'signer_providers_changed' }, params: [] })
+				await assert.rejects(fakeWindow.ethereum.request({ method: 'signer_providers_changed', params: [] }), (error: unknown) => isRecord(error) && error.code === -32004)
+			} finally {
+				Array.prototype.some = nativeSome
+				if (previousInternal === undefined) Reflect.deleteProperty(Object.prototype, 'internal')
+				else Object.defineProperty(Object.prototype, 'internal', previousInternal)
+			}
+			assert.equal(methodReads, 1)
+			assert.equal(forwarded.length, 2)
+			assert.equal(forwarded.every((request) => request.method === 'eth_accounts' && request.internal !== true), true)
+		})
+	})
+
+	test('keeps reply capabilities out of page regex hooks and malformed-message console diagnostics', async () => {
+		const { fakeWindow, sendBackgroundMessage, interceptorErrorPayloads } = createFakeWindow()
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?private-reply-diagnostics', async () => {
+			const nativeTest = RegExp.prototype.test
+			const nativeExec = RegExp.prototype.exec
+			const nativeSplice = Array.prototype.splice
+			const nativeConsoleError = console.error
+			const loggedValues: unknown[] = []
+			let exposedCapability = false
+			try {
+				/reset/u.exec('reset')
+				Array.prototype.splice = function (...args) {
+					if (RegExp.input === CONTENT_SCRIPT_CAPABILITY || RegExp.lastMatch === CONTENT_SCRIPT_CAPABILITY) exposedCapability = true
+					return Reflect.apply(nativeSplice, this, args)
+				}
+				RegExp.prototype.test = function (value) {
+					if (value === CONTENT_SCRIPT_CAPABILITY) exposedCapability = true
+					return nativeTest.call(this, value)
+				}
+				RegExp.prototype.exec = function (value) {
+					if (value === CONTENT_SCRIPT_CAPABILITY) exposedCapability = true
+					return nativeExec.call(this, value)
+				}
+				console.error = (...values: unknown[]) => { loggedValues.push(...values) }
+				await fakeWindow.ethereum.request({ method: 'eth_chainId' })
+				sendBackgroundMessage({ interceptorApproved: true, type: 'malformed-private-reply' })
+				await waitFor(() => interceptorErrorPayloads.length > 0)
+				assert.equal(exposedCapability, false)
+				assert.equal(loggedValues.some((value) => isRecord(value) && isRecord(value.data) && value.data.contentScriptCapability === CONTENT_SCRIPT_CAPABILITY), false)
+			} finally {
+				RegExp.prototype.test = nativeTest
+				RegExp.prototype.exec = nativeExec
+				Array.prototype.splice = nativeSplice
+				console.error = nativeConsoleError
+			}
 		})
 	})
 
@@ -2069,6 +2158,9 @@ describe('inpage signer bridge', () => {
 
 		try {
 			await import('../../app/inpage/ts/inpage.js')
+			const initializeBridge = Reflect.get(fakeWindow, '__interceptorInitializeBridge')
+			if (typeof initializeBridge !== 'function') throw new Error('Missing inpage initializer')
+			initializeBridge(BRIDGE_SECRET)
 			await waitFor(() => signerRequests.length >= 1)
 			assert.deepEqual(signerRequests, ['eth_chainId'])
 			assert.strictEqual(fakeWindow.dispatchEvent, originalDispatchEvent)
@@ -4889,6 +4981,9 @@ describe('inpage signer bridge', () => {
 
 		try {
 			await import('../../app/inpage/ts/inpage.js?json-rpc-error-data')
+			const initializeBridge = Reflect.get(fakeWindow, '__interceptorInitializeBridge')
+			if (typeof initializeBridge !== 'function') throw new Error('Missing inpage initializer')
+			initializeBridge(BRIDGE_SECRET)
 			await waitFor(() => signerRequests.length >= 1)
 			const provider = fakeWindow.ethereum as {
 				request: (payload: { method: string, params?: readonly unknown[] }) => Promise<unknown>
@@ -4982,6 +5077,9 @@ describe('inpage signer bridge', () => {
 
 		try {
 			await import('../../app/inpage/ts/inpage.js?signer-json-rpc-error-data')
+			const initializeBridge = Reflect.get(fakeWindow, '__interceptorInitializeBridge')
+			if (typeof initializeBridge !== 'function') throw new Error('Missing inpage initializer')
+			initializeBridge(BRIDGE_SECRET)
 			await waitFor(() => signerRequests.length >= 1)
 			const provider = fakeWindow.ethereum as {
 				request: (payload: { method: string, params?: readonly unknown[] }) => Promise<unknown>
@@ -5032,6 +5130,9 @@ describe('inpage signer bridge', () => {
 
 		try {
 			await import('../../app/inpage/ts/inpage.js?signer-chain-id-error')
+			const initializeBridge = Reflect.get(fakeWindow, '__interceptorInitializeBridge')
+			if (typeof initializeBridge !== 'function') throw new Error('Missing inpage initializer')
+			initializeBridge(BRIDGE_SECRET)
 			await waitFor(() => interceptorErrorPayloads.length === 1)
 
 			assert.deepEqual(signerRequests, ['eth_chainId'])
@@ -5077,6 +5178,9 @@ describe('inpage signer bridge', () => {
 
 		try {
 			await import('../../app/inpage/ts/inpage.js?locked-compatibility')
+			const initializeBridge = Reflect.get(fakeWindow, '__interceptorInitializeBridge')
+			if (typeof initializeBridge !== 'function') throw new Error('Missing inpage initializer')
+			initializeBridge(BRIDGE_SECRET)
 			await waitFor(() => 'isInterceptor' in (fakeWindow.ethereum as Record<string, unknown>))
 			assert.equal((fakeWindow.ethereum as { selectedAddress?: unknown }).selectedAddress, undefined)
 			assert.deepEqual(warnings, [])
@@ -5202,6 +5306,9 @@ describe('inpage signer bridge', () => {
 
 		try {
 			await import('../../app/inpage/ts/inpage.js?configurable-getter-compatibility')
+			const initializeBridge = Reflect.get(fakeWindow, '__interceptorInitializeBridge')
+			if (typeof initializeBridge !== 'function') throw new Error('Missing inpage initializer')
+			initializeBridge(BRIDGE_SECRET)
 			await waitFor(() => connectedToSigner)
 			sendBackgroundMessage({
 				interceptorApproved: true,
@@ -5252,6 +5359,9 @@ describe('inpage signer bridge', () => {
 
 		try {
 			await import('../../app/inpage/ts/inpage.js?non-extensible-compatibility')
+			const initializeBridge = Reflect.get(fakeWindow, '__interceptorInitializeBridge')
+			if (typeof initializeBridge !== 'function') throw new Error('Missing inpage initializer')
+			initializeBridge(BRIDGE_SECRET)
 			await waitFor(() => signerRequests.includes('eth_chainId'))
 			sendBackgroundMessage({
 				interceptorApproved: true,

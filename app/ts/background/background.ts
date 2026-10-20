@@ -2,6 +2,8 @@ import { isSignerIndependentRpcMethod } from './signerRequestPolicy.js'
 import { isTopFrameId } from '../utils/requests.js'
 import { prepareSafeAppsRequest } from './safeAppsRequestHandler.js'
 import type { RpcRequestContext } from '../types/confirmationRequest.js'
+import { FinishSignerProviderSelection } from '../types/interceptor-messages.js'
+import { releaseSignerSelectionLease } from './signerSelectionLease.js'
 import type { InpageScriptRequest, RPCReply, Settings } from '../types/interceptor-messages.js'
 import 'webextension-polyfill'
 import { getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
@@ -29,7 +31,8 @@ import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { getWalletSelectedAccount, isActiveSigningSafe } from '../utils/activeAddressSelection.js'
 import { isAccountConnectionMethod, isAccountOnlyMethod } from './accountRequestMethods.js'
 import { beginSignerProviderSelection, finishSignerProviderSelection, signerProviderSelected, signerProvidersChanged } from './signerProviderSelection.js'
-import { isAuthoritativeTopSocket, socketCanExecuteWithSelectedSigner } from './signerExecutionAuthority.js'
+import { getSignerExecutionError, isAuthoritativeTopSocket } from './signerExecutionAuthority.js'
+import type { ApprovalState } from './websiteAccessPolicy.js'
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
 import { getActiveAddressForCurrentSignerState, getConfirmedSignerStateToken, isSignerStateTokenCurrent } from './signerStateOwnership.js'
@@ -227,12 +230,41 @@ async function handleRPCRequest(
 	return await rpcRequestHandlers[parsedRequest.method](undefined, parsedRequest)
 }
 
+type ProviderHandlerContext = {
+	readonly simulationServicesOwner: SimulationServicesOwner
+	readonly websiteTabConnections: WebsiteTabConnections
+	readonly port: browser.runtime.Port
+	readonly request: InterceptedRequest
+	readonly approval: ApprovalState
+	readonly activeAddress: bigint | undefined
+	readonly websiteOrigin: string
+	readonly isTopFrame: boolean
+}
+
+const adaptProviderHandler = <T>(handler: (owner: SimulationServicesOwner, connections: WebsiteTabConnections, port: browser.runtime.Port, request: InterceptedRequest, approval: ApprovalState, activeAddress: bigint | undefined) => Promise<T>) => (context: ProviderHandlerContext) => handler(context.simulationServicesOwner, context.websiteTabConnections, context.port, context.request, context.approval, context.activeAddress)
+
 const providerHandlers = {
-	signer_reply: { method: 'signer_reply' as const, func: signerReply },
-	eth_accounts_reply: { method: 'eth_accounts_reply' as const, func: ethAccountsReply },
-	signer_chainChanged: { method: 'signer_chainChanged' as const, func: signerChainChanged },
-	wallet_switchEthereumChain_reply: { method: 'wallet_switchEthereumChain_reply' as const, func: walletSwitchEthereumChainReply },
-	connected_to_signer: { method: 'connected_to_signer' as const, func: connectedToSigner },
+	signer_reply: { method: 'signer_reply' as const, func: adaptProviderHandler(signerReply) },
+	eth_accounts_reply: { method: 'eth_accounts_reply' as const, func: adaptProviderHandler(ethAccountsReply) },
+	signer_chainChanged: { method: 'signer_chainChanged' as const, func: adaptProviderHandler(signerChainChanged) },
+	wallet_switchEthereumChain_reply: { method: 'wallet_switchEthereumChain_reply' as const, func: adaptProviderHandler(walletSwitchEthereumChainReply) },
+	connected_to_signer: { method: 'connected_to_signer' as const, func: adaptProviderHandler(connectedToSigner) },
+	signer_providers_changed: { method: 'signer_providers_changed' as const, func: async (context: ProviderHandlerContext) => ({
+		type: 'result' as const, method: 'signer_providers_changed' as const,
+		result: await signerProvidersChanged(context.request, context.websiteOrigin, context.isTopFrame, context.port.sender?.frameId),
+	}) },
+	signer_provider_selected: { method: 'signer_provider_selected' as const, func: async (context: ProviderHandlerContext) => {
+		await signerProviderSelected(context.request, context.websiteOrigin, context.isTopFrame, context.port.sender?.frameId, context.websiteTabConnections)
+		return { type: 'result' as const, method: 'signer_provider_selected' as const, result: '0x' as const }
+	} },
+	begin_signer_provider_selection: { method: 'begin_signer_provider_selection' as const, func: async (context: ProviderHandlerContext) => ({
+		type: 'result' as const, method: 'begin_signer_provider_selection' as const,
+		result: await beginSignerProviderSelection(context.request, context.websiteOrigin, context.isTopFrame, context.port.sender?.frameId),
+	}) },
+	finish_signer_provider_selection: { method: 'finish_signer_provider_selection' as const, func: async (context: ProviderHandlerContext) => {
+		finishSignerProviderSelection(context.request)
+		return { type: 'result' as const, method: 'finish_signer_provider_selection' as const, result: '0x' as const }
+	} },
 }
 
 function isProviderMethod(method: string): method is keyof typeof providerHandlers {
@@ -403,6 +435,26 @@ function replyWithSignerAccountError(websiteTabConnections: WebsiteTabConnection
 }
 
 export const handleInterceptedRequest = async (port: browser.runtime.Port | undefined, websiteOrigin: string, websitePromise: Promise<Website> | Website, simulationServicesOwner: SimulationServicesOwner, socket: WebsiteSocket, request: InterceptedRequest, websiteTabConnections: WebsiteTabConnections, publishRpcConnectionStatus: PublishRpcConnectionStatus): Promise<unknown> => {
+	try {
+		return await processInterceptedRequest(port, websiteOrigin, websitePromise, simulationServicesOwner, socket, request, websiteTabConnections, publishRpcConnectionStatus)
+	} catch (error: unknown) {
+		if (request.interceptorInternalRequest !== true) throw error
+		// A finish request must release its token even when setup storage reads fail.
+		if (request.method === 'finish_signer_provider_selection') {
+			const finish = FinishSignerProviderSelection.safeParse(request)
+			if (finish.success) releaseSignerSelectionLease(socket.tabId, finish.value.params[0])
+		}
+		// Include setup reads and settle before reporting: either failure can otherwise hold the selection workflow.
+		const delivered = replyToInterceptedRequest(websiteTabConnections, {
+			type: 'result', method: request.method, uniqueRequestIdentifier: request.uniqueRequestIdentifier,
+			error: { code: -32603, message: 'Failed to process the internal signer request.' },
+		})
+		await reportUnexpectedError(error, { code: 'internal_provider_request_failed' })
+		return delivered
+	}
+}
+
+const processInterceptedRequest = async (port: browser.runtime.Port | undefined, websiteOrigin: string, websitePromise: Promise<Website> | Website, simulationServicesOwner: SimulationServicesOwner, socket: WebsiteSocket, request: InterceptedRequest, websiteTabConnections: WebsiteTabConnections, publishRpcConnectionStatus: PublishRpcConnectionStatus): Promise<unknown> => {
 	const initialSettings = await getSettings()
 	if (request.method === 'wallet_revokePermissions') {
 		const parsedRequest = parseWalletRevokePermissionsRequest(websiteTabConnections, request)
@@ -418,35 +470,17 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 		|| (initialSettings.useSignersAddressAsActiveAddress && (isAccountConnectionMethod(request.method) || isAccountOnlyMethod(request.method)))
 	if (request.interceptorInternalRequest !== true && isInternalProviderMethod(request.method)) return refusePublicInternalProviderMethod(websiteTabConnections, request)
 	const isTopFrame = port !== undefined && isTopFrameId(port.sender?.frameId) && isAuthoritativeTopSocket(socket)
-	if (request.method === 'signer_providers_changed') {
-		const result = await signerProvidersChanged(request, websiteOrigin, isTopFrame, port?.sender?.frameId)
-		return replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'signer_providers_changed', result, uniqueRequestIdentifier: request.uniqueRequestIdentifier })
-	}
-	if (request.method === 'signer_provider_selected') {
-		await signerProviderSelected(request, websiteOrigin, isTopFrame, port?.sender?.frameId, websiteTabConnections)
-		return replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'signer_provider_selected', result: '0x', uniqueRequestIdentifier: request.uniqueRequestIdentifier })
-	}
-	if (request.method === 'begin_signer_provider_selection') {
-		const result = await beginSignerProviderSelection(request, websiteOrigin, isTopFrame, port?.sender?.frameId)
-		return replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'begin_signer_provider_selection', result, uniqueRequestIdentifier: request.uniqueRequestIdentifier })
-	}
-	if (request.method === 'finish_signer_provider_selection') {
-		finishSignerProviderSelection(request)
-		return replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'finish_signer_provider_selection', result: '0x', uniqueRequestIdentifier: request.uniqueRequestIdentifier })
-	}
+	const signerExecutionError = getSignerExecutionError(request.uniqueRequestIdentifier.requestSocket)
 	if (request.interceptorInternalRequest !== true
 		&& requestCanReachSigner
 		&& !request.usingInterceptorWithoutSigner
 		&& !(isAccountConnectionMethod(request.method)
 			&& (initialActiveAddress !== undefined || getWebsiteAccessApprovalState(initialSettings.websiteAccess, websiteOrigin) !== 'hasAccess'))
-		&& !socketCanExecuteWithSelectedSigner(request.uniqueRequestIdentifier.requestSocket)) {
+		&& signerExecutionError !== undefined) {
 		return replyToInterceptedRequest(websiteTabConnections, {
 			type: 'result',
 			...getRequestWithDefinedParams(request),
-			error: {
-				code: METAMASK_ERROR_NOT_AUTHORIZED,
-				message: 'The selected signer provider is not ready for this frame. Retry the request after wallet synchronization completes.',
-			},
+			error: signerExecutionError,
 		})
 	}
 	const providerHandler = getProviderHandler(request.method)
@@ -459,7 +493,7 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 		const providerCallbackActiveAddress = initialActiveAddress !== undefined && getWebsiteAddressAccessApprovalState(initialSettings.websiteAccess, websiteOrigin, initialActiveAddress) === 'hasAccess'
 			? initialActiveAddress.address
 			: undefined
-		const providerHandlerReturn = await providerHandler.func(simulationServicesOwner, websiteTabConnections, port, request, providerCallbackApproval, providerCallbackActiveAddress)
+		const providerHandlerReturn = await providerHandler.func({ simulationServicesOwner, websiteTabConnections, port, request, approval: providerCallbackApproval, activeAddress: providerCallbackActiveAddress, websiteOrigin, isTopFrame })
 		if (providerHandlerReturn.type === 'doNotReply') return
 		const message: InpageScriptRequest = { uniqueRequestIdentifier: request.uniqueRequestIdentifier, ...providerHandlerReturn }
 		return replyToInterceptedRequest(websiteTabConnections, message)

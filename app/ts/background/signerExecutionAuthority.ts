@@ -1,3 +1,5 @@
+import type { InterceptedRequestForward } from '../types/interceptor-messages.js'
+import { METAMASK_ERROR_NOT_AUTHORIZED } from '../utils/constants.js'
 import { EthereumQuantity, serialize } from '../types/wire-types.js'
 import { isTopFrameId, type WebsiteSocket } from '../utils/requests.js'
 
@@ -223,4 +225,15 @@ export function clearSignerExecutionAuthorityForTab(tabId: number) {
 		clearTimeout(timeout)
 		pendingChildSocketRemovalTimers.delete(key)
 	}
+}
+
+export function getSignerExecutionError(socket: WebsiteSocket) {
+	if (socketCanExecuteWithSelectedSigner(socket)) return undefined
+	return { code: METAMASK_ERROR_NOT_AUTHORIZED, message: 'The selected signer provider is not ready for this frame. Retry the request after wallet synchronization completes.' }
+}
+
+export function authorizeSignerForward(message: InterceptedRequestForward): InterceptedRequestForward {
+	if (message.type !== 'forwardToSigner') return message
+	const error = getSignerExecutionError(message.uniqueRequestIdentifier.requestSocket)
+	return error === undefined ? message : { ...message, type: 'result', error }
 }

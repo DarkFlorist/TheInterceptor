@@ -13,6 +13,67 @@ async function refreshSafeAppsPorts(connections: WebsiteTabConnections) {
 }
 
 describe('background eth_accounts', () => {
+	test('every failing signer-selection internal handler replies with a terminal error', async () => {
+		installBrowserMock()
+		const { handleInterceptedRequest, websiteSocketToString } = await loadModules()
+		const socket = { tabId: 1, connectionName: 0n }
+		const websiteOrigin = 'https://internal-handler-failure.example'
+		const website = { websiteOrigin }
+		const { port, messages } = createPort(socket.tabId, undefined, 0)
+		const connections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		for (const [index, method] of ['signer_providers_changed', 'signer_provider_selected', 'begin_signer_provider_selection', 'finish_signer_provider_selection'].entries()) {
+			const requestId = index + 1
+			await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
+				interceptorRequest: true, interceptorInternalRequest: true, usingInterceptorWithoutSigner: false,
+				uniqueRequestIdentifier: { requestId, requestSocket: socket }, method, params: [],
+			}, connections, noopPublishRpcConnectionStatus)
+			const reply = messages.find((message) => message.requestId === requestId && message.method === method)
+			assert.equal(reply?.error?.code, -32603)
+			assert.equal(reply?.bridgeRequestSettled, true)
+		}
+	})
+
+	for (const failureLocation of ['settings', 'active-address']) {
+		test(`internal setup ${ failureLocation } failure settles requests and releases the finish lease`, async () => {
+			installBrowserMock()
+			const { handleInterceptedRequest, websiteSocketToString } = await loadModules()
+			const { acquireSignerSelectionLease, signerSelectionLeaseIsActive, runWithSignerSelectionGate } = await import('../../app/ts/background/signerSelectionLease.js')
+			const socket = { tabId: 1, connectionName: 0n }
+			const websiteOrigin = 'https://internal-setup-failure.example'
+			const { port, messages } = createPort(socket.tabId, undefined, 0)
+			const connections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+				[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+			} }]])
+			const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+			const token = await acquireSignerSelectionLease(socket.tabId, socket)
+			const originalGet = browser.storage.local.get.bind(browser.storage.local)
+			const read = spyOn(browser.storage.local, 'get').mockImplementation(async (keys) => {
+				if (failureLocation === 'settings' ? Array.isArray(keys) && keys.includes('simulationMode') : keys === 'tabState_1') throw new Error('Setup storage read failed')
+				return await originalGet(keys)
+			})
+			try {
+				for (const [index, method] of ['signer_providers_changed', 'finish_signer_provider_selection'].entries()) {
+					await handleInterceptedRequest(port, websiteOrigin, { websiteOrigin }, simulationServicesOwner, socket, {
+						interceptorRequest: true, interceptorInternalRequest: true, usingInterceptorWithoutSigner: false,
+						uniqueRequestIdentifier: { requestId: index + 1, requestSocket: socket }, method, params: method === 'finish_signer_provider_selection' ? [token] : [],
+					}, connections, noopPublishRpcConnectionStatus)
+					assert.equal(messages.find((message) => message.requestId === index + 1)?.error?.code, -32603)
+					assert.equal(messages.find((message) => message.requestId === index + 1)?.bridgeRequestSettled, true)
+				}
+			} finally { read.mockRestore() }
+			assert.equal(signerSelectionLeaseIsActive(socket.tabId, token), false)
+			assert.equal(await runWithSignerSelectionGate(socket.tabId, async () => 'released'), 'released')
+			await handleInterceptedRequest(port, websiteOrigin, { websiteOrigin }, simulationServicesOwner, socket, {
+				interceptorRequest: true, usingInterceptorWithoutSigner: true,
+				uniqueRequestIdentifier: { requestId: 3, requestSocket: socket }, method: 'eth_accounts', params: [],
+			}, connections, noopPublishRpcConnectionStatus)
+			assert.ok(messages.find((message) => message.requestId === 3))
+		})
+	}
+
 	test('confirms a persisted popup address before slow permission work completes', async () => {
 		const { runtimeMessages } = installBrowserMock()
 		const { changeActiveAddress, changeSimulationMode, getSettings, updateUserAddressBookEntries, updateWebsiteAccess } = await loadModules()

@@ -1,3 +1,4 @@
+import { runWithSignerSelectionGate } from '../signerSelectionLease.js'
 import { isSignerChainChangePending, changeActiveRpc } from '../walletSwitch.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
@@ -107,14 +108,15 @@ export const openChangeChainDialog = async (
 		})
 
 		if (openedDialog !== undefined) {
+			const confirmationDialog = openedDialog
 			addWindowTabListeners(onCloseWindow, onCloseTab)
-			await setChainChangeConfirmationPromise({
+			await runWithSignerSelectionGate(request.uniqueRequestIdentifier.requestSocket.tabId, async () => await setChainChangeConfirmationPromise({
 				website: website,
-				popupOrTabId: openedDialog,
+				popupOrTabId: confirmationDialog,
 				request: request,
 				simulationMode: simulationMode,
 				rpcNetwork: await getRpcNetworkForChain(params.params[0].chainId),
-			})
+			}))
 			await updateChainChangeViewWithPendingRequest()
 		} else {
 			await resolveChainChange(

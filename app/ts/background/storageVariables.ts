@@ -18,7 +18,6 @@ import { modifyObject } from '../utils/typescript.js'
 import type { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { getLargeStateValue, prepareLargeStateWrite, setLargeStateValue, setLargeStateValues } from '../utils/largeStateStore.js'
 import type { InterceptorErrorDiagnostic } from '../types/errorDiagnostics.js'
-import { runWithSignerSelectionGate } from './signerSelectionLease.js'
 import { SafeTransactionStacks } from '../types/safeTypes.js'
 import { createStoredValueRepository } from '../utils/storedValue.js'
 import { isValidErc20Decimals } from '../utils/erc20.js'
@@ -81,10 +80,7 @@ export async function updatePendingTransactionOrMessage(uniqueRequestIdentifier:
 }
 
 export async function appendPendingTransactionOrMessage(pendingTransactionOrMessage: PendingTransactionOrSignableMessage) {
-	const tabId = pendingTransactionOrMessage.uniqueRequestIdentifier.requestSocket.tabId
-	await runWithSignerSelectionGate(tabId, async () => {
-		await updatePendingTransactionOrMessages(async (pendingTransactionsOrMessages) => [...pendingTransactionsOrMessages, pendingTransactionOrMessage])
-	})
+	await updatePendingTransactionOrMessages(async (pendingTransactionsOrMessages) => [...pendingTransactionsOrMessages, pendingTransactionOrMessage])
 }
 
 export async function removePendingTransactionOrMessage(uniqueRequestIdentifier: UniqueRequestIdentifier) {
@@ -98,8 +94,7 @@ export async function removePendingTransactionOrMessage(uniqueRequestIdentifier:
 export const getChainChangeConfirmationPromise = async() => (await browserStorageLocalGet('chainChangeConfirmationPromise'))?.chainChangeConfirmationPromise ?? undefined
 export async function setChainChangeConfirmationPromise(chainChangeConfirmationPromise: PendingChainChangeConfirmationPromise | undefined) {
 	if (chainChangeConfirmationPromise === undefined) return await browserStorageLocalRemove('chainChangeConfirmationPromise')
-	const tabId = chainChangeConfirmationPromise.request.uniqueRequestIdentifier.requestSocket.tabId
-	return await runWithSignerSelectionGate(tabId, async () => await browserStorageLocalSet({ chainChangeConfirmationPromise }))
+	return await browserStorageLocalSet({ chainChangeConfirmationPromise })
 }
 
 export const getFetchSimulationStackRequestPromise = async() => (await browserStorageLocalGet('fetchSimulationStackRequestPromise'))?.fetchSimulationStackRequestPromise ?? undefined

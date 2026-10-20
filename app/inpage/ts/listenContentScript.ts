@@ -1,7 +1,6 @@
 const contentScriptListenerGlobalKey = Symbol.for('TheInterceptor.listenContentScript')
 
-function listenContentScript(connectionName: string | undefined, diagnosticsSource: 'content-script' | 'document-start') {
-	const INTERCEPTOR_BRIDGE_PORT_MESSAGE = 'interceptor_bridge_port'
+function listenContentScript(connectionName: string | undefined, diagnosticsSource: 'content-script' | 'document-start', bridgeSecret: string) {
 	const INTERCEPTOR_BRIDGE_REQUEST_MESSAGE = 'interceptor_bridge_request'
 	const INTERCEPTOR_BRIDGE_INITIALIZED_MESSAGE = 'interceptor_bridge_initialized'
 	const INTERCEPTOR_BRIDGE_RECONNECTED_MESSAGE = 'interceptor_bridge_reconnected'
@@ -289,32 +288,42 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 		}
 	}
 
-	globalThis.addEventListener('message', (messageEvent: MessageEvent<unknown>) => {
-		if (
-			inpagePort !== undefined
-			|| (messageEvent.source !== null && messageEvent.source !== window)
-			|| typeof messageEvent.data !== 'object'
-			|| messageEvent.data === null
-			|| !('type' in messageEvent.data)
-			|| messageEvent.data.type !== INTERCEPTOR_BRIDGE_PORT_MESSAGE
-			|| !('bridgeCapability' in messageEvent.data)
-			|| !isUuid(messageEvent.data.bridgeCapability)
-		) return
-		const port = messageEvent.ports[0]
-		if (port === undefined) {
-			reportInterceptorError(createForwardedDiagnosticsFromRaw(diagnosticsSource, 'connect inpage bridge', 'Missing inpage MessagePort', messageEvent.data, getForwardedDiagnosticsRequestContext(messageEvent.data)))
-			return
-		}
-		// Both scripts run at document_start. The inpage side retains the opposite MessagePort endpoint in a closure, so page code that observes this transferred endpoint can only send toward the inpage provider, not toward the extension. Pinning every request to this session capability also prevents a later page message or replacement port from being treated as the established bridge.
-		inpageBridgeCapability = messageEvent.data.bridgeCapability
+	const receivePrivateBridge = (event: Event) => {
+		if (inpagePort !== undefined || !('data' in event) || typeof event.data !== 'string' || !('ports' in event) || !Array.isArray(event.ports)) return
+		const [bootstrapSecret, bridgeCapability] = event.data.split(':')
+		if (bootstrapSecret !== bridgeSecret || !isUuid(bridgeCapability)) return
+		const port: unknown = event.ports[0]
+		if (!(port instanceof MessagePort)) return
 		inpagePort = port
-		inpagePort.onmessage = (portMessageEvent: MessageEvent<unknown>) => forwardInpageMessageToBackground(portMessageEvent.data)
-		inpagePort.postMessage({
-			type: INTERCEPTOR_BRIDGE_INITIALIZED_MESSAGE,
-			bridgeCapability: inpageBridgeCapability,
-			contentScriptCapability,
-		})
-	})
+		inpageBridgeCapability = bridgeCapability
+		port.onmessage = (message: MessageEvent<unknown>) => forwardInpageMessageToBackground(message.data)
+		port.postMessage({ type: INTERCEPTOR_BRIDGE_INITIALIZED_MESSAGE, bridgeCapability: inpageBridgeCapability, contentScriptCapability })
+		event.preventDefault()
+	}
+
+	const observedRoots = new WeakSet<object>()
+	const preparePrivateBridge = () => {
+		if (inpagePort !== undefined) return true
+		for (const host of Array.from(document.querySelectorAll('[data-interceptor-bridge]'))) {
+			let root: unknown
+			if ('openOrClosedShadowRoot' in host) {
+				// Firefox exposes closed roots directly on the content-script Xray wrapper.
+				root = host.openOrClosedShadowRoot
+			} else {
+				const dom: unknown = Reflect.get(browser, 'dom')
+				if (typeof dom !== 'object' || dom === null) throw new Error('The private bridge requires the extension DOM API')
+				const openRoot: unknown = Reflect.get(dom, 'openOrClosedShadowRoot')
+				if (typeof openRoot !== 'function') throw new Error('The private bridge requires access to closed shadow roots')
+				root = Reflect.apply(openRoot, dom, [host])
+			}
+			if (typeof root !== 'object' || root === null || observedRoots.has(root)) continue
+			const addListener: unknown = Reflect.get(root, 'addEventListener')
+			if (typeof addListener !== 'function') continue
+			Reflect.apply(addListener, root, ['interceptor_private_bridge', receivePrivateBridge])
+			observedRoots.add(root)
+		}
+		return inpagePort !== undefined
+	}
 
 	connect = () => {
 		if (reconnectTimer !== undefined) {
@@ -433,6 +442,7 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 	} catch (error: unknown) {
 		console.error(error)
 	}
+	return preparePrivateBridge
 }
 
 function registerContentScriptListener() {

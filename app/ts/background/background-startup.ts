@@ -1,3 +1,4 @@
+import { initializeInpageBridge } from './inpageBridgeBootstrap.js'
 import { createSafeAppsCompatibilityFeature, initializeSafeAppsCompatibility } from './safeAppsCompatibilityCoordinator.js'
 import 'webextension-polyfill'
 import { getSettings, updateKnownWebsiteMetadata } from './settings.js'
@@ -391,7 +392,8 @@ browser.tabs.onUpdated.addListener(onTabUpdated)
 browser.runtime.onConnect.addListener((port) => catchAllErrorsAndCall(async () => {
 	return await onContentScriptConnected(waitForBackgroundStartup, port, websiteTabConnections)
 }))
-browser.runtime.onMessage.addListener((message: unknown) => Promise.resolve(catchAllErrorsAndCall(async () => {
+browser.runtime.onMessage.addListener((message: unknown, sender: browser.runtime.MessageSender) => Promise.resolve(catchAllErrorsAndCall(async () => {
+	if (typeof message === 'object' && message !== null && 'method' in message && message.method === 'initialize_inpage_bridge') return await initializeInpageBridge(message, sender)
 	const { simulationServicesOwner } = await waitForBackgroundStartup()
 	const settings = await getSettings()
 	return await popupMessageHandler(websiteTabConnections, simulationServicesOwner, message, settings, rpcConnectionStatusPublisher.publishRpcConnectionStatus)

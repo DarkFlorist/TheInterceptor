@@ -5,8 +5,7 @@ import { websiteSocketToString } from './backgroundUtils.js'
 import { serialize } from '../types/wire-types.js'
 import { isIgnorablePortLifecycleError } from './contentScriptPortLifecycle.js'
 import { attemptDeliveryAfterManifestV2Reconnect, attemptSocketDeliveryAfterManifestV2Reconnect } from './manifestV2Reconnect.js'
-import { socketCanExecuteWithSelectedSigner } from './signerExecutionAuthority.js'
-import { METAMASK_ERROR_NOT_AUTHORIZED } from '../utils/constants.js'
+import { authorizeSignerForward, socketCanExecuteWithSelectedSigner } from './signerExecutionAuthority.js'
 
 const isSignerTouchingCallback = (message: SubscriptionReplyOrCallBack) => message.method === 'request_signer_to_eth_requestAccounts'
 	|| message.method === 'request_signer_to_eth_accounts'
@@ -29,16 +28,8 @@ function postMessageToPortIfConnected(port: browser.runtime.Port, message: Inter
 
 export function replyToInterceptedRequest(websiteTabConnections: WebsiteTabConnections, message: InterceptedRequestForward) {
 	if (message.type === 'doNotReply') return
-	const authorizedMessage = message.type === 'forwardToSigner' && !socketCanExecuteWithSelectedSigner(message.uniqueRequestIdentifier.requestSocket)
-		? {
-			...message,
-			type: 'result' as const,
-			error: {
-				code: METAMASK_ERROR_NOT_AUTHORIZED,
-				message: 'The selected signer provider is not ready for this frame. Retry the request after wallet synchronization completes.',
-			},
-		}
-		: message
+	// Revalidate after asynchronous confirmation: the tab's selected signer can change while the user considers a request.
+	const authorizedMessage = authorizeSignerForward(message)
 	const tabConnection = websiteTabConnections.get(authorizedMessage.uniqueRequestIdentifier.requestSocket.tabId)
 	const identifier = websiteSocketToString(authorizedMessage.uniqueRequestIdentifier.requestSocket)
 	if (tabConnection === undefined) return false

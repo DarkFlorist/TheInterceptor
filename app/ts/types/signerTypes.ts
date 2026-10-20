@@ -1,5 +1,5 @@
 import * as funtypes from 'funtypes'
-import { internalSignerStatuses } from '../utils/signerIdentity.js'
+import { isEip6963ProviderUuid, isEip6963ProviderName, isEip6963ProviderIcon, isEip6963ProviderRdns } from '../utils/eip6963ProviderInfo.js'
 import { EthereumAddress, EthereumQuantity } from './wire-types.js'
 
 export type SignerName = funtypes.Static<typeof SignerName>
@@ -17,12 +17,10 @@ export const SignerName = funtypes.Union(
 
 export type EIP6963ProviderInfo = funtypes.Static<typeof EIP6963ProviderInfo>
 export const EIP6963ProviderInfo = funtypes.ReadonlyObject({
-	uuid: funtypes.String.withConstraint((value) => /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)),
-	name: funtypes.String.withConstraint((value) => value.length > 0 && value.length <= 128 && !internalSignerStatuses.has(value)),
-	icon: funtypes.String.withConstraint((value) => value.length > 0 && value.length <= 131_072),
-	rdns: funtypes.String.withConstraint((value) => value.length > 0
-		&& value.length <= 255
-		&& /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(value)),
+	uuid: funtypes.String.withConstraint(isEip6963ProviderUuid),
+	name: funtypes.String.withConstraint(isEip6963ProviderName),
+	icon: funtypes.String.withConstraint(isEip6963ProviderIcon),
+	rdns: funtypes.String.withConstraint(isEip6963ProviderRdns),
 })
 
 export type SignerPreference = funtypes.Static<typeof SignerPreference>

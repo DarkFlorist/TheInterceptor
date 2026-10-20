@@ -1,3 +1,4 @@
+import { runWithSignerSelectionGate } from '../signerSelectionLease.js'
 import type { MessageConfirmationRequest, TransactionConfirmationRequest } from '../../types/confirmationRequest.js'
 import { SafeMessage } from '../../safe/safeMessage.js'
 import { isSafeMessageCoSignRequest } from '../../safe/safeRequestPolicy.js'
@@ -699,7 +700,7 @@ export async function openConfirmTransactionDialogForMessage(
 				signedMessageTransaction,
 				...(safeMessageCoSignSnapshot === undefined ? {} : { safeMessageCoSignSnapshot }),
 			}
-			await appendPendingTransactionOrMessage(pendingMessage)
+			await runWithSignerSelectionGate(pendingMessage.uniqueRequestIdentifier.requestSocket.tabId, async () => await appendPendingTransactionOrMessage(pendingMessage))
 			await updateConfirmTransactionView(ethereumClientService, tokenPriceService)
 
 			await updatePendingTransactionOrMessage(pendingMessage.uniqueRequestIdentifier, async (message) => {
@@ -815,7 +816,7 @@ export async function openConfirmTransactionDialogForTransaction(
 				...(safeTransaction === undefined ? {} : { safeTransaction }),
 				...(pendingSafeFields ?? {}),
 			}
-			await appendPendingTransactionOrMessage(pendingTransaction)
+			await runWithSignerSelectionGate(pendingTransaction.uniqueRequestIdentifier.requestSocket.tabId, async () => await appendPendingTransactionOrMessage(pendingTransaction))
 			await updateConfirmTransactionView(ethereumClientService, tokenPriceService)
 			markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionSimulationStart)
 			const simulationResultsPromise = silenceChromeUnCaughtPromise(refreshConfirmTransactionSimulation(

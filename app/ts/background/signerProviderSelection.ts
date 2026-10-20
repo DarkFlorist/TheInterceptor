@@ -34,18 +34,17 @@ export async function beginSignerProviderSelection(request: ProviderMessage, web
 		: !isTopFrameId(frameId) && providerUuid !== undefined && getSignerExecutionTargetForSocket(socket, websiteOrigin) === providerUuid
 	if (!socketCanSelectProvider()) return undefined
 	const token = await acquireSignerSelectionLease(tabId, socket)
-	if (!socketCanSelectProvider()) {
-		releaseSignerSelectionLease(tabId, token)
-		return undefined
+	let transferredToCaller = false
+	try {
+		if (!socketCanSelectProvider()) return undefined
+		const hasPendingSignerWork = await tabHasPendingSignerWork(tabId)
+		if (!socketCanSelectProvider() || !signerSelectionLeaseIsActive(tabId, token) || hasPendingSignerWork) return undefined
+		transferredToCaller = true
+		return token
+	} finally {
+		// Storage and policy failures must release a lease whose token never reached the inpage caller.
+		if (!transferredToCaller) releaseSignerSelectionLease(tabId, token)
 	}
-	const hasPendingSignerWork = await tabHasPendingSignerWork(tabId)
-	if (!socketCanSelectProvider() || !signerSelectionLeaseIsActive(tabId, token)) {
-		releaseSignerSelectionLease(tabId, token)
-		return undefined
-	}
-	if (!hasPendingSignerWork) return token
-	releaseSignerSelectionLease(tabId, token)
-	return undefined
 }
 
 export function finishSignerProviderSelection(request: ProviderMessage) {

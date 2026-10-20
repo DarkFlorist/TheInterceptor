@@ -68,6 +68,18 @@ function createProviderMessage(method: string, params: readonly unknown[], tabId
 }
 
 describe('EIP-6963 signer provider selection', () => {
+	test('releases a selection lease when persistence fails before its token reaches the caller', async () => {
+		let failReads = true
+		installBrowserMock(async () => { if (failReads) throw new Error('Signer storage unavailable') })
+		const { beginSignerProviderSelection, finishSignerProviderSelection } = await import('../../app/ts/background/signerProviderSelection.js')
+		const request = createProviderMessage('begin_signer_provider_selection', [provider.uuid])
+		await assert.rejects(beginSignerProviderSelection(request, 'app.example', true, 0), /Signer storage unavailable/)
+		failReads = false
+		const token = await beginSignerProviderSelection(request, 'app.example', true, 0)
+		if (token === undefined) throw new Error('The failed selection retained its lease')
+		finishSignerProviderSelection(createProviderMessage('finish_signer_provider_selection', [token]))
+	})
+
 	test('keeps active signer execution targets isolated per tab while sharing the site preference', async () => {
 		installBrowserMock()
 		const secondProvider = {
@@ -608,7 +620,7 @@ describe('EIP-6963 signer provider selection', () => {
 		const { storageState } = installBrowserMock()
 		const { beginSignerProviderSelection, finishSignerProviderSelection } = await import('../../app/ts/background/signerProviderSelection.js')
 		const { setChainChangeConfirmationPromise } = await import('../../app/ts/background/storageVariables.js')
-		const { registerTopSignerDocument } = await import('../../app/ts/background/signerSelectionLease.js')
+		const { registerTopSignerDocument, runWithSignerSelectionGate } = await import('../../app/ts/background/signerSelectionLease.js')
 		const { defaultRpcs } = await import('../../app/ts/background/settings.js')
 		const beginRequest = createProviderMessage('begin_signer_provider_selection', [provider.uuid])
 		const token = await beginSignerProviderSelection(beginRequest, 'app.example', true, 0)
@@ -624,7 +636,7 @@ describe('EIP-6963 signer provider selection', () => {
 			simulationMode: false,
 		}
 		let pendingWriteFinished = false
-		const pendingWrite = setChainChangeConfirmationPromise(pendingChainChange).then(() => { pendingWriteFinished = true })
+		const pendingWrite = runWithSignerSelectionGate(7, async () => await setChainChangeConfirmationPromise(pendingChainChange)).then(() => { pendingWriteFinished = true })
 		await new Promise((resolve) => setTimeout(resolve, 0))
 		assert.equal(pendingWriteFinished, false)
 		assert.equal(storageState.chainChangeConfirmationPromise, undefined)
