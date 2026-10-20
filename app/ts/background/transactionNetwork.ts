@@ -2,6 +2,7 @@ import type { EthereumClientService } from '../simulation/services/EthereumClien
 import type { PendingTransaction, PendingTransactionOrSignableMessage, SimulatedPendingTransaction } from '../types/accessRequest.js'
 import { METAMASK_ERROR_NOT_CONNECTED_TO_APPROPRIATE_CHAIN } from '../utils/constants.js'
 import { getSettings } from './settings.js'
+import { updateInterceptorTransactionStack, updateTransactionState } from './storageVariables.js'
 
 // A transaction is only prepared, simulated and visualized with the client of the network it was requested for. After a network switch its preview is kept unchanged, and approval is refused until the user switches back.
 export const isEthereumClientOnTransactionChain = (ethereum: EthereumClientService, pendingTransaction: PendingTransaction) => ethereum.getChainId() === pendingTransaction.requestedChainId
@@ -29,15 +30,23 @@ function getTransactionNetworkError(activeChainId: bigint, ethereum: EthereumCli
 
 export const getTransactionNetworkApprovalError = async (ethereum: EthereumClientService, pendingTransaction: PendingTransaction) => getTransactionNetworkError((await getSettings()).activeRpcNetwork.chainId, ethereum, pendingTransaction)
 
-type NetworkCheckedCommit<T> = { readonly committed: true, readonly result: T } | { readonly committed: false, readonly refusal: TransactionNetworkError }
+export type RequestedNetworkCommit<T> = { readonly committed: true, readonly result: T } | { readonly committed: false, readonly refusal: TransactionNetworkError }
 
-// The write or delivery a commit already started. startCommit is synchronous, so it cannot await before returning; it must also start its write or delivery before it returns, rather than deferring it inside a promise that awaits first, which no type can rule out. Each commit site passes a function that calls its write or delivery directly, and the test 'a network-checked commit starts in the same turn as its network check' checks that this guard calls it in the same turn as the check.
-export type StartedCommit<T> = { readonly started: Promise<T> | T }
-
-// The last step before a transaction is forwarded to the signer, added to the simulation stack or stored in a Gnosis Safe stack, so a network switch either finished before the check or applies after the commit posted its request or queued its storage update. This guarantees that the Interceptor's active network, its client and the stored preview match the requested network at every commit or delivery attempt; it cannot guarantee the network an external wallet signs on, because the forwarded request carries no chain id and a wallet can switch networks before the Interceptor learns of it. Signable messages carry no requested network, so they are committed unchecked.
-export async function commitOnRequestedNetwork<T>(ethereum: EthereumClientService, pending: PendingTransactionOrSignableMessage, startCommit: () => StartedCommit<T>): Promise<NetworkCheckedCommit<T>> {
+// Reads the active network and returns the synchronous check against it, which a guarded write or delivery calls in the same synchronous step in which it starts. Passing this check means the Interceptor's active network, its client and the stored preview match the requested network when the write or delivery starts; it cannot tell which network an external wallet signs on, because the forwarded request carries no chain id and a wallet can switch networks before the Interceptor learns of it. Signable messages carry no requested network, so they always pass.
+export async function readRequestedNetworkCheck(ethereum: EthereumClientService, pending: PendingTransactionOrSignableMessage): Promise<() => TransactionNetworkError | undefined> {
 	const activeChainId = (await getSettings()).activeRpcNetwork.chainId
-	const refusal = pending.type === 'Transaction' ? getTransactionNetworkError(activeChainId, ethereum, pending) : undefined
-	if (refusal !== undefined) return { committed: false, refusal }
-	return { committed: true, result: await startCommit().started }
+	return () => pending.type === 'Transaction' ? getTransactionNetworkError(activeChainId, ethereum, pending) : undefined
 }
+
+// Only this module's own writes are passed here, so a caller of the guarded writes below supplies data alone and has no code between the check and the queued write.
+async function startOnRequestedNetwork<T>(ethereum: EthereumClientService, pending: PendingTransaction, start: () => Promise<T>): Promise<RequestedNetworkCommit<T>> {
+	const check = await readRequestedNetworkCheck(ethereum, pending)
+	const refusal = check()
+	if (refusal !== undefined) return { committed: false, refusal }
+	return { committed: true, result: await start() }
+}
+
+// Queues the update on the transaction state lock in the same synchronous step as the passed check, so the stack reset of a later network switch, which takes the same lock, is applied after it. The update itself runs later, under the lock, and is synchronous.
+export const updateTransactionStateOnRequestedNetwork = async (ethereum: EthereumClientService, pending: PendingTransaction, update: Parameters<typeof updateTransactionState>[0]) => await startOnRequestedNetwork(ethereum, pending, () => updateTransactionState(update))
+
+export const updateInterceptorTransactionStackOnRequestedNetwork = async (ethereum: EthereumClientService, pending: PendingTransaction, update: Parameters<typeof updateInterceptorTransactionStack>[0]) => await startOnRequestedNetwork(ethereum, pending, () => updateInterceptorTransactionStack(update))

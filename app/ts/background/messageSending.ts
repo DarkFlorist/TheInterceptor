@@ -5,6 +5,9 @@ import { websiteSocketToString } from './backgroundUtils.js'
 import { serialize } from '../types/wire-types.js'
 import { isIgnorablePortLifecycleError } from './contentScriptPortLifecycle.js'
 import { attemptDeliveryAfterManifestV2Reconnect, attemptSocketDeliveryAfterManifestV2Reconnect } from './manifestV2Reconnect.js'
+import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
+import type { PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
+import { readRequestedNetworkCheck, type RequestedNetworkCommit, type TransactionNetworkError } from './transactionNetwork.js'
 
 function postMessageToPortIfConnected(port: browser.runtime.Port, message: InterceptorMessageToInpage) {
 	try {
@@ -42,15 +45,14 @@ export async function replyToInterceptedRequestAfterManifestV2Reconnect(websiteT
 	return await attemptDeliveryAfterManifestV2Reconnect(websiteTabConnections, message, () => replyToInterceptedRequest(websiteTabConnections, message))
 }
 
-type GuardedDeliveryAttempt<Refusal> = { readonly committed: true, readonly result: boolean | undefined } | { readonly committed: false, readonly refusal: Refusal }
-
-// Delivers like replyToInterceptedRequestAfterManifestV2Reconnect, but runs every delivery attempt, including the retry after a Manifest V2 reconnect, through guardAttempt, which either makes the attempt or refuses it. A refused attempt ends the delivery and its refusal is returned.
-export async function replyToInterceptedRequestAfterManifestV2ReconnectWithGuard<Refusal>(websiteTabConnections: WebsiteTabConnections, message: InterceptedRequestForward, guardAttempt: (deliver: () => boolean | undefined) => Promise<GuardedDeliveryAttempt<Refusal>>): Promise<GuardedDeliveryAttempt<Refusal>> {
-	const refusals: Refusal[] = []
+// Forwards a request to the signer like replyToInterceptedRequestAfterManifestV2Reconnect, but calls the requested-network check in the same synchronous step as every delivery attempt, including the retry after a Manifest V2 reconnect, which can outlast a network switch. A refused attempt ends the delivery and its refusal is returned.
+export async function forwardToSignerOnRequestedNetwork(websiteTabConnections: WebsiteTabConnections, ethereum: EthereumClientService, pending: PendingTransactionOrSignableMessage, message: InterceptedRequestForward): Promise<RequestedNetworkCommit<boolean | undefined>> {
+	const refusals: TransactionNetworkError[] = []
 	const delivered = await attemptDeliveryAfterManifestV2Reconnect(websiteTabConnections, message, async () => {
-		const attempt = await guardAttempt(() => replyToInterceptedRequest(websiteTabConnections, message))
-		if (attempt.committed) return attempt.result
-		refusals.push(attempt.refusal)
+		const check = await readRequestedNetworkCheck(ethereum, pending)
+		const refusal = check()
+		if (refusal === undefined) return replyToInterceptedRequest(websiteTabConnections, message)
+		refusals.push(refusal)
 		// Only a false result makes the reconnect helper retry, so a refused attempt ends the delivery.
 		return undefined
 	})

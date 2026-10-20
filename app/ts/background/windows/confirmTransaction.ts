@@ -16,7 +16,7 @@ import { captureSimulationSnapshot, getUpdatedSimulationState } from '../simulat
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getRpcConnectionStatus, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
 import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
-import { replyToInterceptedRequestAfterManifestV2Reconnect, replyToInterceptedRequestAfterManifestV2ReconnectWithGuard } from '../messageSending.js'
+import { forwardToSignerOnRequestedNetwork, replyToInterceptedRequestAfterManifestV2Reconnect } from '../messageSending.js'
 import { attemptQueuedTerminalReplyDelivery, queueTerminalReply, queueTerminalReplyAndAttemptDelivery } from '../terminalReplyDelivery.js'
 import { stringToBytes, keccak256 } from '../../utils/ethereumPrimitives.js'
 import { EthereumBytes32, EthereumQuantity, serialize } from '../../types/wire-types.js'
@@ -46,7 +46,7 @@ import { getSafePendingFlow } from '../../safe/safePendingFlow.js'
 import { persistUnsignedSafeTransaction, resolveSafeSignerReply } from '../safeConfirmationPersistence.js'
 import { getWalletSelectedAccount } from '../../utils/activeAddressSelection.js'
 import { createSafeSignerErrorStatus } from '../safeSignerErrors.js'
-import { commitOnRequestedNetwork, getTransactionNetworkApprovalError, isEthereumClientOnTransactionChain, type TransactionNetworkError } from '../transactionNetwork.js'
+import { getTransactionNetworkApprovalError, isEthereumClientOnTransactionChain, type TransactionNetworkError, updateInterceptorTransactionStackOnRequestedNetwork } from '../transactionNetwork.js'
 
 const pendingConfirmationSemaphore = new Semaphore(1)
 const pendingNoResponseRetryTimers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -395,7 +395,7 @@ async function resolveStoredPendingTransactionOrMessage(ethereum: EthereumClient
 		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'WaitingForSigner' } }))
 		await updateConfirmTransactionView(ethereum, tokenPriceService)
 		// The forwarded parameters carry no chain id, so the network is checked once more right before every attempt to post the request to the wallet.
-		const forwarding = await replyToInterceptedRequestAfterManifestV2ReconnectWithGuard(websiteTabConnections, { ...signerFacingRequest, type: 'forwardToSigner', uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier }, async (deliver) => await commitOnRequestedNetwork(ethereum, pendingTransactionOrMessage, () => ({ started: deliver() })))
+		const forwarding = await forwardToSignerOnRequestedNetwork(websiteTabConnections, ethereum, pendingTransactionOrMessage, { ...signerFacingRequest, type: 'forwardToSigner', uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
 		if (!forwarding.committed) return await invalidateTransactionApproval(ethereum, tokenPriceService, confirmation.data.uniqueRequestIdentifier, forwarding.refusal)
 		if (forwarding.result) return true
 		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, {
@@ -450,10 +450,10 @@ async function resolveStoredPendingTransactionOrMessage(ethereum: EthereumClient
 			const signedTransaction = getSignedTransactionForSimulation(pendingTransactionOrMessage.transactionToSimulate)
 			const transaction = { ...pendingTransactionOrMessage.transactionToSimulate, signedTransaction }
 			// The stack update is queued right after the final network check, so the stack reset of a later network switch is queued after this transaction is added.
-			const addition = await commitOnRequestedNetwork(ethereum, pendingTransactionOrMessage, () => ({ started: updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => ({ operations: [
+			const addition = await updateInterceptorTransactionStackOnRequestedNetwork(ethereum, pendingTransactionOrMessage, (prevStack: InterceptorTransactionStack) => ({ operations: [
 				...prevStack.operations,
 				{ type: 'Transaction' as const, preSimulationTransaction: transaction}
-			] })) }))
+			] }))
 			if (!addition.committed) return await invalidateTransactionApproval(ethereum, tokenPriceService, confirmation.data.uniqueRequestIdentifier, addition.refusal)
 			await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService)
 			markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionStackAppended)

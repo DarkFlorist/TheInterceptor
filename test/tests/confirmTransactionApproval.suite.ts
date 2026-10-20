@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { setSystemTime, test } from 'bun:test'
-import { activeAddress, addressString, browserMock, createDisconnectedPort, createSafeAddressBookEntry, createSafeTx, createWebsitePort, EIP712Message, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, pendingTransaction, recipientAddress, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, simulator, uniqueRequestIdentifier } from './confirmTransactionTestHarness.js'
+import { activeAddress, addressString, browserMock, createDisconnectedPort, createSafeAddressBookEntry, createSafeStackFixture, createSafeTx, createWebsitePort, EIP712Message, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, pendingTransaction, recipientAddress, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, signedTransaction, simulator, uniqueRequestIdentifier } from './confirmTransactionTestHarness.js'
 import { createDeferredValue } from './backgroundEthAccountsTestHarness.js'
 import type { PendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
 import { SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
@@ -572,21 +572,35 @@ test('a network switch while the website connection is re-established keeps the 
 	assert.equal(pending.approvalStatus.code, METAMASK_ERROR_NOT_CONNECTED_TO_APPROPRIATE_CHAIN)
 })
 
-test('a network-checked commit starts in the same turn as its network check', async () => {
-	const { commitOnRequestedNetwork } = await import('../../app/ts/background/transactionNetwork.js')
-	let microtaskQueuedByCheckRan = false
-	// The network check reads the requested network, so this queues a microtask at the check; any await before the commit starts would let it run first.
-	const pending = { ...pendingTransaction, get requestedChainId() {
-		queueMicrotask(() => { microtaskQueuedByCheckRan = true })
+test('every guarded write and delivery starts in the same synchronous step as its network check', async () => {
+	const { updateInterceptorTransactionStackOnRequestedNetwork, updateTransactionStateOnRequestedNetwork } = await import('../../app/ts/background/transactionNetwork.js')
+	const { forwardToSignerOnRequestedNetwork } = await import('../../app/ts/background/messageSending.js')
+	await setUpTransactionApprovalTest(false)
+	let workAfterCheck: Promise<unknown> = Promise.resolve()
+	// The network check reads the requested network, so this queues work right after the check, which only runs after the write or delivery if that started in the same synchronous step.
+	const pendingWithWorkAfterCheck = (work: () => Promise<unknown>) => ({ ...pendingTransaction, get requestedChainId() {
+		queueMicrotask(() => { workAfterCheck = work() })
 		return fakeRpcNetwork.chainId
-	} }
-	let startedAfterAnAwait: boolean | undefined
+	} })
 
-	const commit = await commitOnRequestedNetwork(simulator.ethereum, pending, () => {
-		startedAfterAnAwait = microtaskQueuedByCheckRan
-		return { started: 'stored' }
-	})
+	// A stack reset queued right after the check, like the one of a network switch, is applied after the guarded update.
+	const stackOperation = { type: 'Transaction' as const, preSimulationTransaction: { ...pendingTransaction.transactionToSimulate, signedTransaction } }
+	const stackUpdate = await updateInterceptorTransactionStackOnRequestedNetwork(simulator.ethereum, pendingWithWorkAfterCheck(async () => await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))), () => ({ operations: [stackOperation] }))
+	await workAfterCheck
+	assert.equal(stackUpdate.committed, true)
+	assert.deepEqual((await modules.getInterceptorTransactionStack()).operations, [])
 
-	assert.deepEqual(commit, { committed: true, result: 'stored' })
-	assert.equal(startedAfterAnAwait, false)
+	const stateUpdate = await updateTransactionStateOnRequestedNetwork(simulator.ethereum, pendingWithWorkAfterCheck(async () => await modules.updateSafeTransactionStacks(() => [])), (previousState) => ({ ...previousState, safeTransactionStacks: [createSafeStackFixture([])] }))
+	await workAfterCheck
+	assert.equal(stateUpdate.committed, true)
+	assert.deepEqual(await modules.getSafeTransactionStacks(), [])
+
+	let checkWorkRan = false
+	let postedAfterCheckWork: boolean | undefined
+	const port = createWebsitePort(socket, 0, [], () => { postedAfterCheckWork = checkWorkRan })
+	const websiteTabConnections = new Map([[socket.tabId, { connections: { [modules.websiteSocketToString(socket)]: { port, socket, websiteOrigin: website.websiteOrigin, approved: true, wantsToConnect: true } } }]])
+	const forwarding = await forwardToSignerOnRequestedNetwork(websiteTabConnections, simulator.ethereum, pendingWithWorkAfterCheck(async () => { checkWorkRan = true }), { ...pendingTransaction.originalRequestParameters, type: 'forwardToSigner', uniqueRequestIdentifier })
+	await workAfterCheck
+	assert.deepEqual(forwarding, { committed: true, result: true })
+	assert.equal(postedAfterCheckWork, false)
 })
