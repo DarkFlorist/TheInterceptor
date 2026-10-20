@@ -343,7 +343,7 @@ test('routes a Safe co-signing request through the wallet-selected owner', async
 			/Unexpected Safe owner decoder failure/u,
 		)
 		await assert.rejects(
-			modules.resolveSafeSignerReply(simulator.ethereum, simulator.tokenPriceService, reviewedCoSignRequest, '0x1234'),
+			modules.resolveSafeSignerReply(simulator.ethereum, reviewedCoSignRequest, '0x1234'),
 			/Unexpected Safe owner decoder failure/u,
 		)
 	} finally {
@@ -773,7 +773,7 @@ test('signs Safe transaction typed data normally when the active signing address
 		pendingChanged: false,
 		signerFacingRequest: undefined,
 	})
-	assert.deepEqual(await modules.resolveSafeSignerReply(simulator.ethereum, simulator.tokenPriceService, pendingMessage, '0x1234'), { status: 'not-safe' })
+	assert.deepEqual(await modules.resolveSafeSignerReply(simulator.ethereum, pendingMessage, '0x1234'), { status: 'not-safe' })
 	assert.deepEqual(await getLatestUnexpectedError(), unexpectedErrorBeforeRequest)
 })
 

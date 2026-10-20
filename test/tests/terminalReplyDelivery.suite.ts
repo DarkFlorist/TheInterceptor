@@ -3,7 +3,7 @@ import { test } from 'bun:test'
 import { getLatestUnexpectedError } from '../../app/ts/background/storageVariables.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../app/ts/utils/constants.js'
-import { activeAddress, browserMock, createDisconnectedPort, createRecordingPort, isRecord, modules, pendingTransaction, signedTransaction, simulator, uniqueRequestIdentifier, waitForPendingTransactionsToClear, withSilencedConsole } from './confirmTransactionTestHarness.js'
+import { activeAddress, browserMock, createDisconnectedPort, createRecordingPort, createSafeAddressBookEntry, createSafeTx, EIP712Message, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, pendingTransaction, recipientAddress, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, signedTransaction, simulator, uniqueRequestIdentifier, waitForPendingTransactionsToClear, withSilencedConsole } from './confirmTransactionTestHarness.js'
 
 test('failed signer delivery keeps the request and replaces the waiting spinner with a wallet-neutral error', async () => {
 	await browser.storage.local.set({ simulationMode: false })
@@ -716,7 +716,7 @@ test('startup pruning removes terminal replies for missing tabs and preserves li
 })
 
 
-// Chrome refuses to focus or close tabs and windows while the user drags a tab. Missing tabs and windows are already ignored by the browser helpers, so a failure like this is what reaches the confirmation window cleanup.
+// Chrome refuses to focus, open or close tabs and windows while the user drags a tab. Missing tabs and windows are already ignored by the browser helpers, so a failure like this is what reaches the confirmation window cleanup.
 const TAB_DRAG_ERROR_MESSAGE = 'Tabs cannot be edited right now (user may be dragging a tab).'
 
 function connectRequestingWebsite() {
@@ -819,6 +819,87 @@ test('approving a simulated message signature answers the website before the win
 	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
 	assert.deepEqual((await modules.getInterceptorTransactionStack()).operations.map((operation) => operation.type), ['Message'])
 	await assertConfirmationViewFailureWasReported()
+})
+
+// Fails opening the simulation stack window, which the cleanup does after a Gnosis Safe proposal is stored, and records how many replies the website had received by then.
+function failOpeningTheSimulationStackWindow(postedMessages: readonly unknown[]) {
+	const repliesReceivedBeforeCleanup: number[] = []
+	browserMock.setWindowCreateHandler(async () => {
+		repliesReceivedBeforeCleanup.push(getRepliesToWebsite(postedMessages).length)
+		throw new Error(TAB_DRAG_ERROR_MESSAGE)
+	})
+	return repliesReceivedBeforeCleanup
+}
+
+// A signing-mode Gnosis Safe proposal from the requesting website, reviewed against a Safe whose only owner is the test owner.
+async function storeSafeProposalRequest(approvalStatus: { readonly status: 'WaitingForUser' } | { readonly status: 'WaitingForSigner' }) {
+	fakeSafeContract.owners = [safeTestOwnerAddress]
+	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, { to: recipientAddress, value: 0n, input: new Uint8Array() }, 0n)
+	const safeTxHash = BigInt(getSafeTxHash(safeTx))
+	await modules.updateSafeTransactionStacks(() => [])
+	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({ simulationMode: false, rpcNetwork: fakeRpcNetwork, activeSigningSafeAddress: activeAddress })
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [{
+		...pendingTransaction,
+		simulationMode: false,
+		approvalStatus,
+		safeTransaction: {
+			safeAddress: activeAddress,
+			safeSignerAddress: safeTestOwnerAddress,
+			safeVersion: '1.4.1',
+			threshold: 2n,
+			reviewedSafeState: { version: '1.4.1', nonce: 0n, owners: [safeTestOwnerAddress], threshold: 2n },
+			safeTxHash,
+			safeTx,
+		},
+	}] })
+	return { safeTx, safeTxHash }
+}
+
+async function assertSafeProposalWasStoredAndAnswered(postedMessages: readonly unknown[], safeTxHash: bigint) {
+	const [reply] = getRepliesToWebsite(postedMessages)
+	if (!isRecord(reply)) throw new Error('Missing reply to the website')
+	assert.equal(reply.method, 'eth_sendTransaction')
+	assert.equal(reply.result, modules.EthereumBytes32.serialize(safeTxHash))
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+	const [storedStack] = await modules.getSafeTransactionStacks()
+	assert.equal(storedStack?.transactions[0]?.safeTxHash, safeTxHash)
+	await assertConfirmationViewFailureWasReported()
+	return storedStack?.transactions[0]
+}
+
+test('adding a Gnosis Safe proposal to its stack answers the website with the proposal hash before opening the stack window, whose failure is reported', async () => {
+	const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
+	const { safeTxHash } = await storeSafeProposalRequest({ status: 'WaitingForUser' })
+	const repliesReceivedBeforeCleanup = failOpeningTheSimulationStackWindow(postedMessages)
+
+	const delivered = await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+		method: 'popup_confirmDialog',
+		data: { action: 'addToSafeStack', uniqueRequestIdentifier },
+	}))
+
+	assert.equal(delivered, true)
+	assert.deepEqual(repliesReceivedBeforeCleanup, [1])
+	const storedProposal = await assertSafeProposalWasStoredAndAnswered(postedMessages, safeTxHash)
+	assert.deepEqual(storedProposal?.signatures, [])
+})
+
+test('a Gnosis Safe owner signature answers the website with the proposal hash before opening the stack window, whose failure is reported', async () => {
+	const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
+	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeSimulationSignerAddress: safeTestOwnerAddress })])
+	const { safeTx, safeTxHash } = await storeSafeProposalRequest({ status: 'WaitingForSigner' })
+	const signature = await safeTestOwnerAccount.signTypedData(EIP712Message.parse(safeTxToTypedDataJson(safeTx)))
+	const repliesReceivedBeforeCleanup = failOpeningTheSimulationStackWindow(postedMessages)
+
+	const delivered = await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+		method: 'popup_confirmDialog',
+		data: { action: 'signerIncluded', signerReply: signature, uniqueRequestIdentifier },
+	}))
+
+	assert.equal(delivered, true)
+	assert.deepEqual(repliesReceivedBeforeCleanup, [1])
+	const storedProposal = await assertSafeProposalWasStoredAndAnswered(postedMessages, safeTxHash)
+	assert.equal(storedProposal?.signatures[0]?.signer, safeTestOwnerAddress)
 })
 
 await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))

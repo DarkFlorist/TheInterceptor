@@ -44,13 +44,16 @@ import { prepareSafeTransactionConfirmation } from '../safeTransactionConfirmati
 import { createSafeMessageCoSignSnapshot, getPendingSafeSignerAddress, getSafeSignerMismatchApprovalStatus, isExpectedSafeMessageCoSignSnapshotFailure, isSafeMessageAccountMismatchFailure, isSafeSignerSelectionFailure, resolveSafeConfirmation, SAFE_SIGNER_SELECTION_ERROR_CODE, type RefreshedSafeSignerSelection } from '../safeConfirmationResolver.js'
 import { createSafeOffChainMessageSnapshot, refreshAndPersistSafeSignerSelection } from '../safeSignerSelectionRefresh.js'
 import { getSafePendingFlow } from '../../safe/safePendingFlow.js'
-import { persistUnsignedSafeTransaction, resolveSafeSignerReply } from '../safeConfirmationPersistence.js'
+import { persistUnsignedSafeTransaction, resolveSafeSignerReply, showStoredSafeProposal } from '../safeConfirmationPersistence.js'
 import { getWalletSelectedAccount } from '../../utils/activeAddressSelection.js'
 import { createSafeSignerErrorStatus } from '../safeSignerErrors.js'
 
 const pendingConfirmationSemaphore = new Semaphore(1)
 const pendingNoResponseRetryTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const NO_RESPONSE_RETRY_DELAY_MS = 50
+
+// How resolving a request changed the simulation stack, which decides the view work done once the website has its answer.
+type SimulationStackChange = 'changed' | 'unchanged' | 'safeProposalStored'
 
 async function refreshDirectSafeExecutionSimulation(
 	ethereum: EthereumClientService,
@@ -314,10 +317,11 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 	}
 	const signerFacingRequest: SendTransactionParams | SendRawTransactionParams | SignMessageParams = safeResolution.signerFacingRequest
 		?? pendingTransactionOrMessage.originalRequestParameters
-	// Updates the confirmation window once the request has left the confirmation queue: the simulation stack view when approval changed the stack, and the queue view, which focuses the website's tab or closes the window once the queue is empty. The website's answer never waits for this view work, so a failure in it is reported instead of reaching the caller.
-	const updateViewAfterPendingRequestRemoved = async (simulationStack: 'changed' | 'unchanged') => {
+	// Updates the confirmation window once the request has left the confirmation queue: the simulation stack view when approval changed the stack, the simulation stack window for a stored Gnosis Safe proposal, and the queue view, which focuses the website's tab or closes the window once the queue is empty. The website's answer never waits for this view work, so a failure in it is reported instead of reaching the caller.
+	const updateViewAfterPendingRequestRemoved = async (simulationStack: SimulationStackChange) => {
 		try {
 			if (simulationStack === 'changed') await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService)
+			if (simulationStack === 'safeProposalStored') await showStoredSafeProposal(ethereum, tokenPriceService)
 			if ((await getPendingTransactionsAndMessages()).length === 0) await tryFocusingTabOrWindow({ type: 'tab', id: pendingTransactionOrMessage.uniqueRequestIdentifier.requestSocket.tabId })
 			if (!(await updateConfirmTransactionView(ethereum, tokenPriceService))) await closePopupOrTabById(pendingTransactionOrMessage.popupOrTabId)
 		} catch(error: unknown) {
@@ -329,14 +333,14 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 		await updateViewAfterPendingRequestRemoved('unchanged')
 	}
 	// The reply is queued and the request is removed from the confirmation queue, so after a restart at most the reply's delivery is left. The reply is delivered before the view work, which cannot hold it back.
-	const removePendingRequestAndDeliverTerminalReply = async (terminalReply: InterceptedRequestForward, simulationStack: 'changed' | 'unchanged') => {
+	const removePendingRequestAndDeliverTerminalReply = async (terminalReply: InterceptedRequestForward, simulationStack: SimulationStackChange) => {
 		await queueTerminalReply(terminalReply)
 		await removePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier)
 		const delivered = await attemptQueuedTerminalReplyDelivery(websiteTabConnections, terminalReply)
 		await updateViewAfterPendingRequestRemoved(simulationStack)
 		return delivered
 	}
-	const reply = async (message: { type: 'forwardToSigner' } | { type: 'result', error: { code: number, message: string } } | { type: 'result', result: unknown }, simulationStack: 'changed' | 'unchanged' = 'unchanged') => {
+	const reply = async (message: { type: 'forwardToSigner' } | { type: 'result', error: { code: number, message: string } } | { type: 'result', result: unknown }, simulationStack: SimulationStackChange = 'unchanged') => {
 		if (message.type === 'result' && !('error' in message)) {
 			if (pendingTransactionOrMessage.originalRequestParameters.method === 'eth_sendRawTransaction' || pendingTransactionOrMessage.originalRequestParameters.method === 'eth_sendTransaction') {
 				const terminalReply = { ...pendingTransactionOrMessage.originalRequestParameters, ...message, result: EthereumBytes32.parse(message.result), uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier }
@@ -354,7 +358,7 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 	}
 	if (confirmation.data.action === 'addToSafeStack') {
 		if (pendingTransactionOrMessage.approvalStatus.status === 'WaitingForSigner') return false
-		const safeReply = await persistUnsignedSafeTransaction(ethereum, tokenPriceService, pendingTransactionOrMessage)
+		const safeReply = await persistUnsignedSafeTransaction(ethereum, pendingTransactionOrMessage)
 		if (safeReply.status === 'error') {
 			await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (pending) => modifyObject(pending, {
 				approvalStatus: safeReply.approvalStatus,
@@ -362,7 +366,7 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 			await updateConfirmTransactionView(ethereum, tokenPriceService)
 			return false
 		}
-		if (safeReply.status === 'success') return reply({ type: 'result', result: safeReply.result })
+		if (safeReply.status === 'success') return reply({ type: 'result', result: safeReply.result }, safeReply.simulationStack)
 		return false
 	}
 	if (
@@ -397,7 +401,7 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 	if (confirmation.data.action === 'reject') return reply(formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User denied transaction signature'))
 	if (!pendingTransactionOrMessage.simulationMode) {
 		if (confirmation.data.action === 'signerIncluded') {
-			const safeReply = await resolveSafeSignerReply(ethereum, tokenPriceService, pendingTransactionOrMessage, confirmation.data.signerReply)
+			const safeReply = await resolveSafeSignerReply(ethereum, pendingTransactionOrMessage, confirmation.data.signerReply)
 			if (safeReply.status === 'error') {
 				await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (pending) => modifyObject(pending, {
 					approvalStatus: safeReply.approvalStatus,
@@ -405,7 +409,7 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 				await updateConfirmTransactionView(ethereum, tokenPriceService)
 				return false
 			}
-			if (safeReply.status === 'success') return reply({ type: 'result', result: safeReply.result })
+			if (safeReply.status === 'success') return reply({ type: 'result', result: safeReply.result }, safeReply.simulationStack)
 			return reply({ type: 'result', result: confirmation.data.signerReply })
 		}
 		await removePendingRequestAndUpdateView()

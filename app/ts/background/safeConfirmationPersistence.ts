@@ -18,7 +18,7 @@ import { getSafePendingFlow } from '../safe/safePendingFlow.js'
 
 export type SafeSignerReplyResolution =
 	| { readonly status: 'not-safe' }
-	| { readonly status: 'success', readonly result: string }
+	| { readonly status: 'success', readonly result: string, readonly simulationStack: 'safeProposalStored' | 'unchanged' }
 	| { readonly status: 'error', readonly approvalStatus: SafeSignerErrorStatus }
 
 const signerError = (message: string): SafeSignerReplyResolution => ({
@@ -28,13 +28,12 @@ const signerError = (message: string): SafeSignerReplyResolution => ({
 
 export async function resolveSafeSignerReply(
 	ethereum: EthereumClientService,
-	tokenPriceService: TokenPriceService,
 	pending: PendingTransactionOrSignableMessage,
 	signerReply: unknown,
 ): Promise<SafeSignerReplyResolution> {
 	const flow = getSafePendingFlow(pending)
 	if (flow?.kind === 'proposal' && flow.pending.transactionOrMessageCreationStatus === 'Simulated') {
-		return await persistSignedSafeTransaction(ethereum, tokenPriceService, flow.pending, flow.pending.safeTransaction, signerReply)
+		return await persistSignedSafeTransaction(ethereum, flow.pending, flow.pending.safeTransaction, signerReply)
 	}
 
 	if (
@@ -42,7 +41,7 @@ export async function resolveSafeSignerReply(
 		&& flow.pending.transactionOrMessageCreationStatus === 'Simulated'
 	) {
 		try {
-			return { status: 'success', result: await validateSafeMessageCoSignature(ethereum, flow.pending, signerReply) }
+			return { status: 'success', result: await validateSafeMessageCoSignature(ethereum, flow.pending, signerReply), simulationStack: 'unchanged' }
 		} catch (error) {
 			if (!isSafeContractValidationFailure(error) && !isSafeOwnerValidationFailure(error) && !isSafeSignerSelectionFailure(error)) throw error
 			return signerError(`Gnosis Safe co-signature was rejected: ${ getErrorMessage(error) ?? 'The signer returned an invalid Gnosis Safe signature.' }`)
@@ -78,7 +77,6 @@ async function prepareSafeProposalPersistence(
 
 async function persistSignedSafeTransaction(
 	ethereum: EthereumClientService,
-	tokenPriceService: TokenPriceService,
 	pendingTransaction: PendingSafeTransaction,
 	safeSigningRequest: SafeTransactionSigningRequest,
 	signerReply: unknown,
@@ -102,12 +100,11 @@ async function persistSignedSafeTransaction(
 		if (!isSafeContractValidationFailure(error) && !isSafeOwnerValidationFailure(error)) throw error
 		return signerError(`Gnosis Safe proposal or owner signature was rejected: ${ getErrorMessage(error) ?? 'The signer returned an invalid proposal signature.' }`)
 	}
-	return await persistSafeTransaction(ethereum, tokenPriceService, pendingTransaction, safeSigningRequest, safeSnapshot.state.nonce, [ownerSignature])
+	return await persistSafeTransaction(ethereum, pendingTransaction, safeSigningRequest, safeSnapshot.state.nonce, [ownerSignature])
 }
 
 async function persistSafeTransaction(
 	ethereum: EthereumClientService,
-	tokenPriceService: TokenPriceService,
 	pendingTransaction: PendingSafeTransaction,
 	safeSigningRequest: SafeTransactionSigningRequest,
 	currentSafeNonce: bigint,
@@ -187,21 +184,24 @@ async function persistSafeTransaction(
 		if (!isSafeContractValidationFailure(error)) throw error
 		return signerError(`Gnosis Safe proposal could not be persisted: ${ getErrorMessage(error) ?? 'The local Gnosis Safe proposal stack changed.' }`)
 	}
+	return { status: 'success', result: funtypes.String.parse(EthereumBytes32.serialize(safeSigningRequest.safeTxHash)), simulationStack: 'safeProposalStored' }
+}
+
+// Shows a proposal that was just stored in the Gnosis Safe stack: the simulation is refreshed with it and the simulation stack window opens. This is window work, so it runs only after the website has the proposal's hash.
+export async function showStoredSafeProposal(ethereum: EthereumClientService, tokenPriceService: TokenPriceService) {
 	await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { invalidateOldState: true })
 	await openPopupOrTab({ url: getHtmlFile('simulationStack') })
-	return { status: 'success', result: funtypes.String.parse(EthereumBytes32.serialize(safeSigningRequest.safeTxHash)) }
 }
 
 export async function persistUnsignedSafeTransaction(
 	ethereum: EthereumClientService,
-	tokenPriceService: TokenPriceService,
 	pending: PendingTransactionOrSignableMessage,
 ): Promise<SafeSignerReplyResolution> {
 	const flow = getSafePendingFlow(pending)
 	if (flow?.kind !== 'proposal' || flow.pending.transactionOrMessageCreationStatus !== 'Simulated') return { status: 'not-safe' }
 	try {
 		const safeSnapshot = await prepareSafeProposalPersistence(ethereum, flow.pending.safeTransaction)
-		return await persistSafeTransaction(ethereum, tokenPriceService, flow.pending, flow.pending.safeTransaction, safeSnapshot.state.nonce, [])
+		return await persistSafeTransaction(ethereum, flow.pending, flow.pending.safeTransaction, safeSnapshot.state.nonce, [])
 	} catch (error) {
 		if (!isSafeContractValidationFailure(error)) throw error
 		return signerError(`Gnosis Safe proposal could not be added to the stack: ${ getErrorMessage(error) ?? 'The local Gnosis Safe proposal stack changed.' }`)
