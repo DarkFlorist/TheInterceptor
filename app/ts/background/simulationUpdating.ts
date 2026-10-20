@@ -230,6 +230,7 @@ async function tryGetFailedTransactionPreview(ethereum: EthereumClientService, r
 /**
  * Attaches a freshly resolved failure preview to a confirmation that shows a transaction failure. Both the confirmation simulation and the confirmation metadata refresh attach previews only through this, so they share one error policy.
  * Undefined when a newer refresh aborted this one, so the caller drops this outdated failure like any cancelled refresh instead of letting it replace the newer refresh's stored result. The signal is checked rather than the lookup error because the lookup can also finish from cached metadata without noticing the abort.
+ * An address-book change does not abort a running simulation, so a simulation that resolved names before the change can still store them after the change's metadata refresh. Successful simulations store their names the same way. Catching a stored run up with address-book changes made while it ran is a concern of every confirmation run, not of this preview.
  */
 export async function withFailedTransactionPreviewUnlessCancelled<Failure extends { readonly data: object }>(ethereum: EthereumClientService, requestAbortController: AbortController | undefined, transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed, failure: Failure): Promise<Failure | undefined> {
 	try {
