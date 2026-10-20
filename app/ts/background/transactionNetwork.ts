@@ -1,7 +1,7 @@
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { PendingTransaction, PendingTransactionOrSignableMessage, SimulatedPendingTransaction } from '../types/accessRequest.js'
 import { METAMASK_ERROR_NOT_CONNECTED_TO_APPROPRIATE_CHAIN } from '../utils/constants.js'
-import { getSettings } from './settings.js'
+import { getActiveNetworkWrites, getSettings } from './settings.js'
 import { updateInterceptorTransactionStack, updateTransactionState } from './storageVariables.js'
 
 // A transaction is only prepared, simulated and visualized with the client of the network it was requested for. After a network switch its preview is kept unchanged, and approval is refused until the user switches back.
@@ -32,18 +32,28 @@ export const getTransactionNetworkApprovalError = async (ethereum: EthereumClien
 
 export type RequestedNetworkCommit<T> = { readonly committed: true, readonly result: T } | { readonly committed: false, readonly refusal: TransactionNetworkError }
 
-// Reads the active network and returns the synchronous check against it, which a guarded write or delivery calls in the same synchronous step in which it starts. Passing this check means the Interceptor's active network, its client and the stored preview match the requested network when the write or delivery starts; it cannot tell which network an external wallet signs on, because the forwarded request carries no chain id and a wallet can switch networks before the Interceptor learns of it. Signable messages carry no requested network, so they always pass.
-export async function readRequestedNetworkCheck(ethereum: EthereumClientService, pending: PendingTransactionOrSignableMessage): Promise<() => TransactionNetworkError | undefined> {
+// Whether a guarded write or delivery starts, is refused, or must read the active network again because a write of it was running when it was read, or started since.
+export type RequestedNetworkVerdict = { readonly verdict: 'start' } | { readonly verdict: 'refuse', readonly refusal: TransactionNetworkError } | { readonly verdict: 'readAgain' }
+
+// Reads the active network and returns the synchronous check against it, which a guarded write or delivery calls in the same synchronous step in which it starts. The check compares the counts of getActiveNetworkWrites, which every write of the active network updates, with those from before the read, so a 'start' verdict means that the network read is still the stored active network, and that it, the client and the stored preview match the requested network when the write or delivery starts. It cannot tell which network an external wallet signs on, because the forwarded request carries no chain id and a wallet can switch networks before the Interceptor learns of it. Signable messages carry no requested network, so they are never refused.
+export async function readRequestedNetworkCheck(ethereum: EthereumClientService, pending: PendingTransactionOrSignableMessage): Promise<() => RequestedNetworkVerdict> {
+	const writesBeforeRead = getActiveNetworkWrites()
 	const activeChainId = (await getSettings()).activeRpcNetwork.chainId
-	return () => pending.type === 'Transaction' ? getTransactionNetworkError(activeChainId, ethereum, pending) : undefined
+	return () => {
+		if (writesBeforeRead.started !== writesBeforeRead.finished || getActiveNetworkWrites().started !== writesBeforeRead.started) return { verdict: 'readAgain' }
+		const refusal = pending.type === 'Transaction' ? getTransactionNetworkError(activeChainId, ethereum, pending) : undefined
+		return refusal === undefined ? { verdict: 'start' } : { verdict: 'refuse', refusal }
+	}
 }
 
 // Only this module's own writes are passed here, so a caller of the guarded writes below supplies data alone and has no code between the check and the queued write.
 async function startOnRequestedNetwork<T>(ethereum: EthereumClientService, pending: PendingTransaction, start: () => Promise<T>): Promise<RequestedNetworkCommit<T>> {
-	const check = await readRequestedNetworkCheck(ethereum, pending)
-	const refusal = check()
-	if (refusal !== undefined) return { committed: false, refusal }
-	return { committed: true, result: await start() }
+	while (true) {
+		const check = await readRequestedNetworkCheck(ethereum, pending)
+		const verdict = check()
+		if (verdict.verdict === 'refuse') return { committed: false, refusal: verdict.refusal }
+		if (verdict.verdict === 'start') return { committed: true, result: await start() }
+	}
 }
 
 // Queues the update on the transaction state lock in the same synchronous step as the passed check, so the stack reset of a later network switch, which takes the same lock, is applied after it. The update itself runs later, under the lock, and is synchronous.

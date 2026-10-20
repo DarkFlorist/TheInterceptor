@@ -49,12 +49,16 @@ export async function replyToInterceptedRequestAfterManifestV2Reconnect(websiteT
 export async function forwardToSignerOnRequestedNetwork(websiteTabConnections: WebsiteTabConnections, ethereum: EthereumClientService, pending: PendingTransactionOrSignableMessage, message: InterceptedRequestForward): Promise<RequestedNetworkCommit<boolean | undefined>> {
 	const refusals: TransactionNetworkError[] = []
 	const delivered = await attemptDeliveryAfterManifestV2Reconnect(websiteTabConnections, message, async () => {
-		const check = await readRequestedNetworkCheck(ethereum, pending)
-		const refusal = check()
-		if (refusal === undefined) return replyToInterceptedRequest(websiteTabConnections, message)
-		refusals.push(refusal)
-		// Only a false result makes the reconnect helper retry, so a refused attempt ends the delivery.
-		return undefined
+		while (true) {
+			const check = await readRequestedNetworkCheck(ethereum, pending)
+			const verdict = check()
+			if (verdict.verdict === 'start') return replyToInterceptedRequest(websiteTabConnections, message)
+			if (verdict.verdict === 'refuse') {
+				refusals.push(verdict.refusal)
+				// Only a false result makes the reconnect helper retry, so a refused attempt ends the delivery.
+				return undefined
+			}
+		}
 	})
 	const [refusal] = refusals
 	return refusal === undefined ? { committed: true, result: delivered } : { committed: false, refusal }

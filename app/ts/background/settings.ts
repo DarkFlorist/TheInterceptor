@@ -203,15 +203,30 @@ function getSimulationModeStorageUpdate(changes: SimulationModeChanges) {
 	}
 }
 
+// Every write of the active network goes through trackActiveNetworkWrite, which counts the writes that started and finished. A reader compares these counts, synchronously, with the ones from when its read started, to tell whether a write could have changed the network after it was read.
+let activeNetworkWritesStarted = 0
+let activeNetworkWritesFinished = 0
+export const getActiveNetworkWrites = () => ({ started: activeNetworkWritesStarted, finished: activeNetworkWritesFinished })
+
+async function trackActiveNetworkWrite<T>(changes: SimulationModeChanges, write: () => Promise<T>) {
+	if (changes.rpcNetwork === undefined) return await write()
+	activeNetworkWritesStarted += 1
+	try {
+		return await write()
+	} finally {
+		activeNetworkWritesFinished += 1
+	}
+}
+
 export async function changeSimulationMode(changes: SimulationModeChanges) {
-	return await browserStorageLocalSet(getSimulationModeStorageUpdate(changes))
+	return await trackActiveNetworkWrite(changes, async () => await browserStorageLocalSet(getSimulationModeStorageUpdate(changes)))
 }
 
 async function replaceModeAndSigningPreferencesForImport(changes: SimulationModeChanges, signingAddressPreferences: SigningAddressPreferences) {
-	return await signingAddressPreferencesSemaphore.execute(async () => await browserStorageLocalSet({
+	return await signingAddressPreferencesSemaphore.execute(async () => await trackActiveNetworkWrite(changes, async () => await browserStorageLocalSet({
 		...getSimulationModeStorageUpdate(changes),
 		signingAddressPreferences,
-	}))
+	})))
 }
 
 const websiteAccessSemaphore = new Semaphore(1)

@@ -604,3 +604,93 @@ test('every guarded write and delivery starts in the same synchronous step as it
 	assert.deepEqual(forwarding, { committed: true, result: true })
 	assert.equal(postedAfterCheckWork, false)
 })
+
+// Switches the active network right after the given settings read captured its snapshot, before the reader's check runs, through the settings writer every network change uses, so the check sees the network from before the switch unless it notices the write.
+async function switchNetworkAfterSettingsRead(settingsReadNumber: number) {
+	const { changeSimulationMode } = await import('../../app/ts/background/settings.js')
+	let settingsReads = 0
+	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+		const items = readStoredItems()
+		if (Array.isArray(keys) && keys.includes('activeRpcNetwork')) {
+			settingsReads += 1
+			if (settingsReads === settingsReadNumber) queueMicrotask(() => { void changeSimulationMode({ simulationMode: false, rpcNetwork: otherNetwork }) })
+		}
+		return items
+	})
+}
+
+test('a network switch right after the network was read keeps the guarded stack and state writes from committing', async () => {
+	const { updateInterceptorTransactionStackOnRequestedNetwork, updateTransactionStateOnRequestedNetwork } = await import('../../app/ts/background/transactionNetwork.js')
+	await setUpTransactionApprovalTest(false)
+	const stackOperation = { type: 'Transaction' as const, preSimulationTransaction: { ...pendingTransaction.transactionToSimulate, signedTransaction } }
+
+	await switchNetworkAfterSettingsRead(1)
+	const stackUpdate = await updateInterceptorTransactionStackOnRequestedNetwork(simulator.ethereum, pendingTransaction, () => ({ operations: [stackOperation] }))
+	assert.equal(stackUpdate.committed ? undefined : stackUpdate.refusal.code, METAMASK_ERROR_NOT_CONNECTED_TO_APPROPRIATE_CHAIN)
+	assert.deepEqual((await modules.getInterceptorTransactionStack()).operations, [])
+
+	await modules.browserStorageLocalSet({ activeRpcNetwork: fakeRpcNetwork })
+	await switchNetworkAfterSettingsRead(1)
+	const stateUpdate = await updateTransactionStateOnRequestedNetwork(simulator.ethereum, pendingTransaction, (previousState) => ({ ...previousState, safeTransactionStacks: [createSafeStackFixture([])] }))
+	assert.equal(stateUpdate.committed ? undefined : stateUpdate.refusal.code, METAMASK_ERROR_NOT_CONNECTED_TO_APPROPRIATE_CHAIN)
+	assert.deepEqual(await modules.getSafeTransactionStacks(), [])
+})
+
+test('a network switch right after the network was read keeps the first delivery to the signer from being posted', async () => {
+	const { postedMessages, websiteTabConnections } = await setUpTransactionApprovalTest(false)
+	const { forwardToSignerOnRequestedNetwork } = await import('../../app/ts/background/messageSending.js')
+
+	await switchNetworkAfterSettingsRead(1)
+	const forwarding = await forwardToSignerOnRequestedNetwork(websiteTabConnections, simulator.ethereum, pendingTransaction, { ...pendingTransaction.originalRequestParameters, type: 'forwardToSigner', uniqueRequestIdentifier })
+
+	assert.equal(forwarding.committed ? undefined : forwarding.refusal.code, METAMASK_ERROR_NOT_CONNECTED_TO_APPROPRIATE_CHAIN)
+	assert.deepEqual(getForwardedSignerRequests(postedMessages), [])
+})
+
+test('a network switch right after the network was read keeps the retried delivery to the signer from being posted', async () => {
+	const { websiteTabConnections } = await setUpTransactionApprovalTest(false)
+	const { forwardToSignerOnRequestedNetwork } = await import('../../app/ts/background/messageSending.js')
+	const socketKey = modules.websiteSocketToString(socket)
+	const connectPort = (port: browser.runtime.Port) => websiteTabConnections.set(socket.tabId, { connections: { [socketKey]: { port, socket, websiteOrigin: website.websiteOrigin, approved: true, wantsToConnect: true } } })
+	const disconnectedPort = createDisconnectedPort()
+	const replacementPortMessages: unknown[] = []
+	connectPort(disconnectedPort.port)
+	browserMock.setManifestVersion(2)
+	browserMock.setTabMessageHandler(async () => {
+		connectPort(createWebsitePort(socket, 0, replacementPortMessages))
+		return { reconnected: true }
+	})
+
+	// The first attempt reads the network once and fails on the disconnected port; the retry after the reconnect reads it again.
+	await switchNetworkAfterSettingsRead(2)
+	const forwarding = await forwardToSignerOnRequestedNetwork(websiteTabConnections, simulator.ethereum, pendingTransaction, { ...pendingTransaction.originalRequestParameters, type: 'forwardToSigner', uniqueRequestIdentifier })
+
+	assert.equal(disconnectedPort.getPostAttempts(), 1)
+	assert.equal(forwarding.committed ? undefined : forwarding.refusal.code, METAMASK_ERROR_NOT_CONNECTED_TO_APPROPRIATE_CHAIN)
+	assert.deepEqual(getForwardedSignerRequests(replacementPortMessages), [])
+})
+
+test('a network write still running when the network was read keeps the guarded write from committing', async () => {
+	const { updateInterceptorTransactionStackOnRequestedNetwork } = await import('../../app/ts/background/transactionNetwork.js')
+	const { changeSimulationMode } = await import('../../app/ts/background/settings.js')
+	await setUpTransactionApprovalTest(false)
+	const stackOperation = { type: 'Transaction' as const, preSimulationTransaction: { ...pendingTransaction.transactionToSimulate, signedTransaction } }
+	// The network write waits until the guarded write has read the network, so that read sees the network from before the switch.
+	const networkRead = createDeferredValue<undefined>()
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		if ('activeRpcNetwork' in items) await networkRead.promise
+		writeStoredItems()
+	})
+	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+		const items = readStoredItems()
+		if (Array.isArray(keys) && keys.includes('activeRpcNetwork')) networkRead.resolve(undefined)
+		return items
+	})
+
+	const networkSwitch = changeSimulationMode({ simulationMode: false, rpcNetwork: otherNetwork })
+	const stackUpdate = await updateInterceptorTransactionStackOnRequestedNetwork(simulator.ethereum, pendingTransaction, () => ({ operations: [stackOperation] }))
+	await networkSwitch
+
+	assert.equal(stackUpdate.committed ? undefined : stackUpdate.refusal.code, METAMASK_ERROR_NOT_CONNECTED_TO_APPROPRIATE_CHAIN)
+	assert.deepEqual((await modules.getInterceptorTransactionStack()).operations, [])
+})
