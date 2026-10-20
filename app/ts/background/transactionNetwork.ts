@@ -31,7 +31,7 @@ export const getTransactionNetworkApprovalError = async (ethereum: EthereumClien
 
 type NetworkCheckedCommit<T> = { readonly committed: true, readonly result: T } | { readonly committed: false, readonly refusal: TransactionNetworkError }
 
-// The write or delivery a commit already started. It is returned from a synchronous function, which cannot await, so the commit begins in the same turn as the network check before it.
+// The write or delivery a commit already started. startCommit is synchronous, so it cannot await before returning; it must also start its write or delivery before it returns, rather than deferring it inside a promise that awaits first, which no type can rule out. Each commit site passes a function that calls its write or delivery directly, and the test 'a network-checked commit starts in the same turn as its network check' checks that this guard calls it in the same turn as the check.
 export type StartedCommit<T> = { readonly started: Promise<T> | T }
 
 // The last step before a transaction is forwarded to the signer, added to the simulation stack or stored in a Gnosis Safe stack, so a network switch either finished before the check or applies after the commit posted its request or queued its storage update. This guarantees that the Interceptor's active network, its client and the stored preview match the requested network at every commit or delivery attempt; it cannot guarantee the network an external wallet signs on, because the forwarded request carries no chain id and a wallet can switch networks before the Interceptor learns of it. Signable messages carry no requested network, so they are committed unchecked.
