@@ -205,24 +205,24 @@ test('refreshes the failed transaction preview when the address book changes', a
 	assertUsdcTransferPreview(popupVisualisation.data.failedTransactionPreview, 'Circle USD')
 })
 
-// Rewrites the stored confirmations the way versions without simulation run ids stored them.
-async function forgetStoredSimulationRunIds() {
+// Rewrites the stored confirmations the way versions without confirmation run ids stored them.
+async function forgetStoredConfirmationRunIds() {
 	const { pendingTransactionsAndMessages } = await browser.storage.local.get('pendingTransactionsAndMessages')
 	if (!Array.isArray(pendingTransactionsAndMessages)) throw new Error('Missing stored pending transactions')
 	await browser.storage.local.set({ pendingTransactionsAndMessages: pendingTransactionsAndMessages.map((pending: unknown) => {
 		if (!isRecord(pending) || !isRecord(pending.popupVisualisation) || !isRecord(pending.popupVisualisation.data)) return pending
-		const { simulationId: _simulationId, ...dataWithoutSimulationId } = pending.popupVisualisation.data
-		return { ...pending, popupVisualisation: { ...pending.popupVisualisation, data: dataWithoutSimulationId } }
+		const { confirmationRunId: _confirmationRunId, ...dataWithoutConfirmationRunId } = pending.popupVisualisation.data
+		return { ...pending, popupVisualisation: { ...pending.popupVisualisation, data: dataWithoutConfirmationRunId } }
 	}) })
 }
 
-test('refreshes the metadata of a confirmation stored without a simulation run id as older than any run', async () => {
+test('refreshes the metadata of a confirmation stored without a confirmation run id as older than any run', async () => {
 	await useInvoiceAddressBook()
 	const confirmationSimulator = createFeeValidatingSimulator(TOO_LITTLE_ETH_FOR_FEES)
 	await openUsdcTransferConfirmation(confirmationSimulator)
-	const runId = (await getPendingFailedTransactionVisualisation()).data.simulationId
-	await forgetStoredSimulationRunIds()
-	assert.equal((await getPendingFailedTransactionVisualisation()).data.simulationId < runId, true, 'a confirmation stored without a run id parses as older than any run')
+	const confirmationRunId = (await getPendingFailedTransactionVisualisation()).data.confirmationRunId
+	await forgetStoredConfirmationRunIds()
+	assert.equal((await getPendingFailedTransactionVisualisation()).data.confirmationRunId < confirmationRunId, true, 'a confirmation stored without a confirmation run id parses as older than any run')
 	await modules.updateUserAddressBookEntries((entries) => [
 		...entries,
 		{ type: 'ERC20', name: 'Circle USD', symbol: 'USDC', decimals: 6n, address: USDC_ADDRESS, entrySource: 'User', chainId: fakeRpcNetwork.chainId },

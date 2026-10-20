@@ -37,10 +37,10 @@ const FailedTransactionPreview = funtypes.ReadonlyObject({
 	parsedInputData: EnrichedEthereumInputData,
 })
 
-// Confirmations stored by versions without run ids parse as run 0, which is older than any run because getNextConfirmationSimulationId hands out ids from 1 upwards: a metadata refresh still refreshes such a confirmation, and its result never replaces a newer run.
-const ConfirmationSimulationId = funtypes.Union(funtypes.Number, funtypes.Undefined).withParser({
-	parse: (simulationId) => ({ success: true, value: simulationId ?? 0 }),
-	serialize: (simulationId) => ({ success: true, value: simulationId }),
+// Confirmations stored by versions without run ids parse as run 0, which is older than any run because getNextConfirmationRunId hands out ids from 1 upwards: a metadata refresh still refreshes such a confirmation, and its result never replaces a newer run.
+const ConfirmationRunId = funtypes.Union(funtypes.Number, funtypes.Undefined).withParser({
+	parse: (confirmationRunId) => ({ success: true, value: confirmationRunId ?? 0 }),
+	serialize: (confirmationRunId) => ({ success: true, value: confirmationRunId }),
 })
 
 type ConfirmTransactionSimulationBaseData = funtypes.Static<typeof ConfirmTransactionSimulationBaseData>
@@ -51,8 +51,8 @@ const ConfirmTransactionSimulationBaseData = funtypes.ReadonlyObject({
 	uniqueRequestIdentifier: UniqueRequestIdentifier,
 	transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed,
 	signerName: SignerName,
-	// Identifies the confirmation simulation run that produced this visualisation. Unlike CompleteVisualizedSimulation.simulationId, which counts refreshes of the simulation stack, it names one confirmation simulation run of this pending transaction.
-	simulationId: ConfirmationSimulationId,
+	// Names one confirmation simulation run of this pending transaction.
+	confirmationRunId: ConfirmationRunId,
 }).And(funtypes.ReadonlyPartial({
 	// Present when the transaction has no simulation results, so the failure view can still show its address-book names and parsed input.
 	failedTransactionPreview: FailedTransactionPreview,

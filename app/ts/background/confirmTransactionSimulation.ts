@@ -20,11 +20,11 @@ import { getInterceptorTransactionStack, getTabState } from './storageVariables.
 let confirmTransactionAbortController = new AbortController()
 export const getConfirmTransactionAbortController = () => confirmTransactionAbortController
 
-let latestConfirmationSimulationId = 0
+let latestConfirmationRunId = 0
 // Every confirmation simulation run gets a new id, which refreshPopupConfirmTransactionMetadata uses to tell the run whose metadata it refreshed from a newer one. The id is the millisecond clock bumped past the previous id, so ids increase within a background session. Unlike the popup refresh generation it is not persisted, so ids stored before a background restart are not handed out again only as long as the system clock has not gone backwards.
-function getNextConfirmationSimulationId() {
-	latestConfirmationSimulationId = Math.max(latestConfirmationSimulationId + 1, Date.now())
-	return latestConfirmationSimulationId
+function getNextConfirmationRunId() {
+	latestConfirmationRunId = Math.max(latestConfirmationRunId + 1, Date.now())
+	return latestConfirmationRunId
 }
 
 export async function refreshConfirmTransactionSimulation(
@@ -43,7 +43,7 @@ export async function refreshConfirmTransactionSimulation(
 		activeAddress,
 		signerName: (await getTabState(uniqueRequestIdentifier.requestSocket.tabId)).signerName,
 		tabIdOpenedFrom: uniqueRequestIdentifier.requestSocket.tabId,
-		simulationId: getNextConfirmationSimulationId(),
+		confirmationRunId: getNextConfirmationRunId(),
 	}
 	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' }, 'confirmTransaction')
 	confirmTransactionAbortController.abort(NEW_BLOCK_ABORT)
@@ -62,13 +62,14 @@ export async function refreshConfirmTransactionSimulation(
 						website: transactionToSimulate.website,
 						created: transactionToSimulate.created,
 						originalRequestParameters: transactionToSimulate.originalRequestParameters,
-						transactionIdentifier: transactionToSimulate.transactionIdentifier
+						transactionIdentifier: transactionToSimulate.transactionIdentifier,
+						...(transactionToSimulate.simulationOptions === undefined ? {} : { simulationOptions: transactionToSimulate.simulationOptions }),
 					}
 					: createSafeExecutionPreSimulationTransaction(transactionToSimulate, safeSigningRequest)
 				: undefined
 			const simulationStateWithNewTransaction = preSimulationTransaction === undefined
 				? simulationInput
-				: appendTransactionsToInput(simulationInput, [preSimulationTransaction], undefined, {}, safeSigningRequest !== undefined)
+				: appendTransactionsToInput(simulationInput, [preSimulationTransaction], undefined, {}, preSimulationTransaction.simulationOptions?.simulateWithZeroBaseFee ?? false)
 			const updatedSimulationState = await createSimulationStateWithNonceAndBaseFeeFixing(simulationStateWithNewTransaction, ethereum)
 			return await visualizeSimulatorState(updatedSimulationState, ethereum, tokenPriceService, thisConfirmTransactionAbortController)
 		}

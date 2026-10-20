@@ -62,6 +62,7 @@ import { getLastKnownCurrentTabId } from './currentTab.js'
 import { reloadConnectedTabs } from './popupMessageHandlers/websiteAccess.js'
 import { updateWebsiteAccessAndContentScriptInjectionStrategy } from './websiteAccessUpdating.js'
 import { getConfiguredSigningSafeForChain } from './signingAddressSelection.js'
+import { getSimulationModeFeePayment, type TransactionFeePayment } from './safeTransactionConfirmation.js'
 
 type TimestampedPopupVisualisation = {
 	data: {
@@ -577,7 +578,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 				await updatePendingTransactionOrMessage(first.uniqueRequestIdentifier, async (current) => {
 					if (current.type !== 'Transaction' || (current.transactionOrMessageCreationStatus !== 'Simulated' && current.transactionOrMessageCreationStatus !== 'FailedToSimulate')) return current
 					// A simulation run stored during the metadata lookups has another id even within the same second, so the metadata of the older run must not replace it.
-					if (current.popupVisualisation.data.simulationId !== popupVisualisation.data.simulationId) return current
+					if (current.popupVisualisation.data.confirmationRunId !== popupVisualisation.data.confirmationRunId) return current
 					return modifyObject(current, { popupVisualisation: refreshedPopupVisualisation })
 				})
 				const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {
@@ -615,6 +616,10 @@ export async function refreshPopupConfirmTransactionSimulation(ethereum: Ethereu
 	if (firstTxn === undefined || firstTxn.type !== 'Transaction' || (firstTxn.transactionOrMessageCreationStatus !== 'Simulated' && firstTxn.transactionOrMessageCreationStatus !== 'FailedToSimulate')) return
 	const safeFlow = getSafePendingFlow(firstTxn)
 	const proposalSafeTransaction = safeFlow?.kind === 'proposal' ? safeFlow.pending.safeTransaction : undefined
+	// Decided from the stored active address as when the confirmation opened, so a refresh keeps the confirmation's fee model.
+	const feePayment: TransactionFeePayment = firstTxn.simulationMode
+		? await getSimulationModeFeePayment(ethereum.getChainId(), firstTxn.originalRequestParameters, firstTxn.activeAddress)
+		: { gasPayment: safeFlow === undefined ? 'transaction-sender' : 'external-executor', simulationOptions: undefined }
 	const transactionToSimulate = firstTxn.originalRequestParameters.method === 'eth_sendTransaction'
 		? await formEthSendTransaction(
 			ethereum,
@@ -625,7 +630,8 @@ export async function refreshPopupConfirmTransactionSimulation(ethereum: Ethereu
 			firstTxn.created,
 			firstTxn.transactionIdentifier,
 			firstTxn.simulationMode,
-			safeFlow === undefined ? 'transaction-sender' : 'external-executor',
+			feePayment.gasPayment,
+			feePayment.simulationOptions,
 		)
 		: await formSendRawTransaction(ethereum, firstTxn.originalRequestParameters, firstTxn.transactionToSimulate.website, firstTxn.created, firstTxn.transactionIdentifier)
 	const refreshMessage = await refreshConfirmTransactionSimulation(
