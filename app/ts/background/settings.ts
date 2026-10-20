@@ -55,6 +55,19 @@ type StartupStorageDefaults = {
 	signingAddressPreferences: SigningAddressPreferences
 }
 
+// Every write of the active network, whether a network switch, a settings import or the repair of a corrupt stored value, runs through trackActiveNetworkWrite, which counts the writes that started and finished.
+let activeNetworkWritesStarted = 0
+let activeNetworkWritesFinished = 0
+
+async function trackActiveNetworkWrite<T>(write: () => Promise<T>) {
+	activeNetworkWritesStarted += 1
+	try {
+		return await write()
+	} finally {
+		activeNetworkWritesFinished += 1
+	}
+}
+
 async function getParsedStorageValueOrDefaultFromItems<Key extends keyof StartupStorageDefaults>(storedItems: Readonly<Record<string, unknown>>, key: Key, defaultValue: StartupStorageDefaults[Key]): Promise<StartupStorageDefaults[Key]> {
 	const rawValue = storedItems[key]
 	const storedItem = hasOwnKey(storedItems, key) ? { [key]: rawValue } : {}
@@ -63,7 +76,10 @@ async function getParsedStorageValueOrDefaultFromItems<Key extends keyof Startup
 	if (rawValue === undefined) return defaultValue
 	console.warn(`${ key } was corrupt:`)
 	console.warn(rawValue)
-	await browserStorageLocalSet({ [key]: defaultValue } as unknown as Parameters<typeof browserStorageLocalSet>[0])
+	const repair = async () => await browserStorageLocalSet({ [key]: defaultValue } as unknown as Parameters<typeof browserStorageLocalSet>[0])
+	// Repairing the active network writes it, so the repair is counted like a network switch.
+	if (key === 'activeRpcNetwork') await trackActiveNetworkWrite(repair)
+	else await repair()
 	return defaultValue
 }
 
@@ -100,6 +116,20 @@ export async function getSettings() : Promise<Settings> {
 		simulationModePromise,
 	])
 	return { activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode }
+}
+
+export type ActiveNetworkSnapshot = {
+	readonly activeRpcNetwork: RpcNetwork
+	// Whether the network read is still the stored active network. It is not once a write of the active network was running when the read started, or has started since.
+	readonly isStillCurrent: () => boolean
+}
+
+// Reads the active network together with a synchronous check of whether it is still current, for a reader that must act on the network that is stored when it acts.
+export async function readActiveNetworkSnapshot(): Promise<ActiveNetworkSnapshot> {
+	const writesStartedBeforeRead = activeNetworkWritesStarted
+	const writeRunningWhenReadStarted = activeNetworkWritesStarted !== activeNetworkWritesFinished
+	const { activeRpcNetwork } = await getSettings()
+	return { activeRpcNetwork, isStillCurrent: () => !writeRunningWhenReadStarted && activeNetworkWritesStarted === writesStartedBeforeRead }
 }
 
 export const setPage = async (openedPageV2: Page) => await browserStorageLocalSet({ openedPageV2 })
@@ -203,27 +233,15 @@ function getSimulationModeStorageUpdate(changes: SimulationModeChanges) {
 	}
 }
 
-// Every write of the active network goes through trackActiveNetworkWrite, which counts the writes that started and finished. A reader compares these counts, synchronously, with the ones from when its read started, to tell whether a write could have changed the network after it was read.
-let activeNetworkWritesStarted = 0
-let activeNetworkWritesFinished = 0
-export const getActiveNetworkWrites = () => ({ started: activeNetworkWritesStarted, finished: activeNetworkWritesFinished })
-
-async function trackActiveNetworkWrite<T>(changes: SimulationModeChanges, write: () => Promise<T>) {
-	if (changes.rpcNetwork === undefined) return await write()
-	activeNetworkWritesStarted += 1
-	try {
-		return await write()
-	} finally {
-		activeNetworkWritesFinished += 1
-	}
-}
+// Only changes that name a network write the active network, so only those are counted.
+const writeSimulationModeChanges = async <T>(changes: SimulationModeChanges, write: () => Promise<T>) => changes.rpcNetwork === undefined ? await write() : await trackActiveNetworkWrite(write)
 
 export async function changeSimulationMode(changes: SimulationModeChanges) {
-	return await trackActiveNetworkWrite(changes, async () => await browserStorageLocalSet(getSimulationModeStorageUpdate(changes)))
+	return await writeSimulationModeChanges(changes, async () => await browserStorageLocalSet(getSimulationModeStorageUpdate(changes)))
 }
 
 async function replaceModeAndSigningPreferencesForImport(changes: SimulationModeChanges, signingAddressPreferences: SigningAddressPreferences) {
-	return await signingAddressPreferencesSemaphore.execute(async () => await trackActiveNetworkWrite(changes, async () => await browserStorageLocalSet({
+	return await signingAddressPreferencesSemaphore.execute(async () => await writeSimulationModeChanges(changes, async () => await browserStorageLocalSet({
 		...getSimulationModeStorageUpdate(changes),
 		signingAddressPreferences,
 	})))

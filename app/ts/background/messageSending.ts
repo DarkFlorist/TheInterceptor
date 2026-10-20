@@ -7,7 +7,7 @@ import { isIgnorablePortLifecycleError } from './contentScriptPortLifecycle.js'
 import { attemptDeliveryAfterManifestV2Reconnect, attemptSocketDeliveryAfterManifestV2Reconnect } from './manifestV2Reconnect.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
-import { readRequestedNetworkCheck, type RequestedNetworkCommit, type TransactionNetworkError } from './transactionNetwork.js'
+import { proceedOnRequestedNetwork, type RequestedNetworkCommit, type TransactionNetworkError } from './transactionNetwork.js'
 
 function postMessageToPortIfConnected(port: browser.runtime.Port, message: InterceptorMessageToInpage) {
 	try {
@@ -49,16 +49,11 @@ export async function replyToInterceptedRequestAfterManifestV2Reconnect(websiteT
 export async function forwardToSignerOnRequestedNetwork(websiteTabConnections: WebsiteTabConnections, ethereum: EthereumClientService, pending: PendingTransactionOrSignableMessage, message: InterceptedRequestForward): Promise<RequestedNetworkCommit<boolean | undefined>> {
 	const refusals: TransactionNetworkError[] = []
 	const delivered = await attemptDeliveryAfterManifestV2Reconnect(websiteTabConnections, message, async () => {
-		while (true) {
-			const check = await readRequestedNetworkCheck(ethereum, pending)
-			const verdict = check()
-			if (verdict.verdict === 'start') return replyToInterceptedRequest(websiteTabConnections, message)
-			if (verdict.verdict === 'refuse') {
-				refusals.push(verdict.refusal)
-				// Only a false result makes the reconnect helper retry, so a refused attempt ends the delivery.
-				return undefined
-			}
-		}
+		const attempt = await proceedOnRequestedNetwork(ethereum, pending, () => replyToInterceptedRequest(websiteTabConnections, message))
+		if (attempt.committed) return attempt.result
+		refusals.push(attempt.refusal)
+		// Only a false result makes the reconnect helper retry, so a refused attempt ends the delivery.
+		return undefined
 	})
 	const [refusal] = refusals
 	return refusal === undefined ? { committed: true, result: delivered } : { committed: false, refusal }
