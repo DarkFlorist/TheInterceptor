@@ -278,6 +278,7 @@ function makeSimulatedPendingRawTransaction(transactionToSimulate: WebsiteCreate
 		simulationMode: true,
 		activeAddress: transactionToSimulate.transaction.from,
 		created: transactionToSimulate.created,
+		instanceId: 'raw transaction instance',
 		transactionIdentifier: transactionToSimulate.transactionIdentifier,
 		transactionToSimulate,
 		website: transactionToSimulate.website,
@@ -347,7 +348,7 @@ async function assertAcceptPreservesRawSignedTransaction(signedTransactionBytes:
 			new EthereumClientService(createEip7702TransactionParsingRequestHandler(), async () => undefined, async () => undefined, rpcNetwork),
 			{} as never,
 			browserMock.websiteTabConnections,
-			{ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: pendingTransaction.uniqueRequestIdentifier, action: 'accept' } },
+			{ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: pendingTransaction.uniqueRequestIdentifier, instanceId: pendingTransaction.instanceId, action: 'accept' } },
 		)
 
 		const [postedMessage] = browserMock.postedMessages

@@ -266,8 +266,8 @@ export const setGasLimitForTransaction = async (transactionIdentifier: bigint, g
 export async function resolvePendingTransactionOrMessage(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, refreshedSafeSignerSelection?: RefreshedSafeSignerSelection) {
 	let pendingTransactionOrMessage = await getPendingTransactionOrMessageByidentifier(confirmation.data.uniqueRequestIdentifier)
 	if (pendingTransactionOrMessage === undefined) return false // no need to resolve as it doesn't exist anymore
-	// A popup decision names the instance the user saw, so it never resolves a replacement request that reuses the page-chosen request id.
-	if (confirmation.data.instanceId !== undefined && confirmation.data.instanceId !== pendingTransactionOrMessage.instanceId) return false
+	// A decision (accept, reject, add to Safe stack, or no response on popup close) names the instance the user saw, so it never resolves a replacement request that reuses the page-chosen request id. A wallet reply is deliberately not bound to an instance: it arrives over the page's own connection (signerReply checks the socket and port), and the page controls its injected provider, so it could already send any reply for any of its own pending request ids. A reply only answers that page's own request and forwards nothing new, and Safe replies are validated by resolveSafeSignerReply.
+	if (confirmation.data.action !== 'signerIncluded' && confirmation.data.instanceId !== pendingTransactionOrMessage.instanceId) return false
 	if (
 		confirmation.data.action === 'accept'
 		&& refreshedSafeSignerSelection?.selectedSigner !== undefined
@@ -388,6 +388,7 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 	if (pendingTransactionOrMessage === undefined || pendingTransactionOrMessage.transactionOrMessageCreationStatus !== 'Simulated') return reply(formRejectMessage(METAMASK_ERROR_BLANKET_ERROR, 'The Interceptor failed to process the transaction'))
 	if (confirmation.data.action === 'reject') return reply(formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User denied transaction signature'))
 	if (!pendingTransactionOrMessage.simulationMode) {
+		// The wallet's reply is not bound to a pending instance: the page could send any reply for its own request ids anyway (see the instance check at the top).
 		if (confirmation.data.action === 'signerIncluded') {
 			const safeReply = await resolveSafeSignerReply(ethereum, tokenPriceService, pendingTransactionOrMessage, confirmation.data.signerReply)
 			if (safeReply.status === 'error') {

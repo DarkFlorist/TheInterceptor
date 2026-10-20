@@ -3,7 +3,7 @@ import * as assert from 'assert'
 import { test } from 'bun:test'
 import { encodeFunctionCall } from '../../app/ts/utils/abiRuntime.js'
 import { getLatestUnexpectedError } from '../../app/ts/background/storageVariables.js'
-import { activeAddress, addressString, browserMock, createSafeAddressBookEntry, createSafeTx, createWebsitePort, EIP712Message, ethereum, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, oldTimestamp, pendingTransaction, privateKeyToAccount, recipientAddress, SAFE_EXECUTION_ABI, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, signedTransaction, simulator, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
+import { activeAddress, addressString, browserMock, createSafeAddressBookEntry, createSafeTx, createWebsitePort, EIP712Message, ethereum, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, oldTimestamp, pendingTransaction, privateKeyToAccount, recipientAddress, SAFE_EXECUTION_ABI, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, signedTransaction, simulator, uniqueRequestIdentifier, withSilencedConsole, getPendingInstanceId } from './confirmTransactionTestHarness.js'
 
 test('refreshing confirm transaction updates the persisted simulation timestamp', async () => {
 	browserMock.sentMessages.length = 0
@@ -202,7 +202,7 @@ test('forwards a Safe transaction to the wallet-selected Safe owner as EIP-712 t
 	fakeSafeContract.owners = [0x1111111111111111111111111111111111111111n]
 	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
-		data: { action: 'accept', uniqueRequestIdentifier },
+		data: { action: 'accept', uniqueRequestIdentifier, instanceId: await getPendingInstanceId(uniqueRequestIdentifier) },
 	}), false)
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
 	const [changedOwnersProposal] = await modules.getPendingTransactionsAndMessages()
@@ -217,7 +217,7 @@ test('forwards a Safe transaction to the wallet-selected Safe owner as EIP-712 t
 	}))
 	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
-		data: { action: 'accept', uniqueRequestIdentifier },
+		data: { action: 'accept', uniqueRequestIdentifier, instanceId: await getPendingInstanceId(uniqueRequestIdentifier) },
 	}), true)
 
 	const signerRequest = postedMessages.find((message) => isRecord(message) && message.type === 'forwardToSigner')
@@ -384,7 +384,7 @@ test('routes a Safe co-signing request through the wallet-selected owner', async
 	assert.equal(refreshedCoSignRequest?.approvalStatus.status, 'WaitingForUser')
 	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
-		data: { action: 'accept', uniqueRequestIdentifier },
+		data: { action: 'accept', uniqueRequestIdentifier, instanceId: await getPendingInstanceId(uniqueRequestIdentifier) },
 	}), true)
 
 	const signerRequest = postedMessages.find((message) => isRecord(message) && message.type === 'forwardToSigner')
@@ -1202,7 +1202,7 @@ test('routes a completed active Safe execution through its configured signer and
 		websiteTabConnections,
 		{
 			method: 'popup_confirmDialog',
-			data: { action: 'accept', uniqueRequestIdentifier },
+			data: { action: 'accept', uniqueRequestIdentifier, instanceId: await getPendingInstanceId(uniqueRequestIdentifier) },
 		},
 		{ selectedSigner: safeSignerAddress, verificationError: undefined },
 	)), false)
@@ -1215,7 +1215,7 @@ test('routes a completed active Safe execution through its configured signer and
 		websiteTabConnections,
 		{
 			method: 'popup_confirmDialog',
-			data: { action: 'accept', uniqueRequestIdentifier },
+			data: { action: 'accept', uniqueRequestIdentifier, instanceId: await getPendingInstanceId(uniqueRequestIdentifier) },
 		},
 		{ selectedSigner: alternateSignerAddress, verificationError: undefined },
 	)), false)
@@ -1227,7 +1227,7 @@ test('routes a completed active Safe execution through its configured signer and
 		websiteTabConnections,
 		{
 			method: 'popup_confirmDialog',
-			data: { action: 'accept', uniqueRequestIdentifier },
+			data: { action: 'accept', uniqueRequestIdentifier, instanceId: await getPendingInstanceId(uniqueRequestIdentifier) },
 		},
 		{ selectedSigner: alternateSignerAddress, verificationError: undefined },
 	), false)
@@ -1253,7 +1253,7 @@ test('routes a completed active Safe execution through its configured signer and
 		websiteTabConnections,
 		{
 			method: 'popup_confirmDialog',
-			data: { action: 'accept', uniqueRequestIdentifier },
+			data: { action: 'accept', uniqueRequestIdentifier, instanceId: await getPendingInstanceId(uniqueRequestIdentifier) },
 		},
 		{ selectedSigner: safeSignerAddress, verificationError: undefined },
 	), false)
@@ -1275,7 +1275,7 @@ test('routes a completed active Safe execution through its configured signer and
 		websiteTabConnections,
 		{
 			method: 'popup_confirmDialog',
-			data: { action: 'accept', uniqueRequestIdentifier },
+			data: { action: 'accept', uniqueRequestIdentifier, instanceId: await getPendingInstanceId(uniqueRequestIdentifier) },
 		},
 		{ selectedSigner: safeSignerAddress, verificationError: undefined },
 	), false)
@@ -1296,7 +1296,7 @@ test('routes a completed active Safe execution through its configured signer and
 		websiteTabConnections,
 		{
 			method: 'popup_confirmDialog',
-			data: { action: 'accept', uniqueRequestIdentifier },
+			data: { action: 'accept', uniqueRequestIdentifier, instanceId: await getPendingInstanceId(uniqueRequestIdentifier) },
 		},
 		{ selectedSigner: safeSignerAddress, verificationError: undefined },
 	), true)

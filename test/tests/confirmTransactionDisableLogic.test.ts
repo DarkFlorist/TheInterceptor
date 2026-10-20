@@ -108,6 +108,7 @@ describe('ConfirmTransaction signable message disable logic', () => {
 			method: 'popup_confirmDialog',
 			data: {
 				uniqueRequestIdentifier: { requestId: 1, requestSocket: { tabId: 2, connectionName: 0n } },
+				instanceId: 'pending request instance',
 				action: 'accept',
 			},
 		}))

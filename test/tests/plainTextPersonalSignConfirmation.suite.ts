@@ -2,10 +2,11 @@ import * as assert from 'assert'
 import { test } from 'bun:test'
 import { personalEcRecover } from '../../app/ts/background/personalEcRecoverRpc.js'
 import { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
+import { TransactionConfirmation } from '../../app/ts/types/interceptor-messages.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
 import { decodePersonalSignMessage } from '../../app/ts/utils/personalSignMessage.js'
 import { hashMessage } from '../../app/ts/utils/ethereumPrimitives.js'
-import { activeAddress, browserMock, createWebsitePort, isRecord, modules, simulator, uniqueRequestIdentifier as defaultUniqueRequestIdentifier } from './confirmTransactionTestHarness.js'
+import { activeAddress, browserMock, createWebsitePort, isRecord, modules, simulator, uniqueRequestIdentifier as defaultUniqueRequestIdentifier, getPendingInstanceId } from './confirmTransactionTestHarness.js'
 
 const plainTextMessage = 'Hello world'
 const website = { websiteOrigin: 'https://plain-text.example', icon: undefined, title: 'Plain text' }
@@ -35,10 +36,10 @@ const openPlainTextPersonalSign = async (simulationMode: boolean, postedMessages
 	assert.equal(visualized.messageHash, hashMessage(plainTextMessage))
 	const accept = async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
-		data: { action: 'accept', uniqueRequestIdentifier },
+		data: { action: 'accept', uniqueRequestIdentifier, instanceId: await getPendingInstanceId(uniqueRequestIdentifier) },
 	})
 	// A popup decision names the pending request instance the user saw.
-	const decide = async (decision: { readonly action: 'accept' } | { readonly action: 'reject', readonly errorString: undefined }, instanceId: string) => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+	const decide = async (decision: { readonly action: 'accept' | 'addToSafeStack' | 'noResponse' } | { readonly action: 'reject', readonly errorString: undefined }, instanceId: string) => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
 		data: { ...decision, uniqueRequestIdentifier, instanceId },
 	})
@@ -71,13 +72,25 @@ test('answers an accepted plain-text personal_sign request in simulation mode wi
 	assert.deepEqual(await personalEcRecover(ecRecoverRequest, stackMessages), { type: 'result', method: 'personal_ecRecover', result: signerAddress })
 })
 
+test('requires every popup decision to name the request instance it decides on', () => {
+	const uniqueRequestIdentifier = { requestId: 1, requestSocket: { tabId: 1, connectionName: '0x0' } }
+	const decisions = [{ action: 'accept' }, { action: 'addToSafeStack' }, { action: 'noResponse' }, { action: 'reject', errorString: undefined }]
+	for (const decision of decisions) {
+		assert.equal(TransactionConfirmation.safeParse({ method: 'popup_confirmDialog', data: { ...decision, uniqueRequestIdentifier } }).success, false, decision.action)
+		assert.equal(TransactionConfirmation.safeParse({ method: 'popup_confirmDialog', data: { ...decision, uniqueRequestIdentifier, instanceId: 'reviewed instance' } }).success, true, decision.action)
+	}
+	// The wallet's reply arrives over the page's own connection and is not bound to an instance.
+	assert.equal(TransactionConfirmation.safeParse({ method: 'popup_confirmDialog', data: { action: 'signerIncluded', signerReply: '0x', uniqueRequestIdentifier } }).success, true)
+})
+
 test('ignores a popup decision made for another instance of the same request id', async () => {
 	const postedMessages: unknown[] = []
 	const { signerAddress, decide, instanceId } = await openPlainTextPersonalSign(false, postedMessages)
 
 	// The page can reuse a request id, so a decision on a replaced request must not resolve the request now pending under that id.
-	assert.equal(await decide({ action: 'accept' }, 'replaced instance'), false)
-	assert.equal(await decide({ action: 'reject', errorString: undefined }, 'replaced instance'), false)
+	for (const decision of [{ action: 'accept' as const }, { action: 'addToSafeStack' as const }, { action: 'noResponse' as const }, { action: 'reject' as const, errorString: undefined }]) {
+		assert.equal(await decide(decision, 'replaced instance'), false, decision.action)
+	}
 	const [stillPending] = await modules.getPendingTransactionsAndMessages()
 	assert.equal(stillPending?.instanceId, instanceId)
 	assert.equal(stillPending?.approvalStatus.status, 'WaitingForUser')
