@@ -13,6 +13,8 @@ import { parseInputData } from '../../simulation/parsing.js'
 import { getMessageHashForPersonalSign } from '../../simulation/services/simulationPersonalSigning.js'
 import { getMessageAndDomainHash, getSafeTxHash, isValidMessage } from '../../utils/eip712.js'
 import { promiseAllMapAbortSafe } from '../../utils/requests.js'
+import { decodePersonalSignMessage } from '../../utils/personalSignMessage.js'
+import { getSiweLookalikeQuarantineReasons, getSiweQuarantineReasons, parseSiweMessage } from '../../utils/siwe.js'
 
 async function addMetadataToOpenSeaOrder(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, openSeaOrder: OpenSeaOrderMessage) {
 	return {
@@ -67,18 +69,41 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 
 	if (originalParams.originalRequestParameters.method === 'personal_sign') {
 		const account = await identifyAddress(ethereumClientService, requestAbortController, originalParams.originalRequestParameters.params[1])
-		return {
+		const decodedMessage = decodePersonalSignMessage(originalParams.originalRequestParameters.params[0])
+		const siweMessage = parseSiweMessage(decodedMessage)
+		const personalSignParams = {
 			method: originalParams.originalRequestParameters.method,
 			...basicParams,
 			rpcNetwork,
-			type: 'NotParsed' as const,
-			message: originalParams.originalRequestParameters.params[0],
 			account,
-			...getSigningQuarantineCodes(undefined, rpcNetwork.chainId, account.address, activeAddressWithMetadata.address, undefined),
-			stringifiedMessage: stringifyJSONWithBigInts(originalParams.originalRequestParameters.params[0], 4),
 			rawMessage: originalParams.originalRequestParameters.params[0],
 			isValidMessage: isValid.valid,
 			messageHash: getMessageHashForPersonalSign(originalParams.originalRequestParameters),
+		}
+		if (siweMessage !== undefined) {
+			const quarantineReasons = [
+				...getSiweQuarantineReasons(siweMessage, signedMessageTransaction.requestOrigin),
+				...getSigningQuarantineCodes(siweMessage.chainId, rpcNetwork.chainId, account.address, activeAddressWithMetadata.address, siweMessage.address).quarantineReasons,
+			]
+			return {
+				...personalSignParams,
+				type: 'SignInWithEthereum' as const,
+				message: siweMessage,
+				signInAccount: await identifyAddress(ethereumClientService, requestAbortController, siweMessage.address),
+				quarantine: quarantineReasons.length > 0,
+				quarantineReasons,
+				stringifiedMessage: decodedMessage,
+			}
+		}
+		const signingQuarantineReasons = getSigningQuarantineCodes(undefined, rpcNetwork.chainId, account.address, activeAddressWithMetadata.address, undefined).quarantineReasons
+		const quarantineReasons = [...getSiweLookalikeQuarantineReasons(decodedMessage), ...signingQuarantineReasons]
+		return {
+			...personalSignParams,
+			type: 'NotParsed' as const,
+			message: originalParams.originalRequestParameters.params[0],
+			quarantine: quarantineReasons.length > 0,
+			quarantineReasons,
+			stringifiedMessage: stringifyJSONWithBigInts(originalParams.originalRequestParameters.params[0], 4),
 		}
 	}
 	const namedParams = { param: originalParams.originalRequestParameters.params[1], account: originalParams.originalRequestParameters.params[0] }
