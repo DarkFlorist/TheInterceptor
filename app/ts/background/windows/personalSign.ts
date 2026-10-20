@@ -34,7 +34,16 @@ export function getSigningQuarantineCodes(messageChainId: bigint | undefined, ac
 export const getSignedMessageActiveAddress = (signedMessageTransaction: SignedMessageTransaction) =>
 	signedMessageTransaction.activeAddress ?? signedMessageTransaction.fakeSignedFor
 
+export const IMPORTED_SIGNATURE_QUARANTINE_REASON = 'This signature was imported from a simulation stack export, so the Interceptor did not see which account was active when it was requested and cannot check that it is for your active address.'
+
 export async function craftPersonalSignPopupMessage(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, signedMessageTransaction: SignedMessageTransaction, rpcNetwork: RpcNetwork): Promise<VisualizedPersonalSignRequest> {
+	const visualizedPersonalSignRequest = await visualizePersonalSignRequest(ethereumClientService, requestAbortController, signedMessageTransaction, rpcNetwork)
+	// The account check of every message type compares against `activeAddress` / `fakeSignedFor`, which an imported message only claims, so an imported signature is always flagged rather than passing on the export file's word.
+	if (signedMessageTransaction.importedFromExport !== true) return visualizedPersonalSignRequest
+	return { ...visualizedPersonalSignRequest, quarantine: true, quarantineReasons: [IMPORTED_SIGNATURE_QUARANTINE_REASON, ...visualizedPersonalSignRequest.quarantineReasons] }
+}
+
+async function visualizePersonalSignRequest(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, signedMessageTransaction: SignedMessageTransaction, rpcNetwork: RpcNetwork): Promise<VisualizedPersonalSignRequest> {
 	const activeAddressWithMetadata = await identifyAddress(ethereumClientService, requestAbortController, getSignedMessageActiveAddress(signedMessageTransaction))
 	const signerName = (await getTabState(signedMessageTransaction.request.uniqueRequestIdentifier.requestSocket.tabId)).signerName
 	const basicParams = {

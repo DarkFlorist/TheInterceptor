@@ -1241,10 +1241,15 @@ export async function importSimulationStack(ethereum: EthereumClientService, tok
 		return websiteData ?? website
 	}
 
+	// An imported message was never requested through this extension, so the active address and simulation signer it carries are only the export file's claim. Neither can be re-derived from the message (for a Safe, an owner rather than the Safe signs), so they are kept for the simulation but the message is marked as imported, and craftPersonalSignPopupMessage flags it instead of trusting its account check. `safeMessageReview` stays, because a Safe message is only shown with its review when the review text hashes to the digest it signs. Operations already in the stack keep what this extension recorded for them.
+	const importedOperations = parsedRequest.data.interceptorSimulateStack.operations.map((operation) => operation.type === 'Message'
+		? modifyObject(operation, { signedMessageTransaction: modifyObject(operation.signedMessageTransaction, { importedFromExport: true }) })
+		: operation)
+
 	let updatedStack: InterceptorTransactionStack
 	try {
 		updatedStack = await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => {
-			const newOperations = [...prevStack.operations, ...parsedRequest.data.interceptorSimulateStack.operations]
+			const newOperations = [...prevStack.operations, ...importedOperations]
 			// generate new ids for operations to prevent duplicated ids
 			return { operations: normalizeConsecutiveTimeManipulations(newOperations.map((operation) => {
 				switch(operation.type) {
