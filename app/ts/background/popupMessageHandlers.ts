@@ -1241,10 +1241,17 @@ export async function importSimulationStack(ethereum: EthereumClientService, tok
 		return websiteData ?? website
 	}
 
+	// The extension never saw the frame that requested an imported message, so the request origin claimed by the export file is dropped; getSiweQuarantineReasons then flags an imported sign-in message as having no recorded origin instead of trusting the file. Messages already in the stack keep the origin recorded when they were requested.
+	const importedOperations = parsedRequest.data.interceptorSimulateStack.operations.map((operation) => {
+		if (operation.type !== 'Message') return operation
+		const { requestOrigin: _unobservedRequestOrigin, ...signedMessageTransaction } = operation.signedMessageTransaction
+		return modifyObject(operation, { signedMessageTransaction })
+	})
+
 	let updatedStack: InterceptorTransactionStack
 	try {
 		updatedStack = await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => {
-			const newOperations = [...prevStack.operations, ...parsedRequest.data.interceptorSimulateStack.operations]
+			const newOperations = [...prevStack.operations, ...importedOperations]
 			// generate new ids for operations to prevent duplicated ids
 			return { operations: normalizeConsecutiveTimeManipulations(newOperations.map((operation) => {
 				switch(operation.type) {
