@@ -523,7 +523,12 @@ type ConfirmTransactionMetadataDependencies = {
 	readonly visualisation?: OpenConsumerVisualisationDependencies
 }
 
+// Counts started confirmation metadata refreshes, so only the latest started one stores its lookups; see refreshPopupConfirmTransactionMetadata.
+let latestConfirmationMetadataRefresh = 0
+
 export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, requestAbortController: AbortController | undefined, dependencies: ConfirmTransactionMetadataDependencies = {}) {
+	latestConfirmationMetadataRefresh += 1
+	const thisConfirmationMetadataRefresh = latestConfirmationMetadataRefresh
 	const promises = await getPendingTransactionsAndMessages()
 	const first = promises[0]
 	if (first === undefined) return
@@ -579,6 +584,8 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 					if (current.type !== 'Transaction' || (current.transactionOrMessageCreationStatus !== 'Simulated' && current.transactionOrMessageCreationStatus !== 'FailedToSimulate')) return current
 					// A simulation run stored during the metadata lookups has another id even within the same second, so the metadata of the older run must not replace it.
 					if (current.popupVisualisation.data.confirmationRunId !== popupVisualisation.data.confirmationRunId) return current
+					// Overlapping metadata refreshes, such as after two address-book changes, share the run and its id, so the run id alone would let an older refresh that finishes last store names from the older address book.
+					if (thisConfirmationMetadataRefresh !== latestConfirmationMetadataRefresh) return current
 					return modifyObject(current, { popupVisualisation: refreshedPopupVisualisation })
 				})
 				const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {

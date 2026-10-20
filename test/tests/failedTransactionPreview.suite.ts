@@ -265,6 +265,27 @@ test('keeps a newer simulation run stored during the failure preview metadata re
 	assert.deepEqual(await getPendingFailedTransactionVisualisation(), newerVisualisation, 'the metadata of the initial run replaced the newer run')
 })
 
+test('keeps the names of a newer metadata refresh when an older refresh of the same failed confirmation finishes last', async () => {
+	await useInvoiceAddressBook()
+	const confirmationSimulator = createFeeValidatingSimulator(TOO_LITTLE_ETH_FOR_FEES)
+	await openUsdcTransferConfirmation(confirmationSimulator)
+	// Forgetting the supplier makes the older refresh look it up on chain after reading the payer's name, which is when the payer is renamed and the newer refresh runs.
+	await modules.updateUserAddressBookEntries((entries) => entries.filter((entry) => entry.address !== recipientAddress))
+	const { refreshPopupConfirmTransactionMetadata } = await import('../../app/ts/background/popupMessageHandlers.js')
+	const getStoredPayerName = async () => (await getPendingFailedTransactionVisualisation()).data.failedTransactionPreview?.addressBookEntries.find((entry) => entry.address === activeAddress)?.name
+	let payerNameAfterNewerRefresh: string | undefined
+	const ethereumRefreshingAgainDuringLookup = supersedeDuringAddressLookup(confirmationSimulator.ethereum, recipientAddress, 'resolves', async () => {
+		await modules.updateUserAddressBookEntries((entries) => entries.map((entry) => entry.address === activeAddress ? { ...entry, name: 'Renamed Payer' } : entry))
+		await refreshPopupConfirmTransactionMetadata(confirmationSimulator.ethereum, confirmationSimulator.tokenPriceService, undefined)
+		payerNameAfterNewerRefresh = await getStoredPayerName()
+	})
+
+	await withSilencedConsole(async () => await refreshPopupConfirmTransactionMetadata(ethereumRefreshingAgainDuringLookup, confirmationSimulator.tokenPriceService, undefined))
+
+	assert.equal(payerNameAfterNewerRefresh, 'Renamed Payer', 'the newer refresh runs during the older refresh and stores the new name')
+	assert.equal(await getStoredPayerName(), 'Renamed Payer', 'the older refresh replaced the newer names')
+})
+
 test('resolves address-book names and parses calldata when the confirmation simulation throws', async () => {
 	await useInvoiceAddressBook()
 	const { refreshConfirmTransactionSimulation } = await import('../../app/ts/background/confirmTransactionSimulation.js')
