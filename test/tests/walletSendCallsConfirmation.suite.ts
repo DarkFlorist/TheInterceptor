@@ -223,6 +223,29 @@ test('a batch whose calls cannot be simulated cannot be approved', async () => {
 	assert.equal(getWalletSendCallsReply(postedMessages), undefined)
 })
 
+test('a metadata refresh stores the re-visualized batch preview of the same simulation run and updates the confirmation window', async () => {
+	const { websiteTabConnections } = await setUpWalletSendCallsTest()
+	await requestBatch(websiteTabConnections)
+	const storedBatch = await getPendingBatch()
+	const { refreshPopupConfirmTransactionMetadata } = await import('../../app/ts/background/popupMessageHandlers.js')
+	let queueWrites = 0
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		if ('pendingTransactionsAndMessages' in items) queueWrites += 1
+		writeStoredItems()
+	})
+	browserMock.sentMessages.length = 0
+
+	await refreshPopupConfirmTransactionMetadata(simulator.ethereum, simulator.tokenPriceService, undefined)
+	browserMock.setStorageSetHandler(undefined)
+
+	assert.equal(queueWrites, 1)
+	const refreshedBatch = await getPendingBatch()
+	assert.equal(refreshedBatch.popupVisualisation.statusCode, 'success')
+	assert.equal(refreshedBatch.popupVisualisation.data.simulationId, storedBatch.popupVisualisation.data.simulationId)
+	assert.deepEqual(refreshedBatch.transactionsToSimulate, storedBatch.transactionsToSimulate)
+	assert.ok(browserMock.sentMessages.some((message) => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions'))
+})
+
 test('a metadata refresh that finishes after the batch was approved does not bring it back', async () => {
 	const { postedMessages, websiteTabConnections } = await setUpWalletSendCallsTest()
 	await requestBatch(websiteTabConnections)

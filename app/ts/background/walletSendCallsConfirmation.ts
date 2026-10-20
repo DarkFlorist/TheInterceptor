@@ -13,14 +13,14 @@ import { tryFocusingTabOrWindow } from '../utils/popupOrTab.js'
 import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString } from '../utils/requests.js'
 import { createScopedKeyedSerialExecutor } from '../utils/semaphore.js'
 import { assertNever, modifyObject } from '../utils/typescript.js'
-import { getNextConfirmationSimulationId, startConfirmTransactionSimulation, toPreSimulationTransaction } from './confirmTransactionSimulation.js'
+import { getNextConfirmationSimulationId, startConfirmTransactionSimulation, toPreSimulationTransaction } from './confirmationSimulationRun.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
 import { getSimulationSettingsSnapshot } from './settings.js'
 import { captureStackSimulationContext, createSimulationStateWithNonceAndBaseFeeFixing, getSimulationInputForStack, getStackSimulationContextFingerprint, type StackSimulationContext, toStackSimulationContext, visualizeSimulatorState } from './simulationUpdating.js'
 import { getInterceptorTransactionStack, getPendingTransactionsAndMessages, getTabState, updateInterceptorTransactionStackUnlessRefused, updatePendingTransactionOrMessage } from './storageVariables.js'
 import { attemptQueuedTerminalReplyDelivery, queueTerminalReply, queueTerminalReplyAndAttemptDelivery } from './terminalReplyDelivery.js'
 import { addPendingTransactionBatch, getWalletSendCallsApprovalError, getWalletSendCallsBindingError, getWalletSendCallsTransactionParams, getWalletSendCallTransactionIdentifier, isEthereumClientOnBatchChain, isTransactionBatchOnStack, isWalletSendCallsIdInUse, lookUpWalletSendCallsAccount, releasePendingTransactionBatch, removeApprovedTransactionBatch, walletSendCallsIdInUseError } from './walletSendCalls.js'
-import { type AnswerRequestsOfClosedWindow, formRejectMessage, getPendingTransactionWindow, runWithPendingConfirmationLock, shouldReplacePopupVisualisation, updateConfirmTransactionView, updateViewAfterPendingRequestRemoved } from './confirmationWindowSupport.js'
+import { type AnswerRequestsOfClosedWindow, formRejectMessage, getPendingTransactionWindow, refreshConfirmationMetadata, runWithPendingConfirmationLock, shouldReplacePopupVisualisation, updateConfirmTransactionView, updateViewAfterPendingRequestRemoved } from './confirmationWindowSupport.js'
 import { formEthSendTransactionOnSimulationState } from './transactionPreparation.js'
 
 // Confirms simulation-mode wallet_sendCalls batches: admits a batch to the confirmation queue, previews it on top of the simulation stack, and approves or rejects it as a whole. The confirmation window's generic dispatch hands every batch to resolvePendingTransactionBatch.
@@ -116,6 +116,14 @@ async function refreshUnapprovedTransactionBatchPreview(ethereumClientService: E
 		throw error
 	}
 	await updateConfirmTransactionView(ethereumClientService, tokenPriceService, true)
+}
+
+// The batch's part of the metadata refresh. Protectors and metadata of another network would describe different contracts, so a batch is only re-visualized on the network it was requested for.
+export async function refreshPendingTransactionBatchMetadata(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, requestAbortController: AbortController | undefined, pendingBatch: PendingTransactionBatch, updateConfirmationWindow: () => Promise<void>) {
+	if (pendingBatch.transactionOrMessageCreationStatus === 'Crafting' || pendingBatch.popupVisualisation.statusCode === 'failed' || !isEthereumClientOnBatchChain(ethereum, pendingBatch)) return
+	await refreshConfirmationMetadata(ethereum, tokenPriceService, requestAbortController, pendingBatch.uniqueRequestIdentifier, pendingBatch.popupVisualisation, (current) => current.type === 'TransactionBatch' && current.transactionOrMessageCreationStatus !== 'Crafting'
+		? { visualisation: current.popupVisualisation, withVisualisation: (popupVisualisation) => modifyObject(current, { popupVisualisation }) }
+		: undefined, updateConfirmationWindow)
 }
 
 export async function refreshPendingTransactionBatchSimulation(ethereumClientService: EthereumClientService, tokenPriceService: TokenPriceService, pendingBatch: PendingTransactionBatch) {

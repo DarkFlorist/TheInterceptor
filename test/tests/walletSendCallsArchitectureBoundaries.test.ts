@@ -12,6 +12,8 @@ const transactionPreparationSource = await readSource('background/transactionPre
 const accessRequestTypesSource = await readSource('types/accessRequest.ts')
 const storageVariablesSource = await readSource('background/storageVariables.ts')
 const backgroundSource = await readSource('background/background.ts')
+const confirmationSimulationRunSource = await readSource('background/confirmationSimulationRun.ts')
+const popupMessageHandlersSource = await readSource('background/popupMessageHandlers.ts')
 const visualizerTypesSource = await readSource('types/visualizer-types.ts')
 const safeConfirmationSources = await Promise.all([
 	'background/safeConfirmationResolver.ts',
@@ -90,4 +92,23 @@ test('wallet_sendCalls resolves and compares the active account with the shared 
 	assert.match(walletSendCallsSource, /import \{ haveSameActiveAddressSettings \} from '\.\/backgroundUtils\.js'/u)
 	assert.doesNotMatch(walletSendCallsSource, /getActiveAddressForCurrentSignerState|const haveSameActiveAddressSettings|activeSimulationAddress/u)
 	assert.doesNotMatch(backgroundSource, /function getActiveAddressForRequest/u)
+})
+
+test('both confirmation flows share the simulation run machinery from a neutral module', () => {
+	assert.equal(importsFrom(walletSendCallsConfirmationSource, 'confirmTransactionSimulation.js'), false)
+	assert.equal(importsFrom(walletSendCallsConfirmationSource, 'confirmationSimulationRun.js'), true)
+	assert.equal(importsFrom(confirmTransactionSimulationSource, 'confirmationSimulationRun.js'), true)
+	for (const flowModule of ['windows/confirmTransaction.js', 'confirmTransactionSimulation.js', 'walletSendCallsConfirmation.js']) assert.equal(importsFrom(confirmationSimulationRunSource, flowModule), false, flowModule)
+	for (const runState of ['let confirmTransactionAbortController', 'let runningConfirmationSimulation', 'let latestConfirmationSimulationId']) {
+		assert.ok(confirmationSimulationRunSource.includes(runState), runState)
+		assert.ok(!confirmTransactionSimulationSource.includes(runState), runState)
+	}
+})
+
+test('the confirmation metadata refresh routes batches to their owner and shares how a refreshed preview is stored', () => {
+	assert.match(popupMessageHandlersSource, /case 'TransactionBatch': return await refreshPendingTransactionBatchMetadata\(/u)
+	assert.match(walletSendCallsConfirmationSource, /export async function refreshPendingTransactionBatchMetadata\(/u)
+	assert.match(confirmationWindowSupportSource, /export async function refreshConfirmationMetadata</u)
+	assert.doesNotMatch(popupMessageHandlersSource, /isEthereumClientOnBatchChain|isSameConfirmationSimulation|storeRefreshedConfirmationMetadata/u)
+	assert.doesNotMatch(walletSendCallsConfirmationSource, /isSameConfirmationSimulation|visualizeSimulatorState\(refreshedVisualisation/u)
 })

@@ -3,19 +3,20 @@ import type { TokenPriceService } from '../simulation/services/priceEstimator.js
 import type { PendingTransactionOrSignableMessage, PopupPendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import { UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../types/interceptor-messages.js'
 import type { RpcConnectionStatus } from '../types/user-interface-types.js'
-import { type CompleteVisualizedSimulation, createPassthroughCompleteVisualizedSimulation } from '../types/visualizer-types.js'
+import { type CompleteVisualizedSimulation, type SimulationState, createPassthroughCompleteVisualizedSimulation } from '../types/visualizer-types.js'
 import { serialize } from '../types/wire-types.js'
 import { isExpectedInfrastructureError, reportUnexpectedError } from '../utils/errors.js'
 import { closePopupOrTabById, openPopupOrTab, getPopupOrTabById, tryFocusingTabOrWindow } from '../utils/popupOrTab.js'
-import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
+import { silenceChromeUnCaughtPromise, type UniqueRequestIdentifier } from '../utils/requests.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { assertNever } from '../utils/typescript.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
 import { getSettings } from './settings.js'
-import { getPendingTransactionsAndMessages, getRpcConnectionStatus } from './storageVariables.js'
+import { visualizeSimulatorState } from './simulationUpdating.js'
+import { getPendingTransactionsAndMessages, getRpcConnectionStatus, updatePendingTransactionOrMessage } from './storageVariables.js'
 
-// The confirmation queue and window that the confirmation window module and wallet_sendCalls batches share: the admission lock, the window that shows the queue, its view updates, the ordering of stored previews and the rejection reply format.
+// The confirmation queue and window that the confirmation window module and wallet_sendCalls batches share: the admission lock, the window that shows the queue, its view updates, the ordering and metadata refresh of stored previews and the rejection reply format.
 
 const pendingConfirmationSemaphore = new Semaphore(1)
 // Requests are added to the confirmation queue one at a time while holding this lock.
@@ -66,6 +67,45 @@ export const shouldReplacePopupVisualisation = (
 	const nextSimulationId = nextPopupVisualisation.data.simulationId
 	if (currentSimulationId !== undefined && nextSimulationId !== undefined) return nextSimulationId >= currentSimulationId
 	return getSimulationStartedTimestamp(nextPopupVisualisation).getTime() >= getSimulationStartedTimestamp(currentPopupVisualisation).getTime()
+}
+
+// A visualisation stored without a simulationId by an older version cannot be told apart from a newer run, so it never matches.
+const isSameConfirmationSimulation = (current: { readonly data: { readonly simulationId?: number } }, refreshed: { readonly data: { readonly simulationId?: number } }) => current.data.simulationId !== undefined && current.data.simulationId === refreshed.data.simulationId
+
+type SimulatedConfirmationVisualisation<Data> = { readonly statusCode: 'success', readonly data: Data }
+
+// The simulated visualisation that a stored confirmation shows, and the confirmation with a refreshed visualisation in its place.
+export type ShownConfirmationVisualisation<Data> = {
+	readonly visualisation: { readonly data: { readonly simulationId?: number } }
+	readonly withVisualisation: (popupVisualisation: SimulatedConfirmationVisualisation<Data>) => PendingTransactionOrSignableMessage
+}
+
+// Re-visualizes a confirmation's simulation with fresh metadata, then updates the confirmation window. The stored confirmation is re-read so that only its visualisation is replaced, and only while it still shows the same simulation run: approval changes made meanwhile and newer simulations are kept. An unreachable RPC leaves everything for the next refresh.
+export async function refreshConfirmationMetadata<Data extends { readonly simulationState: SimulationState, readonly simulationId?: number }>(
+	ethereum: EthereumClientService,
+	tokenPriceService: TokenPriceService,
+	requestAbortController: AbortController | undefined,
+	uniqueRequestIdentifier: UniqueRequestIdentifier,
+	refreshedVisualisation: SimulatedConfirmationVisualisation<Data>,
+	getShownVisualisation: (current: PendingTransactionOrSignableMessage) => ShownConfirmationVisualisation<Data> | undefined,
+	updateConfirmationWindow: () => Promise<void>,
+) {
+	try {
+		const visualizedSimulationState = await visualizeSimulatorState(refreshedVisualisation.data.simulationState, ethereum, tokenPriceService, requestAbortController)
+		const popupVisualisation = { statusCode: 'success' as const, data: { ...refreshedVisualisation.data, ...visualizedSimulationState } }
+		let stored = false
+		await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (current) => {
+			const shown = getShownVisualisation(current)
+			if (shown === undefined || !isSameConfirmationSimulation(shown.visualisation, refreshedVisualisation)) return undefined
+			stored = true
+			return shown.withVisualisation(popupVisualisation)
+		})
+		if (!stored) return
+		await updateConfirmationWindow()
+	} catch(error: unknown) {
+		if (isExpectedInfrastructureError(error)) return
+		throw error
+	}
 }
 
 export function toPopupPendingTransactionOrSignableMessage(pending: PendingTransactionOrSignableMessage): PopupPendingTransactionOrSignableMessage {
