@@ -742,3 +742,39 @@ test('a repair of a corrupt active network still running when the network is rea
 	assert.equal(stackUpdate.committed ? undefined : stackUpdate.refusal.code, METAMASK_ERROR_NOT_CONNECTED_TO_APPROPRIATE_CHAIN)
 	assert.deepEqual((await modules.getInterceptorTransactionStack()).operations, [])
 })
+
+test('a page context reads a corrupt active network without writing it, so a guarded write commits only on the network that stays stored', async () => {
+	const { updateInterceptorTransactionStackOnRequestedNetwork } = await import('../../app/ts/background/transactionNetwork.js')
+	const backgroundSettings = await import('../../app/ts/background/settings.js')
+	// A popup bundle runs its own copy of the settings module, sharing only storage with the background.
+	const popupSettingsModule = '../../app/ts/background/settings.js?popup'
+	const popupSettings: typeof backgroundSettings = await import(popupSettingsModule)
+	await setUpTransactionApprovalTest(false)
+	const stackOperation = { type: 'Transaction' as const, preSimulationTransaction: { ...pendingTransaction.transactionToSimulate, signedTransaction } }
+	const guardReadNetwork = createDeferredValue<undefined>()
+	const networkWritesOtherThanTheSelection: unknown[] = []
+	// Any write of the active network besides the background's selection is held until the guarded write read the network, like a delayed repair.
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		if ('activeRpcNetwork' in items && !(isRecord(items.activeRpcNetwork) && items.activeRpcNetwork.chainId === `0x${ fakeRpcNetwork.chainId.toString(16) }`)) {
+			networkWritesOtherThanTheSelection.push(items.activeRpcNetwork)
+			await guardReadNetwork.promise
+		}
+		writeStoredItems()
+	})
+
+	browserMock.storageState.activeRpcNetwork = { corrupt: true }
+	const pageRead = withSilencedConsole(async () => await popupSettings.getActiveRpcNetworkWithoutRepair())
+	await backgroundSettings.changeSimulationMode({ simulationMode: false, rpcNetwork: fakeRpcNetwork })
+	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+		const items = readStoredItems()
+		if (Array.isArray(keys) && keys.includes('activeRpcNetwork')) guardReadNetwork.resolve(undefined)
+		return items
+	})
+	const stackUpdate = await updateInterceptorTransactionStackOnRequestedNetwork(simulator.ethereum, pendingTransaction, () => ({ operations: [stackOperation] }))
+	guardReadNetwork.resolve(undefined)
+
+	assert.equal((await pageRead).chainId, backgroundSettings.defaultRpcs[0]?.chainId)
+	assert.deepEqual(networkWritesOtherThanTheSelection, [])
+	assert.equal(stackUpdate.committed, true)
+	assert.equal((await backgroundSettings.getSettings()).activeRpcNetwork.chainId, fakeRpcNetwork.chainId)
+})

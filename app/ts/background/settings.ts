@@ -55,7 +55,7 @@ type StartupStorageDefaults = {
 	signingAddressPreferences: SigningAddressPreferences
 }
 
-// Every write of the active network, whether a network switch, a settings import or the repair of a corrupt stored value, runs through trackActiveNetworkWrite, which counts the writes that started and finished.
+// Every write of the active network, whether a network switch, a settings import or the repair of a corrupt stored value, runs through trackActiveNetworkWrite, which counts the writes that started and finished. The counts cover writes made in the background, where readActiveNetworkSnapshot runs; a page context, such as the popup, runs its own copy of this module whose counts the background never sees, so page code reads the network with getActiveRpcNetworkWithoutRepair and never writes it, which pageContextSettingsImports.test.ts checks.
 let activeNetworkWritesStarted = 0
 let activeNetworkWritesFinished = 0
 
@@ -116,6 +116,13 @@ export async function getSettings() : Promise<Settings> {
 		simulationModePromise,
 	])
 	return { activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode }
+}
+
+// Reads the active network for a page context: a corrupt stored value is read as the default network but left for the background to repair, because only the background writes the active network.
+export async function getActiveRpcNetworkWithoutRepair(): Promise<RpcNetwork> {
+	const defaultRpcNetwork = defaultRpcs[0]
+	if (defaultRpcNetwork === undefined) throw new Error('default rpc was missing')
+	return browserStorageLocalSafeParse(await browser.storage.local.get('activeRpcNetwork'))?.activeRpcNetwork ?? defaultRpcNetwork
 }
 
 export type ActiveNetworkSnapshot = {
