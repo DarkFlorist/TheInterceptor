@@ -37,11 +37,17 @@ export async function simulateAndStoreConfirmationRun<Result>(simulateAndStore: 
 	const run: ConfirmationRunInFlight = { refreshOnceStored: undefined }
 	confirmationRunsInFlight.add(run)
 	let storedNewRun = false
-	const result = await simulateAndStore(async (uniqueRequestIdentifier, update) => {
-		const outcome = await storeConfirmationRun(uniqueRequestIdentifier, update)
-		if (outcome.storedNewRun) storedNewRun = true
-		return outcome
-	}).finally(() => confirmationRunsInFlight.delete(run))
+	let result: Result
+	try {
+		result = await simulateAndStore(async (uniqueRequestIdentifier, update) => {
+			const outcome = await storeConfirmationRun(uniqueRequestIdentifier, update)
+			if (outcome.storedNewRun) storedNewRun = true
+			return outcome
+		})
+	} finally {
+		// Also when simulateAndStore throws before returning its promise, so no run stays in flight to be marked stale later.
+		confirmationRunsInFlight.delete(run)
+	}
 	if (storedNewRun && run.refreshOnceStored !== undefined) await run.refreshOnceStored()
 	return result
 }
