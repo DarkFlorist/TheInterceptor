@@ -79,6 +79,28 @@ export async function updatePendingTransactionOrMessage(uniqueRequestIdentifier:
 	})
 }
 
+type PendingRequestInstance = Pick<PendingTransactionOrSignableMessage, 'uniqueRequestIdentifier' | 'instanceId'>
+
+export const isSamePendingRequestInstance = (first: PendingRequestInstance, second: PendingRequestInstance) => {
+	return first.instanceId === second.instanceId && doesUniqueRequestIdentifiersMatch(first.uniqueRequestIdentifier, second.uniqueRequestIdentifier)
+}
+
+// Updates only the pending request instance that was read earlier, so work that awaited in between never stores into a different request the page sent under the same request id. Returns whether that instance is still pending.
+export async function updatePendingTransactionOrMessageInstance(instance: PendingRequestInstance, update: (pendingTransactionOrMessage: PendingTransactionOrSignableMessage) => Promise<PendingTransactionOrSignableMessage | undefined>) {
+	let instanceIsPending = false
+	await updatePendingTransactionOrMessages(async (pendingTransactionsOrMessages) => {
+		const match = pendingTransactionsOrMessages.findIndex((pending) => isSamePendingRequestInstance(pending, instance))
+		if (match < 0) return pendingTransactionsOrMessages
+		const found = pendingTransactionsOrMessages[match]
+		if (found === undefined) return pendingTransactionsOrMessages
+		instanceIsPending = true
+		const updated = await update(found)
+		if (updated === undefined) return pendingTransactionsOrMessages
+		return replaceElementInReadonlyArray(pendingTransactionsOrMessages, match, updated)
+	})
+	return instanceIsPending
+}
+
 export async function appendPendingTransactionOrMessage(pendingTransactionOrMessage: PendingTransactionOrSignableMessage) {
 	await updatePendingTransactionOrMessages(async (pendingTransactionsOrMessages) => [...pendingTransactionsOrMessages, pendingTransactionOrMessage])
 }
