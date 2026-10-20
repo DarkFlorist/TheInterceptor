@@ -22,7 +22,7 @@ export async function refreshConfirmTransactionSimulation(
 	activeAddress: bigint,
 	simulationMode: boolean,
 	uniqueRequestIdentifier: UniqueRequestIdentifier,
-	simulationId: number,
+	confirmationRunId: number,
 	transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed,
 	safeSigningRequest?: SafeTransactionSigningRequest,
 ): Promise<ConfirmTransactionTransactionSingleVisualization | undefined> {
@@ -33,9 +33,9 @@ export async function refreshConfirmTransactionSimulation(
 		activeAddress,
 		signerName: (await getTabState(uniqueRequestIdentifier.requestSocket.tabId)).signerName,
 		tabIdOpenedFrom: uniqueRequestIdentifier.requestSocket.tabId,
-		simulationId,
+		confirmationRunId,
 	}
-	const thisConfirmTransactionAbortController = startConfirmTransactionSimulation(uniqueRequestIdentifier, simulationId)
+	const thisConfirmTransactionAbortController = startConfirmTransactionSimulation(uniqueRequestIdentifier, confirmationRunId)
 	if (thisConfirmTransactionAbortController === undefined) return undefined
 	const simulationStartedTimestamp = new Date()
 	const simulationInput = safeSigningRequest === undefined

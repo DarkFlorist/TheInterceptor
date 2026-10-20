@@ -13,7 +13,7 @@ import { tryFocusingTabOrWindow } from '../utils/popupOrTab.js'
 import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString } from '../utils/requests.js'
 import { createScopedKeyedSerialExecutor } from '../utils/semaphore.js'
 import { assertNever, modifyObject } from '../utils/typescript.js'
-import { getNextConfirmationSimulationId, startConfirmTransactionSimulation, toPreSimulationTransaction } from './confirmationSimulationRun.js'
+import { getNextConfirmationRunId, startConfirmTransactionSimulation, toPreSimulationTransaction } from './confirmationSimulationRun.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
 import { getSimulationSettingsSnapshot } from './settings.js'
 import { captureStackSimulationContext, createSimulationStateWithNonceAndBaseFeeFixing, getSimulationInputForStack, getStackSimulationContextFingerprint, type StackSimulationContext, toStackSimulationContext, visualizeSimulatorState } from './simulationUpdating.js'
@@ -50,7 +50,7 @@ async function simulateConfirmTransactionBatch(
 	activeAddress: bigint,
 	simulationMode: boolean,
 	uniqueRequestIdentifier: UniqueRequestIdentifier,
-	simulationId: number,
+	confirmationRunId: number,
 	simulationInputWithBatch: SimulationStateInput,
 ): Promise<ConfirmTransactionBatchVisualization | undefined> {
 	const info = {
@@ -59,9 +59,9 @@ async function simulateConfirmTransactionBatch(
 		activeAddress,
 		signerName: (await getTabState(uniqueRequestIdentifier.requestSocket.tabId)).signerName,
 		simulationStartedTimestamp: new Date(),
-		simulationId,
+		confirmationRunId,
 	}
-	const thisConfirmTransactionAbortController = startConfirmTransactionSimulation(uniqueRequestIdentifier, simulationId)
+	const thisConfirmTransactionAbortController = startConfirmTransactionSimulation(uniqueRequestIdentifier, confirmationRunId)
 	if (thisConfirmTransactionAbortController === undefined) return undefined
 	try {
 		const visualizedSimulatorState = await visualizeSimulatorState(await createSimulationStateWithNonceAndBaseFeeFixing(simulationInputWithBatch, ethereum), ethereum, tokenPriceService, thisConfirmTransactionAbortController)
@@ -81,10 +81,10 @@ async function simulateConfirmTransactionBatch(
 
 async function simulatePendingTransactionBatch(ethereumClientService: EthereumClientService, tokenPriceService: TokenPriceService, pendingBatch: PendingTransactionBatch) {
 	// Taken before the simulation stack is read, so a run that prepared the calls from an older stack always has an older id, however long its preparation takes.
-	const simulationId = getNextConfirmationSimulationId()
+	const confirmationRunId = getNextConfirmationRunId()
 	const { context: stackContext } = await captureStackSimulationContext()
 	const { transactionsToSimulate, simulationInputWithBatch } = await formWalletSendCallsTransactions(ethereumClientService, pendingBatch, stackContext)
-	const popupVisualisation = await simulateConfirmTransactionBatch(ethereumClientService, tokenPriceService, pendingBatch.activeAddress, pendingBatch.simulationMode, pendingBatch.uniqueRequestIdentifier, simulationId, simulationInputWithBatch)
+	const popupVisualisation = await simulateConfirmTransactionBatch(ethereumClientService, tokenPriceService, pendingBatch.activeAddress, pendingBatch.simulationMode, pendingBatch.uniqueRequestIdentifier, confirmationRunId, simulationInputWithBatch)
 	if (popupVisualisation === undefined) return undefined
 	return {
 		transactionsToSimulate,
@@ -279,7 +279,7 @@ async function resolveUnapprovedTransactionBatch(ethereum: EthereumClientService
 		case 'accept': {
 			if (pendingBatch.transactionOrMessageCreationStatus !== 'Simulated') return false
 			// The approval names the preview the user saw. A refresh stores its replacement before the popup shows it, and a duplicate window can still show an older preview, so approving any other preview is refused and the stored one is shown for a fresh approval.
-			if (confirmation.data.approvedSimulationId === undefined || confirmation.data.approvedSimulationId !== pendingBatch.popupVisualisation.data.simulationId) {
+			if (confirmation.data.approvedConfirmationRunId === undefined || confirmation.data.approvedConfirmationRunId !== pendingBatch.popupVisualisation.data.confirmationRunId) {
 				await updateConfirmTransactionView(ethereum, tokenPriceService)
 				return false
 			}

@@ -38,8 +38,8 @@ const ConfirmationSimulationCommonData = funtypes.ReadonlyObject({
 	uniqueRequestIdentifier: UniqueRequestIdentifier,
 	signerName: SignerName,
 }).And(funtypes.ReadonlyPartial({
-	// Identifies the confirmation simulation run that produced this visualisation; confirmations stored by older versions have none. Unlike CompleteVisualizedSimulation.simulationId, which counts refreshes of the simulation stack, it names one confirmation simulation run of this pending transaction.
-	simulationId: funtypes.Number,
+	// Names one confirmation simulation run of this pending transaction: the run that produced this visualisation. Confirmations stored by older versions have none.
+	confirmationRunId: funtypes.Number,
 }))
 
 type ConfirmTransactionSimulationBaseData = funtypes.Static<typeof ConfirmTransactionSimulationBaseData>

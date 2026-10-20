@@ -99,7 +99,7 @@ test('both confirmation flows share the simulation run machinery from a neutral 
 	assert.equal(importsFrom(walletSendCallsConfirmationSource, 'confirmationSimulationRun.js'), true)
 	assert.equal(importsFrom(confirmTransactionSimulationSource, 'confirmationSimulationRun.js'), true)
 	for (const flowModule of ['windows/confirmTransaction.js', 'confirmTransactionSimulation.js', 'walletSendCallsConfirmation.js']) assert.equal(importsFrom(confirmationSimulationRunSource, flowModule), false, flowModule)
-	for (const runState of ['let confirmTransactionAbortController', 'let runningConfirmationSimulation', 'let latestConfirmationSimulationId']) {
+	for (const runState of ['let confirmTransactionAbortController', 'let runningConfirmationSimulation', 'let latestConfirmationRunId']) {
 		assert.ok(confirmationSimulationRunSource.includes(runState), runState)
 		assert.ok(!confirmTransactionSimulationSource.includes(runState), runState)
 	}

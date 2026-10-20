@@ -945,12 +945,12 @@ export function ConfirmTransaction() {
 		if (currentPendingTransactionOrSignableMessage.value === undefined) throw new Error('dialogState is not set')
 		// A batch approval names the preview shown when the user clicked, so the background can refuse it if that preview was replaced in the meantime.
 		const displayedBatch = getSimulatedTransactionBatch(currentPendingTransactionOrSignableMessage.value)
-		const approvedSimulationId = displayedBatch?.popupVisualisation.data.simulationId
+		const approvedConfirmationRunId = displayedBatch?.popupVisualisation.data.confirmationRunId
 		pendingTransactionAddedNotification.value = false
 		const currentWindow = await browser.windows.getCurrent()
 		checkAndThrowRuntimeLastError()
 		if (currentWindow.id === undefined) throw new Error('could not get our own Id!')
-		const deliveryError = await sendConfirmDialogMessage({ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: currentPendingTransactionOrSignableMessage.value.uniqueRequestIdentifier, action: 'accept', ...(approvedSimulationId === undefined ? {} : { approvedSimulationId }) } })
+		const deliveryError = await sendConfirmDialogMessage({ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: currentPendingTransactionOrSignableMessage.value.uniqueRequestIdentifier, action: 'accept', ...(approvedConfirmationRunId === undefined ? {} : { approvedConfirmationRunId }) } })
 		if (deliveryError !== undefined) unexpectedError.value = deliveryError
 	}
 	async function rejectTransaction() {

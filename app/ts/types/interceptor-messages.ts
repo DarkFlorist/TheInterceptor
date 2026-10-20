@@ -259,8 +259,8 @@ export const TransactionConfirmation = funtypes.ReadonlyObject({
 				funtypes.ReadonlyObject({
 					action: funtypes.Union(funtypes.Literal('accept'), funtypes.Literal('addToSafeStack'), funtypes.Literal('noResponse')),
 				}).And(funtypes.ReadonlyPartial({
-					// The simulationId of the wallet_sendCalls preview the user approved; batch approval is refused unless it is the stored preview.
-					approvedSimulationId: funtypes.Number,
+					// The confirmationRunId of the wallet_sendCalls preview the user approved; batch approval is refused unless it is the stored preview.
+					approvedConfirmationRunId: funtypes.Number,
 				})),
 				funtypes.ReadonlyObject({
 					action: funtypes.Literal('reject'),

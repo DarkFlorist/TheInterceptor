@@ -48,7 +48,7 @@ type TimestampedPopupVisualisation = {
 	statusCode: 'success' | 'failed'
 	data: {
 		simulationStartedTimestamp: Date
-		simulationId?: number
+		confirmationRunId?: number
 		simulationState: {
 			simulationConductedTimestamp: Date
 		}
@@ -57,31 +57,31 @@ type TimestampedPopupVisualisation = {
 
 const getSimulationStartedTimestamp = (popupVisualisation: TimestampedPopupVisualisation) => popupVisualisation.data.simulationStartedTimestamp
 
-// A stored simulation run is only replaced by the same or a newer run, whether either run succeeded or failed. Stored start timestamps keep only whole seconds, so runs are ordered by simulationId when both have one, and by start time only when a run was stored by an older version without an id.
+// A stored simulation run is only replaced by the same or a newer run, whether either run succeeded or failed. Stored start timestamps keep only whole seconds, so runs are ordered by confirmationRunId when both have one, and by start time only when a run was stored by an older version without an id.
 export const shouldReplacePopupVisualisation = (
 	currentPopupVisualisation: TimestampedPopupVisualisation | undefined,
 	nextPopupVisualisation: TimestampedPopupVisualisation,
 ) => {
 	if (currentPopupVisualisation === undefined) return true
-	const currentSimulationId = currentPopupVisualisation.data.simulationId
-	const nextSimulationId = nextPopupVisualisation.data.simulationId
-	if (currentSimulationId !== undefined && nextSimulationId !== undefined) return nextSimulationId >= currentSimulationId
+	const currentConfirmationRunId = currentPopupVisualisation.data.confirmationRunId
+	const nextConfirmationRunId = nextPopupVisualisation.data.confirmationRunId
+	if (currentConfirmationRunId !== undefined && nextConfirmationRunId !== undefined) return nextConfirmationRunId >= currentConfirmationRunId
 	return getSimulationStartedTimestamp(nextPopupVisualisation).getTime() >= getSimulationStartedTimestamp(currentPopupVisualisation).getTime()
 }
 
-// A visualisation stored without a simulationId by an older version cannot be told apart from a newer run, so it never matches.
-const isSameConfirmationSimulation = (current: { readonly data: { readonly simulationId?: number } }, refreshed: { readonly data: { readonly simulationId?: number } }) => current.data.simulationId !== undefined && current.data.simulationId === refreshed.data.simulationId
+// A visualisation stored without a confirmationRunId by an older version cannot be told apart from a newer run, so it never matches.
+const isSameConfirmationSimulation = (current: { readonly data: { readonly confirmationRunId?: number } }, refreshed: { readonly data: { readonly confirmationRunId?: number } }) => current.data.confirmationRunId !== undefined && current.data.confirmationRunId === refreshed.data.confirmationRunId
 
 type SimulatedConfirmationVisualisation<Data> = { readonly statusCode: 'success', readonly data: Data }
 
 // The simulated visualisation that a stored confirmation shows, and the confirmation with a refreshed visualisation in its place.
 export type ShownConfirmationVisualisation<Data> = {
-	readonly visualisation: { readonly data: { readonly simulationId?: number } }
+	readonly visualisation: { readonly data: { readonly confirmationRunId?: number } }
 	readonly withVisualisation: (popupVisualisation: SimulatedConfirmationVisualisation<Data>) => PendingTransactionOrSignableMessage
 }
 
 // Re-visualizes a confirmation's simulation with fresh metadata, then updates the confirmation window. The stored confirmation is re-read so that only its visualisation is replaced, and only while it still shows the same simulation run: approval changes made meanwhile and newer simulations are kept. An unreachable RPC leaves everything for the next refresh.
-export async function refreshConfirmationMetadata<Data extends { readonly simulationState: SimulationState, readonly simulationId?: number }>(
+export async function refreshConfirmationMetadata<Data extends { readonly simulationState: SimulationState, readonly confirmationRunId?: number }>(
 	ethereum: EthereumClientService,
 	tokenPriceService: TokenPriceService,
 	requestAbortController: AbortController | undefined,

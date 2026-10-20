@@ -277,14 +277,14 @@ test('uses zero-reimbursement Safe semantics in the pre-sign confirmation simula
 	}, 0n)
 	const safeTxHash = BigInt(getSafeTxHash(safeTx))
 	const { refreshConfirmTransactionSimulation } = await import('../../app/ts/background/confirmTransactionSimulation.js')
-	const { getNextConfirmationSimulationId } = await import('../../app/ts/background/confirmationSimulationRun.js')
+	const { getNextConfirmationRunId } = await import('../../app/ts/background/confirmationSimulationRun.js')
 	const popupVisualisation = await refreshConfirmTransactionSimulation(
 		simulator.ethereum,
 		simulator.tokenPriceService,
 		activeAddress,
 		false,
 		uniqueRequestIdentifier,
-		getNextConfirmationSimulationId(),
+		getNextConfirmationRunId(),
 		pendingTransaction.transactionToSimulate,
 		{
 			safeAddress: activeAddress,

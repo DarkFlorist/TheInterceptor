@@ -41,10 +41,10 @@ test('a metadata refresh of an older transaction simulation does not replace a n
 	}
 })
 
-test('a stored simulation run is only replaced by a newer run, ordered by simulation id when both runs have one', async () => {
+test('a stored simulation run is only replaced by a newer run, ordered by confirmationRunId when both runs have one', async () => {
 	const { shouldReplacePopupVisualisation } = await import('../../app/ts/background/confirmationWindowSupport.js')
 	const sameSecond = new Date('2026-01-01T00:00:00.000Z')
-	const run = (statusCode: 'success' | 'failed', simulationStartedTimestamp: Date, simulationId?: number) => ({ statusCode, data: { ...popupVisualisation.data, simulationStartedTimestamp, ...(simulationId === undefined ? {} : { simulationId }) } })
+	const run = (statusCode: 'success' | 'failed', simulationStartedTimestamp: Date, confirmationRunId?: number) => ({ statusCode, data: { ...popupVisualisation.data, simulationStartedTimestamp, ...(confirmationRunId === undefined ? {} : { confirmationRunId }) } })
 
 	assert.equal(shouldReplacePopupVisualisation(undefined, run('failed', sameSecond, 1)), true)
 	// Within one stored second, only the ids tell the runs apart, whether the older run succeeded or failed.

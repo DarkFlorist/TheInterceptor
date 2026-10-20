@@ -62,17 +62,17 @@ async function getPendingBatch(uniqueRequestIdentifier = batchRequestIdentifier)
 	return pending
 }
 
-const getStoredPreviewSimulationId = async (uniqueRequestIdentifier: typeof batchRequestIdentifier) => {
+const getStoredPreviewConfirmationRunId = async (uniqueRequestIdentifier: typeof batchRequestIdentifier) => {
 	const pending = (await modules.getPendingTransactionsAndMessages()).find((entry) => entry.type === 'TransactionBatch' && entry.uniqueRequestIdentifier.requestId === uniqueRequestIdentifier.requestId)
-	return pending?.type === 'TransactionBatch' && pending.transactionOrMessageCreationStatus !== 'Crafting' ? pending.popupVisualisation.data.simulationId : undefined
+	return pending?.type === 'TransactionBatch' && pending.transactionOrMessageCreationStatus !== 'Crafting' ? pending.popupVisualisation.data.confirmationRunId : undefined
 }
 
-// Approves like the confirmation window does, naming the preview it shows: the stored one, unless a test passes the simulationId of a preview the window still shows.
-async function approveBatch(websiteTabConnections: BatchTestConnections, uniqueRequestIdentifier = batchRequestIdentifier, displayedSimulationId?: number) {
-	const approvedSimulationId = displayedSimulationId ?? await getStoredPreviewSimulationId(uniqueRequestIdentifier)
+// Approves like the confirmation window does, naming the preview it shows: the stored one, unless a test passes the confirmationRunId of a preview the window still shows.
+async function approveBatch(websiteTabConnections: BatchTestConnections, uniqueRequestIdentifier = batchRequestIdentifier, displayedConfirmationRunId?: number) {
+	const approvedConfirmationRunId = displayedConfirmationRunId ?? await getStoredPreviewConfirmationRunId(uniqueRequestIdentifier)
 	return await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
-		data: { action: 'accept', uniqueRequestIdentifier, ...(approvedSimulationId === undefined ? {} : { approvedSimulationId }) },
+		data: { action: 'accept', uniqueRequestIdentifier, ...(approvedConfirmationRunId === undefined ? {} : { approvedConfirmationRunId }) },
 	})
 }
 
@@ -241,7 +241,7 @@ test('a metadata refresh stores the re-visualized batch preview of the same simu
 	assert.equal(queueWrites, 1)
 	const refreshedBatch = await getPendingBatch()
 	assert.equal(refreshedBatch.popupVisualisation.statusCode, 'success')
-	assert.equal(refreshedBatch.popupVisualisation.data.simulationId, storedBatch.popupVisualisation.data.simulationId)
+	assert.equal(refreshedBatch.popupVisualisation.data.confirmationRunId, storedBatch.popupVisualisation.data.confirmationRunId)
 	assert.deepEqual(refreshedBatch.transactionsToSimulate, storedBatch.transactionsToSimulate)
 	assert.ok(browserMock.sentMessages.some((message) => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions'))
 })
@@ -659,7 +659,7 @@ async function approveWhileAdmissionFocusesItsWindow(delivery: 'delivered' | 'in
 	let approvalStarted = false
 	const updateWindow = browser.windows.update
 	browser.windows.update = async (...parameters: Parameters<typeof browser.windows.update>) => {
-		if (approvalStarted || await getStoredPreviewSimulationId(batchRequestIdentifier) === undefined) return await updateWindow(...parameters)
+		if (approvalStarted || await getStoredPreviewConfirmationRunId(batchRequestIdentifier) === undefined) return await updateWindow(...parameters)
 		approvalStarted = true
 		if (delivery === 'interrupted') connection.port = createDisconnectedPort().port
 		assert.equal(await approveBatch(websiteTabConnections), delivery === 'delivered')
@@ -1091,14 +1091,14 @@ for (const { name, change } of simulationContextChanges) {
 test('two windows approving a preview that was replaced both refuse until the replacement is approved', async () => {
 	const { websiteTabConnections } = await setUpWalletSendCallsTest()
 	await requestBatch(websiteTabConnections)
-	const displayedPreviewId = await getStoredPreviewSimulationId(batchRequestIdentifier)
+	const displayedConfirmationRunId = await getStoredPreviewConfirmationRunId(batchRequestIdentifier)
 	await simulationContextChanges[0]?.change()
 
-	const approvals = await Promise.all([approveBatch(websiteTabConnections, batchRequestIdentifier, displayedPreviewId), approveBatch(websiteTabConnections, batchRequestIdentifier, displayedPreviewId)])
+	const approvals = await Promise.all([approveBatch(websiteTabConnections, batchRequestIdentifier, displayedConfirmationRunId), approveBatch(websiteTabConnections, batchRequestIdentifier, displayedConfirmationRunId)])
 
 	assert.deepEqual(approvals, [false, false])
 	assert.deepEqual(await getStackBatchTransactions(), [])
-	assert.notEqual(await getStoredPreviewSimulationId(batchRequestIdentifier), displayedPreviewId)
+	assert.notEqual(await getStoredPreviewConfirmationRunId(batchRequestIdentifier), displayedConfirmationRunId)
 	assert.equal(await approveBatch(websiteTabConnections), true)
 	assert.equal((await getStackBatchTransactions()).length, 2)
 })
@@ -1133,7 +1133,7 @@ test('approving the displayed preview is refused while a refreshed preview is st
 		const storedPreview = await getPendingBatch()
 		assert.notDeepEqual(getPreparedNonces(storedPreview), getPreparedNonces(displayedPreview))
 
-		assert.equal(await approveBatch(websiteTabConnections, batchRequestIdentifier, displayedPreview.popupVisualisation.data.simulationId), false)
+		assert.equal(await approveBatch(websiteTabConnections, batchRequestIdentifier, displayedPreview.popupVisualisation.data.confirmationRunId), false)
 
 		assert.equal((await getStackBatchTransactions()).length, 2)
 	} finally {

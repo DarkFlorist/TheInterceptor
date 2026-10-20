@@ -10,7 +10,7 @@ import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import type { InterceptorTransactionStack } from '../../types/visualizer-types.js'
 import type { SendRawTransactionParams, SendTransactionParams } from '../../types/JsonRpc-types.js'
 import { refreshConfirmTransactionSimulation } from '../confirmTransactionSimulation.js'
-import { getNextConfirmationSimulationId } from '../confirmationSimulationRun.js'
+import { getNextConfirmationRunId } from '../confirmationSimulationRun.js'
 import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getPendingTransactionsAndMessagesExceptBatches, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
 import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
 import { replyToInterceptedRequestAfterManifestV2Reconnect } from '../messageSending.js'
@@ -54,7 +54,7 @@ async function refreshDirectSafeExecutionSimulation(
 	pending = flow.pending
 	const originalRequestParameters = pending.originalRequestParameters
 	if (originalRequestParameters.method !== 'eth_sendTransaction') return pending
-	const simulationId = getNextConfirmationSimulationId()
+	const confirmationRunId = getNextConfirmationRunId()
 	const transactionToSimulate = await formEthSendTransaction(
 		ethereum,
 		undefined,
@@ -72,7 +72,7 @@ async function refreshDirectSafeExecutionSimulation(
 		pending.activeAddress,
 		false,
 		pending.uniqueRequestIdentifier,
-		simulationId,
+		confirmationRunId,
 		transactionToSimulate,
 	)
 	if (popupVisualisation === undefined) throw new Error('The refreshed Gnosis Safe execution simulation did not complete.')
@@ -521,7 +521,7 @@ export async function openConfirmTransactionDialogForTransaction(
 		gasPayment,
 		preparationMessage: safePreparationMessage,
 	} = safePreparation
-	const simulationId = getNextConfirmationSimulationId()
+	const confirmationRunId = getNextConfirmationRunId()
 	const transactionToSimulatePromise = safePreparationMessage !== undefined
 		? Promise.resolve({
 			website,
@@ -583,7 +583,7 @@ export async function openConfirmTransactionDialogForTransaction(
 				transactionExecutor,
 				simulationMode,
 				request.uniqueRequestIdentifier,
-				simulationId,
+				confirmationRunId,
 				transactionToSimulate,
 				safeTransaction,
 			))
