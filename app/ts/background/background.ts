@@ -25,7 +25,7 @@ import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
 import { buildExecutionSimulationStateFromPreparedInput, getCurrentSimulationInput, getUpdatedSimulationStackSnapshot, prepareSimulationInputForRpc } from './simulationUpdating.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { getWalletSelectedAccount, isActiveSigningSafe } from '../utils/activeAddressSelection.js'
-import { isAccountConnectionMethod, isAccountOnlyMethod } from './accountRequestMethods.js'
+import { isAccountConnectionMethod, isAccountOnlyMethod, isAnsweredWithoutInterceptorRpc } from './accountRequestMethods.js'
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
 import { getActiveAddressForCurrentSignerState, getConfirmedSignerStateToken, isSignerStateTokenCurrent } from './signerStateOwnership.js'
@@ -143,8 +143,7 @@ async function handleRPCRequest(
 		hasRpcConnection: settings.activeRpcNetwork.httpsRpc !== undefined,
 	})
 	if (safePolicyReply !== undefined) return safePolicyReply
-	// personal_ecRecover is pure computation, so like account-only methods it never needs the Interceptor RPC and stays local even on signer-only networks.
-	const answeredWithoutInterceptorRpc = isAccountOnlyMethod(parsedRequest.method) || parsedRequest.method === 'personal_ecRecover'
+	const answeredWithoutInterceptorRpc = isAnsweredWithoutInterceptorRpc(parsedRequest.method)
 	if (settings.activeRpcNetwork.httpsRpc === undefined && forwardToSigner && !answeredWithoutInterceptorRpc) {
 		// we are using network that is not supported by us
 		return { type: 'forwardToSigner' as const, replyWithSignersReply: true, ...request }
@@ -211,7 +210,7 @@ async function handleRPCRequest(
 		eth_sign: rpcRequestHandler('eth_sign', async (_context, rpcRequest) => ({ type: 'result' as const, method: rpcRequest.method, error: { code: 10000, message: 'eth_sign is deprecated' } })),
 		eth_sendRawTransaction: rpcRequestHandler('eth_sendRawTransaction', async (_context, rpcRequest) => await sendEthereumTransaction(rpcRequest)),
 		eth_sendTransaction: rpcRequestHandler('eth_sendTransaction', async (_context, rpcRequest) => await sendEthereumTransaction(rpcRequest)),
-		personal_ecRecover: rpcRequestHandler('personal_ecRecover', async (_context, rpcRequest) => await personalEcRecover(rpcRequest, await getSimulatedSignedMessages())),
+		personal_ecRecover: rpcRequestHandler('personal_ecRecover', async (_context, rpcRequest) => await personalEcRecover(rpcRequest, await getSimulatedSignedMessages(), website.websiteOrigin)),
 		web3_clientVersion: rpcRequestHandler('web3_clientVersion', async () => await web3ClientVersion(ethereum)),
 		eth_feeHistory: rpcRequestHandler('eth_feeHistory', async (_context, rpcRequest) => await feeHistory(ethereum, rpcRequest)),
 		eth_maxPriorityFeePerGas: rpcRequestHandler('eth_maxPriorityFeePerGas', async () => await maxPriorityFeePerGas(ethereum)),
