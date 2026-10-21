@@ -172,6 +172,7 @@ function makePendingTransaction(errorMessage = 'simulation failed') {
 		simulationMode: false,
 		activeAddress,
 		created,
+		instanceId: 'failed pending transaction',
 		transactionIdentifier,
 		transactionToSimulate,
 		website,

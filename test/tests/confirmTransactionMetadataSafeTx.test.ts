@@ -339,6 +339,7 @@ function createPendingSafeTxMessage(modules: TestModules, rpcNetwork: RpcEntry):
 		originalRequestParameters,
 		simulationMode: true,
 		uniqueRequestIdentifier: { requestId: 1, requestSocket: { tabId: 1, connectionName: 0n } },
+		instanceId: 'SafeTx pending message',
 		signedMessageTransaction: {
 			website: visualizedPersonalSignRequest.website,
 			created: visualizedPersonalSignRequest.created,

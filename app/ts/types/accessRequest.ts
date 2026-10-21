@@ -1,7 +1,7 @@
 import * as funtypes from 'funtypes'
 import { PopupOrTabId, Website } from './websiteAccessTypes.js'
 import { AddressBookEntry } from './addressBookTypes.js'
-import { EthereumAddress, EthereumQuantity, EthereumTimestamp, OptionalEthereumAddress } from './wire-types.js'
+import { EthereumAddress, EthereumQuantity, EthereumTimestamp, LiteralConverterParserFactory, OptionalEthereumAddress } from './wire-types.js'
 import { SignerName } from './signerTypes.js'
 import { InterceptedRequest, UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
 import { FailedToCreateWebsiteCreatedEthereumTransaction, NamedTokenId, SignedMessageTransaction, SimulationState, TokenPriceEstimate, VisualizedSimulationState, WebsiteCreatedEthereumTransaction, WebsiteCreatedEthereumTransactionOrFailed } from './visualizer-types.js'
@@ -92,12 +92,9 @@ export const createPendingRequestInstanceId = () => crypto.randomUUID()
 
 // Requests stored before instance ids existed all parse as this constant, so every read of such a request agrees on its instance id.
 const LEGACY_PENDING_REQUEST_INSTANCE_ID = 'legacy'
-const PendingRequestInstanceId = funtypes.Union(
+export const PendingRequestInstanceId = funtypes.Union(
 	funtypes.String,
-	funtypes.Literal(undefined).withParser({
-		parse: () => ({ success: true, value: LEGACY_PENDING_REQUEST_INSTANCE_ID }),
-		serialize: () => ({ success: true, value: undefined }),
-	}),
+	funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, LEGACY_PENDING_REQUEST_INSTANCE_ID)),
 )
 
 type SimulatedPendingTransactionBase = funtypes.Static<typeof SimulatedPendingTransactionBase>

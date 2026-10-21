@@ -67,13 +67,13 @@ async function updatePendingTransactionOrMessages(update: (pendingTransactionsOr
 	})
 }
 
-// Matches the request id alone, so it can update a different request the page sent later under the same id. Only signer replies use it: the wallet answers over the page's own connection naming just the request id, so the page already decides which of its requests a reply reaches. Work that read a pending request and writes back uses updatePendingTransactionOrMessageInstance.
-export async function updatePendingRequestMatchedByRequestId(uniqueRequestIdentifier: UniqueRequestIdentifier, update: (pendingTransactionOrMessage: PendingTransactionOrSignableMessage) => Promise<PendingTransactionOrSignableMessage | undefined>) {
+// For signer replies, which name only the request id. The wallet answers over the page's own connection, so the page owns that channel and could forge a reply for any of its ids; this is no defence against the page itself. It does make sure a reply only reaches the request under that id once it was forwarded to the signer, never a newer request under a reused id that the user has not approved. Work that read a pending request and writes back uses updatePendingTransactionOrMessageInstance.
+export async function updatePendingRequestWaitingForSigner(uniqueRequestIdentifier: UniqueRequestIdentifier, update: (pendingTransactionOrMessage: PendingTransactionOrSignableMessage) => Promise<PendingTransactionOrSignableMessage | undefined>) {
 	await updatePendingTransactionOrMessages(async (pendingTransactionsOrMessages) => {
 		const match = pendingTransactionsOrMessages.findIndex((pending) => doesUniqueRequestIdentifiersMatch(pending.uniqueRequestIdentifier, uniqueRequestIdentifier))
 		if (match < 0) return pendingTransactionsOrMessages
 		const found = pendingTransactionsOrMessages[match]
-		if (found === undefined) return pendingTransactionsOrMessages
+		if (found === undefined || found.approvalStatus.status !== 'WaitingForSigner') return pendingTransactionsOrMessages
 		const updated = await update(found)
 		if (updated === undefined) return pendingTransactionsOrMessages
 		return replaceElementInReadonlyArray(pendingTransactionsOrMessages, match, updated)

@@ -137,8 +137,8 @@ test('Safe signer refresh persistence is isolated from confirmation resolution',
 	assert.doesNotMatch(confirmTransactionSource, /function persistSafeSignerSelectionRefresh/u)
 })
 
-const REQUEST_ID_ONLY_UPDATE = 'updatePendingRequestMatchedByRequestId'
-type RequestIdOnlyUpdateUse = { readonly enclosingFunction: string | undefined, readonly isCall: boolean }
+const SIGNER_REPLY_UPDATE = 'updatePendingRequestWaitingForSigner'
+type SignerReplyUpdateUse = { readonly enclosingFunction: string | undefined, readonly isCall: boolean }
 
 const getEnclosingFunctionDeclarationName = (node: ts.Node) => {
 	for (let current: ts.Node | undefined = node.parent; current !== undefined; current = current.parent) {
@@ -147,18 +147,18 @@ const getEnclosingFunctionDeclarationName = (node: ts.Node) => {
 	return undefined
 }
 
-// Every reference to the request-id-only pending update in one source, under its own name, an aliased import or a namespace property, with the function declaration around it and whether it is called there.
-function findRequestIdOnlyUpdateUses(fileName: string, sourceText: string) {
+// Every reference to the signer-reply pending update in one source, under its own name, an aliased import or a namespace property, with the function declaration around it and whether it is called there.
+function findSignerReplyUpdateUses(fileName: string, sourceText: string) {
 	const sourceFile = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true)
-	const localNames = new Set([REQUEST_ID_ONLY_UPDATE])
+	const localNames = new Set([SIGNER_REPLY_UPDATE])
 	for (const statement of sourceFile.statements) {
 		const namedBindings = ts.isImportDeclaration(statement) ? statement.importClause?.namedBindings : undefined
 		if (namedBindings === undefined || !ts.isNamedImports(namedBindings)) continue
 		for (const element of namedBindings.elements) {
-			if ((element.propertyName ?? element.name).text === REQUEST_ID_ONLY_UPDATE) localNames.add(element.name.text)
+			if ((element.propertyName ?? element.name).text === SIGNER_REPLY_UPDATE) localNames.add(element.name.text)
 		}
 	}
-	const uses: RequestIdOnlyUpdateUse[] = []
+	const uses: SignerReplyUpdateUse[] = []
 	const visit = (node: ts.Node) => {
 		const isReference = ts.isIdentifier(node) && localNames.has(node.text) && !ts.isImportSpecifier(node.parent) && !(ts.isFunctionDeclaration(node.parent) && node.parent.name === node)
 		if (isReference) {
@@ -171,27 +171,27 @@ function findRequestIdOnlyUpdateUses(fileName: string, sourceText: string) {
 	return uses
 }
 
-const signerReplyCall: RequestIdOnlyUpdateUse = { enclosingFunction: 'signerReply', isCall: true }
+const signerReplyCall: SignerReplyUpdateUse = { enclosingFunction: 'signerReply', isCall: true }
 
-// Matching a pending request by request id alone can update a different request the page sent under a reused id, so each such caller is a visible decision.
-test('only signer replies update a pending request matched by its request id alone', async () => {
+// The signer-reply update finds a pending request by request id alone, which a page can reuse, so each caller is a visible decision.
+test('only signer replies update a pending request found by its request id alone', async () => {
 	const repositoryRoot = new URL('../../', import.meta.url).pathname
-	const usesByFile: [string, RequestIdOnlyUpdateUse][] = []
+	const usesByFile: [string, SignerReplyUpdateUse][] = []
 	for await (const file of new Bun.Glob('app/ts/**/*.{ts,tsx}').scan({ cwd: repositoryRoot })) {
-		for (const use of findRequestIdOnlyUpdateUses(file, await Bun.file(`${ repositoryRoot }${ file }`).text())) usesByFile.push([file, use])
+		for (const use of findSignerReplyUpdateUses(file, await Bun.file(`${ repositoryRoot }${ file }`).text())) usesByFile.push([file, use])
 	}
 	const signerReplyFile = 'app/ts/background/providerMessageHandlers.ts'
 	assert.deepEqual(usesByFile, [[signerReplyFile, signerReplyCall], [signerReplyFile, signerReplyCall], [signerReplyFile, signerReplyCall]])
 })
 
-test('the request-id-only update check finds calls by syntax, not by text position', () => {
-	const signerReply = `export async function signerReply() { await ${ REQUEST_ID_ONLY_UPDATE }(id, update) }`
-	const callAfterSignerReply = `${ signerReply }\nexport async function afterSignerReply() { await ${ REQUEST_ID_ONLY_UPDATE }(id, update) }`
-	assert.deepEqual(findRequestIdOnlyUpdateUses('mutation.ts', callAfterSignerReply), [signerReplyCall, { enclosingFunction: 'afterSignerReply', isCall: true }])
-	const extraCallWithSpaceBeforeArguments = `export async function signerReply() { await ${ REQUEST_ID_ONLY_UPDATE }(id, update); await ${ REQUEST_ID_ONLY_UPDATE } (id, update) }`
-	assert.deepEqual(findRequestIdOnlyUpdateUses('mutation.ts', extraCallWithSpaceBeforeArguments), [signerReplyCall, signerReplyCall])
-	const aliasedImport = `import { ${ REQUEST_ID_ONLY_UPDATE } as updateById } from './storageVariables.js'\nexport async function elsewhere() { await updateById(id, update) }`
-	assert.deepEqual(findRequestIdOnlyUpdateUses('mutation.ts', aliasedImport), [{ enclosingFunction: 'elsewhere', isCall: true }])
+test('the signer-reply update check finds calls by syntax, not by text position', () => {
+	const signerReply = `export async function signerReply() { await ${ SIGNER_REPLY_UPDATE }(id, update) }`
+	const callAfterSignerReply = `${ signerReply }\nexport async function afterSignerReply() { await ${ SIGNER_REPLY_UPDATE }(id, update) }`
+	assert.deepEqual(findSignerReplyUpdateUses('mutation.ts', callAfterSignerReply), [signerReplyCall, { enclosingFunction: 'afterSignerReply', isCall: true }])
+	const extraCallWithSpaceBeforeArguments = `export async function signerReply() { await ${ SIGNER_REPLY_UPDATE }(id, update); await ${ SIGNER_REPLY_UPDATE } (id, update) }`
+	assert.deepEqual(findSignerReplyUpdateUses('mutation.ts', extraCallWithSpaceBeforeArguments), [signerReplyCall, signerReplyCall])
+	const aliasedImport = `import { ${ SIGNER_REPLY_UPDATE } as updateById } from './storageVariables.js'\nexport async function elsewhere() { await updateById(id, update) }`
+	assert.deepEqual(findSignerReplyUpdateUses('mutation.ts', aliasedImport), [{ enclosingFunction: 'elsewhere', isCall: true }])
 })
 
 test('Safe pending flow discrimination has one owner', () => {

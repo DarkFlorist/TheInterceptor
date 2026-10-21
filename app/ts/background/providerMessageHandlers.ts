@@ -5,7 +5,7 @@ import type { TabState, WebsiteTabConnections } from '../types/user-interface-ty
 import { EthereumAccountsReply, EthereumChainReply } from '../types/JsonRpc-types.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { getSocketFromPort, isTopFramePort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
-import { getRpcNetworkForChain, setDefaultSignerName, updatePendingRequestMatchedByRequestId, updateTabState } from './storageVariables.js'
+import { getRpcNetworkForChain, setDefaultSignerName, updatePendingRequestWaitingForSigner, updateTabState } from './storageVariables.js'
 import { getMetamaskCompatibilityMode, getSettings } from './settings.js'
 import { applyWalletSwitchReply } from './walletSwitch.js'
 import { verifyAccess, withSuppressedUnscopedConnectionEventsForSocketAsync } from './accessManagement.js'
@@ -305,7 +305,7 @@ export async function signerReply(simulationServicesOwner: SimulationServicesOwn
 		if (!isCurrentWebsiteConnection(tabConnection, socket, port)
 			|| requestSocket.tabId !== socket.tabId
 			|| requestSocket.connectionName !== socket.connectionName) {
-			await updatePendingRequestMatchedByRequestId(uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'SignerError', ...signerConnectionReplacedError } }))
+			await updatePendingRequestWaitingForSigner(uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'SignerError', ...signerConnectionReplacedError } }))
 			await updateConfirmTransactionView(ethereum, tokenPriceService)
 			return doNotReply
 		}
@@ -334,11 +334,11 @@ export async function signerReply(simulationServicesOwner: SimulationServicesOwn
 					return doNotReply
 				}
 				if (params.error.code === METAMASK_ERROR_USER_REJECTED_REQUEST) {
-					await updatePendingRequestMatchedByRequestId(uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'WaitingForUser' } }))
+					await updatePendingRequestWaitingForSigner(uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'WaitingForUser' } }))
 					await updateConfirmTransactionView(ethereum, tokenPriceService)
 					return doNotReply
 				}
-				await updatePendingRequestMatchedByRequestId(uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'SignerError', ...params.error } }))
+				await updatePendingRequestWaitingForSigner(uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'SignerError', ...params.error } }))
 				await updateConfirmTransactionView(ethereum, tokenPriceService)
 				return doNotReply
 			}

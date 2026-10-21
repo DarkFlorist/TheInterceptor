@@ -13,6 +13,7 @@ import { EIP712Message } from '../../app/ts/types/eip721.js'
 import { privateKeyToAccount } from '../../app/ts/utils/ethereumPrimitives.js'
 import type { SafeEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { SafeOwnerSignature, SafeStackTransaction, SafeTransactionStack } from '../../app/ts/types/safeTypes.js'
+import type { UniqueRequestIdentifier } from '../../app/ts/utils/requests.js'
 
 export type RuntimeMessage = {
 	method?: string
@@ -249,7 +250,14 @@ export async function loadModules() {
 		getPendingTerminalReplies: pendingTerminalReplies.getPendingTerminalReplies,
 		prunePendingTerminalRepliesForMissingTabs: pendingTerminalReplies.prunePendingTerminalRepliesForMissingTabs,
 		updateInterceptorTransactionStack: storageVariables.updateInterceptorTransactionStack,
-		updatePendingRequestMatchedByRequestId: storageVariables.updatePendingRequestMatchedByRequestId,
+		// Test setup: changes the stored pending request under this id, whatever its approval status.
+		updateStoredPendingRequest: async (uniqueRequestIdentifier: UniqueRequestIdentifier, update: Parameters<typeof storageVariables.updatePendingTransactionOrMessageInstance>[1]) => {
+			const stored = (await storageVariables.getPendingTransactionsAndMessages()).find((pending) => pending.uniqueRequestIdentifier.requestId === uniqueRequestIdentifier.requestId
+				&& pending.uniqueRequestIdentifier.requestSocket.tabId === uniqueRequestIdentifier.requestSocket.tabId
+				&& pending.uniqueRequestIdentifier.requestSocket.connectionName === uniqueRequestIdentifier.requestSocket.connectionName)
+			if (stored === undefined) throw new Error('No stored pending request to update')
+			await storageVariables.updatePendingTransactionOrMessageInstance(stored, update)
+		},
 		updateSafeTransactionStacks: async (update: (previous: Awaited<ReturnType<typeof storageVariables.getSafeTransactionStacks>>) => Awaited<ReturnType<typeof storageVariables.getSafeTransactionStacks>>) => {
 			const updated = await storageVariables.updateTransactionState((previous) => ({
 				...previous,
@@ -565,6 +573,7 @@ export const pendingTransaction = {
 		simulationMode: true,
 		activeAddress,
 		created,
+		instanceId: 'harness pending transaction',
 		transactionIdentifier: 1n,
 		website: popupVisualisation.data.transactionToSimulate.website,
 		approvalStatus: { status: 'WaitingForUser' },

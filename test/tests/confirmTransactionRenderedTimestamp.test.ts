@@ -142,6 +142,7 @@ function makePendingTransaction(simulationConductedTimestamp: Date, value?: bigi
 		simulationMode: true,
 		activeAddress,
 		created,
+		instanceId: 'failed pending transaction',
 		transactionIdentifier,
 		transactionToSimulate,
 		website,

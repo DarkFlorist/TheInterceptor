@@ -269,6 +269,8 @@ export const setGasLimitForTransaction = async (transactionIdentifier: bigint, g
 export async function resolvePendingTransactionOrMessage(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, refreshedSafeSignerSelection?: RefreshedSafeSignerSelection) {
 	let pendingTransactionOrMessage = await getPendingTransactionOrMessageByidentifier(confirmation.data.uniqueRequestIdentifier)
 	if (pendingTransactionOrMessage === undefined) return // no need to resolve as it doesn't exist anymore
+	// A signer reply names only the request id, so it resolves only a request that was forwarded to the signer, never a newer request under a reused id that the user has not approved.
+	if (confirmation.data.action === 'signerIncluded' && pendingTransactionOrMessage.approvalStatus.status !== 'WaitingForSigner') return false
 	if (
 		confirmation.data.action === 'accept'
 		&& refreshedSafeSignerSelection?.selectedSigner !== undefined

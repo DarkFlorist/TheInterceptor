@@ -1,8 +1,9 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
 import { UpdateConfirmTransactionDialogPendingTransactions } from '../../app/ts/types/interceptor-messages.js'
-import type { PendingTransactionOrSignableMessage, PopupPendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
-import { activeAddress, browserMock, createWebsitePort, fakeRequestHandler, modules, recipientAddress, type RuntimeMessage, simulator } from './confirmTransactionTestHarness.js'
+import { PendingRequestInstanceId, type PendingTransactionOrSignableMessage, type PopupPendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
+import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
+import { activeAddress, browserMock, createWebsitePort, fakeRequestHandler, isRecord, modules, recipientAddress, type RuntimeMessage, simulator } from './confirmTransactionTestHarness.js'
 
 // A page chooses its own JSON-RPC request ids, so it can send a new request under the id of one whose popup was just closed, or of one that is still pending.
 const pageRequestIdentifier = { requestId: -2, requestSocket: { tabId: 1, connectionName: 0n } }
@@ -11,12 +12,12 @@ const ONE_ETHER = 10n ** 18n
 const FIRST_MESSAGE = '0x6669727374'
 const REPLACEMENT_MESSAGE = '0x7265706c6163656d656e74'
 
-async function startPageConnection() {
+async function startPageConnection(messagesPostedToPage: unknown[] = []) {
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 	browserMock.setLiveWindowIds([99])
 	browserMock.setLiveTabIds([99])
 	const socket = pageRequestIdentifier.requestSocket
-	const port = createWebsitePort(socket, 0, [])
+	const port = createWebsitePort(socket, 0, messagesPostedToPage)
 	return new Map([[socket.tabId, { connections: { [modules.websiteSocketToString(socket)]: { port, socket, websiteOrigin: pageWebsite.websiteOrigin, approved: true, wantsToConnect: true } } }]])
 }
 
@@ -352,3 +353,78 @@ test('a governance execution request for a closed request does not simulate or a
 	assert.notEqual(replacement.transactionIdentifier, closed.transactionIdentifier)
 	assert.equal(browserMock.sentMessages.slice(messagesBeforeRequest).some((message) => message.method === 'popup_simulateExecutionReply'), false)
 })
+
+test('pending request instance ids parse a string as it is and a missing id from before instance ids existed as the legacy id, and nothing else', () => {
+	const instanceId = crypto.randomUUID()
+	assert.deepEqual(PendingRequestInstanceId.safeParse(undefined), { success: true, value: 'legacy' })
+	assert.deepEqual(PendingRequestInstanceId.safeParse(instanceId), { success: true, value: instanceId })
+	for (const invalid of [5, null, { instanceId }]) assert.equal(PendingRequestInstanceId.safeParse(invalid).success, false)
+})
+
+const SIGNED_TRANSACTION_HASH = `0x${ '11'.repeat(32) }`
+const signerReplies = [
+	{ branch: 'success', reply: { success: true, reply: SIGNED_TRANSACTION_HASH } },
+	{ branch: 'user rejected', reply: { success: false, error: { code: 4001, message: 'User rejected the request.' } } },
+	{ branch: 'error', reply: { success: false, error: { code: -32603, message: 'The wallet failed.' } } },
+] as const
+
+async function approveAndForwardToSigner(connections: PageConnections) {
+	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, connections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier: pageRequestIdentifier } }), true)
+	assert.equal((await getOnlyPendingRequest()).approvalStatus.status, 'WaitingForSigner')
+}
+
+// The wallet's reply to a forwarded 0 ether transaction comes back over the page's connection, naming only the request id; a reply from a port that is no longer the page's connection takes the connection-replaced branch.
+async function sendSignerReplyToPage(connections: PageConnections, reply: (typeof signerReplies)[number]['reply'], fromReplacedConnection = false) {
+	const socket = pageRequestIdentifier.requestSocket
+	const currentPort = connections.get(socket.tabId)?.connections[modules.websiteSocketToString(socket)]?.port
+	if (currentPort === undefined) throw new Error('Missing page connection')
+	const port = fromReplacedConnection ? createWebsitePort(socket, 0, []) : currentPort
+	const forwardedParameters = [{ from: activeAddress, to: recipientAddress, value: 0n, gas: 21_000n, maxFeePerGas: 1n, maxPriorityFeePerGas: 1n, input: new Uint8Array() }]
+	await modules.signerReply(createTestSimulationServicesOwner({ ethereum: simulator.ethereum, tokenPriceService: simulator.tokenPriceService }), connections, port, {
+		method: 'signer_reply',
+		params: [{ ...reply, signerProviderGeneration: 1, forwardRequest: { type: 'forwardToSigner', replyWithSignersReply: true, method: 'eth_sendTransaction', params: forwardedParameters, requestId: pageRequestIdentifier.requestId } }],
+		interceptorRequest: true,
+		interceptorInternalRequest: true,
+		usingInterceptorWithoutSigner: false,
+		uniqueRequestIdentifier: { requestId: 1000, requestSocket: socket },
+	}, 'hasAccess', activeAddress)
+}
+
+const signerReplyCases = [...signerReplies.map((signerReply) => ({ ...signerReply, fromReplacedConnection: false })), { branch: 'connection replaced', reply: signerReplies[0].reply, fromReplacedConnection: true }]
+
+for (const { branch, reply, fromReplacedConnection } of signerReplyCases) {
+	test(`a signer reply (${ branch }) for a forwarded request leaves a newer request under the reused request id untouched`, async () => {
+		const messagesPostedToPage: unknown[] = []
+		const connections = await startPageConnection(messagesPostedToPage)
+		await sendTransactionFromPage(connections, 0n)
+		await approveAndForwardToSigner(connections)
+		await closeConfirmationPopup(connections)
+		await sendTransactionFromPage(connections, ONE_ETHER)
+		// The newer request is blocked by an error the user has to clear, so each branch shows whether it touched it, including a user-rejected reply that would reset it to waiting for the user.
+		await modules.updateStoredPendingRequest(pageRequestIdentifier, async (pending) => ({ ...pending, approvalStatus: { status: 'SignerError' as const, code: -32010, message: 'Select a current Gnosis Safe owner in the signer wallet.' } }))
+		const newer = await getOnlyPendingRequest()
+		const messagesPostedBeforeReply = messagesPostedToPage.length
+
+		await sendSignerReplyToPage(connections, reply, fromReplacedConnection)
+
+		assert.deepEqual(await getOnlyPendingRequest(), newer)
+		assert.deepEqual(messagesPostedToPage.slice(messagesPostedBeforeReply), [])
+	})
+
+	test(`a signer reply (${ branch }) still resolves the forwarded request under its request id`, async () => {
+		const messagesPostedToPage: unknown[] = []
+		const connections = await startPageConnection(messagesPostedToPage)
+		await sendTransactionFromPage(connections, 0n)
+		await approveAndForwardToSigner(connections)
+
+		await sendSignerReplyToPage(connections, reply, fromReplacedConnection)
+
+		const pending = await modules.getPendingTransactionsAndMessages()
+		if (branch === 'success') {
+			assert.deepEqual(pending, [])
+			assert.equal(messagesPostedToPage.some((message) => isRecord(message) && message.requestId === pageRequestIdentifier.requestId && message.result === SIGNED_TRANSACTION_HASH), true)
+			return
+		}
+		assert.equal(pending[0]?.approvalStatus.status, branch === 'user rejected' ? 'WaitingForUser' : 'SignerError')
+	})
+}
