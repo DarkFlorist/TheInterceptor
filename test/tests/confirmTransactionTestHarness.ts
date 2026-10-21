@@ -218,6 +218,7 @@ export async function loadModules() {
 		refreshPopupConfirmTransactionSimulation: popupMessageHandlers.refreshPopupConfirmTransactionSimulation,
 		refreshPopupConfirmTransactionMetadata: popupMessageHandlers.refreshPopupConfirmTransactionMetadata,
 		popupReadyAndListening: popupMessageHandlers.popupReadyAndListening,
+		forceSetGasLimitForTransaction: popupMessageHandlers.forceSetGasLimitForTransaction,
 		removeTransactionOrSignedMessage: popupMessageHandlers.removeTransactionOrSignedMessage,
 		simulateGovernanceContractExecutionOnPass: popupMessageHandlers.simulateGovernanceContractExecutionOnPass,
 		confirmDialog: popupMessageHandlers.confirmDialog,

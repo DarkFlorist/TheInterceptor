@@ -1,5 +1,5 @@
 import * as assert from 'assert'
-import { test } from 'bun:test'
+import { setSystemTime, test } from 'bun:test'
 import { UpdateConfirmTransactionDialogPendingTransactions } from '../../app/ts/types/interceptor-messages.js'
 import { PendingRequestInstanceId, type PendingTransactionOrSignableMessage, type PopupPendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
 import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
@@ -452,22 +452,35 @@ test('a metadata refresh that finishes after the request was approved keeps it w
 	}
 })
 
-test('a metadata refresh does not store its visualisation over a re-simulation stored while it ran', async () => {
-	const connections = await startPageConnection()
-	await sendTransactionFromPage(connections, 0n)
-	const pause = pauseFirstRpcRequest('eth_getCode')
+test('a metadata refresh does not store its visualisation over a re-simulation of a changed transaction in the same second', async () => {
+	// Stored simulation timestamps keep only whole seconds; holding the clock still makes both runs share them.
+	setSystemTime(new Date('2026-01-01T00:00:00.000Z'))
 	try {
-		const refresh = modules.refreshPopupConfirmTransactionMetadata(simulator.ethereum, simulator.tokenPriceService, undefined)
-		await waitUntilReached(pause.reached, refresh, 'reaching the paused RPC request')
-		// A simulation run is told apart by its timestamps, so the re-simulation starts a few milliseconds after the first run.
-		await Bun.sleep(5)
-		await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
-		const resimulated = await getOnlyPendingRequest()
-		pause.release()
-		await refresh
+		const connections = await startPageConnection()
+		await sendTransactionFromPage(connections, 0n)
+		const firstRun = await getOnlyPendingRequest()
+		if (firstRun.type !== 'Transaction' || firstRun.transactionOrMessageCreationStatus !== 'Simulated' || firstRun.popupVisualisation.statusCode !== 'success') throw new Error('Expected a simulated transaction')
+		const pause = pauseFirstRpcRequest('eth_getCode')
+		try {
+			const refresh = modules.refreshPopupConfirmTransactionMetadata(simulator.ethereum, simulator.tokenPriceService, undefined)
+			await waitUntilReached(pause.reached, refresh, 'reaching the paused RPC request')
+			await modules.forceSetGasLimitForTransaction(simulator.ethereum, simulator.tokenPriceService, { method: 'popup_forceSetGasLimitForTransaction', data: { transactionIdentifier: firstRun.transactionIdentifier, gasLimit: 42_000n } })
+			const secondRun = await getOnlyPendingRequest()
+			if (secondRun.type !== 'Transaction' || secondRun.transactionOrMessageCreationStatus !== 'Simulated' || secondRun.popupVisualisation.statusCode !== 'success') throw new Error('Expected a re-simulated transaction')
+			assert.equal(secondRun.popupVisualisation.data.simulationStartedTimestamp.getTime(), firstRun.popupVisualisation.data.simulationStartedTimestamp.getTime())
+			assert.equal(secondRun.popupVisualisation.data.simulationState.simulationConductedTimestamp.getTime(), firstRun.popupVisualisation.data.simulationState.simulationConductedTimestamp.getTime())
+			pause.release()
+			await refresh
+		} finally {
+			pause.restore()
+		}
 
-		assert.deepEqual(await getOnlyPendingRequest(), resimulated)
+		const stored = await getOnlyPendingRequest()
+		if (stored.type !== 'Transaction' || stored.transactionOrMessageCreationStatus !== 'Simulated' || stored.popupVisualisation.statusCode !== 'success') throw new Error('Expected a simulated transaction')
+		assert.equal(stored.transactionToSimulate.transaction.gas, 42_000n)
+		const visualisedGas = stored.popupVisualisation.data.visualizedSimulationState.visualizedBlocks.flatMap((block) => block.simulatedAndVisualizedTransactions.map((transaction) => transaction.transaction.gas))
+		assert.deepEqual(visualisedGas, [42_000n])
 	} finally {
-		pause.restore()
+		setSystemTime()
 	}
 })
