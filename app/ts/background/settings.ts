@@ -262,15 +262,14 @@ export const setSafeAppsCompatibilityMode = async(safeAppsCompatibilityMode: boo
 // Exports are shared for backups, syncing, and support requests, so RPC URL credentials are removed instead of being handed out as working secrets. Removing rather than redacting keeps the exported URL usable; after importing elsewhere, the user re-adds the credentials.
 const removeRpcNetworkUrlCredentials = (rpcNetwork: RpcNetwork): RpcNetwork => rpcNetwork.httpsRpc === undefined ? rpcNetwork : { ...rpcNetwork, httpsRpc: removeRpcUrlCredentials(rpcNetwork.httpsRpc) }
 
-// Re-importing an export where the RPC list still has the credentialed entry selects that entry instead of a credential-free endpoint that would fail authentication. Import never writes the RPC list, so no entry is added either way; with several credentialed matches, picking one would be a guess, so the import is kept as is.
+// Re-importing an export where the RPC list still has the credentialed entry selects that entry instead of a credential-free endpoint that would fail authentication. Import never writes the RPC list, so no entry is added either way.
 function restoreExportedRpcNetworkCredentials(importedRpcNetwork: RpcNetwork, rpcEntries: RpcEntries): RpcNetwork {
 	const importedIdentityKey = getRpcEntryIdentityKey(importedRpcNetwork)
-	const credentialedMatches = rpcEntries.filter((entry) => {
-		const entryWithoutCredentials = removeRpcNetworkUrlCredentials(entry)
-		return entryWithoutCredentials.httpsRpc !== entry.httpsRpc && getRpcEntryIdentityKey(entryWithoutCredentials) === importedIdentityKey
-	})
-	const [onlyMatch, ...otherMatches] = credentialedMatches
-	return onlyMatch === undefined || otherMatches.length > 0 ? importedRpcNetwork : onlyMatch
+	// Credential-free entries count as matches too, so a credential-free selection stored next to its credentialed counterpart stays credential-free.
+	const [onlyMatch, ...otherMatches] = rpcEntries.filter((entry) => getRpcEntryIdentityKey(removeRpcNetworkUrlCredentials(entry)) === importedIdentityKey)
+	// Several matches would make the credentials a guess, and a lone credential-free match is the imported network itself.
+	if (onlyMatch === undefined || otherMatches.length > 0 || onlyMatch.httpsRpc === removeRpcUrlCredentials(onlyMatch.httpsRpc)) return importedRpcNetwork
+	return onlyMatch
 }
 
 export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> {

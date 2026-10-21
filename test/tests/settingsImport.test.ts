@@ -531,6 +531,19 @@ describe('settings export of RPC URL credentials', () => {
 		assert.deepEqual(await getRpcList(), rpcEntries)
 	})
 
+	test('keeps a credential-free selection stored next to its credentialed counterpart', async () => {
+		const { getSettings, importSettingsAndAddressBook } = await settingsModulePromise
+		const { getRpcList } = await storageVariablesModulePromise
+		const anonymousRpcEntry = { ...credentialFreeRpcEntry, primary: false }
+		const rpcEntries = [anonymousRpcEntry, credentialedRpcEntry]
+		const exportedSettings = await exportWithActiveRpc(rpcEntries, anonymousRpcEntry)
+
+		await importSettingsAndAddressBook(exportedSettings)
+
+		assert.deepEqual((await getSettings()).activeRpcNetwork, anonymousRpcEntry)
+		assert.deepEqual(await getRpcList(), rpcEntries)
+	})
+
 	test('keeps the credential-free import when several stored entries differ only in credentials', async () => {
 		const { getSettings, importSettingsAndAddressBook } = await settingsModulePromise
 		const otherCredentialsRpcEntry = { ...credentialedRpcEntry, httpsRpc: 'https://bob:other-secret@node.example/v1', primary: false }
