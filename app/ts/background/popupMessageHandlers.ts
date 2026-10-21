@@ -21,7 +21,7 @@ import { isJSON } from '../utils/json.js'
 import { doAddressBookChainIdsMatch, type AddressBookEntry, type IncompleteAddressBookEntry } from '../types/addressBookTypes.js'
 import { EthereumAddress, serialize } from '../types/wire-types.js'
 import { fetchAbiFromBlockExplorer, isValidAbi } from '../simulation/services/EtherScanAbiFetcher.js'
-import { checksummedAddress, generate256BitRandomBigInt, stringifyJSONWithBigInts, stringToAddress } from '../utils/bigint.js'
+import { checksummedAddress, generate256BitRandomBigInt, stringToAddress } from '../utils/bigint.js'
 import { isAddress } from '../utils/ethereumPrimitives.js'
 import { getIssueWithAddressString } from '../utils/addressValidation.js'
 import type { Website } from '../types/websiteAccessTypes.js'
@@ -71,11 +71,6 @@ type TimestampedPopupVisualisation = {
 }
 
 const getSimulationConductedTimestamp = (popupVisualisation: TimestampedPopupVisualisation) => popupVisualisation.data.simulationState.simulationConductedTimestamp
-
-type SimulationRunVisualisation = { readonly data: { readonly simulationStartedTimestamp: Date, readonly transactionToSimulate: unknown, readonly simulationState: unknown } }
-
-// Identifies a confirmation simulation run by value: its timestamps, the transaction it simulated and the simulation state it produced, including the block. Stored timestamps keep only whole seconds, so two runs within one second share them, but a run of a changed transaction still differs here. A run of an unchanged transaction in the same second is the same simulation, so a visualisation made for one applies to the other. A unique run id stored with each simulation would replace this check.
-const getSimulationRunKey = (popupVisualisation: SimulationRunVisualisation) => stringifyJSONWithBigInts([popupVisualisation.data.simulationStartedTimestamp, popupVisualisation.data.transactionToSimulate, popupVisualisation.data.simulationState])
 
 const formatCaughtErrorMessage = (error: unknown) => getErrorMessage(error) ?? 'Unknown error'
 
@@ -528,6 +523,9 @@ type ConfirmTransactionMetadataDependencies = {
 	readonly visualisation?: OpenConsumerVisualisationDependencies
 }
 
+// A visualisation stored without a confirmationRunId by an older version cannot be told apart from a newer run, so it never matches.
+const isSameConfirmationSimulation = (current: { readonly data: { readonly confirmationRunId?: number } }, refreshed: { readonly data: { readonly confirmationRunId?: number } }) => current.data.confirmationRunId !== undefined && current.data.confirmationRunId === refreshed.data.confirmationRunId
+
 export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, requestAbortController: AbortController | undefined, dependencies: ConfirmTransactionMetadataDependencies = {}) {
 	const [first] = await getPendingTransactionsAndMessages()
 	if (first === undefined) return
@@ -575,14 +573,13 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 		case 'Transaction': {
 			if (first.transactionOrMessageCreationStatus !== 'Simulated' || first.popupVisualisation.statusCode === 'failed') return
 			const visualisedRun = first.popupVisualisation
-			const visualisedRunKey = getSimulationRunKey(visualisedRun)
 			try {
 				const visualizedSimulationState = await visualizeSimulatorState(visualisedRun.data.simulationState, ethereum, tokenPriceService, requestAbortController)
 				const popupVisualisation = { statusCode: 'success' as const, data: modifyObject(visualisedRun.data, { ...visualizedSimulationState }) }
 				let visualisationStored = false
-				// Only the visualisation is replaced, on the request as it is stored now, so an approval or other change made while this ran is kept. Nothing is stored if the page replaced the request under the same request id, or if a re-simulation meanwhile produced a different simulation.
+				// Only the visualisation is replaced, on the request as it is stored now, so an approval or other change made while this ran is kept. Nothing is stored if the page replaced the request under the same request id, or if it was re-simulated meanwhile.
 				await updatePendingTransactionOrMessageInstance(first, async (current) => {
-					if (current.type !== 'Transaction' || current.transactionOrMessageCreationStatus !== 'Simulated' || getSimulationRunKey(current.popupVisualisation) !== visualisedRunKey) return undefined
+					if (current.type !== 'Transaction' || current.transactionOrMessageCreationStatus !== 'Simulated' || !isSameConfirmationSimulation(current.popupVisualisation, visualisedRun)) return undefined
 					visualisationStored = true
 					return modifyObject(current, { popupVisualisation })
 				})

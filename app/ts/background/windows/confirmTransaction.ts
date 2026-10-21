@@ -160,6 +160,7 @@ export function toPopupPendingTransactionOrSignableMessage(pending: PendingTrans
 				simulationMode: pending.simulationMode,
 				uniqueRequestIdentifier: pending.uniqueRequestIdentifier,
 				created: pending.created,
+				instanceId: pending.instanceId,
 				website: pending.website,
 				activeAddress: pending.activeAddress,
 				approvalStatus: pending.approvalStatus,
