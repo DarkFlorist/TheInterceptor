@@ -61,6 +61,7 @@ import { getLastKnownCurrentTabId } from './currentTab.js'
 import { reloadConnectedTabs } from './popupMessageHandlers/websiteAccess.js'
 import { updateWebsiteAccessAndContentScriptInjectionStrategy } from './websiteAccessUpdating.js'
 import { getConfiguredSigningSafeForChain } from './signingAddressSelection.js'
+import { toImportedStackOperation, withoutImportMarker } from './importedStackTrust.js'
 
 type TimestampedPopupVisualisation = {
 	data: {
@@ -1205,7 +1206,7 @@ export async function requestInterceptorSimulationInput(ethereumClientService: E
 
 	const interceptorSimulateStack = modifyObject(simulationStack, { operations: simulationStack.operations.map((operation) => {
 		switch(operation.type) {
-			case 'Message': return modifyObject(operation, { signedMessageTransaction: modifyObject(operation.signedMessageTransaction, { website: { ...operation.signedMessageTransaction.website, icon: undefined, title: undefined } }) })
+			case 'Message': return modifyObject(operation, { signedMessageTransaction: modifyObject(withoutImportMarker(operation.signedMessageTransaction), { website: { ...operation.signedMessageTransaction.website, icon: undefined, title: undefined } }) })
 			case 'TimeManipulation': return operation
 			case 'Transaction': return modifyObject(operation, { preSimulationTransaction: modifyObject(operation.preSimulationTransaction, { website: { ...operation.preSimulationTransaction.website, icon: undefined, title: undefined } }) })
 			default: return assertNever(operation)
@@ -1241,10 +1242,13 @@ export async function importSimulationStack(ethereum: EthereumClientService, tok
 		return websiteData ?? website
 	}
 
+	// Nothing an export file claims about how its operations were requested is trusted; importedStackTrust owns what an imported operation keeps and loses.
+	const importedOperations = parsedRequest.data.interceptorSimulateStack.operations.map(toImportedStackOperation)
+
 	let updatedStack: InterceptorTransactionStack
 	try {
 		updatedStack = await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => {
-			const newOperations = [...prevStack.operations, ...parsedRequest.data.interceptorSimulateStack.operations]
+			const newOperations = [...prevStack.operations, ...importedOperations]
 			// generate new ids for operations to prevent duplicated ids
 			return { operations: normalizeConsecutiveTimeManipulations(newOperations.map((operation) => {
 				switch(operation.type) {

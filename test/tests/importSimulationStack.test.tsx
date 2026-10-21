@@ -8,6 +8,10 @@ import { InterceptorSimulationExport, InterceptorTransactionStack } from '../../
 import { NEW_BLOCK_ABORT } from '../../app/ts/utils/constants.js'
 import { createSafeTx } from '../../app/ts/safe/safeCore.js'
 import { getSafeTxHash } from '../../app/ts/utils/eip712.js'
+import { createSafeMessageTypedData } from '../../app/ts/safe/safeMessage.js'
+import { EIP712Message } from '../../app/ts/types/eip721.js'
+import type { SignedMessageTransaction } from '../../app/ts/types/visualizer-types.js'
+import { IMPORTED_SIGNATURE_QUARANTINE_REASON } from '../../app/ts/background/importedStackTrust.js'
 
 const storageState: Record<string, unknown> = {}
 let runtimeSendMessage = async (_message: unknown) => undefined
@@ -78,6 +82,8 @@ async function loadModules() {
 	return {
 		...await import('../../app/ts/background/popupMessageHandlers.js'),
 		...await import('../../app/ts/components/pages/ImportSimulationStack.js'),
+		...await import('../../app/ts/background/windows/personalSign.js'),
+		...await import('../../app/ts/simulation/services/EthereumClientService.js'),
 	}
 }
 
@@ -206,6 +212,66 @@ function createSafeSimulationExportPayload() {
 	}
 }
 
+// vitalik.eth is in the default address book, so visualizing a message signed by it needs no RPC.
+const VITALIK_ADDRESS = 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n
+const SAFE_MESSAGE_TEXT = 'Hello Safe'
+// A Safe message envelope for the text above; its `message.message` is the digest that a review text has to hash to.
+const SAFE_MESSAGE_TYPED_DATA = createSafeMessageTypedData(1n, VITALIK_ADDRESS, SAFE_MESSAGE_TEXT)
+
+// A simulated signature as a stack operation. `activeAddress` and `fakeSignedFor` both claim the account the message is for, which is what an export would claim to keep the account check quiet.
+type SignatureRequest = { readonly parameters: SignedMessageTransaction['originalRequestParameters'], readonly wireParams: readonly string[] }
+
+function createMessageOperation(messageIdentifier: bigint, request: SignatureRequest, safeMessageReview?: { readonly text: string, readonly isTypedData: boolean }) {
+	const signedMessageTransaction: SignedMessageTransaction = {
+		website: { websiteOrigin: 'example.com', icon: undefined, title: 'Example' },
+		created: new Date('2024-01-01T00:00:00.000Z'),
+		fakeSignedFor: VITALIK_ADDRESS,
+		activeAddress: VITALIK_ADDRESS,
+		originalRequestParameters: request.parameters,
+		request: {
+			method: request.parameters.method,
+			// The intercepted request keeps the wire form the page sent.
+			params: [...request.wireParams],
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 1, requestSocket: { tabId: 1, connectionName: 0n } },
+		},
+		simulationMode: true,
+		messageIdentifier,
+		...(safeMessageReview === undefined ? {} : { safeMessageReview }),
+	}
+	return { type: 'Message' as const, signedMessageTransaction }
+}
+
+const personalSignRequest = (): SignatureRequest => {
+	const message = `0x${ Buffer.from('Welcome to example.com').toString('hex') }`
+	return { parameters: { method: 'personal_sign', params: [message, VITALIK_ADDRESS] }, wireParams: [message, `0x${ VITALIK_ADDRESS.toString(16) }`] }
+}
+
+const safeMessageRequest = (): SignatureRequest => ({
+	parameters: { method: 'eth_signTypedData_v4', params: [VITALIK_ADDRESS, EIP712Message.parse(JSON.stringify(SAFE_MESSAGE_TYPED_DATA))] },
+	wireParams: [`0x${ VITALIK_ADDRESS.toString(16) }`, JSON.stringify(SAFE_MESSAGE_TYPED_DATA)],
+})
+
+// Imports the operations on top of what is already stored and returns the stored stack, observed operations first.
+async function importMessageOperations(operations: readonly ReturnType<typeof createMessageOperation>[]) {
+	const modules = await modulesPromise
+	const parsedExport = InterceptorSimulationExport.parse(InterceptorSimulationExport.serialize({ ...exportPayload, interceptorSimulateStack: { operations } }))
+	const reply = await modules.importSimulationStack(expectedInfrastructureEthereum as never, {} as never, { method: 'popup_importSimulationStack', data: parsedExport })
+	assert.equal(reply.ok, true)
+	return InterceptorTransactionStack.parse(storageState.interceptorTransactionStack).operations.map((operation) => {
+		if (operation.type !== 'Message') throw new Error('Expected only message operations')
+		return operation.signedMessageTransaction
+	})
+}
+
+async function visualizeSignedMessage(signedMessageTransaction: SignedMessageTransaction) {
+	const modules = await modulesPromise
+	const rpcEntry = { name: 'Ethereum Mainnet', chainId: 1n, httpsRpc: 'https://rpc.example.invalid', currencyName: 'Ether', currencyTicker: 'ETH', currencyLogoUri: undefined, primary: true, minimized: false }
+	const ethereum = new modules.EthereumClientService({ rpcUrl: rpcEntry.httpsRpc, clearCache: () => undefined, jsonRpcRequest: async () => { throw new Error('RPC should not be called') } }, async () => undefined, async () => undefined, rpcEntry)
+	return await modules.craftPersonalSignPopupMessage(ethereum, undefined, signedMessageTransaction, rpcEntry)
+}
+
 function resetEnvironment() {
 	for (const key of Object.keys(storageState)) delete storageState[key]
 	runtimeSendMessage = async () => undefined
@@ -311,6 +377,132 @@ describe('import simulation stack', () => {
 		const exported = InterceptorSimulationExport.parse(JSON.parse(reply.ethSimulateV1InputString))
 		assert.deepEqual(exported.interceptorSimulateStack.operations, [])
 		assert.deepEqual(exportedSimulationInput, [])
+	})
+
+	test('flags an imported signature whose export claims the signing account was active, while an observed one keeps its values', async () => {
+		resetEnvironment()
+		const observed = createMessageOperation(1n, personalSignRequest())
+		storageState.interceptorTransactionStack = InterceptorTransactionStack.serialize({ operations: [observed] })
+
+		const [storedObserved, storedImported] = await importMessageOperations([createMessageOperation(2n, personalSignRequest())])
+		if (storedObserved === undefined || storedImported === undefined) throw new Error('Expected the observed and the imported message')
+
+		assert.deepEqual({ ...storedObserved, messageIdentifier: 0n }, { ...observed.signedMessageTransaction, messageIdentifier: 0n })
+		assert.equal(storedObserved.importedFromExport, undefined)
+		assert.equal(storedImported.importedFromExport, true)
+
+		const visualizedObserved = await visualizeSignedMessage(storedObserved)
+		assert.equal(visualizedObserved.quarantine, false)
+		const visualizedImported = await visualizeSignedMessage(storedImported)
+		assert.equal(visualizedImported.quarantine, true)
+		assert.deepEqual(visualizedImported.quarantineReasons, [IMPORTED_SIGNATURE_QUARANTINE_REASON])
+	})
+
+	test('shows an imported Safe message with its review only when the review hashes to the digest it signs', async () => {
+		resetEnvironment()
+		const observed = createMessageOperation(1n, safeMessageRequest(), { text: SAFE_MESSAGE_TEXT, isTypedData: false })
+		storageState.interceptorTransactionStack = InterceptorTransactionStack.serialize({ operations: [observed] })
+
+		const [storedObserved, matchingReview, craftedReview] = await importMessageOperations([
+			createMessageOperation(2n, safeMessageRequest(), { text: SAFE_MESSAGE_TEXT, isTypedData: false }),
+			createMessageOperation(3n, safeMessageRequest(), { text: 'Harmless login request', isTypedData: false }),
+		])
+		if (storedObserved === undefined || matchingReview === undefined || craftedReview === undefined) throw new Error('Expected the observed and both imported messages')
+		assert.deepEqual(storedObserved.safeMessageReview, { text: SAFE_MESSAGE_TEXT, isTypedData: false })
+
+		const visualizedObserved = await visualizeSignedMessage(storedObserved)
+		assert.equal(visualizedObserved.type, 'SafeMessage')
+		assert.equal(visualizedObserved.quarantine, false)
+
+		const visualizedMatching = await visualizeSignedMessage(matchingReview)
+		if (visualizedMatching.type !== 'SafeMessage') throw new Error(`Expected a Safe message review, got ${ visualizedMatching.type }`)
+		assert.deepEqual(visualizedMatching.review, { text: SAFE_MESSAGE_TEXT, isTypedData: false })
+		assert.deepEqual(visualizedMatching.quarantineReasons, [IMPORTED_SIGNATURE_QUARANTINE_REASON])
+
+		// A review text that does not hash to the signed digest is not shown; the message falls back to plain EIP-712 and stays flagged.
+		const visualizedCrafted = await visualizeSignedMessage(craftedReview)
+		assert.equal(visualizedCrafted.type, 'EIP712')
+		assert.equal(visualizedCrafted.quarantine, true)
+		assert.deepEqual(visualizedCrafted.quarantineReasons, [IMPORTED_SIGNATURE_QUARANTINE_REASON])
+	})
+
+	test('marks every imported message whatever the export file says about it', async () => {
+		resetEnvironment()
+		const withMarker = createMessageOperation(1n, personalSignRequest())
+		const markedExport = InterceptorSimulationExport.serialize({ ...exportPayload, interceptorSimulateStack: { operations: [{ ...withMarker, signedMessageTransaction: { ...withMarker.signedMessageTransaction, importedFromExport: true } }] } })
+		// The marker can only be `true`, so an export claiming `false` is not a valid export and never reaches the import.
+		const [markedOperation] = markedExport.interceptorSimulateStack.operations
+		if (markedOperation?.type !== 'Message') throw new Error('Expected the exported message')
+		assert.equal(InterceptorSimulationExport.safeParse({ ...markedExport, interceptorSimulateStack: { operations: [{ ...markedOperation, signedMessageTransaction: { ...markedOperation.signedMessageTransaction, importedFromExport: false } }] } }).success, false)
+		// Without the marker or with it already set, the import marks the message.
+		const importedMessages = await importMessageOperations([createMessageOperation(2n, personalSignRequest()), { ...withMarker, signedMessageTransaction: { ...withMarker.signedMessageTransaction, importedFromExport: true } }])
+		assert.deepEqual(importedMessages.map((message) => message.importedFromExport), [true, true])
+	})
+
+	test('keeps the import marker through the id regeneration of a later import and through stack persistence', async () => {
+		resetEnvironment()
+		const [firstImport] = await importMessageOperations([createMessageOperation(1n, personalSignRequest())])
+		if (firstImport === undefined) throw new Error('Expected the imported message')
+		// A later import regenerates the ids of every operation already in the stack, this one included, and stores the stack again.
+		const [importedEarlier, importedLater] = await importMessageOperations([createMessageOperation(2n, personalSignRequest())])
+		if (importedEarlier === undefined || importedLater === undefined) throw new Error('Expected both imported messages')
+		assert.notEqual(importedEarlier.messageIdentifier, firstImport.messageIdentifier)
+		assert.equal(importedEarlier.importedFromExport, true)
+		assert.deepEqual((await visualizeSignedMessage(importedEarlier)).quarantineReasons, [IMPORTED_SIGNATURE_QUARANTINE_REASON])
+	})
+
+	test('leaves the import marker out of export files, and marks the messages again when the file is imported', async () => {
+		const modules = await modulesPromise
+		resetEnvironment()
+		await importMessageOperations([createMessageOperation(1n, personalSignRequest())])
+		storageState.simulationMode = true
+		const ethereum = {
+			async getBlockNumber() { return 1n },
+			async ethSimulateV1Input() { return { method: 'eth_simulateV1' as const, params: [{ blockStateCalls: [], traceTransfers: true, validation: true }, 'latest' as const] } },
+		}
+
+		const exportReply = await modules.requestInterceptorSimulationInput(ethereum as never)
+
+		if (!exportReply.ok) throw new Error(exportReply.message)
+		assert.equal(exportReply.ethSimulateV1InputString.includes('importedFromExport'), false)
+		const exported = InterceptorSimulationExport.parse(JSON.parse(exportReply.ethSimulateV1InputString))
+		const [exportedMessage] = exported.interceptorSimulateStack.operations
+		if (exportedMessage?.type !== 'Message') throw new Error('Expected the exported message')
+		assert.equal(exportedMessage.signedMessageTransaction.importedFromExport, undefined)
+
+		resetEnvironment()
+		const [reimported] = await importMessageOperations([exportedMessage])
+		assert.equal(reimported?.importedFromExport, true)
+	})
+
+	test('drops the simulation options an imported transaction claims, while a transaction already in the stack keeps its own', async () => {
+		const modules = await modulesPromise
+		resetEnvironment()
+		const withSimulationOptions = (transactionIdentifier: bigint, simulationOptions: { readonly requiredChainId: bigint, readonly simulateWithZeroBaseFee: boolean }) => {
+			const [operation] = create7702ExportPayload().interceptorSimulateStack.operations
+			if (operation === undefined) throw new Error('Expected transaction fixture')
+			return { ...operation, preSimulationTransaction: { ...operation.preSimulationTransaction, transactionIdentifier, simulationOptions } }
+		}
+		storageState.interceptorTransactionStack = InterceptorTransactionStack.serialize({ operations: [withSimulationOptions(1n, { requiredChainId: 1n, simulateWithZeroBaseFee: true })] })
+		const parsedExport = InterceptorSimulationExport.parse(InterceptorSimulationExport.serialize({
+			...exportPayload,
+			interceptorSimulateStack: { operations: [
+				// A zero base fee lets a contract notice it is being simulated and behave differently there.
+				withSimulationOptions(2n, { requiredChainId: 1n, simulateWithZeroBaseFee: true }),
+				// A required chain decides on which chain the transaction is simulated at all.
+				withSimulationOptions(3n, { requiredChainId: 5n, simulateWithZeroBaseFee: false }),
+			] },
+		}))
+
+		const reply = await modules.importSimulationStack(expectedInfrastructureEthereum as never, {} as never, { method: 'popup_importSimulationStack', data: parsedExport })
+
+		assert.equal(reply.ok, true)
+		const storedTransactions = InterceptorTransactionStack.parse(storageState.interceptorTransactionStack).operations.map((operation) => {
+			if (operation.type !== 'Transaction') throw new Error('Expected only transaction operations')
+			return operation.preSimulationTransaction
+		})
+		assert.deepEqual(storedTransactions.map((transaction) => transaction.simulationOptions), [{ requiredChainId: 1n, simulateWithZeroBaseFee: true }, undefined, undefined])
+		assert.equal(storedTransactions.every((transaction) => transaction.signedTransaction.type === '7702'), true)
 	})
 
 	test('preserves EIP-7702 authorization signatures when importing an exported stack', async () => {

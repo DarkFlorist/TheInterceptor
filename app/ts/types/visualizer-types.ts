@@ -182,6 +182,8 @@ export const SignedMessageTransaction = funtypes.ReadonlyObject({
 	safeMessageReview: SafeMessageReview,
 	// Older persisted stacks predate the distinction between the active Safe and its simulation signer.
 	activeAddress: EthereumAddress,
+	// Marks a message imported from an export file; background/importedStackTrust.ts owns what it means, sets it on import, keeps it out of export files and flags such signatures.
+	importedFromExport: funtypes.Literal(true),
 }))
 
 export type SimulationStateInputBlock = funtypes.Static<typeof SimulationStateInputBlock>
