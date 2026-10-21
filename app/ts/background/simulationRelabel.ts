@@ -1,8 +1,8 @@
 // The one metadata re-label of a stored simulation result, shared by the stack re-label (relabelPopupVisualisation) and the displayed confirmation re-label (relabelDisplayedConfirmationSimulation); see "Address-book re-labels" in docs/popup-simulation-refresh.md.
 import type { RpcNetwork } from '../types/rpc.js'
-import type { RecordedProtectorChainReads, SimulationState, VisualizedSimulationState } from '../types/visualizer-types.js'
+import type { SimulationState } from '../types/visualizer-types.js'
 import { isExpectedInfrastructureError, reportUnexpectedError } from '../utils/errors.js'
-import { type StoredSimulationMetadata, visualizeStoredRunWithoutNode } from './simulationUpdating.js'
+import { getRecordedVisualisationLookups, type StoredSimulationMetadata, visualizeStoredRunWithoutNode } from './storedRunVisualisation.js'
 
 type SimulationMetadata = Omit<Awaited<ReturnType<typeof visualizeStoredRunWithoutNode>>, 'simulationState'>
 
@@ -28,31 +28,15 @@ type StoredSimulationRelabel<Stored> = {
 	readonly abortController: AbortController | undefined
 }
 
-// The protector chain reads recorded with each transaction of a stored visualisation, by block, or undefined when a transaction was stored by a version that did not record them. A failed simulation ran no protectors, so it needs none.
-function getRecordedProtectorChainReads(visualizedSimulationState: VisualizedSimulationState) {
-	if (visualizedSimulationState.success === false) return []
-	const recordedByBlock: RecordedProtectorChainReads[][] = []
-	for (const block of visualizedSimulationState.visualizedBlocks) {
-		const recordedForBlock: RecordedProtectorChainReads[] = []
-		for (const transaction of block.simulatedAndVisualizedTransactions) {
-			if (transaction.protectorChainReads === undefined) return undefined
-			recordedForBlock.push(transaction.protectorChainReads)
-		}
-		recordedByBlock.push(recordedForBlock)
-	}
-	return recordedByBlock
-}
-
 // Re-runs only the visualisation step (address-book names, ABI-parsed input, token metadata, and protector warnings such as send-to-non-contact) for a stored run, without any RPC request (see visualizeStoredRunWithoutNode), then writes the new metadata only onto that same run.
 export async function relabelStoredSimulation<Stored>(rpcNetwork: RpcNetwork, { stored, getRunToRelabel, updateStored, abortController }: StoredSimulationRelabel<Stored>) {
 	const runToRelabel = getRunToRelabel(stored)
 	if (runToRelabel === undefined) return
 	// A run stored by a version that did not record its protectors' chain reads or the entries its address lookups resolved could only be visualised again by simulating, so it keeps its names until it is simulated again.
-	const storedVisualisation = runToRelabel.storedMetadata.visualizedSimulationState
-	const protectorChainReads = getRecordedProtectorChainReads(storedVisualisation)
-	if (protectorChainReads === undefined || storedVisualisation.identifiedAddressBookEntries === undefined) return
+	const recorded = getRecordedVisualisationLookups(runToRelabel.storedMetadata.visualizedSimulationState)
+	if (recorded === undefined) return
 	// The re-visualised simulation state is dropped so the stored one, including its conducted timestamp, is kept.
-	const { simulationState: _revisualizedSimulationState, ...metadata } = await visualizeStoredRunWithoutNode(runToRelabel.simulationState, runToRelabel.storedMetadata, { protectorChainReads, identifiedAddressBookEntries: storedVisualisation.identifiedAddressBookEntries }, rpcNetwork)
+	const { simulationState: _revisualizedSimulationState, ...metadata } = await visualizeStoredRunWithoutNode(runToRelabel.simulationState, runToRelabel.storedMetadata, recorded, rpcNetwork)
 	// Newer work that aborted this re-label while it visualised stores its own result instead.
 	if (abortController?.signal.aborted) return
 	await updateStored((current) => {
