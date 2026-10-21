@@ -183,7 +183,7 @@ export async function loadModules() {
 		safeSimulation,
 		safeCore,
 		safeConfirmationPersistence,
-		confirmationWindowSupport,
+		confirmationDialogUpdates,
 		transactionPreparation,
 	] = await Promise.all([
 		import('../../app/ts/simulation/services/EthereumClientService.js'),
@@ -207,7 +207,7 @@ export async function loadModules() {
 		import('../../app/ts/safe/safeSimulation.js'),
 		import('../../app/ts/safe/safeCore.js'),
 		import('../../app/ts/background/safeConfirmationPersistence.js'),
-		import('../../app/ts/background/confirmationWindowSupport.js'),
+		import('../../app/ts/background/confirmationDialogUpdates.js'),
 		import('../../app/ts/background/transactionPreparation.js'),
 	])
 	const flushPendingTerminalRepliesForSocket: typeof flushPendingTerminalRepliesForSocketType = terminalReplyDelivery.flushPendingTerminalRepliesForSocket
@@ -226,7 +226,7 @@ export async function loadModules() {
 		setSafeSimulationSigner: popupMessageHandlers.setSafeSimulationSigner,
 		fetchSimulationStackRequestConfirmation: popupMessageHandlers.fetchSimulationStackRequestConfirmation,
 		resolvePendingTransactionOrMessage: confirmTransaction.resolvePendingTransactionOrMessage,
-		updateConfirmTransactionView: confirmationWindowSupport.updateConfirmTransactionView,
+		updateConfirmTransactionView: confirmationDialogUpdates.updateConfirmTransactionView,
 		formEthSendTransaction: transactionPreparation.formEthSendTransaction,
 		getSafeExecutionSignerRoute: safeExecutionRouting.getSafeExecutionSignerRoute,
 		prepareSafeExecutionSignerRoute: safeExecutionRouting.prepareSafeExecutionSignerRoute,

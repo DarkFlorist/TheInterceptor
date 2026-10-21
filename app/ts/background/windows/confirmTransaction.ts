@@ -38,7 +38,11 @@ import { persistUnsignedSafeTransaction, resolveSafeSignerReply } from '../safeC
 import { getWalletSelectedAccount } from '../../utils/activeAddressSelection.js'
 import { createSafeSignerErrorStatus } from '../safeSignerErrors.js'
 import { resolvePendingTransactionBatch } from '../walletSendCallsConfirmation.js'
-import { type AnswerRequestsOfClosedWindow, formRejectMessage, getPendingTransactionWindow, runWithPendingConfirmationLock, shouldReplacePopupVisualisation, updateConfirmTransactionView, updateViewAfterPendingRequestRemoved } from '../confirmationWindowSupport.js'
+import { runWithPendingConfirmationLock } from '../confirmationAdmissionLock.js'
+import { updateConfirmTransactionView } from '../confirmationDialogUpdates.js'
+import { shouldReplacePopupVisualisation } from '../confirmationPreviews.js'
+import { formRejectMessage } from '../confirmationReplies.js'
+import { type AnswerRequestsOfClosedWindow, getPendingTransactionWindow, updateViewAfterPendingRequestRemoved } from '../confirmationWindow.js'
 import { formEthSendTransaction, formSendRawTransaction } from '../transactionPreparation.js'
 
 const pendingNoResponseRetryTimers = new Map<string, ReturnType<typeof setTimeout>>()

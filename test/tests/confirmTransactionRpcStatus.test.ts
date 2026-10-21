@@ -252,7 +252,7 @@ describe('confirm transaction rpc status bootstrap', () => {
 			import('../../app/ts/utils/storageUtils.js'),
 			import('../../app/ts/background/settings.js'),
 			import('../../app/ts/background/storageVariables.js'),
-			import('../../app/ts/background/confirmationWindowSupport.js'),
+			import('../../app/ts/background/confirmationDialogUpdates.js'),
 			import('../../app/ts/components/pages/ConfirmTransaction.js'),
 			import('../../app/ts/simulation/services/EthereumClientService.js'),
 			import('../../app/ts/simulation/services/priceEstimator.js'),

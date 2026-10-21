@@ -7,7 +7,16 @@ const confirmTransactionSource = await readSource('background/windows/confirmTra
 const confirmTransactionSimulationSource = await readSource('background/confirmTransactionSimulation.ts')
 const walletSendCallsConfirmationSource = await readSource('background/walletSendCallsConfirmation.ts')
 const walletSendCallsSource = await readSource('background/walletSendCalls.ts')
-const confirmationWindowSupportSource = await readSource('background/confirmationWindowSupport.ts')
+// The confirmation support that both confirmation flows share, one concern per module, and what each module owns.
+const confirmationSupportModules = {
+	'confirmationAdmissionLock.ts': ['runWithPendingConfirmationLock'],
+	'confirmationWindow.ts': ['AnswerRequestsOfClosedWindow', 'getPendingTransactionWindow', 'updateViewAfterPendingRequestRemoved'],
+	'confirmationDialogUpdates.ts': ['toPopupPendingTransactionOrSignableMessage', 'sendConfirmTransactionDialogUpdates', 'updateConfirmTransactionView'],
+	'confirmationPreviews.ts': ['shouldReplacePopupVisualisation', 'refreshConfirmationMetadata'],
+	'confirmationReplies.ts': ['formRejectMessage'],
+} as const
+const confirmationSupportSources = Object.fromEntries(await Promise.all(Object.keys(confirmationSupportModules).map(async (module) => [module, await readSource(`background/${ module }`)] as const)))
+const getConfirmationSupportSource = (module: keyof typeof confirmationSupportModules) => confirmationSupportSources[module] ?? ''
 const transactionPreparationSource = await readSource('background/transactionPreparation.ts')
 const accessRequestTypesSource = await readSource('types/accessRequest.ts')
 const storageVariablesSource = await readSource('background/storageVariables.ts')
@@ -49,18 +58,31 @@ const importsFrom = (source: string, modulePath: string) => new RegExp(`^import 
 
 test('the batch owner depends on the shared confirmation support modules, not on the confirmation window it is dispatched from', () => {
 	assert.equal(importsFrom(walletSendCallsConfirmationSource, 'windows/confirmTransaction.js'), false)
-	assert.equal(importsFrom(walletSendCallsConfirmationSource, 'confirmationWindowSupport.js'), true)
 	assert.equal(importsFrom(walletSendCallsConfirmationSource, 'transactionPreparation.js'), true)
-	for (const supportSource of [confirmationWindowSupportSource, transactionPreparationSource]) {
+	for (const supportSource of [...Object.values(confirmationSupportSources), transactionPreparationSource]) {
 		assert.equal(importsFrom(supportSource, 'windows/confirmTransaction.js'), false)
 		assert.equal(importsFrom(supportSource, 'walletSendCallsConfirmation.js'), false)
 	}
-	assert.equal(importsFrom(confirmTransactionSource, 'confirmationWindowSupport.js'), true)
 	assert.equal(importsFrom(confirmTransactionSource, 'transactionPreparation.js'), true)
 	// One admission lock serializes every confirmation that is added to the queue.
-	assert.match(confirmationWindowSupportSource, /const pendingConfirmationSemaphore = new Semaphore\(1\)/u)
+	assert.match(getConfirmationSupportSource('confirmationAdmissionLock.ts'), /const pendingConfirmationSemaphore = new Semaphore\(1\)/u)
 	assert.doesNotMatch(confirmTransactionSource, /new Semaphore\(/u)
 	assert.doesNotMatch(walletSendCallsConfirmationSource, /new Semaphore\(/u)
+})
+
+test('each shared confirmation concern has one owner module, which both confirmation flows import it from', () => {
+	const exportOf = (name: string) => new RegExp(`^export (?:const|async function|function|type) ${ name }\\b`, 'mu')
+	for (const [module, ownedNames] of Object.entries(confirmationSupportModules)) {
+		for (const name of ownedNames) {
+			const owners = Object.entries(confirmationSupportSources).filter(([, source]) => exportOf(name).test(source)).map(([owner]) => owner)
+			assert.deepEqual(owners, [module], name)
+			for (const flowSource of [confirmTransactionSource, walletSendCallsConfirmationSource, popupMessageHandlersSource]) assert.doesNotMatch(flowSource, exportOf(name), name)
+		}
+	}
+	for (const flowSource of [confirmTransactionSource, walletSendCallsConfirmationSource]) {
+		for (const module of ['confirmationAdmissionLock.js', 'confirmationWindow.js', 'confirmationPreviews.js', 'confirmationReplies.js', 'confirmationDialogUpdates.js']) assert.equal(importsFrom(flowSource, module), true, module)
+		assert.equal(importsFrom(flowSource, 'confirmationWindowSupport.js'), false)
+	}
 })
 
 test('the confirmation window hands batches to the batch owner at one dispatch point', () => {
@@ -108,7 +130,22 @@ test('both confirmation flows share the simulation run machinery from a neutral 
 test('the confirmation metadata refresh routes batches to their owner and shares how a refreshed preview is stored', () => {
 	assert.match(popupMessageHandlersSource, /case 'TransactionBatch': return await refreshPendingTransactionBatchMetadata\(/u)
 	assert.match(walletSendCallsConfirmationSource, /export async function refreshPendingTransactionBatchMetadata\(/u)
-	assert.match(confirmationWindowSupportSource, /export async function refreshConfirmationMetadata</u)
+	assert.match(getConfirmationSupportSource('confirmationPreviews.ts'), /export async function refreshConfirmationMetadata</u)
 	assert.doesNotMatch(popupMessageHandlersSource, /isEthereumClientOnBatchChain|isSameConfirmationSimulation|storeRefreshedConfirmationMetadata/u)
 	assert.doesNotMatch(walletSendCallsConfirmationSource, /isSameConfirmationSimulation|visualizeSimulatorState\(refreshedVisualisation/u)
+})
+
+test('the appended gas estimate and simulation preparation fill RPC blocks by one shared rule', async () => {
+	const preparationSource = await readSource('simulation/services/EthereumClientService.ts')
+	const simulationServiceSource = await readSource('simulation/services/SimulationModeEthereumClientService.ts')
+	const appendedEstimateSource = simulationServiceSource.slice(simulationServiceSource.indexOf('export const simulateEstimateGasAppendedToSimulation'))
+	const generalEstimateStart = simulationServiceSource.indexOf('export const simulateEstimateGas =')
+	const generalEstimateSource = simulationServiceSource.slice(generalEstimateStart, simulationServiceSource.indexOf('\n}\n', generalEstimateStart))
+	assert.match(preparationSource, /export const fitsInRpcBlock = \(usedGas: bigint, transactionGas: bigint, blockGasLimit: bigint\) => transactionGas <= getGasLeftInRpcBlock\(usedGas, blockGasLimit\)/u)
+	assert.match(preparationSource, /if \(fitsInRpcBlock\(currentChunkGasSum, transaction\.gas, gasLimit\)\)/u)
+	assert.doesNotMatch(preparationSource, /currentChunkGasSum \+ transaction\.gas <=|calculateTotalGasUsed/u)
+	for (const rule of ['getGasUsedInLastRpcBlock(', 'getGasLeftInRpcBlock(', 'fitsInRpcBlock(']) assert.ok(appendedEstimateSource.includes(rule), rule)
+	assert.doesNotMatch(appendedEstimateSource, /blockGasLimit - |lastRpcBlockGas \+ /u)
+	// The general estimate runs in a new block and carries none of the appended placement.
+	assert.doesNotMatch(generalEstimateSource, /appendToLastPrefixBlock|RpcBlock/u)
 })

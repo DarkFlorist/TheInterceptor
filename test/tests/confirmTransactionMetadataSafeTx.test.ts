@@ -142,7 +142,7 @@ const browserMock = createBrowserMock()
 
 async function loadModules() {
 	const popupMessageHandlers = await import('../../app/ts/background/popupMessageHandlers.js')
-	const confirmationWindowSupport = await import('../../app/ts/background/confirmationWindowSupport.js')
+	const confirmationDialogUpdates = await import('../../app/ts/background/confirmationDialogUpdates.js')
 	const ethereumClientService = await import('../../app/ts/simulation/services/EthereumClientService.js')
 	const priceEstimator = await import('../../app/ts/simulation/services/priceEstimator.js')
 	const settings = await import('../../app/ts/background/settings.js')
@@ -153,7 +153,7 @@ async function loadModules() {
 
 	return {
 		refreshPopupConfirmTransactionMetadata: popupMessageHandlers.refreshPopupConfirmTransactionMetadata,
-		updateConfirmTransactionView: confirmationWindowSupport.updateConfirmTransactionView,
+		updateConfirmTransactionView: confirmationDialogUpdates.updateConfirmTransactionView,
 		EthereumClientService: ethereumClientService.EthereumClientService,
 		TokenPriceService: priceEstimator.TokenPriceService,
 		defaultActiveAddresses: settings.defaultActiveAddresses,

@@ -20,7 +20,11 @@ import { captureStackSimulationContext, createSimulationStateWithNonceAndBaseFee
 import { getInterceptorTransactionStack, getPendingTransactionsAndMessages, getTabState, updateInterceptorTransactionStackUnlessRefused, updatePendingTransactionOrMessage } from './storageVariables.js'
 import { attemptQueuedTerminalReplyDelivery, queueTerminalReply, queueTerminalReplyAndAttemptDelivery } from './terminalReplyDelivery.js'
 import { addPendingTransactionBatch, getWalletSendCallsApprovalError, getWalletSendCallsBindingError, getWalletSendCallsTransactionParams, getWalletSendCallTransactionIdentifier, isEthereumClientOnBatchChain, isTransactionBatchOnStack, isWalletSendCallsIdInUse, lookUpWalletSendCallsAccount, releasePendingTransactionBatch, removeApprovedTransactionBatch, walletSendCallsIdInUseError } from './walletSendCalls.js'
-import { type AnswerRequestsOfClosedWindow, formRejectMessage, getPendingTransactionWindow, refreshConfirmationMetadata, runWithPendingConfirmationLock, shouldReplacePopupVisualisation, updateConfirmTransactionView, updateViewAfterPendingRequestRemoved } from './confirmationWindowSupport.js'
+import { runWithPendingConfirmationLock } from './confirmationAdmissionLock.js'
+import { updateConfirmTransactionView } from './confirmationDialogUpdates.js'
+import { refreshConfirmationMetadata, shouldReplacePopupVisualisation } from './confirmationPreviews.js'
+import { formRejectMessage } from './confirmationReplies.js'
+import { type AnswerRequestsOfClosedWindow, getPendingTransactionWindow, updateViewAfterPendingRequestRemoved } from './confirmationWindow.js'
 import { formEthSendTransactionOnSimulationState } from './transactionPreparation.js'
 
 // Confirms simulation-mode wallet_sendCalls batches: admits a batch to the confirmation queue, previews it on top of the simulation stack, and approves or rejects it as a whole. The confirmation window's generic dispatch hands every batch to resolvePendingTransactionBatch.
@@ -36,7 +40,7 @@ async function formWalletSendCallsTransactions(ethereumClientService: EthereumCl
 		// The batch is previewed exactly where approval commits it: its calls are appended to the stack's operations, and each call is estimated in the block that approval adds it to.
 		const simulationState = toResolvedSimulationState(await createSimulationStateWithNonceAndBaseFeeFixing(getSimulationInputForStack(stackContext, preparedOperations, true), ethereumClientService))
 		const transactionIdentifier = getWalletSendCallTransactionIdentifier(pendingBatch.uniqueRequestIdentifier, callIndex)
-		const transactionToSimulate = await formEthSendTransactionOnSimulationState(ethereumClientService, undefined, simulationState, pendingBatch.binding.account, pendingBatch.website, transactionParams, pendingBatch.created, transactionIdentifier, pendingBatch.simulationMode, 'transaction-sender', 'endOfLastSimulatedBlock')
+		const transactionToSimulate = await formEthSendTransactionOnSimulationState(ethereumClientService, undefined, simulationState, pendingBatch.binding.account, pendingBatch.website, transactionParams, pendingBatch.created, transactionIdentifier, pendingBatch.simulationMode, 'transaction-sender', 'appendedToSimulation')
 		transactionsToSimulate.push(transactionToSimulate)
 		if (transactionToSimulate.success) preparedOperations.push(toWalletSendCallStackOperation(transactionToSimulate))
 	}

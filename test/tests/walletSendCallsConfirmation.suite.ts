@@ -1213,6 +1213,8 @@ for (const { gasLeft, expectedRpcBlockIndex } of [{ gasLeft: 28_000n, expectedRp
 		// The stack transaction has nonce 0 and the batch call nonce 1.
 		const prepared = await peakGasEthereum.prepareEthSimulateV1Input(pending.popupVisualisation.data.simulationState.simulationStateInput, await peakGasEthereum.getBlockNumber(undefined), undefined)
 		const preparedRpcBlockIndex = prepared.rpcBlocks.findIndex((block) => block.transactions.some((transaction) => transaction.signedTransaction.nonce === 1n))
+		const { fitsInRpcBlock } = await import('../../app/ts/simulation/services/EthereumClientService.js')
+		assert.equal(expectedRpcBlockIndex, fitsInRpcBlock(fakeBlock.gasLimit - gasLeft, 21_000n, fakeBlock.gasLimit) ? 0 : 1)
 		assert.equal(preparedRpcBlockIndex, expectedRpcBlockIndex)
 		assert.equal(estimateRpcBlockIndexes[estimateRpcBlockIndexes.length - 1], expectedRpcBlockIndex)
 		assert.equal(await approveBatch(websiteTabConnections), true)

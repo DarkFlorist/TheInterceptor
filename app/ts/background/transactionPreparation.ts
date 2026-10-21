@@ -1,5 +1,5 @@
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { type GasEstimationPlacement, getInputFieldFromDataOrInput, getSimulatedBalance, getSimulatedErc20Balance, getSimulatedTransactionCount, simulateEstimateGas } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { getInputFieldFromDataOrInput, getSimulatedBalance, getSimulatedErc20Balance, getSimulatedTransactionCount, simulateEstimateGas, simulateEstimateGasAppendedToSimulation } from '../simulation/services/SimulationModeEthereumClientService.js'
 import type { SendRawTransactionParams, SendTransactionParams } from '../types/JsonRpc-types.js'
 import { PASSTHROUGH_STATE, type ResolvedSimulationState, type WebsiteCreatedEthereumTransaction, type WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
 import type { EthereumQuantity } from '../types/wire-types.js'
@@ -73,6 +73,9 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 	return await formEthSendTransactionOnSimulationState(ethereumClientService, requestAbortController, simulationState, activeAddress, website, sendTransactionParams, created, transactionIdentifier, simulationMode, gasPayment)
 }
 
+// Where the transaction's gas is estimated: in a new block after the simulation, or appended to the simulation, in the RPC block that preparation puts it in, which is where wallet_sendCalls approval adds a call.
+export type GasEstimationPlacement = 'newBlock' | 'appendedToSimulation'
+
 // Prepares the transaction's nonce, fees and gas limit against the given simulation state instead of the current simulation stack.
 export const formEthSendTransactionOnSimulationState = async(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: ResolvedSimulationState, activeAddress: bigint | undefined, website: Website, sendTransactionParams: SendTransactionParams, created: Date, transactionIdentifier: EthereumQuantity, simulationMode: boolean, gasPayment: TransactionGasPayment, gasEstimationPlacement: GasEstimationPlacement = 'newBlock'): Promise<WebsiteCreatedEthereumTransactionOrFailed> => {
 	const transactionDetails = sendTransactionParams.params[0]
@@ -127,7 +130,9 @@ export const formEthSendTransactionOnSimulationState = async(ethereumClientServi
 			if (gasPayment === 'external-executor' && simulationState.kind === 'passthrough') {
 				throw new Error('Gnosis Safe transaction gas estimation requires the Interceptor simulator.')
 			}
-			const estimateGas = await simulateEstimateGas(ethereumClientService, requestAbortController, simulationState, transactionWithoutGas, gasEstimationPlacement)
+			const estimateGas = gasEstimationPlacement === 'newBlock'
+				? await simulateEstimateGas(ethereumClientService, requestAbortController, simulationState, transactionWithoutGas)
+				: await simulateEstimateGasAppendedToSimulation(ethereumClientService, requestAbortController, simulationState, transactionWithoutGas)
 			if ('error' in estimateGas) {
 				const insufficientBalanceMessage = balancePromise === undefined
 					? undefined
