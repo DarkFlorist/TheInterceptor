@@ -1,4 +1,3 @@
-import type { EthereumClientService } from './services/EthereumClientService.js'
 import type { EthereumAddress, EthereumData, EthereumQuantity } from '../types/wire-types.js'
 import { bytes32String } from '../utils/bigint.js'
 import { APPROVAL_LOG, DEPOSIT_LOG, ENS_ADDRESS_CHANGED, ENS_ADDR_CHANGED, ENS_CONTENT_HASH_CHANGED, ENS_ETHEREUM_NAME_SERVICE, ENS_ETH_REGISTRAR_CONTROLLER, ENS_EXPIRY_EXTENDED, ENS_FUSES_SET, ENS_NAME_CHANGED, ENS_CONTROLLER_NAME_REGISTERED, ENS_BASE_REGISTRAR_NAME_RENEWED, ENS_NAME_UNWRAPPED, ENS_NEW_OWNER, ENS_NEW_RESOLVER, ENS_NEW_TTL, ENS_PUBLIC_RESOLVER, ENS_PUBLIC_RESOLVER_2, ENS_CONTROLLER_NAME_RENEWED, ENS_REGISTRY_WITH_FALLBACK, ENS_REVERSE_CLAIMED, ENS_REVERSE_REGISTRAR, ENS_TEXT_CHANGED, ENS_TEXT_CHANGED_KEY_VALUE, ENS_TOKEN_WRAPPER, ENS_TRANSFER, ERC1155_TRANSFERBATCH_LOG, ERC1155_TRANSFERSINGLE_LOG, ERC721_APPROVAL_FOR_ALL_LOG, TRANSFER_LOG, WITHDRAWAL_LOG, ENS_BASE_REGISTRAR_NAME_REGISTERED, ENS_NAME_WRAPPED } from '../utils/constants.js'
@@ -7,7 +6,7 @@ import type { AddressBookEntryCategory } from '../types/addressBookTypes.js'
 import { parseEventIfPossible, parseTransactionInputIfPossible } from './services/simulationTokenBalanceQueries.js'
 import { getAbi } from '../utils/abi.js'
 import { parseAbiParametersToSolidityVariables } from '../utils/solidityTypes.js'
-import { identifyAddress } from '../background/metadataUtils.js'
+import type { IdentifyAddress } from '../types/metadataLookups.js'
 import { assertNever } from '../utils/typescript.js'
 import type { EthereumEvent } from '../types/ethSimulate-types.js'
 import type { EnrichedEthereumEvent, EnrichedEthereumInputData, ParsedEvent, TokenVisualizerResult } from '../types/EnrichedEthereumData.js'
@@ -85,10 +84,10 @@ const ensEventHandler = (parsedEvent: ParsedEvent) => {
 	return undefined
 }
 
-export const parseInputData = async (transaction: { to: EthereumAddress | undefined | null, value: EthereumQuantity, input: EthereumData }, ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined): Promise<EnrichedEthereumInputData> => {
+export const parseInputData = async (transaction: { to: EthereumAddress | undefined | null, value: EthereumQuantity, input: EthereumData }, identifyAddress: IdentifyAddress): Promise<EnrichedEthereumInputData> => {
 	const nonParsed = { input: transaction.input, type: 'NonParsed' as const }
 	if (transaction.to === undefined || transaction.to === null) return nonParsed
-	const addressBookEntry = await identifyAddress(ethereumClientService, requestAbortController, transaction.to)
+	const addressBookEntry = await identifyAddress(transaction.to)
 	const abi = getAbi(addressBookEntry)
 	if (!abi) return nonParsed
 	const parsed = parseTransactionInputIfPossible(abi, transaction.input, transaction.value)
@@ -115,9 +114,9 @@ export const parseInputData = async (transaction: { to: EthereumAddress | undefi
 	}
 }
 
-export const parseEvents = async (events: readonly EthereumEvent[], ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined): Promise<readonly EnrichedEthereumEvent[]> => {
+export const parseEvents = async (events: readonly EthereumEvent[], identifyAddress: IdentifyAddress): Promise<readonly EnrichedEthereumEvent[]> => {
 	const parsedEvents = await promiseAllMapAbortSafe(events, async (event) => {
-		const loggersAddressBookEntry = await identifyAddress(ethereumClientService, requestAbortController, event.address)
+		const loggersAddressBookEntry = await identifyAddress(event.address)
 		const abi = getAbi(loggersAddressBookEntry)
 		const nonParsed = { ...event, isParsed: 'NonParsed' as const, loggersAddressBookEntry }
 		if (!abi) return nonParsed

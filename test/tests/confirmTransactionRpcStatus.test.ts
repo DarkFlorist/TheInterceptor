@@ -516,3 +516,37 @@ describe('confirm transaction rpc status bootstrap', () => {
 		dom.restore()
 	})
 })
+
+describe('confirm transaction address-book refresh', () => {
+	test('asks for its metadata when the address book changes and again once the stored simulations are re-labelled', async () => {
+		const dom = installDomMock()
+		const browser = installBrowserMock(() => undefined)
+		const { serialize } = await import('../../app/ts/types/wire-types.js')
+		const { UpdateConfirmTransactionDialogPendingTransactions } = await import('../../app/ts/types/interceptor-messages.js')
+		const { ConfirmTransaction } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
+		const countMetadataRequests = () => browser.getSentMessages().filter((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_refreshConfirmTransactionMetadata').length
+
+		await act(() => {
+			render(h(ConfirmTransaction, {}), dom.document.body)
+		})
+		await act(() => {
+			browser.dispatch({
+				role: 'all',
+				...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
+					method: 'popup_update_confirm_transaction_dialog_pending_transactions',
+					data: { pendingTransactionAndSignableMessages: [makePendingTransaction()], currentBlockNumber: 124n, rpcConnectionStatus: undefined },
+				}),
+			})
+		})
+
+		for (const [index, method] of ['popup_addressBookEntriesChanged', 'popup_simulationsRelabelled'].entries()) {
+			await act(async () => {
+				browser.dispatch({ role: 'all', method })
+				await new Promise((resolve) => setTimeout(resolve, 0))
+			})
+			assert.equal(countMetadataRequests(), index + 1, method)
+		}
+		await unmountConfirmTransaction(dom)
+		dom.restore()
+	})
+})

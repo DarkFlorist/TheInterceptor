@@ -148,7 +148,6 @@ async function loadModules() {
 	const settings = await import('../../app/ts/background/settings.js')
 	const storageUtils = await import('../../app/ts/utils/storageUtils.js')
 	const storageVariables = await import('../../app/ts/background/storageVariables.js')
-	const popupVisualisationUpdater = await import('../../app/ts/background/popupVisualisationUpdater.js')
 	const wireTypes = await import('../../app/ts/types/wire-types.js')
 
 	return {
@@ -160,7 +159,7 @@ async function loadModules() {
 		browserStorageLocalSet: storageUtils.browserStorageLocalSet,
 		browserStorageLocalSet2: storageUtils.browserStorageLocalSet2,
 		getPopupVisualisationState: storageVariables.getPopupVisualisationState,
-		refreshPopupVisualisationForOpenConsumer: popupVisualisationUpdater.refreshPopupVisualisationForOpenConsumer,
+		setPopupVisualisationState: storageVariables.setPopupVisualisationState,
 		serialize: wireTypes.serialize,
 		EthereumBlockHeader: wireTypes.EthereumBlockHeader,
 		EthereumQuantity: wireTypes.EthereumQuantity,
@@ -221,8 +220,9 @@ function assertWireSafe(value: unknown, seen = new Set<unknown>()) {
 	for (const nestedValue of Object.values(value)) assertWireSafe(nestedValue, seen)
 }
 
+// A view update sends the pending confirmations on their own; a metadata request sends them with the stack in a metadata update.
 function getPendingTransactionsUpdateMessage(sentMessages: readonly RuntimeMessage[]) {
-	const message = sentMessages.find((entry) => entry.method === 'popup_update_confirm_transaction_dialog_pending_transactions')
+	const message = sentMessages.find((entry) => entry.method === 'popup_update_confirm_transaction_dialog_pending_transactions' || entry.method === 'popup_update_confirm_transaction_dialog_metadata')
 	if (message === undefined) throw new Error('Expected confirm transaction update message')
 	if (!isRecord(message.data)) throw new Error('Expected confirm transaction message data')
 	assert.equal(message.role, 'confirmTransaction')
@@ -384,43 +384,7 @@ function assertPopupPendingSafeTxShape(sentMessages: readonly RuntimeMessage[]) 
 }
 
 describe('SafeTx confirm transaction metadata', () => {
-	test('uses the stored visualisation when a confirmation refresh fails unexpectedly', async () => {
-		await browserMock.reset()
-		const modules = await modulesPromise
-		const fakeRpcNetwork: RpcEntry = {
-			name: 'Test Chain',
-			chainId: 1337n,
-			httpsRpc: 'https://example.invalid',
-			currencyName: 'Ether',
-			currencyTicker: 'ETH',
-			currencyLogoUri: undefined,
-			primary: true,
-			minimized: true,
-		}
-		const ethereum = new modules.EthereumClientService({
-			rpcUrl: fakeRpcNetwork.httpsRpc,
-			clearCache() { return undefined },
-			async jsonRpcRequest() { throw new Error('RPC should not be called') },
-		}, async () => undefined, async () => undefined, fakeRpcNetwork)
-		const tokenPriceService = new modules.TokenPriceService(ethereum, 0)
-		const storedVisualisation = await modules.getPopupVisualisationState()
-		const refreshError = new Error('Unexpected visualizer failure')
-		let reportedError: unknown
-
-		const result = await modules.refreshPopupVisualisationForOpenConsumer(ethereum, tokenPriceService, {
-			async update() { throw refreshError },
-			async getStored() { return storedVisualisation },
-			async reportError(error) {
-				reportedError = error
-				return undefined
-			},
-		})
-
-		assert.equal(result, storedVisualisation)
-		assert.equal(reportedError, refreshError)
-	})
-
-	test('still updates confirmation metadata when visualisation refresh falls back', async () => {
+	test('confirmation metadata requests send the stored stack visualisation without simulating or re-labelling it', async () => {
 		await browserMock.reset()
 		const modules = await modulesPromise
 		const fakeRpcNetwork: RpcEntry = {
@@ -445,37 +409,22 @@ describe('SafeTx confirm transaction metadata', () => {
 				}
 			},
 		}, async () => undefined, async () => undefined, fakeRpcNetwork)
-		const tokenPriceService = new modules.TokenPriceService(ethereum, 0)
 		await modules.browserStorageLocalSet({
 			simulationMode: true,
 			activeRpcNetwork: fakeRpcNetwork,
 			userAddressBookEntriesV3: modules.defaultActiveAddresses,
 		})
 		await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [createPendingSafeTxMessage(modules, fakeRpcNetwork)] })
-		const storedVisualisation = { ...await modules.getPopupVisualisationState(), simulationId: 77 }
-		const refreshError = new Error('Unexpected visualizer failure')
-		let reportedError: unknown
-		let reportCalls = 0
+		const storedVisualisation = await modules.setPopupVisualisationState({ ...await modules.getPopupVisualisationState(), simulationId: 77 })
 
-		await modules.refreshPopupConfirmTransactionMetadata(ethereum, tokenPriceService, undefined, {
-			visualisation: {
-				async update() { throw refreshError },
-				async getStored() { return storedVisualisation },
-				async reportError(error) {
-					reportCalls += 1
-					reportedError = error
-					return undefined
-				},
-			},
-		})
+		await modules.refreshPopupConfirmTransactionMetadata(ethereum)
 
-		const dialogUpdate = browserMock.sentMessages.find((message) => message.method === 'popup_update_confirm_transaction_dialog')
-		if (!isRecord(dialogUpdate?.data)) throw new Error('Missing confirm transaction dialog update')
+		const dialogUpdate = browserMock.sentMessages.find((message) => message.method === 'popup_update_confirm_transaction_dialog_metadata')
+		if (!isRecord(dialogUpdate?.data)) throw new Error('Missing confirm transaction dialog metadata update')
 		const visualizedSimulatorState = dialogUpdate.data.visualizedSimulatorState
 		if (!isRecord(visualizedSimulatorState)) throw new Error('Missing stored visualisation in confirm transaction dialog update')
 		assert.equal(visualizedSimulatorState.simulationId, 77)
-		assert.equal(reportedError, refreshError)
-		assert.equal(reportCalls, 1)
+		assert.deepEqual(await modules.getPopupVisualisationState(), storedVisualisation)
 	})
 
 	test('refresh confirm metadata sends popup-safe SafeTx payload', async () => {
@@ -510,7 +459,6 @@ describe('SafeTx confirm transaction metadata', () => {
 		}
 
 		const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
-		const tokenPriceService = new modules.TokenPriceService(ethereum, 0)
 		await modules.browserStorageLocalSet({
 			simulationMode: true,
 			activeRpcNetwork: fakeRpcNetwork,
@@ -520,10 +468,11 @@ describe('SafeTx confirm transaction metadata', () => {
 			pendingTransactionsAndMessages: [createPendingSafeTxMessage(modules, fakeRpcNetwork)],
 		})
 
-		await modules.refreshPopupConfirmTransactionMetadata(ethereum, tokenPriceService, undefined)
+		await modules.refreshPopupConfirmTransactionMetadata(ethereum)
 
 		assertPopupPendingSafeTxShape(browserMock.sentMessages)
-		assert.equal((await modules.getPopupVisualisationState()).simulationId, 1)
+		// A metadata request reads the stored stack simulation, which address-book changes re-label beforehand, and never stores a new simulation.
+		assert.equal((await modules.getPopupVisualisationState()).simulationId, 0)
 		assert.equal(browserMock.sentMessages.some((message) => message.method === 'popup_isSimulationVisualizerOpen'), false)
 	})
 

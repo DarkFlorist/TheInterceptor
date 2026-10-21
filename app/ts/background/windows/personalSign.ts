@@ -1,11 +1,11 @@
 import { SafeMessage } from '../../safe/safeMessage.js'
-import type { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
 import { stringifyJSONWithBigInts } from '../../utils/bigint.js'
 import { type OpenSeaOrderMessage, PersonalSignRequestIdentifiedEIP712Message, type VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
 import { assertNever } from '../../utils/typescript.js'
 import { extractEIP712Message, validateEIP712Types } from '../../utils/eip712Parsing.js'
 import { getRpcNetworkForChain, getTabState } from '../storageVariables.js'
-import { getAddressesForSolidityTypes, identifyAddress } from '../metadataUtils.js'
+import { getAddressesForSolidityTypes } from '../metadataUtils.js'
+import type { IdentifyAddress } from '../../types/metadataLookups.js'
 import type { SignedMessageTransaction } from '../../types/visualizer-types.js'
 import type { RpcNetwork } from '../../types/rpc.js'
 import { getChainName } from '../../utils/constants.js'
@@ -14,13 +14,13 @@ import { getMessageHashForPersonalSign } from '../../simulation/services/simulat
 import { getMessageAndDomainHash, getSafeTxHash, isValidMessage } from '../../utils/eip712.js'
 import { promiseAllMapAbortSafe } from '../../utils/requests.js'
 
-async function addMetadataToOpenSeaOrder(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, openSeaOrder: OpenSeaOrderMessage) {
+async function addMetadataToOpenSeaOrder(identify: IdentifyAddress, openSeaOrder: OpenSeaOrderMessage) {
 	return {
 		...openSeaOrder,
-		zone: await identifyAddress(ethereumClientService, requestAbortController, openSeaOrder.zone),
-		offerer: await identifyAddress(ethereumClientService, requestAbortController, openSeaOrder.offerer),
-		offer: await promiseAllMapAbortSafe(openSeaOrder.offer, async (offer) => ({ ...offer, token: await identifyAddress(ethereumClientService, requestAbortController, offer.token) })),
-		consideration: await promiseAllMapAbortSafe(openSeaOrder.consideration, async (offer) => ({ ...offer, token: await identifyAddress(ethereumClientService, requestAbortController, offer.token), recipient: await identifyAddress(ethereumClientService, requestAbortController, offer.recipient) }))
+		zone: await identify(openSeaOrder.zone),
+		offerer: await identify(openSeaOrder.offerer),
+		offer: await promiseAllMapAbortSafe(openSeaOrder.offer, async (offer) => ({ ...offer, token: await identify(offer.token) })),
+		consideration: await promiseAllMapAbortSafe(openSeaOrder.consideration, async (offer) => ({ ...offer, token: await identify(offer.token), recipient: await identify(offer.recipient) }))
 	 }
 }
 
@@ -34,8 +34,8 @@ export function getSigningQuarantineCodes(messageChainId: bigint | undefined, ac
 export const getSignedMessageActiveAddress = (signedMessageTransaction: SignedMessageTransaction) =>
 	signedMessageTransaction.activeAddress ?? signedMessageTransaction.fakeSignedFor
 
-export async function craftPersonalSignPopupMessage(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, signedMessageTransaction: SignedMessageTransaction, rpcNetwork: RpcNetwork): Promise<VisualizedPersonalSignRequest> {
-	const activeAddressWithMetadata = await identifyAddress(ethereumClientService, requestAbortController, getSignedMessageActiveAddress(signedMessageTransaction))
+export async function craftPersonalSignPopupMessage(identify: IdentifyAddress, signedMessageTransaction: SignedMessageTransaction, rpcNetwork: RpcNetwork): Promise<VisualizedPersonalSignRequest> {
+	const activeAddressWithMetadata = await identify(getSignedMessageActiveAddress(signedMessageTransaction))
 	const signerName = (await getTabState(signedMessageTransaction.request.uniqueRequestIdentifier.requestSocket.tabId)).signerName
 	const basicParams = {
 		website: signedMessageTransaction.website,
@@ -49,7 +49,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 	const isValid = isValidMessage(signedMessageTransaction.originalRequestParameters)
 
 	if (originalParams.originalRequestParameters.method === 'eth_signTypedData') {
-		const account = await identifyAddress(ethereumClientService, requestAbortController, originalParams.originalRequestParameters.params[1])
+		const account = await identify(originalParams.originalRequestParameters.params[1])
 		return {
 			method: originalParams.originalRequestParameters.method,
 			...basicParams,
@@ -66,7 +66,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 	}
 
 	if (originalParams.originalRequestParameters.method === 'personal_sign') {
-		const account = await identifyAddress(ethereumClientService, requestAbortController, originalParams.originalRequestParameters.params[1])
+		const account = await identify(originalParams.originalRequestParameters.params[1])
 		return {
 			method: originalParams.originalRequestParameters.method,
 			...basicParams,
@@ -82,7 +82,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 		}
 	}
 	const namedParams = { param: originalParams.originalRequestParameters.params[1], account: originalParams.originalRequestParameters.params[0] }
-	const account = await identifyAddress(ethereumClientService, requestAbortController, namedParams.account)
+	const account = await identify(namedParams.account)
 	const maybeParsed = PersonalSignRequestIdentifiedEIP712Message.safeParse(namedParams.param)
 	if (isValid.valid === false) {
 		return {
@@ -105,7 +105,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 		const safeMessage = SafeMessage.safeParse({ typedData: namedParams.param, review: signedMessageTransaction.safeMessageReview })
 		// if we fail to parse the message, that means it's a message type we do not identify, let's just show it as a nonidentified EIP712 message
 		if (validateEIP712Types(namedParams.param) === false) throw new Error('Not a valid EIP712 Message')
-		const message = await extractEIP712Message(ethereumClientService, requestAbortController, namedParams.param)
+		const message = await extractEIP712Message(identify, namedParams.param)
 		const { chainId } = message.domain
 		const chainid = chainId?.type === 'unsignedInteger' ? chainId.value : undefined
 		return {
@@ -126,8 +126,8 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 	const parsed = maybeParsed.value
 	switch (parsed.primaryType) {
 		case 'Permit': {
-			const token = await identifyAddress(ethereumClientService, requestAbortController, parsed.domain.verifyingContract)
-			const owner = await identifyAddress(ethereumClientService, requestAbortController, parsed.message.owner)
+			const token = await identify(parsed.domain.verifyingContract)
+			const owner = await identify(parsed.message.owner)
 			if (token.type === 'ERC721') throw 'Attempted to perform Permit to an ERC721'
 			if (token.type === 'ERC1155') throw 'Attempted to perform Permit to an ERC1155'
 			return {
@@ -138,7 +138,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 				message: parsed,
 				account,
 				owner,
-				spender: await identifyAddress(ethereumClientService, requestAbortController, parsed.message.spender),
+				spender: await identify(parsed.message.spender),
 				verifyingContract: token,
 				...getSigningQuarantineCodes(BigInt(parsed.domain.chainId), rpcNetwork.chainId, account.address, activeAddressWithMetadata.address, owner.address),
 				rawMessage: stringifyJSONWithBigInts(parsed, 4),
@@ -148,7 +148,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			}
 		}
 		case 'PermitSingle': {
-			const token = await identifyAddress(ethereumClientService, requestAbortController, parsed.message.details.token)
+			const token = await identify(parsed.message.details.token)
 			if (token.type === 'ERC721') throw 'Attempted to perform Permit to an ERC721'
 			if (token.type === 'ERC1155') throw 'Attempted to perform Permit to an ERC1155'
 			return {
@@ -159,8 +159,8 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 				message: parsed,
 				account,
 				token: token,
-				spender: await identifyAddress(ethereumClientService, requestAbortController, parsed.message.spender),
-				verifyingContract: await identifyAddress(ethereumClientService, requestAbortController, parsed.domain.verifyingContract),
+				spender: await identify(parsed.message.spender),
+				verifyingContract: await identify(parsed.domain.verifyingContract),
 				...getSigningQuarantineCodes(parsed.domain.chainId, rpcNetwork.chainId, account.address, activeAddressWithMetadata.address, undefined),
 				stringifiedMessage: stringifyJSONWithBigInts(parsed, 4),
 				rawMessage: stringifyJSONWithBigInts(parsed),
@@ -170,12 +170,12 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 		}
 		case 'SafeTx': {
 			const addresses = {
-				to: await identifyAddress(ethereumClientService, requestAbortController, parsed.message.to),
-				gasToken: await identifyAddress(ethereumClientService, requestAbortController, parsed.message.gasToken),
-				refundReceiver: await identifyAddress(ethereumClientService, requestAbortController, parsed.message.refundReceiver),
-				verifyingContract: await identifyAddress(ethereumClientService, requestAbortController, parsed.domain.verifyingContract),
+				to: await identify(parsed.message.to),
+				gasToken: await identify(parsed.message.gasToken),
+				refundReceiver: await identify(parsed.message.refundReceiver),
+				verifyingContract: await identify(parsed.domain.verifyingContract),
 			}
-			const parsedMessageData = await parseInputData({ to: parsed.message.to, value: 0n, input: parsed.message.data }, ethereumClientService, requestAbortController)
+			const parsedMessageData = await parseInputData({ to: parsed.message.to, value: 0n, input: parsed.message.data }, identify)
 			const addressesInEventsAndInputData = getAddressesForSolidityTypes(parsedMessageData.type === 'Parsed' ? parsedMessageData.args : [])
 			return {
 				method: originalParams.originalRequestParameters.method,
@@ -190,7 +190,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 				stringifiedMessage: stringifyJSONWithBigInts(parsed, 4),
 				rawMessage: stringifyJSONWithBigInts(parsed),
 				parsedMessageData,
-				parsedMessageDataAddressBookEntries: await promiseAllMapAbortSafe(addressesInEventsAndInputData, (address) => identifyAddress(ethereumClientService, requestAbortController, address)),
+				parsedMessageDataAddressBookEntries: await promiseAllMapAbortSafe(addressesInEventsAndInputData, (address) => identify(address)),
 				isValidMessage: isValid.valid,
 				...hashes,
 				safeTxHash: getSafeTxHash(parsed),
@@ -201,7 +201,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			...basicParams,
 			type: 'OrderComponents' as const,
 			rpcNetwork: rpcNetwork.chainId !== parsed.domain.chainId ? await getRpcNetworkForChain(parsed.domain.chainId) : rpcNetwork,
-			message: await addMetadataToOpenSeaOrder(ethereumClientService, requestAbortController, parsed.message),
+			message: await addMetadataToOpenSeaOrder(identify, parsed.message),
 			account,
 			...getSigningQuarantineCodes(parsed.domain.chainId, rpcNetwork.chainId, account.address, activeAddressWithMetadata.address, undefined),
 			stringifiedMessage: stringifyJSONWithBigInts(parsed, 4),

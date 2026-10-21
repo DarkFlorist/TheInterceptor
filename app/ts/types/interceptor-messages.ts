@@ -526,6 +526,7 @@ const MessageToPopupSimple = funtypes.ReadonlyObject({
 		funtypes.Literal('popup_confirm_transaction_simulation_started'),
 		funtypes.Literal('popup_accounts_update'),
 		funtypes.Literal('popup_addressBookEntriesChanged'),
+		funtypes.Literal('popup_simulationsRelabelled'),
 		funtypes.Literal('popup_interceptor_access_changed'),
 		funtypes.Literal('popup_notification_removed'),
 		funtypes.Literal('popup_signer_name_changed'),
@@ -574,6 +575,31 @@ const createUpdateConfirmTransactionDialogPendingTransactionsRuntype = () => fun
 type UpdateConfirmTransactionDialogPendingTransactionsRuntype = ReturnType<typeof createUpdateConfirmTransactionDialogPendingTransactionsRuntype>
 const UpdateConfirmTransactionDialogPendingTransactionsRuntype: UpdateConfirmTransactionDialogPendingTransactionsRuntype = createUpdateConfirmTransactionDialogPendingTransactionsRuntype()
 export const UpdateConfirmTransactionDialogPendingTransactions: typeof UpdateConfirmTransactionDialogPendingTransactionsRuntype = UpdateConfirmTransactionDialogPendingTransactionsRuntype
+
+type UpdateConfirmTransactionDialogMetadataPartial = funtypes.Static<typeof UpdateConfirmTransactionDialogMetadataPartial>
+const UpdateConfirmTransactionDialogMetadataPartial = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_update_confirm_transaction_dialog_metadata'),
+	data: funtypes.Unknown
+}).asReadonly()
+
+// The stored confirmations and stack with the names of an address-book change, sent without an RPC request; it carries no block number or connection status, so the dialog keeps the ones it shows.
+export type UpdateConfirmTransactionDialogMetadata = {
+	readonly method: 'popup_update_confirm_transaction_dialog_metadata'
+	readonly data: {
+		readonly pendingTransactionAndSignableMessages: readonly PopupPendingTransactionOrSignableMessage[]
+		readonly visualizedSimulatorState: CompleteVisualizedSimulation
+	}
+}
+const createUpdateConfirmTransactionDialogMetadataRuntype = () => funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_update_confirm_transaction_dialog_metadata'),
+	data: funtypes.ReadonlyObject({
+		pendingTransactionAndSignableMessages: funtypes.ReadonlyArray(PopupPendingTransactionOrSignableMessage),
+		visualizedSimulatorState: CompleteVisualizedSimulation,
+	})
+}).asReadonly()
+type UpdateConfirmTransactionDialogMetadataRuntype = ReturnType<typeof createUpdateConfirmTransactionDialogMetadataRuntype>
+const UpdateConfirmTransactionDialogMetadataRuntype: UpdateConfirmTransactionDialogMetadataRuntype = createUpdateConfirmTransactionDialogMetadataRuntype()
+export const UpdateConfirmTransactionDialogMetadata: typeof UpdateConfirmTransactionDialogMetadataRuntype = UpdateConfirmTransactionDialogMetadataRuntype
 
 export type InterceptorAccessReply = funtypes.Static<typeof InterceptorAccessReply>
 export const InterceptorAccessReply = funtypes.ReadonlyObject({
@@ -966,6 +992,7 @@ const messageToPopupPayloadCodecs: [
 	typeof SettingsUpdated,
 	typeof UpdateConfirmTransactionDialogPartial,
 	typeof UpdateConfirmTransactionDialogPendingTransactionsPartial,
+	typeof UpdateConfirmTransactionDialogMetadataPartial,
 	typeof PopupInitiateExportSettings,
 	typeof ImportSettingsReply,
 	typeof ActiveSigningAddressChanged,
@@ -993,6 +1020,7 @@ const messageToPopupPayloadCodecs: [
 	SettingsUpdated,
 	UpdateConfirmTransactionDialogPartial,
 	UpdateConfirmTransactionDialogPendingTransactionsPartial,
+	UpdateConfirmTransactionDialogMetadataPartial,
 	PopupInitiateExportSettings,
 	ImportSettingsReply,
 	ActiveSigningAddressChanged,

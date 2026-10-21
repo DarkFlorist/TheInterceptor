@@ -1,7 +1,6 @@
 import { EthereumAddress, EthereumData, EthereumQuantity, NonHexBigInt } from '../types/wire-types.js'
 import * as funtypes from 'funtypes'
-import { identifyAddress } from '../background/metadataUtils.js'
-import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
+import type { IdentifyAddress } from '../types/metadataLookups.js'
 import { type EnrichedGroupedSolidityType, type PureFlatGroupedSolidityType, type PureGroupedSolidityType, SignedBigInt, SolidityType, type SolidityVariable } from '../types/solidityType.js'
 import { promiseAllMapAbortSafe } from './requests.js'
 import type { AbiParameter } from './ethereumPrimitives.js'
@@ -116,11 +115,11 @@ function getSolidityTypeCategory(type: SolidityType) {
 	return solidityTypeCategories[type]
 }
 
-export async function parseSolidityValueByTypeEnriched(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, type: SolidityType, value: unknown, isArray: boolean, useLocalStorage = true): Promise<EnrichedGroupedSolidityType> {
+export async function parseSolidityValueByTypeEnriched(identifyAddress: IdentifyAddress, type: SolidityType, value: unknown, isArray: boolean): Promise<EnrichedGroupedSolidityType> {
 	const categorized = getSolidityTypeCategory(type)
 	if (categorized === 'address') {
-		if (isArray) return { type: 'address[]', value: await promiseAllMapAbortSafe(funtypes.ReadonlyArray(EthereumAddress).parse(value), (value) => identifyAddress(ethereumClientService, requestAbortController, value, useLocalStorage)) }
-		return { type: 'address', value: await identifyAddress(ethereumClientService, requestAbortController, EthereumAddress.parse(value), useLocalStorage) }
+		if (isArray) return { type: 'address[]', value: await promiseAllMapAbortSafe(funtypes.ReadonlyArray(EthereumAddress).parse(value), (value) => identifyAddress(value)) }
+		return { type: 'address', value: await identifyAddress(EthereumAddress.parse(value)) }
 	}
 	const parsed = parseSolidityValueByTypePure(type, value, isArray)
 	if (parsed.type === 'address' || parsed.type === 'address[]') throw new Error('parsed to address or address array')

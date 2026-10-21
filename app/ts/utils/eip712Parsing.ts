@@ -1,4 +1,4 @@
-import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
+import type { IdentifyAddress } from '../types/metadataLookups.js'
 import { JSONEncodeableObject } from '../utils/json.js'
 import type { EIP712Message, EnrichedEIP712, EnrichedEIP712Message, EnrichedEIP712MessageRecord } from '../types/eip721.js'
 import { parseSolidityValueByTypeEnriched } from './solidityTypes.js'
@@ -69,29 +69,29 @@ function parseEIP712Array(value: unknown, expectedLength: number | undefined): r
 	return value
 }
 
-async function extractEIP712Value(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, depth: number, value: unknown, parsedType: ParsedEIP712Type, types: { [x: string]: readonly { readonly name: string, readonly type: string}[] | undefined }, useLocalStorage: boolean): Promise<EnrichedEIP712MessageRecord> {
+async function extractEIP712Value(identifyAddress: IdentifyAddress, depth: number, value: unknown, parsedType: ParsedEIP712Type, types: { [x: string]: readonly { readonly name: string, readonly type: string}[] | undefined }): Promise<EnrichedEIP712MessageRecord> {
 	if (!parsedType.valid) throw new Error('EIP712 type contained an invalid array dimension')
 	if (parsedType.arrayDimensions.length > 1) {
 		const arrayValue = parseEIP712Array(value, parsedType.arrayDimensions[0])
 		const nestedType = { baseType: parsedType.baseType, arrayDimensions: parsedType.arrayDimensions.slice(1), valid: true }
-		return { type: 'nestedArray', value: await promiseAllMapAbortSafe(arrayValue, (nestedValue) => extractEIP712Value(ethereumClientService, requestAbortController, depth, nestedValue, nestedType, types, useLocalStorage)) }
+		return { type: 'nestedArray', value: await promiseAllMapAbortSafe(arrayValue, (nestedValue) => extractEIP712Value(identifyAddress, depth, nestedValue, nestedType, types)) }
 	}
 	if (SolidityType.test(parsedType.baseType)) {
 		if (parsedType.arrayDimensions.length === 1) parseEIP712Array(value, parsedType.arrayDimensions[0])
-		return parseSolidityValueByTypeEnriched(ethereumClientService, requestAbortController, parsedType.baseType, value, parsedType.arrayDimensions.length === 1, useLocalStorage)
+		return parseSolidityValueByTypeEnriched(identifyAddress, parsedType.baseType, value, parsedType.arrayDimensions.length === 1)
 	}
 	if (parsedType.arrayDimensions.length === 1) {
 		const arrayValue = parseEIP712Array(value, parsedType.arrayDimensions[0])
 		return { type: 'record[]', value: await promiseAllMapAbortSafe(arrayValue, (nestedValue) => {
 			if (!JSONEncodeableObject.test(nestedValue)) throw new Error('EIP712 record array contained a non-record value')
-			return extractEIP712MessageSubset(ethereumClientService, requestAbortController, depth + 1, nestedValue, parsedType.baseType, types, useLocalStorage)
+			return extractEIP712MessageSubset(identifyAddress, depth + 1, nestedValue, parsedType.baseType, types)
 		}) }
 	}
 	if (!JSONEncodeableObject.test(value)) throw new Error(`Not a JSON record: ${ value }`)
-	return { type: 'record', value: await extractEIP712MessageSubset(ethereumClientService, requestAbortController, depth + 1, value, parsedType.baseType, types, useLocalStorage) }
+	return { type: 'record', value: await extractEIP712MessageSubset(identifyAddress, depth + 1, value, parsedType.baseType, types) }
 }
 
-async function extractEIP712MessageSubset(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, depth: number, message: JSONEncodeableObject, currentType: string, types: { [x: string]: readonly { readonly name: string, readonly type: string}[] | undefined }, useLocalStorage = true): Promise<EnrichedEIP712Message> {
+async function extractEIP712MessageSubset(identifyAddress: IdentifyAddress, depth: number, message: JSONEncodeableObject, currentType: string, types: { [x: string]: readonly { readonly name: string, readonly type: string}[] | undefined }): Promise<EnrichedEIP712Message> {
 	if (depth > MAX_EIP712_STRUCT_DEPTH) throw new Error('Too deep EIP712 message')
 	const currentTypes = types[currentType]
 	if (currentTypes === undefined) throw new Error(`Types not found: ${ currentType }`)
@@ -100,15 +100,15 @@ async function extractEIP712MessageSubset(ethereumClientService: EthereumClientS
 		if (messageEntry === undefined) throw new Error(`Subtype not found: ${ key }`)
 		const fullType = findType(key, currentTypes)
 		if (fullType === undefined) throw new Error(`Type not found for key: ${ key }`)
-		return [key, await extractEIP712Value(ethereumClientService, requestAbortController, depth, messageEntry, parseEIP712Type(fullType), types, useLocalStorage)]
+		return [key, await extractEIP712Value(identifyAddress, depth, messageEntry, parseEIP712Type(fullType), types)]
 	})
 	return pairArray.reduce((accumulator, [key, value]) => ({ ...accumulator, [key]: value }), {} as Promise<EnrichedEIP712Message>)
 }
 
-export async function extractEIP712Message(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, message: EIP712Message, useLocalStorage = true): Promise<EnrichedEIP712> {
+export async function extractEIP712Message(identifyAddress: IdentifyAddress, message: EIP712Message): Promise<EnrichedEIP712> {
 	return {
 		primaryType: message.primaryType,
-		message: await extractEIP712MessageSubset(ethereumClientService, requestAbortController, 0, message.message, message.primaryType, message.types, useLocalStorage),
-		domain: await extractEIP712MessageSubset(ethereumClientService, requestAbortController, 0, message.domain, 'EIP712Domain', message.types, useLocalStorage),
+		message: await extractEIP712MessageSubset(identifyAddress, 0, message.message, message.primaryType, message.types),
+		domain: await extractEIP712MessageSubset(identifyAddress, 0, message.domain, 'EIP712Domain', message.types),
 	}
 }
