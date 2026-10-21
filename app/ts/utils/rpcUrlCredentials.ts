@@ -8,6 +8,7 @@ export type RpcFetchTarget = {
 
 const REDACTED_URL_CREDENTIALS = '***'
 const PERCENT_ESCAPE_OR_CHARACTER = /%[0-9a-f]{2}|[\s\S]/gi
+const SCHEME_AND_AUTHORITY_SLASHES = /^[a-z][a-z\d+.-]*:\/\//i
 
 function parseUrlOrUndefined(url: string) {
 	try {
@@ -17,6 +18,16 @@ function parseUrlOrUndefined(url: string) {
 		throw error
 	}
 }
+
+// The URL parser splits userinfo from the host only when it finds a host. A string it cannot parse, such as one with a malformed port or host, or one it parses without a host, such as `alice:secret@host` with its scheme missing, keeps any credentials elsewhere in the string.
+function parseUrlWithHostOrUndefined(rpcUrl: string) {
+	const parsedUrl = parseUrlOrUndefined(rpcUrl)
+	if (parsedUrl === undefined || parsedUrl.host === '') return undefined
+	return parsedUrl
+}
+
+// Userinfo always ends with `@`, so a string without one has no credentials to find.
+const mayContainUnparsedUserinfo = (rpcUrl: string) => rpcUrl.includes('@')
 
 const hasUrlCredentials = (url: URL) => url.username !== '' || url.password !== ''
 
@@ -46,25 +57,35 @@ const encodeBytesAsBase64 = (bytes: readonly number[]) => btoa(bytes.map((byte) 
 // Like browsers, an encoded `%3A` in the username decodes to a colon that servers read as the separator; RFC 7617 forbids colons in user-ids.
 const getBasicAuthorizationHeaderValue = (url: URL) => `Basic ${ encodeBytesAsBase64(percentDecodeToBytes(`${ url.username }:${ url.password }`)) }`
 
-// The one credential transport check: the RPC form's save path calls it, and every RPC request, including the form's URL probe, reaches it through getRpcFetchTarget. Returns undefined for unparseable, credential-free, or safely sent URLs.
+// The one credential transport check: the RPC form's save path calls it, and every RPC request, including the form's URL probe, reaches it through getRpcFetchTarget. Strings containing `@` without a parsed host are refused because browsers echo the raw URL, credentials included, in fetch errors. Returns undefined for credential-free or safely sent URLs, and for strings without `@` that fetch can reject on its own.
 export function getRpcUrlCredentialsTransportError(rpcUrl: string) {
-	const parsedUrl = parseUrlOrUndefined(rpcUrl)
-	if (parsedUrl === undefined || !hasUrlCredentials(parsedUrl) || canSendRpcUrlCredentials(parsedUrl)) return undefined
+	const parsedUrl = parseUrlWithHostOrUndefined(rpcUrl)
+	if (parsedUrl === undefined) return mayContainUnparsedUserinfo(rpcUrl) ? `RPC URL ${ redactRpcUrlCredentials(rpcUrl) } could not be parsed as a URL with a host. Check its scheme, host, and port.` : undefined
+	if (!hasUrlCredentials(parsedUrl) || canSendRpcUrlCredentials(parsedUrl)) return undefined
 	return `Credentials in RPC URL ${ redactRpcUrlCredentials(rpcUrl) } can only be sent over https, or over http to localhost.`
 }
 
-// Unparseable or credential-free URLs are returned unchanged so fetch keeps its existing behavior and errors. URLs that bypassed the RPC form, such as imported settings, throw rather than silently dropping their credentials.
+// Credential-free URLs, and strings without `@` that cannot be parsed, are returned unchanged so fetch keeps its existing behavior and errors. URLs that bypassed the RPC form, such as imported settings, throw rather than silently dropping their credentials.
 export function getRpcFetchTarget(rpcUrl: string): RpcFetchTarget {
 	const credentialsTransportError = getRpcUrlCredentialsTransportError(rpcUrl)
 	if (credentialsTransportError !== undefined) throw new Error(credentialsTransportError)
-	const parsedUrl = parseUrlOrUndefined(rpcUrl)
+	const parsedUrl = parseUrlWithHostOrUndefined(rpcUrl)
 	if (parsedUrl === undefined || !hasUrlCredentials(parsedUrl)) return { url: rpcUrl, headers: {} }
 	return { url: removeRpcUrlCredentials(rpcUrl), headers: { Authorization: getBasicAuthorizationHeaderValue(parsedUrl) } }
 }
 
+// Handles only strings parseUrlWithHostOrUndefined rejects: a malformed port or host, or a missing scheme. Without an `@` there is no userinfo and the string is returned unchanged. Otherwise it fails closed: everything after the scheme's `//`, or from the start without one, up to the last `@` counts as userinfo, because a password may itself contain `/` or `@`. An `@` in the path or query of such a string also drops what precedes it, which only mangles strings that are not usable RPC URLs.
+function replaceUnparsedUserinfo(rpcUrl: string, replacementUserinfo: string) {
+	const lastAtIndex = rpcUrl.lastIndexOf('@')
+	if (lastAtIndex === -1) return rpcUrl
+	const schemeAndAuthoritySlashes = SCHEME_AND_AUTHORITY_SLASHES.exec(rpcUrl)?.[0] ?? ''
+	return `${ schemeAndAuthoritySlashes }${ replacementUserinfo }${ rpcUrl.slice(lastAtIndex + 1) }`
+}
+
 function replaceUrlCredentials(rpcUrl: string, replacementUsername: string) {
-	const parsedUrl = parseUrlOrUndefined(rpcUrl)
-	if (parsedUrl === undefined || !hasUrlCredentials(parsedUrl)) return rpcUrl
+	const parsedUrl = parseUrlWithHostOrUndefined(rpcUrl)
+	if (parsedUrl === undefined) return replaceUnparsedUserinfo(rpcUrl, replacementUsername === '' ? '' : `${ replacementUsername }@`)
+	if (!hasUrlCredentials(parsedUrl)) return rpcUrl
 	parsedUrl.username = replacementUsername
 	parsedUrl.password = ''
 	return parsedUrl.toString()

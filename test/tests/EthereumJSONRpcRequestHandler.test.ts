@@ -378,6 +378,22 @@ describe('EthereumJSONRpcRequestHandler URL credentials', () => {
 		}
 	})
 
+	test('fails requests to credential URLs the URL parser cannot split without fetching, since browsers repeat the raw URL in fetch errors', async () => {
+		const fetchMock = installRecordingFetchMock(createChainIdResponse)
+		const requestHandler = new EthereumJSONRpcRequestHandler('https://alice:s3cret@remote-node:99999/v1')
+
+		try {
+			await assert.rejects(requestHandler.jsonRpcRequest({ method: 'eth_chainId' }), (error: unknown) => {
+				assert.ok(error instanceof Error)
+				assert.equal(error.message, 'RPC URL https://***@remote-node:99999/v1 could not be parsed as a URL with a host. Check its scheme, host, and port.')
+				return true
+			})
+			assert.equal(fetchMock.calls.length, 0)
+		} finally {
+			fetchMock.restore()
+		}
+	})
+
 	test('keeps credential-free RPC URLs and headers unchanged', async () => {
 		const fetchMock = installRecordingFetchMock(createChainIdResponse)
 		const requestHandler = new EthereumJSONRpcRequestHandler('https://rpc.example')

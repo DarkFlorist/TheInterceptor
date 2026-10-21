@@ -22,7 +22,7 @@ Credential-bearing RPC URLs are only usable over https, or over http to a loopba
 
 Settings exports remove RPC URL credentials rather than masking them, so a shared backup holds no working secret and still imports as a usable credential-free endpoint. Import never writes the RPC list, so it cannot add a duplicate entry. Import selects a stored credentialed entry only when it is the single stored entry matching the imported network apart from credentials. Credential-free entries count as matches, so a credential-free selection stored next to its credentialed counterpart stays credential-free. In every other case the imported network is kept and the user re-adds the credentials.
 
-`app/ts/utils/rpcUrlCredentials.ts` owns credential handling, and `redactRpcUrlCredentials` is the only way to display or log an RPC URL. `test/tests/rpcUrlCredentialBoundaries.test.ts` fails when app code reads a raw RPC URL for anything other than a comparison, a call into that module, or a reviewed non-display use.
+`app/ts/utils/rpcUrlCredentials.ts` owns credential handling, and `redactRpcUrlCredentials` is the only way to display or log an RPC URL. Strings containing `@` that the URL parser cannot split into userinfo and host, such as a malformed port or host or a missing scheme, fail closed: redaction and export removal drop everything up to the last `@` after the scheme, and they are never fetched, because browsers repeat the raw URL in fetch errors. `test/tests/rpcUrlCredentialBoundaries.test.ts` fails when app code reads a raw RPC URL for anything other than a comparison, a call into that module, or a reviewed non-display use.
 
 ## Schema evolution
 

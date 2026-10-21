@@ -126,3 +126,48 @@ describe('RPC URL credential transport', () => {
 		assert.equal(canSendCredentialsTo('ftp://localhost'), false)
 	})
 })
+
+describe('RPC URL strings the URL parser cannot split into userinfo and host', () => {
+	const malformedCredentialRpcUrls = [
+		{ description: 'a malformed port', rpcUrl: 'https://alice:s3cret@rpc.example:99999/v1', redacted: 'https://***@rpc.example:99999/v1', removed: 'https://rpc.example:99999/v1' },
+		{ description: 'a malformed host', rpcUrl: 'https://alice:s3cret@rpc exa.mple/v1', redacted: 'https://***@rpc exa.mple/v1', removed: 'https://rpc exa.mple/v1' },
+		{ description: 'an @ in the path and query', rpcUrl: 'https://alice:s3cret@rpc.example:99999/team@v1?contact=ops@example.com', redacted: 'https://***@example.com', removed: 'https://example.com' },
+		{ description: 'a missing scheme', rpcUrl: 'alice:s3cret@rpc.example/v1', redacted: '***@rpc.example/v1', removed: 'rpc.example/v1' },
+		{ description: 'a password containing / and @', rpcUrl: 'https://alice:s3c/r@t@rpc.example:99999', redacted: 'https://***@rpc.example:99999', removed: 'https://rpc.example:99999' },
+	]
+	const assertNoSecret = (value: string, description: string) => {
+		assert.equal(value.includes('alice'), false, description)
+		assert.equal(value.includes('s3c'), false, description)
+	}
+
+	test('redacts everything up to the last @ for display', () => {
+		for (const { description, rpcUrl, redacted } of malformedCredentialRpcUrls) {
+			assert.equal(redactRpcUrlCredentials(rpcUrl), redacted, description)
+			assertNoSecret(redactRpcUrlCredentials(rpcUrl), description)
+		}
+	})
+
+	test('removes everything up to the last @ for export', () => {
+		for (const { description, rpcUrl, removed } of malformedCredentialRpcUrls) {
+			assert.equal(removeRpcUrlCredentials(rpcUrl), removed, description)
+			assertNoSecret(removeRpcUrlCredentials(rpcUrl), description)
+		}
+	})
+
+	test('refuses to fetch them, since browsers repeat the raw URL in fetch errors', () => {
+		for (const { description, rpcUrl, redacted } of malformedCredentialRpcUrls) {
+			const expectedMessage = `RPC URL ${ redacted } could not be parsed as a URL with a host. Check its scheme, host, and port.`
+			assert.equal(getRpcUrlCredentialsTransportError(rpcUrl), expectedMessage, description)
+			assert.throws(() => getRpcFetchTarget(rpcUrl), (error: unknown) => error instanceof Error && error.message === expectedMessage, description)
+		}
+	})
+
+	test('leaves valid URLs with an @ after the host, and strings without any @, unchanged', () => {
+		for (const rpcUrl of ['https://rpc.example/v1?contact=ops@example.com', 'rpc.example:8545', 'rpc example']) {
+			assert.equal(redactRpcUrlCredentials(rpcUrl), rpcUrl)
+			assert.equal(removeRpcUrlCredentials(rpcUrl), rpcUrl)
+			assert.equal(getRpcUrlCredentialsTransportError(rpcUrl), undefined)
+			assert.deepEqual(getRpcFetchTarget(rpcUrl), { url: rpcUrl, headers: {} })
+		}
+	})
+})

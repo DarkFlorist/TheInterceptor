@@ -544,6 +544,41 @@ describe('settings export of RPC URL credentials', () => {
 		assert.deepEqual(await getRpcList(), rpcEntries)
 	})
 
+	// A malformed port, a malformed host, an @ in the path and query, and a missing scheme: none of these split into userinfo and host.
+	const unsplittableCredentialRpcUrls = [
+		'https://alice:s3cret@rpc.example:99999/v1',
+		'https://alice:s3cret@rpc exa.mple/v1',
+		'https://alice:s3cret@rpc.example:99999/team@v1?contact=ops@example.com',
+		'alice:s3cret@rpc.example/v1',
+	]
+
+	const assertExportFileHasNoSecret = (exportedSettings: ExportedSettings, rpcUrl: string) => {
+		const exportedFileContents = JSON.stringify(serialize(ExportedSettings, exportedSettings))
+		assert.equal(exportedFileContents.includes('alice'), false, rpcUrl)
+		assert.equal(exportedFileContents.includes('s3cret'), false, rpcUrl)
+	}
+
+	test('removes credentials from active RPC URLs the URL parser cannot split', async () => {
+		for (const rpcUrl of unsplittableCredentialRpcUrls) {
+			browserMock.reset()
+			assertExportFileHasNoSecret(await exportWithActiveRpc([credentialedRpcEntry], { ...credentialedRpcEntry, httpsRpc: rpcUrl }), rpcUrl)
+		}
+	})
+
+	test('keeps credentials of unsplittable RPC URLs out of an export made after importing them', async () => {
+		const { exportSettingsAndAddressBook, getSettings, importSettingsAndAddressBook } = await settingsModulePromise
+		const baseExport = await exportWithActiveRpc([publicRpcEntry], publicRpcEntry)
+		if (baseExport.version !== '1.6') throw new Error('Expected current settings export version')
+		for (const rpcUrl of unsplittableCredentialRpcUrls) {
+			browserMock.reset()
+			const importedFileContents = JSON.stringify(serialize(ExportedSettings, { ...baseExport, settings: { ...baseExport.settings, rpcNetwork: { ...credentialedRpcEntry, httpsRpc: rpcUrl } } }))
+			await importSettingsAndAddressBook(ExportedSettings.parse(JSON.parse(importedFileContents)))
+			assert.equal((await getSettings()).activeRpcNetwork.httpsRpc, rpcUrl)
+
+			assertExportFileHasNoSecret(await exportSettingsAndAddressBook(), rpcUrl)
+		}
+	})
+
 	test('keeps the credential-free import when several stored entries differ only in credentials', async () => {
 		const { getSettings, importSettingsAndAddressBook } = await settingsModulePromise
 		const otherCredentialsRpcEntry = { ...credentialedRpcEntry, httpsRpc: 'https://bob:other-secret@node.example/v1', primary: false }
