@@ -126,7 +126,7 @@ test('popup method guards reject inherited object keys', () => {
 })
 
 test('Safe signer refresh persistence is isolated from confirmation resolution', () => {
-	assert.match(safeSignerSelectionRefreshSource, /export async function refreshAndPersistSafeSignerSelection[\s\S]*?updatePendingTransactionOrMessage/u)
+	assert.match(safeSignerSelectionRefreshSource, /export async function refreshAndPersistSafeSignerSelection[\s\S]*?updatePendingTransactionOrMessageInstance\(/u)
 	assert.match(confirmTransactionSource, /refreshAndPersistSafeSignerSelection\(/u)
 	assert.doesNotMatch(safeConfirmationResolverSource, /function shouldRefreshSafeSignerSelection/u)
 	assert.doesNotMatch(safeConfirmationResolverSource, /function mergeSafeSignerSelectionRefresh/u)
@@ -134,6 +134,20 @@ test('Safe signer refresh persistence is isolated from confirmation resolution',
 	assert.doesNotMatch(confirmTransactionSource, /function shouldRefreshSafeSignerSelection/u)
 	assert.doesNotMatch(confirmTransactionSource, /function mergeSafeSignerSelectionRefresh/u)
 	assert.doesNotMatch(confirmTransactionSource, /function persistSafeSignerSelectionRefresh/u)
+})
+
+// Matching a pending request by request id alone can update a different request the page sent under a reused id, so each such caller is a visible decision.
+test('only signer replies update a pending request matched by its request id alone', async () => {
+	const repositoryRoot = new URL('../../', import.meta.url).pathname
+	const callsByFile: [string, number][] = []
+	for await (const file of new Bun.Glob('app/ts/**/*.{ts,tsx}').scan({ cwd: repositoryRoot })) {
+		const calls = (await Bun.file(`${ repositoryRoot }${ file }`).text()).match(/(?<!function )updatePendingRequestMatchedByRequestId\(/gu)?.length ?? 0
+		if (calls > 0) callsByFile.push([file, calls])
+	}
+	assert.deepEqual(callsByFile, [['app/ts/background/providerMessageHandlers.ts', 3]])
+	const providerMessageHandlersSource = await Bun.file(`${ repositoryRoot }app/ts/background/providerMessageHandlers.ts`).text()
+	const signerReplySource = providerMessageHandlersSource.slice(providerMessageHandlersSource.indexOf('export async function signerReply('))
+	assert.equal(signerReplySource.match(/updatePendingRequestMatchedByRequestId\(/gu)?.length, 3)
 })
 
 test('Safe pending flow discrimination has one owner', () => {
