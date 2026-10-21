@@ -173,6 +173,7 @@ export async function promiseAllMapAbortSafe<InputType, OutputType>(values: read
 	return await silenceChromeUnCaughtPromise(Promise.all(guardedPromises))
 }
 
-export function isTopFrameId(frameId: number | undefined): frameId is 0 | undefined {
-	return frameId === undefined || frameId === 0
+export function isTopFrameId(frameId: number | undefined): frameId is 0 {
+	// Missing browser frame metadata cannot establish top-frame authority.
+	return frameId === 0
 }

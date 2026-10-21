@@ -1,11 +1,12 @@
 import { isEip6963ProviderInfo, type EIP6963ProviderInfo } from '../../ts/utils/eip6963ProviderInfo.js'
 import type { WindowEthereum, EthereumRequest, Signer, SignerSelectionKind, AnnouncedProvider, MessageMethodAndParams } from './inpage.js'
 
+type PreparedSigner = { readonly provider: WindowEthereum, readonly request: EthereumRequest, readonly connected: boolean }
+
+// The listener owns the active EIP-1193 transport; this coordinator owns catalog decisions. Exchange snapshots and atomic activation commands rather than sharing mutable fields.
 type SignerProviderHost = {
-	connected: boolean
-	signerWindowEthereumProvider: WindowEthereum | undefined
-	signerWindowEthereumRequest: EthereumRequest | undefined
-	fallbackSignerWindowEthereumRequest: EthereumRequest | undefined
+	getCurrentSigner(): PreparedSigner | undefined
+	activateSigner(signer: PreparedSigner | undefined): void
 	hasUsableSignerInterface(provider: unknown): provider is WindowEthereum
 	getSignerDocumentGeneration(): string
 	isBridgeReconnectedError(error: unknown): boolean
@@ -16,7 +17,6 @@ type SignerProviderHost = {
 	reportSignerDiscoveryError(phase: string, error: unknown): void
 	runWithSignerSelectionBlocked<T>(workflow: () => Promise<T>): Promise<T>
 	sendInternalMessageToBackgroundPage(request: Omit<MessageMethodAndParams, 'internal'>): Promise<unknown>
-	setSignerProvider(provider: WindowEthereum | undefined, request: EthereumRequest | undefined, fallback?: EthereumRequest): void
 	signerSelectionHasBlockerOutsideCurrentWorkflow(): boolean
 	signerSelectionIsIdle(): boolean
 }
@@ -90,8 +90,9 @@ export function createSignerProviderCoordinator(host: SignerProviderHost) {
 			host.markInitialSignerProviderCatalogReconciled()
 			return true
 		}
-		const preparedSigner = provider === host.signerWindowEthereumProvider && host.signerWindowEthereumRequest !== undefined
-			? { provider: host.signerWindowEthereumProvider, connected: host.connected, request: host.signerWindowEthereumRequest }
+		const currentSigner = host.getCurrentSigner()
+		const preparedSigner = currentSigner?.provider === provider
+			? currentSigner
 			: host.prepareSignerProvider(provider, 'EIP6963', false, false)
 		if (preparedSigner === undefined) {
 			if (typeof provider === 'object' && provider !== null) rejectedSignerProviders.add(provider)
@@ -108,8 +109,7 @@ export function createSignerProviderCoordinator(host: SignerProviderHost) {
 			return false
 		}
 
-		host.setSignerProvider(preparedSigner.provider, preparedSigner.request)
-		host.connected = preparedSigner.connected
+		host.activateSigner(preparedSigner)
 		selectedSignerProviderUuid = uuid
 		await host.sendInternalMessageToBackgroundPage({ method: 'signer_provider_selected', params: [info, selectionKind] })
 		await host.connectToSigner('EIP6963')
@@ -200,12 +200,9 @@ export function createSignerProviderCoordinator(host: SignerProviderHost) {
 				scheduleSignerProviderCatalogRetry()
 				return
 			}
-			host.signerWindowEthereumProvider = undefined
-			host.signerWindowEthereumRequest = undefined
-			host.fallbackSignerWindowEthereumRequest = undefined
+			host.activateSigner(undefined)
 			selectedSignerProviderUuid = undefined
 			explicitlySelectedSignerProviderUuid = undefined
-			host.connected = true
 			await host.connectToSigner('NoSigner')
 			host.markInitialSignerProviderCatalogReconciled()
 		} finally {
@@ -415,13 +412,15 @@ export function createSignerProviderCoordinator(host: SignerProviderHost) {
 
 
 	return {
-		get rejectedSignerProviders() { return rejectedSignerProviders },
-		get explicitlySelectedSignerProviderUuid() { return explicitlySelectedSignerProviderUuid },
-		set explicitlySelectedSignerProviderUuid(value) { explicitlySelectedSignerProviderUuid = value },
-		get signerProviderCatalogReconciliationNeeded() { return signerProviderCatalogReconciliationNeeded },
-		set signerProviderCatalogReconciliationNeeded(value) { signerProviderCatalogReconciliationNeeded = value },
-		get pendingExplicitSignerProviderUuid() { return pendingExplicitSignerProviderUuid },
-		set pendingExplicitSignerProviderUuid(value) { pendingExplicitSignerProviderUuid = value },
+		rejectProvider: (provider: object) => { rejectedSignerProviders.add(provider) },
+		isProviderRejected: (provider: object) => rejectedSignerProviders.has(provider),
+		reconcileWhenIdle: () => {
+			if (host.signerSelectionIsIdle() && (signerProviderCatalogReconciliationNeeded || pendingExplicitSignerProviderUuid !== undefined)) enqueueProviderCatalogSynchronization()
+		},
+		handleBridgeReconnect: () => {
+			signerProviderCatalogReconciliationNeeded = true
+			if (explicitlySelectedSignerProviderUuid !== undefined) pendingExplicitSignerProviderUuid = explicitlySelectedSignerProviderUuid
+		},
 		scheduleInitialSignerConnection,
 		selectAnnouncedProvider,
 		enqueueProviderCatalogSynchronization,

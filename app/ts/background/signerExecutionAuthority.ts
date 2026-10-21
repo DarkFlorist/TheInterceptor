@@ -102,7 +102,7 @@ export function reconcileSignerExecutionDocument(socket: WebsiteSocket, websiteO
 		authority.eligibleSocketKeys.add(key)
 		return true
 	}
-	if (isTopFrameId(frameId) || currentChildSocketKeysByTab.get(socket.tabId)?.get(frameId) !== key) return false
+	if (frameId === undefined || isTopFrameId(frameId) || currentChildSocketKeysByTab.get(socket.tabId)?.get(frameId) !== key) return false
 	if (authority.documentGeneration !== documentGeneration) return false
 	authority.eligibleSocketKeys.add(key)
 	return true

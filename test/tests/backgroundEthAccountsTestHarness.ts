@@ -169,7 +169,7 @@ export async function loadModules() {
 	}
 }
 
-export function createPort(tabId: number, onPostMessage?: (message: PortMessage) => void, frameId?: number, connectionName = 0n) {
+export function createPort(tabId: number, onPostMessage?: (message: PortMessage) => void, frameId = 0, connectionName = 0n) {
 	const messages: PortMessage[] = []
 	const port = {
 		name: `0x${ connectionName.toString(16) }`,

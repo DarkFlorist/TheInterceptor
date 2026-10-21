@@ -525,9 +525,9 @@ describe('EIP-6963 signer provider selection', () => {
 		assert.equal(tabState.explicitlySelectedSignerProviderUuid, provider.uuid)
 	})
 
-	test('delivers an explicit selection to a top frame without frameId and commits authority only after its acknowledgement', async () => {
+	test('rejects selection to a socket without frameId even if it previously held top authority', async () => {
 		installBrowserMock()
-		const { selectSignerProvider, signerProviderSelected } = await import('../../app/ts/background/signerProviderSelection.js')
+		const { selectSignerProvider } = await import('../../app/ts/background/signerProviderSelection.js')
 		const { getSignerExecutionTargetForOrigin, registerAuthoritativeTopSocket, setSignerExecutionTarget } = await import('../../app/ts/background/signerExecutionAuthority.js')
 		const { updateTabState } = await import('../../app/ts/background/storageVariables.js')
 		const oldProviderUuid = '55555555-5555-4555-8555-555555555555'
@@ -547,15 +547,11 @@ describe('EIP-6963 signer provider selection', () => {
 		registerAuthoritativeTopSocket({ tabId: 7, connectionName: 1n }, 'app.example')
 		assert.equal(setSignerExecutionTarget(7, oldProviderUuid, 'app.example'), true)
 
-		await selectSignerProvider(websiteTabConnections, { method: 'popup_selectSignerProvider', data: { tabId: 7, websiteOrigin: 'app.example', uuid: provider.uuid } })
-
-		assert.equal(topFrameMessages.length, 1)
+		await assert.rejects(selectSignerProvider(websiteTabConnections, { method: 'popup_selectSignerProvider', data: { tabId: 7, websiteOrigin: 'app.example', uuid: provider.uuid } }), /top-frame connection/)
+		assert.deepEqual(topFrameMessages, [])
 		assert.deepEqual(childFrameMessages, [])
 		assert.deepEqual(otherSiteMessages, [])
 		assert.equal(getSignerExecutionTargetForOrigin(7, 'app.example'), oldProviderUuid)
-
-		await signerProviderSelected(createProviderMessage('signer_provider_selected', [provider, 'explicit']), 'app.example', true, 0, websiteTabConnections)
-		assert.equal(getSignerExecutionTargetForOrigin(7, 'app.example'), provider.uuid)
 	})
 
 	test('rejects selection when no positively identified top-frame connection exists', async () => {

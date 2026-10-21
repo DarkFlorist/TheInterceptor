@@ -7,6 +7,17 @@ import { addressString, confirmedSignerOwnership, createEthereumWithGetBlockCoun
 const ADDRESS_PROMPT_TIMEOUT_MS = 2_000
 
 describe('background signer selection routing', () => {
+	test('missing frame identity cannot reconcile signer authority or borrow cross-origin metadata', async () => {
+		installBrowserMock({ tabStatus: 'loading' })
+		const { getWebsiteDetailsForConnection } = await import('../../app/ts/background/websiteConnectionMetadata.js')
+		const { isTopFrameId } = await import('../../app/ts/utils/requests.js')
+		const { updateTabState } = await loadModules()
+		await updateTabState(1, (previousState) => ({ ...previousState, website: { websiteOrigin: 'https://top.test', title: 'Private top title', icon: undefined } }))
+		assert.equal(isTopFrameId(undefined), false)
+		assert.equal(reconcileSignerExecutionDocument({ tabId: 1, connectionName: 99n }, 'https://top.test', '11111111-1111-4111-8111-111111111111', false, undefined), false)
+		assert.deepEqual(await getWebsiteDetailsForConnection(1, 'https://child.test', undefined), { title: undefined, icon: undefined })
+	})
+
 	test('answers locally handled RPCs after signer authority is lost on worker restart', async () => {
 		installBrowserMock()
 		const { clearSignerExecutionAuthorityForTab } = await import('../../app/ts/background/signerExecutionAuthority.js')
@@ -93,7 +104,7 @@ describe('background signer selection routing', () => {
 		assert.equal(child.messages.at(-1)?.error?.code, -32602)
 	})
 
-	test('treats an omitted content-script frameId as the top frame for provider catalogs and popup selection', async () => {
+	test('rejects an omitted content-script frameId for provider catalogs and popup selection', async () => {
 		installBrowserMock()
 		const { handleInterceptedRequest, getTabState, updateTabState, websiteSocketToString } = await loadModules()
 		const { selectSignerProvider } = await import('../../app/ts/background/signerProviderSelection.js')
@@ -107,6 +118,7 @@ describe('background signer selection routing', () => {
 		}
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port, messages } = createPort(socket.tabId)
+		if (port.sender !== undefined) delete port.sender.frameId
 		const connectionKey = websiteSocketToString(socket)
 		const websiteTabConnections: WebsiteTabConnections = new Map([[socket.tabId, { connections: {
 			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
@@ -123,12 +135,12 @@ describe('background signer selection routing', () => {
 			params: [[provider], false, '11111111-1111-4111-8111-111111111111'],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 
-		assert.deepEqual((await getTabState(socket.tabId)).availableSignerProviders, [provider])
-		await selectSignerProvider(websiteTabConnections, {
+		assert.deepEqual((await getTabState(socket.tabId)).availableSignerProviders, [])
+		await assert.rejects(selectSignerProvider(websiteTabConnections, {
 			method: 'popup_selectSignerProvider',
 			data: { tabId: socket.tabId, websiteOrigin, uuid: provider.uuid },
-		})
-		assert.equal(messages.filter((message) => message.method === 'select_signer_provider').length, 1)
+		}), /provider|top-frame/)
+		assert.equal(messages.filter((message) => message.method === 'select_signer_provider').length, 0)
 	})
 
 	test('access refresh reuses top metadata for same-origin children without leaking it cross-origin', async () => {

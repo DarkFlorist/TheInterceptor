@@ -1,5 +1,5 @@
 import { MessageToPopup, type MessageToPopupPayload, PopupMessage, type PopupReadyAndListeningPage, type Settings, WindowMessage } from '../types/interceptor-messages.js'
-import { type WebsiteSocket, checkAndThrowRuntimeLastError } from '../utils/requests.js'
+import { type WebsiteSocket, checkAndThrowRuntimeLastError, isTopFrameId } from '../utils/requests.js'
 import { EthereumQuantity, serialize } from '../types/wire-types.js'
 import type { PopupOrTabId } from '../types/websiteAccessTypes.js'
 import { getAllTabStates, getTabState, getUserAddressBookEntries } from './storageVariables.js'
@@ -321,5 +321,4 @@ export const getSocketFromPort = (port: browser.runtime.Port) => {
 	return { tabId: port.sender?.tab?.id, connectionName: EthereumQuantity.parse(port.name) }
 }
 
-// MV2 ports may omit frameId; preserve their top-frame fallback consistently for ownership and eligibility.
-export const isTopFramePort = (port: browser.runtime.Port) => port.sender?.frameId === undefined || port.sender.frameId === 0
+export const isTopFramePort = (port: browser.runtime.Port) => isTopFrameId(port.sender?.frameId)

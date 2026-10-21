@@ -1,3 +1,5 @@
+import type { EIP6963ProviderInfo } from '../types/signerTypes.js'
+export type { EIP6963ProviderInfo } from '../types/signerTypes.js'
 import { internalSignerStatuses } from './signerIdentity.js'
 
 const isValidImageDataUri = (value: string) => {
@@ -18,7 +20,6 @@ export const isEip6963ProviderName = (value: string) => value.length > 0 && valu
 export const isEip6963ProviderIcon = (value: string) => value.length <= 131_072 && isValidImageDataUri(value)
 export const isEip6963ProviderRdns = (value: string) => value.length > 0 && value.length <= 255 && /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(value)
 
-export type EIP6963ProviderInfo = { readonly uuid: string, readonly name: string, readonly icon: string, readonly rdns: string }
 export const isEip6963ProviderInfo = (value: unknown): value is EIP6963ProviderInfo => typeof value === 'object' && value !== null
 	&& 'uuid' in value && typeof value.uuid === 'string' && isEip6963ProviderUuid(value.uuid)
 	&& 'name' in value && typeof value.name === 'string' && isEip6963ProviderName(value.name)

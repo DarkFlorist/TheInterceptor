@@ -117,10 +117,12 @@ describe('background eth_accounts', () => {
 		assert.equal(settingsBroadcasts.length, 1, 'One authoritative settings broadcast must cover the entire transition')
 	})
 
-	test('shared top-frame identity accepts MV2 and top-frame ports and rejects child frames', async () => {
+	test('shared top-frame identity requires browser-confirmed frame zero', async () => {
 		const { isTopFramePort } = await loadModules()
 		for (const frameId of [undefined, 0, 1, 9]) {
-			assert.equal(isTopFramePort(createPort(1, undefined, frameId).port), frameId === undefined || frameId === 0)
+			const { port } = createPort(1, undefined, frameId)
+			if (frameId === undefined && port.sender !== undefined) delete port.sender.frameId
+			assert.equal(isTopFramePort(port), frameId === 0)
 		}
 	})
 
