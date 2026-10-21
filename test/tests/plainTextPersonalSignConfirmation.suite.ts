@@ -6,6 +6,7 @@ import { TransactionConfirmation } from '../../app/ts/types/interceptor-messages
 import { addressString } from '../../app/ts/utils/bigint.js'
 import { decodePersonalSignMessage } from '../../app/ts/utils/personalSignMessage.js'
 import { hashMessage } from '../../app/ts/utils/ethereumPrimitives.js'
+import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import { activeAddress, browserMock, createWebsitePort, isRecord, modules, simulator, uniqueRequestIdentifier as defaultUniqueRequestIdentifier, getPendingInstanceId } from './confirmTransactionTestHarness.js'
 
 const plainTextMessage = 'Hello world'
@@ -183,13 +184,23 @@ test('forwards the approved request, not a replacement that reuses its request i
 	}
 })
 
+const SIGNATURE = `0x${ '11'.repeat(65) }`
+const signerReplies = [
+	{ branch: 'success', reply: { success: true, reply: SIGNATURE } },
+	{ branch: 'user rejected', reply: { success: false, error: { code: 4001, message: 'User rejected the request.' } } },
+	{ branch: 'error', reply: { success: false, error: { code: -32603, message: 'The wallet failed.' } } },
+] as const
+type SignerReplyOutcome = (typeof signerReplies)[number]['reply']
+const signerReplyCases = [...signerReplies.map((signerReply) => ({ ...signerReply, fromReplacedConnection: false })), { branch: 'connection replaced', reply: signerReplies[0].reply, fromReplacedConnection: true }]
+
 // Opens personal_sign requests through the real creation path on one website connection.
 const createPersonalSignRequester = (postedMessages: unknown[]) => {
 	if (activeAddress === undefined) throw new Error('Missing default active address')
 	const signerAddress = activeAddress
 	const socket = defaultUniqueRequestIdentifier.requestSocket
+	const port = createWebsitePort(socket, 0, postedMessages)
 	const websiteTabConnections = new Map([[socket.tabId, { connections: {
-		[modules.websiteSocketToString(socket)]: { port: createWebsitePort(socket, 0, postedMessages), socket, websiteOrigin: website.websiteOrigin, approved: true, wantsToConnect: true },
+		[modules.websiteSocketToString(socket)]: { port, socket, websiteOrigin: website.websiteOrigin, approved: true, wantsToConnect: true },
 	} }]])
 	const requestSignature = async (message: string, requestId: number) => {
 		const signRequest = { method: 'personal_sign' as const, params: [message, signerAddress] as const }
@@ -204,7 +215,21 @@ const createPersonalSignRequester = (postedMessages: unknown[]) => {
 	browserMock.setLiveWindowIds([99])
 	browserMock.setLiveTabIds([99])
 	const getPendingMessages = async () => (await modules.getPendingTransactionsAndMessages()).flatMap((pending) => pending.type === 'SignableMessage' && pending.transactionOrMessageCreationStatus === 'Simulated' && pending.visualizedPersonalSignRequest.type === 'NotParsed' ? [{ instanceId: pending.instanceId, visualized: pending.visualizedPersonalSignRequest }] : [])
-	return { signerAddress, requestSignature, decide, getPendingMessages }
+	// The wallet's reply to a forwarded personal_sign comes back over the page's connection naming only the request id; a reply from a port that is no longer the page's connection takes the connection-replaced branch.
+	const sendSignerReply = async (requestId: number, reply: SignerReplyOutcome, fromReplacedConnection: boolean) => await modules.signerReply(createTestSimulationServicesOwner({ ethereum: simulator.ethereum, tokenPriceService: simulator.tokenPriceService }), websiteTabConnections, fromReplacedConnection ? createWebsitePort(socket, 0, []) : port, {
+		method: 'signer_reply',
+		params: [{ ...reply, signerProviderGeneration: 1, forwardRequest: { type: 'forwardToSigner', replyWithSignersReply: true, method: 'personal_sign', params: [plainTextMessage, addressString(signerAddress)], requestId } }],
+		interceptorRequest: true,
+		interceptorInternalRequest: true,
+		usingInterceptorWithoutSigner: false,
+		uniqueRequestIdentifier: { requestId: 1000, requestSocket: socket },
+	}, 'hasAccess', signerAddress)
+	const closeConfirmationPopup = async () => {
+		const [pending] = await modules.getPendingTransactionsAndMessages()
+		if (pending === undefined) throw new Error('Missing pending request')
+		await modules.onCloseWindowOrTab(pending.popupOrTabId, simulator.ethereum, simulator.tokenPriceService, websiteTabConnections)
+	}
+	return { signerAddress, requestSignature, decide, getPendingMessages, sendSignerReply, closeConfirmationPopup }
 }
 
 const duplicateIdError = { type: 'result', error: { code: -32600, message: 'A request with this id is already awaiting confirmation.' } }
@@ -261,3 +286,66 @@ test('flags a 0x-prefixed message with invalid hex digits, shows it as written w
 	const { getApprovalAcknowledgement } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
 	assert.notEqual(getApprovalAcknowledgement(pending), undefined)
 })
+
+const getPendingRequests = async () => await modules.getPendingTransactionsAndMessages()
+// Blocks the request with an error the user has to clear, so each reply branch shows whether it touched it, including a user-rejected reply that would reset it to waiting for the user.
+const blockWithUserFacingError = async (requestId: number) => {
+	await modules.updatePendingTransactionOrMessage({ requestId, requestSocket: defaultUniqueRequestIdentifier.requestSocket }, async (pending) => ({ ...pending, approvalStatus: { status: 'SignerError' as const, code: -32010, message: 'Select a current Gnosis Safe owner in the signer wallet.' } }))
+	return await getPendingRequests()
+}
+
+for (const { branch, reply, fromReplacedConnection } of signerReplyCases) {
+	test(`a signer reply (${ branch }) for a request the user has not approved resolves and resets nothing`, async () => {
+		await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+		const postedMessages: unknown[] = []
+		const { requestSignature, sendSignerReply } = createPersonalSignRequester(postedMessages)
+		assert.deepEqual(await requestSignature(plainTextMessage, -5), { type: 'doNotReply' })
+		const notApproved = await blockWithUserFacingError(-5)
+		const messagesPostedBeforeReply = postedMessages.length
+
+		await sendSignerReply(-5, reply, fromReplacedConnection)
+
+		assert.deepEqual(await getPendingRequests(), notApproved)
+		assert.deepEqual(postedMessages.slice(messagesPostedBeforeReply), [])
+	})
+
+	test(`a signer reply (${ branch }) for a forwarded request leaves a newer request under the reused request id untouched`, async () => {
+		await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+		const postedMessages: unknown[] = []
+		const { requestSignature, decide, getPendingMessages, sendSignerReply, closeConfirmationPopup } = createPersonalSignRequester(postedMessages)
+		assert.deepEqual(await requestSignature(plainTextMessage, -6), { type: 'doNotReply' })
+		const [forwarded] = await getPendingMessages()
+		if (forwarded === undefined) throw new Error('Missing forwarded request')
+		assert.equal(await decide({ action: 'accept' }, -6, forwarded.instanceId), true)
+		// The user closes the popup while the wallet is still signing, and the page sends a new request under the same id.
+		await closeConfirmationPopup()
+		assert.deepEqual(await requestSignature(plainTextMessage, -6), { type: 'doNotReply' })
+		const newer = await blockWithUserFacingError(-6)
+		const messagesPostedBeforeReply = postedMessages.length
+
+		await sendSignerReply(-6, reply, fromReplacedConnection)
+
+		assert.deepEqual(await getPendingRequests(), newer)
+		assert.deepEqual(postedMessages.slice(messagesPostedBeforeReply), [])
+	})
+
+	test(`a signer reply (${ branch }) still resolves the forwarded request under its request id`, async () => {
+		await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+		const postedMessages: unknown[] = []
+		const { requestSignature, decide, getPendingMessages, sendSignerReply } = createPersonalSignRequester(postedMessages)
+		assert.deepEqual(await requestSignature(plainTextMessage, -7), { type: 'doNotReply' })
+		const [forwarded] = await getPendingMessages()
+		if (forwarded === undefined) throw new Error('Missing forwarded request')
+		assert.equal(await decide({ action: 'accept' }, -7, forwarded.instanceId), true)
+
+		await sendSignerReply(-7, reply, fromReplacedConnection)
+
+		const pending = await getPendingRequests()
+		if (branch === 'success') {
+			assert.deepEqual(pending, [])
+			assert.equal(postedMessages.some((message) => isRecord(message) && message.requestId === -7 && message.result === SIGNATURE), true)
+			return
+		}
+		assert.equal(pending[0]?.approvalStatus.status, branch === 'user rejected' ? 'WaitingForUser' : 'SignerError')
+	})
+}

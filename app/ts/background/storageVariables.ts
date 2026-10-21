@@ -79,6 +79,11 @@ export async function updatePendingTransactionOrMessage(uniqueRequestIdentifier:
 	})
 }
 
+// For signer replies, which name only the request id. The wallet answers over the page's own connection, so the page owns that channel and could forge a reply for any of its ids; this is no defence against the page itself. It does make sure a reply only reaches the request under that id once it was forwarded to the signer, never a request the user has not approved, such as a newer request under a reused id.
+export async function updatePendingRequestWaitingForSigner(uniqueRequestIdentifier: UniqueRequestIdentifier, update: (pendingTransactionOrMessage: PendingTransactionOrSignableMessage) => Promise<PendingTransactionOrSignableMessage | undefined>) {
+	await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => pending.approvalStatus.status === 'WaitingForSigner' ? await update(pending) : undefined)
+}
+
 // Returns false without appending when a request with the same id is already pending. Pages choose request ids and the bridge does not deduplicate negative ones, so refusing duplicates here, atomically with the append, keeps every lookup of a pending request by id unambiguous.
 export async function appendPendingTransactionOrMessage(pendingTransactionOrMessage: PendingTransactionOrSignableMessage) {
 	let appended = false
