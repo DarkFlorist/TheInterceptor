@@ -1,3 +1,5 @@
+// This module owns credentials embedded in RPC URLs: getRpcFetchTarget sends them, getRpcUrlCredentialsTransportError decides where they may go, redactRpcUrlCredentials masks them for display and logs, and removeRpcUrlCredentials drops them from exports.
+
 // Browsers reject fetch URLs with embedded credentials, so configured `https://user:password@host` RPC URLs are sent as Basic auth instead, but only over https or loopback http.
 export type RpcFetchTarget = {
 	readonly url: string
@@ -29,7 +31,7 @@ function isIpv4LoopbackHostname(hostname: string) {
 const isLoopbackHostname = (hostname: string) => hostname === 'localhost' || hostname === '[::1]' || isIpv4LoopbackHostname(hostname)
 
 // Basic auth over plaintext HTTP exposes reusable credentials to anyone on the network path, while loopback traffic never leaves the machine.
-export function canSendRpcUrlCredentials(url: URL) {
+function canSendRpcUrlCredentials(url: URL) {
 	if (url.protocol === 'https:') return true
 	return url.protocol === 'http:' && isLoopbackHostname(url.hostname)
 }
@@ -44,32 +46,36 @@ const encodeBytesAsBase64 = (bytes: readonly number[]) => btoa(bytes.map((byte) 
 // Like browsers, an encoded `%3A` in the username decodes to a colon that servers read as the separator; RFC 7617 forbids colons in user-ids.
 const getBasicAuthorizationHeaderValue = (url: URL) => `Basic ${ encodeBytesAsBase64(percentDecodeToBytes(`${ url.username }:${ url.password }`)) }`
 
-const getUnprotectedRpcUrlCredentialsMessage = (rpcUrl: string) => `Credentials in RPC URL ${ redactRpcUrlCredentials(rpcUrl) } can only be sent over https, or over http to localhost.`
-
-// Returns why the URL's credentials must not be sent, or undefined when it is unparseable, credential-free, or uses a transport that protects them.
+// The one credential transport check: the RPC form's save path calls it, and every RPC request, including the form's URL probe, reaches it through getRpcFetchTarget. Returns undefined for unparseable, credential-free, or safely sent URLs.
 export function getRpcUrlCredentialsTransportError(rpcUrl: string) {
 	const parsedUrl = parseUrlOrUndefined(rpcUrl)
 	if (parsedUrl === undefined || !hasUrlCredentials(parsedUrl) || canSendRpcUrlCredentials(parsedUrl)) return undefined
-	return getUnprotectedRpcUrlCredentialsMessage(rpcUrl)
+	return `Credentials in RPC URL ${ redactRpcUrlCredentials(rpcUrl) } can only be sent over https, or over http to localhost.`
 }
 
-// Unparseable or credential-free URLs are returned unchanged so fetch keeps its existing behavior and errors.
+// Unparseable or credential-free URLs are returned unchanged so fetch keeps its existing behavior and errors. URLs that bypassed the RPC form, such as imported settings, throw rather than silently dropping their credentials.
 export function getRpcFetchTarget(rpcUrl: string): RpcFetchTarget {
+	const credentialsTransportError = getRpcUrlCredentialsTransportError(rpcUrl)
+	if (credentialsTransportError !== undefined) throw new Error(credentialsTransportError)
 	const parsedUrl = parseUrlOrUndefined(rpcUrl)
 	if (parsedUrl === undefined || !hasUrlCredentials(parsedUrl)) return { url: rpcUrl, headers: {} }
-	// The RPC form rejects these URLs, but imported settings bypass it; throwing instead of dropping the credentials makes the misconfiguration visible.
-	if (!canSendRpcUrlCredentials(parsedUrl)) throw new Error(getUnprotectedRpcUrlCredentialsMessage(rpcUrl))
-	const authorization = getBasicAuthorizationHeaderValue(parsedUrl)
-	parsedUrl.username = ''
-	parsedUrl.password = ''
-	return { url: parsedUrl.toString(), headers: { Authorization: authorization } }
+	return { url: removeRpcUrlCredentials(rpcUrl), headers: { Authorization: getBasicAuthorizationHeaderValue(parsedUrl) } }
 }
 
-// Use for every displayed, logged, or diagnostic RPC URL. Usernames can be API tokens, so the whole userinfo is masked.
-export function redactRpcUrlCredentials(rpcUrl: string) {
+function replaceUrlCredentials(rpcUrl: string, replacementUsername: string) {
 	const parsedUrl = parseUrlOrUndefined(rpcUrl)
 	if (parsedUrl === undefined || !hasUrlCredentials(parsedUrl)) return rpcUrl
-	parsedUrl.username = REDACTED_URL_CREDENTIALS
+	parsedUrl.username = replacementUsername
 	parsedUrl.password = ''
 	return parsedUrl.toString()
+}
+
+// The one way to display, log, or put an RPC URL in a diagnostic. Usernames can be API tokens, so the whole userinfo is masked.
+export function redactRpcUrlCredentials(rpcUrl: string) {
+	return replaceUrlCredentials(rpcUrl, REDACTED_URL_CREDENTIALS)
+}
+
+// Leaves a working credential-free URL, where the redaction placeholder would be read back as a bogus username.
+export function removeRpcUrlCredentials(rpcUrl: string) {
+	return replaceUrlCredentials(rpcUrl, '')
 }

@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { canSendRpcUrlCredentials, getRpcFetchTarget, getRpcUrlCredentialsTransportError, redactRpcUrlCredentials } from '../../app/ts/utils/rpcUrlCredentials.js'
+import { getRpcFetchTarget, getRpcUrlCredentialsTransportError, redactRpcUrlCredentials, removeRpcUrlCredentials } from '../../app/ts/utils/rpcUrlCredentials.js'
 
 const basicAuthorization = (credentials: string) => ({ Authorization: `Basic ${ Buffer.from(credentials, 'utf8').toString('base64') }` })
 
@@ -75,6 +75,14 @@ describe('RPC URL credentials', () => {
 		assert.equal(redactRpcUrlCredentials('http://alice:p%C3%A4ss@localhost:8545'), 'http://***@localhost:8545/')
 	})
 
+	test('removes the whole userinfo for export, leaving a usable credential-free URL', () => {
+		assert.equal(removeRpcUrlCredentials('https://alice:s3cret@rpc.example/v1?key=value'), 'https://rpc.example/v1?key=value')
+		assert.equal(removeRpcUrlCredentials('https://token@rpc.example'), 'https://rpc.example/')
+		assert.equal(removeRpcUrlCredentials('http://:s3cret@localhost:8545'), 'http://localhost:8545/')
+		assert.equal(removeRpcUrlCredentials('https://rpc.example'), 'https://rpc.example')
+		assert.equal(removeRpcUrlCredentials('rpc example'), 'rpc example')
+	})
+
 	test('leaves credential-free and unparseable URLs unchanged for display', () => {
 		assert.equal(redactRpcUrlCredentials('https://rpc.example'), 'https://rpc.example')
 		assert.equal(redactRpcUrlCredentials('rpc example'), 'rpc example')
@@ -82,7 +90,13 @@ describe('RPC URL credentials', () => {
 })
 
 describe('RPC URL credential transport', () => {
-	const canSendCredentialsTo = (url: string) => canSendRpcUrlCredentials(new URL(url))
+	// The transport predicate is internal, so each host is checked through the exported validation entry point with test credentials added.
+	const canSendCredentialsTo = (url: string) => {
+		const urlWithCredentials = new URL(url)
+		urlWithCredentials.username = 'alice'
+		urlWithCredentials.password = 's3cret'
+		return getRpcUrlCredentialsTransportError(urlWithCredentials.toString()) === undefined
+	}
 
 	test('allows credentials over https to any host', () => {
 		assert.equal(canSendCredentialsTo('https://alice:s3cret@remote-node'), true)
