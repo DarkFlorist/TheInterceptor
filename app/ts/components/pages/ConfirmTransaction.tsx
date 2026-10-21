@@ -10,12 +10,12 @@ import type { RenameAddressCallBack, RpcConnectionStatus } from '../../types/use
 import { sendPopupMessageToBackgroundPage, sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport, sendPopupMessageWithReply } from '../../background/backgroundUtils.js'
 import { SignerLogoText, SignersLogoName } from '../subcomponents/signers.js'
 import { type CaughtError, ErrorCheckBox, UnexpectedError } from '../subcomponents/Error.js'
-import { QuarantineReasons, SenderReceiver, TransactionImportanceBlock } from '../simulationExplaining/Transactions.js'
+import { getTransactionFailureText, QuarantineReasons, SenderReceiver, TransactionImportanceBlock } from '../simulationExplaining/Transactions.js'
 import { identifyTransaction } from '../simulationExplaining/identifyTransaction.js'
 import { DinoSaysNotification } from '../subcomponents/DinoSays.js'
 import { addressEditEntry, tryFocusingTabOrWindow } from '../ui-utils.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
-import type { PopupPendingTransactionOrSignableMessage as PendingTransactionOrSignableMessage, SimulatedPendingTransaction } from '../../types/accessRequest.js'
+import { isPastUserDecision, type PopupPendingTransactionOrSignableMessage as PendingTransactionOrSignableMessage, type SimulatedPendingTransaction } from '../../types/accessRequest.js'
 import { WebsiteOriginText } from '../subcomponents/address.js'
 import { SmallAddress } from '../subcomponents/address.js'
 import { TransactionInput } from '../subcomponents/ParsedInputData.js'
@@ -23,7 +23,7 @@ import type { EthereumBytes32 } from '../../types/wire-types.js'
 import type { OriginalSendRequestParameters } from '../../types/JsonRpc-types.js'
 import { getWebsiteWarningMessage } from '../../utils/websiteData.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
-import { checkAndThrowRuntimeLastError } from '../../utils/requests.js'
+import { checkAndThrowRuntimeLastError, getUniqueRequestIdentifierString } from '../../utils/requests.js'
 import { Link } from '../subcomponents/link.js'
 import { NetworkErrors } from '../subcomponents/NetworkErrors.js'
 import { identifySignature } from '../simulationExplaining/identifySignature.js'
@@ -36,7 +36,7 @@ import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/bro
 import { POPUP_PERFORMANCE_MARKS, markPerformance, markPerformanceOnce } from '../../utils/popupPerformance.js'
 import { getAddressBookEntryOrAFiller } from '../ui-utils.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
-import { bigintToDecimalString, dataStringWith0xStart } from '../../utils/bigint.js'
+import { bigintToDecimalString, dataStringWith0xStart, stringifyJSONWithBigInts } from '../../utils/bigint.js'
 import { browserStorageLocalGet2 } from '../../utils/storageUtils.js'
 import { reportUnexpectedError } from '../../utils/errors.js'
 import { type AsyncStates, useAsyncState } from '../../utils/preact-utilities.js'
@@ -106,10 +106,41 @@ export function shouldDisableSignableMessageConfirm(params: {
 	canSignMessage: boolean
 	forceSendEnabled: boolean
 	hasSupportedRpc: boolean
+	requiresAcknowledgement: boolean
 }) {
 	if (!params.isValidMessage) return true
+	// A message with a warning to acknowledge (see getApprovalAcknowledgement) is only approved once the user ticks it for this request.
+	if (params.requiresAcknowledgement && !params.forceSendEnabled) return true
 	return !params.canSignMessage && !params.forceSendEnabled && !params.hasSupportedRpc
 }
+
+type ApprovalAcknowledgement = { readonly text: string, readonly key: string }
+
+// The warning the user must tick before approving the request, or undefined when approval needs none. The checkbox is rendered exactly when this is defined, and approval counts a tick only while its key matches: the same request showing the same warnings, so a tick never carries over to the next queued request or to a refresh with new warnings.
+export function getApprovalAcknowledgement(pending: PendingTransactionOrSignableMessage | undefined): ApprovalAcknowledgement | undefined {
+	if (pending?.transactionOrMessageCreationStatus !== 'Simulated') return undefined
+	// The page picks the request id and may reuse it (the bridge does not deduplicate negative ids), so the key binds the id the extension generated for this pending request, plus its parameters so an edited request needs a new tick. The request id and creation time only matter for requests stored before instance ids existed, which share one legacy instance id.
+	const requestKey = [pending.instanceId, getUniqueRequestIdentifierString(pending.uniqueRequestIdentifier), pending.created, pending.originalRequestParameters]
+	// Every warning the request shows is part of the key: the failure, if any, and the quarantine verdict with its reasons.
+	const acknowledge = (text: string, warnings: { readonly failure: string | undefined, readonly quarantine: boolean, readonly quarantineReasons: readonly string[] }) => ({ text, key: stringifyJSONWithBigInts([...requestKey, text, warnings]) })
+	if (pending.type === 'SignableMessage') {
+		const visualized = pending.visualizedPersonalSignRequest
+		if (!isPossibleToSignMessage(visualized, pending.activeAddress) || !visualized.quarantine) return undefined
+		return acknowledge('I understand that there are issues with this signature request but I want to send it anyway against Interceptors recommendations.', { failure: undefined, quarantine: visualized.quarantine, quarantineReasons: visualized.quarantineReasons })
+	}
+	if (pending.popupVisualisation.statusCode !== 'success' || pending.popupVisualisation.data.visualizedSimulationState.success === false) return undefined
+	const results = getResultsForTransaction(pending.popupVisualisation.data.visualizedSimulationState, pending.transactionIdentifier)
+	if (results === undefined) return undefined
+	const failureText = 'I understand that the transaction will fail but I want to send it anyway.'
+	switch (results.transactionStatus) {
+		case 'Failed To Simulate': return acknowledge(failureText, { failure: getTransactionFailureText(results), quarantine: false, quarantineReasons: [] })
+		case 'Transaction Failed': return acknowledge(failureText, { failure: getTransactionFailureText(results), quarantine: results.quarantine, quarantineReasons: results.quarantineReasons })
+		case 'Transaction Succeeded': return results.quarantine ? acknowledge('I understand that there are issues with this transaction but I want to send it anyway against Interceptors recommendations.', { failure: undefined, quarantine: results.quarantine, quarantineReasons: results.quarantineReasons }) : undefined
+		default: return assertNever(results)
+	}
+}
+
+const isApprovalAcknowledged = (acknowledgement: ApprovalAcknowledgement | undefined, acknowledgedApprovalKey: string | undefined) => acknowledgement !== undefined && acknowledgement.key === acknowledgedApprovalKey
 
 export function getConfirmDialogDeliveryErrorMessage(error: unknown) {
 	const reason = error instanceof Error
@@ -503,7 +534,9 @@ function SuccessfulTransactionCardContent(param: SuccessfulTransactionCardConten
 
 type CheckBoxesParams = {
 	currentPendingTransactionOrSignableMessage: ReadonlySignal<PendingTransactionOrSignableMessage | undefined>,
-	forceSend: Signal<boolean>,
+	// Derived once by ConfirmTransaction, so the checkbox and the approval gate read the same acknowledgement.
+	approvalAcknowledgement: ReadonlySignal<ApprovalAcknowledgement | undefined>,
+	acknowledgedApprovalKey: Signal<string | undefined>,
 	addressBookEntries?: readonly AddressBookEntry[],
 }
 
@@ -561,6 +594,13 @@ export const CheckBoxes = (params: CheckBoxesParams) => {
 		]
 		: []
 	const addressBookEntries = [...visualizedAddressBookEntries, ...(params.addressBookEntries ?? [])]
+	const acknowledgement = params.approvalAcknowledgement.value
+	// Rendered with signer errors too, so a request that failed in the wallet can be acknowledged again and retried.
+	const acknowledgementCheckBox = acknowledgement === undefined ? <></> : <ErrorCheckBox
+		text = { acknowledgement.text }
+		checked = { isApprovalAcknowledged(acknowledgement, params.acknowledgedApprovalKey.value) }
+		onChange = { (checked) => { params.acknowledgedApprovalKey.value = checked ? acknowledgement.key : undefined } }
+	/>
 	if (current.approvalStatus.status === 'SignerError') return <div style = 'display: grid'>
 		<div style = { margins }>
 			<ErrorComponent text = { current.approvalStatus.message } />
@@ -568,36 +608,15 @@ export const CheckBoxes = (params: CheckBoxesParams) => {
 				? <></>
 				: <SafeSignerErrorDetails details = { current.approvalStatus.safeSignerErrorDetails } addressBookEntries = { addressBookEntries } />
 			}
+			{ acknowledgementCheckBox }
 		</div>
 	</div>
-	if (current?.type === 'SignableMessage') {
-		const visualizedPersonalSignRequest = current.visualizedPersonalSignRequest
-		return  <>
-			{ isPossibleToSignMessage(visualizedPersonalSignRequest, visualizedPersonalSignRequest.activeAddress.address) && visualizedPersonalSignRequest.quarantine
-				? <div style = 'display: grid'>
-					<div style = 'margin: 0px; margin-bottom: 10px; margin-left: 20px; margin-right: 20px; '>
-						<ErrorCheckBox text = { 'I understand that there are issues with this signature request but I want to send it anyway against Interceptors recommendations.' } checked = { params.forceSend } />
-					</div>
-				</div>
-				: <></>
-			}
-		</>
-	}
-	if (current?.popupVisualisation.statusCode !== 'success' || current.popupVisualisation.data.visualizedSimulationState.success === false) return <></>
-	const currentResults = getResultsForTransaction(current.popupVisualisation.data.visualizedSimulationState, current.transactionIdentifier)
-
-	if (currentResults === undefined) return <></>
-	if (currentResults.transactionStatus !== 'Transaction Succeeded') return <div style = 'display: grid'>
+	if (acknowledgement === undefined) return <></>
+	return <div style = 'display: grid'>
 		<div style = { margins }>
-			<ErrorCheckBox text = { 'I understand that the transaction will fail but I want to send it anyway.' } checked = { params.forceSend } />
+			{ acknowledgementCheckBox }
 		</div>
 	</div>
-	if (currentResults.quarantine === true) return <div style = 'display: grid'>
-		<div style = { margins }>
-			<ErrorCheckBox text = { 'I understand that there are issues with this transaction but I want to send it anyway against Interceptors recommendations.' } checked = { params.forceSend } />
-		</div>
-	</div>
-	return <></>
 }
 
 type NetworkErrorParams = {
@@ -750,7 +769,7 @@ export function ConfirmationActionButtons({ identified, signerName, simulationMo
 	</div>
 }
 
-export const shouldDisableConfirmForApprovalStatus = (approvalStatus: PendingTransactionOrSignableMessage['approvalStatus']) => approvalStatus.status === 'WaitingForSigner'
+export const shouldDisableConfirmForApprovalStatus = (approvalStatus: PendingTransactionOrSignableMessage['approvalStatus']) => isPastUserDecision(approvalStatus)
 
 function ConfirmationButtons({ currentPendingTransactionOrSignableMessage, reject, rejectButtonState, approve, approveButtonState, confirmDisabled, addToSafeStack, addToSafeStackButtonState, addToSafeStackDisabled }: ButtonsParams) {
 	if (currentPendingTransactionOrSignableMessage === undefined) return <RejectButton onClick = { reject } state = { rejectButtonState }/>
@@ -790,7 +809,9 @@ export function ConfirmTransaction() {
 	})
 	const pendingTransactionsAndSignableMessages = useSignal<readonly PendingTransactionOrSignableMessage[]>([])
 	const completeVisualizedSimulation = useSignal<CompleteVisualizedSimulation>(createPassthroughCompleteVisualizedSimulation())
-	const forceSend = useSignal<boolean>(false)
+	const acknowledgedApprovalKey = useSignal<string | undefined>(undefined)
+	const approvalAcknowledgement = useComputed(() => getApprovalAcknowledgement(currentPendingTransactionOrSignableMessage.value))
+	const approvalAcknowledged = useComputed(() => isApprovalAcknowledged(approvalAcknowledgement.value, acknowledgedApprovalKey.value))
 	const currentBlockNumber = useSignal<undefined | bigint>(undefined)
 	const modalState = useSignal<ModalState>({ page: 'noModal' })
 	const rpcConnectionStatus = useSignal<RpcConnectionStatus>(undefined)
@@ -921,26 +942,32 @@ export function ConfirmTransaction() {
 		}
 	}, [])
 
+	// The queue and the warnings can change while the approval awaits, so it captures what the user approved at click time and sends nothing unless the same request, with the same warnings, is still shown and approvable.
 	async function approveTransaction() {
-		if (currentPendingTransactionOrSignableMessage.value === undefined) throw new Error('dialogState is not set')
+		const approved = currentPendingTransactionOrSignableMessage.value
+		if (approved === undefined) throw new Error('dialogState is not set')
+		const approvedAcknowledgementKey = approvalAcknowledgement.value?.key
+		if (isConfirmDisabled.value) return
 		pendingTransactionAddedNotification.value = false
 		const currentWindow = await browser.windows.getCurrent()
 		checkAndThrowRuntimeLastError()
 		if (currentWindow.id === undefined) throw new Error('could not get our own Id!')
-		const deliveryError = await sendConfirmDialogMessage({ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: currentPendingTransactionOrSignableMessage.value.uniqueRequestIdentifier, action: 'accept' } })
+		if (currentPendingTransactionOrSignableMessage.value?.instanceId !== approved.instanceId || approvalAcknowledgement.value?.key !== approvedAcknowledgementKey || isConfirmDisabled.value) return
+		const deliveryError = await sendConfirmDialogMessage({ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: approved.uniqueRequestIdentifier, instanceId: approved.instanceId, action: 'accept' } })
 		if (deliveryError !== undefined) unexpectedError.value = deliveryError
 	}
+	// Rejects only the request shown when the user clicked, and nothing if that request is no longer shown once the awaits finish.
 	async function rejectTransaction() {
-		if (currentPendingTransactionOrSignableMessage.value === undefined) throw new Error('dialogState is not set')
+		const rejected = currentPendingTransactionOrSignableMessage.value
+		if (rejected === undefined) throw new Error('dialogState is not set')
 		pendingTransactionAddedNotification.value = false
 		const currentWindow = await browser.windows.getCurrent()
 		checkAndThrowRuntimeLastError()
 		if (currentWindow.id === undefined) throw new Error('could not get our own Id!')
-		if (pendingTransactionsAndSignableMessages.value.length === 1) await tryFocusingTabOrWindow({ type: 'tab', id: currentPendingTransactionOrSignableMessage.value.uniqueRequestIdentifier.requestSocket.tabId })
+		if (pendingTransactionsAndSignableMessages.value.length === 1) await tryFocusingTabOrWindow({ type: 'tab', id: rejected.uniqueRequestIdentifier.requestSocket.tabId })
 
 		const getPossibleErrorString = () => {
-			const pending = currentPendingTransactionOrSignableMessage.value
-			if (pending === undefined) return undefined
+			const pending = rejected
 			if (pending.transactionOrMessageCreationStatus === 'FailedToSimulate') return pending.transactionToSimulate.error.message
 			if (pending.transactionOrMessageCreationStatus !== 'Simulated') return undefined
 			if (pending.type !== 'Transaction') return undefined
@@ -951,8 +978,10 @@ export function ConfirmTransaction() {
 			return results.transactionStatus !== 'Transaction Succeeded' ? results.error.message : undefined
 		}
 
+		if (currentPendingTransactionOrSignableMessage.value?.instanceId !== rejected.instanceId) return
 		const deliveryError = await sendConfirmDialogMessage({ method: 'popup_confirmDialog', data: {
-			uniqueRequestIdentifier: currentPendingTransactionOrSignableMessage.value.uniqueRequestIdentifier,
+			uniqueRequestIdentifier: rejected.uniqueRequestIdentifier,
+			instanceId: rejected.instanceId,
 			action: 'reject',
 			errorString: getPossibleErrorString(),
 		} })
@@ -974,7 +1003,7 @@ export function ConfirmTransaction() {
 		if (pending === undefined) return
 		resetAddToSafeStackButton()
 		void waitForAddToSafeStack(async () => {
-			const deliveryError = await sendConfirmDialogMessage({ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: pending.uniqueRequestIdentifier, action: 'addToSafeStack' } })
+			const deliveryError = await sendConfirmDialogMessage({ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: pending.uniqueRequestIdentifier, instanceId: pending.instanceId, action: 'addToSafeStack' } })
 			if (deliveryError !== undefined) unexpectedError.value = deliveryError
 		})
 	}
@@ -1000,24 +1029,23 @@ export function ConfirmTransaction() {
 			return shouldDisableSignableMessageConfirm({
 				isValidMessage: currentPendingTransactionOrSignableMessage.value.visualizedPersonalSignRequest.isValidMessage === true,
 				canSignMessage: isPossibleToSignMessage(currentPendingTransactionOrSignableMessage.value.visualizedPersonalSignRequest, currentPendingTransactionOrSignableMessage.value.activeAddress),
-				forceSendEnabled: forceSend.value,
+				forceSendEnabled: approvalAcknowledged.value,
 				hasSupportedRpc: currentPendingTransactionOrSignableMessage.value.visualizedPersonalSignRequest.rpcNetwork.httpsRpc !== undefined,
+				requiresAcknowledgement: approvalAcknowledgement.value !== undefined,
 			})
 		}
-		if (forceSend.value) return false
 		if (currentPendingTransactionOrSignableMessage.value.popupVisualisation === undefined) return true
 		if (currentPendingTransactionOrSignableMessage.value.popupVisualisation.statusCode !== 'success') return true
 		if (currentPendingTransactionOrSignableMessage.value.popupVisualisation.data.visualizedSimulationState.success === false) return true
 		const lastTx = getResultsForTransaction(currentPendingTransactionOrSignableMessage.value.popupVisualisation.data.visualizedSimulationState, currentPendingTransactionOrSignableMessage.value.transactionIdentifier)
 		if (lastTx === undefined) return true
-		if (lastTx.transactionStatus !== 'Transaction Succeeded') return true
-		if (lastTx.quarantine) return true
-		return false
+		// A failing or quarantined transaction needs the acknowledgement from getApprovalAcknowledgement, ticked for this request.
+		return approvalAcknowledgement.value !== undefined && !approvalAcknowledged.value
 	})
 	const isAddToSafeStackDisabled = useComputed(() => {
 		const pending = currentPendingTransactionOrSignableMessage.value
 		if (pending?.type !== 'Transaction' || getSafeTransactionPendingFlow(pending)?.kind !== 'proposal') return true
-		if (pending.approvalStatus.status === 'WaitingForSigner') return true
+		if (isPastUserDecision(pending.approvalStatus)) return true
 		if (pending.transactionOrMessageCreationStatus !== 'Simulated' || pending.popupVisualisation.statusCode !== 'success') return true
 		if (pending.popupVisualisation.data.visualizedSimulationState.success === false) return true
 		const lastTx = getResultsForTransaction(pending.popupVisualisation.data.visualizedSimulationState, pending.transactionIdentifier)
@@ -1133,7 +1161,7 @@ export function ConfirmTransaction() {
 							</> }
 						</div>
 						<nav class = 'window-footer popup-button-row' style = 'position: sticky; bottom: 0; width: 100%;'>
-							<CheckBoxes currentPendingTransactionOrSignableMessage = { currentPendingTransactionOrSignableMessage } forceSend = { forceSend } addressBookEntries = { completeVisualizedSimulation.value.addressBookEntries } />
+							<CheckBoxes currentPendingTransactionOrSignableMessage = { currentPendingTransactionOrSignableMessage } approvalAcknowledgement = { approvalAcknowledgement } acknowledgedApprovalKey = { acknowledgedApprovalKey } addressBookEntries = { completeVisualizedSimulation.value.addressBookEntries } />
 					<ConfirmationButtons
 						currentPendingTransactionOrSignableMessage = { currentPendingTransactionOrSignableMessage.value }
 						reject = { reject }

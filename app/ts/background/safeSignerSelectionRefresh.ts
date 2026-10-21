@@ -2,7 +2,7 @@ import type { SafeMessageReview } from '../types/safeReview.js'
 import type { SignMessageParams } from '../types/jsonRpc-signing-types.js'
 import { stringifyJSONWithBigInts } from '../utils/bigint.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import type { PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
+import { isPastUserDecision, type PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import type { SafeEntry } from '../types/addressBookTypes.js'
 import { SafeMessage, validateSafeMessageForSigning } from '../safe/safeMessage.js'
 import type { EIP712Message } from '../types/eip721.js'
@@ -13,7 +13,7 @@ import { modifyObject } from '../utils/typescript.js'
 import { areEqualUint8Arrays } from '../utils/typed-arrays.js'
 import { assertSafeContractStateUnchanged, createSafeContractValidationFailure, createSafeTransactionSigningRequest, getSafeTxSignerFacingTypedData, isSafeContractValidationFailure, isSafeOwnerValidationFailure, validateSafeTransactionForSigning, type SafeOwnerValidator } from '../safe/safeCore.js'
 import { areSafeExecutionSignerRequestsEqual, prepareSafeExecutionSignerRoute } from '../safe/safeExecutionRouting.js'
-import { getUserAddressBookEntriesForChainIdMorePreciseFirst, updatePendingTransactionOrMessage } from './storageVariables.js'
+import { getUserAddressBookEntriesForChainIdMorePreciseFirst, updatePendingTransactionOrMessageInstance } from './storageVariables.js'
 import { createSafeSignerErrorStatus, type SafeSignerErrorStatus } from './safeSignerErrors.js'
 import { getSafePendingFlow, type DirectSafeExecutionFlow, type SafeMessageCoSignFlow, type SafePendingFlow, type SafeProposalFlow } from '../safe/safePendingFlow.js'
 
@@ -294,7 +294,7 @@ export async function refreshSafeSignerSelection(
 }
 
 function shouldRefreshSafeSignerSelection(flow: SafePendingFlow, selectedSigner: bigint) {
-	if (flow.pending.approvalStatus.status === 'WaitingForSigner') return false
+	if (isPastUserDecision(flow.pending.approvalStatus)) return false
 	switch (flow.kind) {
 		case 'directExecution': return flow.pending.safeExecutionSignerAddress !== selectedSigner
 		case 'messageCoSign': return flow.pending.safeMessageCoSignSnapshot.safeSignerAddress !== selectedSigner
@@ -345,6 +345,17 @@ function mergeSafeSignerSelectionRefresh(
 		approvalStatus: refreshedFlow.pending.approvalStatus,
 	})
 	return current
+}
+
+// Stores a Gnosis Safe confirmation refresh on the request as it is stored now: only the Safe fields and approval status the refresh rebuilt, so other changes made meanwhile are kept. A request forwarded to the signer meanwhile is left for the signer's reply. Returns whether the refresh was stored.
+export async function persistSafeConfirmationRefresh(refreshed: PendingTransactionOrSignableMessage) {
+	let persisted = false
+	await updatePendingTransactionOrMessageInstance(refreshed, async (current) => {
+		if (isPastUserDecision(current.approvalStatus)) return undefined
+		persisted = true
+		return mergeSafeSignerSelectionRefresh(current, refreshed)
+	})
+	return persisted
 }
 
 type RefreshDirectSafeExecutionSimulation = (
@@ -418,7 +429,8 @@ async function recoverSafeMessageReview(ethereum: EthereumClientService, pending
 		refreshResult = await handleSafeSignerSelectionRefreshFailure(error, undefined, 'Select a current Gnosis Safe owner in the signer wallet before co-signing.')
 	}
 	let persistedPending: PendingTransactionOrSignableMessage | undefined
-	await updatePendingTransactionOrMessage(pending.uniqueRequestIdentifier, async (current) => {
+	// Stored only into the request instance the refresh started from, never a request the page sent later under the same request id.
+	await updatePendingTransactionOrMessageInstance(pending, async (current) => {
 		// Do not overwrite a cancellation, another completed refresh, or changed review data while the owner lookup was pending.
 		if (current.type !== 'SignableMessage' || current.safeMessageCoSignSnapshot !== undefined || current.activeAddress !== pending.activeAddress
 			|| current.approvalStatus.status !== 'SignerError' || current.approvalStatus.code !== SAFE_SIGNER_SELECTION_ERROR_CODE
@@ -472,7 +484,8 @@ export async function refreshAndPersistSafeSignerSelection(
 		return { refreshRequired: true, refreshResult, persisted: false, persistedPending: undefined }
 	}
 	let persistedPending: PendingTransactionOrSignableMessage | undefined
-	await updatePendingTransactionOrMessage(pending.uniqueRequestIdentifier, async (current) => {
+	// Stored only into the request instance the refresh started from, never a request the page sent later under the same request id.
+	await updatePendingTransactionOrMessageInstance(pending, async (current) => {
 		const currentFlow = getSafePendingFlow(current)
 		if (currentFlow === undefined || !shouldRefreshSafeSignerSelection(currentFlow, selectedSigner)) return current
 		if (!pendingSafeRefreshBaseMatches(current, pending)) return current

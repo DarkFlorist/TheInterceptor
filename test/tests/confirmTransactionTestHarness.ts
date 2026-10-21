@@ -215,6 +215,7 @@ export async function loadModules() {
 		Multicall3ABI: constants.Multicall3ABI,
 		defaultActiveAddresses: settings.defaultActiveAddresses,
 		refreshPopupConfirmTransactionSimulation: popupMessageHandlers.refreshPopupConfirmTransactionSimulation,
+		refreshPopupConfirmTransactionMetadata: popupMessageHandlers.refreshPopupConfirmTransactionMetadata,
 		confirmDialog: popupMessageHandlers.confirmDialog,
 		getSafeSignerSelectionFromAccountRefresh: popupMessageHandlers.getSafeSignerSelectionFromAccountRefresh,
 		importSafeStack: popupMessageHandlers.importSafeStack,
@@ -620,6 +621,14 @@ export function createWebsitePort(socket: { readonly tabId: number, readonly con
 			onPostMessage?.(message)
 		},
 	}
+}
+
+// Popup decisions name the pending request instance they decide on, so tests read it from the pending list like the popup does.
+export async function getPendingInstanceId(uniqueRequestIdentifier: { readonly requestId: number, readonly requestSocket: { readonly tabId: number, readonly connectionName: bigint } }) {
+	const pending = (await modules.getPendingTransactionsAndMessages()).find((entry) => entry.uniqueRequestIdentifier.requestId === uniqueRequestIdentifier.requestId
+		&& entry.uniqueRequestIdentifier.requestSocket.tabId === uniqueRequestIdentifier.requestSocket.tabId
+		&& entry.uniqueRequestIdentifier.requestSocket.connectionName === uniqueRequestIdentifier.requestSocket.connectionName)
+	return pending?.instanceId ?? 'no pending request'
 }
 
 export async function waitForPendingTransactionsToClear() {
