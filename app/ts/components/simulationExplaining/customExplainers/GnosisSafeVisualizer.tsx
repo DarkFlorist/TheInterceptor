@@ -110,6 +110,9 @@ type GnosisSafeVisualizerParams = {
 export function GnosisSafeVisualizer(param: GnosisSafeVisualizerParams) {
 	const simulateExecutionReply = useSignal<SimulateExecutionReply | undefined>(undefined)
 	const activeAddress = useSignal<bigint | undefined>(undefined)
+	const addressBookRevision = useSignal(0)
+	const requestedAddressBookRevision = useRef(0)
+	const simulationRequestGeneration = useRef(0)
 	const outcomeTitleId = `safe-outcome-title-${ param.gnosisSafeMessage.messageIdentifier.toString() }`
 	const { value: gnosisSimulationRequest, waitFor: waitForGnosisSimulation, reset: resetGnosisSimulationRequest } = useAsyncState<void>()
 	const requestErrorText = useComputed(() => gnosisSimulationRequest.value.state === 'rejected' ? gnosisSimulationRequest.value.error.message : undefined)
@@ -123,11 +126,16 @@ export function GnosisSafeVisualizer(param: GnosisSafeVisualizerParams) {
 			const maybeParsed = MessageToPopup.safeParse(msg)
 			if (!maybeParsed.success) return false // not a message we are interested in
 			const parsed = maybeParsed.value
+			if (parsed.method === 'popup_addressBookEntriesChanged') {
+				addressBookRevision.value += 1
+				return false
+			}
 			if (parsed.method === 'popup_new_block_arrived') return false
 			if (parsed.method !== 'popup_simulateExecutionReply') return false
 			const { role: _role, ...popupSimulateExecutionReply } = parsed
 			const reply = SimulateExecutionReply.parse(popupSimulateExecutionReply)
 			if (!isReplyForCurrentMessage(reply)) return false
+			simulationRequestGeneration.current += 1
 			resetGnosisSimulationRequest()
 			simulateExecutionReply.value = reply
 			return false
@@ -138,8 +146,11 @@ export function GnosisSafeVisualizer(param: GnosisSafeVisualizerParams) {
 
 	const requestToSimulate = () => {
 		if (gnosisSimulationRequest.value.state === 'pending') return
+		requestedAddressBookRevision.current = addressBookRevision.value
+		const requestGeneration = ++simulationRequestGeneration.current
 		waitForGnosisSimulation(async () => {
 			const reply = await requestPopupSimulateGnosisSafeTransaction({ gnosisSafeMessage: param.gnosisSafeMessage })
+			if (requestGeneration !== simulationRequestGeneration.current) return
 			if (reply === undefined) throw new Error(GNOSIS_SIMULATION_REPLY_MISSING_ERROR)
 			if (param.gnosisSafeMessage.messageIdentifier !== currentMessageIdentifier.current || !isReplyForCurrentMessage(reply)) return
 			simulateExecutionReply.value = reply
@@ -152,6 +163,12 @@ export function GnosisSafeVisualizer(param: GnosisSafeVisualizerParams) {
 		resetGnosisSimulationRequest()
 		requestToSimulate()
 	}, [param.activeAddress, param.gnosisSafeMessage.messageIdentifier])
+
+	useEffect(() => {
+		// Edits made during a simulation need a fresh result once that request finishes.
+		if (addressBookRevision.value === requestedAddressBookRevision.current || gnosisSimulationRequest.value.state === 'pending') return
+		requestToSimulate()
+	}, [addressBookRevision.value, gnosisSimulationRequest.value.state])
 
 	const simulationPending = gnosisSimulationRequest.value.state === 'pending'
 
