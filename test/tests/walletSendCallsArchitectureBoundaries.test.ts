@@ -186,3 +186,18 @@ test('the simulation stack is written in one critical section', () => {
 		assert.doesNotMatch(body, /transactionStateSemaphore|assertUniqueInterceptorTransactionIds|setLargeStateValue/u, wrapper)
 	}
 })
+
+test('confirmation run ids are only taken by the run module, before a run reads its inputs', async () => {
+	assert.match(confirmationSimulationRunSource, /^function getNextConfirmationRunId\(\) \{$/mu)
+	assert.match(confirmationSimulationRunSource, /^export async function runConfirmationSimulation<T>\(run: \(confirmationRunId: number\) => Promise<T>\): Promise<T> \{\n\treturn await run\(getNextConfirmationRunId\(\)\)\n\}$/mu)
+	const appSourceDirectory = new URL('../../app/ts/', import.meta.url).pathname
+	for await (const file of new Bun.Glob('**/*.{ts,tsx}').scan({ cwd: appSourceDirectory, absolute: true })) {
+		if (file.endsWith('/background/confirmationSimulationRun.ts')) continue
+		assert.doesNotMatch(await Bun.file(file).text(), /getNextConfirmationRunId/u, file)
+	}
+	// Every flow that starts a confirmation simulation run does its preparation inside the run.
+	const runsIn = (source: string) => source.match(/await runConfirmationSimulation\(async \(confirmationRunId\) =>/gu)?.length ?? 0
+	assert.equal(runsIn(confirmTransactionSource), 2)
+	assert.equal(runsIn(popupMessageHandlersSource), 1)
+	assert.equal(runsIn(walletSendCallsConfirmationSource), 1)
+})

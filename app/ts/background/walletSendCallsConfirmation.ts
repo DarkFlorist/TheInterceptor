@@ -13,7 +13,7 @@ import { tryFocusingTabOrWindow } from '../utils/popupOrTab.js'
 import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString } from '../utils/requests.js'
 import { createScopedKeyedSerialExecutor } from '../utils/semaphore.js'
 import { assertNever, modifyObject } from '../utils/typescript.js'
-import { getNextConfirmationRunId, startConfirmTransactionSimulation, toPreSimulationTransaction } from './confirmationSimulationRun.js'
+import { runConfirmationSimulation, startConfirmTransactionSimulation, toPreSimulationTransaction } from './confirmationSimulationRun.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
 import { getSimulationSettingsSnapshot } from './settings.js'
 import { captureStackSimulationContext, createSimulationStateWithNonceAndBaseFeeFixing, getSimulationInputForStack, getStackSimulationContextFingerprint, type StackSimulationContext, toStackSimulationContext, visualizeSimulatorState } from './simulationUpdating.js'
@@ -86,18 +86,18 @@ async function simulateConfirmTransactionBatch(
 }
 
 async function simulatePendingTransactionBatch(ethereumClientService: EthereumClientService, tokenPriceService: TokenPriceService, pendingBatch: PendingTransactionBatch) {
-	// Taken before the simulation stack is read, so a run that prepared the calls from an older stack always has an older id, however long its preparation takes.
-	const confirmationRunId = getNextConfirmationRunId()
-	const { context: stackContext } = await captureStackSimulationContext()
-	const { transactionsToSimulate, simulationInputWithBatch } = await formWalletSendCallsTransactions(ethereumClientService, pendingBatch, stackContext)
-	const popupVisualisation = await simulateConfirmTransactionBatch(ethereumClientService, tokenPriceService, pendingBatch.activeAddress, pendingBatch.simulationMode, pendingBatch.uniqueRequestIdentifier, confirmationRunId, simulationInputWithBatch)
-	if (popupVisualisation === undefined) return undefined
-	return {
-		transactionsToSimulate,
-		popupVisualisation,
-		simulatedContextFingerprint: getStackSimulationContextFingerprint(stackContext),
-		transactionOrMessageCreationStatus: transactionsToSimulate.every((transaction) => transaction.success) ? 'Simulated' as const : 'FailedToSimulate' as const,
-	}
+	return await runConfirmationSimulation(async (confirmationRunId) => {
+		const { context: stackContext } = await captureStackSimulationContext()
+		const { transactionsToSimulate, simulationInputWithBatch } = await formWalletSendCallsTransactions(ethereumClientService, pendingBatch, stackContext)
+		const popupVisualisation = await simulateConfirmTransactionBatch(ethereumClientService, tokenPriceService, pendingBatch.activeAddress, pendingBatch.simulationMode, pendingBatch.uniqueRequestIdentifier, confirmationRunId, simulationInputWithBatch)
+		if (popupVisualisation === undefined) return undefined
+		return {
+			transactionsToSimulate,
+			popupVisualisation,
+			simulatedContextFingerprint: getStackSimulationContextFingerprint(stackContext),
+			transactionOrMessageCreationStatus: transactionsToSimulate.every((transaction) => transaction.success) ? 'Simulated' as const : 'FailedToSimulate' as const,
+		}
+	})
 }
 
 // An interrupted simulation stores nothing: the previous results, or the Crafting state of a new batch, stay until the next block retries it.

@@ -1,5 +1,5 @@
 import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
-import { getNextConfirmationRunId } from './confirmationSimulationRun.js'
+import { runConfirmationSimulation } from './confirmationSimulationRun.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { captureSimulationSnapshot, getUpdatedSimulationStackSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
 import { getSettings, setUseTabsInsteadOfPopup, setPage, getMakeCurrentAddressRich, setMetamaskCompatibilityMode, setSafeAppsCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, updateMakeCurrentAddressRich, updateFixedMakeMeRichList } from './settings.js'
@@ -572,30 +572,32 @@ export async function refreshPopupConfirmTransactionSimulation(ethereum: Ethereu
 	if (firstTxn === undefined || firstTxn.type !== 'Transaction' || (firstTxn.transactionOrMessageCreationStatus !== 'Simulated' && firstTxn.transactionOrMessageCreationStatus !== 'FailedToSimulate')) return
 	const safeFlow = getSafePendingFlow(firstTxn)
 	const proposalSafeTransaction = safeFlow?.kind === 'proposal' ? safeFlow.pending.safeTransaction : undefined
-	const confirmationRunId = getNextConfirmationRunId()
-	const transactionToSimulate = firstTxn.originalRequestParameters.method === 'eth_sendTransaction'
-		? await formEthSendTransaction(
+	const { transactionToSimulate, refreshMessage } = await runConfirmationSimulation(async (confirmationRunId) => {
+		const transactionToSimulate = firstTxn.originalRequestParameters.method === 'eth_sendTransaction'
+			? await formEthSendTransaction(
+				ethereum,
+				undefined,
+				firstTxn.activeAddress,
+				firstTxn.transactionToSimulate.website,
+				firstTxn.originalRequestParameters,
+				firstTxn.created,
+				firstTxn.transactionIdentifier,
+				firstTxn.simulationMode,
+				safeFlow === undefined ? 'transaction-sender' : 'external-executor',
+			)
+			: await formSendRawTransaction(ethereum, firstTxn.originalRequestParameters, firstTxn.transactionToSimulate.website, firstTxn.created, firstTxn.transactionIdentifier)
+		const refreshMessage = await refreshConfirmTransactionSimulation(
 			ethereum,
-			undefined,
+			tokenPriceService,
 			firstTxn.activeAddress,
-			firstTxn.transactionToSimulate.website,
-			firstTxn.originalRequestParameters,
-			firstTxn.created,
-			firstTxn.transactionIdentifier,
 			firstTxn.simulationMode,
-			safeFlow === undefined ? 'transaction-sender' : 'external-executor',
+			firstTxn.uniqueRequestIdentifier,
+			confirmationRunId,
+			transactionToSimulate,
+			proposalSafeTransaction,
 		)
-		: await formSendRawTransaction(ethereum, firstTxn.originalRequestParameters, firstTxn.transactionToSimulate.website, firstTxn.created, firstTxn.transactionIdentifier)
-	const refreshMessage = await refreshConfirmTransactionSimulation(
-		ethereum,
-		tokenPriceService,
-		firstTxn.activeAddress,
-		firstTxn.simulationMode,
-		firstTxn.uniqueRequestIdentifier,
-		confirmationRunId,
-		transactionToSimulate,
-		proposalSafeTransaction,
-	)
+		return { transactionToSimulate, refreshMessage }
+	})
 	if (refreshMessage === undefined) return
 	await updatePendingTransactionOrMessage(firstTxn.uniqueRequestIdentifier, async (transactionOrMessage) => {
 		switch (transactionOrMessage.type) {

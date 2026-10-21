@@ -277,14 +277,14 @@ test('uses zero-reimbursement Safe semantics in the pre-sign confirmation simula
 	}, 0n)
 	const safeTxHash = BigInt(getSafeTxHash(safeTx))
 	const { refreshConfirmTransactionSimulation } = await import('../../app/ts/background/confirmTransactionSimulation.js')
-	const { getNextConfirmationRunId } = await import('../../app/ts/background/confirmationSimulationRun.js')
-	const popupVisualisation = await refreshConfirmTransactionSimulation(
+	const { runConfirmationSimulation } = await import('../../app/ts/background/confirmationSimulationRun.js')
+	const popupVisualisation = await runConfirmationSimulation(async (confirmationRunId) => await refreshConfirmTransactionSimulation(
 		simulator.ethereum,
 		simulator.tokenPriceService,
 		activeAddress,
 		false,
 		uniqueRequestIdentifier,
-		getNextConfirmationRunId(),
+		confirmationRunId,
 		pendingTransaction.transactionToSimulate,
 		{
 			safeAddress: activeAddress,
@@ -295,7 +295,7 @@ test('uses zero-reimbursement Safe semantics in the pre-sign confirmation simula
 			safeTx,
 			executionGasLimit: 123_456n,
 		},
-	)
+	))
 
 	assert.equal(popupVisualisation?.statusCode, 'success')
 	if (popupVisualisation?.statusCode !== 'success') throw new Error('Safe confirmation simulation failed')
