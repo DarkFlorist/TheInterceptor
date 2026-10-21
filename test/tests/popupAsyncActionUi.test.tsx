@@ -8,6 +8,7 @@ import { PopupRequestsReplies } from '../../app/ts/types/interceptor-reply-messa
 import type { VisualizedPersonalSignRequestSafeTx } from '../../app/ts/types/personal-message-definitions.js'
 import type { SimulatedAndVisualizedTransaction } from '../../app/ts/types/visualizer-types.js'
 import type { PendingAccessRequest } from '../../app/ts/types/accessRequest.js'
+import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../app/ts/utils/constants.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
 import { clickRenderedElement, findRenderedElement, installDomMock } from './domMock.js'
 
@@ -174,6 +175,53 @@ function createSimulationFailureReply(transactionOrMessageIdentifier: bigint, er
 			errorType: 'Other' as const,
 			transactionOrMessageIdentifier,
 			errorMessage,
+		},
+	})
+}
+
+function createGnosisSimulationSuccessReply(messageIdentifier: bigint, recipientName: string) {
+	const message = createGnosisSafeMessageFixture(messageIdentifier)
+	const recipient = { ...message.to, name: recipientName }
+	const timestamp = new Date('2024-01-01T00:00:00.000Z')
+	const transaction: SimulatedAndVisualizedTransaction = {
+		website: message.website,
+		created: timestamp,
+		parsedInputData: { type: 'NonParsed', input: new Uint8Array() },
+		transactionIdentifier: messageIdentifier,
+		originalRequestParameters: { method: 'eth_sendTransaction', params: [{ from: gnosisSignerAddress.address, to: recipient.address, value: 1n, input: new Uint8Array() }] },
+		tokenBalancesAfter: [],
+		tokenPriceEstimates: [],
+		tokenPriceQuoteToken: undefined,
+		gasSpent: 21_000n,
+		realizedGasPrice: 1n,
+		quarantine: false,
+		quarantineReasons: [],
+		transactionStatus: 'Transaction Succeeded',
+		transaction: {
+			from: gnosisSignerAddress, to: recipient, rpcNetwork: message.rpcNetwork,
+			type: '1559', nonce: 0n, maxFeePerGas: 1n, maxPriorityFeePerGas: 1n,
+			gas: 21_000n, value: 1n, input: new Uint8Array(), hash: 1n,
+		},
+		events: [],
+	}
+	return serialize(SimulateExecutionReply, {
+		method: 'popup_simulateExecutionReply',
+		data: {
+			success: true,
+			transactionOrMessageIdentifier: messageIdentifier,
+			result: {
+				namedTokenIds: [],
+				addressBookEntries: [gnosisSignerAddress, recipient, { type: 'ERC20', name: 'Ether', symbol: 'ETH', decimals: 18n, address: ETHEREUM_LOGS_LOGGER_ADDRESS, entrySource: 'Interceptor' }],
+				tokenPriceEstimates: [],
+				visualizedSimulationState: {
+					success: true,
+					visualizedBlocks: [{ simulatedAndVisualizedTransactions: [transaction], visualizedPersonalSignRequests: [], blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' } }],
+				},
+				simulationState: {
+					success: true, simulationStateInput: [], simulatedBlocks: [], blockNumber: 1n,
+					blockTimestamp: timestamp, baseFeePerGas: 1n, simulationConductedTimestamp: timestamp, rpcNetwork: message.rpcNetwork,
+				},
+			},
 		},
 	})
 }
@@ -1207,6 +1255,71 @@ describe('popup async action UI', () => {
 		assert.equal(dom.document.body.textContent?.includes('Simulating Gnosis Safe execution failed because the background page did not return a reply.'), true)
 		dom.restore()
 	})
+
+	for (const completion of ['before edit', 'direct reply after edit', 'broadcast after edit']) {
+		test(`updates Gnosis outcome address names with simulation completion via ${ completion }`, async () => {
+			const renameWhilePending = completion !== 'before edit'
+			const modules = await modulesPromise
+			const dom = installDomMock()
+			const initialReply = createDeferred<unknown>()
+			let recipientName = 'Original recipient'
+			let simulationRequestCount = 0
+			runtimeSendMessage = async (message) => {
+				if (getRuntimeMethod(message) !== 'popup_simulateGnosisSafeTransaction') return undefined
+				simulationRequestCount += 1
+				return simulationRequestCount === 1 ? initialReply.promise : createGnosisSimulationSuccessReply(7n, recipientName)
+			}
+
+			try {
+				await act(() => {
+					render(h(modules.GnosisSafeVisualizer, {
+						gnosisSafeMessage: createGnosisSafeMessageFixture(7n),
+						activeAddress: gnosisSignerAddress.address,
+						renameAddressCallBack: () => undefined,
+						editEnsNamedHashCallBack: () => undefined,
+					}), dom.document.body)
+				})
+				const originalReply = createGnosisSimulationSuccessReply(7n, recipientName)
+				if (!renameWhilePending) {
+					await act(async () => {
+						initialReply.resolve(originalReply)
+						await settleAsyncUpdates()
+					})
+					assert.equal(findFirstByClass(dom.document.body, 'safe-outcome-panel')?.textContent?.includes(recipientName), true, dom.document.body.textContent)
+				}
+
+				await act(async () => {
+					recipientName = 'Renamed recipient'
+					await emitRuntimeMessage({ role: 'all', method: 'popup_addressBookEntriesChanged' })
+					await emitRuntimeMessage({ role: 'all', method: 'popup_addressBookEntriesChanged' })
+					await settleAsyncUpdates()
+				})
+				if (renameWhilePending) {
+					assert.equal(simulationRequestCount, 1)
+					await act(async () => {
+						if (completion === 'broadcast after edit') await emitRuntimeMessage({ role: 'all', ...originalReply })
+						else initialReply.resolve(originalReply)
+						await settleAsyncUpdates()
+					})
+				}
+				await act(async () => { await settleAsyncUpdates() })
+
+				if (completion === 'broadcast after edit') {
+					await act(async () => {
+						initialReply.resolve(originalReply)
+						await settleAsyncUpdates()
+					})
+				}
+				const outcomeText = findFirstByClass(dom.document.body, 'safe-outcome-panel')?.textContent ?? ''
+				assert.equal(outcomeText.includes('Renamed recipient'), true, outcomeText)
+				assert.equal(outcomeText.includes('Original recipient'), false, outcomeText)
+				assert.equal(simulationRequestCount, 2)
+			} finally {
+				await act(() => { render(null, dom.document.body) })
+				dom.restore()
+			}
+		})
+	}
 
 	test('shows the dapp-originated Gnosis Safe EIP-712 fields and hashes under the signature card extra details', async () => {
 		const modules = await modulesPromise
