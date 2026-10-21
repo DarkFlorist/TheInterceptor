@@ -44,6 +44,7 @@ import { AsyncActionButton, AsyncStatusIcon } from '../subcomponents/AsyncAction
 import type { SignerName } from '../../types/signerTypes.js'
 import { assertNever } from '../../utils/typescript.js'
 import { getSafeTransactionPendingFlow } from '../../safe/safePendingFlow.js'
+import { getSimulatedTransactionBatch, getTransactionBatchApprovalBlocker, getTransactionBatchErrorMessage, getTransactionBatchTitle, TransactionBatchCard } from './ConfirmTransactionBatch.js'
 
 type UnderTransactionsParams = {
 	pendingTransactionsAndSignableMessages: ReadonlySignal<PendingTransactionOrSignableMessage[]>
@@ -143,7 +144,7 @@ function UnderTransactions(param: UnderTransactionsParams) {
 			const style = `margin-bottom: 0px; scale: ${ Math.pow(0.95, nTx - index) }; position: relative; top: ${ (nTx - index) * HALF_HEADER_HEIGHT }px;`
 			const stackItemKey = pendingTransaction.type === 'Transaction'
 				? `transaction-${ pendingTransaction.transactionIdentifier.toString() }`
-				: `message-${ pendingTransaction.uniqueRequestIdentifier.requestId.toString() }`
+				: `${ pendingTransaction.type === 'TransactionBatch' ? 'batch' : 'message' }-${ pendingTransaction.uniqueRequestIdentifier.requestId.toString() }`
 			if (pendingTransaction.transactionOrMessageCreationStatus !== 'Simulated') return <div key = { stackItemKey } class = 'card' style = { style }>
 				<header class = 'card-header'>
 					<div class = 'card-header-icon unset-cursor'>
@@ -152,8 +153,17 @@ function UnderTransactions(param: UnderTransactionsParams) {
 						</span>
 					</div>
 					<p class = 'card-header-title' style = 'white-space: nowrap;'>
-						{ pendingTransaction.transactionOrMessageCreationStatus === 'FailedToSimulate' ? pendingTransaction.transactionToSimulate.error.message : 'Simulating...' }
+						{ pendingTransaction.transactionOrMessageCreationStatus === 'FailedToSimulate'
+							? pendingTransaction.type === 'TransactionBatch' ? getTransactionBatchErrorMessage(pendingTransaction) ?? 'Simulation failed' : pendingTransaction.transactionToSimulate.error.message
+							: 'Simulating...' }
 					</p>
+					<WebsiteOriginText website = { pendingTransaction.website } class = 'card-header-website' />
+				</header>
+				<div style = { absoluteStyle }></div>
+			</div>
+			if (pendingTransaction.type === 'TransactionBatch') return <div key = { stackItemKey } class = 'card' style = { style }>
+				<header class = 'card-header'>
+					<p class = 'card-header-title' style = 'white-space: nowrap;'>{ getTransactionBatchTitle(pendingTransaction) }</p>
 					<WebsiteOriginText website = { pendingTransaction.website } class = 'card-header-website' />
 				</header>
 				<div style = { absoluteStyle }></div>
@@ -197,6 +207,7 @@ const TransactionNames = (param: TransactionNamesParams) => {
 		if (currentPendingTransactionOrSignableMessage === undefined) return 'Loading...'
 		if (currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'Simulated') return getTransactionStatusLabel(currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus)
 		if (currentPendingTransactionOrSignableMessage.type === 'SignableMessage') return identifySignature(currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest).title
+		if (currentPendingTransactionOrSignableMessage.type === 'TransactionBatch') return getTransactionBatchTitle(currentPendingTransactionOrSignableMessage)
 		if (currentPendingTransactionOrSignableMessage.popupVisualisation.statusCode === 'failed') return 'Failing transaction'
 		const lastTx = currentPendingTransactionOrSignableMessage.popupVisualisation.statusCode !== 'success' || currentPendingTransactionOrSignableMessage.popupVisualisation.data.visualizedSimulationState.success === false ? undefined : getResultsForTransaction(currentPendingTransactionOrSignableMessage.popupVisualisation.data.visualizedSimulationState, currentPendingTransactionOrSignableMessage.transactionIdentifier)
 		if (lastTx === undefined) return 'Could not find transaction...'
@@ -583,6 +594,14 @@ export const CheckBoxes = (params: CheckBoxesParams) => {
 			}
 		</>
 	}
+	if (current.type === 'TransactionBatch') {
+		if (getTransactionBatchApprovalBlocker(current) !== 'requiresForceSend') return <></>
+		return <div style = 'display: grid'>
+			<div style = { margins }>
+				<ErrorCheckBox text = { 'I understand that some calls in this batch fail or have issues, but I want to send the whole batch anyway against Interceptors recommendations.' } checked = { params.forceSend } />
+			</div>
+		</div>
+	}
 	if (current?.popupVisualisation.statusCode !== 'success' || current.popupVisualisation.data.visualizedSimulationState.success === false) return <></>
 	const currentResults = getResultsForTransaction(current.popupVisualisation.data.visualizedSimulationState, current.transactionIdentifier)
 
@@ -756,9 +775,10 @@ function ConfirmationButtons({ currentPendingTransactionOrSignableMessage, rejec
 	if (currentPendingTransactionOrSignableMessage === undefined) return <RejectButton onClick = { reject } state = { rejectButtonState }/>
 	if (currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'Simulated') return <RejectButton onClick = { reject } state = { rejectButtonState }/>
 
-	const signerName = currentPendingTransactionOrSignableMessage.type === 'Transaction' ? currentPendingTransactionOrSignableMessage.popupVisualisation.data.signerName : currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest.signerName
+	const signerName = currentPendingTransactionOrSignableMessage.type === 'SignableMessage' ? currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest.signerName : currentPendingTransactionOrSignableMessage.popupVisualisation.data.signerName
 	const identify = () => {
 		if (currentPendingTransactionOrSignableMessage.type === 'SignableMessage') return identifySignature(currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest)
+		if (currentPendingTransactionOrSignableMessage.type === 'TransactionBatch') return { title: getTransactionBatchTitle(currentPendingTransactionOrSignableMessage), signingAction: 'Send batch', simulationAction: 'Simulate batch', rejectAction: 'Reject batch' }
 		const lastTx = currentPendingTransactionOrSignableMessage.popupVisualisation.statusCode !== 'success' || currentPendingTransactionOrSignableMessage.popupVisualisation.data.visualizedSimulationState.success === false ? undefined : getResultsForTransaction(currentPendingTransactionOrSignableMessage.popupVisualisation.data.visualizedSimulationState, currentPendingTransactionOrSignableMessage.transactionIdentifier)
 		if (lastTx === undefined) return undefined
 		return identifyTransaction(lastTx)
@@ -923,11 +943,14 @@ export function ConfirmTransaction() {
 
 	async function approveTransaction() {
 		if (currentPendingTransactionOrSignableMessage.value === undefined) throw new Error('dialogState is not set')
+		// A batch approval names the preview shown when the user clicked, so the background can refuse it if that preview was replaced in the meantime.
+		const displayedBatch = getSimulatedTransactionBatch(currentPendingTransactionOrSignableMessage.value)
+		const approvedConfirmationRunId = displayedBatch?.popupVisualisation.data.confirmationRunId
 		pendingTransactionAddedNotification.value = false
 		const currentWindow = await browser.windows.getCurrent()
 		checkAndThrowRuntimeLastError()
 		if (currentWindow.id === undefined) throw new Error('could not get our own Id!')
-		const deliveryError = await sendConfirmDialogMessage({ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: currentPendingTransactionOrSignableMessage.value.uniqueRequestIdentifier, action: 'accept' } })
+		const deliveryError = await sendConfirmDialogMessage({ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: currentPendingTransactionOrSignableMessage.value.uniqueRequestIdentifier, action: 'accept', ...(approvedConfirmationRunId === undefined ? {} : { approvedConfirmationRunId }) } })
 		if (deliveryError !== undefined) unexpectedError.value = deliveryError
 	}
 	async function rejectTransaction() {
@@ -941,6 +964,7 @@ export function ConfirmTransaction() {
 		const getPossibleErrorString = () => {
 			const pending = currentPendingTransactionOrSignableMessage.value
 			if (pending === undefined) return undefined
+			if (pending.type === 'TransactionBatch') return pending.transactionOrMessageCreationStatus === 'Crafting' ? undefined : getTransactionBatchErrorMessage(pending)
 			if (pending.transactionOrMessageCreationStatus === 'FailedToSimulate') return pending.transactionToSimulate.error.message
 			if (pending.transactionOrMessageCreationStatus !== 'Simulated') return undefined
 			if (pending.type !== 'Transaction') return undefined
@@ -996,6 +1020,10 @@ export function ConfirmTransaction() {
 		if (currentPendingTransactionOrSignableMessage.value === undefined) return true
 		if (currentPendingTransactionOrSignableMessage.value.transactionOrMessageCreationStatus !== 'Simulated') return true
 		if (shouldDisableConfirmForApprovalStatus(currentPendingTransactionOrSignableMessage.value.approvalStatus)) return true
+		if (currentPendingTransactionOrSignableMessage.value.type === 'TransactionBatch') {
+			const approvalBlocker = getTransactionBatchApprovalBlocker(currentPendingTransactionOrSignableMessage.value)
+			return approvalBlocker === 'notSimulated' || (approvalBlocker === 'requiresForceSend' && !forceSend.value)
+		}
 		if (currentPendingTransactionOrSignableMessage.value.type !== 'Transaction') {
 			return shouldDisableSignableMessageConfirm({
 				isValidMessage: currentPendingTransactionOrSignableMessage.value.visualizedPersonalSignRequest.isValidMessage === true,
@@ -1029,6 +1057,8 @@ export function ConfirmTransaction() {
 		if (current?.type === 'Transaction' && current.transactionOrMessageCreationStatus === 'Simulated' && current.popupVisualisation.statusCode === 'success') {
 			return current.popupVisualisation.data.addressBookEntries
 		}
+		const batch = getSimulatedTransactionBatch(current)
+		if (batch?.popupVisualisation.statusCode === 'success') return batch.popupVisualisation.data.addressBookEntries
 		return completeVisualizedSimulation.value.addressBookEntries
 	}
 
@@ -1122,6 +1152,16 @@ export function ConfirmTransaction() {
 									rpcConnectionStatus = { rpcConnectionStatus }
 									numberOfUnderTransactions = { underTransactions.value.length }
 								/>
+							: currentPendingTransactionOrSignableMessage.value.type === 'TransactionBatch' ?
+								<div style = { `position: relative; top: ${ underTransactions.value.length * -HALF_HEADER_HEIGHT }px` }>
+									<TransactionBatchCard
+										currentPendingTransaction = { currentPendingTransactionOrSignableMessage }
+										renameAddressCallBack = { renameAddressCallBack }
+										editEnsNamedHashCallBack = { editEnsNamedHashCallBack }
+										currentBlockNumber = { currentBlockNumber }
+										rpcConnectionStatus = { rpcConnectionStatus }
+									/>
+								</div>
 							: <>
 								<SignatureCard
 									visualizedPersonalSignRequest = { currentPendingTransactionOrSignableMessage.value.visualizedPersonalSignRequest }

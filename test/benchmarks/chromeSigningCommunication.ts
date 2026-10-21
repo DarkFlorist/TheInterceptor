@@ -1,4 +1,4 @@
-import { closeTarget, connectTarget, createTargetPage, launchChromeSession, waitForInterceptorExtensionServiceWorker, waitForPerformanceMarks, waitForRegisteredContentScripts, waitForTargetByUrl, waitForTargetGone } from './chromeHarness.js'
+import { closeTarget, connectTarget, createTargetPage, launchChromeSession, waitForBrowserTargets, waitForInterceptorExtensionServiceWorker, waitForPerformanceMarks, waitForRegisteredContentScripts, waitForTargetByUrl, waitForTargetGone } from './chromeHarness.js'
 import { startChromeCommunicationPageServer } from './chromeCommunicationPageServer.js'
 import type { CdpConnection } from './chromeHarness.js'
 
@@ -159,6 +159,22 @@ async function main() {
 
 			await waitForTargetGone(chrome.browserDebugPort, (target) => target.id === confirmTargetId, 10_000, 'completed confirmation popup')
 			confirmTargetId = undefined
+
+			await pageConnection.evaluate(`(() => {
+				globalThis.__sendCallsResult = { status: 'pending' }
+				globalThis.ethereum.request({ method: 'wallet_sendCalls', params: [{ version: '2.0.0', chainId: '0x1', atomicRequired: false, calls: [{ to: ${ JSON.stringify(FAKE_SIGNER_ADDRESS) }, value: '0x0' }, { to: ${ JSON.stringify(FAKE_SIGNER_ADDRESS) }, data: '0x' }] }] })
+					.then((result) => { globalThis.__sendCallsResult = { status: 'fulfilled', result } })
+					.catch((error) => { globalThis.__sendCallsResult = { status: 'rejected', error: error instanceof Error ? error.message : String(error), code: typeof error?.code === 'number' ? error.code : undefined } })
+			})()`)
+			// Signing mode refuses wallet_sendCalls without a confirmation, because a wallet may execute the batch atomically, unlike the separate transactions the Interceptor would preview.
+			await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__sendCallsResult?.status !== 'pending'`).catch(() => false), 10_000, 'wallet_sendCalls result')
+			const sendCallsResult = await pageConnection.evaluate<{ status?: string, code?: number }>('globalThis.__sendCallsResult')
+			if (sendCallsResult.status !== 'rejected' || sendCallsResult.code !== 4200) throw new Error(`Unexpected wallet_sendCalls result in signing mode: ${ JSON.stringify(sendCallsResult) }`)
+			const batchReachedSigner = await pageConnection.evaluate<boolean>(`globalThis.__fakeSignerRequests?.includes('wallet_sendCalls')`)
+			if (batchReachedSigner) throw new Error('wallet_sendCalls reached the signer in signing mode')
+			const confirmationTargets = (await waitForBrowserTargets(chrome.browserDebugPort)).filter((target) => target.url.startsWith(`chrome-extension://${ extensionId }/html3/confirmTransactionV3.html`))
+			if (confirmationTargets.length > 0) throw new Error('A confirmation window opened for wallet_sendCalls in signing mode')
+
 			await pageConnection.evaluate(`(() => {
 				globalThis.__signingResult = { status: 'pending' }
 				globalThis.ethereum.request({ method: 'eth_sendTransaction', params: [{ from: ${ JSON.stringify(FAKE_SIGNER_ADDRESS) }, to: ${ JSON.stringify(FAKE_SIGNER_ADDRESS) }, value: '0x0', data: '0x' }] })

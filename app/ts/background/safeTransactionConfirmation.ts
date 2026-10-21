@@ -7,7 +7,7 @@ import type { SafeTransactionSigningRequest } from '../types/safeTypes.js'
 import type { WebsiteCreatedEthereumTransaction, WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
 import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER } from '../utils/constants.js'
 import { getErrorMessage, reportLocalRecovery } from '../utils/errors.js'
-import { getPendingTransactionsAndMessages, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
+import { getPendingTransactionsAndMessagesExceptBatches, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
 import { reconcileStoredSafeState, type ReconciledStoredSafeState } from './safeStackState.js'
 import { createSafeContractValidationFailure, createSafeTransactionReviewRequest, createSafeTransactionSigningRequest, isSafeContractValidationFailure, isSafeOwnerValidationFailure } from '../safe/safeCore.js'
 import { getSafeExecutionReviewedState, getSafeExecutionSignerRoute, isSafeExecutionRequestForActiveSafe, prepareSafeExecutionSignerRoute } from '../safe/safeExecutionRouting.js'
@@ -253,7 +253,7 @@ async function createSafeSigningRequestForTransaction(
 
 	const { safeState, storedStack } = reconciledStoredSafeState
 	const firstUncommittedNonce = safeState.nonce + BigInt(storedStack?.transactions.length ?? 0)
-	const pendingSafeTransactionNonces = new Set((await getPendingTransactionsAndMessages()).flatMap((pending) => {
+	const pendingSafeTransactionNonces = new Set((await getPendingTransactionsAndMessagesExceptBatches()).flatMap((pending) => {
 		const flow = getSafePendingFlow(pending)
 		if (flow?.kind !== 'proposal') return []
 		const pendingRequest = flow.pending.safeTransaction

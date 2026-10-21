@@ -253,7 +253,11 @@ type CollapsibleStackCardParams = {
 	toggleCollapsed?: () => void
 }
 
-export function Transaction(param: TransactionVisualizationParameters & CollapsibleStackCardParams) {
+type TransactionCardOptions = {
+	gasLimitEditable?: boolean
+}
+
+export function Transaction(param: TransactionVisualizationParameters & CollapsibleStackCardParams & TransactionCardOptions) {
 	const removeTransactionOrSignedMessage = param.removeTransactionOrSignedMessage
 	const remove = removeTransactionOrSignedMessage === undefined ? undefined : () => {
 		return removeTransactionOrSignedMessage({ type: 'Transaction', transactionIdentifier: param.simTx.transactionIdentifier })
@@ -294,7 +298,7 @@ export function Transaction(param: TransactionVisualizationParameters & Collapsi
 					<TokenLogAnalysisCard simTx = { param.simTx } renameAddressCallBack = { param.renameAddressCallBack } />
 					<NonTokenLogAnalysisCard simTx = { param.simTx } renameAddressCallBack = { param.renameAddressCallBack } addressMetaData = { param.addressMetaData } editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }/>
 				</> }
-				<RawTransactionDetailsCard isRawTransaction = { param.simTx.originalRequestParameters.method === 'eth_sendRawTransaction' } transaction = { param.simTx.transaction } transactionIdentifier = { param.simTx.transactionIdentifier } parsedInputData = { param.simTx.parsedInputData } renameAddressCallBack = { param.renameAddressCallBack } gasSpent = { 'gasSpent' in param.simTx ? param.simTx.gasSpent : undefined } addressMetaData = { param.addressMetaData } />
+				<RawTransactionDetailsCard isRawTransaction = { param.simTx.originalRequestParameters.method === 'eth_sendRawTransaction' } transaction = { param.simTx.transaction } transactionIdentifier = { param.simTx.transactionIdentifier } parsedInputData = { param.simTx.parsedInputData } renameAddressCallBack = { param.renameAddressCallBack } gasSpent = { 'gasSpent' in param.simTx ? param.simTx.gasSpent : undefined } addressMetaData = { param.addressMetaData } gasLimitEditable = { param.gasLimitEditable } />
 				<SenderReceiver from = { param.simTx.transaction.from } to = { param.simTx.transaction.to } renameAddressCallBack = { param.renameAddressCallBack }/>
 
 				<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: auto auto;'>

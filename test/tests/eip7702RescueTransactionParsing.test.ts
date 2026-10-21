@@ -320,11 +320,13 @@ async function assertAcceptPreservesRawSignedTransaction(signedTransactionBytes:
 	try {
 		const [
 			{ browserStorageLocalSet2 },
-			{ formSendRawTransaction, resolvePendingTransactionOrMessage },
+			{ resolvePendingTransactionOrMessage },
+			{ formSendRawTransaction },
 			{ getInterceptorTransactionStack },
 		] = await Promise.all([
 			import('../../app/ts/utils/storageUtils.js'),
 			import('../../app/ts/background/windows/confirmTransaction.js'),
+			import('../../app/ts/background/transactionPreparation.js'),
 			import('../../app/ts/background/storageVariables.js'),
 		])
 		const request = SendRawTransactionParams.parse({
@@ -429,7 +431,7 @@ describe('EIP-7702 rescue transaction parsing', () => {
 		})
 		const browserMock = installBrowserMock()
 		try {
-			const { formEthSendTransaction } = await import('../../app/ts/background/windows/confirmTransaction.js')
+			const { formEthSendTransaction } = await import('../../app/ts/background/transactionPreparation.js')
 			const transaction = await formEthSendTransaction(
 				new EthereumClientService(createEip7702TransactionParsingRequestHandler(), async () => undefined, async () => undefined, rpcNetwork),
 				undefined,
@@ -490,7 +492,7 @@ describe('EIP-7702 rescue transaction parsing', () => {
 		assert.equal('authority' in parsedAuthorization, false)
 		const browserMock = installBrowserMock()
 		try {
-			const { formEthSendTransaction } = await import('../../app/ts/background/windows/confirmTransaction.js')
+			const { formEthSendTransaction } = await import('../../app/ts/background/transactionPreparation.js')
 			const transaction = await formEthSendTransaction(
 				new EthereumClientService(createEip7702TransactionParsingRequestHandler(), async () => undefined, async () => undefined, rpcNetwork),
 				undefined,
@@ -519,7 +521,7 @@ describe('EIP-7702 rescue transaction parsing', () => {
 	test('formEthSendTransaction explains omitted-gas native balance shortfalls and preserves unrelated failures', async () => {
 		const browserMock = installBrowserMock()
 		try {
-			const { formEthSendTransaction } = await import('../../app/ts/background/windows/confirmTransaction.js')
+			const { formEthSendTransaction } = await import('../../app/ts/background/transactionPreparation.js')
 			const sender = 0x0000000000000000000000000000000000000001n
 			const value = 2n * 10n ** 18n
 			const params = SendTransactionParams.parse({
