@@ -167,12 +167,16 @@ test('forwards the approved request, not a replacement that reuses its request i
 		const approval = decide({ action: 'accept' }, instanceId)
 		await waitUntil(() => approvalPaused)
 
-		// The user closes the confirmation window, which rejects the approved request, and the page sends a different message under the same id.
-		await modules.onCloseWindowOrTab(pendingMessage.popupOrTabId, simulator.ethereum, simulator.tokenPriceService, websiteTabConnections)
+		// The user closes the confirmation window, which rejects the approved request, and the page then sends a different message under the same id. Resolutions of one request run one at a time, so the close may finish before or after the held approval.
 		const replacementParameters = { method: 'personal_sign' as const, params: ['Replacement message', signerAddress] as const }
-		await modules.appendPendingTransactionOrMessage({ ...pendingMessage, instanceId: 'replacement instance', originalRequestParameters: replacementParameters, signedMessageTransaction: { ...pendingMessage.signedMessageTransaction, originalRequestParameters: replacementParameters } })
+		const closeThenReplace = (async () => {
+			await modules.onCloseWindowOrTab(pendingMessage.popupOrTabId, simulator.ethereum, simulator.tokenPriceService, websiteTabConnections)
+			await modules.appendPendingTransactionOrMessage({ ...pendingMessage, instanceId: 'replacement instance', originalRequestParameters: replacementParameters, signedMessageTransaction: { ...pendingMessage.signedMessageTransaction, originalRequestParameters: replacementParameters } })
+		})()
+		await new Promise((resolve) => setTimeout(resolve, 20))
 		resumeApproval()
 		await approval
+		await closeThenReplace
 
 		const forwardedParameters = postedMessages.filter(isForwardToSigner).map((message) => isRecord(message) ? message.params : undefined)
 		assert.ok(forwardedParameters.length > 0)
