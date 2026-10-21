@@ -428,3 +428,46 @@ for (const { branch, reply, fromReplacedConnection } of signerReplyCases) {
 		assert.equal(pending[0]?.approvalStatus.status, branch === 'user rejected' ? 'WaitingForUser' : 'SignerError')
 	})
 }
+
+test('a metadata refresh that finishes after the request was approved keeps it waiting for the signer, so the wallet reply resolves it once', async () => {
+	const messagesPostedToPage: unknown[] = []
+	const connections = await startPageConnection(messagesPostedToPage)
+	await sendTransactionFromPage(connections, 0n)
+	const pause = pauseFirstRpcRequest('eth_getCode')
+	try {
+		const refresh = modules.refreshPopupConfirmTransactionMetadata(simulator.ethereum, simulator.tokenPriceService, undefined)
+		await waitUntilReached(pause.reached, refresh, 'reaching the paused RPC request')
+		await approveAndForwardToSigner(connections)
+		pause.release()
+		await refresh
+		assert.equal((await getOnlyPendingRequest()).approvalStatus.status, 'WaitingForSigner')
+
+		await sendSignerReplyToPage(connections, signerReplies[0].reply)
+
+		assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+		const transactionHashReplies = messagesPostedToPage.filter((message) => isRecord(message) && message.requestId === pageRequestIdentifier.requestId && message.result === SIGNED_TRANSACTION_HASH)
+		assert.equal(transactionHashReplies.length, 1)
+	} finally {
+		pause.restore()
+	}
+})
+
+test('a metadata refresh does not store its visualisation over a re-simulation stored while it ran', async () => {
+	const connections = await startPageConnection()
+	await sendTransactionFromPage(connections, 0n)
+	const pause = pauseFirstRpcRequest('eth_getCode')
+	try {
+		const refresh = modules.refreshPopupConfirmTransactionMetadata(simulator.ethereum, simulator.tokenPriceService, undefined)
+		await waitUntilReached(pause.reached, refresh, 'reaching the paused RPC request')
+		// A simulation run is told apart by its timestamps, so the re-simulation starts a few milliseconds after the first run.
+		await Bun.sleep(5)
+		await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
+		const resimulated = await getOnlyPendingRequest()
+		pause.release()
+		await refresh
+
+		assert.deepEqual(await getOnlyPendingRequest(), resimulated)
+	} finally {
+		pause.restore()
+	}
+})

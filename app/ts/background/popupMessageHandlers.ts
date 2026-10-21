@@ -72,6 +72,12 @@ type TimestampedPopupVisualisation = {
 
 const getSimulationConductedTimestamp = (popupVisualisation: TimestampedPopupVisualisation) => popupVisualisation.data.simulationState.simulationConductedTimestamp
 
+type SimulationRunVisualisation = TimestampedPopupVisualisation & { data: { simulationStartedTimestamp: Date } }
+
+// A simulation run is identified by when it started and when it was conducted, so a re-simulation stored meanwhile counts as a different run.
+const isSameSimulationRun = (current: SimulationRunVisualisation, other: SimulationRunVisualisation) => current.data.simulationStartedTimestamp.getTime() === other.data.simulationStartedTimestamp.getTime()
+	&& getSimulationConductedTimestamp(current).getTime() === getSimulationConductedTimestamp(other).getTime()
+
 const formatCaughtErrorMessage = (error: unknown) => getErrorMessage(error) ?? 'Unknown error'
 
 const importSimulationStackSuccess = (): ImportSimulationStackReply => ({ type: 'ImportSimulationStackReply', ok: true })
@@ -569,17 +575,18 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 		}
 		case 'Transaction': {
 			if (first.transactionOrMessageCreationStatus !== 'Simulated' || first.popupVisualisation.statusCode === 'failed') return
+			const visualisedRun = first.popupVisualisation
 			try {
-				const visualizedSimulationState = await visualizeSimulatorState(first.popupVisualisation.data.simulationState, ethereum, tokenPriceService, requestAbortController)
-				const updatedFirst = modifyObject(first,
-					{
-						popupVisualisation: {
-							statusCode: 'success',
-							data: modifyObject(first.popupVisualisation.data, { ...visualizedSimulationState })
-						}
-					})
-				// The page may have replaced the visualised request meanwhile with a new request under the same request id; then store nothing.
-				if (!await updatePendingTransactionOrMessageInstance(first, async () => updatedFirst)) return
+				const visualizedSimulationState = await visualizeSimulatorState(visualisedRun.data.simulationState, ethereum, tokenPriceService, requestAbortController)
+				const popupVisualisation = { statusCode: 'success' as const, data: modifyObject(visualisedRun.data, { ...visualizedSimulationState }) }
+				let visualisationStored = false
+				// Only the visualisation is replaced, on the request as it is stored now, so an approval or other change made while this ran is kept. Nothing is stored if the page replaced the request under the same request id, or if it was re-simulated meanwhile.
+				await updatePendingTransactionOrMessageInstance(first, async (current) => {
+					if (current.type !== 'Transaction' || current.transactionOrMessageCreationStatus !== 'Simulated' || !isSameSimulationRun(current.popupVisualisation, visualisedRun)) return undefined
+					visualisationStored = true
+					return modifyObject(current, { popupVisualisation })
+				})
+				if (!visualisationStored) return
 				const message: UpdateConfirmTransactionDialog = {
 					method: 'popup_update_confirm_transaction_dialog' as const,
 					data: {

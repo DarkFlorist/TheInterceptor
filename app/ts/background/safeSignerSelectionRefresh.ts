@@ -347,6 +347,17 @@ function mergeSafeSignerSelectionRefresh(
 	return current
 }
 
+// Stores a Gnosis Safe confirmation refresh on the request as it is stored now: only the Safe fields and approval status the refresh rebuilt, so other changes made meanwhile are kept. A request forwarded to the signer meanwhile is left for the signer's reply. Returns whether the refresh was stored.
+export async function persistSafeConfirmationRefresh(refreshed: PendingTransactionOrSignableMessage) {
+	let persisted = false
+	await updatePendingTransactionOrMessageInstance(refreshed, async (current) => {
+		if (current.approvalStatus.status === 'WaitingForSigner') return undefined
+		persisted = true
+		return mergeSafeSignerSelectionRefresh(current, refreshed)
+	})
+	return persisted
+}
+
 type RefreshDirectSafeExecutionSimulation = (
 	pending: PendingTransactionOrSignableMessage,
 ) => Promise<PendingTransactionOrSignableMessage>
