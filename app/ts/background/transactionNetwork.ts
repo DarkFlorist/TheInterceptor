@@ -41,7 +41,7 @@ async function readRequestedNetworkCheck(ethereum: EthereumClientService, pendin
 	}
 }
 
-// Reads the active network until it is still the stored active network when checked, then either refuses or calls proceed in the same synchronous step as the passing check. A passing check means the stored active network, the client and the stored preview match the requested network at that step; it cannot tell which network an external wallet signs on, because the forwarded request carries no chain id and a wallet can switch networks before the Interceptor learns of it. Signable messages carry no requested network, so they are never refused. The guarded writes below and the guarded delivery in messageSending.ts pass their own write or post as proceed, so their callers pass data only.
+// Reads the active network until it is still the stored active network when checked, then either refuses or calls proceed in the same synchronous step as the passing check. A passing check means the stored active network, the client and the stored preview match the requested network at that step; it cannot tell which network an external wallet signs on, because the forwarded request carries no chain id and a wallet can switch networks before the Interceptor learns of it. Signable messages carry no requested network, so they are never refused. The guarded writes below and the guarded delivery in requestedNetworkForwarding.ts pass their own write or post as proceed, so their callers pass data only.
 export async function proceedOnRequestedNetwork<T>(ethereum: EthereumClientService, pending: PendingTransactionOrSignableMessage, proceed: () => T | Promise<T>): Promise<RequestedNetworkCommit<T>> {
 	while (true) {
 		const check = await readRequestedNetworkCheck(ethereum, pending)

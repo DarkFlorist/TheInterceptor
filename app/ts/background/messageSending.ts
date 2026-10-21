@@ -5,9 +5,6 @@ import { websiteSocketToString } from './backgroundUtils.js'
 import { serialize } from '../types/wire-types.js'
 import { isIgnorablePortLifecycleError } from './contentScriptPortLifecycle.js'
 import { attemptDeliveryAfterManifestV2Reconnect, attemptSocketDeliveryAfterManifestV2Reconnect } from './manifestV2Reconnect.js'
-import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import type { PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
-import { proceedOnRequestedNetwork, type RequestedNetworkCommit, type TransactionNetworkError } from './transactionNetwork.js'
 
 function postMessageToPortIfConnected(port: browser.runtime.Port, message: InterceptorMessageToInpage) {
 	try {
@@ -43,20 +40,6 @@ export function replyToInterceptedRequest(websiteTabConnections: WebsiteTabConne
 
 export async function replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections: WebsiteTabConnections, message: InterceptedRequestForward) {
 	return await attemptDeliveryAfterManifestV2Reconnect(websiteTabConnections, message, () => replyToInterceptedRequest(websiteTabConnections, message))
-}
-
-// Forwards a request to the signer like replyToInterceptedRequestAfterManifestV2Reconnect, but calls the requested-network check in the same synchronous step as every delivery attempt, including the retry after a Manifest V2 reconnect, which can outlast a network switch. A refused attempt ends the delivery and its refusal is returned.
-export async function forwardToSignerOnRequestedNetwork(websiteTabConnections: WebsiteTabConnections, ethereum: EthereumClientService, pending: PendingTransactionOrSignableMessage, message: InterceptedRequestForward): Promise<RequestedNetworkCommit<boolean | undefined>> {
-	const refusals: TransactionNetworkError[] = []
-	const delivered = await attemptDeliveryAfterManifestV2Reconnect(websiteTabConnections, message, async () => {
-		const attempt = await proceedOnRequestedNetwork(ethereum, pending, () => replyToInterceptedRequest(websiteTabConnections, message))
-		if (attempt.committed) return attempt.result
-		refusals.push(attempt.refusal)
-		// Only a false result makes the reconnect helper retry, so a refused attempt ends the delivery.
-		return undefined
-	})
-	const [refusal] = refusals
-	return refusal === undefined ? { committed: true, result: delivered } : { committed: false, refusal }
 }
 
 export function sendSubscriptionReplyOrCallBackToPort(port: browser.runtime.Port, message: SubscriptionReplyOrCallBack) {

@@ -574,7 +574,7 @@ test('a network switch while the website connection is re-established keeps the 
 
 test('every guarded write and delivery starts in the same synchronous step as its network check', async () => {
 	const { updateInterceptorTransactionStackOnRequestedNetwork, updateTransactionStateOnRequestedNetwork } = await import('../../app/ts/background/transactionNetwork.js')
-	const { forwardToSignerOnRequestedNetwork } = await import('../../app/ts/background/messageSending.js')
+	const { forwardToSignerOnRequestedNetwork } = await import('../../app/ts/background/requestedNetworkForwarding.js')
 	await setUpTransactionApprovalTest(false)
 	let workAfterCheck: Promise<unknown> = Promise.resolve()
 	// The network check reads the requested network, so this queues work right after the check, which only runs after the write or delivery if that started in the same synchronous step.
@@ -638,7 +638,7 @@ test('a network switch right after the network was read keeps the guarded stack 
 
 test('a network switch right after the network was read keeps the first delivery to the signer from being posted', async () => {
 	const { postedMessages, websiteTabConnections } = await setUpTransactionApprovalTest(false)
-	const { forwardToSignerOnRequestedNetwork } = await import('../../app/ts/background/messageSending.js')
+	const { forwardToSignerOnRequestedNetwork } = await import('../../app/ts/background/requestedNetworkForwarding.js')
 
 	await switchNetworkAfterSettingsRead(1)
 	const forwarding = await forwardToSignerOnRequestedNetwork(websiteTabConnections, simulator.ethereum, pendingTransaction, { ...pendingTransaction.originalRequestParameters, type: 'forwardToSigner', uniqueRequestIdentifier })
@@ -649,7 +649,7 @@ test('a network switch right after the network was read keeps the first delivery
 
 test('a network switch right after the network was read keeps the retried delivery to the signer from being posted', async () => {
 	const { websiteTabConnections } = await setUpTransactionApprovalTest(false)
-	const { forwardToSignerOnRequestedNetwork } = await import('../../app/ts/background/messageSending.js')
+	const { forwardToSignerOnRequestedNetwork } = await import('../../app/ts/background/requestedNetworkForwarding.js')
 	const socketKey = modules.websiteSocketToString(socket)
 	const connectPort = (port: browser.runtime.Port) => websiteTabConnections.set(socket.tabId, { connections: { [socketKey]: { port, socket, websiteOrigin: website.websiteOrigin, approved: true, wantsToConnect: true } } })
 	const disconnectedPort = createDisconnectedPort()

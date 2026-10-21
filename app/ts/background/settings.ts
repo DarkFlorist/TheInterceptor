@@ -4,7 +4,7 @@ import { Semaphore } from '../utils/semaphore.js'
 import type { EthereumAddress } from '../types/wire-types.js'
 import type { Website, WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import type { BlockExplorer, RpcNetwork } from '../types/rpc.js'
-import { type RichListElement, browserStorageLocalGet, browserStorageLocalSafeParse, browserStorageLocalSet } from '../utils/storageUtils.js'
+import { type RichListElement, beginActiveNetworkRead, browserStorageLocalGet, browserStorageLocalSafeParse, browserStorageLocalSet, browserStorageLocalSetActiveNetwork } from '../utils/storageUtils.js'
 import { getUserAddressBookEntries, updateUserAddressBookEntries } from './storageVariables.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
@@ -55,20 +55,10 @@ type StartupStorageDefaults = {
 	signingAddressPreferences: SigningAddressPreferences
 }
 
-// Every write of the active network, whether a network switch, a settings import or the repair of a corrupt stored value, runs through trackActiveNetworkWrite, which counts the writes that started and finished. The counts cover writes made in the background, where readActiveNetworkSnapshot runs; a page context, such as the popup, runs its own copy of this module whose counts the background never sees, so page code reads the network with getActiveRpcNetworkWithoutRepair and never writes it, which pageContextSettingsImports.test.ts checks.
-let activeNetworkWritesStarted = 0
-let activeNetworkWritesFinished = 0
+// Every write of the active network, whether a network switch, a settings import or the repair of a corrupt stored value, goes through browserStorageLocalSetActiveNetwork, the only storage setter whose type accepts the key, which counts it for readActiveNetworkSnapshot. Types cannot tell which bundle a module runs in: a page context, such as the popup, runs its own copy of storageUtils.ts and this module, whose counts the background never sees, so page code reads the network with getActiveRpcNetworkWithoutRepair and never writes it, which pageContextSettingsImports.test.ts checks.
+type StartupStorageKeyOtherThanActiveNetwork = Exclude<keyof StartupStorageDefaults, 'activeRpcNetwork'>
 
-async function trackActiveNetworkWrite<T>(write: () => Promise<T>) {
-	activeNetworkWritesStarted += 1
-	try {
-		return await write()
-	} finally {
-		activeNetworkWritesFinished += 1
-	}
-}
-
-async function getParsedStorageValueOrDefaultFromItems<Key extends keyof StartupStorageDefaults>(storedItems: Readonly<Record<string, unknown>>, key: Key, defaultValue: StartupStorageDefaults[Key]): Promise<StartupStorageDefaults[Key]> {
+async function getParsedStorageValueOrDefaultFromItems<Key extends StartupStorageKeyOtherThanActiveNetwork>(storedItems: Readonly<Record<string, unknown>>, key: Key, defaultValue: StartupStorageDefaults[Key]): Promise<StartupStorageDefaults[Key]> {
 	const rawValue = storedItems[key]
 	const storedItem = hasOwnKey(storedItems, key) ? { [key]: rawValue } : {}
 	const parsedValue: Readonly<Partial<StartupStorageDefaults>> | undefined = browserStorageLocalSafeParse(storedItem)
@@ -76,14 +66,23 @@ async function getParsedStorageValueOrDefaultFromItems<Key extends keyof Startup
 	if (rawValue === undefined) return defaultValue
 	console.warn(`${ key } was corrupt:`)
 	console.warn(rawValue)
-	const repair = async () => await browserStorageLocalSet({ [key]: defaultValue } as unknown as Parameters<typeof browserStorageLocalSet>[0])
-	// Repairing the active network writes it, so the repair is counted like a network switch.
-	if (key === 'activeRpcNetwork') await trackActiveNetworkWrite(repair)
-	else await repair()
+	await browserStorageLocalSet({ [key]: defaultValue } as unknown as Parameters<typeof browserStorageLocalSet>[0])
 	return defaultValue
 }
 
-async function getParsedStorageValueOrDefault<Key extends keyof StartupStorageDefaults>(key: Key, defaultValue: StartupStorageDefaults[Key]): Promise<StartupStorageDefaults[Key]> {
+// Reads the active network like getParsedStorageValueOrDefaultFromItems reads the other settings, but repairs a corrupt stored value through browserStorageLocalSetActiveNetwork.
+async function getActiveRpcNetworkOrRepairFromItems(storedItems: Readonly<Record<string, unknown>>, defaultRpcNetwork: RpcNetwork): Promise<RpcNetwork> {
+	const { activeRpcNetwork: rawValue } = storedItems
+	const storedNetwork = browserStorageLocalSafeParse(hasOwnKey(storedItems, 'activeRpcNetwork') ? { activeRpcNetwork: rawValue } : {})?.activeRpcNetwork
+	if (storedNetwork !== undefined) return storedNetwork
+	if (rawValue === undefined) return defaultRpcNetwork
+	console.warn('activeRpcNetwork was corrupt:')
+	console.warn(rawValue)
+	await browserStorageLocalSetActiveNetwork({ activeRpcNetwork: defaultRpcNetwork })
+	return defaultRpcNetwork
+}
+
+async function getParsedStorageValueOrDefault<Key extends StartupStorageKeyOtherThanActiveNetwork>(key: Key, defaultValue: StartupStorageDefaults[Key]): Promise<StartupStorageDefaults[Key]> {
 	return await getParsedStorageValueOrDefaultFromItems(await browser.storage.local.get(key), key, defaultValue)
 }
 
@@ -105,7 +104,7 @@ export async function getSettings() : Promise<Settings> {
 	const useSignersAddressAsActiveAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'useSignersAddressAsActiveAddress', false))
 	const websiteAccessPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'websiteAccess', []).then(sanitizeWebsiteAccess))
 	const simulationModePromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'simulationMode', defaultSimulationMode))
-	const activeRpcNetworkPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'activeRpcNetwork', defaultRpcs[0]))
+	const activeRpcNetworkPromise = silenceChromeUnCaughtPromise(getActiveRpcNetworkOrRepairFromItems(storedItems, defaultRpcs[0]))
 	const [activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode] = await Promise.all([
 		activeSimulationAddressPromise,
 		activeSigningSafeAddressPromise,
@@ -133,10 +132,9 @@ export type ActiveNetworkSnapshot = {
 
 // Reads the active network together with a synchronous check of whether it is still current, for a reader that must act on the network that is stored when it acts.
 export async function readActiveNetworkSnapshot(): Promise<ActiveNetworkSnapshot> {
-	const writesStartedBeforeRead = activeNetworkWritesStarted
-	const writeRunningWhenReadStarted = activeNetworkWritesStarted !== activeNetworkWritesFinished
+	const isStillCurrent = beginActiveNetworkRead()
 	const { activeRpcNetwork } = await getSettings()
-	return { activeRpcNetwork, isStillCurrent: () => !writeRunningWhenReadStarted && activeNetworkWritesStarted === writesStartedBeforeRead }
+	return { activeRpcNetwork, isStillCurrent }
 }
 
 export const setPage = async (openedPageV2: Page) => await browserStorageLocalSet({ openedPageV2 })
@@ -233,25 +231,27 @@ type SimulationModeChanges = {
 function getSimulationModeStorageUpdate(changes: SimulationModeChanges) {
 	return {
 		simulationMode: changes.simulationMode,
-		...changes.rpcNetwork ? { activeRpcNetwork: changes.rpcNetwork }: {},
 		...'activeSimulationAddress' in changes ? { independentActiveSimulationAddress: changes.activeSimulationAddress } : {},
 		...'activeSigningAddress' in changes ? { activeSigningAddress: changes.activeSigningAddress }: {},
 		...'activeSigningSafeAddress' in changes ? { activeSigningSafeAddress: changes.activeSigningSafeAddress }: {},
 	}
 }
 
-// Only changes that name a network write the active network, so only those are counted.
-const writeSimulationModeChanges = async <T>(changes: SimulationModeChanges, write: () => Promise<T>) => changes.rpcNetwork === undefined ? await write() : await trackActiveNetworkWrite(write)
+// Changes that name a network write it with the rest of the update through browserStorageLocalSetActiveNetwork, the only setter of the active network.
+async function writeSimulationModeUpdate(update: Parameters<typeof browserStorageLocalSet>[0], rpcNetwork: RpcNetwork | undefined) {
+	if (rpcNetwork === undefined) return await browserStorageLocalSet(update)
+	return await browserStorageLocalSetActiveNetwork({ ...update, activeRpcNetwork: rpcNetwork })
+}
 
 export async function changeSimulationMode(changes: SimulationModeChanges) {
-	return await writeSimulationModeChanges(changes, async () => await browserStorageLocalSet(getSimulationModeStorageUpdate(changes)))
+	return await writeSimulationModeUpdate(getSimulationModeStorageUpdate(changes), changes.rpcNetwork)
 }
 
 async function replaceModeAndSigningPreferencesForImport(changes: SimulationModeChanges, signingAddressPreferences: SigningAddressPreferences) {
-	return await signingAddressPreferencesSemaphore.execute(async () => await writeSimulationModeChanges(changes, async () => await browserStorageLocalSet({
+	return await signingAddressPreferencesSemaphore.execute(async () => await writeSimulationModeUpdate({
 		...getSimulationModeStorageUpdate(changes),
 		signingAddressPreferences,
-	})))
+	}, changes.rpcNetwork))
 }
 
 const websiteAccessSemaphore = new Semaphore(1)
