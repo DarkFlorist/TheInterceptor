@@ -25,6 +25,7 @@ import { getErrorMessage, JsonRpcResponseError, reportUnexpectedError, isExpecte
 import type { PendingTransactionOrSignableMessage, PopupPendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
 import type { SignMessageParams } from '../../types/jsonRpc-signing-types.js'
 import type { InterceptedRequestForward } from '../../types/interceptor-messages.js'
+import type { SimulationStackChange } from '../../types/visualizer-types.js'
 import type { SafeSignerErrorDetails } from '../../types/safeTypes.js'
 import { craftPersonalSignPopupMessage } from './personalSign.js'
 import { getSettings } from '../settings.js'
@@ -44,7 +45,7 @@ import { prepareSafeTransactionConfirmation } from '../safeTransactionConfirmati
 import { createSafeMessageCoSignSnapshot, getPendingSafeSignerAddress, getSafeSignerMismatchApprovalStatus, isExpectedSafeMessageCoSignSnapshotFailure, isSafeMessageAccountMismatchFailure, isSafeSignerSelectionFailure, resolveSafeConfirmation, SAFE_SIGNER_SELECTION_ERROR_CODE, type RefreshedSafeSignerSelection } from '../safeConfirmationResolver.js'
 import { createSafeOffChainMessageSnapshot, refreshAndPersistSafeSignerSelection } from '../safeSignerSelectionRefresh.js'
 import { getSafePendingFlow } from '../../safe/safePendingFlow.js'
-import { persistUnsignedSafeTransaction, resolveSafeSignerReply, showStoredSafeProposal } from '../safeConfirmationPersistence.js'
+import { persistUnsignedSafeTransaction, resolveSafeSignerReply } from '../safeConfirmationPersistence.js'
 import { getWalletSelectedAccount } from '../../utils/activeAddressSelection.js'
 import { createSafeSignerErrorStatus } from '../safeSignerErrors.js'
 
@@ -52,8 +53,27 @@ const pendingConfirmationSemaphore = new Semaphore(1)
 const pendingNoResponseRetryTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const NO_RESPONSE_RETRY_DELAY_MS = 50
 
-// How resolving a request changed the simulation stack, which decides the view work done once the website has its answer.
-type SimulationStackChange = 'changed' | 'unchanged' | 'safeProposalStored'
+// Shows a proposal that was just stored in the Gnosis Safe stack: the simulation is refreshed with it and the simulation stack window opens, where the user continues with the proposal.
+async function showStoredSafeProposal(ethereum: EthereumClientService, tokenPriceService: TokenPriceService) {
+	await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { invalidateOldState: true })
+	await openPopupOrTab({ url: getHtmlFile('simulationStack') })
+}
+
+// Shows how resolving a request changed the simulation stack. Every outcome is handled here, so a new outcome fails typecheck until it is given its view work.
+async function showSimulationStackChange(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, simulationStack: SimulationStackChange) {
+	switch (simulationStack) {
+		case 'unchanged': return
+		case 'changed': {
+			await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService)
+			return
+		}
+		case 'safeProposalStored': {
+			await showStoredSafeProposal(ethereum, tokenPriceService)
+			return
+		}
+		default: assertNever(simulationStack)
+	}
+}
 
 async function refreshDirectSafeExecutionSimulation(
 	ethereum: EthereumClientService,
@@ -317,11 +337,10 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 	}
 	const signerFacingRequest: SendTransactionParams | SendRawTransactionParams | SignMessageParams = safeResolution.signerFacingRequest
 		?? pendingTransactionOrMessage.originalRequestParameters
-	// Updates the confirmation window once the request has left the confirmation queue: the simulation stack view when approval changed the stack, the simulation stack window for a stored Gnosis Safe proposal, and the queue view, which focuses the website's tab or closes the window once the queue is empty. The website's answer never waits for this view work, so a failure in it is reported instead of reaching the caller.
+	// Updates the confirmation window once the request has left the confirmation queue: the view of how the simulation stack changed, and the queue view, which focuses the website's tab or closes the window once the queue is empty. The website's answer never waits for this view work, so a failure in it is reported instead of reaching the caller.
 	const updateViewAfterPendingRequestRemoved = async (simulationStack: SimulationStackChange) => {
 		try {
-			if (simulationStack === 'changed') await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService)
-			if (simulationStack === 'safeProposalStored') await showStoredSafeProposal(ethereum, tokenPriceService)
+			await showSimulationStackChange(ethereum, tokenPriceService, simulationStack)
 			if ((await getPendingTransactionsAndMessages()).length === 0) await tryFocusingTabOrWindow({ type: 'tab', id: pendingTransactionOrMessage.uniqueRequestIdentifier.requestSocket.tabId })
 			if (!(await updateConfirmTransactionView(ethereum, tokenPriceService))) await closePopupOrTabById(pendingTransactionOrMessage.popupOrTabId)
 		} catch(error: unknown) {

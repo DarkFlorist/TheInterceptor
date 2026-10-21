@@ -1,14 +1,11 @@
 import * as funtypes from 'funtypes'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import type { PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import type { SafeOwnerSignature, SafeStackTransaction, SafeTransactionSigningRequest } from '../types/safeTypes.js'
+import type { SimulationStackChange } from '../types/visualizer-types.js'
 import { getErrorMessage } from '../utils/errors.js'
 import { EthereumBytes32 } from '../types/wire-types.js'
-import { getHtmlFile } from './backgroundUtils.js'
 import { getSafeTransactionStacks, updateTransactionState } from './storageVariables.js'
-import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
-import { openPopupOrTab } from '../utils/popupOrTab.js'
 import { assertSafeContractStateUnchanged, createSafeContractValidationFailure, createSafeOwnerValidationFailure, createSafeOwnerValidator, getSafeContractSnapshot, isSafeContractValidationFailure, isSafeOwnerValidationFailure } from '../safe/safeCore.js'
 import { createSafeExecutionPreSimulationTransaction } from '../safe/safeSimulation.js'
 import { mapSafeTransactionMetadata, mergeSafeOwnerSignatures, reconcileSafeTransactionStack, reconcileSafeTransactionState } from '../safe/safeStack.js'
@@ -18,7 +15,7 @@ import { getSafePendingFlow } from '../safe/safePendingFlow.js'
 
 export type SafeSignerReplyResolution =
 	| { readonly status: 'not-safe' }
-	| { readonly status: 'success', readonly result: string, readonly simulationStack: 'safeProposalStored' | 'unchanged' }
+	| { readonly status: 'success', readonly result: string, readonly simulationStack: SimulationStackChange }
 	| { readonly status: 'error', readonly approvalStatus: SafeSignerErrorStatus }
 
 const signerError = (message: string): SafeSignerReplyResolution => ({
@@ -185,12 +182,6 @@ async function persistSafeTransaction(
 		return signerError(`Gnosis Safe proposal could not be persisted: ${ getErrorMessage(error) ?? 'The local Gnosis Safe proposal stack changed.' }`)
 	}
 	return { status: 'success', result: funtypes.String.parse(EthereumBytes32.serialize(safeSigningRequest.safeTxHash)), simulationStack: 'safeProposalStored' }
-}
-
-// Shows a proposal that was just stored in the Gnosis Safe stack: the simulation is refreshed with it and the simulation stack window opens. This is window work, so it runs only after the website has the proposal's hash.
-export async function showStoredSafeProposal(ethereum: EthereumClientService, tokenPriceService: TokenPriceService) {
-	await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { invalidateOldState: true })
-	await openPopupOrTab({ url: getHtmlFile('simulationStack') })
 }
 
 export async function persistUnsignedSafeTransaction(
