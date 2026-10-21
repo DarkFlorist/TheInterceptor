@@ -215,6 +215,7 @@ export async function loadModules() {
 		Multicall3ABI: constants.Multicall3ABI,
 		defaultActiveAddresses: settings.defaultActiveAddresses,
 		refreshPopupConfirmTransactionSimulation: popupMessageHandlers.refreshPopupConfirmTransactionSimulation,
+		refreshPopupConfirmTransactionMetadata: popupMessageHandlers.refreshPopupConfirmTransactionMetadata,
 		confirmDialog: popupMessageHandlers.confirmDialog,
 		getSafeSignerSelectionFromAccountRefresh: popupMessageHandlers.getSafeSignerSelectionFromAccountRefresh,
 		importSafeStack: popupMessageHandlers.importSafeStack,

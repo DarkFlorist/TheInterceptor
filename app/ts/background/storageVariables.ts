@@ -79,7 +79,42 @@ export async function updatePendingTransactionOrMessage(uniqueRequestIdentifier:
 	})
 }
 
-// For signer replies, which name only the request id. The wallet answers over the page's own connection, so the page owns that channel and could forge a reply for any of its ids; this is no defence against the page itself. It does make sure a reply only reaches the request under that id once it was forwarded to the signer, never a request the user has not approved, such as a newer request under a reused id.
+type PendingRequestInstance = Pick<PendingTransactionOrSignableMessage, 'uniqueRequestIdentifier' | 'instanceId'>
+
+export const isSamePendingRequestInstance = (first: PendingRequestInstance, second: PendingRequestInstance) => {
+	return first.instanceId === second.instanceId && doesUniqueRequestIdentifiersMatch(first.uniqueRequestIdentifier, second.uniqueRequestIdentifier)
+}
+
+// Updates only the pending request instance that was read earlier, so work that awaited in between never stores into a different request the page sent under the same request id. Returns whether that instance is still pending.
+export async function updatePendingTransactionOrMessageInstance(instance: PendingRequestInstance, update: (pendingTransactionOrMessage: PendingTransactionOrSignableMessage) => Promise<PendingTransactionOrSignableMessage | undefined>) {
+	let instanceIsPending = false
+	await updatePendingTransactionOrMessages(async (pendingTransactionsOrMessages) => {
+		const match = pendingTransactionsOrMessages.findIndex((pending) => isSamePendingRequestInstance(pending, instance))
+		if (match < 0) return pendingTransactionsOrMessages
+		const found = pendingTransactionsOrMessages[match]
+		if (found === undefined) return pendingTransactionsOrMessages
+		instanceIsPending = true
+		const updated = await update(found)
+		if (updated === undefined) return pendingTransactionsOrMessages
+		return replaceElementInReadonlyArray(pendingTransactionsOrMessages, match, updated)
+	})
+	return instanceIsPending
+}
+
+// Removes the pending request instance that was read earlier, only while it is still pending and isRemovable accepts it as stored now. beforeRemoval runs first under the same lock, so a terminal reply is queued only for the instance actually removed, and is stored before the removal. Returns whether the instance was removed.
+export async function removePendingTransactionOrMessageInstance(instance: PendingRequestInstance, isRemovable: (pendingTransactionOrMessage: PendingTransactionOrSignableMessage) => boolean, beforeRemoval: () => Promise<void>) {
+	let removed = false
+	await updatePendingTransactionOrMessages(async (pendingTransactionsOrMessages) => {
+		const found = pendingTransactionsOrMessages.find((pending) => isSamePendingRequestInstance(pending, instance))
+		if (found === undefined || !isRemovable(found)) return pendingTransactionsOrMessages
+		await beforeRemoval()
+		removed = true
+		return pendingTransactionsOrMessages.filter((pending) => !isSamePendingRequestInstance(pending, instance))
+	})
+	return removed
+}
+
+// For signer replies, which name only the request id. The wallet answers over the page's own connection, so the page owns that channel and could forge a reply for any of its ids; this is no defence against the page itself. It does make sure a reply only reaches the request under that id once it was forwarded to the signer, never a request the user has not approved, such as a newer request under a reused id. Work that read a pending request and writes back uses updatePendingTransactionOrMessageInstance.
 export async function updatePendingRequestWaitingForSigner(uniqueRequestIdentifier: UniqueRequestIdentifier, update: (pendingTransactionOrMessage: PendingTransactionOrSignableMessage) => Promise<PendingTransactionOrSignableMessage | undefined>) {
 	await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => pending.approvalStatus.status === 'WaitingForSigner' ? await update(pending) : undefined)
 }
