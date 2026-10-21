@@ -7,6 +7,8 @@ const confirmTransactionSource = await readSource('background/windows/confirmTra
 const confirmTransactionSimulationSource = await readSource('background/confirmTransactionSimulation.ts')
 const walletSendCallsConfirmationSource = await readSource('background/walletSendCallsConfirmation.ts')
 const walletSendCallsSource = await readSource('background/walletSendCalls.ts')
+const walletSendCallsBatchIdsSource = await readSource('background/walletSendCallsBatchIds.ts')
+const walletSendCallsBindingSource = await readSource('background/walletSendCallsBinding.ts')
 // The confirmation support that both confirmation flows share, one concern per module, and what each module owns.
 const confirmationSupportModules = {
 	'confirmationAdmissionLock.ts': ['runWithPendingConfirmationLock'],
@@ -100,8 +102,31 @@ test('the Gnosis Safe confirmation flow is typed without wallet_sendCalls batche
 
 test('batch ids are looked up only in the batch id records, not on simulation stack transactions', () => {
 	assert.doesNotMatch(visualizerTypesSource, /walletSendCallsBatchId/u)
-	assert.match(walletSendCallsSource, /updatePendingTransactionsAndWalletSendCallsBatchIds\(/u)
-	assert.doesNotMatch(walletSendCallsSource, /getPendingTransactionsAndMessages\(/u)
+	assert.match(walletSendCallsBatchIdsSource, /updatePendingTransactionsAndWalletSendCallsBatchIds\(/u)
+	assert.doesNotMatch(walletSendCallsBatchIdsSource, /getPendingTransactionsAndMessages\(/u)
+})
+
+const importedModules = (source: string) => [...source.matchAll(/^import [^\n]* from '([^']+)'/gmu)].map((match) => match[1]).filter((path): path is string => path !== undefined).sort()
+
+test('the batch id registry owns its records and their consistency with the queue and the stack, and depends only on storage', () => {
+	for (const name of ['getWalletSendCallsBatchId', 'getWalletSendCallTransactionIdentifier', 'isTransactionBatchOnStack', 'isWalletSendCallsIdInUse', 'addPendingTransactionBatch', 'releasePendingTransactionBatch', 'removeApprovedTransactionBatch', 'getWalletSendCallsBatchTransactionIdentifiers']) {
+		assert.match(walletSendCallsBatchIdsSource, new RegExp(`^export (?:const|async function|function) ${ name }\\b`, 'mu'), name)
+		for (const otherSource of [walletSendCallsSource, walletSendCallsBindingSource, walletSendCallsConfirmationSource]) assert.doesNotMatch(otherSource, new RegExp(`^export (?:const|async function|function) ${ name }\\b`, 'mu'), name)
+	}
+	assert.deepEqual(importedModules(walletSendCallsBatchIdsSource).filter((path) => path.startsWith('./')), ['./storageVariables.js'])
+	for (const recordStore of ['updatePendingTransactionsAndWalletSendCallsBatchIds', 'getPendingTransactionsAndWalletSendCallsBatchIds', 'getWalletSendCallsBatchIds']) {
+		assert.doesNotMatch(walletSendCallsSource, new RegExp(recordStore, 'u'), recordStore)
+		assert.doesNotMatch(walletSendCallsBindingSource, new RegExp(recordStore, 'u'), recordStore)
+	}
+})
+
+test('walletSendCalls.ts keeps only the EIP-5792 wire contract, and the admission binding has its own module', () => {
+	// The wire contract reads the simulated receipts for wallet_getCallsStatus and the registry for the calls of a batch id, and nothing about accounts, website access or settings.
+	assert.deepEqual(importedModules(walletSendCallsSource).filter((path) => !path.startsWith('../types/') && !path.startsWith('../utils/') && path !== 'funtypes'), ['../simulation/services/EthereumClientService.js', '../simulation/services/SimulationModeEthereumClientService.js', './walletSendCallsBatchIds.js'])
+	for (const name of ['lookUpWalletSendCallsAccount', 'getWalletSendCallsBindingError', 'getWalletSendCallsApprovalError', 'isEthereumClientOnBatchChain']) {
+		assert.match(walletSendCallsBindingSource, new RegExp(`^export (?:const|async function|function) ${ name }\\b`, 'mu'), name)
+		assert.doesNotMatch(walletSendCallsSource, new RegExp(`^export (?:const|async function|function) ${ name }\\b`, 'mu'), name)
+	}
 })
 
 test('the batch-free confirmation type is derived from the full union, and the queue is sorted into it exhaustively', () => {
@@ -110,9 +135,9 @@ test('the batch-free confirmation type is derived from the full union, and the q
 })
 
 test('wallet_sendCalls resolves and compares the active account with the shared rule', () => {
-	assert.equal(importsFrom(walletSendCallsSource, 'websiteActiveAddress.js'), true)
-	assert.match(walletSendCallsSource, /import \{ haveSameActiveAddressSettings \} from '\.\/backgroundUtils\.js'/u)
-	assert.doesNotMatch(walletSendCallsSource, /getActiveAddressForCurrentSignerState|const haveSameActiveAddressSettings|activeSimulationAddress/u)
+	assert.equal(importsFrom(walletSendCallsBindingSource, 'websiteActiveAddress.js'), true)
+	assert.match(walletSendCallsBindingSource, /import \{ haveSameActiveAddressSettings \} from '\.\/backgroundUtils\.js'/u)
+	for (const source of [walletSendCallsSource, walletSendCallsBindingSource]) assert.doesNotMatch(source, /getActiveAddressForCurrentSignerState|const haveSameActiveAddressSettings|activeSimulationAddress/u)
 	assert.doesNotMatch(backgroundSource, /function getActiveAddressForRequest/u)
 })
 
@@ -148,4 +173,16 @@ test('the appended gas estimate and simulation preparation fill RPC blocks by on
 	assert.doesNotMatch(appendedEstimateSource, /blockGasLimit - |lastRpcBlockGas \+ /u)
 	// The general estimate runs in a new block and carries none of the appended placement.
 	assert.doesNotMatch(generalEstimateSource, /appendToLastPrefixBlock|RpcBlock/u)
+})
+
+test('the simulation stack is written in one critical section', () => {
+	assert.equal(storageVariablesSource.match(/setLargeStateValue\('interceptorTransactionStack'/gu)?.length, 1)
+	assert.match(storageVariablesSource, /async function updateInterceptorTransactionStackOrRefuse</u)
+	for (const wrapper of ['updateInterceptorTransactionStack', 'updateInterceptorTransactionStackUnlessRefused']) {
+		const start = storageVariablesSource.search(new RegExp(`export async function ${ wrapper }[<(]`, 'u'))
+		assert.ok(start >= 0, wrapper)
+		const body = storageVariablesSource.slice(start, storageVariablesSource.indexOf('\n}\n', start))
+		assert.match(body, /await updateInterceptorTransactionStackOrRefuse</u, wrapper)
+		assert.doesNotMatch(body, /transactionStateSemaphore|assertUniqueInterceptorTransactionIds|setLargeStateValue/u, wrapper)
+	}
 })

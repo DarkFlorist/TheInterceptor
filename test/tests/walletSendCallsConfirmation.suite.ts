@@ -86,7 +86,7 @@ const getBatchIdRecords = async () => {
 }
 
 const isBatchIdInUse = async (batchId: string) => {
-	const { isWalletSendCallsIdInUse } = await import('../../app/ts/background/walletSendCalls.js')
+	const { isWalletSendCallsIdInUse } = await import('../../app/ts/background/walletSendCallsBatchIds.js')
 	return await isWalletSendCallsIdInUse(website.websiteOrigin, batchId)
 }
 

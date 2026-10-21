@@ -72,7 +72,7 @@ export async function getPendingTransactionsAndWalletSendCallsBatchIds(): Promis
 	return await pendingTransactionsSemaphore.execute(async () => ({ pendingTransactionsAndMessages: await readPendingTransactionsAndMessagesWithRecovery(), walletSendCallsBatchIds: await getWalletSendCallsBatchIds() }))
 }
 
-// Updates the confirmation queue and the wallet_sendCalls batch id records in one storage write, so a batch and its id record are added and removed together (see walletSendCalls.ts).
+// Updates the confirmation queue and the wallet_sendCalls batch id records in one storage write, so a batch and its id record are added and removed together (see walletSendCallsBatchIds.ts).
 export async function updatePendingTransactionsAndWalletSendCallsBatchIds(update: (current: PendingTransactionsAndWalletSendCallsBatchIds) => Promise<PendingTransactionsAndWalletSendCallsBatchIds>) {
 	await pendingTransactionsSemaphore.execute(async () => {
 		const pendingTransactionsAndMessages = await readPendingTransactionsAndMessagesWithRecovery()
@@ -431,27 +431,35 @@ export async function addEnsLabelHash(label: string) {
 
 const transactionStateSemaphore = new Semaphore(1)
 export const getInterceptorTransactionStack = async () => await getLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack) ?? { operations: [] }
-export async function updateInterceptorTransactionStack(updateFunc: (prevStack: InterceptorTransactionStack) => InterceptorTransactionStack): Promise<InterceptorTransactionStack> {
+// What an update of the simulation stack decides after reading it: the stack to write, or a refusal that leaves the stack as it is.
+type InterceptorTransactionStackUpdate<Refusal> =
+	| { readonly kind: 'write', readonly stack: InterceptorTransactionStack }
+	| { readonly kind: 'refuse', readonly refusal: Refusal }
+
+// The one critical section that writes the simulation stack: it reads the stack, lets decide pick what to write, checks the transaction ids and writes, all inside the stack's write lock, so no other stack update comes between the read and the write, and nothing is awaited between decide's last read and the write.
+async function updateInterceptorTransactionStackOrRefuse<Refusal>(decide: (prevStack: InterceptorTransactionStack) => Promise<InterceptorTransactionStackUpdate<Refusal>>): Promise<InterceptorTransactionStackUpdate<Refusal>> {
 	return await transactionStateSemaphore.execute(async () => {
-		const prevStack = await getInterceptorTransactionStack()
-		const interceptorTransactionStack = updateFunc(prevStack)
-		assertUniqueInterceptorTransactionIds(interceptorTransactionStack)
-		await setLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack, interceptorTransactionStack)
-		return interceptorTransactionStack
+		const update = await decide(await getInterceptorTransactionStack())
+		if (update.kind === 'refuse') return update
+		assertUniqueInterceptorTransactionIds(update.stack)
+		await setLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack, update.stack)
+		return update
 	})
 }
 
-// Reads the stack, then asks getRefusal about it as the last step before writing, all inside the stack's write lock, and writes nothing when it returns a refusal. No other stack update can come between, and nothing is awaited between getRefusal's last read and the write.
+export async function updateInterceptorTransactionStack(updateFunc: (prevStack: InterceptorTransactionStack) => InterceptorTransactionStack): Promise<InterceptorTransactionStack> {
+	const update = await updateInterceptorTransactionStackOrRefuse<never>(async (prevStack) => ({ kind: 'write', stack: updateFunc(prevStack) }))
+	if (update.kind === 'refuse') return assertNever(update.refusal)
+	return update.stack
+}
+
+// Asks getRefusal about the current stack as the last step before writing, and writes nothing when it returns a refusal.
 export async function updateInterceptorTransactionStackUnlessRefused<Refusal>(getRefusal: (currentStack: InterceptorTransactionStack) => Promise<Refusal | undefined>, updateFunc: (prevStack: InterceptorTransactionStack) => InterceptorTransactionStack): Promise<Refusal | undefined> {
-	return await transactionStateSemaphore.execute(async () => {
-		const prevStack = await getInterceptorTransactionStack()
+	const update = await updateInterceptorTransactionStackOrRefuse<Refusal>(async (prevStack) => {
 		const refusal = await getRefusal(prevStack)
-		if (refusal !== undefined) return refusal
-		const interceptorTransactionStack = updateFunc(prevStack)
-		assertUniqueInterceptorTransactionIds(interceptorTransactionStack)
-		await setLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack, interceptorTransactionStack)
-		return undefined
+		return refusal === undefined ? { kind: 'write', stack: updateFunc(prevStack) } : { kind: 'refuse', refusal }
 	})
+	return update.kind === 'refuse' ? update.refusal : undefined
 }
 
 export const getSafeTransactionStacks = async () => await getLargeStateValue('safeTransactionStacks', SafeTransactionStacks) ?? []

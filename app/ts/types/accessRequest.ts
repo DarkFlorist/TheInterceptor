@@ -203,7 +203,7 @@ export const PendingTransactionBatch = funtypes.Intersect(
 	),
 )
 
-// One wallet_sendCalls batch id that a website uses, with the calls that approving its batch adds to the simulation stack (see walletSendCalls.ts for when records are added and removed).
+// One wallet_sendCalls batch id that a website uses, with the calls that approving its batch adds to the simulation stack (see walletSendCallsBatchIds.ts for when records are added and removed).
 export type WalletSendCallsBatchIdRecord = funtypes.Static<typeof WalletSendCallsBatchIdRecord>
 export const WalletSendCallsBatchIdRecord = funtypes.ReadonlyObject({
 	websiteOrigin: funtypes.String,
