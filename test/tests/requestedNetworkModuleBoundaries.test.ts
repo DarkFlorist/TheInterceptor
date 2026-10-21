@@ -9,6 +9,8 @@ const transportModules = [backgroundModule('messageSending.ts'), backgroundModul
 const networkRuleModule = backgroundModule('transactionNetwork.ts')
 const forwardingModule = backgroundModule('requestedNetworkForwarding.ts')
 const networkPolicyModules = [networkRuleModule, forwardingModule]
+// storageUtils.ts owns the counted active-network writer and its freshness counters, so it counts as storage here.
+const storageModules = [backgroundModule('settings.ts'), backgroundModule('storageVariables.ts'), path.join(import.meta.dir, '..', '..', 'app', 'ts', 'utils', 'storageUtils.ts')]
 
 const listReached = (from: readonly string[], forbidden: readonly string[]) => from.flatMap((module) => [...getRuntimeModulesReachableFrom([module])]
 	.filter((reached) => forbidden.includes(reached))
@@ -18,7 +20,7 @@ const listReached = (from: readonly string[], forbidden: readonly string[]) => f
 test('the transport depends on no network policy or storage, and the network rule on no delivery', () => {
 	// The transport already reaches settings and storage indirectly through backgroundUtils.ts, so for those only its own imports are checked.
 	const directImportsOfPolicyOrStorage = transportModules.flatMap((module) => getRuntimeDependencies(module)
-		.filter((dependency) => [...networkPolicyModules, backgroundModule('settings.ts'), backgroundModule('storageVariables.ts')].includes(dependency.module))
+		.filter((dependency) => [...networkPolicyModules, ...storageModules].includes(dependency.module))
 		.map((dependency) => `${ path.basename(module) } imports ${ path.basename(dependency.module) }`))
 	assert.deepEqual(directImportsOfPolicyOrStorage, [])
 	assert.deepEqual(listReached(transportModules, networkPolicyModules), [])
