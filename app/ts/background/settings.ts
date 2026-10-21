@@ -130,10 +130,12 @@ export type ActiveNetworkSnapshot = {
 	readonly isStillCurrent: () => boolean
 }
 
-// Reads the active network together with a synchronous check of whether it is still current, for a reader that must act on the network that is stored when it acts.
+// Reads only the active network, repairing a corrupt stored value as getSettings does, together with a synchronous check of whether it is still current, for a reader that must act on the network that is stored when it acts.
 export async function readActiveNetworkSnapshot(): Promise<ActiveNetworkSnapshot> {
+	const defaultRpcNetwork = defaultRpcs[0]
+	if (defaultRpcNetwork === undefined) throw new Error('default rpc was missing')
 	const isStillCurrent = beginActiveNetworkRead()
-	const { activeRpcNetwork } = await getSettings()
+	const activeRpcNetwork = await getActiveRpcNetworkOrRepairFromItems(await browser.storage.local.get(['activeRpcNetwork']), defaultRpcNetwork)
 	return { activeRpcNetwork, isStillCurrent }
 }
 
