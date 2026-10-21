@@ -8,6 +8,8 @@ import type { RpcEntry } from '../../app/ts/types/rpc.js'
 const checksummedAddress = '0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B'
 const badChecksumAddress = '0xaB5801a7D398351b8bE11C439e05C5B3259aeC9B'
 const addressValue = 0xab5801a7d398351b8be11c439e05c5b3259aec9bn
+const otherAddress = '0x0000000000000000000000000000000000000123'
+const chainPrefixIssue = 'Chain prefix must be an EIP-3770 short name followed directly by the address (e.g. eth:0x...).'
 
 const rpcEntry: RpcEntry = {
 	name: 'Ethereum Mainnet',
@@ -161,7 +163,15 @@ describe('background handling of user-entered EIP-3770 addresses', () => {
 
 	test('reports an unsupported chain prefix form instead of the address length', async () => {
 		const { errorStates } = await validateAddressWindowState(`eth: ${ checksummedAddress }`)
-		assert.deepEqual(errorStates, [{ blockEditing: true, message: 'Chain prefix must be an EIP-3770 short name followed directly by the address (e.g. eth:0x...).' }])
+		assert.deepEqual(errorStates, [{ blockEditing: true, message: chainPrefixIssue }])
+	})
+
+	test('rejects an address-like chain prefix instead of validating the address after it', async () => {
+		for (const prefix of [`0X${ checksummedAddress.slice(2) }`, checksummedAddress.slice(2), checksummedAddress.slice(2).toLowerCase()]) {
+			const { errorStates, requestedCodeAddresses } = await validateAddressWindowState(`${ prefix }:${ otherAddress }`)
+			assert.deepEqual(errorStates, [{ blockEditing: true, message: chainPrefixIssue }], prefix)
+			assert.deepEqual(requestedCodeAddresses, [], prefix)
+		}
 	})
 
 	test('finds address-book entries by a pasted chain-specific address', async () => {

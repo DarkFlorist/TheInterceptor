@@ -3,8 +3,31 @@ import { describe, test } from 'bun:test'
 import { getIssueWithAddressString, getIssueWithUserEnteredAddress, parseUserEnteredAddress, removeEip3770ChainShortNameFromSearchQuery } from '../../app/ts/utils/addressValidation.js'
 
 const checksummedAddress = '0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B'
+const checksummedAddressHexDigits = checksummedAddress.slice(2)
 const badChecksumAddress = '0xaB5801a7D398351b8bE11C439e05C5B3259aeC9B'
 const addressValue = 0xab5801a7d398351b8be11c439e05c5b3259aec9bn
+const otherAddress = '0x0000000000000000000000000000000000000123'
+const chainPrefixIssue = 'Chain prefix must be an EIP-3770 short name followed directly by the address (e.g. eth:0x...).'
+
+// Prefixes that read like an address or other hex data. If any of them were dropped as a chain short name, `<prefix>:<otherAddress>` would show a known address first and resolve to `otherAddress`.
+const addressLikeChainPrefixes = [
+	checksummedAddress,
+	checksummedAddress.toLowerCase(),
+	`0X${ checksummedAddressHexDigits }`,
+	`0X${ checksummedAddressHexDigits.toLowerCase() }`,
+	`0X${ checksummedAddressHexDigits.toUpperCase() }`,
+	checksummedAddressHexDigits,
+	checksummedAddressHexDigits.toLowerCase(),
+	checksummedAddressHexDigits.toUpperCase(),
+	'0x',
+	'0X',
+	'0xAb58',
+	'0XAB58',
+	'0xab58g',
+	checksummedAddressHexDigits.slice(0, 32),
+	`${ checksummedAddressHexDigits.slice(0, 31) }g`,
+	`g${ checksummedAddressHexDigits.slice(0, 6) }`,
+]
 
 describe('address validation', () => {
 	test('accepts uniformly uppercase addresses while still checking mixed-case addresses', () => {
@@ -27,10 +50,27 @@ describe('parseUserEnteredAddress', () => {
 		assert.equal(parseUserEnteredAddress(`base-sep:${ checksummedAddress }`), addressValue)
 	})
 
-	test('accepts every short name allowed by the ethereum-lists/chains schema', () => {
-		assert.equal(parseUserEnteredAddress(`lightlink_phoenix:${ checksummedAddress }`), addressValue)
-		assert.equal(parseUserEnteredAddress(`tacchain_239-1:${ checksummedAddress }`), addressValue)
-		assert.equal(parseUserEnteredAddress(`${ 'a'.repeat(64) }:${ checksummedAddress }`), addressValue)
+	test('accepts the ethereum-lists/chains short-name forms in use', () => {
+		const registryShortNames = [
+			'oeth',
+			'matic',
+			'lightlink_phoenix',
+			'tacchain_239-1',
+			'_old_fire',
+			'OP',
+			'TelosEVM',
+			// Short names made only of hex digits stay valid while they are too short to read like an address.
+			'b3',
+			'dc',
+			'dffc',
+			// The longest run of hex digits in a registry short name (`babea`).
+			'Bobabeam',
+			'thebinaryholdings-mainnet',
+		]
+		for (const shortName of registryShortNames) {
+			assert.equal(parseUserEnteredAddress(`${ shortName }:${ checksummedAddress }`), addressValue, shortName)
+		}
+		assert.equal(parseUserEnteredAddress(`${ 'z'.repeat(32) }:${ checksummedAddress }`), addressValue)
 	})
 
 	test('trims surrounding whitespace before removing the chain short name', () => {
@@ -43,12 +83,15 @@ describe('parseUserEnteredAddress', () => {
 	test('rejects syntactically invalid chain short names', () => {
 		assert.equal(parseUserEnteredAddress(`:${ checksummedAddress }`), undefined)
 		assert.equal(parseUserEnteredAddress(`e.th:${ checksummedAddress }`), undefined)
-		assert.equal(parseUserEnteredAddress(`${ 'a'.repeat(65) }:${ checksummedAddress }`), undefined)
+		assert.equal(parseUserEnteredAddress(`${ 'z'.repeat(33) }:${ checksummedAddress }`), undefined)
 	})
 
 	test('rejects more than one chain short name', () => {
 		assert.equal(parseUserEnteredAddress(`eth:gno:${ checksummedAddress }`), undefined)
 		assert.equal(parseUserEnteredAddress(`eth:eth:${ checksummedAddress }`), undefined)
+		assert.equal(parseUserEnteredAddress(`eth::${ checksummedAddress }`), undefined)
+		assert.equal(parseUserEnteredAddress(`::${ checksummedAddress }`), undefined)
+		assert.equal(parseUserEnteredAddress(`eth:${ checksummedAddress }:`), undefined)
 	})
 
 	test('rejects a chain short name without an address', () => {
@@ -58,8 +101,11 @@ describe('parseUserEnteredAddress', () => {
 		assert.equal(parseUserEnteredAddress(`${ checksummedAddress }:`), undefined)
 	})
 
-	test('never treats a full address as a chain short name', () => {
-		assert.equal(parseUserEnteredAddress(`${ checksummedAddress }:0x0000000000000000000000000000000000000123`), undefined)
+	test('never treats an address or other hex data as a chain short name', () => {
+		for (const prefix of addressLikeChainPrefixes) {
+			assert.equal(parseUserEnteredAddress(`${ prefix }:${ otherAddress }`), undefined, prefix)
+			assert.equal(parseUserEnteredAddress(` ${ prefix }:${ checksummedAddress } `), undefined, prefix)
+		}
 	})
 
 	test('keeps the address checksum rules for prefixed addresses', () => {
@@ -70,8 +116,6 @@ describe('parseUserEnteredAddress', () => {
 })
 
 describe('getIssueWithUserEnteredAddress', () => {
-	const chainPrefixIssue = 'Chain prefix must be an EIP-3770 short name followed directly by the address (e.g. eth:0x...).'
-
 	test('accepts plain and chain-specific addresses', () => {
 		assert.equal(getIssueWithUserEnteredAddress(checksummedAddress), undefined)
 		assert.equal(getIssueWithUserEnteredAddress(` eth:${ checksummedAddress } `), undefined)
@@ -83,9 +127,16 @@ describe('getIssueWithUserEnteredAddress', () => {
 		assert.equal(getIssueWithUserEnteredAddress(`eth :${ checksummedAddress }`), chainPrefixIssue)
 		assert.equal(getIssueWithUserEnteredAddress(`:${ checksummedAddress }`), chainPrefixIssue)
 		assert.equal(getIssueWithUserEnteredAddress(`e.th:${ checksummedAddress }`), chainPrefixIssue)
+		assert.equal(getIssueWithUserEnteredAddress(`${ 'z'.repeat(33) }:${ checksummedAddress }`), chainPrefixIssue)
 		assert.equal(getIssueWithUserEnteredAddress(`eth:gno:${ checksummedAddress }`), chainPrefixIssue)
+		assert.equal(getIssueWithUserEnteredAddress(`eth::${ checksummedAddress }`), chainPrefixIssue)
 		assert.equal(getIssueWithUserEnteredAddress(`${ checksummedAddress }:`), chainPrefixIssue)
-		assert.equal(getIssueWithUserEnteredAddress(`${ checksummedAddress }:0x0000000000000000000000000000000000000123`), chainPrefixIssue)
+	})
+
+	test('reports an address-like chain prefix instead of validating the address after it', () => {
+		for (const prefix of addressLikeChainPrefixes) {
+			assert.equal(getIssueWithUserEnteredAddress(`${ prefix }:${ otherAddress }`), chainPrefixIssue, prefix)
+		}
 	})
 
 	test('keeps the address issues for the address after a valid chain prefix', () => {
@@ -105,6 +156,11 @@ describe('removeEip3770ChainShortNameFromSearchQuery', () => {
 		assert.equal(removeEip3770ChainShortNameFromSearchQuery('alice'), 'alice')
 		assert.equal(removeEip3770ChainShortNameFromSearchQuery('eth:alice'), 'eth:alice')
 		assert.equal(removeEip3770ChainShortNameFromSearchQuery('eth:0xab58'), 'eth:0xab58')
-		assert.equal(removeEip3770ChainShortNameFromSearchQuery(`${ checksummedAddress }:0x0000000000000000000000000000000000000123`), `${ checksummedAddress }:0x0000000000000000000000000000000000000123`)
+	})
+
+	test('keeps a query with an address-like chain prefix unchanged', () => {
+		for (const prefix of addressLikeChainPrefixes) {
+			assert.equal(removeEip3770ChainShortNameFromSearchQuery(`${ prefix }:${ otherAddress }`), `${ prefix }:${ otherAddress }`, prefix)
+		}
 	})
 })

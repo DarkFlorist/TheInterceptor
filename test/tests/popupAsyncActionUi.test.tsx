@@ -942,6 +942,64 @@ describe('popup async action UI', () => {
 		dom.restore()
 	})
 
+	test('does not identify or save the address after an address-like chain prefix', async () => {
+		const modules = await modulesPromise
+		const dom = installDomMock()
+		const sentMessages: unknown[] = []
+		let closeCount = 0
+		runtimeSendMessage = async (message) => {
+			sentMessages.push(message)
+			return undefined
+		}
+		// The visible leading token is a full address written with `0X`, so treating it as a chain short name would save the second address instead.
+		const modifyAddressWindowState = signal({
+			windowStateId: 'address-like-prefix-window',
+			errorState: undefined,
+			incompleteAddressBookEntry: {
+				addingAddress: true,
+				type: 'contact' as const,
+				address: '0XAb5801a7D398351b8bE11C439e05C5B3259aeC9B:0x0000000000000000000000000000000000000123',
+				askForAddressAccess: true,
+				name: 'Pasted contact',
+				symbol: undefined,
+				decimals: undefined,
+				logoUri: undefined,
+				entrySource: 'User' as const,
+				abi: undefined,
+				useAsActiveAddress: undefined,
+				declarativeNetRequestBlockMode: undefined,
+				chainId: 1n,
+			},
+		})
+
+		await act(async () => {
+			render(h(modules.AddNewAddress, {
+				close: () => { closeCount += 1 },
+				setActiveAddressAndInformAboutIt: undefined,
+				modifyAddressWindowState,
+				activeAddress: undefined,
+				rpcEntries: signal([]),
+			}), dom.document.body)
+			await settleAsyncUpdates()
+		})
+
+		assert.equal(sentMessages.some((message) => getRuntimeMethod(message) === 'popup_requestIdentifyAddress'), false)
+		assert.equal(dom.document.body.textContent?.includes('Address is not valid'), true)
+		const createButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.trim() === 'Create address')
+		if (createButton === undefined) throw new Error('Expected Create address button')
+		assert.equal(isDisabled(createButton), true)
+
+		await act(async () => {
+			await clickElement(createButton)
+			await settleAsyncUpdates()
+		})
+
+		assert.equal(sentMessages.some((message) => getRuntimeMethod(message) === 'popup_addOrModifyAddressBookEntry'), false)
+		assert.equal(closeCount, 0)
+		render(null, dom.document.body)
+		dom.restore()
+	})
+
 	test('shows cached Safe owners but blocks saving when automatic owner retrieval fails', async () => {
 		const modules = await modulesPromise
 		const dom = installDomMock()
