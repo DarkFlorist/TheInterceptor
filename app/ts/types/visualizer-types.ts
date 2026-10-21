@@ -182,7 +182,7 @@ export const SignedMessageTransaction = funtypes.ReadonlyObject({
 	safeMessageReview: SafeMessageReview,
 	// Older persisted stacks predate the distinction between the active Safe and its simulation signer.
 	activeAddress: EthereumAddress,
-	// Set by importSimulationStack on messages it imports: this extension never saw the request, so `activeAddress` and `fakeSignedFor` are the export file's claim, and craftPersonalSignPopupMessage flags the signature instead of trusting its account check.
+	// Marks a message imported from an export file; background/importedStackTrust.ts owns what it means, sets it on import, keeps it out of export files and flags such signatures.
 	importedFromExport: funtypes.Literal(true),
 }))
 

@@ -61,6 +61,7 @@ import { getLastKnownCurrentTabId } from './currentTab.js'
 import { reloadConnectedTabs } from './popupMessageHandlers/websiteAccess.js'
 import { updateWebsiteAccessAndContentScriptInjectionStrategy } from './websiteAccessUpdating.js'
 import { getConfiguredSigningSafeForChain } from './signingAddressSelection.js'
+import { toImportedStackOperation, withoutImportMarker } from './importedStackTrust.js'
 
 type TimestampedPopupVisualisation = {
 	data: {
@@ -1205,7 +1206,7 @@ export async function requestInterceptorSimulationInput(ethereumClientService: E
 
 	const interceptorSimulateStack = modifyObject(simulationStack, { operations: simulationStack.operations.map((operation) => {
 		switch(operation.type) {
-			case 'Message': return modifyObject(operation, { signedMessageTransaction: modifyObject(operation.signedMessageTransaction, { website: { ...operation.signedMessageTransaction.website, icon: undefined, title: undefined } }) })
+			case 'Message': return modifyObject(operation, { signedMessageTransaction: modifyObject(withoutImportMarker(operation.signedMessageTransaction), { website: { ...operation.signedMessageTransaction.website, icon: undefined, title: undefined } }) })
 			case 'TimeManipulation': return operation
 			case 'Transaction': return modifyObject(operation, { preSimulationTransaction: modifyObject(operation.preSimulationTransaction, { website: { ...operation.preSimulationTransaction.website, icon: undefined, title: undefined } }) })
 			default: return assertNever(operation)
@@ -1241,18 +1242,8 @@ export async function importSimulationStack(ethereum: EthereumClientService, tok
 		return websiteData ?? website
 	}
 
-	// Imported operations were never requested through this extension, so nothing they claim about how they were requested is trusted; operations already in the stack keep what this extension recorded for them. A message's active address and simulation signer cannot be re-derived from the message (for a Safe, an owner rather than the Safe signs), so they are kept for the simulation, but the message is marked as imported and craftPersonalSignPopupMessage flags it instead of trusting its account check. Its `safeMessageReview` stays, because a Safe message is only shown with its review when the review text hashes to the digest it signs. A transaction's `simulationOptions` are dropped: only Safe proposals, which cannot be imported here, set them, and a claimed `requiredChainId` decides on which chain the transaction is simulated at all while a claimed zero base fee lets a contract detect the simulation (`block.basefee == 0`) and behave differently in it.
-	const importedOperations = parsedRequest.data.interceptorSimulateStack.operations.map((operation) => {
-		switch (operation.type) {
-			case 'Message': return modifyObject(operation, { signedMessageTransaction: modifyObject(operation.signedMessageTransaction, { importedFromExport: true }) })
-			case 'Transaction': {
-				const { simulationOptions: _unobservedSimulationOptions, ...preSimulationTransaction } = operation.preSimulationTransaction
-				return modifyObject(operation, { preSimulationTransaction })
-			}
-			case 'TimeManipulation': return operation
-			default: return assertNever(operation)
-		}
-	})
+	// Nothing an export file claims about how its operations were requested is trusted; importedStackTrust owns what an imported operation keeps and loses.
+	const importedOperations = parsedRequest.data.interceptorSimulateStack.operations.map(toImportedStackOperation)
 
 	let updatedStack: InterceptorTransactionStack
 	try {
