@@ -49,6 +49,9 @@ export function createBrowserMock() {
 	let tabMessageHandler: ((tabId: number, message: unknown) => unknown | Promise<unknown>) | undefined
 	let storageGetHandler: ((keys: StorageKeys, readStoredItems: () => Record<string, unknown>) => Promise<Record<string, unknown>>) | undefined
 	let storageSetHandler: ((items: Record<string, unknown>, writeStoredItems: () => void) => Promise<void>) | undefined
+	let tabUpdateHandler: ((tabId: number) => Promise<void>) | undefined
+	let windowRemoveHandler: ((windowId: number) => Promise<void>) | undefined
+	let windowCreateHandler: (() => Promise<void>) | undefined
 
 	const getItems = (keys?: StorageKeys) => {
 		if (keys === undefined || keys === null) return { ...storageState }
@@ -100,7 +103,10 @@ export function createBrowserMock() {
 				if (!liveTabIds.has(tabId)) throw new Error(`No tab with id: ${ tabId }`)
 				return { id: tabId }
 			},
-			async update() { return undefined },
+			async update(tabId: number) {
+				await tabUpdateHandler?.(tabId)
+				return undefined
+			},
 			async remove() { return undefined },
 			onUpdated: { addListener: () => undefined, removeListener: () => undefined },
 			onRemoved: { addListener: () => undefined, removeListener: () => undefined },
@@ -111,8 +117,14 @@ export function createBrowserMock() {
 				return { id: windowId }
 			},
 			async update() { return undefined },
-			async create() { return { id: 99 } },
-			async remove() { return undefined },
+			async create() {
+				await windowCreateHandler?.()
+				return { id: 99 }
+			},
+			async remove(windowId: number) {
+				await windowRemoveHandler?.(windowId)
+				return undefined
+			},
 		},
 		action: {
 			async setIcon() { return undefined },
@@ -146,6 +158,9 @@ export function createBrowserMock() {
 		setStorageGetHandler(handler: typeof storageGetHandler) { storageGetHandler = handler },
 		setStorageSetHandler(handler: typeof storageSetHandler) { storageSetHandler = handler },
 		setTabMessageHandler(handler: ((tabId: number, message: unknown) => unknown | Promise<unknown>) | undefined) { tabMessageHandler = handler },
+		setTabUpdateHandler(handler: typeof tabUpdateHandler) { tabUpdateHandler = handler },
+		setWindowRemoveHandler(handler: typeof windowRemoveHandler) { windowRemoveHandler = handler },
+		setWindowCreateHandler(handler: typeof windowCreateHandler) { windowCreateHandler = handler },
 		reset() {
 			for (const key of Object.keys(storageState)) delete storageState[key]
 			sentMessages.length = 0
@@ -156,6 +171,9 @@ export function createBrowserMock() {
 			tabMessageHandler = undefined
 			storageGetHandler = undefined
 			storageSetHandler = undefined
+			tabUpdateHandler = undefined
+			windowRemoveHandler = undefined
+			windowCreateHandler = undefined
 		},
 	}
 }
