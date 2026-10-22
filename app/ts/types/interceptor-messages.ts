@@ -1,3 +1,4 @@
+import { internalProviderMethods } from '../utils/internalProviderMethods.js'
 import { PopupSettingsChangeStatus } from './popupSettingsProtocol.js'
 import { ModifyMakeMeRich, EnableSimulationMode, ChangeActiveChain, ChangeActiveAddress } from './popupSettingsRequests.js'
 import * as funtypes from 'funtypes'
@@ -70,6 +71,10 @@ const InpageScriptRequestWithoutIdentifier = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('finish_signer_provider_selection'), result: funtypes.Literal('0x') }),
 )
 
+// Internal result methods form the reserved request contract; connection-status notifications are background-only.
+export const InternalProviderMethods = internalProviderMethods satisfies Record<Exclude<Extract<InpageScriptRequestWithoutIdentifier, { readonly method: string }>['method'], 'signer_connection_status_changed'> | 'InterceptorError' | 'safe_apps_request', true>
+export type InternalProviderMethod = keyof typeof InternalProviderMethods
+
 export type WatchAssetSignerRequest = funtypes.Static<typeof WatchAssetSignerRequest>
 export const WatchAssetSignerRequest = funtypes.ReadonlyObject({
 	parameters: funtypes.Unknown,
@@ -95,8 +100,7 @@ const ErrorReturn = funtypes.ReadonlyObject({
 })
 
 export type InpageScriptCallBack = funtypes.Static<typeof InpageScriptCallBack>
-export const InpageScriptCallBack = funtypes.Union(
-	ErrorReturn,
+export const InpageScriptCommand = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_connection_status'), result: funtypes.ReadonlyTuple() }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_chainId'), result: funtypes.ReadonlyTuple() }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_to_wallet_switchEthereumChain'), result: EthereumQuantity, walletSwitchRequestId: funtypes.String }),
@@ -111,6 +115,9 @@ export const InpageScriptCallBack = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('chainChanged'), result: EthereumQuantity }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('safe_apps_compatibility'), result: funtypes.ReadonlyObject({ enabled: funtypes.Boolean }).And(funtypes.ReadonlyPartial({ canRequestAccess: funtypes.Boolean })) }),
 )
+
+export type InpageScriptCommand = funtypes.Static<typeof InpageScriptCommand>
+export const InpageScriptCallBack = funtypes.Union(ErrorReturn, InpageScriptCommand)
 
 export type GetSimulationStackReply = funtypes.Static<typeof GetSimulationStackReply>
 export const GetSimulationStackReply = funtypes.Union(

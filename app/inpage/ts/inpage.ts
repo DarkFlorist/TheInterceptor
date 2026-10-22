@@ -1,5 +1,7 @@
+import { isInternalProviderMethod as isInternalBackgroundMethod } from '../../ts/utils/internalProviderMethods.js'
 import { createSignerProviderCoordinator } from './signerProviderCoordinator.js'
 import { createPrivateInpageBridge } from './privateInpageBridge.js'
+import type { InternalProviderMethod } from '../../ts/utils/internalProviderMethods.js'
 import type { SignerName, EIP6963ProviderInfo } from '../../ts/types/signerTypes.js'
 
 const SAFE_APPS_RESPONSE_VERSION = '9.1.0'
@@ -258,24 +260,6 @@ export type MessageMethodAndParams = {
 	readonly params?: readonly unknown[]
 }
 
-const INTERNAL_BACKGROUND_METHODS = [
-	'begin_signer_provider_selection',
-	'connected_to_signer',
-	'eth_accounts_reply',
-	'finish_signer_provider_selection',
-	'InterceptorError',
-	'safe_apps_request',
-	'signer_chainChanged',
-	'signer_provider_selected',
-	'signer_providers_changed',
-	'signer_reply',
-	'wallet_switchEthereumChain_reply',
-] as const
-
-const internalBackgroundMethods = new Set<string>(INTERNAL_BACKGROUND_METHODS)
-const hasInternalBackgroundMethod = internalBackgroundMethods.has.bind(internalBackgroundMethods)
-const isInternalBackgroundMethod = (method: string) => hasInternalBackgroundMethod(method)
-
 type InterceptedRequestBase = {
 	readonly walletSwitchRequestId?: string,
 	readonly interceptorApproved: true,
@@ -493,7 +477,7 @@ type AnyCallBack =  ((message: ProviderMessage) => void)
 	| ((chainId: string) => void)
 
 type EthereumRequestParameters = readonly unknown[] | Readonly<Record<string, unknown>>
-export type EthereumRequest = (methodAndParams: { readonly method: string, readonly params?: EthereumRequestParameters }) => Promise<unknown>
+type EthereumRequest = (methodAndParams: { readonly method: string, readonly params?: EthereumRequestParameters }) => Promise<unknown>
 type InterceptorEthereumRequestParameters = EthereumRequestParameters
 const METHODS_ACCEPTING_NAMED_PARAMETERS: ReadonlySet<string> = new Set(['wallet_watchAsset'])
 
@@ -551,13 +535,6 @@ type InpageWindow = Window & {
 }
 
 const inpageWindow: InpageWindow = window
-
-export type AnnouncedProvider = {
-	readonly info: EIP6963ProviderInfo
-	readonly provider: unknown
-}
-
-export type SignerSelectionKind = 'explicit' | 'remembered'
 
 type SingleSendAsyncParam = { readonly id: string | number | null, readonly method: string, readonly params: InterceptorEthereumRequestParameters }
 type ForwardedDiagnosticsRequestContext = {
@@ -749,9 +726,6 @@ class InterceptorMessageListener {
 	private contentScriptCapability: string | undefined = undefined
 	private readonly contentScriptBridgeInitialized = new InterceptorFuture<void>()
 	private readonly subscribedSignerProviders = new WeakSet<object>()
-	private activeSignerRequestCount = 0
-	private signerSelectionBlockingRequestCount = 0
-	private signerSelectionBlockingWorkflowCount = 0
 	private signerSelectionGeneration = 0
 	private readonly initialSignerProviderCatalogReconciliation = new InterceptorFuture<void>()
 	private initialSignerProviderCatalogReconciled = false
@@ -782,25 +756,28 @@ class InterceptorMessageListener {
 
 	public constructor() {
 		this.signerProviders = createSignerProviderCoordinator({
-			getCurrentSigner: () => this.signerWindowEthereumProvider === undefined || this.signerWindowEthereumRequest === undefined
-				? undefined
-				: { provider: this.signerWindowEthereumProvider, request: this.signerWindowEthereumRequest, connected: this.connected },
-			activateSigner: (signer) => {
-				this.setSignerProvider(signer?.provider, signer?.request)
-				this.connected = signer?.connected ?? true
+			activateAnnouncedSigner: (provider: unknown) => {
+				const prepared = provider === this.signerWindowEthereumProvider && this.signerWindowEthereumRequest !== undefined
+					? { provider: this.signerWindowEthereumProvider, request: this.signerWindowEthereumRequest, connected: this.connected }
+					: this.prepareSignerProvider(provider, 'EIP6963', false, false)
+				if (prepared === undefined) return false
+				this.setSignerProvider(prepared.provider, prepared.request)
+				this.connected = prepared.connected
+				return true
 			},
+			clearSigner: () => { this.setSignerProvider(undefined, undefined); this.connected = true },
 			hasUsableSignerInterface: InterceptorMessageListener.hasUsableSignerInterface,
+			completeSelection: async (info, kind) => {
+				await this.sendInternalMessageToBackgroundPage({ method: 'signer_provider_selected', params: [info, kind] })
+				await this.connectToSigner('EIP6963')
+				await this.getAccountsFromSigner()
+			},
 			getSignerDocumentGeneration,
 			isBridgeReconnectedError: (error) => error instanceof SignerSynchronizationBridgeReconnectedError,
 			connectToSigner: (...args) => this.connectToSigner(...args),
-			getAccountsFromSigner: (...args) => this.getAccountsFromSigner(...args),
 			markInitialSignerProviderCatalogReconciled: (...args) => this.markInitialSignerProviderCatalogReconciled(...args),
-			prepareSignerProvider: (...args) => this.prepareSignerProvider(...args),
 			reportSignerDiscoveryError: (...args) => this.reportSignerDiscoveryError(...args),
-			runWithSignerSelectionBlocked: (...args) => this.runWithSignerSelectionBlocked(...args),
 			sendInternalMessageToBackgroundPage: (...args) => this.sendInternalMessageToBackgroundPage(...args),
-			signerSelectionHasBlockerOutsideCurrentWorkflow: (...args) => this.signerSelectionHasBlockerOutsideCurrentWorkflow(...args),
-			signerSelectionIsIdle: (...args) => this.signerSelectionIsIdle(...args),
 		})
 		this.privateBridge = createPrivateInpageBridge(this.bridgeCapability, (event) => { void this.onMessage(event) })
 		this.injectEthereumIntoWindow()
@@ -915,7 +892,7 @@ class InterceptorMessageListener {
 		this.requestId++
 		const pendingRequestId = this.requestId
 		const blocksSignerSelection = !internal
-		if (blocksSignerSelection) this.signerSelectionBlockingRequestCount++
+		const releaseSelectionBlocker = blocksSignerSelection ? this.signerProviders.blockSignerSelection() : undefined
 		const replayOnDisconnect = !internal && messageMethodAndParams.method === 'eth_requestAccounts'
 		const future = new InterceptorFuture<unknown>()
 		this.outstandingRequests.set(pendingRequestId, {
@@ -938,43 +915,20 @@ class InterceptorMessageListener {
 			return await future
 		} finally {
 			this.outstandingRequests.delete(pendingRequestId)
-			if (blocksSignerSelection) {
-				this.signerSelectionBlockingRequestCount--
-				this.enqueueSignerProviderReconciliationWhenIdle()
-			}
+			releaseSelectionBlocker?.()
 		}
 	}
 
-	private readonly signerSelectionIsIdle = () => this.activeSignerRequestCount === 0
-		&& this.signerSelectionBlockingRequestCount === 0
-		&& this.signerSelectionBlockingWorkflowCount === 0
-	private readonly signerSelectionHasBlockerOutsideCurrentWorkflow = () => this.activeSignerRequestCount > 0
-		|| this.signerSelectionBlockingRequestCount > 0
-		|| this.signerSelectionBlockingWorkflowCount > 1
 	private readonly markInitialSignerProviderCatalogReconciled = () => {
 		if (this.initialSignerProviderCatalogReconciled) return
 		this.initialSignerProviderCatalogReconciled = true
 		this.initialSignerProviderCatalogReconciliation.resolve(undefined)
 	}
 
-	private readonly runWithSignerSelectionBlocked = async <T>(workflow: () => Promise<T>) => {
-		this.signerSelectionBlockingWorkflowCount++
-		try {
-			return await workflow()
-		} finally {
-			this.signerSelectionBlockingWorkflowCount--
-			this.enqueueSignerProviderReconciliationWhenIdle()
-		}
-	}
-
 	private readonly startSignerSelectionBlockingWorkflow = (phase: string, workflow: () => Promise<unknown>) => {
-		void this.runWithSignerSelectionBlocked(workflow).catch((error: unknown) => {
+		void this.signerProviders.runWithSignerSelectionBlocked(workflow).catch((error: unknown) => {
 			this.reportSignerDiscoveryError(phase, error)
 		})
-	}
-
-	private readonly enqueueSignerProviderReconciliationWhenIdle = () => {
-		this.signerProviders.reconcileWhenIdle()
 	}
 
 	private readonly drainRequestScopedProviderEventCallbacks = (requestId: number) => {
@@ -998,7 +952,7 @@ class InterceptorMessageListener {
 		if (callbackError !== undefined) throw callbackError
 	}
 
-	private readonly sendInternalMessageToBackgroundPage = async (messageMethodAndParams: MessageMethodAndParams) => {
+	private readonly sendInternalMessageToBackgroundPage = async (messageMethodAndParams: { readonly method: InternalProviderMethod, readonly params?: readonly unknown[] }) => {
 		return await this.sendMessageToBackgroundPage(messageMethodAndParams, true)
 	}
 
@@ -1049,7 +1003,7 @@ class InterceptorMessageListener {
 
 	private readonly requestFromSigner = async (methodAndParams: { readonly method: string, readonly params?: EthereumRequestParameters }, allowRequestAccountsFallbackToRoot = false) => {
 		if (this.signerWindowEthereumRequest === undefined) throw new Error('Interceptor is in wallet mode and should not forward to an external wallet')
-		this.activeSignerRequestCount++
+		const releaseSelectionBlocker = this.signerProviders.blockSignerSelection()
 		try {
 			try {
 				return await this.signerWindowEthereumRequest(methodAndParams)
@@ -1061,8 +1015,7 @@ class InterceptorMessageListener {
 				return await this.fallbackSignerWindowEthereumRequest(methodAndParams)
 			}
 		} finally {
-			this.activeSignerRequestCount--
-			this.enqueueSignerProviderReconciliationWhenIdle()
+			releaseSelectionBlocker()
 		}
 	}
 
@@ -1680,12 +1633,12 @@ class InterceptorMessageListener {
 				}
 				case 'request_signer_to_eth_requestAccounts': {
 					if (!this.initialSignerProviderCatalogReconciled) await this.initialSignerProviderCatalogReconciliation
-					await this.runWithSignerSelectionBlocked(async () => await this.requestAccountsFromSigner())
+					await this.signerProviders.runWithSignerSelectionBlocked(async () => await this.requestAccountsFromSigner())
 					return
 				}
 				case 'request_signer_to_eth_accounts': {
 					if (!this.initialSignerProviderCatalogReconciled) await this.initialSignerProviderCatalogReconciliation
-					await this.runWithSignerSelectionBlocked(async () => await this.getAccountsFromSigner())
+					await this.signerProviders.runWithSignerSelectionBlocked(async () => await this.getAccountsFromSigner())
 					return
 				}
 				case 'request_signer_to_wallet_switchEthereumChain': {
@@ -1693,22 +1646,22 @@ class InterceptorMessageListener {
 					if (typeof replyRequest.result !== 'string' || typeof replyRequest.walletSwitchRequestId !== 'string') throw new Error('Invalid wallet switch command')
 					const chainId = replyRequest.result
 					const walletSwitchRequestId = replyRequest.walletSwitchRequestId
-					await this.runWithSignerSelectionBlocked(async () => await this.requestChangeChainFromSigner(chainId, walletSwitchRequestId))
+					await this.signerProviders.runWithSignerSelectionBlocked(async () => await this.requestChangeChainFromSigner(chainId, walletSwitchRequestId))
 					return
 				}
 				case 'request_signer_to_wallet_watchAsset': {
 					if (!this.initialSignerProviderCatalogReconciled) await this.initialSignerProviderCatalogReconciliation
-					await this.runWithSignerSelectionBlocked(async () => await this.requestWatchAssetFromSigner(replyRequest.result))
+					await this.signerProviders.runWithSignerSelectionBlocked(async () => await this.requestWatchAssetFromSigner(replyRequest.result))
 					return
 				}
 				case 'request_signer_connection_status': {
 					if (!this.initialSignerProviderCatalogReconciled) await this.initialSignerProviderCatalogReconciliation
-					await this.runWithSignerSelectionBlocked(async () => await this.connectToSigner(this.signerName))
+					await this.signerProviders.runWithSignerSelectionBlocked(async () => await this.connectToSigner(this.signerName))
 					return
 				}
 				case 'request_signer_chainId': {
 					if (!this.initialSignerProviderCatalogReconciled) await this.initialSignerProviderCatalogReconciliation
-					await this.runWithSignerSelectionBlocked(async () => await this.requestChainIdFromSigner())
+					await this.signerProviders.runWithSignerSelectionBlocked(async () => await this.requestChainIdFromSigner())
 					return
 				}
 				case 'select_signer_provider': {
@@ -2017,9 +1970,8 @@ class InterceptorMessageListener {
 	}
 
 	public readonly handleEthereumInitialized = () => {
-		if (inpageWindow.ethereum?.isInterceptor) return
-		this.injectEthereumIntoWindow()
 		this.requestAnnouncedProviders()
+		this.injectEthereumIntoWindow()
 	}
 
 	public readonly injectEthereumIntoWindow = () => {

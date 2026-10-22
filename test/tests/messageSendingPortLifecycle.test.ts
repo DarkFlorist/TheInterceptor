@@ -19,7 +19,8 @@ function createPort(postMessage: (message: unknown) => void): browser.runtime.Po
 		hasListener() { return false },
 	}
 	return {
-		name: 'test-port',
+		name: '0x123',
+		sender: { tab: { id: 1 }, frameId: 0 },
 		disconnect() { return undefined },
 		postMessage,
 		onMessage: event,
@@ -28,6 +29,30 @@ function createPort(postMessage: (message: unknown) => void): browser.runtime.Po
 }
 
 describe('background messageSending port lifecycle', () => {
+	test('both callback transports deny wallet commands until authority is reconciled, while discovery still works', () => {
+		installBrowserMock()
+		const socket = { tabId: 1, connectionName: 0x123n }
+		clearSignerExecutionAuthorityForTab(socket.tabId)
+		const messages: unknown[] = []
+		const port = createPort((message) => messages.push(message))
+		const connections = new Map([[socket.tabId, { connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true },
+		} }]])
+		const command = { type: 'result', method: 'request_signer_to_eth_accounts', result: [] } as const
+		assert.equal(sendSubscriptionReplyOrCallBackToPort(port, command), false)
+		assert.equal(sendSubscriptionReplyOrCallBack(connections, socket, command), false)
+		assert.deepEqual(messages, [])
+		assert.equal(sendSubscriptionReplyOrCallBackToPort(port, { type: 'result', method: 'request_signer_connection_status', result: [] }), true)
+		registerAuthoritativeTopSocket(socket, 'https://example.test')
+		reconcileSignerExecutionDocument(socket, 'https://example.test', '11111111-1111-4111-8111-111111111111', true, 0)
+		allowLegacySignerExecution(socket, 'https://example.test')
+		assert.equal(sendSubscriptionReplyOrCallBackToPort(port, command), true)
+		assert.equal(sendSubscriptionReplyOrCallBack(connections, socket, command), true)
+		clearSignerExecutionAuthorityForTab(socket.tabId)
+		assert.equal(sendSubscriptionReplyOrCallBackToPort(port, command), false)
+		assert.equal(messages.length, 3)
+	})
+
 	test('ignores disconnected runtime lastError after posting to a content-script port', () => {
 		installBrowserMock()
 		let postedMessages = 0

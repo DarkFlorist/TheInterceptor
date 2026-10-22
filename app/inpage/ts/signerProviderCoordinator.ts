@@ -1,24 +1,23 @@
 import { isEip6963ProviderInfo, type EIP6963ProviderInfo } from '../../ts/utils/eip6963ProviderInfo.js'
-import type { WindowEthereum, EthereumRequest, Signer, SignerSelectionKind, AnnouncedProvider, MessageMethodAndParams } from './inpage.js'
+import { createSignerSelectionGate } from './signerSelectionGate.js'
+import type { SignerName } from '../../ts/types/signerTypes.js'
+import type { InternalProviderMethod } from '../../ts/utils/internalProviderMethods.js'
 
-type PreparedSigner = { readonly provider: WindowEthereum, readonly request: EthereumRequest, readonly connected: boolean }
+type SignerSelectionKind = 'explicit' | 'remembered'
+type AnnouncedProvider = { readonly provider: unknown, readonly info: EIP6963ProviderInfo }
 
-// The listener owns the active EIP-1193 transport; this coordinator owns catalog decisions. Exchange snapshots and atomic activation commands rather than sharing mutable fields.
-type SignerProviderHost = {
-	getCurrentSigner(): PreparedSigner | undefined
-	activateSigner(signer: PreparedSigner | undefined): void
-	hasUsableSignerInterface(provider: unknown): provider is WindowEthereum
+// Catalog decisions and selection gating live here; the transport owns wallet activation and background acknowledgements.
+type SignerProviderTransport = {
+	activateAnnouncedSigner(provider: unknown): boolean
+	clearSigner(): void
+	hasUsableSignerInterface(provider: unknown): provider is object
+	completeSelection(info: EIP6963ProviderInfo, kind: SignerSelectionKind): Promise<void>
 	getSignerDocumentGeneration(): string
 	isBridgeReconnectedError(error: unknown): boolean
-	connectToSigner(signerName: Signer): Promise<void>
-	getAccountsFromSigner(): Promise<unknown>
+	connectToSigner(signerName: SignerName): Promise<void>
 	markInitialSignerProviderCatalogReconciled(): void
-	prepareSignerProvider(provider: unknown, signer: Signer, requireMarker?: boolean, requireConsistency?: boolean): { provider: WindowEthereum, request: EthereumRequest, connected: boolean } | undefined
 	reportSignerDiscoveryError(phase: string, error: unknown): void
-	runWithSignerSelectionBlocked<T>(workflow: () => Promise<T>): Promise<T>
-	sendInternalMessageToBackgroundPage(request: Omit<MessageMethodAndParams, 'internal'>): Promise<unknown>
-	signerSelectionHasBlockerOutsideCurrentWorkflow(): boolean
-	signerSelectionIsIdle(): boolean
+	sendInternalMessageToBackgroundPage(request: { readonly method: InternalProviderMethod, readonly params?: readonly unknown[] }): Promise<unknown>
 }
 
 const MAX_EIP6963_PROVIDERS = 16
@@ -45,7 +44,10 @@ const getEip6963Announcement = (event: Event) => {
 	}
 }
 
-export function createSignerProviderCoordinator(host: SignerProviderHost) {
+export function createSignerProviderCoordinator(host: SignerProviderTransport) {
+	const selectionGate = createSignerSelectionGate(() => {
+		if (signerProviderCatalogRetryTimer === undefined && (signerProviderCatalogReconciliationNeeded || pendingExplicitSignerProviderUuid !== undefined)) enqueueProviderCatalogSynchronization()
+	})
 	const rejectedSignerProviders = new WeakSet<object>()
 	const announcedProviders = new Map<string, AnnouncedProvider>()
 	const conflictingProviderUuids = new Set<string>()
@@ -62,9 +64,9 @@ export function createSignerProviderCoordinator(host: SignerProviderHost) {
 	let pendingExplicitSignerProviderUuid: string | undefined
 	let signerCatalogDecisionGeneration = 0
 	let signerProviderCatalogRevision = 0
-	let pendingInitialSignerConnection: { readonly signerName: Signer } | undefined
+	let pendingInitialSignerConnection: { readonly signerName: SignerName } | undefined
 
-	const scheduleInitialSignerConnection = (signerName: Signer) => {
+	const scheduleInitialSignerConnection = (signerName: SignerName) => {
 		pendingInitialSignerConnection = { signerName }
 		enqueueProviderCatalogSynchronization()
 	}
@@ -83,18 +85,12 @@ export function createSignerProviderCoordinator(host: SignerProviderHost) {
 		if (announcedProvider === undefined) throw new Error('The selected EIP-6963 provider is no longer available')
 		const { provider, info } = announcedProvider
 		if (selectedSignerProviderUuid === uuid) {
-			await host.sendInternalMessageToBackgroundPage({ method: 'signer_provider_selected', params: [info, selectionKind] })
-			// A restarted worker needs fresh ownership and account replies even when the page still holds the same provider object.
-			await host.connectToSigner('EIP6963')
-			await host.getAccountsFromSigner()
+			// A worker restart needs fresh ownership and account replies even for the same provider object.
+			await host.completeSelection(info, selectionKind)
 			host.markInitialSignerProviderCatalogReconciled()
 			return true
 		}
-		const currentSigner = host.getCurrentSigner()
-		const preparedSigner = currentSigner?.provider === provider
-			? currentSigner
-			: host.prepareSignerProvider(provider, 'EIP6963', false, false)
-		if (preparedSigner === undefined) {
+		if (!host.activateAnnouncedSigner(provider)) {
 			if (typeof provider === 'object' && provider !== null) rejectedSignerProviders.add(provider)
 			if (announcedProviders.get(uuid) === announcedProvider) {
 				announcedProviders.delete(uuid)
@@ -109,11 +105,8 @@ export function createSignerProviderCoordinator(host: SignerProviderHost) {
 			return false
 		}
 
-		host.activateSigner(preparedSigner)
 		selectedSignerProviderUuid = uuid
-		await host.sendInternalMessageToBackgroundPage({ method: 'signer_provider_selected', params: [info, selectionKind] })
-		await host.connectToSigner('EIP6963')
-		await host.getAccountsFromSigner()
+		await host.completeSelection(info, selectionKind)
 		host.markInitialSignerProviderCatalogReconciled()
 		return true
 	}
@@ -130,7 +123,7 @@ export function createSignerProviderCoordinator(host: SignerProviderHost) {
 			return false
 		}
 		try {
-			if (host.signerSelectionHasBlockerOutsideCurrentWorkflow()
+			if (selectionGate.hasExternalBlockers()
 				|| capturedSignerCatalogDecisionGeneration !== signerCatalogDecisionGeneration
 				|| capturedSignerProviderCatalogRevision !== signerProviderCatalogRevision) {
 				signerProviderCatalogReconciliationNeeded = true
@@ -159,14 +152,14 @@ export function createSignerProviderCoordinator(host: SignerProviderHost) {
 			signerCatalogDecisionGeneration++
 			explicitlySelectedSignerProviderUuid = uuid
 			preferredSignerRdns = announcedProvider.info.rdns
-			if (!host.signerSelectionIsIdle()) {
+			if (!selectionGate.isIdle()) {
 				pendingExplicitSignerProviderUuid = uuid
 				signerProviderCatalogReconciliationNeeded = true
 				return
 			}
 			pendingExplicitSignerProviderUuid = undefined
 		}
-		await host.runWithSignerSelectionBlocked(async () => await applyAnnouncedProviderSelection(uuid, selectionKind))
+		await selectionGate.runSelection(async () => await applyAnnouncedProviderSelection(uuid, selectionKind))
 	}
 
 	const clearUnavailablePreferredSigner = async (force = false): Promise<void> => {
@@ -174,7 +167,7 @@ export function createSignerProviderCoordinator(host: SignerProviderHost) {
 			host.markInitialSignerProviderCatalogReconciled()
 			return
 		}
-		if (!host.signerSelectionIsIdle()) {
+		if (!selectionGate.isIdle()) {
 			signerProviderCatalogReconciliationNeeded = true
 			return
 		}
@@ -183,35 +176,37 @@ export function createSignerProviderCoordinator(host: SignerProviderHost) {
 			host.markInitialSignerProviderCatalogReconciled()
 			return
 		}
-		const capturedSignerCatalogDecisionGeneration = signerCatalogDecisionGeneration
-		const capturedSignerProviderCatalogRevision = signerProviderCatalogRevision
-		const leaseToken = await host.sendInternalMessageToBackgroundPage({ method: 'begin_signer_provider_selection', params: [undefined] })
-		if (leaseToken !== undefined && typeof leaseToken !== 'string') throw new Error('Failed to parse signer selection lease')
-		if (leaseToken === undefined) {
-			signerProviderCatalogReconciliationNeeded = true
-			scheduleSignerProviderCatalogRetry()
-			return
-		}
-		try {
-			if (host.signerSelectionHasBlockerOutsideCurrentWorkflow()
-				|| capturedSignerCatalogDecisionGeneration !== signerCatalogDecisionGeneration
-				|| capturedSignerProviderCatalogRevision !== signerProviderCatalogRevision) {
+		await selectionGate.runSelection(async () => {
+			const capturedSignerCatalogDecisionGeneration = signerCatalogDecisionGeneration
+			const capturedSignerProviderCatalogRevision = signerProviderCatalogRevision
+			const leaseToken = await host.sendInternalMessageToBackgroundPage({ method: 'begin_signer_provider_selection', params: [undefined] })
+			if (leaseToken !== undefined && typeof leaseToken !== 'string') throw new Error('Failed to parse signer selection lease')
+			if (leaseToken === undefined) {
 				signerProviderCatalogReconciliationNeeded = true
 				scheduleSignerProviderCatalogRetry()
 				return
 			}
-			host.activateSigner(undefined)
-			selectedSignerProviderUuid = undefined
-			explicitlySelectedSignerProviderUuid = undefined
-			await host.connectToSigner('NoSigner')
-			host.markInitialSignerProviderCatalogReconciled()
-		} finally {
-			await host.sendInternalMessageToBackgroundPage({ method: 'finish_signer_provider_selection', params: [leaseToken] })
-		}
+			try {
+				if (selectionGate.hasExternalBlockers()
+					|| capturedSignerCatalogDecisionGeneration !== signerCatalogDecisionGeneration
+					|| capturedSignerProviderCatalogRevision !== signerProviderCatalogRevision) {
+					signerProviderCatalogReconciliationNeeded = true
+					scheduleSignerProviderCatalogRetry()
+					return
+				}
+				host.clearSigner()
+				selectedSignerProviderUuid = undefined
+				explicitlySelectedSignerProviderUuid = undefined
+				await host.connectToSigner('NoSigner')
+				host.markInitialSignerProviderCatalogReconciled()
+			} finally {
+				await host.sendInternalMessageToBackgroundPage({ method: 'finish_signer_provider_selection', params: [leaseToken] })
+			}
+		})
 	}
 
 	const synchronizeAnnouncedProviders = async (): Promise<void> => {
-		if (!host.signerSelectionIsIdle()) {
+		if (!selectionGate.isIdle()) {
 			signerProviderCatalogReconciliationNeeded = true
 			return
 		}
@@ -245,14 +240,14 @@ export function createSignerProviderCoordinator(host: SignerProviderHost) {
 			return
 		}
 		clearSignerProviderCatalogRetry()
-		if (!host.signerSelectionIsIdle()) {
+		if (!selectionGate.isIdle()) {
 			signerProviderCatalogReconciliationNeeded = true
 			return
 		}
 		preferredSignerRdns = replyPreferredRdns?.toLowerCase()
 		if ('selectedSignerProviderUuid' in reply && typeof reply.selectedSignerProviderUuid === 'string') {
 			const selectedSignerProviderUuid = reply.selectedSignerProviderUuid
-			await host.runWithSignerSelectionBlocked(async () => await applyAnnouncedProviderSelection(selectedSignerProviderUuid, 'remembered'))
+			await selectionGate.runSelection(async () => await applyAnnouncedProviderSelection(selectedSignerProviderUuid, 'remembered'))
 			return
 		}
 		if (replyPreferredRdns === undefined) {
@@ -268,7 +263,7 @@ export function createSignerProviderCoordinator(host: SignerProviderHost) {
 				return
 			}
 			if (selectedSignerProviderUuid !== explicitlySelectedProvider.info.uuid) {
-				await host.runWithSignerSelectionBlocked(async () => await applyAnnouncedProviderSelection(explicitlySelectedProvider.info.uuid, 'explicit'))
+				await selectionGate.runSelection(async () => await applyAnnouncedProviderSelection(explicitlySelectedProvider.info.uuid, 'explicit'))
 			}
 			if (selectedSignerProviderUuid === explicitlySelectedProvider.info.uuid) host.markInitialSignerProviderCatalogReconciled()
 			return
@@ -304,7 +299,7 @@ export function createSignerProviderCoordinator(host: SignerProviderHost) {
 	}
 
 	const reconcileSignerProviderCatalog = async (): Promise<void> => {
-		if (!host.signerSelectionIsIdle()) {
+		if (!selectionGate.isIdle()) {
 			signerProviderCatalogReconciliationNeeded = true
 			return
 		}
@@ -318,7 +313,7 @@ export function createSignerProviderCoordinator(host: SignerProviderHost) {
 			try {
 				// Rebuild background document authority before replaying the user's selection after a worker restart.
 				await synchronizeAnnouncedProviders()
-				await host.runWithSignerSelectionBlocked(async () => await applyAnnouncedProviderSelection(pendingUuid, 'explicit'))
+				await selectionGate.runSelection(async () => await applyAnnouncedProviderSelection(pendingUuid, 'explicit'))
 			} catch (error: unknown) {
 				host.reportSignerDiscoveryError('apply deferred EIP-6963 signer selection', error)
 			}
@@ -414,9 +409,8 @@ export function createSignerProviderCoordinator(host: SignerProviderHost) {
 	return {
 		rejectProvider: (provider: object) => { rejectedSignerProviders.add(provider) },
 		isProviderRejected: (provider: object) => rejectedSignerProviders.has(provider),
-		reconcileWhenIdle: () => {
-			if (host.signerSelectionIsIdle() && (signerProviderCatalogReconciliationNeeded || pendingExplicitSignerProviderUuid !== undefined)) enqueueProviderCatalogSynchronization()
-		},
+		blockSignerSelection: selectionGate.block,
+		runWithSignerSelectionBlocked: selectionGate.runBlocked,
 		handleBridgeReconnect: () => {
 			signerProviderCatalogReconciliationNeeded = true
 			if (explicitlySelectedSignerProviderUuid !== undefined) pendingExplicitSignerProviderUuid = explicitlySelectedSignerProviderUuid

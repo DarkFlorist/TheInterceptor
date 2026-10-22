@@ -59,10 +59,14 @@ describe('background signer selection routing', () => {
 		assert.equal(subscription?.error, undefined)
 		assert.equal(typeof subscription?.result, 'string')
 		assert.equal((await request('eth_unsubscribe', [subscription?.result], 5))?.result, true)
-		for (const [index, method] of ['personal_sign', 'wallet_watchAsset', 'wallet_unknownMethod'].entries()) assert.equal((await request(method, [], index + 6))?.error?.code, 4100)
+		assert.equal((await request('wallet_unknownMethod', [], 6))?.error?.code, 4100)
+		assert.equal((await request('eth_accounts', [], 9))?.error?.code, 4100, 'Cached signer identity is unavailable until this frame has reconciled')
+		// Invalid requests fail local validation without reaching a wallet.
+		assert.equal((await request('personal_sign', [], 7))?.error?.code, -32700)
+		assert.equal((await request('wallet_watchAsset', [], 8))?.error?.code, -32602)
 	})
 
-	test('blocks simulated wallet_watchAsset requests until the child frame acknowledges the selected provider', async () => {
+	test('validates unsupported wallet_watchAsset chains locally before and after signer reconciliation', async () => {
 		installBrowserMock()
 		const { handleInterceptedRequest, websiteSocketToString, updateWebsiteAccess, changeSimulationMode, setUseSignersAddressAsActiveAddress } = await loadModules()
 		const websiteOrigin = 'https://example.test'
@@ -94,7 +98,7 @@ describe('background signer selection routing', () => {
 		} as const
 
 		await handleInterceptedRequest(child.port, websiteOrigin, website, simulationServicesOwner, childSocket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
-		assert.equal(child.messages.at(-1)?.error?.code, 4100)
+		assert.equal(child.messages.at(-1)?.error?.code, -32602)
 
 		assert.equal(authorizeSocketForSignerExecution(childSocket, providerUuid, websiteOrigin), true)
 		await handleInterceptedRequest(child.port, websiteOrigin, website, simulationServicesOwner, childSocket, {

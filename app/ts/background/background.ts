@@ -1,10 +1,10 @@
-import { isSignerIndependentRpcMethod } from './signerRequestPolicy.js'
+import { isInternalProviderMethod } from '../utils/internalProviderMethods.js'
 import { isTopFrameId } from '../utils/requests.js'
 import { prepareSafeAppsRequest } from './safeAppsRequestHandler.js'
 import type { RpcRequestContext } from '../types/confirmationRequest.js'
 import { FinishSignerProviderSelection } from '../types/interceptor-messages.js'
 import { releaseSignerSelectionLease } from './signerSelectionLease.js'
-import type { InpageScriptRequest, RPCReply, Settings } from '../types/interceptor-messages.js'
+import type { InpageScriptRequest, RPCReply, Settings, InternalProviderMethod } from '../types/interceptor-messages.js'
 import 'webextension-polyfill'
 import { getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
 import { getSettings, updateWebsiteAccess } from './settings.js'
@@ -52,22 +52,6 @@ if (initializeWatchAssetWindowListeners()) {
 
 const RPC_PARSE_FAILURE_HANDLERS = [getWatchAssetRpcParseFailureReply, getWalletGetCapabilitiesParseFailureReply]
 const JSON_RPC_METHOD_NOT_FOUND = -32601
-const INTERNAL_PROVIDER_METHODS = [
-	'connected_to_signer',
-	'eth_accounts_reply',
-	'InterceptorError',
-	'safe_apps_request',
-	'signer_chainChanged',
-	'signer_reply',
-	'signer_provider_selected',
-	'signer_providers_changed',
-	'begin_signer_provider_selection',
-	'finish_signer_provider_selection',
-	'wallet_switchEthereumChain_reply',
-] as const
-
-const isInternalProviderMethod = (method: string) => INTERNAL_PROVIDER_METHODS.some((internalMethod) => internalMethod === method)
-
 async function handleRPCRequest(
 	simulationServicesOwner: SimulationServicesOwner,
 	websiteTabConnections: WebsiteTabConnections,
@@ -265,7 +249,7 @@ const providerHandlers = {
 		finishSignerProviderSelection(context.request)
 		return { type: 'result' as const, method: 'finish_signer_provider_selection' as const, result: '0x' as const }
 	} },
-}
+} satisfies Record<Exclude<InternalProviderMethod, 'InterceptorError' | 'safe_apps_request'>, { readonly method: InternalProviderMethod, readonly func: (context: ProviderHandlerContext) => Promise<unknown> }>
 
 function isProviderMethod(method: string): method is keyof typeof providerHandlers {
 	return hasOwnKey(providerHandlers, method)
@@ -463,26 +447,15 @@ const processInterceptedRequest = async (port: browser.runtime.Port | undefined,
 		return replyToInterceptedRequest(websiteTabConnections, { ...getRequestWithDefinedParams(request), ...result })
 	}
 	const initialActiveAddress = await getActiveAddressForRequest(initialSettings, websiteTabConnections, socket.tabId)
-	const signerIndependentRpc = initialSettings.activeRpcNetwork.httpsRpc !== undefined
-		&& isSignerIndependentRpcMethod(request.method)
-	const requestCanReachSigner = (!initialSettings.simulationMode && !signerIndependentRpc)
-		|| request.method === 'wallet_watchAsset'
-		|| (initialSettings.useSignersAddressAsActiveAddress && (isAccountConnectionMethod(request.method) || isAccountOnlyMethod(request.method)))
 	if (request.interceptorInternalRequest !== true && isInternalProviderMethod(request.method)) return refusePublicInternalProviderMethod(websiteTabConnections, request)
-	const isTopFrame = port !== undefined && isTopFrameId(port.sender?.frameId) && isAuthoritativeTopSocket(socket)
-	const signerExecutionError = getSignerExecutionError(request.uniqueRequestIdentifier.requestSocket)
-	if (request.interceptorInternalRequest !== true
-		&& requestCanReachSigner
-		&& !request.usingInterceptorWithoutSigner
-		&& !(isAccountConnectionMethod(request.method)
-			&& (initialActiveAddress !== undefined || getWebsiteAccessApprovalState(initialSettings.websiteAccess, websiteOrigin) !== 'hasAccess'))
-		&& signerExecutionError !== undefined) {
-		return replyToInterceptedRequest(websiteTabConnections, {
-			type: 'result',
-			...getRequestWithDefinedParams(request),
-			error: signerExecutionError,
-		})
+	// Cached wallet identities still require this frame's reconciliation, even when no new wallet command is needed. Interactive account approval can bootstrap access separately.
+	if (request.interceptorInternalRequest !== true && isAccountOnlyMethod(request.method) && !isAccountConnectionMethod(request.method)
+		&& (!initialSettings.simulationMode || initialSettings.useSignersAddressAsActiveAddress) && !request.usingInterceptorWithoutSigner) {
+		const error = getSignerExecutionError(socket)
+		if (error !== undefined) return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), error })
 	}
+	const isTopFrame = port !== undefined && isTopFrameId(port.sender?.frameId) && isAuthoritativeTopSocket(socket)
+	// Signer authority is checked when a request or callback actually leaves for the wallet, including after asynchronous user confirmation.
 	const providerHandler = getProviderHandler(request.method)
 	const identifiedMethod = providerHandler.method
 	if (identifiedMethod !== 'notProviderMethod') {

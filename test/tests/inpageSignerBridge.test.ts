@@ -1112,7 +1112,7 @@ describe('inpage signer bridge', () => {
 		await assert.rejects(withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?unexpected-document-generation-failure', async () => undefined), /Unexpected top-window getter failure/)
 	})
 
-	test('refreshes EIP-6963 providers after startup when a legacy Rabby signer connected first', async () => {
+	test.each(['DOMContentLoaded', 'ethereum#initialized'])('refreshes EIP-6963 providers on %s after a legacy Rabby signer connected first', async (initializationEvent) => {
 		const connectedSignerNames: unknown[] = []
 		const catalogRequests: InpageRequest[] = []
 		const { fakeWindow } = createFakeWindow({
@@ -1136,7 +1136,7 @@ describe('inpage signer bridge', () => {
 			{ uuid: '22222222-2222-4222-8222-222222222222', name: 'MetaMask', icon: 'data:image/svg+xml,<svg/>', rdns: 'io.metamask' },
 		]
 
-		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?late-eip6963-after-legacy-rabby', async () => {
+		await withFakeInpageWindow(fakeWindow, `../../app/inpage/ts/inpage.js?late-eip6963-after-legacy-rabby-${ initializationEvent }`, async () => {
 			await waitFor(() => connectedSignerNames.includes('Rabby'))
 			await waitFor(() => catalogRequests.some((request) => Array.isArray(request.params?.[0]) && request.params[0].length === 0))
 			fakeWindow.addEventListener('eip6963:requestProvider', () => {
@@ -1144,7 +1144,7 @@ describe('inpage signer bridge', () => {
 				fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: providerInfos[1], provider: metaMaskProvider } })
 			})
 
-			fakeWindow.dispatchEvent({ type: 'DOMContentLoaded' })
+			fakeWindow.dispatchEvent({ type: initializationEvent })
 
 			await waitFor(() => catalogRequests.some((request) => Array.isArray(request.params?.[0]) && request.params[0].length === providerInfos.length))
 		})
@@ -2887,10 +2887,12 @@ describe('inpage signer bridge', () => {
 				return iconReads === 1 ? 'data:image/svg+xml,<svg/>' : 'https://attacker.example/icon.svg'
 			},
 		}
-		fakeWindow.addEventListener('eip6963:requestProvider', () => fakeWindow.dispatchEvent({
-			type: 'eip6963:announceProvider',
-			detail: { info: statefulInfo, provider: announcedProvider },
-		}))
+		let announced = false
+		fakeWindow.addEventListener('eip6963:requestProvider', () => {
+			if (announced) return
+			announced = true
+			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: statefulInfo, provider: announcedProvider } })
+		})
 
 		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?eip6963-metadata-snapshot', async () => {
 			await waitFor(() => catalogs.length > 0)

@@ -840,7 +840,7 @@ describe('EIP-6963 signer provider selection', () => {
 		const childSocket = { tabId: 7, connectionName: 2n }
 		const deliveredMessages: unknown[] = []
 		const websiteTabConnections: WebsiteTabConnections = new Map([[7, { connections: {
-			'7-0x2': { port: { postMessage: (message: unknown) => deliveredMessages.push(message) }, socket: childSocket, websiteOrigin: 'frame.example', frameId: 2, approved: true, wantsToConnect: true },
+			'7-0x2': { port: { name: '0x2', sender: { tab: { id: 7 }, frameId: 2 }, postMessage: (message: unknown) => deliveredMessages.push(message) }, socket: childSocket, websiteOrigin: 'app.example', frameId: 2, approved: true, wantsToConnect: true },
 		} }]])
 		registerCurrentChildSignerSocket(childSocket, 2)
 		reconcileSignerExecutionDocument(childSocket, 'app.example', DOCUMENT_GENERATION, false, 2)
