@@ -351,8 +351,8 @@ header:has(form[role='search']) h1 {
 				font-size: var(--text-size);
 			}
 
-			/* The Copy and Edit chips, an svg icon with a span label. The repeated entry icon slot is excluded because an icon such as a Blockie with a ticker also holds an svg and a span */
-			> :not([role=img]):has(svg):has(span) {
+			/* The Copy and Edit chips, matched by class rather than by their svg icon and span label because an entry icon such as a Blockie with a ticker holds an svg and a span too */
+			> .inline-card-action-chip {
 				font-size: 0.9em;
 				background: var(--inline-action-color);
 				color: var(--text-color);

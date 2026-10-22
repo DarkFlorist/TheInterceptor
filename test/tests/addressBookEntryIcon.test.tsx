@@ -158,6 +158,16 @@ describe('address book entry icons', () => {
 		assert.match(css, /\.blockie-with-ticker:is\(\[data-ticker-text\*="M"\], \[data-ticker-text\*="W"\]\)::after \{[^}]*font-size: 0\.34em;/u)
 	})
 
+	test('styles only the Copy and Edit chips as chips, never a Blockie with a ticker in the icon slot', async () => {
+		// The chip rules in interceptor-pages.css match the inline-card-action-chip class, so the svg and span of this icon cannot make it look like a chip
+		const rendered = await renderIntoDom(createTokenSymbol(createErc20Entry({ entrySource: 'User' })), (container) => ({
+			icon: readFirstIcon(container),
+			chipTitles: collectElements(container, 'span').filter((element) => element.getAttribute?.('class') === 'inline-card-action-chip').map((element) => element.getAttribute?.('title')),
+		}))
+		assert.equal(rendered.icon.kind, 'blockieWithTicker')
+		assert.deepEqual(rendered.chipTitles, ['Copy', 'Edit'])
+	})
+
 	test('uses the same token icon in address cards as in token symbols', async () => {
 		for (const entrySource of ['DarkFloristMetadata', 'User', 'OnChain'] as const) {
 			const tokenSymbolIcon = await renderTokenSymbolIcon(createErc20Entry({ entrySource }))
