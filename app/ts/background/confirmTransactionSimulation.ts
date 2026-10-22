@@ -21,7 +21,7 @@ let confirmTransactionAbortController = new AbortController()
 export const getConfirmTransactionAbortController = () => confirmTransactionAbortController
 
 let latestConfirmationRunId = 0
-// Every confirmation simulation run gets a new id, which refreshPopupConfirmTransactionMetadata uses to tell the run whose metadata it refreshed from a newer one. The id is the millisecond clock bumped past the previous id, so ids increase within a background session. Unlike the popup refresh generation it is not persisted, because it is only compared for equality; a stored id could be handed out again after a background restart only if the clock went back to that exact millisecond. See "Confirmation dialog staleness" in docs/popup-simulation-refresh.md for how this id, the simulation timestamp and the metadata refresh counter divide the work.
+// Every confirmation simulation run gets a new id, which refreshPopupConfirmTransactionMetadata uses to tell the run whose metadata it refreshed from a newer one. The id is the millisecond clock bumped past the previous id, so ids increase within a background session. Unlike the popup refresh generation it is not persisted, because it is only compared for equality; after a restart the counter starts over, so an id stored before the restart can be handed out again. See "Confirmation dialog staleness" in docs/popup-simulation-refresh.md for how this id, the simulation timestamp and the metadata refresh counter divide the work.
 function getNextConfirmationRunId() {
 	latestConfirmationRunId = Math.max(latestConfirmationRunId + 1, Date.now())
 	return latestConfirmationRunId

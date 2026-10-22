@@ -664,6 +664,7 @@ export async function refreshPopupConfirmTransactionSimulation(ethereum: Ethereu
 			case 'SignableMessage': throw new Error('Tried to refresh simulation of a message')
 			case 'Transaction': {
 				if (transactionOrMessage.transactionOrMessageCreationStatus !== 'Simulated' && transactionOrMessage.transactionOrMessageCreationStatus !== 'FailedToSimulate') return transactionOrMessage
+				// Keeps a simulation that ran later than this refresh's; see "Confirmation dialog staleness" in docs/popup-simulation-refresh.md.
 				const currentTimestamp = getSimulationConductedTimestamp(transactionOrMessage.popupVisualisation)
 				const nextTimestamp = getSimulationConductedTimestamp(refreshMessage)
 				if (currentTimestamp !== undefined && nextTimestamp !== undefined && nextTimestamp.getTime() < currentTimestamp.getTime()) return transactionOrMessage
