@@ -24,4 +24,32 @@ describe('getAddressMetaData', () => {
 		console.warn(metadata)
 		assert.equal(metadata.name, 'USDC')
 	})
+
+	test('identifies a bundled token stored only under its checksummed address', async () => {
+		const metadata = await identifyAddress(ethereum, undefined, 0x041171993284df560249b57358f931d9eb7b925dn, false)
+		assert.deepStrictEqual(metadata, {
+			name: 'Compound Pax Dollar',
+			symbol: 'cUSDP',
+			decimals: 8n,
+			logoUri: '../vendor/@darkflorist/address-metadata/images/contracts/compound.png',
+			address: 0x041171993284df560249b57358f931d9eb7b925dn,
+			type: 'ERC20',
+			entrySource: 'DarkFloristMetadata',
+			chainId: 5n,
+		})
+	})
+
+	test('keeps identifying a token stored under both casings by its lower case entry', async () => {
+		const metadata = await identifyAddress(ethereum, undefined, 0x028171bca77440897b824ca71d1c56cac55b68a3n, false)
+		assert.deepStrictEqual(metadata, {
+			name: 'Aave DAI',
+			symbol: 'ADAI',
+			decimals: 18n,
+			logoUri: '../vendor/@darkflorist/address-metadata/images/tokens/0x028171bca77440897b824ca71d1c56cac55b68a3.png',
+			address: 0x028171bca77440897b824ca71d1c56cac55b68a3n,
+			type: 'ERC20',
+			entrySource: 'DarkFloristMetadata',
+			chainId: 5n,
+		})
+	})
 })
