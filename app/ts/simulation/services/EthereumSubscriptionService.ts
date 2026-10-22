@@ -1,5 +1,5 @@
 import type { EthNewFilter, EthSubscribeParams } from '../../types/JsonRpc-types.js'
-import { assertNever } from '../../utils/typescript.js'
+import { hasOwnKey } from '../../utils/typescript.js'
 import type { EthereumClientService } from './EthereumClientService.js'
 import { getEthereumSubscriptionsAndFilters, updateEthereumSubscriptionsAndFilters } from '../../background/storageVariables.js'
 import type { EthereumSubscriptionsAndFilters, ResolvedExecutionSimulationState, ResolvedSimulationInput } from '../../types/visualizer-types.js'
@@ -49,6 +49,60 @@ const isSameWebsiteSocket = (left: WebsiteSocket, right: WebsiteSocket) => left.
 const filterChangesScope = {}
 const runFilterChangeSerially = createScopedKeyedSerialExecutor<typeof filterChangesScope, string>()
 
+type StoredEthSubscription = Exclude<EthereumSubscriptionsAndFilters[number], { readonly type: 'eth_newFilter' }>
+type LiveBlock = Awaited<ReturnType<EthereumClientService['getBlock']>>
+type SimulatedBlock = NonNullable<Awaited<ReturnType<typeof getSimulatedBlockFromInput>>>
+// Each is fetched at most once per block, however many subscribers need it.
+type NewBlockSources = {
+	readonly isSimulation: boolean
+	readonly getLiveBlock: () => Promise<LiveBlock>
+	readonly getSimulatedBlocks: () => Promise<readonly SimulatedBlock[]>
+}
+type EthSubscriptionTypeBehaviour = {
+	// Sent once, right after the subscriber received the eth_subscribe reply carrying the subscription id.
+	readonly sendInitialMessages: (websiteTabConnections: WebsiteTabConnections, subscription: StoredEthSubscription) => void
+	readonly sendNewBlockMessages: (websiteTabConnections: WebsiteTabConnections, subscription: StoredEthSubscription, newBlockSources: NewBlockSources) => Promise<void>
+}
+
+// Everything that differs between the supported eth_subscribe types; createEthereumSubscription rejects types without an entry. Supporting a type takes an entry here, its stored record runtype in EthereumSubscriptionsAndFilters and its notification payload in SubscriptionReturnValue; the Record type makes a stored type without an entry a type error.
+const ethSubscriptionTypes: Record<StoredEthSubscription['type'], EthSubscriptionTypeBehaviour> = {
+	newHeads: {
+		// newHeads subscribers are only notified about blocks that arrive after they subscribed.
+		sendInitialMessages: () => undefined,
+		sendNewBlockMessages: async (websiteTabConnections, subscription, newBlockSources) => {
+			const newBlock = await newBlockSources.getLiveBlock()
+			sendSubscriptionReplyOrCallBack(websiteTabConnections, subscription.subscriptionCreatorSocket, {
+				type: 'result',
+				method: 'newHeads' as const,
+				result: { subscription: subscription.subscriptionOrFilterId, result: newBlock } as const,
+				subscription: subscription.subscriptionOrFilterId,
+			})
+			if (!newBlockSources.isSimulation) return
+			for (const simulatedBlock of await newBlockSources.getSimulatedBlocks()) {
+				// post our simulated blocks on top (reorg them)
+				sendSubscriptionReplyOrCallBack(websiteTabConnections, subscription.subscriptionCreatorSocket, {
+					type: 'result',
+					method: 'newHeads' as const,
+					result: { subscription: subscription.subscriptionOrFilterId, result: simulatedBlock },
+					subscription: subscription.subscriptionOrFilterId,
+				})
+			}
+		},
+	},
+	syncing: {
+		// geth immediately sends a new subscriber its current sync status. The Interceptor treats its RPC node as always synced, so that status is `false`, and new blocks cannot change it.
+		sendInitialMessages: (websiteTabConnections, subscription) => {
+			sendSubscriptionReplyOrCallBack(websiteTabConnections, subscription.subscriptionCreatorSocket, {
+				type: 'result',
+				method: 'syncing',
+				result: { subscription: subscription.subscriptionOrFilterId, result: false },
+				subscription: subscription.subscriptionOrFilterId,
+			})
+		},
+		sendNewBlockMessages: async () => undefined,
+	},
+}
+
 export async function sendSubscriptionMessagesForNewBlock(
 	blockNumber: bigint,
 	ethereumClientService: EthereumClientService,
@@ -57,9 +111,9 @@ export async function sendSubscriptionMessagesForNewBlock(
 	getSimulationState: (ethereumClientService: EthereumClientService) => Promise<ResolvedExecutionSimulationState>,
 ) {
 	const ethereumSubscriptionsAndFilters = await getEthereumSubscriptionsAndFilters()
-	let liveBlockPromise: Promise<Awaited<ReturnType<EthereumClientService['getBlock']>>> | undefined
+	let liveBlockPromise: Promise<LiveBlock> | undefined
 	let simulationStatePromise: Promise<ResolvedExecutionSimulationState> | undefined
-	let simulatedBlocksPromise: Promise<readonly NonNullable<Awaited<ReturnType<typeof getSimulatedBlockFromInput>>>[]> | undefined
+	let simulatedBlocksPromise: Promise<readonly SimulatedBlock[]> | undefined
 	const getLiveBlock = async () => {
 		if (liveBlockPromise === undefined) liveBlockPromise = ethereumClientService.getBlock(undefined, blockNumber, false)
 		return await liveBlockPromise
@@ -84,62 +138,39 @@ export async function sendSubscriptionMessagesForNewBlock(
 		})()
 		return await simulatedBlocksPromise
 	}
+	const newBlockSources = { isSimulation, getLiveBlock, getSimulatedBlocks }
 	for (const subscriptionOrFilter of ethereumSubscriptionsAndFilters) {
 		const tabConnection = websiteTabConnections.get(subscriptionOrFilter.subscriptionCreatorSocket.tabId)
 		if (tabConnection?.connections[websiteSocketToString(subscriptionOrFilter.subscriptionCreatorSocket)] === undefined) { // connection removed
 			await removeEthereumSubscription(subscriptionOrFilter.subscriptionCreatorSocket, subscriptionOrFilter.subscriptionOrFilterId)
 			continue
 		}
-		switch (subscriptionOrFilter.type) {
-			case 'newHeads': {
-				const newBlock = await getLiveBlock()
-
-				sendSubscriptionReplyOrCallBack(websiteTabConnections, subscriptionOrFilter.subscriptionCreatorSocket, {
-					type: 'result',
-					method: 'newHeads' as const,
-					result: { subscription: subscriptionOrFilter.subscriptionOrFilterId, result: newBlock } as const,
-					subscription: subscriptionOrFilter.subscriptionOrFilterId,
-				})
-
-				if (isSimulation) {
-					for (const simulatedBlock of await getSimulatedBlocks()) {
-						// post our simulated blocks on top (reorg them)
-						sendSubscriptionReplyOrCallBack(websiteTabConnections, subscriptionOrFilter.subscriptionCreatorSocket, {
-							type: 'result',
-							method: 'newHeads' as const,
-							result: { subscription: subscriptionOrFilter.subscriptionOrFilterId, result: simulatedBlock },
-							subscription: subscriptionOrFilter.subscriptionOrFilterId,
-						})
-					}
-				}
-				break
-			}
-			case 'eth_newFilter': break
-			default: assertNever(subscriptionOrFilter)
-		}
+		if (subscriptionOrFilter.type === 'eth_newFilter') continue // filters are polled through eth_getFilterChanges instead
+		await ethSubscriptionTypes[subscriptionOrFilter.type].sendNewBlockMessages(websiteTabConnections, subscriptionOrFilter, newBlockSources)
 	}
 	return
 }
+
+// Creating a subscription is the only way to get its initial messages. Send them only after the eth_subscribe reply carrying `subscriptionId` was delivered: both use the same port, so the page then already knows the id when a notification for it arrives.
 export async function createEthereumSubscription(params: EthSubscribeParams, subscriptionCreatorSocket: WebsiteSocket) {
-	switch(params.params[0]) {
-		case 'newHeads': {
-			const subscriptionOrFilterId = generateId(40)
-			await updateEthereumSubscriptionsAndFilters((subscriptionsAndfilters: EthereumSubscriptionsAndFilters) => {
-				return subscriptionsAndfilters.concat({ type: 'newHeads', subscriptionOrFilterId, params, subscriptionCreatorSocket })
-			})
-			return subscriptionOrFilterId
-		}
-		case 'logs':
-		case 'newPendingTransactions':
-		case 'syncing':
-			throw new JsonRpcResponseError({
-				jsonrpc: '2.0',
-				id: 1,
-				error: {
-					code: METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER,
-					message: `Dapp requested for '${ params.params[0] }' subscription but it's not implemented`,
-				},
-			})
+	const type = params.params[0]
+	if (!hasOwnKey(ethSubscriptionTypes, type)) {
+		throw new JsonRpcResponseError({
+			jsonrpc: '2.0',
+			id: 1,
+			error: {
+				code: METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER,
+				message: `Dapp requested for '${ type }' subscription but it's not implemented`,
+			},
+		})
+	}
+	const subscription: StoredEthSubscription = { type, subscriptionOrFilterId: generateId(40), params, subscriptionCreatorSocket }
+	await updateEthereumSubscriptionsAndFilters((subscriptionsAndfilters: EthereumSubscriptionsAndFilters) => {
+		return subscriptionsAndfilters.concat(subscription)
+	})
+	return {
+		subscriptionId: subscription.subscriptionOrFilterId,
+		sendInitialMessages: (websiteTabConnections: WebsiteTabConnections) => ethSubscriptionTypes[subscription.type].sendInitialMessages(websiteTabConnections, subscription),
 	}
 }
 
