@@ -24,9 +24,10 @@ Object.defineProperty(globalThis, 'browser', {
 	},
 })
 
-const { getMetadataForAddressBookData } = await import('../../app/ts/background/metadataSearch.js')
+const { findEntryWithSymbolOrName, getMetadataForAddressBookData } = await import('../../app/ts/background/metadataSearch.js')
 
 const AAVE_DAI_ADDRESS = 0x028171bca77440897b824ca71d1c56cac55b68a3n
+const AAVE_WETH_ADDRESS = 0x030ba81f1c18d280636f32af80b9aad02cf0854en
 
 const tokenAddressesKeyedInBothCasings = Array.from(tokenMetadata.keys()).filter((key) => key !== key.toLowerCase() && tokenMetadata.has(key.toLowerCase())).map((key) => key.toLowerCase())
 const tokenAddressesKeyedOnlyChecksummed = Array.from(tokenMetadata.keys()).filter((key) => key !== key.toLowerCase() && !tokenMetadata.has(key.toLowerCase())).map((key) => key.toLowerCase())
@@ -65,5 +66,15 @@ describe('bundled ERC20 token listing', () => {
 	test('address search returns a token keyed in both casings once', async () => {
 		const { entries } = await getMetadataForAddressBookData({ filter: 'ERC20 Tokens', chainId: 1n, searchString: addressString(AAVE_DAI_ADDRESS) })
 		assert.deepEqual(entries.map((entry) => entry.name), ['Aave DAI'])
+	})
+})
+
+describe('bundled entry lookup by symbol or name', () => {
+	test('resolves a symbol shared by both casings of a token to the lowercase-keyed entry', async () => {
+		const entry = await findEntryWithSymbolOrName('aweth', undefined, 1n)
+		assert.ok(entry?.type === 'ERC20')
+		assert.equal(entry.address, AAVE_WETH_ADDRESS)
+		assert.equal(entry.name, 'Aave WETH')
+		assert.equal(entry.symbol, 'AWETH')
 	})
 })
