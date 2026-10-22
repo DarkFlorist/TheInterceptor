@@ -4,7 +4,8 @@ import { isInternalProviderMethod as isInternalBackgroundMethod } from '../../ts
 import { createSignerProviderCoordinator } from './signerProviderCoordinator.js'
 import { createPrivateInpageBridge } from './privateInpageBridge.js'
 import type { InternalProviderMethod } from '../../ts/utils/internalProviderMethods.js'
-import type { SignerName, EIP6963ProviderInfo } from '../../ts/types/signerTypes.js'
+import type { EIP6963ProviderInfo } from '../../ts/utils/eip6963ProviderInfo.js'
+import type { SignerName } from '../../ts/types/signerTypes.js'
 
 const SAFE_APPS_RESPONSE_VERSION = '9.1.0'
 const SAFE_APPS_PENDING_REQUEST_LIMIT = 32

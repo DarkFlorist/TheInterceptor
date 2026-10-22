@@ -73,7 +73,7 @@ const InpageScriptRequestWithoutIdentifier = funtypes.Union(
 
 // Internal result methods form the reserved request contract; connection-status notifications are background-only.
 export const InternalProviderMethods = internalProviderMethods satisfies Record<Exclude<Extract<InpageScriptRequestWithoutIdentifier, { readonly method: string }>['method'], 'signer_connection_status_changed'> | 'InterceptorError' | 'safe_apps_request', true>
-export type InternalProviderMethod = keyof typeof InternalProviderMethods
+export type { InternalProviderMethod } from '../utils/internalProviderMethods.js'
 
 export type WatchAssetSignerRequest = funtypes.Static<typeof WatchAssetSignerRequest>
 export const WatchAssetSignerRequest = funtypes.ReadonlyObject({

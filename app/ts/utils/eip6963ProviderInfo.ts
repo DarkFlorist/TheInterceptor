@@ -1,7 +1,7 @@
 import { isUuid } from './uuid.js'
-import type { EIP6963ProviderInfo } from '../types/signerTypes.js'
-export type { EIP6963ProviderInfo } from '../types/signerTypes.js'
 import { internalSignerStatuses } from './signerIdentity.js'
+
+export type EIP6963ProviderInfo = { readonly uuid: string, readonly name: string, readonly icon: string, readonly rdns: string }
 
 const isValidImageDataUri = (value: string) => {
 	const match = /^data:image\/[a-z0-9.+-]+(?:;[a-z0-9.+-]+=[^;,]+)*(;base64)?,(.+)$/is.exec(value)

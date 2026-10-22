@@ -62,7 +62,7 @@ export async function signerProvidersChanged(request: ProviderMessage, websiteOr
 		automaticSelectionAllowed: false,
 		signerSelectionChangeAllowed: false,
 		legacySignerAllowed: false,
-		...(signerFrameHasDifferentOrigin(socket, websiteOrigin) ? { signerFrameIneligible: true } : {}),
+		...((!isTopFrame && frameId === undefined) || signerFrameHasDifferentOrigin(socket, websiteOrigin) ? { signerFrameIneligible: true } : {}),
 	}
 	if (!isTopFrame) {
 		const executionTarget = getSignerExecutionTargetForSocket(socket, websiteOrigin)

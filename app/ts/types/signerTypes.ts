@@ -1,5 +1,5 @@
 import * as funtypes from 'funtypes'
-import { isEip6963ProviderUuid, isEip6963ProviderName, isEip6963ProviderIcon, isEip6963ProviderRdns } from '../utils/eip6963ProviderInfo.js'
+import { isEip6963ProviderUuid, isEip6963ProviderName, isEip6963ProviderIcon, isEip6963ProviderRdns, type EIP6963ProviderInfo as ProviderInfo } from '../utils/eip6963ProviderInfo.js'
 import { EthereumAddress, EthereumQuantity } from './wire-types.js'
 
 export type SignerName = funtypes.Static<typeof SignerName>
@@ -15,13 +15,14 @@ export const SignerName = funtypes.Union(
 	funtypes.Literal('EIP6963'),
 )
 
-export type EIP6963ProviderInfo = funtypes.Static<typeof EIP6963ProviderInfo>
+// The runtime schema adapts the realm-neutral provider-info contract owned by the shared validator module.
+export type EIP6963ProviderInfo = ProviderInfo
 export const EIP6963ProviderInfo = funtypes.ReadonlyObject({
 	uuid: funtypes.String.withConstraint(isEip6963ProviderUuid),
 	name: funtypes.String.withConstraint(isEip6963ProviderName),
 	icon: funtypes.String.withConstraint(isEip6963ProviderIcon),
 	rdns: funtypes.String.withConstraint(isEip6963ProviderRdns),
-})
+}) satisfies funtypes.Runtype<ProviderInfo>
 
 export type SignerPreference = funtypes.Static<typeof SignerPreference>
 export const SignerPreference = funtypes.ReadonlyObject({

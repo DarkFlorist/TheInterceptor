@@ -140,6 +140,8 @@ describe('background signer selection routing', () => {
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 
 		assert.deepEqual((await getTabState(socket.tabId)).availableSignerProviders, [])
+		const catalogResult = messages.find((message) => message.method === 'signer_providers_changed')?.result
+		assert.ok(catalogResult !== null && typeof catalogResult === 'object' && 'signerFrameIneligible' in catalogResult && catalogResult.signerFrameIneligible === true, 'Unknown frame identity must settle catalog discovery instead of retrying forever')
 		await assert.rejects(selectSignerProvider(websiteTabConnections, {
 			method: 'popup_selectSignerProvider',
 			data: { tabId: socket.tabId, websiteOrigin, uuid: provider.uuid },

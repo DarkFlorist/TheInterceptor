@@ -188,7 +188,7 @@ describe('EIP-6963 signer provider selection', () => {
 		const result = await signerProvidersChanged(createProviderMessage('signer_providers_changed', [[provider], false]), 'app.example', false)
 		const tabState = await getTabState(7)
 
-		assert.deepEqual(result, { preferredSignerRdns: undefined, automaticSelectionAllowed: false, signerSelectionChangeAllowed: false, legacySignerAllowed: false })
+		assert.deepEqual(result, { preferredSignerRdns: undefined, automaticSelectionAllowed: false, signerSelectionChangeAllowed: false, legacySignerAllowed: false, signerFrameIneligible: true })
 		assert.deepEqual(tabState.availableSignerProviders, [])
 		assert.equal(tabState.selectedSignerProvider, undefined)
 	})

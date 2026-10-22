@@ -174,6 +174,6 @@ export async function promiseAllMapAbortSafe<InputType, OutputType>(values: read
 }
 
 export function isTopFrameId(frameId: number | undefined): frameId is 0 {
-	// Missing browser frame metadata cannot establish top-frame authority.
+	// Missing metadata cannot establish top-frame authority; see https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/runtime/MessageSender#frameid
 	return frameId === 0
 }
