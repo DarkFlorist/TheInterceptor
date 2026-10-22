@@ -18,6 +18,7 @@ import { Semaphore } from '../utils/semaphore.js'
 import { RawInterceptedRequest, checkAndThrowRuntimeLastError, getHostWithPort, isMissingBrowserTargetError, silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { DEFAULT_TAB_CONNECTION, ICON_NOT_ACTIVE } from '../utils/constants.js'
 import { reportUnexpectedError, isExpectedInfrastructureError, printError, reportLocalRecoveryBestEffort } from '../utils/errors.js'
+import { redactRpcUrlCredentials } from '../utils/rpcUrlCredentials.js'
 import { updateContentScriptInjectionStrategyManifestV2 } from '../utils/contentScriptsUpdating.js'
 import { checkIfInterceptorShouldSleep } from './sleeping.js'
 import { onCloseWindowOrTab, resolvePendingRequestsForMissingConfirmationWindows } from './windows/confirmTransaction.js'
@@ -88,7 +89,7 @@ const rpcRequestLifecycleCallbacks = {
 			source: 'rpc_request_lifecycle',
 			code: 'rpc_request_lifecycle_callback_failed',
 			message: `RPC request lifecycle callback ${ callbackName } failed.`,
-			details: { callbackName, request },
+			details: { callbackName, request: { ...request, rpcUrl: redactRpcUrlCredentials(request.rpcUrl) } },
 		})
 	},
 } satisfies RpcRequestLifecycleCallbacks

@@ -6,6 +6,7 @@ import { CANNOT_APPROVE, CANNOT_BURN_FUSES, CANNOT_CREATE_SUBDOMAIN, CANNOT_SET_
 import type { EthereumAddress } from '../types/wire-types.js'
 import { decodeFunctionOutput, encodeFunctionCall } from './abiRuntime.js'
 import { normalizeEnsNameOrUndefined } from './ens.js'
+import { redactRpcUrlCredentials } from './rpcUrlCredentials.js'
 
 // parses ens string, eg vitalik.eth from the wrapped ens names() return value
 function encodeEthereumNameServiceString(data: string): string | undefined {
@@ -57,7 +58,7 @@ export const getEthereumNameServiceNameFromTokenId = async (ethereumMainnet: Eth
 	const normalizedName = normalizeEnsNameOrUndefined(name)
 	if (normalizedName === undefined) return undefined
 	if (tokenId !== BigInt(namehash(normalizedName))) {
-		console.error(`Querying RPC ${ ethereumMainnet.getRpcEntry().httpsRpc } returned invalid name for hash: ${ tokenId }.`)
+		console.error(`Querying RPC ${ redactRpcUrlCredentials(ethereumMainnet.getRpcEntry().httpsRpc) } returned invalid name for hash: ${ tokenId }.`)
 		return undefined
 	}
 	return name

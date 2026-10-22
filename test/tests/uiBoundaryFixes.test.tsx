@@ -12,9 +12,9 @@ import { DropDownMenu } from '../../app/ts/components/subcomponents/DropDownMenu
 import { InlineCard } from '../../app/ts/components/subcomponents/InlineCard.js'
 import { hasValidTimePickerValue, parseTimePickerDeltaValue, TimePicker } from '../../app/ts/components/subcomponents/TimePicker.js'
 import { rpcEntriesToChainEntriesWithAllChainsEntry } from '../../app/ts/components/ui-utils.js'
-import { parseRpcFormData } from '../../app/ts/utils/rpcFormData.js'
+import { getRpcFormMode, parseRpcFormData } from '../../app/ts/utils/rpcFormData.js'
 import { removeAddressBookEntryAndClose } from '../../app/ts/AddressBook.js'
-import { completeRpcFormMutation, removeRpcEntryAndKeepActiveRpcConsistent, saveRpcEntryAndKeepActiveRpcConsistent } from '../../app/ts/components/subcomponents/ConfigureRpcConnection.js'
+import { completeRpcFormMutation, ConfigureRpcForm, removeRpcEntryAndKeepActiveRpcConsistent, RpcQueryProvider, saveRpcEntryAndKeepActiveRpcConsistent } from '../../app/ts/components/subcomponents/ConfigureRpcConnection.js'
 import { readAndImportSettingsFile, withObjectUrl } from '../../app/ts/components/pages/SettingsView.js'
 import type { AddressBookEntry } from '../../app/ts/types/addressBookTypes.js'
 import { installDomMock } from './domMock.js'
@@ -24,12 +24,105 @@ type TestNode = {
 	readonly childNodes?: readonly TestNode[]
 	readonly getAttribute?: (name: string) => string | null
 	readonly tagName?: string
+	readonly l?: Record<string, (event: unknown) => unknown>
+	value?: string
+	setCustomValidity?: (message: string) => void
 }
 
 function collectElements(node: TestNode | undefined, tagName: string, results: TestNode[] = []) {
 	if (node?.tagName === tagName.toUpperCase()) results.push(node)
 	for (const child of node?.childNodes ?? []) collectElements(child, tagName, results)
 	return results
+}
+
+const NativeFormData = globalThis.FormData
+
+// Stands in for the FormData global while the RPC form is rendered: Bun's FormData ignores form elements, and the DOM mock keeps Preact's defaultValue prop as an attribute, so this collects the named inputs like a browser would. The form calls it with `new`, which returns the native FormData built here.
+function formDataFromRenderedInputs(form?: TestNode) {
+	const formData = new NativeFormData()
+	for (const input of collectElements(form, 'input')) {
+		const name = input.getAttribute?.('name')
+		if (name === null || name === undefined) continue
+		formData.set(name, input.value ?? input.getAttribute?.('defaultValue') ?? '')
+	}
+	return formData
+}
+
+// A native submit event carrying the form as its target and the clicked button as its submitter; the SubmitEvent global is the native Event while the form is rendered, so the form's instanceof check accepts it.
+function createSubmitEvent(form: TestNode, submitter: TestNode) {
+	const event = new Event('submit', { cancelable: true })
+	Object.defineProperty(event, 'target', { configurable: true, value: form })
+	Object.defineProperty(event, 'submitter', { configurable: true, value: submitter })
+	return event
+}
+
+async function withGlobalValues(values: Record<string, unknown>, run: () => Promise<void>) {
+	const previousDescriptors = Object.keys(values).map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)] as const)
+	for (const [name, value] of Object.entries(values)) Object.defineProperty(globalThis, name, { configurable: true, writable: true, value })
+	try {
+		await run()
+	} finally {
+		for (const [name, descriptor] of previousDescriptors) {
+			if (descriptor === undefined) Reflect.deleteProperty(globalThis, name)
+			else Object.defineProperty(globalThis, name, descriptor)
+		}
+	}
+}
+
+function findInput(inputs: readonly TestNode[], attributeName: string, attributeValue: string) {
+	const input = inputs.find((candidate) => candidate.getAttribute?.(attributeName) === attributeValue)
+	if (input === undefined) throw new Error(`Expected an input with ${ attributeName } ${ attributeValue }`)
+	return input
+}
+
+// Calls the input listener Preact registered, as typing would; the RPC URL field debounces this into an RPC probe. TextInput renders through preact/compat, which registers onInput under its lowercase name.
+async function typeIntoInput(input: TestNode, value: string) {
+	input.value = value
+	const inputHandler = input.l?.['inputfalse']
+	if (inputHandler === undefined) throw new Error('Expected an input listener')
+	await act(async () => { inputHandler({ currentTarget: input }) })
+}
+
+async function waitForRenderedState(condition: () => boolean, timeoutMs = 3000) {
+	const startedAt = Date.now()
+	while (!condition()) {
+		if (Date.now() - startedAt > timeoutMs) throw new Error('Timed out waiting for the rendered state')
+		await act(async () => await new Promise((resolve) => setTimeout(resolve, 10)))
+	}
+}
+
+// Renders the RPC form, lets the test inspect and fill its inputs, then submits it through the rendered Save button. Network requests are counted instead of sent.
+async function renderAndSaveRpcForm(defaultValues: RpcEntry | undefined, prepareInputs: (inputs: readonly TestNode[]) => void | Promise<void>) {
+	const dom = installDomMock()
+	const savedEntries: RpcEntry[] = []
+	let formClosed = false
+	let fetchCalls = 0
+	let renderedText = ''
+	const countingFetch = async () => {
+		fetchCalls += 1
+		throw new Error('The RPC form test does not serve network requests')
+	}
+	try {
+		await withGlobalValues({ SubmitEvent: Event, HTMLFormElement: globalThis.Element, HTMLButtonElement: globalThis.Element, FormData: formDataFromRenderedInputs, fetch: countingFetch }, async () => {
+			await act(() => render(<RpcQueryProvider><ConfigureRpcForm defaultValues = { defaultValues } onCancel = { () => { formClosed = true } } onSave = { async (entry) => { savedEntries.push(entry) } } /></RpcQueryProvider>, dom.document.body))
+			await prepareInputs(collectElements(dom.document.body, 'input'))
+
+			const form = collectElements(dom.document.body, 'form')[0]
+			const saveButton = collectElements(form, 'button').find((button) => button.getAttribute?.('value') === 'save')
+			const submitHandler = form?.l?.['Submitfalse']
+			if (form === undefined || saveButton === undefined || submitHandler === undefined) throw new Error('Expected the rendered RPC form')
+			// The DOM mock keeps Preact's value prop as an attribute; expose it as the button property the submit handler reads.
+			saveButton.value = saveButton.getAttribute?.('value') ?? undefined
+
+			await act(async () => { submitHandler(createSubmitEvent(form, saveButton)) })
+			for (let attempt = 0; attempt < 20 && !formClosed; attempt += 1) await act(async () => await new Promise((resolve) => setTimeout(resolve, 0)))
+			renderedText = dom.document.body.textContent
+		})
+		return { savedEntries, formClosed, fetchCalls, renderedText }
+	} finally {
+		render(null, dom.document.body)
+		dom.restore()
+	}
 }
 
 function createRpcFormData(apiKey: string) {
@@ -91,6 +184,16 @@ describe('UI boundary fixes', () => {
 		assert.equal(labels[2], 'Shared gateway (OTHER, Other currency)')
 		assert.equal(getRpcEntryLabel([first, second], first), 'Shared gateway (connection 1)')
 		assert.equal(getRpcEntryLabel([first, second], second), 'Shared gateway (connection 2)')
+	})
+
+	test('redacts RPC URL credentials from selector labels', () => {
+		const first: RpcEntry = { name: 'Private node', chainId: 1n, httpsRpc: 'https://alice:first-secret@node.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
+		const second = { ...first, httpsRpc: 'https://bob:second-secret@node.example', primary: false }
+		const publicNode = { ...first, httpsRpc: 'https://public.example', primary: false }
+		assert.equal(getRpcEntryLabel([first, publicNode], first), 'Private node (https://***@node.example/)')
+		assert.equal(getRpcEntryLabel([first, second, publicNode], first), 'Private node (https://***@node.example/) (connection 1)')
+		assert.equal(getRpcEntryLabel([first, second, publicNode], second), 'Private node (https://***@node.example/) (connection 2)')
+		assert.equal(getRpcEntryLabel([first, second, publicNode], publicNode), 'Private node (https://public.example)')
 	})
 
 	test('keeps dropdown controls from submitting surrounding forms', async () => {
@@ -382,8 +485,105 @@ describe('UI boundary fixes', () => {
 		assert.equal(hasValidTimePickerValue('No Delay', undefined, undefined), true)
 	})
 
+	test('decides once from the edited entry whether the RPC form adds or edits', () => {
+		const storedEntry: RpcEntry = { name: 'Private node', chainId: 1n, httpsRpc: 'https://alice:s3cret@node.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
+		assert.deepEqual(getRpcFormMode(undefined), { kind: 'add' })
+		assert.deepEqual(getRpcFormMode(storedEntry), { kind: 'edit', storedRpcUrl: 'https://alice:s3cret@node.example' })
+	})
+
+	test('saves the stored RPC URL in edit mode, even if URL text was submitted', () => {
+		const formData = createRpcFormData('')
+		formData.set('httpsRpc', 'https://***@node.example/')
+		const parsed = parseRpcFormData(formData, { kind: 'edit', storedRpcUrl: 'https://alice:s3cret@node.example' })
+
+		assert.equal(parsed.success, true)
+		if (!parsed.success) throw new Error(parsed.message)
+		assert.equal(parsed.value.httpsRpc, 'https://alice:s3cret@node.example')
+	})
+
+	test('saves the typed RPC URL in add mode', () => {
+		const formData = createRpcFormData('')
+		formData.set('httpsRpc', ' https://alice:s3cret@node.example ')
+		const parsed = parseRpcFormData(formData, { kind: 'add' })
+
+		assert.equal(parsed.success, true)
+		if (!parsed.success) throw new Error(parsed.message)
+		assert.equal(parsed.value.httpsRpc, 'https://alice:s3cret@node.example')
+	})
+
+	test('saves the stored credentialed URL when the rendered edit form is submitted', async () => {
+		const storedEntry: RpcEntry = { name: 'Private node', chainId: 1n, httpsRpc: 'https://alice:s3cret@node.example/v1', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
+		const { savedEntries, formClosed } = await renderAndSaveRpcForm(storedEntry, (inputs) => {
+			const urlInput = findInput(inputs, 'placeholder', 'RPC URL *')
+			assert.equal(urlInput.getAttribute?.('defaultValue'), 'https://***@node.example/v1')
+			assert.equal(urlInput.getAttribute?.('name'), null)
+			assert.notEqual(urlInput.getAttribute?.('readOnly'), null)
+			findInput(inputs, 'name', 'name').value = 'Renamed node'
+		})
+
+		assert.equal(formClosed, true)
+		assert.deepEqual(savedEntries.map((entry) => ({ name: entry.name, httpsRpc: entry.httpsRpc })), [{ name: 'Renamed node', httpsRpc: storedEntry.httpsRpc }])
+	})
+
+	test('saves the typed credentialed URL when the rendered add form is submitted', async () => {
+		const typedRpcUrl = 'https://alice:s3cret@node.example'
+		const { savedEntries, formClosed } = await renderAndSaveRpcForm(undefined, (inputs) => {
+			const urlInput = findInput(inputs, 'placeholder', 'RPC URL *')
+			assert.equal(urlInput.getAttribute?.('name'), 'httpsRpc')
+			assert.equal(urlInput.getAttribute?.('readOnly'), null)
+			urlInput.value = typedRpcUrl
+			findInput(inputs, 'name', 'name').value = 'Private node'
+			findInput(inputs, 'name', 'chainId').value = '1'
+			findInput(inputs, 'name', 'currencyName').value = 'Ether'
+			findInput(inputs, 'name', 'currencyTicker').value = 'ETH'
+		})
+
+		assert.equal(formClosed, true)
+		assert.deepEqual(savedEntries.map((entry) => ({ name: entry.name, chainId: entry.chainId, httpsRpc: entry.httpsRpc })), [{ name: 'Private node', chainId: 1n, httpsRpc: typedRpcUrl }])
+	})
+
+	test('rejects saving a typed credential URL that would be sent over plaintext http, to a remote or loopback host', async () => {
+		for (const host of ['remote-node:8545', '127.0.0.1:8545']) {
+			const typedRpcUrl = `http://alice:s3cret@${ host }`
+			const expectedError = `Credentials in RPC URL http://***@${ host }/ can only be sent over https.`
+			const urlFieldValidityMessages: string[] = []
+			const { savedEntries, formClosed, fetchCalls, renderedText } = await renderAndSaveRpcForm(undefined, async (inputs) => {
+				const urlInput = findInput(inputs, 'placeholder', 'RPC URL *')
+				urlInput.setCustomValidity = (message) => { urlFieldValidityMessages.push(message) }
+				await typeIntoInput(urlInput, typedRpcUrl)
+				await waitForRenderedState(() => urlFieldValidityMessages.at(-1) === expectedError)
+				// Filling every other field, as a probe of a previously typed URL would, leaves the credential check as the only reason not to save.
+				findInput(inputs, 'name', 'name').value = 'Private node'
+				findInput(inputs, 'name', 'chainId').value = '1'
+				findInput(inputs, 'name', 'currencyName').value = 'Ether'
+				findInput(inputs, 'name', 'currencyTicker').value = 'ETH'
+			})
+
+			assert.equal(urlFieldValidityMessages.at(-1), expectedError, host)
+			assert.equal(fetchCalls, 0, host)
+			assert.equal(formClosed, false, host)
+			assert.deepEqual(savedEntries, [], host)
+			assert.equal(renderedText.includes(expectedError), true, host)
+			assert.equal(renderedText.includes('s3cret'), false, host)
+		}
+	})
+
+	test('rejects saving an edited entry whose stored URL would send credentials over plaintext http, to a remote or loopback host', async () => {
+		for (const host of ['remote-node:8545', 'localhost:8545']) {
+			const importedEntry: RpcEntry = { name: 'Imported node', chainId: 1n, httpsRpc: `http://alice:s3cret@${ host }`, currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
+			const { savedEntries, formClosed, renderedText } = await renderAndSaveRpcForm(importedEntry, (inputs) => {
+				findInput(inputs, 'name', 'name').value = 'Renamed node'
+			})
+
+			assert.equal(formClosed, false, host)
+			assert.deepEqual(savedEntries, [], host)
+			assert.equal(renderedText.includes(`Credentials in RPC URL http://***@${ host }/ can only be sent over https.`), true, host)
+			assert.equal(renderedText.includes('s3cret'), false, host)
+		}
+	})
+
 	test('keeps a block explorer URL when its API key is empty', () => {
-		const parsed = parseRpcFormData(createRpcFormData(''))
+		const parsed = parseRpcFormData(createRpcFormData(''), { kind: 'add' })
 
 		assert.equal(parsed.success, true)
 		if (!parsed.success) throw new Error(parsed.message)
