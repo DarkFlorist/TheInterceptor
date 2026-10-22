@@ -1,12 +1,12 @@
 import type { MessageConfirmationRequest, TransactionConfirmationRequest } from '../types/confirmationRequest.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { createEthereumSubscriptionAndReply, createNewFilter, getEthFilterChanges, getEthFilterLogs, removeEthereumSubscription } from '../simulation/services/EthereumSubscriptionService.js'
+import { createEthereumSubscription, createNewFilter, getEthFilterChanges, getEthFilterLogs, removeEthereumSubscription } from '../simulation/services/EthereumSubscriptionService.js'
 import { createSimulationCallParams, getSimulatedBalanceFromInput, getSimulatedBlockByHashFromInput, getSimulatedBlockFromInput, getSimulatedBlockNumberFromInput, getSimulatedCodeFromInput, getSimulatedLogs, getSimulatedStorageAtFromInput, getSimulatedTransactionByHashFromInput, getSimulatedTransactionReceipt, simulatedCallFromInput, simulateEstimateGasFromInput, getSimulatedFeeHistory, getSimulatedTransactionCountFromInput, ethSimulateV1FromInput } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { DEFAULT_CALL_ADDRESS, ERROR_INTERCEPTOR_GET_CODE_FAILED } from '../utils/constants.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { ResolvedExecutionSimulationState, ResolvedSimulationInput } from '../types/visualizer-types.js'
 import { openChangeChainDialog } from './windows/changeChain.js'
-import type { InterceptedRequest, UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
+import type { InterceptedRequest, WebsiteSocket } from '../utils/requests.js'
 import type { EstimateGasParams, EthBalanceParams, EthBlockByHashParams, EthBlockByNumberParams, EthCallParams, EthGetStorageAtParams, EthNewFilter, EthGetLogsParams, EthSubscribeParams, EthUnSubscribeParams, FeeHistory, GetCode, GetFilterChanges, GetSimulationStack, GetTransactionCount, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams, UninstallFilter, GetFilterLogs, InterceptorError } from '../types/JsonRpc-types.js'
 import type { EthSimulateV1Params } from '../types/ethSimulate-types.js'
 import type { Website } from '../types/websiteAccessTypes.js'
@@ -76,10 +76,14 @@ export async function estimateGas(ethereumClientService: EthereumClientService, 
 	return { type: 'result' as const, method: request.method, result: estimatedGas.gas }
 }
 
-export async function subscribe(websiteTabConnections: WebsiteTabConnections, uniqueRequestIdentifier: UniqueRequestIdentifier, request: EthSubscribeParams) {
-	// The subscription service posts the reply itself, as some subscription types must follow it with an initial notification.
-	await createEthereumSubscriptionAndReply(websiteTabConnections, request, uniqueRequestIdentifier)
-	return { type: 'doNotReply' as const }
+export async function subscribe(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, request: EthSubscribeParams) {
+	const subscription = await createEthereumSubscription(request, socket)
+	return {
+		type: 'result' as const,
+		method: request.method,
+		result: subscription.subscriptionId,
+		afterReplyDelivered: () => subscription.sendInitialMessages(websiteTabConnections),
+	}
 }
 
 export async function unsubscribe(socket: WebsiteSocket, request: EthUnSubscribeParams) {

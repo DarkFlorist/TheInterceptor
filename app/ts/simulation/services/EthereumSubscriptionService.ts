@@ -5,8 +5,8 @@ import { getEthereumSubscriptionsAndFilters, updateEthereumSubscriptionsAndFilte
 import type { EthereumSubscriptionsAndFilters, ResolvedExecutionSimulationState, ResolvedSimulationInput } from '../../types/visualizer-types.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { getSimulatedBlockFromInput, getSimulatedBlockNumber, getSimulatedBlockNumberFromInput, getSimulatedLogs } from './SimulationModeEthereumClientService.js'
-import { replyToInterceptedRequest, sendSubscriptionReplyOrCallBack } from '../../background/messageSending.js'
-import type { UniqueRequestIdentifier, WebsiteSocket } from '../../utils/requests.js'
+import { sendSubscriptionReplyOrCallBack } from '../../background/messageSending.js'
+import type { WebsiteSocket } from '../../utils/requests.js'
 import { websiteSocketToString } from '../../background/backgroundUtils.js'
 import { createScopedKeyedSerialExecutor } from '../../utils/semaphore.js'
 import { JsonRpcResponseError } from '../../utils/errors.js'
@@ -151,7 +151,8 @@ export async function sendSubscriptionMessagesForNewBlock(
 	return
 }
 
-async function createEthereumSubscription(params: EthSubscribeParams, subscriptionCreatorSocket: WebsiteSocket) {
+// Creating a subscription is the only way to get its initial messages. Send them only after the eth_subscribe reply carrying `subscriptionId` was delivered: both use the same port, so the page then already knows the id when a notification for it arrives.
+export async function createEthereumSubscription(params: EthSubscribeParams, subscriptionCreatorSocket: WebsiteSocket) {
 	const type = params.params[0]
 	if (!hasOwnKey(ethSubscriptionTypes, type)) {
 		throw new JsonRpcResponseError({
@@ -167,15 +168,10 @@ async function createEthereumSubscription(params: EthSubscribeParams, subscripti
 	await updateEthereumSubscriptionsAndFilters((subscriptionsAndfilters: EthereumSubscriptionsAndFilters) => {
 		return subscriptionsAndfilters.concat(subscription)
 	})
-	return subscription
-}
-
-// The only way to create an eth_subscribe subscription, so no caller can send a subscription id without the initial messages that must follow it. Both travel on the same port in this order, so the page already knows the id when a notification for it arrives.
-export async function createEthereumSubscriptionAndReply(websiteTabConnections: WebsiteTabConnections, params: EthSubscribeParams, uniqueRequestIdentifier: UniqueRequestIdentifier) {
-	const subscription = await createEthereumSubscription(params, uniqueRequestIdentifier.requestSocket)
-	const replyDelivered = replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: params.method, result: subscription.subscriptionOrFilterId, uniqueRequestIdentifier })
-	if (replyDelivered === true) ethSubscriptionTypes[subscription.type].sendInitialMessages(websiteTabConnections, subscription)
-	return subscription.subscriptionOrFilterId
+	return {
+		subscriptionId: subscription.subscriptionOrFilterId,
+		sendInitialMessages: (websiteTabConnections: WebsiteTabConnections) => ethSubscriptionTypes[subscription.type].sendInitialMessages(websiteTabConnections, subscription),
+	}
 }
 
 export async function createNewFilter(params: EthNewFilter, subscriptionCreatorSocket: WebsiteSocket, ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationInput: ResolvedSimulationInput) {

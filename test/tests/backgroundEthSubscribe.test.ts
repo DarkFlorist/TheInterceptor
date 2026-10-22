@@ -4,7 +4,8 @@ import { PASSTHROUGH_STATE } from '../../app/ts/types/visualizer-types.js'
 import { METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER } from '../../app/ts/utils/constants.js'
 import { confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus } from './backgroundEthAccountsTestHarness.js'
 
-async function createApprovedSubscriberHarness() {
+// With `portDisconnected`, every post attempt is still recorded in `messages` but fails the way a closed port does, so no reply is delivered.
+async function createApprovedSubscriberHarness({ portDisconnected = false }: { readonly portDisconnected?: boolean } = {}) {
 	installBrowserMock()
 	const modules = await loadModules()
 	const { sendSubscriptionMessagesForNewBlock } = await import('../../app/ts/simulation/services/EthereumSubscriptionService.js')
@@ -17,7 +18,7 @@ async function createApprovedSubscriberHarness() {
 	await modules.updateEthereumSubscriptionsAndFilters(() => [])
 
 	const socket = { tabId: 1, connectionName: 0n }
-	const { port, messages } = createPort(socket.tabId)
+	const { port, messages } = createPort(socket.tabId, portDisconnected ? () => { throw new Error('Attempting to use a disconnected port object') } : undefined)
 	const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 		[modules.websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 	} }]])
@@ -76,6 +77,17 @@ describe('background eth_subscribe', () => {
 			{ method: 'eth_subscribe', requestId: 1, subscription: undefined, result: subscription.subscriptionOrFilterId },
 		])
 		assert.equal(getBlockCalls.count, 0)
+	})
+
+	test('syncing subscribers get no initial notification when the subscription id reply was not delivered', async () => {
+		const { modules, messages, sendRequest } = await createApprovedSubscriberHarness({ portDisconnected: true })
+
+		await sendRequest(1, 'eth_subscribe', ['syncing'])
+		const [subscription] = await modules.getEthereumSubscriptionsAndFilters()
+		if (subscription?.type !== 'syncing') throw new Error('syncing subscription was not stored')
+		assert.deepEqual(summarizePortMessages(messages), [
+			{ method: 'eth_subscribe', requestId: 1, subscription: undefined, result: subscription.subscriptionOrFilterId },
+		])
 	})
 
 	test('unsupported subscription types get a single error reply', async () => {
