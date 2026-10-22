@@ -487,7 +487,7 @@ test('prepares Safe transaction intent without charging gas to the Safe', async 
 		created,
 		1n,
 		false,
-		'external-executor',
+		{ gasPayment: 'external-executor', simulationOptions: undefined },
 	)
 
 	assert.equal(prepared.success, true)
@@ -526,7 +526,7 @@ test('does not fall back to ordinary gas estimation when Safe simulation state i
 		created,
 		1n,
 		false,
-		'external-executor',
+		{ gasPayment: 'external-executor', simulationOptions: undefined },
 	))
 
 	assert.equal(prepared.success, false)

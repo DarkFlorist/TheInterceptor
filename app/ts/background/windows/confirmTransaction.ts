@@ -9,7 +9,7 @@ import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS, 
 import { type TransactionConfirmation, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
 import { Semaphore } from '../../utils/semaphore.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
-import { type InterceptorTransactionStack, PASSTHROUGH_STATE, type TransactionSimulationOptions, type WebsiteCreatedEthereumTransaction, type WebsiteCreatedEthereumTransactionOrFailed, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
+import { type InterceptorTransactionStack, PASSTHROUGH_STATE, SENDER_PAID_FEES, type TransactionFeePayment, type WebsiteCreatedEthereumTransaction, type WebsiteCreatedEthereumTransactionOrFailed, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
 import type { SendRawTransactionParams, SendTransactionParams } from '../../types/JsonRpc-types.js'
 import { refreshConfirmTransactionSimulation } from '../confirmTransactionSimulation.js'
 import { captureSimulationSnapshot, getUpdatedSimulationState } from '../simulationUpdating.js'
@@ -70,7 +70,7 @@ async function refreshDirectSafeExecutionSimulation(
 		pending.created,
 		pending.transactionIdentifier,
 		false,
-		'external-executor',
+		pending.feePayment,
 	)
 	const popupVisualisation = await refreshConfirmTransactionSimulation(
 		ethereum,
@@ -532,20 +532,18 @@ export const formSendRawTransaction = async(_ethereumClientService: EthereumClie
 	}
 }
 
-export type TransactionGasPayment = 'transaction-sender' | 'external-executor'
-
-export const formEthSendTransaction = async(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, activeAddress: bigint | undefined, website: Website, sendTransactionParams: SendTransactionParams, created: Date, transactionIdentifier: EthereumQuantity, simulationMode = true, gasPayment: TransactionGasPayment = 'transaction-sender', simulationOptions: TransactionSimulationOptions | undefined = undefined): Promise<WebsiteCreatedEthereumTransactionOrFailed> => {
-	const simulationState = simulationMode || gasPayment === 'external-executor'
+export const formEthSendTransaction = async(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, activeAddress: bigint | undefined, website: Website, sendTransactionParams: SendTransactionParams, created: Date, transactionIdentifier: EthereumQuantity, simulationMode = true, feePayment: TransactionFeePayment = SENDER_PAID_FEES): Promise<WebsiteCreatedEthereumTransactionOrFailed> => {
+	const simulationState = simulationMode || feePayment.gasPayment === 'external-executor'
 		? await getUpdatedSimulationState(ethereumClientService, await captureSimulationSnapshot())
 		: PASSTHROUGH_STATE
 	const transactionDetails = sendTransactionParams.params[0]
 	if (activeAddress === undefined) throw new Error('Access to active address is denied')
 	const from = simulationMode && transactionDetails.from !== undefined ? transactionDetails.from : activeAddress
 	const transactionCountPromise = silenceChromeUnCaughtPromise(getSimulatedTransactionCount(ethereumClientService, requestAbortController, simulationState, from))
-	const parentBlockPromise = gasPayment === 'transaction-sender'
+	const parentBlockPromise = feePayment.gasPayment === 'transaction-sender'
 		? silenceChromeUnCaughtPromise(ethereumClientService.getBlock(requestAbortController)) // the latest real block is the parent of the transaction being prepared
 		: undefined
-	const balancePromise = gasPayment === 'transaction-sender'
+	const balancePromise = feePayment.gasPayment === 'transaction-sender'
 		? silenceChromeUnCaughtPromise(getSimulatedBalance(ethereumClientService, requestAbortController, simulationState, from))
 		: undefined
 	const parentBlock = parentBlockPromise === undefined ? undefined : await parentBlockPromise
@@ -553,15 +551,15 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 	if (parentBlock !== undefined && parentBlock.baseFeePerGas === undefined) throw new Error(CANNOT_SIMULATE_OFF_LEGACY_BLOCK)
 	const parentBaseFeePerGas = parentBlock?.baseFeePerGas
 	const requestedMaxPriorityFeePerGas = transactionDetails.maxPriorityFeePerGas !== undefined && transactionDetails.maxPriorityFeePerGas !== null ? transactionDetails.maxPriorityFeePerGas : 10n**8n // 0.1 nanoeth/gas
-	const maxPriorityFeePerGas = gasPayment === 'external-executor' ? 0n : requestedMaxPriorityFeePerGas
+	const maxPriorityFeePerGas = feePayment.gasPayment === 'external-executor' ? 0n : requestedMaxPriorityFeePerGas
 	const value = transactionDetails.value !== undefined  ? transactionDetails.value : 0n
 	const getFeePerGas = async (gasLimit: bigint) => {
-		if (gasPayment === 'external-executor') return { maxFeePerGas: 0n, maxPriorityFeePerGas: 0n }
+		if (feePayment.gasPayment === 'external-executor') return { maxFeePerGas: 0n, maxPriorityFeePerGas: 0n }
 		if (parentBaseFeePerGas === undefined || balancePromise === undefined) throw new Error('Transaction fee context is unavailable')
 		return getTransactionFeesForBaseFee(parentBaseFeePerGas, maxPriorityFeePerGas, transactionDetails.maxFeePerGas, await balancePromise, value, gasLimit)
 	}
 	const getInitialMaxFeePerGas = () => {
-		if (gasPayment === 'external-executor') return 0n
+		if (feePayment.gasPayment === 'external-executor') return 0n
 		if (hasExplicitMaxFeePerGas(transactionDetails.maxFeePerGas)) return transactionDetails.maxFeePerGas
 		if (parentBaseFeePerGas === undefined) throw new Error('Transaction fee context is unavailable')
 		return getDesiredMaxFeePerGasForBaseFee(parentBaseFeePerGas, maxPriorityFeePerGas)
@@ -586,10 +584,10 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 		error: undefined,
 	}
 	// Carried into the pre-simulation transaction so the confirmation simulation and the simulation stack use the same block options.
-	const simulationOptionsField = simulationOptions === undefined ? {} : { simulationOptions }
+	const simulationOptionsField = feePayment.simulationOptions === undefined ? {} : { simulationOptions: feePayment.simulationOptions }
 	if (transactionDetails.gas === undefined) {
 		try {
-			if (gasPayment === 'external-executor' && simulationState.kind === 'passthrough') {
+			if (feePayment.gasPayment === 'external-executor' && simulationState.kind === 'passthrough') {
 				throw new Error('Gnosis Safe transaction gas estimation requires the Interceptor simulator.')
 			}
 			const estimateGas = await simulateEstimateGas(ethereumClientService, requestAbortController, simulationState, transactionWithoutGas)
@@ -763,8 +761,7 @@ export async function openConfirmTransactionDialogForTransaction(
 	const {
 		effectiveTransactionParams,
 		transactionExecutor,
-		gasPayment,
-		simulationOptions,
+		feePayment,
 		preparationMessage: safePreparationMessage,
 	} = safePreparation
 	const transactionToSimulatePromise = safePreparationMessage !== undefined
@@ -789,8 +786,7 @@ export async function openConfirmTransactionDialogForTransaction(
 			created,
 			transactionIdentifier,
 			simulationMode,
-			gasPayment,
-			simulationOptions,
+			feePayment,
 		)
 		: formSendRawTransaction(ethereumClientService, effectiveTransactionParams, website, created, transactionIdentifier)
 	silenceChromeUnCaughtPromise(transactionToSimulatePromise)
@@ -813,6 +809,7 @@ export async function openConfirmTransactionDialogForTransaction(
 				simulationMode,
 				activeAddress: transactionExecutor,
 				created,
+				feePayment,
 				transactionOrMessageCreationStatus: 'Crafting' as const,
 				transactionIdentifier,
 				website,

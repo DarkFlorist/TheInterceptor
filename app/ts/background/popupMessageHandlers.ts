@@ -62,7 +62,6 @@ import { getLastKnownCurrentTabId } from './currentTab.js'
 import { reloadConnectedTabs } from './popupMessageHandlers/websiteAccess.js'
 import { updateWebsiteAccessAndContentScriptInjectionStrategy } from './websiteAccessUpdating.js'
 import { getConfiguredSigningSafeForChain } from './signingAddressSelection.js'
-import { getSimulationModeFeePayment, type TransactionFeePayment } from './safeTransactionConfirmation.js'
 
 type TimestampedPopupVisualisation = {
 	data: {
@@ -631,10 +630,6 @@ export async function refreshPopupConfirmTransactionSimulation(ethereum: Ethereu
 	if (firstTxn === undefined || firstTxn.type !== 'Transaction' || (firstTxn.transactionOrMessageCreationStatus !== 'Simulated' && firstTxn.transactionOrMessageCreationStatus !== 'FailedToSimulate')) return
 	const safeFlow = getSafePendingFlow(firstTxn)
 	const proposalSafeTransaction = safeFlow?.kind === 'proposal' ? safeFlow.pending.safeTransaction : undefined
-	// Decided from the stored active address as when the confirmation opened, so a refresh keeps the confirmation's fee model.
-	const feePayment: TransactionFeePayment = firstTxn.simulationMode
-		? await getSimulationModeFeePayment(ethereum.getChainId(), firstTxn.originalRequestParameters, firstTxn.activeAddress)
-		: { gasPayment: safeFlow === undefined ? 'transaction-sender' : 'external-executor', simulationOptions: undefined }
 	const transactionToSimulate = firstTxn.originalRequestParameters.method === 'eth_sendTransaction'
 		? await formEthSendTransaction(
 			ethereum,
@@ -645,8 +640,8 @@ export async function refreshPopupConfirmTransactionSimulation(ethereum: Ethereu
 			firstTxn.created,
 			firstTxn.transactionIdentifier,
 			firstTxn.simulationMode,
-			feePayment.gasPayment,
-			feePayment.simulationOptions,
+			// The fee model decided when the confirmation opened, so a refresh forms the transaction with the same fees even if the address book has changed since.
+			firstTxn.feePayment,
 		)
 		: await formSendRawTransaction(ethereum, firstTxn.originalRequestParameters, firstTxn.transactionToSimulate.website, firstTxn.created, firstTxn.transactionIdentifier)
 	const refreshMessage = await refreshConfirmTransactionSimulation(

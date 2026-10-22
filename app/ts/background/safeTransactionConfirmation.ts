@@ -4,7 +4,7 @@ import type { EthereumClientService } from '../simulation/services/EthereumClien
 import type { SendRawTransactionParams, SendTransactionParams } from '../types/JsonRpc-types.js'
 import type { SafeEntry } from '../types/addressBookTypes.js'
 import type { SafeTransactionSigningRequest } from '../types/safeTypes.js'
-import type { TransactionSimulationOptions, WebsiteCreatedEthereumTransaction, WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
+import { SENDER_PAID_FEES, type TransactionFeePayment, type WebsiteCreatedEthereumTransaction, type WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
 import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER } from '../utils/constants.js'
 import { getErrorMessage, reportLocalRecovery } from '../utils/errors.js'
 import { getPendingTransactionsAndMessages, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
@@ -17,15 +17,9 @@ import { getSafePendingFlow } from '../safe/safePendingFlow.js'
 
 type SafeExecutionSignerRoute = NonNullable<Awaited<ReturnType<typeof prepareSafeExecutionSignerRoute>>>
 
-export type TransactionFeePayment = {
-	readonly gasPayment: 'transaction-sender' | 'external-executor'
-	// Only set in simulation mode, where a transaction of the active Gnosis Safe is simulated and stacked itself instead of going through the Safe signing flow.
-	readonly simulationOptions: TransactionSimulationOptions | undefined
-}
-
-const SENDER_PAID_FEES: TransactionFeePayment = { gasPayment: 'transaction-sender', simulationOptions: undefined }
-
-export type SafeTransactionConfirmationPreparation = TransactionFeePayment & {
+export type SafeTransactionConfirmationPreparation = {
+	// The confirmation's fee model, stored with its pending transaction so that refreshes form the transaction with the same fees.
+	readonly feePayment: TransactionFeePayment
 	readonly effectiveTransactionParams: SendTransactionParams | SendRawTransactionParams
 	readonly transactionExecutor: bigint
 	readonly preparationMessage: string | undefined
@@ -144,7 +138,7 @@ export async function prepareSafeTransactionConfirmation(
 		? await getSimulationModeFeePayment(ethereum.getChainId(), transactionParams, activeAddress)
 		: { gasPayment: safeEntry === undefined && !isDirectSafeExecution ? 'transaction-sender' : 'external-executor', simulationOptions: undefined }
 	return {
-		...feePayment,
+		feePayment,
 		effectiveTransactionParams: safeExecutionSignerRoute?.transactionParams ?? transactionParams,
 		transactionExecutor: safeExecutionSignerRoute?.executor ?? activeAddress,
 		preparationMessage: directSignerSelectionMessage ?? executionPreparationMessage ?? reconciliationMessage,
@@ -245,7 +239,7 @@ function createRejectedPreparation(
 	message: string,
 ): SafeTransactionConfirmationPreparation {
 	return {
-		...SENDER_PAID_FEES,
+		feePayment: SENDER_PAID_FEES,
 		effectiveTransactionParams: transactionParams,
 		transactionExecutor: activeAddress,
 		preparationMessage: undefined,

@@ -126,6 +126,23 @@ const TransactionSimulationOptions = funtypes.ReadonlyObject({
 	simulateWithZeroBaseFee: funtypes.Boolean,
 })
 
+// Who pays a transaction's fees when it is formed and simulated. Decided once when its confirmation opens and stored with the pending transaction, so every refresh of the confirmation uses the same fees.
+export type TransactionFeePayment = funtypes.Static<typeof TransactionFeePayment>
+export const TransactionFeePayment = funtypes.Union(
+	funtypes.ReadonlyObject({
+		gasPayment: funtypes.Literal('transaction-sender'),
+		simulationOptions: funtypes.Undefined,
+	}),
+	// A Gnosis Safe's transaction is paid for by the external executor that runs it, so it is formed without fees and without checking the Safe's balance against them.
+	funtypes.ReadonlyObject({
+		gasPayment: funtypes.Literal('external-executor'),
+		// Only set in simulation mode, where a transaction of the active Gnosis Safe is simulated and stacked itself instead of going through the Safe signing flow.
+		simulationOptions: funtypes.Union(TransactionSimulationOptions, funtypes.Undefined),
+	}),
+)
+
+export const SENDER_PAID_FEES: TransactionFeePayment = { gasPayment: 'transaction-sender', simulationOptions: undefined }
+
 export type PreSimulationTransaction = funtypes.Static<typeof PreSimulationTransaction>
 export const PreSimulationTransaction = funtypes.ReadonlyObject({
 	signedTransaction: EthereumSendableSignedTransaction,

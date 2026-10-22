@@ -1,13 +1,19 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
 import type { SendRawTransactionParams, SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
-import { activeAddress, addressString, createFeeValidatingSimulator, createSafeAddressBookEntry, createWebsitePort, fakeRpcNetwork, isRecord, modules, recipientAddress, TOO_LITTLE_ETH_FOR_FEES, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
+import type { SafeEntry } from '../../app/ts/types/addressBookTypes.js'
+import { activeAddress, addressString, createFeeValidatingSimulator, createSafeAddressBookEntry, createSafeStackTransactionFixture, createWebsitePort, fakeRpcNetwork, isRecord, modules, pendingTransaction, recipientAddress, TOO_LITTLE_ETH_FOR_FEES, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
 
 // createSafeAddressBookEntry configures the Safe at activeAddress.
 const SAFE_ADDRESS = activeAddress
 const ORDINARY_ACCOUNT = recipientAddress
 const OTHER_ACCOUNT = 0x6666666666666666666666666666666666666666n
 const SAFE_EXECUTION_SIMULATION_OPTIONS = { requiredChainId: fakeRpcNetwork.chainId, simulateWithZeroBaseFee: true }
+const SENDER_PAID_FEES = { gasPayment: 'transaction-sender', simulationOptions: undefined }
+const EXECUTOR_PAID_FEES = { gasPayment: 'external-executor', simulationOptions: SAFE_EXECUTION_SIMULATION_OPTIONS }
+// A Gnosis Safe proposal or direct execution in signing mode, whose block options come from the Safe flow itself.
+const SAFE_SIGNING_FLOW_FEES = { gasPayment: 'external-executor', simulationOptions: undefined }
+const SAFE_ADDRESS_BOOK = [createSafeAddressBookEntry({ safeSimulationSignerAddress: recipientAddress, safeVersion: '1.4.1' })]
 
 const createTransferParams = async (fields: Record<string, unknown>) => (await import('../../app/ts/types/JsonRpc-types.js')).SendTransactionParams.parse({
 	method: 'eth_sendTransaction',
@@ -29,9 +35,9 @@ function createWebsiteTabConnections(postedMessages: unknown[]) {
 }
 
 // Opens the confirmation in simulation mode with the given active address, which the user selects and the page cannot change.
-async function openSimulationModeConfirmation(simulator: ReturnType<typeof createFeeValidatingSimulator>, selectedActiveAddress: bigint, transactionParams: SendTransactionParams, websiteTabConnections: ReturnType<typeof createWebsiteTabConnections>) {
+async function openSimulationModeConfirmation(simulator: ReturnType<typeof createFeeValidatingSimulator>, selectedActiveAddress: bigint, transactionParams: SendTransactionParams, websiteTabConnections: ReturnType<typeof createWebsiteTabConnections>, addressBookEntries: readonly SafeEntry[] = SAFE_ADDRESS_BOOK) {
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
-	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeSimulationSignerAddress: recipientAddress, safeVersion: '1.4.1' })])
+	await modules.updateUserAddressBookEntries(() => addressBookEntries)
 	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({ simulationMode: true, rpcNetwork: fakeRpcNetwork, activeSimulationAddress: selectedActiveAddress })
 	assert.deepEqual(await withSilencedConsole(async () => await modules.openConfirmTransactionDialogForTransaction(
 		simulator.ethereum,
@@ -61,6 +67,7 @@ test('simulates a transaction from the active Gnosis Safe with executor-paid fee
 	const pending = await openSimulationModeConfirmation(simulator, SAFE_ADDRESS, await createTransferParams({ from: addressString(SAFE_ADDRESS) }), websiteTabConnections)
 
 	assert.equal(pending.safeTransaction, undefined, 'simulation mode stacks the transaction instead of proposing it to the Safe')
+	assert.deepEqual(pending.feePayment, EXECUTOR_PAID_FEES)
 	assert.equal(pending.transactionToSimulate.transaction.from, SAFE_ADDRESS)
 	assert.equal(pending.transactionToSimulate.transaction.maxFeePerGas, 0n)
 	assert.deepEqual(pending.transactionToSimulate.simulationOptions, SAFE_EXECUTION_SIMULATION_OPTIONS)
@@ -101,9 +108,6 @@ const getSimulationModeFeePayment = async (selectedActiveAddress: bigint, transa
 	return await (await import('../../app/ts/background/safeTransactionConfirmation.js')).getSimulationModeFeePayment(fakeRpcNetwork.chainId, transactionParams, selectedActiveAddress)
 }
 
-const SENDER_PAID_FEES = { gasPayment: 'transaction-sender', simulationOptions: undefined }
-const EXECUTOR_PAID_FEES = { gasPayment: 'external-executor', simulationOptions: SAFE_EXECUTION_SIMULATION_OPTIONS }
-
 const feePaymentCases = [
 	{ description: 'the active Safe sends without naming a sender', selectedActiveAddress: SAFE_ADDRESS, createParams: async () => await createTransferParams({}), expected: EXECUTOR_PAID_FEES },
 	{ description: 'the page names the active Safe as the sender', selectedActiveAddress: SAFE_ADDRESS, createParams: async () => await createTransferParams({ from: addressString(SAFE_ADDRESS) }), expected: EXECUTOR_PAID_FEES },
@@ -116,5 +120,75 @@ const feePaymentCases = [
 for (const { description, selectedActiveAddress, createParams, expected } of feePaymentCases) {
 	test(`simulation mode fee payment when ${ description }`, async () => {
 		assert.deepEqual(await getSimulationModeFeePayment(selectedActiveAddress, await createParams()), expected)
+	})
+}
+
+async function refreshAndGetSimulatedConfirmation(simulator: ReturnType<typeof createFeeValidatingSimulator>) {
+	await withSilencedConsole(async () => await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService))
+	const [pending] = await modules.getPendingTransactionsAndMessages()
+	if (pending?.type !== 'Transaction' || pending.transactionOrMessageCreationStatus !== 'Simulated') throw new Error('Expected the refreshed transaction to stay simulated')
+	return pending
+}
+
+const addressBookChangeCases = [
+	{ description: 'stops being a configured Gnosis Safe', addressBookWhenOpened: SAFE_ADDRESS_BOOK, addressBookWhenRefreshed: [], expected: EXECUTOR_PAID_FEES },
+	{ description: 'becomes a configured Gnosis Safe', addressBookWhenOpened: [], addressBookWhenRefreshed: SAFE_ADDRESS_BOOK, expected: SENDER_PAID_FEES },
+]
+
+for (const { description, addressBookWhenOpened, addressBookWhenRefreshed, expected } of addressBookChangeCases) {
+	test(`a refresh keeps the fee payment the confirmation opened with when the active address ${ description } meanwhile`, async () => {
+		const simulator = createFeeValidatingSimulator(TOO_LITTLE_ETH_FOR_FEES)
+		const pending = await openSimulationModeConfirmation(simulator, SAFE_ADDRESS, await createTransferParams({ from: addressString(SAFE_ADDRESS) }), createWebsiteTabConnections([]), addressBookWhenOpened)
+		assert.deepEqual(pending.feePayment, expected)
+
+		await modules.updateUserAddressBookEntries(() => addressBookWhenRefreshed)
+		const refreshedPending = await refreshAndGetSimulatedConfirmation(simulator)
+
+		assert.notEqual(refreshedPending.popupVisualisation.data.confirmationRunId, pending.popupVisualisation.data.confirmationRunId, 'the refresh stored a new simulation run')
+		assert.deepEqual(refreshedPending.feePayment, expected)
+		assert.deepEqual(refreshedPending.transactionToSimulate.simulationOptions, expected.simulationOptions)
+		assert.equal(refreshedPending.transactionToSimulate.transaction.maxFeePerGas === 0n, expected.gasPayment === 'external-executor')
+	})
+}
+
+// Rewrites the stored confirmations the way versions that decided the fee payment again on every refresh stored them.
+async function forgetStoredFeePayments() {
+	const { pendingTransactionsAndMessages } = await browser.storage.local.get('pendingTransactionsAndMessages')
+	if (!Array.isArray(pendingTransactionsAndMessages)) throw new Error('Missing stored pending transactions')
+	await browser.storage.local.set({ pendingTransactionsAndMessages: pendingTransactionsAndMessages.map((pending: unknown) => {
+		if (!isRecord(pending)) return pending
+		const { feePayment: _feePayment, ...pendingWithoutFeePayment } = pending
+		return pendingWithoutFeePayment
+	}) })
+}
+
+test('refreshes a simulation-mode confirmation stored without a fee payment with the sender-paid fees older versions used', async () => {
+	const simulator = createFeeValidatingSimulator(TOO_LITTLE_ETH_FOR_FEES)
+	await openSimulationModeConfirmation(simulator, SAFE_ADDRESS, await createTransferParams({ from: addressString(SAFE_ADDRESS) }), createWebsiteTabConnections([]))
+	await forgetStoredFeePayments()
+	const [storedPending] = await modules.getPendingTransactionsAndMessages()
+	if (storedPending?.type !== 'Transaction') throw new Error('Expected the stored transaction')
+	assert.deepEqual(storedPending.feePayment, SENDER_PAID_FEES, 'older versions never simulated a Gnosis Safe transaction with executor-paid fees in simulation mode')
+
+	const refreshedPending = await refreshAndGetSimulatedConfirmation(simulator)
+
+	assert.deepEqual(refreshedPending.feePayment, SENDER_PAID_FEES)
+	assert.equal(refreshedPending.transactionToSimulate.simulationOptions, undefined)
+	assert.notEqual(refreshedPending.transactionToSimulate.transaction.maxFeePerGas, 0n)
+})
+
+const { safeTx, safeTxHash } = createSafeStackTransactionFixture()
+const legacySafeFlowCases = [
+	{ description: 'a Gnosis Safe proposal', safeFlowFields: { safeTransaction: { safeAddress: SAFE_ADDRESS, safeVersion: '1.4.1', threshold: 1n, safeTxHash, safeTx } } },
+	{ description: 'a direct Gnosis Safe execution', safeFlowFields: { safeExecutionOriginalRequestParameters: pendingTransaction.originalRequestParameters } },
+]
+
+for (const { description, safeFlowFields } of legacySafeFlowCases) {
+	test(`gives ${ description } stored without a fee payment the executor-paid fees older versions refreshed it with`, async () => {
+		await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [{ ...pendingTransaction, simulationMode: false, ...safeFlowFields }] })
+		await forgetStoredFeePayments()
+		const [storedPending] = await modules.getPendingTransactionsAndMessages()
+		if (storedPending?.type !== 'Transaction') throw new Error('Expected the stored transaction')
+		assert.deepEqual(storedPending.feePayment, SAFE_SIGNING_FLOW_FEES)
 	})
 }
