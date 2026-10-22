@@ -7,7 +7,7 @@ import type { AddressBookEntry } from '../../types/addressBookTypes.js'
 import type { EnrichedEthereumEvents } from '../../types/EnrichedEthereumData.js'
 import { checksummedAddress } from '../../utils/bigint.js'
 import { getFundsDestinations, type IdentifyAddress } from '../fundsDestinations.js'
-import { findLookalikeDestinations, type KnownAddressIndexesLoader, type LookalikeDestination } from '../lookalikeAddresses.js'
+import { findLookalikeDestinations, type KnownAddressIndexesLoader, type LookalikeDestination } from '../../utils/lookalikeAddresses.js'
 
 const ADDRESS_POISONING_EXPLANATION = 'Scammers create addresses that share the first and last characters of addresses you use, hoping you copy the wrong one (address poisoning). Verify the full address before continuing.'
 

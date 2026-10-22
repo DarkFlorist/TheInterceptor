@@ -1,5 +1,5 @@
 import type { AddressBookEntries } from '../types/addressBookTypes.js'
-import { indexKnownAddresses, indexRecognizedAddressBookEntries, type KnownAddressIndex } from '../simulation/lookalikeAddresses.js'
+import { indexKnownAddresses, indexRecognizedAddressBookEntries, type KnownAddressIndex } from '../utils/lookalikeAddresses.js'
 import { listBundledMetadata } from './bundledMetadata.js'
 import { getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
 

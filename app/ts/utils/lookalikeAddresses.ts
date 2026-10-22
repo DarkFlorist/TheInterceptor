@@ -1,6 +1,6 @@
-import type { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
+import { isRecognizedEntrySource, type AddressBookEntries, type AddressBookEntry } from '../types/addressBookTypes.js'
 import type { EthereumAddress } from '../types/wire-types.js'
-import { addressStringWithout0x } from '../utils/bigint.js'
+import { addressStringWithout0x } from './bigint.js'
 
 // Address poisoning addresses copy the leading and trailing hex characters that wallets and explorers display (usually 4-6 leading and 4 trailing), while two unrelated addresses share 4 + 4 characters with a probability of only 1 in 16^8 (about 1 in 4.3 billion).
 const LOOKALIKE_PREFIX_HEX_LENGTH = 4
@@ -31,11 +31,8 @@ export const indexKnownAddresses = (knownAddresses: readonly KnownAddress[]): Kn
 	return index
 }
 
-// OnChain entries are added automatically for every address the extension sees (including poisoning addresses) and FilledIn entries are placeholders, so neither tells that the user vetted the address.
-const isRecognizedAddressBookEntry = (entry: AddressBookEntry) => entry.entrySource !== 'OnChain' && entry.entrySource !== 'FilledIn'
-
-// Only entries the user vetted are imitation targets.
-export const indexRecognizedAddressBookEntries = (addressBookEntries: AddressBookEntries) => indexKnownAddresses(addressBookEntries.filter(isRecognizedAddressBookEntry))
+// Only recognized entries are imitation targets, because OnChain entries are recorded for every address the extension sees, including poisoning addresses.
+export const indexRecognizedAddressBookEntries = (addressBookEntries: AddressBookEntries) => indexKnownAddresses(addressBookEntries.filter((entry) => isRecognizedEntrySource(entry.entrySource)))
 
 // Supplied by the caller (the background layer reads the stored address book and the bundled metadata), so this module only matches addresses.
 export type KnownAddressIndexesLoader = () => Promise<readonly KnownAddressIndex[]>
@@ -52,7 +49,7 @@ export type LookalikeDestination = { readonly destination: AddressBookEntry, rea
 
 // Recognized destinations are never lookalikes, so the known addresses are loaded once, and only when some destination is unrecognized.
 export async function findLookalikeDestinations(destinations: readonly AddressBookEntry[], loadKnownAddressIndexes: KnownAddressIndexesLoader): Promise<readonly LookalikeDestination[]> {
-	const unrecognizedDestinations = destinations.filter((destination) => !isRecognizedAddressBookEntry(destination))
+	const unrecognizedDestinations = destinations.filter((destination) => !isRecognizedEntrySource(destination.entrySource))
 	if (unrecognizedDestinations.length === 0) return []
 	const knownAddressIndexes = await loadKnownAddressIndexes()
 	return unrecognizedDestinations.flatMap((destination) => {

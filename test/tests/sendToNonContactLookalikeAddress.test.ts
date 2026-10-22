@@ -1,7 +1,7 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { getSendToNonContactWarnings, sendToNonContact } from '../../app/ts/simulation/protectors/sendToNonContactAddress.js'
-import type { KnownAddress, KnownAddressIndex, KnownAddressIndexesLoader } from '../../app/ts/simulation/lookalikeAddresses.js'
+import type { KnownAddress, KnownAddressIndex, KnownAddressIndexesLoader } from '../../app/ts/utils/lookalikeAddresses.js'
 import { runProtectorsForTransaction } from '../../app/ts/simulation/protectorRunner.js'
 import { updateUserAddressBookEntries } from '../../app/ts/background/storageVariables.js'
 import { getKnownAddressIndexes, loadKnownAddressIndexesForChain } from '../../app/ts/background/lookalikeKnownAddresses.js'
