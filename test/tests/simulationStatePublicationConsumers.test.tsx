@@ -5,9 +5,10 @@ import { act } from 'preact/test-utils'
 import { App } from '../../app/ts/components/App.js'
 import { FetchSimulationStack } from '../../app/ts/components/pages/FetchSimulationStack.js'
 import { SimulationStackPage } from '../../app/ts/components/pages/SimulationStackPage.js'
+import { subscribeToSimulationStatePublications } from '../../app/ts/components/simulationStatePublications.js'
 import { retainPreviousVisualisation } from '../../app/ts/utils/popupVisualisationLifecycle.js'
 import type { AddressBookEntry } from '../../app/ts/types/addressBookTypes.js'
-import { MessageToPopup, type Settings, type UpdateHomePage } from '../../app/ts/types/interceptor-messages.js'
+import { MessageToPopup, PopupMessage, type Settings, type UpdateHomePage } from '../../app/ts/types/interceptor-messages.js'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
 import type { PendingFetchSimulationStackRequestPromise } from '../../app/ts/types/user-interface-types.js'
 import { type CompleteVisualizedSimulation, createPassthroughCompleteVisualizedSimulation } from '../../app/ts/types/visualizer-types.js'
@@ -28,6 +29,7 @@ function getMessageMethod(message: unknown) {
 
 function installBrowserMock() {
 	const listeners: RuntimeMessageListener[] = []
+	const sentMessages: unknown[] = []
 	const sentMethods: string[] = []
 	Object.defineProperty(globalThis, 'browser', {
 		configurable: true,
@@ -39,6 +41,7 @@ function installBrowserMock() {
 				getURL: (path: string) => `chrome-extension://test-extension${ path }`,
 				// Records every request and leaves it unanswered, so only what a view sends on its own is observed.
 				async sendMessage(message: unknown) {
+					sentMessages.push(message)
 					const method = getMessageMethod(message)
 					if (method !== undefined) sentMethods.push(method)
 					return undefined
@@ -55,6 +58,7 @@ function installBrowserMock() {
 	})
 	Object.defineProperty(globalThis, 'chrome', { configurable: true, writable: true, value: { runtime: { id: 'test-extension' } } })
 	return {
+		sentMessages,
 		sentMethods,
 		deliver(message: unknown) {
 			for (const listener of [...listeners]) listener(message, {}, () => undefined)
@@ -200,6 +204,22 @@ describe('simulation state publication consumers', () => {
 	test('every view that uses the live simulation hook is covered by the view checks', () => {
 		const liveSimulationViews = PUBLICATION_CONSUMING_VIEWS.filter((view) => view.subscribingModule === LIVE_SIMULATION_HOOK_MODULE).map((view) => view.viewModule)
 		assert.deepEqual(getModulesMatching(/(?<!function )\buseLiveSimulationHomeData\(/u), getUniqueSorted(liveSimulationViews), 'Add the view that uses useLiveSimulationHomeData to PUBLICATION_CONSUMING_VIEWS')
+	})
+
+	test('an error thrown while a view handles a publication is reported as a popup listener failure', async () => {
+		const browserMock = installBrowserMock()
+		const unsubscribe = subscribeToSimulationStatePublications(() => { throw new Error('publication handler failed') })
+		try {
+			browserMock.deliver(serialize(MessageToPopup, { role: 'all', method: 'popup_simulation_state_changed', data: { visualizedSimulatorState: finishedState } }))
+			await settle()
+			const reportedErrors = browserMock.sentMessages.flatMap((message) => {
+				const parsed = PopupMessage.safeParse(message)
+				return parsed.success && parsed.value.method === 'popup_UnexpectedErrorOccured' ? [parsed.value.data] : []
+			})
+			assert.deepEqual(reportedErrors.map(({ code, message, source }) => ({ code, message, source })), [{ code: 'popup_message_listener_failed', message: 'publication handler failed', source: 'popup' }])
+		} finally {
+			unsubscribe()
+		}
 	})
 
 	for (const view of PUBLICATION_CONSUMING_VIEWS) test(`the ${ view.name } renders publications without requesting another simulation`, async () => {

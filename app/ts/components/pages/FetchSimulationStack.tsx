@@ -5,7 +5,7 @@ import { addressEditEntry, tryFocusingTabOrWindow } from '../ui-utils.js'
 import type { PendingFetchSimulationStackRequestPromise } from '../../types/user-interface-types.js'
 import { type ReadonlySignal, Signal, useComputed, useSignal } from '@preact/signals'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
-import { type CompleteVisualizedSimulation, type EditEnsNamedHashWindowState, type ModifyAddressWindowState, type SimulationAndVisualisationResults, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
+import { type EditEnsNamedHashWindowState, type ModifyAddressWindowState, type SimulationAndVisualisationResults, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { SmallAddress } from '../subcomponents/address.js'
 import { AddNewAddress } from './AddNewAddress.js'
@@ -18,7 +18,7 @@ import { sanitizeStoredWebsiteIcon } from '../../utils/websiteIcons.js'
 import { useAsyncState } from '../../utils/preact-utilities.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 import { EditEnsLabelHash } from './EditEnsLabelHash.js'
-import { hasCurrentAddressBookEntries, predatesVisualisation } from '../../utils/popupVisualisationLifecycle.js'
+import { type ShownSimulationStack, type SimulationStackUpdate, applySimulationStackUpdate } from '../../utils/popupVisualisationLifecycle.js'
 import { subscribeToSimulationStatePublications } from '../simulationStatePublications.js'
 import type { EthereumBytes32 } from '../../types/wire-types.js'
 
@@ -84,8 +84,7 @@ export function FetchSimulationStack() {
 	const changeRequest = useSignal<PendingFetchSimulationStackRequestPromise | undefined>(undefined)
 	const modalState = useSignal<FetchSimulationStackModalState>({ page: 'noModal' })
 
-	const completeVisualizedSimulation = useSignal<CompleteVisualizedSimulation>(createPassthroughCompleteVisualizedSimulation())
-	const simulationAddressBookEntries = useSignal<readonly AddressBookEntry[] | undefined>(undefined)
+	const shownSimulationStack = useSignal<ShownSimulationStack>({ visualisation: createPassthroughCompleteVisualizedSimulation(), addressBookEntries: undefined })
 	const rpcEntries = useSignal<RpcEntries>([])
 	const { value: rejectRequestState, waitFor: waitForRejectRequest } = useAsyncState<void>()
 	const { value: allowRequestState, waitFor: waitForAllowRequest } = useAsyncState<void>()
@@ -107,34 +106,28 @@ export function FetchSimulationStack() {
 			changeRequest.value = parsed.data
 			return false
 		}
-		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
-		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
+		return noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
 	}, [])
 
-	const applyPublishedSimulation = (visualizedSimulatorState: CompleteVisualizedSimulation) => {
-		completeVisualizedSimulation.value = visualizedSimulatorState
-		// While a refresh runs or after it fails, the address references of the last finished refresh stay.
-		if (hasCurrentAddressBookEntries(visualizedSimulatorState)) simulationAddressBookEntries.value = visualizedSimulatorState.addressBookEntries
+	// The only writer of the shown stack: publications and the opening replies arrive in any order, and applySimulationStackUpdate decides what each may replace.
+	const applyUpdate = (update: SimulationStackUpdate) => {
+		shownSimulationStack.value = applySimulationStackUpdate(shownSimulationStack.peek(), update)
 	}
-	useEffect(() => subscribeToSimulationStatePublications(applyPublishedSimulation), [])
-	// The opening replies travel separately from publications, so a publication can arrive first, and a reply must not then replace it with older data.
-	const updateSimulation = async () => {
-		const simulationStack = await requestPopupCompleteVisualizedSimulation()
-		if (simulationStack === undefined || predatesVisualisation(simulationStack.visualizedSimulatorState, completeVisualizedSimulation.value)) return
-		completeVisualizedSimulation.value = simulationStack.visualizedSimulatorState
+	useEffect(() => subscribeToSimulationStatePublications((visualisation) => applyUpdate({ source: 'publication', visualisation })), [])
+	const requestOpeningVisualisation = async () => {
+		const reply = await requestPopupCompleteVisualizedSimulation()
+		if (reply !== undefined) applyUpdate({ source: 'openingVisualisationReply', visualisation: reply.visualizedSimulatorState })
 	}
 	// Without an open home popup or simulation stack page the stored visualisation is not refreshed, so in simulation mode opening this page simulates the current stack once for its address references.
-	const updateMetaData = async () => {
-		const data = await requestPopupSimulationMetadata()
-		// Only a finished publication sets the references before this reply, and later finished publications keep them current, so the reply only fills references nothing has supplied yet.
-		if (data === undefined || simulationAddressBookEntries.value !== undefined) return
-		simulationAddressBookEntries.value = data.metadata.addressBookEntries
+	const requestOpeningMetadata = async () => {
+		const reply = await requestPopupSimulationMetadata()
+		if (reply !== undefined) applyUpdate({ source: 'openingMetadataReply', addressBookEntries: reply.metadata.addressBookEntries })
 	}
 
 	useEffect(() => {
 		void sendPopupReadyAndListening('fetchSimulationStack')
-		updateSimulation()
-		updateMetaData()
+		requestOpeningVisualisation()
+		requestOpeningMetadata()
 		sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
 	}, [])
 
@@ -160,7 +153,7 @@ export function FetchSimulationStack() {
 	}
 
 	const simulationStackResults = useComputed<SimulationAndVisualisationResults | undefined>(() => {
-		const complete = completeVisualizedSimulation.value
+		const complete = shownSimulationStack.value.visualisation
 		if (complete.simulationState.kind === 'passthrough') return undefined
 		return {
 			blockNumber: complete.simulationState.value.blockNumber,
@@ -178,14 +171,14 @@ export function FetchSimulationStack() {
 	const isThereSimulationStack = useComputed(() => {
 		const stackResults = simulationStackResults.value
 		if (stackResults === undefined) return false
-		return stackResults.simulationStateInput.some((block) => block.transactions.length > 0 || block.signedMessages.length > 0) || completeVisualizedSimulation.value?.numberOfAddressesMadeRich !== 0
+		return stackResults.simulationStateInput.some((block) => block.transactions.length > 0 || block.signedMessages.length > 0) || shownSimulationStack.value.visualisation.numberOfAddressesMadeRich !== 0
 	})
 
-	const addressMetaData = useComputed(() => simulationAddressBookEntries.value ?? [])
+	const addressMetaData = useComputed(() => shownSimulationStack.value.addressBookEntries ?? [])
 	const addressReferences = useComputed(() => addressMetaData.value.filter((address) => address.address !== ETHEREUM_LOGS_LOGGER_ADDRESS))
 	const activeAddress = useSignal<bigint | undefined>(undefined)
 
-	if (changeRequest.value === undefined || simulationAddressBookEntries.value === undefined) return <main> <CenterToPageTextSpinner text = { 'Getting simulation stack...'  }/></main>
+	if (changeRequest.value === undefined || shownSimulationStack.value.addressBookEntries === undefined) return <main> <CenterToPageTextSpinner text = { 'Getting simulation stack...'  }/></main>
 	const websiteIcon = sanitizeStoredWebsiteIcon(changeRequest.value.website.icon)
 	return (
 		<main>

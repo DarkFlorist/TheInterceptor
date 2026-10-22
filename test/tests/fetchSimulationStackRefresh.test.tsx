@@ -247,7 +247,7 @@ async function setUpSimulationModeWithOpenConsumer() {
 			await settleMessageFlow()
 		},
 		async cleanUp() {
-			// FetchSimulationStack cannot remove its wrapped runtime listener, so detach the pages and let in-flight background work drain before the next test.
+			// Detach the pages before draining, so in-flight background work, including a running refresh loop, cannot reach them again before the next test.
 			routeBackgroundRequest = undefined
 			pageListeners.length = 0
 			resetMessageCounts()
