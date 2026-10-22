@@ -19,7 +19,7 @@ import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { socketCanExecuteWithSelectedSigner } from './signerExecutionAuthority.js'
 import { isSignerMissing } from '../utils/signerMetadata.js'
-import { beginSignerStateConfirmation, clearSignerDerivedTabState, confirmSignerState, doesSignerStateTokenMatchIdentity, getConfirmedSignerStateToken, isCurrentWebsiteConnection, isSignerStateTokenCurrent, runSignerStateOperation, signerConnectionReplacedError, tabHasApprovedWebsiteConnection, type SignerStateToken } from './signerStateOwnership.js'
+import { beginSignerStateConfirmation, clearSignerDerivedTabState, confirmSignerState, doesSignerStateTokenMatchIdentity, getAuthorizedSignerStateToken, isCurrentWebsiteConnection, isSignerStateTokenAuthorized, runSignerStateOperation, signerConnectionReplacedError, tabHasApprovedWebsiteConnection, type SignerStateToken } from './signerStateOwnership.js'
 import { getConfiguredSigningSafe, getSigningAddressSelectionTransition } from './signingAddressSelection.js'
 import { getWalletSelectedAccount } from '../utils/activeAddressSelection.js'
 import { getActiveAddressEntryForChain } from './metadataUtils.js'
@@ -28,8 +28,8 @@ import type { ApprovalState } from './websiteAccessPolicy.js'
 
 function getSignerCallbackToken(websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, signerProviderGeneration: number) {
 	const socket = getSocketFromPort(port)
-	if (socket === undefined || !socketCanExecuteWithSelectedSigner(socket)) return undefined
-	const token = getConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
+	if (socket === undefined) return undefined
+	const token = getAuthorizedSignerStateToken(websiteTabConnections, socket)
 	if (token === undefined) return undefined
 	if (token.socket.connectionName !== socket.connectionName || token.port !== port) return undefined
 	if (token.signerProviderGeneration !== signerProviderGeneration) return undefined
@@ -84,7 +84,7 @@ export async function ethAccountsReply(simulationServicesOwner: SimulationServic
 			if (signerAccountsReply.signerUnavailable !== true) {
 				await updateTabState(tabId, (previousState: TabState) => modifyObject(previousState, { signerAccountError }))
 			}
-			if (!isSignerStateTokenCurrent(websiteTabConnections, signerStateToken)) return returnValue
+			if (!isSignerStateTokenAuthorized(websiteTabConnections, signerStateToken)) return returnValue
 			// Wake requesters waiting for a signer accounts round-trip even when the signer rejected or errored.
 			sendInternalWindowMessage({
 				method: 'window_signer_accounts_changed',
@@ -106,7 +106,7 @@ export async function ethAccountsReply(simulationServicesOwner: SimulationServic
 			signerAccounts,
 			activeSigningAddress,
 		}))
-		if (!isSignerStateTokenCurrent(websiteTabConnections, signerStateToken)) return returnValue
+		if (!isSignerStateTokenAuthorized(websiteTabConnections, signerStateToken)) return returnValue
 		const { ethereum, tokenPriceService } = simulationServicesOwner.getCurrent()
 		await refreshPendingSafeSignerSelectionErrors(ethereum, tokenPriceService, tabId)
 		// Restore this wallet account's most recent EOA-or-Safe selection. This remains inside the signer-state operation so a reconnect cannot interleave with downstream address and chain mutations.
@@ -153,11 +153,11 @@ async function changeSignerChain(simulationServicesOwner: SimulationServicesOwne
 	const tabStateChange = await updateTabState(signerStateToken.socket.tabId, (previousState: TabState) => {
 		return previousState.signerChain === signerChain ? previousState : modifyObject(previousState, { signerChain })
 	})
-	if (!isSignerStateTokenCurrent(websiteTabConnections, signerStateToken)) return
+	if (!isSignerStateTokenAuthorized(websiteTabConnections, signerStateToken)) return
 	const oldSignerChain = tabStateChange.previousState.signerChain
 	// update active address if we are using signers address
 	const settings = await getSettings()
-	if (!isSignerStateTokenCurrent(websiteTabConnections, signerStateToken) || !socketCanExecuteWithSelectedSigner(signerStateToken.socket)) return
+	if (!isSignerStateTokenAuthorized(websiteTabConnections, signerStateToken)) return
 	const selectedSafe = await getConfiguredSigningSafe(settings, tabStateChange.newState.signerAccounts)
 	if (selectedSafe !== undefined) {
 		// Safe signing is pinned to the Safe's configured Interceptor chain. A signer-wallet chain change only refreshes signer state; it must not move the dapp away from the active Safe.
@@ -203,8 +203,6 @@ export async function signerChainChanged(simulationServicesOwner: SimulationServ
 export async function walletSwitchEthereumChainReply(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, _approval: ApprovalState, _activeAddress: bigint | undefined) {
 	const returnValue = { type: 'result' as const, method: 'wallet_switchEthereumChain_reply' as const, result: '0x' as const }
 	const params = WalletSwitchEthereumChainReply.parse(request).params[0]
-	const socket = getSocketFromPort(port)
-	if (socket === undefined || !socketCanExecuteWithSelectedSigner(socket)) return returnValue
 	await applyWalletSwitchReply(websiteTabConnections, port, params, async (token, chainId, rpc) => {
 		await changeSignerChain(simulationServicesOwner, websiteTabConnections, token, chainId, 'hasAccess', rpc)
 	})
@@ -269,7 +267,7 @@ export async function connectedToSigner(_simulationServicesOwner: SimulationServ
 		return await getConnectedToSignerResult()
 	})
 	// Passive account refresh is core signer behavior, independent of Safe Apps compatibility.
-	const currentSigner = getConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
+	const currentSigner = getAuthorizedSignerStateToken(websiteTabConnections, socket)
 	const accountsRequested = shouldRefreshSignerAccounts
 		&& currentSigner?.port === port
 		&& currentSigner.signerProviderGeneration === signerProviderGeneration

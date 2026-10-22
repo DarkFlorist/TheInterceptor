@@ -177,6 +177,25 @@ export function isSignerStateTokenCurrent(websiteTabConnections: WebsiteTabConne
 	return currentToken !== undefined && doSignerStateTokensMatch(currentToken, token)
 }
 
+// Freshness alone is also used for lifecycle cleanup. Wallet operations additionally require the selected provider's authority for both its state owner and the requesting frame.
+export function isSignerStateTokenAuthorized(websiteTabConnections: WebsiteTabConnections, token: SignerStateToken, requestSocket = token.socket) {
+	return requestSocket.tabId === token.socket.tabId
+		&& isSignerStateTokenCurrent(websiteTabConnections, token)
+		&& socketCanExecuteWithSelectedSigner(token.socket)
+		&& socketCanExecuteWithSelectedSigner(requestSocket)
+}
+
+export function getAuthorizedSignerStateToken(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
+	const token = getConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
+	return token !== undefined && isSignerStateTokenAuthorized(websiteTabConnections, token, socket) ? token : undefined
+}
+
+export async function waitForAuthorizedSignerStateToken(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
+	if (!socketCanExecuteWithSelectedSigner(socket)) return undefined
+	const token = await waitForConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
+	return token !== undefined && isSignerStateTokenAuthorized(websiteTabConnections, token, socket) ? token : undefined
+}
+
 export async function getActiveAddressForCurrentSignerState<T>(
 	websiteTabConnections: WebsiteTabConnections,
 	settings: Pick<Settings, 'simulationMode' | 'useSignersAddressAsActiveAddress'>,
@@ -201,11 +220,8 @@ export function sendCallbackToConfirmedSignerOwner(websiteTabConnections: Websit
 }
 
 function sendCallbackToSignerStateToken(websiteTabConnections: WebsiteTabConnections, signerStateToken: SignerStateToken, message: InpageScriptCallBack) {
-	const tabConnection = websiteTabConnections.get(signerStateToken.socket.tabId)
-	const ownerConnection = tabConnection?.connections[websiteSocketToString(signerStateToken.socket)]
 	if (!tabHasApprovedWebsiteConnection(websiteTabConnections, signerStateToken.socket.tabId)
-		|| ownerConnection?.port !== signerStateToken.port
-		|| !socketCanExecuteWithSelectedSigner(signerStateToken.socket)) return false
+		|| !isSignerStateTokenAuthorized(websiteTabConnections, signerStateToken)) return false
 	return sendSubscriptionReplyOrCallBackToPort(signerStateToken.port, { type: 'result', ...message }) ? signerStateToken : false
 }
 

@@ -1,9 +1,6 @@
 import type { InterceptedRequestForward } from '../types/interceptor-messages.js'
 import { METAMASK_ERROR_NOT_AUTHORIZED } from '../utils/constants.js'
-import { EthereumQuantity, serialize } from '../types/wire-types.js'
-import { isTopFrameId, type WebsiteSocket } from '../utils/requests.js'
-
-const socketKey = (socket: WebsiteSocket) => `${ socket.tabId }-${ serialize(EthereumQuantity, socket.connectionName) }`
+import { isTopFrameId, websiteSocketToString, type WebsiteSocket } from '../utils/requests.js'
 
 type SignerExecutionAuthority = {
 	readonly websiteOrigin: string
@@ -22,7 +19,7 @@ const pendingChildSocketRemovalTimers = new Map<string, ReturnType<typeof setTim
 
 export function registerCurrentChildSignerSocket(socket: WebsiteSocket, frameId: number) {
 	if (isTopFrameId(frameId)) return false
-	const key = socketKey(socket)
+	const key = websiteSocketToString(socket)
 	const pendingRemoval = pendingChildSocketRemovalTimers.get(key)
 	if (pendingRemoval !== undefined) {
 		clearTimeout(pendingRemoval)
@@ -44,7 +41,7 @@ export function registerCurrentChildSignerSocket(socket: WebsiteSocket, frameId:
 }
 
 export function unregisterCurrentChildSignerSocket(socket: WebsiteSocket) {
-	const key = socketKey(socket)
+	const key = websiteSocketToString(socket)
 	const pendingRemoval = pendingChildSocketRemovalTimers.get(key)
 	if (pendingRemoval !== undefined) clearTimeout(pendingRemoval)
 	pendingChildSocketRemovalTimers.delete(key)
@@ -62,7 +59,7 @@ export function unregisterCurrentChildSignerSocket(socket: WebsiteSocket) {
 }
 
 export function scheduleCurrentChildSignerSocketRemoval(socket: WebsiteSocket) {
-	const key = socketKey(socket)
+	const key = websiteSocketToString(socket)
 	if (!childFrameIdsBySocketKey.has(key) || pendingChildSocketRemovalTimers.has(key)) return false
 	const timeout = setTimeout(() => {
 		pendingChildSocketRemovalTimers.delete(key)
@@ -73,7 +70,7 @@ export function scheduleCurrentChildSignerSocketRemoval(socket: WebsiteSocket) {
 }
 
 export function registerAuthoritativeTopSocket(socket: WebsiteSocket, websiteOrigin: string) {
-	const key = socketKey(socket)
+	const key = websiteSocketToString(socket)
 	const current = signerExecutionAuthorities.get(socket.tabId)
 	if (authoritativeTopSocketKeys.get(socket.tabId) === key && current?.websiteOrigin === websiteOrigin) {
 		current.eligibleSocketKeys.add(key)
@@ -94,7 +91,7 @@ export function registerAuthoritativeTopSocket(socket: WebsiteSocket, websiteOri
 
 export function reconcileSignerExecutionDocument(socket: WebsiteSocket, websiteOrigin: string, documentGeneration: string, isTopFrame: boolean, frameId: number | undefined) {
 	const authority = signerExecutionAuthorities.get(socket.tabId)
-	const key = socketKey(socket)
+	const key = websiteSocketToString(socket)
 	if (authority === undefined || authority.websiteOrigin !== websiteOrigin) return false
 	if (isTopFrame) {
 		if (!isAuthoritativeTopSocket(socket)) return false
@@ -109,7 +106,7 @@ export function reconcileSignerExecutionDocument(socket: WebsiteSocket, websiteO
 }
 
 export function isAuthoritativeTopSocket(socket: WebsiteSocket) {
-	return authoritativeTopSocketKeys.get(socket.tabId) === socketKey(socket)
+	return authoritativeTopSocketKeys.get(socket.tabId) === websiteSocketToString(socket)
 }
 
 export function setSignerExecutionTarget(tabId: number, providerUuid: string, websiteOrigin: string) {
@@ -130,9 +127,9 @@ export function setSignerExecutionTarget(tabId: number, providerUuid: string, we
 export function allowLegacySignerExecution(socket: WebsiteSocket, websiteOrigin: string) {
 	if (!isAuthoritativeTopSocket(socket)) return false
 	const current = signerExecutionAuthorities.get(socket.tabId)
-	if (current === undefined || current.websiteOrigin !== websiteOrigin || current.documentGeneration === undefined || !current.eligibleSocketKeys.has(socketKey(socket))) return false
+	if (current === undefined || current.websiteOrigin !== websiteOrigin || current.documentGeneration === undefined || !current.eligibleSocketKeys.has(websiteSocketToString(socket))) return false
 	if (current.mode === 'legacy') {
-		current.authorizedSocketKeys.add(socketKey(socket))
+		current.authorizedSocketKeys.add(websiteSocketToString(socket))
 		return true
 	}
 	signerExecutionAuthorities.set(socket.tabId, {
@@ -141,7 +138,7 @@ export function allowLegacySignerExecution(socket: WebsiteSocket, websiteOrigin:
 		mode: 'legacy',
 		providerUuid: undefined,
 		eligibleSocketKeys: current.eligibleSocketKeys,
-		authorizedSocketKeys: new Set([socketKey(socket)]),
+		authorizedSocketKeys: new Set([websiteSocketToString(socket)]),
 	})
 	return true
 }
@@ -169,7 +166,7 @@ export function getSignerExecutionTargetForSocket(socket: WebsiteSocket, website
 	const authority = signerExecutionAuthorities.get(socket.tabId)
 	if (authority?.mode !== 'eip6963'
 		|| authority.websiteOrigin !== websiteOrigin
-		|| !authority.eligibleSocketKeys.has(socketKey(socket))) return undefined
+		|| !authority.eligibleSocketKeys.has(websiteSocketToString(socket))) return undefined
 	return authority.providerUuid
 }
 
@@ -180,12 +177,12 @@ export function signerFrameHasDifferentOrigin(socket: WebsiteSocket, websiteOrig
 
 export function socketIsEligibleForSignerExecution(socket: WebsiteSocket, websiteOrigin: string) {
 	const authority = signerExecutionAuthorities.get(socket.tabId)
-	return authority?.websiteOrigin === websiteOrigin && authority.eligibleSocketKeys.has(socketKey(socket))
+	return authority?.websiteOrigin === websiteOrigin && authority.eligibleSocketKeys.has(websiteSocketToString(socket))
 }
 
 export function authorizeSocketForSignerExecution(socket: WebsiteSocket, providerUuid: string, websiteOrigin: string) {
 	const authority = signerExecutionAuthorities.get(socket.tabId)
-	const key = socketKey(socket)
+	const key = websiteSocketToString(socket)
 	if (authority?.mode !== 'eip6963'
 		|| authority.providerUuid !== providerUuid
 		|| authority.websiteOrigin !== websiteOrigin
@@ -196,7 +193,7 @@ export function authorizeSocketForSignerExecution(socket: WebsiteSocket, provide
 
 export function authorizeSocketForLegacySignerExecution(socket: WebsiteSocket, websiteOrigin: string) {
 	const authority = signerExecutionAuthorities.get(socket.tabId)
-	const key = socketKey(socket)
+	const key = websiteSocketToString(socket)
 	if (authority?.mode !== 'legacy'
 		|| authority.websiteOrigin !== websiteOrigin
 		|| !authority.eligibleSocketKeys.has(key)) return false
@@ -205,7 +202,7 @@ export function authorizeSocketForLegacySignerExecution(socket: WebsiteSocket, w
 }
 
 export function socketCanExecuteWithSelectedSigner(socket: WebsiteSocket) {
-	const key = socketKey(socket)
+	const key = websiteSocketToString(socket)
 	const authority = signerExecutionAuthorities.get(socket.tabId)
 	if (authority?.authorizedSocketKeys.has(key) !== true) return false
 	if (isAuthoritativeTopSocket(socket)) return true

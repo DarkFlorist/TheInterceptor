@@ -1,9 +1,40 @@
+import { clearSignerExecutionAuthorityForTab, registerCurrentChildSignerSocket, reconcileSignerExecutionDocument, authorizeSocketForLegacySignerExecution } from '../../app/ts/background/signerExecutionAuthority.js'
 import { authorizeLegacySignerSocket } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { getWalletSwitchRequestId, confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
 
 describe('background eth_accounts', () => {
+	test('signer authorization composes state freshness with owner and requesting-frame authority', async () => {
+		installBrowserMock()
+		const { getConfirmedSignerStateToken, getAuthorizedSignerStateToken, isSignerStateTokenAuthorized, websiteSocketToString } = await loadModules()
+		const socket = { tabId: 714, connectionName: 0n }
+		const child = { tabId: socket.tabId, connectionName: 1n }
+		const { port } = createPort(socket.tabId)
+		const connections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true },
+		} }]])
+		try {
+			clearSignerExecutionAuthorityForTab(socket.tabId)
+			const token = getConfirmedSignerStateToken(connections, socket.tabId)
+			assert.ok(token)
+			assert.equal(getAuthorizedSignerStateToken(connections, socket), undefined, 'Confirmed state alone cannot grant execution authority')
+			authorizeLegacySignerSocket(socket)
+			assert.equal(isSignerStateTokenAuthorized(connections, token), true)
+			assert.equal(isSignerStateTokenAuthorized(connections, { ...token, ownerGeneration: token.ownerGeneration + 1 }), false, 'Authority alone cannot make a stale token current')
+			assert.equal(getAuthorizedSignerStateToken(connections, child), undefined, 'A current owner cannot authorize an unreconciled requesting frame')
+			registerCurrentChildSignerSocket(child, 1)
+			reconcileSignerExecutionDocument(child, 'https://example.test', '11111111-1111-4111-8111-111111111111', false, 1)
+			assert.equal(authorizeSocketForLegacySignerExecution(child, 'https://example.test'), true)
+			assert.ok(getAuthorizedSignerStateToken(connections, child))
+			assert.equal(isSignerStateTokenAuthorized(connections, token, { ...child, tabId: socket.tabId + 1 }), false)
+			clearSignerExecutionAuthorityForTab(socket.tabId)
+			assert.equal(isSignerStateTokenAuthorized(connections, token, child), false, 'Revocation invalidates an otherwise current token')
+		} finally {
+			clearSignerExecutionAuthorityForTab(socket.tabId)
+		}
+	})
+
 	test('awaits retry-state publishing before replying to a waking RPC request', async () => {
 		installBrowserMock()
 		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, setRpcConnectionStatus, getRpcConnectionStatus } = await loadModules()

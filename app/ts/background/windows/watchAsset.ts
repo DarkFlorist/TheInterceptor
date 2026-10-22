@@ -11,7 +11,7 @@ import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.j
 import { addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab } from '../../utils/popupOrTab.js'
 import type { AddressBookEntries, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../types/addressBookTypes.js'
 import { reportUnexpectedError } from '../../utils/errors.js'
-import { addSignerStateReplacementListener, getConfirmedSignerStateToken, isSignerStateTokenCurrent, sendCallbackToExpectedConfirmedSignerOwner, type SignerStateIdentity } from '../signerStateOwnership.js'
+import { addSignerStateReplacementListener, getAuthorizedSignerStateToken, isSignerStateTokenAuthorized, sendCallbackToExpectedConfirmedSignerOwner, type SignerStateIdentity } from '../signerStateOwnership.js'
 import { checksummedAddress } from '../../utils/bigint.js'
 import { Semaphore } from '../../utils/semaphore.js'
 import { isSignerMissing } from '../../utils/signerMetadata.js'
@@ -19,7 +19,6 @@ import { imageToUri, type ImageToUriResult } from '../../utils/imageToUri.js'
 import { loadErc1046Metadata, loadLegacyErc20Metadata, loadNftMetadataAndVerifyOwnership, normalizeWatchAssetImageUrl } from '../watchAssetMetadata.js'
 import { invalidWatchAssetRequest, watchAssetRequestError } from '../watchAssetRpc.js'
 import { isValidAddressBookEntryName, MAX_ADDRESS_BOOK_ENTRY_NAME_LENGTH } from '../../utils/addressBookValidation.js'
-import { socketCanExecuteWithSelectedSigner } from '../signerExecutionAuthority.js'
 import { isValidErc20Decimals } from '../../utils/erc20.js'
 
 export const MAX_PENDING_WATCH_ASSET_REQUESTS = 20
@@ -116,12 +115,12 @@ function toPendingRequest(request: StoredWatchAssetRequest): PendingWatchAssetRe
 }
 
 async function getForwardSignerTarget(websiteTabConnections: WebsiteTabConnections, request: StoredWatchAssetRequest) {
-	if (!socketCanExecuteWithSelectedSigner(request.request.uniqueRequestIdentifier.requestSocket)) return undefined
-	const tabId = request.request.uniqueRequestIdentifier.requestSocket.tabId
-	const signerStateToken = getConfirmedSignerStateToken(websiteTabConnections, tabId)
+	const requestSocket = request.request.uniqueRequestIdentifier.requestSocket
+	const tabId = requestSocket.tabId
+	const signerStateToken = getAuthorizedSignerStateToken(websiteTabConnections, requestSocket)
 	if (signerStateToken === undefined) return undefined
 	const signerName = (await getTabState(tabId)).signerName
-	if (!isSignerStateTokenCurrent(websiteTabConnections, signerStateToken) || isSignerMissing(signerName)) return undefined
+	if (!isSignerStateTokenAuthorized(websiteTabConnections, signerStateToken, requestSocket) || isSignerMissing(signerName)) return undefined
 	return {
 		signerName,
 		connectionName: signerStateToken.socket.connectionName,

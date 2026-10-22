@@ -11,7 +11,7 @@ import { promoteRpcAsPrimary, getTabState } from './storageVariables.js'
 import { getRpcNetworkChange, getRpcChangeRoute } from '../utils/rpcNetworkChange.js'
 import type { RpcNetwork } from '../types/rpc.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
-import { sendCallbackToConfirmedSignerOwner, getConfirmedSignerStateToken, runSignerStateOperation, signerConnectionReplacedError, addSignerStateReplacementListener, doSignerStateTokensMatch, signerUnavailableError, type SignerStateToken } from './signerStateOwnership.js'
+import { sendCallbackToConfirmedSignerOwner, getAuthorizedSignerStateToken, runSignerStateOperation, signerConnectionReplacedError, addSignerStateReplacementListener, doSignerStateTokensMatch, signerUnavailableError, type SignerStateToken } from './signerStateOwnership.js'
 
 type PendingSignerChainChange = {
 	readonly walletSwitchRequestId: string
@@ -181,7 +181,7 @@ export async function applyWalletSwitchReply(
 	const socket = getSocketFromPort(port)
 	if (socket === undefined) return
 	await runSignerStateOperation(websiteTabConnections, socket.tabId, async () => {
-		const currentSignerStateToken = getConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
+		const currentSignerStateToken = getAuthorizedSignerStateToken(websiteTabConnections, socket)
 		if (currentSignerStateToken?.socket.connectionName !== socket.connectionName || currentSignerStateToken.port !== port) return
 		if (!isPendingWalletSwitchRequest(params.walletSwitchRequestId)) return
 		const pendingSignerStateToken = getPendingSignerChainChangeTokenForCallback(port, params.signerProviderGeneration, params.chainId)

@@ -19,9 +19,8 @@ import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.
 import type { PublishRpcConnectionStatus } from '../rpcSlowRequestTracking.js'
 import { type PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab, removeWindowTabListeners, tryFocusingTabOrWindow } from '../../utils/popupOrTab.js'
 import { isAccountConnectionMethod } from '../accountRequestMethods.js'
-import { socketCanExecuteWithSelectedSigner } from '../signerExecutionAuthority.js'
 import type { ErrorWithCodeAndOptionalData } from '../../types/error.js'
-import { getConfirmedSignerStateToken, isSignerStateTokenCurrent, signerConnectionReplacedError, signerUnavailableError, tabHasApprovedWebsiteConnection, waitForConfirmedSignerStateToken } from '../signerStateOwnership.js'
+import { getConfirmedSignerStateToken, getAuthorizedSignerStateToken, isSignerStateTokenAuthorized, signerConnectionReplacedError, signerUnavailableError, tabHasApprovedWebsiteConnection, waitForAuthorizedSignerStateToken } from '../signerStateOwnership.js'
 import { assertActiveAddressSelectionAllowed, includePersistedAddressBookEntry } from '../../utils/activeAddressSelection.js'
 
 type OpenedDialogWithListeners = {
@@ -196,11 +195,10 @@ async function requestSignerAccountsFromSigner(
 	options: SignerAccountRefreshOptions = {},
 ) {
 	return await serializeSignerAccountRequest(websiteTabConnections, socket.tabId, async () => {
-		if (!socketCanExecuteWithSelectedSigner(socket)) return { accounts: [], error: signerUnavailableError }
-		const signerStateToken = await waitForConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
+		const signerStateToken = await waitForAuthorizedSignerStateToken(websiteTabConnections, socket)
 		if (signerStateToken === undefined) return { accounts: [], error: signerUnavailableError }
 		const tabState = await getTabState(socket.tabId)
-		if (!isSignerStateTokenCurrent(websiteTabConnections, signerStateToken)) return { accounts: [], error: signerConnectionReplacedError }
+		if (!isSignerStateTokenAuthorized(websiteTabConnections, signerStateToken, socket)) return { accounts: [], error: signerConnectionReplacedError }
 		if (onlyIfUnavailable && tabState.signerAccounts.length !== 0) return { accounts: tabState.signerAccounts, error: undefined }
 
 		const future = new Future<ErrorWithCodeAndOptionalData | undefined>
@@ -225,7 +223,7 @@ async function requestSignerAccountsFromSigner(
 			const requestSignerAccountsMessage = requestAccounts
 				? { type: 'result' as const, method: 'request_signer_to_eth_requestAccounts' as const, result: [] as const }
 				: { type: 'result' as const, method: 'request_signer_to_eth_accounts' as const, result: [] as const }
-			const messageSent = isSignerStateTokenCurrent(websiteTabConnections, signerStateToken)
+			const messageSent = isSignerStateTokenAuthorized(websiteTabConnections, signerStateToken, socket)
 				&& sendSubscriptionReplyOrCallBackToPort(signerStateToken.port, requestSignerAccountsMessage)
 			if (messageSent) {
 				error = requestAccounts
@@ -237,9 +235,11 @@ async function requestSignerAccountsFromSigner(
 			channel.removeEventListener('message', listener)
 			channel.close()
 		}
-		const completedSignerStateToken = getConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
+		const completedTabState = await getTabState(socket.tabId)
+		// Discovery may confirm a newer provider generation on this port; return its current authorized accounts.
+		const completedSignerStateToken = getAuthorizedSignerStateToken(websiteTabConnections, socket)
 		if (completedSignerStateToken?.port !== signerStateToken.port) return { accounts: [], error: error ?? signerConnectionReplacedError }
-		return { accounts: (await getTabState(socket.tabId)).signerAccounts, error }
+		return { accounts: completedTabState.signerAccounts, error }
 	})
 }
 

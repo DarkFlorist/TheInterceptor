@@ -1,5 +1,5 @@
 import { MessageToPopup, type MessageToPopupPayload, PopupMessage, type PopupReadyAndListeningPage, type Settings, WindowMessage } from '../types/interceptor-messages.js'
-import { type WebsiteSocket, checkAndThrowRuntimeLastError, isTopFrameId } from '../utils/requests.js'
+import { type WebsiteSocket, checkAndThrowRuntimeLastError, isTopFrameId, websiteSocketToString } from '../utils/requests.js'
 import { EthereumQuantity, serialize } from '../types/wire-types.js'
 import type { PopupOrTabId } from '../types/websiteAccessTypes.js'
 import { getAllTabStates, getTabState, getUserAddressBookEntries } from './storageVariables.js'
@@ -312,7 +312,7 @@ export async function setExtensionBadgeBackgroundColor(details: browser.action._
 	}
 }
 
-export const websiteSocketToString = (socket: WebsiteSocket) => `${ socket.tabId }-${ serialize(EthereumQuantity, socket.connectionName) }`
+export { websiteSocketToString } from '../utils/requests.js'
 
 export const getWebsiteSocketConnection = (websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) => websiteTabConnections.get(socket.tabId)?.connections[websiteSocketToString(socket)]
 
