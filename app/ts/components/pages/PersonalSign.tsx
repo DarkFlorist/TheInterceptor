@@ -225,6 +225,7 @@ function SignRequest({ visualizedPersonalSignRequest, renameAddressCallBack, edi
 				renameAddressCallBack = { renameAddressCallBack }
 			/>
 		}
+		// Permit2 signatures authorize transfers of whatever token address they name, so a token that isn't an identified ERC20 still gets its spender and raw amount shown, under an explicit warning (UnidentifiedPermitTokenApprovals), rather than only an error; tokens identified as ERC721 or ERC1155 are rejected in the background. The EIP-2612 branch above keeps its existing requirement that the token be identified as an ERC20, which is outside this change; a failed metadata lookup can also trip it.
 		case 'Permit2': return <PermitTokenApprovals
 			owner = { visualizedPersonalSignRequest.account }
 			spender = { visualizedPersonalSignRequest.spender }
