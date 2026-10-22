@@ -50,7 +50,7 @@ export const InlineCard = (props: InlineCardProps) => {
 						<span><data class = 'truncate text-legible' style = { props.style } value = { props.label }>{ props.label }</data></span>
 					</span>
 					<button class = 'inline-card-copy-action' type = 'button' onClick = { copyTextToClipboard } value = { props.copyValue } aria-label = { `Copy ${ props.label }` }>
-						<span title = 'Copy'>
+						<span class = 'inline-card-action-chip' title = 'Copy'>
 							<CopyIcon />
 							<span>copy</span>
 						</span>
@@ -59,7 +59,7 @@ export const InlineCard = (props: InlineCardProps) => {
 					<button type = 'button' onClick = { copyTextToClipboard } value = { props.copyValue }>
 						<span role = 'img'><Icon /></span>
 						<span><data class = 'truncate text-legible' style = { props.style } value = { props.label }>{ props.label }</data></span>
-						<span title = 'Copy'>
+						<span class = 'inline-card-action-chip' title = 'Copy'>
 							<CopyIcon />
 							<span>copy</span>
 						</span>
@@ -73,7 +73,7 @@ export const InlineCard = (props: InlineCardProps) => {
 				}
 				{ props.onEditClicked ? (
 					<button type = 'button' value = { props.copyValue } onClick = { edit }>
-						<span title = 'Edit'>
+						<span class = 'inline-card-action-chip' title = 'Edit'>
 							<EditIcon />
 							<span>edit</span>
 						</span>
