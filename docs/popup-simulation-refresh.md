@@ -39,3 +39,15 @@ Choose the registration that describes the operation:
 Transaction confirmation uses the owner registration and obtains services after refreshing wallet accounts. Visualization, metadata, and simulation operations use the snapshot registration where their existing execution contract requires a fixed pair. Do not use a snapshot registration to orchestrate a new user prompt or continue against a newly selected endpoint after that prompt; those stages need the owner contract.
 
 `SimulationServicesOwner.reset()` stops the replaced client's background polling and installs a new pair. `EthereumClientService.cleanup()` does not destroy its request handler, clear its endpoint, or invalidate RPC methods: an already-started snapshot can still finish against its original provider. A snapshot is therefore a fixed endpoint, not a promise to represent the latest selection. It must not be reused for a later independent operation. The registry types make that choice visible and prevent snapshot handlers from calling owner-based lifecycle APIs through their context.
+
+## Confirmation dialog staleness
+
+A pending transaction confirmation stores one simulation run, and three guards keep an older result from replacing a newer one. Each answers a different question, so none can stand in for another:
+
+| Guard | Where | Question | Why it is not one of the others |
+| --- | --- | --- | --- |
+| `simulationConductedTimestamp`, compared by `shouldReplacePopupVisualisation` | `windows/confirmTransaction.ts` | Was this simulation started before the one already stored? | Timestamps are stored in whole seconds, so two runs in the same second tie. |
+| `confirmationRunId` from `getNextConfirmationRunId` | `confirmTransactionSimulation.ts` | Is the stored run still the run this metadata refresh read? `refreshPopupConfirmTransactionMetadata` compares it for equality before writing. | Overlapping metadata refreshes read the same run and share its id. |
+| `latestConfirmationMetadataRefresh` | `popupMessageHandlers.ts` | Is this the latest started metadata refresh? Only that one stores and sends its lookups. | It counts metadata refreshes, not runs: storing a new run does not change it. |
+
+The run id is compared only for equality, never for order, so unlike the popup refresh generation (`popupRefreshGeneration.ts`) it is not persisted. A run after a background restart could only reuse a stored id if the clock went back to that exact millisecond. The metadata refresh counter lives in memory because a refresh never outlives the background. #1622, #1633, #1647 and #1651 use the same `confirmationRunId` and generator, so they converge when merged.

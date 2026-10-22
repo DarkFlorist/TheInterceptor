@@ -523,7 +523,7 @@ type ConfirmTransactionMetadataDependencies = {
 	readonly visualisation?: OpenConsumerVisualisationDependencies
 }
 
-// Counts started confirmation metadata refreshes, so only the latest started one stores and sends its lookups; see refreshPopupConfirmTransactionMetadata.
+// Counts started confirmation metadata refreshes, so only the latest started one stores and sends its lookups; see refreshPopupConfirmTransactionMetadata and "Confirmation dialog staleness" in docs/popup-simulation-refresh.md.
 let latestConfirmationMetadataRefresh = 0
 
 export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, requestAbortController: AbortController | undefined, dependencies: ConfirmTransactionMetadataDependencies = {}) {

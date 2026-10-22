@@ -138,6 +138,7 @@ type TimestampedPopupVisualisation = {
 
 const getSimulationStartedTimestamp = (popupVisualisation: TimestampedPopupVisualisation) => popupVisualisation.data.simulationStartedTimestamp
 
+// Orders stored simulation results by start time; see "Confirmation dialog staleness" in docs/popup-simulation-refresh.md for the run id and metadata refresh counter that cover what timestamps cannot.
 const shouldReplacePopupVisualisation = (
 	currentPopupVisualisation: TimestampedPopupVisualisation | undefined,
 	nextPopupVisualisation: TimestampedPopupVisualisation,
