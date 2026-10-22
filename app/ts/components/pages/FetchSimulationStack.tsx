@@ -117,15 +117,18 @@ export function FetchSimulationStack() {
 		if (hasCurrentAddressBookEntries(visualizedSimulatorState)) simulationAddressBookEntries.value = visualizedSimulatorState.addressBookEntries
 	}
 	useEffect(() => subscribeToSimulationStatePublications(applyPublishedSimulation), [])
+	// The opening replies travel separately from publications, so a publication can arrive first, and a reply must not then replace it with older data.
 	const updateSimulation = async () => {
 		const simulationStack = await requestPopupCompleteVisualizedSimulation()
-		if (simulationStack === undefined) return
+		// Simulation ids grow with every refresh, so a lower id comes from an older refresh than the published state.
+		if (simulationStack === undefined || simulationStack.visualizedSimulatorState.simulationId < completeVisualizedSimulation.value.simulationId) return
 		completeVisualizedSimulation.value = simulationStack.visualizedSimulatorState
 	}
 	// Without an open home popup or simulation stack page the stored visualisation is not refreshed, so in simulation mode opening this page simulates the current stack once for its address references.
 	const updateMetaData = async () => {
 		const data = await requestPopupSimulationMetadata()
-		if (data === undefined) return
+		// Only a finished publication sets the references before this reply, and later finished publications keep them current, so the reply only fills references nothing has supplied yet.
+		if (data === undefined || simulationAddressBookEntries.value !== undefined) return
 		simulationAddressBookEntries.value = data.metadata.addressBookEntries
 	}
 

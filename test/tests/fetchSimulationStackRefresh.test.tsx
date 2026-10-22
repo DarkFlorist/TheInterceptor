@@ -4,6 +4,7 @@ import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { FetchSimulationStack } from '../../app/ts/components/pages/FetchSimulationStack.js'
 import { useLiveSimulationHomeData } from '../../app/ts/components/hooks/useLiveSimulationHomeData.js'
+import { retainPreviousVisualisation } from '../../app/ts/background/popupVisualisationAddressBookEntries.js'
 import { getNativeTokenErc20 } from '../../app/ts/background/metadataUtils.js'
 import { mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import type { AddressBookEntry } from '../../app/ts/types/addressBookTypes.js'
@@ -22,6 +23,8 @@ const storageState: Record<string, unknown> = {}
 const pageListeners: RuntimeMessageListener[] = []
 const messageCounts = { simulationStatePublishes: 0, ethSimulateV1Requests: 0 }
 let messagesInFlight = 0
+// Requests a test deliberately leaves unanswered; they stay in flight without keeping the flow from settling.
+let heldRequests = 0
 let routeBackgroundRequest: ((message: unknown) => Promise<unknown>) | undefined
 
 function getMessageMethod(message: unknown) {
@@ -207,7 +210,7 @@ async function settleMessageFlow() {
 	let idleTicks = 0
 	for (let tick = 0; tick < MAX_SETTLE_TICKS && idleTicks < 3 && messageCounts.simulationStatePublishes <= REFRESH_LOOP_PUBLISH_LIMIT; tick++) {
 		await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
-		idleTicks = messagesInFlight === 0 ? idleTicks + 1 : 0
+		idleTicks = messagesInFlight === heldRequests ? idleTicks + 1 : 0
 	}
 }
 
@@ -392,12 +395,46 @@ function createBackgroundWithOutdatedStoredVisualisation(currentStackAddressBook
 	}
 }
 
+function createHeldReply<Reply>() {
+	let release: (reply: Reply) => void = () => undefined
+	const reply = new Promise<Reply>((resolve) => { release = resolve })
+	return {
+		release,
+		async waitForRelease() {
+			heldRequests += 1
+			try {
+				return await reply
+			} finally {
+				heldRequests -= 1
+			}
+		},
+	}
+}
+
+// Holds FetchSimulationStack's opening replies until the test releases them, so publications can arrive first.
+function createBackgroundWithHeldOpeningReplies() {
+	const visualisation = createHeldReply<CompleteVisualizedSimulation>()
+	const addressBookEntries = createHeldReply<readonly AddressBookEntry[]>()
+	return {
+		releaseVisualisation: visualisation.release,
+		releaseAddressBookEntries: addressBookEntries.release,
+		async handle(message: unknown) {
+			const method = getMessageMethod(message)
+			switch (method) {
+				case 'popup_requestCompleteVisualizedSimulation': return PopupRequestsReplies.popup_requestCompleteVisualizedSimulation.serialize({ method, visualizedSimulatorState: await visualisation.waitForRelease() })
+				case 'popup_requestSimulationMetadata': return PopupRequestsReplies.popup_requestSimulationMetadata.serialize({ method, metadata: { namedTokenIds: [], addressBookEntries: await addressBookEntries.waitForRelease(), ens: { ensNameHashes: [], ensLabelHashes: [] } } })
+				default: return undefined
+			}
+		},
+	}
+}
+
 async function publishSimulationState(visualizedSimulatorState: CompleteVisualizedSimulation) {
 	await act(async () => { await browser.runtime.sendMessage(serialize(MessageToPopup, { role: 'all', method: 'popup_simulation_state_changed', data: { visualizedSimulatorState } })) })
 	await settleMessageFlow()
 }
 
-async function openFetchSimulationStackPage(background: ReturnType<typeof createBackgroundWithOutdatedStoredVisualisation>) {
+async function openFetchSimulationStackPage(background: { readonly handle: (message: unknown) => Promise<unknown> }) {
 	pageListeners.length = 0
 	installBrowserMock()
 	routeBackgroundRequest = background.handle
@@ -444,6 +481,39 @@ describe('FetchSimulationStack published simulation states', () => {
 			assert.ok(page.getText().includes('Current Contract'))
 			assert.ok(!page.getText().includes('No simulation stack'))
 			assert.equal(background.simulationRequests.length, 2)
+		} finally {
+			await page.close()
+		}
+	})
+
+	test('opening replies that arrive after a finished publication do not replace its stack or address references', async () => {
+		const openingStack = createVisualizedTransactionStack('Opening Contract', 2, 100n)
+		const background = createBackgroundWithHeldOpeningReplies()
+		const page = await openFetchSimulationStackPage(background)
+		try {
+			await publishSimulationState(createVisualizedTransactionStack('Published Contract', 3, 101n))
+			assert.ok(page.getText().includes('Published Contract'))
+			background.releaseVisualisation(openingStack)
+			background.releaseAddressBookEntries(openingStack.addressBookEntries)
+			await settleMessageFlow()
+			assert.ok(page.getText().includes('Published Contract'))
+			assert.ok(!page.getText().includes('Opening Contract'))
+		} finally {
+			await page.close()
+		}
+	})
+
+	test('the opening address references still fill in when only an updating publication arrived first', async () => {
+		const openingStack = createVisualizedTransactionStack('Opening Contract', 2, 100n)
+		const background = createBackgroundWithHeldOpeningReplies()
+		const page = await openFetchSimulationStackPage(background)
+		try {
+			await publishSimulationState(retainPreviousVisualisation(createPassthroughCompleteVisualizedSimulation(1), { simulationId: 2, simulationUpdatingState: 'updating' }))
+			assert.ok(page.getText().includes('Getting simulation stack...'))
+			background.releaseVisualisation(openingStack)
+			background.releaseAddressBookEntries(openingStack.addressBookEntries)
+			await settleMessageFlow()
+			assert.ok(page.getText().includes('Opening Contract'))
 		} finally {
 			await page.close()
 		}
