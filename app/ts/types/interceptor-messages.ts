@@ -165,7 +165,7 @@ const SubscriptionReturnValue = funtypes.Union(
 			result: EthereumBlockHeaderWithTransactionHashes
 		})
 	}),
-	// Always `false`; see sendInitialSubscriptionMessages.
+	// Always `false`; see the syncing entry of ethSubscriptionTypes.
 	funtypes.ReadonlyObject({
 		method: funtypes.Literal('syncing'),
 		result: funtypes.ReadonlyObject({

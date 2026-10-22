@@ -1,6 +1,7 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { PASSTHROUGH_STATE } from '../../app/ts/types/visualizer-types.js'
+import { METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER } from '../../app/ts/utils/constants.js'
 import { confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus } from './backgroundEthAccountsTestHarness.js'
 
 async function createApprovedSubscriberHarness() {
@@ -75,5 +76,15 @@ describe('background eth_subscribe', () => {
 			{ method: 'eth_subscribe', requestId: 1, subscription: undefined, result: subscription.subscriptionOrFilterId },
 		])
 		assert.equal(getBlockCalls.count, 0)
+	})
+
+	test('unsupported subscription types get a single error reply', async () => {
+		const { modules, messages, sendRequest } = await createApprovedSubscriberHarness()
+
+		await sendRequest(1, 'eth_subscribe', ['logs'])
+		assert.deepEqual(messages.map((message) => ({ method: message.method, requestId: message.requestId, errorCode: message.error?.code })), [
+			{ method: 'eth_subscribe', requestId: 1, errorCode: METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER },
+		])
+		assert.deepEqual(await modules.getEthereumSubscriptionsAndFilters(), [])
 	})
 })
