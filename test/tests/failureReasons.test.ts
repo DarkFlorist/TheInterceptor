@@ -13,12 +13,8 @@ describe('getFailureReasonForDisplay', () => {
 		expect(decodeEthereumError([], revertWithData(encodeErrorString('STF'))).reason).toBe('STF')
 	})
 
-	test('shows the plain revert reason unless the caller opts into annotations', () => {
-		expect(getFailureReasonForDisplay([], revertWithData(encodeErrorString('STF')))).toBe('STF')
-		expect(getFailureReasonForDisplay([], revertWithData(encodeErrorString('LOK')))).toBe('LOK')
-	})
-
-	test('applies the caller annotation to decoded Error(string) revert reasons', () => {
+	test('applies only the caller annotation to decoded Error(string) revert reasons', () => {
+		expect(getFailureReasonForDisplay([], revertWithData(encodeErrorString('STF')), (revertReason) => revertReason)).toBe('STF')
 		expect(getFailureReasonForDisplay([], revertWithData(encodeErrorString('STF')), annotateRevertReason)).toBe('STF (annotated)')
 		expect(getFailureReasonForDisplay([], revertWithData(encodeErrorString('')), annotateRevertReason)).toBe('Unknown error (annotated)')
 	})

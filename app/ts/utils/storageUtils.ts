@@ -13,6 +13,7 @@ import { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { InterceptorErrorDiagnostic } from '../types/errorDiagnostics.js'
 import { InterceptedRequestForward } from '../types/interceptor-messages.js'
 import { ICON_ACCESS_DENIED } from './constants.js'
+import { addMissingTransactionCreationFailureReason } from '../simulation/transactionCreationFailureReason.js'
 import { hasOwnKey } from './typescript.js'
 
 type IdsOfOpenedTabs = funtypes.Static<typeof IdsOfOpenedTabs>
@@ -155,15 +156,22 @@ const LocalStorageKey2 = funtypes.Union(
 	funtypes.Literal('pendingTransactionsAndMessages'),
 )
 
+// The background and the confirmation popup both read pending transactions through here, so entries stored by older versions are normalized in one place.
+const parseLocalStorageItems2 = (storedItems: unknown): LocalStorageItems2 => {
+	const items = LocalStorageItems2.parse(storedItems)
+	if (items.pendingTransactionsAndMessages === undefined) return items
+	return { ...items, pendingTransactionsAndMessages: items.pendingTransactionsAndMessages.map(addMissingTransactionCreationFailureReason) }
+}
+
 // these methods are split to 1 and 2 to make the funtypes types simpler
 export async function browserStorageLocalGet2(keys: LocalStorageKey2 | LocalStorageKey2[]): Promise<LocalStorageItems2> {
-	return LocalStorageItems2.parse(await browser.storage.local.get(Array.isArray(keys) ? keys : [keys]))
+	return parseLocalStorageItems2(await browser.storage.local.get(Array.isArray(keys) ? keys : [keys]))
 }
 
 export async function browserStorageLocalGet2Result(keys: LocalStorageKey2 | LocalStorageKey2[]) {
 	const storedItems = await browser.storage.local.get(Array.isArray(keys) ? keys : [keys])
 	try {
-		return { success: true as const, value: LocalStorageItems2.parse(storedItems) }
+		return { success: true as const, value: parseLocalStorageItems2(storedItems) }
 	} catch (error) {
 		if (!(error instanceof funtypes.ValidationError)) throw error
 		return { success: false as const, error }

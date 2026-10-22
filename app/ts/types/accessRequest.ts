@@ -39,7 +39,7 @@ const ConfirmTransactionSimulationBaseData = funtypes.ReadonlyObject({
 	transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed,
 	signerName: SignerName,
 }).And(funtypes.ReadonlyPartial({
-	// Displayed reason when transactionToSimulate failed to be created, computed by refreshConfirmTransactionSimulation; optional so visualisations stored before it existed still parse.
+	// Displayed reason when transactionToSimulate failed to be created, derived only by getTransactionCreationFailureReason. Optional so visualisations stored before it existed still parse; reading stored pending transactions fills it in for them.
 	transactionCreationFailureReason: funtypes.String,
 }))
 
