@@ -79,9 +79,7 @@ export async function estimateGas(ethereumClientService: EthereumClientService, 
 export async function subscribe(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, request: EthSubscribeParams) {
 	const subscription = await createEthereumSubscription(request, socket)
 	return {
-		type: 'result' as const,
-		method: request.method,
-		result: subscription.subscriptionId,
+		reply: { type: 'result' as const, method: request.method, result: subscription.subscriptionId },
 		afterReplyDelivered: () => subscription.sendInitialMessages(websiteTabConnections),
 	}
 }

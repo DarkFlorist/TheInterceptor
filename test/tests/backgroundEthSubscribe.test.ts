@@ -32,7 +32,7 @@ async function createApprovedSubscriberHarness({ portDisconnected = false }: { r
 		params: [...params],
 	}, websiteTabConnections, noopPublishRpcConnectionStatus)
 	const sendNewBlock = async () => await sendSubscriptionMessagesForNewBlock(8443561n, ethereum, true, websiteTabConnections, async () => PASSTHROUGH_STATE)
-	return { modules, messages, getBlockCalls, sendRequest, sendNewBlock }
+	return { modules, messages, getBlockCalls, sendRequest, sendNewBlock, socket, websiteTabConnections }
 }
 
 // Keep only the fields that identify each posted message so the assertions read as an ordered delivery log.
@@ -77,6 +77,23 @@ describe('background eth_subscribe', () => {
 			{ method: 'eth_subscribe', requestId: 1, subscription: undefined, result: subscription.subscriptionOrFilterId },
 		])
 		assert.equal(getBlockCalls.count, 0)
+	})
+
+	test('the eth_subscribe handler returns a plain-data reply with its follow-up beside it, and the follow-up runs after delivery', async () => {
+		const { messages, socket, websiteTabConnections } = await createApprovedSubscriberHarness()
+		const { subscribe } = await import('../../app/ts/background/simulationModeHandlers.js')
+		const { replyToInterceptedRequestWithFollowUp } = await import('../../app/ts/background/messageSending.js')
+
+		const { reply, afterReplyDelivered } = await subscribe(websiteTabConnections, socket, { method: 'eth_subscribe', params: ['syncing'] })
+		// structuredClone rejects functions the way postMessage does, so this fails if the reply ever carries a closure.
+		assert.deepEqual(structuredClone(reply), reply)
+		assert.deepEqual(messages, [])
+
+		assert.equal(replyToInterceptedRequestWithFollowUp(websiteTabConnections, { ...reply, uniqueRequestIdentifier: { requestId: 1, requestSocket: socket } }, afterReplyDelivered), true)
+		assert.deepEqual(summarizePortMessages(messages), [
+			{ method: 'eth_subscribe', requestId: 1, subscription: undefined, result: reply.result },
+			{ method: 'syncing', requestId: undefined, subscription: reply.result, result: { subscription: reply.result, result: false } },
+		])
 	})
 
 	test('syncing subscribers get no initial notification when the subscription id reply was not delivered', async () => {
