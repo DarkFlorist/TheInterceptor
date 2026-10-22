@@ -4,20 +4,24 @@ import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import type { ProviderMessage } from '../../app/ts/utils/requests.js'
 import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
-import { clearSignerExecutionAuthorityForTab, reconcileSignerExecutionDocument, registerAuthoritativeTopSocket } from '../../app/ts/background/signerExecutionAuthority.js'
+import { clearSignerExecutionAuthorityForTab, getSignerDocumentGeneration, reconcileSignerExecutionDocument, registerAuthoritativeTopSocket } from '../../app/ts/background/signerExecutionAuthority.js'
 
 const defineGlobal = (name: PropertyKey, value: unknown) => Object.defineProperty(globalThis, name, { value, configurable: true, writable: true })
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null
-const DOCUMENT_GENERATION = '11111111-1111-4111-8111-111111111111'
+let DOCUMENT_GENERATION = '11111111-1111-4111-8111-111111111111'
 const NEXT_DOCUMENT_GENERATION = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 
 function installBrowserMock(beforeStorageGet?: (keys: unknown) => Promise<void>) {
 	clearSignerExecutionAuthorityForTab(7)
 	registerAuthoritativeTopSocket({ tabId: 7, connectionName: 1n }, 'app.example')
+	const generation = getSignerDocumentGeneration({ tabId: 7, connectionName: 1n }, 'app.example')
+	if (generation === undefined) throw new Error('Missing background document generation')
+	DOCUMENT_GENERATION = generation
 	reconcileSignerExecutionDocument({ tabId: 7, connectionName: 1n }, 'app.example', DOCUMENT_GENERATION, true, 0)
 	const storageState: Record<string, unknown> = {}
 	const popupMessages: unknown[] = []
 	defineGlobal('browser', {
+		tabs: { sendMessage: async (_tabId: number, message: { method: string }) => message.method === 'interceptor_signer_document_probe' ? { origin: 'https://app.example' } : false },
 		runtime: {
 			lastError: undefined,
 			async sendMessage(message: unknown) {
@@ -53,13 +57,12 @@ const provider = {
 } as const
 
 function createProviderMessage(method: string, params: readonly unknown[], tabId = 7): ProviderMessage {
-	const normalizedParams = method === 'signer_providers_changed' && params.length === 2 ? [...params, DOCUMENT_GENERATION] : params
 	return {
 		interceptorRequest: true,
 		interceptorInternalRequest: true,
 		usingInterceptorWithoutSigner: false,
 		method,
-		params: normalizedParams,
+		params,
 		uniqueRequestIdentifier: {
 			requestId: 1,
 			requestSocket: { tabId, connectionName: 1n },
@@ -68,6 +71,36 @@ function createProviderMessage(method: string, params: readonly unknown[], tabId
 }
 
 describe('EIP-6963 signer provider selection', () => {
+	test('settles child catalogs for an unavailable preference while retrying an undecided top catalog', async () => {
+		installBrowserMock()
+		const { signerProvidersChanged } = await import('../../app/ts/background/signerProviderSelection.js')
+		const { setSignerPreference } = await import('../../app/ts/background/storageVariables.js')
+		const { registerCurrentChildSignerSocket, socketCanExecuteWithSelectedSigner } = await import('../../app/ts/background/signerExecutionAuthority.js')
+		const child = { tabId: 7, connectionName: 2n }
+		registerCurrentChildSignerSocket(child, 2)
+		const childCatalog = { ...createProviderMessage('signer_providers_changed', [[], false]), uniqueRequestIdentifier: { requestId: 2, requestSocket: child } }
+		assert.equal((await signerProvidersChanged(childCatalog, 'app.example', false, 2)).signerFrameIneligible, undefined, 'A top catalog that has not decided yet remains retryable')
+		await setSignerPreference('app.example', provider.rdns)
+		await signerProvidersChanged(createProviderMessage('signer_providers_changed', [[], false]), 'app.example', true)
+		assert.equal((await signerProvidersChanged(childCatalog, 'app.example', false, 2)).signerFrameIneligible, true, 'An unavailable preference must not hold public child-frame requests indefinitely')
+		assert.equal(socketCanExecuteWithSelectedSigner(child), false)
+	})
+
+	test('background-issued document identity cannot be replaced by a catalog caller', async () => {
+		installBrowserMock()
+		const top = { tabId: 7, connectionName: 1n }
+		const generation = getSignerDocumentGeneration(top, 'app.example')
+		assert.ok(generation)
+		assert.notEqual(generation, NEXT_DOCUMENT_GENERATION)
+		assert.equal(reconcileSignerExecutionDocument(top, 'app.example', NEXT_DOCUMENT_GENERATION, true, 0), true)
+		assert.equal(getSignerDocumentGeneration(top, 'app.example'), generation)
+		const child = { tabId: 7, connectionName: 2n }
+		const { registerCurrentChildSignerSocket } = await import('../../app/ts/background/signerExecutionAuthority.js')
+		registerCurrentChildSignerSocket(child, 2)
+		assert.equal(reconcileSignerExecutionDocument(child, 'app.example', NEXT_DOCUMENT_GENERATION, false, 2), false)
+		assert.equal(reconcileSignerExecutionDocument(child, 'app.example', generation, false, 2), true)
+	})
+
 	test('releases a selection lease when persistence fails before its token reaches the caller', async () => {
 		let failReads = true
 		installBrowserMock(async () => { if (failReads) throw new Error('Signer storage unavailable') })
@@ -366,11 +399,11 @@ describe('EIP-6963 signer provider selection', () => {
 
 		registerAuthoritativeTopSocket(newTopSocket, 'app.example')
 		const newTopCatalog = {
-			...createProviderMessage('signer_providers_changed', [[], false, NEXT_DOCUMENT_GENERATION]),
+			...createProviderMessage('signer_providers_changed', [[], false]),
 			uniqueRequestIdentifier: { requestId: 3, requestSocket: newTopSocket },
 		}
 		const newChildCatalog = {
-			...createProviderMessage('signer_providers_changed', [[], false, NEXT_DOCUMENT_GENERATION]),
+			...createProviderMessage('signer_providers_changed', [[], false]),
 			uniqueRequestIdentifier: { requestId: 4, requestSocket: newChildSocket },
 		}
 		await signerProvidersChanged(newTopCatalog, 'app.example', true)
@@ -459,7 +492,7 @@ describe('EIP-6963 signer provider selection', () => {
 
 		assert.equal(registerAuthoritativeTopSocket(newTopSocket, 'app.example'), true)
 		assert.equal(reconcileSignerExecutionDocument(newTopSocket, 'app.example', NEXT_DOCUMENT_GENERATION, true, 0), true)
-		assert.equal(reconcileSignerExecutionDocument(newChildSocket, 'app.example', NEXT_DOCUMENT_GENERATION, false, 2), true)
+		assert.equal(reconcileSignerExecutionDocument(newChildSocket, 'app.example', getSignerDocumentGeneration(newTopSocket, 'app.example'), false, 2), true)
 		assert.equal(allowLegacySignerExecution(newTopSocket, 'app.example'), true)
 		assert.equal(authorizeSocketForLegacySignerExecution(newChildSocket, 'app.example'), true)
 		assert.equal(socketCanExecuteWithSelectedSigner(oldTopSocket), false)

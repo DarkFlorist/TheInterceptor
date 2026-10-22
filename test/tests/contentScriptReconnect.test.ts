@@ -4,7 +4,7 @@ import { acknowledgeAndTrackBridgeRequest, INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_ME
 
 type ContentScriptMockState = {
 	readonly backgroundMessageListeners: ((message: unknown) => void)[]
-	readonly runtimeMessageListeners: ((message: unknown) => unknown)[]
+	readonly runtimeMessageListeners: ((message: unknown, sender?: browser.runtime.MessageSender) => unknown)[]
 	readonly disconnectListeners: (() => void)[]
 	readonly eventListeners: Map<string, EventListenerOrEventListenerObject[]>
 	readonly postedMessages: unknown[]
@@ -21,6 +21,11 @@ const BRIDGE_SECRET = 'a'.repeat(64)
 const BRIDGE_CAPABILITY = '11111111-1111-4111-8111-111111111111'
 
 async function withContentScriptMock(source: ContentScriptSource, run: (state: ContentScriptMockState) => Promise<void>, legacyListenerDescriptor: PropertyDescriptor | undefined = undefined) {
+	const windowDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'window')
+	const isolatedWindow = {}
+	Object.defineProperty(isolatedWindow, 'top', { value: isolatedWindow })
+	Object.defineProperty(isolatedWindow, 'origin', { value: 'https://example.test' })
+	Object.defineProperty(globalThis, 'window', { configurable: true, value: isolatedWindow })
 	const browserDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'browser')
 	const addEventListenerDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'addEventListener')
 	const documentDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'document')
@@ -35,7 +40,7 @@ async function withContentScriptMock(source: ContentScriptSource, run: (state: C
 	const interceptorInjectedDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'interceptorInjected')
 	const contentScriptListenerDescriptor = Object.getOwnPropertyDescriptor(globalThis, contentScriptListenerGlobalKey)
 	const backgroundMessageListeners: ((message: unknown) => void)[] = []
-	const runtimeMessageListeners: ((message: unknown) => unknown)[] = []
+	const runtimeMessageListeners: ((message: unknown, sender?: browser.runtime.MessageSender) => unknown)[] = []
 	const disconnectListeners: (() => void)[] = []
 	const eventListeners = new Map<string, EventListenerOrEventListenerObject[]>()
 	const postedMessages: unknown[] = []
@@ -47,6 +52,7 @@ async function withContentScriptMock(source: ContentScriptSource, run: (state: C
 	const browserMock = {
 		dom: { openOrClosedShadowRoot: () => ({ addEventListener }) },
 		runtime: {
+			id: 'test-extension',
 			sendMessage: async () => true,
 			get lastError() { return runtime.lastError },
 			getURL: (path: string) => `browser-extension://test/${ path }`,
@@ -66,7 +72,7 @@ async function withContentScriptMock(source: ContentScriptSource, run: (state: C
 					},
 				}
 			},
-			onMessage: { addListener: (listener: (message: unknown) => unknown) => { runtimeMessageListeners.push(listener) } },
+			onMessage: { addListener: (listener: (message: unknown, sender?: browser.runtime.MessageSender) => unknown) => { runtimeMessageListeners.push(listener) } },
 		},
 	}
 	const addEventListener = (type: string, listener: EventListenerOrEventListenerObject) => {
@@ -103,6 +109,8 @@ async function withContentScriptMock(source: ContentScriptSource, run: (state: C
 		for (const callback of mutationCallbacks) callback()
 		await run({ backgroundMessageListeners, runtimeMessageListeners, disconnectListeners, eventListeners, postedMessages, connectionNames, runtime, getConnectionCount: () => connectionCount, failNextPost: () => { shouldFailNextPost = true } })
 	} finally {
+		if (windowDescriptor === undefined) Reflect.deleteProperty(globalThis, 'window')
+		else Object.defineProperty(globalThis, 'window', windowDescriptor)
 		if (browserDescriptor === undefined) Reflect.deleteProperty(globalThis, 'browser')
 		else Object.defineProperty(globalThis, 'browser', browserDescriptor)
 		if (addEventListenerDescriptor === undefined) Reflect.deleteProperty(globalThis, 'addEventListener')
@@ -466,14 +474,21 @@ async function verifyStalePortAcknowledgementIsIgnored(source: ContentScriptSour
 }
 
 async function verifyEstablishedBridgeRejectsForgedInternalRequests(source: ContentScriptSource) {
-	await withContentScriptMock(source, async ({ backgroundMessageListeners, eventListeners, postedMessages }) => {
+	await withContentScriptMock(source, async ({ backgroundMessageListeners, runtimeMessageListeners, eventListeners, postedMessages, connectionNames }) => {
+		const documentGeneration = '33333333-3333-4333-8333-333333333333'
+		backgroundMessageListeners[0]?.({ type: 'interceptor_signer_document_generation', signerDocumentGeneration: documentGeneration })
+		const probe = { method: 'interceptor_signer_document_probe', signerDocumentGeneration: documentGeneration }
+		assert.deepEqual(await runtimeMessageListeners[0]?.(probe, { id: 'test-extension' }), { origin: 'https://example.test' })
+		assert.equal(await runtimeMessageListeners[0]?.(probe, { id: 'another-extension' }), false)
+		assert.deepEqual(await runtimeMessageListeners[0]?.({ method: probe.method, connectionName: connectionNames[0] }, { id: 'test-extension' }), { origin: 'https://example.test' })
+		assert.equal(await runtimeMessageListeners[0]?.({ method: probe.method, connectionName: '0x999' }, { id: 'test-extension' }), false)
 		const legitimateChannel = new MessageChannel()
 		dispatchPrivateBridge(eventListeners, legitimateChannel.port2)
 		legitimateChannel.port1.postMessage({
 			type: 'interceptor_bridge_request',
 			bridgeCapability: BRIDGE_CAPABILITY,
 			method: 'signer_providers_changed',
-			params: [[], false, BRIDGE_CAPABILITY],
+			params: [[], false],
 			usingInterceptorWithoutSigner: false,
 			requestId: 1,
 			internal: true,
@@ -484,7 +499,7 @@ async function verifyEstablishedBridgeRejectsForgedInternalRequests(source: Cont
 			interceptorRequest: true,
 			interceptorInternalRequest: true,
 			method: 'signer_providers_changed',
-			params: [[], false, BRIDGE_CAPABILITY],
+			params: [[], false],
 			usingInterceptorWithoutSigner: false,
 			requestId: 1,
 		} })

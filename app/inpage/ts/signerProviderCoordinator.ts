@@ -12,7 +12,6 @@ type SignerProviderTransport = {
 	clearSigner(): void
 	hasUsableSignerInterface(provider: unknown): provider is object
 	completeSelection(info: EIP6963ProviderInfo, kind: SignerSelectionKind): Promise<void>
-	getSignerDocumentGeneration(): string
 	isBridgeReconnectedError(error: unknown): boolean
 	connectToSigner(signerName: SignerName): Promise<void>
 	markInitialSignerProviderCatalogReconciled(): void
@@ -111,30 +110,32 @@ export function createSignerProviderCoordinator(host: SignerProviderTransport) {
 		return true
 	}
 
-	const applyAnnouncedProviderSelection = async (uuid: string, selectionKind: SignerSelectionKind): Promise<boolean> => {
-		const capturedSignerCatalogDecisionGeneration = signerCatalogDecisionGeneration
-		const capturedSignerProviderCatalogRevision = signerProviderCatalogRevision
-		const leaseToken = await host.sendInternalMessageToBackgroundPage({ method: 'begin_signer_provider_selection', params: [uuid] })
-		if (leaseToken !== undefined && typeof leaseToken !== 'string') throw new Error('Failed to parse signer selection lease')
-		if (leaseToken === undefined) {
+	const runWithSelectionLease = async (uuid: string | undefined, apply: () => Promise<boolean>): Promise<boolean> => {
+		const capturedDecisionGeneration = signerCatalogDecisionGeneration
+		const capturedCatalogRevision = signerProviderCatalogRevision
+		const retry = () => {
 			signerProviderCatalogReconciliationNeeded = true
-			if (selectionKind === 'explicit') pendingExplicitSignerProviderUuid = uuid
 			scheduleSignerProviderCatalogRetry()
 			return false
 		}
+		const leaseToken = await host.sendInternalMessageToBackgroundPage({ method: 'begin_signer_provider_selection', params: [uuid] })
+		if (leaseToken !== undefined && typeof leaseToken !== 'string') throw new Error('Failed to parse signer selection lease')
+		if (leaseToken === undefined) return retry()
 		try {
 			if (selectionGate.hasExternalBlockers()
-				|| capturedSignerCatalogDecisionGeneration !== signerCatalogDecisionGeneration
-				|| capturedSignerProviderCatalogRevision !== signerProviderCatalogRevision) {
-				signerProviderCatalogReconciliationNeeded = true
-				if (selectionKind === 'explicit') pendingExplicitSignerProviderUuid = uuid
-				scheduleSignerProviderCatalogRetry()
-				return false
-			}
-			return await applyAnnouncedProviderSelectionWithoutLease(uuid, selectionKind)
+				|| capturedDecisionGeneration !== signerCatalogDecisionGeneration
+				|| capturedCatalogRevision !== signerProviderCatalogRevision) return retry()
+			return await apply()
 		} finally {
 			await host.sendInternalMessageToBackgroundPage({ method: 'finish_signer_provider_selection', params: [leaseToken] })
 		}
+	}
+
+	const applyAnnouncedProviderSelection = async (uuid: string, selectionKind: SignerSelectionKind): Promise<boolean> => {
+		const applied = await runWithSelectionLease(uuid, async () => await applyAnnouncedProviderSelectionWithoutLease(uuid, selectionKind))
+		// Only selecting a provider has an explicit UUID to replay; clearing an unavailable preference does not.
+		if (!applied && selectionKind === 'explicit' && announcedProviders.has(uuid)) pendingExplicitSignerProviderUuid = uuid
+		return applied
 	}
 
 	const selectAnnouncedProvider = async (uuid: string, selectionKind: SignerSelectionKind): Promise<void> => {
@@ -176,33 +177,14 @@ export function createSignerProviderCoordinator(host: SignerProviderTransport) {
 			host.markInitialSignerProviderCatalogReconciled()
 			return
 		}
-		await selectionGate.runSelection(async () => {
-			const capturedSignerCatalogDecisionGeneration = signerCatalogDecisionGeneration
-			const capturedSignerProviderCatalogRevision = signerProviderCatalogRevision
-			const leaseToken = await host.sendInternalMessageToBackgroundPage({ method: 'begin_signer_provider_selection', params: [undefined] })
-			if (leaseToken !== undefined && typeof leaseToken !== 'string') throw new Error('Failed to parse signer selection lease')
-			if (leaseToken === undefined) {
-				signerProviderCatalogReconciliationNeeded = true
-				scheduleSignerProviderCatalogRetry()
-				return
-			}
-			try {
-				if (selectionGate.hasExternalBlockers()
-					|| capturedSignerCatalogDecisionGeneration !== signerCatalogDecisionGeneration
-					|| capturedSignerProviderCatalogRevision !== signerProviderCatalogRevision) {
-					signerProviderCatalogReconciliationNeeded = true
-					scheduleSignerProviderCatalogRetry()
-					return
-				}
-				host.clearSigner()
-				selectedSignerProviderUuid = undefined
-				explicitlySelectedSignerProviderUuid = undefined
-				await host.connectToSigner('NoSigner')
-				host.markInitialSignerProviderCatalogReconciled()
-			} finally {
-				await host.sendInternalMessageToBackgroundPage({ method: 'finish_signer_provider_selection', params: [leaseToken] })
-			}
-		})
+		await selectionGate.runSelection(async () => await runWithSelectionLease(undefined, async () => {
+			host.clearSigner()
+			selectedSignerProviderUuid = undefined
+			explicitlySelectedSignerProviderUuid = undefined
+			await host.connectToSigner('NoSigner')
+			host.markInitialSignerProviderCatalogReconciled()
+			return true
+		}))
 	}
 
 	const synchronizeAnnouncedProviders = async (): Promise<void> => {
@@ -213,7 +195,7 @@ export function createSignerProviderCoordinator(host: SignerProviderTransport) {
 		const catalogDecisionGeneration = signerCatalogDecisionGeneration
 		const catalogRevision = signerProviderCatalogRevision
 		const providers = [...announcedProviders.values()].map((announcement) => announcement.info)
-		const reply = await host.sendInternalMessageToBackgroundPage({ method: 'signer_providers_changed', params: [providers, signerProviderCatalogOverflowed, host.getSignerDocumentGeneration()] })
+		const reply = await host.sendInternalMessageToBackgroundPage({ method: 'signer_providers_changed', params: [providers, signerProviderCatalogOverflowed] })
 		if (typeof reply !== 'object'
 			|| reply === null
 			|| !('automaticSelectionAllowed' in reply)

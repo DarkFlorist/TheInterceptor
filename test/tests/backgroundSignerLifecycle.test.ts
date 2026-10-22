@@ -1,3 +1,4 @@
+import { getSignerDocumentGeneration } from '../../app/ts/background/signerExecutionAuthority.js'
 import { clearSignerExecutionAuthorityForTab, registerCurrentChildSignerSocket, reconcileSignerExecutionDocument, authorizeSocketForLegacySignerExecution } from '../../app/ts/background/signerExecutionAuthority.js'
 import { authorizeLegacySignerSocket } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
@@ -24,7 +25,7 @@ describe('background eth_accounts', () => {
 			assert.equal(isSignerStateTokenAuthorized(connections, { ...token, ownerGeneration: token.ownerGeneration + 1 }), false, 'Authority alone cannot make a stale token current')
 			assert.equal(getAuthorizedSignerStateToken(connections, child), undefined, 'A current owner cannot authorize an unreconciled requesting frame')
 			registerCurrentChildSignerSocket(child, 1)
-			reconcileSignerExecutionDocument(child, 'https://example.test', '11111111-1111-4111-8111-111111111111', false, 1)
+			reconcileSignerExecutionDocument(child, 'https://example.test', getSignerDocumentGeneration(socket, 'https://example.test'), false, 1)
 			assert.equal(authorizeSocketForLegacySignerExecution(child, 'https://example.test'), true)
 			assert.ok(getAuthorizedSignerStateToken(connections, child))
 			assert.equal(isSignerStateTokenAuthorized(connections, token, { ...child, tabId: socket.tabId + 1 }), false)

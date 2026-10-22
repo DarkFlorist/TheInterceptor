@@ -1,4 +1,4 @@
-import { getSignerAccountIdentityError } from './accountIdentityPolicy.js'
+import { getSignerAccountIdentityError, usesSignerAccountIdentity } from './accountIdentityPolicy.js'
 import { isInternalProviderMethod, type InternalProviderMethod } from '../utils/internalProviderMethods.js'
 import { isTopFrameId } from '../utils/requests.js'
 import { prepareSafeAppsRequest } from './safeAppsRequestHandler.js'
@@ -32,7 +32,7 @@ import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { getWalletSelectedAccount, isActiveSigningSafe } from '../utils/activeAddressSelection.js'
 import { isAccountConnectionMethod, isAccountOnlyMethod } from './accountRequestMethods.js'
 import { beginSignerProviderSelection, finishSignerProviderSelection, signerProviderSelected, signerProvidersChanged } from './signerProviderSelection.js'
-import { isAuthoritativeTopSocket } from './signerExecutionAuthority.js'
+import { getSignerExecutionError, isAuthoritativeTopSocket } from './signerExecutionAuthority.js'
 import type { ApprovalState } from './websiteAccessPolicy.js'
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
@@ -388,17 +388,17 @@ async function discoverAccountRequestAddressContext(
 ) {
 	const settings = await getSettings()
 	const activeAddress = await getActiveAddressForRequest(settings, websiteTabConnections, socket.tabId)
-	if (activeAddress !== undefined) return { settings, activeAddress, requestedSignerAccountsForAddressConsent: false, signerAccountError: undefined }
-	if (!isAccountConnectionMethod(request.method)) return { settings, activeAddress, requestedSignerAccountsForAddressConsent: false, signerAccountError: undefined }
+	if (activeAddress !== undefined) return { settings, walletDerivedAddress: usesSignerAccountIdentity(settings), activeAddress, requestedSignerAccountsForAddressConsent: false, signerAccountError: undefined }
+	if (!isAccountConnectionMethod(request.method)) return { settings, walletDerivedAddress: usesSignerAccountIdentity(settings), activeAddress, requestedSignerAccountsForAddressConsent: false, signerAccountError: undefined }
 	const websiteAccess = getWebsiteAccessApprovalState(settings.websiteAccess, websiteOrigin)
-	if (websiteAccess === 'noAccess' || websiteAccess === 'interceptorDisabled') return { settings, activeAddress, requestedSignerAccountsForAddressConsent: false, signerAccountError: undefined }
+	if (websiteAccess === 'noAccess' || websiteAccess === 'interceptorDisabled') return { settings, walletDerivedAddress: usesSignerAccountIdentity(settings), activeAddress, requestedSignerAccountsForAddressConsent: false, signerAccountError: undefined }
 
 	const signerAccountsResult = await askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections, socket, true)
 	const refreshedSettings = await getSettings()
 	const refreshedActiveAddress = await getActiveAddressForRequest(refreshedSettings, websiteTabConnections, socket.tabId)
-	if (refreshedActiveAddress !== undefined) return { settings: refreshedSettings, activeAddress: refreshedActiveAddress, requestedSignerAccountsForAddressConsent: true, signerAccountError: signerAccountsResult.error }
+	if (refreshedActiveAddress !== undefined) return { settings: refreshedSettings, walletDerivedAddress: usesSignerAccountIdentity(refreshedSettings), activeAddress: refreshedActiveAddress, requestedSignerAccountsForAddressConsent: true, signerAccountError: signerAccountsResult.error }
 	const firstSignerAddress = signerAccountsResult.accounts[0] === undefined ? undefined : await getWalletActiveAddressEntryForChain(signerAccountsResult.accounts[0], refreshedSettings.activeRpcNetwork.chainId)
-	return { settings: refreshedSettings, activeAddress: firstSignerAddress, requestedSignerAccountsForAddressConsent: true, signerAccountError: signerAccountsResult.error }
+	return { settings: refreshedSettings, walletDerivedAddress: true, activeAddress: firstSignerAddress, requestedSignerAccountsForAddressConsent: true, signerAccountError: signerAccountsResult.error }
 }
 
 const isSignerProviderDisconnectedError = (error: ErrorWithCodeAndOptionalData | undefined): error is ErrorWithCodeAndOptionalData => error?.code === METAMASK_ERROR_PROVIDER_DISCONNECTED
@@ -450,8 +450,7 @@ const processInterceptedRequest = async (port: browser.runtime.Port | undefined,
 	const initialActiveAddress = await getActiveAddressForRequest(initialSettings, websiteTabConnections, socket.tabId)
 	if (request.interceptorInternalRequest !== true && isInternalProviderMethod(request.method)) return refusePublicInternalProviderMethod(websiteTabConnections, request)
 	// Cached wallet identities still require this frame's reconciliation, even when no new wallet command is needed. Interactive account approval can bootstrap access separately.
-	if (request.interceptorInternalRequest !== true && isAccountOnlyMethod(request.method) && !isAccountConnectionMethod(request.method)
-		&& !request.usingInterceptorWithoutSigner) {
+	if (request.interceptorInternalRequest !== true && isAccountOnlyMethod(request.method) && !isAccountConnectionMethod(request.method)) {
 		const error = getSignerAccountIdentityError(initialSettings, socket)
 		if (error !== undefined) return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), error })
 	}
@@ -472,7 +471,7 @@ const processInterceptedRequest = async (port: browser.runtime.Port | undefined,
 		const message: InpageScriptRequest = { uniqueRequestIdentifier: request.uniqueRequestIdentifier, ...providerHandlerReturn }
 		return replyToInterceptedRequest(websiteTabConnections, message)
 	}
-	const { settings, activeAddress, requestedSignerAccountsForAddressConsent, signerAccountError } = await discoverAccountRequestAddressContext(websiteTabConnections, socket, request, websiteOrigin)
+	const { settings, walletDerivedAddress, activeAddress, requestedSignerAccountsForAddressConsent, signerAccountError } = await discoverAccountRequestAddressContext(websiteTabConnections, socket, request, websiteOrigin)
 	if (isTerminalSignerAccountConnectionError(signerAccountError)) return replyWithSignerAccountError(websiteTabConnections, request, signerAccountError)
 	if (requestedSignerAccountsForAddressConsent && activeAddress === undefined) {
 		if (getWebsiteAccessApprovalState(settings.websiteAccess, websiteOrigin) === 'interceptorDisabled') return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...ERROR_INTERCEPTOR_DISABLED })
@@ -524,7 +523,7 @@ const processInterceptedRequest = async (port: browser.runtime.Port | undefined,
 		if (refreshedActiveAddress === undefined) return replyWithoutActiveAccount(websiteTabConnections, request)
 		const refreshedAccess = verifyAccess(websiteTabConnections, socket, false, websiteOrigin, refreshedActiveAddress, refreshedSettings, { ignoreConnectionApproval: true })
 		if (refreshedAccess !== 'hasAccess') return replyWithoutActiveAccount(websiteTabConnections, request)
-		return await handleContentScriptMessage(simulationServicesOwner, websiteTabConnections, request, await websitePromise, refreshedActiveAddress, publishRpcConnectionStatus)
+		return await handleContentScriptMessage(simulationServicesOwner, websiteTabConnections, request, await websitePromise, refreshedActiveAddress, true, publishRpcConnectionStatus)
 	}
 
 	if (access === 'noAccess' || activeAddress === undefined) {
@@ -548,13 +547,13 @@ const processInterceptedRequest = async (port: browser.runtime.Port | undefined,
 		case 'hasAccess': {
 			if (activeAddress === undefined) return refuseAccess(websiteTabConnections, request)
 			const website = await websitePromise
-			return await handleContentScriptMessage(simulationServicesOwner, websiteTabConnections, request, website, activeAddress, publishRpcConnectionStatus)
+			return await handleContentScriptMessage(simulationServicesOwner, websiteTabConnections, request, website, activeAddress, walletDerivedAddress, publishRpcConnectionStatus)
 		}
 		default: assertNever(access)
 	}
 }
 
-async function handleContentScriptMessage(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, website: Website, activeAddress: AddressBookEntry, publishRpcConnectionStatus: PublishRpcConnectionStatus) {
+async function handleContentScriptMessage(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, website: Website, activeAddress: AddressBookEntry, walletDerivedAddress: boolean, publishRpcConnectionStatus: PublishRpcConnectionStatus) {
 	try {
 		const requestWithDefinedParams = getRequestWithDefinedParams(request)
 		const settings = await getSettings()
@@ -581,6 +580,13 @@ async function handleContentScriptMessage(simulationServicesOwner: SimulationSer
 			resolved,
 			activeAddress.address,
 		)
+		// Preserve the address-resolution policy across awaits: switching to an independent simulation identity cannot authorize an already computed wallet identity.
+		if (isAccountOnlyMethod(request.method)) {
+			const currentSettings = await getSettings()
+			const socket = request.uniqueRequestIdentifier.requestSocket
+			const identityError = (walletDerivedAddress ? getSignerExecutionError(socket) : undefined) ?? getSignerAccountIdentityError(settings, socket) ?? getSignerAccountIdentityError(currentSettings, socket)
+			if (identityError !== undefined) return replyToInterceptedRequest(websiteTabConnections, { ...requestWithDefinedParams, type: 'result', error: identityError })
+		}
 		replayProviderStateForAccountRequest(websiteTabConnections, request, resolved, activeAddress.address, settings)
 		return replyToInterceptedRequest(websiteTabConnections, { ...requestWithDefinedParams, ...resolved })
 	} catch (error: unknown) {

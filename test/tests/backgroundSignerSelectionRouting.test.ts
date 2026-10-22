@@ -1,3 +1,4 @@
+import { getSignerDocumentGeneration } from '../../app/ts/background/signerExecutionAuthority.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
@@ -79,7 +80,7 @@ describe('background signer selection routing', () => {
 		const childSocket = { tabId: 1, connectionName: 2n }
 		const providerUuid = '22222222-2222-4222-8222-222222222222'
 		registerCurrentChildSignerSocket(childSocket, 2)
-		reconcileSignerExecutionDocument(childSocket, websiteOrigin, '11111111-1111-4111-8111-111111111111', false, 2)
+		reconcileSignerExecutionDocument(childSocket, websiteOrigin, getSignerDocumentGeneration(topSocket, websiteOrigin), false, 2)
 		setSignerExecutionTarget(childSocket.tabId, providerUuid, websiteOrigin)
 
 		const top = createPort(topSocket.tabId, undefined, 0, topSocket.connectionName)
@@ -136,7 +137,7 @@ describe('background signer selection routing', () => {
 			usingInterceptorWithoutSigner: false,
 			uniqueRequestIdentifier: { requestId: 10, requestSocket: socket },
 			method: 'signer_providers_changed',
-			params: [[provider], false, '11111111-1111-4111-8111-111111111111'],
+			params: [[provider], false],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 
 		assert.deepEqual((await getTabState(socket.tabId)).availableSignerProviders, [])

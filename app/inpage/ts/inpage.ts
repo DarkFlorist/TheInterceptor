@@ -1,5 +1,5 @@
 import { generateUuidV4, isUuid } from '../../ts/utils/uuid.js'
-import { INTERCEPTOR_BRIDGE_REQUEST_MESSAGE, INTERCEPTOR_BRIDGE_INITIALIZED_MESSAGE, INTERCEPTOR_BRIDGE_RECONNECTED_MESSAGE } from '../../ts/utils/inpageBridgeProtocol.js'
+import { INTERCEPTOR_BRIDGE_REQUEST_MESSAGE, INTERCEPTOR_BRIDGE_INITIALIZED_MESSAGE, INTERCEPTOR_BRIDGE_RECONNECTED_MESSAGE, installInpageBridgeInitializer } from '../../ts/utils/inpageBridgeProtocol.js'
 import { isInternalProviderMethod as isInternalBackgroundMethod } from '../../ts/utils/internalProviderMethods.js'
 import { createSignerProviderCoordinator } from './signerProviderCoordinator.js'
 import { createPrivateInpageBridge } from './privateInpageBridge.js'
@@ -291,34 +291,7 @@ type InterceptedRequestForwardToSigner = InterceptedRequestBase & { readonly typ
 type InterceptedRequestForward = InterceptedRequestForwardWithResult | InterceptedRequestForwardWithError | InterceptedRequestForwardToSigner
 
 const REQUEST_SCOPED_PROVIDER_EVENT_METHODS = new Set(['accountsChanged', 'connect', 'disconnect', 'chainChanged'])
-const SIGNER_DOCUMENT_GENERATION_KEY = Symbol.for('dark.florist.interceptor.signerDocumentGeneration')
-const signerFrameFallbackDocumentGeneration = generateUuidV4()
-
 class SignerSynchronizationBridgeReconnectedError extends Error {}
-
-const getSignerDocumentGeneration = () => {
-	try {
-		const topWindow = window.top
-		if (topWindow === null) return signerFrameFallbackDocumentGeneration
-		const existing = Reflect.get(topWindow, SIGNER_DOCUMENT_GENERATION_KEY)
-		if (isUuid(existing)) return existing
-		// Same-origin child frames can initialize before the top frame. Whichever frame runs first establishes the shared generation so every frame reconciles against the same top-document authority.
-		Reflect.defineProperty(topWindow, SIGNER_DOCUMENT_GENERATION_KEY, {
-			configurable: false,
-			enumerable: false,
-			writable: false,
-			value: signerFrameFallbackDocumentGeneration,
-		})
-		const sharedGeneration = Reflect.get(topWindow, SIGNER_DOCUMENT_GENERATION_KEY)
-		return isUuid(sharedGeneration) ? sharedGeneration : signerFrameFallbackDocumentGeneration
-	} catch (error: unknown) {
-		if (!(error instanceof DOMException) || error.name !== 'SecurityError') throw error
-		// Accessing window.top throws for a cross-origin frame. Its fallback can publish a catalog, but the background will not grant it same-origin signer authority.
-		return signerFrameFallbackDocumentGeneration
-	}
-}
-
-getSignerDocumentGeneration()
 
 function normalizeSignerChainId(chainId: string) {
 	// Coinbase historically emitted decimal chain IDs. Only normalize the entire value so malformed IDs are not silently truncated by Number.parseInt.
@@ -749,7 +722,6 @@ class InterceptorMessageListener {
 				await this.connectToSigner('EIP6963')
 				await this.getAccountsFromSigner()
 			},
-			getSignerDocumentGeneration,
 			isBridgeReconnectedError: (error) => error instanceof SignerSynchronizationBridgeReconnectedError,
 			connectToSigner: (...args) => this.connectToSigner(...args),
 			markInitialSignerProviderCatalogReconciled: (...args) => this.markInitialSignerProviderCatalogReconciled(...args),
@@ -2059,7 +2031,7 @@ function injectInterceptor() {
 const interceptorMessageListener = injectInterceptor()
 
 // Chrome invokes this fixed entry point with an isolated-script nonce. The endpoint never leaves its closed shadow root.
-Object.defineProperty(window, '__interceptorInitializeBridge', { value: interceptorMessageListener.initializeBridge })
+installInpageBridgeInitializer(window, interceptorMessageListener.initializeBridge)
 const documentStartBridgeSecret = '[[interceptor-bootstrap-secret]]'
 if (!documentStartBridgeSecret.startsWith('[[')) {
 	// Firefox's isolated document_start script installs the private-root listener after inline injection returns.

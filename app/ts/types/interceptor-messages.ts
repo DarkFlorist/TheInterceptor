@@ -460,7 +460,7 @@ export const ConnectedToSigner = funtypes.ReadonlyObject({
 export type SignerProvidersChanged = funtypes.Static<typeof SignerProvidersChanged>
 export const SignerProvidersChanged = funtypes.ReadonlyObject({
 	method: funtypes.Literal('signer_providers_changed'),
-	params: funtypes.Tuple(funtypes.ReadonlyArray(EIP6963ProviderInfo), funtypes.Boolean, EIP6963ProviderInfo.fields.uuid),
+	params: funtypes.Tuple(funtypes.ReadonlyArray(EIP6963ProviderInfo), funtypes.Boolean),
 }).asReadonly()
 
 export type SignerProviderSelected = funtypes.Static<typeof SignerProviderSelected>

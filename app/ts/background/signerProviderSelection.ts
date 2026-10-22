@@ -1,3 +1,4 @@
+import { probeChildSignerDocument } from './signerDocumentSynchronization.js'
 import { getExplicitSignerSelectionForConnection } from './signerSelectionOwnership.js'
 import { isTopFrameId } from '../utils/requests.js'
 import { BeginSignerProviderSelection, FinishSignerProviderSelection, SignerProviderSelected, SignerProvidersChanged, type SelectSignerProvider, type SubscriptionReplyOrCallBack } from '../types/interceptor-messages.js'
@@ -8,7 +9,7 @@ import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
 import { getChainChangeConfirmationPromise, getPendingTransactionsAndMessages, getSignerPreference, getTabState, setSignerPreference, updateTabState } from './storageVariables.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { acquireSignerSelectionLease, releaseSignerSelectionLease, signerSelectionLeaseIsActive } from './signerSelectionLease.js'
-import { allowLegacySignerExecution, authorizeSocketForLegacySignerExecution, authorizeSocketForSignerExecution, blockSignerExecution, getSignerExecutionTargetForSocket, isAuthoritativeTopSocket, reconcileSignerExecutionDocument, setSignerExecutionTarget, signerFrameHasDifferentOrigin, socketIsEligibleForSignerExecution } from './signerExecutionAuthority.js'
+import { allowLegacySignerExecution, authorizeSocketForLegacySignerExecution, authorizeSocketForSignerExecution, blockSignerExecution, getSignerExecutionTargetForSocket, getSignerDocumentGeneration, isAuthoritativeTopSocket, reconcileSignerExecutionDocument, setSignerExecutionTarget, signerSelectionIsUnavailable, signerFrameHasDifferentOrigin, socketIsEligibleForSignerExecution } from './signerExecutionAuthority.js'
 
 const tabHasPendingSignerWork = async (tabId: number) => {
 	const [pendingSignerRequests, pendingChainChange] = await Promise.all([
@@ -55,14 +56,16 @@ export function finishSignerProviderSelection(request: ProviderMessage) {
 }
 
 export async function signerProvidersChanged(request: ProviderMessage, websiteOrigin: string, isTopFrame: boolean, frameId: number | undefined = isTopFrame ? 0 : undefined) {
-	const [announcedProviders, signerProviderCatalogOverflowed, documentGeneration] = SignerProvidersChanged.parse(request).params
+	const [announcedProviders, signerProviderCatalogOverflowed] = SignerProvidersChanged.parse(request).params
 	const socket = request.uniqueRequestIdentifier.requestSocket
+	const childDocument = !isTopFrame && frameId !== undefined ? await probeChildSignerDocument(socket, websiteOrigin, frameId) : undefined
+	const documentGeneration = isTopFrame ? getSignerDocumentGeneration(socket, websiteOrigin) : childDocument?.status === 'ready' ? childDocument.generation : undefined
 	if (!reconcileSignerExecutionDocument(socket, websiteOrigin, documentGeneration, isTopFrame, frameId)) return {
 		preferredSignerRdns: undefined,
 		automaticSelectionAllowed: false,
 		signerSelectionChangeAllowed: false,
 		legacySignerAllowed: false,
-		...((!isTopFrame && frameId === undefined) || signerFrameHasDifferentOrigin(socket, websiteOrigin) ? { signerFrameIneligible: true } : {}),
+		...(childDocument?.status === 'ineligible' || (!isTopFrame && frameId === undefined) || signerFrameHasDifferentOrigin(socket, websiteOrigin) ? { signerFrameIneligible: true } : {}),
 	}
 	if (!isTopFrame) {
 		const executionTarget = getSignerExecutionTargetForSocket(socket, websiteOrigin)
@@ -74,7 +77,7 @@ export async function signerProvidersChanged(request: ProviderMessage, websiteOr
 			signerSelectionChangeAllowed: selectedSignerProviderUuid !== undefined || legacySignerAllowed,
 			legacySignerAllowed,
 			...(selectedSignerProviderUuid === undefined ? {} : { selectedSignerProviderUuid }),
-			...(executionTarget !== undefined && selectedSignerProviderUuid === undefined ? { signerFrameIneligible: true } : {}),
+			...(signerSelectionIsUnavailable(socket, websiteOrigin) || (executionTarget !== undefined && selectedSignerProviderUuid === undefined) ? { signerFrameIneligible: true } : {}),
 		}
 	}
 	const providers = announcedProviders.map((provider) => ({ ...provider, rdns: provider.rdns.toLowerCase() }))

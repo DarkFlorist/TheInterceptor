@@ -1,5 +1,5 @@
 import { generateUuidV4, isUuid } from '../../ts/utils/uuid.js'
-import { INTERCEPTOR_BRIDGE_REQUEST_MESSAGE, INTERCEPTOR_BRIDGE_INITIALIZED_MESSAGE, INTERCEPTOR_BRIDGE_RECONNECTED_MESSAGE, INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, INTERCEPTOR_PRIVATE_BRIDGE_EVENT } from '../../ts/utils/inpageBridgeProtocol.js'
+import { INTERCEPTOR_BRIDGE_REQUEST_MESSAGE, INTERCEPTOR_BRIDGE_INITIALIZED_MESSAGE, INTERCEPTOR_BRIDGE_RECONNECTED_MESSAGE, INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, INTERCEPTOR_PRIVATE_BRIDGE_EVENT, INTERCEPTOR_SIGNER_DOCUMENT_GENERATION_MESSAGE, INTERCEPTOR_SIGNER_DOCUMENT_PROBE_METHOD } from '../../ts/utils/inpageBridgeProtocol.js'
 const contentScriptListenerGlobalKey = Symbol.for('TheInterceptor.listenContentScript')
 
 function listenContentScript(connectionName: string | undefined, diagnosticsSource: 'content-script' | 'document-start', bridgeSecret: string) {
@@ -34,6 +34,9 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 		return `0x${ Array.from(arr, dec2hex).join('') }`
 	}
 	const connectionNameNotUndefined = connectionName === undefined ? generateId(40) : connectionName
+	// Capture the effective origin in the isolated world; URL origins alone cannot identify opaque sandbox documents.
+	const frameOrigin = window.origin
+	let signerDocumentGeneration: string | undefined
 	let pageHidden = false
 	let extensionPort: browser.runtime.Port | undefined 
 	let inpagePort: MessagePort | undefined
@@ -335,6 +338,14 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 
 		// forward all messages we get from the background script to the window so the page script can filter and process them
 		connectedExtensionPort.onMessage.addListener(messageEvent => {
+			if (typeof messageEvent === 'object' && messageEvent !== null
+				&& 'type' in messageEvent && messageEvent.type === INTERCEPTOR_SIGNER_DOCUMENT_GENERATION_MESSAGE) {
+				if (extensionPort !== connectedExtensionPort) return
+				if (!('signerDocumentGeneration' in messageEvent) || !isUuid(messageEvent.signerDocumentGeneration)) throw new Error('Invalid signer document generation')
+				if (window.top !== window) throw new Error('Signer document generation targeted a child frame')
+				signerDocumentGeneration = messageEvent.signerDocumentGeneration
+				return
+			}
 			const isBridgeAcknowledgement = typeof messageEvent === 'object'
 				&& messageEvent !== null
 				&& 'type' in messageEvent
@@ -389,7 +400,14 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 		return connectedExtensionPort
 	}
 	connect()
-	browser.runtime.onMessage.addListener(async (message: unknown) => {
+	browser.runtime.onMessage.addListener(async (message: unknown, sender?: browser.runtime.MessageSender) => {
+		if (typeof message === 'object' && message !== null && 'method' in message && message.method === INTERCEPTOR_SIGNER_DOCUMENT_PROBE_METHOD) {
+			if (sender?.id === undefined || sender.id !== browser.runtime.id) return false
+			const matches = 'signerDocumentGeneration' in message
+				? window.top === window && signerDocumentGeneration !== undefined && message.signerDocumentGeneration === signerDocumentGeneration
+				: 'connectionName' in message && typeof message.connectionName === 'string' && BigInt(message.connectionName) === BigInt(connectionNameNotUndefined)
+			return matches ? { origin: frameOrigin } : false
+		}
 		if (
 			typeof message !== 'object'
 			|| message === null

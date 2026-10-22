@@ -1,3 +1,5 @@
+import { runInNewContext } from 'node:vm'
+import { installInpageBridgeInitializer, invokeInpageBridgeInitializer } from '../../app/ts/utils/inpageBridgeProtocol.js'
 import * as assert from 'assert'
 import { test } from 'bun:test'
 import { initializeInpageBridge } from '../../app/ts/background/inpageBridgeBootstrap.js'
@@ -29,4 +31,14 @@ test('privileged bridge bootstrap targets the exact sending document and rejects
 		if (previousBrowser === undefined) Reflect.deleteProperty(globalThis, 'browser')
 		else Object.defineProperty(globalThis, 'browser', previousBrowser)
 	}
+})
+
+test('the MAIN-world initializer installer and serialized invocation share one contract', () => {
+	const mainRealm = {}
+	installInpageBridgeInitializer(mainRealm, (value) => value === secret)
+	const invokeSource = `(${ invokeInpageBridgeInitializer.toString() })`
+	assert.equal(runInNewContext(`${ invokeSource }(${ JSON.stringify(secret) })`, mainRealm), true)
+	assert.equal(runInNewContext(`${ invokeSource }('wrong-secret')`, mainRealm), false)
+	assert.equal(runInNewContext(`${ invokeSource }(${ JSON.stringify(secret) })`, {}), false)
+	assert.throws(() => runInNewContext(`${ invokeSource }(undefined)`, mainRealm), /Missing inpage bootstrap key/)
 })

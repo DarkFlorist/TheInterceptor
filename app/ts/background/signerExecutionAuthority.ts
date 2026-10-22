@@ -1,11 +1,12 @@
+import { generateUuidV4 } from '../utils/uuid.js'
 import type { InterceptedRequestForward } from '../types/interceptor-messages.js'
 import { METAMASK_ERROR_NOT_AUTHORIZED } from '../utils/constants.js'
 import { isTopFrameId, websiteSocketToString, type WebsiteSocket } from '../utils/requests.js'
 
 type SignerExecutionAuthority = {
 	readonly websiteOrigin: string
-	documentGeneration: string | undefined
-	readonly mode: 'blocked' | 'legacy' | 'eip6963'
+	readonly documentGeneration: string
+	readonly mode: 'pending' | 'blocked' | 'legacy' | 'eip6963'
 	readonly providerUuid: string | undefined
 	readonly eligibleSocketKeys: Set<string>
 	readonly authorizedSocketKeys: Set<string>
@@ -73,33 +74,45 @@ export function registerAuthoritativeTopSocket(socket: WebsiteSocket, websiteOri
 	const key = websiteSocketToString(socket)
 	const current = signerExecutionAuthorities.get(socket.tabId)
 	if (authoritativeTopSocketKeys.get(socket.tabId) === key && current?.websiteOrigin === websiteOrigin) {
-		current.eligibleSocketKeys.add(key)
 		return false
 	}
 	authoritativeTopSocketKeys.set(socket.tabId, key)
 	// Every document starts blocked until its initial (possibly empty) EIP-6963 catalog has been reconciled with the site's stored preference.
 	signerExecutionAuthorities.set(socket.tabId, {
 		websiteOrigin,
-		documentGeneration: undefined,
-		mode: 'blocked',
+		documentGeneration: generateUuidV4(),
+		mode: 'pending',
 		providerUuid: undefined,
-		eligibleSocketKeys: new Set([key]),
+		eligibleSocketKeys: new Set(),
 		authorizedSocketKeys: new Set(),
 	})
 	return true
 }
 
-export function reconcileSignerExecutionDocument(socket: WebsiteSocket, websiteOrigin: string, documentGeneration: string, isTopFrame: boolean, frameId: number | undefined) {
+
+export function getSignerDocumentGenerationForOrigin(tabId: number, websiteOrigin: string) {
+	const authority = signerExecutionAuthorities.get(tabId)
+	return authority?.websiteOrigin === websiteOrigin ? authority.documentGeneration : undefined
+}
+
+export function getSignerDocumentGeneration(socket: WebsiteSocket, websiteOrigin: string) {
+	return isAuthoritativeTopSocket(socket) ? getSignerDocumentGenerationForOrigin(socket.tabId, websiteOrigin) : undefined
+}
+
+export function isCurrentChildSignerSocket(socket: WebsiteSocket, frameId: number | undefined) {
+	return frameId !== undefined && !isTopFrameId(frameId) && currentChildSocketKeysByTab.get(socket.tabId)?.get(frameId) === websiteSocketToString(socket)
+}
+
+export function reconcileSignerExecutionDocument(socket: WebsiteSocket, websiteOrigin: string, documentGeneration: string | undefined, isTopFrame: boolean, frameId: number | undefined) {
 	const authority = signerExecutionAuthorities.get(socket.tabId)
 	const key = websiteSocketToString(socket)
 	if (authority === undefined || authority.websiteOrigin !== websiteOrigin) return false
 	if (isTopFrame) {
 		if (!isAuthoritativeTopSocket(socket)) return false
-		authority.documentGeneration = documentGeneration
 		authority.eligibleSocketKeys.add(key)
 		return true
 	}
-	if (frameId === undefined || isTopFrameId(frameId) || currentChildSocketKeysByTab.get(socket.tabId)?.get(frameId) !== key) return false
+	if (!isCurrentChildSignerSocket(socket, frameId)) return false
 	if (authority.documentGeneration !== documentGeneration) return false
 	authority.eligibleSocketKeys.add(key)
 	return true
@@ -111,7 +124,7 @@ export function isAuthoritativeTopSocket(socket: WebsiteSocket) {
 
 export function setSignerExecutionTarget(tabId: number, providerUuid: string, websiteOrigin: string) {
 	const current = signerExecutionAuthorities.get(tabId)
-	if (current === undefined || current.websiteOrigin !== websiteOrigin || current.documentGeneration === undefined) return false
+	if (current === undefined || current.websiteOrigin !== websiteOrigin || !current.eligibleSocketKeys.has(authoritativeTopSocketKeys.get(tabId) ?? '')) return false
 	if (current.mode === 'eip6963' && current.providerUuid === providerUuid) return true
 	signerExecutionAuthorities.set(tabId, {
 		websiteOrigin,
@@ -127,7 +140,7 @@ export function setSignerExecutionTarget(tabId: number, providerUuid: string, we
 export function allowLegacySignerExecution(socket: WebsiteSocket, websiteOrigin: string) {
 	if (!isAuthoritativeTopSocket(socket)) return false
 	const current = signerExecutionAuthorities.get(socket.tabId)
-	if (current === undefined || current.websiteOrigin !== websiteOrigin || current.documentGeneration === undefined || !current.eligibleSocketKeys.has(websiteSocketToString(socket))) return false
+	if (current === undefined || current.websiteOrigin !== websiteOrigin || !current.eligibleSocketKeys.has(websiteSocketToString(socket))) return false
 	if (current.mode === 'legacy') {
 		current.authorizedSocketKeys.add(websiteSocketToString(socket))
 		return true
@@ -154,6 +167,11 @@ export function blockSignerExecution(tabId: number) {
 		eligibleSocketKeys: current.eligibleSocketKeys,
 		authorizedSocketKeys: new Set(),
 	})
+}
+
+export function signerSelectionIsUnavailable(socket: WebsiteSocket, websiteOrigin: string) {
+	const authority = signerExecutionAuthorities.get(socket.tabId)
+	return authority?.mode === 'blocked' && authority.websiteOrigin === websiteOrigin
 }
 
 export function getSignerExecutionTargetForOrigin(tabId: number, websiteOrigin: string) {

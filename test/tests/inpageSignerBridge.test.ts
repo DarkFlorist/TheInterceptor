@@ -1106,10 +1106,10 @@ describe('inpage signer bridge', () => {
 		})
 	})
 
-	test('propagates unexpected failures when obtaining the signer document generation', async () => {
+	test('injects the provider without consulting a page-controlled top-window getter', async () => {
 		const { fakeWindow } = createFakeWindow()
 		Object.defineProperty(fakeWindow, 'top', { get: () => { throw new Error('Unexpected top-window getter failure') } })
-		await assert.rejects(withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?unexpected-document-generation-failure', async () => undefined), /Unexpected top-window getter failure/)
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?no-page-document-generation', async () => { assert.ok(fakeWindow.ethereum) })
 	})
 
 	test.each(['DOMContentLoaded', 'ethereum#initialized'])('refreshes EIP-6963 providers on %s after a legacy Rabby signer connected first', async (initializationEvent) => {
@@ -1187,57 +1187,17 @@ describe('inpage signer bridge', () => {
 		}
 	})
 
-	test('shares the top document generation when a same-origin child initializes first', async () => {
-		const childDocumentGenerations: string[] = []
-		const topDocumentGenerations: string[] = []
-		const createGenerationCapture = (documentGenerations: string[]) => createFakeWindow({
-			handleRequest: (request, reply) => {
-				if (request.method !== 'signer_providers_changed') return false
-				const documentGeneration = request.params?.[2]
-				if (typeof documentGeneration === 'string') documentGenerations.push(documentGeneration)
-				reply({
-					interceptorApproved: true,
-					requestId: request.requestId,
-					type: 'result',
-					method: request.method,
-					result: { preferredSignerRdns: undefined, automaticSelectionAllowed: true, signerSelectionChangeAllowed: true },
-				})
-				return true
-			},
+	test('publishes catalogs without sourcing document identity from page globals', async () => {
+		const requests: InpageRequest[] = []
+		const { fakeWindow } = createFakeWindow({ handleRequest: (request) => {
+			if (request.method === 'signer_providers_changed') requests.push(request)
+			return false
+		} })
+		Object.defineProperty(fakeWindow, Symbol.for('dark.florist.interceptor.signerDocumentGeneration'), { value: 'attacker-chosen-generation' })
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?isolated-document-generation', async () => {
+			await waitFor(() => requests.length > 0)
+			assert.equal(requests[0]?.params?.length, 2, 'The isolated proxy supplies background-issued document identity')
 		})
-		const top = createGenerationCapture(topDocumentGenerations)
-		const child = createGenerationCapture(childDocumentGenerations)
-		Reflect.defineProperty(top.fakeWindow, 'top', { configurable: true, value: top.fakeWindow })
-		Reflect.defineProperty(child.fakeWindow, 'top', { configurable: true, value: top.fakeWindow })
-
-		await withFakeInpageWindow(child.fakeWindow, '../../app/inpage/ts/inpage.js?child-first-shared-document-generation', async () => {
-			await waitFor(() => childDocumentGenerations.length > 0)
-		})
-		await withFakeInpageWindow(top.fakeWindow, '../../app/inpage/ts/inpage.js?top-after-child-shared-document-generation', async () => {
-			await waitFor(() => topDocumentGenerations.length > 0)
-		})
-
-		const childDocumentGeneration = childDocumentGenerations[0]
-		const topDocumentGeneration = topDocumentGenerations[0]
-		if (childDocumentGeneration === undefined || topDocumentGeneration === undefined) throw new Error('Missing signer document generation')
-		assert.equal(childDocumentGeneration, topDocumentGeneration)
-
-		const topSocket = { tabId: 101, connectionName: 1n }
-		const childSocket = { tabId: 101, connectionName: 2n }
-		const {
-			clearSignerExecutionAuthorityForTab,
-			reconcileSignerExecutionDocument,
-			registerAuthoritativeTopSocket,
-			registerCurrentChildSignerSocket,
-		} = await import('../../app/ts/background/signerExecutionAuthority.js')
-		try {
-			registerAuthoritativeTopSocket(topSocket, 'app.example')
-			registerCurrentChildSignerSocket(childSocket, 2)
-			assert.equal(reconcileSignerExecutionDocument(topSocket, 'app.example', topDocumentGeneration, true, 0), true)
-			assert.equal(reconcileSignerExecutionDocument(childSocket, 'app.example', childDocumentGeneration, false, 2), true)
-		} finally {
-			clearSignerExecutionAuthorityForTab(topSocket.tabId)
-		}
 	})
 
 	test('retries initial provider catalog reconciliation after the background bridge reconnects', async () => {
@@ -2696,7 +2656,7 @@ describe('inpage signer bridge', () => {
 			await waitFor(() => emptyCatalogRequest !== undefined && connectedSignerNames.includes('NoSigner'))
 			assert.equal(Array.isArray(emptyCatalogRequest?.params), true)
 			assert.deepEqual(emptyCatalogRequest?.params?.slice(0, 2), [[], false])
-			assert.equal(typeof emptyCatalogRequest?.params?.[2], 'string')
+			assert.equal(emptyCatalogRequest?.params?.length, 2)
 			assert.equal(connectedSignerNames.includes('MetaMask'), false)
 			emptyCatalogRequest = undefined
 			sendBackgroundMessage({ interceptorApproved: true, type: 'result', method: 'request_signer_provider_catalog', result: [] })
