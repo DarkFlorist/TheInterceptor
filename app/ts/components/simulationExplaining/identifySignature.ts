@@ -1,4 +1,4 @@
-import type { VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
+import { type VisualizedPersonalSignRequest, type VisualizedPersonalSignRequestPermit2SignatureTransfer, getPermit2SignatureTransferKind } from '../../types/personal-message-definitions.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { addressString } from '../../utils/bigint.js'
 import { assertNever } from '../../utils/typescript.js'
@@ -9,6 +9,12 @@ function getPermitTokenLabel(entry: AddressBookEntry) {
 	const name = entry.name.trim()
 	if (name !== '') return name
 	return addressString(entry.address)
+}
+
+function getPermit2SignatureTransferName(data: VisualizedPersonalSignRequestPermit2SignatureTransfer) {
+	if (getPermit2SignatureTransferKind(data.message).isBatch) return 'Permit2 batch transfer'
+	const [permitted] = data.permitted
+	return permitted === undefined ? 'Permit2 transfer' : `${ getPermitTokenLabel(permitted.token) } Permit2 transfer`
 }
 
 export function identifySignature(data: VisualizedPersonalSignRequest) {
@@ -59,6 +65,24 @@ export function identifySignature(data: VisualizedPersonalSignRequest) {
 				signingAction: `Sign ${ tokenLabel } Permit`,
 				simulationAction: `Simulate ${ tokenLabel } Permit`,
 				rejectAction: `Reject ${ tokenLabel } Permit`,
+				to: data.spender
+			}
+		}
+		case 'Permit2Batch': return {
+			title: 'Permit2 batch approval',
+			signingAction: 'Sign Permit2 batch approval',
+			simulationAction: 'Simulate Permit2 batch approval',
+			rejectAction: 'Reject Permit2 batch approval',
+			to: data.spender
+		}
+		case 'Permit2SignatureTransfer': {
+			// The integrator defined witness type name is deliberately kept out of the title, as the dapp could name it to look harmless.
+			const name = getPermit2SignatureTransferName(data)
+			return {
+				title: name,
+				signingAction: `Sign ${ name }`,
+				simulationAction: `Simulate ${ name }`,
+				rejectAction: `Reject ${ name }`,
 				to: data.spender
 			}
 		}
