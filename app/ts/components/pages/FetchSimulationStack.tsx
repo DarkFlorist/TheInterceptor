@@ -18,7 +18,7 @@ import { sanitizeStoredWebsiteIcon } from '../../utils/websiteIcons.js'
 import { useAsyncState } from '../../utils/preact-utilities.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 import { EditEnsLabelHash } from './EditEnsLabelHash.js'
-import { hasCurrentAddressBookEntries } from '../../background/popupVisualisationAddressBookEntries.js'
+import { hasCurrentAddressBookEntries, predatesVisualisation } from '../../background/popupVisualisationLifecycle.js'
 import { subscribeToSimulationStatePublications } from '../simulationStatePublications.js'
 import type { EthereumBytes32 } from '../../types/wire-types.js'
 
@@ -120,8 +120,7 @@ export function FetchSimulationStack() {
 	// The opening replies travel separately from publications, so a publication can arrive first, and a reply must not then replace it with older data.
 	const updateSimulation = async () => {
 		const simulationStack = await requestPopupCompleteVisualizedSimulation()
-		// Simulation ids grow with every refresh, so a lower id comes from an older refresh than the published state.
-		if (simulationStack === undefined || simulationStack.visualizedSimulatorState.simulationId < completeVisualizedSimulation.value.simulationId) return
+		if (simulationStack === undefined || predatesVisualisation(simulationStack.visualizedSimulatorState, completeVisualizedSimulation.value)) return
 		completeVisualizedSimulation.value = simulationStack.visualizedSimulatorState
 	}
 	// Without an open home popup or simulation stack page the stored visualisation is not refreshed, so in simulation mode opening this page simulates the current stack once for its address references.

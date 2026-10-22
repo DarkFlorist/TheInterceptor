@@ -1,4 +1,4 @@
-// Owns whether a published popup visualisation's address book entries were resolved for the stack it describes. popupVisualisationUpdater.ts builds every state that keeps the previous entries with retainPreviousVisualisation, and views ask hasCurrentAddressBookEntries; this module imports no background services, so popup pages can use it. See docs/popup-simulation-refresh.md.
+// Owns what the popup visualisation states the updater stores and publishes mean to views: whether a state's address book entries are current, and which of two states was stored first. popupVisualisationUpdater.ts builds every state that keeps the previous entries with retainPreviousVisualisation; this module imports no background services, so popup pages can use it. See docs/popup-simulation-refresh.md.
 import type { CompleteVisualizedSimulation, SimulationUpdatingState } from '../types/visualizer-types.js'
 import { assertNever } from '../utils/typescript.js'
 
@@ -21,4 +21,22 @@ export function hasCurrentAddressBookEntries({ simulationUpdatingState }: Pick<C
 		case 'failed': return false
 		default: return assertNever(simulationUpdatingState)
 	}
+}
+
+// Within one simulation id, the updater stores the retained 'updating' state first and then at most one result: 'done', 'failed', or 'updating' again when the node cannot be reached, which repeats the first state. A new updating state fails typecheck here until its place in the refresh is decided.
+function isRefreshResult(simulationUpdatingState: SimulationUpdatingState) {
+	switch (simulationUpdatingState) {
+		case 'done':
+		case 'failed': return true
+		case 'updating': return false
+		default: return assertNever(simulationUpdatingState)
+	}
+}
+
+type VisualisationOrder = Pick<CompleteVisualizedSimulation, 'simulationId' | 'simulationUpdatingState'>
+
+// Whether the candidate was stored before the shown state, so showing it would go back in time: simulation ids grow with every refresh, and within one id the updating state comes before the refresh's result.
+export function predatesVisualisation(candidate: VisualisationOrder, shown: VisualisationOrder) {
+	if (candidate.simulationId !== shown.simulationId) return candidate.simulationId < shown.simulationId
+	return !isRefreshResult(candidate.simulationUpdatingState) && isRefreshResult(shown.simulationUpdatingState)
 }

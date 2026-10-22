@@ -4,7 +4,7 @@ import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { FetchSimulationStack } from '../../app/ts/components/pages/FetchSimulationStack.js'
 import { useLiveSimulationHomeData } from '../../app/ts/components/hooks/useLiveSimulationHomeData.js'
-import { retainPreviousVisualisation } from '../../app/ts/background/popupVisualisationAddressBookEntries.js'
+import { retainPreviousVisualisation } from '../../app/ts/background/popupVisualisationLifecycle.js'
 import { getNativeTokenErc20 } from '../../app/ts/background/metadataUtils.js'
 import { mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import type { AddressBookEntry } from '../../app/ts/types/addressBookTypes.js'
@@ -498,6 +498,39 @@ describe('FetchSimulationStack published simulation states', () => {
 			await settleMessageFlow()
 			assert.ok(page.getText().includes('Published Contract'))
 			assert.ok(!page.getText().includes('Opening Contract'))
+		} finally {
+			await page.close()
+		}
+	})
+
+	test('an opening reply with the updating state of a refresh does not replace the published result of that refresh', async () => {
+		const finishedStack = createVisualizedTransactionStack('Finished Contract', 3, 101n)
+		const background = createBackgroundWithHeldOpeningReplies()
+		const page = await openFetchSimulationStackPage(background)
+		try {
+			await publishSimulationState(finishedStack)
+			// The reply captured the refresh while it was running: the previous rows under the same simulation id.
+			background.releaseVisualisation(retainPreviousVisualisation(createVisualizedTransactionStack('Retained Contract', 2, 100n), { simulationId: 3, simulationUpdatingState: 'updating' }))
+			background.releaseAddressBookEntries(finishedStack.addressBookEntries)
+			await settleMessageFlow()
+			assert.ok(page.getText().includes('Finished Contract'))
+			assert.ok(!page.getText().includes('Retained Contract'))
+		} finally {
+			await page.close()
+		}
+	})
+
+	test('an opening reply with the result of a refresh replaces the published updating state of that refresh', async () => {
+		const finishedStack = createVisualizedTransactionStack('Finished Contract', 3, 101n)
+		const background = createBackgroundWithHeldOpeningReplies()
+		const page = await openFetchSimulationStackPage(background)
+		try {
+			await publishSimulationState(retainPreviousVisualisation(createVisualizedTransactionStack('Retained Contract', 2, 100n), { simulationId: 3, simulationUpdatingState: 'updating' }))
+			background.releaseVisualisation(finishedStack)
+			background.releaseAddressBookEntries(finishedStack.addressBookEntries)
+			await settleMessageFlow()
+			assert.ok(page.getText().includes('Finished Contract'))
+			assert.ok(!page.getText().includes('Retained Contract'))
 		} finally {
 			await page.close()
 		}
