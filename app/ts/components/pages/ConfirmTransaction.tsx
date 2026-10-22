@@ -8,6 +8,7 @@ import { CenterToPageTextSpinner, Spinner } from '../subcomponents/Spinner.js'
 import { AddNewAddress } from './AddNewAddress.js'
 import type { RenameAddressCallBack, RpcConnectionStatus } from '../../types/user-interface-types.js'
 import { sendPopupMessageToBackgroundPage, sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport, sendPopupMessageWithReply } from '../../background/backgroundUtils.js'
+import { addMissingTransactionCreationFailureReason } from '../../simulation/pendingTransactionFailureReason.js'
 import { SignerLogoText, SignersLogoName } from '../subcomponents/signers.js'
 import { type CaughtError, ErrorCheckBox, UnexpectedError } from '../subcomponents/Error.js'
 import { QuarantineReasons, SenderReceiver, TransactionImportanceBlock } from '../simulationExplaining/Transactions.js'
@@ -152,7 +153,7 @@ function UnderTransactions(param: UnderTransactionsParams) {
 						</span>
 					</div>
 					<p class = 'card-header-title' style = 'white-space: nowrap;'>
-						{ pendingTransaction.transactionOrMessageCreationStatus === 'FailedToSimulate' ? pendingTransaction.transactionToSimulate.error.message : 'Simulating...' }
+						{ pendingTransaction.transactionOrMessageCreationStatus === 'FailedToSimulate' ? pendingTransaction.popupVisualisation.data.transactionCreationFailureReason : 'Simulating...' }
 					</p>
 					<WebsiteOriginText website = { pendingTransaction.website } class = 'card-header-website' />
 				</header>
@@ -367,8 +368,9 @@ function TransactionCardContent(param: TransactionCardContentParams) {
 	if (currentPendingTransaction === undefined) return <></>
 	const popupVisualisation = currentPendingTransaction.popupVisualisation
 	const getErrorMesssage = () => {
+		// The card is labelled as a gas estimation error whenever the transaction failed to be created, so its reason wins over a later simulation failure.
+		if (!popupVisualisation.data.transactionToSimulate.success) return popupVisualisation.data.transactionCreationFailureReason ?? 'Unknown error'
 		if (popupVisualisation.statusCode === 'failed') return `${ popupVisualisation.data.error.decodedErrorMessage } ${ popupVisualisation.data.error.data !== undefined ? ` (data: '${ popupVisualisation.data.error.data }')` : '' }`
-		if (!popupVisualisation.data.transactionToSimulate.success) return popupVisualisation.data.transactionToSimulate.error.message
 		return 'Unknown error'
 	}
 	if (popupVisualisation.statusCode === 'failed' || popupVisualisation.data.transactionToSimulate.success === false) {
@@ -802,9 +804,11 @@ export function ConfirmTransaction() {
 	const simulationDataPriority = useSignal(0)
 	const networkDataPriority = useSignal(0)
 
-	const applyPendingTransactions = (pendingTransactions: readonly PendingTransactionOrSignableMessage[], priority: number) => {
+	// Pending transactions from storage, the bootstrap reply and pushed updates all enter popup state here, so entries stored by older versions get their failure reason in one place.
+	const applyPendingTransactions = (receivedPendingTransactions: readonly PendingTransactionOrSignableMessage[], priority: number) => {
 		if (priority < pendingTransactionsDataPriority.value) return
 		pendingTransactionsDataPriority.value = priority
+		const pendingTransactions = receivedPendingTransactions.map((pending) => pending.type === 'Transaction' ? addMissingTransactionCreationFailureReason(pending) : pending)
 		const previousPendingTransactions = pendingTransactionsAndSignableMessages.value
 		pendingTransactionsAndSignableMessages.value = pendingTransactions
 		if (previousPendingTransactions.length > 0 && pendingTransactions.length > previousPendingTransactions.length) pendingTransactionAddedNotification.value = true
@@ -941,7 +945,7 @@ export function ConfirmTransaction() {
 		const getPossibleErrorString = () => {
 			const pending = currentPendingTransactionOrSignableMessage.value
 			if (pending === undefined) return undefined
-			if (pending.transactionOrMessageCreationStatus === 'FailedToSimulate') return pending.transactionToSimulate.error.message
+			if (pending.transactionOrMessageCreationStatus === 'FailedToSimulate') return pending.popupVisualisation.data.transactionCreationFailureReason
 			if (pending.transactionOrMessageCreationStatus !== 'Simulated') return undefined
 			if (pending.type !== 'Transaction') return undefined
 			if (pending.popupVisualisation.statusCode !== 'success' ) return undefined

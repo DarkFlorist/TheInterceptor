@@ -15,7 +15,7 @@ import { EthSimulateV1BlockHeader, EthSimulateV1CallResult, EthSimulateV1Params,
 import type { EditEnsNamedHashCallBack } from '../components/subcomponents/ens.js'
 import { EnrichedEthereumEventWithMetadata, EnrichedEthereumInputData } from './EnrichedEthereumData.js'
 import type { ReadonlySignal } from '@preact/signals'
-import { DecodedError, ErrorWithCodeAndOptionalData } from './error.js'
+import { DecodedError, ErrorWithCodeAndOptionalData, TransactionCreationError } from './error.js'
 import { SafeStackTransaction } from './safeTypes.js'
 
 export type TokenBalancesAfter = funtypes.Static<typeof TokenBalancesAfter>
@@ -162,7 +162,7 @@ export const FailedToCreateWebsiteCreatedEthereumTransaction = funtypes.Readonly
 	originalRequestParameters: OriginalSendRequestParameters,
 	transactionIdentifier: EthereumQuantity,
 	success: funtypes.Literal(false),
-	error: ErrorWithCodeAndOptionalData
+	error: TransactionCreationError
 })
 
 export type WebsiteCreatedEthereumTransactionOrFailed = funtypes.Static<typeof WebsiteCreatedEthereumTransactionOrFailed>
