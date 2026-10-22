@@ -79,6 +79,11 @@ const convertContractDefinitionToAddressBookEntry = ([address, def]: [string, Co
 	}
 }
 
+// Some bundled addresses are keyed both in lowercase and checksummed with different data; address lookups read the lowercase key, so list only that entry and keep checksummed-only entries
+function bundledEntriesOncePerAddress<Definition>(metadata: ReadonlyMap<string, Definition>) {
+	return Array.from(metadata).filter(([address]) => address === address.toLowerCase() || !metadata.has(address.toLowerCase()))
+}
+
 function concatArraysUniqueByAddress<T>(addTo: readonly (T & { address: bigint })[], addFrom: readonly (T & { address: bigint })[]) {
 	const existingValues = new Set(addTo.map(item => addressString(item.address)))
 	const uniqueItems = addFrom.filter(item => !existingValues.has(addressString(item.address)))
@@ -120,7 +125,7 @@ async function filterAddressBookDataByCategoryAndSearchString(addressBookCategor
 		}
 		case 'ERC1155 Tokens': {
 			const filteredUserEntries = userEntries.filter((entry): entry is Erc1155Entry => entry.type === 'ERC1155')
-			const entries = chainId === 1n ? concatArraysUniqueByAddress(filteredUserEntries, Array.from(erc1155Metadata).map(convertErc1155DefinitionToAddressBookEntry)) : filteredUserEntries
+			const entries = chainId === 1n ? concatArraysUniqueByAddress(filteredUserEntries, bundledEntriesOncePerAddress(erc1155Metadata).map(convertErc1155DefinitionToAddressBookEntry)) : filteredUserEntries
 			if (searchingDisabled) return entries
 			const searchFunction = (entry: Erc1155Entry) => ({
 				comparison: fuzzyCompare(searchPattern, trimmedSearch, entry.name, addressString(entry.address)),
@@ -130,7 +135,7 @@ async function filterAddressBookDataByCategoryAndSearchString(addressBookCategor
 		}
 		case 'ERC20 Tokens': {
 			const filteredUserEntries = userEntries.filter((entry): entry is Erc20TokenEntry => entry.type === 'ERC20')
-			const entries = chainId === 1n ? concatArraysUniqueByAddress(filteredUserEntries, Array.from(tokenMetadata).map(convertTokenDefinitionToAddressBookEntry)) : filteredUserEntries
+			const entries = chainId === 1n ? concatArraysUniqueByAddress(filteredUserEntries, bundledEntriesOncePerAddress(tokenMetadata).map(convertTokenDefinitionToAddressBookEntry)) : filteredUserEntries
 			if (searchingDisabled) return entries
 			const searchFunction = (entry: Erc20TokenEntry) => ({
 				comparison: fuzzyCompare(searchPattern, trimmedSearch, `${ entry.symbol} ${ entry.name}`, addressString(entry.address)),
@@ -140,7 +145,7 @@ async function filterAddressBookDataByCategoryAndSearchString(addressBookCategor
 		}
 		case 'Non Fungible Tokens': {
 			const filteredUserEntries = userEntries.filter((entry): entry is Erc721Entry => entry.type === 'ERC721')
-			const entries = chainId === 1n ? concatArraysUniqueByAddress(filteredUserEntries, Array.from(erc721Metadata).map(convertErc721DefinitionToAddressBookEntry)) : filteredUserEntries
+			const entries = chainId === 1n ? concatArraysUniqueByAddress(filteredUserEntries, bundledEntriesOncePerAddress(erc721Metadata).map(convertErc721DefinitionToAddressBookEntry)) : filteredUserEntries
 			if (searchingDisabled) return entries
 			const searchFunction = (entry: Erc721Entry) => ({
 				comparison: fuzzyCompare(searchPattern, trimmedSearch, `${ entry.symbol} ${ entry.name}`, addressString(entry.address)),
@@ -150,7 +155,7 @@ async function filterAddressBookDataByCategoryAndSearchString(addressBookCategor
 		}
 		case 'Other Contracts': {
 			const filteredUserEntries = userEntries.filter((entry): entry is ContractEntry => entry.type === 'contract')
-			const entries = chainId === 1n ? concatArraysUniqueByAddress(filteredUserEntries, Array.from(contractMetadata).map(convertContractDefinitionToAddressBookEntry)) : filteredUserEntries
+			const entries = chainId === 1n ? concatArraysUniqueByAddress(filteredUserEntries, bundledEntriesOncePerAddress(contractMetadata).map(convertContractDefinitionToAddressBookEntry)) : filteredUserEntries
 			if (searchingDisabled) return entries
 			const searchFunction = (entry: ContractEntry) => ({
 				comparison: fuzzyCompare(searchPattern, trimmedSearch, `${ 'protocol' in entry && entry.protocol !== undefined ? entry.protocol : ''} ${ entry.name }`, addressString(entry.address)),
