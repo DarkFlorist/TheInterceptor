@@ -1,3 +1,4 @@
+import { getExplicitSignerSelection, getExplicitSignerSelectionForConnection } from './signerSelectionOwnership.js'
 import { initializeInpageBridge } from './inpageBridgeBootstrap.js'
 import { createSafeAppsCompatibilityFeature, initializeSafeAppsCompatibility } from './safeAppsCompatibilityCoordinator.js'
 import 'webextension-polyfill'
@@ -134,7 +135,7 @@ const isManifestV2 = manifestVersion === 2
 const tabStateInitializationPromise = initializeTabStateStorage(manifestVersion)
 
 if (isManifestV2) {
-	updateContentScriptInjectionStrategyManifestV2()
+	void catchAllErrorsAndCall(updateContentScriptInjectionStrategyManifestV2)
 }
 
 const pendingRequestLimiter = new Semaphore(40) // only allow 40 requests pending globally
@@ -220,10 +221,10 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ simulati
 		const registration = await registerWebsiteConnectionAndProvisionallyClaimSignerState(websiteTabConnections, socket, newConnection, isTopFrame)
 		if (registration.createdTabConnection || startsNewSignerDocument) {
 			await updateTabState(socket.tabId, (previousState: TabState) => {
-				// A child's first reconnect must not erase its top frame's persisted choice before the top can prove its connection identity.
-				const preserveSelection = previousState.selectedSignerProvider !== undefined
-					&& previousState.explicitlySelectedSignerProviderUuid === previousState.selectedSignerProvider.uuid
-					&& (!isTopFrame || (previousState.website?.websiteOrigin === websiteOrigin && previousState.selectedSignerConnectionName === socket.connectionName))
+				// A child can retain stored top-frame selection without claiming ownership; only the top's matching connection may restore authority.
+				const preserveSelection = (isTopFrame
+					? getExplicitSignerSelectionForConnection(previousState, websiteOrigin, socket.connectionName)
+					: getExplicitSignerSelection(previousState)) !== undefined
 				return modifyObject(previousState, {
 					website: preserveSelection && !isTopFrame ? previousState.website : { websiteOrigin, icon: undefined, title: undefined },
 					...(preserveSelection ? {} : {

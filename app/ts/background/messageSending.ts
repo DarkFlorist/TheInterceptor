@@ -8,7 +8,7 @@ import { isIgnorablePortLifecycleError } from './contentScriptPortLifecycle.js'
 import { attemptDeliveryAfterManifestV2Reconnect, attemptSocketDeliveryAfterManifestV2Reconnect } from './manifestV2Reconnect.js'
 import { authorizeSignerForward, socketCanExecuteWithSelectedSigner } from './signerExecutionAuthority.js'
 
-// Exhaustive over the command union: adding a callback requires an explicit authority decision.
+// Wallet commands require execution authority. Website-state producers apply website/address consent and accountIdentityPolicy; chain state comes from Interceptor's configured RPC, and disconnect/disabled events must clear stale state even without a wallet.
 const callbackAuthority = {
 	request_signer_connection_status: 'discovery',
 	request_signer_provider_catalog: 'discovery',
@@ -18,12 +18,12 @@ const callbackAuthority = {
 	request_signer_to_wallet_watchAsset: 'signer',
 	request_signer_to_eth_requestAccounts: 'signer',
 	request_signer_to_eth_accounts: 'signer',
-	disconnect: 'notification',
-	connect: 'notification',
-	accountsChanged: 'notification',
-	chainChanged: 'notification',
-	safe_apps_compatibility: 'notification',
-} satisfies Record<InpageScriptCommand['method'], 'signer' | 'discovery' | 'notification'>
+	disconnect: 'website-state',
+	connect: 'website-state',
+	accountsChanged: 'website-state',
+	chainChanged: 'website-state',
+	safe_apps_compatibility: 'website-state',
+} satisfies Record<InpageScriptCommand['method'], 'signer' | 'discovery' | 'website-state'>
 
 const isSignerTouchingCallback = (message: SubscriptionReplyOrCallBack) => hasOwnKey(callbackAuthority, message.method) && callbackAuthority[message.method] === 'signer'
 

@@ -214,11 +214,21 @@ describe('content script injection strategy', () => {
 		])
 	})
 
-	test('failed Firefox registration preserves the previous registration and propagates failure', async () => {
-		const { getScriptingOperations } = installBrowserMock({ registerError: new Error('Firefox registration failed') })
-		const { updateContentScriptInjectionStrategyManifestV2 } = await loadModules()
-		await assert.rejects(updateContentScriptInjectionStrategyManifestV2(), /Firefox registration failed/)
+	test('reports Firefox registration failure, preserves the previous registration, and permits retry', async () => {
+		const { getScriptingOperations, sentMessages } = installBrowserMock()
+		const { updateContentScriptInjectionStrategyManifestV2, getLatestUnexpectedError } = await loadModules()
+		await updateContentScriptInjectionStrategyManifestV2()
+		const register = browser.contentScripts.register
+		browser.contentScripts.register = async () => { throw new Error('Firefox registration failed') }
+		await withSilencedConsole(async () => await updateContentScriptInjectionStrategyManifestV2())
 		assert.deepEqual(getScriptingOperations(), ['register-firefox'])
+		const error = await getLatestUnexpectedError()
+		assert.equal(error?.data.message, 'Firefox registration failed')
+		assert.equal(error?.data.code, 'content_script_registration_failed')
+		assert.equal(sentMessages.at(-1)?.method, 'popup_UnexpectedErrorOccured')
+		browser.contentScripts.register = register
+		await updateContentScriptInjectionStrategyManifestV2()
+		assert.deepEqual(getScriptingOperations().slice(-2), ['register-firefox', 'unregister-firefox'])
 	})
 
 	test('records manifest v3 registration failures as unexpected errors', async () => {

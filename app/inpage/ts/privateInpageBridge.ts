@@ -1,3 +1,5 @@
+import { INTERCEPTOR_PRIVATE_BRIDGE_EVENT } from '../../ts/utils/inpageBridgeProtocol.js'
+
 // Capture the native event constructor while the registered MAIN script runs at document_start.
 const PrivateBridgeEvent = MessageEvent
 const nativeDataGetter = Object.getOwnPropertyDescriptor(MessageEvent.prototype, 'data')?.get
@@ -41,7 +43,7 @@ export function createPrivateInpageBridge(bridgeCapability: string, receiveMessa
 			if (initializedSecret !== undefined) return initializedSecret === bootstrapSecret
 			// The secret is compared by the isolated receiver. A page calling this entry point cannot see the non-composed event inside the closed root or guess the receiver's nonce.
 			eventOptions.data = `${ bootstrapSecret }:${ bridgeCapability }`
-			const accepted = !dispatch(new PrivateBridgeEvent('interceptor_private_bridge', eventOptions))
+			const accepted = !dispatch(new PrivateBridgeEvent(INTERCEPTOR_PRIVATE_BRIDGE_EVENT, eventOptions))
 			if (!accepted) return false
 			initializedSecret = bootstrapSecret
 			removeHost()

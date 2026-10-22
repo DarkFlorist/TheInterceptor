@@ -2141,7 +2141,7 @@ describe('background eth_accounts', () => {
 		const siblingLifecycleMessages = siblingMessages.filter((message) => message.method === 'connect' || message.method === 'accountsChanged' || message.method === 'chainChanged')
 		assert.deepEqual(siblingLifecycleMessages.map((message) => message.method), ['connect', 'accountsChanged', 'chainChanged'])
 		assert.deepEqual(siblingLifecycleMessages.map((message) => message.requestId), [undefined, undefined, undefined])
-		assert.deepEqual(siblingLifecycleMessages.map((message) => message.result), [['0x1'], [accountString], '0x1'])
+		assert.deepEqual(siblingLifecycleMessages.map((message) => message.result), [['0x1'], [], '0x1'])
 		const access = (await getSettings()).websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin)
 		assert.equal(access?.access, true)
 		assert.deepEqual(access?.addressAccess, [{ address: account, access: true }])
@@ -2598,6 +2598,7 @@ describe('background eth_accounts', () => {
 		const safeAddress = 0x2323232323232323232323232323232323232323n
 		const signerAddress = 0x2424242424242424242424242424242424242424n
 		const socket = { tabId: 173, connectionName: 0n }
+		authorizeLegacySignerSocket(socket, websiteOrigin)
 		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: safeAddress, activeSigningAddress: signerAddress, activeSigningSafeAddress: safeAddress })
 		await setUseSignersAddressAsActiveAddress(false)
 		await updateUserAddressBookEntries(() => [{

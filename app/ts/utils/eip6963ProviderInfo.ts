@@ -1,3 +1,4 @@
+import { isUuid } from './uuid.js'
 import type { EIP6963ProviderInfo } from '../types/signerTypes.js'
 export type { EIP6963ProviderInfo } from '../types/signerTypes.js'
 import { internalSignerStatuses } from './signerIdentity.js'
@@ -15,7 +16,7 @@ const isValidImageDataUri = (value: string) => {
 		throw error
 	}
 }
-export const isEip6963ProviderUuid = (value: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+export const isEip6963ProviderUuid = (value: string) => isUuid(value) && value[14] === '4'
 export const isEip6963ProviderName = (value: string) => value.length > 0 && value.length <= 128 && !internalSignerStatuses.has(value)
 export const isEip6963ProviderIcon = (value: string) => value.length <= 131_072 && isValidImageDataUri(value)
 export const isEip6963ProviderRdns = (value: string) => value.length > 0 && value.length <= 255 && /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(value)

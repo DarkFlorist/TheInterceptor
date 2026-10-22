@@ -26,11 +26,11 @@ export function createDeferredValue<T>() {
 	return { promise, resolve: (value: T) => resolveValue(value) }
 }
 
-export function authorizeLegacySignerSocket(socket: { readonly tabId: number, readonly connectionName: bigint }) {
+export function authorizeLegacySignerSocket(socket: { readonly tabId: number, readonly connectionName: bigint }, websiteOrigin = 'https://example.test') {
 	clearSignerExecutionAuthorityForTab(socket.tabId)
-	registerAuthoritativeTopSocket(socket, 'https://example.test')
-	reconcileSignerExecutionDocument(socket, 'https://example.test', '11111111-1111-4111-8111-111111111111', true, 0)
-	allowLegacySignerExecution(socket, 'https://example.test')
+	registerAuthoritativeTopSocket(socket, websiteOrigin)
+	reconcileSignerExecutionDocument(socket, websiteOrigin, '11111111-1111-4111-8111-111111111111', true, 0)
+	allowLegacySignerExecution(socket, websiteOrigin)
 }
 
 export function installBrowserMock({ deferFirstChainChangeRemoval = false, manifestVersion = 3, tabStatus = 'complete' }: { readonly deferFirstChainChangeRemoval?: boolean, readonly manifestVersion?: 2 | 3, readonly tabStatus?: 'loading' | 'complete' } = {}) {

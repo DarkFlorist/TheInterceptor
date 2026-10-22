@@ -797,7 +797,7 @@ describe('background eth_accounts', () => {
 		assert.deepEqual(accountChangedMessages.map((message) => message.result), [[accountString]])
 		assert.deepEqual(accountChangedMessages.map((message) => message.requestId), [9])
 		const siblingAccountChangedMessages = siblingMessages.filter((message) => message.method === 'accountsChanged')
-		assert.deepEqual(siblingAccountChangedMessages.map((message) => message.result), [[accountString]])
+		assert.deepEqual(siblingAccountChangedMessages.map((message) => message.result), [[]], 'An unreconciled sibling must not receive wallet identities')
 		assert.deepEqual(siblingAccountChangedMessages.map((message) => message.requestId), [undefined])
 	})
 
@@ -863,7 +863,7 @@ describe('background eth_accounts', () => {
 		assert.deepEqual(messages.filter((message) => message.method === 'eth_accounts' && message.requestId === 17).map((message) => message.result), [[accountString]])
 		assert.deepEqual(messages.filter((message) => message.method !== 'eth_accounts_reply').map((message) => message.method), ['request_signer_to_eth_requestAccounts', 'accountsChanged', 'eth_accounts'])
 		assert.deepEqual(siblingMessages.filter((message) => message.method === 'accountsChanged').map((message) => message.requestId), [undefined])
-		assert.deepEqual(siblingMessages.filter((message) => message.method === 'accountsChanged').map((message) => message.result), [[accountString]])
+		assert.deepEqual(siblingMessages.filter((message) => message.method === 'accountsChanged').map((message) => message.result), [[]], 'An unreconciled sibling must not receive wallet identities')
 	})
 
 	for (const manifestVersion of [2, 3] as const) {

@@ -1,3 +1,5 @@
+import { generateUuidV4, isUuid } from '../../ts/utils/uuid.js'
+import { INTERCEPTOR_BRIDGE_REQUEST_MESSAGE, INTERCEPTOR_BRIDGE_INITIALIZED_MESSAGE, INTERCEPTOR_BRIDGE_RECONNECTED_MESSAGE } from '../../ts/utils/inpageBridgeProtocol.js'
 import { isInternalProviderMethod as isInternalBackgroundMethod } from '../../ts/utils/internalProviderMethods.js'
 import { createSignerProviderCoordinator } from './signerProviderCoordinator.js'
 import { createPrivateInpageBridge } from './privateInpageBridge.js'
@@ -287,37 +289,11 @@ type InterceptedRequestForwardToSigner = InterceptedRequestBase & { readonly typ
 
 type InterceptedRequestForward = InterceptedRequestForwardWithResult | InterceptedRequestForwardWithError | InterceptedRequestForwardToSigner
 
-const INTERCEPTOR_BRIDGE_REQUEST_MESSAGE = 'interceptor_bridge_request'
-const INTERCEPTOR_BRIDGE_INITIALIZED_MESSAGE = 'interceptor_bridge_initialized'
-const INTERCEPTOR_BRIDGE_RECONNECTED_MESSAGE = 'interceptor_bridge_reconnected'
 const REQUEST_SCOPED_PROVIDER_EVENT_METHODS = new Set(['accountsChanged', 'connect', 'disconnect', 'chainChanged'])
 const SIGNER_DOCUMENT_GENERATION_KEY = Symbol.for('dark.florist.interceptor.signerDocumentGeneration')
-const generateUuidV4 = () => {
-	const bytes = new Uint8Array(16)
-	globalThis.crypto.getRandomValues(bytes)
-	bytes[6] = (bytes[6] & 0x0f) | 0x40
-	bytes[8] = (bytes[8] & 0x3f) | 0x80
-	const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
-	return `${ hex.slice(0, 8) }-${ hex.slice(8, 12) }-${ hex.slice(12, 16) }-${ hex.slice(16, 20) }-${ hex.slice(20) }`
-}
 const signerFrameFallbackDocumentGeneration = generateUuidV4()
 
 class SignerSynchronizationBridgeReconnectedError extends Error {}
-
-// Use primitive operations: RegExp matches publish private inputs through legacy page-readable statics.
-const isUuid = (value: unknown): value is string => {
-	if (typeof value !== 'string' || value.length !== 36) return false
-	for (let index = 0; index < value.length; index++) {
-		const character = value[index]
-		if (index === 8 || index === 13 || index === 18 || index === 23) {
-			if (character !== '-') return false
-		} else if (character === undefined || !((character >= '0' && character <= '9') || (character >= 'a' && character <= 'f') || (character >= 'A' && character <= 'F'))) return false
-	}
-	const version = value[14]
-	const variant = value[19]
-	return version !== undefined && version >= '1' && version <= '5'
-		&& (variant === '8' || variant === '9' || variant === 'a' || variant === 'b' || variant === 'A' || variant === 'B')
-}
 
 const getSignerDocumentGeneration = () => {
 	try {
@@ -1838,6 +1814,7 @@ class InterceptorMessageListener {
 				}
 				await this.sendInternalMessageToBackgroundPage({ method: 'signer_reply', params: [ signerReply ] })
 			} catch(error: unknown) {
+				// Delivery belongs to the original dapp request: even a reconnect must reject it, rather than enter the control-plane retry path below.
 				if (error instanceof Error) return pendingRequest.future.reject(error)
 				return pendingRequest.future.reject(this.parseRpcError(error))
 			}

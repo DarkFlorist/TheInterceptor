@@ -5043,6 +5043,31 @@ describe('inpage signer bridge', () => {
 		assert.deepEqual(forwardedSignerRequests, [{ method: 'eth_getStorageAt', params: storageParams }])
 	})
 
+	test.each(['reconnect', 'background-error'])('rejects the original dapp request when signer-reply delivery fails through %s', async (failure) => {
+		let delivery: InpageRequest | undefined
+		let settled = false
+		const { fakeWindow, notifyBridgeReconnected } = createFakeWindow({
+			handleSignerRequest: ({ method }) => method === 'wallet_testReplyDelivery' ? '0x1234' : undefined,
+			handleRequest: (request, reply) => {
+				if (request.method === 'wallet_testReplyDelivery') {
+					reply({ interceptorApproved: true, requestId: request.requestId, type: 'forwardToSigner', method: request.method, params: [] })
+					return true
+				}
+				if (request.method !== 'signer_reply') return false
+				delivery = request
+				if (failure === 'background-error') reply({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, error: { code: -32603, message: 'Signer reply delivery failed' } })
+				return true
+			},
+		})
+		await withFakeInpageWindow(fakeWindow, `../../app/inpage/ts/inpage.js?reply-delivery-${ failure }`, async () => {
+			const rejected = assert.rejects(fakeWindow.ethereum.request({ method: 'wallet_testReplyDelivery' }), /reconnected|Signer reply delivery failed/).then(() => { settled = true })
+			await waitFor(() => delivery !== undefined)
+			if (failure === 'reconnect') notifyBridgeReconnected()
+			await waitFor(() => settled)
+			await rejected
+		})
+	})
+
 	test('preserves string JSON-RPC error data from signer replies', async () => {
 		const previousWindow = (globalThis as { window?: unknown }).window
 		const previousCustomEvent = (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent

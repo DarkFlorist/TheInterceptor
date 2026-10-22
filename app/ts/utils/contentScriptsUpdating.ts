@@ -35,8 +35,8 @@ export function getContentScriptExcludeMatches(origins: readonly string[]) {
 }
 
 export const updateContentScriptInjectionStrategyManifestV3 = async () => {
-	const excludeMatches = getContentScriptExcludeMatches(getInterceptorDisabledSites((await getSettings()).websiteAccess))
 	try {
+		const excludeMatches = getContentScriptExcludeMatches(getInterceptorDisabledSites((await getSettings()).websiteAccess))
 		type RegisteredContentScript = Parameters<typeof browser.scripting.registerContentScripts>[0][0]
 		// The browser polyfill types do not expose Chrome's MAIN world or matchOriginAsFallback options.
 		type FixedContentScript = RegisteredContentScript & { world?: 'MAIN' | 'ISOLATED', matchOriginAsFallback: boolean }
@@ -75,25 +75,31 @@ export const updateContentScriptInjectionStrategyManifestV3 = async () => {
 const firefoxRegistrationGate = new Semaphore(1)
 let firefoxRegistration: browser.contentScripts.RegisteredContentScript | undefined
 
-export const updateContentScriptInjectionStrategyManifestV2 = async () => await firefoxRegistrationGate.execute(async () => {
-	const disabledSites = getInterceptorDisabledSites((await getSettings()).websiteAccess)
-	// Register ahead of navigation: onCommitted plus asynchronous executeScript can run after hostile page scripts. Globs preserve port-specific exclusions, which Firefox match patterns cannot express.
-	const nextRegistration = await browser.contentScripts.register({
-		matches: injectableSitesWildcard,
-		excludeGlobs: getContentScriptExcludeMatches(disabledSites).flatMap((pattern) => pattern.includes('://*.') ? [pattern.replace('://*.', '://'), pattern] : [pattern]),
-		allFrames: true,
-		matchAboutBlank: true,
-		runAt: 'document_start',
-		js: [
-			{ file: '/vendor/webextension-polyfill/dist/browser-polyfill.js' },
-			{ file: '/inpage/js/listenContentScript.js' },
-			{ file: '/inpage/js/document_start.js' },
-		],
-	})
-	const previousRegistration = firefoxRegistration
-	firefoxRegistration = nextRegistration
-	await previousRegistration?.unregister()
-})
+export const updateContentScriptInjectionStrategyManifestV2 = async () => {
+	try {
+		await firefoxRegistrationGate.execute(async () => {
+			const disabledSites = getInterceptorDisabledSites((await getSettings()).websiteAccess)
+			// Register ahead of navigation: onCommitted plus asynchronous executeScript can run after hostile page scripts. Globs preserve port-specific exclusions, which Firefox match patterns cannot express.
+			const nextRegistration = await browser.contentScripts.register({
+				matches: injectableSitesWildcard,
+				excludeGlobs: getContentScriptExcludeMatches(disabledSites).flatMap((pattern) => pattern.includes('://*.') ? [pattern.replace('://*.', '://'), pattern] : [pattern]),
+				allFrames: true,
+				matchAboutBlank: true,
+				runAt: 'document_start',
+				js: [
+					{ file: '/vendor/webextension-polyfill/dist/browser-polyfill.js' },
+					{ file: '/inpage/js/listenContentScript.js' },
+					{ file: '/inpage/js/document_start.js' },
+				],
+			})
+			const previousRegistration = firefoxRegistration
+			firefoxRegistration = nextRegistration
+			await previousRegistration?.unregister()
+		})
+	} catch (error: unknown) {
+		await reportUnexpectedError(error, { code: 'content_script_registration_failed' })
+	}
+}
 
 export const updateContentScriptInjectionStrategy = async () => {
 	if (browser.runtime.getManifest().manifest_version === 3) await updateContentScriptInjectionStrategyManifestV3()

@@ -138,6 +138,8 @@ describe('EIP-6963 signer provider selection', () => {
 		storageState.signerPreferences = [{ websiteOrigin: 'app.example', rdns: provider.rdns }]
 		const { signerProvidersChanged, signerProviderSelected } = await import('../../app/ts/background/signerProviderSelection.js')
 		const { socketCanExecuteWithSelectedSigner } = await import('../../app/ts/background/signerExecutionAuthority.js')
+		const { updateTabState } = await import('../../app/ts/background/storageVariables.js')
+		await updateTabState(7, (state) => ({ ...state, website: { websiteOrigin: 'app.example', title: undefined, icon: undefined } }))
 		const catalogRequest = createProviderMessage('signer_providers_changed', [[provider], false])
 		const rememberedSelection = createProviderMessage('signer_provider_selected', [provider, 'remembered'])
 		const explicitSelection = createProviderMessage('signer_provider_selected', [provider, 'explicit'])
@@ -514,7 +516,7 @@ describe('EIP-6963 signer provider selection', () => {
 		const { getTabState, updateTabState } = await import('../../app/ts/background/storageVariables.js')
 		const duplicateWalletInstance = { ...provider, uuid: '33333333-3333-4333-8333-333333333333' }
 		const unrelatedProvider = { ...provider, uuid: '44444444-4444-4444-8444-444444444444', name: 'Unrelated Wallet', rdns: 'org.example.unrelated' }
-		await updateTabState(7, (previousState) => ({ ...previousState, availableSignerProviders: [provider, duplicateWalletInstance] }))
+		await updateTabState(7, (previousState) => ({ ...previousState, website: { websiteOrigin: 'app.example', title: undefined, icon: undefined }, availableSignerProviders: [provider, duplicateWalletInstance] }))
 		await signerProviderSelected(createProviderMessage('signer_provider_selected', [provider, 'explicit']), 'app.example', true, 0, new Map())
 
 		await signerProvidersChanged(createProviderMessage('signer_providers_changed', [[provider, duplicateWalletInstance, unrelatedProvider], false]), 'app.example', true)

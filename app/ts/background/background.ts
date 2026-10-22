@@ -1,3 +1,4 @@
+import { getSignerAccountIdentityError } from './accountIdentityPolicy.js'
 import { isInternalProviderMethod } from '../utils/internalProviderMethods.js'
 import { isTopFrameId } from '../utils/requests.js'
 import { prepareSafeAppsRequest } from './safeAppsRequestHandler.js'
@@ -31,7 +32,7 @@ import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { getWalletSelectedAccount, isActiveSigningSafe } from '../utils/activeAddressSelection.js'
 import { isAccountConnectionMethod, isAccountOnlyMethod } from './accountRequestMethods.js'
 import { beginSignerProviderSelection, finishSignerProviderSelection, signerProviderSelected, signerProvidersChanged } from './signerProviderSelection.js'
-import { getSignerExecutionError, isAuthoritativeTopSocket } from './signerExecutionAuthority.js'
+import { isAuthoritativeTopSocket } from './signerExecutionAuthority.js'
 import type { ApprovalState } from './websiteAccessPolicy.js'
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
@@ -307,10 +308,10 @@ function getApprovedAccountsForAccountRequest(request: InterceptedRequest, resol
 	return getAccountRequestResultAccounts(resolved)
 }
 
-function replayProviderStateForAccountRequest(websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, resolved: RPCReply, activeAddress: bigint | undefined) {
+function replayProviderStateForAccountRequest(websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, resolved: RPCReply, activeAddress: bigint | undefined, settings: Settings) {
 	const accounts = getApprovedAccountsForAccountRequest(request, resolved, activeAddress)
 	if (accounts === undefined || accounts.length === 0) return
-	sendAccountsChangedToPort(websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, accounts, request.uniqueRequestIdentifier.requestId)
+	sendAccountsChangedToPort(websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, accounts, request.uniqueRequestIdentifier.requestId, settings)
 }
 
 async function persistApprovedAccountsForAccountRequest(
@@ -450,8 +451,8 @@ const processInterceptedRequest = async (port: browser.runtime.Port | undefined,
 	if (request.interceptorInternalRequest !== true && isInternalProviderMethod(request.method)) return refusePublicInternalProviderMethod(websiteTabConnections, request)
 	// Cached wallet identities still require this frame's reconciliation, even when no new wallet command is needed. Interactive account approval can bootstrap access separately.
 	if (request.interceptorInternalRequest !== true && isAccountOnlyMethod(request.method) && !isAccountConnectionMethod(request.method)
-		&& (!initialSettings.simulationMode || initialSettings.useSignersAddressAsActiveAddress) && !request.usingInterceptorWithoutSigner) {
-		const error = getSignerExecutionError(socket)
+		&& !request.usingInterceptorWithoutSigner) {
+		const error = getSignerAccountIdentityError(initialSettings, socket)
 		if (error !== undefined) return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), error })
 	}
 	const isTopFrame = port !== undefined && isTopFrameId(port.sender?.frameId) && isAuthoritativeTopSocket(socket)
@@ -580,7 +581,7 @@ async function handleContentScriptMessage(simulationServicesOwner: SimulationSer
 			resolved,
 			activeAddress.address,
 		)
-		replayProviderStateForAccountRequest(websiteTabConnections, request, resolved, activeAddress.address)
+		replayProviderStateForAccountRequest(websiteTabConnections, request, resolved, activeAddress.address, settings)
 		return replyToInterceptedRequest(websiteTabConnections, { ...requestWithDefinedParams, ...resolved })
 	} catch (error: unknown) {
 		if (isFailedToFetchError(error)) {

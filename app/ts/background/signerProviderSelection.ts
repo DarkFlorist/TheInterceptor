@@ -1,3 +1,4 @@
+import { getExplicitSignerSelectionForConnection } from './signerSelectionOwnership.js'
 import { isTopFrameId } from '../utils/requests.js'
 import { BeginSignerProviderSelection, FinishSignerProviderSelection, SignerProviderSelected, SignerProvidersChanged, type SelectSignerProvider, type SubscriptionReplyOrCallBack } from '../types/interceptor-messages.js'
 import type { TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
@@ -97,8 +98,7 @@ export async function signerProvidersChanged(request: ProviderMessage, websiteOr
 			? undefined
 			: providers.find((provider) => provider.uuid === previousState.selectedSignerProvider?.uuid)
 		const preserveExplicitSelection = previouslySelectedProvider !== undefined
-			&& previousState.explicitlySelectedSignerProviderUuid === previouslySelectedProvider.uuid
-			&& previousState.selectedSignerConnectionName === socket.connectionName
+			&& getExplicitSignerSelectionForConnection(previousState, websiteOrigin, socket.connectionName)?.uuid === previouslySelectedProvider.uuid
 		const preferredSignerUnavailable = preferredSignerRdns !== undefined && !preserveExplicitSelection
 		// Remembered RDNS is a display preference, never proof that a new document's provider is the wallet the user selected.
 		const selectedSignerProvider = preserveExplicitSelection ? previouslySelectedProvider : undefined
@@ -148,8 +148,7 @@ export async function signerProviderSelected(request: ProviderMessage, websiteOr
 	const currentTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)
 	if (!isAuthoritativeTopSocket(request.uniqueRequestIdentifier.requestSocket)) return
 	const matchingProvider = currentTabState.availableSignerProviders?.find((announcedProvider) => announcedProvider.uuid === provider.uuid)
-	if (selectionKind !== 'explicit' && (currentTabState.explicitlySelectedSignerProviderUuid !== provider.uuid
-		|| currentTabState.selectedSignerConnectionName !== request.uniqueRequestIdentifier.requestSocket.connectionName)) throw new Error('Select the signer again for this document; remembered RDNS cannot authorize a provider')
+	if (selectionKind !== 'explicit' && getExplicitSignerSelectionForConnection(currentTabState, websiteOrigin, request.uniqueRequestIdentifier.requestSocket.connectionName)?.uuid !== provider.uuid) throw new Error('Select the signer again for this document; remembered RDNS cannot authorize a provider')
 	if (matchingProvider === undefined
 		|| matchingProvider.rdns !== provider.rdns
 		|| matchingProvider.name !== provider.name

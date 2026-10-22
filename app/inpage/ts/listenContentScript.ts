@@ -1,11 +1,8 @@
+import { generateUuidV4, isUuid } from '../../ts/utils/uuid.js'
+import { INTERCEPTOR_BRIDGE_REQUEST_MESSAGE, INTERCEPTOR_BRIDGE_INITIALIZED_MESSAGE, INTERCEPTOR_BRIDGE_RECONNECTED_MESSAGE, INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, INTERCEPTOR_PRIVATE_BRIDGE_EVENT } from '../../ts/utils/inpageBridgeProtocol.js'
 const contentScriptListenerGlobalKey = Symbol.for('TheInterceptor.listenContentScript')
 
 function listenContentScript(connectionName: string | undefined, diagnosticsSource: 'content-script' | 'document-start', bridgeSecret: string) {
-	const INTERCEPTOR_BRIDGE_REQUEST_MESSAGE = 'interceptor_bridge_request'
-	const INTERCEPTOR_BRIDGE_INITIALIZED_MESSAGE = 'interceptor_bridge_initialized'
-	const INTERCEPTOR_BRIDGE_RECONNECTED_MESSAGE = 'interceptor_bridge_reconnected'
-	// This non-module inpage build cannot import the canonical background constant from bridgeRequestDelivery.ts; contentScriptReconnect.test.ts enforces that both values match.
-	const INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE = 'interceptor_bridge_acknowledgement'
 	const checkAndThrowRuntimeLastError = () => {
 		const error: browser.runtime._LastError | undefined | null = browser.runtime.lastError // firefox return `null` on no errors
 		if (error !== null && error !== undefined && error.message !== undefined) throw new Error(error.message)
@@ -36,14 +33,6 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 		globalThis.crypto.getRandomValues(arr)
 		return `0x${ Array.from(arr, dec2hex).join('') }`
 	}
-	const generateUuidV4 = () => {
-		const bytes = new Uint8Array(16)
-		globalThis.crypto.getRandomValues(bytes)
-		bytes[6] = (bytes[6] & 0x0f) | 0x40
-		bytes[8] = (bytes[8] & 0x3f) | 0x80
-		const hex = Array.from(bytes, dec2hex).join('')
-		return `${ hex.slice(0, 8) }-${ hex.slice(8, 12) }-${ hex.slice(12, 16) }-${ hex.slice(16, 20) }-${ hex.slice(20) }`
-	}
 	const connectionNameNotUndefined = connectionName === undefined ? generateId(40) : connectionName
 	let pageHidden = false
 	let extensionPort: browser.runtime.Port | undefined 
@@ -63,7 +52,6 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 		readonly replayOnDisconnect?: unknown
 	}
 
-	const isUuid = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(value)
 	const isForwardedDiagnosticsRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null
 	const isBridgeRequestCandidate = (value: unknown): value is BridgeRequestCandidate => typeof value === 'object' && value !== null
 	const isBridgeRequest = (value: unknown, expectedBridgeCapability: string): value is {
@@ -319,7 +307,7 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 			if (typeof root !== 'object' || root === null || observedRoots.has(root)) continue
 			const addListener: unknown = Reflect.get(root, 'addEventListener')
 			if (typeof addListener !== 'function') continue
-			Reflect.apply(addListener, root, ['interceptor_private_bridge', receivePrivateBridge])
+			Reflect.apply(addListener, root, [INTERCEPTOR_PRIVATE_BRIDGE_EVENT, receivePrivateBridge])
 			observedRoots.add(root)
 		}
 		return inpagePort !== undefined

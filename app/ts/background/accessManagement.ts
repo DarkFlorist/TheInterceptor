@@ -1,3 +1,4 @@
+import { getFrameVisibleAccounts } from './accountIdentityPolicy.js'
 import { getActiveAddress, getActiveAddressesForAllTabs, getWebsiteSocketConnection, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
 import { getActiveAddressEntryForChain, getActiveAddresses } from './metadataUtils.js'
 import { requestAccessFromUser } from './windows/interceptorAccess.js'
@@ -130,7 +131,7 @@ export async function sendActiveAccountChangeToApprovedWebsitePorts(websiteTabCo
 			sendSubscriptionReplyOrCallBack(websiteTabConnections, connection.socket, {
 				type: 'result' as const,
 				method: 'accountsChanged',
-				result: activeAddress !== undefined ? [activeAddress.address] : []
+				result: getFrameVisibleAccounts(settings, connection.socket, activeAddress !== undefined ? [activeAddress.address] : [])
 			})
 		}
 	}
@@ -199,7 +200,7 @@ export function sendProviderConnectionEventsToPort(
 	accounts: readonly bigint[],
 ) {
 	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'connect', result: [settings.activeRpcNetwork.chainId] })
-	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'accountsChanged', result: accounts })
+	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'accountsChanged', result: getFrameVisibleAccounts(settings, socket, accounts) })
 	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'chainChanged', result: settings.activeRpcNetwork.chainId })
 }
 
@@ -208,8 +209,9 @@ export function sendAccountsChangedToPort(
 	socket: WebsiteSocket,
 	accounts: readonly bigint[],
 	requestId: number,
+	settings: Settings,
 ) {
-	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'accountsChanged', result: accounts, requestId })
+	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'accountsChanged', result: getFrameVisibleAccounts(settings, socket, accounts), requestId })
 }
 
 function disconnectFromPort(
