@@ -30,7 +30,6 @@ import { createSimulationServicesOwner, type SimulationServicesOwner } from '../
 import { addWindowTabListeners } from '../utils/popupOrTab.js'
 import { migrateAddressBook } from './addressBookMigration.js'
 import { migrateWebsiteAccess } from './websiteAccessMigration.js'
-import { migratePendingTransactionCreationFailureReasons } from './pendingTransactionMigration.js'
 import { initializeContentScriptConnectionAfterBackgroundStartup, isIgnorablePortLifecycleError, tryRegisterContentScriptPortListeners } from './contentScriptPortLifecycle.js'
 import { bumpPopupRefreshGeneration, initializePopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { flushPendingTerminalRepliesForConnectedPortWithRetry } from './terminalReplyDelivery.js'
@@ -276,8 +275,6 @@ async function startup() {
 	await tabStateInitializationPromise
 	await migrateAddressBook()
 	await migrateWebsiteAccess()
-	// Popup messages are handled only after startup, so once the confirmation popup's ready handshake is answered, its bootstrap data, later updates and the storage read it repeats after the handshake all see migrated entries. A failure only leaves old entries without a displayed reason, so it must not block startup.
-	await migratePendingTransactionCreationFailureReasons().catch(async (error: unknown) => { await reportUnexpectedError(error) })
 	await initializeSafeAppsCompatibility(safeAppsCompatibility).catch(async (error: unknown) => { await reportUnexpectedError(error) })
 	await initializePopupRefreshGeneration()
 	bumpPopupRefreshGeneration()

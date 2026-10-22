@@ -518,21 +518,47 @@ describe('confirm transaction rpc status bootstrap', () => {
 		dom.restore()
 	})
 
-	test('shows the migrated failure reason when the bootstrap reply fails after an early storage read', async () => {
-		const dom = installDomMock()
-		// An entry stored by a version before the failure reason was persisted.
+	// Entries stored before the failure reason was persisted have none; the popup derives it whichever way the entry arrives.
+	const makeLegacyStfPendingTransaction = () => {
 		const pendingTransaction = makePendingTransaction()
 		const transactionToSimulate = { ...pendingTransaction.transactionToSimulate, error: { code: -32000, message: 'execution reverted', data: encodeErrorString('STF') } }
 		const { transactionCreationFailureReason: _transactionCreationFailureReason, ...legacyVisualisationData } = pendingTransaction.popupVisualisation.data
-		const legacyPendingTransaction = { ...pendingTransaction, transactionToSimulate, popupVisualisation: { ...pendingTransaction.popupVisualisation, data: { ...legacyVisualisationData, transactionToSimulate } } }
-		const { migratePendingTransactionCreationFailureReasons } = await import('../../app/ts/background/pendingTransactionMigration.js')
-		// Like the background, every reply waits for startup, which runs the migration; the bootstrap itself fails as it does when the RPC is unreachable.
-		let backgroundStartup: Promise<void> | undefined
-		installBrowserMock(async (message) => {
+		return { ...pendingTransaction, transactionToSimulate, popupVisualisation: { ...pendingTransaction.popupVisualisation, data: { ...legacyVisualisationData, transactionToSimulate } } }
+	}
+	const stfReason = 'STF - possible Uniswap V3 error: Token transfer from the sender via safeTransferFrom failed'
+	const transportFailure = new Error('Could not establish connection. Receiving end does not exist.')
+	const readyReplyWithoutBootstrap = { method: 'popup_readyAndListening', data: { popupOrTabId: { type: 'popup', id: 1 } } }
+	const legacyEntryScenarios = [
+		{ name: 'the ready handshake first fails to connect and then returns no data', storeLegacyEntry: true, answerReadyHandshake: (readyCallNumber: number) => { if (readyCallNumber === 1) throw transportFailure; return undefined }, pushLegacyEntry: false },
+		{ name: 'the ready handshake succeeds without bootstrap data', storeLegacyEntry: true, answerReadyHandshake: () => readyReplyWithoutBootstrap, pushLegacyEntry: false },
+		{ name: 'the ready handshake returns it as bootstrap data', storeLegacyEntry: false, answerReadyHandshake: 'bootstrapLegacyEntry' as const, pushLegacyEntry: false },
+		{ name: 'the background pushes it', storeLegacyEntry: false, answerReadyHandshake: () => undefined, pushLegacyEntry: true },
+	]
+
+	test.each(legacyEntryScenarios)('shows the derived failure reason of a legacy entry when $name', async ({ storeLegacyEntry, answerReadyHandshake, pushLegacyEntry }) => {
+		const dom = installDomMock()
+		const legacyPendingTransaction = makeLegacyStfPendingTransaction()
+		const { createPassthroughCompleteVisualizedSimulation } = await import('../../app/ts/types/visualizer-types.js')
+		const { serialize } = await import('../../app/ts/types/wire-types.js')
+		const { PopupRequestsReplies } = await import('../../app/ts/types/interceptor-reply-messages.js')
+		const { UpdateConfirmTransactionDialogPendingTransactions } = await import('../../app/ts/types/interceptor-messages.js')
+		let readyCallNumber = 0
+		const browser = installBrowserMock((message) => {
 			if (typeof message !== 'object' || message === null || !('method' in message) || message.method !== 'popup_readyAndListening') return undefined
-			backgroundStartup ??= migratePendingTransactionCreationFailureReasons()
-			await backgroundStartup
-			return undefined
+			readyCallNumber++
+			if (answerReadyHandshake !== 'bootstrapLegacyEntry') return answerReadyHandshake(readyCallNumber)
+			return serialize(PopupRequestsReplies.popup_readyAndListening, {
+				method: 'popup_readyAndListening',
+				data: {
+					popupOrTabId: { type: 'popup', id: 1 },
+					confirmTransactionBootstrap: {
+						pendingTransactionAndSignableMessages: [legacyPendingTransaction],
+						currentBlockNumber: 123n,
+						rpcConnectionStatus: undefined,
+						visualizedSimulatorState: createPassthroughCompleteVisualizedSimulation(),
+					},
+				},
+			})
 		})
 		const [
 			{ browserStorageLocalSet2 },
@@ -541,15 +567,26 @@ describe('confirm transaction rpc status bootstrap', () => {
 			import('../../app/ts/utils/storageUtils.js'),
 			import('../../app/ts/components/pages/ConfirmTransaction.js'),
 		])
-		await browserStorageLocalSet2({ pendingTransactionsAndMessages: [legacyPendingTransaction] })
+		if (storeLegacyEntry) await browserStorageLocalSet2({ pendingTransactionsAndMessages: [legacyPendingTransaction] })
 
 		await act(() => {
 			render(h(ConfirmTransaction, {}), dom.document.body)
 		})
+		if (pushLegacyEntry) {
+			await act(() => {
+				browser.dispatch({
+					role: 'all',
+					...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
+						method: 'popup_update_confirm_transaction_dialog_pending_transactions',
+						data: { pendingTransactionAndSignableMessages: [legacyPendingTransaction], currentBlockNumber: 123n, rpcConnectionStatus: undefined },
+					}),
+				})
+			})
+		}
 		await new Promise((resolve) => setTimeout(resolve, CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS + 50))
 
-		assert.notEqual(backgroundStartup, undefined)
-		assert.equal(dom.document.body.textContent?.includes('STF - possible Uniswap V3 error: Token transfer from the sender via safeTransferFrom failed'), true)
+		assert.equal(readyCallNumber > 0, true)
+		assert.equal(dom.document.body.textContent?.includes(stfReason), true)
 		assert.equal(dom.document.body.textContent?.includes('Unknown error'), false)
 		await unmountConfirmTransaction(dom)
 		dom.restore()
