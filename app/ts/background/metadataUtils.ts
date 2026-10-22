@@ -23,6 +23,7 @@ import { JsonRpcResponseError, reportLocalRecoveryBestEffort } from '../utils/er
 import { getDeployedContractAddress } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { isValidErc20Decimals } from '../utils/erc20.js'
 import { findActiveAddressBookEntryForChain } from '../utils/activeAddressSelection.js'
+import { getKnownAddressIndexes } from '../simulation/lookalikeAddresses.js'
 
 const pathJoin = (parts: string[], sep = '/') => parts.join(sep).replace(new RegExp(sep + '{1,}', 'g'), sep)
 
@@ -223,6 +224,9 @@ export async function identifyAddress(ethereumClientService: EthereumClientServi
 	if (useLocalStorage) await addUserAddressBookEntryIfItDoesNotExist(entry)
 	return entry
 }
+
+// Lookalike detection compares a destination with every vetted entry of the chain instead of resolving one address, so it indexes the whole per-chain address book that identifyAddressWithoutNode searches, read through the same accessor.
+export const loadKnownAddressIndexesForChain = async (chainId: bigint) => getKnownAddressIndexes(await getUserAddressBookEntriesForChainIdMorePreciseFirst(chainId), chainId)
 
 const getAddressesForSolidityType = (typeValue: PureGroupedSolidityType): readonly bigint[] => {
 	switch(typeValue.type) {

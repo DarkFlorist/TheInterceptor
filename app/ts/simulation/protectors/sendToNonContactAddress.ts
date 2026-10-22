@@ -1,12 +1,12 @@
 import type { EthereumUnsignedTransaction } from '../../types/wire-types.js'
 import type { SimulationState } from '../../types/visualizer-types.js'
 import type { EthereumClientService } from '../services/EthereumClientService.js'
-import { identifyAddress } from '../../background/metadataUtils.js'
+import { identifyAddress, loadKnownAddressIndexesForChain } from '../../background/metadataUtils.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
 import type { EnrichedEthereumEvents } from '../../types/EnrichedEthereumData.js'
 import { checksummedAddress } from '../../utils/bigint.js'
 import { getFundsDestinations, type IdentifyAddress } from '../fundsDestinations.js'
-import { findLookalikeDestinations, loadKnownAddressIndexesForChain, type KnownAddressIndexesLoader, type LookalikeDestination } from '../lookalikeAddresses.js'
+import { findLookalikeDestinations, type KnownAddressIndexesLoader, type LookalikeDestination } from '../lookalikeAddresses.js'
 
 const ADDRESS_POISONING_EXPLANATION = 'Scammers create addresses that share the first and last characters of addresses you use, hoping you copy the wrong one (address poisoning). Verify the full address before continuing.'
 
@@ -40,6 +40,7 @@ export async function getSendToNonContactWarnings(transaction: EthereumUnsignedT
 	return warnings.filter((warning) => warning !== undefined)
 }
 
+// Binds the background address book readers, so getSendToNonContactWarnings decides only from its explicit inputs.
 export async function sendToNonContact(transaction: EthereumUnsignedTransaction, ethereum: EthereumClientService, requestAbortController: AbortController | undefined, _simulationState: SimulationState, eventsPromise: Promise<EnrichedEthereumEvents>) {
 	const events = await eventsPromise
 	return await getSendToNonContactWarnings(transaction, events, async (address) => await identifyAddress(ethereum, requestAbortController, address), async () => await loadKnownAddressIndexesForChain(ethereum.getChainId()))

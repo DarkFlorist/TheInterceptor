@@ -5,6 +5,7 @@ import { getSendToNonContactWarnings, sendToNonContact } from '../../app/ts/simu
 import { getKnownAddressIndexes, type KnownAddress, type KnownAddressIndex, type KnownAddressIndexesLoader } from '../../app/ts/simulation/lookalikeAddresses.js'
 import { runProtectorsForTransaction } from '../../app/ts/simulation/protectorRunner.js'
 import { updateUserAddressBookEntries } from '../../app/ts/background/storageVariables.js'
+import { loadKnownAddressIndexesForChain } from '../../app/ts/background/metadataUtils.js'
 import type { AddressBookEntries, AddressBookEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { EnrichedEthereumEvents } from '../../app/ts/types/EnrichedEthereumData.js'
 import type { WebsiteCreatedEthereumTransaction } from '../../app/ts/types/visualizer-types.js'
@@ -102,6 +103,22 @@ const compoundPaxDollarLookalike: AddressBookEntry = {
 	name: checksummedAddress(0x041100000000000000000000000000000000925dn),
 	address: 0x041100000000000000000000000000000000925dn,
 	entrySource: 'OnChain',
+}
+
+const optimismContact: AddressBookEntry = {
+	type: 'contact',
+	name: 'Optimism contact',
+	address: 0x5555555555555555555555555555555555555555n,
+	chainId: 10n,
+	entrySource: 'User',
+}
+
+const everyChainContact: AddressBookEntry = {
+	type: 'contact',
+	name: 'Every chain contact',
+	address: 0x6666666666666666666666666666666666666666n,
+	chainId: 'AllChains',
+	entrySource: 'User',
 }
 
 const addressBook: AddressBookEntries = [sender, alice, bob, erc20Token, autoDiscovered]
@@ -292,5 +309,25 @@ describe('sendToNonContact with the stored address book', () => {
 
 		assert.deepEqual(warnings, [])
 		assert.equal(readStorageKeys.includes('userAddressBookEntriesV3'), false)
+	})
+})
+
+describe('loadKnownAddressIndexesForChain', () => {
+	// The index keeps whole address book entries, so only the fields a warning uses are compared.
+	const toNameAndAddress = ({ name, address }: KnownAddress): KnownAddress => ({ name, address })
+	// Lists the indexed addresses in insertion order, which decides the entry a warning names when several share a lookalike key.
+	const listKnownAddresses = (index: KnownAddressIndex) => Array.from(index.values()).flat().map(toNameAndAddress)
+
+	test('indexes the vetted stored entries of the chain with chain specific entries first, and adds the bundled metadata only on mainnet', async () => {
+		installBrowserStorageMock()
+		await updateUserAddressBookEntries(() => [alice, everyChainContact, autoDiscovered, optimismContact, bob])
+
+		const mainnetIndexes = await loadKnownAddressIndexesForChain(1n)
+		const optimismIndexes = await loadKnownAddressIndexesForChain(10n)
+
+		assert.deepEqual(mainnetIndexes.slice(0, 1).map(listKnownAddresses), [[bob, alice, everyChainContact].map(toNameAndAddress)])
+		// On mainnet the bundled metadata index follows the address book index.
+		assert.deepEqual(mainnetIndexes.slice(1), getKnownAddressIndexes([], 1n).slice(1))
+		assert.deepEqual(optimismIndexes.map(listKnownAddresses), [[optimismContact, everyChainContact].map(toNameAndAddress)])
 	})
 })

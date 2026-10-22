@@ -2,7 +2,6 @@ import { contractMetadata, erc1155Metadata, erc721Metadata, tokenMetadata } from
 import type { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
 import type { EthereumAddress } from '../types/wire-types.js'
 import { addressStringWithout0x } from '../utils/bigint.js'
-import { getUserAddressBookEntriesForChainId } from '../background/storageVariables.js'
 
 // Address poisoning addresses copy the leading and trailing hex characters that wallets and explorers display (usually 4-6 leading and 4 trailing), while two unrelated addresses share 4 + 4 characters with a probability of only 1 in 16^8 (about 1 in 4.3 billion).
 const LOOKALIKE_PREFIX_HEX_LENGTH = 4
@@ -52,8 +51,7 @@ export const getKnownAddressIndexes = (addressBookEntriesForChain: AddressBookEn
 	...(chainId === 1n ? [getBundledMetadataIndex()] : []),
 ]
 
-export const loadKnownAddressIndexesForChain = async (chainId: bigint) => getKnownAddressIndexes(await getUserAddressBookEntriesForChainId(chainId), chainId)
-
+// Supplied by the caller (the background layer reads the stored address book), so this module stays free of storage access.
 export type KnownAddressIndexesLoader = () => Promise<readonly KnownAddressIndex[]>
 
 // Some bundled tokens exist only under checksummed keys that identifyAddress does not recognize, so an exact match with a known address must also rule out a lookalike.
