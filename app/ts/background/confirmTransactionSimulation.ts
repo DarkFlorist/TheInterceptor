@@ -4,6 +4,7 @@ import { getSignedTransactionForSimulation } from '../simulation/services/simula
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { createSafeExecutionPreSimulationTransaction, createSafeSigningSimulationInput } from '../safe/safeSimulation.js'
 import { getFailureReasonForDisplay } from '../simulation/failureReasons.js'
+import { appendProtocolRevertReasonHints } from '../simulation/revertReasonHints.js'
 import type { ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
 import type { SafeTransactionSigningRequest } from '../types/safeTypes.js'
 import type { WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
@@ -65,7 +66,7 @@ export async function refreshConfirmTransactionSimulation(
 	// A transaction that failed to be created is not simulated, so callers pass the recipient ABI, plus the simulation ABIs when the simulation produced them, to decode its custom errors.
 	const getTransactionCreationFailureReason = (errorAbis: readonly string[]) => {
 		if (transactionCreationError === undefined) return undefined
-		return transactionCreationError.insufficientBalanceMessage ?? getFailureReasonForDisplay(errorAbis, transactionCreationError)
+		return transactionCreationError.insufficientBalanceMessage ?? getFailureReasonForDisplay(errorAbis, transactionCreationError, appendProtocolRevertReasonHints)
 	}
 	const simulationInput = safeSigningRequest === undefined
 		? await getCurrentSimulationInput()
@@ -141,7 +142,7 @@ export async function refreshConfirmTransactionSimulation(
 			...info,
 			simulationStartedTimestamp,
 			transactionCreationFailureReason: getTransactionCreationFailureReason(recipientErrorAbis),
-			error: { ...baseError, decodedErrorMessage: isJsonRpcResponseError ? getFailureReasonForDisplay(recipientErrorAbis, baseError) : baseError.message },
+			error: { ...baseError, decodedErrorMessage: isJsonRpcResponseError ? getFailureReasonForDisplay(recipientErrorAbis, baseError, appendProtocolRevertReasonHints) : baseError.message },
 			simulationState: {
 				blockNumber: 0n,
 				simulationConductedTimestamp: new Date()

@@ -1,3 +1,5 @@
+import type { RevertReasonHintProvider } from './revertReasonHints.js'
+
 // Source: https://docs.uniswap.org/contracts/v3/reference/error-codes plus the require strings in Uniswap/v3-core and Uniswap/v3-periphery.
 // Self-explanatory periphery strings that unrelated contracts also use, such as 'Transaction too old', 'Not approved' and 'Invalid token ID', are deliberately not attributed to Uniswap.
 const uniswapV3RevertReasonToExplanation = (revertReason: string): string | undefined => {
@@ -36,9 +38,8 @@ const uniswapV3RevertReasonToExplanation = (revertReason: string): string | unde
 	}
 }
 
-// Expects a decoded Error(string) revert reason. Uniswap V3 short codes such as 'T' or 'L' can also come from unrelated contracts, and they bubble up through routers, aggregators and V3 forks, so the explanation is appended as a hint labeled 'possible' next to the unchanged original reason instead of being scoped to known Uniswap addresses.
-export const appendPossibleUniswapV3Explanation = (revertReason: string) => {
-	const uniswapV3Explanation = uniswapV3RevertReasonToExplanation(revertReason)
-	if (uniswapV3Explanation === undefined) return revertReason
-	return `${ revertReason } - possible Uniswap V3 error: ${ uniswapV3Explanation }`
+// Short codes such as 'T' or 'L' are still explained even though unrelated contracts can revert with them too. Pool reverts bubble up through routers, aggregators and V3 forks on many chains, and the simulation does not report which contract reverted, so the transaction's recipient cannot tell whether Uniswap V3 was involved. Only exact matches are explained, and appendRevertReasonHints labels the hint 'possible' next to the unchanged code.
+export const uniswapV3RevertReasonHintProvider: RevertReasonHintProvider = {
+	protocolName: 'Uniswap V3',
+	explainRevertReason: uniswapV3RevertReasonToExplanation,
 }

@@ -119,6 +119,16 @@ test('carries the transaction creation failure reason when the simulation throws
 	assert.equal(popupVisualisation.data.transactionCreationFailureReason, insufficientBalanceMessage)
 })
 
+test('explains Uniswap V3 revert codes in a thrown simulation error', async () => {
+	const failingSimulator = createSimulatorWithFailingRpcMethods((method) => method === 'eth_getBlockByNumber' ? createJsonRpcError('execution reverted', encodeErrorString('STF')) : undefined)
+
+	const popupVisualisation = await refreshFailedTransactionCreation({ code: -32000, message: 'execution reverted', data: '0x' }, failingSimulator)
+
+	assert.equal(popupVisualisation?.statusCode, 'failed')
+	if (popupVisualisation?.statusCode !== 'failed') throw new Error('Expected a failed confirmation simulation')
+	assert.equal(popupVisualisation.data.error.decodedErrorMessage, 'STF - possible Uniswap V3 error: Token transfer from the sender via safeTransferFrom failed, usually due to insufficient token balance or allowance')
+})
+
 test('decodes gas estimation custom errors with the recipient ABI when the simulation throws an RPC error', async () => {
 	await modules.updateUserAddressBookEntries((entries) => [...entries, { type: 'contract', name: 'Router', address: routerAddress, entrySource: 'User', chainId: fakeRpcNetwork.chainId, abi: routerAbi }])
 	const failingSimulator = createSimulatorWithFailingRpcMethods((method) => method === 'eth_getBlockByNumber' ? createJsonRpcError('block unavailable', '0x') : undefined)

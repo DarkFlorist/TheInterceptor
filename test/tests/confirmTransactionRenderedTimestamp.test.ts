@@ -2,6 +2,7 @@ import * as assert from 'assert'
 import { encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { encodeErrorString } from './errorDataFixtures.js'
 import { getFailureReasonForDisplay } from '../../app/ts/simulation/failureReasons.js'
+import { appendProtocolRevertReasonHints } from '../../app/ts/simulation/revertReasonHints.js'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { describe, test } from 'bun:test'
@@ -308,7 +309,7 @@ function makeGasEstimationFailedPendingTransaction(requestId: number, gasEstimat
 // Mirrors the background, which persists the raw gas estimation error and computes the displayed reason when it builds the popup visualisation.
 function makeRevertedGasEstimationPendingTransaction(revertReason: string, requestId: number) {
 	const gasEstimationError = { code: -32000, message: 'execution reverted', data: encodeErrorString(revertReason) }
-	return makeGasEstimationFailedPendingTransaction(requestId, gasEstimationError, getFailureReasonForDisplay([], gasEstimationError))
+	return makeGasEstimationFailedPendingTransaction(requestId, gasEstimationError, getFailureReasonForDisplay([], gasEstimationError, appendProtocolRevertReasonHints))
 }
 
 const { UpdateConfirmTransactionDialogPendingTransactions } = await import('../../app/ts/types/interceptor-messages.js')
@@ -612,7 +613,7 @@ describe('ConfirmTransaction', () => {
 
 		const failedPendingTransaction = makePendingTransaction(new Date('2024-01-01T00:00:05.000Z'))
 		const transactionToSimulate = { ...failedPendingTransaction.transactionToSimulate, error: { code: -32000, message: 'execution reverted', data: encodeErrorString('STF') } }
-		const stfReason = getFailureReasonForDisplay([], transactionToSimulate.error)
+		const stfReason = getFailureReasonForDisplay([], transactionToSimulate.error, appendProtocolRevertReasonHints)
 		const pendingTransaction = {
 			...failedPendingTransaction,
 			transactionToSimulate,
