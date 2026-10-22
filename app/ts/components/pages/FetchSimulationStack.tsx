@@ -18,7 +18,7 @@ import { sanitizeStoredWebsiteIcon } from '../../utils/websiteIcons.js'
 import { useAsyncState } from '../../utils/preact-utilities.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 import { EditEnsLabelHash } from './EditEnsLabelHash.js'
-import { type ShownSimulationStack, type SimulationStackUpdate, applySimulationStackUpdate } from '../../utils/popupVisualisationLifecycle.js'
+import { type ShownSimulationStack, type SimulationStackUpdate, applySimulationStackUpdate } from './fetchSimulationStackUpdates.js'
 import { subscribeToSimulationStatePublications } from '../simulationStatePublications.js'
 import type { EthereumBytes32 } from '../../types/wire-types.js'
 
