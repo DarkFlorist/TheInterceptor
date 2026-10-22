@@ -1,4 +1,3 @@
-import { contractMetadata, erc1155Metadata, erc721Metadata, tokenMetadata } from '@darkflorist/address-metadata'
 import type { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
 import type { EthereumAddress } from '../types/wire-types.js'
 import { addressStringWithout0x } from '../utils/bigint.js'
@@ -18,7 +17,7 @@ const getLookalikeKey = (address: EthereumAddress) => {
 	return `${ hexWithout0x.slice(0, LOOKALIKE_PREFIX_HEX_LENGTH) }${ hexWithout0x.slice(-LOOKALIKE_SUFFIX_HEX_LENGTH) }`
 }
 
-const indexKnownAddresses = (knownAddresses: readonly KnownAddress[]): KnownAddressIndex => {
+export const indexKnownAddresses = (knownAddresses: readonly KnownAddress[]): KnownAddressIndex => {
 	const index = new Map<string, KnownAddress[]>()
 	for (const knownAddress of knownAddresses) {
 		const key = getLookalikeKey(knownAddress.address)
@@ -35,26 +34,13 @@ const indexKnownAddresses = (knownAddresses: readonly KnownAddress[]): KnownAddr
 // OnChain entries are added automatically for every address the extension sees (including poisoning addresses) and FilledIn entries are placeholders, so neither tells that the user vetted the address.
 const isRecognizedAddressBookEntry = (entry: AddressBookEntry) => entry.entrySource !== 'OnChain' && entry.entrySource !== 'FilledIn'
 
-let bundledMetadataIndex: KnownAddressIndex | undefined
+// Only entries the user vetted are imitation targets.
+export const indexRecognizedAddressBookEntries = (addressBookEntries: AddressBookEntries) => indexKnownAddresses(addressBookEntries.filter(isRecognizedAddressBookEntry))
 
-// The bundled metadata is static and has about ten thousand entries, so its index is built once on first use.
-const getBundledMetadataIndex = () => {
-	if (bundledMetadataIndex !== undefined) return bundledMetadataIndex
-	const bundledMetadata = [...tokenMetadata, ...contractMetadata, ...erc721Metadata, ...erc1155Metadata]
-	bundledMetadataIndex = indexKnownAddresses(bundledMetadata.map(([address, definition]) => ({ name: definition.name, address: BigInt(address) })))
-	return bundledMetadataIndex
-}
-
-// User vetted address book entries come first so a warning names the user's own entry when it also resembles a bundled one; bundled metadata describes Ethereum mainnet, where the address book also lists it.
-export const getKnownAddressIndexes = (addressBookEntriesForChain: AddressBookEntries, chainId: bigint): readonly KnownAddressIndex[] => [
-	indexKnownAddresses(addressBookEntriesForChain.filter(isRecognizedAddressBookEntry)),
-	...(chainId === 1n ? [getBundledMetadataIndex()] : []),
-]
-
-// Supplied by the caller (the background layer reads the stored address book), so this module stays free of storage access.
+// Supplied by the caller (the background layer reads the stored address book and the bundled metadata), so this module only matches addresses.
 export type KnownAddressIndexesLoader = () => Promise<readonly KnownAddressIndex[]>
 
-// Some bundled tokens exist only under checksummed keys that identifyAddress does not recognize, so an exact match with a known address must also rule out a lookalike.
+// identifyAddress returns a stored OnChain entry before bundled metadata, for example for an address auto-added before the bundled metadata listed it, so an exact match with a known address must also rule out a lookalike.
 const findLookalikeKnownAddress = (destination: AddressBookEntry, knownAddressIndexes: readonly KnownAddressIndex[]) => {
 	const key = getLookalikeKey(destination.address)
 	const knownAddressesWithSameKey = knownAddressIndexes.flatMap((index) => index.get(key) ?? [])

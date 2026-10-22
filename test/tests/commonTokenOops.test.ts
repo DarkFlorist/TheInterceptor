@@ -40,6 +40,6 @@ describe('commonTokenOops', () => {
 
 		const result = await commonTokenOops(transaction, ethereum, undefined, failedMainnetSimulationState)
 
-		assert.equal(result, 'Attempt to send tokens to a contract (Uniswap V2 Router 02) that cannot receive such tokens')
+		assert.deepEqual(result, ['Attempt to send tokens to a contract (Uniswap V2 Router 02) that cannot receive such tokens'])
 	})
 })

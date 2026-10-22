@@ -1,7 +1,8 @@
 import type { EthereumUnsignedTransaction } from '../../types/wire-types.js'
 import type { SimulationState } from '../../types/visualizer-types.js'
 import type { EthereumClientService } from '../services/EthereumClientService.js'
-import { identifyAddress, loadKnownAddressIndexesForChain } from '../../background/metadataUtils.js'
+import { identifyAddress } from '../../background/metadataUtils.js'
+import { loadKnownAddressIndexesForChain } from '../../background/lookalikeKnownAddresses.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
 import type { EnrichedEthereumEvents } from '../../types/EnrichedEthereumData.js'
 import { checksummedAddress } from '../../utils/bigint.js'
@@ -40,8 +41,8 @@ export async function getSendToNonContactWarnings(transaction: EthereumUnsignedT
 	return warnings.filter((warning) => warning !== undefined)
 }
 
-// Binds the background address book readers, so getSendToNonContactWarnings decides only from its explicit inputs.
-export async function sendToNonContact(transaction: EthereumUnsignedTransaction, ethereum: EthereumClientService, requestAbortController: AbortController | undefined, _simulationState: SimulationState, eventsPromise: Promise<EnrichedEthereumEvents>) {
+// Binds the background readers of the address book and bundled metadata, so getSendToNonContactWarnings decides only from its explicit inputs.
+export async function sendToNonContact(transaction: EthereumUnsignedTransaction, ethereum: EthereumClientService, requestAbortController: AbortController | undefined, _simulationState: SimulationState, eventsPromise: Promise<EnrichedEthereumEvents>): Promise<readonly string[]> {
 	const events = await eventsPromise
 	return await getSendToNonContactWarnings(transaction, events, async (address) => await identifyAddress(ethereum, requestAbortController, address), async () => await loadKnownAddressIndexesForChain(ethereum.getChainId()))
 }

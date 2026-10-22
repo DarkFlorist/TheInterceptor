@@ -1,11 +1,11 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { tokenMetadata } from '@darkflorist/address-metadata'
 import { getSendToNonContactWarnings, sendToNonContact } from '../../app/ts/simulation/protectors/sendToNonContactAddress.js'
-import { getKnownAddressIndexes, type KnownAddress, type KnownAddressIndex, type KnownAddressIndexesLoader } from '../../app/ts/simulation/lookalikeAddresses.js'
+import type { KnownAddress, KnownAddressIndex, KnownAddressIndexesLoader } from '../../app/ts/simulation/lookalikeAddresses.js'
 import { runProtectorsForTransaction } from '../../app/ts/simulation/protectorRunner.js'
 import { updateUserAddressBookEntries } from '../../app/ts/background/storageVariables.js'
-import { loadKnownAddressIndexesForChain } from '../../app/ts/background/metadataUtils.js'
+import { getKnownAddressIndexes, loadKnownAddressIndexesForChain } from '../../app/ts/background/lookalikeKnownAddresses.js'
+import { findBundledMetadata } from '../../app/ts/background/bundledMetadata.js'
 import type { AddressBookEntries, AddressBookEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { EnrichedEthereumEvents } from '../../app/ts/types/EnrichedEthereumData.js'
 import type { WebsiteCreatedEthereumTransaction } from '../../app/ts/types/visualizer-types.js'
@@ -86,7 +86,15 @@ const wethLookalike: AddressBookEntry = {
 	entrySource: 'OnChain',
 }
 
-// Some bundled tokens exist only under checksummed keys, which identifyAddress looks up in lower case, so it reports them as OnChain.
+// identifyAddress returns a stored OnChain entry before bundled metadata, as for an address auto-added before the bundled metadata listed it.
+const wethAsStoredOnChainEntry: AddressBookEntry = {
+	type: 'contract',
+	name: checksummedAddress(WETH_ADDRESS),
+	address: WETH_ADDRESS,
+	entrySource: 'OnChain',
+}
+
+// Some bundled tokens exist only under checksummed keys, which the bundled metadata lookup does not find, so identifyAddress reports them as OnChain.
 const COMPOUND_PAX_DOLLAR_ADDRESS = 0x041171993284df560249b57358f931d9eb7b925dn
 
 const compoundPaxDollarAsUnrecognized: AddressBookEntry = {
@@ -123,7 +131,7 @@ const everyChainContact: AddressBookEntry = {
 
 const addressBook: AddressBookEntries = [sender, alice, bob, erc20Token, autoDiscovered]
 
-const identifyAddress = createIdentifyAddress([sender, alice, aliceLookalike, bob, bobLookalike, aliceVanityTwin, autoDiscovered, autoDiscoveredLookalike, unrelatedUnknown, proxy, wethLookalike, compoundPaxDollarAsUnrecognized, compoundPaxDollarLookalike, nativeToken, erc20Token])
+const identifyAddress = createIdentifyAddress([sender, alice, aliceLookalike, bob, bobLookalike, aliceVanityTwin, autoDiscovered, autoDiscoveredLookalike, unrelatedUnknown, proxy, wethLookalike, wethAsStoredOnChainEntry, compoundPaxDollarAsUnrecognized, compoundPaxDollarLookalike, nativeToken, erc20Token])
 
 const sendEtherTo = (destination: AddressBookEntry) => createTransaction({ to: destination.address })
 
@@ -237,13 +245,16 @@ describe('sendToNonContact lookalike destinations', () => {
 		assert.deepEqual(otherChainWarnings, [expectedNotInAddressBookWarning(wethLookalike)])
 	})
 
-	test('matches bundled tokens stored only under checksummed keys and never flags their exact address as a lookalike', async () => {
+	test('does not flag a stored OnChain entry that is exactly a bundled address as its lookalike', async () => {
+		assert.deepEqual(await getWarnings(sendEtherTo(wethAsStoredOnChainEntry)), [expectedNotInAddressBookWarning(wethAsStoredOnChainEntry)])
+	})
+
+	test('treats bundled tokens stored only under checksummed keys as unknown, like identifyAddress does', async () => {
 		const lookalikeWarnings = await getWarnings(sendEtherTo(compoundPaxDollarLookalike))
 		const exactWarnings = await getWarnings(sendEtherTo(compoundPaxDollarAsUnrecognized))
 
-		assert.equal(tokenMetadata.has(checksummedAddress(COMPOUND_PAX_DOLLAR_ADDRESS)), true)
-		assert.equal(tokenMetadata.has(addressString(COMPOUND_PAX_DOLLAR_ADDRESS)), false)
-		assert.deepEqual(lookalikeWarnings, [expectedLookalikeWarning(compoundPaxDollarLookalike, { name: 'Compound Pax Dollar', address: COMPOUND_PAX_DOLLAR_ADDRESS })])
+		assert.equal(findBundledMetadata(COMPOUND_PAX_DOLLAR_ADDRESS), undefined)
+		assert.deepEqual(lookalikeWarnings, [expectedNotInAddressBookWarning(compoundPaxDollarLookalike)])
 		assert.deepEqual(exactWarnings, [expectedNotInAddressBookWarning(compoundPaxDollarAsUnrecognized)])
 	})
 
