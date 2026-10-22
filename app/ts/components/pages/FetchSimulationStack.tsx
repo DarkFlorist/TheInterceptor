@@ -18,6 +18,8 @@ import { sanitizeStoredWebsiteIcon } from '../../utils/websiteIcons.js'
 import { useAsyncState } from '../../utils/preact-utilities.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 import { EditEnsLabelHash } from './EditEnsLabelHash.js'
+import { hasCurrentAddressBookEntries } from '../../background/popupVisualisationAddressBookEntries.js'
+import { subscribeToSimulationStatePublications } from '../simulationStatePublications.js'
 import type { EthereumBytes32 } from '../../types/wire-types.js'
 
 export type FetchSimulationStackModalState =
@@ -97,11 +99,6 @@ export function FetchSimulationStack() {
 			const maybeParsed = MessageToPopup.safeParse(msg)
 			if (!maybeParsed.success) return false // not a message we are interested in
 			const parsed = maybeParsed.value
-			if (parsed.method === 'popup_simulation_state_changed') {
-				// Requesting the visualisation again here would simulate and publish this message again while the home popup or simulation stack page is open.
-				applyPublishedSimulation(parsed.data.visualizedSimulatorState)
-				return false
-			}
 			if (parsed.method === 'popup_requestSettingsReply') {
 				rpcEntries.value = parsed.data.rpcEntries
 				return false
@@ -116,9 +113,10 @@ export function FetchSimulationStack() {
 
 	const applyPublishedSimulation = (visualizedSimulatorState: CompleteVisualizedSimulation) => {
 		completeVisualizedSimulation.value = visualizedSimulatorState
-		// Only a finished refresh reflects the current stack; updating, invalidated and failed states carry earlier or no addresses, so the last finished references stay.
-		if (visualizedSimulatorState.simulationUpdatingState === 'done') simulationAddressBookEntries.value = visualizedSimulatorState.addressBookEntries
+		// While a refresh runs or after it fails, the address references of the last finished refresh stay.
+		if (hasCurrentAddressBookEntries(visualizedSimulatorState)) simulationAddressBookEntries.value = visualizedSimulatorState.addressBookEntries
 	}
+	useEffect(() => subscribeToSimulationStatePublications(applyPublishedSimulation), [])
 	const updateSimulation = async () => {
 		const simulationStack = await requestPopupCompleteVisualizedSimulation()
 		if (simulationStack === undefined) return

@@ -7,10 +7,10 @@ import { NEW_BLOCK_ABORT, TIME_BETWEEN_BLOCKS } from '../utils/constants.js'
 import { reportUnexpectedError, isExpectedInfrastructureError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { modifyObject } from '../utils/typescript.js'
 import { captureSimulationSnapshot, getSimulationProviderForSnapshot, type SimulationSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
 import { requestIsSimulationDataConsumerOpen, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getPopupVisualisationFingerprint } from './popupSimulationFingerprint.js'
+import { retainPreviousVisualisation } from './popupVisualisationAddressBookEntries.js'
 import { visualizeSimulatorState } from './simulationUpdating.js'
 import { getPopupVisualisationState, setPopupVisualisationState } from './storageVariables.js'
 
@@ -89,7 +89,7 @@ export const updatePopupVisualisationIfNeeded = async (ethereum: EthereumClientS
 		const thisAbortController = abortController
 		if (invalidateOldState) {
 			const simulationId = popupVisualisation.simulationId + 1
-			const visualizedSimulatorState = await setPopupVisualisationState(modifyObject(popupVisualisation, { simulationId, simulationResultState: 'invalid', simulationUpdatingState: 'updating' }))
+			const visualizedSimulatorState = await setPopupVisualisationState(retainPreviousVisualisation(popupVisualisation, { simulationId, simulationUpdatingState: 'updating', simulationResultState: 'invalid' }))
 			await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState } })
 		}
 		await updatePopupVisualisationState(ethereum, tokenPriceService, thisAbortController, false, capturedSnapshot)
@@ -155,7 +155,7 @@ export async function updatePopupVisualisationState(ethereum: EthereumClientServ
 				await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState: newState } })
 				return
 			}
-			const visualizedSimulatorState = await setPopupVisualisationState(modifyObject(popupVisualisation, { simulationId, simulationUpdatingState: 'updating' }))
+			const visualizedSimulatorState = await setPopupVisualisationState(retainPreviousVisualisation(popupVisualisation, { simulationId, simulationUpdatingState: 'updating' }))
 			const changedMessagePromise = silenceChromeUnCaughtPromise(sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState } }))
 			try {
 				const getUpdatedState = async () => {
@@ -171,12 +171,12 @@ export async function updatePopupVisualisationState(ethereum: EthereumClientServ
 			} catch (error) {
 				if (isNewBlockAbort(error)) return
 				if (isFailedToFetchError(error)) {
-					const state = await setPopupVisualisationState(modifyObject(popupVisualisation, { simulationId, simulationUpdatingState: 'updating' }))
+					const state = await setPopupVisualisationState(retainPreviousVisualisation(popupVisualisation, { simulationId, simulationUpdatingState: 'updating' }))
 					await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState: state }  })
 					return
 				}
 				if (throwOnUnexpectedError) throw error
-				const state = await setPopupVisualisationState(modifyObject(popupVisualisation, { simulationId, simulationUpdatingState: 'failed' }))
+				const state = await setPopupVisualisationState(retainPreviousVisualisation(popupVisualisation, { simulationId, simulationUpdatingState: 'failed' }))
 				await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState: state }  })
 				await reportUnexpectedError(error)
 			}
