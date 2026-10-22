@@ -2,8 +2,12 @@ import type { Result } from 'funtypes'
 import { RpcEntry } from '../types/rpc.js'
 import { getRpcUrlCredentialsTransportError } from './rpcUrlCredentials.js'
 
-// The edit form's URL field is read-only, redacted, and unnamed, so edits pass the stored URL here instead of submitting the field text.
-export function parseRpcFormData(formData: FormData, editedEntryRpcUrl?: string): Result<RpcEntry> {
+// The RPC form's one add-or-edit decision, made by getRpcFormMode and used both to render the URL field and to choose the saved URL. Adding saves the URL typed into the `httpsRpc` field. Editing saves the stored URL, because the form only shows it redacted in a read-only field without a form name.
+export type RpcFormMode = { readonly kind: 'add' } | { readonly kind: 'edit', readonly storedRpcUrl: string }
+
+export const getRpcFormMode = (editedEntry: RpcEntry | undefined): RpcFormMode => editedEntry === undefined ? { kind: 'add' } : { kind: 'edit', storedRpcUrl: editedEntry.httpsRpc }
+
+export function parseRpcFormData(formData: FormData, formMode: RpcFormMode): Result<RpcEntry> {
 	const chainIdFromForm = formData.get('chainId')?.toString().trim()
 	const blockExplorerUrlForm = formData.get('blockExplorerUrl')?.toString().trim()
 	const blockExplorerApiKeyForm = formData.get('blockExplorerApiKey')?.toString().trim()
@@ -11,7 +15,7 @@ export function parseRpcFormData(formData: FormData, editedEntryRpcUrl?: string)
 	const newRpcEntry = {
 		name: formData.get('name')?.toString().trim() || '',
 		chainId: chainIdFromForm ? `0x${ BigInt(chainIdFromForm).toString(16) }` : '',
-		httpsRpc: editedEntryRpcUrl ?? (formData.get('httpsRpc')?.toString().trim() || ''),
+		httpsRpc: formMode.kind === 'edit' ? formMode.storedRpcUrl : formData.get('httpsRpc')?.toString().trim() || '',
 		currencyName: formData.get('currencyName')?.toString().trim() || '',
 		currencyTicker: formData.get('currencyTicker')?.toString().trim() || '',
 		...hasBlockExplorerUrl ? { blockExplorer: { apiUrl: blockExplorerUrlForm, apiKey: blockExplorerApiKeyForm ?? '' } } : {},

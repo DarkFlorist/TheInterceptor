@@ -3,11 +3,10 @@ import type { Settings } from '../types/interceptor-messages.js'
 import { Semaphore } from '../utils/semaphore.js'
 import type { EthereumAddress } from '../types/wire-types.js'
 import type { Website, WebsiteAccessArray } from '../types/websiteAccessTypes.js'
-import type { BlockExplorer, RpcEntries, RpcNetwork } from '../types/rpc.js'
+import type { BlockExplorer, RpcNetwork } from '../types/rpc.js'
 import { type RichListElement, browserStorageLocalGet, browserStorageLocalSafeParse, browserStorageLocalSet } from '../utils/storageUtils.js'
 import { getRpcList, getUserAddressBookEntries, updateUserAddressBookEntries } from './storageVariables.js'
-import { removeRpcUrlCredentials } from '../utils/rpcUrlCredentials.js'
-import { getRpcEntryIdentityKey } from '../utils/rpcNetworkChange.js'
+import { removeRpcNetworkCredentialsForExport, restoreRpcNetworkCredentialsForImport } from '../utils/rpcUrlCredentials.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
 import type { BlockTimeManipulation } from '../types/visualizer-types.js'
@@ -259,19 +258,6 @@ export const setMetamaskCompatibilityMode = async(metamaskCompatibilityMode: boo
 export const getSafeAppsCompatibilityMode = async() => (await browserStorageLocalGet('safeAppsCompatibilityMode'))?.safeAppsCompatibilityMode ?? false
 export const setSafeAppsCompatibilityMode = async(safeAppsCompatibilityMode: boolean) => await browserStorageLocalSet({ safeAppsCompatibilityMode })
 
-// Exports are shared for backups, syncing, and support requests, so RPC URL credentials are removed instead of being handed out as working secrets. Removing rather than redacting keeps the exported URL usable; after importing elsewhere, the user re-adds the credentials.
-const removeRpcNetworkUrlCredentials = (rpcNetwork: RpcNetwork): RpcNetwork => rpcNetwork.httpsRpc === undefined ? rpcNetwork : { ...rpcNetwork, httpsRpc: removeRpcUrlCredentials(rpcNetwork.httpsRpc) }
-
-// Re-importing an export where the RPC list still has the credentialed entry selects that entry instead of a credential-free endpoint that would fail authentication. Import never writes the RPC list, so no entry is added either way.
-function restoreExportedRpcNetworkCredentials(importedRpcNetwork: RpcNetwork, rpcEntries: RpcEntries): RpcNetwork {
-	const importedIdentityKey = getRpcEntryIdentityKey(importedRpcNetwork)
-	// Credential-free entries count as matches too, so a credential-free selection stored next to its credentialed counterpart stays credential-free.
-	const [onlyMatch, ...otherMatches] = rpcEntries.filter((entry) => getRpcEntryIdentityKey(removeRpcNetworkUrlCredentials(entry)) === importedIdentityKey)
-	// Several matches would make the credentials a guess, and a lone credential-free match is the imported network itself.
-	if (onlyMatch === undefined || otherMatches.length > 0 || onlyMatch.httpsRpc === removeRpcUrlCredentials(onlyMatch.httpsRpc)) return importedRpcNetwork
-	return onlyMatch
-}
-
 export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> {
 	const exportDate = (new Date).toISOString().split('T')[0]
 	if (exportDate === undefined) throw new Error('Datestring did not contain Date')
@@ -287,7 +273,7 @@ export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> 
 			openedPage: settings.openedPage,
 			useSignersAddressAsActiveAddress: settings.useSignersAddressAsActiveAddress,
 			websiteAccess: settings.websiteAccess,
-			rpcNetwork: removeRpcNetworkUrlCredentials(settings.activeRpcNetwork),
+			rpcNetwork: removeRpcNetworkCredentialsForExport(settings.activeRpcNetwork),
 			simulationMode: settings.simulationMode,
 			addressBookEntries: await getUserAddressBookEntries(),
 			useTabsInsteadOfPopup: await getUseTabsInsteadOfPopup(),
@@ -319,7 +305,8 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 	} else {
 		await replaceModeAndSigningPreferencesForImport({
 			simulationMode: exportedSetings.settings.simulationMode,
-			rpcNetwork: restoreExportedRpcNetworkCredentials(exportedSetings.settings.rpcNetwork, await getRpcList()),
+			// Exports leave RPC URL credentials out, so this device's RPC list is the only place they can be restored from.
+			rpcNetwork: restoreRpcNetworkCredentialsForImport(exportedSetings.settings.rpcNetwork, await getRpcList()),
 			activeSimulationAddress: exportedSetings.version === '1.5' || exportedSetings.version === '1.6' ? exportedSetings.settings.activeSimulationAddress : defaultActiveAddress,
 			activeSigningAddress: undefined,
 			activeSigningSafeAddress: exportedSetings.version === '1.5' || exportedSetings.version === '1.6' ? exportedSetings.settings.activeSigningSafeAddress : undefined,

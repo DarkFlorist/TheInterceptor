@@ -531,6 +531,30 @@ describe('settings export of RPC URL credentials', () => {
 		assert.deepEqual(await getRpcList(), rpcEntries)
 	})
 
+	test('selects the stored credentialed entry renamed after the export, since only chain ID and credential-free URL are matched', async () => {
+		const { getSettings, importSettingsAndAddressBook } = await settingsModulePromise
+		const { getRpcList, setRpcList } = await storageVariablesModulePromise
+		const exportedSettings = await exportWithActiveRpc([publicRpcEntry, credentialedRpcEntry], credentialedRpcEntry)
+		const renamedRpcEntries = [publicRpcEntry, { ...credentialedRpcEntry, name: 'Renamed private node' }]
+		await setRpcList(renamedRpcEntries)
+
+		await importSettingsAndAddressBook(exportedSettings)
+
+		assert.deepEqual((await getSettings()).activeRpcNetwork, renamedRpcEntries[1])
+		assert.deepEqual(await getRpcList(), renamedRpcEntries)
+	})
+
+	test('keeps the credential-free import when the stored credentialed entry is on another chain', async () => {
+		const { getSettings, importSettingsAndAddressBook } = await settingsModulePromise
+		const { setRpcList } = await storageVariablesModulePromise
+		const exportedSettings = await exportWithActiveRpc([credentialedRpcEntry], credentialedRpcEntry)
+		await setRpcList([publicRpcEntry, { ...credentialedRpcEntry, chainId: 10n }])
+
+		await importSettingsAndAddressBook(exportedSettings)
+
+		assert.deepEqual((await getSettings()).activeRpcNetwork, credentialFreeRpcEntry)
+	})
+
 	test('keeps a credential-free selection stored next to its credentialed counterpart', async () => {
 		const { getSettings, importSettingsAndAddressBook } = await settingsModulePromise
 		const { getRpcList } = await storageVariablesModulePromise

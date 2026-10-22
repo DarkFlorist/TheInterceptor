@@ -1,6 +1,7 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { getRpcFetchTarget, getRpcUrlCredentialsTransportError, redactRpcUrlCredentials, removeRpcUrlCredentials } from '../../app/ts/utils/rpcUrlCredentials.js'
+import type { RpcEntry, RpcNetwork } from '../../app/ts/types/rpc.js'
+import { getRpcFetchTarget, getRpcUrlCredentialsTransportError, redactRpcUrlCredentials, removeRpcNetworkCredentialsForExport, removeRpcUrlCredentials, restoreRpcNetworkCredentialsForImport } from '../../app/ts/utils/rpcUrlCredentials.js'
 
 const basicAuthorization = (credentials: string) => ({ Authorization: `Basic ${ Buffer.from(credentials, 'utf8').toString('base64') }` })
 
@@ -169,5 +170,56 @@ describe('RPC URL strings the URL parser cannot split into userinfo and host', (
 			assert.equal(getRpcUrlCredentialsTransportError(rpcUrl), undefined)
 			assert.deepEqual(getRpcFetchTarget(rpcUrl), { url: rpcUrl, headers: {} })
 		}
+	})
+})
+
+describe('RPC network credentials in settings exports and imports', () => {
+	const credentialedEntry: RpcEntry = { name: 'Private node', chainId: 1n, httpsRpc: 'https://alice:s3cret@node.example/v1', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
+	const exportedNetwork = removeRpcNetworkCredentialsForExport(credentialedEntry)
+	const publicEntry: RpcEntry = { ...credentialedEntry, name: 'Public node', httpsRpc: 'https://public.example', primary: false }
+	const signerOnlyNetwork: RpcNetwork = { httpsRpc: undefined, chainId: 1n, name: 'Signer chain', currencyName: 'Ether?', currencyTicker: 'ETH?', primary: false, minimized: true }
+
+	test('exports the network with its URL credentials removed and everything else unchanged', () => {
+		assert.deepEqual(exportedNetwork, { ...credentialedEntry, httpsRpc: 'https://node.example/v1' })
+		assert.deepEqual(removeRpcNetworkCredentialsForExport(publicEntry), publicEntry)
+		assert.deepEqual(removeRpcNetworkCredentialsForExport(signerOnlyNetwork), signerOnlyNetwork)
+	})
+
+	test('selects the single stored entry with the same chain ID whose URL exports as the imported URL', () => {
+		assert.equal(restoreRpcNetworkCredentialsForImport(exportedNetwork, [publicEntry, credentialedEntry]), credentialedEntry)
+	})
+
+	test('compares only the chain ID and the credential-free URL, so an entry renamed or reconfigured after the export still matches', () => {
+		const reconfiguredEntry: RpcEntry = { ...credentialedEntry, name: 'Renamed node', currencyName: 'Renamed Ether', currencyTicker: 'RETH', currencyLogoUri: 'https://logo.example/eth.svg', blockExplorer: { apiUrl: 'https://explorer.example/api', apiKey: 'explorer-key' }, primary: false, minimized: true }
+		assert.equal(restoreRpcNetworkCredentialsForImport(exportedNetwork, [publicEntry, reconfiguredEntry]), reconfiguredEntry)
+	})
+
+	test('keeps the imported network when the stored entry differs in chain ID or in its credential-free URL', () => {
+		const differingEntries = [
+			{ description: 'another chain ID', storedEntry: { ...credentialedEntry, chainId: 10n } },
+			{ description: 'another path', storedEntry: { ...credentialedEntry, httpsRpc: 'https://alice:s3cret@node.example/v2' } },
+			{ description: 'another host', storedEntry: { ...credentialedEntry, httpsRpc: 'https://alice:s3cret@other-node.example/v1' } },
+		]
+		for (const { description, storedEntry } of differingEntries) {
+			assert.equal(restoreRpcNetworkCredentialsForImport(exportedNetwork, [publicEntry, storedEntry]), exportedNetwork, description)
+		}
+	})
+
+	test('keeps the imported network when several stored entries match, credential-free ones included', () => {
+		const otherCredentialsEntry: RpcEntry = { ...credentialedEntry, httpsRpc: 'https://bob:other-secret@node.example/v1', primary: false }
+		const credentialFreeEntry: RpcEntry = { ...credentialedEntry, httpsRpc: 'https://node.example/v1', primary: false }
+		assert.equal(restoreRpcNetworkCredentialsForImport(exportedNetwork, [credentialedEntry, otherCredentialsEntry]), exportedNetwork)
+		assert.equal(restoreRpcNetworkCredentialsForImport(exportedNetwork, [credentialFreeEntry, credentialedEntry]), exportedNetwork)
+	})
+
+	test('keeps the imported network when the only match has no credentials', () => {
+		const credentialFreeEntry: RpcEntry = { ...credentialedEntry, name: 'Anonymous node', httpsRpc: 'https://node.example/v1', primary: false }
+		assert.equal(restoreRpcNetworkCredentialsForImport(exportedNetwork, [publicEntry, credentialFreeEntry]), exportedNetwork)
+	})
+
+	test('keeps an imported URL that still has credentials, and a signer-only network', () => {
+		const olderExportNetwork: RpcEntry = { ...credentialedEntry, httpsRpc: 'https://bob:other-secret@node.example/v1' }
+		assert.equal(restoreRpcNetworkCredentialsForImport(olderExportNetwork, [credentialedEntry]), olderExportNetwork)
+		assert.equal(restoreRpcNetworkCredentialsForImport(signerOnlyNetwork, [credentialedEntry]), signerOnlyNetwork)
 	})
 })

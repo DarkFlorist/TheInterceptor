@@ -2,8 +2,8 @@ import * as assert from 'node:assert'
 import { test } from 'bun:test'
 import ts from 'typescript'
 
-// RPC URLs can embed credentials, so app code reads them raw only to compare them, to hand them to the functions in app/ts/utils/rpcUrlCredentials.ts that own credentials, or at one of the reviewed uses below. A new raw read must either go through redactRpcUrlCredentials or be added here with the reason it is never displayed or logged.
-const RAW_RPC_URL_PROPERTIES = new Set(['httpsRpc', 'rpcUrl'])
+// RPC URLs can embed credentials, so app code reads them raw only to compare them, to hand them to the functions in app/ts/utils/rpcUrlCredentials.ts that own credentials, or at one of the reviewed uses below. A new raw read must either go through redactRpcUrlCredentials or be added here with the reason it is never displayed or logged. `storedRpcUrl` is the RPC form's edit mode carrying an entry's raw URL.
+const RAW_RPC_URL_PROPERTIES = new Set(['httpsRpc', 'rpcUrl', 'storedRpcUrl'])
 const CREDENTIAL_OWNING_FUNCTIONS = new Set(['redactRpcUrlCredentials', 'removeRpcUrlCredentials', 'getRpcFetchTarget', 'getRpcUrlCredentialsTransportError'])
 const EQUALITY_OPERATORS = new Set([ts.SyntaxKind.EqualsEqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsEqualsToken, ts.SyntaxKind.EqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsToken])
 
@@ -15,9 +15,10 @@ const REVIEWED_RAW_RPC_URL_READS: readonly (RawRpcUrlRead & { reason: string })[
 	{ file: 'app/ts/background/rpcSlowRequestTracking.ts', enclosingFunction: 'getCurrentSlowRpcRequestForStatus', property: 'httpsRpc', reason: 'Matches slow requests to the active endpoint.' },
 	{ file: 'app/ts/background/rpcSlowRequestTracking.ts', enclosingFunction: 'publishSlowRpcRequestStatus', property: 'httpsRpc', reason: 'Matches slow requests to the active endpoint.' },
 	{ file: 'app/ts/background/rpcSlowRequestTracking.ts', enclosingFunction: 'slowRpcRequestKey', property: 'rpcUrl', reason: 'In-memory map key, never shown.' },
-	{ file: 'app/ts/components/subcomponents/ConfigureRpcConnection.tsx', enclosingFunction: 'handleFormSubmit', property: 'httpsRpc', reason: 'Saving an edited entry keeps its stored URL; the form only shows it redacted.' },
 	{ file: 'app/ts/simulation/serviceLifecycle.ts', enclosingFunction: 'createEthereumClientService', property: 'httpsRpc', reason: 'The request handler sends through getRpcFetchTarget.' },
 	{ file: 'app/ts/simulation/services/EthereumJSONRpcRequestHandler.ts', enclosingFunction: 'fetchWithSlowRequestWarning', property: 'rpcUrl', reason: 'Identifies the endpoint of a slow request; background-startup redacts it before reporting.' },
+	{ file: 'app/ts/utils/rpcFormData.ts', enclosingFunction: 'getRpcFormMode', property: 'httpsRpc', reason: 'The edit mode carries the stored URL so saving keeps it; the URL field shows it only redacted.' },
+	{ file: 'app/ts/utils/rpcFormData.ts', enclosingFunction: 'parseRpcFormData', property: 'storedRpcUrl', reason: 'Saving an edited entry keeps its stored URL, credentials included.' },
 ]
 
 function isAssignmentTarget(node: ts.Node) {

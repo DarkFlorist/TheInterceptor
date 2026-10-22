@@ -1,4 +1,6 @@
-// This module owns credentials embedded in RPC URLs: getRpcFetchTarget sends them, getRpcUrlCredentialsTransportError decides where they may go, redactRpcUrlCredentials masks them for display and logs, and removeRpcUrlCredentials drops them from exports.
+import type { RpcEntries, RpcEntry, RpcNetwork } from '../types/rpc.js'
+
+// This module owns credentials embedded in RPC URLs: getRpcFetchTarget sends them, getRpcUrlCredentialsTransportError decides where they may go, redactRpcUrlCredentials masks them for display and logs, removeRpcNetworkCredentialsForExport drops them from settings exports, and restoreRpcNetworkCredentialsForImport selects the stored entry that still has them when such an export is imported.
 
 // Browsers reject fetch URLs with embedded credentials, so configured `https://user:password@host` RPC URLs are sent as Basic auth instead, but only over https or loopback http.
 export type RpcFetchTarget = {
@@ -99,4 +101,23 @@ export function redactRpcUrlCredentials(rpcUrl: string) {
 // Leaves a working credential-free URL, where the redaction placeholder would be read back as a bogus username.
 export function removeRpcUrlCredentials(rpcUrl: string) {
 	return replaceUrlCredentials(rpcUrl, '')
+}
+
+// Settings exports are shared for backups, syncing, and support requests, so the exported RPC network has its URL credentials removed rather than redacted: the file holds no working secret and still names a usable credential-free endpoint.
+export function removeRpcNetworkCredentialsForExport(rpcNetwork: RpcNetwork): RpcNetwork {
+	if (rpcNetwork.httpsRpc === undefined) return rpcNetwork
+	return { ...rpcNetwork, httpsRpc: removeRpcUrlCredentials(rpcNetwork.httpsRpc) }
+}
+
+// The same endpoint apart from credentials: the same chain ID, and a URL that equals the imported one once its credentials are removed as an export removes them. Only these two fields are compared, written out here instead of using an RPC entry snapshot key, so new RpcNetwork fields cannot change which entry an import selects; name, currency, explorer, and list preferences may differ.
+function isSameEndpointApartFromCredentials(storedEntry: RpcEntry, importedRpcEntry: RpcEntry) {
+	return storedEntry.chainId === importedRpcEntry.chainId && removeRpcUrlCredentials(storedEntry.httpsRpc) === importedRpcEntry.httpsRpc
+}
+
+// Exports carry no credentials, so only the RPC list of the device importing the file can supply them; the caller passes that list, and import never writes it. The stored entry is selected only when it is the single match and has credentials: several matches would make the credentials a guess, and a lone credential-free match is the imported endpoint itself. Credential-free entries count as matches, so a credential-free selection stored next to its credentialed counterpart stays credential-free. An imported URL that still has credentials, from a file exported before credentials were removed, equals no credential-free URL and is kept as imported.
+export function restoreRpcNetworkCredentialsForImport(importedRpcNetwork: RpcNetwork, storedRpcEntries: RpcEntries): RpcNetwork {
+	if (importedRpcNetwork.httpsRpc === undefined) return importedRpcNetwork
+	const [onlyMatch, ...otherMatches] = storedRpcEntries.filter((storedEntry) => isSameEndpointApartFromCredentials(storedEntry, importedRpcNetwork))
+	if (onlyMatch === undefined || otherMatches.length > 0 || removeRpcUrlCredentials(onlyMatch.httpsRpc) === onlyMatch.httpsRpc) return importedRpcNetwork
+	return onlyMatch
 }

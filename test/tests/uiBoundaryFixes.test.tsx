@@ -12,7 +12,7 @@ import { DropDownMenu } from '../../app/ts/components/subcomponents/DropDownMenu
 import { InlineCard } from '../../app/ts/components/subcomponents/InlineCard.js'
 import { hasValidTimePickerValue, parseTimePickerDeltaValue, TimePicker } from '../../app/ts/components/subcomponents/TimePicker.js'
 import { rpcEntriesToChainEntriesWithAllChainsEntry } from '../../app/ts/components/ui-utils.js'
-import { parseRpcFormData } from '../../app/ts/utils/rpcFormData.js'
+import { getRpcFormMode, parseRpcFormData } from '../../app/ts/utils/rpcFormData.js'
 import { removeAddressBookEntryAndClose } from '../../app/ts/AddressBook.js'
 import { completeRpcFormMutation, ConfigureRpcForm, removeRpcEntryAndKeepActiveRpcConsistent, RpcQueryProvider, saveRpcEntryAndKeepActiveRpcConsistent } from '../../app/ts/components/subcomponents/ConfigureRpcConnection.js'
 import { readAndImportSettingsFile, withObjectUrl } from '../../app/ts/components/pages/SettingsView.js'
@@ -485,10 +485,26 @@ describe('UI boundary fixes', () => {
 		assert.equal(hasValidTimePickerValue('No Delay', undefined, undefined), true)
 	})
 
-	test('saves the stored RPC URL when editing an entry whose field shows a redacted URL', () => {
+	test('decides once from the edited entry whether the RPC form adds or edits', () => {
+		const storedEntry: RpcEntry = { name: 'Private node', chainId: 1n, httpsRpc: 'https://alice:s3cret@node.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
+		assert.deepEqual(getRpcFormMode(undefined), { kind: 'add' })
+		assert.deepEqual(getRpcFormMode(storedEntry), { kind: 'edit', storedRpcUrl: 'https://alice:s3cret@node.example' })
+	})
+
+	test('saves the stored RPC URL in edit mode, even if URL text was submitted', () => {
 		const formData = createRpcFormData('')
 		formData.set('httpsRpc', 'https://***@node.example/')
-		const parsed = parseRpcFormData(formData, 'https://alice:s3cret@node.example')
+		const parsed = parseRpcFormData(formData, { kind: 'edit', storedRpcUrl: 'https://alice:s3cret@node.example' })
+
+		assert.equal(parsed.success, true)
+		if (!parsed.success) throw new Error(parsed.message)
+		assert.equal(parsed.value.httpsRpc, 'https://alice:s3cret@node.example')
+	})
+
+	test('saves the typed RPC URL in add mode', () => {
+		const formData = createRpcFormData('')
+		formData.set('httpsRpc', ' https://alice:s3cret@node.example ')
+		const parsed = parseRpcFormData(formData, { kind: 'add' })
 
 		assert.equal(parsed.success, true)
 		if (!parsed.success) throw new Error(parsed.message)
@@ -501,6 +517,7 @@ describe('UI boundary fixes', () => {
 			const urlInput = findInput(inputs, 'placeholder', 'RPC URL *')
 			assert.equal(urlInput.getAttribute?.('defaultValue'), 'https://***@node.example/v1')
 			assert.equal(urlInput.getAttribute?.('name'), null)
+			assert.notEqual(urlInput.getAttribute?.('readOnly'), null)
 			findInput(inputs, 'name', 'name').value = 'Renamed node'
 		})
 
@@ -561,7 +578,7 @@ describe('UI boundary fixes', () => {
 	})
 
 	test('keeps a block explorer URL when its API key is empty', () => {
-		const parsed = parseRpcFormData(createRpcFormData(''))
+		const parsed = parseRpcFormData(createRpcFormData(''), { kind: 'add' })
 
 		assert.equal(parsed.success, true)
 		if (!parsed.success) throw new Error(parsed.message)

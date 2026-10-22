@@ -15,7 +15,7 @@ import { JsonRpcResponseError } from '../../utils/errors.js'
 import { EthereumQuantity } from '../../types/wire-types.js'
 import { isBrowserFetchTransportError } from '../../utils/caughtErrors.js'
 import { AsyncStatusIcon } from './AsyncAction.js'
-import { parseRpcFormData } from '../../utils/rpcFormData.js'
+import { getRpcFormMode, parseRpcFormData, type RpcFormMode } from '../../utils/rpcFormData.js'
 import { requestPopupSettingsChange } from '../popupSettingsChange.js'
 import { ErrorComponent } from './Error.js'
 import { redactRpcUrlCredentials } from '../../utils/rpcUrlCredentials.js'
@@ -192,6 +192,7 @@ export async function completeRpcFormMutation(mutation: () => Promise<void>, onS
 }
 
 export const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: ConfigureRpcFormProps) => {
+	const formMode = getRpcFormMode(defaultValues)
 	const confirmRemoval = useSignal(false)
 	const { rpcQuery, resetRpcQuery } = useQueryRpc()
 	const { value: mutationState, waitFor: waitForMutation } = useAsyncState<void>()
@@ -229,7 +230,7 @@ export const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: 
 
 				case 'save':
 					void waitForMutation(async () => await completeRpcFormMutation(async () => {
-						const parsedData = parseRpcFormData(new FormData(form), defaultValues?.httpsRpc)
+						const parsedData = parseRpcFormData(new FormData(form), formMode)
 						if (!parsedData.success) throw new Error(parsedData.message)
 						await onSave(parsedData.value)
 					}, () => completeForm(form)))
@@ -273,7 +274,7 @@ export const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: 
 			<main class = 'grid' style = '--gap-y: 0.5rem'>
 				<p>Interceptor will automatically verify the RPC URL you provide and attempt to fill relevant information. Adjust the pre-populated details to your liking.</p>
 				<div class = 'grid' style = '--grid-cols: 1fr 1fr; --gap-x: 1rem; --gap-y: 0' >
-					<RpcUrlField { ...(defaultValues?.httpsRpc !== undefined ? { storedRpcUrlForDisplay: redactRpcUrlCredentials(defaultValues.httpsRpc) } : {}) } />
+					<RpcUrlField formMode = { formMode } />
 					<TextInput label = 'RPC Connection Name *' name = 'name' defaultValue = { networkNameDefault.value } style = '--area: 5 / span 1' required autoFocus />
 					<TextInput label = 'Chain ID' name = 'chainId' style = '--area: 5 / span 1' defaultValue = { chainIdDefault.value } required readOnly />
 					<TextInput label = 'Currency Name *' name = 'currencyName' defaultValue = { currencyNameDefault.value } style = '--area: 7 / span 1' required />
@@ -311,13 +312,13 @@ export const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: 
 
 const RPC_URL_FETCH_DEBOUNCE = 600
 
-// Editing receives only the redacted stored URL, shown in a read-only field without a form name, so saving uses the stored URL instead of this text.
-const RpcUrlField = ({ storedRpcUrlForDisplay }: { storedRpcUrlForDisplay?: string }) => {
+// Renders the URL the form mode saves: an editable `httpsRpc` field when adding, and the stored URL redacted, read-only, and without a form name when editing.
+const RpcUrlField = ({ formMode }: { formMode: RpcFormMode }) => {
 	const { rpcQuery, queryRpcInfo } = useQueryRpc()
 	const inputRef = useRef<HTMLInputElement>(null)
 	const timeout = useSignal<ReturnType<typeof setTimeout> | undefined>(undefined)
-	const isEditingStoredUrl = storedRpcUrlForDisplay !== undefined
-	const formFieldName = isEditingStoredUrl ? undefined : 'httpsRpc'
+	const isEditing = formMode.kind === 'edit'
+	const displayedStoredRpcUrl = formMode.kind === 'edit' ? redactRpcUrlCredentials(formMode.storedRpcUrl) : undefined
 
 	const deferredQueryAnRpcUrl = (url: string) => {
 		if (timeout.value) clearTimeout(timeout.value)
@@ -332,7 +333,7 @@ const RpcUrlField = ({ storedRpcUrlForDisplay }: { storedRpcUrlForDisplay?: stri
 		if (!inputRef.current) return
 		switch (rpcQuery.value.state) {
 			case 'inactive':
-				if (isEditingStoredUrl) inputRef.current.setCustomValidity('')
+				if (isEditing) inputRef.current.setCustomValidity('')
 				return
 			case 'pending':
 				inputRef.current.setCustomValidity('')
@@ -347,7 +348,7 @@ const RpcUrlField = ({ storedRpcUrlForDisplay }: { storedRpcUrlForDisplay?: stri
 		}
 	})
 
-	return <TextInput ref = { inputRef } label = 'RPC URL *' name = { formFieldName } defaultValue = { storedRpcUrlForDisplay } onInput = { (e) => deferredQueryAnRpcUrl(e.currentTarget.value) } statusIcon = { <AsyncStatusIcon state = { rpcQuery.value.state } /> } style = '--area: 1 / span 2' required autoComplete = 'off' autoFocus = { !isEditingStoredUrl } readOnly = { isEditingStoredUrl } />
+	return <TextInput ref = { inputRef } label = 'RPC URL *' name = { isEditing ? undefined : 'httpsRpc' } defaultValue = { displayedStoredRpcUrl } onInput = { (e) => deferredQueryAnRpcUrl(e.currentTarget.value) } statusIcon = { <AsyncStatusIcon state = { rpcQuery.value.state } /> } style = '--area: 1 / span 2' required autoComplete = 'off' autoFocus = { !isEditing } readOnly = { isEditing } />
 }
 
 const Trash = () => (
