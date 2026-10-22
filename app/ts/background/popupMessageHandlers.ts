@@ -551,7 +551,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 				}
 			}
 			const visualizedPersonalSignRequest = await visualizedPersonalSignRequestPromise
-			// Read after every await, so the dialog is sent the pending requests as stored now. A newer metadata refresh that started meanwhile sends its own update, which this older one must not follow.
+			// Read after every await, so the dialog is sent the pending requests as stored now. A newer metadata refresh that started meanwhile sends its own update, which this older one must not follow. See "Confirmation dialog staleness" in docs/popup-simulation-refresh.md.
 			const [currentFirst, ...otherPendingRequests] = await getPendingTransactionsAndMessages()
 			if (thisConfirmationMetadataRefresh !== latestConfirmationMetadataRefresh) return
 			if (currentFirst?.type !== 'SignableMessage' || !doesUniqueRequestIdentifiersMatch(currentFirst.uniqueRequestIdentifier, first.uniqueRequestIdentifier)) return
@@ -586,9 +586,9 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 				if (refreshedPopupVisualisation === undefined) return
 				await updatePendingTransactionOrMessage(first.uniqueRequestIdentifier, async (current) => {
 					if (current.type !== 'Transaction' || (current.transactionOrMessageCreationStatus !== 'Simulated' && current.transactionOrMessageCreationStatus !== 'FailedToSimulate')) return current
-					// A simulation run stored during the metadata lookups has another id even within the same second, so the metadata of the older run must not replace it.
+					// A simulation run stored during the metadata lookups has another id even within the same second (ids can repeat only across a background restart), so the metadata of the older run must not replace it. See "Confirmation dialog staleness" in docs/popup-simulation-refresh.md.
 					if (current.popupVisualisation.data.confirmationRunId !== popupVisualisation.data.confirmationRunId) return current
-					// Overlapping metadata refreshes, such as after two address-book changes, share the run and its id, so the run id alone would let an older refresh that finishes last store names from the older address book.
+					// Overlapping metadata refreshes, such as after two address-book changes, share the run and its id, so the run id alone would let an older refresh that finishes last store names from the older address book. See "Confirmation dialog staleness" in docs/popup-simulation-refresh.md.
 					if (thisConfirmationMetadataRefresh !== latestConfirmationMetadataRefresh) return current
 					return modifyObject(current, { popupVisualisation: refreshedPopupVisualisation })
 				})
@@ -600,7 +600,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 						rpcConnectionStatus: await rpcConnectionStatusPromise,
 					}
 				}
-				// Read after every await, so the dialog is sent the pending requests as stored now. A newer metadata refresh that started meanwhile sends its own update, which this older one must not follow.
+				// Read after every await, so the dialog is sent the pending requests as stored now. A newer metadata refresh that started meanwhile sends its own update, which this older one must not follow. See "Confirmation dialog staleness" in docs/popup-simulation-refresh.md.
 				const pendingTransactionAndSignableMessages = await getPendingTransactionsAndMessages()
 				if (thisConfirmationMetadataRefresh !== latestConfirmationMetadataRefresh) return
 				if (pendingTransactionAndSignableMessages.length === 0) return // the dialog expects at least one pending request, as in updateConfirmTransactionView
