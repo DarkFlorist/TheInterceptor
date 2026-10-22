@@ -346,33 +346,34 @@ describe('EthereumJSONRpcRequestHandler URL credentials', () => {
 		}
 	})
 
-	test('sends URL credentials over plaintext http to loopback nodes', async () => {
+	test('creates handlers for stored plaintext http credential URLs, loopback included, but fails their requests without fetching', async () => {
 		const fetchMock = installRecordingFetchMock(createChainIdResponse)
-		const requestHandler = new EthereumJSONRpcRequestHandler('http://alice:s3cret@127.0.0.1:8545')
 
 		try {
-			assert.equal(await requestHandler.jsonRpcRequest({ method: 'eth_chainId' }), '0x1')
-			assert.deepEqual(fetchMock.calls.map((call) => call.url), ['http://127.0.0.1:8545/'])
-			assert.equal(fetchMock.calls[0]?.headers.get('Authorization'), `Basic ${ Buffer.from('alice:s3cret', 'utf8').toString('base64') }`)
+			for (const host of ['remote-node:8545', '127.0.0.1:8545', 'localhost:8545']) {
+				for (const caching of [true, false]) {
+					const requestHandler = new EthereumJSONRpcRequestHandler(`http://alice:s3cret@${ host }/v1`, caching)
+					await assert.rejects(requestHandler.jsonRpcRequest({ method: 'eth_chainId' }), (error: unknown) => {
+						assert.ok(error instanceof Error)
+						assert.equal(error.message, `Credentials in RPC URL http://***@${ host }/v1 can only be sent over https.`)
+						return true
+					})
+				}
+			}
+			assert.equal(fetchMock.calls.length, 0)
 		} finally {
 			fetchMock.restore()
 		}
 	})
 
-	test('creates handlers for stored plaintext remote credential URLs but fails their requests without fetching', async () => {
-		const plaintextCredentialRpcUrl = 'http://alice:s3cret@remote-node:8545/v1'
+	test('sends credential-free plaintext http requests to loopback nodes unchanged', async () => {
 		const fetchMock = installRecordingFetchMock(createChainIdResponse)
+		const requestHandler = new EthereumJSONRpcRequestHandler('http://127.0.0.1:8545')
 
 		try {
-			for (const caching of [true, false]) {
-				const requestHandler = new EthereumJSONRpcRequestHandler(plaintextCredentialRpcUrl, caching)
-				await assert.rejects(requestHandler.jsonRpcRequest({ method: 'eth_chainId' }), (error: unknown) => {
-					assert.ok(error instanceof Error)
-					assert.equal(error.message, 'Credentials in RPC URL http://***@remote-node:8545/v1 can only be sent over https, or over http to localhost.')
-					return true
-				})
-			}
-			assert.equal(fetchMock.calls.length, 0)
+			assert.equal(await requestHandler.jsonRpcRequest({ method: 'eth_chainId' }), '0x1')
+			assert.deepEqual(fetchMock.calls.map((call) => call.url), ['http://127.0.0.1:8545'])
+			assert.equal(fetchMock.calls[0]?.headers.get('Authorization'), null)
 		} finally {
 			fetchMock.restore()
 		}

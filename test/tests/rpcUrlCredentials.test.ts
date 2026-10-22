@@ -19,31 +19,26 @@ describe('RPC URL credentials', () => {
 		})
 	})
 
-	test('keeps the scheme and port of local http nodes', () => {
-		assert.deepEqual(getRpcFetchTarget('http://alice:s3cret@localhost:8545'), {
-			url: 'http://localhost:8545/',
-			headers: basicAuthorization('alice:s3cret'),
-		})
-		assert.deepEqual(getRpcFetchTarget('http://alice:s3cret@127.1.2.3:8545'), { url: 'http://127.1.2.3:8545/', headers: basicAuthorization('alice:s3cret') })
-		assert.deepEqual(getRpcFetchTarget('http://alice:s3cret@[::1]:8545'), { url: 'http://[::1]:8545/', headers: basicAuthorization('alice:s3cret') })
+	test('throws instead of sending credentials over plaintext http, to remote and loopback hosts alike', () => {
+		for (const host of ['remote-node:8545', 'localhost:8545', '127.0.0.1:8545', '[::1]:8545']) {
+			const expectedMessage = `Credentials in RPC URL http://***@${ host }/ can only be sent over https.`
+			assert.throws(() => getRpcFetchTarget(`http://alice:s3cret@${ host }`), (error: unknown) => error instanceof Error && error.message === expectedMessage, host)
+		}
+		assert.throws(() => getRpcFetchTarget('http://token@localhost'), (error: unknown) => error instanceof Error && !error.message.includes('token'))
 	})
 
-	test('throws instead of sending credentials over plaintext http to a remote host', () => {
-		const expectedMessage = 'Credentials in RPC URL http://***@remote-node:8545/ can only be sent over https, or over http to localhost.'
-		assert.throws(() => getRpcFetchTarget('http://alice:s3cret@remote-node:8545'), (error: unknown) => error instanceof Error && error.message === expectedMessage)
-		assert.throws(() => getRpcFetchTarget('http://alice:s3cret@127.evil.com'), (error: unknown) => error instanceof Error && error.message === 'Credentials in RPC URL http://***@127.evil.com/ can only be sent over https, or over http to localhost.')
-		assert.throws(() => getRpcFetchTarget('http://token@localhost.evil.com'), (error: unknown) => error instanceof Error && !error.message.includes('token'))
-	})
-
-	test('keeps credential-free plaintext http URLs to remote hosts unchanged', () => {
-		assert.deepEqual(getRpcFetchTarget('http://remote-node:8545'), { url: 'http://remote-node:8545', headers: {} })
-		assert.equal(getRpcUrlCredentialsTransportError('http://remote-node:8545'), undefined)
+	test('keeps credential-free plaintext http URLs to remote and loopback hosts unchanged', () => {
+		for (const rpcUrl of ['http://remote-node:8545', 'http://localhost:8545', 'http://127.0.0.1:8545']) {
+			assert.deepEqual(getRpcFetchTarget(rpcUrl), { url: rpcUrl, headers: {} })
+			assert.equal(getRpcUrlCredentialsTransportError(rpcUrl), undefined)
+		}
 	})
 
 	test('explains which credential URLs cannot be sent without exposing the credentials', () => {
-		assert.equal(getRpcUrlCredentialsTransportError('http://alice:s3cret@remote-node:8545'), 'Credentials in RPC URL http://***@remote-node:8545/ can only be sent over https, or over http to localhost.')
+		assert.equal(getRpcUrlCredentialsTransportError('http://alice:s3cret@remote-node:8545'), 'Credentials in RPC URL http://***@remote-node:8545/ can only be sent over https.')
+		assert.equal(getRpcUrlCredentialsTransportError('http://alice:s3cret@localhost:8545'), 'Credentials in RPC URL http://***@localhost:8545/ can only be sent over https.')
 		assert.equal(getRpcUrlCredentialsTransportError('https://alice:s3cret@remote-node'), undefined)
-		assert.equal(getRpcUrlCredentialsTransportError('http://alice:s3cret@localhost:8545'), undefined)
+		assert.equal(getRpcUrlCredentialsTransportError('https://alice:s3cret@localhost:8545'), undefined)
 		assert.equal(getRpcUrlCredentialsTransportError('rpc example'), undefined)
 	})
 
@@ -100,29 +95,18 @@ describe('RPC URL credential transport', () => {
 	}
 
 	test('allows credentials over https to any host', () => {
-		assert.equal(canSendCredentialsTo('https://alice:s3cret@remote-node'), true)
-		assert.equal(canSendCredentialsTo('https://alice:s3cret@203.0.113.7:8545'), true)
-	})
-
-	test('allows credentials over plaintext http only to loopback hosts', () => {
-		for (const url of ['http://localhost:8545', 'http://LocalHost', 'http://127.0.0.1:8545', 'http://127.1.2.3', 'http://127.255.255.255', 'http://[::1]:8545']) {
+		for (const url of ['https://remote-node', 'https://203.0.113.7:8545', 'https://localhost:8545']) {
 			assert.equal(canSendCredentialsTo(url), true, url)
 		}
 	})
 
-	test('treats IPv4 and IPv6 shorthands as the loopback addresses the URL parser normalizes them to', () => {
-		assert.equal(canSendCredentialsTo('http://127.1'), true)
-		assert.equal(canSendCredentialsTo('http://0x7f.1'), true)
-		assert.equal(canSendCredentialsTo('http://[0:0:0:0:0:0:0:1]'), true)
-	})
-
-	test('rejects plaintext http to remote hosts, including names that only look like loopback', () => {
-		for (const url of ['http://remote-node:8545', 'http://203.0.113.7', 'http://128.0.0.1', 'http://127.evil.com', 'http://localhost.evil.com', 'http://evil-localhost', 'http://127.0.0.1.nip.io']) {
+	test('rejects credentials over plaintext http to every host, loopback included', () => {
+		for (const url of ['http://remote-node:8545', 'http://203.0.113.7', 'http://localhost:8545', 'http://127.0.0.1:8545', 'http://127.1', 'http://[::1]:8545']) {
 			assert.equal(canSendCredentialsTo(url), false, url)
 		}
 	})
 
-	test('rejects schemes other than http and https', () => {
+	test('rejects schemes other than https', () => {
 		assert.equal(canSendCredentialsTo('ws://localhost:8545'), false)
 		assert.equal(canSendCredentialsTo('ftp://localhost'), false)
 	})

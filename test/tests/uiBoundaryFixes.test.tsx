@@ -542,39 +542,44 @@ describe('UI boundary fixes', () => {
 		assert.deepEqual(savedEntries.map((entry) => ({ name: entry.name, chainId: entry.chainId, httpsRpc: entry.httpsRpc })), [{ name: 'Private node', chainId: 1n, httpsRpc: typedRpcUrl }])
 	})
 
-	test('rejects saving a typed credential URL that would be sent over plaintext http to a remote host', async () => {
-		const typedRpcUrl = 'http://alice:s3cret@remote-node:8545'
-		const expectedError = 'Credentials in RPC URL http://***@remote-node:8545/ can only be sent over https, or over http to localhost.'
-		const urlFieldValidityMessages: string[] = []
-		const { savedEntries, formClosed, fetchCalls, renderedText } = await renderAndSaveRpcForm(undefined, async (inputs) => {
-			const urlInput = findInput(inputs, 'placeholder', 'RPC URL *')
-			urlInput.setCustomValidity = (message) => { urlFieldValidityMessages.push(message) }
-			await typeIntoInput(urlInput, typedRpcUrl)
-			await waitForRenderedState(() => urlFieldValidityMessages.at(-1) === expectedError)
-			// Filling every other field, as a probe of a previously typed URL would, leaves the credential check as the only reason not to save.
-			findInput(inputs, 'name', 'name').value = 'Private node'
-			findInput(inputs, 'name', 'chainId').value = '1'
-			findInput(inputs, 'name', 'currencyName').value = 'Ether'
-			findInput(inputs, 'name', 'currencyTicker').value = 'ETH'
-		})
+	test('rejects saving a typed credential URL that would be sent over plaintext http, to a remote or loopback host', async () => {
+		for (const host of ['remote-node:8545', '127.0.0.1:8545']) {
+			const typedRpcUrl = `http://alice:s3cret@${ host }`
+			const expectedError = `Credentials in RPC URL http://***@${ host }/ can only be sent over https.`
+			const urlFieldValidityMessages: string[] = []
+			const { savedEntries, formClosed, fetchCalls, renderedText } = await renderAndSaveRpcForm(undefined, async (inputs) => {
+				const urlInput = findInput(inputs, 'placeholder', 'RPC URL *')
+				urlInput.setCustomValidity = (message) => { urlFieldValidityMessages.push(message) }
+				await typeIntoInput(urlInput, typedRpcUrl)
+				await waitForRenderedState(() => urlFieldValidityMessages.at(-1) === expectedError)
+				// Filling every other field, as a probe of a previously typed URL would, leaves the credential check as the only reason not to save.
+				findInput(inputs, 'name', 'name').value = 'Private node'
+				findInput(inputs, 'name', 'chainId').value = '1'
+				findInput(inputs, 'name', 'currencyName').value = 'Ether'
+				findInput(inputs, 'name', 'currencyTicker').value = 'ETH'
+			})
 
-		assert.equal(urlFieldValidityMessages.at(-1), expectedError)
-		assert.equal(fetchCalls, 0)
-		assert.equal(formClosed, false)
-		assert.deepEqual(savedEntries, [])
-		assert.equal(renderedText.includes(expectedError), true)
-		assert.equal(renderedText.includes('s3cret'), false)
+			assert.equal(urlFieldValidityMessages.at(-1), expectedError, host)
+			assert.equal(fetchCalls, 0, host)
+			assert.equal(formClosed, false, host)
+			assert.deepEqual(savedEntries, [], host)
+			assert.equal(renderedText.includes(expectedError), true, host)
+			assert.equal(renderedText.includes('s3cret'), false, host)
+		}
 	})
 
-	test('rejects saving an edited entry whose stored URL would send credentials over plaintext http to a remote host', async () => {
-		const importedEntry: RpcEntry = { name: 'Imported node', chainId: 1n, httpsRpc: 'http://alice:s3cret@remote-node:8545', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
-		const { savedEntries, formClosed, renderedText } = await renderAndSaveRpcForm(importedEntry, (inputs) => {
-			findInput(inputs, 'name', 'name').value = 'Renamed node'
-		})
+	test('rejects saving an edited entry whose stored URL would send credentials over plaintext http, to a remote or loopback host', async () => {
+		for (const host of ['remote-node:8545', 'localhost:8545']) {
+			const importedEntry: RpcEntry = { name: 'Imported node', chainId: 1n, httpsRpc: `http://alice:s3cret@${ host }`, currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
+			const { savedEntries, formClosed, renderedText } = await renderAndSaveRpcForm(importedEntry, (inputs) => {
+				findInput(inputs, 'name', 'name').value = 'Renamed node'
+			})
 
-		assert.equal(formClosed, false)
-		assert.deepEqual(savedEntries, [])
-		assert.equal(renderedText.includes('Credentials in RPC URL http://***@remote-node:8545/ can only be sent over https, or over http to localhost.'), true)
+			assert.equal(formClosed, false, host)
+			assert.deepEqual(savedEntries, [], host)
+			assert.equal(renderedText.includes(`Credentials in RPC URL http://***@${ host }/ can only be sent over https.`), true, host)
+			assert.equal(renderedText.includes('s3cret'), false, host)
+		}
 	})
 
 	test('keeps a block explorer URL when its API key is empty', () => {
