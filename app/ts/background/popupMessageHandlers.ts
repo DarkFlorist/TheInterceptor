@@ -19,11 +19,10 @@ import type { EthereumClientService } from '../simulation/services/EthereumClien
 import { CompleteVisualizedSimulation, InterceptorSimulationExport, type InterceptorStackOperation, InterceptorTransactionStack, type ModifyAddressWindowState, createPassthroughCompleteVisualizedSimulation } from '../types/visualizer-types.js'
 import { isJSON } from '../utils/json.js'
 import { doAddressBookChainIdsMatch, type AddressBookEntry, type IncompleteAddressBookEntry } from '../types/addressBookTypes.js'
-import { EthereumAddress, serialize } from '../types/wire-types.js'
+import { serialize } from '../types/wire-types.js'
 import { fetchAbiFromBlockExplorer, isValidAbi } from '../simulation/services/EtherScanAbiFetcher.js'
-import { checksummedAddress, generate256BitRandomBigInt, stringToAddress } from '../utils/bigint.js'
-import { isAddress } from '../utils/ethereumPrimitives.js'
-import { getIssueWithAddressString } from '../utils/addressValidation.js'
+import { checksummedAddress, generate256BitRandomBigInt } from '../utils/bigint.js'
+import { getIssueWithUserEnteredAddress, parseUserEnteredAddress } from '../utils/addressValidation.js'
 import type { Website } from '../types/websiteAccessTypes.js'
 import { makeSureInterceptorIsNotSleeping } from './sleeping.js'
 import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
@@ -902,23 +901,20 @@ export async function simulateGnosisSafeTransactionOnPass(ethereum: EthereumClie
 const getErrorIfAnyWithIncompleteAddressBookEntry = async (ethereum: EthereumClientService, incompleteAddressBookEntry: IncompleteAddressBookEntry) => {
 	// check for duplicates
 	const duplicateEntry = await findEntryWithSymbolOrName(incompleteAddressBookEntry.symbol, incompleteAddressBookEntry.name, incompleteAddressBookEntry.chainId)
-	if (duplicateEntry !== undefined && duplicateEntry.address !== stringToAddress(incompleteAddressBookEntry.address)) {
+	if (duplicateEntry !== undefined && duplicateEntry.address !== parseUserEnteredAddress(incompleteAddressBookEntry.address, incompleteAddressBookEntry.chainId)) {
 		return `There already exists ${ duplicateEntry.type } with ${ 'symbol' in duplicateEntry ? `the symbol "${ duplicateEntry.symbol }" and` : '' } the name "${ duplicateEntry.name }".`
 	}
 
 	// check that address is valid
 	if (incompleteAddressBookEntry.address !== undefined) {
-		const trimmed = incompleteAddressBookEntry.address.trim()
-		if (isAddress(trimmed)) {
-			const address = EthereumAddress.parse(trimmed)
-			if (incompleteAddressBookEntry.addingAddress) {
-				const identifiedAddress = await identifyAddress(ethereum, undefined, address)
-				if (identifiedAddress.entrySource !== 'OnChain' && identifiedAddress.entrySource !== 'FilledIn') {
-					return 'The address already exists. Edit the existing record instead trying to add it again.'
-				}
+		const address = parseUserEnteredAddress(incompleteAddressBookEntry.address, incompleteAddressBookEntry.chainId)
+		if (address !== undefined && incompleteAddressBookEntry.addingAddress) {
+			const identifiedAddress = await identifyAddress(ethereum, undefined, address)
+			if (identifiedAddress.entrySource !== 'OnChain' && identifiedAddress.entrySource !== 'FilledIn') {
+				return 'The address already exists. Edit the existing record instead trying to add it again.'
 			}
 		}
-		const issue = getIssueWithAddressString(trimmed)
+		const issue = getIssueWithUserEnteredAddress(incompleteAddressBookEntry.address, incompleteAddressBookEntry.chainId)
 		if (issue !== undefined) return issue
 	}
 

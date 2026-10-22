@@ -51,6 +51,12 @@ describe('searchWebsiteAccess', () => {
 		assert.equal(result.some(entry => entry.website.websiteOrigin === 'multi.dapp'), true)
 	})
 
+	test('finds websites by a pasted EIP-3770 chain-specific address', () => {
+		const result = searchWebsiteAccess('eth:0x0000000000000000000000000000000000000123', testData)
+		assert.deepEqual(result, searchWebsiteAccess('0x0000000000000000000000000000000000000123', testData))
+		assert.equal(result[0], testData[0])
+	})
+
 	test('matches websites with an undefined title by origin', () => {
 		assert.equal(searchWebsiteAccess('etherscan', testData)[0], testData[2])
 	})
