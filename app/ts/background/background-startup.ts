@@ -276,7 +276,7 @@ async function startup() {
 	await tabStateInitializationPromise
 	await migrateAddressBook()
 	await migrateWebsiteAccess()
-	// Popup messages are handled only after startup, so the bootstrap reply the confirmation popup requests on every mount, and every later update, carry migrated entries that take priority over anything it hydrated from storage before this ran. A failure only leaves old entries without a displayed reason, so it must not block startup.
+	// Popup messages are handled only after startup, so once the confirmation popup's ready handshake is answered, its bootstrap data, later updates and the storage read it repeats after the handshake all see migrated entries. A failure only leaves old entries without a displayed reason, so it must not block startup.
 	await migratePendingTransactionCreationFailureReasons().catch(async (error: unknown) => { await reportUnexpectedError(error) })
 	await initializeSafeAppsCompatibility(safeAppsCompatibility).catch(async (error: unknown) => { await reportUnexpectedError(error) })
 	await initializePopupRefreshGeneration()

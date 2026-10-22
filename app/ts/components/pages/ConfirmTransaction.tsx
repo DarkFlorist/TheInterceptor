@@ -905,15 +905,17 @@ export function ConfirmTransaction() {
 			}
 			applyNetworkData(bootstrapData.currentBlockNumber, bootstrapData.rpcConnectionStatus, CONFIRM_TRANSACTION_DATA_PRIORITY.bootstrap)
 		}
-		void hydratePendingTransactionsFromStorage().then((pendingTransactions) => {
+		const applyPendingTransactionsFromStorage = async () => {
+			const pendingTransactions = await hydratePendingTransactionsFromStorage()
 			if (cancelled || pendingTransactions.length === 0) return
 			applyPendingTransactions(pendingTransactions, CONFIRM_TRANSACTION_DATA_PRIORITY.storage)
-		})
-		void sendPopupMessageWithReply({ method: 'popup_readyAndListening', data: { page: 'confirmTransaction' } }).then((reply) => {
-			if (cancelled || reply?.method !== 'popup_readyAndListening') return
-			const bootstrapData = reply.data.confirmTransactionBootstrap
-			if (bootstrapData === undefined) return
-			applyBootstrapData(bootstrapData)
+		}
+		void applyPendingTransactionsFromStorage()
+		void sendPopupMessageWithReply({ method: 'popup_readyAndListening', data: { page: 'confirmTransaction' } }).then(async (reply) => {
+			if (cancelled) return
+			if (reply?.method === 'popup_readyAndListening' && reply.data.confirmTransactionBootstrap !== undefined) applyBootstrapData(reply.data.confirmTransactionBootstrap)
+			// The background answers only after its startup, which migrates stored pending transactions, so storage is read again in case the snapshot above predates that migration and the reply carried no bootstrap data, for example because the RPC failed. Bootstrap and pushed data outrank storage data, so otherwise this changes nothing.
+			await applyPendingTransactionsFromStorage()
 		})
 		void bootstrapConfirmTransactionDialog(() => cancelled || currentPendingTransactionOrSignableMessage.value !== undefined, applyBootstrapData)
 		sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })

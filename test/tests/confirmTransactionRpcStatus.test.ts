@@ -3,6 +3,7 @@ import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { describe, test } from 'bun:test'
 import { installDomMock } from './domMock.js'
+import { encodeErrorString } from './errorDataFixtures.js'
 
 type RuntimeMessageListener = (message: unknown) => unknown
 
@@ -513,6 +514,43 @@ describe('confirm transaction rpc status bootstrap', () => {
 		})
 
 		assert.equal(dom.document.body.textContent?.includes('Contract ABI'), true)
+		await unmountConfirmTransaction(dom)
+		dom.restore()
+	})
+
+	test('shows the migrated failure reason when the bootstrap reply fails after an early storage read', async () => {
+		const dom = installDomMock()
+		// An entry stored by a version before the failure reason was persisted.
+		const pendingTransaction = makePendingTransaction()
+		const transactionToSimulate = { ...pendingTransaction.transactionToSimulate, error: { code: -32000, message: 'execution reverted', data: encodeErrorString('STF') } }
+		const { transactionCreationFailureReason: _transactionCreationFailureReason, ...legacyVisualisationData } = pendingTransaction.popupVisualisation.data
+		const legacyPendingTransaction = { ...pendingTransaction, transactionToSimulate, popupVisualisation: { ...pendingTransaction.popupVisualisation, data: { ...legacyVisualisationData, transactionToSimulate } } }
+		const { migratePendingTransactionCreationFailureReasons } = await import('../../app/ts/background/pendingTransactionMigration.js')
+		// Like the background, every reply waits for startup, which runs the migration; the bootstrap itself fails as it does when the RPC is unreachable.
+		let backgroundStartup: Promise<void> | undefined
+		installBrowserMock(async (message) => {
+			if (typeof message !== 'object' || message === null || !('method' in message) || message.method !== 'popup_readyAndListening') return undefined
+			backgroundStartup ??= migratePendingTransactionCreationFailureReasons()
+			await backgroundStartup
+			return undefined
+		})
+		const [
+			{ browserStorageLocalSet2 },
+			{ ConfirmTransaction, CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS },
+		] = await Promise.all([
+			import('../../app/ts/utils/storageUtils.js'),
+			import('../../app/ts/components/pages/ConfirmTransaction.js'),
+		])
+		await browserStorageLocalSet2({ pendingTransactionsAndMessages: [legacyPendingTransaction] })
+
+		await act(() => {
+			render(h(ConfirmTransaction, {}), dom.document.body)
+		})
+		await new Promise((resolve) => setTimeout(resolve, CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS + 50))
+
+		assert.notEqual(backgroundStartup, undefined)
+		assert.equal(dom.document.body.textContent?.includes('STF - possible Uniswap V3 error: Token transfer from the sender via safeTransferFrom failed'), true)
+		assert.equal(dom.document.body.textContent?.includes('Unknown error'), false)
 		await unmountConfirmTransaction(dom)
 		dom.restore()
 	})
