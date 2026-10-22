@@ -10,7 +10,7 @@ import { Semaphore } from '../utils/semaphore.js'
 import { captureSimulationSnapshot, getSimulationProviderForSnapshot, type SimulationSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
 import { requestIsSimulationDataConsumerOpen, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getPopupVisualisationFingerprint } from './popupSimulationFingerprint.js'
-import { retainPreviousVisualisation } from './popupVisualisationLifecycle.js'
+import { retainPreviousVisualisation } from '../utils/popupVisualisationLifecycle.js'
 import { visualizeSimulatorState } from './simulationUpdating.js'
 import { getPopupVisualisationState, setPopupVisualisationState } from './storageVariables.js'
 

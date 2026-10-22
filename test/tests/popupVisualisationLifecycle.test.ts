@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { hasCurrentAddressBookEntries, predatesVisualisation, retainPreviousVisualisation } from '../../app/ts/background/popupVisualisationLifecycle.js'
+import { hasCurrentAddressBookEntries, predatesVisualisation, retainPreviousVisualisation } from '../../app/ts/utils/popupVisualisationLifecycle.js'
 import type { AddressBookEntry } from '../../app/ts/types/addressBookTypes.js'
 import { type CompleteVisualizedSimulation, createPassthroughCompleteVisualizedSimulation } from '../../app/ts/types/visualizer-types.js'
 

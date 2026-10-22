@@ -1,6 +1,6 @@
-// Owns what the popup visualisation states the updater stores and publishes mean to views: whether a state's address book entries are current, and which of two states was stored first. popupVisualisationUpdater.ts builds every state that keeps the previous entries with retainPreviousVisualisation; this module imports no background services, so popup pages can use it. See docs/popup-simulation-refresh.md.
+// Owns what the popup visualisation states the updater stores and publishes mean to views: whether a state's address book entries are current, and which of two states was stored first. The background's popupVisualisationUpdater.ts builds every state that keeps the previous entries with retainPreviousVisualisation, and popup views read states through the predicates below; it lives in utils, like activeStackContext.ts, so both depend on it without popup code importing from background. See docs/popup-simulation-refresh.md.
 import type { CompleteVisualizedSimulation, SimulationUpdatingState } from '../types/visualizer-types.js'
-import { assertNever } from '../utils/typescript.js'
+import { assertNever } from './typescript.js'
 
 type RetainedVisualisationChange = {
 	readonly simulationId: number
