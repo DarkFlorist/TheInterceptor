@@ -713,3 +713,23 @@ test('startup pruning removes terminal replies for missing tabs and preserves li
 })
 
 await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
+
+test('pending transaction storage waits for a signer selection lease without caller-side locking', async () => {
+	const { acquireSignerSelectionLease, releaseSignerSelectionLease } = await import('../../app/ts/background/signerSelectionLease.js')
+	const tabId = pendingTransaction.uniqueRequestIdentifier.requestSocket.tabId
+	const token = await acquireSignerSelectionLease(tabId)
+	let persisted = false
+	const pendingWrite = modules.appendPendingTransactionOrMessage({
+		...pendingTransaction,
+		uniqueRequestIdentifier: { ...pendingTransaction.uniqueRequestIdentifier, requestId: 987654 },
+	}).then(() => { persisted = true })
+	try {
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		assert.equal(persisted, false)
+		assert.equal((await modules.getPendingTransactionsAndMessages()).some((pending) => pending.uniqueRequestIdentifier.requestId === 987654), false)
+	} finally {
+		releaseSignerSelectionLease(tabId, token)
+	}
+	await pendingWrite
+	assert.equal((await modules.getPendingTransactionsAndMessages()).some((pending) => pending.uniqueRequestIdentifier.requestId === 987654), true)
+})

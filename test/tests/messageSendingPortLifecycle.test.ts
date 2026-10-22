@@ -2,7 +2,6 @@ import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { replyToInterceptedRequest, replyToInterceptedRequestAfterManifestV2Reconnect, sendSubscriptionReplyOrCallBack, sendSubscriptionReplyOrCallBackAfterManifestV2Reconnect, sendSubscriptionReplyOrCallBackToPort } from '../../app/ts/background/messageSending.js'
 import { websiteSocketToString } from '../../app/ts/background/backgroundUtils.js'
-import { allowLegacySignerExecution, clearSignerExecutionAuthorityForTab, reconcileSignerExecutionDocument, registerAuthoritativeTopSocket } from '../../app/ts/background/signerExecutionAuthority.js'
 
 function installBrowserMock() {
 	globalThis.browser = {
@@ -29,28 +28,18 @@ function createPort(postMessage: (message: unknown) => void): browser.runtime.Po
 }
 
 describe('background messageSending port lifecycle', () => {
-	test('both callback transports deny wallet commands until authority is reconciled, while discovery still works', () => {
+	test('generic callback transports deliver their input without signer policy', () => {
 		installBrowserMock()
 		const socket = { tabId: 1, connectionName: 0x123n }
-		clearSignerExecutionAuthorityForTab(socket.tabId)
 		const messages: unknown[] = []
 		const port = createPort((message) => messages.push(message))
 		const connections = new Map([[socket.tabId, { connections: {
 			[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true },
 		} }]])
 		const command = { type: 'result', method: 'request_signer_to_eth_accounts', result: [] } as const
-		assert.equal(sendSubscriptionReplyOrCallBackToPort(port, command), false)
-		assert.equal(sendSubscriptionReplyOrCallBack(connections, socket, command), false)
-		assert.deepEqual(messages, [])
-		assert.equal(sendSubscriptionReplyOrCallBackToPort(port, { type: 'result', method: 'request_signer_connection_status', result: [] }), true)
-		registerAuthoritativeTopSocket(socket, 'https://example.test')
-		reconcileSignerExecutionDocument(socket, 'https://example.test', '11111111-1111-4111-8111-111111111111', true, 0)
-		allowLegacySignerExecution(socket, 'https://example.test')
 		assert.equal(sendSubscriptionReplyOrCallBackToPort(port, command), true)
 		assert.equal(sendSubscriptionReplyOrCallBack(connections, socket, command), true)
-		clearSignerExecutionAuthorityForTab(socket.tabId)
-		assert.equal(sendSubscriptionReplyOrCallBackToPort(port, command), false)
-		assert.equal(messages.length, 3)
+		assert.deepEqual(messages, [{ ...command, interceptorApproved: true }, { ...command, interceptorApproved: true }])
 	})
 
 	test('ignores disconnected runtime lastError after posting to a content-script port', () => {
@@ -185,10 +174,7 @@ describe('background messageSending port lifecycle', () => {
 
 	test('reconnects an MV2 content-script port before requesting signer accounts', async () => {
 		const socket = { tabId: 1, connectionName: 0x123n }
-		clearSignerExecutionAuthorityForTab(socket.tabId)
-		registerAuthoritativeTopSocket(socket, 'https://example.test')
-		reconcileSignerExecutionDocument(socket, 'https://example.test', '11111111-1111-4111-8111-111111111111', true, 0)
-		allowLegacySignerExecution(socket, 'https://example.test')
+
 		const connectionKey = websiteSocketToString(socket)
 		const postedMessages: unknown[] = []
 		const connectedPort = createPort((message) => { postedMessages.push(message) })

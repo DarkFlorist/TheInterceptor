@@ -1,3 +1,4 @@
+import { runWithSignerSelectionGate } from './signerSelectionLease.js'
 import { getRpcEntryIdentityKey } from '../utils/rpcNetworkChange.js'
 import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
@@ -80,7 +81,7 @@ export async function updatePendingTransactionOrMessage(uniqueRequestIdentifier:
 }
 
 export async function appendPendingTransactionOrMessage(pendingTransactionOrMessage: PendingTransactionOrSignableMessage) {
-	await updatePendingTransactionOrMessages(async (pendingTransactionsOrMessages) => [...pendingTransactionsOrMessages, pendingTransactionOrMessage])
+	await runWithSignerSelectionGate(pendingTransactionOrMessage.uniqueRequestIdentifier.requestSocket.tabId, async () => await updatePendingTransactionOrMessages(async (pendingTransactionsOrMessages) => [...pendingTransactionsOrMessages, pendingTransactionOrMessage]))
 }
 
 export async function removePendingTransactionOrMessage(uniqueRequestIdentifier: UniqueRequestIdentifier) {
@@ -93,8 +94,9 @@ export async function removePendingTransactionOrMessage(uniqueRequestIdentifier:
 
 export const getChainChangeConfirmationPromise = async() => (await browserStorageLocalGet('chainChangeConfirmationPromise'))?.chainChangeConfirmationPromise ?? undefined
 export async function setChainChangeConfirmationPromise(chainChangeConfirmationPromise: PendingChainChangeConfirmationPromise | undefined) {
+	// Removing work cannot create a selection conflict; only creating a confirmation reserves the gate.
 	if (chainChangeConfirmationPromise === undefined) return await browserStorageLocalRemove('chainChangeConfirmationPromise')
-	return await browserStorageLocalSet({ chainChangeConfirmationPromise })
+	return await runWithSignerSelectionGate(chainChangeConfirmationPromise.request.uniqueRequestIdentifier.requestSocket.tabId, async () => await browserStorageLocalSet({ chainChangeConfirmationPromise }))
 }
 
 export const getFetchSimulationStackRequestPromise = async() => (await browserStorageLocalGet('fetchSimulationStackRequestPromise'))?.fetchSimulationStackRequestPromise ?? undefined

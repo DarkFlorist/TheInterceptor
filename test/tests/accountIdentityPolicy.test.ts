@@ -1,3 +1,4 @@
+import { createAuthorizedConnections } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import { test } from 'bun:test'
 import { clearSignerExecutionAuthorityForTab } from '../../app/ts/background/signerExecutionAuthority.js'
@@ -16,11 +17,11 @@ test('website state preserves approved simulation accounts but hides wallet iden
 	const otherSocket = { tabId: 1, connectionName: 100n }
 	const approved = createPort(1, undefined, 2, socket.connectionName)
 	const unapproved = createPort(1, undefined, 3, otherSocket.connectionName)
-	const connections = new Map([[1, { connections: {
+	const connections = createAuthorizedConnections(new Map([[1, { connections: {
 		[websiteSocketToString(socket)]: { port: approved.port, socket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true },
 		[websiteSocketToString(otherSocket)]: { port: unapproved.port, socket: otherSocket, websiteOrigin: 'https://unapproved.test', approved: false, wantsToConnect: false },
-	} }]])
-	clearSignerExecutionAuthorityForTab(1)
+	} }]]))
+	clearSignerExecutionAuthorityForTab(connections, 1)
 	await sendActiveAccountChangeToApprovedWebsitePorts(connections, settings)
 	assert.deepEqual(approved.messages.at(-1)?.result, [addressString(account)])
 	assert.equal(unapproved.messages.length, 0)
@@ -33,7 +34,7 @@ test('website state preserves approved simulation accounts but hides wallet iden
 	assert.deepEqual(approved.messages.filter((message) => message.method === 'accountsChanged').slice(1).map((message) => message.result), [[], [], []])
 	assert.equal(unapproved.messages.length, 0)
 
-	authorizeLegacySignerSocket(socket)
+	authorizeLegacySignerSocket(connections, socket)
 	sendProviderConnectionEventsToPort(connections, socket, walletSettings, [account])
 	assert.deepEqual(approved.messages.filter((message) => message.method === 'accountsChanged').at(-1)?.result, [addressString(account)])
 })
@@ -50,10 +51,10 @@ for (const childOrigin of ['https://example.test', 'https://child.test']) test(`
 	const child = { tabId: 1, connectionName: 91n }
 	const top = createPort(1)
 	const frame = createPort(1, undefined, 2, child.connectionName)
-	const connections = new Map([[1, { ...confirmedSignerOwnership(owner), connections: {
+	const connections = createAuthorizedConnections(new Map([[1, { ...confirmedSignerOwnership(owner), connections: {
 		[websiteSocketToString(owner)]: { port: top.port, socket: owner, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true },
 		[websiteSocketToString(child)]: { port: frame.port, socket: child, websiteOrigin: childOrigin, approved: true, wantsToConnect: true },
-	} }]])
+	} }]]))
 	const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 	for (const [requestId, method] of ['eth_accounts', 'wallet_getPermissions', 'wallet_getCapabilities'].entries()) {
 		await handleInterceptedRequest(frame.port, childOrigin, { websiteOrigin: childOrigin }, simulationServicesOwner, child, {
@@ -75,9 +76,9 @@ for (const method of ['eth_accounts', 'wallet_getPermissions', 'wallet_getCapabi
 		await updateTabState(1, (previous) => ({ ...previous, signerAccounts: [account], activeSigningAddress: account }))
 		const socket = { tabId: 1, connectionName: 0n }
 		const frame = createPort(1)
-		const connections = new Map([[1, { ...confirmedSignerOwnership(socket), connections: {
+		const connections = createAuthorizedConnections(new Map([[1, { ...confirmedSignerOwnership(socket), connections: {
 			[websiteSocketToString(socket)]: { port: frame.port, socket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true },
-		} }]])
+		} }]]))
 		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 		const paused = createDeferredSignal()
 		const release = createDeferredSignal()
@@ -96,7 +97,7 @@ for (const method of ['eth_accounts', 'wallet_getPermissions', 'wallet_getCapabi
 			}, connections, noopPublishRpcConnectionStatus)
 			await paused.promise
 			const messagesBeforeDelivery = frame.messages.length
-			clearSignerExecutionAuthorityForTab(1)
+			clearSignerExecutionAuthorityForTab(connections, 1)
 			await changeSimulationMode({ simulationMode: true, activeSimulationAddress: 0x2222222222222222222222222222222222222222n })
 			release.resolve()
 			await pending

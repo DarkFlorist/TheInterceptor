@@ -131,7 +131,7 @@ export async function sendActiveAccountChangeToApprovedWebsitePorts(websiteTabCo
 			sendSubscriptionReplyOrCallBack(websiteTabConnections, connection.socket, {
 				type: 'result' as const,
 				method: 'accountsChanged',
-				result: getFrameVisibleAccounts(settings, connection.socket, activeAddress !== undefined ? [activeAddress.address] : [])
+				result: getFrameVisibleAccounts(websiteTabConnections, settings, connection.socket, activeAddress !== undefined ? [activeAddress.address] : [])
 			})
 		}
 	}
@@ -200,7 +200,7 @@ export function sendProviderConnectionEventsToPort(
 	accounts: readonly bigint[],
 ) {
 	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'connect', result: [settings.activeRpcNetwork.chainId] })
-	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'accountsChanged', result: getFrameVisibleAccounts(settings, socket, accounts) })
+	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'accountsChanged', result: getFrameVisibleAccounts(websiteTabConnections, settings, socket, accounts) })
 	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'chainChanged', result: settings.activeRpcNetwork.chainId })
 }
 
@@ -211,7 +211,7 @@ export function sendAccountsChangedToPort(
 	requestId: number,
 	settings: Settings,
 ) {
-	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'accountsChanged', result: getFrameVisibleAccounts(settings, socket, accounts), requestId })
+	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'accountsChanged', result: getFrameVisibleAccounts(websiteTabConnections, settings, socket, accounts), requestId })
 }
 
 function disconnectFromPort(

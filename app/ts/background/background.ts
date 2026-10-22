@@ -32,7 +32,7 @@ import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { getWalletSelectedAccount, isActiveSigningSafe } from '../utils/activeAddressSelection.js'
 import { isAccountConnectionMethod, isAccountOnlyMethod } from './accountRequestMethods.js'
 import { beginSignerProviderSelection, finishSignerProviderSelection, signerProviderSelected, signerProvidersChanged } from './signerProviderSelection.js'
-import { getSignerExecutionError, isAuthoritativeTopSocket } from './signerExecutionAuthority.js'
+import { authorizeSignerForward, getSignerExecutionError, isAuthoritativeTopSocket } from './signerExecutionAuthority.js'
 import type { ApprovalState } from './websiteAccessPolicy.js'
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
@@ -236,7 +236,7 @@ const providerHandlers = {
 	connected_to_signer: { method: 'connected_to_signer' as const, func: adaptProviderHandler(connectedToSigner) },
 	signer_providers_changed: { method: 'signer_providers_changed' as const, func: async (context: ProviderHandlerContext) => ({
 		type: 'result' as const, method: 'signer_providers_changed' as const,
-		result: await signerProvidersChanged(context.request, context.websiteOrigin, context.isTopFrame, context.port.sender?.frameId),
+		result: await signerProvidersChanged(context.websiteTabConnections, context.request, context.websiteOrigin, context.isTopFrame, context.port.sender?.frameId),
 	}) },
 	signer_provider_selected: { method: 'signer_provider_selected' as const, func: async (context: ProviderHandlerContext) => {
 		await signerProviderSelected(context.request, context.websiteOrigin, context.isTopFrame, context.port.sender?.frameId, context.websiteTabConnections)
@@ -244,7 +244,7 @@ const providerHandlers = {
 	} },
 	begin_signer_provider_selection: { method: 'begin_signer_provider_selection' as const, func: async (context: ProviderHandlerContext) => ({
 		type: 'result' as const, method: 'begin_signer_provider_selection' as const,
-		result: await beginSignerProviderSelection(context.request, context.websiteOrigin, context.isTopFrame, context.port.sender?.frameId),
+		result: await beginSignerProviderSelection(context.websiteTabConnections, context.request, context.websiteOrigin, context.isTopFrame, context.port.sender?.frameId),
 	}) },
 	finish_signer_provider_selection: { method: 'finish_signer_provider_selection' as const, func: async (context: ProviderHandlerContext) => {
 		finishSignerProviderSelection(context.request)
@@ -451,10 +451,10 @@ const processInterceptedRequest = async (port: browser.runtime.Port | undefined,
 	if (request.interceptorInternalRequest !== true && isInternalProviderMethod(request.method)) return refusePublicInternalProviderMethod(websiteTabConnections, request)
 	// Cached wallet identities still require this frame's reconciliation, even when no new wallet command is needed. Interactive account approval can bootstrap access separately.
 	if (request.interceptorInternalRequest !== true && isAccountOnlyMethod(request.method) && !isAccountConnectionMethod(request.method)) {
-		const error = getSignerAccountIdentityError(initialSettings, socket)
+		const error = getSignerAccountIdentityError(websiteTabConnections, initialSettings, socket)
 		if (error !== undefined) return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), error })
 	}
-	const isTopFrame = port !== undefined && isTopFrameId(port.sender?.frameId) && isAuthoritativeTopSocket(socket)
+	const isTopFrame = port !== undefined && isTopFrameId(port.sender?.frameId) && isAuthoritativeTopSocket(websiteTabConnections, socket)
 	// Signer authority is checked when a request or callback actually leaves for the wallet, including after asynchronous user confirmation.
 	const providerHandler = getProviderHandler(request.method)
 	const identifiedMethod = providerHandler.method
@@ -584,11 +584,11 @@ async function handleContentScriptMessage(simulationServicesOwner: SimulationSer
 		if (isAccountOnlyMethod(request.method)) {
 			const currentSettings = await getSettings()
 			const socket = request.uniqueRequestIdentifier.requestSocket
-			const identityError = (walletDerivedAddress ? getSignerExecutionError(socket) : undefined) ?? getSignerAccountIdentityError(settings, socket) ?? getSignerAccountIdentityError(currentSettings, socket)
+			const identityError = (walletDerivedAddress ? getSignerExecutionError(websiteTabConnections, socket) : undefined) ?? getSignerAccountIdentityError(websiteTabConnections, settings, socket) ?? getSignerAccountIdentityError(websiteTabConnections, currentSettings, socket)
 			if (identityError !== undefined) return replyToInterceptedRequest(websiteTabConnections, { ...requestWithDefinedParams, type: 'result', error: identityError })
 		}
 		replayProviderStateForAccountRequest(websiteTabConnections, request, resolved, activeAddress.address, settings)
-		return replyToInterceptedRequest(websiteTabConnections, { ...requestWithDefinedParams, ...resolved })
+		return replyToInterceptedRequest(websiteTabConnections, authorizeSignerForward(websiteTabConnections, { ...requestWithDefinedParams, ...resolved }))
 	} catch (error: unknown) {
 		if (isFailedToFetchError(error)) {
 			return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN })

@@ -1,3 +1,4 @@
+import type { SignerExecutionAuthorityState } from '../background/signerExecutionAuthority.js'
 import type { WebsiteLifecycleCallbacks } from './websiteLifecycle.js'
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumBlockHeader, EthereumQuantity, EthereumTimestamp, OptionalEthereumAddress } from './wire-types.js'
@@ -187,7 +188,7 @@ export type TabConnection = {
 }
 
 // Scope observers to their connection collection so asynchronous mutations cannot notify another collection; feature state and configuration belong to the observer.
-export type WebsiteTabConnections = Map<number, TabConnection> & { readonly lifecycle?: WebsiteLifecycleCallbacks }
+export type WebsiteTabConnections = Map<number, TabConnection> & { readonly lifecycle?: WebsiteLifecycleCallbacks, signerExecutionAuthority?: SignerExecutionAuthorityState }
 
 export type TabState = funtypes.Static<typeof TabState>
 export const TabState = funtypes.Intersect(

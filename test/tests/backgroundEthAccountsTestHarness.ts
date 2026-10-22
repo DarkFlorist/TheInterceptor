@@ -26,15 +26,23 @@ export function createDeferredValue<T>() {
 	return { promise, resolve: (value: T) => resolveValue(value) }
 }
 
-export function authorizeLegacySignerSocket(socket: { readonly tabId: number, readonly connectionName: bigint }, websiteOrigin = 'https://example.test') {
-	clearSignerExecutionAuthorityForTab(socket.tabId)
-	registerAuthoritativeTopSocket(socket, websiteOrigin)
-	reconcileSignerExecutionDocument(socket, websiteOrigin, '11111111-1111-4111-8111-111111111111', true, 0)
-	allowLegacySignerExecution(socket, websiteOrigin)
+export function authorizeLegacySignerSocket(connections: WebsiteTabConnections, socket: { readonly tabId: number, readonly connectionName: bigint }, websiteOrigin = 'https://example.test') {
+	clearSignerExecutionAuthorityForTab(connections, socket.tabId)
+	registerAuthoritativeTopSocket(connections, socket, websiteOrigin)
+	reconcileSignerExecutionDocument(connections, socket, websiteOrigin, '11111111-1111-4111-8111-111111111111', true, 0)
+	allowLegacySignerExecution(connections, socket, websiteOrigin)
+}
+
+// Each fixture owns its live document proofs; browser mocks do not grant authority to unrelated collections.
+export function createAuthorizedConnections<T extends WebsiteTabConnections>(connections: T): T {
+	for (const [tabId, tab] of connections) {
+		const owner = Object.values(tab.connections).find((connection) => connection.socket.connectionName === (tab.signerStateOwner?.connectionName ?? 0n))
+		if (owner !== undefined) authorizeLegacySignerSocket(connections, owner.socket, owner.websiteOrigin)
+	}
+	return connections
 }
 
 export function installBrowserMock({ deferFirstChainChangeRemoval = false, manifestVersion = 3, tabStatus = 'complete' }: { readonly deferFirstChainChangeRemoval?: boolean, readonly manifestVersion?: 2 | 3, readonly tabStatus?: 'loading' | 'complete' } = {}) {
-	authorizeLegacySignerSocket({ tabId: 1, connectionName: 0n })
 	const storageListeners = new Set<(changes: Record<string, { newValue?: unknown, oldValue?: unknown }>, area: string) => void>()
 	const storageState: Record<string, unknown> = {}
 	const runtimeMessages: unknown[] = []

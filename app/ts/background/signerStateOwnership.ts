@@ -181,8 +181,8 @@ export function isSignerStateTokenCurrent(websiteTabConnections: WebsiteTabConne
 export function isSignerStateTokenAuthorized(websiteTabConnections: WebsiteTabConnections, token: SignerStateToken, requestSocket = token.socket) {
 	return requestSocket.tabId === token.socket.tabId
 		&& isSignerStateTokenCurrent(websiteTabConnections, token)
-		&& socketCanExecuteWithSelectedSigner(token.socket)
-		&& socketCanExecuteWithSelectedSigner(requestSocket)
+		&& socketCanExecuteWithSelectedSigner(websiteTabConnections, token.socket)
+		&& socketCanExecuteWithSelectedSigner(websiteTabConnections, requestSocket)
 }
 
 export function getAuthorizedSignerStateToken(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
@@ -191,7 +191,7 @@ export function getAuthorizedSignerStateToken(websiteTabConnections: WebsiteTabC
 }
 
 export async function waitForAuthorizedSignerStateToken(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
-	if (!socketCanExecuteWithSelectedSigner(socket)) return undefined
+	if (!socketCanExecuteWithSelectedSigner(websiteTabConnections, socket)) return undefined
 	const token = await waitForConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
 	return token !== undefined && isSignerStateTokenAuthorized(websiteTabConnections, token, socket) ? token : undefined
 }

@@ -123,7 +123,7 @@ const catchAllErrorsAndCall = async (func: () => Promise<unknown>) => {
 
 browser.tabs.onRemoved.addListener(async (tabId: number) => await catchAllErrorsAndCall(async () => {
 	releaseSignerSelectionLeasesForTab(tabId)
-	clearSignerExecutionAuthorityForTab(tabId)
+	clearSignerExecutionAuthorityForTab(websiteTabConnections, tabId)
 	for (const socketIdentifier of latestReceivedBridgeRequestIds.keys()) {
 		if (socketIdentifier.startsWith(`${ tabId }-`)) latestReceivedBridgeRequestIds.delete(socketIdentifier)
 	}
@@ -173,7 +173,7 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ simulati
 		() => {
 			catchAllErrorsAndCall(async () => {
 				await getConnectionInitializationPromise()
-				if (await removeWebsiteTabConnection(websiteTabConnections, socket, port)) scheduleCurrentChildSignerSocketRemoval(socket)
+				if (await removeWebsiteTabConnection(websiteTabConnections, socket, port)) scheduleCurrentChildSignerSocketRemoval(websiteTabConnections, socket)
 			})
 		},
 		(payload) => {
@@ -212,13 +212,13 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ simulati
 	)
 	if (!listenersRegistered) return
 	if (isTopFrame) {
-		startsNewSignerDocument = registerTopSignerDocument(socket, websiteOrigin)
-		const signerDocumentGeneration = getSignerDocumentGeneration(socket, websiteOrigin)
+		startsNewSignerDocument = registerTopSignerDocument(websiteTabConnections, socket, websiteOrigin)
+		const signerDocumentGeneration = getSignerDocumentGeneration(websiteTabConnections, socket, websiteOrigin)
 		if (signerDocumentGeneration === undefined) throw new Error('Missing authoritative signer document generation')
 		port.postMessage({ type: INTERCEPTOR_SIGNER_DOCUMENT_GENERATION_MESSAGE, signerDocumentGeneration })
 		checkAndThrowRuntimeLastError()
 	} else if (port.sender?.frameId !== undefined) {
-		childSignerCatalogResynchronizationNeeded = registerCurrentChildSignerSocket(socket, port.sender.frameId)
+		childSignerCatalogResynchronizationNeeded = registerCurrentChildSignerSocket(websiteTabConnections, socket, port.sender.frameId)
 			&& latestReceivedBridgeRequestIds.has(identifier)
 	}
 
@@ -253,7 +253,7 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ simulati
 			}
 		}
 		if (!isTopFrame) {
-			const synchronization = getChildSignerConnectionSynchronization(socket, websiteOrigin, childSignerCatalogResynchronizationNeeded)
+			const synchronization = getChildSignerConnectionSynchronization(websiteTabConnections, socket, websiteOrigin, childSignerCatalogResynchronizationNeeded)
 			if (synchronization !== undefined) sendSubscriptionReplyOrCallBackToPort(port, synchronization)
 		}
 		if (registration.provisionallyClaimedSignerState) {

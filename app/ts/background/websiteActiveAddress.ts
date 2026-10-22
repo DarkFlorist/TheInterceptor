@@ -7,7 +7,7 @@ import { getActiveAddressForCurrentSignerState } from './signerStateOwnership.js
 import { hasAddressAccess } from './websiteAccessPolicy.js'
 
 export async function getWebsiteActiveAddress(websiteTabConnections: WebsiteTabConnections, websiteOrigin: string, settings: Settings, socket: WebsiteSocket) {
-	if (getSignerAccountIdentityError(settings, socket) !== undefined) return undefined
+	if (getSignerAccountIdentityError(websiteTabConnections, settings, socket) !== undefined) return undefined
 	const activeAddress = await getActiveAddressForCurrentSignerState(websiteTabConnections, settings, socket.tabId, async () => await getActiveAddress(settings, socket.tabId))
 	if (activeAddress === undefined) return undefined
 	return hasAddressAccess(settings.websiteAccess, websiteOrigin, activeAddress) === 'hasAccess' ? activeAddress : undefined

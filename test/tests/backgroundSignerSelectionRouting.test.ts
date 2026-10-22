@@ -1,3 +1,4 @@
+import { createAuthorizedConnections } from './backgroundEthAccountsTestHarness.js'
 import { getSignerDocumentGeneration } from '../../app/ts/background/signerExecutionAuthority.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
@@ -15,7 +16,7 @@ describe('background signer selection routing', () => {
 		const { updateTabState } = await loadModules()
 		await updateTabState(1, (previousState) => ({ ...previousState, website: { websiteOrigin: 'https://top.test', title: 'Private top title', icon: undefined } }))
 		assert.equal(isTopFrameId(undefined), false)
-		assert.equal(reconcileSignerExecutionDocument({ tabId: 1, connectionName: 99n }, 'https://top.test', '11111111-1111-4111-8111-111111111111', false, undefined), false)
+		assert.equal(reconcileSignerExecutionDocument(new Map(), { tabId: 1, connectionName: 99n }, 'https://top.test', '11111111-1111-4111-8111-111111111111', false, undefined), false)
 		assert.deepEqual(await getWebsiteDetailsForConnection(1, 'https://child.test', undefined), { title: undefined, icon: undefined })
 	})
 
@@ -32,10 +33,10 @@ describe('background signer selection routing', () => {
 		const socket = { tabId: 1, connectionName: 0n }
 		await updateTabState(socket.tabId, (previousState) => ({ ...previousState, signerAccounts: [address], activeSigningAddress: address, signerName: 'EIP6963', signerConnected: true }))
 		const { port, messages } = createPort(socket.tabId)
-		const websiteTabConnections: WebsiteTabConnections = new Map([[1, { ...confirmedSignerOwnership(socket), connections: {
+		const websiteTabConnections: WebsiteTabConnections = createAuthorizedConnections(new Map([[1, { ...confirmedSignerOwnership(socket), connections: {
 			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, frameId: 0, approved: true, wantsToConnect: true },
-		} }]])
-		clearSignerExecutionAuthorityForTab(1)
+		} }]]))
+		clearSignerExecutionAuthorityForTab(websiteTabConnections, 1)
 		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 }, { getCodeResult: new Uint8Array([0x60, 0x00]) })
 		const request = async (method: string, params: readonly unknown[], requestId: number) => {
 			await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
@@ -79,16 +80,16 @@ describe('background signer selection routing', () => {
 		const topSocket = { tabId: 1, connectionName: 0n }
 		const childSocket = { tabId: 1, connectionName: 2n }
 		const providerUuid = '22222222-2222-4222-8222-222222222222'
-		registerCurrentChildSignerSocket(childSocket, 2)
-		reconcileSignerExecutionDocument(childSocket, websiteOrigin, getSignerDocumentGeneration(topSocket, websiteOrigin), false, 2)
-		setSignerExecutionTarget(childSocket.tabId, providerUuid, websiteOrigin)
 
 		const top = createPort(topSocket.tabId, undefined, 0, topSocket.connectionName)
 		const child = createPort(childSocket.tabId, undefined, 2, childSocket.connectionName)
-		const websiteTabConnections: WebsiteTabConnections = new Map([[childSocket.tabId, { ...confirmedSignerOwnership(topSocket), connections: {
+		const websiteTabConnections: WebsiteTabConnections = createAuthorizedConnections(new Map([[childSocket.tabId, { ...confirmedSignerOwnership(topSocket), connections: {
 			[websiteSocketToString(topSocket)]: { port: top.port, socket: topSocket, websiteOrigin, frameId: 0, approved: true, wantsToConnect: true },
 			[websiteSocketToString(childSocket)]: { port: child.port, socket: childSocket, websiteOrigin, frameId: 2, approved: true, wantsToConnect: true },
-		} }]])
+		} }]]))
+		registerCurrentChildSignerSocket(websiteTabConnections, childSocket, 2)
+		reconcileSignerExecutionDocument(websiteTabConnections, childSocket, websiteOrigin, getSignerDocumentGeneration(websiteTabConnections, topSocket, websiteOrigin), false, 2)
+		setSignerExecutionTarget(websiteTabConnections, childSocket.tabId, providerUuid, websiteOrigin)
 		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 		const request = {
 			interceptorRequest: true,
@@ -101,7 +102,7 @@ describe('background signer selection routing', () => {
 		await handleInterceptedRequest(child.port, websiteOrigin, website, simulationServicesOwner, childSocket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
 		assert.equal(child.messages.at(-1)?.error?.code, -32602)
 
-		assert.equal(authorizeSocketForSignerExecution(childSocket, providerUuid, websiteOrigin), true)
+		assert.equal(authorizeSocketForSignerExecution(websiteTabConnections, childSocket, providerUuid, websiteOrigin), true)
 		await handleInterceptedRequest(child.port, websiteOrigin, website, simulationServicesOwner, childSocket, {
 			...request,
 			uniqueRequestIdentifier: { ...request.uniqueRequestIdentifier, requestId: 2 },
@@ -125,9 +126,9 @@ describe('background signer selection routing', () => {
 		const { port, messages } = createPort(socket.tabId)
 		if (port.sender !== undefined) delete port.sender.frameId
 		const connectionKey = websiteSocketToString(socket)
-		const websiteTabConnections: WebsiteTabConnections = new Map([[socket.tabId, { connections: {
+		const websiteTabConnections: WebsiteTabConnections = createAuthorizedConnections(new Map([[socket.tabId, { connections: {
 			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
-		} }]])
+		} }]]))
 		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 		await updateTabState(socket.tabId, (previousState) => ({ ...previousState, website }))
 
@@ -167,10 +168,10 @@ describe('background signer selection routing', () => {
 
 		const sameOriginSocket = { tabId: 1, connectionName: 2n }
 		const crossOriginSocket = { tabId: 1, connectionName: 3n }
-		const websiteTabConnections = new Map([[1, { connections: {
+		const websiteTabConnections = createAuthorizedConnections(new Map([[1, { connections: {
 			[websiteSocketToString(sameOriginSocket)]: { port: createPort(1).port, socket: sameOriginSocket, websiteOrigin: sameOrigin, frameId: 2, approved: false, wantsToConnect: true },
 			[websiteSocketToString(crossOriginSocket)]: { port: createPort(1).port, socket: crossOriginSocket, websiteOrigin: crossOrigin, frameId: 3, approved: false, wantsToConnect: true },
-		} }]])
+		} }]]))
 		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 		const metadataTimeout = new Promise<never>((_resolve, reject) => setTimeout(() => reject(new Error('Child access refresh waited for the loading tab')), ADDRESS_PROMPT_TIMEOUT_MS))
 		await Promise.race([

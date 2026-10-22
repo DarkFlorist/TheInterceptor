@@ -214,7 +214,7 @@ export async function connectedToSigner(_simulationServicesOwner: SimulationServ
 	const isTopFrame = isTopFramePort(port)
 	const socket = getSocketFromPort(port)
 	const requestSocket = request.uniqueRequestIdentifier.requestSocket
-	if (socket === undefined || socket.tabId !== requestSocket.tabId || socket.connectionName !== requestSocket.connectionName || !socketCanExecuteWithSelectedSigner(socket)) return await getConnectedToSignerResult()
+	if (socket === undefined || socket.tabId !== requestSocket.tabId || socket.connectionName !== requestSocket.connectionName || !socketCanExecuteWithSelectedSigner(websiteTabConnections, socket)) return await getConnectedToSignerResult()
 	// Persisted origin approval must not let a newly connected child frame claim tab-wide signer ownership or bootstrap address access.
 	if (!isTopFrame && !isApprovedWebsitePort(websiteTabConnections, port)) return await getConnectedToSignerResult()
 	let shouldRefreshSignerAccounts = false
@@ -249,7 +249,7 @@ export async function connectedToSigner(_simulationServicesOwner: SimulationServ
 		await sendPopupMessageToOpenWindows({ method: 'popup_signer_name_changed' })
 		if (hasSignerCallbackAccess(websiteTabConnections, socket.tabId, approval)) {
 			const settings = await getSettings()
-			if (!signerMissing && (!settings.simulationMode || settings.useSignersAddressAsActiveAddress)) {
+			if (!signerMissing && (!settings.simulationMode || settings.useSignersAddressAsActiveAddress) && getAuthorizedSignerStateToken(websiteTabConnections, socket)?.port === port) {
 				sendSubscriptionReplyOrCallBackToPort(port, { type: 'result', method: 'request_signer_chainId', result: [] })
 			}
 		}
@@ -306,7 +306,7 @@ export async function signerReply(simulationServicesOwner: SimulationServicesOwn
 		if (!isCurrentWebsiteConnection(tabConnection, socket, port)
 			|| requestSocket.tabId !== socket.tabId
 			|| requestSocket.connectionName !== socket.connectionName
-			|| !socketCanExecuteWithSelectedSigner(socket)) {
+			|| !socketCanExecuteWithSelectedSigner(websiteTabConnections, socket)) {
 			await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'SignerError', ...signerConnectionReplacedError } }))
 			await updateConfirmTransactionView(ethereum, tokenPriceService)
 			return doNotReply

@@ -1,3 +1,4 @@
+import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { WebsiteSocket } from '../utils/requests.js'
 import { registerAuthoritativeTopSocket } from './signerExecutionAuthority.js'
 
@@ -72,8 +73,8 @@ export function releaseSignerSelectionLeasesForSocket(socket: WebsiteSocket) {
 	}
 }
 
-export function registerTopSignerDocument(socket: WebsiteSocket, websiteOrigin: string) {
-	const startsNewSignerDocument = registerAuthoritativeTopSocket(socket, websiteOrigin)
+export function registerTopSignerDocument(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string) {
+	const startsNewSignerDocument = registerAuthoritativeTopSocket(websiteTabConnections, socket, websiteOrigin)
 	if (startsNewSignerDocument) releaseSignerSelectionLeasesForTab(socket.tabId)
 	return startsNewSignerDocument
 }

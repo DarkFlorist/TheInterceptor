@@ -1,4 +1,3 @@
-import { runWithSignerSelectionGate } from '../signerSelectionLease.js'
 import { isSignerChainChangePending, changeActiveRpc } from '../walletSwitch.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
@@ -14,11 +13,11 @@ import type { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
 import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
 import { type PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab, removeWindowTabListeners } from '../../utils/popupOrTab.js'
 
-let pendForUserReply: Future<ChainChangeConfirmation> | undefined 
+let pendForUserReply: Future<ChainChangeConfirmation> | undefined
 
 let chainChangeResolutionInProgress = false
 
-let openedDialog: PopupOrTab | undefined 
+let openedDialog: PopupOrTab | undefined
 
 export async function updateChainChangeViewWithPendingRequest() {
 	const promise = await getChainChangeConfirmationPromise()
@@ -110,13 +109,13 @@ export const openChangeChainDialog = async (
 		if (openedDialog !== undefined) {
 			const confirmationDialog = openedDialog
 			addWindowTabListeners(onCloseWindow, onCloseTab)
-			await runWithSignerSelectionGate(request.uniqueRequestIdentifier.requestSocket.tabId, async () => await setChainChangeConfirmationPromise({
+			await setChainChangeConfirmationPromise({
 				website: website,
 				popupOrTabId: confirmationDialog,
 				request: request,
 				simulationMode: simulationMode,
 				rpcNetwork: await getRpcNetworkForChain(params.params[0].chainId),
-			}))
+			})
 			await updateChainChangeViewWithPendingRequest()
 		} else {
 			await resolveChainChange(

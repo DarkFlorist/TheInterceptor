@@ -4,6 +4,7 @@ import { probeChildSignerDocument } from '../../app/ts/background/signerDocument
 import { clearSignerExecutionAuthorityForTab, getSignerDocumentGeneration, registerAuthoritativeTopSocket, registerCurrentChildSignerSocket } from '../../app/ts/background/signerExecutionAuthority.js'
 
 test('document synchronization checks active top and child identities and revalidates after browser replies', async () => {
+	const connections = new Map()
 	const previousBrowser = Object.getOwnPropertyDescriptor(globalThis, 'browser')
 	const top = { tabId: 816, connectionName: 1n }
 	const child = { tabId: top.tabId, connectionName: 2n }
@@ -23,37 +24,37 @@ test('document synchronization checks active top and child identities and revali
 		},
 	} } })
 	try {
-		registerAuthoritativeTopSocket(top, origin)
-		registerCurrentChildSignerSocket(child, 2)
-		const generation = getSignerDocumentGeneration(top, origin)
+		registerAuthoritativeTopSocket(connections, top, origin)
+		registerCurrentChildSignerSocket(connections, child, 2)
+		const generation = getSignerDocumentGeneration(connections, top, origin)
 		assert.ok(generation)
-		assert.deepEqual(await probeChildSignerDocument(child, origin, 2), { status: 'ready', generation })
+		assert.deepEqual(await probeChildSignerDocument(connections, child, origin, 2), { status: 'ready', generation })
 		assert.deepEqual(probes, [
 			{ tabId: top.tabId, message: { method: 'interceptor_signer_document_probe', signerDocumentGeneration: generation }, options: { frameId: 0 } },
 			{ tabId: top.tabId, message: { method: 'interceptor_signer_document_probe', connectionName: '0x2' }, options: { frameId: 2 } },
 		])
 		childOrigin = 'http://example.test'
-		assert.deepEqual(await probeChildSignerDocument(child, origin, 2), { status: 'ineligible' }, 'A matching hostname cannot substitute for a matching origin')
+		assert.deepEqual(await probeChildSignerDocument(connections, child, origin, 2), { status: 'ineligible' }, 'A matching hostname cannot substitute for a matching origin')
 		childOrigin = 'null'
-		assert.deepEqual(await probeChildSignerDocument(child, origin, 2), { status: 'ineligible' }, 'Opaque sandbox origins cannot share wallet authority')
+		assert.deepEqual(await probeChildSignerDocument(connections, child, origin, 2), { status: 'ineligible' }, 'Opaque sandbox origins cannot share wallet authority')
 		childOrigin = origin
 		topMatches = false
-		assert.deepEqual(await probeChildSignerDocument(child, origin, 2), { status: 'retry' })
+		assert.deepEqual(await probeChildSignerDocument(connections, child, origin, 2), { status: 'retry' })
 		topMatches = true
 		childMatches = false
-		assert.deepEqual(await probeChildSignerDocument(child, origin, 2), { status: 'retry' })
+		assert.deepEqual(await probeChildSignerDocument(connections, child, origin, 2), { status: 'retry' })
 		childMatches = true
 		failure = new Error('Could not establish connection. Receiving end does not exist.')
-		assert.deepEqual(await probeChildSignerDocument(child, origin, 2), { status: 'retry' })
+		assert.deepEqual(await probeChildSignerDocument(connections, child, origin, 2), { status: 'retry' })
 		failure = new Error('Unexpected browser failure')
-		await assert.rejects(probeChildSignerDocument(child, origin, 2), /Unexpected browser failure/)
+		await assert.rejects(probeChildSignerDocument(connections, child, origin, 2), /Unexpected browser failure/)
 		failure = undefined
-		beforeReply = () => { registerAuthoritativeTopSocket({ ...top, connectionName: 3n }, origin) }
-		assert.deepEqual(await probeChildSignerDocument(child, origin, 2), { status: 'retry' }, 'Navigation invalidates a completed probe')
-		beforeReply = () => { registerCurrentChildSignerSocket({ ...child, connectionName: 4n }, 2) }
-		assert.deepEqual(await probeChildSignerDocument(child, origin, 2), { status: 'retry' }, 'A replaced child socket invalidates a completed probe')
+		beforeReply = () => { registerAuthoritativeTopSocket(connections, { ...top, connectionName: 3n }, origin) }
+		assert.deepEqual(await probeChildSignerDocument(connections, child, origin, 2), { status: 'retry' }, 'Navigation invalidates a completed probe')
+		beforeReply = () => { registerCurrentChildSignerSocket(connections, { ...child, connectionName: 4n }, 2) }
+		assert.deepEqual(await probeChildSignerDocument(connections, child, origin, 2), { status: 'retry' }, 'A replaced child socket invalidates a completed probe')
 	} finally {
-		clearSignerExecutionAuthorityForTab(top.tabId)
+		clearSignerExecutionAuthorityForTab(connections, top.tabId)
 		if (previousBrowser === undefined) Reflect.deleteProperty(globalThis, 'browser')
 		else Object.defineProperty(globalThis, 'browser', previousBrowser)
 	}

@@ -1,4 +1,4 @@
-import { runWithSignerSelectionGate } from '../signerSelectionLease.js'
+import { sendSignerForwardAfterManifestV2Reconnect } from '../signerMessageSending.js'
 import type { MessageConfirmationRequest, TransactionConfirmationRequest } from '../../types/confirmationRequest.js'
 import { SafeMessage } from '../../safe/safeMessage.js'
 import { isSafeMessageCoSignRequest } from '../../safe/safeRequestPolicy.js'
@@ -17,7 +17,6 @@ import { captureSimulationSnapshot, getUpdatedSimulationState } from '../simulat
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getRpcConnectionStatus, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
 import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
-import { replyToInterceptedRequestAfterManifestV2Reconnect } from '../messageSending.js'
 import { attemptQueuedTerminalReplyDelivery, queueTerminalReply, queueTerminalReplyAndAttemptDelivery } from '../terminalReplyDelivery.js'
 import { stringToBytes, keccak256 } from '../../utils/ethereumPrimitives.js'
 import { EthereumBytes32, EthereumQuantity, serialize } from '../../types/wire-types.js'
@@ -339,7 +338,7 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 			return await attemptQueuedTerminalReplyDelivery(websiteTabConnections, terminalReply)
 		}
 		await removePendingRequestAndUpdateView()
-		return await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, { ...pendingTransactionOrMessage.originalRequestParameters, ...message, uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
+		return await sendSignerForwardAfterManifestV2Reconnect(websiteTabConnections, { ...pendingTransactionOrMessage.originalRequestParameters, ...message, uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
 	}
 	if (confirmation.data.action === 'addToSafeStack') {
 		if (pendingTransactionOrMessage.approvalStatus.status === 'WaitingForSigner') return false
@@ -361,7 +360,7 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 	if (confirmation.data.action === 'accept' && pendingTransactionOrMessage.simulationMode === false) {
 		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'WaitingForSigner' } }))
 		await updateConfirmTransactionView(ethereum, tokenPriceService)
-		const requestWasForwarded = await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, { ...signerFacingRequest, type: 'forwardToSigner', uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
+		const requestWasForwarded = await sendSignerForwardAfterManifestV2Reconnect(websiteTabConnections, { ...signerFacingRequest, type: 'forwardToSigner', uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
 		if (requestWasForwarded) return true
 		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, {
 			approvalStatus: {
@@ -398,7 +397,7 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 			return reply({ type: 'result', result: confirmation.data.signerReply })
 		}
 		await removePendingRequestAndUpdateView()
-		return await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, { ...signerFacingRequest, type: 'forwardToSigner', uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
+		return await sendSignerForwardAfterManifestV2Reconnect(websiteTabConnections, { ...signerFacingRequest, type: 'forwardToSigner', uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
 	}
 	if (confirmation.data.action === 'signerIncluded') throw new Error('Signer included transaction that was in simulation')
 
@@ -700,7 +699,7 @@ export async function openConfirmTransactionDialogForMessage(
 				signedMessageTransaction,
 				...(safeMessageCoSignSnapshot === undefined ? {} : { safeMessageCoSignSnapshot }),
 			}
-			await runWithSignerSelectionGate(pendingMessage.uniqueRequestIdentifier.requestSocket.tabId, async () => await appendPendingTransactionOrMessage(pendingMessage))
+			await appendPendingTransactionOrMessage(pendingMessage)
 			await updateConfirmTransactionView(ethereumClientService, tokenPriceService)
 
 			await updatePendingTransactionOrMessage(pendingMessage.uniqueRequestIdentifier, async (message) => {
@@ -816,7 +815,7 @@ export async function openConfirmTransactionDialogForTransaction(
 				...(safeTransaction === undefined ? {} : { safeTransaction }),
 				...(pendingSafeFields ?? {}),
 			}
-			await runWithSignerSelectionGate(pendingTransaction.uniqueRequestIdentifier.requestSocket.tabId, async () => await appendPendingTransactionOrMessage(pendingTransaction))
+			await appendPendingTransactionOrMessage(pendingTransaction)
 			await updateConfirmTransactionView(ethereumClientService, tokenPriceService)
 			markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionSimulationStart)
 			const simulationResultsPromise = silenceChromeUnCaughtPromise(refreshConfirmTransactionSimulation(
