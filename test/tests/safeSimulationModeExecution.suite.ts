@@ -123,6 +123,17 @@ for (const { description, selectedActiveAddress, createParams, expected } of fee
 	})
 }
 
+test('finds a configured Gnosis Safe only as a Safe entry on its own chain', async () => {
+	const { findConfiguredSafeForChain } = await import('../../app/ts/background/signingAddressSelection.js')
+	const ordinaryAccountContact = modules.defaultActiveAddresses.find((entry) => entry.address === ORDINARY_ACCOUNT)
+	if (ordinaryAccountContact === undefined) throw new Error('Missing the default address book entry of the ordinary account')
+	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry(), ordinaryAccountContact])
+
+	assert.equal((await findConfiguredSafeForChain(SAFE_ADDRESS, fakeRpcNetwork.chainId))?.address, SAFE_ADDRESS)
+	assert.equal(await findConfiguredSafeForChain(SAFE_ADDRESS, fakeRpcNetwork.chainId + 1n), undefined, 'a Safe configured on another chain')
+	assert.equal(await findConfiguredSafeForChain(ORDINARY_ACCOUNT, fakeRpcNetwork.chainId), undefined, 'an address book entry that is not a Safe')
+})
+
 async function refreshAndGetSimulatedConfirmation(simulator: ReturnType<typeof createFeeValidatingSimulator>) {
 	await withSilencedConsole(async () => await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService))
 	const [pending] = await modules.getPendingTransactionsAndMessages()

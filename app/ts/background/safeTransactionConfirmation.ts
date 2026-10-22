@@ -7,7 +7,8 @@ import type { SafeTransactionSigningRequest } from '../types/safeTypes.js'
 import { SENDER_PAID_FEES, type TransactionFeePayment, type WebsiteCreatedEthereumTransaction, type WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
 import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER } from '../utils/constants.js'
 import { getErrorMessage, reportLocalRecovery } from '../utils/errors.js'
-import { getPendingTransactionsAndMessages, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
+import { getPendingTransactionsAndMessages } from './storageVariables.js'
+import { findConfiguredSafeForChain } from './signingAddressSelection.js'
 import { reconcileStoredSafeState, type ReconciledStoredSafeState } from './safeStackState.js'
 import { createSafeContractValidationFailure, createSafeTransactionReviewRequest, createSafeTransactionSigningRequest, isSafeContractValidationFailure, isSafeOwnerValidationFailure } from '../safe/safeCore.js'
 import { getSafeExecutionReviewedState, getSafeExecutionSignerRoute, isSafeExecutionRequestForActiveSafe, prepareSafeExecutionSignerRoute } from '../safe/safeExecutionRouting.js'
@@ -53,8 +54,7 @@ export async function getSimulationModeFeePayment(chainId: bigint, transactionPa
 	const transactionDetails = transactionParams.params[0]
 	if (transactionDetails.type === '7702' || transactionDetails.authorizationList !== undefined) return SENDER_PAID_FEES
 	if ((transactionDetails.from ?? activeAddress) !== activeAddress) return SENDER_PAID_FEES
-	const activeAddressIsSafe = (await getUserAddressBookEntriesForChainIdMorePreciseFirst(chainId)).some((entry) => entry.type === 'safe' && entry.address === activeAddress)
-	if (!activeAddressIsSafe) return SENDER_PAID_FEES
+	if (await findConfiguredSafeForChain(activeAddress, chainId) === undefined) return SENDER_PAID_FEES
 	return { gasPayment: 'external-executor', simulationOptions: { requiredChainId: chainId, simulateWithZeroBaseFee: true } }
 }
 
@@ -66,10 +66,7 @@ export async function prepareSafeTransactionConfirmation(
 	walletSignerAddress: bigint | undefined,
 ): Promise<SafeTransactionConfirmationPreparation> {
 	const transactionParams = confirmation.parameters
-	const configuredSafeEntry = simulationMode
-		? undefined
-		: (await getUserAddressBookEntriesForChainIdMorePreciseFirst(ethereum.getChainId()))
-			.find((entry): entry is SafeEntry => entry.type === 'safe' && entry.address === activeAddress)
+	const configuredSafeEntry = simulationMode ? undefined : await findConfiguredSafeForChain(activeAddress, ethereum.getChainId())
 	if (configuredSafeEntry !== undefined) {
 		if (transactionParams.method === 'eth_sendRawTransaction') {
 			return createRejectedPreparation(activeAddress, transactionParams, 'Gnosis Safe wallets do not support eth_sendRawTransaction.')
