@@ -97,7 +97,9 @@ export function App() {
 		if (!isSettingsLoaded.value) return
 		if (appPage.value !== undefined && appPage.value.page === 'AddNewAddress') return
 
-		const bigIntReprentation = parseUserEnteredAddress(address)
+		// A new entry for the pasted address gets the connected chain, so an EIP-3770 prefix naming another chain is ignored like any other text that is not an address.
+		const entryChainId = rpcConnectionStatus.peek()?.rpcNetwork.chainId ?? 1n
+		const bigIntReprentation = parseUserEnteredAddress(address, entryChainId)
 		if (bigIntReprentation === undefined) return
 
 		// see if we have that address, if so, let's switch to it
@@ -123,7 +125,7 @@ export function App() {
 				abi: undefined,
 				useAsActiveAddress: true,
 				declarativeNetRequestBlockMode: undefined,
-				chainId: rpcConnectionStatus.peek()?.rpcNetwork.chainId ?? 1n,
+				chainId: entryChainId,
 			}
 		} } as const
 		appPage.value = { page: 'AddNewAddress', state: new Signal(newPage.state) }

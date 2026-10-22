@@ -901,20 +901,20 @@ export async function simulateGnosisSafeTransactionOnPass(ethereum: EthereumClie
 const getErrorIfAnyWithIncompleteAddressBookEntry = async (ethereum: EthereumClientService, incompleteAddressBookEntry: IncompleteAddressBookEntry) => {
 	// check for duplicates
 	const duplicateEntry = await findEntryWithSymbolOrName(incompleteAddressBookEntry.symbol, incompleteAddressBookEntry.name, incompleteAddressBookEntry.chainId)
-	if (duplicateEntry !== undefined && duplicateEntry.address !== parseUserEnteredAddress(incompleteAddressBookEntry.address)) {
+	if (duplicateEntry !== undefined && duplicateEntry.address !== parseUserEnteredAddress(incompleteAddressBookEntry.address, incompleteAddressBookEntry.chainId)) {
 		return `There already exists ${ duplicateEntry.type } with ${ 'symbol' in duplicateEntry ? `the symbol "${ duplicateEntry.symbol }" and` : '' } the name "${ duplicateEntry.name }".`
 	}
 
 	// check that address is valid
 	if (incompleteAddressBookEntry.address !== undefined) {
-		const address = parseUserEnteredAddress(incompleteAddressBookEntry.address)
+		const address = parseUserEnteredAddress(incompleteAddressBookEntry.address, incompleteAddressBookEntry.chainId)
 		if (address !== undefined && incompleteAddressBookEntry.addingAddress) {
 			const identifiedAddress = await identifyAddress(ethereum, undefined, address)
 			if (identifiedAddress.entrySource !== 'OnChain' && identifiedAddress.entrySource !== 'FilledIn') {
 				return 'The address already exists. Edit the existing record instead trying to add it again.'
 			}
 		}
-		const issue = getIssueWithUserEnteredAddress(incompleteAddressBookEntry.address)
+		const issue = getIssueWithUserEnteredAddress(incompleteAddressBookEntry.address, incompleteAddressBookEntry.chainId)
 		if (issue !== undefined) return issue
 	}
 

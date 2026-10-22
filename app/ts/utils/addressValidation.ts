@@ -1,4 +1,7 @@
+import type { ChainIdWithUniversal } from '../types/addressBookTypes.js'
 import { stringToAddress } from './bigint.js'
+import { CHAIN_IDS_BY_EIP3770_SHORT_NAME } from './chainNames.js'
+import { getChainName } from './constants.js'
 import { getAddress } from './ethereumPrimitives.js'
 
 // EIP-3770 chain-specific addresses are written as `<shortName>:<address>`, for example `eth:0x...` copied from Safe{Wallet}: https://eips.ethereum.org/EIPS/eip-3770
@@ -20,36 +23,53 @@ function isUserEnteredChainShortName(shortName: string) {
 	return !HEX_DATA_RUN.test(shortName)
 }
 
-// Returns the trimmed input without its EIP-3770 short name, or undefined when the input has a colon but not a valid short name directly followed by the address, so an invalid prefix makes the whole input invalid instead of being dropped.
-function removeEip3770ChainShortName(userEnteredAddress: string) {
+type ChainSpecificAddress = {
+	readonly address: string
+	readonly chainShortName: string | undefined
+}
+
+// Splits the trimmed input into the address and its EIP-3770 short name, or returns undefined when the input has a colon but not a valid short name directly followed by the address, so an invalid prefix makes the whole input invalid instead of being dropped.
+function splitEip3770ChainShortName(userEnteredAddress: string): ChainSpecificAddress | undefined {
 	const trimmed = userEnteredAddress.trim()
 	const separatorIndex = trimmed.indexOf(':')
-	if (separatorIndex === -1) return trimmed
-	const shortName = trimmed.slice(0, separatorIndex)
+	if (separatorIndex === -1) return { address: trimmed, chainShortName: undefined }
+	const chainShortName = trimmed.slice(0, separatorIndex)
 	const address = trimmed.slice(separatorIndex + 1)
-	if (!isUserEnteredChainShortName(shortName)) return undefined
+	if (!isUserEnteredChainShortName(chainShortName)) return undefined
 	if (address.includes(':') || /^\s/u.test(address)) return undefined
-	// The Interceptor has no short-name-to-chain-ID registry, so a valid short name is not compared with the selected chain.
-	return address
+	return { address, chainShortName }
 }
 
-// Parses an address typed or pasted by the user. Accepts `0x...` and EIP-3770 `<shortName>:0x...`, with the same checksum rules as `stringToAddress`.
-export function parseUserEnteredAddress(userEnteredAddress: string | undefined) {
+// Returns an issue when the short name names a known chain other than the chain of the entry the address is entered for.
+function getChainShortNameMismatchIssue(chainShortName: string | undefined, entryChainId: ChainIdWithUniversal) {
+	// An entry for all chains has no single chain to compare the short name with.
+	if (chainShortName === undefined || entryChainId === 'AllChains') return undefined
+	const shortNameChainId = CHAIN_IDS_BY_EIP3770_SHORT_NAME.get(chainShortName)
+	// A short name missing from the table cannot be compared, so it is accepted without knowing its chain.
+	if (shortNameChainId === undefined || shortNameChainId === entryChainId) return undefined
+	return `This address is for ${ getChainName(shortNameChainId) } (${ chainShortName }:), but this entry is for ${ getChainName(entryChainId) }.`
+}
+
+// Parses an address typed or pasted by the user for an entry on `entryChainId`. Accepts `0x...` and EIP-3770 `<shortName>:0x...` unless the short name names another chain, with the same checksum rules as `stringToAddress`.
+export function parseUserEnteredAddress(userEnteredAddress: string | undefined, entryChainId: ChainIdWithUniversal) {
 	if (userEnteredAddress === undefined) return undefined
-	return stringToAddress(removeEip3770ChainShortName(userEnteredAddress))
+	const chainSpecificAddress = splitEip3770ChainShortName(userEnteredAddress)
+	if (chainSpecificAddress === undefined) return undefined
+	if (getChainShortNameMismatchIssue(chainSpecificAddress.chainShortName, entryChainId) !== undefined) return undefined
+	return stringToAddress(chainSpecificAddress.address)
 }
 
-export function getIssueWithUserEnteredAddress(userEnteredAddress: string): string | undefined {
-	const address = removeEip3770ChainShortName(userEnteredAddress)
-	if (address === undefined) return CHAIN_PREFIX_ISSUE
-	return getIssueWithAddressString(address)
+export function getIssueWithUserEnteredAddress(userEnteredAddress: string, entryChainId: ChainIdWithUniversal): string | undefined {
+	const chainSpecificAddress = splitEip3770ChainShortName(userEnteredAddress)
+	if (chainSpecificAddress === undefined) return CHAIN_PREFIX_ISSUE
+	return getChainShortNameMismatchIssue(chainSpecificAddress.chainShortName, entryChainId) ?? getIssueWithAddressString(chainSpecificAddress.address)
 }
 
-// Free-text search queries are kept as typed unless the whole query is an address, so a pasted `eth:0x...` finds the same entries as `0x...`.
+// Free-text search queries are kept as typed unless the whole query is an address, so a pasted `eth:0x...` finds the same entries as `0x...`. Search is not tied to one entry's chain, so the short name is not compared.
 export function removeEip3770ChainShortNameFromSearchQuery(searchQuery: string) {
-	const address = removeEip3770ChainShortName(searchQuery)
-	if (address === undefined || stringToAddress(address) === undefined) return searchQuery
-	return address
+	const chainSpecificAddress = splitEip3770ChainShortName(searchQuery)
+	if (chainSpecificAddress === undefined || stringToAddress(chainSpecificAddress.address) === undefined) return searchQuery
+	return chainSpecificAddress.address
 }
 
 export function getIssueWithAddressString(address: string): string | undefined {

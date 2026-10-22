@@ -161,6 +161,12 @@ describe('background handling of user-entered EIP-3770 addresses', () => {
 		assert.deepEqual(requestedCodeAddresses, [])
 	})
 
+	test('rejects a chain-specific address whose short name names another chain than the entry', async () => {
+		const { errorStates, requestedCodeAddresses } = await validateAddressWindowState(`gno:${ checksummedAddress }`)
+		assert.deepEqual(errorStates, [{ blockEditing: true, message: 'This address is for Gnosis (gno:), but this entry is for Ethereum Mainnet.' }])
+		assert.deepEqual(requestedCodeAddresses, [])
+	})
+
 	test('reports an unsupported chain prefix form instead of the address length', async () => {
 		const { errorStates } = await validateAddressWindowState(`eth: ${ checksummedAddress }`)
 		assert.deepEqual(errorStates, [{ blockEditing: true, message: chainPrefixIssue }])

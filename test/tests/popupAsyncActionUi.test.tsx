@@ -1000,6 +1000,63 @@ describe('popup async action UI', () => {
 		dom.restore()
 	})
 
+	test('does not identify or save an address whose chain prefix names another chain than the entry', async () => {
+		const modules = await modulesPromise
+		const dom = installDomMock()
+		const sentMessages: unknown[] = []
+		let closeCount = 0
+		runtimeSendMessage = async (message) => {
+			sentMessages.push(message)
+			return undefined
+		}
+		const modifyAddressWindowState = signal({
+			windowStateId: 'other-chain-prefix-window',
+			errorState: undefined,
+			incompleteAddressBookEntry: {
+				addingAddress: true,
+				type: 'contact' as const,
+				address: 'gno:0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B',
+				askForAddressAccess: true,
+				name: 'Pasted contact',
+				symbol: undefined,
+				decimals: undefined,
+				logoUri: undefined,
+				entrySource: 'User' as const,
+				abi: undefined,
+				useAsActiveAddress: undefined,
+				declarativeNetRequestBlockMode: undefined,
+				chainId: 1n,
+			},
+		})
+
+		await act(async () => {
+			render(h(modules.AddNewAddress, {
+				close: () => { closeCount += 1 },
+				setActiveAddressAndInformAboutIt: undefined,
+				modifyAddressWindowState,
+				activeAddress: undefined,
+				rpcEntries: signal([]),
+			}), dom.document.body)
+			await settleAsyncUpdates()
+		})
+
+		assert.equal(sentMessages.some((message) => getRuntimeMethod(message) === 'popup_requestIdentifyAddress'), false)
+		assert.equal(dom.document.body.textContent?.includes('Address is not valid'), true)
+		const createButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.trim() === 'Create address')
+		if (createButton === undefined) throw new Error('Expected Create address button')
+		assert.equal(isDisabled(createButton), true)
+
+		await act(async () => {
+			await clickElement(createButton)
+			await settleAsyncUpdates()
+		})
+
+		assert.equal(sentMessages.some((message) => getRuntimeMethod(message) === 'popup_addOrModifyAddressBookEntry'), false)
+		assert.equal(closeCount, 0)
+		render(null, dom.document.body)
+		dom.restore()
+	})
+
 	test('shows cached Safe owners but blocks saving when automatic owner retrieval fails', async () => {
 		const modules = await modulesPromise
 		const dom = installDomMock()
