@@ -264,13 +264,32 @@ test('counts a Safe execution nested in a MultiSend batch that a stacked execTra
 	assert.ok(approvedSlotsOfLaterProposal.every((slot) => stateDiff[slot] === 1n))
 })
 
-test('counts no execution for a stacked execTransaction call the Safe can\'t decode', async () => {
+test('counts a Safe execution that another Safe or any contract relays among the executions that raise the Safe\'s nonce', async () => {
 	configureSafe()
-	const malformedCall = createSafeCall({ value: 0n, input: Uint8Array.from([0x6a, 0x76, 0x12, 0x02, 0x01]), gas: 100_000n }, undefined)
-	const malformedExecution = { ...malformedCall, signedTransaction: { ...malformedCall.signedTransaction, from: ORDINARY_ACCOUNT, to: SAFE_ADDRESS } }
+	const OTHER_SAFE = 0x7777777777777777777777777777777777777777n
+	const encodeExecTransaction = (to: bigint, data: string) => encodeFunctionCall(SAFE_EXECUTION_ABI, 'execTransaction', [addressString(to), 0n, data, 0n, 0n, 0n, 0n, addressString(0n), addressString(0n), '0x'])
+	// Another Safe, which the input doesn't otherwise execute, executes this Safe through its own execTransaction.
+	const relayedThroughOtherSafe = createSafeCall({ value: 0n, input: hexToBytes(encodeExecTransaction(OTHER_SAFE, encodeExecTransaction(SAFE_ADDRESS, '0x'))), gas: 200_000n }, undefined)
+	const throughOtherSafe = { ...relayedThroughOtherSafe, signedTransaction: { ...relayedThroughOtherSafe.signedTransaction, from: ORDINARY_ACCOUNT, to: OTHER_SAFE } }
+	// Any contract can relay an execution it is handed in its calldata.
+	const relayedByContract = createSafeCall({ value: 0n, input: hexToBytes(encodeFunctionCall([{ type: 'function', name: 'relay', stateMutability: 'nonpayable', inputs: [{ name: 'target', type: 'address' }, { name: 'data', type: 'bytes' }], outputs: [] }], 'relay', [addressString(SAFE_ADDRESS), encodeExecTransaction(CALLED_CONTRACT, '0x')])), gas: 200_000n }, undefined)
+	const byContract = { ...relayedByContract, signedTransaction: { ...relayedByContract.signedTransaction, from: ORDINARY_ACCOUNT, to: CALLED_CONTRACT } }
 	const laterProposal = createSafeProposal({ value: 9n })
-	const [preparedBlock] = await prepareSafeExecutionSimulationInput([createBlock([malformedExecution, laterProposal])], ethereum, 123n, BASE_FEE_PER_GAS)
-	assert.equal(Object.keys(preparedBlock?.stateOverrides[addressString(SAFE_ADDRESS)]?.stateDiff ?? {}).length, SORTED_OWNERS.length, 'the later proposal is approved at the Safe\'s nonce only')
+	const [preparedBlock] = await prepareSafeExecutionSimulationInput([createBlock([throughOtherSafe, byContract, laterProposal])], ethereum, 123n, BASE_FEE_PER_GAS)
+	const laterSafeTx = laterProposal.safeTransaction?.safeTx
+	if (laterSafeTx === undefined) throw new Error('Expected a Safe proposal')
+	const stateDiff = preparedBlock?.stateOverrides[addressString(SAFE_ADDRESS)]?.stateDiff ?? {}
+	// Three execTransaction calls may each have executed this Safe, so the nonce may be anywhere from 5 to 8.
+	const approvedSlotsOfLaterProposal = [5n, 6n, 7n, 8n].flatMap((nonce) => SORTED_OWNERS.map((owner) => approvedHashSlot(owner, BigInt(getSafeTxHash(createSafeTxFromMessage(fakeRpcNetwork.chainId, SAFE_ADDRESS, { ...laterSafeTx.message, nonce }))))))
+	assert.ok(approvedSlotsOfLaterProposal.every((slot) => stateDiff[slot] === 1n))
+})
+
+test('approves a Safe execution only at the Safe\'s nonce when no earlier transaction can execute a Safe', async () => {
+	configureSafe()
+	const ordinaryTransaction = createSafeCall({ value: 1n, input: Uint8Array.from([0x12, 0x34]), gas: 21_000n }, undefined)
+	const laterProposal = createSafeProposal({ value: 9n })
+	const [preparedBlock] = await prepareSafeExecutionSimulationInput([createBlock([ordinaryTransaction, laterProposal])], ethereum, 123n, BASE_FEE_PER_GAS)
+	assert.equal(Object.keys(preparedBlock?.stateOverrides[addressString(SAFE_ADDRESS)]?.stateDiff ?? {}).length, SORTED_OWNERS.length)
 })
 
 test('runs a Safe proposal stored by an earlier version in a block with the real base fee', async () => {
