@@ -6,9 +6,9 @@ import type { ProviderMessage } from '../../app/ts/utils/requests.js'
 import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
 import { clearSignerExecutionAuthorityForTab, getSignerDocumentGeneration, reconcileSignerExecutionDocument, registerAuthoritativeTopSocket } from '../../app/ts/background/signerExecutionAuthority.js'
 
-function withDocumentAuthority<T extends WebsiteTabConnections>(collection: T): T {
-	collection.signerExecutionAuthority = connections.signerExecutionAuthority
-	return collection
+function populateDocumentConnections(collection: WebsiteTabConnections): WebsiteTabConnections {
+	for (const [tabId, tab] of collection) connections.set(tabId, tab)
+	return connections
 }
 
 const defineGlobal = (name: PropertyKey, value: unknown) => Object.defineProperty(globalThis, name, { value, configurable: true, writable: true })
@@ -185,22 +185,22 @@ describe('EIP-6963 signer provider selection', () => {
 		const explicitSelection = createProviderMessage('signer_provider_selected', [provider, 'explicit'])
 
 		assert.equal((await signerProvidersChanged(connections, catalogRequest, 'app.example', true)).automaticSelectionAllowed, false)
-		await assert.rejects(signerProviderSelected(rememberedSelection, 'app.example', true, 0, withDocumentAuthority(new Map())), /remembered RDNS cannot authorize/)
+		await assert.rejects(signerProviderSelected(rememberedSelection, 'app.example', true, 0, populateDocumentConnections(new Map())), /remembered RDNS cannot authorize/)
 		assert.equal(socketCanExecuteWithSelectedSigner(connections, catalogRequest.uniqueRequestIdentifier.requestSocket), false)
-		await signerProviderSelected(explicitSelection, 'app.example', true, 0, withDocumentAuthority(new Map()))
+		await signerProviderSelected(explicitSelection, 'app.example', true, 0, populateDocumentConnections(new Map()))
 		assert.equal(socketCanExecuteWithSelectedSigner(connections, catalogRequest.uniqueRequestIdentifier.requestSocket), true)
 
 		// Worker restart preserves the content script's connection identity, independently of page-supplied RDNS and generation metadata.
 		clearSignerExecutionAuthorityForTab(connections, 7)
 		registerAuthoritativeTopSocket(connections, catalogRequest.uniqueRequestIdentifier.requestSocket, 'app.example')
 		await signerProvidersChanged(connections, catalogRequest, 'app.example', true)
-		await signerProviderSelected(rememberedSelection, 'app.example', true, 0, withDocumentAuthority(new Map()))
+		await signerProviderSelected(rememberedSelection, 'app.example', true, 0, populateDocumentConnections(new Map()))
 		assert.equal(socketCanExecuteWithSelectedSigner(connections, catalogRequest.uniqueRequestIdentifier.requestSocket), true)
 
 		const newSocket = { tabId: 7, connectionName: 9n }
 		registerAuthoritativeTopSocket(connections, newSocket, 'app.example')
 		await signerProvidersChanged(connections, { ...catalogRequest, uniqueRequestIdentifier: { requestId: 2, requestSocket: newSocket } }, 'app.example', true)
-		await assert.rejects(signerProviderSelected({ ...rememberedSelection, uniqueRequestIdentifier: { requestId: 3, requestSocket: newSocket } }, 'app.example', true, 0, withDocumentAuthority(new Map())), /remembered RDNS cannot authorize/)
+		await assert.rejects(signerProviderSelected({ ...rememberedSelection, uniqueRequestIdentifier: { requestId: 3, requestSocket: newSocket } }, 'app.example', true, 0, populateDocumentConnections(new Map())), /remembered RDNS cannot authorize/)
 		assert.equal(socketCanExecuteWithSelectedSigner(connections, newSocket), false)
 	})
 
@@ -537,7 +537,7 @@ describe('EIP-6963 signer provider selection', () => {
 			availableSignerProviders: [provider],
 		}))
 
-		await signerProviderSelected(createProviderMessage('signer_provider_selected', [provider, 'explicit']), 'app.example', true, 0, withDocumentAuthority(new Map()))
+		await signerProviderSelected(createProviderMessage('signer_provider_selected', [provider, 'explicit']), 'app.example', true, 0, populateDocumentConnections(new Map()))
 		const tabState = await getTabState(7)
 
 		assert.deepEqual(await getSignerPreference('app.example'), { websiteOrigin: 'app.example', rdns: provider.rdns })
@@ -557,7 +557,7 @@ describe('EIP-6963 signer provider selection', () => {
 		const duplicateWalletInstance = { ...provider, uuid: '33333333-3333-4333-8333-333333333333' }
 		const unrelatedProvider = { ...provider, uuid: '44444444-4444-4444-8444-444444444444', name: 'Unrelated Wallet', rdns: 'org.example.unrelated' }
 		await updateTabState(7, (previousState) => ({ ...previousState, website: { websiteOrigin: 'app.example', title: undefined, icon: undefined }, availableSignerProviders: [provider, duplicateWalletInstance] }))
-		await signerProviderSelected(createProviderMessage('signer_provider_selected', [provider, 'explicit']), 'app.example', true, 0, withDocumentAuthority(new Map()))
+		await signerProviderSelected(createProviderMessage('signer_provider_selected', [provider, 'explicit']), 'app.example', true, 0, populateDocumentConnections(new Map()))
 
 		await signerProvidersChanged(connections, createProviderMessage('signer_providers_changed', [[provider, duplicateWalletInstance, unrelatedProvider], false]), 'app.example', true)
 		const tabState = await getTabState(7)
@@ -581,7 +581,7 @@ describe('EIP-6963 signer provider selection', () => {
 		const topFrameMessages: unknown[] = []
 		const childFrameMessages: unknown[] = []
 		const otherSiteMessages: unknown[] = []
-		const websiteTabConnections: WebsiteTabConnections = withDocumentAuthority(new Map([[7, { connections: {
+		const websiteTabConnections: WebsiteTabConnections = populateDocumentConnections(new Map([[7, { connections: {
 			'7-0x1': { port: { postMessage: (message: unknown) => topFrameMessages.push(message) }, socket: { tabId: 7, connectionName: 1n }, websiteOrigin: 'app.example', approved: true, wantsToConnect: true },
 			'7-0x2': { port: { postMessage: (message: unknown) => childFrameMessages.push(message) }, socket: { tabId: 7, connectionName: 2n }, websiteOrigin: 'app.example', frameId: 2, approved: true, wantsToConnect: true },
 			'7-0x3': { port: { postMessage: (message: unknown) => otherSiteMessages.push(message) }, socket: { tabId: 7, connectionName: 3n }, websiteOrigin: 'frame.example', frameId: 3, approved: true, wantsToConnect: true },
@@ -607,7 +607,7 @@ describe('EIP-6963 signer provider selection', () => {
 			availableSignerProviders: [provider],
 		}))
 		const deliveredMessages: unknown[] = []
-		const websiteTabConnections: WebsiteTabConnections = withDocumentAuthority(new Map([[7, { connections: {
+		const websiteTabConnections: WebsiteTabConnections = populateDocumentConnections(new Map([[7, { connections: {
 			'7-0x1': { port: { postMessage: (message: unknown) => deliveredMessages.push(message) }, socket: { tabId: 7, connectionName: 1n }, websiteOrigin: 'app.example', frameId: 2, approved: true, wantsToConnect: true },
 			'7-0x2': { port: { postMessage: (message: unknown) => deliveredMessages.push(message) }, socket: { tabId: 7, connectionName: 2n }, websiteOrigin: 'app.example', approved: true, wantsToConnect: true },
 		} }]]))
@@ -629,7 +629,7 @@ describe('EIP-6963 signer provider selection', () => {
 			availableSignerProviders: [provider],
 		}))
 		const deliveredMessages: unknown[] = []
-		const websiteTabConnections: WebsiteTabConnections = withDocumentAuthority(new Map([[7, { connections: {
+		const websiteTabConnections: WebsiteTabConnections = populateDocumentConnections(new Map([[7, { connections: {
 			'7-0x1': { port: { postMessage: (message: unknown) => deliveredMessages.push(message) }, socket: { tabId: 7, connectionName: 1n }, websiteOrigin: 'app.example', frameId: 0, approved: true, wantsToConnect: true },
 		} }]]))
 		registerAuthoritativeTopSocket(websiteTabConnections, { tabId: 7, connectionName: 1n }, 'app.example')
@@ -778,7 +778,7 @@ describe('EIP-6963 signer provider selection', () => {
 			...createProviderMessage('signer_provider_selected', [provider, 'remembered']),
 			uniqueRequestIdentifier: { requestId: 4, requestSocket: childSocket },
 		}
-		await signerProviderSelected(childSelectionRequest, 'app.example', false, 2, withDocumentAuthority(new Map()))
+		await signerProviderSelected(childSelectionRequest, 'app.example', false, 2, populateDocumentConnections(new Map()))
 		assert.equal(socketCanExecuteWithSelectedSigner(connections, childSocket), true)
 	})
 
@@ -794,7 +794,7 @@ describe('EIP-6963 signer provider selection', () => {
 		await updateTabState(7, (previousState) => ({ ...previousState, availableSignerProviders: [provider] }))
 		const childMessages: unknown[] = []
 		const crossOriginChildMessages: unknown[] = []
-		const websiteTabConnections: WebsiteTabConnections = withDocumentAuthority(new Map([[7, { connections: {
+		const websiteTabConnections: WebsiteTabConnections = populateDocumentConnections(new Map([[7, { connections: {
 			'7-0x1': { port: { postMessage: () => undefined }, socket: topSocket, websiteOrigin: 'app.example', frameId: 0, approved: true, wantsToConnect: true },
 			'7-0x2': { port: { postMessage: (message: unknown) => childMessages.push(message) }, socket: childSocket, websiteOrigin: 'app.example', frameId: 2, approved: true, wantsToConnect: true },
 			'7-0x3': { port: { postMessage: (message: unknown) => crossOriginChildMessages.push(message) }, socket: crossOriginChildSocket, websiteOrigin: 'frame.example', frameId: 3, approved: true, wantsToConnect: true },
@@ -845,7 +845,7 @@ describe('EIP-6963 signer provider selection', () => {
 			...createProviderMessage('signer_provider_selected', [provider, 'explicit']),
 			uniqueRequestIdentifier: { requestId: 2, requestSocket: oldSocket },
 		}
-		await assert.rejects(signerProviderSelected(staleSelectionRequest, 'app.example', false, 0, withDocumentAuthority(new Map())), /current top frame or child frame/)
+		await assert.rejects(signerProviderSelected(staleSelectionRequest, 'app.example', false, 0, populateDocumentConnections(new Map())), /current top frame or child frame/)
 		const staleBeginRequest = {
 			...createProviderMessage('begin_signer_provider_selection', [provider.uuid]),
 			uniqueRequestIdentifier: { requestId: 3, requestSocket: oldSocket },
@@ -859,7 +859,7 @@ describe('EIP-6963 signer provider selection', () => {
 		const { authorizeSignerForward, setSignerExecutionTarget } = await import('../../app/ts/background/signerExecutionAuthority.js')
 		const childSocket = { tabId: 7, connectionName: 2n }
 		const deliveredMessages: unknown[] = []
-		const websiteTabConnections: WebsiteTabConnections = withDocumentAuthority(new Map([[7, { connections: {
+		const websiteTabConnections: WebsiteTabConnections = populateDocumentConnections(new Map([[7, { connections: {
 			'7-0x2': { port: { postMessage: (message: unknown) => deliveredMessages.push(message) }, socket: childSocket, websiteOrigin: 'frame.example', frameId: 2, approved: true, wantsToConnect: true },
 		} }]]))
 		setSignerExecutionTarget(websiteTabConnections, 7, provider.uuid, 'app.example')
@@ -876,9 +876,9 @@ describe('EIP-6963 signer provider selection', () => {
 		assert.equal(isRecord(reply) && isRecord(reply.error) && reply.error.code === 4100, true)
 	})
 
-	test('authority queries and cleanup do not initialize a connection collection', async () => {
+	test('authority registration, queries, and cleanup keep state private from the connection collection', async () => {
 		const { blockSignerExecution, getSignerExecutionError, getSignerExecutionTargetForOrigin, isAuthoritativeTopSocket, socketCanExecuteWithSelectedSigner } = await import('../../app/ts/background/signerExecutionAuthority.js')
-		const untouched: WebsiteTabConnections = new Map()
+		const untouched: WebsiteTabConnections = Object.freeze(new Map())
 		const socket = { tabId: 704, connectionName: 1n }
 		assert.equal(getSignerDocumentGeneration(untouched, socket, 'app.example'), undefined)
 		assert.equal(getSignerExecutionTargetForOrigin(untouched, socket.tabId, 'app.example'), undefined)
@@ -888,11 +888,17 @@ describe('EIP-6963 signer provider selection', () => {
 		assert.equal(reconcileSignerExecutionDocument(untouched, socket, 'app.example', undefined, true, 0), false)
 		blockSignerExecution(untouched, socket.tabId)
 		clearSignerExecutionAuthorityForTab(untouched, socket.tabId)
-		assert.equal(Object.hasOwn(untouched, 'signerExecutionAuthority'), false)
+		assert.deepEqual(Object.getOwnPropertyNames(untouched), [])
 		registerAuthoritativeTopSocket(untouched, socket, 'app.example')
-		assert.notEqual(untouched.signerExecutionAuthority, undefined)
+		const generation = getSignerDocumentGeneration(untouched, socket, 'app.example')
+		assert.ok(generation)
+		assert.deepEqual(Object.getOwnPropertyNames(untouched), [])
 		clearSignerExecutionAuthorityForTab(untouched, socket.tabId)
-		assert.equal(Object.hasOwn(untouched, 'signerExecutionAuthority'), false)
+		assert.equal(getSignerDocumentGeneration(untouched, socket, 'app.example'), undefined)
+		registerAuthoritativeTopSocket(untouched, socket, 'app.example')
+		assert.notEqual(getSignerDocumentGeneration(untouched, socket, 'app.example'), generation)
+		clearSignerExecutionAuthorityForTab(untouched, socket.tabId)
+		assert.deepEqual(Object.getOwnPropertyNames(untouched), [])
 	})
 
 	test('separate connection collections cannot share signer execution authority', async () => {

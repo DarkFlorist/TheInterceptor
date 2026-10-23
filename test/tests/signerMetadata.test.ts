@@ -21,3 +21,7 @@ describe('signer metadata', () => {
 		assert.equal(getSignerLogo('Rabby'), '../img/signers/rabby.svg')
 	})
 })
+
+test('internal signer statuses have no built-in wallet logo', () => {
+	for (const name of ['NoSigner', 'NotRecognizedSigner', 'NoSignerDetected', 'EIP6963']) assert.equal(getSignerLogo(SignerName.parse(name)), undefined)
+})
