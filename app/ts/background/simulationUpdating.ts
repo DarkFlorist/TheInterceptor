@@ -297,7 +297,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 		const parentBlock = await ethereum.getBlock(undefined)
 		if (parentBlock === null) throw new Error('The latest block is null')
 		if (parentBlock.baseFeePerGas === undefined) return returnError('cannot build simulation from legacy block')
-		const simulationInput = await getCurrentSimulationInput()
+		const simulationInput = await prepareSafeExecutionsForRpc(await getCurrentSimulationInput(), ethereum)
 		const signedExecutionTransaction = mockSignTransaction({ ...contractExecutionResult.executingTransaction, gas: contractExecutionResult.ethSimulateV1CallResult.gasUsed })
 		const executionTransaction: PreSimulationTransaction = {
 			signedTransaction: signedExecutionTransaction,

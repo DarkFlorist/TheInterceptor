@@ -43,6 +43,7 @@ test('everything that sends the simulation stack to the node runs its Gnosis Saf
 	assert.match(simulationUpdatingSource, /export const prepareSimulationInputForRpc = [^\n]*\n(?:.*\n){0,4}?\tsimulationInput = await prepareSafeExecutionsForRpc\(simulationInput, ethereum\)/u)
 	assert.match(simulationUpdatingSource, /export const simulateGnosisSafeMetaTransaction = [^\n]*\n(?:.*\n){0,2}?\t\tconst simulationInput = await prepareSafeExecutionsForRpc\(stackSimulationInput, ethereumClientService\)/u)
 	assert.match(popupMessageHandlersSource, /const simulationInput = await prepareSafeExecutionsForRpc\(await getCurrentSimulationInput\(\), ethereumClientService\)/u)
+	assert.match(simulationUpdatingSource, /export const simulateGovernanceContractExecution = [^\n]*\n(?:.*\n){0,30}?\t\tconst simulationInput = await prepareSafeExecutionsForRpc\(await getCurrentSimulationInput\(\), ethereum\)/u)
 })
 
 test('the Gnosis Safe domain layer does not import background orchestration', () => {

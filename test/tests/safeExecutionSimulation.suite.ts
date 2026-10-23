@@ -4,14 +4,14 @@ import { keccak_256 } from '@noble/hashes/sha3'
 import type { SendRawTransactionParams, SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
 import { InterceptorTransactionStack, PreSimulationTransaction, type SimulationStateInput, type TransactionSimulationOptions } from '../../app/ts/types/visualizer-types.js'
 import { EthereumSendableSignedTransaction } from '../../app/ts/types/wire-types.js'
-import { describeSafeExecutionFailure, prepareSafeExecutionSimulationInput, SAFE_EXECUTION_SIMULATION_EXECUTOR } from '../../app/ts/safe/safeExecutionSimulation.js'
+import { describeSafeExecutionFailure, estimateSafeExecutionGas, prepareSafeExecutionSimulationInput, SAFE_EXECUTION_SIMULATION_EXECUTOR } from '../../app/ts/safe/safeExecutionSimulation.js'
 import { prepareSafeTransactionConfirmation } from '../../app/ts/background/safeTransactionConfirmation.js'
 import { getSimulatedTransactionByHashFromInput } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { encodeFunctionCall } from '../../app/ts/utils/abiRuntime.js'
 import { decodeEthereumError } from '../../app/ts/utils/errorDecoding.js'
 import { dataStringWith0xStart } from '../../app/ts/utils/bigint.js'
 import { getGasFeePaidByTransactionSender } from '../../app/ts/utils/transactionGasAccounting.js'
-import { activeAddress, addressString, created, createSafeAddressBookEntry, createSafeTx, createWebsitePort, ethereum, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, hexToBytes, isRecord, modules, recipientAddress, SAFE_EXECUTION_ABI, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
+import { activeAddress, addressString, created, createSafeAddressBookEntry, createSafeTx, createWebsitePort, ethereum, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, hexToBytes, isRecord, makeFakeEthSimulateResult, modules, recipientAddress, SAFE_EXECUTION_ABI, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
 
 // createSafeAddressBookEntry configures the Safe at activeAddress, the address the fake RPC gives code.
 const SAFE_ADDRESS = activeAddress
@@ -21,6 +21,8 @@ const OWNERS = [0x3000000000000000000000000000000000000003n, 0x10000000000000000
 const SORTED_OWNERS = [0x1000000000000000000000000000000000000001n, 0x2000000000000000000000000000000000000002n, 0x3000000000000000000000000000000000000003n]
 const SAFE_EXECUTION_SIMULATION_OPTIONS: TransactionSimulationOptions = { requiredChainId: fakeRpcNetwork.chainId, simulateWithZeroBaseFee: false, executeThroughSafe: true }
 const BASE_FEE_PER_GAS = 1_000n
+// What geth returns when a Safe's call fails inside execTransaction: Error("GS013").
+const GS013_REVERT_DATA = '0x08c379a0000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000054753303133000000000000000000000000000000000000000000000000000000'
 const EXECUTOR_MAX_FEE_PER_GAS = BASE_FEE_PER_GAS * 2n + 10n ** 8n
 
 const pad32 = (value: bigint) => value.toString(16).padStart(64, '0')
@@ -129,6 +131,53 @@ test('approves a later execution of the same Gnosis Safe at every nonce the Safe
 	})
 })
 
+test('counts a stacked execTransaction call to the Gnosis Safe among the executions that raise its nonce', async () => {
+	configureSafe()
+	const directExecution = { ...createSafeCall({ value: 0n, input: hexToBytes(encodeFunctionCall(SAFE_EXECUTION_ABI, 'execTransaction', [addressString(CALLED_CONTRACT), 0n, '0x', 0n, 0n, 0n, 0n, addressString(0n), addressString(0n), '0x'])), gas: 100_000n }, undefined) }
+	const directExecutionToSafe = { ...directExecution, signedTransaction: { ...directExecution.signedTransaction, from: ORDINARY_ACCOUNT, to: SAFE_ADDRESS } }
+	const safeCall = createSafeCall({ value: 2n, input: new Uint8Array(), gas: 63_000n }, SAFE_EXECUTION_SIMULATION_OPTIONS)
+	const [preparedBlock] = await prepareSafeExecutionSimulationInput([createBlock([directExecutionToSafe, safeCall])], ethereum, 123n, BASE_FEE_PER_GAS)
+	const approvedSlots = [5n, 6n].flatMap((nonce) => SORTED_OWNERS.map((owner) => approvedHashSlot(owner, getSafeTxHashAt(safeCall, nonce))))
+	assert.deepEqual(Object.keys(preparedBlock?.stateOverrides[addressString(SAFE_ADDRESS)]?.stateDiff ?? {}).sort(), approvedSlots.sort())
+	assert.equal(preparedBlock?.transactions[0]?.executedTransaction, undefined, 'the stacked execTransaction call runs as it is')
+})
+
+test('estimates a Gnosis Safe\'s call as its executor\'s execTransaction call', async () => {
+	configureSafe()
+	const simulator = createRecordingSimulator()
+	const safeCall = createSafeCall({ value: 7n, input: new Uint8Array(), gas: 0n }, SAFE_EXECUTION_SIMULATION_OPTIONS)
+	const { gas: _gas, hash: _hash, r: _r, s: _s, yParity: _yParity, ...safeCallWithoutGas } = safeCall.signedTransaction
+	const estimate = await estimateSafeExecutionGas(simulator.ethereum, undefined, [], safeCallWithoutGas, { website: safeCall.website, created: safeCall.created, originalRequestParameters: safeCall.originalRequestParameters, transactionIdentifier: safeCall.transactionIdentifier })
+	if ('error' in estimate) throw new Error(estimate.error.message)
+	assert.ok(estimate.gas > 0n)
+	assert.ok(simulator.simulatedCalls.length > 0)
+	assert.ok(simulator.simulatedCalls.every((call) => call.from === SAFE_EXECUTION_SIMULATION_EXECUTOR && call.to === SAFE_ADDRESS && call.baseFeePerGas > 0n), 'every estimate run is the executor\'s call in a block with the real base fee')
+})
+
+test('explains a Gnosis Safe\'s call that reverts while its gas is estimated', async () => {
+	configureSafe()
+	// What geth returns when the Safe's call reverts inside execTransaction.
+	const revertingRequestHandler = {
+		rpcUrl: fakeRpcNetwork.httpsRpc,
+		clearCache() { return undefined },
+		async jsonRpcRequest(rpcRequest: { method: string, params?: readonly unknown[] }) {
+			if (rpcRequest.method !== 'eth_simulateV1') return await fakeRequestHandler.jsonRpcRequest(rpcRequest)
+			const simulationParams = rpcRequest.params?.[0]
+			const blockStateCalls = isRecord(simulationParams) && Array.isArray(simulationParams.blockStateCalls) ? simulationParams.blockStateCalls : []
+			return modules.serialize(modules.EthSimulateV1Result, blockStateCalls.map((blockStateCall) => ({
+				...makeFakeEthSimulateResult(0n, modules.Multicall3ABI, 0),
+				calls: blockStateCall.calls.map(() => ({ status: 'failure', gasUsed: 75_370n, returnData: new Uint8Array(), error: { code: 3, message: 'execution reverted: GS013', data: GS013_REVERT_DATA } })),
+			})))
+		},
+	}
+	const revertingEthereum = new modules.EthereumClientService(revertingRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
+	const safeCall = createSafeCall({ value: 7n, input: new Uint8Array(), gas: 0n }, SAFE_EXECUTION_SIMULATION_OPTIONS)
+	const { gas: _gas, hash: _hash, r: _r, s: _s, yParity: _yParity, ...safeCallWithoutGas } = safeCall.signedTransaction
+	const estimate = await estimateSafeExecutionGas(revertingEthereum, undefined, [], safeCallWithoutGas, { website: safeCall.website, created: safeCall.created, originalRequestParameters: safeCall.originalRequestParameters, transactionIdentifier: safeCall.transactionIdentifier })
+	if (!('error' in estimate)) throw new Error('Expected the estimate to fail')
+	assert.match(estimate.error.message, /Gnosis Safe's call reverted \(GS013\)/u)
+})
+
 test('leaves an input without Gnosis Safe executions as it is, without reading any Safe', async () => {
 	const input = [createBlock([createSafeCall({ value: 1n, input: new Uint8Array(), gas: 21_000n }, undefined)])]
 	fakeSafeContract.requestedRpcMethods.length = 0
@@ -171,9 +220,7 @@ test('looks up a simulated Gnosis Safe execution as the Safe\'s own call, as its
 })
 
 test('explains why a Gnosis Safe execution failed without its call\'s revert reason', () => {
-	// What geth returns when a Safe's call fails inside execTransaction.
-	const gs013Data = '0x08c379a0000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000054753303133000000000000000000000000000000000000000000000000000000'
-	const gs013 = decodeEthereumError([], { code: 3, message: 'execution reverted: GS013', data: gs013Data }).reason
+	const gs013 = decodeEthereumError([], { code: 3, message: 'execution reverted: GS013', data: GS013_REVERT_DATA }).reason
 	assert.equal(gs013, 'GS013')
 	assert.match(describeSafeExecutionFailure({ simulationOptions: SAFE_EXECUTION_SIMULATION_OPTIONS }, gs013), /Gnosis Safe's call reverted \(GS013\)/u)
 	assert.equal(describeSafeExecutionFailure({ simulationOptions: SAFE_EXECUTION_SIMULATION_OPTIONS }, 'GS025'), 'GS025')
@@ -272,8 +319,7 @@ test('simulates a configured Gnosis Safe\'s transaction in simulation mode as th
 		assert.ok(call.baseFeePerGas > 0n, 'in a block with the real base fee')
 		assert.ok(call.maxFeePerGas >= call.baseFeePerGas)
 	}
-	// Only the gas estimate of the Safe's own call sends from the Safe, in a zero base fee block like every gas estimate. The preview's effects come from the executor's call.
-	assert.ok(simulator.simulatedCalls.filter((call) => call.from === SAFE_ADDRESS).every((call) => call.baseFeePerGas === 0n))
+	assert.equal(simulator.simulatedCalls.some((call) => call.from === SAFE_ADDRESS), false, 'the Safe never sends a transaction itself, not even to estimate gas')
 	const visualizedTransaction = pending.popupVisualisation.data.visualizedSimulationState.visualizedBlocks.at(-1)?.simulatedAndVisualizedTransactions.at(-1)
 	assert.deepEqual(visualizedTransaction?.simulationOptions, SAFE_EXECUTION_SIMULATION_OPTIONS)
 

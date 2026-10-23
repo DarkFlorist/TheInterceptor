@@ -1,6 +1,7 @@
 import type { MessageConfirmationRequest, TransactionConfirmationRequest } from '../../types/confirmationRequest.js'
 import { SafeMessage } from '../../safe/safeMessage.js'
 import { isSafeMessageCoSignRequest } from '../../safe/safeRequestPolicy.js'
+import { estimateSafeExecutionGas } from '../../safe/safeExecutionSimulation.js'
 import type { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
 import { getInputFieldFromDataOrInput, getSimulatedBalance, getSimulatedErc20Balance, getSimulatedTransactionCount, simulateEstimateGas } from '../../simulation/services/SimulationModeEthereumClientService.js'
 import { simulatePersonalSign } from '../../simulation/services/simulationPersonalSigning.js'
@@ -9,7 +10,7 @@ import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS, 
 import { type TransactionConfirmation, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
 import { Semaphore } from '../../utils/semaphore.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
-import { type InterceptorTransactionStack, PASSTHROUGH_STATE, type TransactionGasPayment, type TransactionSimulationOptions, type WebsiteCreatedEthereumTransaction, type WebsiteCreatedEthereumTransactionOrFailed, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
+import { type InterceptorTransactionStack, PASSTHROUGH_STATE, type ResolvedSimulationState, type TransactionGasPayment, type TransactionSimulationOptions, type WebsiteCreatedEthereumTransaction, type WebsiteCreatedEthereumTransactionOrFailed, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
 import type { SendRawTransactionParams, SendTransactionParams } from '../../types/JsonRpc-types.js'
 import { refreshConfirmTransactionSimulation } from '../confirmTransactionSimulation.js'
 import { captureSimulationSnapshot, getUpdatedSimulationState } from '../simulationUpdating.js'
@@ -531,6 +532,13 @@ export const formSendRawTransaction = async(_ethereumClientService: EthereumClie
 	}
 }
 
+// The simulated stack a transaction is formed on top of. A failed stack simulation fails the gas estimate, as in simulateEstimateGas.
+const getSimulationStateInput = (simulationState: ResolvedSimulationState) => {
+	if (simulationState.kind === 'passthrough') throw new Error('Gnosis Safe transaction gas estimation requires the Interceptor simulator.')
+	if (simulationState.value.success === false) throw new JsonRpcResponseError(simulationState.value.jsonRpcError)
+	return simulationState.value.simulationStateInput
+}
+
 export const formEthSendTransaction = async(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, activeAddress: bigint | undefined, website: Website, sendTransactionParams: SendTransactionParams, created: Date, transactionIdentifier: EthereumQuantity, simulationMode = true, gasPayment: TransactionGasPayment = 'transaction-sender'): Promise<WebsiteCreatedEthereumTransactionOrFailed> => {
 	const paidByExecutor = gasPayment !== 'transaction-sender'
 	const simulationState = simulationMode || paidByExecutor
@@ -592,7 +600,9 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 			if (paidByExecutor && simulationState.kind === 'passthrough') {
 				throw new Error('Gnosis Safe transaction gas estimation requires the Interceptor simulator.')
 			}
-			const estimateGas = await simulateEstimateGas(ethereumClientService, requestAbortController, simulationState, transactionWithoutGas)
+			const estimateGas = gasPayment === 'simulated-safe-executor'
+				? await estimateSafeExecutionGas(ethereumClientService, requestAbortController, getSimulationStateInput(simulationState), transactionWithoutGas, { website, created, originalRequestParameters: sendTransactionParams, transactionIdentifier })
+				: await simulateEstimateGas(ethereumClientService, requestAbortController, simulationState, transactionWithoutGas)
 			if ('error' in estimateGas) {
 				const insufficientBalanceMessage = balancePromise === undefined
 					? undefined
