@@ -715,7 +715,7 @@ test('startup pruning removes terminal replies for missing tabs and preserves li
 await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
 
 test('pending transaction storage waits for a signer selection lease without caller-side locking', async () => {
-	const { acquireSignerSelectionLease, releaseSignerSelectionLease } = await import('../../app/ts/background/signerSelectionLease.js')
+	const { acquireSignerSelectionLease, releaseSignerSelectionLease } = await import('../../app/ts/background/signerExecutionAuthority.js')
 	const tabId = pendingTransaction.uniqueRequestIdentifier.requestSocket.tabId
 	const websiteTabConnections = new Map()
 	const token = await acquireSignerSelectionLease(websiteTabConnections, tabId)

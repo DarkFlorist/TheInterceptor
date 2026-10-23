@@ -41,7 +41,7 @@ describe('background eth_accounts', () => {
 		test(`internal setup ${ failureLocation } failure settles requests and releases the finish lease`, async () => {
 			installBrowserMock()
 			const { handleInterceptedRequest, websiteSocketToString } = await loadModules()
-			const { acquireSignerSelectionLease, signerSelectionLeaseIsActive, runWithSignerSelectionGate } = await import('../../app/ts/background/signerSelectionLease.js')
+			const { acquireSignerSelectionLease, signerSelectionLeaseIsActive, runWithSignerSelectionGate } = await import('../../app/ts/background/signerExecutionAuthority.js')
 			const socket = { tabId: 1, connectionName: 0n }
 			const websiteOrigin = 'https://internal-setup-failure.example'
 			const { port, messages } = createPort(socket.tabId, undefined, 0)

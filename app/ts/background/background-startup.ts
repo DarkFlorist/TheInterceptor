@@ -1,3 +1,4 @@
+import { clearSignerExecutionAuthorityForTab, getSignerDocumentGeneration, registerCurrentChildSignerSocket, scheduleCurrentChildSignerSocketRemoval, registerAuthoritativeTopSocket, releaseSignerSelectionLeasesForSocket } from './signerExecutionAuthority.js'
 import { INTERCEPTOR_SIGNER_DOCUMENT_GENERATION_MESSAGE } from '../utils/inpageBridgeProtocol.js'
 import { getExplicitSignerSelection, getExplicitSignerSelectionForConnection } from './signerSelectionOwnership.js'
 import { initializeInpageBridge } from './inpageBridgeBootstrap.js'
@@ -39,9 +40,7 @@ import { flushPendingTerminalRepliesForConnectedPortWithRetry } from './terminal
 import { prunePendingTerminalRepliesForMissingTabs, removePendingTerminalRepliesForTab } from './pendingTerminalReplies.js'
 import { createRetriableTerminalStateRecovery } from './terminalStateRecovery.js'
 import { acknowledgeAndTrackBridgeRequest, INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE } from './bridgeRequestDelivery.js'
-import { clearSignerExecutionAuthorityForTab, getSignerDocumentGeneration, registerCurrentChildSignerSocket, scheduleCurrentChildSignerSocketRemoval } from './signerExecutionAuthority.js'
 import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
-import { registerTopSignerDocument, releaseSignerSelectionLeasesForSocket } from './signerSelectionLease.js'
 import { getChildSignerConnectionSynchronization } from './signerProviderSelection.js'
 import { getWebsiteDetailsForConnection } from './websiteConnectionMetadata.js'
 import { registerWebsiteConnectionAndProvisionallyClaimSignerState } from './signerStateOwnership.js'
@@ -211,7 +210,7 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ simulati
 	)
 	if (!listenersRegistered) return
 	if (isTopFrame) {
-		startsNewSignerDocument = registerTopSignerDocument(websiteTabConnections, socket, websiteOrigin)
+		startsNewSignerDocument = registerAuthoritativeTopSocket(websiteTabConnections, socket, websiteOrigin)
 		const signerDocumentGeneration = getSignerDocumentGeneration(websiteTabConnections, socket, websiteOrigin)
 		if (signerDocumentGeneration === undefined) throw new Error('Missing authoritative signer document generation')
 		port.postMessage({ type: INTERCEPTOR_SIGNER_DOCUMENT_GENERATION_MESSAGE, signerDocumentGeneration })

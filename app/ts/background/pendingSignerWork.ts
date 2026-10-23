@@ -1,6 +1,6 @@
 import type { PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import type { WebsiteTabConnections, PendingChainChangeConfirmationPromise } from '../types/user-interface-types.js'
-import { runWithSignerSelectionGate } from './signerSelectionLease.js'
+import { runWithSignerSelectionGate } from './signerExecutionAuthority.js'
 import { updatePendingTransactionOrMessages, writeChainChangeConfirmation } from './storageVariables.js'
 
 // Creation enters the signer workflow through these operations, so callers cannot omit or nest its selection reservation.

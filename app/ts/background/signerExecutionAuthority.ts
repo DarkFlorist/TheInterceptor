@@ -1,19 +1,10 @@
+import { createChildSignerSockets } from './childSignerSockets.js'
+import { createSignerSelectionGate } from './signerSelectionGate.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { generateUuidV4 } from '../utils/uuid.js'
 import type { InterceptedRequestForward } from '../types/interceptor-messages.js'
 import { METAMASK_ERROR_NOT_AUTHORIZED } from '../utils/constants.js'
 import { isTopFrameId, websiteSocketToString, type WebsiteSocket } from '../utils/requests.js'
-
-type GateReservation = {
-	readonly release: () => void
-}
-
-type ActiveSignerSelectionLease = {
-	readonly tabId: number
-	readonly socket?: WebsiteSocket
-	readonly release: () => void
-	readonly timeout: ReturnType<typeof setTimeout>
-}
 
 type SignerExecutionAuthority = {
 	readonly websiteOrigin: string
@@ -25,13 +16,10 @@ type SignerExecutionAuthority = {
 }
 
 type SignerCoordinationState = {
-	readonly gateTailsByTab: Map<number, Promise<void>>
-	readonly activeLeasesByToken: Map<string, ActiveSignerSelectionLease>
+	readonly selectionGate: ReturnType<typeof createSignerSelectionGate>
+	readonly childSockets: ReturnType<typeof createChildSignerSockets>
 	readonly authoritativeTopSocketKeys: Map<number, string>
 	readonly signerExecutionAuthorities: Map<number, SignerExecutionAuthority>
-	readonly currentChildSocketKeysByTab: Map<number, Map<number, string>>
-	readonly childFrameIdsBySocketKey: Map<string, number>
-	readonly pendingChildSocketRemovalTimers: Map<string, ReturnType<typeof setTimeout>>
 }
 
 // One collection-scoped owner holds document authority and selection reservations privately, so copying connection/UI snapshots cannot grant execution. TabState is persisted display data; signerStateOwner tracks callback freshness rather than execution permission.
@@ -39,14 +27,19 @@ const signerCoordinationByConnections = new WeakMap<WebsiteTabConnections, Signe
 
 // Registration and workflow reservations initialize this collection's ephemeral state; queries never attach state. Persisted TabState is a UI/catalog snapshot and never grants execution authority.
 function createSignerCoordinationState(): SignerCoordinationState {
+	const signerExecutionAuthorities = new Map<number, SignerExecutionAuthority>()
+	const selectionGate = createSignerSelectionGate()
+	const invalidateSocket = (key: string, tabId: number) => {
+		selectionGate.releaseForSocketKey(key)
+		const authority = signerExecutionAuthorities.get(tabId)
+		authority?.eligibleSocketKeys.delete(key)
+		authority?.authorizedSocketKeys.delete(key)
+	}
 	return {
-		gateTailsByTab: new Map(),
-		activeLeasesByToken: new Map(),
 		authoritativeTopSocketKeys: new Map<number, string>(),
-		signerExecutionAuthorities: new Map<number, SignerExecutionAuthority>(),
-		currentChildSocketKeysByTab: new Map<number, Map<number, string>>(),
-		childFrameIdsBySocketKey: new Map<string, number>(),
-		pendingChildSocketRemovalTimers: new Map<string, ReturnType<typeof setTimeout>>(),
+		signerExecutionAuthorities,
+		selectionGate,
+		childSockets: createChildSignerSockets(invalidateSocket, selectionGate.releaseForSocketKey),
 	}
 }
 
@@ -60,66 +53,15 @@ function initializeSignerCoordination(websiteTabConnections: WebsiteTabConnectio
 
 export function registerCurrentChildSignerSocket(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, frameId: number) {
 	if (isTopFrameId(frameId)) return false
-	releaseSignerSelectionLeasesForSocket(websiteTabConnections, socket)
-	const { signerExecutionAuthorities, currentChildSocketKeysByTab, childFrameIdsBySocketKey, pendingChildSocketRemovalTimers } = initializeSignerCoordination(websiteTabConnections)
-	const key = websiteSocketToString(socket)
-	const pendingRemoval = pendingChildSocketRemovalTimers.get(key)
-	if (pendingRemoval !== undefined) {
-		clearTimeout(pendingRemoval)
-		pendingChildSocketRemovalTimers.delete(key)
-	}
-	const currentForTab = currentChildSocketKeysByTab.get(socket.tabId) ?? new Map<number, string>()
-	currentChildSocketKeysByTab.set(socket.tabId, currentForTab)
-	const previousKey = currentForTab.get(frameId)
-	if (previousKey === key) return false
-	currentForTab.set(frameId, key)
-	childFrameIdsBySocketKey.set(key, frameId)
-	const authority = signerExecutionAuthorities.get(socket.tabId)
-	if (previousKey !== undefined) {
-		for (const lease of signerCoordinationByConnections.get(websiteTabConnections)?.activeLeasesByToken.values() ?? []) {
-			if (lease.socket !== undefined && websiteSocketToString(lease.socket) === previousKey) lease.release()
-		}
-		childFrameIdsBySocketKey.delete(previousKey)
-		authority?.eligibleSocketKeys.delete(previousKey)
-		authority?.authorizedSocketKeys.delete(previousKey)
-	}
-	return true
+	return initializeSignerCoordination(websiteTabConnections).childSockets.register(socket, frameId)
 }
 
 export function unregisterCurrentChildSignerSocket(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
-	releaseSignerSelectionLeasesForSocket(websiteTabConnections, socket)
-	const state = signerCoordinationByConnections.get(websiteTabConnections)
-	if (state === undefined) return false
-	const { signerExecutionAuthorities, currentChildSocketKeysByTab, childFrameIdsBySocketKey, pendingChildSocketRemovalTimers } = state
-	const key = websiteSocketToString(socket)
-	const pendingRemoval = pendingChildSocketRemovalTimers.get(key)
-	if (pendingRemoval !== undefined) clearTimeout(pendingRemoval)
-	pendingChildSocketRemovalTimers.delete(key)
-	const frameId = childFrameIdsBySocketKey.get(key)
-	childFrameIdsBySocketKey.delete(key)
-	if (frameId === undefined) return false
-	const currentForTab = currentChildSocketKeysByTab.get(socket.tabId)
-	if (currentForTab?.get(frameId) !== key) return false
-	currentForTab.delete(frameId)
-	if (currentForTab.size === 0) currentChildSocketKeysByTab.delete(socket.tabId)
-	const authority = signerExecutionAuthorities.get(socket.tabId)
-	authority?.eligibleSocketKeys.delete(key)
-	authority?.authorizedSocketKeys.delete(key)
-	return true
+	return signerCoordinationByConnections.get(websiteTabConnections)?.childSockets.unregister(socket) ?? false
 }
 
 export function scheduleCurrentChildSignerSocketRemoval(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
-	const state = signerCoordinationByConnections.get(websiteTabConnections)
-	if (state === undefined) return false
-	const { childFrameIdsBySocketKey, pendingChildSocketRemovalTimers } = state
-	const key = websiteSocketToString(socket)
-	if (!childFrameIdsBySocketKey.has(key) || pendingChildSocketRemovalTimers.has(key)) return false
-	const timeout = setTimeout(() => {
-		pendingChildSocketRemovalTimers.delete(key)
-		unregisterCurrentChildSignerSocket(websiteTabConnections, socket)
-	}, 1000)
-	pendingChildSocketRemovalTimers.set(key, timeout)
-	return true
+	return signerCoordinationByConnections.get(websiteTabConnections)?.childSockets.scheduleRemoval(socket) ?? false
 }
 
 export function registerAuthoritativeTopSocket(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string) {
@@ -129,7 +71,7 @@ export function registerAuthoritativeTopSocket(websiteTabConnections: WebsiteTab
 	if (authoritativeTopSocketKeys.get(socket.tabId) === key && current?.websiteOrigin === websiteOrigin) {
 		return false
 	}
-	releaseSignerSelectionLeasesForTab(websiteTabConnections, socket.tabId)
+	initializeSignerCoordination(websiteTabConnections).selectionGate.releaseForTab(socket.tabId)
 	authoritativeTopSocketKeys.set(socket.tabId, key)
 	// Every document starts blocked until its initial (possibly empty) EIP-6963 catalog has been reconciled with the site's stored preference.
 	signerExecutionAuthorities.set(socket.tabId, {
@@ -156,10 +98,7 @@ export function getSignerDocumentGeneration(websiteTabConnections: WebsiteTabCon
 }
 
 export function isCurrentChildSignerSocket(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, frameId: number | undefined) {
-	const state = signerCoordinationByConnections.get(websiteTabConnections)
-	if (state === undefined) return false
-	const { currentChildSocketKeysByTab } = state
-	return frameId !== undefined && !isTopFrameId(frameId) && currentChildSocketKeysByTab.get(socket.tabId)?.get(frameId) === websiteSocketToString(socket)
+	return signerCoordinationByConnections.get(websiteTabConnections)?.childSockets.isCurrent(socket, frameId) ?? false
 }
 
 export function reconcileSignerExecutionDocument(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string, documentGeneration: string | undefined, isTopFrame: boolean, frameId: number | undefined) {
@@ -317,34 +256,23 @@ export function authorizeSocketForLegacySignerExecution(websiteTabConnections: W
 export function socketCanExecuteWithSelectedSigner(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
 	const state = signerCoordinationByConnections.get(websiteTabConnections)
 	if (state === undefined) return false
-	const { signerExecutionAuthorities, currentChildSocketKeysByTab, childFrameIdsBySocketKey } = state
+	const { signerExecutionAuthorities, childSockets } = state
 	const key = websiteSocketToString(socket)
 	const authority = signerExecutionAuthorities.get(socket.tabId)
 	if (authority?.authorizedSocketKeys.has(key) !== true) return false
 	if (isAuthoritativeTopSocket(websiteTabConnections, socket)) return true
-	const frameId = childFrameIdsBySocketKey.get(key)
-	return frameId !== undefined && currentChildSocketKeysByTab.get(socket.tabId)?.get(frameId) === key
+	return childSockets.containsCurrentSocket(socket)
 }
 
 export function clearSignerExecutionAuthorityForTab(websiteTabConnections: WebsiteTabConnections, tabId: number) {
-	releaseSignerSelectionLeasesForTab(websiteTabConnections, tabId)
 	const state = signerCoordinationByConnections.get(websiteTabConnections)
 	if (state === undefined) return
-	const { authoritativeTopSocketKeys, signerExecutionAuthorities, currentChildSocketKeysByTab, childFrameIdsBySocketKey, pendingChildSocketRemovalTimers } = state
-	authoritativeTopSocketKeys.delete(tabId)
-	signerExecutionAuthorities.delete(tabId)
-	currentChildSocketKeysByTab.delete(tabId)
-	for (const [key] of childFrameIdsBySocketKey) {
-		if (key.startsWith(`${ tabId }-`)) childFrameIdsBySocketKey.delete(key)
-	}
-	for (const [key, timeout] of pendingChildSocketRemovalTimers) {
-		if (!key.startsWith(`${ tabId }-`)) continue
-		clearTimeout(timeout)
-		pendingChildSocketRemovalTimers.delete(key)
-	}
-	// The last document's cleanup releases the collection's authority state. Read-only policy checks never recreate it.
-	if (authoritativeTopSocketKeys.size === 0 && signerExecutionAuthorities.size === 0 && currentChildSocketKeysByTab.size === 0
-		&& childFrameIdsBySocketKey.size === 0 && pendingChildSocketRemovalTimers.size === 0 && state.gateTailsByTab.size === 0 && state.activeLeasesByToken.size === 0) signerCoordinationByConnections.delete(websiteTabConnections)
+	state.selectionGate.releaseForTab(tabId)
+	state.childSockets.clearTab(tabId)
+	state.authoritativeTopSocketKeys.delete(tabId)
+	state.signerExecutionAuthorities.delete(tabId)
+	// Keep the owner alive while queued reservations drain; policy reads never initialize it.
+	if (state.authoritativeTopSocketKeys.size === 0 && state.signerExecutionAuthorities.size === 0 && state.childSockets.isEmpty() && state.selectionGate.isIdle()) signerCoordinationByConnections.delete(websiteTabConnections)
 }
 
 export function getSignerExecutionError(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
@@ -358,70 +286,22 @@ export function authorizeSignerForward(websiteTabConnections: WebsiteTabConnecti
 	return error === undefined ? message : { ...message, type: 'result', error }
 }
 
-async function reserveSignerSelectionGate(websiteTabConnections: WebsiteTabConnections, tabId: number): Promise<GateReservation> {
-	const { gateTailsByTab } = initializeSignerCoordination(websiteTabConnections)
-	const previousTail = gateTailsByTab.get(tabId) ?? Promise.resolve()
-	let releaseReservation: (() => void) | undefined
-	const completion = new Promise<void>((resolve) => { releaseReservation = resolve })
-	const currentTail = previousTail.then(async () => await completion)
-	gateTailsByTab.set(tabId, currentTail)
-	await previousTail
-	let released = false
-	const release = () => {
-		if (released) return
-		released = true
-		releaseReservation?.()
-		void currentTail.then(() => {
-			if (gateTailsByTab.get(tabId) === currentTail) gateTailsByTab.delete(tabId)
-		})
-	}
-	return { release }
-}
-
 export async function acquireSignerSelectionLease(websiteTabConnections: WebsiteTabConnections, tabId: number, socket?: WebsiteSocket) {
-	const { activeLeasesByToken } = initializeSignerCoordination(websiteTabConnections)
-	const reservation = await reserveSignerSelectionGate(websiteTabConnections, tabId)
-	const token = crypto.randomUUID()
-	const release = () => {
-		const lease = activeLeasesByToken.get(token)
-		if (lease === undefined) return
-		activeLeasesByToken.delete(token)
-		clearTimeout(lease.timeout)
-		reservation.release()
-	}
-	const timeout = setTimeout(release, 30_000)
-	activeLeasesByToken.set(token, { tabId, socket, release, timeout })
-	return token
+	return await initializeSignerCoordination(websiteTabConnections).selectionGate.acquire(tabId, socket)
 }
 
 export function releaseSignerSelectionLease(websiteTabConnections: WebsiteTabConnections, tabId: number, token: string) {
-	const lease = signerCoordinationByConnections.get(websiteTabConnections)?.activeLeasesByToken.get(token)
-	if (lease?.tabId !== tabId) return false
-	lease.release()
-	return true
+	return signerCoordinationByConnections.get(websiteTabConnections)?.selectionGate.release(tabId, token) ?? false
 }
 
 export function signerSelectionLeaseIsActive(websiteTabConnections: WebsiteTabConnections, tabId: number, token: string) {
-	return signerCoordinationByConnections.get(websiteTabConnections)?.activeLeasesByToken.get(token)?.tabId === tabId
-}
-
-function releaseSignerSelectionLeasesForTab(websiteTabConnections: WebsiteTabConnections, tabId: number) {
-	for (const lease of signerCoordinationByConnections.get(websiteTabConnections)?.activeLeasesByToken.values() ?? []) {
-		if (lease.tabId === tabId) lease.release()
-	}
+	return signerCoordinationByConnections.get(websiteTabConnections)?.selectionGate.isActive(tabId, token) ?? false
 }
 
 export function releaseSignerSelectionLeasesForSocket(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
-	for (const lease of signerCoordinationByConnections.get(websiteTabConnections)?.activeLeasesByToken.values() ?? []) {
-		if (lease.socket?.tabId === socket.tabId && lease.socket.connectionName === socket.connectionName) lease.release()
-	}
+	signerCoordinationByConnections.get(websiteTabConnections)?.selectionGate.releaseForSocketKey(websiteSocketToString(socket))
 }
 
 export async function runWithSignerSelectionGate<T>(websiteTabConnections: WebsiteTabConnections, tabId: number, action: () => Promise<T>) {
-	const reservation = await reserveSignerSelectionGate(websiteTabConnections, tabId)
-	try {
-		return await action()
-	} finally {
-		reservation.release()
-	}
+	return await initializeSignerCoordination(websiteTabConnections).selectionGate.run(tabId, action)
 }

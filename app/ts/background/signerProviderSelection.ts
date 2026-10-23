@@ -1,3 +1,4 @@
+import { acquireSignerSelectionLease, releaseSignerSelectionLease, signerSelectionLeaseIsActive, allowLegacySignerExecution, authorizeSocketForLegacySignerExecution, authorizeSocketForSignerExecution, blockSignerExecution, getSignerExecutionTargetForSocket, getSignerDocumentGeneration, isAuthoritativeTopSocket, reconcileSignerExecutionDocument, setSignerExecutionTarget, signerSelectionIsUnavailable, signerFrameHasDifferentOrigin, socketIsEligibleForSignerExecution } from './signerExecutionAuthority.js'
 import { probeChildSignerDocument } from './signerDocumentSynchronization.js'
 import { getExplicitSignerSelectionForConnection } from './signerSelectionOwnership.js'
 import { isTopFrameId } from '../utils/requests.js'
@@ -8,8 +9,6 @@ import { modifyObject } from '../utils/typescript.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
 import { getChainChangeConfirmationPromise, getPendingTransactionsAndMessages, getSignerPreference, getTabState, setSignerPreference, updateTabState } from './storageVariables.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
-import { acquireSignerSelectionLease, releaseSignerSelectionLease, signerSelectionLeaseIsActive } from './signerSelectionLease.js'
-import { allowLegacySignerExecution, authorizeSocketForLegacySignerExecution, authorizeSocketForSignerExecution, blockSignerExecution, getSignerExecutionTargetForSocket, getSignerDocumentGeneration, isAuthoritativeTopSocket, reconcileSignerExecutionDocument, setSignerExecutionTarget, signerSelectionIsUnavailable, signerFrameHasDifferentOrigin, socketIsEligibleForSignerExecution } from './signerExecutionAuthority.js'
 
 const tabHasPendingSignerWork = async (tabId: number) => {
 	const [pendingSignerRequests, pendingChainChange] = await Promise.all([
