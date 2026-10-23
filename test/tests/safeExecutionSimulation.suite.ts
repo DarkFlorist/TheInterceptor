@@ -232,6 +232,21 @@ test('runs a Safe proposal as the executor executing its SafeTx, refund fields i
 	assert.deepEqual(preparedBlock?.stateOverrides[addressString(SAFE_ADDRESS)]?.stateDiff, Object.fromEntries(SORTED_OWNERS.map((owner) => [approvedHashSlot(owner, safeTxHashAtSafeNonce), 1n])))
 })
 
+test('counts an execTransaction call inside a Safe proposal\'s MultiSend batch among the executions that raise the Safe\'s nonce', async () => {
+	configureSafe()
+	const { encodeSafeBatch, SAFE_MULTI_SEND_CALL_ONLY } = await import('../../app/ts/safe/safeDelegateCalls.js')
+	const selfExecution = hexToBytes(encodeFunctionCall(SAFE_EXECUTION_ABI, 'execTransaction', [addressString(CALLED_CONTRACT), 0n, '0x', 0n, 0n, 0n, 0n, addressString(0n), addressString(0n), '0x']))
+	const batch = createSafeProposal({ to: SAFE_MULTI_SEND_CALL_ONLY, value: 0n, operation: 1n, data: encodeSafeBatch([{ to: SAFE_ADDRESS, value: 0n, data: selfExecution }, { to: CALLED_CONTRACT, value: 0n, data: new Uint8Array([1]) }]) })
+	const laterProposal = createSafeProposal({ value: 9n })
+	const [preparedBlock] = await prepareSafeExecutionSimulationInput([createBlock([batch, laterProposal])], ethereum, 123n, BASE_FEE_PER_GAS)
+	const laterSafeTx = laterProposal.safeTransaction?.safeTx
+	if (laterSafeTx === undefined) throw new Error('Expected a Safe proposal')
+	const stateDiff = preparedBlock?.stateOverrides[addressString(SAFE_ADDRESS)]?.stateDiff ?? {}
+	// The batch's own execution and the execution its batch makes raise the nonce from 5 to 7.
+	const approvedSlotsOfLaterProposal = [5n, 6n, 7n].flatMap((nonce) => SORTED_OWNERS.map((owner) => approvedHashSlot(owner, BigInt(getSafeTxHash(createSafeTxFromMessage(fakeRpcNetwork.chainId, SAFE_ADDRESS, { ...laterSafeTx.message, nonce }))))))
+	assert.ok(approvedSlotsOfLaterProposal.every((slot) => stateDiff[slot] === 1n))
+})
+
 test('runs a Safe proposal stored by an earlier version in a block with the real base fee', async () => {
 	configureSafe()
 	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({ simulationMode: false, rpcNetwork: fakeRpcNetwork, activeSigningSafeAddress: SAFE_ADDRESS })
