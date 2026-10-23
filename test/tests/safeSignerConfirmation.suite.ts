@@ -167,7 +167,7 @@ test('keeps a disconnected Safe proposal reviewable and attaches the owner after
 		new Date(),
 		1n,
 		false,
-		preparation.feePayment,
+		preparation.gasPayment,
 	)
 	const finalized = await preparation.finalize(transactionToSimulate, uniqueRequestIdentifier.requestSocket.tabId)
 	assert.equal(finalized.transactionToSimulate.success, true)

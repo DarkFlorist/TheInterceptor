@@ -3,15 +3,8 @@ import type { TabState } from '../types/user-interface-types.js'
 import type { ActiveAddressSelection } from '../utils/activeAddressSelection.js'
 import { getActiveAddressSelection, resolveSigningSafe } from '../utils/activeAddressSelection.js'
 import type { SigningAddressPreference } from '../types/signerTypes.js'
-import type { SafeEntry } from '../types/addressBookTypes.js'
 import { getSigningAddressPreferences, rememberSigningAddressPreference } from './settings.js'
 import { getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
-
-// The one rule for whether an address is a Gnosis Safe configured on a chain: it turns a signing-mode transaction of the active address into a Safe proposal, and gives a simulation-mode one executor-paid fees (getSimulationModeFeePayment). Unlike getConfiguredSigningSafeForChain, it does not require the connected signer to own the Safe.
-export async function findConfiguredSafeForChain(address: bigint, chainId: bigint): Promise<SafeEntry | undefined> {
-	const entry = (await getUserAddressBookEntriesForChainIdMorePreciseFirst(chainId)).find((candidate) => candidate.type === 'safe' && candidate.address === address)
-	return entry?.type === 'safe' ? entry : undefined
-}
 
 export async function getConfiguredSigningSafeForChain(activeSigningSafeAddress: bigint | undefined, chainId: bigint, signerAccounts: readonly bigint[]) {
 	return resolveSigningSafe(activeSigningSafeAddress, chainId, signerAccounts, await getUserAddressBookEntriesForChainIdMorePreciseFirst(chainId))

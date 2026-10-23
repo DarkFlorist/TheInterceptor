@@ -4,7 +4,7 @@ import { AddressBookEntry } from './addressBookTypes.js'
 import { EthereumAddress, EthereumQuantity, EthereumTimestamp, OptionalEthereumAddress } from './wire-types.js'
 import { SignerName } from './signerTypes.js'
 import { InterceptedRequest, UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
-import { FailedToCreateWebsiteCreatedEthereumTransaction, NamedTokenId, SENDER_PAID_FEES, SignedMessageTransaction, SimulationState, TokenPriceEstimate, TransactionFeePayment, VisualizedSimulationState, WebsiteCreatedEthereumTransaction, WebsiteCreatedEthereumTransactionOrFailed } from './visualizer-types.js'
+import { FailedToCreateWebsiteCreatedEthereumTransaction, NamedTokenId, SignedMessageTransaction, SimulationState, TokenPriceEstimate, VisualizedSimulationState, WebsiteCreatedEthereumTransaction, WebsiteCreatedEthereumTransactionOrFailed } from './visualizer-types.js'
 import { VisualizedPersonalSignRequest } from './personal-message-definitions.js'
 import { OriginalSendRequestParameters, SendTransactionParams } from './JsonRpc-types.js'
 import { SignMessageParams } from './jsonRpc-signing-types.js'
@@ -105,8 +105,8 @@ const PendingTransactionApprovalStatus = funtypes.Union(
 	}).And(funtypes.ReadonlyPartial({ safeSignerErrorDetails: SafeSignerErrorDetails })),
 )
 
-type StoredSimulatedPendingTransactionBase = funtypes.Static<typeof StoredSimulatedPendingTransactionBase>
-const StoredSimulatedPendingTransactionBase = funtypes.ReadonlyObject({
+type SimulatedPendingTransactionBase = funtypes.Static<typeof SimulatedPendingTransactionBase>
+const SimulatedPendingTransactionBase = funtypes.ReadonlyObject({
 	type: funtypes.Literal('Transaction'),
 	popupOrTabId: PopupOrTabId,
 	originalRequestParameters: OriginalSendRequestParameters,
@@ -122,20 +122,7 @@ const StoredSimulatedPendingTransactionBase = funtypes.ReadonlyObject({
 	safeExecutionSignerAddress: EthereumAddress,
 	safeExecutionOriginalRequestParameters: SendTransactionParams,
 	safeExecutionReviewedSafeState: SafeContractStateSnapshot,
-	// Decided by prepareSafeTransactionConfirmation when the confirmation opens. Missing only in transactions stored by versions that decided it again on every refresh.
-	feePayment: TransactionFeePayment,
 }))
-
-// Versions that did not store the fee payment derived it on every refresh from the stored Gnosis Safe flow: an external executor paid for a Safe proposal or direct Safe execution, and the sender paid otherwise, in both cases without simulation options. A transaction stored by them keeps exactly those fees.
-const getFeePaymentOlderVersionsRefreshedWith = (pending: StoredSimulatedPendingTransactionBase): TransactionFeePayment => pending.safeTransaction === undefined && pending.safeExecutionOriginalRequestParameters === undefined
-	? SENDER_PAID_FEES
-	: { gasPayment: 'external-executor', simulationOptions: undefined }
-
-type SimulatedPendingTransactionBase = funtypes.Static<typeof SimulatedPendingTransactionBase>
-const SimulatedPendingTransactionBase = StoredSimulatedPendingTransactionBase.withParser({
-	parse: (pending) => ({ success: true, value: { ...pending, feePayment: pending.feePayment ?? getFeePaymentOlderVersionsRefreshedWith(pending) } }),
-	serialize: (pending) => ({ success: true, value: pending }),
-})
 
 export type SimulatedPendingTransaction = funtypes.Static<typeof SimulatedPendingTransaction>
 export const SimulatedPendingTransaction = funtypes.Intersect(

@@ -4,11 +4,10 @@ import type { EthereumClientService } from '../simulation/services/EthereumClien
 import type { SendRawTransactionParams, SendTransactionParams } from '../types/JsonRpc-types.js'
 import type { SafeEntry } from '../types/addressBookTypes.js'
 import type { SafeTransactionSigningRequest } from '../types/safeTypes.js'
-import { SENDER_PAID_FEES, type TransactionFeePayment, type WebsiteCreatedEthereumTransaction, type WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
+import type { WebsiteCreatedEthereumTransaction, WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
 import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER } from '../utils/constants.js'
 import { getErrorMessage, reportLocalRecovery } from '../utils/errors.js'
-import { getPendingTransactionsAndMessages } from './storageVariables.js'
-import { findConfiguredSafeForChain } from './signingAddressSelection.js'
+import { getPendingTransactionsAndMessages, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
 import { reconcileStoredSafeState, type ReconciledStoredSafeState } from './safeStackState.js'
 import { createSafeContractValidationFailure, createSafeTransactionReviewRequest, createSafeTransactionSigningRequest, isSafeContractValidationFailure, isSafeOwnerValidationFailure } from '../safe/safeCore.js'
 import { getSafeExecutionReviewedState, getSafeExecutionSignerRoute, isSafeExecutionRequestForActiveSafe, prepareSafeExecutionSignerRoute } from '../safe/safeExecutionRouting.js'
@@ -19,10 +18,9 @@ import { getSafePendingFlow } from '../safe/safePendingFlow.js'
 type SafeExecutionSignerRoute = NonNullable<Awaited<ReturnType<typeof prepareSafeExecutionSignerRoute>>>
 
 export type SafeTransactionConfirmationPreparation = {
-	// The confirmation's fee model, stored with its pending transaction so that refreshes form the transaction with the same fees.
-	readonly feePayment: TransactionFeePayment
 	readonly effectiveTransactionParams: SendTransactionParams | SendRawTransactionParams
 	readonly transactionExecutor: bigint
+	readonly gasPayment: 'transaction-sender' | 'external-executor'
 	readonly preparationMessage: string | undefined
 	readonly rejection: {
 		readonly code: number
@@ -43,21 +41,6 @@ export type SafeTransactionConfirmationPreparation = {
 	}>
 }
 
-/**
- * A Gnosis Safe never sends or pays for its own transaction: an external executor runs it through execTransaction. So in simulation mode, a transaction from the active Safe is simulated like a Safe proposal in signing mode, without fees in a zero base fee block, and without checking the Safe's balance against fees it never pays.
- * The trigger is the active address the user selected being a Safe configured on this chain, the same check that turns signing-mode transactions into Safe proposals, never the page's `from`. A page can only opt out by naming another sender, which keeps sender-paid fees with their balance and base fee checks even when that sender is another Safe from the address book, so a page cannot move an ordinary transaction into the zero base fee block that a contract could detect.
- * Raw transactions and EIP-7702 authorizations, which signing mode rejects for a Safe, cannot be Safe executions and keep sender-paid fees.
- * The called contract can see the zero fees (`block.basefee == 0`, `tx.gasprice == 0`), but they don't make this route newly detectable: the simulation runs the Safe itself as the transaction sender, so `tx.origin` is the Safe's contract, while on-chain it is always the executor's account. Funding the Safe to pay real fees would remove only the fee signals, and would leave the Safe holding ether it doesn't have once the unused gas is refunded. Only simulating the executor's `execTransaction` call would remove both.
- */
-export async function getSimulationModeFeePayment(chainId: bigint, transactionParams: SendTransactionParams | SendRawTransactionParams, activeAddress: bigint): Promise<TransactionFeePayment> {
-	if (transactionParams.method !== 'eth_sendTransaction') return SENDER_PAID_FEES
-	const transactionDetails = transactionParams.params[0]
-	if (transactionDetails.type === '7702' || transactionDetails.authorizationList !== undefined) return SENDER_PAID_FEES
-	if ((transactionDetails.from ?? activeAddress) !== activeAddress) return SENDER_PAID_FEES
-	if (await findConfiguredSafeForChain(activeAddress, chainId) === undefined) return SENDER_PAID_FEES
-	return { gasPayment: 'external-executor', simulationOptions: { requiredChainId: chainId, simulateWithZeroBaseFee: true } }
-}
-
 export async function prepareSafeTransactionConfirmation(
 	ethereum: EthereumClientService,
 	confirmation: TransactionConfirmationRequest,
@@ -66,7 +49,10 @@ export async function prepareSafeTransactionConfirmation(
 	walletSignerAddress: bigint | undefined,
 ): Promise<SafeTransactionConfirmationPreparation> {
 	const transactionParams = confirmation.parameters
-	const configuredSafeEntry = simulationMode ? undefined : await findConfiguredSafeForChain(activeAddress, ethereum.getChainId())
+	const configuredSafeEntry = simulationMode
+		? undefined
+		: (await getUserAddressBookEntriesForChainIdMorePreciseFirst(ethereum.getChainId()))
+			.find((entry): entry is SafeEntry => entry.type === 'safe' && entry.address === activeAddress)
 	if (configuredSafeEntry !== undefined) {
 		if (transactionParams.method === 'eth_sendRawTransaction') {
 			return createRejectedPreparation(activeAddress, transactionParams, 'Gnosis Safe wallets do not support eth_sendRawTransaction.')
@@ -131,13 +117,10 @@ export async function prepareSafeTransactionConfirmation(
 	const directSignerSelectionMessage = isDirectSafeExecution && safeExecutionSignerRoute === undefined
 		? executionPreparationMessage ?? 'Connect a signer wallet and select a current Gnosis Safe owner before signing.'
 		: undefined
-	const feePayment: TransactionFeePayment = simulationMode
-		? await getSimulationModeFeePayment(ethereum.getChainId(), transactionParams, activeAddress)
-		: { gasPayment: safeEntry === undefined && !isDirectSafeExecution ? 'transaction-sender' : 'external-executor', simulationOptions: undefined }
 	return {
-		feePayment,
 		effectiveTransactionParams: safeExecutionSignerRoute?.transactionParams ?? transactionParams,
 		transactionExecutor: safeExecutionSignerRoute?.executor ?? activeAddress,
+		gasPayment: safeEntry === undefined && !isDirectSafeExecution ? 'transaction-sender' : 'external-executor',
 		preparationMessage: directSignerSelectionMessage ?? executionPreparationMessage ?? reconciliationMessage,
 		rejection: undefined,
 		async finalize(transactionToSimulate, tabId) {
@@ -236,9 +219,9 @@ function createRejectedPreparation(
 	message: string,
 ): SafeTransactionConfirmationPreparation {
 	return {
-		feePayment: SENDER_PAID_FEES,
 		effectiveTransactionParams: transactionParams,
 		transactionExecutor: activeAddress,
+		gasPayment: 'transaction-sender',
 		preparationMessage: undefined,
 		rejection: { code: METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER, message },
 		async finalize(transactionToSimulate) {

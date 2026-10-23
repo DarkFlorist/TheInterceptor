@@ -640,8 +640,7 @@ export async function refreshPopupConfirmTransactionSimulation(ethereum: Ethereu
 			firstTxn.created,
 			firstTxn.transactionIdentifier,
 			firstTxn.simulationMode,
-			// The fee model decided when the confirmation opened, so a refresh forms the transaction with the same fees even if the address book has changed since.
-			firstTxn.feePayment,
+			safeFlow === undefined ? 'transaction-sender' : 'external-executor',
 		)
 		: await formSendRawTransaction(ethereum, firstTxn.originalRequestParameters, firstTxn.transactionToSimulate.website, firstTxn.created, firstTxn.transactionIdentifier)
 	const refreshMessage = await refreshConfirmTransactionSimulation(
