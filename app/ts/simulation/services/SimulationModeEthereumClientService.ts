@@ -715,6 +715,8 @@ const usesInterceptorFilledMaxFeePerGas = (transaction: PreSimulationTransaction
 	return transaction.originalRequestParameters.method === 'eth_sendTransaction'
 		&& isFeeMarketPreSimulationTransaction(transaction)
 		&& !hasExplicitMaxFeePerGas(transaction.originalRequestParameters.params[0].maxFeePerGas)
+		// A Gnosis Safe execution's own call has no fees: its executor pays them (prepareSafeExecutionSimulationInput).
+		&& transaction.simulationOptions?.executeThroughSafe !== true
 }
 
 const getBaseFeeAdjustedTransaction = (

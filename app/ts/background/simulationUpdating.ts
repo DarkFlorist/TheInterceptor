@@ -2,6 +2,7 @@ import type { Settings } from '../types/interceptor-messages.js'
 import type { RpcNetwork } from '../types/rpc.js'
 import { isSignerOnlyNetwork } from '../utils/rpcNetworkChange.js'
 import { prepareSafeDelegateSimulationInput, prepareSafeDelegateStateOverrides, ORIGINAL_GNOSIS_SAFE, SAFE_DELEGATE_EXECUTE_ABI } from '../safe/safeSimulation.js'
+import { isSafeExecutionSimulation, prepareSafeExecutionSimulationInput } from '../safe/safeExecutionSimulation.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { appendTransactionToInputAndSimulate, createExecutionSimulationState, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustmentBalances, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfterForTransaction, getWebsiteCreatedEthereumTransactions, simulateEstimateGasFromInput, sliceSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { calculateRealizedEffectiveGasPrice } from '../simulation/services/simulationBlockParameters.js'
@@ -455,6 +456,11 @@ export const prepareSimulationInputForRpc = async (simulationInput: SimulationSt
 	// Base-fee and nonce repair only rewrite transactions. Signed-message and state-override blocks must still reach the RPC handler, but inspecting them here would run an extra eth_simulateV1 request without any transaction nonce to repair.
 	if (simulationInput.every((block) => block.transactions.length === 0)) return simulationInput
 	const parentBlock = await ethereum.getBlock(undefined)
+	// Before the base-fee repair, whose balance lookups simulate the input up to each transaction, so those lookups run the Safe executions as the executor's calls too.
+	if (parentBlock !== null && simulationInput.some((block) => block.transactions.some(isSafeExecutionSimulation))) {
+		// The executor pays the base fee prepareEthSimulateV1Input gives every block, including its fallback for blocks without one.
+		simulationInput = await prepareSafeExecutionSimulationInput(simulationInput, ethereum, parentBlock.number, parentBlock.baseFeePerGas ?? 15_000_000n)
+	}
 	const getBaseFeeFixedInputStateBlocks = async () => {
 		if (parentBlock === undefined) return simulationInput
 		const baseFeeFixedInputStateBlocks: SimulationStateInputBlock[] = []

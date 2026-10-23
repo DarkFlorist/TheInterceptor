@@ -347,8 +347,8 @@ export class EthereumClientService {
 			return transactionChunks
 		}
 
-		// if transactions spend more gas in a block than the block allows, split them into multiple blocks. Also clamp a single transaction to take at most one block worth of gas
-		const gasLimitedInput: SimulationStateInputMinimalData = simulationStateInput.map((block) => ({ ...block, transactions: block.transactions.map((transaction) => ({ signedTransaction: gasLimitTransaction(transaction.signedTransaction) })) }))
+		// if transactions spend more gas in a block than the block allows, split them into multiple blocks. Also clamp a single transaction to take at most one block worth of gas. A transaction with an executedTransaction (a Gnosis Safe execution, see prepareSafeExecutionSimulationInput) runs as that call.
+		const gasLimitedInput: SimulationStateInputMinimalData = simulationStateInput.map((block) => ({ ...block, transactions: block.transactions.map((transaction) => ({ signedTransaction: gasLimitTransaction(transaction.executedTransaction ?? transaction.signedTransaction) })) }))
 		const calculateTotalGasUsed = (currentTransactions: { gas: bigint }[]) => currentTransactions.reduce((totalGasUsed, transaction) => totalGasUsed + transaction.gas, 0n)
 		const preparedBlocks: PreparedEthSimulateV1InputBlock[] = []
 		const rpcBlocks: SimulationStateInputMinimalDataBlock[] = []

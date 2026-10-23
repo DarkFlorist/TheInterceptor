@@ -1,0 +1,302 @@
+import * as assert from 'assert'
+import { test } from 'bun:test'
+import { keccak_256 } from '@noble/hashes/sha3'
+import type { SendRawTransactionParams, SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
+import type { PreSimulationTransaction, SimulationStateInput, TransactionSimulationOptions } from '../../app/ts/types/visualizer-types.js'
+import { describeSafeExecutionFailure, prepareSafeExecutionSimulationInput, SAFE_EXECUTION_SIMULATION_EXECUTOR } from '../../app/ts/safe/safeExecutionSimulation.js'
+import { prepareSafeTransactionConfirmation } from '../../app/ts/background/safeTransactionConfirmation.js'
+import { encodeFunctionCall } from '../../app/ts/utils/abiRuntime.js'
+import { decodeEthereumError } from '../../app/ts/utils/errorDecoding.js'
+import { dataStringWith0xStart } from '../../app/ts/utils/bigint.js'
+import { getGasFeePaidByTransactionSender } from '../../app/ts/utils/transactionGasAccounting.js'
+import { activeAddress, addressString, created, createSafeAddressBookEntry, createSafeTx, createWebsitePort, ethereum, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, hexToBytes, isRecord, modules, recipientAddress, SAFE_EXECUTION_ABI, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
+
+// createSafeAddressBookEntry configures the Safe at activeAddress, the address the fake RPC gives code.
+const SAFE_ADDRESS = activeAddress
+const ORDINARY_ACCOUNT = recipientAddress
+const CALLED_CONTRACT = 0x6666666666666666666666666666666666666666n
+const OWNERS = [0x3000000000000000000000000000000000000003n, 0x1000000000000000000000000000000000000001n, 0x2000000000000000000000000000000000000002n]
+const SAFE_EXECUTION_SIMULATION_OPTIONS: TransactionSimulationOptions = { requiredChainId: fakeRpcNetwork.chainId, simulateWithZeroBaseFee: false, executeThroughSafe: true }
+const BASE_FEE_PER_GAS = 1_000n
+const EXECUTOR_MAX_FEE_PER_GAS = BASE_FEE_PER_GAS * 2n + 10n ** 8n
+
+const pad32 = (value: bigint) => value.toString(16).padStart(64, '0')
+const keccak = (hex: string) => BigInt(`0x${ Buffer.from(keccak_256(hexToBytes(`0x${ hex }`))).toString('hex') }`)
+// Solidity's slot for approvedHashes[owner][hash], with approvedHashes at slot 8, computed independently of the code under test.
+const approvedHashSlot = (owner: bigint, safeTxHash: bigint) => `0x${ pad32(keccak(pad32(safeTxHash) + pad32(keccak(pad32(owner) + pad32(8n))))) }`
+const prevalidatedSignature = (owner: bigint) => `${ pad32(owner) }${ pad32(0n) }01`
+
+function createSafeCall(fields: { readonly value: bigint, readonly input: Uint8Array, readonly gas: bigint }, simulationOptions: PreSimulationTransaction['simulationOptions']): PreSimulationTransaction {
+	return {
+		signedTransaction: {
+			type: '1559',
+			from: SAFE_ADDRESS,
+			chainId: fakeRpcNetwork.chainId,
+			nonce: 0n,
+			maxFeePerGas: 0n,
+			maxPriorityFeePerGas: 0n,
+			gas: fields.gas,
+			to: CALLED_CONTRACT,
+			value: fields.value,
+			input: fields.input,
+			accessList: [],
+			r: 0n,
+			s: 0n,
+			yParity: 'even',
+			hash: 0x1234n + fields.value,
+		},
+		website: { websiteOrigin: 'https://example.com', icon: undefined, title: undefined },
+		created,
+		originalRequestParameters: { method: 'eth_sendTransaction', params: [{ from: SAFE_ADDRESS, to: CALLED_CONTRACT, value: fields.value, input: fields.input }] },
+		transactionIdentifier: fields.value,
+		...(simulationOptions === undefined ? {} : { simulationOptions }),
+	}
+}
+
+const createBlock = (transactions: readonly PreSimulationTransaction[], stateOverrides: SimulationStateInput[number]['stateOverrides'] = {}): SimulationStateInput[number] => ({
+	stateOverrides,
+	transactions,
+	signedMessages: [],
+	blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' },
+	simulateWithZeroBaseFee: false,
+})
+
+const getSafeTxHashAt = (transaction: PreSimulationTransaction, nonce: bigint) => {
+	const { to, value, input } = transaction.signedTransaction
+	if (to === null) throw new Error('Expected a call')
+	return BigInt(getSafeTxHash(createSafeTx(fakeRpcNetwork.chainId, SAFE_ADDRESS, { to, value, input }, nonce)))
+}
+
+const configureSafe = () => {
+	fakeSafeContract.owners = OWNERS
+	fakeSafeContract.threshold = 2n
+	fakeSafeContract.nonce = 5n
+}
+
+test('runs a Gnosis Safe execution as an executor calling execTransaction with real fees', async () => {
+	configureSafe()
+	const safeCall = createSafeCall({ value: 7n, input: Uint8Array.from([0x12, 0x34]), gas: 63_000n }, SAFE_EXECUTION_SIMULATION_OPTIONS)
+	const ordinaryTransaction = createSafeCall({ value: 1n, input: new Uint8Array(), gas: 21_000n }, undefined)
+	const [preparedBlock] = await prepareSafeExecutionSimulationInput([createBlock([safeCall, ordinaryTransaction])], ethereum, 123n, BASE_FEE_PER_GAS)
+	const [preparedSafeCall, preparedOrdinaryTransaction] = preparedBlock?.transactions ?? []
+	assert.equal(preparedOrdinaryTransaction?.executedTransaction, undefined, 'an ordinary transaction runs as it is')
+	assert.deepEqual(preparedSafeCall?.signedTransaction, safeCall.signedTransaction, 'the Safe\'s call stays what the dialog shows and the protectors check')
+
+	const executed = preparedSafeCall?.executedTransaction
+	if (executed?.type !== '1559') throw new Error('Expected the executor\'s EIP-1559 call')
+	assert.equal(executed.from, SAFE_EXECUTION_SIMULATION_EXECUTOR)
+	assert.equal(executed.to, SAFE_ADDRESS)
+	assert.equal(executed.value, 0n)
+	assert.equal(executed.nonce, 0n)
+	assert.equal(executed.maxPriorityFeePerGas, 10n ** 8n)
+	assert.equal(executed.maxFeePerGas, EXECUTOR_MAX_FEE_PER_GAS)
+	assert.ok(executed.maxFeePerGas >= BASE_FEE_PER_GAS, 'the executor pays at least the base fee')
+	assert.equal(executed.gas, 64_000n + 100_000n + 2n * 10_000n)
+	// The two lowest owners sign, sorted, with pre-validated signatures.
+	const expectedSignatures = `0x${ prevalidatedSignature(OWNERS[1] ?? 0n) }${ prevalidatedSignature(OWNERS[2] ?? 0n) }`
+	assert.equal(dataStringWith0xStart(executed.input), encodeFunctionCall(SAFE_EXECUTION_ABI, 'execTransaction', [addressString(CALLED_CONTRACT), 7n, '0x1234', 0n, 0n, 0n, 0n, addressString(0n), addressString(0n), expectedSignatures]))
+
+	const safeTxHash = getSafeTxHashAt(safeCall, 5n)
+	assert.deepEqual(preparedBlock?.stateOverrides, {
+		[addressString(SAFE_ADDRESS)]: { stateDiff: {
+			[approvedHashSlot(OWNERS[1] ?? 0n, safeTxHash)]: 1n,
+			[approvedHashSlot(OWNERS[2] ?? 0n, safeTxHash)]: 1n,
+		} },
+		[addressString(SAFE_EXECUTION_SIMULATION_EXECUTOR)]: { balance: executed.gas * EXECUTOR_MAX_FEE_PER_GAS },
+	})
+})
+
+test('approves a later execution of the same Gnosis Safe at every nonce the Safe can have by then', async () => {
+	configureSafe()
+	const firstCall = createSafeCall({ value: 1n, input: new Uint8Array(), gas: 63_000n }, SAFE_EXECUTION_SIMULATION_OPTIONS)
+	const secondCall = createSafeCall({ value: 2n, input: new Uint8Array(), gas: 126_000n }, SAFE_EXECUTION_SIMULATION_OPTIONS)
+	const makeRichOverride = { [addressString(SAFE_ADDRESS)]: { balance: 10n ** 18n } }
+	const [firstBlock, secondBlock] = await prepareSafeExecutionSimulationInput([createBlock([firstCall], makeRichOverride), createBlock([secondCall])], ethereum, 123n, BASE_FEE_PER_GAS)
+	const firstExecuted = firstBlock?.transactions[0]?.executedTransaction
+	const secondExecuted = secondBlock?.transactions[0]?.executedTransaction
+	if (firstExecuted === undefined || secondExecuted === undefined) throw new Error('Expected both Safe executions to be prepared')
+	assert.equal(secondExecuted.nonce, 1n, 'the executor sends its calls in order')
+	assert.deepEqual(secondBlock?.stateOverrides, {}, 'every override is set at the start of the simulation')
+
+	const approvedSlots = [
+		...[5n].map((nonce) => getSafeTxHashAt(firstCall, nonce)),
+		// The first execution raises the Safe's nonce to 6 if it succeeds.
+		...[5n, 6n].map((nonce) => getSafeTxHashAt(secondCall, nonce)),
+	].flatMap((safeTxHash) => [approvedHashSlot(OWNERS[1] ?? 0n, safeTxHash), approvedHashSlot(OWNERS[2] ?? 0n, safeTxHash)])
+	assert.deepEqual(firstBlock?.stateOverrides, {
+		[addressString(SAFE_ADDRESS)]: { balance: 10n ** 18n, stateDiff: Object.fromEntries(approvedSlots.map((slot) => [slot, 1n])) },
+		[addressString(SAFE_EXECUTION_SIMULATION_EXECUTOR)]: { balance: (firstExecuted.gas + secondExecuted.gas) * EXECUTOR_MAX_FEE_PER_GAS },
+	})
+})
+
+test('leaves an input without Gnosis Safe executions as it is, without reading any Safe', async () => {
+	const input = [createBlock([createSafeCall({ value: 1n, input: new Uint8Array(), gas: 21_000n }, undefined)])]
+	fakeSafeContract.requestedRpcMethods.length = 0
+	assert.equal(await prepareSafeExecutionSimulationInput(input, ethereum, 123n, BASE_FEE_PER_GAS), input)
+	assert.deepEqual(fakeSafeContract.requestedRpcMethods, [])
+})
+
+test('sends the executor\'s call to the node in place of the Safe\'s call', async () => {
+	configureSafe()
+	const [preparedBlock] = await prepareSafeExecutionSimulationInput([createBlock([createSafeCall({ value: 7n, input: new Uint8Array(), gas: 63_000n }, SAFE_EXECUTION_SIMULATION_OPTIONS)])], ethereum, 123n, BASE_FEE_PER_GAS)
+	if (preparedBlock === undefined) throw new Error('Expected a prepared block')
+	const request = await ethereum.ethSimulateV1Input([preparedBlock], 123n, undefined)
+	const [call] = request.params[0].blockStateCalls[0]?.calls ?? []
+	assert.equal(call?.from, SAFE_EXECUTION_SIMULATION_EXECUTOR)
+	assert.equal(call?.to, SAFE_ADDRESS)
+	assert.equal(call?.maxFeePerGas, EXECUTOR_MAX_FEE_PER_GAS)
+})
+
+test('explains why a Gnosis Safe execution failed without its call\'s revert reason', () => {
+	// What geth returns when a Safe's call fails inside execTransaction.
+	const gs013Data = '0x08c379a0000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000054753303133000000000000000000000000000000000000000000000000000000'
+	const gs013 = decodeEthereumError([], { code: 3, message: 'execution reverted: GS013', data: gs013Data }).reason
+	assert.equal(gs013, 'GS013')
+	assert.match(describeSafeExecutionFailure({ simulationOptions: SAFE_EXECUTION_SIMULATION_OPTIONS }, gs013), /Gnosis Safe's call reverted \(GS013\)/u)
+	assert.equal(describeSafeExecutionFailure({ simulationOptions: SAFE_EXECUTION_SIMULATION_OPTIONS }, 'GS025'), 'GS025')
+	assert.equal(describeSafeExecutionFailure({}, 'GS013'), 'GS013', 'only a simulated Safe execution hides its call\'s reason behind GS013')
+})
+
+test('charges no gas to a Gnosis Safe whose execution the simulation runs', () => {
+	assert.equal(getGasFeePaidByTransactionSender({ gasSpent: 50_000n, realizedGasPrice: 3n, simulationOptions: SAFE_EXECUTION_SIMULATION_OPTIONS }), 0n)
+	assert.equal(getGasFeePaidByTransactionSender({ gasSpent: 50_000n, realizedGasPrice: 3n }), 150_000n)
+})
+
+const createTransferParams = async (fields: Record<string, unknown>) => (await import('../../app/ts/types/JsonRpc-types.js')).SendTransactionParams.parse({
+	method: 'eth_sendTransaction',
+	params: [{ to: addressString(CALLED_CONTRACT), value: '0x0', data: '0x', ...fields }],
+})
+
+function createWebsiteTabConnections(postedMessages: unknown[]) {
+	return new Map([[uniqueRequestIdentifier.requestSocket.tabId, {
+		connections: {
+			[modules.websiteSocketToString(uniqueRequestIdentifier.requestSocket)]: {
+				port: createWebsitePort(uniqueRequestIdentifier.requestSocket, 0, postedMessages),
+				socket: uniqueRequestIdentifier.requestSocket,
+				websiteOrigin: 'https://example.com',
+				approved: true,
+				wantsToConnect: true,
+			},
+		},
+	}]])
+}
+
+// Like geth's eth_simulateV1 without validation: a call that pays fees must cover its block's base fee, and a call without fees skips the check. Records every simulated call.
+function createRecordingSimulator() {
+	const simulatedCalls: { readonly from: bigint, readonly to: bigint, readonly maxFeePerGas: bigint, readonly baseFeePerGas: bigint }[] = []
+	const requestHandler = {
+		rpcUrl: fakeRpcNetwork.httpsRpc,
+		clearCache() { return undefined },
+		async jsonRpcRequest(rpcRequest: { method: string, params?: readonly unknown[] }) {
+			if (rpcRequest.method === 'eth_simulateV1') {
+				const simulationParams = rpcRequest.params?.[0]
+				const blockStateCalls = isRecord(simulationParams) && Array.isArray(simulationParams.blockStateCalls) ? simulationParams.blockStateCalls : []
+				for (const blockStateCall of blockStateCalls) {
+					const baseFeePerGas = BigInt(blockStateCall.blockOverrides?.baseFeePerGas ?? 0n)
+					for (const call of blockStateCall.calls) {
+						const maxFeePerGas = BigInt(call.maxFeePerGas ?? 0n)
+						if (maxFeePerGas !== 0n && maxFeePerGas < baseFeePerGas) throw new Error('max fee per gas less than block base fee')
+						simulatedCalls.push({ from: BigInt(call.from), to: BigInt(call.to), maxFeePerGas, baseFeePerGas })
+					}
+				}
+			}
+			return await fakeRequestHandler.jsonRpcRequest(rpcRequest)
+		},
+	}
+	const recordingEthereum = new modules.EthereumClientService(requestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
+	return { simulatedCalls, ethereum: recordingEthereum, tokenPriceService: new modules.TokenPriceService(recordingEthereum, 60_000) }
+}
+
+async function openSimulationModeConfirmation(simulator: ReturnType<typeof createRecordingSimulator>, selectedActiveAddress: bigint, transactionParams: SendTransactionParams, websiteTabConnections: ReturnType<typeof createWebsiteTabConnections>) {
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry()])
+	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({ simulationMode: true, rpcNetwork: fakeRpcNetwork, activeSimulationAddress: selectedActiveAddress })
+	assert.deepEqual(await withSilencedConsole(async () => await modules.openConfirmTransactionDialogForTransaction(
+		simulator.ethereum,
+		simulator.tokenPriceService,
+		{ interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier, method: transactionParams.method, params: transactionParams.params },
+		{ kind: 'transaction', parameters: transactionParams },
+		true,
+		selectedActiveAddress,
+		{ websiteOrigin: 'https://example.com', icon: undefined, title: undefined },
+		websiteTabConnections,
+	)), { type: 'doNotReply' })
+	const [pending] = await modules.getPendingTransactionsAndMessages()
+	if (pending?.type !== 'Transaction' || pending.transactionOrMessageCreationStatus !== 'Simulated') throw new Error(`Expected a simulated transaction, got ${ pending?.transactionOrMessageCreationStatus }`)
+	return pending
+}
+
+test('simulates a configured Gnosis Safe\'s transaction in simulation mode as the Safe executing it, through refresh and the stack', async () => {
+	configureSafe()
+	const simulator = createRecordingSimulator()
+	const postedMessages: unknown[] = []
+	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+	const pending = await openSimulationModeConfirmation(simulator, SAFE_ADDRESS, await createTransferParams({}), websiteTabConnections)
+
+	assert.equal(pending.executeThroughSafe, true)
+	assert.equal(pending.safeTransaction, undefined, 'simulation mode stacks the transaction instead of proposing it to the Safe')
+	assert.equal(pending.transactionToSimulate.transaction.from, SAFE_ADDRESS)
+	assert.equal(pending.transactionToSimulate.transaction.maxFeePerGas, 0n, 'the Safe pays no fees')
+	assert.deepEqual(pending.transactionToSimulate.simulationOptions, SAFE_EXECUTION_SIMULATION_OPTIONS)
+	if (pending.popupVisualisation.statusCode !== 'success') throw new Error(`Safe execution simulation failed: ${ pending.popupVisualisation.data.error.message }`)
+	const simulatedSafeCall = pending.popupVisualisation.data.simulationState.simulationStateInput.at(-1)?.transactions.at(-1)
+	assert.equal(simulatedSafeCall?.signedTransaction.maxFeePerGas, 0n, 'the base-fee repair leaves the Safe\'s own call without fees')
+	assert.equal(simulatedSafeCall?.executedTransaction?.from, SAFE_EXECUTION_SIMULATION_EXECUTOR)
+	const executorCalls = simulator.simulatedCalls.filter((call) => call.from === SAFE_EXECUTION_SIMULATION_EXECUTOR)
+	assert.ok(executorCalls.length > 0, 'the node runs the executor\'s call')
+	for (const call of executorCalls) {
+		assert.equal(call.to, SAFE_ADDRESS)
+		assert.ok(call.baseFeePerGas > 0n, 'in a block with the real base fee')
+		assert.ok(call.maxFeePerGas >= call.baseFeePerGas)
+	}
+	// Only the gas estimate of the Safe's own call sends from the Safe, in a zero base fee block like every gas estimate. The preview's effects come from the executor's call.
+	assert.ok(simulator.simulatedCalls.filter((call) => call.from === SAFE_ADDRESS).every((call) => call.baseFeePerGas === 0n))
+	const visualizedTransaction = pending.popupVisualisation.data.visualizedSimulationState.visualizedBlocks.at(-1)?.simulatedAndVisualizedTransactions.at(-1)
+	assert.deepEqual(visualizedTransaction?.simulationOptions, SAFE_EXECUTION_SIMULATION_OPTIONS)
+
+	await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
+	const [refreshedPending] = await modules.getPendingTransactionsAndMessages()
+	if (refreshedPending?.type !== 'Transaction' || refreshedPending.transactionOrMessageCreationStatus !== 'Simulated') throw new Error('Expected the refreshed transaction to stay simulated')
+	assert.deepEqual(refreshedPending.transactionToSimulate.simulationOptions, SAFE_EXECUTION_SIMULATION_OPTIONS, 'a refresh forms the transaction as a Safe execution again')
+
+	await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+		method: 'popup_confirmDialog',
+		data: { action: 'accept', uniqueRequestIdentifier },
+	})
+	const [stackedOperation] = (await modules.getInterceptorTransactionStack()).operations
+	if (stackedOperation?.type !== 'Transaction') throw new Error('Expected the Safe transaction on the simulation stack')
+	assert.deepEqual(stackedOperation.preSimulationTransaction.simulationOptions, SAFE_EXECUTION_SIMULATION_OPTIONS)
+	const { getCurrentSimulationInput, prepareSimulationInputForRpc } = await import('../../app/ts/background/simulationUpdating.js')
+	const stackInput = await getCurrentSimulationInput()
+	assert.equal(stackInput.at(-1)?.simulateWithZeroBaseFee, false)
+	const preparedStackInput = await prepareSimulationInputForRpc(stackInput, simulator.ethereum)
+	assert.equal(preparedStackInput.at(-1)?.transactions.at(-1)?.executedTransaction?.from, SAFE_EXECUTION_SIMULATION_EXECUTOR, 'the stacked transaction keeps running through the Safe')
+	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
+})
+
+const isSimulationModeSafeExecution = async (selectedActiveAddress: bigint, transactionParams: SendTransactionParams | SendRawTransactionParams) => {
+	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry()])
+	const preparation = await prepareSafeTransactionConfirmation(ethereum, { kind: 'transaction', parameters: transactionParams }, true, selectedActiveAddress, undefined)
+	return preparation.gasPayment === 'simulated-safe-executor'
+}
+
+const simulationModeCases = [
+	{ description: 'the active Safe sends without naming a sender', selectedActiveAddress: SAFE_ADDRESS, createParams: async () => await createTransferParams({}), expected: true },
+	{ description: 'the page names the active Safe as the sender', selectedActiveAddress: SAFE_ADDRESS, createParams: async () => await createTransferParams({ from: addressString(SAFE_ADDRESS) }), expected: true },
+	{ description: 'the page names a configured Safe that is not the active address', selectedActiveAddress: ORDINARY_ACCOUNT, createParams: async () => await createTransferParams({ from: addressString(SAFE_ADDRESS) }), expected: true },
+	{ description: 'the page names another sender while the Safe is active', selectedActiveAddress: SAFE_ADDRESS, createParams: async () => await createTransferParams({ from: addressString(ORDINARY_ACCOUNT) }), expected: false },
+	{ description: 'the Safe\'s request carries EIP-7702 authorizations', selectedActiveAddress: SAFE_ADDRESS, createParams: async () => await createTransferParams({ authorizationList: [{ chainId: '0x1', address: addressString(CALLED_CONTRACT), nonce: '0x0' }] }), expected: false },
+	{ description: 'the Safe\'s request creates a contract', selectedActiveAddress: SAFE_ADDRESS, createParams: async () => (await import('../../app/ts/types/JsonRpc-types.js')).SendTransactionParams.parse({ method: 'eth_sendTransaction', params: [{ value: '0x0', data: '0x00' }] }), expected: false },
+	{ description: 'the request is a raw signed transaction', selectedActiveAddress: SAFE_ADDRESS, createParams: async (): Promise<SendRawTransactionParams> => ({ method: 'eth_sendRawTransaction', params: [new Uint8Array([1])] }), expected: false },
+]
+
+for (const { description, selectedActiveAddress, createParams, expected } of simulationModeCases) {
+	test(`${ expected ? 'runs' : 'does not run' } a simulation-mode transaction through the Gnosis Safe when ${ description }`, async () => {
+		assert.equal(await isSimulationModeSafeExecution(selectedActiveAddress, await createParams()), expected)
+	})
+}
+
+test('keeps the ordinary simulation for a configured Gnosis Safe whose version Interceptor does not support', async () => {
+	fakeSafeContract.version = '1.2.0'
+	assert.equal(await withSilencedConsole(async () => await isSimulationModeSafeExecution(SAFE_ADDRESS, await createTransferParams({}))), false)
+})

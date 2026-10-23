@@ -104,6 +104,8 @@ const SimulatedPendingTransactionBase = funtypes.ReadonlyObject({
 	safeExecutionSignerAddress: EthereumAddress,
 	safeExecutionOriginalRequestParameters: SendTransactionParams,
 	safeExecutionReviewedSafeState: SafeContractStateSnapshot,
+	// Set when the confirmation opened in simulation mode for a Gnosis Safe's own transaction (prepareSafeTransactionConfirmation), so every refresh forms it to run through the Safe again.
+	executeThroughSafe: funtypes.Literal(true),
 }))
 
 export type SimulatedPendingTransaction = funtypes.Static<typeof SimulatedPendingTransaction>

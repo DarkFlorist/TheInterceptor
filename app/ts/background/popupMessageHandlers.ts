@@ -50,7 +50,7 @@ import { updateRichListAddress } from '../utils/richList.js'
 import { serializeSimulateExecutionReply } from '../types/simulateExecutionReply.js'
 import { createSafeContractValidationFailure, getSafeContractSnapshot, validateSafeOwnerIsEoa } from '../safe/safeCore.js'
 import { normalizeConsecutiveTimeManipulations } from '../utils/transactionStack.js'
-import { getSafePendingFlow } from '../safe/safePendingFlow.js'
+import { getPendingTransactionGasPayment, getSafePendingFlow } from '../safe/safePendingFlow.js'
 import { getOperationsForActiveStackContext, SIMULATION_STACK_CONTEXT } from '../utils/activeStackContext.js'
 import { type ActiveAddressSelection, assertActiveAddressSelectionAllowed, getActiveAddressSelection, getWalletSelectedAccount } from '../utils/activeAddressSelection.js'
 export { importSafeStack, requestSafeStackExport, validateSafeTransactionStackForCurrentContract } from './safeStackHandlers.js'
@@ -621,7 +621,7 @@ export async function refreshPopupConfirmTransactionSimulation(ethereum: Ethereu
 			firstTxn.created,
 			firstTxn.transactionIdentifier,
 			firstTxn.simulationMode,
-			safeFlow === undefined ? 'transaction-sender' : 'external-executor',
+			getPendingTransactionGasPayment(firstTxn),
 		)
 		: await formSendRawTransaction(ethereum, firstTxn.originalRequestParameters, firstTxn.transactionToSimulate.website, firstTxn.created, firstTxn.transactionIdentifier)
 	const refreshMessage = await refreshConfirmTransactionSimulation(

@@ -23,6 +23,7 @@ const getETHBalanceChanges = (baseFeePerGas: bigint, transaction: SimulatedTrans
 				gasSpent: transaction.ethSimulateV1CallResult.gasUsed,
 				realizedGasPrice: transaction.realizedGasPrice,
 				safeTransaction: transaction.preSimulationTransaction.safeTransaction,
+				simulationOptions: transaction.preSimulationTransaction.simulationOptions,
 			})
 			: 0n
 		return {
@@ -76,6 +77,7 @@ export const getSimulatedStackV1 = (simulationState: ResolvedSimulationState, ad
 						gasSpent: transaction.ethSimulateV1CallResult.gasUsed,
 						realizedGasPrice: transaction.realizedGasPrice,
 						safeTransaction: transaction.preSimulationTransaction.safeTransaction,
+						simulationOptions: transaction.preSimulationTransaction.simulationOptions,
 					})
 					: 0n
 				return {
