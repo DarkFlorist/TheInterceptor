@@ -141,7 +141,7 @@ export async function registerWebsiteConnectionAndProvisionallyClaimSignerState(
 ) {
 	return await runSignerStateOperation(websiteTabConnections, socket.tabId, async () => {
 		let tabConnection = websiteTabConnections.get(socket.tabId)
-		const createdTabConnection = tabConnection === undefined
+		const createdTabConnection = tabConnection === undefined || (Object.keys(tabConnection.connections).length === 0 && tabConnection.signerStateOwner === undefined)
 		if (tabConnection === undefined) {
 			tabConnection = { connections: {} }
 			websiteTabConnections.set(socket.tabId, tabConnection)

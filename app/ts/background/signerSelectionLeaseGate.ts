@@ -12,7 +12,7 @@ type ActiveSignerSelectionLease = {
 }
 
 // A coordinator creates one gate; this module owns no global or collection registry.
-export function createSignerSelectionGate() {
+export function createSignerSelectionLeaseGate() {
 	const gateTailsByTab = new Map<number, Promise<void>>()
 	const activeLeasesByToken = new Map<string, ActiveSignerSelectionLease>()
 

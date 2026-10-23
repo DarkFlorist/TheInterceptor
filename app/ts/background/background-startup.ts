@@ -1,4 +1,4 @@
-import { clearSignerExecutionAuthorityForTab, getSignerDocumentGeneration, registerCurrentChildSignerSocket, scheduleCurrentChildSignerSocketRemoval, registerAuthoritativeTopSocket, releaseSignerSelectionLeasesForSocket } from './signerExecutionAuthority.js'
+import { clearSignerExecutionAuthorityForTab, getSignerDocumentGeneration, registerCurrentChildSignerSocket, registerAuthoritativeTopSocket, releaseSignerSelectionLeasesForSocket } from './signerExecutionAuthority.js'
 import { INTERCEPTOR_SIGNER_DOCUMENT_GENERATION_MESSAGE } from '../utils/inpageBridgeProtocol.js'
 import { getExplicitSignerSelection, getExplicitSignerSelectionForConnection } from './signerSelectionOwnership.js'
 import { initializeInpageBridge } from './inpageBridgeBootstrap.js'
@@ -122,6 +122,7 @@ const catchAllErrorsAndCall = async (func: () => Promise<unknown>) => {
 
 browser.tabs.onRemoved.addListener(async (tabId: number) => await catchAllErrorsAndCall(async () => {
 	clearSignerExecutionAuthorityForTab(websiteTabConnections, tabId)
+	websiteTabConnections.delete(tabId)
 	for (const socketIdentifier of latestReceivedBridgeRequestIds.keys()) {
 		if (socketIdentifier.startsWith(`${ tabId }-`)) latestReceivedBridgeRequestIds.delete(socketIdentifier)
 	}
@@ -171,7 +172,7 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ simulati
 		() => {
 			catchAllErrorsAndCall(async () => {
 				await getConnectionInitializationPromise()
-				if (await removeWebsiteTabConnection(websiteTabConnections, socket, port)) scheduleCurrentChildSignerSocketRemoval(websiteTabConnections, socket)
+				await removeWebsiteTabConnection(websiteTabConnections, socket, port)
 			})
 		},
 		(payload) => {

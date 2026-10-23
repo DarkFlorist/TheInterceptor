@@ -158,9 +158,9 @@ describe('background messageSending port lifecycle', () => {
 					reconnectMessages.push(message)
 					if (admission === 'revoked') blockSignerExecution(websiteTabConnections, socket.tabId)
 					setTimeout(() => {
-						websiteTabConnections.set(socket.tabId, { connections: {
-							[connectionKey]: { port, socket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true },
-						} })
+						const tab = websiteTabConnections.get(socket.tabId)
+						if (tab === undefined) throw new Error('Missing reconnecting tab')
+						tab.connections[connectionKey] = { port, socket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true }
 					}, 100)
 					return { reconnected: true }
 				},

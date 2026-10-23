@@ -180,10 +180,17 @@ export type SignerStateOwner = {
 	}
 }
 
+export type SignerExecutionOwner = {
+	readonly dispose: () => void
+	readonly socketDisconnected: (socket: WebsiteSocket) => void
+}
+
 export type TabConnection = {
 	connections: Record<string, SocketConnection> // socket as string
 	// Signer ownership is a separate lifecycle from the passive page connection registry.
 	signerStateOwner?: SignerStateOwner
+	// The tab owns execution lifetime; the owner's mutable proofs remain private to the background.
+	signerExecutionOwner?: SignerExecutionOwner
 }
 
 // Scope observers to their connection collection so asynchronous mutations cannot notify another collection; feature state and configuration belong to the observer.

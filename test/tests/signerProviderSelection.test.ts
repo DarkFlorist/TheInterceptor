@@ -2,12 +2,16 @@ import { InterceptorMessageToInpage } from '../../app/ts/types/interceptor-messa
 import { serialize } from '../../app/ts/types/wire-types.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import type { ProviderMessage } from '../../app/ts/utils/requests.js'
+import { websiteSocketToString, type ProviderMessage } from '../../app/ts/utils/requests.js'
 import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
 import { clearSignerExecutionAuthorityForTab, getSignerDocumentGeneration, reconcileSignerExecutionDocument, registerAuthoritativeTopSocket } from '../../app/ts/background/signerExecutionAuthority.js'
 
 function populateDocumentConnections(collection: WebsiteTabConnections): WebsiteTabConnections {
-	for (const [tabId, tab] of collection) connections.set(tabId, tab)
+	for (const [tabId, tab] of collection) {
+		const current = connections.get(tabId)
+		if (current === undefined) connections.set(tabId, tab)
+		else Object.assign(current.connections, tab.connections)
+	}
 	return connections
 }
 
@@ -920,6 +924,48 @@ describe('EIP-6963 signer provider selection', () => {
 		assert.notEqual(getSignerDocumentGeneration(unrelated, socket, 'app.example'), DOCUMENT_GENERATION)
 		clearSignerExecutionAuthorityForTab(unrelated, socket.tabId)
 		assert.equal(socketCanExecuteWithSelectedSigner(connections, socket), true)
+	})
+
+	test('tab-owned authority survives collection reconstruction and cannot be copied from plain connection fields', async () => {
+		installBrowserMock()
+		const { allowLegacySignerExecution, socketCanExecuteWithSelectedSigner, acquireSignerSelectionLease, releaseSignerSelectionLease } = await import('../../app/ts/background/signerExecutionAuthority.js')
+		const socket = { tabId: 7, connectionName: 1n }
+		assert.equal(allowLegacySignerExecution(connections, socket, 'app.example'), true)
+		const rebuilt: WebsiteTabConnections = new Map(connections)
+		assert.equal(socketCanExecuteWithSelectedSigner(rebuilt, socket), true)
+		const lease = await acquireSignerSelectionLease(rebuilt, 7, socket)
+		assert.equal(releaseSignerSelectionLease(connections, 7, lease), true)
+		const tab = rebuilt.get(7)
+		if (tab === undefined) throw new Error('Missing owned tab')
+		assert.ok(Object.isFrozen(tab.signerExecutionOwner))
+		assert.deepEqual(Object.keys(tab.signerExecutionOwner ?? {}), ['dispose', 'socketDisconnected'])
+		rebuilt.set(7, { connections: { ...tab.connections } })
+		assert.equal(socketCanExecuteWithSelectedSigner(rebuilt, socket), false)
+		tab.signerExecutionOwner?.dispose()
+		assert.equal(socketCanExecuteWithSelectedSigner(connections, socket), false)
+	})
+
+	test('canonical connection removal releases a child lease and expires its authority through the tab owner', async () => {
+		installBrowserMock()
+		const { createPort } = await import('./backgroundEthAccountsTestHarness.js')
+		const { removeWebsiteTabConnection } = await import('../../app/ts/background/websiteTabConnections.js')
+		const { registerCurrentChildSignerSocket, allowLegacySignerExecution, authorizeSocketForLegacySignerExecution, acquireSignerSelectionLease, signerSelectionLeaseIsActive, socketCanExecuteWithSelectedSigner } = await import('../../app/ts/background/signerExecutionAuthority.js')
+		const socket = { tabId: 7, connectionName: 2n }
+		const { port } = createPort(7, undefined, 2, 2n)
+		registerCurrentChildSignerSocket(connections, socket, 2)
+		reconcileSignerExecutionDocument(connections, socket, 'app.example', DOCUMENT_GENERATION, false, 2)
+		allowLegacySignerExecution(connections, { tabId: 7, connectionName: 1n }, 'app.example')
+		assert.equal(authorizeSocketForLegacySignerExecution(connections, socket, 'app.example'), true)
+		const tab = connections.get(7)
+		if (tab === undefined) throw new Error('Missing child tab')
+		tab.connections[websiteSocketToString(socket)] = { port, socket, websiteOrigin: 'app.example', approved: true, wantsToConnect: true, frameId: 2 }
+		const lease = await acquireSignerSelectionLease(connections, 7, socket)
+		assert.equal(await removeWebsiteTabConnection(connections, socket, port), true)
+		assert.equal(signerSelectionLeaseIsActive(connections, 7, lease), false)
+		assert.equal(connections.get(7), tab)
+		await new Promise((resolve) => setTimeout(resolve, 1100))
+		assert.equal(socketCanExecuteWithSelectedSigner(connections, socket), false)
+		tab.signerExecutionOwner?.dispose()
 	})
 
 	test('selection gates and lease teardown are isolated between connection collections with identical tab IDs', async () => {

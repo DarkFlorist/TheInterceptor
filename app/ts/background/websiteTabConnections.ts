@@ -14,6 +14,7 @@ export async function removeWebsiteTabConnection(websiteTabConnections: WebsiteT
 		if (currentConnection?.port !== disconnectedPort) return false
 		const signerStateToken = getConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
 		delete tabConnection.connections[connectionIdentifier]
+		tabConnection.signerExecutionOwner?.socketDisconnected(socket)
 		notifyWebsiteLifecycle(websiteTabConnections.lifecycle?.connectionRemoved, socket)
 		if (tabConnection.signerStateOwner?.connectionName === socket.connectionName) {
 			resolveSignerStateConfirmation(tabConnection)
@@ -25,7 +26,8 @@ export async function removeWebsiteTabConnection(websiteTabConnections: WebsiteT
 			await updateTabState(socket.tabId, clearSignerDerivedTabState)
 			settleSignerRequestsForReplacedState(signerStateToken)
 		}
-		if (Object.keys(tabConnection.connections).length === 0) websiteTabConnections.delete(socket.tabId)
+		// Retain the tab owner across transport reconnects; tabs.onRemoved disposes it and removes the record.
+		if (Object.keys(tabConnection.connections).length === 0 && tabConnection.signerExecutionOwner === undefined) websiteTabConnections.delete(socket.tabId)
 		return true
 	})
 }
