@@ -241,7 +241,7 @@ export async function loadModules() {
 		getInterceptorTransactionStack: storageVariables.getInterceptorTransactionStack,
 		setFetchSimulationStackRequestPromise: storageVariables.setFetchSimulationStackRequestPromise,
 		getUserAddressBookEntries: storageVariables.getUserAddressBookEntries,
-		appendPendingTransactionOrMessage: storageVariables.appendPendingTransactionOrMessage,
+		appendPendingTransactionOrMessage: (await import('../../app/ts/background/pendingSignerWork.js')).appendPendingTransactionOrMessage,
 		getPendingTerminalReplies: pendingTerminalReplies.getPendingTerminalReplies,
 		prunePendingTerminalRepliesForMissingTabs: pendingTerminalReplies.prunePendingTerminalRepliesForMissingTabs,
 		updateInterceptorTransactionStack: storageVariables.updateInterceptorTransactionStack,
@@ -611,6 +611,7 @@ export function createRecordingPort(postedMessages: unknown[]): browser.runtime.
 }
 
 export function createWebsitePort(socket: { readonly tabId: number, readonly connectionName: bigint }, frameId: number, postedMessages: unknown[], onPostMessage?: (message: unknown) => void): browser.runtime.Port {
+	// These fixtures model a wallet whose initial provider catalog has already reconciled.
 	return {
 		...createRecordingPort(postedMessages),
 		name: `0x${ socket.connectionName.toString(16) }`,

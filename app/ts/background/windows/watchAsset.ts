@@ -11,7 +11,7 @@ import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.j
 import { addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab } from '../../utils/popupOrTab.js'
 import type { AddressBookEntries, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../types/addressBookTypes.js'
 import { reportUnexpectedError } from '../../utils/errors.js'
-import { addSignerStateReplacementListener, getConfirmedSignerStateToken, isSignerStateTokenCurrent, sendCallbackToExpectedConfirmedSignerOwner, type SignerStateIdentity } from '../signerStateOwnership.js'
+import { addSignerStateReplacementListener, getAuthorizedSignerStateToken, isSignerStateTokenAuthorized, sendCallbackToExpectedConfirmedSignerOwner, type SignerStateIdentity } from '../signerStateOwnership.js'
 import { checksummedAddress } from '../../utils/bigint.js'
 import { Semaphore } from '../../utils/semaphore.js'
 import { isSignerMissing } from '../../utils/signerMetadata.js'
@@ -115,11 +115,12 @@ function toPendingRequest(request: StoredWatchAssetRequest): PendingWatchAssetRe
 }
 
 async function getForwardSignerTarget(websiteTabConnections: WebsiteTabConnections, request: StoredWatchAssetRequest) {
-	const tabId = request.request.uniqueRequestIdentifier.requestSocket.tabId
-	const signerStateToken = getConfirmedSignerStateToken(websiteTabConnections, tabId)
+	const requestSocket = request.request.uniqueRequestIdentifier.requestSocket
+	const tabId = requestSocket.tabId
+	const signerStateToken = getAuthorizedSignerStateToken(websiteTabConnections, requestSocket)
 	if (signerStateToken === undefined) return undefined
 	const signerName = (await getTabState(tabId)).signerName
-	if (!isSignerStateTokenCurrent(websiteTabConnections, signerStateToken) || isSignerMissing(signerName)) return undefined
+	if (!isSignerStateTokenAuthorized(websiteTabConnections, signerStateToken, requestSocket) || isSignerMissing(signerName)) return undefined
 	return {
 		signerName,
 		connectionName: signerStateToken.socket.connectionName,

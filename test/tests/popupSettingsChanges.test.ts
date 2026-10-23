@@ -1,3 +1,4 @@
+import { createAuthorizedConnections } from './backgroundEthAccountsTestHarness.js'
 import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
@@ -116,9 +117,9 @@ describe('popup settings changes', () => {
 		await saveCurrentTabId(1)
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port, messages } = createPort(1)
-		const connections = new Map([[1, { ...confirmedSignerOwnership(socket), connections: {
+		const connections = createAuthorizedConnections(new Map([[1, { ...confirmedSignerOwnership(socket), connections: {
 			[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true },
-		} }]])
+		} }]]))
 		const settings = await getSettings()
 		const context = {
 			...createEthereumWithGetBlockCounter({ count: 0 }), settings, websiteTabConnections: connections,
@@ -188,9 +189,9 @@ describe('popup settings changes', () => {
 		await saveCurrentTabId(1)
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port, messages } = createPort(1)
-		const connections = new Map([[1, { ...confirmedSignerOwnership(socket), connections: {
+		const connections = createAuthorizedConnections(new Map([[1, { ...confirmedSignerOwnership(socket), connections: {
 			[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true },
-		} }]])
+		} }]]))
 		await changeSimulationMode({ simulationMode })
 		const currentRpc = (await getSettings()).activeRpcNetwork
 		if (currentRpc.httpsRpc === undefined) throw new Error('Expected a configured RPC')
@@ -340,9 +341,9 @@ describe('popup settings changes', () => {
 			await saveCurrentTabId(1)
 			const socket = { tabId: 1, connectionName: 0n }
 			const { port, messages } = createPort(1)
-			const connections = new Map([[1, { ...confirmedSignerOwnership(socket), connections: {
+			const connections = createAuthorizedConnections(new Map([[1, { ...confirmedSignerOwnership(socket), connections: {
 				[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true },
-			} }]])
+			} }]]))
 			const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 			let simulationReads = 0
 			if (outcome === 'unavailable simulation') Object.defineProperty(ethereum, 'getCachedBlock', { value: () => {
@@ -398,9 +399,9 @@ describe('popup settings changes', () => {
 		await updateTabState(1, previous => ({ ...previous, signerAccounts: [1n], activeSigningAddress: 1n, signerChain: currentRpc.chainId }))
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port, messages } = createPort(1)
-		const connections = new Map([[1, { ...confirmedSignerOwnership(socket), connections: {
+		const connections = createAuthorizedConnections(new Map([[1, { ...confirmedSignerOwnership(socket), connections: {
 			[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true },
-		} }]])
+		} }]]))
 		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 		const reply = await changeActiveRpc(simulationServicesOwner, connections, requestedRpc, { source: 'dapp', signerTabId: 1, simulationMode: false }, 10)
 		const settings = await getSettings()
@@ -427,9 +428,9 @@ describe('popup settings changes', () => {
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port, messages } = createPort(1)
 		const ownership = confirmedSignerOwnership(socket)
-		const connections = new Map([[1, { ...ownership, connections: {
+		const connections = createAuthorizedConnections(new Map([[1, { ...ownership, connections: {
 			[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true },
-		} }]])
+		} }]]))
 		const rpc = { ...(await getSettings()).activeRpcNetwork, chainId: 2n, httpsRpc: 'https://early-reply.example.test' }
 		const services = createEthereumWithGetBlockCounter({ count: 0 })
 		let delivery: Promise<void> | undefined
@@ -465,9 +466,9 @@ describe('popup settings changes', () => {
 			await changeSimulationMode({ simulationMode: false })
 			const socket = { tabId: 1, connectionName: 0n }
 			const { port, messages } = createPort(1)
-			const connections = new Map([[1, { ...confirmedSignerOwnership(socket), connections: {
+			const connections = createAuthorizedConnections(new Map([[1, { ...confirmedSignerOwnership(socket), connections: {
 				[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true },
-			} }]])
+			} }]]))
 			const rpc = { ...(await getSettings()).activeRpcNetwork, chainId: 2n, httpsRpc: 'https://timeout.example.test' }
 			const services = createEthereumWithGetBlockCounter({ count: 0 })
 			const request = (timeoutMs: number) => changeActiveRpc(services.simulationServicesOwner, connections, rpc, { source: 'dapp', simulationMode: false, signerTabId: 1 }, timeoutMs)
@@ -510,7 +511,7 @@ describe('popup settings changes', () => {
 				const { setChainChangeConfirmationPromise, resolveChainChange } = await loadModules()
 				const dappRpc = { ...rpc, httpsRpc: 'https://dapp-switch.example.test' }
 				const uniqueRequestIdentifier = { requestId: 55, requestSocket: socket }
-				await setChainChangeConfirmationPromise({
+				await setChainChangeConfirmationPromise(connections, {
 					website: { websiteOrigin: 'https://example.test' }, popupOrTabId: { type: 'popup', id: 10 }, simulationMode: false, rpcNetwork: dappRpc,
 					request: { method: 'wallet_switchEthereumChain', params: [{ chainId: 2n }], interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier },
 				})
@@ -549,9 +550,9 @@ describe('popup settings changes', () => {
 			const socket = { tabId: 1, connectionName: 0n }
 			const ownership = confirmedSignerOwnership(socket)
 			const { port, messages } = createPort(socket.tabId)
-			const connections = new Map([[1, { ...ownership, connections: {
+			const connections = createAuthorizedConnections(new Map([[1, { ...ownership, connections: {
 				[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true },
-			} }]])
+			} }]]))
 			const rpc = { ...(await getSettings()).activeRpcNetwork, chainId: 2n, httpsRpc: 'https://rpc.example.test' }
 			const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 			let completed = false

@@ -1,3 +1,4 @@
+import { createAuthorizedConnections } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'node:assert'
 import { describe, expect, test } from 'bun:test'
 import type { ContactEntry, SafeEntry } from '../../app/ts/types/addressBookTypes.js'
@@ -36,9 +37,9 @@ describe('active settings concurrency', () => {
 		await updateWebsiteAccess(() => [{ website: { websiteOrigin }, access: true }])
 		const { port, messages } = createPort(1)
 		const socket = { tabId: 1, connectionName: 0n }
-		const connections: WebsiteTabConnections = new Map([[1, { connections: {
+		const connections: WebsiteTabConnections = createAuthorizedConnections(new Map([[1, { connections: {
 			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
-		} }]])
+		} }]]))
 		const firstRpcWriteStarted = pauseAfterFirstStorageWrite('activeRpcNetwork')
 		const previousNetwork = (await getSettings()).activeRpcNetwork
 		const firstNetwork = {
@@ -244,9 +245,9 @@ describe('active settings concurrency', () => {
 		const websiteOrigin = 'example.test'
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port } = createPort(socket.tabId)
-		const connections: WebsiteTabConnections = new Map([[socket.tabId, { connections: {
+		const connections: WebsiteTabConnections = createAuthorizedConnections(new Map([[socket.tabId, { connections: {
 			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: false, wantsToConnect: true },
-		} }]])
+		} }]]))
 		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 		await requestAccessFromUser(simulationServicesOwner, connections, socket, { websiteOrigin }, undefined, originalAddress, await getSettings(), originalAddress, undefined)
 		const pending = (await getPendingAccessRequests())[0]
@@ -307,9 +308,9 @@ describe('active settings concurrency', () => {
 		await updateUserAddressBookEntries(() => [selectedAddress])
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port } = createPort(socket.tabId)
-		const connections: WebsiteTabConnections = new Map([[socket.tabId, { connections: {
+		const connections: WebsiteTabConnections = createAuthorizedConnections(new Map([[socket.tabId, { connections: {
 			[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'example.test', approved: false, wantsToConnect: true },
-		} }]])
+		} }]]))
 		Object.defineProperty(browser.windows, 'create', {
 			configurable: true,
 			value: async () => { throw new Error('Access popup failed to open') },
@@ -377,9 +378,9 @@ describe('active settings concurrency', () => {
 			if (message.method === 'accountsChanged' && Array.isArray(message.result) && message.result.length === 0) secondAccountPublished.resolve()
 		})
 		const socket = { tabId: 1, connectionName: 0n }
-		const connections: WebsiteTabConnections = new Map([[1, { connections: {
+		const connections: WebsiteTabConnections = createAuthorizedConnections(new Map([[1, { connections: {
 			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
-		} }]])
+		} }]]))
 		const iconStarted = createDeferredSignal()
 		const releaseIcon = createDeferredSignal()
 		const originalSetIcon = browser.action.setIcon.bind(browser.action)
@@ -436,9 +437,9 @@ describe('active settings concurrency', () => {
 		const snapshot = await getSettings()
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port } = createPort(1)
-		const connections: WebsiteTabConnections = new Map([[1, { connections: {
+		const connections: WebsiteTabConnections = createAuthorizedConnections(new Map([[1, { connections: {
 			[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'example.test', approved: false, wantsToConnect: true },
-		} }]])
+		} }]]))
 		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 		if (completion === 'staged') {
 			const update = await reconcileWebsiteApprovalAccesses(connections, snapshot)
@@ -479,9 +480,9 @@ describe('active settings concurrency', () => {
 		await updateUserAddressBookEntries(() => [selectedAddress])
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port } = createPort(1)
-		const connections: WebsiteTabConnections = new Map([[1, { connections: {
+		const connections: WebsiteTabConnections = createAuthorizedConnections(new Map([[1, { connections: {
 			[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'example.test', approved: false, wantsToConnect: true },
-		} }]])
+		} }]]))
 		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 		const rpcNetwork = { ...(await getSettings()).activeRpcNetwork, httpsRpc: 'https://replacement.invalid' }
 		const failure = new Error('Service reset failed after settings persisted')

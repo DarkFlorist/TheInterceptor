@@ -169,7 +169,7 @@ test('MV2 popup close rejects its captured requests without deleting a concurren
 	browserMock.setManifestVersion(2)
 	browserMock.setTabMessageHandler(async () => {
 		reconnectRequests += 1
-		await modules.appendPendingTransactionOrMessage(concurrentlyAppendedRequest)
+		await modules.appendPendingTransactionOrMessage(websiteTabConnections, concurrentlyAppendedRequest)
 		websiteTabConnections.set(uniqueRequestIdentifier.requestSocket.tabId, { connections: {
 			[socketKey]: {
 				port: replacementPort,
@@ -713,3 +713,24 @@ test('startup pruning removes terminal replies for missing tabs and preserves li
 })
 
 await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
+
+test('pending transaction storage waits for a signer selection lease without caller-side locking', async () => {
+	const { acquireSignerSelectionLease, releaseSignerSelectionLease } = await import('../../app/ts/background/signerExecutionAuthority.js')
+	const tabId = pendingTransaction.uniqueRequestIdentifier.requestSocket.tabId
+	const websiteTabConnections = new Map()
+	const token = await acquireSignerSelectionLease(websiteTabConnections, tabId)
+	let persisted = false
+	const pendingWrite = modules.appendPendingTransactionOrMessage(websiteTabConnections, {
+		...pendingTransaction,
+		uniqueRequestIdentifier: { ...pendingTransaction.uniqueRequestIdentifier, requestId: 987654 },
+	}).then(() => { persisted = true })
+	try {
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		assert.equal(persisted, false)
+		assert.equal((await modules.getPendingTransactionsAndMessages()).some((pending) => pending.uniqueRequestIdentifier.requestId === 987654), false)
+	} finally {
+		releaseSignerSelectionLease(websiteTabConnections, tabId, token)
+	}
+	await pendingWrite
+	assert.equal((await modules.getPendingTransactionsAndMessages()).some((pending) => pending.uniqueRequestIdentifier.requestId === 987654), true)
+})

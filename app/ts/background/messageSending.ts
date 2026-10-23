@@ -38,8 +38,9 @@ export function replyToInterceptedRequest(websiteTabConnections: WebsiteTabConne
 	return false
 }
 
-export async function replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections: WebsiteTabConnections, message: InterceptedRequestForward) {
-	return await attemptDeliveryAfterManifestV2Reconnect(websiteTabConnections, message, () => replyToInterceptedRequest(websiteTabConnections, message))
+// Preparation runs on every delivery attempt so domain admission can observe changes during reconnect.
+export async function replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections: WebsiteTabConnections, message: InterceptedRequestForward, prepareAttempt: (message: InterceptedRequestForward) => InterceptedRequestForward = (message) => message) {
+	return await attemptDeliveryAfterManifestV2Reconnect(websiteTabConnections, message, () => replyToInterceptedRequest(websiteTabConnections, prepareAttempt(message)))
 }
 
 export function sendSubscriptionReplyOrCallBackToPort(port: browser.runtime.Port, message: SubscriptionReplyOrCallBack) {
@@ -54,7 +55,7 @@ export function sendSubscriptionReplyOrCallBack(websiteTabConnections: WebsiteTa
 		const connection = tabConnection.connections[socketAsString]
 		if (connection === undefined) throw new Error('connection was undefined')
 		if (socketAsString !== identifier) continue
-		return postMessageToPortIfConnected(connection.port, { ...message, interceptorApproved: true })
+		return sendSubscriptionReplyOrCallBackToPort(connection.port, message)
 	}
 	return false
 }

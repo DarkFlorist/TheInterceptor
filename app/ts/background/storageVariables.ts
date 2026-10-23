@@ -60,7 +60,7 @@ export async function getPendingTransactionsAndMessages(): Promise<readonly Pend
 }
 
 export const clearPendingTransactions = async () => await updatePendingTransactionOrMessages(async () => [])
-async function updatePendingTransactionOrMessages(update: (pendingTransactionsOrMessages: readonly PendingTransactionOrSignableMessage[]) => Promise<readonly PendingTransactionOrSignableMessage[]>) {
+export async function updatePendingTransactionOrMessages(update: (pendingTransactionsOrMessages: readonly PendingTransactionOrSignableMessage[]) => Promise<readonly PendingTransactionOrSignableMessage[]>) {
 	return await pendingTransactionsSemaphore.execute(async () => {
 		const pendingTransactionsAndMessages = await update(await readPendingTransactionsAndMessagesWithRecovery())
 		await browserStorageLocalSet2({ pendingTransactionsAndMessages })
@@ -79,10 +79,6 @@ export async function updatePendingTransactionOrMessage(uniqueRequestIdentifier:
 	})
 }
 
-export async function appendPendingTransactionOrMessage(pendingTransactionOrMessage: PendingTransactionOrSignableMessage) {
-	await updatePendingTransactionOrMessages(async (pendingTransactionsOrMessages) => [...pendingTransactionsOrMessages, pendingTransactionOrMessage])
-}
-
 export async function removePendingTransactionOrMessage(uniqueRequestIdentifier: UniqueRequestIdentifier) {
 	await updatePendingTransactionOrMessages(async (pendingTransactionsOrMessages) => {
 		const foundPromise = pendingTransactionsOrMessages.find((pendingTransactionsOrMessages) => doesUniqueRequestIdentifiersMatch(pendingTransactionsOrMessages.uniqueRequestIdentifier, uniqueRequestIdentifier))
@@ -92,7 +88,7 @@ export async function removePendingTransactionOrMessage(uniqueRequestIdentifier:
 }
 
 export const getChainChangeConfirmationPromise = async() => (await browserStorageLocalGet('chainChangeConfirmationPromise'))?.chainChangeConfirmationPromise ?? undefined
-export async function setChainChangeConfirmationPromise(chainChangeConfirmationPromise: PendingChainChangeConfirmationPromise | undefined) {
+export async function writeChainChangeConfirmation(chainChangeConfirmationPromise: PendingChainChangeConfirmationPromise | undefined) {
 	if (chainChangeConfirmationPromise === undefined) return await browserStorageLocalRemove('chainChangeConfirmationPromise')
 	return await browserStorageLocalSet({ chainChangeConfirmationPromise })
 }
@@ -140,13 +136,36 @@ export async function updatePopupVisualisationWithCallBack(update: (oldResults: 
 	})
 }
 
-const defaultSignerNameRepository = createStoredValueRepository<SignerName>({
-	read: async () => (await browserStorageLocalGet('signerName')).signerName,
-	write: async (signerName) => { await browserStorageLocalSet({ signerName }) },
-	getDefault: () => 'NoSignerDetected',
-})
-export const setDefaultSignerName = defaultSignerNameRepository.set
-const getDefaultSignerName = defaultSignerNameRepository.get
+// Signer identity is tab/document scoped. Reusing a global last-seen signer can display or act on stale wallet state before the current document reconciles.
+const getDefaultSignerName = async (): Promise<SignerName> => 'NoSignerDetected'
+
+const signerPreferencesSemaphore = new Semaphore(1)
+export async function getSignerPreference(websiteOrigin: string) {
+	const preferences = (await browserStorageLocalGet('signerPreferences'))?.signerPreferences ?? []
+	const preference = preferences.find((candidate) => candidate.websiteOrigin === websiteOrigin)
+	return preference === undefined ? undefined : { ...preference, rdns: preference.rdns.toLowerCase() }
+}
+
+export async function setSignerPreference(websiteOrigin: string, rdns: string) {
+	await signerPreferencesSemaphore.execute(async () => {
+		const preferences = (await browserStorageLocalGet('signerPreferences'))?.signerPreferences ?? []
+		await browserStorageLocalSet({
+			signerPreferences: [
+				...preferences.filter((preference) => preference.websiteOrigin !== websiteOrigin),
+				{ websiteOrigin, rdns: rdns.toLowerCase() },
+			],
+		})
+	})
+}
+
+export async function removeSignerPreference(websiteOrigin: string) {
+	await signerPreferencesSemaphore.execute(async () => {
+		const preferences = (await browserStorageLocalGet('signerPreferences'))?.signerPreferences ?? []
+		const nextPreferences = preferences.filter((preference) => preference.websiteOrigin !== websiteOrigin)
+		if (nextPreferences.length === preferences.length) return
+		await browserStorageLocalSet({ signerPreferences: nextPreferences })
+	})
+}
 
 export async function getTabState(tabId: number) : Promise<TabState> {
 	return await getTabStateFromStorage(tabId) ?? {
@@ -157,6 +176,11 @@ export async function getTabState(tabId: number) : Promise<TabState> {
 		signerAccounts: [],
 		signerChain: undefined,
 		signerAccountError: undefined,
+		availableSignerProviders: [],
+		selectedSignerProvider: undefined,
+		explicitlySelectedSignerProviderUuid: undefined,
+		preferredSignerUnavailable: false,
+		signerProviderCatalogOverflowed: false,
 		tabIconDetails: DEFAULT_TAB_CONNECTION,
 		activeSigningAddress: undefined
 	}

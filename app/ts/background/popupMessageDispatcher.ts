@@ -11,6 +11,7 @@ import { addressBookPopupMessageHandlers } from './popupMessageHandlerRegistries
 import { settingsPopupMessageHandlers } from './popupMessageHandlerRegistries/settings.js'
 import { safePopupMessageHandlers } from './popupMessageHandlerRegistries/safe.js'
 import { websiteAccessPopupMessageHandlers } from './popupMessageHandlerRegistries/websiteAccess.js'
+import { selectSignerProvider } from './signerProviderSelection.js'
 
 export type { PopupMessageDispatcherContext } from './popupMessageHandlerRegistry.js'
 
@@ -18,6 +19,7 @@ const popupMessageHandlers = {
 	popup_confirmDialog: popupMessageHandler('popup_confirmDialog', async (context, request) => await confirmDialog(context.simulationServicesOwner, context.websiteTabConnections, request)),
 	popup_changePage: popupMessageHandler('popup_changePage', async (_context, request) => await changePage(request)),
 	popup_requestAccountsFromSigner: popupMessageHandler('popup_requestAccountsFromSigner', async (context, request) => await requestAccountsFromSigner(context.websiteTabConnections, request)),
+	popup_selectSignerProvider: popupMessageHandler('popup_selectSignerProvider', async (context, request) => await selectSignerProvider(context.websiteTabConnections, request)),
 	popup_resetSimulation: popupMessageHandler('popup_resetSimulation', async (context) => await context.resetSimulationState()),
 	popup_removeTransactionOrSignedMessage: popupSnapshotMessageHandler('popup_removeTransactionOrSignedMessage', async (context, request) => {
 		const { ethereum, tokenPriceService } = context.services

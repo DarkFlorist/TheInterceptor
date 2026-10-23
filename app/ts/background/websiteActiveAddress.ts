@@ -1,3 +1,4 @@
+import { getSignerAccountIdentityError } from './accountIdentityPolicy.js'
 import type { Settings } from '../types/interceptor-messages.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { WebsiteSocket } from '../utils/requests.js'
@@ -6,6 +7,7 @@ import { getActiveAddressForCurrentSignerState } from './signerStateOwnership.js
 import { hasAddressAccess } from './websiteAccessPolicy.js'
 
 export async function getWebsiteActiveAddress(websiteTabConnections: WebsiteTabConnections, websiteOrigin: string, settings: Settings, socket: WebsiteSocket) {
+	if (getSignerAccountIdentityError(websiteTabConnections, settings, socket) !== undefined) return undefined
 	const activeAddress = await getActiveAddressForCurrentSignerState(websiteTabConnections, settings, socket.tabId, async () => await getActiveAddress(settings, socket.tabId))
 	if (activeAddress === undefined) return undefined
 	return hasAddressAccess(settings.websiteAccess, websiteOrigin, activeAddress) === 'hasAccess' ? activeAddress : undefined
