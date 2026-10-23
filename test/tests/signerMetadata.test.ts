@@ -1,7 +1,8 @@
+import { signerIdentities } from '../../app/ts/utils/signerIdentity.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { EIP6963ProviderInfo, SignerName } from '../../app/ts/types/signerTypes.js'
-import { getPrettySignerName, getSignerLogo } from '../../app/ts/utils/signerMetadata.js'
+import { getPrettySignerName, getSignerLogo, isSignerMissing } from '../../app/ts/utils/signerMetadata.js'
 
 describe('signer metadata', () => {
 	test('keeps arbitrary provider names separate from internal signer identities', () => {
@@ -22,6 +23,15 @@ describe('signer metadata', () => {
 	})
 })
 
-test('internal signer statuses have no built-in wallet logo', () => {
-	for (const name of ['NoSigner', 'NotRecognizedSigner', 'NoSignerDetected', 'EIP6963']) assert.equal(getSignerLogo(SignerName.parse(name)), undefined)
+test('the canonical identity catalog drives runtime names, provider-name protection, labels, and wallet logos', () => {
+	const provider = { uuid: '22222222-2222-4222-8222-222222222222', icon: 'data:image/png;base64,AA==', rdns: 'com.example.wallet' }
+	for (const [name, identity] of Object.entries(signerIdentities)) {
+		const parsed = SignerName.parse(name)
+		assert.equal(parsed, name)
+		assert.equal(getPrettySignerName(parsed), identity.displayName)
+		assert.equal(isSignerMissing(parsed), identity.missing)
+		assert.equal(EIP6963ProviderInfo.safeParse({ ...provider, name }).success, identity.kind === 'wallet')
+		if (identity.kind === 'wallet') assert.equal(typeof getSignerLogo(parsed), 'string')
+		else assert.equal(getSignerLogo(parsed), undefined)
+	}
 })

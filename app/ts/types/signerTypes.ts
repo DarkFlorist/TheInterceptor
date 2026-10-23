@@ -1,19 +1,10 @@
+import { isSignerName, type SignerName as SignerIdentityName } from '../utils/signerIdentity.js'
 import * as funtypes from 'funtypes'
 import { isEip6963ProviderUuid, isEip6963ProviderName, isEip6963ProviderIcon, isEip6963ProviderRdns, type EIP6963ProviderInfo as ProviderInfo } from '../utils/eip6963ProviderInfo.js'
 import { EthereumAddress, EthereumQuantity } from './wire-types.js'
 
-export type SignerName = funtypes.Static<typeof SignerName>
-export const SignerName = funtypes.Union(
-	funtypes.Literal('NoSigner'),
-	funtypes.Literal('NotRecognizedSigner'),
-	funtypes.Literal('NoSignerDetected'),
-	funtypes.Literal('MetaMask'),
-	funtypes.Literal('Ambire'),
-	funtypes.Literal('Brave'),
-	funtypes.Literal('CoinbaseWallet'),
-	funtypes.Literal('Rabby'),
-	funtypes.Literal('EIP6963'),
-)
+export type SignerName = SignerIdentityName
+export const SignerName = funtypes.Guard(isSignerName)
 
 // The runtime schema adapts the realm-neutral provider-info contract owned by the shared validator module.
 export type EIP6963ProviderInfo = ProviderInfo
