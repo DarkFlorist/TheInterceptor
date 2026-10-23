@@ -86,10 +86,10 @@ test('signer ownership and Safe Apps eligibility use the same top-frame predicat
 })
 
 
-test('dialog and RPC delegate simulation share state-override construction', async () => {
+test('only the Safe message preview replaces a Safe\'s code; Safe proposals delegate-call through execTransaction', async () => {
 	const safeSimulation = await Bun.file(new URL('../../app/ts/safe/safeSimulation.ts', import.meta.url)).text()
 	assert.match(simulationUpdatingSource, /return prepareSafeDelegateStateOverrides\(/u)
-	assert.match(safeSimulation, /stateOverrides: prepareSafeDelegateStateOverrides\(/u)
+	assert.doesNotMatch(safeSimulation, /prepareSafeDelegateStateOverrides\(safeAddress, code, block\.stateOverrides\)/u)
 	assert.doesNotMatch(simulationUpdatingSource, /code: getGnosisSafeProxyProxy\(\)/u)
 })
 

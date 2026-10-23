@@ -176,8 +176,8 @@ export const WebsiteCreatedEthereumTransaction = funtypes.ReadonlyObject({
 /**
  * Who pays a transaction's fees, which decides how formEthSendTransaction forms it:
  * - 'transaction-sender': the sender, whose balance limits the fees.
- * - 'external-executor': an executor outside the simulation, for a Gnosis Safe proposal or a direct Safe execution in signing mode. The transaction is formed without fees.
- * - 'simulated-safe-executor': the executor the simulation runs a Gnosis Safe's own call through (safe/safeExecutionSimulation.ts), in simulation mode. The Safe's call is formed without fees and marked to run through the Safe.
+ * - 'external-executor': an executor outside the simulation, for a direct Gnosis Safe execution in signing mode. The transaction is formed without fees.
+ * - 'simulated-safe-executor': the executor the simulation runs a Gnosis Safe's own call through (safe/safeExecutionSimulation.ts), for a Safe proposal or a Safe's transaction in simulation mode. The Safe's call is formed without fees, its gas is estimated as the executor's execTransaction call, and it is marked to run through the Safe.
  */
 export type TransactionGasPayment = 'transaction-sender' | 'external-executor' | 'simulated-safe-executor'
 

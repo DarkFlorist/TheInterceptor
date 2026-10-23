@@ -1,6 +1,7 @@
 import type { Settings } from '../../types/interceptor-messages.js'
 import { type EthereumClientService, getNextBlockTimeStampOverride, getTotalExecutedGasLimit } from './EthereumClientService.js'
 import type { PreparedEthSimulateV1Input } from './EthereumClientService.js'
+import { isGnosisSafeExecution } from '../../utils/transactionGasAccounting.js'
 import { type EthereumSignedTransactionWithBlockData, type EthereumBlockTag, type EthereumAddress, type EthereumBlockHeader, type EthereumBlockHeaderWithTransactionHashes, EthereumData, EthereumQuantity, EthereumBytes32, type EthereumSendableSignedTransaction } from '../../types/wire-types.js'
 import { addressString, bigintSecondsToDate, bigintToUint8Array, dataStringWith0xStart, dateToBigintSeconds, max, min, stringToUint8Array } from '../../utils/bigint.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, ETHEREUM_LOGS_LOGGER_ADDRESS, MOCK_ADDRESS, MULTICALL3, Multicall3ABI, DEFAULT_CALL_ADDRESS, GAS_PER_BLOB } from '../../utils/constants.js'
@@ -716,7 +717,7 @@ const usesInterceptorFilledMaxFeePerGas = (transaction: PreSimulationTransaction
 		&& isFeeMarketPreSimulationTransaction(transaction)
 		&& !hasExplicitMaxFeePerGas(transaction.originalRequestParameters.params[0].maxFeePerGas)
 		// A Gnosis Safe execution's own call has no fees: its executor pays them (prepareSafeExecutionSimulationInput).
-		&& transaction.simulationOptions?.executeThroughSafe !== true
+		&& !isGnosisSafeExecution(transaction)
 }
 
 const getBaseFeeAdjustedTransaction = (

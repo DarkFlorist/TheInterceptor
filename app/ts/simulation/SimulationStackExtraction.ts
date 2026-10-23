@@ -4,7 +4,7 @@ import type { ResolvedSimulationState, SimulatedTransaction } from '../types/vis
 import type { EthereumAddress } from '../types/wire-types.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS, MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
 import { handleERC20TransferLog } from './logHandlers.js'
-import { getGasFeePaidByTransactionSender, isPaidByGnosisSafeExecutor } from '../utils/transactionGasAccounting.js'
+import { getGasFeePaidByTransactionSender, isGnosisSafeExecution } from '../utils/transactionGasAccounting.js'
 
 const mergeSimulationOverrides = (stateOverridesArray: StateOverrides[]): StateOverrides => {
 	return stateOverridesArray.reduce((accumulator, next) => ({ ...accumulator, ...next }), {})
@@ -69,7 +69,7 @@ export const getSimulatedStackV1 = (simulationState: ResolvedSimulationState, ad
 			maxPriorityFeePerGas,
 			balanceChanges: ethBalanceAfter.map((balanceAfter) => {
 				// Version 1.0.0 omitted the base fee from its gas-price adjustment. Keep that legacy output, while 1.0.1 subtracts the base fee without producing an invalid negative JSON-RPC quantity when the sender has insufficient simulated balance. A Gnosis Safe pays no gas, so its balance is not adjusted.
-				const balanceAfterBalance = version === '1.0.0' || balanceAfter.owner !== transaction.preSimulationTransaction.signedTransaction.from || isPaidByGnosisSafeExecutor(transaction.preSimulationTransaction)
+				const balanceAfterBalance = version === '1.0.0' || balanceAfter.owner !== transaction.preSimulationTransaction.signedTransaction.from || isGnosisSafeExecution(transaction.preSimulationTransaction)
 					? balanceAfter.balance ?? 0n
 					: subtractBaseFeeWithoutUnderflow(balanceAfter.balance ?? 0n, simulationState.value.baseFeePerGas * transaction.ethSimulateV1CallResult.gasUsed)
 				const gasFees = balanceAfter.owner === transaction.preSimulationTransaction.signedTransaction.from

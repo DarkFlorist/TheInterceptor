@@ -42,7 +42,11 @@ export function getSafeTransactionPendingFlow(pending: PendingTransaction): Dire
 // The fee mode prepareSafeTransactionConfirmation decided when the confirmation opened, read back from the pending transaction so every refresh forms the transaction the same way.
 export function getPendingTransactionGasPayment(pending: PendingTransaction): TransactionGasPayment {
 	if (pending.executeThroughSafe === true) return 'simulated-safe-executor'
-	return getSafeTransactionPendingFlow(pending) === undefined ? 'transaction-sender' : 'external-executor'
+	switch (getSafeTransactionPendingFlow(pending)?.kind) {
+		case undefined: return 'transaction-sender'
+		case 'proposal': return 'simulated-safe-executor'
+		case 'directExecution': return 'external-executor'
+	}
 }
 
 export function getSafePendingFlow(pending: PendingTransactionOrSignableMessage): SafePendingFlow | undefined {

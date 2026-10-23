@@ -138,6 +138,13 @@ export async function prepareSafeTransactionConfirmation(
 	}
 
 	const executeThroughSafe = simulationMode && await isSimulationModeSafeExecution(ethereum, transactionParams, activeAddress)
+	const getGasPayment = (): TransactionGasPayment => {
+		// A direct Safe execution is the signer's own execTransaction call.
+		if (isDirectSafeExecution) return 'external-executor'
+		// A Safe proposal, or in simulation mode a Safe's own call, runs through the Safe's execTransaction.
+		if (safeEntry !== undefined || executeThroughSafe) return 'simulated-safe-executor'
+		return 'transaction-sender'
+	}
 	const pendingSafeFields: PendingSafeFields | undefined = executeThroughSafe
 		? { executeThroughSafe: true }
 		: !isDirectSafeExecution || transactionParams.method !== 'eth_sendTransaction'
@@ -153,7 +160,7 @@ export async function prepareSafeTransactionConfirmation(
 	return {
 		effectiveTransactionParams: safeExecutionSignerRoute?.transactionParams ?? transactionParams,
 		transactionExecutor: safeExecutionSignerRoute?.executor ?? activeAddress,
-		gasPayment: executeThroughSafe ? 'simulated-safe-executor' : safeEntry === undefined && !isDirectSafeExecution ? 'transaction-sender' : 'external-executor',
+		gasPayment: getGasPayment(),
 		preparationMessage: directSignerSelectionMessage ?? executionPreparationMessage ?? reconciliationMessage,
 		rejection: undefined,
 		async finalize(transactionToSimulate, tabId) {

@@ -36,7 +36,7 @@ export function createSafeSigningSimulationInput(
 		transactions,
 		signedMessages: [],
 		blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION,
-		simulateWithZeroBaseFee: true,
+		simulateWithZeroBaseFee: false,
 	}]
 }
 
@@ -82,9 +82,10 @@ export function createSafeExecutionPreSimulationTransaction(
 		created: transactionToSimulate.created,
 		originalRequestParameters: transactionToSimulate.originalRequestParameters,
 		transactionIdentifier: transactionToSimulate.transactionIdentifier,
+		// The simulation runs a proposal through the Safe's execTransaction with real fees (safe/safeExecutionSimulation.ts), so it needs no zero base fee block.
 		simulationOptions: {
 			requiredChainId,
-			simulateWithZeroBaseFee: true,
+			simulateWithZeroBaseFee: false,
 		},
 		safeTransaction: {
 			safeTx: safeSigningRequest.safeTx,
@@ -106,22 +107,15 @@ export function prepareSafeDelegateStateOverrides(safeAddress: bigint, code: Uin
 	}
 }
 
-export async function prepareSafeDelegateSimulationInput(input: SimulationStateInput, ethereum: EthereumClientService, blockNumber: bigint): Promise<SimulationStateInput> {
-	const delegates = input.flatMap((block) => block.transactions.flatMap((transaction) => transaction.safeTransaction?.safeTx.message.operation === 1n ? [transaction.safeTransaction.safeTx] : []))
-	if (delegates.length === 0) return input
-	const safes = new Set(delegates.map((transaction) => transaction.domain.verifyingContract))
-	if (safes.size !== 1) throw createSafeValidationError('Safe delegate simulation requires one active Safe per stack.', 'safe_contract_validation')
-	const safeAddress = delegates[0]?.domain.verifyingContract
-	if (safeAddress === undefined) return input
-	for (const transaction of delegates) await validateSafeDelegateCode(ethereum, transaction, blockNumber)
+// A delegate-call proposal runs through the Safe's execTransaction like every proposal (safe/safeExecutionSimulation.ts), so the Safe makes the delegate call itself. It may only delegate-call a library Interceptor allows, and the call the dialog shows must match its SafeTx.
+export async function validateSafeDelegateSimulationInput(input: SimulationStateInput, ethereum: EthereumClientService, blockNumber: bigint) {
 	for (const block of input) for (const transaction of block.transactions) {
 		const safeTx = transaction.safeTransaction?.safeTx
 		if (safeTx?.message.operation !== 1n) continue
-		const simulated = transaction.signedTransaction
+		await validateSafeDelegateCode(ethereum, safeTx, blockNumber)
+		const safeAddress = safeTx.domain.verifyingContract
+		const shown = transaction.signedTransaction
 		const expectedInput = encodeFunctionCall(SAFE_DELEGATE_EXECUTE_ABI, 'delegateCallExecute', [addressString(safeTx.message.to), dataStringWith0xStart(safeTx.message.data)])
-		if (simulated.from !== safeAddress || simulated.to !== safeAddress || simulated.value !== 0n || dataStringWith0xStart(simulated.input) !== expectedInput) throw createSafeValidationError('The Safe delegate simulation does not match its proposal.', 'safe_contract_validation')
+		if (shown.from !== safeAddress || shown.to !== safeAddress || shown.value !== 0n || dataStringWith0xStart(shown.input) !== expectedInput) throw createSafeValidationError('The Safe delegate simulation does not match its proposal.', 'safe_contract_validation')
 	}
-	const code = await ethereum.getCode(safeAddress, blockNumber, undefined)
-	if (code.length === 0) throw createSafeValidationError('The Safe proxy code is unavailable for batch simulation.', 'safe_contract_validation')
-	return input.map((block) => ({ ...block, stateOverrides: prepareSafeDelegateStateOverrides(safeAddress, code, block.stateOverrides) }))
 }

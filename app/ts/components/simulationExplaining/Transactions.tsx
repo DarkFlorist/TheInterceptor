@@ -285,7 +285,7 @@ export function Transaction(param: TransactionVisualizationParameters & Collapsi
 				{ param.simTx.safeTransaction === undefined ? <></> :
 					<div class = 'notification is-info' style = 'margin-bottom: 10px;'>
 						<p class = 'paragraph'><strong>Optimistic Gnosis Safe transaction</strong></p>
-						<p class = 'paragraph'>Gnosis Safe nonce { param.simTx.safeTransaction.safeTx.message.nonce.toString() }; { param.simTx.safeTransaction.signatures.length } owner signature{ param.simTx.safeTransaction.signatures.length === 1 ? '' : 's' } collected. This optimistic preview simulates the Gnosis Safe calling the destination, but does not model Gnosis Safe guards, modules, events, nonce changes, executor-dependent behavior, or network gas. Nothing has necessarily been executed onchain.</p>
+						<p class = 'paragraph'>Gnosis Safe nonce { param.simTx.safeTransaction.safeTx.message.nonce.toString() }; { param.simTx.safeTransaction.signatures.length } owner signature{ param.simTx.safeTransaction.signatures.length === 1 ? '' : 's' } collected. This optimistic preview simulates an executor account running the Gnosis Safe's execTransaction and paying the network fees, as if the Safe's owners had approved it. Nothing has necessarily been executed onchain.</p>
 					</div>
 				}
 				<SafeExecutionSimulationNotice simulationOptions = { param.simTx.simulationOptions }/>

@@ -1,8 +1,9 @@
 import type { Settings } from '../types/interceptor-messages.js'
 import type { RpcNetwork } from '../types/rpc.js'
 import { isSignerOnlyNetwork } from '../utils/rpcNetworkChange.js'
-import { prepareSafeDelegateSimulationInput, prepareSafeDelegateStateOverrides, ORIGINAL_GNOSIS_SAFE, SAFE_DELEGATE_EXECUTE_ABI } from '../safe/safeSimulation.js'
-import { isSafeExecutionSimulation, prepareSafeExecutionSimulationInput } from '../safe/safeExecutionSimulation.js'
+import { prepareSafeDelegateStateOverrides, ORIGINAL_GNOSIS_SAFE, SAFE_DELEGATE_EXECUTE_ABI, validateSafeDelegateSimulationInput } from '../safe/safeSimulation.js'
+import { prepareSafeExecutionSimulationInput } from '../safe/safeExecutionSimulation.js'
+import { isGnosisSafeExecution } from '../utils/transactionGasAccounting.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { appendTransactionToInputAndSimulate, createExecutionSimulationState, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustmentBalances, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfterForTransaction, getWebsiteCreatedEthereumTransactions, simulateEstimateGasFromInput, sliceSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { calculateRealizedEffectiveGasPrice } from '../simulation/services/simulationBlockParameters.js'
@@ -92,7 +93,8 @@ export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[
 					simulationOptions?.requiredChainId !== undefined
 					&& simulationOptions.requiredChainId !== settings.activeRpcNetwork.chainId
 				) break
-				const simulateWithZeroBaseFee = simulationOptions?.simulateWithZeroBaseFee ?? false
+				// Safe proposals stored by earlier versions ask for a zero base fee block, but every Gnosis Safe execution now runs through the Safe with real fees.
+				const simulateWithZeroBaseFee = !isGnosisSafeExecution(operation.preSimulationTransaction) && (simulationOptions?.simulateWithZeroBaseFee ?? false)
 				if (currentBlockTransactions.length > 0 && currentBlockSimulateWithZeroBaseFee !== simulateWithZeroBaseFee) {
 					pushBlock({ type: 'AddToTimestamp', deltaToAdd: 0n, deltaUnit: 'Seconds' })
 				}
@@ -454,7 +456,7 @@ export const updateSimulationMetadata = async (ethereum: EthereumClientService, 
 
 // Gives every Gnosis Safe execution of the input the executor's call the node runs it as (prepareSafeExecutionSimulationInput). Everything that sends the simulation stack to the node prepares it with this: every simulation through prepareSimulationInputForRpc, the stack export and the Safe transaction preview on top of the stack.
 export const prepareSafeExecutionsForRpc = async (simulationInput: SimulationStateInput, ethereum: EthereumClientService) => {
-	if (!simulationInput.some((block) => block.transactions.some(isSafeExecutionSimulation))) return simulationInput
+	if (!simulationInput.some((block) => block.transactions.some(isGnosisSafeExecution))) return simulationInput
 	const parentBlock = await ethereum.getBlock(undefined)
 	if (parentBlock === null) throw new Error('The latest block is null')
 	// The executor pays the base fee prepareEthSimulateV1Input gives every block, including its fallback for blocks without one.
@@ -462,7 +464,7 @@ export const prepareSafeExecutionsForRpc = async (simulationInput: SimulationSta
 }
 
 export const prepareSimulationInputForRpc = async (simulationInput: SimulationStateInput, ethereum: EthereumClientService) => {
-	if (simulationInput.some((block) => block.transactions.some((transaction) => transaction.safeTransaction?.safeTx.message.operation === 1n))) simulationInput = await prepareSafeDelegateSimulationInput(simulationInput, ethereum, await ethereum.getBlockNumber(undefined))
+	if (simulationInput.some((block) => block.transactions.some((transaction) => transaction.safeTransaction?.safeTx.message.operation === 1n))) await validateSafeDelegateSimulationInput(simulationInput, ethereum, await ethereum.getBlockNumber(undefined))
 	// Base-fee and nonce repair only rewrite transactions. Signed-message and state-override blocks must still reach the RPC handler, but inspecting them here would run an extra eth_simulateV1 request without any transaction nonce to repair.
 	if (simulationInput.every((block) => block.transactions.length === 0)) return simulationInput
 	// Before the base-fee repair, whose balance lookups simulate the input up to each transaction, so those lookups run the Safe executions as the executor's calls too.

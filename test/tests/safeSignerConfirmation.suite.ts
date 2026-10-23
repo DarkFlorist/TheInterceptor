@@ -1031,14 +1031,14 @@ test('persists and simulates a valid Safe owner signature before replying with t
 	assert.equal(optimisticTransaction.preSimulationTransaction.signedTransaction.maxPriorityFeePerGas, 0n)
 	assert.deepEqual(optimisticTransaction.preSimulationTransaction.simulationOptions, {
 		requiredChainId: fakeRpcNetwork.chainId,
-		simulateWithZeroBaseFee: true,
+		simulateWithZeroBaseFee: false,
 	})
 	assert.equal((await (await import('../../app/ts/background/settings.js')).getSettings()).activeSigningSafeAddress, activeAddress)
 	const simulationInput = await (await import('../../app/ts/background/simulationUpdating.js')).getCurrentSimulationInput()
 	const safeSimulationBlock = simulationInput.find((block) => block.transactions.some((transaction) =>
 		transaction.safeTransaction?.safeTxHash === safeTxHash
 	))
-	assert.equal(safeSimulationBlock?.simulateWithZeroBaseFee, true)
+	assert.equal(safeSimulationBlock?.simulateWithZeroBaseFee, false, 'the Safe\'s executor pays the real base fee')
 	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
 	const dappReply = postedMessages.find((message) =>
 		isRecord(message) && message.method === 'eth_sendTransaction' && message.requestId === uniqueRequestIdentifier.requestId
