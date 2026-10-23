@@ -657,7 +657,7 @@ describe('EIP-6963 signer provider selection', () => {
 	test('serializes child-frame pending creation behind an active top-frame selection lease', async () => {
 		const { storageState } = installBrowserMock()
 		const { beginSignerProviderSelection, finishSignerProviderSelection } = await import('../../app/ts/background/signerProviderSelection.js')
-		const { setChainChangeConfirmationPromise } = await import('../../app/ts/background/storageVariables.js')
+		const { setChainChangeConfirmationPromise } = await import('../../app/ts/background/pendingSignerWork.js')
 		const { registerTopSignerDocument } = await import('../../app/ts/background/signerSelectionLease.js')
 		const { defaultRpcs } = await import('../../app/ts/background/settings.js')
 		const beginRequest = createProviderMessage('begin_signer_provider_selection', [provider.uuid])
@@ -874,6 +874,25 @@ describe('EIP-6963 signer provider selection', () => {
 		const reply = deliveredMessages[0]
 		assert.equal(isRecord(reply) && reply.type === 'result', true)
 		assert.equal(isRecord(reply) && isRecord(reply.error) && reply.error.code === 4100, true)
+	})
+
+	test('authority queries and cleanup do not initialize a connection collection', async () => {
+		const { blockSignerExecution, getSignerExecutionError, getSignerExecutionTargetForOrigin, isAuthoritativeTopSocket, socketCanExecuteWithSelectedSigner } = await import('../../app/ts/background/signerExecutionAuthority.js')
+		const untouched: WebsiteTabConnections = new Map()
+		const socket = { tabId: 704, connectionName: 1n }
+		assert.equal(getSignerDocumentGeneration(untouched, socket, 'app.example'), undefined)
+		assert.equal(getSignerExecutionTargetForOrigin(untouched, socket.tabId, 'app.example'), undefined)
+		assert.equal(isAuthoritativeTopSocket(untouched, socket), false)
+		assert.equal(socketCanExecuteWithSelectedSigner(untouched, socket), false)
+		assert.equal(getSignerExecutionError(untouched, socket)?.code, 4100)
+		assert.equal(reconcileSignerExecutionDocument(untouched, socket, 'app.example', undefined, true, 0), false)
+		blockSignerExecution(untouched, socket.tabId)
+		clearSignerExecutionAuthorityForTab(untouched, socket.tabId)
+		assert.equal(Object.hasOwn(untouched, 'signerExecutionAuthority'), false)
+		registerAuthoritativeTopSocket(untouched, socket, 'app.example')
+		assert.notEqual(untouched.signerExecutionAuthority, undefined)
+		clearSignerExecutionAuthorityForTab(untouched, socket.tabId)
+		assert.equal(Object.hasOwn(untouched, 'signerExecutionAuthority'), false)
 	})
 
 	test('separate connection collections cannot share signer execution authority', async () => {

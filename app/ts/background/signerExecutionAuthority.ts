@@ -1,20 +1,12 @@
+import type { SignerExecutionAuthority, SignerExecutionAuthorityState } from '../types/signerExecutionAuthority.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { generateUuidV4 } from '../utils/uuid.js'
 import type { InterceptedRequestForward } from '../types/interceptor-messages.js'
 import { METAMASK_ERROR_NOT_AUTHORIZED } from '../utils/constants.js'
 import { isTopFrameId, websiteSocketToString, type WebsiteSocket } from '../utils/requests.js'
 
-type SignerExecutionAuthority = {
-	readonly websiteOrigin: string
-	readonly documentGeneration: string
-	readonly mode: 'pending' | 'blocked' | 'legacy' | 'eip6963'
-	readonly providerUuid: string | undefined
-	readonly eligibleSocketKeys: Set<string>
-	readonly authorizedSocketKeys: Set<string>
-}
-
-// Ephemeral document proofs belong to this live connection collection. Persisted TabState is a UI/catalog snapshot and never grants execution authority.
-export function createSignerExecutionAuthorityState() {
+// Registration initializes this collection's ephemeral document proofs; queries never attach state. Persisted TabState is a UI/catalog snapshot and never grants execution authority.
+function createSignerExecutionAuthorityState(): SignerExecutionAuthorityState {
 	return {
 		authoritativeTopSocketKeys: new Map<number, string>(),
 		signerExecutionAuthorities: new Map<number, SignerExecutionAuthority>(),
@@ -24,16 +16,14 @@ export function createSignerExecutionAuthorityState() {
 	}
 }
 
-export type SignerExecutionAuthorityState = ReturnType<typeof createSignerExecutionAuthorityState>
-
-function getAuthorityState(websiteTabConnections: WebsiteTabConnections) {
+function initializeSignerExecutionAuthority(websiteTabConnections: WebsiteTabConnections) {
 	if (websiteTabConnections.signerExecutionAuthority === undefined) websiteTabConnections.signerExecutionAuthority = createSignerExecutionAuthorityState()
 	return websiteTabConnections.signerExecutionAuthority
 }
 
 export function registerCurrentChildSignerSocket(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, frameId: number) {
-	const { signerExecutionAuthorities, currentChildSocketKeysByTab, childFrameIdsBySocketKey, pendingChildSocketRemovalTimers } = getAuthorityState(websiteTabConnections)
 	if (isTopFrameId(frameId)) return false
+	const { signerExecutionAuthorities, currentChildSocketKeysByTab, childFrameIdsBySocketKey, pendingChildSocketRemovalTimers } = initializeSignerExecutionAuthority(websiteTabConnections)
 	const key = websiteSocketToString(socket)
 	const pendingRemoval = pendingChildSocketRemovalTimers.get(key)
 	if (pendingRemoval !== undefined) {
@@ -56,7 +46,9 @@ export function registerCurrentChildSignerSocket(websiteTabConnections: WebsiteT
 }
 
 export function unregisterCurrentChildSignerSocket(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
-	const { signerExecutionAuthorities, currentChildSocketKeysByTab, childFrameIdsBySocketKey, pendingChildSocketRemovalTimers } = getAuthorityState(websiteTabConnections)
+	const state = websiteTabConnections.signerExecutionAuthority
+	if (state === undefined) return false
+	const { signerExecutionAuthorities, currentChildSocketKeysByTab, childFrameIdsBySocketKey, pendingChildSocketRemovalTimers } = state
 	const key = websiteSocketToString(socket)
 	const pendingRemoval = pendingChildSocketRemovalTimers.get(key)
 	if (pendingRemoval !== undefined) clearTimeout(pendingRemoval)
@@ -75,7 +67,9 @@ export function unregisterCurrentChildSignerSocket(websiteTabConnections: Websit
 }
 
 export function scheduleCurrentChildSignerSocketRemoval(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
-	const { childFrameIdsBySocketKey, pendingChildSocketRemovalTimers } = getAuthorityState(websiteTabConnections)
+	const state = websiteTabConnections.signerExecutionAuthority
+	if (state === undefined) return false
+	const { childFrameIdsBySocketKey, pendingChildSocketRemovalTimers } = state
 	const key = websiteSocketToString(socket)
 	if (!childFrameIdsBySocketKey.has(key) || pendingChildSocketRemovalTimers.has(key)) return false
 	const timeout = setTimeout(() => {
@@ -87,7 +81,7 @@ export function scheduleCurrentChildSignerSocketRemoval(websiteTabConnections: W
 }
 
 export function registerAuthoritativeTopSocket(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string) {
-	const { authoritativeTopSocketKeys, signerExecutionAuthorities } = getAuthorityState(websiteTabConnections)
+	const { authoritativeTopSocketKeys, signerExecutionAuthorities } = initializeSignerExecutionAuthority(websiteTabConnections)
 	const key = websiteSocketToString(socket)
 	const current = signerExecutionAuthorities.get(socket.tabId)
 	if (authoritativeTopSocketKeys.get(socket.tabId) === key && current?.websiteOrigin === websiteOrigin) {
@@ -107,7 +101,9 @@ export function registerAuthoritativeTopSocket(websiteTabConnections: WebsiteTab
 }
 
 export function getSignerDocumentGenerationForOrigin(websiteTabConnections: WebsiteTabConnections, tabId: number, websiteOrigin: string) {
-	const { signerExecutionAuthorities } = getAuthorityState(websiteTabConnections)
+	const state = websiteTabConnections.signerExecutionAuthority
+	if (state === undefined) return undefined
+	const { signerExecutionAuthorities } = state
 	const authority = signerExecutionAuthorities.get(tabId)
 	return authority?.websiteOrigin === websiteOrigin ? authority.documentGeneration : undefined
 }
@@ -117,12 +113,16 @@ export function getSignerDocumentGeneration(websiteTabConnections: WebsiteTabCon
 }
 
 export function isCurrentChildSignerSocket(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, frameId: number | undefined) {
-	const { currentChildSocketKeysByTab } = getAuthorityState(websiteTabConnections)
+	const state = websiteTabConnections.signerExecutionAuthority
+	if (state === undefined) return false
+	const { currentChildSocketKeysByTab } = state
 	return frameId !== undefined && !isTopFrameId(frameId) && currentChildSocketKeysByTab.get(socket.tabId)?.get(frameId) === websiteSocketToString(socket)
 }
 
 export function reconcileSignerExecutionDocument(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string, documentGeneration: string | undefined, isTopFrame: boolean, frameId: number | undefined) {
-	const { signerExecutionAuthorities } = getAuthorityState(websiteTabConnections)
+	const state = websiteTabConnections.signerExecutionAuthority
+	if (state === undefined) return false
+	const { signerExecutionAuthorities } = state
 	const authority = signerExecutionAuthorities.get(socket.tabId)
 	const key = websiteSocketToString(socket)
 	if (authority === undefined || authority.websiteOrigin !== websiteOrigin) return false
@@ -138,12 +138,16 @@ export function reconcileSignerExecutionDocument(websiteTabConnections: WebsiteT
 }
 
 export function isAuthoritativeTopSocket(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
-	const { authoritativeTopSocketKeys } = getAuthorityState(websiteTabConnections)
+	const state = websiteTabConnections.signerExecutionAuthority
+	if (state === undefined) return false
+	const { authoritativeTopSocketKeys } = state
 	return authoritativeTopSocketKeys.get(socket.tabId) === websiteSocketToString(socket)
 }
 
 export function setSignerExecutionTarget(websiteTabConnections: WebsiteTabConnections, tabId: number, providerUuid: string, websiteOrigin: string) {
-	const { authoritativeTopSocketKeys, signerExecutionAuthorities } = getAuthorityState(websiteTabConnections)
+	const state = websiteTabConnections.signerExecutionAuthority
+	if (state === undefined) return false
+	const { authoritativeTopSocketKeys, signerExecutionAuthorities } = state
 	const current = signerExecutionAuthorities.get(tabId)
 	if (current === undefined || current.websiteOrigin !== websiteOrigin || !current.eligibleSocketKeys.has(authoritativeTopSocketKeys.get(tabId) ?? '')) return false
 	if (current.mode === 'eip6963' && current.providerUuid === providerUuid) return true
@@ -159,7 +163,9 @@ export function setSignerExecutionTarget(websiteTabConnections: WebsiteTabConnec
 }
 
 export function allowLegacySignerExecution(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string) {
-	const { signerExecutionAuthorities } = getAuthorityState(websiteTabConnections)
+	const state = websiteTabConnections.signerExecutionAuthority
+	if (state === undefined) return false
+	const { signerExecutionAuthorities } = state
 	if (!isAuthoritativeTopSocket(websiteTabConnections, socket)) return false
 	const current = signerExecutionAuthorities.get(socket.tabId)
 	if (current === undefined || current.websiteOrigin !== websiteOrigin || !current.eligibleSocketKeys.has(websiteSocketToString(socket))) return false
@@ -179,7 +185,9 @@ export function allowLegacySignerExecution(websiteTabConnections: WebsiteTabConn
 }
 
 export function blockSignerExecution(websiteTabConnections: WebsiteTabConnections, tabId: number) {
-	const { signerExecutionAuthorities } = getAuthorityState(websiteTabConnections)
+	const state = websiteTabConnections.signerExecutionAuthority
+	if (state === undefined) return
+	const { signerExecutionAuthorities } = state
 	const current = signerExecutionAuthorities.get(tabId)
 	if (current === undefined) return
 	signerExecutionAuthorities.set(tabId, {
@@ -193,20 +201,26 @@ export function blockSignerExecution(websiteTabConnections: WebsiteTabConnection
 }
 
 export function signerSelectionIsUnavailable(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string) {
-	const { signerExecutionAuthorities } = getAuthorityState(websiteTabConnections)
+	const state = websiteTabConnections.signerExecutionAuthority
+	if (state === undefined) return false
+	const { signerExecutionAuthorities } = state
 	const authority = signerExecutionAuthorities.get(socket.tabId)
 	return authority?.mode === 'blocked' && authority.websiteOrigin === websiteOrigin
 }
 
 export function getSignerExecutionTargetForOrigin(websiteTabConnections: WebsiteTabConnections, tabId: number, websiteOrigin: string) {
-	const { signerExecutionAuthorities } = getAuthorityState(websiteTabConnections)
+	const state = websiteTabConnections.signerExecutionAuthority
+	if (state === undefined) return undefined
+	const { signerExecutionAuthorities } = state
 	const authority = signerExecutionAuthorities.get(tabId)
 	if (authority?.mode !== 'eip6963' || authority.websiteOrigin !== websiteOrigin) return undefined
 	return authority.providerUuid
 }
 
 export function getSignerExecutionTargetForSocket(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string) {
-	const { signerExecutionAuthorities } = getAuthorityState(websiteTabConnections)
+	const state = websiteTabConnections.signerExecutionAuthority
+	if (state === undefined) return undefined
+	const { signerExecutionAuthorities } = state
 	const authority = signerExecutionAuthorities.get(socket.tabId)
 	if (authority?.mode !== 'eip6963'
 		|| authority.websiteOrigin !== websiteOrigin
@@ -215,19 +229,25 @@ export function getSignerExecutionTargetForSocket(websiteTabConnections: Website
 }
 
 export function signerFrameHasDifferentOrigin(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string) {
-	const { signerExecutionAuthorities } = getAuthorityState(websiteTabConnections)
+	const state = websiteTabConnections.signerExecutionAuthority
+	if (state === undefined) return false
+	const { signerExecutionAuthorities } = state
 	const authority = signerExecutionAuthorities.get(socket.tabId)
 	return authority !== undefined && authority.websiteOrigin !== websiteOrigin
 }
 
 export function socketIsEligibleForSignerExecution(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string) {
-	const { signerExecutionAuthorities } = getAuthorityState(websiteTabConnections)
+	const state = websiteTabConnections.signerExecutionAuthority
+	if (state === undefined) return false
+	const { signerExecutionAuthorities } = state
 	const authority = signerExecutionAuthorities.get(socket.tabId)
 	return authority?.websiteOrigin === websiteOrigin && authority.eligibleSocketKeys.has(websiteSocketToString(socket))
 }
 
 export function authorizeSocketForSignerExecution(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, providerUuid: string, websiteOrigin: string) {
-	const { signerExecutionAuthorities } = getAuthorityState(websiteTabConnections)
+	const state = websiteTabConnections.signerExecutionAuthority
+	if (state === undefined) return false
+	const { signerExecutionAuthorities } = state
 	const authority = signerExecutionAuthorities.get(socket.tabId)
 	const key = websiteSocketToString(socket)
 	if (authority?.mode !== 'eip6963'
@@ -239,7 +259,9 @@ export function authorizeSocketForSignerExecution(websiteTabConnections: Website
 }
 
 export function authorizeSocketForLegacySignerExecution(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string) {
-	const { signerExecutionAuthorities } = getAuthorityState(websiteTabConnections)
+	const state = websiteTabConnections.signerExecutionAuthority
+	if (state === undefined) return false
+	const { signerExecutionAuthorities } = state
 	const authority = signerExecutionAuthorities.get(socket.tabId)
 	const key = websiteSocketToString(socket)
 	if (authority?.mode !== 'legacy'
@@ -250,7 +272,9 @@ export function authorizeSocketForLegacySignerExecution(websiteTabConnections: W
 }
 
 export function socketCanExecuteWithSelectedSigner(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
-	const { signerExecutionAuthorities, currentChildSocketKeysByTab, childFrameIdsBySocketKey } = getAuthorityState(websiteTabConnections)
+	const state = websiteTabConnections.signerExecutionAuthority
+	if (state === undefined) return false
+	const { signerExecutionAuthorities, currentChildSocketKeysByTab, childFrameIdsBySocketKey } = state
 	const key = websiteSocketToString(socket)
 	const authority = signerExecutionAuthorities.get(socket.tabId)
 	if (authority?.authorizedSocketKeys.has(key) !== true) return false
@@ -260,7 +284,9 @@ export function socketCanExecuteWithSelectedSigner(websiteTabConnections: Websit
 }
 
 export function clearSignerExecutionAuthorityForTab(websiteTabConnections: WebsiteTabConnections, tabId: number) {
-	const { authoritativeTopSocketKeys, signerExecutionAuthorities, currentChildSocketKeysByTab, childFrameIdsBySocketKey, pendingChildSocketRemovalTimers } = getAuthorityState(websiteTabConnections)
+	const state = websiteTabConnections.signerExecutionAuthority
+	if (state === undefined) return
+	const { authoritativeTopSocketKeys, signerExecutionAuthorities, currentChildSocketKeysByTab, childFrameIdsBySocketKey, pendingChildSocketRemovalTimers } = state
 	authoritativeTopSocketKeys.delete(tabId)
 	signerExecutionAuthorities.delete(tabId)
 	currentChildSocketKeysByTab.delete(tabId)
@@ -272,6 +298,9 @@ export function clearSignerExecutionAuthorityForTab(websiteTabConnections: Websi
 		clearTimeout(timeout)
 		pendingChildSocketRemovalTimers.delete(key)
 	}
+	// The last document's cleanup releases the collection's authority state. Read-only policy checks never recreate it.
+	if (authoritativeTopSocketKeys.size === 0 && signerExecutionAuthorities.size === 0 && currentChildSocketKeysByTab.size === 0
+		&& childFrameIdsBySocketKey.size === 0 && pendingChildSocketRemovalTimers.size === 0) delete websiteTabConnections.signerExecutionAuthority
 }
 
 export function getSignerExecutionError(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {

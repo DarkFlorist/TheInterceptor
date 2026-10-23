@@ -169,6 +169,7 @@ export async function loadModules() {
 		...await import('../../app/ts/background/websiteLifecycle.js'),
 		...await import('../../app/ts/background/settings.js'),
 		...await import('../../app/ts/background/storageVariables.js'),
+		...await import('../../app/ts/background/pendingSignerWork.js'),
 		...await import('../../app/ts/background/websiteAccessPolicy.js'),
 		...await import('../../app/ts/background/websiteTabConnections.js'),
 		...await import('../../app/ts/background/windows/changeChain.js'),

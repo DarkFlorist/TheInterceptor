@@ -1,4 +1,4 @@
-import type { SignerExecutionAuthorityState } from '../background/signerExecutionAuthority.js'
+import type { SignerExecutionAuthorityState } from './signerExecutionAuthority.js'
 import type { WebsiteLifecycleCallbacks } from './websiteLifecycle.js'
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumBlockHeader, EthereumQuantity, EthereumTimestamp, OptionalEthereumAddress } from './wire-types.js'

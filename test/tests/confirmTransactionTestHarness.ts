@@ -241,7 +241,7 @@ export async function loadModules() {
 		getInterceptorTransactionStack: storageVariables.getInterceptorTransactionStack,
 		setFetchSimulationStackRequestPromise: storageVariables.setFetchSimulationStackRequestPromise,
 		getUserAddressBookEntries: storageVariables.getUserAddressBookEntries,
-		appendPendingTransactionOrMessage: storageVariables.appendPendingTransactionOrMessage,
+		appendPendingTransactionOrMessage: (await import('../../app/ts/background/pendingSignerWork.js')).appendPendingTransactionOrMessage,
 		getPendingTerminalReplies: pendingTerminalReplies.getPendingTerminalReplies,
 		prunePendingTerminalRepliesForMissingTabs: pendingTerminalReplies.prunePendingTerminalRepliesForMissingTabs,
 		updateInterceptorTransactionStack: storageVariables.updateInterceptorTransactionStack,

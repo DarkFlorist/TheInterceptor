@@ -1,4 +1,3 @@
-import { runWithSignerSelectionGate } from './signerSelectionLease.js'
 import { getRpcEntryIdentityKey } from '../utils/rpcNetworkChange.js'
 import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
@@ -61,7 +60,7 @@ export async function getPendingTransactionsAndMessages(): Promise<readonly Pend
 }
 
 export const clearPendingTransactions = async () => await updatePendingTransactionOrMessages(async () => [])
-async function updatePendingTransactionOrMessages(update: (pendingTransactionsOrMessages: readonly PendingTransactionOrSignableMessage[]) => Promise<readonly PendingTransactionOrSignableMessage[]>) {
+export async function updatePendingTransactionOrMessages(update: (pendingTransactionsOrMessages: readonly PendingTransactionOrSignableMessage[]) => Promise<readonly PendingTransactionOrSignableMessage[]>) {
 	return await pendingTransactionsSemaphore.execute(async () => {
 		const pendingTransactionsAndMessages = await update(await readPendingTransactionsAndMessagesWithRecovery())
 		await browserStorageLocalSet2({ pendingTransactionsAndMessages })
@@ -80,10 +79,6 @@ export async function updatePendingTransactionOrMessage(uniqueRequestIdentifier:
 	})
 }
 
-export async function appendPendingTransactionOrMessage(pendingTransactionOrMessage: PendingTransactionOrSignableMessage) {
-	await runWithSignerSelectionGate(pendingTransactionOrMessage.uniqueRequestIdentifier.requestSocket.tabId, async () => await updatePendingTransactionOrMessages(async (pendingTransactionsOrMessages) => [...pendingTransactionsOrMessages, pendingTransactionOrMessage]))
-}
-
 export async function removePendingTransactionOrMessage(uniqueRequestIdentifier: UniqueRequestIdentifier) {
 	await updatePendingTransactionOrMessages(async (pendingTransactionsOrMessages) => {
 		const foundPromise = pendingTransactionsOrMessages.find((pendingTransactionsOrMessages) => doesUniqueRequestIdentifiersMatch(pendingTransactionsOrMessages.uniqueRequestIdentifier, uniqueRequestIdentifier))
@@ -93,10 +88,9 @@ export async function removePendingTransactionOrMessage(uniqueRequestIdentifier:
 }
 
 export const getChainChangeConfirmationPromise = async() => (await browserStorageLocalGet('chainChangeConfirmationPromise'))?.chainChangeConfirmationPromise ?? undefined
-export async function setChainChangeConfirmationPromise(chainChangeConfirmationPromise: PendingChainChangeConfirmationPromise | undefined) {
-	// Removing work cannot create a selection conflict; only creating a confirmation reserves the gate.
+export async function writeChainChangeConfirmation(chainChangeConfirmationPromise: PendingChainChangeConfirmationPromise | undefined) {
 	if (chainChangeConfirmationPromise === undefined) return await browserStorageLocalRemove('chainChangeConfirmationPromise')
-	return await runWithSignerSelectionGate(chainChangeConfirmationPromise.request.uniqueRequestIdentifier.requestSocket.tabId, async () => await browserStorageLocalSet({ chainChangeConfirmationPromise }))
+	return await browserStorageLocalSet({ chainChangeConfirmationPromise })
 }
 
 export const getFetchSimulationStackRequestPromise = async() => (await browserStorageLocalGet('fetchSimulationStackRequestPromise'))?.fetchSimulationStackRequestPromise ?? undefined
