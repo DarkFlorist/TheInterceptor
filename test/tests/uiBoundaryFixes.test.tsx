@@ -17,7 +17,7 @@ import { removeAddressBookEntryAndClose } from '../../app/ts/AddressBook.js'
 import { completeRpcFormMutation, removeRpcEntryAndKeepActiveRpcConsistent, saveRpcEntryAndKeepActiveRpcConsistent } from '../../app/ts/components/subcomponents/ConfigureRpcConnection.js'
 import { readAndImportSettingsFile, withObjectUrl } from '../../app/ts/components/pages/SettingsView.js'
 import type { AddressBookEntry } from '../../app/ts/types/addressBookTypes.js'
-import { installDomMock } from './domMock.js'
+import { installDomMock, clickRenderedElement, findRenderedElement } from './domMock.js'
 import { synchronizeViewConfig, ViewSelector } from '../../app/ts/components/subcomponents/ViewSelector.js'
 
 type TestNode = {
@@ -100,9 +100,36 @@ describe('UI boundary fixes', () => {
 				render(<form><DropDownMenu selected = { signal('One') } dropDownOptions = { signal<readonly string[]>(['One', 'Two']) } onChangedCallBack = { () => undefined } buttonClassses = 'button-class' /></form>, dom.document.body)
 			})
 
+			const trigger = findRenderedElement(dom.document.body, (node) => node.tagName === 'BUTTON')
+			if (trigger === undefined) throw new Error('Missing dropdown trigger')
+			await act(async () => await clickRenderedElement(trigger))
 			const buttons = collectElements(dom.document.body, 'button')
 			assert.equal(buttons.length, 3)
 			assert.equal(buttons.every((button) => button.getAttribute?.('type') === 'button'), true)
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+		}
+	})
+
+	test('shared dropdown selects rich objects by stable identity rather than object reference', async () => {
+		const dom = installDomMock()
+		const first = { uuid: 'first', name: 'Wallet' }
+		const second = { uuid: 'second', name: 'Wallet' }
+		const selected = signal({ ...first })
+		try {
+			await act(() => render(<DropDownMenu selected = { selected } dropDownOptions = { signal([first, second]) } onChangedCallBack = { (option) => { selected.value = option } } buttonClassses = 'rich-trigger' getOptionKey = { (option) => option.uuid } getOptionLabel = { (option) => `${ option.name }: ${ option.uuid }` } />, dom.document.body))
+			const trigger = findRenderedElement(dom.document.body, (node) => node.tagName === 'BUTTON')
+			if (trigger === undefined) throw new Error('Missing rich dropdown trigger')
+			await act(async () => await clickRenderedElement(trigger))
+			const options = collectElements(dom.document.body, 'button').filter((option) => option.getAttribute?.('role') === 'option')
+			assert.equal(options.length, 2)
+			assert.equal(String(options[0]?.getAttribute?.('aria-selected')), 'true')
+			const option = findRenderedElement(dom.document.body, (node) => node.textContent === 'Wallet: second' && node.tagName === 'BUTTON')
+			if (option === undefined) throw new Error('Missing second rich option')
+			await act(async () => await clickRenderedElement(option))
+			assert.equal(selected.value.uuid, 'second')
+			assert.equal(String(collectElements(dom.document.body, 'button')[0]?.getAttribute?.('aria-expanded')), 'false')
 		} finally {
 			render(null, dom.document.body)
 			dom.restore()
@@ -116,7 +143,7 @@ describe('UI boundary fixes', () => {
 				render(<DropDownMenu selected = { signal('safe') } dropDownOptions = { signal<readonly string[]>(['safe']) } onChangedCallBack = { () => undefined } buttonClassses = 'button-class' ariaLabel = 'Address type' />, dom.document.body)
 			})
 
-			const trigger = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-haspopup') === 'true')
+			const trigger = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-haspopup') === 'listbox')
 			assert.equal(trigger?.getAttribute?.('aria-label'), 'Address type: safe')
 		} finally {
 			render(null, dom.document.body)
@@ -134,15 +161,12 @@ describe('UI boundary fixes', () => {
 				</div>, dom.document.body)
 			})
 
-			const menuIds = collectElements(dom.document.body, 'div')
-				.filter((element) => element.getAttribute?.('role') === 'menu')
-				.map((element) => element.getAttribute?.('id'))
 			const controlledIds = collectElements(dom.document.body, 'button')
-				.filter((element) => element.getAttribute?.('aria-haspopup') === 'true')
+				.filter((element) => element.getAttribute?.('aria-haspopup') === 'listbox')
 				.map((element) => element.getAttribute?.('aria-controls'))
-			assert.equal(menuIds.length, 2)
-			assert.equal(new Set(menuIds).size, 2)
-			assert.deepEqual(controlledIds, menuIds)
+			assert.equal(controlledIds.length, 2)
+			assert.equal(new Set(controlledIds).size, 2)
+			assert.equal(controlledIds.every((id) => typeof id === 'string' && id.length > 0), true)
 		} finally {
 			render(null, dom.document.body)
 			dom.restore()

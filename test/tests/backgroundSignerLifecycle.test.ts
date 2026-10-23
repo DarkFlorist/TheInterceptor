@@ -424,7 +424,7 @@ describe('background eth_accounts', () => {
 			params: [{ chainId: requestedRpcNetwork.chainId }],
 		}
 		await changeSimulationMode({ simulationMode: false, rpcNetwork: currentRpcNetwork, activeSimulationAddress: undefined, activeSigningAddress: undefined })
-		await setChainChangeConfirmationPromise({
+		await setChainChangeConfirmationPromise(websiteTabConnections, {
 			website,
 			popupOrTabId: { type: 'popup', id: 9 },
 			request,
@@ -496,7 +496,7 @@ describe('background eth_accounts', () => {
 			params: [{ chainId: requestedRpcNetwork.chainId }],
 		}
 		await changeSimulationMode({ simulationMode: false, rpcNetwork: currentRpcNetwork, activeSimulationAddress: undefined, activeSigningAddress: undefined })
-		await setChainChangeConfirmationPromise({
+		await setChainChangeConfirmationPromise(websiteTabConnections, {
 			website,
 			popupOrTabId: { type: 'popup', id: 10 },
 			request,
@@ -593,7 +593,7 @@ describe('background eth_accounts', () => {
 			params: [{ chainId: requestedRpcNetwork.chainId }],
 		}
 		await changeSimulationMode({ simulationMode: false, rpcNetwork: currentRpcNetwork, activeSimulationAddress: undefined, activeSigningAddress: undefined })
-		await setChainChangeConfirmationPromise({
+		await setChainChangeConfirmationPromise(websiteTabConnections, {
 			website,
 			popupOrTabId: { type: 'popup', id: 11 },
 			request,

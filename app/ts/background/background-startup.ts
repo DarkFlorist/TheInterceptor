@@ -41,7 +41,7 @@ import { createRetriableTerminalStateRecovery } from './terminalStateRecovery.js
 import { acknowledgeAndTrackBridgeRequest, INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE } from './bridgeRequestDelivery.js'
 import { clearSignerExecutionAuthorityForTab, getSignerDocumentGeneration, registerCurrentChildSignerSocket, scheduleCurrentChildSignerSocketRemoval } from './signerExecutionAuthority.js'
 import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
-import { registerTopSignerDocument, releaseSignerSelectionLeasesForSocket, releaseSignerSelectionLeasesForTab } from './signerSelectionLease.js'
+import { registerTopSignerDocument, releaseSignerSelectionLeasesForSocket } from './signerSelectionLease.js'
 import { getChildSignerConnectionSynchronization } from './signerProviderSelection.js'
 import { getWebsiteDetailsForConnection } from './websiteConnectionMetadata.js'
 import { registerWebsiteConnectionAndProvisionallyClaimSignerState } from './signerStateOwnership.js'
@@ -122,7 +122,6 @@ const catchAllErrorsAndCall = async (func: () => Promise<unknown>) => {
 }
 
 browser.tabs.onRemoved.addListener(async (tabId: number) => await catchAllErrorsAndCall(async () => {
-	releaseSignerSelectionLeasesForTab(tabId)
 	clearSignerExecutionAuthorityForTab(websiteTabConnections, tabId)
 	for (const socketIdentifier of latestReceivedBridgeRequestIds.keys()) {
 		if (socketIdentifier.startsWith(`${ tabId }-`)) latestReceivedBridgeRequestIds.delete(socketIdentifier)
@@ -149,7 +148,7 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ simulati
 	}
 	const websiteOrigin = getHostWithPort(port.sender.url)
 	const identifier = websiteSocketToString(socket)
-	if (latestReceivedBridgeRequestIds.has(identifier)) releaseSignerSelectionLeasesForSocket(socket)
+	if (latestReceivedBridgeRequestIds.has(identifier)) releaseSignerSelectionLeasesForSocket(websiteTabConnections, socket)
 	const websitePromise = (async () => {
 		const websiteDetails = await getWebsiteDetailsForConnection(socket.tabId, websiteOrigin, port.sender?.frameId)
 		const website = { websiteOrigin, ...websiteDetails }

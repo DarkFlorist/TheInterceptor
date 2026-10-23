@@ -247,7 +247,7 @@ const providerHandlers = {
 		result: await beginSignerProviderSelection(context.websiteTabConnections, context.request, context.websiteOrigin, context.isTopFrame, context.port.sender?.frameId),
 	}) },
 	finish_signer_provider_selection: { method: 'finish_signer_provider_selection' as const, func: async (context: ProviderHandlerContext) => {
-		finishSignerProviderSelection(context.request)
+		finishSignerProviderSelection(context.websiteTabConnections, context.request)
 		return { type: 'result' as const, method: 'finish_signer_provider_selection' as const, result: '0x' as const }
 	} },
 } satisfies Record<Exclude<InternalProviderMethod, 'InterceptorError' | 'safe_apps_request'>, { readonly method: InternalProviderMethod, readonly func: (context: ProviderHandlerContext) => Promise<unknown> }>
@@ -427,7 +427,7 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 		// A finish request must release its token even when setup storage reads fail.
 		if (request.method === 'finish_signer_provider_selection') {
 			const finish = FinishSignerProviderSelection.safeParse(request)
-			if (finish.success) releaseSignerSelectionLease(socket.tabId, finish.value.params[0])
+			if (finish.success) releaseSignerSelectionLease(websiteTabConnections, socket.tabId, finish.value.params[0])
 		}
 		// Include setup reads and settle before reporting: either failure can otherwise hold the selection workflow.
 		const delivered = replyToInterceptedRequest(websiteTabConnections, {

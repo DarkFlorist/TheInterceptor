@@ -117,7 +117,7 @@ describe('EIP-6963 signer provider selection', () => {
 		failReads = false
 		const token = await beginSignerProviderSelection(connections, request, 'app.example', true, 0)
 		if (token === undefined) throw new Error('The failed selection retained its lease')
-		finishSignerProviderSelection(createProviderMessage('finish_signer_provider_selection', [token]))
+		finishSignerProviderSelection(connections, createProviderMessage('finish_signer_provider_selection', [token]))
 	})
 
 	test('keeps active signer execution targets isolated per tab while sharing the site preference', async () => {
@@ -674,7 +674,7 @@ describe('EIP-6963 signer provider selection', () => {
 			simulationMode: false,
 		}
 		let pendingWriteFinished = false
-		const pendingWrite = setChainChangeConfirmationPromise(pendingChainChange).then(() => { pendingWriteFinished = true })
+		const pendingWrite = setChainChangeConfirmationPromise(connections, pendingChainChange).then(() => { pendingWriteFinished = true })
 		await new Promise((resolve) => setTimeout(resolve, 0))
 		assert.equal(pendingWriteFinished, false)
 		assert.equal(storageState.chainChangeConfirmationPromise, undefined)
@@ -682,7 +682,7 @@ describe('EIP-6963 signer provider selection', () => {
 		await new Promise((resolve) => setTimeout(resolve, 0))
 		assert.equal(pendingWriteFinished, false)
 
-		finishSignerProviderSelection(createProviderMessage('finish_signer_provider_selection', [token]))
+		finishSignerProviderSelection(connections, createProviderMessage('finish_signer_provider_selection', [token]))
 		await pendingWrite
 		const storedPendingChainChange = storageState.chainChangeConfirmationPromise
 		if (!isRecord(storedPendingChainChange)
@@ -699,12 +699,13 @@ describe('EIP-6963 signer provider selection', () => {
 		const { acquireSignerSelectionLease, releaseSignerSelectionLease } = await import('../../app/ts/background/signerSelectionLease.js')
 		const oldSocket = { tabId: 7, connectionName: 1n }
 		const newSocket = { tabId: 7, connectionName: 2n }
-		const blockingToken = await acquireSignerSelectionLease(7)
+		const blockingToken = await acquireSignerSelectionLease(connections, 7)
 		const staleBeginRequest = createProviderMessage('begin_signer_provider_selection', [provider.uuid])
 		const queuedSelection = beginSignerProviderSelection(connections, staleBeginRequest, 'app.example', true, 0)
 		await new Promise((resolve) => setTimeout(resolve, 0))
 		registerAuthoritativeTopSocket(connections, newSocket, 'app.example')
-		assert.equal(releaseSignerSelectionLease(7, blockingToken), true)
+		// Registering a new document invalidates the old document lease as part of authority replacement.
+		assert.equal(releaseSignerSelectionLease(connections, 7, blockingToken), false)
 		assert.equal(await queuedSelection, undefined)
 
 		const currentBeginRequest = {
@@ -713,7 +714,7 @@ describe('EIP-6963 signer provider selection', () => {
 		}
 		const currentToken = await beginSignerProviderSelection(connections, currentBeginRequest, 'app.example', true, 0)
 		if (currentToken === undefined) throw new Error('The current document failed to acquire the released signer selection gate')
-		finishSignerProviderSelection({ ...currentBeginRequest, method: 'finish_signer_provider_selection', params: [currentToken] })
+		finishSignerProviderSelection(connections, { ...currentBeginRequest, method: 'finish_signer_provider_selection', params: [currentToken] })
 	})
 
 	test('rejects an old document superseded while its pending-work check is in flight', async () => {
@@ -745,7 +746,7 @@ describe('EIP-6963 signer provider selection', () => {
 		}
 		const currentToken = await beginSignerProviderSelection(connections, currentBeginRequest, 'app.example', true, 0)
 		if (currentToken === undefined) throw new Error('The current document failed to acquire the signer selection gate')
-		finishSignerProviderSelection({ ...currentBeginRequest, method: 'finish_signer_provider_selection', params: [currentToken] })
+		finishSignerProviderSelection(connections, { ...currentBeginRequest, method: 'finish_signer_provider_selection', params: [currentToken] })
 	})
 
 	test('requests cached provider resynchronization when a disconnected child reconnects', async () => {
@@ -915,21 +916,40 @@ describe('EIP-6963 signer provider selection', () => {
 		assert.equal(socketCanExecuteWithSelectedSigner(connections, socket), true)
 	})
 
+	test('selection gates and lease teardown are isolated between connection collections with identical tab IDs', async () => {
+		installBrowserMock()
+		const { acquireSignerSelectionLease, releaseSignerSelectionLease, signerSelectionLeaseIsActive, runWithSignerSelectionGate } = await import('../../app/ts/background/signerSelectionLease.js')
+		const unrelated: WebsiteTabConnections = new Map()
+		const token = await acquireSignerSelectionLease(connections, 7)
+		const unrelatedToken = await acquireSignerSelectionLease(unrelated, 7)
+		assert.equal(releaseSignerSelectionLease(unrelated, 7, token), false)
+		let queuedWorkRan = false
+		const queuedWork = runWithSignerSelectionGate(connections, 7, async () => { queuedWorkRan = true })
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		assert.equal(queuedWorkRan, false)
+		clearSignerExecutionAuthorityForTab(connections, 7)
+		await queuedWork
+		assert.equal(queuedWorkRan, true)
+		assert.equal(signerSelectionLeaseIsActive(connections, 7, token), false)
+		assert.equal(signerSelectionLeaseIsActive(unrelated, 7, unrelatedToken), true)
+		clearSignerExecutionAuthorityForTab(unrelated, 7)
+		assert.equal(signerSelectionLeaseIsActive(unrelated, 7, unrelatedToken), false)
+	})
+
 	test('clears signer authority state when a tab closes', async () => {
 		installBrowserMock()
 		const { authorizeSocketForSignerExecution, clearSignerExecutionAuthorityForTab, getSignerExecutionTargetForOrigin, isAuthoritativeTopSocket, setSignerExecutionTarget, socketCanExecuteWithSelectedSigner } = await import('../../app/ts/background/signerExecutionAuthority.js')
-		const { acquireSignerSelectionLease, releaseSignerSelectionLease, releaseSignerSelectionLeasesForTab } = await import('../../app/ts/background/signerSelectionLease.js')
+		const { acquireSignerSelectionLease, releaseSignerSelectionLease } = await import('../../app/ts/background/signerSelectionLease.js')
 		const socket = { tabId: 7, connectionName: 1n }
 		setSignerExecutionTarget(connections, 7, provider.uuid, 'app.example')
 		assert.equal(authorizeSocketForSignerExecution(connections, socket, provider.uuid, 'app.example'), true)
-		const leaseToken = await acquireSignerSelectionLease(7)
-		releaseSignerSelectionLeasesForTab(7)
+		const leaseToken = await acquireSignerSelectionLease(connections, 7)
 		clearSignerExecutionAuthorityForTab(connections, 7)
 
 		assert.equal(isAuthoritativeTopSocket(connections, socket), false)
 		assert.equal(getSignerExecutionTargetForOrigin(connections, 7, 'app.example'), undefined)
 		assert.equal(socketCanExecuteWithSelectedSigner(connections, socket), false)
-		assert.equal(releaseSignerSelectionLease(7, leaseToken), false)
+		assert.equal(releaseSignerSelectionLease(connections, 7, leaseToken), false)
 	})
 
 	test('releases only the reconnecting socket signer-selection lease', async () => {
@@ -942,13 +962,13 @@ describe('EIP-6963 signer provider selection', () => {
 		} = await import('../../app/ts/background/signerSelectionLease.js')
 		const reconnectingSocket = { tabId: 7, connectionName: 1n }
 		const otherTabSocket = { tabId: 8, connectionName: 1n }
-		const reconnectingLease = await acquireSignerSelectionLease(7, reconnectingSocket)
-		releaseSignerSelectionLeasesForSocket(reconnectingSocket)
-		assert.equal(releaseSignerSelectionLease(7, reconnectingLease), false)
-		assert.equal(finishSignerProviderSelection(createProviderMessage('finish_signer_provider_selection', [reconnectingLease])), false)
+		const reconnectingLease = await acquireSignerSelectionLease(connections, 7, reconnectingSocket)
+		releaseSignerSelectionLeasesForSocket(connections, reconnectingSocket)
+		assert.equal(releaseSignerSelectionLease(connections, 7, reconnectingLease), false)
+		assert.equal(finishSignerProviderSelection(connections, createProviderMessage('finish_signer_provider_selection', [reconnectingLease])), false)
 
-		const otherTabLease = await acquireSignerSelectionLease(8, otherTabSocket)
-		releaseSignerSelectionLeasesForSocket(reconnectingSocket)
-		assert.equal(releaseSignerSelectionLease(8, otherTabLease), true)
+		const otherTabLease = await acquireSignerSelectionLease(connections, 8, otherTabSocket)
+		releaseSignerSelectionLeasesForSocket(connections, reconnectingSocket)
+		assert.equal(releaseSignerSelectionLease(connections, 8, otherTabLease), true)
 	})
 })

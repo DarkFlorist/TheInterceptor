@@ -49,7 +49,7 @@ describe('background eth_accounts', () => {
 				[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 			} }]]))
 			const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
-			const token = await acquireSignerSelectionLease(socket.tabId, socket)
+			const token = await acquireSignerSelectionLease(connections, socket.tabId, socket)
 			const originalGet = browser.storage.local.get.bind(browser.storage.local)
 			const read = spyOn(browser.storage.local, 'get').mockImplementation(async (keys) => {
 				if (failureLocation === 'settings' ? Array.isArray(keys) && keys.includes('simulationMode') : keys === 'tabState_1') throw new Error('Setup storage read failed')
@@ -65,8 +65,8 @@ describe('background eth_accounts', () => {
 					assert.equal(messages.find((message) => message.requestId === index + 1)?.bridgeRequestSettled, true)
 				}
 			} finally { read.mockRestore() }
-			assert.equal(signerSelectionLeaseIsActive(socket.tabId, token), false)
-			assert.equal(await runWithSignerSelectionGate(socket.tabId, async () => 'released'), 'released')
+			assert.equal(signerSelectionLeaseIsActive(connections, socket.tabId, token), false)
+			assert.equal(await runWithSignerSelectionGate(connections, socket.tabId, async () => 'released'), 'released')
 			await handleInterceptedRequest(port, websiteOrigin, { websiteOrigin }, simulationServicesOwner, socket, {
 				interceptorRequest: true, usingInterceptorWithoutSigner: true,
 				uniqueRequestIdentifier: { requestId: 3, requestSocket: socket }, method: 'eth_accounts', params: [],

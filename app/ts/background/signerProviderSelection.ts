@@ -35,24 +35,24 @@ export async function beginSignerProviderSelection(websiteTabConnections: Websit
 		? isAuthoritativeTopSocket(websiteTabConnections, socket)
 		: !isTopFrameId(frameId) && providerUuid !== undefined && getSignerExecutionTargetForSocket(websiteTabConnections, socket, websiteOrigin) === providerUuid
 	if (!socketCanSelectProvider()) return undefined
-	const token = await acquireSignerSelectionLease(tabId, socket)
+	const token = await acquireSignerSelectionLease(websiteTabConnections, tabId, socket)
 	let transferredToCaller = false
 	try {
 		if (!socketCanSelectProvider()) return undefined
 		const hasPendingSignerWork = await tabHasPendingSignerWork(tabId)
-		if (!socketCanSelectProvider() || !signerSelectionLeaseIsActive(tabId, token) || hasPendingSignerWork) return undefined
+		if (!socketCanSelectProvider() || !signerSelectionLeaseIsActive(websiteTabConnections, tabId, token) || hasPendingSignerWork) return undefined
 		transferredToCaller = true
 		return token
 	} finally {
 		// Storage and policy failures must release a lease whose token never reached the inpage caller.
-		if (!transferredToCaller) releaseSignerSelectionLease(tabId, token)
+		if (!transferredToCaller) releaseSignerSelectionLease(websiteTabConnections, tabId, token)
 	}
 }
 
-export function finishSignerProviderSelection(request: ProviderMessage) {
+export function finishSignerProviderSelection(websiteTabConnections: WebsiteTabConnections, request: ProviderMessage) {
 	const [token] = FinishSignerProviderSelection.parse(request).params
 	const tabId = request.uniqueRequestIdentifier.requestSocket.tabId
-	return releaseSignerSelectionLease(tabId, token)
+	return releaseSignerSelectionLease(websiteTabConnections, tabId, token)
 }
 
 export async function signerProvidersChanged(websiteTabConnections: WebsiteTabConnections, request: ProviderMessage, websiteOrigin: string, isTopFrame: boolean, frameId: number | undefined = isTopFrame ? 0 : undefined) {
@@ -82,15 +82,13 @@ export async function signerProvidersChanged(websiteTabConnections: WebsiteTabCo
 	}
 	const providers = announcedProviders.map((provider) => ({ ...provider, rdns: provider.rdns.toLowerCase() }))
 	const tabId = request.uniqueRequestIdentifier.requestSocket.tabId
-	const [preferredSignerPreference, pendingSignerRequests, pendingChainChange] = await Promise.all([
+	const [preferredSignerPreference, hasPendingSignerWork] = await Promise.all([
 		getSignerPreference(websiteOrigin),
-		getPendingTransactionsAndMessages(),
-		getChainChangeConfirmationPromise(),
+		tabHasPendingSignerWork(tabId),
 	])
 	if (!isAuthoritativeTopSocket(websiteTabConnections, socket)) return { preferredSignerRdns: undefined, automaticSelectionAllowed: false, signerSelectionChangeAllowed: false, legacySignerAllowed: false }
 	const preferredSignerRdns = preferredSignerPreference?.rdns
-	const signerSelectionChangeAllowed = !pendingSignerRequests.some((pending) => pending.uniqueRequestIdentifier.requestSocket.tabId === tabId)
-		&& pendingChainChange?.request.uniqueRequestIdentifier.requestSocket.tabId !== tabId
+	const signerSelectionChangeAllowed = !hasPendingSignerWork
 	await updateTabState(request.uniqueRequestIdentifier.requestSocket.tabId, (previousState: TabState) => {
 		if (!isAuthoritativeTopSocket(websiteTabConnections, request.uniqueRequestIdentifier.requestSocket)) return previousState
 		if (!signerSelectionChangeAllowed) return modifyObject(previousState, {

@@ -911,6 +911,11 @@ fieldset[disabled] .button.is-primary.is-danger {
 	z-index: 30;
 }
 
+.signer-provider-options-content {
+	display: grid;
+	gap: 0.25rem;
+}
+
 .signer-provider-option {
 	--btn-bg-color: transparent;
 	border-color: transparent;

@@ -511,7 +511,7 @@ describe('popup settings changes', () => {
 				const { setChainChangeConfirmationPromise, resolveChainChange } = await loadModules()
 				const dappRpc = { ...rpc, httpsRpc: 'https://dapp-switch.example.test' }
 				const uniqueRequestIdentifier = { requestId: 55, requestSocket: socket }
-				await setChainChangeConfirmationPromise({
+				await setChainChangeConfirmationPromise(connections, {
 					website: { websiteOrigin: 'https://example.test' }, popupOrTabId: { type: 'popup', id: 10 }, simulationMode: false, rpcNetwork: dappRpc,
 					request: { method: 'wallet_switchEthereumChain', params: [{ chainId: 2n }], interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier },
 				})

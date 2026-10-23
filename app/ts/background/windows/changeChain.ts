@@ -98,7 +98,7 @@ export const openChangeChainDialog = async (
 		const oldPromise = await getChainChangeConfirmationPromise()
 		if (oldPromise !== undefined) {
 			if (await getPopupOrTabById(oldPromise.popupOrTabId) !== undefined) return userDeniedChange
-			await setChainChangeConfirmationPromise(undefined)
+			await setChainChangeConfirmationPromise(websiteTabConnections, undefined)
 		}
 		openedDialog = await openPopupOrTab({
 			url: getHtmlFile('changeChain'),
@@ -110,7 +110,7 @@ export const openChangeChainDialog = async (
 		if (openedDialog !== undefined) {
 			const confirmationDialog = openedDialog
 			addWindowTabListeners(onCloseWindow, onCloseTab)
-			await setChainChangeConfirmationPromise({
+			await setChainChangeConfirmationPromise(websiteTabConnections, {
 				website: website,
 				popupOrTabId: confirmationDialog,
 				request: request,
@@ -139,7 +139,7 @@ export const openChangeChainDialog = async (
 }
 
 async function resolve(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, reply: ChainChangeConfirmation, simulationMode: boolean) {
-	await setChainChangeConfirmationPromise(undefined)
+	await setChainChangeConfirmationPromise(websiteTabConnections, undefined)
 	if (reply.data.accept) {
 		return await changeActiveRpc(simulationServicesOwner, websiteTabConnections, reply.data.rpcNetwork, { source: 'dapp', simulationMode, signerTabId: reply.data.uniqueRequestIdentifier.requestSocket.tabId })
 	}

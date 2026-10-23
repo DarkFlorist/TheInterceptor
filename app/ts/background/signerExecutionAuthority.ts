@@ -4,6 +4,17 @@ import type { InterceptedRequestForward } from '../types/interceptor-messages.js
 import { METAMASK_ERROR_NOT_AUTHORIZED } from '../utils/constants.js'
 import { isTopFrameId, websiteSocketToString, type WebsiteSocket } from '../utils/requests.js'
 
+type GateReservation = {
+	readonly release: () => void
+}
+
+type ActiveSignerSelectionLease = {
+	readonly tabId: number
+	readonly socket?: WebsiteSocket
+	readonly release: () => void
+	readonly timeout: ReturnType<typeof setTimeout>
+}
+
 type SignerExecutionAuthority = {
 	readonly websiteOrigin: string
 	readonly documentGeneration: string
@@ -13,7 +24,9 @@ type SignerExecutionAuthority = {
 	readonly authorizedSocketKeys: Set<string>
 }
 
-type SignerExecutionAuthorityState = {
+type SignerCoordinationState = {
+	readonly gateTailsByTab: Map<number, Promise<void>>
+	readonly activeLeasesByToken: Map<string, ActiveSignerSelectionLease>
 	readonly authoritativeTopSocketKeys: Map<number, string>
 	readonly signerExecutionAuthorities: Map<number, SignerExecutionAuthority>
 	readonly currentChildSocketKeysByTab: Map<number, Map<number, string>>
@@ -21,12 +34,14 @@ type SignerExecutionAuthorityState = {
 	readonly pendingChildSocketRemovalTimers: Map<string, ReturnType<typeof setTimeout>>
 }
 
-// Scope is explicit at every API call; weak keys keep private authority tied to the live connection collection.
-const authorityByConnections = new WeakMap<WebsiteTabConnections, SignerExecutionAuthorityState>()
+// One collection-scoped owner holds document authority and selection reservations privately, so copying connection/UI snapshots cannot grant execution. TabState is persisted display data; signerStateOwner tracks callback freshness rather than execution permission.
+const signerCoordinationByConnections = new WeakMap<WebsiteTabConnections, SignerCoordinationState>()
 
-// Registration initializes this collection's ephemeral document proofs; queries never attach state. Persisted TabState is a UI/catalog snapshot and never grants execution authority.
-function createSignerExecutionAuthorityState(): SignerExecutionAuthorityState {
+// Registration and workflow reservations initialize this collection's ephemeral state; queries never attach state. Persisted TabState is a UI/catalog snapshot and never grants execution authority.
+function createSignerCoordinationState(): SignerCoordinationState {
 	return {
+		gateTailsByTab: new Map(),
+		activeLeasesByToken: new Map(),
 		authoritativeTopSocketKeys: new Map<number, string>(),
 		signerExecutionAuthorities: new Map<number, SignerExecutionAuthority>(),
 		currentChildSocketKeysByTab: new Map<number, Map<number, string>>(),
@@ -35,17 +50,18 @@ function createSignerExecutionAuthorityState(): SignerExecutionAuthorityState {
 	}
 }
 
-function initializeSignerExecutionAuthority(websiteTabConnections: WebsiteTabConnections) {
-	const current = authorityByConnections.get(websiteTabConnections)
+function initializeSignerCoordination(websiteTabConnections: WebsiteTabConnections) {
+	const current = signerCoordinationByConnections.get(websiteTabConnections)
 	if (current !== undefined) return current
-	const state = createSignerExecutionAuthorityState()
-	authorityByConnections.set(websiteTabConnections, state)
+	const state = createSignerCoordinationState()
+	signerCoordinationByConnections.set(websiteTabConnections, state)
 	return state
 }
 
 export function registerCurrentChildSignerSocket(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, frameId: number) {
 	if (isTopFrameId(frameId)) return false
-	const { signerExecutionAuthorities, currentChildSocketKeysByTab, childFrameIdsBySocketKey, pendingChildSocketRemovalTimers } = initializeSignerExecutionAuthority(websiteTabConnections)
+	releaseSignerSelectionLeasesForSocket(websiteTabConnections, socket)
+	const { signerExecutionAuthorities, currentChildSocketKeysByTab, childFrameIdsBySocketKey, pendingChildSocketRemovalTimers } = initializeSignerCoordination(websiteTabConnections)
 	const key = websiteSocketToString(socket)
 	const pendingRemoval = pendingChildSocketRemovalTimers.get(key)
 	if (pendingRemoval !== undefined) {
@@ -60,6 +76,9 @@ export function registerCurrentChildSignerSocket(websiteTabConnections: WebsiteT
 	childFrameIdsBySocketKey.set(key, frameId)
 	const authority = signerExecutionAuthorities.get(socket.tabId)
 	if (previousKey !== undefined) {
+		for (const lease of signerCoordinationByConnections.get(websiteTabConnections)?.activeLeasesByToken.values() ?? []) {
+			if (lease.socket !== undefined && websiteSocketToString(lease.socket) === previousKey) lease.release()
+		}
 		childFrameIdsBySocketKey.delete(previousKey)
 		authority?.eligibleSocketKeys.delete(previousKey)
 		authority?.authorizedSocketKeys.delete(previousKey)
@@ -68,7 +87,8 @@ export function registerCurrentChildSignerSocket(websiteTabConnections: WebsiteT
 }
 
 export function unregisterCurrentChildSignerSocket(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
-	const state = authorityByConnections.get(websiteTabConnections)
+	releaseSignerSelectionLeasesForSocket(websiteTabConnections, socket)
+	const state = signerCoordinationByConnections.get(websiteTabConnections)
 	if (state === undefined) return false
 	const { signerExecutionAuthorities, currentChildSocketKeysByTab, childFrameIdsBySocketKey, pendingChildSocketRemovalTimers } = state
 	const key = websiteSocketToString(socket)
@@ -89,7 +109,7 @@ export function unregisterCurrentChildSignerSocket(websiteTabConnections: Websit
 }
 
 export function scheduleCurrentChildSignerSocketRemoval(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
-	const state = authorityByConnections.get(websiteTabConnections)
+	const state = signerCoordinationByConnections.get(websiteTabConnections)
 	if (state === undefined) return false
 	const { childFrameIdsBySocketKey, pendingChildSocketRemovalTimers } = state
 	const key = websiteSocketToString(socket)
@@ -103,12 +123,13 @@ export function scheduleCurrentChildSignerSocketRemoval(websiteTabConnections: W
 }
 
 export function registerAuthoritativeTopSocket(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string) {
-	const { authoritativeTopSocketKeys, signerExecutionAuthorities } = initializeSignerExecutionAuthority(websiteTabConnections)
+	const { authoritativeTopSocketKeys, signerExecutionAuthorities } = initializeSignerCoordination(websiteTabConnections)
 	const key = websiteSocketToString(socket)
 	const current = signerExecutionAuthorities.get(socket.tabId)
 	if (authoritativeTopSocketKeys.get(socket.tabId) === key && current?.websiteOrigin === websiteOrigin) {
 		return false
 	}
+	releaseSignerSelectionLeasesForTab(websiteTabConnections, socket.tabId)
 	authoritativeTopSocketKeys.set(socket.tabId, key)
 	// Every document starts blocked until its initial (possibly empty) EIP-6963 catalog has been reconciled with the site's stored preference.
 	signerExecutionAuthorities.set(socket.tabId, {
@@ -123,7 +144,7 @@ export function registerAuthoritativeTopSocket(websiteTabConnections: WebsiteTab
 }
 
 export function getSignerDocumentGenerationForOrigin(websiteTabConnections: WebsiteTabConnections, tabId: number, websiteOrigin: string) {
-	const state = authorityByConnections.get(websiteTabConnections)
+	const state = signerCoordinationByConnections.get(websiteTabConnections)
 	if (state === undefined) return undefined
 	const { signerExecutionAuthorities } = state
 	const authority = signerExecutionAuthorities.get(tabId)
@@ -135,14 +156,14 @@ export function getSignerDocumentGeneration(websiteTabConnections: WebsiteTabCon
 }
 
 export function isCurrentChildSignerSocket(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, frameId: number | undefined) {
-	const state = authorityByConnections.get(websiteTabConnections)
+	const state = signerCoordinationByConnections.get(websiteTabConnections)
 	if (state === undefined) return false
 	const { currentChildSocketKeysByTab } = state
 	return frameId !== undefined && !isTopFrameId(frameId) && currentChildSocketKeysByTab.get(socket.tabId)?.get(frameId) === websiteSocketToString(socket)
 }
 
 export function reconcileSignerExecutionDocument(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string, documentGeneration: string | undefined, isTopFrame: boolean, frameId: number | undefined) {
-	const state = authorityByConnections.get(websiteTabConnections)
+	const state = signerCoordinationByConnections.get(websiteTabConnections)
 	if (state === undefined) return false
 	const { signerExecutionAuthorities } = state
 	const authority = signerExecutionAuthorities.get(socket.tabId)
@@ -160,14 +181,14 @@ export function reconcileSignerExecutionDocument(websiteTabConnections: WebsiteT
 }
 
 export function isAuthoritativeTopSocket(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
-	const state = authorityByConnections.get(websiteTabConnections)
+	const state = signerCoordinationByConnections.get(websiteTabConnections)
 	if (state === undefined) return false
 	const { authoritativeTopSocketKeys } = state
 	return authoritativeTopSocketKeys.get(socket.tabId) === websiteSocketToString(socket)
 }
 
 export function setSignerExecutionTarget(websiteTabConnections: WebsiteTabConnections, tabId: number, providerUuid: string, websiteOrigin: string) {
-	const state = authorityByConnections.get(websiteTabConnections)
+	const state = signerCoordinationByConnections.get(websiteTabConnections)
 	if (state === undefined) return false
 	const { authoritativeTopSocketKeys, signerExecutionAuthorities } = state
 	const current = signerExecutionAuthorities.get(tabId)
@@ -185,7 +206,7 @@ export function setSignerExecutionTarget(websiteTabConnections: WebsiteTabConnec
 }
 
 export function allowLegacySignerExecution(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string) {
-	const state = authorityByConnections.get(websiteTabConnections)
+	const state = signerCoordinationByConnections.get(websiteTabConnections)
 	if (state === undefined) return false
 	const { signerExecutionAuthorities } = state
 	if (!isAuthoritativeTopSocket(websiteTabConnections, socket)) return false
@@ -207,7 +228,7 @@ export function allowLegacySignerExecution(websiteTabConnections: WebsiteTabConn
 }
 
 export function blockSignerExecution(websiteTabConnections: WebsiteTabConnections, tabId: number) {
-	const state = authorityByConnections.get(websiteTabConnections)
+	const state = signerCoordinationByConnections.get(websiteTabConnections)
 	if (state === undefined) return
 	const { signerExecutionAuthorities } = state
 	const current = signerExecutionAuthorities.get(tabId)
@@ -223,7 +244,7 @@ export function blockSignerExecution(websiteTabConnections: WebsiteTabConnection
 }
 
 export function signerSelectionIsUnavailable(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string) {
-	const state = authorityByConnections.get(websiteTabConnections)
+	const state = signerCoordinationByConnections.get(websiteTabConnections)
 	if (state === undefined) return false
 	const { signerExecutionAuthorities } = state
 	const authority = signerExecutionAuthorities.get(socket.tabId)
@@ -231,7 +252,7 @@ export function signerSelectionIsUnavailable(websiteTabConnections: WebsiteTabCo
 }
 
 export function getSignerExecutionTargetForOrigin(websiteTabConnections: WebsiteTabConnections, tabId: number, websiteOrigin: string) {
-	const state = authorityByConnections.get(websiteTabConnections)
+	const state = signerCoordinationByConnections.get(websiteTabConnections)
 	if (state === undefined) return undefined
 	const { signerExecutionAuthorities } = state
 	const authority = signerExecutionAuthorities.get(tabId)
@@ -240,7 +261,7 @@ export function getSignerExecutionTargetForOrigin(websiteTabConnections: Website
 }
 
 export function getSignerExecutionTargetForSocket(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string) {
-	const state = authorityByConnections.get(websiteTabConnections)
+	const state = signerCoordinationByConnections.get(websiteTabConnections)
 	if (state === undefined) return undefined
 	const { signerExecutionAuthorities } = state
 	const authority = signerExecutionAuthorities.get(socket.tabId)
@@ -251,7 +272,7 @@ export function getSignerExecutionTargetForSocket(websiteTabConnections: Website
 }
 
 export function signerFrameHasDifferentOrigin(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string) {
-	const state = authorityByConnections.get(websiteTabConnections)
+	const state = signerCoordinationByConnections.get(websiteTabConnections)
 	if (state === undefined) return false
 	const { signerExecutionAuthorities } = state
 	const authority = signerExecutionAuthorities.get(socket.tabId)
@@ -259,7 +280,7 @@ export function signerFrameHasDifferentOrigin(websiteTabConnections: WebsiteTabC
 }
 
 export function socketIsEligibleForSignerExecution(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string) {
-	const state = authorityByConnections.get(websiteTabConnections)
+	const state = signerCoordinationByConnections.get(websiteTabConnections)
 	if (state === undefined) return false
 	const { signerExecutionAuthorities } = state
 	const authority = signerExecutionAuthorities.get(socket.tabId)
@@ -267,7 +288,7 @@ export function socketIsEligibleForSignerExecution(websiteTabConnections: Websit
 }
 
 export function authorizeSocketForSignerExecution(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, providerUuid: string, websiteOrigin: string) {
-	const state = authorityByConnections.get(websiteTabConnections)
+	const state = signerCoordinationByConnections.get(websiteTabConnections)
 	if (state === undefined) return false
 	const { signerExecutionAuthorities } = state
 	const authority = signerExecutionAuthorities.get(socket.tabId)
@@ -281,7 +302,7 @@ export function authorizeSocketForSignerExecution(websiteTabConnections: Website
 }
 
 export function authorizeSocketForLegacySignerExecution(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string) {
-	const state = authorityByConnections.get(websiteTabConnections)
+	const state = signerCoordinationByConnections.get(websiteTabConnections)
 	if (state === undefined) return false
 	const { signerExecutionAuthorities } = state
 	const authority = signerExecutionAuthorities.get(socket.tabId)
@@ -294,7 +315,7 @@ export function authorizeSocketForLegacySignerExecution(websiteTabConnections: W
 }
 
 export function socketCanExecuteWithSelectedSigner(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
-	const state = authorityByConnections.get(websiteTabConnections)
+	const state = signerCoordinationByConnections.get(websiteTabConnections)
 	if (state === undefined) return false
 	const { signerExecutionAuthorities, currentChildSocketKeysByTab, childFrameIdsBySocketKey } = state
 	const key = websiteSocketToString(socket)
@@ -306,7 +327,8 @@ export function socketCanExecuteWithSelectedSigner(websiteTabConnections: Websit
 }
 
 export function clearSignerExecutionAuthorityForTab(websiteTabConnections: WebsiteTabConnections, tabId: number) {
-	const state = authorityByConnections.get(websiteTabConnections)
+	releaseSignerSelectionLeasesForTab(websiteTabConnections, tabId)
+	const state = signerCoordinationByConnections.get(websiteTabConnections)
 	if (state === undefined) return
 	const { authoritativeTopSocketKeys, signerExecutionAuthorities, currentChildSocketKeysByTab, childFrameIdsBySocketKey, pendingChildSocketRemovalTimers } = state
 	authoritativeTopSocketKeys.delete(tabId)
@@ -322,7 +344,7 @@ export function clearSignerExecutionAuthorityForTab(websiteTabConnections: Websi
 	}
 	// The last document's cleanup releases the collection's authority state. Read-only policy checks never recreate it.
 	if (authoritativeTopSocketKeys.size === 0 && signerExecutionAuthorities.size === 0 && currentChildSocketKeysByTab.size === 0
-		&& childFrameIdsBySocketKey.size === 0 && pendingChildSocketRemovalTimers.size === 0) authorityByConnections.delete(websiteTabConnections)
+		&& childFrameIdsBySocketKey.size === 0 && pendingChildSocketRemovalTimers.size === 0 && state.gateTailsByTab.size === 0 && state.activeLeasesByToken.size === 0) signerCoordinationByConnections.delete(websiteTabConnections)
 }
 
 export function getSignerExecutionError(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
@@ -334,4 +356,72 @@ export function authorizeSignerForward(websiteTabConnections: WebsiteTabConnecti
 	if (message.type !== 'forwardToSigner') return message
 	const error = getSignerExecutionError(websiteTabConnections, message.uniqueRequestIdentifier.requestSocket)
 	return error === undefined ? message : { ...message, type: 'result', error }
+}
+
+async function reserveSignerSelectionGate(websiteTabConnections: WebsiteTabConnections, tabId: number): Promise<GateReservation> {
+	const { gateTailsByTab } = initializeSignerCoordination(websiteTabConnections)
+	const previousTail = gateTailsByTab.get(tabId) ?? Promise.resolve()
+	let releaseReservation: (() => void) | undefined
+	const completion = new Promise<void>((resolve) => { releaseReservation = resolve })
+	const currentTail = previousTail.then(async () => await completion)
+	gateTailsByTab.set(tabId, currentTail)
+	await previousTail
+	let released = false
+	const release = () => {
+		if (released) return
+		released = true
+		releaseReservation?.()
+		void currentTail.then(() => {
+			if (gateTailsByTab.get(tabId) === currentTail) gateTailsByTab.delete(tabId)
+		})
+	}
+	return { release }
+}
+
+export async function acquireSignerSelectionLease(websiteTabConnections: WebsiteTabConnections, tabId: number, socket?: WebsiteSocket) {
+	const { activeLeasesByToken } = initializeSignerCoordination(websiteTabConnections)
+	const reservation = await reserveSignerSelectionGate(websiteTabConnections, tabId)
+	const token = crypto.randomUUID()
+	const release = () => {
+		const lease = activeLeasesByToken.get(token)
+		if (lease === undefined) return
+		activeLeasesByToken.delete(token)
+		clearTimeout(lease.timeout)
+		reservation.release()
+	}
+	const timeout = setTimeout(release, 30_000)
+	activeLeasesByToken.set(token, { tabId, socket, release, timeout })
+	return token
+}
+
+export function releaseSignerSelectionLease(websiteTabConnections: WebsiteTabConnections, tabId: number, token: string) {
+	const lease = signerCoordinationByConnections.get(websiteTabConnections)?.activeLeasesByToken.get(token)
+	if (lease?.tabId !== tabId) return false
+	lease.release()
+	return true
+}
+
+export function signerSelectionLeaseIsActive(websiteTabConnections: WebsiteTabConnections, tabId: number, token: string) {
+	return signerCoordinationByConnections.get(websiteTabConnections)?.activeLeasesByToken.get(token)?.tabId === tabId
+}
+
+function releaseSignerSelectionLeasesForTab(websiteTabConnections: WebsiteTabConnections, tabId: number) {
+	for (const lease of signerCoordinationByConnections.get(websiteTabConnections)?.activeLeasesByToken.values() ?? []) {
+		if (lease.tabId === tabId) lease.release()
+	}
+}
+
+export function releaseSignerSelectionLeasesForSocket(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
+	for (const lease of signerCoordinationByConnections.get(websiteTabConnections)?.activeLeasesByToken.values() ?? []) {
+		if (lease.socket?.tabId === socket.tabId && lease.socket.connectionName === socket.connectionName) lease.release()
+	}
+}
+
+export async function runWithSignerSelectionGate<T>(websiteTabConnections: WebsiteTabConnections, tabId: number, action: () => Promise<T>) {
+	const reservation = await reserveSignerSelectionGate(websiteTabConnections, tabId)
+	try {
+		return await action()
+	} finally {
+		reservation.release()
+	}
 }
