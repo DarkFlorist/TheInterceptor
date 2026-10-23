@@ -147,14 +147,18 @@ export async function estimateSafeExecutionGas(
 	const lastBlock = last(preparedInput)
 	const executedTransaction = last(lastBlock?.transactions ?? [])?.executedTransaction
 	if (lastBlock === undefined || executedTransaction === undefined) throw new Error('The Gnosis Safe execution to estimate was not prepared.')
+	// Recognised from the failed call itself, because the estimate's error keeps only the call's return data.
+	let safeCallReverted = false
 	const simulateWithGasLimit = async (gasLimit: bigint) => {
 		const input = [...preparedInput.slice(0, -1), { ...lastBlock, transactions: [{ ...safeCall, executedTransaction: { ...executedTransaction, gas: gasLimit } }] }]
-		return last(last(await ethereum.simulate(input, parentBlock.number, requestAbortController))?.calls ?? [])
+		const result = last(last(await ethereum.simulate(input, parentBlock.number, requestAbortController))?.calls ?? [])
+		safeCallReverted = result?.status === 'failure' && isSafeCallRevert(result.error, result.returnData)
+		return result
 	}
 	const initialResult = await simulateWithGasLimit(blockGasLimit)
 	if (initialResult === undefined) return { error: { code: ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, message: 'ETH Simulate Failed to estimate gas', data: '0x' } }
 	const estimate = await getGasEstimateFromSimulation(initialResult, blockGasLimit, simulateWithGasLimit)
-	if ('error' in estimate && isSafeCallRevert(estimate.error)) return { error: { ...estimate.error, message: SAFE_CALL_REVERTED_MESSAGE } }
+	if ('error' in estimate && (safeCallReverted || isSafeCallRevert(estimate.error))) return { error: { ...estimate.error, message: SAFE_CALL_REVERTED_MESSAGE } }
 	return estimate
 }
 
