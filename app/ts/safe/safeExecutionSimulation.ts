@@ -10,9 +10,9 @@ import type { EthereumSendableSignedTransaction, EthereumUnsignedTransaction } f
 import { encodeAbiValues, encodeFunctionCall } from '../utils/abiRuntime.js'
 import { addressString, bytes32String, dataStringWith0xStart, generate256BitRandomBigInt, stringToUint8Array } from '../utils/bigint.js'
 import { getSafeTxHash } from '../utils/eip712.js'
-import { keccak256 } from '../utils/ethereumPrimitives.js'
-import { createSafeTxFromMessage, getSafeContractStateAtBlock, type SafeContractState } from './safeCore.js'
-import { prevalidatedSafeSignature, SAFE_EXECUTION_ABI } from './safeExecution.js'
+import { isAbiDataDecodeError, keccak256 } from '../utils/ethereumPrimitives.js'
+import { createSafeTxFromMessage, getSafeContractStateAtBlock, isSafeContractValidationFailure, type SafeContractState } from './safeCore.js'
+import { decodeSafeExecution, prevalidatedSafeSignature, SAFE_EXECUTION_ABI } from './safeExecution.js'
 import { isSafeExecTransactionCall } from './safeExecutionRouting.js'
 import { decodeSafeBatch, SAFE_MULTI_SEND_CALL_ONLY } from './safeDelegateCalls.js'
 import { ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED } from '../utils/constants.js'
@@ -64,13 +64,25 @@ function getSafeExecution({ safeTransaction, signedTransaction, simulationOption
 	}
 }
 
-// The calls a transaction makes that can execute a Safe: a stacked transaction's call, a Safe execution's CALL, or the CALL entries of a Safe's MultiSend batch. A delegate call to the other library Interceptor allows, SignMessageLib, calls nothing.
-function getCallsThatCanExecuteASafe(transaction: SimulationInputTransaction): readonly { readonly to: bigint | null, readonly data: Uint8Array }[] {
-	if (!isGnosisSafeExecution(transaction)) return [{ to: transaction.signedTransaction.to, data: transaction.signedTransaction.input }]
-	const { message } = getSafeExecution(transaction)
-	if (message.operation === 0n) return [{ to: message.to, data: message.data }]
-	if (message.to === SAFE_MULTI_SEND_CALL_ONLY) return decodeSafeBatch(message.data)
+type Call = { readonly to: bigint | null, readonly data: Uint8Array }
+
+// The calls a Safe makes when it executes a SafeTx: its CALL, or the CALL entries of a MultiSend batch it delegate-calls. A delegate call to SignMessageLib, the other library Interceptor allows, calls nothing.
+const getCallsOfSafeTx = ({ to, data, operation }: Pick<SafeTx['message'], 'to' | 'data' | 'operation'>): readonly Call[] => {
+	if (operation === 0n) return [{ to, data }]
+	if (to === SAFE_MULTI_SEND_CALL_ONLY) return decodeSafeBatch(data)
 	return []
+}
+
+// The Safes a call executes: a call to the execTransaction of one of the given Safes executes it, and the calls of the SafeTx it executes can execute a Safe again. Each nested call is part of the calldata around it, so the search ends. A call the Safe can't decode reverts, so it executes nothing.
+function getSafesExecutedBy(call: Call, safeAddresses: ReadonlySet<bigint>): readonly bigint[] {
+	if (call.to === null || !safeAddresses.has(call.to) || !isSafeExecTransactionCall(call.data)) return []
+	try {
+		const { safeTx } = decodeSafeExecution(0n, call.to, 0n, call.data)
+		return [call.to, ...getCallsOfSafeTx(safeTx.message).flatMap((innerCall) => getSafesExecutedBy(innerCall, safeAddresses))]
+	} catch (error: unknown) {
+		if (!isSafeContractValidationFailure(error) && !isAbiDataDecodeError(error)) throw error
+		return []
+	}
 }
 
 function createExecutorTransaction(execution: SafeExecution, safeCall: EthereumSendableSignedTransaction, signingOwners: readonly bigint[], executorNonce: bigint, maxFeePerGas: bigint): EthereumSendableSignedTransaction {
@@ -101,7 +113,7 @@ function createExecutorTransaction(execution: SafeExecution, safeCall: EthereumS
  * Prepares every Gnosis Safe execution in the input (isGnosisSafeExecution: a Safe proposal, or a Safe's own call in simulation mode) to run the way the Safe runs it on-chain: SAFE_EXECUTION_SIMULATION_EXECUTOR calls the Safe's execTransaction with real fees in a block with the real base fee, and the Safe makes the call. The transaction's signedTransaction stays the Safe's call that the dialog shows; the call the node runs is its executedTransaction.
  * The simulation assumes the Safe's owners approved the call. The first block's state overrides mark the call's SafeTx hash as approved (approvedHashes) by every owner of the Safe at the parent block, and the execution carries their pre-validated signatures. The Safe can reach this state on-chain, through approveHash. An owner that an earlier execution on the stack removes still signs, so an execution after such a removal can fail the Safe's signature check (GS026).
  * The approvals are visible: a called contract that reads its Safe's approvedHashes for the current SafeTx hash finds them set, as it would if the owners had approved with approveHash, but not if they sign off-chain. A preview runs before the owners have signed, so it has to make the Safe accept approvals it doesn't have yet. The alternatives can be told apart as well: replacing the ecrecover precompile to accept made-up signatures puts code at its address, and lowering the threshold changes getThreshold. approvedHashes is the one of them the Safe can reach on-chain, and a contract can only see it by inspecting its own Safe, unlike a tx.origin that is a contract or a zero base fee.
- * The SafeTx hash includes the Safe's nonce at execution, and each earlier execution of the same Safe in the input raises it by one if it succeeds: a simulated Safe execution, or a call to the Safe's execTransaction, whether a stacked transaction, a Safe execution or a Safe's MultiSend batch makes it. So an execution is approved at every nonce from the Safe's nonce at the parent block up to that nonce plus its number of earlier executions.
+ * The SafeTx hash includes the Safe's nonce at execution, and each earlier execution of the same Safe in the input raises it by one if it succeeds: a simulated Safe execution, or a call to the Safe's execTransaction made by a stacked transaction or a Safe execution, directly or through the SafeTxs and MultiSend batches it executes (getSafesExecutedBy). So an execution is approved at every nonce from the Safe's nonce at the parent block up to that nonce plus its number of earlier executions.
  * The first block also funds the executor for every execution's gas at its maximum fee.
  */
 export async function prepareSafeExecutionSimulationInput(input: SimulationStateInput, ethereum: EthereumClientService, parentBlockNumber: bigint, baseFeePerGas: bigint): Promise<SimulationStateInput> {
@@ -114,15 +126,14 @@ export async function prepareSafeExecutionSimulationInput(input: SimulationState
 	let executorNonce = 0n
 	let executorBalance = 0n
 	const countExecution = (safeAddress: bigint) => earlierExecutionsBySafe.set(safeAddress, (earlierExecutionsBySafe.get(safeAddress) ?? 0n) + 1n)
-	// A call to a Safe's execTransaction, made by a stacked transaction or by a Safe execution.
-	const countExecTransactionCalls = (transaction: SimulationInputTransaction) => {
-		for (const { to, data } of getCallsThatCanExecuteASafe(transaction)) {
-			if (to !== null && safeStates.has(to) && isSafeExecTransactionCall(data)) countExecution(to)
-		}
+	const safeAddressesExecuted = new Set(safeStates.keys())
+	// Executions of a Safe that the calls of a stacked transaction or a Safe execution make, nested ones included.
+	const countExecutionsMadeBy = (calls: readonly Call[]) => {
+		for (const call of calls) for (const executedSafe of getSafesExecutedBy(call, safeAddressesExecuted)) countExecution(executedSafe)
 	}
 	const preparedInput = input.map((block) => ({ ...block, transactions: block.transactions.map((transaction) => {
 		if (!isGnosisSafeExecution(transaction)) {
-			countExecTransactionCalls(transaction)
+			countExecutionsMadeBy([{ to: transaction.signedTransaction.to, data: transaction.signedTransaction.input }])
 			return transaction
 		}
 		const { signedTransaction } = transaction
@@ -132,7 +143,7 @@ export async function prepareSafeExecutionSimulationInput(input: SimulationState
 		if (safeState === undefined) throw new Error('The Gnosis Safe state of the execution was not read.')
 		const earlierExecutions = earlierExecutionsBySafe.get(safeAddress) ?? 0n
 		countExecution(safeAddress)
-		countExecTransactionCalls(transaction)
+		countExecutionsMadeBy(getCallsOfSafeTx(execution.message))
 		const approvedHashSlots = approvedHashSlotsBySafe.get(safeAddress) ?? {}
 		for (let nonce = safeState.nonce; nonce <= safeState.nonce + earlierExecutions; nonce++) {
 			const safeTxHash = BigInt(getSafeTxHash(createSafeTxFromMessage(execution.chainId, safeAddress, { ...execution.message, nonce })))

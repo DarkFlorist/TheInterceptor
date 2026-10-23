@@ -247,6 +247,32 @@ test('counts an execTransaction call inside a Safe proposal\'s MultiSend batch a
 	assert.ok(approvedSlotsOfLaterProposal.every((slot) => stateDiff[slot] === 1n))
 })
 
+test('counts a Safe execution nested in a MultiSend batch that a stacked execTransaction call executes', async () => {
+	configureSafe()
+	const { encodeSafeBatch, SAFE_MULTI_SEND_CALL_ONLY } = await import('../../app/ts/safe/safeDelegateCalls.js')
+	const encodeExecTransaction = (to: bigint, data: string, operation: bigint) => encodeFunctionCall(SAFE_EXECUTION_ABI, 'execTransaction', [addressString(to), 0n, data, operation, 0n, 0n, 0n, addressString(0n), addressString(0n), '0x'])
+	const batch = encodeSafeBatch([{ to: SAFE_ADDRESS, value: 0n, data: hexToBytes(encodeExecTransaction(CALLED_CONTRACT, '0x', 0n)) }, { to: CALLED_CONTRACT, value: 0n, data: new Uint8Array([1]) }])
+	const stackedCall = createSafeCall({ value: 0n, input: hexToBytes(encodeExecTransaction(SAFE_MULTI_SEND_CALL_ONLY, dataStringWith0xStart(batch), 1n)), gas: 200_000n }, undefined)
+	const stackedExecution = { ...stackedCall, signedTransaction: { ...stackedCall.signedTransaction, from: ORDINARY_ACCOUNT, to: SAFE_ADDRESS } }
+	const laterProposal = createSafeProposal({ value: 9n })
+	const [preparedBlock] = await prepareSafeExecutionSimulationInput([createBlock([stackedExecution, laterProposal])], ethereum, 123n, BASE_FEE_PER_GAS)
+	const laterSafeTx = laterProposal.safeTransaction?.safeTx
+	if (laterSafeTx === undefined) throw new Error('Expected a Safe proposal')
+	const stateDiff = preparedBlock?.stateOverrides[addressString(SAFE_ADDRESS)]?.stateDiff ?? {}
+	// The stacked execution and the execution its batch makes raise the nonce from 5 to 7.
+	const approvedSlotsOfLaterProposal = [5n, 6n, 7n].flatMap((nonce) => SORTED_OWNERS.map((owner) => approvedHashSlot(owner, BigInt(getSafeTxHash(createSafeTxFromMessage(fakeRpcNetwork.chainId, SAFE_ADDRESS, { ...laterSafeTx.message, nonce }))))))
+	assert.ok(approvedSlotsOfLaterProposal.every((slot) => stateDiff[slot] === 1n))
+})
+
+test('counts no execution for a stacked execTransaction call the Safe can\'t decode', async () => {
+	configureSafe()
+	const malformedCall = createSafeCall({ value: 0n, input: Uint8Array.from([0x6a, 0x76, 0x12, 0x02, 0x01]), gas: 100_000n }, undefined)
+	const malformedExecution = { ...malformedCall, signedTransaction: { ...malformedCall.signedTransaction, from: ORDINARY_ACCOUNT, to: SAFE_ADDRESS } }
+	const laterProposal = createSafeProposal({ value: 9n })
+	const [preparedBlock] = await prepareSafeExecutionSimulationInput([createBlock([malformedExecution, laterProposal])], ethereum, 123n, BASE_FEE_PER_GAS)
+	assert.equal(Object.keys(preparedBlock?.stateOverrides[addressString(SAFE_ADDRESS)]?.stateDiff ?? {}).length, SORTED_OWNERS.length, 'the later proposal is approved at the Safe\'s nonce only')
+})
+
 test('runs a Safe proposal stored by an earlier version in a block with the real base fee', async () => {
 	configureSafe()
 	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({ simulationMode: false, rpcNetwork: fakeRpcNetwork, activeSigningSafeAddress: SAFE_ADDRESS })
