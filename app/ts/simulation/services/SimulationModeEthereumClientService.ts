@@ -1,5 +1,5 @@
 import type { Settings } from '../../types/interceptor-messages.js'
-import { type EthereumClientService, getNextBlockTimeStampOverride } from './EthereumClientService.js'
+import { type EthereumClientService, getNextBlockTimeStampOverride, getTotalExecutedGasLimit } from './EthereumClientService.js'
 import type { PreparedEthSimulateV1Input } from './EthereumClientService.js'
 import { type EthereumSignedTransactionWithBlockData, type EthereumBlockTag, type EthereumAddress, type EthereumBlockHeader, type EthereumBlockHeaderWithTransactionHashes, EthereumData, EthereumQuantity, EthereumBytes32, type EthereumSendableSignedTransaction } from '../../types/wire-types.js'
 import { addressString, bigintSecondsToDate, bigintToUint8Array, dataStringWith0xStart, dateToBigintSeconds, max, min, stringToUint8Array } from '../../utils/bigint.js'
@@ -123,7 +123,7 @@ const transactionQueueTotalGasUsed = (simulatedTransactions: readonly SimulatedT
 
 const transactionQueueTotalGasLimitFromInput = (block: SimulationStateInputMinimalDataBlock | undefined) => {
 	if (block === undefined) return 0n
-	return block.transactions.reduce((totalGasUsed, transaction) => totalGasUsed + transaction.signedTransaction.gas, 0n)
+	return getTotalExecutedGasLimit(block.transactions)
 }
 
 const isEmptySimulationInput = (simulationStateInput: SimulationStateInput | SimulationStateInputMinimalData) => simulationStateInput.length === 0

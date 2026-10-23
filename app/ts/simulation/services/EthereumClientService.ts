@@ -32,6 +32,13 @@ const parseSignatureHex = (signature: `0x${ string }`) => {
 	}
 }
 
+type RpcTransaction = SimulationStateInputMinimalDataBlock['transactions'][number]
+
+// The call the node runs for a transaction. A Gnosis Safe execution runs as its executedTransaction (prepareSafeExecutionSimulationInput), while its signedTransaction stays the Safe's own call, which transaction lookups and receipts return.
+const getExecutedTransaction = (transaction: RpcTransaction) => transaction.executedTransaction ?? transaction.signedTransaction
+
+export const getTotalExecutedGasLimit = (transactions: readonly RpcTransaction[]) => transactions.reduce((totalGasLimit, transaction) => totalGasLimit + getExecutedTransaction(transaction).gas, 0n)
+
 const toEthSimulateCall = (transaction: EthereumSendableSignedTransaction) => {
 	const commonFields = {
 		type: transaction.type,
@@ -326,38 +333,40 @@ export class EthereumClientService {
 		const blockOverrides: BlockOverrides[] = []
 		const baseFeePerGas = parentBlock.baseFeePerGas === undefined ? 15000000n : parentBlock.baseFeePerGas
 
-		const gasLimitTransaction = (transaction: EthereumSendableSignedTransaction) => ({ ...transaction, gas: transaction.gas > parentBlock.gasLimit ? parentBlock.gasLimit : transaction.gas })
+		const clampGasToBlock = (transaction: EthereumSendableSignedTransaction) => ({ ...transaction, gas: transaction.gas > parentBlock.gasLimit ? parentBlock.gasLimit : transaction.gas })
+		const gasLimitTransaction = (transaction: RpcTransaction): RpcTransaction => ({
+			signedTransaction: clampGasToBlock(transaction.signedTransaction),
+			...(transaction.executedTransaction === undefined ? {} : { executedTransaction: clampGasToBlock(transaction.executedTransaction) }),
+		})
 
-		const splitTransactionsByGasLimit = (currentTransactions: EthereumSendableSignedTransaction[], gasLimit: bigint): EthereumSendableSignedTransaction[][] => {
-			const transactionChunks: EthereumSendableSignedTransaction[][] = []
-			let currentChunk: EthereumSendableSignedTransaction[] = []
+		const splitTransactionsByGasLimit = (currentTransactions: readonly RpcTransaction[], gasLimit: bigint): RpcTransaction[][] => {
+			const transactionChunks: RpcTransaction[][] = []
+			let currentChunk: RpcTransaction[] = []
 			let currentChunkGasSum = 0n
 			for (const transaction of currentTransactions) {
-				if (transaction.gas > gasLimit) throw new Error(`Transaction gas ${ transaction.gas.toString() } exceeds gas limit ${ gasLimit.toString() }`)
-				if (currentChunkGasSum + transaction.gas <= gasLimit) {
+				const { gas } = getExecutedTransaction(transaction)
+				if (gas > gasLimit) throw new Error(`Transaction gas ${ gas.toString() } exceeds gas limit ${ gasLimit.toString() }`)
+				if (currentChunkGasSum + gas <= gasLimit) {
 					currentChunk.push(transaction)
-					currentChunkGasSum = currentChunkGasSum + transaction.gas
+					currentChunkGasSum = currentChunkGasSum + gas
 				} else {
 					transactionChunks.push(currentChunk)
 					currentChunk = [ transaction ]
-					currentChunkGasSum = transaction.gas
+					currentChunkGasSum = gas
 				}
 			}
 			if (currentChunk.length > 0) transactionChunks.push(currentChunk)
 			return transactionChunks
 		}
 
-		// if transactions spend more gas in a block than the block allows, split them into multiple blocks. Also clamp a single transaction to take at most one block worth of gas. A transaction with an executedTransaction (a Gnosis Safe execution, see prepareSafeExecutionSimulationInput) runs as that call.
-		const gasLimitedInput: SimulationStateInputMinimalData = simulationStateInput.map((block) => ({ ...block, transactions: block.transactions.map((transaction) => ({ signedTransaction: gasLimitTransaction(transaction.executedTransaction ?? transaction.signedTransaction) })) }))
-		const calculateTotalGasUsed = (currentTransactions: { gas: bigint }[]) => currentTransactions.reduce((totalGasUsed, transaction) => totalGasUsed + transaction.gas, 0n)
+		// if transactions spend more gas in a block than the block allows, split them into multiple blocks. Also clamp a single transaction to take at most one block worth of gas
+		const gasLimitedInput: SimulationStateInputMinimalData = simulationStateInput.map((block) => ({ ...block, transactions: block.transactions.map(gasLimitTransaction) }))
 		const preparedBlocks: PreparedEthSimulateV1InputBlock[] = []
 		const rpcBlocks: SimulationStateInputMinimalDataBlock[] = []
 		for (const inputBlock of gasLimitedInput) {
-			const signedTransactions = inputBlock.transactions.map((x) => x.signedTransaction)
-			if (calculateTotalGasUsed(signedTransactions) > parentBlock.gasLimit) {
-				const splitted = splitTransactionsByGasLimit(signedTransactions, parentBlock.gasLimit)
-				for (const [index, newTransactions] of splitted.entries()) {
-					const transactions = newTransactions.map((transaction) => ({ signedTransaction: transaction }))
+			if (getTotalExecutedGasLimit(inputBlock.transactions) > parentBlock.gasLimit) {
+				const splitted = splitTransactionsByGasLimit(inputBlock.transactions, parentBlock.gasLimit)
+				for (const [index, transactions] of splitted.entries()) {
 					if (index === 0) {
 						rpcBlocks.push({ ...inputBlock, transactions })
 					} else {
@@ -383,7 +392,7 @@ export class EthereumClientService {
 		}
 
 		const getBlockStateCall = async (block: SimulationStateInputMinimalDataBlock, blockOverrides: BlockOverrides) => {
-			const rpcCalls = block.transactions.map((transaction) => toEthSimulateCall(transaction.signedTransaction))
+			const rpcCalls = block.transactions.map((transaction) => toEthSimulateCall(getExecutedTransaction(transaction)))
 			const ecRecoverMovedToAddress = 0x123456n
 			const ecRecoverAddress = 1n
 

@@ -16,9 +16,8 @@ export const SAFE_EXECUTION_SIMULATION_EXECUTOR = generate256BitRandomBigInt() >
 const SAFE_APPROVED_HASHES_SLOT = 8n
 // The executor's tip, the default formEthSendTransaction gives a transaction.
 const EXECUTOR_MAX_PRIORITY_FEE_PER_GAS = 10n ** 8n // 0.1 nanoeth/gas
-// Gas for execTransaction's own work around the Safe's call: its calldata, the signature checks, the nonce update, its event and the Safe's guard if it has one.
-const SAFE_EXECUTION_GAS_OVERHEAD = 100_000n
-const SAFE_EXECUTION_GAS_PER_SIGNATURE = 10_000n
+// Gas for execTransaction's own work around the Safe's call: its calldata, the signature checks, the nonce update, its event and the Safe's guard if it has one. The node charges only the gas used, so a generous allowance only keeps an execution from failing for lack of gas.
+const SAFE_EXECUTION_GAS_ALLOWANCE = 1_000_000n
 
 export const isSafeExecutionSimulation = (transaction: Pick<PreSimulationTransaction, 'simulationOptions'>) => transaction.simulationOptions?.executeThroughSafe === true
 
@@ -29,14 +28,14 @@ const getApprovedHashStorageSlot = (owner: bigint, safeTxHash: bigint) => keccak
 	[bytes32String(safeTxHash), keccak256(encodeAbiValues(['address', 'uint256'], [addressString(owner), SAFE_APPROVED_HASHES_SLOT]))],
 ))
 
-// The Safe needs `threshold` owner signatures; the lowest owners sign, as execTransaction requires signatures sorted by owner.
-const getApprovingOwners = (safeState: SafeContractState) => [...safeState.owners].sort(compareAddresses).slice(0, Number(safeState.threshold))
+// Every owner approves and signs, sorted as execTransaction requires. execTransaction checks only as many signatures as its threshold at execution, so an execution still passes after an earlier one on the stack raises the threshold.
+const getSigningOwners = (safeState: SafeContractState) => [...safeState.owners].sort(compareAddresses)
 
 // The Safe's own call: from the Safe, to the called contract.
 type SafeCall = Pick<Extract<EthereumSendableSignedTransaction, { readonly type: '1559' }>, 'from' | 'chainId' | 'gas' | 'value' | 'input' | 'hash'> & { readonly to: bigint }
 
-function createExecutorTransaction(safeCall: SafeCall, safeState: SafeContractState, executorNonce: bigint, maxFeePerGas: bigint): EthereumSendableSignedTransaction {
-	const signatures: `0x${ string }` = `0x${ getApprovingOwners(safeState).map((owner) => prevalidatedSafeSignature(owner).slice(2)).join('') }`
+function createExecutorTransaction(safeCall: SafeCall, signingOwners: readonly bigint[], executorNonce: bigint, maxFeePerGas: bigint): EthereumSendableSignedTransaction {
+	const signatures: `0x${ string }` = `0x${ signingOwners.map((owner) => prevalidatedSafeSignature(owner).slice(2)).join('') }`
 	return {
 		type: '1559',
 		from: SAFE_EXECUTION_SIMULATION_EXECUTOR,
@@ -45,7 +44,7 @@ function createExecutorTransaction(safeCall: SafeCall, safeState: SafeContractSt
 		maxFeePerGas,
 		maxPriorityFeePerGas: EXECUTOR_MAX_PRIORITY_FEE_PER_GAS,
 		// The Safe passes on at most 63/64 of the remaining gas to its call.
-		gas: safeCall.gas * 64n / 63n + SAFE_EXECUTION_GAS_OVERHEAD + SAFE_EXECUTION_GAS_PER_SIGNATURE * safeState.threshold,
+		gas: safeCall.gas * 64n / 63n + SAFE_EXECUTION_GAS_ALLOWANCE,
 		to: safeCall.from,
 		value: 0n,
 		// A CALL without refund: safeTxGas, baseGas and gasPrice are zero, so execTransaction reverts if the Safe's call fails.
@@ -60,7 +59,7 @@ function createExecutorTransaction(safeCall: SafeCall, safeState: SafeContractSt
 
 /**
  * Prepares every Gnosis Safe execution in the input (isSafeExecutionSimulation) to run the way the Safe runs it on-chain: SAFE_EXECUTION_SIMULATION_EXECUTOR calls the Safe's execTransaction with real fees in a block with the real base fee, and the Safe makes the call. The transaction's signedTransaction stays the Safe's call; the call the node runs is its executedTransaction.
- * The simulation assumes the Safe's owners approved the call. The first block's state overrides mark the call's SafeTx hash as approved (approvedHashes) by the Safe's lowest `threshold` owners, and the execution carries their pre-validated signatures. The Safe can reach this state on-chain, through approveHash.
+ * The simulation assumes the Safe's owners approved the call. The first block's state overrides mark the call's SafeTx hash as approved (approvedHashes) by every owner of the Safe at the parent block, and the execution carries their pre-validated signatures. The Safe can reach this state on-chain, through approveHash. An owner that an earlier execution on the stack removes still signs, so an execution after such a removal can fail the Safe's signature check (GS026).
  * The SafeTx hash includes the Safe's nonce at execution, and each earlier execution of the same Safe in the input raises it by one if it succeeds. So an execution is approved at every nonce from the Safe's nonce at the parent block up to that nonce plus its number of earlier executions.
  * The first block also funds the executor for every execution's gas at its maximum fee.
  */
@@ -87,10 +86,10 @@ export async function prepareSafeExecutionSimulationInput(input: SimulationState
 		const approvedHashSlots = approvedHashSlotsBySafe.get(safeAddress) ?? {}
 		for (let nonce = safeState.nonce; nonce <= safeState.nonce + earlierExecutions; nonce++) {
 			const safeTxHash = BigInt(getSafeTxHash(createSafeTx(safeCall.chainId, safeAddress, { to: safeCall.to, value: safeCall.value, input: safeCall.input }, nonce)))
-			for (const owner of getApprovingOwners(safeState)) approvedHashSlots[getApprovedHashStorageSlot(owner, safeTxHash)] = 1n
+			for (const owner of getSigningOwners(safeState)) approvedHashSlots[getApprovedHashStorageSlot(owner, safeTxHash)] = 1n
 		}
 		approvedHashSlotsBySafe.set(safeAddress, approvedHashSlots)
-		const executedTransaction = createExecutorTransaction(safeCall, safeState, executorNonce, maxFeePerGas)
+		const executedTransaction = createExecutorTransaction(safeCall, getSigningOwners(safeState), executorNonce, maxFeePerGas)
 		executorNonce += 1n
 		executorBalance += executedTransaction.gas * maxFeePerGas
 		return { ...transaction, executedTransaction }

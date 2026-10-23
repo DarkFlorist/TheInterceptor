@@ -351,9 +351,10 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 	}
 }
 
-export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: VisualizedPersonalSignRequestSafeTx, simulationInput: SimulationStateInput, ethereumClientService: EthereumClientService, tokenPriceService: TokenPriceService): Promise<DistributiveOmit<SimulateExecutionReplyData, 'transactionOrMessageIdentifier'>> => {
+export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: VisualizedPersonalSignRequestSafeTx, stackSimulationInput: SimulationStateInput, ethereumClientService: EthereumClientService, tokenPriceService: TokenPriceService): Promise<DistributiveOmit<SimulateExecutionReplyData, 'transactionOrMessageIdentifier'>> => {
 	const returnError = (errorMessage: string) => ({ success: false as const, errorType: 'Other' as const, errorMessage })
 	try {
+		const simulationInput = await prepareSafeExecutionsForRpc(stackSimulationInput, ethereumClientService)
 		// Call: 0x0, DelegateCall: 0x1
 		// https://github.com/safe-global/safe-smart-account/blob/main/contracts/libraries/Enum.sol
 		const isDelegateCall = gnosisSafeMessage.message.message.operation === 0x1n
@@ -451,16 +452,22 @@ export const updateSimulationMetadata = async (ethereum: EthereumClientService, 
 	})
 }
 
+// Gives every Gnosis Safe execution of the input the executor's call the node runs it as (prepareSafeExecutionSimulationInput). Everything that sends the simulation stack to the node prepares it with this: every simulation through prepareSimulationInputForRpc, the stack export and the Safe transaction preview on top of the stack.
+export const prepareSafeExecutionsForRpc = async (simulationInput: SimulationStateInput, ethereum: EthereumClientService) => {
+	if (!simulationInput.some((block) => block.transactions.some(isSafeExecutionSimulation))) return simulationInput
+	const parentBlock = await ethereum.getBlock(undefined)
+	if (parentBlock === null) throw new Error('The latest block is null')
+	// The executor pays the base fee prepareEthSimulateV1Input gives every block, including its fallback for blocks without one.
+	return await prepareSafeExecutionSimulationInput(simulationInput, ethereum, parentBlock.number, parentBlock.baseFeePerGas ?? 15_000_000n)
+}
+
 export const prepareSimulationInputForRpc = async (simulationInput: SimulationStateInput, ethereum: EthereumClientService) => {
 	if (simulationInput.some((block) => block.transactions.some((transaction) => transaction.safeTransaction?.safeTx.message.operation === 1n))) simulationInput = await prepareSafeDelegateSimulationInput(simulationInput, ethereum, await ethereum.getBlockNumber(undefined))
 	// Base-fee and nonce repair only rewrite transactions. Signed-message and state-override blocks must still reach the RPC handler, but inspecting them here would run an extra eth_simulateV1 request without any transaction nonce to repair.
 	if (simulationInput.every((block) => block.transactions.length === 0)) return simulationInput
-	const parentBlock = await ethereum.getBlock(undefined)
 	// Before the base-fee repair, whose balance lookups simulate the input up to each transaction, so those lookups run the Safe executions as the executor's calls too.
-	if (parentBlock !== null && simulationInput.some((block) => block.transactions.some(isSafeExecutionSimulation))) {
-		// The executor pays the base fee prepareEthSimulateV1Input gives every block, including its fallback for blocks without one.
-		simulationInput = await prepareSafeExecutionSimulationInput(simulationInput, ethereum, parentBlock.number, parentBlock.baseFeePerGas ?? 15_000_000n)
-	}
+	simulationInput = await prepareSafeExecutionsForRpc(simulationInput, ethereum)
+	const parentBlock = await ethereum.getBlock(undefined)
 	const getBaseFeeFixedInputStateBlocks = async () => {
 		if (parentBlock === undefined) return simulationInput
 		const baseFeeFixedInputStateBlocks: SimulationStateInputBlock[] = []

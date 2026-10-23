@@ -140,7 +140,14 @@ export const PreSimulationTransaction = funtypes.ReadonlyObject({
 }).And(funtypes.ReadonlyPartial({
 	safeTransaction: SafeStackTransaction,
 	simulationOptions: TransactionSimulationOptions,
-	// The call the node runs in place of signedTransaction, set by prepareSafeExecutionSimulationInput for a Gnosis Safe execution: the executor's execTransaction call. signedTransaction stays the Safe's own call, which the dialog shows and the protectors check.
+}))
+
+/**
+ * A transaction of a simulation input, which prepareSimulationInputForRpc may give the call the node runs in place of signedTransaction: for a Gnosis Safe execution, the executor's execTransaction call (prepareSafeExecutionSimulationInput). signedTransaction stays the Safe's own call, which the dialog shows and the protectors check.
+ * Only the preparation sets executedTransaction. The simulation stack, its imports and pending transactions hold PreSimulationTransaction, whose parser drops the field, so no stored or imported transaction can run a call other than the one it shows.
+ */
+export type SimulationInputTransaction = funtypes.Static<typeof SimulationInputTransaction>
+export const SimulationInputTransaction = PreSimulationTransaction.And(funtypes.ReadonlyPartial({
 	executedTransaction: EthereumSendableSignedTransaction,
 }))
 
@@ -206,7 +213,7 @@ export const SignedMessageTransaction = funtypes.ReadonlyObject({
 export type SimulationStateInputBlock = funtypes.Static<typeof SimulationStateInputBlock>
 export const SimulationStateInputBlock = funtypes.ReadonlyObject({
 	stateOverrides: StateOverrides,
-	transactions: funtypes.ReadonlyArray(PreSimulationTransaction),
+	transactions: funtypes.ReadonlyArray(SimulationInputTransaction),
 	signedMessages: funtypes.ReadonlyArray(SignedMessageTransaction),
 	blockTimeManipulation: BlockTimeManipulation,
 	simulateWithZeroBaseFee: funtypes.Boolean,

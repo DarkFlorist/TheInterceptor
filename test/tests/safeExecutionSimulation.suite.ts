@@ -2,9 +2,11 @@ import * as assert from 'assert'
 import { test } from 'bun:test'
 import { keccak_256 } from '@noble/hashes/sha3'
 import type { SendRawTransactionParams, SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
-import type { PreSimulationTransaction, SimulationStateInput, TransactionSimulationOptions } from '../../app/ts/types/visualizer-types.js'
+import { InterceptorTransactionStack, PreSimulationTransaction, type SimulationStateInput, type TransactionSimulationOptions } from '../../app/ts/types/visualizer-types.js'
+import { EthereumSendableSignedTransaction } from '../../app/ts/types/wire-types.js'
 import { describeSafeExecutionFailure, prepareSafeExecutionSimulationInput, SAFE_EXECUTION_SIMULATION_EXECUTOR } from '../../app/ts/safe/safeExecutionSimulation.js'
 import { prepareSafeTransactionConfirmation } from '../../app/ts/background/safeTransactionConfirmation.js'
+import { getSimulatedTransactionByHashFromInput } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { encodeFunctionCall } from '../../app/ts/utils/abiRuntime.js'
 import { decodeEthereumError } from '../../app/ts/utils/errorDecoding.js'
 import { dataStringWith0xStart } from '../../app/ts/utils/bigint.js'
@@ -16,6 +18,7 @@ const SAFE_ADDRESS = activeAddress
 const ORDINARY_ACCOUNT = recipientAddress
 const CALLED_CONTRACT = 0x6666666666666666666666666666666666666666n
 const OWNERS = [0x3000000000000000000000000000000000000003n, 0x1000000000000000000000000000000000000001n, 0x2000000000000000000000000000000000000002n]
+const SORTED_OWNERS = [0x1000000000000000000000000000000000000001n, 0x2000000000000000000000000000000000000002n, 0x3000000000000000000000000000000000000003n]
 const SAFE_EXECUTION_SIMULATION_OPTIONS: TransactionSimulationOptions = { requiredChainId: fakeRpcNetwork.chainId, simulateWithZeroBaseFee: false, executeThroughSafe: true }
 const BASE_FEE_PER_GAS = 1_000n
 const EXECUTOR_MAX_FEE_PER_GAS = BASE_FEE_PER_GAS * 2n + 10n ** 8n
@@ -91,17 +94,14 @@ test('runs a Gnosis Safe execution as an executor calling execTransaction with r
 	assert.equal(executed.maxPriorityFeePerGas, 10n ** 8n)
 	assert.equal(executed.maxFeePerGas, EXECUTOR_MAX_FEE_PER_GAS)
 	assert.ok(executed.maxFeePerGas >= BASE_FEE_PER_GAS, 'the executor pays at least the base fee')
-	assert.equal(executed.gas, 64_000n + 100_000n + 2n * 10_000n)
-	// The two lowest owners sign, sorted, with pre-validated signatures.
-	const expectedSignatures = `0x${ prevalidatedSignature(OWNERS[1] ?? 0n) }${ prevalidatedSignature(OWNERS[2] ?? 0n) }`
+	assert.equal(executed.gas, 64_000n + 1_000_000n)
+	// Every owner signs, sorted, with pre-validated signatures, so an execution passes whatever threshold the Safe has by then.
+	const expectedSignatures = `0x${ SORTED_OWNERS.map(prevalidatedSignature).join('') }`
 	assert.equal(dataStringWith0xStart(executed.input), encodeFunctionCall(SAFE_EXECUTION_ABI, 'execTransaction', [addressString(CALLED_CONTRACT), 7n, '0x1234', 0n, 0n, 0n, 0n, addressString(0n), addressString(0n), expectedSignatures]))
 
 	const safeTxHash = getSafeTxHashAt(safeCall, 5n)
 	assert.deepEqual(preparedBlock?.stateOverrides, {
-		[addressString(SAFE_ADDRESS)]: { stateDiff: {
-			[approvedHashSlot(OWNERS[1] ?? 0n, safeTxHash)]: 1n,
-			[approvedHashSlot(OWNERS[2] ?? 0n, safeTxHash)]: 1n,
-		} },
+		[addressString(SAFE_ADDRESS)]: { stateDiff: Object.fromEntries(SORTED_OWNERS.map((owner) => [approvedHashSlot(owner, safeTxHash), 1n])) },
 		[addressString(SAFE_EXECUTION_SIMULATION_EXECUTOR)]: { balance: executed.gas * EXECUTOR_MAX_FEE_PER_GAS },
 	})
 })
@@ -122,7 +122,7 @@ test('approves a later execution of the same Gnosis Safe at every nonce the Safe
 		...[5n].map((nonce) => getSafeTxHashAt(firstCall, nonce)),
 		// The first execution raises the Safe's nonce to 6 if it succeeds.
 		...[5n, 6n].map((nonce) => getSafeTxHashAt(secondCall, nonce)),
-	].flatMap((safeTxHash) => [approvedHashSlot(OWNERS[1] ?? 0n, safeTxHash), approvedHashSlot(OWNERS[2] ?? 0n, safeTxHash)])
+	].flatMap((safeTxHash) => SORTED_OWNERS.map((owner) => approvedHashSlot(owner, safeTxHash)))
 	assert.deepEqual(firstBlock?.stateOverrides, {
 		[addressString(SAFE_ADDRESS)]: { balance: 10n ** 18n, stateDiff: Object.fromEntries(approvedSlots.map((slot) => [slot, 1n])) },
 		[addressString(SAFE_EXECUTION_SIMULATION_EXECUTOR)]: { balance: (firstExecuted.gas + secondExecuted.gas) * EXECUTOR_MAX_FEE_PER_GAS },
@@ -145,6 +145,29 @@ test('sends the executor\'s call to the node in place of the Safe\'s call', asyn
 	assert.equal(call?.from, SAFE_EXECUTION_SIMULATION_EXECUTOR)
 	assert.equal(call?.to, SAFE_ADDRESS)
 	assert.equal(call?.maxFeePerGas, EXECUTOR_MAX_FEE_PER_GAS)
+})
+
+test('drops an execution override from an imported simulation stack, so a stacked transaction runs the call it shows', () => {
+	const shownCall = createSafeCall({ value: 7n, input: Uint8Array.from([0x12, 0x34]), gas: 63_000n }, SAFE_EXECUTION_SIMULATION_OPTIONS)
+	const harmlessCall = createSafeCall({ value: 0n, input: new Uint8Array(), gas: 21_000n }, undefined)
+	const importedStack = InterceptorTransactionStack.parse({ operations: [{
+		type: 'Transaction',
+		preSimulationTransaction: { ...modules.serialize(PreSimulationTransaction, shownCall), executedTransaction: modules.serialize(EthereumSendableSignedTransaction, harmlessCall.signedTransaction) },
+	}] })
+	const [operation] = importedStack.operations
+	if (operation?.type !== 'Transaction') throw new Error('Expected the imported transaction')
+	assert.equal('executedTransaction' in operation.preSimulationTransaction, false)
+	assert.deepEqual(operation.preSimulationTransaction, shownCall)
+})
+
+test('looks up a simulated Gnosis Safe execution as the Safe\'s own call, as its receipt shows it', async () => {
+	configureSafe()
+	const safeCall = createSafeCall({ value: 7n, input: new Uint8Array(), gas: 63_000n }, SAFE_EXECUTION_SIMULATION_OPTIONS)
+	const preparedInput = await prepareSafeExecutionSimulationInput([createBlock([safeCall])], ethereum, 123n, BASE_FEE_PER_GAS)
+	const lookedUp = await getSimulatedTransactionByHashFromInput(ethereum, undefined, { kind: 'simulated', value: preparedInput }, safeCall.signedTransaction.hash)
+	assert.equal(lookedUp?.from, SAFE_ADDRESS)
+	assert.equal(lookedUp?.to, CALLED_CONTRACT)
+	assert.equal(lookedUp?.value, 7n)
 })
 
 test('explains why a Gnosis Safe execution failed without its call\'s revert reason', () => {
@@ -271,6 +294,13 @@ test('simulates a configured Gnosis Safe\'s transaction in simulation mode as th
 	assert.equal(stackInput.at(-1)?.simulateWithZeroBaseFee, false)
 	const preparedStackInput = await prepareSimulationInputForRpc(stackInput, simulator.ethereum)
 	assert.equal(preparedStackInput.at(-1)?.transactions.at(-1)?.executedTransaction?.from, SAFE_EXECUTION_SIMULATION_EXECUTOR, 'the stacked transaction keeps running through the Safe')
+	const { requestInterceptorSimulationInput } = await import('../../app/ts/background/popupMessageHandlers.js')
+	const simulationExport = await requestInterceptorSimulationInput(simulator.ethereum)
+	if (!simulationExport.ok) throw new Error(simulationExport.message)
+	const exportedRequest: unknown = JSON.parse(simulationExport.ethSimulateV1InputString)
+	const exportedSimulation = isRecord(exportedRequest) && isRecord(exportedRequest.eth_simulateV1) && Array.isArray(exportedRequest.eth_simulateV1.params) ? exportedRequest.eth_simulateV1.params[0] : undefined
+	const exportedCalls = isRecord(exportedSimulation) && Array.isArray(exportedSimulation.blockStateCalls) ? exportedSimulation.blockStateCalls.flatMap((blockStateCall) => blockStateCall.calls) : []
+	assert.deepEqual(exportedCalls.map((call) => BigInt(call.from)), [SAFE_EXECUTION_SIMULATION_EXECUTOR], 'the exported request runs the stacked Safe execution as the preview does')
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
 })
 

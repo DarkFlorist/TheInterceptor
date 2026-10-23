@@ -32,7 +32,7 @@ import { checkAndThrowRuntimeLastError, doesUniqueRequestIdentifiersMatch, silen
 import { assertNever, modifyObject } from '../utils/typescript.js'
 import type { VisualizedPersonalSignRequestSafeTx } from '../types/personal-message-definitions.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
-import { getCurrentSimulationInput, getMetadataForSimulation, simulateGnosisSafeMetaTransaction, simulateGovernanceContractExecution, updateSimulationMetadata, visualizeSimulatorState } from './simulationUpdating.js'
+import { getCurrentSimulationInput, getMetadataForSimulation, prepareSafeExecutionsForRpc, simulateGnosisSafeMetaTransaction, simulateGovernanceContractExecution, updateSimulationMetadata, visualizeSimulatorState } from './simulationUpdating.js'
 import { getErrorMessage, reportUnexpectedError, isExpectedInfrastructureError } from '../utils/errors.js'
 import type { ImportSimulationStackReply, RequestAbiAndNameFromBlockExplorer, RequestIdentifyAddress, SetSafeSimulationSigner, UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { getWebsiteCreatedEthereumTransactions } from '../simulation/services/SimulationModeEthereumClientService.js'
@@ -1199,7 +1199,7 @@ export async function requestInterceptorSimulationInput(ethereumClientService: E
 		}
 	}
 	const simulationStack = modifyObject(stack, { operations: getOperationsForActiveStackContext(stack, SIMULATION_STACK_CONTEXT) })
-	const simulationInput = await getCurrentSimulationInput()
+	const simulationInput = await prepareSafeExecutionsForRpc(await getCurrentSimulationInput(), ethereumClientService)
 	const currentBlockNumberPromise = silenceChromeUnCaughtPromise(ethereumClientService.getBlockNumber(undefined))
 	const eth_simulateV1 = await ethereumClientService.ethSimulateV1Input(simulationInput, await currentBlockNumberPromise, undefined)
 

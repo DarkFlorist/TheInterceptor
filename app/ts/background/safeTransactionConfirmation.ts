@@ -138,8 +138,9 @@ export async function prepareSafeTransactionConfirmation(
 	}
 
 	const executeThroughSafe = simulationMode && await isSimulationModeSafeExecution(ethereum, transactionParams, activeAddress)
-	const simulatedSafeExecutionFields: PendingSafeFields = { executeThroughSafe: true }
-	const pendingSafeFields = executeThroughSafe ? simulatedSafeExecutionFields : !isDirectSafeExecution || transactionParams.method !== 'eth_sendTransaction'
+	const pendingSafeFields: PendingSafeFields | undefined = executeThroughSafe
+		? { executeThroughSafe: true }
+		: !isDirectSafeExecution || transactionParams.method !== 'eth_sendTransaction'
 		? undefined
 		: {
 			safeExecutionOriginalRequestParameters: transactionParams,
