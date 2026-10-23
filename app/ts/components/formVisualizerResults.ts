@@ -149,7 +149,7 @@ export function formSimulatedAndVisualizedTransactions(simulatedTransactions: re
 				? {
 					error: {
 						...simulatedTx.ethSimulateV1CallResult.error,
-						decodedErrorMessage: describeSafeExecutionFailure(simulatedTx.preSimulationTransaction, decodeEthereumError(availableAbis, simulatedTx.ethSimulateV1CallResult.error).reason),
+						decodedErrorMessage: describeSafeExecutionFailure(simulatedTx.preSimulationTransaction, simulatedTx.ethSimulateV1CallResult, decodeEthereumError(availableAbis, simulatedTx.ethSimulateV1CallResult.error).reason),
 					},
 					transactionStatus: 'Transaction Failed',
 				}

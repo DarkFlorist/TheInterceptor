@@ -161,10 +161,11 @@ export async function estimateSafeExecutionGas(
 // When the Safe's call fails, execTransaction reverts with GS013 and drops the call's own revert reason, so the bare code is explained instead.
 const SAFE_CALL_REVERTED_MESSAGE = 'The Gnosis Safe\'s call reverted (GS013). The Safe does not pass on the call\'s own revert reason.'
 
-// Nodes report the revert in the message, in the revert data, or in both.
-const isSafeCallRevert = (error: ErrorWithCodeAndOptionalData) => error.message.endsWith('GS013') || decodeEthereumError([], error).reason === 'GS013'
+// Nodes report the revert reason in the message, in the error's data, in the call's return data, or in several of them.
+const isSafeCallRevert = (error: ErrorWithCodeAndOptionalData, returnData?: Uint8Array) => error.message.endsWith('GS013')
+	|| [error.data, returnData === undefined ? undefined : dataStringWith0xStart(returnData)].some((data) => data !== undefined && decodeEthereumError([], { ...error, data }).reason === 'GS013')
 
-export function describeSafeExecutionFailure(transaction: Pick<PreSimulationTransaction, 'simulationOptions'>, decodedErrorMessage: string) {
-	if (!isSafeExecutionSimulation(transaction) || decodedErrorMessage !== 'GS013') return decodedErrorMessage
+export function describeSafeExecutionFailure(transaction: Pick<PreSimulationTransaction, 'simulationOptions'>, failure: { readonly error: ErrorWithCodeAndOptionalData, readonly returnData: Uint8Array }, decodedErrorMessage: string) {
+	if (!isSafeExecutionSimulation(transaction) || !isSafeCallRevert(failure.error, failure.returnData)) return decodedErrorMessage
 	return SAFE_CALL_REVERTED_MESSAGE
 }

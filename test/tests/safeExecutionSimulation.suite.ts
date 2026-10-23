@@ -25,6 +25,12 @@ const BASE_FEE_PER_GAS = 1_000n
 const GS013_REVERT_DATA = '0x08c379a0000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000054753303133000000000000000000000000000000000000000000000000000000'
 const EXECUTOR_MAX_FEE_PER_GAS = BASE_FEE_PER_GAS * 2n + 10n ** 8n
 
+// geth reports a revert in the message and the error data; other nodes may only return the revert data.
+const revertResponses = [
+	{ description: 'in the message', message: 'execution reverted: GS013', returnData: new Uint8Array() },
+	{ description: 'only in the revert data', message: 'execution reverted', returnData: hexToBytes(GS013_REVERT_DATA) },
+]
+
 const pad32 = (value: bigint) => value.toString(16).padStart(64, '0')
 const keccak = (hex: string) => BigInt(`0x${ Buffer.from(keccak_256(hexToBytes(`0x${ hex }`))).toString('hex') }`)
 // Solidity's slot for approvedHashes[owner][hash], with approvedHashes at slot 8, computed independently of the code under test.
@@ -154,11 +160,6 @@ test('estimates a Gnosis Safe\'s call as its executor\'s execTransaction call', 
 	assert.ok(simulator.simulatedCalls.every((call) => call.from === SAFE_EXECUTION_SIMULATION_EXECUTOR && call.to === SAFE_ADDRESS && call.baseFeePerGas > 0n), 'every estimate run is the executor\'s call in a block with the real base fee')
 })
 
-// geth reports a revert in the message and the error data; other nodes may only return the revert data.
-const revertResponses = [
-	{ description: 'in the message', message: 'execution reverted: GS013', returnData: new Uint8Array() },
-	{ description: 'only in the revert data', message: 'execution reverted', returnData: hexToBytes(GS013_REVERT_DATA) },
-]
 
 for (const { description, message, returnData } of revertResponses) {
 	test(`explains a Gnosis Safe's call that reverts while its gas is estimated, reported ${ description }`, async () => {
@@ -238,12 +239,18 @@ test('looks up a simulated Gnosis Safe execution as the Safe\'s own call, as its
 	assert.equal(lookedUp?.value, 7n)
 })
 
-test('explains why a Gnosis Safe execution failed without its call\'s revert reason', () => {
-	const gs013 = decodeEthereumError([], { code: 3, message: 'execution reverted: GS013', data: GS013_REVERT_DATA }).reason
-	assert.equal(gs013, 'GS013')
-	assert.match(describeSafeExecutionFailure({ simulationOptions: SAFE_EXECUTION_SIMULATION_OPTIONS }, gs013), /Gnosis Safe's call reverted \(GS013\)/u)
-	assert.equal(describeSafeExecutionFailure({ simulationOptions: SAFE_EXECUTION_SIMULATION_OPTIONS }, 'GS025'), 'GS025')
-	assert.equal(describeSafeExecutionFailure({}, 'GS013'), 'GS013', 'only a simulated Safe execution hides its call\'s reason behind GS013')
+for (const { description, message, returnData } of revertResponses) {
+	test(`explains why a simulated Gnosis Safe execution failed without its call's revert reason, reported ${ description }`, () => {
+		const failure = { error: { code: 3, message }, returnData }
+		const decodedErrorMessage = decodeEthereumError([], failure.error).reason
+		assert.match(describeSafeExecutionFailure({ simulationOptions: SAFE_EXECUTION_SIMULATION_OPTIONS }, failure, decodedErrorMessage), /Gnosis Safe's call reverted \(GS013\)/u)
+		assert.equal(describeSafeExecutionFailure({}, failure, decodedErrorMessage), decodedErrorMessage, 'only a simulated Safe execution hides its call\'s reason behind GS013')
+	})
+}
+
+test('keeps the reason of a simulated Gnosis Safe execution that fails for another reason', () => {
+	const failure = { error: { code: 3, message: 'execution reverted: GS025', data: '0x' }, returnData: new Uint8Array() }
+	assert.equal(describeSafeExecutionFailure({ simulationOptions: SAFE_EXECUTION_SIMULATION_OPTIONS }, failure, 'GS025'), 'GS025')
 })
 
 test('charges no gas to a Gnosis Safe whose execution the simulation runs', () => {
