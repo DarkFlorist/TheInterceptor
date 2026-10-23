@@ -154,28 +154,47 @@ test('estimates a Gnosis Safe\'s call as its executor\'s execTransaction call', 
 	assert.ok(simulator.simulatedCalls.every((call) => call.from === SAFE_EXECUTION_SIMULATION_EXECUTOR && call.to === SAFE_ADDRESS && call.baseFeePerGas > 0n), 'every estimate run is the executor\'s call in a block with the real base fee')
 })
 
-test('explains a Gnosis Safe\'s call that reverts while its gas is estimated', async () => {
+// geth reports a revert in the message and the error data; other nodes may only return the revert data.
+const revertResponses = [
+	{ description: 'in the message', message: 'execution reverted: GS013', returnData: new Uint8Array() },
+	{ description: 'only in the revert data', message: 'execution reverted', returnData: hexToBytes(GS013_REVERT_DATA) },
+]
+
+for (const { description, message, returnData } of revertResponses) {
+	test(`explains a Gnosis Safe's call that reverts while its gas is estimated, reported ${ description }`, async () => {
+		configureSafe()
+		const revertingRequestHandler = {
+			rpcUrl: fakeRpcNetwork.httpsRpc,
+			clearCache() { return undefined },
+			async jsonRpcRequest(rpcRequest: { method: string, params?: readonly unknown[] }) {
+				if (rpcRequest.method !== 'eth_simulateV1') return await fakeRequestHandler.jsonRpcRequest(rpcRequest)
+				const simulationParams = rpcRequest.params?.[0]
+				const blockStateCalls = isRecord(simulationParams) && Array.isArray(simulationParams.blockStateCalls) ? simulationParams.blockStateCalls : []
+				return modules.serialize(modules.EthSimulateV1Result, blockStateCalls.map((blockStateCall) => ({
+					...makeFakeEthSimulateResult(0n, modules.Multicall3ABI, 0),
+					calls: blockStateCall.calls.map(() => ({ status: 'failure', gasUsed: 75_370n, returnData, error: { code: 3, message } })),
+				})))
+			},
+		}
+		const revertingEthereum = new modules.EthereumClientService(revertingRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
+		const safeCall = createSafeCall({ value: 7n, input: new Uint8Array(), gas: 0n }, SAFE_EXECUTION_SIMULATION_OPTIONS)
+		const { gas: _gas, hash: _hash, r: _r, s: _s, yParity: _yParity, ...safeCallWithoutGas } = safeCall.signedTransaction
+		const estimate = await estimateSafeExecutionGas(revertingEthereum, undefined, [], safeCallWithoutGas, { website: safeCall.website, created: safeCall.created, originalRequestParameters: safeCall.originalRequestParameters, transactionIdentifier: safeCall.transactionIdentifier })
+		if (!('error' in estimate)) throw new Error('Expected the estimate to fail')
+		assert.match(estimate.error.message, /Gnosis Safe's call reverted \(GS013\)/u)
+	})
+}
+
+test('counts a Gnosis Safe execution whose own call executes a Safe among the executions that raise that Safe\'s nonce', async () => {
 	configureSafe()
-	// What geth returns when the Safe's call reverts inside execTransaction.
-	const revertingRequestHandler = {
-		rpcUrl: fakeRpcNetwork.httpsRpc,
-		clearCache() { return undefined },
-		async jsonRpcRequest(rpcRequest: { method: string, params?: readonly unknown[] }) {
-			if (rpcRequest.method !== 'eth_simulateV1') return await fakeRequestHandler.jsonRpcRequest(rpcRequest)
-			const simulationParams = rpcRequest.params?.[0]
-			const blockStateCalls = isRecord(simulationParams) && Array.isArray(simulationParams.blockStateCalls) ? simulationParams.blockStateCalls : []
-			return modules.serialize(modules.EthSimulateV1Result, blockStateCalls.map((blockStateCall) => ({
-				...makeFakeEthSimulateResult(0n, modules.Multicall3ABI, 0),
-				calls: blockStateCall.calls.map(() => ({ status: 'failure', gasUsed: 75_370n, returnData: new Uint8Array(), error: { code: 3, message: 'execution reverted: GS013', data: GS013_REVERT_DATA } })),
-			})))
-		},
-	}
-	const revertingEthereum = new modules.EthereumClientService(revertingRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
-	const safeCall = createSafeCall({ value: 7n, input: new Uint8Array(), gas: 0n }, SAFE_EXECUTION_SIMULATION_OPTIONS)
-	const { gas: _gas, hash: _hash, r: _r, s: _s, yParity: _yParity, ...safeCallWithoutGas } = safeCall.signedTransaction
-	const estimate = await estimateSafeExecutionGas(revertingEthereum, undefined, [], safeCallWithoutGas, { website: safeCall.website, created: safeCall.created, originalRequestParameters: safeCall.originalRequestParameters, transactionIdentifier: safeCall.transactionIdentifier })
-	if (!('error' in estimate)) throw new Error('Expected the estimate to fail')
-	assert.match(estimate.error.message, /Gnosis Safe's call reverted \(GS013\)/u)
+	// A Safe execution can call a Safe's execTransaction, here its own, which raises that Safe's nonce once more.
+	const nestedExecution = createSafeCall({ value: 0n, input: hexToBytes(encodeFunctionCall(SAFE_EXECUTION_ABI, 'execTransaction', [addressString(CALLED_CONTRACT), 0n, '0x', 0n, 0n, 0n, 0n, addressString(0n), addressString(0n), '0x'])), gas: 100_000n }, SAFE_EXECUTION_SIMULATION_OPTIONS)
+	const nestedExecutionOfSafe = { ...nestedExecution, signedTransaction: { ...nestedExecution.signedTransaction, to: SAFE_ADDRESS } }
+	const safeCall = createSafeCall({ value: 2n, input: new Uint8Array(), gas: 63_000n }, SAFE_EXECUTION_SIMULATION_OPTIONS)
+	const [preparedBlock] = await prepareSafeExecutionSimulationInput([createBlock([nestedExecutionOfSafe, safeCall])], ethereum, 123n, BASE_FEE_PER_GAS)
+	const approvedSlotsOfSafeCall = [5n, 6n, 7n].flatMap((nonce) => SORTED_OWNERS.map((owner) => approvedHashSlot(owner, getSafeTxHashAt(safeCall, nonce))))
+	const stateDiff = preparedBlock?.stateOverrides[addressString(SAFE_ADDRESS)]?.stateDiff ?? {}
+	assert.ok(approvedSlotsOfSafeCall.every((slot) => stateDiff[slot] === 1n), 'the later execution is approved at the nonce after both executions of the first transaction')
 })
 
 test('leaves an input without Gnosis Safe executions as it is, without reading any Safe', async () => {
