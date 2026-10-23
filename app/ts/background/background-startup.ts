@@ -1,4 +1,4 @@
-import { clearSignerExecutionAuthorityForTab, getSignerDocumentGeneration, registerCurrentChildSignerSocket, registerAuthoritativeTopSocket, releaseSignerSelectionLeasesForSocket } from './signerExecutionAuthority.js'
+import { getSignerExecutionOwner, clearSignerExecutionAuthorityForTab, getSignerDocumentGeneration, registerCurrentChildSignerSocket, registerAuthoritativeTopSocket, releaseSignerSelectionLeasesForSocket } from './signerExecutionAuthority.js'
 import { INTERCEPTOR_SIGNER_DOCUMENT_GENERATION_MESSAGE } from '../utils/inpageBridgeProtocol.js'
 import { getExplicitSignerSelection, getExplicitSignerSelectionForConnection } from './signerSelectionOwnership.js'
 import { initializeInpageBridge } from './inpageBridgeBootstrap.js'
@@ -212,7 +212,7 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ simulati
 	if (!listenersRegistered) return
 	if (isTopFrame) {
 		startsNewSignerDocument = registerAuthoritativeTopSocket(websiteTabConnections, socket, websiteOrigin)
-		const signerDocumentGeneration = getSignerDocumentGeneration(websiteTabConnections, socket, websiteOrigin)
+		const signerDocumentGeneration = getSignerDocumentGeneration(getSignerExecutionOwner(websiteTabConnections, socket.tabId), socket, websiteOrigin)
 		if (signerDocumentGeneration === undefined) throw new Error('Missing authoritative signer document generation')
 		port.postMessage({ type: INTERCEPTOR_SIGNER_DOCUMENT_GENERATION_MESSAGE, signerDocumentGeneration })
 		checkAndThrowRuntimeLastError()

@@ -17,7 +17,7 @@ import { resolveWatchAssetSignerReply } from './windows/watchAsset.js'
 import { modifyObject } from '../utils/typescript.js'
 import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
-import { socketCanExecuteWithSelectedSigner } from './signerExecutionAuthority.js'
+import { getSignerExecutionOwner, socketCanExecuteWithSelectedSigner } from './signerExecutionAuthority.js'
 import { isSignerMissing } from '../utils/signerMetadata.js'
 import { beginSignerStateConfirmation, clearSignerDerivedTabState, confirmSignerState, doesSignerStateTokenMatchIdentity, getAuthorizedSignerStateToken, isCurrentWebsiteConnection, isSignerStateTokenAuthorized, runSignerStateOperation, signerConnectionReplacedError, tabHasApprovedWebsiteConnection, type SignerStateToken } from './signerStateOwnership.js'
 import { getConfiguredSigningSafe, getSigningAddressSelectionTransition } from './signingAddressSelection.js'
@@ -214,7 +214,7 @@ export async function connectedToSigner(_simulationServicesOwner: SimulationServ
 	const isTopFrame = isTopFramePort(port)
 	const socket = getSocketFromPort(port)
 	const requestSocket = request.uniqueRequestIdentifier.requestSocket
-	if (socket === undefined || socket.tabId !== requestSocket.tabId || socket.connectionName !== requestSocket.connectionName || !socketCanExecuteWithSelectedSigner(websiteTabConnections, socket)) return await getConnectedToSignerResult()
+	if (socket === undefined || socket.tabId !== requestSocket.tabId || socket.connectionName !== requestSocket.connectionName || !socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(websiteTabConnections, socket.tabId), socket)) return await getConnectedToSignerResult()
 	// Persisted origin approval must not let a newly connected child frame claim tab-wide signer ownership or bootstrap address access.
 	if (!isTopFrame && !isApprovedWebsitePort(websiteTabConnections, port)) return await getConnectedToSignerResult()
 	let shouldRefreshSignerAccounts = false
@@ -306,7 +306,7 @@ export async function signerReply(simulationServicesOwner: SimulationServicesOwn
 		if (!isCurrentWebsiteConnection(tabConnection, socket, port)
 			|| requestSocket.tabId !== socket.tabId
 			|| requestSocket.connectionName !== socket.connectionName
-			|| !socketCanExecuteWithSelectedSigner(websiteTabConnections, socket)) {
+			|| !socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(websiteTabConnections, socket.tabId), socket)) {
 			await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'SignerError', ...signerConnectionReplacedError } }))
 			await updateConfirmTransactionView(ethereum, tokenPriceService)
 			return doNotReply

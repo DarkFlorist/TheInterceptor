@@ -1,7 +1,7 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { replyToInterceptedRequest, replyToInterceptedRequestAfterManifestV2Reconnect, sendSubscriptionReplyOrCallBack, sendSubscriptionReplyOrCallBackAfterManifestV2Reconnect, sendSubscriptionReplyOrCallBackToPort } from '../../app/ts/background/messageSending.js'
-import { allowLegacySignerExecution, authorizeSignerForward, blockSignerExecution, getSignerDocumentGeneration, reconcileSignerExecutionDocument, registerAuthoritativeTopSocket } from '../../app/ts/background/signerExecutionAuthority.js'
+import { getSignerExecutionOwner, allowLegacySignerExecution, authorizeSignerForward, blockSignerExecution, getSignerDocumentGeneration, reconcileSignerExecutionDocument, registerAuthoritativeTopSocket } from '../../app/ts/background/signerExecutionAuthority.js'
 import { websiteSocketToString } from '../../app/ts/background/backgroundUtils.js'
 
 function installBrowserMock() {
@@ -145,9 +145,9 @@ describe('background messageSending port lifecycle', () => {
 		const reconnectMessages: unknown[] = []
 		let admissionChecks = 0
 		registerAuthoritativeTopSocket(websiteTabConnections, socket, 'https://example.test')
-		const generation = getSignerDocumentGeneration(websiteTabConnections, socket, 'https://example.test')
-		reconcileSignerExecutionDocument(websiteTabConnections, socket, 'https://example.test', generation, true, 0)
-		assert.equal(allowLegacySignerExecution(websiteTabConnections, socket, 'https://example.test'), true)
+		const generation = getSignerDocumentGeneration(getSignerExecutionOwner(websiteTabConnections, socket.tabId), socket, 'https://example.test')
+		reconcileSignerExecutionDocument(getSignerExecutionOwner(websiteTabConnections, socket.tabId), socket, 'https://example.test', generation, true, 0)
+		assert.equal(allowLegacySignerExecution(getSignerExecutionOwner(websiteTabConnections, socket.tabId), socket, 'https://example.test'), true)
 		globalThis.browser = {
 			runtime: {
 				lastError: undefined,
@@ -156,7 +156,7 @@ describe('background messageSending port lifecycle', () => {
 			tabs: {
 				async sendMessage(_tabId: number, message: unknown) {
 					reconnectMessages.push(message)
-					if (admission === 'revoked') blockSignerExecution(websiteTabConnections, socket.tabId)
+					if (admission === 'revoked') blockSignerExecution(getSignerExecutionOwner(websiteTabConnections, socket.tabId), socket.tabId)
 					setTimeout(() => {
 						const tab = websiteTabConnections.get(socket.tabId)
 						if (tab === undefined) throw new Error('Missing reconnecting tab')
@@ -175,7 +175,7 @@ describe('background messageSending port lifecycle', () => {
 
 		assert.equal(await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, message, admission === 'transparent' ? undefined : (attempt) => {
 			admissionChecks += 1
-			return authorizeSignerForward(websiteTabConnections, attempt)
+			return authorizeSignerForward(getSignerExecutionOwner(websiteTabConnections, attempt.uniqueRequestIdentifier.requestSocket.tabId), attempt)
 		}), true)
 		assert.deepEqual(reconnectMessages, [{ method: 'interceptor_reconnect_content_script_port', connectionName: '0x123' }])
 		assert.equal(disconnectedPostAttempts, 1)

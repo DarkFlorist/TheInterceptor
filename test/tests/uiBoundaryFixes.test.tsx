@@ -21,6 +21,7 @@ import { installDomMock, clickRenderedElement, findRenderedElement } from './dom
 import { synchronizeViewConfig, ViewSelector } from '../../app/ts/components/subcomponents/ViewSelector.js'
 
 type TestNode = {
+	readonly style?: { readonly display?: string }
 	readonly childNodes?: readonly TestNode[]
 	readonly getAttribute?: (name: string) => string | null
 	readonly tagName?: string
@@ -130,6 +131,32 @@ describe('UI boundary fixes', () => {
 			await act(async () => await clickRenderedElement(option))
 			assert.equal(selected.value.uuid, 'second')
 			assert.equal(String(collectElements(dom.document.body, 'button')[0]?.getAttribute?.('aria-expanded')), 'false')
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+		}
+	})
+
+	const mountingModes: readonly ('persistent' | 'when-open')[] = ['persistent', 'when-open']
+	for (const optionMounting of mountingModes) test(`styled dropdown uses explicit ${ optionMounting } mounting with the same selection semantics`, async () => {
+		const dom = installDomMock()
+		const selected = signal('One')
+		try {
+			await act(() => render(<DropDownMenu selected = { selected } dropDownOptions = { signal(['One', 'Two']) } onChangedCallBack = { (option) => { selected.value = option } } buttonClassses = 'styled-trigger' ariaLabel = 'Styled choice' optionMounting = { optionMounting } classes = { { container: 'styled-container', menu: 'styled-menu', content: 'styled-content', option: 'styled-option', chevron: 'styled-chevron' } } />, dom.document.body))
+			const optionCount = () => collectElements(dom.document.body, 'button').filter((button) => button.getAttribute?.('role') === 'option').length
+			assert.equal(optionCount(), optionMounting === 'persistent' ? 2 : 0)
+			if (optionMounting === 'persistent') assert.equal(collectElements(dom.document.body, 'div').find((node) => node.getAttribute?.('role') === 'listbox')?.style?.display, 'none')
+			const trigger = findRenderedElement(dom.document.body, (node) => node.tagName === 'BUTTON')
+			if (trigger === undefined) throw new Error('Missing styled trigger')
+			assert.equal(collectElements(dom.document.body, 'button')[0]?.getAttribute?.('aria-haspopup'), 'listbox')
+			await act(async () => await clickRenderedElement(trigger))
+			assert.equal(optionCount(), 2)
+			const option = findRenderedElement(dom.document.body, (node) => node.tagName === 'BUTTON' && node.textContent === 'Two')
+			if (option === undefined) throw new Error('Missing styled choice')
+			await act(async () => await clickRenderedElement(option))
+			assert.equal(selected.value, 'Two')
+			assert.equal(optionCount(), optionMounting === 'persistent' ? 2 : 0)
+			if (optionMounting === 'persistent') assert.equal(collectElements(dom.document.body, 'div').find((node) => node.getAttribute?.('role') === 'listbox')?.style?.display, 'none')
 		} finally {
 			render(null, dom.document.body)
 			dom.restore()

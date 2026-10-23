@@ -281,11 +281,13 @@ function SignerProviderSelector(param: { tabState: Signal<TabState | undefined>,
 			disabled = { !param.isInitialHomeDataLoaded.value }
 			id = 'signer-provider-selector'
 			optionsId = 'signer-provider-options'
+			optionMounting = 'when-open'
+			triggerLayout = 'custom'
 			placeholder = { placeholderText }
 			getOptionKey = { (provider) => provider.uuid }
 			getOptionLabel = { signerProviderOptionLabel }
 			getOptionAttributes = { (provider) => ({ 'data-provider-uuid': provider.uuid }) }
-			classes = { { container: 'signer-provider-dropdown', menu: 'signer-provider-options', content: 'signer-provider-options-content', option: 'btn signer-provider-option', chevron: 'signer-provider-chevron' } }
+			classes = { { trigger: '', container: 'signer-provider-dropdown', menu: 'signer-provider-options', content: 'signer-provider-options-content', option: 'btn signer-provider-option', chevron: 'signer-provider-chevron' } }
 			renderSelected = { (provider) => provider === undefined ? <>
 				<span class = 'signer-provider-logo-frame signer-provider-logo-placeholder' aria-hidden = 'true'>?</span>
 				<span class = 'signer-provider-identity'>

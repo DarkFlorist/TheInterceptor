@@ -1,4 +1,4 @@
-import { allowLegacySignerExecution, clearSignerExecutionAuthorityForTab, reconcileSignerExecutionDocument, registerAuthoritativeTopSocket } from '../../app/ts/background/signerExecutionAuthority.js'
+import { getSignerExecutionOwner, allowLegacySignerExecution, clearSignerExecutionAuthorityForTab, reconcileSignerExecutionDocument, registerAuthoritativeTopSocket } from '../../app/ts/background/signerExecutionAuthority.js'
 import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
 import type { SimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
 import { EthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
@@ -29,8 +29,8 @@ export function createDeferredValue<T>() {
 export function authorizeLegacySignerSocket(connections: WebsiteTabConnections, socket: { readonly tabId: number, readonly connectionName: bigint }, websiteOrigin = 'https://example.test') {
 	clearSignerExecutionAuthorityForTab(connections, socket.tabId)
 	registerAuthoritativeTopSocket(connections, socket, websiteOrigin)
-	reconcileSignerExecutionDocument(connections, socket, websiteOrigin, '11111111-1111-4111-8111-111111111111', true, 0)
-	allowLegacySignerExecution(connections, socket, websiteOrigin)
+	reconcileSignerExecutionDocument(getSignerExecutionOwner(connections, socket.tabId), socket, websiteOrigin, '11111111-1111-4111-8111-111111111111', true, 0)
+	allowLegacySignerExecution(getSignerExecutionOwner(connections, socket.tabId), socket, websiteOrigin)
 }
 
 // Each fixture owns its live document proofs; browser mocks do not grant authority to unrelated collections.

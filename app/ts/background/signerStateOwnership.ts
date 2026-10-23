@@ -7,7 +7,7 @@ import { sendInternalWindowMessage, websiteSocketToString } from './backgroundUt
 import { updateTabState } from './storageVariables.js'
 import { METAMASK_ERROR_PROVIDER_DISCONNECTED } from '../utils/constants.js'
 import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
-import { socketCanExecuteWithSelectedSigner } from './signerExecutionAuthority.js'
+import { getSignerExecutionOwner, socketCanExecuteWithSelectedSigner } from './signerExecutionAuthority.js'
 
 const SIGNER_STATE_CONFIRMATION_TIMEOUT_MS = 3_000
 const serializeSignerStateOperation = createScopedKeyedSerialExecutor<WebsiteTabConnections, number>()
@@ -181,8 +181,8 @@ export function isSignerStateTokenCurrent(websiteTabConnections: WebsiteTabConne
 export function isSignerStateTokenAuthorized(websiteTabConnections: WebsiteTabConnections, token: SignerStateToken, requestSocket = token.socket) {
 	return requestSocket.tabId === token.socket.tabId
 		&& isSignerStateTokenCurrent(websiteTabConnections, token)
-		&& socketCanExecuteWithSelectedSigner(websiteTabConnections, token.socket)
-		&& socketCanExecuteWithSelectedSigner(websiteTabConnections, requestSocket)
+		&& socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(websiteTabConnections, token.socket.tabId), token.socket)
+		&& socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(websiteTabConnections, requestSocket.tabId), requestSocket)
 }
 
 export function getAuthorizedSignerStateToken(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
@@ -191,7 +191,7 @@ export function getAuthorizedSignerStateToken(websiteTabConnections: WebsiteTabC
 }
 
 export async function waitForAuthorizedSignerStateToken(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
-	if (!socketCanExecuteWithSelectedSigner(websiteTabConnections, socket)) return undefined
+	if (!socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(websiteTabConnections, socket.tabId), socket)) return undefined
 	const token = await waitForConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
 	return token !== undefined && isSignerStateTokenAuthorized(websiteTabConnections, token, socket) ? token : undefined
 }

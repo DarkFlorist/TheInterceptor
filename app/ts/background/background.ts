@@ -4,7 +4,7 @@ import { isTopFrameId } from '../utils/requests.js'
 import { prepareSafeAppsRequest } from './safeAppsRequestHandler.js'
 import type { RpcRequestContext } from '../types/confirmationRequest.js'
 import { FinishSignerProviderSelection } from '../types/interceptor-messages.js'
-import { releaseSignerSelectionLease } from './signerExecutionAuthority.js'
+import { getSignerExecutionOwner, releaseSignerSelectionLease } from './signerExecutionAuthority.js'
 import type { InpageScriptRequest, RPCReply, Settings } from '../types/interceptor-messages.js'
 import 'webextension-polyfill'
 import { getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
@@ -454,7 +454,7 @@ const processInterceptedRequest = async (port: browser.runtime.Port | undefined,
 		const error = getSignerAccountIdentityError(websiteTabConnections, initialSettings, socket)
 		if (error !== undefined) return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), error })
 	}
-	const isTopFrame = port !== undefined && isTopFrameId(port.sender?.frameId) && isAuthoritativeTopSocket(websiteTabConnections, socket)
+	const isTopFrame = port !== undefined && isTopFrameId(port.sender?.frameId) && isAuthoritativeTopSocket(getSignerExecutionOwner(websiteTabConnections, socket.tabId), socket)
 	// Signer authority is checked when a request or callback actually leaves for the wallet, including after asynchronous user confirmation.
 	const providerHandler = getProviderHandler(request.method)
 	const identifiedMethod = providerHandler.method
@@ -584,11 +584,11 @@ async function handleContentScriptMessage(simulationServicesOwner: SimulationSer
 		if (isAccountOnlyMethod(request.method)) {
 			const currentSettings = await getSettings()
 			const socket = request.uniqueRequestIdentifier.requestSocket
-			const identityError = (walletDerivedAddress ? getSignerExecutionError(websiteTabConnections, socket) : undefined) ?? getSignerAccountIdentityError(websiteTabConnections, settings, socket) ?? getSignerAccountIdentityError(websiteTabConnections, currentSettings, socket)
+			const identityError = (walletDerivedAddress ? getSignerExecutionError(getSignerExecutionOwner(websiteTabConnections, socket.tabId), socket) : undefined) ?? getSignerAccountIdentityError(websiteTabConnections, settings, socket) ?? getSignerAccountIdentityError(websiteTabConnections, currentSettings, socket)
 			if (identityError !== undefined) return replyToInterceptedRequest(websiteTabConnections, { ...requestWithDefinedParams, type: 'result', error: identityError })
 		}
 		replayProviderStateForAccountRequest(websiteTabConnections, request, resolved, activeAddress.address, settings)
-		return replyToInterceptedRequest(websiteTabConnections, authorizeSignerForward(websiteTabConnections, { ...requestWithDefinedParams, ...resolved }))
+		return replyToInterceptedRequest(websiteTabConnections, authorizeSignerForward(getSignerExecutionOwner(websiteTabConnections, ({ ...requestWithDefinedParams, ...resolved }).uniqueRequestIdentifier.requestSocket.tabId), { ...requestWithDefinedParams, ...resolved }))
 	} catch (error: unknown) {
 		if (isFailedToFetchError(error)) {
 			return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN })

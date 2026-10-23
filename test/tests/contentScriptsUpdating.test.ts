@@ -168,11 +168,21 @@ function getManifestV2WebAccessibleResources() {
 }
 
 describe('content script injection strategy', () => {
-	test('creates valid manifest v3 exclusions without admitting malformed stored origins', async () => {
+	test('Firefox exclusion globs include root hosts as well as subdomains and preserve explicit ports', async () => {
 		installBrowserMock()
-		const { getContentScriptExcludeMatches } = await loadModules()
+		const { getFirefoxContentScriptExclusionGlobs } = await loadModules()
+		assert.deepEqual(getFirefoxContentScriptExclusionGlobs(['example.com', 'localhost:3000', 'https://secure.test']), [
+			'*://example.com/*', '*://*.example.com/*',
+			'http://localhost:3000/*', 'https://localhost:3000/*',
+			'https://secure.test/*', 'https://*.secure.test/*',
+		])
+	})
 
-		assert.deepEqual(getContentScriptExcludeMatches([
+	test('creates explicit content-script exclusion match patterns without admitting malformed stored origins', async () => {
+		installBrowserMock()
+		const { getContentScriptExclusionMatchPatterns } = await loadModules()
+
+		assert.deepEqual(getContentScriptExclusionMatchPatterns([
 			'',
 			'example.com',
 			'localhost:3000',

@@ -4,7 +4,7 @@ import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { websiteSocketToString, type ProviderMessage } from '../../app/ts/utils/requests.js'
 import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
-import { clearSignerExecutionAuthorityForTab, getSignerDocumentGeneration, reconcileSignerExecutionDocument, registerAuthoritativeTopSocket } from '../../app/ts/background/signerExecutionAuthority.js'
+import { getSignerExecutionOwner, clearSignerExecutionAuthorityForTab, getSignerDocumentGeneration, reconcileSignerExecutionDocument, registerAuthoritativeTopSocket } from '../../app/ts/background/signerExecutionAuthority.js'
 
 function populateDocumentConnections(collection: WebsiteTabConnections): WebsiteTabConnections {
 	for (const [tabId, tab] of collection) {
@@ -25,10 +25,10 @@ function installBrowserMock(beforeStorageGet?: (keys: unknown) => Promise<void>)
 	connections = new Map()
 	clearSignerExecutionAuthorityForTab(connections, 7)
 	registerAuthoritativeTopSocket(connections, { tabId: 7, connectionName: 1n }, 'app.example')
-	const generation = getSignerDocumentGeneration(connections, { tabId: 7, connectionName: 1n }, 'app.example')
+	const generation = getSignerDocumentGeneration(getSignerExecutionOwner(connections, ({ tabId: 7, connectionName: 1n }).tabId), { tabId: 7, connectionName: 1n }, 'app.example')
 	if (generation === undefined) throw new Error('Missing background document generation')
 	DOCUMENT_GENERATION = generation
-	reconcileSignerExecutionDocument(connections, { tabId: 7, connectionName: 1n }, 'app.example', DOCUMENT_GENERATION, true, 0)
+	reconcileSignerExecutionDocument(getSignerExecutionOwner(connections, ({ tabId: 7, connectionName: 1n }).tabId), { tabId: 7, connectionName: 1n }, 'app.example', DOCUMENT_GENERATION, true, 0)
 	const storageState: Record<string, unknown> = {}
 	const popupMessages: unknown[] = []
 	defineGlobal('browser', {
@@ -94,22 +94,22 @@ describe('EIP-6963 signer provider selection', () => {
 		await setSignerPreference('app.example', provider.rdns)
 		await signerProvidersChanged(connections, createProviderMessage('signer_providers_changed', [[], false]), 'app.example', true)
 		assert.equal((await signerProvidersChanged(connections, childCatalog, 'app.example', false, 2)).signerFrameIneligible, true, 'An unavailable preference must not hold public child-frame requests indefinitely')
-		assert.equal(socketCanExecuteWithSelectedSigner(connections, child), false)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(connections, child.tabId), child), false)
 	})
 
 	test('background-issued document identity cannot be replaced by a catalog caller', async () => {
 		installBrowserMock()
 		const top = { tabId: 7, connectionName: 1n }
-		const generation = getSignerDocumentGeneration(connections, top, 'app.example')
+		const generation = getSignerDocumentGeneration(getSignerExecutionOwner(connections, top.tabId), top, 'app.example')
 		assert.ok(generation)
 		assert.notEqual(generation, NEXT_DOCUMENT_GENERATION)
-		assert.equal(reconcileSignerExecutionDocument(connections, top, 'app.example', NEXT_DOCUMENT_GENERATION, true, 0), true)
-		assert.equal(getSignerDocumentGeneration(connections, top, 'app.example'), generation)
+		assert.equal(reconcileSignerExecutionDocument(getSignerExecutionOwner(connections, top.tabId), top, 'app.example', NEXT_DOCUMENT_GENERATION, true, 0), true)
+		assert.equal(getSignerDocumentGeneration(getSignerExecutionOwner(connections, top.tabId), top, 'app.example'), generation)
 		const child = { tabId: 7, connectionName: 2n }
 		const { registerCurrentChildSignerSocket } = await import('../../app/ts/background/signerExecutionAuthority.js')
 		registerCurrentChildSignerSocket(connections, child, 2)
-		assert.equal(reconcileSignerExecutionDocument(connections, child, 'app.example', NEXT_DOCUMENT_GENERATION, false, 2), false)
-		assert.equal(reconcileSignerExecutionDocument(connections, child, 'app.example', generation, false, 2), true)
+		assert.equal(reconcileSignerExecutionDocument(getSignerExecutionOwner(connections, child.tabId), child, 'app.example', NEXT_DOCUMENT_GENERATION, false, 2), false)
+		assert.equal(reconcileSignerExecutionDocument(getSignerExecutionOwner(connections, child.tabId), child, 'app.example', generation, false, 2), true)
 	})
 
 	test('releases a selection lease when persistence fails before its token reaches the caller', async () => {
@@ -143,20 +143,20 @@ describe('EIP-6963 signer provider selection', () => {
 		} = await import('../../app/ts/background/signerExecutionAuthority.js')
 		const { getSignerPreference, setSignerPreference } = await import('../../app/ts/background/storageVariables.js')
 		registerAuthoritativeTopSocket(connections, secondTabSocket, 'app.example')
-		reconcileSignerExecutionDocument(connections, secondTabSocket, 'app.example', NEXT_DOCUMENT_GENERATION, true, 0)
+		reconcileSignerExecutionDocument(getSignerExecutionOwner(connections, secondTabSocket.tabId), secondTabSocket, 'app.example', NEXT_DOCUMENT_GENERATION, true, 0)
 
 		try {
-			assert.equal(setSignerExecutionTarget(connections, 7, provider.uuid, 'app.example'), true)
-			assert.equal(setSignerExecutionTarget(connections, 8, secondProvider.uuid, 'app.example'), true)
-			assert.equal(authorizeSocketForSignerExecution(connections, { tabId: 7, connectionName: 1n }, provider.uuid, 'app.example'), true)
-			assert.equal(authorizeSocketForSignerExecution(connections, secondTabSocket, secondProvider.uuid, 'app.example'), true)
+			assert.equal(setSignerExecutionTarget(getSignerExecutionOwner(connections, 7), 7, provider.uuid, 'app.example'), true)
+			assert.equal(setSignerExecutionTarget(getSignerExecutionOwner(connections, 8), 8, secondProvider.uuid, 'app.example'), true)
+			assert.equal(authorizeSocketForSignerExecution(getSignerExecutionOwner(connections, ({ tabId: 7, connectionName: 1n }).tabId), { tabId: 7, connectionName: 1n }, provider.uuid, 'app.example'), true)
+			assert.equal(authorizeSocketForSignerExecution(getSignerExecutionOwner(connections, secondTabSocket.tabId), secondTabSocket, secondProvider.uuid, 'app.example'), true)
 
 			await setSignerPreference('app.example', secondProvider.rdns)
 
-			assert.equal(getSignerExecutionTargetForOrigin(connections, 7, 'app.example'), provider.uuid)
-			assert.equal(getSignerExecutionTargetForOrigin(connections, 8, 'app.example'), secondProvider.uuid)
-			assert.equal(socketCanExecuteWithSelectedSigner(connections, { tabId: 7, connectionName: 1n }), true)
-			assert.equal(socketCanExecuteWithSelectedSigner(connections, secondTabSocket), true)
+			assert.equal(getSignerExecutionTargetForOrigin(getSignerExecutionOwner(connections, 7), 7, 'app.example'), provider.uuid)
+			assert.equal(getSignerExecutionTargetForOrigin(getSignerExecutionOwner(connections, 8), 8, 'app.example'), secondProvider.uuid)
+			assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(connections, ({ tabId: 7, connectionName: 1n }).tabId), { tabId: 7, connectionName: 1n }), true)
+			assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(connections, secondTabSocket.tabId), secondTabSocket), true)
 			assert.equal((await getSignerPreference('app.example'))?.rdns, secondProvider.rdns)
 		} finally {
 			clearSignerExecutionAuthorityForTab(connections, 8)
@@ -190,29 +190,29 @@ describe('EIP-6963 signer provider selection', () => {
 
 		assert.equal((await signerProvidersChanged(connections, catalogRequest, 'app.example', true)).automaticSelectionAllowed, false)
 		await assert.rejects(signerProviderSelected(rememberedSelection, 'app.example', true, 0, populateDocumentConnections(new Map())), /remembered RDNS cannot authorize/)
-		assert.equal(socketCanExecuteWithSelectedSigner(connections, catalogRequest.uniqueRequestIdentifier.requestSocket), false)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(connections, catalogRequest.uniqueRequestIdentifier.requestSocket.tabId), catalogRequest.uniqueRequestIdentifier.requestSocket), false)
 		await signerProviderSelected(explicitSelection, 'app.example', true, 0, populateDocumentConnections(new Map()))
-		assert.equal(socketCanExecuteWithSelectedSigner(connections, catalogRequest.uniqueRequestIdentifier.requestSocket), true)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(connections, catalogRequest.uniqueRequestIdentifier.requestSocket.tabId), catalogRequest.uniqueRequestIdentifier.requestSocket), true)
 
 		// Worker restart preserves the content script's connection identity, independently of page-supplied RDNS and generation metadata.
 		clearSignerExecutionAuthorityForTab(connections, 7)
 		registerAuthoritativeTopSocket(connections, catalogRequest.uniqueRequestIdentifier.requestSocket, 'app.example')
 		await signerProvidersChanged(connections, catalogRequest, 'app.example', true)
 		await signerProviderSelected(rememberedSelection, 'app.example', true, 0, populateDocumentConnections(new Map()))
-		assert.equal(socketCanExecuteWithSelectedSigner(connections, catalogRequest.uniqueRequestIdentifier.requestSocket), true)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(connections, catalogRequest.uniqueRequestIdentifier.requestSocket.tabId), catalogRequest.uniqueRequestIdentifier.requestSocket), true)
 
 		const newSocket = { tabId: 7, connectionName: 9n }
 		registerAuthoritativeTopSocket(connections, newSocket, 'app.example')
 		await signerProvidersChanged(connections, { ...catalogRequest, uniqueRequestIdentifier: { requestId: 2, requestSocket: newSocket } }, 'app.example', true)
 		await assert.rejects(signerProviderSelected({ ...rememberedSelection, uniqueRequestIdentifier: { requestId: 3, requestSocket: newSocket } }, 'app.example', true, 0, populateDocumentConnections(new Map())), /remembered RDNS cannot authorize/)
-		assert.equal(socketCanExecuteWithSelectedSigner(connections, newSocket), false)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(connections, newSocket.tabId), newSocket), false)
 	})
 
 	test('settles a same-origin child catalog that lacks the selected provider without granting authority', async () => {
 		installBrowserMock()
 		const { signerProvidersChanged } = await import('../../app/ts/background/signerProviderSelection.js')
 		const { registerCurrentChildSignerSocket, setSignerExecutionTarget, socketCanExecuteWithSelectedSigner } = await import('../../app/ts/background/signerExecutionAuthority.js')
-		setSignerExecutionTarget(connections, 7, provider.uuid, 'app.example')
+		setSignerExecutionTarget(getSignerExecutionOwner(connections, 7), 7, provider.uuid, 'app.example')
 		const childSocket = { tabId: 7, connectionName: 2n }
 		registerCurrentChildSignerSocket(connections, childSocket, 2)
 		const request = { ...createProviderMessage('signer_providers_changed', [[], false]), uniqueRequestIdentifier: { requestId: 2, requestSocket: childSocket } }
@@ -220,7 +220,7 @@ describe('EIP-6963 signer provider selection', () => {
 		const delivered = InterceptorMessageToInpage.parse(serialize(InterceptorMessageToInpage, { interceptorApproved: true, requestId: 2, type: 'result', method: 'signer_providers_changed', result }))
 		if (delivered.method !== 'signer_providers_changed' || !('result' in delivered) || !isRecord(delivered.result)) throw new Error('Missing serialized catalog result')
 		assert.equal(delivered.result.signerFrameIneligible, true)
-		assert.equal(socketCanExecuteWithSelectedSigner(connections, childSocket), false)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(connections, childSocket.tabId), childSocket), false)
 	})
 
 	test('does not publish catalog state from a frame without verified top-frame identity', async () => {
@@ -249,7 +249,7 @@ describe('EIP-6963 signer provider selection', () => {
 		assert.equal(result.signerFrameIneligible, true)
 		assert.equal(result.signerSelectionChangeAllowed, false)
 		assert.equal(result.legacySignerAllowed, false)
-		assert.equal(socketCanExecuteWithSelectedSigner(connections, request.uniqueRequestIdentifier.requestSocket), false)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(connections, request.uniqueRequestIdentifier.requestSocket.tabId), request.uniqueRequestIdentifier.requestSocket), false)
 	})
 
 	test('fails closed when a remembered RDNS matches more than one announced provider', async () => {
@@ -285,7 +285,7 @@ describe('EIP-6963 signer provider selection', () => {
 		const result = await signerProvidersChanged(connections, createProviderMessage('signer_providers_changed', [[], false]), 'app.example', true)
 
 		assert.deepEqual(result, { preferredSignerRdns: provider.rdns, automaticSelectionAllowed: false, signerSelectionChangeAllowed: true, legacySignerAllowed: false })
-		assert.equal(socketCanExecuteWithSelectedSigner(connections, { tabId: 7, connectionName: 1n }), false)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(connections, ({ tabId: 7, connectionName: 1n }).tabId), { tabId: 7, connectionName: 1n }), false)
 	})
 
 	test('treats RDNS identity as case-insensitive when restoring and detecting ambiguity', async () => {
@@ -380,12 +380,12 @@ describe('EIP-6963 signer provider selection', () => {
 
 		const deferred = await signerProvidersChanged(connections, createProviderMessage('signer_providers_changed', [[], false]), 'app.example', true)
 		assert.deepEqual(deferred, { preferredSignerRdns: undefined, automaticSelectionAllowed: false, signerSelectionChangeAllowed: false, legacySignerAllowed: false })
-		assert.equal(socketCanExecuteWithSelectedSigner(connections, { tabId: 7, connectionName: 1n }), false)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(connections, ({ tabId: 7, connectionName: 1n }).tabId), { tabId: 7, connectionName: 1n }), false)
 
 		delete storageState.chainChangeConfirmationPromise
 		const allowed = await signerProvidersChanged(connections, createProviderMessage('signer_providers_changed', [[], false]), 'app.example', true)
 		assert.deepEqual(allowed, { preferredSignerRdns: undefined, automaticSelectionAllowed: false, signerSelectionChangeAllowed: true, legacySignerAllowed: true })
-		assert.equal(socketCanExecuteWithSelectedSigner(connections, { tabId: 7, connectionName: 1n }), true)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(connections, ({ tabId: 7, connectionName: 1n }).tabId), { tabId: 7, connectionName: 1n }), true)
 	})
 
 	test('keeps superseded document sockets blocked after the new document enables legacy signing', async () => {
@@ -405,8 +405,8 @@ describe('EIP-6963 signer provider selection', () => {
 		const { registerCurrentChildSignerSocket } = await import('../../app/ts/background/signerExecutionAuthority.js')
 		registerCurrentChildSignerSocket(connections, oldChildSocket, 2)
 		await signerProvidersChanged(connections, oldChildCatalog, 'app.example', false, 2)
-		assert.equal(socketCanExecuteWithSelectedSigner(connections, oldTopSocket), true)
-		assert.equal(socketCanExecuteWithSelectedSigner(connections, oldChildSocket), true)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(connections, oldTopSocket.tabId), oldTopSocket), true)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(connections, oldChildSocket.tabId), oldChildSocket), true)
 
 		registerAuthoritativeTopSocket(connections, newTopSocket, 'app.example')
 		const newTopCatalog = {
@@ -422,11 +422,11 @@ describe('EIP-6963 signer provider selection', () => {
 		await signerProvidersChanged(connections, newChildCatalog, 'app.example', false, 2)
 		await signerProvidersChanged(connections, newTopCatalog, 'app.example', true)
 
-		assert.equal(socketCanExecuteWithSelectedSigner(connections, oldTopSocket), false)
-		assert.equal(socketCanExecuteWithSelectedSigner(connections, oldChildSocket), false)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(connections, oldTopSocket.tabId), oldTopSocket), false)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(connections, oldChildSocket.tabId), oldChildSocket), false)
 		assert.equal((await signerProvidersChanged(connections, oldChildCatalog, 'app.example', false, 2)).legacySignerAllowed, false)
-		assert.equal(socketCanExecuteWithSelectedSigner(connections, newTopSocket), true)
-		assert.equal(socketCanExecuteWithSelectedSigner(connections, newChildSocket), true)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(connections, newTopSocket.tabId), newTopSocket), true)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(connections, newChildSocket.tabId), newChildSocket), true)
 	})
 
 	test('preserves legacy and exact-provider authority across same-document port reconnects', async () => {
@@ -435,22 +435,22 @@ describe('EIP-6963 signer provider selection', () => {
 		const topSocket = { tabId: 7, connectionName: 1n }
 		const childSocket = { tabId: 7, connectionName: 2n }
 		registerCurrentChildSignerSocket(connections, childSocket, 2)
-		reconcileSignerExecutionDocument(connections, childSocket, 'app.example', DOCUMENT_GENERATION, false, 2)
-		assert.equal(allowLegacySignerExecution(connections, topSocket, 'app.example'), true)
-		assert.equal(authorizeSocketForLegacySignerExecution(connections, childSocket, 'app.example'), true)
+		reconcileSignerExecutionDocument(getSignerExecutionOwner(connections, childSocket.tabId), childSocket, 'app.example', DOCUMENT_GENERATION, false, 2)
+		assert.equal(allowLegacySignerExecution(getSignerExecutionOwner(connections, topSocket.tabId), topSocket, 'app.example'), true)
+		assert.equal(authorizeSocketForLegacySignerExecution(getSignerExecutionOwner(connections, childSocket.tabId), childSocket, 'app.example'), true)
 
 		assert.equal(registerAuthoritativeTopSocket(connections, topSocket, 'app.example'), false)
 		assert.equal(scheduleCurrentChildSignerSocketRemoval(connections, childSocket), true)
 		assert.equal(registerCurrentChildSignerSocket(connections, childSocket, 2), false)
-		assert.equal(socketCanExecuteWithSelectedSigner(connections, topSocket), true)
-		assert.equal(socketCanExecuteWithSelectedSigner(connections, childSocket), true)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(connections, topSocket.tabId), topSocket), true)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(connections, childSocket.tabId), childSocket), true)
 
-		assert.equal(setSignerExecutionTarget(connections, 7, provider.uuid, 'app.example'), true)
-		assert.equal(authorizeSocketForSignerExecution(connections, topSocket, provider.uuid, 'app.example'), true)
-		assert.equal(authorizeSocketForSignerExecution(connections, childSocket, provider.uuid, 'app.example'), true)
+		assert.equal(setSignerExecutionTarget(getSignerExecutionOwner(connections, 7), 7, provider.uuid, 'app.example'), true)
+		assert.equal(authorizeSocketForSignerExecution(getSignerExecutionOwner(connections, topSocket.tabId), topSocket, provider.uuid, 'app.example'), true)
+		assert.equal(authorizeSocketForSignerExecution(getSignerExecutionOwner(connections, childSocket.tabId), childSocket, provider.uuid, 'app.example'), true)
 		assert.equal(registerAuthoritativeTopSocket(connections, topSocket, 'app.example'), false)
-		assert.equal(socketCanExecuteWithSelectedSigner(connections, topSocket), true)
-		assert.equal(socketCanExecuteWithSelectedSigner(connections, childSocket), true)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(connections, topSocket.tabId), topSocket), true)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(connections, childSocket.tabId), childSocket), true)
 	})
 
 	test('revokes the previous child document when the same frame connects with a new socket', async () => {
@@ -460,41 +460,41 @@ describe('EIP-6963 signer provider selection', () => {
 		const oldChildSocket = { tabId: 7, connectionName: 2n }
 		const replacementChildSocket = { tabId: 7, connectionName: 3n }
 		registerCurrentChildSignerSocket(connections, oldChildSocket, 2)
-		assert.equal(reconcileSignerExecutionDocument(connections, oldChildSocket, 'app.example', DOCUMENT_GENERATION, false, 2), true)
-		assert.equal(allowLegacySignerExecution(connections, topSocket, 'app.example'), true)
-		assert.equal(authorizeSocketForLegacySignerExecution(connections, oldChildSocket, 'app.example'), true)
-		assert.equal(socketCanExecuteWithSelectedSigner(connections, oldChildSocket), true)
+		assert.equal(reconcileSignerExecutionDocument(getSignerExecutionOwner(connections, oldChildSocket.tabId), oldChildSocket, 'app.example', DOCUMENT_GENERATION, false, 2), true)
+		assert.equal(allowLegacySignerExecution(getSignerExecutionOwner(connections, topSocket.tabId), topSocket, 'app.example'), true)
+		assert.equal(authorizeSocketForLegacySignerExecution(getSignerExecutionOwner(connections, oldChildSocket.tabId), oldChildSocket, 'app.example'), true)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(connections, oldChildSocket.tabId), oldChildSocket), true)
 
 		const oldLease = await acquireSignerSelectionLease(connections, 7, oldChildSocket)
 		assert.equal(scheduleCurrentChildSignerSocketRemoval(connections, oldChildSocket), true)
 		assert.equal(registerCurrentChildSignerSocket(connections, replacementChildSocket, 2), true)
 		assert.equal(signerSelectionLeaseIsActive(connections, 7, oldLease), false)
-		assert.equal(socketCanExecuteWithSelectedSigner(connections, oldChildSocket), false)
-		assert.equal(socketCanExecuteWithSelectedSigner(connections, replacementChildSocket), false)
-		assert.equal(reconcileSignerExecutionDocument(connections, replacementChildSocket, 'app.example', DOCUMENT_GENERATION, false, 2), true)
-		assert.equal(authorizeSocketForLegacySignerExecution(connections, replacementChildSocket, 'app.example'), true)
-		assert.equal(socketCanExecuteWithSelectedSigner(connections, replacementChildSocket), true)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(connections, oldChildSocket.tabId), oldChildSocket), false)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(connections, replacementChildSocket.tabId), replacementChildSocket), false)
+		assert.equal(reconcileSignerExecutionDocument(getSignerExecutionOwner(connections, replacementChildSocket.tabId), replacementChildSocket, 'app.example', DOCUMENT_GENERATION, false, 2), true)
+		assert.equal(authorizeSocketForLegacySignerExecution(getSignerExecutionOwner(connections, replacementChildSocket.tabId), replacementChildSocket, 'app.example'), true)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(connections, replacementChildSocket.tabId), replacementChildSocket), true)
 		const replacementLease = await acquireSignerSelectionLease(connections, 7, replacementChildSocket)
 		assert.equal(unregisterCurrentChildSignerSocket(connections, oldChildSocket), false)
 		assert.equal(signerSelectionLeaseIsActive(connections, 7, replacementLease), true)
-		assert.equal(socketCanExecuteWithSelectedSigner(connections, replacementChildSocket), true)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(connections, replacementChildSocket.tabId), replacementChildSocket), true)
 		assert.equal(unregisterCurrentChildSignerSocket(connections, replacementChildSocket), true)
 		assert.equal(signerSelectionLeaseIsActive(connections, 7, replacementLease), false)
-		assert.equal(socketCanExecuteWithSelectedSigner(connections, replacementChildSocket), false)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(connections, replacementChildSocket.tabId), replacementChildSocket), false)
 		assert.equal(registerCurrentChildSignerSocket(connections, replacementChildSocket, 2), true)
-		assert.equal(reconcileSignerExecutionDocument(connections, replacementChildSocket, 'app.example', DOCUMENT_GENERATION, false, 2), true)
-		assert.equal(authorizeSocketForLegacySignerExecution(connections, replacementChildSocket, 'app.example'), true)
-		assert.equal(socketCanExecuteWithSelectedSigner(connections, replacementChildSocket), true)
+		assert.equal(reconcileSignerExecutionDocument(getSignerExecutionOwner(connections, replacementChildSocket.tabId), replacementChildSocket, 'app.example', DOCUMENT_GENERATION, false, 2), true)
+		assert.equal(authorizeSocketForLegacySignerExecution(getSignerExecutionOwner(connections, replacementChildSocket.tabId), replacementChildSocket, 'app.example'), true)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(connections, replacementChildSocket.tabId), replacementChildSocket), true)
 
-		assert.equal(setSignerExecutionTarget(connections, 7, provider.uuid, 'app.example'), true)
-		assert.equal(authorizeSocketForSignerExecution(connections, replacementChildSocket, provider.uuid, 'app.example'), true)
-		assert.equal(socketCanExecuteWithSelectedSigner(connections, replacementChildSocket), true)
+		assert.equal(setSignerExecutionTarget(getSignerExecutionOwner(connections, 7), 7, provider.uuid, 'app.example'), true)
+		assert.equal(authorizeSocketForSignerExecution(getSignerExecutionOwner(connections, replacementChildSocket.tabId), replacementChildSocket, provider.uuid, 'app.example'), true)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(connections, replacementChildSocket.tabId), replacementChildSocket), true)
 		assert.equal(registerCurrentChildSignerSocket(connections, oldChildSocket, 2), true)
-		assert.equal(socketCanExecuteWithSelectedSigner(connections, replacementChildSocket), false)
-		assert.equal(socketCanExecuteWithSelectedSigner(connections, oldChildSocket), false)
-		assert.equal(reconcileSignerExecutionDocument(connections, oldChildSocket, 'app.example', DOCUMENT_GENERATION, false, 2), true)
-		assert.equal(authorizeSocketForSignerExecution(connections, oldChildSocket, provider.uuid, 'app.example'), true)
-		assert.equal(socketCanExecuteWithSelectedSigner(connections, oldChildSocket), true)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(connections, replacementChildSocket.tabId), replacementChildSocket), false)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(connections, oldChildSocket.tabId), oldChildSocket), false)
+		assert.equal(reconcileSignerExecutionDocument(getSignerExecutionOwner(connections, oldChildSocket.tabId), oldChildSocket, 'app.example', DOCUMENT_GENERATION, false, 2), true)
+		assert.equal(authorizeSocketForSignerExecution(getSignerExecutionOwner(connections, oldChildSocket.tabId), oldChildSocket, provider.uuid, 'app.example'), true)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(connections, oldChildSocket.tabId), oldChildSocket), true)
 	})
 
 	test('admits a child that connects before its new top only after their document generation matches', async () => {
@@ -504,17 +504,17 @@ describe('EIP-6963 signer provider selection', () => {
 		const newChildSocket = { tabId: 7, connectionName: 2n }
 		const newTopSocket = { tabId: 7, connectionName: 3n }
 		registerCurrentChildSignerSocket(connections, newChildSocket, 2)
-		assert.equal(reconcileSignerExecutionDocument(connections, newChildSocket, 'app.example', NEXT_DOCUMENT_GENERATION, false, 2), false)
-		assert.equal(socketCanExecuteWithSelectedSigner(connections, newChildSocket), false)
+		assert.equal(reconcileSignerExecutionDocument(getSignerExecutionOwner(connections, newChildSocket.tabId), newChildSocket, 'app.example', NEXT_DOCUMENT_GENERATION, false, 2), false)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(connections, newChildSocket.tabId), newChildSocket), false)
 
 		assert.equal(registerAuthoritativeTopSocket(connections, newTopSocket, 'app.example'), true)
-		assert.equal(reconcileSignerExecutionDocument(connections, newTopSocket, 'app.example', NEXT_DOCUMENT_GENERATION, true, 0), true)
-		assert.equal(reconcileSignerExecutionDocument(connections, newChildSocket, 'app.example', getSignerDocumentGeneration(connections, newTopSocket, 'app.example'), false, 2), true)
-		assert.equal(allowLegacySignerExecution(connections, newTopSocket, 'app.example'), true)
-		assert.equal(authorizeSocketForLegacySignerExecution(connections, newChildSocket, 'app.example'), true)
-		assert.equal(socketCanExecuteWithSelectedSigner(connections, oldTopSocket), false)
-		assert.equal(socketCanExecuteWithSelectedSigner(connections, newTopSocket), true)
-		assert.equal(socketCanExecuteWithSelectedSigner(connections, newChildSocket), true)
+		assert.equal(reconcileSignerExecutionDocument(getSignerExecutionOwner(connections, newTopSocket.tabId), newTopSocket, 'app.example', NEXT_DOCUMENT_GENERATION, true, 0), true)
+		assert.equal(reconcileSignerExecutionDocument(getSignerExecutionOwner(connections, newChildSocket.tabId), newChildSocket, 'app.example', getSignerDocumentGeneration(getSignerExecutionOwner(connections, newTopSocket.tabId), newTopSocket, 'app.example'), false, 2), true)
+		assert.equal(allowLegacySignerExecution(getSignerExecutionOwner(connections, newTopSocket.tabId), newTopSocket, 'app.example'), true)
+		assert.equal(authorizeSocketForLegacySignerExecution(getSignerExecutionOwner(connections, newChildSocket.tabId), newChildSocket, 'app.example'), true)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(connections, oldTopSocket.tabId), oldTopSocket), false)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(connections, newTopSocket.tabId), newTopSocket), true)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(connections, newChildSocket.tabId), newChildSocket), true)
 	})
 
 	test('keeps a restored bfcache document blocked until it republishes its catalog generation', async () => {
@@ -522,17 +522,17 @@ describe('EIP-6963 signer provider selection', () => {
 		const { allowLegacySignerExecution, registerAuthoritativeTopSocket, socketCanExecuteWithSelectedSigner } = await import('../../app/ts/background/signerExecutionAuthority.js')
 		const restoredSocket = { tabId: 7, connectionName: 1n }
 		const interveningSocket = { tabId: 7, connectionName: 2n }
-		assert.equal(allowLegacySignerExecution(connections, restoredSocket, 'app.example'), true)
+		assert.equal(allowLegacySignerExecution(getSignerExecutionOwner(connections, restoredSocket.tabId), restoredSocket, 'app.example'), true)
 		assert.equal(registerAuthoritativeTopSocket(connections, interveningSocket, 'app.example'), true)
-		assert.equal(reconcileSignerExecutionDocument(connections, interveningSocket, 'app.example', NEXT_DOCUMENT_GENERATION, true, 0), true)
-		assert.equal(allowLegacySignerExecution(connections, interveningSocket, 'app.example'), true)
+		assert.equal(reconcileSignerExecutionDocument(getSignerExecutionOwner(connections, interveningSocket.tabId), interveningSocket, 'app.example', NEXT_DOCUMENT_GENERATION, true, 0), true)
+		assert.equal(allowLegacySignerExecution(getSignerExecutionOwner(connections, interveningSocket.tabId), interveningSocket, 'app.example'), true)
 
 		assert.equal(registerAuthoritativeTopSocket(connections, restoredSocket, 'app.example'), true)
-		assert.equal(socketCanExecuteWithSelectedSigner(connections, restoredSocket), false)
-		assert.equal(allowLegacySignerExecution(connections, restoredSocket, 'app.example'), false)
-		assert.equal(reconcileSignerExecutionDocument(connections, restoredSocket, 'app.example', DOCUMENT_GENERATION, true, 0), true)
-		assert.equal(allowLegacySignerExecution(connections, restoredSocket, 'app.example'), true)
-		assert.equal(socketCanExecuteWithSelectedSigner(connections, restoredSocket), true)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(connections, restoredSocket.tabId), restoredSocket), false)
+		assert.equal(allowLegacySignerExecution(getSignerExecutionOwner(connections, restoredSocket.tabId), restoredSocket, 'app.example'), false)
+		assert.equal(reconcileSignerExecutionDocument(getSignerExecutionOwner(connections, restoredSocket.tabId), restoredSocket, 'app.example', DOCUMENT_GENERATION, true, 0), true)
+		assert.equal(allowLegacySignerExecution(getSignerExecutionOwner(connections, restoredSocket.tabId), restoredSocket, 'app.example'), true)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(connections, restoredSocket.tabId), restoredSocket), true)
 	})
 
 	test('persists a confirmed selection and clears stale signer account state', async () => {
@@ -597,13 +597,13 @@ describe('EIP-6963 signer provider selection', () => {
 			'7-0x3': { port: { postMessage: (message: unknown) => otherSiteMessages.push(message) }, socket: { tabId: 7, connectionName: 3n }, websiteOrigin: 'frame.example', frameId: 3, approved: true, wantsToConnect: true },
 		} }]]))
 		registerAuthoritativeTopSocket(websiteTabConnections, { tabId: 7, connectionName: 1n }, 'app.example')
-		assert.equal(setSignerExecutionTarget(websiteTabConnections, 7, oldProviderUuid, 'app.example'), true)
+		assert.equal(setSignerExecutionTarget(getSignerExecutionOwner(websiteTabConnections, 7), 7, oldProviderUuid, 'app.example'), true)
 
 		await assert.rejects(selectSignerProvider(websiteTabConnections, { method: 'popup_selectSignerProvider', data: { tabId: 7, websiteOrigin: 'app.example', uuid: provider.uuid } }), /top-frame connection/)
 		assert.deepEqual(topFrameMessages, [])
 		assert.deepEqual(childFrameMessages, [])
 		assert.deepEqual(otherSiteMessages, [])
-		assert.equal(getSignerExecutionTargetForOrigin(websiteTabConnections, 7, 'app.example'), oldProviderUuid)
+		assert.equal(getSignerExecutionTargetForOrigin(getSignerExecutionOwner(websiteTabConnections, 7), 7, 'app.example'), oldProviderUuid)
 	})
 
 	test('rejects selection when no positively identified top-frame connection exists', async () => {
@@ -764,13 +764,13 @@ describe('EIP-6963 signer provider selection', () => {
 		const { getChildSignerConnectionSynchronization, signerProviderSelected, signerProvidersChanged } = await import('../../app/ts/background/signerProviderSelection.js')
 		const { authorizeSocketForSignerExecution, registerCurrentChildSignerSocket, setSignerExecutionTarget, socketCanExecuteWithSelectedSigner, unregisterCurrentChildSignerSocket } = await import('../../app/ts/background/signerExecutionAuthority.js')
 		const childSocket = { tabId: 7, connectionName: 2n }
-		assert.equal(setSignerExecutionTarget(connections, 7, provider.uuid, 'app.example'), true)
+		assert.equal(setSignerExecutionTarget(getSignerExecutionOwner(connections, 7), 7, provider.uuid, 'app.example'), true)
 		assert.equal(registerCurrentChildSignerSocket(connections, childSocket, 2), true)
-		assert.equal(reconcileSignerExecutionDocument(connections, childSocket, 'app.example', DOCUMENT_GENERATION, false, 2), true)
-		assert.equal(authorizeSocketForSignerExecution(connections, childSocket, provider.uuid, 'app.example'), true)
-		assert.equal(socketCanExecuteWithSelectedSigner(connections, childSocket), true)
+		assert.equal(reconcileSignerExecutionDocument(getSignerExecutionOwner(connections, childSocket.tabId), childSocket, 'app.example', DOCUMENT_GENERATION, false, 2), true)
+		assert.equal(authorizeSocketForSignerExecution(getSignerExecutionOwner(connections, childSocket.tabId), childSocket, provider.uuid, 'app.example'), true)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(connections, childSocket.tabId), childSocket), true)
 		assert.equal(unregisterCurrentChildSignerSocket(connections, childSocket), true)
-		assert.equal(socketCanExecuteWithSelectedSigner(connections, childSocket), false)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(connections, childSocket.tabId), childSocket), false)
 
 		const catalogResynchronizationNeeded = registerCurrentChildSignerSocket(connections, childSocket, 2)
 		assert.equal(catalogResynchronizationNeeded, true)
@@ -790,7 +790,7 @@ describe('EIP-6963 signer provider selection', () => {
 			uniqueRequestIdentifier: { requestId: 4, requestSocket: childSocket },
 		}
 		await signerProviderSelected(childSelectionRequest, 'app.example', false, 2, populateDocumentConnections(new Map()))
-		assert.equal(socketCanExecuteWithSelectedSigner(connections, childSocket), true)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(connections, childSocket.tabId), childSocket), true)
 	})
 
 	test('propagates exact UUID authority only to same-origin frames and requires their acknowledgement', async () => {
@@ -812,12 +812,12 @@ describe('EIP-6963 signer provider selection', () => {
 		} }]]))
 		registerAuthoritativeTopSocket(websiteTabConnections, topSocket, 'app.example')
 		registerCurrentChildSignerSocket(websiteTabConnections, childSocket, 2)
-		reconcileSignerExecutionDocument(websiteTabConnections, childSocket, 'app.example', DOCUMENT_GENERATION, false, 2)
-		setSignerExecutionTarget(websiteTabConnections, 7, provider.uuid, 'app.example')
+		reconcileSignerExecutionDocument(getSignerExecutionOwner(websiteTabConnections, childSocket.tabId), childSocket, 'app.example', DOCUMENT_GENERATION, false, 2)
+		setSignerExecutionTarget(getSignerExecutionOwner(websiteTabConnections, 7), 7, provider.uuid, 'app.example')
 
 		await signerProviderSelected(createProviderMessage('signer_provider_selected', [provider, 'explicit']), 'app.example', true, 0, websiteTabConnections)
-		assert.equal(socketCanExecuteWithSelectedSigner(websiteTabConnections, topSocket), true)
-		assert.equal(socketCanExecuteWithSelectedSigner(websiteTabConnections, childSocket), false)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(websiteTabConnections, topSocket.tabId), topSocket), true)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(websiteTabConnections, childSocket.tabId), childSocket), false)
 		assert.equal(childMessages.length, 1)
 		assert.deepEqual(crossOriginChildMessages, [])
 
@@ -826,14 +826,14 @@ describe('EIP-6963 signer provider selection', () => {
 			uniqueRequestIdentifier: { requestId: 2, requestSocket: childSocket },
 		}
 		await signerProviderSelected(childSelectionRequest, 'app.example', false, 2, websiteTabConnections)
-		assert.equal(socketCanExecuteWithSelectedSigner(websiteTabConnections, childSocket), true)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(websiteTabConnections, childSocket.tabId), childSocket), true)
 
 		const crossOriginSelectionRequest = {
 			...createProviderMessage('signer_provider_selected', [provider, 'explicit'], 7),
 			uniqueRequestIdentifier: { requestId: 3, requestSocket: crossOriginChildSocket },
 		}
 		await assert.rejects(signerProviderSelected(crossOriginSelectionRequest, 'frame.example', false, 3, websiteTabConnections), /outside the tab execution authority/)
-		assert.equal(socketCanExecuteWithSelectedSigner(websiteTabConnections, crossOriginChildSocket), false)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(websiteTabConnections, crossOriginChildSocket.tabId), crossOriginChildSocket), false)
 	})
 
 	test('blocks signer execution while superseding an old top-frame document', async () => {
@@ -843,14 +843,14 @@ describe('EIP-6963 signer provider selection', () => {
 		const oldSocket = { tabId: 7, connectionName: 1n }
 		const newSocket = { tabId: 7, connectionName: 2n }
 		registerAuthoritativeTopSocket(connections, oldSocket, 'app.example')
-		setSignerExecutionTarget(connections, 7, provider.uuid, 'app.example')
-		assert.equal(authorizeSocketForSignerExecution(connections, oldSocket, provider.uuid, 'app.example'), true)
+		setSignerExecutionTarget(getSignerExecutionOwner(connections, 7), 7, provider.uuid, 'app.example')
+		assert.equal(authorizeSocketForSignerExecution(getSignerExecutionOwner(connections, oldSocket.tabId), oldSocket, provider.uuid, 'app.example'), true)
 		registerAuthoritativeTopSocket(connections, newSocket, 'app.example')
-		assert.equal(isAuthoritativeTopSocket(connections, oldSocket), false)
-		assert.equal(isAuthoritativeTopSocket(connections, newSocket), true)
-		assert.equal(getSignerExecutionTargetForOrigin(connections, 7, 'app.example'), undefined)
-		assert.equal(socketCanExecuteWithSelectedSigner(connections, oldSocket), false)
-		assert.equal(socketCanExecuteWithSelectedSigner(connections, newSocket), false)
+		assert.equal(isAuthoritativeTopSocket(getSignerExecutionOwner(connections, oldSocket.tabId), oldSocket), false)
+		assert.equal(isAuthoritativeTopSocket(getSignerExecutionOwner(connections, newSocket.tabId), newSocket), true)
+		assert.equal(getSignerExecutionTargetForOrigin(getSignerExecutionOwner(connections, 7), 7, 'app.example'), undefined)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(connections, oldSocket.tabId), oldSocket), false)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(connections, newSocket.tabId), newSocket), false)
 
 		const staleSelectionRequest = {
 			...createProviderMessage('signer_provider_selected', [provider, 'explicit']),
@@ -873,9 +873,13 @@ describe('EIP-6963 signer provider selection', () => {
 		const websiteTabConnections: WebsiteTabConnections = populateDocumentConnections(new Map([[7, { connections: {
 			'7-0x2': { port: { postMessage: (message: unknown) => deliveredMessages.push(message) }, socket: childSocket, websiteOrigin: 'frame.example', frameId: 2, approved: true, wantsToConnect: true },
 		} }]]))
-		setSignerExecutionTarget(websiteTabConnections, 7, provider.uuid, 'app.example')
+		setSignerExecutionTarget(getSignerExecutionOwner(websiteTabConnections, 7), 7, provider.uuid, 'app.example')
 
-		const delivered = replyToInterceptedRequest(websiteTabConnections, authorizeSignerForward(websiteTabConnections, {
+		const delivered = replyToInterceptedRequest(websiteTabConnections, authorizeSignerForward(getSignerExecutionOwner(websiteTabConnections, ({
+			...createProviderMessage('eth_sendTransaction', [{ from: '0x1111111111111111111111111111111111111111' }]),
+			type: 'forwardToSigner',
+			uniqueRequestIdentifier: { requestId: 4, requestSocket: childSocket },
+		}).uniqueRequestIdentifier.requestSocket.tabId), {
 			...createProviderMessage('eth_sendTransaction', [{ from: '0x1111111111111111111111111111111111111111' }]),
 			type: 'forwardToSigner',
 			uniqueRequestIdentifier: { requestId: 4, requestSocket: childSocket },
@@ -891,23 +895,23 @@ describe('EIP-6963 signer provider selection', () => {
 		const { blockSignerExecution, getSignerExecutionError, getSignerExecutionTargetForOrigin, isAuthoritativeTopSocket, socketCanExecuteWithSelectedSigner } = await import('../../app/ts/background/signerExecutionAuthority.js')
 		const untouched: WebsiteTabConnections = Object.freeze(new Map())
 		const socket = { tabId: 704, connectionName: 1n }
-		assert.equal(getSignerDocumentGeneration(untouched, socket, 'app.example'), undefined)
-		assert.equal(getSignerExecutionTargetForOrigin(untouched, socket.tabId, 'app.example'), undefined)
-		assert.equal(isAuthoritativeTopSocket(untouched, socket), false)
-		assert.equal(socketCanExecuteWithSelectedSigner(untouched, socket), false)
-		assert.equal(getSignerExecutionError(untouched, socket)?.code, 4100)
-		assert.equal(reconcileSignerExecutionDocument(untouched, socket, 'app.example', undefined, true, 0), false)
-		blockSignerExecution(untouched, socket.tabId)
+		assert.equal(getSignerDocumentGeneration(getSignerExecutionOwner(untouched, socket.tabId), socket, 'app.example'), undefined)
+		assert.equal(getSignerExecutionTargetForOrigin(getSignerExecutionOwner(untouched, socket.tabId), socket.tabId, 'app.example'), undefined)
+		assert.equal(isAuthoritativeTopSocket(getSignerExecutionOwner(untouched, socket.tabId), socket), false)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(untouched, socket.tabId), socket), false)
+		assert.equal(getSignerExecutionError(getSignerExecutionOwner(untouched, socket.tabId), socket)?.code, 4100)
+		assert.equal(reconcileSignerExecutionDocument(getSignerExecutionOwner(untouched, socket.tabId), socket, 'app.example', undefined, true, 0), false)
+		blockSignerExecution(getSignerExecutionOwner(untouched, socket.tabId), socket.tabId)
 		clearSignerExecutionAuthorityForTab(untouched, socket.tabId)
 		assert.deepEqual(Object.getOwnPropertyNames(untouched), [])
 		registerAuthoritativeTopSocket(untouched, socket, 'app.example')
-		const generation = getSignerDocumentGeneration(untouched, socket, 'app.example')
+		const generation = getSignerDocumentGeneration(getSignerExecutionOwner(untouched, socket.tabId), socket, 'app.example')
 		assert.ok(generation)
 		assert.deepEqual(Object.getOwnPropertyNames(untouched), [])
 		clearSignerExecutionAuthorityForTab(untouched, socket.tabId)
-		assert.equal(getSignerDocumentGeneration(untouched, socket, 'app.example'), undefined)
+		assert.equal(getSignerDocumentGeneration(getSignerExecutionOwner(untouched, socket.tabId), socket, 'app.example'), undefined)
 		registerAuthoritativeTopSocket(untouched, socket, 'app.example')
-		assert.notEqual(getSignerDocumentGeneration(untouched, socket, 'app.example'), generation)
+		assert.notEqual(getSignerDocumentGeneration(getSignerExecutionOwner(untouched, socket.tabId), socket, 'app.example'), generation)
 		clearSignerExecutionAuthorityForTab(untouched, socket.tabId)
 		assert.deepEqual(Object.getOwnPropertyNames(untouched), [])
 	})
@@ -916,33 +920,36 @@ describe('EIP-6963 signer provider selection', () => {
 		installBrowserMock()
 		const { allowLegacySignerExecution, socketCanExecuteWithSelectedSigner } = await import('../../app/ts/background/signerExecutionAuthority.js')
 		const socket = { tabId: 7, connectionName: 1n }
-		assert.equal(allowLegacySignerExecution(connections, socket, 'app.example'), true)
+		assert.equal(allowLegacySignerExecution(getSignerExecutionOwner(connections, socket.tabId), socket, 'app.example'), true)
 		const unrelated: WebsiteTabConnections = new Map()
-		assert.equal(socketCanExecuteWithSelectedSigner(connections, socket), true)
-		assert.equal(socketCanExecuteWithSelectedSigner(unrelated, socket), false)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(connections, socket.tabId), socket), true)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(unrelated, socket.tabId), socket), false)
 		registerAuthoritativeTopSocket(unrelated, socket, 'app.example')
-		assert.notEqual(getSignerDocumentGeneration(unrelated, socket, 'app.example'), DOCUMENT_GENERATION)
+		assert.notEqual(getSignerDocumentGeneration(getSignerExecutionOwner(unrelated, socket.tabId), socket, 'app.example'), DOCUMENT_GENERATION)
 		clearSignerExecutionAuthorityForTab(unrelated, socket.tabId)
-		assert.equal(socketCanExecuteWithSelectedSigner(connections, socket), true)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(connections, socket.tabId), socket), true)
 	})
 
 	test('tab-owned authority survives collection reconstruction and cannot be copied from plain connection fields', async () => {
 		installBrowserMock()
 		const { allowLegacySignerExecution, socketCanExecuteWithSelectedSigner, acquireSignerSelectionLease, releaseSignerSelectionLease } = await import('../../app/ts/background/signerExecutionAuthority.js')
 		const socket = { tabId: 7, connectionName: 1n }
-		assert.equal(allowLegacySignerExecution(connections, socket, 'app.example'), true)
+		assert.equal(allowLegacySignerExecution(getSignerExecutionOwner(connections, socket.tabId), socket, 'app.example'), true)
 		const rebuilt: WebsiteTabConnections = new Map(connections)
-		assert.equal(socketCanExecuteWithSelectedSigner(rebuilt, socket), true)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(rebuilt, socket.tabId), socket), true)
 		const lease = await acquireSignerSelectionLease(rebuilt, 7, socket)
 		assert.equal(releaseSignerSelectionLease(connections, 7, lease), true)
 		const tab = rebuilt.get(7)
 		if (tab === undefined) throw new Error('Missing owned tab')
 		assert.ok(Object.isFrozen(tab.signerExecutionOwner))
+		assert.equal(getSignerExecutionOwner(rebuilt, 7), tab.signerExecutionOwner)
+		assert.equal(socketCanExecuteWithSelectedSigner({ dispose: () => undefined, socketDisconnected: () => undefined }, socket), false)
+		assert.equal(socketCanExecuteWithSelectedSigner(tab.signerExecutionOwner, { ...socket, tabId: 8 }), false)
 		assert.deepEqual(Object.keys(tab.signerExecutionOwner ?? {}), ['dispose', 'socketDisconnected'])
 		rebuilt.set(7, { connections: { ...tab.connections } })
-		assert.equal(socketCanExecuteWithSelectedSigner(rebuilt, socket), false)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(rebuilt, socket.tabId), socket), false)
 		tab.signerExecutionOwner?.dispose()
-		assert.equal(socketCanExecuteWithSelectedSigner(connections, socket), false)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(connections, socket.tabId), socket), false)
 	})
 
 	test('canonical connection removal releases a child lease and expires its authority through the tab owner', async () => {
@@ -953,9 +960,9 @@ describe('EIP-6963 signer provider selection', () => {
 		const socket = { tabId: 7, connectionName: 2n }
 		const { port } = createPort(7, undefined, 2, 2n)
 		registerCurrentChildSignerSocket(connections, socket, 2)
-		reconcileSignerExecutionDocument(connections, socket, 'app.example', DOCUMENT_GENERATION, false, 2)
-		allowLegacySignerExecution(connections, { tabId: 7, connectionName: 1n }, 'app.example')
-		assert.equal(authorizeSocketForLegacySignerExecution(connections, socket, 'app.example'), true)
+		reconcileSignerExecutionDocument(getSignerExecutionOwner(connections, socket.tabId), socket, 'app.example', DOCUMENT_GENERATION, false, 2)
+		allowLegacySignerExecution(getSignerExecutionOwner(connections, ({ tabId: 7, connectionName: 1n }).tabId), { tabId: 7, connectionName: 1n }, 'app.example')
+		assert.equal(authorizeSocketForLegacySignerExecution(getSignerExecutionOwner(connections, socket.tabId), socket, 'app.example'), true)
 		const tab = connections.get(7)
 		if (tab === undefined) throw new Error('Missing child tab')
 		tab.connections[websiteSocketToString(socket)] = { port, socket, websiteOrigin: 'app.example', approved: true, wantsToConnect: true, frameId: 2 }
@@ -964,7 +971,7 @@ describe('EIP-6963 signer provider selection', () => {
 		assert.equal(signerSelectionLeaseIsActive(connections, 7, lease), false)
 		assert.equal(connections.get(7), tab)
 		await new Promise((resolve) => setTimeout(resolve, 1100))
-		assert.equal(socketCanExecuteWithSelectedSigner(connections, socket), false)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(connections, socket.tabId), socket), false)
 		tab.signerExecutionOwner?.dispose()
 	})
 
@@ -993,14 +1000,14 @@ describe('EIP-6963 signer provider selection', () => {
 		const { authorizeSocketForSignerExecution, clearSignerExecutionAuthorityForTab, getSignerExecutionTargetForOrigin, isAuthoritativeTopSocket, setSignerExecutionTarget, socketCanExecuteWithSelectedSigner } = await import('../../app/ts/background/signerExecutionAuthority.js')
 		const { acquireSignerSelectionLease, releaseSignerSelectionLease } = await import('../../app/ts/background/signerExecutionAuthority.js')
 		const socket = { tabId: 7, connectionName: 1n }
-		setSignerExecutionTarget(connections, 7, provider.uuid, 'app.example')
-		assert.equal(authorizeSocketForSignerExecution(connections, socket, provider.uuid, 'app.example'), true)
+		setSignerExecutionTarget(getSignerExecutionOwner(connections, 7), 7, provider.uuid, 'app.example')
+		assert.equal(authorizeSocketForSignerExecution(getSignerExecutionOwner(connections, socket.tabId), socket, provider.uuid, 'app.example'), true)
 		const leaseToken = await acquireSignerSelectionLease(connections, 7)
 		clearSignerExecutionAuthorityForTab(connections, 7)
 
-		assert.equal(isAuthoritativeTopSocket(connections, socket), false)
-		assert.equal(getSignerExecutionTargetForOrigin(connections, 7, 'app.example'), undefined)
-		assert.equal(socketCanExecuteWithSelectedSigner(connections, socket), false)
+		assert.equal(isAuthoritativeTopSocket(getSignerExecutionOwner(connections, socket.tabId), socket), false)
+		assert.equal(getSignerExecutionTargetForOrigin(getSignerExecutionOwner(connections, 7), 7, 'app.example'), undefined)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(connections, socket.tabId), socket), false)
 		assert.equal(releaseSignerSelectionLease(connections, 7, leaseToken), false)
 	})
 

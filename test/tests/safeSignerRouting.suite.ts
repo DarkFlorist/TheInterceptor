@@ -1,5 +1,5 @@
 import { createAuthorizedConnections } from './backgroundEthAccountsTestHarness.js'
-import { authorizeSocketForSignerExecution, getSignerDocumentGeneration, reconcileSignerExecutionDocument, registerAuthoritativeTopSocket, registerCurrentChildSignerSocket, setSignerExecutionTarget } from '../../app/ts/background/signerExecutionAuthority.js'
+import { getSignerExecutionOwner, authorizeSocketForSignerExecution, getSignerDocumentGeneration, reconcileSignerExecutionDocument, registerAuthoritativeTopSocket, registerCurrentChildSignerSocket, setSignerExecutionTarget } from '../../app/ts/background/signerExecutionAuthority.js'
 import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import { test } from 'bun:test'
@@ -41,12 +41,12 @@ test('accepts a signer reply from the current approved child-frame port', async 
 		},
 	}]]))
 		registerAuthoritativeTopSocket(websiteTabConnections, topSocket, websiteOrigin)
-	const documentGeneration = getSignerDocumentGeneration(websiteTabConnections, topSocket, websiteOrigin)
+	const documentGeneration = getSignerDocumentGeneration(getSignerExecutionOwner(websiteTabConnections, topSocket.tabId), topSocket, websiteOrigin)
 		registerCurrentChildSignerSocket(websiteTabConnections, childSocket, 2)
-		reconcileSignerExecutionDocument(websiteTabConnections, topSocket, websiteOrigin, documentGeneration, true, 0)
-		reconcileSignerExecutionDocument(websiteTabConnections, childSocket, websiteOrigin, documentGeneration, false, 2)
-		setSignerExecutionTarget(websiteTabConnections, topSocket.tabId, providerUuid, websiteOrigin)
-		authorizeSocketForSignerExecution(websiteTabConnections, childSocket, providerUuid, websiteOrigin)
+		reconcileSignerExecutionDocument(getSignerExecutionOwner(websiteTabConnections, topSocket.tabId), topSocket, websiteOrigin, documentGeneration, true, 0)
+		reconcileSignerExecutionDocument(getSignerExecutionOwner(websiteTabConnections, childSocket.tabId), childSocket, websiteOrigin, documentGeneration, false, 2)
+		setSignerExecutionTarget(getSignerExecutionOwner(websiteTabConnections, topSocket.tabId), topSocket.tabId, providerUuid, websiteOrigin)
+		authorizeSocketForSignerExecution(getSignerExecutionOwner(websiteTabConnections, childSocket.tabId), childSocket, providerUuid, websiteOrigin)
 	await modules.browserStorageLocalSet2({
 		pendingTransactionsAndMessages: [{
 			...pendingTransaction,

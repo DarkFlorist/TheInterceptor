@@ -1,7 +1,7 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
 import { probeChildSignerDocument } from '../../app/ts/background/signerDocumentSynchronization.js'
-import { clearSignerExecutionAuthorityForTab, getSignerDocumentGeneration, registerAuthoritativeTopSocket, registerCurrentChildSignerSocket } from '../../app/ts/background/signerExecutionAuthority.js'
+import { getSignerExecutionOwner, clearSignerExecutionAuthorityForTab, getSignerDocumentGeneration, registerAuthoritativeTopSocket, registerCurrentChildSignerSocket } from '../../app/ts/background/signerExecutionAuthority.js'
 
 test('document synchronization checks active top and child identities and revalidates after browser replies', async () => {
 	const connections = new Map()
@@ -26,7 +26,7 @@ test('document synchronization checks active top and child identities and revali
 	try {
 		registerAuthoritativeTopSocket(connections, top, origin)
 		registerCurrentChildSignerSocket(connections, child, 2)
-		const generation = getSignerDocumentGeneration(connections, top, origin)
+		const generation = getSignerDocumentGeneration(getSignerExecutionOwner(connections, top.tabId), top, origin)
 		assert.ok(generation)
 		assert.deepEqual(await probeChildSignerDocument(connections, child, origin, 2), { status: 'ready', generation })
 		assert.deepEqual(probes, [

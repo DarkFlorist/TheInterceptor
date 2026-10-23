@@ -6,7 +6,7 @@ import { Semaphore } from './semaphore.js'
 const injectableSitesWildcard = ['file://*/*', 'http://*/*', 'https://*/*']
 export const getInterceptorDisabledSites = (websiteAccess: WebsiteAccessArray) => websiteAccess.filter((entry) => entry.interceptorDisabled === true).map((entry) => entry.website.websiteOrigin)
 
-function getContentScriptExcludeMatchesForOrigin(origin: string) {
+function getContentScriptExclusionMatchPatternsForOrigin(origin: string) {
 	if (origin === '') return ['file:///*']
 	try {
 		const hasExplicitScheme = origin.includes('://')
@@ -26,17 +26,22 @@ function getContentScriptExcludeMatchesForOrigin(origin: string) {
 	}
 }
 
-export function getContentScriptExcludeMatches(origins: readonly string[]) {
+export function getContentScriptExclusionMatchPatterns(origins: readonly string[]) {
 	const patterns = new Set<string>()
 	for (const origin of origins) {
-		for (const pattern of getContentScriptExcludeMatchesForOrigin(origin)) patterns.add(pattern)
+		for (const pattern of getContentScriptExclusionMatchPatternsForOrigin(origin)) patterns.add(pattern)
 	}
 	return [...patterns]
 }
 
+// Firefox globs require separate root-host and subdomain patterns; their port semantics differ from match patterns.
+export function getFirefoxContentScriptExclusionGlobs(origins: readonly string[]) {
+	return getContentScriptExclusionMatchPatterns(origins).flatMap((pattern) => pattern.includes('://*.') ? [pattern.replace('://*.', '://'), pattern] : [pattern])
+}
+
 export const updateContentScriptInjectionStrategyManifestV3 = async () => {
 	try {
-		const excludeMatches = getContentScriptExcludeMatches(getInterceptorDisabledSites((await getSettings()).websiteAccess))
+		const excludeMatches = getContentScriptExclusionMatchPatterns(getInterceptorDisabledSites((await getSettings()).websiteAccess))
 		type RegisteredContentScript = Parameters<typeof browser.scripting.registerContentScripts>[0][0]
 		// The browser polyfill types do not expose Chrome's MAIN world or matchOriginAsFallback options.
 		type FixedContentScript = RegisteredContentScript & { world?: 'MAIN' | 'ISOLATED', matchOriginAsFallback: boolean }
@@ -82,7 +87,7 @@ export const updateContentScriptInjectionStrategyManifestV2 = async () => {
 			// Register ahead of navigation: onCommitted plus asynchronous executeScript can run after hostile page scripts. Globs preserve port-specific exclusions, which Firefox match patterns cannot express.
 			const nextRegistration = await browser.contentScripts.register({
 				matches: injectableSitesWildcard,
-				excludeGlobs: getContentScriptExcludeMatches(disabledSites).flatMap((pattern) => pattern.includes('://*.') ? [pattern.replace('://*.', '://'), pattern] : [pattern]),
+				excludeGlobs: getFirefoxContentScriptExclusionGlobs(disabledSites),
 				allFrames: true,
 				matchAboutBlank: true,
 				runAt: 'document_start',

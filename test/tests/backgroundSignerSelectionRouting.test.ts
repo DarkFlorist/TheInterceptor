@@ -1,5 +1,5 @@
 import { createAuthorizedConnections } from './backgroundEthAccountsTestHarness.js'
-import { getSignerDocumentGeneration } from '../../app/ts/background/signerExecutionAuthority.js'
+import { getSignerExecutionOwner, getSignerDocumentGeneration } from '../../app/ts/background/signerExecutionAuthority.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
@@ -16,7 +16,7 @@ describe('background signer selection routing', () => {
 		const { updateTabState } = await loadModules()
 		await updateTabState(1, (previousState) => ({ ...previousState, website: { websiteOrigin: 'https://top.test', title: 'Private top title', icon: undefined } }))
 		assert.equal(isTopFrameId(undefined), false)
-		assert.equal(reconcileSignerExecutionDocument(new Map(), { tabId: 1, connectionName: 99n }, 'https://top.test', '11111111-1111-4111-8111-111111111111', false, undefined), false)
+		assert.equal(reconcileSignerExecutionDocument(getSignerExecutionOwner(new Map(), ({ tabId: 1, connectionName: 99n }).tabId), { tabId: 1, connectionName: 99n }, 'https://top.test', '11111111-1111-4111-8111-111111111111', false, undefined), false)
 		assert.deepEqual(await getWebsiteDetailsForConnection(1, 'https://child.test', undefined), { title: undefined, icon: undefined })
 	})
 
@@ -88,8 +88,8 @@ describe('background signer selection routing', () => {
 			[websiteSocketToString(childSocket)]: { port: child.port, socket: childSocket, websiteOrigin, frameId: 2, approved: true, wantsToConnect: true },
 		} }]]))
 		registerCurrentChildSignerSocket(websiteTabConnections, childSocket, 2)
-		reconcileSignerExecutionDocument(websiteTabConnections, childSocket, websiteOrigin, getSignerDocumentGeneration(websiteTabConnections, topSocket, websiteOrigin), false, 2)
-		setSignerExecutionTarget(websiteTabConnections, childSocket.tabId, providerUuid, websiteOrigin)
+		reconcileSignerExecutionDocument(getSignerExecutionOwner(websiteTabConnections, childSocket.tabId), childSocket, websiteOrigin, getSignerDocumentGeneration(getSignerExecutionOwner(websiteTabConnections, topSocket.tabId), topSocket, websiteOrigin), false, 2)
+		setSignerExecutionTarget(getSignerExecutionOwner(websiteTabConnections, childSocket.tabId), childSocket.tabId, providerUuid, websiteOrigin)
 		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 		const request = {
 			interceptorRequest: true,
@@ -102,7 +102,7 @@ describe('background signer selection routing', () => {
 		await handleInterceptedRequest(child.port, websiteOrigin, website, simulationServicesOwner, childSocket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
 		assert.equal(child.messages.at(-1)?.error?.code, -32602)
 
-		assert.equal(authorizeSocketForSignerExecution(websiteTabConnections, childSocket, providerUuid, websiteOrigin), true)
+		assert.equal(authorizeSocketForSignerExecution(getSignerExecutionOwner(websiteTabConnections, childSocket.tabId), childSocket, providerUuid, websiteOrigin), true)
 		await handleInterceptedRequest(child.port, websiteOrigin, website, simulationServicesOwner, childSocket, {
 			...request,
 			uniqueRequestIdentifier: { ...request.uniqueRequestIdentifier, requestId: 2 },
