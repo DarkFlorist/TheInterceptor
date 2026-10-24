@@ -14,8 +14,8 @@ import type { UniqueRequestIdentifier } from '../utils/requests.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { identifyAddress } from './metadataUtils.js'
 import { getSimulationErrorAbis } from './simulationErrorAbi.js'
-import { createSimulationStateWithNonceAndBaseFeeFixing, getCurrentSimulationInput, visualizeSimulatorState } from './simulationUpdating.js'
-import { getInterceptorTransactionStack, getTabState } from './storageVariables.js'
+import { createSimulationStateWithNonceAndBaseFeeFixing, type SimulationSnapshot, visualizeSimulatorState } from './simulationUpdating.js'
+import { getTabState } from './storageVariables.js'
 
 let confirmTransactionAbortController = new AbortController()
 export const getConfirmTransactionAbortController = () => confirmTransactionAbortController
@@ -23,6 +23,7 @@ export const getConfirmTransactionAbortController = () => confirmTransactionAbor
 export async function refreshConfirmTransactionSimulation(
 	ethereum: EthereumClientService,
 	tokenPriceService: TokenPriceService,
+	simulation: SimulationSnapshot,
 	activeAddress: bigint,
 	simulationMode: boolean,
 	uniqueRequestIdentifier: UniqueRequestIdentifier,
@@ -43,8 +44,8 @@ export async function refreshConfirmTransactionSimulation(
 	const thisConfirmTransactionAbortController = confirmTransactionAbortController
 	const simulationStartedTimestamp = new Date()
 	const simulationInput = safeSigningRequest === undefined
-		? await getCurrentSimulationInput()
-		: createSafeSigningSimulationInput(await getInterceptorTransactionStack(), safeSigningRequest)
+		? simulation.simulationStateInput
+		: createSafeSigningSimulationInput(simulation.interceptorTransactionStack, safeSigningRequest)
 	try {
 		const getNewVisualizedSimulationState = async () => {
 			const preSimulationTransaction = transactionToSimulate.success

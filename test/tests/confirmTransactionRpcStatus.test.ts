@@ -4,6 +4,14 @@ import { act } from 'preact/test-utils'
 import { describe, test } from 'bun:test'
 import { installDomMock } from './domMock.js'
 
+// Confirmation flows take the settings that belong to their client; these sequential tests read the current pair.
+const readSettings = async () => await (await import('../../app/ts/background/settings.js')).getSettings()
+// Like a request snapshot, confirmations read the settings together with the simulation stack built from them.
+const readNetworkState = async () => {
+	const settings = await readSettings()
+	return { settings, simulation: await (await import('../../app/ts/background/simulationUpdating.js')).captureSimulationSnapshot(settings) }
+}
+
 type RuntimeMessageListener = (message: unknown) => unknown
 
 type TestDomNode = {
@@ -294,7 +302,7 @@ describe('confirm transaction rpc status bootstrap', () => {
 		}, async () => undefined, async () => undefined, rpcNetwork)
 		const tokenPriceService = new TokenPriceService(ethereum, 0)
 
-		await updateConfirmTransactionView(ethereum, tokenPriceService)
+		await updateConfirmTransactionView(ethereum, tokenPriceService, await readNetworkState())
 
 		const initialMessage = browser.sentMessages.find((message) =>
 			typeof message === 'object'

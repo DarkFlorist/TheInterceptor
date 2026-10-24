@@ -457,22 +457,22 @@ describe('popup message dispatcher seams', () => {
 			},
 		})
 
-		await dispatchPopupMessage(
-			createDispatcherContext(async () => undefined),
-			{ method: 'popup_import_settings', data: { fileContents: importedSettings } },
-		)
+		const context = createDispatcherContext(async () => undefined)
+		// Importing compares the imported network with the installed client's endpoint.
+		Object.defineProperty(context.simulationServicesOwner.getCurrent().ethereum, 'getRpcEntry', { value: () => settings.activeRpcNetwork })
+		await dispatchPopupMessage(context, { method: 'popup_import_settings', data: { fileContents: importedSettings } })
 
 		const messages = sentMessages.map((message) => MessageToPopup.parse(message))
-		assert.equal(messages.length, 2)
-		const importSuccess = messages[0]
-		assert.equal(importSuccess?.method, 'popup_initiate_export_settings_reply')
+		// The import transition publishes the account refresh inside the lock; the handler then replies and broadcasts the settings.
+		assert.deepEqual(messages.map((message) => message.method), ['popup_accounts_update', 'popup_initiate_export_settings_reply', 'popup_settingsUpdated'])
+		const importSuccess = messages[1]
 		if (importSuccess?.method !== 'popup_initiate_export_settings_reply') throw new Error('Expected successful import broadcast.')
 		assert.equal(importSuccess.data.success, true)
-		assert.equal(messages[1]?.method, 'popup_settingsUpdated')
-		if (messages[1]?.method !== 'popup_settingsUpdated') throw new Error('Expected imported settings broadcast.')
-		assert.equal(messages[1].data.activeSimulationAddress, 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n)
-		assert.equal(messages[1].data.activeRpcNetwork.httpsRpc, 'https://example.test/rpc')
-		assert.equal(messages[1].data.simulationMode, false)
+		const settingsBroadcast = messages[2]
+		if (settingsBroadcast?.method !== 'popup_settingsUpdated') throw new Error('Expected imported settings broadcast.')
+		assert.equal(settingsBroadcast.data.activeSimulationAddress, 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n)
+		assert.equal(settingsBroadcast.data.activeRpcNetwork.httpsRpc, 'https://example.test/rpc')
+		assert.equal(settingsBroadcast.data.simulationMode, false)
 		assert.deepEqual(dynamicRuleUpdates, [{
 			removeRuleIds: [],
 			addRules: [{

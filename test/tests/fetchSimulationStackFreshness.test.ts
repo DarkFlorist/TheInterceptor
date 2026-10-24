@@ -80,6 +80,7 @@ function createSnapshot(balance: bigint): SimulationStackSnapshot {
 		simulateWithZeroBaseFee: false,
 	}]
 	return {
+		activeAddressMadeRich: undefined,
 		simulationInput: { kind: 'simulated', value: simulationInput },
 		simulationState: {
 			kind: 'simulated',

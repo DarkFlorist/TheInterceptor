@@ -563,7 +563,7 @@ describe('popup clear reset', () => {
 		await browserStorageLocalSet({ popupVisualisation: matchingPopupVisualisation })
 
 		const { refreshHomeData } = modules
-		await refreshHomeData(fakeEthereum, fakeTokenPriceService, new Map(), true, 1, async () => undefined, false)
+		await refreshHomeData({ getCurrent: () => ({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService }) }, new Map(), true, 1, async () => undefined, false)
 
 		const popupVisualisation = (await browserStorageLocalGet('popupVisualisation')).popupVisualisation
 		assert.ok(popupVisualisation)
@@ -705,9 +705,11 @@ describe('popup clear reset', () => {
 	test('clears the interceptor stack when changing rpc to another chain', async () => {
 		browserMock.reset()
 		const resets: RpcNetwork[] = []
+		// Like the production owner, the reset installs services for the new network.
+		const otherChainEthereum = createFakeEthereum(otherChainRpcNetwork) as never as Parameters<typeof updatePopupVisualisationIfNeeded>[0]
 		const simulationServicesOwner = createTestSimulationServicesOwner({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService }, (nextRpcEntry: RpcNetwork) => {
 			resets.push(nextRpcEntry)
-			return { ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService }
+			return { ethereum: otherChainEthereum, tokenPriceService: fakeTokenPriceService }
 		})
 		await browserStorageLocalSet({
 			independentActiveSimulationAddress: activeAddress,

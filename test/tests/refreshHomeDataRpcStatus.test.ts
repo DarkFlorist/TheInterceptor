@@ -180,7 +180,7 @@ describe('refreshHomeData', () => {
 		const tokenPriceService = new TokenPriceService(ethereum, 0)
 
 		try {
-			await refreshHomeData(ethereum, tokenPriceService, new Map(), true, 1, async (_method, rpcConnectionStatus) => await setRpcConnectionStatus(rpcConnectionStatus), false)
+			await refreshHomeData({ getCurrent: () => ({ ethereum, tokenPriceService }) }, new Map(), true, 1, async (_method, rpcConnectionStatus) => await setRpcConnectionStatus(rpcConnectionStatus), false)
 		} finally {
 			ethereum.cleanup()
 		}
@@ -274,7 +274,7 @@ describe('refreshHomeData', () => {
 		const tokenPriceService = new TokenPriceService(ethereum, 0)
 
 		try {
-			await refreshHomeData(ethereum, tokenPriceService, websiteTabConnections, true, 1, async (_method, rpcConnectionStatus) => await setRpcConnectionStatus(rpcConnectionStatus), false)
+			await refreshHomeData({ getCurrent: () => ({ ethereum, tokenPriceService }) }, websiteTabConnections, true, 1, async (_method, rpcConnectionStatus) => await setRpcConnectionStatus(rpcConnectionStatus), false)
 		} finally {
 			ethereum.cleanup()
 		}
@@ -713,7 +713,7 @@ describe('refreshHomeData', () => {
 		const tokenPriceService = new TokenPriceService(ethereum, 0)
 
 		try {
-			await refreshHomeData(ethereum, tokenPriceService, new Map(), true, 1, async (_method, rpcConnectionStatus) => await setRpcConnectionStatus(rpcConnectionStatus), false)
+			await refreshHomeData({ getCurrent: () => ({ ethereum, tokenPriceService }) }, new Map(), true, 1, async (_method, rpcConnectionStatus) => await setRpcConnectionStatus(rpcConnectionStatus), false)
 		} finally {
 			ethereum.cleanup()
 		}

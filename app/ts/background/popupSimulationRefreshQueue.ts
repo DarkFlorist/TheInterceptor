@@ -11,7 +11,7 @@ export type RevisionedPopupSimulationRefresh = PopupSimulationRefresh & { readon
 
 export type PopupSimulationRefreshOutcome = { readonly status: 'superseded' } | { readonly status: 'observed', readonly available: boolean }
 
-// An observed result describes stored availability after an attempt, not which request published it.
+// An observed result describes whether the attempt produced a visualisation for its snapshot, not what storage holds afterwards.
 export function createPopupSimulationRefresher<T extends RevisionedPopupSimulationRefresh>(refresh: (services: T) => Promise<boolean>) {
 	type Entry = { services: T, readonly result: Future<PopupSimulationRefreshOutcome> }
 	let pending: Entry | undefined

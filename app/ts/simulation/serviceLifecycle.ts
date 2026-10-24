@@ -52,7 +52,7 @@ export function resetSimulationServices(
 	onErrorBlockCallback: OnErrorBlockCallback,
 	rpcRequestLifecycleCallbacks: RpcRequestLifecycleCallbacks = {},
 ): SimulationServices {
-	// Retire background polling; cleanup does not invalidate RPC methods used by an in-flight snapshot.
+	// Permanently retire background polling; cleanup does not invalidate RPC methods used by an in-flight snapshot.
 	currentServices.ethereum.cleanup()
 	return createSimulationServices(
 		rpcNetwork,
@@ -68,7 +68,7 @@ export type SimulationServicesOwner = {
 	readonly reset: (rpcNetwork: RpcEntry) => SimulationServices
 }
 
-// One owner publishes installed services. Returned pairs are snapshots for an operation; independent message handlers must read getCurrent() when their work starts.
+// One owner publishes installed services. Reset only inside runNetworkTransition; work that simulates with settings (dapp requests, popup snapshot handlers, confirmation resolution) reads settings, stack and services together through readNetworkSnapshot, other handlers read getCurrent() when their work starts.
 export function createSimulationServicesOwner(
 	rpcNetwork: RpcEntry,
 	newBlockAttemptCallback: NewBlockAttemptCallback,
