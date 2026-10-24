@@ -17,7 +17,7 @@ import type { MessageHashAndSignature } from '../../utils/eip712.js'
 import { encodeAbiValues } from '../../utils/abiRuntime.js'
 import { getCurrentTimestampString } from '../../utils/time.js'
 import { projectEip7702AuthorizationForRpc } from '../../utils/eip7702Authorization.js'
-import { runsThroughGnosisSafe } from '../../utils/transactionGasAccounting.js'
+import { isGnosisSafeExecution } from '../../utils/transactionGasAccounting.js'
 
 const parseSignatureHex = (signature: `0x${ string }`) => {
 	const stripped = signature.slice(2)
@@ -328,8 +328,8 @@ export class EthereumClientService {
 	}
 
 	public readonly prepareEthSimulateV1Input = async (simulationStateInput: SimulationStateInputMinimalData, blockNumber: bigint, requestAbortController: AbortController | undefined): Promise<PreparedEthSimulateV1Input> => {
-		// Every simulation input reaches the node through here. A Gnosis Safe execution that skipped prepareSafeExecutionsForRpc would run as the Safe sending its own call, so it fails here instead.
-		if (simulationStateInput.some((block) => block.transactions.some((transaction) => runsThroughGnosisSafe(transaction) && transaction.executedTransaction === undefined))) throw new Error('A Gnosis Safe execution reached the node without its executor\'s call (prepareSafeExecutionsForRpc).')
+		// Every simulation input reaches the node through here. A Gnosis Safe execution (isGnosisSafeExecution) that skipped prepareSafeExecutionsForRpc would run as the Safe sending its own call, so it fails here instead.
+		if (simulationStateInput.some((block) => block.transactions.some((transaction) => isGnosisSafeExecution(transaction) && transaction.executedTransaction === undefined))) throw new Error('A Gnosis Safe execution reached the node without its executor\'s call (prepareSafeExecutionsForRpc).')
 		const parentBlock = await this.getBlock(requestAbortController, blockNumber)
 		if (parentBlock === null) throw new Error(`The block ${ blockNumber } is null`)
 

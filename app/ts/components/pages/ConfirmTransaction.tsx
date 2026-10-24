@@ -463,7 +463,7 @@ function SuccessfulTransactionCardContent(param: SuccessfulTransactionCardConten
 
 				<RawTransactionDetailsCard isRawTransaction = { simTx.originalRequestParameters.method === 'eth_sendRawTransaction' } transaction = { simTx.transaction } transactionIdentifier = { simTx.transactionIdentifier } parsedInputData = { simTx.parsedInputData } renameAddressCallBack = { param.renameAddressCallBack } gasSpent = { 'gasSpent' in simTx ? simTx.gasSpent : undefined } addressMetaData = { addressMetaData } />
 
-				<SafeExecutionSimulationNotice simulationOptions = { simTx.simulationOptions }/>
+				<SafeExecutionSimulationNotice transaction = { simTx }/>
 
 				{ safeFlow?.kind !== 'proposal' ? <></> : <SafeProposalSigningRequestCard
 					safeTransaction = { safeFlow.pending.safeTransaction }

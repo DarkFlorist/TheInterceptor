@@ -42,7 +42,11 @@ export function getSafeTransactionPendingFlow(pending: PendingTransaction): Dire
 // The fee mode prepareSafeTransactionConfirmation decided when the confirmation opened, read back from the pending transaction so every refresh forms the transaction the same way. A simulation-mode Safe execution (executeThroughSafe) is not a SafePendingFlow: those are the signing-mode flows, which sign, propose or execute with the user's signer, while a simulation-mode transaction only runs through the Safe in the simulation.
 export function getPendingTransactionGasPayment(pending: PendingTransaction): TransactionGasPayment {
 	if (pending.executeThroughSafe === true) return 'simulated-safe-executor'
-	return getSafeTransactionPendingFlow(pending) === undefined ? 'transaction-sender' : 'external-executor'
+	switch (getSafeTransactionPendingFlow(pending)?.kind) {
+		case undefined: return 'transaction-sender'
+		case 'proposal': return 'simulated-safe-executor'
+		case 'directExecution': return 'external-executor'
+	}
 }
 
 export function getSafePendingFlow(pending: PendingTransactionOrSignableMessage): SafePendingFlow | undefined {
