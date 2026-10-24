@@ -1,10 +1,11 @@
 import { describe, test } from 'bun:test'
 import * as assert from 'node:assert'
-import { createSimulationState, getSimulatedBlock, getSimulatedBlockFromInput, getSimulatedCode, getSimulatedTransactionByHash, getSimulatedTransactionByHashFromInput, getSimulatedTransactionCount, groupEthSimulateV1ResultByInputBlocks, mockSignTransaction, simulatedCall, simulatedCallFromInput } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
+import { keccak256 } from '../../app/ts/utils/ethereumPrimitives.js'
+import { createExecutionSimulationState, createSimulationState, getSimulatedBlockFromInput, getSimulatedCode, getSimulatedTransactionByHashFromInput, getSimulatedTransactionCount, groupEthSimulateV1ResultByInputBlocks, mockSignTransaction, simulatedCall, simulatedCallFromInput } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { toResolvedSimulationInput, toResolvedSimulationState } from '../../app/ts/types/visualizer-types.js'
-import { createSimulationModeTestContext, blockNumber, createSimulationStateInput, createTwoBlockSimulationStateInput, exampleTransaction } from './simulationModeEthereumClientServiceTestHelpers.js'
+import { createSimulationModeTestContext, blockNumber, createSimulationStateInput, createTwoBlockSimulationStateInput, exampleTransaction, testBytes32 } from './simulationModeEthereumClientServiceTestHelpers.js'
 
-const { ethereum, getBlockNumberFromInput, getBlockFromInput, getBlockByHashFromInput } = createSimulationModeTestContext()
+const { ethereum, getBlockNumberFromInput, getBlockFromInput, getBlockByHashFromInput, getReceiptFromState, createAbortRecordingEthereum } = createSimulationModeTestContext()
 
 describe('SimulationModeEthereumClientService', () => {
 	test('forwards safe and earliest block tags instead of applying the simulation overlay', async () => {
@@ -208,44 +209,23 @@ describe('SimulationModeEthereumClientService', () => {
 				}),
 			})),
 		}))
-		const template = await createSimulationState(ethereum, undefined, createTwoBlockSimulationStateInput())
-		if (template.success === false) throw new Error('simulation unexpectedly failed')
-		// Exercise the state reader with two included transactions per block and a nonzero base fee; simulateEstimateGas still reads blocks through it.
-		const state = toResolvedSimulationState({
-			...template,
-			simulatedBlocks: template.simulatedBlocks.map((block, blockIndex) => ({
-				...block,
-				blockBaseFeePerGas: 10n,
-				simulatedTransactions: (input[blockIndex]?.transactions ?? []).map((transaction, transactionIndex) => {
-					const simulatedTransaction = block.simulatedTransactions[0]
-					if (simulatedTransaction === undefined) throw new Error('template transaction missing')
-					return { ...simulatedTransaction, preSimulationTransaction: transaction, realizedGasPrice: transactionIndex === 0 ? 1n : 11n }
-				}),
-			})),
-		})
 		for (const blockIndex of [0, 1]) {
 			const number = blockNumber + BigInt(blockIndex) + 1n
-			for (const source of ['input', 'state']) {
-				const block = source === 'input'
-					? await getBlockFromInput(input, number, true)
-					: await getSimulatedBlock(ethereum, undefined, state, number, true)
-				if (block === null) throw new Error('full block missing')
-				assert.equal(block.transactions.length, 2)
-				assert.equal(block.number, number)
-				assert.ok(block.baseFeePerGas !== undefined && block.baseFeePerGas > 0n)
-				for (const [transactionIndex, transaction] of block.transactions.entries()) {
-					if (typeof transaction === 'bigint' || !('blockHash' in transaction)) throw new Error('transaction block data missing')
-					const lookup = source === 'input'
-						? await getSimulatedTransactionByHashFromInput(ethereum, undefined, toResolvedSimulationInput(input), transaction.hash)
-						: await getSimulatedTransactionByHash(ethereum, undefined, state, transaction.hash)
-					assert.deepStrictEqual(transaction, lookup)
-					assert.equal(transaction.blockHash, block.hash)
-					assert.equal(transaction.blockNumber, number)
-					assert.equal(transaction.transactionIndex, BigInt(transactionIndex))
-					assert.deepStrictEqual(transaction.data, new Uint8Array([0x12, 0x34]))
-					assert.equal(transaction.gasPrice, transactionIndex === 0 ? 1n : block.baseFeePerGas + 1n)
-					assert.ok(transaction.v === 0n || transaction.v === 1n)
-				}
+			const block = await getBlockFromInput(input, number, true)
+			if (block === null) throw new Error('full block missing')
+			assert.equal(block.transactions.length, 2)
+			assert.equal(block.number, number)
+			assert.ok(block.baseFeePerGas !== undefined && block.baseFeePerGas > 0n)
+			for (const [transactionIndex, transaction] of block.transactions.entries()) {
+				if (typeof transaction === 'bigint' || !('blockHash' in transaction)) throw new Error('transaction block data missing')
+				const lookup = await getSimulatedTransactionByHashFromInput(ethereum, undefined, toResolvedSimulationInput(input), transaction.hash)
+				assert.deepStrictEqual(transaction, lookup)
+				assert.equal(transaction.blockHash, block.hash)
+				assert.equal(transaction.blockNumber, number)
+				assert.equal(transaction.transactionIndex, BigInt(transactionIndex))
+				assert.deepStrictEqual(transaction.data, new Uint8Array([0x12, 0x34]))
+				assert.equal(transaction.gasPrice, transactionIndex === 0 ? 1n : block.baseFeePerGas + 1n)
+				assert.ok(transaction.v === 0n || transaction.v === 1n)
 			}
 		}
 	})
@@ -326,4 +306,46 @@ describe('SimulationModeEthereumClientService', () => {
 		assert.equal(secondBlock.number, firstBlock.number + 1n)
 	})
 
+	test('hash-only block lookups and eth_simulateV1 forward the request abort controller', async () => {
+		const { ethereum: recordingEthereum, rpcCalls } = createAbortRecordingEthereum()
+		const requestAbortController = new AbortController()
+		await recordingEthereum.getBlock(requestAbortController, blockNumber, false)
+		await recordingEthereum.getBlockByHash(BigInt(testBytes32('abcd')), requestAbortController, false)
+		await recordingEthereum.simulatePrepared(createSimulationStateInput(), blockNumber, requestAbortController)
+		await recordingEthereum.simulate(createSimulationStateInput(), blockNumber, requestAbortController)
+
+		assert.deepEqual(rpcCalls.map((call) => call.method), ['eth_getBlockByNumber', 'eth_getBlockByHash', 'eth_getBlockByNumber', 'eth_simulateV1', 'eth_getBlockByNumber', 'eth_simulateV1'])
+		assert.ok(rpcCalls.every((call) => call.requestAbortController === requestAbortController))
+	})
+
+	test('input-based blocks, transactions and receipts report the base fee eth_simulateV1 executes with', async () => {
+		const parentBaseFeePerGas = 0x5cn
+		const maxPriorityFeePerGas = 1n
+		const input = createTwoBlockSimulationStateInput().map((block, blockIndex) => ({
+			...block,
+			simulateWithZeroBaseFee: blockIndex === 1,
+			transactions: block.transactions.map((transaction) => ({
+				...transaction,
+				signedTransaction: mockSignTransaction({ ...exampleTransaction, nonce: BigInt(blockIndex), maxFeePerGas: 1_000_000n, maxPriorityFeePerGas }),
+			})),
+		}))
+		const prepared = await ethereum.prepareEthSimulateV1Input(input, blockNumber, undefined)
+		assert.deepEqual(prepared.blockOverrides.map((blockOverride) => blockOverride.baseFeePerGas), [parentBaseFeePerGas, 0n])
+		const executionState = await createExecutionSimulationState(ethereum, undefined, input)
+		if (executionState.success === false) throw new Error('simulation unexpectedly failed')
+
+		for (const [blockIndex, executedBaseFeePerGas] of [parentBaseFeePerGas, 0n].entries()) {
+			const block = await getBlockFromInput(input, blockNumber + BigInt(blockIndex) + 1n, true)
+			if (block === null) throw new Error('simulated block missing')
+			const transaction = block.transactions[0]
+			if (transaction === undefined || typeof transaction === 'bigint' || !('blockHash' in transaction)) throw new Error('full simulated transaction data missing')
+			const receipt = await getReceiptFromState(executionState, transaction.hash)
+
+			assert.equal(block.baseFeePerGas, executedBaseFeePerGas)
+			assert.equal(transaction.gasPrice, executedBaseFeePerGas + maxPriorityFeePerGas)
+			assert.equal(receipt?.effectiveGasPrice, executedBaseFeePerGas + maxPriorityFeePerGas)
+			// A simulated block never has withdrawals, so it reports the empty-trie root keccak256(rlp('')).
+			assert.equal(block.withdrawalsRoot, BigInt(keccak256(new Uint8Array([0x80]))))
+		}
+	})
 })
