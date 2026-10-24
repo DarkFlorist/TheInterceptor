@@ -1,5 +1,5 @@
 import { ICON_ACCESS_DENIED, ICON_ACTIVE, ICON_ACTIVE_WITH_SHIELD, ICON_INTERCEPTOR_DISABLED, ICON_NOT_ACTIVE, ICON_NOT_ACTIVE_WITH_SHIELD, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIGNING_NOT_SUPPORTED_WITH_SHIELD, ICON_SIGNING_WITH_SHIELD, ICON_SIMULATING, ICON_SIMULATING_WITH_SHIELD, PRIMARY_COLOR, WARNING_COLOR } from '../utils/constants.js'
-import { areWeBlocking } from './accessManagement.js'
+import { areWeBlocking } from './websiteRequestBlocking.js'
 import { hasAccess, hasAddressAccess } from './websiteAccessPolicy.js'
 import { getActiveAddress, sendPopupMessageToOpenWindows, setExtensionBadgeBackgroundColor, setExtensionBadgeText, setExtensionIcon, setExtensionTitle } from './backgroundUtils.js'
 import { createScopedKeyedSerialExecutor } from '../utils/semaphore.js'
@@ -151,15 +151,19 @@ export async function updateExtensionBadge() {
 	return await setExtensionBadgeText( { text: '' } )
 }
 
-export async function retrieveWebsiteDetails(tabId: number, websiteOrigin?: string) {
-	let loadedTab
+// A tab that never finishes loading or has already closed has no details to show, so both cases resolve to undefined like a missing tab.
+async function waitForLoadedTabIfStillAvailable(tabId: number) {
 	try {
-		loadedTab = await waitForLoadedTab(tabId)
+		return await waitForLoadedTab(tabId)
 	} catch (error) {
-		if (error instanceof Error && error.message === WAIT_FOR_LOADED_TAB_TIMEOUT_MESSAGE) return { title: undefined, icon: undefined }
-		if (isMissingBrowserTargetError(error)) return { title: undefined, icon: undefined }
+		if (error instanceof Error && error.message === WAIT_FOR_LOADED_TAB_TIMEOUT_MESSAGE) return undefined
+		if (isMissingBrowserTargetError(error)) return undefined
 		throw error
 	}
+}
+
+export async function retrieveWebsiteDetails(tabId: number, websiteOrigin?: string) {
+	const loadedTab = await waitForLoadedTabIfStillAvailable(tabId)
 	if (loadedTab === undefined) return { title: undefined, icon: undefined }
 
 	if (websiteOrigin !== undefined) {
