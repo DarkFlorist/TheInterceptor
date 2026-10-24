@@ -1,7 +1,7 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
 import { assertActiveAddressSelectionAllowed, getActiveAddressSelection, getDisplayedSigningAddressSelection, getOptimisticActiveAddressSelection, getSelectableActiveAddresses, getWalletSelectedAccount, includePersistedAddressBookEntry, isActiveAddressSelectionAllowed, isSignerConnectedForMode, resolveActiveAddressForMode, type SigningAddressSelection } from '../../app/ts/utils/activeAddressSelection.js'
-import type { AddressBookEntries } from '../../app/ts/types/addressBookTypes.js'
+import type { AddressBookEntries, ContactEntry, SafeEntry } from '../../app/ts/types/addressBookTypes.js'
 import { requestActiveAddressChange } from '../../app/ts/components/activeAddressChange.js'
 import { getActiveAddressEntry } from '../../app/ts/components/subcomponents/address.js'
 
@@ -13,8 +13,12 @@ const UNOWNED_SAFE_ADDRESS = 0x4000000000000000000000000000000000000004n
 const UNKNOWN_OWNERS_SAFE_ADDRESS = 0x5000000000000000000000000000000000000005n
 const simulationAddressInput = (activeAddress: bigint | undefined) => ({ mode: 'simulation' as const, activeAddress })
 const signingAddressInput = (selectedAddress: SigningAddressSelection | undefined, signerAccounts: readonly bigint[], walletFallbackAddress: bigint | undefined) => ({ mode: 'signing' as const, selectedAddress, signerAccounts, walletFallbackAddress })
-const popupMessageHandlersSource = await Bun.file(new URL('../../app/ts/background/popupMessageHandlers/home.ts', import.meta.url)).text()
-const interceptorAccessSource = await Bun.file(new URL('../../app/ts/background/windows/interceptorAccess.ts', import.meta.url)).text()
+const homePopupMessageHandlersSource = await Bun.file(new URL('../../app/ts/background/popupMessageHandlers/home.ts', import.meta.url)).text()
+// The access dialog and the resolution of its replies together form the access-dialog security gate.
+const interceptorAccessSource = [
+	await Bun.file(new URL('../../app/ts/background/windows/interceptorAccess.ts', import.meta.url)).text(),
+	await Bun.file(new URL('../../app/ts/background/windows/interceptorAccessResolution.ts', import.meta.url)).text(),
+].join('\n')
 const providerMessageHandlersSource = await Bun.file(new URL('../../app/ts/background/providerMessageHandlers.ts', import.meta.url)).text()
 const activeSettingsSource = await Bun.file(new URL('../../app/ts/background/activeSettings.ts', import.meta.url)).text()
 const backgroundUtilsSource = await Bun.file(new URL('../../app/ts/background/backgroundUtils.ts', import.meta.url)).text()
@@ -27,10 +31,13 @@ const homeSource = await Bun.file(new URL('../../app/ts/components/pages/Home.ts
 const simulationStackPageSource = await Bun.file(new URL('../../app/ts/components/pages/SimulationStackPage.tsx', import.meta.url)).text()
 const modeActiveAddressHookSource = await Bun.file(new URL('../../app/ts/components/hooks/useModeActiveAddress.ts', import.meta.url)).text()
 
+const savedEoaEntry: ContactEntry = { type: 'contact', name: 'Saved EOA', address: EOA_ADDRESS, entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true }
+const currentChainSafeEntry: SafeEntry = { type: 'safe', name: 'Current-chain Safe', address: SAFE_ADDRESS, chainId: 1n, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [EOA_ADDRESS] }
+const otherChainSafeEntry: SafeEntry = { type: 'safe', name: 'Other-chain Safe', address: OTHER_CHAIN_SAFE_ADDRESS, chainId: 10n, entrySource: 'User', useAsActiveAddress: true }
 const activeAddresses: AddressBookEntries = [
-	{ type: 'contact', name: 'Saved EOA', address: EOA_ADDRESS, entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true },
-	{ type: 'safe', name: 'Current-chain Safe', address: SAFE_ADDRESS, chainId: 1n, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [EOA_ADDRESS] },
-	{ type: 'safe', name: 'Other-chain Safe', address: OTHER_CHAIN_SAFE_ADDRESS, chainId: 10n, entrySource: 'User', useAsActiveAddress: true },
+	savedEoaEntry,
+	currentChainSafeEntry,
+	otherChainSafeEntry,
 	{ type: 'safe', name: 'Unowned Safe', address: UNOWNED_SAFE_ADDRESS, chainId: 1n, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [OTHER_CHAIN_SAFE_ADDRESS] },
 	{ type: 'safe', name: 'Unknown owners Safe', address: UNKNOWN_OWNERS_SAFE_ADDRESS, chainId: 1n, entrySource: 'User', useAsActiveAddress: true },
 ]
@@ -120,7 +127,7 @@ describe('active address selection', () => {
 	})
 
 	test('does not mistake a wallet EOA for a same-address Safe on another chain', () => {
-		const sameAddressOtherChainSafe = { ...activeAddresses[2], address: EOA_ADDRESS }
+		const sameAddressOtherChainSafe = { ...otherChainSafeEntry, address: EOA_ADDRESS }
 		assert.deepEqual(resolveActiveAddressForMode([...activeAddresses, sameAddressOtherChainSafe], 1n, signingAddressInput({ type: 'walletAccount', address: EOA_ADDRESS }, [EOA_ADDRESS, OTHER_EOA_ADDRESS], OTHER_EOA_ADDRESS)), {
 			activeAddress: EOA_ADDRESS,
 			activeAddressBookEntry: activeAddresses[0],
@@ -135,12 +142,12 @@ describe('active address selection', () => {
 	})
 
 	test('keeps an explicitly selected Safe when its address matches the wallet account', () => {
-		const selfOwnedSafe = { ...activeAddresses[1], safeSignerAddresses: [SAFE_ADDRESS] }
-		assert.deepEqual(getActiveAddressSelection(SAFE_ADDRESS, [activeAddresses[0], selfOwnedSafe], false, 1n, [SAFE_ADDRESS]), {
+		const selfOwnedSafe = { ...currentChainSafeEntry, safeSignerAddresses: [SAFE_ADDRESS] }
+		assert.deepEqual(getActiveAddressSelection(SAFE_ADDRESS, [savedEoaEntry, selfOwnedSafe], false, 1n, [SAFE_ADDRESS]), {
 			type: 'addressBookEntry',
 			entry: selfOwnedSafe,
 		})
-		assert.deepEqual(resolveActiveAddressForMode([activeAddresses[0], selfOwnedSafe], 1n, signingAddressInput({ type: 'safe', address: SAFE_ADDRESS }, [SAFE_ADDRESS], SAFE_ADDRESS)), {
+		assert.deepEqual(resolveActiveAddressForMode([savedEoaEntry, selfOwnedSafe], 1n, signingAddressInput({ type: 'safe', address: SAFE_ADDRESS }, [SAFE_ADDRESS], SAFE_ADDRESS)), {
 			activeAddress: SAFE_ADDRESS,
 			activeAddressBookEntry: selfOwnedSafe,
 			safeSigningMode: true,
@@ -164,8 +171,8 @@ describe('active address selection', () => {
 	})
 
 	test('uses current-chain metadata instead of an earlier wrong-chain entry for the same address', () => {
-		const wrongChainEntry = { ...activeAddresses[0], name: 'Wrong-chain EOA', chainId: 10n, askForAddressAccess: false }
-		const currentChainEntry = { ...activeAddresses[0], name: 'Current-chain EOA', chainId: 1n, askForAddressAccess: true }
+		const wrongChainEntry = { ...savedEoaEntry, name: 'Wrong-chain EOA', chainId: 10n, askForAddressAccess: false }
+		const currentChainEntry = { ...savedEoaEntry, name: 'Current-chain EOA', chainId: 1n, askForAddressAccess: true }
 		const duplicatedAddressEntries = [wrongChainEntry, currentChainEntry, ...activeAddresses.slice(1)]
 
 		assert.deepEqual(resolveActiveAddressForMode(duplicatedAddressEntries, 1n, simulationAddressInput(EOA_ADDRESS)), {
@@ -234,7 +241,7 @@ describe('active address selection', () => {
 	})
 
 	test('replaces stale metadata for a just-persisted entry', () => {
-		const staleEntry = { type: 'safe', name: 'Stale Safe', address: SAFE_ADDRESS, chainId: 1n, entrySource: 'User', safeSignerAddresses: [] } as const
+		const staleEntry = { type: 'safe', name: 'Stale Safe', address: SAFE_ADDRESS, chainId: 1n, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [] } as const
 		const persistedEntry = { ...staleEntry, name: 'Updated Safe', safeSignerAddresses: [EOA_ADDRESS] }
 		const selectableAddresses = includePersistedAddressBookEntry([staleEntry], persistedEntry)
 
@@ -283,8 +290,8 @@ describe('active address selection', () => {
 	})
 
 	test('keeps popup and access-dialog security gates on the shared selection policy', () => {
-		assert.match(popupMessageHandlersSource, /selection = getActiveAddressSelection\(/u)
-		assert.doesNotMatch(popupMessageHandlersSource, /activeChainSigningSafe\.safeSignerAddresses/u)
+		assert.match(homePopupMessageHandlersSource, /selection = getActiveAddressSelection\(/u)
+		assert.doesNotMatch(homePopupMessageHandlersSource, /activeChainSigningSafe\.safeSignerAddresses/u)
 		assert.match(interceptorAccessSource, /return assertActiveAddressSelectionAllowed\(addressSelection, selectableAddresses/u)
 		assert.match(interceptorAccessSource, /approvedAddressSelection \?\? await getAllowedAddressSelectionForAccessRequest/u)
 		assert.equal(interceptorAccessSource.match(/includePersistedAddressBookEntry\(activeAddresses, request(?:ed)?Entry\)/gu)?.length, 1)
@@ -300,9 +307,9 @@ describe('active address selection', () => {
 		assert.doesNotMatch(activeSettingsSource, /inferredSafeEntryOnActiveChain/u)
 		assert.match(activeSettingsSource, /Signing address changes must identify whether the selection is the signer or a Safe\./u)
 		assert.match(providerMessageHandlersSource, /!settings\.simulationMode \? \{ signingAddressSelection: 'signer'/u)
-		const explicitPopupSelectionHandler = popupMessageHandlersSource.slice(
-			popupMessageHandlersSource.indexOf('export async function changeActiveAddress('),
-			popupMessageHandlersSource.indexOf('export async function modifyMakeMeRich('),
+		const explicitPopupSelectionHandler = homePopupMessageHandlersSource.slice(
+			homePopupMessageHandlersSource.indexOf('export async function changeActiveAddress('),
+			homePopupMessageHandlersSource.indexOf('export async function modifyMakeMeRich('),
 		)
 		assert.match(explicitPopupSelectionHandler, /activateAddressSelection\(/u)
 		assert.match(interceptorAccessSource, /activateAddressSelection\(/u)

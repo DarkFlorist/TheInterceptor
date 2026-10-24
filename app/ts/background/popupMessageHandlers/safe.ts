@@ -12,8 +12,7 @@ import { getErrorMessage, reportUnexpectedError } from '../../utils/errors.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { updatePopupVisualisationIfNeeded } from '../popupVisualisationUpdater.js'
 import { getSafeTransactionStacks, getUserAddressBookEntries, updateTransactionState, updateUserAddressBookEntries } from '../storageVariables.js'
-import { getSettings } from '../settings.js'
-import { updateWebsiteApprovalAccesses } from '../accessManagement.js'
+import { syncWebsiteApprovalsWithSettings } from '../websiteAccessReconciliation.js'
 
 export async function setSafeSimulationSigner(
 	simulationServicesOwner: SimulationServicesOwner,
@@ -76,7 +75,7 @@ export async function setSafeSimulationSigner(
 		}
 	}
 	if (updatedEntry.useAsActiveAddress) {
-		await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
+		await syncWebsiteApprovalsWithSettings(websiteTabConnections, { promptForAccessesIfNeeded: true })
 	}
 	await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 	return { type: 'SetSafeSimulationSignerReply' as const, ok: true as const }

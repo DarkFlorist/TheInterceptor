@@ -99,9 +99,10 @@ export async function removeTransactionOrSignedMessage(ethereum: EthereumClientS
 			}
 			case 'Message': {
 				const messageIdentifier = params.data.messageIdentifier
+				// Normalize after removal: the removed message may have separated two time manipulations.
 				return {
-					operations: normalizeConsecutiveTimeManipulations(prevStack.operations)
-						.filter((operation) => !(operation.type === 'Message' && messageIdentifier === operation.signedMessageTransaction.messageIdentifier))
+					operations: normalizeConsecutiveTimeManipulations(prevStack.operations
+						.filter((operation) => !(operation.type === 'Message' && messageIdentifier === operation.signedMessageTransaction.messageIdentifier)))
 				}
 			}
 			default: assertNever(params.data)

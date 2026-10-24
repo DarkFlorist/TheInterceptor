@@ -5,9 +5,10 @@ import type { SigningAddressPreference } from '../types/signerTypes.js'
 import { getRpcNetworkChange } from '../utils/rpcNetworkChange.js'
 import type { RpcNetwork } from '../types/rpc.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
-import { Semaphore } from '../utils/semaphore.js'
 import type { WebsiteAccessUpdate } from './accessManagement.js'
-import { reconcileWebsiteApprovalAccesses, finishWebsiteAccessUpdate, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts } from './accessManagement.js'
+import { reconcileWebsiteApprovalAccesses, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts } from './accessManagement.js'
+import { finishWebsiteAccessUpdate } from './websiteAccessReconciliation.js'
+import { withSettingsTransitionLock } from './settingsTransitionLock.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { changeSimulationMode, getSettings, setUseSignersAddressAsActiveAddress, trackPreviousActiveAddressForMakeMeRichList } from './settings.js'
@@ -69,7 +70,6 @@ type ActiveSettingsTransition = {
 	readonly signingPreference?: SigningAddressPreference
 }
 
-const changeActiveAddressAndChainSemaphore = new Semaphore(1)
 async function runActiveSettingsChange(
 	simulationServicesOwner: SimulationServicesOwner,
 	websiteTabConnections: WebsiteTabConnections,
@@ -79,7 +79,7 @@ async function runActiveSettingsChange(
 	let accessUpdate: WebsiteAccessUpdate | undefined
 	try {
 		// Settings, approvals, resets, notifications and selection preferences form one ordered transition.
-		await changeActiveAddressAndChainSemaphore.execute(async () => {
+		await withSettingsTransitionLock(async (lock) => {
 			if (transition.simulationSignerSelection !== undefined) {
 				const { useSignerAddress, signerAddress } = transition.simulationSignerSelection
 				await setUseSignersAddressAsActiveAddress(useSignerAddress, signerAddress)
@@ -104,7 +104,8 @@ async function runActiveSettingsChange(
 				})
 			}
 
-			const updatedSettings = await getSettings()
+			const committedSettings = await lock.readSettings()
+			const updatedSettings = committedSettings.settings
 			const { chainChanged: rpcChainChanged, endpointChanged: rpcEndpointChanged } = getRpcNetworkChange(previousSettings.activeRpcNetwork, updatedSettings.activeRpcNetwork)
 			try {
 				try {
@@ -128,7 +129,7 @@ async function runActiveSettingsChange(
 					})
 				}
 			} finally {
-				accessUpdate = await reconcileWebsiteApprovalAccesses(websiteTabConnections, updatedSettings)
+				accessUpdate = await reconcileWebsiteApprovalAccesses(websiteTabConnections, committedSettings)
 			}
 			await sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
 			if (rpcChainChanged) {
@@ -142,9 +143,9 @@ async function runActiveSettingsChange(
 			await sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await getSettings())
 		})
 	} finally {
-		// Complete committed access updates after releasing the semaphore, even if a later reset or notification fails.
+		// Complete committed access updates after releasing the lock, even if a later reset or notification fails.
 		if (accessUpdate !== undefined) {
-			await finishWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, accessUpdate, change.promptForAccessesIfNeeded ?? true)
+			await finishWebsiteAccessUpdate(websiteTabConnections, accessUpdate, { promptForAccessesIfNeeded: change.promptForAccessesIfNeeded ?? true })
 		}
 	}
 }

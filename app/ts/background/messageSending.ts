@@ -1,5 +1,6 @@
 import { type InterceptedRequestForward, InterceptorMessageToInpage, type SubscriptionReplyOrCallBack } from '../types/interceptor-messages.js'
-import { type WebsiteSocket, checkAndThrowRuntimeLastError, isMissingBrowserTargetError } from '../utils/requests.js'
+import { type InterceptedRequest, type WebsiteSocket, checkAndThrowRuntimeLastError, isMissingBrowserTargetError } from '../utils/requests.js'
+import { METAMASK_ERROR_NOT_AUTHORIZED } from '../utils/constants.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { websiteSocketToString } from './backgroundUtils.js'
 import { serialize } from '../types/wire-types.js'
@@ -36,6 +37,17 @@ export function replyToInterceptedRequest(websiteTabConnections: WebsiteTabConne
 		})
 	}
 	return false
+}
+
+export function refuseAccess(websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest) {
+	return replyToInterceptedRequest(websiteTabConnections, {
+		type: 'result',
+		...request,
+		error: {
+			code: METAMASK_ERROR_NOT_AUTHORIZED,
+			message: 'The requested method and/or account has not been authorized by the user.'
+		},
+	})
 }
 
 export async function replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections: WebsiteTabConnections, message: InterceptedRequestForward) {
