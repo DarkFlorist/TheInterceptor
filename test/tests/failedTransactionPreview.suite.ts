@@ -265,6 +265,54 @@ test('keeps a newer simulation run stored during the failure preview metadata re
 	assert.deepEqual(await getPendingFailedTransactionVisualisation(), newerVisualisation, 'the metadata of the initial run replaced the newer run')
 })
 
+test('keeps a newer simulation run that got the run id of the run the metadata refresh read, as after a background restart', async () => {
+	await useInvoiceAddressBook()
+	const confirmationSimulator = createFeeValidatingSimulator(TOO_LITTLE_ETH_FOR_FEES)
+	const { refreshPopupConfirmTransactionMetadata } = await import('../../app/ts/background/popupMessageHandlers.js')
+	await openUsdcTransferConfirmation(confirmationSimulator)
+	const initialVisualisation = await getPendingFailedTransactionVisualisation()
+	if (initialVisualisation.statusCode !== 'failed') throw new Error('Expected the initial run to fail')
+	// After a restart, a new run can get the id of a run stored before it, if the earlier session's ids ran ahead of the clock or the clock moved back.
+	const newerVisualisationWithSameRunId = { ...initialVisualisation, data: { ...initialVisualisation.data, error: { ...initialVisualisation.data.error, message: 'the newer run', decodedErrorMessage: 'the newer run' } } }
+	await modules.updateUserAddressBookEntries((entries) => entries.filter((entry) => entry.address !== recipientAddress))
+	const ethereumStoringNewerRunDuringLookup = supersedeDuringAddressLookup(confirmationSimulator.ethereum, recipientAddress, 'resolves', async () => {
+		await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => pending.type === 'Transaction' && 'popupVisualisation' in pending ? { ...pending, popupVisualisation: newerVisualisationWithSameRunId } : pending)
+	})
+
+	await withSilencedConsole(async () => await refreshPopupConfirmTransactionMetadata(ethereumStoringNewerRunDuringLookup, confirmationSimulator.tokenPriceService, undefined))
+
+	const storedVisualisation = await getPendingFailedTransactionVisualisation()
+	assert.equal(storedVisualisation.data.confirmationRunId, initialVisualisation.data.confirmationRunId)
+	assert.deepEqual(storedVisualisation, newerVisualisationWithSameRunId, 'the metadata refresh wrote the run it read over the newer run with the same id')
+})
+
+test('probes an unknown EIP-7702 delegation target of a request that could not be formed and keeps it in the address book, as the simulation view does', async () => {
+	await useInvoiceAddressBook()
+	const unknownDelegationTarget = 0x7777777777777777777777777777777777777777n
+	const { SendTransactionParams } = await import('../../app/ts/types/JsonRpc-types.js')
+	const requestWithAuthorization = SendTransactionParams.parse({
+		method: 'eth_sendTransaction',
+		params: [{
+			from: addressString(activeAddress),
+			to: addressString(USDC_ADDRESS),
+			value: '0x0',
+			data: encodeFunctionCall(Erc20ABI, 'transfer', [addressString(recipientAddress), TRANSFERRED_USDC]),
+			authorizationList: [{ chainId: '0x1', address: addressString(unknownDelegationTarget), nonce: '0x0' }],
+		}],
+	})
+	const { getFailedTransactionPreview } = await import('../../app/ts/background/simulationUpdating.js')
+	const preview = await getFailedTransactionPreview(simulator.ethereum, undefined, {
+		website,
+		created,
+		originalRequestParameters: requestWithAuthorization,
+		transactionIdentifier: 1n,
+		success: false,
+		error: { code: -32000, message: 'gas estimation failed' },
+	})
+	assert.equal(preview.addressBookEntries.some((entry) => entry.address === unknownDelegationTarget), true, 'the failure view names the delegation target')
+	assert.equal((await modules.getUserAddressBookEntries()).some((entry) => entry.address === unknownDelegationTarget), true, 'naming it keeps the on-chain identification in the address book')
+})
+
 test('keeps and shows the names of a newer metadata refresh when an older refresh of the same failed confirmation finishes last', async () => {
 	await useInvoiceAddressBook()
 	const confirmationSimulator = createFeeValidatingSimulator(TOO_LITTLE_ETH_FOR_FEES)

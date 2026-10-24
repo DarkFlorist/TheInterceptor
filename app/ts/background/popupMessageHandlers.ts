@@ -15,7 +15,7 @@ import { getActiveAddressForCurrentSignerState, sendCallbackToAllConfirmedSigner
 import { findEntryWithSymbolOrName, getMetadataForAddressBookData } from './metadataSearch.js'
 import { getActiveAddressEntryForChain, getActiveAddresses, identifyAddress } from './metadataUtils.js'
 import type { TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
-import type { ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
+import { ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { CompleteVisualizedSimulation, InterceptorSimulationExport, type InterceptorStackOperation, InterceptorTransactionStack, type ModifyAddressWindowState, createPassthroughCompleteVisualizedSimulation } from '../types/visualizer-types.js'
 import { isJSON } from '../utils/json.js'
@@ -522,6 +522,8 @@ type ConfirmTransactionMetadataDependencies = {
 	readonly visualisation?: OpenConsumerVisualisationDependencies
 }
 
+const isSamePopupVisualisation = (first: ConfirmTransactionTransactionSingleVisualization, second: ConfirmTransactionTransactionSingleVisualization) => JSON.stringify(serialize(ConfirmTransactionTransactionSingleVisualization, first)) === JSON.stringify(serialize(ConfirmTransactionTransactionSingleVisualization, second))
+
 // Counts started confirmation metadata refreshes, so only the latest started one stores and sends its lookups; see refreshPopupConfirmTransactionMetadata and "Confirmation dialog staleness" in docs/popup-simulation-refresh.md.
 let latestConfirmationMetadataRefresh = 0
 
@@ -585,8 +587,9 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 				if (refreshedPopupVisualisation === undefined) return
 				await updatePendingTransactionOrMessage(first.uniqueRequestIdentifier, async (current) => {
 					if (current.type !== 'Transaction' || (current.transactionOrMessageCreationStatus !== 'Simulated' && current.transactionOrMessageCreationStatus !== 'FailedToSimulate')) return current
-					// A simulation run stored during the metadata lookups has another id even within the same second (ids can repeat only across a background restart), so the metadata of the older run must not replace it. See "Confirmation dialog staleness" in docs/popup-simulation-refresh.md.
+					// A simulation run stored during the metadata lookups has another id even within the same second, so the metadata of the older run must not replace it. Ids can repeat across a background restart, so the stored result must also be the one this refresh read. See "Confirmation dialog staleness" in docs/popup-simulation-refresh.md.
 					if (current.popupVisualisation.data.confirmationRunId !== popupVisualisation.data.confirmationRunId) return current
+					if (!isSamePopupVisualisation(current.popupVisualisation, popupVisualisation)) return current
 					// Overlapping metadata refreshes, such as after two address-book changes, share the run and its id, so the run id alone would let an older refresh that finishes last store names from the older address book. See "Confirmation dialog staleness" in docs/popup-simulation-refresh.md.
 					if (thisConfirmationMetadataRefresh !== latestConfirmationMetadataRefresh) return current
 					return modifyObject(current, { popupVisualisation: refreshedPopupVisualisation })
