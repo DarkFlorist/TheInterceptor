@@ -10,6 +10,7 @@ import type { WebsiteSocket } from '../../utils/requests.js'
 import { websiteSocketToString } from '../../background/backgroundUtils.js'
 import { createScopedKeyedSerialExecutor } from '../../utils/semaphore.js'
 import { JsonRpcResponseError } from '../../utils/errors.js'
+import type { EthereumBlockHeaderWithTransactionHashes } from '../../types/wire-types.js'
 import { METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER } from '../../utils/constants.js'
 
 const dec2hex = (dec: number) => dec.toString(16).padStart(2, '0')
@@ -57,9 +58,9 @@ export async function sendSubscriptionMessagesForNewBlock(
 	getSimulationState: (ethereumClientService: EthereumClientService) => Promise<ResolvedExecutionSimulationState>,
 ) {
 	const ethereumSubscriptionsAndFilters = await getEthereumSubscriptionsAndFilters()
-	let liveBlockPromise: Promise<Awaited<ReturnType<EthereumClientService['getBlock']>>> | undefined
+	let liveBlockPromise: Promise<EthereumBlockHeaderWithTransactionHashes> | undefined
 	let simulationStatePromise: Promise<ResolvedExecutionSimulationState> | undefined
-	let simulatedBlocksPromise: Promise<readonly NonNullable<Awaited<ReturnType<typeof getSimulatedBlockFromInput>>>[]> | undefined
+	let simulatedBlocksPromise: Promise<readonly NonNullable<EthereumBlockHeaderWithTransactionHashes>[]> | undefined
 	const getLiveBlock = async () => {
 		if (liveBlockPromise === undefined) liveBlockPromise = ethereumClientService.getBlock(undefined, blockNumber, false)
 		return await liveBlockPromise

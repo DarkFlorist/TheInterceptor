@@ -101,15 +101,21 @@ const panicErrorCodeToReason = (errorCode: bigint): string | undefined => {
 	}
 }
 
+// Revert data is decoded only when the provider returned it as a string. Other JSON-RPC error data shapes (for example rate-limit objects) are treated as missing.
+type ErrorWithStringData = {
+	readonly message: string
+	readonly data: string | undefined
+}
+
 const getErrorAbiItem = (abi: Abi): ErrorAbiItem | undefined => {
 	const item = abi[0]
 	if (item === undefined || item.type !== 'error') return undefined
 	return item
 }
 
-const handleEmptyError = (error: ErrorWithCodeAndOptionalData) => emptyErrorResult({ data: error.data, reason: error.message })
+const handleEmptyError = (error: ErrorWithStringData) => emptyErrorResult({ data: error.data, reason: error.message })
 
-const handleRevertError = (error: ErrorWithCodeAndOptionalData) => {
+const handleRevertError = (error: ErrorWithStringData) => {
 	if (error.data === undefined) return unknownErrorResult({ reason: 'Unknown error returned', data: '0x' })
 	const encodedReason = `0x${ error.data.slice(ERROR_STRING_PREFIX.length) }` as const
 	const fragment = getErrorAbiItem(ErrorStringABI)
@@ -131,7 +137,7 @@ const handleRevertError = (error: ErrorWithCodeAndOptionalData) => {
 	}
 }
 
-const handlePanicError = (error: ErrorWithCodeAndOptionalData) => {
+const handlePanicError = (error: ErrorWithStringData) => {
 	if (error.data === undefined) return unknownErrorResult({ reason: 'Unknown error returned', data: '0x' })
 	const encodedReason = `0x${ error.data.slice(PANIC_CODE_PREFIX.length) }` as const
 	const fragment = getErrorAbiItem(PanicABI)
@@ -154,7 +160,7 @@ const handlePanicError = (error: ErrorWithCodeAndOptionalData) => {
 	}
 }
 
-const handleCustomError = (errorAbis: readonly AbiLike[], error: ErrorWithCodeAndOptionalData) => {
+const handleCustomError = (errorAbis: readonly AbiLike[], error: ErrorWithStringData) => {
 	const result: Parameters<typeof customErrorResult>[0] = { data: error.data, reason: error.message }
 	if (error.data === undefined || !isHexData(error.data)) return customErrorResult(result)
 	const errorItems = errorAbis.flatMap((abi) => normalizeAbi(abi).filter((item): item is ErrorAbiItem => item.type === 'error'))
@@ -171,7 +177,11 @@ const handleCustomError = (errorAbis: readonly AbiLike[], error: ErrorWithCodeAn
 	})
 }
 
-export const decodeEthereumError = (errorAbis: readonly AbiLike[], error: ErrorWithCodeAndOptionalData): DecodedError => {
+export const decodeEthereumError = (errorAbis: readonly AbiLike[], errorWithCodeAndOptionalData: ErrorWithCodeAndOptionalData): DecodedError => {
+	const error: ErrorWithStringData = {
+		message: errorWithCodeAndOptionalData.message,
+		data: typeof errorWithCodeAndOptionalData.data === 'string' ? errorWithCodeAndOptionalData.data : undefined,
+	}
 	try {
 		if (error.data === '0x') return handleEmptyError(error)
 		if (error.data?.startsWith(ERROR_STRING_PREFIX)) return handleRevertError(error)
