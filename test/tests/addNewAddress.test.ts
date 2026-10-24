@@ -309,7 +309,7 @@ describe('add new address save flow', () => {
 		assert.ok(addNewAddressSource.indexOf('<span>Name</span>') < addNewAddressSource.indexOf('<span>Address type</span>'))
 		assert.ok(addNewAddressSource.indexOf('<span>Address type</span>') < addNewAddressSource.indexOf('<span>Chain</span>'))
 		assert.match(addNewAddressSource, /class = 'address-editor-identity-controls'[\s\S]*?<span>Name<\/span>[\s\S]*?<span>Address type<\/span>[\s\S]*?<span>Chain<\/span>/)
-		assert.match(addNewAddressSource, /<AddressIcon address = \{ stringToAddress[^\n]+isBig = \{ true \}/)
+		assert.match(addNewAddressSource, /<AddressIcon address = \{ parseUserEnteredAddress[^\n]+isBig = \{ true \}/)
 		assert.match(addNewAddressSource, /ariaLabel = 'Address type'/)
 		assert.match(addNewAddressSource, /ariaLabel = 'Chain'/)
 		assert.equal((addNewAddressSource.match(/class = 'address-editor-disclosure-chevron'/g) ?? []).length, 2)
