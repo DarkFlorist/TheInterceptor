@@ -7,7 +7,8 @@ import { createSafeTxFromMessage } from '../../app/ts/safe/safeCore.js'
 import { decodeSafeExecution } from '../../app/ts/safe/safeExecution.js'
 import { InterceptorTransactionStack, PreSimulationTransaction, type SimulationStateInput, type TransactionSimulationOptions } from '../../app/ts/types/visualizer-types.js'
 import { EthereumSendableSignedTransaction } from '../../app/ts/types/wire-types.js'
-import { describeSafeExecutionFailure, estimateSafeExecutionGas, prepareSafeExecutionSimulationInput, SAFE_EXECUTION_SIMULATION_EXECUTOR } from '../../app/ts/safe/safeExecutionSimulation.js'
+import { estimateSafeExecutionGas, prepareSafeExecutionSimulationInput, SAFE_EXECUTION_SIMULATION_EXECUTOR } from '../../app/ts/safe/safeExecutionSimulation.js'
+import { describeSafeExecutionFailure } from '../../app/ts/safe/safeExecutionFailure.js'
 import { prepareSafeTransactionConfirmation } from '../../app/ts/background/safeTransactionConfirmation.js'
 import { getSimulatedTransactionByHashFromInput } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { encodeFunctionCall } from '../../app/ts/utils/abiRuntime.js'
@@ -282,6 +283,17 @@ test('counts a Safe execution that another Safe or any contract relays among the
 	// Three execTransaction calls may each have executed this Safe, so the nonce may be anywhere from 5 to 8.
 	const approvedSlotsOfLaterProposal = [5n, 6n, 7n, 8n].flatMap((nonce) => SORTED_OWNERS.map((owner) => approvedHashSlot(owner, BigInt(getSafeTxHash(createSafeTxFromMessage(fakeRpcNetwork.chainId, SAFE_ADDRESS, { ...laterSafeTx.message, nonce }))))))
 	assert.ok(approvedSlotsOfLaterProposal.every((slot) => stateDiff[slot] === 1n))
+})
+
+test('counts at most 16 relayed executions, however many execTransaction selectors a page stuffs into calldata', async () => {
+	configureSafe()
+	const stuffedCalldata = new Uint8Array(4 * 10_000)
+	for (let index = 0; index < stuffedCalldata.length; index += 4) stuffedCalldata.set([0x6a, 0x76, 0x12, 0x02], index)
+	const stuffedTransaction = createSafeCall({ value: 0n, input: stuffedCalldata, gas: 1_000_000n }, undefined)
+	const laterProposal = createSafeProposal({ value: 9n })
+	const [preparedBlock] = await prepareSafeExecutionSimulationInput([createBlock([{ ...stuffedTransaction, signedTransaction: { ...stuffedTransaction.signedTransaction, from: ORDINARY_ACCOUNT } }, laterProposal])], ethereum, 123n, BASE_FEE_PER_GAS)
+	// The Safe's nonce 5 plus at most 16 relayed executions: nonces 5 to 21.
+	assert.equal(Object.keys(preparedBlock?.stateOverrides[addressString(SAFE_ADDRESS)]?.stateDiff ?? {}).length, 17 * SORTED_OWNERS.length)
 })
 
 test('approves a Safe execution only at the Safe\'s nonce when no earlier transaction can execute a Safe', async () => {

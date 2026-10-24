@@ -16,8 +16,8 @@ import { prevalidatedSafeSignature, SAFE_EXECUTION_ABI } from './safeExecution.j
 import { ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED } from '../utils/constants.js'
 import type { DistributiveOmit } from '../utils/typescript.js'
 import { last } from '../utils/array.js'
-import { decodeEthereumError } from '../utils/errorDecoding.js'
 import { isGnosisSafeExecution } from '../utils/transactionGasAccounting.js'
+import { isSafeCallRevert, SAFE_CALL_REVERTED_MESSAGE } from './safeExecutionFailure.js'
 
 // The account that sends simulated Gnosis Safe executions. It is random for each background session, so a called contract can't recognise the simulation by a known tx.origin. On-chain, too, a Safe's transactions are often sent by accounts that aren't its owners, such as relayers.
 export const SAFE_EXECUTION_SIMULATION_EXECUTOR = generate256BitRandomBigInt() >> 96n
@@ -65,6 +65,9 @@ function getSafeExecution({ safeTransaction, signedTransaction, simulationOption
 // execTransaction's selector. A call to any Safe's execTransaction is encoded within the calldata of the calls that relay it, so its selector's occurrences in a transaction's calldata bound the Safe executions the transaction can make, whichever contracts relay them and however deeply.
 const EXEC_TRANSACTION_SELECTOR = stringToUint8Array(encodeFunctionCall(SAFE_EXECUTION_ABI, 'execTransaction', [addressString(0n), 0n, '0x', 0n, 0n, 0n, 0n, addressString(0n), addressString(0n), '0x']).slice(0, 10))
 
+// At most this many relayed executions are counted. A page can stuff calldata with the selector, and each counted execution makes every later Safe execution hash and approve one more nonce; real transactions relay a Safe execution rarely, and hardly ever this often.
+const MAX_COUNTED_RELAYED_EXECUTIONS = 16n
+
 const countExecTransactionSelectors = (data: Uint8Array) => {
 	let occurrences = 0n
 	for (let index = 0; index + EXEC_TRANSACTION_SELECTOR.length <= data.length; index++) {
@@ -102,7 +105,7 @@ function createExecutorTransaction(execution: SafeExecution, safeCall: EthereumS
  * The simulation assumes the Safe's owners approved the call. The first block's state overrides mark the call's SafeTx hash as approved (approvedHashes) by every owner of the Safe at the parent block, and the execution carries their pre-validated signatures. The Safe can reach this state on-chain, through approveHash. An owner that an earlier execution on the stack removes still signs, so an execution after such a removal can fail the Safe's signature check (GS026).
  * The approvals are visible: a called contract that reads its Safe's approvedHashes for the current SafeTx hash finds them set, as it would if the owners had approved with approveHash, but not if they sign off-chain. A preview runs before the owners have signed, so it has to make the Safe accept approvals it doesn't have yet. The alternatives can be told apart as well: replacing the ecrecover precompile to accept made-up signatures puts code at its address, and lowering the threshold changes getThreshold. approvedHashes is the one of them the Safe can reach on-chain, and a contract can only see it by inspecting its own Safe, unlike a tx.origin that is a contract or a zero base fee.
  * The SafeTx hash includes the Safe's nonce at execution, and each earlier execution of the same Safe in the input raises it by one if it succeeds: a simulated execution of the Safe, or a call to its execTransaction that an earlier transaction makes, directly or relayed through other Safes, batches or contracts. So an execution is approved at every nonce from the Safe's nonce at the parent block up to that nonce plus the earlier simulated executions of the Safe and every execTransaction selector in the earlier transactions' calldata (countExecTransactionSelectors). Counting every selector can only approve nonces the Safe won't reach, which does no harm.
- * The selectors bound only the executions whose calls appear in the calldata. A contract that executes a Safe more often than the calls it is handed, by repeating one or by building its own, raises the nonce past the approved range, and a later execution of that Safe then fails the signature check (GS025) in the preview: a visible failure, never a success that wouldn't happen. Reading each Safe's nonce from the simulation before every execution would close this, at the cost of a simulation per execution on every simulation of the stack.
+ * The selectors bound only the executions whose calls appear in the calldata, and at most MAX_COUNTED_RELAYED_EXECUTIONS of them count. A contract that executes a Safe more often than the calls it is handed, by repeating one or by building its own, or more often than that, raises the nonce past the approved range, and a later execution of that Safe then fails the signature check (GS025) in the preview: a visible failure, never a success that wouldn't happen. Reading each Safe's nonce from the simulation before every execution would close this, at the cost of a simulation per execution on every simulation of the stack.
  * The first block also funds the executor for every execution's gas at its maximum fee.
  */
 export async function prepareSafeExecutionSimulationInput(input: SimulationStateInput, ethereum: EthereumClientService, parentBlockNumber: bigint, baseFeePerGas: bigint): Promise<SimulationStateInput> {
@@ -126,7 +129,7 @@ export async function prepareSafeExecutionSimulationInput(input: SimulationState
 		const safeState = safeStates.get(safeAddress)
 		if (safeState === undefined) throw new Error('The Gnosis Safe state of the execution was not read.')
 		const earlierSimulatedExecutions = earlierSimulatedExecutionsBySafe.get(safeAddress) ?? 0n
-		const earlierExecutions = earlierSimulatedExecutions + earlierExecTransactionCalls
+		const earlierExecutions = earlierSimulatedExecutions + (earlierExecTransactionCalls < MAX_COUNTED_RELAYED_EXECUTIONS ? earlierExecTransactionCalls : MAX_COUNTED_RELAYED_EXECUTIONS)
 		earlierSimulatedExecutionsBySafe.set(safeAddress, earlierSimulatedExecutions + 1n)
 		// The data the Safe calls or delegate-calls with, a MultiSend batch included.
 		earlierExecTransactionCalls += countExecTransactionSelectors(execution.message.data)
@@ -188,16 +191,4 @@ export async function estimateSafeExecutionGas(
 	const estimate = await getGasEstimateFromSimulation(initialResult, blockGasLimit, simulateWithGasLimit)
 	if ('error' in estimate && (safeCallReverted || isSafeCallRevert(estimate.error))) return { error: { ...estimate.error, message: SAFE_CALL_REVERTED_MESSAGE } }
 	return estimate
-}
-
-// When the Safe's call fails, execTransaction reverts with GS013 and drops the call's own revert reason, so the bare code is explained instead.
-const SAFE_CALL_REVERTED_MESSAGE = 'The Gnosis Safe\'s call reverted (GS013). The Safe does not pass on the call\'s own revert reason.'
-
-// Nodes report the revert reason in the message, in the error's data, in the call's return data, or in several of them.
-const isSafeCallRevert = (error: ErrorWithCodeAndOptionalData, returnData?: Uint8Array) => error.message.endsWith('GS013')
-	|| [error.data, returnData === undefined ? undefined : dataStringWith0xStart(returnData)].some((data) => data !== undefined && decodeEthereumError([], { ...error, data }).reason === 'GS013')
-
-export function describeSafeExecutionFailure(transaction: Pick<PreSimulationTransaction, 'safeTransaction' | 'simulationOptions'>, failure: { readonly error: ErrorWithCodeAndOptionalData, readonly returnData: Uint8Array }, decodedErrorMessage: string) {
-	if (!isGnosisSafeExecution(transaction) || !isSafeCallRevert(failure.error, failure.returnData)) return decodedErrorMessage
-	return SAFE_CALL_REVERTED_MESSAGE
 }
