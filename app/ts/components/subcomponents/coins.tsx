@@ -9,7 +9,7 @@ import type { Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../types/add
 import type { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../utils/constants.js'
 import type { RpcNetwork } from '../../types/rpc.js'
-import { Blockie } from './SVGBlockie.js'
+import { AddressBookEntryIcon } from './AddressBookEntryIcon.js'
 import { AbbreviatedValue } from './AbbreviatedValue.js'
 import { InlineCard } from './InlineCard.js'
 import { getNativeTokenErc20 } from '../../background/metadataUtils.js'
@@ -153,10 +153,7 @@ export function TokenSymbol(param: TokenSymbolParams) {
 		'--text-size': param.fontSize === 'big' ? 'var(--big-font-size)' : 'var(--normal-font-size)'
 	}
 
-	const generateIcon = () => {
-		if (param.tokenEntry.logoUri === undefined) return <Blockie address = { param.tokenEntry.address } />
-		return <img style = { { minWidth: '1em', minHeight: '1em' } } width = '16' height = '16' src = { param.tokenEntry.logoUri } />
-	}
+	const generateIcon = () => <AddressBookEntryIcon addressBookEntry = { param.tokenEntry } />
 	if (param.tokenEntry.address === ETHEREUM_LOGS_LOGGER_ADDRESS) {
 		return <InlineCard icon = { generateIcon } label = { tokenName } style = { { ...defaultCardStyles, ...param.style } } noCopy = { true } noExpandButtons />
 	}

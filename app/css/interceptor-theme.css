@@ -430,6 +430,70 @@ svg[role="img"] {
 	border: 1px solid var(--layout-line-color);
 }
 
+/* Icon for the chooseAddressBookEntryIcon 'curatedTicker' kind (see components/subcomponents/addressBookEntryIconChoice.ts), in the same 1em box as the Blockie */
+.token-ticker-icon {
+	border-radius: 50%;
+	box-sizing: border-box;
+	color: var(--black-color);
+	display: inline-block;
+	font-weight: 700;
+	height: 1em;
+	line-height: 1em;
+	overflow: hidden;
+	text-align: center;
+	white-space: nowrap;
+	width: 1em;
+}
+
+/* A block pseudo element inherits the absolute 1em line height of the icon, which centers the smaller letters vertically */
+.token-ticker-icon::before {
+	content: attr(data-ticker-text);
+	display: block;
+	font-size: 0.44em;
+}
+
+.token-ticker-icon--single-character::before {
+	font-size: 0.625em;
+}
+
+/* Icon for the chooseAddressBookEntryIcon 'blockieWithTicker' kind (see components/subcomponents/addressBookEntryIconChoice.ts), the letters are drawn over the Blockie */
+.blockie-with-ticker {
+	display: inline-block;
+	height: 1em;
+	overflow: hidden;
+	position: relative;
+	width: 1em;
+}
+
+/* Absolute positioning keeps the Blockie inside the 1em box whatever display and vertical alignment the surrounding card gives to icons */
+.blockie-with-ticker > svg {
+	inset: 0;
+	position: absolute;
+}
+
+/* White letters on a dark pill stay readable over every Blockie color. For every ticker of up to two ASCII letters or digits the pill stays under 0.75em wide and 0.45em tall, so the outer pixel column on each side and the top and bottom two pixel rows of the 8 by 8 Blockie always stay visible */
+.blockie-with-ticker::after {
+	background-color: var(--black-alpha-d6);
+	border-radius: 0.25em;
+	color: var(--text-color);
+	content: attr(data-ticker-text);
+	font-size: 0.44em;
+	font-weight: 700;
+	left: 50%;
+	line-height: 1;
+	padding-inline: 0.05em;
+	position: absolute;
+	top: 50%;
+	transform: translate(-50%, -50%);
+	white-space: nowrap;
+}
+
+/* M and W are the widest letters, so tickers containing them get smaller and slightly tighter letters to keep the pill under 0.75em wide */
+.blockie-with-ticker:is([data-ticker-text*="M"], [data-ticker-text*="W"])::after {
+	font-size: 0.34em;
+	letter-spacing: -0.03em;
+}
+
 .address-editor-address-input {
 	field-sizing: content;
 	font-family: monospace;
