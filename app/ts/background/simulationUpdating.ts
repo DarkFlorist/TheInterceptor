@@ -194,11 +194,11 @@ export async function getMetadataForSimulation(
 	}
 }
 
-// The failure view shows the formed transaction when there is one, otherwise the website's request.
+// The failure view (FailedTransactionPreviewDetails) shows an eth_sendTransaction request's sender, recipient and calldata, of the formed transaction when there is one, otherwise of the request. It shows a raw transaction only as its signed bytes, so a raw transaction has nothing to name or parse.
 const getFailedTransactionFields = (transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed) => {
-	if (transactionToSimulate.success) return { call: transactionToSimulate.transaction, addressFields: transactionToSimulate.transaction }
 	const request = transactionToSimulate.originalRequestParameters
 	if (request.method !== 'eth_sendTransaction') return undefined
+	if (transactionToSimulate.success) return { call: transactionToSimulate.transaction, addressFields: transactionToSimulate.transaction }
 	const transaction = request.params[0]
 	return {
 		// Request validation (JsonRpc-types) rejects a transaction whose input and data both exist but differ, so this preview and the dialog's raw input view show the same calldata whichever field they read first.
@@ -210,10 +210,9 @@ const getFailedTransactionFields = (transactionToSimulate: WebsiteCreatedEthereu
 /** The failure view's counterpart of getMetadataForSimulation for a transaction without simulation results: parses its calldata and names its addresses with the address collection and lookups metadataUtils shares with simulated transactions. Like getMetadataForSimulation it lives here because it also parses calldata, and the parser already depends on metadataUtils. */
 export async function getFailedTransactionPreview(ethereum: EthereumClientService, requestAbortController: AbortController | undefined, transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed): Promise<FailedTransactionPreview> {
 	const fields = getFailedTransactionFields(transactionToSimulate)
-	const parsedInputData: EnrichedEthereumInputData = fields === undefined
-		? { type: 'NonParsed', input: new Uint8Array() }
-		: await parseInputData(fields.call, ethereum, requestAbortController)
-	const addressBookEntries = await getAddressBookEntriesForTransactionWithoutSimulation(ethereum, requestAbortController, fields?.addressFields, parsedInputData)
+	if (fields === undefined) return { addressBookEntries: [], parsedInputData: { type: 'NonParsed', input: new Uint8Array() } }
+	const parsedInputData = await parseInputData(fields.call, ethereum, requestAbortController)
+	const addressBookEntries = await getAddressBookEntriesForTransactionWithoutSimulation(ethereum, requestAbortController, fields.addressFields, parsedInputData)
 	return { addressBookEntries, parsedInputData }
 }
 

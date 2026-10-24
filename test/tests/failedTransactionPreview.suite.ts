@@ -317,6 +317,57 @@ test('neither names nor probes the EIP-7702 delegation target or the contract a 
 	assert.equal(storedAddresses.includes(unknownDelegationTarget) || storedAddresses.includes(wouldBeDeployedContract), false, 'no identification of an address the view does not show was kept in the address book')
 })
 
+test('neither names nor probes the EIP-7702 delegation target of a formed transaction, which the failure view does not show', async () => {
+	await useInvoiceAddressBook()
+	const { getFailedTransactionPreview } = await import('../../app/ts/background/simulationUpdating.js')
+	const transfer = await createFormedUsdcTransfer(100n)
+	const unknownDelegationTarget = 0x7777777777777777777777777777777777777777n
+	const probedAddresses: unknown[] = []
+	const recordingSimulator = createSimulatorWithRpcFailure((rpcRequest) => {
+		if (rpcRequest.method === 'eth_getCode') probedAddresses.push(rpcRequest.params?.[0])
+		return undefined
+	})
+	const delegatingTransfer = { ...transfer.transaction, type: '7702' as const, authorizationList: [{ address: unknownDelegationTarget, chainId: 1n, nonce: 0n }] }
+	const preview = await getFailedTransactionPreview(recordingSimulator.ethereum, undefined, { ...transfer, transaction: delegatingTransfer })
+	assert.equal(preview.addressBookEntries.some((entry) => entry.address === unknownDelegationTarget), false)
+	assert.equal(probedAddresses.includes(unknownDelegationTarget), false)
+	assert.equal((await modules.getUserAddressBookEntries()).some((entry) => entry.address === unknownDelegationTarget), false)
+})
+
+test('neither names, parses nor probes anything for a failed raw transaction, whose failure view shows only its signed bytes', async () => {
+	await useInvoiceAddressBook()
+	const { Transaction } = await import('micro-eth-signer')
+	const { SendRawTransactionParams } = await import('../../app/ts/types/JsonRpc-types.js')
+	const { formSendRawTransaction } = await import('../../app/ts/background/windows/confirmTransaction.js')
+	const { refreshConfirmTransactionSimulation } = await import('../../app/ts/background/confirmTransactionSimulation.js')
+	const unknownRecipient = 0x7777777777777777777777777777777777777777n
+	const signedTransfer = Transaction.prepare({
+		type: 'eip1559',
+		chainId: 1n,
+		nonce: 0n,
+		maxFeePerGas: 1n,
+		maxPriorityFeePerGas: 1n,
+		gasLimit: 60_000n,
+		to: addressString(USDC_ADDRESS),
+		value: 0n,
+		accessList: [],
+		data: encodeFunctionCall(Erc20ABI, 'transfer', [addressString(unknownRecipient), TRANSFERRED_USDC]),
+	}, false).signBy('0x0000000000000000000000000000000000000000000000000000000000000001').toHex()
+	const formedRawTransaction = await formSendRawTransaction(simulator.ethereum, SendRawTransactionParams.parse({ method: 'eth_sendRawTransaction', params: [signedTransfer] }), website, created, 99n)
+	const probedAddresses: unknown[] = []
+	const failingSimulator = createSimulatorWithRpcFailure((rpcRequest) => {
+		if (rpcRequest.method === 'eth_getCode') probedAddresses.push(rpcRequest.params?.[0])
+		return rpcRequest.method === 'eth_getBlockByNumber' ? createRpcError('block lookup unavailable') : undefined
+	})
+	const popupVisualisation = await refreshConfirmTransactionSimulation(failingSimulator.ethereum, failingSimulator.tokenPriceService, activeAddress, true, uniqueRequestIdentifier, formedRawTransaction)
+	if (popupVisualisation?.statusCode !== 'failed') throw new Error('Expected the raw transaction confirmation to fail')
+	assert.equal(popupVisualisation.data.error.message, 'block lookup unavailable')
+	assert.deepEqual(popupVisualisation.data.failedTransactionPreview?.addressBookEntries, [])
+	assert.equal(popupVisualisation.data.failedTransactionPreview?.parsedInputData.type, 'NonParsed')
+	assert.deepEqual(probedAddresses, [])
+	assert.equal((await modules.getUserAddressBookEntries()).some((entry) => entry.address === unknownRecipient), false)
+})
+
 test('keeps and shows the names of a newer metadata refresh when an older refresh of the same failed confirmation finishes last', async () => {
 	await useInvoiceAddressBook()
 	const confirmationSimulator = createFeeValidatingSimulator(TOO_LITTLE_ETH_FOR_FEES)
