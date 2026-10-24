@@ -428,4 +428,35 @@ describe('inpage MetaMask compatibility properties', () => {
 		}
 	})
 
+	for (const injectionPath of ['assigns its methods onto the wallet provider', 'wraps the wallet provider'] as const) {
+		test(`reports isMetaMask true over a wallet that reports false when MetaMask compatibility mode is enabled and the Interceptor ${ injectionPath }`, async () => {
+			const { fakeWindow, fakeSigner, signerRequests } = createFakeWindow()
+			fakeSigner.isMetaMask = false
+			const wrapsWalletProvider = injectionPath === 'wraps the wallet provider'
+			// A non-configurable selectedAddress that the Interceptor cannot take over makes it wrap the wallet provider instead of assigning its methods onto it.
+			if (wrapsWalletProvider) Object.defineProperty(fakeSigner, 'selectedAddress', { configurable: false, enumerable: true, writable: false, value: undefined })
+
+			await withFakeInpageWindow(fakeWindow, `compatibility-forces-metamask-marker-${ wrapsWalletProvider ? 'wrapper' : 'assigned' }`, async () => {
+				// The signer chain request starts after the connected_to_signer reply has enabled compatibility mode.
+				await waitFor(() => signerRequests.includes('eth_chainId'))
+				assert.equal(fakeWindow.ethereum === fakeSigner, !wrapsWalletProvider)
+				assert.equal(readProperty(fakeWindow.web3, 'currentProvider'), fakeWindow.ethereum)
+				assert.equal(readProperty(fakeWindow.ethereum, 'isInterceptor'), true)
+				assert.equal(readProperty(fakeWindow.ethereum, 'isMetaMask'), true)
+				// Only window.ethereum reports MetaMask; a wrapped wallet provider keeps its own marker.
+				if (wrapsWalletProvider) assert.equal(fakeSigner.isMetaMask, false)
+			})
+		})
+	}
+
+	test('adds the isMetaMask marker to a provider without one when MetaMask compatibility mode is enabled', async () => {
+		const { fakeWindow } = createFakeWindow()
+		Object.defineProperty(fakeWindow, 'ethereum', { configurable: true, writable: true, value: undefined })
+
+		await withFakeInpageWindow(fakeWindow, 'compatibility-adds-missing-metamask-marker', async () => {
+			await waitFor(() => fakeWindow.web3 !== undefined)
+			assert.equal(readProperty(fakeWindow.ethereum, 'isInterceptor'), true)
+			assert.equal(readProperty(fakeWindow.ethereum, 'isMetaMask'), true)
+		})
+	})
 })
