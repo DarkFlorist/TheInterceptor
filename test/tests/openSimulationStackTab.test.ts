@@ -1,6 +1,7 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { getSimulationStackTargetHash } from '../../app/ts/utils/simulationStackTargets.js'
+import { importAllPopupMessageHandlers } from './popupMessageHandlerModules.js'
 
 type TabRecord = {
 	readonly id: number
@@ -97,11 +98,11 @@ function installBrowserMock(tabs: readonly TabRecord[], openedTabs: OpenedTabIds
 }
 
 async function loadOpenNewTab() {
-	return (await import('../../app/ts/background/popupMessageHandlers.js')).openNewTab
+	return (await importAllPopupMessageHandlers()).openNewTab
 }
 
 async function loadGetLastKnownCurrentTabId() {
-	return (await import('../../app/ts/background/popupMessageHandlers.js')).getLastKnownCurrentTabId
+	return (await import('../../app/ts/background/currentTab.js')).getLastKnownCurrentTabId
 }
 
 const emptyOpenedTabs = (): OpenedTabIds => ({

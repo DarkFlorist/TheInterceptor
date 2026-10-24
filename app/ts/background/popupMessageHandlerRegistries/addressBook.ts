@@ -1,5 +1,6 @@
 import { popupSnapshotMessageHandler, popupMessageHandler, type PopupMessageHandlerMap } from '../popupMessageHandlerRegistry.js'
-import { addOrModifyAddressBookEntry, changeAddOrModifyAddressWindowState, getAddressBookData, openNewTab, removeAddressBookEntry, requestAbiAndNameFromBlockExplorer, requestIdentifyAddress, setEnsNameForHash } from '../popupMessageHandlers.js'
+import { addOrModifyAddressBookEntry, changeAddOrModifyAddressWindowState, getAddressBookData, removeAddressBookEntry, requestAbiAndNameFromBlockExplorer, requestIdentifyAddress, setEnsNameForHash } from '../popupMessageHandlers/addressBook.js'
+import { openNewTab } from '../popupMessageHandlers/navigation.js'
 
 export const addressBookPopupMessageHandlers = {
 	popup_addOrModifyAddressBookEntry: popupMessageHandler('popup_addOrModifyAddressBookEntry', async (context, request) => await addOrModifyAddressBookEntry(context.simulationServicesOwner, context.websiteTabConnections, request)),

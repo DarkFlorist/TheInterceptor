@@ -13,7 +13,7 @@ const UNOWNED_SAFE_ADDRESS = 0x4000000000000000000000000000000000000004n
 const UNKNOWN_OWNERS_SAFE_ADDRESS = 0x5000000000000000000000000000000000000005n
 const simulationAddressInput = (activeAddress: bigint | undefined) => ({ mode: 'simulation' as const, activeAddress })
 const signingAddressInput = (selectedAddress: SigningAddressSelection | undefined, signerAccounts: readonly bigint[], walletFallbackAddress: bigint | undefined) => ({ mode: 'signing' as const, selectedAddress, signerAccounts, walletFallbackAddress })
-const popupMessageHandlersSource = await Bun.file(new URL('../../app/ts/background/popupMessageHandlers.ts', import.meta.url)).text()
+const popupMessageHandlersSource = await Bun.file(new URL('../../app/ts/background/popupMessageHandlers/home.ts', import.meta.url)).text()
 const interceptorAccessSource = await Bun.file(new URL('../../app/ts/background/windows/interceptorAccess.ts', import.meta.url)).text()
 const providerMessageHandlersSource = await Bun.file(new URL('../../app/ts/background/providerMessageHandlers.ts', import.meta.url)).text()
 const activeSettingsSource = await Bun.file(new URL('../../app/ts/background/activeSettings.ts', import.meta.url)).text()

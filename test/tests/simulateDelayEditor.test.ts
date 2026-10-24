@@ -1,5 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
+import { importAllPopupMessageHandlers } from './popupMessageHandlerModules.js'
 
 type StorageState = Record<string, unknown>
 
@@ -60,9 +61,8 @@ Object.defineProperty(globalThis, 'chrome', { value: { runtime: { id: 'test-exte
 
 const { getCurrentSimulationInput } = await import('../../app/ts/background/simulationUpdating.js')
 const { getInterceptorTransactionStack, updateInterceptorTransactionStack } = await import('../../app/ts/background/storageVariables.js')
-const { setTransactionOrMessageBlockTimeManipulator } = await import('../../app/ts/background/popupMessageHandlers.js')
+const { setTransactionOrMessageBlockTimeManipulator } = await importAllPopupMessageHandlers()
 const { mockSignTransaction } = await import('../../app/ts/simulation/services/SimulationModeEthereumClientService.js')
-const { DEFAULT_BLOCK_MANIPULATION } = await import('../../app/ts/config/defaults.js')
 const { browserStorageLocalSet } = await import('../../app/ts/utils/storageUtils.js')
 
 const baseTransaction = {

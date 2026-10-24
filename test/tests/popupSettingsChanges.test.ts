@@ -3,6 +3,7 @@ import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { getWalletSwitchRequestId, confirmedSignerOwnership, createDeferredValue, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
 import type { RevisionedPopupSimulationRefresh } from '../../app/ts/background/popupSimulationRefreshQueue.js'
+import { importAllPopupMessageHandlers } from './popupMessageHandlerModules.js'
 
 describe('popup settings changes', () => {
 	for (const firstSucceeded of [true, false]) test(`keeps overlapping refresh outcomes independent (first=${ firstSucceeded })`, async () => {
@@ -169,7 +170,7 @@ describe('popup settings changes', () => {
 	test('skips work when reselecting the current mode or RPC', async () => {
 		const { runtimeMessages } = installBrowserMock()
 		const { changeSimulationMode, getSettings } = await loadModules()
-		const { enableSimulationMode } = await import('../../app/ts/background/popupMessageHandlers.js')
+		const { enableSimulationMode } = await importAllPopupMessageHandlers()
 		const { changeActiveRpc } = await import('../../app/ts/background/walletSwitch.js')
 		await changeSimulationMode({ simulationMode: true })
 		const { ethereum, tokenPriceService } = createEthereumWithGetBlockCounter({ count: 0 })
@@ -184,7 +185,7 @@ describe('popup settings changes', () => {
 		installBrowserMock()
 		const { changeSimulationMode, getSettings, saveCurrentTabId, websiteSocketToString } = await loadModules()
 		const { changeActiveRpc } = await import('../../app/ts/background/walletSwitch.js')
-		const { popupChangeActiveRpc } = await import('../../app/ts/background/popupMessageHandlers.js')
+		const { popupChangeActiveRpc } = await importAllPopupMessageHandlers()
 		await saveCurrentTabId(1)
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port, messages } = createPort(1)
@@ -326,7 +327,7 @@ describe('popup settings changes', () => {
 		test(`preserves RPC preferences until a popup wallet switch is accepted (${ outcome })`, async () => {
 			installBrowserMock()
 			const { changeSimulationMode, getSettings, websiteSocketToString, updateTabState, updateUserAddressBookEntries, saveCurrentTabId } = await loadModules()
-			const { popupChangeActiveRpc } = await import('../../app/ts/background/popupMessageHandlers.js')
+			const { popupChangeActiveRpc } = await importAllPopupMessageHandlers()
 			const { walletSwitchEthereumChainReply, signerChainChanged } = await import('../../app/ts/background/providerMessageHandlers.js')
 			const { setRpcList, getRpcList, getPrimaryRpcForChain } = await import('../../app/ts/background/storageVariables.js')
 			const currentRpc = (await getSettings()).activeRpcNetwork
