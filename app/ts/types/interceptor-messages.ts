@@ -5,7 +5,7 @@ import { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackReque
 import { EthereumAddress, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, NonHexBigInt, OptionalEthereumAddress } from './wire-types.js'
 import { ModifyAddressWindowState, CompleteVisualizedSimulation, BlockTimeManipulation, BlockTimeManipulationWithNoDelay, InterceptorSimulationExport } from './visualizer-types.js'
 import { UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
-import { EthGetFeeHistoryResponse, EthGetLogsResponse, EthGetStorageAtParams, EthGetStorageAtResponse, EthTransactionReceiptResponse, GetBlockReturn, SendRawTransactionParams, SendTransactionParams, SimulationStackVersion, WalletAddEthereumChain } from './JsonRpc-types.js'
+import { EthGetFeeHistoryResponse, EthGetLogsResponse, EthGetStorageAtParams, EthGetStorageAtResponse, EthTransactionReceiptResponse, GetBlockReturn, SendRawTransactionParams, SendTransactionParams, SimulationStackV1Version, SimulationStackV2Version, SimulationStackVersion, WalletAddEthereumChain } from './JsonRpc-types.js'
 import { AddressBookEntries, AddressBookEntry, ChainIdWithUniversal } from './addressBookTypes.js'
 import { Page } from './exportedSettingsTypes.js'
 import { Website, WebsiteAccess, WebsiteAccessArray } from './websiteAccessTypes.js'
@@ -97,8 +97,8 @@ export const InpageScriptCallBack = funtypes.Union(
 
 export type GetSimulationStackReply = funtypes.Static<typeof GetSimulationStackReply>
 export const GetSimulationStackReply = funtypes.Union(
-	funtypes.ReadonlyObject({ version: funtypes.Union(funtypes.Literal('1.0.0'), funtypes.Literal('1.0.1')), payload: GetSimulationStackReplyV1 }),
-	funtypes.ReadonlyObject({ version: funtypes.Union(funtypes.Literal('2.0.0'), funtypes.Literal('2.0.1')), payload: GetSimulationStackReplyV2 })
+	funtypes.ReadonlyObject({ version: SimulationStackV1Version, payload: GetSimulationStackReplyV1 }),
+	funtypes.ReadonlyObject({ version: SimulationStackV2Version, payload: GetSimulationStackReplyV2 })
 )
 
 type NonForwardingRPCRequestSuccessfullReturnValue = funtypes.Static<typeof NonForwardingRPCRequestSuccessfullReturnValue>
