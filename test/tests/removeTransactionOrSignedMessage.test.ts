@@ -1,5 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
+import { importAllPopupMessageHandlers } from './popupMessageHandlerModules.js'
 
 type RuntimeMessage = {
 	method?: string
@@ -81,7 +82,7 @@ async function loadModules() {
 		simulationModeEthereumClientService,
 		storageVariables,
 	] = await Promise.all([
-		import('../../app/ts/background/popupMessageHandlers.js'),
+		importAllPopupMessageHandlers(),
 		import('../../app/ts/simulation/services/SimulationModeEthereumClientService.js'),
 		import('../../app/ts/background/storageVariables.js'),
 	])
