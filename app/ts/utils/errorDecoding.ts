@@ -7,6 +7,19 @@ const ERROR_STRING_PREFIX = '0x08c379a0' // Error(string)
 const PANIC_CODE_PREFIX = '0x4e487b71' // Panic(uint256)
 const isHexData = (value: string): value is `0x${ string }` => value.startsWith('0x')
 
+type ErrorDataKind = 'missing' | 'empty' | 'errorString' | 'panic' | 'custom'
+// decodeEthereumError dispatches on this classification and needsAbiToDecodeError reads it, so the ABI lookup gate cannot drift from the decoder.
+const getErrorDataKind = (errorData: string | undefined): ErrorDataKind => {
+	if (errorData === undefined) return 'missing'
+	if (errorData === '0x') return 'empty'
+	if (errorData.startsWith(ERROR_STRING_PREFIX)) return 'errorString'
+	if (errorData.startsWith(PANIC_CODE_PREFIX)) return 'panic'
+	return 'custom'
+}
+
+// Only custom error selectors need the reverting contract's ABI to decode, so callers can skip looking it up for anything else.
+export const needsAbiToDecodeError = (errorData: string | undefined): boolean => errorData !== undefined && getErrorDataKind(errorData) === 'custom' && isHexData(errorData)
+
 const ErrorStringABI = [
 	{
 		type: 'error',
@@ -23,7 +36,7 @@ const PanicABI = [
 	},
 ] as const satisfies Abi
 
-enum ErrorType {
+export enum ErrorType {
 	EmptyError = 'EmptyError',
 	RevertError = 'RevertError',
 	PanicError = 'PanicError',
@@ -173,11 +186,13 @@ const handleCustomError = (errorAbis: readonly AbiLike[], error: ErrorWithCodeAn
 
 export const decodeEthereumError = (errorAbis: readonly AbiLike[], error: ErrorWithCodeAndOptionalData): DecodedError => {
 	try {
-		if (error.data === '0x') return handleEmptyError(error)
-		if (error.data?.startsWith(ERROR_STRING_PREFIX)) return handleRevertError(error)
-		if (error.data?.startsWith(PANIC_CODE_PREFIX)) return handlePanicError(error)
-		if (error.data !== undefined) return handleCustomError(errorAbis, error)
-		return unknownErrorResult({ data: error.data, reason: error.message, name: 'unknown' })
+		switch (getErrorDataKind(error.data)) {
+			case 'empty': return handleEmptyError(error)
+			case 'errorString': return handleRevertError(error)
+			case 'panic': return handlePanicError(error)
+			case 'custom': return handleCustomError(errorAbis, error)
+			case 'missing': return unknownErrorResult({ data: error.data, reason: error.message, name: 'unknown' })
+		}
 	} catch (decodingError: unknown) {
 		reportLocalRecoveryBestEffort(decodingError, { code: 'ethereum_error_decode_failed', message: 'Returning an unknown decoded error result.' })
 		return unknownErrorResult({ data: error.data, reason: `Failed to decode error: ${ error.message }`, name: 'unknown' })
