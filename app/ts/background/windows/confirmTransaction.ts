@@ -138,6 +138,7 @@ type TimestampedPopupVisualisation = {
 
 const getSimulationStartedTimestamp = (popupVisualisation: TimestampedPopupVisualisation) => popupVisualisation.data.simulationStartedTimestamp
 
+// Keeps a simulation that started later than the new confirmation's; see "Confirmation dialog staleness" in docs/popup-simulation-refresh.md for the other guards.
 const shouldReplacePopupVisualisation = (
 	currentPopupVisualisation: TimestampedPopupVisualisation | undefined,
 	nextPopupVisualisation: TimestampedPopupVisualisation,

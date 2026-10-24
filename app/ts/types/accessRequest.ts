@@ -9,6 +9,7 @@ import { VisualizedPersonalSignRequest } from './personal-message-definitions.js
 import { OriginalSendRequestParameters, SendTransactionParams } from './JsonRpc-types.js'
 import { SignMessageParams } from './jsonRpc-signing-types.js'
 import { DecodedError } from './error.js'
+import { EnrichedEthereumInputData } from './EnrichedEthereumData.js'
 import { SafeContractStateSnapshot, SafeMessageCoSignSnapshot, SafeSignerErrorDetails, SafeTransactionSigningRequest } from './safeTypes.js'
 
 export type PendingAccessRequest = funtypes.Static<typeof PendingAccessRequest>
@@ -30,6 +31,18 @@ export const PendingAccessRequest = funtypes.ReadonlyObject({
 export type PendingAccessRequests = funtypes.Static<typeof PendingAccessRequests>
 export const PendingAccessRequests = funtypes.ReadonlyArray(PendingAccessRequest)
 
+export type FailedTransactionPreview = funtypes.Static<typeof FailedTransactionPreview>
+const FailedTransactionPreview = funtypes.ReadonlyObject({
+	addressBookEntries: funtypes.ReadonlyArray(AddressBookEntry),
+	parsedInputData: EnrichedEthereumInputData,
+})
+
+// Confirmations stored by versions without run ids parse as run 0, which is older than any run because getNextConfirmationRunId hands out ids from 1 upwards: a metadata refresh still refreshes such a confirmation, and its result never replaces a newer run.
+const ConfirmationRunId = funtypes.Union(funtypes.Number, funtypes.Undefined).withParser({
+	parse: (confirmationRunId) => ({ success: true, value: confirmationRunId ?? 0 }),
+	serialize: (confirmationRunId) => ({ success: true, value: confirmationRunId }),
+})
+
 type ConfirmTransactionSimulationBaseData = funtypes.Static<typeof ConfirmTransactionSimulationBaseData>
 const ConfirmTransactionSimulationBaseData = funtypes.ReadonlyObject({
 	activeAddress: EthereumAddress,
@@ -38,7 +51,12 @@ const ConfirmTransactionSimulationBaseData = funtypes.ReadonlyObject({
 	uniqueRequestIdentifier: UniqueRequestIdentifier,
 	transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed,
 	signerName: SignerName,
-})
+	// Names one confirmation simulation run of this pending transaction.
+	confirmationRunId: ConfirmationRunId,
+}).And(funtypes.ReadonlyPartial({
+	// Present when the transaction has no simulation results, so the failure view can still show its address-book names and parsed input.
+	failedTransactionPreview: FailedTransactionPreview,
+}))
 
 type ConfirmTransactionDialogState = funtypes.Static<typeof ConfirmTransactionDialogState>
 const ConfirmTransactionDialogState = funtypes.Intersect(

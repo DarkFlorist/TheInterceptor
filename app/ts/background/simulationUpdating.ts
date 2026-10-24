@@ -3,7 +3,7 @@ import type { RpcNetwork } from '../types/rpc.js'
 import { isSignerOnlyNetwork } from '../utils/rpcNetworkChange.js'
 import { prepareSafeDelegateSimulationInput, prepareSafeDelegateStateOverrides, ORIGINAL_GNOSIS_SAFE, SAFE_DELEGATE_EXECUTE_ABI } from '../safe/safeSimulation.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { appendTransactionToInputAndSimulate, createExecutionSimulationState, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustmentBalances, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfterForTransaction, getWebsiteCreatedEthereumTransactions, simulateEstimateGasFromInput, sliceSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { appendTransactionToInputAndSimulate, createExecutionSimulationState, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustmentBalances, getInputFieldFromDataOrInput, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfterForTransaction, getWebsiteCreatedEthereumTransactions, simulateEstimateGasFromInput, sliceSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { calculateRealizedEffectiveGasPrice } from '../simulation/services/simulationBlockParameters.js'
 import { mockSignTransaction } from '../simulation/services/simulationTransactionSigning.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../config/defaults.js'
@@ -11,14 +11,14 @@ import type { TokenPriceService } from '../simulation/services/priceEstimator.js
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
 import { runProtectorsForTransaction } from '../simulation/protectorRunner.js'
 import type { EnrichedEthereumEvents, EnrichedEthereumInputData } from '../types/EnrichedEthereumData.js'
-import type { PendingTransaction } from '../types/accessRequest.js'
+import type { FailedTransactionPreview, PendingTransaction } from '../types/accessRequest.js'
 import type { AddressBookEntry, Erc20TokenEntry } from '../types/addressBookTypes.js'
 import type { SimulateExecutionReplyData } from '../types/interceptor-messages.js'
-import { PASSTHROUGH_STATE, type BlockTimeManipulation, type ExecutionSimulationState, type NonSimulatedAndVisualizedTransaction, type PreSimulationTransaction, type SignedMessageTransaction, type SimulationState, type SimulationStateInput, type SimulationStateInputBlock, type VisualizedSimulatorState, toResolvedSimulationInput, toResolvedSimulationState } from '../types/visualizer-types.js'
+import { PASSTHROUGH_STATE, type BlockTimeManipulation, type ExecutionSimulationState, type NonSimulatedAndVisualizedTransaction, type PreSimulationTransaction, type SignedMessageTransaction, type SimulationState, type SimulationStateInput, type SimulationStateInputBlock, type VisualizedSimulatorState, type WebsiteCreatedEthereumTransactionOrFailed, toResolvedSimulationInput, toResolvedSimulationState } from '../types/visualizer-types.js'
 import { get4Byte, get4ByteString } from '../utils/calldata.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS, FourByteExplanations, MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
 import { type DistributiveOmit, assertNever, modifyObject } from '../utils/typescript.js'
-import { getAddressBookEntriesForVisualiserFromTransactions, identifyAddress, nameTokenIds, retrieveEnsNodeAndLabelHashes } from './metadataUtils.js'
+import { getAddressBookEntriesForTransactionWithoutSimulation, getAddressBookEntriesForVisualiserFromTransactions, identifyAddress, nameTokenIds, retrieveEnsNodeAndLabelHashes } from './metadataUtils.js'
 import { getFixedAddressRichList, getPreSimulationBlockTimeManipulation, getSettings, getWethForChainId } from './settings.js'
 import { addressString, dataStringWith0xStart, dateToBigintSeconds, stringToUint8Array } from '../utils/bigint.js'
 import { simulateCompoundGovernanceExecution } from '../simulation/compoundGovernanceFaking.js'
@@ -191,6 +191,54 @@ export async function getMetadataForSimulation(
 		namedTokenIds,
 		addressBookEntries: addressBookEntries,
 		ens: await ensPromise
+	}
+}
+
+// The failure view (FailedTransactionPreviewDetails) shows the sender, recipient and calldata of the website's eth_sendTransaction request, whether or not it was formed into a transaction. Forming can fill in a different sender, the active address, which the view doesn't show. The view shows a raw transaction only as its signed bytes, so a raw transaction has nothing to name or parse.
+const getFailedTransactionFields = (transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed) => {
+	const request = transactionToSimulate.originalRequestParameters
+	if (request.method !== 'eth_sendTransaction') return undefined
+	const transaction = request.params[0]
+	return {
+		// Request validation (JsonRpc-types) rejects a transaction whose input and data both exist but differ, so this preview and the dialog's raw input view show the same calldata whichever field they read first.
+		call: { to: transaction.to, value: transaction.value ?? 0n, input: getInputFieldFromDataOrInput(transaction) },
+		addressFields: transaction,
+	}
+}
+
+/** The failure view's counterpart of getMetadataForSimulation for a transaction without simulation results: parses its calldata and names its addresses with the address collection and lookups metadataUtils shares with simulated transactions. Like getMetadataForSimulation it lives here because it also parses calldata, and the parser already depends on metadataUtils. */
+export async function getFailedTransactionPreview(ethereum: EthereumClientService, requestAbortController: AbortController | undefined, transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed): Promise<FailedTransactionPreview> {
+	const fields = getFailedTransactionFields(transactionToSimulate)
+	if (fields === undefined) return { addressBookEntries: [], parsedInputData: { type: 'NonParsed', input: new Uint8Array() } }
+	const parsedInputData = await parseInputData(fields.call, ethereum, requestAbortController)
+	const addressBookEntries = await getAddressBookEntriesForTransactionWithoutSimulation(ethereum, requestAbortController, fields.addressFields, parsedInputData)
+	return { addressBookEntries, parsedInputData }
+}
+
+// Missing names or ABIs must not hide why the transaction failed, so an RPC failure or a newer refresh interrupting the lookup leaves the failure as it is. Any other error is a defect and propagates to withFailedTransactionPreviewUnlessCancelled.
+async function tryGetFailedTransactionPreview(ethereum: EthereumClientService, requestAbortController: AbortController | undefined, transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed): Promise<FailedTransactionPreview | undefined> {
+	try {
+		return await getFailedTransactionPreview(ethereum, requestAbortController, transactionToSimulate)
+	} catch (error: unknown) {
+		if (isExpectedInfrastructureError(error)) return undefined
+		throw error
+	}
+}
+
+/**
+ * Attaches a freshly resolved failure preview to a confirmation that shows a transaction failure. Both the confirmation simulation and the confirmation metadata refresh attach previews only through this, so they share one error policy.
+ * Undefined when a newer refresh aborted this one, so the caller drops this outdated failure like any cancelled refresh instead of letting it replace the newer refresh's stored result. The signal is checked rather than the lookup error because the lookup can also finish from cached metadata without noticing the abort.
+ * An address-book change does not abort a running simulation, so a simulation that resolved names before the change can still store them after the change's metadata refresh. Successful simulations store their names the same way. Catching a stored run up with address-book changes made while it ran is a concern of every confirmation run, not of this preview.
+ */
+export async function withFailedTransactionPreviewUnlessCancelled<Failure extends { readonly data: object }>(ethereum: EthereumClientService, requestAbortController: AbortController | undefined, transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed, failure: Failure): Promise<Failure | undefined> {
+	try {
+		const failedTransactionPreview = await tryGetFailedTransactionPreview(ethereum, requestAbortController, transactionToSimulate)
+		if (requestAbortController?.signal.aborted) return undefined
+		return failedTransactionPreview === undefined ? failure : { ...failure, data: { ...failure.data, failedTransactionPreview } }
+	} catch (error: unknown) {
+		// Callers store the failure returned here, and the dialog opener turns any thrown error into a rejection of the website's request, so a defective preview is reported at this boundary, as refreshConfirmTransactionSimulation reports unexpected simulation errors, and the transaction's own failure is kept.
+		await reportUnexpectedError(error, { code: 'failed_transaction_preview_failed' })
+		return requestAbortController?.signal.aborted ? undefined : failure
 	}
 }
 
