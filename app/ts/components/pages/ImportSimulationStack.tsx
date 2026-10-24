@@ -1,6 +1,6 @@
-import { useEffect } from 'preact/hooks'
+import { useEffect, useRef } from 'preact/hooks'
 import { Notice } from '../subcomponents/Error.js'
-import { type ComponentChildren, createRef } from 'preact'
+import type { ComponentChildren } from 'preact'
 import { XMarkIcon } from '../subcomponents/icons.js'
 import { type Signal, useComputed } from '@preact/signals'
 import { isJSON } from '../../utils/json.js'
@@ -16,7 +16,7 @@ type SimulationInputParams = {
 }
 
 function SimulationInput({ input, disabled, isValid }: SimulationInputParams) {
-	const ref = createRef<HTMLTextAreaElement>()
+	const ref = useRef<HTMLTextAreaElement>(null)
 	useEffect(() => { ref.current?.focus() }, [])
 	return <textarea
 		class = { `simulation-stack-import-input${ isValid.value ? '' : ' simulation-stack-import-input-invalid' }` }

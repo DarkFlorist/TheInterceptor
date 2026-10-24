@@ -6,16 +6,16 @@ interface PasteProps {
 }
 
 // catches paste events if enabled === true and callbacks OnPaste
-export function PasteCatcher(props: PasteProps) {
-	function catcher(event: Event) {
-		if (props.enabled === false) return
-		if (!(event instanceof ClipboardEvent)) return
-		if (event.clipboardData === null) return
-		props.onPaste(event.clipboardData.getData('text'))
-	}
+export function PasteCatcher({ enabled, onPaste }: PasteProps) {
 	useEffect(() => {
+		function catcher(event: Event) {
+			if (enabled === false) return
+			if (!(event instanceof ClipboardEvent)) return
+			if (event.clipboardData === null) return
+			onPaste(event.clipboardData.getData('text'))
+		}
 		window.addEventListener('paste', catcher)
 		return () => { window.removeEventListener('paste', catcher) }
-	}, [props.enabled, props.onPaste])
+	}, [enabled, onPaste])
 	return <></>
 }
