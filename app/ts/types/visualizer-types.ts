@@ -182,6 +182,8 @@ export const SignedMessageTransaction = funtypes.ReadonlyObject({
 	safeMessageReview: SafeMessageReview,
 	// Older persisted stacks predate the distinction between the active Safe and its simulation signer.
 	activeAddress: EthereumAddress,
+	// Full origin (`scheme://host[:port]`) of the requesting frame at request time, derived by getFrameOrigins together with `website.websiteOrigin`; it is not on `Website` because `websiteOrigin` is the scheme-less key that website access settings are persisted under. It is missing from records stored before it was recorded, from imported simulation stacks (importSimulationStack drops it because the extension never saw that frame) and when the frame had already disconnected, and getSiweQuarantineReasons then flags a sign-in message instead of comparing hosts alone.
+	requestOrigin: funtypes.String,
 }))
 
 export type SimulationStateInputBlock = funtypes.Static<typeof SimulationStateInputBlock>

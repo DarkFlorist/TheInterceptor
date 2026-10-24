@@ -1,5 +1,5 @@
 import { bigintSecondsToDate } from '../../utils/bigint.js'
-import { EthereumData } from '../../types/wire-types.js'
+import { decodePersonalSignMessage } from '../../utils/personalSignMessage.js'
 import type { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { MOCK_PRIVATE_KEYS_ADDRESS, getChainName } from '../../utils/constants.js'
 import type { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
@@ -7,7 +7,7 @@ import { assertNever } from '../../utils/typescript.js'
 import { SimpleTokenApprovalVisualisation } from '../simulationExplaining/customExplainers/SimpleTokenApprovalVisualisation.js'
 import { SmallAddress, WebsiteOriginText } from '../subcomponents/address.js'
 import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
-import type { VisualizedPersonalSignRequest, VisualizedPersonalSignRequestPermit, VisualizedPersonalSignRequestPermit2, VisualizedPersonalSignRequestSafeTx } from '../../types/personal-message-definitions.js'
+import type { SiweMessage, VisualizedPersonalSignRequest, VisualizedPersonalSignRequestPermit, VisualizedPersonalSignRequestPermit2, VisualizedPersonalSignRequestSafeTx } from '../../types/personal-message-definitions.js'
 import { OrderComponents, OrderComponentsExtraDetails } from '../simulationExplaining/customExplainers/OpenSeaOrder.js'
 import { humanReadableDateFromSeconds, CellElement } from '../ui-utils.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
@@ -23,9 +23,12 @@ import { TransactionInput } from '../subcomponents/ParsedInputData.js'
 import { SafeTxSigningDetails } from '../subcomponents/SafeTxSigningDetails.js'
 import { CollapsibleCard } from '../subcomponents/CollapsibleCard.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
-import type { ReadonlySignal } from '@preact/signals'
+import { type ReadonlySignal, useSignal } from '@preact/signals'
+import { useEffect } from 'preact/hooks'
 import type { PopupPendingTransactionOrSignableMessage as PendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
 import { identifySignature } from '../simulationExplaining/identifySignature.js'
+import { SignInWithEthereumVisualizer } from '../simulationExplaining/customExplainers/SignInWithEthereumVisualizer.js'
+import { getSiweValidityWarnings } from '../../utils/siwe.js'
 
 type SignatureCardParams = {
 	visualizedPersonalSignRequest: VisualizedPersonalSignRequest
@@ -92,13 +95,6 @@ type SignRequestParams = {
 	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
 }
 
-export const decodeMessage = (message: string) => {
-	if (!message.startsWith('0x')) return message
-	const parsedMessage = EthereumData.safeParse(message)
-	if (parsedMessage.success) return new TextDecoder().decode(parsedMessage.value)
-	return message
-}
-
 function isNinetyFivePercentNumbersOrASCII(input: string): boolean {
 	const asciiCount = input.split('').filter(char => char.charCodeAt(0) <= 127).length
 	const numberCount = input.split('').filter(char => !isNaN(Number(char))).length
@@ -109,7 +105,7 @@ function isNinetyFivePercentNumbersOrASCII(input: string): boolean {
 function SignRequest({ visualizedPersonalSignRequest, renameAddressCallBack, editEnsNamedHashCallBack }: SignRequestParams) {
 	switch (visualizedPersonalSignRequest.type) {
 		case 'NotParsed': {
-			const decoded = decodeMessage(visualizedPersonalSignRequest.message)
+			const decoded = decodePersonalSignMessage(visualizedPersonalSignRequest.message)
 			const isDecodedAsciiOrNumbers = isNinetyFivePercentNumbersOrASCII(decoded)
 			return <Viewer id = 'personal_sign'>
 				<Viewer.List>
@@ -127,6 +123,7 @@ function SignRequest({ visualizedPersonalSignRequest, renameAddressCallBack, edi
 				<Viewer.Triggers />
 			</Viewer>
 		}
+		case 'SignInWithEthereum': return <SignInWithEthereumVisualizer signInRequest = { visualizedPersonalSignRequest } renameAddressCallBack = { renameAddressCallBack }/>
 		case 'SafeTx': return <GnosisSafeVisualizer
 			gnosisSafeMessage = { visualizedPersonalSignRequest }
 			activeAddress = { visualizedPersonalSignRequest.activeAddress.address }
@@ -313,9 +310,10 @@ function ExtraDetailsInner({ visualizedPersonalSignRequest, renameAddressCallBac
 	switch(visualizedPersonalSignRequest.type) {
 		case 'EIP712':
 		case 'SafeMessage':
+		case 'SignInWithEthereum':
 		case 'NotParsed': return <>
 			<span class = 'log-table' style = 'justify-content: center; column-gap: 5px; grid-template-columns: auto auto'>
-				{ visualizedPersonalSignRequest.type === 'NotParsed' ? <></> : <>
+				{ visualizedPersonalSignRequest.type === 'NotParsed' || visualizedPersonalSignRequest.type === 'SignInWithEthereum' ? <></> : <>
 					<CellElement text = 'Domain Hash: '/>
 					<CellElement text = { visualizedPersonalSignRequest.domainHash }/>
 				</> }
@@ -349,7 +347,7 @@ function RawMessage({ visualizedPersonalSignRequest }: ExtraDetailsCardParams) {
 		<ViewSelector id = 'raw_message'>
 			<ViewSelector.List>
 				<ViewSelector.View title = 'View Parsed' value = 'parsed'>
-					<pre> { decodeMessage(visualizedPersonalSignRequest.stringifiedMessage) }</pre>
+					<pre> { decodePersonalSignMessage(visualizedPersonalSignRequest.stringifiedMessage) }</pre>
 				</ViewSelector.View>
 				<ViewSelector.View title = 'View Raw' value = 'raw'>
 					<pre>{ visualizedPersonalSignRequest.rawMessage }</pre>
@@ -377,6 +375,17 @@ function Signer({ signer, renameAddressCallBack }: { signer: AddressBookEntry, r
 
 const HALF_HEADER_HEIGHT = 48 / 2
 
+// A sign-in message can expire or become valid while its confirmation is open, and a pending request is not re-crafted as time passes, so its validity window is checked against the clock every second here instead of being stored in `quarantineReasons`. Approving a signature never depends on its warnings or its `quarantine` flag (see shouldDisableSignableMessageConfirm), so keeping the shown warning current is all that an approval-time recheck could add.
+function SiweValidityWarnings({ message }: { message: SiweMessage }) {
+	const now = useSignal(Date.now())
+	useEffect(() => {
+		now.value = Date.now()
+		const id = setInterval(() => { now.value = Date.now() }, 1000)
+		return () => clearInterval(id)
+	}, [])
+	return <QuarantineReasons quarantineReasons = { getSiweValidityWarnings(message, new Date(now.value)) }/>
+}
+
 export function SignatureCard(params: SignatureCardParams) {
 	const headerActionLabel = params.collapsed === undefined ? undefined : params.collapsed ? 'Expand signature details' : 'Collapse signature details'
 	return <div class = 'card' style = { `top: ${ params.numberOfUnderTransactions * -HALF_HEADER_HEIGHT }px` }>
@@ -386,6 +395,7 @@ export function SignatureCard(params: SignatureCardParams) {
 				<SignRequest { ...params }/>
 			</div>
 			<QuarantineReasons quarantineReasons = { params.visualizedPersonalSignRequest.quarantineReasons }/>
+			{ params.visualizedPersonalSignRequest.type === 'SignInWithEthereum' ? <SiweValidityWarnings message = { params.visualizedPersonalSignRequest.message }/> : <></> }
 			<ExtraDetails { ...params }/>
 			{ params.visualizedPersonalSignRequest.type === 'NotParsed' ? <></> : <RawMessage { ...params }/> }
 
