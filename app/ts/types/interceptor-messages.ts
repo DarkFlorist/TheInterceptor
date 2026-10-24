@@ -98,7 +98,7 @@ export const InpageScriptCallBack = funtypes.Union(
 export type GetSimulationStackReply = funtypes.Static<typeof GetSimulationStackReply>
 export const GetSimulationStackReply = funtypes.Union(
 	funtypes.ReadonlyObject({ version: funtypes.Union(funtypes.Literal('1.0.0'), funtypes.Literal('1.0.1')), payload: GetSimulationStackReplyV1 }),
-	funtypes.ReadonlyObject({ version: funtypes.Literal('2.0.0'), payload: GetSimulationStackReplyV2 })
+	funtypes.ReadonlyObject({ version: funtypes.Union(funtypes.Literal('2.0.0'), funtypes.Literal('2.0.1')), payload: GetSimulationStackReplyV2 })
 )
 
 type NonForwardingRPCRequestSuccessfullReturnValue = funtypes.Static<typeof NonForwardingRPCRequestSuccessfullReturnValue>

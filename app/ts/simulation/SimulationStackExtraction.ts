@@ -12,13 +12,13 @@ const mergeSimulationOverrides = (stateOverridesArray: StateOverrides[]): StateO
 
 const subtractBaseFeeWithoutUnderflow = (balance: bigint, baseFee: bigint) => balance > baseFee ? balance - baseFee : 0n
 
-const getETHBalanceChanges = (transaction: SimulatedTransaction) => {
+const getETHBalanceChanges = (baseFeePerGas: bigint, transaction: SimulatedTransaction, version: '2.0.0' | '2.0.1') => {
 	if (transaction.ethSimulateV1CallResult.status === 'failure') return []
 	const ethLogs = transaction.ethSimulateV1CallResult.logs.filter((log) => log.address === ETHEREUM_LOGS_LOGGER_ADDRESS)
 	const ethBalanceAfter = transaction.tokenBalancesAfter.filter((x) => x.token === ETHEREUM_LOGS_LOGGER_ADDRESS)
 	return ethBalanceAfter.map((balanceAfter) => {
-		// The account's simulated balance after the transaction; its balance before adds back what the transaction moved out of it and the gas it paid.
-		const balanceAfterBalance = balanceAfter.balance
+		// Version 2.0.0 reported the gas the transaction used at the base fee as the account's balance after it. Keep that legacy output, while 2.0.1 reports the account's simulated balance. The balance before adds back what the transaction moved out of the account and the gas it paid.
+		const balanceAfterBalance = version === '2.0.0' ? baseFeePerGas * transaction.ethSimulateV1CallResult.gasUsed : balanceAfter.balance
 		const gasFees = balanceAfter.owner === transaction.preSimulationTransaction.signedTransaction.from
 			? getGasFeePaidByTransactionSender({
 				gasSpent: transaction.ethSimulateV1CallResult.gasUsed,
@@ -40,12 +40,12 @@ const getETHBalanceChanges = (transaction: SimulatedTransaction) => {
 	})
 }
 
-export const getSimulatedStackV2 = (simulationState: ResolvedSimulationState): GetSimulationStackReplyV2 => {
+export const getSimulatedStackV2 = (simulationState: ResolvedSimulationState, version: '2.0.0' | '2.0.1'): GetSimulationStackReplyV2 => {
 	if (simulationState.kind === 'passthrough') return { stateOverrides: {}, transactions: [] }
 	if (simulationState.value.success === false) return { stateOverrides: {}, transactions: [] }
 	return {
 		stateOverrides: mergeSimulationOverrides(simulationState.value.simulatedBlocks.map((simulatedBlock) => simulatedBlock.stateOverrides)),
-		transactions: simulationState.value.simulatedBlocks.flatMap((simulatedBlock) => simulatedBlock.simulatedTransactions).map((simulatedTransaction) => ({ ethBalanceChanges: getETHBalanceChanges(simulatedTransaction), simulatedTransaction }))
+		transactions: simulationState.value.simulatedBlocks.flatMap((simulatedBlock) => simulatedBlock.simulatedTransactions).map((simulatedTransaction) => ({ ethBalanceChanges: getETHBalanceChanges(simulationState.value.baseFeePerGas, simulatedTransaction, version), simulatedTransaction }))
 	}
 }
 

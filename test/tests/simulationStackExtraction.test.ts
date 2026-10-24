@@ -79,10 +79,17 @@ const simulationStateWithSenderBalance: ResolvedSimulationState = {
 }
 
 describe('simulation stack extraction', () => {
-	test('version 2.0.0 reports an account\'s simulated balance after the transaction, and before it with the gas it paid added back', () => {
-		const [transaction] = getSimulatedStackV2(simulationStateWithSenderBalance).transactions
+	test('version 2.0.1 reports an account\'s simulated balance after the transaction, and before it with the gas it paid added back', () => {
+		const [transaction] = getSimulatedStackV2(simulationStateWithSenderBalance, '2.0.1').transactions
 		// The fixture's sender pays 21000 gas at a realized gas price of 2 attoeth per gas and moves no ether.
 		assert.deepEqual(transaction?.ethBalanceChanges, [{ address: SENDER, before: SENDER_BALANCE_AFTER + 42_000n, after: SENDER_BALANCE_AFTER }])
+	})
+
+	test('version 2.0.0 keeps its legacy output, the gas used at the base fee as the balance after the transaction', () => {
+		if (simulationStateWithSenderBalance.kind !== 'simulated' || !simulationStateWithSenderBalance.value.success) throw new Error('missing simulation fixture')
+		const legacyBalanceAfter = simulationStateWithSenderBalance.value.baseFeePerGas * 21_000n
+		const [transaction] = getSimulatedStackV2(simulationStateWithSenderBalance, '2.0.0').transactions
+		assert.deepEqual(transaction?.ethBalanceChanges, [{ address: SENDER, before: legacyBalanceAfter + 42_000n, after: legacyBalanceAfter }])
 	})
 
 	test('version 1.0.1 remains serializable when the sender balance is below the base fee', () => {

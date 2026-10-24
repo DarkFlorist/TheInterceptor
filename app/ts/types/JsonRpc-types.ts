@@ -347,7 +347,7 @@ const EthSign = funtypes.ReadonlyObject({
 }).asReadonly()
 
 export type SimulationStackVersion = funtypes.Static<typeof SimulationStackVersion>
-export const SimulationStackVersion = funtypes.Union(funtypes.Literal('1.0.0'), funtypes.Literal('1.0.1'), funtypes.Literal('2.0.0'))
+export const SimulationStackVersion = funtypes.Union(funtypes.Literal('1.0.0'), funtypes.Literal('1.0.1'), funtypes.Literal('2.0.0'), funtypes.Literal('2.0.1'))
 
 export type GetSimulationStack = funtypes.Static<typeof GetSimulationStack>
 export const GetSimulationStack = funtypes.ReadonlyObject({
