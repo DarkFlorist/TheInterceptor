@@ -22,7 +22,7 @@ import { updateContentScriptInjectionStrategyManifestV2 } from '../utils/content
 import { checkIfInterceptorShouldSleep } from './sleeping.js'
 import { onCloseWindowOrTab, resolvePendingRequestsForMissingConfirmationWindows } from './windows/confirmTransaction.js'
 import { modifyObject } from '../utils/typescript.js'
-import { updateDeclarativeNetRequestBlocks } from './accessManagement.js'
+import { updateDeclarativeNetRequestBlocks } from './websiteRequestBlocking.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerformance.js'
 import { removeWebsiteTabConnection } from './websiteTabConnections.js'
