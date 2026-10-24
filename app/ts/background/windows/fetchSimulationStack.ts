@@ -39,8 +39,7 @@ export async function updateFetchSimulationStackRequestWithPendingRequest() {
 
 export async function getSimulationStack(simulationState: ResolvedSimulationState, version: SimulationStackVersion) {
 	switch (version) {
-		case '2.0.0':
-		case '2.0.1': return { version, payload: getSimulatedStackV2(simulationState, version) } as const
+		case '2.0.0': return { version, payload: getSimulatedStackV2(simulationState) } as const
 		case '1.0.0':
 		case '1.0.1': {
 			const addressToMakeRich = await getAddressToMakeRich()

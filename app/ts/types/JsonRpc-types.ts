@@ -346,14 +346,8 @@ const EthSign = funtypes.ReadonlyObject({
 	params: funtypes.ReadonlyTuple(EthereumAddress, funtypes.String),
 }).asReadonly()
 
-export type SimulationStackV1Version = funtypes.Static<typeof SimulationStackV1Version>
-export const SimulationStackV1Version = funtypes.Union(funtypes.Literal('1.0.0'), funtypes.Literal('1.0.1'))
-
-export type SimulationStackV2Version = funtypes.Static<typeof SimulationStackV2Version>
-export const SimulationStackV2Version = funtypes.Union(funtypes.Literal('2.0.0'), funtypes.Literal('2.0.1'))
-
 export type SimulationStackVersion = funtypes.Static<typeof SimulationStackVersion>
-export const SimulationStackVersion = funtypes.Union(SimulationStackV1Version, SimulationStackV2Version)
+export const SimulationStackVersion = funtypes.Union(funtypes.Literal('1.0.0'), funtypes.Literal('1.0.1'), funtypes.Literal('2.0.0'))
 
 export type GetSimulationStack = funtypes.Static<typeof GetSimulationStack>
 export const GetSimulationStack = funtypes.ReadonlyObject({

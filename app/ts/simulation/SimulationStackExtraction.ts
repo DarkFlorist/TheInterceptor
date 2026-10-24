@@ -2,7 +2,6 @@ import type { StateOverrides } from '../types/ethSimulate-types.js'
 import type { GetSimulationStackReplyV1, GetSimulationStackReplyV2 } from '../types/simulationStackTypes.js'
 import type { ResolvedSimulationState, SimulatedTransaction } from '../types/visualizer-types.js'
 import type { EthereumAddress } from '../types/wire-types.js'
-import type { SimulationStackV1Version, SimulationStackV2Version } from '../types/JsonRpc-types.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS, MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
 import { handleERC20TransferLog } from './logHandlers.js'
 import { getGasFeePaidByTransactionSender } from '../utils/transactionGasAccounting.js'
@@ -13,13 +12,13 @@ const mergeSimulationOverrides = (stateOverridesArray: StateOverrides[]): StateO
 
 const subtractBaseFeeWithoutUnderflow = (balance: bigint, baseFee: bigint) => balance > baseFee ? balance - baseFee : 0n
 
-const getETHBalanceChanges = (baseFeePerGas: bigint, transaction: SimulatedTransaction, version: SimulationStackV2Version) => {
+const getETHBalanceChanges = (transaction: SimulatedTransaction) => {
 	if (transaction.ethSimulateV1CallResult.status === 'failure') return []
 	const ethLogs = transaction.ethSimulateV1CallResult.logs.filter((log) => log.address === ETHEREUM_LOGS_LOGGER_ADDRESS)
 	const ethBalanceAfter = transaction.tokenBalancesAfter.filter((x) => x.token === ETHEREUM_LOGS_LOGGER_ADDRESS)
 	return ethBalanceAfter.map((balanceAfter) => {
-		// Version 2.0.0 reported the gas the transaction used at the base fee as the account's balance after it. Keep that legacy output, while 2.0.1 reports the account's simulated balance. The balance before adds back what the transaction moved out of the account and the gas it paid.
-		const balanceAfterBalance = version === '2.0.0' ? baseFeePerGas * transaction.ethSimulateV1CallResult.gasUsed : balanceAfter.balance
+		// The account's simulated balance after the transaction; its balance before adds back what the transaction moved out of it and the gas it paid.
+		const balanceAfterBalance = balanceAfter.balance
 		const gasFees = balanceAfter.owner === transaction.preSimulationTransaction.signedTransaction.from
 			? getGasFeePaidByTransactionSender({
 				gasSpent: transaction.ethSimulateV1CallResult.gasUsed,
@@ -41,16 +40,16 @@ const getETHBalanceChanges = (baseFeePerGas: bigint, transaction: SimulatedTrans
 	})
 }
 
-export const getSimulatedStackV2 = (simulationState: ResolvedSimulationState, version: SimulationStackV2Version): GetSimulationStackReplyV2 => {
+export const getSimulatedStackV2 = (simulationState: ResolvedSimulationState): GetSimulationStackReplyV2 => {
 	if (simulationState.kind === 'passthrough') return { stateOverrides: {}, transactions: [] }
 	if (simulationState.value.success === false) return { stateOverrides: {}, transactions: [] }
 	return {
 		stateOverrides: mergeSimulationOverrides(simulationState.value.simulatedBlocks.map((simulatedBlock) => simulatedBlock.stateOverrides)),
-		transactions: simulationState.value.simulatedBlocks.flatMap((simulatedBlock) => simulatedBlock.simulatedTransactions).map((simulatedTransaction) => ({ ethBalanceChanges: getETHBalanceChanges(simulationState.value.baseFeePerGas, simulatedTransaction, version), simulatedTransaction }))
+		transactions: simulationState.value.simulatedBlocks.flatMap((simulatedBlock) => simulatedBlock.simulatedTransactions).map((simulatedTransaction) => ({ ethBalanceChanges: getETHBalanceChanges(simulatedTransaction), simulatedTransaction }))
 	}
 }
 
-export const getSimulatedStackV1 = (simulationState: ResolvedSimulationState, addressToMakeRich: EthereumAddress | undefined, version: SimulationStackV1Version): GetSimulationStackReplyV1 => {
+export const getSimulatedStackV1 = (simulationState: ResolvedSimulationState, addressToMakeRich: EthereumAddress | undefined, version: '1.0.0' | '1.0.1'): GetSimulationStackReplyV1 => {
 	if (simulationState.kind === 'passthrough' || simulationState.value.success === false) return []
 	const simulatedTransactions = simulationState.value.simulatedBlocks.flatMap((simulatedBlock) => simulatedBlock.simulatedTransactions).map((transaction) => {
 		const ethLogs = transaction.ethSimulateV1CallResult.status === 'failure' ? [] : transaction.ethSimulateV1CallResult.logs.filter((log) => log.address === ETHEREUM_LOGS_LOGGER_ADDRESS)
