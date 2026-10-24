@@ -3,7 +3,7 @@ import type { HomeParams, FirstCardParams, SimulationStateParam, RenameAddressCa
 import { type SimulationAndVisualisationResults, isEmptySimulationAndVisualisationResults } from '../../types/visualizer-types.js'
 import { ActiveAddressComponent, SmallAddress, StaticBigAddress, WebsiteOriginText, getActiveAddressEntry } from '../subcomponents/address.js'
 import { SimulationSummary } from '../simulationExplaining/SimulationSummary.js'
-import { TransactionsAndSignedMessages } from '../simulationExplaining/Transactions.js'
+import { TransactionsAndSignedMessages } from '../simulationExplaining/TransactionsAndSignedMessages.js'
 import { ICON_ACTIVE, ICON_INTERCEPTOR_DISABLED, ICON_NOT_ACTIVE, ICON_NOT_ACTIVE_WITH_SHIELD } from '../../utils/constants.js'
 import { getPrettySignerName, SignerLogoText, SignersLogoName } from '../subcomponents/signers.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
@@ -918,8 +918,12 @@ export function Home(param: HomeParams) {
 	})
 	const visualizedAddress = useComputed(() => safeStackMode.value ? param.activeSigningSafeAddress.value : modeActiveAddress.value.activeAddress)
 
+	// Read the signal values during render so the effect reruns when they change; listing the stable signal objects themselves would never retrigger it.
+	const isSimulationMode = param.simulationMode.value
+	const isSafeStackMode = safeStackMode.value
+	const currentVisualizedAddress = visualizedAddress.value
 	useEffect(() => {
-		if ((!param.simulationMode.value && !safeStackMode.value) || visualizedAddress.value === undefined) {
+		if ((!isSimulationMode && !isSafeStackMode) || currentVisualizedAddress === undefined) {
 			showPopupVisualisation.value = false
 			return
 		}
@@ -927,7 +931,7 @@ export function Home(param: HomeParams) {
 		return scheduleAfterPaint(() => {
 			showPopupVisualisation.value = true
 		})
-	}, [param.simulationMode.value, safeStackMode.value, visualizedAddress.value])
+	}, [isSimulationMode, isSafeStackMode, currentVisualizedAddress])
 
 	useSignalEffect(() => {
 		param.simVisResults.value
