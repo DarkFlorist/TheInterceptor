@@ -208,6 +208,7 @@ function SignRequest({ visualizedPersonalSignRequest, renameAddressCallBack, edi
 				renameAddressCallBack = { renameAddressCallBack }
 			/>
 		}
+		// A permit authorizes transfers of whatever token address it names, so a token that isn't an identified ERC20 still gets its spender and raw amount shown, under an explicit warning (UnidentifiedPermitTokenApprovals), rather than only an error; tokens identified as ERC721 or ERC1155 are rejected in the background (identifyPermitToken).
 		case 'Permit': return <PermitTokenApprovals
 			owner = { visualizedPersonalSignRequest.owner }
 			spender = { visualizedPersonalSignRequest.spender }
