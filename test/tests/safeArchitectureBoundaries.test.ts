@@ -24,7 +24,7 @@ test('the confirmation window delegates Gnosis Safe resolution, persistence, and
 	assert.match(confirmTransactionSource, /resolveSafeSignerReply\(/u)
 	assert.match(confirmTransactionSource, /prepareSafeTransactionConfirmation\(/u)
 	assert.match(confirmTransactionSource, /safePreparation\.finalize\(/u)
-	assert.doesNotMatch(confirmTransactionSource, /from '\.\.\/\.\.\/safe\/(?:safeCore|safeStack|safeSimulation)\.js'/u)
+	assert.doesNotMatch(confirmTransactionSource, /from '\.\.\/\.\.\/safe\/(?:safeCore|safeStack|safeSimulation|safeExecutionSimulation)\.js'/u)
 	assert.doesNotMatch(confirmTransactionSource, /persistSignedSafeTransaction|validateSafeOwnerSignature|reconcileSafeTransactionState/u)
 	assert.doesNotMatch(confirmTransactionSource, /safeExecutionSignerRoute|reconciledStoredSafeState/u)
 })

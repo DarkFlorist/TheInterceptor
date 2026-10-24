@@ -8,7 +8,7 @@ export type TransactionGasAccounting = {
 	readonly simulationOptions?: TransactionSimulationOptions
 }
 
-// A Gnosis Safe never pays for its own transaction: its executor does, whether outside the simulation (a Safe proposal) or inside it (a Safe execution in simulation mode).
+// A Gnosis Safe never pays for its own transaction: its executor does, whether outside the simulation (a Safe proposal) or inside it (a Safe's own call in simulation mode, which the simulation runs through the Safe's execTransaction).
 export function isPaidByGnosisSafeExecutor(transaction: Pick<TransactionGasAccounting, 'safeTransaction' | 'simulationOptions'>) {
 	return transaction.safeTransaction !== undefined || transaction.simulationOptions?.executeThroughSafe === true
 }
