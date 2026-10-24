@@ -102,6 +102,8 @@ export const getNextBlockTimeStampOverride = (previousBlockTimeStamp: Date, bloc
 	return bigintSecondsToDate(max(prevTime + 1n, blockTimeManipulation.timeToSet))
 }
 
+const withTransactionHashes = (block: NonNullable<EthereumBlockHeader>): EthereumBlockHeaderWithTransactionHashes => ({ ...block, transactions: block.transactions.map((transaction) => transaction.hash) })
+
 export type IEthereumClientService = Pick<EthereumClientService, keyof EthereumClientService>
 export type PreparedEthSimulateV1InputBlock = {
 	readonly inputBlock: SimulationStateInputMinimalDataBlock
@@ -225,30 +227,23 @@ export class EthereumClientService {
 	}
 
 	public async getBlock(requestAbortController: AbortController | undefined, blockTag?: EthereumBlockTag, fullObjects?: true): Promise<EthereumBlockHeader>
-	public async getBlock(requestAbortController: AbortController | undefined, blockTag: EthereumBlockTag, fullObjects: boolean): Promise<EthereumBlockHeaderWithTransactionHashes | EthereumBlockHeader>
 	public async getBlock(requestAbortController: AbortController | undefined, blockTag: EthereumBlockTag, fullObjects: false): Promise<EthereumBlockHeaderWithTransactionHashes>
+	public async getBlock(requestAbortController: AbortController | undefined, blockTag: EthereumBlockTag, fullObjects: boolean): Promise<EthereumBlockHeaderWithTransactionHashes | EthereumBlockHeader>
 	public async getBlock(requestAbortController: AbortController | undefined, blockTag: EthereumBlockTag = 'latest', fullObjects = true): Promise<EthereumBlockHeaderWithTransactionHashes | EthereumBlockHeader> {
 		const cached = this.getCachedBlock()
-		if (cached && (blockTag === 'latest' || blockTag === cached.number)) {
-			if (fullObjects === false) return { ...cached, transactions: cached.transactions.map((transaction) => transaction.hash) }
-			return cached
-		}
-		if (fullObjects === false) return EthereumBlockHeaderWithTransactionHashes.parse(await this.requestHandler.jsonRpcRequest({ method: 'eth_getBlockByNumber', params: [blockTag, false] }))
-		return EthereumBlockHeader.parse(await this.requestHandler.jsonRpcRequest({ method: 'eth_getBlockByNumber', params: [blockTag, fullObjects] }, requestAbortController))
+		if (cached && (blockTag === 'latest' || blockTag === cached.number)) return fullObjects ? cached : withTransactionHashes(cached)
+		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_getBlockByNumber', params: [blockTag, fullObjects] }, requestAbortController)
+		return fullObjects ? EthereumBlockHeader.parse(response) : EthereumBlockHeaderWithTransactionHashes.parse(response)
 	}
 
+	public async getBlockByHash(blockHash: EthereumBytes32, requestAbortController: AbortController | undefined, fullObjects?: true): Promise<EthereumBlockHeader>
+	public async getBlockByHash(blockHash: EthereumBytes32, requestAbortController: AbortController | undefined, fullObjects: false): Promise<EthereumBlockHeaderWithTransactionHashes>
+	public async getBlockByHash(blockHash: EthereumBytes32, requestAbortController: AbortController | undefined, fullObjects: boolean): Promise<EthereumBlockHeaderWithTransactionHashes | EthereumBlockHeader>
 	public async getBlockByHash(blockHash: EthereumBytes32, requestAbortController: AbortController | undefined, fullObjects = true): Promise<EthereumBlockHeaderWithTransactionHashes | EthereumBlockHeader> {
 		const cached = this.getCachedBlock()
-		if (cached && (cached.hash === blockHash)) {
-			if (fullObjects === false) {
-				return { ...cached, transactions: cached.transactions.map((transaction) => transaction.hash) }
-			}
-			return cached
-		}
-		if (fullObjects === false) {
-			return EthereumBlockHeaderWithTransactionHashes.parse(await this.requestHandler.jsonRpcRequest({ method: 'eth_getBlockByHash', params: [blockHash, false] }))
-		}
-		return EthereumBlockHeader.parse(await this.requestHandler.jsonRpcRequest({ method: 'eth_getBlockByHash', params: [blockHash, fullObjects] }, requestAbortController))
+		if (cached && cached.hash === blockHash) return fullObjects ? cached : withTransactionHashes(cached)
+		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_getBlockByHash', params: [blockHash, fullObjects] }, requestAbortController)
+		return fullObjects ? EthereumBlockHeader.parse(response) : EthereumBlockHeaderWithTransactionHashes.parse(response)
 	}
 
 	public readonly getChainId = () => this.getRpcEntry().chainId
@@ -450,13 +445,13 @@ export class EthereumClientService {
 		const prepared = await this.prepareEthSimulateV1Input(simulationStateInput, blockNumber, requestAbortController)
 		return {
 			prepared,
-			result: EthSimulateV1Result.parse(await this.requestHandler.jsonRpcRequest(prepared.request)),
+			result: await this.ethSimulateV1Request(prepared.request, requestAbortController),
 		}
 	}
 
 	public readonly simulate = async (simulationStateInput: SimulationStateInputMinimalData, blockNumber: bigint, requestAbortController: AbortController | undefined): Promise<EthSimulateV1Result> => {
 		const input = await this.ethSimulateV1Input(simulationStateInput, blockNumber, requestAbortController)
-		return EthSimulateV1Result.parse(await this.requestHandler.jsonRpcRequest(input))
+		return await this.ethSimulateV1Request(input, requestAbortController)
 	}
 
 	public readonly web3ClientVersion = async (requestAbortController: AbortController | undefined) => {

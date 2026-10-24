@@ -60,7 +60,7 @@ export class ErrorWithData extends Error {
 export class JsonRpcResponseError extends Error {
 	public readonly id: string | number
 	public readonly code: number
-	public readonly data: string | undefined
+	public readonly data: unknown
 	public constructor(jsonRpcResponse: JsonRpcErrorResponse) {
 		super(jsonRpcResponse.error.message)
 		this.code = jsonRpcResponse.error.code
