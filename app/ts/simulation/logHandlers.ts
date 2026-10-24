@@ -295,13 +295,14 @@ export function handleEnsExpiryExtended(eventLog: ParsedEvent) {
 }
 
 function decodeENSName(encodedName: Uint8Array): string {
+	const textDecoder = new TextDecoder()
 	let i = 0
 	let decodedName = ''
 	while (i < encodedName.length) {
 		const length = encodedName[i]
 		if (length === 0 || length === undefined) break
 		i++
-		const label = new TextDecoder().decode(encodedName.slice(i, i + length))
+		const label = textDecoder.decode(encodedName.slice(i, i + length))
 		decodedName += label + '.'
 		i += length
 	}
