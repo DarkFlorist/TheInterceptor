@@ -1,13 +1,15 @@
-import { bigintSecondsToDate } from '../../utils/bigint.js'
+import { Fragment } from 'preact'
+import { MAX_DATE_SECONDS, bigintSecondsToDate } from '../../utils/bigint.js'
 import { EthereumData } from '../../types/wire-types.js'
 import type { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { MOCK_PRIVATE_KEYS_ADDRESS, getChainName } from '../../utils/constants.js'
 import type { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
 import { assertNever } from '../../utils/typescript.js'
-import { SimpleTokenApprovalVisualisation } from '../simulationExplaining/customExplainers/SimpleTokenApprovalVisualisation.js'
+import { SimpleTokenApprovalVisualisation, TokenApprovalsVisualisation } from '../simulationExplaining/customExplainers/SimpleTokenApprovalVisualisation.js'
 import { SmallAddress, WebsiteOriginText } from '../subcomponents/address.js'
 import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
-import type { VisualizedPersonalSignRequest, VisualizedPersonalSignRequestPermit, VisualizedPersonalSignRequestPermit2, VisualizedPersonalSignRequestSafeTx } from '../../types/personal-message-definitions.js'
+import { TokenSymbol } from '../subcomponents/coins.js'
+import type { Permit2Witness, VisualizedPersonalSignRequest, VisualizedPersonalSignRequestPermit, VisualizedPersonalSignRequestPermit2, VisualizedPersonalSignRequestPermit2Batch, VisualizedPersonalSignRequestPermit2SignatureTransfer, VisualizedPersonalSignRequestSafeTx } from '../../types/personal-message-definitions.js'
 import { OrderComponents, OrderComponentsExtraDetails } from '../simulationExplaining/customExplainers/OpenSeaOrder.js'
 import { humanReadableDateFromSeconds, CellElement } from '../ui-utils.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
@@ -26,6 +28,7 @@ import { ErrorComponent } from '../subcomponents/Error.js'
 import type { ReadonlySignal } from '@preact/signals'
 import type { PopupPendingTransactionOrSignableMessage as PendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
 import { identifySignature } from '../simulationExplaining/identifySignature.js'
+import type { RpcNetwork } from '../../types/rpc.js'
 
 type SignatureCardParams = {
 	visualizedPersonalSignRequest: VisualizedPersonalSignRequest
@@ -106,6 +109,65 @@ function isNinetyFivePercentNumbersOrASCII(input: string): boolean {
 	return validCount / input.length >= 0.95
 }
 
+type PermitTokenAmount = { token: AddressBookEntry, amount: bigint }
+
+type PermitTokenApprovalsParams = {
+	owner: AddressBookEntry
+	spender: AddressBookEntry
+	tokenAmounts: readonly PermitTokenAmount[]
+	rpcNetwork: RpcNetwork
+	renameAddressCallBack: RenameAddressCallBack
+}
+
+type UnidentifiedPermitTokenApprovalsParams = {
+	spender: AddressBookEntry
+	tokenAmounts: readonly PermitTokenAmount[]
+	renameAddressCallBack: RenameAddressCallBack
+}
+
+// A token can be unidentified when it has no code on the active chain or its metadata lookup failed, and the spender and amounts must stay visible even then.
+function UnidentifiedPermitTokenApprovals({ spender, tokenAmounts, renameAddressCallBack }: UnidentifiedPermitTokenApprovalsParams) {
+	const errorText = tokenAmounts.length === 1
+		? 'The permitted token is not an identified ERC20 token, so its amount is shown as a raw value without decimals.'
+		: 'These permitted tokens are not identified ERC20 tokens, so their amounts are shown as raw values without decimals.'
+	return <>
+		<ErrorComponent text = { errorText }/>
+		<span class = 'log-table' style = 'justify-content: center; column-gap: 5px; grid-template-columns: auto auto'>
+			<CellElement text = 'Spender: '/>
+			<CellElement text = { <SmallAddress addressBookEntry = { spender } renameAddressCallBack = { renameAddressCallBack }/> }/>
+			{ tokenAmounts.map(({ token, amount }, index) => <Fragment key = { index }>
+				<CellElement text = 'Token: '/>
+				<CellElement text = { <SmallAddress addressBookEntry = { token } renameAddressCallBack = { renameAddressCallBack }/> }/>
+				<CellElement text = 'Raw amount: '/>
+				<CellElement text = { amount.toString(10) }/>
+			</Fragment>) }
+		</span>
+	</>
+}
+
+// Identified ERC20 tokens keep their decimal adjusted approval display even when other tokens of the same batch are unidentified.
+function PermitTokenApprovals({ owner, spender, tokenAmounts, rpcNetwork, renameAddressCallBack }: PermitTokenApprovalsParams) {
+	const approvals = tokenAmounts.flatMap(({ token, amount }) => token.type === 'ERC20' ? [{ type: 'ERC20' as const, token, amount, from: owner, to: spender, isApproval: true, logObject: undefined }] : [])
+	const unidentifiedTokenAmounts = tokenAmounts.filter(({ token }) => token.type !== 'ERC20')
+	return <>
+		{ approvals.length === 0 ? <></> : <TokenApprovalsVisualisation
+			spender = { spender }
+			approvals = { approvals }
+			transactionGasses = { { gasSpent: 0n, realizedGasPrice: 0n } }
+			rpcNetwork = { rpcNetwork }
+			renameAddressCallBack = { renameAddressCallBack }
+		/> }
+		{ unidentifiedTokenAmounts.length === 0 ? <></> : <UnidentifiedPermitTokenApprovals spender = { spender } tokenAmounts = { unidentifiedTokenAmounts } renameAddressCallBack = { renameAddressCallBack }/> }
+	</>
+}
+
+function Permit2WitnessDetails({ witness, renameAddressCallBack }: { witness: Permit2Witness, renameAddressCallBack: RenameAddressCallBack }) {
+	return <>
+		<p class = 'paragraph'>{ `This signature is only valid together with the following ${ witness.typeName } witness data:` }</p>
+		<EIP712Table enrichedEIP712Message = { { [witness.fieldName]: witness.value } } renameAddressCallBack = { renameAddressCallBack } isSubTable = { false }/>
+	</>
+}
+
 function SignRequest({ visualizedPersonalSignRequest, renameAddressCallBack, editEnsNamedHashCallBack }: SignRequestParams) {
 	switch (visualizedPersonalSignRequest.type) {
 		case 'NotParsed': {
@@ -163,23 +225,31 @@ function SignRequest({ visualizedPersonalSignRequest, renameAddressCallBack, edi
 				renameAddressCallBack = { renameAddressCallBack }
 			/>
 		}
-		case 'Permit2': {
-			if (visualizedPersonalSignRequest.token.type !== 'ERC20') return <ErrorComponent text = { 'Malformed Permit2 request. The tokentype is not ERC20' }/>
-			return <SimpleTokenApprovalVisualisation
-				approval = { {
-					type: 'ERC20',
-					token: visualizedPersonalSignRequest.token,
-					amount: visualizedPersonalSignRequest.message.message.details.amount,
-					from: visualizedPersonalSignRequest.account,
-					to: visualizedPersonalSignRequest.spender,
-					isApproval: true,
-					logObject: undefined,
-				} }
-				transactionGasses = { { gasSpent: 0n, realizedGasPrice: 0n } }
+		// Permit2 signatures authorize transfers of whatever token address they name, so a token that isn't an identified ERC20 still gets its spender and raw amount shown, under an explicit warning (UnidentifiedPermitTokenApprovals), rather than only an error; tokens identified as ERC721 or ERC1155 are rejected in the background. The EIP-2612 branch above keeps its existing requirement that the token be identified as an ERC20, which is outside this change; a failed metadata lookup can also trip it.
+		case 'Permit2': return <PermitTokenApprovals
+			owner = { visualizedPersonalSignRequest.account }
+			spender = { visualizedPersonalSignRequest.spender }
+			tokenAmounts = { [{ token: visualizedPersonalSignRequest.token, amount: visualizedPersonalSignRequest.message.message.details.amount }] }
+			rpcNetwork = { visualizedPersonalSignRequest.rpcNetwork }
+			renameAddressCallBack = { renameAddressCallBack }
+		/>
+		case 'Permit2Batch': return <PermitTokenApprovals
+			owner = { visualizedPersonalSignRequest.account }
+			spender = { visualizedPersonalSignRequest.spender }
+			tokenAmounts = { visualizedPersonalSignRequest.details }
+			rpcNetwork = { visualizedPersonalSignRequest.rpcNetwork }
+			renameAddressCallBack = { renameAddressCallBack }
+		/>
+		case 'Permit2SignatureTransfer': return <>
+			<PermitTokenApprovals
+				owner = { visualizedPersonalSignRequest.account }
+				spender = { visualizedPersonalSignRequest.spender }
+				tokenAmounts = { visualizedPersonalSignRequest.permitted }
 				rpcNetwork = { visualizedPersonalSignRequest.rpcNetwork }
 				renameAddressCallBack = { renameAddressCallBack }
 			/>
-		}
+			{ visualizedPersonalSignRequest.witness === undefined ? <></> : <Permit2WitnessDetails witness = { visualizedPersonalSignRequest.witness } renameAddressCallBack = { renameAddressCallBack }/> }
+		</>
 		default: assertNever(visualizedPersonalSignRequest)
 	}
 }
@@ -247,23 +317,82 @@ function ArbitraryEIP712({ enrichedEIP712, renameAddressCallBack }: ArbitraryEIP
 	</>
 }
 
-function Permit2ExtraDetails({ permit2 }: { permit2: VisualizedPersonalSignRequestPermit2 }) {
+function Permit2TimeRemaining({ timestampSeconds }: { timestampSeconds: bigint }) {
+	// Permit2 accepts deadlines and expirations beyond any representable date, such as the maximum uint256 deadline.
+	if (timestampSeconds > MAX_DATE_SECONDS) return <>unlimited</>
+	return <>
+		<SomeTimeAgo priorTimestamp = { bigintSecondsToDate(timestampSeconds) } countBackwards = { true }/>
+		{ ` (until ${ humanReadableDateFromSeconds(timestampSeconds) })` }
+	</>
+}
+
+type Permit2DomainDetailsParams = {
+	chainId: bigint
+	verifyingContract: AddressBookEntry
+	renameAddressCallBack: RenameAddressCallBack
+}
+
+function Permit2DomainDetails({ chainId, verifyingContract, renameAddressCallBack }: Permit2DomainDetailsParams) {
 	return <>
 		<CellElement text = 'Chain: '/>
-		<CellElement text = { getChainName(BigInt(permit2.message.domain.chainId)) }/>
+		<CellElement text = { getChainName(chainId) }/>
+		<CellElement text = 'Verifying contract: '/>
+		<CellElement text = { <SmallAddress addressBookEntry = { verifyingContract } renameAddressCallBack = { renameAddressCallBack }/> }/>
+	</>
+}
+
+function SignatureHashes({ domainHash, messageHash }: { domainHash: string, messageHash: string }) {
+	return <>
+		<CellElement text = 'Domain Hash: '/>
+		<CellElement text = { domainHash }/>
+		<CellElement text = 'Message Hash: '/>
+		<CellElement text = { messageHash }/>
+	</>
+}
+
+function Permit2ExtraDetails({ permit2, renameAddressCallBack }: { permit2: VisualizedPersonalSignRequestPermit2, renameAddressCallBack: RenameAddressCallBack }) {
+	return <>
+		<Permit2DomainDetails chainId = { permit2.message.domain.chainId } verifyingContract = { permit2.verifyingContract } renameAddressCallBack = { renameAddressCallBack }/>
 		<CellElement text = 'Nonce: '/>
 		<CellElement text = { permit2.message.message.details.nonce.toString(10) }/>
-		<CellElement text = 'Signature expires  in:'/>
-		<CellElement text = { <SomeTimeAgo priorTimestamp = { bigintSecondsToDate(permit2.message.message.sigDeadline) } countBackwards = { true }/> }/>
-		<CellElement text = 'Spender can spend for:'/>
-		<CellElement text = { <>
-			<SomeTimeAgo priorTimestamp = { bigintSecondsToDate(permit2.message.message.details.expiration) } countBackwards = { true }/>
-			{ ` (until ${ humanReadableDateFromSeconds(permit2.message.message.details.expiration) })` }
-		</> }/>
-		<CellElement text = 'Domain Hash: '/>
-		<CellElement text = { permit2.domainHash }/>
-		<CellElement text = 'Message Hash: '/>
-		<CellElement text = { permit2.messageHash }/>
+		<CellElement text = 'Signature expires in: '/>
+		<CellElement text = { <Permit2TimeRemaining timestampSeconds = { permit2.message.message.sigDeadline }/> }/>
+		<CellElement text = 'Spender can spend for: '/>
+		<CellElement text = { <Permit2TimeRemaining timestampSeconds = { permit2.message.message.details.expiration }/> }/>
+		<SignatureHashes domainHash = { permit2.domainHash } messageHash = { permit2.messageHash }/>
+	</>
+}
+
+// Shows the token like the approval box does, so look-alike tokens with the same symbol stay distinguishable by icon, address and untrusted marker.
+function Permit2DetailsToken({ token, renameAddressCallBack }: { token: AddressBookEntry, renameAddressCallBack: RenameAddressCallBack }) {
+	if (token.type === 'ERC20') return <TokenSymbol tokenEntry = { token } useFullTokenName = { false } renameAddressCallBack = { renameAddressCallBack } fontSize = 'normal'/>
+	return <SmallAddress addressBookEntry = { token } renameAddressCallBack = { renameAddressCallBack }/>
+}
+
+function Permit2BatchExtraDetails({ permit2Batch, renameAddressCallBack }: { permit2Batch: VisualizedPersonalSignRequestPermit2Batch, renameAddressCallBack: RenameAddressCallBack }) {
+	return <>
+		<Permit2DomainDetails chainId = { permit2Batch.message.domain.chainId } verifyingContract = { permit2Batch.verifyingContract } renameAddressCallBack = { renameAddressCallBack }/>
+		<CellElement text = 'Signature expires in: '/>
+		<CellElement text = { <Permit2TimeRemaining timestampSeconds = { permit2Batch.message.message.sigDeadline }/> }/>
+		{ permit2Batch.details.map((details, index) => <Fragment key = { index }>
+			<CellElement text = { <><Permit2DetailsToken token = { details.token } renameAddressCallBack = { renameAddressCallBack }/> nonce: </> }/>
+			<CellElement text = { details.nonce.toString(10) }/>
+			<CellElement text = { <>Spender can spend <Permit2DetailsToken token = { details.token } renameAddressCallBack = { renameAddressCallBack }/> for: </> }/>
+			<CellElement text = { <Permit2TimeRemaining timestampSeconds = { details.expiration }/> }/>
+		</Fragment>) }
+		<SignatureHashes domainHash = { permit2Batch.domainHash } messageHash = { permit2Batch.messageHash }/>
+	</>
+}
+
+function Permit2SignatureTransferExtraDetails({ permit2SignatureTransfer, renameAddressCallBack }: { permit2SignatureTransfer: VisualizedPersonalSignRequestPermit2SignatureTransfer, renameAddressCallBack: RenameAddressCallBack }) {
+	const { domain, message } = permit2SignatureTransfer.message
+	return <>
+		<Permit2DomainDetails chainId = { domain.chainId } verifyingContract = { permit2SignatureTransfer.verifyingContract } renameAddressCallBack = { renameAddressCallBack }/>
+		<CellElement text = 'Nonce: '/>
+		<CellElement text = { message.nonce.toString(10) }/>
+		<CellElement text = 'Signature expires in: '/>
+		<CellElement text = { <Permit2TimeRemaining timestampSeconds = { message.deadline }/> }/>
+		<SignatureHashes domainHash = { permit2SignatureTransfer.domainHash } messageHash = { permit2SignatureTransfer.messageHash }/>
 	</>
 }
 
@@ -325,7 +454,9 @@ function ExtraDetailsInner({ visualizedPersonalSignRequest, renameAddressCallBac
 		</>
 		case 'OrderComponents': return <OrderComponentsExtraDetails orderComponents = { visualizedPersonalSignRequest.message } renameAddressCallBack = { renameAddressCallBack }/>
 		case 'Permit': return <PermitExtraDetails permit = { visualizedPersonalSignRequest }/>
-		case 'Permit2': return <Permit2ExtraDetails permit2 = { visualizedPersonalSignRequest }/>
+		case 'Permit2': return <Permit2ExtraDetails permit2 = { visualizedPersonalSignRequest } renameAddressCallBack = { renameAddressCallBack }/>
+		case 'Permit2Batch': return <Permit2BatchExtraDetails permit2Batch = { visualizedPersonalSignRequest } renameAddressCallBack = { renameAddressCallBack }/>
+		case 'Permit2SignatureTransfer': return <Permit2SignatureTransferExtraDetails permit2SignatureTransfer = { visualizedPersonalSignRequest } renameAddressCallBack = { renameAddressCallBack }/>
 		case 'SafeTx': return <GnosisSafeExtraDetails visualizedPersonalSignRequestSafeTx = { visualizedPersonalSignRequest } renameAddressCallBack = { renameAddressCallBack }/>
 		default: assertNever(visualizedPersonalSignRequest)
 	}

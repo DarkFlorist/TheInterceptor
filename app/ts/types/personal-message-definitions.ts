@@ -5,8 +5,9 @@ import { RpcNetwork } from './rpc.js'
 import { AddressBookEntry } from './addressBookTypes.js'
 import { Website } from './websiteAccessTypes.js'
 import { SignerName } from './signerTypes.js'
-import { EnrichedEIP712 } from './eip721.js'
+import { EnrichedEIP712, EnrichedEIP712MessageRecord } from './eip721.js'
 import { EnrichedEthereumInputData } from './EnrichedEthereumData.js'
+import { assertNever } from '../utils/typescript.js'
 
 type EIP2612Message = funtypes.Static<typeof EIP2612Message>
 const EIP2612Message = funtypes.ReadonlyObject({
@@ -68,73 +69,187 @@ const EIP2612Message = funtypes.ReadonlyObject({
 	}),
 })
 
+const Permit2EIP712DomainTypes = funtypes.ReadonlyTuple(
+	funtypes.ReadonlyObject({ name: funtypes.Literal('name'), type: funtypes.Literal('string') }),
+	funtypes.ReadonlyObject({ name: funtypes.Literal('chainId'), type: funtypes.Literal('uint256') }),
+	funtypes.ReadonlyObject({ name: funtypes.Literal('verifyingContract'), type: funtypes.Literal('address') }),
+)
+
+// Every Permit2 message kind shares this domain definition so they are all held to the same domain check.
+const Permit2Domain = funtypes.ReadonlyObject({
+	name: funtypes.Literal('Permit2'),
+	chainId: NonHexBigInt,
+	verifyingContract: EthereumAddress,
+})
+
+const Permit2DetailsTypes = funtypes.ReadonlyTuple(
+	funtypes.ReadonlyObject({ name: funtypes.Literal('token'), type: funtypes.Literal('address') }),
+	funtypes.ReadonlyObject({ name: funtypes.Literal('amount'), type: funtypes.Literal('uint160') }),
+	funtypes.ReadonlyObject({ name: funtypes.Literal('expiration'), type: funtypes.Literal('uint48') }),
+	funtypes.ReadonlyObject({ name: funtypes.Literal('nonce'), type: funtypes.Literal('uint48') }),
+)
+
+const Permit2Details = funtypes.ReadonlyObject({
+	token: EthereumAddress,
+	amount: NonHexBigInt,
+	expiration: NonHexBigInt,
+	nonce: NonHexBigInt,
+})
+
+// Permit2 AllowanceTransfer `PermitSingle`, which grants a time limited allowance for one token.
 export type Permit2 = funtypes.Static<typeof Permit2>
 export const Permit2 = funtypes.ReadonlyObject({
 	types: funtypes.ReadonlyObject({
-		PermitSingle: funtypes.Tuple(
-			funtypes.ReadonlyObject({
-				name: funtypes.Literal('details'),
-				type: funtypes.Literal('PermitDetails'),
-			}),
-			funtypes.ReadonlyObject({
-				name: funtypes.Literal('spender'),
-				type: funtypes.Literal('address'),
-			}),
-			funtypes.ReadonlyObject({
-				name: funtypes.Literal('sigDeadline'),
-				type: funtypes.Literal('uint256'),
-			}),
+		PermitSingle: funtypes.ReadonlyTuple(
+			funtypes.ReadonlyObject({ name: funtypes.Literal('details'), type: funtypes.Literal('PermitDetails') }),
+			funtypes.ReadonlyObject({ name: funtypes.Literal('spender'), type: funtypes.Literal('address') }),
+			funtypes.ReadonlyObject({ name: funtypes.Literal('sigDeadline'), type: funtypes.Literal('uint256') }),
 		),
-		PermitDetails: funtypes.Tuple(
-			funtypes.ReadonlyObject({
-				name: funtypes.Literal('token'),
-				type: funtypes.Literal('address'),
-			}),
-			funtypes.ReadonlyObject({
-				name: funtypes.Literal('amount'),
-				type: funtypes.Literal('uint160'),
-			}),
-			funtypes.ReadonlyObject({
-				name: funtypes.Literal('expiration'),
-				type: funtypes.Literal('uint48'),
-			}),
-			funtypes.ReadonlyObject({
-				name: funtypes.Literal('nonce'),
-				type: funtypes.Literal('uint48'),
-			}),
-		),
-		EIP712Domain: funtypes.Tuple(
-			funtypes.ReadonlyObject({
-				name: funtypes.Literal('name'),
-				type: funtypes.Literal('string'),
-			}),
-			funtypes.ReadonlyObject({
-				name: funtypes.Literal('chainId'),
-				type: funtypes.Literal('uint256'),
-			}),
-			funtypes.ReadonlyObject({
-				name: funtypes.Literal('verifyingContract'),
-				type: funtypes.Literal('address'),
-			}),
-		)
+		PermitDetails: Permit2DetailsTypes,
+		EIP712Domain: Permit2EIP712DomainTypes,
 	}),
-	domain: funtypes.ReadonlyObject({
-		name: funtypes.Literal('Permit2'),
-		chainId: NonHexBigInt,
-		verifyingContract: EthereumAddress,
-	}),
+	domain: Permit2Domain,
 	primaryType: funtypes.Literal('PermitSingle'),
 	message: funtypes.ReadonlyObject({
-		details: funtypes.ReadonlyObject({
-			token: EthereumAddress,
-			amount: NonHexBigInt,
-			expiration: NonHexBigInt,
-			nonce: NonHexBigInt,
-		}),
+		details: Permit2Details,
 		spender: EthereumAddress,
 		sigDeadline: NonHexBigInt,
 	})
 })
+
+// Permit2 AllowanceTransfer `PermitBatch`, which grants time limited allowances for several tokens at once.
+export type Permit2Batch = funtypes.Static<typeof Permit2Batch>
+export const Permit2Batch = funtypes.ReadonlyObject({
+	types: funtypes.ReadonlyObject({
+		PermitBatch: funtypes.ReadonlyTuple(
+			funtypes.ReadonlyObject({ name: funtypes.Literal('details'), type: funtypes.Literal('PermitDetails[]') }),
+			funtypes.ReadonlyObject({ name: funtypes.Literal('spender'), type: funtypes.Literal('address') }),
+			funtypes.ReadonlyObject({ name: funtypes.Literal('sigDeadline'), type: funtypes.Literal('uint256') }),
+		),
+		PermitDetails: Permit2DetailsTypes,
+		EIP712Domain: Permit2EIP712DomainTypes,
+	}),
+	domain: Permit2Domain,
+	primaryType: funtypes.Literal('PermitBatch'),
+	message: funtypes.ReadonlyObject({
+		details: funtypes.ReadonlyArray(Permit2Details),
+		spender: EthereumAddress,
+		sigDeadline: NonHexBigInt,
+	})
+})
+
+const Permit2TokenPermissionsTypes = funtypes.ReadonlyTuple(
+	funtypes.ReadonlyObject({ name: funtypes.Literal('token'), type: funtypes.Literal('address') }),
+	funtypes.ReadonlyObject({ name: funtypes.Literal('amount'), type: funtypes.Literal('uint256') }),
+)
+
+const Permit2TokenPermissions = funtypes.ReadonlyObject({
+	token: EthereumAddress,
+	amount: NonHexBigInt,
+})
+
+const Permit2SinglePermittedType = funtypes.ReadonlyObject({ name: funtypes.Literal('permitted'), type: funtypes.Literal('TokenPermissions') })
+const Permit2BatchPermittedType = funtypes.ReadonlyObject({ name: funtypes.Literal('permitted'), type: funtypes.Literal('TokenPermissions[]') })
+const Permit2SignatureTransferSpenderType = funtypes.ReadonlyObject({ name: funtypes.Literal('spender'), type: funtypes.Literal('address') })
+const Permit2SignatureTransferNonceType = funtypes.ReadonlyObject({ name: funtypes.Literal('nonce'), type: funtypes.Literal('uint256') })
+const Permit2SignatureTransferDeadlineType = funtypes.ReadonlyObject({ name: funtypes.Literal('deadline'), type: funtypes.Literal('uint256') })
+// Integrators choose both the witness field name and its type, for example UniswapX signs `ExclusiveDutchOrder witness`.
+const Permit2WitnessType = funtypes.ReadonlyObject({ name: funtypes.String, type: funtypes.String })
+
+const Permit2SingleTransferMessage = funtypes.ReadonlyObject({
+	permitted: Permit2TokenPermissions,
+	spender: EthereumAddress,
+	nonce: NonHexBigInt,
+	deadline: NonHexBigInt,
+})
+
+const Permit2BatchTransferMessage = funtypes.ReadonlyObject({
+	permitted: funtypes.ReadonlyArray(Permit2TokenPermissions),
+	spender: EthereumAddress,
+	nonce: NonHexBigInt,
+	deadline: NonHexBigInt,
+})
+
+// Permit2 SignatureTransfer `PermitTransferFrom`, which lets the spender transfer one token once before the deadline.
+const Permit2TransferFrom = funtypes.ReadonlyObject({
+	types: funtypes.ReadonlyObject({
+		PermitTransferFrom: funtypes.ReadonlyTuple(Permit2SinglePermittedType, Permit2SignatureTransferSpenderType, Permit2SignatureTransferNonceType, Permit2SignatureTransferDeadlineType),
+		TokenPermissions: Permit2TokenPermissionsTypes,
+		EIP712Domain: Permit2EIP712DomainTypes,
+	}),
+	domain: Permit2Domain,
+	primaryType: funtypes.Literal('PermitTransferFrom'),
+	message: Permit2SingleTransferMessage,
+})
+
+// Permit2 SignatureTransfer `PermitBatchTransferFrom`, the multi token version of `PermitTransferFrom`.
+const Permit2BatchTransferFrom = funtypes.ReadonlyObject({
+	types: funtypes.ReadonlyObject({
+		PermitBatchTransferFrom: funtypes.ReadonlyTuple(Permit2BatchPermittedType, Permit2SignatureTransferSpenderType, Permit2SignatureTransferNonceType, Permit2SignatureTransferDeadlineType),
+		TokenPermissions: Permit2TokenPermissionsTypes,
+		EIP712Domain: Permit2EIP712DomainTypes,
+	}),
+	domain: Permit2Domain,
+	primaryType: funtypes.Literal('PermitBatchTransferFrom'),
+	message: Permit2BatchTransferMessage,
+})
+
+// Permit2 SignatureTransfer `PermitWitnessTransferFrom`, a `PermitTransferFrom` that also signs integrator defined witness data. Funtypes drops unknown keys, so the witness value is read from the original request after the EIP-712 verifier has checked it against its declared type.
+const Permit2WitnessTransferFrom = funtypes.ReadonlyObject({
+	types: funtypes.ReadonlyObject({
+		PermitWitnessTransferFrom: funtypes.ReadonlyTuple(Permit2SinglePermittedType, Permit2SignatureTransferSpenderType, Permit2SignatureTransferNonceType, Permit2SignatureTransferDeadlineType, Permit2WitnessType),
+		TokenPermissions: Permit2TokenPermissionsTypes,
+		EIP712Domain: Permit2EIP712DomainTypes,
+	}),
+	domain: Permit2Domain,
+	primaryType: funtypes.Literal('PermitWitnessTransferFrom'),
+	message: Permit2SingleTransferMessage,
+})
+
+// Permit2 SignatureTransfer `PermitBatchWitnessTransferFrom`, the multi token version of `PermitWitnessTransferFrom`.
+const Permit2BatchWitnessTransferFrom = funtypes.ReadonlyObject({
+	types: funtypes.ReadonlyObject({
+		PermitBatchWitnessTransferFrom: funtypes.ReadonlyTuple(Permit2BatchPermittedType, Permit2SignatureTransferSpenderType, Permit2SignatureTransferNonceType, Permit2SignatureTransferDeadlineType, Permit2WitnessType),
+		TokenPermissions: Permit2TokenPermissionsTypes,
+		EIP712Domain: Permit2EIP712DomainTypes,
+	}),
+	domain: Permit2Domain,
+	primaryType: funtypes.Literal('PermitBatchWitnessTransferFrom'),
+	message: Permit2BatchTransferMessage,
+})
+
+export type Permit2SignatureTransfer = funtypes.Static<typeof Permit2SignatureTransfer>
+export const Permit2SignatureTransfer = funtypes.Union(Permit2TransferFrom, Permit2BatchTransferFrom, Permit2WitnessTransferFrom, Permit2BatchWitnessTransferFrom)
+
+type Permit2StructField = { readonly name: string, readonly type: string }
+
+export type Permit2SignatureTransferKind = {
+	readonly isBatch: boolean
+	readonly hasWitness: boolean
+	// Single token transfers are listed as a one element array so single and batch transfers are handled the same way.
+	readonly permitted: readonly funtypes.Static<typeof Permit2TokenPermissions>[]
+	readonly structFields: readonly Permit2StructField[]
+}
+
+// The only place that tells the SignatureTransfer primary types apart, so token grouping, witness lookup and naming always agree on the kind.
+export function getPermit2SignatureTransferKind(permit: Permit2SignatureTransfer): Permit2SignatureTransferKind {
+	switch (permit.primaryType) {
+		case 'PermitTransferFrom': return { isBatch: false, hasWitness: false, permitted: [permit.message.permitted], structFields: permit.types.PermitTransferFrom }
+		case 'PermitBatchTransferFrom': return { isBatch: true, hasWitness: false, permitted: permit.message.permitted, structFields: permit.types.PermitBatchTransferFrom }
+		case 'PermitWitnessTransferFrom': return { isBatch: false, hasWitness: true, permitted: [permit.message.permitted], structFields: permit.types.PermitWitnessTransferFrom }
+		case 'PermitBatchWitnessTransferFrom': return { isBatch: true, hasWitness: true, permitted: permit.message.permitted, structFields: permit.types.PermitBatchWitnessTransferFrom }
+		default: return assertNever(permit)
+	}
+}
+
+// Permit2 itself defines these SignatureTransfer fields, while the integrator names the witness field, for example `witness` in UniswapX.
+const permit2SignatureTransferFieldNames: readonly string[] = ['permitted', 'spender', 'nonce', 'deadline']
+
+// Finds the witness by name instead of by position, and returns undefined unless exactly one field is not a Permit2 field, so a Permit2 field is never taken as the witness.
+export function findPermit2WitnessField(structFields: readonly Permit2StructField[]) {
+	const witnessFields = structFields.filter(({ name }) => !permit2SignatureTransferFieldNames.includes(name))
+	return witnessFields.length === 1 ? witnessFields[0] : undefined
+}
 
 type SeaPortItemType = funtypes.Static<typeof SeaPortItemType>
 const SeaPortItemType = funtypes.Union(
@@ -445,6 +560,57 @@ export const VisualizedPersonalSignRequestPermit2 = funtypes.Intersect(
 	})
 )
 
+const Permit2DetailsWithAddressBookEntry = funtypes.ReadonlyObject({
+	token: AddressBookEntry,
+	amount: NonHexBigInt,
+	expiration: NonHexBigInt,
+	nonce: NonHexBigInt,
+})
+
+export type VisualizedPersonalSignRequestPermit2Batch = funtypes.Static<typeof VisualizedPersonalSignRequestPermit2Batch>
+export const VisualizedPersonalSignRequestPermit2Batch = funtypes.Intersect(
+	PersonalSignRequestBase,
+	funtypes.ReadonlyObject({
+		method: EthSignTyped,
+		type: funtypes.Literal('Permit2Batch'),
+		message: Permit2Batch,
+		details: funtypes.ReadonlyArray(Permit2DetailsWithAddressBookEntry),
+		spender: AddressBookEntry,
+		verifyingContract: AddressBookEntry,
+		messageHash: funtypes.String,
+		domainHash: funtypes.String,
+	})
+)
+
+const Permit2TokenPermissionsWithAddressBookEntry = funtypes.ReadonlyObject({
+	token: AddressBookEntry,
+	amount: NonHexBigInt,
+})
+
+export type Permit2Witness = funtypes.Static<typeof Permit2Witness>
+export const Permit2Witness = funtypes.ReadonlyObject({
+	fieldName: funtypes.String,
+	typeName: funtypes.String,
+	value: EnrichedEIP712MessageRecord,
+})
+
+export type VisualizedPersonalSignRequestPermit2SignatureTransfer = funtypes.Static<typeof VisualizedPersonalSignRequestPermit2SignatureTransfer>
+export const VisualizedPersonalSignRequestPermit2SignatureTransfer = funtypes.Intersect(
+	PersonalSignRequestBase,
+	funtypes.ReadonlyObject({
+		method: EthSignTyped,
+		type: funtypes.Literal('Permit2SignatureTransfer'),
+		message: Permit2SignatureTransfer,
+		// Single token transfers are listed as a one element array so single and batch transfers render the same way.
+		permitted: funtypes.ReadonlyArray(Permit2TokenPermissionsWithAddressBookEntry),
+		spender: AddressBookEntry,
+		verifyingContract: AddressBookEntry,
+		witness: funtypes.Union(Permit2Witness, funtypes.Undefined),
+		messageHash: funtypes.String,
+		domainHash: funtypes.String,
+	})
+)
+
 type VisualizedPersonalSignRequestOrderComponents = funtypes.Static<typeof VisualizedPersonalSignRequestOrderComponents>
 const VisualizedPersonalSignRequestOrderComponents = funtypes.Intersect(
 	PersonalSignRequestBase,
@@ -526,9 +692,11 @@ export const VisualizedPersonalSignRequest = funtypes.Union(
 	VisualizedPersonalSignRequestSafeMessage,
 	VisualizedPersonalSignRequestPermit,
 	VisualizedPersonalSignRequestPermit2,
+	VisualizedPersonalSignRequestPermit2Batch,
+	VisualizedPersonalSignRequestPermit2SignatureTransfer,
 	VisualizedPersonalSignRequestSafeTx,
 	VisualizedPersonalSignRequestOrderComponents,
 )
 
 export type PersonalSignRequestIdentifiedEIP712Message = funtypes.Static<typeof PersonalSignRequestIdentifiedEIP712Message>
-export const PersonalSignRequestIdentifiedEIP712Message = funtypes.Union(EIP2612Message, Permit2, OpenSeaOrder, SafeTx)
+export const PersonalSignRequestIdentifiedEIP712Message = funtypes.Union(EIP2612Message, Permit2, Permit2Batch, Permit2SignatureTransfer, OpenSeaOrder, SafeTx)
