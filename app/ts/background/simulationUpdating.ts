@@ -194,11 +194,10 @@ export async function getMetadataForSimulation(
 	}
 }
 
-// The failure view (FailedTransactionPreviewDetails) shows an eth_sendTransaction request's sender, recipient and calldata, of the formed transaction when there is one, otherwise of the request. It shows a raw transaction only as its signed bytes, so a raw transaction has nothing to name or parse.
+// The failure view (FailedTransactionPreviewDetails) shows the sender, recipient and calldata of the website's eth_sendTransaction request, whether or not it was formed into a transaction. Forming can fill in a different sender, the active address, which the view doesn't show. The view shows a raw transaction only as its signed bytes, so a raw transaction has nothing to name or parse.
 const getFailedTransactionFields = (transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed) => {
 	const request = transactionToSimulate.originalRequestParameters
 	if (request.method !== 'eth_sendTransaction') return undefined
-	if (transactionToSimulate.success) return { call: transactionToSimulate.transaction, addressFields: transactionToSimulate.transaction }
 	const transaction = request.params[0]
 	return {
 		// Request validation (JsonRpc-types) rejects a transaction whose input and data both exist but differ, so this preview and the dialog's raw input view show the same calldata whichever field they read first.

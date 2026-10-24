@@ -327,11 +327,45 @@ test('neither names nor probes the EIP-7702 delegation target of a formed transa
 		if (rpcRequest.method === 'eth_getCode') probedAddresses.push(rpcRequest.params?.[0])
 		return undefined
 	})
-	const delegatingTransfer = { ...transfer.transaction, type: '7702' as const, authorizationList: [{ address: unknownDelegationTarget, chainId: 1n, nonce: 0n }] }
+	const delegatingTransfer: WebsiteCreatedEthereumTransaction['transaction'] = {
+		type: '7702',
+		from: activeAddress,
+		chainId: fakeRpcNetwork.chainId,
+		nonce: 0n,
+		maxFeePerGas: 1n,
+		maxPriorityFeePerGas: 1n,
+		gas: 60_000n,
+		to: USDC_ADDRESS,
+		value: 0n,
+		input: transfer.transaction.input,
+		accessList: [],
+		authorizationList: [{ address: unknownDelegationTarget, chainId: 1n, nonce: 0n }],
+	}
 	const preview = await getFailedTransactionPreview(recordingSimulator.ethereum, undefined, { ...transfer, transaction: delegatingTransfer })
 	assert.equal(preview.addressBookEntries.some((entry) => entry.address === unknownDelegationTarget), false)
 	assert.equal(probedAddresses.includes(unknownDelegationTarget), false)
 	assert.equal((await modules.getUserAddressBookEntries()).some((entry) => entry.address === unknownDelegationTarget), false)
+})
+
+test('names the sender the failure view shows, the request\'s, when forming the transaction filled in the active address', async () => {
+	await useInvoiceAddressBook()
+	const { getFailedTransactionPreview } = await import('../../app/ts/background/simulationUpdating.js')
+	const { SendTransactionParams } = await import('../../app/ts/types/JsonRpc-types.js')
+	const transfer = await createFormedUsdcTransfer(16n)
+	const requestedSender = 0x5555555555555555555555555555555555555555n
+	const transferCall = { to: addressString(USDC_ADDRESS), value: '0x0', data: encodeFunctionCall(Erc20ABI, 'transfer', [addressString(recipientAddress), TRANSFERRED_USDC]) }
+	const requests = [
+		{ shownSender: undefined, request: transferCall },
+		{ shownSender: requestedSender, request: { ...transferCall, from: addressString(requestedSender) } },
+	]
+	for (const { shownSender, request } of requests) {
+		// The formed transaction is sent from the active address, as when the request omits its sender or signing mode replaces it.
+		const preview = await getFailedTransactionPreview(simulator.ethereum, undefined, { ...transfer, originalRequestParameters: SendTransactionParams.parse({ method: 'eth_sendTransaction', params: [request] }) })
+		const namedAddresses = preview.addressBookEntries.map((entry) => entry.address)
+		assert.equal(namedAddresses.includes(activeAddress), false, 'the filled-in sender the view does not show is not named')
+		assert.equal(namedAddresses.includes(recipientAddress), true)
+		if (shownSender !== undefined) assert.equal(namedAddresses.includes(shownSender), true, 'the requested sender the view shows is named')
+	}
 })
 
 test('neither names, parses nor probes anything for a failed raw transaction, whose failure view shows only its signed bytes', async () => {
@@ -447,7 +481,9 @@ test('collects the failure view addresses with the simulation view rules, leavin
 	const { getAddressesToIdentifyForVisualiserFromTransactions } = await import('../../app/ts/background/metadataUtils.js')
 	const { getDeployedContractAddress } = await import('../../app/ts/simulation/services/SimulationModeEthereumClientService.js')
 	const transfer = await createFormedUsdcTransfer(15n)
-	const contractCreation = { ...transfer, transaction: { ...transfer.transaction, to: null } }
+	const transferRequest = await getUsdcTransferParams()
+	const creationRequest: SendTransactionParams = { method: 'eth_sendTransaction', params: [{ ...transferRequest.params[0], to: null }] }
+	const contractCreation = { ...transfer, originalRequestParameters: creationRequest, transaction: { ...transfer.transaction, to: null } }
 	const deployedContract = getDeployedContractAddress(activeAddress, 0n)
 	for (const transactionToSimulate of [transfer, contractCreation]) {
 		const failedTransactionPreview = await getFailedTransactionPreview(simulator.ethereum, undefined, transactionToSimulate)
