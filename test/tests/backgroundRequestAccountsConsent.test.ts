@@ -1,8 +1,23 @@
 import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
+import type { InterceptedRequest } from '../../app/ts/utils/requests.js'
 import { confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, createRestoringBrowserMockInstaller, loadModules, noopPublishRpcConnectionStatus } from './backgroundEthAccountsTestHarness.js'
 
 const installBrowserMock = createRestoringBrowserMockInstaller()
+
+type InterceptorAccessModule = typeof import('../../app/ts/background/windows/interceptorAccess.js')
+
+const isInterceptorAccessModule = (loadedModule: unknown): loadedModule is InterceptorAccessModule => typeof loadedModule === 'object'
+	&& loadedModule !== null
+	&& 'requestAccessFromUser' in loadedModule
+	&& typeof loadedModule.requestAccessFromUser === 'function'
+
+// Loads an independent instance of the access dialog module, because Bun keys module instances by the full specifier including the query.
+async function importSeparateInterceptorAccessModule(instanceName: string): Promise<InterceptorAccessModule> {
+	const loadedModule: unknown = await import(`../../app/ts/background/windows/interceptorAccess.js?${ instanceName }`)
+	if (!isInterceptorAccessModule(loadedModule)) throw new Error(`The separate interceptorAccess module instance ${ instanceName } did not load`)
+	return loadedModule
+}
 
 describe('background eth_requestAccounts address consent', () => {
 	test('requires visible address consent after signer discovery for site-approved eth_requestAccounts', async () => {
@@ -300,6 +315,87 @@ describe('background eth_requestAccounts address consent', () => {
 		assert.deepEqual(messages.filter((message) => message.method === 'eth_accounts' && message.requestId === 11).at(-1)?.result, ['0x6666666666666666666666666666666666666666'])
 		assert.equal((await getPendingAccessRequests()).length, 0)
 		assert.deepEqual((await getSettings()).websiteAccess[0]?.addressAccess, [{ address: account, access: true }])
+	})
+
+	test('reuses a persisted access dialog when the same eth_requestAccounts is replayed after restart', async () => {
+		installBrowserMock()
+		const {
+			websiteSocketToString,
+			changeSimulationMode,
+			setUseSignersAddressAsActiveAddress,
+			updateWebsiteAccess,
+			getPendingAccessRequests,
+			getSettings,
+			createInterceptedRequestReplay,
+			requestAccessFromUser: requestAccessFromUserAfterRestart,
+			resolveInterceptorAccess: resolveInterceptorAccessAfterRestart,
+		} = await loadModules()
+		const { getActiveAddressEntryForChain } = await import('../../app/ts/background/metadataUtils.js')
+		// A separately loaded dialog module stands in for the worker that ran before the restart; the shared modules are the restarted worker.
+		const firstWorkerAccess = await importSeparateInterceptorAccessModule('access-dialog-worker-before-restart')
+		const websiteOrigin = 'https://app.safe.global'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const account = 0x6677667766776677667766776677667766776677n
+		const accountString = '0x6677667766776677667766776677667766776677'
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: account, activeSigningAddress: undefined })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: undefined }])
+
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const connectionKey = websiteSocketToString(socket)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[connectionKey]: { port, socket, websiteOrigin, approved: false, wantsToConnect: true },
+		} }]])
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		const request: InterceptedRequest = {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 111, requestSocket: socket },
+			method: 'eth_requestAccounts',
+		}
+		const requestAccessToAddress = await getActiveAddressEntryForChain(account, 1n)
+		const settings = await getSettings()
+
+		const replayInterceptedRequest = createInterceptedRequestReplay(simulationServicesOwner, websiteTabConnections, noopPublishRpcConnectionStatus)
+		await firstWorkerAccess.requestAccessFromUser(
+			websiteTabConnections,
+			socket,
+			website,
+			request,
+			requestAccessToAddress,
+			settings,
+			requestAccessToAddress,
+			replayInterceptedRequest,
+		)
+		await requestAccessFromUserAfterRestart(
+			websiteTabConnections,
+			socket,
+			website,
+			request,
+			requestAccessToAddress,
+			settings,
+			requestAccessToAddress,
+			replayInterceptedRequest,
+		)
+
+		assert.equal((await getPendingAccessRequests()).length, 1)
+		assert.equal(messages.some((message) => message.requestId === 111), false)
+		const pendingRequest = (await getPendingAccessRequests())[0]
+		if (pendingRequest === undefined) throw new Error('Missing pending request after worker restart')
+		await resolveInterceptorAccessAfterRestart(
+			simulationServicesOwner,
+			websiteTabConnections,
+			{
+				userReply: 'Approved',
+				requestAccessToAddress: pendingRequest.requestAccessToAddress?.address,
+				originalRequestAccessToAddress: pendingRequest.originalRequestAccessToAddress?.address,
+				accessRequestId: pendingRequest.accessRequestId,
+			},
+			noopPublishRpcConnectionStatus,
+		)
+
+		assert.deepEqual(messages.filter((message) => message.method === 'eth_accounts' && message.requestId === 111).map((message) => message.result), [[accountString]])
 	})
 
 	test('uses refreshed website access after signer account discovery', async () => {

@@ -2,8 +2,7 @@ import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { popupMessageHandler, type PopupMessageHandlerMap } from '../popupMessageHandlerRegistry.js'
 import { openNewTab } from '../popupMessageHandlers/navigation.js'
 import { changeSettings, exportSettings, importSettings, setNewRpcList, settingsOpened } from '../popupMessageHandlers/settings.js'
-import { getSettings } from '../settings.js'
-import { updateWebsiteApprovalAccesses } from '../accessManagement.js'
+import { syncWebsiteApprovalsWithSettings } from '../websiteAccessReconciliation.js'
 
 export const settingsPopupMessageHandlers = {
 	popup_requestSettings: popupMessageHandler('popup_requestSettings', async () => await settingsOpened()),
@@ -13,9 +12,8 @@ export const settingsPopupMessageHandlers = {
 		const importSettingsReply = await importSettings(request)
 		await sendPopupMessageToOpenWindows(importSettingsReply)
 		if (!importSettingsReply.data.success) return
-		const importedSettings = await getSettings()
-		const popupRefreshGeneration = await updateWebsiteApprovalAccesses(context.simulationServicesOwner, context.websiteTabConnections, importedSettings, true)
-		await sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: importedSettings, popupRefreshGeneration })
+		const { reconciledSettings, popupRefreshGeneration } = await syncWebsiteApprovalsWithSettings(context.websiteTabConnections, { promptForAccessesIfNeeded: true })
+		await sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: reconciledSettings, popupRefreshGeneration })
 	}),
 	popup_get_export_settings: popupMessageHandler('popup_get_export_settings', async () => await exportSettings()),
 	popup_set_rpc_list: popupMessageHandler('popup_set_rpc_list', async (context, request) => await setNewRpcList(context.simulationServicesOwner, request, context.settings)),

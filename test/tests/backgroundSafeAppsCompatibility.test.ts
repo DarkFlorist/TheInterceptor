@@ -3,9 +3,11 @@ import { describe, spyOn, test } from 'bun:test'
 import { notifyWebsiteLifecycle } from '../../app/ts/background/websiteLifecycle.js'
 import type { InterceptedRequest } from '../../app/ts/utils/requests.js'
 import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
-import { flushMicrotasks } from '../harness/async.js'
+import { flushMicrotasks, waitFor } from '../harness/async.js'
 import { addressString, confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, createRestoringBrowserMockInstaller, loadModules, noopPublishRpcConnectionStatus, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
+import { withSilencedConsole } from './consoleSilence.js'
 import { readProperty } from '../harness/assertions.js'
+import { hasMessageMethod } from './runtimeMessageMatchers.js'
 
 const installBrowserMock = createRestoringBrowserMockInstaller()
 
@@ -16,6 +18,8 @@ async function refreshSafeAppsPorts(connections: WebsiteTabConnections) {
 	notifyWebsiteLifecycle(lifecycle(connections)?.accessReconciled)
 	await flushMicrotasks()
 }
+
+const isUnexpectedErrorPopupMessage = (message: unknown) => hasMessageMethod(message, 'popup_UnexpectedErrorOccured')
 
 describe('background Safe Apps compatibility and website lifecycle observers', () => {
 	test('shared top-frame identity accepts MV2 and top-frame ports and rejects child frames', async () => {
@@ -75,6 +79,45 @@ describe('background Safe Apps compatibility and website lifecycle observers', (
 			await setSafeAppsCompatibilityMode(true)
 			await waitForPortMessageCount(messages, 'safe_apps_compatibility', 3)
 		} finally { dispose() }
+	})
+
+	test('optional lifecycle observers do not block or fail strict access reconciliation', async () => {
+		const { runtimeMessages } = installBrowserMock()
+		const { syncWebsiteApprovalsWithSettings } = await loadModules()
+		const connections = Object.assign(new Map(), { lifecycle: { accessReconciled: () => { throw new Error('Observer failed') } } })
+		await withSilencedConsole(async () => {
+			assert.equal(typeof (await syncWebsiteApprovalsWithSettings(connections, { promptForAccessesIfNeeded: false, throwOnError: true })).popupRefreshGeneration, 'number')
+			await waitFor(() => runtimeMessages.some(isUnexpectedErrorPopupMessage), { description: 'the reported observer failure' })
+		})
+	})
+
+	test('async lifecycle callback rejection is reported without delaying access reconciliation', async () => {
+		const { runtimeMessages } = installBrowserMock()
+		const { syncWebsiteApprovalsWithSettings } = await loadModules()
+		const releaseCallback = Promise.withResolvers<undefined>()
+		const connections = Object.assign(new Map(), { lifecycle: { accessReconciled: async () => {
+			await releaseCallback.promise
+			throw new Error('Async observer failed')
+		} } })
+		await withSilencedConsole(async () => {
+			assert.equal(typeof (await syncWebsiteApprovalsWithSettings(connections, { promptForAccessesIfNeeded: false, throwOnError: true })).popupRefreshGeneration, 'number')
+			releaseCallback.resolve(undefined)
+			await waitFor(() => runtimeMessages.some(isUnexpectedErrorPopupMessage), { description: 'the reported async observer failure' })
+		})
+	})
+
+	test('access reconciliation invokes only the explicitly supplied connection callbacks', async () => {
+		installBrowserMock()
+		const { syncWebsiteApprovalsWithSettings } = await loadModules()
+		const calls: string[] = []
+		const first = Object.assign(new Map(), { lifecycle: { accessReconciled: () => { calls.push('first') } } })
+		const second = Object.assign(new Map(), { lifecycle: { accessReconciled: () => { calls.push('second') } } })
+		await syncWebsiteApprovalsWithSettings(first, { promptForAccessesIfNeeded: false, throwOnError: true })
+		assert.deepEqual(calls, ['first'])
+		await syncWebsiteApprovalsWithSettings(new Map(), { promptForAccessesIfNeeded: false, throwOnError: true })
+		assert.deepEqual(calls, ['first'])
+		await syncWebsiteApprovalsWithSettings(second, { promptForAccessesIfNeeded: false, throwOnError: true })
+		assert.deepEqual(calls, ['first', 'second'])
 	})
 
 	test('does not enable Safe compatibility or expose an active address to an unapproved connected_to_signer request', async () => {
@@ -151,6 +194,132 @@ describe('background Safe Apps compatibility and website lifecycle observers', (
 		assert.equal(connection.approved, true)
 		assert.equal(messages.filter((message) => message.method === 'request_signer_to_eth_accounts').length, 1)
 		assert.equal(messages.some((message) => message.method === 'safe_apps_compatibility'), false)
+	})
+
+	test('does not advertise an approved EOA as a Safe on top-frame reload or child-frame approval', async () => {
+		installBrowserMock()
+		const {
+			handleInterceptedRequest,
+			websiteSocketToString,
+			changeSimulationMode,
+			setUseSignersAddressAsActiveAddress,
+			setSafeAppsCompatibilityMode,
+			initializeSafeAppsCompatibility,
+			updateWebsiteAccess,
+			syncWebsiteApprovalsWithSettings,
+			updateTabState,
+		} = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const account = 0x5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5bn
+		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: account })
+		await setUseSignersAddressAsActiveAddress(false)
+		await setSafeAppsCompatibilityMode(true)
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
+
+		const socket = { tabId: 1, connectionName: 0n }
+		await updateTabState(socket.tabId, (previousState) => ({ ...previousState, signerName: 'MetaMask', signerConnected: true, signerAccounts: [account], activeSigningAddress: account }))
+		const { port, messages } = createPort(socket.tabId, undefined, 0)
+		const connectionKey = websiteSocketToString(socket)
+		const connection = { port, socket, websiteOrigin, approved: false, wantsToConnect: false }
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: { [connectionKey]: connection } }]])
+		await initializeSafeAppsCompatibility(websiteTabConnections)
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		const request: InterceptedRequest = {
+			interceptorRequest: true,
+			interceptorInternalRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 13, requestSocket: socket },
+			method: 'connected_to_signer',
+			params: [true, 'MetaMask', 1],
+		}
+
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
+
+		const connectedResult = messages.find((message) => message.method === 'connected_to_signer' && message.requestId === 13)?.result
+		assert.equal(connection.approved, true)
+		assert.equal(connection.wantsToConnect, true)
+		assert.equal(readProperty(connectedResult, 'metamaskCompatibilityMode'), false)
+		await waitForPortMessageCount(messages, 'safe_apps_compatibility', 1)
+		assert.equal(readProperty(messages.find((message) => message.method === 'safe_apps_compatibility')?.result, 'enabled'), false)
+		assert.deepEqual(messages.find((message) => message.method === 'accountsChanged')?.result, [addressString(account)])
+
+		const childSocket = { tabId: 2, connectionName: 1n }
+		const { port: childPort, messages: childMessages } = createPort(childSocket.tabId, undefined, 2, childSocket.connectionName)
+		const childConnection = { port: childPort, socket: childSocket, websiteOrigin, approved: false, wantsToConnect: false }
+		const childConnections = new Map([[childSocket.tabId, { ...confirmedSignerOwnership(childSocket), connections: { [websiteSocketToString(childSocket)]: childConnection } }]])
+		await initializeSafeAppsCompatibility(childConnections)
+		await updateTabState(childSocket.tabId, (previousState) => ({ ...previousState, signerAccounts: [account], activeSigningAddress: account }))
+		await handleInterceptedRequest(childPort, websiteOrigin, website, simulationServicesOwner, childSocket, {
+			...request,
+			uniqueRequestIdentifier: { requestId: 14, requestSocket: childSocket },
+		}, childConnections, noopPublishRpcConnectionStatus)
+		const childResult = childMessages.find((message) => message.method === 'connected_to_signer' && message.requestId === 14)?.result
+		assert.equal(childConnection.approved, false)
+		assert.equal(readProperty(childResult, 'metamaskCompatibilityMode'), false)
+
+		await syncWebsiteApprovalsWithSettings(childConnections, { promptForAccessesIfNeeded: false })
+		await waitForPortMessageCount(childMessages, 'safe_apps_compatibility', 1)
+		assert.equal(childConnection.approved, true)
+		assert.equal(childMessages.filter((message) => message.method === 'safe_apps_compatibility').every((message) => readProperty(message.result, 'enabled') === false), true)
+		await refreshSafeAppsPorts(childConnections)
+		assert.equal(childMessages.filter((message) => message.method === 'safe_apps_compatibility').every((message) => readProperty(message.result, 'enabled') === false), true)
+	})
+
+	test('keeps Safe compatibility disabled when address consent is granted only to an EOA', async () => {
+		installBrowserMock()
+		const {
+			handleInterceptedRequest,
+			websiteSocketToString,
+			changeSimulationMode,
+			setUseSignersAddressAsActiveAddress,
+			setSafeAppsCompatibilityMode,
+			initializeSafeAppsCompatibility,
+			updateWebsiteAccess,
+			syncWebsiteApprovalsWithSettings,
+			updateTabState,
+		} = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const account = 0x6666666666666666666666666666666666666666n
+		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: account })
+		await setUseSignersAddressAsActiveAddress(false)
+		await setSafeAppsCompatibilityMode(true)
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [] }])
+
+		const socket = { tabId: 1, connectionName: 0n }
+		await updateTabState(socket.tabId, (previousState) => ({ ...previousState, signerName: 'MetaMask', signerConnected: true, signerAccounts: [account], activeSigningAddress: account }))
+		const { port, messages } = createPort(socket.tabId, undefined, 0)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		await initializeSafeAppsCompatibility(websiteTabConnections)
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		const connectedRequest: InterceptedRequest = {
+			interceptorRequest: true,
+			interceptorInternalRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 15, requestSocket: socket },
+			method: 'connected_to_signer',
+			params: [true, 'MetaMask', 1],
+		}
+
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, connectedRequest, websiteTabConnections, noopPublishRpcConnectionStatus)
+		await waitForPortMessageCount(messages, 'safe_apps_compatibility', 1)
+		assert.equal(readProperty(messages.find((message) => message.method === 'connected_to_signer' && message.requestId === 15)?.result, 'metamaskCompatibilityMode'), false)
+		assert.equal(messages.filter((message) => message.method === 'safe_apps_compatibility').every((message) => readProperty(message.result, 'enabled') === false), true)
+
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
+		await syncWebsiteApprovalsWithSettings(websiteTabConnections, { promptForAccessesIfNeeded: false })
+		assert.equal(messages.filter((message) => message.method === 'safe_apps_compatibility').every((message) => readProperty(message.result, 'enabled') === false), true)
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
+			...connectedRequest,
+			uniqueRequestIdentifier: { requestId: 16, requestSocket: socket },
+			params: [false, 'NoSigner', 2],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		await waitForPortMessageCount(messages, 'safe_apps_compatibility', 3)
+		assert.equal(readProperty(messages.find((message) => message.method === 'connected_to_signer' && message.requestId === 16)?.result, 'metamaskCompatibilityMode'), false)
+		assert.equal(messages.filter((message) => message.method === 'safe_apps_compatibility').every((message) => readProperty(message.result, 'enabled') === false), true)
 	})
 
 	test('enables Safe compatibility only while an owned configured Safe is active', async () => {
