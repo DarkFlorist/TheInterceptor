@@ -340,6 +340,34 @@ test('keeps and shows the names of a newer metadata refresh when an older refres
 	assert.equal(browserMock.sentMessages.slice(messagesSentBeforeOlderRefreshResumes).some(isDialogUpdate), false, 'the older refresh sent the dialog an update after the newer one')
 })
 
+test('stores the names of a newer metadata refresh that read the confirmation before an older refresh\'s write landed', async () => {
+	await useInvoiceAddressBook()
+	const confirmationSimulator = createFeeValidatingSimulator(TOO_LITTLE_ETH_FOR_FEES)
+	await openUsdcTransferConfirmation(confirmationSimulator)
+	const { refreshPopupConfirmTransactionMetadata } = await import('../../app/ts/background/popupMessageHandlers.js')
+	const getStoredPayerName = async () => (await getPendingFailedTransactionVisualisation()).data.failedTransactionPreview?.addressBookEntries.find((entry) => entry.address === activeAddress)?.name
+	const renamePayer = async (name: string) => await modules.updateUserAddressBookEntries((entries) => entries.map((entry) => entry.address === activeAddress ? { ...entry, name } : entry))
+	// Holds the older refresh's write of the pending transactions until the newer refresh has read them.
+	let releaseOlderWrite: (() => void) | undefined
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		if (releaseOlderWrite === undefined && 'pendingTransactionsAndMessages' in items) {
+			await new Promise<void>((resolve) => { releaseOlderWrite = resolve })
+		}
+		writeStoredItems()
+	})
+	await renamePayer('First name')
+	const olderRefresh = refreshPopupConfirmTransactionMetadata(confirmationSimulator.ethereum, confirmationSimulator.tokenPriceService, undefined)
+	while (releaseOlderWrite === undefined) await new Promise((resolve) => setTimeout(resolve, 1))
+	await renamePayer('Second name')
+	const newerRefresh = refreshPopupConfirmTransactionMetadata(confirmationSimulator.ethereum, confirmationSimulator.tokenPriceService, undefined)
+	await new Promise((resolve) => setTimeout(resolve, 10))
+	releaseOlderWrite()
+	await withSilencedConsole(async () => await Promise.all([olderRefresh, newerRefresh]))
+	browserMock.setStorageSetHandler(undefined)
+
+	assert.equal(await getStoredPayerName(), 'Second name', 'the older refresh\'s names, stored after the newer refresh read the confirmation, made the newer refresh drop its own')
+})
+
 test('resolves address-book names and parses calldata when the confirmation simulation throws', async () => {
 	await useInvoiceAddressBook()
 	const { refreshConfirmTransactionSimulation } = await import('../../app/ts/background/confirmTransactionSimulation.js')
