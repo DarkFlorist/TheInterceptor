@@ -18,7 +18,7 @@ type ShowHintEventDetail = {
 	y: number
 }
 
-export const showHint = (target: HTMLElement, detail: ShowHintEventDetail) => {
+export const showHint = (target: EventTarget, detail: ShowHintEventDetail) => {
 	target.dispatchEvent(new CustomEvent(showHintEventName, { bubbles: true, detail }))
 }
 

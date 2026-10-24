@@ -223,7 +223,6 @@ export const SimulationStateBlock = funtypes.Intersect(
 	}),
 )
 
-type SimulationStateSuccess = funtypes.Static<typeof SimulationStateSuccess>
 const SimulationStateSuccess = funtypes.ReadonlyObject({
 	success: funtypes.Literal(true),
 	simulationStateInput: SimulationStateInput,
@@ -475,7 +474,6 @@ export const createPassthroughCompleteVisualizedSimulation = (
 	numberOfAddressesMadeRich,
 })
 
-type NewHeadsSubscription = funtypes.Static<typeof NewHeadsSubscription>
 const NewHeadsSubscription = funtypes.ReadonlyObject({
 	type: funtypes.Literal('newHeads'),
 	subscriptionOrFilterId: funtypes.String,
@@ -483,7 +481,6 @@ const NewHeadsSubscription = funtypes.ReadonlyObject({
 	subscriptionCreatorSocket: WebsiteSocket,
 })
 
-type NewEthfilter = funtypes.Static<typeof NewEthfilter>
 const NewEthfilter = funtypes.ReadonlyObject({
 	type: funtypes.Literal('eth_newFilter'),
 	subscriptionOrFilterId: funtypes.String,
@@ -505,7 +502,6 @@ export const VisualizedSimulatorState = funtypes.ReadonlyObject({
 	visualizedSimulationState: VisualizedSimulationState,
 })
 
-type ModifyAddressWindowStateError = funtypes.Static<typeof ModifyAddressWindowStateError>
 const ModifyAddressWindowStateError = funtypes.Union(funtypes.ReadonlyObject({ message: funtypes.String, blockEditing: funtypes.Boolean }), funtypes.Undefined)
 
 export type ModifyAddressWindowState = funtypes.Static<typeof ModifyAddressWindowState>

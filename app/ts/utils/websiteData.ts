@@ -1,6 +1,5 @@
 import * as funtypes from 'funtypes'
 
-type WebsiteMetadataInfo  = funtypes.Static<typeof WebsiteMetadataInfo>
 const WebsiteMetadataInfo = funtypes.Intersect(
 	funtypes.ReadonlyObject({
 		name: funtypes.String,

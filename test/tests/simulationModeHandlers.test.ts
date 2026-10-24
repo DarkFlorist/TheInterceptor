@@ -5,10 +5,9 @@ import type { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
 import { toResolvedSimulationInput } from '../../app/ts/types/visualizer-types.js'
 import { bytes32String } from '../../app/ts/utils/bigint.js'
-import { installBrowserMock } from '../harness/browserMock.js'
+import { replaceGlobal } from '../harness/globals.js'
 
-// simulationModeHandlers.ts still imports background.ts, whose module setup needs the extension globals, so install them before loading it.
-installBrowserMock({ extensionId: 'test-extension' })
+replaceGlobal('chrome', { runtime: { id: 'test-extension' } })
 
 const { getStorageAt } = await import('../../app/ts/background/simulationModeHandlers.js')
 
