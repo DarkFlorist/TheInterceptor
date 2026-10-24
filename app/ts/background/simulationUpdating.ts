@@ -1,10 +1,12 @@
 import type { Settings } from '../types/interceptor-messages.js'
 import type { RpcNetwork } from '../types/rpc.js'
+import type { EthereumUnsignedTransaction } from '../types/wire-types.js'
 import { isSignerOnlyNetwork } from '../utils/rpcNetworkChange.js'
 import { prepareSafeDelegateSimulationInput, prepareSafeDelegateStateOverrides, ORIGINAL_GNOSIS_SAFE, SAFE_DELEGATE_EXECUTE_ABI } from '../safe/safeSimulation.js'
+import { estimateSafeExecutionGas, prepareSafeExecutionSimulationInput } from '../safe/safeExecutionSimulation.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { appendTransactionToInputAndSimulate, createExecutionSimulationState, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustmentBalances, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfterForTransaction, getWebsiteCreatedEthereumTransactions, simulateEstimateGasFromInput, sliceSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
-import { calculateRealizedEffectiveGasPrice } from '../simulation/services/simulationBlockParameters.js'
+import { appendTransactionToInputAndSimulate, createExecutionSimulationState, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustmentBalances, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfterForTransaction, getWebsiteCreatedEthereumTransactions, simulateEstimateGas, simulateEstimateGasFromInput, sliceSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { calculateRealizedEffectiveGasPrice, getSimulatedBlockBaseFeePerGas } from '../simulation/services/simulationBlockParameters.js'
 import { mockSignTransaction } from '../simulation/services/simulationTransactionSigning.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../config/defaults.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
@@ -14,7 +16,7 @@ import type { EnrichedEthereumEvents, EnrichedEthereumInputData } from '../types
 import type { PendingTransaction } from '../types/accessRequest.js'
 import type { AddressBookEntry, Erc20TokenEntry } from '../types/addressBookTypes.js'
 import type { SimulateExecutionReplyData } from '../types/interceptor-messages.js'
-import { PASSTHROUGH_STATE, type BlockTimeManipulation, type ExecutionSimulationState, type NonSimulatedAndVisualizedTransaction, type PreSimulationTransaction, type SignedMessageTransaction, type SimulationState, type SimulationStateInput, type SimulationStateInputBlock, type VisualizedSimulatorState, toResolvedSimulationInput, toResolvedSimulationState } from '../types/visualizer-types.js'
+import { PASSTHROUGH_STATE, type BlockTimeManipulation, type ExecutionSimulationState, type NonSimulatedAndVisualizedTransaction, type PreSimulationTransaction, type ResolvedSimulationState, type SignedMessageTransaction, type SimulationState, type SimulationStateInput, type SimulationStateInputBlock, type VisualizedSimulatorState, toResolvedSimulationInput, toResolvedSimulationState } from '../types/visualizer-types.js'
 import { get4Byte, get4ByteString } from '../utils/calldata.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS, FourByteExplanations, MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
 import { type DistributiveOmit, assertNever, modifyObject } from '../utils/typescript.js'
@@ -296,7 +298,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 		const parentBlock = await ethereum.getBlock(undefined)
 		if (parentBlock === null) throw new Error('The latest block is null')
 		if (parentBlock.baseFeePerGas === undefined) return returnError('cannot build simulation from legacy block')
-		const simulationInput = await getCurrentSimulationInput()
+		const simulationInput = await prepareSafeExecutionsForRpc(await getCurrentSimulationInput(), ethereum)
 		const signedExecutionTransaction = mockSignTransaction({ ...contractExecutionResult.executingTransaction, gas: contractExecutionResult.ethSimulateV1CallResult.gasUsed })
 		const executionTransaction: PreSimulationTransaction = {
 			signedTransaction: signedExecutionTransaction,
@@ -350,9 +352,10 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 	}
 }
 
-export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: VisualizedPersonalSignRequestSafeTx, simulationInput: SimulationStateInput, ethereumClientService: EthereumClientService, tokenPriceService: TokenPriceService): Promise<DistributiveOmit<SimulateExecutionReplyData, 'transactionOrMessageIdentifier'>> => {
+export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: VisualizedPersonalSignRequestSafeTx, stackSimulationInput: SimulationStateInput, ethereumClientService: EthereumClientService, tokenPriceService: TokenPriceService): Promise<DistributiveOmit<SimulateExecutionReplyData, 'transactionOrMessageIdentifier'>> => {
 	const returnError = (errorMessage: string) => ({ success: false as const, errorType: 'Other' as const, errorMessage })
 	try {
+		const simulationInput = await prepareSafeExecutionsForRpc(stackSimulationInput, ethereumClientService)
 		// Call: 0x0, DelegateCall: 0x1
 		// https://github.com/safe-global/safe-smart-account/blob/main/contracts/libraries/Enum.sol
 		const isDelegateCall = gnosisSafeMessage.message.message.operation === 0x1n
@@ -450,10 +453,35 @@ export const updateSimulationMetadata = async (ethereum: EthereumClientService, 
 	})
 }
 
+// Gives every Gnosis Safe execution of the input the executor's call the node runs it as (prepareSafeExecutionSimulationInput). Everything that sends the simulation stack to the node prepares it with this: every simulation through prepareSimulationInputForRpc, the stack export, the Safe transaction preview and the governance execution preview on top of the stack. EthereumClientService.prepareEthSimulateV1Input rejects a Safe execution that wasn't prepared.
+export const prepareSafeExecutionsForRpc = async (simulationInput: SimulationStateInput, ethereum: EthereumClientService) => {
+	if (simulationInput.every((block) => block.transactions.length === 0)) return simulationInput
+	const parentBlock = await ethereum.getBlock(undefined)
+	if (parentBlock === null) throw new Error('The latest block is null')
+	// The simulation reads the latest block again. If a newer block arrives in between, the executor's maximum fee of twice the base fee leaves room for the base fee to rise, as EIP-1559 wallets do.
+	return await prepareSafeExecutionSimulationInput(simulationInput, ethereum, parentBlock.number, getSimulatedBlockBaseFeePerGas(parentBlock))
+}
+
+// Estimates the gas of a transaction formed on top of the simulation stack the way the stack runs it: a Gnosis Safe's own call as its executor's execTransaction call (estimateSafeExecutionGas), any other transaction as itself. A failed stack simulation fails the estimate in both cases, as in simulateEstimateGas.
+export const estimateGasOnTopOfStack = async (
+	ethereum: EthereumClientService,
+	requestAbortController: AbortController | undefined,
+	simulationState: ResolvedSimulationState,
+	transaction: DistributiveOmit<EthereumUnsignedTransaction, 'gas'>,
+	safeCallFields: Pick<PreSimulationTransaction, 'website' | 'created' | 'originalRequestParameters' | 'transactionIdentifier'> | undefined,
+) => {
+	if (safeCallFields === undefined) return await simulateEstimateGas(ethereum, requestAbortController, simulationState, transaction)
+	if (simulationState.kind === 'passthrough') throw new Error('Gnosis Safe transaction gas estimation requires the Interceptor simulator.')
+	if (simulationState.value.success === false) throw new JsonRpcResponseError(simulationState.value.jsonRpcError)
+	return await estimateSafeExecutionGas(ethereum, requestAbortController, simulationState.value.simulationStateInput, transaction, safeCallFields)
+}
+
 export const prepareSimulationInputForRpc = async (simulationInput: SimulationStateInput, ethereum: EthereumClientService) => {
 	if (simulationInput.some((block) => block.transactions.some((transaction) => transaction.safeTransaction?.safeTx.message.operation === 1n))) simulationInput = await prepareSafeDelegateSimulationInput(simulationInput, ethereum, await ethereum.getBlockNumber(undefined))
 	// Base-fee and nonce repair only rewrite transactions. Signed-message and state-override blocks must still reach the RPC handler, but inspecting them here would run an extra eth_simulateV1 request without any transaction nonce to repair.
 	if (simulationInput.every((block) => block.transactions.length === 0)) return simulationInput
+	// Before the base-fee repair, whose balance lookups simulate the input up to each transaction, so those lookups run the Safe executions as the executor's calls too.
+	simulationInput = await prepareSafeExecutionsForRpc(simulationInput, ethereum)
 	const parentBlock = await ethereum.getBlock(undefined)
 	const getBaseFeeFixedInputStateBlocks = async () => {
 		if (parentBlock === undefined) return simulationInput

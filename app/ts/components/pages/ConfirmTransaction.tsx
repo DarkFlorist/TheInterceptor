@@ -10,7 +10,7 @@ import type { RenameAddressCallBack, RpcConnectionStatus } from '../../types/use
 import { sendPopupMessageToBackgroundPage, sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport, sendPopupMessageWithReply } from '../../background/backgroundUtils.js'
 import { SignerLogoText, SignersLogoName } from '../subcomponents/signers.js'
 import { type CaughtError, ErrorCheckBox, UnexpectedError } from '../subcomponents/Error.js'
-import { QuarantineReasons, SenderReceiver, TransactionImportanceBlock } from '../simulationExplaining/Transactions.js'
+import { QuarantineReasons, SafeExecutionSimulationNotice, SenderReceiver, TransactionImportanceBlock } from '../simulationExplaining/Transactions.js'
 import { identifyTransaction } from '../simulationExplaining/identifyTransaction.js'
 import { DinoSaysNotification } from '../subcomponents/DinoSays.js'
 import { addressEditEntry, tryFocusingTabOrWindow } from '../ui-utils.js'
@@ -462,6 +462,8 @@ function SuccessfulTransactionCardContent(param: SuccessfulTransactionCardConten
 				</> }
 
 				<RawTransactionDetailsCard isRawTransaction = { simTx.originalRequestParameters.method === 'eth_sendRawTransaction' } transaction = { simTx.transaction } transactionIdentifier = { simTx.transactionIdentifier } parsedInputData = { simTx.parsedInputData } renameAddressCallBack = { param.renameAddressCallBack } gasSpent = { 'gasSpent' in simTx ? simTx.gasSpent : undefined } addressMetaData = { addressMetaData } />
+
+				<SafeExecutionSimulationNotice simulationOptions = { simTx.simulationOptions }/>
 
 				{ safeFlow?.kind !== 'proposal' ? <></> : <SafeProposalSigningRequestCard
 					safeTransaction = { safeFlow.pending.safeTransaction }

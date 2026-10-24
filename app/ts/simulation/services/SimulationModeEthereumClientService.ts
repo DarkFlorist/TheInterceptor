@@ -1,5 +1,5 @@
 import type { Settings } from '../../types/interceptor-messages.js'
-import { type EthereumClientService, getNextBlockTimeStampOverride } from './EthereumClientService.js'
+import { type EthereumClientService, getNextBlockTimeStampOverride, getTotalExecutedGasLimit } from './EthereumClientService.js'
 import type { PreparedEthSimulateV1Input } from './EthereumClientService.js'
 import { type EthereumSignedTransactionWithBlockData, type EthereumBlockTag, type EthereumAddress, type EthereumBlockHeader, type EthereumBlockHeaderWithTransactionHashes, EthereumData, EthereumQuantity, EthereumBytes32, type EthereumSendableSignedTransaction } from '../../types/wire-types.js'
 import { addressString, bigintSecondsToDate, bigintToUint8Array, dataStringWith0xStart, dateToBigintSeconds, max, min, stringToUint8Array } from '../../utils/bigint.js'
@@ -27,7 +27,7 @@ import { getCodeByteCode } from '../../utils/ethereumByteCodes.js'
 import { createStorageReaderAccountOverride, decodeStorageReaderResult, encodeStorageReaderCall, PRECOMPILE_RESERVED_ADDRESS_MAX } from '../storageReader.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../../config/defaults.js'
 import { getGasEstimateFromSimulation, jsonRpcErrorToGasEstimate } from './simulationGasEstimation.js'
-import { calculateRealizedEffectiveGasPrice, getBlockTimeManipulationSeconds, getNextBaseFeePerGas } from './simulationBlockParameters.js'
+import { calculateRealizedEffectiveGasPrice, getBlockTimeManipulationSeconds, getNextBaseFeePerGas, getSimulatedBlockBaseFeePerGas } from './simulationBlockParameters.js'
 import { getSignedTransactionForSimulation, mockSignTransaction } from './simulationTransactionSigning.js'
 import { getMessageHashForPersonalSign, simulatePersonalSign } from './simulationPersonalSigning.js'
 import { type BalanceQuery, getTokenBalanceQueriesForTransaction } from './simulationTokenBalanceQueries.js'
@@ -123,7 +123,7 @@ const transactionQueueTotalGasUsed = (simulatedTransactions: readonly SimulatedT
 
 const transactionQueueTotalGasLimitFromInput = (block: SimulationStateInputMinimalDataBlock | undefined) => {
 	if (block === undefined) return 0n
-	return block.transactions.reduce((totalGasUsed, transaction) => totalGasUsed + transaction.signedTransaction.gas, 0n)
+	return getTotalExecutedGasLimit(block.transactions)
 }
 
 const isEmptySimulationInput = (simulationStateInput: SimulationStateInput | SimulationStateInputMinimalData) => simulationStateInput.length === 0
@@ -345,7 +345,7 @@ const simulateBlockCallWithPreparedInputContext = async (
 	const simulationPrefix = context?.prepared.request.params[0].blockStateCalls.slice(0, simulationPrefixBlockCount) ?? []
 	const previousBlockOverride = simulationPrefixBlockCount === 0 ? undefined : context?.prepared.blockOverrides[simulationPrefixBlockCount - 1]
 	const previousBlockTime = previousBlockOverride?.time ?? parentBlock.timestamp
-	const baseFeePerGas = parentBlock.baseFeePerGas === undefined ? 15_000_000n : parentBlock.baseFeePerGas
+	const baseFeePerGas = getSimulatedBlockBaseFeePerGas(parentBlock)
 	const blockStateCalls: readonly SimulateBlockCalls[] = [
 		...simulationPrefix,
 		{
@@ -715,6 +715,8 @@ const usesInterceptorFilledMaxFeePerGas = (transaction: PreSimulationTransaction
 	return transaction.originalRequestParameters.method === 'eth_sendTransaction'
 		&& isFeeMarketPreSimulationTransaction(transaction)
 		&& !hasExplicitMaxFeePerGas(transaction.originalRequestParameters.params[0].maxFeePerGas)
+		// A Gnosis Safe execution's own call has no fees: its executor pays them (prepareSafeExecutionSimulationInput).
+		&& transaction.simulationOptions?.executeThroughSafe !== true
 }
 
 const getBaseFeeAdjustedTransaction = (
