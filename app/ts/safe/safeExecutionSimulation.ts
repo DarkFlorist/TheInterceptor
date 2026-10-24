@@ -30,8 +30,6 @@ const EXECUTOR_MAX_PRIORITY_FEE_PER_GAS = 10n ** 8n // 0.1 nanoeth/gas
 // Gas for execTransaction's own work around the Safe's call: its calldata, the signature checks, the nonce update, its event and the Safe's guard if it has one. The node charges only the gas used, so a generous allowance only keeps an execution from failing for lack of gas.
 const SAFE_EXECUTION_GAS_ALLOWANCE = 1_000_000n
 
-// A transaction formed in simulation mode for a Gnosis Safe's own call (formEthSendTransaction), which runs through the Safe.
-
 const compareAddresses = (first: bigint, second: bigint) => first < second ? -1 : first > second ? 1 : 0
 
 const getApprovedHashStorageSlot = (owner: bigint, safeTxHash: bigint) => keccak256(encodeAbiValues(
