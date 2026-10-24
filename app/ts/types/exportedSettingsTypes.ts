@@ -24,7 +24,6 @@ export const ActiveAddress = funtypes.ReadonlyObject({
 	askForAddressAccess: funtypes.Union(funtypes.Boolean, funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, true))),
 }).asReadonly()
 
-type ActiveAddressArray = funtypes.Static<typeof ActiveAddressArray>
 const ActiveAddressArray = funtypes.ReadonlyArray(ActiveAddress)
 
 const exportedSettingsEnvelopeFields = {
