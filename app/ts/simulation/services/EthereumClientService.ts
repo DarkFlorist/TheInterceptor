@@ -6,7 +6,7 @@ import type { IEthereumJSONRpcRequestHandler } from './EthereumJSONRpcRequestHan
 import { addressString, bigintSecondsToDate, bytes32String, dataString, dateToBigintSeconds, max } from '../../utils/bigint.js'
 import { type BlockCalls, type BlockOverrides, EthSimulateV1Result, type EthSimulateV1Params } from '../../types/ethSimulate-types.js'
 import { EthGetFeeHistoryResponse, EthGetStorageAtResponse, EthTransactionReceiptResponse, type FeeHistory, type EthGetLogsRequest, EthGetLogsResponse, type PartialEthereumTransaction } from '../../types/JsonRpc-types.js'
-import { getBlockTimeManipulationSeconds } from './simulationBlockParameters.js'
+import { getBlockTimeManipulationSeconds, getSimulatedBlockBaseFeePerGas } from './simulationBlockParameters.js'
 import { simulatePersonalSign } from './simulationPersonalSigning.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../../config/defaults.js'
 import { getEcRecoverOverride } from '../../utils/ethereumByteCodes.js'
@@ -17,6 +17,7 @@ import type { MessageHashAndSignature } from '../../utils/eip712.js'
 import { encodeAbiValues } from '../../utils/abiRuntime.js'
 import { getCurrentTimestampString } from '../../utils/time.js'
 import { projectEip7702AuthorizationForRpc } from '../../utils/eip7702Authorization.js'
+import { runsThroughGnosisSafe } from '../../utils/transactionGasAccounting.js'
 
 const parseSignatureHex = (signature: `0x${ string }`) => {
 	const stripped = signature.slice(2)
@@ -327,11 +328,13 @@ export class EthereumClientService {
 	}
 
 	public readonly prepareEthSimulateV1Input = async (simulationStateInput: SimulationStateInputMinimalData, blockNumber: bigint, requestAbortController: AbortController | undefined): Promise<PreparedEthSimulateV1Input> => {
+		// Every simulation input reaches the node through here. A Gnosis Safe execution that skipped prepareSafeExecutionsForRpc would run as the Safe sending its own call, so it fails here instead.
+		if (simulationStateInput.some((block) => block.transactions.some((transaction) => runsThroughGnosisSafe(transaction) && transaction.executedTransaction === undefined))) throw new Error('A Gnosis Safe execution reached the node without its executor\'s call (prepareSafeExecutionsForRpc).')
 		const parentBlock = await this.getBlock(requestAbortController, blockNumber)
 		if (parentBlock === null) throw new Error(`The block ${ blockNumber } is null`)
 
 		const blockOverrides: BlockOverrides[] = []
-		const baseFeePerGas = parentBlock.baseFeePerGas === undefined ? 15000000n : parentBlock.baseFeePerGas
+		const baseFeePerGas = getSimulatedBlockBaseFeePerGas(parentBlock)
 
 		const clampGasToBlock = (transaction: EthereumSendableSignedTransaction) => ({ ...transaction, gas: transaction.gas > parentBlock.gasLimit ? parentBlock.gasLimit : transaction.gas })
 		const gasLimitTransaction = (transaction: RpcTransaction): RpcTransaction => ({

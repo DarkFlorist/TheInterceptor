@@ -6,7 +6,7 @@ import { prepareSafeDelegateSimulationInput, prepareSafeDelegateStateOverrides, 
 import { estimateSafeExecutionGas, prepareSafeExecutionSimulationInput } from '../safe/safeExecutionSimulation.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { appendTransactionToInputAndSimulate, createExecutionSimulationState, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustmentBalances, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfterForTransaction, getWebsiteCreatedEthereumTransactions, simulateEstimateGas, simulateEstimateGasFromInput, sliceSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
-import { calculateRealizedEffectiveGasPrice } from '../simulation/services/simulationBlockParameters.js'
+import { calculateRealizedEffectiveGasPrice, getSimulatedBlockBaseFeePerGas } from '../simulation/services/simulationBlockParameters.js'
 import { mockSignTransaction } from '../simulation/services/simulationTransactionSigning.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../config/defaults.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
@@ -453,13 +453,13 @@ export const updateSimulationMetadata = async (ethereum: EthereumClientService, 
 	})
 }
 
-// Gives every Gnosis Safe execution of the input the executor's call the node runs it as (prepareSafeExecutionSimulationInput). Everything that sends the simulation stack to the node prepares it with this: every simulation through prepareSimulationInputForRpc, the stack export and the Safe transaction preview on top of the stack.
+// Gives every Gnosis Safe execution of the input the executor's call the node runs it as (prepareSafeExecutionSimulationInput). Everything that sends the simulation stack to the node prepares it with this: every simulation through prepareSimulationInputForRpc, the stack export, the Safe transaction preview and the governance execution preview on top of the stack. EthereumClientService.prepareEthSimulateV1Input rejects a Safe execution that wasn't prepared.
 export const prepareSafeExecutionsForRpc = async (simulationInput: SimulationStateInput, ethereum: EthereumClientService) => {
 	if (simulationInput.every((block) => block.transactions.length === 0)) return simulationInput
 	const parentBlock = await ethereum.getBlock(undefined)
 	if (parentBlock === null) throw new Error('The latest block is null')
-	// The executor pays the base fee prepareEthSimulateV1Input gives every block, including its fallback for blocks without one.
-	return await prepareSafeExecutionSimulationInput(simulationInput, ethereum, parentBlock.number, parentBlock.baseFeePerGas ?? 15_000_000n)
+	// The simulation reads the latest block again. If a newer block arrives in between, the executor's maximum fee of twice the base fee leaves room for the base fee to rise, as EIP-1559 wallets do.
+	return await prepareSafeExecutionSimulationInput(simulationInput, ethereum, parentBlock.number, getSimulatedBlockBaseFeePerGas(parentBlock))
 }
 
 // Estimates the gas of a transaction formed on top of the simulation stack the way the stack runs it: a Gnosis Safe's own call as its executor's execTransaction call (estimateSafeExecutionGas), any other transaction as itself. A failed stack simulation fails the estimate in both cases, as in simulateEstimateGas.

@@ -27,7 +27,7 @@ import { getCodeByteCode } from '../../utils/ethereumByteCodes.js'
 import { createStorageReaderAccountOverride, decodeStorageReaderResult, encodeStorageReaderCall, PRECOMPILE_RESERVED_ADDRESS_MAX } from '../storageReader.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../../config/defaults.js'
 import { getGasEstimateFromSimulation, jsonRpcErrorToGasEstimate } from './simulationGasEstimation.js'
-import { calculateRealizedEffectiveGasPrice, getBlockTimeManipulationSeconds, getNextBaseFeePerGas } from './simulationBlockParameters.js'
+import { calculateRealizedEffectiveGasPrice, getBlockTimeManipulationSeconds, getNextBaseFeePerGas, getSimulatedBlockBaseFeePerGas } from './simulationBlockParameters.js'
 import { getSignedTransactionForSimulation, mockSignTransaction } from './simulationTransactionSigning.js'
 import { getMessageHashForPersonalSign, simulatePersonalSign } from './simulationPersonalSigning.js'
 import { type BalanceQuery, getTokenBalanceQueriesForTransaction } from './simulationTokenBalanceQueries.js'
@@ -345,7 +345,7 @@ const simulateBlockCallWithPreparedInputContext = async (
 	const simulationPrefix = context?.prepared.request.params[0].blockStateCalls.slice(0, simulationPrefixBlockCount) ?? []
 	const previousBlockOverride = simulationPrefixBlockCount === 0 ? undefined : context?.prepared.blockOverrides[simulationPrefixBlockCount - 1]
 	const previousBlockTime = previousBlockOverride?.time ?? parentBlock.timestamp
-	const baseFeePerGas = parentBlock.baseFeePerGas === undefined ? 15_000_000n : parentBlock.baseFeePerGas
+	const baseFeePerGas = getSimulatedBlockBaseFeePerGas(parentBlock)
 	const blockStateCalls: readonly SimulateBlockCalls[] = [
 		...simulationPrefix,
 		{

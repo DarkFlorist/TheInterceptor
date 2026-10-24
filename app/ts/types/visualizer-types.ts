@@ -225,7 +225,7 @@ export const SimulationStateInput = funtypes.ReadonlyArray(SimulationStateInputB
 export type SimulationStateInputMinimalDataBlock = funtypes.Static<typeof SimulationStateInputMinimalDataBlock>
 export const SimulationStateInputMinimalDataBlock = funtypes.ReadonlyObject({
 	stateOverrides: StateOverrides,
-	transactions: funtypes.ReadonlyArray(funtypes.ReadonlyObject({ signedTransaction: EthereumSendableSignedTransaction }).And(funtypes.ReadonlyPartial({ executedTransaction: EthereumSendableSignedTransaction }))),
+	transactions: funtypes.ReadonlyArray(funtypes.ReadonlyObject({ signedTransaction: EthereumSendableSignedTransaction }).And(funtypes.ReadonlyPartial({ executedTransaction: EthereumSendableSignedTransaction, simulationOptions: TransactionSimulationOptions }))),
 	signedMessages: funtypes.ReadonlyArray(SignedMessageTransaction),
 	blockTimeManipulation: BlockTimeManipulation,
 	simulateWithZeroBaseFee: funtypes.Boolean,
