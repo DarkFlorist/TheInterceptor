@@ -7,7 +7,8 @@ import { areEqualUint8Arrays } from '../utils/typed-arrays.js'
 import { createSafeContractValidationFailure, getSafeContractSnapshot } from './safeCore.js'
 import { completeSafeExecutionWithConfiguredSigner, decodeSafeExecution } from './safeExecution.js'
 
-const SAFE_EXEC_TRANSACTION_SELECTOR = Uint8Array.from([0x6a, 0x76, 0x12, 0x02])
+// The selector of a Gnosis Safe's execTransaction.
+export const SAFE_EXEC_TRANSACTION_SELECTOR = Uint8Array.from([0x6a, 0x76, 0x12, 0x02])
 
 export const isSafeExecTransactionCall = (input: Uint8Array) => SAFE_EXEC_TRANSACTION_SELECTOR.every((byte, index) => input[index] === byte)
 

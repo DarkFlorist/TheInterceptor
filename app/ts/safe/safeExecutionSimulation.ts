@@ -18,6 +18,7 @@ import type { DistributiveOmit } from '../utils/typescript.js'
 import { last } from '../utils/array.js'
 import { isGnosisSafeExecution } from '../utils/transactionGasAccounting.js'
 import { isSafeCallRevert, SAFE_CALL_REVERTED_MESSAGE } from './safeExecutionFailure.js'
+import { SAFE_EXEC_TRANSACTION_SELECTOR } from './safeExecutionRouting.js'
 import { getSimulatedBlockBaseFeePerGas } from '../simulation/services/simulationBlockParameters.js'
 
 // The account that sends simulated Gnosis Safe executions. It is random for each background session, so a called contract can't recognise the simulation by a known tx.origin. On-chain, too, a Safe's transactions are often sent by accounts that aren't its owners, such as relayers.
@@ -63,16 +64,14 @@ function getSafeExecution({ safeTransaction, signedTransaction, simulationOption
 	}
 }
 
-// execTransaction's selector. A call to any Safe's execTransaction is encoded within the calldata of the calls that relay it, so its selector's occurrences in a transaction's calldata bound the Safe executions the transaction can make, whichever contracts relay them and however deeply.
-const EXEC_TRANSACTION_SELECTOR = stringToUint8Array(encodeFunctionCall(SAFE_EXECUTION_ABI, 'execTransaction', [addressString(0n), 0n, '0x', 0n, 0n, 0n, 0n, addressString(0n), addressString(0n), '0x']).slice(0, 10))
-
 // At most this many relayed executions are counted. A page can stuff calldata with the selector, and each counted execution makes every later Safe execution hash and approve one more nonce; real transactions relay a Safe execution rarely, and hardly ever this often.
 const MAX_COUNTED_RELAYED_EXECUTIONS = 16n
 
+// A call to any Safe's execTransaction is encoded within the calldata of the calls that relay it, so its selector's occurrences in a transaction's calldata bound the Safe executions the transaction can make, whichever contracts relay them and however deeply.
 const countExecTransactionSelectors = (data: Uint8Array) => {
 	let occurrences = 0n
-	for (let index = 0; index + EXEC_TRANSACTION_SELECTOR.length <= data.length; index++) {
-		if (EXEC_TRANSACTION_SELECTOR.every((byte, offset) => data[index + offset] === byte)) occurrences++
+	for (let index = 0; index + SAFE_EXEC_TRANSACTION_SELECTOR.length <= data.length; index++) {
+		if (SAFE_EXEC_TRANSACTION_SELECTOR.every((byte, offset) => data[index + offset] === byte)) occurrences++
 	}
 	return occurrences
 }
@@ -172,7 +171,7 @@ export async function estimateSafeExecutionGas(
 	const safeCall: PreSimulationTransaction = {
 		...safeCallFields,
 		signedTransaction: mockSignTransaction({ ...safeCallWithoutGas, gas: blockGasLimit }),
-		simulationOptions: { requiredChainId: ethereum.getChainId(), simulateWithZeroBaseFee: false, executeThroughSafe: true },
+		simulationOptions: { requiredChainId: ethereum.getChainId(), executeThroughSafe: true },
 	}
 	// appendTransactionsToInput puts the Safe's call alone in a new last block.
 	const preparedInput = await prepareSafeExecutionSimulationInput(appendTransactionsToInput(simulationInput, [safeCall]), ethereum, parentBlock.number, getSimulatedBlockBaseFeePerGas(parentBlock))

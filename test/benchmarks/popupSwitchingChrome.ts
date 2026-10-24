@@ -247,7 +247,7 @@ async function runIteration() {
 		const stack: InterceptorTransactionStack = { operations: [{ type: 'Transaction', preSimulationTransaction: {
 			signedTransaction: mockSignTransaction({ type: '1559', ...transaction, nonce: 0n, gas: 21_000n, chainId: 2n, maxFeePerGas: 2n, maxPriorityFeePerGas: 1n }),
 			website: { websiteOrigin: server.url.host }, created: new Date(), originalRequestParameters: { method: 'eth_sendTransaction', params: [{ ...transaction, maxFeePerGas: 2n, maxPriorityFeePerGas: 1n }] },
-			transactionIdentifier: 1n, simulationOptions: { requiredChainId: 2n, simulateWithZeroBaseFee: false },
+			transactionIdentifier: 1n, simulationOptions: { requiredChainId: 2n },
 		} }] }
 		await workerConnection.evaluate(`browser.storage.local.set({ interceptorTransactionStack: ${ JSON.stringify(serialize(InterceptorTransactionStack, stack)) } })`)
 		await popup.evaluate(`browser.runtime.sendMessage({ method: 'popup_refreshSimulation' })`)

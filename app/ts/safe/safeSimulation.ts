@@ -82,11 +82,7 @@ export function createSafeExecutionPreSimulationTransaction(
 		created: transactionToSimulate.created,
 		originalRequestParameters: transactionToSimulate.originalRequestParameters,
 		transactionIdentifier: transactionToSimulate.transactionIdentifier,
-		// The simulation runs a proposal through the Safe's execTransaction with real fees (safe/safeExecutionSimulation.ts), so it needs no zero base fee block.
-		simulationOptions: {
-			requiredChainId,
-			simulateWithZeroBaseFee: false,
-		},
+		simulationOptions: { requiredChainId },
 		safeTransaction: {
 			safeTx: safeSigningRequest.safeTx,
 			safeTxHash: safeSigningRequest.safeTxHash,

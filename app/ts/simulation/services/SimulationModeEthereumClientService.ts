@@ -622,7 +622,7 @@ const createPreparedSimulatedExecutionBlocks = async (
 	})
 }
 
-export const appendTransactionsToInput = (simulationStateInput: SimulationStateInput, transactions: PreSimulationTransaction[], blockDelta: number | undefined = undefined, stateOverrides: StateOverrides = {}, simulateWithZeroBaseFee = false): SimulationStateInput => {
+export const appendTransactionsToInput = (simulationStateInput: SimulationStateInput, transactions: PreSimulationTransaction[], blockDelta: number | undefined = undefined, stateOverrides: StateOverrides = {}): SimulationStateInput => {
 	const blockToAppendTo = blockDelta ?? simulationStateInput.length
 	const mergeStateSets = (oldOverrides: StateOverrides, newOverrides: StateOverrides) => {
 		const copy = { ...oldOverrides }
@@ -643,7 +643,7 @@ export const appendTransactionsToInput = (simulationStateInput: SimulationStateI
 	}
 	return [
 		...simulationStateInput,
-		{ stateOverrides, transactions: newTransactions, signedMessages: [], blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION, simulateWithZeroBaseFee }
+		{ stateOverrides, transactions: newTransactions, signedMessages: [], blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION, simulateWithZeroBaseFee: false }
 	]
 }
 

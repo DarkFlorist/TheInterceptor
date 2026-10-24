@@ -71,9 +71,9 @@ export const BlockTimeManipulationWithNoDelay = funtypes.Union(
 )
 
 export type TransactionSimulationOptions = funtypes.Static<typeof TransactionSimulationOptions>
+// Earlier versions also stored simulateWithZeroBaseFee here, true for Safe proposals. Parsing drops it from a stored or imported stack, so every stacked transaction runs in a block with the real base fee.
 export const TransactionSimulationOptions = funtypes.ReadonlyObject({
 	requiredChainId: EthereumQuantity,
-	simulateWithZeroBaseFee: funtypes.Boolean,
 }).And(funtypes.ReadonlyPartial({
 	// The transaction is a Gnosis Safe's own call. The simulator runs it the way the Safe runs it on-chain: an executor account calls the Safe's execTransaction and pays real fees (safe/safeExecutionSimulation.ts).
 	executeThroughSafe: funtypes.Literal(true),

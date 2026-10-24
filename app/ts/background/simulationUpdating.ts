@@ -4,7 +4,6 @@ import type { EthereumUnsignedTransaction } from '../types/wire-types.js'
 import { isSignerOnlyNetwork } from '../utils/rpcNetworkChange.js'
 import { prepareSafeDelegateStateOverrides, ORIGINAL_GNOSIS_SAFE, SAFE_DELEGATE_EXECUTE_ABI, validateSafeDelegateSimulationInput } from '../safe/safeSimulation.js'
 import { estimateSafeExecutionGas, prepareSafeExecutionSimulationInput } from '../safe/safeExecutionSimulation.js'
-import { isGnosisSafeExecution } from '../utils/transactionGasAccounting.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { appendTransactionToInputAndSimulate, createExecutionSimulationState, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustmentBalances, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfterForTransaction, getWebsiteCreatedEthereumTransactions, simulateEstimateGas, simulateEstimateGasFromInput, sliceSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { calculateRealizedEffectiveGasPrice, getSimulatedBlockBaseFeePerGas } from '../simulation/services/simulationBlockParameters.js'
@@ -68,7 +67,6 @@ export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[
 	let currentBlockSignedMessages: SignedMessageTransaction[] = []
 	let currentBlockStateOverrides = getMakeCurrentAddressRichStateOverride(await richListPromise)
 	let previousBlockTimeManipulation = settings.simulationMode ? preSimulationBlockTimeManipulation : DEFAULT_BLOCK_MANIPULATION
-	let currentBlockSimulateWithZeroBaseFee = false
 
 	const pushBlock = (blockTimeManipulation: BlockTimeManipulation) => {
 		inputBlocks.push({
@@ -76,13 +74,12 @@ export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[
 			transactions: currentBlockTransactions,
 			signedMessages: currentBlockSignedMessages,
 			blockTimeManipulation: previousBlockTimeManipulation,
-			simulateWithZeroBaseFee: currentBlockSimulateWithZeroBaseFee,
+			simulateWithZeroBaseFee: false,
 		})
 		previousBlockTimeManipulation = blockTimeManipulation
 		currentBlockSignedMessages = []
 		currentBlockStateOverrides = {}
 		currentBlockTransactions = []
-		currentBlockSimulateWithZeroBaseFee = false
 	}
 
 	const operations = getOperationsForActiveStackContext(stack, getActiveStackContext(settings))
@@ -94,12 +91,6 @@ export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[
 					simulationOptions?.requiredChainId !== undefined
 					&& simulationOptions.requiredChainId !== settings.activeRpcNetwork.chainId
 				) break
-				// Safe proposals stored by earlier versions ask for a zero base fee block, but every Gnosis Safe execution now runs through the Safe with real fees.
-				const simulateWithZeroBaseFee = !isGnosisSafeExecution(operation.preSimulationTransaction) && (simulationOptions?.simulateWithZeroBaseFee ?? false)
-				if (currentBlockTransactions.length > 0 && currentBlockSimulateWithZeroBaseFee !== simulateWithZeroBaseFee) {
-					pushBlock({ type: 'AddToTimestamp', deltaToAdd: 0n, deltaUnit: 'Seconds' })
-				}
-				currentBlockSimulateWithZeroBaseFee = simulateWithZeroBaseFee
 				currentBlockTransactions.push(operation.preSimulationTransaction)
 				break
 			}
@@ -127,7 +118,7 @@ export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[
 			transactions: currentBlockTransactions,
 			signedMessages: currentBlockSignedMessages,
 			blockTimeManipulation: previousBlockTimeManipulation,
-			simulateWithZeroBaseFee: currentBlockSimulateWithZeroBaseFee,
+			simulateWithZeroBaseFee: false,
 		})
 	}
 	return inputBlocks

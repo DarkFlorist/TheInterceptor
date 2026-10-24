@@ -585,7 +585,7 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 	}
 	// Carried to the confirmation simulation and the simulation stack, which run the Safe's call through its execTransaction.
 	const simulationOptionsField: { readonly simulationOptions?: TransactionSimulationOptions } = gasPayment === 'simulated-safe-executor'
-		? { simulationOptions: { requiredChainId: ethereumClientService.getChainId(), simulateWithZeroBaseFee: false, executeThroughSafe: true } }
+		? { simulationOptions: { requiredChainId: ethereumClientService.getChainId(), executeThroughSafe: true } }
 		: {}
 	if (transactionDetails.gas === undefined) {
 		try {

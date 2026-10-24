@@ -23,7 +23,7 @@ const ORDINARY_ACCOUNT = recipientAddress
 const CALLED_CONTRACT = 0x6666666666666666666666666666666666666666n
 const OWNERS = [0x3000000000000000000000000000000000000003n, 0x1000000000000000000000000000000000000001n, 0x2000000000000000000000000000000000000002n]
 const SORTED_OWNERS = [0x1000000000000000000000000000000000000001n, 0x2000000000000000000000000000000000000002n, 0x3000000000000000000000000000000000000003n]
-const SAFE_EXECUTION_SIMULATION_OPTIONS: TransactionSimulationOptions = { requiredChainId: fakeRpcNetwork.chainId, simulateWithZeroBaseFee: false, executeThroughSafe: true }
+const SAFE_EXECUTION_SIMULATION_OPTIONS: TransactionSimulationOptions = { requiredChainId: fakeRpcNetwork.chainId, executeThroughSafe: true }
 const BASE_FEE_PER_GAS = 1_000n
 // What geth returns when a Safe's call fails inside execTransaction: Error("GS013").
 const GS013_REVERT_DATA = '0x08c379a0000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000054753303133000000000000000000000000000000000000000000000000000000'
@@ -204,14 +204,13 @@ test('counts a Gnosis Safe execution whose own call executes a Safe among the ex
 })
 
 // A Safe proposal of the signing-mode stack: the Safe's call is shown, and its SafeTx is what the Safe executes.
-function createSafeProposal(message: Partial<SafeTx['message']>, legacySimulationOptions = false): PreSimulationTransaction {
+function createSafeProposal(message: Partial<SafeTx['message']>): PreSimulationTransaction {
 	const safeTx = { ...createSafeTx(fakeRpcNetwork.chainId, SAFE_ADDRESS, { to: CALLED_CONTRACT, value: 3n, input: Uint8Array.from([0x56]) }, 4n), }
 	const proposalSafeTx = { ...safeTx, message: { ...safeTx.message, ...message } }
 	const shownCall = createSafeCall({ value: 3n, input: Uint8Array.from([0x56]), gas: 63_000n }, undefined)
 	return {
 		...shownCall,
-		// Earlier versions stored Safe proposals for a zero base fee block.
-		simulationOptions: { requiredChainId: fakeRpcNetwork.chainId, simulateWithZeroBaseFee: legacySimulationOptions },
+		simulationOptions: { requiredChainId: fakeRpcNetwork.chainId },
 		safeTransaction: { safeTx: proposalSafeTx, safeTxHash: BigInt(getSafeTxHash(proposalSafeTx)), created, websiteOrigin: 'https://example.com', transactionIdentifier: 3n, signatures: [] },
 	}
 }
@@ -304,10 +303,18 @@ test('approves a Safe execution only at the Safe\'s nonce when no earlier transa
 	assert.equal(Object.keys(preparedBlock?.stateOverrides[addressString(SAFE_ADDRESS)]?.stateDiff ?? {}).length, SORTED_OWNERS.length)
 })
 
-test('runs a Safe proposal stored by an earlier version in a block with the real base fee', async () => {
+test('drops the zero base fee flag of a Safe proposal stored by an earlier version and runs it with the real base fee', async () => {
 	configureSafe()
 	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({ simulationMode: false, rpcNetwork: fakeRpcNetwork, activeSigningSafeAddress: SAFE_ADDRESS })
-	await modules.updateInterceptorTransactionStack(() => ({ operations: [{ type: 'Transaction', preSimulationTransaction: createSafeProposal({}, true) }] }))
+	const serializedProposal = modules.serialize(PreSimulationTransaction, createSafeProposal({}))
+	// Earlier versions stored Safe proposals for a zero base fee block.
+	const storedByEarlierVersion = { operations: [{ type: 'Transaction', preSimulationTransaction: { ...serializedProposal, simulationOptions: { ...serializedProposal.simulationOptions, simulateWithZeroBaseFee: true } } }] }
+	// Loading the stack from storage parses it with InterceptorTransactionStack.
+	const loadedStack = InterceptorTransactionStack.parse(storedByEarlierVersion)
+	const [loadedOperation] = loadedStack.operations
+	if (loadedOperation?.type !== 'Transaction') throw new Error('Expected the stored proposal')
+	assert.deepEqual(loadedOperation.preSimulationTransaction.simulationOptions, { requiredChainId: fakeRpcNetwork.chainId })
+	await modules.updateInterceptorTransactionStack(() => loadedStack)
 	const { getCurrentSimulationInput, prepareSafeExecutionsForRpc } = await import('../../app/ts/background/simulationUpdating.js')
 	const stackInput = await getCurrentSimulationInput()
 	assert.equal(stackInput.at(-1)?.simulateWithZeroBaseFee, false)
