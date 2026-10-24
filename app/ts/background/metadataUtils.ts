@@ -258,7 +258,7 @@ type TransactionAddressFields = {
 	readonly authorizationList?: readonly { readonly address: bigint }[]
 }
 
-// The sender, the recipient or the contract the transaction deploys, and the EIP-7702 delegation targets it authorizes.
+// The sender, the recipient or the contract the transaction deploys, and the EIP-7702 delegation targets it authorizes. A request with an authorization list is formed into an EIP-7702 transaction whatever type it names (createEip1559Or7702Transaction), so the failure view names its delegation targets as the simulation view would. A website chooses all of these, as it chooses the calldata arguments named below; naming an address only reads on-chain metadata and stores nothing.
 const getTransactionAddresses = ({ from, to, nonce, authorizationList }: TransactionAddressFields) => {
 	const recipientOrDeployedContract = to ?? (from === undefined || nonce === undefined ? undefined : getDeployedContractAddress(from, nonce))
 	return [from, recipientOrDeployedContract, ...(authorizationList ?? []).map((authorization) => authorization.address)]
