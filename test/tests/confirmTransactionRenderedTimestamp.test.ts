@@ -9,6 +9,14 @@ import { getSafeTxHash } from '../../app/ts/utils/eip712.js'
 import { bytes32String } from '../../app/ts/utils/bigint.js'
 import { getNativeTokenErc20 } from '../../app/ts/background/metadataUtils.js'
 
+// Confirmation flows take the settings that belong to their client; these sequential tests read the current pair.
+const readSettings = async () => await (await import('../../app/ts/background/settings.js')).getSettings()
+// Like a request snapshot, confirmations read the settings together with the simulation stack built from them.
+const readNetworkState = async () => {
+	const settings = await readSettings()
+	return { settings, simulation: await (await import('../../app/ts/background/simulationUpdating.js')).captureSimulationSnapshot(settings) }
+}
+
 type RuntimeMessageListener = (message: unknown) => unknown
 const hexToBytes = (hex: string) => Uint8Array.from(Buffer.from(hex.slice(2), 'hex'))
 
@@ -634,7 +642,7 @@ describe('ConfirmTransaction', () => {
 		await updateInterceptorTransactionStack(() => ({ operations: [] }))
 
 		await act(async () => {
-			await refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService as never)
+			await refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService as never, await readNetworkState())
 		})
 
 		const [refreshedPendingTransaction] = await getPendingTransactionsAndMessages()

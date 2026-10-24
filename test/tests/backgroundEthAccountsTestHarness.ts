@@ -199,21 +199,23 @@ export function createEthereumWithGetBlockCounter(
 		initialBlockPolling = true,
 		getCodeResult,
 		getStorageAtResult,
+		rpcEntry = {
+			name: 'Test RPC',
+			chainId: 1n,
+			httpsRpc: 'http://127.0.0.1:8545',
+			currencyName: 'Ether',
+			currencyTicker: 'ETH',
+			primary: true,
+			minimized: false,
+		},
 	}: {
 		readonly initialBlockPolling?: boolean
 		readonly getCodeResult?: Uint8Array
 		readonly getStorageAtResult?: bigint
+		// Transitions compare the committed network with this endpoint, so tests about resets pass the network the client serves.
+		readonly rpcEntry?: RpcEntry
 	} = {},
 ) {
-	const rpcEntry: RpcEntry = {
-		name: 'Test RPC',
-		chainId: 1n,
-		httpsRpc: 'http://127.0.0.1:8545',
-		currencyName: 'Ether',
-		currencyTicker: 'ETH',
-		primary: true,
-		minimized: false,
-	}
 	let blockPolling = initialBlockPolling
 	const ethereum = new Proxy(
 		new EthereumClientService(
@@ -263,3 +265,6 @@ export function createTestSimulationServicesOwner(initial: { ethereum: EthereumC
 		reset: network => { current = reset === undefined ? current : reset(network); return current },
 	}
 }
+
+// An owner that keeps the given services installed, for confirmation flows that need one but never switch networks.
+export const fixedServicesOwner = (ethereum: EthereumClientService, tokenPriceService: TokenPriceService) => createTestSimulationServicesOwner({ ethereum, tokenPriceService })

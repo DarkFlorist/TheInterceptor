@@ -1,6 +1,15 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
 import { activeAddress, addressString, browserMock, created, createSafeAddressBookEntry, createSafeTx, createWebsitePort, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, hexToBytes, isRecord, modules, pendingTransaction, recipientAddress, signedTransaction, simulator, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
+import { fixedServicesOwner } from './backgroundEthAccountsTestHarness.js'
+
+// Confirmation flows take the settings that belong to their client; these sequential tests read the current pair.
+const readSettings = async () => await (await import('../../app/ts/background/settings.js')).getSettings()
+// Like a request snapshot, confirmations read the settings together with the simulation stack built from them.
+const readNetworkState = async () => {
+	const settings = await readSettings()
+	return { settings, simulation: await (await import('../../app/ts/background/simulationUpdating.js')).captureSimulationSnapshot(settings) }
+}
 
 test('rejects EIP-7702 authorization lists before creating a Safe proposal', async () => {
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
@@ -42,8 +51,10 @@ test('rejects EIP-7702 authorization lists before creating a Safe proposal', asy
 	}]])
 
 	const reply = await modules.openConfirmTransactionDialogForTransaction(
+		fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService),
 		simulator.ethereum,
 		simulator.tokenPriceService,
+		await readNetworkState(),
 		{
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,
@@ -107,8 +118,10 @@ test('shows stale local Safe stack failures in the transaction confirmation', as
 	}]])
 
 	const reply = await withSilencedConsole(async () => await modules.openConfirmTransactionDialogForTransaction(
+		fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService),
 		simulator.ethereum,
 		simulator.tokenPriceService,
+		await readNetworkState(),
 		{
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,
@@ -131,7 +144,7 @@ test('shows stale local Safe stack failures in the transaction confirmation', as
 	if (pendingFailure.transactionToSimulate.success) throw new Error('Expected Safe preparation failure')
 	assert.match(pendingFailure.transactionToSimulate.error.message, /current Gnosis Safe nonce 1 is beyond this stack's final nonce 0/u)
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
-	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+	assert.equal(await modules.resolvePendingTransactionOrMessage(fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService), simulator.ethereum, simulator.tokenPriceService, await readNetworkState(), websiteTabConnections, {
 		method: 'popup_confirmDialog',
 		data: { action: 'accept', uniqueRequestIdentifier },
 	}), false)
@@ -191,6 +204,7 @@ test('reconciles executed Safe operations before simulating the next proposal', 
 		threshold: 2n,
 		transactions,
 	}])
+	// Stacked Gnosis Safe operations carry the chain they belong to, so the Safe simulation includes them.
 	await modules.updateInterceptorTransactionStack(() => ({
 		operations: transactions.map((safeTransaction) => ({
 			type: 'Transaction' as const,
@@ -199,6 +213,7 @@ test('reconciles executed Safe operations before simulating the next proposal', 
 				signedTransaction,
 				transactionIdentifier: safeTransaction.transactionIdentifier,
 				safeTransaction,
+				simulationOptions: { requiredChainId: fakeRpcNetwork.chainId, simulateWithZeroBaseFee: true },
 			},
 		})),
 	}))
@@ -236,8 +251,10 @@ test('reconciles executed Safe operations before simulating the next proposal', 
 	}]])
 
 	assert.deepEqual(await modules.openConfirmTransactionDialogForTransaction(
+		fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService),
 		simulator.ethereum,
 		simulator.tokenPriceService,
+		await readNetworkState(),
 		{
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,
@@ -261,6 +278,12 @@ test('reconciles executed Safe operations before simulating the next proposal', 
 		pending.uniqueRequestIdentifier.requestId === uniqueRequestIdentifier.requestId
 	)
 	assert.equal(pendingProposal?.safeTransaction?.safeTx.message.nonce, 2n)
+	if (pendingProposal?.type !== 'Transaction' || pendingProposal.transactionOrMessageCreationStatus !== 'Simulated') throw new Error('Expected a simulated Gnosis Safe proposal')
+	if (pendingProposal.popupVisualisation.statusCode !== 'success') throw new Error('Expected the Gnosis Safe proposal simulation to succeed')
+	// The already executed nonce 0 operation must not be replayed before the proposal.
+	const simulatedIdentifiers = pendingProposal.popupVisualisation.data.simulationState.simulationStateInput.flatMap((block) => block.transactions.map(({ transactionIdentifier }) => transactionIdentifier))
+	assert.ok(simulatedIdentifiers.includes(81n))
+	assert.ok(!simulatedIdentifiers.includes(80n))
 })
 
 test('uses zero-reimbursement Safe semantics in the pre-sign confirmation simulation', async () => {
@@ -279,6 +302,7 @@ test('uses zero-reimbursement Safe semantics in the pre-sign confirmation simula
 	const popupVisualisation = await (await import('../../app/ts/background/confirmTransactionSimulation.js')).refreshConfirmTransactionSimulation(
 		simulator.ethereum,
 		simulator.tokenPriceService,
+		(await readNetworkState()).simulation,
 		activeAddress,
 		false,
 		uniqueRequestIdentifier,
@@ -386,7 +410,7 @@ test('does not show simulation-mode stack setup in a Safe signing confirmation',
 	})
 	browserMock.sentMessages.length = 0
 
-	await modules.updateConfirmTransactionView(simulator.ethereum, simulator.tokenPriceService)
+	await modules.updateConfirmTransactionView(simulator.ethereum, simulator.tokenPriceService, await readNetworkState())
 
 	const dialogUpdate = browserMock.sentMessages.find((message) => isRecord(message) && message.method === 'popup_update_confirm_transaction_dialog')
 	if (!isRecord(dialogUpdate) || !isRecord(dialogUpdate.data) || !isRecord(dialogUpdate.data.visualizedSimulatorState)) {
@@ -447,7 +471,7 @@ test('returns the current Safe overlay when a simulation-stack request is confir
 		},
 	}]])
 
-	await modules.fetchSimulationStackRequestConfirmation(simulator.ethereum, websiteTabConnections, {
+	await modules.fetchSimulationStackRequestConfirmation(simulator.ethereum, (await readNetworkState()).simulation, websiteTabConnections, {
 		method: 'popup_fetchSimulationStackRequestConfirmation',
 		data: {
 			accept: true,
@@ -480,6 +504,7 @@ test('prepares Safe transaction intent without charging gas to the Safe', async 
 
 	const prepared = await modules.formEthSendTransaction(
 		simulator.ethereum,
+		(await readNetworkState()).simulation,
 		undefined,
 		activeAddress,
 		{ websiteOrigin: 'https://example.com', icon: undefined, title: undefined },
@@ -519,6 +544,7 @@ test('does not fall back to ordinary gas estimation when Safe simulation state i
 
 	const prepared = await withSilencedConsole(async () => await modules.formEthSendTransaction(
 		simulator.ethereum,
+		(await readNetworkState()).simulation,
 		undefined,
 		activeAddress,
 		{ websiteOrigin: 'https://example.com', icon: undefined, title: undefined },
@@ -690,7 +716,7 @@ test('refreshes pending Safe intent without charging gas to the Safe', async () 
 		}],
 	})
 
-	await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
+	await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService, await readNetworkState())
 
 	const [refreshed] = await modules.getPendingTransactionsAndMessages()
 	if (refreshed?.type !== 'Transaction' || refreshed.transactionOrMessageCreationStatus !== 'Simulated') {
@@ -753,7 +779,7 @@ test('refreshes direct Safe execution without charging gas to the signer', async
 	})
 	fakeSafeContract.requestedRpcMethods.splice(0, fakeSafeContract.requestedRpcMethods.length)
 
-	await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
+	await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService, await readNetworkState())
 
 	const [refreshed] = await modules.getPendingTransactionsAndMessages()
 	if (refreshed?.type !== 'Transaction' || refreshed.transactionOrMessageCreationStatus !== 'Simulated') {

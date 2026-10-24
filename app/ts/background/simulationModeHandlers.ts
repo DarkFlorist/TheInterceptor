@@ -10,6 +10,7 @@ import type { InterceptedRequest, WebsiteSocket } from '../utils/requests.js'
 import type { EstimateGasParams, EthBalanceParams, EthBlockByHashParams, EthBlockByNumberParams, EthCallParams, EthGetStorageAtParams, EthNewFilter, EthGetLogsParams, EthSubscribeParams, EthUnSubscribeParams, FeeHistory, GetCode, GetFilterChanges, GetSimulationStack, GetTransactionCount, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams, UninstallFilter, GetFilterLogs, InterceptorError } from '../types/JsonRpc-types.js'
 import type { EthSimulateV1Params } from '../types/ethSimulate-types.js'
 import type { Website } from '../types/websiteAccessTypes.js'
+import type { NetworkState } from './simulationUpdating.js'
 import { METAMASK_ERROR_BLANKET_ERROR } from '../utils/constants.js'
 import { openConfirmTransactionDialogForMessage, openConfirmTransactionDialogForTransaction } from './windows/confirmTransaction.js'
 import { printError } from '../utils/errors.js'
@@ -38,8 +39,10 @@ export async function getTransactionReceipt(ethereumClientService: EthereumClien
 }
 
 export async function sendTransaction(
+	simulationServicesOwner: SimulationServicesOwner,
 	ethereumClientService: EthereumClientService,
 	tokenPriceService: TokenPriceService,
+	network: NetworkState,
 	activeAddress: bigint | undefined,
 	confirmation: TransactionConfirmationRequest,
 	request: InterceptedRequest,
@@ -48,7 +51,7 @@ export async function sendTransaction(
 	simulationMode = true,
 ) {
 	markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionRequestReceived)
-	const action = await openConfirmTransactionDialogForTransaction(ethereumClientService, tokenPriceService, request, confirmation, simulationMode, activeAddress, website, websiteTabConnections)
+	const action = await openConfirmTransactionDialogForTransaction(simulationServicesOwner, ethereumClientService, tokenPriceService, network, request, confirmation, simulationMode, activeAddress, website, websiteTabConnections)
 	if (action.type === 'doNotReply') return action
 	return { method: confirmation.parameters.method, ...action }
 }
@@ -122,8 +125,10 @@ export async function maxPriorityFeePerGas(ethereumClientService: EthereumClient
 }
 
 export async function personalSign(
+	simulationServicesOwner: SimulationServicesOwner,
 	ethereumClientService: EthereumClientService,
 	tokenPriceService: TokenPriceService,
+	network: NetworkState,
 	activeAddress: bigint | undefined,
 	confirmation: MessageConfirmationRequest,
 	request: InterceptedRequest,
@@ -131,13 +136,14 @@ export async function personalSign(
 	websiteTabConnections: WebsiteTabConnections,
 	simulationMode = true,
 ) {
-	const action = await openConfirmTransactionDialogForMessage(ethereumClientService, tokenPriceService, request, confirmation, simulationMode, activeAddress, website, websiteTabConnections)
+	const action = await openConfirmTransactionDialogForMessage(simulationServicesOwner, ethereumClientService, tokenPriceService, network, request, confirmation, simulationMode, activeAddress, website, websiteTabConnections)
 	if (action.type === 'doNotReply') return action
 	return { method: confirmation.parameters.method, ...action }
 }
 
-export async function switchEthereumChain(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, params: SwitchEthereumChainParams, request: InterceptedRequest, simulationMode: boolean, website: Website) {
-	if (simulationServicesOwner.getCurrent().ethereum.getChainId() === params.params[0].chainId) {
+// The request's own network decides whether it is already on the chain; installed services keep the previous chain on signer-only networks.
+export async function switchEthereumChain(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, params: SwitchEthereumChainParams, request: InterceptedRequest, activeChainId: bigint, simulationMode: boolean, website: Website) {
+	if (activeChainId === params.params[0].chainId) {
 		// we are already on the right chain
 		return { type: 'result' as const, method: params.method, result: null }
 	}

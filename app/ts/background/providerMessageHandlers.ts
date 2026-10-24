@@ -3,7 +3,7 @@ import type { RpcNetwork } from '../types/rpc.js'
 import { ConnectedToSigner, SignerReply, WalletSwitchEthereumChainReply, WatchAssetSignerRequest } from '../types/interceptor-messages.js'
 import type { TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import { EthereumAccountsReply, EthereumChainReply } from '../types/JsonRpc-types.js'
-import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
+import { activateAddressSelection, changeActiveAddressAndChain, readNetworkSnapshot } from './activeSettings.js'
 import { getSocketFromPort, isTopFramePort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getRpcNetworkForChain, setDefaultSignerName, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
 import { getMetamaskCompatibilityMode, getSettings } from './settings.js'
@@ -106,8 +106,9 @@ export async function ethAccountsReply(simulationServicesOwner: SimulationServic
 			activeSigningAddress,
 		}))
 		if (!isSignerStateTokenCurrent(websiteTabConnections, signerStateToken)) return returnValue
-		const { ethereum, tokenPriceService } = simulationServicesOwner.getCurrent()
-		await refreshPendingSafeSignerSelectionErrors(ethereum, tokenPriceService, tabId)
+		const refreshNetwork = await readNetworkSnapshot(simulationServicesOwner)
+		const { ethereum, tokenPriceService } = refreshNetwork.services
+		await refreshPendingSafeSignerSelectionErrors(ethereum, tokenPriceService, refreshNetwork, tabId)
 		// Restore this wallet account's most recent EOA-or-Safe selection. This remains inside the signer-state operation so a reconnect cannot interleave with downstream address and chain mutations.
 		const settings = await getSettings()
 		const transition = await getSigningAddressSelectionTransition(settings, tabStateChange.previousState, tabStateChange.newState)
@@ -283,7 +284,8 @@ export async function signerReply(simulationServicesOwner: SimulationServicesOwn
 	const socket = getSocketFromPort(port)
 	if (socket === undefined) return doNotReply
 	return await runSignerStateOperation(websiteTabConnections, socket.tabId, async () => {
-		const { ethereum, tokenPriceService } = simulationServicesOwner.getCurrent()
+		const network = await readNetworkSnapshot(simulationServicesOwner)
+		const { ethereum, tokenPriceService } = network.services
 		if (params.forwardRequest.method === 'wallet_watchAsset') {
 			const context = WatchAssetSignerRequest.parse(params.forwardRequest.params)
 			if (context.uniqueRequestIdentifier.requestSocket.tabId !== socket.tabId || context.signerIdentity.tabId !== socket.tabId) return doNotReply
@@ -306,7 +308,7 @@ export async function signerReply(simulationServicesOwner: SimulationServicesOwn
 			|| requestSocket.tabId !== socket.tabId
 			|| requestSocket.connectionName !== socket.connectionName) {
 			await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'SignerError', ...signerConnectionReplacedError } }))
-			await updateConfirmTransactionView(ethereum, tokenPriceService)
+			await updateConfirmTransactionView(ethereum, tokenPriceService, network)
 			return doNotReply
 		}
 		switch(params.forwardRequest.method) {
@@ -320,7 +322,7 @@ export async function signerReply(simulationServicesOwner: SimulationServicesOwn
 			case 'eth_sendTransaction': {
 				if (params.success) {
 					try {
-						await resolvePendingTransactionOrMessage(ethereum, tokenPriceService, websiteTabConnections, {
+						await resolvePendingTransactionOrMessage(simulationServicesOwner, ethereum, tokenPriceService, network, websiteTabConnections, {
 							method: 'popup_confirmDialog',
 							data: {
 								uniqueRequestIdentifier,
@@ -335,11 +337,11 @@ export async function signerReply(simulationServicesOwner: SimulationServicesOwn
 				}
 				if (params.error.code === METAMASK_ERROR_USER_REJECTED_REQUEST) {
 					await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'WaitingForUser' } }))
-					await updateConfirmTransactionView(ethereum, tokenPriceService)
+					await updateConfirmTransactionView(ethereum, tokenPriceService, network)
 					return doNotReply
 				}
 				await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'SignerError', ...params.error } }))
-				await updateConfirmTransactionView(ethereum, tokenPriceService)
+				await updateConfirmTransactionView(ethereum, tokenPriceService, network)
 				return doNotReply
 			}
 		}

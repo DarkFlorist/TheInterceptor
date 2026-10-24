@@ -22,6 +22,8 @@ export type SafeTransactionConfirmationPreparation = {
 	readonly transactionExecutor: bigint
 	readonly gasPayment: 'transaction-sender' | 'external-executor'
 	readonly preparationMessage: string | undefined
+	// Reconciliation removed executed Gnosis Safe operations from storage, so a stack read before preparation is out of date.
+	readonly storedSafeStackReconciled: boolean
 	readonly rejection: {
 		readonly code: number
 		readonly message: string
@@ -122,6 +124,7 @@ export async function prepareSafeTransactionConfirmation(
 		transactionExecutor: safeExecutionSignerRoute?.executor ?? activeAddress,
 		gasPayment: safeEntry === undefined && !isDirectSafeExecution ? 'transaction-sender' : 'external-executor',
 		preparationMessage: directSignerSelectionMessage ?? executionPreparationMessage ?? reconciliationMessage,
+		storedSafeStackReconciled: reconciledStoredSafeState !== undefined,
 		rejection: undefined,
 		async finalize(transactionToSimulate, tabId) {
 			let finalizedTransaction = transactionToSimulate
@@ -223,6 +226,7 @@ function createRejectedPreparation(
 		transactionExecutor: activeAddress,
 		gasPayment: 'transaction-sender',
 		preparationMessage: undefined,
+		storedSafeStackReconciled: false,
 		rejection: { code: METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER, message },
 		async finalize(transactionToSimulate) {
 			return {

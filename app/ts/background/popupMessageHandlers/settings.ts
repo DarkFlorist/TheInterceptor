@@ -1,12 +1,14 @@
-import type { ImportSettings, ImportSettingsReply, SetRpcList, Settings } from '../../types/interceptor-messages.js'
+import type { ImportSettings, ImportSettingsReply, SetRpcList } from '../../types/interceptor-messages.js'
 import { ExportedSettings } from '../../types/exportedSettingsTypes.js'
 import { serialize } from '../../types/wire-types.js'
 import { isJSON } from '../../utils/json.js'
 import { silenceChromeUnCaughtPromise } from '../../utils/requests.js'
 import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
-import { getPrimaryRpcForChain, getRpcList, setRpcList } from '../storageVariables.js'
-import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettings, getUseTabsInsteadOfPopup, importSettingsAndAddressBook } from '../settings.js'
+import { getRpcList, setRpcList } from '../storageVariables.js'
+import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettings, getUseTabsInsteadOfPopup } from '../settings.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
+import { importSettingsTransition, selectUpdatedPrimaryRpcTransition } from '../activeSettings.js'
+import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 
 export async function settingsOpened() {
 	const useTabsInsteadOfPopupPromise = silenceChromeUnCaughtPromise(getUseTabsInsteadOfPopup())
@@ -27,7 +29,7 @@ export async function settingsOpened() {
 	})
 }
 
-export async function importSettings(settingsData: ImportSettings): Promise<ImportSettingsReply> {
+export async function importSettings(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, settingsData: ImportSettings): Promise<ImportSettingsReply> {
 	if (!isJSON(settingsData.data.fileContents)) {
 		return { method: 'popup_initiate_export_settings_reply', data: { success: false, errorMessage: 'Failed to read the file. It is not a valid JSON file.' } }
 	}
@@ -35,7 +37,7 @@ export async function importSettings(settingsData: ImportSettings): Promise<Impo
 	if (!parsed.success) {
 		return { method: 'popup_initiate_export_settings_reply', data: { success: false, errorMessage: 'Failed to read the file. It is not a valid interceptor settings file' } }
 	}
-	await importSettingsAndAddressBook(parsed.value)
+	await importSettingsTransition(simulationServicesOwner, websiteTabConnections, parsed.value)
 	return { method: 'popup_initiate_export_settings_reply', data: { success: true } }
 }
 
@@ -47,9 +49,9 @@ export async function exportSettings() {
 	})
 }
 
-export async function setNewRpcList(simulationServicesOwner: SimulationServicesOwner, request: SetRpcList, settings: Settings) {
+export async function setNewRpcList(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: SetRpcList) {
 	await setRpcList(request.data)
 	await sendPopupMessageToOpenWindows({ method: 'popup_update_rpc_list', data: request.data })
-	const primary = await getPrimaryRpcForChain(settings.activeRpcNetwork.chainId)
-	if (primary !== undefined) simulationServicesOwner.reset(primary)
+	// The transition reads the active chain itself; a network switch may have finished since this popup message arrived.
+	await selectUpdatedPrimaryRpcTransition(simulationServicesOwner, websiteTabConnections)
 }

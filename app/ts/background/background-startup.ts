@@ -27,6 +27,7 @@ import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerformance.js'
 import { removeWebsiteTabConnection } from './websiteTabConnections.js'
 import { createSimulationServicesOwner, type SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
+import { readNetworkSnapshot } from './activeSettings.js'
 import { addWindowTabListeners } from '../utils/popupOrTab.js'
 import { migrateAddressBook } from './addressBookMigration.js'
 import { migrateWebsiteAccess } from './websiteAccessMigration.js'
@@ -297,8 +298,9 @@ async function startup() {
 
 const recoverPendingTerminalState = createRetriableTerminalStateRecovery({
 	recover: async () => {
-		const { ethereum, tokenPriceService } = getSimulationServices()
-		await resolvePendingRequestsForMissingConfirmationWindows(ethereum, tokenPriceService, websiteTabConnections)
+		if (simulationServicesOwner === undefined) throw new Error('Simulation services are not initialized')
+		const network = await readNetworkSnapshot(simulationServicesOwner)
+		await resolvePendingRequestsForMissingConfirmationWindows(simulationServicesOwner, network.services.ethereum, network.services.tokenPriceService, network, websiteTabConnections)
 		await prunePendingTerminalRepliesForMissingTabs()
 	},
 	onFailure: (error) => {
@@ -334,15 +336,15 @@ const onTabUpdated = async (tabId: number, changeInfo: browser.tabs._OnUpdatedCh
 })
 
 const onCloseWindow = async (id: number) => await catchAllErrorsAndCall(async () => {
-	await waitForBackgroundStartup()
-	const simulationServices = getSimulationServices()
-	return await onCloseWindowOrTab({ type: 'popup' as const, id }, simulationServices.ethereum, simulationServices.tokenPriceService, websiteTabConnections)
+	const { simulationServicesOwner: owner } = await waitForBackgroundStartup()
+	const network = await readNetworkSnapshot(owner)
+	return await onCloseWindowOrTab(owner, { type: 'popup' as const, id }, network.services.ethereum, network.services.tokenPriceService, network, websiteTabConnections)
 })
 
 const onCloseTab = async (id: number) => await catchAllErrorsAndCall(async () => {
-	await waitForBackgroundStartup()
-	const simulationServices = getSimulationServices()
-	return await onCloseWindowOrTab({ type: 'tab' as const, id }, simulationServices.ethereum, simulationServices.tokenPriceService, websiteTabConnections)
+	const { simulationServicesOwner: owner } = await waitForBackgroundStartup()
+	const network = await readNetworkSnapshot(owner)
+	return await onCloseWindowOrTab(owner, { type: 'tab' as const, id }, network.services.ethereum, network.services.tokenPriceService, network, websiteTabConnections)
 })
 
 // MV3 service worker event listeners must be registered synchronously at module load.
