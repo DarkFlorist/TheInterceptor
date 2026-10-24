@@ -1,6 +1,6 @@
-import { useEffect } from 'preact/hooks'
+import { useEffect, useRef } from 'preact/hooks'
 import { useComputed, useSignal } from '@preact/signals'
-import { MessageToPopup, type PopupSettingsChangeStatus } from '../../types/interceptor-messages.js'
+import type { PopupSettingsChangeStatus } from '../../types/interceptor-messages.js'
 import { acceptPopupSettingsChangeStatus, type PopupSettingsOperation } from '../../types/popupSettingsProtocol.js'
 import type { PopupSettingsRequestWithSharedReply } from '../../types/popupSettingsRequests.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
@@ -9,6 +9,7 @@ import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUti
 import { includePersistedAddressBookEntry, isActiveAddressSelectionAllowed } from '../../utils/activeAddressSelection.js'
 import { requestActiveAddressChange } from '../activeAddressChange.js'
 import { requestPopupSettingsChange } from '../popupSettingsChange.js'
+import { usePopupMessage } from './usePopupMessage.js'
 import type { useLiveSimulationHomeData } from './useLiveSimulationHomeData.js'
 
 const popupSettingsOperationLabels: Readonly<Record<PopupSettingsOperation, string>> = {
@@ -70,35 +71,29 @@ export function usePopupSettingsChanges({ isSettingsLoaded, activeAddresses, sim
 		await changePopupSettings({ method: 'popup_modifyMakeMeRich', data: { add, address } })
 	}
 
-	useEffect(() => {
-		let latestSettingsGeneration = 0
-		const listener = (message: unknown) => {
-			const parsed = MessageToPopup.safeParse(message)
-			if (!parsed.success || parsed.value.role === 'confirmTransaction') return
-			const update = parsed.value
-			if (update.method === 'popup_settingsChangeStatus') {
-				backgroundSettingsChange.value = acceptPopupSettingsChangeStatus(backgroundSettingsChange.value, update.data)
-			}
-			if (update.method === 'popup_settingsUpdated' || update.method === 'popup_UpdateHomePage' || update.method === 'popup_homePageBootstrap') {
-				if (update.popupRefreshGeneration < latestSettingsGeneration) return
-				latestSettingsGeneration = update.popupRefreshGeneration
-			}
-			const pending = pendingAddressSelection.value
-			if (update.method !== 'popup_settingsUpdated' || pending === undefined || !isActiveAddressChanging.value) return
-			const settings = update.data
-			if (settings.simulationMode !== pending.simulationMode) return
-			// Reveal canonical settings as soon as they match the selection; the request reply still owns completion and errors.
-			const selectedAddress = settings.simulationMode ? settings.activeSimulationAddress : settings.activeSigningSafeAddress
-			const matchesSelection = pending.address === 'signer'
-				? settings.simulationMode ? settings.useSignersAddressAsActiveAddress : settings.activeSigningSafeAddress === undefined
-				: selectedAddress === pending.address
-			if (!matchesSelection) return
-			isActiveAddressChanging.value = false
+	const latestSettingsGeneration = useRef(0)
+	usePopupMessage((update) => {
+		if (update.role === 'confirmTransaction') return
+		if (update.method === 'popup_settingsChangeStatus') {
+			backgroundSettingsChange.value = acceptPopupSettingsChangeStatus(backgroundSettingsChange.value, update.data)
 		}
-		browser.runtime.onMessage.addListener(listener)
-		void sendPopupMessageToBackgroundPage({ method: 'popup_requestSettingsChangeStatus' })
-		return () => browser.runtime.onMessage.removeListener(listener)
-	}, [])
+		if (update.method === 'popup_settingsUpdated' || update.method === 'popup_UpdateHomePage' || update.method === 'popup_homePageBootstrap') {
+			if (update.popupRefreshGeneration < latestSettingsGeneration.current) return
+			latestSettingsGeneration.current = update.popupRefreshGeneration
+		}
+		const pending = pendingAddressSelection.value
+		if (update.method !== 'popup_settingsUpdated' || pending === undefined || !isActiveAddressChanging.value) return
+		const settings = update.data
+		if (settings.simulationMode !== pending.simulationMode) return
+		// Reveal canonical settings as soon as they match the selection; the request reply still owns completion and errors.
+		const selectedAddress = settings.simulationMode ? settings.activeSimulationAddress : settings.activeSigningSafeAddress
+		const matchesSelection = pending.address === 'signer'
+			? settings.simulationMode ? settings.useSignersAddressAsActiveAddress : settings.activeSigningSafeAddress === undefined
+			: selectedAddress === pending.address
+		if (!matchesSelection) return
+		isActiveAddressChanging.value = false
+	})
+	useEffect(() => { void sendPopupMessageToBackgroundPage({ method: 'popup_requestSettingsChangeStatus' }) }, [])
 
 	return { isActiveAddressChanging, isActiveAddressChangePending, isSettingsChangePending, sharedStatusLabel, setActiveAddressAndInformAboutIt, setActiveRpcAndInformAboutIt, setSimulationMode, setRichState }
 }

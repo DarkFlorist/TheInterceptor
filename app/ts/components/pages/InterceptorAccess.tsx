@@ -3,7 +3,6 @@ import { useEffect } from 'preact/hooks'
 import { ActiveAddressComponent, BigAddress, WebsiteOriginText } from '../subcomponents/address.js'
 import { AddNewAddress } from './AddNewAddress.js'
 import type { RenameAddressCallBack } from '../../types/user-interface-types.js'
-import { MessageToPopup } from '../../types/interceptor-messages.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import Hint from '../subcomponents/Hint.js'
 import { addressEditEntry, convertNumberToCharacterRepresentationIfSmallEnough } from '../ui-utils.js'
@@ -14,10 +13,10 @@ import type { AddressBookEntries, AddressBookEntry } from '../../types/addressBo
 import type { Website } from '../../types/websiteAccessTypes.js'
 import type { PendingAccessRequest, PendingAccessRequests } from '../../types/accessRequest.js'
 import { type ReadonlySignal, Signal, useComputed, useSignal } from '@preact/signals'
-import type { RpcEntries } from '../../types/rpc.js'
 import type { ModifyAddressWindowState } from '../../types/visualizer-types.js'
 import { ChevronIcon } from '../subcomponents/icons.js'
-import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
+import { usePopupMessage } from '../hooks/usePopupMessage.js'
+import { usePopupSettingsSnapshot } from '../hooks/usePopupSettingsSnapshot.js'
 import { sendPopupReadyAndListening } from '../../background/backgroundUtils.js'
 import { sanitizeStoredWebsiteIcon } from '../../utils/websiteIcons.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
@@ -221,8 +220,9 @@ export function InterceptorAccess() {
 	const appPage = useSignal<Page>({ page: 'Home', accessRequestId: '' })
 	const informationUpdatedTimestamp = useSignal<number>(0)
 	const timeTicker = useSignal<number>(0)
-	const rpcEntries = useSignal<RpcEntries>([])
-	const activeRpcChainId = useSignal<bigint | undefined>(undefined)
+	const settingsSnapshot = usePopupSettingsSnapshot()
+	const rpcEntries = useComputed(() => settingsSnapshot.value?.rpcEntries ?? [])
+	const activeRpcChainId = useComputed(() => settingsSnapshot.value?.activeRpcNetwork.chainId)
 	const selectedPendingAccessRequest = useComputed(() => getSelectedPendingAccessRequest(
 		pendingAccessRequests.value,
 		appPage.value.page === 'Home' ? undefined : appPage.value.accessRequestId,
@@ -233,46 +233,19 @@ export function InterceptorAccess() {
 		return getSelectableActiveAddresses(activeAddresses.value, accessRequest.simulationMode, activeRpcChainId.value, accessRequest.signerAccounts)
 	})
 
-	useEffect(() => {
-		function popupMessageListener(msg: unknown): false {
-			const maybeParsed = MessageToPopup.safeParse(msg)
-			if (!maybeParsed.success) return false // not a message we are interested in
-			const parsed = maybeParsed.value
-			if (parsed.method === 'popup_settingsUpdated') {
-				sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
-				return false
-			}
-			if (parsed.method === 'popup_requestSettingsReply') {
-				rpcEntries.value = parsed.data.rpcEntries
-				activeRpcChainId.value = parsed.data.activeRpcNetwork.chainId
-				return false
-			}
-			if (parsed.method === 'popup_addressBookEntriesChanged') {
-				refreshMetadata()
-				return false
-			}
-			if (parsed.method === 'popup_websiteAccess_changed') {
-				refreshMetadata()
-				return false
-			}
-			if (parsed.method === 'popup_interceptorAccessDialog' || parsed.method === 'popup_interceptor_access_dialog_pending_changed') {
-				if (parsed.method === 'popup_interceptor_access_dialog_pending_changed') {
-					if (pendingAccessRequests.value.length > 0) informationUpdatedTimestamp.value = Date.now()
-				}
-				pendingAccessRequests.value = parsed.data.pendingAccessRequests
-				activeAddresses.value = parsed.data.activeAddresses
-				return false
-			}
-			return false
+	usePopupMessage(async (message) => {
+		if (message.method === 'popup_addressBookEntriesChanged' || message.method === 'popup_websiteAccess_changed') {
+			await refreshMetadata()
+			return
 		}
-		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
-		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
-	}, [])
+		if (message.method === 'popup_interceptorAccessDialog' || message.method === 'popup_interceptor_access_dialog_pending_changed') {
+			if (message.method === 'popup_interceptor_access_dialog_pending_changed' && pendingAccessRequests.value.length > 0) informationUpdatedTimestamp.value = Date.now()
+			pendingAccessRequests.value = message.data.pendingAccessRequests
+			activeAddresses.value = message.data.activeAddresses
+		}
+	})
 
-	useEffect(() => {
-		void sendPopupReadyAndListening('interceptorAccess')
-		sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
-	}, [])
+	useEffect(() => { void sendPopupReadyAndListening('interceptorAccess') }, [])
 
 	async function approve(accessRequestId: string) {
 		const accessRequest = pendingAccessRequests.value.find((request) => request.accessRequestId === accessRequestId)
