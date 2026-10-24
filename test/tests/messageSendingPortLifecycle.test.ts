@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { replyToInterceptedRequest, replyToInterceptedRequestAfterManifestV2Reconnect, sendSubscriptionReplyOrCallBack, sendSubscriptionReplyOrCallBackAfterManifestV2Reconnect, sendSubscriptionReplyOrCallBackToPort } from '../../app/ts/background/messageSending.js'
+import { replyToInterceptedRequest, replyToInterceptedRequestAfterManifestV2Reconnect, replyToInterceptedRequestWithFollowUp, sendSubscriptionReplyOrCallBack, sendSubscriptionReplyOrCallBackAfterManifestV2Reconnect, sendSubscriptionReplyOrCallBackToPort } from '../../app/ts/background/messageSending.js'
 import { websiteSocketToString } from '../../app/ts/background/backgroundUtils.js'
 
 function installBrowserMock() {
@@ -93,6 +93,38 @@ describe('background messageSending port lifecycle', () => {
 		assert.equal(replyToInterceptedRequest(createConnections(disconnectedPort), message), false)
 		assert.equal(replyToInterceptedRequest(new Map(), message), false)
 		assert.equal(replyToInterceptedRequest(new Map([[socket.tabId, { connections: {} }]]), message), false)
+	})
+
+	test('runs a reply follow-up for any method, only after its reply was delivered', () => {
+		installBrowserMock()
+		const socket = { tabId: 1, connectionName: 0n }
+		const connectionKey = websiteSocketToString(socket)
+		const createConnections = (port: browser.runtime.Port) => new Map([[socket.tabId, { connections: {
+			[connectionKey]: { port, socket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true },
+		} }]])
+		const message = {
+			type: 'result' as const,
+			method: 'eth_accounts' as const,
+			result: [],
+			uniqueRequestIdentifier: { requestId: 7, requestSocket: socket },
+		}
+		const events: string[] = []
+		const followUp = () => { events.push('follow-up') }
+
+		const connectedPort = createPort(() => { events.push('reply') })
+		assert.equal(replyToInterceptedRequestWithFollowUp(createConnections(connectedPort), message, followUp), true)
+		assert.deepEqual(events, ['reply', 'follow-up'])
+
+		events.length = 0
+		const disconnectedPort = createPort(() => {
+			events.push('reply attempt')
+			throw new Error('Attempting to use a disconnected port object')
+		})
+		assert.equal(replyToInterceptedRequestWithFollowUp(createConnections(disconnectedPort), message, followUp), false)
+		assert.equal(replyToInterceptedRequestWithFollowUp(new Map(), message, followUp), false)
+		assert.deepEqual(events, ['reply attempt'])
+
+		assert.equal(replyToInterceptedRequestWithFollowUp(createConnections(connectedPort), message, undefined), true)
 	})
 
 	test('reports when a signer account request misses a disconnected content-script port', () => {
