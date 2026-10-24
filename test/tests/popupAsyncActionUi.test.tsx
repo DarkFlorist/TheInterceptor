@@ -9,7 +9,8 @@ import type { VisualizedPersonalSignRequestSafeTx } from '../../app/ts/types/per
 import type { SimulatedAndVisualizedTransaction } from '../../app/ts/types/visualizer-types.js'
 import type { PendingAccessRequest } from '../../app/ts/types/accessRequest.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
-import { clickRenderedElement, findRenderedElement, installDomMock } from './domMock.js'
+import { installDomMock } from './domMock.js'
+import { clickElement, getElement } from './domQueries.js'
 
 let runtimeSendMessage = async (_message: unknown) => undefined
 const runtimeMessageListeners: Array<(message: unknown) => unknown> = []
@@ -1223,11 +1224,10 @@ describe('popup async action UI', () => {
 				editEnsNamedHashCallBack: () => undefined,
 			}), dom.document.body)
 		})
-		const extraDetailsHeader = findRenderedElement(dom.document.body, (node) => node.tagName === 'HEADER' && node.textContent?.includes('Extra details') === true)
-		if (extraDetailsHeader === undefined) throw new Error('Expected the extra details card')
+		const extraDetailsHeader = getElement(dom.document.body, (element) => element.tagName === 'HEADER' && element.textContent.includes('Extra details'), 'the extra details card')
 		assert.equal(dom.document.body.textContent?.includes('Domain Hash'), false)
 
-		await act(async () => { await clickRenderedElement(extraDetailsHeader) })
+		await act(async () => { await clickElement(extraDetailsHeader) })
 		const renderedText = dom.document.body.textContent ?? ''
 		for (const expected of [
 			'Gnosis Safe: Safe',
