@@ -1,10 +1,13 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
+import * as funtypes from 'funtypes'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { describe, test } from 'bun:test'
+import type { BrowserMock } from '../harness/browserMock.js'
+import { replaceGlobal, replaceProperty } from '../harness/globals.js'
 import { installDateMock, installDomMock } from './domMock.js'
 import { withSilencedConsole } from './consoleSilence.js'
-import { importAllPopupMessageHandlers } from './popupMessageHandlerModules.js'
+import { createPerTestRestorer } from '../harness/perTest.js'
 
 const { NEW_BLOCK_ABORT } = await import('../../app/ts/utils/constants.js')
 const { classifyCaughtError, hasInterceptorInternalErrorCode, isExpectedInfrastructureError, shouldSuppressUnexpectedErrorReport } = await import('../../app/ts/utils/errors.js')
@@ -29,28 +32,15 @@ test('shared error infrastructure stays independent from Safe error codes', asyn
 	assert.doesNotMatch(errorsSource, /safeValidation/u)
 })
 
-type RuntimeMessage = {
-	method?: string
-	type?: string
-	data?: unknown
-}
-
 async function captureConsoleCalls<T>(run: () => Promise<T>) {
-	const originalConsoleError = console.error
-	const originalConsoleTrace = console.trace
-	const originalConsoleWarn = console.warn
 	const consoleErrors: unknown[][] = []
 	const consoleTraces: unknown[][] = []
 	const consoleWarns: unknown[][] = []
-	console.error = (...args: unknown[]) => {
-		consoleErrors.push(args)
-	}
-	console.trace = (...args: unknown[]) => {
-		consoleTraces.push(args)
-	}
-	console.warn = (...args: unknown[]) => {
-		consoleWarns.push(args)
-	}
+	const restoreConsoleMethods = [
+		replaceProperty(console, 'error', (...args: unknown[]) => { consoleErrors.push(args) }),
+		replaceProperty(console, 'trace', (...args: unknown[]) => { consoleTraces.push(args) }),
+		replaceProperty(console, 'warn', (...args: unknown[]) => { consoleWarns.push(args) }),
+	]
 	try {
 		return {
 			result: await run(),
@@ -59,93 +49,18 @@ async function captureConsoleCalls<T>(run: () => Promise<T>) {
 			consoleWarns,
 		}
 	} finally {
-		console.error = originalConsoleError
-		console.trace = originalConsoleTrace
-		console.warn = originalConsoleWarn
+		for (const restoreConsoleMethod of restoreConsoleMethods.reverse()) restoreConsoleMethod()
 	}
 }
 
-function createBrowserMock() {
-	const storageState: Record<string, unknown> = {}
-	const sentMessages: RuntimeMessage[] = []
-	const defaultSendMessage = async (message: RuntimeMessage) => {
-		sentMessages.push(message)
-		return undefined
-	}
-	const defaultSetStorage = async (items: Record<string, unknown>) => {
-		Object.assign(storageState, items)
-	}
-	const getStorageItems = (keys?: string | string[] | Record<string, unknown> | null) => {
-		if (keys === undefined || keys === null) return { ...storageState }
-		if (Array.isArray(keys)) return Object.fromEntries(keys.map((key) => [key, storageState[key]]))
-		if (typeof keys === 'string') return { [keys]: storageState[keys] }
-		return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
-	}
+const { installBrowserMockForTest } = createPerTestRestorer()
 
-	const browserMock = {
-		runtime: {
-			lastError: null,
-			sendMessage: defaultSendMessage,
-			getManifest: () => ({ manifest_version: 3 }),
-			onMessage: { addListener: () => undefined, removeListener: () => undefined },
-			onConnect: { addListener: () => undefined, removeListener: () => undefined },
-		},
-		storage: {
-			local: {
-				async get(keys?: string | string[] | Record<string, unknown> | null) { return getStorageItems(keys) },
-				set: defaultSetStorage,
-				async remove(keys: string | string[]) {
-					for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
-				},
-			},
-		},
-		tabs: {
-			async query() { return [] },
-			async get() { return undefined },
-			async update() { return undefined },
-			onUpdated: { addListener: () => undefined, removeListener: () => undefined },
-			onRemoved: { addListener: () => undefined, removeListener: () => undefined },
-		},
-		windows: {
-			async get() { return undefined },
-			async update() { return undefined },
-		},
-		action: {
-			async setIcon() { return undefined },
-			async setTitle() { return undefined },
-			async setBadgeText() { return undefined },
-			async setBadgeBackgroundColor() { return undefined },
-		},
-		browserAction: {
-			async setIcon() { return undefined },
-			async setTitle() { return undefined },
-			async setBadgeText() { return undefined },
-			async setBadgeBackgroundColor() { return undefined },
-		},
-	}
-
-	Object.defineProperty(globalThis, 'browser', { value: browserMock, configurable: true, writable: true })
-	Object.defineProperty(globalThis, 'chrome', { value: { runtime: { id: 'test-extension' } }, configurable: true, writable: true })
-
-	return {
-		sentMessages,
-		reset() {
-			for (const key of Object.keys(storageState)) delete storageState[key]
-			sentMessages.length = 0
-			browserMock.runtime.lastError = null
-			browserMock.runtime.sendMessage = defaultSendMessage
-			browserMock.storage.local.set = defaultSetStorage
-		},
-		setSendMessage(sendMessage: (message: RuntimeMessage) => Promise<unknown>) {
-			browserMock.runtime.sendMessage = sendMessage
-		},
-		setStorageSet(set: (items: Record<string, unknown>) => Promise<void>) {
-			browserMock.storage.local.set = set
-		},
-	}
-}
-
-const browserMock = createBrowserMock()
+// Popup messages are sent serialized; this reads the fields the assertions check and ignores the rest.
+const SentPopupMessage = funtypes.ReadonlyPartial({
+	method: funtypes.String,
+	data: funtypes.ReadonlyPartial({ code: funtypes.String }),
+})
+const readSentPopupMessages = (browserMock: BrowserMock) => browserMock.calls.runtimeSendMessage.map((message) => SentPopupMessage.parse(message))
 
 async function loadModules() {
 	return {
@@ -187,7 +102,7 @@ describe('unexpected error diagnostics', () => {
 	})
 
 	test('does not report new-block aborts as unexpected errors', async () => {
-		browserMock.reset()
+		const browserMock = installBrowserMockForTest()
 		const { createInterceptorInternalError, getInterceptorErrorDiagnostics, reportUnexpectedError, getLatestUnexpectedError } = await modulesPromise
 
 		await reportUnexpectedError(NEW_BLOCK_ABORT)
@@ -196,22 +111,22 @@ describe('unexpected error diagnostics', () => {
 
 		assert.equal(await getLatestUnexpectedError(), undefined)
 		assert.equal((await getInterceptorErrorDiagnostics()).length, 0)
-		assert.equal(browserMock.sentMessages.length, 0)
+		assert.equal(browserMock.calls.runtimeSendMessage.length, 0)
 	})
 
 	test('does not report handled Safe validation failures as unexpected errors', async () => {
-		browserMock.reset()
+		const browserMock = installBrowserMockForTest()
 		const { getInterceptorErrorDiagnostics, reportUnexpectedError, getLatestUnexpectedError } = await modulesPromise
 
 		await reportUnexpectedError(createSafeValidationError('Select a current Safe owner.', 'safe_signer_selection'))
 
 		assert.equal(await getLatestUnexpectedError(), undefined)
 		assert.equal((await getInterceptorErrorDiagnostics()).length, 0)
-		assert.equal(browserMock.sentMessages.length, 0)
+		assert.equal(browserMock.calls.runtimeSendMessage.length, 0)
 	})
 
 	test('reports explicit expected-infrastructure diagnostics when suppression is disabled', async () => {
-		browserMock.reset()
+		const browserMock = installBrowserMockForTest()
 		const { createInterceptorInternalError, getLatestUnexpectedError, reportUnexpectedError } = await modulesPromise
 
 		await withSilencedConsole(async () => await reportUnexpectedError(createInterceptorInternalError('Failed to fetch', 'fetch_transport_failed', 'failedToFetch'), {
@@ -224,11 +139,11 @@ describe('unexpected error diagnostics', () => {
 		assert.equal(latestUnexpectedError?.data.message, 'Failed to fetch')
 		assert.equal(latestUnexpectedError?.data.source, 'popup')
 		assert.equal(latestUnexpectedError?.data.code, 'popup_message_listener_failed')
-		assert.equal(browserMock.sentMessages.length, 1)
+		assert.equal(browserMock.calls.runtimeSendMessage.length, 1)
 	})
 
 	test('reports wrapped new-block aborts as unexpected development errors', async () => {
-		browserMock.reset()
+		const browserMock = installBrowserMockForTest()
 		const { reportUnexpectedError, getLatestUnexpectedError } = await modulesPromise
 
 		await withSilencedConsole(async () => await reportUnexpectedError(new Error(`Failed to refresh metadata: ${ NEW_BLOCK_ABORT }`)))
@@ -236,12 +151,12 @@ describe('unexpected error diagnostics', () => {
 		const latestUnexpectedError = await getLatestUnexpectedError()
 		assert.equal(latestUnexpectedError?.data.message, `Failed to refresh metadata: ${ NEW_BLOCK_ABORT }`)
 		assert.equal(latestUnexpectedError?.data.code, 'wrapped_new_block_abort')
-		assert.equal(browserMock.sentMessages.length, 1)
+		assert.equal(browserMock.calls.runtimeSendMessage.length, 1)
 	})
 
 	test('records unexpected errors even when broadcasting the notification fails', async () => {
-		browserMock.reset()
-		browserMock.setSendMessage(async () => { throw new Error('broadcast failed') })
+		const browserMock = installBrowserMockForTest()
+		browserMock.browser.runtime.sendMessage = async () => { throw new Error('broadcast failed') }
 		const { reportUnexpectedError, getLatestUnexpectedError } = await modulesPromise
 
 		await withSilencedConsole(async () => await reportUnexpectedError(new Error('root failure')))
@@ -249,48 +164,45 @@ describe('unexpected error diagnostics', () => {
 		const latestUnexpectedError = await getLatestUnexpectedError()
 		assert.equal(latestUnexpectedError?.data.message, 'root failure')
 		assert.equal(latestUnexpectedError?.data.code, 'unexpected_error')
-		assert.equal(browserMock.sentMessages.length, 0)
+		assert.equal(browserMock.calls.runtimeSendMessage.length, 0)
 	})
 
 	test('broadcasts unexpected errors even when persistence fails', async () => {
-		browserMock.reset()
-		browserMock.setStorageSet(async () => { throw new Error('storage failed') })
+		const browserMock = installBrowserMockForTest()
+		browserMock.browser.storage.local.set = async () => { throw new Error('storage failed') }
 		const { reportUnexpectedError, getLatestUnexpectedError } = await modulesPromise
 
 		await withSilencedConsole(async () => await reportUnexpectedError(new Error('root failure')))
 
 		assert.equal(await getLatestUnexpectedError(), undefined)
-		assert.equal(browserMock.sentMessages.length, 1)
-		const [message] = browserMock.sentMessages
+		assert.equal(browserMock.calls.runtimeSendMessage.length, 1)
+		const [message] = readSentPopupMessages(browserMock)
 		assert.equal(message?.method, 'popup_UnexpectedErrorOccured')
-		const data = message?.data
-		if (typeof data !== 'object' || data === null || !('code' in data)) throw new Error('missing unexpected error data')
-		assert.equal(data.code, 'unexpected_error_persist_failed')
+		assert.equal(message?.data?.code, 'unexpected_error_persist_failed')
 	})
 
 	test('preserves caller abort reasons from fetch requests', async () => {
 		const { fetchWithTimeout } = await modulesPromise
-		const originalFetch = globalThis.fetch
-		globalThis.fetch = async (_resource, init) => {
+		const restoreFetch = replaceGlobal('fetch', async (_resource: RequestInfo | URL, init?: RequestInit) => {
 			const signal = init?.signal
 			if (!(signal instanceof AbortSignal)) throw new Error('missing abort signal')
 			await new Promise((_resolve, reject) => {
 				signal.addEventListener('abort', () => reject(new DOMException('The user aborted a request.')), { once: true })
 			})
 			throw new Error('unreachable')
-		}
+		})
 		try {
 			const requestAbortController = new AbortController()
 			const requestPromise = fetchWithTimeout('https://example.invalid', undefined, 60_000, requestAbortController)
 			requestAbortController.abort(NEW_BLOCK_ABORT)
 			await assert.rejects(requestPromise, (error) => error === NEW_BLOCK_ABORT)
 		} finally {
-			globalThis.fetch = originalFetch
+			restoreFetch()
 		}
 	})
 
 	test('keeps forwarded InterceptorError diagnostics out of the popup message', async () => {
-		browserMock.reset()
+		const browserMock = installBrowserMockForTest()
 		const { reportUnexpectedError, getLatestUnexpectedError, GENERIC_UNEXPECTED_ERROR_MESSAGE } = await modulesPromise
 		const diagnosticsMessage = 'inpage: Request did not exist anymore\n\nphase: handle background reply\n\nrequestMethod: eth_accounts\n\nrequestId: 17\n\nthrown:\nError: Request did not exist anymore'
 
@@ -301,11 +213,11 @@ describe('unexpected error diagnostics', () => {
 		assert.equal(latestUnexpectedError?.data.source, 'internal')
 		assert.equal(latestUnexpectedError?.data.code, 'unexpected_error')
 		assert.equal(typeof latestUnexpectedError?.data.debugId, 'string')
-		assert.equal(browserMock.sentMessages.length, 1)
+		assert.equal(browserMock.calls.runtimeSendMessage.length, 1)
 	})
 
 	test('keeps plain unexpected errors unchanged', async () => {
-		browserMock.reset()
+		installBrowserMockForTest()
 		const { getInterceptorErrorDiagnostics, reportUnexpectedError, getLatestUnexpectedError } = await modulesPromise
 
 		await withSilencedConsole(async () => await reportUnexpectedError(new Error('plain error')))
@@ -329,7 +241,7 @@ describe('unexpected error diagnostics', () => {
 	})
 
 	test('logs user-facing unexpected errors to the extension console with their diagnostic metadata and cause', async () => {
-		browserMock.reset()
+		const browserMock = installBrowserMockForTest()
 		const { reportUnexpectedError } = await modulesPromise
 
 		const { consoleErrors, consoleTraces } = await captureConsoleCalls(async () => await reportUnexpectedError(new Error('plain error')))
@@ -344,13 +256,13 @@ describe('unexpected error diagnostics', () => {
 		), true)
 		assert.equal(consoleErrors.some((args) => args[0] instanceof Error && args[0].message === 'plain error'), true)
 		assert.equal(consoleTraces.length, 0)
-		assert.equal(browserMock.sentMessages.length, 1)
-		assert.equal(browserMock.sentMessages[0]?.method, 'popup_UnexpectedErrorOccured')
+		assert.equal(browserMock.calls.runtimeSendMessage.length, 1)
+		assert.equal(readSentPopupMessages(browserMock)[0]?.method, 'popup_UnexpectedErrorOccured')
 	})
 
 	test('still logs reporting pipeline failures to the extension console', async () => {
-		browserMock.reset()
-		browserMock.setStorageSet(async () => { throw new Error('storage failed') })
+		const browserMock = installBrowserMockForTest()
+		browserMock.browser.storage.local.set = async () => { throw new Error('storage failed') }
 		const { reportUnexpectedError } = await modulesPromise
 
 		const { consoleErrors, consoleTraces } = await captureConsoleCalls(async () => await reportUnexpectedError(new Error('plain error')))
@@ -361,8 +273,8 @@ describe('unexpected error diagnostics', () => {
 	})
 
 	test('still logs popup broadcast failures to the extension console', async () => {
-		browserMock.reset()
-		browserMock.setSendMessage(async () => { throw new Error('broadcast failed') })
+		const browserMock = installBrowserMockForTest()
+		browserMock.browser.runtime.sendMessage = async () => { throw new Error('broadcast failed') }
 		const { reportUnexpectedError } = await modulesPromise
 
 		const { consoleErrors, consoleTraces } = await captureConsoleCalls(async () => await reportUnexpectedError(new Error('plain error')))
@@ -372,7 +284,7 @@ describe('unexpected error diagnostics', () => {
 	})
 
 	test('uses metadata message without dropping the original error cause', async () => {
-		browserMock.reset()
+		installBrowserMockForTest()
 		const { getInterceptorErrorDiagnostics, reportUnexpectedError, getLatestUnexpectedError } = await modulesPromise
 
 		await withSilencedConsole(async () => await reportUnexpectedError(new Error('root failure'), {
@@ -393,9 +305,9 @@ describe('unexpected error diagnostics', () => {
 	})
 
 	test('keeps forwarded popup error message as diagnostic cause', async () => {
-		browserMock.reset()
+		installBrowserMockForTest()
 		const { getInterceptorErrorDiagnostics, getLatestUnexpectedError } = await modulesPromise
-		const { reportUnexpectedErrorInWindow } = await importAllPopupMessageHandlers()
+		const { reportUnexpectedErrorInWindow } = await import('../../app/ts/background/popupMessageHandlers/diagnostics.js')
 		const timestamp = new Date('2026-06-23T00:00:00.000Z')
 
 		await withSilencedConsole(async () => await reportUnexpectedErrorInWindow({
@@ -425,7 +337,7 @@ describe('unexpected error diagnostics', () => {
 	})
 
 	test('records local recovery diagnostics without notifying the popup', async () => {
-		browserMock.reset()
+		const browserMock = installBrowserMockForTest()
 		const { getInterceptorErrorDiagnostics, getLatestUnexpectedError, reportLocalRecovery } = await modulesPromise
 
 		await withSilencedConsole(async () => await reportLocalRecovery(new Error('decode failed'), {
@@ -435,7 +347,7 @@ describe('unexpected error diagnostics', () => {
 		}))
 
 		assert.equal(await getLatestUnexpectedError(), undefined)
-		assert.equal(browserMock.sentMessages.length, 0)
+		assert.equal(browserMock.calls.runtimeSendMessage.length, 0)
 		const diagnostics = await getInterceptorErrorDiagnostics()
 		assert.equal(diagnostics.length, 1)
 		const [diagnostic] = diagnostics
@@ -449,7 +361,7 @@ describe('unexpected error diagnostics', () => {
 	})
 
 	test('logs local recovery diagnostics as readable console strings', async () => {
-		browserMock.reset()
+		installBrowserMockForTest()
 		const { reportLocalRecovery } = await modulesPromise
 
 		const { consoleWarns } = await captureConsoleCalls(async () => await reportLocalRecovery(new Error('decode failed'), {
@@ -467,15 +379,13 @@ describe('unexpected error diagnostics', () => {
 	})
 
 	test('best-effort local recovery does not block on diagnostic persistence', async () => {
-		browserMock.reset()
+		const browserMock = installBrowserMockForTest()
 		let storageSetStarted = false
-		let releaseStorageSet: (() => void) | undefined
-		browserMock.setStorageSet(async () => {
+		const storageSetRelease = Promise.withResolvers<void>()
+		browserMock.browser.storage.local.set = async () => {
 			storageSetStarted = true
-			await new Promise<void>((resolve) => {
-				releaseStorageSet = resolve
-			})
-		})
+			await storageSetRelease.promise
+		}
 		const { getLatestUnexpectedError, reportLocalRecoveryBestEffort } = await modulesPromise
 
 		await withSilencedConsole(async () => {
@@ -488,10 +398,10 @@ describe('unexpected error diagnostics', () => {
 		assert.equal(storageSetStarted, false)
 		for (let index = 0; index < 10 && !storageSetStarted; index++) await Promise.resolve()
 		assert.equal(storageSetStarted, true)
-		releaseStorageSet?.()
+		storageSetRelease.resolve()
 		await Promise.resolve()
 		assert.equal(await getLatestUnexpectedError(), undefined)
-		assert.equal(browserMock.sentMessages.length, 0)
+		assert.equal(browserMock.calls.runtimeSendMessage.length, 0)
 	})
 
 	test('renders forwarded diagnostics directly from the message string in the existing unexpected error popup', async () => {

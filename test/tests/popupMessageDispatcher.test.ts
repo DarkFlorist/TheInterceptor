@@ -1,97 +1,18 @@
-import { createDeferredValue, createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
-import * as assert from 'assert'
-import { beforeEach, describe, test } from 'bun:test'
+import * as assert from 'node:assert'
+import { describe, test } from 'bun:test'
 import type { PopupMessageDispatcherContext } from '../../app/ts/background/popupMessageHandlerRegistry.js'
 import type { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import type { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
 import type { Settings } from '../../app/ts/types/interceptor-messages.js'
+import type { WebsiteAccess } from '../../app/ts/types/websiteAccessTypes.js'
+import { settleWithin, waitFor } from '../harness/async.js'
+import { createEthereumWithGetBlockCounter, createRestoringBrowserMockInstaller, createTestSimulationServicesOwner, installBackgroundBrowserMock } from './backgroundEthAccountsTestHarness.js'
+import { withSilencedConsole } from './consoleSilence.js'
 
-const storageState: Record<string, unknown> = {}
-const sentMessages: unknown[] = []
-const dynamicRuleUpdates: unknown[] = []
-const contentScriptUpdateBatches: { readonly id: string, readonly excludeMatches?: readonly string[] }[][] = []
-const dispatcherEvents: ({ type: 'message', message: unknown } | { type: 'dynamicRuleUpdate' })[] = []
-let storageSetError: Error | undefined
-let dynamicRuleUpdateError: Error | undefined
-let addressBookBroadcastWait: Promise<void> | undefined
+const installBrowserMock = createRestoringBrowserMockInstaller()
 
-Reflect.set(globalThis, 'chrome', { runtime: { id: 'test-extension' } })
-Reflect.set(globalThis, 'browser', {
-	runtime: {
-		lastError: undefined,
-		getManifest: () => ({ manifest_version: 3 }),
-		sendMessage: async (message: unknown) => {
-			sentMessages.push(message)
-			dispatcherEvents.push({ type: 'message', message })
-			const parsed = MessageToPopup.safeParse(message)
-			if (parsed.success && parsed.value.method === 'popup_addressBookEntriesChanged') await addressBookBroadcastWait
-			return undefined
-		},
-		onMessage: { addListener: () => undefined, removeListener: () => undefined },
-		onConnect: { addListener: () => undefined, removeListener: () => undefined },
-	},
-	storage: {
-		local: {
-			async get(keys?: string | string[] | Record<string, unknown> | null) {
-				if (keys === undefined || keys === null) return { ...storageState }
-				if (Array.isArray(keys)) return Object.fromEntries(keys.filter((key) => key in storageState).map((key) => [key, storageState[key]]))
-				if (typeof keys === 'string') return keys in storageState ? { [keys]: storageState[keys] } : {}
-				return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
-			},
-			async set(items: Record<string, unknown>) {
-				if (storageSetError !== undefined) throw storageSetError
-				Object.assign(storageState, items)
-			},
-			async remove(keys: string | string[]) {
-				for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
-			},
-		},
-	},
-	tabs: {
-		query: async () => [],
-		get: async () => undefined,
-		update: async () => undefined,
-		onUpdated: { addListener: () => undefined, removeListener: () => undefined },
-		onRemoved: { addListener: () => undefined, removeListener: () => undefined },
-	},
-	windows: {
-		get: async () => undefined,
-		update: async () => undefined,
-	},
-	action: {
-		setIcon: async () => undefined,
-		setTitle: async () => undefined,
-		setBadgeText: async () => undefined,
-		setBadgeBackgroundColor: async () => undefined,
-	},
-	browserAction: {
-		setIcon: async () => undefined,
-		setTitle: async () => undefined,
-		setBadgeText: async () => undefined,
-		setBadgeBackgroundColor: async () => undefined,
-	},
-	declarativeNetRequest: {
-		getDynamicRules: async () => [],
-		getSessionRules: async () => [],
-		updateDynamicRules: async (update: unknown) => {
-			if (dynamicRuleUpdateError !== undefined) throw dynamicRuleUpdateError
-			dynamicRuleUpdates.push(update)
-			dispatcherEvents.push({ type: 'dynamicRuleUpdate' })
-			return undefined
-		},
-		updateSessionRules: async () => undefined,
-	},
-	scripting: {
-		getRegisteredContentScripts: async () => [
-			{ id: 'inpage', excludeMatches: ['*://*.disabled.test/*'] },
-			{ id: 'inpage2', excludeMatches: ['*://*.disabled.test/*'] },
-		],
-		registerContentScripts: async () => undefined,
-		updateContentScripts: async (scripts: { readonly id: string, readonly excludeMatches?: readonly string[] }[]) => { contentScriptUpdateBatches.push(scripts) },
-		unregisterContentScripts: async () => undefined,
-	},
-})
-
+// The dispatcher modules check for the extension globals while they load, so they are imported under a mock that is removed again before the tests install their own.
+const importTimeBrowserMock = installBackgroundBrowserMock()
 const [
 	{ dispatchPopupMessage },
 	{ getLatestUnexpectedError },
@@ -105,9 +26,53 @@ const [
 	import('../../app/ts/simulation/services/priceEstimator.js'),
 	import('../../app/ts/types/interceptor-messages.js'),
 ])
+importTimeBrowserMock.restore()
+
+type ContentScriptUpdate = { readonly id: string, readonly excludeMatches?: readonly string[] }
+type DispatcherEvent = { readonly type: 'message', readonly message: unknown } | { readonly type: 'dynamicRuleUpdate' }
+
+const isPopupMessage = (method: string) => (message: unknown) => {
+	const parsed = MessageToPopup.safeParse(message)
+	return parsed.success && parsed.value.method === method
+}
+
+// Installs a browser mock with the manifest v3 content scripts registered, and records content-script updates plus the order of popup broadcasts and dynamic rule updates.
+async function installDispatcherBrowserMock({ websiteAccess }: { readonly websiteAccess?: readonly WebsiteAccess[] } = {}) {
+	const browserMock = installBrowserMock({ storage: { local: websiteAccess === undefined ? {} : { websiteAccess } } })
+	await browserMock.browser.scripting.registerContentScripts([
+		{ id: 'inpage', excludeMatches: ['*://*.disabled.test/*'] },
+		{ id: 'inpage2', excludeMatches: ['*://*.disabled.test/*'] },
+	])
+	const contentScriptUpdateBatches: ContentScriptUpdate[][] = []
+	const scripting = browserMock.browser.scripting
+	const updateContentScripts = scripting.updateContentScripts
+	scripting.updateContentScripts = async (scripts) => {
+		contentScriptUpdateBatches.push([...scripts])
+		await updateContentScripts(scripts)
+	}
+	const dispatcherEvents: DispatcherEvent[] = []
+	browserMock.handlers.runtimeMessage = (message) => {
+		dispatcherEvents.push({ type: 'message', message })
+		return undefined
+	}
+	const declarativeNetRequest = browserMock.browser.declarativeNetRequest
+	const updateDynamicRules = declarativeNetRequest.updateDynamicRules
+	declarativeNetRequest.updateDynamicRules = async (options) => {
+		dispatcherEvents.push({ type: 'dynamicRuleUpdate' })
+		await updateDynamicRules(options)
+	}
+	return {
+		browserMock,
+		sentMessages: browserMock.calls.runtimeSendMessage,
+		contentScriptUpdateBatches,
+		dispatcherEvents,
+		dynamicRuleUpdates: () => browserMock.calls.declarativeNetRequestUpdates.flatMap(({ scope, options }) => scope === 'dynamic' ? [options] : []),
+	}
+}
 
 const settings: Settings = {
 	activeSimulationAddress: 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n,
+	activeSigningSafeAddress: undefined,
 	openedPage: { page: 'Home' },
 	useSignersAddressAsActiveAddress: false,
 	websiteAccess: [],
@@ -136,9 +101,14 @@ const disabledWebsiteAccess: Settings['websiteAccess'][number] = {
 	declarativeNetRequestBlockMode: 'disabled',
 }
 
-function createDispatcherContext(resetSimulationState: () => Promise<void>): PopupMessageDispatcherContext {
+// Services built without their constructors, so a handler that unexpectedly reaches the RPC fails instead of polling it.
+const createInertServices = () => {
 	const ethereum: EthereumClientService = Object.create(EthereumClientServiceConstructor.prototype)
 	const tokenPriceService: TokenPriceService = Object.create(TokenPriceServiceConstructor.prototype)
+	return { ethereum, tokenPriceService }
+}
+
+function createDispatcherContext(resetSimulationState: () => Promise<void>, { ethereum, tokenPriceService } = createInertServices()): PopupMessageDispatcherContext {
 	return {
 		websiteTabConnections: new Map(),
 		simulationServicesOwner: createTestSimulationServicesOwner({ ethereum, tokenPriceService }, () => ({ ethereum, tokenPriceService })),
@@ -150,27 +120,16 @@ function createDispatcherContext(resetSimulationState: () => Promise<void>): Pop
 	}
 }
 
-beforeEach(() => {
-	storageSetError = undefined
-	dynamicRuleUpdateError = undefined
-	addressBookBroadcastWait = undefined
-	for (const key of Object.keys(storageState)) delete storageState[key]
-	sentMessages.splice(0, sentMessages.length)
-	dynamicRuleUpdates.splice(0, dynamicRuleUpdates.length)
-	contentScriptUpdateBatches.splice(0, contentScriptUpdateBatches.length)
-	dispatcherEvents.splice(0, dispatcherEvents.length)
-})
-
 describe('popup message dispatcher seams', () => {
 	test('refreshes manifest v3 content script exclusions after removing a disabled website', async () => {
-		storageState.websiteAccess = [disabledWebsiteAccess]
+		const { browserMock, contentScriptUpdateBatches } = await installDispatcherBrowserMock({ websiteAccess: [disabledWebsiteAccess] })
 
 		await dispatchPopupMessage(createDispatcherContext(async () => undefined), {
 			method: 'popup_removeWebsiteAccess',
 			data: { websiteOrigin: 'disabled.test' },
 		})
 
-		assert.deepEqual(storageState.websiteAccess, [])
+		assert.deepEqual(browserMock.readStoredValue('websiteAccess'), [])
 		assert.equal(contentScriptUpdateBatches.length, 1)
 		assert.deepEqual(contentScriptUpdateBatches.at(-1)?.map(({ id, excludeMatches }) => ({ id, excludeMatches })), [
 			{ id: 'inpage2', excludeMatches: [] },
@@ -179,19 +138,19 @@ describe('popup message dispatcher seams', () => {
 	})
 
 	test('does not refresh content script exclusions after removing an enabled website', async () => {
-		storageState.websiteAccess = [{ ...disabledWebsiteAccess, interceptorDisabled: false }]
+		const { browserMock, contentScriptUpdateBatches } = await installDispatcherBrowserMock({ websiteAccess: [{ ...disabledWebsiteAccess, interceptorDisabled: false }] })
 
 		await dispatchPopupMessage(createDispatcherContext(async () => undefined), {
 			method: 'popup_removeWebsiteAccess',
 			data: { websiteOrigin: 'disabled.test' },
 		})
 
-		assert.deepEqual(storageState.websiteAccess, [])
+		assert.deepEqual(browserMock.readStoredValue('websiteAccess'), [])
 		assert.equal(contentScriptUpdateBatches.length, 0)
 	})
 
 	test('refreshes manifest v3 content script exclusions after the access editor removes a disabled website', async () => {
-		storageState.websiteAccess = [disabledWebsiteAccess]
+		const { browserMock, contentScriptUpdateBatches } = await installDispatcherBrowserMock({ websiteAccess: [disabledWebsiteAccess] })
 
 		await dispatchPopupMessage(createDispatcherContext(async () => undefined), {
 			method: 'popup_changeInterceptorAccess',
@@ -202,7 +161,7 @@ describe('popup message dispatcher seams', () => {
 			}],
 		})
 
-		assert.deepEqual(storageState.websiteAccess, [])
+		assert.deepEqual(browserMock.readStoredValue('websiteAccess'), [])
 		assert.equal(contentScriptUpdateBatches.length, 1)
 		assert.deepEqual(contentScriptUpdateBatches.at(-1)?.map(({ id, excludeMatches }) => ({ id, excludeMatches })), [
 			{ id: 'inpage2', excludeMatches: [] },
@@ -211,6 +170,7 @@ describe('popup message dispatcher seams', () => {
 	})
 
 	test('snapshot registration captures at invocation and keeps one pair across awaits', async () => {
+		await installDispatcherBrowserMock()
 		const { popupSnapshotMessageHandler } = await import('../../app/ts/background/popupMessageHandlerRegistry.js')
 		const context = createDispatcherContext(async () => undefined)
 		const initial = context.simulationServicesOwner.getCurrent()
@@ -218,14 +178,14 @@ describe('popup message dispatcher seams', () => {
 		const last = createDispatcherContext(async () => undefined).simulationServicesOwner.getCurrent()
 		let next = replacement
 		context.simulationServicesOwner = createTestSimulationServicesOwner(initial, () => next)
-		const entered = createDeferredValue<void>()
-		const release = createDeferredValue<void>()
+		const entered = Promise.withResolvers<void>()
+		const release = Promise.withResolvers<void>()
 		const observed: typeof initial[] = []
 		const handler = popupSnapshotMessageHandler('popup_requestSimulationMetadata', async snapshot => {
 			assert.equal('simulationServicesOwner' in snapshot, false)
 			assert.equal('resetSimulationState' in snapshot, false)
 			observed.push(snapshot.services)
-			entered.resolve(undefined)
+			entered.resolve()
 			await release.promise
 			observed.push(snapshot.services)
 		})
@@ -235,7 +195,7 @@ describe('popup message dispatcher seams', () => {
 		await entered.promise
 		next = last
 		context.simulationServicesOwner.reset(network)
-		release.resolve(undefined)
+		release.resolve()
 		await pending
 		await handler(context, { method: 'popup_requestSimulationMetadata' })
 		assert.equal(observed.length, 4)
@@ -243,9 +203,10 @@ describe('popup message dispatcher seams', () => {
 	})
 
 	test('returns a save failure when address-book persistence fails', async () => {
-		storageSetError = new Error('Address-book storage unavailable.')
+		const { browserMock } = await installDispatcherBrowserMock()
+		browserMock.browser.storage.local.set = async () => { throw new Error('Address-book storage unavailable.') }
 
-		const result = await dispatchPopupMessage(createDispatcherContext(async () => undefined), {
+		const result = await withSilencedConsole(async () => await dispatchPopupMessage(createDispatcherContext(async () => undefined), {
 			method: 'popup_addOrModifyAddressBookEntry',
 			data: {
 				type: 'contact',
@@ -253,7 +214,7 @@ describe('popup message dispatcher seams', () => {
 				address: 1n,
 				entrySource: 'User',
 			},
-		})
+		}))
 
 		assert.deepEqual(result, {
 			type: 'AddOrModifyAddressBookEntryReply',
@@ -263,7 +224,7 @@ describe('popup message dispatcher seams', () => {
 	})
 
 	test('returns and records a failure when active-address access refresh fails', async () => {
-		storageState.websiteAccess = [{
+		const { browserMock, dynamicRuleUpdates } = await installDispatcherBrowserMock({ websiteAccess: [{
 			website: {
 				websiteOrigin: 'address-book-refresh-failure.test',
 				icon: undefined,
@@ -272,10 +233,12 @@ describe('popup message dispatcher seams', () => {
 			addressAccess: [],
 			access: true,
 			declarativeNetRequestBlockMode: 'block-all',
-		}]
-		dynamicRuleUpdateError = new Error('Access refresh unavailable.')
+		}] })
+		const declarativeNetRequest = browserMock.browser.declarativeNetRequest
+		const updateDynamicRules = declarativeNetRequest.updateDynamicRules
+		declarativeNetRequest.updateDynamicRules = async () => { throw new Error('Access refresh unavailable.') }
 
-		const result = await dispatchPopupMessage(createDispatcherContext(async () => undefined), {
+		const result = await withSilencedConsole(async () => await dispatchPopupMessage(createDispatcherContext(async () => undefined), {
 			method: 'popup_addOrModifyAddressBookEntry',
 			data: {
 				type: 'contact',
@@ -284,7 +247,7 @@ describe('popup message dispatcher seams', () => {
 				entrySource: 'User',
 				useAsActiveAddress: true,
 			},
-		})
+		}))
 		const latestUnexpectedError = await getLatestUnexpectedError()
 
 		assert.deepEqual(result, {
@@ -295,7 +258,7 @@ describe('popup message dispatcher seams', () => {
 		assert.equal(latestUnexpectedError?.data.source, 'address_book_save')
 		assert.equal(latestUnexpectedError?.data.code, 'address_book_save_failed')
 
-		dynamicRuleUpdateError = undefined
+		declarativeNetRequest.updateDynamicRules = updateDynamicRules
 		const retryResult = await dispatchPopupMessage(createDispatcherContext(async () => undefined), {
 			method: 'popup_addOrModifyAddressBookEntry',
 			data: {
@@ -311,10 +274,11 @@ describe('popup message dispatcher seams', () => {
 			type: 'AddOrModifyAddressBookEntryReply',
 			ok: true,
 		})
-		assert.equal(dynamicRuleUpdates.length, 1)
+		assert.equal(dynamicRuleUpdates().length, 1)
 	})
 
 	test('broadcasts address-book saves for metadata consumers to refresh themselves', async () => {
+		const { sentMessages } = await installDispatcherBrowserMock()
 		const result = await dispatchPopupMessage(createDispatcherContext(async () => undefined), {
 			method: 'popup_addOrModifyAddressBookEntry',
 			data: {
@@ -326,15 +290,16 @@ describe('popup message dispatcher seams', () => {
 		})
 
 		assert.deepEqual(result, { type: 'AddOrModifyAddressBookEntryReply', ok: true })
-		assert.equal(sentMessages.some((message) => {
-			const parsed = MessageToPopup.safeParse(message)
-			return parsed.success && parsed.value.method === 'popup_addressBookEntriesChanged'
-		}), true)
+		assert.equal(sentMessages.some(isPopupMessage('popup_addressBookEntriesChanged')), true)
 	})
 
 	test('returns a successful save reply without waiting for address-book refresh listeners', async () => {
-		let releaseBroadcast: (() => void) | undefined
-		addressBookBroadcastWait = new Promise<void>((resolve) => { releaseBroadcast = resolve })
+		const { browserMock, sentMessages } = await installDispatcherBrowserMock()
+		const releaseBroadcast = Promise.withResolvers<void>()
+		browserMock.handlers.runtimeMessage = async (message) => {
+			if (isPopupMessage('popup_addressBookEntriesChanged')(message)) await releaseBroadcast.promise
+			return undefined
+		}
 		const dispatch = dispatchPopupMessage(createDispatcherContext(async () => undefined), {
 			method: 'popup_addOrModifyAddressBookEntry',
 			data: {
@@ -346,21 +311,16 @@ describe('popup message dispatcher seams', () => {
 			},
 		})
 
-		while (!sentMessages.some((message) => {
-			const parsed = MessageToPopup.safeParse(message)
-			return parsed.success && parsed.value.method === 'popup_addressBookEntriesChanged'
-		})) await Promise.resolve()
-		const result = await Promise.race([
-			dispatch,
-			new Promise<'save reply timeout'>((resolve) => { setTimeout(() => resolve('save reply timeout'), 50) }),
-		])
-		releaseBroadcast?.()
+		await waitFor(() => sentMessages.some(isPopupMessage('popup_addressBookEntriesChanged')), { description: 'the address-book broadcast' })
+		const result = await settleWithin(dispatch, 50, 'The save reply waited for the address-book broadcast listeners')
+		releaseBroadcast.resolve()
 		await dispatch
 
 		assert.deepEqual(result, { type: 'AddOrModifyAddressBookEntryReply', ok: true })
 	})
 
 	test('delegates simulation reset through the injected lifecycle callback', async () => {
+		await installDispatcherBrowserMock()
 		let resetCount = 0
 		const result = await dispatchPopupMessage(createDispatcherContext(async () => {
 			resetCount += 1
@@ -370,6 +330,7 @@ describe('popup message dispatcher seams', () => {
 	})
 
 	test('deliberately ignores popup window status probes handled by window listeners', async () => {
+		await installDispatcherBrowserMock()
 		const context = createDispatcherContext(async () => {
 			throw new Error('Window status probes must not reset simulation state.')
 		})
@@ -378,8 +339,9 @@ describe('popup message dispatcher seams', () => {
 	})
 
 	test('does not identify an address using a different active chain', async () => {
-		const context = createDispatcherContext(async () => undefined)
-		Object.defineProperty(context.simulationServicesOwner.getCurrent().ethereum, 'getChainId', { value: () => 1n })
+		await installDispatcherBrowserMock()
+		const { ethereum, tokenPriceService } = createEthereumWithGetBlockCounter({ count: 0 }, { getChainId: () => 1n })
+		const context = createDispatcherContext(async () => undefined, { ethereum, tokenPriceService })
 
 		assert.deepEqual(await dispatchPopupMessage(context, {
 			method: 'popup_requestIdentifyAddress',
@@ -391,6 +353,7 @@ describe('popup message dispatcher seams', () => {
 	})
 
 	test('routes Safe contract state through its dedicated protocol', async () => {
+		await installDispatcherBrowserMock()
 		const context = createDispatcherContext(async () => undefined)
 		assert.deepEqual(await dispatchPopupMessage(context, {
 			method: 'popup_requestSafeContractState',
@@ -405,12 +368,12 @@ describe('popup message dispatcher seams', () => {
 	})
 
 	test('broadcasts an import failure without refreshing settings', async () => {
-		storageState.websiteAccess = [{
+		const { browserMock, sentMessages, dynamicRuleUpdates } = await installDispatcherBrowserMock({ websiteAccess: [{
 			website: { websiteOrigin: 'failure-refresh.test', icon: undefined, title: 'Failure refresh sentinel' },
 			addressAccess: [],
 			access: true,
 			declarativeNetRequestBlockMode: 'block-all',
-		}]
+		}] })
 		await dispatchPopupMessage(
 			createDispatcherContext(async () => undefined),
 			{ method: 'popup_import_settings', data: { fileContents: 'not json' } },
@@ -422,11 +385,12 @@ describe('popup message dispatcher seams', () => {
 		assert.equal(importFailure?.method, 'popup_initiate_export_settings_reply')
 		if (importFailure?.method !== 'popup_initiate_export_settings_reply') throw new Error('Expected failed import broadcast.')
 		assert.equal(importFailure.data.success, false)
-		assert.equal(storageState.independentActiveSimulationAddress, undefined)
-		assert.deepEqual(dynamicRuleUpdates, [])
+		assert.equal(browserMock.readStoredValue('independentActiveSimulationAddress'), undefined)
+		assert.deepEqual(dynamicRuleUpdates(), [])
 	})
 
 	test('reloads imported settings before refreshing access and broadcasting the update', async () => {
+		const { sentMessages, dispatcherEvents, dynamicRuleUpdates } = await installDispatcherBrowserMock()
 		const importedSettings = JSON.stringify({
 			name: 'InterceptorSettingsAndAddressBook',
 			version: '1.4',
@@ -473,7 +437,7 @@ describe('popup message dispatcher seams', () => {
 		assert.equal(messages[1].data.activeSimulationAddress, 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n)
 		assert.equal(messages[1].data.activeRpcNetwork.httpsRpc, 'https://example.test/rpc')
 		assert.equal(messages[1].data.simulationMode, false)
-		assert.deepEqual(dynamicRuleUpdates, [{
+		assert.deepEqual(dynamicRuleUpdates(), [{
 			removeRuleIds: [],
 			addRules: [{
 				id: 1,
