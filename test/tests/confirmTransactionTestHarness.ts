@@ -22,6 +22,7 @@ export type RuntimeMessage = {
 
 export type StorageKeys = string | string[] | Record<string, unknown> | null | undefined
 
+// Accepts arrays, unlike isRecord in test/harness/assertions.ts; kept until the confirmation tests move to the shared harness, which deletes it.
 export function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null
 }
