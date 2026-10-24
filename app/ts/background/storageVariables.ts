@@ -65,16 +65,19 @@ async function updatePendingTransactionOrMessages(update: (pendingTransactionsOr
 	})
 }
 
+// Applies `update` to the stored request. Returns the stored result, or undefined when the request is gone or `update` declined by returning undefined.
 export async function updatePendingTransactionOrMessage(uniqueRequestIdentifier: UniqueRequestIdentifier, update: (pendingTransactionOrMessage: PendingTransactionOrSignableMessage) => Promise<PendingTransactionOrSignableMessage | undefined>) {
+	let updated: PendingTransactionOrSignableMessage | undefined
 	await updatePendingTransactionOrMessages(async (pendingTransactionsOrMessages) => {
 		const match = pendingTransactionsOrMessages.findIndex((pending) => doesUniqueRequestIdentifiersMatch(pending.uniqueRequestIdentifier, uniqueRequestIdentifier))
 		if (match < 0) return pendingTransactionsOrMessages
 		const found = pendingTransactionsOrMessages[match]
 		if (found === undefined) return pendingTransactionsOrMessages
-		const updated = await update(found)
+		updated = await update(found)
 		if (updated === undefined) return pendingTransactionsOrMessages
 		return replaceElementInReadonlyArray(pendingTransactionsOrMessages, match, updated)
 	})
+	return updated
 }
 
 export async function appendPendingTransactionOrMessage(pendingTransactionOrMessage: PendingTransactionOrSignableMessage) {

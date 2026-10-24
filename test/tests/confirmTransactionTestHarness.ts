@@ -351,6 +351,7 @@ async function loadModules() {
 		setSafeSimulationSigner: popupMessageHandlers.setSafeSimulationSigner,
 		fetchSimulationStackRequestConfirmation: popupMessageHandlers.fetchSimulationStackRequestConfirmation,
 		resolvePendingTransactionOrMessage: confirmTransaction.resolvePendingTransactionOrMessage,
+		getReviewRevision: confirmTransaction.getReviewRevision,
 		updateConfirmTransactionView: confirmTransaction.updateConfirmTransactionView,
 		formEthSendTransaction: confirmTransaction.formEthSendTransaction,
 		getSafeExecutionSignerRoute: safeExecutionRouting.getSafeExecutionSignerRoute,
