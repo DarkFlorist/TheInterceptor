@@ -1,14 +1,12 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import * as fs from 'node:fs'
 import { describe, test } from 'bun:test'
+import { createPerTestBrowserMockInstaller } from '../harness/perTest.js'
+import { waitFor } from '../harness/async.js'
 import { withSilencedConsole } from './consoleSilence.js'
+import { getMessageMethod } from './runtimeMessageMatchers.js'
 
-type RuntimeMessage = {
-	readonly method?: string
-	readonly data?: { readonly message?: string, readonly code?: string }
-}
-
-type BrowserMockOptions = {
+type ContentScriptBrowserMockOptions = {
 	readonly registerError?: Error
 	readonly updateError?: Error
 	readonly executeScriptError?: Error
@@ -18,134 +16,66 @@ type BrowserMockOptions = {
 	readonly registeredContentScriptIds?: readonly string[]
 }
 
-type RegisteredContentScript = {
-	readonly id: string
-	readonly excludeMatches?: readonly string[]
-}
+const committedTabId = 42
+const installBrowserMock = createPerTestBrowserMockInstaller()
 
-function installBrowserMock({ registerError, updateError, executeScriptError, tabUrl = 'https://example.com/', hasVisibleTabUrl = true, tabUrlAfterStorageRead, registeredContentScriptIds = [] }: BrowserMockOptions = {}) {
-	const storageState: Record<string, unknown> = {}
-	const sentMessages: RuntimeMessage[] = []
-	const executedScriptFiles: string[] = []
-	const registeredContentScripts = new Map(registeredContentScriptIds.map((id) => [id, { id }]))
-	let executeScriptCalls = 0
+async function installContentScriptBrowserMock({ registerError, updateError, executeScriptError, tabUrl = 'https://example.com/', hasVisibleTabUrl = true, tabUrlAfterStorageRead, registeredContentScriptIds = [] }: ContentScriptBrowserMockOptions = {}) {
+	const browserMock = installBrowserMock({ tabs: [hasVisibleTabUrl ? { id: committedTabId, url: tabUrl } : { id: committedTabId }] })
+	const { browser, calls } = browserMock
+	if (registeredContentScriptIds.length > 0) await browser.scripting.registerContentScripts(registeredContentScriptIds.map((id) => ({ id })))
+
 	const scriptingOperations: string[] = []
 	const unregisteredContentScriptIdBatches: string[][] = []
-	let currentTabUrl = tabUrl
-	let committedListener: ((details: browser.webNavigation._OnCommittedDetails) => unknown) | undefined
-	const getStorageItems = (keys?: string | string[] | Record<string, unknown> | null) => {
-		if (keys === undefined || keys === null) return { ...storageState }
-		if (Array.isArray(keys)) return Object.fromEntries(keys.map((key) => [key, storageState[key]]))
-		if (typeof keys === 'string') return { [keys]: storageState[keys] }
-		return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
+	const { registerContentScripts, updateContentScripts, unregisterContentScripts, getRegisteredContentScripts } = browser.scripting
+	browser.scripting.registerContentScripts = async (scripts) => {
+		scriptingOperations.push('register')
+		if (registerError !== undefined) throw registerError
+		await registerContentScripts(scripts)
+	}
+	browser.scripting.updateContentScripts = async (scripts) => {
+		scriptingOperations.push('update')
+		if (updateError !== undefined) throw updateError
+		await updateContentScripts(scripts)
+	}
+	browser.scripting.unregisterContentScripts = async (filter) => {
+		scriptingOperations.push('unregister')
+		unregisteredContentScriptIdBatches.push([...filter?.ids ?? (await getRegisteredContentScripts()).map(({ id }) => id)])
+		await unregisterContentScripts(filter)
+	}
+	const executeScript = browser.tabs.executeScript
+	browser.tabs.executeScript = async (tabId, details) => {
+		const results = await executeScript(tabId, details)
+		if (executeScriptError !== undefined) throw executeScriptError
+		return results
+	}
+	if (tabUrlAfterStorageRead !== undefined) {
+		// The tab navigates while the injection logic loads settings from storage.
+		const getStorageItems = browser.storage.local.get
+		browser.storage.local.get = async (keys) => {
+			const storageItems = await getStorageItems(keys)
+			await browser.tabs.update(committedTabId, { url: tabUrlAfterStorageRead })
+			return storageItems
+		}
 	}
 
-	Object.defineProperty(globalThis, 'browser', {
-		configurable: true,
-		writable: true,
-		value: {
-			runtime: {
-				lastError: null,
-				async sendMessage(message: RuntimeMessage) {
-					sentMessages.push(message)
-					return undefined
-				},
-				getManifest: () => ({ manifest_version: 3 }),
-				onMessage: { addListener: () => undefined, removeListener: () => undefined },
-				onConnect: { addListener: () => undefined, removeListener: () => undefined },
-			},
-			storage: {
-				local: {
-					async get(keys?: string | string[] | Record<string, unknown> | null) {
-						const storageItems = getStorageItems(keys)
-						currentTabUrl = tabUrlAfterStorageRead ?? currentTabUrl
-						return storageItems
-					},
-					async set(items: Record<string, unknown>) { Object.assign(storageState, items) },
-					async remove(keys: string | string[]) {
-						for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
-					},
-				},
-			},
-			scripting: {
-				async unregisterContentScripts(filter?: { readonly ids?: readonly string[] }) {
-					scriptingOperations.push('unregister')
-					const ids = filter?.ids === undefined ? [...registeredContentScripts.keys()] : [...filter.ids]
-					unregisteredContentScriptIdBatches.push(ids)
-					for (const id of ids) registeredContentScripts.delete(id)
-				},
-				async getRegisteredContentScripts() { return [...registeredContentScripts.values()] },
-				async registerContentScripts(scripts: readonly RegisteredContentScript[]) {
-					scriptingOperations.push('register')
-					if (registerError !== undefined) throw registerError
-					for (const script of scripts) registeredContentScripts.set(script.id, script)
-				},
-				async updateContentScripts(scripts: readonly RegisteredContentScript[]) {
-					scriptingOperations.push('update')
-					if (updateError !== undefined) throw updateError
-					for (const script of scripts) registeredContentScripts.set(script.id, script)
-				},
-			},
-			tabs: {
-				async query() { return [{ id: 42, url: currentTabUrl }] },
-				async get() { return hasVisibleTabUrl ? { id: 42, url: currentTabUrl } : { id: 42 } },
-				async update() { return undefined },
-				async executeScript(_tabId: number, injection: { readonly file?: string }) {
-					executeScriptCalls++
-					if (injection.file !== undefined) executedScriptFiles.push(injection.file)
-					if (executeScriptError !== undefined) throw executeScriptError
-					return undefined
-				},
-				onUpdated: { addListener: () => undefined, removeListener: () => undefined },
-				onRemoved: { addListener: () => undefined, removeListener: () => undefined },
-			},
-			windows: {
-				async get() { return undefined },
-				async update() { return undefined },
-			},
-			webNavigation: {
-				onCommitted: {
-					addListener(listener: (details: browser.webNavigation._OnCommittedDetails) => unknown) {
-						committedListener = listener
-					},
-					removeListener: () => undefined,
-				},
-			},
-			action: {
-				async setIcon() { return undefined },
-				async setTitle() { return undefined },
-				async setBadgeText() { return undefined },
-				async setBadgeBackgroundColor() { return undefined },
-			},
-			browserAction: {
-				async setIcon() { return undefined },
-				async setTitle() { return undefined },
-				async setBadgeText() { return undefined },
-				async setBadgeBackgroundColor() { return undefined },
-			},
-		},
-	})
-	Object.defineProperty(globalThis, 'chrome', { configurable: true, writable: true, value: { runtime: { id: 'test-extension' } } })
-
 	return {
-		sentMessages,
-		getRegisteredContentScripts() { return [...registeredContentScripts.values()] },
+		sentMessages: calls.runtimeSendMessage,
+		getRegisteredContentScripts: browserMock.getRegisteredContentScripts,
 		getScriptingOperations() { return [...scriptingOperations] },
 		getUnregisteredContentScriptIdBatches() { return unregisteredContentScriptIdBatches.map((ids) => [...ids]) },
-		getExecuteScriptCalls() { return executeScriptCalls },
-		getExecutedScriptFiles() { return [...executedScriptFiles] },
-		getCommittedListener() {
-			if (committedListener === undefined) throw new Error('webNavigation listener was not registered')
-			return committedListener
+		getExecuteScriptCalls() { return calls.tabsExecuteScript.length },
+		getExecutedScriptFiles() { return calls.tabsExecuteScript.flatMap(({ details }) => details.file === undefined ? [] : [details.file]) },
+		async dispatchCommittedNavigation(details: browser.webNavigation._OnCommittedDetails) {
+			if (!browser.webNavigation.onCommitted.hasListeners()) throw new Error('webNavigation listener was not registered')
+			await Promise.all(browser.webNavigation.onCommitted.dispatch(details))
 		},
 	}
 }
 
 const committedDetails: browser.webNavigation._OnCommittedDetails = {
-	tabId: 42,
+	tabId: committedTabId,
 	url: 'https://example.com/',
 	frameId: 0,
-	parentFrameId: -1,
 	processId: 1,
 	timeStamp: 1,
 	transitionQualifiers: [],
@@ -170,7 +100,7 @@ function getManifestV2WebAccessibleResources() {
 
 describe('content script injection strategy', () => {
 	test('creates valid manifest v3 exclusions without admitting malformed stored origins', async () => {
-		installBrowserMock()
+		await installContentScriptBrowserMock()
 		const { getManifestV3ExcludeMatches } = await loadModules()
 
 		assert.deepEqual(getManifestV3ExcludeMatches([
@@ -197,11 +127,11 @@ describe('content script injection strategy', () => {
 	})
 
 	test('exposes every manifest v2 injected file to Firefox', async () => {
-		const { getCommittedListener, getExecutedScriptFiles } = installBrowserMock()
+		const { dispatchCommittedNavigation, getExecutedScriptFiles } = await installContentScriptBrowserMock()
 		const { updateContentScriptInjectionStrategyManifestV2 } = await loadModules()
 
 		await updateContentScriptInjectionStrategyManifestV2()
-		await getCommittedListener()(committedDetails)
+		await dispatchCommittedNavigation(committedDetails)
 
 		const injectedFiles = [
 			'/vendor/webextension-polyfill/dist/browser-polyfill.js',
@@ -216,7 +146,7 @@ describe('content script injection strategy', () => {
 	})
 
 	test('records manifest v3 registration failures as unexpected errors', async () => {
-		const { sentMessages } = installBrowserMock({ registerError: new Error('registration failed') })
+		const { sentMessages } = await installContentScriptBrowserMock({ registerError: new Error('registration failed') })
 		const { updateContentScriptInjectionStrategyManifestV3, getLatestUnexpectedError } = await loadModules()
 
 		await withSilencedConsole(async () => await updateContentScriptInjectionStrategyManifestV3())
@@ -224,11 +154,11 @@ describe('content script injection strategy', () => {
 		const latestUnexpectedError = await getLatestUnexpectedError()
 		assert.equal(latestUnexpectedError?.data.message, 'registration failed')
 		assert.equal(latestUnexpectedError?.data.code, 'content_script_registration_failed')
-		assert.equal(sentMessages.at(-1)?.method, 'popup_UnexpectedErrorOccured')
+		assert.equal(getMessageMethod(sentMessages.at(-1)), 'popup_UnexpectedErrorOccured')
 	})
 
 	test('registers missing scripts, updates existing definitions, and then prunes obsolete registrations', async () => {
-		const { getRegisteredContentScripts, getScriptingOperations, getUnregisteredContentScriptIdBatches } = installBrowserMock({ registeredContentScriptIds: ['inpage', 'obsolete-inpage'] })
+		const { getRegisteredContentScripts, getScriptingOperations, getUnregisteredContentScriptIdBatches } = await installContentScriptBrowserMock({ registeredContentScriptIds: ['inpage', 'obsolete-inpage'] })
 		const { updateContentScriptInjectionStrategyManifestV3 } = await loadModules()
 
 		await updateContentScriptInjectionStrategyManifestV3()
@@ -240,7 +170,7 @@ describe('content script injection strategy', () => {
 	})
 
 	test('keeps existing and obsolete manifest v3 content scripts registered when an update fails', async () => {
-		const { getRegisteredContentScripts, getScriptingOperations, getUnregisteredContentScriptIdBatches } = installBrowserMock({
+		const { getRegisteredContentScripts, getScriptingOperations, getUnregisteredContentScriptIdBatches } = await installContentScriptBrowserMock({
 			registeredContentScriptIds: ['inpage', 'inpage2', 'obsolete-inpage'],
 			updateError: new Error('update failed'),
 		})
@@ -254,31 +184,31 @@ describe('content script injection strategy', () => {
 	})
 
 	test('keeps missing-tab manifest v2 injection failures ignored', async () => {
-		const { getCommittedListener } = installBrowserMock({ executeScriptError: new Error('No tab with id: 42.') })
+		const { dispatchCommittedNavigation } = await installContentScriptBrowserMock({ executeScriptError: new Error('No tab with id: 42.') })
 		const { updateContentScriptInjectionStrategyManifestV2, getLatestUnexpectedError } = await loadModules()
 
 		await updateContentScriptInjectionStrategyManifestV2()
 		await withSilencedConsole(async () => {
-			await getCommittedListener()(committedDetails)
+			await dispatchCommittedNavigation(committedDetails)
 		})
 
 		assert.equal(await getLatestUnexpectedError(), undefined)
 	})
 
 	test('keeps invalid-tab manifest v2 injection failures ignored', async () => {
-		const { getCommittedListener } = installBrowserMock({ executeScriptError: new Error('Invalid tab ID: 42') })
+		const { dispatchCommittedNavigation } = await installContentScriptBrowserMock({ executeScriptError: new Error('Invalid tab ID: 42') })
 		const { updateContentScriptInjectionStrategyManifestV2, getLatestUnexpectedError } = await loadModules()
 
 		await updateContentScriptInjectionStrategyManifestV2()
 		await withSilencedConsole(async () => {
-			await getCommittedListener()(committedDetails)
+			await dispatchCommittedNavigation(committedDetails)
 		})
 
 		assert.equal(await getLatestUnexpectedError(), undefined)
 	})
 
 	test('skips manifest v2 injection after navigation reaches another extension page', async () => {
-		const { getCommittedListener, getExecuteScriptCalls } = installBrowserMock({
+		const { dispatchCommittedNavigation, getExecuteScriptCalls } = await installContentScriptBrowserMock({
 			tabUrl: 'chrome-extension://another-extension-id/home.html',
 			executeScriptError: new Error('Cannot access a chrome-extension:// URL of different extension'),
 		})
@@ -286,7 +216,7 @@ describe('content script injection strategy', () => {
 
 		await updateContentScriptInjectionStrategyManifestV2()
 		await withSilencedConsole(async () => {
-			await getCommittedListener()(committedDetails)
+			await dispatchCommittedNavigation(committedDetails)
 		})
 
 		assert.equal(getExecuteScriptCalls(), 0)
@@ -301,7 +231,7 @@ describe('content script injection strategy', () => {
 			'https://chrome.google.com/webstore?hl=en',
 			'https://chrome.google.com/webstore#extensions',
 		]) {
-			const { getCommittedListener, getExecuteScriptCalls } = installBrowserMock({
+			const { dispatchCommittedNavigation, getExecuteScriptCalls } = await installContentScriptBrowserMock({
 				tabUrl: extensionGalleryUrl,
 				executeScriptError: new Error('The extensions gallery cannot be scripted.'),
 			})
@@ -309,7 +239,7 @@ describe('content script injection strategy', () => {
 
 			await updateContentScriptInjectionStrategyManifestV2()
 			await withSilencedConsole(async () => {
-				await getCommittedListener()({ ...committedDetails, url: extensionGalleryUrl })
+				await dispatchCommittedNavigation({ ...committedDetails, url: extensionGalleryUrl })
 			})
 
 			assert.equal(getExecuteScriptCalls(), 0)
@@ -319,7 +249,7 @@ describe('content script injection strategy', () => {
 	})
 
 	test('skips manifest v2 injection when the tab URL is unavailable', async () => {
-		const { getCommittedListener, getExecuteScriptCalls } = installBrowserMock({
+		const { dispatchCommittedNavigation, getExecuteScriptCalls } = await installContentScriptBrowserMock({
 			hasVisibleTabUrl: false,
 			executeScriptError: new Error('Cannot access a chrome-extension:// URL of different extension'),
 		})
@@ -327,7 +257,7 @@ describe('content script injection strategy', () => {
 
 		await updateContentScriptInjectionStrategyManifestV2()
 		await withSilencedConsole(async () => {
-			await getCommittedListener()(committedDetails)
+			await dispatchCommittedNavigation(committedDetails)
 		})
 
 		assert.equal(getExecuteScriptCalls(), 0)
@@ -336,7 +266,7 @@ describe('content script injection strategy', () => {
 	})
 
 	test('rechecks the current tab URL after loading manifest v2 settings', async () => {
-		const { getCommittedListener, getExecuteScriptCalls } = installBrowserMock({
+		const { dispatchCommittedNavigation, getExecuteScriptCalls } = await installContentScriptBrowserMock({
 			tabUrlAfterStorageRead: 'chrome-extension://another-extension-id/home.html',
 			executeScriptError: new Error('Cannot access a chrome-extension:// URL of different extension'),
 		})
@@ -344,7 +274,7 @@ describe('content script injection strategy', () => {
 
 		await updateContentScriptInjectionStrategyManifestV2()
 		await withSilencedConsole(async () => {
-			await getCommittedListener()(committedDetails)
+			await dispatchCommittedNavigation(committedDetails)
 		})
 
 		assert.equal(getExecuteScriptCalls(), 0)
@@ -353,14 +283,14 @@ describe('content script injection strategy', () => {
 	})
 
 	test('ignores a different extension target that appears after the final tab URL check', async () => {
-		const { getCommittedListener, getExecuteScriptCalls } = installBrowserMock({
+		const { dispatchCommittedNavigation, getExecuteScriptCalls } = await installContentScriptBrowserMock({
 			executeScriptError: new Error('Cannot access a chrome-extension:// URL of different extension'),
 		})
 		const { updateContentScriptInjectionStrategyManifestV2, getInterceptorErrorDiagnostics, getLatestUnexpectedError } = await loadModules()
 
 		await updateContentScriptInjectionStrategyManifestV2()
 		await withSilencedConsole(async () => {
-			await getCommittedListener()(committedDetails)
+			await dispatchCommittedNavigation(committedDetails)
 		})
 
 		assert.equal(getExecuteScriptCalls(), 1)
@@ -369,14 +299,14 @@ describe('content script injection strategy', () => {
 	})
 
 	test('ignores an extension gallery target that appears after the final tab URL check', async () => {
-		const { getCommittedListener, getExecuteScriptCalls } = installBrowserMock({
+		const { dispatchCommittedNavigation, getExecuteScriptCalls } = await installContentScriptBrowserMock({
 			executeScriptError: new Error('The extensions gallery cannot be scripted.'),
 		})
 		const { updateContentScriptInjectionStrategyManifestV2, getInterceptorErrorDiagnostics, getLatestUnexpectedError } = await loadModules()
 
 		await updateContentScriptInjectionStrategyManifestV2()
 		await withSilencedConsole(async () => {
-			await getCommittedListener()(committedDetails)
+			await dispatchCommittedNavigation(committedDetails)
 		})
 
 		assert.equal(getExecuteScriptCalls(), 1)
@@ -391,15 +321,15 @@ describe('content script injection strategy', () => {
 			'Unexpected executeScript failure: The extensions gallery cannot be scripted.',
 			'The extensions gallery cannot be scripted. after navigation',
 		]) {
-			const { getCommittedListener } = installBrowserMock({ executeScriptError: new Error(errorMessage) })
+			const { dispatchCommittedNavigation } = await installContentScriptBrowserMock({ executeScriptError: new Error(errorMessage) })
 			const { updateContentScriptInjectionStrategyManifestV2, getInterceptorErrorDiagnostics, getLatestUnexpectedError } = await loadModules()
 
 			await updateContentScriptInjectionStrategyManifestV2()
 			await withSilencedConsole(async () => {
-				await getCommittedListener()(committedDetails)
+				await dispatchCommittedNavigation(committedDetails)
 			})
 
-			for (let index = 0; index < 10 && (await getInterceptorErrorDiagnostics()).length === 0; index++) await Promise.resolve()
+			await waitFor(async () => (await getInterceptorErrorDiagnostics()).length > 0)
 			assert.equal(await getLatestUnexpectedError(), undefined)
 			const diagnostics = await getInterceptorErrorDiagnostics()
 			assert.equal(diagnostics.length, 1)
@@ -409,15 +339,15 @@ describe('content script injection strategy', () => {
 	})
 
 	test('records manifest v2 injection failures as local recovery diagnostics', async () => {
-		const { getCommittedListener } = installBrowserMock({ executeScriptError: new Error('executeScript failed') })
+		const { dispatchCommittedNavigation } = await installContentScriptBrowserMock({ executeScriptError: new Error('executeScript failed') })
 		const { updateContentScriptInjectionStrategyManifestV2, getInterceptorErrorDiagnostics, getLatestUnexpectedError } = await loadModules()
 
 		await updateContentScriptInjectionStrategyManifestV2()
 		await withSilencedConsole(async () => {
-			await getCommittedListener()(committedDetails)
+			await dispatchCommittedNavigation(committedDetails)
 		})
 
-		for (let index = 0; index < 10 && (await getInterceptorErrorDiagnostics()).length === 0; index++) await Promise.resolve()
+		await waitFor(async () => (await getInterceptorErrorDiagnostics()).length > 0)
 		assert.equal(await getLatestUnexpectedError(), undefined)
 		const diagnostics = await getInterceptorErrorDiagnostics()
 		assert.equal(diagnostics.length, 1)
