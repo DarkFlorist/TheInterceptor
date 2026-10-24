@@ -6,7 +6,7 @@
 //   assert.equal(requestHandler.ethSimulateV1Calls.at(-1)?.lastCallGas, undefined)
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import type { IEthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
-import { getSimulatedBlockFromInput, getSimulatedBlockNumberFromInput, getSimulatedLogs, getSimulatedTransactionByHashFromInput, getSimulatedTransactionReceipt, mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
+import { getSimulatedBlockByHashFromInput, getSimulatedBlockFromInput, getSimulatedBlockNumberFromInput, getSimulatedLogs, getSimulatedTransactionByHashFromInput, getSimulatedTransactionReceipt, mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { STORAGE_READER_ABI } from '../../app/ts/simulation/storageReader.js'
 import { type EthSimulateV1BlockTag, type EthSimulateV1CallResult, type EthSimulateV1Params, EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
 import type { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
@@ -30,7 +30,7 @@ const getCodeAbi = [{
 }] as const
 const getCodeSelector = encodeFunctionCall(getCodeAbi, 'at', ['0x0000000000000000000000000000000000000000']).slice(0, 10)
 const GET_CODE_HELPER_ADDRESS = 0x1ce438391307f908756fefe0fe220c0f0d51508an
-const SHA256_PRECOMPILE_ADDRESS = 0x2n
+export const SHA256_PRECOMPILE_ADDRESS = 0x2n
 const activePrecompileAddresses = new Set([SHA256_PRECOMPILE_ADDRESS])
 
 export function testBytes32(suffix: string) {
@@ -40,7 +40,7 @@ export function testBytes32(suffix: string) {
 export const zeroBytes256 = `0x${'0'.repeat(512)}`
 
 export const blockNumber = 8443561n
-const rpcNetwork = {
+export const rpcNetwork = {
 	name: 'Goerli',
 	chainId: 5n,
 	httpsRpc: 'https://rpc.dark.florist/flipcardtrustone',
@@ -278,6 +278,7 @@ export function createSimulationModeTestContext() {
 	}
 	const getBlockNumberFromInput = async (simulationStateInput: SimulationStateInputForTest) => await getSimulatedBlockNumberFromInput(ethereum, undefined, toResolvedSimulationInput(simulationStateInput))
 	const getBlockFromInput = async (simulationStateInput: SimulationStateInputForTest, blockTag: Parameters<typeof getSimulatedBlockFromInput>[3], includeTransactions = false) => await getSimulatedBlockFromInput(ethereum, undefined, toResolvedSimulationInput(simulationStateInput), blockTag, includeTransactions)
+	const getBlockByHashFromInput = async (simulationStateInput: SimulationStateInputForTest, blockHash: bigint, includeTransactions = false) => await getSimulatedBlockByHashFromInput(ethereum, undefined, toResolvedSimulationInput(simulationStateInput), blockHash, includeTransactions)
 	const getTransactionByHashFromInput = async (simulationStateInput: SimulationStateInputForTest, hash: bigint) => await getSimulatedTransactionByHashFromInput(ethereum, undefined, toResolvedSimulationInput(simulationStateInput), hash)
 	const getReceiptFromState = async (simulationState: ExecutionSimulationStateForTest, hash: bigint) => await getSimulatedTransactionReceipt(ethereum, undefined, toResolvedExecutionSimulationState(simulationState), hash)
 	const getLogsFromState = async (simulationState: ExecutionSimulationStateForTest, filter: Parameters<typeof getSimulatedLogs>[3]) => await getSimulatedLogs(ethereum, undefined, toResolvedExecutionSimulationState(simulationState), filter)
@@ -287,6 +288,7 @@ export function createSimulationModeTestContext() {
 		createEthereumWithThrowingSimulationPreparation,
 		getBlockNumberFromInput,
 		getBlockFromInput,
+		getBlockByHashFromInput,
 		getTransactionByHashFromInput,
 		getReceiptFromState,
 		getLogsFromState,
