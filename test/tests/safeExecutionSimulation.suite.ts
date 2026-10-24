@@ -344,6 +344,12 @@ test('sends the executor\'s call to the node in place of the Safe\'s call', asyn
 	assert.equal(call?.maxFeePerGas, EXECUTOR_MAX_FEE_PER_GAS)
 })
 
+test('rejects a Gnosis Safe execution or Safe proposal that reaches the node without its executor\'s call', async () => {
+	for (const unpreparedExecution of [createSafeCall({ value: 7n, input: new Uint8Array(), gas: 63_000n }, SAFE_EXECUTION_SIMULATION_OPTIONS), createSafeProposal({})]) {
+		await assert.rejects(ethereum.ethSimulateV1Input([createBlock([unpreparedExecution])], 123n, undefined), /reached the node without its executor's call/u)
+	}
+})
+
 test('drops an execution override from an imported simulation stack, so a stacked transaction runs the call it shows', () => {
 	const shownCall = createSafeCall({ value: 7n, input: Uint8Array.from([0x12, 0x34]), gas: 63_000n }, SAFE_EXECUTION_SIMULATION_OPTIONS)
 	const harmlessCall = createSafeCall({ value: 0n, input: new Uint8Array(), gas: 21_000n }, undefined)

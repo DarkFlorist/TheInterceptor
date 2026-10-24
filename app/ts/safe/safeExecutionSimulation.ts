@@ -18,6 +18,7 @@ import type { DistributiveOmit } from '../utils/typescript.js'
 import { last } from '../utils/array.js'
 import { isGnosisSafeExecution } from '../utils/transactionGasAccounting.js'
 import { isSafeCallRevert, SAFE_CALL_REVERTED_MESSAGE } from './safeExecutionFailure.js'
+import { getSimulatedBlockBaseFeePerGas } from '../simulation/services/simulationBlockParameters.js'
 
 // The account that sends simulated Gnosis Safe executions. It is random for each background session, so a called contract can't recognise the simulation by a known tx.origin. On-chain, too, a Safe's transactions are often sent by accounts that aren't its owners, such as relayers.
 export const SAFE_EXECUTION_SIMULATION_EXECUTOR = generate256BitRandomBigInt() >> 96n
@@ -174,7 +175,7 @@ export async function estimateSafeExecutionGas(
 		simulationOptions: { requiredChainId: ethereum.getChainId(), simulateWithZeroBaseFee: false, executeThroughSafe: true },
 	}
 	// appendTransactionsToInput puts the Safe's call alone in a new last block.
-	const preparedInput = await prepareSafeExecutionSimulationInput(appendTransactionsToInput(simulationInput, [safeCall]), ethereum, parentBlock.number, parentBlock.baseFeePerGas ?? 15_000_000n)
+	const preparedInput = await prepareSafeExecutionSimulationInput(appendTransactionsToInput(simulationInput, [safeCall]), ethereum, parentBlock.number, getSimulatedBlockBaseFeePerGas(parentBlock))
 	const lastBlock = last(preparedInput)
 	const executedTransaction = last(lastBlock?.transactions ?? [])?.executedTransaction
 	if (lastBlock === undefined || executedTransaction === undefined) throw new Error('The Gnosis Safe execution to estimate was not prepared.')
