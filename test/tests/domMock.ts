@@ -92,7 +92,7 @@ export type MockElement = MockNodeFields & {
 	scrollIntoView?: (options?: ScrollIntoViewOptions) => void
 }
 
-type MockDialogElement = MockElement & {
+export type MockDialogElement = MockElement & {
 	open: boolean
 	returnValue: string
 	showModal: () => void
@@ -112,9 +112,11 @@ export type MockDocument = {
 
 const mockNodes = new WeakSet<object>()
 const mockElements = new WeakSet<object>()
+const mockDialogs = new WeakSet<object>()
 
 const isMockNode = (value: unknown): value is MockNode => typeof value === 'object' && value !== null && mockNodes.has(value)
 export const isMockElement = (value: unknown): value is MockElement => typeof value === 'object' && value !== null && mockElements.has(value)
+export const isMockDialogElement = (value: unknown): value is MockDialogElement => typeof value === 'object' && value !== null && mockDialogs.has(value)
 
 function requireMockNode(value: unknown) {
 	if (!isMockNode(value)) throw new Error('Expected a node created by the DOM mock')
@@ -286,6 +288,7 @@ function createDialogElement(ownerDocument: MockDocument, tagName: string, owner
 			dialog.dispatchEvent(new Event('close'))
 		},
 	})
+	mockDialogs.add(dialog)
 	owner?.dialogs.add(dialog)
 	return dialog
 }

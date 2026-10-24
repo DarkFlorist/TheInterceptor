@@ -1,66 +1,23 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
 import type { FetchSimulationStackRequestConfirmation } from '../../app/ts/types/interceptor-messages.js'
 import type { SimulationStackSnapshot } from '../../app/ts/background/windows/fetchSimulationStack.js'
+import type { GetSimulationStack } from '../../app/ts/types/JsonRpc-types.js'
+import type { RpcEntry } from '../../app/ts/types/rpc.js'
+import type { InterceptedRequest } from '../../app/ts/utils/requests.js'
+import { waitForValue } from '../harness/async.js'
+import { installBrowserMock } from '../harness/browserMock.js'
+import { createPerTestBrowserMockInstaller } from '../harness/perTest.js'
 
-const storageState: Record<string, unknown> = {}
-let popupWindowExists = false
-let popupWindowCreationCount = 0
-
-function installBrowserMock() {
-	Object.defineProperty(globalThis, 'browser', {
-		configurable: true,
-		writable: true,
-		value: {
-			runtime: {
-				lastError: null,
-				getManifest: () => ({ manifest_version: 3 }),
-				getURL: (path: string) => `chrome-extension://test-extension${ path }`,
-			},
-			storage: {
-				local: {
-					async get(keys?: string | string[]) {
-						const requestedKeys = Array.isArray(keys) ? keys : keys === undefined ? Object.keys(storageState) : [keys]
-						return Object.fromEntries(requestedKeys.filter((key) => key in storageState).map((key) => [key, storageState[key]]))
-					},
-					async set(items: Record<string, unknown>) {
-						Object.assign(storageState, items)
-					},
-					async remove(keys: string | string[]) {
-						for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
-					},
-				},
-			},
-			tabs: {
-				async create() { return undefined },
-				async get() { return undefined },
-				async remove() { return undefined },
-				onRemoved: { addListener: () => undefined, removeListener: () => undefined },
-			},
-			windows: {
-				async create() {
-					popupWindowExists = true
-					popupWindowCreationCount += 1
-					return { id: 41 }
-				},
-				async get() {
-					return popupWindowExists ? { id: 41 } : undefined
-				},
-				async remove() {
-					popupWindowExists = false
-				},
-				onRemoved: { addListener: () => undefined, removeListener: () => undefined },
-			},
-		},
-	})
-}
-
+// The app modules are imported after the browser globals exist, as in the extension.
 installBrowserMock()
+const installBrowserMockForTest = createPerTestBrowserMockInstaller()
 
 const modulesPromise = import('../../app/ts/background/windows/fetchSimulationStack.js')
+const storageVariablesPromise = import('../../app/ts/background/storageVariables.js')
 
 const blockTimeManipulation = { type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' } as const
-const rpcNetwork = {
+const rpcNetwork: RpcEntry = {
 	name: 'Test RPC',
 	chainId: 1n,
 	httpsRpc: 'https://rpc.example',
@@ -68,10 +25,13 @@ const rpcNetwork = {
 	currencyTicker: 'ETH',
 	primary: true,
 	minimized: false,
-} as const
+}
+const getSimulationStackParams: GetSimulationStack = { method: 'interceptor_getSimulationStack', params: ['2.0.0'] }
+
+const createStateOverrides = (balance: bigint) => ({ '0x0000000000000000000000000000000000000001': { balance } })
 
 function createSnapshot(balance: bigint): SimulationStackSnapshot {
-	const stateOverrides = { '0x0000000000000000000000000000000000000001': { balance } }
+	const stateOverrides = createStateOverrides(balance)
 	const simulationInput = [{
 		stateOverrides,
 		transactions: [],
@@ -106,10 +66,9 @@ function createSnapshot(balance: bigint): SimulationStackSnapshot {
 
 describe('fetch simulation stack freshness', () => {
 	test('returns and fingerprints the confirmation-time snapshot', async () => {
-		for (const key of Object.keys(storageState)) delete storageState[key]
-		popupWindowExists = false
-		popupWindowCreationCount = 0
+		installBrowserMockForTest()
 		const modules = await modulesPromise
+		const { getFetchSimulationStackRequestPromise } = await storageVariablesPromise
 		const initialSnapshot = createSnapshot(1n)
 		const confirmationSnapshot = createSnapshot(2n)
 		const uniqueRequestIdentifier = { requestId: 7, requestSocket: { tabId: 3, connectionName: 5n } }
@@ -127,32 +86,36 @@ describe('fetch simulation stack freshness', () => {
 			true,
 			new Map(),
 			uniqueRequestIdentifier,
-			{ method: 'interceptor_getSimulationStack', params: ['2.0.0'] },
+			getSimulationStackParams,
 			{ websiteOrigin: 'https://requester.example', icon: undefined, title: undefined },
 		)
-		await new Promise((resolve) => setTimeout(resolve, 0))
-		const storedRequest = storageState.fetchSimulationStackRequestPromise
-		assert.equal(typeof storedRequest === 'object' && storedRequest !== null && 'simulationOverlayEnabled' in storedRequest && storedRequest.simulationOverlayEnabled, true)
+		const storedRequest = await waitForValue(getFetchSimulationStackRequestPromise, { description: 'the stored fetch simulation stack request' })
+		assert.equal(storedRequest.simulationOverlayEnabled, true)
 		await modules.resolveFetchSimulationStackRequest(confirmationSnapshot, new Map(), confirmation)
 		const result = await pendingResult
 
-		assert.equal(result.outcome, 'accepted')
-		assert.deepEqual(result.result.payload.stateOverrides, confirmationSnapshot.simulationInput.value[0]?.stateOverrides)
+		assert.ok(result.outcome === 'accepted')
+		assert.ok(result.result.version === '2.0.0')
+		assert.deepEqual(result.result.payload.stateOverrides, createStateOverrides(2n))
 		assert.equal(result.simulationStackHash, modules.getSimulationStackHash(confirmationSnapshot.simulationInput))
 		assert.notEqual(result.simulationStackHash, modules.getSimulationStackHash(initialSnapshot.simulationInput))
 	})
 
 	test('caches rejection for the confirmation-time snapshot only', async () => {
-		for (const key of Object.keys(storageState)) delete storageState[key]
-		popupWindowExists = false
-		popupWindowCreationCount = 0
+		const browserMock = installBrowserMockForTest()
 		const modules = await modulesPromise
 		const initialSnapshot = createSnapshot(3n)
 		const confirmationSnapshot = createSnapshot(4n)
 		const socket = { tabId: 8, connectionName: 13n }
 		const website = { websiteOrigin: 'https://requester.example', icon: undefined, title: undefined }
-		const params = { method: 'interceptor_getSimulationStack' as const, params: ['2.0.0' as const] }
-		const createRequest = (requestId: number) => ({ method: params.method, params: params.params, uniqueRequestIdentifier: { requestId, requestSocket: socket } })
+		const params = getSimulationStackParams
+		const createRequest = (requestId: number): InterceptedRequest => ({
+			method: params.method,
+			params: params.params,
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId, requestSocket: socket },
+		})
 		const reject = (requestId: number): FetchSimulationStackRequestConfirmation => ({
 			method: 'popup_fetchSimulationStackRequestConfirmation',
 			data: {
@@ -166,15 +129,15 @@ describe('fetch simulation stack freshness', () => {
 		await modules.resolveFetchSimulationStackRequest(confirmationSnapshot, new Map(), reject(20))
 		const firstResult = await firstRequest
 		assert.ok('error' in firstResult)
-		assert.equal(popupWindowCreationCount, 1)
+		assert.equal(browserMock.calls.windowsCreate.length, 1)
 
 		const cachedConfirmationResult = await modules.openFetchSimulationStackDialogOrGetCachedResult(confirmationSnapshot, true, new Map(), params, website, createRequest(21), socket)
 		assert.ok('error' in cachedConfirmationResult)
-		assert.equal(popupWindowCreationCount, 1)
+		assert.equal(browserMock.calls.windowsCreate.length, 1)
 
 		const initialSnapshotRequest = modules.openFetchSimulationStackDialogOrGetCachedResult(initialSnapshot, true, new Map(), params, website, createRequest(22), socket)
 		await modules.resolveFetchSimulationStackRequest(initialSnapshot, new Map(), reject(22))
 		await initialSnapshotRequest
-		assert.equal(popupWindowCreationCount, 2)
+		assert.equal(browserMock.calls.windowsCreate.length, 2)
 	})
 })

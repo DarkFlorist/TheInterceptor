@@ -1,130 +1,72 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { describe, test } from 'bun:test'
+import type * as funtypes from 'funtypes'
 import { installDomMock } from './domMock.js'
+import { clickElement, collectElements } from './domQueries.js'
+import { installBrowserMock } from '../harness/browserMock.js'
+import { flushMicrotasks, waitFor } from '../harness/async.js'
+import { replaceGlobal } from '../harness/globals.js'
+import { getMessageMethod, hasMessageMethod } from './runtimeMessageMatchers.js'
+import type { PendingTransaction } from '../../app/ts/types/accessRequest.js'
+import type { SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
+import type { IEthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
+import { UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../app/ts/types/interceptor-messages.js'
+import { PopupRequestsReplies } from '../../app/ts/types/interceptor-reply-messages.js'
+import { createPassthroughCompleteVisualizedSimulation } from '../../app/ts/types/visualizer-types.js'
+import { serialize } from '../../app/ts/types/wire-types.js'
 
-type RuntimeMessageListener = (message: unknown) => unknown
+type PopupReadyAndListeningReply = funtypes.Static<typeof PopupRequestsReplies.popup_readyAndListening>
 
-type TestDomNode = {
-	readonly tagName?: string
-	readonly parentNode?: TestDomNode | null
-	readonly childNodes?: readonly TestDomNode[]
-	readonly textContent?: string | null
-	readonly l?: Record<string, (event: unknown) => unknown>
+function getSentMessagesWithMethod(sentMessages: readonly unknown[], method: string) {
+	return sentMessages.filter((message) => hasMessageMethod(message, method))
 }
 
-function collectElements(node: TestDomNode | undefined, tagName: string, results: TestDomNode[] = []) {
-	if (node?.tagName === tagName.toUpperCase()) results.push(node)
-	for (const child of node?.childNodes ?? []) collectElements(child, tagName, results)
-	return results
+// Answers like a background page that has no pending request to bootstrap the confirmation dialog with.
+function replyWithoutBootstrapData(message: unknown) {
+	if (getMessageMethod(message) === 'popup_isMainPopupWindowOpen') return { method: 'popup_isMainPopupWindowOpen', data: { isOpen: false } }
+	if (getMessageMethod(message) === 'popup_readyAndListening') return { method: 'popup_readyAndListening', data: { popupOrTabId: { type: 'popup', id: 1 } } }
+	return undefined
 }
 
-async function clickElement(element: TestDomNode) {
-	const clickHandler = element.l === undefined ? undefined : Object.entries(element.l).find(([key]) => key.startsWith('Click'))?.[1]
-	if (clickHandler === undefined) throw new Error('Expected click handler')
-	await clickHandler({ currentTarget: element, stopPropagation() { return undefined } })
-}
-
-function installBrowserMock(sendMessageOverride?: (message: unknown, sentMessages: unknown[]) => unknown) {
-	const listeners: RuntimeMessageListener[] = []
-	const storageState: Record<string, unknown> = {}
-	const sentMessages: unknown[] = []
-
-	Object.defineProperty(globalThis, 'browser', {
-		configurable: true,
-		writable: true,
-		value: {
-			runtime: {
-				lastError: null,
-				async sendMessage(message: unknown) {
-					sentMessages.push(message)
-					if (sendMessageOverride !== undefined) return await sendMessageOverride(message, sentMessages)
-					if (typeof message === 'object' && message !== null && 'method' in message) {
-						const typedMessage = message as { method?: string }
-						if (typedMessage.method === 'popup_isMainPopupWindowOpen') {
-							return { method: 'popup_isMainPopupWindowOpen', data: { isOpen: false } }
-						}
-						if (typedMessage.method === 'popup_readyAndListening') {
-							return { method: 'popup_readyAndListening', data: { popupOrTabId: { type: 'popup', id: 1 } } }
-						}
-					}
-					return undefined
-				},
-				getManifest: () => ({ manifest_version: 3 }),
-				onMessage: {
-					addListener(listener: RuntimeMessageListener) {
-						listeners.push(listener)
-					},
-					removeListener(listener: RuntimeMessageListener) {
-						const index = listeners.indexOf(listener)
-						if (index >= 0) listeners.splice(index, 1)
-					},
-				},
-				onConnect: { addListener: () => undefined, removeListener: () => undefined },
+function serializeBootstrapReply(pendingTransaction: PendingTransaction) {
+	const reply: PopupReadyAndListeningReply = {
+		method: 'popup_readyAndListening',
+		data: {
+			popupOrTabId: { type: 'popup', id: 1 },
+			confirmTransactionBootstrap: {
+				pendingTransactionAndSignableMessages: [pendingTransaction],
+				currentBlockNumber: 123n,
+				rpcConnectionStatus: undefined,
+				visualizedSimulatorState: createPassthroughCompleteVisualizedSimulation(),
 			},
-			storage: {
-				local: {
-					async get(keys?: string | string[] | Record<string, unknown> | null) {
-						if (keys === undefined || keys === null) return { ...storageState }
-						if (Array.isArray(keys)) return Object.fromEntries(keys.filter((key) => key in storageState).map((key) => [key, storageState[key]]))
-						if (typeof keys === 'string') return keys in storageState ? { [keys]: storageState[keys] } : {}
-						return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
-					},
-					async set(items: Record<string, unknown>) {
-						Object.assign(storageState, items)
-					},
-					async remove(keys: string | string[]) {
-						for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
-					},
-				},
-			},
-			tabs: {
-				async query() { return [] },
-				async get() { return undefined },
-				async update() { return undefined },
-				onUpdated: { addListener: () => undefined, removeListener: () => undefined },
-				onRemoved: { addListener: () => undefined, removeListener: () => undefined },
-			},
-			windows: {
-				async get() { return undefined },
-				async update() { return undefined },
-			},
-			action: {
-				async setIcon() { return undefined },
-				async setTitle() { return undefined },
-				async setBadgeText() { return undefined },
-				async setBadgeBackgroundColor() { return undefined },
-			},
-			browserAction: {
-				async setIcon() { return undefined },
-				async setTitle() { return undefined },
-				async setBadgeText() { return undefined },
-				async setBadgeBackgroundColor() { return undefined },
-			},
-			declarativeNetRequest: {
-				async getDynamicRules() { return [] },
-				async getSessionRules() { return [] },
-				async updateDynamicRules() { return undefined },
-				async updateSessionRules() { return undefined },
-			},
-		},
-	})
-	Object.defineProperty(globalThis, 'chrome', {
-		configurable: true,
-		writable: true,
-		value: { runtime: { id: 'test-extension' } },
-	})
-
-	return {
-		sentMessages,
-		getSentMessages() {
-			return [...sentMessages]
-		},
-		dispatch(message: unknown) {
-			for (const listener of [...listeners]) listener(message)
 		},
 	}
+	return serialize(PopupRequestsReplies.popup_readyAndListening, reply)
+}
+
+function createPendingTransactionsPush(pendingTransactionAndSignableMessages: readonly PendingTransaction[]) {
+	const update: UpdateConfirmTransactionDialogPendingTransactions = {
+		method: 'popup_update_confirm_transaction_dialog_pending_transactions',
+		data: {
+			pendingTransactionAndSignableMessages,
+			currentBlockNumber: 124n,
+			rpcConnectionStatus: undefined,
+		},
+	}
+	return { role: 'all', ...serialize(UpdateConfirmTransactionDialogPendingTransactions, update) }
+}
+
+// ConfirmTransaction only waits for the bootstrap retry delay before sending another popup_readyAndListening, so counting the timers scheduled with that delay shows whether a retry is coming without waiting for one.
+function countScheduledBootstrapRetries(retryDelayMs: number) {
+	const scheduleTimer = globalThis.setTimeout
+	let scheduledRetries = 0
+	const restore = replaceGlobal('setTimeout', (handler: TimerHandler, delay?: number, ...timerArguments: unknown[]) => {
+		if (delay === retryDelayMs) scheduledRetries += 1
+		return scheduleTimer(handler, delay, ...timerArguments)
+	})
+	return { getScheduledRetries: () => scheduledRetries, restore }
 }
 
 async function unmountConfirmTransaction(dom: ReturnType<typeof installDomMock>) {
@@ -140,7 +82,7 @@ function makePendingTransaction(errorMessage = 'simulation failed') {
 	const created = new Date('2024-01-01T00:00:00.000Z')
 	const website = { websiteOrigin: 'https://example.com', icon: undefined, title: undefined }
 	const originalRequestParameters = {
-		method: 'eth_sendTransaction' as const,
+		method: 'eth_sendTransaction',
 		params: [{
 			from: activeAddress,
 			to: recipientAddress,
@@ -150,7 +92,7 @@ function makePendingTransaction(errorMessage = 'simulation failed') {
 			maxPriorityFeePerGas: 1n,
 			input: new Uint8Array(),
 		}],
-	}
+	} satisfies SendTransactionParams
 	const transactionToSimulate = {
 		website,
 		created,
@@ -196,12 +138,12 @@ function makePendingTransaction(errorMessage = 'simulation failed') {
 				},
 			},
 		},
-	}
+	} satisfies PendingTransaction
 }
 
 function makeUnexpectedSimulationFailurePendingTransaction(errorMessage: string) {
 	const failedPendingTransaction = makePendingTransaction(errorMessage)
-	const originalTransaction = failedPendingTransaction.originalRequestParameters.params[0]
+	const [originalTransaction] = failedPendingTransaction.originalRequestParameters.params
 	const transactionToSimulate = {
 		website: failedPendingTransaction.website,
 		created: failedPendingTransaction.created,
@@ -233,12 +175,12 @@ function makeUnexpectedSimulationFailurePendingTransaction(errorMessage: string)
 				transactionToSimulate,
 			},
 		},
-	}
+	} satisfies PendingTransaction
 }
 
 describe('confirm transaction rpc status bootstrap', () => {
 	test('includes rpcConnectionStatus in the initial payload and renders the warning before later push events', async () => {
-		const browser = installBrowserMock()
+		const browserMock = installBrowserMock({ handlers: { runtimeMessage: replyWithoutBootstrapData } })
 		const dom = installDomMock()
 		const [
 			{ browserStorageLocalSet, browserStorageLocalSet2 },
@@ -284,34 +226,27 @@ describe('confirm transaction rpc status bootstrap', () => {
 			retrying: false,
 		})
 
-		const ethereum = new EthereumClientService({
+		const requestHandler = {
 			rpcUrl: rpcNetwork.httpsRpc,
-			clearCache() { /* noop test stub */ },
-			async jsonRpcRequest(rpcRequest: { method: string }) {
+			clearCache: () => undefined,
+			getChainId: async () => rpcNetwork.chainId,
+			async jsonRpcRequest(rpcRequest: { readonly method: string }) {
 				if (rpcRequest.method === 'eth_blockNumber') return '0x7b'
 				throw new Error(`Unexpected RPC method: ${ rpcRequest.method }`)
 			},
-		}, async () => undefined, async () => undefined, rpcNetwork)
+		} satisfies IEthereumJSONRpcRequestHandler
+		const ethereum = new EthereumClientService(requestHandler, async () => undefined, async () => undefined, rpcNetwork)
 		const tokenPriceService = new TokenPriceService(ethereum, 0)
 
 		await updateConfirmTransactionView(ethereum, tokenPriceService)
 
-		const initialMessage = browser.sentMessages.find((message) =>
-			typeof message === 'object'
-			&& message !== null
-			&& 'method' in message
-			&& message.method === 'popup_update_confirm_transaction_dialog'
-		)
-		if (initialMessage === undefined || typeof initialMessage !== 'object' || initialMessage === null || !('data' in initialMessage)) {
-			throw new Error('missing initial confirm transaction dialog message')
-		}
+		const initialMessage = browserMock.calls.runtimeSendMessage.find((message) => getMessageMethod(message) === 'popup_update_confirm_transaction_dialog')
+		if (initialMessage === undefined) throw new Error('missing initial confirm transaction dialog message')
+		const initialUpdate = UpdateConfirmTransactionDialog.parse(initialMessage)
 
 		assert.equal(
-			typeof initialMessage.data === 'object'
-				&& initialMessage.data !== null
-				&& 'rpcConnectionStatus' in initialMessage.data
-				&& initialMessage.data.rpcConnectionStatus !== undefined
-				&& initialMessage.data.rpcConnectionStatus.retrying === false,
+			initialUpdate.data.rpcConnectionStatus !== undefined
+				&& initialUpdate.data.rpcConnectionStatus.retrying === false,
 			true,
 		)
 
@@ -319,135 +254,136 @@ describe('confirm transaction rpc status bootstrap', () => {
 			render(h(ConfirmTransaction, {}), dom.document.body)
 		})
 
-		await act(() => {
-			browser.dispatch(initialMessage)
+		await act(async () => {
+			await browserMock.dispatchRuntimeMessage(initialMessage)
 		})
 
 		assert.equal(dom.document.body.textContent?.includes('Retrying resumes when the extension becomes active.'), true)
 		await unmountConfirmTransaction(dom)
 		dom.restore()
+		browserMock.restore()
 	})
 
 	test('hydrates from a later bootstrap reply when the first ready handshake happens before pending data exists', async () => {
 		const dom = installDomMock()
 		const pendingTransaction = makePendingTransaction()
-		const { createPassthroughCompleteVisualizedSimulation } = await import('../../app/ts/types/visualizer-types.js')
-		const { serialize } = await import('../../app/ts/types/wire-types.js')
-		const { PopupRequestsReplies } = await import('../../app/ts/types/interceptor-reply-messages.js')
-		const browser = installBrowserMock((message) => {
-			if (typeof message !== 'object' || message === null || !('method' in message)) return undefined
-			const typedMessage = message as { method?: string }
-			if (typedMessage.method === 'popup_readyAndListening') {
-				const readyCalls = browser.getSentMessages().filter((sentMessage) =>
-					typeof sentMessage === 'object'
-					&& sentMessage !== null
-					&& 'method' in sentMessage
-					&& sentMessage.method === 'popup_readyAndListening'
-				).length
-				if (readyCalls === 1) return undefined
-				return serialize(PopupRequestsReplies.popup_readyAndListening, {
-					method: 'popup_readyAndListening',
-					data: {
-						popupOrTabId: { type: 'popup', id: 1 },
-						confirmTransactionBootstrap: {
-							pendingTransactionAndSignableMessages: [pendingTransaction],
-							currentBlockNumber: 123n,
-							rpcConnectionStatus: undefined,
-							visualizedSimulatorState: createPassthroughCompleteVisualizedSimulation(),
-						},
-					},
-				})
-			}
-			if (typedMessage.method === 'popup_requestSettings') return undefined
-			return undefined
-		})
+		const browserMock = installBrowserMock()
+		browserMock.handlers.runtimeMessage = (message) => {
+			if (getMessageMethod(message) !== 'popup_readyAndListening') return undefined
+			const readyCalls = getSentMessagesWithMethod(browserMock.calls.runtimeSendMessage, 'popup_readyAndListening').length
+			if (readyCalls === 1) return undefined
+			return serializeBootstrapReply(pendingTransaction)
+		}
 		const { ConfirmTransaction, CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
 
 		await act(() => {
 			render(h(ConfirmTransaction, {}), dom.document.body)
 		})
 
-		await new Promise((resolve) => setTimeout(resolve, CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS + 50))
+		await waitFor(() => dom.document.body.textContent?.includes('simulation failed') === true, {
+			timeoutMs: CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS + 1000,
+			description: 'the retried bootstrap reply to render',
+		})
 
-		const readyCalls = browser.getSentMessages().filter((message) =>
-			typeof message === 'object'
-			&& message !== null
-			&& 'method' in message
-			&& message.method === 'popup_readyAndListening'
-		).length
+		const readyCalls = getSentMessagesWithMethod(browserMock.calls.runtimeSendMessage, 'popup_readyAndListening').length
 		assert.equal(readyCalls >= 2, true)
 
 		assert.equal(dom.document.body.textContent?.includes('simulation failed'), true)
 		assert.equal(dom.document.body.textContent?.includes('Initializing...'), false)
 		await unmountConfirmTransaction(dom)
 		dom.restore()
+		browserMock.restore()
+	})
+
+	test('sends a single popup_readyAndListening request at startup', async () => {
+		const dom = installDomMock()
+		const pendingTransaction = makePendingTransaction('bootstrapped transaction')
+		const browserMock = installBrowserMock({
+			handlers: { runtimeMessage: (message) => getMessageMethod(message) === 'popup_readyAndListening' ? serializeBootstrapReply(pendingTransaction) : undefined },
+		})
+		const { ConfirmTransaction, CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
+		const bootstrapRetries = countScheduledBootstrapRetries(CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS)
+
+		await act(() => {
+			render(h(ConfirmTransaction, {}), dom.document.body)
+		})
+		await waitFor(() => dom.document.body.textContent?.includes('bootstrapped transaction') === true, { description: 'the bootstrap reply to render' })
+		await flushMicrotasks()
+
+		assert.equal(dom.document.body.textContent?.includes('bootstrapped transaction'), true)
+		assert.equal(bootstrapRetries.getScheduledRetries(), 0)
+		assert.equal(getSentMessagesWithMethod(browserMock.calls.runtimeSendMessage, 'popup_readyAndListening').length, 1)
+		bootstrapRetries.restore()
+		await unmountConfirmTransaction(dom)
+		dom.restore()
+		browserMock.restore()
+	})
+
+	test('keeps showing the last request when a pushed pending transaction list is empty and removes its listeners on unmount', async () => {
+		const dom = installDomMock()
+		const browserMock = installBrowserMock()
+		const { ConfirmTransaction } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
+		const dispatchPendingTransactions = async (pendingTransactions: readonly PendingTransaction[]) => await act(async () => {
+			await browserMock.dispatchRuntimeMessage(createPendingTransactionsPush(pendingTransactions))
+		})
+
+		await act(() => {
+			render(h(ConfirmTransaction, {}), dom.document.body)
+		})
+		assert.equal(browserMock.browser.runtime.onMessage.hasListeners(), true)
+		await dispatchPendingTransactions([makePendingTransaction('last pending transaction')])
+		await dispatchPendingTransactions([])
+		// A failure while handling the empty push would be reported through promise callbacks only.
+		await flushMicrotasks()
+
+		assert.equal(dom.document.body.textContent?.includes('last pending transaction'), true)
+		assert.deepEqual(getSentMessagesWithMethod(browserMock.calls.runtimeSendMessage, 'popup_UnexpectedErrorOccured'), [])
+		await unmountConfirmTransaction(dom)
+		assert.equal(browserMock.browser.runtime.onMessage.hasListeners(), false)
+		dom.restore()
+		browserMock.restore()
 	})
 
 	test('does not let a late bootstrap reply overwrite pushed pending transaction data', async () => {
 		const dom = installDomMock()
 		const stalePendingTransaction = makePendingTransaction('stale bootstrap transaction')
 		const freshPendingTransaction = makePendingTransaction('fresh pushed transaction')
-		const { createPassthroughCompleteVisualizedSimulation } = await import('../../app/ts/types/visualizer-types.js')
-		const { serialize } = await import('../../app/ts/types/wire-types.js')
-		const { UpdateConfirmTransactionDialogPendingTransactions } = await import('../../app/ts/types/interceptor-messages.js')
-		const { PopupRequestsReplies } = await import('../../app/ts/types/interceptor-reply-messages.js')
-		const browser = installBrowserMock(async (message) => {
-			if (typeof message !== 'object' || message === null || !('method' in message)) return undefined
-			const typedMessage = message as { method?: string }
-			if (typedMessage.method === 'popup_readyAndListening') {
-				await new Promise((resolve) => setTimeout(resolve, 25))
-				return serialize(PopupRequestsReplies.popup_readyAndListening, {
-					method: 'popup_readyAndListening',
-					data: {
-						popupOrTabId: { type: 'popup', id: 1 },
-						confirmTransactionBootstrap: {
-							pendingTransactionAndSignableMessages: [stalePendingTransaction],
-							currentBlockNumber: 123n,
-							rpcConnectionStatus: undefined,
-							visualizedSimulatorState: createPassthroughCompleteVisualizedSimulation(),
-						},
-					},
-				})
-			}
-			if (typedMessage.method === 'popup_requestSettings') return undefined
-			return undefined
+		const lateBootstrapReply = Promise.withResolvers<void>()
+		const browserMock = installBrowserMock({
+			handlers: {
+				runtimeMessage: async (message) => {
+					if (getMessageMethod(message) !== 'popup_readyAndListening') return undefined
+					// The bootstrap reply is held back until the test has pushed fresher pending transactions.
+					await lateBootstrapReply.promise
+					return serializeBootstrapReply(stalePendingTransaction)
+				},
+			},
 		})
 		const { ConfirmTransaction } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
 
 		await act(() => {
 			render(h(ConfirmTransaction, {}), dom.document.body)
 		})
+		await waitFor(() => getSentMessagesWithMethod(browserMock.calls.runtimeSendMessage, 'popup_readyAndListening').length === 1, { description: 'the bootstrap request' })
 
-		await act(() => {
-			browser.dispatch({
-				role: 'all',
-				...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
-					method: 'popup_update_confirm_transaction_dialog_pending_transactions',
-					data: {
-						pendingTransactionAndSignableMessages: [freshPendingTransaction],
-						currentBlockNumber: 124n,
-						rpcConnectionStatus: undefined,
-					},
-				}),
-			})
+		await act(async () => {
+			await browserMock.dispatchRuntimeMessage(createPendingTransactionsPush([freshPendingTransaction]))
 		})
-		await new Promise((resolve) => setTimeout(resolve, 50))
+		await act(async () => {
+			lateBootstrapReply.resolve()
+			await flushMicrotasks()
+		})
 
 		assert.equal(dom.document.body.textContent?.includes('fresh pushed transaction'), true)
 		assert.equal(dom.document.body.textContent?.includes('stale bootstrap transaction'), false)
 		await unmountConfirmTransaction(dom)
 		dom.restore()
+		browserMock.restore()
 	})
 
 	test('renders an unexpected simulation failure instead of a simulation spinner', async () => {
 		const dom = installDomMock()
-		installBrowserMock((message) => {
-			if (typeof message !== 'object' || message === null || !('method' in message)) return undefined
-			const typedMessage = message as { method?: string }
-			if (typedMessage.method === 'popup_readyAndListening') return undefined
-			if (typedMessage.method === 'popup_requestSettings') return undefined
-			return undefined
-		})
+		const browserMock = installBrowserMock()
 		const [
 			{ browserStorageLocalSet2 },
 			{ ConfirmTransaction },
@@ -463,24 +399,19 @@ describe('confirm transaction rpc status bootstrap', () => {
 		await act(() => {
 			render(h(ConfirmTransaction, {}), dom.document.body)
 		})
-		await new Promise((resolve) => setTimeout(resolve, 25))
+		await waitFor(() => dom.document.body.textContent?.includes('Failed to decode ABI data') === true, { description: 'the stored pending transaction to render' })
 
 		assert.equal(dom.document.body.textContent?.includes('Failed to decode ABI data'), true)
 		assert.equal(dom.document.body.textContent?.includes('Simulating...'), false)
 		assert.equal(dom.document.body.textContent?.includes('Initializing...'), false)
 		await unmountConfirmTransaction(dom)
 		dom.restore()
+		browserMock.restore()
 	})
 
 	test('opens address editing from an execution error preview', async () => {
 		const dom = installDomMock()
-		installBrowserMock((message) => {
-			if (typeof message !== 'object' || message === null || !('method' in message)) return undefined
-			const typedMessage = message as { method?: string }
-			if (typedMessage.method === 'popup_readyAndListening') return undefined
-			if (typedMessage.method === 'popup_requestSettings') return undefined
-			return undefined
-		})
+		const browserMock = installBrowserMock()
 		const [
 			{ browserStorageLocalSet2 },
 			{ ConfirmTransaction },
@@ -496,15 +427,14 @@ describe('confirm transaction rpc status bootstrap', () => {
 		await act(() => {
 			render(h(ConfirmTransaction, {}), dom.document.body)
 		})
-		await new Promise((resolve) => setTimeout(resolve, 25))
+		await waitFor(() => dom.document.body.textContent?.includes('Execution error') === true, { description: 'the stored pending transaction to render' })
 
 		assert.equal(dom.document.body.textContent?.includes('Execution error'), true)
-		const toLabel = collectElements(dom.document.body, 'dt').find((term) => term.textContent?.trim() === 'To')
-		if (toLabel === undefined || toLabel.parentNode === null || toLabel.parentNode === undefined) throw new Error('Expected the receiving address row')
-		const toLabelIndex = toLabel.parentNode.childNodes?.indexOf(toLabel) ?? -1
-		const receivingAddress = toLabel.parentNode.childNodes?.[toLabelIndex + 1]
+		const toLabel = collectElements(dom.document.body, 'dt').find((term) => term.textContent.trim() === 'To')
+		if (toLabel === undefined || toLabel.parentNode === null) throw new Error('Expected the receiving address row')
+		const receivingAddress = toLabel.parentNode.childNodes[toLabel.parentNode.childNodes.indexOf(toLabel) + 1]
 		if (receivingAddress === undefined) throw new Error('Expected the receiving address details')
-		const editAbiButton = collectElements(receivingAddress, 'button').find((button) => button.textContent?.trim() === 'edit')
+		const editAbiButton = collectElements(receivingAddress, 'button').find((button) => button.textContent.trim() === 'edit')
 		if (editAbiButton === undefined) throw new Error('Expected the receiving address edit button')
 
 		await act(async () => {
@@ -514,5 +444,6 @@ describe('confirm transaction rpc status bootstrap', () => {
 		assert.equal(dom.document.body.textContent?.includes('Contract ABI'), true)
 		await unmountConfirmTransaction(dom)
 		dom.restore()
+		browserMock.restore()
 	})
 })

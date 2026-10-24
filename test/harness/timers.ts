@@ -11,7 +11,7 @@
 // The waiting helpers in async.ts keep the timer functions that existed when they loaded, so they still work while manual timers are installed.
 import { replaceGlobal } from './globals.js'
 
-type ManualTimers = {
+export type ManualTimers = {
 	// Number of scheduled callbacks that have not run or been cleared yet.
 	readonly pendingCount: () => number
 	// Runs the callbacks pending when it is called, in scheduling order; callbacks they schedule stay pending, and callbacks they clear do not run.
