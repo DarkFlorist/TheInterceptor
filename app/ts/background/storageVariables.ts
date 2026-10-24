@@ -15,9 +15,7 @@ import { replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
 import { keccak256, namehash, stringToBytes } from '../utils/ethereumPrimitives.js'
 import { isValidEnsName } from '../utils/ens.js'
 import { modifyObject } from '../utils/typescript.js'
-import type { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { getLargeStateValue, prepareLargeStateWrite, setLargeStateValue, setLargeStateValues } from '../utils/largeStateStore.js'
-import type { InterceptorErrorDiagnostic } from '../types/errorDiagnostics.js'
 import { SafeTransactionStacks } from '../types/safeTypes.js'
 import { createStoredValueRepository } from '../utils/storedValue.js'
 import { isValidErc20Decimals } from '../utils/erc20.js'
@@ -320,49 +318,6 @@ export async function addUserAddressBookEntryIfItDoesNotExist(newEntry: AddressB
 		if (existingEntry !== undefined) return
 		return await browserStorageLocalSet({ userAddressBookEntriesV3: entries.concat(newEntry) })
 	})
-}
-
-export async function setLatestUnexpectedError(latestUnexpectedError: UnexpectedErrorOccured | undefined) {
-	if (latestUnexpectedError === undefined) return await browserStorageLocalRemove('latestUnexpectedError')
-	return await browserStorageLocalSet({ latestUnexpectedError })
-}
-
-export async function getLatestUnexpectedError(): Promise<UnexpectedErrorOccured | undefined> {
-	const { latestUnexpectedError: rawError } = await browser.storage.local.get('latestUnexpectedError')
-	const parsedError = await browserStorageLocalSafeParseGet('latestUnexpectedError')
-	if (parsedError?.latestUnexpectedError !== undefined) return parsedError.latestUnexpectedError
-	if (rawError === undefined) return undefined
-	console.warn('latestUnexpectedError was corrupt:')
-	console.warn(rawError)
-	await browserStorageLocalRemove('latestUnexpectedError')
-	return undefined
-}
-
-const MAX_INTERCEPTOR_ERROR_DIAGNOSTICS = 50
-const interceptorErrorDiagnosticsSemaphore = new Semaphore(1)
-
-export async function getInterceptorErrorDiagnostics(): Promise<readonly InterceptorErrorDiagnostic[]> {
-	try {
-		return (await browserStorageLocalGet('interceptorErrorDiagnostics'))?.interceptorErrorDiagnostics ?? []
-	} catch (error) {
-		console.warn('interceptorErrorDiagnostics were corrupt:')
-		console.warn(error)
-		await browserStorageLocalRemove('interceptorErrorDiagnostics')
-		return []
-	}
-}
-
-export async function appendInterceptorErrorDiagnostic(diagnostic: InterceptorErrorDiagnostic) {
-	await interceptorErrorDiagnosticsSemaphore.execute(async () => {
-		const diagnostics = await getInterceptorErrorDiagnostics()
-		await browserStorageLocalSet({
-			interceptorErrorDiagnostics: [...diagnostics, diagnostic].slice(-MAX_INTERCEPTOR_ERROR_DIAGNOSTICS),
-		})
-	})
-}
-
-export async function clearInterceptorErrorDiagnostics() {
-	await browserStorageLocalRemove('interceptorErrorDiagnostics')
 }
 
 export const getEnsNodeHashes = async () => (await browserStorageLocalGet('ensNameHashes'))?.ensNameHashes ?? []

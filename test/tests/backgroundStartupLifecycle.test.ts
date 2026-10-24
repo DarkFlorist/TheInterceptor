@@ -1,7 +1,9 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import * as path from 'node:path'
 import { describe, test } from 'bun:test'
-import { initializeContentScriptConnectionAfterBackgroundStartup, isIgnorablePortLifecycleError, tryRegisterContentScriptPortListeners } from '../../app/ts/background/contentScriptPortLifecycle.js'
+import { initializeContentScriptConnectionAfterBackgroundStartup, tryRegisterContentScriptPortListeners } from '../../app/ts/background/contentScriptPortLifecycle.js'
+import { isIgnorablePortLifecycleError } from '../../app/ts/utils/extensionMessaging.js'
+import { flushMicrotasks } from '../harness/async.js'
 
 const backgroundStartupSourcePath = path.join(import.meta.dir, '..', '..', 'app', 'ts', 'background', 'background-startup.ts')
 
@@ -10,16 +12,21 @@ describe('background startup lifecycle', () => {
 		let disconnectHandlerRan = false
 		let messageHandlerRan = false
 
-		const port = {
-			get onDisconnect() {
+		const port: browser.runtime.Port = {
+			name: '',
+			postMessage: () => undefined,
+			disconnect: () => undefined,
+			get onDisconnect(): browser.runtime.Port['onDisconnect'] {
 				throw new Error('Failed to read the \'onDisconnect\' property from \'Object\': Extension context invalidated.')
 			},
 			onMessage: {
 				addListener: () => {
 					messageHandlerRan = true
 				},
+				removeListener: () => undefined,
+				hasListener: () => false,
 			},
-		} as unknown as browser.runtime.Port
+		}
 
 		const registered = tryRegisterContentScriptPortListeners(
 			port,
@@ -45,18 +52,17 @@ describe('background startup lifecycle', () => {
 	})
 
 	test('delays content script connection initialization until background startup completes', async () => {
-		let finishStartup: ((value: { ready: true }) => void) | undefined
-		const startupPromise = new Promise<{ ready: true }>((resolve) => { finishStartup = resolve })
+		const startup = Promise.withResolvers<{ ready: true }>()
 		let connectionInitialized = false
 
 		const initializationPromise = initializeContentScriptConnectionAfterBackgroundStartup(
-			async () => await startupPromise,
+			async () => await startup.promise,
 			async () => { connectionInitialized = true },
 		)
-		await Promise.resolve()
+		await flushMicrotasks()
 		assert.equal(connectionInitialized, false)
 
-		finishStartup?.({ ready: true })
+		startup.resolve({ ready: true })
 
 		assert.deepEqual(await initializationPromise, { ready: true })
 		assert.equal(connectionInitialized, true)

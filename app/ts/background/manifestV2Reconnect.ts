@@ -2,7 +2,7 @@ import type { InterceptedRequestForward } from '../types/interceptor-messages.js
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { type WebsiteSocket, isMissingBrowserTargetError } from '../utils/requests.js'
 import { websiteSocketToString } from './backgroundUtils.js'
-import { isIgnorablePortLifecycleError } from './contentScriptPortLifecycle.js'
+import { isIgnorablePortLifecycleError } from '../utils/extensionMessaging.js'
 import { EthereumQuantity, serialize } from '../types/wire-types.js'
 
 const waitForReplacementWebsiteConnection = async (websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, previousPort: browser.runtime.Port | undefined) => {

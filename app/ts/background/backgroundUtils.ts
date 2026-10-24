@@ -1,4 +1,4 @@
-import { MessageToPopup, type MessageToPopupPayload, PopupMessage, type PopupReadyAndListeningPage, type Settings, WindowMessage } from '../types/interceptor-messages.js'
+import { type MessageToPopup, type MessageToPopupPayload, PopupMessage, type PopupReadyAndListeningPage, type Settings, WindowMessage } from '../types/interceptor-messages.js'
 import { type WebsiteSocket, checkAndThrowRuntimeLastError } from '../utils/requests.js'
 import { EthereumQuantity, serialize } from '../types/wire-types.js'
 import type { PopupOrTabId } from '../types/websiteAccessTypes.js'
@@ -6,15 +6,10 @@ import { getAllTabStates, getTabState, getUserAddressBookEntries } from './stora
 import { getActiveAddressEntryForChain, getWalletActiveAddressEntryForChain } from './metadataUtils.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 import { PopupMessageReplyRequests, type PopupRequests, PopupRequestsReplies, type PopupRequestsReplyReturn } from '../types/interceptor-reply-messages.js'
-import { isIgnorablePortLifecycleError } from './contentScriptPortLifecycle.js'
+import { isIgnorableExtensionMessagingError, sendPopupMessageToOpenWindowsWithoutUnexpectedErrorReport } from '../utils/extensionMessaging.js'
 import type { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
 import { getWalletSelectedAccount, resolveActiveAddressForMode } from '../utils/activeAddressSelection.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
-
-function isIgnorableExtensionMessagingError(error: Error) {
-	return isIgnorablePortLifecycleError(error)
-		|| error.message?.includes('A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received')
-}
 
 type ConfiguredActiveAddressResolution =
 	| { readonly useConfiguredAddress: false }
@@ -89,22 +84,6 @@ export async function getActiveAddressesForAllTabs(settings: Settings) {
 		const signingAddr = settings.simulationMode ? state.activeSigningAddress : walletSelectedAccount
 		return { tabId: state.tabId, activeAddress: signingAddr === undefined ? undefined : await getWalletActiveAddressEntryForChain(signingAddr, settings.activeRpcNetwork.chainId) }
 	}))
-}
-
-export async function sendPopupMessageToOpenWindowsWithoutUnexpectedErrorReport(message: MessageToPopupPayload, role: MessageToPopup['role'] = 'all') {
-	try {
-		await browser.runtime.sendMessage(serialize(MessageToPopup, { role, ...message }))
-		checkAndThrowRuntimeLastError()
-	} catch (error) {
-		if (error instanceof Error) {
-			if (error?.message?.includes('Could not establish connection.')) {
-				// ignore this error, this error is thrown when a popup is not open to receive the message we are ignoring this error because the popup messaging is used to update a popups UI, and if a popup is not open, we don't need to update the UI
-				return
-			}
-			if (isIgnorableExtensionMessagingError(error)) return
-		}
-		throw error
-	}
 }
 
 export async function sendPopupMessageToOpenWindows(message: MessageToPopupPayload, role: MessageToPopup['role'] = 'all') {

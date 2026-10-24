@@ -90,7 +90,7 @@ describe('ConfirmTransaction signable message disable logic', () => {
 			{ getLatestUnexpectedError },
 		] = await Promise.all([
 			import('../../app/ts/components/pages/ConfirmTransaction.js'),
-			import('../../app/ts/background/storageVariables.js'),
+			import('../../app/ts/utils/unexpectedErrorStorage.js'),
 		])
 
 		const localError = await withSilencedConsole(async () => await sendConfirmDialogMessage({
