@@ -5,7 +5,9 @@
 	"packageManager": "bun@1.4.2",
 	"scripts": {
 		"test": "bun run compile-contracts && bun test --isolate --timeout 60000",
-		"typecheck": "bun run compile-contracts && bun --bun tsc --noEmit --project tsconfig.json && bun ./node_modules/typescript/lib/tsc.js --noEmit --project tsconfig-inpage.json",
+		"typecheck": "bun run compile-contracts && bun --bun tsc --noEmit --project tsconfig.json && bun ./node_modules/typescript/lib/tsc.js --noEmit --project tsconfig-inpage.json && bun run typecheck:test && bun run typecheck:build",
+		"typecheck:test": "bun --bun tsc --project tsconfig-test.json",
+		"typecheck:build": "bun --bun tsc --project build/tsconfig.json",
 		"compile-contracts": "bun ./build/compileSolidityContracts.mts",
 		"install-chrome": "bash ./scripts/install-chrome.sh",
 		"install-firefox": "bun ./scripts/install-firefox.mts",
@@ -51,7 +53,7 @@
 		"lint:fetch-error-messages": "bun ./scripts/check-raw-fetch-error-messages.mts",
 		"lint:signals": "bun ./scripts/check-signal-comparisons.mts",
 		"lint:units": "bun ./scripts/check-si-units.mts",
-		"lint": "bun run biome:check && bun run lint:catches && bun run lint:quotes && bun run lint:imports && bun run lint:comments && bun run lint:error-reporting && bun run lint:error-catches && bun run lint:new-block-abort && bun run lint:fetch-error-messages && bun run lint:signals && bun run lint:units"
+		"lint": "bun run biome:check && bun run lint:catches && bun run lint:quotes && bun run lint:imports && bun run lint:comments && bun run lint:error-reporting && bun run lint:error-catches && bun run lint:new-block-abort && bun run lint:fetch-error-messages && bun run lint:signals && bun run lint:units && bun run knip"
 	},
 	"dependencies": {
 		"@darkflorist/address-metadata": "0.10.0",

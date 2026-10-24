@@ -1,16 +1,9 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
+import { installBrowserMock } from '../harness/browserMock.js'
+import { replaceProperty } from '../harness/globals.js'
 
-const storageState: Record<string, unknown> = {}
-Object.defineProperty(globalThis, 'browser', { value: {
-	storage: { local: {
-		async get() { return { ...storageState } },
-		async set(items: Record<string, unknown>) { Object.assign(storageState, items) },
-		async remove(keys: string | string[]) {
-			for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
-		},
-	} },
-}, configurable: true, writable: true })
+installBrowserMock()
 
 const { getSimulationErrorAbis } = await import('../../app/ts/background/simulationErrorAbi.js')
 const { NEW_BLOCK_ABORT } = await import('../../app/ts/utils/constants.js')
@@ -34,10 +27,8 @@ describe('simulation error ABI lookup', () => {
 	})
 
 	test('preserves the simulation failure when optional metadata lookup fails', async () => {
-		const originalConsoleWarn = console.warn
-		const originalConsoleError = console.error
-		console.warn = () => undefined
-		console.error = () => undefined
+		const restoreConsoleWarn = replaceProperty(console, 'warn', () => undefined)
+		const restoreConsoleError = replaceProperty(console, 'error', () => undefined)
 		try {
 			const abis = await getSimulationErrorAbis('0x12345678', async () => {
 				throw new Error('intrinsic gas too low')
@@ -45,8 +36,8 @@ describe('simulation error ABI lookup', () => {
 
 			assert.deepEqual(abis, [])
 		} finally {
-			console.warn = originalConsoleWarn
-			console.error = originalConsoleError
+			restoreConsoleError()
+			restoreConsoleWarn()
 		}
 	})
 

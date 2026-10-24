@@ -1,10 +1,11 @@
-import { performance } from 'perf_hooks'
+import { performance } from 'node:perf_hooks'
 import { BENCHMARK_RPC_REQUESTS_GLOBAL } from '../../app/ts/utils/benchmarking.js'
 import { POPUP_PERFORMANCE_MARKS } from '../../app/ts/utils/popupPerformance.js'
-import { launchChromeSession, waitForInterceptorExtensionServiceWorker, waitForServiceWorker, createTargetPage, connectTarget, closeTarget, waitForPerformanceMark, waitForPerformanceMarks, waitForRegisteredContentScripts, readExtensionLargeStateValue, getPerformanceSnapshot, roundToTwoDecimals, absoluteTime, waitForPopupTarget, waitForTargetByUrl, waitForTargetGone, waitForBrowserTargets } from './chromeHarness.js'
+import { launchChromeSession, waitForCondition, waitForInterceptorExtensionServiceWorker, waitForServiceWorker, createTargetPage, connectTarget, closeTarget, waitForPerformanceMark, waitForPerformanceMarks, waitForRegisteredContentScripts, readExtensionLargeStateValue, getPerformanceSnapshot, roundToTwoDecimals, absoluteTime, waitForPopupTarget, waitForTargetByUrl, waitForTargetGone, waitForBrowserTargets } from './chromeHarness.js'
 import { startTransactionStackPageServer } from './transactionStackPageServer.js'
 import type { CdpConnection, ChromeSession, PerformanceMarkSnapshot } from './chromeHarness.js'
 import type { BenchmarkRpcRequestSample } from '../../app/ts/utils/benchmarking.js'
+import * as funtypes from 'funtypes'
 
 type ScenarioName = 'cold' | 'warm' | 'stacked'
 
@@ -65,12 +66,28 @@ type BenchmarkContext = {
 	anchorTargetId: string
 }
 
-type TransactionStackPageState = {
-	phase: 'loading' | 'provider-ready' | 'requesting-access' | 'access-granted' | 'requesting-transaction' | 'submitted' | 'requesting-balance' | 'balance-fetched' | 'error'
-	txHash?: string
-	balance?: string
-	error?: string
-}
+const TransactionStackPageState = funtypes.ReadonlyObject({
+	phase: funtypes.Union(
+		funtypes.Literal('loading'),
+		funtypes.Literal('provider-ready'),
+		funtypes.Literal('requesting-access'),
+		funtypes.Literal('access-granted'),
+		funtypes.Literal('requesting-transaction'),
+		funtypes.Literal('submitted'),
+		funtypes.Literal('requesting-balance'),
+		funtypes.Literal('balance-fetched'),
+		funtypes.Literal('error'),
+	),
+}).And(funtypes.ReadonlyPartial({
+	txHash: funtypes.String,
+	balance: funtypes.String,
+	error: funtypes.String,
+}))
+type TransactionStackPageState = funtypes.Static<typeof TransactionStackPageState>
+const OptionalTransactionStackPageState = funtypes.Union(funtypes.Undefined, TransactionStackPageState)
+const ButtonInspection = funtypes.ReadonlyObject({ enabled: funtypes.Boolean, snapshot: funtypes.String })
+const BenchmarkRpcRequestSamples = funtypes.ReadonlyArray(funtypes.ReadonlyObject({ method: funtypes.String, durationMs: funtypes.Number }))
+const OptionalTransactionStackOperations = funtypes.Union(funtypes.Undefined, funtypes.ReadonlyPartial({ operations: funtypes.ReadonlyArray(funtypes.Unknown) }))
 
 const BENCHMARK_TRANSACTION_PAGE_STATE_GLOBAL = '__interceptorBenchmarkTxPageState' as const
 
@@ -205,6 +222,10 @@ function rpcRequestCollectorResetExpression() {
 	})()`
 }
 
+async function readRpcRequestSamples(workerConnection: CdpConnection) {
+	return BenchmarkRpcRequestSamples.parse(await workerConnection.evaluate(rpcRequestCollectorExpression()))
+}
+
 async function clearWorkerPerformanceMarks(workerConnection: CdpConnection) {
 	await workerConnection.evaluate(`(async () => {
 		performance.clearMarks()
@@ -212,20 +233,8 @@ async function clearWorkerPerformanceMarks(workerConnection: CdpConnection) {
 	})()`)
 }
 
-async function waitForCondition(condition: () => Promise<boolean> | boolean, timeoutMs: number, label: string) {
-	const start = Date.now()
-	while (true) {
-		if (await condition()) return
-		if (Date.now() - start > timeoutMs) throw new Error(`Timed out waiting for ${ label } after ${ timeoutMs }ms`)
-		await new Promise<void>((resolve) => {
-			setTimeout(resolve, 50)
-		})
-	}
-}
-
 async function getTransactionPageState(connection: CdpConnection): Promise<TransactionStackPageState | undefined> {
-	const state = await connection.evaluate<TransactionStackPageState | undefined>(`(() => globalThis[${ JSON.stringify(BENCHMARK_TRANSACTION_PAGE_STATE_GLOBAL) }] ?? undefined)()`)
-	return state
+	return OptionalTransactionStackPageState.parse(await connection.evaluate(`(() => globalThis[${ JSON.stringify(BENCHMARK_TRANSACTION_PAGE_STATE_GLOBAL) }] ?? undefined)()`))
 }
 
 async function waitForTransactionPagePhase(connection: CdpConnection, phase: TransactionStackPageState['phase'], timeoutMs: number) {
@@ -240,7 +249,7 @@ async function waitForButtonEnabled(connection: CdpConnection, selector: string,
 	const start = Date.now()
 	let latestSnapshot = 'No button snapshot captured.'
 	while (true) {
-		const result = await connection.evaluate<{ enabled: boolean, snapshot: string }>(`(() => {
+		const result = await connection.evaluate(`(() => {
 			const buttons = Array.from(document.querySelectorAll('button')).map((button) => ({
 				text: button.textContent?.replace(/\\s+/g, ' ').trim() ?? '',
 				className: button.className,
@@ -256,7 +265,7 @@ async function waitForButtonEnabled(connection: CdpConnection, selector: string,
 					performanceMarks: performance.getEntriesByType('mark').map((mark) => mark.name),
 				}, undefined, 2),
 			}
-		})()`).catch((error) => ({
+		})()`).then((inspection) => ButtonInspection.parse(inspection)).catch((error) => ({
 			enabled: false,
 			snapshot: `Failed to inspect buttons: ${ error instanceof Error ? error.message : String(error) }`,
 		}))
@@ -356,7 +365,7 @@ async function openPopupAndCollect(context: BenchmarkContext, scenario: Scenario
 			}
 			const popupRefreshCompleteMs = absoluteTime(popupRefreshCompleteSnapshot, POPUP_REFRESH_COMPLETE_MARK) === undefined ? undefined : requiredTiming(launchEpochMs, popupRefreshCompleteSnapshot, POPUP_REFRESH_COMPLETE_MARK)
 			const popupRefreshRenderedMs = absoluteTime(popupRefreshRenderedSnapshot, POPUP_REFRESH_RENDERED_MARK) === undefined ? undefined : requiredTiming(launchEpochMs, popupRefreshRenderedSnapshot, POPUP_REFRESH_RENDERED_MARK)
-			const rpcRequests = (await workerConnection.evaluate<readonly BenchmarkRpcRequestSample[] | undefined>(rpcRequestCollectorExpression())) ?? []
+			const rpcRequests = await readRpcRequestSamples(workerConnection)
 			return {
 				scenario,
 				launchMode: 'real-chrome-extension-page',
@@ -426,10 +435,10 @@ async function prepareStackedTransaction(context: BenchmarkContext, transactionP
 			} catch (error) {
 				const pageState = await getTransactionPageState(pageConnection)
 				const workerSnapshot = await getPerformanceSnapshot(workerConnection).catch(() => undefined)
-				const rpcRequests = await workerConnection.evaluate<readonly BenchmarkRpcRequestSample[] | undefined>(rpcRequestCollectorExpression()).catch(() => undefined)
-				const popupVisualisationState = await readExtensionLargeStateValue<unknown>(workerConnection, 'popupVisualisation').catch(() => undefined)
-				const pendingTransactionStorage = await workerConnection.evaluate<unknown>(`(async () => (await browser.storage.local.get('pendingTransactionsAndMessages')).pendingTransactionsAndMessages)()`).catch(() => undefined)
-				const diagnostics = await workerConnection.evaluate<unknown>(`(async () => (await browser.storage.local.get('interceptorErrorDiagnostics')).interceptorErrorDiagnostics)()`).catch(() => undefined)
+				const rpcRequests = await readRpcRequestSamples(workerConnection).catch(() => undefined)
+				const popupVisualisationState = await readExtensionLargeStateValue(workerConnection, 'popupVisualisation').catch(() => undefined)
+				const pendingTransactionStorage = await workerConnection.evaluate(`(async () => (await browser.storage.local.get('pendingTransactionsAndMessages')).pendingTransactionsAndMessages)()`).catch(() => undefined)
+				const diagnostics = await workerConnection.evaluate(`(async () => (await browser.storage.local.get('interceptorErrorDiagnostics')).interceptorErrorDiagnostics)()`).catch(() => undefined)
 				throw new Error(`${ error instanceof Error ? error.message : String(error) }\ntransaction page state: ${ JSON.stringify(pageState) }\nworker performance marks: ${ JSON.stringify(workerSnapshot?.marks ?? []) }\nrpc requests: ${ JSON.stringify(rpcRequests ?? []) }\npopup visualisation state: ${ JSON.stringify(popupVisualisationState) }\npending transaction storage: ${ JSON.stringify(pendingTransactionStorage) }\nerror diagnostics: ${ JSON.stringify(diagnostics) }`)
 			}
 			const confirmPopupSnapshot = await getPerformanceSnapshot(confirmConnection)
@@ -437,8 +446,8 @@ async function prepareStackedTransaction(context: BenchmarkContext, transactionP
 			await waitForTransactionPagePhase(pageConnection, 'balance-fetched', 60_000)
 			const pageSnapshot = await getPerformanceSnapshot(pageConnection)
 			const workerSnapshot = await getPerformanceSnapshot(workerConnection)
-			const setupRpcRequests = (await workerConnection.evaluate<readonly BenchmarkRpcRequestSample[] | undefined>(rpcRequestCollectorExpression())) ?? []
-			const stackLength = ((await readExtensionLargeStateValue<{ readonly operations?: readonly unknown[] }>(workerConnection, 'interceptorTransactionStack'))?.operations?.length) ?? 0
+			const setupRpcRequests = await readRpcRequestSamples(workerConnection)
+			const stackLength = OptionalTransactionStackOperations.parse(await readExtensionLargeStateValue(workerConnection, 'interceptorTransactionStack'))?.operations?.length ?? 0
 			if (stackLength < 1) throw new Error('Transaction stack was not appended')
 			return {
 				stackLength,

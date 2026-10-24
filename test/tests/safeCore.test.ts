@@ -1,6 +1,7 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
-import { AddressBookEntry, getSafeSignerAddresses } from '../../app/ts/types/addressBookTypes.js'
+import * as funtypes from 'funtypes'
+import { AddressBookEntry, getSafeSignerAddresses, type SafeEntry } from '../../app/ts/types/addressBookTypes.js'
 import { EIP712Message } from '../../app/ts/types/eip721.js'
 import { SafeTx } from '../../app/ts/types/personal-message-definitions.js'
 import { SafeStackExport } from '../../app/ts/types/safeTypes.js'
@@ -8,10 +9,57 @@ import { SAFE_ABI, assertInterceptorSafeTransactionPolicy, createSafeOwnerValida
 import { completeSafeExecutionWithConfiguredSigner, SAFE_EXECUTION_ABI } from '../../app/ts/safe/safeExecution.js'
 import { getMessageAndDomainHash, getSafeTxHash } from '../../app/ts/utils/eip712.js'
 import { privateKeyToAccount } from '../../app/ts/utils/ethereumPrimitives.js'
-import { bytesFromHex, bytesToHex, concat, ensureHex, keccak256 } from '../../app/ts/utils/ethereumBytes.js'
+import { bytesFromHex, bytesToHex, concat, ensureHex, keccak256, type Hex } from '../../app/ts/utils/ethereumBytes.js'
 import { decodeFunctionDataStrict, encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
+import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
+import type { IEthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
+import type { RpcEntry } from '../../app/ts/types/rpc.js'
+import type { EthereumBlockTag } from '../../app/ts/types/wire-types.js'
 
 const privateKey = '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+
+// The serialized EIP-712 JSON carries every Safe number as a decimal string and the calldata as hex.
+const SerializedSafeTxFields = funtypes.ReadonlyObject({
+	domain: funtypes.ReadonlyObject({ chainId: funtypes.String }),
+	message: funtypes.ReadonlyObject({ nonce: funtypes.String, data: funtypes.String }),
+})
+
+const mainnetRpcEntry = {
+	name: 'Ethereum',
+	chainId: 1n,
+	httpsRpc: 'https://safe-core.test',
+	currencyName: 'Ether',
+	currencyTicker: 'ETH',
+	primary: true,
+	minimized: false,
+} satisfies RpcEntry
+
+type SafeRpcMethods = Pick<EthereumClientService, 'getBlockNumber' | 'getCode' | 'call'>
+
+// Safe validation reads the chain only through getBlockNumber, getCode and call. EthereumClientService defines those as per-instance function properties, so a real mainnet client with them replaced keeps the class type while each stub keeps the real method signature; any other RPC request reaches the rejecting request handler and fails the test.
+function createSafeEthereum(methods: SafeRpcMethods) {
+	const rejectingRequestHandler: IEthereumJSONRpcRequestHandler = {
+		rpcUrl: mainnetRpcEntry.httpsRpc,
+		clearCache: () => undefined,
+		getChainId: async () => mainnetRpcEntry.chainId,
+		jsonRpcRequest: async (request) => { throw new Error(`Unexpected RPC request: ${ request.method }`) },
+	}
+	return Object.assign(new EthereumClientService(rejectingRequestHandler, async () => undefined, async () => undefined, mainnetRpcEntry), methods)
+}
+
+// Answers eth_call like an RPC node: encodeReply picks the ABI-encoded return data from the called Safe function selector.
+function answerSafeCalls(encodeReply: (selector: string, blockTag: EthereumBlockTag) => Hex): SafeRpcMethods['call'] {
+	return async (transaction, blockTag) => {
+		if (transaction.input === undefined) throw new Error('Unexpected Safe call without calldata')
+		return bytesFromHex(encodeReply(bytesToHex(transaction.input).slice(0, 10), blockTag))
+	}
+}
+
+function parseSafeAddressBookEntry(input: unknown): SafeEntry {
+	const entry = AddressBookEntry.parse(input)
+	if (entry.type !== 'safe') throw new Error(`Expected a Safe address-book entry, received a ${ entry.type } entry`)
+	return entry
+}
 
 describe('Safe transaction support', () => {
 	test('creates a canonical Safe transaction that round-trips through EIP-712 JSON', () => {
@@ -21,11 +69,12 @@ describe('Safe transaction support', () => {
 			input: new Uint8Array([0xde, 0xad, 0xbe, 0xef]),
 		}, 7n)
 		const json = safeTxToTypedDataJson(safeTx)
-		const parsedJson = JSON.parse(json)
+		const parsedJson: unknown = JSON.parse(json)
+		const serializedFields = SerializedSafeTxFields.parse(parsedJson)
 
-		assert.equal(parsedJson.domain.chainId, '1')
-		assert.equal(parsedJson.message.nonce, '7')
-		assert.equal(parsedJson.message.data, '0xdeadbeef')
+		assert.equal(serializedFields.domain.chainId, '1')
+		assert.equal(serializedFields.message.nonce, '7')
+		assert.equal(serializedFields.message.data, '0xdeadbeef')
 		assert.doesNotThrow(() => EIP712Message.parse(json))
 		assert.equal(BigInt(getSafeTxHash(safeTx)), BigInt(getSafeTxHash(SafeTx.parse(parsedJson))))
 	})
@@ -79,12 +128,12 @@ describe('Safe transaction support', () => {
 				'0x0000000000000000000000000000000000000000', '0x0000000000000000000000000000000000000000', 3n,
 			]).slice(0, 10),
 		}
-		const ethereum = {
-			getChainId: () => 1n,
+		// The client is on mainnet (chain ID 1), the chain the current Safe transaction is created for.
+		const ethereum = createSafeEthereum({
 			getBlockNumber: async () => 123n,
-			getCode: async (address: bigint) => address === safeAddress ? new Uint8Array([1]) : new Uint8Array(),
-			call: async (transaction: { readonly input: Uint8Array }) => {
-				switch (bytesToHex(transaction.input).slice(0, 10)) {
+			getCode: async (address) => address === safeAddress ? new Uint8Array([1]) : new Uint8Array(),
+			call: answerSafeCalls((selector) => {
+				switch (selector) {
 					case selectors.version: return encodeFunctionReturn(SAFE_ABI, 'VERSION', ['1.4.1'])
 					case selectors.nonce: return encodeFunctionReturn(SAFE_ABI, 'nonce', [3n])
 					case selectors.owners: return encodeFunctionReturn(SAFE_ABI, 'getOwners', [['0x0000000000000000000000000000000000005678']])
@@ -92,8 +141,8 @@ describe('Safe transaction support', () => {
 					case selectors.transactionHash: return encodeFunctionReturn(SAFE_ABI, 'getTransactionHash', ['0x0000000000000000000000000000000000000000000000000000000000000000'])
 					default: throw new Error('Unexpected Safe call')
 				}
-			},
-		}
+			}),
+		})
 		const currentSafeTx = createSafeTx(1n, safeAddress, { to: 0x9abcn, value: 0n, input: new Uint8Array() }, 3n)
 		const expectedFailure = (pattern: RegExp) => (error: unknown) => isSafeContractValidationFailure(error) && pattern.test(error.message)
 
@@ -192,7 +241,7 @@ describe('Safe transaction support', () => {
 	})
 
 	test('parses a chain-specific Safe address-book entry with an optional simulation signer', () => {
-		const entry = AddressBookEntry.parse({
+		const entry = parseSafeAddressBookEntry({
 			type: 'safe',
 			name: 'Treasury Safe',
 			address: '0x0000000000000000000000000000000000001234',
@@ -219,7 +268,7 @@ describe('Safe transaction support', () => {
 	})
 
 	test('keeps the current Safe schema free of the removed signing-only owner field', () => {
-		const entry = AddressBookEntry.parse({
+		const entry = parseSafeAddressBookEntry({
 			type: 'safe',
 			name: 'Legacy Safe',
 			address: '0x0000000000000000000000000000000000001234',
@@ -242,24 +291,22 @@ describe('Safe transaction support', () => {
 			owners: encodeFunctionCall(SAFE_ABI, 'getOwners', []).slice(0, 10),
 			threshold: encodeFunctionCall(SAFE_ABI, 'getThreshold', []).slice(0, 10),
 		}
-		const createEthereum = (contractOwner = false, version = '1.4.1') => ({
-			async getBlockNumber() {
-				return 123n
-			},
-			async getCode(address: bigint, blockTag: bigint | string) {
+		const createEthereum = (contractOwner = false, version = '1.4.1') => createSafeEthereum({
+			getBlockNumber: async () => 123n,
+			getCode: async (address, blockTag) => {
 				assert.equal(blockTag, 123n)
 				return address === 0x1234n || contractOwner ? new Uint8Array([1]) : new Uint8Array()
 			},
-			async call(transaction: { readonly input: Uint8Array }, blockTag: bigint | string) {
+			call: answerSafeCalls((selector, blockTag) => {
 				assert.equal(blockTag, 123n)
-				switch (bytesToHex(transaction.input).slice(0, 10)) {
+				switch (selector) {
 					case selectors.version: return encodeFunctionReturn(SAFE_ABI, 'VERSION', [version])
 					case selectors.nonce: return encodeFunctionReturn(SAFE_ABI, 'nonce', [3n])
 					case selectors.owners: return encodeFunctionReturn(SAFE_ABI, 'getOwners', [['0x0000000000000000000000000000000000005678']])
 					case selectors.threshold: return encodeFunctionReturn(SAFE_ABI, 'getThreshold', [2n])
 					default: throw new Error('Unexpected Safe call')
 				}
-			},
+			}),
 		})
 
 		assert.deepEqual(await getSafeContractState(createEthereum(), 0x1234n), {
@@ -290,28 +337,28 @@ describe('Safe transaction support', () => {
 	test('reuses the Safe snapshot and owner-code result across repeated validations', async () => {
 		let blockNumberReads = 0
 		let ownerCodeReads = 0
-		const blockTags: (bigint | string)[] = []
-		const baseEthereum = {
-			async getBlockNumber() {
+		const blockTags: EthereumBlockTag[] = []
+		const baseEthereum = createSafeEthereum({
+			getBlockNumber: async () => {
 				blockNumberReads += 1
 				return 122n + BigInt(blockNumberReads)
 			},
-			async getCode(address: bigint, blockTag: bigint | string) {
+			getCode: async (address, blockTag) => {
 				blockTags.push(blockTag)
 				if (address !== 0x1234n) ownerCodeReads += 1
 				return address === 0x1234n ? new Uint8Array([1]) : new Uint8Array()
 			},
-			async call(transaction: { readonly input: Uint8Array }, blockTag: bigint | string) {
+			call: answerSafeCalls((selector, blockTag) => {
 				blockTags.push(blockTag)
-				switch (bytesToHex(transaction.input).slice(0, 10)) {
+				switch (selector) {
 					case encodeFunctionCall(SAFE_ABI, 'VERSION', []).slice(0, 10): return encodeFunctionReturn(SAFE_ABI, 'VERSION', ['1.4.1'])
 					case encodeFunctionCall(SAFE_ABI, 'nonce', []).slice(0, 10): return encodeFunctionReturn(SAFE_ABI, 'nonce', [3n])
 					case encodeFunctionCall(SAFE_ABI, 'getOwners', []).slice(0, 10): return encodeFunctionReturn(SAFE_ABI, 'getOwners', [['0x0000000000000000000000000000000000005678']])
 					case encodeFunctionCall(SAFE_ABI, 'getThreshold', []).slice(0, 10): return encodeFunctionReturn(SAFE_ABI, 'getThreshold', [2n])
 					default: throw new Error('Unexpected Safe call')
 				}
-			},
-		}
+			}),
+		})
 
 		const snapshot = await getSafeContractSnapshot(baseEthereum, 0x1234n)
 		const ownerValidator = createSafeOwnerValidator(baseEthereum, 0x1234n, snapshot)

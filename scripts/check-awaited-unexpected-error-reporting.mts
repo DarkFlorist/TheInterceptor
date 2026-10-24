@@ -44,17 +44,17 @@ function isMessageObjectLiteral(expression: ts.Expression) {
 }
 
 function isWrappedReportExpression(expression: ts.Expression) {
-	expression = skipParentheses(expression)
-	if (ts.isNewExpression(expression)) return true
-	if (ts.isCallExpression(expression) && ts.isIdentifier(expression.expression) && expression.expression.text === 'Error') return true
-	return isMessageObjectLiteral(expression)
+	const unwrappedExpression = skipParentheses(expression)
+	if (ts.isNewExpression(unwrappedExpression)) return true
+	if (ts.isCallExpression(unwrappedExpression) && ts.isIdentifier(unwrappedExpression.expression) && unwrappedExpression.expression.text === 'Error') return true
+	return isMessageObjectLiteral(unwrappedExpression)
 }
 
 function isWrappedIdentifier(expression: ts.Expression, scopes: readonly Scope[]) {
-	expression = skipParentheses(expression)
-	if (!ts.isIdentifier(expression)) return false
+	const unwrappedExpression = skipParentheses(expression)
+	if (!ts.isIdentifier(unwrappedExpression)) return false
 	for (const scope of scopes) {
-		const wrapped = scope.reportValues.get(expression.text)
+		const wrapped = scope.reportValues.get(unwrappedExpression.text)
 		if (wrapped !== undefined) return wrapped
 	}
 	return false

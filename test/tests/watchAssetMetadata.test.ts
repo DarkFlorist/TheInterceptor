@@ -1,9 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import type { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
+import type { IEthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
 import { Erc1046ABI, Erc1155ABI, Erc20ABI, Erc721ABI } from '../../app/ts/utils/abi.js'
 import { encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { loadErc1046Metadata, loadLegacyErc20Metadata, loadNftMetadataAndVerifyOwnership } from '../../app/ts/background/watchAssetMetadata.js'
+import { replaceGlobal } from '../harness/globals.js'
 
 const rpcEntry = {
 	name: 'Ethereum',
@@ -15,22 +17,22 @@ const rpcEntry = {
 	minimized: true,
 }
 
-class SequentialCallHandler {
-	public rpcUrl = rpcEntry.httpsRpc
-	public constructor(private readonly replies: (string | Error)[]) {}
-	public readonly jsonRpcRequest = async (request: EthereumJsonRpcRequest) => {
+// Answers each eth_call with the next queued reply and rejects any other RPC method.
+const createSequentialCallHandler = (replies: (string | Error)[]): IEthereumJSONRpcRequestHandler => ({
+	rpcUrl: rpcEntry.httpsRpc,
+	jsonRpcRequest: async (request: EthereumJsonRpcRequest) => {
 		if (request.method !== 'eth_call') throw new Error(`Unexpected RPC method ${ request.method }`)
-		const reply = this.replies.shift()
+		const reply = replies.shift()
 		if (reply === undefined) throw new Error('Unexpected extra eth_call')
 		if (reply instanceof Error) throw reply
 		return reply
-	}
-	public readonly clearCache = () => undefined
-	public readonly getChainId = async () => 1n
-}
+	},
+	clearCache: () => undefined,
+	getChainId: async () => 1n,
+})
 
 function createEthereum(replies: (string | Error)[]) {
-	return new EthereumClientService(new SequentialCallHandler(replies), async () => undefined, async () => undefined, rpcEntry)
+	return new EthereumClientService(createSequentialCallHandler(replies), async () => undefined, async () => undefined, rpcEntry)
 }
 
 function metadataDataUri(value: unknown) {
@@ -112,12 +114,11 @@ describe('watch asset contract metadata', () => {
 	})
 
 	test('rejects alternative numeric IP metadata hosts before fetching', async () => {
-		const originalFetch = globalThis.fetch
 		let fetchCount = 0
-		globalThis.fetch = async () => {
+		const restoreFetch = replaceGlobal('fetch', async () => {
 			fetchCount++
 			throw new Error('Unsafe metadata URL must not be fetched')
-		}
+		})
 		try {
 			for (const metadataUri of ['https://127.1/token.json', 'https://2130706433/token.json', 'https://0x7f000001/token.json', 'https://10.1/token.json', 'https://0/token.json', 'https://0177.0.0.1/token.json']) {
 				const result = await loadErc1046Metadata(createEthereum([encodeFunctionReturn(Erc1046ABI, 'tokenURI', [metadataUri])]), 1n)
@@ -125,17 +126,15 @@ describe('watch asset contract metadata', () => {
 			}
 			expect(fetchCount).toBe(0)
 		} finally {
-			globalThis.fetch = originalFetch
+			restoreFetch()
 		}
 	})
 
 	test('rejects oversized data URIs before invoking their decoders', async () => {
-		const originalAtob = globalThis.atob
-		const originalDecodeURIComponent = globalThis.decodeURIComponent
 		let atobCalls = 0
 		let decodeCalls = 0
-		globalThis.atob = () => { atobCalls++; throw new Error('Oversized base64 must not be decoded') }
-		globalThis.decodeURIComponent = () => { decodeCalls++; throw new Error('Oversized percent data must not be decoded') }
+		const restoreAtob = replaceGlobal('atob', () => { atobCalls++; throw new Error('Oversized base64 must not be decoded') })
+		const restoreDecodeURIComponent = replaceGlobal('decodeURIComponent', () => { decodeCalls++; throw new Error('Oversized percent data must not be decoded') })
 		try {
 			const base64Uri = `data:application/json;base64,${ 'A'.repeat(Math.ceil(262_144 / 3) * 4 + 1) }`
 			const base64Result = await loadErc1046Metadata(createEthereum([encodeFunctionReturn(Erc1046ABI, 'tokenURI', [base64Uri])]), 1n)
@@ -147,8 +146,8 @@ describe('watch asset contract metadata', () => {
 			expect(atobCalls).toBe(0)
 			expect(decodeCalls).toBe(0)
 		} finally {
-			globalThis.atob = originalAtob
-			globalThis.decodeURIComponent = originalDecodeURIComponent
+			restoreDecodeURIComponent()
+			restoreAtob()
 		}
 	})
 

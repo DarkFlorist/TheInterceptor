@@ -1,6 +1,6 @@
 import { bigintToRoundedPrettyDecimalString, calculateWeightedPercentile } from '../../app/ts/utils/bigint.js'
 import { describe, test } from 'bun:test'
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 
 describe('utils.bigint', () => {
 	test('display 1 ETH', () => assert.equal(bigintToRoundedPrettyDecimalString(10n ** 18n, 18n, 4), '1'))
