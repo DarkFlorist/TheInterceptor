@@ -286,31 +286,35 @@ test('keeps a newer simulation run that got the run id of the run the metadata r
 	assert.deepEqual(storedVisualisation, newerVisualisationWithSameRunId, 'the metadata refresh wrote the run it read over the newer run with the same id')
 })
 
-test('probes an unknown EIP-7702 delegation target of a request that could not be formed and keeps it in the address book, as the simulation view does', async () => {
+test('neither names nor probes the EIP-7702 delegation target or the contract a creation would deploy, which the failure view does not show', async () => {
 	await useInvoiceAddressBook()
 	const unknownDelegationTarget = 0x7777777777777777777777777777777777777777n
 	const { SendTransactionParams } = await import('../../app/ts/types/JsonRpc-types.js')
-	const requestWithAuthorization = SendTransactionParams.parse({
-		method: 'eth_sendTransaction',
-		params: [{
-			from: addressString(activeAddress),
-			to: addressString(USDC_ADDRESS),
-			value: '0x0',
-			data: encodeFunctionCall(Erc20ABI, 'transfer', [addressString(recipientAddress), TRANSFERRED_USDC]),
-			authorizationList: [{ chainId: '0x1', address: addressString(unknownDelegationTarget), nonce: '0x0' }],
-		}],
-	})
+	const { getDeployedContractAddress } = await import('../../app/ts/simulation/services/SimulationModeEthereumClientService.js')
+	const wouldBeDeployedContract = getDeployedContractAddress(activeAddress, 0n)
+	const requestWithAuthorization = {
+		from: addressString(activeAddress),
+		to: addressString(USDC_ADDRESS),
+		value: '0x0',
+		data: encodeFunctionCall(Erc20ABI, 'transfer', [addressString(recipientAddress), TRANSFERRED_USDC]),
+		authorizationList: [{ chainId: '0x1', address: addressString(unknownDelegationTarget), nonce: '0x0' }],
+	}
+	const contractCreationWithNonce = { from: addressString(activeAddress), value: '0x0', data: '0x6000', nonce: '0x0' }
 	const { getFailedTransactionPreview } = await import('../../app/ts/background/simulationUpdating.js')
-	const preview = await getFailedTransactionPreview(simulator.ethereum, undefined, {
-		website,
-		created,
-		originalRequestParameters: requestWithAuthorization,
-		transactionIdentifier: 1n,
-		success: false,
-		error: { code: -32000, message: 'gas estimation failed' },
-	})
-	assert.equal(preview.addressBookEntries.some((entry) => entry.address === unknownDelegationTarget), true, 'the failure view names the delegation target')
-	assert.equal((await modules.getUserAddressBookEntries()).some((entry) => entry.address === unknownDelegationTarget), true, 'naming it keeps the on-chain identification in the address book')
+	for (const request of [requestWithAuthorization, contractCreationWithNonce]) {
+		const preview = await getFailedTransactionPreview(simulator.ethereum, undefined, {
+			website,
+			created,
+			originalRequestParameters: SendTransactionParams.parse({ method: 'eth_sendTransaction', params: [request] }),
+			transactionIdentifier: 1n,
+			success: false,
+			error: { code: -32000, message: 'gas estimation failed' },
+		})
+		assert.equal(preview.addressBookEntries.some((entry) => entry.address === activeAddress), true, 'the failure view names the sender it shows')
+		assert.equal(preview.addressBookEntries.some((entry) => entry.address === unknownDelegationTarget || entry.address === wouldBeDeployedContract), false)
+	}
+	const storedAddresses = (await modules.getUserAddressBookEntries()).map((entry) => entry.address)
+	assert.equal(storedAddresses.includes(unknownDelegationTarget) || storedAddresses.includes(wouldBeDeployedContract), false, 'no identification of an address the view does not show was kept in the address book')
 })
 
 test('keeps and shows the names of a newer metadata refresh when an older refresh of the same failed confirmation finishes last', async () => {
@@ -386,13 +390,14 @@ test('resolves address-book names and parses calldata when the confirmation simu
 	assertUsdcTransferPreview(popupVisualisation.data.failedTransactionPreview)
 })
 
-test('collects the failure view addresses with the simulation view rules for the same transaction', async () => {
+test('collects the failure view addresses with the simulation view rules, leaving out the contract a creation would deploy', async () => {
 	await useInvoiceAddressBook()
 	const { getFailedTransactionPreview } = await import('../../app/ts/background/simulationUpdating.js')
 	const { getAddressesToIdentifyForVisualiserFromTransactions } = await import('../../app/ts/background/metadataUtils.js')
 	const { getDeployedContractAddress } = await import('../../app/ts/simulation/services/SimulationModeEthereumClientService.js')
 	const transfer = await createFormedUsdcTransfer(15n)
 	const contractCreation = { ...transfer, transaction: { ...transfer.transaction, to: null } }
+	const deployedContract = getDeployedContractAddress(activeAddress, 0n)
 	for (const transactionToSimulate of [transfer, contractCreation]) {
 		const failedTransactionPreview = await getFailedTransactionPreview(simulator.ethereum, undefined, transactionToSimulate)
 		const simulationViewAddresses = getAddressesToIdentifyForVisualiserFromTransactions([], [failedTransactionPreview.parsedInputData], [{
@@ -409,11 +414,10 @@ test('collects the failure view addresses with the simulation view rules for the
 			}],
 		}])
 		const failureViewAddresses = new Set(failedTransactionPreview.addressBookEntries.map((entry) => entry.address))
-		assert.deepEqual(failureViewAddresses, new Set(simulationViewAddresses))
+		assert.deepEqual(failureViewAddresses, new Set(simulationViewAddresses.filter((address) => address !== deployedContract)))
 		assert.equal(failureViewAddresses.has(ETHEREUM_LOGS_LOGGER_ADDRESS), true)
+		assert.equal(simulationViewAddresses.includes(deployedContract), transactionToSimulate === contractCreation, 'the simulation view of the creation names the contract it deploys')
 	}
-	const contractCreationPreview = await getFailedTransactionPreview(simulator.ethereum, undefined, contractCreation)
-	assert.equal(contractCreationPreview.addressBookEntries.some((entry) => entry.address === getDeployedContractAddress(activeAddress, 0n)), true)
 })
 
 const failedPreviewLookups = [
