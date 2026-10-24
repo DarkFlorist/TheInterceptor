@@ -254,6 +254,7 @@ function createMockSimulationModeRequestHandler(): MockSimulationModeRequestHand
 	return handler
 }
 
+type RecordedRpcCall = { readonly method: string, readonly requestAbortController: AbortController | undefined }
 type SimulationStateInputForTest = Parameters<typeof toResolvedSimulationInput>[0]
 type ExecutionSimulationStateForTest = Parameters<typeof toResolvedExecutionSimulationState>[0]
 
@@ -282,6 +283,19 @@ export function createSimulationModeTestContext() {
 	const getTransactionByHashFromInput = async (simulationStateInput: SimulationStateInputForTest, hash: bigint) => await getSimulatedTransactionByHashFromInput(ethereum, undefined, toResolvedSimulationInput(simulationStateInput), hash)
 	const getReceiptFromState = async (simulationState: ExecutionSimulationStateForTest, hash: bigint) => await getSimulatedTransactionReceipt(ethereum, undefined, toResolvedExecutionSimulationState(simulationState), hash)
 	const getLogsFromState = async (simulationState: ExecutionSimulationStateForTest, filter: Parameters<typeof getSimulatedLogs>[3]) => await getSimulatedLogs(ethereum, undefined, toResolvedExecutionSimulationState(simulationState), filter)
+	const createAbortRecordingEthereum = () => {
+		const rpcCalls: RecordedRpcCall[] = []
+		const recordingEthereum = new EthereumClientService({
+			rpcUrl: requestHandler.rpcUrl,
+			clearCache: requestHandler.clearCache,
+			getChainId: requestHandler.getChainId,
+			jsonRpcRequest: async (rpcRequest: EthereumJsonRpcRequest, requestAbortController?: AbortController) => {
+				rpcCalls.push({ method: rpcRequest.method, requestAbortController })
+				return await requestHandler.jsonRpcRequest(rpcRequest)
+			},
+		}, async () => undefined, async () => undefined, rpcNetwork)
+		return { ethereum: recordingEthereum, rpcCalls }
+	}
 	return {
 		requestHandler,
 		ethereum,
@@ -292,6 +306,7 @@ export function createSimulationModeTestContext() {
 		getTransactionByHashFromInput,
 		getReceiptFromState,
 		getLogsFromState,
+		createAbortRecordingEthereum,
 	}
 }
 

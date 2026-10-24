@@ -1,11 +1,12 @@
 import { describe, test } from 'bun:test'
 import * as assert from 'node:assert'
 import { addressString, stringToUint8Array } from '../../app/ts/utils/bigint.js'
-import { createExecutionSimulationState, createSimulationState, getBaseFeeAdjustedTransactions, getBaseFeeAdjustmentBalances, getSimulatedBalanceFromInput, getSimulatedTransactionCount, getSimulatedTransactionCountFromInput, mockSignTransaction, simulateEstimateGasFromInput } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
+import { createExecutionSimulationState, createSimulationState, getBaseFeeAdjustedTransactions, getBaseFeeAdjustmentBalances, getSimulatedBalance, getSimulatedBalanceFromInput, getSimulatedTransactionCount, getSimulatedTransactionCountFromInput, mockSignTransaction, simulateEstimateGasFromInput } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { toResolvedSimulationInput, toResolvedSimulationState } from '../../app/ts/types/visualizer-types.js'
+import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../app/ts/utils/constants.js'
 import { Erc20ABI } from '../../app/ts/utils/abi.js'
 import { encodeFunctionCall } from '../../app/ts/utils/abiRuntime.js'
-import { createSimulationModeTestContext, example7702Transaction, exampleTransaction } from './simulationModeEthereumClientServiceTestHelpers.js'
+import { createSimulationModeTestContext, createSimulationStateInput, example7702Transaction, exampleTransaction } from './simulationModeEthereumClientServiceTestHelpers.js'
 
 const { requestHandler, ethereum } = createSimulationModeTestContext()
 
@@ -379,4 +380,26 @@ describe('SimulationModeEthereumClientService', () => {
 		assert.equal(tokenBalancesAfter?.some((balance) => balance.token === token), false)
 	})
 
+	test('state-based balance includes the gas paid by a failed transaction', async () => {
+		const template = await createSimulationState(ethereum, undefined, createSimulationStateInput())
+		if (template.success === false) throw new Error('simulation unexpectedly failed')
+		const balanceAfterFailedTransaction = 123n
+		const failedTransactionState = toResolvedSimulationState({
+			...template,
+			simulatedBlocks: template.simulatedBlocks.map((block) => ({
+				...block,
+				simulatedTransactions: block.simulatedTransactions.map((simulatedTransaction) => ({
+					...simulatedTransaction,
+					ethSimulateV1CallResult: { status: 'failure', returnData: new Uint8Array(), gasUsed: 21_000n, error: { code: -32000, message: 'execution reverted' } },
+					tokenBalancesAfter: [{ token: ETHEREUM_LOGS_LOGGER_ADDRESS, tokenId: undefined, owner: exampleTransaction.from, balance: balanceAfterFailedTransaction }],
+				})),
+			})),
+		})
+		requestHandler.balance = 10n ** 18n
+		try {
+			assert.equal(await getSimulatedBalance(ethereum, undefined, failedTransactionState, exampleTransaction.from), balanceAfterFailedTransaction)
+		} finally {
+			requestHandler.balance = 0n
+		}
+	})
 })
