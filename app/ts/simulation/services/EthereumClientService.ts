@@ -5,7 +5,7 @@ import { keccak256 } from '../../utils/ethereumPrimitives.js'
 import type { IEthereumJSONRpcRequestHandler } from './EthereumJSONRpcRequestHandler.js'
 import { addressString, bigintSecondsToDate, bytes32String, dataString, dateToBigintSeconds, max } from '../../utils/bigint.js'
 import { type BlockCalls, type BlockOverrides, EthSimulateV1Result, type EthSimulateV1Params } from '../../types/ethSimulate-types.js'
-import { EthGetFeeHistoryResponse, EthGetStorageAtResponse, EthTransactionReceiptResponse, type FeeHistory, type EthGetLogsRequest, EthGetLogsResponse, type PartialEthereumTransaction } from '../../types/JsonRpc-types.js'
+import { EthGetFeeHistoryResponse, EthGetStorageAtResponse, EthSyncingResponse, EthTransactionReceiptResponse, type FeeHistory, type EthGetLogsRequest, EthGetLogsResponse, type PartialEthereumTransaction } from '../../types/JsonRpc-types.js'
 import { getBlockTimeManipulationSeconds } from './simulationBlockParameters.js'
 import { simulatePersonalSign } from './simulationPersonalSigning.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../../config/defaults.js'
@@ -273,6 +273,12 @@ export class EthereumClientService {
 	public readonly getMaxPriorityFeePerGas = async(requestAbortController: AbortController | undefined) => {
 		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_maxPriorityFeePerGas' }, requestAbortController)
 		return EthereumQuantity.parse(response)
+	}
+
+	// Bypass the response cache: it is only cleared when the latest block changes, and a stalled or syncing node's status can change while its latest block does not.
+	public readonly getSyncingStatus = async(requestAbortController: AbortController | undefined) => {
+		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_syncing' }, requestAbortController, true)
+		return EthSyncingResponse.parse(response)
 	}
 
 	public readonly getTransactionByHash = async (hash: bigint, requestAbortController: AbortController | undefined) => {

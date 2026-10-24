@@ -121,6 +121,11 @@ export async function maxPriorityFeePerGas(ethereumClientService: EthereumClient
 	return { type: 'result' as const, method: 'eth_maxPriorityFeePerGas' as const, result: await ethereumClientService.getMaxPriorityFeePerGas(undefined) }
 }
 
+// Simulated blocks only extend the RPC node's chain locally, so the node's own sync status is the honest answer in every mode.
+export async function syncing(ethereumClientService: EthereumClientService) {
+	return { type: 'result' as const, method: 'eth_syncing' as const, result: await ethereumClientService.getSyncingStatus(undefined) }
+}
+
 export async function personalSign(
 	ethereumClientService: EthereumClientService,
 	tokenPriceService: TokenPriceService,

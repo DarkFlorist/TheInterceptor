@@ -4,6 +4,24 @@ import type { SimulationStateInput } from '../../app/ts/types/visualizer-types.j
 import { MessageToPopup } from '../../app/ts/types/interceptor-messages.js'
 import { createDeferredValue, createTestSimulationServicesOwner, addressString, confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, createSafeTx, EthereumJsonRpcRequest, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, safeTxToTypedDataJson, } from './backgroundEthAccountsTestHarness.js'
 
+function installEthSyncingRpcMock(syncingResults: readonly unknown[]) {
+	const originalFetch = globalThis.fetch
+	const requestedMethods: string[] = []
+	const remainingResults = [...syncingResults]
+	globalThis.fetch = async (_input, init) => {
+		if (typeof init?.body !== 'string') throw new Error('Expected a JSON-RPC request body')
+		const request: unknown = JSON.parse(init.body)
+		if (typeof request !== 'object' || request === null || !('id' in request) || !('method' in request) || typeof request.method !== 'string') throw new Error('Expected a JSON-RPC request')
+		requestedMethods.push(request.method)
+		if (request.method !== 'eth_syncing' || remainingResults.length === 0) throw new Error(`Unexpected RPC request: ${ request.method }`)
+		return Response.json({ jsonrpc: '2.0', id: request.id, result: remainingResults.shift() })
+	}
+	return {
+		requestedMethods,
+		restore: () => { globalThis.fetch = originalFetch },
+	}
+}
+
 describe('background eth_accounts', () => {
 	test('resolves an access prompt with the services installed after it opened', async () => {
 		installBrowserMock()
@@ -263,6 +281,107 @@ describe('background eth_accounts', () => {
 			method: 'eth_getStorageAt',
 			params: ['0xe592427a0aece92de3edee1f18e0157c05861564', '0x0', 'latest'],
 		})
+	})
+
+	test('answers eth_syncing from the Interceptor RPC node in simulation and signing modes', async () => {
+		installBrowserMock()
+		const { handleInterceptedRequest, websiteSocketToString, updateWebsiteAccess, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateTabState } = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const account = 0x1111111111111111111111111111111111111111n
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: account, activeSigningAddress: undefined })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
+
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const connectionKey = websiteSocketToString(socket)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		const syncingProgress = { startingBlock: '0x0', currentBlock: '0x80d5a9', highestBlock: '0x80d5b0', knownStates: '0x2a', pulledStates: '0x29' }
+		const rpcMock = installEthSyncingRpcMock([false, syncingProgress, syncingProgress])
+		const requestEthSyncing = async (requestId: number) => await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId, requestSocket: socket },
+			method: 'eth_syncing',
+			params: [],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+
+		try {
+			await requestEthSyncing(1)
+			await requestEthSyncing(2)
+			await changeSimulationMode({ simulationMode: false, activeSimulationAddress: account, activeSigningAddress: account })
+			await setUseSignersAddressAsActiveAddress(true)
+			await updateTabState(socket.tabId, (previousState) => ({ ...previousState, signerAccounts: [account], activeSigningAddress: account }))
+			await requestEthSyncing(3)
+		} finally {
+			rpcMock.restore()
+		}
+
+		const ethSyncingReply = (requestId: number, result: unknown) => ({ interceptorApproved: true, requestId, bridgeRequestSettled: true, type: 'result', method: 'eth_syncing', result })
+		assert.deepEqual(messages.find((message) => message.requestId === 1), ethSyncingReply(1, false))
+		assert.deepEqual(messages.find((message) => message.requestId === 2), ethSyncingReply(2, syncingProgress))
+		assert.deepEqual(messages.find((message) => message.requestId === 3), ethSyncingReply(3, syncingProgress))
+		assert.deepEqual(rpcMock.requestedMethods, ['eth_syncing', 'eth_syncing', 'eth_syncing'])
+	})
+
+	test('forwards eth_syncing to the signer on networks without an Interceptor RPC', async () => {
+		installBrowserMock()
+		const { handleInterceptedRequest, websiteSocketToString, updateWebsiteAccess, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateTabState } = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const account = 0x1111111111111111111111111111111111111111n
+		await changeSimulationMode({
+			simulationMode: false,
+			rpcNetwork: {
+				name: 'Signer only',
+				chainId: 1n,
+				httpsRpc: undefined,
+				currencyName: 'Ether?',
+				currencyTicker: 'ETH?',
+				primary: false,
+				minimized: true,
+			},
+			activeSimulationAddress: account,
+			activeSigningAddress: account,
+		})
+		await setUseSignersAddressAsActiveAddress(true)
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
+
+		const socket = { tabId: 1, connectionName: 0n }
+		await updateTabState(socket.tabId, (previousState) => ({ ...previousState, signerAccounts: [account], activeSigningAddress: account }))
+		const { port, messages } = createPort(socket.tabId)
+		const connectionKey = websiteSocketToString(socket)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		const rpcMock = installEthSyncingRpcMock([])
+
+		try {
+			await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
+				interceptorRequest: true,
+				usingInterceptorWithoutSigner: false,
+				uniqueRequestIdentifier: { requestId: 1, requestSocket: socket },
+				method: 'eth_syncing',
+				params: [],
+			}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		} finally {
+			rpcMock.restore()
+		}
+
+		assert.deepEqual(messages.at(-1), {
+			interceptorApproved: true,
+			requestId: 1,
+			type: 'forwardToSigner',
+			replyWithSignersReply: true,
+			method: 'eth_syncing',
+			params: [],
+		})
+		assert.deepEqual(rpcMock.requestedMethods, [])
 	})
 
 	test('preserves transaction-free overlays without running transaction preparation', async () => {
