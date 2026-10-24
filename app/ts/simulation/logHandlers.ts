@@ -51,7 +51,8 @@ export function handleErc721ApprovalForAllLog(eventLog: EthereumEvent): TokenVis
 		tokenAddress: eventLog.address,
 		type: 'NFT All approval',
 		isApproval: true,
-		allApprovalAdded: eventLog.topics[3] !== 0n,
+		// The standard ApprovalForAll event keeps the approved flag in the log data; also accept contracts that index it as a fourth topic.
+		allApprovalAdded: (eventLog.topics[3] ?? bytesToUnsigned(eventLog.data)) !== 0n,
 	}]
 }
 
