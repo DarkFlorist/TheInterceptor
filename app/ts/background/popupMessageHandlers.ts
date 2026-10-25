@@ -38,7 +38,7 @@ import { checkAndThrowRuntimeLastError, doesUniqueRequestIdentifiersMatch, silen
 import { assertNever, modifyObject } from '../utils/typescript.js'
 import type { VisualizedPersonalSignRequestSafeTx } from '../types/personal-message-definitions.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
-import { getCurrentSimulationInput, getMetadataForSimulation, simulateGnosisSafeMetaTransaction, simulateGovernanceContractExecution, updateSimulationMetadata } from './simulationUpdating.js'
+import { getCurrentSimulationInput, getMetadataForSimulation, simulateGnosisSafeMetaTransaction, simulateGovernanceContractExecution, type PendingGovernanceVote, updateSimulationMetadata } from './simulationUpdating.js'
 import { getErrorMessage, reportUnexpectedError, isExpectedInfrastructureError } from '../utils/errors.js'
 import type { ImportSimulationStackReply, RequestAbiAndNameFromBlockExplorer, RequestIdentifyAddress, SetSafeSimulationSigner, UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { getWebsiteCreatedEthereumTransactions } from '../simulation/services/SimulationModeEthereumClientService.js'
@@ -842,11 +842,24 @@ export async function changeSettings(simulationServicesOwner: SimulationServices
 	return await requestNewHomeData(simulationServicesOwner.getCurrent().ethereum, websiteTabConnections, false, true, requestAbortController, bumpPopupRefreshGeneration())
 }
 
+// The confirmation window shows the governance vote preview for a pending transaction and for each prepared call of a pending wallet_sendCalls batch, so both are searched.
+const findPendingGovernanceVote = (pendingTransactions: readonly PendingTransactionOrSignableMessage[], transactionIdentifier: bigint): PendingGovernanceVote | undefined => {
+	for (const pending of pendingTransactions) {
+		if (pending.type === 'Transaction' && pending.transactionIdentifier === transactionIdentifier) {
+			return pending.transactionOrMessageCreationStatus === 'Simulated' ? { status: 'Prepared', voteTransaction: pending.transactionToSimulate } : { status: 'StillSimulating' }
+		}
+		if (pending.type !== 'TransactionBatch' || pending.transactionOrMessageCreationStatus === 'Crafting') continue
+		for (const call of pending.transactionsToSimulate) {
+			if (call.success && call.transactionIdentifier === transactionIdentifier) return { status: 'Prepared', voteTransaction: call }
+		}
+	}
+	return undefined
+}
+
 export async function simulateGovernanceContractExecutionOnPass(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, request: SimulateGovernanceContractExecution) {
-	const pendingTransactions = await getPendingTransactionsAndMessages()
-	const transaction = pendingTransactions.find((tx) => tx.type === 'Transaction' && tx.transactionIdentifier === request.data.transactionIdentifier)
-	if (transaction === undefined || transaction.type !== 'Transaction') throw new Error(`Could not find transactionIdentifier: ${ request.data.transactionIdentifier }`)
-	const governanceContractExecutionVisualisation = await simulateGovernanceContractExecution(transaction, ethereum, tokenPriceService)
+	const pendingVote = findPendingGovernanceVote(await getPendingTransactionsAndMessages(), request.data.transactionIdentifier)
+	if (pendingVote === undefined) throw new Error(`Could not find transactionIdentifier: ${ request.data.transactionIdentifier }`)
+	const governanceContractExecutionVisualisation = await simulateGovernanceContractExecution(pendingVote, ethereum, tokenPriceService)
 	const reply = {
 		method: 'popup_simulateExecutionReply' as const,
 		data: { ...governanceContractExecutionVisualisation, transactionOrMessageIdentifier: request.data.transactionIdentifier }

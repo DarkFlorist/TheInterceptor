@@ -223,6 +223,26 @@ test('a batch whose calls cannot be simulated cannot be approved', async () => {
 	assert.equal(getWalletSendCallsReply(postedMessages), undefined)
 })
 
+test('the governance vote preview finds a vote sent as a call of a wallet_sendCalls batch', async () => {
+	const { websiteTabConnections } = await setUpWalletSendCallsTest()
+	const governanceAddress = 0x6666666666666666666666666666666666666666n
+	// castVote(uint256 proposalId = 12, uint8 support = 1)
+	const castVoteData = `0x56781388${ (12n).toString(16).padStart(64, '0') }${ (1n).toString(16).padStart(64, '0') }`
+	const batchWithVote = { ...walletSendCallsRequest, params: [{ ...walletSendCallsRequest.params[0], calls: [walletSendCallsRequest.params[0].calls[0], { to: addressString(governanceAddress), data: castVoteData }] }] }
+	assert.deepEqual(await requestBatch(websiteTabConnections, batchWithVote), { type: 'doNotReply' })
+	const voteCall = (await getPendingBatch()).transactionsToSimulate[1]
+	if (voteCall === undefined || !voteCall.success) throw new Error('Missing prepared vote call')
+
+	const { simulateGovernanceContractExecutionOnPass } = await import('../../app/ts/background/popupMessageHandlers.js')
+	const reply = await simulateGovernanceContractExecutionOnPass(simulator.ethereum, simulator.tokenPriceService, { method: 'popup_simulateGovernanceContractExecution', data: { transactionIdentifier: voteCall.transactionIdentifier } })
+
+	assert.equal(reply.data.transactionOrMessageIdentifier, voteCall.transactionIdentifier)
+	// The vote was found and decoded: the preview only stops because the test governance contract has no ABI.
+	assert.equal(reply.data.success, false)
+	if (reply.data.success) throw new Error('Unexpected governance execution preview')
+	assert.equal(reply.data.errorType, 'MissingAbi')
+})
+
 test('a metadata refresh stores the re-visualized batch preview of the same simulation run and updates the confirmation window', async () => {
 	const { websiteTabConnections } = await setUpWalletSendCallsTest()
 	await requestBatch(websiteTabConnections)

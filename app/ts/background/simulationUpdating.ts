@@ -11,10 +11,9 @@ import type { TokenPriceService } from '../simulation/services/priceEstimator.js
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
 import { runProtectorsForTransaction } from '../simulation/protectorRunner.js'
 import type { EnrichedEthereumEvents, EnrichedEthereumInputData } from '../types/EnrichedEthereumData.js'
-import type { PendingTransaction } from '../types/accessRequest.js'
 import type { AddressBookEntry, Erc20TokenEntry } from '../types/addressBookTypes.js'
 import type { SimulateExecutionReplyData } from '../types/interceptor-messages.js'
-import { PASSTHROUGH_STATE, type BlockTimeManipulation, type ExecutionSimulationState, type InterceptorStackOperation, InterceptorTransactionStack, type NonSimulatedAndVisualizedTransaction, type PreSimulationTransaction, type SignedMessageTransaction, type SimulationState, type SimulationStateInput, type SimulationStateInputBlock, type VisualizedSimulatorState, toResolvedSimulationInput, toResolvedSimulationState } from '../types/visualizer-types.js'
+import { PASSTHROUGH_STATE, type BlockTimeManipulation, type ExecutionSimulationState, type InterceptorStackOperation, InterceptorTransactionStack, type NonSimulatedAndVisualizedTransaction, type PreSimulationTransaction, type SignedMessageTransaction, type SimulationState, type SimulationStateInput, type SimulationStateInputBlock, type VisualizedSimulatorState, type WebsiteCreatedEthereumTransaction, toResolvedSimulationInput, toResolvedSimulationState } from '../types/visualizer-types.js'
 import { get4Byte, get4ByteString } from '../utils/calldata.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS, FourByteExplanations, MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
 import { type DistributiveOmit, assertNever, modifyObject } from '../utils/typescript.js'
@@ -294,13 +293,18 @@ export const getGovernanceExecutionTokenBalancesAfter = async (
 	)
 }
 
-export const simulateGovernanceContractExecution = async (pendingTransaction: PendingTransaction, ethereum: EthereumClientService, tokenPriceService: TokenPriceService): Promise<DistributiveOmit<SimulateExecutionReplyData, 'transactionOrMessageIdentifier'>> => {
+// A vote awaiting confirmation, sent on its own or as one call of a wallet_sendCalls batch. Its calldata is only known once the vote has been prepared for simulation.
+export type PendingGovernanceVote = { readonly status: 'Prepared', readonly voteTransaction: WebsiteCreatedEthereumTransaction } | { readonly status: 'StillSimulating' }
+
+// The proposal execution is simulated on top of the current simulation stack, without the vote itself, so a vote inside a batch gets the same preview as the same vote sent on its own.
+export const simulateGovernanceContractExecution = async (pendingVote: PendingGovernanceVote, ethereum: EthereumClientService, tokenPriceService: TokenPriceService): Promise<DistributiveOmit<SimulateExecutionReplyData, 'transactionOrMessageIdentifier'>> => {
 	const returnError = (errorMessage: string) => ({ success: false as const, errorType: 'Other' as const, errorMessage })
 	try {
 		// identifies compound governane call and performs simulation if the vote passes
-		if (pendingTransaction.transactionOrMessageCreationStatus !== 'Simulated') return returnError('Still simulating the voting transaction')
-		const fourByte = get4Byte(pendingTransaction.transactionToSimulate.transaction.input)
-		const fourByteString = get4ByteString(pendingTransaction.transactionToSimulate.transaction.input)
+		if (pendingVote.status !== 'Prepared') return returnError('Still simulating the voting transaction')
+		const { voteTransaction } = pendingVote
+		const fourByte = get4Byte(voteTransaction.transaction.input)
+		const fourByteString = get4ByteString(voteTransaction.transaction.input)
 		if (fourByte === undefined || fourByteString === undefined) return returnError('Could not identify the 4byte signature')
 		const explanation = FourByteExplanations[fourByte]
 		if ((explanation !== 'Cast Vote'
@@ -311,12 +315,12 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 			&& explanation !== 'Cast Vote with Reason And Additional Info by Signature')
 		) return returnError('Could not identify the transaction as a vote')
 
-		if (pendingTransaction.transactionToSimulate.transaction.to === null) return returnError('The transaction creates a contract instead of casting a vote')
-		const params = decodeCallDataLoose(CompoundGovernanceAbi, dataStringWith0xStart(pendingTransaction.transactionToSimulate.transaction.input))
+		if (voteTransaction.transaction.to === null) return returnError('The transaction creates a contract instead of casting a vote')
+		const params = decodeCallDataLoose(CompoundGovernanceAbi, dataStringWith0xStart(voteTransaction.transaction.input))
 		if (params === undefined) return returnError('Could not find the voting function')
 		const { proposalId: rawProposalId } = params.namedArgs
 		const proposalId = funtypes.BigInt.parse(rawProposalId)
-		const addr = await identifyAddress(ethereum, undefined, pendingTransaction.transactionToSimulate.transaction.to)
+		const addr = await identifyAddress(ethereum, undefined, voteTransaction.transaction.to)
 		if (!('abi' in addr) || addr.abi === undefined) return { success: false as const, errorType: 'MissingAbi' as const, errorMessage: 'ABi for the governance contract is missing', errorAddressBookEntry: addr }
 		const contractExecutionResult = await simulateCompoundGovernanceExecution(ethereum, addr, proposalId)
 		if (contractExecutionResult === undefined) return returnError('Failed to simulate governance execution')
@@ -327,10 +331,10 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 		const signedExecutionTransaction = mockSignTransaction({ ...contractExecutionResult.executingTransaction, gas: contractExecutionResult.ethSimulateV1CallResult.gasUsed })
 		const executionTransaction: PreSimulationTransaction = {
 			signedTransaction: signedExecutionTransaction,
-			website: pendingTransaction.transactionToSimulate.website,
+			website: voteTransaction.website,
 			created: new Date(),
-			originalRequestParameters: pendingTransaction.originalRequestParameters,
-			transactionIdentifier: pendingTransaction.transactionIdentifier,
+			originalRequestParameters: voteTransaction.originalRequestParameters,
+			transactionIdentifier: voteTransaction.transactionIdentifier,
 		}
 		const governanceExecutionSimulationInput = getGovernanceExecutionSimulationInput(
 			simulationInput,
