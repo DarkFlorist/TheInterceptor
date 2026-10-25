@@ -1,6 +1,6 @@
 import { publishFailedPopupVisualisation } from './popupVisualisationUpdater.js'
 import { queuePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
-import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
+import type { SimulationServices, SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { getRpcNetworkChange, isSignerOnlyNetwork } from '../utils/rpcNetworkChange.js'
 import type { RpcNetwork } from '../types/rpc.js'
 import { reportUnexpectedError } from '../utils/errors.js'
@@ -13,7 +13,7 @@ import { changeSimulationMode, getSettings, importSettingsAndAddressBook } from 
 import type { Settings } from '../types/interceptor-messages.js'
 import type { ExportedSettings } from '../types/exportedSettingsTypes.js'
 import { getPrimaryRpcForChain, updateInterceptorTransactionStack, updateTransactionState } from './storageVariables.js'
-import { buildSimulationSnapshot, captureSimulationSnapshot, type NetworkState, readSimulationInputSources } from './simulationUpdating.js'
+import { buildSimulationSnapshot, captureSimulationSnapshot, type NetworkState, readSimulationInputSources, type SimulationSnapshot } from './simulationUpdating.js'
 import { assertNever } from '../utils/typescript.js'
 import type { InterceptorStackOperation } from '../types/visualizer-types.js'
 import { activeStackContextsEqual, getActiveStackContext, operationBelongsToActiveStackContext, SIMULATION_STACK_CONTEXT } from '../utils/activeStackContext.js'
@@ -148,12 +148,12 @@ type CommittedNetworkEffects = {
 }
 
 // Runs settings writes that may commit a new network; each effect of the committed network is compared with the settings from before the transition. If the transition fails, every effect that has not succeeded is retried before the lock is released and, if one still fails, kept for the next lock holder; the transition's own error is kept.
-export async function runSettingsTransition(
+export async function runSettingsTransition<T>(
 	simulationServicesOwner: SimulationServicesOwner,
 	websiteTabConnections: WebsiteTabConnections,
-	transition: (settingsBeforeTransition: Settings, effects: CommittedNetworkEffects) => Promise<void>,
-) {
-	await runNetworkTransition(async () => {
+	transition: (settingsBeforeTransition: Settings, effects: CommittedNetworkEffects) => Promise<T>,
+): Promise<T> {
+	return await runNetworkTransition(async () => {
 		const settingsBeforeTransition = await getSettings()
 		const change: CommittedNetworkChange = { simulationServicesOwner, websiteTabConnections, settingsBeforeTransition, completedEffects: new Set() }
 		const effects: CommittedNetworkEffects = {
@@ -165,7 +165,7 @@ export async function runSettingsTransition(
 			},
 		}
 		try {
-			await transition(settingsBeforeTransition, effects)
+			return await transition(settingsBeforeTransition, effects)
 		} catch (error) {
 			unfinishedNetworkChange = change
 			try {
@@ -178,24 +178,31 @@ export async function runSettingsTransition(
 	})
 }
 
-// Notifies popups and approved websites inside the lock, so they see network changes in commit order; the installed services already match the committed network.
-export async function publishCommittedSettingsChange(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, effects: CommittedNetworkEffects, previousSettings: Settings, updatedSettings: Settings) {
+// A popup refresh that a committed change needs: its services and snapshot are read under the lock, and it is simulated after the lock is released, so requests waiting for the lock do not wait for the simulation.
+type PendingPopupRefresh = { readonly services: SimulationServices, readonly snapshot: SimulationSnapshot }
+
+export async function runPendingPopupRefresh(refresh: PendingPopupRefresh | undefined) {
+	if (refresh !== undefined) await queuePopupSimulationRefresh(refresh.services, refresh.snapshot)
+}
+
+// Notifies popups and approved websites inside the lock, so they see network changes in commit order; the installed services already match the committed network. Returns the popup refresh for the caller to run after the lock.
+export async function publishCommittedSettingsChange(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, effects: CommittedNetworkEffects, previousSettings: Settings, updatedSettings: Settings): Promise<PendingPopupRefresh | undefined> {
 	const { endpointChanged } = getRpcNetworkChange(previousSettings.activeRpcNetwork, updatedSettings.activeRpcNetwork)
 	await sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
 	await effects.notifyChainChange(updatedSettings)
 	// External-wallet signing has no simulated stack; Safe signing retains its separate stack visualization.
-	if ((updatedSettings.simulationMode || updatedSettings.activeSigningSafeAddress !== undefined) && (endpointChanged || !activeStackContextsEqual(getActiveStackContext(previousSettings), getActiveStackContext(updatedSettings)))) {
-		await queuePopupSimulationRefresh(simulationServicesOwner.getCurrent())
-	}
+	const needsPopupRefresh = (updatedSettings.simulationMode || updatedSettings.activeSigningSafeAddress !== undefined) && (endpointChanged || !activeStackContextsEqual(getActiveStackContext(previousSettings), getActiveStackContext(updatedSettings)))
+	const popupRefresh = needsPopupRefresh ? { services: simulationServicesOwner.getCurrent(), snapshot: await captureSimulationSnapshot() } : undefined
 	await sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await getSettings())
+	return popupRefresh
 }
 
 // An RPC list update can make another endpoint the active chain's primary. Settings then select that primary together with its services, like a switch to it would; a signer-only selection has no endpoint to replace.
 export async function selectUpdatedPrimaryRpcTransition(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections) {
-	await runSettingsTransition(simulationServicesOwner, websiteTabConnections, async (previousSettings, effects) => {
-		if (isSignerOnlyNetwork(previousSettings.activeRpcNetwork)) return
+	await runPendingPopupRefresh(await runSettingsTransition(simulationServicesOwner, websiteTabConnections, async (previousSettings, effects) => {
+		if (isSignerOnlyNetwork(previousSettings.activeRpcNetwork)) return undefined
 		const primary = await getPrimaryRpcForChain(previousSettings.activeRpcNetwork.chainId)
-		if (primary === undefined || !getRpcNetworkChange(previousSettings.activeRpcNetwork, primary).endpointChanged) return
+		if (primary === undefined || !getRpcNetworkChange(previousSettings.activeRpcNetwork, primary).endpointChanged) return undefined
 		await changeSimulationMode({ simulationMode: previousSettings.simulationMode, rpcNetwork: primary })
 		const updatedSettings = await getSettings()
 		try {
@@ -204,17 +211,17 @@ export async function selectUpdatedPrimaryRpcTransition(simulationServicesOwner:
 			// Publish committed settings even if installing their services fails.
 			await sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: updatedSettings, popupRefreshGeneration: bumpPopupRefreshGeneration() })
 		}
-		await publishCommittedSettingsChange(simulationServicesOwner, websiteTabConnections, effects, previousSettings, updatedSettings)
-	})
+		return await publishCommittedSettingsChange(simulationServicesOwner, websiteTabConnections, effects, previousSettings, updatedSettings)
+	}))
 }
 
 // An import can change the active network like a switch does; the popup handler then reconciles website approvals and publishes the imported settings.
 export async function importSettingsTransition(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, exportedSettings: ExportedSettings) {
-	await runSettingsTransition(simulationServicesOwner, websiteTabConnections, async (settingsBeforeImport, effects) => {
+	await runPendingPopupRefresh(await runSettingsTransition(simulationServicesOwner, websiteTabConnections, async (settingsBeforeImport, effects) => {
 		await importSettingsAndAddressBook(exportedSettings)
 		const importedSettings = await getSettings()
 		await effects.installServices(importedSettings)
 		await effects.clearStackForChangedChain(importedSettings)
-		await publishCommittedSettingsChange(simulationServicesOwner, websiteTabConnections, effects, settingsBeforeImport, importedSettings)
-	})
+		return await publishCommittedSettingsChange(simulationServicesOwner, websiteTabConnections, effects, settingsBeforeImport, importedSettings)
+	}))
 }

@@ -450,6 +450,7 @@ describe('popup clear reset', () => {
 		const { queuePopupSimulationRefresh } = await import('../../app/ts/background/popupSimulationRefreshQueue.js')
 		const { requestCompleteVisualizedSimulation } = await import('../../app/ts/background/popupMessageHandlers.js')
 		const { Future } = await import('../../app/ts/utils/future.js')
+		const { captureSimulationSnapshot } = await import('../../app/ts/background/simulationUpdating.js')
 		const started = new Future<void>()
 		const release = new Future<void>()
 		const originalSend = browser.runtime.sendMessage
@@ -462,7 +463,7 @@ describe('popup clear reset', () => {
 			}
 			return await originalSend(message)
 		}
-		const queued = queuePopupSimulationRefresh({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService, invalidateOldState: true })
+		const queued = queuePopupSimulationRefresh({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService, invalidateOldState: true }, await captureSimulationSnapshot())
 		let timeout: ReturnType<typeof setTimeout> | undefined
 		try {
 			await started

@@ -1211,6 +1211,42 @@ describe('network transition snapshot', () => {
 		}
 	})
 
+	test('a network switch releases the transition lock before its popup simulation runs, so requests do not wait for that simulation', async () => {
+		const { modules, switchToNetworkB } = await createApprovedSimulationDapp({ simulationConsumerOpen: true })
+		const recording = createRecordingServicesOwner(networkA)
+		const simulationStarted = createDeferredSignal()
+		const releaseSimulation = createDeferredSignal()
+		// Services installed by the switch hold their first simulation until the test releases it.
+		const owner: SimulationServicesOwner = {
+			getCurrent: recording.owner.getCurrent,
+			reset: (rpcNetwork) => {
+				const services = recording.owner.reset(rpcNetwork)
+				recording.getInstalled().interceptRequests(async (request) => {
+					if (request.method !== 'eth_simulateV1') return
+					simulationStarted.resolve()
+					await releaseSimulation.promise
+				})
+				return services
+			},
+		}
+		let deadline: ReturnType<typeof setTimeout> | undefined
+		try {
+			const switching = switchToNetworkB(owner)
+			await simulationStarted.promise
+			const snapshot = await Promise.race([
+				modules.readNetworkSnapshot(owner),
+				new Promise<never>((_resolve, reject) => { deadline = setTimeout(() => reject(new Error('The snapshot read waited for the popup simulation')), 1000) }),
+			])
+			assert.equal(snapshot.settings.activeRpcNetwork.chainId, networkB.chainId)
+			releaseSimulation.resolve()
+			await switching
+		} finally {
+			clearTimeout(deadline)
+			releaseSimulation.resolve()
+			recording.retireAll()
+		}
+	})
+
 	test('a request that arrives during a network switch waits for it and uses the new network', async () => {
 		const { sendEthSimulateV1, switchToNetworkB, assertRequestSucceeded } = await createApprovedSimulationDapp()
 		const { owner, installed, retireAll } = createRecordingServicesOwner(networkA)

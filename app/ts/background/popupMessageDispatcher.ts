@@ -24,7 +24,7 @@ const popupMessageHandlers = {
 		return await removeTransactionOrSignedMessage(ethereum, tokenPriceService, request)
 	}),
 	popup_refreshSimulation: popupSnapshotMessageHandler('popup_refreshSimulation', async (context) => {
-		await queuePopupSimulationRefresh({ ...context.services, invalidateOldState: true })
+		await queuePopupSimulationRefresh({ ...context.services, invalidateOldState: true }, context.simulation)
 	}),
 	popup_refreshConfirmTransactionDialogSimulation: popupSnapshotMessageHandler('popup_refreshConfirmTransactionDialogSimulation', async (context) => {
 		const { ethereum, tokenPriceService } = context.services

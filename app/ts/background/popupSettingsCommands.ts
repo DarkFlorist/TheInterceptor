@@ -8,6 +8,7 @@ import { popupMessageHandler, type PopupMessageDispatcherContext, type PopupMess
 import { getSettings } from './settings.js'
 import { changeActiveAddress, enableSimulationMode, modifyMakeMeRich, popupChangeActiveRpc } from './popupMessageHandlers.js'
 import { queuePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
+import { readNetworkSnapshot } from './networkTransition.js'
 
 const settingsCoordinator = createPopupSettingsCoordinator(async (data) => await sendPopupMessageToOpenWindows({ method: 'popup_settingsChangeStatus', data }))
 
@@ -34,7 +35,8 @@ export const popupSettingsCommandHandlers = {
 	}),
 	popup_modifyMakeMeRich: settingsCommand('popup_modifyMakeMeRich', async (context, request) => {
 		if (await modifyMakeMeRich(request)) {
-			const outcome = await queuePopupSimulationRefresh({ ...context.simulationServicesOwner.getCurrent(), invalidateOldState: true })
+			const { services, simulation } = await readNetworkSnapshot(context.simulationServicesOwner)
+			const outcome = await queuePopupSimulationRefresh({ ...services, invalidateOldState: true }, simulation)
 			if (outcome.status === 'observed' && !outcome.available) {
 				return { type: 'PopupSettingsChangeReply', ok: false, message: 'The rich setting was saved, but the latest simulation is unavailable. Please refresh the simulation to retry.' }
 			}

@@ -1,7 +1,7 @@
 // Coalesce interactive requests only; popupVisualisationUpdater owns execution, cancellation and stored state. See docs/popup-simulation-refresh.md.
 import { Future } from '../utils/future.js'
 import type { SimulationServices } from '../simulation/serviceLifecycle.js'
-import { captureSimulationSnapshot, getSimulationProviderForSnapshot, type SimulationSnapshot } from './simulationUpdating.js'
+import { getSimulationProviderForSnapshot, type SimulationSnapshot } from './simulationUpdating.js'
 import { getPopupVisualisationFingerprint } from './popupSimulationFingerprint.js'
 import { stringifyJSONWithBigInts } from '../utils/bigint.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
@@ -61,8 +61,8 @@ const refreshRevision = createPopupSimulationRefresher<RevisionedPopupSimulation
 	return result.simulationUpdatingState !== 'failed' && result.simulationResultState !== 'invalid'
 })
 
-export async function queuePopupSimulationRefresh(services: PopupSimulationRefresh) {
-	const snapshot = await captureSimulationSnapshot()
+// Callers read the snapshot under the transition lock, so its settings and stack describe one network; the simulation itself runs outside the lock.
+export async function queuePopupSimulationRefresh(services: PopupSimulationRefresh, snapshot: SimulationSnapshot) {
 	const provider = getSimulationProviderForSnapshot(services.ethereum, snapshot)
 	const block = provider?.getCachedBlock()
 	// Without a cached head we cannot prove that two requests cover the same block; keep the follow-up refresh.

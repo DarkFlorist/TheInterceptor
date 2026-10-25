@@ -12,7 +12,7 @@ import { updateTransactionState } from './storageVariables.js'
 import type { ActiveAddressSelection } from '../utils/activeAddressSelection.js'
 import { rememberSigningAddressSelection } from './signingAddressSelection.js'
 import { getActiveStackContext, operationBelongsToActiveStackContext } from '../utils/activeStackContext.js'
-import { publishCommittedSettingsChange, runSettingsTransition } from './networkTransition.js'
+import { publishCommittedSettingsChange, readNetworkSnapshot, runPendingPopupRefresh, runSettingsTransition } from './networkTransition.js'
 
 async function clearSimulationStateFromConfig() {
 	const settings = await getSettings()
@@ -45,7 +45,8 @@ async function clearSimulationStateFromConfig() {
 
 export async function resetSimulationStateFromConfig(simulationServicesOwner: SimulationServicesOwner) {
 	await clearSimulationStateFromConfig()
-	await queuePopupSimulationRefresh({ ...simulationServicesOwner.getCurrent(), invalidateOldState: true })
+	const { services, simulation } = await readNetworkSnapshot(simulationServicesOwner)
+	await queuePopupSimulationRefresh({ ...services, invalidateOldState: true }, simulation)
 }
 
 const keepTrackOfPreviousAddressForRichList = async () => {
@@ -76,7 +77,7 @@ async function runActiveSettingsChange(
 	let accessUpdate: WebsiteAccessUpdate | undefined
 	try {
 		// Settings, approvals, resets, notifications and selection preferences form one ordered transition.
-		await runSettingsTransition(simulationServicesOwner, websiteTabConnections, async (previousSettings, effects) => {
+		const popupRefresh = await runSettingsTransition(simulationServicesOwner, websiteTabConnections, async (previousSettings, effects) => {
 			// These writes keep the network, mode and stack context of the settings read before the transition.
 			if (transition.simulationSignerSelection !== undefined) {
 				const { useSignerAddress, signerAddress } = transition.simulationSignerSelection
@@ -117,8 +118,9 @@ async function runActiveSettingsChange(
 			} finally {
 				accessUpdate = await reconcileWebsiteApprovalAccesses(websiteTabConnections, updatedSettings)
 			}
-			await publishCommittedSettingsChange(simulationServicesOwner, websiteTabConnections, effects, previousSettings, updatedSettings)
+			return await publishCommittedSettingsChange(simulationServicesOwner, websiteTabConnections, effects, previousSettings, updatedSettings)
 		})
+		await runPendingPopupRefresh(popupRefresh)
 	} finally {
 		// Complete committed access updates after releasing the semaphore, even if a later reset or notification fails.
 		if (accessUpdate !== undefined) {
