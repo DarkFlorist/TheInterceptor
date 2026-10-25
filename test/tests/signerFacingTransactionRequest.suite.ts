@@ -437,6 +437,32 @@ for (const feeFieldCase of feeFieldCases) {
 	})
 }
 
+for (const nullPlaceholderCase of [{ name: 'a legacy', type: '0x0' }, { name: 'an EIP-2930', type: '0x1' }]) {
+	test(`${ nullPlaceholderCase.name } request with null dynamic fee placeholders is prepared and forwarded with its gas price`, async () => {
+		const { renderedText, forwardedTransaction } = await prepareAcceptAndRenderFeeFields({ type: nullPlaceholderCase.type, maxFeePerGas: null, maxPriorityFeePerGas: null })
+		assert.equal(forwardedTransaction.type, nullPlaceholderCase.type)
+		assert.equal('maxFeePerGas' in forwardedTransaction, false)
+		assert.equal('maxPriorityFeePerGas' in forwardedTransaction, false)
+		assert.equal(renderedText.includes(`Gas Price${ toNanoethPerGasText(forwardedTransaction.gasPrice) }`), true, renderedText)
+	})
+}
+
+test('a legacy request with a real dynamic fee value is still rejected', async () => {
+	await assert.rejects(modules.formEthSendTransaction(
+		simulator.ethereum,
+		undefined,
+		activeAddress,
+		{ websiteOrigin: 'https://example.com', icon: undefined, title: undefined },
+		SendTransactionParams.parse({
+			method: 'eth_sendTransaction',
+			params: [{ type: '0x0', from: addressString(activeAddress), to: addressString(recipientAddress), gas: '0x5208', maxFeePerGas: '0x2', maxPriorityFeePerGas: null }],
+		}),
+		new Date('2024-01-01T00:00:00.000Z'),
+		1n,
+		false,
+	), /Legacy transactions cannot include dynamic fee fields/u)
+})
+
 test('refreshing a signer-mode confirmation regenerates the nonce the website did not specify', async () => {
 	const staleTransaction = { ...unsignedTransaction, nonce: 7n }
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [{

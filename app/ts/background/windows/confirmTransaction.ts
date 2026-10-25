@@ -702,7 +702,9 @@ function getSupportedSendTransactionType(transactionDetails: SendTransactionPara
 				: '1559')
 	if (requestedType === '4844') throw new Error('EIP-4844 eth_sendTransaction requests are not supported')
 
-	const hasDynamicFeeFields = transactionDetails.maxFeePerGas !== undefined || transactionDetails.maxPriorityFeePerGas !== undefined
+	// The request schema accepts null fee placeholders (some websites send them), which leave the fee unspecified rather than requesting a dynamic fee.
+	const isFeeSpecified = (fee: bigint | null | undefined) => fee !== undefined && fee !== null
+	const hasDynamicFeeFields = isFeeSpecified(transactionDetails.maxFeePerGas) || isFeeSpecified(transactionDetails.maxPriorityFeePerGas)
 	if ((requestedType === 'legacy' || requestedType === '2930') && hasDynamicFeeFields) {
 		const transactionTypeName = requestedType === 'legacy' ? 'Legacy' : 'EIP-2930'
 		throw new Error(`${ transactionTypeName } transactions cannot include dynamic fee fields`)
