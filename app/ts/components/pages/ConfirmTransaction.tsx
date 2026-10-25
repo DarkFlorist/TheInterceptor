@@ -36,7 +36,7 @@ import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/bro
 import { POPUP_PERFORMANCE_MARKS, markPerformance, markPerformanceOnce } from '../../utils/popupPerformance.js'
 import { getAddressBookEntryOrAFiller } from '../ui-utils.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
-import { bigintToDecimalString, dataStringWith0xStart } from '../../utils/bigint.js'
+import { bigintToDecimalString, dataStringWith0xStart, nanoString, stringifyJSONWithBigInts } from '../../utils/bigint.js'
 import { browserStorageLocalGet2 } from '../../utils/storageUtils.js'
 import { reportUnexpectedError } from '../../utils/errors.js'
 import { type AsyncStates, useAsyncState } from '../../utils/preact-utilities.js'
@@ -247,7 +247,20 @@ type TransactionCardParams = {
 	numberOfUnderTransactions: number,
 }
 
-function FailedTransactionPreviewDetails({
+const SELECTED_BY_WALLET = 'Selected by your wallet'
+
+function getRequestedFeesText(request: Extract<OriginalSendRequestParameters, { method: 'eth_sendTransaction' }>['params'][0]) {
+	const fees = [
+		...(request.gasPrice === undefined ? [] : [`gas price ${ nanoString(request.gasPrice) } nanoeth/gas`]),
+		// Websites may send null for dynamic fee fields, which sets no fee value.
+		...(request.maxFeePerGas === undefined || request.maxFeePerGas === null ? [] : [`max fee ${ nanoString(request.maxFeePerGas) } nanoeth/gas`]),
+		...(request.maxPriorityFeePerGas === undefined || request.maxPriorityFeePerGas === null ? [] : [`max priority fee ${ nanoString(request.maxPriorityFeePerGas) } nanoeth/gas`]),
+	]
+	return fees.length === 0 ? SELECTED_BY_WALLET : fees.join(', ')
+}
+
+// Shown when the confirmation simulation fails. An override forwards exactly this website request, so every forwarded field is listed and omitted ones are marked as wallet-selected.
+export function FailedTransactionPreviewDetails({
 	website,
 	transactionIdentifier,
 	originalRequestParameters,
@@ -307,10 +320,21 @@ function FailedTransactionPreviewDetails({
 					<dd>{ request === undefined ? 'Unknown' : `${ bigintToDecimalString(request.value ?? 0n, 18n) } ether` }</dd>
 					<dt>Gas limit </dt>
 					<dd>
+						{ request !== undefined && gasLimit === undefined ? <span>{ SELECTED_BY_WALLET } </span> : <></> }
 						<GasLimitEditor transactionIdentifier = { transactionIdentifier } initialGasLimit = { gasLimit } isRawTransaction = { originalRequestParameters.method === 'eth_sendRawTransaction' } />
 					</dd>
+					{ request === undefined ? <></> : <>
+						<dt>Nonce</dt>
+						<dd>{ request.nonce === undefined ? SELECTED_BY_WALLET : request.nonce.toString(10) }</dd>
+						<dt>Fees</dt>
+						<dd>{ getRequestedFeesText(request) }</dd>
+					</> }
 				</dl>
 			</div>
+			{ request === undefined ? <></> : <div class = 'textbox' style = 'margin-top: 10px;'>
+				<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Request sent to your wallet</p>
+				<p class = 'paragraph' style = 'color: var(--subtitle-text-color); white-space: pre-wrap; word-break: break-word;'>{ stringifyJSONWithBigInts(originalRequestParameters, 2) }</p>
+			</div> }
 			<div style = 'margin-top: 10px;'>
 				<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Transaction Input</p>
 				{ rawRequest === undefined

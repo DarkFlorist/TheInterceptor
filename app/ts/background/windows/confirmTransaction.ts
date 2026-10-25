@@ -620,6 +620,8 @@ function getReviewedSignerFacingRequest(pending: PendingTransactionOrSignableMes
 	if (pending.originalRequestParameters.method !== 'eth_sendTransaction') return pending.originalRequestParameters
 	if (getSafePendingFlow(pending) !== undefined) return pending.originalRequestParameters
 	if (pending.transactionOrMessageCreationStatus !== 'Simulated') return pending.originalRequestParameters
+	// When the confirmation simulation fails, the popup shows only the website's own request, so an override forwards exactly that request and leaves omitted gas, fees and nonce to the wallet instead of sending prepared values the user never saw.
+	if (pending.popupVisualisation.statusCode !== 'success') return pending.originalRequestParameters
 	const reviewedTransaction = getReviewedTransactionForSigning(pending.transactionToSimulate.transaction, pending.popupVisualisation, pending.transactionIdentifier)
 	// The simulator repairs nonces against the latest block only for its preview, so its nonce is never forwarded: an omitted nonce stays wallet-selected because the wallet can see its own pending transactions, and a nonce the website supplied is forwarded unchanged so its ordering and replay protection hold. The popup shows the nonce that will be signed and notes a different simulated one.
 	const websiteNonce = pending.originalRequestParameters.params[0].nonce
@@ -672,9 +674,7 @@ export function assertSimulatedTransactionMatchesPrepared(prepared: EthereumUnsi
 }
 
 // The confirmation simulation re-derives interceptor-filled fees for the current base fee, and the popup displays those fees, so the wallet receives them instead of the prepared ones. The simulation may also repair the nonce for its preview, so the nonce is the only other field allowed to differ and is never taken from it. The prepared unsigned authorization list is kept because the simulated one carries placeholder signatures.
-function getReviewedTransactionForSigning(prepared: EthereumUnsignedTransaction, popupVisualisation: ConfirmTransactionTransactionSingleVisualization, transactionIdentifier: bigint): EthereumUnsignedTransaction {
-	// A failed simulation displays the prepared transaction itself.
-	if (popupVisualisation.statusCode !== 'success') return prepared
+function getReviewedTransactionForSigning(prepared: EthereumUnsignedTransaction, popupVisualisation: Extract<ConfirmTransactionTransactionSingleVisualization, { statusCode: 'success' }>, transactionIdentifier: bigint): EthereumUnsignedTransaction {
 	const simulated = popupVisualisation.data.simulationState.simulationStateInput
 		.flatMap((block) => block.transactions)
 		.find((transaction) => transaction.transactionIdentifier === transactionIdentifier)?.signedTransaction
