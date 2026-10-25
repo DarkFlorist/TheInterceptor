@@ -828,6 +828,36 @@ test('approving a simulated message signature answers the website before the win
 	await assertConfirmationViewFailureWasReported()
 })
 
+test('a request the website sends while the previous window is still being cleaned up opens its own window and the previous window is closed', async () => {
+	const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
+	const previousWindow = pendingTransaction.popupOrTabId
+	// The mock browser opens every new window with id 99.
+	const nextRequestWindow = { type: 'popup', id: 99 }
+	browserMock.setLiveWindowIds([previousWindow.id, nextRequestWindow.id])
+	const removedWindowIds: number[] = []
+	browserMock.setWindowRemoveHandler(async (windowId) => { removedWindowIds.push(windowId) })
+	const nextRequestIdentifier = { ...uniqueRequestIdentifier, requestId: 2 }
+	const nextSignRequest = { method: 'personal_sign' as const, params: ['0x68656c6c6f', activeAddress] as const }
+	const nextRequest = { method: 'personal_sign', params: ['0x68656c6c6f', addressString(activeAddress)], interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier: nextRequestIdentifier }
+	let nextRequestOutcome: unknown
+	// The cleanup first refreshes the simulation view of the approved transaction. The website, which already has its answer, sends its next request while that refresh waits on the popup probe.
+	browserMock.setRuntimeSendMessageHandler(async (message) => {
+		if (message.method !== 'popup_isSimulationVisualizerOpen' || nextRequestOutcome !== undefined || getRepliesToWebsite(postedMessages).length !== 1) return
+		nextRequestOutcome = 'pending'
+		nextRequestOutcome = await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, nextRequest, { kind: 'message', parameters: nextSignRequest }, true, activeAddress, pendingTransaction.website, websiteTabConnections)
+	})
+
+	const delivered = await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+		method: 'popup_confirmDialog',
+		data: { action: 'accept', uniqueRequestIdentifier },
+	})
+
+	assert.equal(delivered, true)
+	assert.deepEqual(nextRequestOutcome, { type: 'doNotReply' })
+	assert.deepEqual((await modules.getPendingTransactionsAndMessages()).map((pending) => ({ uniqueRequestIdentifier: pending.uniqueRequestIdentifier, popupOrTabId: pending.popupOrTabId })), [{ uniqueRequestIdentifier: nextRequestIdentifier, popupOrTabId: nextRequestWindow }])
+	assert.deepEqual(removedWindowIds, [previousWindow.id])
+})
+
 // Fails opening the simulation stack window, which the cleanup does after a Gnosis Safe proposal is stored, and records how many replies the website had received by then.
 function failOpeningTheSimulationStackWindow(postedMessages: readonly unknown[]) {
 	const repliesReceivedBeforeCleanup: number[] = []
