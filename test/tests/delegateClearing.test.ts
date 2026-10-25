@@ -12,6 +12,7 @@ import { installBrowserMock } from './backgroundEthAccountsTestHarness.js'
 import { updateInterceptorTransactionStack } from '../../app/ts/background/storageVariables.js'
 import { appendTransactionsToInput, createSimulationState, ethSimulateV1FromInput, getSimulatedCode, getSimulatedCodeFromInput, mockSignTransaction, simulatedCallFromInput, simulateEstimateGasFromInput } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
+import { getSimulatedStackV2 } from '../../app/ts/simulation/SimulationStackExtraction.js'
 import { getSimulationInputHash } from '../../app/ts/utils/simulationFingerprint.js'
 import { isCodeClearedBySimulationOverrides } from '../../app/ts/utils/delegateClearingState.js'
 import { getEffectiveStateOverrides } from '../../app/ts/utils/simulationStateOverrides.js'
@@ -151,6 +152,8 @@ describe('delegate clearing in simulation', () => {
 		assert.equal(idleState.success, true)
 		if (idleState.success) assert.equal(idleState.simulatedBlocks.length, 0)
 		assert.equal(ethSimulateRequests.length, 0)
+		// interceptor_getSimulationStack 2.0.0 must still report the cleared code although the idle stack has no simulated blocks.
+		assert.deepEqual(getSimulatedStackV2({ kind: 'simulated', value: idleState }), { stateOverrides: { [addressString(activeAddress)]: { code: new Uint8Array() } }, transactions: [] })
 		const idleCode = await getSimulatedCodeFromInput(ethereum, undefined, createSimulatedInput(input, simulationOverrides), activeAddress)
 		assert.equal(idleCode.statusCode, 'success')
 		if (idleCode.statusCode === 'success') assert.equal(idleCode.getCodeReturn.length, 0)
