@@ -70,6 +70,7 @@ function EmbeddedPageFrame({ children, scrollable = false }: { children: Compone
 }
 
 function ManagementPanelContent({ page, selectPage }: { page: ManagementPage, selectPage: (page: ManagementPage) => void }) {
+	// Reuse the page content, while the standalone compatibility entries keep their own shells.
 	switch (page) {
 		case 'home': return <ManagementHome selectPage = { selectPage } />
 		case 'websites': return <WebsiteAccessView />

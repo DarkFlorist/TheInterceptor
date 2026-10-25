@@ -11,6 +11,7 @@ export function getManagementPageParameters(hash: string, page: ManagementPage) 
 }
 
 export function getManagementPageFromHash(hash: string): ManagementPage | undefined {
+	// This parser accepts only management shell routes; legacy standalone hashes are redirected at their entry points.
 	if (hash === '' || hash === '#') return 'home'
 	return managementPages.find((page) => hash === getManagementPageHash(page) || hash.startsWith(`${ getManagementPageHash(page) }?`))
 }

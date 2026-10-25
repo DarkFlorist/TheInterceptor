@@ -36,6 +36,7 @@ export const DynamicScroller = <T extends {}>({ items, renderItem, }: DynamicScr
 	const itemHeight = useSignal(0)
 	const scrollViewRef = useRef<HTMLDivElement>(null)
 	const itemRef = useRef<HTMLDivElement>(null)
+	const pendingScrollAdjustment = useRef<{ scrollTop: number, offset: number } | undefined>(undefined)
 
 	const recalculateStartIndex = (event: Event) => {
 		if (!(event.currentTarget instanceof HTMLDivElement)) return
@@ -56,12 +57,28 @@ export const DynamicScroller = <T extends {}>({ items, renderItem, }: DynamicScr
 		if (scrollViewRef.current !== null) scrollViewRef.current.scrollTop = getDynamicScrollOffset(synchronizedStartIndex, itemHeight.value, items.value.length, maxItems.value)
 	})
 
+	useLayoutEffect(() => {
+		const pending = pendingScrollAdjustment.current
+		if (pending === undefined || scrollViewRef.current === null) return
+		pendingScrollAdjustment.current = undefined
+		// The new spacer height is in the DOM now, so the browser can accept the restored scroll position.
+		scrollViewRef.current.scrollTop = pending.scrollTop + scrollOffset.peek() - pending.offset
+	})
+
 	// Remeasure the first visible row after scrolling or revealing a hidden tab.
 	useLayoutEffect(() => {
 		if (itemRef.current === null) return
 		const observer = new ResizeObserver(([entry]) => {
 			if (entry === undefined || !isPositiveFinite(entry.contentRect.height)) return
-			itemHeight.value = entry.contentRect.height
+			// A smaller row may change the row under a scrolled viewport; at the top it is safe to remeasure.
+			const nextHeight = clampedStartIndex.peek() === 0 && scrollViewRef.current?.scrollTop === 0
+				? entry.contentRect.height
+				: Math.max(itemHeight.peek(), entry.contentRect.height)
+			if (nextHeight === itemHeight.peek()) return
+			if (scrollViewRef.current !== null && pendingScrollAdjustment.current === undefined) {
+				pendingScrollAdjustment.current = { scrollTop: scrollViewRef.current.scrollTop, offset: scrollOffset.peek() }
+			}
+			itemHeight.value = nextHeight
 		})
 		observer.observe(itemRef.current)
 		return () => { observer.disconnect() }

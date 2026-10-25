@@ -24,10 +24,15 @@ function DiagnosticCard({ diagnostic }: { diagnostic: InterceptorErrorDiagnostic
 		{ diagnostic.cause === undefined && diagnostic.rawError === undefined && diagnostic.details === undefined && diagnostic.debugId === undefined ? <></> :
 			<details class = 'diagnostics-details'>
 				<summary>Technical details</summary>
-				<p>{ DIAGNOSTIC_UNTRUSTED_TEXT_WARNING }</p>
-				{ diagnostic.cause === undefined ? <></> : <div><strong>Cause</strong><pre>{ diagnostic.cause }</pre></div> }
-				{ diagnostic.rawError === undefined ? <></> : <div><strong>Raw error</strong><pre>{ diagnostic.rawError }</pre></div> }
-				{ diagnostic.details === undefined ? <></> : <div><strong>Context</strong><pre>{ diagnostic.details }</pre></div> }
+				{ diagnostic.cause === undefined && diagnostic.rawError === undefined && diagnostic.details === undefined ? <></> :
+					<section class = 'diagnostics-captured-text' aria-label = 'Untrusted captured text'>
+						<strong>Untrusted captured text</strong>
+						<p>{ DIAGNOSTIC_UNTRUSTED_TEXT_WARNING }</p>
+						{ diagnostic.cause === undefined ? <></> : <div><strong>Cause</strong><pre>{ diagnostic.cause }</pre></div> }
+						{ diagnostic.rawError === undefined ? <></> : <div><strong>Raw error</strong><pre>{ diagnostic.rawError }</pre></div> }
+						{ diagnostic.details === undefined ? <></> : <div><strong>Context</strong><pre>{ diagnostic.details }</pre></div> }
+					</section>
+				}
 				{ diagnostic.debugId === undefined ? <></> : <p><strong>Debug ID:</strong> <code>{ diagnostic.debugId }</code></p> }
 			</details>
 		}
@@ -58,6 +63,7 @@ export function DiagnosticsView() {
 		await clipboardCopy(formatDiagnosticsForClipboard(diagnostics.peek()))
 	}
 
+	// The management shell mounts only its active panel, so revisiting Diagnostics fetches a fresh snapshot.
 	useEffect(() => { void waitForLoad(loadDiagnostics) }, [])
 
 	const loadError = loadState.value.state === 'rejected' ? loadState.value.error.message : undefined

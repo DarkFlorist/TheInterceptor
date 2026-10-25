@@ -180,6 +180,7 @@ header:has(form[role='search']) h1 {
 	background: var(--bg-color);
 	overflow-y: scroll;
 	overscroll-behavior: contain;
+	/* Covers the sticky management header (z-index: 1) while details are open. */
 	z-index: 30;
 }
 
@@ -1104,6 +1105,13 @@ fieldset[disabled] .button.is-primary.is-danger {
 
 .diagnostics-details summary {
 	cursor: pointer;
+}
+
+.diagnostics-captured-text {
+	margin-top: 0.75rem;
+	padding: 0.75rem;
+	border: 1px solid var(--warning-color);
+	background: var(--surface-dark-color);
 }
 
 .diagnostics-details div,

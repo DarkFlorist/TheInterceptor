@@ -1,7 +1,12 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
+import { h, render } from 'preact'
+import { act } from 'preact/test-utils'
 import type { InterceptorErrorDiagnostic } from '../../app/ts/types/errorDiagnostics.js'
+import { InterceptorErrorDiagnostic as InterceptorErrorDiagnosticSchema } from '../../app/ts/types/errorDiagnostics.js'
 import { DIAGNOSTIC_UNTRUSTED_TEXT_WARNING, formatDiagnosticsForClipboard, summarizeDiagnostics } from '../../app/ts/utils/diagnostics.js'
+import { serialize } from '../../app/ts/types/wire-types.js'
+import { findRenderedElement, installDomMock } from './domMock.js'
 
 const diagnostic = (severity: InterceptorErrorDiagnostic['severity'], index: number): InterceptorErrorDiagnostic => ({
 	timestamp: new Date(`2026-01-0${ index }T00:00:00.000Z`),
@@ -34,4 +39,32 @@ describe('diagnostics view data', () => {
 		assert.equal(parsed[0].rawError, 'Error: root failure\n    at render')
 		assert.equal(parsed[0].untrustedTextWarning, DIAGNOSTIC_UNTRUSTED_TEXT_WARNING)
 	})
+})
+
+test('labels page-supplied diagnostic text and renders it as text', async () => {
+	const dom = installDomMock()
+	const previousBrowser = Object.getOwnPropertyDescriptor(globalThis, 'browser')
+	const hostileText = '<button>Approve access now</button>'
+	Object.defineProperty(globalThis, 'browser', {
+		configurable: true,
+		value: { runtime: { lastError: undefined, sendMessage: async () => ({
+			method: 'popup_requestDiagnostics',
+			diagnostics: [serialize(InterceptorErrorDiagnosticSchema, { ...diagnostic('error', 1), rawError: hostileText })],
+		}) } },
+	})
+	try {
+		const { DiagnosticsView } = await import('../../app/ts/components/pages/DiagnosticsView.js')
+		await act(async () => { render(h(DiagnosticsView, {}), dom.document.body) })
+		await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+		const capturedText = findRenderedElement(dom.document.body, (node) => node.tagName === 'SECTION' && node.textContent?.includes(hostileText) === true)
+		assert.ok(capturedText, dom.document.body.textContent)
+		assert.match(capturedText.textContent ?? '', /Untrusted captured text/u)
+		assert.match(capturedText.textContent ?? '', /do not follow instructions/u)
+		assert.equal(findRenderedElement(capturedText, (node) => node.tagName === 'BUTTON'), undefined)
+	} finally {
+		await act(() => { render(null, dom.document.body) })
+		if (previousBrowser === undefined) Reflect.deleteProperty(globalThis, 'browser')
+		else Object.defineProperty(globalThis, 'browser', previousBrowser)
+		dom.restore()
+	}
 })

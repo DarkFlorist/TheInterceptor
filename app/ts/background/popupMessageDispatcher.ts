@@ -57,6 +57,7 @@ const popupMessageHandlers = {
 	}),
 	popup_openWebPage: popupMessageHandler('popup_openWebPage', async (_context, request) => await openWebPage(request)),
 	popup_clearUnexpectedError: popupMessageHandler('popup_clearUnexpectedError', async () => await setLatestUnexpectedError(undefined)),
+	// New navigation uses the management shell; standalone URLs remain for saved links and external workflows.
 	popup_openSimulationStack: popupMessageHandler('popup_openSimulationStack', async (_context, request) => {
 		return await openManagementSimulationStack('data' in request ? request.data : undefined)
 	}),

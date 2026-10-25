@@ -56,6 +56,7 @@ function snapshotError(error: Error, seen: WeakSet<object>, budget: ErrorSnapsho
 }
 
 export function stringifyDiagnosticDetails(details: unknown): string | undefined {
+	// Inspect only known fields and bound both traversal and output before untrusted errors reach the UI.
 	if (details === undefined) return undefined
 	if (typeof details === 'string') return limitDiagnosticText(details)
 	if (details === null || typeof details === 'boolean' || typeof details === 'number' || typeof details === 'bigint') return limitDiagnosticText(String(details))

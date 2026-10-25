@@ -40,6 +40,7 @@ export async function openManagementSimulationStack(identifier?: TransactionOrMe
 }
 
 export async function openManagementSimulationStackReview() {
+	// Tab mode reuses the tracked management tab; popup mode uses the shared popup opener.
 	if (await getUseTabsInsteadOfPopup()) {
 		await openManagementSimulationStack()
 		return
