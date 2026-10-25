@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
-import { activeAddress, addressString, createAcceptConfirmation, createSafeAddressBookEntry, createSafeTx, createWebsitePort, created, EIP712Message, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, pendingTransaction, popupVisualisation, recipientAddress, safeTestOwnerAddress, safeTxToTypedDataJson, signedTransaction, simulator, uniqueRequestIdentifier, unsignedTransaction } from './confirmTransactionTestHarness.js'
+import { activeAddress, addressString, browserMock, createAcceptConfirmation, createSafeAddressBookEntry, createSafeTx, createWebsitePort, created, EIP712Message, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, pendingTransaction, popupVisualisation, recipientAddress, safeTestOwnerAddress, safeTxToTypedDataJson, signedTransaction, simulator, uniqueRequestIdentifier, unsignedTransaction } from './confirmTransactionTestHarness.js'
 
 type TransactionOutcome = { transactionStatus: 'Transaction Succeeded' } | { transactionStatus: 'Transaction Failed', error: { code: number, message: string, decodedErrorMessage: string } }
 
@@ -117,6 +117,48 @@ test('refuses an accept that names a stale result revision and keeps the request
 
 	assert.equal(await resolveAccept(websiteTabConnections, await createAcceptConfirmation()), true)
 	assert.equal(wasForwardedToSigner(), true)
+})
+
+test('refuses an accept when a refresh holding the pending-request lock commits a quarantined result before the accept claims the request', async () => {
+	const { websiteTabConnections, wasForwardedToSigner } = createSignerConnection()
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [makeReviewedTransaction(succeeded, false)] })
+	let storageReads = 0
+	browserMock.setStorageGetHandler(async (_keys, readStoredItems) => {
+		storageReads += 1
+		return readStoredItems()
+	})
+	// Lets the accept run until it is blocked on the pending-request lock, which is when it stops reading storage.
+	const waitForStorageReadsToSettle = async () => {
+		let observedReads = -1
+		while (observedReads !== storageReads) {
+			observedReads = storageReads
+			for (let turn = 0; turn < 5; turn++) await new Promise((resolve) => setTimeout(resolve, 0))
+		}
+	}
+	const acceptForReviewedResult = await createAcceptConfirmation()
+	const refreshEntered = Promise.withResolvers<void>()
+	const refreshReleased = Promise.withResolvers<void>()
+	const refresh = modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async () => {
+		refreshEntered.resolve()
+		await refreshReleased.promise
+		return makeReviewedTransaction(succeeded, true, new Date('2024-01-01T00:00:12.000Z'))
+	})
+	await refreshEntered.promise
+
+	const acceptance = resolveAccept(websiteTabConnections, acceptForReviewedResult)
+	await waitForStorageReadsToSettle()
+	refreshReleased.resolve()
+	await refresh
+
+	assert.equal(await acceptance, false)
+	assert.equal(wasForwardedToSigner(), false)
+	const refreshed = await getStoredRequest()
+	assert.equal(refreshed.approvalStatus.status, 'WaitingForUser', 'the refreshed result is not claimed by the stale accept')
+	assert.equal(refreshed.resultRevision, acceptForReviewedResult.data.resultRevision + 1)
+
+	assert.equal(await resolveAccept(websiteTabConnections, await createAcceptConfirmation(uniqueRequestIdentifier, true)), true)
+	assert.equal(wasForwardedToSigner(), true)
+	assert.equal((await getStoredRequest()).approvalStatus.status, 'WaitingForSigner')
 })
 
 test('requires the send-anyway override for failing and quarantined transactions', async () => {
