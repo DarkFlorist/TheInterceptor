@@ -4,10 +4,11 @@ import { requestAccessFromUser } from './windows/interceptorAccess.js'
 import { retrieveWebsiteDetails, updateExtensionIcon } from './iconHandler.js'
 import type { TabConnection, WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { InpageScriptCallBack, Settings } from '../types/interceptor-messages.js'
-import { getReadableActiveRpcNetwork, getRequiredSettings, getSettingsSnapshot, getWebsiteAccess, updateWebsiteAccess } from './settings.js'
+import { getRequiredSettings, getSettingsSnapshot, getWebsiteAccess, updateWebsiteAccess } from './settings.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
-import { type WebsiteSocket, getHostWithPort } from '../utils/requests.js'
-import { getAllTabStates, getRpcConfigurationState } from './storageVariables.js'
+import { type WebsiteSocket, getHostWithPort, silenceChromeUnCaughtPromise } from '../utils/requests.js'
+import { getAllTabStates } from './storageVariables.js'
+import { browserStorageLocalSafeParseGet } from '../utils/storageUtils.js'
 import type { Website, WebsiteAccessArray, WebsiteAddressAccess } from '../types/websiteAccessTypes.js'
 import { getUniqueItemsByProperties, replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
 import { modifyObject } from '../utils/typescript.js'
@@ -17,7 +18,7 @@ import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { mergeStoredWebsiteMetadata } from '../utils/websiteIcons.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
-import { getActiveAddressForCurrentSignerState } from './signerStateOwnership.js'
+import { getActiveAddressForCurrentSignerState, registerWebsiteConnectionAndProvisionallyClaimSignerState } from './signerStateOwnership.js'
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
 import { notifyWebsiteLifecycle } from './websiteLifecycle.js'
 import { hasAccess, hasAddressAccess, type ApprovalState } from './websiteAccessPolicy.js'
@@ -426,10 +427,26 @@ export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: W
 	})
 }
 
-// Connections register unapproved, so a new connection can only change tab blocking while it is derived from persisted consent. That depends on whether the active RPC network is readable right now (it can become unreadable after the last reconciliation), so check the current configuration instead of remembering an earlier mode.
+// Lock-free and conservative, so it adds no contention to connection setup: only a stored active RPC network that parses counts as readable. A missing, corrupt or unreadable value makes the caller reconcile.
+async function storedActiveRpcNetworkIsReadable() {
+	try {
+		return (await browserStorageLocalSafeParseGet('activeRpcNetwork'))?.activeRpcNetwork !== undefined
+	} catch {
+		return false
+	}
+}
+
+// Connections register unapproved, so a new connection can only change tab blocking while it is derived from persisted consent. That depends on whether the active RPC network is readable right now (it can become unreadable after the last reconciliation), so check the stored value instead of remembering an earlier mode.
 export async function updateDeclarativeNetRequestBlocksForRegisteredConnection(websiteTabConnections: WebsiteTabConnections) {
-	if (getReadableActiveRpcNetwork(await getRpcConfigurationState()) !== undefined) return
+	if (await storedActiveRpcNetworkIsReadable()) return
 	await updateDeclarativeNetRequestBlocks(websiteTabConnections)
+}
+
+// Every registered connection, including a child frame in an existing tab, can make its tab eligible for request blocking (persisted consent while the active RPC network is unreadable), so blocking is reconciled for each registration. The reconciliation is returned instead of awaited so connection setup latency is unchanged; the caller must handle its failure.
+export async function registerWebsiteConnectionAndReconcileRequestBlocks(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, connection: TabConnection['connections'][string], isTopFrame: boolean) {
+	const registration = await registerWebsiteConnectionAndProvisionallyClaimSignerState(websiteTabConnections, socket, connection, isTopFrame)
+	// Guarded so a failure before the caller attaches its handler is not reported as an unhandled rejection; the caller still observes it.
+	return { ...registration, requestBlocksReconciliation: silenceChromeUnCaughtPromise(updateDeclarativeNetRequestBlocksForRegisteredConnection(websiteTabConnections)) }
 }
 
 export const areWeBlocking = async (websiteTabConnections: WebsiteTabConnections, tabId: number, websiteOrigin: string) => {

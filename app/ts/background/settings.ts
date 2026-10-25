@@ -128,9 +128,6 @@ export function requireSettings(snapshot: { readonly settings: Settings | undefi
 	return snapshot.settings
 }
 
-// Settings exist exactly when the configuration still has a readable active RPC network.
-export const getReadableActiveRpcNetwork = (rpcConfiguration: RpcConfigurationState) => 'activeRpcNetwork' in rpcConfiguration ? rpcConfiguration.activeRpcNetwork : undefined
-
 export type SettingsSnapshot = {
 	readonly settings: Settings | undefined
 	readonly rpcConfiguration: RpcConfigurationState
@@ -141,7 +138,7 @@ export type SettingsSnapshot = {
 // Admission boundary: settings and RPC configuration come from one storage read and must travel together through the admitted operation.
 export async function getSettingsSnapshot(): Promise<SettingsSnapshot> {
 	const { storedItems, rpcConfiguration } = await getRpcConfigurationStateWithStorageSnapshot(SETTINGS_STORAGE_KEYS)
-	const activeRpcNetwork = getReadableActiveRpcNetwork(rpcConfiguration)
+	const activeRpcNetwork = 'activeRpcNetwork' in rpcConfiguration ? rpcConfiguration.activeRpcNetwork : undefined
 	const settings = activeRpcNetwork === undefined ? undefined : await getSettingsFromStorageItems(storedItems, activeRpcNetwork)
 	const websiteAccess = settings === undefined ? await getWebsiteAccessFromStorageItems(storedItems) : settings.websiteAccess
 	return { settings, rpcConfiguration, websiteAccess }

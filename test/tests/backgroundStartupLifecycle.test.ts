@@ -72,10 +72,12 @@ describe('background startup lifecycle', () => {
 
 		const listenerRegistration = connectionHandler.indexOf('tryRegisterContentScriptPortListeners(')
 		const startupGate = connectionHandler.indexOf('connectionInitializationPromise = initializeContentScriptConnectionAfterBackgroundStartup(')
-		const connectionRegistration = connectionHandler.indexOf('registerWebsiteConnectionAndProvisionallyClaimSignerState(')
+		const connectionRegistration = connectionHandler.indexOf('registerWebsiteConnectionAndReconcileRequestBlocks(')
 		const firstTabStateWrite = connectionHandler.indexOf('await updateTabState(')
 
 		assert.equal(listenerRegistration >= 0 && listenerRegistration < startupGate, true)
 		assert.equal(startupGate < connectionRegistration && connectionRegistration < firstTabStateWrite, true)
+		// Every registration, including child frames in an existing tab, hands its request-block reconciliation to the error boundary without a frame or new-tab condition.
+		assert.match(connectionHandler, /\n\t\tvoid catchAllErrorsAndCall\(async \(\) => await registration\.requestBlocksReconciliation\)\n/u)
 	})
 })
