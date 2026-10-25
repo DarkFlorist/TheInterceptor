@@ -4,7 +4,7 @@ import type { PopupReplyOption } from '../types/interceptor-reply-messages.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { createMethodHandlerFor } from '../utils/methodHandlers.js'
 import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
-import { readNetworkSnapshot } from './activeSettings.js'
+import { readNetworkSnapshot } from './networkTransition.js'
 import type { SimulationSnapshot } from './simulationUpdating.js'
 
 export type PopupMessageDispatcherContext = {

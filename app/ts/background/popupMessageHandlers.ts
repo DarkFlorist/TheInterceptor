@@ -1,5 +1,6 @@
 import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
-import { activateAddressSelection, changeActiveAddressAndChain, readNetworkSnapshot } from './activeSettings.js'
+import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
+import { readNetworkSnapshot } from './networkTransition.js'
 import { getUpdatedSimulationStackSnapshot, getUpdatedSimulationState, type NetworkState, type SimulationSnapshot } from './simulationUpdating.js'
 import { getSettings, setUseTabsInsteadOfPopup, setPage, getMakeCurrentAddressRich, setMetamaskCompatibilityMode, setSafeAppsCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, updateMakeCurrentAddressRich, updateFixedMakeMeRichList } from './settings.js'
 import { getPendingTransactionsAndMessages, getTabState, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests, updateTransactionState, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, getSafeTransactionStacks } from './storageVariables.js'
@@ -620,6 +621,8 @@ export async function refreshPopupConfirmTransactionSimulation(ethereum: Ethereu
 	if (firstTxn === undefined || firstTxn.type !== 'Transaction' || (firstTxn.transactionOrMessageCreationStatus !== 'Simulated' && firstTxn.transactionOrMessageCreationStatus !== 'FailedToSimulate')) return
 	// An accepted transaction that already joined the stack keeps it, since re-preparing it would change its nonce and hash.
 	if (network.simulation.interceptorTransactionStack.operations.some((operation) => operation.type === 'Transaction' && operation.preSimulationTransaction.transactionIdentifier === firstTxn.transactionIdentifier)) return
+	// A simulation-mode transaction only joins the stack of the chain it was admitted on, so after a switch it keeps that chain's simulation until the chain is active again; re-simulating it here would move it to the new chain. A signing-mode transaction goes to the wallet on the active chain, so it is re-simulated there.
+	if (firstTxn.simulationMode && firstTxn.simulationChainId !== undefined && firstTxn.simulationChainId !== network.settings.activeRpcNetwork.chainId) return
 	const safeFlow = getSafePendingFlow(firstTxn)
 	const proposalSafeTransaction = safeFlow?.kind === 'proposal' ? safeFlow.pending.safeTransaction : undefined
 	const transactionToSimulate = firstTxn.originalRequestParameters.method === 'eth_sendTransaction'
@@ -655,7 +658,7 @@ export async function refreshPopupConfirmTransactionSimulation(ethereum: Ethereu
 				const currentTimestamp = getSimulationConductedTimestamp(transactionOrMessage.popupVisualisation)
 				const nextTimestamp = getSimulationConductedTimestamp(refreshMessage)
 				if (currentTimestamp !== undefined && nextTimestamp !== undefined && nextTimestamp.getTime() < currentTimestamp.getTime()) return transactionOrMessage
-				// The refresh re-simulated on the current network, which is now the stack the transaction would join.
+				// The refresh ran on the active chain, which in simulation mode is the chain the transaction was admitted on.
 				const simulationChainId = network.settings.activeRpcNetwork.chainId
 				if (transactionToSimulate.success) {
 					return {

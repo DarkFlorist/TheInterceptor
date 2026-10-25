@@ -5,6 +5,7 @@ const backgroundSource = await Bun.file(new URL('../../app/ts/background/backgro
 const confirmTransactionSource = await Bun.file(new URL('../../app/ts/background/windows/confirmTransaction.ts', import.meta.url)).text()
 const popupMessageHandlersSource = await Bun.file(new URL('../../app/ts/background/popupMessageHandlers.ts', import.meta.url)).text()
 const activeSettingsSource = await Bun.file(new URL('../../app/ts/background/activeSettings.ts', import.meta.url)).text()
+const networkTransitionSource = await Bun.file(new URL('../../app/ts/background/networkTransition.ts', import.meta.url)).text()
 const simulationUpdatingSource = await Bun.file(new URL('../../app/ts/background/simulationUpdating.ts', import.meta.url)).text()
 const safeTransactionConfirmationSource = await Bun.file(new URL('../../app/ts/background/safeTransactionConfirmation.ts', import.meta.url)).text()
 const confirmTransactionComponentSource = await Bun.file(new URL('../../app/ts/components/pages/ConfirmTransaction.tsx', import.meta.url)).text()
@@ -44,11 +45,13 @@ test('the Gnosis Safe domain layer does not import background orchestration', ()
 })
 
 test('general simulation orchestration gets active stack policy from the shared utility layer', () => {
-	assert.match(activeSettingsSource, /from '\.\.\/utils\/activeStackContext\.js'/u)
+	for (const source of [activeSettingsSource, networkTransitionSource]) {
+		assert.match(source, /from '\.\.\/utils\/activeStackContext\.js'/u)
+		assert.doesNotMatch(source, /from '\.\.\/safe\/safeStack\.js'/u)
+		assert.doesNotMatch(source, /previousSettings\.activeSigningSafeAddress !== updatedSettings\.activeSigningSafeAddress/u)
+	}
 	assert.match(simulationUpdatingSource, /from '\.\.\/utils\/activeStackContext\.js'/u)
-	assert.match(activeSettingsSource, /!activeStackContextsEqual\(getActiveStackContext\(previousSettings\), getActiveStackContext\(updatedSettings\)\)/u)
-	assert.doesNotMatch(activeSettingsSource, /from '\.\.\/safe\/safeStack\.js'/u)
-	assert.doesNotMatch(activeSettingsSource, /previousSettings\.activeSigningSafeAddress !== updatedSettings\.activeSigningSafeAddress/u)
+	assert.match(networkTransitionSource, /!activeStackContextsEqual\(getActiveStackContext\(previousSettings\), getActiveStackContext\(updatedSettings\)\)/u)
 	assert.doesNotMatch(simulationUpdatingSource, /from '\.\.\/safe\/safeStack\.js'/u)
 	assert.doesNotMatch(simulationUpdatingSource, /if \(!settings\.simulationMode\) break/u)
 })

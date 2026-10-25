@@ -100,7 +100,7 @@ const SimulatedPendingTransactionBase = funtypes.ReadonlyObject({
 	website: Website,
 	approvalStatus: PendingTransactionApprovalStatus,
 }).And(funtypes.ReadonlyPartial({
-	// The chain the confirmation was last simulated on; a simulated transaction is only added to that chain's simulation stack.
+	// The chain the confirmation was simulated on. In simulation mode it stays the chain the request was admitted on, because refreshes skip other chains, and the transaction is only added to that chain's simulation stack.
 	simulationChainId: EthereumQuantity,
 	safeTransaction: SafeTransactionSigningRequest,
 	safeExecutionSignerAddress: EthereumAddress,

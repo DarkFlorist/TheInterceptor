@@ -626,6 +626,34 @@ describe('network transition snapshot', () => {
 		}
 	})
 
+	test('a block refresh after a network switch keeps a simulation-mode confirmation on the network it was admitted on', async () => {
+		const { modules, websiteTabConnections, sendDappRequest, switchToNetworkB, getReply } = await createApprovedSimulationDapp()
+		const { owner, retireAll, getInstalled } = createRecordingServicesOwner(networkA)
+		try {
+			await sendDappRequest(owner, { method: 'eth_sendTransaction', params: [{ from: addressString(firstAddress), to: addressString(secondAddress), value: '0x0', data: '0x' }] })
+			const [pending] = await modules.getPendingTransactionsAndMessages()
+			if (pending?.type !== 'Transaction') throw new Error('Expected a pending transaction')
+			await switchToNetworkB(owner)
+			const servicesB = getInstalled()
+
+			// The confirmation window refreshes on every new block of the active network.
+			await modules.refreshPopupConfirmTransactionSimulation(servicesB.ethereum, servicesB.tokenPriceService, await modules.readNetworkSnapshot(owner))
+			assert.equal(getSimulateV1Requests(servicesB).length, 0)
+			const [afterRefresh] = await modules.getPendingTransactionsAndMessages()
+			if (afterRefresh?.type !== 'Transaction') throw new Error('Expected a pending transaction')
+			assert.equal(afterRefresh.simulationChainId, networkA.chainId)
+			assert.deepEqual(afterRefresh.transactionToSimulate, pending.transactionToSimulate)
+
+			await modules.confirmDialog(owner, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier: pending.uniqueRequestIdentifier } })
+			assert.deepEqual((await modules.getInterceptorTransactionStack()).operations, [])
+			const [stillPending] = await modules.getPendingTransactionsAndMessages()
+			assert.equal(stillPending?.approvalStatus.status, 'SignerError')
+			assert.equal(getReply('eth_sendTransaction', 1), undefined)
+		} finally {
+			retireAll()
+		}
+	})
+
 	test('a confirmation metadata refresh shows the stack captured with its settings and services', async () => {
 		const { modules, websiteTabConnections, sendDappRequest, switchToNetworkB } = await createApprovedSimulationDapp()
 		const { dispatchPopupMessage } = await import('../../app/ts/background/popupMessageDispatcher.js')
@@ -1068,14 +1096,16 @@ describe('network transition snapshot', () => {
 
 	test('a chain switch request on a signer-only network is already on that chain, although the installed services keep serving the previous one', async () => {
 		installBrowserMock()
+		const { changeSimulationMode } = await loadModules()
 		const { switchEthereumChain } = await import('../../app/ts/background/simulationModeHandlers.js')
 		const { owner, retireAll } = createRecordingServicesOwner(networkA)
 		const signerOnlyChainId = 0x539n
+		await changeSimulationMode({ simulationMode: false, rpcNetwork: { chainId: signerOnlyChainId, httpsRpc: undefined, name: 'Signer only', currencyName: 'Ether?', currencyTicker: 'ETH?', primary: false, minimized: true } })
 		const params = { method: 'wallet_switchEthereumChain' as const, params: [{ chainId: signerOnlyChainId }] as const }
 		const request = { interceptorRequest: true, usingInterceptorWithoutSigner: true, uniqueRequestIdentifier: { requestId: 1, requestSocket: { tabId: 1, connectionName: 0n } }, ...params }
 		try {
 			assert.equal(owner.getCurrent().ethereum.getChainId(), networkA.chainId)
-			assert.deepEqual(await switchEthereumChain(owner, new Map(), params, request, signerOnlyChainId, false, website), { type: 'result', method: 'wallet_switchEthereumChain', result: null })
+			assert.deepEqual(await switchEthereumChain(owner, new Map(), params, request, false, website), { type: 'result', method: 'wallet_switchEthereumChain', result: null })
 		} finally {
 			retireAll()
 		}

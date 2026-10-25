@@ -24,7 +24,7 @@ import { makeSureInterceptorIsNotSleeping } from './sleeping.js'
 import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
 import { buildExecutionSimulationStateFromPreparedInput, getUpdatedSimulationStackSnapshot, prepareSimulationInputForRpc, type SimulationSnapshot } from './simulationUpdating.js'
 import type { SimulationServices, SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
-import { readNetworkSnapshot } from './activeSettings.js'
+import { readNetworkSnapshot } from './networkTransition.js'
 import { getWalletSelectedAccount, isActiveSigningSafe } from '../utils/activeAddressSelection.js'
 import { isAccountConnectionMethod, isAccountOnlyMethod } from './accountRequestMethods.js'
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
@@ -181,7 +181,7 @@ async function handleRPCRequest(
 		eth_signTypedData_v2: rpcRequestHandler('eth_signTypedData_v2', async (_context, rpcRequest) => await signMessage(rpcRequest)),
 		eth_signTypedData_v3: rpcRequestHandler('eth_signTypedData_v3', async (_context, rpcRequest) => await signMessage(rpcRequest)),
 		eth_signTypedData_v4: rpcRequestHandler('eth_signTypedData_v4', async (_context, rpcRequest) => await signMessage(rpcRequest)),
-		wallet_switchEthereumChain: rpcRequestHandler('wallet_switchEthereumChain', async (_context, rpcRequest) => await switchEthereumChain(simulationServicesOwner, websiteTabConnections, rpcRequest, request, settings.activeRpcNetwork.chainId, settings.simulationMode, website)),
+		wallet_switchEthereumChain: rpcRequestHandler('wallet_switchEthereumChain', async (_context, rpcRequest) => await switchEthereumChain(simulationServicesOwner, websiteTabConnections, rpcRequest, request, settings.simulationMode, website)),
 		wallet_watchAsset: rpcRequestHandler('wallet_watchAsset', async (_context, rpcRequest) => await handleWatchAssetRequest(ethereum, websiteTabConnections, request, website, rpcRequest, {}, activeAddress)),
 		wallet_requestPermissions: rpcRequestHandler('wallet_requestPermissions', async () => await requestPermissions(activeAddress, website)),
 		wallet_getPermissions: rpcRequestHandler('wallet_getPermissions', async () => await getPermissions(activeAddress, website)),

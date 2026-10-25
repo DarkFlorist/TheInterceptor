@@ -7,7 +7,7 @@ import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.
 import { getRpcList, setRpcList } from '../storageVariables.js'
 import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettings, getUseTabsInsteadOfPopup } from '../settings.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
-import { importSettingsTransition, selectUpdatedPrimaryRpcTransition } from '../activeSettings.js'
+import { importSettingsTransition, selectUpdatedPrimaryRpcTransition } from '../networkTransition.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 
 export async function settingsOpened() {

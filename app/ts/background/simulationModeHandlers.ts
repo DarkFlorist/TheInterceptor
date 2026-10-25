@@ -6,6 +6,7 @@ import { DEFAULT_CALL_ADDRESS, ERROR_INTERCEPTOR_GET_CODE_FAILED } from '../util
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { ResolvedExecutionSimulationState, ResolvedSimulationInput } from '../types/visualizer-types.js'
 import { openChangeChainDialog } from './windows/changeChain.js'
+import { getSettings } from './settings.js'
 import type { InterceptedRequest, WebsiteSocket } from '../utils/requests.js'
 import type { EstimateGasParams, EthBalanceParams, EthBlockByHashParams, EthBlockByNumberParams, EthCallParams, EthGetStorageAtParams, EthNewFilter, EthGetLogsParams, EthSubscribeParams, EthUnSubscribeParams, FeeHistory, GetCode, GetFilterChanges, GetSimulationStack, GetTransactionCount, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams, UninstallFilter, GetFilterLogs, InterceptorError } from '../types/JsonRpc-types.js'
 import type { EthSimulateV1Params } from '../types/ethSimulate-types.js'
@@ -141,9 +142,9 @@ export async function personalSign(
 	return { method: confirmation.parameters.method, ...action }
 }
 
-// The request's own network decides whether it is already on the chain; installed services keep the previous chain on signer-only networks.
-export async function switchEthereumChain(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, params: SwitchEthereumChainParams, request: InterceptedRequest, activeChainId: bigint, simulationMode: boolean, website: Website) {
-	if (activeChainId === params.params[0].chainId) {
+// A switch acts on the live network, so it compares with the settings now rather than with the request's snapshot, which a later transition may have replaced. The settings also name a signer-only network, while the installed services keep serving the previous chain.
+export async function switchEthereumChain(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, params: SwitchEthereumChainParams, request: InterceptedRequest, simulationMode: boolean, website: Website) {
+	if ((await getSettings()).activeRpcNetwork.chainId === params.params[0].chainId) {
 		// we are already on the right chain
 		return { type: 'result' as const, method: params.method, result: null }
 	}
