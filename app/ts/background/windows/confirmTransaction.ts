@@ -312,7 +312,7 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async () => pendingTransactionOrMessage)
 	}
 	const signerFacingRequest: SendTransactionParams | SendRawTransactionParams | SignMessageParams = safeResolution.signerFacingRequest
-		?? pendingTransactionOrMessage.originalRequestParameters
+		?? getReviewedSignerFacingRequest(pendingTransactionOrMessage)
 	const removePendingRequestAndUpdateView = async () => {
 		await removePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier)
 		if ((await getPendingTransactionsAndMessages()).length === 0) await tryFocusingTabOrWindow({ type: 'tab', id: pendingTransactionOrMessage.uniqueRequestIdentifier.requestSocket.tabId })
@@ -378,7 +378,9 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 			await updateConfirmTransactionView(ethereum, tokenPriceService)
 			return false
 		}
+		// Only requests that ask the wallet to sign are bound to the authorized account. A raw transaction is already signed, so broadcasting it grants no authority over its sender: the website could submit the same bytes to any public RPC.
 		if (pendingTransactionOrMessage.type === 'Transaction'
+			&& pendingTransactionOrMessage.originalRequestParameters.method === 'eth_sendTransaction'
 			&& pendingTransactionOrMessage.transactionToSimulate.transaction.from !== pendingTransactionOrMessage.activeAddress) {
 			throw new Error('The reviewed transaction sender is not the active authorized account')
 		}
@@ -607,6 +609,15 @@ export function toCanonicalSendTransactionParams(transaction: EthereumUnsignedTr
 	}
 }
 
+// `originalRequestParameters` keeps the website's own inputs so refreshes regenerate omitted fields (nonce, gas and fees) against current chain state, while the wallet receives the exact reviewed transaction so it cannot fill in values the user did not see. Gnosis Safe flows are excluded: they are simulated with zero fees for an external executor, and the Safe resolver either supplies its own signer-facing request or re-validates the direct execution route against the reviewed Safe state.
+function getReviewedSignerFacingRequest(pending: PendingTransactionOrSignableMessage): SendTransactionParams | SendRawTransactionParams | SignMessageParams {
+	if (pending.type === 'SignableMessage') return pending.originalRequestParameters
+	if (pending.originalRequestParameters.method !== 'eth_sendTransaction') return pending.originalRequestParameters
+	if (getSafePendingFlow(pending) !== undefined) return pending.originalRequestParameters
+	if (pending.transactionOrMessageCreationStatus !== 'Simulated') return pending.originalRequestParameters
+	return toCanonicalSendTransactionParams(pending.transactionToSimulate.transaction)
+}
+
 type SupportedSendTransactionType = Exclude<EthereumUnsignedTransaction['type'], '4844'>
 export type TransactionGasPayment = 'transaction-sender' | 'external-executor'
 
@@ -741,8 +752,7 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 					success: false,
 				}
 			}
-			const transaction = await finalizeTransaction(estimateGas.gas)
-			return { transaction, ...extraParams, originalRequestParameters: toCanonicalSendTransactionParams(transaction), success: true }
+			return { transaction: await finalizeTransaction(estimateGas.gas), ...extraParams, success: true }
 		} catch(error: unknown) {
 			if (isNewBlockAbort(error)) throw error
 			if (error instanceof JsonRpcResponseError) return { ...extraParams, error: { code: error.code, message: error.message, data: typeof error.data === 'string' ? error.data : '0x' }, success: false }
@@ -751,8 +761,7 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 			return { ...extraParams, error: { code: 123456, message: 'Unknown Error', data: '0x' }, success: false }
 		}
 	}
-	const transaction = await finalizeTransaction(transactionDetails.gas)
-	return { transaction, ...extraParams, originalRequestParameters: toCanonicalSendTransactionParams(transaction), success: true }
+	return { transaction: await finalizeTransaction(transactionDetails.gas), ...extraParams, success: true }
 }
 
 const getPendingTransactionWindow = async (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections) => {
@@ -949,7 +958,7 @@ export async function openConfirmTransactionDialogForTransaction(
 			const pendingTransaction = {
 				type: 'Transaction' as const,
 				popupOrTabId: openedDialog,
-				originalRequestParameters: transactionToSimulate.originalRequestParameters,
+				originalRequestParameters: effectiveTransactionParams,
 				uniqueRequestIdentifier: request.uniqueRequestIdentifier,
 				simulationMode,
 				activeAddress: transactionExecutor,

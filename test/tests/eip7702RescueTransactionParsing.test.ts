@@ -381,7 +381,7 @@ describe('EIP-7702 rescue transaction parsing', () => {
 	test('binds signer-mode transaction sender, chain, nonce, type, fees, and access list to the reviewed request', async () => {
 		const browserMock = installBrowserMock()
 		try {
-			const { formEthSendTransaction } = await import('../../app/ts/background/windows/confirmTransaction.js')
+			const { formEthSendTransaction, toCanonicalSendTransactionParams } = await import('../../app/ts/background/windows/confirmTransaction.js')
 			const sender = 0x0000000000000000000000000000000000000001n
 			const request = SendTransactionParams.parse({
 				method: 'eth_sendTransaction',
@@ -416,7 +416,8 @@ describe('EIP-7702 rescue transaction parsing', () => {
 			assert.equal(result.success, true)
 			if (!result.success) throw new Error('Expected transaction creation to succeed')
 			assert.equal(result.transaction.type, '2930')
-			assert.deepEqual(result.originalRequestParameters, {
+			assert.deepEqual(result.originalRequestParameters, request)
+			assert.deepEqual(toCanonicalSendTransactionParams(result.transaction), {
 				method: 'eth_sendTransaction',
 				params: [{
 					type: '2930',
@@ -442,7 +443,7 @@ describe('EIP-7702 rescue transaction parsing', () => {
 	test('infers EIP-2930 when gasPrice and an access list are supplied without an explicit type', async () => {
 		const browserMock = installBrowserMock()
 		try {
-			const { formEthSendTransaction } = await import('../../app/ts/background/windows/confirmTransaction.js')
+			const { formEthSendTransaction, toCanonicalSendTransactionParams } = await import('../../app/ts/background/windows/confirmTransaction.js')
 			const sender = 0x0000000000000000000000000000000000000001n
 			const request = SendTransactionParams.parse({
 				method: 'eth_sendTransaction',
@@ -474,8 +475,11 @@ describe('EIP-7702 rescue transaction parsing', () => {
 			assert.equal(result.success, true)
 			if (!result.success) throw new Error('Expected transaction creation to succeed')
 			assert.equal(result.transaction.type, '2930')
-			assert.equal(result.originalRequestParameters.params[0].type, '2930')
-			assert.deepEqual(result.originalRequestParameters.params[0].accessList, [{
+			// The website's request keeps its omitted type so refreshes infer it again; only the signer-facing request is canonical.
+			assert.deepEqual(result.originalRequestParameters, request)
+			const signerFacingRequest = toCanonicalSendTransactionParams(result.transaction)
+			assert.equal(signerFacingRequest.params[0].type, '2930')
+			assert.deepEqual(signerFacingRequest.params[0].accessList, [{
 				address: EthereumAddress.parse(accessListAddress),
 				storageKeys: [EthereumBytes32.parse(accessListStorageKey)],
 			}])

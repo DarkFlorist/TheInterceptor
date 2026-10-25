@@ -646,7 +646,6 @@ export async function refreshPopupConfirmTransactionSimulation(ethereum: Ethereu
 				if (transactionToSimulate.success) {
 					return {
 						...transactionOrMessage,
-						originalRequestParameters: transactionToSimulate.originalRequestParameters,
 						transactionToSimulate,
 						popupVisualisation: refreshMessage,
 						transactionOrMessageCreationStatus: 'Simulated' as const,
