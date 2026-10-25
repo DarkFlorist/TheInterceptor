@@ -1,4 +1,5 @@
 import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
+import { createSimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
 import * as assert from 'assert'
 import { test } from 'bun:test'
 import { encodeFunctionCall } from '../../app/ts/utils/abiRuntime.js'
@@ -124,6 +125,87 @@ test('settles a direct signing reply while RPC services are unavailable', async 
 	const dappReply = messages.find((message) => isRecord(message) && message.method === 'eth_sendTransaction' && message.requestId === requestIdentifier.requestId)
 	if (!isRecord(dappReply)) throw new Error('Missing signer reply while services were unavailable')
 	assert.equal(dappReply.result, modules.EthereumBytes32.serialize(signedTransaction.hash))
+})
+
+test('replays a Safe signature deferred while only the RPC configuration was unreadable once retrying recovers it', async () => {
+	const { retryRpcConfiguration } = await import('../../app/ts/background/popupMessageHandlers/settings.js')
+	const socket = { tabId: 1, connectionName: 47n }
+	const requestIdentifier = { requestId: 88, requestSocket: socket }
+	const messages: unknown[] = []
+	const port = createWebsitePort(socket, 0, messages)
+	const websiteTabConnections = new Map([[socket.tabId, {
+		signerStateOwner: { connectionName: socket.connectionName, confirmed: true, generation: 3, providerGeneration: 8 },
+		connections: {
+			[modules.websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.com', approved: true, wantsToConnect: true },
+		},
+	}]])
+	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, { to: recipientAddress, value: 0n, input: new Uint8Array() }, 0n)
+	const safeTxHash = BigInt(getSafeTxHash(safeTx))
+	fakeSafeContract.nonce = 0n
+	fakeSafeContract.threshold = 2n
+	fakeSafeContract.owners = [safeTestOwnerAddress]
+	const signature = await safeTestOwnerAccount.signTypedData(EIP712Message.parse(safeTxToTypedDataJson(safeTx)))
+	await modules.browserStorageLocalSet2({
+		pendingTransactionsAndMessages: [{
+			...pendingTransaction,
+			uniqueRequestIdentifier: requestIdentifier,
+			simulationMode: false,
+			approvalStatus: { status: 'WaitingForSigner' },
+			safeTransaction: {
+				safeAddress: activeAddress,
+				safeSignerAddress: safeTestOwnerAddress,
+				safeVersion: '1.4.1',
+				threshold: 2n,
+				reviewedSafeState: { version: '1.4.1', nonce: 0n, owners: [safeTestOwnerAddress], threshold: 2n },
+				safeTxHash,
+				safeTx,
+			},
+		}],
+	})
+	// The owner keeps its installed services for the whole outage; only reading the RPC configuration fails.
+	let deferredReplay: Promise<void> | undefined
+	const simulationServicesOwner = createSimulationServicesOwner(fakeRpcNetwork, async () => undefined, async () => undefined, {}, () => {
+		deferredReplay = modules.resolveDeferredSafeSignerReplies({ ethereum: simulator.ethereum, tokenPriceService: simulator.tokenPriceService }, websiteTabConnections)
+	})
+	let rpcConfigurationReadable = false
+	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+		if (!rpcConfigurationReadable && Array.isArray(keys) && keys.includes('rpcEntries')) throw new Error('Storage read failed')
+		return readStoredItems()
+	})
+
+	await modules.signerReply(simulationServicesOwner, websiteTabConnections, port, {
+		method: 'signer_reply',
+		params: [{
+			success: true,
+			signerProviderGeneration: 8,
+			forwardRequest: {
+				type: 'forwardToSigner',
+				replyWithSignersReply: true,
+				method: 'eth_signTypedData_v4',
+				params: [recipientAddress, EIP712Message.parse(safeTxToTypedDataJson(safeTx))],
+				requestId: requestIdentifier.requestId,
+			},
+			reply: signature,
+		}],
+		interceptorRequest: true,
+		interceptorInternalRequest: true,
+		usingInterceptorWithoutSigner: false,
+		uniqueRequestIdentifier: { requestId: 89, requestSocket: socket },
+	}, 'hasAccess', activeAddress)
+	assert.notEqual(simulationServicesOwner.getCurrent(), undefined)
+	const [deferredProposal] = await modules.getPendingTransactionsAndMessages()
+	assert.equal(deferredProposal?.deferredSafeSignerReply?.signerReply, signature)
+	assert.deepEqual(await modules.getSafeTransactionStacks(), [])
+
+	rpcConfigurationReadable = true
+	await retryRpcConfiguration(simulationServicesOwner, async () => undefined)
+	await deferredReplay
+
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	const [persistedStack] = await modules.getSafeTransactionStacks()
+	assert.deepEqual(persistedStack?.transactions[0]?.signatures, [{ signer: safeTestOwnerAddress, signature }])
+	assert.equal(messages.filter((message) => isRecord(message) && message.method === 'eth_sendTransaction' && message.requestId === requestIdentifier.requestId && message.result === modules.EthereumBytes32.serialize(safeTxHash)).length, 1)
+	simulationServicesOwner.clear()
 })
 
 // Recovery and a popup that reports no decision share one no-response owner, so neither may discard a signature the signer already returned.
