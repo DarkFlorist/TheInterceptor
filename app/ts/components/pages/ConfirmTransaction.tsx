@@ -249,6 +249,11 @@ type TransactionCardParams = {
 
 const SELECTED_BY_WALLET = 'Selected by your wallet'
 
+// Simulation mode only adds the prepared transaction to the local simulation, and a Safe proposal sends the wallet typed data instead of this request.
+export function isFailedRequestForwardedToWallet(pending: SimulatedPendingTransaction, safeFlow: ReturnType<typeof getSafeTransactionPendingFlow>) {
+	return !pending.simulationMode && safeFlow?.kind !== 'proposal'
+}
+
 function getRequestedFeesText(request: Extract<OriginalSendRequestParameters, { method: 'eth_sendTransaction' }>['params'][0]) {
 	const fees = [
 		...(request.gasPrice === undefined ? [] : [`gas price ${ nanoString(request.gasPrice) } nanoeth/gas`]),
@@ -259,9 +264,10 @@ function getRequestedFeesText(request: Extract<OriginalSendRequestParameters, { 
 	return fees.length === 0 ? SELECTED_BY_WALLET : fees.join(', ')
 }
 
-// Shown when the confirmation simulation fails. An override forwards exactly this website request, so every forwarded field is listed and omitted ones are marked as wallet-selected.
+// Shown when the confirmation simulation fails. When the request goes to the wallet, an override forwards exactly this website request, so every forwarded field is listed and omitted ones are marked as wallet-selected; simulation mode keeps the plain summary because acceptance only adds the locally prepared transaction to the simulation.
 export function FailedTransactionPreviewDetails({
 	website,
+	forwardsRequestToWallet,
 	transactionIdentifier,
 	originalRequestParameters,
 	addressMetaData,
@@ -275,6 +281,7 @@ export function FailedTransactionPreviewDetails({
 	renameAddressCallBack,
 }: {
 	website: Website
+	forwardsRequestToWallet: boolean
 	transactionIdentifier: bigint
 	originalRequestParameters: OriginalSendRequestParameters
 	addressMetaData: readonly AddressBookEntry[]
@@ -320,10 +327,10 @@ export function FailedTransactionPreviewDetails({
 					<dd>{ request === undefined ? 'Unknown' : `${ bigintToDecimalString(request.value ?? 0n, 18n) } ether` }</dd>
 					<dt>Gas limit </dt>
 					<dd>
-						{ request !== undefined && gasLimit === undefined ? <span>{ SELECTED_BY_WALLET } </span> : <></> }
+						{ forwardsRequestToWallet && request !== undefined && gasLimit === undefined ? <span>{ SELECTED_BY_WALLET } </span> : <></> }
 						<GasLimitEditor transactionIdentifier = { transactionIdentifier } initialGasLimit = { gasLimit } isRawTransaction = { originalRequestParameters.method === 'eth_sendRawTransaction' } />
 					</dd>
-					{ request === undefined ? <></> : <>
+					{ !forwardsRequestToWallet || request === undefined ? <></> : <>
 						<dt>Nonce</dt>
 						<dd>{ request.nonce === undefined ? SELECTED_BY_WALLET : request.nonce.toString(10) }</dd>
 						<dt>Fees</dt>
@@ -331,7 +338,7 @@ export function FailedTransactionPreviewDetails({
 					</> }
 				</dl>
 			</div>
-			{ request === undefined ? <></> : <div class = 'textbox' style = 'margin-top: 10px;'>
+			{ !forwardsRequestToWallet || request === undefined ? <></> : <div class = 'textbox' style = 'margin-top: 10px;'>
 				<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Request sent to your wallet</p>
 				<p class = 'paragraph' style = 'color: var(--subtitle-text-color); white-space: pre-wrap; word-break: break-word;'>{ stringifyJSONWithBigInts(originalRequestParameters, 2) }</p>
 			</div> }
@@ -410,6 +417,7 @@ function TransactionCardContent(param: TransactionCardContentParams) {
 		return <>
 			<FailedTransactionPreviewDetails
 				website = { currentPendingTransaction.transactionToSimulate.website }
+				forwardsRequestToWallet = { isFailedRequestForwardedToWallet(currentPendingTransaction, safeFlow) }
 				transactionIdentifier = { currentPendingTransaction.transactionIdentifier }
 				originalRequestParameters = { currentPendingTransaction.originalRequestParameters }
 				addressMetaData = { addressMetaData }

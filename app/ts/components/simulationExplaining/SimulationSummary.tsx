@@ -992,6 +992,26 @@ export function GasLimitEditor({ transactionIdentifier, initialGasLimit, isRawTr
 	</>
 }
 
+// The fee fields the wallet is asked to sign, for every supported transaction type.
+function TransactionFeeFields({ transaction }: { transaction: TransactionWithAddressBookEntries }) {
+	switch (transaction.type) {
+		case 'legacy':
+		case '2930': return transaction.gasPrice === undefined ? <></> : <>
+			<dt>Gas Price</dt>
+			<dd>{ `${ nanoString(transaction.gasPrice) } nanoeth/gas` }</dd>
+		</>
+		case '1559':
+		case '4844':
+		case '7702': return <>
+			<dt>Max Fee Per Gas</dt>
+			<dd>{ `${ nanoString(transaction.maxFeePerGas) } nanoeth/gas` }</dd>
+			<dt>Max Priority Fee Per Gas</dt>
+			<dd>{ `${ nanoString(transaction.maxPriorityFeePerGas) } nanoeth/gas` }</dd>
+		</>
+		default: return assertNever(transaction)
+	}
+}
+
 export function RawTransactionDetailsCard({ isRawTransaction, transaction, renameAddressCallBack, gasSpent, parsedInputData, addressMetaData, transactionIdentifier, signerNonce }: RawTransactionDetailsCardParams) {
 	const showSummary = useSignal<boolean>(false)
 
@@ -1033,15 +1053,7 @@ export function RawTransactionDetailsCard({ isRawTransaction, transaction, renam
 						<dd><span class = 'text-legible truncate'>{ bytes32String(transaction.hash) }</span></dd>
 
 
-						{ transaction.type !== '1559'
-							? <></>
-							: <>
-								<dt>Max Fee Per Gas</dt>
-								<dd>{ `${ nanoString(transaction.maxFeePerGas) } nanoeth/gas` }</dd>
-								<dt>Max Priority Fee Per Gas</dt>
-								<dd>{ `${ nanoString(transaction.maxPriorityFeePerGas) } nanoeth/gas` }</dd>
-							</>
-						}
+						<TransactionFeeFields transaction = { transaction } />
 					</dl>
 
 					<div>

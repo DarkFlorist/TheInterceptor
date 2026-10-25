@@ -4,7 +4,8 @@ import { Signal } from '@preact/signals'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { JsonRpcResponseError } from '../../app/ts/utils/errors.js'
-import { installDomMock } from './domMock.js'
+import { nanoString } from '../../app/ts/utils/bigint.js'
+import { clickRenderedElement, findRenderedElement, installDomMock } from './domMock.js'
 import { SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
 import { UpdateConfirmTransactionDialogPendingTransactions } from '../../app/ts/types/interceptor-messages.js'
 import { activeAddress, addressString, browserMock, createWebsitePort, fakeBlock, fakeRequestHandler, fakeRpcNetwork, isRecord, modules, pendingTransaction, recipientAddress, simulator, unsignedTransaction, uniqueRequestIdentifier } from './confirmTransactionTestHarness.js'
@@ -246,18 +247,21 @@ test('the simulated transaction guard compares access lists and EIP-7702 authori
 	}
 })
 
-async function renderFailedSimulationView() {
-	const { FailedTransactionPreviewDetails } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
+async function renderFailedSimulationView(renderInSimulationMode = false) {
+	const { FailedTransactionPreviewDetails, isFailedRequestForwardedToWallet } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
+	const { getSafeTransactionPendingFlow } = await import('../../app/ts/safe/safePendingFlow.js')
 	const popupUpdate = browserMock.sentMessages.findLast((message) => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions')
 	const [displayedRequest] = UpdateConfirmTransactionDialogPendingTransactions.parse(popupUpdate).data.pendingTransactionAndSignableMessages
 	if (displayedRequest?.type !== 'Transaction' || displayedRequest.transactionOrMessageCreationStatus !== 'Simulated') throw new Error('The popup did not receive a prepared transaction')
 	// Preparation succeeded, so the request stays acceptable with the override, but the popup can only show its failure view.
 	if (displayedRequest.popupVisualisation.statusCode !== 'failed') throw new Error('Expected the confirmation simulation to fail')
+	const renderedRequest = renderInSimulationMode ? { ...displayedRequest, simulationMode: true } : displayedRequest
 	const dom = installDomMock()
 	try {
 		await act(() => {
 			render(h(FailedTransactionPreviewDetails, {
 				website: displayedRequest.website,
+				forwardsRequestToWallet: isFailedRequestForwardedToWallet(renderedRequest, getSafeTransactionPendingFlow(renderedRequest)),
 				transactionIdentifier: displayedRequest.transactionIdentifier,
 				originalRequestParameters: displayedRequest.originalRequestParameters,
 				addressMetaData: [],
@@ -324,6 +328,12 @@ async function prepareFailSimulationAndOverride(requestedNonce: bigint | undefin
 	assert.match(renderedText, /Value0 ether/u)
 	assert.match(renderedText, /Gas limit Selected by your wallet/u)
 	assert.match(renderedText, /FeesSelected by your wallet/u)
+	assert.match(renderedText, /Request sent to your wallet/u)
+	// In simulation mode acceptance only adds the prepared transaction locally, so the same failure keeps its plain summary.
+	const simulationModeText = await renderFailedSimulationView(true)
+	assert.doesNotMatch(simulationModeText, /your wallet/u)
+	assert.doesNotMatch(simulationModeText, /Nonce/u)
+	assert.match(simulationModeText, /Value0 ether/u)
 	return { forwardedTransaction, renderedText }
 }
 
@@ -337,6 +347,95 @@ test('an override after a failed confirmation simulation leaves an omitted nonce
 	const { renderedText } = await prepareFailSimulationAndOverride(undefined)
 	assert.match(renderedText, /NonceSelected by your wallet/u)
 })
+
+async function prepareAcceptAndRenderFeeFields(requestFields: Record<string, unknown>) {
+	const { getSignerNonce } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
+	const { RawTransactionDetailsCard } = await import('../../app/ts/components/simulationExplaining/SimulationSummary.js')
+	const { getSafeTransactionPendingFlow } = await import('../../app/ts/safe/safePendingFlow.js')
+	await browser.storage.local.set({ simulationMode: false })
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	const ethereum = createChainScenarioEthereum({ chainNonce: 0n, preparationBaseFeePerGas: 1n, simulationBaseFeePerGas: 100n })
+	const transactionParams = SendTransactionParams.parse({
+		method: 'eth_sendTransaction',
+		params: [{ from: addressString(activeAddress), to: addressString(recipientAddress), value: '0x0', gas: '0x5208', ...requestFields }],
+	})
+	const postedMessages: unknown[] = []
+	const websiteTabConnections = createApprovedConnections(postedMessages)
+	assert.deepEqual(await modules.openConfirmTransactionDialogForTransaction(
+		ethereum,
+		simulator.tokenPriceService,
+		{ interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier, ...transactionParams },
+		{ kind: 'transaction', parameters: transactionParams },
+		false,
+		activeAddress,
+		{ websiteOrigin: 'https://example.com', icon: undefined, title: undefined },
+		websiteTabConnections,
+	), { type: 'doNotReply' })
+	const popupUpdate = browserMock.sentMessages.findLast((message) => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions')
+	const [displayedRequest] = UpdateConfirmTransactionDialogPendingTransactions.parse(popupUpdate).data.pendingTransactionAndSignableMessages
+	if (displayedRequest?.type !== 'Transaction' || displayedRequest.transactionOrMessageCreationStatus !== 'Simulated') throw new Error('The popup did not receive a simulated transaction')
+	if (displayedRequest.popupVisualisation.statusCode !== 'success') throw new Error('The popup did not receive a successful simulation')
+	const simTx = displayedRequest.popupVisualisation.data.visualizedSimulationState.visualizedBlocks
+		.flatMap((block) => block.simulatedAndVisualizedTransactions)
+		.find((transaction) => transaction.transactionIdentifier === displayedRequest.transactionIdentifier)
+	if (simTx === undefined) throw new Error('The popup did not display the reviewed transaction')
+	const dom = installDomMock()
+	let renderedText = ''
+	try {
+		await act(() => {
+			render(h(RawTransactionDetailsCard, {
+				isRawTransaction: false,
+				transaction: simTx.transaction,
+				renameAddressCallBack: () => undefined,
+				gasSpent: undefined,
+				parsedInputData: simTx.parsedInputData,
+				addressMetaData: new Signal([]),
+				transactionIdentifier: simTx.transactionIdentifier,
+				signerNonce: getSignerNonce(displayedRequest, getSafeTransactionPendingFlow(displayedRequest)),
+			}), dom.document.body)
+		})
+		const cardHeader = findRenderedElement(dom.document.body, (node) => node.tagName === 'HEADER' && node.textContent?.includes('Raw transaction information') === true)
+		if (cardHeader === undefined) throw new Error('Missing raw transaction card header')
+		await act(async () => { await clickRenderedElement(cardHeader) })
+		renderedText = dom.document.body.textContent ?? ''
+	} finally {
+		await act(() => { render(null, dom.document.body) })
+		dom.restore()
+	}
+	assert.equal(await modules.resolvePendingTransactionOrMessage(ethereum, simulator.tokenPriceService, websiteTabConnections, {
+		method: 'popup_confirmDialog',
+		data: { action: 'accept', uniqueRequestIdentifier, forceSend: false },
+	}), true)
+	const forwardedTransaction = getForwardedSignerRequest(postedMessages).params[0]
+	if (!isRecord(forwardedTransaction)) throw new Error('Missing forwarded transaction parameters')
+	return { renderedText, forwardedTransaction }
+}
+
+const toNanoethPerGasText = (forwardedValue: unknown) => {
+	if (typeof forwardedValue !== 'string') throw new Error('Missing forwarded fee field')
+	return `${ nanoString(BigInt(forwardedValue)) } nanoeth/gas`
+}
+
+const feeFieldCases = [
+	{ name: 'legacy', requestFields: { type: '0x0' }, forwardedType: '0x0' },
+	{ name: 'EIP-2930', requestFields: { type: '0x1', accessList: [] }, forwardedType: '0x1' },
+	{ name: 'EIP-1559', requestFields: {}, forwardedType: '0x2' },
+	{ name: 'EIP-7702', requestFields: { type: '0x4', authorizationList: [{ chainId: toHex(fakeRpcNetwork.chainId), address: addressString(recipientAddress), nonce: '0x1' }] }, forwardedType: '0x4' },
+]
+
+for (const feeFieldCase of feeFieldCases) {
+	test(`the expanded ${ feeFieldCase.name } confirmation details show every fee field forwarded to the wallet`, async () => {
+		const { renderedText, forwardedTransaction } = await prepareAcceptAndRenderFeeFields(feeFieldCase.requestFields)
+		assert.equal(forwardedTransaction.type, feeFieldCase.forwardedType)
+		if (forwardedTransaction.gasPrice !== undefined) {
+			assert.equal(renderedText.includes(`Gas Price${ toNanoethPerGasText(forwardedTransaction.gasPrice) }`), true, renderedText)
+			assert.equal(renderedText.includes('Max Fee Per Gas'), false)
+		} else {
+			assert.equal(renderedText.includes(`Max Fee Per Gas${ toNanoethPerGasText(forwardedTransaction.maxFeePerGas) }`), true, renderedText)
+			assert.equal(renderedText.includes(`Max Priority Fee Per Gas${ toNanoethPerGasText(forwardedTransaction.maxPriorityFeePerGas) }`), true, renderedText)
+		}
+	})
+}
 
 test('refreshing a signer-mode confirmation regenerates the nonce the website did not specify', async () => {
 	const staleTransaction = { ...unsignedTransaction, nonce: 7n }

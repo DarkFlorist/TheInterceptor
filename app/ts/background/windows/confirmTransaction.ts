@@ -620,7 +620,7 @@ function getReviewedSignerFacingRequest(pending: PendingTransactionOrSignableMes
 	if (pending.originalRequestParameters.method !== 'eth_sendTransaction') return pending.originalRequestParameters
 	if (getSafePendingFlow(pending) !== undefined) return pending.originalRequestParameters
 	if (pending.transactionOrMessageCreationStatus !== 'Simulated') return pending.originalRequestParameters
-	// When the confirmation simulation fails, the popup shows only the website's own request, so an override forwards exactly that request and leaves omitted gas, fees and nonce to the wallet instead of sending prepared values the user never saw.
+	// When the confirmation simulation fails, the popup shows only the website's own request, so an override forwards exactly that request and leaves omitted gas, fees and nonce to the wallet instead of sending prepared values the user never saw. The failure view has no override checkbox, but an override ticked on an earlier simulation of the same request stays enabled after a refresh fails, so this path is reachable.
 	if (pending.popupVisualisation.statusCode !== 'success') return pending.originalRequestParameters
 	const reviewedTransaction = getReviewedTransactionForSigning(pending.transactionToSimulate.transaction, pending.popupVisualisation, pending.transactionIdentifier)
 	// The simulator repairs nonces against the latest block only for its preview, so its nonce is never forwarded: an omitted nonce stays wallet-selected because the wallet can see its own pending transactions, and a nonce the website supplied is forwarded unchanged so its ordering and replay protection hold. The popup shows the nonce that will be signed and notes a different simulated one.
