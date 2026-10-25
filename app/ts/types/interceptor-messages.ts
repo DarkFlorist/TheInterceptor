@@ -1051,6 +1051,7 @@ const PopupMessageRuntype = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestHomePageBootstrap') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestSettingsChangeStatus') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_refreshHomeData') }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_openManagement') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_openSettings') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_clearUnexpectedError') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_import_settings'), data: funtypes.ReadonlyObject({ fileContents: funtypes.String }) }),

@@ -24,6 +24,7 @@ export const stylesheetFilenames = [
 	'interceptor-pages.css',
 ] as const
 
+// Keep addressBook, simulationStack, and websiteAccess as standalone compatibility pages for saved extension URLs and the Chrome Safe co-signing benchmark. New in-app navigation opens settingsView.
 export const pageDefinitions: readonly PageDefinition[] = [
 	{
 		name: 'addressBook',
@@ -61,7 +62,7 @@ export const pageDefinitions: readonly PageDefinition[] = [
 	},
 	{
 		name: 'settingsView',
-		title: 'Import settings - The Interceptor',
+		title: 'Manage The Interceptor',
 		htmlStyle: 'background-color: var(--bg-color); overflow-y: inherit;',
 	},
 	{

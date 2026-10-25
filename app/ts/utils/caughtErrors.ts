@@ -6,10 +6,15 @@ type InterceptorInternalErrorDefinition = {
 }
 
 export function getErrorMessage(error: unknown) {
-	if (error instanceof Error) return error.message
-	if (typeof error === 'string') return error
-	if (typeof error === 'object' && error !== null && 'message' in error && typeof error.message === 'string') return error.message
-	return undefined
+	try {
+		if (error instanceof Error) return error.message
+		if (typeof error === 'string') return error
+		if (typeof error === 'object' && error !== null && 'message' in error && typeof error.message === 'string') return error.message
+		return undefined
+	} catch {
+		// A broken message getter is preserved by the diagnostic snapshot instead.
+		return undefined
+	}
 }
 
 export function createInterceptorInternalError<Code extends string>(message: string, interceptorErrorCode: Code, interceptorErrorClassification: InterceptorInternalErrorClassification) {
@@ -17,14 +22,17 @@ export function createInterceptorInternalError<Code extends string>(message: str
 }
 
 function getInterceptorInternalErrorDefinition(error: unknown): InterceptorInternalErrorDefinition | undefined {
-	if (typeof error !== 'object' || error === null || !('interceptorErrorCode' in error)) return undefined
-	const code = error.interceptorErrorCode
-	if (typeof code !== 'string') return undefined
-	if ('interceptorErrorClassification' in error) {
-		const classification = error.interceptorErrorClassification
+	if (typeof error !== 'object' || error === null) return undefined
+	try {
+		const code = Object.getOwnPropertyDescriptor(error, 'interceptorErrorCode')?.value
+		if (typeof code !== 'string') return undefined
+		const classification = Object.getOwnPropertyDescriptor(error, 'interceptorErrorClassification')?.value
 		if (classification === 'failedToFetch' || classification === 'handled') return { code, classification }
+		return undefined
+	} catch {
+		// Unreadable classification fields leave the error reportable as unexpected.
+		return undefined
 	}
-	return undefined
 }
 
 export function getInterceptorInternalErrorCode(error: unknown): string | undefined {
