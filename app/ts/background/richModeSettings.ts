@@ -4,10 +4,10 @@ import type { AddressBookEntries } from '../types/addressBookTypes.js'
 import { EthereumAddress } from '../types/wire-types.js'
 import type { RichAccountBalance, RichModeState, RichToken } from '../types/richMode.js'
 import { MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
-import { filterRichTokensSupportedByAddressBook, getDefaultRichTokenAmount, normalizeRichAccountBalances, sameRichTokenIdentity } from '../utils/richTokens.js'
+import { reconcileRichTokenMetadata, getDefaultRichTokenAmount, normalizeRichAccountBalances, sameRichTokenIdentity } from '../utils/richTokens.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { browserStorageLocalSafeParse, browserStorageLocalSafeParseGet, browserStorageLocalSet } from '../utils/storageUtils.js'
-import { getUserAddressBookEntries } from './storageVariables.js'
+import { getUserAddressBookEntries } from './addressBookStorage.js'
 
 // All funding and address-book mutations enter through this owner; transaction-local methods keep related writes under one lock.
 const richModeSemaphore = new Semaphore(1)
@@ -116,21 +116,27 @@ function createRichModeTransaction(initial: RichModeState) {
 			return tokens
 		},
 		reconcileAddressBook: async (entries: AddressBookEntries) => {
-			const supported = filterRichTokensSupportedByAddressBook(richTokensForPresentation(state), entries)
-			if (supported.length === state.tokenLayouts.length) return
+			const current = richTokensForPresentation(state)
+			const supported = reconcileRichTokenMetadata(current, entries)
+			if (supported.length === current.length && supported.every((token, index) => token === current[index])) return false
+			let fundingChanged = false
+			const accountBalances = state.accountBalances.map((profile) => {
+				const tokenBalances = profile.tokenBalances.filter((balance) => supported.some((token) => token.chainId === profile.chainId && sameRichTokenIdentity(token, balance)))
+				if (tokenBalances.length === profile.tokenBalances.length) return profile
+				fundingChanged = true
+				return { ...profile, tokenBalances }
+			})
 			replace({
 				...state,
 				tokenLayouts: supported.map(({ amount: _amount, ...layout }) => layout),
-				accountBalances: state.accountBalances.map((profile) => ({
-					...profile,
-					tokenBalances: profile.tokenBalances.filter((balance) => supported.some((token) => token.chainId === profile.chainId && sameRichTokenIdentity(token, balance))),
-				})),
+				accountBalances: fundingChanged ? accountBalances : state.accountBalances,
 			})
+			return fundingChanged
 		},
 		updateAddressBook: async (update: (entries: AddressBookEntries) => AddressBookEntries) => {
 			const entries = update(addressBookEntries ?? await getUserAddressBookEntries())
 			addressBookEntries = entries
-			await transaction.reconcileAddressBook(entries)
+			return await transaction.reconcileAddressBook(entries)
 		},
 		commit: async () => {
 			if (!changed && addressBookEntries === undefined && (await browserStorageLocalSafeParseGet('richModeState'))?.richModeState !== undefined) return

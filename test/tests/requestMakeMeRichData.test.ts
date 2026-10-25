@@ -9,18 +9,19 @@ import { MockRequestHandler } from '../MockRequestHandler.js'
 import { RichToken } from '../../app/ts/types/richMode.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
 import type { ResolvedSimulationState } from '../../app/ts/types/visualizer-types.js'
+import { AddressBookEntry, type Erc1155Entry } from '../../app/ts/types/addressBookTypes.js'
 
 const richAccountAddress = 0x1111111111111111111111111111111111111111n
 
 const defineGlobal = (name: PropertyKey, value: unknown) => Object.defineProperty(globalThis, name, { value, configurable: true, writable: true })
 
-function installBrowserMock(options: { onRuntimeSendMessage?: () => void, onStorageGet?: (keys: unknown) => void, onStorageSet?: (items: Record<string, unknown>) => void | Promise<void> } = {}) {
+function installBrowserMock(options: { onRuntimeSendMessage?: (message: unknown) => void, onStorageGet?: (keys: unknown) => void, onStorageSet?: (items: Record<string, unknown>) => void | Promise<void> } = {}) {
 	const storageState: Record<string, unknown> = {}
 	defineGlobal('browser', {
 		runtime: {
 			lastError: null,
-			async sendMessage() {
-				options.onRuntimeSendMessage?.()
+			async sendMessage(message: unknown) {
+				options.onRuntimeSendMessage?.(message)
 				return undefined
 			},
 			getManifest: () => ({ manifest_version: 3 }),
@@ -327,6 +328,68 @@ describe('requestMakeMeRichList resilience', () => {
 		assert.equal(after.accountBalances[0]?.nativeAmount, 789n)
 		assert.equal(after.accountBalances[0]?.tokenBalances[0]?.amount, 456n)
 		for (const key of ['makeCurrentAddressRich', 'fixedAddressRichList', 'richNativeAmount', 'richTokens', 'richAccountBalances']) assert.equal(Object.hasOwn(storageState, key), false)
+	})
+
+	test('refreshes cached token metadata without changing saved balances and uses corrected defaults for another account', async () => {
+		const storageState = installBrowserMock()
+		const { getRichModeState, modifyRichToken, mutateRichMode, updateRichTokens, updateRichAccountBalances } = await loadModules()
+		const tokenAddress = 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48n
+		const secondAccount = 0x2222222222222222222222222222222222222222n
+		storageState.userAddressBookEntriesV3 = [{ type: 'ERC20', address: addressString(tokenAddress), name: 'Original token', symbol: 'OLD', decimals: '0x12', entrySource: 'User', chainId: '0x1' }]
+		await updateRichTokens(() => [{ chainId: 1n, tokenAddress, tokenType: 'ERC20', tokenId: undefined, name: 'Original token', symbol: 'OLD', decimals: 18n, amount: 200_000n * 10n ** 18n, balanceSlot: 9n, erc1155StorageOrder: undefined }])
+		await updateRichAccountBalances(() => [{ chainId: 1n, address: richAccountAddress, nativeAmount: 123n, tokenBalances: [{ tokenAddress, tokenId: undefined, amount: 456n }] }])
+
+		const fundingChanged = await mutateRichMode(async (store) => await store.updateAddressBook((entries) => entries.map((entry) => entry.type === 'ERC20'
+			? { ...entry, name: 'USD Coin', symbol: 'USDC', decimals: 6n }
+			: entry)))
+		assert.equal(fundingChanged, false)
+		const updated = await getRichModeState()
+		assert.equal(updated.tokenLayouts[0]?.name, 'USD Coin')
+		assert.equal(updated.tokenLayouts[0]?.symbol, 'USDC')
+		assert.equal(updated.tokenLayouts[0]?.decimals, 6n)
+		assert.equal(updated.tokenLayouts[0]?.balanceSlot, 9n)
+		assert.deepEqual(updated.accountBalances, [{ chainId: 1n, address: richAccountAddress, nativeAmount: 123n, tokenBalances: [{ tokenAddress, tokenId: undefined, amount: 456n }] }])
+
+		const requestHandler = new MockRequestHandler()
+		const ethereum = new EthereumClientService(requestHandler, async () => undefined, async () => undefined, {
+			name: 'Ethereum', chainId: 1n, httpsRpc: requestHandler.rpcUrl, currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: true,
+		})
+		let probeCount = 0
+		Object.defineProperty(ethereum, 'ethSimulateV1', { value: async () => { probeCount += 1; throw new Error('A cached layout should not need another storage probe') } })
+		const reply = await modifyRichToken(ethereum, undefined, { method: 'popup_modifyRichToken', data: { action: 'Add', address: secondAccount, tokenAddress } })
+		assert.equal(reply.result.success, true)
+		if (!reply.result.success) throw new Error(reply.result.error)
+		assert.equal(reply.result.richToken?.name, 'USD Coin')
+		assert.equal(reply.result.richToken?.symbol, 'USDC')
+		assert.equal(reply.result.richToken?.decimals, 6n)
+		assert.equal(reply.result.richToken?.balanceSlot, 9n)
+		assert.equal(reply.result.richToken?.amount, 200_000_000_000n)
+		assert.equal(probeCount, 0)
+		const saved = await getRichModeState()
+		assert.equal(saved.accountBalances.find((profile) => profile.address === secondAccount)?.tokenBalances[0]?.amount, 200_000_000_000n)
+		assert.equal(saved.accountBalances.find((profile) => profile.address === richAccountAddress)?.tokenBalances[0]?.amount, 456n)
+	})
+
+	test('reports funding changes when watched IDs or their address-book entry are removed', async () => {
+		const storageState = installBrowserMock()
+		const { getRichModeState, mutateRichMode, updateRichTokens, updateRichAccountBalances } = await loadModules()
+		const tokenAddress = 0x3333333333333333333333333333333333333333n
+		storageState.userAddressBookEntriesV3 = [{ type: 'ERC1155', address: addressString(tokenAddress), name: 'Collectibles', symbol: 'NFT', entrySource: 'User', chainId: '0x1', watchedTokenIds: ['0x7', '0x8'] }]
+		await updateRichTokens(() => [7n, 8n].map((tokenId) => ({ chainId: 1n, tokenAddress, tokenType: 'ERC1155', tokenId, name: 'Collectibles', symbol: 'NFT', decimals: 0n, amount: 200_000n, balanceSlot: 2n, erc1155StorageOrder: 'TokenIdThenOwner' })))
+		await updateRichAccountBalances(() => [{ chainId: 1n, address: richAccountAddress, nativeAmount: 123n, tokenBalances: [{ tokenAddress, tokenId: 7n, amount: 12n }, { tokenAddress, tokenId: 8n, amount: 34n }] }])
+
+		const unwatched = await mutateRichMode(async (store) => await store.updateAddressBook((entries) => entries.map((entry) => entry.type === 'ERC1155' ? { ...entry, watchedTokenIds: [8n] } : entry)))
+		assert.equal(unwatched, true)
+		const afterUnwatch = await getRichModeState()
+		assert.deepEqual(afterUnwatch.tokenLayouts.map((token) => token.tokenId), [8n])
+		assert.deepEqual(afterUnwatch.accountBalances[0]?.tokenBalances, [{ tokenAddress, tokenId: 8n, amount: 34n }])
+		assert.equal(await mutateRichMode(async (store) => await store.updateAddressBook((entries) => entries)), false)
+
+		assert.equal(await mutateRichMode(async (store) => await store.updateAddressBook(() => [])), true)
+		const afterRemoval = await getRichModeState()
+		assert.deepEqual(afterRemoval.tokenLayouts, [])
+		assert.deepEqual(afterRemoval.accountBalances[0]?.tokenBalances, [])
+		assert.equal(afterRemoval.accountBalances[0]?.nativeAmount, 123n)
 	})
 
 	test('migrates global token balances once without adding them to later rich accounts', async () => {
@@ -937,6 +1000,59 @@ describe('requestMakeMeRichList resilience', () => {
 		assert.equal(simulationInput[0]?.stateOverrides[addressString(tokenAddress)], undefined)
 	})
 
+	for (const edit of ['removal', 'watched-ID change', 'token-type change', 'metadata-only edit', 'no-op edit'] as const) {
+		test(`address-book ${ edit } refreshes simulation only when funding changes`, async () => {
+			let visibilityProbeCount = 0
+			const storageState = installBrowserMock({ onRuntimeSendMessage: (message) => {
+				if (typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_isSimulationVisualizerOpen') visibilityProbeCount += 1
+			} })
+			const { addOrModifyAddressBookEntry, removeAddressBookEntry, updateRichTokens, updateRichAccountBalances, setMakeCurrentAddressRich, getRichAccountBalances } = await loadModules()
+			const entry: Erc1155Entry = {
+				type: 'ERC1155', name: 'Game Items', address: 0x4444444444444444444444444444444444444444n,
+				symbol: 'ITEM', entrySource: 'User', chainId: 1n, watchedTokenIds: [42n],
+			}
+			storageState.userAddressBookEntriesV3 = [serialize(AddressBookEntry, entry)]
+			storageState.simulationMode = true
+			storageState.independentActiveSimulationAddress = addressString(richAccountAddress)
+			await updateRichTokens(() => [{
+				chainId: 1n, tokenAddress: entry.address, tokenType: 'ERC1155', tokenId: 42n,
+				name: entry.name, symbol: entry.symbol, decimals: 0n, amount: 100n,
+				balanceSlot: 3n, erc1155StorageOrder: 'TokenIdThenOwner',
+			}])
+			await updateRichAccountBalances(() => [{
+				chainId: 1n, address: richAccountAddress, nativeAmount: 1n,
+				tokenBalances: [{ tokenAddress: entry.address, tokenId: 42n, amount: 100n }],
+			}])
+			await setMakeCurrentAddressRich(true)
+			const requestHandler = new MockRequestHandler()
+			const ethereum = new EthereumClientService(requestHandler, async () => undefined, async () => undefined, {
+				name: 'Ethereum', chainId: 1n, httpsRpc: requestHandler.rpcUrl,
+				currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: true,
+			})
+			const services = createTestSimulationServicesOwner({ ethereum, tokenPriceService: new TokenPriceService(ethereum, 60_000) })
+			if (edit === 'removal') {
+				await removeAddressBookEntry(services, new Map(), {
+					method: 'popup_removeAddressBookEntry',
+					data: { address: entry.address, addressBookCategory: 'ERC1155 Tokens', chainId: 1n },
+				})
+			} else {
+				const updatedEntry: AddressBookEntry = edit === 'token-type change'
+					? { type: 'contract', name: entry.name, address: entry.address, chainId: 1n, entrySource: 'User' }
+					: edit === 'watched-ID change'
+						? { ...entry, watchedTokenIds: [] }
+						: edit === 'metadata-only edit'
+							? { ...entry, name: 'Renamed Game Items', symbol: 'RENAMED' }
+							: entry
+				assert.deepEqual(await addOrModifyAddressBookEntry(services, new Map(), {
+					method: 'popup_addOrModifyAddressBookEntry', data: updatedEntry,
+				}), { type: 'AddOrModifyAddressBookEntryReply', ok: true })
+			}
+			const fundingChanged = edit === 'removal' || edit === 'watched-ID change' || edit === 'token-type change'
+			assert.equal(visibilityProbeCount, fundingChanged ? 1 : 0)
+			assert.equal((await getRichAccountBalances())[0]?.tokenBalances.length, fundingChanged ? 0 : 1)
+		})
+	}
+
 	test('address-book removal wins against an in-flight token storage scan', async () => {
 		const storageState = installBrowserMock()
 		const { modifyRichToken, removeAddressBookEntry, getRichTokens } = await loadModules()
@@ -990,8 +1106,17 @@ describe('requestMakeMeRichList resilience', () => {
 				data: { address: tokenAddress, addressBookCategory: 'ERC20 Tokens', chainId: 1n },
 			},
 		)
-		releaseProbe()
-		await Promise.all([addPromise, removePromise])
+		let timeout: ReturnType<typeof setTimeout> | undefined
+		try {
+			await Promise.race([
+				removePromise,
+				new Promise<never>((_resolve, reject) => { timeout = setTimeout(() => reject(new Error('Address-book removal waited for the RPC scan')), 2000) }),
+			])
+		} finally {
+			clearTimeout(timeout)
+			releaseProbe()
+		}
+		assert.equal((await addPromise).result.success, false)
 
 		assert.deepEqual(await getRichTokens(), [])
 	})

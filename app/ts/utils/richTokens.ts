@@ -8,6 +8,7 @@ import { decodeFunctionOutputSafely, encodeAbiValues, encodeFunctionCall } from 
 import { addressString, bytes32String, stringToUint8Array } from './bigint.js'
 import { keccak256 } from './ethereumPrimitives.js'
 import { parseUnits } from './ethereumUnits.js'
+import { getAddressBookEntriesForChainIdMorePreciseFirst } from './addressBook.js'
 
 const DEFAULT_RICH_TOKEN_COUNT = 200_000n
 export const MAX_RICH_TOKEN_AMOUNT = 2n ** 256n - 1n
@@ -208,6 +209,18 @@ export const isRichTokenSupportedByAddressBook = (token: RichToken, addressBookE
 
 export const filterRichTokensSupportedByAddressBook = (tokens: readonly RichToken[], addressBookEntries: readonly AddressBookEntry[]) => (
 	tokens.filter((token) => isRichTokenSupportedByAddressBook(token, addressBookEntries))
+)
+
+export const reconcileRichTokenMetadata = (tokens: readonly RichToken[], addressBookEntries: readonly AddressBookEntry[]): readonly RichToken[] => (
+	filterRichTokensSupportedByAddressBook(tokens, addressBookEntries).map((token) => {
+		const entries = getAddressBookEntriesForChainIdMorePreciseFirst(addressBookEntries, token.chainId)
+		const metadata = entries.find((entry) => entry.address === token.tokenAddress && entry.type === token.tokenType)
+		if (metadata === undefined || (metadata.type !== 'ERC20' && metadata.type !== 'ERC1155')) return token
+		const decimals = metadata.type === 'ERC20' ? metadata.decimals : 0n
+		if (token.name === metadata.name && token.symbol === metadata.symbol && token.decimals === decimals) return token
+		// Layout metadata controls defaults for future accounts; existing profile amounts remain in base units.
+		return { ...token, name: metadata.name, symbol: metadata.symbol, decimals, amount: getDefaultRichTokenAmount(decimals) }
+	})
 )
 
 type AddressBookRichTokenCandidate =

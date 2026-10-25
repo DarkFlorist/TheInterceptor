@@ -1,3 +1,4 @@
+import { queuePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
 import type { RichToken } from '../types/richMode.js'
 import { addressesBeingMadeRich, getRichModeState, profilesForAddresses, richTokensForPresentation } from './richModeSettings.js'
 import { discoverErc1155BalanceStorage, discoverErc20BalanceStorageSlot, getDefaultRichTokenAmount, getRichTokenOptions, isSupportedRichTokenDecimals, MAX_RICH_TOKEN_AMOUNT, MAX_SUPPORTED_RICH_TOKEN_DECIMALS, sameRichTokenIdentity, verifyErc1155BalanceStorageSlot } from '../utils/richTokens.js'
@@ -298,7 +299,56 @@ export async function modifyRichToken(
 ) {
 	const chainId = ethereum.getChainId()
 	const identity = { tokenAddress: request.data.tokenAddress, tokenId: request.data.tokenId }
+	const getAddressBookToken = async () => {
+		const entries = (await getUserAddressBookEntriesForChainIdMorePreciseFirst(chainId))
+			.filter((entry): entry is Erc20TokenEntry | Erc1155Entry => entry.type === 'ERC20' || entry.type === 'ERC1155')
+			.filter((entry) => entry.address === request.data.tokenAddress)
+		const requestedTokenId = request.data.tokenId
+		if (requestedTokenId === undefined) return entries.find((entry): entry is Erc20TokenEntry => entry.type === 'ERC20')
+		const metadataEntry = entries.find((entry): entry is Erc1155Entry => entry.type === 'ERC1155')
+		const tokenIdIsWatched = entries.some((entry) => entry.type === 'ERC1155' && entry.watchedTokenIds?.includes(requestedTokenId) === true)
+		return tokenIdIsWatched ? metadataEntry : undefined
+	}
+	const discoverStorage = async () => {
+		if (request.data.action !== 'Add') return undefined
+		const addressBookToken = await getAddressBookToken()
+		if (addressBookToken === undefined || (addressBookToken.type === 'ERC20' && !isSupportedRichTokenDecimals(addressBookToken.decimals))) return undefined
+		const current = richTokensForPresentation(await getRichModeState())
+		if (current.some((token) => token.chainId === chainId && sameRichTokenIdentity(token, identity))) return undefined
+		const getErc1155Storage = async () => {
+			if (addressBookToken.type !== 'ERC1155' || request.data.tokenId === undefined) return undefined
+			const cachedToken = current.find((token) =>
+				token.chainId === chainId
+				&& token.tokenAddress === request.data.tokenAddress
+				&& token.tokenType === 'ERC1155'
+				&& token.erc1155StorageOrder !== undefined
+			)
+			if (
+				cachedToken?.erc1155StorageOrder !== undefined
+				&& await verifyErc1155BalanceStorageSlot(
+					ethereum,
+					requestAbortController,
+					request.data.tokenAddress,
+					request.data.tokenId,
+					cachedToken.balanceSlot,
+					cachedToken.erc1155StorageOrder,
+				)
+			) {
+				return { balanceSlot: cachedToken.balanceSlot, storageOrder: cachedToken.erc1155StorageOrder }
+			}
+			return await discoverErc1155BalanceStorage(ethereum, requestAbortController, request.data.tokenAddress, request.data.tokenId)
+		}
+		const discoveredErc1155Storage = await getErc1155Storage()
+		const discoveredStorage = addressBookToken.type === 'ERC20'
+			? { balanceSlot: await discoverErc20BalanceStorageSlot(ethereum, requestAbortController, request.data.tokenAddress), erc1155StorageOrder: undefined }
+			: discoveredErc1155Storage === undefined
+				? undefined
+				: { balanceSlot: discoveredErc1155Storage.balanceSlot, erc1155StorageOrder: discoveredErc1155Storage.storageOrder }
+		return discoveredStorage
+	}
 	try {
+		// RPC probes must not block address-book edits; eligibility and cached layouts are reread under the mutation lock before commit.
+		const discoveredStorage = await discoverStorage()
 		return await mutateRichMode(async (store) => {
 			if (request.data.action === 'Remove') {
 				await store.updateRichAccountBalances((profiles) => profiles.map((profile) => profile.chainId === chainId && profile.address === request.data.address
@@ -331,16 +381,7 @@ export async function modifyRichToken(
 					return { ...profile, tokenBalances: [...profile.tokenBalances, { ...identity, amount: richToken.amount }] }
 				}))
 			}
-			const getAddressBookToken = async () => {
-				const entries = (await getUserAddressBookEntriesForChainIdMorePreciseFirst(chainId))
-					.filter((entry): entry is Erc20TokenEntry | Erc1155Entry => entry.type === 'ERC20' || entry.type === 'ERC1155')
-					.filter((entry) => entry.address === request.data.tokenAddress)
-				const requestedTokenId = request.data.tokenId
-				if (requestedTokenId === undefined) return entries.find((entry): entry is Erc20TokenEntry => entry.type === 'ERC20')
-				const metadataEntry = entries.find((entry): entry is Erc1155Entry => entry.type === 'ERC1155')
-				const tokenIdIsWatched = entries.some((entry) => entry.type === 'ERC1155' && entry.watchedTokenIds?.includes(requestedTokenId) === true)
-				return tokenIdIsWatched ? metadataEntry : undefined
-			}
+
 			const addressBookToken = await getAddressBookToken()
 			if (addressBookToken === undefined) {
 				await store.updateRichTokens((tokens) => tokens.filter((token) => token.chainId !== chainId || !sameRichTokenIdentity(token, identity)))
@@ -356,51 +397,18 @@ export async function modifyRichToken(
 				return { method: 'popup_modifyRichToken' as const, result: { success: true as const, richToken: existing } }
 			}
 
-			const getErc1155Storage = async () => {
-				if (addressBookToken.type !== 'ERC1155' || request.data.tokenId === undefined) return undefined
-				const cachedToken = current.find((token) =>
-					token.chainId === chainId
-					&& token.tokenAddress === request.data.tokenAddress
-					&& token.tokenType === 'ERC1155'
-					&& token.erc1155StorageOrder !== undefined
-				)
-				if (
-					cachedToken?.erc1155StorageOrder !== undefined
-					&& await verifyErc1155BalanceStorageSlot(
-						ethereum,
-						requestAbortController,
-						request.data.tokenAddress,
-						request.data.tokenId,
-						cachedToken.balanceSlot,
-						cachedToken.erc1155StorageOrder,
-					)
-				) {
-					return { balanceSlot: cachedToken.balanceSlot, storageOrder: cachedToken.erc1155StorageOrder }
-				}
-				return await discoverErc1155BalanceStorage(ethereum, requestAbortController, request.data.tokenAddress, request.data.tokenId)
-			}
-			const discoveredErc1155Storage = await getErc1155Storage()
-			const discoveredStorage = addressBookToken.type === 'ERC20'
-				? { balanceSlot: await discoverErc20BalanceStorageSlot(ethereum, requestAbortController, request.data.tokenAddress), erc1155StorageOrder: undefined }
-				: discoveredErc1155Storage === undefined
-					? undefined
-					: { balanceSlot: discoveredErc1155Storage.balanceSlot, erc1155StorageOrder: discoveredErc1155Storage.storageOrder }
 			if (discoveredStorage === undefined || discoveredStorage.balanceSlot === undefined) {
 				return { method: 'popup_modifyRichToken' as const, result: { success: false as const, error: 'The token uses an unsupported balance storage layout. No verified balance slot was found in the first 64 storage positions.' } }
-			}
-			const latestAddressBookToken = await getAddressBookToken()
-			if (latestAddressBookToken === undefined) {
-				return { method: 'popup_modifyRichToken' as const, result: { success: false as const, error: 'The token was removed from the active-chain address book while its balance storage was being detected.' } }
 			}
 			const richToken = {
 				chainId,
 				tokenAddress: request.data.tokenAddress,
-				tokenType: latestAddressBookToken.type,
+				tokenType: addressBookToken.type,
 				tokenId: request.data.tokenId,
-				name: latestAddressBookToken.name,
-				symbol: latestAddressBookToken.symbol,
-				decimals: latestAddressBookToken.type === 'ERC20' ? latestAddressBookToken.decimals : 0n,
-				amount: getDefaultRichTokenAmount(latestAddressBookToken.type === 'ERC20' ? latestAddressBookToken.decimals : 0n),
+				name: addressBookToken.name,
+				symbol: addressBookToken.symbol,
+				decimals: addressBookToken.type === 'ERC20' ? addressBookToken.decimals : 0n,
+				amount: getDefaultRichTokenAmount(addressBookToken.type === 'ERC20' ? addressBookToken.decimals : 0n),
 				balanceSlot: discoveredStorage.balanceSlot,
 				erc1155StorageOrder: discoveredStorage.erc1155StorageOrder,
 			}
@@ -422,12 +430,13 @@ export async function modifyRichToken(
 }
 
 export async function removeAddressBookEntry(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, removeAddressBookEntry: RemoveAddressBookEntry) {
-	await mutateRichMode(async (store) => {
-		await store.updateAddressBook((previousContacts) => previousContacts.filter((contact) =>
+	const fundingChanged = await mutateRichMode(async (store) => {
+		return await store.updateAddressBook((previousContacts) => previousContacts.filter((contact) =>
 			!(contact.address === removeAddressBookEntry.data.address
 			&& (contact.chainId === removeAddressBookEntry.data.chainId || (contact.chainId === undefined && removeAddressBookEntry.data.chainId === 1n))))
 		)
 	})
+	if (fundingChanged) await queuePopupSimulationRefresh({ ...simulationServicesOwner.getCurrent(), invalidateOldState: true })
 	if (removeAddressBookEntry.data.addressBookCategory === 'My Active Addresses' || removeAddressBookEntry.data.addressBookCategory === 'My Safes') {
 		await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
 	}
@@ -471,14 +480,15 @@ export async function addOrModifyAddressBookEntry(simulationServicesOwner: Simul
 				}
 			}
 		}
-		await mutateRichMode(async (store) => {
-			await store.updateAddressBook((previousContacts) => {
+		const fundingChanged = await mutateRichMode(async (store) => {
+			return await store.updateAddressBook((previousContacts) => {
 				if (previousContacts.find((previous) => previous.address === entryToStore.address && doAddressBookChainIdsMatch(previous.chainId, entryToStore.chainId)) ) {
 					return previousContacts.map((previous) => previous.address === entryToStore.address && doAddressBookChainIdsMatch(previous.chainId, entryToStore.chainId) ? entryToStore : previous)
 				}
 				return previousContacts.concat([entryToStore])
 			})
 		})
+		if (fundingChanged) await queuePopupSimulationRefresh({ ...simulationServicesOwner.getCurrent(), invalidateOldState: true })
 		if (entryToStore.useAsActiveAddress) await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true, true)
 		void sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 		return { type: 'AddOrModifyAddressBookEntryReply' as const, ok: true as const }
