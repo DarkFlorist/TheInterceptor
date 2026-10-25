@@ -171,6 +171,16 @@ export function setSignerExecutionTarget(owner: SignerExecutionOwner | undefined
 	return true
 }
 
+// Restoring an existing document cannot replace an active target or revive a deliberately blocked selection.
+export function recoverSignerExecution(owner: SignerExecutionOwner | undefined, socket: WebsiteSocket, websiteOrigin: string, providerUuid: string | undefined) {
+	const authority = getSignerCoordination(owner)?.signerExecutionAuthorities.get(socket.tabId)
+	if (authority === undefined || !isAuthoritativeTopSocket(owner, socket)) return false
+	if (authority.mode !== 'pending' && !(providerUuid === undefined ? authority.mode === 'legacy' : authority.mode === 'eip6963' && authority.providerUuid === providerUuid)) return false
+	return providerUuid === undefined
+		? allowLegacySignerExecution(owner, socket, websiteOrigin)
+		: setSignerExecutionTarget(owner, socket.tabId, providerUuid, websiteOrigin) && authorizeSocketForSignerExecution(owner, socket, providerUuid, websiteOrigin)
+}
+
 export function allowLegacySignerExecution(owner: SignerExecutionOwner | undefined, socket: WebsiteSocket, websiteOrigin: string) {
 	const state = getSignerCoordination(owner)
 	if (state === undefined) return false
@@ -215,6 +225,11 @@ export function signerSelectionIsUnavailable(owner: SignerExecutionOwner | undef
 	const { signerExecutionAuthorities } = state
 	const authority = signerExecutionAuthorities.get(socket.tabId)
 	return authority?.mode === 'blocked' && authority.websiteOrigin === websiteOrigin
+}
+
+export function signerExecutionIsPending(owner: SignerExecutionOwner | undefined, tabId: number, websiteOrigin: string) {
+	const authority = getSignerCoordination(owner)?.signerExecutionAuthorities.get(tabId)
+	return authority?.websiteOrigin === websiteOrigin && authority.mode === 'pending'
 }
 
 export function getSignerExecutionTargetForOrigin(owner: SignerExecutionOwner | undefined, tabId: number, websiteOrigin: string) {

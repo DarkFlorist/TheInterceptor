@@ -1,4 +1,4 @@
-import { getSignerExecutionOwner, acquireSignerSelectionLease, releaseSignerSelectionLease, signerSelectionLeaseIsActive, allowLegacySignerExecution, authorizeSocketForLegacySignerExecution, authorizeSocketForSignerExecution, blockSignerExecution, getSignerExecutionTargetForSocket, getSignerDocumentGeneration, isAuthoritativeTopSocket, reconcileSignerExecutionDocument, setSignerExecutionTarget, signerSelectionIsUnavailable, signerFrameHasDifferentOrigin, socketIsEligibleForSignerExecution } from './signerExecutionAuthority.js'
+import { getSignerExecutionOwner, signerExecutionIsPending, recoverSignerExecution, acquireSignerSelectionLease, releaseSignerSelectionLease, signerSelectionLeaseIsActive, allowLegacySignerExecution, authorizeSocketForLegacySignerExecution, authorizeSocketForSignerExecution, blockSignerExecution, getSignerExecutionTargetForSocket, getSignerDocumentGeneration, isAuthoritativeTopSocket, reconcileSignerExecutionDocument, setSignerExecutionTarget, signerSelectionIsUnavailable, signerFrameHasDifferentOrigin, socketIsEligibleForSignerExecution } from './signerExecutionAuthority.js'
 import { probeChildSignerDocument } from './signerDocumentSynchronization.js'
 import { getExplicitSignerSelectionForConnection } from './signerSelectionOwnership.js'
 import { isTopFrameId } from '../utils/requests.js'
@@ -55,16 +55,49 @@ export function finishSignerProviderSelection(websiteTabConnections: WebsiteTabC
 }
 
 export async function signerProvidersChanged(websiteTabConnections: WebsiteTabConnections, request: ProviderMessage, websiteOrigin: string, isTopFrame: boolean, frameId: number | undefined = isTopFrame ? 0 : undefined) {
-	const [announcedProviders, signerProviderCatalogOverflowed] = SignerProvidersChanged.parse(request).params
+	const [announcedProviders, signerProviderCatalogOverflowed, recovery] = SignerProvidersChanged.parse(request).params
 	const socket = request.uniqueRequestIdentifier.requestSocket
 	const childDocument = !isTopFrame && frameId !== undefined ? await probeChildSignerDocument(websiteTabConnections, socket, websiteOrigin, frameId) : undefined
 	const documentGeneration = isTopFrame ? getSignerDocumentGeneration(getSignerExecutionOwner(websiteTabConnections, socket.tabId), socket, websiteOrigin) : childDocument?.status === 'ready' ? childDocument.generation : undefined
+	const signerFrameIneligible = childDocument?.status === 'ineligible' || (!isTopFrame && frameId === undefined) || signerFrameHasDifferentOrigin(getSignerExecutionOwner(websiteTabConnections, socket.tabId), socket, websiteOrigin)
 	if (!reconcileSignerExecutionDocument(getSignerExecutionOwner(websiteTabConnections, socket.tabId), socket, websiteOrigin, documentGeneration, isTopFrame, frameId)) return {
 		preferredSignerRdns: undefined,
 		automaticSelectionAllowed: false,
 		signerSelectionChangeAllowed: false,
 		legacySignerAllowed: false,
-		...(childDocument?.status === 'ineligible' || (!isTopFrame && frameId === undefined) || signerFrameHasDifferentOrigin(getSignerExecutionOwner(websiteTabConnections, socket.tabId), socket, websiteOrigin) ? { signerFrameIneligible: true } : {}),
+		...(signerFrameIneligible ? { signerFrameIneligible: true } : {}),
+		...(recovery === undefined ? {} : { signerConnectionRecoveryStatus: !signerFrameIneligible && childDocument?.status === 'retry' ? 'retry' as const : 'refused' as const }),
+	}
+	if (recovery !== undefined) {
+		// Recover only this document's already chosen transport. Pending approvals continue to prohibit selecting a different wallet.
+		const owner = getSignerExecutionOwner(websiteTabConnections, socket.tabId)
+		let recovered = false
+		let retryable = false
+		if (isTopFrame) {
+			const state = await getTabState(socket.tabId)
+			const preference = await getSignerPreference(websiteOrigin)
+			const currentOwner = getSignerExecutionOwner(websiteTabConnections, socket.tabId)
+			if (isAuthoritativeTopSocket(currentOwner, socket)) {
+				const selected = getExplicitSignerSelectionForConnection(state, websiteOrigin, socket.connectionName)
+				if (selected !== undefined && selected.uuid === recovery.activeSignerProviderUuid
+					&& announcedProviders.some((candidate) => candidate.uuid === selected.uuid && candidate.rdns === selected.rdns && candidate.name === selected.name && candidate.icon === selected.icon)) {
+					recovered = recoverSignerExecution(currentOwner, socket, websiteOrigin, selected.uuid)
+				} else if (recovery.activeSignerProviderUuid === undefined && state.selectedSignerProvider === undefined && preference === undefined
+					&& state.legacySignerConnection?.websiteOrigin === websiteOrigin && state.legacySignerConnection.connectionName === socket.connectionName) {
+					recovered = recoverSignerExecution(currentOwner, socket, websiteOrigin, undefined)
+				}
+				// A rejected top proof is final for this recovery, including children waiting for its authority.
+				if (!recovered && signerExecutionIsPending(currentOwner, socket.tabId, websiteOrigin)) blockSignerExecution(currentOwner, socket.tabId)
+			}
+		} else {
+			const providerAvailable = recovery.activeSignerProviderUuid === undefined || announcedProviders.some((candidate) => candidate.uuid === recovery.activeSignerProviderUuid)
+			retryable = providerAvailable && signerExecutionIsPending(owner, socket.tabId, websiteOrigin)
+			recovered = recovery.activeSignerProviderUuid === undefined
+				? authorizeSocketForLegacySignerExecution(owner, socket, websiteOrigin)
+				: announcedProviders.some((candidate) => candidate.uuid === recovery.activeSignerProviderUuid)
+					&& authorizeSocketForSignerExecution(owner, socket, recovery.activeSignerProviderUuid, websiteOrigin)
+		}
+		return { preferredSignerRdns: undefined, automaticSelectionAllowed: false, signerSelectionChangeAllowed: false, legacySignerAllowed: false, signerConnectionRecoveryStatus: recovered ? 'recovered' as const : retryable ? 'retry' as const : 'refused' as const }
 	}
 	if (!isTopFrame) {
 		const executionTarget = getSignerExecutionTargetForSocket(getSignerExecutionOwner(websiteTabConnections, socket.tabId), socket, websiteOrigin)
@@ -131,6 +164,9 @@ export async function signerProvidersChanged(websiteTabConnections: WebsiteTabCo
 		blockSignerExecution(getSignerExecutionOwner(websiteTabConnections, tabId), tabId)
 	} else {
 		allowLegacySignerExecution(getSignerExecutionOwner(websiteTabConnections, socket.tabId), socket, websiteOrigin)
+		await updateTabState(tabId, (state) => isAuthoritativeTopSocket(getSignerExecutionOwner(websiteTabConnections, socket.tabId), socket)
+			? { ...state, legacySignerConnection: { websiteOrigin, connectionName: socket.connectionName } }
+			: state)
 	}
 	await sendPopupMessageToOpenWindows({ method: 'popup_signer_name_changed' })
 	return { preferredSignerRdns, automaticSelectionAllowed: false, signerSelectionChangeAllowed, legacySignerAllowed: preferredSignerRdns === undefined }
@@ -169,6 +205,7 @@ export async function signerProviderSelected(request: ProviderMessage, websiteOr
 			selectedSignerProvider: provider,
 			explicitlySelectedSignerProviderUuid: provider.uuid,
 			selectedSignerConnectionName: request.uniqueRequestIdentifier.requestSocket.connectionName,
+			legacySignerConnection: undefined,
 			preferredSignerUnavailable: false,
 		})
 	})

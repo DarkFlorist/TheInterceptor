@@ -82,6 +82,82 @@ function createProviderMessage(method: string, params: readonly unknown[], tabId
 }
 
 describe('EIP-6963 signer provider selection', () => {
+	test.each(['legacy', 'eip6963'])('recovers the same %s document during pending approval without permitting selection changes', async (mode) => {
+		const { storageState } = installBrowserMock()
+		const { signerProvidersChanged, signerProviderSelected, beginSignerProviderSelection } = await import('../../app/ts/background/signerProviderSelection.js')
+		const { socketCanExecuteWithSelectedSigner } = await import('../../app/ts/background/signerExecutionAuthority.js')
+		const { updateTabState } = await import('../../app/ts/background/storageVariables.js')
+		const { defaultRpcs } = await import('../../app/ts/background/settings.js')
+		await updateTabState(7, (state) => ({ ...state, website: { websiteOrigin: 'app.example', icon: undefined, title: 'Example' } }))
+		await signerProvidersChanged(connections, createProviderMessage('signer_providers_changed', [[provider], false]), 'app.example', true)
+		if (mode === 'eip6963') await signerProviderSelected(createProviderMessage('signer_provider_selected', [provider, 'explicit']), 'app.example', true, 0, connections)
+		storageState.chainChangeConfirmationPromise = {
+			website: { websiteOrigin: 'app.example', icon: undefined, title: 'Example' },
+			popupOrTabId: { type: 'popup', id: 99 },
+			request: { ...createProviderMessage('wallet_switchEthereumChain', [{ chainId: '0x1' }]), uniqueRequestIdentifier: { requestId: 1, requestSocket: { tabId: 7, connectionName: '0x1' } } },
+			rpcNetwork: { ...defaultRpcs[0], chainId: '0x1' },
+			simulationMode: false,
+		}
+		const activeSignerProviderUuid = mode === 'eip6963' ? provider.uuid : undefined
+		const recovery = createProviderMessage('signer_providers_changed', [[provider], false, { activeSignerProviderUuid }])
+		const restarted: WebsiteTabConnections = new Map()
+		registerAuthoritativeTopSocket(restarted, recovery.uniqueRequestIdentifier.requestSocket, 'app.example')
+		const { registerCurrentChildSignerSocket } = await import('../../app/ts/background/signerExecutionAuthority.js')
+		const childSocket = { tabId: 7, connectionName: 3n }
+		registerCurrentChildSignerSocket(restarted, childSocket, 1)
+		const childRecovery = { ...recovery, uniqueRequestIdentifier: { requestId: 3, requestSocket: childSocket } }
+		const earlyChildReply = await signerProvidersChanged(restarted, childRecovery, 'app.example', false, 1)
+		assert.equal('signerConnectionRecoveryStatus' in earlyChildReply && earlyChildReply.signerConnectionRecoveryStatus, 'retry')
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(restarted, 7), recovery.uniqueRequestIdentifier.requestSocket), false)
+		const reply = await signerProvidersChanged(restarted, recovery, 'app.example', true)
+		assert.equal('signerConnectionRecoveryStatus' in reply && reply.signerConnectionRecoveryStatus, 'recovered')
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(restarted, 7), recovery.uniqueRequestIdentifier.requestSocket), true)
+		const childReply = await signerProvidersChanged(restarted, childRecovery, 'app.example', false, 1)
+		assert.equal('signerConnectionRecoveryStatus' in childReply && childReply.signerConnectionRecoveryStatus, 'recovered')
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(restarted, 7), childSocket), true)
+		assert.equal(await beginSignerProviderSelection(restarted, createProviderMessage('begin_signer_provider_selection', [provider.uuid]), 'app.example', true, 0), undefined)
+		// A navigation is a different document even when it announces the same provider metadata.
+		const nextSocket = { tabId: 7, connectionName: 2n }
+		registerAuthoritativeTopSocket(restarted, nextSocket, 'app.example')
+		const nextRequest = { ...recovery, uniqueRequestIdentifier: { requestId: 2, requestSocket: nextSocket } }
+		const nextReply = await signerProvidersChanged(restarted, nextRequest, 'app.example', true)
+		assert.equal('signerConnectionRecoveryStatus' in nextReply && nextReply.signerConnectionRecoveryStatus, 'refused')
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(restarted, 7), nextSocket), false)
+		const otherOrigin: WebsiteTabConnections = new Map()
+		registerAuthoritativeTopSocket(otherOrigin, recovery.uniqueRequestIdentifier.requestSocket, 'other.example')
+		const otherReply = await signerProvidersChanged(otherOrigin, recovery, 'other.example', true)
+		assert.equal('signerConnectionRecoveryStatus' in otherReply && otherReply.signerConnectionRecoveryStatus, 'refused')
+		if (mode === 'eip6963') {
+			const changedProvider: WebsiteTabConnections = new Map()
+			registerAuthoritativeTopSocket(changedProvider, recovery.uniqueRequestIdentifier.requestSocket, 'app.example')
+			const changedReply = await signerProvidersChanged(changedProvider, createProviderMessage('signer_providers_changed', [[{ ...provider, name: 'Different Wallet' }], false, { activeSignerProviderUuid }]), 'app.example', true)
+			assert.equal('signerConnectionRecoveryStatus' in changedReply && changedReply.signerConnectionRecoveryStatus, 'refused')
+			assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(changedProvider, 7), recovery.uniqueRequestIdentifier.requestSocket), false)
+		}
+	})
+
+	test('refuses an absent selected provider permanently and releases children waiting for top recovery', async () => {
+		installBrowserMock()
+		const { signerProvidersChanged, signerProviderSelected } = await import('../../app/ts/background/signerProviderSelection.js')
+		const { registerCurrentChildSignerSocket, socketCanExecuteWithSelectedSigner } = await import('../../app/ts/background/signerExecutionAuthority.js')
+		await signerProvidersChanged(connections, createProviderMessage('signer_providers_changed', [[provider], false]), 'app.example', true)
+		await signerProviderSelected(createProviderMessage('signer_provider_selected', [provider, 'explicit']), 'app.example', true, 0, connections)
+		const restarted: WebsiteTabConnections = new Map()
+		const top = { tabId: 7, connectionName: 1n }
+		const child = { tabId: 7, connectionName: 3n }
+		registerAuthoritativeTopSocket(restarted, top, 'app.example')
+		registerCurrentChildSignerSocket(restarted, child, 1)
+		const childRecovery = { ...createProviderMessage('signer_providers_changed', [[provider], false, { activeSignerProviderUuid: provider.uuid }]), uniqueRequestIdentifier: { requestId: 2, requestSocket: child } }
+		assert.equal((await signerProvidersChanged(restarted, childRecovery, 'app.example', false, 1)).signerConnectionRecoveryStatus, 'retry')
+		const absentChildRecovery = { ...childRecovery, params: [[], false, { activeSignerProviderUuid: provider.uuid }] }
+		assert.equal((await signerProvidersChanged(restarted, absentChildRecovery, 'app.example', false, 1)).signerConnectionRecoveryStatus, 'refused', 'A quarantined child provider cannot be recovered by waiting for the top')
+		const topRecovery = createProviderMessage('signer_providers_changed', [[], false, { activeSignerProviderUuid: provider.uuid }])
+		assert.equal((await signerProvidersChanged(restarted, topRecovery, 'app.example', true)).signerConnectionRecoveryStatus, 'refused')
+		assert.equal((await signerProvidersChanged(restarted, childRecovery, 'app.example', false, 1)).signerConnectionRecoveryStatus, 'refused')
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(restarted, 7), top), false)
+		assert.equal(socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(restarted, 7), child), false)
+	})
+
 	test('settles child catalogs for an unavailable preference while retrying an undecided top catalog', async () => {
 		installBrowserMock()
 		const { signerProvidersChanged } = await import('../../app/ts/background/signerProviderSelection.js')

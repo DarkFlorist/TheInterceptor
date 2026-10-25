@@ -1,5 +1,5 @@
 import { createAuthorizedConnections } from './backgroundEthAccountsTestHarness.js'
-import { getSignerExecutionOwner, authorizeSocketForSignerExecution, getSignerDocumentGeneration, reconcileSignerExecutionDocument, registerAuthoritativeTopSocket, registerCurrentChildSignerSocket, setSignerExecutionTarget } from '../../app/ts/background/signerExecutionAuthority.js'
+import { getSignerExecutionOwner, authorizeSocketForSignerExecution, blockSignerExecution, getSignerDocumentGeneration, reconcileSignerExecutionDocument, registerAuthoritativeTopSocket, registerCurrentChildSignerSocket, setSignerExecutionTarget } from '../../app/ts/background/signerExecutionAuthority.js'
 import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import { test } from 'bun:test'
@@ -81,6 +81,57 @@ test('accepts a signer reply from the current approved child-frame port', async 
 	const childReply = childMessages.find((message) => isRecord(message) && message.method === 'eth_sendTransaction' && message.requestId === childRequestIdentifier.requestId)
 	if (!isRecord(childReply)) throw new Error('Missing child-frame signer reply')
 	assert.equal(childReply.result, modules.EthereumBytes32.serialize(signedTransaction.hash))
+})
+
+test.each(['authorized', 'blocked'])('a disconnected personal_sign reply clears WaitingForSigner with %s execution authority', async (authority) => {
+	const socket = uniqueRequestIdentifier.requestSocket
+	const messages: unknown[] = []
+	const port = createWebsitePort(socket, 0, messages)
+	const websiteOrigin = 'https://example.com'
+	const connections = createAuthorizedConnections(new Map([[socket.tabId, {
+		signerStateOwner: { connectionName: socket.connectionName, confirmed: true, generation: 3, providerGeneration: 8 },
+		connections: { [modules.websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true } },
+	}]]))
+	const parameters = { method: 'personal_sign', params: ['0x1234', activeAddress] } as const
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	assert.deepEqual(await modules.openConfirmTransactionDialogForMessage(
+		simulator.ethereum,
+		simulator.tokenPriceService,
+		{ ...parameters, interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier },
+		{ kind: 'message', parameters },
+		false,
+		activeAddress,
+		{ websiteOrigin, icon: undefined, title: undefined },
+		connections,
+	), { type: 'doNotReply' })
+	await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => ({ ...pending, approvalStatus: { status: 'WaitingForSigner' } }))
+	if (authority === 'blocked') blockSignerExecution(getSignerExecutionOwner(connections, socket.tabId), socket.tabId)
+	const disconnect = { code: 4900, message: 'Signer connection recovery was refused.' }
+	assert.deepEqual(await modules.signerReply(createTestSimulationServicesOwner({ ethereum: simulator.ethereum, tokenPriceService: simulator.tokenPriceService }), connections, port, {
+		method: 'signer_reply',
+		params: [{
+			success: false,
+			signerProviderGeneration: 8,
+			forwardRequest: { method: 'personal_sign', params: ['0x1234', addressString(activeAddress)], type: 'forwardToSigner', requestId: uniqueRequestIdentifier.requestId },
+			error: disconnect,
+		}],
+		interceptorRequest: true,
+		interceptorInternalRequest: true,
+		usingInterceptorWithoutSigner: false,
+		uniqueRequestIdentifier: { requestId: 79, requestSocket: socket },
+	}, 'hasAccess', activeAddress), { type: 'doNotReply' })
+
+	const pending = await modules.getPendingTransactionsAndMessages()
+	assert.equal(pending.length, 1, 'The signing approval remains available for retry or rejection')
+	const approval = pending[0]
+	assert.equal(approval?.type, 'SignableMessage')
+	assert.equal(approval?.originalRequestParameters.method, 'personal_sign')
+	assert.equal(approval?.approvalStatus.status, 'SignerError')
+	if (approval?.approvalStatus.status !== 'SignerError') throw new Error('Missing retryable signing error')
+	assert.equal(approval.approvalStatus.code, 4900)
+	if (authority === 'authorized') assert.equal(approval.approvalStatus.message, disconnect.message)
+	assert.deepEqual(messages, [], 'An error callback must neither forward another wallet command nor publish a successful dapp result')
+	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
 })
 
 test('preserves a MetaMask keyring scan error on a retryable Safe signature', async () => {

@@ -14,6 +14,8 @@ type SignerProviderTransport = {
 	completeSelection(info: EIP6963ProviderInfo, kind: SignerSelectionKind): Promise<void>
 	isBridgeReconnectedError(error: unknown): boolean
 	connectToSigner(signerName: SignerName): Promise<void>
+	recoverSignerConnection(): Promise<void>
+	invalidateSignerConnection(): void
 	markInitialSignerProviderCatalogReconciled(): void
 	reportSignerDiscoveryError(phase: string, error: unknown): void
 	sendInternalMessageToBackgroundPage(request: { readonly method: InternalProviderMethod, readonly params?: readonly unknown[] }): Promise<unknown>
@@ -64,6 +66,13 @@ export function createSignerProviderCoordinator(host: SignerProviderTransport) {
 	let signerCatalogDecisionGeneration = 0
 	let signerProviderCatalogRevision = 0
 	let pendingInitialSignerConnection: { readonly signerName: SignerName } | undefined
+	let signerConnectionRecoveryNeeded = false
+	const signerConnectionRecoveryWaiters = new Set<() => void>()
+	const finishSignerConnectionRecovery = () => {
+		signerConnectionRecoveryNeeded = false
+		for (const resolve of signerConnectionRecoveryWaiters) resolve()
+		signerConnectionRecoveryWaiters.clear()
+	}
 
 	const scheduleInitialSignerConnection = (signerName: SignerName) => {
 		pendingInitialSignerConnection = { signerName }
@@ -281,6 +290,41 @@ export function createSignerProviderCoordinator(host: SignerProviderTransport) {
 	}
 
 	const reconcileSignerProviderCatalog = async (): Promise<void> => {
+		if (signerConnectionRecoveryNeeded) {
+			try {
+				const recoveryStatus = await selectionGate.runSelection(async () => {
+					const providers = [...announcedProviders.values()].map((announcement) => announcement.info)
+					const reply = await host.sendInternalMessageToBackgroundPage({ method: 'signer_providers_changed', params: [providers, signerProviderCatalogOverflowed, { activeSignerProviderUuid: selectedSignerProviderUuid }] })
+					if (typeof reply !== 'object' || reply === null || !('signerConnectionRecoveryStatus' in reply)) throw new Error('Missing signer recovery outcome')
+					if (reply.signerConnectionRecoveryStatus === 'retry' || reply.signerConnectionRecoveryStatus === 'refused') return reply.signerConnectionRecoveryStatus
+					if (reply.signerConnectionRecoveryStatus !== 'recovered') throw new Error('Invalid signer recovery outcome')
+					// The background proved the existing document/provider. Reconfirm it without replacing the transport or invalidating in-flight wallet calls.
+					await host.recoverSignerConnection()
+					return 'recovered'
+				})
+				if (recoveryStatus === 'recovered') {
+					finishSignerConnectionRecovery()
+					if (pendingExplicitSignerProviderUuid === selectedSignerProviderUuid) pendingExplicitSignerProviderUuid = undefined
+					host.markInitialSignerProviderCatalogReconciled()
+				} else if (recoveryStatus === 'refused') {
+					// A permanent proof failure releases durable wallet replies into their background error lifecycle; invalidating the epoch also catches later replies without poisoning a future selection.
+					host.invalidateSignerConnection()
+					finishSignerConnectionRecovery()
+					// A quarantined provider cannot reappear. Release its replay so catalog discovery can continue, while retaining available interrupted selections and other queued choices.
+					if (pendingExplicitSignerProviderUuid !== undefined && pendingExplicitSignerProviderUuid === selectedSignerProviderUuid && !announcedProviders.has(pendingExplicitSignerProviderUuid)) pendingExplicitSignerProviderUuid = undefined
+				} else if (selectionGate.isIdle()) {
+					// Startup or an interrupted selection still uses the ordinary lease path when no durable request is blocking it.
+					finishSignerConnectionRecovery()
+				} else {
+					scheduleSignerProviderCatalogRetry()
+					return
+				}
+			} catch (error: unknown) {
+				if (!host.isBridgeReconnectedError(error)) host.reportSignerDiscoveryError('recover signer connection', error)
+				scheduleSignerProviderCatalogRetry()
+				return
+			}
+		}
 		if (!selectionGate.isIdle()) {
 			signerProviderCatalogReconciliationNeeded = true
 			return
@@ -389,13 +433,24 @@ export function createSignerProviderCoordinator(host: SignerProviderTransport) {
 
 
 	return {
+		// Legacy reinjection may restore the public facade, but only catalog selection can replace a chosen or explicitly unavailable signer.
+		canActivateLegacySigner: () => selectedSignerProviderUuid === undefined
+			&& explicitlySelectedSignerProviderUuid === undefined
+			&& pendingExplicitSignerProviderUuid === undefined
+			&& preferredSignerRdns === undefined,
 		rejectProvider: (provider: object) => { rejectedSignerProviders.add(provider) },
 		isProviderRejected: (provider: object) => rejectedSignerProviders.has(provider),
 		blockSignerSelection: selectionGate.block,
 		runWithSignerSelectionBlocked: selectionGate.runBlocked,
 		handleBridgeReconnect: () => {
+			signerConnectionRecoveryNeeded = true
 			signerProviderCatalogReconciliationNeeded = true
-			if (explicitlySelectedSignerProviderUuid !== undefined) pendingExplicitSignerProviderUuid = explicitlySelectedSignerProviderUuid
+			if (pendingExplicitSignerProviderUuid === undefined && explicitlySelectedSignerProviderUuid !== undefined) pendingExplicitSignerProviderUuid = explicitlySelectedSignerProviderUuid
+		},
+		isRecoveringSignerConnection: () => signerConnectionRecoveryNeeded,
+		waitForSignerConnectionRecovery: async () => {
+			if (!signerConnectionRecoveryNeeded) return
+			await new Promise<void>((resolve) => { signerConnectionRecoveryWaiters.add(resolve) })
 		},
 		scheduleInitialSignerConnection,
 		selectAnnouncedProvider,

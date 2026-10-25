@@ -197,7 +197,7 @@ function createFakeWindow({ onConnectedToSignerRequest, handleRequest, handleSig
 					requestId: request.requestId,
 					type: 'result',
 					method: 'signer_providers_changed',
-					result: { automaticSelectionAllowed: true, signerSelectionChangeAllowed: true },
+					result: { automaticSelectionAllowed: true, signerSelectionChangeAllowed: true, ...(request.params?.[2] === undefined ? {} : { signerConnectionRecoveryStatus: 'recovered' }) },
 				})
 				return
 			case 'signer_provider_selected':
@@ -1200,6 +1200,310 @@ describe('inpage signer bridge', () => {
 		})
 	})
 
+	test.each(['eth_blockNumber', 'eth_call'])('settles a lost %s query so signer reconciliation can recover after reconnect', async (method) => {
+		const requests: InpageRequest[] = []
+		const { fakeWindow, notifyBridgeReconnected, sendBackgroundMessage } = createFakeWindow({
+			handleRequest: (request) => {
+				requests.push(request)
+				return request.method === method
+			},
+		})
+		await withFakeInpageWindow(fakeWindow, `../../app/inpage/ts/inpage.js?lost-query-reconnect-${ method }`, async () => {
+			await waitFor(() => requests.some((request) => request.method === 'connected_to_signer'))
+			const rejected = assert.rejects(fakeWindow.ethereum.request({ method }), (error: unknown) => isRecord(error) && error.code === 4900)
+			await waitFor(() => requests.some((request) => request.method === method))
+			const catalogCount = requests.filter((request) => request.method === 'signer_providers_changed').length
+			notifyBridgeReconnected()
+			await rejected
+			await waitFor(() => requests.filter((request) => request.method === 'signer_providers_changed').length > catalogCount)
+			assert.equal(requests.filter((request) => request.method === method).length, 1)
+			// A late reply to the interrupted query must not settle the next public request.
+			const interrupted = requests.find((request) => request.method === method)
+			assert.ok(interrupted)
+			sendBackgroundMessage({ interceptorApproved: true, type: 'result', method, requestId: interrupted.requestId, result: '0xlate' })
+			assert.equal(await fakeWindow.ethereum.request({ method: 'net_version' }), '0x')
+		})
+	})
+
+	test.each(['eth_sendTransaction', 'personal_sign', 'wallet_watchAsset', 'wallet_switchEthereumChain', 'eth_requestAccounts', 'wallet_requestPermissions'])('preserves pending %s approval across reconnect without replaying the wallet command', async (method) => {
+		const requests: InpageRequest[] = []
+		const { fakeWindow, notifyBridgeReconnected, sendBackgroundMessage } = createFakeWindow({
+			handleRequest: (request) => {
+				requests.push(request)
+				return request.method === method
+			},
+		})
+		await withFakeInpageWindow(fakeWindow, `../../app/inpage/ts/inpage.js?durable-approval-reconnect-${ method }`, async () => {
+			await waitFor(() => requests.some((request) => request.method === 'connected_to_signer'))
+			let settled = false
+			const pending = fakeWindow.ethereum.request({ method })
+			const outcome = pending.then((value) => { settled = true; return value }, (error: unknown) => { settled = true; throw error })
+			await waitFor(() => requests.some((request) => request.method === method))
+			const connectionCount = requests.filter((request) => request.method === 'connected_to_signer').length
+			const providerGeneration = requests.filter((request) => request.method === 'connected_to_signer').at(-1)?.params?.[2]
+			notifyBridgeReconnected()
+			// This later command on the same port establishes that the reconnect was processed.
+			sendBackgroundMessage({ interceptorApproved: true, type: 'result', method: 'request_signer_connection_status', result: [] })
+			await waitFor(() => requests.filter((request) => request.method === 'connected_to_signer').length > connectionCount)
+			assert.equal(requests.some((request) => request.method === 'signer_providers_changed' && request.params?.[2] !== undefined), true)
+			assert.equal(requests.filter((request) => request.method === 'connected_to_signer').at(-1)?.params?.[2], providerGeneration)
+			assert.equal(settled, false)
+			assert.equal(requests.filter((request) => request.method === method).length, 1)
+			const originalRequest = requests.find((request) => request.method === method)
+			assert.ok(originalRequest)
+			assert.equal(originalRequest.replayOnDisconnect, method === 'eth_requestAccounts' ? true : undefined)
+			const result = method === 'eth_requestAccounts' || method === 'wallet_requestPermissions' ? [] : '0xapproved'
+			sendBackgroundMessage({ interceptorApproved: true, type: 'result', method, requestId: originalRequest.requestId, result })
+			assert.deepEqual(await outcome, result)
+		})
+	})
+
+	test.each(['legacy', 'eip6963'])('recovers an in-flight %s wallet call without changing its provider epoch or applying a queued wallet switch', async (mode) => {
+		const requests: InpageRequest[] = []
+		let signerCallStarted = false
+		let resolveSignature: (() => void) | undefined
+		const signature = new Promise<string>((resolve) => { resolveSignature = () => resolve('original-signature') })
+		const { fakeWindow, notifyBridgeReconnected, sendBackgroundMessage } = createFakeWindow({
+			handleRequest: (request, reply) => {
+				requests.push(request)
+				if (request.method !== 'wallet_testPendingSignature') return false
+				reply({ interceptorApproved: true, type: 'forwardToSigner', requestId: request.requestId, method: request.method, params: [], replyWithSignersReply: true })
+				return true
+			},
+			handleSignerRequest: (request) => {
+				if (request.method !== 'wallet_testPendingSignature') return undefined
+				signerCallStarted = true
+				return signature
+			},
+		})
+		const original = fakeWindow.ethereum
+		const info = { uuid: '56565656-5656-4656-8656-565656565656', name: 'Selected Wallet', icon: 'data:image/svg+xml,<svg/>', rdns: 'com.example.selected' }
+		const otherInfo = { ...info, uuid: '78787878-7878-4787-8787-787878787878', name: 'Other Wallet', rdns: 'com.example.other' }
+		const other = { request: async ({ method }: SignerRequest) => method === 'eth_chainId' ? '0x1' : [], on: () => other, removeListener: () => other }
+		fakeWindow.addEventListener('eip6963:requestProvider', () => {
+			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info, provider: original } })
+			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: otherInfo, provider: other } })
+		})
+		await withFakeInpageWindow(fakeWindow, `../../app/inpage/ts/inpage.js?pending-wallet-call-recovery-${ mode }`, async () => {
+			await waitFor(() => requests.some((request) => request.method === 'connected_to_signer'))
+			if (mode === 'eip6963') {
+				sendBackgroundMessage({ interceptorApproved: true, type: 'result', method: 'select_signer_provider', result: info.uuid })
+				await waitFor(() => requests.some((request) => request.method === 'finish_signer_provider_selection'))
+			}
+			const completedSelections = requests.filter((request) => request.method === 'finish_signer_provider_selection').length
+			const outcome = fakeWindow.ethereum.request({ method: 'wallet_testPendingSignature' }).then((reply) => ({ reply }), (error: unknown) => ({ error }))
+			await waitFor(() => signerCallStarted)
+			sendBackgroundMessage({ interceptorApproved: true, type: 'result', method: 'select_signer_provider', result: otherInfo.uuid })
+			const connectionsBefore = requests.filter((request) => request.method === 'connected_to_signer')
+			notifyBridgeReconnected()
+			await waitFor(() => requests.filter((request) => request.method === 'connected_to_signer').length > connectionsBefore.length)
+			assert.equal(requests.filter((request) => request.method === 'connected_to_signer').at(-1)?.params?.[2], connectionsBefore.at(-1)?.params?.[2])
+			assert.equal(requests.filter((request) => request.method === 'finish_signer_provider_selection').length, completedSelections)
+			resolveSignature?.()
+			assert.deepEqual(await outcome, { reply: 'original-signature' })
+			await waitFor(() => requests.filter((request) => request.method === 'finish_signer_provider_selection').length > completedSelections)
+			const lastSelection = requests.filter((request) => request.method === 'signer_provider_selected').at(-1)?.params?.[0]
+			assert.ok(isRecord(lastSelection))
+			assert.equal(lastSelection.uuid, otherInfo.uuid)
+		})
+	})
+
+	test('reports a wallet disconnect during personal_sign to the background confirmation lifecycle', async () => {
+		let signerCalls = 0
+		let publicRequestId: number | undefined
+		let resolveSignature: (() => void) | undefined
+		const signerReplies: unknown[] = []
+		const signature = new Promise<string>((resolve) => { resolveSignature = () => resolve('stale-signature') })
+		const { fakeWindow, emitSignerEvent, sendBackgroundMessage } = createFakeWindow({
+			handleRequest: (request, reply) => {
+				if (request.method === 'personal_sign') {
+					publicRequestId = request.requestId
+					reply({ interceptorApproved: true, type: 'forwardToSigner', requestId: request.requestId, method: request.method, params: [] })
+					return true
+				}
+				if (request.method === 'signer_reply') signerReplies.push(request.params?.[0])
+				return false
+			},
+			handleSignerRequest: (request) => {
+				if (request.method !== 'personal_sign') return undefined
+				signerCalls++
+				return signature
+			},
+		})
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?disconnect-signing-confirmation', async () => {
+			let settled = false
+			const outcome = fakeWindow.ethereum.request({ method: 'personal_sign' }).then((reply) => { settled = true; return { reply } }, (error: unknown) => { settled = true; return { error } })
+			await waitFor(() => signerCalls === 1)
+			emitSignerEvent('disconnect', { code: 4900, message: 'Wallet disconnected' })
+			await waitFor(() => signerReplies.length === 1)
+			const signerReply = signerReplies[0]
+			assert.ok(isRecord(signerReply) && isRecord(signerReply.error) && isRecord(signerReply.forwardRequest))
+			assert.equal(signerReply.success, false)
+			assert.equal(signerReply.error.code, 4900)
+			assert.equal(signerReply.forwardRequest.method, 'personal_sign')
+			assert.equal('reply' in signerReply, false)
+			assert.equal(settled, false, 'The confirmation lifecycle owns settlement of its dapp request')
+			resolveSignature?.()
+			await signature
+			await new Promise((resolve) => setTimeout(resolve, 0))
+			assert.equal(signerReplies.length, 1, 'A later wallet success must not replace the disconnect error')
+			assert.equal(signerCalls, 1)
+			sendBackgroundMessage({ interceptorApproved: true, type: 'result', requestId: publicRequestId, method: 'personal_sign', error: signerReply.error })
+			const result = await outcome
+			assert.ok('error' in result && isRecord(result.error))
+			assert.equal(result.error.code, 4900)
+		})
+	})
+
+	test.each(['before-refusal', 'after-refusal', 'queued-choice'])('settles quarantined-provider recovery and restores catalog discovery for %s', async (walletTiming) => {
+		const requests: InpageRequest[] = []
+		const signerReplies: unknown[] = []
+		let publicRequestId: number | undefined
+		let signerCalls = 0
+		let resolveSignature: (() => void) | undefined
+		let refuseRecovery: (() => void) | undefined
+		const signature = new Promise<string>((resolve) => { resolveSignature = () => resolve('stale-signature') })
+		const { fakeWindow, notifyBridgeReconnected, sendBackgroundMessage } = createFakeWindow({
+			handleRequest: (request, reply) => {
+				requests.push(request)
+				if (request.method === 'personal_sign') {
+					publicRequestId = request.requestId
+					reply({ interceptorApproved: true, type: 'forwardToSigner', requestId: request.requestId, method: request.method, params: [] })
+					return true
+				}
+				if (request.method === 'signer_reply') signerReplies.push(request.params?.[0])
+				if (request.method !== 'signer_providers_changed' || request.params?.[2] === undefined) return false
+				const catalog = request.params[0]
+				assert.ok(Array.isArray(catalog))
+				assert.equal(catalog.some((candidate: unknown) => isRecord(candidate) && candidate.uuid === info.uuid), false, 'The real coordinator quarantines conflicting metadata before recovery')
+				refuseRecovery = () => reply({ interceptorApproved: true, type: 'result', requestId: request.requestId, method: request.method, result: { signerConnectionRecoveryStatus: 'refused' } })
+				return true
+			},
+			handleSignerRequest: (request) => {
+				if (request.method !== 'personal_sign') return undefined
+				signerCalls++
+				return signature
+			},
+		})
+		const original = fakeWindow.ethereum
+		const info = { uuid: '56565656-5656-4656-8656-565656565656', name: 'Selected Wallet', icon: 'data:image/svg+xml,<svg/>', rdns: 'com.example.selected' }
+		const otherInfo = { ...info, uuid: '78787878-7878-4787-8787-787878787878', name: 'Other Wallet', rdns: 'com.example.other' }
+		const other = { request: async ({ method }: SignerRequest) => method === 'personal_sign' ? 'fresh-signature' : method === 'eth_chainId' ? '0x1' : [], on: () => other, removeListener: () => other }
+		fakeWindow.addEventListener('eip6963:requestProvider', () => {
+			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info, provider: original } })
+			if (walletTiming === 'queued-choice') fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: otherInfo, provider: other } })
+		})
+		await withFakeInpageWindow(fakeWindow, `../../app/inpage/ts/inpage.js?quarantined-recovery-${ walletTiming }`, async () => {
+			await waitFor(() => requests.some((request) => request.method === 'connected_to_signer'))
+			sendBackgroundMessage({ interceptorApproved: true, type: 'result', method: 'select_signer_provider', result: info.uuid })
+			await waitFor(() => requests.some((request) => request.method === 'finish_signer_provider_selection'))
+			let settled = false
+			const outcome = fakeWindow.ethereum.request({ method: 'personal_sign' }).then((reply) => { settled = true; return { reply } }, (error: unknown) => { settled = true; return { error } })
+			await waitFor(() => signerCalls === 1)
+			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: { ...info, name: 'Conflicting Wallet' }, provider: original } })
+			if (walletTiming === 'queued-choice') sendBackgroundMessage({ interceptorApproved: true, type: 'result', method: 'select_signer_provider', result: otherInfo.uuid })
+			notifyBridgeReconnected()
+			await waitFor(() => refuseRecovery !== undefined)
+			if (walletTiming === 'before-refusal') {
+				resolveSignature?.()
+				await signature
+				await new Promise((resolve) => setTimeout(resolve, 0))
+				assert.equal(signerReplies.length, 0)
+			}
+			refuseRecovery?.()
+			await waitFor(() => signerReplies.length === 1)
+			const failedReply = signerReplies[0]
+			assert.ok(isRecord(failedReply) && isRecord(failedReply.error))
+			assert.equal(failedReply.success, false)
+			assert.equal(failedReply.error.code, 4900)
+			assert.equal('reply' in failedReply, false)
+			assert.equal(settled, false, 'Background confirmation processing must own terminal settlement')
+			const selectionsBefore = requests.filter((request) => request.method === 'finish_signer_provider_selection').length
+			if (walletTiming !== 'queued-choice') fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: otherInfo, provider: other } })
+			await new Promise((resolve) => setTimeout(resolve, 0))
+			assert.equal(requests.filter((request) => request.method === 'finish_signer_provider_selection').length, selectionsBefore)
+			resolveSignature?.()
+			await signature
+			sendBackgroundMessage({ interceptorApproved: true, type: 'result', requestId: publicRequestId, method: 'personal_sign', error: failedReply.error })
+			assert.ok('error' in await outcome)
+			if (walletTiming !== 'queued-choice') {
+				await waitFor(() => requests.some((request) => {
+					const catalog = request.params?.[0]
+					return request.method === 'signer_providers_changed' && request.params?.[2] === undefined
+						&& Array.isArray(catalog) && catalog.some((candidate: unknown) => isRecord(candidate) && candidate.uuid === otherInfo.uuid)
+				}))
+				assert.equal(requests.filter((request) => request.method === 'finish_signer_provider_selection').length, selectionsBefore, 'A newly announced wallet must reach the popup catalog before it is selected')
+				sendBackgroundMessage({ interceptorApproved: true, type: 'result', method: 'select_signer_provider', result: otherInfo.uuid })
+			}
+			await waitFor(() => requests.filter((request) => request.method === 'finish_signer_provider_selection').length > selectionsBefore)
+			const selectedInfo = requests.filter((request) => request.method === 'signer_provider_selected').at(-1)?.params?.[0]
+			assert.ok(isRecord(selectedInfo) && selectedInfo.uuid === otherInfo.uuid, 'A different queued choice must survive refusal of the old provider')
+			assert.equal(requests.filter((request) => request.method === 'signer_providers_changed' && request.params?.[2] !== undefined).length, 1, 'Permanent refusal must not retry')
+			const freshOutcome = fakeWindow.ethereum.request({ method: 'personal_sign' })
+			await waitFor(() => signerReplies.length === 2)
+			const freshReply = signerReplies[1]
+			assert.ok(isRecord(freshReply))
+			assert.equal(freshReply.success, true)
+			assert.equal(freshReply.reply, 'fresh-signature', 'The failed recovery must not poison a later explicit selection')
+			assert.equal(signerCalls, 1, 'The old wallet command is never replayed')
+			sendBackgroundMessage({ interceptorApproved: true, type: 'result', requestId: publicRequestId, method: 'personal_sign', result: freshReply.reply })
+			assert.equal(await freshOutcome, 'fresh-signature')
+		})
+	})
+
+	test('holds a completed wallet reply until the restarted background confirms signer identity', async () => {
+		let recoveryStarted = false
+		let recoveryAttempts = 0
+		let publicRequestId: number | undefined
+		let signerReplyDelivered = false
+		let releaseRecoveryStatus: (() => void) | undefined
+		let resolveSignature: (() => void) | undefined
+		const signature = new Promise<string>((resolve) => { resolveSignature = () => resolve('recovered-signature') })
+		const { fakeWindow, notifyBridgeReconnected } = createFakeWindow({
+			handleRequest: (request, reply) => {
+				if (request.method === 'signer_providers_changed' && request.params?.[2] !== undefined) {
+					recoveryAttempts++
+					if (recoveryAttempts === 1) {
+						reply({ interceptorApproved: true, type: 'result', requestId: request.requestId, method: request.method, result: { signerConnectionRecoveryStatus: 'retry' } })
+						return true
+					}
+					recoveryStarted = true
+				}
+				if (request.method === 'connected_to_signer' && recoveryStarted) {
+					releaseRecoveryStatus = () => reply({ interceptorApproved: true, type: 'result', requestId: request.requestId, method: request.method, result: { metamaskCompatibilityMode: true } })
+					return true
+				}
+				if (request.method === 'wallet_testRecoveryReply') {
+					publicRequestId = request.requestId
+					reply({ interceptorApproved: true, type: 'forwardToSigner', requestId: request.requestId, method: request.method, params: [] })
+					return true
+				}
+				if (request.method === 'signer_reply') {
+					signerReplyDelivered = true
+					reply({ interceptorApproved: true, type: 'result', requestId: request.requestId, method: request.method, result: '0x' })
+					reply({ interceptorApproved: true, type: 'result', requestId: publicRequestId, method: 'wallet_testRecoveryReply', result: 'recovered-signature' })
+					return true
+				}
+				return false
+			},
+			handleSignerRequest: (request) => request.method === 'wallet_testRecoveryReply' ? signature : undefined,
+		})
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?recovery-reply-delivery-barrier', async () => {
+			const outcome = fakeWindow.ethereum.request({ method: 'wallet_testRecoveryReply' })
+			await waitFor(() => publicRequestId !== undefined)
+			notifyBridgeReconnected()
+			await waitFor(() => releaseRecoveryStatus !== undefined)
+			resolveSignature?.()
+			await signature
+			await new Promise((resolve) => setTimeout(resolve, 0))
+			assert.equal(signerReplyDelivered, false)
+			releaseRecoveryStatus?.()
+			assert.equal(await outcome, 'recovered-signature')
+			assert.equal(signerReplyDelivered, true)
+			assert.equal(recoveryAttempts, 2, 'A child waiting for top authority retries without invalidating its wallet call')
+		})
+	})
+
 	test('retries initial provider catalog reconciliation after the background bridge reconnects', async () => {
 		let catalogRequestCount = 0
 		let publicRequestForwarded = false
@@ -1213,7 +1517,7 @@ describe('inpage signer bridge', () => {
 						requestId: request.requestId,
 						type: 'result',
 						method: request.method,
-						result: { preferredSignerRdns: undefined, automaticSelectionAllowed: true, signerSelectionChangeAllowed: true },
+						result: { preferredSignerRdns: undefined, automaticSelectionAllowed: true, signerSelectionChangeAllowed: true, ...(request.params?.[2] === undefined ? {} : { signerConnectionRecoveryStatus: 'refused' }) },
 					})
 					return true
 				}
@@ -1382,7 +1686,12 @@ describe('inpage signer bridge', () => {
 		for (const interruptedMethod of ['begin_signer_provider_selection', 'signer_provider_selected', 'finish_signer_provider_selection']) {
 			const methodCounts = new Map<string, number>()
 			const { fakeWindow, notifyBridgeReconnected, sendBackgroundMessage } = createFakeWindow({
-				handleRequest: (request) => {
+				handleRequest: (request, reply) => {
+					if (request.method === 'signer_providers_changed' && request.params?.[2] !== undefined) {
+						// This test interrupts an uncommitted selection; exercise the normal lease retry when recovery cannot prove it.
+						reply({ interceptorApproved: true, type: 'result', requestId: request.requestId, method: request.method, result: { signerConnectionRecoveryStatus: 'refused' } })
+						return true
+					}
 					const methodCount = (methodCounts.get(request.method) ?? 0) + 1
 					methodCounts.set(request.method, methodCount)
 					return request.method === interruptedMethod && methodCount === 1
@@ -2720,6 +3029,159 @@ describe('inpage signer bridge', () => {
 		assert.doesNotThrow(() => SignerReply.parse({ method: 'signer_reply', params: [signerReply] }))
 	})
 
+	test.each(['native', 'page-hooked'])('reselects a patched legacy root through its original bound wallet transport with %s WeakMap methods', async (weakMapMethods) => {
+		const publicRequests: string[] = []
+		let catalogs = 0
+		let completedSelections = 0
+		const { fakeWindow, sendBackgroundMessage, signerRequests, backgroundEthAccountsReplies, signerAccounts } = createFakeWindow({
+			handleRequest: (request, reply) => {
+				if (request.method === 'signer_providers_changed') catalogs++
+				if (request.method === 'finish_signer_provider_selection') completedSelections++
+				if (request.internal === true) return false
+				publicRequests.push(request.method)
+				reply({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, error: { code: -32603, message: 'Wallet transport recursively entered the public provider' } })
+				return true
+			},
+		})
+		const legacyProvider = fakeWindow.ethereum
+		const originalRequest = legacyProvider.request
+		let legacyConnected = true
+		legacyProvider.request = async function (request: SignerRequest) {
+			assert.equal(this, legacyProvider)
+			return await originalRequest(request)
+		}
+		legacyProvider.isConnected = function () {
+			assert.equal(this, legacyProvider)
+			return legacyConnected
+		}
+		const legacyRequest = legacyProvider.request
+		const otherRequests: string[] = []
+		const otherProvider = {
+			request: async ({ method }: SignerRequest) => { otherRequests.push(method); return method === 'eth_chainId' ? '0x2' : [] },
+			on: () => otherProvider,
+			removeListener: () => otherProvider,
+		}
+		const legacyInfo = { uuid: '12121212-1212-4212-8212-121212121212', name: 'Legacy Wallet', icon: 'data:image/svg+xml,<svg/>', rdns: 'com.example.legacy' }
+		const otherInfo = { ...legacyInfo, uuid: '34343434-3434-4434-8434-343434343434', name: 'Other Wallet', rdns: 'com.example.other' }
+		fakeWindow.addEventListener('eip6963:requestProvider', () => {
+			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: legacyInfo, provider: legacyProvider } })
+			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: otherInfo, provider: otherProvider } })
+		})
+
+		await withFakeInpageWindow(fakeWindow, `../../app/inpage/ts/inpage.js?legacy-root-reselection-${ weakMapMethods }`, async () => {
+			await waitFor(() => catalogs > 0 && signerRequests.includes('eth_chainId'))
+			assert.equal(fakeWindow.ethereum, legacyProvider, 'The legacy root is patched in place')
+			assert.notEqual(legacyProvider.request, legacyRequest)
+			const getDescriptor = Object.getOwnPropertyDescriptor(WeakMap.prototype, 'get')
+			const setDescriptor = Object.getOwnPropertyDescriptor(WeakMap.prototype, 'set')
+			assert.ok(getDescriptor)
+			assert.ok(setDescriptor)
+			const originalGet = WeakMap.prototype.get
+			const originalSet = WeakMap.prototype.set
+			let observedGetTransports = 0
+			let observedSetTransports = 0
+			try {
+				if (weakMapMethods === 'page-hooked') {
+					Object.defineProperty(WeakMap.prototype, 'get', { ...getDescriptor, value: function (this: WeakMap<object, unknown>, key: object) {
+						const value: unknown = Reflect.apply(originalGet, this, [key])
+						if (isRecord(value) && typeof value.request === 'function') observedGetTransports++
+						return value
+					} })
+					Object.defineProperty(WeakMap.prototype, 'set', { ...setDescriptor, value: function (this: WeakMap<object, unknown>, key: object, value: unknown) {
+						if (isRecord(value) && typeof value.request === 'function') observedSetTransports++
+						return Reflect.apply(originalSet, this, [key, value])
+					} })
+				}
+				sendBackgroundMessage({ interceptorApproved: true, type: 'result', method: 'select_signer_provider', result: otherInfo.uuid })
+				await waitFor(() => completedSelections === 1 && otherRequests.includes('eth_accounts'))
+				const legacyRequestCount = signerRequests.length
+				const otherRequestCount = otherRequests.length
+				legacyConnected = false
+				sendBackgroundMessage({ interceptorApproved: true, type: 'result', method: 'select_signer_provider', result: legacyInfo.uuid })
+				await waitFor(() => completedSelections === 2)
+				assert.deepEqual(publicRequests, [], 'Reselection must not capture Interceptor request wrappers')
+				assert.equal(signerRequests.slice(legacyRequestCount).includes('eth_accounts'), true)
+				assert.equal(signerRequests.slice(legacyRequestCount).includes('eth_chainId'), true)
+				const accountsReply = backgroundEthAccountsReplies.at(-1)
+				assert.ok(isRecord(accountsReply))
+				assert.equal(accountsReply.type, 'success')
+				assert.deepEqual(accountsReply.accounts, signerAccounts)
+				assert.equal(otherRequests.length, otherRequestCount)
+				assert.equal(fakeWindow.ethereum.isConnected(), false, 'Reselection reads the original wallet connection state again')
+				assert.deepEqual({ observedGetTransports, observedSetTransports }, { observedGetTransports: 0, observedSetTransports: 0 }, 'Page WeakMap hooks cannot observe the original wallet transport')
+			} finally {
+				Object.defineProperty(WeakMap.prototype, 'get', getDescriptor)
+				Object.defineProperty(WeakMap.prototype, 'set', setDescriptor)
+			}
+		})
+	})
+
+	test.each(['idle', 'pending'])('preserves the selected signer when a late legacy root initializes during %s signing', async (signingState) => {
+		const pendingSignerRequest = signingState === 'pending'
+		const info = { uuid: '56565656-5656-4656-8656-565656565656', name: 'Selected Wallet', icon: 'data:image/svg+xml,<svg/>', rdns: 'com.example.selected' }
+		let selected = false
+		let catalogs = 0
+		let completedSelections = 0
+		let signerCalls = 0
+		let resolveSignature: (() => void) | undefined
+		const signature = new Promise<string>((resolve) => { resolveSignature = () => resolve('selected-wallet-signature') })
+		const { fakeWindow, sendBackgroundMessage, backgroundEthAccountsReplies, signerAccounts } = createFakeWindow({
+			handleRequest: (request, reply) => {
+				if (request.method === 'signer_provider_selected') selected = true
+				if (request.method === 'finish_signer_provider_selection') completedSelections++
+				if (request.method === 'signer_providers_changed') {
+					catalogs++
+					reply({ interceptorApproved: true, type: 'result', requestId: request.requestId, method: request.method, result: { preferredSignerRdns: selected ? info.rdns : undefined, automaticSelectionAllowed: false, signerSelectionChangeAllowed: true } })
+					return true
+				}
+				if (request.method !== 'wallet_testLateReinjection') return false
+				reply({ interceptorApproved: true, type: 'forwardToSigner', requestId: request.requestId, method: request.method, params: [], replyWithSignersReply: true })
+				return true
+			},
+			handleSignerRequest: (request) => {
+				if (request.method !== 'wallet_testLateReinjection') return undefined
+				signerCalls++
+				return pendingSignerRequest ? signature : 'selected-wallet-signature'
+			},
+		})
+		const originalProvider = fakeWindow.ethereum
+		fakeWindow.addEventListener('eip6963:requestProvider', () => {
+			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info, provider: originalProvider } })
+		})
+		await withFakeInpageWindow(fakeWindow, `../../app/inpage/ts/inpage.js?late-legacy-root-${ pendingSignerRequest }`, async () => {
+			await waitFor(() => catalogs > 0)
+			sendBackgroundMessage({ interceptorApproved: true, type: 'result', method: 'select_signer_provider', result: info.uuid })
+			await waitFor(() => completedSelections === 1)
+			const pending = pendingSignerRequest
+				? fakeWindow.ethereum.request({ method: 'wallet_testLateReinjection' }).then((reply) => ({ reply }), (error: unknown) => ({ error }))
+				: undefined
+			if (pending !== undefined) await waitFor(() => signerCalls === 1)
+			const lateRequests: string[] = []
+			const lateProvider = {
+				isMetaMask: true,
+				isConnected: () => true,
+				request: async ({ method }: SignerRequest) => { lateRequests.push(method); return method === 'eth_chainId' ? '0x2' : [] },
+				on: () => lateProvider,
+				removeListener: () => lateProvider,
+			}
+			fakeWindow.ethereum = lateProvider
+			fakeWindow.dispatchEvent({ type: 'ethereum#initialized' })
+			fakeWindow.dispatchEvent({ type: 'eip6963:requestProvider' })
+			assert.notEqual(fakeWindow.ethereum, lateProvider, 'Restore the Interceptor facade over the late root')
+			const accountReplyCount = backgroundEthAccountsReplies.length
+			sendBackgroundMessage({ interceptorApproved: true, type: 'result', method: 'request_signer_to_eth_accounts', result: [] })
+			await waitFor(() => backgroundEthAccountsReplies.length > accountReplyCount)
+			const accountReply = backgroundEthAccountsReplies.at(-1)
+			assert.ok(isRecord(accountReply))
+			assert.deepEqual(accountReply.accounts, signerAccounts)
+			resolveSignature?.()
+			if (pending !== undefined) assert.deepEqual(await pending, { reply: 'selected-wallet-signature' })
+			assert.equal(await fakeWindow.ethereum.request({ method: 'wallet_testLateReinjection' }), 'selected-wallet-signature')
+			assert.deepEqual(lateRequests, [], 'Root reinjection must not select a different wallet')
+			assert.equal(completedSelections, 1)
+		})
+	})
+
 	test('collects multiple EIP-6963 providers and switches only after an explicit selection', async () => {
 		const firstRequests: string[] = []
 		const secondRequests: string[] = []
@@ -3442,6 +3904,7 @@ describe('inpage signer bridge', () => {
 	test('waits for an internal accounts reply acknowledgement before applying a deferred selection', async () => {
 		const selectedProviders: unknown[] = []
 		const secondRequests: string[] = []
+		let initialSelectionFinished = false
 		let delayFirstProviderAccounts = false
 		let delayedAccountsRequestStarted = false
 		let resolveDelayedAccountsRequest: ((accounts: string[]) => void) | undefined
@@ -3453,6 +3916,7 @@ describe('inpage signer bridge', () => {
 					return true
 				}
 				if (request.method === 'signer_provider_selected') selectedProviders.push(request.params?.[0])
+				if (request.method === 'finish_signer_provider_selection') initialSelectionFinished = true
 				if (request.method === 'eth_accounts_reply' && delayFirstProviderAccounts) {
 					acknowledgeAccountsReply = () => reply({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: undefined })
 					return true
@@ -3487,7 +3951,8 @@ describe('inpage signer bridge', () => {
 
 		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?eip6963-internal-workflow-order', async () => {
 			sendBackgroundMessage({ interceptorApproved: true, type: 'result', method: 'select_signer_provider', result: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' })
-			await waitFor(() => selectedProviders.length === 1)
+			// Delay the next workflow only after initial selection has completed its own accounts handshake.
+			await waitFor(() => selectedProviders.length === 1 && initialSelectionFinished)
 			delayFirstProviderAccounts = true
 			sendBackgroundMessage({ interceptorApproved: true, type: 'result', method: 'request_signer_to_eth_accounts', result: [] })
 			await waitFor(() => delayedAccountsRequestStarted)

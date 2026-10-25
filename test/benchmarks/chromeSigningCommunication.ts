@@ -1,6 +1,6 @@
 import { closeTarget, connectTarget, createTargetPage, launchChromeSession, waitForInterceptorExtensionServiceWorker, waitForPerformanceMarks, waitForPopupTarget, waitForRegisteredContentScripts, waitForTargetByUrl, waitForTargetGone } from './chromeHarness.js'
 import { startChromeCommunicationPageServer } from './chromeCommunicationPageServer.js'
-import type { CdpConnection } from './chromeHarness.js'
+import type { CdpConnection, ChromeSession } from './chromeHarness.js'
 
 const ACCESS_APPROVE_BUTTON_SELECTOR = 'nav.popup-button-row button.is-primary:not(.is-danger)'
 const CONFIRM_APPROVE_BUTTON_SELECTOR = 'nav.popup-button-row button.dialog-action-button.is-primary:not(.is-danger)'
@@ -75,7 +75,7 @@ async function pressKey(connection: CdpConnection, key: 'ArrowDown' | 'ArrowUp' 
 	})
 }
 
-const fakeSignerPreload = `(() => {
+const fakeSignerPreload = (announceProviders = true) => `(() => {
 	globalThis.__fakeSignerPreloadStarted = true
 	const aggregateRequests = []
 	const providerRequestsByUuid = {}
@@ -116,12 +116,13 @@ const fakeSignerPreload = `(() => {
 			aggregateRequests.push(method)
 			if (method === 'eth_chainId') return '0x1'
 			if (method === 'eth_accounts' || method === 'eth_requestAccounts') return [${ JSON.stringify(FAKE_SIGNER_ADDRESS) }]
+			if (method === 'eth_sendTransaction') return ${ JSON.stringify(FAKE_SIGNED_TRANSACTION_HASH) }
 			return await new Promise(() => undefined)
 		},
 		on: () => globalThis.ethereum,
 		removeListener: () => globalThis.ethereum,
 	}
-	const providerInfos = ${ JSON.stringify(FAKE_PROVIDER_INFOS) }
+	const providerInfos = ${ announceProviders ? JSON.stringify(FAKE_PROVIDER_INFOS) : '[]' }
 	const providers = providerInfos.map(createSigner)
 	globalThis.addEventListener('eip6963:requestProvider', () => {
 		for (const detail of providers) {
@@ -129,6 +130,36 @@ const fakeSignerPreload = `(() => {
 		}
 	})
 })()`
+
+async function restartWithPendingApproval(chrome: ChromeSession, page: CdpConnection, previousWorkerId: string, fromChild = false) {
+	const signerChainRequestCount = `(() => {
+		const requester = ${ fromChild ? 'globalThis.__signingFrame.contentWindow' : 'globalThis' }
+		return [...Object.values(requester.__fakeSignerRequestsByUuid ?? {}), requester.__aggregateSignerRequests ?? []]
+			.flat().filter((method) => method === 'eth_chainId').length
+	})()`
+	const previousChainRequests = await page.evaluate<number>(signerChainRequestCount)
+	await page.send('ServiceWorker.enable')
+	await page.send('ServiceWorker.stopAllWorkers')
+	await waitForTargetGone(chrome.browserDebugPort, (target) => target.id === previousWorkerId, 10_000, 'worker stopped with an open confirmation')
+	// Wake the worker without awaiting a public RPC whose recovery is the behavior under test.
+	await page.evaluate(`void ethereum.request({ method: 'eth_chainId' }).catch(() => undefined)`)
+	const worker = await waitForInterceptorExtensionServiceWorker(chrome.browserDebugPort, 30_000)
+	if (worker.id === previousWorkerId) throw new Error('Worker did not restart with an open confirmation')
+	const connection = await connectTarget(chrome.browserDebugPort, worker.id)
+	try {
+		await waitForPerformanceMarks(connection, ['interceptor:background:loaded'], 30_000)
+		await waitForCondition(async () => await connection.evaluate<boolean>(`(async () => {
+			const storage = await browser.storage.local.get()
+			const pending = storage.pendingTransactionsAndMessages
+			return Array.isArray(pending) && pending.length === 1
+				&& Object.values(storage).some((value) => value?.signerAccounts?.includes(${ JSON.stringify(FAKE_SIGNER_ADDRESS) }))
+		})()`).catch(() => false), 30_000, 'restored signer while approval remains pending')
+	} finally {
+		connection.close()
+	}
+	await waitForCondition(async () => await page.evaluate<number>(signerChainRequestCount) > previousChainRequests, 30_000, 'requesting document signer handshake after pending-approval restart')
+	return worker
+}
 
 async function main() {
 	const server = await startChromeCommunicationPageServer()
@@ -153,7 +184,7 @@ async function main() {
 		const pageConnection = await connectTarget(chrome.browserDebugPort, pageTargetId)
 		try {
 			await pageConnection.send('Page.enable')
-			await pageConnection.send('Page.addScriptToEvaluateOnNewDocument', { source: fakeSignerPreload })
+			await pageConnection.send('Page.addScriptToEvaluateOnNewDocument', { source: fakeSignerPreload() })
 			await pageConnection.send('Page.navigate', { url: server.baseUrl })
 			await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__interceptorChromeCommunicationState?.phase === 'requesting-access'`).catch(() => false), 30_000, 'access request')
 
@@ -324,6 +355,9 @@ async function main() {
 			const confirmConnection = await connectTarget(chrome.browserDebugPort, confirmTarget.id)
 			try {
 				await waitForButtonEnabled(confirmConnection, CONFIRM_APPROVE_BUTTON_SELECTOR, 30_000)
+				// Preserve the actual persisted approval and page RPC across a second worker restart.
+				workerTarget = await restartWithPendingApproval(chrome, pageConnection, workerTarget.id, true)
+				await waitForButtonEnabled(confirmConnection, CONFIRM_APPROVE_BUTTON_SELECTOR, 30_000)
 				await clickButton(confirmConnection, CONFIRM_APPROVE_BUTTON_SELECTOR)
 			} finally {
 				confirmConnection.close()
@@ -351,6 +385,8 @@ async function main() {
 			if (aggregateReceivedSigningRequest) throw new Error('Signing request was sent to Brave instead of the selected EIP-6963 provider')
 			const nonSelectedProviderReceivedSigningRequest = await pageConnection.evaluate<boolean>(`Object.entries(globalThis.__signingFrame?.contentWindow?.__fakeSignerRequestsByUuid ?? {}).some(([uuid, requests]) => uuid !== ${ JSON.stringify(SELECTED_PROVIDER_UUID) } && requests.includes('eth_sendTransaction'))`)
 			if (nonSelectedProviderReceivedSigningRequest) throw new Error('Signing request was sent to an EIP-6963 provider other than the selected provider')
+			const selectedSigningCallCount = await pageConnection.evaluate<number>(`globalThis.__signingFrame.contentWindow.__fakeSignerRequestsByUuid[${ JSON.stringify(SELECTED_PROVIDER_UUID) }].filter((method) => method === 'eth_sendTransaction').length`)
+			if (selectedSigningCallCount !== 1) throw new Error(`Expected exactly one selected-wallet transaction after recovery, received ${ selectedSigningCallCount }`)
 
 			await waitForTargetGone(chrome.browserDebugPort, (target) => target.id === confirmTargetId, 10_000, 'completed confirmation popup')
 			confirmTargetId = undefined
@@ -388,4 +424,69 @@ async function main() {
 	}
 }
 
+async function verifyLegacyPendingApprovalRecovery() {
+	const server = await startChromeCommunicationPageServer()
+	const chrome = await launchChromeSession()
+	try {
+		let worker = await waitForInterceptorExtensionServiceWorker(chrome.browserDebugPort, 30_000)
+		const extensionId = extractExtensionId(worker.url)
+		const initialWorker = await connectTarget(chrome.browserDebugPort, worker.id)
+		try {
+			await waitForPerformanceMarks(initialWorker, ['interceptor:background:loaded'], 30_000)
+			await waitForRegisteredContentScripts(initialWorker, ['inpage', 'inpage2'], 30_000)
+			await initialWorker.evaluate('browser.storage.local.set({ simulationMode: false })')
+		} finally {
+			initialWorker.close()
+		}
+		const targetId = await createTargetPage(chrome.browserConnection, 'about:blank')
+		const page = await connectTarget(chrome.browserDebugPort, targetId)
+		try {
+			await page.send('Page.enable')
+			await page.send('Page.addScriptToEvaluateOnNewDocument', { source: fakeSignerPreload(false) })
+			await page.send('Page.navigate', { url: server.baseUrl })
+			const access = await waitForTargetByUrl(chrome.browserDebugPort, `chrome-extension://${ extensionId }/html3/interceptorAccessV3.html`, 30_000)
+			const accessPage = await connectTarget(chrome.browserDebugPort, access.id)
+			try {
+				await waitForButtonEnabled(accessPage, ACCESS_APPROVE_BUTTON_SELECTOR, 30_000)
+				await clickButton(accessPage, ACCESS_APPROVE_BUTTON_SELECTOR)
+			} finally {
+				accessPage.close()
+			}
+			await waitForCondition(async () => await page.evaluate<boolean>(`globalThis.__interceptorChromeCommunicationState?.phase === 'access-granted'`), 30_000, 'legacy account access')
+			await page.evaluate(`(() => {
+				globalThis.__legacySigningResult = { status: 'pending' }
+				ethereum.request({ method: 'eth_sendTransaction', params: [{ from: ${ JSON.stringify(FAKE_SIGNER_ADDRESS) }, to: ${ JSON.stringify(FAKE_SIGNER_ADDRESS) }, value: '0x0', data: '0x' }] })
+					.then((result) => { globalThis.__legacySigningResult = { status: 'fulfilled', result } })
+					.catch((error) => { globalThis.__legacySigningResult = { status: 'rejected', error: String(error) } })
+			})()`)
+			const confirmation = await waitForTargetByUrl(chrome.browserDebugPort, `chrome-extension://${ extensionId }/html3/confirmTransactionV3.html`, 30_000)
+			const confirmationPage = await connectTarget(chrome.browserDebugPort, confirmation.id)
+			try {
+				await waitForButtonEnabled(confirmationPage, CONFIRM_APPROVE_BUTTON_SELECTOR, 30_000)
+				worker = await restartWithPendingApproval(chrome, page, worker.id)
+				await waitForButtonEnabled(confirmationPage, CONFIRM_APPROVE_BUTTON_SELECTOR, 30_000)
+				await clickButton(confirmationPage, CONFIRM_APPROVE_BUTTON_SELECTOR)
+			} finally {
+				confirmationPage.close()
+			}
+			await waitForCondition(async () => await page.evaluate<boolean>(`globalThis.__legacySigningResult?.status === 'fulfilled'`), 10_000, 'legacy signing result after pending-approval restart')
+			const outcome = await page.evaluate<{ result: string, calls: number }>(`({ result: globalThis.__legacySigningResult.result, calls: globalThis.__aggregateSignerRequests.filter((method) => method === 'eth_sendTransaction').length })`)
+			if (outcome.result !== FAKE_SIGNED_TRANSACTION_HASH || outcome.calls !== 1) throw new Error(`Legacy approval recovery did not execute exactly once: ${ JSON.stringify(outcome) }`)
+			const finalWorker = await connectTarget(chrome.browserDebugPort, worker.id)
+			try {
+				await waitForCondition(async () => await finalWorker.evaluate<boolean>(`(async () => (await browser.storage.local.get('pendingTransactionsAndMessages')).pendingTransactionsAndMessages?.length === 0)()`), 10_000, 'completed legacy approval cleanup')
+			} finally {
+				finalWorker.close()
+			}
+			console.warn('Interceptor Chrome legacy pending-approval recovery test passed.')
+		} finally {
+			page.close()
+		}
+	} finally {
+		await chrome.close()
+		await server.close()
+	}
+}
+
 await main()
+await verifyLegacyPendingApprovalRecovery()

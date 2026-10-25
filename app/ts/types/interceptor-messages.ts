@@ -63,7 +63,7 @@ const InpageScriptRequestWithoutIdentifier = funtypes.Union(
 				signerSelectionChangeAllowed: funtypes.Boolean,
 				legacySignerAllowed: funtypes.Union(funtypes.Boolean, funtypes.Undefined),
 			}),
-			funtypes.ReadonlyPartial({ selectedSignerProviderUuid: EIP6963ProviderInfo.fields.uuid, signerFrameIneligible: funtypes.Boolean }),
+			funtypes.ReadonlyPartial({ selectedSignerProviderUuid: EIP6963ProviderInfo.fields.uuid, signerFrameIneligible: funtypes.Boolean, signerConnectionRecoveryStatus: funtypes.Union(funtypes.Literal('recovered'), funtypes.Literal('retry'), funtypes.Literal('refused')) }),
 		),
 	}),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('signer_provider_selected'), result: funtypes.Literal('0x') }),
@@ -460,7 +460,10 @@ export const ConnectedToSigner = funtypes.ReadonlyObject({
 export type SignerProvidersChanged = funtypes.Static<typeof SignerProvidersChanged>
 export const SignerProvidersChanged = funtypes.ReadonlyObject({
 	method: funtypes.Literal('signer_providers_changed'),
-	params: funtypes.Tuple(funtypes.ReadonlyArray(EIP6963ProviderInfo), funtypes.Boolean),
+	params: funtypes.Union(
+		funtypes.Tuple(funtypes.ReadonlyArray(EIP6963ProviderInfo), funtypes.Boolean),
+		funtypes.Tuple(funtypes.ReadonlyArray(EIP6963ProviderInfo), funtypes.Boolean, funtypes.ReadonlyObject({ activeSignerProviderUuid: funtypes.Union(EIP6963ProviderInfo.fields.uuid, funtypes.Undefined) })),
+	),
 }).asReadonly()
 
 export type SignerProviderSelected = funtypes.Static<typeof SignerProviderSelected>
