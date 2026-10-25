@@ -509,6 +509,25 @@ export function createSafeStackFixture(
 		transactions,
 	}
 }
+const reviewedTransactionToSimulate = {
+	website: { websiteOrigin: 'https://example.com', icon: undefined, title: undefined },
+	created,
+	originalRequestParameters: {
+		method: 'eth_sendTransaction' as const,
+		params: [{
+			from: activeAddress,
+			to: recipientAddress,
+			value: 0n,
+			gas: 21_000n,
+			maxFeePerGas: 1n,
+			maxPriorityFeePerGas: 1n,
+			input: new Uint8Array(),
+		}],
+	},
+	transactionIdentifier: 1n,
+	success: true as const,
+	transaction: unsignedTransaction,
+}
 export const popupVisualisation = {
 	statusCode: 'success' as const,
 	data: {
@@ -516,32 +535,27 @@ export const popupVisualisation = {
 		simulationMode: true,
 		simulationStartedTimestamp: created,
 		uniqueRequestIdentifier,
-		transactionToSimulate: {
-			website: { websiteOrigin: 'https://example.com', icon: undefined, title: undefined },
-			created,
-			originalRequestParameters: {
-				method: 'eth_sendTransaction' as const,
-				params: [{
-					from: activeAddress,
-					to: recipientAddress,
-					value: 0n,
-					gas: 21_000n,
-					maxFeePerGas: 1n,
-					maxPriorityFeePerGas: 1n,
-					input: new Uint8Array(),
-				}],
-			},
-			transactionIdentifier: 1n,
-			success: true as const,
-			transaction: unsignedTransaction,
-		},
+		transactionToSimulate: reviewedTransactionToSimulate,
 		signerName: 'NoSignerDetected',
 		addressBookEntries: [],
 		tokenPriceEstimates: [],
 		namedTokenIds: [],
 		simulationState: {
 			success: true as const,
-			simulationStateInput: [],
+			// The reviewed transaction is part of its own confirmation simulation, as in production.
+			simulationStateInput: [{
+				stateOverrides: {},
+				transactions: [{
+					signedTransaction,
+					website: reviewedTransactionToSimulate.website,
+					created,
+					originalRequestParameters: reviewedTransactionToSimulate.originalRequestParameters,
+					transactionIdentifier: reviewedTransactionToSimulate.transactionIdentifier,
+				}],
+				signedMessages: [],
+				blockTimeManipulation: { type: 'AddToTimestamp' as const, deltaToAdd: 12n, deltaUnit: 'Seconds' as const },
+				simulateWithZeroBaseFee: false,
+			}],
 			simulatedBlocks: [],
 			blockNumber: 123n,
 			blockTimestamp: oldTimestamp,

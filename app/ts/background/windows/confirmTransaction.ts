@@ -19,10 +19,11 @@ import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueReques
 import { replyToInterceptedRequestAfterManifestV2Reconnect } from '../messageSending.js'
 import { attemptQueuedTerminalReplyDelivery, queueTerminalReply, queueTerminalReplyAndAttemptDelivery } from '../terminalReplyDelivery.js'
 import { stringToBytes, keccak256 } from '../../utils/ethereumPrimitives.js'
-import { EthereumBytes32, EthereumQuantity, serialize, type EthereumUnsignedTransaction } from '../../types/wire-types.js'
+import { EthereumBytes32, EthereumQuantity, serialize, type EthereumSendableSignedTransaction, type EthereumUnsignedTransaction } from '../../types/wire-types.js'
+import { areEqualUint8Arrays } from '../../utils/typed-arrays.js'
 import type { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
 import { getErrorMessage, JsonRpcResponseError, reportUnexpectedError, isExpectedInfrastructureError, isNewBlockAbort, reportLocalRecovery } from '../../utils/errors.js'
-import type { PendingTransactionOrSignableMessage, PopupPendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
+import type { ConfirmTransactionTransactionSingleVisualization, PendingTransactionOrSignableMessage, PopupPendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
 import { getRequestedSignMessageAccount, type SignMessageParams } from '../../types/jsonRpc-signing-types.js'
 import type { SafeSignerErrorDetails } from '../../types/safeTypes.js'
 import { craftPersonalSignPopupMessage } from './personalSign.js'
@@ -311,7 +312,8 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 	if (safeResolution.pendingChanged) {
 		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async () => pendingTransactionOrMessage)
 	}
-	const signerFacingRequest: SendTransactionParams | SendRawTransactionParams | SignMessageParams = safeResolution.signerFacingRequest
+	// Derived only when forwarding, after the authorization checks, so rejecting a request never depends on rebuilding its reviewed transaction.
+	const getSignerFacingRequest = (): SendTransactionParams | SendRawTransactionParams | SignMessageParams => safeResolution.signerFacingRequest
 		?? getReviewedSignerFacingRequest(pendingTransactionOrMessage)
 	const removePendingRequestAndUpdateView = async () => {
 		await removePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier)
@@ -391,7 +393,7 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 		}
 		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'WaitingForSigner' } }))
 		await updateConfirmTransactionView(ethereum, tokenPriceService)
-		const requestWasForwarded = await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, { ...signerFacingRequest, type: 'forwardToSigner', uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
+		const requestWasForwarded = await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, { ...getSignerFacingRequest(), type: 'forwardToSigner', uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
 		if (requestWasForwarded) return true
 		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, {
 			approvalStatus: {
@@ -428,7 +430,7 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 			return reply({ type: 'result', result: confirmation.data.signerReply })
 		}
 		await removePendingRequestAndUpdateView()
-		return await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, { ...signerFacingRequest, type: 'forwardToSigner', uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
+		return await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, { ...getSignerFacingRequest(), type: 'forwardToSigner', uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
 	}
 	if (confirmation.data.action === 'signerIncluded') throw new Error('Signer included transaction that was in simulation')
 
@@ -609,13 +611,44 @@ export function toCanonicalSendTransactionParams(transaction: EthereumUnsignedTr
 	}
 }
 
-// `originalRequestParameters` keeps the website's own inputs so refreshes regenerate omitted fields (nonce, gas and fees) against current chain state, while the wallet receives the exact reviewed transaction so it cannot fill in values the user did not see. Gnosis Safe flows are excluded: they are simulated with zero fees for an external executor, and the Safe resolver either supplies its own signer-facing request or re-validates the direct execution route against the reviewed Safe state.
+// `originalRequestParameters` keeps the website's own inputs so refreshes regenerate omitted fields (nonce, gas and fees) against current chain state, while the wallet receives the exact transaction the popup displayed so it cannot sign values the user did not see. Gnosis Safe flows are excluded: they are simulated with zero fees for an external executor, and the Safe resolver either supplies its own signer-facing request or re-validates the direct execution route against the reviewed Safe state.
 function getReviewedSignerFacingRequest(pending: PendingTransactionOrSignableMessage): SendTransactionParams | SendRawTransactionParams | SignMessageParams {
 	if (pending.type === 'SignableMessage') return pending.originalRequestParameters
 	if (pending.originalRequestParameters.method !== 'eth_sendTransaction') return pending.originalRequestParameters
 	if (getSafePendingFlow(pending) !== undefined) return pending.originalRequestParameters
 	if (pending.transactionOrMessageCreationStatus !== 'Simulated') return pending.originalRequestParameters
-	return toCanonicalSendTransactionParams(pending.transactionToSimulate.transaction)
+	return toCanonicalSendTransactionParams(getDisplayedTransaction(pending.transactionToSimulate.transaction, pending.popupVisualisation, pending.transactionIdentifier))
+}
+
+function assertSimulatedTransactionMatchesPrepared(prepared: EthereumUnsignedTransaction, simulated: EthereumSendableSignedTransaction) {
+	if (simulated.type !== prepared.type
+		|| simulated.from !== prepared.from
+		|| simulated.to !== prepared.to
+		|| simulated.value !== prepared.value
+		|| simulated.gas !== prepared.gas
+		|| simulated.chainId !== prepared.chainId
+		|| !areEqualUint8Arrays(simulated.input, prepared.input)) {
+		throw new Error('The simulated transaction does not match the prepared transaction')
+	}
+}
+
+// The confirmation simulation repairs a stale nonce and re-derives interceptor-filled fees for the current base fee, and the popup displays that simulated transaction. Forwarding it, rather than the prepared one or a nonce the simulation rejected, keeps "the wallet signs what was displayed" true; only the nonce and fee fields may differ, and the prepared unsigned authorization list is kept because the simulated one carries placeholder signatures.
+function getDisplayedTransaction(prepared: EthereumUnsignedTransaction, popupVisualisation: ConfirmTransactionTransactionSingleVisualization, transactionIdentifier: bigint): EthereumUnsignedTransaction {
+	// A failed simulation displays the prepared transaction itself.
+	if (popupVisualisation.statusCode !== 'success') return prepared
+	const simulated = popupVisualisation.data.simulationState.simulationStateInput
+		.flatMap((block) => block.transactions)
+		.find((transaction) => transaction.transactionIdentifier === transactionIdentifier)?.signedTransaction
+	if (simulated === undefined) throw new Error('The reviewed transaction is missing from its confirmation simulation')
+	assertSimulatedTransactionMatchesPrepared(prepared, simulated)
+	switch (prepared.type) {
+		case 'legacy': return simulated.type === 'legacy' ? { ...prepared, nonce: simulated.nonce, gasPrice: simulated.gasPrice } : prepared
+		case '2930': return simulated.type === '2930' ? { ...prepared, nonce: simulated.nonce, gasPrice: simulated.gasPrice } : prepared
+		case '1559': return simulated.type === '1559' ? { ...prepared, nonce: simulated.nonce, maxFeePerGas: simulated.maxFeePerGas, maxPriorityFeePerGas: simulated.maxPriorityFeePerGas } : prepared
+		case '4844': return simulated.type === '4844' ? { ...prepared, nonce: simulated.nonce, maxFeePerGas: simulated.maxFeePerGas, maxPriorityFeePerGas: simulated.maxPriorityFeePerGas } : prepared
+		case '7702': return simulated.type === '7702' ? { ...prepared, nonce: simulated.nonce, maxFeePerGas: simulated.maxFeePerGas, maxPriorityFeePerGas: simulated.maxPriorityFeePerGas } : prepared
+		default: return assertNever(prepared)
+	}
 }
 
 type SupportedSendTransactionType = Exclude<EthereumUnsignedTransaction['type'], '4844'>
