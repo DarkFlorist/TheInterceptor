@@ -1,6 +1,15 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
 import { browserMock, createDisconnectedPort, createRecordingPort, isRecord, modules, pendingTransaction, signedTransaction, simulator, uniqueRequestIdentifier, waitForPendingTransactionsToClear, withSilencedConsole } from './confirmTransactionTestHarness.js'
+import { fixedServicesOwner } from './backgroundEthAccountsTestHarness.js'
+
+// Confirmation flows take the settings that belong to their client; these sequential tests read the current pair.
+const readSettings = async () => await (await import('../../app/ts/background/settings.js')).getSettings()
+// Like a request snapshot, confirmations read the settings together with the simulation stack built from them.
+const readNetworkState = async () => {
+	const settings = await readSettings()
+	return { settings, simulation: await (await import('../../app/ts/background/simulationUpdating.js')).captureSimulationSnapshot(settings) }
+}
 
 test('failed signer delivery keeps the request and replaces the waiting spinner with a wallet-neutral error', async () => {
 	await browser.storage.local.set({ simulationMode: false })
@@ -27,7 +36,7 @@ test('failed signer delivery keeps the request and replaces the waiting spinner 
 			approvalStatus: { status: 'WaitingForUser' },
 		}] })
 
-		const delivered = await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, connectionCase.connections, {
+		const delivered = await modules.resolvePendingTransactionOrMessage(fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService), simulator.ethereum, simulator.tokenPriceService, await readNetworkState(), connectionCase.connections, {
 			method: 'popup_confirmDialog',
 			data: { action: 'accept', uniqueRequestIdentifier },
 		})
@@ -71,7 +80,7 @@ test('reject and result replies remain durable after their pending request is re
 
 	for (const terminalReply of terminalReplies) {
 		await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [terminalReply.transaction] })
-		assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, disconnectedConnections, terminalReply.confirmation), false, terminalReply.name)
+		assert.equal(await modules.resolvePendingTransactionOrMessage(fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService), simulator.ethereum, simulator.tokenPriceService, await readNetworkState(), disconnectedConnections, terminalReply.confirmation), false, terminalReply.name)
 		assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [], terminalReply.name)
 		assert.equal((await modules.getPendingTerminalReplies()).length, 1, terminalReply.name)
 
@@ -120,7 +129,7 @@ test('terminal replies are persisted before removing the pending rejection or re
 				writeStoredItems()
 			})
 
-			const resolution = modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, new Map(), terminalReply.confirmation)
+			const resolution = modules.resolvePendingTransactionOrMessage(fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService), simulator.ethereum, simulator.tokenPriceService, await readNetworkState(), new Map(), terminalReply.confirmation)
 			await persistenceStarted
 			assert.equal((await modules.getPendingTransactionsAndMessages()).length, 1, terminalReply.name)
 			releasePersistence?.()
@@ -184,7 +193,7 @@ test('MV2 popup close rejects its captured requests without deleting a concurren
 	})
 
 	try {
-		await modules.onCloseWindowOrTab({ type: 'popup', id: 1 }, simulator.ethereum, simulator.tokenPriceService, websiteTabConnections)
+		await modules.onCloseWindowOrTab(fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService), { type: 'popup', id: 1 }, simulator.ethereum, simulator.tokenPriceService, await readNetworkState(), websiteTabConnections)
 	} finally {
 		browserMock.setManifestVersion(3)
 		browserMock.setTabMessageHandler(undefined)
@@ -233,7 +242,7 @@ test('popup close keeps the pending request when durable rejection enqueue fails
 		return readStoredItems()
 	})
 
-	await withSilencedConsole(async () => await modules.onCloseWindowOrTab({ type: 'popup', id: 1 }, simulator.ethereum, simulator.tokenPriceService, websiteTabConnections))
+	await withSilencedConsole(async () => await modules.onCloseWindowOrTab(fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService), { type: 'popup', id: 1 }, simulator.ethereum, simulator.tokenPriceService, await readNetworkState(), websiteTabConnections))
 	assert.equal((await modules.getPendingTransactionsAndMessages()).length, 1)
 	assert.equal(postedMessages.length, 0)
 	assert.equal(browserMock.storageState.pendingTerminalReplies, undefined)
@@ -284,7 +293,7 @@ test('popup close retries outbox cleanup without reposting after direct delivery
 		return readStoredItems()
 	})
 
-	await withSilencedConsole(async () => await modules.onCloseWindowOrTab({ type: 'popup', id: 1 }, simulator.ethereum, simulator.tokenPriceService, websiteTabConnections))
+	await withSilencedConsole(async () => await modules.onCloseWindowOrTab(fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService), { type: 'popup', id: 1 }, simulator.ethereum, simulator.tokenPriceService, await readNetworkState(), websiteTabConnections))
 	assert.equal(postedMessages.length, 1)
 	assert.equal((await modules.getPendingTransactionsAndMessages()).length, 1)
 	assert.equal((await modules.getPendingTerminalReplies()).length, 1)
@@ -348,7 +357,7 @@ test('MV2 reconnect cleanup failure retries without reposting the rejection', as
 	})
 
 	try {
-		await withSilencedConsole(async () => await modules.onCloseWindowOrTab({ type: 'popup', id: 1 }, simulator.ethereum, simulator.tokenPriceService, websiteTabConnections))
+		await withSilencedConsole(async () => await modules.onCloseWindowOrTab(fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService), { type: 'popup', id: 1 }, simulator.ethereum, simulator.tokenPriceService, await readNetworkState(), websiteTabConnections))
 		assert.equal(postedMessages.length, 1)
 		assert.equal((await modules.getPendingTransactionsAndMessages()).length, 1)
 		assert.equal((await modules.getPendingTerminalReplies()).length, 1)
@@ -387,7 +396,7 @@ test('startup recovery rejects orphaned requests and preserves requests with liv
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [pendingTransaction, livePendingTransaction] })
 	browserMock.setLiveWindowIds([livePopupId])
 
-	await modules.resolvePendingRequestsForMissingConfirmationWindows(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections)
+	await modules.resolvePendingRequestsForMissingConfirmationWindows(fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService), simulator.ethereum, simulator.tokenPriceService, await readNetworkState(), websiteTabConnections)
 	const remainingTransactions = await modules.getPendingTransactionsAndMessages()
 	assert.deepEqual(remainingTransactions.map((transaction) => transaction.uniqueRequestIdentifier.requestId), [livePendingTransaction.uniqueRequestIdentifier.requestId])
 	assert.equal(postedMessages.length, 1)
@@ -405,7 +414,7 @@ test('startup recovery removes the unreachable rejection created for an orphaned
 	browserMock.setLiveTabIds([])
 	browserMock.setLiveWindowIds([])
 
-	await modules.resolvePendingRequestsForMissingConfirmationWindows(simulator.ethereum, simulator.tokenPriceService, new Map())
+	await modules.resolvePendingRequestsForMissingConfirmationWindows(fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService), simulator.ethereum, simulator.tokenPriceService, await readNetworkState(), new Map())
 	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
 	assert.equal((await modules.getPendingTerminalReplies()).length, 1)
 
@@ -437,7 +446,7 @@ test('popup-close rejection remains queued after reconnect timeout and flushes o
 	browserMock.setTabMessageHandler(async () => ({ reconnected: true }))
 
 	try {
-		await modules.onCloseWindowOrTab({ type: 'popup', id: 1 }, simulator.ethereum, simulator.tokenPriceService, websiteTabConnections)
+		await modules.onCloseWindowOrTab(fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService), { type: 'popup', id: 1 }, simulator.ethereum, simulator.tokenPriceService, await readNetworkState(), websiteTabConnections)
 		await new Promise((resolve) => setTimeout(resolve, 1_050))
 		assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
 		assert.equal((await modules.getPendingTerminalReplies()).length, 1)

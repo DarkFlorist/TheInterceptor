@@ -8,6 +8,15 @@ import { getSafeAppsRequestCommand } from '../../app/ts/background/safeAppsReque
 import { createSafeAppsMessageServices } from '../../app/ts/background/safeAppsMessages.js'
 import { hashMessage, hashTypedData } from '../../app/ts/utils/ethereumPrimitives.js'
 import { activeAddress, createSafeAddressBookEntry, createWebsitePort, EIP712Message, fakeRpcNetwork, fakeSafeContract, modules, safeTestOwnerAccount, safeTestOwnerAddress, simulator, uniqueRequestIdentifier } from './confirmTransactionTestHarness.js'
+import { fixedServicesOwner } from './backgroundEthAccountsTestHarness.js'
+
+// Confirmation flows take the settings that belong to their client; these sequential tests read the current pair.
+const readSettings = async () => await (await import('../../app/ts/background/settings.js')).getSettings()
+// Like a request snapshot, confirmations read the settings together with the simulation stack built from them.
+const readNetworkState = async () => {
+	const settings = await readSettings()
+	return { settings, simulation: await (await import('../../app/ts/background/simulationUpdating.js')).captureSimulationSnapshot(settings) }
+}
 
 const originalMessage = 'Hello Safe 👋'
 const typedData = () => createSafeMessageTypedData(fakeRpcNetwork.chainId, activeAddress, originalMessage)
@@ -25,7 +34,7 @@ async function prepareMessageReview(data = typedData(), review = { text: origina
 	const port = createWebsitePort(socket, 0, [])
 	const connections = new Map([[socket.tabId, { connections: { [modules.websiteSocketToString(socket)]: { socket, port, websiteOrigin: 'safe-app.example', approved: true, wantsToConnect: true } } }]])
 	const request = { method: signRequest().method, params: [addressString(activeAddress), JSON.stringify(data)], interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier }
-	assert.deepEqual(await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, request, { kind: 'message', parameters: signRequest(), review }, false, activeAddress, { websiteOrigin: 'safe-app.example', icon: undefined, title: 'Safe App' }, connections), { type: 'doNotReply' })
+	assert.deepEqual(await modules.openConfirmTransactionDialogForMessage(fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService), simulator.ethereum, simulator.tokenPriceService, await readNetworkState(), request, { kind: 'message', parameters: signRequest(), review }, false, activeAddress, { websiteOrigin: 'safe-app.example', icon: undefined, title: 'Safe App' }, connections), { type: 'doNotReply' })
 	const [pending] = await modules.getPendingTransactionsAndMessages()
 	if (pending?.type !== 'SignableMessage' || pending.transactionOrMessageCreationStatus !== 'Simulated') throw new Error('Missing Safe message review')
 	return pending
@@ -172,7 +181,7 @@ for (const isTypedData of [false, true]) test(`Safe ${ isTypedData ? 'typed' : '
 	assert.equal(pending.approvalStatus.status, 'SignerError')
 	assert.equal(pending.safeMessageCoSignSnapshot, undefined)
 	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({ ...state, signerAccounts: [safeTestOwnerAddress], activeSigningAddress: safeTestOwnerAddress }))
-	await modules.refreshPendingSafeSignerSelectionErrors(simulator.ethereum, simulator.tokenPriceService, uniqueRequestIdentifier.requestSocket.tabId)
+	await modules.refreshPendingSafeSignerSelectionErrors(simulator.ethereum, simulator.tokenPriceService, await readNetworkState(), uniqueRequestIdentifier.requestSocket.tabId)
 	const [recovered] = await modules.getPendingTransactionsAndMessages()
 	if (recovered?.type !== 'SignableMessage') throw new Error('Missing recovered Safe message')
 	assert.equal(recovered.approvalStatus.status, 'WaitingForUser')

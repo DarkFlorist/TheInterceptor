@@ -4,6 +4,8 @@ import type { PopupReplyOption } from '../types/interceptor-reply-messages.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { createMethodHandlerFor } from '../utils/methodHandlers.js'
 import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
+import { readNetworkSnapshot } from './networkTransition.js'
+import type { SimulationSnapshot } from './simulationUpdating.js'
 
 export type PopupMessageDispatcherContext = {
 	websiteTabConnections: WebsiteTabConnections
@@ -19,9 +21,10 @@ export type PopupMessageHandler = (context: PopupMessageDispatcherContext, reque
 export type PopupMessageHandlerMap = Record<PopupMessage['method'], PopupMessageHandler>
 export const popupMessageHandler = createMethodHandlerFor<PopupMessage, PopupMessageDispatcherContext, Promise<PopupReplyOption | void>>()
 
-// One fixed-provider operation: this context deliberately exposes neither reset nor the live owner.
+// One fixed-provider operation: settings, stack and services are read together under the transition lock, and the context exposes neither reset nor the live owner.
 export type PopupSnapshotContext = Omit<PopupMessageDispatcherContext, 'simulationServicesOwner' | 'resetSimulationState'> & {
 	readonly services: SimulationServices
+	readonly simulation: SimulationSnapshot
 }
 
 export function popupSnapshotMessageHandler<Method extends PopupMessage['method']>(
@@ -30,6 +33,7 @@ export function popupSnapshotMessageHandler<Method extends PopupMessage['method'
 ): PopupMessageHandler {
 	return popupMessageHandler(method, async (context, request) => {
 		const { simulationServicesOwner, resetSimulationState: _resetSimulationState, ...executionContext } = context
-		return await handler({ ...executionContext, services: simulationServicesOwner.getCurrent() }, request)
+		const { settings, simulation, services } = await readNetworkSnapshot(simulationServicesOwner)
+		return await handler({ ...executionContext, settings, simulation, services }, request)
 	})
 }

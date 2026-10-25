@@ -181,6 +181,7 @@ async function loadModules() {
 	const settings = await import('../../app/ts/background/settings.js')
 	const background = await import('../../app/ts/background/background.js')
 	const activeSettings = await import('../../app/ts/background/activeSettings.js')
+	const networkTransition = await import('../../app/ts/background/networkTransition.js')
 	const walletSwitch = await import('../../app/ts/background/walletSwitch.js')
 	const popupMessageRouting = await import('../../app/ts/background/popupMessageRouting.js')
 	const storageVariables = await import('../../app/ts/background/storageVariables.js')
@@ -195,6 +196,7 @@ async function loadModules() {
 		...settings,
 		...background,
 		...activeSettings,
+		...networkTransition,
 		...walletSwitch,
 		...popupMessageRouting,
 		updateTransactionState: storageVariables.updateTransactionState,
@@ -448,6 +450,7 @@ describe('popup clear reset', () => {
 		const { queuePopupSimulationRefresh } = await import('../../app/ts/background/popupSimulationRefreshQueue.js')
 		const { requestCompleteVisualizedSimulation } = await import('../../app/ts/background/popupMessageHandlers.js')
 		const { Future } = await import('../../app/ts/utils/future.js')
+		const { captureSimulationSnapshot } = await import('../../app/ts/background/simulationUpdating.js')
 		const started = new Future<void>()
 		const release = new Future<void>()
 		const originalSend = browser.runtime.sendMessage
@@ -460,7 +463,7 @@ describe('popup clear reset', () => {
 			}
 			return await originalSend(message)
 		}
-		const queued = queuePopupSimulationRefresh({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService, invalidateOldState: true })
+		const queued = queuePopupSimulationRefresh({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService, invalidateOldState: true }, await captureSimulationSnapshot())
 		let timeout: ReturnType<typeof setTimeout> | undefined
 		try {
 			await started
@@ -563,7 +566,7 @@ describe('popup clear reset', () => {
 		await browserStorageLocalSet({ popupVisualisation: matchingPopupVisualisation })
 
 		const { refreshHomeData } = modules
-		await refreshHomeData(fakeEthereum, fakeTokenPriceService, new Map(), true, 1, async () => undefined, false)
+		await refreshHomeData({ getCurrent: () => ({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService }) }, new Map(), true, 1, async () => undefined, false)
 
 		const popupVisualisation = (await browserStorageLocalGet('popupVisualisation')).popupVisualisation
 		assert.ok(popupVisualisation)
@@ -705,9 +708,11 @@ describe('popup clear reset', () => {
 	test('clears the interceptor stack when changing rpc to another chain', async () => {
 		browserMock.reset()
 		const resets: RpcNetwork[] = []
+		// Like the production owner, the reset installs services for the new network.
+		const otherChainEthereum = createFakeEthereum(otherChainRpcNetwork) as never as Parameters<typeof updatePopupVisualisationIfNeeded>[0]
 		const simulationServicesOwner = createTestSimulationServicesOwner({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService }, (nextRpcEntry: RpcNetwork) => {
 			resets.push(nextRpcEntry)
-			return { ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService }
+			return { ethereum: otherChainEthereum, tokenPriceService: fakeTokenPriceService }
 		})
 		await browserStorageLocalSet({
 			independentActiveSimulationAddress: activeAddress,

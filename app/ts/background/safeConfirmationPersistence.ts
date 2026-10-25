@@ -187,6 +187,7 @@ async function persistSafeTransaction(
 		if (!isSafeContractValidationFailure(error)) throw error
 		return signerError(`Gnosis Safe proposal could not be persisted: ${ getErrorMessage(error) ?? 'The local Gnosis Safe proposal stack changed.' }`)
 	}
+	// The proposal joins its own chain's Gnosis Safe stack, but the shared visualisation follows the current selection, so its refresh reads the settings and stack when it runs.
 	await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { invalidateOldState: true })
 	await openPopupOrTab({ url: getHtmlFile('simulationStack') })
 	return { status: 'success', result: funtypes.String.parse(EthereumBytes32.serialize(safeSigningRequest.safeTxHash)) }

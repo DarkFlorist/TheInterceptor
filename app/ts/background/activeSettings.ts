@@ -1,20 +1,18 @@
-import { publishFailedPopupVisualisation } from './popupVisualisationUpdater.js'
 import { queuePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import type { SigningAddressPreference } from '../types/signerTypes.js'
-import { getRpcNetworkChange } from '../utils/rpcNetworkChange.js'
 import type { RpcNetwork } from '../types/rpc.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
-import { Semaphore } from '../utils/semaphore.js'
 import type { WebsiteAccessUpdate } from './accessManagement.js'
-import { reconcileWebsiteApprovalAccesses, finishWebsiteAccessUpdate, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts } from './accessManagement.js'
+import { reconcileWebsiteApprovalAccesses, finishWebsiteAccessUpdate } from './accessManagement.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { changeSimulationMode, getSettings, setUseSignersAddressAsActiveAddress, trackPreviousActiveAddressForMakeMeRichList } from './settings.js'
 import { updateTransactionState } from './storageVariables.js'
 import type { ActiveAddressSelection } from '../utils/activeAddressSelection.js'
 import { rememberSigningAddressSelection } from './signingAddressSelection.js'
-import { activeStackContextsEqual, getActiveStackContext, operationBelongsToActiveStackContext } from '../utils/activeStackContext.js'
+import { getActiveStackContext, operationBelongsToActiveStackContext } from '../utils/activeStackContext.js'
+import { publishCommittedSettingsChange, readNetworkSnapshot, runPendingPopupRefresh, runSettingsTransition } from './networkTransition.js'
 
 async function clearSimulationStateFromConfig() {
 	const settings = await getSettings()
@@ -47,7 +45,8 @@ async function clearSimulationStateFromConfig() {
 
 export async function resetSimulationStateFromConfig(simulationServicesOwner: SimulationServicesOwner) {
 	await clearSimulationStateFromConfig()
-	await queuePopupSimulationRefresh({ ...simulationServicesOwner.getCurrent(), invalidateOldState: true })
+	const { services, simulation } = await readNetworkSnapshot(simulationServicesOwner)
+	await queuePopupSimulationRefresh({ ...services, invalidateOldState: true }, simulation)
 }
 
 const keepTrackOfPreviousAddressForRichList = async () => {
@@ -69,7 +68,6 @@ type ActiveSettingsTransition = {
 	readonly signingPreference?: SigningAddressPreference
 }
 
-const changeActiveAddressAndChainSemaphore = new Semaphore(1)
 async function runActiveSettingsChange(
 	simulationServicesOwner: SimulationServicesOwner,
 	websiteTabConnections: WebsiteTabConnections,
@@ -79,13 +77,13 @@ async function runActiveSettingsChange(
 	let accessUpdate: WebsiteAccessUpdate | undefined
 	try {
 		// Settings, approvals, resets, notifications and selection preferences form one ordered transition.
-		await changeActiveAddressAndChainSemaphore.execute(async () => {
+		const popupRefresh = await runSettingsTransition(simulationServicesOwner, websiteTabConnections, async (previousSettings, effects) => {
+			// These writes keep the network, mode and stack context of the settings read before the transition.
 			if (transition.simulationSignerSelection !== undefined) {
 				const { useSignerAddress, signerAddress } = transition.simulationSignerSelection
 				await setUseSignersAddressAsActiveAddress(useSignerAddress, signerAddress)
 			}
 			if (change.simulationMode && change.activeAddress !== undefined) await keepTrackOfPreviousAddressForRichList()
-			const previousSettings = await getSettings()
 
 			if (change.simulationMode) {
 				await changeSimulationMode({
@@ -105,22 +103,12 @@ async function runActiveSettingsChange(
 			}
 
 			const updatedSettings = await getSettings()
-			const { chainChanged: rpcChainChanged, endpointChanged: rpcEndpointChanged } = getRpcNetworkChange(previousSettings.activeRpcNetwork, updatedSettings.activeRpcNetwork)
 			try {
 				try {
 					// The preference belongs to the committed selection, even if later provider preparation fails.
 					if (transition.signingPreference !== undefined) await rememberSigningAddressSelection(transition.signingPreference)
-					// A signer-only chain has no provider to install; simulation is disabled until a configured endpoint is selected.
-					if (rpcEndpointChanged && change.rpcNetwork?.httpsRpc !== undefined) {
-						try {
-							simulationServicesOwner.reset(change.rpcNetwork)
-						} catch (error) {
-							// Only failed provider installation invalidates simulation output here.
-							await publishFailedPopupVisualisation()
-							throw error
-						}
-					}
-					if (updatedSettings.simulationMode && rpcChainChanged) await clearSimulationStateFromConfig()
+					await effects.installServices(updatedSettings)
+					await effects.clearStackForChangedChain(updatedSettings)
 				} finally {
 					// Publish committed settings even if installing their services fails.
 					await sendPopupMessageToOpenWindows({
@@ -130,17 +118,9 @@ async function runActiveSettingsChange(
 			} finally {
 				accessUpdate = await reconcileWebsiteApprovalAccesses(websiteTabConnections, updatedSettings)
 			}
-			await sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
-			if (rpcChainChanged) {
-				sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'chainChanged', result: updatedSettings.activeRpcNetwork.chainId })
-				await sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
-			}
-			// External-wallet signing has no simulated stack; Safe signing retains its separate stack visualization.
-			if ((updatedSettings.simulationMode || updatedSettings.activeSigningSafeAddress !== undefined) && (rpcEndpointChanged || !activeStackContextsEqual(getActiveStackContext(previousSettings), getActiveStackContext(updatedSettings)))) {
-				await queuePopupSimulationRefresh(simulationServicesOwner.getCurrent())
-			}
-			await sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await getSettings())
+			return await publishCommittedSettingsChange(simulationServicesOwner, websiteTabConnections, effects, previousSettings, updatedSettings)
 		})
+		await runPendingPopupRefresh(popupRefresh)
 	} finally {
 		// Complete committed access updates after releasing the semaphore, even if a later reset or notification fails.
 		if (accessUpdate !== undefined) {
