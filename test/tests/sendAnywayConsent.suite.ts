@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
-import { activeAddress, createAcceptConfirmation, createWebsitePort, created, fakeRpcNetwork, isRecord, modules, pendingTransaction, popupVisualisation, recipientAddress, signedTransaction, simulator, uniqueRequestIdentifier, unsignedTransaction } from './confirmTransactionTestHarness.js'
+import { activeAddress, addressString, createAcceptConfirmation, createSafeAddressBookEntry, createSafeTx, createWebsitePort, created, EIP712Message, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, pendingTransaction, popupVisualisation, recipientAddress, safeTestOwnerAddress, safeTxToTypedDataJson, signedTransaction, simulator, uniqueRequestIdentifier, unsignedTransaction } from './confirmTransactionTestHarness.js'
 
 type TransactionOutcome = { transactionStatus: 'Transaction Succeeded' } | { transactionStatus: 'Transaction Failed', error: { code: number, message: string, decodedErrorMessage: string } }
 
@@ -63,13 +63,28 @@ function createSignerConnection() {
 			},
 		},
 	}]])
-	const wasForwardedToSigner = () => postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner')
-	return { websiteTabConnections, wasForwardedToSigner }
+	const getSignerRequest = () => postedMessages.find((message) => isRecord(message) && message.type === 'forwardToSigner')
+	const wasForwardedToSigner = () => getSignerRequest() !== undefined
+	const getForwardedSigner = () => {
+		const signerRequest = getSignerRequest()
+		return isRecord(signerRequest) && Array.isArray(signerRequest.params) ? signerRequest.params[0] : undefined
+	}
+	return { websiteTabConnections, wasForwardedToSigner, getForwardedSigner }
 }
 
 type AcceptConfirmation = Awaited<ReturnType<typeof createAcceptConfirmation>>
-const resolveAccept = async (websiteTabConnections: ReturnType<typeof createSignerConnection>['websiteTabConnections'], accept: AcceptConfirmation) => {
-	return await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, accept)
+const resolveAccept = async (websiteTabConnections: ReturnType<typeof createSignerConnection>['websiteTabConnections'], accept: AcceptConfirmation, selectedSigner?: bigint) => {
+	const refreshedSafeSignerSelection = selectedSigner === undefined ? undefined : { selectedSigner, verificationError: undefined }
+	return await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, accept, refreshedSafeSignerSelection)
+}
+
+function prepareSafeWithTwoOwners(reviewedOwner: bigint, selectedOwner: bigint) {
+	fakeSafeContract.owners = [reviewedOwner, selectedOwner]
+	fakeSafeContract.threshold = 2n
+	fakeSafeContract.nonce = 0n
+	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, { to: recipientAddress, value: 0n, input: new Uint8Array() }, 0n)
+	fakeSafeContract.transactionHash = BigInt(getSafeTxHash(safeTx))
+	return safeTx
 }
 
 async function getStoredRequest() {
@@ -135,4 +150,63 @@ test('requires the send-anyway override for a quarantined signature request', as
 
 	assert.equal(await resolveAccept(websiteTabConnections, await createAcceptConfirmation(uniqueRequestIdentifier, true)), true)
 	assert.equal(wasForwardedToSigner(), true)
+})
+
+test('refuses a Safe proposal accept when the signer refresh during resolution changes the reviewed owner', async () => {
+	const reviewedOwner = recipientAddress
+	const selectedOwner = safeTestOwnerAddress
+	const safeTx = prepareSafeWithTwoOwners(reviewedOwner, selectedOwner)
+	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' })])
+	await modules.updateSafeTransactionStacks(() => [])
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [{
+		...pendingTransaction,
+		simulationMode: false,
+		safeTransaction: {
+			safeAddress: activeAddress,
+			safeSignerAddress: reviewedOwner,
+			safeVersion: '1.4.1',
+			threshold: 2n,
+			reviewedSafeState: { version: '1.4.1', nonce: 0n, owners: [reviewedOwner, selectedOwner], threshold: 2n },
+			safeTxHash: BigInt(getSafeTxHash(safeTx)),
+			safeTx,
+			executionGasLimit: 21_000n,
+		},
+	}] })
+	const { websiteTabConnections, wasForwardedToSigner, getForwardedSigner } = createSignerConnection()
+	const acceptForReviewedOwner = await createAcceptConfirmation()
+
+	assert.equal(await resolveAccept(websiteTabConnections, acceptForReviewedOwner, selectedOwner), false)
+	assert.equal(wasForwardedToSigner(), false)
+	const refreshed = await getStoredRequest()
+	assert.equal(refreshed.type === 'Transaction' ? refreshed.safeTransaction?.safeSignerAddress : undefined, selectedOwner)
+	assert.equal(refreshed.resultRevision, acceptForReviewedOwner.data.resultRevision + 1)
+
+	assert.equal(await resolveAccept(websiteTabConnections, await createAcceptConfirmation(), selectedOwner), true)
+	assert.equal(getForwardedSigner(), addressString(selectedOwner))
+})
+
+test('refuses a Safe co-signing accept when the signer refresh during resolution changes the reviewed owner', async () => {
+	const reviewedOwner = recipientAddress
+	const selectedOwner = safeTestOwnerAddress
+	const safeTx = prepareSafeWithTwoOwners(reviewedOwner, selectedOwner)
+	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' })])
+	await modules.updateSafeTransactionStacks(() => [])
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({ ...state, signerAccounts: [reviewedOwner], activeSigningAddress: reviewedOwner, signerChain: fakeRpcNetwork.chainId }))
+	const { websiteTabConnections, wasForwardedToSigner, getForwardedSigner } = createSignerConnection()
+	const signRequest = { method: 'eth_signTypedData_v4' as const, params: [activeAddress, EIP712Message.parse(safeTxToTypedDataJson(safeTx))] as const }
+	const request = { ...signRequest, interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier }
+	assert.deepEqual(await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, request, { kind: 'message', parameters: signRequest }, false, activeAddress, pendingTransaction.website, websiteTabConnections), { type: 'doNotReply' })
+	const reviewed = await getStoredRequest()
+	assert.equal(reviewed.type === 'SignableMessage' ? reviewed.safeMessageCoSignSnapshot?.safeSignerAddress : undefined, reviewedOwner)
+	const acceptForReviewedOwner = await createAcceptConfirmation()
+
+	assert.equal(await resolveAccept(websiteTabConnections, acceptForReviewedOwner, selectedOwner), false)
+	assert.equal(wasForwardedToSigner(), false)
+	const refreshed = await getStoredRequest()
+	assert.equal(refreshed.type === 'SignableMessage' ? refreshed.safeMessageCoSignSnapshot?.safeSignerAddress : undefined, selectedOwner)
+	assert.equal(refreshed.resultRevision, acceptForReviewedOwner.data.resultRevision + 1)
+
+	assert.equal(await resolveAccept(websiteTabConnections, await createAcceptConfirmation(), selectedOwner), true)
+	assert.equal(getForwardedSigner(), addressString(selectedOwner))
 })

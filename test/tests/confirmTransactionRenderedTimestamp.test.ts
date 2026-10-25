@@ -203,7 +203,7 @@ function makeSafeProposal<T extends ReturnType<typeof makePendingTransaction> | 
 	}
 }
 
-type SimulatedTransactionOutcome = ({ transactionStatus: 'Transaction Succeeded' } | { transactionStatus: 'Transaction Failed', error: { code: number, message: string, decodedErrorMessage: string } }) & { quarantine?: boolean, quarantineReasons?: readonly string[] }
+type SimulatedTransactionOutcome = ({ transactionStatus: 'Transaction Succeeded' } | { transactionStatus: 'Transaction Failed', error: { code: number, message: string, decodedErrorMessage: string, data?: string } }) & { quarantine?: boolean, quarantineReasons?: readonly string[] }
 
 function makeSimulatedPendingTransaction(value: bigint, outcome: SimulatedTransactionOutcome = { transactionStatus: 'Transaction Succeeded' }) {
 	const failed = makePendingTransaction(new Date('2024-01-01T00:00:05.000Z'), value)
@@ -768,14 +768,22 @@ describe('ConfirmTransaction', () => {
 		assert.equal(isSendAnywayTicked(dom), true, 'a re-simulation with the same failure keeps the override')
 		assert.equal(isConfirmEnabled(dom), true)
 
+		// Different contract reverts share the raw message; the popup shows the decoded reason and revert data.
+		const differentRevertReason = { ...makeSimulatedPendingTransaction(0n, { ...revertedOutcome, error: { ...revertedOutcome.error, decodedErrorMessage: 'Ownable: caller is not the owner', data: '0x08c379a0' } }), resultRevision: 3 }
+		await dispatchPendingTransactions(browser, [differentRevertReason])
+		assert.equal(dom.document.body.textContent?.includes('Ownable: caller is not the owner'), true)
+		assert.equal(isSendAnywayTicked(dom), false, 'a different decoded revert reason needs a new acknowledgement')
+		assert.equal(isConfirmEnabled(dom), false)
+		await tickSendAnyway(dom)
+
 		const insufficientFunds = { transactionStatus: 'Transaction Failed' as const, error: { code: -32000, message: 'insufficient funds', decodedErrorMessage: 'insufficient funds' } }
-		const differentFailure = { ...makeSimulatedPendingTransaction(0n, insufficientFunds), resultRevision: 3 }
+		const differentFailure = { ...makeSimulatedPendingTransaction(0n, insufficientFunds), resultRevision: 4 }
 		await dispatchPendingTransactions(browser, [differentFailure])
 		assert.equal(isSendAnywayTicked(dom), false, 'a different failure needs a new acknowledgement')
 		assert.equal(isConfirmEnabled(dom), false)
 
 		await tickSendAnyway(dom)
-		const newQuarantineReason = { ...makeSimulatedPendingTransaction(0n, { ...insufficientFunds, quarantine: true, quarantineReasons: ['The recipient is a known scam address.'] }), resultRevision: 4 }
+		const newQuarantineReason = { ...makeSimulatedPendingTransaction(0n, { ...insufficientFunds, quarantine: true, quarantineReasons: ['The recipient is a known scam address.'] }), resultRevision: 5 }
 		await dispatchPendingTransactions(browser, [newQuarantineReason])
 		assert.equal(isSendAnywayTicked(dom), false, 'a new quarantine reason needs a new acknowledgement')
 

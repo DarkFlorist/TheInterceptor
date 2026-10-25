@@ -324,6 +324,15 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 	if (safeResolution.pendingChanged) {
 		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async () => pendingTransactionOrMessage)
 	}
+	if (confirmation.data.action === 'accept') {
+		// The Safe signer refresh and resolution above may persist new content and bump the revision, so the accept is checked again against what is stored now. The in-memory copy predates the revision the storage update assigned.
+		const storedPending = await getPendingTransactionOrMessageByidentifier(confirmation.data.uniqueRequestIdentifier)
+		if (storedPending === undefined) return
+		if (!isAcceptForStoredResult(storedPending, confirmation.data)) {
+			await updateConfirmTransactionView(ethereum, tokenPriceService)
+			return false
+		}
+	}
 	const signerFacingRequest: SendTransactionParams | SendRawTransactionParams | SignMessageParams = safeResolution.signerFacingRequest
 		?? pendingTransactionOrMessage.originalRequestParameters
 	const removePendingRequestAndUpdateView = async () => {
