@@ -75,6 +75,7 @@ function createSafeAppsBridge(windowObject: SafeAppsWindow, requestSafeApps: (re
 		releaseDiscovery(discovery)
 	}
 	const pendingRequests = createSafeAppsRequestQueue<{ readonly id: string, readonly method: string, readonly parsedRequest: ParsedSafeAppsRequest, readonly origin: string, readonly bridgeToken?: string }>({
+		// Expire queued discovery on its own deadline, even if no message or eligibility update follows.
 		timers: { setTimeout: window.setTimeout.bind(window), clearTimeout: window.clearTimeout.bind(window) },
 		onRejected: (pending, error, reason) => {
 			// Startup discovery stays silent until the background determines access eligibility.
