@@ -1275,6 +1275,25 @@ describe('inpage signer bridge', () => {
 		assert.deepEqual(connectedToSignerParams, [[false, 'NoSigner', 1]])
 	})
 
+	test('marks an in-place patched provider with isMetaMask false as MetaMask in compatibility mode', async () => {
+		let connectedToSigner = false
+		const { fakeWindow } = createFakeWindow({
+			onConnectedToSignerRequest: () => {
+				connectedToSigner = true
+			},
+		})
+		const injectedProvider = fakeWindow.ethereum
+		injectedProvider.isMetaMask = false
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?explicit-false-metamask-marker-compatibility', async () => {
+			await waitFor(() => connectedToSigner)
+			await waitFor(() => Reflect.get(fakeWindow.ethereum, 'isMetaMask') === true)
+			assert.equal(fakeWindow.ethereum, injectedProvider)
+			assert.equal(Reflect.get(fakeWindow.ethereum, 'isInterceptor'), true)
+			assert.equal(Reflect.get(fakeWindow.ethereum, 'isMetaMask'), true)
+		})
+	})
+
 	test('preserves large chain IDs in the legacy networkVersion compatibility property', async () => {
 		const largeChainId = '0x20000000000001'
 		const { fakeWindow } = createFakeWindow({

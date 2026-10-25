@@ -1810,7 +1810,10 @@ class InterceptorMessageListener {
 		this.metamaskCompatibilityMode = enable
 		if (enable) {
 			if (inpageWindow.ethereum === undefined) return
-			if (!('isMetaMask' in inpageWindow.ethereum)) setCompatibilityProperty(inpageWindow.ethereum, 'isMetaMask', true, 'window.ethereum.isMetaMask')
+			// A patched-in-place signer may carry its own `isMetaMask: false`; compatibility mode must still present `true`.
+			let reportsMetaMask = false
+			try { reportsMetaMask = inpageWindow.ethereum.isMetaMask === true } catch (error: unknown) { this.reportSignerDiscoveryError('read compatibility MetaMask marker', error) }
+			if (!reportsMetaMask) setCompatibilityProperty(inpageWindow.ethereum, 'isMetaMask', true, 'window.ethereum.isMetaMask')
 			const legacyWeb3 = getLegacyWeb3WithoutInvokingAccessors(inpageWindow)
 			if (legacyWeb3 !== undefined) {
 				setCompatibilityProperty(legacyWeb3, 'currentProvider', inpageWindow.ethereum, 'window.web3.currentProvider')
