@@ -10,7 +10,7 @@ import { resolvePendingTransactionOrMessage, setGasLimitForTransaction } from '.
 import { sendConfirmTransactionDialogUpdates, toPopupPendingTransactionOrSignableMessage, updateConfirmTransactionView } from './confirmationDialogUpdates.js'
 import { refreshConfirmationMetadata } from './confirmationPreviews.js'
 import { formEthSendTransaction, formSendRawTransaction } from './transactionPreparation.js'
-import { refreshPendingTransactionBatchMetadata, refreshPendingTransactionBatchSimulation } from './walletSendCallsConfirmation.js'
+import { findGovernanceVoteInTransactionBatch, refreshPendingTransactionBatchMetadata, refreshPendingTransactionBatchSimulation } from './walletSendCallsConfirmation.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, getAddressMetadataForAccess, refreshSignerAccountsForTab, refreshSignerAccountsFromApprovedWebsitePorts, requestAddressChange, resolveInterceptorAccess, type SignerAccountRefreshOptions } from './windows/interceptorAccess.js'
 import { resolveChainChange } from './windows/changeChain.js'
 import { changeActiveRpc } from './walletSwitch.js'
@@ -842,22 +842,26 @@ export async function changeSettings(simulationServicesOwner: SimulationServices
 	return await requestNewHomeData(simulationServicesOwner.getCurrent().ethereum, websiteTabConnections, false, true, requestAbortController, bumpPopupRefreshGeneration())
 }
 
-// The confirmation window shows the governance vote preview for a pending transaction and for each prepared call of a pending wallet_sendCalls batch, so both are searched.
-const findPendingGovernanceVote = (pendingTransactions: readonly PendingTransactionOrSignableMessage[], transactionIdentifier: bigint): PendingGovernanceVote | undefined => {
+// The confirmation window shows the governance vote preview for a pending transaction and for each prepared call of a pending wallet_sendCalls batch, so both are searched. Either can hold a vote prepared for another network than the active client's, which is then not simulated with that client.
+const findPendingGovernanceVote = (ethereum: EthereumClientService, pendingTransactions: readonly PendingTransactionOrSignableMessage[], transactionIdentifier: bigint): PendingGovernanceVote | undefined => {
 	for (const pending of pendingTransactions) {
-		if (pending.type === 'Transaction' && pending.transactionIdentifier === transactionIdentifier) {
-			return pending.transactionOrMessageCreationStatus === 'Simulated' ? { status: 'Prepared', voteTransaction: pending.transactionToSimulate } : { status: 'StillSimulating' }
+		if (pending.type === 'TransactionBatch') {
+			const batchVote = findGovernanceVoteInTransactionBatch(ethereum, pending, transactionIdentifier)
+			if (batchVote !== undefined) return batchVote
+			continue
 		}
-		if (pending.type !== 'TransactionBatch' || pending.transactionOrMessageCreationStatus === 'Crafting') continue
-		for (const call of pending.transactionsToSimulate) {
-			if (call.success && call.transactionIdentifier === transactionIdentifier) return { status: 'Prepared', voteTransaction: call }
-		}
+		if (pending.type !== 'Transaction' || pending.transactionIdentifier !== transactionIdentifier) continue
+		if (pending.transactionOrMessageCreationStatus !== 'Simulated') return { status: 'StillSimulating' }
+		// The transaction is prepared again for the active network when its preview refreshes, so a network switch leaves it on the old network until then. A legacy transaction without a chain id is valid on every network.
+		const voteChainId = pending.transactionToSimulate.transaction.chainId
+		if (voteChainId !== undefined && voteChainId !== ethereum.getChainId()) return { status: 'PreparedForOtherNetwork' }
+		return { status: 'Prepared', voteTransaction: pending.transactionToSimulate }
 	}
 	return undefined
 }
 
 export async function simulateGovernanceContractExecutionOnPass(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, request: SimulateGovernanceContractExecution) {
-	const pendingVote = findPendingGovernanceVote(await getPendingTransactionsAndMessages(), request.data.transactionIdentifier)
+	const pendingVote = findPendingGovernanceVote(ethereum, await getPendingTransactionsAndMessages(), request.data.transactionIdentifier)
 	if (pendingVote === undefined) throw new Error(`Could not find transactionIdentifier: ${ request.data.transactionIdentifier }`)
 	const governanceContractExecutionVisualisation = await simulateGovernanceContractExecution(pendingVote, ethereum, tokenPriceService)
 	const reply = {

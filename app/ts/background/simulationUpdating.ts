@@ -293,15 +293,17 @@ export const getGovernanceExecutionTokenBalancesAfter = async (
 	)
 }
 
-// A vote awaiting confirmation, sent on its own or as one call of a wallet_sendCalls batch. Its calldata is only known once the vote has been prepared for simulation.
-export type PendingGovernanceVote = { readonly status: 'Prepared', readonly voteTransaction: WebsiteCreatedEthereumTransaction } | { readonly status: 'StillSimulating' }
+// A vote awaiting confirmation, sent on its own or as one call of a wallet_sendCalls batch. Its calldata is only known once the vote has been prepared for simulation, and its proposal can only be looked up on the network the vote was prepared for.
+export type PendingGovernanceVote = { readonly status: 'Prepared', readonly voteTransaction: WebsiteCreatedEthereumTransaction } | { readonly status: 'StillSimulating' } | { readonly status: 'PreparedForOtherNetwork' }
 
 // The proposal execution is simulated on top of the current simulation stack, without the vote itself, so a vote inside a batch gets the same preview as the same vote sent on its own.
 export const simulateGovernanceContractExecution = async (pendingVote: PendingGovernanceVote, ethereum: EthereumClientService, tokenPriceService: TokenPriceService): Promise<DistributiveOmit<SimulateExecutionReplyData, 'transactionOrMessageIdentifier'>> => {
 	const returnError = (errorMessage: string) => ({ success: false as const, errorType: 'Other' as const, errorMessage })
 	try {
 		// identifies compound governane call and performs simulation if the vote passes
-		if (pendingVote.status !== 'Prepared') return returnError('Still simulating the voting transaction')
+		if (pendingVote.status === 'StillSimulating') return returnError('Still simulating the voting transaction')
+		// The same governance address can hold another contract, or another proposal with the same id, on the active network.
+		if (pendingVote.status === 'PreparedForOtherNetwork') return returnError('The vote was prepared for another network. Switch back to that network to simulate the proposal execution.')
 		const { voteTransaction } = pendingVote
 		const fourByte = get4Byte(voteTransaction.transaction.input)
 		const fourByteString = get4ByteString(voteTransaction.transaction.input)

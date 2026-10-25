@@ -16,7 +16,7 @@ import { assertNever, modifyObject } from '../utils/typescript.js'
 import { runConfirmationSimulation, startConfirmTransactionSimulation, toPreSimulationTransaction } from './confirmationSimulationRun.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
 import { getSimulationSettingsSnapshot } from './settings.js'
-import { captureStackSimulationContext, createSimulationStateWithNonceAndBaseFeeFixing, getSimulationInputForStack, getStackSimulationContextFingerprint, type StackSimulationContext, toStackSimulationContext, visualizeSimulatorState } from './simulationUpdating.js'
+import { captureStackSimulationContext, createSimulationStateWithNonceAndBaseFeeFixing, getSimulationInputForStack, getStackSimulationContextFingerprint, type PendingGovernanceVote, type StackSimulationContext, toStackSimulationContext, visualizeSimulatorState } from './simulationUpdating.js'
 import { getInterceptorTransactionStack, getPendingTransactionsAndMessages, getTabState, updateInterceptorTransactionStackUnlessRefused, updatePendingTransactionOrMessage } from './storageVariables.js'
 import { attemptQueuedTerminalReplyDelivery, queueTerminalReply, queueTerminalReplyAndAttemptDelivery } from './terminalReplyDelivery.js'
 import { getWalletSendCallsTransactionParams, walletSendCallsIdInUseError } from './walletSendCalls.js'
@@ -130,6 +130,17 @@ export async function refreshPendingTransactionBatchMetadata(ethereum: EthereumC
 	await refreshConfirmationMetadata(ethereum, tokenPriceService, requestAbortController, pendingBatch.uniqueRequestIdentifier, pendingBatch.popupVisualisation, (current) => current.type === 'TransactionBatch' && current.transactionOrMessageCreationStatus !== 'Crafting'
 		? { visualisation: current.popupVisualisation, withVisualisation: (popupVisualisation) => modifyObject(current, { popupVisualisation }) }
 		: undefined, updateConfirmationWindow)
+}
+
+// The batch's part of the governance vote preview lookup: a prepared call with the identifier, unless the batch's preview belongs to another network than the client's.
+export function findGovernanceVoteInTransactionBatch(ethereum: EthereumClientService, pendingBatch: PendingTransactionBatch, transactionIdentifier: bigint): PendingGovernanceVote | undefined {
+	if (pendingBatch.transactionOrMessageCreationStatus === 'Crafting') return undefined
+	for (const call of pendingBatch.transactionsToSimulate) {
+		if (!call.success || call.transactionIdentifier !== transactionIdentifier) continue
+		if (!isEthereumClientOnBatchChain(ethereum, pendingBatch)) return { status: 'PreparedForOtherNetwork' }
+		return { status: 'Prepared', voteTransaction: call }
+	}
+	return undefined
 }
 
 export async function refreshPendingTransactionBatchSimulation(ethereumClientService: EthereumClientService, tokenPriceService: TokenPriceService, pendingBatch: PendingTransactionBatch) {

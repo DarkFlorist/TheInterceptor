@@ -223,24 +223,59 @@ test('a batch whose calls cannot be simulated cannot be approved', async () => {
 	assert.equal(getWalletSendCallsReply(postedMessages), undefined)
 })
 
-test('the governance vote preview finds a vote sent as a call of a wallet_sendCalls batch', async () => {
-	const { websiteTabConnections } = await setUpWalletSendCallsTest()
-	const governanceAddress = 0x6666666666666666666666666666666666666666n
-	// castVote(uint256 proposalId = 12, uint8 support = 1)
-	const castVoteData = `0x56781388${ (12n).toString(16).padStart(64, '0') }${ (1n).toString(16).padStart(64, '0') }`
-	const batchWithVote = { ...walletSendCallsRequest, params: [{ ...walletSendCallsRequest.params[0], calls: [walletSendCallsRequest.params[0].calls[0], { to: addressString(governanceAddress), data: castVoteData }] }] }
+const governanceAddress = 0x6666666666666666666666666666666666666666n
+// castVote(uint256 proposalId = 12, uint8 support = 1)
+const castVoteData = `0x56781388${ (12n).toString(16).padStart(64, '0') }${ (1n).toString(16).padStart(64, '0') }`
+const batchWithVote = { ...walletSendCallsRequest, params: [{ ...walletSendCallsRequest.params[0], calls: [walletSendCallsRequest.params[0].calls[0], { to: addressString(governanceAddress), data: castVoteData }] }] }
+
+async function requestGovernanceVotePreview(transactionIdentifier: bigint, services: Pick<typeof simulator, 'ethereum' | 'tokenPriceService'> = simulator) {
+	const { simulateGovernanceContractExecutionOnPass } = await import('../../app/ts/background/popupMessageHandlers.js')
+	return await simulateGovernanceContractExecutionOnPass(services.ethereum, services.tokenPriceService, { method: 'popup_simulateGovernanceContractExecution', data: { transactionIdentifier } })
+}
+
+async function requestBatchWithVote(websiteTabConnections: BatchTestConnections) {
 	assert.deepEqual(await requestBatch(websiteTabConnections, batchWithVote), { type: 'doNotReply' })
 	const voteCall = (await getPendingBatch()).transactionsToSimulate[1]
 	if (voteCall === undefined || !voteCall.success) throw new Error('Missing prepared vote call')
+	return voteCall
+}
 
-	const { simulateGovernanceContractExecutionOnPass } = await import('../../app/ts/background/popupMessageHandlers.js')
-	const reply = await simulateGovernanceContractExecutionOnPass(simulator.ethereum, simulator.tokenPriceService, { method: 'popup_simulateGovernanceContractExecution', data: { transactionIdentifier: voteCall.transactionIdentifier } })
+test('the governance vote preview finds a vote sent as a call of a wallet_sendCalls batch', async () => {
+	const { websiteTabConnections } = await setUpWalletSendCallsTest()
+	const voteCall = await requestBatchWithVote(websiteTabConnections)
+
+	const reply = await requestGovernanceVotePreview(voteCall.transactionIdentifier)
 
 	assert.equal(reply.data.transactionOrMessageIdentifier, voteCall.transactionIdentifier)
 	// The vote was found and decoded: the preview only stops because the test governance contract has no ABI.
 	assert.equal(reply.data.success, false)
 	if (reply.data.success) throw new Error('Unexpected governance execution preview')
 	assert.equal(reply.data.errorType, 'MissingAbi')
+})
+
+test('the governance vote preview of a batch call is refused on another network without querying it', async () => {
+	const { websiteTabConnections } = await setUpWalletSendCallsTest()
+	const voteCall = await requestBatchWithVote(websiteTabConnections)
+	const otherNetworkServices = createOtherNetworkServices()
+
+	await modules.browserStorageLocalSet({ activeRpcNetwork: otherNetwork })
+	const reply = await requestGovernanceVotePreview(voteCall.transactionIdentifier, otherNetworkServices)
+
+	assert.deepEqual(reply.data, { success: false, errorType: 'Other', errorMessage: 'The vote was prepared for another network. Switch back to that network to simulate the proposal execution.', transactionOrMessageIdentifier: voteCall.transactionIdentifier })
+	assert.deepEqual(otherNetworkServices.requestedRpcMethods, [])
+})
+
+test('the governance vote preview of a pending transaction prepared for another network is refused without querying it', async () => {
+	await setUpWalletSendCallsTest()
+	const voteTransaction = { ...pendingTransaction.transactionToSimulate, transaction: { ...pendingTransaction.transactionToSimulate.transaction, chainId: fakeRpcNetwork.chainId, to: governanceAddress, input: Buffer.from(castVoteData.slice(2), 'hex') } }
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [{ ...pendingTransaction, transactionToSimulate: voteTransaction }] })
+	const otherNetworkServices = createOtherNetworkServices()
+
+	await modules.browserStorageLocalSet({ activeRpcNetwork: otherNetwork })
+	const reply = await requestGovernanceVotePreview(pendingTransaction.transactionIdentifier, otherNetworkServices)
+
+	assert.deepEqual(reply.data, { success: false, errorType: 'Other', errorMessage: 'The vote was prepared for another network. Switch back to that network to simulate the proposal execution.', transactionOrMessageIdentifier: pendingTransaction.transactionIdentifier })
+	assert.deepEqual(otherNetworkServices.requestedRpcMethods, [])
 })
 
 test('a metadata refresh stores the re-visualized batch preview of the same simulation run and updates the confirmation window', async () => {
