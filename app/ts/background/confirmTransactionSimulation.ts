@@ -19,6 +19,21 @@ import { getInterceptorTransactionStack, getTabState } from './storageVariables.
 
 let confirmTransactionAbortController = new AbortController()
 export const getConfirmTransactionAbortController = () => confirmTransactionAbortController
+let nextRefreshGeneration = 0
+let activeRefreshGeneration = 0
+
+// Reserve request order before reading eligibility; a no-op refresh must leave the active simulation alone.
+export function reserveConfirmTransactionSimulationRefresh() {
+	const generation = ++nextRefreshGeneration
+	return {
+		isCurrent: () => generation === activeRefreshGeneration,
+		claim: () => {
+			if (generation < activeRefreshGeneration) return false
+			activeRefreshGeneration = generation
+			return true
+		},
+	}
+}
 
 export async function refreshConfirmTransactionSimulation(
 	ethereum: EthereumClientService,
@@ -28,7 +43,9 @@ export async function refreshConfirmTransactionSimulation(
 	uniqueRequestIdentifier: UniqueRequestIdentifier,
 	transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed,
 	safeSigningRequest?: SafeTransactionSigningRequest,
+	refresh = reserveConfirmTransactionSimulationRefresh(),
 ): Promise<ConfirmTransactionTransactionSingleVisualization | undefined> {
+	if (!refresh.claim()) return undefined
 	const info = {
 		uniqueRequestIdentifier,
 		transactionToSimulate,
@@ -37,6 +54,8 @@ export async function refreshConfirmTransactionSimulation(
 		signerName: (await getTabState(uniqueRequestIdentifier.requestSocket.tabId)).signerName,
 		tabIdOpenedFrom: uniqueRequestIdentifier.requestSocket.tabId,
 	}
+	// The tab read can yield to a newer refresh; stale work must not abort its controller.
+	if (!refresh.isCurrent()) return undefined
 	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' }, 'confirmTransaction')
 	confirmTransactionAbortController.abort(NEW_BLOCK_ABORT)
 	confirmTransactionAbortController = new AbortController()
@@ -65,6 +84,7 @@ export async function refreshConfirmTransactionSimulation(
 			return await visualizeSimulatorState(updatedSimulationState, ethereum, tokenPriceService, thisConfirmTransactionAbortController)
 		}
 		const visualizedSimulatorState = await getNewVisualizedSimulationState()
+		if (!refresh.isCurrent()) return undefined
 		const availableAbis = visualizedSimulatorState.addressBookEntries
 			.map((entry) => 'abi' in entry && entry.abi !== undefined ? entry.abi : undefined)
 			.filter((abiOrUndefined): abiOrUndefined is string => abiOrUndefined !== undefined)
@@ -106,6 +126,7 @@ export async function refreshConfirmTransactionSimulation(
 		if (isFailedToFetchError(error)) return undefined
 		const isJsonRpcResponseError = error instanceof JsonRpcResponseError
 		if (!isJsonRpcResponseError) await reportUnexpectedError(error, { code: 'confirm_transaction_simulation_failed' })
+		if (!refresh.isCurrent()) return undefined
 
 		const baseError = isJsonRpcResponseError
 			? { code: error.code, message: error.message, data: typeof error.data === 'string' ? error.data : '0x' }
