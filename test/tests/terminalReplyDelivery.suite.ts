@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
-import { browserMock, createDisconnectedPort, createRecordingPort, isRecord, modules, pendingTransaction, signedTransaction, simulator, uniqueRequestIdentifier, waitForPendingTransactionsToClear, withSilencedConsole } from './confirmTransactionTestHarness.js'
+import { browserMock, createDisconnectedPort, createRecordingPort, isRecord, modules, pendingTransaction, signedTransaction, simulator, uniqueRequestIdentifier, waitForPendingTransactionsToClear, withSilencedConsole, createAcceptConfirmation } from './confirmTransactionTestHarness.js'
 
 test('failed signer delivery keeps the request and replaces the waiting spinner with a wallet-neutral error', async () => {
 	await browser.storage.local.set({ simulationMode: false })
@@ -27,10 +27,7 @@ test('failed signer delivery keeps the request and replaces the waiting spinner 
 			approvalStatus: { status: 'WaitingForUser' },
 		}] })
 
-		const delivered = await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, connectionCase.connections, {
-			method: 'popup_confirmDialog',
-			data: { action: 'accept', uniqueRequestIdentifier },
-		})
+		const delivered = await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, connectionCase.connections, await createAcceptConfirmation())
 		const retainedRequests = await modules.getPendingTransactionsAndMessages()
 		const retainedRequest = retainedRequests[0]
 

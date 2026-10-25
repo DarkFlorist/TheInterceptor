@@ -1,7 +1,7 @@
 import { bigintSecondsToDate } from '../../utils/bigint.js'
 import { EthereumData } from '../../types/wire-types.js'
 import type { RenameAddressCallBack } from '../../types/user-interface-types.js'
-import { MOCK_PRIVATE_KEYS_ADDRESS, getChainName } from '../../utils/constants.js'
+import { getChainName } from '../../utils/constants.js'
 import type { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
 import { assertNever } from '../../utils/typescript.js'
 import { SimpleTokenApprovalVisualisation } from '../simulationExplaining/customExplainers/SimpleTokenApprovalVisualisation.js'
@@ -400,10 +400,6 @@ export function SignatureCard(params: SignatureCardParams) {
 			</span>
 		</div> }
 	</div>
-}
-
-export function isPossibleToSignMessage(visualizedPersonalSignRequest: VisualizedPersonalSignRequest, activeAddress: bigint) {
-	return !(visualizedPersonalSignRequest.simulationMode && (activeAddress !== MOCK_PRIVATE_KEYS_ADDRESS || visualizedPersonalSignRequest.method !== 'personal_sign'))
 }
 
 export function InvalidMessage({ pendingTransactionOrSignableMessage } : { pendingTransactionOrSignableMessage: ReadonlySignal<PendingTransactionOrSignableMessage | undefined> }) {

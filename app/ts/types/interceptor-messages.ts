@@ -255,7 +255,13 @@ export const TransactionConfirmation = funtypes.ReadonlyObject({
 					signerReply: funtypes.Unknown,
 				}),
 				funtypes.ReadonlyObject({
-					action: funtypes.Union(funtypes.Literal('accept'), funtypes.Literal('addToSafeStack'), funtypes.Literal('noResponse')),
+					action: funtypes.Literal('accept'),
+					// Names the stored result revision the user reviewed and whether they ticked send-anyway for it, so the background can refuse stale or unacknowledged accepts.
+					resultRevision: funtypes.Number,
+					forceSend: funtypes.Boolean,
+				}),
+				funtypes.ReadonlyObject({
+					action: funtypes.Union(funtypes.Literal('addToSafeStack'), funtypes.Literal('noResponse')),
 				}),
 				funtypes.ReadonlyObject({
 					action: funtypes.Literal('reject'),

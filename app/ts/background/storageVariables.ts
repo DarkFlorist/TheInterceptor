@@ -12,6 +12,8 @@ import type { SignerName } from '../types/signerTypes.js'
 import type { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import type { RpcEntries, RpcNetwork } from '../types/rpc.js'
 import { replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
+import { getResultRevision } from '../utils/sendAnywayConsent.js'
+import { stringifyJSONWithBigInts } from '../utils/bigint.js'
 import { keccak256, namehash, stringToBytes } from '../utils/ethereumPrimitives.js'
 import { isValidEnsName } from '../utils/ens.js'
 import { modifyObject } from '../utils/typescript.js'
@@ -75,8 +77,15 @@ export async function updatePendingTransactionOrMessage(uniqueRequestIdentifier:
 		if (found === undefined) return pendingTransactionsOrMessages
 		const updated = await update(found)
 		if (updated === undefined) return pendingTransactionsOrMessages
-		return replaceElementInReadonlyArray(pendingTransactionsOrMessages, match, updated)
+		const resultRevision = hasSameReviewedContent(found, updated) ? getResultRevision(found) : getResultRevision(found) + 1
+		return replaceElementInReadonlyArray(pendingTransactionsOrMessages, match, { ...updated, resultRevision })
 	})
+}
+
+// Approval status tracks the signer round trip rather than what the user reviewed, so changing only it keeps the result revision.
+function hasSameReviewedContent(previous: PendingTransactionOrSignableMessage, updated: PendingTransactionOrSignableMessage) {
+	const getReviewedContent = (pending: PendingTransactionOrSignableMessage) => stringifyJSONWithBigInts({ ...pending, approvalStatus: undefined, resultRevision: undefined })
+	return getReviewedContent(previous) === getReviewedContent(updated)
 }
 
 export async function appendPendingTransactionOrMessage(pendingTransactionOrMessage: PendingTransactionOrSignableMessage) {

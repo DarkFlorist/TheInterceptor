@@ -13,6 +13,7 @@ import { EIP712Message } from '../../app/ts/types/eip721.js'
 import { privateKeyToAccount } from '../../app/ts/utils/ethereumPrimitives.js'
 import type { SafeEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { SafeOwnerSignature, SafeStackTransaction, SafeTransactionStack } from '../../app/ts/types/safeTypes.js'
+import { type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../../app/ts/utils/requests.js'
 
 export type RuntimeMessage = {
 	method?: string
@@ -568,6 +569,12 @@ export const pendingTransaction = {
 		transactionOrMessageCreationStatus: 'Simulated',
 		transactionToSimulate: popupVisualisation.data.transactionToSimulate,
 	} as const
+
+// Builds the accept the popup sends for the request as currently stored, naming its result revision and the send-anyway override.
+export async function createAcceptConfirmation(requestIdentifier: UniqueRequestIdentifier = uniqueRequestIdentifier, forceSend = false) {
+	const pending = (await modules.getPendingTransactionsAndMessages()).find((entry) => doesUniqueRequestIdentifiersMatch(entry.uniqueRequestIdentifier, requestIdentifier))
+	return { method: 'popup_confirmDialog' as const, data: { action: 'accept' as const, uniqueRequestIdentifier: requestIdentifier, resultRevision: pending?.resultRevision ?? 0, forceSend } }
+}
 
 export async function resetConfirmTransactionTestState() {
 	browserMock.reset()

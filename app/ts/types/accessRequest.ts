@@ -87,6 +87,9 @@ const PendingTransactionApprovalStatus = funtypes.Union(
 	}).And(funtypes.ReadonlyPartial({ safeSignerErrorDetails: SafeSignerErrorDetails })),
 )
 
+// Bumped by the background whenever the stored request content changes, so an accept can name the exact result the user reviewed. Optional because requests stored by older versions lack it.
+const PendingResultRevision = funtypes.Number
+
 type SimulatedPendingTransactionBase = funtypes.Static<typeof SimulatedPendingTransactionBase>
 const SimulatedPendingTransactionBase = funtypes.ReadonlyObject({
 	type: funtypes.Literal('Transaction'),
@@ -100,6 +103,7 @@ const SimulatedPendingTransactionBase = funtypes.ReadonlyObject({
 	website: Website,
 	approvalStatus: PendingTransactionApprovalStatus,
 }).And(funtypes.ReadonlyPartial({
+	resultRevision: PendingResultRevision,
 	safeTransaction: SafeTransactionSigningRequest,
 	safeExecutionSignerAddress: EthereumAddress,
 	safeExecutionOriginalRequestParameters: SendTransactionParams,
@@ -153,7 +157,7 @@ const PendingSignableMessage = funtypes.Intersect(
 		website: Website,
 		activeAddress: EthereumAddress,
 		approvalStatus: PendingTransactionApprovalStatus,
-	}).And(funtypes.ReadonlyPartial({ safeMessageCoSignSnapshot: SafeMessageCoSignSnapshot })),
+	}).And(funtypes.ReadonlyPartial({ resultRevision: PendingResultRevision, safeMessageCoSignSnapshot: SafeMessageCoSignSnapshot })),
 	funtypes.Union(
 		funtypes.ReadonlyObject({ transactionOrMessageCreationStatus: funtypes.Literal('Simulated'), visualizedPersonalSignRequest: VisualizedPersonalSignRequest }),
 		funtypes.ReadonlyObject({ transactionOrMessageCreationStatus: funtypes.Union(funtypes.Literal('Crafting'), funtypes.Literal('Simulating')) })
@@ -171,7 +175,7 @@ const PopupPendingSignableMessageBase = funtypes.ReadonlyObject({
 	website: Website,
 	activeAddress: EthereumAddress,
 	approvalStatus: PendingTransactionApprovalStatus,
-})
+}).And(funtypes.ReadonlyPartial({ resultRevision: PendingResultRevision }))
 
 export type PopupPendingSignableMessage = funtypes.Static<typeof PopupPendingSignableMessage>
 export const PopupPendingSignableMessage = funtypes.Intersect(
