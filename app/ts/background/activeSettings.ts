@@ -10,9 +10,10 @@ import type { WebsiteAccessUpdate } from './accessManagement.js'
 import { reconcileWebsiteApprovalAccesses, finishWebsiteAccessUpdate, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts } from './accessManagement.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
-import { applyCommittedSettingsTransition, captureRpcNetwork, changeSimulationMode, getRequiredSettings, getSettingsForCapturedRpcNetwork, getSettingsSnapshot, requireSettings, setUseSignersAddressAsActiveAddress, type SimulationModeChanges, trackPreviousActiveAddressForMakeMeRichList } from './settings.js'
+import { captureRpcNetwork, changeSimulationMode, getRequiredSettings, getSettingsAfterStorageUpdates, getSettingsForCapturedRpcNetwork, getSettingsSnapshot, requireSettings, setUseSignersAddressAsActiveAddress, type SimulationModeChanges, trackPreviousActiveAddressForMakeMeRichList } from './settings.js'
 import { updateTransactionState, type RpcConfigurationState } from './storageVariables.js'
 import type { Settings } from '../types/interceptor-messages.js'
+import type { LocalStorageItems } from '../utils/storageUtils.js'
 import type { ActiveAddressSelection } from '../utils/activeAddressSelection.js'
 import { rememberSigningAddressSelection } from './signingAddressSelection.js'
 import { activeStackContextsEqual, getActiveStackContext, operationBelongsToActiveStackContext } from '../utils/activeStackContext.js'
@@ -162,20 +163,16 @@ async function runActiveSettingsChange(
 			const rpcServicesOptional = rpcServicesAreOptional(previousSnapshot.rpcConfiguration)
 			const recoverServicesOnRpcSelection = simulationServicesOwner.getCurrent() === undefined && rpcServicesOptional
 			if (!rpcConfigurationIsUsable(previousSnapshot.rpcConfiguration, simulationServicesOwner)) throw createRpcConfigurationUnavailableError()
+			const committedStorageUpdates: LocalStorageItems[] = []
 			if (transition.simulationSignerSelection !== undefined) {
 				const { useSignerAddress, signerAddress } = transition.simulationSignerSelection
-				await setUseSignersAddressAsActiveAddress(useSignerAddress, signerAddress)
+				committedStorageUpdates.push(await setUseSignersAddressAsActiveAddress(useSignerAddress, signerAddress))
 			}
 			if (change.simulationMode && change.activeAddress !== undefined) await keepTrackOfPreviousAddressForRichList(previousSettings)
+			committedStorageUpdates.push(await changeSimulationMode(getSimulationModeChanges(change)))
 
-			const simulationModeChanges = getSimulationModeChanges(change)
-			await changeSimulationMode(simulationModeChanges)
-
-			// settings.ts owns how the committed writes map onto Settings. Its projection pins the committed RPC network and is published only when the committed settings cannot be read back from storage, because the writes above have already succeeded.
-			const committedSettings = applyCommittedSettingsTransition(previousSettings, {
-				simulationModeChanges,
-				...(transition.simulationSignerSelection === undefined ? {} : { useSignersAddressAsActiveAddress: transition.simulationSignerSelection.useSignerAddress }),
-			})
+			// Derived from the exact items just written; it pins the committed RPC network and is published only when the committed settings cannot be read back, because the writes above have already succeeded.
+			const committedSettings = await getSettingsAfterStorageUpdates(previousSettings, committedStorageUpdates)
 			const updatedSettings = await getSettingsForCapturedRpcNetwork(captureRpcNetwork(committedSettings))
 			try {
 				// The preference belongs to the committed selection, even if later provider preparation fails.

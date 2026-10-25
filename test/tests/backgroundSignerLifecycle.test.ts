@@ -1,24 +1,12 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
+import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
 import { getWalletSwitchRequestId, confirmedSignerOwnership, createDeferredValue, createEthereumWithGetBlockCounter, createPort, createTestSimulationServicesOwner, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
 
 describe('background eth_accounts', () => {
-	test('fails closed for tab-level external request blocking while the active RPC network is unreadable', async () => {
-		const browserMock = installBrowserMock({ manifestVersion: 3 })
-		const {
-			areWeBlocking,
-			changeSimulationMode,
-			getRequiredSettings,
-			retryRpcConfiguration,
-			setRpcConfiguration,
-			updateDeclarativeNetRequestBlocks,
-			updateTabState,
-			updateUserAddressBookEntries,
-			updateWebsiteAccess,
-			websiteSocketToString,
-		} = await loadModules()
+	const setUpAddressLevelBlockAllWithUnreadableActiveRpcNetwork = async (consentedWebsiteOrigin: string) => {
+		const { changeSimulationMode, updateUserAddressBookEntries, updateWebsiteAccess } = await loadModules()
 		const activeAddress = 0x1010101010101010101010101010101010101010n
-		const settings = await getRequiredSettings()
 		await updateUserAddressBookEntries(() => [{
 			type: 'contact',
 			name: 'Blocked active address',
@@ -29,52 +17,57 @@ describe('background eth_accounts', () => {
 			askForAddressAccess: false,
 			declarativeNetRequestBlockMode: 'block-all',
 		}])
-		await changeSimulationMode({ simulationMode: false, activeSigningAddress: activeAddress })
-		const tabId = 9876
-		await updateTabState(tabId, (previous) => ({ ...previous, signerAccounts: [activeAddress], activeSigningAddress: activeAddress }))
-		const websiteOrigin = 'startup-recovery.example'
-		await updateWebsiteAccess(() => [{ website: { websiteOrigin, icon: undefined, title: undefined }, access: true, declarativeNetRequestBlockMode: 'block-all' }])
-		const socket = { tabId, connectionName: 0n }
-		const { port } = createPort(tabId)
-		const websiteTabConnections = new Map([[tabId, { ...confirmedSignerOwnership(socket), connections: {
-			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
-		} }]])
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: activeAddress })
+		// Persisted consent only; the website itself has no site-level block rule.
+		await updateWebsiteAccess(() => [{ website: { websiteOrigin: consentedWebsiteOrigin, icon: undefined, title: undefined }, access: true }])
 		await browser.storage.local.set({ activeRpcNetwork: 'corrupt' })
-		const dynamicUpdatesBeforeRecovery = browserMock.requestBlockingCalls.dynamicRuleUpdates
-		const sessionUpdatesBeforeRecovery = browserMock.requestBlockingCalls.sessionRuleUpdates
+	}
 
+	const withSilencedWarnings = async <T>(operation: () => Promise<T>) => {
 		const originalWarn = console.warn
 		console.warn = () => undefined
 		try {
-			await updateDeclarativeNetRequestBlocks(websiteTabConnections)
+			return await operation()
 		} finally {
 			console.warn = originalWarn
 		}
+	}
 
-		assert.equal(browserMock.requestBlockingCalls.dynamicRuleUpdates, dynamicUpdatesBeforeRecovery + 1)
-		// The tab's active address cannot be resolved without the active network, so the approved tab is blocked rather than left open.
-		assert.equal(browserMock.requestBlockingCalls.sessionRuleUpdates, sessionUpdatesBeforeRecovery + 1)
-		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [tabId])
-		const originalAreWeBlockingWarn = console.warn
-		console.warn = () => undefined
-		try {
-			assert.equal(await areWeBlocking(websiteTabConnections, tabId, 'unrelated.example'), true)
-		} finally {
-			console.warn = originalAreWeBlockingWarn
-		}
+	test('blocks newly registered tabs with persisted consent while the active RPC network is unreadable', async () => {
+		const browserMock = installBrowserMock({ manifestVersion: 3 })
+		const { areWeBlocking, updateDeclarativeNetRequestBlocks, updateDeclarativeNetRequestBlocksForRegisteredConnection } = await loadModules()
+		const { registerWebsiteConnectionAndProvisionallyClaimSignerState } = await import('../../app/ts/background/signerStateOwnership.js')
+		const consentedWebsiteOrigin = 'consented-startup.example'
+		await setUpAddressLevelBlockAllWithUnreadableActiveRpcNetwork(consentedWebsiteOrigin)
+		const consentedSocket = { tabId: 9876, connectionName: 0n }
+		const unconsentedSocket = { tabId: 9877, connectionName: 0n }
+		const websiteTabConnections: WebsiteTabConnections = new Map()
+		// Background startup reconciles before any content script connects.
+		await withSilencedWarnings(async () => await updateDeclarativeNetRequestBlocks(websiteTabConnections))
+		// Connections register unapproved exactly as background startup creates them; runtime approval is never restored while settings are unavailable.
+		await registerWebsiteConnectionAndProvisionallyClaimSignerState(websiteTabConnections, consentedSocket, { port: createPort(consentedSocket.tabId).port, socket: consentedSocket, websiteOrigin: consentedWebsiteOrigin, approved: false, wantsToConnect: false }, true)
+		await registerWebsiteConnectionAndProvisionallyClaimSignerState(websiteTabConnections, unconsentedSocket, { port: createPort(unconsentedSocket.tabId).port, socket: unconsentedSocket, websiteOrigin: 'unconsented.example', approved: false, wantsToConnect: false }, true)
 
-		await setRpcConfiguration([settings.activeRpcNetwork], settings.activeRpcNetwork)
-		const recoveryServices = createEthereumWithGetBlockCounter({ count: 0 })
-		const simulationServicesOwner = createTestSimulationServicesOwner(
-			{ ethereum: recoveryServices.ethereum, tokenPriceService: recoveryServices.tokenPriceService },
-			() => ({ ethereum: recoveryServices.ethereum, tokenPriceService: recoveryServices.tokenPriceService }),
-		)
-		simulationServicesOwner.clear()
-		await retryRpcConfiguration(simulationServicesOwner, async () => await updateDeclarativeNetRequestBlocks(websiteTabConnections))
-		// The recovered active address also blocks this tab, so the rule applied while unavailable is already correct.
-		assert.equal(browserMock.requestBlockingCalls.sessionRuleUpdates, sessionUpdatesBeforeRecovery + 1)
-		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [tabId])
-		assert.equal(await areWeBlocking(websiteTabConnections, tabId, 'unrelated.example'), true)
+		// The same reconciliation background startup runs for each registered connection.
+		await withSilencedWarnings(async () => await updateDeclarativeNetRequestBlocksForRegisteredConnection(websiteTabConnections))
+
+		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [consentedSocket.tabId])
+		assert.equal(await withSilencedWarnings(async () => await areWeBlocking(websiteTabConnections, consentedSocket.tabId, consentedWebsiteOrigin)), true)
+		assert.equal(await withSilencedWarnings(async () => await areWeBlocking(websiteTabConnections, unconsentedSocket.tabId, 'unconsented.example')), false)
+	})
+
+	test('keeps tab blocking rules applied before a service-worker restart while the active RPC network is unreadable', async () => {
+		const blockedBeforeRestartTabId = 9878
+		const browserMock = installBrowserMock({ manifestVersion: 3, initialSessionRules: [{ id: 1, condition: { tabIds: [blockedBeforeRestartTabId] } }] })
+		const { areWeBlocking, updateDeclarativeNetRequestBlocks } = await loadModules()
+		await setUpAddressLevelBlockAllWithUnreadableActiveRpcNetwork('consented-restart.example')
+		// Startup reconciles before any content script reconnects.
+		const emptyConnections: WebsiteTabConnections = new Map()
+
+		await withSilencedWarnings(async () => await updateDeclarativeNetRequestBlocks(emptyConnections))
+
+		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [blockedBeforeRestartTabId])
+		assert.equal(await withSilencedWarnings(async () => await areWeBlocking(emptyConnections, blockedBeforeRestartTabId, 'consented-restart.example')), true)
 	})
 
 	test('completes signer callbacks but rejects RPC requests while configuration and services are unavailable', async () => {

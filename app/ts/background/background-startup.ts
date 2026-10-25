@@ -21,7 +21,7 @@ import { updateContentScriptInjectionStrategyManifestV2 } from '../utils/content
 import { checkIfInterceptorShouldSleep } from './sleeping.js'
 import { onCloseWindowOrTab, resolveDeferredSafeSignerReplies, resolvePendingRequestsForMissingConfirmationWindows } from './windows/confirmTransaction.js'
 import { modifyObject } from '../utils/typescript.js'
-import { updateDeclarativeNetRequestBlocks } from './accessManagement.js'
+import { updateDeclarativeNetRequestBlocks, updateDeclarativeNetRequestBlocksForRegisteredConnection } from './accessManagement.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerformance.js'
 import { removeWebsiteTabConnection } from './websiteTabConnections.js'
@@ -210,6 +210,8 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ simulati
 			})
 			void catchAllErrorsAndCall(async () => updateExtensionIcon(websiteTabConnections, socket.tabId, websiteOrigin, bumpPopupRefreshGeneration()))
 		}
+		// A registered connection can make its tab eligible for request blocking before any access check runs (persisted consent while the active RPC network is unreadable).
+		if (isTopFrame || registration.createdTabConnection) void catchAllErrorsAndCall(async () => await updateDeclarativeNetRequestBlocksForRegisteredConnection(websiteTabConnections))
 		if (registration.provisionallyClaimedSignerState) {
 			sendSubscriptionReplyOrCallBackToPort(port, { type: 'result', method: 'request_signer_connection_status', result: [] })
 		}

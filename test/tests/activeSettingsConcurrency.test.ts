@@ -6,6 +6,7 @@ import { ICON_NOT_ACTIVE } from '../../app/ts/utils/constants.js'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
 import { createTestSimulationServicesOwner, createDeferredSignal, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus } from './backgroundEthAccountsTestHarness.js'
 import { isRpcConfigurationUnavailableError } from '../../app/ts/utils/rpcConfigurationError.js'
+import { EthereumAddress, OptionalEthereumAddress, serialize } from '../../app/ts/types/wire-types.js'
 
 const firstAddress: ContactEntry = { type: 'contact', name: 'First address', address: 1n, chainId: 'AllChains', entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: false }
 const secondAddress: ContactEntry = { ...firstAddress, name: 'Second address', address: 2n }
@@ -33,25 +34,65 @@ describe('active settings transition projection', () => {
 	const safeAddress = 0x6666666666666666666666666666666666666666n
 	const projectedRpcNetwork: RpcEntry = { name: 'Projected network', chainId: 10n, httpsRpc: 'https://projected.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: true }
 	test.each([
-		{ name: 'simulation address and network', simulationModeChanges: { simulationMode: true, activeSimulationAddress: secondAddress.address, rpcNetwork: projectedRpcNetwork }, useSignersAddressAsActiveAddress: undefined },
-		{ name: 'simulation using the signer address', simulationModeChanges: { simulationMode: true }, useSignersAddressAsActiveAddress: true },
-		{ name: 'signing Safe selection', simulationModeChanges: { simulationMode: false, activeSigningSafeAddress: safeAddress }, useSignersAddressAsActiveAddress: undefined },
-		{ name: 'signing signer selection', simulationModeChanges: { simulationMode: false, activeSigningAddress: signerAddress, activeSigningSafeAddress: undefined }, useSignersAddressAsActiveAddress: false },
-	] as const)('projects the $name transition exactly as storage reads it back', async ({ simulationModeChanges, useSignersAddressAsActiveAddress }) => {
+		{ name: 'simulation address and network', simulationModeChanges: { simulationMode: true, activeSimulationAddress: secondAddress.address, rpcNetwork: projectedRpcNetwork }, signerAddressSelection: undefined },
+		{ name: 'simulation with the simulation address omitted', simulationModeChanges: { simulationMode: true }, signerAddressSelection: undefined },
+		{ name: 'simulation with the simulation address explicitly cleared', simulationModeChanges: { simulationMode: true, activeSimulationAddress: undefined }, signerAddressSelection: undefined },
+		{ name: 'simulation using the signer address', simulationModeChanges: { simulationMode: true }, signerAddressSelection: { useSignersAddressAsActiveAddress: true, currentSignerAddress: signerAddress } },
+		{ name: 'signing Safe selection', simulationModeChanges: { simulationMode: false, activeSigningSafeAddress: safeAddress }, signerAddressSelection: undefined },
+		{ name: 'signing with the Safe omitted', simulationModeChanges: { simulationMode: false }, signerAddressSelection: undefined },
+		{ name: 'signing signer selection with the Safe explicitly cleared', simulationModeChanges: { simulationMode: false, activeSigningAddress: signerAddress, activeSigningSafeAddress: undefined }, signerAddressSelection: { useSignersAddressAsActiveAddress: false, currentSignerAddress: undefined } },
+	] as const)('projects the $name transition exactly as storage reads it back', async ({ simulationModeChanges, signerAddressSelection }) => {
 		installBrowserMock()
-		const { applyCommittedSettingsTransition, changeSimulationMode, getRequiredSettings, setRpcList, setUseSignersAddressAsActiveAddress } = await loadModules()
-		const previousSettings = await getRequiredSettings()
-		await setRpcList([previousSettings.activeRpcNetwork, projectedRpcNetwork])
-		await changeSimulationMode({ simulationMode: !simulationModeChanges.simulationMode, activeSigningSafeAddress: safeAddress })
+		const { changeSimulationMode, getRequiredSettings, getSettingsAfterStorageUpdates, setRpcList, setUseSignersAddressAsActiveAddress } = await loadModules()
+		const initialSettings = await getRequiredSettings()
+		await setRpcList([initialSettings.activeRpcNetwork, projectedRpcNetwork])
+		await changeSimulationMode({ simulationMode: !simulationModeChanges.simulationMode, activeSimulationAddress: firstAddress.address, activeSigningSafeAddress: safeAddress })
 		const settingsBeforeTransition = await getRequiredSettings()
 
-		if (useSignersAddressAsActiveAddress !== undefined) await setUseSignersAddressAsActiveAddress(useSignersAddressAsActiveAddress, signerAddress)
-		await changeSimulationMode(simulationModeChanges)
+		const committedStorageUpdates = [
+			...(signerAddressSelection === undefined ? [] : [await setUseSignersAddressAsActiveAddress(signerAddressSelection.useSignersAddressAsActiveAddress, signerAddressSelection.currentSignerAddress)]),
+			await changeSimulationMode(simulationModeChanges),
+		]
 
-		expect(applyCommittedSettingsTransition(settingsBeforeTransition, {
-			simulationModeChanges,
-			...(useSignersAddressAsActiveAddress === undefined ? {} : { useSignersAddressAsActiveAddress }),
-		})).toEqual(await getRequiredSettings())
+		expect(await getSettingsAfterStorageUpdates(settingsBeforeTransition, committedStorageUpdates)).toEqual(await getRequiredSettings())
+	})
+
+	test('publishes the committed transition when the read-back after a successful write fails', async () => {
+		const { runtimeMessages } = installBrowserMock()
+		const { changeActiveAddressAndChain, changeSimulationMode, getRequiredSettings, updateUserAddressBookEntries } = await loadModules()
+		await updateUserAddressBookEntries(() => [firstAddress, secondAddress])
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: firstAddress.address })
+		const settingsBeforeTransition = await getRequiredSettings()
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		const originalGet = browser.storage.local.get.bind(browser.storage.local)
+		const originalSet = browser.storage.local.set.bind(browser.storage.local)
+		let transitionCommitted = false
+		Object.defineProperty(browser.storage.local, 'set', { configurable: true, value: async (items: Record<string, unknown>) => {
+			await originalSet(items)
+			if ('independentActiveSimulationAddress' in items) transitionCommitted = true
+		} })
+		Object.defineProperty(browser.storage.local, 'get', { configurable: true, value: async (...args: Parameters<typeof browser.storage.local.get>) => {
+			const keys = args[0]
+			const readsSettings = Array.isArray(keys) && keys.includes('simulationMode') && keys.includes('rpcEntries')
+			if (transitionCommitted && readsSettings) throw new Error('Storage became unreadable after the transition was written')
+			return await originalGet(...args)
+		} })
+		const originalWarn = console.warn
+		console.warn = () => undefined
+		try {
+			await changeActiveAddressAndChain(simulationServicesOwner, new Map(), { simulationMode: true, activeAddress: secondAddress.address })
+		} finally {
+			console.warn = originalWarn
+			Object.defineProperty(browser.storage.local, 'get', { configurable: true, value: originalGet })
+			Object.defineProperty(browser.storage.local, 'set', { configurable: true, value: originalSet })
+		}
+
+		const settingsUpdates = runtimeMessages.filter((message): message is { method: string, data: Record<string, unknown> } => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_settingsUpdated' && 'data' in message)
+		const publishedSettings = settingsUpdates.at(-1)?.data
+		expect(publishedSettings?.activeSimulationAddress).toEqual(serialize(EthereumAddress, secondAddress.address))
+		expect(publishedSettings?.activeSigningSafeAddress).toEqual(serialize(OptionalEthereumAddress, settingsBeforeTransition.activeSigningSafeAddress))
+		expect(publishedSettings?.simulationMode).toEqual(true)
+		expect((await getRequiredSettings()).activeSimulationAddress).toEqual(secondAddress.address)
 	})
 })
 

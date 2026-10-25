@@ -4,7 +4,7 @@ import { Semaphore } from '../utils/semaphore.js'
 import type { EthereumAddress } from '../types/wire-types.js'
 import type { Website, WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import type { BlockExplorer, RpcNetwork } from '../types/rpc.js'
-import { type RichListElement, browserStorageLocalGet, browserStorageLocalSafeParse, browserStorageLocalSet } from '../utils/storageUtils.js'
+import { type LocalStorageItems, type RichListElement, browserStorageLocalGet, browserStorageLocalSafeParse, browserStorageLocalSet, serializeLocalStorageItems } from '../utils/storageUtils.js'
 import { getRpcConfigurationStateWithStorageSnapshot, getUserAddressBookEntries, updateUserAddressBookEntries } from './storageVariables.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
@@ -84,15 +84,28 @@ const SETTINGS_STORAGE_KEYS = [
 
 const getWebsiteAccessFromStorageItems = async (storedItems: Readonly<Record<string, unknown>>) => sanitizeWebsiteAccess(await getParsedStorageValueOrDefaultFromItems(storedItems, 'websiteAccess', []))
 
-async function getSettingsFromStorageItems(storedItems: Readonly<Record<string, unknown>>, activeRpcNetwork: RpcNetwork): Promise<Settings> {
+type SettingsStorageFields = Omit<Settings, 'activeRpcNetwork'>
+
+function getStartupSettingsStorageFields(): SettingsStorageFields {
 	if (defaultRpcs[0] === undefined || defaultActiveAddresses[0] === undefined) throw new Error('default rpc or default address was missing')
-	const defaultPage: Page = { page: 'Home' }
-	const activeSimulationAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'independentActiveSimulationAddress', defaultActiveAddresses[0].address))
-	const activeSigningSafeAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'activeSigningSafeAddress', undefined))
-	const openedPagePromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'openedPageV2', defaultPage))
-	const useSignersAddressAsActiveAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'useSignersAddressAsActiveAddress', false))
-	const websiteAccessPromise = silenceChromeUnCaughtPromise(getWebsiteAccessFromStorageItems(storedItems))
-	const simulationModePromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'simulationMode', defaultSimulationMode))
+	return {
+		activeSimulationAddress: defaultActiveAddresses[0].address,
+		activeSigningSafeAddress: undefined,
+		openedPage: { page: 'Home' },
+		useSignersAddressAsActiveAddress: false,
+		websiteAccess: [],
+		simulationMode: defaultSimulationMode,
+	}
+}
+
+// The single storage-to-Settings conversion. Fields missing from `storedItems` take their value from `missingFieldValues`.
+async function getSettingsFromStorageItems(storedItems: Readonly<Record<string, unknown>>, activeRpcNetwork: RpcNetwork, missingFieldValues: SettingsStorageFields = getStartupSettingsStorageFields()): Promise<Settings> {
+	const activeSimulationAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'independentActiveSimulationAddress', missingFieldValues.activeSimulationAddress))
+	const activeSigningSafeAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'activeSigningSafeAddress', missingFieldValues.activeSigningSafeAddress))
+	const openedPagePromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'openedPageV2', missingFieldValues.openedPage))
+	const useSignersAddressAsActiveAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'useSignersAddressAsActiveAddress', missingFieldValues.useSignersAddressAsActiveAddress))
+	const websiteAccessPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'websiteAccess', missingFieldValues.websiteAccess).then(sanitizeWebsiteAccess))
+	const simulationModePromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'simulationMode', missingFieldValues.simulationMode))
 	const [activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, simulationMode] = await Promise.all([
 		activeSimulationAddressPromise,
 		activeSigningSafeAddressPromise,
@@ -225,11 +238,14 @@ export async function trackPreviousActiveAddressForMakeMeRichList(previousActive
 	})
 }
 
-export async function setUseSignersAddressAsActiveAddress(useSignersAddressAsActiveAddress: boolean, currentSignerAddress: bigint | undefined = undefined) {
-	return await browserStorageLocalSet({
+// The active-settings writers return the exact storage items they persisted. Those items are the single representation of the transition: they are written as-is and `getSettingsAfterStorageUpdates` projects Settings from them.
+export async function setUseSignersAddressAsActiveAddress(useSignersAddressAsActiveAddress: boolean, currentSignerAddress: bigint | undefined = undefined): Promise<LocalStorageItems> {
+	const storageUpdate = {
 		useSignersAddressAsActiveAddress,
 		...useSignersAddressAsActiveAddress === true ? { activeSigningAddress: currentSignerAddress } : {}
-	})
+	}
+	await browserStorageLocalSet(storageUpdate)
+	return storageUpdate
 }
 
 export type SimulationModeChanges = {
@@ -250,21 +266,17 @@ function getSimulationModeStorageUpdate(changes: SimulationModeChanges) {
 	}
 }
 
-// Settings projection of the two writers above (`setUseSignersAddressAsActiveAddress` and `changeSimulationMode`). It sits beside their storage mappings so this module stays the single owner of how an active-settings transition changes Settings; a field added to SimulationModeChanges must be handled in both places here. `activeSigningAddress` is persisted but is not part of Settings.
-export function applyCommittedSettingsTransition(settings: Settings, transition: { readonly simulationModeChanges: SimulationModeChanges, readonly useSignersAddressAsActiveAddress?: boolean }): Settings {
-	const { simulationModeChanges: changes, useSignersAddressAsActiveAddress } = transition
-	return {
-		...settings,
-		...useSignersAddressAsActiveAddress === undefined ? {} : { useSignersAddressAsActiveAddress },
-		simulationMode: changes.simulationMode,
-		...changes.rpcNetwork ? { activeRpcNetwork: changes.rpcNetwork } : {},
-		...'activeSimulationAddress' in changes ? { activeSimulationAddress: changes.activeSimulationAddress } : {},
-		...'activeSigningSafeAddress' in changes ? { activeSigningSafeAddress: changes.activeSigningSafeAddress } : {},
-	}
+export async function changeSimulationMode(changes: SimulationModeChanges): Promise<LocalStorageItems> {
+	const storageUpdate = getSimulationModeStorageUpdate(changes)
+	await browserStorageLocalSet(storageUpdate)
+	return storageUpdate
 }
 
-export async function changeSimulationMode(changes: SimulationModeChanges) {
-	return await browserStorageLocalSet(getSimulationModeStorageUpdate(changes))
+// The Settings that committed storage updates produce, derived by running the serialized updates (applied in write order) through the same storage-to-Settings conversion used for reads; fields no update writes keep their previous values. No field mapping is repeated here.
+export async function getSettingsAfterStorageUpdates(previousSettings: Settings, storageUpdates: readonly LocalStorageItems[]): Promise<Settings> {
+	const updatedItems = storageUpdates.reduce<Record<string, unknown>>((items, storageUpdate) => ({ ...items, ...serializeLocalStorageItems(storageUpdate) }), {})
+	const activeRpcNetwork = await getParsedStorageValueOrDefaultFromItems(updatedItems, 'activeRpcNetwork', previousSettings.activeRpcNetwork)
+	return await getSettingsFromStorageItems(updatedItems, activeRpcNetwork, previousSettings)
 }
 
 async function replaceModeAndSigningPreferencesForImport(changes: SimulationModeChanges, signingAddressPreferences: SigningAddressPreferences) {

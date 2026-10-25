@@ -303,22 +303,36 @@ const getApprovedTabs = (websiteTabConnections: WebsiteTabConnections) => {
 	}
 	return approvedTabs
 }
-// A tab's active address is resolved for the active RPC network's chain, so it cannot be determined while that network is unreadable. Tab blocking is a user privacy control that must not depend on RPC availability: fail closed by blocking every approved tab while any active address is configured to block all external requests.
-const getTabIdsToBlockWithoutActiveRpcNetwork = async (approvedTabIds: ReadonlySet<number>) => {
+// Without a readable active RPC network a tab's active address cannot be resolved for its chain, and runtime connection approval is not restored either (connections register unapproved and requests are refused before access checks). Tab blocking is a user privacy control that must not depend on RPC availability, so fail closed: block every connected tab that is approved at runtime or whose website has persisted consent, while any active address blocks all external requests.
+const getTabIdsToBlockWithoutActiveRpcNetwork = async (websiteTabConnections: WebsiteTabConnections, websiteAccess: WebsiteAccessArray) => {
 	const anyActiveAddressBlocksAll = (await getActiveAddresses()).some((entry) => entry.declarativeNetRequestBlockMode === 'block-all')
-	return anyActiveAddressBlocksAll ? Array.from(approvedTabIds) : []
+	if (!anyActiveAddressBlocksAll) return []
+	const tabIdsToBlock: number[] = []
+	for (const [tabId, tabConnection] of websiteTabConnections.entries()) {
+		const tabHasConsentedConnection = Object.values(tabConnection.connections).some((connection) => connection.approved || hasAccess(websiteAccess, connection.websiteOrigin) === 'hasAccess')
+		if (tabHasConsentedConnection) tabIdsToBlock.push(tabId)
+	}
+	return tabIdsToBlock
 }
-const getTabsAndAddressesToBlock = async (websiteTabConnections: WebsiteTabConnections) => {
+
+type RequestBlocks = {
+	readonly tabIdsToBlock: readonly number[]
+	readonly sitesToBlock: readonly string[]
+	// True when the tab set is only a conservative lower bound (active RPC network unreadable); tab blocks that are already applied must then be kept, never lifted.
+	readonly keepAppliedTabBlocks: boolean
+}
+
+const getSitesToBlock = (websiteAccess: WebsiteAccessArray) => websiteAccess.filter((access) => access.declarativeNetRequestBlockMode === 'block-all').map((acccess) => acccess.website.websiteOrigin)
+
+const getTabsAndAddressesToBlock = async (websiteTabConnections: WebsiteTabConnections): Promise<RequestBlocks> => {
 	const approvedTabIds = getApprovedTabs(websiteTabConnections)
 	const settings = (await getSettingsSnapshot()).settings
-	const tabIdsToBlock = settings === undefined
-		? await getTabIdsToBlockWithoutActiveRpcNetwork(approvedTabIds)
-		: (await getActiveAddressesForAllTabs(settings)).filter((tabData) => approvedTabIds.has(tabData.tabId)).filter((tabData) => tabData.activeAddress?.declarativeNetRequestBlockMode === 'block-all').map((tabData) => tabData.tabId)
-	const sitesToBlock = (await getWebsiteAccess()).filter((access) => access.declarativeNetRequestBlockMode === 'block-all').map((acccess) => acccess.website.websiteOrigin)
-	return {
-		tabIdsToBlock,
-		sitesToBlock
+	if (settings === undefined) {
+		const websiteAccess = await getWebsiteAccess()
+		return { tabIdsToBlock: await getTabIdsToBlockWithoutActiveRpcNetwork(websiteTabConnections, websiteAccess), sitesToBlock: getSitesToBlock(websiteAccess), keepAppliedTabBlocks: true }
 	}
+	const tabIdsToBlock = (await getActiveAddressesForAllTabs(settings)).filter((tabData) => approvedTabIds.has(tabData.tabId)).filter((tabData) => tabData.activeAddress?.declarativeNetRequestBlockMode === 'block-all').map((tabData) => tabData.tabId)
+	return { tabIdsToBlock, sitesToBlock: getSitesToBlock(await getWebsiteAccess()), keepAppliedTabBlocks: false }
 }
 
 let webRequestListener: (details: browser.webRequest._OnBeforeRequestDetails) => void = () => undefined
@@ -326,10 +340,23 @@ let previousTabIdsToBlock: readonly number[] = []
 let previousSitesToBlock: readonly string[] = []
 let previousTabBlockIdentifier: string | undefined
 let previousSiteBlockIdentifier: string | undefined
+let tabBlocksUsePersistedConsent = false
+
+// MV3 session rules survive service-worker restarts, so they are the authoritative record of applied tab blocks; MV2 listeners do not survive a restart.
+const getAppliedTabBlocks = async (): Promise<readonly number[]> => {
+	if (browser.runtime.getManifest().manifest_version !== 3) return previousTabIdsToBlock
+	return (await browser.declarativeNetRequest.getSessionRules()).flatMap((rule) => rule.condition.tabIds ?? [])
+}
+
+const getTabIdsWithAppliedTabBlocks = async (tabIdsToBlock: readonly number[]) => Array.from(new Set([...await getAppliedTabBlocks(), ...tabIdsToBlock]))
+
 const updateDeclarativeNetRequestBlocksSemaphore = new Semaphore(1)
 export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: WebsiteTabConnections) {
 	return await updateDeclarativeNetRequestBlocksSemaphore.execute(async () => {
-		const { tabIdsToBlock, sitesToBlock } = await getTabsAndAddressesToBlock(websiteTabConnections)
+		const requestBlocks = await getTabsAndAddressesToBlock(websiteTabConnections)
+		tabBlocksUsePersistedConsent = requestBlocks.keepAppliedTabBlocks
+		const { sitesToBlock } = requestBlocks
+		const tabIdsToBlock = requestBlocks.keepAppliedTabBlocks ? await getTabIdsWithAppliedTabBlocks(requestBlocks.tabIdsToBlock) : requestBlocks.tabIdsToBlock
 		const tabBlockIdentifier = tabIdsToBlock.join('|')
 		const siteBlockIdentifier = sitesToBlock.join('|')
 		const tabBlocksChanged = tabBlockIdentifier !== previousTabBlockIdentifier
@@ -346,7 +373,7 @@ export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: W
 							id: dynamicRuleIds.length === 0 ? 1 : Math.max.apply(null, dynamicRuleIds) + 1,
 							priority: 1,
 							action : { type: 'block' as const },
-							condition: { initiatorDomains: sitesToBlock, domainType: 'thirdParty' as const }
+							condition: { initiatorDomains: [...sitesToBlock], domainType: 'thirdParty' as const }
 						}]
 					})
 				} else {
@@ -364,7 +391,7 @@ export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: W
 							id: sessionRuleIds.length === 0 ? 1 : Math.max.apply(null, sessionRuleIds) + 1,
 							priority: 2,
 							action : { type: 'block' as const },
-							condition: { tabIds: tabIdsToBlock, domainType: 'thirdParty' as const }
+							condition: { tabIds: [...tabIdsToBlock], domainType: 'thirdParty' as const }
 						}]
 					})
 				} else {
@@ -402,10 +429,17 @@ export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: W
 	})
 }
 
+// Connections register unapproved, so a new connection can only change tab blocking while it is derived from persisted consent (active RPC network unreadable); otherwise skip the reconciliation work on every page load.
+export async function updateDeclarativeNetRequestBlocksForRegisteredConnection(websiteTabConnections: WebsiteTabConnections) {
+	if (!tabBlocksUsePersistedConsent) return
+	await updateDeclarativeNetRequestBlocks(websiteTabConnections)
+}
+
 export const areWeBlocking = async (websiteTabConnections: WebsiteTabConnections, tabId: number, websiteOrigin: string) => {
-	const { tabIdsToBlock, sitesToBlock } = await getTabsAndAddressesToBlock(websiteTabConnections)
-	if (sitesToBlock.find((blockUrl) => blockUrl === websiteOrigin) !== undefined) return true
-	if (tabIdsToBlock.find((blockTab) => blockTab === tabId) !== undefined) return true
+	const requestBlocks = await getTabsAndAddressesToBlock(websiteTabConnections)
+	if (requestBlocks.sitesToBlock.find((blockUrl) => blockUrl === websiteOrigin) !== undefined) return true
+	if (requestBlocks.tabIdsToBlock.find((blockTab) => blockTab === tabId) !== undefined) return true
+	if (requestBlocks.keepAppliedTabBlocks && (await getAppliedTabBlocks()).find((blockTab) => blockTab === tabId) !== undefined) return true
 	return false
 }
 

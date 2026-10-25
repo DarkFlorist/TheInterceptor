@@ -25,18 +25,21 @@ export function createDeferredValue<T>() {
 	return { promise, resolve: (value: T) => resolveValue(value) }
 }
 
-export function installBrowserMock({ deferFirstChainChangeRemoval = false, manifestVersion = 3 }: { readonly deferFirstChainChangeRemoval?: boolean, readonly manifestVersion?: 2 | 3 } = {}) {
+export function installBrowserMock({ deferFirstChainChangeRemoval = false, manifestVersion = 3, initialSessionRules = [] }: { readonly deferFirstChainChangeRemoval?: boolean, readonly manifestVersion?: 2 | 3, readonly initialSessionRules?: readonly { readonly id: number, readonly condition: { readonly tabIds?: readonly number[] } }[] } = {}) {
 	const storageListeners = new Set<(changes: Record<string, { newValue?: unknown, oldValue?: unknown }>, area: string) => void>()
 	const storageState: Record<string, unknown> = {}
 	const runtimeMessages: unknown[] = []
 	const chainChangeRemovalStarted = createDeferredSignal()
 	const chainChangeRemovalRelease = createDeferredSignal()
 	let chainChangeRemovalDeferred = false
+	type SessionRule = { readonly id: number, readonly condition: { readonly tabIds?: readonly number[] } }
+	// Session rules survive service-worker restarts, so tests can seed them to model rules applied before a restart.
+	const sessionRules: SessionRule[] = [...initialSessionRules]
 	const requestBlockingCalls = {
 		declarativeNetRequestUpdates: 0,
 		dynamicRuleUpdates: 0,
 		sessionRuleUpdates: 0,
-		blockedSessionTabIds: new Array<number>(),
+		blockedSessionTabIds: initialSessionRules.flatMap((rule) => rule.condition.tabIds ?? []),
 		webRequestListenerAdds: 0,
 		webRequestListenerRemovals: 0,
 	}
@@ -106,16 +109,18 @@ export function installBrowserMock({ deferFirstChainChangeRemoval = false, manif
 		},
 		declarativeNetRequest: {
 			async getDynamicRules() { return [] },
-			async getSessionRules() { return [] },
+			async getSessionRules() { return [...sessionRules] },
 			async updateDynamicRules() {
 				requestBlockingCalls.declarativeNetRequestUpdates += 1
 				requestBlockingCalls.dynamicRuleUpdates += 1
 				return undefined
 			},
-			async updateSessionRules(update: { readonly addRules?: readonly { readonly condition: { readonly tabIds?: readonly number[] } }[] }) {
+			async updateSessionRules(update: { readonly removeRuleIds?: readonly number[], readonly addRules?: readonly SessionRule[] }) {
 				requestBlockingCalls.declarativeNetRequestUpdates += 1
 				requestBlockingCalls.sessionRuleUpdates += 1
-				requestBlockingCalls.blockedSessionTabIds = (update.addRules ?? []).flatMap((rule) => rule.condition.tabIds ?? [])
+				const remainingRules = sessionRules.filter((rule) => update.removeRuleIds?.includes(rule.id) !== true)
+				sessionRules.splice(0, sessionRules.length, ...remainingRules, ...(update.addRules ?? []))
+				requestBlockingCalls.blockedSessionTabIds = sessionRules.flatMap((rule) => rule.condition.tabIds ?? [])
 				return undefined
 			},
 		},

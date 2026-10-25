@@ -98,7 +98,7 @@ const LocalStorageItemsRuntype = funtypes.Intersect(funtypes.ReadonlyPartial({
 	popupRefreshGeneration: funtypes.Number,
 	pendingTerminalReplies: funtypes.ReadonlyArray(InterceptedRequestForward),
 }), OptionalActiveSigningAddressStorageProperty, OptionalActiveSigningSafeAddressStorageProperty, OptionalIndependentActiveSimulationAddressStorageProperty)
-type LocalStorageItems = funtypes.Static<typeof LocalStorageItemsRuntype>
+export type LocalStorageItems = funtypes.Static<typeof LocalStorageItemsRuntype>
 const LocalStorageItems: typeof LocalStorageItemsRuntype = LocalStorageItemsRuntype
 
 type LocalStorageKey = funtypes.Static<typeof LocalStorageKey>
@@ -205,8 +205,9 @@ export async function browserStorageLocalSafeParseGet(keys: LocalStorageKey | Lo
 export async function browserStorageLocalRemove(keys: LocalStorageKey | LocalStorageKey[]) {
 	return await browser.storage.local.remove(Array.isArray(keys) ? keys : [keys])
 }
+export const serializeLocalStorageItems = (items: LocalStorageItems) => serialize(LocalStorageItems, items)
 export async function browserStorageLocalSet(items: LocalStorageItems) {
-	return await browser.storage.local.set(serialize(LocalStorageItems, items))
+	return await browser.storage.local.set(serializeLocalStorageItems(items))
 }
 
 const getTabStateKey = (tabId: number): `tabState_${ number }` => `tabState_${ tabId }`
