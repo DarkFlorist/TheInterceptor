@@ -56,6 +56,43 @@ describe('background eth_accounts', () => {
 		assert.equal(await withSilencedWarnings(async () => await areWeBlocking(websiteTabConnections, unconsentedSocket.tabId, 'unconsented.example')), false)
 	})
 
+	test('blocks a consented tab registered after the active RPC network becomes unreadable at runtime', async () => {
+		const browserMock = installBrowserMock({ manifestVersion: 3 })
+		const { areWeBlocking, changeSimulationMode, updateDeclarativeNetRequestBlocks, updateDeclarativeNetRequestBlocksForRegisteredConnection, updateUserAddressBookEntries, updateWebsiteAccess } = await loadModules()
+		const { registerWebsiteConnectionAndProvisionallyClaimSignerState } = await import('../../app/ts/background/signerStateOwnership.js')
+		const consentedWebsiteOrigin = 'consented-runtime.example'
+		const activeAddress = 0x1010101010101010101010101010101010101010n
+		await updateUserAddressBookEntries(() => [{ type: 'contact', name: 'Blocked active address', address: activeAddress, chainId: 'AllChains', entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: false, declarativeNetRequestBlockMode: 'block-all' }])
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: activeAddress })
+		await updateWebsiteAccess(() => [{ website: { websiteOrigin: consentedWebsiteOrigin, icon: undefined, title: undefined }, access: true }])
+		const websiteTabConnections: WebsiteTabConnections = new Map()
+		// A healthy reconciliation runs first, so no earlier fail-closed state is carried into the registration below.
+		await updateDeclarativeNetRequestBlocks(websiteTabConnections)
+		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [])
+		await browser.storage.local.set({ activeRpcNetwork: 'corrupt' })
+		const socket = { tabId: 9879, connectionName: 0n }
+		await registerWebsiteConnectionAndProvisionallyClaimSignerState(websiteTabConnections, socket, { port: createPort(socket.tabId).port, socket, websiteOrigin: consentedWebsiteOrigin, approved: false, wantsToConnect: false }, true)
+
+		await withSilencedWarnings(async () => await updateDeclarativeNetRequestBlocksForRegisteredConnection(websiteTabConnections))
+
+		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [socket.tabId])
+		assert.equal(await withSilencedWarnings(async () => await areWeBlocking(websiteTabConnections, socket.tabId, consentedWebsiteOrigin)), true)
+	})
+
+	test('applies persisted-consent tab blocking before reporting it', async () => {
+		const browserMock = installBrowserMock({ manifestVersion: 3 })
+		const { areWeBlocking } = await loadModules()
+		const { registerWebsiteConnectionAndProvisionallyClaimSignerState } = await import('../../app/ts/background/signerStateOwnership.js')
+		const consentedWebsiteOrigin = 'consented-report.example'
+		await setUpAddressLevelBlockAllWithUnreadableActiveRpcNetwork(consentedWebsiteOrigin)
+		const websiteTabConnections: WebsiteTabConnections = new Map()
+		const socket = { tabId: 9880, connectionName: 0n }
+		await registerWebsiteConnectionAndProvisionallyClaimSignerState(websiteTabConnections, socket, { port: createPort(socket.tabId).port, socket, websiteOrigin: consentedWebsiteOrigin, approved: false, wantsToConnect: false }, true)
+
+		assert.equal(await withSilencedWarnings(async () => await areWeBlocking(websiteTabConnections, socket.tabId, consentedWebsiteOrigin)), true)
+		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [socket.tabId])
+	})
+
 	test('keeps tab blocking rules applied before a service-worker restart while the active RPC network is unreadable', async () => {
 		const blockedBeforeRestartTabId = 9878
 		const browserMock = installBrowserMock({ manifestVersion: 3, initialSessionRules: [{ id: 1, condition: { tabIds: [blockedBeforeRestartTabId] } }] })

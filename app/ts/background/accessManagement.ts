@@ -4,10 +4,10 @@ import { requestAccessFromUser } from './windows/interceptorAccess.js'
 import { retrieveWebsiteDetails, updateExtensionIcon } from './iconHandler.js'
 import type { TabConnection, WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { InpageScriptCallBack, Settings } from '../types/interceptor-messages.js'
-import { getRequiredSettings, getSettingsSnapshot, getWebsiteAccess, updateWebsiteAccess } from './settings.js'
+import { getReadableActiveRpcNetwork, getRequiredSettings, getSettingsSnapshot, getWebsiteAccess, updateWebsiteAccess } from './settings.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
 import { type WebsiteSocket, getHostWithPort } from '../utils/requests.js'
-import { getAllTabStates } from './storageVariables.js'
+import { getAllTabStates, getRpcConfigurationState } from './storageVariables.js'
 import type { Website, WebsiteAccessArray, WebsiteAddressAccess } from '../types/websiteAccessTypes.js'
 import { getUniqueItemsByProperties, replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
 import { modifyObject } from '../utils/typescript.js'
@@ -340,8 +340,6 @@ let previousTabIdsToBlock: readonly number[] = []
 let previousSitesToBlock: readonly string[] = []
 let previousTabBlockIdentifier: string | undefined
 let previousSiteBlockIdentifier: string | undefined
-let tabBlocksUsePersistedConsent = false
-
 // MV3 session rules survive service-worker restarts, so they are the authoritative record of applied tab blocks; MV2 listeners do not survive a restart.
 const getAppliedTabBlocks = async (): Promise<readonly number[]> => {
 	if (browser.runtime.getManifest().manifest_version !== 3) return previousTabIdsToBlock
@@ -354,7 +352,6 @@ const updateDeclarativeNetRequestBlocksSemaphore = new Semaphore(1)
 export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: WebsiteTabConnections) {
 	return await updateDeclarativeNetRequestBlocksSemaphore.execute(async () => {
 		const requestBlocks = await getTabsAndAddressesToBlock(websiteTabConnections)
-		tabBlocksUsePersistedConsent = requestBlocks.keepAppliedTabBlocks
 		const { sitesToBlock } = requestBlocks
 		const tabIdsToBlock = requestBlocks.keepAppliedTabBlocks ? await getTabIdsWithAppliedTabBlocks(requestBlocks.tabIdsToBlock) : requestBlocks.tabIdsToBlock
 		const tabBlockIdentifier = tabIdsToBlock.join('|')
@@ -429,18 +426,19 @@ export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: W
 	})
 }
 
-// Connections register unapproved, so a new connection can only change tab blocking while it is derived from persisted consent (active RPC network unreadable); otherwise skip the reconciliation work on every page load.
+// Connections register unapproved, so a new connection can only change tab blocking while it is derived from persisted consent. That depends on whether the active RPC network is readable right now (it can become unreadable after the last reconciliation), so check the current configuration instead of remembering an earlier mode.
 export async function updateDeclarativeNetRequestBlocksForRegisteredConnection(websiteTabConnections: WebsiteTabConnections) {
-	if (!tabBlocksUsePersistedConsent) return
+	if (getReadableActiveRpcNetwork(await getRpcConfigurationState()) !== undefined) return
 	await updateDeclarativeNetRequestBlocks(websiteTabConnections)
 }
 
 export const areWeBlocking = async (websiteTabConnections: WebsiteTabConnections, tabId: number, websiteOrigin: string) => {
 	const requestBlocks = await getTabsAndAddressesToBlock(websiteTabConnections)
 	if (requestBlocks.sitesToBlock.find((blockUrl) => blockUrl === websiteOrigin) !== undefined) return true
-	if (requestBlocks.tabIdsToBlock.find((blockTab) => blockTab === tabId) !== undefined) return true
-	if (requestBlocks.keepAppliedTabBlocks && (await getAppliedTabBlocks()).find((blockTab) => blockTab === tabId) !== undefined) return true
-	return false
+	if (!requestBlocks.keepAppliedTabBlocks) return requestBlocks.tabIdsToBlock.find((blockTab) => blockTab === tabId) !== undefined
+	// Blocking derived from persisted consent is applied before it is reported, so the reported state is always the enforced state even if the active RPC network became unreadable after the last reconciliation.
+	await updateDeclarativeNetRequestBlocks(websiteTabConnections)
+	return (await getAppliedTabBlocks()).find((blockTab) => blockTab === tabId) !== undefined
 }
 
 export type WebsiteAccessUpdate = {
