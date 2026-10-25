@@ -28,6 +28,7 @@ import { Link } from '../subcomponents/link.js'
 import { NetworkErrors } from '../subcomponents/NetworkErrors.js'
 import { identifySignature } from '../simulationExplaining/identifySignature.js'
 import { InvalidMessage, SignatureCard, SignatureHeader, isPossibleToSignMessage } from './PersonalSign.js'
+import type { VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
 import type { EditEnsNamedHashCallBack } from '../subcomponents/ens.js'
 import { EditEnsLabelHash } from './EditEnsLabelHash.js'
 import { type ReadonlySignal, Signal, useComputed, useSignal } from '@preact/signals'
@@ -106,6 +107,12 @@ export function getSignerNonce(pending: SimulatedPendingTransaction, safeFlow: R
 	if (pending.simulationMode || safeFlow?.kind === 'proposal' || pending.originalRequestParameters.method !== 'eth_sendTransaction') return { kind: 'simulated' }
 	const websiteNonce = pending.originalRequestParameters.params[0].nonce
 	return websiteNonce === undefined ? { kind: 'wallet-selected' } : { kind: 'website-requested', nonce: websiteNonce }
+}
+
+// Quarantined signature requests need this acknowledgement before confirming, so offer it wherever acknowledging lets the request proceed: always in signing mode, and in simulation mode when the simulation signer can sign it or the RPC can simulate it, matching shouldDisableSignableMessageConfirm.
+export function canAcknowledgeQuarantinedSignature(visualizedPersonalSignRequest: VisualizedPersonalSignRequest) {
+	return isPossibleToSignMessage(visualizedPersonalSignRequest, visualizedPersonalSignRequest.activeAddress.address)
+		|| visualizedPersonalSignRequest.rpcNetwork.httpsRpc !== undefined
 }
 
 export function shouldDisableSignableMessageConfirm(params: {
@@ -614,7 +621,7 @@ export const CheckBoxes = (params: CheckBoxesParams) => {
 	if (current?.type === 'SignableMessage') {
 		const visualizedPersonalSignRequest = current.visualizedPersonalSignRequest
 		return  <>
-			{ isPossibleToSignMessage(visualizedPersonalSignRequest, visualizedPersonalSignRequest.activeAddress.address) && visualizedPersonalSignRequest.quarantine
+			{ visualizedPersonalSignRequest.quarantine && canAcknowledgeQuarantinedSignature(visualizedPersonalSignRequest)
 				? <div style = 'display: grid'>
 					<div style = 'margin: 0px; margin-bottom: 10px; margin-left: 20px; margin-right: 20px; '>
 						<ErrorCheckBox text = { 'I understand that there are issues with this signature request but I want to send it anyway against Interceptors recommendations.' } checked = { params.forceSend } />
