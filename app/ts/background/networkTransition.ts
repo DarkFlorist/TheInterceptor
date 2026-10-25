@@ -41,7 +41,7 @@ type CommittedNetworkChange = {
 	readonly completedEffects: Set<NetworkChangeEffect>
 }
 
-// Effects that a failed transition could not complete. They live in memory only, so after a background restart services are rebuilt from the settings and websites receive the chain when they reconnect, but a stack left from the previous chain is not cleared.
+// Effects that a failed transition could not complete. They belong to the lock rather than to a call chain: the failed transition has already thrown to its caller, so the next lock holder, a read included, completes them before it acts on the committed network. They live in memory only, so after a background restart services are rebuilt from the settings and websites receive the chain when they reconnect, but a stack left from the previous chain is not cleared.
 let unfinishedNetworkChange: CommittedNetworkChange | undefined
 
 // Every effect is idempotent or recorded once it succeeds: installation compares with the installed client, clearing the active stack context twice is harmless, and websites are notified once per committed change. Popup notifications are best-effort.

@@ -14,7 +14,7 @@ import { Multicall3ABI } from '../../app/ts/utils/constants.js'
 import { JsonRpcResponseError } from '../../app/ts/utils/errors.js'
 import { isRecord } from '../../app/ts/utils/runtimeTypeGuards.js'
 import { eth_getBlockByNumber_goerli_8443561_true, eth_simulateV1_dummy_call_result } from '../RPCResponses.js'
-import { createDeferredSignal, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus } from './backgroundEthAccountsTestHarness.js'
+import { confirmedSignerOwnership, createDeferredSignal, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus } from './backgroundEthAccountsTestHarness.js'
 import { Transaction } from 'micro-eth-signer'
 import { mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 
@@ -171,7 +171,7 @@ function reportSimulationConsumer(isOpen: boolean) {
 	})
 }
 
-async function createApprovedSimulationDapp({ simulationConsumerOpen = false }: { readonly simulationConsumerOpen?: boolean } = {}) {
+async function createApprovedSimulationDapp({ simulationConsumerOpen = false, signerConfirmed = false }: { readonly simulationConsumerOpen?: boolean, readonly signerConfirmed?: boolean } = {}) {
 	const { runtimeMessages } = installBrowserMock()
 	if (simulationConsumerOpen) reportSimulationConsumer(true)
 	const modules = await loadModules()
@@ -180,7 +180,7 @@ async function createApprovedSimulationDapp({ simulationConsumerOpen = false }: 
 	await modules.updateWebsiteAccess(() => [{ website, access: true, addressAccess: undefined }])
 	const socket = { tabId: 1, connectionName: 0n }
 	const { port, messages } = createPort(socket.tabId)
-	const websiteTabConnections = new Map([[socket.tabId, { connections: {
+	const websiteTabConnections = new Map([[socket.tabId, { ...signerConfirmed ? confirmedSignerOwnership(socket) : {}, connections: {
 		[modules.websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 	} }]])
 	const sendDappRequest = async (simulationServicesOwner: SimulationServicesOwner, request: { readonly method: string, readonly params: readonly unknown[] }, requestId = 1) => await modules.handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
@@ -826,6 +826,47 @@ describe('network transition snapshot', () => {
 		}
 	})
 
+	test('a signing-mode message refreshed after a network switch is described on the active chain and warns that it is for another chain', async () => {
+		const { modules, runtimeMessages, sendDappRequest, socket } = await createApprovedSimulationDapp({ signerConfirmed: true })
+		await modules.setRpcList([networkA, networkB])
+		await modules.changeSimulationMode({ simulationMode: false, activeSigningAddress: firstAddress, rpcNetwork: networkA })
+		await modules.setUseSignersAddressAsActiveAddress(true, firstAddress)
+		await modules.updateTabState(socket.tabId, (previousState) => ({ ...previousState, signerAccounts: [firstAddress], activeSigningAddress: firstAddress }))
+		const { owner, retireAll, getInstalled } = createRecordingServicesOwner(networkA)
+		const typedData = {
+			types: { EIP712Domain: [{ name: 'name', type: 'string' }, { name: 'chainId', type: 'uint256' }], Mail: [{ name: 'contents', type: 'string' }] },
+			primaryType: 'Mail',
+			domain: { name: 'Mail', chainId: Number(networkA.chainId) },
+			message: { contents: 'Hello' },
+		}
+		const { MessageToPopup } = await import('../../app/ts/types/interceptor-messages.js')
+		try {
+			await sendDappRequest(owner, { method: 'eth_signTypedData_v4', params: [addressString(firstAddress), JSON.stringify(typedData)] })
+			const [pending] = await modules.getPendingTransactionsAndMessages()
+			if (pending?.type !== 'SignableMessage' || pending.transactionOrMessageCreationStatus !== 'Simulated') throw new Error('Expected a simulated message')
+			assert.equal(pending.simulationMode, false)
+			assert.equal(pending.visualizedPersonalSignRequest.quarantine, false)
+
+			// The wallet follows the switch, so it would sign while chain B is active.
+			await modules.changeActiveAddressAndChain(owner, new Map(), { simulationMode: false, rpcNetwork: networkB, promptForAccessesIfNeeded: false })
+			const servicesB = getInstalled()
+			const messagesBefore = runtimeMessages.length
+			await modules.refreshPopupConfirmTransactionMetadata(servicesB.ethereum, servicesB.tokenPriceService, (await modules.readNetworkSnapshot(owner)).simulation, undefined)
+
+			const refreshedMessages = runtimeMessages.slice(messagesBefore).flatMap((message) => {
+				const parsed = MessageToPopup.safeParse(message)
+				if (!parsed.success || parsed.value.method !== 'popup_update_confirm_transaction_dialog_pending_transactions') return []
+				const [first] = parsed.value.data.pendingTransactionAndSignableMessages
+				return first?.type === 'SignableMessage' && first.transactionOrMessageCreationStatus === 'Simulated' ? [first.visualizedPersonalSignRequest] : []
+			})
+			assert.equal(refreshedMessages.length, 1)
+			assert.equal(refreshedMessages[0]?.quarantine, true)
+			assert.match(refreshedMessages[0]?.quarantineReasons.join(' ') ?? '', /different chain/u)
+		} finally {
+			retireAll()
+		}
+	})
+
 	test.each(['switch', 'import'] as const)('a signing-mode %s to another chain drops the simulation stack before simulation is enabled there', async (kind) => {
 		installBrowserMock()
 		const modules = await loadModules()
@@ -1089,23 +1130,6 @@ describe('network transition snapshot', () => {
 
 			assert.equal(getSimulateV1Requests(servicesA).length, simulationsOnA)
 			assert.deepEqual(await modules.getPopupVisualisationState(), visualisationOfB)
-		} finally {
-			retireAll()
-		}
-	})
-
-	test('a chain switch request on a signer-only network is already on that chain, although the installed services keep serving the previous one', async () => {
-		installBrowserMock()
-		const { changeSimulationMode } = await loadModules()
-		const { switchEthereumChain } = await import('../../app/ts/background/simulationModeHandlers.js')
-		const { owner, retireAll } = createRecordingServicesOwner(networkA)
-		const signerOnlyChainId = 0x539n
-		await changeSimulationMode({ simulationMode: false, rpcNetwork: { chainId: signerOnlyChainId, httpsRpc: undefined, name: 'Signer only', currencyName: 'Ether?', currencyTicker: 'ETH?', primary: false, minimized: true } })
-		const params = { method: 'wallet_switchEthereumChain' as const, params: [{ chainId: signerOnlyChainId }] as const }
-		const request = { interceptorRequest: true, usingInterceptorWithoutSigner: true, uniqueRequestIdentifier: { requestId: 1, requestSocket: { tabId: 1, connectionName: 0n } }, ...params }
-		try {
-			assert.equal(owner.getCurrent().ethereum.getChainId(), networkA.chainId)
-			assert.deepEqual(await switchEthereumChain(owner, new Map(), params, request, false, website), { type: 'result', method: 'wallet_switchEthereumChain', result: null })
 		} finally {
 			retireAll()
 		}

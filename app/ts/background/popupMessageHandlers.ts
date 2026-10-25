@@ -540,8 +540,8 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 		: Promise.resolve(createPassthroughCompleteVisualizedSimulation())
 	switch (first.type) {
 		case 'SignableMessage': {
-			// A message admitted on another chain keeps its metadata; these services would describe a different network.
-			if (first.simulationChainId !== undefined && first.simulationChainId !== simulation.activeRpcNetwork.chainId) return
+			// A simulation-mode message admitted on another chain keeps its metadata, since it only joins that chain's stack and these services describe a different network. A signing-mode message goes to the wallet on the active chain, so it is described there, and its quarantine warns when its chain differs.
+			if (first.simulationMode && first.simulationChainId !== undefined && first.simulationChainId !== simulation.activeRpcNetwork.chainId) return
 			const visualizedPersonalSignRequestPromise = craftPersonalSignPopupMessage(ethereum, requestAbortController, first.signedMessageTransaction, ethereum.getRpcEntry())
 			silenceChromeUnCaughtPromise(visualizedPersonalSignRequestPromise)
 			const message: UpdateConfirmTransactionDialog = {

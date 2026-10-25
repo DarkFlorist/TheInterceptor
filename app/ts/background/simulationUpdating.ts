@@ -521,7 +521,7 @@ export const createSimulationStateWithNonceAndBaseFeeFixing = async (simulationI
 	return await buildSimulationStateFromPreparedInput(await prepareSimulationInputForRpc(simulationInput, ethereum), ethereum)
 }
 
-// Labels and quarantine checks describe the network the simulation ran on, which may no longer be the active one.
+// Labels and quarantine checks describe the network the simulation ran on, which may no longer be the active one. Its signed messages were added on that network, and a chain change drops them from the active stack, so their quarantine compares their chain with that network. Pending messages are checked against the active chain when the confirmation refreshes.
 export async function visualizeSimulatorState(simulationState: SimulationState, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, requestAbortController: AbortController | undefined): Promise<VisualizedSimulatorState> {
 	const simulatedNetwork = simulationState.rpcNetwork
 	const getWeth = async (): Promise<Erc20TokenEntry | undefined> => {
