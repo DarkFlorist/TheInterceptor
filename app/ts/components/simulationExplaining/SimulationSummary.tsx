@@ -933,6 +933,7 @@ type RawTransactionDetailsCardParams = {
 	gasSpent: bigint | undefined
 	transactionIdentifier: bigint
 	isRawTransaction: boolean,
+	nonceSelectedByWallet: boolean,
 }
 
 type GasLimitEditorParams = {
@@ -976,7 +977,7 @@ export function GasLimitEditor({ transactionIdentifier, initialGasLimit, isRawTr
 	</>
 }
 
-export function RawTransactionDetailsCard({ isRawTransaction, transaction, renameAddressCallBack, gasSpent, parsedInputData, addressMetaData, transactionIdentifier }: RawTransactionDetailsCardParams) {
+export function RawTransactionDetailsCard({ isRawTransaction, transaction, renameAddressCallBack, gasSpent, parsedInputData, addressMetaData, transactionIdentifier, nonceSelectedByWallet }: RawTransactionDetailsCardParams) {
 	const showSummary = useSignal<boolean>(false)
 
 	return <div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
@@ -1010,7 +1011,7 @@ export function RawTransactionDetailsCard({ isRawTransaction, transaction, renam
 							<GasLimitEditor transactionIdentifier = { transactionIdentifier } initialGasLimit = { transaction.gas } isRawTransaction = { isRawTransaction } />
 						</dd>
 						<dt>Nonce: </dt>
-						<dd>{ transaction.nonce.toString(10) }</dd>
+						<dd>{ nonceSelectedByWallet ? `${ transaction.nonce.toString(10) } (estimate, your wallet picks the final nonce)` : transaction.nonce.toString(10) }</dd>
 						<dt>Chain</dt>
 						<dd>{ transaction.rpcNetwork.name }</dd>
 						<dt>Unsigned transaction hash</dt>

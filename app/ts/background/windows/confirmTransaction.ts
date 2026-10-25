@@ -19,7 +19,7 @@ import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueReques
 import { replyToInterceptedRequestAfterManifestV2Reconnect } from '../messageSending.js'
 import { attemptQueuedTerminalReplyDelivery, queueTerminalReply, queueTerminalReplyAndAttemptDelivery } from '../terminalReplyDelivery.js'
 import { stringToBytes, keccak256 } from '../../utils/ethereumPrimitives.js'
-import { EthereumBytes32, EthereumQuantity, serialize, type EthereumSendableSignedTransaction, type EthereumUnsignedTransaction } from '../../types/wire-types.js'
+import { EthereumBytes32, EthereumQuantity, serialize, type EthereumAccessList, type EthereumSendableSignedTransaction, type EthereumUnsignedTransaction } from '../../types/wire-types.js'
 import { areEqualUint8Arrays } from '../../utils/typed-arrays.js'
 import type { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
 import { getErrorMessage, JsonRpcResponseError, reportUnexpectedError, isExpectedInfrastructureError, isNewBlockAbort, reportLocalRecovery } from '../../utils/errors.js'
@@ -564,12 +564,15 @@ export const formSendRawTransaction = async(_ethereumClientService: EthereumClie
 	}
 }
 
-export function toCanonicalSendTransactionParams(transaction: EthereumUnsignedTransaction): SendTransactionParams {
+// 'wallet-selects-nonce' omits the nonce so the wallet keeps choosing its next available nonce, which accounts for transactions still pending in its mempool view.
+export type SignerNonceSelection = 'forward-reviewed-nonce' | 'wallet-selects-nonce'
+
+export function toCanonicalSendTransactionParams(transaction: EthereumUnsignedTransaction, nonceSelection: SignerNonceSelection = 'forward-reviewed-nonce'): SendTransactionParams {
 	const common = {
 		type: transaction.type,
 		from: transaction.from,
 		chainId: transaction.chainId,
-		nonce: transaction.nonce,
+		...(nonceSelection === 'wallet-selects-nonce' ? {} : { nonce: transaction.nonce }),
 		gas: transaction.gas,
 		to: transaction.to,
 		value: transaction.value,
@@ -611,23 +614,56 @@ export function toCanonicalSendTransactionParams(transaction: EthereumUnsignedTr
 	}
 }
 
-// `originalRequestParameters` keeps the website's own inputs so refreshes regenerate omitted fields (nonce, gas and fees) against current chain state, while the wallet receives the exact transaction the popup displayed so it cannot sign values the user did not see. Gnosis Safe flows are excluded: they are simulated with zero fees for an external executor, and the Safe resolver either supplies its own signer-facing request or re-validates the direct execution route against the reviewed Safe state.
+// `originalRequestParameters` keeps the website's own inputs so refreshes regenerate omitted fields (nonce, gas and fees) against current chain state, while the wallet receives the transaction the popup displayed so it cannot sign values the user did not see. Gnosis Safe flows are excluded: they are simulated with zero fees for an external executor, and the Safe resolver either supplies its own signer-facing request or re-validates the direct execution route against the reviewed Safe state.
 function getReviewedSignerFacingRequest(pending: PendingTransactionOrSignableMessage): SendTransactionParams | SendRawTransactionParams | SignMessageParams {
 	if (pending.type === 'SignableMessage') return pending.originalRequestParameters
 	if (pending.originalRequestParameters.method !== 'eth_sendTransaction') return pending.originalRequestParameters
 	if (getSafePendingFlow(pending) !== undefined) return pending.originalRequestParameters
 	if (pending.transactionOrMessageCreationStatus !== 'Simulated') return pending.originalRequestParameters
-	return toCanonicalSendTransactionParams(getDisplayedTransaction(pending.transactionToSimulate.transaction, pending.popupVisualisation, pending.transactionIdentifier))
+	const displayedTransaction = getDisplayedTransaction(pending.transactionToSimulate.transaction, pending.popupVisualisation, pending.transactionIdentifier)
+	// The displayed nonce comes from the latest block and cannot see the wallet's pending transactions, so forcing it could replace one of them. A nonce the website supplied is forwarded exactly as displayed; an omitted one stays wallet-selected, and the popup labels it as an estimate.
+	return toCanonicalSendTransactionParams(displayedTransaction, pending.originalRequestParameters.params[0].nonce === undefined ? 'wallet-selects-nonce' : 'forward-reviewed-nonce')
 }
 
-function assertSimulatedTransactionMatchesPrepared(prepared: EthereumUnsignedTransaction, simulated: EthereumSendableSignedTransaction) {
+type AuthorizationWithoutSignature = { readonly chainId: bigint, readonly address: bigint, readonly nonce: bigint }
+
+function areAccessListsEqual(first: EthereumAccessList | undefined, second: EthereumAccessList | undefined) {
+	if (first === undefined || second === undefined) return first === second
+	return first.length === second.length && first.every((entry, index) => {
+		const other = second[index]
+		return other !== undefined
+			&& entry.address === other.address
+			&& entry.storageKeys.length === other.storageKeys.length
+			&& entry.storageKeys.every((storageKey, storageKeyIndex) => storageKey === other.storageKeys[storageKeyIndex])
+	})
+}
+
+// Signature fields are ignored because the simulation adds placeholder signatures to unsigned authorizations; the forwarded request keeps the prepared ones.
+function areAuthorizationsEqualIgnoringSignatures(first: readonly AuthorizationWithoutSignature[] | undefined, second: readonly AuthorizationWithoutSignature[] | undefined) {
+	if (first === undefined || second === undefined) return first === second
+	return first.length === second.length && first.every((authorization, index) => {
+		const other = second[index]
+		return other !== undefined && authorization.chainId === other.chainId && authorization.address === other.address && authorization.nonce === other.nonce
+	})
+}
+
+function areBlobVersionedHashesEqual(first: readonly bigint[] | undefined, second: readonly bigint[] | undefined) {
+	if (first === undefined || second === undefined) return first === second
+	return first.length === second.length && first.every((hash, index) => hash === second[index])
+}
+
+export function assertSimulatedTransactionMatchesPrepared(prepared: EthereumUnsignedTransaction, simulated: EthereumSendableSignedTransaction) {
 	if (simulated.type !== prepared.type
 		|| simulated.from !== prepared.from
 		|| simulated.to !== prepared.to
 		|| simulated.value !== prepared.value
 		|| simulated.gas !== prepared.gas
 		|| simulated.chainId !== prepared.chainId
-		|| !areEqualUint8Arrays(simulated.input, prepared.input)) {
+		|| !areEqualUint8Arrays(simulated.input, prepared.input)
+		|| !areAccessListsEqual('accessList' in simulated ? simulated.accessList : undefined, 'accessList' in prepared ? prepared.accessList : undefined)
+		|| !areAuthorizationsEqualIgnoringSignatures(simulated.type === '7702' ? simulated.authorizationList : undefined, prepared.type === '7702' ? prepared.authorizationList : undefined)
+		|| (simulated.type === '4844' ? simulated.maxFeePerBlobGas : undefined) !== (prepared.type === '4844' ? prepared.maxFeePerBlobGas : undefined)
+		|| !areBlobVersionedHashesEqual(simulated.type === '4844' ? simulated.blobVersionedHashes : undefined, prepared.type === '4844' ? prepared.blobVersionedHashes : undefined)) {
 		throw new Error('The simulated transaction does not match the prepared transaction')
 	}
 }

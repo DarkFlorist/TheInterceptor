@@ -38,11 +38,12 @@ function getForwardedSignerRequest(postedMessages: readonly unknown[]) {
 
 type ChainScenario = {
 	readonly chainNonce: bigint
+	readonly pendingNonce?: bigint
 	readonly preparationBaseFeePerGas: bigint
 	readonly simulationBaseFeePerGas: bigint
 }
 
-// Answers like the shared fake RPC, but reports the sender's on-chain nonce, rejects other nonces like a node would, and changes the base fee after the confirmation was prepared.
+// Answers like the shared fake RPC, but reports the sender's latest and pending nonces, rejects nonces other than the latest one like a node would, and changes the base fee after the confirmation was prepared.
 function createChainScenarioEthereum(scenario: ChainScenario) {
 	let blockRequests = 0
 	const requestHandler = {
@@ -55,7 +56,7 @@ function createChainScenarioEthereum(scenario: ChainScenario) {
 					const baseFeePerGas = blockRequests === 1 ? scenario.preparationBaseFeePerGas : scenario.simulationBaseFeePerGas
 					return modules.serialize(modules.EthereumBlockHeader, { ...fakeBlock, baseFeePerGas })
 				}
-				case 'eth_getTransactionCount': return modules.serialize(modules.EthereumQuantity, scenario.chainNonce)
+				case 'eth_getTransactionCount': return modules.serialize(modules.EthereumQuantity, rpcRequest.params?.[1] === 'pending' ? scenario.pendingNonce ?? scenario.chainNonce : scenario.chainNonce)
 				case 'eth_getBalance': return modules.serialize(modules.EthereumQuantity, 10n ** 21n)
 				case 'eth_simulateV1': {
 					const simulation = modules.EthSimulateV1Result.parse(await fakeRequestHandler.jsonRpcRequest(rpcRequest))
@@ -100,9 +101,8 @@ function getLatestDisplayedTransaction() {
 
 const toHex = (value: bigint) => `0x${ value.toString(16) }`
 
-async function prepareSimulateAndAccept(scenario: ChainScenario, requestedNonce: bigint | undefined) {
+async function prepareSimulateAndAccept(ethereum: ReturnType<typeof createChainScenarioEthereum>, requestIdentifier: typeof uniqueRequestIdentifier, requestedNonce: bigint | undefined) {
 	await browser.storage.local.set({ simulationMode: false })
-	const ethereum = createChainScenarioEthereum(scenario)
 	const transactionParams = SendTransactionParams.parse({
 		method: 'eth_sendTransaction',
 		params: [{
@@ -113,45 +113,51 @@ async function prepareSimulateAndAccept(scenario: ChainScenario, requestedNonce:
 			...(requestedNonce === undefined ? {} : { nonce: toHex(requestedNonce) }),
 		}],
 	})
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 	const postedMessages: unknown[] = []
 	const websiteTabConnections = createApprovedConnections(postedMessages)
 	assert.deepEqual(await modules.openConfirmTransactionDialogForTransaction(
 		ethereum,
 		simulator.tokenPriceService,
-		{ interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier, ...transactionParams },
+		{ interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier: requestIdentifier, ...transactionParams },
 		{ kind: 'transaction', parameters: transactionParams },
 		false,
 		activeAddress,
 		{ websiteOrigin: 'https://example.com', icon: undefined, title: undefined },
 		websiteTabConnections,
 	), { type: 'doNotReply' })
-	const displayed = getLatestDisplayedTransaction()
+	const { displayedTransaction, preparedTransaction } = getLatestDisplayedTransaction()
 	assert.equal(await modules.resolvePendingTransactionOrMessage(ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
-		data: { action: 'accept', uniqueRequestIdentifier, forceSend: false },
+		data: { action: 'accept', uniqueRequestIdentifier: requestIdentifier, forceSend: false },
 	}), true)
 	const signerRequest = getForwardedSignerRequest(postedMessages)
 	const forwardedTransaction = signerRequest.params[0]
 	if (!isRecord(forwardedTransaction)) throw new Error('Missing forwarded transaction parameters')
 	assert.equal(signerRequest.method, 'eth_sendTransaction')
-	const { displayedTransaction } = displayed
 	assert.equal(forwardedTransaction.type, '0x2')
 	assert.equal(forwardedTransaction.from, addressString(displayedTransaction.from.address))
 	assert.equal(forwardedTransaction.to, displayedTransaction.to === undefined ? undefined : addressString(displayedTransaction.to.address))
 	assert.equal(forwardedTransaction.chainId, toHex(displayedTransaction.rpcNetwork.chainId))
-	assert.equal(forwardedTransaction.nonce, toHex(displayedTransaction.nonce))
 	assert.equal(forwardedTransaction.gas, toHex(displayedTransaction.gas))
 	assert.equal(forwardedTransaction.value, toHex(displayedTransaction.value))
 	assert.equal(forwardedTransaction.maxFeePerGas, toHex(displayedTransaction.maxFeePerGas))
 	assert.equal(forwardedTransaction.maxPriorityFeePerGas, toHex(displayedTransaction.maxPriorityFeePerGas))
+	assert.deepEqual(forwardedTransaction.accessList, [])
 	assert.equal(forwardedTransaction.data, '0x')
 	assert.equal(displayedTransaction.input.length, 0)
-	return displayed
+	if (requestedNonce === undefined) {
+		// An omitted nonce stays wallet-selected so the wallet can account for its own pending transactions.
+		assert.equal('nonce' in forwardedTransaction, false)
+	} else {
+		assert.equal(forwardedTransaction.nonce, toHex(displayedTransaction.nonce))
+	}
+	return { displayedTransaction, preparedTransaction, websiteTabConnections }
 }
 
-test('forwards the displayed transaction after the confirmation simulation repairs the nonce', async () => {
-	const { displayedTransaction, preparedTransaction } = await prepareSimulateAndAccept({ chainNonce: 0n, preparationBaseFeePerGas: 1n, simulationBaseFeePerGas: 1n }, 7n)
+test('forwards the displayed nonce after the simulation repairs a nonce the website supplied', async () => {
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	const ethereum = createChainScenarioEthereum({ chainNonce: 0n, preparationBaseFeePerGas: 1n, simulationBaseFeePerGas: 1n })
+	const { displayedTransaction, preparedTransaction } = await prepareSimulateAndAccept(ethereum, uniqueRequestIdentifier, 7n)
 	assert.equal(preparedTransaction.nonce, 7n)
 	assert.equal(displayedTransaction.nonce, 0n)
 	const [storedRequest] = await modules.getPendingTransactionsAndMessages()
@@ -159,12 +165,59 @@ test('forwards the displayed transaction after the confirmation simulation repai
 })
 
 test('forwards the displayed fees after the base fee changes between preparation and simulation', async () => {
-	const { displayedTransaction, preparedTransaction } = await prepareSimulateAndAccept({ chainNonce: 3n, preparationBaseFeePerGas: 1n, simulationBaseFeePerGas: 100n }, undefined)
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	const ethereum = createChainScenarioEthereum({ chainNonce: 3n, preparationBaseFeePerGas: 1n, simulationBaseFeePerGas: 100n })
+	const { displayedTransaction, preparedTransaction } = await prepareSimulateAndAccept(ethereum, uniqueRequestIdentifier, undefined)
 	if (preparedTransaction.type !== '1559') throw new Error('Expected an EIP-1559 prepared transaction')
 	assert.equal(displayedTransaction.nonce, 3n)
 	assert.notEqual(displayedTransaction.maxFeePerGas, preparedTransaction.maxFeePerGas)
 	const [storedRequest] = await modules.getPendingTransactionsAndMessages()
 	assert.equal(storedRequest?.originalRequestParameters.method === 'eth_sendTransaction' ? storedRequest.originalRequestParameters.params[0].maxFeePerGas : 'missing', undefined)
+})
+
+test('does not force the latest nonce over a pending wallet transaction when the website omitted the nonce', async () => {
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	const ethereum = createChainScenarioEthereum({ chainNonce: 5n, pendingNonce: 6n, preparationBaseFeePerGas: 1n, simulationBaseFeePerGas: 1n })
+	const { displayedTransaction } = await prepareSimulateAndAccept(ethereum, uniqueRequestIdentifier, undefined)
+	// The simulation only sees the latest block, so the displayed nonce is the one a pending wallet transaction already uses.
+	assert.equal(displayedTransaction.nonce, 5n)
+})
+
+test('leaves nonce selection to the wallet for two sends accepted before either is mined', async () => {
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	const ethereum = createChainScenarioEthereum({ chainNonce: 5n, preparationBaseFeePerGas: 1n, simulationBaseFeePerGas: 1n })
+	const firstRequestIdentifier = { ...uniqueRequestIdentifier, requestId: 21 }
+	const secondRequestIdentifier = { ...uniqueRequestIdentifier, requestId: 22 }
+	const firstSend = await prepareSimulateAndAccept(ethereum, firstRequestIdentifier, undefined)
+	assert.equal(await modules.resolvePendingTransactionOrMessage(ethereum, simulator.tokenPriceService, firstSend.websiteTabConnections, {
+		method: 'popup_confirmDialog',
+		data: { action: 'signerIncluded', signerReply: `0x${ '12'.repeat(32) }`, uniqueRequestIdentifier: firstRequestIdentifier },
+	}), true)
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	const secondSend = await prepareSimulateAndAccept(ethereum, secondRequestIdentifier, undefined)
+	// Both previews estimate the same latest nonce; forwarding it would make the second send replace the first.
+	assert.equal(firstSend.displayedTransaction.nonce, 5n)
+	assert.equal(secondSend.displayedTransaction.nonce, 5n)
+})
+
+test('the simulated transaction guard compares access lists and EIP-7702 authorizations but ignores placeholder signatures', () => {
+	const authorization = { chainId: 1n, address: recipientAddress, nonce: 4n }
+	const prepared = { ...unsignedTransaction, type: '7702' as const, accessList: [{ address: recipientAddress, storageKeys: [1n] }], authorizationList: [authorization] }
+	const simulated = { ...prepared, r: 0n, s: 0n, yParity: 'even' as const, hash: 1n, authorizationList: [{ ...authorization, r: 0n, s: 0n, yParity: 'even' as const }] }
+	modules.assertSimulatedTransactionMatchesPrepared(prepared, simulated)
+	modules.assertSimulatedTransactionMatchesPrepared(prepared, { ...simulated, nonce: 9n, maxFeePerGas: 9n, maxPriorityFeePerGas: 9n })
+	const mismatches = [
+		{ ...simulated, accessList: [{ address: recipientAddress, storageKeys: [2n] }] },
+		{ ...simulated, accessList: [] },
+		{ ...simulated, authorizationList: [{ ...authorization, address: activeAddress, r: 0n, s: 0n, yParity: 'even' as const }] },
+		{ ...simulated, authorizationList: [{ ...authorization, nonce: 5n, r: 0n, s: 0n, yParity: 'even' as const }] },
+		{ ...simulated, authorizationList: [] },
+		{ ...simulated, gas: unsignedTransaction.gas + 1n },
+		{ ...simulated, input: new Uint8Array([1]) },
+	]
+	for (const mismatch of mismatches) {
+		assert.throws(() => modules.assertSimulatedTransactionMatchesPrepared(prepared, mismatch), /does not match the prepared transaction/u)
+	}
 })
 
 test('refreshing a signer-mode confirmation regenerates the nonce the website did not specify', async () => {

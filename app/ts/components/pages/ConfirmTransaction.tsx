@@ -101,6 +101,14 @@ export function getAddressBookEntryForEdit(clickedEntry: AddressBookEntry, addre
 
 const HALF_HEADER_HEIGHT = 48 / 2
 
+// Signing-mode requests that omit a nonce are forwarded without one, so the wallet picks the final nonce; Safe proposals are signed as typed data and never send this transaction.
+function isNonceSelectedByWallet(pending: SimulatedPendingTransaction, safeFlow: ReturnType<typeof getSafeTransactionPendingFlow>) {
+	return !pending.simulationMode
+		&& safeFlow?.kind !== 'proposal'
+		&& pending.originalRequestParameters.method === 'eth_sendTransaction'
+		&& pending.originalRequestParameters.params[0].nonce === undefined
+}
+
 export function shouldDisableSignableMessageConfirm(params: {
 	isValidMessage: boolean
 	canSignMessage: boolean
@@ -463,7 +471,7 @@ function SuccessfulTransactionCardContent(param: SuccessfulTransactionCardConten
 					/>
 				</> }
 
-				<RawTransactionDetailsCard isRawTransaction = { simTx.originalRequestParameters.method === 'eth_sendRawTransaction' } transaction = { simTx.transaction } transactionIdentifier = { simTx.transactionIdentifier } parsedInputData = { simTx.parsedInputData } renameAddressCallBack = { param.renameAddressCallBack } gasSpent = { 'gasSpent' in simTx ? simTx.gasSpent : undefined } addressMetaData = { addressMetaData } />
+				<RawTransactionDetailsCard isRawTransaction = { simTx.originalRequestParameters.method === 'eth_sendRawTransaction' } transaction = { simTx.transaction } transactionIdentifier = { simTx.transactionIdentifier } parsedInputData = { simTx.parsedInputData } renameAddressCallBack = { param.renameAddressCallBack } gasSpent = { 'gasSpent' in simTx ? simTx.gasSpent : undefined } addressMetaData = { addressMetaData } nonceSelectedByWallet = { isNonceSelectedByWallet(currentPendingTransaction, safeFlow) } />
 
 				{ safeFlow?.kind !== 'proposal' ? <></> : <SafeProposalSigningRequestCard
 					safeTransaction = { safeFlow.pending.safeTransaction }
