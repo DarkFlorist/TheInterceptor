@@ -87,7 +87,10 @@ function hasWrongSenderNonce(call: unknown, chainNonce: bigint) {
 	return BigInt(call.from) === activeAddress && BigInt(call.nonce) !== chainNonce
 }
 
-function getLatestDisplayedTransaction() {
+async function getLatestDisplayedTransaction() {
+	const { getSignerNonce } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
+	const { getNonceDisplayText } = await import('../../app/ts/components/simulationExplaining/SimulationSummary.js')
+	const { getSafeTransactionPendingFlow } = await import('../../app/ts/safe/safePendingFlow.js')
 	const popupUpdate = browserMock.sentMessages.findLast((message) => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions')
 	const [displayedRequest] = UpdateConfirmTransactionDialogPendingTransactions.parse(popupUpdate).data.pendingTransactionAndSignableMessages
 	if (displayedRequest?.type !== 'Transaction' || displayedRequest.transactionOrMessageCreationStatus !== 'Simulated') throw new Error('The popup did not receive a simulated transaction')
@@ -96,7 +99,9 @@ function getLatestDisplayedTransaction() {
 		.flatMap((block) => block.simulatedAndVisualizedTransactions)
 		.find((transaction) => transaction.transactionIdentifier === displayedRequest.transactionIdentifier)?.transaction
 	if (displayedTransaction?.type !== '1559') throw new Error('The popup did not display the reviewed EIP-1559 transaction')
-	return { displayedTransaction, preparedTransaction: displayedRequest.transactionToSimulate.transaction }
+	// The same helpers the raw-transaction card uses to render the nonce row.
+	const displayedNonceText = getNonceDisplayText(displayedTransaction.nonce, getSignerNonce(displayedRequest, getSafeTransactionPendingFlow(displayedRequest)))
+	return { displayedTransaction, displayedNonceText, preparedTransaction: displayedRequest.transactionToSimulate.transaction }
 }
 
 const toHex = (value: bigint) => `0x${ value.toString(16) }`
@@ -125,7 +130,7 @@ async function prepareSimulateAndAccept(ethereum: ReturnType<typeof createChainS
 		{ websiteOrigin: 'https://example.com', icon: undefined, title: undefined },
 		websiteTabConnections,
 	), { type: 'doNotReply' })
-	const { displayedTransaction, preparedTransaction } = getLatestDisplayedTransaction()
+	const { displayedTransaction, displayedNonceText, preparedTransaction } = await getLatestDisplayedTransaction()
 	assert.equal(await modules.resolvePendingTransactionOrMessage(ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
 		data: { action: 'accept', uniqueRequestIdentifier: requestIdentifier, forceSend: false },
@@ -148,20 +153,33 @@ async function prepareSimulateAndAccept(ethereum: ReturnType<typeof createChainS
 	if (requestedNonce === undefined) {
 		// An omitted nonce stays wallet-selected so the wallet can account for its own pending transactions.
 		assert.equal('nonce' in forwardedTransaction, false)
+		assert.equal(displayedNonceText, `${ displayedTransaction.nonce.toString(10) } (estimate, your wallet picks the final nonce)`)
 	} else {
-		assert.equal(forwardedTransaction.nonce, toHex(displayedTransaction.nonce))
+		// A requested nonce is forwarded unchanged, and the popup shows that nonce first.
+		assert.equal(forwardedTransaction.nonce, toHex(requestedNonce))
+		assert.equal(displayedNonceText.split(' ')[0], requestedNonce.toString(10))
 	}
-	return { displayedTransaction, preparedTransaction, websiteTabConnections }
+	return { displayedTransaction, displayedNonceText, preparedTransaction, websiteTabConnections }
 }
 
-test('forwards the displayed nonce after the simulation repairs a nonce the website supplied', async () => {
+test('forwards a requested future nonce unchanged instead of the simulation-repaired latest nonce', async () => {
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
-	const ethereum = createChainScenarioEthereum({ chainNonce: 0n, preparationBaseFeePerGas: 1n, simulationBaseFeePerGas: 1n })
-	const { displayedTransaction, preparedTransaction } = await prepareSimulateAndAccept(ethereum, uniqueRequestIdentifier, 7n)
-	assert.equal(preparedTransaction.nonce, 7n)
-	assert.equal(displayedTransaction.nonce, 0n)
+	const ethereum = createChainScenarioEthereum({ chainNonce: 5n, pendingNonce: 6n, preparationBaseFeePerGas: 1n, simulationBaseFeePerGas: 1n })
+	const { displayedTransaction, displayedNonceText, preparedTransaction } = await prepareSimulateAndAccept(ethereum, uniqueRequestIdentifier, 6n)
+	assert.equal(preparedTransaction.nonce, 6n)
+	// The preview repaired the nonce to the latest one, which a pending wallet transaction already uses.
+	assert.equal(displayedTransaction.nonce, 5n)
+	assert.equal(displayedNonceText, '6 (simulated with nonce 5)')
+})
+
+test('forwards an already-mined requested nonce unchanged so a retried transfer cannot execute twice', async () => {
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	const ethereum = createChainScenarioEthereum({ chainNonce: 5n, preparationBaseFeePerGas: 1n, simulationBaseFeePerGas: 1n })
+	const { displayedTransaction, displayedNonceText } = await prepareSimulateAndAccept(ethereum, uniqueRequestIdentifier, 3n)
+	assert.equal(displayedTransaction.nonce, 5n)
+	assert.equal(displayedNonceText, '3 (simulated with nonce 5)')
 	const [storedRequest] = await modules.getPendingTransactionsAndMessages()
-	assert.equal(storedRequest?.originalRequestParameters.method === 'eth_sendTransaction' ? storedRequest.originalRequestParameters.params[0].nonce : undefined, 7n)
+	assert.equal(storedRequest?.originalRequestParameters.method === 'eth_sendTransaction' ? storedRequest.originalRequestParameters.params[0].nonce : undefined, 3n)
 })
 
 test('forwards the displayed fees after the base fee changes between preparation and simulation', async () => {

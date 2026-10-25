@@ -31,6 +31,7 @@ import type { VisualizedPersonalSignRequest } from '../../types/personal-message
 import { identifySignature } from './identifySignature.js'
 import { Collapsible } from '../subcomponents/Collapsible.js'
 import { EnsEventsExplainer, getVisibleEnsEvents } from './customExplainers/EnsEventExplainer.js'
+import { assertNever } from '../../utils/typescript.js'
 
 type Erc20BalanceChangeParams = {
 	erc20TokenBalanceChanges: Erc20TokenBalanceChange[]
@@ -933,7 +934,21 @@ type RawTransactionDetailsCardParams = {
 	gasSpent: bigint | undefined
 	transactionIdentifier: bigint
 	isRawTransaction: boolean,
-	nonceSelectedByWallet: boolean,
+	signerNonce: SignerNonce,
+}
+
+// The nonce the wallet will sign: the simulated one in simulation mode, one the wallet picks for requests that omitted it, or exactly the one the website requested.
+export type SignerNonce = { readonly kind: 'simulated' } | { readonly kind: 'wallet-selected' } | { readonly kind: 'website-requested', readonly nonce: bigint }
+
+export function getNonceDisplayText(simulatedNonce: bigint, signerNonce: SignerNonce) {
+	switch (signerNonce.kind) {
+		case 'simulated': return simulatedNonce.toString(10)
+		case 'wallet-selected': return `${ simulatedNonce.toString(10) } (estimate, your wallet picks the final nonce)`
+		case 'website-requested': return signerNonce.nonce === simulatedNonce
+			? signerNonce.nonce.toString(10)
+			: `${ signerNonce.nonce.toString(10) } (simulated with nonce ${ simulatedNonce.toString(10) })`
+		default: return assertNever(signerNonce)
+	}
 }
 
 type GasLimitEditorParams = {
@@ -977,7 +992,7 @@ export function GasLimitEditor({ transactionIdentifier, initialGasLimit, isRawTr
 	</>
 }
 
-export function RawTransactionDetailsCard({ isRawTransaction, transaction, renameAddressCallBack, gasSpent, parsedInputData, addressMetaData, transactionIdentifier, nonceSelectedByWallet }: RawTransactionDetailsCardParams) {
+export function RawTransactionDetailsCard({ isRawTransaction, transaction, renameAddressCallBack, gasSpent, parsedInputData, addressMetaData, transactionIdentifier, signerNonce }: RawTransactionDetailsCardParams) {
 	const showSummary = useSignal<boolean>(false)
 
 	return <div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
@@ -1011,7 +1026,7 @@ export function RawTransactionDetailsCard({ isRawTransaction, transaction, renam
 							<GasLimitEditor transactionIdentifier = { transactionIdentifier } initialGasLimit = { transaction.gas } isRawTransaction = { isRawTransaction } />
 						</dd>
 						<dt>Nonce: </dt>
-						<dd>{ nonceSelectedByWallet ? `${ transaction.nonce.toString(10) } (estimate, your wallet picks the final nonce)` : transaction.nonce.toString(10) }</dd>
+						<dd>{ getNonceDisplayText(transaction.nonce, signerNonce) }</dd>
 						<dt>Chain</dt>
 						<dd>{ transaction.rpcNetwork.name }</dd>
 						<dt>Unsigned transaction hash</dt>

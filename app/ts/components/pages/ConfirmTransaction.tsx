@@ -3,7 +3,7 @@ import { useEffect } from 'preact/hooks'
 import { MessageToPopup, type TransactionConfirmation, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
 import { type CompleteVisualizedSimulation, type EditEnsNamedHashWindowState, type MaybeSimulatedTransaction, type ModifyAddressWindowState, type VisualizedSimulationState, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
 import Hint from '../subcomponents/Hint.js'
-import { GasLimitEditor, RawTransactionDetailsCard, GasFee, TokenLogAnalysisCard, SimulatedInBlockNumber, TransactionCreated, TransactionHeader, TransactionHeaderForFailedToSimulate, TransactionsAccountChangesCard, NonTokenLogAnalysisCard, getSimulationDisplayBlockNumber } from '../simulationExplaining/SimulationSummary.js'
+import { GasLimitEditor, RawTransactionDetailsCard, type SignerNonce, GasFee, TokenLogAnalysisCard, SimulatedInBlockNumber, TransactionCreated, TransactionHeader, TransactionHeaderForFailedToSimulate, TransactionsAccountChangesCard, NonTokenLogAnalysisCard, getSimulationDisplayBlockNumber } from '../simulationExplaining/SimulationSummary.js'
 import { CenterToPageTextSpinner, Spinner } from '../subcomponents/Spinner.js'
 import { AddNewAddress } from './AddNewAddress.js'
 import type { RenameAddressCallBack, RpcConnectionStatus } from '../../types/user-interface-types.js'
@@ -101,12 +101,11 @@ export function getAddressBookEntryForEdit(clickedEntry: AddressBookEntry, addre
 
 const HALF_HEADER_HEIGHT = 48 / 2
 
-// Signing-mode requests that omit a nonce are forwarded without one, so the wallet picks the final nonce; Safe proposals are signed as typed data and never send this transaction.
-function isNonceSelectedByWallet(pending: SimulatedPendingTransaction, safeFlow: ReturnType<typeof getSafeTransactionPendingFlow>) {
-	return !pending.simulationMode
-		&& safeFlow?.kind !== 'proposal'
-		&& pending.originalRequestParameters.method === 'eth_sendTransaction'
-		&& pending.originalRequestParameters.params[0].nonce === undefined
+// Mirrors the background signer request: signing-mode sends forward the website's nonce unchanged or, when it was omitted, let the wallet pick one. Safe proposals are signed as typed data and never send this transaction.
+export function getSignerNonce(pending: SimulatedPendingTransaction, safeFlow: ReturnType<typeof getSafeTransactionPendingFlow>): SignerNonce {
+	if (pending.simulationMode || safeFlow?.kind === 'proposal' || pending.originalRequestParameters.method !== 'eth_sendTransaction') return { kind: 'simulated' }
+	const websiteNonce = pending.originalRequestParameters.params[0].nonce
+	return websiteNonce === undefined ? { kind: 'wallet-selected' } : { kind: 'website-requested', nonce: websiteNonce }
 }
 
 export function shouldDisableSignableMessageConfirm(params: {
@@ -471,7 +470,7 @@ function SuccessfulTransactionCardContent(param: SuccessfulTransactionCardConten
 					/>
 				</> }
 
-				<RawTransactionDetailsCard isRawTransaction = { simTx.originalRequestParameters.method === 'eth_sendRawTransaction' } transaction = { simTx.transaction } transactionIdentifier = { simTx.transactionIdentifier } parsedInputData = { simTx.parsedInputData } renameAddressCallBack = { param.renameAddressCallBack } gasSpent = { 'gasSpent' in simTx ? simTx.gasSpent : undefined } addressMetaData = { addressMetaData } nonceSelectedByWallet = { isNonceSelectedByWallet(currentPendingTransaction, safeFlow) } />
+				<RawTransactionDetailsCard isRawTransaction = { simTx.originalRequestParameters.method === 'eth_sendRawTransaction' } transaction = { simTx.transaction } transactionIdentifier = { simTx.transactionIdentifier } parsedInputData = { simTx.parsedInputData } renameAddressCallBack = { param.renameAddressCallBack } gasSpent = { 'gasSpent' in simTx ? simTx.gasSpent : undefined } addressMetaData = { addressMetaData } signerNonce = { getSignerNonce(currentPendingTransaction, safeFlow) } />
 
 				{ safeFlow?.kind !== 'proposal' ? <></> : <SafeProposalSigningRequestCard
 					safeTransaction = { safeFlow.pending.safeTransaction }

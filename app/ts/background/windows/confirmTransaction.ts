@@ -614,15 +614,18 @@ export function toCanonicalSendTransactionParams(transaction: EthereumUnsignedTr
 	}
 }
 
-// `originalRequestParameters` keeps the website's own inputs so refreshes regenerate omitted fields (nonce, gas and fees) against current chain state, while the wallet receives the transaction the popup displayed so it cannot sign values the user did not see. Gnosis Safe flows are excluded: they are simulated with zero fees for an external executor, and the Safe resolver either supplies its own signer-facing request or re-validates the direct execution route against the reviewed Safe state.
+// `originalRequestParameters` keeps the website's own inputs so refreshes regenerate omitted fields (nonce, gas and fees) against current chain state, while the wallet receives the reviewed transaction with the fees the popup displayed so it cannot sign values the user did not see. Gnosis Safe flows are excluded: they are simulated with zero fees for an external executor, and the Safe resolver either supplies its own signer-facing request or re-validates the direct execution route against the reviewed Safe state.
 function getReviewedSignerFacingRequest(pending: PendingTransactionOrSignableMessage): SendTransactionParams | SendRawTransactionParams | SignMessageParams {
 	if (pending.type === 'SignableMessage') return pending.originalRequestParameters
 	if (pending.originalRequestParameters.method !== 'eth_sendTransaction') return pending.originalRequestParameters
 	if (getSafePendingFlow(pending) !== undefined) return pending.originalRequestParameters
 	if (pending.transactionOrMessageCreationStatus !== 'Simulated') return pending.originalRequestParameters
-	const displayedTransaction = getDisplayedTransaction(pending.transactionToSimulate.transaction, pending.popupVisualisation, pending.transactionIdentifier)
-	// The displayed nonce comes from the latest block and cannot see the wallet's pending transactions, so forcing it could replace one of them. A nonce the website supplied is forwarded exactly as displayed; an omitted one stays wallet-selected, and the popup labels it as an estimate.
-	return toCanonicalSendTransactionParams(displayedTransaction, pending.originalRequestParameters.params[0].nonce === undefined ? 'wallet-selects-nonce' : 'forward-reviewed-nonce')
+	const reviewedTransaction = getReviewedTransactionForSigning(pending.transactionToSimulate.transaction, pending.popupVisualisation, pending.transactionIdentifier)
+	// The simulator repairs nonces against the latest block only for its preview, so its nonce is never forwarded: an omitted nonce stays wallet-selected because the wallet can see its own pending transactions, and a nonce the website supplied is forwarded unchanged so its ordering and replay protection hold. The popup shows the nonce that will be signed and notes a different simulated one.
+	const websiteNonce = pending.originalRequestParameters.params[0].nonce
+	if (websiteNonce === undefined) return toCanonicalSendTransactionParams(reviewedTransaction, 'wallet-selects-nonce')
+	if (reviewedTransaction.nonce !== websiteNonce) throw new Error('The reviewed transaction nonce does not match the nonce the website requested')
+	return toCanonicalSendTransactionParams(reviewedTransaction, 'forward-reviewed-nonce')
 }
 
 type AuthorizationWithoutSignature = { readonly chainId: bigint, readonly address: bigint, readonly nonce: bigint }
@@ -668,8 +671,8 @@ export function assertSimulatedTransactionMatchesPrepared(prepared: EthereumUnsi
 	}
 }
 
-// The confirmation simulation repairs a stale nonce and re-derives interceptor-filled fees for the current base fee, and the popup displays that simulated transaction. Forwarding it, rather than the prepared one or a nonce the simulation rejected, keeps "the wallet signs what was displayed" true; only the nonce and fee fields may differ, and the prepared unsigned authorization list is kept because the simulated one carries placeholder signatures.
-function getDisplayedTransaction(prepared: EthereumUnsignedTransaction, popupVisualisation: ConfirmTransactionTransactionSingleVisualization, transactionIdentifier: bigint): EthereumUnsignedTransaction {
+// The confirmation simulation re-derives interceptor-filled fees for the current base fee, and the popup displays those fees, so the wallet receives them instead of the prepared ones. The simulation may also repair the nonce for its preview, so the nonce is the only other field allowed to differ and is never taken from it. The prepared unsigned authorization list is kept because the simulated one carries placeholder signatures.
+function getReviewedTransactionForSigning(prepared: EthereumUnsignedTransaction, popupVisualisation: ConfirmTransactionTransactionSingleVisualization, transactionIdentifier: bigint): EthereumUnsignedTransaction {
 	// A failed simulation displays the prepared transaction itself.
 	if (popupVisualisation.statusCode !== 'success') return prepared
 	const simulated = popupVisualisation.data.simulationState.simulationStateInput
@@ -678,11 +681,11 @@ function getDisplayedTransaction(prepared: EthereumUnsignedTransaction, popupVis
 	if (simulated === undefined) throw new Error('The reviewed transaction is missing from its confirmation simulation')
 	assertSimulatedTransactionMatchesPrepared(prepared, simulated)
 	switch (prepared.type) {
-		case 'legacy': return simulated.type === 'legacy' ? { ...prepared, nonce: simulated.nonce, gasPrice: simulated.gasPrice } : prepared
-		case '2930': return simulated.type === '2930' ? { ...prepared, nonce: simulated.nonce, gasPrice: simulated.gasPrice } : prepared
-		case '1559': return simulated.type === '1559' ? { ...prepared, nonce: simulated.nonce, maxFeePerGas: simulated.maxFeePerGas, maxPriorityFeePerGas: simulated.maxPriorityFeePerGas } : prepared
-		case '4844': return simulated.type === '4844' ? { ...prepared, nonce: simulated.nonce, maxFeePerGas: simulated.maxFeePerGas, maxPriorityFeePerGas: simulated.maxPriorityFeePerGas } : prepared
-		case '7702': return simulated.type === '7702' ? { ...prepared, nonce: simulated.nonce, maxFeePerGas: simulated.maxFeePerGas, maxPriorityFeePerGas: simulated.maxPriorityFeePerGas } : prepared
+		case 'legacy': return simulated.type === 'legacy' ? { ...prepared, gasPrice: simulated.gasPrice } : prepared
+		case '2930': return simulated.type === '2930' ? { ...prepared, gasPrice: simulated.gasPrice } : prepared
+		case '1559': return simulated.type === '1559' ? { ...prepared, maxFeePerGas: simulated.maxFeePerGas, maxPriorityFeePerGas: simulated.maxPriorityFeePerGas } : prepared
+		case '4844': return simulated.type === '4844' ? { ...prepared, maxFeePerGas: simulated.maxFeePerGas, maxPriorityFeePerGas: simulated.maxPriorityFeePerGas } : prepared
+		case '7702': return simulated.type === '7702' ? { ...prepared, maxFeePerGas: simulated.maxFeePerGas, maxPriorityFeePerGas: simulated.maxPriorityFeePerGas } : prepared
 		default: return assertNever(prepared)
 	}
 }
