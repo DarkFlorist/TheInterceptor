@@ -417,17 +417,14 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 	const identifiedMethod = providerHandler.method
 	if (identifiedMethod !== 'notProviderMethod') {
 		if (port === undefined) return
-		if (initialSettings === undefined) {
-			const providerHandlerReturn = await providerHandler.func(simulationServicesOwner, websiteTabConnections, port, request, 'hasAccess', undefined)
-			if (providerHandlerReturn.type === 'doNotReply') return
-			const message: InpageScriptRequest = { uniqueRequestIdentifier: request.uniqueRequestIdentifier, ...providerHandlerReturn }
-			return replyToInterceptedRequest(websiteTabConnections, message)
-		}
-		const initialActiveAddress = await getActiveAddressForRequest(initialSettings, websiteTabConnections, socket.tabId)
+		// Website approval is read from the same snapshot whether or not the RPC configuration is readable, so an unapproved site stays unapproved while settings are unavailable.
+		const { websiteAccess } = initialSnapshot
 		const providerCallbackApproval = request.method === 'eth_accounts_reply'
 			? 'hasAccess'
-			: getWebsiteAccessApprovalState(initialSettings.websiteAccess, websiteOrigin)
-		const providerCallbackActiveAddress = initialActiveAddress !== undefined && getWebsiteAddressAccessApprovalState(initialSettings.websiteAccess, websiteOrigin, initialActiveAddress) === 'hasAccess'
+			: getWebsiteAccessApprovalState(websiteAccess, websiteOrigin)
+		// The active address is resolved on the active RPC network's chain; without one no address is disclosed to the callback.
+		const initialActiveAddress = initialSettings === undefined ? undefined : await getActiveAddressForRequest(initialSettings, websiteTabConnections, socket.tabId)
+		const providerCallbackActiveAddress = initialActiveAddress !== undefined && getWebsiteAddressAccessApprovalState(websiteAccess, websiteOrigin, initialActiveAddress) === 'hasAccess'
 			? initialActiveAddress.address
 			: undefined
 		const providerHandlerReturn = await providerHandler.func(simulationServicesOwner, websiteTabConnections, port, request, providerCallbackApproval, providerCallbackActiveAddress)

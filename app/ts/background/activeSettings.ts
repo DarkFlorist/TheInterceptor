@@ -10,7 +10,7 @@ import type { WebsiteAccessUpdate } from './accessManagement.js'
 import { reconcileWebsiteApprovalAccesses, finishWebsiteAccessUpdate, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts } from './accessManagement.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
-import { captureRpcNetwork, changeSimulationMode, getRequiredSettings, getSettingsForCapturedRpcNetwork, getSettingsSnapshot, requireSettings, setUseSignersAddressAsActiveAddress, trackPreviousActiveAddressForMakeMeRichList } from './settings.js'
+import { applyCommittedSettingsTransition, captureRpcNetwork, changeSimulationMode, getRequiredSettings, getSettingsForCapturedRpcNetwork, getSettingsSnapshot, requireSettings, setUseSignersAddressAsActiveAddress, type SimulationModeChanges, trackPreviousActiveAddressForMakeMeRichList } from './settings.js'
 import { updateTransactionState, type RpcConfigurationState } from './storageVariables.js'
 import type { Settings } from '../types/interceptor-messages.js'
 import type { ActiveAddressSelection } from '../utils/activeAddressSelection.js'
@@ -105,20 +105,21 @@ async function publishCommittedSettingsTransition(
 	await sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, updatedSettings)
 }
 
-function applyActiveSettingsTransition(previousSettings: Settings, transition: ActiveSettingsTransition): Settings {
-	const { change, simulationSignerSelection } = transition
+function getSimulationModeChanges(change: ActiveAddressAndChainChange): SimulationModeChanges {
+	if (change.simulationMode) {
+		return {
+			simulationMode: change.simulationMode,
+			...('activeAddress' in change ? { activeSimulationAddress: change.activeAddress } : {}),
+			...(change.rpcNetwork !== undefined ? { rpcNetwork: change.rpcNetwork } : {}),
+		}
+	}
+	if ('activeAddress' in change && change.signingAddressSelection === undefined) throw new Error('Signing address changes must identify whether the selection is the signer or a Safe.')
 	const selectsSafe = change.signingAddressSelection === 'safe'
 	return {
-		...previousSettings,
 		simulationMode: change.simulationMode,
-		...(change.rpcNetwork === undefined ? {} : { activeRpcNetwork: change.rpcNetwork }),
-		...(change.simulationMode && 'activeAddress' in change ? { activeSimulationAddress: change.activeAddress } : {}),
-		...(!change.simulationMode && !selectsSafe && 'activeAddress' in change ? { activeSigningAddress: change.activeAddress } : {}),
-		...(!change.simulationMode && 'activeAddress' in change ? { activeSigningSafeAddress: selectsSafe ? change.activeAddress : undefined } : {}),
-		...(simulationSignerSelection === undefined ? {} : {
-			useSignersAddressAsActiveAddress: simulationSignerSelection.useSignerAddress,
-			...(simulationSignerSelection.useSignerAddress ? { activeSigningAddress: simulationSignerSelection.signerAddress } : {}),
-		}),
+		...(!selectsSafe && 'activeAddress' in change ? { activeSigningAddress: change.activeAddress } : {}),
+		...('activeAddress' in change ? { activeSigningSafeAddress: selectsSafe ? change.activeAddress : undefined } : {}),
+		...(change.rpcNetwork !== undefined ? { rpcNetwork: change.rpcNetwork } : {}),
 	}
 }
 
@@ -167,25 +168,15 @@ async function runActiveSettingsChange(
 			}
 			if (change.simulationMode && change.activeAddress !== undefined) await keepTrackOfPreviousAddressForRichList(previousSettings)
 
-			if (change.simulationMode) {
-				await changeSimulationMode({
-					simulationMode: change.simulationMode,
-					...('activeAddress' in change ? { activeSimulationAddress: change.activeAddress } : {}),
-					...(change.rpcNetwork !== undefined ? { rpcNetwork: change.rpcNetwork } : {}),
-				})
-			} else {
-				if ('activeAddress' in change && change.signingAddressSelection === undefined) throw new Error('Signing address changes must identify whether the selection is the signer or a Safe.')
-				const selectsSafe = change.signingAddressSelection === 'safe'
-				await changeSimulationMode({
-					simulationMode: change.simulationMode,
-					...(!selectsSafe && 'activeAddress' in change ? { activeSigningAddress: change.activeAddress } : {}),
-					...('activeAddress' in change ? { activeSigningSafeAddress: selectsSafe ? change.activeAddress : undefined } : {}),
-					...(change.rpcNetwork !== undefined ? { rpcNetwork: change.rpcNetwork } : {}),
-				})
-			}
+			const simulationModeChanges = getSimulationModeChanges(change)
+			await changeSimulationMode(simulationModeChanges)
 
-			const expectedSettings = applyActiveSettingsTransition(previousSettings, transition)
-			const updatedSettings = await getSettingsForCapturedRpcNetwork(captureRpcNetwork(expectedSettings))
+			// settings.ts owns how the committed writes map onto Settings. Its projection pins the committed RPC network and is published only when the committed settings cannot be read back from storage, because the writes above have already succeeded.
+			const committedSettings = applyCommittedSettingsTransition(previousSettings, {
+				simulationModeChanges,
+				...(transition.simulationSignerSelection === undefined ? {} : { useSignersAddressAsActiveAddress: transition.simulationSignerSelection.useSignerAddress }),
+			})
+			const updatedSettings = await getSettingsForCapturedRpcNetwork(captureRpcNetwork(committedSettings))
 			try {
 				// The preference belongs to the committed selection, even if later provider preparation fails.
 				if (transition.signingPreference !== undefined) await rememberSigningAddressSelection(transition.signingPreference)

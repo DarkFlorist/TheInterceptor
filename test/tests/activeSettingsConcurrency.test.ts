@@ -28,6 +28,33 @@ function pauseAfterFirstStorageWrite(key: string) {
 	return started.promise
 }
 
+describe('active settings transition projection', () => {
+	const signerAddress = 0x5555555555555555555555555555555555555555n
+	const safeAddress = 0x6666666666666666666666666666666666666666n
+	const projectedRpcNetwork: RpcEntry = { name: 'Projected network', chainId: 10n, httpsRpc: 'https://projected.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: true }
+	test.each([
+		{ name: 'simulation address and network', simulationModeChanges: { simulationMode: true, activeSimulationAddress: secondAddress.address, rpcNetwork: projectedRpcNetwork }, useSignersAddressAsActiveAddress: undefined },
+		{ name: 'simulation using the signer address', simulationModeChanges: { simulationMode: true }, useSignersAddressAsActiveAddress: true },
+		{ name: 'signing Safe selection', simulationModeChanges: { simulationMode: false, activeSigningSafeAddress: safeAddress }, useSignersAddressAsActiveAddress: undefined },
+		{ name: 'signing signer selection', simulationModeChanges: { simulationMode: false, activeSigningAddress: signerAddress, activeSigningSafeAddress: undefined }, useSignersAddressAsActiveAddress: false },
+	] as const)('projects the $name transition exactly as storage reads it back', async ({ simulationModeChanges, useSignersAddressAsActiveAddress }) => {
+		installBrowserMock()
+		const { applyCommittedSettingsTransition, changeSimulationMode, getRequiredSettings, setRpcList, setUseSignersAddressAsActiveAddress } = await loadModules()
+		const previousSettings = await getRequiredSettings()
+		await setRpcList([previousSettings.activeRpcNetwork, projectedRpcNetwork])
+		await changeSimulationMode({ simulationMode: !simulationModeChanges.simulationMode, activeSigningSafeAddress: safeAddress })
+		const settingsBeforeTransition = await getRequiredSettings()
+
+		if (useSignersAddressAsActiveAddress !== undefined) await setUseSignersAddressAsActiveAddress(useSignersAddressAsActiveAddress, signerAddress)
+		await changeSimulationMode(simulationModeChanges)
+
+		expect(applyCommittedSettingsTransition(settingsBeforeTransition, {
+			simulationModeChanges,
+			...(useSignersAddressAsActiveAddress === undefined ? {} : { useSignersAddressAsActiveAddress }),
+		})).toEqual(await getRequiredSettings())
+	})
+})
+
 describe('active settings concurrency', () => {
 	test('does not install a requested RPC or mutate services after settings validation fails', async () => {
 		installBrowserMock()

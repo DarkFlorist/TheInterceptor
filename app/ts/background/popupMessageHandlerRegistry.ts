@@ -36,7 +36,7 @@ export type PopupMessageHandler = (context: PopupMessageDispatcherContext, reque
 export type PopupMessageHandlerMap = Record<PopupMessage['method'], PopupMessageHandler>
 export type PopupReadyMessageDispatcherContext = Omit<PopupMessageDispatcherContext, 'settings'> & { readonly settings: Settings }
 
-type PopupAdmissionMode = 'settings' | 'recovery' | 'rpc-configuration' | 'rpc-usable' | 'rpc-lifecycle' | 'rpc-snapshot' | 'optional-rpc-snapshot'
+type PopupAdmissionMode = 'settings' | 'recovery' | 'rpc-configuration' | 'rpc-usable' | 'rpc-lifecycle' | 'rpc-snapshot' | 'rpc-snapshot-with-access-prompts' | 'optional-rpc-snapshot'
 
 // This exhaustive table is the single source of truth for popup admission. Adding a protocol method requires choosing its availability and snapshot semantics here.
 const POPUP_ADMISSION_MODE = {
@@ -105,7 +105,7 @@ const POPUP_ADMISSION_MODE = {
 	popup_retryRpcConfiguration: 'recovery',
 	popup_setDisableInterceptor: 'settings',
 	popup_setEnsNameForHash: 'settings',
-	popup_setSafeSimulationSigner: 'rpc-snapshot',
+	popup_setSafeSimulationSigner: 'rpc-snapshot-with-access-prompts',
 	popup_setTransactionOrMessageBlockTimeManipulator: 'rpc-snapshot',
 	popup_set_rpc_list: 'settings',
 	popup_simulateGnosisSafeTransaction: 'rpc-snapshot',
@@ -119,6 +119,7 @@ type PopupMethodForAdmission<Mode extends PopupAdmissionMode> = {
 type PopupRecoveryMethod = PopupMethodForAdmission<'recovery'>
 type PopupOptionalSnapshotMethod = PopupMethodForAdmission<'optional-rpc-snapshot'>
 type PopupSnapshotMethod = PopupMethodForAdmission<'rpc-snapshot'>
+type PopupSnapshotWithAccessPromptsMethod = PopupMethodForAdmission<'rpc-snapshot-with-access-prompts'>
 export type PopupReadyAdmissionMethod = PopupMethodForAdmission<'settings' | 'rpc-configuration' | 'rpc-usable' | 'rpc-lifecycle'>
 
 const popupMethodHandler = createMethodHandlerFor<PopupMessage, PopupMessageDispatcherContext, Promise<PopupReplyOption | void>>()
@@ -130,11 +131,11 @@ export type PopupAdmission =
 // All static availability policy is resolved from POPUP_ADMISSION_MODE here. Optional handlers supply only their request-variant requirements.
 export function admitPopupRequest(context: PopupMessageDispatcherContext, request: PopupMessage, optionalRequirements?: { readonly requiresSettings: boolean, readonly requiresRpc: boolean }): PopupAdmission {
 	const mode = POPUP_ADMISSION_MODE[request.method]
-	const requiresSettings = mode === 'settings' || mode === 'rpc-configuration' || mode === 'rpc-usable' || mode === 'rpc-lifecycle' || mode === 'rpc-snapshot'
+	const requiresSettings = mode === 'settings' || mode === 'rpc-configuration' || mode === 'rpc-usable' || mode === 'rpc-lifecycle' || mode === 'rpc-snapshot' || mode === 'rpc-snapshot-with-access-prompts'
 		|| (mode === 'optional-rpc-snapshot' && optionalRequirements?.requiresSettings === true)
 	const requiresRpcConfiguration = mode === 'rpc-configuration' || mode === 'rpc-usable'
 	const requiresUsableRpcConfiguration = mode === 'rpc-usable'
-	const requiresRpcServices = mode === 'rpc-lifecycle' || mode === 'rpc-snapshot'
+	const requiresRpcServices = mode === 'rpc-lifecycle' || mode === 'rpc-snapshot' || mode === 'rpc-snapshot-with-access-prompts'
 		|| (mode === 'optional-rpc-snapshot' && optionalRequirements?.requiresRpc === true)
 	if (requiresSettings && context.settings === undefined) return { kind: 'rejected', reply: rpcConfigurationUnavailableReply(request) }
 	if (requiresRpcConfiguration && !rpcConfigurationIsReady(context.rpcConfiguration)) return { kind: 'rejected', reply: rpcConfigurationUnavailableReply(request) }
@@ -183,6 +184,24 @@ export function popupSnapshotMessageHandler<Method extends PopupSnapshotMethod>(
 		if (admission.settings === undefined || admission.services === undefined) return rpcConfigurationUnavailableReply(request)
 		const { simulationServicesOwner, resetSimulationState: _resetSimulationState, ...executionContext } = context
 		return await handler({ ...executionContext, settings: admission.settings, services: admission.services }, request)
+	})
+}
+
+// A fixed-provider operation whose committed change can require new website access decisions. The live owner is exposed only so those follow-up access prompts can be opened (matching the other address-book handlers); the operation itself must use the admitted `services` pair.
+export type PopupSnapshotWithAccessPromptsContext = PopupSnapshotContext & {
+	readonly accessPromptSimulationServicesOwner: SimulationServicesOwner
+}
+
+export function popupSnapshotWithAccessPromptsMessageHandler<Method extends PopupSnapshotWithAccessPromptsMethod>(
+	method: Method,
+	handler: (context: PopupSnapshotWithAccessPromptsContext, request: Extract<PopupMessage, { readonly method: Method }>) => Promise<PopupReplyOption | void>,
+): PopupMessageHandler {
+	return popupMethodHandler(method, async (context, request) => {
+		const admission = admitPopupRequest(context, request)
+		if (admission.kind === 'rejected') return admission.reply
+		if (admission.settings === undefined || admission.services === undefined) return rpcConfigurationUnavailableReply(request)
+		const { simulationServicesOwner, resetSimulationState: _resetSimulationState, ...executionContext } = context
+		return await handler({ ...executionContext, settings: admission.settings, services: admission.services, accessPromptSimulationServicesOwner: simulationServicesOwner }, request)
 	})
 }
 

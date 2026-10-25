@@ -300,6 +300,39 @@ describe('content script injection strategy', () => {
 		assert.equal(getReloadCalls(), 4)
 	})
 
+	test('applies disabled-site exclusions while the RPC configuration is unreadable', async () => {
+		const { getRegisteredContentScripts } = installBrowserMock()
+		const { updateContentScriptInjectionStrategyManifestV3 } = await loadModules()
+		await browser.storage.local.set({
+			activeRpcNetwork: 'corrupt',
+			rpcEntries: 'corrupt',
+			websiteAccess: [{ website: { websiteOrigin: 'https://disabled-offline.example', icon: undefined, title: undefined }, interceptorDisabled: true }],
+		})
+
+		await updateContentScriptInjectionStrategyManifestV3()
+
+		assert.equal(getRegisteredContentScripts().length, 2)
+		assert.equal(getRegisteredContentScripts().every(({ excludeMatches }) => excludeMatches?.includes('https://*.disabled-offline.example/*') === true), true)
+	})
+
+	test.each([
+		{ disabled: false, expectedExecuteScriptCalls: 3 },
+		{ disabled: true, expectedExecuteScriptCalls: 0 },
+	])('decides manifest v2 injection from website access while the RPC configuration is unreadable (disabled: $disabled)', async ({ disabled, expectedExecuteScriptCalls }) => {
+		const { getCommittedListener, getExecuteScriptCalls } = installBrowserMock()
+		const { updateContentScriptInjectionStrategyManifestV2 } = await loadModules()
+		await browser.storage.local.set({
+			activeRpcNetwork: 'corrupt',
+			rpcEntries: 'corrupt',
+			websiteAccess: [{ website: { websiteOrigin: 'example.com', icon: undefined, title: undefined }, interceptorDisabled: disabled }],
+		})
+
+		await updateContentScriptInjectionStrategyManifestV2()
+		assert.equal(await getCommittedListener()(committedDetails), false)
+
+		assert.equal(getExecuteScriptCalls(), expectedExecuteScriptCalls)
+	})
+
 	test('keeps existing and obsolete manifest v3 content scripts registered when an update fails', async () => {
 		const { getRegisteredContentScripts, getScriptingOperations, getUnregisteredContentScriptIdBatches } = installBrowserMock({
 			registeredContentScriptIds: ['inpage', 'inpage2', 'obsolete-inpage'],

@@ -3,9 +3,10 @@ import { describe, test } from 'bun:test'
 import { getWalletSwitchRequestId, confirmedSignerOwnership, createDeferredValue, createEthereumWithGetBlockCounter, createPort, createTestSimulationServicesOwner, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
 
 describe('background eth_accounts', () => {
-	test('keeps startup blocking reconciliation available while RPC settings recover', async () => {
+	test('fails closed for tab-level external request blocking while the active RPC network is unreadable', async () => {
 		const browserMock = installBrowserMock({ manifestVersion: 3 })
 		const {
+			areWeBlocking,
 			changeSimulationMode,
 			getRequiredSettings,
 			retryRpcConfiguration,
@@ -51,7 +52,16 @@ describe('background eth_accounts', () => {
 		}
 
 		assert.equal(browserMock.requestBlockingCalls.dynamicRuleUpdates, dynamicUpdatesBeforeRecovery + 1)
-		assert.equal(browserMock.requestBlockingCalls.sessionRuleUpdates, sessionUpdatesBeforeRecovery)
+		// The tab's active address cannot be resolved without the active network, so the approved tab is blocked rather than left open.
+		assert.equal(browserMock.requestBlockingCalls.sessionRuleUpdates, sessionUpdatesBeforeRecovery + 1)
+		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [tabId])
+		const originalAreWeBlockingWarn = console.warn
+		console.warn = () => undefined
+		try {
+			assert.equal(await areWeBlocking(websiteTabConnections, tabId, 'unrelated.example'), true)
+		} finally {
+			console.warn = originalAreWeBlockingWarn
+		}
 
 		await setRpcConfiguration([settings.activeRpcNetwork], settings.activeRpcNetwork)
 		const recoveryServices = createEthereumWithGetBlockCounter({ count: 0 })
@@ -61,7 +71,10 @@ describe('background eth_accounts', () => {
 		)
 		simulationServicesOwner.clear()
 		await retryRpcConfiguration(simulationServicesOwner, async () => await updateDeclarativeNetRequestBlocks(websiteTabConnections))
+		// The recovered active address also blocks this tab, so the rule applied while unavailable is already correct.
 		assert.equal(browserMock.requestBlockingCalls.sessionRuleUpdates, sessionUpdatesBeforeRecovery + 1)
+		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [tabId])
+		assert.equal(await areWeBlocking(websiteTabConnections, tabId, 'unrelated.example'), true)
 	})
 
 	test('completes signer callbacks but rejects RPC requests while configuration and services are unavailable', async () => {
@@ -195,6 +208,43 @@ describe('background eth_accounts', () => {
 			}],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 		assert.deepEqual((await getPendingWatchAssetRequests())[0]?.forwardingStatus, { status: 'completed', accepted: true })
+	})
+
+	test.each([
+		{ websiteAccess: 'unapproved', expectedSignerChain: 1n },
+		{ websiteAccess: 'denied', expectedSignerChain: 1n },
+		{ websiteAccess: 'approved', expectedSignerChain: 5n },
+	] as const)('uses the stored $websiteAccess website approval for signer callbacks while the active RPC network is unreadable', async ({ websiteAccess, expectedSignerChain }) => {
+		installBrowserMock()
+		const { getTabState, handleInterceptedRequest, updateTabState, updateWebsiteAccess, websiteSocketToString } = await loadModules()
+		const websiteOrigin = `https://${ websiteAccess }-signer-callback.example`
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const socket = { tabId: 4321, connectionName: 0n }
+		const { port } = createPort(socket.tabId)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: false, wantsToConnect: true },
+		} }]])
+		if (websiteAccess !== 'unapproved') await updateWebsiteAccess(() => [{ website, access: websiteAccess === 'approved' }])
+		await updateTabState(socket.tabId, (previousState) => ({ ...previousState, signerChain: 1n }))
+		await browser.storage.local.set({ activeRpcNetwork: 'corrupt' })
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+
+		const originalWarn = console.warn
+		console.warn = () => undefined
+		try {
+			await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
+				interceptorRequest: true,
+				interceptorInternalRequest: true,
+				usingInterceptorWithoutSigner: false,
+				uniqueRequestIdentifier: { requestId: 1, requestSocket: socket },
+				method: 'signer_chainChanged',
+				params: ['0x5', 1],
+			}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		} finally {
+			console.warn = originalWarn
+		}
+
+		assert.equal((await getTabState(socket.tabId)).signerChain, expectedSignerChain)
 	})
 
 	test.each(['reset', 'clear'])('keeps the admitted service snapshot for a chain switch when the owner is %s before execution', async (lifecycleChange) => {

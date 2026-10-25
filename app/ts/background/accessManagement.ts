@@ -303,11 +303,16 @@ const getApprovedTabs = (websiteTabConnections: WebsiteTabConnections) => {
 	}
 	return approvedTabs
 }
+// A tab's active address is resolved for the active RPC network's chain, so it cannot be determined while that network is unreadable. Tab blocking is a user privacy control that must not depend on RPC availability: fail closed by blocking every approved tab while any active address is configured to block all external requests.
+const getTabIdsToBlockWithoutActiveRpcNetwork = async (approvedTabIds: ReadonlySet<number>) => {
+	const anyActiveAddressBlocksAll = (await getActiveAddresses()).some((entry) => entry.declarativeNetRequestBlockMode === 'block-all')
+	return anyActiveAddressBlocksAll ? Array.from(approvedTabIds) : []
+}
 const getTabsAndAddressesToBlock = async (websiteTabConnections: WebsiteTabConnections) => {
 	const approvedTabIds = getApprovedTabs(websiteTabConnections)
 	const settings = (await getSettingsSnapshot()).settings
 	const tabIdsToBlock = settings === undefined
-		? undefined
+		? await getTabIdsToBlockWithoutActiveRpcNetwork(approvedTabIds)
 		: (await getActiveAddressesForAllTabs(settings)).filter((tabData) => approvedTabIds.has(tabData.tabId)).filter((tabData) => tabData.activeAddress?.declarativeNetRequestBlockMode === 'block-all').map((tabData) => tabData.tabId)
 	const sitesToBlock = (await getWebsiteAccess()).filter((access) => access.declarativeNetRequestBlockMode === 'block-all').map((acccess) => acccess.website.websiteOrigin)
 	return {
@@ -325,9 +330,9 @@ const updateDeclarativeNetRequestBlocksSemaphore = new Semaphore(1)
 export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: WebsiteTabConnections) {
 	return await updateDeclarativeNetRequestBlocksSemaphore.execute(async () => {
 		const { tabIdsToBlock, sitesToBlock } = await getTabsAndAddressesToBlock(websiteTabConnections)
-		const tabBlockIdentifier = tabIdsToBlock?.join('|')
+		const tabBlockIdentifier = tabIdsToBlock.join('|')
 		const siteBlockIdentifier = sitesToBlock.join('|')
-		const tabBlocksChanged = tabBlockIdentifier !== undefined && tabBlockIdentifier !== previousTabBlockIdentifier
+		const tabBlocksChanged = tabBlockIdentifier !== previousTabBlockIdentifier
 		const siteBlocksChanged = siteBlockIdentifier !== previousSiteBlockIdentifier
 		if (!tabBlocksChanged && !siteBlocksChanged) return
 
@@ -350,7 +355,7 @@ export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: W
 				previousSitesToBlock = sitesToBlock
 				previousSiteBlockIdentifier = siteBlockIdentifier
 			}
-			if (tabBlocksChanged && tabIdsToBlock !== undefined) {
+			if (tabBlocksChanged) {
 				const sessionRuleIds = (await browser.declarativeNetRequest.getSessionRules()).map((rule) => rule.id)
 				if (tabIdsToBlock.length !== 0) {
 					await browser.declarativeNetRequest.updateSessionRules({
@@ -376,7 +381,7 @@ export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: W
 				previousSitesToBlock = sitesToBlock
 				previousSiteBlockIdentifier = siteBlockIdentifier
 			}
-			if (tabBlocksChanged && tabIdsToBlock !== undefined) {
+			if (tabBlocksChanged) {
 				previousTabIdsToBlock = tabIdsToBlock
 				previousTabBlockIdentifier = tabBlockIdentifier
 			}
@@ -400,7 +405,7 @@ export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: W
 export const areWeBlocking = async (websiteTabConnections: WebsiteTabConnections, tabId: number, websiteOrigin: string) => {
 	const { tabIdsToBlock, sitesToBlock } = await getTabsAndAddressesToBlock(websiteTabConnections)
 	if (sitesToBlock.find((blockUrl) => blockUrl === websiteOrigin) !== undefined) return true
-	if (tabIdsToBlock?.find((blockTab) => blockTab === tabId) !== undefined) return true
+	if (tabIdsToBlock.find((blockTab) => blockTab === tabId) !== undefined) return true
 	return false
 }
 

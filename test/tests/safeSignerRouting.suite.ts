@@ -2,7 +2,7 @@ import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHa
 import * as assert from 'assert'
 import { test } from 'bun:test'
 import { encodeFunctionCall } from '../../app/ts/utils/abiRuntime.js'
-import { getLatestUnexpectedError } from '../../app/ts/background/storageVariables.js'
+import { getLatestUnexpectedError, getPendingAccessRequests } from '../../app/ts/background/storageVariables.js'
 import { getRequiredSettings } from '../../app/ts/background/settings.js'
 import { activeAddress, addressString, browserMock, createSafeAddressBookEntry, createSafeTx, createWebsitePort, EIP712Message, ethereum, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, oldTimestamp, pendingTransaction, privateKeyToAccount, recipientAddress, SAFE_EXECUTION_ABI, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, signedTransaction, simulator, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
 
@@ -126,7 +126,8 @@ test('settles a direct signing reply while RPC services are unavailable', async 
 	assert.equal(dappReply.result, modules.EthereumBytes32.serialize(signedTransaction.hash))
 })
 
-test('delivers an already-signed Safe proposal while unavailable and persists its signature after recovery', async () => {
+// Recovery and a popup that reports no decision share one no-response owner, so neither may discard a signature the signer already returned.
+test.each(['recovery', 'popup no-response'] as const)('delivers an already-signed Safe proposal while unavailable and persists its signature on %s', async (settlement) => {
 	const socket = { tabId: 1, connectionName: 45n }
 	const requestIdentifier = { requestId: 84, requestSocket: socket }
 	const messages: unknown[] = []
@@ -208,7 +209,14 @@ test('delivers an already-signed Safe proposal while unavailable and persists it
 	assert.deepEqual(deferredAfterPopupClose?.deferredSafeSignerReply, { signerReply: signature, terminalReplyQueued: true })
 	assert.equal(messages.filter((message) => isRecord(message) && message.method === 'eth_sendTransaction' && message.requestId === requestIdentifier.requestId).length, 1)
 
-	await modules.resolveDeferredSafeSignerReplies({ ethereum: simulator.ethereum, tokenPriceService: simulator.tokenPriceService }, websiteTabConnections)
+	if (settlement === 'recovery') {
+		await modules.resolveDeferredSafeSignerReplies({ ethereum: simulator.ethereum, tokenPriceService: simulator.tokenPriceService }, websiteTabConnections)
+	} else {
+		await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+			method: 'popup_confirmDialog',
+			data: { uniqueRequestIdentifier: requestIdentifier, action: 'noResponse' },
+		})
+	}
 
 	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
 	const [persistedStack] = await modules.getSafeTransactionStacks()
@@ -1322,6 +1330,7 @@ test('changes the Safe simulation signer only after validating current on-chain 
 
 	const reply = await modules.setSafeSimulationSigner(
 		ethereum,
+		createTestSimulationServicesOwner(simulator),
 		await getRequiredSettings(),
 		new Map(),
 		{
@@ -1344,6 +1353,7 @@ test('changes the Safe simulation signer only after validating current on-chain 
 	fakeSafeContract.version = 'invalid-version'
 	const unsupportedVersionFailure = await withSilencedConsole(async () => modules.setSafeSimulationSigner(
 		ethereum,
+		createTestSimulationServicesOwner(simulator),
 		await getRequiredSettings(),
 		new Map(),
 		{
@@ -1393,6 +1403,7 @@ test('refreshes Safe owner metadata and clears a stale simulation signer without
 
 	const reply = await modules.setSafeSimulationSigner(
 		ethereum,
+		createTestSimulationServicesOwner(simulator),
 		await getRequiredSettings(),
 		new Map(),
 		{
@@ -1411,6 +1422,40 @@ test('refreshes Safe owner metadata and clears a stale simulation signer without
 	assert.deepEqual(updatedSafeEntry?.safeSignerAddresses, [recipientAddress])
 	assert.equal(updatedSafeEntry?.safeVersion, fakeSafeContract.version)
 	assert.equal(fakeSafeContract.requestedCodeAddresses.includes(recipientAddress), false)
+})
+
+test('prompts a connected website for access after changing the active Safe simulation signer', async () => {
+	const alternateSigner = 0x1234567890123456789012345678901234567890n
+	fakeSafeContract.owners = [recipientAddress, alternateSigner]
+	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({
+		safeSimulationSignerAddress: recipientAddress,
+		safeSignerAddresses: [recipientAddress, alternateSigner],
+	})])
+	const socket = { tabId: 7, connectionName: 70n }
+	const websiteOrigin = 'https://needs-safe-access.example'
+	const websiteTabConnections = new Map([[socket.tabId, {
+		connections: {
+			[modules.websiteSocketToString(socket)]: { port: createWebsitePort(socket, 0, []), socket, websiteOrigin, approved: false, wantsToConnect: true },
+		},
+	}]])
+
+	const reply = await modules.setSafeSimulationSigner(
+		ethereum,
+		createTestSimulationServicesOwner(simulator),
+		await getRequiredSettings(),
+		websiteTabConnections,
+		{
+			method: 'popup_setSafeSimulationSigner',
+			data: {
+				chainId: fakeRpcNetwork.chainId,
+				safeAddress: activeAddress,
+				safeSimulationSignerAddress: alternateSigner,
+			},
+		},
+	)
+
+	assert.deepEqual(reply, { type: 'SetSafeSimulationSignerReply', ok: true })
+	assert.deepEqual((await getPendingAccessRequests()).map((pendingAccessRequest) => pendingAccessRequest.website.websiteOrigin), [websiteOrigin])
 })
 
 test('routes a completed active Safe execution through its configured signer and rechecks signer changes', async () => {

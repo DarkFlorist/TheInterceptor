@@ -359,6 +359,7 @@ export async function addOrModifyAddressBookEntry(ethereum: EthereumClientServic
 
 export async function setSafeSimulationSigner(
 	ethereum: EthereumClientService,
+	accessPromptSimulationServicesOwner: SimulationServicesOwner,
 	settings: Settings,
 	websiteTabConnections: WebsiteTabConnections,
 	request: SetSafeSimulationSigner,
@@ -418,7 +419,8 @@ export async function setSafeSimulationSigner(
 		}
 	}
 	if (updatedEntry.useAsActiveAddress) {
-		await updateWebsiteApprovalAccesses(undefined, websiteTabConnections, settings, false)
+		// The Safe entry is an active address, so reconcile website approvals against the updated entry and prompt websites that now need an access decision, like the other address-book handlers.
+		await updateWebsiteApprovalAccesses(accessPromptSimulationServicesOwner, websiteTabConnections, settings, true)
 	}
 	await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 	return { type: 'SetSafeSimulationSignerReply' as const, ok: true as const }

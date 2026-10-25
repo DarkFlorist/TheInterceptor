@@ -82,6 +82,8 @@ const SETTINGS_STORAGE_KEYS = [
 	'simulationMode',
 ] as const
 
+const getWebsiteAccessFromStorageItems = async (storedItems: Readonly<Record<string, unknown>>) => sanitizeWebsiteAccess(await getParsedStorageValueOrDefaultFromItems(storedItems, 'websiteAccess', []))
+
 async function getSettingsFromStorageItems(storedItems: Readonly<Record<string, unknown>>, activeRpcNetwork: RpcNetwork): Promise<Settings> {
 	if (defaultRpcs[0] === undefined || defaultActiveAddresses[0] === undefined) throw new Error('default rpc or default address was missing')
 	const defaultPage: Page = { page: 'Home' }
@@ -89,7 +91,7 @@ async function getSettingsFromStorageItems(storedItems: Readonly<Record<string, 
 	const activeSigningSafeAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'activeSigningSafeAddress', undefined))
 	const openedPagePromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'openedPageV2', defaultPage))
 	const useSignersAddressAsActiveAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'useSignersAddressAsActiveAddress', false))
-	const websiteAccessPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'websiteAccess', []).then(sanitizeWebsiteAccess))
+	const websiteAccessPromise = silenceChromeUnCaughtPromise(getWebsiteAccessFromStorageItems(storedItems))
 	const simulationModePromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'simulationMode', defaultSimulationMode))
 	const [activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, simulationMode] = await Promise.all([
 		activeSimulationAddressPromise,
@@ -113,12 +115,20 @@ export function requireSettings(snapshot: { readonly settings: Settings | undefi
 	return snapshot.settings
 }
 
+export type SettingsSnapshot = {
+	readonly settings: Settings | undefined
+	readonly rpcConfiguration: RpcConfigurationState
+	// Website approvals do not depend on the RPC configuration, so access decisions keep using the stored approvals even when `settings` is unavailable. An unreadable store yields no approvals, which fails closed.
+	readonly websiteAccess: WebsiteAccessArray
+}
+
 // Admission boundary: settings and RPC configuration come from one storage read and must travel together through the admitted operation.
-export async function getSettingsSnapshot(): Promise<{ readonly settings: Settings | undefined, readonly rpcConfiguration: RpcConfigurationState }> {
+export async function getSettingsSnapshot(): Promise<SettingsSnapshot> {
 	const { storedItems, rpcConfiguration } = await getRpcConfigurationStateWithStorageSnapshot(SETTINGS_STORAGE_KEYS)
 	const activeRpcNetwork = 'activeRpcNetwork' in rpcConfiguration ? rpcConfiguration.activeRpcNetwork : undefined
 	const settings = activeRpcNetwork === undefined ? undefined : await getSettingsFromStorageItems(storedItems, activeRpcNetwork)
-	return { settings, rpcConfiguration }
+	const websiteAccess = settings === undefined ? await getWebsiteAccessFromStorageItems(storedItems) : settings.websiteAccess
+	return { settings, rpcConfiguration, websiteAccess }
 }
 
 const capturedRpcNetworkMarker = Symbol('capturedRpcNetwork')
@@ -222,7 +232,7 @@ export async function setUseSignersAddressAsActiveAddress(useSignersAddressAsAct
 	})
 }
 
-type SimulationModeChanges = {
+export type SimulationModeChanges = {
 	readonly simulationMode: boolean
 	readonly rpcNetwork?: RpcNetwork
 	readonly activeSimulationAddress?: EthereumAddress
@@ -237,6 +247,19 @@ function getSimulationModeStorageUpdate(changes: SimulationModeChanges) {
 		...'activeSimulationAddress' in changes ? { independentActiveSimulationAddress: changes.activeSimulationAddress } : {},
 		...'activeSigningAddress' in changes ? { activeSigningAddress: changes.activeSigningAddress }: {},
 		...'activeSigningSafeAddress' in changes ? { activeSigningSafeAddress: changes.activeSigningSafeAddress }: {},
+	}
+}
+
+// Settings projection of the two writers above (`setUseSignersAddressAsActiveAddress` and `changeSimulationMode`). It sits beside their storage mappings so this module stays the single owner of how an active-settings transition changes Settings; a field added to SimulationModeChanges must be handled in both places here. `activeSigningAddress` is persisted but is not part of Settings.
+export function applyCommittedSettingsTransition(settings: Settings, transition: { readonly simulationModeChanges: SimulationModeChanges, readonly useSignersAddressAsActiveAddress?: boolean }): Settings {
+	const { simulationModeChanges: changes, useSignersAddressAsActiveAddress } = transition
+	return {
+		...settings,
+		...useSignersAddressAsActiveAddress === undefined ? {} : { useSignersAddressAsActiveAddress },
+		simulationMode: changes.simulationMode,
+		...changes.rpcNetwork ? { activeRpcNetwork: changes.rpcNetwork } : {},
+		...'activeSimulationAddress' in changes ? { activeSimulationAddress: changes.activeSimulationAddress } : {},
+		...'activeSigningSafeAddress' in changes ? { activeSigningSafeAddress: changes.activeSigningSafeAddress } : {},
 	}
 }
 

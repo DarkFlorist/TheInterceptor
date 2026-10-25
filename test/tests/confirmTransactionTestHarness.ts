@@ -113,6 +113,7 @@ export function createBrowserMock() {
 			async update() { return undefined },
 			async create() { return { id: 99 } },
 			async remove() { return undefined },
+			onRemoved: { addListener: () => undefined, removeListener: () => undefined },
 		},
 		action: {
 			async setIcon() { return undefined },
@@ -125,6 +126,12 @@ export function createBrowserMock() {
 			async setTitle() { return undefined },
 			async setBadgeText() { return undefined },
 			async setBadgeBackgroundColor() { return undefined },
+		},
+		declarativeNetRequest: {
+			async getDynamicRules() { return [] },
+			async getSessionRules() { return [] },
+			async updateDynamicRules() { return undefined },
+			async updateSessionRules() { return undefined },
 		},
 	}
 	Object.defineProperty(globalThis, 'browser', { value: browser, configurable: true, writable: true })

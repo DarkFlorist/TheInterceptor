@@ -36,6 +36,7 @@ export function installBrowserMock({ deferFirstChainChangeRemoval = false, manif
 		declarativeNetRequestUpdates: 0,
 		dynamicRuleUpdates: 0,
 		sessionRuleUpdates: 0,
+		blockedSessionTabIds: new Array<number>(),
 		webRequestListenerAdds: 0,
 		webRequestListenerRemovals: 0,
 	}
@@ -111,9 +112,10 @@ export function installBrowserMock({ deferFirstChainChangeRemoval = false, manif
 				requestBlockingCalls.dynamicRuleUpdates += 1
 				return undefined
 			},
-			async updateSessionRules() {
+			async updateSessionRules(update: { readonly addRules?: readonly { readonly condition: { readonly tabIds?: readonly number[] } }[] }) {
 				requestBlockingCalls.declarativeNetRequestUpdates += 1
 				requestBlockingCalls.sessionRuleUpdates += 1
+				requestBlockingCalls.blockedSessionTabIds = (update.addRules ?? []).flatMap((rule) => rule.condition.tabIds ?? [])
 				return undefined
 			},
 		},

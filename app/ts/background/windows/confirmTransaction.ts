@@ -384,6 +384,7 @@ export async function resolveDeferredSafeSignerReplies(services: ConfirmationSer
 }
 
 export async function resolvePendingTransactionOrMessage(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, refreshedSafeSignerSelection?: RefreshedSafeSignerSelection) {
+	if (confirmation.data.action === 'noResponse') return await resolvePendingRequestAsNoResponse(confirmation.data.uniqueRequestIdentifier, { ethereum, tokenPriceService }, websiteTabConnections)
 	let pendingTransactionOrMessage = await getPendingTransactionOrMessageByidentifier(confirmation.data.uniqueRequestIdentifier)
 	if (pendingTransactionOrMessage === undefined) return // no need to resolve as it doesn't exist anymore
 	if (
@@ -474,15 +475,6 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 		await updateConfirmTransactionView(ethereum, tokenPriceService)
 		return false
 	}
-	if (confirmation.data.action === 'noResponse') {
-		const noResponseDelivery = await queueTerminalReplyAndAttemptDelivery(websiteTabConnections, {
-			...pendingTransactionOrMessage.originalRequestParameters,
-			...formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User denied transaction signature'),
-			uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier,
-		})
-		await removePendingRequestAndUpdateView()
-		return noResponseDelivery
-	}
 	if (pendingTransactionOrMessage === undefined || pendingTransactionOrMessage.transactionOrMessageCreationStatus !== 'Simulated') return reply(formRejectMessage(METAMASK_ERROR_BLANKET_ERROR, 'The Interceptor failed to process the transaction'))
 	if (confirmation.data.action === 'reject') return reply(formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User denied transaction signature'))
 	if (!pendingTransactionOrMessage.simulationMode) {
@@ -558,7 +550,7 @@ export async function resolvePendingRequestsForMissingConfirmationWindows(ethere
 const resolveAllPendingTransactionsAndMessageAsNoResponse = async (transactions: readonly PendingTransactionOrSignableMessage[], services: ConfirmationServices | undefined, websiteTabConnections: WebsiteTabConnections) => {
 	for (const transaction of transactions) {
 		try {
-			await resolvePendingTransactionAsNoResponse(transaction, services, websiteTabConnections)
+			await resolvePendingRequestAsNoResponse(transaction.uniqueRequestIdentifier, services, websiteTabConnections)
 		} catch(e) {
 			await reportLocalRecovery(e, { code: 'pending_request_no_response_resolution_failed', message: 'Failed to resolve a pending request as no-response after a popup closed.' })
 			schedulePendingNoResponseRetry(transaction, services, websiteTabConnections)
@@ -566,29 +558,27 @@ const resolveAllPendingTransactionsAndMessageAsNoResponse = async (transactions:
 	}
 }
 
-async function resolvePendingTransactionAsNoResponse(transaction: PendingTransactionOrSignableMessage, services: ConfirmationServices | undefined, websiteTabConnections: WebsiteTabConnections) {
-	const currentTransaction = await getPendingTransactionOrMessageByidentifier(transaction.uniqueRequestIdentifier)
-	if (currentTransaction === undefined) return
-	if (currentTransaction.deferredSafeSignerReply !== undefined) {
-		if (services === undefined) return
+// Single owner of the no-response outcome, whether the popup reports it or the confirmation window disappeared. A Safe signature the signer already returned (`deferredSafeSignerReply`) is settled as signed rather than rejected; settling it needs RPC services, so without them the request stays pending until recovery resolves it. Without a deferred reply the request is rejected, which needs no RPC services.
+async function resolvePendingRequestAsNoResponse(uniqueRequestIdentifier: UniqueRequestIdentifier, services: ConfirmationServices | undefined, websiteTabConnections: WebsiteTabConnections): Promise<boolean | undefined> {
+	const pending = await getPendingTransactionOrMessageByidentifier(uniqueRequestIdentifier)
+	if (pending === undefined) return undefined
+	if (pending.deferredSafeSignerReply !== undefined) {
+		if (services === undefined) return undefined
 		await resolvePendingTransactionOrMessage(services.ethereum, services.tokenPriceService, websiteTabConnections, {
 			method: 'popup_confirmDialog',
-			data: {
-				uniqueRequestIdentifier: currentTransaction.uniqueRequestIdentifier,
-				action: 'signerIncluded',
-				signerReply: currentTransaction.deferredSafeSignerReply.signerReply,
-			},
+			data: { uniqueRequestIdentifier, action: 'signerIncluded', signerReply: pending.deferredSafeSignerReply.signerReply },
 		})
-		const unresolvedTransaction = await getPendingTransactionOrMessageByidentifier(transaction.uniqueRequestIdentifier)
-		if (unresolvedTransaction?.deferredSafeSignerReply !== undefined || unresolvedTransaction === undefined) return
-		return await resolvePendingTransactionAsNoResponse(unresolvedTransaction, services, websiteTabConnections)
+		const unresolvedPending = await getPendingTransactionOrMessageByidentifier(uniqueRequestIdentifier)
+		// A deferred signature that failed validation is dropped from the pending request, which then falls through to the no-response rejection.
+		if (unresolvedPending === undefined || unresolvedPending.deferredSafeSignerReply !== undefined) return undefined
+		return await resolvePendingRequestAsNoResponse(uniqueRequestIdentifier, services, websiteTabConnections)
 	}
 	const delivery = await queueTerminalReplyAndAttemptDelivery(websiteTabConnections, {
-		...currentTransaction.originalRequestParameters,
+		...pending.originalRequestParameters,
 		...formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User denied transaction signature'),
-		uniqueRequestIdentifier: currentTransaction.uniqueRequestIdentifier,
+		uniqueRequestIdentifier,
 	})
-	await removeSettledPendingRequest(currentTransaction, services)
+	await removeSettledPendingRequest(pending, services)
 	return delivery
 }
 
@@ -599,7 +589,7 @@ function schedulePendingNoResponseRetry(transaction: PendingTransactionOrSignabl
 		pendingNoResponseRetryTimers.delete(identifier)
 		void (async () => {
 			try {
-				await resolvePendingTransactionAsNoResponse(transaction, services, websiteTabConnections)
+				await resolvePendingRequestAsNoResponse(transaction.uniqueRequestIdentifier, services, websiteTabConnections)
 			} catch (error) {
 				await reportLocalRecovery(error, { code: 'pending_request_no_response_retry_failed', message: 'Retrying a pending popup-close rejection after a transient failure.' })
 				schedulePendingNoResponseRetry(transaction, services, websiteTabConnections)
