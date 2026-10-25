@@ -3,7 +3,7 @@ import signMessageLibrary from '../fixtures/safe-libraries/SignMessageLib.json'
 import { SAFE_MULTI_SEND_CALL_ONLY, SAFE_SIGN_MESSAGE_LIB } from '../../app/ts/safe/safeDelegateCalls.js'
 import { SAFE_MESSAGE_ABI } from '../../app/ts/safe/safeMessage.js'
 import type { flushPendingTerminalRepliesForSocket as flushPendingTerminalRepliesForSocketType } from '../../app/ts/background/terminalReplyDelivery.js'
-import { encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
+import { decodeCallDataLoose, encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { withSilencedConsole } from './consoleSilence.js'
 import { createSafeTx, SAFE_ABI, safeTxToTypedDataJson } from '../../app/ts/safe/safeCore.js'
 import { SAFE_EXECUTION_ABI } from '../../app/ts/safe/safeExecution.js'
@@ -183,6 +183,8 @@ export async function loadModules() {
 		safeSimulation,
 		safeCore,
 		safeConfirmationPersistence,
+		confirmationDialogUpdates,
+		transactionPreparation,
 	] = await Promise.all([
 		import('../../app/ts/simulation/services/EthereumClientService.js'),
 		import('../../app/ts/simulation/services/priceEstimator.js'),
@@ -205,6 +207,8 @@ export async function loadModules() {
 		import('../../app/ts/safe/safeSimulation.js'),
 		import('../../app/ts/safe/safeCore.js'),
 		import('../../app/ts/background/safeConfirmationPersistence.js'),
+		import('../../app/ts/background/confirmationDialogUpdates.js'),
+		import('../../app/ts/background/transactionPreparation.js'),
 	])
 	const flushPendingTerminalRepliesForSocket: typeof flushPendingTerminalRepliesForSocketType = terminalReplyDelivery.flushPendingTerminalRepliesForSocket
 
@@ -222,8 +226,8 @@ export async function loadModules() {
 		setSafeSimulationSigner: popupMessageHandlers.setSafeSimulationSigner,
 		fetchSimulationStackRequestConfirmation: popupMessageHandlers.fetchSimulationStackRequestConfirmation,
 		resolvePendingTransactionOrMessage: confirmTransaction.resolvePendingTransactionOrMessage,
-		updateConfirmTransactionView: confirmTransaction.updateConfirmTransactionView,
-		formEthSendTransaction: confirmTransaction.formEthSendTransaction,
+		updateConfirmTransactionView: confirmationDialogUpdates.updateConfirmTransactionView,
+		formEthSendTransaction: transactionPreparation.formEthSendTransaction,
 		getSafeExecutionSignerRoute: safeExecutionRouting.getSafeExecutionSignerRoute,
 		prepareSafeExecutionSignerRoute: safeExecutionRouting.prepareSafeExecutionSignerRoute,
 		openConfirmTransactionDialogForMessage: confirmTransaction.openConfirmTransactionDialogForMessage,
@@ -302,9 +306,7 @@ export function makeFakeBlock() {
 	}
 }
 
-export function makeFakeEthSimulateResult(multicallBalance: bigint, multicallAbi: readonly string[], callCount = 1) {
-	const balanceResult = encodeFunctionReturn(multicallAbi, 'getEthBalance', [multicallBalance])
-	const aggregate3Result = encodeFunctionReturn(multicallAbi, 'aggregate3', [[{ success: true, returnData: balanceResult }]])
+export function makeFakeEthSimulateResult(multicallBalance: bigint, multicallAbi: readonly string[], callCount = 1, simulatedCalls: readonly unknown[] = []) {
 	return {
 		number: 123n,
 		hash: 0x9876n,
@@ -312,13 +314,25 @@ export function makeFakeEthSimulateResult(multicallBalance: bigint, multicallAbi
 		gasLimit: 30_000_000n,
 		gasUsed: 21_000n,
 		baseFeePerGas: 1n,
-		calls: Array.from({ length: callCount }, () => ({
+		calls: Array.from({ length: callCount }, (_, callIndex) => ({
 			status: 'success' as const,
 			gasUsed: 21_000n,
 			logs: [],
-			returnData: hexToBytes(aggregate3Result),
+			returnData: getFakeSimulatedCallReturnData(simulatedCalls[callIndex], multicallBalance, multicallAbi),
 		})),
 	}
+}
+
+const SIMULATED_GET_CODE_HELPER_ADDRESS = 0x1ce438391307f908756fefe0fe220c0f0d51508an
+const SIMULATED_GET_CODE_HELPER_ABI = [{ type: 'function', name: 'at', stateMutability: 'view', inputs: [{ name: 'target', type: 'address' }], outputs: [{ name: 'code', type: 'bytes' }] }] as const
+
+// Balance lookups are Multicall3 aggregate3 calls and protectors read code through the simulated getCode helper. Answering both lets simulations with several calldata-carrying transactions run end to end.
+function getFakeSimulatedCallReturnData(call: unknown, multicallBalance: bigint, multicallAbi: readonly string[]) {
+	if (isRecord(call) && call.to === SIMULATED_GET_CODE_HELPER_ADDRESS) return hexToBytes(encodeFunctionReturn(SIMULATED_GET_CODE_HELPER_ABI, 'at', ['0x']))
+	const decodedCall = isRecord(call) && call.input instanceof Uint8Array ? decodeCallDataLoose(multicallAbi, call.input) : undefined
+	const balanceQueries = decodedCall?.name === 'aggregate3' ? decodedCall.args[0] : undefined
+	const balanceResult = encodeFunctionReturn(multicallAbi, 'getEthBalance', [multicallBalance])
+	return hexToBytes(encodeFunctionReturn(multicallAbi, 'aggregate3', [Array.from({ length: Array.isArray(balanceQueries) ? balanceQueries.length : 1 }, () => ({ success: true, returnData: balanceResult }))]))
 }
 
 export const browserMock = createBrowserMock()
@@ -369,6 +383,7 @@ export const fakeSafeContract = {
 	beforeVersionResponse: undefined as (() => Promise<void>) | undefined,
 	requestedRpcMethods: [] as string[],
 	failEthSimulate: false,
+	getEthSimulateFailure: undefined as ((rpcRequest: { method: string, params?: readonly unknown[] }) => Error | undefined) | undefined,
 	safeOwnerLookupFailure: undefined as 'expected' | 'unexpected' | undefined,
 }
 
@@ -385,6 +400,7 @@ export function resetFakeSafeContractState() {
 	fakeSafeContract.beforeVersionResponse = undefined
 	fakeSafeContract.requestedRpcMethods.length = 0
 	fakeSafeContract.failEthSimulate = false
+	fakeSafeContract.getEthSimulateFailure = undefined
 	fakeSafeContract.safeOwnerLookupFailure = undefined
 }
 
@@ -433,14 +449,17 @@ export const fakeRequestHandler = {
 					default: throw new Error(`Unexpected eth_call selector: ${ selector }`)
 				}
 			}
-			case 'eth_simulateV1':
+			case 'eth_simulateV1': {
 				if (fakeSafeContract.failEthSimulate) throw new Error('eth_simulateV1 unavailable')
+				const ethSimulateFailure = fakeSafeContract.getEthSimulateFailure?.(rpcRequest)
+				if (ethSimulateFailure !== undefined) throw ethSimulateFailure
 				return modules.serialize(
 					modules.EthSimulateV1Result,
 					(Array.isArray(rpcRequest.params?.[0]?.blockStateCalls) ? rpcRequest.params[0].blockStateCalls : [{}]).map((blockStateCall) =>
-						makeFakeEthSimulateResult(0n, modules.Multicall3ABI, Array.isArray(blockStateCall.calls) ? blockStateCall.calls.length : 0),
+						makeFakeEthSimulateResult(0n, modules.Multicall3ABI, Array.isArray(blockStateCall.calls) ? blockStateCall.calls.length : 0, Array.isArray(blockStateCall.calls) ? blockStateCall.calls : []),
 					),
 				)
+			}
 			default:
 				throw new Error(`Unexpected RPC method: ${ rpcRequest.method }`)
 		}

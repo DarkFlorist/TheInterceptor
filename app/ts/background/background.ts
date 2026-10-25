@@ -4,14 +4,13 @@ import type { InpageScriptRequest, RPCReply, Settings } from '../types/intercept
 import 'webextension-polyfill'
 import { getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
 import { getSettings, updateWebsiteAccess } from './settings.js'
-import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getBlockByHash, getCode, getFilterChanges, getFilterLogs, getLogs, getPermissions, getStorageAt, getTransactionByHash, getTransactionCount, getTransactionReceipt, handleInterceptorError, installNewFilter, maxPriorityFeePerGas, netVersion, personalSign, requestInterceptorSimulatorStack, requestPermissions, sendTransaction, subscribe, switchEthereumChain, ethSimulateV1, feeHistory, uninstallNewFilter, unsubscribe, web3ClientVersion } from './simulationModeHandlers.js'
+import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getBlockByHash, getCode, getFilterChanges, getFilterLogs, getLogs, getPermissions, getStorageAt, getTransactionByHash, getTransactionCount, getTransactionReceipt, handleInterceptorError, installNewFilter, maxPriorityFeePerGas, netVersion, personalSign, requestInterceptorSimulatorStack, requestPermissions, sendCalls, sendTransaction, subscribe, switchEthereumChain, ethSimulateV1, feeHistory, uninstallNewFilter, unsubscribe, web3ClientVersion } from './simulationModeHandlers.js'
 import { PASSTHROUGH_STATE, type ResolvedExecutionSimulationState, type ResolvedSimulationInput, toResolvedExecutionSimulationState, toResolvedSimulationInput } from '../types/visualizer-types.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, requestAccessFromUser } from './windows/interceptorAccess.js'
-import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_PROVIDER_DISCONNECTED, METAMASK_ERROR_USER_REJECTED_REQUEST, ERROR_INTERCEPTOR_DISABLED } from '../utils/constants.js'
+import { JSON_RPC_ERROR_CODE_METHOD_NOT_FOUND, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_PROVIDER_DISCONNECTED, METAMASK_ERROR_USER_REJECTED_REQUEST, ERROR_INTERCEPTOR_DISABLED } from '../utils/constants.js'
 import { clearWebsiteConnectionIntent, finalizeWebsiteAccessChange, persistWebsiteAccessChange, sendAccountsChangedToPort, verifyAccess, withSuppressedUnscopedConnectionEventsForSocket } from './accessManagement.js'
 import { getActiveAddressEntryForChain, getWalletActiveAddressEntryForChain } from './metadataUtils.js'
-import { getActiveAddress } from './backgroundUtils.js'
 import { assertNever, hasOwnKey } from '../utils/typescript.js'
 import { JsonRpcResponseError, reportUnexpectedError, isFailedToFetchError } from '../utils/errors.js'
 import { InterceptedRequest, type WebsiteSocket } from '../utils/requests.js'
@@ -28,13 +27,15 @@ import { getWalletSelectedAccount, isActiveSigningSafe } from '../utils/activeAd
 import { isAccountConnectionMethod, isAccountOnlyMethod } from './accountRequestMethods.js'
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
-import { getActiveAddressForCurrentSignerState, getConfirmedSignerStateToken, isSignerStateTokenCurrent } from './signerStateOwnership.js'
+import { getConfirmedSignerStateToken, isSignerStateTokenCurrent } from './signerStateOwnership.js'
+import { getActiveAddressForRequest } from './websiteActiveAddress.js'
 import { handleWatchAssetRequest, initializeWatchAssetWindowListeners, processWatchAssetQueue } from './windows/watchAsset.js'
 import { getSafeModeRpcPolicyReply } from '../safe/safeRequestPolicy.js'
 import { getWatchAssetRpcParseFailureReply } from './watchAssetRpc.js'
 import { createMethodHandlerFor } from '../utils/methodHandlers.js'
 import { getWalletCapabilities } from './walletCapabilities.js'
 import { getWalletGetCapabilitiesParseFailureReply } from './walletGetCapabilitiesRpc.js'
+import { getSigningModeWalletCallsReply, getSimulatedCallsStatus, getSimulatedShowCallsStatusReply, getWalletSendCallsParseFailureReply } from './walletSendCalls.js'
 import { hasAccess as getWebsiteAccessApprovalState, hasAddressAccess as getWebsiteAddressAccessApprovalState } from './websiteAccessPolicy.js'
 
 if (initializeWatchAssetWindowListeners()) {
@@ -43,8 +44,7 @@ if (initializeWatchAssetWindowListeners()) {
 	})
 }
 
-const RPC_PARSE_FAILURE_HANDLERS = [getWatchAssetRpcParseFailureReply, getWalletGetCapabilitiesParseFailureReply]
-const JSON_RPC_METHOD_NOT_FOUND = -32601
+const RPC_PARSE_FAILURE_HANDLERS = [getWatchAssetRpcParseFailureReply, getWalletGetCapabilitiesParseFailureReply, getWalletSendCallsParseFailureReply]
 const INTERNAL_PROVIDER_METHODS = [
 	'connected_to_signer',
 	'eth_accounts_reply',
@@ -97,6 +97,9 @@ async function handleRPCRequest(
 		if (!forwardToSigner) throw new Error('Should not forward to signer')
 		return { type: 'forwardToSigner' as const, ...request }
 	}
+	// Signing mode refuses EIP-5792 batches on every network: the preview simulates separate transactions, but a wallet may execute them atomically, where transient storage carries over.
+	const signingModeWalletCallsReply = settings.simulationMode ? undefined : getSigningModeWalletCallsReply(request)
+	if (signingModeWalletCallsReply !== undefined) return signingModeWalletCallsReply
 
 	if (maybeParsedRequest.success === false) {
 		for (const getMethodSpecificReply of RPC_PARSE_FAILURE_HANDLERS) {
@@ -180,15 +183,15 @@ async function handleRPCRequest(
 		wallet_watchAsset: rpcRequestHandler('wallet_watchAsset', async (_context, rpcRequest) => await handleWatchAssetRequest(ethereum, websiteTabConnections, request, website, rpcRequest, {}, activeAddress)),
 		wallet_requestPermissions: rpcRequestHandler('wallet_requestPermissions', async () => await requestPermissions(activeAddress, website)),
 		wallet_getPermissions: rpcRequestHandler('wallet_getPermissions', async () => await getPermissions(activeAddress, website)),
-		wallet_getCapabilities: rpcRequestHandler('wallet_getCapabilities', async (_context, rpcRequest) => {
-			if (rpcRequest.params[0] !== activeAddress) {
-				return getWalletCapabilities(rpcRequest, activeAddress, settings.activeRpcNetwork.chainId, activeSafeSigner)
-			}
-			if (!safeSigningMode && activeSafeSigner === undefined && forwardToSigner) {
-				return { type: 'forwardToSigner', replyWithSignersReply: true, ...request }
-			}
-			return getWalletCapabilities(rpcRequest, activeAddress, settings.activeRpcNetwork.chainId, activeSafeSigner)
+		// Answered locally in every mode, so websites are never offered the signer's batch capabilities, such as atomic execution, while signing mode refuses wallet_sendCalls.
+		wallet_getCapabilities: rpcRequestHandler('wallet_getCapabilities', async (_context, rpcRequest) => getWalletCapabilities(rpcRequest, activeAddress, settings.activeRpcNetwork.chainId, activeSafeSigner)),
+		// Only simulation mode reaches the EIP-5792 handlers; signing mode refused these methods above.
+		wallet_sendCalls: rpcRequestHandler('wallet_sendCalls', async (_context, rpcRequest) => {
+			if (settings.activeRpcNetwork.httpsRpc === undefined) return { type: 'result' as const, method: rpcRequest.method, error: { code: METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER, message: 'wallet_sendCalls batches are simulated before approval, which requires an Interceptor RPC connection for this network.' } }
+			return await sendCalls(ethereum, tokenPriceService, websiteTabConnections, activeAddress, rpcRequest, request, website)
 		}),
+		wallet_getCallsStatus: rpcRequestHandler('wallet_getCallsStatus', async (_context, rpcRequest) => await withExecutionSimulationState((simulationState) => getSimulatedCallsStatus(ethereum, simulationState, rpcRequest, website.websiteOrigin))),
+		wallet_showCallsStatus: rpcRequestHandler('wallet_showCallsStatus', async (_context, rpcRequest) => getSimulatedShowCallsStatusReply(rpcRequest)),
 		eth_accounts: rpcRequestHandler('eth_accounts', async () => await getAccounts(activeAddress)),
 		eth_requestAccounts: rpcRequestHandler('eth_requestAccounts', async () => await getAccounts(activeAddress)),
 		eth_gasPrice: rpcRequestHandler('eth_gasPrice', async () => await gasPrice(ethereum)),
@@ -263,7 +266,7 @@ function refusePublicInternalProviderMethod(websiteTabConnections: WebsiteTabCon
 		method: request.method,
 		uniqueRequestIdentifier: request.uniqueRequestIdentifier,
 		error: {
-			code: JSON_RPC_METHOD_NOT_FOUND,
+			code: JSON_RPC_ERROR_CODE_METHOD_NOT_FOUND,
 			message: `Method not found: ${ request.method }`,
 		},
 	})
@@ -349,10 +352,6 @@ function parseWalletRevokePermissionsRequest(websiteTabConnections: WebsiteTabCo
 		},
 	})
 	return undefined
-}
-
-async function getActiveAddressForRequest(settings: Settings, websiteTabConnections: WebsiteTabConnections, tabId: number) {
-	return await getActiveAddressForCurrentSignerState(websiteTabConnections, settings, tabId, async () => await getActiveAddress(settings, tabId))
 }
 
 async function discoverAccountRequestAddressContext(

@@ -1,9 +1,9 @@
-import type { PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
+import type { PendingTransactionOrSignableMessageExceptBatch } from '../types/accessRequest.js'
 import type { SendTransactionParams } from '../types/JsonRpc-types.js'
 import type { SafeMessageCoSignSnapshot, SafeTransactionSigningRequest } from '../types/safeTypes.js'
 
-type PendingTransaction = Extract<PendingTransactionOrSignableMessage, { readonly type: 'Transaction' }>
-type PendingSignableMessage = Extract<PendingTransactionOrSignableMessage, { readonly type: 'SignableMessage' }>
+type PendingTransaction = Extract<PendingTransactionOrSignableMessageExceptBatch, { readonly type: 'Transaction' }>
+type PendingSignableMessage = Extract<PendingTransactionOrSignableMessageExceptBatch, { readonly type: 'SignableMessage' }>
 
 export type DirectSafeExecutionFlow = {
 	readonly kind: 'directExecution'
@@ -38,7 +38,7 @@ export function getSafeTransactionPendingFlow(pending: PendingTransaction): Dire
 	return undefined
 }
 
-export function getSafePendingFlow(pending: PendingTransactionOrSignableMessage): SafePendingFlow | undefined {
+export function getSafePendingFlow(pending: PendingTransactionOrSignableMessageExceptBatch): SafePendingFlow | undefined {
 	if (pending.type === 'Transaction') return getSafeTransactionPendingFlow(pending)
 	if (pending.safeMessageCoSignSnapshot === undefined) return undefined
 	return {

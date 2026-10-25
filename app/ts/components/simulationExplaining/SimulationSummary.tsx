@@ -933,6 +933,8 @@ type RawTransactionDetailsCardParams = {
 	gasSpent: bigint | undefined
 	transactionIdentifier: bigint
 	isRawTransaction: boolean,
+	// Gas limits can only be changed for single transactions; each call of a wallet_sendCalls batch keeps the gas limit estimated for it within the batch.
+	gasLimitEditable?: boolean
 }
 
 type GasLimitEditorParams = {
@@ -976,7 +978,7 @@ export function GasLimitEditor({ transactionIdentifier, initialGasLimit, isRawTr
 	</>
 }
 
-export function RawTransactionDetailsCard({ isRawTransaction, transaction, renameAddressCallBack, gasSpent, parsedInputData, addressMetaData, transactionIdentifier }: RawTransactionDetailsCardParams) {
+export function RawTransactionDetailsCard({ isRawTransaction, transaction, renameAddressCallBack, gasSpent, parsedInputData, addressMetaData, transactionIdentifier, gasLimitEditable = true }: RawTransactionDetailsCardParams) {
 	const showSummary = useSignal<boolean>(false)
 
 	return <div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
@@ -1007,7 +1009,9 @@ export function RawTransactionDetailsCard({ isRawTransaction, transaction, renam
 						</> }
 						<dt>Gas limit </dt>
 						<dd style = 'display: flex; align-items: center; justify-content: center;'>
-							<GasLimitEditor transactionIdentifier = { transactionIdentifier } initialGasLimit = { transaction.gas } isRawTransaction = { isRawTransaction } />
+							{ gasLimitEditable
+								? <GasLimitEditor transactionIdentifier = { transactionIdentifier } initialGasLimit = { transaction.gas } isRawTransaction = { isRawTransaction } />
+								: `${ transaction.gas.toString(10) } gas` }
 						</dd>
 						<dt>Nonce: </dt>
 						<dd>{ transaction.nonce.toString(10) }</dd>

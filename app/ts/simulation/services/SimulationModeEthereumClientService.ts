@@ -1,6 +1,6 @@
 import type { Settings } from '../../types/interceptor-messages.js'
 import { type EthereumClientService, getNextBlockTimeStampOverride } from './EthereumClientService.js'
-import type { PreparedEthSimulateV1Input } from './EthereumClientService.js'
+import { type PreparedEthSimulateV1Input, fitsInRpcBlock, getGasLeftInRpcBlock, getGasUsedInLastRpcBlock } from './EthereumClientService.js'
 import { type EthereumSignedTransactionWithBlockData, type EthereumBlockTag, type EthereumAddress, type EthereumBlockHeader, type EthereumBlockHeaderWithTransactionHashes, EthereumData, EthereumQuantity, EthereumBytes32, type EthereumSendableSignedTransaction } from '../../types/wire-types.js'
 import { addressString, bigintSecondsToDate, bigintToUint8Array, dataStringWith0xStart, dateToBigintSeconds, max, min, stringToUint8Array } from '../../utils/bigint.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, ETHEREUM_LOGS_LOGGER_ADDRESS, MOCK_ADDRESS, MULTICALL3, Multicall3ABI, DEFAULT_CALL_ADDRESS, GAS_PER_BLOB } from '../../utils/constants.js'
@@ -295,6 +295,8 @@ type SimulateBlockCallOptions = {
 	extraOverrides?: StateOverrides
 	simulateWithZeroBaseFee?: boolean
 	simulationPrefixBlockCount?: number
+	// Runs the call after the transactions of the last prefix block instead of in a new block, so it shares that block's number, timestamp and base fee. Extra overrides then apply from the start of that block.
+	appendToLastPrefixBlock?: boolean
 }
 
 const isInactivePrecompileRelocationError = (error: unknown) => error instanceof JsonRpcResponseError
@@ -346,21 +348,29 @@ const simulateBlockCallWithPreparedInputContext = async (
 	const previousBlockOverride = simulationPrefixBlockCount === 0 ? undefined : context?.prepared.blockOverrides[simulationPrefixBlockCount - 1]
 	const previousBlockTime = previousBlockOverride?.time ?? parentBlock.timestamp
 	const baseFeePerGas = parentBlock.baseFeePerGas === undefined ? 15_000_000n : parentBlock.baseFeePerGas
-	const blockStateCalls: readonly SimulateBlockCalls[] = [
-		...simulationPrefix,
-		{
-			calls: [createSimulatedBlockCall(transaction)],
-			blockOverrides: {
-				...(previousBlockOverride ?? { feeRecipient: parentBlock.miner }),
-				baseFeePerGas: simulateWithZeroBaseFee ? 0n : baseFeePerGas,
-				time: getNextBlockTimeStampOverride(previousBlockTime, DEFAULT_BLOCK_MANIPULATION),
+	const call = createSimulatedBlockCall(transaction)
+	const lastPrefixBlock = simulationPrefix[simulationPrefix.length - 1]
+	if (options.appendToLastPrefixBlock === true && lastPrefixBlock === undefined) throw new Error('There is no simulated block to add the call to')
+	const blockStateCalls: readonly SimulateBlockCalls[] = options.appendToLastPrefixBlock === true && lastPrefixBlock !== undefined
+		? [
+			...simulationPrefix.slice(0, -1),
+			{ ...lastPrefixBlock, calls: [...lastPrefixBlock.calls, call], stateOverrides: { ...lastPrefixBlock.stateOverrides, ...extraOverrides } },
+		]
+		: [
+			...simulationPrefix,
+			{
+				calls: [call],
+				blockOverrides: {
+					...(previousBlockOverride ?? { feeRecipient: parentBlock.miner }),
+					baseFeePerGas: simulateWithZeroBaseFee ? 0n : baseFeePerGas,
+					time: getNextBlockTimeStampOverride(previousBlockTime, DEFAULT_BLOCK_MANIPULATION),
+				},
+				stateOverrides: extraOverrides,
 			},
-			stateOverrides: extraOverrides,
-		},
-	]
+		]
 	const simulationResult = await ethereumClientService.ethSimulateV1(blockStateCalls, parentBlock.number, requestAbortController)
 	const lastBlock = simulationResult[simulationResult.length - 1]
-	return lastBlock?.calls[0]
+	return lastBlock?.calls[lastBlock.calls.length - 1]
 }
 
 const simulateBlockCallOnTopOfSimulationInput = async (
@@ -379,16 +389,26 @@ const simulateBlockCallOnTopOfSimulationInput = async (
 	)
 }
 
-export const simulateEstimateGas = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: ResolvedSimulationState, data: PartialEthereumTransaction, blockDelta: number | undefined = undefined): Promise<{ error: ErrorWithCodeAndOptionalData } | { gas: bigint }> => {
-	if (simulationState.kind === 'passthrough') return { gas: await ethereumClientService.estimateGas(data, requestAbortController) }
+type GasEstimate = { error: ErrorWithCodeAndOptionalData } | { gas: bigint }
+
+// What both gas estimates below run on: the simulated state's latest block, its prepared simulation, and a function that estimates the transaction in a block placed by the given options.
+type GasEstimateSetup =
+	| { readonly kind: 'estimated', readonly estimate: GasEstimate }
+	| {
+		readonly kind: 'ready'
+		readonly block: NonNullable<EthereumBlockHeader>
+		readonly context: PreparedSimulationExecutionContext | undefined
+		readonly estimateInBlock: (blockCallOptions: SimulateBlockCallOptions, maxGas: bigint) => Promise<GasEstimate>
+	}
+
+const setUpGasEstimate = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: ResolvedSimulationState, data: PartialEthereumTransaction): Promise<GasEstimateSetup> => {
+	if (simulationState.kind === 'passthrough') return { kind: 'estimated', estimate: { gas: await ethereumClientService.estimateGas(data, requestAbortController) } }
 	const currentState = simulationState.value
 	if (currentState.success === false) throw new JsonRpcResponseError(currentState.jsonRpcError)
 	const sendAddress = data.from !== undefined ? data.from : MOCK_ADDRESS
 	const transactionCount = getSimulatedTransactionCount(ethereumClientService, requestAbortController, simulationState, sendAddress)
 	const block = await getSimulatedBlock(ethereumClientService, requestAbortController, simulationState)
 	if (block === null) throw new Error('The latest block is null')
-	const simulatedBlockIncrement = blockDelta === undefined ? currentState.simulatedBlocks.length || 0 : blockDelta
-	const maxGas = simulationGasLeft(currentState.simulatedBlocks[simulatedBlockIncrement] || undefined, block)
 
 	const estimateGasTransactionBase = {
 		from: sendAddress,
@@ -404,28 +424,65 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 		accessList: data.accessList ?? []
 	}
 	const estimateGasTransaction = await createEip1559Or7702Transaction(estimateGasTransactionBase, data)
+	let context: PreparedSimulationExecutionContext | undefined
 	try {
-		const context = await createPreparedSimulationExecutionContext(ethereumClientService, requestAbortController, currentState.simulationStateInput)
-		const simulateWithGasLimit = async (gasLimit: bigint) => await simulateBlockCallWithPreparedInputContext(
-			ethereumClientService,
-			requestAbortController,
-			context,
-			{ ...estimateGasTransaction, gasLimit },
-			{ simulateWithZeroBaseFee: true },
-		)
-		const lastResult = await simulateBlockCallWithPreparedInputContext(ethereumClientService, requestAbortController, context, estimateGasTransaction, { simulateWithZeroBaseFee: true })
-		if (lastResult === undefined) return { error: { code: ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, message: 'ETH Simulate Failed to estimate gas', data: '0x' } }
-		return await getGasEstimateFromSimulation(lastResult, maxGas, simulateWithGasLimit)
+		context = await createPreparedSimulationExecutionContext(ethereumClientService, requestAbortController, currentState.simulationStateInput)
 	} catch (error: unknown) {
-		if (error instanceof JsonRpcResponseError) return jsonRpcErrorToGasEstimate(error)
+		if (error instanceof JsonRpcResponseError) return { kind: 'estimated', estimate: jsonRpcErrorToGasEstimate(error) }
 		throw error
 	}
+	const estimateInBlock = async (blockCallOptions: SimulateBlockCallOptions, maxGas: bigint): Promise<GasEstimate> => {
+		try {
+			const simulateWithGasLimit = async (gasLimit: bigint) => await simulateBlockCallWithPreparedInputContext(
+				ethereumClientService,
+				requestAbortController,
+				context,
+				{ ...estimateGasTransaction, gasLimit },
+				blockCallOptions,
+			)
+			const lastResult = await simulateBlockCallWithPreparedInputContext(ethereumClientService, requestAbortController, context, estimateGasTransaction, blockCallOptions)
+			if (lastResult === undefined) return { error: { code: ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, message: 'ETH Simulate Failed to estimate gas', data: '0x' } }
+			return await getGasEstimateFromSimulation(lastResult, maxGas, simulateWithGasLimit)
+		} catch (error: unknown) {
+			if (error instanceof JsonRpcResponseError) return jsonRpcErrorToGasEstimate(error)
+			throw error
+		}
+	}
+	return { kind: 'ready', block, context, estimateInBlock }
 }
+
+// Estimates the transaction in a new block after the simulated blocks.
+export const simulateEstimateGas = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: ResolvedSimulationState, data: PartialEthereumTransaction): Promise<GasEstimate> => {
+	const setup = await setUpGasEstimate(ethereumClientService, requestAbortController, simulationState, data)
+	if (setup.kind === 'estimated') return setup.estimate
+	return await setup.estimateInBlock({ simulateWithZeroBaseFee: true }, simulationGasLeft(undefined, setup.block))
+}
+
+// Estimates a transaction appended to the end of the simulated blocks, in the RPC block that preparing the simulation with it puts it in. Preparation splits a simulated block whose transactions exceed the block gas limit into several RPC blocks (see fitsInRpcBlock), so the transaction joins the last of them if its gas fits there, sharing its number, timestamp and base fee, and starts a new RPC block with the default block time and the regular base fee otherwise.
+export const simulateEstimateGasAppendedToSimulation = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: ResolvedSimulationState, data: PartialEthereumTransaction): Promise<GasEstimate> => {
+	const setup = await setUpGasEstimate(ethereumClientService, requestAbortController, simulationState, data)
+	if (setup.kind === 'estimated') return setup.estimate
+	const { context, estimateInBlock } = setup
+	const blockGasLimit = context?.parentBlock.gasLimit ?? setup.block.gasLimit
+	const lastRpcBlockGas = context === undefined ? 0n : getGasUsedInLastRpcBlock(context.prepared)
+	// The reserve below the block gas limit only caps a single estimate, as it does in a new block; whether the transaction fits in the last RPC block is preparation's rule alone.
+	const singleEstimateGasCap = blockGasLimit * 1023n / 1024n
+	const gasLeftInLastRpcBlock = min(getGasLeftInRpcBlock(lastRpcBlockGas, blockGasLimit), singleEstimateGasCap)
+	const inLastRpcBlock = gasLeftInLastRpcBlock === 0n ? undefined : await estimateInBlock({ simulateWithZeroBaseFee: true, appendToLastPrefixBlock: true }, gasLeftInLastRpcBlock)
+	if (inLastRpcBlock !== undefined && 'gas' in inLastRpcBlock && fitsInRpcBlock(lastRpcBlockGas, inLastRpcBlock.gas, blockGasLimit)) return inLastRpcBlock
+	// The estimate in a new RPC block is kept only if preparation would indeed move the transaction there; otherwise the transaction fails where preparation keeps it.
+	const inNextRpcBlock = await estimateInBlock({ simulateWithZeroBaseFee: false }, singleEstimateGasCap)
+	if (inLastRpcBlock === undefined || ('gas' in inNextRpcBlock && !fitsInRpcBlock(lastRpcBlockGas, inNextRpcBlock.gas, blockGasLimit))) return inNextRpcBlock
+	return inLastRpcBlock
+}
+
+// The rule for funding the current account: only in simulation mode, and only while the make-me-rich option is on. Both the simulation input and the exported simulation stack use it.
+export const selectAddressToMakeRich = (settings: Settings, makeCurrentAddressRich: boolean) => settings.simulationMode && makeCurrentAddressRich ? settings.activeSimulationAddress : undefined
 
 export const getAddressToMakeRich = async (settingsSnapshot?: Settings) => {
 	const settings = settingsSnapshot ?? await getSettings()
 	if (!settings.simulationMode) return undefined
-	return await getMakeCurrentAddressRich() ? settings.activeSimulationAddress : undefined
+	return selectAddressToMakeRich(settings, await getMakeCurrentAddressRich())
 }
 
 export const groupEthSimulateV1ResultByInputBlocks = (prepared: PreparedEthSimulateV1Input, result: EthSimulateV1Result): GroupedEthSimulateV1Result => {
