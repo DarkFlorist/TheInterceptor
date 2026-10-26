@@ -107,6 +107,10 @@ export function FetchSimulationStack() {
 				rpcEntries.value = parsed.data.rpcEntries
 				return false
 			}
+			if (parsed.method === 'popup_update_rpc_list') {
+				rpcEntries.value = parsed.data
+				return false
+			}
 			if (parsed.method !== 'popup_fetchSimulationStackRequest') return false
 			changeRequest.value = parsed.data
 			return false
