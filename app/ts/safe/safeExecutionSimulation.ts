@@ -4,7 +4,7 @@ import { getGasEstimateFromSimulation } from '../simulation/services/simulationG
 import { mockSignTransaction } from '../simulation/services/simulationTransactionSigning.js'
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
 import type { MutableStateOverrides } from '../types/ethSimulate-types.js'
-import type { PreSimulationTransaction, SimulationStateInput } from '../types/visualizer-types.js'
+import type { PreSimulationTransaction, SimulationInputTransaction, SimulationStateInput } from '../types/visualizer-types.js'
 import type { EthereumSendableSignedTransaction, EthereumUnsignedTransaction } from '../types/wire-types.js'
 import { encodeAbiValues, encodeFunctionCall } from '../utils/abiRuntime.js'
 import { addressString, bytes32String, dataStringWith0xStart, generate256BitRandomBigInt, stringToUint8Array } from '../utils/bigint.js'
@@ -36,6 +36,13 @@ const getApprovedHashStorageSlot = (owner: bigint, safeTxHash: bigint) => keccak
 	['bytes32', 'bytes32'],
 	[bytes32String(safeTxHash), keccak256(encodeAbiValues(['address', 'uint256'], [addressString(owner), SAFE_APPROVED_HASHES_SLOT]))],
 ))
+
+// A transaction that isn't a Gnosis Safe execution runs its own call, even if an earlier preparation gave it an executedTransaction: EthereumClientService rejects one that still has it.
+function withoutExecutedTransaction(transaction: SimulationInputTransaction): SimulationInputTransaction {
+	if (transaction.executedTransaction === undefined) return transaction
+	const { executedTransaction: _executedTransaction, ...ownCall } = transaction
+	return ownCall
+}
 
 // Every owner approves and signs, sorted as execTransaction requires. execTransaction checks only as many signatures as its threshold at execution, so an execution still passes after an earlier one on the stack raises the threshold.
 const getSigningOwners = (safeState: SafeContractState) => [...safeState.owners].sort(compareAddresses)
@@ -75,7 +82,7 @@ function createExecutorTransaction(safeCall: SafeCall, signingOwners: readonly b
  */
 export async function prepareSafeExecutionSimulationInput(input: SimulationStateInput, ethereum: EthereumClientService, parentBlockNumber: bigint, baseFeePerGas: bigint): Promise<SimulationStateInput> {
 	const safeAddresses = new Set(input.flatMap((block) => block.transactions.filter(runsThroughGnosisSafe).map((transaction) => transaction.signedTransaction.from)))
-	if (safeAddresses.size === 0) return input
+	if (safeAddresses.size === 0 && input.every((block) => block.transactions.every((transaction) => transaction.executedTransaction === undefined))) return input
 	const safeStates = new Map(await Promise.all([...safeAddresses].map(async (safeAddress) => [safeAddress, await getSafeContractStateAtBlock(ethereum, safeAddress, parentBlockNumber)] as const)))
 	const maxFeePerGas = baseFeePerGas * 2n + EXECUTOR_MAX_PRIORITY_FEE_PER_GAS
 	const earlierExecutionsBySafe = new Map<bigint, bigint>()
@@ -90,7 +97,7 @@ export async function prepareSafeExecutionSimulationInput(input: SimulationState
 	const preparedInput = input.map((block) => ({ ...block, transactions: block.transactions.map((transaction) => {
 		if (!runsThroughGnosisSafe(transaction)) {
 			countExecTransactionCall(transaction.signedTransaction)
-			return transaction
+			return withoutExecutedTransaction(transaction)
 		}
 		const { signedTransaction } = transaction
 		if (signedTransaction.type !== '1559') throw new Error('A Gnosis Safe execution simulation requires an EIP-1559 transaction.')
@@ -114,7 +121,8 @@ export async function prepareSafeExecutionSimulationInput(input: SimulationState
 		return { ...transaction, executedTransaction }
 	}) }))
 	const [firstBlock, ...laterBlocks] = preparedInput
-	if (firstBlock === undefined) return preparedInput
+	// Without a Gnosis Safe execution there are no approvals to set and no executor to fund.
+	if (firstBlock === undefined || executorNonce === 0n) return preparedInput
 	const stateOverrides: MutableStateOverrides = { ...firstBlock.stateOverrides }
 	for (const [safeAddress, approvedHashSlots] of approvedHashSlotsBySafe) {
 		const safeOverride = stateOverrides[addressString(safeAddress)]
