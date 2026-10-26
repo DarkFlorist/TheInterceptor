@@ -66,7 +66,33 @@ const simulationStateWithBalanceBelowBaseFee: ResolvedSimulationState = {
 	},
 }
 
+const SAFE_BALANCE = 10n ** 18n
+const [simulatedBlock] = simulationStateWithBalanceBelowBaseFee.kind === 'simulated' && simulationStateWithBalanceBelowBaseFee.value.success ? simulationStateWithBalanceBelowBaseFee.value.simulatedBlocks : []
+const [simulatedTransaction] = simulatedBlock?.simulatedTransactions ?? []
+if (simulationStateWithBalanceBelowBaseFee.kind !== 'simulated' || !simulationStateWithBalanceBelowBaseFee.value.success || simulatedBlock === undefined || simulatedTransaction === undefined) throw new Error('missing simulation fixture')
+// The sender is a Gnosis Safe whose execution the simulation runs through its execTransaction (safe/safeExecutionSimulation.ts), in a block with a real base fee.
+const simulationStateWithSafeExecution: ResolvedSimulationState = {
+	kind: 'simulated',
+	value: {
+		...simulationStateWithBalanceBelowBaseFee.value,
+		baseFeePerGas: 1_000n,
+		simulatedBlocks: [{
+			...simulatedBlock,
+			simulatedTransactions: [{
+				...simulatedTransaction,
+				preSimulationTransaction: { ...simulatedTransaction.preSimulationTransaction, simulationOptions: { requiredChainId: 1n, simulateWithZeroBaseFee: false, executeThroughSafe: true } },
+				tokenBalancesAfter: [{ token: ETHEREUM_LOGS_LOGGER_ADDRESS, tokenId: undefined, owner: SENDER, balance: SAFE_BALANCE }],
+			}],
+		}],
+	},
+}
+
 describe('simulation stack extraction', () => {
+	test('version 1.0.1 reports a Gnosis Safe\'s balance without gas, which its executor pays', () => {
+		const payload = getSimulatedStackV1(simulationStateWithSafeExecution, undefined, '1.0.1')
+		assert.deepEqual(payload[0]?.balanceChanges, [{ address: SENDER, before: SAFE_BALANCE, after: SAFE_BALANCE }])
+	})
+
 	test('version 1.0.1 remains serializable when the sender balance is below the base fee', () => {
 		const payload = getSimulatedStackV1(simulationStateWithBalanceBelowBaseFee, undefined, '1.0.1')
 		assert.equal(payload[0]?.balanceChanges[0]?.after, 0n)

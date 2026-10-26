@@ -6,7 +6,7 @@ import type { IEthereumJSONRpcRequestHandler } from './EthereumJSONRpcRequestHan
 import { addressString, bigintSecondsToDate, bytes32String, dataString, dateToBigintSeconds, max } from '../../utils/bigint.js'
 import { type BlockCalls, type BlockOverrides, EthSimulateV1Result, type EthSimulateV1Params } from '../../types/ethSimulate-types.js'
 import { EthGetFeeHistoryResponse, EthGetStorageAtResponse, EthTransactionReceiptResponse, type FeeHistory, type EthGetLogsRequest, EthGetLogsResponse, type PartialEthereumTransaction } from '../../types/JsonRpc-types.js'
-import { getBlockTimeManipulationSeconds } from './simulationBlockParameters.js'
+import { getBlockTimeManipulationSeconds, getSimulatedBlockBaseFeePerGas } from './simulationBlockParameters.js'
 import { simulatePersonalSign } from './simulationPersonalSigning.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../../config/defaults.js'
 import { getEcRecoverOverride } from '../../utils/ethereumByteCodes.js'
@@ -17,6 +17,7 @@ import type { MessageHashAndSignature } from '../../utils/eip712.js'
 import { encodeAbiValues } from '../../utils/abiRuntime.js'
 import { getCurrentTimestampString } from '../../utils/time.js'
 import { projectEip7702AuthorizationForRpc } from '../../utils/eip7702Authorization.js'
+import { runsThroughGnosisSafe } from '../../utils/transactionGasAccounting.js'
 
 const parseSignatureHex = (signature: `0x${ string }`) => {
 	const stripped = signature.slice(2)
@@ -31,6 +32,13 @@ const parseSignatureHex = (signature: `0x${ string }`) => {
 		yParity: rawV >= 27 ? rawV - 27 : rawV,
 	}
 }
+
+type RpcTransaction = SimulationStateInputMinimalDataBlock['transactions'][number]
+
+// The call the node runs for a transaction. A Gnosis Safe execution runs as its executedTransaction (prepareSafeExecutionSimulationInput), while its signedTransaction stays the Safe's own call, which transaction lookups and receipts return.
+const getExecutedTransaction = (transaction: RpcTransaction) => transaction.executedTransaction ?? transaction.signedTransaction
+
+export const getTotalExecutedGasLimit = (transactions: readonly RpcTransaction[]) => transactions.reduce((totalGasLimit, transaction) => totalGasLimit + getExecutedTransaction(transaction).gas, 0n)
 
 const toEthSimulateCall = (transaction: EthereumSendableSignedTransaction) => {
 	const commonFields = {
@@ -320,27 +328,38 @@ export class EthereumClientService {
 	}
 
 	public readonly prepareEthSimulateV1Input = async (simulationStateInput: SimulationStateInputMinimalData, blockNumber: bigint, requestAbortController: AbortController | undefined): Promise<PreparedEthSimulateV1Input> => {
+		// Every simulation input reaches the node through here. A Gnosis Safe execution that skipped prepareSafeExecutionsForRpc would run as the Safe sending its own call, so it fails here instead.
+		if (simulationStateInput.some((block) => block.transactions.some((transaction) => runsThroughGnosisSafe(transaction) && transaction.executedTransaction === undefined))) throw new Error('A Gnosis Safe execution reached the node without its executor\'s call (prepareSafeExecutionsForRpc).')
+		// Conversely, only a prepared Gnosis Safe execution may run a call other than the signedTransaction it shows.
+		if (simulationStateInput.some((block) => block.transactions.some((transaction) => transaction.executedTransaction !== undefined && !runsThroughGnosisSafe(transaction)))) throw new Error('A transaction that is not a Gnosis Safe execution reached the node with a call other than its own.')
 		const parentBlock = await this.getBlock(requestAbortController, blockNumber)
 		if (parentBlock === null) throw new Error(`The block ${ blockNumber } is null`)
 
 		const blockOverrides: BlockOverrides[] = []
-		const baseFeePerGas = parentBlock.baseFeePerGas === undefined ? 15000000n : parentBlock.baseFeePerGas
+		const baseFeePerGas = getSimulatedBlockBaseFeePerGas(parentBlock)
 
-		const gasLimitTransaction = (transaction: EthereumSendableSignedTransaction) => ({ ...transaction, gas: transaction.gas > parentBlock.gasLimit ? parentBlock.gasLimit : transaction.gas })
+		const clampGasToBlock = (transaction: EthereumSendableSignedTransaction) => ({ ...transaction, gas: transaction.gas > parentBlock.gasLimit ? parentBlock.gasLimit : transaction.gas })
+		const gasLimitTransaction = (transaction: RpcTransaction): RpcTransaction => ({
+			signedTransaction: clampGasToBlock(transaction.signedTransaction),
+			...(transaction.executedTransaction === undefined ? {} : { executedTransaction: clampGasToBlock(transaction.executedTransaction) }),
+			// Kept with executedTransaction, so the rpcBlocks hold the same invariant the checks above enforce.
+			...(transaction.simulationOptions === undefined ? {} : { simulationOptions: transaction.simulationOptions }),
+		})
 
-		const splitTransactionsByGasLimit = (currentTransactions: EthereumSendableSignedTransaction[], gasLimit: bigint): EthereumSendableSignedTransaction[][] => {
-			const transactionChunks: EthereumSendableSignedTransaction[][] = []
-			let currentChunk: EthereumSendableSignedTransaction[] = []
+		const splitTransactionsByGasLimit = (currentTransactions: readonly RpcTransaction[], gasLimit: bigint): RpcTransaction[][] => {
+			const transactionChunks: RpcTransaction[][] = []
+			let currentChunk: RpcTransaction[] = []
 			let currentChunkGasSum = 0n
 			for (const transaction of currentTransactions) {
-				if (transaction.gas > gasLimit) throw new Error(`Transaction gas ${ transaction.gas.toString() } exceeds gas limit ${ gasLimit.toString() }`)
-				if (currentChunkGasSum + transaction.gas <= gasLimit) {
+				const { gas } = getExecutedTransaction(transaction)
+				if (gas > gasLimit) throw new Error(`Transaction gas ${ gas.toString() } exceeds gas limit ${ gasLimit.toString() }`)
+				if (currentChunkGasSum + gas <= gasLimit) {
 					currentChunk.push(transaction)
-					currentChunkGasSum = currentChunkGasSum + transaction.gas
+					currentChunkGasSum = currentChunkGasSum + gas
 				} else {
 					transactionChunks.push(currentChunk)
 					currentChunk = [ transaction ]
-					currentChunkGasSum = transaction.gas
+					currentChunkGasSum = gas
 				}
 			}
 			if (currentChunk.length > 0) transactionChunks.push(currentChunk)
@@ -348,16 +367,13 @@ export class EthereumClientService {
 		}
 
 		// if transactions spend more gas in a block than the block allows, split them into multiple blocks. Also clamp a single transaction to take at most one block worth of gas
-		const gasLimitedInput: SimulationStateInputMinimalData = simulationStateInput.map((block) => ({ ...block, transactions: block.transactions.map((transaction) => ({ signedTransaction: gasLimitTransaction(transaction.signedTransaction) })) }))
-		const calculateTotalGasUsed = (currentTransactions: { gas: bigint }[]) => currentTransactions.reduce((totalGasUsed, transaction) => totalGasUsed + transaction.gas, 0n)
+		const gasLimitedInput: SimulationStateInputMinimalData = simulationStateInput.map((block) => ({ ...block, transactions: block.transactions.map(gasLimitTransaction) }))
 		const preparedBlocks: PreparedEthSimulateV1InputBlock[] = []
 		const rpcBlocks: SimulationStateInputMinimalDataBlock[] = []
 		for (const inputBlock of gasLimitedInput) {
-			const signedTransactions = inputBlock.transactions.map((x) => x.signedTransaction)
-			if (calculateTotalGasUsed(signedTransactions) > parentBlock.gasLimit) {
-				const splitted = splitTransactionsByGasLimit(signedTransactions, parentBlock.gasLimit)
-				for (const [index, newTransactions] of splitted.entries()) {
-					const transactions = newTransactions.map((transaction) => ({ signedTransaction: transaction }))
+			if (getTotalExecutedGasLimit(inputBlock.transactions) > parentBlock.gasLimit) {
+				const splitted = splitTransactionsByGasLimit(inputBlock.transactions, parentBlock.gasLimit)
+				for (const [index, transactions] of splitted.entries()) {
 					if (index === 0) {
 						rpcBlocks.push({ ...inputBlock, transactions })
 					} else {
@@ -383,7 +399,7 @@ export class EthereumClientService {
 		}
 
 		const getBlockStateCall = async (block: SimulationStateInputMinimalDataBlock, blockOverrides: BlockOverrides) => {
-			const rpcCalls = block.transactions.map((transaction) => toEthSimulateCall(transaction.signedTransaction))
+			const rpcCalls = block.transactions.map((transaction) => toEthSimulateCall(getExecutedTransaction(transaction)))
 			const ecRecoverMovedToAddress = 0x123456n
 			const ecRecoverAddress = 1n
 

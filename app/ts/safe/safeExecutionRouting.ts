@@ -9,6 +9,8 @@ import { completeSafeExecutionWithConfiguredSigner, decodeSafeExecution } from '
 
 const SAFE_EXEC_TRANSACTION_SELECTOR = Uint8Array.from([0x6a, 0x76, 0x12, 0x02])
 
+export const isSafeExecTransactionCall = (input: Uint8Array) => SAFE_EXEC_TRANSACTION_SELECTOR.every((byte, index) => input[index] === byte)
+
 export function areSafeExecutionSignerRequestsEqual(first: SendTransactionParams, second: SendTransactionParams) {
 	const firstTransaction = first.params[0]
 	const secondTransaction = second.params[0]
@@ -28,8 +30,7 @@ export function isSafeExecutionRequestForActiveSafe(transactionParams: SendTrans
 	if (safeEntry === undefined) return false
 	const transaction = transactionParams.params[0]
 	if (transaction.from !== safeEntry.address || transaction.to !== safeEntry.address) return false
-	const input = getInputFieldFromDataOrInput(transaction)
-	return SAFE_EXEC_TRANSACTION_SELECTOR.every((byte, index) => input[index] === byte)
+	return isSafeExecTransactionCall(getInputFieldFromDataOrInput(transaction))
 }
 
 export async function getSafeExecutionReviewedState(

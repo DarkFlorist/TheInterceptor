@@ -70,6 +70,14 @@ export const BlockTimeManipulationWithNoDelay = funtypes.Union(
 	}),
 )
 
+export type TransactionSimulationOptions = funtypes.Static<typeof TransactionSimulationOptions>
+export const TransactionSimulationOptions = funtypes.ReadonlyObject({
+	requiredChainId: EthereumQuantity,
+	simulateWithZeroBaseFee: funtypes.Boolean,
+}).And(funtypes.ReadonlyPartial({
+	// The transaction is a Gnosis Safe's own call. The simulator runs it the way the Safe runs it on-chain: an executor account calls the Safe's execTransaction and pays real fees (safe/safeExecutionSimulation.ts).
+	executeThroughSafe: funtypes.Literal(true),
+}))
 
 export type NonSimulatedAndVisualizedTransactionBase = funtypes.Static<typeof NonSimulatedAndVisualizedTransactionBase>
 export const NonSimulatedAndVisualizedTransactionBase = funtypes.ReadonlyObject({
@@ -82,6 +90,7 @@ export const NonSimulatedAndVisualizedTransactionBase = funtypes.ReadonlyObject(
 	error: DecodedError
 }).And(funtypes.ReadonlyPartial({
 	safeTransaction: SafeStackTransaction,
+	simulationOptions: TransactionSimulationOptions,
 }))
 
 export type SimulatedAndVisualizedTransactionBase = funtypes.Static<typeof SimulatedAndVisualizedTransactionBase>
@@ -102,6 +111,7 @@ export const SimulatedAndVisualizedTransactionBase = funtypes.Intersect(
 		events: funtypes.ReadonlyArray(EnrichedEthereumEventWithMetadata),
 	}).And(funtypes.ReadonlyPartial({
 		safeTransaction: SafeStackTransaction,
+		simulationOptions: TransactionSimulationOptions,
 	})),
 	funtypes.Union(
 		funtypes.ReadonlyObject({
@@ -129,10 +139,16 @@ export const PreSimulationTransaction = funtypes.ReadonlyObject({
 	transactionIdentifier: EthereumQuantity,
 }).And(funtypes.ReadonlyPartial({
 	safeTransaction: SafeStackTransaction,
-	simulationOptions: funtypes.ReadonlyObject({
-		requiredChainId: EthereumQuantity,
-		simulateWithZeroBaseFee: funtypes.Boolean,
-	}),
+	simulationOptions: TransactionSimulationOptions,
+}))
+
+/**
+ * A transaction of a simulation input, which prepareSimulationInputForRpc may give the call the node runs in place of signedTransaction: for a Gnosis Safe execution, the executor's execTransaction call (prepareSafeExecutionSimulationInput). signedTransaction stays the Safe's own call, which the dialog shows and the protectors check.
+ * Only the preparation sets executedTransaction. The simulation stack, its imports and pending transactions hold PreSimulationTransaction, whose parser drops the field, so no stored or imported transaction can run a call other than the one it shows.
+ */
+export type SimulationInputTransaction = funtypes.Static<typeof SimulationInputTransaction>
+export const SimulationInputTransaction = PreSimulationTransaction.And(funtypes.ReadonlyPartial({
+	executedTransaction: EthereumSendableSignedTransaction,
 }))
 
 export type SimulatedTransaction = funtypes.Static<typeof SimulatedTransaction>
@@ -153,7 +169,17 @@ export const WebsiteCreatedEthereumTransaction = funtypes.ReadonlyObject({
 	transaction: EthereumUnsignedTransaction,
 }).And(funtypes.ReadonlyPartial({
 	signedTransaction: EthereumSendableSignedTransaction,
+	// Carried into the pre-simulation transaction, both for the confirmation simulation and on the simulation stack.
+	simulationOptions: TransactionSimulationOptions,
 }))
+
+/**
+ * Who pays a transaction's fees, which decides how formEthSendTransaction forms it:
+ * - 'transaction-sender': the sender, whose balance limits the fees.
+ * - 'external-executor': an executor outside the simulation, for a Gnosis Safe proposal or a direct Safe execution in signing mode. The transaction is formed without fees.
+ * - 'simulated-safe-executor': the executor the simulation runs a Gnosis Safe's own call through (safe/safeExecutionSimulation.ts), in simulation mode. The Safe's call is formed without fees and marked to run through the Safe.
+ */
+export type TransactionGasPayment = 'transaction-sender' | 'external-executor' | 'simulated-safe-executor'
 
 export type FailedToCreateWebsiteCreatedEthereumTransaction = funtypes.Static<typeof FailedToCreateWebsiteCreatedEthereumTransaction>
 export const FailedToCreateWebsiteCreatedEthereumTransaction = funtypes.ReadonlyObject({
@@ -187,7 +213,7 @@ export const SignedMessageTransaction = funtypes.ReadonlyObject({
 export type SimulationStateInputBlock = funtypes.Static<typeof SimulationStateInputBlock>
 export const SimulationStateInputBlock = funtypes.ReadonlyObject({
 	stateOverrides: StateOverrides,
-	transactions: funtypes.ReadonlyArray(PreSimulationTransaction),
+	transactions: funtypes.ReadonlyArray(SimulationInputTransaction),
 	signedMessages: funtypes.ReadonlyArray(SignedMessageTransaction),
 	blockTimeManipulation: BlockTimeManipulation,
 	simulateWithZeroBaseFee: funtypes.Boolean,
@@ -199,7 +225,7 @@ export const SimulationStateInput = funtypes.ReadonlyArray(SimulationStateInputB
 export type SimulationStateInputMinimalDataBlock = funtypes.Static<typeof SimulationStateInputMinimalDataBlock>
 export const SimulationStateInputMinimalDataBlock = funtypes.ReadonlyObject({
 	stateOverrides: StateOverrides,
-	transactions: funtypes.ReadonlyArray(funtypes.ReadonlyObject({ signedTransaction: EthereumSendableSignedTransaction })),
+	transactions: funtypes.ReadonlyArray(funtypes.ReadonlyObject({ signedTransaction: EthereumSendableSignedTransaction }).And(funtypes.ReadonlyPartial({ executedTransaction: EthereumSendableSignedTransaction, simulationOptions: TransactionSimulationOptions }))),
 	signedMessages: funtypes.ReadonlyArray(SignedMessageTransaction),
 	blockTimeManipulation: BlockTimeManipulation,
 	simulateWithZeroBaseFee: funtypes.Boolean,

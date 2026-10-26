@@ -54,7 +54,8 @@ export async function refreshConfirmTransactionSimulation(
 						website: transactionToSimulate.website,
 						created: transactionToSimulate.created,
 						originalRequestParameters: transactionToSimulate.originalRequestParameters,
-						transactionIdentifier: transactionToSimulate.transactionIdentifier
+						transactionIdentifier: transactionToSimulate.transactionIdentifier,
+						...(transactionToSimulate.simulationOptions === undefined ? {} : { simulationOptions: transactionToSimulate.simulationOptions }),
 					}
 					: createSafeExecutionPreSimulationTransaction(transactionToSimulate, safeSigningRequest)
 				: undefined

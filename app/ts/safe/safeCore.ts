@@ -152,7 +152,7 @@ export function assertSafeContractStateUnchanged(reviewedState: SafeContractStat
 	}
 }
 
-async function getSafeContractStateAtBlock(ethereum: EthereumClientService, safeAddress: EthereumAddress, blockNumber: bigint): Promise<SafeContractState> {
+export async function getSafeContractStateAtBlock(ethereum: EthereumClientService, safeAddress: EthereumAddress, blockNumber: bigint): Promise<SafeContractState> {
 	const code = await ethereum.getCode(safeAddress, blockNumber, undefined)
 	if (code.length === 0) throw createSafeContractValidationFailure('The Gnosis Safe address does not contain a deployed contract on the selected chain.')
 	const [versionResult, nonceResult, ownersResult, thresholdResult] = await Promise.all([
