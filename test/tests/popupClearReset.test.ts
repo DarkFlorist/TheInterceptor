@@ -374,7 +374,7 @@ function createResetTestTransaction(transactionIdentifier: bigint, requiredChain
 		created: new Date('2024-01-01T00:00:00.000Z'),
 		originalRequestParameters: { method: 'eth_sendTransaction', params: [transaction] },
 		transactionIdentifier,
-		simulationOptions: { requiredChainId, simulateWithZeroBaseFee: safeAddress !== undefined },
+		simulationOptions: { requiredChainId },
 		...(safeTx === undefined ? {} : {
 			safeTransaction: {
 				safeTx,

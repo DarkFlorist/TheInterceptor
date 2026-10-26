@@ -1,6 +1,7 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
 import { activeAddress, addressString, browserMock, created, createSafeAddressBookEntry, createSafeTx, createWebsitePort, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, hexToBytes, isRecord, modules, pendingTransaction, recipientAddress, signedTransaction, simulator, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
+import { SAFE_EXECUTION_SIMULATION_EXECUTOR } from '../../app/ts/safe/safeExecutionSimulation.js'
 
 test('rejects EIP-7702 authorization lists before creating a Safe proposal', async () => {
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
@@ -263,7 +264,7 @@ test('reconciles executed Safe operations before simulating the next proposal', 
 	assert.equal(pendingProposal?.safeTransaction?.safeTx.message.nonce, 2n)
 })
 
-test('uses zero-reimbursement Safe semantics in the pre-sign confirmation simulation', async () => {
+test('runs the pre-sign confirmation simulation of a Safe proposal through the Safe\'s execTransaction', async () => {
 	await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
 	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({
 		simulationMode: false,
@@ -296,14 +297,18 @@ test('uses zero-reimbursement Safe semantics in the pre-sign confirmation simula
 
 	assert.equal(popupVisualisation?.statusCode, 'success')
 	if (popupVisualisation?.statusCode !== 'success') throw new Error('Safe confirmation simulation failed')
-	assert.equal(popupVisualisation.data.simulationState.simulationStateInput.at(-1)?.simulateWithZeroBaseFee, true)
+	const proposalBlock = popupVisualisation.data.simulationState.simulationStateInput.at(-1)
+	assert.equal(proposalBlock?.simulateWithZeroBaseFee, false, 'the executor pays the real base fee')
+	const executedProposal = proposalBlock?.transactions.at(-1)?.executedTransaction
+	assert.equal(executedProposal?.from, SAFE_EXECUTION_SIMULATION_EXECUTOR)
+	assert.equal(executedProposal?.to, activeAddress)
 	if (!popupVisualisation.data.visualizedSimulationState.success) {
 		throw new Error('Safe confirmation visualization failed')
 	}
 	const simulatedSafeTransaction = popupVisualisation.data.visualizedSimulationState.visualizedBlocks
 		.at(-1)?.simulatedAndVisualizedTransactions.at(-1)
 	assert.equal(simulatedSafeTransaction?.safeTransaction?.safeTxHash, safeTxHash)
-	assert.equal(simulatedSafeTransaction?.realizedGasPrice, 0n)
+	assert.equal(simulatedSafeTransaction?.realizedGasPrice, 0n, 'the Safe pays no gas')
 	assert.equal(simulatedSafeTransaction?.transaction.gas, 123_456n)
 })
 
@@ -355,7 +360,7 @@ test('isolates Safe signing previews from the simulation-mode transaction stack'
 	assert.deepEqual(isolatedInput[0]?.transactions.map(({ transactionIdentifier }) => transactionIdentifier), [71n])
 	assert.deepEqual(isolatedInput[0]?.stateOverrides, {})
 	assert.deepEqual(isolatedInput[0]?.blockTimeManipulation, { type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' })
-	assert.equal(isolatedInput[0]?.simulateWithZeroBaseFee, true)
+	assert.equal(isolatedInput[0]?.simulateWithZeroBaseFee, false)
 })
 
 test('does not show simulation-mode stack setup in a Safe signing confirmation', async () => {
@@ -769,7 +774,8 @@ test('refreshes direct Safe execution without charging gas to the signer', async
 
 test('atomic Safe batch preparation and simulation preserve one nonce and delegate execution as the Safe', async () => {
 	const { encodeSafeBatch, SAFE_MULTI_SEND_CALL_ONLY } = await import('../../app/ts/safe/safeDelegateCalls.js')
-	const { prepareSafeDelegateSimulationInput, ORIGINAL_GNOSIS_SAFE, SAFE_DELEGATE_EXECUTE_ABI } = await import('../../app/ts/safe/safeSimulation.js')
+	const { validateSafeDelegateSimulationInput, SAFE_DELEGATE_EXECUTE_ABI } = await import('../../app/ts/safe/safeSimulation.js')
+	const { prepareSafeExecutionSimulationInput } = await import('../../app/ts/safe/safeExecutionSimulation.js')
 	const { encodeFunctionCall } = await import('../../app/ts/utils/abiRuntime.js')
 	const { dataStringWith0xStart } = await import('../../app/ts/utils/bigint.js')
 	const { SendTransactionParams } = await import('../../app/ts/types/JsonRpc-types.js')
@@ -790,12 +796,17 @@ test('atomic Safe batch preparation and simulation preserve one nonce and delega
 	assert.equal(simulated.signedTransaction.from, activeAddress)
 	assert.equal(simulated.signedTransaction.to, activeAddress)
 	assert.equal(dataStringWith0xStart(simulated.signedTransaction.input), encodeFunctionCall(SAFE_DELEGATE_EXECUTE_ABI, 'delegateCallExecute', [addressString(SAFE_MULTI_SEND_CALL_ONLY), dataStringWith0xStart(input)]))
-	const block = { transactions: [simulated], signedMessages: [], stateOverrides: {}, blockTimeManipulation: { type: 'AddToTimestamp' as const, deltaToAdd: 12n, deltaUnit: 'Seconds' as const }, simulateWithZeroBaseFee: true }
-	const prepared = await prepareSafeDelegateSimulationInput([block], simulator.ethereum, 123n)
-	assert.equal(prepared[0]?.transactions.length, 1)
-	assert.deepEqual(prepared[0]?.stateOverrides[addressString(ORIGINAL_GNOSIS_SAFE)]?.code, new Uint8Array([1]))
-	assert.ok(prepared[0]?.stateOverrides[addressString(activeAddress)]?.code)
-	await assert.rejects(prepareSafeDelegateSimulationInput([{ ...block, transactions: [{ ...simulated, signedTransaction: { ...simulated.signedTransaction, to: recipientAddress } }] }], simulator.ethereum, 123n), /does not match its proposal/)
+	const block = { transactions: [simulated], signedMessages: [], stateOverrides: {}, blockTimeManipulation: { type: 'AddToTimestamp' as const, deltaToAdd: 12n, deltaUnit: 'Seconds' as const }, simulateWithZeroBaseFee: false }
+	await validateSafeDelegateSimulationInput([block], simulator.ethereum, 123n)
+	await assert.rejects(validateSafeDelegateSimulationInput([{ ...block, transactions: [{ ...simulated, signedTransaction: { ...simulated.signedTransaction, to: recipientAddress } }] }], simulator.ethereum, 123n), /does not match its proposal/)
+	// The Safe makes the delegate call itself, through execTransaction, without replacing its code.
+	const [prepared] = await prepareSafeExecutionSimulationInput([block], simulator.ethereum, 123n, 1n)
+	assert.equal(prepared?.stateOverrides[addressString(activeAddress)]?.code, undefined)
+	const executed = prepared?.transactions[0]?.executedTransaction
+	if (executed === undefined) throw new Error('Expected the batch to run through the Safe')
+	const { decodeSafeExecution } = await import('../../app/ts/safe/safeExecution.js')
+	assert.equal(executed.to, activeAddress)
+	assert.deepEqual(decodeSafeExecution(fakeRpcNetwork.chainId, activeAddress, 0n, executed.input).safeTx, safeTx)
 })
 
 test('on-chain Safe message review context is bound to calldata and stays outside RPC transaction params', async () => {
