@@ -247,6 +247,10 @@ export function InterceptorAccess() {
 				activeRpcChainId.value = parsed.data.activeRpcNetwork.chainId
 				return false
 			}
+			if (parsed.method === 'popup_update_rpc_list') {
+				rpcEntries.value = parsed.data
+				return false
+			}
 			if (parsed.method === 'popup_addressBookEntriesChanged') {
 				refreshMetadata()
 				return false

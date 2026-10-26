@@ -286,6 +286,10 @@ const WebsiteSettingsDetail = () => {
 				rpcEntries.value = parsed.data.rpcEntries
 				return false
 			}
+			if (parsed.method === 'popup_update_rpc_list') {
+				rpcEntries.value = parsed.data
+				return false
+			}
 			return false
 		}
 		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)

@@ -248,6 +248,10 @@ export function AddressBook() {
 					}
 				}
 			}
+			if (parsed.method === 'popup_update_rpc_list') {
+				rpcEntries.value = parsed.data
+				return false
+			}
 			if (parsed.method !== 'popup_getAddressBookDataReply') return false
 			const reply = GetAddressBookDataReply.parse(msg)
 			if (doesReplyMatchViewFilter(viewFilter.peek(), reply.data.data)) {
