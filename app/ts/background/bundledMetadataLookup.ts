@@ -14,6 +14,11 @@ const keyByLowerCaseAddress = <Definition>(metadata: ReadonlyMap<string, Definit
 	return canonical
 }
 
+// Re-keys every entry by lower case address in map order, including the ones the canonical map shadows.
+function* keyEveryEntryByLowerCaseAddress<Definition>(metadata: ReadonlyMap<string, Definition>): Generator<[string, Definition]> {
+	for (const [key, definition] of metadata) yield [key.toLowerCase(), definition]
+}
+
 // Each canonical map is built once, on first use, and holds the bundled definition objects themselves rather than copies.
 const createBundledMetadataCategory = <Definition>(metadata: ReadonlyMap<string, Definition>) => {
 	let canonical: ReadonlyMap<string, Definition> | undefined
@@ -24,6 +29,7 @@ const createBundledMetadataCategory = <Definition>(metadata: ReadonlyMap<string,
 	return {
 		lookup: (address: EthereumAddress): Definition | undefined => getCanonical().get(addressString(address)),
 		list: () => getCanonical().entries(),
+		listEvery: () => keyEveryEntryByLowerCaseAddress(metadata),
 	}
 }
 
@@ -43,3 +49,9 @@ export const listBundledContractMetadata = bundledContracts.list
 export const listBundledTokenMetadata = bundledTokens.list
 export const listBundledErc721Metadata = bundledErc721s.list
 export const listBundledErc1155Metadata = bundledErc1155s.list
+
+// Each yields every bundled entry of its category, including the ones the lookup shadows, keyed by lower case address string, in bundled map order. Name and symbol matching reads these because a shadowed entry's name is still a bundled name of its address, and a match then shows the lookup's entry for that address.
+export const listEveryBundledContractMetadata = bundledContracts.listEvery
+export const listEveryBundledTokenMetadata = bundledTokens.listEvery
+export const listEveryBundledErc721Metadata = bundledErc721s.listEvery
+export const listEveryBundledErc1155Metadata = bundledErc1155s.listEvery
