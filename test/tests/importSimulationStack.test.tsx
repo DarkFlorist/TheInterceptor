@@ -103,10 +103,7 @@ const exportPayload = {
 }
 
 const exportString = JSON.stringify(InterceptorSimulationExport.serialize(exportPayload))
-// The import reads the chain to decide which imported transactions run through a Gnosis Safe configured on it.
-const importingEthereum = { getChainId: () => 1n }
 const expectedInfrastructureEthereum = {
-	...importingEthereum,
 	getBlock: async () => { throw NEW_BLOCK_ABORT },
 }
 
@@ -268,7 +265,7 @@ describe('import simulation stack', () => {
 			Object.assign(storageState, items)
 		}
 
-		const reply = await modules.importSimulationStack(importingEthereum as never, {} as never, { method: 'popup_importSimulationStack', data: exportPayload })
+		const reply = await modules.importSimulationStack({} as never, {} as never, { method: 'popup_importSimulationStack', data: exportPayload })
 
 		assert.equal(reply.type, 'ImportSimulationStackReply')
 		assert.equal(reply.ok, false)
@@ -283,7 +280,6 @@ describe('import simulation stack', () => {
 			InterceptorSimulationExport.serialize(createSafeSimulationExportPayload())
 		)
 
-		// Without a chain to read, the import fails here only if it rejects the Safe proposals before deciding which transactions a Gnosis Safe executes.
 		const reply = await modules.importSimulationStack({} as never, {} as never, { method: 'popup_importSimulationStack', data: parsedExport })
 
 		assert.equal(reply.type, 'ImportSimulationStackReply')

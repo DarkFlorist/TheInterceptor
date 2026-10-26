@@ -583,6 +583,23 @@ test('simulates a configured Gnosis Safe\'s transaction in simulation mode as th
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
 })
 
+test('simulates a configured Gnosis Safe that the page names as the sender, while another account is active, as an ordinary transaction from the Safe, through refresh', async () => {
+	configureSafe()
+	const simulator = createRecordingSimulator()
+	const pending = await openSimulationModeConfirmation(simulator, ORDINARY_ACCOUNT, await createTransferParams({ from: addressString(SAFE_ADDRESS) }), createWebsiteTabConnections([]))
+
+	assert.equal(pending.executeThroughSafe, undefined, 'owner approval is only assumed for the Safe the user is simulating as')
+	assert.equal(pending.transactionToSimulate.transaction.from, SAFE_ADDRESS, 'the page\'s sender is simulated as before')
+	assert.equal(pending.transactionToSimulate.simulationOptions?.executeThroughSafe, undefined)
+	assert.equal(simulator.simulatedCalls.some((call) => call.from === SAFE_EXECUTION_SIMULATION_EXECUTOR), false, 'no executor calls the Safe\'s execTransaction')
+
+	await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
+	const [refreshedPending] = await modules.getPendingTransactionsAndMessages()
+	if (refreshedPending?.type !== 'Transaction' || refreshedPending.transactionOrMessageCreationStatus !== 'Simulated') throw new Error('Expected the refreshed transaction to stay simulated')
+	assert.equal(refreshedPending.transactionToSimulate.simulationOptions?.executeThroughSafe, undefined, 'a refresh keeps the ordinary simulation')
+	assert.equal(simulator.simulatedCalls.some((call) => call.from === SAFE_EXECUTION_SIMULATION_EXECUTOR), false)
+})
+
 const isSimulationModeSafeExecution = async (selectedActiveAddress: bigint, transactionParams: SendTransactionParams | SendRawTransactionParams) => {
 	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry()])
 	const preparation = await prepareSafeTransactionConfirmation(ethereum, { kind: 'transaction', parameters: transactionParams }, true, selectedActiveAddress, undefined)
@@ -592,7 +609,7 @@ const isSimulationModeSafeExecution = async (selectedActiveAddress: bigint, tran
 const simulationModeCases = [
 	{ description: 'the active Safe sends without naming a sender', selectedActiveAddress: SAFE_ADDRESS, createParams: async () => await createTransferParams({}), expected: true },
 	{ description: 'the page names the active Safe as the sender', selectedActiveAddress: SAFE_ADDRESS, createParams: async () => await createTransferParams({ from: addressString(SAFE_ADDRESS) }), expected: true },
-	{ description: 'the page names a configured Safe that is not the active address', selectedActiveAddress: ORDINARY_ACCOUNT, createParams: async () => await createTransferParams({ from: addressString(SAFE_ADDRESS) }), expected: true },
+	{ description: 'the page names a configured Safe that is not the active address', selectedActiveAddress: ORDINARY_ACCOUNT, createParams: async () => await createTransferParams({ from: addressString(SAFE_ADDRESS) }), expected: false },
 	{ description: 'the page names another sender while the Safe is active', selectedActiveAddress: SAFE_ADDRESS, createParams: async () => await createTransferParams({ from: addressString(ORDINARY_ACCOUNT) }), expected: false },
 	{ description: 'the Safe\'s request carries EIP-7702 authorizations', selectedActiveAddress: SAFE_ADDRESS, createParams: async () => await createTransferParams({ authorizationList: [{ chainId: '0x1', address: addressString(CALLED_CONTRACT), nonce: '0x0' }] }), expected: false },
 	{ description: 'the Safe\'s request creates a contract', selectedActiveAddress: SAFE_ADDRESS, createParams: async () => (await import('../../app/ts/types/JsonRpc-types.js')).SendTransactionParams.parse({ method: 'eth_sendTransaction', params: [{ value: '0x0', data: '0x00' }] }), expected: false },
@@ -626,16 +643,14 @@ async function importStackedTransaction(transaction: PreSimulationTransaction) {
 
 const ORDINARY_SIMULATION_OPTIONS: TransactionSimulationOptions = { requiredChainId: fakeRpcNetwork.chainId }
 const importCases = [
-	{ description: 'keeps running an imported transaction of a configured Gnosis Safe through the Safe, so a simulation-mode stack round-trips', sender: SAFE_ADDRESS, safeConfigured: true, imported: SAFE_EXECUTION_SIMULATION_OPTIONS, expected: SAFE_EXECUTION_SIMULATION_OPTIONS },
-	{ description: 'runs an imported transaction of a configured Gnosis Safe through the Safe, as a confirmation would, though the import did not ask to', sender: SAFE_ADDRESS, safeConfigured: true, imported: undefined, expected: SAFE_EXECUTION_SIMULATION_OPTIONS },
-	{ description: 'does not run an imported transaction through a Gnosis Safe when its sender is not a Safe, though the import asks to', sender: ORDINARY_ACCOUNT, safeConfigured: true, imported: SAFE_EXECUTION_SIMULATION_OPTIONS, expected: ORDINARY_SIMULATION_OPTIONS },
-	{ description: 'does not run an imported transaction through a Gnosis Safe that is not configured on this chain, though the import asks to', sender: SAFE_ADDRESS, safeConfigured: false, imported: SAFE_EXECUTION_SIMULATION_OPTIONS, expected: ORDINARY_SIMULATION_OPTIONS },
+	{ description: 'drops executeThroughSafe from an imported transaction of the active Gnosis Safe, so a file cannot make Interceptor assume the owners approved it', imported: SAFE_EXECUTION_SIMULATION_OPTIONS },
+	{ description: 'keeps an imported transaction of the active Gnosis Safe that does not ask to run through the Safe as an ordinary transaction', imported: ORDINARY_SIMULATION_OPTIONS },
 ]
 
-for (const { description, sender, safeConfigured, imported, expected } of importCases) {
+for (const { description, imported } of importCases) {
 	test(description, async () => {
-		await modules.updateUserAddressBookEntries(() => safeConfigured ? [createSafeAddressBookEntry()] : [])
-		const safeCall = createSafeCall({ value: 7n, input: new Uint8Array(), gas: 63_000n }, imported)
-		assert.deepEqual(await importStackedTransaction({ ...safeCall, signedTransaction: { ...safeCall.signedTransaction, from: sender } }), expected)
+		await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry()])
+		await (await import('../../app/ts/background/settings.js')).changeSimulationMode({ simulationMode: true, rpcNetwork: fakeRpcNetwork, activeSimulationAddress: SAFE_ADDRESS })
+		assert.deepEqual(await importStackedTransaction(createSafeCall({ value: 7n, input: new Uint8Array(), gas: 63_000n }, imported)), ORDINARY_SIMULATION_OPTIONS)
 	})
 }
