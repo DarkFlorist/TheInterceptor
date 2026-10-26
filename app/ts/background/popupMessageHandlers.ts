@@ -51,7 +51,7 @@ import { serializeSimulateExecutionReply } from '../types/simulateExecutionReply
 import { createSafeContractValidationFailure, getSafeContractSnapshot, validateSafeOwnerIsEoa } from '../safe/safeCore.js'
 import { normalizeConsecutiveTimeManipulations } from '../utils/transactionStack.js'
 import { getPendingTransactionGasPayment, getSafePendingFlow } from '../safe/safePendingFlow.js'
-import { decideImportedGnosisSafeExecutions } from './safeTransactionConfirmation.js'
+import { withoutImportedGnosisSafeExecutions } from './safeTransactionConfirmation.js'
 import { getOperationsForActiveStackContext, SIMULATION_STACK_CONTEXT } from '../utils/activeStackContext.js'
 import { type ActiveAddressSelection, assertActiveAddressSelectionAllowed, getActiveAddressSelection, getWalletSelectedAccount } from '../utils/activeAddressSelection.js'
 export { importSafeStack, requestSafeStackExport, validateSafeTransactionStackForCurrentContract } from './safeStackHandlers.js'
@@ -1236,13 +1236,8 @@ export async function importSimulationStack(ethereum: EthereumClientService, tok
 	const importedStackBytes = estimateSerializedStateBytes(InterceptorTransactionStack, parsedRequest.data.interceptorSimulateStack)
 	console.info(`[simulation-stack import] received ${ parsedRequest.data.interceptorSimulateStack.operations.length } operations (${ formatEstimatedBytes(importedStackBytes) }).`)
 
-	// Interceptor, not the imported stack, decides which transactions run through a Gnosis Safe.
-	let importedOperations: readonly InterceptorStackOperation[]
-	try {
-		importedOperations = await decideImportedGnosisSafeExecutions(ethereum, parsedRequest.data.interceptorSimulateStack.operations)
-	} catch (error) {
-		return importSimulationStackFailure(`Failed to check which imported transactions a Gnosis Safe executes: ${ formatCaughtErrorMessage(error) }`)
-	}
+	// A simulation-mode Gnosis Safe stack re-imports as ordinary transactions from the Safe, because only a confirmation decides to assume the Safe's owners approved a transaction.
+	const importedOperations = withoutImportedGnosisSafeExecutions(parsedRequest.data.interceptorSimulateStack.operations)
 
 	const websiteAccess = await getWebsiteAccess()
 	const updateWebsiteDetails = (website: Website) => {
