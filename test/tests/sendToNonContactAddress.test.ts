@@ -1,7 +1,7 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { tokenMetadata } from '@darkflorist/address-metadata'
-import { identifyAddress as identifyAddressWithMetadata } from '../../app/ts/background/metadataUtils.js'
+import { identifyAddress as identifyAddressFromMetadataOrNode } from '../../app/ts/background/metadataUtils.js'
 import { getSendToNonContactWarning } from '../../app/ts/simulation/protectors/sendToNonContactAddress.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import type { AddressBookEntry, Erc20TokenEntry } from '../../app/ts/types/addressBookTypes.js'
@@ -198,27 +198,27 @@ describe('sendToNonContact proxy transfers', () => {
 const COMPOUND_PAX_DOLLAR_CHECKSUMMED_KEY = '0x041171993284df560249B57358F931D9eB7b925D'
 const UNBUNDLED_ADDRESS = 0x1000000000000000000000000000000000000001n
 
-// The mock node reports no code for any address, so an address outside the bundled metadata is identified on chain as an EOA.
+// Runs the real identification against a mock mainnet node, the chain the bundled metadata describes. The node reports no code for any address, so an address outside the bundled metadata is identified on chain as an EOA.
 const mockRequestHandler = new MockRequestHandler()
 const mainnet = { name: 'Ethereum Mainnet', chainId: 1n, httpsRpc: mockRequestHandler.rpcUrl, currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: true }
 const mockEthereum = new EthereumClientService(mockRequestHandler, async () => undefined, async () => undefined, mainnet)
-const identifyWithBundledMetadata = async (address: bigint) => await identifyAddressWithMetadata(mockEthereum, undefined, address, false)
+const identifyAddressOverMockNode = async (address: bigint) => await identifyAddressFromMetadataOrNode(mockEthereum, undefined, address, false)
 
 describe('sendToNonContact with bundled metadata', () => {
 	test('trusts a token that the bundled metadata stores only under its checksummed address', async () => {
 		assert.equal(tokenMetadata.has(COMPOUND_PAX_DOLLAR_CHECKSUMMED_KEY.toLowerCase()), false)
 		const address = BigInt(COMPOUND_PAX_DOLLAR_CHECKSUMMED_KEY)
-		assert.equal((await identifyWithBundledMetadata(address)).entrySource, 'DarkFloristMetadata')
+		assert.equal((await identifyAddressOverMockNode(address)).entrySource, 'DarkFloristMetadata')
 
-		const warning = await getSendToNonContactWarning(createTransaction({ to: address }), [], identifyWithBundledMetadata)
+		const warning = await getSendToNonContactWarning(createTransaction({ to: address }), [], identifyAddressOverMockNode)
 
 		assert.equal(warning, undefined)
 	})
 
 	test('still warns about an address that is in no bundled map', async () => {
-		assert.equal((await identifyWithBundledMetadata(UNBUNDLED_ADDRESS)).entrySource, 'OnChain')
+		assert.equal((await identifyAddressOverMockNode(UNBUNDLED_ADDRESS)).entrySource, 'OnChain')
 
-		const warning = await getSendToNonContactWarning(createTransaction({ to: UNBUNDLED_ADDRESS }), [], identifyWithBundledMetadata)
+		const warning = await getSendToNonContactWarning(createTransaction({ to: UNBUNDLED_ADDRESS }), [], identifyAddressOverMockNode)
 
 		assert.equal(warning?.includes('which is not in the addressbook'), true)
 	})

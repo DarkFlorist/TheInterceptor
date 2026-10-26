@@ -24,7 +24,7 @@ const createBundledMetadataLookup = <Definition>(metadata: ReadonlyMap<string, D
 	}
 }
 
-// A checksummed key is an ordinary entry of the same curated @darkflorist/address-metadata map, so a match under either casing is trusted like a lower case match: callers mark it 'DarkFloristMetadata', not 'OnChain', which deliberately drops the non-contact warning and the untrusted address badge shown only for 'OnChain' entries.
+// A checksummed key is an ordinary entry of the same curated @darkflorist/address-metadata map, so a match under either casing is trusted like a lower case match: callers mark it 'DarkFloristMetadata', not 'OnChain', which deliberately changes every 'OnChain'-gated behaviour, such as the non-contact warning and the untrusted address badge.
 export const getBundledContractMetadata = createBundledMetadataLookup(contractMetadata)
 export const getBundledTokenMetadata = createBundledMetadataLookup(tokenMetadata)
 export const getBundledErc721Metadata = createBundledMetadataLookup(erc721Metadata)
