@@ -4,7 +4,7 @@ import type { EthereumClientService } from '../simulation/services/EthereumClien
 import type { SendRawTransactionParams, SendTransactionParams } from '../types/JsonRpc-types.js'
 import type { SafeEntry } from '../types/addressBookTypes.js'
 import type { SafeTransactionSigningRequest } from '../types/safeTypes.js'
-import type { TransactionGasPayment, WebsiteCreatedEthereumTransaction, WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
+import type { InterceptorStackOperation, TransactionGasPayment, WebsiteCreatedEthereumTransaction, WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
 import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER } from '../utils/constants.js'
 import { getErrorMessage, reportLocalRecovery } from '../utils/errors.js'
 import { getPendingTransactionsAndMessages, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
@@ -14,6 +14,7 @@ import { getSafeExecutionReviewedState, getSafeExecutionSignerRoute, isSafeExecu
 import { getSafeSignerMismatchApprovalStatus, SAFE_SIGNER_SELECTION_ERROR_CODE } from './safeConfirmationResolver.js'
 import { createSafeSignerErrorStatus, type SafeSignerErrorStatus } from './safeSignerErrors.js'
 import { getSafePendingFlow } from '../safe/safePendingFlow.js'
+import { modifyObject } from '../utils/typescript.js'
 
 type SafeExecutionSignerRoute = NonNullable<Awaited<ReturnType<typeof prepareSafeExecutionSignerRoute>>>
 
@@ -45,16 +46,8 @@ export type SafeTransactionConfirmationPreparation = {
 	}>
 }
 
-/**
- * In simulation mode, a transaction whose sender is a Gnosis Safe configured on this chain runs the way the Safe runs it on-chain: through the Safe's execTransaction, sent by an executor that pays the fees (safe/safeExecutionSimulation.ts). The sender is the page's `from` or else the active address, as formEthSendTransaction simulates it. Simulation mode simulates any sender the page names without a signature, so naming a Safe gives the page nothing new: it only makes the simulation run the Safe's way.
- * Raw transactions, EIP-7702 authorizations and contract creations, which a Safe can't make through execTransaction, and Safes that aren't deployed on this chain or have a version Interceptor doesn't support, keep the ordinary simulation.
- */
-async function isSimulationModeSafeExecution(ethereum: EthereumClientService, transactionParams: SendTransactionParams | SendRawTransactionParams, activeAddress: bigint) {
-	if (transactionParams.method !== 'eth_sendTransaction') return false
-	const transactionDetails = transactionParams.params[0]
-	if (transactionDetails.type === '7702' || transactionDetails.authorizationList !== undefined) return false
-	if (transactionDetails.to === undefined || transactionDetails.to === null) return false
-	const sender = transactionDetails.from ?? activeAddress
+// Simulation mode runs a transaction from `sender` through the Gnosis Safe's execTransaction if the sender is a Gnosis Safe configured on this chain, deployed with a version Interceptor supports.
+async function isSimulatedGnosisSafe(ethereum: EthereumClientService, sender: bigint) {
 	const addressBookEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(ethereum.getChainId())
 	if (!addressBookEntries.some((entry) => entry.type === 'safe' && entry.address === sender)) return false
 	try {
@@ -69,6 +62,47 @@ async function isSimulationModeSafeExecution(ethereum: EthereumClientService, tr
 		})
 		return false
 	}
+}
+
+/**
+ * In simulation mode, a transaction whose sender is a Gnosis Safe configured on this chain runs the way the Safe runs it on-chain: through the Safe's execTransaction, sent by an executor that pays the fees (safe/safeExecutionSimulation.ts). The sender is the page's `from` or else the active address, as formEthSendTransaction simulates it. Simulation mode simulates any sender the page names without a signature, so naming a Safe gives the page nothing new: it only makes the simulation run the Safe's way.
+ * Raw transactions, EIP-7702 authorizations and contract creations, which a Safe can't make through execTransaction, and Safes that aren't deployed on this chain or have a version Interceptor doesn't support, keep the ordinary simulation.
+ */
+async function isSimulationModeSafeExecution(ethereum: EthereumClientService, transactionParams: SendTransactionParams | SendRawTransactionParams, activeAddress: bigint) {
+	if (transactionParams.method !== 'eth_sendTransaction') return false
+	const transactionDetails = transactionParams.params[0]
+	if (transactionDetails.type === '7702' || transactionDetails.authorizationList !== undefined) return false
+	if (transactionDetails.to === undefined || transactionDetails.to === null) return false
+	return await isSimulatedGnosisSafe(ethereum, transactionDetails.from ?? activeAddress)
+}
+
+/**
+ * Running a transaction through a Gnosis Safe makes the simulation assume the Safe's owners approved it, so an imported simulation stack doesn't get to choose it: every imported transaction's executeThroughSafe is dropped and decided again as isSimulationModeSafeExecution decides it for a confirmation.
+ * Re-deciding rather than rejecting the flag needs no confirmation context: an imported transaction is already formed with an explicit sender, and a confirmation runs only an EIP-1559 call that formEthSendTransaction formed for this chain through a Safe. So a stack exported in simulation mode imports as it was, while a transaction from a sender that isn't a Gnosis Safe configured here runs as an ordinary transaction.
+ */
+export async function decideImportedGnosisSafeExecutions(ethereum: EthereumClientService, operations: readonly InterceptorStackOperation[]): Promise<readonly InterceptorStackOperation[]> {
+	const chainId = ethereum.getChainId()
+	const decisionsBySender = new Map<bigint, Promise<boolean>>()
+	const isSimulatedGnosisSafeOnce = (sender: bigint) => {
+		const decision = decisionsBySender.get(sender) ?? isSimulatedGnosisSafe(ethereum, sender)
+		decisionsBySender.set(sender, decision)
+		return decision
+	}
+	return await Promise.all(operations.map(async (operation) => {
+		if (operation.type !== 'Transaction') return operation
+		const transaction = operation.preSimulationTransaction
+		const { signedTransaction, simulationOptions } = transaction
+		const isSafeExecution = transaction.originalRequestParameters.method === 'eth_sendTransaction'
+			&& signedTransaction.type === '1559'
+			&& signedTransaction.to !== null
+			&& signedTransaction.chainId === chainId
+			&& await isSimulatedGnosisSafeOnce(signedTransaction.from)
+		// The options formEthSendTransaction gives a simulation-mode Gnosis Safe execution.
+		if (isSafeExecution) return modifyObject(operation, { preSimulationTransaction: modifyObject(transaction, { simulationOptions: { requiredChainId: chainId, executeThroughSafe: true } }) })
+		if (simulationOptions?.executeThroughSafe === undefined) return operation
+		const { executeThroughSafe: _importedExecuteThroughSafe, ...ordinarySimulationOptions } = simulationOptions
+		return modifyObject(operation, { preSimulationTransaction: modifyObject(transaction, { simulationOptions: ordinarySimulationOptions }) })
+	}))
 }
 
 export async function prepareSafeTransactionConfirmation(

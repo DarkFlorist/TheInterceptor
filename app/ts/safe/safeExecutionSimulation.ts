@@ -38,6 +38,13 @@ const getApprovedHashStorageSlot = (owner: bigint, safeTxHash: bigint) => keccak
 	[bytes32String(safeTxHash), keccak256(encodeAbiValues(['address', 'uint256'], [addressString(owner), SAFE_APPROVED_HASHES_SLOT]))],
 ))
 
+// A transaction that isn't a Gnosis Safe execution runs its own call, even if an earlier preparation gave it an executedTransaction: EthereumClientService rejects one that still has it.
+function withoutExecutedTransaction(transaction: SimulationInputTransaction): SimulationInputTransaction {
+	if (transaction.executedTransaction === undefined) return transaction
+	const { executedTransaction: _executedTransaction, ...ownCall } = transaction
+	return ownCall
+}
+
 // Every owner approves and signs, sorted as execTransaction requires. execTransaction checks only as many signatures as its threshold at execution, so an execution still passes after an earlier one on the stack raises the threshold.
 const getSigningOwners = (safeState: SafeContractState) => [...safeState.owners].sort(compareAddresses)
 
@@ -110,7 +117,7 @@ function createExecutorTransaction(execution: SafeExecution, safeCall: EthereumS
  */
 export async function prepareSafeExecutionSimulationInput(input: SimulationStateInput, ethereum: EthereumClientService, parentBlockNumber: bigint, baseFeePerGas: bigint): Promise<SimulationStateInput> {
 	const safeAddresses = new Set(input.flatMap((block) => block.transactions.filter(isGnosisSafeExecution).map((transaction) => getSafeExecution(transaction).safeAddress)))
-	if (safeAddresses.size === 0) return input
+	if (safeAddresses.size === 0 && input.every((block) => block.transactions.every((transaction) => transaction.executedTransaction === undefined))) return input
 	const safeStates = new Map(await Promise.all([...safeAddresses].map(async (safeAddress) => [safeAddress, await getSafeContractStateAtBlock(ethereum, safeAddress, parentBlockNumber)] as const)))
 	const maxFeePerGas = baseFeePerGas * 2n + EXECUTOR_MAX_PRIORITY_FEE_PER_GAS
 	const earlierSimulatedExecutionsBySafe = new Map<bigint, bigint>()
@@ -121,7 +128,7 @@ export async function prepareSafeExecutionSimulationInput(input: SimulationState
 	const preparedInput = input.map((block) => ({ ...block, transactions: block.transactions.map((transaction) => {
 		if (!isGnosisSafeExecution(transaction)) {
 			earlierExecTransactionCalls += countExecTransactionSelectors(transaction.signedTransaction.input)
-			return transaction
+			return withoutExecutedTransaction(transaction)
 		}
 		const { signedTransaction } = transaction
 		const execution = getSafeExecution(transaction)
@@ -145,7 +152,8 @@ export async function prepareSafeExecutionSimulationInput(input: SimulationState
 		return { ...transaction, executedTransaction }
 	}) }))
 	const [firstBlock, ...laterBlocks] = preparedInput
-	if (firstBlock === undefined) return preparedInput
+	// Without a Gnosis Safe execution there are no approvals to set and no executor to fund.
+	if (firstBlock === undefined || executorNonce === 0n) return preparedInput
 	const stateOverrides: MutableStateOverrides = { ...firstBlock.stateOverrides }
 	for (const [safeAddress, approvedHashSlots] of approvedHashSlotsBySafe) {
 		const safeOverride = stateOverrides[addressString(safeAddress)]
