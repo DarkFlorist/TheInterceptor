@@ -283,6 +283,7 @@ describe('import simulation stack', () => {
 			InterceptorSimulationExport.serialize(createSafeSimulationExportPayload())
 		)
 
+		// Without a chain to read, the import fails here only if it rejects the Safe proposals before deciding which transactions a Gnosis Safe executes.
 		const reply = await modules.importSimulationStack({} as never, {} as never, { method: 'popup_importSimulationStack', data: parsedExport })
 
 		assert.equal(reply.type, 'ImportSimulationStackReply')

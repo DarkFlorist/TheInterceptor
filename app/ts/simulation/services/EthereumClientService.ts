@@ -342,7 +342,8 @@ export class EthereumClientService {
 		const gasLimitTransaction = (transaction: RpcTransaction): RpcTransaction => ({
 			signedTransaction: clampGasToBlock(transaction.signedTransaction),
 			...(transaction.executedTransaction === undefined ? {} : { executedTransaction: clampGasToBlock(transaction.executedTransaction) }),
-			// Kept with executedTransaction, so the rpcBlocks hold the same invariant the checks above enforce.
+			// Kept with executedTransaction, so the rpcBlocks hold the same invariant the checks above enforce: isGnosisSafeExecution reads both.
+			...(transaction.safeTransaction === undefined ? {} : { safeTransaction: transaction.safeTransaction }),
 			...(transaction.simulationOptions === undefined ? {} : { simulationOptions: transaction.simulationOptions }),
 		})
 

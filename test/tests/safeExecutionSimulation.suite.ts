@@ -383,6 +383,46 @@ for (const { description, createOtherTransactions } of staleExecutionCases) {
 	})
 }
 
+const preparedExecutionCases = [
+	{ description: 'a Gnosis Safe execution', createExecution: () => createSafeCall({ value: 7n, input: new Uint8Array(), gas: 63_000n }, SAFE_EXECUTION_SIMULATION_OPTIONS) },
+	{ description: 'a Safe proposal', createExecution: () => createSafeProposal({}) },
+]
+
+for (const { description, createExecution } of preparedExecutionCases) {
+	test(`passes both RPC boundary checks with ${ description } prepared to run through the Safe, again from the gas-limited blocks`, async () => {
+		configureSafe()
+		const [preparedBlock] = await prepareSafeExecutionSimulationInput([createBlock([createExecution()])], ethereum, 123n, BASE_FEE_PER_GAS)
+		if (preparedBlock === undefined) throw new Error('Expected a prepared block')
+		const prepared = await ethereum.prepareEthSimulateV1Input([preparedBlock], 123n, undefined)
+		// The simulated balances simulate the gas-limited blocks again, so they must still mark the Safe execution.
+		const reprepared = await ethereum.prepareEthSimulateV1Input(prepared.rpcBlocks, 123n, undefined)
+		assert.equal(reprepared.rpcBlocks[0]?.transactions[0]?.executedTransaction?.from, SAFE_EXECUTION_SIMULATION_EXECUTOR)
+	})
+}
+
+test('rejects and clears the executor\'s call of a Safe proposal\'s shown call that is no longer a Safe proposal', async () => {
+	configureSafe()
+	const [preparedBlock] = await prepareSafeExecutionSimulationInput([createBlock([createSafeProposal({})])], ethereum, 123n, BASE_FEE_PER_GAS)
+	const preparedProposal = preparedBlock?.transactions[0]
+	if (preparedProposal?.executedTransaction === undefined) throw new Error('Expected a prepared Safe proposal')
+	const { safeTransaction: _safeTransaction, ...shownCallWithExecutorCall } = preparedProposal
+	await assert.rejects(ethereum.ethSimulateV1Input([createBlock([shownCallWithExecutorCall])], 123n, undefined), /not a Gnosis Safe execution reached the node with a call other than its own/u)
+	const [clearedBlock] = await prepareSafeExecutionSimulationInput([createBlock([shownCallWithExecutorCall])], ethereum, 123n, BASE_FEE_PER_GAS)
+	assert.equal(clearedBlock?.transactions[0]?.executedTransaction, undefined)
+})
+
+test('replaces another call to run that a Safe proposal carries with its executor\'s execution of the SafeTx', async () => {
+	configureSafe()
+	const proposal = createSafeProposal({})
+	const otherCall = createSafeCall({ value: 0n, input: new Uint8Array(), gas: 21_000n }, undefined).signedTransaction
+	const [preparedBlock] = await prepareSafeExecutionSimulationInput([createBlock([{ ...proposal, executedTransaction: otherCall }])], ethereum, 123n, BASE_FEE_PER_GAS)
+	const executed = preparedBlock?.transactions[0]?.executedTransaction
+	const proposalSafeTx = proposal.safeTransaction?.safeTx
+	if (executed === undefined || proposalSafeTx === undefined) throw new Error('Expected a prepared Safe proposal')
+	assert.equal(executed.from, SAFE_EXECUTION_SIMULATION_EXECUTOR)
+	assert.deepEqual(decodeSafeExecution(fakeRpcNetwork.chainId, SAFE_ADDRESS, proposalSafeTx.message.nonce, executed.input).safeTx, proposalSafeTx)
+})
+
 test('drops an execution override from an imported simulation stack, so a stacked transaction runs the call it shows', () => {
 	const shownCall = createSafeCall({ value: 7n, input: Uint8Array.from([0x12, 0x34]), gas: 63_000n }, SAFE_EXECUTION_SIMULATION_OPTIONS)
 	const harmlessCall = createSafeCall({ value: 0n, input: new Uint8Array(), gas: 21_000n }, undefined)
