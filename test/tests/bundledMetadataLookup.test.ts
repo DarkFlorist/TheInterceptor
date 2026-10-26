@@ -6,6 +6,31 @@ import { getBundledContractMetadata, getBundledErc1155Metadata, getBundledErc721
 const COMPOUND_PAX_DOLLAR_CHECKSUMMED_KEY = '0x041171993284df560249B57358F931D9eB7b925D'
 const AAVE_DAI_CHECKSUMMED_KEY = '0x028171bCA77440897B824Ca71D1c56caC55b68A3'
 
+// The reviewed bundled tokens that only the checksummed lookup identifies, and so are trusted as bundled metadata rather than flagged as unknown on-chain addresses: all Compound and Aave tokens of @darkflorist/address-metadata 0.10.0. A dependency bump that changes this set must update this list.
+const REVIEWED_CHECKSUMMED_ONLY_TOKEN_KEYS = [
+	'0x041171993284df560249B57358F931D9eB7b925D',
+	'0x12392F67bdf24faE0AF363c24aC620a2f67DAd86',
+	'0x158079Ee67Fce2f58472A96584A73C7Ab9AC95c1',
+	'0x1E6bb68Acec8fefBD87D192bE09bb274170a0548',
+	'0x2e8F4bdbE3d47d7d7DE490437AeA9915D930F1A3',
+	'0x514cd6756CCBe28772d4Cb81bC3156BA9d1744aa',
+	'0x683923dB55Fead99A79Fa01A27EeC3cB19679cC3',
+	'0x6F634c6135D2EBD550000ac92F494F9CB8183dAe',
+	'0x7713DD9Ca933848F6819F38B8352D9A15EA73F67',
+	'0x952749E07d7157bb9644A894dFAF3Bad5eF6D918',
+	'0x9a14e23A58edf4EFDcB360f68cd1b95ce2081a2F',
+	'0xB29130CBcC3F791f077eAdE0266168E808E5151e',
+	'0xC11b1268C1A384e55C48c2391d8d480264A3A7F4',
+	'0xF5DCe57282A584D2746FaF1593d3121Fcac444dC',
+	'0xc2e2152647F4C26028482Efaf64b2Aa28779EFC4',
+	'0xce1871f791548600cb59efbefFC9c38719142079',
+	'0xd4937682df3C8aEF4FE912A96A74121C0829E664',
+	'0xf650C3d88D12dB855b8bf7D11Be6C55A4e07dCC9',
+]
+
+// The keys of a bundled map that only a checksummed lookup finds, because the map has no lower case key for the address.
+const getChecksummedOnlyKeys = (metadata: ReadonlyMap<string, unknown>) => Array.from(metadata.keys()).filter((key) => key !== key.toLowerCase() && !metadata.has(key.toLowerCase()))
+
 // Every key must be found by its address, and whenever the map also has the lower case key, that entry must be the one returned, as it was before checksummed keys were found.
 const assertEveryKeyResolves = <Definition>(metadata: ReadonlyMap<string, Definition>, lookup: (address: bigint) => Definition | undefined) => {
 	for (const [key, definition] of metadata) {
@@ -34,6 +59,13 @@ describe('bundled metadata lookup', () => {
 		assertEveryKeyResolves(tokenMetadata, getBundledTokenMetadata)
 		assertEveryKeyResolves(erc721Metadata, getBundledErc721Metadata)
 		assertEveryKeyResolves(erc1155Metadata, getBundledErc1155Metadata)
+	})
+
+	test('trusts only the reviewed checksummed-only bundled entries', () => {
+		assert.deepEqual(getChecksummedOnlyKeys(contractMetadata), [])
+		assert.deepEqual(new Set(getChecksummedOnlyKeys(tokenMetadata)), new Set(REVIEWED_CHECKSUMMED_ONLY_TOKEN_KEYS))
+		assert.deepEqual(getChecksummedOnlyKeys(erc721Metadata), [])
+		assert.deepEqual(getChecksummedOnlyKeys(erc1155Metadata), [])
 	})
 
 	test('returns undefined for an address that is not bundled', () => {
