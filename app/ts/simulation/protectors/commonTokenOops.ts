@@ -1,12 +1,11 @@
 import { UNISWAP_V2_ROUTER_ADDRESS, SUSHISWAP_V2_ROUTER_ADDRESS, UNISWAP_V3_ROUTER } from '../../utils/constants.js'
 import type { EthereumAddress, EthereumUnsignedTransaction } from '../../types/wire-types.js'
-import { erc1155Metadata, erc721Metadata, tokenMetadata } from '@darkflorist/address-metadata'
-import { addressString } from '../../utils/bigint.js'
 import { parseTransaction } from '../../utils/calldata.js'
 import { type SimulationState, toResolvedSimulationState } from '../../types/visualizer-types.js'
 import type { EthereumClientService } from '../services/EthereumClientService.js'
 import { getSimulatedCode } from '../services/SimulationModeEthereumClientService.js'
 import { identifyAddress } from '../../background/metadataUtils.js'
+import { getBundledErc1155Metadata, getBundledErc721Metadata, getBundledTokenMetadata } from '../../background/bundledMetadataLookup.js'
 
 const ADDITIONAL_BAD_TRANSFER_TARGETS = new Set<bigint>([
 	UNISWAP_V2_ROUTER_ADDRESS,
@@ -14,10 +13,7 @@ const ADDITIONAL_BAD_TRANSFER_TARGETS = new Set<bigint>([
 	UNISWAP_V3_ROUTER
 ])
 
-const hasKnownCommonTokenMetadata = (address: EthereumAddress) => {
-	const normalizedAddress = addressString(address)
-	return tokenMetadata.has(normalizedAddress) || erc721Metadata.has(normalizedAddress) || erc1155Metadata.has(normalizedAddress)
-}
+const hasKnownCommonTokenMetadata = (address: EthereumAddress) => getBundledTokenMetadata(address) !== undefined || getBundledErc721Metadata(address) !== undefined || getBundledErc1155Metadata(address) !== undefined
 
 export async function getCodeOrError(ethereum: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: SimulationState, address: EthereumAddress) {
 	const code = await getSimulatedCode(ethereum, requestAbortController, toResolvedSimulationState(simulationState), address)
