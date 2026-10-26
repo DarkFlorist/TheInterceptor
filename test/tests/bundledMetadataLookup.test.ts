@@ -13,12 +13,11 @@ const assertEveryKeyResolves = <Definition>(metadata: ReadonlyMap<string, Defini
 	}
 }
 
-// The listing must hold every bundled address exactly once, under its lower case key, with the entry the lookup returns for it.
+// The listing must hold every bundled address exactly once, under its lower case key, at the position of its first key in map order, with the entry the lookup returns for it.
 const assertListsEveryAddressOnce = <Definition>(metadata: ReadonlyMap<string, Definition>, list: () => Iterable<[string, Definition]>, lookup: (address: bigint) => Definition | undefined) => {
 	const listed = Array.from(list())
 	const listedKeys = listed.map(([key]) => key)
-	assert.equal(new Set(listedKeys).size, listedKeys.length)
-	assert.deepEqual(new Set(listedKeys), new Set(Array.from(metadata.keys(), (key) => key.toLowerCase())))
+	assert.deepEqual(listedKeys, Array.from(new Set(Array.from(metadata.keys(), (key) => key.toLowerCase()))))
 	for (const [key, definition] of listed) assert.strictEqual(definition, lookup(BigInt(key)), key)
 }
 

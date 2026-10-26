@@ -2,12 +2,13 @@ import { contractMetadata, erc1155Metadata, erc721Metadata, tokenMetadata } from
 import type { EthereumAddress } from '../types/wire-types.js'
 import { addressString } from '../utils/bigint.js'
 
-// The bundled maps key almost every address by its lower case string, but some tokens only by their checksummed string, and some under both casings with different data. This module is the only reader of those raw maps and re-keys each by lower case address. The lower case key's entry wins, so an address stored under both casings keeps the entry it has always resolved to, and among several other casings the first key in map order wins. Map order is otherwise kept, so a listing only loses the shadowed duplicates.
+// The bundled maps key almost every address by its lower case string, but some tokens only by their checksummed string, and some under both casings with different data. This module is the only reader of those raw maps and re-keys each by lower case address. The lower case key's entry wins, so an address stored under both casings keeps the entry it has always resolved to, and among several other casings the first key in map order wins. Each address stays at the position of its first key in map order, so a listing only loses the shadowed duplicates.
 const keyByLowerCaseAddress = <Definition>(metadata: ReadonlyMap<string, Definition>): ReadonlyMap<string, Definition> => {
 	const canonical = new Map<string, Definition>()
 	for (const [key, definition] of metadata) {
 		const lowerCaseKey = key.toLowerCase()
-		const isShadowed = key !== lowerCaseKey && (metadata.has(lowerCaseKey) || canonical.has(lowerCaseKey))
+		// A later lower case key overwrites an earlier casing's entry, and Map.set keeps the address at the earlier key's position.
+		const isShadowed = key !== lowerCaseKey && canonical.has(lowerCaseKey)
 		if (!isShadowed) canonical.set(lowerCaseKey, definition)
 	}
 	return canonical
