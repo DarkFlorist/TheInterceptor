@@ -6,7 +6,7 @@ import type { SafeOwnerSignature, SafeStackTransaction, SafeTransactionSigningRe
 import { getErrorMessage } from '../utils/errors.js'
 import { EthereumBytes32 } from '../types/wire-types.js'
 import { getHtmlFile } from './backgroundUtils.js'
-import { getSafeTransactionStacks, updateTransactionState } from './storageVariables.js'
+import { getSafeTransactionStacks } from './storageVariables.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
 import { openPopupOrTab } from '../utils/popupOrTab.js'
 import { assertSafeContractStateUnchanged, createSafeContractValidationFailure, createSafeOwnerValidationFailure, createSafeOwnerValidator, getSafeContractSnapshot, isSafeContractValidationFailure, isSafeOwnerValidationFailure } from '../safe/safeCore.js'
@@ -15,6 +15,7 @@ import { mapSafeTransactionMetadata, mergeSafeOwnerSignatures, reconcileSafeTran
 import { isSafeSignerSelectionFailure, validateSafeMessageCoSignature } from './safeConfirmationResolver.js'
 import { createSafeSignerErrorStatus, type SafeSignerErrorStatus } from './safeSignerErrors.js'
 import { getSafePendingFlow } from '../safe/safePendingFlow.js'
+import { updateTransactionStateOnRequestedNetwork } from './transactionNetwork.js'
 
 export type SafeSignerReplyResolution =
 	| { readonly status: 'not-safe' }
@@ -126,7 +127,8 @@ async function persistSafeTransaction(
 		safeTransaction: stackTransaction,
 	}
 	try {
-		await updateTransactionState((previousState) => {
+		// The proposal goes to the Gnosis Safe stack of this client's network, so the network check runs as the last step after the Gnosis Safe contract was validated, and also covers the proposal's signing domain.
+		const persistence = await updateTransactionStateOnRequestedNetwork(ethereum, pendingTransaction, (previousState) => {
 			const reconciledState = reconcileSafeTransactionState(
 				previousState,
 				ethereum.getChainId(),
@@ -183,6 +185,7 @@ async function persistSafeTransaction(
 				}] }
 			return { safeTransactionStacks, interceptorTransactionStack }
 		})
+		if (!persistence.committed) return { status: 'error', approvalStatus: persistence.refusal }
 	} catch (error) {
 		if (!isSafeContractValidationFailure(error)) throw error
 		return signerError(`Gnosis Safe proposal could not be persisted: ${ getErrorMessage(error) ?? 'The local Gnosis Safe proposal stack changed.' }`)

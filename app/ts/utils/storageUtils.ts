@@ -186,11 +186,38 @@ export async function browserStorageLocalSafeParseGet(keys: LocalStorageKey | Lo
 	return browserStorageLocalSafeParse(await browser.storage.local.get(Array.isArray(keys) ? keys : [keys]))
 }
 
-export async function browserStorageLocalRemove(keys: LocalStorageKey | LocalStorageKey[]) {
+// The active network is left out of the generic setter and remover, so browserStorageLocalSetActiveNetwork is the only way to write it.
+type RemovableLocalStorageKey = Exclude<LocalStorageKey, 'activeRpcNetwork'>
+type WritableLocalStorageItems = LocalStorageItems & { readonly activeRpcNetwork?: never }
+
+export async function browserStorageLocalRemove(keys: RemovableLocalStorageKey | RemovableLocalStorageKey[]) {
 	return await browser.storage.local.remove(Array.isArray(keys) ? keys : [keys])
 }
-export async function browserStorageLocalSet(items: LocalStorageItems) {
-	return await browser.storage.local.set(serialize(LocalStorageItems, items))
+const serializeLocalStorageItems = (items: LocalStorageItems) => serialize(LocalStorageItems, items)
+
+export async function browserStorageLocalSet(items: WritableLocalStorageItems) {
+	return await browser.storage.local.set(serializeLocalStorageItems(items))
+}
+
+// Counts the writes of the active network that started and finished, for beginActiveNetworkRead.
+let activeNetworkWritesStarted = 0
+let activeNetworkWritesFinished = 0
+
+// The only setter whose type accepts the active network, so every write of it is counted.
+export async function browserStorageLocalSetActiveNetwork(items: LocalStorageItems & { readonly activeRpcNetwork: RpcNetwork }) {
+	activeNetworkWritesStarted += 1
+	try {
+		return await browser.storage.local.set(serializeLocalStorageItems(items))
+	} finally {
+		activeNetworkWritesFinished += 1
+	}
+}
+
+// Called right before the active network is read. The returned check tells, synchronously, whether the network read is still the stored one: it is not if a write of the active network was running when the read started, or has started since.
+export function beginActiveNetworkRead() {
+	const writesStartedBeforeRead = activeNetworkWritesStarted
+	const writeRunningWhenReadStarted = activeNetworkWritesStarted !== activeNetworkWritesFinished
+	return () => !writeRunningWhenReadStarted && activeNetworkWritesStarted === writesStartedBeforeRead
 }
 
 const getTabStateKey = (tabId: number): `tabState_${ number }` => `tabState_${ tabId }`

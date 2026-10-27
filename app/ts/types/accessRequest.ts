@@ -38,7 +38,10 @@ const ConfirmTransactionSimulationBaseData = funtypes.ReadonlyObject({
 	uniqueRequestIdentifier: UniqueRequestIdentifier,
 	transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed,
 	signerName: SignerName,
-})
+}).And(funtypes.ReadonlyPartial({
+	// Identifies the confirmation simulation run that produced this visualisation; confirmations stored by older versions have none.
+	confirmationRunId: funtypes.Number,
+}))
 
 type ConfirmTransactionDialogState = funtypes.Static<typeof ConfirmTransactionDialogState>
 const ConfirmTransactionDialogState = funtypes.Intersect(
@@ -100,6 +103,8 @@ const SimulatedPendingTransactionBase = funtypes.ReadonlyObject({
 	website: Website,
 	approvalStatus: PendingTransactionApprovalStatus,
 }).And(funtypes.ReadonlyPartial({
+	// The network the website requested the transaction on. Its preview is only refreshed and approved on this network. Confirmations stored by older versions have none, so they cannot be approved.
+	requestedChainId: EthereumQuantity,
 	safeTransaction: SafeTransactionSigningRequest,
 	safeExecutionSignerAddress: EthereumAddress,
 	safeExecutionOriginalRequestParameters: SendTransactionParams,
