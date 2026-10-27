@@ -1,9 +1,10 @@
 import * as assert from 'assert'
 import { setSystemTime, test } from 'bun:test'
-import { activeAddress, addressString, browserMock, createDisconnectedPort, createSafeAddressBookEntry, createSafeStackFixture, createSafeTx, createWebsitePort, EIP712Message, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, pendingTransaction, recipientAddress, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, signedTransaction, simulator, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
+import { Transaction } from 'micro-eth-signer'
+import { activeAddress, addressString, browserMock, createDisconnectedPort, createSafeAddressBookEntry, createSafeStackFixture, createSafeTx, createWebsitePort, EIP712Message, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, pendingTransaction, recipientAddress, safeTestOwnerAccount, safeTestOwnerAddress, safeTestOwnerPrivateKey, safeTxToTypedDataJson, signedTransaction, simulator, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
 import { createDeferredValue } from './backgroundEthAccountsTestHarness.js'
 import type { PendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
-import { SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
+import { SendRawTransactionParams, SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
 import { PersonalSignParams } from '../../app/ts/types/jsonRpc-signing-types.js'
 import { METAMASK_ERROR_NOT_CONNECTED_TO_APPROPRIATE_CHAIN } from '../../app/ts/utils/constants.js'
 
@@ -31,16 +32,22 @@ async function setUpTransactionApprovalTest(simulationMode: boolean) {
 
 type TransactionTestConnections = Awaited<ReturnType<typeof setUpTransactionApprovalTest>>['websiteTabConnections']
 
-async function requestTransaction(websiteTabConnections: TransactionTestConnections, simulationMode: boolean) {
+async function requestTransaction(websiteTabConnections: TransactionTestConnections, simulationMode: boolean, requestParams: SendTransactionParams | SendRawTransactionParams = transactionParams) {
 	const reply = await modules.openConfirmTransactionDialogForTransaction(simulator.ethereum, simulator.tokenPriceService, {
 		interceptorRequest: true,
 		usingInterceptorWithoutSigner: false,
 		uniqueRequestIdentifier,
-		method: transactionParams.method,
-		params: transactionParams.params,
-	}, { kind: 'transaction', parameters: transactionParams }, simulationMode, activeAddress, website, websiteTabConnections)
+		method: requestParams.method,
+		params: requestParams.params,
+	}, { kind: 'transaction', parameters: requestParams }, simulationMode, activeAddress, website, websiteTabConnections)
 	assert.deepEqual(reply, { type: 'doNotReply' })
 }
+
+// An eth_sendRawTransaction whose chain id is fixed by the signature of the website's sender, not by the Interceptor.
+const signRawTransaction = (chainId: bigint) => SendRawTransactionParams.parse({
+	method: 'eth_sendRawTransaction',
+	params: [Transaction.prepare({ type: 'eip1559', chainId, nonce: 0n, maxFeePerGas: 1n, maxPriorityFeePerGas: 1n, gasLimit: 21_000n, to: addressString(recipientAddress), value: 2n, data: '0x', accessList: [] }, false).signBy(safeTestOwnerPrivateKey).toHex()],
+})
 
 async function getPendingTransaction() {
 	const pending = (await modules.getPendingTransactionsAndMessages()).find((entry) => entry.type === 'Transaction')
@@ -230,6 +237,45 @@ test('a transaction preview from another network cannot be approved', async () =
 	await storePreview({})
 	assert.equal(await approveRequest(websiteTabConnections), true)
 	assert.equal(getForwardedSignerRequests(postedMessages).length, 1)
+})
+
+test('a raw transaction signed for the requested network can be approved', async () => {
+	const { postedMessages, websiteTabConnections } = await setUpTransactionApprovalTest(false)
+	await requestTransaction(websiteTabConnections, false, signRawTransaction(fakeRpcNetwork.chainId))
+
+	assert.deepEqual(getPreviewChainIds(await getPendingTransaction()), { transaction: fakeRpcNetwork.chainId, visualization: fakeRpcNetwork.chainId })
+	assert.equal(await approveRequest(websiteTabConnections), true)
+	assert.deepEqual(getForwardedSignerRequests(postedMessages).map((message) => isRecord(message) ? message.method : undefined), ['eth_sendRawTransaction'])
+})
+
+test('a raw transaction signed for another network cannot be approved', async () => {
+	const { postedMessages, websiteTabConnections } = await setUpTransactionApprovalTest(false)
+	await requestTransaction(websiteTabConnections, false, signRawTransaction(otherNetwork.chainId))
+
+	// The simulation runs on the requested network, so only the signed chain id tells that the transaction would be broadcast on another one.
+	assert.deepEqual(getPreviewChainIds(await getPendingTransaction()), { transaction: otherNetwork.chainId, visualization: fakeRpcNetwork.chainId })
+	await expectApprovalToBeInvalidated(websiteTabConnections, postedMessages)
+})
+
+test('a raw transaction signed for another network is not added to the simulation stack', async () => {
+	const { websiteTabConnections } = await setUpTransactionApprovalTest(true)
+	await requestTransaction(websiteTabConnections, true, signRawTransaction(otherNetwork.chainId))
+
+	assert.equal(await approveRequest(websiteTabConnections), false)
+	assert.deepEqual((await modules.getInterceptorTransactionStack()).operations, [])
+	const pending = await getPendingTransaction()
+	if (pending.approvalStatus.status !== 'SignerError') throw new Error(`Expected an invalidated approval, got ${ pending.approvalStatus.status }`)
+	assert.equal(pending.approvalStatus.code, METAMASK_ERROR_NOT_CONNECTED_TO_APPROPRIATE_CHAIN)
+})
+
+test('a legacy raw transaction without a chain id never becomes a pending confirmation', async () => {
+	const { postedMessages, websiteTabConnections } = await setUpTransactionApprovalTest(false)
+	// The pre-EIP-155 deployment transaction of the deterministic deployment proxy, valid on every network because it signs no chain id.
+	const preEip155Transaction = SendRawTransactionParams.parse({ method: 'eth_sendRawTransaction', params: ['0xf8a58085174876e800830186a08080b853604580600e600039806000f350fe7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe03601600081602082378035828234f58015156039578182fd5b8082525050506014600cf31ba02222222222222222222222222222222222222222222222222222222222222222a02222222222222222222222222222222222222222222222222222222222222222'] })
+
+	await assert.rejects(requestTransaction(websiteTabConnections, false, preEip155Transaction), /Unsupported transaction type legacy/)
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	assert.deepEqual(getForwardedSignerRequests(postedMessages), [])
 })
 
 test('a metadata refresh that finishes after the transaction was approved keeps it waiting for the signer', async () => {

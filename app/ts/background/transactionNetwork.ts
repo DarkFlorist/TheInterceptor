@@ -7,10 +7,11 @@ import { updateInterceptorTransactionStack, updateTransactionState } from './sto
 // A transaction is only prepared, simulated and visualized with the client of the network it was requested for. After a network switch its preview is kept unchanged, and approval is refused until the user switches back.
 export const isEthereumClientOnTransactionChain = (ethereum: EthereumClientService, pendingTransaction: PendingTransaction) => ethereum.getChainId() === pendingTransaction.requestedChainId
 
-// The same contract address can behave differently on another network, so the transaction the Interceptor prepared and the visualized simulation must come from the requested network. A raw transaction keeps the network its sender signed it for, and a failed simulation, which can still be force-sent, records no network.
+// The same contract address can behave differently on another network, so the transaction and the visualized simulation must come from the requested network. The chain id of an eth_sendTransaction is the one the Interceptor prepared, and that of an eth_sendRawTransaction is the one the website signed, which must match too, or a raw transaction signed for another network would be previewed here and broadcast there. A failed simulation, which can still be force-sent, records no network.
 function isTransactionPreviewOnRequestedChain(pendingTransaction: Extract<SimulatedPendingTransaction, { readonly transactionOrMessageCreationStatus: 'Simulated' }>, requestedChainId: bigint) {
 	const { popupVisualisation, transactionToSimulate } = pendingTransaction
-	if (pendingTransaction.originalRequestParameters.method === 'eth_sendTransaction' && transactionToSimulate.transaction.chainId !== requestedChainId) return false
+	// Every transaction type requires a chain id; a raw transaction without one, a pre-EIP-155 legacy transaction, is rejected by parseSendRawTransaction before it is ever pending.
+	if (transactionToSimulate.transaction.chainId !== requestedChainId) return false
 	return popupVisualisation.statusCode !== 'success' || popupVisualisation.data.simulationState.rpcNetwork.chainId === requestedChainId
 }
 

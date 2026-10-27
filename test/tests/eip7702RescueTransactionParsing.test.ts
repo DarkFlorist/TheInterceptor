@@ -316,6 +316,7 @@ function makeSimulatedPendingRawTransaction(transactionToSimulate: WebsiteCreate
 	return PendingTransactionOrSignableMessage.parse(serialize(PendingTransactionOrSignableMessage, pendingTransaction))
 }
 
+// The raw transaction must be signed for rpcNetwork, the network it is requested on, or its approval is refused.
 async function assertAcceptPreservesRawSignedTransaction(signedTransactionBytes: Uint8Array) {
 	const browserMock = installBrowserMock()
 	try {
@@ -789,7 +790,7 @@ describe('EIP-7702 rescue transaction parsing', () => {
 		const sponsor = privateKeyToTestAccount('0x0000000000000000000000000000000000000000000000000000000000000001')
 		const signedTransaction = await sponsor.signTransaction({
 			type: 'eip1559',
-			chainId: 5,
+			chainId: rpcNetwork.chainId,
 			nonce: 7,
 			maxFeePerGas: 2n,
 			maxPriorityFeePerGas: 1n,
@@ -807,12 +808,12 @@ describe('EIP-7702 rescue transaction parsing', () => {
 		const victim = privateKeyToTestAccount('0x0000000000000000000000000000000000000000000000000000000000000002')
 		const clearDelegationAuthorization = await victim.signAuthorization({
 			address: zeroAddress,
-			chainId: 5,
+			chainId: rpcNetwork.chainId,
 			nonce: 5,
 		})
 		const signedTransaction = await sponsor.signTransaction({
 			type: 'eip7702',
-			chainId: 5,
+			chainId: rpcNetwork.chainId,
 			nonce: 7,
 			maxFeePerGas: 2n,
 			maxPriorityFeePerGas: 1n,
