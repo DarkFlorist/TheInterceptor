@@ -114,7 +114,7 @@ async function handleRPCRequest(
 		if (safePolicyReply !== undefined) return safePolicyReply
 		console.warn({ request })
 		console.warn(maybeParsedRequest.fullError)
-		// The Safe signing-mode policy above decides first, so a readable invalid-params error never reveals which methods are supported while a Safe is signing. The logged failure of a supported method is from its own codec only, not from the whole request union.
+		// A readable invalid-params error reveals nothing new about which methods the Interceptor handles: a page already learns that from a well-formed call (handled here, versus forwarded to the wallet or refused below), and every method's parameters are in the public source. The Safe signing-mode policy above decides first, so a Safe signing through the wallet still answers every malformed request with its not-supported reply. The logged failure of a supported method is from its own codec only, not from the whole request union.
 		if (requestCodec !== undefined) return getInvalidRpcParamsReply(request, requestCodec, maybeParsedRequest)
 		// Without a method codec the method is not supported here (wallet_revokePermissions is handled before handleRPCRequest), so forward it to the wallet if a signer is available
 		if (forwardToSigner) return { type: 'forwardToSigner' as const, replyWithSignersReply: true, ...request }
