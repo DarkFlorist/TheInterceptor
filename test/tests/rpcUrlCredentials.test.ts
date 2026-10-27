@@ -1,0 +1,209 @@
+import * as assert from 'assert'
+import { describe, test } from 'bun:test'
+import type { RpcEntry, RpcNetwork } from '../../app/ts/types/rpc.js'
+import { getRpcFetchTarget, getRpcUrlCredentialsTransportError, redactRpcUrlCredentials, removeRpcNetworkCredentialsForExport, removeRpcUrlCredentials, restoreRpcNetworkCredentialsForImport } from '../../app/ts/utils/rpcUrlCredentials.js'
+
+const basicAuthorization = (credentials: string) => ({ Authorization: `Basic ${ Buffer.from(credentials, 'utf8').toString('base64') }` })
+
+describe('RPC URL credentials', () => {
+	test('returns credential-free and unparseable URLs unchanged without headers', () => {
+		assert.deepEqual(getRpcFetchTarget('https://rpc.example'), { url: 'https://rpc.example', headers: {} })
+		assert.deepEqual(getRpcFetchTarget('https://rpc.example/v1?key=value'), { url: 'https://rpc.example/v1?key=value', headers: {} })
+		assert.deepEqual(getRpcFetchTarget('rpc example'), { url: 'rpc example', headers: {} })
+	})
+
+	test('moves username and password into a Basic authorization header', () => {
+		assert.deepEqual(getRpcFetchTarget('https://alice:s3cret@rpc.example/v1?key=value'), {
+			url: 'https://rpc.example/v1?key=value',
+			headers: basicAuthorization('alice:s3cret'),
+		})
+	})
+
+	test('throws instead of sending credentials over plaintext http, to remote and loopback hosts alike', () => {
+		for (const host of ['remote-node:8545', 'localhost:8545', '127.0.0.1:8545', '[::1]:8545']) {
+			const expectedMessage = `Credentials in RPC URL http://***@${ host }/ can only be sent over https.`
+			assert.throws(() => getRpcFetchTarget(`http://alice:s3cret@${ host }`), (error: unknown) => error instanceof Error && error.message === expectedMessage, host)
+		}
+		assert.throws(() => getRpcFetchTarget('http://token@localhost'), (error: unknown) => error instanceof Error && !error.message.includes('token'))
+	})
+
+	test('keeps credential-free plaintext http URLs to remote and loopback hosts unchanged', () => {
+		for (const rpcUrl of ['http://remote-node:8545', 'http://localhost:8545', 'http://127.0.0.1:8545']) {
+			assert.deepEqual(getRpcFetchTarget(rpcUrl), { url: rpcUrl, headers: {} })
+			assert.equal(getRpcUrlCredentialsTransportError(rpcUrl), undefined)
+		}
+	})
+
+	test('explains which credential URLs cannot be sent without exposing the credentials', () => {
+		assert.equal(getRpcUrlCredentialsTransportError('http://alice:s3cret@remote-node:8545'), 'Credentials in RPC URL http://***@remote-node:8545/ can only be sent over https.')
+		assert.equal(getRpcUrlCredentialsTransportError('http://alice:s3cret@localhost:8545'), 'Credentials in RPC URL http://***@localhost:8545/ can only be sent over https.')
+		assert.equal(getRpcUrlCredentialsTransportError('https://alice:s3cret@remote-node'), undefined)
+		assert.equal(getRpcUrlCredentialsTransportError('https://alice:s3cret@localhost:8545'), undefined)
+		assert.equal(getRpcUrlCredentialsTransportError('rpc example'), undefined)
+	})
+
+	test('supports a username without a password and a password without a username', () => {
+		assert.deepEqual(getRpcFetchTarget('https://token@rpc.example'), { url: 'https://rpc.example/', headers: basicAuthorization('token:') })
+		assert.deepEqual(getRpcFetchTarget('https://:s3cret@rpc.example'), { url: 'https://rpc.example/', headers: basicAuthorization(':s3cret') })
+	})
+
+	test('decodes percent-encoded credentials', () => {
+		assert.deepEqual(getRpcFetchTarget('https://us%40er:p%3Ass%2Fw%25rd%20@rpc.example').headers, basicAuthorization('us@er:p:ss/w%rd '))
+		assert.deepEqual(getRpcFetchTarget('https://alice:p%C3%A4ss@rpc.example').headers, basicAuthorization('alice:päss'))
+	})
+
+	test('decodes an encoded colon in the username like browsers, so servers split credentials at the first colon', () => {
+		assert.deepEqual(getRpcFetchTarget('https://us%3Aer:pw@rpc.example').headers, basicAuthorization('us:er:pw'))
+	})
+
+	test('keeps malformed percent escapes literal', () => {
+		assert.deepEqual(getRpcFetchTarget('https://alice:100%zz%4@rpc.example').headers, basicAuthorization('alice:100%zz%4'))
+	})
+
+	test('encodes unicode credentials as UTF-8', () => {
+		assert.deepEqual(getRpcFetchTarget('https://jürgen:pässwörd🔑@rpc.example').headers, basicAuthorization('jürgen:pässwörd🔑'))
+	})
+
+	test('redacts the whole userinfo for display', () => {
+		assert.equal(redactRpcUrlCredentials('https://alice:s3cret@rpc.example/v1?key=value'), 'https://***@rpc.example/v1?key=value')
+		assert.equal(redactRpcUrlCredentials('https://token@rpc.example'), 'https://***@rpc.example/')
+		assert.equal(redactRpcUrlCredentials('https://:s3cret@rpc.example'), 'https://***@rpc.example/')
+		assert.equal(redactRpcUrlCredentials('http://alice:p%C3%A4ss@localhost:8545'), 'http://***@localhost:8545/')
+	})
+
+	test('removes the whole userinfo for export, leaving a usable credential-free URL', () => {
+		assert.equal(removeRpcUrlCredentials('https://alice:s3cret@rpc.example/v1?key=value'), 'https://rpc.example/v1?key=value')
+		assert.equal(removeRpcUrlCredentials('https://token@rpc.example'), 'https://rpc.example/')
+		assert.equal(removeRpcUrlCredentials('http://:s3cret@localhost:8545'), 'http://localhost:8545/')
+		assert.equal(removeRpcUrlCredentials('https://rpc.example'), 'https://rpc.example')
+		assert.equal(removeRpcUrlCredentials('rpc example'), 'rpc example')
+	})
+
+	test('leaves credential-free and unparseable URLs unchanged for display', () => {
+		assert.equal(redactRpcUrlCredentials('https://rpc.example'), 'https://rpc.example')
+		assert.equal(redactRpcUrlCredentials('rpc example'), 'rpc example')
+	})
+})
+
+describe('RPC URL credential transport', () => {
+	// The transport predicate is internal, so each host is checked through the exported validation entry point with test credentials added.
+	const canSendCredentialsTo = (url: string) => {
+		const urlWithCredentials = new URL(url)
+		urlWithCredentials.username = 'alice'
+		urlWithCredentials.password = 's3cret'
+		return getRpcUrlCredentialsTransportError(urlWithCredentials.toString()) === undefined
+	}
+
+	test('allows credentials over https to any host', () => {
+		for (const url of ['https://remote-node', 'https://203.0.113.7:8545', 'https://localhost:8545']) {
+			assert.equal(canSendCredentialsTo(url), true, url)
+		}
+	})
+
+	test('rejects credentials over plaintext http to every host, loopback included', () => {
+		for (const url of ['http://remote-node:8545', 'http://203.0.113.7', 'http://localhost:8545', 'http://127.0.0.1:8545', 'http://127.1', 'http://[::1]:8545']) {
+			assert.equal(canSendCredentialsTo(url), false, url)
+		}
+	})
+
+	test('rejects schemes other than https', () => {
+		assert.equal(canSendCredentialsTo('ws://localhost:8545'), false)
+		assert.equal(canSendCredentialsTo('ftp://localhost'), false)
+	})
+})
+
+describe('RPC URL strings the URL parser cannot split into userinfo and host', () => {
+	const malformedCredentialRpcUrls = [
+		{ description: 'a malformed port', rpcUrl: 'https://alice:s3cret@rpc.example:99999/v1', redacted: 'https://***@rpc.example:99999/v1', removed: 'https://rpc.example:99999/v1' },
+		{ description: 'a malformed host', rpcUrl: 'https://alice:s3cret@rpc exa.mple/v1', redacted: 'https://***@rpc exa.mple/v1', removed: 'https://rpc exa.mple/v1' },
+		{ description: 'an @ in the path and query', rpcUrl: 'https://alice:s3cret@rpc.example:99999/team@v1?contact=ops@example.com', redacted: 'https://***@example.com', removed: 'https://example.com' },
+		{ description: 'a missing scheme', rpcUrl: 'alice:s3cret@rpc.example/v1', redacted: '***@rpc.example/v1', removed: 'rpc.example/v1' },
+		{ description: 'a password containing / and @', rpcUrl: 'https://alice:s3c/r@t@rpc.example:99999', redacted: 'https://***@rpc.example:99999', removed: 'https://rpc.example:99999' },
+	]
+	const assertNoSecret = (value: string, description: string) => {
+		assert.equal(value.includes('alice'), false, description)
+		assert.equal(value.includes('s3c'), false, description)
+	}
+
+	test('redacts everything up to the last @ for display', () => {
+		for (const { description, rpcUrl, redacted } of malformedCredentialRpcUrls) {
+			assert.equal(redactRpcUrlCredentials(rpcUrl), redacted, description)
+			assertNoSecret(redactRpcUrlCredentials(rpcUrl), description)
+		}
+	})
+
+	test('removes everything up to the last @ for export', () => {
+		for (const { description, rpcUrl, removed } of malformedCredentialRpcUrls) {
+			assert.equal(removeRpcUrlCredentials(rpcUrl), removed, description)
+			assertNoSecret(removeRpcUrlCredentials(rpcUrl), description)
+		}
+	})
+
+	test('refuses to fetch them, since browsers repeat the raw URL in fetch errors', () => {
+		for (const { description, rpcUrl, redacted } of malformedCredentialRpcUrls) {
+			const expectedMessage = `RPC URL ${ redacted } could not be parsed as a URL with a host. Check its scheme, host, and port.`
+			assert.equal(getRpcUrlCredentialsTransportError(rpcUrl), expectedMessage, description)
+			assert.throws(() => getRpcFetchTarget(rpcUrl), (error: unknown) => error instanceof Error && error.message === expectedMessage, description)
+		}
+	})
+
+	test('leaves valid URLs with an @ after the host, and strings without any @, unchanged', () => {
+		for (const rpcUrl of ['https://rpc.example/v1?contact=ops@example.com', 'rpc.example:8545', 'rpc example']) {
+			assert.equal(redactRpcUrlCredentials(rpcUrl), rpcUrl)
+			assert.equal(removeRpcUrlCredentials(rpcUrl), rpcUrl)
+			assert.equal(getRpcUrlCredentialsTransportError(rpcUrl), undefined)
+			assert.deepEqual(getRpcFetchTarget(rpcUrl), { url: rpcUrl, headers: {} })
+		}
+	})
+})
+
+describe('RPC network credentials in settings exports and imports', () => {
+	const credentialedEntry: RpcEntry = { name: 'Private node', chainId: 1n, httpsRpc: 'https://alice:s3cret@node.example/v1', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
+	const exportedNetwork = removeRpcNetworkCredentialsForExport(credentialedEntry)
+	const publicEntry: RpcEntry = { ...credentialedEntry, name: 'Public node', httpsRpc: 'https://public.example', primary: false }
+	const signerOnlyNetwork: RpcNetwork = { httpsRpc: undefined, chainId: 1n, name: 'Signer chain', currencyName: 'Ether?', currencyTicker: 'ETH?', primary: false, minimized: true }
+
+	test('exports the network with its URL credentials removed and everything else unchanged', () => {
+		assert.deepEqual(exportedNetwork, { ...credentialedEntry, httpsRpc: 'https://node.example/v1' })
+		assert.deepEqual(removeRpcNetworkCredentialsForExport(publicEntry), publicEntry)
+		assert.deepEqual(removeRpcNetworkCredentialsForExport(signerOnlyNetwork), signerOnlyNetwork)
+	})
+
+	test('selects the single stored entry with the same chain ID whose URL exports as the imported URL', () => {
+		assert.equal(restoreRpcNetworkCredentialsForImport(exportedNetwork, [publicEntry, credentialedEntry]), credentialedEntry)
+	})
+
+	test('compares only the chain ID and the credential-free URL, so an entry renamed or reconfigured after the export still matches', () => {
+		const reconfiguredEntry: RpcEntry = { ...credentialedEntry, name: 'Renamed node', currencyName: 'Renamed Ether', currencyTicker: 'RETH', currencyLogoUri: 'https://logo.example/eth.svg', blockExplorer: { apiUrl: 'https://explorer.example/api', apiKey: 'explorer-key' }, primary: false, minimized: true }
+		assert.equal(restoreRpcNetworkCredentialsForImport(exportedNetwork, [publicEntry, reconfiguredEntry]), reconfiguredEntry)
+	})
+
+	test('keeps the imported network when the stored entry differs in chain ID or in its credential-free URL', () => {
+		const differingEntries = [
+			{ description: 'another chain ID', storedEntry: { ...credentialedEntry, chainId: 10n } },
+			{ description: 'another path', storedEntry: { ...credentialedEntry, httpsRpc: 'https://alice:s3cret@node.example/v2' } },
+			{ description: 'another host', storedEntry: { ...credentialedEntry, httpsRpc: 'https://alice:s3cret@other-node.example/v1' } },
+		]
+		for (const { description, storedEntry } of differingEntries) {
+			assert.equal(restoreRpcNetworkCredentialsForImport(exportedNetwork, [publicEntry, storedEntry]), exportedNetwork, description)
+		}
+	})
+
+	test('keeps the imported network when several stored entries match, credential-free ones included', () => {
+		const otherCredentialsEntry: RpcEntry = { ...credentialedEntry, httpsRpc: 'https://bob:other-secret@node.example/v1', primary: false }
+		const credentialFreeEntry: RpcEntry = { ...credentialedEntry, httpsRpc: 'https://node.example/v1', primary: false }
+		assert.equal(restoreRpcNetworkCredentialsForImport(exportedNetwork, [credentialedEntry, otherCredentialsEntry]), exportedNetwork)
+		assert.equal(restoreRpcNetworkCredentialsForImport(exportedNetwork, [credentialFreeEntry, credentialedEntry]), exportedNetwork)
+	})
+
+	test('keeps the imported network when the only match has no credentials', () => {
+		const credentialFreeEntry: RpcEntry = { ...credentialedEntry, name: 'Anonymous node', httpsRpc: 'https://node.example/v1', primary: false }
+		assert.equal(restoreRpcNetworkCredentialsForImport(exportedNetwork, [publicEntry, credentialFreeEntry]), exportedNetwork)
+	})
+
+	test('keeps an imported URL that still has credentials, and a signer-only network', () => {
+		const olderExportNetwork: RpcEntry = { ...credentialedEntry, httpsRpc: 'https://bob:other-secret@node.example/v1' }
+		assert.equal(restoreRpcNetworkCredentialsForImport(olderExportNetwork, [credentialedEntry]), olderExportNetwork)
+		assert.equal(restoreRpcNetworkCredentialsForImport(signerOnlyNetwork, [credentialedEntry]), signerOnlyNetwork)
+	})
+})

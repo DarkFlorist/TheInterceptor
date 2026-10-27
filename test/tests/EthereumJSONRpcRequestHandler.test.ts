@@ -8,6 +8,7 @@ const responseHeaders = { 'Content-Type': 'application/json' }
 const testAddress = 0x0000000000000000000000000000000000000001n
 const HTTP_STATUS_OK = 200
 const HTTP_STATUS_BAD_REQUEST = 400
+const HTTP_STATUS_UNAUTHORIZED = 401
 type LifecycleCallbackError = {
 	error: unknown
 	request: SlowRpcRequest
@@ -25,6 +26,26 @@ function installFetchMock(responses: Response[]) {
 	}
 	return {
 		getCalls: () => calls,
+		restore() {
+			globalThis.fetch = previousFetch
+		},
+	}
+}
+
+type RecordedFetchCall = {
+	url: string
+	headers: Headers
+}
+
+function installRecordingFetchMock(createResponse: () => Response) {
+	const previousFetch = globalThis.fetch
+	const calls: RecordedFetchCall[] = []
+	globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+		calls.push({ url: input instanceof Request ? input.url : input.toString(), headers: new Headers(init?.headers) })
+		return createResponse()
+	}
+	return {
+		calls,
 		restore() {
 			globalThis.fetch = previousFetch
 		},
@@ -299,6 +320,107 @@ describe('EthereumJSONRpcRequestHandler caching', () => {
 				assert.equal(await requestPromise, '0x1')
 				assert.equal(fetchMock.getCalls(), 1)
 				assert.equal(warnings.some((warning) => warning[0] instanceof Error && warning[0].message === 'lifecycle error reporter failed'), true)
+			} finally {
+				fetchMock.restore()
+			}
+		})
+	})
+})
+
+describe('EthereumJSONRpcRequestHandler URL credentials', () => {
+	const credentialRpcUrl = 'https://alice:s3cret@rpc.example/v1'
+	const createChainIdResponse = () => new Response(JSON.stringify({ jsonrpc: '2.0', id: 2, result: '0x1' }), { status: HTTP_STATUS_OK, headers: responseHeaders })
+
+	test('sends URL credentials as a Basic authorization header instead of in the fetched URL', async () => {
+		const fetchMock = installRecordingFetchMock(createChainIdResponse)
+		const requestHandler = new EthereumJSONRpcRequestHandler(credentialRpcUrl, true)
+
+		try {
+			assert.equal(await requestHandler.jsonRpcRequest({ method: 'eth_chainId' }), '0x1')
+			assert.deepEqual(fetchMock.calls.map((call) => call.url), ['https://rpc.example/v1'])
+			assert.equal(fetchMock.calls[0]?.headers.get('Authorization'), `Basic ${ Buffer.from('alice:s3cret', 'utf8').toString('base64') }`)
+			assert.equal(fetchMock.calls[0]?.headers.get('Content-Type'), 'application/json')
+			assert.equal(requestHandler.rpcUrl, credentialRpcUrl)
+		} finally {
+			fetchMock.restore()
+		}
+	})
+
+	test('creates handlers for stored plaintext http credential URLs, loopback included, but fails their requests without fetching', async () => {
+		const fetchMock = installRecordingFetchMock(createChainIdResponse)
+
+		try {
+			for (const host of ['remote-node:8545', '127.0.0.1:8545', 'localhost:8545']) {
+				for (const caching of [true, false]) {
+					const requestHandler = new EthereumJSONRpcRequestHandler(`http://alice:s3cret@${ host }/v1`, caching)
+					await assert.rejects(requestHandler.jsonRpcRequest({ method: 'eth_chainId' }), (error: unknown) => {
+						assert.ok(error instanceof Error)
+						assert.equal(error.message, `Credentials in RPC URL http://***@${ host }/v1 can only be sent over https.`)
+						return true
+					})
+				}
+			}
+			assert.equal(fetchMock.calls.length, 0)
+		} finally {
+			fetchMock.restore()
+		}
+	})
+
+	test('sends credential-free plaintext http requests to loopback nodes unchanged', async () => {
+		const fetchMock = installRecordingFetchMock(createChainIdResponse)
+		const requestHandler = new EthereumJSONRpcRequestHandler('http://127.0.0.1:8545')
+
+		try {
+			assert.equal(await requestHandler.jsonRpcRequest({ method: 'eth_chainId' }), '0x1')
+			assert.deepEqual(fetchMock.calls.map((call) => call.url), ['http://127.0.0.1:8545'])
+			assert.equal(fetchMock.calls[0]?.headers.get('Authorization'), null)
+		} finally {
+			fetchMock.restore()
+		}
+	})
+
+	test('fails requests to credential URLs the URL parser cannot split without fetching, since browsers repeat the raw URL in fetch errors', async () => {
+		const fetchMock = installRecordingFetchMock(createChainIdResponse)
+		const requestHandler = new EthereumJSONRpcRequestHandler('https://alice:s3cret@remote-node:99999/v1')
+
+		try {
+			await assert.rejects(requestHandler.jsonRpcRequest({ method: 'eth_chainId' }), (error: unknown) => {
+				assert.ok(error instanceof Error)
+				assert.equal(error.message, 'RPC URL https://***@remote-node:99999/v1 could not be parsed as a URL with a host. Check its scheme, host, and port.')
+				return true
+			})
+			assert.equal(fetchMock.calls.length, 0)
+		} finally {
+			fetchMock.restore()
+		}
+	})
+
+	test('keeps credential-free RPC URLs and headers unchanged', async () => {
+		const fetchMock = installRecordingFetchMock(createChainIdResponse)
+		const requestHandler = new EthereumJSONRpcRequestHandler('https://rpc.example')
+
+		try {
+			assert.equal(await requestHandler.jsonRpcRequest({ method: 'eth_chainId' }), '0x1')
+			assert.deepEqual(fetchMock.calls.map((call) => call.url), ['https://rpc.example'])
+			assert.equal(fetchMock.calls[0]?.headers.get('Authorization'), null)
+			assert.equal(fetchMock.calls[0]?.headers.get('Content-Type'), 'application/json')
+		} finally {
+			fetchMock.restore()
+		}
+	})
+
+	test('redacts URL credentials from HTTP failure messages', async () => {
+		await withCapturedConsoleWarn(async () => {
+			const fetchMock = installRecordingFetchMock(() => new Response('Unauthorized', { status: HTTP_STATUS_UNAUTHORIZED }))
+			const requestHandler = new EthereumJSONRpcRequestHandler(credentialRpcUrl)
+
+			try {
+				await assert.rejects(requestHandler.jsonRpcRequest({ method: 'eth_chainId' }), (error: unknown) => {
+					assert.ok(error instanceof Error)
+					assert.equal(error.message, 'Query to RPC server https://***@rpc.example/v1 failed with error code: 401 while quering for eth_chainId.')
+					assert.equal(error.message.includes('s3cret'), false)
+					return true
+				})
 			} finally {
 				fetchMock.restore()
 			}

@@ -18,6 +18,7 @@ import { useAsyncState } from '../../utils/preact-utilities.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 import { shouldApplyInitialRpcEntries, shouldOfferBundledRpcReset } from '../../utils/rpcConnectionUi.js'
 import { reportUnexpectedError } from '../../utils/errors.js'
+import { redactRpcUrlCredentials } from '../../utils/rpcUrlCredentials.js'
 
 type CheckBoxSettingParam = {
 	text: string
@@ -272,6 +273,7 @@ const RpcSummary = ({ info }: { info: SignalOrValue<RpcEntry | undefined> }) => 
 	const currentInfo = resolveSignal(info)
 	if (currentInfo === undefined) return <></>
 	const networkName = getChainName(currentInfo.chainId)
+	const displayedRpcUrl = redactRpcUrlCredentials(currentInfo.httpsRpc)
 
 	// rerender form if entry is updated in the background by specifying a unique key
 	const infoKey = JSON.stringify(serialize(RpcEntry, currentInfo))
@@ -281,7 +283,7 @@ const RpcSummary = ({ info }: { info: SignalOrValue<RpcEntry | undefined> }) => 
 			<div class = 'grid rpc-summary-details'>
 				<div class = 'truncate' title = { currentInfo.name }><strong>{ currentInfo.name }</strong></div>
 				<div class = 'truncate' title = { networkName }>{ networkName }</div>
-				<div class = 'truncate' title = { currentInfo.httpsRpc }>{ currentInfo.httpsRpc }</div>
+				<div class = 'truncate' title = { displayedRpcUrl }>{ displayedRpcUrl }</div>
 			</div>
 			<div class = 'actions'>
 				<ConfigureRpcConnection key = { infoKey } rpcInfo = { currentInfo } />
