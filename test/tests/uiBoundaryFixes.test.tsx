@@ -75,10 +75,10 @@ function findInput(inputs: readonly TestNode[], attributeName: string, attribute
 	return input
 }
 
-// Calls the input listener Preact registered, as typing would; the RPC URL field debounces this into an RPC probe. TextInput renders through preact/compat, which registers onInput under its lowercase name.
+// Calls the input listener Preact registered, as typing would; the RPC URL field debounces this into an RPC probe. The key's casing depends on whether preact/compat or the DOM mock lowercases the event name, so it is matched case-insensitively.
 async function typeIntoInput(input: TestNode, value: string) {
 	input.value = value
-	const inputHandler = input.l?.['inputfalse']
+	const inputHandler = Object.entries(input.l ?? {}).find(([key]) => key.toLowerCase() === 'inputfalse')?.[1]
 	if (inputHandler === undefined) throw new Error('Expected an input listener')
 	await act(async () => { inputHandler({ currentTarget: input }) })
 }
