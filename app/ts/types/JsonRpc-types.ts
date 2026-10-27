@@ -1,6 +1,8 @@
 import * as funtypes from 'funtypes'
 import { CanonicalEthereumQuantity, EthereumAccessList, EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumBlockTag, EthereumBytes256, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumSignatureParity, LiteralConverterParserFactory } from './wire-types.js'
 import { areEqualUint8Arrays } from '../utils/typed-arrays.js'
+import type { CodecDescription } from '../utils/funtypesFailureExplanation.js'
+import { hasOwnKey } from '../utils/typescript.js'
 import { EthSimulateV1Params } from './ethSimulate-types.js'
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './jsonRpc-signing-types.js'
 import { ErrorWithCodeAndOptionalData } from './error.js'
@@ -30,6 +32,8 @@ export const EthGetLogsRequest = funtypes.ReadonlyPartial({
 	address: funtypes.Union(EthereumAddress, funtypes.ReadonlyArray(EthereumAddress), funtypes.Null),
 	topics: funtypes.ReadonlyArray(funtypes.Union(EthereumBytes32, funtypes.ReadonlyArray(EthereumBytes32), funtypes.Null)),
 }).withConstraint((logFilter) => logFilter.blockHash === undefined || (logFilter.fromBlock === undefined && logFilter.toBlock === undefined))
+// How invalid-params errors name EthGetLogsRequest; its fields are explained one by one.
+export const EthGetLogsRequestDescription: CodecDescription = { codec: EthGetLogsRequest, label: 'log filter' }
 
 export type EthGetLogsResponse = funtypes.Static<typeof EthGetLogsResponse>
 export const EthGetLogsResponse = funtypes.ReadonlyArray(
@@ -107,6 +111,8 @@ export const PartialEthereumTransaction = funtypes.ReadonlyPartial({
 	if (x.maxFeePerGas !== undefined) return x.gasPrice === undefined /* && x.maxPriorityFeePerGas !== undefined*/ //Remix doesn't send "maxPriorityFeePerGas" with "maxFeePerGas"
   return true
 })
+// How invalid-params errors name PartialEthereumTransaction; its fields are explained one by one.
+export const PartialEthereumTransactionDescription: CodecDescription = { codec: PartialEthereumTransaction, label: 'transaction object' }
 
 export type EthTransactionReceiptResponse = funtypes.Static<typeof EthTransactionReceiptResponse>
 export const EthTransactionReceiptResponse = funtypes.Union(
@@ -476,8 +482,16 @@ export const InterceptorError = funtypes.ReadonlyObject({
 	params: funtypes.ReadonlyTuple(funtypes.String),
 })
 
-export type EthereumJsonRpcRequest = funtypes.Static<typeof EthereumJsonRpcRequest>
-export const EthereumJsonRpcRequest = funtypes.Union(
+const EthBlockNumber = funtypes.ReadonlyObject({ method: funtypes.Literal('eth_blockNumber') })
+const EthChainId = funtypes.ReadonlyObject({ method: funtypes.Literal('eth_chainId') })
+const NetVersion = funtypes.ReadonlyObject({ method: funtypes.Literal('net_version') })
+const WalletGetPermissions = funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_getPermissions') })
+const EthAccounts = funtypes.ReadonlyObject({ method: funtypes.Literal('eth_accounts') })
+const EthRequestAccounts = funtypes.ReadonlyObject({ method: funtypes.Literal('eth_requestAccounts') })
+const EthGasPrice = funtypes.ReadonlyObject({ method: funtypes.Literal('eth_gasPrice') })
+
+// The members of EthereumJsonRpcRequest. ETHEREUM_JSON_RPC_REQUEST_CODEC_BY_METHOD below maps every method they accept back to its member.
+const ethereumJsonRpcRequestCodecs = [
 	EthBlockByNumberParams,
 	EthBlockByHashParams,
 	EthBalanceParams,
@@ -489,20 +503,20 @@ export const EthereumJsonRpcRequest = funtypes.Union(
 	EthCallParams,
 	EthSubscribeParams,
 	EthUnSubscribeParams,
-	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_blockNumber') }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_chainId') }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('net_version') }),
+	EthBlockNumber,
+	EthChainId,
+	NetVersion,
 	GetCode,
 	PersonalSignParams,
 	SignTypedDataParams,
 	OldSignTypedDataParams,
 	SwitchEthereumChainParams,
 	RequestPermissions,
-	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_getPermissions') }),
+	WalletGetPermissions,
 	WalletGetCapabilities,
-	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_accounts') }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_requestAccounts') }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_gasPrice') }),
+	EthAccounts,
+	EthRequestAccounts,
+	EthGasPrice,
 	GetTransactionCount,
 	GetSimulationStack,
 	EthGetStorageAtParams,
@@ -519,13 +533,68 @@ export const EthereumJsonRpcRequest = funtypes.Union(
 	GetFilterChanges,
 	GetFilterLogs,
 	InterceptorError,
-)
+] as const
 
-// Methods accepted by the provider. This mirrors EthereumJsonRpcRequest, plus methods handled before normal RPC dispatch such as wallet_revokePermissions.
-export type SupportedEthereumJsonRpcRequestMethods = funtypes.Static<typeof SupportedEthereumJsonRpcRequestMethods>
-export const SupportedEthereumJsonRpcRequestMethods = funtypes.ReadonlyObject({
-	method: funtypes.Union(WalletRevokePermissions.fields.method, EthereumJsonRpcRequest.alternatives[0].fields.method, ...EthereumJsonRpcRequest.alternatives.map(x => x.fields.method)),
-})
+export type EthereumJsonRpcRequest = funtypes.Static<typeof EthereumJsonRpcRequest>
+export const EthereumJsonRpcRequest = funtypes.Union(...ethereumJsonRpcRequestCodecs)
+
+type EthereumJsonRpcRequestCodec = typeof ethereumJsonRpcRequestCodecs[number]
+// Codec of one method accepted by the provider: an EthereumJsonRpcRequest member, or a method handled before normal RPC dispatch such as wallet_revokePermissions.
+export type SupportedEthereumJsonRpcRequestCodec = EthereumJsonRpcRequestCodec | typeof WalletRevokePermissions
+
+// The members of a codec union that accept requests with the given method.
+type RequestCodecAcceptingMethod<Codec, Method> = Codec extends funtypes.Codec<infer Request> ? Request extends { readonly method: infer CodecMethod } ? Method extends CodecMethod ? Codec : never : never : never
+
+// The EthereumJsonRpcRequest member of every supported method, written out so that dispatch never reads codecs back at runtime. The type requires an entry for every method the union accepts, holding the member that accepts it.
+const ETHEREUM_JSON_RPC_REQUEST_CODEC_BY_METHOD: { readonly [Method in EthereumJsonRpcRequest['method']]: RequestCodecAcceptingMethod<EthereumJsonRpcRequestCodec, Method> } = {
+	eth_getBlockByNumber: EthBlockByNumberParams,
+	eth_getBlockByHash: EthBlockByHashParams,
+	eth_getBalance: EthBalanceParams,
+	eth_estimateGas: EstimateGasParams,
+	eth_getTransactionByHash: TransactionByHashParams,
+	eth_getTransactionReceipt: TransactionReceiptParams,
+	eth_sendTransaction: SendTransactionParams,
+	eth_sendRawTransaction: SendRawTransactionParams,
+	eth_call: EthCallParams,
+	eth_subscribe: EthSubscribeParams,
+	eth_unsubscribe: EthUnSubscribeParams,
+	eth_blockNumber: EthBlockNumber,
+	eth_chainId: EthChainId,
+	net_version: NetVersion,
+	eth_getCode: GetCode,
+	personal_sign: PersonalSignParams,
+	eth_signTypedData_v1: SignTypedDataParams,
+	eth_signTypedData_v2: SignTypedDataParams,
+	eth_signTypedData_v3: SignTypedDataParams,
+	eth_signTypedData_v4: SignTypedDataParams,
+	eth_signTypedData: OldSignTypedDataParams,
+	wallet_switchEthereumChain: SwitchEthereumChainParams,
+	wallet_requestPermissions: RequestPermissions,
+	wallet_getPermissions: WalletGetPermissions,
+	wallet_getCapabilities: WalletGetCapabilities,
+	eth_accounts: EthAccounts,
+	eth_requestAccounts: EthRequestAccounts,
+	eth_gasPrice: EthGasPrice,
+	eth_getTransactionCount: GetTransactionCount,
+	interceptor_getSimulationStack: GetSimulationStack,
+	eth_getStorageAt: EthGetStorageAtParams,
+	eth_getLogs: EthGetLogsParams,
+	eth_sign: EthSign,
+	eth_simulateV1: EthSimulateV1Params,
+	wallet_addEthereumChain: WalletAddEthereumChain,
+	wallet_watchAsset: WalletWatchAsset,
+	web3_clientVersion: Web3ClientVersion,
+	eth_maxPriorityFeePerGas: EthMaxPriorityFeePerGasParams,
+	eth_feeHistory: FeeHistory,
+	eth_newFilter: EthNewFilter,
+	eth_uninstallFilter: UninstallFilter,
+	eth_getFilterChanges: GetFilterChanges,
+	eth_getFilterLogs: GetFilterLogs,
+	InterceptorError: InterceptorError,
+}
+
+// The EthereumJsonRpcRequest member for a method, or undefined when the method is not supported. Parsing with the member directly avoids building validation failures for every unrelated union member.
+export const findEthereumJsonRpcRequestCodec = (method: string): EthereumJsonRpcRequestCodec | undefined => hasOwnKey(ETHEREUM_JSON_RPC_REQUEST_CODEC_BY_METHOD, method) ? ETHEREUM_JSON_RPC_REQUEST_CODEC_BY_METHOD[method] : undefined
 
 export type OriginalSendRequestParameters = funtypes.Static<typeof OriginalSendRequestParameters>
 export const OriginalSendRequestParameters = funtypes.Union(SendTransactionParams, SendRawTransactionParams)

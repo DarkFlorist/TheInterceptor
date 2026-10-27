@@ -1,5 +1,6 @@
 import { ErrorWithCodeAndOptionalData } from './error.js'
-import { EthereumAccessList, EthereumAddress, EthereumBlockHeaderTransaction, EthereumBytes16, EthereumBytes256, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumQuantitySmall, EthereumSignatureParity, EthereumTimestamp, LiteralConverterParserFactory } from './wire-types.js'
+import { EthereumAccessList, EthereumAddress, EthereumBlockHeaderTransaction, EthereumBlockTagDescription, EthereumBytes16, EthereumBytes256, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumQuantitySmall, EthereumSignatureParity, EthereumTimestamp, LiteralConverterParserFactory } from './wire-types.js'
+import type { CodecDescription } from '../utils/funtypesFailureExplanation.js'
 import * as funtypes from 'funtypes'
 
 type AccountOverride = funtypes.Static<typeof AccountOverride>
@@ -111,6 +112,8 @@ export const EthSimulateV1BlockTag = funtypes.Union(
 	funtypes.Literal('pending'),
 	funtypes.Literal('finalized'),
 )
+// eth_simulateV1 accepts the same kinds of block tags as EthereumBlockTag, so invalid-params errors describe them the same way.
+export const EthSimulateV1BlockTagDescription: CodecDescription = { ...EthereumBlockTagDescription, codec: EthSimulateV1BlockTag }
 
 export const EthSimulateV1Params = funtypes.ReadonlyObject({
 	method: funtypes.Literal('eth_simulateV1'),

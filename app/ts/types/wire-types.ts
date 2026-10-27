@@ -1,5 +1,6 @@
 import * as funtypes from 'funtypes'
 import type { UnionToIntersection } from '../utils/typescript.js'
+import type { CodecDescription } from '../utils/funtypesFailureExplanation.js'
 import { isHexEncodedNumber } from '../utils/bigint.js'
 import { isValidErc20Decimals } from '../utils/erc20.js'
 
@@ -189,12 +190,15 @@ export type NonHexBigInt = funtypes.Static<typeof NonHexBigInt>
 
 export const EthereumQuantity = funtypes.String.withParser(BigIntParser)
 export type EthereumQuantity = funtypes.Static<typeof EthereumQuantity>
+// Invalid-params error descriptions live beside the codec they describe so that each type's meaning is stated in exactly one place; rpcParseFailureReply.ts only lists which descriptions it uses.
+export const EthereumQuantityDescription: CodecDescription = { codec: EthereumQuantity, label: 'quantity', expected: 'a hex quantity' }
 
 export const EthereumQuantityUint8 = EthereumQuantity.withConstraint(isValidErc20Decimals)
 export type EthereumQuantityUint8 = funtypes.Static<typeof EthereumQuantityUint8>
 
 export const CanonicalEthereumQuantity = funtypes.String.withParser(CanonicalBigIntParser)
 export type CanonicalEthereumQuantity = funtypes.Static<typeof CanonicalEthereumQuantity>
+export const CanonicalEthereumQuantityDescription: CodecDescription = { codec: CanonicalEthereumQuantity, label: 'quantity', expected: 'a hex quantity without leading zeros' }
 
 export const EthereumSignatureParity = funtypes.String.withParser(EthereumSignatureParityParser)
 export type EthereumSignatureParity = funtypes.Static<typeof EthereumSignatureParity>
@@ -206,9 +210,11 @@ export type EthereumQuantitySmall = funtypes.Static<typeof EthereumQuantitySmall
 
 export const EthereumData = funtypes.String.withParser(BytesParser)
 export type EthereumData = funtypes.Static<typeof EthereumData>
+export const EthereumDataDescription: CodecDescription = { codec: EthereumData, label: 'data', expected: 'hex-encoded bytes' }
 
 export const EthereumAddress = funtypes.String.withParser(AddressParser)
 export type EthereumAddress = funtypes.Static<typeof EthereumAddress>
+export const EthereumAddressDescription: CodecDescription = { codec: EthereumAddress, label: 'address', expected: 'a 20-byte hex address' }
 
 export type OptionalEthereumAddress = funtypes.Static<typeof OptionalEthereumAddress>
 export const OptionalEthereumAddress = funtypes.Union(EthereumAddress, funtypes.Undefined)
@@ -218,6 +224,7 @@ export type EthereumAddressOrMissing = funtypes.Static<typeof EthereumAddressOrM
 
 export const EthereumBytes32 = funtypes.String.withParser(Bytes32Parser)
 export type EthereumBytes32 = funtypes.Static<typeof EthereumBytes32>
+export const EthereumBytes32Description: CodecDescription = { codec: EthereumBytes32, label: 'hash', expected: 'a 32-byte hex value' }
 
 export const EthereumBytes256 = funtypes.String.withParser(Bytes256Parser)
 export type EthereumBytes256 = funtypes.Static<typeof EthereumBytes256>
@@ -230,9 +237,11 @@ export type EthereumTimestamp = funtypes.Static<typeof EthereumTimestamp>
 
 export const EthereumBlockTag = funtypes.Union(EthereumQuantitySmall, EthereumBytes32, funtypes.Literal('earliest'), funtypes.Literal('safe'), funtypes.Literal('latest'), funtypes.Literal('pending'), funtypes.Literal('finalized'))
 export type EthereumBlockTag = funtypes.Static<typeof EthereumBlockTag>
+export const EthereumBlockTagDescription: CodecDescription = { codec: EthereumBlockTag, label: 'block tag', expected: 'a block number, block hash or block tag ("latest", "pending", "safe", "finalized" or "earliest")' }
 
 export const EthereumInput = funtypes.Union(funtypes.String, funtypes.Undefined).withParser(OptionalBytesParser)
 export type EthereumInput = funtypes.Static<typeof EthereumInput>
+export const EthereumInputDescription: CodecDescription = { ...EthereumDataDescription, codec: EthereumInput }
 
 export const EthereumAccessList = funtypes.ReadonlyArray(
 	funtypes.ReadonlyObject({

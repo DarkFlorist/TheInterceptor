@@ -2829,14 +2829,14 @@ describe('background eth_accounts', () => {
 			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
 		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
-		const unsupportedParams: unknown[] = [
-			[],
-			[{ wallet_switchEthereumChain: {} }],
-			[{ wallet_snap: {} }],
-			[{ eth_accounts: {}, wallet_snap: {} }],
-			[{ eth_accounts: { foo: 1 } }],
+		const unsupportedParams: [unknown[], string][] = [
+			[[], 'wallet_revokePermissions is missing required parameter 1: expected 1 parameter, but received 0.'],
+			[[{ wallet_switchEthereumChain: {} }], 'Invalid wallet_revokePermissions parameter 1: missing required field "eth_accounts".'],
+			[[{ wallet_snap: {} }], 'Invalid wallet_revokePermissions parameter 1: missing required field "eth_accounts".'],
+			[[{ eth_accounts: {}, wallet_snap: {} }], 'Invalid wallet_revokePermissions parameter 1: Unexpected property: wallet_snap.'],
+			[[{ eth_accounts: { foo: 1 } }], 'Invalid wallet_revokePermissions parameter 1 field "eth_accounts": Unexpected property: foo.'],
 		]
-		for (const [index, params] of unsupportedParams.entries()) {
+		for (const [index, [params, expectedMessage]] of unsupportedParams.entries()) {
 			const requestId = 13 + index
 			await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 				interceptorRequest: true,
@@ -2847,7 +2847,7 @@ describe('background eth_accounts', () => {
 			}, websiteTabConnections, noopPublishRpcConnectionStatus)
 
 			const revokeReplies = messages.filter((message) => message.method === 'wallet_revokePermissions' && message.requestId === requestId)
-			assert.equal(revokeReplies.at(-1)?.error?.code, -32700)
+			assert.deepEqual(revokeReplies.at(-1)?.error, { code: -32602, message: expectedMessage })
 			assert.equal(websiteTabConnections.get(socket.tabId)?.connections[connectionKey]?.approved, true)
 			const access = (await getSettings()).websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin)
 			assert.equal(access?.access, true)

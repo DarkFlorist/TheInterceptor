@@ -2,6 +2,7 @@ import * as funtypes from 'funtypes'
 import { JSONEncodeableObject, isJSON, jsonParserWithNumbersAsStringsConverter } from '../utils/json.js'
 import { EnrichedGroupedSolidityType } from './solidityType.js'
 import { EthereumQuantity, NonHexBigInt, serialize } from './wire-types.js'
+import { type CodecDescription, describeJsonDocument } from '../utils/funtypesFailureExplanation.js'
 
 export type EIP712Types = funtypes.Static<typeof EIP712Types>
 export const EIP712Types = funtypes.Record(funtypes.String, funtypes.ReadonlyArray(
@@ -29,6 +30,13 @@ const EIP712MessageParser: funtypes.ParsedValue<funtypes.String, EIP712MessageUn
 
 export type EIP712Message = funtypes.Static<typeof EIP712Message>
 export const EIP712Message = funtypes.String.withParser(EIP712MessageParser)
+// How invalid-params errors describe EIP712Message. A string that is not typed data is explained inside its JSON document, whose codec stays private so typed data is only ever parsed through EIP712Message.
+export const EIP712MessageDescription: CodecDescription = {
+	codec: EIP712Message,
+	label: 'typed data',
+	expected: 'EIP-712 typed data encoded as a JSON string',
+	jsonDocument: describeJsonDocument({ name: 'EIP-712 typed data', shape: 'a JSON object with types, primaryType, domain and message', codec: EIP712MessageUnderlying, parse: jsonParserWithNumbersAsStringsConverter }),
+}
 
 export type TypeEnrichedEIP712MessageRecord = EnrichedGroupedSolidityType
 	| { type: 'record', value: { [x: string]: TypeEnrichedEIP712MessageRecord | undefined } }
