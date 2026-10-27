@@ -338,6 +338,7 @@ async function revokeWebsitePermissions(
 function parseWalletRevokePermissionsRequest(websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest) {
 	const maybeParsedRequest = WalletRevokePermissions.safeParse(request)
 	if (maybeParsedRequest.success) return maybeParsedRequest.value
+	// Any page may revoke its own permissions, so this runs before the access check; the readable error only describes wallet_revokePermissions, whose parameters are the public EIP-2255 shape.
 	replyToInterceptedRequest(websiteTabConnections, { ...getInvalidRpcParamsReply(request, WalletRevokePermissions, maybeParsedRequest), uniqueRequestIdentifier: request.uniqueRequestIdentifier })
 	return undefined
 }
