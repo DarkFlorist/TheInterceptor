@@ -317,6 +317,7 @@ try {
 		simulationMode: false,
 		activeAddress: safeAddress,
 		created,
+		instanceId: 'screenshot pending Safe transaction',
 		transactionIdentifier: 42n,
 		website: failedTransaction.website,
 		approvalStatus: { status: 'WaitingForUser' },
