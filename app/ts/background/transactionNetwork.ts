@@ -10,7 +10,7 @@ export const isEthereumClientOnTransactionChain = (ethereum: EthereumClientServi
 // The same contract address can behave differently on another network, so the transaction and the visualized simulation must come from the requested network. The chain id of an eth_sendTransaction is the one the Interceptor prepared, and that of an eth_sendRawTransaction is the one the website signed, which must match too, or a raw transaction signed for another network would be previewed here and broadcast there. A failed simulation, which can still be force-sent, records no network.
 function isTransactionPreviewOnRequestedChain(pendingTransaction: Extract<SimulatedPendingTransaction, { readonly transactionOrMessageCreationStatus: 'Simulated' }>, requestedChainId: bigint) {
 	const { popupVisualisation, transactionToSimulate } = pendingTransaction
-	// Every transaction type requires a chain id; a raw transaction without one, a pre-EIP-155 legacy transaction, is rejected by parseSendRawTransaction before it is ever pending.
+	// Supported raw transactions require a chain id: parseSendRawTransaction rejects every legacy transaction, including a pre-EIP-155 one without a chain id, before it is ever pending.
 	if (transactionToSimulate.transaction.chainId !== requestedChainId) return false
 	return popupVisualisation.statusCode !== 'success' || popupVisualisation.data.simulationState.rpcNetwork.chainId === requestedChainId
 }
