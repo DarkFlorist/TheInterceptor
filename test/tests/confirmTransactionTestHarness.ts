@@ -13,6 +13,7 @@ import { EIP712Message } from '../../app/ts/types/eip721.js'
 import { privateKeyToAccount } from '../../app/ts/utils/ethereumPrimitives.js'
 import type { SafeEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { SafeOwnerSignature, SafeStackTransaction, SafeTransactionStack } from '../../app/ts/types/safeTypes.js'
+import { importAllPopupMessageHandlers } from './popupMessageHandlerModules.js'
 
 export type RuntimeMessage = {
 	method?: string
@@ -190,7 +191,7 @@ export async function loadModules() {
 		import('../../app/ts/simulation/services/SimulationModeEthereumClientService.js'),
 		import('../../app/ts/utils/constants.js'),
 		import('../../app/ts/background/settings.js'),
-		import('../../app/ts/background/popupMessageHandlers.js'),
+		importAllPopupMessageHandlers(),
 		import('../../app/ts/background/windows/confirmTransaction.js'),
 		import('../../app/ts/background/storageVariables.js'),
 		import('../../app/ts/utils/storageUtils.js'),

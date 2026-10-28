@@ -1,6 +1,7 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { ICON_ACCESS_DENIED, ICON_NOT_ACTIVE, ICON_SIMULATING } from '../../app/ts/utils/constants.js'
+import { importAllPopupMessageHandlers } from './popupMessageHandlerModules.js'
 
 type BrowserStorageState = Record<string, unknown>
 type MockTab = {
@@ -100,7 +101,7 @@ async function loadModules() {
 		...await import('../../app/ts/background/backgroundUtils.js'),
 		...await import('../../app/ts/background/iconHandler.js'),
 		...await import('../../app/ts/background/settings.js'),
-		...await import('../../app/ts/background/popupMessageHandlers.js'),
+		...await importAllPopupMessageHandlers(),
 		...await import('../../app/ts/background/storageVariables.js'),
 		...await import('../../app/ts/background/websiteTabConnections.js'),
 		...await import('../../app/ts/background/signerStateOwnership.js'),
