@@ -348,10 +348,13 @@ export function createEthereumWithGetBlockCounter(
 		initialBlockPolling = true,
 		getCodeResult,
 		getStorageAtResult,
+		getChainId,
 	}: {
 		readonly initialBlockPolling?: boolean
 		readonly getCodeResult?: Uint8Array
 		readonly getStorageAtResult?: bigint
+		// Replaces EthereumClientService.getChainId, for example to count which services instance answered.
+		readonly getChainId?: () => bigint
 	} = {},
 ) {
 	const rpcEntry: RpcEntry = {
@@ -385,6 +388,7 @@ export function createEthereumWithGetBlockCounter(
 				}
 				if (property === 'getCode' && getCodeResult !== undefined) return async () => getCodeResult
 				if (property === 'getStorageAt' && getStorageAtResult !== undefined) return async () => getStorageAtResult
+				if (property === 'getChainId' && getChainId !== undefined) return getChainId
 				return Reflect.get(target, property, receiver)
 			},
 		},
