@@ -5,7 +5,7 @@ import { MessageToPopup, type GovernanceVoteInputParameters, SimulateExecutionRe
 import type { RenameAddressCallBack } from '../../../types/user-interface-types.js'
 import type { SimulatedAndVisualizedTransaction } from '../../../types/visualizer-types.js'
 import { checksummedAddress, dataStringWith0xStart } from '../../../utils/bigint.js'
-import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../../utils/browser.js'
+import { addNoReplyExpectingBrowserRuntimeOnMessageListener } from '../../../utils/browser.js'
 import { ErrorComponent } from '../../subcomponents/Error.js'
 import type { EditEnsNamedHashCallBack } from '../../subcomponents/ens.js'
 import { CellElement } from '../../ui-utils.js'
@@ -211,8 +211,8 @@ export function GovernanceVoteVisualizer(param: GovernanceVoteVisualizerParams) 
 			simulateExecutionReply.value = reply
 			return false
 		}
-		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
-		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
+		// Still subscribes through the helper directly: #1683 moves this component onto usePopupMessage together with the rest of its hook changes.
+		return addNoReplyExpectingBrowserRuntimeOnMessageListener((message) => { popupMessageListener(message) })
 	}, [])
 
 	useEffect(() => {
