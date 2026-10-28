@@ -15,7 +15,6 @@ import { InterceptedRequestForward } from '../types/interceptor-messages.js'
 import { ICON_ACCESS_DENIED } from './constants.js'
 import { hasOwnKey } from './typescript.js'
 
-type IdsOfOpenedTabs = funtypes.Static<typeof IdsOfOpenedTabs>
 const IdsOfOpenedTabs = funtypes.Intersect(
 	funtypes.ReadonlyObject({
 		addressBook: funtypes.Union(funtypes.Undefined, funtypes.Number),
@@ -195,7 +194,6 @@ export async function browserStorageLocalSet(items: LocalStorageItems) {
 
 const getTabStateKey = (tabId: number): `tabState_${ number }` => `tabState_${ tabId }`
 
-type TabStateItems = funtypes.Static<typeof TabStateItems>
 export const TabStateItems = funtypes.Record(funtypes.String, TabState)
 const LEGACY_ACCESS_DENIED_SHIELD_ICON = '../img/head-access-denied-shield.png'
 

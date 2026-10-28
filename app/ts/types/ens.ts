@@ -10,7 +10,6 @@ export const MaybeENSNameHash = funtypes.ReadonlyObject({
 export type MaybeENSNameHashes = funtypes.Static<typeof MaybeENSNameHashes>
 export const MaybeENSNameHashes = funtypes.ReadonlyArray(MaybeENSNameHash)
 
-type ENSNameHash = funtypes.Static<typeof ENSNameHash>
 const ENSNameHash = funtypes.ReadonlyObject({
 	nameHash: EthereumBytes32,
 	name: funtypes.String,
@@ -19,7 +18,6 @@ const ENSNameHash = funtypes.ReadonlyObject({
 export type ENSNameHashes = funtypes.Static<typeof ENSNameHashes>
 export const ENSNameHashes = funtypes.ReadonlyArray(ENSNameHash)
 
-type ENSLabelHash = funtypes.Static<typeof ENSLabelHash>
 const ENSLabelHash = funtypes.ReadonlyObject({
 	labelHash: EthereumBytes32,
 	label: funtypes.String,

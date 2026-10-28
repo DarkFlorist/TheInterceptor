@@ -1,14 +1,10 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
+import { getSelectedPendingAccessRequest } from '../../app/ts/components/pages/InterceptorAccess.js'
+import { filterAccessDialogAddressesForChain } from '../../app/ts/background/windows/interceptorAccess.js'
 import { assertActiveAddressSelectionAllowed } from '../../app/ts/utils/activeAddressSelection.js'
 import type { PendingAccessRequest } from '../../app/ts/types/accessRequest.js'
 import type { AddressBookEntries } from '../../app/ts/types/addressBookTypes.js'
-import { installBrowserMock } from '../harness/browserMock.js'
-
-// The access page and dialog modules still import background.ts, whose module setup needs the extension globals, so install them before loading those modules.
-installBrowserMock({ extensionId: 'test-extension' })
-const { getSelectedPendingAccessRequest } = await import('../../app/ts/components/pages/InterceptorAccess.js')
-const { filterAccessDialogAddressesForChain } = await import('../../app/ts/background/windows/interceptorAccess.js')
 
 function createPendingAccessRequest(accessRequestId: string, signerAccount: bigint): PendingAccessRequest {
 	return {

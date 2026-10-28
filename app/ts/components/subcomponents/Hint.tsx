@@ -18,7 +18,8 @@ type ShowHintEventDetail = {
 	y: number
 }
 
-export const showHint = (target: HTMLElement, detail: ShowHintEventDetail) => {
+// Dispatches the hint request from target; the hint appears only if the event bubbles up to an enclosing Hint container, so target has to be inside one, which no element type expresses. Dispatching is all this needs, so it takes any EventTarget.
+export const showHint = (target: EventTarget, detail: ShowHintEventDetail) => {
 	target.dispatchEvent(new CustomEvent(showHintEventName, { bubbles: true, detail }))
 }
 
