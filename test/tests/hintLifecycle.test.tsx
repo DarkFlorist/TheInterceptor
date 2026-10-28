@@ -415,6 +415,51 @@ describe('Hint lifecycle', () => {
 		}
 	})
 
+	const renderTooltipAndShowCopyMessage = async (dom: ReturnType<typeof installDomMock>, copyMessageDelay: number) => {
+		await act(() => {
+			render(<Hint><span data-tooltip = 'Hovered explanation'>Warning</span></Hint>, dom.document.body)
+		})
+		const hoverableTooltip = findElement(dom.document.body, 'span')
+		if (hoverableTooltip?.dispatchEvent === undefined) throw new Error('tooltip target was not rendered')
+		await act(() => { showHint(hoverableTooltip, { content: 'Copied', delay: copyMessageDelay, x: 0, y: 0 }) })
+		assert.equal(findDisplayedHintText(dom), 'Copied')
+		return hoverableTooltip
+	}
+
+	test('keeps a hovered tooltip that replaced a copy message after the copy message timer would have fired', async () => {
+		const dom = installDomMock()
+		try {
+			// The hover tooltip appears 250 milliseconds after mouseover, before the 400 millisecond copy message timer would fire.
+			const hoverableTooltip = await renderTooltipAndShowCopyMessage(dom, 400)
+			await act(() => { hoverableTooltip.dispatchEvent?.(new Event('mouseover', { bubbles: true })) })
+			await act(async () => { await new Promise((resolve) => setTimeout(resolve, 300)) })
+			assert.equal(findDisplayedHintText(dom), 'Hovered explanation')
+			await act(async () => { await new Promise((resolve) => setTimeout(resolve, 200)) })
+			assert.equal(findDisplayedHintText(dom), 'Hovered explanation')
+			// With the copy message timer cancelled, leaving the element ends its tooltip right away.
+			await act(() => { hoverableTooltip.dispatchEvent?.(new Event('mouseout', { bubbles: true })) })
+			assert.equal(findDisplayedHintText(dom), undefined)
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+		}
+	})
+
+	test('still ends a copy message on its own timer when the pointer passes over a tooltip without opening it', async () => {
+		const dom = installDomMock()
+		try {
+			const hoverableTooltip = await renderTooltipAndShowCopyMessage(dom, 100)
+			await act(() => { hoverableTooltip.dispatchEvent?.(new Event('mouseover', { bubbles: true })) })
+			await act(() => { hoverableTooltip.dispatchEvent?.(new Event('mouseout', { bubbles: true })) })
+			assert.equal(findDisplayedHintText(dom), 'Copied')
+			await act(async () => { await new Promise((resolve) => setTimeout(resolve, 400)) })
+			assert.equal(findDisplayedHintText(dom), undefined)
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+		}
+	})
+
 	test('opens each hint as a manual popover in the top layer before measuring it', async () => {
 		const dom = installDomMock()
 		try {

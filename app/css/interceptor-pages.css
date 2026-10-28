@@ -414,6 +414,7 @@ header:has(form[role='search']) h1 {
 		color: var(--status-alert-text-color); /* bright yellow */
 		cursor: help;
 
+		/* The trailing sign is followed by the card's Tooltip popover, so it keeps the right margin it had when both signs were alerts */
 		&:has(+ *) { margin-right: 0.25em }
 		&:is(* + .inline-card-warning-sign) { margin-left: 0.25em }
 	}

@@ -174,6 +174,8 @@ export default function Container(props: Props) {
 			toolTipTimeoutIdRef.current = setTimeout(() => {
 				// An element removed while its tooltip was pending fires no mouseout, so its tooltip must not appear afterwards, also when Preact reused its node for content without that tooltip (the same check as dismissAbandonedTooltip).
 				if (!containerElement.contains(targetElement) || (targetElement.getAttribute(toolTipAttribute) || '') !== tooltipContent) return
+				// Cancelled only once the tooltip replaces a copy message, so a copy message the pointer merely passes over still ends on its own timer.
+				cancelPendingHintTimeouts()
 				displayHint(tooltipContent, pointAnchor(event.clientX, event.clientY), targetElement)
 			}, 250)
 		}
