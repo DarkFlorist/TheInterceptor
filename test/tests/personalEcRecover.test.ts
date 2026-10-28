@@ -8,7 +8,7 @@ import type { PersonalSignParams } from '../../app/ts/types/jsonRpc-signing-type
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
 import type { SignedMessageTransaction } from '../../app/ts/types/visualizer-types.js'
 import type { WebsiteSocket } from '../../app/ts/utils/requests.js'
-import { bytes32String } from '../../app/ts/utils/bigint.js'
+import { addressString, bytes32String } from '../../app/ts/utils/bigint.js'
 import { bytesToHex, hashMessage, privateKeyToAccount } from '../../app/ts/utils/ethereumPrimitives.js'
 import { confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, EthereumJsonRpcRequest, installBrowserMock, loadModules, noopPublishRpcConnectionStatus } from './backgroundEthAccountsTestHarness.js'
 
@@ -245,6 +245,23 @@ describe('personal_ecRecover routing', () => {
 		})
 		assert.equal((await sendPersonalEcRecover(2, [helloMessage, helloSignature]))?.result, recoveredHelloSignerAddress)
 		assert.equal(getBlockCalls.count, 0)
+		assert.equal(messages.some((message) => message.type === 'forwardToSigner'), false)
+	})
+
+	test('answers a Safe owner as simulated signer only in simulation mode, never from the Safe signing-mode stack', async () => {
+		installBrowserMock()
+		const loadedModules = await loadModules()
+		await useSafeSigningMode(loadedModules)
+		const { socket, messages, sendPersonalEcRecover } = await setUpWebsiteConnection(loadedModules)
+		const ownerSignedMessage = createSignedMessage(signerAddress, helloMessage, socket)
+		const ownerSimulatedSignature = await getSimulatedSignature(ownerSignedMessage)
+		await loadedModules.updateInterceptorTransactionStack(() => ({ operations: [{ type: 'Message', signedMessageTransaction: ownerSignedMessage }] }))
+
+		// The Safe signing-mode stack holds only Safe transactions, so the stacked message is not consulted and the mock key is recovered instead of the owner.
+		assert.equal((await sendPersonalEcRecover(1, [helloMessage, ownerSimulatedSignature]))?.result, addressString(mockSimulationKeyAddress))
+		// In simulation mode the same message answers with the Safe's simulation owner, an address the Safe's public owner list already discloses.
+		await loadedModules.changeSimulationMode({ simulationMode: true, activeSimulationAddress: safeAddress, activeSigningAddress: undefined })
+		assert.equal((await sendPersonalEcRecover(2, [helloMessage, ownerSimulatedSignature]))?.result, addressString(signerAddress))
 		assert.equal(messages.some((message) => message.type === 'forwardToSigner'), false)
 	})
 
