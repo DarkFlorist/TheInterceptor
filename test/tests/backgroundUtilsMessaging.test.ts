@@ -65,6 +65,7 @@ async function loadModules() {
 	return {
 		...await import('../../app/ts/background/backgroundUtils.js'),
 		...await import('../../app/ts/background/storageVariables.js'),
+		...await import('../../app/ts/utils/unexpectedErrorStorage.js'),
 		...await import('../../app/ts/background/background.js'),
 		...await import('../../app/ts/background/popupMessageRouting.js'),
 		...await import('../../app/ts/types/interceptor-reply-messages.js'),

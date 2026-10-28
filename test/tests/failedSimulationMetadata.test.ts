@@ -58,7 +58,7 @@ installBrowserMock()
 const { ETHEREUM_LOGS_LOGGER_ADDRESS, NEW_BLOCK_ABORT } = await import('../../app/ts/utils/constants.js')
 const { visualizeSimulatorState } = await import('../../app/ts/background/simulationUpdating.js')
 const { EthereumClientService } = await import('../../app/ts/simulation/services/EthereumClientService.js')
-const { getLatestUnexpectedError } = await import('../../app/ts/background/storageVariables.js')
+const { getLatestUnexpectedError } = await import('../../app/ts/utils/unexpectedErrorStorage.js')
 const { identifyAddress } = await import('../../app/ts/background/metadataUtils.js')
 const { JsonRpcResponseError } = await import('../../app/ts/utils/errors.js')
 
