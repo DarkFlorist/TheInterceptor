@@ -176,6 +176,19 @@ export const JsonRpcErrorResponse = funtypes.ReadonlyObject({
 export type JsonRpcResponse = funtypes.Static<typeof JsonRpcResponse>
 export const JsonRpcResponse = funtypes.Union(JsonRpcErrorResponse, JsonRpcSuccessResponse)
 
+// A provider's raw JSON-RPC response. JSON-RPC lets providers return any JSON value as error data (for example Infura's -32005 rate-limit object), so only this raw parse accepts it; EthereumJSONRpcRequestHandler keeps only string data when it turns the error into a JsonRpcErrorResponse, whose data stays a string.
+export type ProviderJsonRpcErrorResponse = funtypes.Static<typeof ProviderJsonRpcErrorResponse>
+export const ProviderJsonRpcErrorResponse = funtypes.ReadonlyObject({
+	jsonrpc: funtypes.Literal('2.0'),
+	id: funtypes.Union(funtypes.String, funtypes.Number),
+	error: funtypes.Intersect(
+		funtypes.ReadonlyObject({ code: funtypes.Number, message: funtypes.String }),
+		funtypes.Partial({ data: funtypes.Unknown }),
+	),
+}).asReadonly()
+
+export const ProviderJsonRpcResponse = funtypes.Union(ProviderJsonRpcErrorResponse, JsonRpcSuccessResponse)
+
 export type TransactionByHashParams = funtypes.Static<typeof TransactionByHashParams>
 export const TransactionByHashParams = funtypes.ReadonlyObject({
 	method: funtypes.Literal('eth_getTransactionByHash'),
