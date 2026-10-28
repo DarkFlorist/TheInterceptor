@@ -1,6 +1,8 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { afterAll, afterEach, describe, test } from 'bun:test'
 import { imageToUri } from '../../app/ts/utils/imageToUri.js'
+import { replaceGlobal } from '../harness/globals.js'
+import { createPerTestRestorer } from '../harness/perTest.js'
 
 type FetchImplementation = (url: string, init: RequestInit | undefined) => Promise<Response>
 type MockFileReaderState = {
@@ -11,11 +13,9 @@ type MockFileReaderState = {
 	readAsDataURL: (_blob: Blob) => void
 }
 
-const originalFetch = globalThis.fetch
-const originalFileReader = globalThis.FileReader
-const originalCreateImageBitmap = globalThis.createImageBitmap
-
-let fetchImplementation: FetchImplementation = async () => new Response(new Blob(['default']), { status: 200, headers: { 'content-type': 'image/png' } })
+const defaultFetchImplementation: FetchImplementation = async () => new Response(new Blob(['default']), { status: 200, headers: { 'content-type': 'image/png' } })
+let fetchImplementation = defaultFetchImplementation
+const { restoreAfterTest } = createPerTestRestorer()
 
 function installSuccessfulFileReader(result: string) {
 	function SuccessfulFileReader(this: MockFileReaderState) {
@@ -29,58 +29,22 @@ function installSuccessfulFileReader(result: string) {
 		}
 	}
 
-	Object.defineProperty(globalThis, 'FileReader', {
-		configurable: true,
-		writable: true,
-		value: SuccessfulFileReader,
-	})
+	restoreAfterTest(replaceGlobal('FileReader', SuccessfulFileReader))
 }
 
-Object.defineProperty(globalThis, 'fetch', {
-	configurable: true,
-	writable: true,
-	value: async (input: RequestInfo | URL, init: RequestInit | undefined) => {
-		const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
-		return await fetchImplementation(url, init)
-	},
+const restoreFetch = replaceGlobal('fetch', async (input: RequestInfo | URL, init: RequestInit | undefined) => {
+	const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+	return await fetchImplementation(url, init)
 })
-
-function installSuccessfulImageDecoder() {
-	Object.defineProperty(globalThis, 'createImageBitmap', {
-		configurable: true,
-		writable: true,
-		value: async () => ({ width: 16, height: 16, close: () => undefined }),
-	})
-}
-
-installSuccessfulImageDecoder()
+const restoreImageDecoder = replaceGlobal('createImageBitmap', async () => ({ width: 16, height: 16, close: () => undefined }))
 
 afterEach(() => {
-	fetchImplementation = async () => new Response(new Blob(['default']), { status: 200, headers: { 'content-type': 'image/png' } })
-	Object.defineProperty(globalThis, 'FileReader', {
-		configurable: true,
-		writable: true,
-		value: originalFileReader,
-	})
-	installSuccessfulImageDecoder()
+	fetchImplementation = defaultFetchImplementation
 })
 
 afterAll(() => {
-	Object.defineProperty(globalThis, 'fetch', {
-		configurable: true,
-		writable: true,
-		value: originalFetch,
-	})
-	Object.defineProperty(globalThis, 'FileReader', {
-		configurable: true,
-		writable: true,
-		value: originalFileReader,
-	})
-	Object.defineProperty(globalThis, 'createImageBitmap', {
-		configurable: true,
-		writable: true,
-		value: originalCreateImageBitmap,
-	})
+	restoreImageDecoder()
+	restoreFetch()
 })
 
 describe('imageToUri', () => {
@@ -145,11 +109,7 @@ describe('imageToUri', () => {
 	})
 
 	test('rejects bytes that cannot be decoded despite an image content type', async () => {
-		Object.defineProperty(globalThis, 'createImageBitmap', {
-			configurable: true,
-			writable: true,
-			value: async () => { throw new DOMException('Invalid image data') },
-		})
+		restoreAfterTest(replaceGlobal('createImageBitmap', async () => { throw new DOMException('Invalid image data') }))
 		fetchImplementation = async () => new Response(new Blob(['not a png'], { type: 'image/png' }), { status: 200, headers: { 'content-type': 'image/png' } })
 
 		const result = await imageToUri('https://example.test/invalid.png')
@@ -182,11 +142,7 @@ describe('imageToUri', () => {
 			}
 		}
 
-		Object.defineProperty(globalThis, 'FileReader', {
-			configurable: true,
-			writable: true,
-			value: TrackingFileReader,
-		})
+		restoreAfterTest(replaceGlobal('FileReader', TrackingFileReader))
 		fetchImplementation = async () => new Response(new Blob(['too-big'], { type: 'image/png' }), {
 			status: 200,
 			headers: { 'content-type': 'image/png', 'content-length': '7' },
@@ -208,11 +164,7 @@ describe('imageToUri', () => {
 			this.readAsDataURL = () => this.onerror?.()
 		}
 
-		Object.defineProperty(globalThis, 'FileReader', {
-			configurable: true,
-			writable: true,
-			value: FailingFileReader,
-		})
+		restoreAfterTest(replaceGlobal('FileReader', FailingFileReader))
 		fetchImplementation = async () => new Response(new Blob(['ok'], { type: 'image/png' }), { status: 200, headers: { 'content-type': 'image/png' } })
 
 		const result = await imageToUri('https://example.test/reader-fail.png')

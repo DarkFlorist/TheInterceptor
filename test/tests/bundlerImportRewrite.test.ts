@@ -1,4 +1,4 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
@@ -121,7 +121,8 @@ describe('bundler import rewriting', () => {
 		for (const { source, expected } of cases) {
 			const rewritten = replaceImport(filePath, source)
 			assert.equal(rewritten, expected)
-			assert.equal(ts.createSourceFile('runtime.js', rewritten, ts.ScriptTarget.ESNext, true, ts.ScriptKind.JS).parseDiagnostics.length, 0)
+			// transpileModule reports the file's syntactic diagnostics through public API: every parse error SourceFile's internal parseDiagnostics held, plus JS-only grammar errors such as type annotations in a .js file.
+			assert.deepEqual(ts.transpileModule(rewritten, { fileName: 'runtime.js', reportDiagnostics: true, compilerOptions: { allowJs: true, target: ts.ScriptTarget.ESNext, module: ts.ModuleKind.ESNext } }).diagnostics, [])
 		}
 	})
 

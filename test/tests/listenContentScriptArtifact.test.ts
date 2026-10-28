@@ -1,7 +1,9 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import * as path from 'node:path'
 import * as vm from 'node:vm'
 import { test } from 'bun:test'
+
+// Without an outdir, Bun.build returns its bundles in memory (BuildOutput.outputs) and writes nothing to disk; Bun's BuildConfig has no `write` option, so none is passed.
 
 test('bundled content script listener has an undefined completion value', async () => {
 	const buildResult = await Bun.build({
@@ -9,7 +11,6 @@ test('bundled content script listener has an undefined completion value', async 
 		target: 'browser',
 		format: 'esm',
 		splitting: false,
-		write: false,
 	})
 	if (!buildResult.success) throw new Error(buildResult.logs.map((log) => log.message).join('\n'))
 	const output = buildResult.outputs[0]
@@ -28,7 +29,6 @@ test('bundled main-world provider is valid as a classic script', async () => {
 		target: 'browser',
 		format: 'esm',
 		splitting: false,
-		write: false,
 	})
 	if (!buildResult.success) throw new Error(buildResult.logs.map((log) => log.message).join('\n'))
 	const output = buildResult.outputs[0]

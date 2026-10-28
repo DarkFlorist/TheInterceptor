@@ -1,14 +1,27 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
 import { summarizeLogs, summarizeLogsForAddress, type SummaryOutcome } from '../../app/ts/simulation/services/LogSummarizer.js'
 import type { AddressBookEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../app/ts/types/addressBookTypes.js'
 import type { TokenEvent, TokenVisualizerResultWithMetadata } from '../../app/ts/types/EnrichedEthereumData.js'
+import type { SafeTx } from '../../app/ts/types/personal-message-definitions.js'
+import type { RpcNetwork } from '../../app/ts/types/rpc.js'
+import type { SafeStackTransaction } from '../../app/ts/types/safeTypes.js'
 import type { NamedTokenId, SimulatedAndVisualizedTransaction, TokenPriceEstimate } from '../../app/ts/types/visualizer-types.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../app/ts/utils/constants.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
 
 const emptyTokenPriceEstimates: readonly TokenPriceEstimate[] = []
 const emptyNamedTokenIds: readonly NamedTokenId[] = []
+const fixtureCreated = new Date('2024-01-01T00:00:00.000Z')
+const rpcNetwork: RpcNetwork = {
+	name: 'Ethereum',
+	chainId: 1n,
+	httpsRpc: 'https://example.invalid',
+	currencyName: 'Ether',
+	currencyTicker: 'ETH',
+	primary: true,
+	minimized: false,
+}
 
 function createContactEntry(address: bigint, name: string): AddressBookEntry {
 	return {
@@ -51,23 +64,109 @@ function createErc1155Entry(address: bigint, name: string, symbol: string): Erc1
 	}
 }
 
+function getTokenEventSignature(logInformation: TokenVisualizerResultWithMetadata) {
+	switch (logInformation.type) {
+		case 'ERC20':
+		case 'ERC721': return logInformation.isApproval ? 'Approval(address,address,uint256)' : 'Transfer(address,address,uint256)'
+		case 'ERC1155': return 'TransferSingle(address,address,address,uint256,uint256)'
+		case 'NFT All approval': return 'ApprovalForAll(address,address,bool)'
+	}
+}
+
+// The summarizer only reads logInformation, so the raw log fields stay empty apart from the emitting token.
 function createTokenEvent(logInformation: TokenVisualizerResultWithMetadata): TokenEvent {
+	const signature = getTokenEventSignature(logInformation)
 	return {
 		type: 'TokenEvent',
+		isParsed: 'Parsed',
+		name: signature.slice(0, signature.indexOf('(')),
+		signature,
+		args: [],
+		address: logInformation.token.address,
+		loggersAddressBookEntry: logInformation.token,
+		data: new Uint8Array(),
+		topics: [],
 		logInformation,
-	} as unknown as TokenEvent
+	}
+}
+
+// A Safe transaction whose executor is not reimbursed for gas (gasPrice and refundReceiver are zero).
+function createZeroReimbursementSafeTransaction(safeAddress: bigint): SafeStackTransaction {
+	const safeTx: SafeTx = {
+		types: {
+			SafeTx: [
+				{ name: 'to', type: 'address' },
+				{ name: 'value', type: 'uint256' },
+				{ name: 'data', type: 'bytes' },
+				{ name: 'operation', type: 'uint8' },
+				{ name: 'safeTxGas', type: 'uint256' },
+				{ name: 'baseGas', type: 'uint256' },
+				{ name: 'gasPrice', type: 'uint256' },
+				{ name: 'gasToken', type: 'address' },
+				{ name: 'refundReceiver', type: 'address' },
+				{ name: 'nonce', type: 'uint256' },
+			],
+			EIP712Domain: [
+				{ name: 'chainId', type: 'uint256' },
+				{ name: 'verifyingContract', type: 'address' },
+			],
+		},
+		primaryType: 'SafeTx',
+		domain: { chainId: rpcNetwork.chainId, verifyingContract: safeAddress },
+		message: {
+			to: 0n,
+			value: 0n,
+			data: new Uint8Array(),
+			operation: 0n,
+			safeTxGas: 0n,
+			baseGas: 0n,
+			gasPrice: 0n,
+			gasToken: 0n,
+			refundReceiver: 0n,
+			nonce: 0n,
+		},
+	}
+	return {
+		safeTx,
+		safeTxHash: 1n,
+		created: fixtureCreated,
+		websiteOrigin: 'https://example.com',
+		transactionIdentifier: 1n,
+		signatures: [],
+	}
 }
 
 function createSimulatedTransaction(params: { transactionFrom: AddressBookEntry, tokenEvents: readonly TokenVisualizerResultWithMetadata[], gasSpent?: bigint, realizedGasPrice?: bigint, safeTransaction?: boolean }): SimulatedAndVisualizedTransaction {
 	return {
+		website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
+		created: fixtureCreated,
+		parsedInputData: { type: 'NonParsed', input: new Uint8Array() },
+		transactionIdentifier: 1n,
+		originalRequestParameters: { method: 'eth_sendTransaction', params: [{ from: params.transactionFrom.address, value: 0n, input: new Uint8Array() }] },
+		tokenBalancesAfter: [],
+		tokenPriceEstimates: [],
+		tokenPriceQuoteToken: undefined,
+		quarantine: false,
+		quarantineReasons: [],
+		transactionStatus: 'Transaction Succeeded',
 		events: params.tokenEvents.map(createTokenEvent),
 		gasSpent: params.gasSpent ?? 0n,
 		realizedGasPrice: params.realizedGasPrice ?? 0n,
-		...(params.safeTransaction === true ? { safeTransaction: {} } : {}),
+		...(params.safeTransaction === true ? { safeTransaction: createZeroReimbursementSafeTransaction(params.transactionFrom.address) } : {}),
 		transaction: {
 			from: params.transactionFrom,
+			to: undefined,
+			value: 0n,
+			input: new Uint8Array(),
+			rpcNetwork,
+			hash: 1n,
+			gas: 21_000n,
+			nonce: 0n,
+			type: '1559',
+			maxFeePerGas: 1n,
+			maxPriorityFeePerGas: 1n,
 		},
-	} as unknown as SimulatedAndVisualizedTransaction
+	}
 }
 
 function createAddressMetadataMap(entries: readonly AddressBookEntry[]) {

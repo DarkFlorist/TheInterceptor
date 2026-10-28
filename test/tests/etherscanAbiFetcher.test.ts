@@ -1,9 +1,10 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
 import { isValidAbiString } from '../../app/ts/utils/abiRuntime.js'
 import { fetchAbiFromBlockExplorer, getEtherscanErrorMessage, mergeProxyAndImplementationAbi } from '../../app/ts/simulation/services/EtherScanAbiFetcher.js'
 import { EtherscanGetABIResult, EtherscanSourceCodeResult } from '../../app/ts/types/etherscan.js'
 import type { RpcEntries } from '../../app/ts/types/rpc.js'
+import { replaceGlobal } from '../harness/globals.js'
 
 const contractAddress = 0x1111111111111111111111111111111111111111n
 const implementationAddress = '0x2222222222222222222222222222222222222222'
@@ -28,21 +29,20 @@ const jsonResponse = (body: unknown, status = 200) => new Response(JSON.stringif
 })
 
 async function withFetchResponses<T>(responses: readonly Response[], action: (requestedUrls: readonly string[]) => Promise<T>) {
-	const originalFetch = globalThis.fetch
 	const remainingResponses = [...responses]
 	const requestedUrls: string[] = []
-	globalThis.fetch = async (resource) => {
+	const restoreFetch = replaceGlobal('fetch', async (resource: RequestInfo | URL) => {
 		requestedUrls.push(resource.toString())
 		const response = remainingResponses.shift()
 		if (response === undefined) throw new Error('Unexpected extra fetch request')
 		return response
-	}
+	})
 	try {
 		const result = await action(requestedUrls)
 		assert.equal(remainingResponses.length, 0)
 		return result
 	} finally {
-		globalThis.fetch = originalFetch
+		restoreFetch()
 	}
 }
 
@@ -58,6 +58,7 @@ describe('Etherscan ABI fetcher', () => {
 		assert.equal(parsed.success, true)
 		if (!parsed.success) return
 		assert.equal(parsed.value.status, 'failure')
+		if (parsed.value.status !== 'failure') return
 		assert.equal(parsed.value.result, error)
 		assert.equal(getEtherscanErrorMessage(parsed.value.result), `Etherscan returned an error: ${ error }`)
 	})
