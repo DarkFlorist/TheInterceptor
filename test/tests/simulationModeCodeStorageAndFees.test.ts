@@ -12,7 +12,7 @@ import { STORAGE_READER_ABI, STORAGE_READER_PRECOMPILE_RELOCATION_ADDRESS } from
 import { getStorageReaderByteCode } from '../../app/ts/utils/ethereumByteCodes.js'
 import { createSimulationModeTestContext, blockNumber, createSimulationStateInput, createTwoBlockSimulationStateInput, SHA256_PRECOMPILE_ADDRESS, testBytes32 } from './simulationModeEthereumClientServiceTestHelpers.js'
 
-const { requestHandler, ethereum } = createSimulationModeTestContext()
+const { requestHandler, ethereum, createAbortRecordingEthereum } = createSimulationModeTestContext()
 
 describe('SimulationModeEthereumClientService', () => {
 	test('getSimulatedCodeFromInput installs the helper override and omits gas', async () => {
@@ -221,4 +221,15 @@ describe('SimulationModeEthereumClientService', () => {
 		assert.deepEqual(requestHandler.ethFeeHistoryCalls.at(-1), { method: 'eth_feeHistory', params: [5n, 'latest', [25, 75]] })
 	})
 
+	test('state-based code lookups forward the request abort controller to the simulation', async () => {
+		const simulationState = await createSimulationState(ethereum, undefined, createSimulationStateInput())
+		if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
+		const { ethereum: recordingEthereum, rpcCalls } = createAbortRecordingEthereum()
+		const requestAbortController = new AbortController()
+		const simulatedCode = await getSimulatedCode(recordingEthereum, requestAbortController, toResolvedSimulationState(simulationState), 0x1234n)
+
+		assert.equal(simulatedCode.statusCode, 'success')
+		assert.ok(rpcCalls.some((call) => call.method === 'eth_simulateV1'))
+		assert.ok(rpcCalls.every((call) => call.requestAbortController === requestAbortController))
+	})
 })
