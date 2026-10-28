@@ -104,6 +104,9 @@ describe('personal_ecRecover parameters', () => {
 		]) {
 			assert.equal(EthereumJsonRpcRequest.safeParse({ method: 'personal_ecRecover', params }).success, false, JSON.stringify(params))
 		}
+		for (const request of [{ method: 'personal_ecRecover' }, { method: 'personal_ecRecover', params: helloMessage }]) {
+			assert.equal(EthereumJsonRpcRequest.safeParse(request).success, false, JSON.stringify(request))
+		}
 	})
 })
 
@@ -184,13 +187,13 @@ describe('personal_ecRecover routing', () => {
 		} }]])
 		const getBlockCalls = { count: 0 }
 		const { simulationServicesOwner } = createEthereumWithGetBlockCounter(getBlockCalls)
-		const sendPersonalEcRecover = async (requestId: number, params: readonly unknown[]) => {
+		const sendPersonalEcRecover = async (requestId: number, params: readonly unknown[] | undefined) => {
 			await loadedModules.handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 				interceptorRequest: true,
 				usingInterceptorWithoutSigner: false,
 				uniqueRequestIdentifier: { requestId, requestSocket: socket },
 				method: 'personal_ecRecover',
-				params,
+				...(params === undefined ? {} : { params }),
 			}, websiteTabConnections, noopPublishRpcConnectionStatus)
 			return messages.find((message) => message.requestId === requestId)
 		}
@@ -312,14 +315,17 @@ describe('personal_ecRecover routing', () => {
 		await useSigningMode(loadedModules)
 		const { messages, sendPersonalEcRecover } = await setUpWebsiteConnection(loadedModules)
 
-		assert.deepEqual(await sendPersonalEcRecover(1, [helloMessage, helloSignature.slice(0, -4)]), {
-			interceptorApproved: true,
-			requestId: 1,
-			bridgeRequestSettled: true,
-			type: 'result',
-			method: 'personal_ecRecover',
-			error: { code: -32602, message: 'Invalid personal_ecRecover parameters. Expected a message string and a 65 byte or 64 byte compact signature.' },
-		})
+		const malformedRequests: readonly (readonly [number, readonly unknown[] | undefined])[] = [[1, [helloMessage, helloSignature.slice(0, -4)]], [2, undefined]]
+		for (const [requestId, params] of malformedRequests) {
+			assert.deepEqual(await sendPersonalEcRecover(requestId, params), {
+				interceptorApproved: true,
+				requestId,
+				bridgeRequestSettled: true,
+				type: 'result',
+				method: 'personal_ecRecover',
+				error: { code: -32602, message: 'Invalid personal_ecRecover parameters. Expected a message string and a 65 byte or 64 byte compact signature.' },
+			}, JSON.stringify(params))
+		}
 		assert.equal(messages.some((message) => message.type === 'forwardToSigner'), false)
 	})
 })
