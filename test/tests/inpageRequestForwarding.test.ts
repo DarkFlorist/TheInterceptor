@@ -1,7 +1,8 @@
 import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
-import { waitFor } from '../harness/async.js'
-import { createFakeWindow, getPageProvider, type InpageRequest, isForwardRequestCandidate, isJsonRpcResponseCandidate, isRpcErrorCandidate, isSignerReplyCandidate, type SignerRequest, waitOneEventLoopTurn, withFakeInpageWindow } from './inpageSignerBridgeHarness.js'
+import { waitFor, waitForValue } from '../harness/async.js'
+import { createFakeWindow, getPageProvider, type InpageRequest, isForwardRequestCandidate, isJsonRpcResponseCandidate, isRpcErrorCandidate, isSignerReplyCandidate, parseSignerReply, type SignerRequest, waitOneEventLoopTurn, withFakeInpageWindow } from './inpageSignerBridgeHarness.js'
+import { readProperty } from '../harness/assertions.js'
 
 describe('inpage request forwarding, replies and error propagation', () => {
 	test('returns JSON-RPC failures through the sendAsync response argument', async () => {
@@ -433,4 +434,129 @@ describe('inpage request forwarding, replies and error propagation', () => {
 		})
 	})
 
+	test('does not keep reply-less internal notifications as outstanding requests', async () => {
+		const account = '0x1111111111111111111111111111111111111111'
+		const transactionHash = `0x${ '22'.repeat(32) }`
+		const notificationMethods = ['eth_accounts_reply', 'signer_chainChanged', 'signer_reply', 'wallet_switchEthereumChain_reply']
+		const notifications: InpageRequest[] = []
+		let signedTransactionCount = 0
+		const { fakeWindow, sendBackgroundMessage, interceptorErrorPayloads } = createFakeWindow({
+			handleRequest: (request, sendBackgroundMessageForRequest) => {
+				if (request.method === 'eth_sendTransaction') {
+					sendBackgroundMessageForRequest({ interceptorApproved: true, requestId: request.requestId, type: 'forwardToSigner', method: request.method, params: request.params })
+					return true
+				}
+				if (!notificationMethods.includes(request.method)) return false
+				// Like the background, never answer these callbacks; signed transactions are settled through the original request instead.
+				notifications.push(request)
+				if (request.method !== 'signer_reply') return true
+				const signerReply = parseSignerReply(request)
+				sendBackgroundMessageForRequest({ interceptorApproved: true, requestId: signerReply.forwardRequest.requestId, type: 'result', method: 'eth_sendTransaction', result: signerReply.reply })
+				return true
+			},
+			handleSignerRequest: ({ method }) => {
+				if (method === 'wallet_switchEthereumChain') return null
+				if (method !== 'eth_sendTransaction') return undefined
+				signedTransactionCount += 1
+				return transactionHash
+			},
+		})
+
+		await withFakeInpageWindow(fakeWindow, 'reply-less-internal-notifications', async () => {
+			await waitFor(() => notifications.some((request) => request.method === 'signer_chainChanged'))
+			sendBackgroundMessage({ interceptorApproved: true, type: 'result', method: 'request_signer_to_eth_accounts', result: [] })
+			sendBackgroundMessage({ interceptorApproved: true, type: 'result', method: 'request_signer_to_wallet_switchEthereumChain', result: '0x5', walletSwitchRequestId: 'switch-request' })
+			assert.equal(await getPageProvider(fakeWindow).request({ method: 'eth_sendTransaction', params: [{ from: account }] }), transactionHash)
+			await waitFor(() => notificationMethods.every((method) => notifications.some((request) => request.method === method)))
+			assert.equal(notifications.every((request) => request.internal === true), true)
+
+			// A leaked outstanding request would let a late forwardToSigner message that reuses a notification id prompt the wallet again.
+			for (const notification of notifications) {
+				sendBackgroundMessage({ interceptorApproved: true, requestId: notification.requestId, type: 'forwardToSigner', method: 'eth_sendTransaction', params: [{ from: account }] })
+			}
+			await waitFor(() => interceptorErrorPayloads.filter((payload) => typeof payload === 'string' && payload.includes('Request did not exist anymore')).length === notifications.length)
+			assert.equal(signedTransactionCount, 1)
+		})
+	})
+
+	for (const signerRejects of [false, true]) {
+		test(`settles a forwarded wallet_addEthereumChain request from the signer_reply answer when the signer ${ signerRejects ? 'rejects' : 'accepts' }`, async () => {
+			const chainParameters = { chainId: '0x5', chainName: 'Example', rpcUrls: ['https://rpc.example.test'], nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 } }
+			const { fakeWindow } = createFakeWindow({
+				handleRequest: (request, sendBackgroundMessageForRequest) => {
+					if (request.method === 'wallet_addEthereumChain') {
+						sendBackgroundMessageForRequest({ interceptorApproved: true, requestId: request.requestId, type: 'forwardToSigner', method: request.method, params: request.params })
+						return true
+					}
+					if (request.method !== 'signer_reply') return false
+					// The background answers signer_reply for forwarded methods it does not settle itself by echoing the signer outcome.
+					const signerReply = request.params?.[0]
+					if (!isSignerReplyCandidate(signerReply)) throw new Error('Malformed signer reply')
+					sendBackgroundMessageForRequest(signerReply.success === true
+						? { interceptorApproved: true, requestId: request.requestId, type: 'result', method: 'signer_reply', result: signerReply.reply }
+						: { interceptorApproved: true, requestId: request.requestId, type: 'result', method: 'signer_reply', error: signerReply.error })
+					return true
+				},
+				handleSignerRequest: ({ method }) => {
+					if (method !== 'wallet_addEthereumChain') return undefined
+					if (signerRejects) return Promise.reject({ code: 4001, message: 'User rejected the request.' })
+					return null
+				},
+			})
+
+			await withFakeInpageWindow(fakeWindow, `forwarded-add-chain-${ signerRejects ? 'rejected' : 'accepted' }`, async () => {
+				let settledOutcome: { readonly type: 'resolved', readonly result: unknown } | { readonly type: 'rejected', readonly error: unknown } | undefined
+				void getPageProvider(fakeWindow).request({ method: 'wallet_addEthereumChain', params: [chainParameters] }).then(
+					(result) => { settledOutcome = { type: 'resolved', result } },
+					(error: unknown) => { settledOutcome = { type: 'rejected', error } },
+				)
+				const outcome = await waitForValue(() => settledOutcome, { timeoutMs: 2000, description: 'the forwarded wallet_addEthereumChain request to settle' })
+				if (signerRejects) {
+					assert.equal(outcome.type, 'rejected')
+					if (outcome.type !== 'rejected' || !isRpcErrorCandidate(outcome.error)) throw new Error('wallet_addEthereumChain did not reject with an error object')
+					assert.equal(outcome.error.code, 4001)
+					return
+				}
+				assert.deepEqual(outcome, { type: 'resolved', result: null })
+			})
+		})
+	}
+
+	test('reports background commands that fail instead of discarding the error', async () => {
+		const { fakeWindow, sendBackgroundMessage, interceptorErrorPayloads, signerRequests } = createFakeWindow()
+
+		await withFakeInpageWindow(fakeWindow, 'reported-background-command-failure', async () => {
+			await waitFor(() => signerRequests.includes('eth_chainId'))
+			sendBackgroundMessage({ interceptorApproved: true, type: 'result', method: 'request_signer_to_wallet_switchEthereumChain', result: 5, walletSwitchRequestId: 'switch-request' })
+			await waitFor(() => interceptorErrorPayloads.some((payload) => typeof payload === 'string' && payload.includes('Invalid wallet switch command')))
+		})
+	})
+
+	test('rejects malformed account and chain payloads from the background instead of exposing them', async () => {
+		const { fakeWindow, sendBackgroundMessage, interceptorErrorPayloads } = createFakeWindow({
+			handleRequest: (request, sendBackgroundMessageForRequest) => {
+				if (request.method !== 'eth_accounts') return false
+				sendBackgroundMessageForRequest({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: 'eth_accounts', result: [1] })
+				return true
+			},
+		})
+		Object.defineProperty(fakeWindow, 'ethereum', { configurable: true, writable: true, value: undefined })
+
+		await withFakeInpageWindow(fakeWindow, 'malformed-account-and-chain-payloads', async () => {
+			await waitFor(() => readProperty(fakeWindow.ethereum, 'isMetaMask') === true)
+			const provider = getPageProvider(fakeWindow)
+			const events: unknown[] = []
+			provider.on('accountsChanged', (accounts: unknown) => { events.push(accounts) })
+			provider.on('chainChanged', (chainId: unknown) => { events.push(chainId) })
+
+			sendBackgroundMessage({ interceptorApproved: true, type: 'result', method: 'accountsChanged', result: [1] })
+			sendBackgroundMessage({ interceptorApproved: true, type: 'result', method: 'chainChanged', result: 5 })
+			await assert.rejects(async () => await provider.request({ method: 'eth_accounts' }), /wrong type/)
+			await waitFor(() => interceptorErrorPayloads.filter((payload) => typeof payload === 'string' && payload.includes('wrong type')).length === 3)
+
+			assert.deepEqual(events, [])
+			assert.equal(provider.selectedAddress, undefined)
+			assert.equal(provider.chainId, undefined)
+		})
+	})
 })

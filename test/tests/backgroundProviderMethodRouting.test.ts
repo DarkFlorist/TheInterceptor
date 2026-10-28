@@ -234,6 +234,41 @@ describe('background provider method routing', () => {
 		})
 	})
 
+	test('answers a forwarded wallet_addEthereumChain signer reply from a replaced port with the replaced-connection error', async () => {
+		installBrowserMock()
+		const { signerConnectionReplacedError, websiteSocketToString } = await loadModules()
+		const { signerReply } = await import('../../app/ts/background/providerMessageHandlers.js')
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port: currentPort } = createPort(socket.tabId)
+		const { port: replacedPort } = createPort(socket.tabId)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[websiteSocketToString(socket)]: { port: currentPort, socket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true },
+		} }]])
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		const sendSignerReplyFrom = async (port: browser.runtime.Port) => await signerReply(simulationServicesOwner, websiteTabConnections, port, {
+			method: 'signer_reply',
+			params: [{
+				success: true,
+				signerProviderGeneration: 1,
+				forwardRequest: {
+					type: 'forwardToSigner',
+					method: 'wallet_addEthereumChain',
+					params: [{ chainId: '0x89', chainName: 'Polygon', nativeCurrency: { name: 'POL', symbol: 'POL', decimals: 18 }, rpcUrls: ['https://polygon.example.test'] }],
+					requestId: 4,
+				},
+				reply: null,
+			}],
+			interceptorRequest: true,
+			interceptorInternalRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 5, requestSocket: socket },
+		}, 'hasAccess', undefined)
+
+		// The background does not settle wallet_addEthereumChain itself, so the inpage signer_reply request waits for this answer even when the reply arrives over a replaced port.
+		assert.deepEqual(await sendSignerReplyFrom(replacedPort), { type: 'result', method: 'signer_reply', error: signerConnectionReplacedError })
+		assert.deepEqual(await sendSignerReplyFrom(currentPort), { type: 'result', method: 'signer_reply', result: null })
+	})
+
 	test('preserves transaction-free overlays without running transaction preparation', async () => {
 		installBrowserMock()
 		const { prepareSimulationInputForRpc } = await import('../../app/ts/background/simulationUpdating.js')
