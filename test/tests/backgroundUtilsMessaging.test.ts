@@ -1,64 +1,17 @@
-import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
-import { createEthereumWithGetBlockCounter } from './backgroundEthAccountsTestHarness.js'
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
+import * as funtypes from 'funtypes'
+import type { Settings } from '../../app/ts/types/interceptor-messages.js'
+import { createEthereumWithGetBlockCounter, createRestoringBrowserMockInstaller } from './backgroundEthAccountsTestHarness.js'
+import { withSilencedConsole } from './consoleSilence.js'
 
 const ASYNC_RESPONSE_CLOSED_MESSAGE = 'A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received'
 
+const installBackgroundBrowserMock = createRestoringBrowserMockInstaller()
+
+// Every browser.runtime.sendMessage call rejects with errorMessage until a test chooses other replies through handlers.runtimeMessage.
 function installBrowserMock(errorMessage: string) {
-	const storageState: Record<string, unknown> = {}
-	globalThis.browser = {
-		runtime: {
-			lastError: null,
-			async sendMessage() {
-				throw new Error(errorMessage)
-			},
-			getManifest: () => ({ manifest_version: 3 }),
-			onMessage: { addListener: () => undefined, removeListener: () => undefined },
-			onConnect: { addListener: () => undefined, removeListener: () => undefined },
-		},
-		storage: {
-			local: {
-				async get(keys?: string | string[] | Record<string, unknown> | null) {
-					if (keys === undefined || keys === null) return { ...storageState }
-					if (Array.isArray(keys)) return Object.fromEntries(keys.map((key) => [key, storageState[key]]))
-					if (typeof keys === 'string') return { [keys]: storageState[keys] }
-					return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
-				},
-				async set(items: Record<string, unknown>) {
-					Object.assign(storageState, items)
-				},
-				async remove(keys: string | string[]) {
-					for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
-				},
-			},
-		},
-		tabs: {
-			async query() { return [] },
-			async get() { return undefined },
-			async update() { return undefined },
-			onUpdated: { addListener: () => undefined, removeListener: () => undefined },
-			onRemoved: { addListener: () => undefined, removeListener: () => undefined },
-		},
-		windows: {
-			async get() { return undefined },
-			async update() { return undefined },
-		},
-		action: {
-			async setIcon() { return undefined },
-			async setTitle() { return undefined },
-			async setBadgeText() { return undefined },
-			async setBadgeBackgroundColor() { return undefined },
-		},
-		browserAction: {
-			async setIcon() { return undefined },
-			async setTitle() { return undefined },
-			async setBadgeText() { return undefined },
-			async setBadgeBackgroundColor() { return undefined },
-		},
-	} as unknown as typeof globalThis.browser
-	;(globalThis as typeof globalThis & { chrome: { runtime: { id: string } } }).chrome = { runtime: { id: 'test-extension' } }
-	return storageState
+	return installBackgroundBrowserMock({ handlers: { runtimeMessage: () => { throw new Error(errorMessage) } } })
 }
 
 async function loadModules() {
@@ -72,81 +25,90 @@ async function loadModules() {
 	}
 }
 
-async function withSilencedConsole<T>(runWithConsoleSilenced: () => Promise<T>) {
-	const originalConsole = {
-		error: console.error,
-		trace: console.trace,
-		warn: console.warn,
-	}
-	console.error = () => undefined
-	console.trace = () => undefined
-	console.warn = () => undefined
-	try {
-		return await runWithConsoleSilenced()
-	} finally {
-		console.error = originalConsole.error
-		console.trace = originalConsole.trace
-		console.warn = originalConsole.warn
-	}
+const homePageSettings: Settings = {
+	activeSimulationAddress: 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n,
+	activeSigningSafeAddress: undefined,
+	openedPage: { page: 'Home' },
+	useSignersAddressAsActiveAddress: false,
+	websiteAccess: [],
+	activeRpcNetwork: {
+		name: 'Ethereum Mainnet',
+		chainId: 1n,
+		httpsRpc: 'https://ethereum.dark.florist',
+		currencyName: 'Ether',
+		currencyTicker: 'ETH',
+		currencyLogoUri: '../img/ethereum.svg',
+		primary: true,
+		minimized: true,
+	},
+	simulationMode: true,
 }
+
+const ParseErrorReply = funtypes.ReadonlyObject({
+	error: funtypes.ReadonlyObject({
+		code: funtypes.Number,
+		message: funtypes.String,
+	}),
+})
 
 describe('backgroundUtils messaging', () => {
 	test('ignore closed async response errors for popup fire-and-forget messages', async () => {
-		const storageState = installBrowserMock(ASYNC_RESPONSE_CLOSED_MESSAGE)
+		const browserMock = installBrowserMock(ASYNC_RESPONSE_CLOSED_MESSAGE)
 		const { sendPopupMessageToBackgroundPage, getLatestUnexpectedError } = await loadModules()
 
 		await sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
-		assert.equal(storageState.latestUnexpectedError, undefined)
+		assert.equal(browserMock.readStoredValue('latestUnexpectedError'), undefined)
 		assert.equal(await getLatestUnexpectedError(), undefined)
 	})
 
 	test('ignore closed async response errors when broadcasting to open popups', async () => {
-		const storageState = installBrowserMock(ASYNC_RESPONSE_CLOSED_MESSAGE)
+		const browserMock = installBrowserMock(ASYNC_RESPONSE_CLOSED_MESSAGE)
 		const { sendPopupMessageToOpenWindows, getLatestUnexpectedError } = await loadModules()
 
 		await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 
-		assert.equal(storageState.latestUnexpectedError, undefined)
+		assert.equal(browserMock.readStoredValue('latestUnexpectedError'), undefined)
 		assert.equal(await getLatestUnexpectedError(), undefined)
 	})
 
 	test('ignore extension teardown errors for popup fire-and-forget messages', async () => {
-		const storageState = installBrowserMock('Extension context invalidated.')
+		const browserMock = installBrowserMock('Extension context invalidated.')
 		const { sendPopupMessageToBackgroundPage, getLatestUnexpectedError } = await loadModules()
 
 		await sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
 
-		assert.equal(storageState.latestUnexpectedError, undefined)
+		assert.equal(browserMock.readStoredValue('latestUnexpectedError'), undefined)
 		assert.equal(await getLatestUnexpectedError(), undefined)
 	})
 
 	test('ignore disconnected port errors when requesting popup replies', async () => {
-		const storageState = installBrowserMock('Attempting to use a disconnected port object')
+		const browserMock = installBrowserMock('Attempting to use a disconnected port object')
 		const { sendPopupMessageWithReply, getLatestUnexpectedError } = await loadModules()
 
 		const reply = await sendPopupMessageWithReply({ method: 'popup_requestSimulationMode' })
 
 		assert.equal(reply, undefined)
-		assert.equal(storageState.latestUnexpectedError, undefined)
+		assert.equal(browserMock.readStoredValue('latestUnexpectedError'), undefined)
 		assert.equal(await getLatestUnexpectedError(), undefined)
 	})
 
 	test('treat null popup replies as no reply without recording an unexpected error', async () => {
-		const storageState = installBrowserMock('')
-		globalThis.browser.runtime.sendMessage = async () => null
+		const browserMock = installBrowserMock('')
+		// Chrome answers null when the receiving listener replies without a value.
+		browserMock.handlers.runtimeMessage = () => null
 		const { sendPopupMessageWithReply, getLatestUnexpectedError } = await loadModules()
 
 		const reply = await sendPopupMessageWithReply({ method: 'popup_requestSimulationMode' })
 
 		assert.equal(reply, undefined)
-		assert.equal(storageState.latestUnexpectedError, undefined)
+		assert.equal(browserMock.readStoredValue('latestUnexpectedError'), undefined)
 		assert.equal(await getLatestUnexpectedError(), undefined)
 	})
 
 	test('parses a normal popup reply round-trip', async () => {
-		installBrowserMock('unused')
+		const browserMock = installBrowserMock('unused')
 		const { sendPopupMessageWithReply, PopupRequestsReplies } = await loadModules()
-		globalThis.browser.runtime.sendMessage = async () => PopupRequestsReplies.popup_requestMakeMeRichData.serialize({
+		browserMock.handlers.runtimeMessage = () => PopupRequestsReplies.popup_requestMakeMeRichData.serialize({
 			method: 'popup_requestMakeMeRichData',
 			richList: [],
 			makeCurrentAddressRich: true,
@@ -162,10 +124,10 @@ describe('backgroundUtils messaging', () => {
 	})
 
 	test('parses latest unexpected error replies with the requested reply parser', async () => {
-		installBrowserMock('unused')
+		const browserMock = installBrowserMock('unused')
 		const { sendPopupMessageWithReply, PopupRequestsReplies } = await loadModules()
 		const timestamp = new Date('2024-01-01T00:00:00.000Z')
-		globalThis.browser.runtime.sendMessage = async () => PopupRequestsReplies.popup_requestLatestUnexpectedError.serialize({
+		browserMock.handlers.runtimeMessage = () => PopupRequestsReplies.popup_requestLatestUnexpectedError.serialize({
 			method: 'popup_requestLatestUnexpectedError',
 			latestUnexpectedError: {
 				method: 'popup_UnexpectedErrorOccured',
@@ -184,9 +146,9 @@ describe('backgroundUtils messaging', () => {
 	})
 
 	test('reports request-specific parse errors for mismatched popup replies', async () => {
-		const storageState = installBrowserMock('unused')
+		const browserMock = installBrowserMock('unused')
 		const { sendPopupMessageWithReply, PopupRequestsReplies, getLatestUnexpectedError } = await loadModules()
-		globalThis.browser.runtime.sendMessage = async () => PopupRequestsReplies.popup_requestSimulationMode.serialize({
+		browserMock.handlers.runtimeMessage = () => PopupRequestsReplies.popup_requestSimulationMode.serialize({
 			method: 'popup_requestSimulationMode',
 			simulationMode: true,
 		})
@@ -195,39 +157,23 @@ describe('backgroundUtils messaging', () => {
 		const latestUnexpectedError = await getLatestUnexpectedError()
 
 		assert.equal(reply, undefined)
-		assert.equal(typeof storageState.latestUnexpectedError, 'object')
+		assert.equal(typeof browserMock.readStoredValue('latestUnexpectedError'), 'object')
 		assert.equal(latestUnexpectedError?.method, 'popup_UnexpectedErrorOccured')
 		assert.ok(latestUnexpectedError?.data.message.includes('popup_requestLatestUnexpectedError'))
 		assert.ok(!latestUnexpectedError?.data.message.includes('popup_requestMakeMeRichData'))
 	})
 
 	test('returns the complete visualized simulation reply instead of dropping it', async () => {
-		installBrowserMock('unused')
-		globalThis.browser.runtime.sendMessage = async () => undefined
+		const browserMock = installBrowserMock('unused')
+		browserMock.handlers.runtimeMessage = () => undefined
 		const { popupMessageHandler, PopupRequestsReplies } = await loadModules()
 
-		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 		const reply = await popupMessageHandler(
 			new Map(),
 			simulationServicesOwner,
 			{ method: 'popup_requestCompleteVisualizedSimulation' },
-			{
-				activeSimulationAddress: 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n,
-				openedPage: { page: 'Home' },
-				useSignersAddressAsActiveAddress: false,
-				websiteAccess: [],
-				activeRpcNetwork: {
-					name: 'Ethereum Mainnet',
-					chainId: 1n,
-					httpsRpc: 'https://ethereum.dark.florist',
-					currencyName: 'Ether',
-					currencyTicker: 'ETH',
-					currencyLogoUri: '../img/ethereum.svg',
-					primary: true,
-					minimized: true,
-				},
-				simulationMode: true,
-			},
+			homePageSettings,
 			async () => undefined,
 		)
 
@@ -238,35 +184,14 @@ describe('backgroundUtils messaging', () => {
 	test('keeps popup request parsing at the dispatcher boundary', async () => {
 		installBrowserMock('unused')
 		const { popupMessageHandler } = await loadModules()
-		const [{ EthereumClientService }, { TokenPriceService }] = await Promise.all([
-			import('../../app/ts/simulation/services/EthereumClientService.js'),
-			import('../../app/ts/simulation/services/priceEstimator.js'),
-		])
-		const ethereum: import('../../app/ts/simulation/services/EthereumClientService.js').EthereumClientService = Object.create(EthereumClientService.prototype)
-		const tokenPriceService: import('../../app/ts/simulation/services/priceEstimator.js').TokenPriceService = Object.create(TokenPriceService.prototype)
-		const reply = await withSilencedConsole(async () => await popupMessageHandler(
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		const reply = ParseErrorReply.parse(await withSilencedConsole(async () => await popupMessageHandler(
 			new Map(),
-			createTestSimulationServicesOwner({ ethereum, tokenPriceService }),
+			simulationServicesOwner,
 			{ method: 'not_a_popup_method' },
-			{
-				activeSimulationAddress: 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n,
-				openedPage: { page: 'Home' },
-				useSignersAddressAsActiveAddress: false,
-				websiteAccess: [],
-				activeRpcNetwork: {
-					name: 'Ethereum Mainnet',
-					chainId: 1n,
-					httpsRpc: 'https://ethereum.dark.florist',
-					currencyName: 'Ether',
-					currencyTicker: 'ETH',
-					currencyLogoUri: '../img/ethereum.svg',
-					primary: true,
-					minimized: true,
-				},
-				simulationMode: true,
-			},
+			homePageSettings,
 			async () => undefined,
-		))
+		)))
 		assert.equal(reply.error.code, -32700)
 		assert.match(reply.error.message, /not_a_popup_method/)
 	})
