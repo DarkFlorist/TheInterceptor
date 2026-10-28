@@ -137,7 +137,58 @@ function makePreSimulationTransaction(mockSignTransaction: (transaction: ReturnT
 	}
 }
 
+function makeMessageOperation(messageIdentifier: bigint) {
+	const signer = 0x1111111111111111111111111111111111111111n
+	return {
+		type: 'Message' as const,
+		signedMessageTransaction: {
+			website: { websiteOrigin: 'https://example.com', icon: undefined, title: undefined },
+			created: new Date('2024-01-01T00:00:00.000Z'),
+			fakeSignedFor: signer,
+			originalRequestParameters: { method: 'personal_sign' as const, params: ['0x68656c6c6f', signer] as const },
+			request: {
+				method: 'personal_sign',
+				params: ['0x68656c6c6f', '0x1111111111111111111111111111111111111111'],
+				interceptorRequest: true,
+				usingInterceptorWithoutSigner: false,
+				uniqueRequestIdentifier: { requestId: Number(messageIdentifier), requestSocket: { tabId: 1, connectionName: 0n } },
+			},
+			simulationMode: true,
+			messageIdentifier,
+		},
+	}
+}
+
+function makeTimeManipulationOperation(deltaToAdd: bigint) {
+	return { type: 'TimeManipulation' as const, blockTimeManipulation: { type: 'AddToTimestamp' as const, deltaToAdd, deltaUnit: 'Seconds' as const } }
+}
+
 describe('removeTransactionOrSignedMessage', () => {
+	test('removes the time manipulation of a removed message instead of leaving two in a row', async () => {
+		const modules = await loadModules()
+		browserMock.reset()
+		// Each time manipulation applies after the operation before it: 5 seconds after message 1, 7 seconds after message 2.
+		await modules.updateInterceptorTransactionStack(() => ({
+			operations: [
+				makeMessageOperation(1n),
+				makeTimeManipulationOperation(5n),
+				makeMessageOperation(2n),
+				makeTimeManipulationOperation(7n),
+				makeMessageOperation(3n),
+			],
+		}))
+
+		await modules.removeTransactionOrSignedMessage({}, undefined, {
+			method: 'popup_removeTransactionOrSignedMessage',
+			data: { type: 'Message', messageIdentifier: 2n },
+		})
+
+		const stack = await modules.getInterceptorTransactionStack()
+		assert.deepEqual(stack.operations.map((operation) => operation.type === 'Message' ? operation.signedMessageTransaction.messageIdentifier : operation.type), [1n, 'TimeManipulation', 3n])
+		const [, remainingTimeManipulation] = stack.operations
+		assert.equal(remainingTimeManipulation?.type === 'TimeManipulation' && remainingTimeManipulation.blockTimeManipulation.type === 'AddToTimestamp' ? remainingTimeManipulation.blockTimeManipulation.deltaToAdd : undefined, 5n)
+	})
+
 	test('keeps later raw transactions unchanged when removing an earlier same-sender transaction', async () => {
 		const modules = await loadModules()
 		browserMock.reset()

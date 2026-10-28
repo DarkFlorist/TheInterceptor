@@ -1,18 +1,17 @@
-import { getActiveAddress, getWebsiteSocketConnection, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
+import { getActiveAddress, getWebsiteSocketConnection, websiteSocketToString } from './backgroundUtils.js'
 import { getActiveAddressEntryForChain, getActiveAddresses } from './metadataUtils.js'
-import { requestAccessFromUser } from './windows/interceptorAccess.js'
-import { retrieveWebsiteDetails, updateExtensionIcon } from './iconHandler.js'
+import { updateExtensionIcon } from './iconHandler.js'
 import type { TabConnection, WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { InpageScriptCallBack, Settings } from '../types/interceptor-messages.js'
-import { getSettings, updateWebsiteAccess } from './settings.js'
-import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
-import type { WebsiteSocket } from '../utils/requests.js'
+import { updateWebsiteAccess } from './settings.js'
+import { replyToInterceptedRequest, sendSubscriptionReplyOrCallBack } from './messageSending.js'
+import { METAMASK_ERROR_NOT_AUTHORIZED } from '../utils/constants.js'
+import type { InterceptedRequest, WebsiteSocket } from '../utils/requests.js'
 import { getAllTabStates } from './storageVariables.js'
 import type { Website, WebsiteAccessArray, WebsiteAddressAccess } from '../types/websiteAccessTypes.js'
 import { getUniqueItemsByProperties, replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
 import { modifyObject } from '../utils/typescript.js'
 import type { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
-import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { mergeStoredWebsiteMetadata } from '../utils/websiteIcons.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
@@ -23,6 +22,19 @@ import { hasAccess, hasAddressAccess, type ApprovalState } from './websiteAccess
 import { getWebsiteActiveAddress } from './websiteActiveAddress.js'
 import { updateWebsiteAccessAndContentScriptInjectionStrategy } from './websiteAccessUpdating.js'
 import { updateDeclarativeNetRequestBlocks } from './websiteRequestBlocking.js'
+import type { LockedSettings } from './settingsTransitionLock.js'
+
+// The reply to a request that the access policy refuses, for the method or for the requested account.
+export function refuseAccess(websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest) {
+	return replyToInterceptedRequest(websiteTabConnections, {
+		type: 'result',
+		...request,
+		error: {
+			code: METAMASK_ERROR_NOT_AUTHORIZED,
+			message: 'The requested method and/or account has not been authorized by the user.'
+		},
+	})
+}
 
 function setWebsitePortApproval(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, approved: boolean) {
 	const connection = getWebsiteSocketConnection(websiteTabConnections, socket)
@@ -231,21 +243,13 @@ export async function getAssociatedAddresses(settings: Settings, websiteOrigin: 
 	return getUniqueItemsByProperties(all, ['address'])
 }
 
-async function askUserForAccessOnConnectionUpdate(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string, activeAddress: AddressBookEntry | undefined, settings: Settings) {
-	const details = getWebsiteSocketConnection(websiteTabConnections, socket)
-	if (details === undefined) return
-
-	const website = { websiteOrigin, ...await retrieveWebsiteDetails(socket.tabId, websiteOrigin) }
-	await requestAccessFromUser(simulationServicesOwner, websiteTabConnections, socket, website, undefined, activeAddress, settings, activeAddress, undefined)
-}
-
 function addIconRefreshTarget(iconRefreshTargets: Map<string, { tabId: number, websiteOrigin: string }>, tabId: number, websiteOrigin: string) {
 	const key = `${ tabId }-${ websiteOrigin }`
 	if (iconRefreshTargets.has(key)) return
 	iconRefreshTargets.set(key, { tabId, websiteOrigin })
 }
 
-async function getConnectionAccess(websiteTabConnections: WebsiteTabConnections, connection: TabConnection['connections'][string], settings: Settings) {
+export async function getConnectionAccess(websiteTabConnections: WebsiteTabConnections, connection: TabConnection['connections'][string], settings: Settings) {
 	const activeAddress = await getActiveAddressForCurrentSignerState(websiteTabConnections, settings, connection.socket.tabId, async () => await getActiveAddress(settings, connection.socket.tabId))
 	const access = activeAddress ? hasAddressAccess(settings.websiteAccess, connection.websiteOrigin, activeAddress) : hasAccess(settings.websiteAccess, connection.websiteOrigin)
 	return { activeAddress, access }
@@ -272,35 +276,19 @@ async function updateTabConnections(
 	return iconRefreshTargets
 }
 
-async function promptForWebsiteAccesses(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, throwOnError = false) {
-	for (const tabConnection of websiteTabConnections.values()) {
-		for (const connection of Object.values(tabConnection.connections)) {
-			if (!connection.wantsToConnect) continue
-			try {
-				// Reconciliation uses the committed snapshot; deferred prompts must recheck the latest settings.
-				const settings = await getSettings()
-				const { activeAddress, access } = await getConnectionAccess(websiteTabConnections, connection, settings)
-				if (access !== 'askAccess') continue
-				await askUserForAccessOnConnectionUpdate(simulationServicesOwner, websiteTabConnections, connection.socket, connection.websiteOrigin, activeAddress, settings)
-			} catch (error) {
-				if (throwOnError) throw error
-				await reportUnexpectedError(error)
-			}
-		}
-	}
-}
-
 export type WebsiteAccessUpdate = {
 	readonly popupRefreshGeneration: number
 	readonly iconRefreshTargets: readonly { readonly tabId: number, readonly websiteOrigin: string }[]
+	readonly reconciledSettings: Settings
 }
 
-// Reconcile approvals with the committed settings while the caller owns the settings lock.
+// Requiring LockedSettings makes callers hold the settings transition lock, so reconciliation never interleaves with a settings change.
 export async function reconcileWebsiteApprovalAccesses(
 	websiteTabConnections: WebsiteTabConnections,
-	settings: Settings,
+	lockedSettings: LockedSettings,
 	throwOnError = false,
 ): Promise<WebsiteAccessUpdate> {
+	const { settings } = lockedSettings
 	const popupRefreshGeneration = bumpPopupRefreshGeneration()
 	const iconRefreshTargets = new Map<string, { tabId: number, websiteOrigin: string }>()
 
@@ -322,22 +310,17 @@ export async function reconcileWebsiteApprovalAccesses(
 	}
 
 	notifyWebsiteLifecycle(websiteTabConnections.lifecycle?.accessReconciled)
-	return { popupRefreshGeneration, iconRefreshTargets: [...iconRefreshTargets.values()] }
+	return { popupRefreshGeneration, iconRefreshTargets: [...iconRefreshTargets.values()], reconciledSettings: settings }
 }
 
-// Call after releasing the settings lock: access dialogs can activate another address.
-export async function finishWebsiteAccessUpdate(
-	simulationServicesOwner: SimulationServicesOwner | undefined,
+// Refresh every tab icon touched by a reconciliation, plus stored tabs without a live connection. Call after any access prompts so icons show pending requests.
+export async function refreshIconsAfterWebsiteAccessUpdate(
 	websiteTabConnections: WebsiteTabConnections,
 	update: WebsiteAccessUpdate,
-	promptForAccessesIfNeeded: boolean,
 	throwOnError = false,
 ) {
 	const iconRefreshTargets = new Map<string, { tabId: number, websiteOrigin: string }>()
 	for (const target of update.iconRefreshTargets) addIconRefreshTarget(iconRefreshTargets, target.tabId, target.websiteOrigin)
-	if (promptForAccessesIfNeeded && simulationServicesOwner !== undefined) {
-		await promptForWebsiteAccesses(simulationServicesOwner, websiteTabConnections, throwOnError)
-	}
 	try {
 		for (const tabState of await getAllTabStates()) {
 			if (websiteTabConnections.has(tabState.tabId)) continue
@@ -351,49 +334,4 @@ export async function finishWebsiteAccessUpdate(
 		if (throwOnError) throw error
 		await reportUnexpectedError(error)
 	}
-}
-
-export async function updateWebsiteApprovalAccesses(
-	simulationServicesOwner: SimulationServicesOwner | undefined,
-	websiteTabConnections: WebsiteTabConnections,
-	settings: Settings,
-	promptForAccessesIfNeeded: boolean,
-	throwOnError = false,
-): Promise<number> {
-	const update = await reconcileWebsiteApprovalAccesses(websiteTabConnections, settings, throwOnError)
-	await finishWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, update, promptForAccessesIfNeeded, throwOnError)
-	return update.popupRefreshGeneration
-}
-
-export async function finalizeWebsiteAccessChange(
-	simulationServicesOwner: SimulationServicesOwner | undefined,
-	websiteTabConnections: WebsiteTabConnections,
-	settings: Settings,
-	promptForAccessesIfNeeded: boolean,
-): Promise<Settings> {
-	await updateWebsiteApprovalAccesses(
-		simulationServicesOwner,
-		websiteTabConnections,
-		settings,
-		promptForAccessesIfNeeded,
-	)
-	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
-	return settings
-}
-
-export async function persistWebsiteAccessChange(
-	simulationServicesOwner: SimulationServicesOwner | undefined,
-	websiteTabConnections: WebsiteTabConnections,
-	website: Website,
-	access: boolean,
-	address: bigint | undefined,
-	promptForAccessesIfNeeded: boolean,
-): Promise<Settings> {
-	await setAccess(website, access, address)
-	return await finalizeWebsiteAccessChange(
-		simulationServicesOwner,
-		websiteTabConnections,
-		await getSettings(),
-		promptForAccessesIfNeeded,
-	)
 }
