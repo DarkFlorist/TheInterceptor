@@ -1,21 +1,19 @@
 import { isAddress } from '../../utils/ethereumPrimitives.js'
-import { useEffect } from 'preact/hooks'
+import { useEffect, useRef } from 'preact/hooks'
 import type { AddAddressParam } from '../../types/user-interface-types.js'
 import { ErrorCheckBox, ErrorText } from '../subcomponents/Error.js'
 import { checksummedAddress, stringToAddress } from '../../utils/bigint.js'
 import { getMissingPopupReplyErrorMessage, requestPopupAbiAndNameFromBlockExplorer, requestPopupIdentifyAddress, requestPopupSafeContractState, sendPopupMessageToBackgroundPage, sendPopupMessageWithReply } from '../../background/backgroundUtils.js'
 import { AddressIcon, getActiveAddressEntry, SmallAddress } from '../subcomponents/address.js'
 import { assertUnreachable, modifyObject } from '../../utils/typescript.js'
-import { createRef } from 'preact'
 import type { AddressBookEntries, AddressBookEntry, AddressBookEntryType, ChainIdWithUniversal, DeclarativeNetRequestBlockMode } from '../../types/addressBookTypes.js'
 import { isBlockExplorerAvailableForChain, isValidAbi } from '../../simulation/services/EtherScanAbiFetcher.js'
 import type { ModifyAddressWindowState } from '../../types/visualizer-types.js'
-import { MessageToPopup } from '../../types/interceptor-messages.js'
 import { ChevronIcon, XMarkIcon } from '../subcomponents/icons.js'
 import { ChainSelector } from '../subcomponents/ChainSelector.js'
 import type { ChainEntry, RpcEntries } from '../../types/rpc.js'
 import { type Signal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
-import { addNoReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
+import { usePopupMessage } from '../hooks/usePopupMessage.js'
 import { DropDownMenu } from '../subcomponents/DropDownMenu.js'
 import { NonHexBigInt } from '../../types/wire-types.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
@@ -117,7 +115,7 @@ type NameInputParams = {
 }
 
 function NameInput({ nameInput, setNameInput, disabled }: NameInputParams) {
-	const ref = createRef<HTMLInputElement>()
+	const ref = useRef<HTMLInputElement>(null)
 	useEffect(() => { ref.current?.focus() }, [])
 	return <input
 		class = 'input address-editor-name-input'
@@ -396,22 +394,13 @@ export function AddNewAddress(param: AddAddressParam) {
 	const { value: saveEntryState, waitFor: waitForSaveEntry } = useAsyncState<void>()
 	const isBlockExplorerLookupPending = useComputed(() => blockExplorerLookup.value.state === 'pending')
 
-	useEffect(() => {
-		const popupMessageListener = (msg: unknown): false => {
-			const maybeParsed = MessageToPopup.safeParse(msg)
-			if (!maybeParsed.success) return false // not a message we are interested in
-			const parsed = maybeParsed.value
-			if (parsed.method === 'popup_addOrModifyAddressWindowStateInformation') {
-				if (parsed.data.windowStateId !== param.modifyAddressWindowState.value.windowStateId) return false
-				param.modifyAddressWindowState.value = modifyObject(param.modifyAddressWindowState.value, {
-					errorState: mergeAddressWindowErrorState(param.modifyAddressWindowState.value.errorState, parsed.data.errorState)
-				})
-			}
-			return false
-		}
-		// Still subscribes through the helper directly: #1682 moves this component onto usePopupMessage together with the rest of its hook changes.
-		return addNoReplyExpectingBrowserRuntimeOnMessageListener((message) => { popupMessageListener(message) })
-	}, [])
+	usePopupMessage((message) => {
+		if (message.method !== 'popup_addOrModifyAddressWindowStateInformation') return
+		if (message.data.windowStateId !== param.modifyAddressWindowState.value.windowStateId) return
+		param.modifyAddressWindowState.value = modifyObject(param.modifyAddressWindowState.value, {
+			errorState: mergeAddressWindowErrorState(param.modifyAddressWindowState.value.errorState, message.data.errorState)
+		})
+	})
 
 	useSignalEffect(() => {
 		safeSignerRefreshGeneration.value
@@ -486,6 +475,7 @@ export function AddNewAddress(param: AddAddressParam) {
 		lastSuccessfulSafeIdentification.value = undefined
 	}
 
+	// A block explorer lookup belongs to one window, address and chain, so changing any of them (or the active address) discards it; edits to other fields keep it.
 	useEffect(() => {
 		activeAddress.value = param.activeAddress
 		if (param.modifyAddressWindowState.value !== undefined) {
