@@ -75,12 +75,15 @@ export function getNativeTokenErc20(rpcEntry: RpcNetwork | undefined): Erc20Toke
 async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork | undefined, useLocalStorage = true) : Promise<AddressBookEntry | undefined> {
 	if (address === ETHEREUM_LOGS_LOGGER_ADDRESS) return getNativeTokenErc20(rpcEntry)
 
+	const chainId = rpcEntry?.chainId ?? 1n
 	if (useLocalStorage) {
-		const userEntry = (await getUserAddressBookEntriesForChainIdMorePreciseFirst(rpcEntry?.chainId ?? 1n)).find((entry) => entry.address === address)
+		const userEntry = (await getUserAddressBookEntriesForChainIdMorePreciseFirst(chainId)).find((entry) => entry.address === address)
 		if (userEntry !== undefined) return userEntry
 	}
 	const addrString = addressString(address)
-	const addressData = contractMetadata.get(addrString)
+	// bundled @darkflorist/address-metadata entries describe Ethereum mainnet contracts only
+	const useBundledMetadata = chainId === 1n
+	const addressData = useBundledMetadata ? contractMetadata.get(addrString) : undefined
 	if (addressData) {
 		const { logoUri, ...rest } = addressData
 		return {
@@ -93,7 +96,7 @@ async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork 
 		}
 	}
 
-	const tokenData = tokenMetadata.get(addrString)
+	const tokenData = useBundledMetadata ? tokenMetadata.get(addrString) : undefined
 	if (tokenData) {
 		const { logoUri, ...rest } = tokenData
 		return {
@@ -106,7 +109,7 @@ async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork 
 		}
 	}
 
-	const erc721TokenData = erc721Metadata.get(addrString)
+	const erc721TokenData = useBundledMetadata ? erc721Metadata.get(addrString) : undefined
 	if (erc721TokenData) {
 		const { logoUri, ...rest } = erc721TokenData
 		return {
@@ -119,7 +122,7 @@ async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork 
 		}
 	}
 
-	const erc1155TokenData = erc1155Metadata.get(addrString)
+	const erc1155TokenData = useBundledMetadata ? erc1155Metadata.get(addrString) : undefined
 	if (erc1155TokenData) {
 		const { logoUri, ...rest } = erc1155TokenData
 		return {
