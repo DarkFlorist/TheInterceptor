@@ -24,8 +24,6 @@ import { makeSureInterceptorIsNotSleeping } from '../sleeping.js'
 import { getPopupVisualisationState, getRpcConnectionStatus, getRpcList, getSafeTransactionStacks, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst } from '../storageVariables.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, getAddressMetadataForAccess, refreshSignerAccountsFromApprovedWebsitePorts } from '../windows/interceptorAccess.js'
 
-const formatCaughtErrorMessage = (error: unknown) => getErrorMessage(error) ?? 'Unknown error'
-
 function isInterceptorDisabledForWebsite(settings: Settings, websiteOrigin: string | undefined) {
 	if (websiteOrigin === undefined) return false
 	return settings.websiteAccess.some((entry) => entry.website.websiteOrigin === websiteOrigin && entry.interceptorDisabled === true)
@@ -119,13 +117,12 @@ export async function requestNewHomeData(
 	requestAbortController: AbortController | undefined,
 	popupRefreshGeneration: number,
 ) {
-	const newPopupRefreshGeneration = popupRefreshGeneration
 	const updatedPage = await buildHomePageUpdate(ethereum, websiteTabConnections, {
 		requestAbortController,
 		richDataSource: 'cached',
 		shouldRefreshSignerAccounts,
 		includeWebsiteAccessAddressMetadata,
-		popupRefreshGeneration: newPopupRefreshGeneration,
+		popupRefreshGeneration,
 	})
 	await sendPopupMessageToOpenWindows(updatedPage)
 }
@@ -171,7 +168,6 @@ export async function refreshHomeData(
 	refreshSimulation = true,
 	requestAbortController: AbortController | undefined = undefined,
 ) {
-	const newPopupRefreshGeneration = popupRefreshGeneration
 	markPerformance(POPUP_PERFORMANCE_MARKS.backgroundRefreshStart)
 	try {
 		const currentSettings = await getSettings()
@@ -184,7 +180,7 @@ export async function refreshHomeData(
 			richDataSource: 'fresh',
 			shouldRefreshSignerAccounts,
 			includeWebsiteAccessAddressMetadata: true,
-			popupRefreshGeneration: newPopupRefreshGeneration,
+			popupRefreshGeneration,
 		})
 		await sendPopupMessageToOpenWindows(updatedPage)
 	} finally {
@@ -201,7 +197,7 @@ export async function requestMakeMeRichList(ethereumClientService: EthereumClien
 		} catch (error) {
 			if (isExpectedInfrastructureError(error)) throw error
 			const address = checksummedAddress(element.address)
-			const errorMessage = formatCaughtErrorMessage(error)
+			const errorMessage = getErrorMessage(error) ?? 'Unknown error'
 			await reportUnexpectedError(error, {
 				displayMessage: `Failed to identify rich list address ${ address }: ${ errorMessage }`,
 				details: { address, richListEntry: element },

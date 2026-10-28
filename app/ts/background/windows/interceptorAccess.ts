@@ -3,9 +3,7 @@ import { Future } from '../../utils/future.js'
 import type { InterceptorAccessChangeAddress, InterceptorAccessRefresh, InterceptorAccessReply, Settings, WindowMessage } from '../../types/interceptor-messages.js'
 import { createScopedKeyedSerialExecutor, Semaphore } from '../../utils/semaphore.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
-import { getAssociatedAddresses, persistWebsiteAccessChange, updateWebsiteApprovalAccesses, verifyAccess, withSuppressedUnscopedConnectionEventsForSocket, withSuppressedUnscopedConnectionEventsForSocketAsync } from '../accessManagement.js'
-import { handleInterceptedRequest, refuseAccess } from '../background.js'
-import { activateAddressSelection } from '../activeSettings.js'
+import { getAssociatedAddresses, refuseAccess, verifyAccess, withSuppressedUnscopedConnectionEventsForSocket, withSuppressedUnscopedConnectionEventsForSocketAsync } from '../accessManagement.js'
 import { INTERNAL_CHANNEL_NAME, createInternalMessageListener, getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
 import { getActiveAddressEntryForChain, getActiveAddresses, getWalletActiveAddressEntryForChain } from '../metadataUtils.js'
 import { getSettings } from '../settings.js'
@@ -15,8 +13,6 @@ import { replyToInterceptedRequest, sendSubscriptionReplyOrCallBackToPort } from
 import type { PopupOrTabId, Website, WebsiteAccessArray } from '../../types/websiteAccessTypes.js'
 import type { PendingAccessRequest } from '../../types/accessRequest.js'
 import { doAddressBookChainIdsMatch, type AddressBookEntries, type AddressBookEntry } from '../../types/addressBookTypes.js'
-import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
-import type { PublishRpcConnectionStatus } from '../rpcSlowRequestTracking.js'
 import { type PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab, removeWindowTabListeners, tryFocusingTabOrWindow } from '../../utils/popupOrTab.js'
 import { isAccountConnectionMethod } from '../accountRequestMethods.js'
 import type { ErrorWithCodeAndOptionalData } from '../../types/error.js'
@@ -64,33 +60,38 @@ async function waitForSignerAccountReply(future: Future<ErrorWithCodeAndOptional
 	}
 }
 
-const onCloseWindowOrTab = async (simulationServicesOwner: SimulationServicesOwner, popupOrTabs: PopupOrTabId, websiteTabConnections: WebsiteTabConnections) => await pendingInterceptorAccessSemaphore.execute(async () => { // check if user has closed the window on their own, if so, reject signature
+const onCloseWindowOrTab = async (popupOrTabs: PopupOrTabId, websiteTabConnections: WebsiteTabConnections) => await pendingInterceptorAccessSemaphore.execute(async () => { // check if user has closed the window on their own, if so, reject the queued requests
 	if (openedDialog === undefined || openedDialog.popupOrTab.id !== popupOrTabs.id || openedDialog.popupOrTab.type !== popupOrTabs.type) return
 	removeWindowTabListeners(openedDialog.onClosePopup, openedDialog.onCloseTab)
 
 	openedDialog = undefined
-	const pendingRequests = await clearPendingAccessRequests()
-	for (const pendingRequest of pendingRequests) {
-		const reply: InterceptorAccessReply = {
-			originalRequestAccessToAddress: pendingRequest.originalRequestAccessToAddress?.address,
-			requestAccessToAddress: pendingRequest.requestAccessToAddress?.address,
-			accessRequestId: pendingRequest.accessRequestId,
-			userReply: 'noResponse' as const
-		}
-		await resolve(
-			simulationServicesOwner,
-			websiteTabConnections,
-			reply,
-			pendingRequest.request,
-			pendingRequest.website,
-			undefined,
-			pendingRequest,
-		)
+	for (const pendingRequest of await clearPendingAccessRequests()) {
+		if (pendingRequest.request !== undefined) refuseAccess(websiteTabConnections, pendingRequest.request)
 	}
 })
 
-export async function resolveInterceptorAccess(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, reply: InterceptorAccessReply, publishRpcConnectionStatus: PublishRpcConnectionStatus) {
-	const resolution = await pendingInterceptorAccessSemaphore.execute(async () => {
+export type InterceptedRequestReplay = {
+	readonly website: Website
+	readonly socket: WebsiteSocket
+	readonly request: InterceptedRequest
+}
+
+// Sends a request that waited for access back through the RPC router. Callers inject it because the router depends on this dialog.
+export type ReplayInterceptedRequest = (replay: InterceptedRequestReplay) => Promise<unknown>
+
+// Persists an approved or rejected reply and activates a newly selected address. Callers inject it because settings transitions depend on this dialog.
+export type ApplyInterceptorAccessReply = (accessReply: InterceptorAccessReply, pendingAccessRequest: PendingAccessRequest, userRequestedAddressChange: boolean) => Promise<void>
+
+export type InterceptorAccessReplySettlement = {
+	// The reply leaves other website accesses to decide, so the caller reconciles approvals with the settings and prompts for them.
+	readonly promptForFollowUpAccesses: boolean
+	// Replays the requests the reply answered. After an account-connection request it suppresses the unscoped connection events that the replay would otherwise send a second time.
+	readonly replayAnsweredRequests: (replayRequest: ReplayInterceptedRequest) => Promise<void>
+}
+
+// Applies the user's reply to its pending access request under the dialog lock, removes every request the reply answers, and closes the dialog when none remain.
+export async function settleInterceptorAccessReply(websiteTabConnections: WebsiteTabConnections, reply: InterceptorAccessReply, applyAccessReply: ApplyInterceptorAccessReply): Promise<InterceptorAccessReplySettlement> {
+	return await pendingInterceptorAccessSemaphore.execute(async () => {
 		const promises = await getPendingAccessRequests()
 		const pendingRequest = promises.find((req) => req.accessRequestId === reply.accessRequestId)
 		if (pendingRequest === undefined) throw new Error('Access request missing!')
@@ -99,44 +100,17 @@ export async function resolveInterceptorAccess(simulationServicesOwner: Simulati
 			requestAccessToAddress: reply.requestAccessToAddress ?? pendingRequest.requestAccessToAddress?.address,
 			originalRequestAccessToAddress: reply.originalRequestAccessToAddress ?? pendingRequest.originalRequestAccessToAddress?.address,
 		}
-		return {
-			...await resolve(
-				simulationServicesOwner,
-				websiteTabConnections,
-				replyWithPendingRequestAddresses,
-				pendingRequest.request,
-				pendingRequest.website,
-				publishRpcConnectionStatus,
-				pendingRequest,
-			),
-			replayRequestSocket: pendingRequest.request !== undefined && isAccountConnectionMethod(pendingRequest.request.method)
-				? pendingRequest.request.uniqueRequestIdentifier.requestSocket
-				: undefined,
+		const { pendingRequestsToReplay, promptForFollowUpAccesses } = await resolve(websiteTabConnections, replyWithPendingRequestAddresses, pendingRequest, applyAccessReply)
+		const replayRequestSocket = pendingRequest.request !== undefined && isAccountConnectionMethod(pendingRequest.request.method)
+			? pendingRequest.request.uniqueRequestIdentifier.requestSocket
+			: undefined
+		const replayAnsweredRequests = async (replayRequest: ReplayInterceptedRequest) => {
+			const replayAll = async () => { await Promise.all(pendingRequestsToReplay.map(replayRequest)) }
+			if (replayRequestSocket === undefined) return await replayAll()
+			await withSuppressedUnscopedConnectionEventsForSocketAsync(replayRequestSocket, replayAll)
 		}
+		return { promptForFollowUpAccesses, replayAnsweredRequests }
 	})
-	if (resolution.promptForFollowUpAccesses) {
-		await updateWebsiteApprovalAccesses(
-			simulationServicesOwner,
-			websiteTabConnections,
-			await getSettings(),
-			true,
-		)
-	}
-	const replayPendingRequests = async () => await Promise.all(resolution.pendingRequestsToReplay.map((pendingRequest) => handleInterceptedRequest(
-			undefined,
-			pendingRequest.website.websiteOrigin,
-			pendingRequest.website,
-			simulationServicesOwner,
-			pendingRequest.socket,
-			pendingRequest.request,
-			websiteTabConnections,
-			publishRpcConnectionStatus,
-		)))
-	if (resolution.replayRequestSocket === undefined) {
-		await replayPendingRequests()
-		return
-	}
-	await withSuppressedUnscopedConnectionEventsForSocketAsync(resolution.replayRequestSocket, replayPendingRequests)
 }
 
 export async function getAddressMetadataForAccess(websiteAccess: WebsiteAccessArray, chainId: bigint): Promise<AddressBookEntries> {
@@ -165,18 +139,6 @@ async function withCurrentSignerState(pendingAccessRequest: PendingAccessRequest
 
 async function withCurrentSignerStates(pendingAccessRequests: readonly PendingAccessRequest[]) {
 	return await Promise.all(pendingAccessRequests.map(withCurrentSignerState))
-}
-
-async function changeAccess(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, confirmation: InterceptorAccessReply, website: Website, promptForAccessesIfNeeded = true) {
-	if (confirmation.userReply === 'noResponse') return
-	await persistWebsiteAccessChange(
-		simulationServicesOwner,
-		websiteTabConnections,
-		website,
-		confirmation.userReply === 'Approved',
-		confirmation.requestAccessToAddress,
-		promptForAccessesIfNeeded,
-	)
 }
 
 export async function updateInterceptorAccessViewWithPendingRequests() {
@@ -267,7 +229,6 @@ export async function refreshSignerAccountsForTab(
 }
 
 export async function requestAccessFromUser(
-	simulationServicesOwner: SimulationServicesOwner,
 	websiteTabConnections: WebsiteTabConnections,
 	socket: WebsiteSocket,
 	website: Website,
@@ -275,10 +236,9 @@ export async function requestAccessFromUser(
 	requestAccessToAddress: AddressBookEntry | undefined,
 	settings: Settings,
 	activeAddressEntry: AddressBookEntry | undefined,
-	publishRpcConnectionStatus: PublishRpcConnectionStatus,
+	replayInterceptedRequest: ReplayInterceptedRequest,
 ): Promise<void>
 export async function requestAccessFromUser(
-	simulationServicesOwner: SimulationServicesOwner,
 	websiteTabConnections: WebsiteTabConnections,
 	socket: WebsiteSocket,
 	website: Website,
@@ -286,10 +246,9 @@ export async function requestAccessFromUser(
 	requestAccessToAddress: AddressBookEntry | undefined,
 	settings: Settings,
 	activeAddressEntry: AddressBookEntry | undefined,
-	publishRpcConnectionStatus: undefined,
+	replayInterceptedRequest: undefined,
 ): Promise<void>
 export async function requestAccessFromUser(
-	simulationServicesOwner: SimulationServicesOwner,
 	websiteTabConnections: WebsiteTabConnections,
 	socket: WebsiteSocket,
 	website: Website,
@@ -297,7 +256,7 @@ export async function requestAccessFromUser(
 	requestAccessToAddress: AddressBookEntry | undefined,
 	settings: Settings,
 	activeAddressEntry: AddressBookEntry | undefined,
-	publishRpcConnectionStatus: PublishRpcConnectionStatus | undefined,
+	replayInterceptedRequest: ReplayInterceptedRequest | undefined,
 ) {
 	// check if we need to ask address access or not. If address is put to never need to have address specific permision, we don't need to ask for it
 	const askForAddressAccess = requestAccessToAddress !== undefined && requestAccessToAddress.askForAddressAccess !== false
@@ -315,7 +274,7 @@ export async function requestAccessFromUser(
 		if (request === undefined || !isAccountConnectionMethod(request.method)) return verify()
 		return withSuppressedUnscopedConnectionEventsForSocket(request.uniqueRequestIdentifier.requestSocket, verify)
 	}
-	const closeWindowOrTabCallback = (popupOrTabId: PopupOrTabId) => onCloseWindowOrTab(simulationServicesOwner, popupOrTabId, websiteTabConnections)
+	const closeWindowOrTabCallback = (popupOrTabId: PopupOrTabId) => onCloseWindowOrTab(popupOrTabId, websiteTabConnections)
 	const onCloseWindowCallback = async (id: number) => closeWindowOrTabCallback({ type: 'popup' as const, id })
 	const onCloseTabCallback = async (id: number) => closeWindowOrTabCallback({ type: 'tab' as const, id })
 	const pendingReplay = await pendingInterceptorAccessSemaphore.execute(async () => {
@@ -340,14 +299,12 @@ export async function requestAccessFromUser(
 		const previousPendingRequests = await verifyPendingRequests()
 		const justAddToPending = previousPendingRequests.length !== 0
 		const hasAccess = verifyAccessForCurrentRequest(await getSettings())
-		if (hasAccess === 'hasAccess') { // we already have access, just reply with the gate keeped request right away
-			if (request !== undefined) {
-				if (publishRpcConnectionStatus === undefined) throw new Error('RPC connection status publisher is required to replay an intercepted request.')
-				return { website, socket, request }
-			}
-			return undefined
+		// Access was granted or denied after the router decided to ask. No dialog is needed: replay the request so the router answers it from the current settings.
+		if (hasAccess !== 'askAccess') {
+			if (request === undefined) return undefined
+			if (replayInterceptedRequest === undefined) throw new Error('A replay callback is required to replay an intercepted request.')
+			return { website, socket, request }
 		}
-		if (hasAccess !== 'askAccess') return undefined
 		const replayedPendingRequest = request === undefined ? undefined : previousPendingRequests.find((pendingRequest) => {
 			return pendingRequest.request !== undefined && doesUniqueRequestIdentifiersMatch(pendingRequest.request.uniqueRequestIdentifier, request.uniqueRequestIdentifier)
 		})
@@ -435,20 +392,12 @@ export async function requestAccessFromUser(
 		return undefined
 	})
 	if (pendingReplay === undefined) return
-	if (publishRpcConnectionStatus === undefined) throw new Error('RPC connection status publisher is required to replay an intercepted request.')
-	await handleInterceptedRequest(
-		undefined,
-		pendingReplay.website.websiteOrigin,
-		pendingReplay.website,
-		simulationServicesOwner,
-		pendingReplay.socket,
-		pendingReplay.request,
-		websiteTabConnections,
-		publishRpcConnectionStatus,
-	)
+	if (replayInterceptedRequest === undefined) throw new Error('A replay callback is required to replay an intercepted request.')
+	await replayInterceptedRequest(pendingReplay)
 }
 
-async function resolve(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, accessReply: InterceptorAccessReply, request: InterceptedRequest | undefined, website: Website, publishRpcConnectionStatus: PublishRpcConnectionStatus | undefined, pendingAccessRequest: PendingAccessRequest) {
+async function resolve(websiteTabConnections: WebsiteTabConnections, accessReply: InterceptorAccessReply, pendingAccessRequest: PendingAccessRequest, applyAccessReply: ApplyInterceptorAccessReply) {
+	const { request, website } = pendingAccessRequest
 	let promptForFollowUpAccesses = false
 	if (accessReply.userReply === 'noResponse') {
 		if (request !== undefined) refuseAccess(websiteTabConnections, request)
@@ -462,33 +411,13 @@ async function resolve(simulationServicesOwner: SimulationServicesOwner, website
 				|| !doAddressBookChainIdsMatch(requestedEntry.chainId, originalEntry.chainId)
 		const userRequestedAddressChange = accessReply.requestAccessToAddress !== accessReply.originalRequestAccessToAddress || pendingEntryChanged
 		const replyCompletesAccountRequest = request !== undefined && isAccountConnectionMethod(request.method)
-		const shouldPromptForFollowUpAccesses = !replyCompletesAccountRequest
-		promptForFollowUpAccesses = shouldPromptForFollowUpAccesses
+		promptForFollowUpAccesses = !replyCompletesAccountRequest
 		const accountRequestSocket = replyCompletesAccountRequest ? request.uniqueRequestIdentifier.requestSocket : undefined
-		const applyAccessReply = async () => {
-			let approvedAddressSelection
-			if (accessReply.userReply === 'Approved' && accessReply.requestAccessToAddress !== undefined) {
-				approvedAddressSelection = await getAllowedAddressSelectionForAccessRequest(pendingAccessRequest, accessReply.requestAccessToAddress, 'pendingEntry')
-			}
-			if (!userRequestedAddressChange) {
-				await changeAccess(simulationServicesOwner, websiteTabConnections, accessReply, website, false)
-				return
-			}
-			if (accessReply.requestAccessToAddress === undefined) throw new Error('Changed request to page level')
-			await changeAccess(simulationServicesOwner, websiteTabConnections, accessReply, website, false)
-			const settings = await getSettings()
-			const signerAddress = (await getTabState(pendingAccessRequest.socket.tabId)).signerAccounts[0]
-			const selection = approvedAddressSelection ?? await getAllowedAddressSelectionForAccessRequest(pendingAccessRequest, accessReply.requestAccessToAddress, 'pendingEntry')
-			await activateAddressSelection(simulationServicesOwner, websiteTabConnections, selection, {
-				simulationMode: settings.simulationMode,
-				signerAddress,
-				promptForAccessesIfNeeded: false,
-			})
-		}
+		const applyReply = async () => await applyAccessReply(accessReply, pendingAccessRequest, userRequestedAddressChange)
 		if (accountRequestSocket === undefined) {
-			await applyAccessReply()
+			await applyReply()
 		} else {
-			await withSuppressedUnscopedConnectionEventsForSocketAsync(accountRequestSocket, applyAccessReply)
+			await withSuppressedUnscopedConnectionEventsForSocketAsync(accountRequestSocket, applyReply)
 		}
 	}
 
@@ -506,11 +435,8 @@ async function resolve(simulationServicesOwner: SimulationServicesOwner, website
 		await closePopupOrTabById(openedDialog.popupOrTab)
 		openedDialog = undefined
 	}
-	const affectedEntryWithPendingRequest = pendingRequests.previous.filter((pending): pending is PendingAccessRequest & { request: InterceptedRequest } => isAffectedEntry(pending) && pending.request !== undefined)
-
-	if (affectedEntryWithPendingRequest.length === 0) return { pendingRequestsToReplay: [], promptForFollowUpAccesses }
-	if (publishRpcConnectionStatus === undefined) throw new Error('RPC connection status publisher is required to replay intercepted requests.')
-	return { pendingRequestsToReplay: affectedEntryWithPendingRequest, promptForFollowUpAccesses }
+	const pendingRequestsToReplay = pendingRequests.previous.filter((pending): pending is PendingAccessRequest & { request: InterceptedRequest } => isAffectedEntry(pending) && pending.request !== undefined)
+	return { pendingRequestsToReplay, promptForFollowUpAccesses }
 }
 
 export async function requestAddressChange(websiteTabConnections: WebsiteTabConnections, message: InterceptorAccessChangeAddress | InterceptorAccessRefresh) {
@@ -556,7 +482,7 @@ export async function requestAddressChange(websiteTabConnections: WebsiteTabConn
 	return await sendPopupMessageToOpenWindows({ method: 'popup_interceptorAccessDialog', data: { activeAddresses: await getAccessDialogActiveAddresses(), pendingAccessRequests: await withCurrentSignerStates(newRequests.current) } })
 }
 
-async function getAllowedAddressSelectionForAccessRequest(pendingAccessRequest: PendingAccessRequest, address: bigint | 'signer', selectionSource: 'explicitSelection' | 'pendingEntry') {
+export async function getAllowedAddressSelectionForAccessRequest(pendingAccessRequest: PendingAccessRequest, address: bigint | 'signer', selectionSource: 'explicitSelection' | 'pendingEntry') {
 	const settings = await getSettings()
 	const simulationMode = pendingAccessRequest.simulationMode && settings.simulationMode
 	const signerAccounts = (await getTabState(pendingAccessRequest.socket.tabId)).signerAccounts

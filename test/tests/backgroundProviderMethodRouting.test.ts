@@ -10,6 +10,38 @@ type SimulationStateInputBlock = SimulationStateInput[number]
 type SignedMessageRequestParameters = SimulationStateInputBlock['signedMessages'][number]['originalRequestParameters']
 
 describe('background provider method routing', () => {
+	test('resolves an access prompt with the services installed after it opened', async () => {
+		installBrowserMock()
+		const { requestAccessFromUser, createInterceptedRequestReplay, resolveInterceptorAccess, getPendingAccessRequests, getSettings, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress } = await loadModules()
+		const { getActiveAddressEntryForChain } = await import('../../app/ts/background/metadataUtils.js')
+		const website = { websiteOrigin: 'https://access-reset.example', icon: undefined, title: undefined }
+		const account = 1n
+		await setUseSignersAddressAsActiveAddress(false)
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: account })
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(1)
+		const connections = new Map([[1, { ...confirmedSignerOwnership(socket), connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin: website.websiteOrigin, approved: false, wantsToConnect: true },
+		} }]])
+		let oldReads = 0
+		let newReads = 0
+		const original = createEthereumWithGetBlockCounter({ count: 0 }, { getChainId: () => { oldReads++; return 1n } })
+		const installed = createEthereumWithGetBlockCounter({ count: 0 }, { getChainId: () => { newReads++; return 1n } })
+		const owner = createTestSimulationServicesOwner(original, () => installed)
+		const address = await getActiveAddressEntryForChain(account, 1n)
+		await requestAccessFromUser(connections, socket, website, {
+			interceptorRequest: true, usingInterceptorWithoutSigner: true,
+			uniqueRequestIdentifier: { requestId: 992, requestSocket: socket }, method: 'eth_chainId', params: [],
+		}, address, await getSettings(), address, createInterceptedRequestReplay(owner, connections, noopPublishRpcConnectionStatus))
+		const pending = (await getPendingAccessRequests())[0]
+		assert.ok(pending !== undefined)
+		owner.reset(installed.ethereum.getRpcEntry())
+		await resolveInterceptorAccess(owner, connections, { userReply: 'Approved', requestAccessToAddress: account, originalRequestAccessToAddress: account, accessRequestId: pending.accessRequestId }, noopPublishRpcConnectionStatus)
+		assert.equal(oldReads, 0)
+		assert.ok(newReads > 0)
+		assert.equal(messages.find(message => message.requestId === 992)?.result, '0x1')
+		assert.equal((await getPendingAccessRequests()).length, 0)
+	})
 
 	test('uses installed services after waiting for website metadata', async () => {
 		installBrowserMock()
