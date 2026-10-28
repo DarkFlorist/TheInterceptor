@@ -1,67 +1,9 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
 import { withSilencedConsole } from './consoleSilence.js'
+import { createPerTestRestorer } from '../harness/perTest.js'
 
-const defineGlobal = (name: PropertyKey, value: unknown) => Object.defineProperty(globalThis, name, { value, configurable: true, writable: true })
-
-function installBrowserMock() {
-	const storageState: Record<string, unknown> = {}
-	const popupMessages: unknown[] = []
-	defineGlobal('browser', {
-		runtime: {
-			lastError: null,
-			async sendMessage(message: unknown) {
-				popupMessages.push(message)
-				return undefined
-			},
-			getManifest: () => ({ manifest_version: 3 }),
-			onMessage: { addListener: () => undefined, removeListener: () => undefined },
-			onConnect: { addListener: () => undefined, removeListener: () => undefined },
-		},
-		storage: {
-			local: {
-				async get(keys?: string | string[] | Record<string, unknown> | null) {
-					if (keys === undefined || keys === null) return { ...storageState }
-					if (Array.isArray(keys)) return Object.fromEntries(keys.map((key) => [key, storageState[key]]))
-					if (typeof keys === 'string') return { [keys]: storageState[keys] }
-					return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
-				},
-				async set(items: Record<string, unknown>) {
-					Object.assign(storageState, items)
-				},
-				async remove(keys: string | string[]) {
-					for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
-				},
-			},
-		},
-		tabs: {
-			async query() { return [] },
-			async get() { return undefined },
-			async update() { return undefined },
-			onUpdated: { addListener: () => undefined, removeListener: () => undefined },
-			onRemoved: { addListener: () => undefined, removeListener: () => undefined },
-		},
-		windows: {
-			async getAll() { return [] },
-			async get() { return undefined },
-			async update() { return undefined },
-		},
-		action: {
-			async setIcon() { return undefined },
-			async setTitle() { return undefined },
-			async setBadgeText() { return undefined },
-			async setBadgeBackgroundColor() { return undefined },
-		},
-		browserAction: {
-			async setIcon() { return undefined },
-			async setTitle() { return undefined },
-			async setBadgeText() { return undefined },
-			async setBadgeBackgroundColor() { return undefined },
-		},
-	})
-	defineGlobal('chrome', { runtime: { id: 'test-extension' } })
-	return { storageState, popupMessages }
-}
+const { installBrowserMockForTest } = createPerTestRestorer()
 
 async function loadModules() {
 	return {
@@ -74,18 +16,19 @@ async function loadModules() {
 
 describe('unexpected error security', () => {
 	test('keep spoofed InterceptorError diagnostics out of popup state', async () => {
-		const { storageState, popupMessages } = installBrowserMock()
+		const browserMock = installBrowserMockForTest()
 		const { getLatestUnexpectedError, handleInterceptorError } = await loadModules()
 
 		await withSilencedConsole(async () => await handleInterceptorError({ method: 'InterceptorError', params: ['phishing text'] }))
 
-		assert.equal(storageState.latestUnexpectedError, undefined)
+		const { latestUnexpectedError: storedLatestUnexpectedError } = browserMock.readStorage()
+		assert.equal(storedLatestUnexpectedError, undefined)
 		assert.equal(await getLatestUnexpectedError(), undefined)
-		assert.equal(popupMessages.length, 0)
+		assert.equal(browserMock.calls.runtimeSendMessage.length, 0)
 	})
 
 	test('use generic popup copy for unknown thrown values', async () => {
-		const { popupMessages } = installBrowserMock()
+		const browserMock = installBrowserMockForTest()
 		const { getLatestUnexpectedError, reportUnexpectedError, GENERIC_UNEXPECTED_ERROR_MESSAGE } = await loadModules()
 
 		await withSilencedConsole(async () => await reportUnexpectedError({ arbitrary: 'value' }))
@@ -96,11 +39,11 @@ describe('unexpected error security', () => {
 		assert.equal(latestUnexpectedError?.data.source, 'internal')
 		assert.equal(latestUnexpectedError?.data.code, 'unexpected_error')
 		assert.equal(typeof latestUnexpectedError?.data.debugId, 'string')
-		assert.equal(popupMessages.length, 1)
+		assert.equal(browserMock.calls.runtimeSendMessage.length, 1)
 	})
 
 	test('preserve trusted internal Error messages for popup display', async () => {
-		installBrowserMock()
+		installBrowserMockForTest()
 		const { getLatestUnexpectedError, reportUnexpectedError } = await loadModules()
 
 		await withSilencedConsole(async () => await reportUnexpectedError(new Error('Trusted extension failure')))
