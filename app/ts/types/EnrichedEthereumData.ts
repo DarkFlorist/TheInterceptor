@@ -34,7 +34,6 @@ export const ParsedEvent = funtypes.ReadonlyObject({
 	topics: funtypes.ReadonlyArray(EthereumBytes32),
 })
 
-type NonParsedEvent = funtypes.Static<typeof NonParsedEvent>
 const NonParsedEvent = funtypes.ReadonlyObject({
 	isParsed: funtypes.Literal('NonParsed'),
 	address: EthereumAddress,
@@ -76,7 +75,6 @@ export const TokenVisualizerResult = funtypes.Intersect(
 	)
 )
 
-type EnsFuseName = funtypes.Static<typeof EnsFuseName>
 const EnsFuseName = funtypes.Union(
 	funtypes.Literal('Cannot Unwrap Name'),
 	funtypes.Literal('Cannot Burn Fuses'),
@@ -287,7 +285,6 @@ export const TokenVisualizerErc721Event = funtypes.ReadonlyObject({
 	isApproval: funtypes.Boolean,
 })
 
-type TokenVisualizerErc1155Event = funtypes.Static<typeof TokenVisualizerErc1155Event>
 const TokenVisualizerErc1155Event = funtypes.ReadonlyObject({
 	logObject: funtypes.Union(funtypes.Undefined, EnrichedEthereumEvent),
 	type: funtypes.Literal('ERC1155'),

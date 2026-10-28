@@ -159,7 +159,6 @@ export const EthTransactionReceiptResponse = funtypes.Union(
 export type GetBlockReturn = funtypes.Static<typeof GetBlockReturn>
 export const GetBlockReturn = funtypes.Union(EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes)
 
-type JsonRpcSuccessResponse = funtypes.Static<typeof JsonRpcSuccessResponse>
 const JsonRpcSuccessResponse = funtypes.ReadonlyObject({
 	jsonrpc: funtypes.Literal('2.0'),
 	id: funtypes.Union(funtypes.String, funtypes.Number),
@@ -319,7 +318,6 @@ export const GetCode = funtypes.ReadonlyObject({
 	params: funtypes.ReadonlyTuple(EthereumAddress, EthereumBlockTag)
 }).asReadonly()
 
-type RequestPermissions = funtypes.Static<typeof RequestPermissions>
 const RequestPermissions = funtypes.ReadonlyObject({
 	method: funtypes.Literal('wallet_requestPermissions'),
 	params: funtypes.ReadonlyTuple( funtypes.ReadonlyObject({ eth_accounts: funtypes.ReadonlyObject({ }) }) )
@@ -353,7 +351,6 @@ export const GetTransactionCount = funtypes.ReadonlyObject({
 	params: funtypes.ReadonlyTuple(EthereumAddress, EthereumBlockTag)
 }).asReadonly()
 
-type EthSign = funtypes.Static<typeof EthSign>
 const EthSign = funtypes.ReadonlyObject({
 	method: funtypes.Literal('eth_sign'),
 	params: funtypes.ReadonlyTuple(EthereumAddress, funtypes.String),
@@ -419,7 +416,6 @@ export const WalletWatchAsset = funtypes.ReadonlyObject({
 	params: funtypes.ReadonlyTuple(WalletWatchAssetParameters),
 })
 
-type Web3ClientVersion = funtypes.Static<typeof Web3ClientVersion>
 const Web3ClientVersion = funtypes.ReadonlyObject({
 	method: funtypes.Literal('web3_clientVersion'),
 	params: funtypes.ReadonlyTuple()
