@@ -277,6 +277,9 @@ function createGovernanceTransactionFixture(transactionIdentifier: bigint): Simu
 	return governanceTransactionFixture as SimulatedAndVisualizedTransaction
 }
 
+// The transaction card GovernanceVoteVisualizer renders for a simulated vote; these tests only check the visualizer's own buttons and messages.
+const PlaceholderTransactionCard = () => h('div', {}, 'transaction card')
+
 const gnosisSignerAddress = {
 	type: 'contact' as const,
 	name: 'Signer',
@@ -1033,6 +1036,7 @@ describe('popup async action UI', () => {
 
 		await act(() => {
 			render(h(modules.GovernanceVoteVisualizer, {
+				transactionCard: PlaceholderTransactionCard,
 				simTx: createGovernanceTransactionFixture(5n),
 				activeAddress: signal(0x2n),
 				renameAddressCallBack: () => undefined,
@@ -1074,6 +1078,7 @@ describe('popup async action UI', () => {
 
 		await act(() => {
 			render(h(modules.GovernanceVoteVisualizer, {
+				transactionCard: PlaceholderTransactionCard,
 				simTx: createGovernanceTransactionFixture(5n),
 				activeAddress: signal(0x2n),
 				renameAddressCallBack: () => undefined,
@@ -1119,6 +1124,7 @@ describe('popup async action UI', () => {
 
 		await act(() => {
 			render(h(modules.GovernanceVoteVisualizer, {
+				transactionCard: PlaceholderTransactionCard,
 				simTx: createGovernanceTransactionFixture(5n),
 				activeAddress: signal(0x2n),
 				renameAddressCallBack: () => undefined,
@@ -1136,6 +1142,7 @@ describe('popup async action UI', () => {
 
 		await act(() => {
 			render(h(modules.GovernanceVoteVisualizer, {
+				transactionCard: PlaceholderTransactionCard,
 				simTx: createGovernanceTransactionFixture(6n),
 				activeAddress: signal(0x2n),
 				renameAddressCallBack: () => undefined,

@@ -1,8 +1,7 @@
 import type { RenameAddressCallBack } from '../../../types/user-interface-types.js'
 import { BigAddress } from '../../subcomponents/address.js'
-import { AllApproval, TokenAmount, TokenSymbol } from '../../subcomponents/coins.js'
+import { AllApproval, TokenAmount, TokenSymbol, tokenEventToTokenSymbolParams } from '../../subcomponents/coins.js'
 import { GasFee, type TransactionGasses } from '../SimulationSummary.js'
-import { tokenEventToTokenSymbolParams } from './CatchAllVisualizer.js'
 import type { RpcNetwork } from '../../../types/rpc.js'
 import type { TokenVisualizerResultWithMetadata } from '../../../types/EnrichedEthereumData.js'
 

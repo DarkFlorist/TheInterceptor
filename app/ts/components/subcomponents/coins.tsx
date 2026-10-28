@@ -14,6 +14,8 @@ import { AbbreviatedValue } from './AbbreviatedValue.js'
 import { InlineCard } from './InlineCard.js'
 import { getNativeTokenErc20 } from '../../background/metadataUtils.js'
 import { resolveSignal, type SignalOrValue } from '../../utils/signals.js'
+import type { TokenVisualizerResultWithMetadata } from '../../types/EnrichedEthereumData.js'
+import { assertNever } from '../../utils/typescript.js'
 
 type EtherParams = {
 	amount: SignalOrValue<bigint>
@@ -139,6 +141,20 @@ function TokenIdOrNameOrNothing(param: TokenSymbolParams) {
 			{ `#${ truncate(param.tokenId.toString(), 9) }` }&nbsp;
 		</p>
 	</CopyToClipboard>
+}
+
+// Picks the token identity props of TokenSymbol out of a token event.
+export function tokenEventToTokenSymbolParams(tokenEvent: TokenVisualizerResultWithMetadata){
+	switch(tokenEvent.type) {
+		case 'ERC1155': return { tokenEntry: tokenEvent.token, tokenId: tokenEvent.tokenId, tokenIdName: tokenEvent.tokenIdName }
+		case 'ERC20': return { tokenEntry: tokenEvent.token }
+		case 'ERC721': return  { tokenEntry: tokenEvent.token, tokenId: tokenEvent.tokenId }
+		case 'NFT All approval':  {
+			if (tokenEvent.token.type === 'ERC1155') return { tokenEntry: tokenEvent.token, tokenId: undefined, tokenIdName: undefined }
+			return { tokenEntry: tokenEvent.token, tokenId: undefined }
+		}
+		default: assertNever(tokenEvent)
+	}
 }
 
 export function TokenSymbol(param: TokenSymbolParams) {
