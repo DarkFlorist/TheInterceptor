@@ -5,7 +5,7 @@ import type { Website, WebsiteAccess, WebsiteAccessArray, WebsiteAddressAccess }
 import { Modal } from '../subcomponents/Modal.js'
 import { Collapsible } from '../subcomponents/Collapsible.js'
 import { Switch } from '../subcomponents/Switch.js'
-import { MessageToPopup, type RetrieveWebsiteAccessFilter } from '../../types/interceptor-messages.js'
+import type { RetrieveWebsiteAccessFilter } from '../../types/interceptor-messages.js'
 import type { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { InterceptorDisabledIcon, RequestBlockedIcon, SearchIcon, TrashIcon } from '../subcomponents/icons.js'
@@ -15,8 +15,8 @@ import { useOptionalComputed } from '../../utils/OptionalSignal.js'
 import type { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { AddNewAddress } from './AddNewAddress.js'
 import type { ModifyAddressWindowState } from '../../types/visualizer-types.js'
-import type { RpcEntries } from '../../types/rpc.js'
-import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
+import { usePopupMessage } from '../hooks/usePopupMessage.js'
+import { usePopupSettingsSnapshot } from '../hooks/usePopupSettingsSnapshot.js'
 import { addressEditEntry } from '../ui-utils.js'
 import type { OptionalSignal } from '../../utils/OptionalSignal.js'
 import { sanitizeStoredWebsiteIcon } from '../../utils/websiteIcons.js'
@@ -51,30 +51,22 @@ const WebsiteAccessProvider = ({ children }: { children: ComponentChildren }) =>
 		retrieveWebsiteAccess({ query: searchQuery.value })
 	}
 
-  const listenForPopupMessages = () => {
-		const popupMessageListener = (msg: unknown): false => {
-			const maybeParsed = MessageToPopup.safeParse(msg)
-			if (!maybeParsed.success) return false// not a message we are interested in
-			const parsed = maybeParsed.value
-			switch (parsed.method) {
-				case 'popup_setDisableInterceptorReply':
-				case 'popup_addressBookEntriesChanged':
-				case 'popup_websiteAccess_changed':
-					retrieveWebsiteAccess({ query: selectedDomain.value || '' })
-					break
-				case 'popup_retrieveWebsiteAccessReply':
-					websiteAccessList.value = parsed.data.websiteAccess
-					addressAccessMetadata.value = parsed.data.addressAccessMetadata
-					if (selectedDomain.value !== undefined && parsed.data.websiteAccess.some((access) => access.website.websiteOrigin === selectedDomain.value)) break
-					selectedDomain.value = parsed.data.websiteAccess.length === 1 ? parsed.data.websiteAccess[0]?.website.websiteOrigin : undefined
-					break
-			}
-			return false
+	usePopupMessage((message) => {
+		switch (message.method) {
+			case 'popup_setDisableInterceptorReply':
+			case 'popup_addressBookEntriesChanged':
+			case 'popup_websiteAccess_changed':
+				// Refresh with the typed search so the list keeps matching the search box; a selected website stays selected because it came from this filtered list. Refreshing with the selected website instead narrowed the list to that one website while the search box still showed the typed text.
+				retrieveWebsiteAccess({ query: searchQuery.value })
+				break
+			case 'popup_retrieveWebsiteAccessReply':
+				websiteAccessList.value = message.data.websiteAccess
+				addressAccessMetadata.value = message.data.addressAccessMetadata
+				if (selectedDomain.value !== undefined && message.data.websiteAccess.some((access) => access.website.websiteOrigin === selectedDomain.value)) break
+				selectedDomain.value = message.data.websiteAccess.length === 1 ? message.data.websiteAccess[0]?.website.websiteOrigin : undefined
+				break
 		}
-
-		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
-		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
-	}
+	})
 
 	const listenForWindowHashChanges = () => {
 		const handleHashChange = () => {
@@ -90,7 +82,6 @@ const WebsiteAccessProvider = ({ children }: { children: ComponentChildren }) =>
 	}
 
 	useSignalEffect(updateListOnSearch)
-	useEffect(listenForPopupMessages, [])
 	useEffect(listenForWindowHashChanges, [])
 	useEffect(retrieveWebsiteAccess, [])
 
@@ -266,33 +257,13 @@ const WebsiteSettingsDetail = () => {
 	const { websiteAccessList, selectedDomain } = useWebsiteAccess()
 	const selectedWebsiteAccess = useOptionalComputed(() => websiteAccessList.value.find(access => access.website.websiteOrigin === selectedDomain.value))
 	const modalState = useSignal<Modals>({ page: 'noModal' })
-	const rpcEntries = useSignal<RpcEntries>([])
+	const settingsSnapshot = usePopupSettingsSnapshot()
+	const rpcEntries = useComputed(() => settingsSnapshot.value?.rpcEntries ?? [])
 	const closeDetails = () => { clearSelectedWebsite(window, selectedDomain) }
 
 	function renameAddressCallBack(entry: AddressBookEntry) {
 		modalState.value = { page: 'ModifyAddress', state: new Signal(addressEditEntry(entry)) }
 	}
-
-	useEffect(() => {
-		function popupMessageListener(msg: unknown): false {
-			const maybeParsed = MessageToPopup.safeParse(msg)
-			if (!maybeParsed.success) return false // not a message we are interested in
-			const parsed = maybeParsed.value
-			if (parsed.method === 'popup_settingsUpdated') {
-				sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
-				return false
-			}
-			if (parsed.method === 'popup_requestSettingsReply') {
-				rpcEntries.value = parsed.data.rpcEntries
-				return false
-			}
-			return false
-		}
-		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
-		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
-	})
-
-	useEffect(() => { sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' }) }, [])
 
 	if (selectedWebsiteAccess.value === undefined) return <></>
 
