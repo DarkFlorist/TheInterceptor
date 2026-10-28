@@ -1,5 +1,5 @@
 import * as funtypes from 'funtypes'
-import { BytesParser, EthereumAddress, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumUnsignedTransaction, LiteralConverterParserFactory } from './wire-types.js'
+import { BytesParser, EthereumAddress, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumUnsignedTransaction, LiteralConverterParserFactory, serializeBytesAsHexString } from './wire-types.js'
 import { SimulatedTransaction } from './visualizer-types.js'
 import { EthBalanceChanges } from './JsonRpc-types.js'
 import { StateOverrides } from './ethSimulate-types.js'
@@ -14,13 +14,12 @@ const RevertErrorParser: funtypes.ParsedValue<funtypes.String, string>['config']
 	},
 	serialize: (value) => {
 		const encoded = new TextEncoder().encode(value)
-		const serializationResult = BytesParser.serialize!(encoded)
+		const serializationResult = serializeBytesAsHexString(encoded)
 		if (!serializationResult.success) return serializationResult
 		return { success: true, value: `Reverted ${ serializationResult.value }` }
 	}
 }
 
-type OldMulticallLog = funtypes.Static<typeof OldMulticallLog>
 const OldMulticallLog = funtypes.Object({
 	loggersAddress: EthereumAddress,
 	data: EthereumInput,
