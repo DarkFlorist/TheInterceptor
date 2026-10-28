@@ -13,7 +13,10 @@ const UNOWNED_SAFE_ADDRESS = 0x4000000000000000000000000000000000000004n
 const UNKNOWN_OWNERS_SAFE_ADDRESS = 0x5000000000000000000000000000000000000005n
 const simulationAddressInput = (activeAddress: bigint | undefined) => ({ mode: 'simulation' as const, activeAddress })
 const signingAddressInput = (selectedAddress: SigningAddressSelection | undefined, signerAccounts: readonly bigint[], walletFallbackAddress: bigint | undefined) => ({ mode: 'signing' as const, selectedAddress, signerAccounts, walletFallbackAddress })
-const popupMessageHandlersSource = await Bun.file(new URL('../../app/ts/background/popupMessageHandlers.ts', import.meta.url)).text()
+const popupMessageHandlersSource = await Bun.file(new URL('../../app/ts/background/popupMessageHandlers/home.ts', import.meta.url)).text()
+// Every popup handler module, so the negative guards cover a handler wherever it lives.
+const popupMessageHandlersDirectory = new URL('../../app/ts/background/popupMessageHandlers/', import.meta.url)
+const allPopupMessageHandlersSource = (await Promise.all(Array.from(new Bun.Glob('*.ts').scanSync({ cwd: popupMessageHandlersDirectory.pathname }), async (file) => await Bun.file(new URL(file, popupMessageHandlersDirectory)).text()))).join('\n')
 const interceptorAccessSource = await Bun.file(new URL('../../app/ts/background/windows/interceptorAccess.ts', import.meta.url)).text()
 const providerMessageHandlersSource = await Bun.file(new URL('../../app/ts/background/providerMessageHandlers.ts', import.meta.url)).text()
 const activeSettingsSource = await Bun.file(new URL('../../app/ts/background/activeSettings.ts', import.meta.url)).text()
@@ -284,7 +287,8 @@ describe('active address selection', () => {
 
 	test('keeps popup and access-dialog security gates on the shared selection policy', () => {
 		assert.match(popupMessageHandlersSource, /selection = getActiveAddressSelection\(/u)
-		assert.doesNotMatch(popupMessageHandlersSource, /activeChainSigningSafe\.safeSignerAddresses/u)
+		assert.match(allPopupMessageHandlersSource, /export async function enableSimulationMode\(/u)
+		assert.doesNotMatch(allPopupMessageHandlersSource, /activeChainSigningSafe\.safeSignerAddresses/u)
 		assert.match(interceptorAccessSource, /return assertActiveAddressSelectionAllowed\(addressSelection, selectableAddresses/u)
 		assert.match(interceptorAccessSource, /approvedAddressSelection \?\? await getAllowedAddressSelectionForAccessRequest/u)
 		assert.equal(interceptorAccessSource.match(/includePersistedAddressBookEntry\(activeAddresses, request(?:ed)?Entry\)/gu)?.length, 1)

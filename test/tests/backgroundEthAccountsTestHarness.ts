@@ -22,6 +22,7 @@ import { flushMicrotasks, settleWithin, waitFor } from '../harness/async.js'
 import { createMockPort, installBrowserMock as installSharedBrowserMock, type BrowserMock, type BrowserMockOptions, type MockTabSeed } from '../harness/browserMock.js'
 import { replaceGlobal } from '../harness/globals.js'
 import { createPerTestRestorer } from '../harness/perTest.js'
+import { importAllPopupMessageHandlers } from './popupMessageHandlerModules.js'
 
 // The fields tests read from messages that the background posts to a website port; every other field is still present on the message object.
 export type PortMessage = { walletSwitchRequestId?: unknown, type?: unknown, method?: unknown, result?: unknown, requestId?: unknown, error?: { code?: unknown, message?: unknown } }
@@ -258,7 +259,7 @@ export async function loadModules() {
 		...await import('../../app/ts/background/activeSettings.js'),
 		...await import('../../app/ts/background/background.js'),
 		...await import('../../app/ts/background/backgroundUtils.js'),
-		...await import('../../app/ts/background/popupMessageHandlers.js'),
+		...await importAllPopupMessageHandlers(),
 		...safeApps,
 		initializeSafeAppsCompatibility: async (connections: WebsiteTabConnections) => {
 			const feature = safeApps.createSafeAppsCompatibilityFeature(connections)

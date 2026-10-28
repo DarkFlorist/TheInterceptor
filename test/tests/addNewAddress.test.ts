@@ -1,7 +1,8 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
 import { Signal } from '@preact/signals'
 import { areAddressIdentificationKeysEqual, getAddressIdentificationKey, isAddressBookSubmissionDisabled, isIdentificationRequestCurrent, mergeAddressWindowErrorState, saveAddressBookEntry, saveAddressBookEntryAndSwitch, updateModifyAddressWindowState } from '../../app/ts/components/pages/AddNewAddress.js'
+import type { AddressBookEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { ModifyAddressWindowState } from '../../app/ts/types/visualizer-types.js'
 import { EthereumQuantityUint8 } from '../../app/ts/types/wire-types.js'
 import { isValidErc20Decimals } from '../../app/ts/utils/erc20.js'
@@ -16,7 +17,10 @@ const addNewAddressSource = await Bun.file(new URL('../../app/ts/components/page
 const safeContractStateSource = await Bun.file(new URL('../../app/ts/background/safeContractState.ts', import.meta.url)).text()
 const serviceLifecycleSource = await Bun.file(new URL('../../app/ts/simulation/serviceLifecycle.ts', import.meta.url)).text()
 const metadataUtilsSource = await Bun.file(new URL('../../app/ts/background/metadataUtils.ts', import.meta.url)).text()
-const popupMessageHandlersSource = await Bun.file(new URL('../../app/ts/background/popupMessageHandlers.ts', import.meta.url)).text()
+const addressBookPopupMessageHandlersSource = await Bun.file(new URL('../../app/ts/background/popupMessageHandlers/addressBook.ts', import.meta.url)).text()
+// Every popup handler module, so the negative guards cover a handler wherever it lives.
+const popupMessageHandlersDirectory = new URL('../../app/ts/background/popupMessageHandlers/', import.meta.url)
+const allPopupMessageHandlersSource = (await Promise.all(Array.from(new Bun.Glob('*.ts').scanSync({ cwd: popupMessageHandlersDirectory.pathname }), async (file) => await Bun.file(new URL(file, popupMessageHandlersDirectory)).text()))).join('\n')
 const replyMessagesSource = await Bun.file(new URL('../../app/ts/types/interceptor-reply-messages.ts', import.meta.url)).text()
 const screenshotScriptSource = await Bun.file(new URL('../../scripts/capture-safe-ui-screenshots.mts', import.meta.url)).text()
 
@@ -43,6 +47,7 @@ describe('add new address save flow', () => {
 			closed = true
 		}, async () => {
 			sent = true
+			return undefined
 		})
 
 		assert.equal(sent, false)
@@ -93,16 +98,15 @@ describe('add new address save flow', () => {
 
 	test('keeps the modal open until switching finishes', async () => {
 		const calls: string[] = []
-		let switchedEntry: typeof sampleAddressBookEntry | undefined
-		let finishSwitch: (() => void) | undefined
-		const switchFinished = new Promise<void>((resolve) => { finishSwitch = resolve })
+		let switchedEntry: AddressBookEntry | undefined
+		const switchFinished = Promise.withResolvers<void>()
 		const saving = saveAddressBookEntryAndSwitch(
 			sampleAddressBookEntry,
 			() => { calls.push('close') },
 			async (_address, persistedEntry) => {
 				switchedEntry = persistedEntry
 				calls.push('switch:start')
-				await switchFinished
+				await switchFinished.promise
 				calls.push('switch:end')
 			},
 			async () => {
@@ -114,7 +118,7 @@ describe('add new address save flow', () => {
 		assert.deepEqual(calls, ['save'])
 		await Promise.resolve()
 		assert.deepEqual(calls, ['save', 'switch:start'])
-		finishSwitch?.()
+		switchFinished.resolve()
 		await saving
 		assert.deepEqual(calls, ['save', 'switch:start', 'switch:end', 'close'])
 		assert.equal(switchedEntry, sampleAddressBookEntry)
@@ -356,7 +360,8 @@ describe('add new address save flow', () => {
 
 	test('keeps Safe contract retrieval separate from generic address identification', () => {
 		assert.doesNotMatch(metadataUtilsSource, /export async function identifyAddressWithoutNode/)
-		assert.doesNotMatch(popupMessageHandlersSource, /safeContractState|includeSafeContractState/)
+		assert.match(allPopupMessageHandlersSource, /export async function setSafeSimulationSigner\(/u)
+		assert.doesNotMatch(allPopupMessageHandlersSource, /safeContractState|includeSafeContractState/)
 		assert.match(replyMessagesSource, /method: funtypes\.Literal\('popup_requestSafeContractState'\)/)
 		assert.doesNotMatch(replyMessagesSource, /RequestIdentifyAddress[\s\S]{0,500}includeSafeContractState/)
 		assert.match(safeContractStateSource, /getUserAddressBookEntriesForChainIdMorePreciseFirst/)
@@ -369,8 +374,9 @@ describe('add new address save flow', () => {
 		assert.match(addNewAddressSource, /parsedSafeSignerAddresses\.length === 0[\s\S]*?Gnosis Safe owner metadata is unavailable/)
 		assert.match(addNewAddressSource, /!isCurrentSafeLookupComplete\.value \? <><\/> : <ErrorText/)
 		assert.match(addNewAddressSource, /areAddressIdentificationKeysEqual\(lastSuccessfulSafeIdentification\.value, currentIdentification\)/)
-		assert.match(popupMessageHandlersSource, /safeSignerAddresses: \[\.\.\.safeState\.owners\]/)
-		assert.match(popupMessageHandlersSource, /validateSafeOwnerIsEoa\(ethereum, entry\.data\.address, safeSimulationSignerAddress\)/)
-		assert.doesNotMatch(popupMessageHandlersSource, /Promise\.all\(getSafeSignerAddresses\(entry\.data\)/)
+		assert.match(addressBookPopupMessageHandlersSource, /safeSignerAddresses: \[\.\.\.safeState\.owners\]/)
+		assert.match(addressBookPopupMessageHandlersSource, /validateSafeOwnerIsEoa\(ethereum, entry\.data\.address, safeSimulationSignerAddress\)/)
+		assert.match(allPopupMessageHandlersSource, /export async function setSafeSimulationSigner\(/u)
+		assert.doesNotMatch(allPopupMessageHandlersSource, /Promise\.all\(getSafeSignerAddresses\(entry\.data\)/)
 	})
 })

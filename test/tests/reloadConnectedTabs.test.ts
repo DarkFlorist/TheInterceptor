@@ -1,6 +1,7 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
+import { importAllPopupMessageHandlers } from './popupMessageHandlerModules.js'
 
 type RuntimeMessage = {
 	readonly method?: string
@@ -82,7 +83,7 @@ function installBrowserMock(options: BrowserMockOptions) {
 
 async function loadModules() {
 	return {
-		...await import('../../app/ts/background/popupMessageHandlers.js'),
+		...await importAllPopupMessageHandlers(),
 		...await import('../../app/ts/background/storageVariables.js'),
 		...await import('../../app/ts/utils/unexpectedErrorStorage.js'),
 	}
