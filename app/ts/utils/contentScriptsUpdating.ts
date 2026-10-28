@@ -1,44 +1,57 @@
 import { getSettings } from '../background/settings.js'
 import type { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
-import { checkAndThrowRuntimeLastError, getHostWithPort, getTabIfExists, isMissingBrowserTargetError } from './requests.js'
-import { reportLocalRecoveryBestEffort, reportUnexpectedError } from './errors.js'
+import { reportUnexpectedError } from './errors.js'
+import { Semaphore } from './semaphore.js'
 
 const injectableSitesWildcard = ['file://*/*', 'http://*/*', 'https://*/*']
-const injectableSitesRegexp = [/^file:\/\/.*/, /^http:\/\/.*/, /^https:\/\/.*/]
-const extensionGallerySitesRegexp = [/^https:\/\/chromewebstore\.google\.com(?:[\/?#]|$)/, /^https:\/\/chrome\.google\.com\/webstore(?:[\/?#]|$)/]
-const otherExtensionInjectionTargetErrorMessage = 'Cannot access a chrome-extension:// URL of different extension'
-const extensionGalleryInjectionTargetErrorMessage = 'The extensions gallery cannot be scripted.'
-const isInjectableSite = (url: string) => injectableSitesRegexp.some((regexpPattern) => regexpPattern.test(url)) && !extensionGallerySitesRegexp.some((regexpPattern) => regexpPattern.test(url))
-const isExpectedManifestV2InjectionTargetError = (error: unknown) => error instanceof Error && (error.message === otherExtensionInjectionTargetErrorMessage || error.message === extensionGalleryInjectionTargetErrorMessage)
 export const getInterceptorDisabledSites = (websiteAccess: WebsiteAccessArray) => websiteAccess.filter((entry) => entry.interceptorDisabled === true).map((entry) => entry.website.websiteOrigin)
 
-function getManifestV3ExcludeMatchesForOrigin(origin: string) {
-	if (origin === '') return ['file:///*']
+// A disabled site's origin as a URL, or 'file' for local files, or undefined for a stored origin that is not a plain http(s) or file origin.
+function parseDisabledSiteOrigin(origin: string): { readonly url: URL, readonly hasExplicitScheme: boolean } | 'file' | undefined {
+	if (origin === '') return 'file'
 	try {
 		const hasExplicitScheme = origin.includes('://')
 		const url = new URL(hasExplicitScheme ? origin : `http://${ origin }`)
-		if (url.protocol === 'file:') return url.hostname === '' ? ['file:///*'] : []
-		if (url.protocol !== 'http:' && url.protocol !== 'https:') return []
-		if (url.username !== '' || url.password !== '' || url.pathname !== '/' || url.search !== '' || url.hash !== '') return []
-		const hostname = url.hostname
-		if (hostname === '') return []
-		const isIpAddressOrLocalhost = hostname === 'localhost' || hostname.startsWith('[') || /^\d+(?:\.\d+){3}$/.test(hostname)
-		const hostPattern = isIpAddressOrLocalhost ? url.host : `*.${ url.host }`
-		if (hasExplicitScheme) return [`${ url.protocol.slice(0, -1) }://${ hostPattern }/*`]
-		if (url.port === '') return [`*://${ hostPattern }/*`]
-		return [`http://${ hostPattern }/*`, `https://${ hostPattern }/*`]
+		if (url.protocol === 'file:') return url.hostname === '' ? 'file' : undefined
+		if (url.protocol !== 'http:' && url.protocol !== 'https:') return undefined
+		if (url.username !== '' || url.password !== '' || url.pathname !== '/' || url.search !== '' || url.hash !== '') return undefined
+		if (url.hostname === '') return undefined
+		return { url, hasExplicitScheme }
 	} catch {
-		return []
+		return undefined
 	}
 }
 
-export function getManifestV3ExcludeMatches(origins: readonly string[]) {
-	const patterns = new Set<string>()
-	for (const origin of origins) {
-		for (const pattern of getManifestV3ExcludeMatchesForOrigin(origin)) patterns.add(pattern)
-	}
-	return [...patterns]
+// MV3 excludes a disabled site's subdomains too (#1701), and a pattern without a port covers every port of its host.
+function getManifestV3ExcludeMatchesForOrigin(origin: string) {
+	const parsed = parseDisabledSiteOrigin(origin)
+	if (parsed === undefined) return []
+	if (parsed === 'file') return ['file:///*']
+	const { url, hasExplicitScheme } = parsed
+	const hostname = url.hostname
+	const isIpAddressOrLocalhost = hostname === 'localhost' || hostname.startsWith('[') || /^\d+(?:\.\d+){3}$/.test(hostname)
+	const hostPattern = isIpAddressOrLocalhost ? url.host : `*.${ url.host }`
+	if (hasExplicitScheme) return [`${ url.protocol.slice(0, -1) }://${ hostPattern }/*`]
+	if (url.port === '') return [`*://${ hostPattern }/*`]
+	return [`http://${ hostPattern }/*`, `https://${ hostPattern }/*`]
 }
+
+// Before it moved to a registration, MV2 compared a navigation's exact host and port with the disabled sites. Match patterns cannot keep that scope, since a pattern without a port matches every port of its host, so MV2 excludes each disabled site with globs on the URL text, where a default port is absent and any other port follows the host.
+function getManifestV2ExcludeGlobsForOrigin(origin: string) {
+	const parsed = parseDisabledSiteOrigin(origin)
+	if (parsed === undefined) return []
+	if (parsed === 'file') return ['file:///*']
+	if (parsed.hasExplicitScheme) return [`${ parsed.url.protocol.slice(0, -1) }://${ parsed.url.host }/*`]
+	// A URL never shows its scheme's default port, so a stored host with port 80 comes from an https URL and one with port 443 from an http URL.
+	const hasPort = /:\d+$/.test(origin)
+	return ['http', 'https'].flatMap((scheme) => {
+		const url = new URL(`${ scheme }://${ origin }`)
+		return hasPort && url.port === '' ? [] : [`${ scheme }://${ url.host }/*`]
+	})
+}
+
+export const getManifestV3ExcludeMatches = (origins: readonly string[]) => [...new Set(origins.flatMap(getManifestV3ExcludeMatchesForOrigin))]
+const getManifestV2ExcludeGlobs = (origins: readonly string[]) => [...new Set(origins.flatMap(getManifestV2ExcludeGlobsForOrigin))]
 
 export const updateContentScriptInjectionStrategyManifestV3 = async () => {
 	const excludeMatches = getManifestV3ExcludeMatches(getInterceptorDisabledSites((await getSettings()).websiteAccess))
@@ -78,32 +91,50 @@ export const updateContentScriptInjectionStrategyManifestV3 = async () => {
 	}
 }
 
-const injectLogic = async (content: browser.webNavigation._OnCommittedDetails) => {
-	if (!isInjectableSite(content.url)) return false
-	const disabledSites = getInterceptorDisabledSites((await getSettings()).websiteAccess)
-	// The tab can navigate while settings are loading, including to another extension page where injection is prohibited.
-	const thisTab = await getTabIfExists(content.tabId)
-	if (thisTab?.url === undefined || !isInjectableSite(thisTab.url)) return false
-	const urls = [content.url, thisTab.url]
-	const hostnames = urls.map((url) => getHostWithPort(url))
-	const noMatches = disabledSites.every(excludeMatch => !hostnames.includes(excludeMatch))
-	if (!noMatches) return false
-	try {
-		await browser.tabs.executeScript(content.tabId, { file: '/vendor/webextension-polyfill/dist/browser-polyfill.js', allFrames: false, runAt: 'document_start' })
-		await browser.tabs.executeScript(content.tabId, { file: '/inpage/js/listenContentScript.js', allFrames: false, runAt: 'document_start' })
-		await browser.tabs.executeScript(content.tabId, { file: '/inpage/js/document_start.js', allFrames: false, runAt: 'document_start' })
-		checkAndThrowRuntimeLastError()
-	} catch(error) {
-		if (isMissingBrowserTargetError(error) || isExpectedManifestV2InjectionTargetError(error)) return false
-		reportLocalRecoveryBestEffort(error, { code: 'manifest_v2_content_script_injection_failed', message: 'Leaving this navigation without early injection.' })
+// Firefox keeps a contentScripts.register registration only while the background page runs, and only the returned object can remove it, so the current one is kept here. Registered scripts run at document_start, before any page script, the way MV3's registered scripts do.
+let manifestV2Registration: browser.contentScripts.RegisteredContentScript | undefined
+// Registrations a newer one replaced, kept until removing them succeeds. Every update tries again, so a registration with outdated exclusions cannot stay behind and keep injecting into a site disabled since.
+let supersededManifestV2Registrations: readonly browser.contentScripts.RegisteredContentScript[] = []
+const manifestV2RegistrationSemaphore = new Semaphore(1)
+
+async function removeSupersededManifestV2Registrations() {
+	const stillRegistered: browser.contentScripts.RegisteredContentScript[] = []
+	for (const registration of supersededManifestV2Registrations) {
+		try {
+			await registration.unregister()
+		} catch (error: unknown) {
+			stillRegistered.push(registration)
+			await reportUnexpectedError(error, { code: 'content_script_unregistration_failed' })
+		}
 	}
-	return false
+	supersededManifestV2Registrations = stillRegistered
 }
 
-export const updateContentScriptInjectionStrategyManifestV2 = async () => {
-	browser.webNavigation.onCommitted.removeListener(injectLogic)
-	browser.webNavigation.onCommitted.addListener(injectLogic, { url: injectableSitesWildcard.map((urlMatches) => ({ urlMatches })) })
+// The new registration is added before the previous one is removed, so no navigation in between goes without the provider. A page that loads while both exist runs document_start.js twice in the same content-script world, and its interceptorInjected guard lets only the first run inject.
+async function registerManifestV2ContentScripts() {
+	try {
+		const excludeGlobs = getManifestV2ExcludeGlobs(getInterceptorDisabledSites((await getSettings()).websiteAccess))
+		const registration = await browser.contentScripts.register({
+			matches: injectableSitesWildcard,
+			excludeGlobs,
+			js: [
+				{ file: '/vendor/webextension-polyfill/dist/browser-polyfill.js' },
+				{ file: '/inpage/js/listenContentScript.js' },
+				{ file: '/inpage/js/document_start.js' },
+			],
+			runAt: 'document_start',
+			allFrames: false,
+		})
+		if (manifestV2Registration !== undefined) supersededManifestV2Registrations = [...supersededManifestV2Registrations, manifestV2Registration]
+		manifestV2Registration = registration
+	} catch (error: unknown) {
+		await reportUnexpectedError(error, { code: 'content_script_registration_failed' })
+	}
+	await removeSupersededManifestV2Registrations()
 }
+
+// Updates run one at a time, so a slower earlier update cannot replace the registration of a newer disabled-site list.
+export const updateContentScriptInjectionStrategyManifestV2 = async () => await manifestV2RegistrationSemaphore.execute(registerManifestV2ContentScripts)
 
 export const updateContentScriptInjectionStrategy = async () => {
 	if (browser.runtime.getManifest().manifest_version === 3) await updateContentScriptInjectionStrategyManifestV3()

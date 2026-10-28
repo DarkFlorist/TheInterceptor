@@ -3,6 +3,7 @@ import { ExportedSettings } from '../../types/exportedSettingsTypes.js'
 import { serialize } from '../../types/wire-types.js'
 import { isJSON } from '../../utils/json.js'
 import { silenceChromeUnCaughtPromise } from '../../utils/requests.js'
+import { updateContentScriptInjectionStrategy } from '../../utils/contentScriptsUpdating.js'
 import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
 import { getPrimaryRpcForChain, getRpcList, setRpcList } from '../storageVariables.js'
 import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettings, getUseTabsInsteadOfPopup, importSettingsAndAddressBook } from '../settings.js'
@@ -36,6 +37,8 @@ export async function importSettings(settingsData: ImportSettings): Promise<Impo
 		return { method: 'popup_initiate_export_settings_reply', data: { success: false, errorMessage: 'Failed to read the file. It is not a valid interceptor settings file' } }
 	}
 	await importSettingsAndAddressBook(parsed.value)
+	// The content scripts are registered with the disabled sites excluded, so an import that changes them has to register again.
+	await updateContentScriptInjectionStrategy()
 	return { method: 'popup_initiate_export_settings_reply', data: { success: true } }
 }
 

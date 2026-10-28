@@ -27,7 +27,6 @@
 		"tabs",
 		"<all_urls>",
 		"storage",
-		"webNavigation",
 		"webRequest",
 		"webRequestBlocking"
 	],
