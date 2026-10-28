@@ -1,148 +1,38 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
+import type { IEthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
 import type { AddressBookEntry } from '../../app/ts/types/addressBookTypes.js'
+import { EIP712Message } from '../../app/ts/types/eip721.js'
 import type { PendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
+import type { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
+import type { SignMessageParams } from '../../app/ts/types/jsonRpc-signing-types.js'
 import { SafeTx as SafeTxRuntype } from '../../app/ts/types/personal-message-definitions.js'
 import type { SafeTx, VisualizedPersonalSignRequestSafeTx } from '../../app/ts/types/personal-message-definitions.js'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
-import { serialize } from '../../app/ts/types/wire-types.js'
+import { EthereumBlockHeader, EthereumQuantity } from '../../app/ts/types/wire-types.js'
 import { stringifyJSONWithBigInts } from '../../app/ts/utils/bigint.js'
-import { importAllPopupMessageHandlers } from './popupMessageHandlerModules.js'
+import { createPerTestBrowserMockInstaller } from '../harness/perTest.js'
+import { isObjectWithOptionalProperties } from '../harness/assertions.js'
+import { hasMessageMethod } from './runtimeMessageMatchers.js'
 
-type RuntimeMessage = {
-	method?: string
-	role?: string
-	data?: unknown
-}
+const isUnknownArray = (value: unknown): value is readonly unknown[] => Array.isArray(value)
 
-type BrowserMockGlobals = {
-	runtime: {
-		lastError: { message?: string } | null | undefined
-		sendMessage: (message: RuntimeMessage) => Promise<unknown>
-		getManifest: () => { manifest_version: number }
-		onMessage: { addListener: () => undefined; removeListener: () => undefined }
-		onConnect: { addListener: () => undefined; removeListener: () => undefined }
-	}
-	storage: {
-		local: {
-			get: (keys?: string | string[] | Record<string, unknown> | null) => Promise<Record<string, unknown>>
-			set: (items: Record<string, unknown>) => Promise<void>
-			remove: (keys: string | string[]) => Promise<void>
-		}
-	}
-	tabs: {
-		query: () => Promise<unknown[]>
-		get: () => Promise<undefined>
-		update: () => Promise<undefined>
-		onUpdated: { addListener: () => undefined; removeListener: () => undefined }
-		onRemoved: { addListener: () => undefined; removeListener: () => undefined }
-	}
-	windows: {
-		get: () => Promise<undefined>
-		update: () => Promise<undefined>
-	}
-	action: {
-		setIcon: () => Promise<undefined>
-		setTitle: () => Promise<undefined>
-		setBadgeText: () => Promise<undefined>
-		setBadgeBackgroundColor: () => Promise<undefined>
-	}
-	browserAction: {
-		setIcon: () => Promise<undefined>
-		setTitle: () => Promise<undefined>
-		setBadgeText: () => Promise<undefined>
-		setBadgeBackgroundColor: () => Promise<undefined>
-	}
-}
+type PopupPendingMessageField = 'type' | 'transactionOrMessageCreationStatus' | 'approvalStatus' | 'uniqueRequestIdentifier' | 'website' | 'originalRequestParameters' | 'visualizedPersonalSignRequest'
+type PopupVisualizedSignRequestField = 'type' | 'signerName' | 'activeAddress' | 'website'
 
-type BrowserMock = {
-	reset: () => Promise<void>
-	sentMessages: RuntimeMessage[]
-}
+const installBrowserMock = createPerTestBrowserMockInstaller()
 
-function createBrowserMock(): BrowserMock {
-	const storageState: Record<string, unknown> = {}
-	const sentMessages: RuntimeMessage[] = []
-
-	const getItems = (keys?: string | string[] | Record<string, unknown> | null) => {
-		if (keys === undefined || keys === null) return { ...storageState }
-		if (Array.isArray(keys)) return Object.fromEntries(keys.filter((key) => key in storageState).map((key) => [key, storageState[key]]))
-		if (typeof keys === 'string') return keys in storageState ? { [keys]: storageState[keys] } : {}
-		return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
-	}
-
-	const removeItems = (keys: string | string[]) => {
-		for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
-	}
-
-	const browserMock = {
-		runtime: {
-			lastError: null,
-			async sendMessage(message: RuntimeMessage) {
-				sentMessages.push(message)
-				if (message.method === 'popup_isMainPopupWindowOpen') {
-					return { method: 'popup_isMainPopupWindowOpen', data: { isOpen: false } }
-				}
-				return undefined
-			},
-			getManifest: () => ({ manifest_version: 3 }),
-			onMessage: { addListener: () => undefined, removeListener: () => undefined },
-			onConnect: { addListener: () => undefined, removeListener: () => undefined },
-		},
-		storage: {
-			local: {
-				async get(keys?: string | string[] | Record<string, unknown> | null) { return getItems(keys) },
-				async set(items: Record<string, unknown>) { Object.assign(storageState, items) },
-				async remove(keys: string | string[]) { removeItems(keys) },
-			},
-		},
-		tabs: {
-			async query() { return [] },
-			async get() { return undefined },
-			async update() { return undefined },
-			onUpdated: { addListener: () => undefined, removeListener: () => undefined },
-			onRemoved: { addListener: () => undefined, removeListener: () => undefined },
-		},
-		windows: {
-			async get() { return undefined },
-			async update() { return undefined },
-		},
-		action: {
-			async setIcon() { return undefined },
-			async setTitle() { return undefined },
-			async setBadgeText() { return undefined },
-			async setBadgeBackgroundColor() { return undefined },
-		},
-		browserAction: {
-			async setIcon() { return undefined },
-			async setTitle() { return undefined },
-			async setBadgeText() { return undefined },
-			async setBadgeBackgroundColor() { return undefined },
-		},
-	} satisfies BrowserMockGlobals
-
-	const installBrowserGlobals = () => {
-		Object.defineProperty(globalThis, 'browser', { value: browserMock, configurable: true, writable: true })
-		Object.defineProperty(globalThis, 'chrome', { value: { runtime: { id: 'test-extension' } }, configurable: true, writable: true })
-	}
-
-	installBrowserGlobals()
-
-	return {
-		sentMessages,
-		async reset() {
-			for (const key of Object.keys(storageState)) delete storageState[key]
-			sentMessages.length = 0
-			installBrowserGlobals()
-			browserMock.runtime.lastError = null
-		},
-	}
-}
-
-const browserMock = createBrowserMock()
+// The confirmation flow asks whether the main popup is open; every other runtime message goes unanswered.
+const installConfirmationBrowserMock = () => installBrowserMock({
+	handlers: {
+		runtimeMessage: (message) => hasMessageMethod(message, 'popup_isMainPopupWindowOpen')
+			? { method: 'popup_isMainPopupWindowOpen', data: { isOpen: false } }
+			: undefined,
+	},
+})
 
 async function loadModules() {
-	const popupMessageHandlers = await importAllPopupMessageHandlers()
+	const popupMessageHandlers = await import('../../app/ts/background/popupMessageHandlers/confirmation.js')
 	const confirmTransaction = await import('../../app/ts/background/windows/confirmTransaction.js')
 	const ethereumClientService = await import('../../app/ts/simulation/services/EthereumClientService.js')
 	const priceEstimator = await import('../../app/ts/simulation/services/priceEstimator.js')
@@ -150,7 +40,6 @@ async function loadModules() {
 	const storageUtils = await import('../../app/ts/utils/storageUtils.js')
 	const storageVariables = await import('../../app/ts/background/storageVariables.js')
 	const popupVisualisationUpdater = await import('../../app/ts/background/popupVisualisationUpdater.js')
-	const wireTypes = await import('../../app/ts/types/wire-types.js')
 
 	return {
 		refreshPopupConfirmTransactionMetadata: popupMessageHandlers.refreshPopupConfirmTransactionMetadata,
@@ -162,16 +51,31 @@ async function loadModules() {
 		browserStorageLocalSet2: storageUtils.browserStorageLocalSet2,
 		getPopupVisualisationState: storageVariables.getPopupVisualisationState,
 		refreshPopupVisualisationForOpenConsumer: popupVisualisationUpdater.refreshPopupVisualisationForOpenConsumer,
-		serialize: wireTypes.serialize,
-		EthereumBlockHeader: wireTypes.EthereumBlockHeader,
-		EthereumQuantity: wireTypes.EthereumQuantity,
 	}
 }
 
 const modulesPromise = loadModules()
 type TestModules = Awaited<ReturnType<typeof loadModules>>
 
-const serializeForRpc = (runtype: { serialize: (value: unknown) => unknown }, value: unknown) => runtype.serialize(value)
+const fakeRpcNetwork: RpcEntry = {
+	name: 'Test Chain',
+	chainId: 1337n,
+	httpsRpc: 'https://example.invalid',
+	currencyName: 'Ether',
+	currencyTicker: 'ETH',
+	currencyLogoUri: undefined,
+	primary: true,
+	minimized: true,
+}
+
+function createFakeRequestHandler(respond: (rpcRequest: EthereumJsonRpcRequest) => Promise<unknown>): IEthereumJSONRpcRequestHandler {
+	return {
+		rpcUrl: fakeRpcNetwork.httpsRpc,
+		clearCache() { return undefined },
+		async getChainId() { return fakeRpcNetwork.chainId },
+		jsonRpcRequest: respond,
+	}
+}
 
 function makeFakeBlock(number: bigint) {
 	return {
@@ -202,8 +106,18 @@ function makeFakeBlock(number: bigint) {
 	}
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === 'object' && value !== null
+// Answers the block queries a confirmation refresh makes with a fixed fake block and rejects every other RPC method.
+function createFakeBlockRequestHandler(fakeBlock: ReturnType<typeof makeFakeBlock>) {
+	return createFakeRequestHandler(async (rpcRequest) => {
+		switch (rpcRequest.method) {
+			case 'eth_getBlockByNumber':
+				return EthereumBlockHeader.serialize(fakeBlock)
+			case 'eth_blockNumber':
+				return EthereumQuantity.serialize(fakeBlock.number)
+			default:
+				throw new Error(`Unexpected RPC method: ${ rpcRequest.method }`)
+		}
+	})
 }
 
 function assertWireSafe(value: unknown, seen = new Set<unknown>()) {
@@ -212,35 +126,32 @@ function assertWireSafe(value: unknown, seen = new Set<unknown>()) {
 	if (typeof value === 'symbol') throw new Error('Found symbol in serialized payload')
 	if (value instanceof Date) throw new Error('Found Date in serialized payload')
 	if (value instanceof Uint8Array) throw new Error('Found Uint8Array in serialized payload')
-	if (!isRecord(value) && !Array.isArray(value)) return
+	if (typeof value !== 'object' || value === null) return
 	if (seen.has(value)) return
 	seen.add(value)
-	if (Array.isArray(value)) {
-		for (const entry of value) assertWireSafe(entry, seen)
-		return
-	}
+	// Object.values lists array elements as well as object properties.
 	for (const nestedValue of Object.values(value)) assertWireSafe(nestedValue, seen)
 }
 
-function getPendingTransactionsUpdateMessage(sentMessages: readonly RuntimeMessage[]) {
-	const message = sentMessages.find((entry) => entry.method === 'popup_update_confirm_transaction_dialog_pending_transactions')
-	if (message === undefined) throw new Error('Expected confirm transaction update message')
-	if (!isRecord(message.data)) throw new Error('Expected confirm transaction message data')
+function getPendingTransactionsUpdateMessage(sentMessages: readonly unknown[]) {
+	const message = sentMessages.find((entry) => hasMessageMethod(entry, 'popup_update_confirm_transaction_dialog_pending_transactions'))
+	if (!isObjectWithOptionalProperties<'role' | 'data'>(message)) throw new Error('Expected confirm transaction update message')
+	const { data } = message
+	if (!isObjectWithOptionalProperties<'pendingTransactionAndSignableMessages'>(data)) throw new Error('Expected confirm transaction message data')
 	assert.equal(message.role, 'confirmTransaction')
-	return message
+	return { message, data }
 }
 
-function getPendingTransactionsUpdate(sentMessages: readonly RuntimeMessage[]) {
-	const message = getPendingTransactionsUpdateMessage(sentMessages)
-	const pendingTransactions = message.data.pendingTransactionAndSignableMessages
-	if (!Array.isArray(pendingTransactions)) throw new Error('Expected pendingTransactionAndSignableMessages array')
+function getPendingTransactionsUpdate(sentMessages: readonly unknown[]) {
+	const pendingTransactions = getPendingTransactionsUpdateMessage(sentMessages).data.pendingTransactionAndSignableMessages
+	if (!isUnknownArray(pendingTransactions)) throw new Error('Expected pendingTransactionAndSignableMessages array')
 	return pendingTransactions
 }
 
-function getFirstSignablePendingMessage(sentMessages: readonly RuntimeMessage[]) {
+function getFirstSignablePendingMessage(sentMessages: readonly unknown[]) {
 	const pendingTransactions = getPendingTransactionsUpdate(sentMessages)
 	const firstPendingMessage = pendingTransactions[0]
-	if (!isRecord(firstPendingMessage)) throw new Error('Expected first pending message object')
+	if (!isObjectWithOptionalProperties<PopupPendingMessageField>(firstPendingMessage)) throw new Error('Expected first pending message object')
 	assert.equal(firstPendingMessage.type, 'SignableMessage')
 	return firstPendingMessage
 }
@@ -329,9 +240,10 @@ function createPendingSafeTxMessage(modules: TestModules, rpcNetwork: RpcEntry):
 	if (activeAddress === undefined || recipient === undefined) throw new Error('Missing default active addresses for test')
 
 	const visualizedPersonalSignRequest = createVisualizedSafeTxMessage(rpcNetwork, activeAddress, recipient)
-	const originalRequestParameters = {
-		method: 'eth_signTypedData_v4' as const,
-		params: [activeAddress.address, serialize(SafeTxRuntype, visualizedPersonalSignRequest.message)],
+	// Parsed from JSON like a dapp's eth_signTypedData_v4 request, so the typed data holds serialized values.
+	const originalRequestParameters: SignMessageParams = {
+		method: 'eth_signTypedData_v4',
+		params: [activeAddress.address, EIP712Message.parse(JSON.stringify(SafeTxRuntype.serialize(visualizedPersonalSignRequest.message)))],
 	}
 
 	return {
@@ -365,8 +277,8 @@ function createPendingSafeTxMessage(modules: TestModules, rpcNetwork: RpcEntry):
 	}
 }
 
-function assertPopupPendingSafeTxShape(sentMessages: readonly RuntimeMessage[]) {
-	assertWireSafe(getPendingTransactionsUpdateMessage(sentMessages))
+function assertPopupPendingSafeTxShape(sentMessages: readonly unknown[]) {
+	assertWireSafe(getPendingTransactionsUpdateMessage(sentMessages).message)
 	const firstPendingMessage = getFirstSignablePendingMessage(sentMessages)
 	assert.equal('signedMessageTransaction' in firstPendingMessage, false)
 	assert.equal(firstPendingMessage.transactionOrMessageCreationStatus, 'Simulated')
@@ -376,7 +288,7 @@ function assertPopupPendingSafeTxShape(sentMessages: readonly RuntimeMessage[]) 
 	assert.equal(firstPendingMessage.originalRequestParameters !== undefined, true)
 
 	const visualizedPersonalSignRequest = firstPendingMessage.visualizedPersonalSignRequest
-	if (!isRecord(visualizedPersonalSignRequest)) throw new Error('Expected visualized personal sign request')
+	if (!isObjectWithOptionalProperties<PopupVisualizedSignRequestField>(visualizedPersonalSignRequest)) throw new Error('Expected visualized personal sign request')
 	assert.equal('request' in visualizedPersonalSignRequest, false)
 	assert.equal(visualizedPersonalSignRequest.type, 'SafeTx')
 	assert.equal(visualizedPersonalSignRequest.signerName, 'NoSignerDetected')
@@ -386,23 +298,14 @@ function assertPopupPendingSafeTxShape(sentMessages: readonly RuntimeMessage[]) 
 
 describe('SafeTx confirm transaction metadata', () => {
 	test('uses the stored visualisation when a confirmation refresh fails unexpectedly', async () => {
-		await browserMock.reset()
+		installConfirmationBrowserMock()
 		const modules = await modulesPromise
-		const fakeRpcNetwork: RpcEntry = {
-			name: 'Test Chain',
-			chainId: 1337n,
-			httpsRpc: 'https://example.invalid',
-			currencyName: 'Ether',
-			currencyTicker: 'ETH',
-			currencyLogoUri: undefined,
-			primary: true,
-			minimized: true,
-		}
-		const ethereum = new modules.EthereumClientService({
-			rpcUrl: fakeRpcNetwork.httpsRpc,
-			clearCache() { return undefined },
-			async jsonRpcRequest() { throw new Error('RPC should not be called') },
-		}, async () => undefined, async () => undefined, fakeRpcNetwork)
+		const ethereum = new modules.EthereumClientService(
+			createFakeRequestHandler(async () => { throw new Error('RPC should not be called') }),
+			async () => undefined,
+			async () => undefined,
+			fakeRpcNetwork,
+		)
 		const tokenPriceService = new modules.TokenPriceService(ethereum, 0)
 		const storedVisualisation = await modules.getPopupVisualisationState()
 		const refreshError = new Error('Unexpected visualizer failure')
@@ -422,30 +325,9 @@ describe('SafeTx confirm transaction metadata', () => {
 	})
 
 	test('still updates confirmation metadata when visualisation refresh falls back', async () => {
-		await browserMock.reset()
+		const browserMock = installConfirmationBrowserMock()
 		const modules = await modulesPromise
-		const fakeRpcNetwork: RpcEntry = {
-			name: 'Test Chain',
-			chainId: 1337n,
-			httpsRpc: 'https://example.invalid',
-			currencyName: 'Ether',
-			currencyTicker: 'ETH',
-			currencyLogoUri: undefined,
-			primary: true,
-			minimized: true,
-		}
-		const fakeBlock = makeFakeBlock(122n)
-		const ethereum = new modules.EthereumClientService({
-			rpcUrl: fakeRpcNetwork.httpsRpc,
-			clearCache() { return undefined },
-			async jsonRpcRequest(rpcRequest: { method: string }) {
-				switch (rpcRequest.method) {
-					case 'eth_getBlockByNumber': return serializeForRpc(modules.EthereumBlockHeader, fakeBlock)
-					case 'eth_blockNumber': return serializeForRpc(modules.EthereumQuantity, fakeBlock.number)
-					default: throw new Error(`Unexpected RPC method: ${ rpcRequest.method }`)
-				}
-			},
-		}, async () => undefined, async () => undefined, fakeRpcNetwork)
+		const ethereum = new modules.EthereumClientService(createFakeBlockRequestHandler(makeFakeBlock(122n)), async () => undefined, async () => undefined, fakeRpcNetwork)
 		const tokenPriceService = new modules.TokenPriceService(ethereum, 0)
 		await modules.browserStorageLocalSet({
 			simulationMode: true,
@@ -470,47 +352,19 @@ describe('SafeTx confirm transaction metadata', () => {
 			},
 		})
 
-		const dialogUpdate = browserMock.sentMessages.find((message) => message.method === 'popup_update_confirm_transaction_dialog')
-		if (!isRecord(dialogUpdate?.data)) throw new Error('Missing confirm transaction dialog update')
+		const dialogUpdate = browserMock.calls.runtimeSendMessage.find((message) => hasMessageMethod(message, 'popup_update_confirm_transaction_dialog'))
+		if (!isObjectWithOptionalProperties<'data'>(dialogUpdate) || !isObjectWithOptionalProperties<'visualizedSimulatorState'>(dialogUpdate.data)) throw new Error('Missing confirm transaction dialog update')
 		const visualizedSimulatorState = dialogUpdate.data.visualizedSimulatorState
-		if (!isRecord(visualizedSimulatorState)) throw new Error('Missing stored visualisation in confirm transaction dialog update')
+		if (!isObjectWithOptionalProperties<'simulationId'>(visualizedSimulatorState)) throw new Error('Missing stored visualisation in confirm transaction dialog update')
 		assert.equal(visualizedSimulatorState.simulationId, 77)
 		assert.equal(reportedError, refreshError)
 		assert.equal(reportCalls, 1)
 	})
 
 	test('refresh confirm metadata sends popup-safe SafeTx payload', async () => {
-		await browserMock.reset()
+		const browserMock = installConfirmationBrowserMock()
 		const modules = await modulesPromise
-		const fakeRpcNetwork: RpcEntry = {
-			name: 'Test Chain',
-			chainId: 1337n,
-			httpsRpc: 'https://example.invalid',
-			currencyName: 'Ether',
-			currencyTicker: 'ETH',
-			currencyLogoUri: undefined,
-			primary: true,
-			minimized: true,
-		}
-		const fakeBlock = makeFakeBlock(123n)
-		const fakeRequestHandler = {
-			rpcUrl: fakeRpcNetwork.httpsRpc,
-			clearCache() {
-				return undefined
-			},
-			async jsonRpcRequest(rpcRequest: { method: string }) {
-				switch (rpcRequest.method) {
-					case 'eth_getBlockByNumber':
-						return serializeForRpc(modules.EthereumBlockHeader, fakeBlock)
-					case 'eth_blockNumber':
-						return serializeForRpc(modules.EthereumQuantity, fakeBlock.number)
-					default:
-						throw new Error(`Unexpected RPC method: ${ rpcRequest.method }`)
-				}
-			},
-		}
-
-		const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
+		const ethereum = new modules.EthereumClientService(createFakeBlockRequestHandler(makeFakeBlock(123n)), async () => undefined, async () => undefined, fakeRpcNetwork)
 		const tokenPriceService = new modules.TokenPriceService(ethereum, 0)
 		await modules.browserStorageLocalSet({
 			simulationMode: true,
@@ -523,43 +377,15 @@ describe('SafeTx confirm transaction metadata', () => {
 
 		await modules.refreshPopupConfirmTransactionMetadata(ethereum, tokenPriceService, undefined)
 
-		assertPopupPendingSafeTxShape(browserMock.sentMessages)
+		assertPopupPendingSafeTxShape(browserMock.calls.runtimeSendMessage)
 		assert.equal((await modules.getPopupVisualisationState()).simulationId, 1)
-		assert.equal(browserMock.sentMessages.some((message) => message.method === 'popup_isSimulationVisualizerOpen'), false)
+		assert.equal(browserMock.calls.runtimeSendMessage.some((message) => hasMessageMethod(message, 'popup_isSimulationVisualizerOpen')), false)
 	})
 
 	test('initial confirm render sends popup-safe SafeTx payload', async () => {
-		await browserMock.reset()
+		const browserMock = installConfirmationBrowserMock()
 		const modules = await modulesPromise
-		const fakeRpcNetwork: RpcEntry = {
-			name: 'Test Chain',
-			chainId: 1337n,
-			httpsRpc: 'https://example.invalid',
-			currencyName: 'Ether',
-			currencyTicker: 'ETH',
-			currencyLogoUri: undefined,
-			primary: true,
-			minimized: true,
-		}
-		const fakeBlock = makeFakeBlock(456n)
-		const fakeRequestHandler = {
-			rpcUrl: fakeRpcNetwork.httpsRpc,
-			clearCache() {
-				return undefined
-			},
-			async jsonRpcRequest(rpcRequest: { method: string }) {
-				switch (rpcRequest.method) {
-					case 'eth_getBlockByNumber':
-						return serializeForRpc(modules.EthereumBlockHeader, fakeBlock)
-					case 'eth_blockNumber':
-						return serializeForRpc(modules.EthereumQuantity, fakeBlock.number)
-					default:
-						throw new Error(`Unexpected RPC method: ${ rpcRequest.method }`)
-				}
-			},
-		}
-
-		const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
+		const ethereum = new modules.EthereumClientService(createFakeBlockRequestHandler(makeFakeBlock(456n)), async () => undefined, async () => undefined, fakeRpcNetwork)
 		const tokenPriceService = new modules.TokenPriceService(ethereum, 0)
 		await modules.browserStorageLocalSet({
 			simulationMode: true,
@@ -572,6 +398,6 @@ describe('SafeTx confirm transaction metadata', () => {
 
 		await modules.updateConfirmTransactionView(ethereum, tokenPriceService)
 
-		assertPopupPendingSafeTxShape(browserMock.sentMessages)
+		assertPopupPendingSafeTxShape(browserMock.calls.runtimeSendMessage)
 	})
 })
