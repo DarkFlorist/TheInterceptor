@@ -1,6 +1,6 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
-import { readdir } from 'fs/promises'
+import { readdir } from 'node:fs/promises'
 
 async function readHtmlShells(directory: string) {
 	const filenames = await readdir(directory)

@@ -1,30 +1,10 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { beforeEach, describe, test } from 'bun:test'
 import type { TabState } from '../../app/ts/types/user-interface-types.js'
+import { installBrowserMock } from '../harness/browserMock.js'
 
-const storageState: Record<string, unknown> = {}
-
-Object.defineProperty(globalThis, 'browser', {
-	configurable: true,
-	writable: true,
-	value: {
-		storage: {
-			local: {
-				async get(keys?: string | readonly string[]) {
-					if (keys === undefined) return { ...storageState }
-					const requestedKeys = Array.isArray(keys) ? keys : [keys]
-					return Object.fromEntries(requestedKeys.filter((key) => key in storageState).map((key) => [key, storageState[key]]))
-				},
-				async set(items: Record<string, unknown>) {
-					Object.assign(storageState, items)
-				},
-				async remove(keys: string | readonly string[]) {
-					for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
-				},
-			},
-		},
-	},
-})
+const browserMock = installBrowserMock()
+const storedKeys = () => Object.keys(browserMock.readStorage())
 
 const { clearTabStates, getAllTabStates } = await import('../../app/ts/background/storageVariables.js')
 const { initializeTabStateStorage, keepTabStateCleanupAlive } = await import('../../app/ts/background/tabStateLifecycle.js')
@@ -46,31 +26,31 @@ const tabState: TabState = {
 }
 
 describe('tab state storage key selection', () => {
-	beforeEach(() => {
-		for (const key of Object.keys(storageState)) delete storageState[key]
+	beforeEach(async () => {
+		await browserMock.browser.storage.local.clear()
 	})
 
 	test('reads exact tab state keys without parsing similarly prefixed storage', async () => {
 		await setTabStateToStorage(tabState.tabId, tabState)
-		storageState.tabState_12_backup = { corrupt: true }
+		await browserMock.browser.storage.local.set({ tabState_12_backup: { corrupt: true } })
 
 		assert.deepEqual(await getAllTabStates(), [tabState])
 	})
 
 	test('clears exact tab state keys without deleting similarly prefixed storage', async () => {
 		await setTabStateToStorage(tabState.tabId, tabState)
-		storageState.tabState_12_backup = { retained: true }
+		await browserMock.browser.storage.local.set({ tabState_12_backup: { retained: true } })
 
 		await clearTabStates()
 
-		assert.equal('tabState_12' in storageState, false)
-		assert.deepEqual(storageState.tabState_12_backup, { retained: true })
+		assert.equal(storedKeys().includes('tabState_12'), false)
+		assert.deepEqual(await browserMock.browser.storage.local.get('tabState_12_backup'), { tabState_12_backup: { retained: true } })
 	})
 })
 
 describe('tab state startup lifecycle', () => {
-	beforeEach(() => {
-		for (const key of Object.keys(storageState)) delete storageState[key]
+	beforeEach(async () => {
+		await browserMock.browser.storage.local.clear()
 	})
 
 	test('waits for manifest v2 cleanup before background initialization completes', async () => {
@@ -78,7 +58,7 @@ describe('tab state startup lifecycle', () => {
 
 		await initializeTabStateStorage(2)
 
-		assert.equal('tabState_12' in storageState, false)
+		assert.equal(storedKeys().includes('tabState_12'), false)
 	})
 
 	test('keeps manifest v3 activation alive until cleanup completes', async () => {
@@ -93,6 +73,6 @@ describe('tab state startup lifecycle', () => {
 
 		assert.notEqual(activationLifetime, undefined)
 		await activationLifetime
-		assert.equal('tabState_12' in storageState, false)
+		assert.equal(storedKeys().includes('tabState_12'), false)
 	})
 })

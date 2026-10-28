@@ -1,4 +1,4 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { test } from 'bun:test'
 import { collectMultilineNamedImportDiagnostics } from '../../scripts/check-single-line-imports.mts'
 

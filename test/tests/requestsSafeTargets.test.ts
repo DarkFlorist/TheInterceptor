@@ -1,44 +1,12 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
+import { createPerTestBrowserMockInstaller } from '../harness/perTest.js'
 
-type BrowserMockOptions = {
-	readonly tabGetError?: Error
-	readonly windowGetError?: Error
-	readonly tabUpdateError?: Error
-	readonly windowUpdateError?: Error
-	readonly runtimeLastError?: browser.runtime._LastError | undefined | null
-}
+const installBrowserMock = createPerTestBrowserMockInstaller()
 
-function installBrowserMock(options: BrowserMockOptions = {}) {
-	Object.defineProperty(globalThis, 'browser', {
-		configurable: true,
-		writable: true,
-		value: {
-			runtime: {
-				lastError: options.runtimeLastError ?? null,
-			},
-			tabs: {
-				async get(tabId: number) {
-					if (options.tabGetError !== undefined) throw options.tabGetError
-					return { id: tabId }
-				},
-				async update(tabId: number) {
-					if (options.tabUpdateError !== undefined) throw options.tabUpdateError
-					return { id: tabId }
-				},
-			},
-			windows: {
-				async get(windowId: number) {
-					if (options.windowGetError !== undefined) throw options.windowGetError
-					return { id: windowId }
-				},
-				async update(windowId: number) {
-					if (options.windowUpdateError !== undefined) throw options.windowUpdateError
-					return { id: windowId }
-				},
-			},
-		},
-	})
+// Tab 7, tab 9, window 8 and window 10 exist, so every lookup and update succeeds until a test removes a target or replaces an API method to inject a failure.
+function installTargetsBrowserMock() {
+	return installBrowserMock({ windows: [{ id: 8, focused: true }, { id: 10 }], tabs: [{ id: 7, windowId: 8 }, { id: 9, windowId: 10 }] }).browser
 }
 
 async function loadRequestsModule() {
@@ -60,12 +28,13 @@ describe('browser target helpers', () => {
 	test('return undefined for missing tab and window targets', async () => {
 		const { getTabIfExists, getWindowIfExists, updateTabIfExists, updateWindowIfExists } = await loadRequestsModule()
 
-		installBrowserMock({
-			tabGetError: new Error('No tab with id: 7.'),
-			windowGetError: new Error('No window with id: 8.'),
-			tabUpdateError: new Error('Invalid tab ID: 9'),
-			windowUpdateError: new Error('Invalid window ID: 10'),
-		})
+		const browser = installTargetsBrowserMock()
+		// Removing the targets makes tabs.get and windows.get reject with Chrome's "No tab with id: 7." and "No window with id: 8." errors.
+		await browser.tabs.remove(7)
+		await browser.windows.remove(8)
+		// Firefox reports missing update targets as "Invalid tab ID" and "Invalid window ID" instead.
+		browser.tabs.update = async () => { throw new Error('Invalid tab ID: 9') }
+		browser.windows.update = async () => { throw new Error('Invalid window ID: 10') }
 
 		assert.equal(await getTabIfExists(7), undefined)
 		assert.equal(await getWindowIfExists(8), undefined)
@@ -76,23 +45,25 @@ describe('browser target helpers', () => {
 	test('rethrows unexpected tab and window API failures', async () => {
 		const { getTabIfExists, getWindowIfExists, updateTabIfExists, updateWindowIfExists } = await loadRequestsModule()
 
-		installBrowserMock({ tabGetError: new Error('tabs permission missing') })
+		const browser = installTargetsBrowserMock()
+		browser.tabs.get = async () => { throw new Error('tabs permission missing') }
 		await assert.rejects(async () => await getTabIfExists(7), /tabs permission missing/)
 
-		installBrowserMock({ windowGetError: new Error('windows permission missing') })
+		browser.windows.get = async () => { throw new Error('windows permission missing') }
 		await assert.rejects(async () => await getWindowIfExists(8), /windows permission missing/)
 
-		installBrowserMock({ tabUpdateError: new Error('tab update failed') })
+		browser.tabs.update = async () => { throw new Error('tab update failed') }
 		await assert.rejects(async () => await updateTabIfExists(9, { active: true }), /tab update failed/)
 
-		installBrowserMock({ windowUpdateError: new Error('window update failed') })
+		browser.windows.update = async () => { throw new Error('window update failed') }
 		await assert.rejects(async () => await updateWindowIfExists(10, { focused: true }), /window update failed/)
 	})
 
 	test('rethrows unexpected runtime lastError values', async () => {
 		const { getTabIfExists } = await loadRequestsModule()
 
-		installBrowserMock({ runtimeLastError: { message: 'runtime unavailable' } })
+		const browser = installTargetsBrowserMock()
+		browser.runtime.lastError = { message: 'runtime unavailable' }
 
 		await assert.rejects(async () => await getTabIfExists(7), /runtime unavailable/)
 	})
@@ -100,13 +71,13 @@ describe('browser target helpers', () => {
 	test('doesTabExist only returns false for missing tabs', async () => {
 		const { doesTabExist } = await loadRequestsModule()
 
-		installBrowserMock()
+		const browser = installTargetsBrowserMock()
 		assert.equal(await doesTabExist(7), true)
 
-		installBrowserMock({ tabGetError: new Error('No tab with id: 7.') })
+		await browser.tabs.remove(7)
 		assert.equal(await doesTabExist(7), false)
 
-		installBrowserMock({ tabGetError: new Error('tabs permission missing') })
+		browser.tabs.get = async () => { throw new Error('tabs permission missing') }
 		await assert.rejects(async () => await doesTabExist(7), /tabs permission missing/)
 	})
 })

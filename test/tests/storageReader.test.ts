@@ -1,5 +1,5 @@
 import { describe, test } from 'bun:test'
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { createStorageReaderAccountOverride, decodeStorageReaderResult, encodeStorageReaderCall, STORAGE_READER_ABI, STORAGE_READER_PRECOMPILE_RELOCATION_ADDRESS } from '../../app/ts/simulation/storageReader.js'
 import { decodeFunctionDataStrict, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { bytes32String, dataStringWith0xStart, stringToUint8Array } from '../../app/ts/utils/bigint.js'

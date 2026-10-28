@@ -1,4 +1,4 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
 import { MessageToPopup, PopupMessage } from '../../app/ts/types/interceptor-messages.js'
 import { PopupMessageReplyRequests, PopupRequestsReplies } from '../../app/ts/types/interceptor-reply-messages.js'

@@ -1,4 +1,4 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { test } from 'bun:test'
 import { collectSplitCommentDiagnostics, fixSplitProseComments } from '../../scripts/check-single-line-comments.mts'
 

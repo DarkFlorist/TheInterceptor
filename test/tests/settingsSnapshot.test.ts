@@ -1,5 +1,6 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { test } from 'bun:test'
+import { installBrowserMock } from '../harness/browserMock.js'
 
 const firstSnapshot = {
 	independentActiveSimulationAddress: '0x1111111111111111111111111111111111111111',
@@ -37,26 +38,20 @@ const secondSnapshot = {
 	},
 }
 
+const browserMock = installBrowserMock({ storage: { local: firstSnapshot } })
+const readStorage = browserMock.browser.storage.local.get
+const writeStorage = browserMock.browser.storage.local.set
 let storageReadCount = 0
-
-Object.defineProperty(globalThis, 'browser', {
-	configurable: true,
-	writable: true,
-	value: {
-		storage: {
-			local: {
-				async get(keys: string | readonly string[]) {
-					const snapshot = storageReadCount++ === 0 ? firstSnapshot : secondSnapshot
-					const requestedKeys = Array.isArray(keys) ? keys : [keys]
-					return Object.fromEntries(Object.entries(snapshot).filter(([key]) => requestedKeys.includes(key)))
-				},
-				async set() {
-					throw new Error('Valid settings should not require repair writes')
-				},
-			},
-		},
-	},
-})
+// Every read after the first sees different settings, so reading storage more than once would mix two snapshots.
+browserMock.browser.storage.local.get = async (keys) => {
+	const items = await readStorage(keys)
+	storageReadCount += 1
+	if (storageReadCount === 1) await writeStorage(secondSnapshot)
+	return items
+}
+browserMock.browser.storage.local.set = async () => {
+	throw new Error('Valid settings should not require repair writes')
+}
 
 const { getSettings } = await import('../../app/ts/background/settings.js')
 

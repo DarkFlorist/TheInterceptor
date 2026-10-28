@@ -1,104 +1,31 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
 import { h, render } from 'preact'
 import { Signal } from '@preact/signals'
 import { act } from 'preact/test-utils'
-import { installDomMock } from './domMock.js'
 import type { WebsiteAccess } from '../../app/ts/types/websiteAccessTypes.js'
+import { type BrowserMock, installBrowserMock } from '../harness/browserMock.js'
+import { replaceGlobal, replaceProperty } from '../harness/globals.js'
+import { installDomMock, isMockDialogElement, isMockElement, type MockElement, type MockNode } from './domMock.js'
+import { clickElement, collectElements, getElement, getPreactEventHandler } from './domQueries.js'
+import { readProperty } from '../harness/assertions.js'
 
-type RuntimeMessageListener = (message: unknown) => unknown
-type RuntimeMessage = {
-	method?: string
-	data?: unknown
-}
-
-type DomElement = {
-	tagName?: string
-	childNodes?: readonly DomElement[]
-	parentNode?: DomElement | null
-	textContent?: string | null
-	type?: string
-	value?: string
-	checked?: boolean
-	attributes?: Record<string, string | undefined>
-	l?: Record<string, (event: unknown) => unknown>
-	open?: boolean
-}
-
-function createBrowserMock() {
-	const listeners: RuntimeMessageListener[] = []
-	const sentMessages: RuntimeMessage[] = []
-	const storageState: Record<string, unknown> = {}
-
-	const browserMock = {
-		runtime: {
-			lastError: null,
-			async sendMessage(message: RuntimeMessage) {
-				sentMessages.push(message)
-				return undefined
-			},
-			getManifest: () => ({ manifest_version: 3 }),
-			onMessage: {
-				addListener(listener: RuntimeMessageListener) {
-					listeners.push(listener)
-				},
-				removeListener(listener: RuntimeMessageListener) {
-					const index = listeners.indexOf(listener)
-					if (index >= 0) listeners.splice(index, 1)
-				},
-			},
-			onConnect: { addListener: () => undefined, removeListener: () => undefined },
-		},
-		storage: {
-			local: {
-				async get(keys?: string | string[] | Record<string, unknown> | null) {
-					if (keys === undefined || keys === null) return { ...storageState }
-					if (Array.isArray(keys)) return Object.fromEntries(keys.filter((key) => key in storageState).map((key) => [key, storageState[key]]))
-					if (typeof keys === 'string') return keys in storageState ? { [keys]: storageState[keys] } : {}
-					return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
-				},
-				async set(items: Record<string, unknown>) {
-					Object.assign(storageState, items)
-				},
-				async remove(keys: string | string[]) {
-					for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
-				},
-			},
-		},
-		tabs: {
-			async query() { return [] },
-			async get() { return undefined },
-			async update() { return undefined },
-			onUpdated: { addListener: () => undefined, removeListener: () => undefined },
-			onRemoved: { addListener: () => undefined, removeListener: () => undefined },
-		},
-		windows: {
-			async get() { return undefined },
-			async update() { return undefined },
-		},
-		action: {
-			async setIcon() { return undefined },
-			async setTitle() { return undefined },
-			async setBadgeText() { return undefined },
-			async setBadgeBackgroundColor() { return undefined },
-		},
-		browserAction: {
-			async setIcon() { return undefined },
-			async setTitle() { return undefined },
-			async setBadgeText() { return undefined },
-			async setBadgeBackgroundColor() { return undefined },
-		},
+// The page's runtime message listeners, so a test can count the listeners its view added and removed.
+function trackRuntimeMessageListeners(browserMock: BrowserMock) {
+	const listeners: unknown[] = []
+	const onMessage = browserMock.browser.runtime.onMessage
+	const addListener = onMessage.addListener
+	const removeListener = onMessage.removeListener
+	onMessage.addListener = (listener) => {
+		if (!onMessage.hasListener(listener)) listeners.push(listener)
+		addListener(listener)
 	}
-
-	Object.defineProperty(globalThis, 'browser', { value: browserMock, configurable: true, writable: true })
-	Object.defineProperty(globalThis, 'chrome', { value: { runtime: { id: 'test-extension' } }, configurable: true, writable: true })
-
-	return {
-		dispatch(message: RuntimeMessage) {
-			for (const listener of [...listeners]) listener(message)
-		},
-		sentMessages,
+	onMessage.removeListener = (listener) => {
+		const index = listeners.indexOf(listener)
+		if (index >= 0) listeners.splice(index, 1)
+		removeListener(listener)
 	}
+	return () => [...listeners]
 }
 
 function installWindowHashMock(initialHash: string) {
@@ -133,17 +60,20 @@ function installWindowHashMock(initialHash: string) {
 		},
 	}
 
-	globalThis.window.addEventListener = (type, listener) => {
-		if (type === 'hashchange') hashChangeListeners.add(listener)
-	}
-	globalThis.window.removeEventListener = (type, listener) => {
-		if (type === 'hashchange') hashChangeListeners.delete(listener)
-	}
-	Object.defineProperty(globalThis.window, 'location', { value: location, configurable: true, writable: true })
+	const restoreWindowProperties = [
+		replaceProperty(globalThis.window, 'addEventListener', (type: string, listener: EventListenerOrEventListenerObject) => {
+			if (type === 'hashchange') hashChangeListeners.add(listener)
+		}),
+		replaceProperty(globalThis.window, 'removeEventListener', (type: string, listener: EventListenerOrEventListenerObject) => {
+			if (type === 'hashchange') hashChangeListeners.delete(listener)
+		}),
+		replaceProperty(globalThis.window, 'location', location),
+	]
 
 	return {
 		document: dom.document,
 		restore() {
+			for (const restoreWindowProperty of restoreWindowProperties.reverse()) restoreWindowProperty()
 			dom.restore()
 		},
 		setHash(nextHash: string) {
@@ -152,27 +82,25 @@ function installWindowHashMock(initialHash: string) {
 	}
 }
 
-function collectElements(node: DomElement, tagName: string, results: DomElement[] = []) {
-	if (node.tagName === tagName.toUpperCase()) results.push(node)
-	for (const child of node.childNodes ?? []) collectElements(child, tagName, results)
-	return results
-}
+const findRadioByValue = (root: MockNode, value: string) => collectElements(root, 'input').find((element) => element.getAttribute('type') === 'radio' && element.getAttribute('value') === value)
 
-function findRadioByValue(root: DomElement, value: string) {
-	return collectElements(root, 'input').find((element) =>
-		(element.type === 'radio' || element.attributes?.type === 'radio')
-		&& (element.value === value || element.attributes?.value === value || element.attributes?.id === value)
-	)
-}
+const isChecked = (element: MockElement) => element.hasAttribute('checked')
 
-function isChecked(element: DomElement) {
-	return element.checked === true || element.attributes?.checked !== undefined
-}
+const RealFormData = globalThis.FormData
 
-async function clickElement(element: DomElement) {
-	const clickHandler = element.l === undefined ? undefined : Object.entries(element.l).find(([key]) => key.startsWith('Click'))?.[1]
-	if (clickHandler === undefined) throw new Error('Expected click handler')
-	await clickHandler({ currentTarget: element, stopPropagation() { return undefined } })
+// The DOM mock has no form controls for FormData to read, so typing calls the search form's input handler while FormData returns the typed text for the search box, the form's only named field.
+async function typeSearchQuery(searchForm: MockElement, query: string) {
+	const restoreFormData = replaceGlobal('FormData', function FormDataWithTypedSearch() {
+		const formData = new RealFormData()
+		formData.set('search', query)
+		return formData
+	})
+	try {
+		// Lowercase on purpose: WebsiteAccess.tsx imports preact/compat, whose vnode hook renames every onInput prop to oninput (preact/compat/src/render.js), so this form's handler is stored under 'input' rather than the 'Input' key that plain Preact uses on DOM-mock elements. 'Input' would throw here.
+		await getPreactEventHandler(searchForm, 'input')({ currentTarget: searchForm })
+	} finally {
+		restoreFormData()
+	}
 }
 
 const websiteAccessEntries: readonly WebsiteAccess[] = [
@@ -206,16 +134,18 @@ const serializedAddressAccessEntry = {
 }
 
 const serializedAddressAccessMetadata = [{
-	type: 'contact' as const,
+	type: 'contact',
 	name: 'Primary',
 	address: '0x1111111111111111111111111111111111111111',
-	entrySource: 'User' as const,
+	entrySource: 'User',
 	askForAddressAccess: true,
 	useAsActiveAddress: true,
 	chainId: '0x1',
 }]
 
-const browserMock = createBrowserMock()
+// One mock for the whole file, because views rendered by earlier tests stay mounted and keep their runtime listeners.
+const browserMock = installBrowserMock()
+const getRuntimeMessageListeners = trackRuntimeMessageListeners(browserMock)
 const modulesPromise = import('../../app/ts/components/pages/WebsiteAccess.js')
 
 describe('WebsiteAccessView selection', () => {
@@ -227,8 +157,8 @@ describe('WebsiteAccessView selection', () => {
 			render(h(WebsiteAccessView, {}), dom.document.body)
 		})
 
-		await act(() => {
-			browserMock.dispatch({
+		await act(async () => {
+			await browserMock.dispatchRuntimeMessage({
 				role: 'all',
 				method: 'popup_retrieveWebsiteAccessReply',
 				data: {
@@ -240,9 +170,7 @@ describe('WebsiteAccessView selection', () => {
 
 		const alphaRadio = findRadioByValue(dom.document.body, 'alpha.example')
 		const betaRadio = findRadioByValue(dom.document.body, 'beta.example')
-
-		assert.ok(alphaRadio)
-		assert.ok(betaRadio)
+		if (alphaRadio === undefined || betaRadio === undefined) throw new Error('Expected a radio button for each website')
 		assert.equal(isChecked(alphaRadio), false)
 		assert.equal(isChecked(betaRadio), true)
 
@@ -263,8 +191,8 @@ describe('WebsiteAccessView selection', () => {
 			render(h(WebsiteAccessView, {}), dom.document.body)
 		})
 
-		await act(() => {
-			browserMock.dispatch({
+		await act(async () => {
+			await browserMock.dispatchRuntimeMessage({
 				role: 'all',
 				method: 'popup_retrieveWebsiteAccessReply',
 				data: {
@@ -276,9 +204,9 @@ describe('WebsiteAccessView selection', () => {
 
 		assert.equal(dom.document.body.textContent.includes('This website was denied access to The Interceptor.'), false)
 
-		await act(() => {
+		await act(async () => {
 			dom.setHash('#origin:denied.example')
-			browserMock.dispatch({
+			await browserMock.dispatchRuntimeMessage({
 				role: 'all',
 				method: 'popup_retrieveWebsiteAccessReply',
 				data: {
@@ -300,8 +228,8 @@ describe('WebsiteAccessView selection', () => {
 			render(h(WebsiteAccessView, {}), dom.document.body)
 		})
 
-		await act(() => {
-			browserMock.dispatch({
+		await act(async () => {
+			await browserMock.dispatchRuntimeMessage({
 				role: 'all',
 					method: 'popup_retrieveWebsiteAccessReply',
 					data: {
@@ -314,18 +242,18 @@ describe('WebsiteAccessView selection', () => {
 		assert.equal(dom.document.body.textContent.includes('app.sablier.com'), true)
 		assert.equal(dom.document.body.textContent.includes('Primary'), true)
 
-		const removeAddressDialog = collectElements(dom.document.body, 'dialog').filter((dialog) => dialog.textContent?.includes('Removing Address')).at(-1)
-		if (removeAddressDialog === undefined) throw new Error('Expected remove address dialog')
+		const removeAddressDialog = collectElements(dom.document.body, 'dialog').filter((dialog) => dialog.textContent.includes('Removing Address')).at(-1)
+		if (!isMockDialogElement(removeAddressDialog)) throw new Error('Expected remove address dialog')
 		const dialogSiblings = removeAddressDialog.parentNode?.childNodes ?? []
 		const removeAddressButton = dialogSiblings[dialogSiblings.indexOf(removeAddressDialog) - 1]
-		if (removeAddressButton === undefined) throw new Error('Expected remove address button')
+		if (!isMockElement(removeAddressButton)) throw new Error('Expected remove address button')
 
 		await act(async () => {
 			await clickElement(removeAddressButton)
 		})
 		assert.equal(removeAddressDialog.open, true)
 
-		const editAddressButton = collectElements(removeAddressDialog, 'button').find((button) => button.textContent?.trim() === 'edit')
+		const editAddressButton = collectElements(removeAddressDialog, 'button').find((button) => button.textContent.trim() === 'edit')
 		if (editAddressButton === undefined) throw new Error('Expected address edit button in remove dialog')
 
 		await act(async () => {
@@ -337,14 +265,90 @@ describe('WebsiteAccessView selection', () => {
 		dom.restore()
 	})
 
+	test('keeps a constant number of runtime listeners across re-renders and removes them on unmount', async () => {
+		const dom = installWindowHashMock('#origin:beta.example')
+		const { WebsiteAccessView } = await modulesPromise
+		// Views from earlier tests stay mounted, so only count listeners this view added.
+		const listenersBeforeRender = new Set(getRuntimeMessageListeners())
+		const getListenersAddedByThisView = () => getRuntimeMessageListeners().filter((listener) => !listenersBeforeRender.has(listener))
+		const dispatchWebsiteAccessReply = async () => await act(async () => {
+			await browserMock.dispatchRuntimeMessage({
+				role: 'all',
+				method: 'popup_retrieveWebsiteAccessReply',
+				data: { websiteAccess: websiteAccessEntries, addressAccessMetadata: [] },
+			})
+		})
+		try {
+			await act(() => {
+				render(h(WebsiteAccessView, {}), dom.document.body)
+			})
+			await dispatchWebsiteAccessReply()
+			const listenerCountAfterFirstRender = getListenersAddedByThisView().length
+			await dispatchWebsiteAccessReply()
+			await dispatchWebsiteAccessReply()
+			assert.equal(dom.document.body.textContent.includes('Show website access list'), true, 'the selected website details are rendered')
+			assert.equal(getListenersAddedByThisView().length, listenerCountAfterFirstRender)
+
+			await act(() => {
+				render(null, dom.document.body)
+			})
+			assert.deepEqual(getListenersAddedByThisView(), [])
+		} finally {
+			dom.restore()
+		}
+	})
+
+	test('refreshes the website list with the search text instead of the selected website after an access change', async () => {
+		const dom = installWindowHashMock('#origin:beta.example')
+		const { WebsiteAccessView } = await modulesPromise
+		try {
+			await act(() => {
+				render(h(WebsiteAccessView, {}), dom.document.body)
+			})
+			await act(async () => {
+				await browserMock.dispatchRuntimeMessage({
+					role: 'all',
+					method: 'popup_retrieveWebsiteAccessReply',
+					data: { websiteAccess: websiteAccessEntries, addressAccessMetadata: [] },
+				})
+			})
+			const searchForm = getElement(dom.document.body, (element) => element.tagName === 'FORM' && element.getAttribute('role') === 'search', 'the website search form')
+			await act(async () => { await typeSearchQuery(searchForm, 'bet') })
+			// Typing clears the selection, so select a website again to have both a search text and a different selected domain.
+			await act(() => { dom.setHash('#origin:beta.example') })
+			const betaRadio = findRadioByValue(dom.document.body, 'beta.example')
+			assert.equal(betaRadio !== undefined && isChecked(betaRadio), true)
+
+			const sentMessages = browserMock.calls.runtimeSendMessage
+			const sentMessageCountBeforeChange = sentMessages.length
+			await act(async () => {
+				await browserMock.dispatchRuntimeMessage({ role: 'all', method: 'popup_websiteAccess_changed' })
+			})
+			// Views from earlier tests stay mounted and refresh too with their empty search box; this view is the only one with search text.
+			const refreshQueries = sentMessages.slice(sentMessageCountBeforeChange)
+				.filter((message) => readProperty(message, 'method') === 'popup_retrieveWebsiteAccess')
+				.map((message) => readProperty(readProperty(message, 'data'), 'query'))
+			assert.deepEqual(refreshQueries.filter((query) => query !== ''), ['bet'])
+			await act(() => {
+				render(null, dom.document.body)
+			})
+		} finally {
+			dom.restore()
+		}
+	})
+
 	test('clears the selected website even when the URL hash is already empty', async () => {
-		const { clearSelectedWebsite } = await modulesPromise
-		const selectedDomain = new Signal<string | undefined>('app.sablier.com')
-		const location = { hash: '' }
+		const dom = installWindowHashMock('')
+		try {
+			const { clearSelectedWebsite } = await modulesPromise
+			const selectedDomain = new Signal<string | undefined>('app.sablier.com')
 
-		clearSelectedWebsite({ location }, selectedDomain)
+			clearSelectedWebsite(globalThis.window, selectedDomain)
 
-		assert.equal(selectedDomain.value, undefined)
-		assert.equal(location.hash, '')
+			assert.equal(selectedDomain.value, undefined)
+			assert.equal(globalThis.window.location.hash, '')
+		} finally {
+			dom.restore()
+		}
 	})
 })

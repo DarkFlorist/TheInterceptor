@@ -215,7 +215,7 @@ export function GovernanceVoteVisualizer(param: GovernanceVoteVisualizerParams) 
 	// The parent identifies the transaction again on every render, so the vote parameters arrive as a new but equal object each time; this key changes only when their values do.
 	const governanceVoteInputParametersKey = JSON.stringify(serialize(GovernanceVoteInputParameters, param.governanceVoteInputParameters))
 
-	// Reset only when the transaction identity, the vote parameter values or the active address change; other parent re-renders, such as re-simulations, keep the current simulation.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: reset only when the transaction identity, the vote parameter values or the active address change, so other parent re-renders such as re-simulations keep the current simulation.
 	useEffect(() => {
 		governanceVoteInputParameters.value = param.governanceVoteInputParameters
 		activeAddress.value = param.activeAddress.value

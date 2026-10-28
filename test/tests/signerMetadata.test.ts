@@ -1,4 +1,4 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
 import { SignerName } from '../../app/ts/types/signerTypes.js'
 import { getPrettySignerName, getSignerLogo } from '../../app/ts/utils/signerMetadata.js'
