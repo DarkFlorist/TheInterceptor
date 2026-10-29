@@ -296,6 +296,7 @@ type FailedTransactionAddresses = {
 /**
  * Names what the failure view of a transaction without simulation results shows, such as one whose simulation failed: its sender, its recipient and its calldata arguments, collected and looked up as in getAddressBookEntriesForVisualiserFromTransactions.
  * Naming an address can probe it on-chain and keep what it finds in the address book (identifyAddress). So of the addresses a website chooses, this names only those the view shows, leaving out the contract a creation would deploy and EIP-7702 delegation targets. The sender and recipient are copied field by field, because callers pass the whole transaction or request.
+ * Keeping these website-chosen addresses adds no way to plant a trusted name: a successful simulation of the same request already names and keeps its sender, recipient and calldata arguments (getAddressBookEntriesForVisualiserFromTransactions), and an entry kept from chain stays marked entrySource 'OnChain', which the token label flags as untrusted, the send-to-non-contact protector warns about and the address book search leaves out.
  */
 export async function getAddressBookEntriesForTransactionWithoutSimulation(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, transaction: FailedTransactionAddresses, inputData: EnrichedEthereumInputData): Promise<AddressBookEntry[]> {
 	const shownAddresses = { from: transaction.from, to: transaction.to }

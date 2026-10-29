@@ -507,6 +507,41 @@ test('collects the failure view addresses with the simulation view rules, leavin
 	}
 })
 
+test('keeps a website-chosen calldata address in the address book only as the untrusted on-chain entry the metadata lookup of a successful simulation already keeps for it', async () => {
+	const websiteChosenAddress = 0x6666666666666666666666666666666666666666n
+	const { SendTransactionParams } = await import('../../app/ts/types/JsonRpc-types.js')
+	const { getFailedTransactionPreview } = await import('../../app/ts/background/simulationUpdating.js')
+	const { getAddressBookEntriesForVisualiserFromTransactions } = await import('../../app/ts/background/metadataUtils.js')
+	const { parseInputData } = await import('../../app/ts/simulation/parsing.js')
+	const request = SendTransactionParams.parse({
+		method: 'eth_sendTransaction',
+		params: [{ from: addressString(activeAddress), to: addressString(USDC_ADDRESS), value: '0x0', data: encodeFunctionCall(Erc20ABI, 'transfer', [addressString(websiteChosenAddress), TRANSFERRED_USDC]) }],
+	})
+	const formedTransfer = await createFormedUsdcTransfer(18n)
+	const signedTransaction = modules.mockSignTransaction({ ...formedTransfer.transaction, input: request.params[0].data ?? new Uint8Array() })
+	const getKeptEntry = async () => (await modules.getUserAddressBookEntries()).find((entry) => entry.address === websiteChosenAddress)
+
+	// getMetadataForSimulation names a successful simulation's addresses this way, with the confirmed transaction appended to the simulated block.
+	await useInvoiceAddressBook()
+	const simulationViewEntries = await getAddressBookEntriesForVisualiserFromTransactions(simulator.ethereum, undefined, [], [await parseInputData(signedTransaction, simulator.ethereum, undefined)], [{
+		stateOverrides: {},
+		signedMessages: [],
+		blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 0n, deltaUnit: 'Seconds' },
+		simulateWithZeroBaseFee: false,
+		transactions: [{ signedTransaction, website, created, originalRequestParameters: request, transactionIdentifier: 18n }],
+	}])
+	const keptBySimulation = await getKeptEntry()
+	assert.deepEqual(simulationViewEntries.find((entry) => entry.address === websiteChosenAddress), keptBySimulation)
+	assert.equal(keptBySimulation?.entrySource, 'OnChain', 'the successful simulation already kept the website-chosen address, marked as an untrusted on-chain identification')
+
+	await useInvoiceAddressBook()
+	assert.equal(await getKeptEntry(), undefined)
+	const failureView = await getFailedTransactionPreview(simulator.ethereum, undefined, { ...await createUnformedUsdcTransfer(18n), originalRequestParameters: request })
+	const keptByFailureView = await getKeptEntry()
+	assert.deepEqual(failureView.addressBookEntries.find((entry) => entry.address === websiteChosenAddress), keptByFailureView)
+	assert.deepEqual(keptByFailureView, keptBySimulation, 'the failure view keeps the same untrusted entry the successful simulation keeps')
+})
+
 const failedPreviewLookups = [
 	{ description: 'an RPC failure', createLookupError: async () => (await import('../../app/ts/utils/errors.js')).createInterceptorInternalError('Failed to fetch', 'fetch_transport_failed', 'failedToFetch'), isDefect: false },
 	{ description: 'a defect', createLookupError: async () => new Error('address probe decoder defect'), isDefect: true },
