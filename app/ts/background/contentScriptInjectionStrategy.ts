@@ -4,7 +4,7 @@ import { updateContentScriptInjectionStrategyManifestV2, updateContentScriptInje
 import { reportUnexpectedError } from '../utils/errors.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { hasSameContentScriptInjectionSitesConfiguration, hasSameContentScriptRegistrationConfiguration, hasSamePageWorldProviderConfiguration, type ContentScriptRegistrationConfiguration } from '../config/contentScriptInjectionConfiguration.js'
-import { getContentScriptInjectionConfiguration } from './contentScriptInjectionConfiguration.js'
+import { getContentScriptInjectionConfiguration } from './contentScriptInjectionConfigurationLoader.js'
 import { getConnectedTabIdsToReload, reloadTabs } from './reloadConnectedTabs.js'
 import { getMetamaskCompatibilityMode } from './settings.js'
 

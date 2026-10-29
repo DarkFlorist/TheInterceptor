@@ -219,7 +219,7 @@ async function loadModules() {
 	const modules = {
 		...await import('../../app/ts/utils/contentScriptsUpdating.js'),
 		...await import('../../app/ts/background/contentScriptInjectionStrategy.js'),
-		...await import('../../app/ts/background/contentScriptInjectionConfiguration.js'),
+		...await import('../../app/ts/background/contentScriptInjectionConfigurationLoader.js'),
 		...await import('../../app/ts/background/storageVariables.js'),
 	}
 	return {
