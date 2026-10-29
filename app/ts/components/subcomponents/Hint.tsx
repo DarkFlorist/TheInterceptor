@@ -97,6 +97,7 @@ export default function Container(props: Props) {
 
 		// Read from the document when needed rather than remembered, so it can never point at an element that lost focus or was removed: a removed element is no longer the active element or inside the container.
 		const getFocusedTooltipElement = () => {
+			// An element's ownerDocument is never null (only a Document's own is), and the DOM typings declare Element.ownerDocument as Document.
 			const focusedElement = containerElement.ownerDocument.activeElement
 			if (!(focusedElement instanceof Element) || !focusedElement.hasAttribute(toolTipAttribute) || !containerElement.contains(focusedElement)) return undefined
 			return focusedElement
