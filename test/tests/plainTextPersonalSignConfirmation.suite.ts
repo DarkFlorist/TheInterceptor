@@ -2,6 +2,7 @@ import * as assert from 'assert'
 import { test } from 'bun:test'
 import { personalEcRecover } from '../../app/ts/background/personalEcRecoverRpc.js'
 import { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
+import { PendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
 import { TransactionConfirmation } from '../../app/ts/types/interceptor-messages.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
 import { decodePersonalSignMessage } from '../../app/ts/utils/personalSignMessage.js'
@@ -140,6 +141,24 @@ test('resolves popup decisions on a request stored before instance ids existed',
 		}
 		assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
 		assert.equal(postedMessages.some((message) => isRecord(message) && message.method === 'personal_sign' && 'error' in message), true)
+	}
+})
+
+test('parses only a missing pending request instance id as the legacy id and rejects other non-string instance ids', async () => {
+	await openPlainTextPersonalSign(false, [])
+	const storedPending = browserMock.storageState.pendingTransactionsAndMessages
+	if (!Array.isArray(storedPending) || !isRecord(storedPending[0])) throw new Error('Missing stored pending request')
+	const stored = storedPending[0]
+	const parseInstanceId = (pending: Record<string, unknown>) => {
+		const parsed = PendingTransactionOrSignableMessage.safeParse(pending)
+		return parsed.success ? { success: true, instanceId: parsed.value.instanceId } : { success: false }
+	}
+
+	assert.deepEqual(parseInstanceId(Object.fromEntries(Object.entries(stored).filter(([key]) => key !== 'instanceId'))), { success: true, instanceId: 'legacy' })
+	const uuid = '0b6f1c9e-3d4a-4f6b-9c2e-7a8d5e1f2b3c'
+	assert.deepEqual(parseInstanceId({ ...stored, instanceId: uuid }), { success: true, instanceId: uuid })
+	for (const instanceId of [5, null, {}]) {
+		assert.deepEqual(parseInstanceId({ ...stored, instanceId }), { success: false }, JSON.stringify(instanceId))
 	}
 })
 

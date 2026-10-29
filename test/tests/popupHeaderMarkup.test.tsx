@@ -306,6 +306,7 @@ describe('popup header markup', () => {
 		})
 
 		assert.match(dom.document.body.textContent ?? '', /request reached your wallet/)
+		assert.equal(findFirstByClass(dom.document.body, 'safe-signer-error-details'), undefined)
 		dom.restore()
 	})
 
