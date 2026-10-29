@@ -475,7 +475,8 @@ describe('content script injection strategy', () => {
 			registeredContentScriptIds: ['inpage', 'inpage2'],
 		})
 		const { updateAllContentScriptConfigurationAfterSettingsImport } = await import('../../app/ts/background/contentScriptInjectionStrategy.js')
-		const { persistMetamaskCompatibilityMode, withSettingsImportRollback } = await import('../../app/ts/background/settings.js')
+		const { persistMetamaskCompatibilityMode } = await import('../../app/ts/background/settings.js')
+		const { withSettingsImportRollback } = await import('../../app/ts/background/settingsTransactions.js')
 		const { setMetamaskCompatibilityMode } = await import('../../app/ts/background/metamaskCompatibilityMode.js')
 
 		await withSilencedConsole(async () => {
@@ -508,7 +509,8 @@ describe('content script injection strategy', () => {
 			websiteAccess: [],
 		})
 		const { updateAllContentScriptConfigurationAfterSettingsImport } = await import('../../app/ts/background/contentScriptInjectionStrategy.js')
-		const { persistMetamaskCompatibilityMode, withSettingsImportRollback } = await import('../../app/ts/background/settings.js')
+		const { persistMetamaskCompatibilityMode } = await import('../../app/ts/background/settings.js')
+		const { withSettingsImportRollback } = await import('../../app/ts/background/settingsTransactions.js')
 		const { updateWebsiteAccessAndContentScriptInjectionStrategy } = await import('../../app/ts/background/websiteAccessUpdating.js')
 
 		await withSilencedConsole(async () => {
@@ -569,7 +571,8 @@ describe('content script injection strategy', () => {
 			declarativeNetRequestBlockMode: 'disabled',
 		}]
 		const { getStorageState } = installBrowserMock({ websiteAccess: previousWebsiteAccess })
-		const { updateWebsiteAccess, withWebsiteAccessRollback } = await import('../../app/ts/background/settings.js')
+		const { updateWebsiteAccess } = await import('../../app/ts/background/settings.js')
+		const { withWebsiteAccessRollback } = await import('../../app/ts/background/settingsTransactions.js')
 
 		await withSilencedConsole(async () => {
 			await assert.rejects(withWebsiteAccessRollback(
@@ -606,7 +609,8 @@ describe('content script injection strategy', () => {
 			storageGetWaits: [releaseOrdinaryUpdate.promise],
 			onStorageGet: () => ordinaryUpdateStarted.resolve(),
 		})
-		const { updateWebsiteAccess, withWebsiteAccessRollback } = await import('../../app/ts/background/settings.js')
+		const { updateWebsiteAccess } = await import('../../app/ts/background/settings.js')
+		const { withWebsiteAccessRollback } = await import('../../app/ts/background/settingsTransactions.js')
 		const registrationError = new Error('registration failed after queued update')
 
 		const ordinaryUpdate = updateWebsiteAccess((entries) => entries.map((entry) => ({ ...entry, website: { ...entry.website, title: 'Ordinary update' }, access: false })))
