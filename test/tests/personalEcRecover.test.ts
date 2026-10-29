@@ -8,7 +8,7 @@ import type { PersonalSignParams } from '../../app/ts/types/jsonRpc-signing-type
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
 import type { SignedMessageTransaction } from '../../app/ts/types/visualizer-types.js'
 import type { WebsiteSocket } from '../../app/ts/utils/requests.js'
-import { bytes32String } from '../../app/ts/utils/bigint.js'
+import { addressString, bytes32String } from '../../app/ts/utils/bigint.js'
 import { bytesToHex, hashMessage, privateKeyToAccount, stringToBytes } from '../../app/ts/utils/ethereumPrimitives.js'
 import { confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, EthereumJsonRpcRequest, installBrowserMock, loadModules, noopPublishRpcConnectionStatus } from './backgroundEthAccountsTestHarness.js'
 
@@ -104,6 +104,9 @@ describe('personal_ecRecover parameters', () => {
 		]) {
 			assert.equal(EthereumJsonRpcRequest.safeParse({ method: 'personal_ecRecover', params }).success, false, JSON.stringify(params))
 		}
+		for (const request of [{ method: 'personal_ecRecover' }, { method: 'personal_ecRecover', params: helloMessage }]) {
+			assert.equal(EthereumJsonRpcRequest.safeParse(request).success, false, JSON.stringify(request))
+		}
 	})
 })
 
@@ -182,6 +185,15 @@ describe('personal_ecRecover recovery', () => {
 		assert.notEqual(textReply.result, mockSimulationKeyAddress)
 	})
 
+	test('answers the mock key address for a reproduced mock signature of a message the user did not approve in the simulation', async () => {
+		const socket = { tabId: 1, connectionName: 0n }
+		const approvedMessage = createSignedMessage(simulatedSigner, helloMessage, socket)
+		// The mock keys are public, so the page can sign any message with them itself; only the stacked, user-approved message maps to the simulated signer.
+		const unapprovedMessage = createSignedMessage(simulatedSigner, '0x00', socket)
+		const reply = await personalEcRecover(parsePersonalEcRecover(['0x00', await getSimulatedSignature(unapprovedMessage)]), [approvedMessage], websiteOrigin)
+		assert.deepEqual(reply, { type: 'result', method: 'personal_ecRecover', result: mockSimulationKeyAddress })
+	})
+
 	test('prefers the most recent simulated signer when mock-key signatures collide', async () => {
 		const socket = { tabId: 1, connectionName: 0n }
 		const earlierSignedMessage = createSignedMessage(0x3333333333333333333333333333333333333333n, helloMessage, socket)
@@ -211,13 +223,13 @@ describe('personal_ecRecover routing', () => {
 		} }]])
 		const getBlockCalls = { count: 0 }
 		const { simulationServicesOwner } = createEthereumWithGetBlockCounter(getBlockCalls)
-		const sendPersonalEcRecover = async (requestId: number, params: readonly unknown[]) => {
+		const sendPersonalEcRecover = async (requestId: number, params: readonly unknown[] | undefined) => {
 			await loadedModules.handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 				interceptorRequest: true,
 				usingInterceptorWithoutSigner: false,
 				uniqueRequestIdentifier: { requestId, requestSocket: socket },
 				method: 'personal_ecRecover',
-				params,
+				...(params === undefined ? {} : { params }),
 			}, websiteTabConnections, noopPublishRpcConnectionStatus)
 			return messages.find((message) => message.requestId === requestId)
 		}
@@ -271,6 +283,23 @@ describe('personal_ecRecover routing', () => {
 		assert.equal((await sendPersonalEcRecover(2, [helloMessage, helloSignature]))?.result, recoveredHelloSignerAddress)
 		assert.equal((await sendPersonalEcRecover(3, ['Hello world', await getSimulatedSignature(plainTextSignedMessage)]))?.result, '0x1111111111111111111111111111111111111111')
 		assert.equal(getBlockCalls.count, 0)
+		assert.equal(messages.some((message) => message.type === 'forwardToSigner'), false)
+	})
+
+	test('answers a Safe owner as simulated signer only in simulation mode, never from the Safe signing-mode stack', async () => {
+		installBrowserMock()
+		const loadedModules = await loadModules()
+		await useSafeSigningMode(loadedModules)
+		const { socket, messages, sendPersonalEcRecover } = await setUpWebsiteConnection(loadedModules)
+		const ownerSignedMessage = createSignedMessage(signerAddress, helloMessage, socket)
+		const ownerSimulatedSignature = await getSimulatedSignature(ownerSignedMessage)
+		await loadedModules.updateInterceptorTransactionStack(() => ({ operations: [{ type: 'Message', signedMessageTransaction: ownerSignedMessage }] }))
+
+		// The Safe signing-mode stack holds only Safe transactions, so the stacked message is not consulted and the mock key is recovered instead of the owner.
+		assert.equal((await sendPersonalEcRecover(1, [helloMessage, ownerSimulatedSignature]))?.result, addressString(mockSimulationKeyAddress))
+		// In simulation mode the same message answers with the Safe's simulation owner, an address the Safe's public owner list already discloses.
+		await loadedModules.changeSimulationMode({ simulationMode: true, activeSimulationAddress: safeAddress, activeSigningAddress: undefined })
+		assert.equal((await sendPersonalEcRecover(2, [helloMessage, ownerSimulatedSignature]))?.result, addressString(signerAddress))
 		assert.equal(messages.some((message) => message.type === 'forwardToSigner'), false)
 	})
 
@@ -341,14 +370,17 @@ describe('personal_ecRecover routing', () => {
 		await useSigningMode(loadedModules)
 		const { messages, sendPersonalEcRecover } = await setUpWebsiteConnection(loadedModules)
 
-		assert.deepEqual(await sendPersonalEcRecover(1, [helloMessage, helloSignature.slice(0, -4)]), {
-			interceptorApproved: true,
-			requestId: 1,
-			bridgeRequestSettled: true,
-			type: 'result',
-			method: 'personal_ecRecover',
-			error: { code: -32602, message: 'Invalid personal_ecRecover parameters. Expected a message string and a 65 byte or 64 byte compact signature.' },
-		})
+		const malformedRequests: readonly (readonly [number, readonly unknown[] | undefined])[] = [[1, [helloMessage, helloSignature.slice(0, -4)]], [2, undefined]]
+		for (const [requestId, params] of malformedRequests) {
+			assert.deepEqual(await sendPersonalEcRecover(requestId, params), {
+				interceptorApproved: true,
+				requestId,
+				bridgeRequestSettled: true,
+				type: 'result',
+				method: 'personal_ecRecover',
+				error: { code: -32602, message: 'Invalid personal_ecRecover parameters. Expected a message string and a 65 byte or 64 byte compact signature.' },
+			}, JSON.stringify(params))
+		}
 		assert.equal(messages.some((message) => message.type === 'forwardToSigner'), false)
 	})
 })

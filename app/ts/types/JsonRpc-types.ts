@@ -369,7 +369,7 @@ export type RecoverableMessageSignature = funtypes.Static<typeof RecoverableMess
 export const RecoverableMessageSignature = funtypes.String.withParser(RecoverableMessageSignatureParser)
 
 const PersonalEcRecoverMessageAndSignature = funtypes.ReadonlyTuple(funtypes.String, RecoverableMessageSignature) // message (0x-prefixed hex bytes or UTF-8 text), signature
-// MetaMask reads only the first two parameters and ignores any others, so extra parameters must not turn a request it answers into an error.
+// MetaMask reads only the first two parameters and ignores any others, so extra parameters must not turn a request it answers into an error. funtypes validates the ReadonlyArray before calling parse, so a missing or non-array params fails parsing (answered with invalid params) instead of reaching params.slice.
 const PersonalEcRecoverParams = funtypes.ReadonlyArray(funtypes.Unknown).withParser({
 	parse: params => PersonalEcRecoverMessageAndSignature.safeParse(params.slice(0, 2)),
 	serialize: ([message, signature]) => {

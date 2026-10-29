@@ -36,7 +36,7 @@ export const simulatePersonalSign = async (params: SignMessageParams, signingAdd
 
 const areSameSignatures = (first: RecoverableMessageSignature, second: RecoverableMessageSignature) => first.r === second.r && first.s === second.s && first.yParity === second.yParity
 
-// Simulated personal_sign replies are signed with mock keys, so recovering them must resolve to the simulated signer like the ecRecover precompile override does during simulation. The mock keys are public, so any page can compute the mock signature of a message it guesses; only messages the requesting website itself had simulated-signed are matched, so a page cannot probe which addresses other websites' messages were signed for.
+// Simulated personal_sign replies are signed with public mock keys, so recovery resolves them to the simulated signer like the simulation's ecRecover precompile override does. Any page can compute a mock signature, so only messages the requesting website itself simulated-signed match, keeping other websites' signers hidden. For a Safe this signer is its simulation owner, validated against the Safe's public owner list, just as a real owner signature recovers to that owner; Safe signing mode's stack holds no messages, so its wallet-selected owner never reaches this lookup.
 export const findSimulatedPersonalSignSigner = async (signedMessages: readonly SignedMessageTransaction[], messageHash: string, signature: RecoverableMessageSignature, requestingWebsiteOrigin: string) => {
 	// Newest first: one message signed for different simulated signers yields a single shared mock-key signature, so the most recent signing wins.
 	for (const signedMessage of [...signedMessages].reverse()) {
