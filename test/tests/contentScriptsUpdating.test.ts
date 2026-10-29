@@ -594,6 +594,32 @@ describe('content script injection strategy', () => {
 		assert.deepEqual(getStorageState().websiteAccess, [{ ...previousWebsiteAccess[0], website: { ...previousWebsiteAccess[0]?.website, title: 'Concurrent title' } }])
 	})
 
+	test('website access rollback strips the fields of an entry it created that a concurrent writer kept editing', async () => {
+		const registrationError = new Error('registration failed after creating an entry')
+		const { getStorageState } = installBrowserMock({ websiteAccess: [] })
+		const { updateWebsiteAccess } = await import('../../app/ts/background/settings.js')
+		const { withWebsiteAccessRollback } = await import('../../app/ts/background/settingsTransactions.js')
+
+		await withSilencedConsole(async () => {
+			await assert.rejects(withWebsiteAccessRollback(
+				() => [{
+					website: { websiteOrigin: 'created.test', title: 'Transaction title', icon: undefined },
+					addressAccess: [{ address: 0x2222222222222222222222222222222222222222n, access: true }],
+					access: true,
+					interceptorDisabled: true,
+					declarativeNetRequestBlockMode: 'block-all',
+				}],
+				async () => {
+					await updateWebsiteAccess((entries) => entries.map((entry) => ({ ...entry, website: { ...entry.website, title: 'Concurrent title' } })))
+					throw registrationError
+				},
+			), registrationError)
+		})
+
+		// Browser storage is JSON, so fields rolled back to undefined are absent once persisted.
+		assert.deepStrictEqual(JSON.parse(JSON.stringify(getStorageState().websiteAccess)), [{ website: { websiteOrigin: 'created.test', title: 'Concurrent title' } }])
+	})
+
 	test('website access rollback snapshots after an already-running ordinary update', async () => {
 		const ordinaryUpdateStarted = createDeferred()
 		const releaseOrdinaryUpdate = createDeferred()

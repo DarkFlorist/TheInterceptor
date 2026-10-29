@@ -1,43 +1,66 @@
-import type { WebsiteAccess, WebsiteAccessArray, WebsiteAddressAccess } from '../types/websiteAccessTypes.js'
+import type { Website, WebsiteAccess, WebsiteAccessArray, WebsiteAddressAccess } from '../types/websiteAccessTypes.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { snapshotSettingsImportStorage, updateWebsiteAccess, updateWebsiteAccessWithSnapshots } from './settings.js'
 
-function hasSameAddressAccess(first: readonly WebsiteAddressAccess[] | undefined, second: readonly WebsiteAddressAccess[] | undefined) {
-	if (first === undefined || second === undefined) return first === second
-	return first.length === second.length && first.every((entry, index) => entry.address === second[index]?.address && entry.access === second[index]?.access)
+// Equality, and for transaction-rolled-back types also rollback, for every field of a stored type; the mapped types make a field added to that type without a rule here a compile error.
+type FieldEquality<T> = { readonly [Key in keyof T]-?: { readonly isSame: (first: T[Key], second: T[Key]) => boolean } }
+type FieldRules<T> = { readonly [Key in keyof T]-?: FieldEquality<T>[Key] & { readonly rollback: (previous: T[Key] | undefined, updated: T[Key], current: T[Key]) => T[Key] } }
+
+function hasSameFields<T extends object>(fields: FieldEquality<T>, first: T, second: T) {
+	for (const key in fields) {
+		if (!fields[key].isSame(first[key], second[key])) return false
+	}
+	return true
 }
 
-function hasSameWebsiteAccess(first: WebsiteAccess, second: WebsiteAccess) {
-	return first.website.websiteOrigin === second.website.websiteOrigin
-		&& first.website.title === second.website.title
-		&& first.website.icon === second.website.icon
-		&& first.access === second.access
-		&& first.interceptorDisabled === second.interceptorDisabled
-		&& first.declarativeNetRequestBlockMode === second.declarativeNetRequestBlockMode
-		&& hasSameAddressAccess(first.addressAccess, second.addressAccess)
+// Fields rolled back to absent are written as undefined, which persists the same as omitting them.
+function rollbackFields<T extends object>(rules: FieldRules<T>, previous: T | undefined, updated: T, current: T): T {
+	const restored = { ...current }
+	for (const key in rules) restored[key] = rules[key].rollback(previous?.[key], updated[key], current[key])
+	return restored
 }
 
-function rollbackValue<Value>(previous: Value, updated: Value, current: Value, hasSameValue: (first: Value, second: Value) => boolean = Object.is) {
-	return !hasSameValue(previous, updated) && hasSameValue(current, updated) ? previous : current
-}
-
-function rollbackWebsiteAccessEntry(previous: WebsiteAccess | undefined, updated: WebsiteAccess, current: WebsiteAccess): WebsiteAccess {
-	const access = rollbackValue(previous?.access, updated.access, current.access)
-	const interceptorDisabled = rollbackValue(previous?.interceptorDisabled, updated.interceptorDisabled, current.interceptorDisabled)
-	const declarativeNetRequestBlockMode = rollbackValue(previous?.declarativeNetRequestBlockMode, updated.declarativeNetRequestBlockMode, current.declarativeNetRequestBlockMode)
+// Reverts a value the transaction changed unless a concurrent writer has overwritten it since.
+function revertUnlessOverwritten<Value>(isSame: (first: Value | undefined, second: Value | undefined) => boolean) {
 	return {
-		website: {
-			websiteOrigin: current.website.websiteOrigin,
-			title: rollbackValue(previous?.website.title, updated.website.title, current.website.title),
-			icon: rollbackValue(previous?.website.icon, updated.website.icon, current.website.icon),
-		},
-		addressAccess: rollbackValue(previous?.addressAccess, updated.addressAccess, current.addressAccess, hasSameAddressAccess),
-		...(access === undefined ? {} : { access }),
-		...(interceptorDisabled === undefined ? {} : { interceptorDisabled }),
-		...(declarativeNetRequestBlockMode === undefined ? {} : { declarativeNetRequestBlockMode }),
+		isSame,
+		rollback: (previous: Value | undefined, updated: Value | undefined, current: Value | undefined) => !isSame(previous, updated) && isSame(current, updated) ? previous : current,
 	}
 }
+
+const addressAccessEntryEquality = {
+	address: { isSame: Object.is },
+	access: { isSame: Object.is },
+} satisfies FieldEquality<WebsiteAddressAccess>
+
+function hasSameAddressAccess(first: readonly WebsiteAddressAccess[] | undefined, second: readonly WebsiteAddressAccess[] | undefined) {
+	if (first === undefined || second === undefined) return first === second
+	return first.length === second.length && first.every((entry, index) => {
+		const secondEntry = second[index]
+		return secondEntry !== undefined && hasSameFields(addressAccessEntryEquality, entry, secondEntry)
+	})
+}
+
+const websiteRules = {
+	// The origin identifies the entry, so rollback never changes it.
+	websiteOrigin: { isSame: Object.is, rollback: (_previous, _updated, current) => current },
+	title: revertUnlessOverwritten<string>(Object.is),
+	icon: revertUnlessOverwritten<string>(Object.is),
+} satisfies FieldRules<Website>
+
+const websiteAccessRules = {
+	website: {
+		isSame: (first, second) => hasSameFields(websiteRules, first, second),
+		rollback: (previous, updated, current) => rollbackFields(websiteRules, previous, updated, current),
+	},
+	addressAccess: revertUnlessOverwritten(hasSameAddressAccess),
+	access: revertUnlessOverwritten<boolean>(Object.is),
+	interceptorDisabled: revertUnlessOverwritten<boolean>(Object.is),
+	declarativeNetRequestBlockMode: revertUnlessOverwritten<WebsiteAccess['declarativeNetRequestBlockMode']>(Object.is),
+} satisfies FieldRules<WebsiteAccess>
+
+const hasSameWebsiteAccess = (first: WebsiteAccess, second: WebsiteAccess) => hasSameFields(websiteAccessRules, first, second)
 
 async function restoreWebsiteAccessUpdate(previousWebsiteAccess: WebsiteAccessArray, updatedWebsiteAccess: WebsiteAccessArray) {
 	await updateWebsiteAccess((currentWebsiteAccess) => {
@@ -66,7 +89,7 @@ async function restoreWebsiteAccessUpdate(previousWebsiteAccess: WebsiteAccessAr
 				continue
 			}
 			if (previous === undefined && hasSameWebsiteAccess(current, updated)) continue
-			restoredWebsiteAccess.push(rollbackWebsiteAccessEntry(previous, updated, current))
+			restoredWebsiteAccess.push(rollbackFields(websiteAccessRules, previous, updated, current))
 		}
 		for (const origin of changedOrigins) {
 			if (currentOrigins.has(origin) || updatedByOrigin.has(origin)) continue
