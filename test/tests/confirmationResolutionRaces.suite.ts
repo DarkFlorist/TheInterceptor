@@ -162,6 +162,38 @@ test('a wallet reply racing a popup close gives the forwarded request one termin
 	}
 })
 
+test('a wallet reply arriving over another connection in the same tab does not resolve a request forwarded to the signer', async () => {
+	const messagesPostedToPage: unknown[] = []
+	const page = await startPageConnection(messagesPostedToPage)
+	await sendPersonalSignFromPage(page, 'first message')
+	await approveAndForwardToSigner(page)
+	// Another frame or reloaded document in the tab has its own connection, and the background derives a reply's request socket from the port it arrived on.
+	const otherSocket = { tabId: pageRequestIdentifier.requestSocket.tabId, connectionName: 1n }
+	const messagesPostedToOtherConnection: unknown[] = []
+	const otherPort = createWebsitePort(otherSocket, 1, messagesPostedToOtherConnection)
+	const tabConnection = page.connections.get(otherSocket.tabId)
+	if (tabConnection === undefined) throw new Error('Missing page tab connection')
+	tabConnection.connections[modules.websiteSocketToString(otherSocket)] = { port: otherPort, socket: otherSocket, websiteOrigin: pageWebsite.websiteOrigin, approved: true, wantsToConnect: true }
+
+	await modules.signerReply(createTestSimulationServicesOwner({ ethereum: simulator.ethereum, tokenPriceService: simulator.tokenPriceService }), page.connections, otherPort, {
+		method: 'signer_reply',
+		params: [{ success: true, reply: OLD_SIGNATURE, signerProviderGeneration: 1, forwardRequest: { type: 'forwardToSigner', replyWithSignersReply: true, method: 'personal_sign', params: [], requestId: pageRequestIdentifier.requestId } }],
+		interceptorRequest: true,
+		interceptorInternalRequest: true,
+		usingInterceptorWithoutSigner: false,
+		uniqueRequestIdentifier: { requestId: 1000, requestSocket: otherSocket },
+	}, 'hasAccess', signerAddress())
+
+	assert.equal((await getOnlyPendingRequest()).approvalStatus.status, 'WaitingForSigner')
+	assert.equal(getTerminalRepliesTo(messagesPostedToPage, pageRequestIdentifier.requestId).length, 0)
+	assert.equal(getTerminalRepliesTo(messagesPostedToOtherConnection, pageRequestIdentifier.requestId).length, 0)
+
+	// The reply over the request's own connection still completes it.
+	await sendSignerSuccessToPage(page, 'personal_sign', OLD_SIGNATURE)
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	assert.equal(getTerminalRepliesTo(messagesPostedToPage, pageRequestIdentifier.requestId).length, 1)
+})
+
 // A Gnosis Safe proposal from the page, while the wallet has walletOwner selected.
 async function sendSafeProposalFromPage({ connections }: PageConnection, walletOwner: bigint) {
 	const safeAddress = signerAddress()

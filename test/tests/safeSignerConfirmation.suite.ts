@@ -534,6 +534,63 @@ test('does not overwrite an edited Safe proposal request while signer refresh is
 	assert.equal(editedPending?.type === 'Transaction' ? editedPending.safeTransaction?.safeSignerAddress : undefined, reviewedOwner)
 })
 
+test('a signer mismatch refresh does not overwrite a request the page sent under the same id while the mismatch was checked', async () => {
+	const reviewedOwner = recipientAddress
+	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
+		to: recipientAddress,
+		value: 0n,
+		input: new Uint8Array(),
+	}, 0n)
+	const reviewedProposal = {
+		...pendingTransaction,
+		instanceId: 'reviewed instance',
+		simulationMode: false,
+		approvalStatus: { status: 'WaitingForUser' as const },
+		safeTransaction: {
+			safeAddress: activeAddress,
+			safeSignerAddress: reviewedOwner,
+			safeVersion: '1.4.1',
+			threshold: 1n,
+			reviewedSafeState: { version: '1.4.1', nonce: 0n, owners: [reviewedOwner], threshold: 1n },
+			safeTxHash: BigInt(getSafeTxHash(safeTx)),
+			safeTx,
+			executionGasLimit: 21_000n,
+		},
+	}
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [reviewedProposal] })
+	// With no wallet account selected the refresh skips the owner rebuild and only checks the mismatch, which reads the tab state a second time.
+	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({ ...state, signerAccounts: [], activeSigningAddress: undefined }))
+	const tabStateKey = `tabState_${ uniqueRequestIdentifier.requestSocket.tabId }`
+	let tabStateReads = 0
+	let markMismatchCheckReached: () => void = () => undefined
+	let releaseMismatchCheck: () => void = () => undefined
+	const mismatchCheckReached = new Promise<void>((resolve) => { markMismatchCheckReached = () => { resolve() } })
+	const mismatchCheckReleased = new Promise<void>((resolve) => { releaseMismatchCheck = () => { resolve() } })
+	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+		if (keys !== tabStateKey) return readStoredItems()
+		tabStateReads += 1
+		if (tabStateReads !== 2) return readStoredItems()
+		markMismatchCheckReached()
+		await mismatchCheckReleased
+		return readStoredItems()
+	})
+	try {
+		const refresh = modules.refreshPendingSafeSignerSelectionErrors(simulator.ethereum, simulator.tokenPriceService, uniqueRequestIdentifier.requestSocket.tabId)
+		await mismatchCheckReached
+		// Meanwhile the reviewed request is gone and the page sent a new request under the same id.
+		await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [{ ...reviewedProposal, instanceId: 'replacement instance' }] })
+		releaseMismatchCheck()
+		await refresh
+	} finally {
+		releaseMismatchCheck()
+		browserMock.setStorageGetHandler(undefined)
+	}
+
+	const [replacement] = await modules.getPendingTransactionsAndMessages()
+	assert.equal(replacement?.instanceId, 'replacement instance')
+	assert.equal(replacement?.approvalStatus.status, 'WaitingForUser')
+})
+
 test('blocks signer refresh when the reviewed Safe owner set changed', async () => {
 	const reviewedOwner = recipientAddress
 	const selectedOwner = safeTestOwnerAddress

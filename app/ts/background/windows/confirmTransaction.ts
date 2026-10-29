@@ -114,7 +114,8 @@ export async function refreshPendingSafeSignerSelectionErrors(ethereum: Ethereum
 		) continue
 		const signerMismatch = await getSafeSignerMismatchApprovalStatus(tabId, safeSignerAddress, refreshedSelection)
 		if (pending.approvalStatus.status === 'WaitingForUser' && signerMismatch === undefined) continue
-		await updatePendingTransactionOrMessage(pending.uniqueRequestIdentifier, async (current) => {
+		// Written only to the instance read above, so a request the page sent under the same id while the mismatch check awaited keeps its own approval status.
+		await updatePendingTransactionOrMessageInstance(pending, async (current) => {
 			if (isPastUserDecision(current.approvalStatus)) return current
 			if (current.approvalStatus.status === 'SignerError' && current.approvalStatus.code !== SAFE_SIGNER_SELECTION_ERROR_CODE) return current
 			pendingStateChanged = true
@@ -284,7 +285,7 @@ async function resolveStoredPendingTransactionOrMessage(ethereum: EthereumClient
 	let pendingTransactionOrMessage = storedPendingTransactionOrMessage
 	// A signer reply names only the request id, so it resolves only a request that was forwarded to the signer, never a newer request under a reused id that the user has not approved.
 	if (confirmation.data.action === 'signerIncluded' && pendingTransactionOrMessage.approvalStatus.status !== 'WaitingForSigner') return false
-	// A decision (accept, reject, add to Safe stack, or no response on popup close) names the instance the user saw, so it never resolves a replacement request that reuses the page-chosen request id. A wallet reply is not bound to an instance: it arrives over the page's own connection (signerReply checks the socket and port), and the page controls its injected provider, so this is no defence against a page forging a reply for its own forwarded request. Since a reply resolves only a request waiting on the signer (checked above), it can no longer clear or reset a request the user has not approved, and Safe replies are validated by resolveSafeSignerReply.
+	// A decision (accept, reject, add to Safe stack, or no response on popup close) names the instance the user saw, so it never resolves a replacement request that reuses the page-chosen request id. A wallet reply is not bound to an instance: it arrives over the page's own connection (signerReply checks the socket and port), and the page controls its injected provider, so this is no defence against a page forging a reply for its own forwarded request, and an instance id echoed by the reply would pass through that same page and add nothing. Only such a page can reuse a request id on its connection, since the injected provider numbers requests increasingly and the bridge drops repeated non-negative ids, and a page cannot send popup_confirmDialog itself: no manifest declares externally_connectable and the content script relays page messages only over the provider port. Since a reply resolves only a request waiting on the signer (checked above), it can no longer clear or reset a request the user has not approved, and Safe replies are validated by resolveSafeSignerReply.
 	if (confirmation.data.action !== 'signerIncluded' && confirmation.data.instanceId !== pendingTransactionOrMessage.instanceId) return false
 	// A request whose popup closed has its rejection as its one terminal outcome; only the no-response retry that delivers it continues.
 	if (pendingTransactionOrMessage.approvalStatus.status === 'ClosedWithoutResponse' && confirmation.data.action !== 'noResponse') return false
