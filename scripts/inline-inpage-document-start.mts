@@ -1,7 +1,7 @@
 import * as path from 'node:path'
 import * as url from 'node:url'
 import { promises as fs } from 'node:fs'
-import { getPageWorldScriptPaths } from '../app/ts/config/contentScriptInjectionArtifacts.ts'
+import { getPageWorldScriptPaths } from '../app/ts/utils/contentScriptInjectionArtifacts.ts'
 import { metamaskCompatibilityModeAtPageLoadMarker, pageWorldProviderScriptPathMarker } from './content-script-injection-markers.mts'
 
 const projectRoot = path.join(path.dirname(url.fileURLToPath(import.meta.url)), '..')

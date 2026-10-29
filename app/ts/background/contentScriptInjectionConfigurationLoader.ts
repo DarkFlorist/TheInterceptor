@@ -1,4 +1,4 @@
-import { getInterceptorDisabledSites, type ContentScriptRegistrationConfiguration } from '../config/contentScriptInjectionConfiguration.js'
+import { getInterceptorDisabledSites, type ContentScriptRegistrationConfiguration } from '../utils/contentScriptInjectionConfiguration.js'
 import { getMetamaskCompatibilityMode, getSettings } from './settings.js'
 
 export async function getContentScriptInjectionConfiguration(): Promise<ContentScriptRegistrationConfiguration> {

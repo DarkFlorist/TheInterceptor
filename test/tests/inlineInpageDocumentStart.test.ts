@@ -1,7 +1,7 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
 import * as ts from 'typescript'
-import { getPageWorldScriptPaths } from '../../app/ts/config/contentScriptInjectionArtifacts.js'
+import { getPageWorldScriptPaths } from '../../app/ts/utils/contentScriptInjectionArtifacts.js'
 import { metamaskCompatibilityModeAtPageLoadMarker, pageWorldProviderScriptPathMarker } from '../../scripts/content-script-injection-markers.mts'
 import { inlineDocumentStartInjectionConfiguration, inlineMetamaskCompatibilityModeAtPageLoad } from '../../scripts/inline-inpage-document-start.mts'
 
