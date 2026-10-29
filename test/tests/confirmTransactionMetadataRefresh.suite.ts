@@ -458,10 +458,14 @@ async function storeConfirmationRunTransferringToken() {
 	await updateStoredConfirmationVisualisation((data) => ({ ...data, ...visualisedMetadata, simulationState }))
 }
 
-async function getStoredConfirmationTokenTransfer() {
+async function getStoredConfirmationTokenTransferEvent() {
 	const tokenEvent = getLastVisualizedTransaction((await getStoredPendingTransactionVisualisation()).visualizedSimulationState).events.find((event) => event.type === 'TokenEvent')
 	if (tokenEvent?.type !== 'TokenEvent' || tokenEvent.logInformation.type !== 'ERC20') throw new Error('Expected an ERC20 token transfer')
-	const { token, amount } = tokenEvent.logInformation
+	return tokenEvent.logInformation
+}
+
+async function getStoredConfirmationTokenTransfer() {
+	const { token, amount } = await getStoredConfirmationTokenTransferEvent()
 	return { token: { type: token.type, name: token.name, symbol: token.symbol, decimals: token.decimals }, amount }
 }
 
@@ -481,6 +485,21 @@ test('a token whose user entry was removed keeps its kind and decimals in a re-l
 	// Only the run's record of what its lookups identified keeps the removed entry, for its kind and decimals; nothing the dialog shows names it.
 	const { addressBookEntries, visualizedSimulationState: { identifiedAddressBookEntries: _identifiedAddressBookEntries, ...shownVisualisation } } = await getStoredPendingTransactionVisualisation()
 	assert.equal(stringifyJSONWithBigInts([addressBookEntries, shownVisualisation]).includes('Removed token'), false)
+})
+
+// The token as identifyAddress caches an on-chain identification in the address book: the name and symbol the contract declares, marked 'OnChain'.
+const onChainIdentifiedToken: AddressBookEntry = { ...removedTokenEntry, name: 'Self-declared token name', symbol: 'SELF', entrySource: 'OnChain' }
+
+test('a token the run identified on chain keeps that identification in a re-label after its cached entry is removed, still marked OnChain, without any RPC request', async () => {
+	await openSimulationModeConfirmationSendingEther([senderAddressBookEntry, onChainIdentifiedToken])
+	await storeConfirmationRunTransferringToken()
+	await modules.updateUserAddressBookEntries((entries) => entries.filter((entry) => entry.address !== removedToken))
+
+	assert.deepEqual(await getRpcMethodsRequestedWhileEveryRequestFails(relabelDisplayedConfirmation), [])
+
+	// It shows what a new simulation would read from the contract again, and its 'OnChain' source keeps it shown as an untrusted address.
+	const { token, amount } = await getStoredConfirmationTokenTransferEvent()
+	assert.deepEqual({ name: token.name, symbol: token.symbol, decimals: token.decimals, entrySource: token.entrySource, amount }, { name: 'Self-declared token name', symbol: 'SELF', decimals: 6n, entrySource: 'OnChain', amount: transferredTokenAmount })
 })
 
 // The typed-data message as the sender signs it for a website.
