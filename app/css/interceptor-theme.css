@@ -866,8 +866,12 @@ input[type=checkbox]:not([role=switch]):checked::before {
 	cursor: default;
 	border: 1px solid var(--white-color);
 	background-color: var(--card-bg-color);
-	max-width: 100%;
 	font-size: 0.75rem;
+	/* Hints are manual popovers; these undo the popover defaults that would center and pad them instead of placing them at their inline left and top */
+	inset: auto;
+	margin: 0;
+	padding: 0;
+	overflow: visible;
 }
 
 .preact-hint__content {

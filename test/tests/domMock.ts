@@ -145,8 +145,8 @@ class TestElement extends TestNode {
 		if (event.bubbles && !event.cancelBubble && this.parentNode instanceof TestElement) this.parentNode.dispatchEvent(event)
 		return !event.defaultPrevented
 	}
-	focus() { return undefined }
-	blur() { return undefined }
+	focus() { this.ownerDocument.activeElement = this }
+	blur() { if (this.ownerDocument.activeElement === this) this.ownerDocument.activeElement = null }
 	showPopover() { return undefined }
 	hidePopover() { return undefined }
 	togglePopover() { return undefined }
@@ -208,6 +208,8 @@ class TestDialogElement extends TestElement {
 
 class TestDocument {
 	body: TestElement
+	// Set by focus and cleared by blur. Unlike a browser, removing the focused element does not reset it, so code under test must also check that it is still connected.
+	activeElement: TestElement | null = null
 	readonly elementConstructor: new (ownerDocument: TestDocument, tagName: string) => TestElement
 	readonly dialogElementConstructor: new (ownerDocument: TestDocument, tagName: string) => TestElement
 
