@@ -9,7 +9,7 @@ import type { RpcNetwork } from '../../app/ts/types/rpc.js'
 import type { SignedMessageTransaction } from '../../app/ts/types/visualizer-types.js'
 import type { WebsiteSocket } from '../../app/ts/utils/requests.js'
 import { addressString, bytes32String } from '../../app/ts/utils/bigint.js'
-import { bytesToHex, hashMessage, privateKeyToAccount } from '../../app/ts/utils/ethereumPrimitives.js'
+import { bytesToHex, hashMessage, privateKeyToAccount, stringToBytes } from '../../app/ts/utils/ethereumPrimitives.js'
 import { confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, EthereumJsonRpcRequest, installBrowserMock, loadModules, noopPublishRpcConnectionStatus } from './backgroundEthAccountsTestHarness.js'
 
 const privateKey = '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
@@ -158,6 +158,33 @@ describe('personal_ecRecover recovery', () => {
 		assert.notEqual(otherMessageReply.result, simulatedSigner)
 	})
 
+	test('maps simulated plain-text personal_sign signatures back to the simulated signer', async () => {
+		const socket = { tabId: 1, connectionName: 0n }
+		const recoveredSimulatedSigner = { type: 'result', method: 'personal_ecRecover', result: simulatedSigner }
+		for (const message of ['Hello world', 'Grüße 🦊', '']) {
+			const signedMessage = createSignedMessage(simulatedSigner, message, socket)
+			const signature = await getSimulatedSignature(signedMessage)
+			assert.deepEqual(await personalEcRecover(parsePersonalEcRecover([message, signature]), [signedMessage], websiteOrigin), recoveredSimulatedSigner, JSON.stringify(message))
+			assert.deepEqual(await personalEcRecover(parsePersonalEcRecover([bytesToHex(stringToBytes(message)), signature]), [signedMessage], websiteOrigin), recoveredSimulatedSigner, JSON.stringify(message))
+			assert.deepEqual(await personalEcRecover(parsePersonalEcRecover([message, signature]), [], websiteOrigin), { type: 'result', method: 'personal_ecRecover', result: mockSimulationKeyAddress }, JSON.stringify(message))
+		}
+		// Odd-length hex signs its left-padded bytes, so the even-length form of the same bytes finds the same simulated signer.
+		const oddLengthHexMessage = createSignedMessage(simulatedSigner, '0x123', socket)
+		assert.deepEqual(await personalEcRecover(parsePersonalEcRecover(['0x0123', await getSimulatedSignature(oddLengthHexMessage)]), [oddLengthHexMessage], websiteOrigin), recoveredSimulatedSigner)
+	})
+
+	test('reads unprefixed hex as text like MetaMask personal_ecRecover, unlike personal_sign which signs it as bytes', async () => {
+		const socket = { tabId: 1, connectionName: 0n }
+		const signedMessage = createSignedMessage(simulatedSigner, '12', socket)
+		const signature = await getSimulatedSignature(signedMessage)
+		// personal_sign('12') signed the byte 0x12, which personal_ecRecover only reads from the 0x-prefixed form.
+		assert.deepEqual(await personalEcRecover(parsePersonalEcRecover(['0x12', signature]), [signedMessage], websiteOrigin), { type: 'result', method: 'personal_ecRecover', result: simulatedSigner })
+		const textReply = await personalEcRecover(parsePersonalEcRecover(['12', signature]), [signedMessage], websiteOrigin)
+		assert.ok(textReply.type === 'result' && 'result' in textReply)
+		assert.notEqual(textReply.result, simulatedSigner)
+		assert.notEqual(textReply.result, mockSimulationKeyAddress)
+	})
+
 	test('answers the mock key address for a reproduced mock signature of a message the user did not approve in the simulation', async () => {
 		const socket = { tabId: 1, connectionName: 0n }
 		const approvedMessage = createSignedMessage(simulatedSigner, helloMessage, socket)
@@ -242,7 +269,8 @@ describe('personal_ecRecover routing', () => {
 		await loadedModules.updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: simulatedSigner, access: true }] }])
 		const { socket, messages, getBlockCalls, sendPersonalEcRecover } = await setUpWebsiteConnection(loadedModules)
 		const signedMessage = createSignedMessage(simulatedSigner, helloMessage, socket)
-		await loadedModules.updateInterceptorTransactionStack(() => ({ operations: [{ type: 'Message', signedMessageTransaction: signedMessage }] }))
+		const plainTextSignedMessage = createSignedMessage(simulatedSigner, 'Hello world', socket)
+		await loadedModules.updateInterceptorTransactionStack(() => ({ operations: [{ type: 'Message', signedMessageTransaction: plainTextSignedMessage }, { type: 'Message', signedMessageTransaction: signedMessage }] }))
 
 		assert.deepEqual(await sendPersonalEcRecover(1, [helloMessage, await getSimulatedSignature(signedMessage)]), {
 			interceptorApproved: true,
@@ -253,6 +281,7 @@ describe('personal_ecRecover routing', () => {
 			result: '0x1111111111111111111111111111111111111111',
 		})
 		assert.equal((await sendPersonalEcRecover(2, [helloMessage, helloSignature]))?.result, recoveredHelloSignerAddress)
+		assert.equal((await sendPersonalEcRecover(3, ['Hello world', await getSimulatedSignature(plainTextSignedMessage)]))?.result, '0x1111111111111111111111111111111111111111')
 		assert.equal(getBlockCalls.count, 0)
 		assert.equal(messages.some((message) => message.type === 'forwardToSigner'), false)
 	})

@@ -246,15 +246,19 @@ export type TransactionConfirmation = funtypes.Static<typeof TransactionConfirma
 export const TransactionConfirmation = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_confirmDialog'),
 	data: funtypes.Union(
+		// The wallet's reply to a forwarded request. It is not bound to a pending instance; see resolvePendingTransactionOrMessage.
+		funtypes.ReadonlyObject({
+			uniqueRequestIdentifier: UniqueRequestIdentifier,
+			action: funtypes.Literal('signerIncluded'),
+			signerReply: funtypes.Unknown,
+		}),
+		// A decision on the pending request instance the user saw, which must name it because the page-chosen request id can be reused by a replacement request.
 		funtypes.Intersect(
 			funtypes.ReadonlyObject({
 				uniqueRequestIdentifier: UniqueRequestIdentifier,
+				instanceId: funtypes.String,
 			}),
 			funtypes.Union(
-				funtypes.ReadonlyObject({
-					action: funtypes.Literal('signerIncluded'),
-					signerReply: funtypes.Unknown,
-				}),
 				funtypes.ReadonlyObject({
 					action: funtypes.Union(funtypes.Literal('accept'), funtypes.Literal('addToSafeStack'), funtypes.Literal('noResponse')),
 				}),
@@ -263,7 +267,7 @@ export const TransactionConfirmation = funtypes.ReadonlyObject({
 					errorString: funtypes.Union(funtypes.String, funtypes.Undefined),
 				}),
 			)
-		)
+		),
 	)
 })
 
