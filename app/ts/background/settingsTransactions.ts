@@ -1,9 +1,7 @@
 import type { WebsiteAccess, WebsiteAccessArray, WebsiteAddressAccess } from '../types/websiteAccessTypes.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { browserStorageLocalGet, browserStorageLocalRemove, browserStorageLocalSet } from '../utils/storageUtils.js'
-import { hasOwnKey } from '../utils/typescript.js'
-import { exportSettingsAndAddressBook, importSettingsAndAddressBook, updateWebsiteAccess, updateWebsiteAccessWithSnapshots } from './settings.js'
+import { snapshotSettingsImportStorage, updateWebsiteAccess, updateWebsiteAccessWithSnapshots } from './settings.js'
 
 function hasSameAddressAccess(first: readonly WebsiteAddressAccess[] | undefined, second: readonly WebsiteAddressAccess[] | undefined) {
 	if (first === undefined || second === undefined) return first === second
@@ -100,22 +98,15 @@ export async function withWebsiteAccessRollback(update: (previousWebsiteAccess: 
 
 const settingsImportSemaphore = new Semaphore(1)
 
-// Restores the pre-import settings, address book and active signing address when the import fails.
+// Restores the raw pre-import values of every storage key the import writes when the import fails.
 export async function withSettingsImportRollback<T>(importSettings: () => Promise<T>) {
 	return await settingsImportSemaphore.execute(async () => {
-		const [exportedSettingsBeforeImport, activeSigningAddressStorage] = await Promise.all([
-			exportSettingsAndAddressBook(),
-			browserStorageLocalGet('activeSigningAddress'),
-		])
-		const activeSigningAddressWasPresent = hasOwnKey(activeSigningAddressStorage, 'activeSigningAddress')
-		const { activeSigningAddress } = activeSigningAddressStorage
+		const restorePreImportStorage = await snapshotSettingsImportStorage()
 		try {
 			return await importSettings()
 		} catch (error: unknown) {
 			try {
-				await importSettingsAndAddressBook(exportedSettingsBeforeImport)
-				if (activeSigningAddressWasPresent) await browserStorageLocalSet({ activeSigningAddress })
-				else await browserStorageLocalRemove('activeSigningAddress')
+				await restorePreImportStorage()
 			} catch (rollbackError: unknown) {
 				await reportUnexpectedError(rollbackError, { code: 'settings_import_rollback_failed' })
 			}

@@ -4,8 +4,8 @@ import { Semaphore } from '../utils/semaphore.js'
 import type { EthereumAddress } from '../types/wire-types.js'
 import type { Website, WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import type { BlockExplorer, RpcNetwork } from '../types/rpc.js'
-import { type RichListElement, browserStorageLocalGet, browserStorageLocalSafeParse, browserStorageLocalSet } from '../utils/storageUtils.js'
-import { getUserAddressBookEntries, updateUserAddressBookEntries } from './storageVariables.js'
+import { type LocalStorageKey, type RichListElement, browserStorageLocalGet, browserStorageLocalSafeParse, browserStorageLocalSet, snapshotBrowserStorageLocalKeys } from '../utils/storageUtils.js'
+import { getUserAddressBookEntries, updateUserAddressBookEntries, withUserAddressBookEntriesLock } from './storageVariables.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
 import type { BlockTimeManipulation } from '../types/visualizer-types.js'
@@ -286,6 +286,29 @@ export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> 
 			safeAppsCompatibilityMode: await getSafeAppsCompatibilityMode(),
 		}
 	}
+}
+
+// Every storage key importSettingsAndAddressBook writes, directly or through its callees; the import rollback restores exactly these, and settingsImport.test.ts fails if a written key is missing.
+const settingsImportStorageKeys: readonly LocalStorageKey[] = [
+	'openedPageV2',
+	'userAddressBookEntriesV3',
+	'simulationMode',
+	'activeRpcNetwork',
+	'independentActiveSimulationAddress',
+	'activeSigningAddress',
+	'activeSigningSafeAddress',
+	'signingAddressPreferences',
+	'useSignersAddressAsActiveAddress',
+	'websiteAccess',
+	'useTabsInsteadOfPopup',
+	'safeAppsCompatibilityMode',
+	'metamaskCompatibilityMode',
+]
+
+// Snapshots the raw pre-import values; restore holds the import's read-modify-write locks so an in-flight update cannot re-apply imported values afterwards.
+export async function snapshotSettingsImportStorage() {
+	const restoreStorage = await snapshotBrowserStorageLocalKeys(settingsImportStorageKeys)
+	return async () => await websiteAccessSemaphore.execute(async () => await signingAddressPreferencesSemaphore.execute(async () => await withUserAddressBookEntriesLock(restoreStorage)))
 }
 
 export async function importSettingsAndAddressBook(exportedSetings: ExportedSettings) {

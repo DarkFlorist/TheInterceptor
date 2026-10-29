@@ -2,7 +2,7 @@ import * as assert from 'assert'
 import { beforeEach, describe, test } from 'bun:test'
 import type { ExportedSettings } from '../../app/ts/types/exportedSettingsTypes.js'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
-import { browserStorageLocalSet } from '../../app/ts/utils/storageUtils.js'
+import { browserStorageLocalGet, browserStorageLocalSet } from '../../app/ts/utils/storageUtils.js'
 
 type StorageKeyInput = string | string[] | Record<string, unknown> | undefined | null
 
@@ -99,6 +99,9 @@ const settingsModulePromise = import('../../app/ts/background/settings.js').then
 }))
 const signingAddressSelectionModulePromise = import('../../app/ts/background/signingAddressSelection.js')
 const storageVariablesModulePromise = import('../../app/ts/background/storageVariables.js')
+const settingsTransactionsModulePromise = import('../../app/ts/background/settingsTransactions.js')
+
+const readWholeStorage = async () => structuredClone(await browser.storage.local.get(null))
 
 const testRpcNetwork: RpcNetwork = {
 	name: 'Test Mainnet',
@@ -473,5 +476,51 @@ describe('settings import', () => {
 		const websiteAccess = await getWebsiteAccess()
 		assert.equal(websiteAccess[0]?.website.icon, undefined)
 		assert.equal(websiteAccess[1]?.website.icon, 'data:image/png;base64,Y2FjaGVk')
+	})
+
+	test('a failed import of any export version rolls back every storage key the import wrote', async () => {
+		const { exportSettingsAndAddressBook, importSettingsAndAddressBook } = await settingsModulePromise
+		const { withSettingsImportRollback } = await settingsTransactionsModulePromise
+		const currentVersionExport = await exportSettingsAndAddressBook()
+		const exportsOfEveryVersion = [
+			buildVersion10Import(),
+			buildVersion12Import(true, true),
+			buildVersion13Import(),
+			buildVersion14Import(true, true, [{ website: { websiteOrigin: 'imported.example', icon: undefined, title: 'Imported' }, access: true }]),
+			currentVersionExport,
+		]
+		for (const exportedSettings of exportsOfEveryVersion) {
+			browserMock.reset()
+			const importFailure = new Error(`Import of version ${ exportedSettings.version } failed after writing`)
+			let storageWrittenByImport: Record<string, unknown> = {}
+			await assert.rejects(withSettingsImportRollback(async () => {
+				await importSettingsAndAddressBook(exportedSettings)
+				storageWrittenByImport = await readWholeStorage()
+				throw importFailure
+			}), importFailure)
+			assert.notDeepEqual(Object.keys(storageWrittenByImport), [], `version ${ exportedSettings.version } import wrote nothing`)
+			assert.deepEqual(await readWholeStorage(), {}, `version ${ exportedSettings.version } import left keys behind after rollback`)
+		}
+	})
+
+	test('a failed import restores the active signing address that settings exports do not carry', async () => {
+		const activeSigningAddress = 0x7777777777777777777777777777777777777777n
+		const { changeSimulationMode, exportSettingsAndAddressBook, importSettingsAndAddressBook, persistMetamaskCompatibilityMode } = await settingsModulePromise
+		const { withSettingsImportRollback } = await settingsTransactionsModulePromise
+		const exportedSettings = await exportSettingsAndAddressBook()
+		if (exportedSettings.version !== '1.6') throw new Error('Expected current settings export version')
+		await changeSimulationMode({ simulationMode: false, activeSigningAddress })
+		await persistMetamaskCompatibilityMode(true)
+		const storageBeforeImport = await readWholeStorage()
+		const importFailure = new Error('Import failed after replacing the signing address')
+
+		await assert.rejects(withSettingsImportRollback(async () => {
+			await importSettingsAndAddressBook({ ...exportedSettings, settings: { ...exportedSettings.settings, useSignersAddressAsActiveAddress: true } })
+			assert.equal((await browserStorageLocalGet('activeSigningAddress')).activeSigningAddress, undefined)
+			throw importFailure
+		}), importFailure)
+
+		assert.equal((await browserStorageLocalGet('activeSigningAddress')).activeSigningAddress, activeSigningAddress)
+		assert.deepEqual(await readWholeStorage(), storageBeforeImport)
 	})
 })
