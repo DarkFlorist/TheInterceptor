@@ -1,4 +1,6 @@
 import type { PersonalSignParams, SignMessageParams } from '../../types/jsonRpc-signing-types.js'
+import { RecoverableMessageSignature } from '../../types/JsonRpc-types.js'
+import type { SignedMessageTransaction } from '../../types/visualizer-types.js'
 import type { EthereumAddress } from '../../types/wire-types.js'
 import { bytes32String, stringToUint8Array } from '../../utils/bigint.js'
 import { hashMessage, hashTypedData, privateKeyToAccount } from '../../utils/ethereumPrimitives.js'
@@ -28,4 +30,20 @@ export const simulatePersonalSign = async (params: SignMessageParams, signingAdd
 		}
 		default: assertNever(params)
 	}
+}
+
+const areSameSignatures = (first: RecoverableMessageSignature, second: RecoverableMessageSignature) => first.r === second.r && first.s === second.s && first.yParity === second.yParity
+
+// Simulated personal_sign replies are signed with public mock keys, so recovery resolves them to the simulated signer like the simulation's ecRecover precompile override does. Any page can compute a mock signature, so only messages the requesting website itself simulated-signed match, keeping other websites' signers hidden. For a Safe this signer is its simulation owner, validated against the Safe's public owner list, just as a real owner signature recovers to that owner; Safe signing mode's stack holds no messages, so its wallet-selected owner never reaches this lookup.
+export const findSimulatedPersonalSignSigner = async (signedMessages: readonly SignedMessageTransaction[], messageHash: string, signature: RecoverableMessageSignature, requestingWebsiteOrigin: string) => {
+	// Newest first: one message signed for different simulated signers yields a single shared mock-key signature, so the most recent signing wins.
+	for (const signedMessage of [...signedMessages].reverse()) {
+		const signRequest = signedMessage.originalRequestParameters
+		if (signedMessage.website.websiteOrigin !== requestingWebsiteOrigin) continue
+		// Compares hashes of the signed bytes, so personal_ecRecover's reading of its message string only has to agree with personal_sign's on which bytes were signed, not on how the strings are written.
+		if (signRequest.method !== 'personal_sign' || getMessageHashForPersonalSign(signRequest) !== messageHash) continue
+		const simulatedSignature = RecoverableMessageSignature.parse((await simulatePersonalSign(signRequest, signedMessage.fakeSignedFor)).signature)
+		if (areSameSignatures(simulatedSignature, signature)) return signedMessage.fakeSignedFor
+	}
+	return undefined
 }

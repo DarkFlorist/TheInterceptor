@@ -25,7 +25,7 @@ import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
 import { buildExecutionSimulationStateFromPreparedInput, getCurrentSimulationInput, getUpdatedSimulationStackSnapshot, prepareSimulationInputForRpc } from './simulationUpdating.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { getWalletSelectedAccount, isActiveSigningSafe } from '../utils/activeAddressSelection.js'
-import { isAccountConnectionMethod, isAccountOnlyMethod } from './accountRequestMethods.js'
+import { isAccountConnectionMethod, isAccountOnlyMethod, isAnsweredWithoutInterceptorRpc } from './accountRequestMethods.js'
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
 import { getActiveAddressForCurrentSignerState, getConfirmedSignerStateToken, isSignerStateTokenCurrent } from './signerStateOwnership.js'
@@ -35,6 +35,7 @@ import { getWatchAssetRpcParseFailureReply } from './watchAssetRpc.js'
 import { createMethodHandlerFor } from '../utils/methodHandlers.js'
 import { getWalletCapabilities } from './walletCapabilities.js'
 import { getWalletGetCapabilitiesParseFailureReply } from './walletGetCapabilitiesRpc.js'
+import { getPersonalEcRecoverParseFailureReply, personalEcRecover } from './personalEcRecoverRpc.js'
 import { hasAccess as getWebsiteAccessApprovalState, hasAddressAccess as getWebsiteAddressAccessApprovalState } from './websiteAccessPolicy.js'
 
 if (initializeWatchAssetWindowListeners()) {
@@ -43,7 +44,7 @@ if (initializeWatchAssetWindowListeners()) {
 	})
 }
 
-const RPC_PARSE_FAILURE_HANDLERS = [getWatchAssetRpcParseFailureReply, getWalletGetCapabilitiesParseFailureReply]
+const RPC_PARSE_FAILURE_HANDLERS = [getWatchAssetRpcParseFailureReply, getWalletGetCapabilitiesParseFailureReply, getPersonalEcRecoverParseFailureReply]
 const JSON_RPC_METHOD_NOT_FOUND = -32601
 const INTERNAL_PROVIDER_METHODS = [
 	'connected_to_signer',
@@ -88,6 +89,8 @@ async function handleRPCRequest(
 		})()
 		return await executionSimulationStatePromise
 	}
+	// Signed messages are never rewritten by RPC preparation, so read them from the stack without touching the RPC.
+	const getSimulatedSignedMessages = async () => simulationOverlayEnabled ? (await getCurrentSimulationInput()).flatMap((block) => block.signedMessages) : []
 	const { request, confirmation } = context
 	const maybeParsedRequest = confirmation === undefined
 		? EthereumJsonRpcRequest.safeParse(request)
@@ -140,14 +143,14 @@ async function handleRPCRequest(
 		hasRpcConnection: settings.activeRpcNetwork.httpsRpc !== undefined,
 	})
 	if (safePolicyReply !== undefined) return safePolicyReply
-	const accountOnlyMethod = isAccountOnlyMethod(parsedRequest.method)
-	if (settings.activeRpcNetwork.httpsRpc === undefined && forwardToSigner && !accountOnlyMethod) {
+	const answeredWithoutInterceptorRpc = isAnsweredWithoutInterceptorRpc(parsedRequest.method)
+	if (settings.activeRpcNetwork.httpsRpc === undefined && forwardToSigner && !answeredWithoutInterceptorRpc) {
 		// we are using network that is not supported by us
 		return { type: 'forwardToSigner' as const, replyWithSignersReply: true, ...request }
 	}
 	const withSimulationInput = async (handler: (simulationInput: ResolvedSimulationInput) => Promise<RPCReply>) => await handler(await getSimulationInput())
 	const withExecutionSimulationState = async (handler: (simulationState: ResolvedExecutionSimulationState) => Promise<RPCReply>) => await handler(await getExecutionSimulationState())
-	if (!accountOnlyMethod) await makeSureInterceptorIsNotSleeping(ethereum, publishRpcConnectionStatus)
+	if (!answeredWithoutInterceptorRpc) await makeSureInterceptorIsNotSleeping(ethereum, publishRpcConnectionStatus)
 	type ParsedRpcRequest = typeof parsedRequest
 	type RpcRequestHandler = (context: undefined, request: ParsedRpcRequest) => Promise<RPCReply>
 	const rpcRequestHandler = createMethodHandlerFor<ParsedRpcRequest, undefined, Promise<RPCReply>>()
@@ -207,6 +210,7 @@ async function handleRPCRequest(
 		eth_sign: rpcRequestHandler('eth_sign', async (_context, rpcRequest) => ({ type: 'result' as const, method: rpcRequest.method, error: { code: 10000, message: 'eth_sign is deprecated' } })),
 		eth_sendRawTransaction: rpcRequestHandler('eth_sendRawTransaction', async (_context, rpcRequest) => await sendEthereumTransaction(rpcRequest)),
 		eth_sendTransaction: rpcRequestHandler('eth_sendTransaction', async (_context, rpcRequest) => await sendEthereumTransaction(rpcRequest)),
+		personal_ecRecover: rpcRequestHandler('personal_ecRecover', async (_context, rpcRequest) => await personalEcRecover(rpcRequest, await getSimulatedSignedMessages(), website.websiteOrigin)),
 		web3_clientVersion: rpcRequestHandler('web3_clientVersion', async () => await web3ClientVersion(ethereum)),
 		eth_feeHistory: rpcRequestHandler('eth_feeHistory', async (_context, rpcRequest) => await feeHistory(ethereum, rpcRequest)),
 		eth_maxPriorityFeePerGas: rpcRequestHandler('eth_maxPriorityFeePerGas', async () => await maxPriorityFeePerGas(ethereum)),

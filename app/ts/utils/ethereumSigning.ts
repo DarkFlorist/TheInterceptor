@@ -199,6 +199,23 @@ export const recoverAddress = async ({ hash, signature }: {
 	return ensureHex(addr.fromPublicKey(recoveredSignature.recoverPublicKey(digest).toBytes(false)), 'recovered address')
 }
 
+// The micro-eth-signer @noble/curves build throws these (including its 'infinify' typo) when r and s cannot be recovered: r or s outside 1..n-1, an r that is not a curve x-coordinate, or a recovery that lands on the point at infinity. This backend knowledge stays next to recoverAddress so callers only see the outcome below.
+const UNRECOVERABLE_SIGNATURE_ERROR_PREFIXES = ['invalid signature r: ', 'invalid signature s: ', 'bad point: is not on curve', 'invalid recovery: point at infinify'] as const
+
+const isUnrecoverableSignatureError = (error: unknown) => error instanceof Error && UNRECOVERABLE_SIGNATURE_ERROR_PREFIXES.some((prefix) => error.message.startsWith(prefix))
+
+export type AddressRecovery = { readonly type: 'recovered', readonly address: Hex } | { readonly type: 'unrecoverable' }
+
+// Like recoverAddress, but reports a signature whose r and s recover to no address as 'unrecoverable' instead of throwing; any other failure is unexpected and still throws.
+export const tryRecoverAddress = async (parameters: Parameters<typeof recoverAddress>[0]): Promise<AddressRecovery> => {
+	try {
+		return { type: 'recovered', address: await recoverAddress(parameters) }
+	} catch (error: unknown) {
+		if (isUnrecoverableSignatureError(error)) return { type: 'unrecoverable' }
+		throw error
+	}
+}
+
 const signatureToParts = (signature: Hex): { readonly r: bigint, readonly s: bigint, readonly yParity: number } => {
 	const hex = ensureHex(signature, 'signature').slice(2)
 	if (hex.length !== 130) throw new Error('Signature must be 65 bytes')
