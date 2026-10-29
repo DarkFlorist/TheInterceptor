@@ -158,6 +158,15 @@ describe('personal_ecRecover recovery', () => {
 		assert.notEqual(otherMessageReply.result, simulatedSigner)
 	})
 
+	test('answers the mock key address for a reproduced mock signature of a message the user did not approve in the simulation', async () => {
+		const socket = { tabId: 1, connectionName: 0n }
+		const approvedMessage = createSignedMessage(simulatedSigner, helloMessage, socket)
+		// The mock keys are public, so the page can sign any message with them itself; only the stacked, user-approved message maps to the simulated signer.
+		const unapprovedMessage = createSignedMessage(simulatedSigner, '0x00', socket)
+		const reply = await personalEcRecover(parsePersonalEcRecover(['0x00', await getSimulatedSignature(unapprovedMessage)]), [approvedMessage], websiteOrigin)
+		assert.deepEqual(reply, { type: 'result', method: 'personal_ecRecover', result: mockSimulationKeyAddress })
+	})
+
 	test('prefers the most recent simulated signer when mock-key signatures collide', async () => {
 		const socket = { tabId: 1, connectionName: 0n }
 		const earlierSignedMessage = createSignedMessage(0x3333333333333333333333333333333333333333n, helloMessage, socket)
