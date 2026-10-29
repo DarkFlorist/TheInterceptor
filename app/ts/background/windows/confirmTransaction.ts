@@ -853,7 +853,7 @@ export async function openConfirmTransactionDialogForTransaction(
 			await appendPendingTransactionOrMessage(pendingTransaction)
 			await updateConfirmTransactionView(ethereumClientService, tokenPriceService)
 			markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionSimulationStart)
-			await simulateAndStoreConfirmationRun(async (storeRun) => {
+			await simulateAndStoreConfirmationRun(ethereumClientService.getRpcEntry(), async (storeRun) => {
 				const simulationResultsPromise = silenceChromeUnCaughtPromise(refreshConfirmTransactionSimulation(
 					ethereumClientService,
 					tokenPriceService,

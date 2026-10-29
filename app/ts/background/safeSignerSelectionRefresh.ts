@@ -486,12 +486,12 @@ async function refreshAndStoreSafeSignerSelection(
 	return { refreshRequired: true, refreshResult, persisted: persistedPending !== undefined, persistedPending }
 }
 
-// A refreshed direct Safe execution carries a new confirmation run, so the refresh is simulated and stored as a confirmation run.
+// A refreshed direct Safe execution carries a new confirmation run, so the refresh is simulated and stored through simulateAndStoreConfirmationRun, the only writer that knows when the run began its lookups and so whether an address-book change published since needs a re-label.
 export async function refreshAndPersistSafeSignerSelection(
 	ethereum: EthereumClientService,
 	pending: PendingTransactionOrSignableMessage,
 	selectedSigner: bigint,
 	refreshDirectSafeExecutionSimulation: RefreshDirectSafeExecutionSimulation,
 ): Promise<SafeSignerSelectionRefreshPersistence> {
-	return await simulateAndStoreConfirmationRun(async (storeRun) => await refreshAndStoreSafeSignerSelection(ethereum, pending, selectedSigner, refreshDirectSafeExecutionSimulation, storeRun))
+	return await simulateAndStoreConfirmationRun(ethereum.getRpcEntry(), async (storeRun) => await refreshAndStoreSafeSignerSelection(ethereum, pending, selectedSigner, refreshDirectSafeExecutionSimulation, storeRun))
 }

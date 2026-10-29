@@ -1412,6 +1412,41 @@ for (const { kind, open, simulateAndStore } of storedConfirmationRuns) {
 		assert.equal(await getStoredConfirmationRecipientName(), recipientContact.name)
 	})
 
+	// The run compares the published change count from before its lookups with the count once stored, so it re-labels itself without waiting for the publication to finish.
+	test(`${ kind } stored while the publication of an address-book change made during it is still broadcasting ends with the new names`, async () => {
+		await open()
+		const broadcastReleased = createDeferred()
+		browserMock.setRuntimeMessageHandler(async (message) => {
+			if (message.method === 'popup_addressBookEntriesChanged') await broadcastReleased.promise
+			return undefined
+		})
+		let publication: Promise<void> | undefined
+
+		await simulateAndStoreRunningDuringLastLookup(simulateAndStore, async () => {
+			await addRecipientContactWithoutBroadcast()
+			publication = publishAddressBookChangeAndRelabelSimulations(simulator)
+		})
+
+		try {
+			assert.equal(await settlesWithin(getDefined(publication, 'the publication'), 0), false)
+			assert.equal(await getStoredConfirmationRecipientName(), recipientContact.name)
+		} finally {
+			broadcastReleased.resolve()
+			browserMock.setRuntimeMessageHandler(undefined)
+		}
+		await publication
+	})
+
+	// However late a change is published, as when its publication awaits before anything else, the re-label it starts reaches the run stored before it.
+	test(`${ kind } that looked up names before an address-book change was stored ends with the new names when the change is published only after the run is stored`, async () => {
+		await open()
+
+		assert.equal(await simulateAndStoreRunningDuringLastLookup(simulateAndStore, addRecipientContactWithoutBroadcast), 0)
+		await changeAddressBookAndWaitForItsRelabel(async () => undefined)
+
+		assert.equal(await getStoredConfirmationRecipientName(), recipientContact.name)
+	})
+
 	test(`a burst of address-book changes during ${ kind } is caught up with a single re-label once the run is stored`, async () => {
 		const recipientNames = ['Renamed once', 'Renamed twice', 'Renamed three times']
 		await open()

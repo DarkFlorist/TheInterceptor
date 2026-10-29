@@ -578,7 +578,7 @@ export async function refreshPopupConfirmTransactionSimulation(ethereum: Ethereu
 			safeFlow === undefined ? 'transaction-sender' : 'external-executor',
 		)
 		: await formSendRawTransaction(ethereum, firstTxn.originalRequestParameters, firstTxn.transactionToSimulate.website, firstTxn.created, firstTxn.transactionIdentifier)
-	const refreshedRun = await simulateAndStoreConfirmationRun(async (storeRun) => {
+	const refreshedRun = await simulateAndStoreConfirmationRun(ethereum.getRpcEntry(), async (storeRun) => {
 		const refreshMessage = await refreshConfirmTransactionSimulation(
 			ethereum,
 			tokenPriceService,

@@ -1,11 +1,15 @@
-// Re-labels the displayed confirmation's stored run when the address book changes; addressBookChangePublication.ts requests it for each published change and for each confirmation run in flight that the change made stale. See "Address-book re-labels" in docs/popup-simulation-refresh.md.
+// Re-labels the displayed confirmation's stored run when the address book changes; addressBookChangePublication.ts requests it for each published change, and confirmationRunStorage.ts for each confirmation run stored after a change was published during it. See "Address-book re-labels" in docs/popup-simulation-refresh.md.
 import type { PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import type { RpcNetwork } from '../types/rpc.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { modifyObject } from '../utils/typescript.js'
-import { getStoredConfirmationRunId } from './confirmationRunStorage.js'
 import { relabelStoredSimulation, type SimulationRunToRelabel } from './simulationRelabel.js'
 import { getPendingTransactionsAndMessages, updatePendingTransactionOrMessage } from './storageVariables.js'
+
+// The id of the confirmation run a pending confirmation stores; every new run gets a new id, so the writer tells a new run from the stored one by it and a re-label writes only onto the run it read.
+export const getStoredConfirmationRunId = (pending: PendingTransactionOrSignableMessage) => pending.type === 'Transaction' && (pending.transactionOrMessageCreationStatus === 'Simulated' || pending.transactionOrMessageCreationStatus === 'FailedToSimulate')
+	? pending.popupVisualisation.data.confirmationRunId
+	: undefined
 
 // Only a successful simulation of a pending transaction on the services' chain can be re-labelled: failed or still pending simulations show no names to re-label, and a run stored without a confirmationRunId by an older version cannot be told apart from a newer run.
 function getConfirmationRunToRelabel(pending: PendingTransactionOrSignableMessage, chainId: bigint): SimulationRunToRelabel<PendingTransactionOrSignableMessage> | undefined {

@@ -153,17 +153,19 @@ test('the simulation and utils layers take the metadata lookup types from types/
 	assert.deepEqual(offendingFiles, [])
 })
 
-test('confirmation runs are stored through the neutral confirmation-run storage, which the address-book re-label depends on', () => {
-	// The storage knows nothing of the address-book re-label; the publish step marks the runs in flight stale through it, and the re-label reads stored run ids from it.
-	assert.doesNotMatch(confirmationRunStorageSource, /from '\.\/(?:confirmationRelabel|addressBookChangePublication|simulationRelabel|popupVisualisationUpdater)\.js'/u)
-	assert.match(confirmationRelabelSource, /from '\.\/confirmationRunStorage\.js'/u)
-	assert.match(addressBookChangePublicationSource, /markConfirmationRunsInFlightStale\(/u)
+test('confirmation runs are stored through the confirmation-run storage, which catches up on address-book changes published during a run', () => {
+	// The publish step only counts its change; each run reads the count before its lookups and after it is stored, so no module marks runs from a distance.
+	assert.match(addressBookChangePublicationSource, /publishedAddressBookChangeCount \+= 1/u)
+	assert.doesNotMatch(addressBookChangePublicationSource, /from '\.\/confirmationRunStorage\.js'/u)
+	assert.match(confirmationRunStorageSource, /getPublishedAddressBookChangeCount\(\)[\s\S]*?await simulateAndStore\([\s\S]*?getPublishedAddressBookChangeCount\(\)/u)
+	// The re-label does not depend on the storage, so the storage can request it without an import cycle.
+	assert.doesNotMatch(confirmationRelabelSource, /from '\.\/confirmationRunStorage\.js'/u)
 	// Every workflow that stores a confirmation run depends on the storage, not on the re-label.
 	for (const [name, source] of [['windows/confirmTransaction.ts', confirmTransactionSource], ['safeSignerSelectionRefresh.ts', safeSignerSelectionRefreshSource], ['popupMessageHandlers.ts', popupMessageHandlersSource]] as const) {
 		assert.doesNotMatch(source, /from '[^']*confirmationRelabel\.js'/u, name)
 		assert.match(source, /simulateAndStoreConfirmationRun\(/u, name)
 	}
-	// Only simulateAndStoreConfirmationRun hands out the writer, and it tracks the run in flight from before its first lookup, so no stored run can skip the refresh of a stale run.
+	// Only simulateAndStoreConfirmationRun hands out the writer, and it reads the count before the run's first lookup, so no stored run can skip the catch-up re-label.
 	assert.match(confirmationRunStorageSource, /export type StoreConfirmationRun\b/u)
 	assert.doesNotMatch(confirmationRunStorageSource, /export (?:const|async function|function) storeConfirmationRun\b/u)
 })
