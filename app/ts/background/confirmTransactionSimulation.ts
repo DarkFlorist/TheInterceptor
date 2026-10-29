@@ -14,11 +14,18 @@ import type { UniqueRequestIdentifier } from '../utils/requests.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { identifyAddress } from './metadataUtils.js'
 import { getSimulationErrorAbis } from './simulationErrorAbi.js'
-import { createSimulationStateWithNonceAndBaseFeeFixing, getCurrentSimulationInput, visualizeSimulatorState } from './simulationUpdating.js'
+import { createSimulationStateWithNonceAndBaseFeeFixing, getCurrentSimulationInput, visualizeSimulatorState, withFailedTransactionPreviewUnlessCancelled } from './simulationUpdating.js'
 import { getInterceptorTransactionStack, getTabState } from './storageVariables.js'
 
 let confirmTransactionAbortController = new AbortController()
 export const getConfirmTransactionAbortController = () => confirmTransactionAbortController
+
+let latestConfirmationRunId = 0
+// Every confirmation simulation run gets a new id, which refreshPopupConfirmTransactionMetadata uses to tell the run whose metadata it refreshed from a newer one. The id is the millisecond clock bumped past the previous id, so ids increase within a background session. Unlike the popup refresh generation it is not persisted, because it is only compared for equality. After a restart the counter starts over from the clock, above every id handed out before, unless the earlier session ran ahead of the clock by more than the restart took (more than one run per millisecond) or the clock moved back; for that case the metadata refresh also requires the stored run to have the simulation it read. See "Confirmation dialog staleness" in docs/popup-simulation-refresh.md for how this id, the simulation timestamp and the metadata refresh counter divide the work.
+function getNextConfirmationRunId() {
+	latestConfirmationRunId = Math.max(latestConfirmationRunId + 1, Date.now())
+	return latestConfirmationRunId
+}
 
 export async function refreshConfirmTransactionSimulation(
 	ethereum: EthereumClientService,
@@ -36,6 +43,7 @@ export async function refreshConfirmTransactionSimulation(
 		activeAddress,
 		signerName: (await getTabState(uniqueRequestIdentifier.requestSocket.tabId)).signerName,
 		tabIdOpenedFrom: uniqueRequestIdentifier.requestSocket.tabId,
+		confirmationRunId: getNextConfirmationRunId(),
 	}
 	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' }, 'confirmTransaction')
 	confirmTransactionAbortController.abort(NEW_BLOCK_ABORT)
@@ -69,7 +77,7 @@ export async function refreshConfirmTransactionSimulation(
 			.map((entry) => 'abi' in entry && entry.abi !== undefined ? entry.abi : undefined)
 			.filter((abiOrUndefined): abiOrUndefined is string => abiOrUndefined !== undefined)
 		if (visualizedSimulatorState.visualizedSimulationState.success === false) {
-			return { statusCode: 'failed', data: {
+			return await withFailedTransactionPreviewUnlessCancelled(ethereum, thisConfirmTransactionAbortController, transactionToSimulate, { statusCode: 'failed', data: {
 				...info,
 				simulationStartedTimestamp,
 				error: { ...visualizedSimulatorState.visualizedSimulationState.jsonRpcError.error, decodedErrorMessage: visualizedSimulatorState.visualizedSimulationState.jsonRpcError.error.message },
@@ -77,11 +85,11 @@ export async function refreshConfirmTransactionSimulation(
 					blockNumber: visualizedSimulatorState.simulationState.blockNumber,
 					simulationConductedTimestamp: new Date(),
 				}
-			} }
+			} })
 		}
 		const blocks = visualizedSimulatorState.visualizedSimulationState.visualizedBlocks
 		const lastTransaction = last(last(blocks)?.simulatedAndVisualizedTransactions ?? [])
-		return {
+		const confirmation: ConfirmTransactionTransactionSingleVisualization = {
 			statusCode: 'success',
 			data: {
 				...info,
@@ -101,6 +109,7 @@ export async function refreshConfirmTransactionSimulation(
 				}
 			}
 		}
+		return transactionToSimulate.success ? confirmation : await withFailedTransactionPreviewUnlessCancelled(ethereum, thisConfirmTransactionAbortController, transactionToSimulate, confirmation)
 	} catch (error) {
 		if (isNewBlockAbort(error)) return undefined
 		if (isFailedToFetchError(error)) return undefined
@@ -117,7 +126,7 @@ export async function refreshConfirmTransactionSimulation(
 			const recipient = params.to
 			return await getSimulationErrorAbis(baseError.data, async () => await identifyAddress(ethereum, thisConfirmTransactionAbortController, recipient))
 		}
-		return { statusCode: 'failed', data: {
+		return await withFailedTransactionPreviewUnlessCancelled(ethereum, thisConfirmTransactionAbortController, transactionToSimulate, { statusCode: 'failed', data: {
 			...info,
 			simulationStartedTimestamp,
 			error: { ...baseError, decodedErrorMessage: isJsonRpcResponseError ? decodeEthereumError(await extractToAbi(), baseError).reason : baseError.message },
@@ -125,6 +134,6 @@ export async function refreshConfirmTransactionSimulation(
 				blockNumber: 0n,
 				simulationConductedTimestamp: new Date()
 			}
-		} }
+		} })
 	}
 }
