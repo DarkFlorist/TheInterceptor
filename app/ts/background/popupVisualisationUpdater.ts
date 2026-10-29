@@ -2,7 +2,7 @@
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { RpcNetwork } from '../types/rpc.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
-import type { CompleteVisualizedSimulation, SimulationState } from '../types/visualizer-types.js'
+import type { CompleteVisualizedSimulation, SimulationState, StoredCompleteVisualizedSimulation } from '../types/visualizer-types.js'
 import { createPassthroughCompleteVisualizedSimulation, toResolvedSimulationState } from '../types/visualizer-types.js'
 import { NEW_BLOCK_ABORT, TIME_BETWEEN_BLOCKS } from '../utils/constants.js'
 import { reportUnexpectedError, isExpectedInfrastructureError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
@@ -124,7 +124,7 @@ async function executeVisualisationUpdate(capturedAbortController: AbortControll
 }
 
 // Only a finished simulation with operations on the services' chain can be re-labelled: empty states show no operations, another chain's simulation must not get this chain's metadata, and pending, invalidated or failed states are about to be replaced by a simulation that resolves the current metadata itself.
-function getStackRunToRelabel(visualisation: CompleteVisualizedSimulation, chainId: bigint): SimulationRunToRelabel<CompleteVisualizedSimulation> | undefined {
+function getStackRunToRelabel(visualisation: StoredCompleteVisualizedSimulation, chainId: bigint): SimulationRunToRelabel<StoredCompleteVisualizedSimulation> | undefined {
 	if (visualisation.simulationUpdatingState !== 'done' || visualisation.simulationResultState !== 'done') return undefined
 	if (visualisation.simulationState.kind !== 'simulated') return undefined
 	const simulationState = visualisation.simulationState.value

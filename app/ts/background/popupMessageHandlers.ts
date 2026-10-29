@@ -18,7 +18,7 @@ import { findEntryWithSymbolOrName, getMetadataForAddressBookData } from './meta
 import { getActiveAddressEntryForChain, getActiveAddresses, identifyAddress, identifyAddressWith, lookUpMetadataForRelabel, lookUpMetadataOnChain } from './metadataUtils.js'
 import type { TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { CompleteVisualizedSimulation, InterceptorSimulationExport, type InterceptorStackOperation, InterceptorTransactionStack, type ModifyAddressWindowState } from '../types/visualizer-types.js'
+import { type CompleteVisualizedSimulation, InterceptorSimulationExport, type InterceptorStackOperation, InterceptorTransactionStack, type ModifyAddressWindowState, StoredCompleteVisualizedSimulation } from '../types/visualizer-types.js'
 import { isJSON } from '../utils/json.js'
 import { doAddressBookChainIdsMatch, type AddressBookEntry, type IncompleteAddressBookEntry } from '../types/addressBookTypes.js'
 import { EthereumAddress } from '../types/wire-types.js'
@@ -1222,7 +1222,7 @@ export async function importSimulationStack(ethereum: EthereumClientService, tok
 	try {
 		await updatePopupVisualisationState(ethereum, tokenPriceService, undefined, true)
 		const popupVisualisation = await getPopupVisualisationState()
-		const popupVisualisationBytes = estimateSerializedStateBytes(CompleteVisualizedSimulation, popupVisualisation)
+		const popupVisualisationBytes = estimateSerializedStateBytes(StoredCompleteVisualizedSimulation, popupVisualisation)
 		console.info(`[simulation-stack import] persisted popup visualisation at ${ formatEstimatedBytes(popupVisualisationBytes) }.`)
 	} catch (error) {
 		return importSimulationStackFailure(`Imported stack was stored (${ formatEstimatedBytes(updatedStackBytes) }), but updating the visualized simulation failed: ${ formatCaughtErrorMessage(error) }`)

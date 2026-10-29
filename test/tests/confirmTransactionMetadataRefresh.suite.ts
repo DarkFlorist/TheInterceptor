@@ -7,11 +7,12 @@ import type { SimulationServicesOwner } from '../../app/ts/simulation/serviceLif
 import type { SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
 import type { PendingTransactionOrSignableMessage, PopupPendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
 import type { AddressBookEntry } from '../../app/ts/types/addressBookTypes.js'
-import { CompleteVisualizedSimulation, type SignedMessageTransaction, type SimulatedAndVisualizedTransaction, type VisualizedSimulationState, type WebsiteCreatedEthereumTransaction } from '../../app/ts/types/visualizer-types.js'
+import { CompleteVisualizedSimulation, type SignedMessageTransaction, type StoredCompleteVisualizedSimulation, type SimulatedAndVisualizedTransaction, type VisualizedSimulationState, type WebsiteCreatedEthereumTransaction } from '../../app/ts/types/visualizer-types.js'
 import type { Website } from '../../app/ts/types/websiteAccessTypes.js'
 import type { EthereumUnsignedTransaction } from '../../app/ts/types/wire-types.js'
 import type { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import { UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogMetadata, UpdateConfirmTransactionDialogPendingTransactions } from '../../app/ts/types/interceptor-messages.js'
+import { PopupReplyOption } from '../../app/ts/types/interceptor-reply-messages.js'
 import { encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { checksummedAddress, stringifyJSONWithBigInts, stringToUint8Array } from '../../app/ts/utils/bigint.js'
 import { permit2Message } from './data/eip712Data.js'
@@ -23,7 +24,7 @@ import { keccak256, stringToBytes } from '../../app/ts/utils/ethereumPrimitives.
 import { activeAddress, addressString, browserMock, hexToBytes, created, createSafeAddressBookEntry, createSafeTx, EIP712Message, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, isRecord, modules, oldTimestamp, recipientAddress, SAFE_EXECUTION_ABI, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, simulator, uniqueRequestIdentifier, withSilencedConsole, type RuntimeMessage, type StorageKeys } from './confirmTransactionTestHarness.js'
 
 // Loaded after the harness installs the extension globals that the popup handler dependencies require at import time.
-const { addOrModifyAddressBookEntry, changePreSimulationBlockTimeManipulation, refreshPopupConfirmTransactionMetadata, removeAddressBookEntry, requestNewHomeData, setEnsNameForHash } = await import('../../app/ts/background/popupMessageHandlers.js')
+const { addOrModifyAddressBookEntry, changePreSimulationBlockTimeManipulation, refreshPopupConfirmTransactionMetadata, removeAddressBookEntry, requestCompleteVisualizedSimulation, requestNewHomeData, setEnsNameForHash } = await import('../../app/ts/background/popupMessageHandlers.js')
 const { publishAddressBookChangeAndRelabelSimulations } = await import('../../app/ts/background/addressBookChangePublication.js')
 const { getConfirmTransactionAbortController, refreshConfirmTransactionSimulation } = await import('../../app/ts/background/confirmTransactionSimulation.js')
 const { relabelDisplayedConfirmationSimulation } = await import('../../app/ts/background/confirmationRelabel.js')
@@ -300,6 +301,36 @@ test('address-book changes re-label the stored confirmation and stack without si
 	assert.deepEqual(browserMock.sentMessages.map((message) => message.method), ['popup_addressBookEntriesChanged', 'popup_simulationsRelabelled'])
 })
 
+// What the stored runs keep for re-labels in background storage only, never in a popup message.
+const BACKGROUND_ONLY_RUN_RECORD_FIELDS = ['recordedVisualisationLookups', 'confirmationRunId', 'identifiedAddressBookEntries', 'protectorChainReads']
+const carriesBackgroundOnlyRunRecord = (message: unknown) => BACKGROUND_ONLY_RUN_RECORD_FIELDS.some((field) => stringifyJSONWithBigInts(message).includes(`"${ field }"`))
+
+test('popup messages and replies carrying the stored stack and confirmation leave out their runs\' records, which a later re-label still replays', async () => {
+	await openSimulationModeConfirmationSendingEther()
+	const storedConfirmation = await getStoredPendingTransactionVisualisation()
+	assert.notEqual(storedConfirmation.confirmationRunId, undefined)
+	assert.notEqual(storedConfirmation.recordedVisualisationLookups, undefined)
+	assert.notEqual((await getStoredStackVisualisation()).stored.recordedVisualisationLookups, undefined)
+	clearObservedRpcMethodsAndMessages()
+
+	await updatePopupVisualisationState(simulator.ethereum, simulator.tokenPriceService, undefined, true)
+	await modules.updateConfirmTransactionView(simulator.ethereum, simulator.tokenPriceService)
+	await refreshPopupConfirmTransactionMetadata(simulator.ethereum)
+	await requestNewHomeData(simulator.ethereum, new Map(), false, true, undefined, 1)
+	const completeVisualizedSimulationReply = PopupReplyOption.serialize(await requestCompleteVisualizedSimulation(simulator.ethereum, simulator.tokenPriceService))
+
+	const sentMethods = new Set(browserMock.sentMessages.map((message) => message.method))
+	for (const method of ['popup_simulation_state_changed', 'popup_update_confirm_transaction_dialog', 'popup_update_confirm_transaction_dialog_pending_transactions', 'popup_update_confirm_transaction_dialog_metadata', 'popup_UpdateHomePage']) assert.equal(sentMethods.has(method), true, method)
+	assert.deepEqual(browserMock.sentMessages.filter(carriesBackgroundOnlyRunRecord).map((message) => message.method), [])
+	assert.equal(carriesBackgroundOnlyRunRecord(completeVisualizedSimulationReply), false)
+
+	await addRecipientContactWithoutBroadcast()
+	clearObservedRpcMethodsAndMessages()
+	await publishAddressBookChangeAndWaitForRelabel()
+	assert.deepEqual(await getStoredRecipientNames(), { stack: recipientContact.name, confirmation: recipientContact.name })
+	assert.equal(fakeSafeContract.requestedRpcMethods.includes('eth_simulateV1'), false)
+})
+
 test('adding the recipient to the address book clears the send-to-non-contact warning without simulating again', async () => {
 	await openSimulationModeConfirmationSendingEther()
 	assert.equal(hasNotInAddressBookWarning(getLastVisualizedTransaction((await getStoredPendingTransactionVisualisation()).visualizedSimulationState)), true)
@@ -483,8 +514,8 @@ test('a token whose user entry was removed keeps its kind and decimals in a re-l
 
 	assert.deepEqual(await getStoredConfirmationTokenTransfer(), { token: removedTokenAsBareAddress, amount: transferredTokenAmount })
 	// Only the run's record of what its lookups identified keeps the removed entry, for its kind and decimals; nothing the dialog shows names it.
-	const { addressBookEntries, visualizedSimulationState: { identifiedAddressBookEntries: _identifiedAddressBookEntries, ...shownVisualisation } } = await getStoredPendingTransactionVisualisation()
-	assert.equal(stringifyJSONWithBigInts([addressBookEntries, shownVisualisation]).includes('Removed token'), false)
+	const { addressBookEntries, visualizedSimulationState } = await getStoredPendingTransactionVisualisation()
+	assert.equal(stringifyJSONWithBigInts([addressBookEntries, visualizedSimulationState]).includes('Removed token'), false)
 })
 
 // The token as identifyAddress caches an on-chain identification in the address book: the name and symbol the contract declares, marked 'OnChain'.
@@ -1239,26 +1270,10 @@ async function updateStoredConfirmationVisualisation(update: (data: ReturnType<t
 	return await modules.getPendingTransactionsAndMessages()
 }
 
-// A transaction stored by a version that did not record the chain reads of its protectors.
-function withoutRecordedProtectorChainReads(visualizedSimulationState: VisualizedSimulationState): VisualizedSimulationState {
-	if (visualizedSimulationState.success === false) return visualizedSimulationState
-	return {
-		...visualizedSimulationState,
-		visualizedBlocks: visualizedSimulationState.visualizedBlocks.map((block) => ({
-			...block,
-			simulatedAndVisualizedTransactions: block.simulatedAndVisualizedTransactions.map(({ protectorChainReads: _protectorChainReads, ...transaction }) => transaction),
-		})),
-	}
-}
-
-// A visualisation stored by a version that did not record the entries its address lookups resolved.
-const withoutIdentifiedAddressBookEntries = ({ identifiedAddressBookEntries: _identifiedAddressBookEntries, ...visualizedSimulationState }: VisualizedSimulationState): VisualizedSimulationState => visualizedSimulationState
-
 test('confirmations without a confirmation run id or recorded lookups, or simulated on another chain, are not re-labelled', async () => {
 	const unprovableConfirmations: readonly { description: string, update: (data: ReturnType<typeof getSimulatedPendingTransaction>) => ReturnType<typeof getSimulatedPendingTransaction> }[] = [
 		{ description: 'stored by a version without confirmation run ids', update: ({ confirmationRunId: _confirmationRunId, ...data }) => data },
-		{ description: 'stored by a version without recorded protector chain reads, which only a simulation could provide', update: (data) => ({ ...data, visualizedSimulationState: withoutRecordedProtectorChainReads(data.visualizedSimulationState) }) },
-		{ description: 'stored by a version without recorded identified address-book entries', update: (data) => ({ ...data, visualizedSimulationState: withoutIdentifiedAddressBookEntries(data.visualizedSimulationState) }) },
+		{ description: 'stored by a version without recorded lookups, whose protector chain reads only a simulation could provide', update: ({ recordedVisualisationLookups: _recordedVisualisationLookups, ...data }) => data },
 		{ description: 'simulated on another chain', update: (data) => ({ ...data, simulationState: { ...data.simulationState, rpcNetwork: { ...data.simulationState.rpcNetwork, chainId: fakeRpcNetwork.chainId + 1n } } }) },
 	]
 	for (const { description, update } of unprovableConfirmations) {
@@ -1641,7 +1656,7 @@ test('a confirmation simulation that stores no run during a re-label does not st
 	}
 })
 
-async function updateStoredStackVisualisation(update: (stored: CompleteVisualizedSimulation) => CompleteVisualizedSimulation) {
+async function updateStoredStackVisualisation(update: (stored: StoredCompleteVisualizedSimulation) => StoredCompleteVisualizedSimulation) {
 	await updatePopupVisualisationWithCallBack(async (stored) => update(stored))
 	return await getPopupVisualisationState()
 }
@@ -1668,18 +1683,16 @@ test('a stack simulation of another chain is not re-labelled with the current ch
 	assert.deepEqual(await getPopupVisualisationState(), otherChainVisualisation)
 })
 
-test('a stack simulation stored without recorded protector chain reads or identified address-book entries is not re-labelled', async () => {
-	for (const withoutRecord of [withoutRecordedProtectorChainReads, withoutIdentifiedAddressBookEntries]) {
-		await openSimulationModeConfirmationSendingEther()
-		const visualisationWithoutRecord = await updateStoredStackVisualisation((stored) => ({ ...stored, visualizedSimulationState: withoutRecord(stored.visualizedSimulationState) }))
-		await addRecipientContactWithoutBroadcast()
-		clearObservedRpcMethodsAndMessages()
+test('a stack simulation stored without recorded lookups is not re-labelled', async () => {
+	await openSimulationModeConfirmationSendingEther()
+	const visualisationWithoutRecord = await updateStoredStackVisualisation(({ recordedVisualisationLookups: _recordedVisualisationLookups, ...stored }) => stored)
+	await addRecipientContactWithoutBroadcast()
+	clearObservedRpcMethodsAndMessages()
 
-		await relabelStoredStack()
+	await relabelStoredStack()
 
-		assert.deepEqual(await getPopupVisualisationState(), visualisationWithoutRecord, withoutRecord.name)
-		assert.equal(fakeSafeContract.requestedRpcMethods.includes('eth_simulateV1'), false)
-	}
+	assert.deepEqual(await getPopupVisualisationState(), visualisationWithoutRecord)
+	assert.equal(fakeSafeContract.requestedRpcMethods.includes('eth_simulateV1'), false)
 })
 
 test('pending, failed and invalidated stack visualisations are not re-labelled', async () => {

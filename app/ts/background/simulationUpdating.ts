@@ -16,7 +16,7 @@ import type { EnrichedEthereumEvents, EnrichedEthereumInputData } from '../types
 import type { PendingTransaction } from '../types/accessRequest.js'
 import type { AddressBookEntry, Erc20TokenEntry } from '../types/addressBookTypes.js'
 import type { SimulateExecutionReplyData } from '../types/interceptor-messages.js'
-import { PASSTHROUGH_STATE, type BlockTimeManipulation, type ExecutionSimulationState, type NonSimulatedAndVisualizedTransaction, type PreSimulationTransaction, type TokenPriceEstimate, type SignedMessageTransaction, type SimulationState, type SimulationStateInput, type SimulationStateInputBlock, type VisualizedSimulatorState, toResolvedSimulationInput, toResolvedSimulationState } from '../types/visualizer-types.js'
+import { PASSTHROUGH_STATE, type BlockTimeManipulation, type ExecutionSimulationState, type NonSimulatedAndVisualizedTransaction, type PreSimulationTransaction, type TokenPriceEstimate, type SignedMessageTransaction, type SimulationState, type SimulationStateInput, type SimulationStateInputBlock, type RecordedVisualisationLookups, type VisualizedSimulatorState, toResolvedSimulationInput, toResolvedSimulationState } from '../types/visualizer-types.js'
 import { get4Byte, get4ByteString } from '../utils/calldata.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS, FourByteExplanations, MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
 import { type DistributiveOmit, assertNever, modifyObject } from '../utils/typescript.js'
@@ -493,7 +493,7 @@ export type VisualisationLookups = MetadataLookups & {
 	readonly getDelegationAddressBySender: (simulationStateInput: SimulationStateInput) => Promise<ReadonlyMap<string, AddressBookEntry>>
 	readonly estimateTokenPrices: (quoteToken: Erc20TokenEntry, tokens: { address: bigint, decimals: bigint }[]) => Promise<readonly TokenPriceEstimate[]>
 	readonly getProtectorChainReads: GetProtectorChainReads
-	// The entries to store with the run as its identifiedAddressBookEntries.
+	// The entries to store with the run in its recordedVisualisationLookups.
 	readonly getIdentifiedAddressBookEntries: () => readonly AddressBookEntry[]
 }
 
@@ -515,8 +515,8 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 	return await visualizeSimulatorStateWithLookups(simulationState, ethereum.getRpcEntry(), lookUpVisualisationOnNode(ethereum, tokenPriceService, requestAbortController))
 }
 
-// Every lookup goes through lookups, so the visualisation itself reads nothing from the node; rpcNetwork is the services' network.
-export async function visualizeSimulatorStateWithLookups(simulationState: SimulationState, rpcNetwork: RpcNetwork, lookups: VisualisationLookups): Promise<VisualizedSimulatorState> {
+// Every lookup goes through lookups, so the visualisation itself reads nothing from the node; rpcNetwork is the services' network. The run's record of its lookups is returned beside the visualisation, for background storage only.
+export async function visualizeSimulatorStateWithLookups(simulationState: SimulationState, rpcNetwork: RpcNetwork, lookups: VisualisationLookups): Promise<VisualizedSimulatorState & { readonly recordedVisualisationLookups: RecordedVisualisationLookups }> {
 	const getWeth = async (): Promise<Erc20TokenEntry | undefined> => {
 		const wethAddr = getWethForChainId(rpcNetwork.chainId)
 		if (wethAddr === undefined) return undefined
@@ -578,7 +578,8 @@ export async function visualizeSimulatorStateWithLookups(simulationState: Simula
 			tokenPriceQuoteToken: weth,
 			namedTokenIds: updatedMetadata.namedTokenIds,
 			simulationState: refreshedSimulationState,
-			visualizedSimulationState: { success: false, jsonRpcError: simulationState.jsonRpcError, visualizedBlocks, identifiedAddressBookEntries: lookups.getIdentifiedAddressBookEntries() }
+			visualizedSimulationState: { success: false, jsonRpcError: simulationState.jsonRpcError, visualizedBlocks },
+			recordedVisualisationLookups: { protectorChainReads: [], identifiedAddressBookEntries: lookups.getIdentifiedAddressBookEntries() },
 		}
 	}
 
@@ -639,6 +640,10 @@ export async function visualizeSimulatorStateWithLookups(simulationState: Simula
 		tokenPriceEstimates,
 		tokenPriceQuoteToken: weth,
 		simulationState: refreshedSimulationState,
-		visualizedSimulationState: { success: true, visualizedBlocks, identifiedAddressBookEntries: lookups.getIdentifiedAddressBookEntries() },
+		visualizedSimulationState: { success: true, visualizedBlocks },
+		recordedVisualisationLookups: {
+			protectorChainReads: protectorsForEachBlockAndTransaction.map((protectorsForBlock) => protectorsForBlock.map(({ protectorChainReads }) => protectorChainReads)),
+			identifiedAddressBookEntries: lookups.getIdentifiedAddressBookEntries(),
+		},
 	}
 }

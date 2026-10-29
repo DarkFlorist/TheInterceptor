@@ -1,41 +1,14 @@
 // Visualises a stored simulation run again from stored data alone, for an address-book re-label. It builds the VisualisationLookups that a simulation run builds on the node (visualizeSimulatorState in simulationUpdating.ts) from local data and what the run recorded, so it makes no RPC request; both go through the same visualisation. See "Address-book re-labels" in docs/popup-simulation-refresh.md.
 import { replayRecordedProtectorChainReads } from '../simulation/protectorChainReads.js'
-import type { AddressBookEntry } from '../types/addressBookTypes.js'
 import type { RpcNetwork } from '../types/rpc.js'
-import type { RecordedProtectorChainReads, SimulationState, VisualizedSimulationState, VisualizedSimulatorState } from '../types/visualizer-types.js'
+import type { RecordedVisualisationLookups, SimulationState, VisualizedSimulationState, VisualizedSimulatorState } from '../types/visualizer-types.js'
 import { addressString } from '../utils/bigint.js'
 import { lookUpMetadataForRelabel } from './metadataUtils.js'
 import { type VisualisationLookups, visualizeSimulatorStateWithLookups } from './simulationUpdating.js'
 
-// The parts of a run's stored visualisation that an address-book re-label starts from.
-export type StoredSimulationMetadata = Pick<VisualizedSimulatorState, 'addressBookEntries' | 'tokenPriceEstimates' | 'visualizedSimulationState'>
-
-// What a simulation run recorded of its lookups, which an address-book re-label replays instead of making them: the protector chain reads per block and transaction, and every address-book entry its address lookups resolved.
-export type RecordedVisualisationLookups = {
-	readonly protectorChainReads: readonly (readonly RecordedProtectorChainReads[])[]
-	readonly identifiedAddressBookEntries: readonly AddressBookEntry[]
-}
-
-// The protector chain reads recorded with each transaction of a stored visualisation, by block, or undefined when a transaction was stored by a version that did not record them. A failed simulation ran no protectors, so it needs none.
-function getRecordedProtectorChainReads(visualizedSimulationState: VisualizedSimulationState) {
-	if (visualizedSimulationState.success === false) return []
-	const recordedByBlock: RecordedProtectorChainReads[][] = []
-	for (const block of visualizedSimulationState.visualizedBlocks) {
-		const recordedForBlock: RecordedProtectorChainReads[] = []
-		for (const transaction of block.simulatedAndVisualizedTransactions) {
-			if (transaction.protectorChainReads === undefined) return undefined
-			recordedForBlock.push(transaction.protectorChainReads)
-		}
-		recordedByBlock.push(recordedForBlock)
-	}
-	return recordedByBlock
-}
-
-// What a stored visualisation recorded of its run's lookups, or undefined when it was stored by a version that did not record its protectors' chain reads or the entries its address lookups resolved, so it could only be visualised again by simulating.
-export function getRecordedVisualisationLookups(visualizedSimulationState: VisualizedSimulationState): RecordedVisualisationLookups | undefined {
-	const protectorChainReads = getRecordedProtectorChainReads(visualizedSimulationState)
-	if (protectorChainReads === undefined || visualizedSimulationState.identifiedAddressBookEntries === undefined) return undefined
-	return { protectorChainReads, identifiedAddressBookEntries: visualizedSimulationState.identifiedAddressBookEntries }
+// The parts of a stored run that an address-book re-label starts from: its stored visualisation and what the run recorded of its lookups, which runs stored by older versions lack.
+export type StoredSimulationMetadata = Pick<VisualizedSimulatorState, 'addressBookEntries' | 'tokenPriceEstimates' | 'visualizedSimulationState'> & {
+	readonly recordedVisualisationLookups?: RecordedVisualisationLookups | undefined
 }
 
 // The delegation each sender had when the run was visualised, by sender.

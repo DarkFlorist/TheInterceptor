@@ -2,7 +2,7 @@
 import type { RpcNetwork } from '../types/rpc.js'
 import type { SimulationState } from '../types/visualizer-types.js'
 import { isExpectedInfrastructureError, reportUnexpectedError } from '../utils/errors.js'
-import { getRecordedVisualisationLookups, type StoredSimulationMetadata, visualizeStoredRunWithoutNode } from './storedRunVisualisation.js'
+import { type StoredSimulationMetadata, visualizeStoredRunWithoutNode } from './storedRunVisualisation.js'
 
 type SimulationMetadata = Omit<Awaited<ReturnType<typeof visualizeStoredRunWithoutNode>>, 'simulationState'>
 
@@ -33,7 +33,7 @@ export async function relabelStoredSimulation<Stored>(rpcNetwork: RpcNetwork, { 
 	const runToRelabel = getRunToRelabel(stored)
 	if (runToRelabel === undefined) return
 	// A run stored by a version that did not record its protectors' chain reads or the entries its address lookups resolved could only be visualised again by simulating, so it keeps its names until it is simulated again.
-	const recorded = getRecordedVisualisationLookups(runToRelabel.storedMetadata.visualizedSimulationState)
+	const recorded = runToRelabel.storedMetadata.recordedVisualisationLookups
 	if (recorded === undefined) return
 	// The re-visualised simulation state is dropped so the stored one, including its conducted timestamp, is kept.
 	const { simulationState: _revisualizedSimulationState, ...metadata } = await visualizeStoredRunWithoutNode(runToRelabel.simulationState, runToRelabel.storedMetadata, recorded, rpcNetwork)
