@@ -194,6 +194,54 @@ test('a wallet reply arriving over another connection in the same tab does not r
 	assert.equal(getTerminalRepliesTo(messagesPostedToPage, pageRequestIdentifier.requestId).length, 1)
 })
 
+// The page replaces the reviewed request with a new instance under the same request id, as after a popup close and resend.
+async function replaceWithNewInstance(reviewed: Awaited<ReturnType<typeof getOnlyPendingRequest>>, replacementGas: bigint) {
+	if (reviewed.type !== 'Transaction' || reviewed.originalRequestParameters.method !== 'eth_sendTransaction') throw new Error('Expected a pending eth_sendTransaction')
+	const originalRequestParameters = { ...reviewed.originalRequestParameters, params: [{ ...reviewed.originalRequestParameters.params[0], gas: replacementGas }] as const }
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [{ ...reviewed, instanceId: 'replacement instance', originalRequestParameters }] })
+	return await getOnlyPendingRequest()
+}
+
+test('a gas limit edit whose read raced a replacement request under the same id does not change the replacement', async () => {
+	const page = await startPageConnection([])
+	await sendTransactionFromPage(page)
+	const reviewed = await getOnlyPendingRequest()
+	if (reviewed.type !== 'Transaction') throw new Error('Expected a pending transaction')
+	const { setGasLimitForTransaction } = await import('../../app/ts/background/windows/confirmTransaction.js')
+	const hold = holdNextPendingRequestsRead()
+	try {
+		// The edit reads the reviewed request and is held while the page replaces it under the same id.
+		const edit = setGasLimitForTransaction(reviewed.transactionIdentifier, 99_999n)
+		await hold.reached
+		const replacement = await replaceWithNewInstance(reviewed, 88_888n)
+		hold.release()
+		await edit
+		assert.deepEqual(await getOnlyPendingRequest(), replacement)
+	} finally {
+		hold.release()
+		hold.restore()
+	}
+})
+
+test('a simulation refresh that finishes after the page replaced the request under the same id does not overwrite the replacement', async () => {
+	const page = await startPageConnection([])
+	await sendTransactionFromPage(page)
+	const reviewed = await getOnlyPendingRequest()
+	const pause = pauseFirstRpcRequest()
+	try {
+		// The refresh builds and simulates the reviewed request and is held while the page replaces it under the same id.
+		const refresh = modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
+		await pause.reached
+		const replacement = await replaceWithNewInstance(reviewed, 88_888n)
+		pause.release()
+		await refresh
+		assert.deepEqual(await getOnlyPendingRequest(), replacement)
+	} finally {
+		pause.release()
+		pause.restore()
+	}
+})
+
 // A Gnosis Safe proposal from the page, while the wallet has walletOwner selected.
 async function sendSafeProposalFromPage({ connections }: PageConnection, walletOwner: bigint) {
 	const safeAddress = signerAddress()

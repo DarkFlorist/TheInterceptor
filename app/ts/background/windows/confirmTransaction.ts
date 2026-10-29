@@ -255,7 +255,8 @@ export const setGasLimitForTransaction = async (transactionIdentifier: bigint, g
 		})
 		return
 	}
-	await updatePendingTransactionOrMessage(pendingTransaction.uniqueRequestIdentifier, async (transaction) => {
+	// The edit applies only to the instance the user edited, so a request the page sent under the same id after the read above keeps its own gas limit.
+	await updatePendingTransactionOrMessageInstance(pendingTransaction, async (transaction) => {
 		if (transaction.originalRequestParameters.method === 'eth_sendTransaction') {
 			const originalRequestParameters = modifyObject(transaction.originalRequestParameters, { params: [modifyObject(transaction.originalRequestParameters.params[0], { gas: gasLimit })] })
 			return modifyObject(transaction, { originalRequestParameters: originalRequestParameters })
