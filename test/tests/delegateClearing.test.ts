@@ -1,7 +1,7 @@
 import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
 import { EthereumClientService, getNextBlockTimeStampOverride } from '../../app/ts/simulation/services/EthereumClientService.js'
-import { captureSigningSimulationSnapshot, captureWhatIfSimulationSnapshot, getCurrentSimulationInput, getGovernanceExecutionSimulationInput, prepareSimulationInputForRpc } from '../../app/ts/background/simulationUpdating.js'
+import { captureSigningSimulationSnapshot, captureWhatIfSimulationSnapshot, getCurrentSimulationInput, getGovernanceExecutionSimulationInput, getSimulationInputForCurrentMode, prepareSimulationInputForRpc } from '../../app/ts/background/simulationUpdating.js'
 import { getWhatIfSimulationOverrides } from '../../app/ts/background/delegateClearingPolicy.js'
 import { clearDelegateClearingHintCache, getCachedDelegateClearingHint, invalidateDelegateClearingHintsForNewBlock, withDelegateClearingHintInvalidation } from '../../app/ts/background/delegateClearingHintCache.js'
 import { requestDelegateClearing, setDelegateClearing } from '../../app/ts/background/popupMessageHandlers/delegateClearing.js'
@@ -222,6 +222,41 @@ describe('delegate clearing in simulation', () => {
 		const explicitParentRequest = serialize(EthSimulateV1Params, ethSimulateRequests.at(-1))
 		assert.equal(explicitParentRequest.params[0].blockStateCalls[0]?.stateOverrides?.[addressString(activeAddress)]?.code, '0x')
 		assert.equal(explicitParentRequest.params[1], `0x${ parentBlock.number.toString(16) }`)
+	})
+
+	test('website eth_getCode reads on-chain delegate code in signing mode while the choice stays saved', async () => {
+		installBrowserMock()
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: activeAddress, rpcNetwork: rpcEntry })
+		await setDelegateClearingEnabled(activeAddress, rpcEntry.chainId, true)
+		const delegationDesignator = new Uint8Array([0xef, 0x01, 0x00, ...new Uint8Array(20).fill(0xab)])
+		const parentBlockResponse = JsonRpcResponse.parse(JSON.parse(eth_getBlockByNumber_goerli_8443561_true))
+		if ('error' in parentBlockResponse) throw new Error(parentBlockResponse.error.message)
+		let chainCodeRequests = 0
+		const ethereum = new EthereumClientService({
+			rpcUrl: rpcEntry.httpsRpc,
+			clearCache() { return undefined },
+			async jsonRpcRequest(request) {
+				if (request.method === 'eth_getBlockByNumber') return parentBlockResponse.result
+				if (request.method !== 'eth_getCode') throw new Error(`Unexpected RPC method ${ request.method }`)
+				chainCodeRequests += 1
+				return `0x${ Array.from(delegationDesignator, (byte) => byte.toString(16).padStart(2, '0')).join('') }`
+			},
+		}, async () => undefined, async () => undefined, rpcEntry)
+		// Mirrors the website eth_getCode path: background.ts builds the RPC input this way and the getCode handler calls getSimulatedCodeFromInput.
+		const websiteGetCode = async () => {
+			const simulationInput = await prepareSimulationInputForRpc(await getSimulationInputForCurrentMode(await getSettings()), ethereum)
+			return await getSimulatedCodeFromInput(ethereum, undefined, simulationInput, activeAddress, 'latest')
+		}
+
+		assert.deepEqual(await websiteGetCode(), { statusCode: 'success', getCodeReturn: new Uint8Array() })
+		assert.equal(chainCodeRequests, 0)
+
+		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: activeAddress, rpcNetwork: rpcEntry })
+		assert.equal(await isDelegateClearingEnabled(activeAddress, rpcEntry.chainId), true)
+		assert.deepEqual(getWhatIfSimulationOverrides(await getSettings()), {})
+		assert.deepEqual((await getSimulationInputForCurrentMode(await getSettings())).simulationOverrides, {})
+		assert.deepEqual(await websiteGetCode(), { statusCode: 'success', getCodeReturn: delegationDesignator })
+		assert.equal(chainCodeRequests, 1)
 	})
 
 	test('clears before the first stack block and keeps a captured preference stable after storage changes', async () => {
