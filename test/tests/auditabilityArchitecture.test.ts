@@ -24,6 +24,7 @@ const confirmationRelabelSource = await Bun.file(new URL('../../app/ts/backgroun
 const addressBookChangePublicationSource = await Bun.file(new URL('../../app/ts/background/addressBookChangePublication.ts', import.meta.url)).text()
 const simulationUpdatingSource = await Bun.file(new URL('../../app/ts/background/simulationUpdating.ts', import.meta.url)).text()
 const storedRunVisualisationSource = await Bun.file(new URL('../../app/ts/background/storedRunVisualisation.ts', import.meta.url)).text()
+const metadataUtilsSource = await Bun.file(new URL('../../app/ts/background/metadataUtils.ts', import.meta.url)).text()
 const popupMessageHandlersSource = await Bun.file(new URL('../../app/ts/background/popupMessageHandlers.ts', import.meta.url)).text()
 const confirmTransactionPageSource = await Bun.file(new URL('../../app/ts/components/pages/ConfirmTransaction.tsx', import.meta.url)).text()
 const safeAppsCompatibilityCoordinatorSource = await Bun.file(new URL('../../app/ts/background/safeAppsCompatibilityCoordinator.ts', import.meta.url)).text()
@@ -171,6 +172,10 @@ test('the stored-data visualisation of a re-label lives apart from live simulati
 	// simulationUpdating.ts keeps live node-backed simulation; replaying a stored run belongs to storedRunVisualisation.ts.
 	assert.doesNotMatch(simulationUpdatingSource, /replayRecordedProtectorChainReads|lookUpMetadataForRelabel|function visualizeStoredRunWithoutNode/u)
 	assert.match(storedRunVisualisationSource, /export async function visualizeStoredRunWithoutNode\(/u)
+	// The re-label's address fallback is re-label display policy, so it sits with the other stored-run lookups, not in the generic identification of metadataUtils.ts.
+	assert.match(storedRunVisualisationSource, /export function lookUpMetadataForRelabel\(/u)
+	assert.match(storedRunVisualisationSource, /function getIdentifiedOrBareAddressEntry\(/u)
+	assert.doesNotMatch(metadataUtilsSource, /lookUpMetadataForRelabel|getIdentifiedOrBareAddressEntry/u)
 	// Both modes build their lookups as VisualisationLookups, so a lookup either one leaves out fails typecheck.
 	assert.match(simulationUpdatingSource, /function lookUpVisualisationOnNode\([^)]*\): VisualisationLookups \{/u)
 	assert.match(storedRunVisualisationSource, /function lookUpVisualisationFromStoredRun\([^)]*\): VisualisationLookups \{/u)

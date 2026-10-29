@@ -152,6 +152,9 @@ async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork 
 	return undefined
 }
 
+// Identifies an address from the address book and bundled metadata alone, never on chain; undefined when neither knows it.
+export const identifyAddressFromLocalData = async (address: EthereumAddress, rpcEntry: RpcNetwork) => await identifyAddressWithoutNode(address, rpcEntry)
+
 export async function identifyAddress(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, address: bigint, useLocalStorage = true) : Promise<AddressBookEntry> {
 	const identifiedAddress = await identifyAddressWithoutNode(address, ethereumClientService.getRpcEntry(), useLocalStorage)
 	if (identifiedAddress !== undefined) return identifiedAddress
@@ -234,23 +237,6 @@ export const lookUpMetadataOnChain = (ethereumClientService: EthereumClientServi
 	lookUpEnsName: async (nameHash) => await getEthereumNameServiceNameFromTokenId(ethereumClientService, undefined, nameHash),
 })
 
-// The entry a re-label shows for an address that neither the address book nor bundled metadata knows: the entry the run identified it with if the chain did, else the bare address, keeping the token kind and decimals of a removed user or bundled token entry so the run's token amounts still render. Marked 'OnChain', as an on-chain identification would be, so it is flagged as not in the address book.
-function getIdentifiedOrBareAddressEntry(address: EthereumAddress, identifiedEntry: AddressBookEntry | undefined, chainId: bigint): AddressBookEntry {
-	// The run's own on-chain identification needs no re-validation: its name and symbol are what the contract declares, which a new simulation reads again (or takes from the address book's cached copy), and its 'OnChain' source keeps it flagged as untrusted and not in the address book. A removed user or bundled entry falls through to the bare address instead, as its name came from that removed entry.
-	if (identifiedEntry?.entrySource === 'OnChain') return identifiedEntry
-	const bareAddressEntry = { address, name: getAddress(addressString(address)), entrySource: 'OnChain' as const, chainId }
-	switch (identifiedEntry?.type) {
-		case 'ERC20': return { ...bareAddressEntry, type: 'ERC20', symbol: '???', decimals: identifiedEntry.decimals }
-		case 'ERC721': return { ...bareAddressEntry, type: 'ERC721', symbol: '???' }
-		case 'ERC1155': return { ...bareAddressEntry, type: 'ERC1155', symbol: '???', decimals: undefined }
-		case 'contract':
-		case 'safe': return { ...bareAddressEntry, type: 'contract' }
-		case 'contact':
-		case undefined: return { ...bareAddressEntry, type: 'contact' }
-		default: return assertNever(identifiedEntry)
-	}
-}
-
 // Records every entry a simulation run's address lookups resolve, to store with the run as its identifiedAddressBookEntries.
 export function recordIdentifiedAddresses(identify: IdentifyAddress) {
 	const identifiedEntries = new Map<bigint, AddressBookEntry>()
@@ -261,15 +247,6 @@ export function recordIdentifiedAddresses(identify: IdentifyAddress) {
 			return entry
 		},
 		getIdentifiedEntries: () => Array.from(identifiedEntries.values()),
-	}
-}
-
-// An address-book re-label's lookups never reach the chain: identifying an address there simulates, and the re-label must neither simulate nor fail with the node. A removed user entry therefore shows what the run identified it as, or the bare address, until the next simulation identifies the address again. Only entries the run's own lookups resolved stand in (identifiedAddressBookEntries), never data parsed from the stored visualisation, which can carry website-controlled values.
-export function lookUpMetadataForRelabel(identifiedEntries: readonly AddressBookEntry[], rpcEntry: RpcNetwork): MetadataLookups {
-	const identifiedEntryByAddress = new Map(identifiedEntries.map((entry) => [entry.address, entry]))
-	return {
-		identifyAddress: async (address) => await identifyAddressWithoutNode(address, rpcEntry) ?? getIdentifiedOrBareAddressEntry(address, identifiedEntryByAddress.get(address), rpcEntry.chainId),
-		lookUpEnsName: async () => undefined,
 	}
 }
 
