@@ -101,6 +101,35 @@ describe('simulation mode forward guard', () => {
 		assertAnsweredInSimulationMode(replies)
 	})
 
+	test('does not forward when a corrupt simulation mode repair writes simulation mode during the tab-state read', async () => {
+		const { modules, setStorageHooks, sendAddEthereumChainAfterArming } = await setUpSigningModeWebsite()
+		await browser.storage.local.set({ simulationMode: 'corrupt' })
+		const repairRelease = createDeferredValue<undefined>()
+		let repairPaused = false
+		setStorageHooks({
+			beforeSet: async (items) => {
+				if (repairPaused || items.simulationMode !== true) return
+				repairPaused = true
+				await repairRelease.promise
+			},
+		})
+		// This read finds the corrupt value and pauses while repairing it to the default, which enables simulation mode.
+		const repairingSettingsRead = modules.getSettings()
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		assert.equal(repairPaused, true)
+		await modules.changeSimulationMode({ simulationMode: false })
+		const replies = await sendAddEthereumChainAfterArming(5, async () => setStorageHooks({
+			afterGet: async (keys) => {
+				if (keys !== 'tabState_1') return
+				setStorageHooks({})
+				repairRelease.resolve(undefined)
+				await repairingSettingsRead
+			},
+		}))
+		assert.equal((await modules.getSettings()).simulationMode, true)
+		assertAnsweredInSimulationMode(replies)
+	})
+
 	test('counts every write that enables simulation mode, including settings import', async () => {
 		installBrowserMock()
 		const { changeSimulationMode, exportSettingsAndAddressBook, getSimulationModeGeneration, importSettingsAndAddressBook } = await loadModules()

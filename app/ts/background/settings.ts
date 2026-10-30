@@ -63,7 +63,12 @@ async function getParsedStorageValueOrDefaultFromItems<Key extends keyof Startup
 	if (rawValue === undefined) return defaultValue
 	console.warn(`${ key } was corrupt:`)
 	console.warn(rawValue)
-	await browserStorageLocalSet({ [key]: defaultValue } as unknown as Parameters<typeof browserStorageLocalSet>[0])
+	// Repairing simulation mode can enable it, so it goes through the generation-tracked writer that the signer-forward guard relies on.
+	if (key === 'simulationMode' && typeof defaultValue === 'boolean') {
+		await writeSimulationModeChanges({ simulationMode: defaultValue })
+	} else {
+		await browserStorageLocalSet({ [key]: defaultValue } as unknown as Parameters<typeof browserStorageLocalSet>[0])
+	}
 	return defaultValue
 }
 
