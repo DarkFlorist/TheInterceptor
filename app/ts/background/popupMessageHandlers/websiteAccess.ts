@@ -6,7 +6,7 @@ import type { Website } from '../../types/websiteAccessTypes.js'
 import { getErrorMessage, reportUnexpectedError } from '../../utils/errors.js'
 import { checkAndThrowRuntimeLastError } from '../../utils/requests.js'
 import { modifyObject } from '../../utils/typescript.js'
-import { setInterceptorDisabledForWebsite, reconcileWebsiteApprovalAccesses, scheduleWebsiteAccessUiUpdate } from '../accessManagement.js'
+import { setInterceptorDisabledForWebsite, applyWebsiteAccessChange, scheduleWebsiteAccessUiUpdate } from '../accessManagement.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { getTabState } from '../storageVariables.js'
 import { getLastKnownCurrentTabId } from '../currentTab.js'
@@ -22,6 +22,7 @@ const isMissingTabReloadError = (error: unknown) => {
 }
 
 export async function reloadConnectedTabs(websiteTabConnections: WebsiteTabConnections, websiteOrigin?: string) {
+	// Revocations are reconciled (or fail closed) before acknowledgement, independently of this scoped UI refresh.
 	const tabIdsToRefresh = [...websiteTabConnections.entries()].filter(([, tab]) => websiteOrigin === undefined || Object.values(tab.connections).some(connection => connection.websiteOrigin === websiteOrigin)).map(([tabId]) => tabId)
 	const currentTabId = await getLastKnownCurrentTabId()
 	const currentWebsite = currentTabId === undefined ? undefined : (await getTabState(currentTabId)).website
@@ -42,8 +43,7 @@ export const disableInterceptorForPage = async (website: Website, interceptorDis
 }
 
 export async function disableInterceptor(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: DisableInterceptor) {
-	await disableInterceptorForPage(parsedRequest.data.website, parsedRequest.data.interceptorDisabled)
-	const accessUpdate = await reconcileWebsiteApprovalAccesses(websiteTabConnections, await getSettings(), false)
+	const { accessUpdate } = await applyWebsiteAccessChange(websiteTabConnections, async () => await disableInterceptorForPage(parsedRequest.data.website, parsedRequest.data.interceptorDisabled))
 	scheduleWebsiteAccessUiUpdate(simulationServicesOwner, websiteTabConnections, accessUpdate, true)
 	backgroundTaskSupervisor.start({ source: parsedRequest.method, details: { websiteOrigin: parsedRequest.data.website.websiteOrigin } }, async () => await reloadConnectedTabs(websiteTabConnections, parsedRequest.data.website.websiteOrigin))
 	await sendPopupMessageToOpenWindows({ method: 'popup_setDisableInterceptorReply' as const, data: parsedRequest.data })
@@ -64,8 +64,7 @@ const blockOrAllowWebsiteExternalRequests = async (website: Website, shouldBlock
 }
 
 export async function blockOrAllowExternalRequests(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: BlockOrAllowExternalRequests) {
-	await blockOrAllowWebsiteExternalRequests(parsedRequest.data.website, parsedRequest.data.shouldBlock)
-	const accessUpdate = await reconcileWebsiteApprovalAccesses(websiteTabConnections, await getSettings(), false)
+	const { accessUpdate } = await applyWebsiteAccessChange(websiteTabConnections, async () => await blockOrAllowWebsiteExternalRequests(parsedRequest.data.website, parsedRequest.data.shouldBlock))
 	scheduleWebsiteAccessUiUpdate(simulationServicesOwner, websiteTabConnections, accessUpdate, true)
 	backgroundTaskSupervisor.start({ source: parsedRequest.method, details: { websiteOrigin: parsedRequest.data.website.websiteOrigin } }, async () => await reloadConnectedTabs(websiteTabConnections, parsedRequest.data.website.websiteOrigin))
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
@@ -79,8 +78,7 @@ const removeAddressAccessByAddress = async (websiteOrigin: string, address: Ethe
 }
 
 export async function removeWebsiteAddressAccess(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: RemoveWebsiteAddressAccess) {
-	await removeAddressAccessByAddress(parsedRequest.data.websiteOrigin, parsedRequest.data.address)
-	const accessUpdate = await reconcileWebsiteApprovalAccesses(websiteTabConnections, await getSettings(), false)
+	const { accessUpdate } = await applyWebsiteAccessChange(websiteTabConnections, async () => await removeAddressAccessByAddress(parsedRequest.data.websiteOrigin, parsedRequest.data.address))
 	scheduleWebsiteAccessUiUpdate(simulationServicesOwner, websiteTabConnections, accessUpdate, true)
 	backgroundTaskSupervisor.start({ source: parsedRequest.method, details: { websiteOrigin: parsedRequest.data.websiteOrigin } }, async () => await reloadConnectedTabs(websiteTabConnections, parsedRequest.data.websiteOrigin))
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
@@ -96,16 +94,14 @@ const setAddressAccessForWebsite = async (websiteOrigin: string, address: Ethere
 
 export async function allowOrPreventAddressAccessForWebsite(websiteTabConnections: WebsiteTabConnections, parsedRequest: AllowOrPreventAddressAccessForWebsite) {
 	const { website, address, allowAccess } = parsedRequest.data
-	await setAddressAccessForWebsite(website.websiteOrigin, address, allowAccess)
-	const accessUpdate = await reconcileWebsiteApprovalAccesses(websiteTabConnections, await getSettings(), false)
+	const { accessUpdate } = await applyWebsiteAccessChange(websiteTabConnections, async () => await setAddressAccessForWebsite(website.websiteOrigin, address, allowAccess))
 	scheduleWebsiteAccessUiUpdate(undefined, websiteTabConnections, accessUpdate, false)
 	backgroundTaskSupervisor.start({ source: parsedRequest.method, details: { websiteOrigin: website.websiteOrigin } }, async () => await reloadConnectedTabs(websiteTabConnections, website.websiteOrigin))
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }
 
 export async function removeWebsiteAccess(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: RemoveWebsiteAccess) {
-	await updateWebsiteAccessAndContentScriptInjectionStrategy((previousAccess) => previousAccess.filter((access) => access.website.websiteOrigin !== parsedRequest.data.websiteOrigin))
-	const accessUpdate = await reconcileWebsiteApprovalAccesses(websiteTabConnections, await getSettings(), false)
+	const { accessUpdate } = await applyWebsiteAccessChange(websiteTabConnections, async () => await updateWebsiteAccessAndContentScriptInjectionStrategy((previousAccess) => previousAccess.filter((access) => access.website.websiteOrigin !== parsedRequest.data.websiteOrigin)))
 	scheduleWebsiteAccessUiUpdate(simulationServicesOwner, websiteTabConnections, accessUpdate, true)
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }

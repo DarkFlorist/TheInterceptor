@@ -1,15 +1,21 @@
 import * as assert from 'node:assert'
 import { beforeEach, test } from 'bun:test'
-import { createDeferredSignal } from './backgroundEthAccountsTestHarness.js'
-import { createBrowserMock, fakeRequestHandler, fakeRpcNetwork, modules, pendingTransaction, resetConfirmTransactionTestState } from './confirmTransactionTestHarness.js'
+import { createDeferredSignal, installBrowserMock } from './backgroundEthAccountsTestHarness.js'
+import { browserMock, fakeRequestHandler, fakeRpcNetwork, modules, pendingTransaction, resetConfirmTransactionTestState } from './confirmTransactionTestHarness.js'
 import { isPendingTransactionGasLimitCurrent } from '../../app/ts/utils/pendingTransactionSimulation.js'
 import { UpdateConfirmTransactionDialogPendingTransactions } from '../../app/ts/types/interceptor-messages.js'
 import { waitForBackgroundTasks } from './backgroundTasksTestHarness.js'
 
-let browserMock: ReturnType<typeof createBrowserMock>
 beforeEach(async () => {
-	browserMock = createBrowserMock()
 	await resetConfirmTransactionTestState()
+})
+
+test('confirmation reset restores its browser after another test installs a different mock', async () => {
+	installBrowserMock()
+	await resetConfirmTransactionTestState()
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	assert.equal((await modules.getPendingTransactionsAndMessages()).length, 0)
+	assert.deepEqual(browserMock.storageState.pendingTransactionsAndMessages, [])
 })
 
 test('gas edits broadcast a JSON-transportable pending request that disables stale approval', async () => {

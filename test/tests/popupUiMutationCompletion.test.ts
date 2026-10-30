@@ -175,6 +175,97 @@ describe('UI mutation completion', () => {
 		} finally { release.resolve(); await waitForBackgroundTasks() }
 	})
 
+	test.each([
+		['individual', 'settings read'], ['individual', 'blocking rules'], ['individual', 'tab read'],
+		['bulk', 'settings read'], ['bulk', 'blocking rules'], ['bulk', 'tab read'],
+	] as const)('%s revocation fails closed without a success reply when %s fails', async (mode, failure) => {
+		const { runtimeMessages } = installBrowserMock()
+		const modules = await loadModules()
+		const { allowOrPreventAddressAccessForWebsite } = await import('../../app/ts/background/popupMessageHandlers/websiteAccess.js')
+		const address = signedTransaction.from
+		const website = { websiteOrigin: `revocation-${ mode }-${ failure.replaceAll(' ', '-') }.test` }
+		await modules.changeSimulationMode({ simulationMode: true, activeSimulationAddress: address })
+		await modules.updateUserAddressBookEntries(() => [{ type: 'contact', address, name: 'Account', chainId: 'AllChains', entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true }])
+		await modules.updateWebsiteAccess(() => [website, { websiteOrigin: 'still-allowed.test' }].map(website => ({ website, access: true, addressAccess: [{ address, access: true }], declarativeNetRequestBlockMode: 'block-all' })))
+		const entry = (await modules.getSettings()).websiteAccess.find(entry => entry.website.websiteOrigin === website.websiteOrigin)
+		assert.ok(entry)
+		const connections: WebsiteTabConnections = new Map()
+		for (const [tabId, websiteOrigin] of [[1, website.websiteOrigin], [2, 'still-allowed.test']] as const) {
+			const socket = { tabId, connectionName: 0n }
+			const { port } = createPort(tabId)
+			connections.set(tabId, { connections: { [modules.websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: tabId === 1, wantsToConnect: true } } })
+		}
+		const error = new Error(`Failed ${ failure }`)
+		const readStarted = createDeferredSignal()
+		const releaseRead = createDeferredSignal()
+		const originalGet = browser.storage.local.get.bind(browser.storage.local)
+		Object.defineProperty(browser.storage.local, 'get', { configurable: true, value: async (keys?: string | string[] | Record<string, unknown> | null) => {
+			if (failure === 'settings read' && Array.isArray(keys) && keys.includes('openedPageV2')) throw error
+			if (failure === 'tab read' && keys === 'tabState_1') throw error
+			if (failure === 'tab read' && keys === 'tabState_2') { readStarted.resolve(); await releaseRead.promise }
+			return await originalGet(keys)
+		} })
+		if (failure === 'blocking rules') Object.defineProperty(browser.declarativeNetRequest, 'getDynamicRules', { configurable: true, value: async () => { throw error } })
+		let settled = false
+		const { ethereum, tokenPriceService } = createEthereumWithGetBlockCounter({ count: 0 })
+		const request = mode === 'bulk'
+			? modules.changeInterceptorAccess(createTestSimulationServicesOwner({ ethereum, tokenPriceService }), connections, { method: 'popup_changeInterceptorAccess', data: [{ oldEntry: entry, newEntry: entry, removed: true }] })
+			: allowOrPreventAddressAccessForWebsite(connections, { method: 'popup_allowOrPreventAddressAccessForWebsite', data: { website, address, allowAccess: false } })
+		const change = request.then(
+			() => { settled = true; return undefined },
+			caught => { settled = true; return caught },
+		)
+		try {
+			if (failure === 'tab read') {
+				await completesPromptly(readStarted.promise)
+				await new Promise(resolve => setTimeout(resolve, 0))
+				assert.equal(settled, false, 'Wait for other reconciliation tasks before clearing approvals; they could otherwise approve a tab after failure')
+				releaseRead.resolve()
+			}
+			assert.equal(await completesPromptly(change), error)
+			assert.equal([...connections.values()].some(tab => Object.values(tab.connections).some(connection => connection.approved)), false)
+			assert.equal(runtimeMessages.some(message => message.method === 'popup_websiteAccess_changed' || message.method === 'popup_interceptor_access_changed'), false)
+		} finally { releaseRead.resolve(); await change; Object.defineProperty(browser.storage.local, 'get', { configurable: true, value: originalGet }) }
+	})
+
+	test.each(['bulk', 'disable', 'remove'] as const)('%s access change fails closed if content-script setup rejects after saving permissions', async operation => {
+		const { runtimeMessages } = installBrowserMock()
+		const modules = await loadModules()
+		const handlers = await import('../../app/ts/background/popupMessageHandlers/websiteAccess.js')
+		const website = { websiteOrigin: 'revoked-before-injection.test' }
+		const anotherWebsite = { websiteOrigin: 'disabled-in-same-edit.test' }
+		await modules.updateWebsiteAccess(() => [{ website, access: true, interceptorDisabled: operation === 'remove' }, { website: anotherWebsite, access: true }])
+		const entries = (await modules.getSettings()).websiteAccess
+		const [entry, anotherEntry] = entries
+		assert.ok(entry && anotherEntry)
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port } = createPort(socket.tabId)
+		const connections: WebsiteTabConnections = new Map([[socket.tabId, { connections: { [modules.websiteSocketToString(socket)]: { port, socket, websiteOrigin: website.websiteOrigin, approved: true, wantsToConnect: true } } }]])
+		const error = new Error('Cannot read settings for content-script setup')
+		const originalGet = browser.storage.local.get.bind(browser.storage.local)
+		Object.defineProperty(browser.storage.local, 'get', { configurable: true, value: async (keys?: string | string[] | Record<string, unknown> | null) => {
+			if (Array.isArray(keys) && keys.includes('openedPageV2')) throw error
+			return await originalGet(keys)
+		} })
+		const { ethereum, tokenPriceService } = createEthereumWithGetBlockCounter({ count: 0 })
+		const owner = createTestSimulationServicesOwner({ ethereum, tokenPriceService })
+		try {
+			const request = operation === 'bulk' ? modules.changeInterceptorAccess(owner, connections, { method: 'popup_changeInterceptorAccess', data: [
+				{ oldEntry: entry, newEntry: entry, removed: true },
+				{ oldEntry: anotherEntry, newEntry: { ...anotherEntry, interceptorDisabled: true }, removed: false },
+			] }) : operation === 'disable'
+				? handlers.disableInterceptor(owner, connections, { method: 'popup_disableInterceptor', data: { website, interceptorDisabled: true } })
+				: handlers.removeWebsiteAccess(owner, connections, { method: 'popup_removeWebsiteAccess', data: { websiteOrigin: website.websiteOrigin } })
+			await assert.rejects(request, caught => caught === error)
+			assert.equal(Object.values(connections.get(1)?.connections ?? {})[0]?.approved, false)
+			assert.equal(runtimeMessages.some(message => message.method === 'popup_websiteAccess_changed' || message.method === 'popup_interceptor_access_changed' || message.method === 'popup_setDisableInterceptorReply'), false)
+		} finally { Object.defineProperty(browser.storage.local, 'get', { configurable: true, value: originalGet }) }
+		const saved = (await modules.getSettings()).websiteAccess
+		if (operation === 'disable') assert.equal(saved.find(entry => entry.website.websiteOrigin === website.websiteOrigin)?.interceptorDisabled, true)
+		else assert.equal(saved.some(entry => entry.website.websiteOrigin === website.websiteOrigin), false, 'Revocation was committed before setup failed')
+		if (operation === 'bulk') assert.equal(saved.find(entry => entry.website.websiteOrigin === anotherWebsite.websiteOrigin)?.interceptorDisabled, true)
+	})
+
 	test('address-book save reports permission reconciliation failures before acknowledgement', async () => {
 		installBrowserMock()
 		const modules = await loadModules()

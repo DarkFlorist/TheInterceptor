@@ -391,6 +391,27 @@ export type WebsiteAccessUpdate = {
 	readonly iconRefreshTargets: readonly { readonly tabId: number, readonly websiteOrigin: string }[]
 }
 
+// Include post-write setup in the failure boundary: it can reject after permissions have already been committed.
+export async function applyWebsiteAccessChange<T>(websiteTabConnections: WebsiteTabConnections, change: () => Promise<T>) {
+	try {
+		const result = await change()
+		const accessUpdate = await reconcileWebsiteApprovalAccesses(websiteTabConnections, await getSettings(), true)
+		return { result, accessUpdate }
+	} catch (error) {
+		// Failed settings reads or reconciliation leave approval uncertain: fail closed before propagating, independently of background UI reloads.
+		for (const tab of websiteTabConnections.values()) {
+			for (const connection of Object.values(tab.connections)) connection.approved = false
+		}
+		throw error
+	}
+}
+
+// Use when the mutation has no post-write setup; access mutations with content-script updates use applyWebsiteAccessChange.
+export async function reconcileCommittedWebsiteAccess(websiteTabConnections: WebsiteTabConnections) {
+	const { accessUpdate } = await applyWebsiteAccessChange(websiteTabConnections, async () => undefined)
+	return accessUpdate
+}
+
 // Reconcile approvals with the committed settings while the caller owns the settings lock.
 export async function reconcileWebsiteApprovalAccesses(
 	websiteTabConnections: WebsiteTabConnections,
@@ -411,7 +432,11 @@ export async function reconcileWebsiteApprovalAccesses(
 		for (const iconRefreshTarget of tabIconRefreshTargets.values()) addIconRefreshTarget(iconRefreshTargets, iconRefreshTarget.tabId, iconRefreshTarget.websiteOrigin)
 	})
 	try {
-		await Promise.all(updatePromises)
+		// Finish every tab before returning an error so callers can fail closed without a later tab reapproving itself.
+		const results = await Promise.allSettled(updatePromises)
+		for (const result of results) {
+			if (result.status === 'rejected') throw result.reason
+		}
 	} catch (error) {
 		if (throwOnError) throw error
 		await reportUnexpectedError(error)

@@ -11,7 +11,7 @@ import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransacti
 import { askForSignerAccountsFromSignerIfNotAvailable, getAddressMetadataForAccess, refreshSignerAccountsForTab, refreshSignerAccountsFromApprovedWebsitePorts, requestAddressChange, resolveInterceptorAccess, type SignerAccountRefreshOptions } from './windows/interceptorAccess.js'
 import { resolveChainChange } from './windows/changeChain.js'
 import { changeActiveRpc } from './walletSwitch.js'
-import { reconcileWebsiteApprovalAccesses, scheduleWebsiteAccessUiUpdate } from './accessManagement.js'
+import { applyWebsiteAccessChange, reconcileCommittedWebsiteAccess, scheduleWebsiteAccessUiUpdate } from './accessManagement.js'
 import { getActiveOrFirstSignerAddress, getHtmlFile, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getActiveAddressForCurrentSignerState, sendCallbackToAllConfirmedSignerOwners, sendCallbackToConfirmedSignerOwner } from './signerStateOwnership.js'
 import { findEntryWithSymbolOrName, getMetadataForAddressBookData } from './metadataSearch.js'
@@ -285,7 +285,7 @@ export async function removeAddressBookEntry(simulationServicesOwner: Simulation
 		&& (contact.chainId === removeAddressBookEntry.data.chainId || (contact.chainId === undefined && removeAddressBookEntry.data.chainId === 1n))))
 	)
 	if (removeAddressBookEntry.data.addressBookCategory === 'My Active Addresses' || removeAddressBookEntry.data.addressBookCategory === 'My Safes') {
-		const accessUpdate = await reconcileWebsiteApprovalAccesses(websiteTabConnections, await getSettings(), false)
+		const accessUpdate = await reconcileCommittedWebsiteAccess(websiteTabConnections)
 		scheduleWebsiteAccessUiUpdate(simulationServicesOwner, websiteTabConnections, accessUpdate, true)
 	}
 	await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
@@ -335,7 +335,7 @@ export async function addOrModifyAddressBookEntry(simulationServicesOwner: Simul
 			return previousContacts.concat([entryToStore])
 		})
 		if (entryToStore.useAsActiveAddress) {
-			const accessUpdate = await reconcileWebsiteApprovalAccesses(websiteTabConnections, await getSettings(), true)
+			const accessUpdate = await reconcileCommittedWebsiteAccess(websiteTabConnections)
 			scheduleWebsiteAccessUiUpdate(simulationServicesOwner, websiteTabConnections, accessUpdate, true)
 		}
 		void sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
@@ -415,7 +415,7 @@ export async function setSafeSimulationSigner(
 		}
 	}
 	if (updatedEntry.useAsActiveAddress) {
-		const accessUpdate = await reconcileWebsiteApprovalAccesses(websiteTabConnections, await getSettings(), false)
+		const accessUpdate = await reconcileCommittedWebsiteAccess(websiteTabConnections)
 		scheduleWebsiteAccessUiUpdate(simulationServicesOwner, websiteTabConnections, accessUpdate, true)
 	}
 	await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
@@ -423,17 +423,14 @@ export async function setSafeSimulationSigner(
 }
 
 export async function changeInterceptorAccess(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, accessChange: ChangeInterceptorAccess) {
-	const disabledSitesChanged = await updateWebsiteAccessAndContentScriptInjectionStrategy((previousAccess) => {
+	const { result: disabledSitesChanged, accessUpdate } = await applyWebsiteAccessChange(websiteTabConnections, async () => await updateWebsiteAccessAndContentScriptInjectionStrategy((previousAccess) => {
 		const withEntriesRemoved = previousAccess.filter((acc) => accessChange.data.find((change) => change.newEntry.website.websiteOrigin === acc.website.websiteOrigin)?.removed !== true)
 		return withEntriesRemoved.map((entry) => {
 			const changeForEntry = accessChange.data.find((change) => change.newEntry.website.websiteOrigin === entry.website.websiteOrigin)
 			if (changeForEntry === undefined) return entry
 			return changeForEntry.newEntry
 		})
-	})
-
-
-	const accessUpdate = await reconcileWebsiteApprovalAccesses(websiteTabConnections, await getSettings(), false)
+	}))
 	scheduleWebsiteAccessUiUpdate(simulationServicesOwner, websiteTabConnections, accessUpdate, true)
 	if (disabledSitesChanged) {
 		const origins = new Set(accessChange.data.map(change => change.newEntry.website.websiteOrigin))

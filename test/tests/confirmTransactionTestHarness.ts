@@ -127,9 +127,12 @@ export function createBrowserMock() {
 			async setBadgeBackgroundColor() { return undefined },
 		},
 	}
-	Object.defineProperty(globalThis, 'browser', { value: browser, configurable: true, writable: true })
-	Object.defineProperty(globalThis, 'chrome', { value: { runtime: { id: 'test-extension' } }, configurable: true, writable: true })
-	Object.defineProperty(globalThis, 'location', { value: { origin: '' }, configurable: true, writable: true })
+	const installGlobals = () => {
+		Object.defineProperty(globalThis, 'browser', { value: browser, configurable: true, writable: true })
+		Object.defineProperty(globalThis, 'chrome', { value: { runtime: { id: 'test-extension' } }, configurable: true, writable: true })
+		Object.defineProperty(globalThis, 'location', { value: { origin: '' }, configurable: true, writable: true })
+	}
+	installGlobals()
 
 	return {
 		sentMessages,
@@ -147,6 +150,8 @@ export function createBrowserMock() {
 		setStorageSetHandler(handler: typeof storageSetHandler) { storageSetHandler = handler },
 		setTabMessageHandler(handler: ((tabId: number, message: unknown) => unknown | Promise<unknown>) | undefined) { tabMessageHandler = handler },
 		reset() {
+			// Other test files install their own browser; restore this harness before seeding or observing its storage.
+			installGlobals()
 			for (const key of Object.keys(storageState)) delete storageState[key]
 			sentMessages.length = 0
 			browser.runtime.lastError = undefined
