@@ -45,9 +45,7 @@ test('prepares a local transaction against the cleared-code simulation state', a
 			method: 'eth_sendTransaction',
 			params: [{ from: addressString(activeAddress), to: addressString(recipientAddress), value: '0x0' }],
 		})
-		await modules.formEthSendTransaction(simulator.ethereum, undefined, activeAddress,
-			{ websiteOrigin: 'https://example.com', icon: undefined, title: undefined }, params, created, 1n, true)
-		assert.equal(fakeSafeContract.simulatedRequests.some((request) => {
+		const simulatedWithClearedCode = () => fakeSafeContract.simulatedRequests.some((request) => {
 			const params = request.params?.[0]
 			if (!isRecord(params) || !Array.isArray(params.blockStateCalls)) return false
 			return params.blockStateCalls.some((block) => {
@@ -55,7 +53,16 @@ test('prepares a local transaction against the cleared-code simulation state', a
 				const override = block.stateOverrides[addressString(activeAddress)]
 				return isRecord(override) && override.code instanceof Uint8Array && override.code.length === 0
 			})
-		}), true)
+		})
+		await modules.formEthSendTransaction(simulator.ethereum, undefined, activeAddress,
+			{ websiteOrigin: 'https://example.com', icon: undefined, title: undefined }, params, created, 1n, true)
+		assert.equal(simulatedWithClearedCode(), true)
+		// A transaction an external executor will run on-chain never sees the what-if state, even in simulation mode with a saved preference.
+		fakeSafeContract.simulatedRequests.length = 0
+		await modules.formEthSendTransaction(simulator.ethereum, undefined, activeAddress,
+			{ websiteOrigin: 'https://example.com', icon: undefined, title: undefined }, params, created, 1n, true, 'external-executor')
+		assert.equal(fakeSafeContract.simulatedRequests.length > 0, true)
+		assert.equal(simulatedWithClearedCode(), false)
 	} finally {
 		await setDelegateClearingEnabled(activeAddress, fakeRpcNetwork.chainId, false)
 	}

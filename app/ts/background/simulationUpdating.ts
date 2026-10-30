@@ -34,7 +34,7 @@ import { decodeCallDataLoose, encodeFunctionCall } from '../utils/abiRuntime.js'
 import type { StateOverrides } from '../types/ethSimulate-types.js'
 import { getActiveStackContext, getOperationsForActiveStackContext } from '../utils/activeStackContext.js'
 import { isCodeClearedBySimulationOverrides } from '../utils/delegateClearingState.js'
-import { getWhatIfSimulationOverrides } from './delegateClearingPolicy.js'
+import { getSimulationOverridesForPurpose, type SimulationPreviewPurpose } from './delegateClearingPolicy.js'
 
 export { getGovernanceExecutionSimulationInput } from '../simulation/compoundGovernanceFaking.js'
 
@@ -132,14 +132,8 @@ export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[
 	return inputBlocks
 }
 
-export const getWhatIfSimulationInput = async (settings: Settings, richAddresses?: readonly bigint[]): Promise<SimulationInput> =>
-	createSimulatedInput(await getCurrentSimulationInput(richAddresses, settings), getWhatIfSimulationOverrides(settings))
-
-const getSigningSimulationInput = async (settings: Settings, richAddresses?: readonly bigint[]): Promise<SimulationInput> =>
-	createSimulatedInput(await getCurrentSimulationInput(richAddresses, settings))
-
-export const getSimulationInputForCurrentMode = async (settings: Settings, richAddresses?: readonly bigint[]): Promise<SimulationInput> =>
-	settings.simulationMode ? await getWhatIfSimulationInput(settings, richAddresses) : await getSigningSimulationInput(settings, richAddresses)
+export const getSimulationInputForPurpose = async (purpose: SimulationPreviewPurpose, settings: Settings, richAddresses?: readonly bigint[]): Promise<SimulationInput> =>
+	createSimulatedInput(await getCurrentSimulationInput(richAddresses, settings), getSimulationOverridesForPurpose(purpose, settings))
 
 export type SimulationSnapshot = {
 	readonly activeRpcNetwork: RpcNetwork
@@ -149,22 +143,19 @@ export type SimulationSnapshot = {
 }
 
 // Capture selection and input at the storage boundary. An unreadable stack must abort before publishing any fallback.
-async function captureSimulationSnapshotForSettings(settings: Settings, getInput: typeof getWhatIfSimulationInput): Promise<SimulationSnapshot> {
+export async function captureSimulationSnapshotForPurpose(purpose: SimulationPreviewPurpose): Promise<SimulationSnapshot> {
+	const settings = await getSettings()
 	const richAddresses = await getAddressesbeingMadeRich(settings)
 	return {
 		activeRpcNetwork: settings.activeRpcNetwork,
 		activeStackContext: getActiveStackContext(settings),
-		simulationInput: await getInput(settings, richAddresses),
+		simulationInput: await getSimulationInputForPurpose(purpose, settings, richAddresses),
 		numberOfAddressesMadeRich: richAddresses.length,
 	}
 }
 
-export const captureWhatIfSimulationSnapshot = async () => await captureSimulationSnapshotForSettings(await getSettings(), getWhatIfSimulationInput)
-export const captureSigningSimulationSnapshot = async () => await captureSimulationSnapshotForSettings(await getSettings(), getSigningSimulationInput)
-export const captureCurrentModeSimulationSnapshot = async () => {
-	const settings = await getSettings()
-	return await captureSimulationSnapshotForSettings(settings, getSimulationInputForCurrentMode)
-}
+export const captureWhatIfSimulationSnapshot = async () => await captureSimulationSnapshotForPurpose('what-if')
+export const captureSigningSimulationSnapshot = async () => await captureSimulationSnapshotForPurpose('signing-or-execution')
 
 export const getSimulationProviderForSnapshot = (ethereum: EthereumClientService, snapshot: SimulationSnapshot) => (
 	isSignerOnlyNetwork(snapshot.activeRpcNetwork) ? undefined : ethereum
@@ -185,7 +176,7 @@ export async function getUpdatedSimulationState(ethereum: EthereumClientService,
 /** Builds the simulation-stack overlay used by simulation mode and Gnosis Safe signing mode. */
 export async function getUpdatedSimulationStackSnapshot(ethereum: EthereumClientService, simulationOverlayEnabled: boolean) {
 	if (!simulationOverlayEnabled) return { simulationInput: PASSTHROUGH_STATE, simulationState: PASSTHROUGH_STATE }
-	const snapshot = await captureCurrentModeSimulationSnapshot()
+	const snapshot = await captureWhatIfSimulationSnapshot()
 	return {
 		simulationInput: snapshot.simulationInput,
 		simulationState: await getUpdatedSimulationState(ethereum, snapshot),
@@ -272,8 +263,8 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 		const addr = await identifyAddress(ethereum, undefined, pendingTransaction.transactionToSimulate.transaction.to)
 		if (!('abi' in addr) || addr.abi === undefined) return { success: false as const, errorType: 'MissingAbi' as const, errorMessage: 'ABi for the governance contract is missing', errorAddressBookEntry: addr }
 		const settingsSnapshot = await getSettings()
-		// The execution preview continues the vote's own preview, so it shares its what-if state: the opt-in delegate clearing applies only in simulation mode, where nothing is signed, and getWhatIfSimulationOverrides returns no override in signing mode.
-		const simulationInput = await getWhatIfSimulationInput(settingsSnapshot)
+		// The execution preview continues the vote's own preview, so it shares its what-if state: the opt-in delegate clearing applies only in simulation mode, where nothing is signed, and getSimulationOverridesForPurpose returns no override in signing mode.
+		const simulationInput = await getSimulationInputForPurpose('what-if', settingsSnapshot)
 		const executionTransactionMetadata = {
 			website: pendingTransaction.transactionToSimulate.website,
 			created: new Date(),
