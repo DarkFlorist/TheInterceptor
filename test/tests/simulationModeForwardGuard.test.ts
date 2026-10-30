@@ -70,6 +70,30 @@ describe('simulation mode forward guard', () => {
 		assertAnsweredInSimulationMode(replies)
 	})
 
+	test('does not forward when an enabling write is already visible in storage but has not completed', async () => {
+		const { setStorageHooks, readStoredValue, enableSimulationMode, sendAddEthereumChainAfterArming } = await setUpSigningModeWebsite()
+		let enabling: Promise<void> | undefined
+		let storedModeWhileWithheld: unknown
+		const replies = await sendAddEthereumChainAfterArming(7, async () => setStorageHooks({
+			afterGet: async (keys) => {
+				if (keys !== 'tabState_1') return
+				setStorageHooks({
+					afterSet: async (items) => {
+						if (items.simulationMode !== true) return
+						setStorageHooks({})
+						storedModeWhileWithheld = readStoredValue('simulationMode')
+						// Withhold completion for one macrotask; the already-routed request reaches its forward point meanwhile.
+						await new Promise((resolve) => setTimeout(resolve, 0))
+					},
+				})
+				enabling = enableSimulationMode()
+			},
+		}))
+		await enabling
+		assert.equal(storedModeWhileWithheld, true)
+		assertAnsweredInSimulationMode(replies)
+	})
+
 	test('does not forward when simulation mode is enabled during wake-status publishing', async () => {
 		const { modules, ethereum, enableSimulationMode, sendAddEthereumChain } = await setUpSigningModeWebsite({ initialBlockPolling: false })
 		await modules.setRpcConnectionStatus({ isConnected: true, lastConnnectionAttempt: new Date('2024-01-01T00:00:00.000Z'), latestBlock: undefined, rpcNetwork: ethereum.getRpcEntry(), retrying: false })
@@ -159,6 +183,20 @@ describe('simulation mode forward guard', () => {
 		// The popup read must not have written simulation mode, so forwarding matches the stored signing mode.
 		assert.equal(readStoredValue('simulationMode'), false)
 		assert.deepEqual(replies.map((reply) => reply.type), ['forwardToSigner'])
+	})
+
+	test('UI code never calls the background-only getSettings()', async () => {
+		const uiSourcePaths = [
+			...Array.from(new Bun.Glob('components/**/*.{ts,tsx}').scanSync({ cwd: new URL('../../app/ts', import.meta.url).pathname })),
+			...Array.from(new Bun.Glob('*.{ts,tsx}').scanSync({ cwd: new URL('../../app/ts', import.meta.url).pathname })).filter((path) => path !== 'backgroundServiceWorker.ts'),
+		]
+		assert.ok(uiSourcePaths.includes('components/subcomponents/ConfigureRpcConnection.tsx'))
+		const offenders: string[] = []
+		for (const path of uiSourcePaths) {
+			const source = await Bun.file(new URL(`../../app/ts/${ path }`, import.meta.url)).text()
+			if (/\bgetSettings\b/u.test(source)) offenders.push(path)
+		}
+		assert.deepEqual(offenders, [])
 	})
 
 	test('counts every write that enables simulation mode, including settings import', async () => {

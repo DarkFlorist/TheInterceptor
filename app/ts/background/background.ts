@@ -3,7 +3,7 @@ import type { RpcRequestContext } from '../types/confirmationRequest.js'
 import type { InpageScriptRequest, RPCReply, Settings } from '../types/interceptor-messages.js'
 import 'webextension-polyfill'
 import { getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
-import { getSettings, getSimulationModeGeneration, updateWebsiteAccess } from './settings.js'
+import { getSettings, getSimulationModeGeneration, isSimulationModeGenerationCurrent, updateWebsiteAccess, waitForSimulationModeEnablingWrites } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getBlockByHash, getCode, getFilterChanges, getFilterLogs, getLogs, getPermissions, getStorageAt, getTransactionByHash, getTransactionCount, getTransactionReceipt, handleInterceptorError, installNewFilter, maxPriorityFeePerGas, netVersion, personalSign, requestInterceptorSimulatorStack, requestPermissions, sendTransaction, subscribe, switchEthereumChain, ethSimulateV1, feeHistory, uninstallNewFilter, unsubscribe, web3ClientVersion } from './simulationModeHandlers.js'
 import { PASSTHROUGH_STATE, type ResolvedExecutionSimulationState, type ResolvedSimulationInput, toResolvedExecutionSimulationState, toResolvedSimulationInput } from '../types/visualizer-types.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
@@ -531,8 +531,11 @@ async function handleContentScriptMessage(simulationServicesOwner: SimulationSer
 			activeAddress.address,
 		)
 		replayProviderStateForAccountRequest(websiteTabConnections, request, resolved, activeAddress.address)
-		// Simulation mode was enabled after the routing settings were read, so route the request again under the current mode instead of forwarding it to the signer.
-		if (resolved.type === 'forwardToSigner' && getSimulationModeGeneration() !== simulationModeGenerationAtRouting) return await handleRequestAgain()
+		// Simulation mode may have been enabled after the routing settings were read, so let that write settle and route the request again under the current mode instead of forwarding it to the signer.
+		if (resolved.type === 'forwardToSigner' && !isSimulationModeGenerationCurrent(simulationModeGenerationAtRouting)) {
+			await waitForSimulationModeEnablingWrites()
+			return await handleRequestAgain()
+		}
 		return replyToInterceptedRequest(websiteTabConnections, { ...requestWithDefinedParams, ...resolved })
 	} catch (error: unknown) {
 		if (isFailedToFetchError(error)) {

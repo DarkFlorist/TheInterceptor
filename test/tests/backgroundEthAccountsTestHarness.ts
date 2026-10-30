@@ -16,6 +16,8 @@ type StorageHooks = {
 	readonly afterGet?: (keys: StorageGetKeys) => Promise<void>
 	// Runs before a write is applied, so a hook can pause a caller that is waiting on that write.
 	readonly beforeSet?: (items: Record<string, unknown>) => Promise<void>
+	// Runs after a write is applied and before it resolves, so a hook can expose the written values while withholding write completion.
+	readonly afterSet?: (items: Record<string, unknown>) => Promise<void>
 }
 type PortMessage = { walletSwitchRequestId?: unknown, type?: unknown, method?: unknown, result?: unknown, requestId?: unknown, error?: { code?: unknown, message?: unknown } }
 export const noopPublishRpcConnectionStatus: PublishRpcConnectionStatus = async () => undefined
@@ -75,6 +77,7 @@ export function installBrowserMock({ deferFirstChainChangeRemoval = false, manif
 					const changes = Object.fromEntries(Object.entries(items).map(([key, newValue]) => [key, { oldValue: storageState[key], newValue }]))
 					Object.assign(storageState, items)
 					for (const listener of storageListeners) listener(changes, 'local')
+					if (storageHooks.afterSet !== undefined) await storageHooks.afterSet(items)
 				},
 				async remove(keys: string | string[]) {
 					const keysToRemove = Array.isArray(keys) ? keys : [keys]

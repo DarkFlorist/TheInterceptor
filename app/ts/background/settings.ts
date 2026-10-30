@@ -217,16 +217,30 @@ function getSimulationModeStorageUpdate(changes: SimulationModeChanges) {
 
 // Counts completed writes that enable simulation mode. Only entering simulation mode can invalidate a decision to forward a request to the signer.
 let simulationModeGeneration = 0
+// Enabling writes that have started but not settled; storage may already hold simulationMode: true while one is pending.
+const pendingSimulationModeEnablingWrites = new Set<Promise<void>>()
 
-// Capture before reading the settings a routing decision uses; a different value later means simulation mode was enabled after that read.
+// Capture before reading the settings a routing decision uses, then check it with isSimulationModeGenerationCurrent right before forwarding.
 export const getSimulationModeGeneration = () => simulationModeGeneration
 
+// False if simulation mode may have been enabled after the captured generation: an enabling write is still in flight or one has completed since.
+export const isSimulationModeGenerationCurrent = (capturedGeneration: number) => pendingSimulationModeEnablingWrites.size === 0 && simulationModeGeneration === capturedGeneration
+
+export async function waitForSimulationModeEnablingWrites() {
+	await Promise.allSettled(pendingSimulationModeEnablingWrites)
+}
+
 async function writeSimulationModeChanges(changes: SimulationModeChanges, otherItems: { readonly signingAddressPreferences?: SigningAddressPreferences } = {}) {
+	const write = browserStorageLocalSet({ ...getSimulationModeStorageUpdate(changes), ...otherItems })
+	if (!changes.simulationMode) return await write
+	// Registered in the same synchronous step that starts the write, so no forward can be committed in between.
+	pendingSimulationModeEnablingWrites.add(write)
 	try {
-		await browserStorageLocalSet({ ...getSimulationModeStorageUpdate(changes), ...otherItems })
+		await write
 	} finally {
-		// Bump only after the write settles so any routing decision that captured the old generation either read the new mode or sees the bump.
-		if (changes.simulationMode) simulationModeGeneration++
+		pendingSimulationModeEnablingWrites.delete(write)
+		// Bump on settle so a decision that captured the old generation still sees the change after the write is no longer pending.
+		simulationModeGeneration++
 	}
 }
 
