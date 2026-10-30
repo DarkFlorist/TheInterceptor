@@ -533,6 +533,14 @@ async function getLiveSettingsForAdmittedRpcNetwork(admittedSettings: Settings):
 	return { ...liveSettings, activeRpcNetwork: admittedSettings.activeRpcNetwork }
 }
 
+// Storage reads, Safe preparation and wake-status publishing all await after routing is decided, so a signer forward is rechecked against the live simulation mode at the last await before it is posted.
+async function recheckSignerForwardBeforePosting(resolved: RPCReply): Promise<'post' | 'reroute' | 'unavailable'> {
+	if (resolved.type !== 'forwardToSigner') return 'post'
+	const { settings: liveSettings } = await getSettingsSnapshot()
+	if (liveSettings === undefined) return 'unavailable'
+	return liveSettings.simulationMode ? 'reroute' : 'post'
+}
+
 async function handleContentScriptMessage(simulationServicesOwner: SimulationServicesOwner, simulationServices: SimulationServices | undefined, websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, website: Website, activeAddress: AddressBookEntry, admittedSettings: Settings, publishRpcConnectionStatus: PublishRpcConnectionStatus) {
 	try {
 		const requestWithDefinedParams = getRequestWithDefinedParams(request)
@@ -562,6 +570,10 @@ async function handleContentScriptMessage(simulationServicesOwner: SimulationSer
 			resolved,
 			activeAddress.address,
 		)
+		const signerForwardRecheck = await recheckSignerForwardBeforePosting(resolved)
+		if (signerForwardRecheck === 'unavailable') return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...requestWithDefinedParams, error: RPC_CONFIGURATION_UNAVAILABLE_ERROR })
+		// Simulation mode was enabled after routing was decided, so the request is routed again under the live mode instead of reaching the real signer.
+		if (signerForwardRecheck === 'reroute') return await handleContentScriptMessage(simulationServicesOwner, simulationServices, websiteTabConnections, request, website, activeAddress, admittedSettings, publishRpcConnectionStatus)
 		replayProviderStateForAccountRequest(websiteTabConnections, request, resolved, activeAddress.address)
 		return replyToInterceptedRequest(websiteTabConnections, { ...requestWithDefinedParams, ...resolved })
 	} catch (error: unknown) {
