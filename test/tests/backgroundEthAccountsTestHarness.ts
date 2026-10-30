@@ -10,6 +10,13 @@ import { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
 
 type Listener = () => void
+type StorageGetKeys = string | string[] | Record<string, unknown> | null | undefined
+type StorageHooks = {
+	// Runs after a read has captured its result and before it resolves, so a hook can change storage while the reader still holds the old values.
+	readonly afterGet?: (keys: StorageGetKeys) => Promise<void>
+	// Runs before a write is applied, so a hook can pause a caller that is waiting on that write.
+	readonly beforeSet?: (items: Record<string, unknown>) => Promise<void>
+}
 type PortMessage = { walletSwitchRequestId?: unknown, type?: unknown, method?: unknown, result?: unknown, requestId?: unknown, error?: { code?: unknown, message?: unknown } }
 export const noopPublishRpcConnectionStatus: PublishRpcConnectionStatus = async () => undefined
 
@@ -28,6 +35,7 @@ export function createDeferredValue<T>() {
 export function installBrowserMock({ deferFirstChainChangeRemoval = false, manifestVersion = 3 }: { readonly deferFirstChainChangeRemoval?: boolean, readonly manifestVersion?: 2 | 3 } = {}) {
 	const storageListeners = new Set<(changes: Record<string, { newValue?: unknown, oldValue?: unknown }>, area: string) => void>()
 	const storageState: Record<string, unknown> = {}
+	let storageHooks: StorageHooks = {}
 	const runtimeMessages: unknown[] = []
 	const chainChangeRemovalStarted = createDeferredSignal()
 	const chainChangeRemovalRelease = createDeferredSignal()
@@ -51,13 +59,19 @@ export function installBrowserMock({ deferFirstChainChangeRemoval = false, manif
 		storage: {
 			onChanged: { addListener: (listener: (changes: Record<string, { newValue?: unknown, oldValue?: unknown }>, area: string) => void) => storageListeners.add(listener), removeListener: (listener: (changes: Record<string, { newValue?: unknown, oldValue?: unknown }>, area: string) => void) => storageListeners.delete(listener) },
 			local: {
-				async get(keys?: string | string[] | Record<string, unknown> | null) {
-					if (keys === undefined || keys === null) return { ...storageState }
-					if (Array.isArray(keys)) return Object.fromEntries(keys.filter((key) => key in storageState).map((key) => [key, storageState[key]]))
-					if (typeof keys === 'string') return keys in storageState ? { [keys]: storageState[keys] } : {}
-					return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
+				async get(keys?: StorageGetKeys) {
+					const readStorage = () => {
+						if (keys === undefined || keys === null) return { ...storageState }
+						if (Array.isArray(keys)) return Object.fromEntries(keys.filter((key) => key in storageState).map((key) => [key, storageState[key]]))
+						if (typeof keys === 'string') return keys in storageState ? { [keys]: storageState[keys] } : {}
+						return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
+					}
+					const result = readStorage()
+					if (storageHooks.afterGet !== undefined) await storageHooks.afterGet(keys)
+					return result
 				},
 				async set(items: Record<string, unknown>) {
+					if (storageHooks.beforeSet !== undefined) await storageHooks.beforeSet(items)
 					const changes = Object.fromEntries(Object.entries(items).map(([key, newValue]) => [key, { oldValue: storageState[key], newValue }]))
 					Object.assign(storageState, items)
 					for (const listener of storageListeners) listener(changes, 'local')
@@ -132,6 +146,7 @@ export function installBrowserMock({ deferFirstChainChangeRemoval = false, manif
 		requestBlockingCalls,
 		runtimeMessages,
 		readStoredValue: (key: string) => storageState[key],
+		setStorageHooks: (hooks: StorageHooks) => { storageHooks = hooks },
 	}
 }
 

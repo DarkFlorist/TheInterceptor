@@ -203,15 +203,27 @@ function getSimulationModeStorageUpdate(changes: SimulationModeChanges) {
 	}
 }
 
+// Counts completed writes that enable simulation mode. Only entering simulation mode can invalidate a decision to forward a request to the signer.
+let simulationModeGeneration = 0
+
+// Capture before reading the settings a routing decision uses; a different value later means simulation mode was enabled after that read.
+export const getSimulationModeGeneration = () => simulationModeGeneration
+
+async function writeSimulationModeChanges(changes: SimulationModeChanges, otherItems: { readonly signingAddressPreferences?: SigningAddressPreferences } = {}) {
+	try {
+		await browserStorageLocalSet({ ...getSimulationModeStorageUpdate(changes), ...otherItems })
+	} finally {
+		// Bump only after the write settles so any routing decision that captured the old generation either read the new mode or sees the bump.
+		if (changes.simulationMode) simulationModeGeneration++
+	}
+}
+
 export async function changeSimulationMode(changes: SimulationModeChanges) {
-	return await browserStorageLocalSet(getSimulationModeStorageUpdate(changes))
+	return await writeSimulationModeChanges(changes)
 }
 
 async function replaceModeAndSigningPreferencesForImport(changes: SimulationModeChanges, signingAddressPreferences: SigningAddressPreferences) {
-	return await signingAddressPreferencesSemaphore.execute(async () => await browserStorageLocalSet({
-		...getSimulationModeStorageUpdate(changes),
-		signingAddressPreferences,
-	}))
+	return await signingAddressPreferencesSemaphore.execute(async () => await writeSimulationModeChanges(changes, { signingAddressPreferences }))
 }
 
 const websiteAccessSemaphore = new Semaphore(1)
