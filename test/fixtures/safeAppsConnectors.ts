@@ -1,3 +1,4 @@
+// These dev-only packages exercise the actual SDK and two connector entry points; the extension bundle uses its own protocol and build/bundler.mts checks the SDK response version.
 import SafeAppsSDK from '@safe-global/safe-apps-sdk'
 import { safe } from '@wagmi/connectors/safe'
 import gnosis from '@web3-onboard/gnosis'

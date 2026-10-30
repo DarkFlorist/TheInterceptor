@@ -625,6 +625,7 @@ async function main() {
 				const pageDiagnostics = await pageConnection.evaluate('({ state: globalThis.__interceptorChromeCommunicationState, signerRequests: globalThis.__fakeSafeSignerRequests })')
 				throw new Error(`Safe access approval failed: ${ JSON.stringify(pageDiagnostics) }`, { cause: error })
 			}
+			// The Request Finance fixture stores its SDK response as { safeInfo, elapsedMs }, with safeAddress inside safeInfo.
 			const grantedAccounts = await pageConnection.evaluate<readonly string[]>(requestFinanceDiscovery ? '[globalThis.__interceptorChromeCommunicationState.sdkReply.safeInfo.safeAddress]' : 'globalThis.__interceptorChromeCommunicationState.accounts')
 			if (grantedAccounts[0]?.toLowerCase() !== addressString(SAFE_ADDRESS).toLowerCase()) {
 				throw new Error(`Dapp received ${ grantedAccounts[0] ?? 'no account' } instead of the Safe address`)

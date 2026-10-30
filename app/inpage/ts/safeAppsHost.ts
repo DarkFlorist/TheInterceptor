@@ -2,7 +2,7 @@ import { createSafeAppsErrorResponse, createSafeAppsCancellation, parseSafeAppsR
 import { createSafeAppsRequestQueue } from './safeAppsRequestQueue.js'
 import { createSafeAppsTransport } from './safeAppsTransport.js'
 
-// Adapts parent-based Safe SDK messaging to the authorized same-window bridge. Only register the bootstrap on explicitly selected HTTP(S) origins, before the app runs.
+// The emulated parent and message source let any script on an explicitly selected HTTP(S) origin use the Safe Apps API; background RPC admission still checks website access and signing mode for each request.
 export function installSafeAppsHost() {
 	const windowObject = window
 	// Leave existing parent emulation intact if this bootstrap is loaded again.
