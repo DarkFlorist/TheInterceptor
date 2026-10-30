@@ -2,6 +2,8 @@ import * as path from 'node:path'
 import * as url from 'node:url'
 import * as fs from 'node:fs'
 import * as ts from 'typescript'
+// Intentional app-source dependency: the dependency-free path module stays under app/ts because the extension runtime ships it, and this bundler and scripts/inline-inpage-document-start.mts import it as the single source of page-world artifact paths.
+import { getManifestV2DocumentStartScriptPath, getPageWorldScriptPaths } from '../app/ts/utils/contentScriptInjectionArtifacts.ts'
 
 const directoryOfThisFile = path.dirname(url.fileURLToPath(import.meta.url))
 const appDirectory = path.join(directoryOfThisFile, '..', 'app')
@@ -367,6 +369,15 @@ function formatBunBuildLogs(logs: readonly BuildMessage[]) {
 		.join('\n')
 }
 
+const inpageRuntimeEntrypointPaths = [
+	path.join(appDirectory, getManifestV2DocumentStartScriptPath(false)),
+	path.join(appDirectory, getManifestV2DocumentStartScriptPath(true)),
+	path.join(appDirectory, 'inpage', 'js', 'listenContentScript.js'),
+	path.join(appDirectory, 'inpage', 'js', 'listenContentScriptBootstrap.js'),
+	...getPageWorldScriptPaths(false).map((scriptPath) => path.join(appDirectory, scriptPath)),
+	...getPageWorldScriptPaths(true).map((scriptPath) => path.join(appDirectory, scriptPath)),
+]
+
 const runtimeEntrypointPaths = [
 	path.join(appDirectory, 'js', 'backgroundServiceWorker.js'),
 	path.join(appDirectory, 'js', 'background', 'background-startup.js'),
@@ -380,19 +391,11 @@ const runtimeEntrypointPaths = [
 	path.join(appDirectory, 'js', 'settingsView.js'),
 	path.join(appDirectory, 'js', 'simulationStack.js'),
 	path.join(appDirectory, 'js', 'websiteAccess.js'),
-	path.join(appDirectory, 'inpage', 'js', 'document_start.js'),
-	path.join(appDirectory, 'inpage', 'js', 'inpage.js'),
-	path.join(appDirectory, 'inpage', 'js', 'listenContentScript.js'),
-	path.join(appDirectory, 'inpage', 'js', 'listenContentScriptBootstrap.js'),
+	...inpageRuntimeEntrypointPaths,
 	path.join(appDirectory, 'js', 'utils', 'ethereumPrimitives.js'),
 ]
 
-const classicRuntimeEntrypointPaths = new Set([
-	path.join(appDirectory, 'inpage', 'js', 'document_start.js'),
-	path.join(appDirectory, 'inpage', 'js', 'inpage.js'),
-	path.join(appDirectory, 'inpage', 'js', 'listenContentScript.js'),
-	path.join(appDirectory, 'inpage', 'js', 'listenContentScriptBootstrap.js'),
-])
+const classicRuntimeEntrypointPaths = new Set(inpageRuntimeEntrypointPaths)
 
 export function assertClassicEntrypointHasNoModuleSyntax(filePath: string, source: string) {
 	try {

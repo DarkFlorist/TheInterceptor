@@ -1,7 +1,8 @@
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from './utils/popupPerformance.js'
 import './background/background-startup.js'
 import { keepTabStateCleanupAlive } from './background/tabStateLifecycle.js'
-import { updateContentScriptInjectionStrategyManifestV3 } from './utils/contentScriptsUpdating.js'
+import { refreshContentScriptInjectionStrategy } from './background/contentScriptInjectionStrategy.js'
+import { silenceChromeUnCaughtPromise } from './utils/requests.js'
 
 markPerformance(POPUP_PERFORMANCE_MARKS.backgroundLoaded)
 
@@ -14,4 +15,4 @@ self.addEventListener('activate', (event) => {
 	keepTabStateCleanupAlive(event)
 })
 
-updateContentScriptInjectionStrategyManifestV3()
+silenceChromeUnCaughtPromise(refreshContentScriptInjectionStrategy())

@@ -4,8 +4,8 @@ import { Semaphore } from '../utils/semaphore.js'
 import type { EthereumAddress } from '../types/wire-types.js'
 import type { Website, WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import type { BlockExplorer, RpcNetwork } from '../types/rpc.js'
-import { type RichListElement, browserStorageLocalGet, browserStorageLocalSafeParse, browserStorageLocalSet } from '../utils/storageUtils.js'
-import { getUserAddressBookEntries, updateUserAddressBookEntries } from './storageVariables.js'
+import { type LocalStorageKey, type RichListElement, browserStorageLocalGet, browserStorageLocalSafeParse, browserStorageLocalSet, snapshotBrowserStorageLocalKeys } from '../utils/storageUtils.js'
+import { getUserAddressBookEntries, updateUserAddressBookEntries, withUserAddressBookEntriesLock } from './storageVariables.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
 import type { BlockTimeManipulation } from '../types/visualizer-types.js'
@@ -225,13 +225,19 @@ export async function getWebsiteAccess() {
 	return (await getNormalizedWebsiteAccessFromStorage()).sanitizedWebsiteAccess
 }
 
-export async function updateWebsiteAccess(updateFunc: (prevState: WebsiteAccessArray) => WebsiteAccessArray) {
-	await websiteAccessSemaphore.execute(async () => {
+// Returns the stored value before and after the update so rollback transactions can restore only what this update changed.
+export async function updateWebsiteAccessWithSnapshots(updateFunc: (prevState: WebsiteAccessArray) => WebsiteAccessArray) {
+	return await websiteAccessSemaphore.execute(async () => {
 		const { rawWebsiteAccess, sanitizedWebsiteAccess } = await getNormalizedWebsiteAccessFromStorage()
 		const nextWebsiteAccess = sanitizeWebsiteAccess(updateFunc(sanitizedWebsiteAccess))
-		if (nextWebsiteAccess === sanitizedWebsiteAccess && rawWebsiteAccess === sanitizedWebsiteAccess) return
-		return await browserStorageLocalSet({ websiteAccess: nextWebsiteAccess })
+		if (nextWebsiteAccess !== sanitizedWebsiteAccess || rawWebsiteAccess !== sanitizedWebsiteAccess) await browserStorageLocalSet({ websiteAccess: nextWebsiteAccess })
+		return { previousWebsiteAccess: sanitizedWebsiteAccess, updatedWebsiteAccess: nextWebsiteAccess }
 	})
+}
+
+// Last-write-wins: applies the update to the latest stored value; see withWebsiteAccessRollback in settingsTransactions.ts for the merge-and-restore variant.
+export async function updateWebsiteAccess(updateFunc: (prevState: WebsiteAccessArray) => WebsiteAccessArray) {
+	return (await updateWebsiteAccessWithSnapshots(updateFunc)).updatedWebsiteAccess
 }
 
 export async function updateKnownWebsiteMetadata(website: Website) {
@@ -252,7 +258,7 @@ export const getUseTabsInsteadOfPopup = async() => (await browserStorageLocalGet
 export const setUseTabsInsteadOfPopup = async(useTabsInsteadOfPopup: boolean) => await browserStorageLocalSet({ useTabsInsteadOfPopup })
 
 export const getMetamaskCompatibilityMode = async() => (await browserStorageLocalGet('metamaskCompatibilityMode'))?.metamaskCompatibilityMode ?? false
-export const setMetamaskCompatibilityMode = async(metamaskCompatibilityMode: boolean) => await browserStorageLocalSet({ metamaskCompatibilityMode })
+export const persistMetamaskCompatibilityMode = async(metamaskCompatibilityMode: boolean) => await browserStorageLocalSet({ metamaskCompatibilityMode })
 
 export const getSafeAppsCompatibilityMode = async() => (await browserStorageLocalGet('safeAppsCompatibilityMode'))?.safeAppsCompatibilityMode ?? false
 export const setSafeAppsCompatibilityMode = async(safeAppsCompatibilityMode: boolean) => await browserStorageLocalSet({ safeAppsCompatibilityMode })
@@ -280,6 +286,29 @@ export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> 
 			safeAppsCompatibilityMode: await getSafeAppsCompatibilityMode(),
 		}
 	}
+}
+
+// Every storage key importSettingsAndAddressBook writes, directly or through its callees; the import rollback restores exactly these, and settingsImport.test.ts fails if a written key is missing.
+const settingsImportStorageKeys: readonly LocalStorageKey[] = [
+	'openedPageV2',
+	'userAddressBookEntriesV3',
+	'simulationMode',
+	'activeRpcNetwork',
+	'independentActiveSimulationAddress',
+	'activeSigningAddress',
+	'activeSigningSafeAddress',
+	'signingAddressPreferences',
+	'useSignersAddressAsActiveAddress',
+	'websiteAccess',
+	'useTabsInsteadOfPopup',
+	'safeAppsCompatibilityMode',
+	'metamaskCompatibilityMode',
+]
+
+// Snapshots the raw pre-import values; restore holds the import's read-modify-write locks so an in-flight update cannot re-apply imported values afterwards.
+export async function snapshotSettingsImportStorage() {
+	const restoreStorage = await snapshotBrowserStorageLocalKeys(settingsImportStorageKeys)
+	return async () => await websiteAccessSemaphore.execute(async () => await signingAddressPreferencesSemaphore.execute(async () => await withUserAddressBookEntriesLock(restoreStorage)))
 }
 
 export async function importSettingsAndAddressBook(exportedSetings: ExportedSettings) {
@@ -313,9 +342,6 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 	await setUseSignersAddressAsActiveAddress(exportedSetings.settings.useSignersAddressAsActiveAddress)
 	await updateWebsiteAccess(() => exportedSetings.settings.websiteAccess)
 	await setUseTabsInsteadOfPopup(exportedSetings.settings.useTabsInsteadOfPopup)
-	if (exportedSetings.version !== '1.0' && exportedSetings.version !== '1.1') {
-		await setMetamaskCompatibilityMode(exportedSetings.settings.metamaskCompatibilityMode)
-	}
 	await setSafeAppsCompatibilityMode(exportedSetings.version === '1.6' ? exportedSetings.settings.safeAppsCompatibilityMode : false)
 	if (exportedSetings.version !== '1.4' && exportedSetings.version !== '1.5' && exportedSetings.version !== '1.6') {
 		await updateUserAddressBookEntries((previousEntries) => {
@@ -323,6 +349,7 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 			return getUniqueItemsByProperties(previousEntries.concat(exportedSetings.settings.addressInfos.map((x) => convertActiveAddressToAddressBookEntry(x))).concat(exportedSetings.settings.contacts ?? []), ['address'])
 		})
 	}
+	if (exportedSetings.version !== '1.0' && exportedSetings.version !== '1.1') await persistMetamaskCompatibilityMode(exportedSetings.settings.metamaskCompatibilityMode)
 }
 
 export const setPreSimulationBlockTimeManipulation = async (preSimulationBlockTimeManipulation: BlockTimeManipulation) => await browserStorageLocalSet({ preSimulationBlockTimeManipulation })

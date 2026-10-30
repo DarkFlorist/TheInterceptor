@@ -31,9 +31,16 @@ type PortMessage = {
 	result?: unknown
 }
 
+type RegisteredContentScript = {
+	readonly id: string
+	readonly js?: readonly string[]
+}
+
 function installBrowserMock() {
 	const storageState: Record<string, unknown> = {}
 	const sentMessages: RuntimeMessage[] = []
+	const registeredContentScripts: RegisteredContentScript[] = []
+	const reloadedTabs: number[] = []
 
 	Object.defineProperty(globalThis, 'browser', {
 		configurable: true,
@@ -65,10 +72,33 @@ function installBrowserMock() {
 					},
 				},
 			},
+			scripting: {
+				async getRegisteredContentScripts() {
+					return [...registeredContentScripts]
+				},
+				async unregisterContentScripts(filter?: { readonly ids?: readonly string[] }) {
+					const ids = new Set(filter?.ids ?? registeredContentScripts.map(({ id }) => id))
+					for (let index = registeredContentScripts.length - 1; index >= 0; index--) {
+						const registration = registeredContentScripts[index]
+						if (registration !== undefined && ids.has(registration.id)) registeredContentScripts.splice(index, 1)
+					}
+				},
+				async registerContentScripts(scripts: readonly RegisteredContentScript[]) {
+					registeredContentScripts.push(...scripts)
+				},
+				async updateContentScripts(scripts: readonly RegisteredContentScript[]) {
+					for (const script of scripts) {
+						const index = registeredContentScripts.findIndex(({ id }) => id === script.id)
+						if (index === -1) registeredContentScripts.push(script)
+						else registeredContentScripts[index] = script
+					}
+				},
+			},
 			tabs: {
 				async query() { return [] },
 				async get() { return undefined },
 				async update() { return undefined },
+				async reload(tabId: number) { reloadedTabs.push(tabId) },
 				onUpdated: { addListener: () => undefined, removeListener: () => undefined },
 				onRemoved: { addListener: () => undefined, removeListener: () => undefined },
 			},
@@ -109,7 +139,7 @@ function installBrowserMock() {
 	})
 	Object.defineProperty(globalThis, 'location', { configurable: true, writable: true, value: { origin: '' } })
 
-	return { sentMessages }
+	return { sentMessages, registeredContentScripts, reloadedTabs }
 }
 
 function createPort(tabId: number, onPostMessage?: (message: PortMessage) => void) {
@@ -722,7 +752,7 @@ describe('refreshHomeData', () => {
 		assert.equal(homeUpdate?.data?.tabState?.signerAccounts?.length, 0)
 	})
 
-	test('changeSettings refreshes home without triggering signer account refresh', async () => {
+	test('changeSettings refreshes home and MetaMask compatibility registration without triggering signer account refresh', async () => {
 		const browserMock = installBrowserMock()
 		const { browserStorageLocalSet, saveCurrentTabId, updateTabState, setRpcConnectionStatus, changeSettings, defaultActiveAddresses, defaultRpcs, websiteSocketToString, EthereumClientService, TokenPriceService } = await loadModules()
 
@@ -783,7 +813,7 @@ describe('refreshHomeData', () => {
 		}]])
 
 		try {
-			await changeSettings(createTestSimulationServicesOwner({ ethereum, tokenPriceService }), websiteTabConnections, { method: 'popup_ChangeSettings', data: { safeAppsCompatibilityMode: false } } as never, undefined)
+			await changeSettings(createTestSimulationServicesOwner({ ethereum, tokenPriceService }), websiteTabConnections, { method: 'popup_ChangeSettings', data: { metamaskCompatibilityMode: true, safeAppsCompatibilityMode: false } } as never, undefined)
 		} finally {
 			ethereum.cleanup()
 		}
@@ -793,6 +823,10 @@ describe('refreshHomeData', () => {
 		assert.equal(requestMessages.length, 0)
 		assert.equal(homeUpdate?.data?.activeSigningAddressInThisTab, signerAddress)
 		assert.equal(homeUpdate?.data?.websiteAccessAddressMetadata?.length, 1)
+		assert.deepEqual(browserMock.registeredContentScripts.find((registration) => registration.id === 'inpage')?.js, [
+			'/inpage/js/inpage-metamask-compatibility.js',
+		])
+		assert.deepEqual(browserMock.reloadedTabs, [1])
 		assert.equal(messages.some((message) => message.method === 'safe_apps_compatibility'), false)
 	})
 })
