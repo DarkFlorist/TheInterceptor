@@ -141,6 +141,17 @@ describe('website access legacy rebinding', () => {
 		assert.equal(updated.find((entry) => entry.website.websiteOrigin === 'example.test:8443')?.interceptorDisabled, true)
 	})
 
+	test('disabling an exact origin keeps scheme-ambiguous legacy disabled records for the other scheme', () => {
+		const previousAccess = ['example.test', 'example.test:443', 'example.test:80'].map((websiteOrigin) => ({
+			website: { websiteOrigin }, interceptorDisabled: true,
+		}))
+		const updated = applyInterceptorDisabledDecision(previousAccess, { websiteOrigin: 'https://example.test' }, true)
+		assert.deepEqual(updated.slice(0, 3), previousAccess)
+		assert.deepEqual(updated[3], { website: { websiteOrigin: 'https://example.test' }, addressAccess: [], interceptorDisabled: true })
+		assert.equal(isInterceptorDisabledForWebsiteOrigin(updated, 'https://example.test'), true)
+		assert.equal(isInterceptorDisabledForWebsiteOrigin(updated, 'http://example.test'), true)
+	})
+
 	test('does not replace an exact scheme-bound entry with a legacy candidate', () => {
 		const updated = applyWebsiteAccessDecision([
 			{

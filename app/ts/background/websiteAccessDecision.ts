@@ -18,7 +18,8 @@ export function applyInterceptorDisabledDecision(previousWebsiteAccess: WebsiteA
 			foundExactEntry = true
 			return { ...entry, interceptorDisabled }
 		}
-		if (isLegacyWebsiteOriginForCanonicalOrigin(entry.website.websiteOrigin, website.websiteOrigin) && entry.interceptorDisabled === true) {
+		// Only re-enabling clears scheme-ambiguous legacy disables; disabling must leave them in place so the other scheme they alias stays disabled.
+		if (!interceptorDisabled && entry.interceptorDisabled === true && isLegacyWebsiteOriginForCanonicalOrigin(entry.website.websiteOrigin, website.websiteOrigin)) {
 			return { ...entry, interceptorDisabled: false }
 		}
 		return entry
