@@ -82,7 +82,7 @@ export function DelegateClearingOption({ activeAddress, rpcNetwork, simulationMo
 				} } />
 				<span>Simulate with delegate cleared</span>
 			</label>
-			<p class = 'paragraph'>Connected websites can read the cleared code in simulation mode, even with an empty queue. On-chain delegation and signing previews stay unchanged.</p>
+			<p class = 'paragraph'>In simulation mode, connected websites see the cleared code too, even with an empty queue: their code reads, calls and transaction simulations run as if the account had no delegate. On-chain delegation and signing previews stay unchanged.</p>
 			{ errorText.value === undefined ? <></> : <p class = 'paragraph' role = 'alert'>{ errorText.value }</p> }
 		</div>
 	</details>
