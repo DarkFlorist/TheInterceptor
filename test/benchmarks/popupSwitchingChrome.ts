@@ -156,7 +156,7 @@ async function measure(popup: CdpConnection, name: string, method: string, click
 		const selectorBefore = document.querySelector('.popup-home-rpc-selector .dropdown-trigger > button').getBoundingClientRect();
 		const errorCountBefore = document.querySelectorAll('.error-notification').length;
 		let replyReceived = false;
-		const storageKey = { popup_changeActiveAddress: 'independentActiveSimulationAddress', popup_enableSimulationMode: 'simulationMode', popup_changeActiveRpc: 'activeRpcNetwork', popup_modifyMakeMeRich: 'makeCurrentAddressRich' }[${ JSON.stringify(method) }];
+		const storageKey = { popup_changeActiveAddress: 'independentActiveSimulationAddress', popup_enableSimulationMode: 'simulationMode', popup_changeActiveRpc: 'activeRpcNetwork', popup_modifyMakeMeRich: 'richModeState' }[${ JSON.stringify(method) }];
 		const onStorageChange = changes => { if (storageKey in changes && sample.persistedMs === undefined) sample.persistedMs = performance.now() - started; };
 		browser.storage.onChanged.addListener(onStorageChange);
 		runtime.sendMessage = function(message, ...args) {
@@ -205,7 +205,7 @@ async function runIteration() {
 		await waitForRegisteredContentScripts(workerConnection, ['inpage', 'inpage2'], 30_000)
 		await workerConnection.evaluate(`browser.storage.local.set(${ JSON.stringify({
 			simulationMode: true, useSignersAddressAsActiveAddress: false, independentActiveSimulationAddress: walletA,
-			makeCurrentAddressRich: false, rpcEntries: [networkA, networkB, networkC],
+			richModeState: { makeCurrentAddressRich: false, defaultNativeAmount: '0xad78ebc5ac620000', fixedAddressRichList: [], tokenLayouts: [], accountBalances: [] }, rpcEntries: [networkA, networkB, networkC],
 			websiteAccess: [{ website: { websiteOrigin: server.url.host }, access: true, addressAccess: [walletA, walletB].map(address => ({ address, access: true })) }],
 			userAddressBookEntriesV3: [walletA, walletB].map((address, index) => ({ type: 'contact', address, name: `Wallet ${ index === 0 ? 'A' : 'B' }`, entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: false })),
 		}) })`)

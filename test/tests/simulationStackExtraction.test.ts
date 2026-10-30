@@ -5,7 +5,7 @@ import { mockSignTransaction } from '../../app/ts/simulation/services/Simulation
 import { InterceptorMessageToInpage } from '../../app/ts/types/interceptor-messages.js'
 import type { ResolvedSimulationState } from '../../app/ts/types/visualizer-types.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
-import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../app/ts/utils/constants.js'
+import { ETHEREUM_LOGS_LOGGER_ADDRESS, MAKE_YOU_RICH_TRANSACTION } from '../../app/ts/utils/constants.js'
 
 const SENDER = 0x1000000000000000000000000000000000000001n
 const RECIPIENT = 0x2000000000000000000000000000000000000002n
@@ -67,8 +67,16 @@ const simulationStateWithBalanceBelowBaseFee: ResolvedSimulationState = {
 }
 
 describe('simulation stack extraction', () => {
+	test('uses the configured native amount in the legacy rich-mode transaction', () => {
+		const configuredAmount = 12_500_000_000_000_000_000n
+		const payload = getSimulatedStackV1(simulationStateWithBalanceBelowBaseFee, RECIPIENT, configuredAmount, '1.0.1')
+
+		assert.equal(payload[0]?.value, configuredAmount)
+		assert.deepEqual(payload[0]?.balanceChanges, [{ address: RECIPIENT, before: 0n, after: configuredAmount }])
+	})
+
 	test('version 1.0.1 remains serializable when the sender balance is below the base fee', () => {
-		const payload = getSimulatedStackV1(simulationStateWithBalanceBelowBaseFee, undefined, '1.0.1')
+		const payload = getSimulatedStackV1(simulationStateWithBalanceBelowBaseFee, undefined, MAKE_YOU_RICH_TRANSACTION.transaction.value, '1.0.1')
 		assert.equal(payload[0]?.balanceChanges[0]?.after, 0n)
 
 		assert.doesNotThrow(() => serialize(InterceptorMessageToInpage, {

@@ -58,6 +58,7 @@ type BigAddressParams = {
 	readonly addressBookEntry: SignalOrValue<AddressBookEntry | undefined>
 	readonly noCopying?: boolean
 	readonly noEditAddress?: boolean
+	readonly presentationOnly?: boolean
 	readonly renameAddressCallBack: RenameAddressCallBack
 	readonly style?: JSX.CSSProperties
 }
@@ -110,7 +111,7 @@ export function BigAddress(params: BigAddressParams) {
 		...(!params.noCopying && addressString) ? configPartialWithCopyOnClick : { onClick: undefined }
 	}
 
-	return <MultilineCard label = { labelConfig } note = { noteConfig } icon = { iconConfig } style = { params.style } />
+	return <MultilineCard label = { labelConfig } note = { noteConfig } icon = { iconConfig } presentationOnly = { params.presentationOnly } style = { params.style } />
 }
 
 type ActiveAddressParams = {

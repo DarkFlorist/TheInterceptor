@@ -13,7 +13,7 @@ import { DinoSays } from '../subcomponents/DinoSays.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
 import type { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
 import { getSafeSignerAddresses, type AddressBookEntries, type AddressBookEntry } from '../../types/addressBookTypes.js'
-import { BroomIcon, ChevronIcon, OpenInNewIcon } from '../subcomponents/icons.js'
+import { BroomIcon, OpenInNewIcon } from '../subcomponents/icons.js'
 import { RpcSelector } from '../subcomponents/ChainSelector.js'
 import { type Signal, type ReadonlySignal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
 import { useEffect } from 'preact/hooks'
@@ -21,15 +21,14 @@ import { type DeltaUnit, TimePicker, type TimePickerMode, getTimeManipulatorFrom
 import { assertNever } from '../../utils/typescript.js'
 import { bigintSecondsToDate, checksummedAddress, stringToAddress } from '../../utils/bigint.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../../config/defaults.js'
-import type { EnrichedRichListElement } from '../../types/interceptor-reply-messages.js'
 import { useResetSimulation } from '../hooks/useResetSimulation.js'
 import { getSelectableActiveAddresses, getWalletSelectedAccount } from '../../utils/activeAddressSelection.js'
 import { useModeActiveAddress } from '../hooks/useModeActiveAddress.js'
-import { updateRichListAddress } from '../../utils/richList.js'
 import { useAsyncState } from '../../utils/preact-utilities.js'
 import type { RpcEntry } from '../../types/rpc.js'
-import { AsyncActionButton, AsyncStatusIcon } from '../subcomponents/AsyncAction.js'
+import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 import type { ComponentChildren, JSX } from 'preact'
+import { RichModeAccountManager } from './RichMode.js'
 import { DropDownMenu, DropDownMenuButtonContent } from '../subcomponents/DropDownMenu.js'
 
 function scheduleAfterPaint(callback: () => void) {
@@ -347,100 +346,6 @@ function InterceptorDisabledButton({ disableInterceptorToggle, interceptorDisabl
 	/>
 }
 
-type RichListParams = {
-	isSettingsChangePending: ReadonlySignal<boolean>
-	setRichState: (enabled: boolean, address: bigint | 'CurrentAddress') => Promise<void>
-	makeCurrentAddressRich: Signal<boolean>
-	activeAddress: Signal<AddressBookEntry | undefined>
-	richList: Signal<readonly EnrichedRichListElement[]>
-	renameAddressCallBack: RenameAddressCallBack
-	isInitialHomeDataLoaded: Signal<boolean>
-}
-
-function RichList({ makeCurrentAddressRich, activeAddress, richList, renameAddressCallBack, isInitialHomeDataLoaded, isSettingsChangePending, setRichState }: RichListParams) {
-	const { value: richChangeState, waitFor: waitForRichChange } = useAsyncState<void>()
-	const controlsDisabled = !isInitialHomeDataLoaded.value || isSettingsChangePending.value || richChangeState.value.state === 'pending'
-	const saveRichChange = (enabled: boolean, address: bigint | 'CurrentAddress') => {
-		void waitForRichChange(async () => {
-			try {
-				await setRichState(enabled, address)
-			} catch (error) {
-				// Read persisted settings: a failed visualization refresh does not undo a successful save.
-				await sendPopupMessageToBackgroundPage({ method: 'popup_requestNewHomeData', data: { refreshSignerAccounts: false, includeWebsiteAccessAddressMetadata: false } })
-				throw error
-			}
-		})
-	}
-	function enableMakeCurrentAddressRich(enabled: boolean) {
-		if (controlsDisabled) return
-		makeCurrentAddressRich.value = enabled
-		saveRichChange(enabled, 'CurrentAddress')
-	}
-	function modifyRichList(addressBookEntry: AddressBookEntry, makeRich: boolean) {
-		if (controlsDisabled) return
-		richList.value = updateRichListAddress(
-			richList.value,
-			addressBookEntry.address,
-			makeRich,
-			(element) => element.addressBookEntry.address,
-			() => ({ addressBookEntry, makingRich: true, type: 'UserAdded' as const }),
-		)
-		saveRichChange(makeRich, addressBookEntry.address)
-	}
-
-	const showList = useSignal<boolean>(false)
-
-	const activeAddressSetAsRichViaFixedAddressList = useComputed(() =>
-		richList.value.filter((element) => element.makingRich).some((element) => element.addressBookEntry.address === activeAddress.value?.address)
-	)
-	const visibleRichList = useComputed(() => {
-		const peekedActiveAddress = activeAddress.peek() // peek active address here to avoid double render (changing active address retriggers rich bit later)
-		if (peekedActiveAddress === undefined) return richList.value
-		if (richList.value.some((element) => element.addressBookEntry.address === peekedActiveAddress.address)) return richList.value
-		return [...richList.value, { addressBookEntry: peekedActiveAddress, makingRich: false, type: 'CurrentActiveAddress' as const }]
-	})
-
-	const numberOfRichAddresses = useComputed(() => richList.value.filter((element) => element.makingRich).length)
-
-	return <>
-		<header class = 'card-header' style = 'cursor: pointer;' onClick = { () => { showList.value = !showList.value } }>
-			<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em; padding: 0 0.5rem;'>
-				<label class = 'form-control' style = 'grid-template-columns: 1em min-content; width: min-content;' onClick = { event => { event.stopPropagation() } }>
-					<input type = 'checkbox' disabled = { controlsDisabled } checked = { makeCurrentAddressRich.value } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { enableMakeCurrentAddressRich(e.target.checked) } } } onClick = { event => { event.stopPropagation() } } />
-					<p class = 'paragraph checkbox-text' style = 'white-space: nowrap;'> Make current account rich</p>
-				</label>
-			</p>
-			<div class = 'card-header-icon noselect' style = 'cursor: pointer;'>
-				{ numberOfRichAddresses.value === 0 ? <></> : <p class = 'paragraph checkbox-text' style = 'white-space: nowrap; color: gray; padding-right: 10px;'> (+{ numberOfRichAddresses.value } rich address{ numberOfRichAddresses.value > 1 ? 'es' : '' })</p> }
-				<span class = 'icon'><ChevronIcon /></span>
-			</div>
-		</header>
-		{ richChangeState.value.state === 'pending' ? <div class = 'card-content-header' role = 'status' aria-live = 'polite'><AsyncStatusIcon state = 'pending'/> Updating balances...</div> : <></> }
-		{ richChangeState.value.state === 'rejected' ? <ErrorComponent text = { richChangeState.value.error.message }/> : <></> }
-		{ !showList.value
-			? <> { !activeAddressSetAsRichViaFixedAddressList.value || activeAddress.value === undefined ? <></> : <>
-				<div class = 'card-content-header' style = 'font-size: 0.8em;'>
-					<label class = 'form-control' style = 'gap: 1em;'>
-						<input type = 'checkbox' disabled = { controlsDisabled } checked = { true } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null && activeAddress.value !== undefined) { modifyRichList(activeAddress.value, e.target.checked) } } } />
-						<SmallAddress addressBookEntry = { activeAddress } renameAddressCallBack = { renameAddressCallBack } noCopying = { !isInitialHomeDataLoaded.value } noEditAddress = { !isInitialHomeDataLoaded.value } />
-					</label>
-				</div>
-			</> } </>
-			: <div class = 'card-content'>
-				<div style = { { display: 'flex', flexDirection: 'column' } } >
-					<p class = 'paragraph checkbox-text' style = 'white-space: nowrap;'> Addresses being made rich</p>
-					{ visibleRichList.value.map((richListElement) =>
-						<label class = 'form-control' style = 'gap: 1em;' key = { richListElement.addressBookEntry.address.toString() }>
-							<input type = 'checkbox' disabled = { controlsDisabled } checked = { richListElement.makingRich } aria-label = { `Toggle rich address ${ richListElement.addressBookEntry.address.toString() }` } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { modifyRichList(richListElement.addressBookEntry, e.target.checked) } } } />
-							<SmallAddress addressBookEntry = { richListElement.addressBookEntry } renameAddressCallBack = { renameAddressCallBack } noCopying = { !isInitialHomeDataLoaded.value } noEditAddress = { !isInitialHomeDataLoaded.value }/>
-						</label>
-					) }
-				</div>
-			</div>
-		}
-	</>
-}
-
 function FirstCard(param: FirstCardParams) {
 	const timeSelectorMode = useSignal<TimePickerMode>('For')
 	const timeSelectorAbsoluteTime = useSignal<Date | undefined>(undefined)
@@ -728,7 +633,7 @@ function FirstCard(param: FirstCardParams) {
 				</> : !param.isFreshHomeDataLoaded.value ?
 					<SimulationControlsLoadingSkeleton/>
 				: <div class = 'popup-simulation-controls popup-data-reveal'>
-					<RichList isSettingsChangePending = { param.isSettingsChangePending } setRichState = { param.setRichState } activeAddress = { param.activeAddress } makeCurrentAddressRich = { param.makeCurrentAddressRich } renameAddressCallBack = { param.renameAddressCallBack } richList = { param.richList } isInitialHomeDataLoaded = { param.isInitialHomeDataLoaded }/>
+					<RichModeAccountManager isSettingsChangePending = { param.isSettingsChangePending } setRichState = { param.setRichState } activeAddress = { param.activeAddress } makeCurrentAddressRich = { param.makeCurrentAddressRich } richNativeAmount = { param.richNativeAmount } nativeCurrencyTicker = { param.rpcNetwork.value?.currencyTicker ?? 'ETH' } chainId = { param.rpcNetwork.value?.chainId ?? 1n } renameAddressCallBack = { param.renameAddressCallBack } richList = { param.richList } richTokenOptions = { param.richTokenOptions } richAccountBalances = { param.richAccountBalances } isInitialHomeDataLoaded = { param.isInitialHomeDataLoaded }/>
 					<div class = 'popup-simulation-controls-gap'/>
 					<TimePicker
 						startText = 'Delay first transaction'
@@ -987,7 +892,10 @@ export function Home(param: HomeParams) {
 			simulationMode = { param.simulationMode }
 			changeActiveAddress = { param.changeActiveAddress }
 			makeCurrentAddressRich = { param.makeCurrentAddressRich }
+			richNativeAmount = { param.richNativeAmount }
 			richList = { param.fixedAddressRichList }
+			richTokenOptions = { param.richTokenOptions }
+			richAccountBalances = { param.richAccountBalances }
 			tabState = { param.tabState }
 			tabIconDetails = { param.tabIconDetails }
 			renameAddressCallBack = { param.renameAddressCallBack }
