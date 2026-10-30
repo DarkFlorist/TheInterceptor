@@ -311,6 +311,7 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 	}
 	// Imported entries and funding are published together before resolving dependent Safe preferences.
 	const imported = exportedSetings.settings
+	// This user-selected full settings backup is trusted configuration, including its RPC endpoint and access permissions. Restore intentional simulated balances for round trips; reconciliation checks address-book consistency, not on-chain balances. addressesBeingMadeRich excludes all funding overrides in signing mode.
 	await replaceRichModeState('richTokens' in imported ? {
 		makeCurrentAddressRich: imported.makeCurrentAddressRich,
 		defaultNativeAmount: imported.richNativeAmount,
