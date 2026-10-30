@@ -1256,70 +1256,115 @@ describe('popup async action UI', () => {
 		dom.restore()
 	})
 
-	for (const completion of ['before edit', 'direct reply after edit', 'broadcast after edit']) {
-		test(`updates Gnosis outcome address names with simulation completion via ${ completion }`, async () => {
-			const renameWhilePending = completion !== 'before edit'
-			const modules = await modulesPromise
-			const dom = installDomMock()
-			const initialReply = createDeferred<unknown>()
-			let recipientName = 'Original recipient'
-			let simulationRequestCount = 0
-			runtimeSendMessage = async (message) => {
-				if (getRuntimeMethod(message) !== 'popup_simulateGnosisSafeTransaction') return undefined
-				simulationRequestCount += 1
-				return simulationRequestCount === 1 ? initialReply.promise : createGnosisSimulationSuccessReply(7n, recipientName)
-			}
-
-			try {
-				await act(() => {
-					render(h(modules.GnosisSafeVisualizer, {
-						gnosisSafeMessage: createGnosisSafeMessageFixture(7n),
-						activeAddress: gnosisSignerAddress.address,
-						renameAddressCallBack: () => undefined,
-						editEnsNamedHashCallBack: () => undefined,
-					}), dom.document.body)
-				})
-				const originalReply = createGnosisSimulationSuccessReply(7n, recipientName)
-				if (!renameWhilePending) {
-					await act(async () => {
-						initialReply.resolve(originalReply)
-						await settleAsyncUpdates()
-					})
-					assert.equal(findFirstByClass(dom.document.body, 'safe-outcome-panel')?.textContent?.includes(recipientName), true, dom.document.body.textContent)
+	for (const visualizer of ['Safe', 'governance']) {
+		for (const completion of ['before edit', 'direct reply after edit', 'broadcast after edit']) {
+			test(`updates ${ visualizer } outcome address names with simulation completion via ${ completion }`, async () => {
+				const renameWhilePending = completion !== 'before edit'
+				const modules = await modulesPromise
+				const dom = installDomMock()
+				const initialReply = createDeferred<unknown>()
+				let recipientName = 'Original recipient'
+				let simulationRequestCount = 0
+				runtimeSendMessage = async (message) => {
+					if (getRuntimeMethod(message) !== (visualizer === 'Safe' ? 'popup_simulateGnosisSafeTransaction' : 'popup_simulateGovernanceContractExecution')) return undefined
+					simulationRequestCount += 1
+					return simulationRequestCount === 1 ? initialReply.promise : createGnosisSimulationSuccessReply(7n, recipientName)
 				}
 
-				await act(async () => {
-					recipientName = 'Renamed recipient'
-					await emitRuntimeMessage({ role: 'all', method: 'popup_addressBookEntriesChanged' })
-					await emitRuntimeMessage({ role: 'all', method: 'popup_addressBookEntriesChanged' })
-					await settleAsyncUpdates()
-				})
-				if (renameWhilePending) {
-					assert.equal(simulationRequestCount, 1)
-					await act(async () => {
-						if (completion === 'broadcast after edit') await emitRuntimeMessage({ role: 'all', ...originalReply })
-						else initialReply.resolve(originalReply)
-						await settleAsyncUpdates()
+				try {
+					await act(() => {
+						render(visualizer === 'Safe' ? h(modules.GnosisSafeVisualizer, {
+							gnosisSafeMessage: createGnosisSafeMessageFixture(7n),
+							activeAddress: gnosisSignerAddress.address,
+							renameAddressCallBack: () => undefined,
+							editEnsNamedHashCallBack: () => undefined,
+						}) : h(modules.GovernanceVoteVisualizer, {
+							simTx: createGovernanceTransactionFixture(7n),
+							activeAddress: signal(gnosisSignerAddress.address),
+							renameAddressCallBack: () => undefined,
+							editEnsNamedHashCallBack: () => undefined,
+							governanceVoteInputParameters: createGovernanceVoteInputParameters(42n),
+						}), dom.document.body)
 					})
-				}
-				await act(async () => { await settleAsyncUpdates() })
+					if (visualizer === 'governance') {
+						const button = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Simulate execution on a passing vote'))
+						if (button === undefined) throw new Error('Expected governance simulation button')
+						await act(async () => { await clickElement(button) })
+					}
+					const originalReply = createGnosisSimulationSuccessReply(7n, recipientName)
+					if (!renameWhilePending) {
+						await act(async () => {
+							initialReply.resolve(originalReply)
+							await settleAsyncUpdates()
+						})
+						assert.equal(dom.document.body.textContent?.includes(recipientName), true, dom.document.body.textContent)
+					}
 
-				if (completion === 'broadcast after edit') {
 					await act(async () => {
-						initialReply.resolve(originalReply)
+						recipientName = 'Renamed recipient'
+						await emitRuntimeMessage({ role: 'all', method: 'popup_addressBookEntriesChanged' })
+						await emitRuntimeMessage({ role: 'all', method: 'popup_addressBookEntriesChanged' })
 						await settleAsyncUpdates()
 					})
+					if (renameWhilePending) {
+						assert.equal(simulationRequestCount, 1)
+						await act(async () => {
+							if (completion === 'broadcast after edit') await emitRuntimeMessage({ role: 'all', ...originalReply })
+							else initialReply.resolve(originalReply)
+							await settleAsyncUpdates()
+						})
+					}
+					await act(async () => { await settleAsyncUpdates() })
+
+					if (completion === 'broadcast after edit') {
+						await act(async () => {
+							initialReply.resolve(originalReply)
+							await settleAsyncUpdates()
+						})
+					}
+					await act(async () => { await settleAsyncUpdates() })
+					const outcomeText = dom.document.body.textContent ?? ''
+					assert.equal(outcomeText.includes('Renamed recipient'), true, outcomeText)
+					assert.equal(outcomeText.includes('Original recipient'), false, outcomeText)
+					assert.equal(simulationRequestCount, 2)
+				} finally {
+					await act(() => { render(null, dom.document.body) })
+					dom.restore()
 				}
-				const outcomeText = findFirstByClass(dom.document.body, 'safe-outcome-panel')?.textContent ?? ''
-				assert.equal(outcomeText.includes('Renamed recipient'), true, outcomeText)
-				assert.equal(outcomeText.includes('Original recipient'), false, outcomeText)
-				assert.equal(simulationRequestCount, 2)
-			} finally {
-				await act(() => { render(null, dom.document.body) })
-				dom.restore()
-			}
-		})
+			})
+		}
+
 	}
+
+	test('an older matching broadcast cannot discard the awaited Safe result', async () => {
+		const modules = await modulesPromise
+		const dom = installDomMock()
+		const direct = createDeferred<unknown>()
+		runtimeSendMessage = async () => direct.promise
+		try {
+			await act(() => {
+				render(h(modules.GnosisSafeVisualizer, {
+					gnosisSafeMessage: createGnosisSafeMessageFixture(7n),
+					activeAddress: gnosisSignerAddress.address,
+					renameAddressCallBack: () => undefined,
+					editEnsNamedHashCallBack: () => undefined,
+				}), dom.document.body)
+			})
+			await act(async () => {
+				await emitRuntimeMessage({ role: 'all', ...createGnosisSimulationSuccessReply(7n, 'Older broadcast name') })
+				await settleAsyncUpdates()
+			})
+			await act(async () => {
+				direct.resolve(createGnosisSimulationSuccessReply(7n, 'Current direct name'))
+				await settleAsyncUpdates()
+			})
+			assert.equal(dom.document.body.textContent?.includes('Current direct name'), true)
+			assert.equal(dom.document.body.textContent?.includes('Older broadcast name'), false)
+		} finally {
+			await act(() => { render(null, dom.document.body) })
+			dom.restore()
+		}
+	})
 
 	test('shows the dapp-originated Gnosis Safe EIP-712 fields and hashes under the signature card extra details', async () => {
 		const modules = await modulesPromise

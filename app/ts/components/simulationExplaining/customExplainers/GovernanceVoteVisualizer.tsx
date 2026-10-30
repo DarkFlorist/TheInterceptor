@@ -1,19 +1,19 @@
 import { type Signal, type ReadonlySignal, useComputed, useSignal } from '@preact/signals'
 import { getMissingPopupReplyErrorMessage, requestPopupSimulateGovernanceContractExecution } from '../../../background/backgroundUtils.js'
 import type { AddressBookEntry } from '../../../types/addressBookTypes.js'
-import { MessageToPopup, type GovernanceVoteInputParameters, SimulateExecutionReply } from '../../../types/interceptor-messages.js'
+import type { GovernanceVoteInputParameters, SimulateExecutionReply } from '../../../types/interceptor-messages.js'
 import type { RenameAddressCallBack } from '../../../types/user-interface-types.js'
 import type { SimulatedAndVisualizedTransaction } from '../../../types/visualizer-types.js'
 import { checksummedAddress, dataStringWith0xStart } from '../../../utils/bigint.js'
-import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../../utils/browser.js'
 import { ErrorComponent } from '../../subcomponents/Error.js'
 import type { EditEnsNamedHashCallBack } from '../../subcomponents/ens.js'
 import { CellElement } from '../../ui-utils.js'
 import { Transaction } from '../Transactions.js'
-import { useEffect, useRef } from 'preact/hooks'
+import { useEffect } from 'preact/hooks'
 import { resolveSignal, type SignalOrValue } from '../../../utils/signals.js'
 import { AsyncActionButton } from '../../subcomponents/AsyncAction.js'
-import { type AsyncStates, useAsyncState } from '../../../utils/preact-utilities.js'
+import type { AsyncStates } from '../../../utils/preact-utilities.js'
+import { useExecutionSimulation } from '../../hooks/useExecutionSimulation.js'
 
 type MissingAbiParams = {
 	errorMessage: string
@@ -82,7 +82,7 @@ function VotePanel({ inputParams }: { inputParams: SignalOrValue<GovernanceVoteI
 type ShowSuccessOrFailureParams = {
 	simTx: Signal<SimulatedAndVisualizedTransaction | undefined>
 	activeAddress: ReadonlySignal<bigint | undefined>
-	simulateExecutionReply: Signal<SimulateExecutionReply | undefined>
+	simulateExecutionReply: ReadonlySignal<SimulateExecutionReply | undefined>
 	governanceSimulationState: AsyncStates
 	requestErrorText: string | undefined
 	simulateGovernanceVote: () => void
@@ -186,53 +186,21 @@ type GovernanceVoteVisualizerParams = {
 }
 
 export function GovernanceVoteVisualizer(param: GovernanceVoteVisualizerParams) {
-	const simulateExecutionReply = useSignal<SimulateExecutionReply | undefined>(undefined)
 	const governanceVoteInputParameters = useSignal<GovernanceVoteInputParameters | undefined>(undefined)
 	const simTx = useSignal<SimulatedAndVisualizedTransaction | undefined>(undefined)
 	const activeAddress = useSignal<bigint | undefined>(undefined)
-	const { value: governanceSimulationRequest, waitFor: waitForGovernanceSimulation, reset: resetGovernanceSimulationRequest } = useAsyncState<void>()
-	const requestErrorText = useComputed(() => governanceSimulationRequest.value.state === 'rejected' ? governanceSimulationRequest.value.error.message : undefined)
-	const currentTransactionIdentifier = useRef(param.simTx.transactionIdentifier)
-	currentTransactionIdentifier.current = param.simTx.transactionIdentifier
-
-	const isReplyForCurrentTransaction = (reply: SimulateExecutionReply) => reply.data.transactionOrMessageIdentifier === currentTransactionIdentifier.current
-
-	useEffect(() => {
-		const popupMessageListener = (msg: unknown): false => {
-			const maybeParsed = MessageToPopup.safeParse(msg)
-			if (!maybeParsed.success) return false // not a message we are interested in
-			const parsed = maybeParsed.value
-			if (parsed.method === 'popup_new_block_arrived') return false
-			if (parsed.method !== 'popup_simulateExecutionReply') return false
-			const { role: _role, ...popupSimulateExecutionReply } = parsed
-			const reply = SimulateExecutionReply.parse(popupSimulateExecutionReply)
-			if (!isReplyForCurrentTransaction(reply)) return false
-			resetGovernanceSimulationRequest()
-			simulateExecutionReply.value = reply
-			return false
-		}
-		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
-		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
-	}, [])
+	const { reply: simulateExecutionReply, state: simulationState, errorText: requestErrorText, simulate: simulateGovernanceVote, reset } = useExecutionSimulation(
+		param.simTx.transactionIdentifier,
+		() => requestPopupSimulateGovernanceContractExecution({ transactionIdentifier: param.simTx.transactionIdentifier }),
+		GOVERNANCE_SIMULATION_REPLY_MISSING_ERROR,
+	)
 
 	useEffect(() => {
 		governanceVoteInputParameters.value = param.governanceVoteInputParameters
 		simTx.value = param.simTx
 		activeAddress.value = param.activeAddress.value
-		simulateExecutionReply.value = undefined
-		resetGovernanceSimulationRequest()
+		reset()
 	}, [param.simTx.transactionIdentifier, param.governanceVoteInputParameters, param.activeAddress.value])
-
-	const simulateGovernanceVote = () => {
-		const transactionIdentifier = simTx.value?.transactionIdentifier
-		if (transactionIdentifier === undefined) return
-		waitForGovernanceSimulation(async () => {
-			const reply = await requestPopupSimulateGovernanceContractExecution({ transactionIdentifier })
-			if (reply === undefined) throw new Error(GOVERNANCE_SIMULATION_REPLY_MISSING_ERROR)
-			if (transactionIdentifier !== currentTransactionIdentifier.current || !isReplyForCurrentTransaction(reply)) return
-			simulateExecutionReply.value = reply
-		})
-	}
 
 	if (governanceVoteInputParameters.value === undefined || simTx.value === undefined || activeAddress.value === undefined) return <></>
 	return <>
@@ -247,7 +215,7 @@ export function GovernanceVoteVisualizer(param: GovernanceVoteVisualizerParams) 
 						{ simulateExecutionReply.value === undefined ? <></> :
 							<AsyncActionButton
 								class = 'button is-primary is-small'
-								state = { governanceSimulationRequest.value.state }
+								state = { simulationState.value }
 								text = 'Refresh'
 								pendingText = 'Simulating...'
 								onClick = { simulateGovernanceVote }
@@ -260,7 +228,7 @@ export function GovernanceVoteVisualizer(param: GovernanceVoteVisualizerParams) 
 			<div class = 'notification dashed-notification'>
 				<ShowSuccessOrFailure
 					simulateExecutionReply = { simulateExecutionReply }
-					governanceSimulationState = { governanceSimulationRequest.value.state }
+					governanceSimulationState = { simulationState.value }
 					requestErrorText = { requestErrorText.value }
 					simulateGovernanceVote = { simulateGovernanceVote }
 					renameAddressCallBack = { param.renameAddressCallBack }
