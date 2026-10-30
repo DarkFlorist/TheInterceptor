@@ -713,6 +713,7 @@ export async function enableSimulationMode(
 			: await getRpcForChain(chainToSwitch)
 		const signerAccount = await getSignerAccount()
 		if (!params.data) {
+			// Without a signer chain the active RPC network is kept, so the signing selection is resolved on that chain instead of the first configured RPC entry.
 			const targetChainId = networkToSwitch?.chainId ?? settings.activeRpcNetwork.chainId
 			const activeChainEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(targetChainId)
 			const configuredSigningSafe = await getConfiguredSigningSafeForChain(

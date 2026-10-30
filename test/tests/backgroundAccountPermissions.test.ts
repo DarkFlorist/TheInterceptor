@@ -2733,6 +2733,51 @@ describe('background eth_accounts', () => {
 		assert.equal(access?.addressAccess, undefined)
 	})
 
+	test.each(['paused service owner', 'corrupt RPC list'])('wallet_revokePermissions revokes access while the RPC configuration is unavailable because of a %s', async (unavailableState) => {
+		installBrowserMock()
+		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, getRequiredSettings } = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const account = 0x1111111111111111111111111111111111111111n
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: account, activeSigningAddress: undefined })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
+
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const connectionKey = websiteSocketToString(socket)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		// Reading settings first persists a readable active RPC network, so only the RPC list is unusable in the corrupt case.
+		await getRequiredSettings()
+		if (unavailableState === 'paused service owner') simulationServicesOwner.clear()
+		else await browser.storage.local.set({ rpcEntries: 'not-an-rpc-list' })
+
+		const originalWarn = console.warn
+		console.warn = () => undefined
+		try {
+			await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
+				interceptorRequest: true,
+				usingInterceptorWithoutSigner: false,
+				uniqueRequestIdentifier: { requestId: 12, requestSocket: socket },
+				method: 'wallet_revokePermissions',
+				params: [{ eth_accounts: {} }],
+			}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		} finally {
+			console.warn = originalWarn
+		}
+
+		const revokeReplies = messages.filter((message) => message.method === 'wallet_revokePermissions' && message.requestId === 12)
+		assert.equal(revokeReplies.at(-1)?.error, undefined)
+		assert.equal(revokeReplies.at(-1)?.result, null)
+		assert.equal(websiteTabConnections.get(socket.tabId)?.connections[connectionKey]?.approved, false)
+		const access = (await getRequiredSettings()).websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin)
+		assert.equal(access?.access, undefined)
+		assert.equal(access?.addressAccess, undefined)
+	})
+
 	test('wallet_revokePermissions succeeds when the website is already unauthorized', async () => {
 		installBrowserMock()
 		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, getRequiredSettings, getPendingAccessRequests } = await loadModules()
@@ -2954,6 +2999,53 @@ describe('background eth_accounts', () => {
 		assert.equal(settings.simulationMode, true)
 		assert.equal(settings.activeSimulationAddress, simulationAddress)
 		assert.equal(settings.useSignersAddressAsActiveAddress, false)
+	})
+
+	test('resolves the signing Safe on the active network when disabling simulation without a signer chain', async () => {
+		installBrowserMock()
+		const {
+			changeSimulationMode,
+			enableSimulationMode,
+			getRequiredSettings,
+			saveCurrentTabId,
+			setRpcConfiguration,
+			updateTabState,
+			updateUserAddressBookEntries,
+		} = await loadModules()
+		const signerAddress = 0x6363636363636363636363636363636363636363n
+		const safeAddress = 0x6464646464646464646464646464646464646464n
+		const tabId = 199
+		const firstRpc = (await getRequiredSettings()).activeRpcNetwork
+		const activeRpc = { ...firstRpc, name: 'Active second network', chainId: 10n, httpsRpc: 'https://second.example.test', primary: true }
+		await setRpcConfiguration([firstRpc, activeRpc], activeRpc)
+		await updateUserAddressBookEntries(() => [{
+			type: 'safe',
+			name: 'Safe on the active network',
+			address: safeAddress,
+			chainId: activeRpc.chainId,
+			entrySource: 'User',
+			useAsActiveAddress: true,
+			safeSignerAddresses: [signerAddress],
+		}])
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: signerAddress, activeSigningSafeAddress: safeAddress })
+		await updateTabState(tabId, (previousState) => ({
+			...previousState,
+			signerAccounts: [signerAddress],
+			activeSigningAddress: signerAddress,
+			signerChain: undefined,
+		}))
+		await saveCurrentTabId(tabId)
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+
+		await enableSimulationMode(simulationServicesOwner, new Map(), {
+			method: 'popup_enableSimulationMode',
+			data: false,
+		})
+
+		const settings = await getRequiredSettings()
+		assert.equal(settings.simulationMode, false)
+		assert.equal(settings.activeRpcNetwork.chainId, activeRpc.chainId)
+		assert.equal(settings.activeSigningSafeAddress, safeAddress)
 	})
 
 	test('restores the simulation signer after selecting a Safe in signing mode', async () => {

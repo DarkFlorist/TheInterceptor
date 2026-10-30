@@ -289,9 +289,9 @@ describe('background eth_accounts', () => {
 		assert.equal((await getTabState(socket.tabId)).signerChain, expectedSignerChain)
 	})
 
-	test.each(['reset', 'clear'])('keeps the admitted service snapshot for a chain switch when the owner is %s before execution', async (lifecycleChange) => {
+	test.each(['reset', 'clear'])('decides a parked chain switch from the live owner when the owner is %s before execution', async (lifecycleChange) => {
 		installBrowserMock()
-		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess } = await loadModules()
+		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, getChainChangeConfirmationPromise, resolveChainChange } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
 		const account = 0x1111111111111111111111111111111111111111n
@@ -310,6 +310,7 @@ describe('background eth_accounts', () => {
 		const replacementEthereum = new Proxy(replacementServiceState.ethereum, {
 			get(target, property, receiver) {
 				if (property === 'getRpcEntry') return () => replacementNetwork
+				if (property === 'getChainId') return () => replacementNetwork.chainId
 				return Reflect.get(target, property, receiver)
 			},
 		})
@@ -350,11 +351,25 @@ describe('background eth_accounts', () => {
 		if (lifecycleChange === 'reset') simulationServicesOwner.reset(replacementNetwork)
 		else simulationServicesOwner.clear()
 		releaseSettingsRead.resolve(undefined)
+		if (lifecycleChange === 'reset') {
+			// The request was admitted on chain 1, but the live owner moved to chain 10 while it was parked, so the switch back to chain 1 must ask the user instead of reporting success.
+			const deadline = Date.now() + 1000
+			let pendingChainChange = await getChainChangeConfirmationPromise()
+			while (pendingChainChange === undefined) {
+				if (Date.now() >= deadline) throw new Error('Expected the chain change dialog to open for the live chain')
+				await new Promise((resolve) => setTimeout(resolve, 0))
+				pendingChainChange = await getChainChangeConfirmationPromise()
+			}
+			await resolveChainChange(simulationServicesOwner, websiteTabConnections, {
+				method: 'popup_changeChainDialog',
+				data: { rpcNetwork: pendingChainChange.rpcNetwork, uniqueRequestIdentifier: request.uniqueRequestIdentifier, accept: false },
+			})
+		}
 		await requestPromise
 
 		const reply = messages.find((message) => message.method === request.method && message.requestId === request.uniqueRequestIdentifier.requestId)
-		assert.equal(reply?.result, null)
-		assert.equal(reply?.error, undefined)
+		assert.equal(reply?.result, undefined)
+		assert.equal(reply?.error?.code, lifecycleChange === 'reset' ? 4001 : 4900)
 		assert.equal(initialServices.ethereum.isBlockPolling(), false)
 		assert.equal(replacementEthereum.isBlockPolling(), lifecycleChange === 'reset')
 	})

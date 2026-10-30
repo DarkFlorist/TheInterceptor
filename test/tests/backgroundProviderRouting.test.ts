@@ -300,6 +300,59 @@ describe('background eth_accounts', () => {
 		})
 	})
 
+	test('does not forward to the signer when simulation mode is enabled while the request is parked after admission', async () => {
+		installBrowserMock()
+		const { handleInterceptedRequest, websiteSocketToString, updateWebsiteAccess, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateTabState } = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const account = 0x1111111111111111111111111111111111111111n
+		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: account })
+		await setUseSignersAddressAsActiveAddress(true)
+		await updateTabState(1, (previousState) => ({ ...previousState, signerAccounts: [account], activeSigningAddress: account }))
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
+
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		// The request settles its account context from settings read in signing mode, then waits on the website lookup while the user enables simulation mode.
+		const signingModeSettingsRead = createDeferredValue<void>()
+		const parkedWebsite = createDeferredValue<typeof website>()
+		const originalGet = browser.storage.local.get.bind(browser.storage.local)
+		let settingsSnapshotReads = 0
+		Object.defineProperty(browser.storage.local, 'get', {
+			configurable: true,
+			value: async (keys: string | readonly string[]) => {
+				const requestedKeys = Array.isArray(keys) ? keys : [keys]
+				const items = await originalGet(keys)
+				if (requestedKeys.includes('simulationMode') && requestedKeys.includes('rpcEntries')) {
+					settingsSnapshotReads += 1
+					if (settingsSnapshotReads === 2) signingModeSettingsRead.resolve(undefined)
+				}
+				return items
+			},
+		})
+		const request = {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 1, requestSocket: socket },
+			method: 'wallet_addEthereumChain',
+			params: [{ chainId: '0xa', chainName: 'Parked chain', nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 }, rpcUrls: ['https://parked.invalid'] }],
+		}
+
+		const requestPromise = handleInterceptedRequest(port, websiteOrigin, parkedWebsite.promise, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
+		await signingModeSettingsRead.promise
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: account, activeSigningAddress: account })
+		parkedWebsite.resolve(website)
+		await requestPromise
+
+		assert.equal(messages.some((message) => message.type === 'forwardToSigner'), false)
+		const reply = messages.find((message) => message.method === request.method && message.requestId === request.uniqueRequestIdentifier.requestId)
+		assert.equal(reply?.error?.code, 10000)
+	})
+
 	test('preserves transaction-free overlays without running transaction preparation', async () => {
 		installBrowserMock()
 		const { prepareSimulationInputForRpc } = await import('../../app/ts/background/simulationUpdating.js')

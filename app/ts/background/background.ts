@@ -201,7 +201,7 @@ async function handleRPCRequest(
 		eth_signTypedData_v2: rpcRequestHandler('eth_signTypedData_v2', async (_context, rpcRequest) => await signMessage(rpcRequest)),
 		eth_signTypedData_v3: rpcRequestHandler('eth_signTypedData_v3', async (_context, rpcRequest) => await signMessage(rpcRequest)),
 		eth_signTypedData_v4: rpcRequestHandler('eth_signTypedData_v4', async (_context, rpcRequest) => await signMessage(rpcRequest)),
-		wallet_switchEthereumChain: rpcRequestHandler('wallet_switchEthereumChain', async (_context, rpcRequest) => await switchEthereumChain(ethereum, simulationServicesOwner, websiteTabConnections, rpcRequest, request, settings.simulationMode, website)),
+		wallet_switchEthereumChain: rpcRequestHandler('wallet_switchEthereumChain', async (_context, rpcRequest) => await switchEthereumChain(simulationServicesOwner, websiteTabConnections, rpcRequest, request, settings.simulationMode, website)),
 		wallet_watchAsset: rpcRequestHandler('wallet_watchAsset', async (_context, rpcRequest) => await handleWatchAssetRequest(ethereum, websiteTabConnections, request, website, rpcRequest, {}, activeAddress)),
 		...accountOnlyRpcRequestHandlers,
 		eth_gasPrice: rpcRequestHandler('eth_gasPrice', async () => await gasPrice(ethereum)),
@@ -436,13 +436,14 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 		replyIfRpcConfigurationIsUnavailable(simulationServicesOwner, websiteTabConnections, request, initialSnapshot.rpcConfiguration)
 		return
 	}
-	if (replyIfRpcConfigurationIsUnavailable(simulationServicesOwner, websiteTabConnections, request, initialSnapshot.rpcConfiguration)) return
+	// Revoking only rewrites stored website access and needs no RPC services, so it runs before the RPC availability guard and stays possible while services are paused.
 	if (request.method === 'wallet_revokePermissions') {
 		const parsedRequest = parseWalletRevokePermissionsRequest(websiteTabConnections, request)
 		if (parsedRequest === undefined) return
 		const result = await revokeWebsitePermissions(simulationServicesOwner, websiteTabConnections, websiteOrigin)
 		return replyToInterceptedRequest(websiteTabConnections, { ...getRequestWithDefinedParams(request), ...result })
 	}
+	if (replyIfRpcConfigurationIsUnavailable(simulationServicesOwner, websiteTabConnections, request, initialSnapshot.rpcConfiguration)) return
 	const { settings, activeAddress, requestedSignerAccountsForAddressConsent, signerAccountError } = await discoverAccountRequestAddressContext(websiteTabConnections, socket, request, websiteOrigin, initialSettings)
 	if (isTerminalSignerAccountConnectionError(signerAccountError)) return replyWithSignerAccountError(websiteTabConnections, request, signerAccountError)
 	if (requestedSignerAccountsForAddressConsent && activeAddress === undefined) {
@@ -525,9 +526,18 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 	}
 }
 
-async function handleContentScriptMessage(simulationServicesOwner: SimulationServicesOwner, simulationServices: SimulationServices | undefined, websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, website: Website, activeAddress: AddressBookEntry, settings: Settings, publishRpcConnectionStatus: PublishRpcConnectionStatus) {
+// A request can be parked on the website lookup or signer prompts after admission, so routing reads the live simulation mode and signing settings while the RPC network stays pinned to the admitted service pair.
+async function getLiveSettingsForAdmittedRpcNetwork(admittedSettings: Settings): Promise<Settings | undefined> {
+	const { settings: liveSettings } = await getSettingsSnapshot()
+	if (liveSettings === undefined) return undefined
+	return { ...liveSettings, activeRpcNetwork: admittedSettings.activeRpcNetwork }
+}
+
+async function handleContentScriptMessage(simulationServicesOwner: SimulationServicesOwner, simulationServices: SimulationServices | undefined, websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, website: Website, activeAddress: AddressBookEntry, admittedSettings: Settings, publishRpcConnectionStatus: PublishRpcConnectionStatus) {
 	try {
 		const requestWithDefinedParams = getRequestWithDefinedParams(request)
+		const settings = await getLiveSettingsForAdmittedRpcNetwork(admittedSettings)
+		if (settings === undefined) return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...requestWithDefinedParams, error: RPC_CONFIGURATION_UNAVAILABLE_ERROR })
 		const currentChainEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId)
 		const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)
 		const safeSigningMode = isActiveSigningSafe(activeAddress, settings.simulationMode, settings.activeSigningSafeAddress, settings.activeRpcNetwork.chainId, signerTabState.signerAccounts, currentChainEntries)
