@@ -506,7 +506,7 @@ type OutstandingRequest = {
 	requestScopedProviderEventCallbacks?: (() => void)[]
 }
 
-// Query replies have no durable approval or replay path. A worker restart must settle them so their selection blockers cannot prevent signer reconciliation. Keep wallet commands and account approval requests pending for their existing recovery workflows.
+// Queries and filter/subscription operations have no durable approval or replay path. Reject them on reconnect without replaying potentially state-changing operations, so lost replies release their selection blockers. Wallet commands and account approvals keep their existing recovery workflows.
 const PUBLIC_QUERIES_INTERRUPTED_BY_RECONNECT = new Set([
 	'eth_accounts',
 	'eth_blockNumber',
@@ -519,6 +519,7 @@ const PUBLIC_QUERIES_INTERRUPTED_BY_RECONNECT = new Set([
 	'eth_getBlockByHash',
 	'eth_getBlockByNumber',
 	'eth_getCode',
+	'eth_getFilterChanges',
 	'eth_getFilterLogs',
 	'eth_getLogs',
 	'eth_getStorageAt',
@@ -526,7 +527,11 @@ const PUBLIC_QUERIES_INTERRUPTED_BY_RECONNECT = new Set([
 	'eth_getTransactionCount',
 	'eth_getTransactionReceipt',
 	'eth_maxPriorityFeePerGas',
+	'eth_newFilter',
 	'eth_simulateV1',
+	'eth_subscribe',
+	'eth_uninstallFilter',
+	'eth_unsubscribe',
 	'interceptor_getSimulationStack',
 	'net_version',
 	'wallet_getCapabilities',

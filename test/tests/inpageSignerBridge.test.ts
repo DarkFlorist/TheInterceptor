@@ -1200,7 +1200,7 @@ describe('inpage signer bridge', () => {
 		})
 	})
 
-	test.each(['eth_blockNumber', 'eth_call'])('settles a lost %s query so signer reconciliation can recover after reconnect', async (method) => {
+	test.each(['eth_blockNumber', 'eth_call', 'eth_getFilterLogs', 'eth_getFilterChanges', 'eth_newFilter', 'eth_uninstallFilter', 'eth_subscribe', 'eth_unsubscribe'])('settles a lost %s request so signer reconciliation can recover after reconnect', async (method) => {
 		const requests: InpageRequest[] = []
 		const { fakeWindow, notifyBridgeReconnected, sendBackgroundMessage } = createFakeWindow({
 			handleRequest: (request) => {
