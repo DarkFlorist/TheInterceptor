@@ -1,7 +1,7 @@
 import { SafeProposalDetails, SafeProposalSigningRequestCard } from './SafeProposalDetails.js'
 import { useEffect } from 'preact/hooks'
 import { MessageToPopup, type TransactionConfirmation, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
-import { type CompleteVisualizedSimulation, type EditEnsNamedHashWindowState, type MaybeSimulatedTransaction, type ModifyAddressWindowState, type VisualizedSimulationState, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
+import { type CompleteVisualizedSimulation, type EditEnsNamedHashWindowState, type ModifyAddressWindowState, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
 import Hint from '../subcomponents/Hint.js'
 import { GasLimitEditor, RawTransactionDetailsCard, type SignerNonce, GasFee, TokenLogAnalysisCard, SimulatedInBlockNumber, TransactionCreated, TransactionHeader, TransactionHeaderForFailedToSimulate, TransactionsAccountChangesCard, NonTokenLogAnalysisCard, getSimulationDisplayBlockNumber } from '../simulationExplaining/SimulationSummary.js'
 import { CenterToPageTextSpinner, Spinner } from '../subcomponents/Spinner.js'
@@ -22,6 +22,7 @@ import { TransactionInput } from '../subcomponents/ParsedInputData.js'
 import type { EthereumBytes32 } from '../../types/wire-types.js'
 import type { OriginalSendRequestParameters } from '../../types/JsonRpc-types.js'
 import { getWebsiteWarningMessage } from '../../utils/websiteData.js'
+import { getResultsForTransaction, requiresTransactionOverrideAcknowledgement } from '../../utils/transactionOverrideAcknowledgement.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
 import { checkAndThrowRuntimeLastError, doesUniqueRequestIdentifiersMatch } from '../../utils/requests.js'
 import { Link } from '../subcomponents/link.js'
@@ -84,12 +85,6 @@ async function bootstrapConfirmTransactionDialog(
 
 async function hydratePendingTransactionsFromStorage() {
 	return (await browserStorageLocalGet2('pendingTransactionsAndMessages')).pendingTransactionsAndMessages ?? []
-}
-
-const getResultsForTransaction = (visualizedSimulationState: VisualizedSimulationState, transactionIdentifier: bigint) => {
-	return visualizedSimulationState.visualizedBlocks
-		.flatMap((block): readonly MaybeSimulatedTransaction[] => block.simulatedAndVisualizedTransactions)
-		.find((transaction) => transaction.transactionIdentifier === transactionIdentifier)
 }
 
 export function getAddressBookEntryForEdit(clickedEntry: AddressBookEntry, addressBookEntries: readonly AddressBookEntry[]) {
@@ -271,7 +266,7 @@ function getRequestedFeesText(request: Extract<OriginalSendRequestParameters, { 
 	return fees.length === 0 ? SELECTED_BY_WALLET : fees.join(', ')
 }
 
-// Shown when the confirmation simulation fails. When the request goes to the wallet, an override forwards exactly this website request, so every forwarded field is listed and omitted ones are marked as wallet-selected; simulation mode keeps the plain summary because acceptance only adds the locally prepared transaction to the simulation.
+// Shown when the confirmation simulation fails; this view offers only rejection. If a stale or non-popup acceptance with the override acknowledgement still reaches the background, exactly this website request is forwarded, so every forwarded field is listed and omitted ones are marked as wallet-selected; simulation mode keeps the plain summary because acceptance only adds the locally prepared transaction to the simulation.
 export function FailedTransactionPreviewDetails({
 	website,
 	forwardsRequestToWallet,
@@ -1062,14 +1057,7 @@ export function ConfirmTransaction() {
 			})
 		}
 		if (forceSend.value) return false
-		if (currentPendingTransactionOrSignableMessage.value.popupVisualisation === undefined) return true
-		if (currentPendingTransactionOrSignableMessage.value.popupVisualisation.statusCode !== 'success') return true
-		if (currentPendingTransactionOrSignableMessage.value.popupVisualisation.data.visualizedSimulationState.success === false) return true
-		const lastTx = getResultsForTransaction(currentPendingTransactionOrSignableMessage.value.popupVisualisation.data.visualizedSimulationState, currentPendingTransactionOrSignableMessage.value.transactionIdentifier)
-		if (lastTx === undefined) return true
-		if (lastTx.transactionStatus !== 'Transaction Succeeded') return true
-		if (lastTx.quarantine) return true
-		return false
+		return requiresTransactionOverrideAcknowledgement(currentPendingTransactionOrSignableMessage.value.popupVisualisation, currentPendingTransactionOrSignableMessage.value.transactionIdentifier)
 	})
 	const isAddToSafeStackDisabled = useComputed(() => {
 		const pending = currentPendingTransactionOrSignableMessage.value

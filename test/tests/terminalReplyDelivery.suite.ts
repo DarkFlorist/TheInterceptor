@@ -38,9 +38,10 @@ test('failed signer delivery keeps the request and replaces the waiting spinner 
 			approvalStatus: { status: 'WaitingForUser' },
 		}] })
 
+		// Background-only override: the test harness's confirmation simulation visualizes no transaction, so the popup would keep Confirm disabled and this accept carries forceSend as a stale or non-popup message would.
 		const delivered = await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, connectionCase.connections, {
 			method: 'popup_confirmDialog',
-			data: { action: 'accept', uniqueRequestIdentifier, forceSend: false },
+			data: { action: 'accept', uniqueRequestIdentifier, forceSend: true },
 		})
 		const retainedRequests = await modules.getPendingTransactionsAndMessages()
 		const retainedRequest = retainedRequests[0]

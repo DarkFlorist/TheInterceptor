@@ -852,9 +852,10 @@ test('rebases a later pending Safe proposal after an earlier nonce is rejected',
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
 	const [refreshedProposal] = await modules.getPendingTransactionsAndMessages()
 	assert.equal(refreshedProposal?.safeTransaction?.safeTx.message.nonce, 0n)
+	// Background-only override: the test harness's confirmation simulation visualizes no transaction, so the popup would keep Confirm disabled and this accept carries forceSend as a stale or non-popup message would.
 	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
-		data: { action: 'accept', uniqueRequestIdentifier: secondIdentifier, forceSend: false },
+		data: { action: 'accept', uniqueRequestIdentifier: secondIdentifier, forceSend: true },
 	}), true)
 	const signerRequest = postedMessages.find((message) => isRecord(message) && message.type === 'forwardToSigner')
 	if (!isRecord(signerRequest) || !Array.isArray(signerRequest.params)) throw new Error('Missing rebased Safe signer request')
@@ -948,9 +949,10 @@ test('rejects a stale forwarded Safe nonce before persistence and rebases it whe
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
 	const [refreshedPending] = await modules.getPendingTransactionsAndMessages()
 	assert.equal(refreshedPending?.safeTransaction?.safeTx.message.nonce, 0n)
+	// Background-only override: the test harness's confirmation simulation visualizes no transaction, so the popup would keep Confirm disabled and this accept carries forceSend as a stale or non-popup message would.
 	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
-		data: { action: 'accept', uniqueRequestIdentifier: requestIdentifier, forceSend: false },
+		data: { action: 'accept', uniqueRequestIdentifier: requestIdentifier, forceSend: true },
 	}), true)
 	const signerRequest = postedMessages.find((message) => isRecord(message) && message.type === 'forwardToSigner')
 	if (!isRecord(signerRequest) || !Array.isArray(signerRequest.params)) throw new Error('Missing retried Safe signer request')

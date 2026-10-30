@@ -216,9 +216,10 @@ test('forwards a Safe transaction to the wallet-selected Safe owner as EIP-712 t
 		...pending,
 		approvalStatus: { status: 'WaitingForUser' as const },
 	}))
+	// Background-only override: the test harness's confirmation simulation visualizes no transaction, so the popup would keep Confirm disabled and this accept carries forceSend as a stale or non-popup message would.
 	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
-		data: { action: 'accept', uniqueRequestIdentifier, forceSend: false },
+		data: { action: 'accept', uniqueRequestIdentifier, forceSend: true },
 	}), true)
 
 	const signerRequest = postedMessages.find((message) => isRecord(message) && message.type === 'forwardToSigner')
@@ -1297,7 +1298,7 @@ test('routes a completed active Safe execution through its configured signer and
 		...pending,
 		approvalStatus: { status: 'WaitingForUser' as const },
 	}))
-	// The test chain cannot simulate this Safe execution, so the popup shows its failure view and only the override acknowledgement lets the request through.
+	// Background-only override test: the test chain cannot simulate this Safe execution, so the popup would show its failure view (which offers only rejection) and the background forwards the execution only because this accept carries forceSend.
 	assert.equal(await modules.resolvePendingTransactionOrMessage(
 		simulator.ethereum,
 		simulator.tokenPriceService,
@@ -1422,7 +1423,7 @@ test('forwards a direct Safe execution that omits type, gas, and fee fields when
 	assert.equal(pendingExecution.originalRequestParameters.params[0].gas, undefined)
 	assert.equal(pendingExecution.originalRequestParameters.params[0].maxFeePerGas, undefined)
 
-	// The test chain cannot simulate this Safe execution, so the popup shows its failure view and only the override acknowledgement lets the request through.
+	// Background-only override test: the test chain cannot simulate this Safe execution, so the popup would show its failure view (which offers only rejection) and the background forwards the execution only because this accept carries forceSend.
 	assert.equal(await modules.resolvePendingTransactionOrMessage(
 		simulator.ethereum,
 		simulator.tokenPriceService,

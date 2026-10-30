@@ -4,10 +4,12 @@ import { Signal } from '@preact/signals'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { JsonRpcResponseError } from '../../app/ts/utils/errors.js'
+import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
+import { getLatestUnexpectedError } from '../../app/ts/background/storageVariables.js'
 import { nanoString } from '../../app/ts/utils/bigint.js'
 import { clickRenderedElement, findRenderedElement, installDomMock } from './domMock.js'
 import { SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
-import { UpdateConfirmTransactionDialogPendingTransactions } from '../../app/ts/types/interceptor-messages.js'
+import { TransactionConfirmation, UpdateConfirmTransactionDialogPendingTransactions } from '../../app/ts/types/interceptor-messages.js'
 import { activeAddress, addressString, browserMock, createWebsitePort, fakeBlock, fakeRequestHandler, fakeRpcNetwork, isRecord, modules, pendingTransaction, recipientAddress, simulator, unsignedTransaction, uniqueRequestIdentifier } from './confirmTransactionTestHarness.js'
 
 const websiteOnlyRequestParameters = {
@@ -30,10 +32,28 @@ function createApprovedConnections(postedMessages: unknown[]) {
 }
 
 async function acceptPendingRequest(postedMessages: unknown[]) {
+	// Background-only override: the test harness's confirmation simulation visualizes no transaction, so the popup would keep Confirm disabled and this accept carries forceSend as a stale or non-popup message would.
 	return await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, createApprovedConnections(postedMessages), {
 		method: 'popup_confirmDialog',
-		data: { action: 'accept', uniqueRequestIdentifier, forceSend: false },
+		data: { action: 'accept', uniqueRequestIdentifier, forceSend: true },
 	})
+}
+
+// Sends the confirmation through the background's popup message routing, where an uncaught refusal would surface as an unexpected error.
+async function routePopupConfirmation(ethereum: InstanceType<typeof modules.EthereumClientService>, websiteTabConnections: ReturnType<typeof createApprovedConnections>, data: { action: 'accept', forceSend: boolean } | { action: 'reject', errorString: undefined }) {
+	const { popupMessageHandler } = await import('../../app/ts/background/popupMessageRouting.js')
+	const { getSettings } = await import('../../app/ts/background/settings.js')
+	const simulationServicesOwner = createTestSimulationServicesOwner({ ethereum, tokenPriceService: simulator.tokenPriceService })
+	const request = TransactionConfirmation.serialize({ method: 'popup_confirmDialog', data: { ...data, uniqueRequestIdentifier } })
+	return await popupMessageHandler(websiteTabConnections, simulationServicesOwner, request, await getSettings(), () => undefined)
+}
+
+async function assertAcceptanceRefusedWithoutAcknowledgement(ethereum: InstanceType<typeof modules.EthereumClientService>, websiteTabConnections: ReturnType<typeof createApprovedConnections>, postedMessages: readonly unknown[]) {
+	assert.equal(await routePopupConfirmation(ethereum, websiteTabConnections, { action: 'accept', forceSend: false }), undefined)
+	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
+	const [pendingRequest] = await modules.getPendingTransactionsAndMessages()
+	assert.equal(pendingRequest?.approvalStatus.status, 'WaitingForUser')
+	assert.equal(await getLatestUnexpectedError(), undefined)
 }
 
 function getForwardedSignerRequest(postedMessages: readonly unknown[]) {
@@ -48,6 +68,8 @@ type ChainScenario = {
 	readonly preparationBaseFeePerGas: bigint
 	readonly simulationBaseFeePerGas: bigint
 	readonly failConfirmationSimulation?: boolean
+	readonly revertSenderCalls?: boolean
+	readonly networkGasPrice?: bigint
 }
 
 // Answers like the shared fake RPC, but reports the sender's latest and pending nonces, rejects nonces other than the latest one like a node would, and changes the base fee after the confirmation was prepared.
@@ -66,13 +88,14 @@ function createChainScenarioEthereum(scenario: ChainScenario) {
 				case 'eth_getTransactionCount': return modules.serialize(modules.EthereumQuantity, rpcRequest.params?.[1] === 'pending' ? scenario.pendingNonce ?? scenario.chainNonce : scenario.chainNonce)
 				case 'eth_getBalance': return modules.serialize(modules.EthereumQuantity, 10n ** 21n)
 				case 'eth_estimateGas': return modules.serialize(modules.EthereumQuantity, 21_000n)
+				case 'eth_gasPrice': return scenario.networkGasPrice === undefined ? await fakeRequestHandler.jsonRpcRequest(rpcRequest) : modules.serialize(modules.EthereumQuantity, scenario.networkGasPrice)
 				case 'eth_simulateV1': {
 					if (scenario.failConfirmationSimulation === true) throw new JsonRpcResponseError({ jsonrpc: '2.0', id: 1, error: { code: -32000, message: 'eth_simulateV1 is unavailable' } })
 					const simulation = modules.EthSimulateV1Result.parse(await fakeRequestHandler.jsonRpcRequest(rpcRequest))
 					const blockStateCalls = getBlockStateCalls(rpcRequest.params?.[0])
 					return modules.serialize(modules.EthSimulateV1Result, simulation.map((block, blockIndex) => ({
 						...block,
-						calls: block.calls.map((call, callIndex) => hasWrongSenderNonce(blockStateCalls[blockIndex]?.[callIndex], scenario.chainNonce)
+						calls: block.calls.map((call, callIndex) => (scenario.revertSenderCalls === true && isSenderCall(blockStateCalls[blockIndex]?.[callIndex])) || hasWrongSenderNonce(blockStateCalls[blockIndex]?.[callIndex], scenario.chainNonce)
 							? { status: 'failure' as const, returnData: new Uint8Array(), gasUsed: 21_000n, error: { code: -32000, message: 'wrong transaction nonce' } }
 							: call),
 					})))
@@ -87,6 +110,11 @@ function createChainScenarioEthereum(scenario: ChainScenario) {
 function getBlockStateCalls(simulationRequest: unknown): readonly (readonly unknown[])[] {
 	if (!isRecord(simulationRequest) || !Array.isArray(simulationRequest.blockStateCalls)) return []
 	return simulationRequest.blockStateCalls.map((blockStateCall: unknown) => isRecord(blockStateCall) && Array.isArray(blockStateCall.calls) ? blockStateCall.calls : [])
+}
+
+function isSenderCall(call: unknown) {
+	if (!isRecord(call) || (typeof call.from !== 'string' && typeof call.from !== 'bigint')) return false
+	return BigInt(call.from) === activeAddress
 }
 
 function hasWrongSenderNonce(call: unknown, chainNonce: bigint) {
@@ -253,7 +281,7 @@ async function renderFailedSimulationView(renderInSimulationMode = false) {
 	const popupUpdate = browserMock.sentMessages.findLast((message) => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions')
 	const [displayedRequest] = UpdateConfirmTransactionDialogPendingTransactions.parse(popupUpdate).data.pendingTransactionAndSignableMessages
 	if (displayedRequest?.type !== 'Transaction' || displayedRequest.transactionOrMessageCreationStatus !== 'Simulated') throw new Error('The popup did not receive a prepared transaction')
-	// Preparation succeeded, so the request stays acceptable with the override, but the popup can only show its failure view.
+	// Preparation succeeded, so the background still accepts a background-only override, but the popup can only show its failure view, which offers only rejection.
 	if (displayedRequest.popupVisualisation.statusCode !== 'failed') throw new Error('Expected the confirmation simulation to fail')
 	const renderedRequest = renderInSimulationMode ? { ...displayedRequest, simulationMode: true } : displayedRequest
 	const dom = installDomMock()
@@ -312,14 +340,9 @@ async function prepareFailSimulationAndOverride(requestedNonce: bigint | undefin
 	// Preparation generated gas and fees that the failure view never shows.
 	assert.equal(pendingRequest.transactionToSimulate.transaction.gas, 21_000n)
 	const renderedText = await renderFailedSimulationView()
-	// The background refuses an acceptance without the override acknowledgement even if a caller bypasses the popup's disabled confirm button.
-	await assert.rejects(modules.resolvePendingTransactionOrMessage(ethereum, simulator.tokenPriceService, websiteTabConnections, {
-		method: 'popup_confirmDialog',
-		data: { action: 'accept', uniqueRequestIdentifier, forceSend: false },
-	}), /Transactions whose simulation failed require explicit user acknowledgement/u)
-	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
-	assert.equal((await modules.getPendingTransactionsAndMessages()).length, 1)
-	// The popup sends forceSend once the user ticks the override checkbox for a failing transaction.
+	// The failure view offers only rejection, so an acceptance here comes from a stale or non-popup message; without the override acknowledgement the background refuses it.
+	await assertAcceptanceRefusedWithoutAcknowledgement(ethereum, websiteTabConnections, postedMessages)
+	// This is a background-only override: a stale or non-popup acceptance carrying forceSend forwards exactly the website request.
 	assert.equal(await modules.resolvePendingTransactionOrMessage(ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
 		data: { action: 'accept', uniqueRequestIdentifier, forceSend: true },
@@ -344,15 +367,85 @@ async function prepareFailSimulationAndOverride(requestedNonce: bigint | undefin
 	return { forwardedTransaction, renderedText }
 }
 
-test('an override after a failed confirmation simulation forwards exactly the request the failure view shows, including an explicit nonce', async () => {
+test('a background-only override after a failed confirmation simulation forwards exactly the request the failure view shows, including an explicit nonce', async () => {
 	const { forwardedTransaction, renderedText } = await prepareFailSimulationAndOverride(6n)
 	assert.equal(forwardedTransaction.nonce, '0x6')
 	assert.match(renderedText, /Nonce6/u)
 })
 
-test('an override after a failed confirmation simulation leaves an omitted nonce to the wallet', async () => {
+test('a background-only override after a failed confirmation simulation leaves an omitted nonce to the wallet', async () => {
 	const { renderedText } = await prepareFailSimulationAndOverride(undefined)
 	assert.match(renderedText, /NonceSelected by your wallet/u)
+})
+
+test('a refused acceptance after a failed confirmation simulation leaves the request rejectable without an unexpected error', async () => {
+	await browser.storage.local.set({ simulationMode: false })
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	const ethereum = createChainScenarioEthereum({ chainNonce: 0n, preparationBaseFeePerGas: 1n, simulationBaseFeePerGas: 1n, failConfirmationSimulation: true })
+	const { postedMessages, websiteTabConnections } = await openSigningModeTransaction(ethereum, {})
+	await assertAcceptanceRefusedWithoutAcknowledgement(ethereum, websiteTabConnections, postedMessages)
+	assert.equal(await routePopupConfirmation(ethereum, websiteTabConnections, { action: 'reject', errorString: undefined }), undefined)
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	const websiteReply = postedMessages.find((message) => isRecord(message) && message.method === 'eth_sendTransaction' && message.requestId === uniqueRequestIdentifier.requestId)
+	assert.equal(isRecord(websiteReply) && isRecord(websiteReply.error) ? websiteReply.error.code : undefined, 4001)
+	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
+	assert.equal(await getLatestUnexpectedError(), undefined)
+})
+
+async function openSigningModeTransaction(ethereum: ReturnType<typeof createChainScenarioEthereum>, requestFields: Record<string, unknown>) {
+	const transactionParams = SendTransactionParams.parse({
+		method: 'eth_sendTransaction',
+		params: [{ from: addressString(activeAddress), to: addressString(recipientAddress), value: '0x0', gas: '0x5208', ...requestFields }],
+	})
+	const postedMessages: unknown[] = []
+	const websiteTabConnections = createApprovedConnections(postedMessages)
+	assert.deepEqual(await modules.openConfirmTransactionDialogForTransaction(
+		ethereum,
+		simulator.tokenPriceService,
+		{ interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier, ...transactionParams },
+		{ kind: 'transaction', parameters: transactionParams },
+		false,
+		activeAddress,
+		{ websiteOrigin: 'https://example.com', icon: undefined, title: undefined },
+		websiteTabConnections,
+	), { type: 'doNotReply' })
+	return { postedMessages, websiteTabConnections }
+}
+
+// The simulation succeeds, but the popup only enables Confirm after its override checkbox, so the background requires the same acknowledgement before forwarding.
+async function assertSimulatedTransactionNeedsAcknowledgement(scenario: ChainScenario, requestFields: Record<string, unknown>, expectedResult: (result: { readonly transactionStatus: string, readonly quarantine: boolean }) => boolean) {
+	const { getResultsForTransaction } = await import('../../app/ts/utils/transactionOverrideAcknowledgement.js')
+	await browser.storage.local.set({ simulationMode: false })
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	const ethereum = createChainScenarioEthereum(scenario)
+	const { postedMessages, websiteTabConnections } = await openSigningModeTransaction(ethereum, requestFields)
+	const [pendingRequest] = await modules.getPendingTransactionsAndMessages()
+	if (pendingRequest?.type !== 'Transaction' || pendingRequest.transactionOrMessageCreationStatus !== 'Simulated') throw new Error('Expected a simulated transaction')
+	if (pendingRequest.popupVisualisation.statusCode !== 'success') throw new Error('Expected a successful confirmation simulation')
+	const result = getResultsForTransaction(pendingRequest.popupVisualisation.data.visualizedSimulationState, pendingRequest.transactionIdentifier)
+	if (result === undefined) throw new Error('Missing simulated transaction result')
+	assert.equal(expectedResult(result), true)
+	await assertAcceptanceRefusedWithoutAcknowledgement(ethereum, websiteTabConnections, postedMessages)
+	assert.equal(await routePopupConfirmation(ethereum, websiteTabConnections, { action: 'accept', forceSend: true }), undefined)
+	assert.equal(getForwardedSignerRequest(postedMessages).method, 'eth_sendTransaction')
+	assert.equal(await getLatestUnexpectedError(), undefined)
+}
+
+test('a reverting transaction from a successful simulation is forwarded only with the override acknowledgement', async () => {
+	await assertSimulatedTransactionNeedsAcknowledgement(
+		{ chainNonce: 0n, preparationBaseFeePerGas: 1n, simulationBaseFeePerGas: 1n, revertSenderCalls: true },
+		{},
+		(result) => result.transactionStatus === 'Transaction Failed',
+	)
+})
+
+test('a quarantined transaction from a successful simulation is forwarded only with the override acknowledgement', async () => {
+	// The fee protector quarantines a legacy gas price of ten times the network gas price or more, and the simulated base fee pushes the reviewed gas price far above it.
+	await assertSimulatedTransactionNeedsAcknowledgement(
+		{ chainNonce: 0n, preparationBaseFeePerGas: 1n, simulationBaseFeePerGas: 100n },
+		{ type: '0x0' },
+		(result) => result.transactionStatus === 'Transaction Succeeded' && result.quarantine,
+	)
 })
 
 async function prepareAcceptAndRenderFeeFields(requestFields: Record<string, unknown>) {
@@ -361,7 +454,8 @@ async function prepareAcceptAndRenderFeeFields(requestFields: Record<string, unk
 	const { getSafeTransactionPendingFlow } = await import('../../app/ts/safe/safePendingFlow.js')
 	await browser.storage.local.set({ simulationMode: false })
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
-	const ethereum = createChainScenarioEthereum({ chainNonce: 0n, preparationBaseFeePerGas: 1n, simulationBaseFeePerGas: 100n })
+	// A realistic network gas price keeps the fee protector from quarantining the legacy and EIP-2930 cases, which would require the override acknowledgement.
+	const ethereum = createChainScenarioEthereum({ chainNonce: 0n, preparationBaseFeePerGas: 1n, simulationBaseFeePerGas: 100n, networkGasPrice: 10n ** 9n })
 	const transactionParams = SendTransactionParams.parse({
 		method: 'eth_sendTransaction',
 		params: [{ from: addressString(activeAddress), to: addressString(recipientAddress), value: '0x0', gas: '0x5208', ...requestFields }],
