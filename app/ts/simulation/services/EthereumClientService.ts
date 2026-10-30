@@ -4,7 +4,7 @@ import { MAX_BLOCK_CACHE, TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
 import { keccak256 } from '../../utils/ethereumPrimitives.js'
 import type { IEthereumJSONRpcRequestHandler } from './EthereumJSONRpcRequestHandler.js'
 import { addressString, bigintSecondsToDate, bytes32String, dataString, dateToBigintSeconds, max } from '../../utils/bigint.js'
-import { type BlockCalls, type BlockOverrides, EthSimulateV1Result, type EthSimulateV1Params } from '../../types/ethSimulate-types.js'
+import { type BlockCalls, type BlockOverrides, EthSimulateV1Result, type EthSimulateV1Params, type StateOverrides } from '../../types/ethSimulate-types.js'
 import { EthGetFeeHistoryResponse, EthGetStorageAtResponse, EthTransactionReceiptResponse, type FeeHistory, type EthGetLogsRequest, EthGetLogsResponse, type PartialEthereumTransaction } from '../../types/JsonRpc-types.js'
 import { getBlockTimeManipulationSeconds } from './simulationBlockParameters.js'
 import { simulatePersonalSign } from './simulationPersonalSigning.js'
@@ -17,7 +17,7 @@ import type { MessageHashAndSignature } from '../../utils/eip712.js'
 import { encodeAbiValues } from '../../utils/abiRuntime.js'
 import { getCurrentTimestampString } from '../../utils/time.js'
 import { projectEip7702AuthorizationForRpc } from '../../utils/eip7702Authorization.js'
-import { getEffectiveStateOverrides } from '../../utils/simulationStateOverrides.js'
+import { mapBlocksWithEffectiveStateOverrides } from '../../utils/simulationStateOverrides.js'
 
 const parseSignatureHex = (signature: `0x${ string }`) => {
 	const stripped = signature.slice(2)
@@ -388,7 +388,7 @@ export class EthereumClientService {
 			previousBlockOverride = newBlockOverride
 		}
 
-		const getBlockStateCall = async (block: SimulationStateInputMinimalDataBlock, blockOverrides: BlockOverrides, blockIndex: number) => {
+		const getBlockStateCall = async (block: SimulationStateInputMinimalDataBlock, blockOverrides: BlockOverrides, effectiveStateOverrides: StateOverrides) => {
 			const rpcCalls = block.transactions.map((transaction) => toEthSimulateCall(transaction.signedTransaction))
 			const ecRecoverMovedToAddress = 0x123456n
 			const ecRecoverAddress = 1n
@@ -422,15 +422,15 @@ export class EthereumClientService {
 							state: stateSets,
 						}
 					} : {},
-					...getEffectiveStateOverrides(block.stateOverrides, simulationOverrides, { precedingSimulatedBlockCount: blockIndex }),
+					...effectiveStateOverrides,
 				}
 			}
 		}
 
-		const blockStateCalls = await Promise.all(rpcBlocks.map(async (block, index) => {
+		const blockStateCalls = await Promise.all(mapBlocksWithEffectiveStateOverrides(rpcBlocks, simulationOverrides, (block) => block.stateOverrides, async (block, effectiveStateOverrides, index) => {
 			const blockOverrideForBlock = blockOverrides[index]
 			if (blockOverrideForBlock === undefined) throw new Error('Block Overridex index overflow')
-			return await getBlockStateCall(block, blockOverrideForBlock, index)
+			return await getBlockStateCall(block, blockOverrideForBlock, effectiveStateOverrides)
 		}))
 		if (parentBlock === null) throw new Error('The latest block is null')
 		return {

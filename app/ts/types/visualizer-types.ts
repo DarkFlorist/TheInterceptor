@@ -234,7 +234,7 @@ const SimulationStateSuccess = funtypes.ReadonlyObject({
 	simulationConductedTimestamp: EthereumTimestamp,
 	rpcNetwork: RpcNetwork,
 }).And(funtypes.ReadonlyPartial({
-	// Captured initial account state for replay, separate from live preferences; older results mean no initial overrides.
+	// Canonical captured initial account state for replay, separate from live preferences; simulationStateInput omits it, simulatedBlocks[0].stateOverrides is derived from it, and older results mean no initial overrides.
 	simulationOverrides: StateOverrides,
 }))
 
@@ -276,7 +276,7 @@ export const ResolvedSimulationState = funtypes.Union(
 export type SimulatedInput<TInput extends SimulationStateInputMinimalData = SimulationStateInputMinimalData> = {
 	readonly kind: 'simulated'
 	readonly value: TInput
-	/** Generic account state applied before the first simulated block. Callers decide how to construct it. */
+	/** Canonical account state applied before the first simulated block; derive block-level overrides only through utils/simulationStateOverrides.ts. */
 	readonly simulationOverrides: StateOverrides
 }
 export type SimulationInput = SimulatedInput<SimulationStateInput>

@@ -15,7 +15,7 @@ import { addressString } from '../../app/ts/utils/bigint.js'
 import { getSimulatedStackV2 } from '../../app/ts/simulation/SimulationStackExtraction.js'
 import { getSimulationInputHash } from '../../app/ts/utils/simulationFingerprint.js'
 import { isCodeClearedBySimulationOverrides } from '../../app/ts/utils/delegateClearingState.js'
-import { getEffectiveStateOverrides } from '../../app/ts/utils/simulationStateOverrides.js'
+import { getAppendedBlockStateOverrides, mapBlocksWithEffectiveStateOverrides } from '../../app/ts/utils/simulationStateOverrides.js'
 import { MAKE_YOU_RICH_TRANSACTION } from '../../app/ts/utils/constants.js'
 import { EthSimulateV1Params } from '../../app/ts/types/ethSimulate-types.js'
 import { JsonRpcResponse } from '../../app/ts/types/JsonRpc-types.js'
@@ -111,8 +111,12 @@ describe('delegate clearing in simulation', () => {
 	test('applies initial state only to the first block and preserves per-block state later', () => {
 		const initial = { [addressString(activeAddress)]: { code: new Uint8Array() } }
 		const block = { [addressString(activeAddress)]: { balance: 5n } }
-		assert.deepEqual(getEffectiveStateOverrides(block, initial, { precedingSimulatedBlockCount: 0 }), { [addressString(activeAddress)]: { balance: 5n, code: new Uint8Array() } })
-		assert.equal(getEffectiveStateOverrides(block, initial, { precedingSimulatedBlockCount: 1 }), block)
+		const mergedFirstBlock = { [addressString(activeAddress)]: { balance: 5n, code: new Uint8Array() } }
+		assert.deepEqual(getAppendedBlockStateOverrides([], block, initial), mergedFirstBlock)
+		assert.equal(getAppendedBlockStateOverrides([{ stateOverrides: block }], block, initial), block)
+		const mapped = mapBlocksWithEffectiveStateOverrides([{ stateOverrides: block }, { stateOverrides: block }], initial, (simulatedBlock) => simulatedBlock.stateOverrides, (_simulatedBlock, effectiveStateOverrides, blockIndex) => ({ effectiveStateOverrides, blockIndex }))
+		assert.deepEqual(mapped[0], { effectiveStateOverrides: mergedFirstBlock, blockIndex: 0 })
+		assert.equal(mapped[1]?.effectiveStateOverrides, block)
 	})
 
 	test('keeps the idle stack empty and clears the first appended transaction and RPC call', async () => {
