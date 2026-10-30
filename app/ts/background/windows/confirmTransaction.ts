@@ -391,6 +391,12 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 			&& !confirmation.data.forceSend) {
 			throw new Error('Quarantined signature requests require explicit user acknowledgement')
 		}
+		// A failed confirmation simulation leaves nothing reviewed to bind the forwarded request to, so only the failure view's override acknowledgement authorizes sending it.
+		if (pendingTransactionOrMessage.type === 'Transaction'
+			&& pendingTransactionOrMessage.popupVisualisation.statusCode !== 'success'
+			&& !confirmation.data.forceSend) {
+			throw new Error('Transactions whose simulation failed require explicit user acknowledgement')
+		}
 		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'WaitingForSigner' } }))
 		await updateConfirmTransactionView(ethereum, tokenPriceService)
 		const requestWasForwarded = await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, { ...getSignerFacingRequest(), type: 'forwardToSigner', uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
@@ -620,7 +626,7 @@ function getReviewedSignerFacingRequest(pending: PendingTransactionOrSignableMes
 	if (pending.originalRequestParameters.method !== 'eth_sendTransaction') return pending.originalRequestParameters
 	if (getSafePendingFlow(pending) !== undefined) return pending.originalRequestParameters
 	if (pending.transactionOrMessageCreationStatus !== 'Simulated') return pending.originalRequestParameters
-	// When the confirmation simulation fails, the popup shows only the website's own request, so an override forwards exactly that request and leaves omitted gas, fees and nonce to the wallet instead of sending prepared values the user never saw. The popup's failure view offers only rejection, so this is a guard against other callers rather than a UI path.
+	// When the confirmation simulation fails, the popup shows only the website's own request, so an override forwards exactly that request and leaves omitted gas, fees and nonce to the wallet instead of sending prepared values the user never saw; there is no reviewed simulation to bind against, and resolvePendingTransactionOrMessage only forwards it with the failure view's override acknowledgement (forceSend).
 	if (pending.popupVisualisation.statusCode !== 'success') return pending.originalRequestParameters
 	const reviewedTransaction = getReviewedTransactionForSigning(pending.transactionToSimulate.transaction, pending.popupVisualisation, pending.transactionIdentifier)
 	// The simulator repairs nonces against the latest block only for its preview, so its nonce is never forwarded: an omitted nonce stays wallet-selected because the wallet can see its own pending transactions, and a nonce the website supplied is forwarded unchanged so its ordering and replay protection hold. The popup shows the nonce that will be signed and notes a different simulated one.

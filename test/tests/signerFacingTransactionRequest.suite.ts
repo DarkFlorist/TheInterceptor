@@ -312,6 +312,13 @@ async function prepareFailSimulationAndOverride(requestedNonce: bigint | undefin
 	// Preparation generated gas and fees that the failure view never shows.
 	assert.equal(pendingRequest.transactionToSimulate.transaction.gas, 21_000n)
 	const renderedText = await renderFailedSimulationView()
+	// The background refuses an acceptance without the override acknowledgement even if a caller bypasses the popup's disabled confirm button.
+	await assert.rejects(modules.resolvePendingTransactionOrMessage(ethereum, simulator.tokenPriceService, websiteTabConnections, {
+		method: 'popup_confirmDialog',
+		data: { action: 'accept', uniqueRequestIdentifier, forceSend: false },
+	}), /Transactions whose simulation failed require explicit user acknowledgement/u)
+	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
+	assert.equal((await modules.getPendingTransactionsAndMessages()).length, 1)
 	// The popup sends forceSend once the user ticks the override checkbox for a failing transaction.
 	assert.equal(await modules.resolvePendingTransactionOrMessage(ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',

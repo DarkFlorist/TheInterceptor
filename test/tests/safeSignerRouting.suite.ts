@@ -1297,13 +1297,14 @@ test('routes a completed active Safe execution through its configured signer and
 		...pending,
 		approvalStatus: { status: 'WaitingForUser' as const },
 	}))
+	// The test chain cannot simulate this Safe execution, so the popup shows its failure view and only the override acknowledgement lets the request through.
 	assert.equal(await modules.resolvePendingTransactionOrMessage(
 		simulator.ethereum,
 		simulator.tokenPriceService,
 		websiteTabConnections,
 		{
 			method: 'popup_confirmDialog',
-			data: { action: 'accept', uniqueRequestIdentifier, forceSend: false },
+			data: { action: 'accept', uniqueRequestIdentifier, forceSend: true },
 		},
 		{ selectedSigner: safeSignerAddress, verificationError: undefined },
 	), true)
@@ -1421,11 +1422,12 @@ test('forwards a direct Safe execution that omits type, gas, and fee fields when
 	assert.equal(pendingExecution.originalRequestParameters.params[0].gas, undefined)
 	assert.equal(pendingExecution.originalRequestParameters.params[0].maxFeePerGas, undefined)
 
+	// The test chain cannot simulate this Safe execution, so the popup shows its failure view and only the override acknowledgement lets the request through.
 	assert.equal(await modules.resolvePendingTransactionOrMessage(
 		simulator.ethereum,
 		simulator.tokenPriceService,
 		websiteTabConnections,
-		{ method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier, forceSend: false } },
+		{ method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier, forceSend: true } },
 		{ selectedSigner: safeSignerAddress, verificationError: undefined },
 	), true)
 	const signerRequest = postedMessages.find((message) => isRecord(message) && message.type === 'forwardToSigner')
