@@ -1,20 +1,20 @@
-import { type Signal, type ReadonlySignal, useComputed, useSignal } from '@preact/signals'
+import { type ReadonlySignal, useComputed, useSignal } from '@preact/signals'
 import { getMissingPopupReplyErrorMessage, requestPopupSimulateGnosisSafeTransaction } from '../../../background/backgroundUtils.js'
-import { MessageToPopup, SimulateExecutionReply } from '../../../types/interceptor-messages.js'
+import type { SimulateExecutionReply } from '../../../types/interceptor-messages.js'
 import type { VisualizedPersonalSignRequestSafeTx } from '../../../types/personal-message-definitions.js'
 import type { RenameAddressCallBack } from '../../../types/user-interface-types.js'
-import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../../utils/browser.js'
 import { AsyncStatusIcon } from '../../subcomponents/AsyncAction.js'
 import { ErrorComponent } from '../../subcomponents/Error.js'
 import { SmallAddress } from '../../subcomponents/address.js'
 import type { EditEnsNamedHashCallBack } from '../../subcomponents/ens.js'
 import { Transaction } from '../Transactions.js'
-import { useEffect, useRef } from 'preact/hooks'
-import { type AsyncStates, useAsyncState } from '../../../utils/preact-utilities.js'
+import { useEffect } from 'preact/hooks'
+import type { AsyncStates } from '../../../utils/preact-utilities.js'
+import { useExecutionSimulation } from '../../hooks/useExecutionSimulation.js'
 
 type ShowSuccessOrFailureParams = {
 	activeAddress: ReadonlySignal<bigint | undefined>
-	simulateExecutionReply: Signal<SimulateExecutionReply | undefined>
+	simulateExecutionReply: ReadonlySignal<SimulateExecutionReply | undefined>
 	gnosisSimulationState: AsyncStates
 	requestErrorText: string | undefined
 	requestToSimulate: () => void
@@ -108,52 +108,21 @@ type GnosisSafeVisualizerParams = {
 }
 
 export function GnosisSafeVisualizer(param: GnosisSafeVisualizerParams) {
-	const simulateExecutionReply = useSignal<SimulateExecutionReply | undefined>(undefined)
 	const activeAddress = useSignal<bigint | undefined>(undefined)
+	const { reply: simulateExecutionReply, state: simulationState, errorText: requestErrorText, simulate: requestToSimulate, reset } = useExecutionSimulation(
+		param.gnosisSafeMessage.messageIdentifier,
+		() => requestPopupSimulateGnosisSafeTransaction({ gnosisSafeMessage: param.gnosisSafeMessage }),
+		GNOSIS_SIMULATION_REPLY_MISSING_ERROR,
+	)
 	const outcomeTitleId = `safe-outcome-title-${ param.gnosisSafeMessage.messageIdentifier.toString() }`
-	const { value: gnosisSimulationRequest, waitFor: waitForGnosisSimulation, reset: resetGnosisSimulationRequest } = useAsyncState<void>()
-	const requestErrorText = useComputed(() => gnosisSimulationRequest.value.state === 'rejected' ? gnosisSimulationRequest.value.error.message : undefined)
-	const currentMessageIdentifier = useRef(param.gnosisSafeMessage.messageIdentifier)
-	currentMessageIdentifier.current = param.gnosisSafeMessage.messageIdentifier
-
-	const isReplyForCurrentMessage = (reply: SimulateExecutionReply) => reply.data.transactionOrMessageIdentifier === currentMessageIdentifier.current
-
-	useEffect(() => {
-		const popupMessageListener = (msg: unknown): false => {
-			const maybeParsed = MessageToPopup.safeParse(msg)
-			if (!maybeParsed.success) return false // not a message we are interested in
-			const parsed = maybeParsed.value
-			if (parsed.method === 'popup_new_block_arrived') return false
-			if (parsed.method !== 'popup_simulateExecutionReply') return false
-			const { role: _role, ...popupSimulateExecutionReply } = parsed
-			const reply = SimulateExecutionReply.parse(popupSimulateExecutionReply)
-			if (!isReplyForCurrentMessage(reply)) return false
-			resetGnosisSimulationRequest()
-			simulateExecutionReply.value = reply
-			return false
-		}
-		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
-		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
-	}, [])
-
-	const requestToSimulate = () => {
-		if (gnosisSimulationRequest.value.state === 'pending') return
-		waitForGnosisSimulation(async () => {
-			const reply = await requestPopupSimulateGnosisSafeTransaction({ gnosisSafeMessage: param.gnosisSafeMessage })
-			if (reply === undefined) throw new Error(GNOSIS_SIMULATION_REPLY_MISSING_ERROR)
-			if (param.gnosisSafeMessage.messageIdentifier !== currentMessageIdentifier.current || !isReplyForCurrentMessage(reply)) return
-			simulateExecutionReply.value = reply
-		})
-	}
 
 	useEffect(() => {
 		activeAddress.value = param.activeAddress
-		simulateExecutionReply.value = undefined
-		resetGnosisSimulationRequest()
+		reset()
 		requestToSimulate()
 	}, [param.activeAddress, param.gnosisSafeMessage.messageIdentifier])
 
-	const simulationPending = gnosisSimulationRequest.value.state === 'pending'
+	const simulationPending = simulationState.value === 'pending'
 
 	if (activeAddress.value === undefined) return <></>
 	return <>
@@ -175,7 +144,7 @@ export function GnosisSafeVisualizer(param: GnosisSafeVisualizerParams) {
 			<div class = 'safe-outcome-panel__content' aria-live = 'polite' aria-busy = { simulationPending }>
 				<ShowSuccessOrFailure
 					simulateExecutionReply = { simulateExecutionReply }
-					gnosisSimulationState = { gnosisSimulationRequest.value.state }
+					gnosisSimulationState = { simulationState.value }
 					requestErrorText = { requestErrorText.value }
 					requestToSimulate = { requestToSimulate }
 					renameAddressCallBack = { param.renameAddressCallBack }

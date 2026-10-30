@@ -1243,7 +1243,12 @@ describe('simulation visualizer open replies', () => {
 				await new Promise((resolve) => setTimeout(resolve, 0))
 			})
 			await act(async () => { await import('../../app/ts/components/pages/ChangeActiveAddress.js') })
-			const nextCard = collectElements(dom.document.body, 'div').find((element) => element.getAttribute?.('class') === 'card hoverable' && element.textContent?.includes('Next wallet'))
+			const findNextCard = () => collectElements(dom.document.body, 'div').find((element) => element.getAttribute?.('class') === 'card hoverable' && element.textContent?.includes('Next wallet'))
+			// Import completion can precede the lazy page's scheduled render; wait for the picker rather than assuming one timer tick is sufficient on CI.
+			for (let attempt = 0; attempt < 20 && findNextCard() === undefined; attempt += 1) {
+				await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+			}
+			const nextCard = findNextCard()
 			if (nextCard === undefined) throw new Error('Expected the next wallet in the address picker')
 			await act(async () => { await clickElement(nextCard) })
 			assert.ok(changeRequested)
