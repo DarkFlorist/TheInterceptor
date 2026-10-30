@@ -3,11 +3,34 @@ import { beforeEach, test } from 'bun:test'
 import { createDeferredSignal } from './backgroundEthAccountsTestHarness.js'
 import { createBrowserMock, fakeRequestHandler, fakeRpcNetwork, modules, pendingTransaction, resetConfirmTransactionTestState } from './confirmTransactionTestHarness.js'
 import { isPendingTransactionGasLimitCurrent } from '../../app/ts/utils/pendingTransactionSimulation.js'
+import { UpdateConfirmTransactionDialogPendingTransactions } from '../../app/ts/types/interceptor-messages.js'
+import { waitForBackgroundTasks } from './backgroundTasksTestHarness.js'
 
 let browserMock: ReturnType<typeof createBrowserMock>
 beforeEach(async () => {
 	browserMock = createBrowserMock()
 	await resetConfirmTransactionTestState()
+})
+
+test('gas edits broadcast a JSON-transportable pending request that disables stale approval', async () => {
+	const { forceSetGasLimitForTransaction } = await import('../../app/ts/background/popupMessageHandlers.js')
+	const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
+	const tokenPriceService = new modules.TokenPriceService(ethereum, 60_000)
+	try {
+		await forceSetGasLimitForTransaction(ethereum, tokenPriceService, {
+			method: 'popup_forceSetGasLimitForTransaction',
+			data: { transactionIdentifier: pendingTransaction.transactionIdentifier, gasLimit: 30_000n },
+		})
+		const notification = browserMock.sentMessages.find(message => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions')
+		assert.ok(notification, 'The open confirmation must receive the edited request before resimulation')
+		// Chrome runtime messages cross a JSON boundary; structured-clone mocks would miss raw bigint/byte payloads.
+		const received = UpdateConfirmTransactionDialogPendingTransactions.parse(JSON.parse(JSON.stringify(notification)))
+		const [edited] = received.data.pendingTransactionAndSignableMessages
+		assert.ok(edited?.type === 'Transaction' && edited.originalRequestParameters.method === 'eth_sendTransaction')
+		assert.equal(edited.transactionIdentifier, pendingTransaction.transactionIdentifier)
+		assert.equal(edited.originalRequestParameters.params[0].gas, 30_000n)
+		assert.equal(isPendingTransactionGasLimitCurrent(edited), false, 'The popup must reject results for the previous gas limit')
+	} finally { await waitForBackgroundTasks() }
 })
 
 test.each(['pending-state read', 'transaction construction', 'tab-state read'] as const)('a refresh delayed during %s cannot cancel a newer gas simulation', async pauseAt => {

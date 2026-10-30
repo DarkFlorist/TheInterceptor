@@ -1016,11 +1016,15 @@ export async function forceSetGasLimitForTransaction(ethereum: EthereumClientSer
 	// Stack-only edits have no confirmation request to update; never broadcast an empty confirmation list.
 	const pending = await getPendingTransactionsAndMessages()
 	if (pending.length > 0) {
-		await sendPopupMessageToOpenWindows({ method: 'popup_update_confirm_transaction_dialog_pending_transactions', data: {
-			pendingTransactionAndSignableMessages: pending.map(toPopupPendingTransactionOrSignableMessage),
-			currentBlockNumber: ethereum.getCachedBlock()?.number ?? 0n,
-			rpcConnectionStatus: await getRpcConnectionStatus(),
-		} }, 'confirmTransaction')
+		const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {
+			method: 'popup_update_confirm_transaction_dialog_pending_transactions',
+			data: {
+				pendingTransactionAndSignableMessages: pending.map(toPopupPendingTransactionOrSignableMessage),
+				currentBlockNumber: ethereum.getCachedBlock()?.number ?? 0n,
+				rpcConnectionStatus: await getRpcConnectionStatus(),
+			},
+		}
+		await sendPopupMessageToOpenWindows(serialize(UpdateConfirmTransactionDialogPendingTransactions, messagePendingTransactions), 'confirmTransaction')
 	}
 	await schedulePopupSimulationRefresh({ ethereum, tokenPriceService, invalidateOldState: true })
 	backgroundTaskSupervisor.start({ source: 'popup_forceSetGasLimitForTransaction', details: parsedRequest.data }, async () => await refreshPopupConfirmTransactionSimulation(ethereum, tokenPriceService))
