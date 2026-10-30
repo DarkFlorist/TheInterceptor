@@ -10,7 +10,7 @@ const WEBSITE: Website = { websiteOrigin: WEBSITE_ORIGIN, icon: undefined, title
 const SIMULATION_MODE_ADD_CHAIN_ERROR = { code: 10000, message: 'wallet_addEthereumChain not implemented' }
 
 async function setUpSigningModeWebsite({ initialBlockPolling = true }: { readonly initialBlockPolling?: boolean } = {}) {
-	const { setStorageHooks } = installBrowserMock()
+	const { setStorageHooks, readStoredValue } = installBrowserMock()
 	const modules = await loadModules()
 	await modules.changeSimulationMode({ simulationMode: false, activeSimulationAddress: ACCOUNT, activeSigningAddress: ACCOUNT })
 	// Both modes resolve the signer's address, so the website keeps access to the same account after the switch.
@@ -43,7 +43,7 @@ async function setUpSigningModeWebsite({ initialBlockPolling = true }: { readonl
 		website.resolve(WEBSITE)
 		return await replies
 	}
-	return { modules, ethereum, setStorageHooks, enableSimulationMode, sendAddEthereumChain, sendAddEthereumChainAfterArming }
+	return { modules, ethereum, setStorageHooks, readStoredValue, enableSimulationMode, sendAddEthereumChain, sendAddEthereumChainAfterArming }
 }
 
 function assertAnsweredInSimulationMode(replies: readonly { type?: unknown, error?: unknown }[]) {
@@ -128,6 +128,37 @@ describe('simulation mode forward guard', () => {
 		}))
 		assert.equal((await modules.getSettings()).simulationMode, true)
 		assertAnsweredInSimulationMode(replies)
+	})
+
+	test('a popup settings read with a corrupt simulation mode cannot enable it behind the background forward guard', async () => {
+		const { modules, setStorageHooks, readStoredValue, sendAddEthereumChainAfterArming } = await setUpSigningModeWebsite()
+		// A separate module instance has its own simulation-mode generation, like the popup's JS context.
+		const popupSettings = await import('../../app/ts/background/settings.js?popup-context')
+		await browser.storage.local.set({ simulationMode: 'corrupt' })
+		const popupRepairRelease = createDeferredValue<undefined>()
+		let popupRepairPaused = false
+		setStorageHooks({
+			beforeSet: async (items) => {
+				if (popupRepairPaused || items.simulationMode !== true) return
+				popupRepairPaused = true
+				await popupRepairRelease.promise
+			},
+		})
+		// The settings read ConfigureRpcConnection uses in the popup.
+		const popupSettingsRead = popupSettings.getActiveRpcNetwork()
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		await modules.changeSimulationMode({ simulationMode: false })
+		const replies = await sendAddEthereumChainAfterArming(6, async () => setStorageHooks({
+			afterGet: async (keys) => {
+				if (keys !== 'tabState_1') return
+				setStorageHooks({})
+				popupRepairRelease.resolve(undefined)
+				await popupSettingsRead
+			},
+		}))
+		// The popup read must not have written simulation mode, so forwarding matches the stored signing mode.
+		assert.equal(readStoredValue('simulationMode'), false)
+		assert.deepEqual(replies.map((reply) => reply.type), ['forwardToSigner'])
 	})
 
 	test('counts every write that enables simulation mode, including settings import', async () => {

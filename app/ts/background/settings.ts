@@ -76,6 +76,7 @@ async function getParsedStorageValueOrDefault<Key extends keyof StartupStorageDe
 	return await getParsedStorageValueOrDefaultFromItems(await browser.storage.local.get(key), key, defaultValue)
 }
 
+// Background-only: repairing a corrupt simulationMode bumps this context's simulation-mode generation, which only the background's signer-forward guard reads.
 export async function getSettings() : Promise<Settings> {
 	if (defaultRpcs[0] === undefined || defaultActiveAddresses[0] === undefined) throw new Error('default rpc or default address was missing')
 	const defaultPage: Page = { page: 'Home' }
@@ -105,6 +106,12 @@ export async function getSettings() : Promise<Settings> {
 		simulationModePromise,
 	])
 	return { activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode }
+}
+
+// Safe for UI contexts: reads only the active RPC network, so it can never repair or write simulationMode.
+export async function getActiveRpcNetwork() {
+	if (defaultRpcs[0] === undefined) throw new Error('default rpc was missing')
+	return await getParsedStorageValueOrDefault('activeRpcNetwork', defaultRpcs[0])
 }
 
 export const setPage = async (openedPageV2: Page) => await browserStorageLocalSet({ openedPageV2 })
