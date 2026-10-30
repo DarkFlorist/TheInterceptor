@@ -12,6 +12,7 @@ Object.defineProperty(globalThis, 'browser', {
 		set: async (items: Record<string, unknown>) => { writes.push({ ...items }); Object.assign(storedItems, items) },
 	} } },
 })
+const { browserStorageLocalSafeParse } = await import('../../app/ts/utils/storageUtils.js')
 const { getSettings } = await import('../../app/ts/background/settings.js')
 
 beforeEach(() => {
@@ -51,4 +52,18 @@ test('a corrupt setting is repaired without discarding other valid settings', as
 	assert.equal(settings.useSignersAddressAsActiveAddress, true)
 	assert.equal(settings.activeSimulationAddress, 2n)
 	assert.deepEqual(writes, [{ simulationMode: true }])
+})
+
+test('corrupt address repairs use the canonical storage encoding and survive startup', async () => {
+	storedItems.independentActiveSimulationAddress = 'invalid'
+	storedItems.activeSigningSafeAddress = 'invalid'
+	const settings = await getSettings()
+	const parsed = browserStorageLocalSafeParse(storedItems)
+	assert.ok(parsed !== undefined)
+	assert.equal(parsed.independentActiveSimulationAddress, settings.activeSimulationAddress)
+	assert.ok(Object.hasOwn(parsed, 'activeSigningSafeAddress'))
+	assert.equal(parsed.activeSigningSafeAddress, undefined)
+	assert.equal(storedItems.activeSigningSafeAddress, 'missing')
+	assert.deepEqual(await getSettings(), settings)
+	assert.equal(writes.length, 2)
 })
