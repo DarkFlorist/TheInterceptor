@@ -3348,4 +3348,63 @@ describe('background eth_accounts', () => {
 			{ method: 'disconnect', result: [] },
 		])
 	})
+
+	async function replyWithSignerAccountsInSigningMode(previousActiveSigningAddress: bigint | undefined) {
+		installBrowserMock()
+		const { changeSimulationMode, handleInterceptedRequest, setUseSignersAddressAsActiveAddress, updateTabState, updateWebsiteAccess, websiteSocketToString } = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const account = 0x5151515151515151515151515151515151515151n
+		const otherAccount = 0x5252525252525252525252525252525252525252n
+		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: undefined })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
+		await updateTabState(1, (previousState) => ({
+			...previousState,
+			signerAccounts: previousActiveSigningAddress === undefined ? [] : [previousActiveSigningAddress],
+			activeSigningAddress: previousActiveSigningAddress,
+		}))
+		const unboundSocket = { tabId: 1, connectionName: 0n }
+		const sameAccountSocket = { tabId: 1, connectionName: 1n }
+		const otherAccountSocket = { tabId: 1, connectionName: 2n }
+		const unbound = createPort(unboundSocket.tabId)
+		const sameAccount = createPort(sameAccountSocket.tabId, undefined, undefined, sameAccountSocket.connectionName)
+		const otherAccountPort = createPort(otherAccountSocket.tabId, undefined, undefined, otherAccountSocket.connectionName)
+		const websiteTabConnections: WebsiteTabConnections = new Map([[unboundSocket.tabId, { ...confirmedSignerOwnership(unboundSocket), connections: {
+			[websiteSocketToString(unboundSocket)]: { port: unbound.port, socket: unboundSocket, websiteOrigin, approved: true, wantsToConnect: true },
+			[websiteSocketToString(sameAccountSocket)]: { port: sameAccount.port, socket: sameAccountSocket, websiteOrigin, approved: true, approvedAddress: account, wantsToConnect: true },
+			[websiteSocketToString(otherAccountSocket)]: { port: otherAccountPort.port, socket: otherAccountSocket, websiteOrigin, approved: true, approvedAddress: otherAccount, wantsToConnect: true },
+		} }]])
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		await handleInterceptedRequest(unbound.port, websiteOrigin, website, simulationServicesOwner, unboundSocket, {
+			interceptorRequest: true,
+			interceptorInternalRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 501, requestSocket: unboundSocket },
+			method: 'eth_accounts_reply',
+			params: [{ signerProviderGeneration: 1, type: 'success', accounts: [addressString(account)], requestAccounts: false }],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		const wasDisconnected = (messages: typeof unbound.messages) => messages.some((message) => message.method === 'disconnect')
+		return {
+			unboundDisconnected: wasDisconnected(unbound.messages),
+			sameAccountDisconnected: wasDisconnected(sameAccount.messages),
+			otherAccountDisconnected: wasDisconnected(otherAccountPort.messages),
+			sameAccountApproved: websiteTabConnections.get(1)?.connections[websiteSocketToString(sameAccountSocket)]?.approved,
+		}
+	}
+
+	test('does not disconnect approved ports on the first signer account report after a reload', async () => {
+		const result = await replyWithSignerAccountsInSigningMode(undefined)
+		assert.equal(result.unboundDisconnected, false)
+		assert.equal(result.sameAccountDisconnected, false)
+		assert.equal(result.sameAccountApproved, true)
+		assert.equal(result.otherAccountDisconnected, true)
+	})
+
+	test('suspends every approved port when the signer switches between two accounts', async () => {
+		const result = await replyWithSignerAccountsInSigningMode(0x5353535353535353535353535353535353535353n)
+		assert.equal(result.unboundDisconnected, true)
+		assert.equal(result.sameAccountDisconnected, true)
+		assert.equal(result.otherAccountDisconnected, true)
+	})
 })

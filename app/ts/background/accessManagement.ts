@@ -203,11 +203,12 @@ function disconnectFromPort(
 	return false
 }
 
-export function suspendWebsitePortApprovalsForTab(websiteTabConnections: WebsiteTabConnections, tabId: number) {
+export function suspendWebsitePortApprovalsForTab(websiteTabConnections: WebsiteTabConnections, tabId: number, shouldSuspendApproval: (approvedAddress: bigint | undefined) => boolean = () => true) {
 	const tabConnection = websiteTabConnections.get(tabId)
 	if (tabConnection === undefined) return
 	for (const connection of Object.values(tabConnection.connections)) {
 		if (!connection.approved) continue
+		if (!shouldSuspendApproval(connection.approvedAddress)) continue
 		disconnectFromPort(websiteTabConnections, connection.socket)
 	}
 }

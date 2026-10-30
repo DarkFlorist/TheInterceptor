@@ -104,7 +104,9 @@ export async function ethAccountsReply(simulationServicesOwner: SimulationServic
 		const previousActiveSigningAddress = (await getTabState(tabId)).activeSigningAddress
 		const signerAddressControlsWebsiteAccess = !settings.simulationMode || settings.useSignersAddressAsActiveAddress
 		if (!signerAccountsReply.requestAccounts && signerAddressControlsWebsiteAccess && previousActiveSigningAddress !== activeSigningAddress) {
-			suspendWebsitePortApprovalsForTab(websiteTabConnections, tabId)
+			// The first report after signer state was cleared (page load, reload, or signer reconnect) is not an account switch, so it only suspends approvals bound to a different account.
+			const isInitialSignerAccountReport = previousActiveSigningAddress === undefined
+			suspendWebsitePortApprovalsForTab(websiteTabConnections, tabId, (approvedAddress) => !isInitialSignerAccountReport || (approvedAddress !== undefined && approvedAddress !== activeSigningAddress))
 		}
 		const tabStateChange = await updateTabState(tabId, (previousState: TabState) => modifyObject(previousState, {
 			...signerAccounts.length > 0 ? { signerAccountError: undefined } : {},
