@@ -74,7 +74,7 @@ async function handleRPCRequest(
 	const { ethereum, tokenPriceService } = simulationServicesOwner.getCurrent()
 	let simulationInputPromise: Promise<ResolvedSimulationInput> | undefined
 	let executionSimulationStatePromise: Promise<ResolvedExecutionSimulationState> | undefined
-	// Website RPCs in simulation mode deliberately see the user's opt-in what-if state (including delegate clearing, disclosed in its option text); signing mode uses on-chain delegate code because getWhatIfSimulationOverrides returns no override outside simulation mode.
+	// Website RPCs in simulation mode deliberately see the user's opt-in what-if state (including delegate clearing, disclosed in its option text), so a page's reads and calls agree with the simulated stack the user previews; nothing is signed in simulation mode, and signing mode, where transactions are actually sent, previews against on-chain delegate code because getWhatIfSimulationOverrides returns no override outside simulation mode.
 	const getSimulationInput = async () => {
 		if (!simulationOverlayEnabled) return PASSTHROUGH_STATE
 		if (simulationInputPromise === undefined) simulationInputPromise = (async () => {
