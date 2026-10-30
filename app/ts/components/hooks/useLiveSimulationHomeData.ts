@@ -139,7 +139,7 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 			activeSigningSafeAddress.value = settings.activeSigningSafeAddress
 			useSignersAddressAsActiveAddress.value = settings.useSignersAddressAsActiveAddress
 			websiteAccess.value = settings.websiteAccess
-			delegateClearingPreferences.value = settings.delegateClearingPreferences ?? []
+			delegateClearingPreferences.value = settings.delegateClearingPreferences
 			simulationMode.value = settings.simulationMode
 		}
 		const getCurrentActiveStackContext = () => rpcNetwork.value === undefined

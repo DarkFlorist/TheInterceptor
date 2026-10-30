@@ -268,6 +268,7 @@ const settings: Settings = {
 	useSignersAddressAsActiveAddress: false,
 	websiteAccess: [],
 	simulationMode: false,
+	delegateClearingPreferences: [],
 }
 
 function createRichAddressEntry(address: bigint, name: string): AddressBookEntry {
