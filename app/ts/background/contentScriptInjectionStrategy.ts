@@ -8,7 +8,6 @@ import { getContentScriptInjectionConfiguration } from './contentScriptInjection
 import { getConnectedTabIdsToReload, reloadTabs } from './reloadConnectedTabs.js'
 import { getMetamaskCompatibilityMode } from './settings.js'
 
-const contentScriptInjectionStrategySemaphore = new Semaphore(1)
 const contentScriptInjectionConfigurationSemaphore = new Semaphore(1)
 
 type WebsiteAccessUpdateTransaction = (update: (previousWebsiteAccess: WebsiteAccessArray) => WebsiteAccessArray, afterUpdate: (websiteAccess: WebsiteAccessArray) => Promise<void>) => Promise<WebsiteAccessArray>
@@ -17,16 +16,15 @@ type ContentScriptInjectionStrategyRefresh =
 	| { readonly configurationSource: 'storage' }
 	| { readonly configurationSource: 'updated', readonly configuration: ContentScriptRegistrationConfiguration }
 
+// Callers must hold contentScriptInjectionConfigurationSemaphore, which serializes every registration update.
 async function applyContentScriptInjectionStrategy(refresh: ContentScriptInjectionStrategyRefresh) {
-	await contentScriptInjectionStrategySemaphore.execute(async () => {
-		if (browser.runtime.getManifest().manifest_version === 2) {
-			// MV2 installs a lazy reader because each navigation is injected through webNavigation.
-			await updateContentScriptInjectionStrategyManifestV2(getContentScriptInjectionConfiguration)
-			return
-		}
-		const configuration = refresh.configurationSource === 'storage' ? await getContentScriptInjectionConfiguration() : refresh.configuration
-		await updateContentScriptInjectionStrategyManifestV3(configuration)
-	})
+	if (browser.runtime.getManifest().manifest_version === 2) {
+		// MV2 installs a lazy reader because each navigation is injected through webNavigation.
+		await updateContentScriptInjectionStrategyManifestV2(getContentScriptInjectionConfiguration)
+		return
+	}
+	const configuration = refresh.configurationSource === 'storage' ? await getContentScriptInjectionConfiguration() : refresh.configuration
+	await updateContentScriptInjectionStrategyManifestV3(configuration)
 }
 
 export async function refreshContentScriptInjectionStrategy() {
