@@ -4,7 +4,7 @@ import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { websiteSocketToString } from './backgroundUtils.js'
 import { serialize } from '../types/wire-types.js'
 import { isIgnorablePortLifecycleError } from './contentScriptPortLifecycle.js'
-import { attemptDeliveryAfterManifestV2Reconnect, attemptSocketDeliveryAfterManifestV2Reconnect } from './manifestV2Reconnect.js'
+import { attemptSocketDeliveryAfterManifestV2Reconnect } from './manifestV2Reconnect.js'
 
 function postMessageToPortIfConnected(port: browser.runtime.Port, message: InterceptorMessageToInpage) {
 	try {
@@ -36,11 +36,6 @@ export function replyToInterceptedRequest(websiteTabConnections: WebsiteTabConne
 		})
 	}
 	return false
-}
-
-// Preparation runs on every delivery attempt so domain admission can observe changes during reconnect.
-export async function replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections: WebsiteTabConnections, message: InterceptedRequestForward, prepareAttempt: (message: InterceptedRequestForward) => InterceptedRequestForward = (message) => message) {
-	return await attemptDeliveryAfterManifestV2Reconnect(websiteTabConnections, message, () => replyToInterceptedRequest(websiteTabConnections, prepareAttempt(message)))
 }
 
 export function sendSubscriptionReplyOrCallBackToPort(port: browser.runtime.Port, message: SubscriptionReplyOrCallBack) {

@@ -242,7 +242,7 @@ describe('extension icon deduping', () => {
 		assert.equal(setTitleCalls.length, 1)
 	})
 
-	test('access refresh updates stale icons for tabs without active connections', async () => {
+	test.each([false, true])('access refresh updates stale icons without active connections (retained owner: %s)', async (retainedOwner) => {
 		const { setIconCalls, setTitleCalls } = installBrowserMock([{ id: 1, url: 'https://example.test', status: 'complete' }])
 		const { changeSimulationMode, getSettings, updateTabState, updateWebsiteApprovalAccesses } = await loadModules()
 
@@ -258,7 +258,7 @@ describe('extension icon deduping', () => {
 
 		await updateWebsiteApprovalAccesses(
 			undefined,
-			new Map(),
+			retainedOwner ? new Map([[1, { connections: {}, signerExecutionOwner: { dispose: () => undefined, socketDisconnected: () => undefined } }]]) : new Map(),
 			await getSettings(),
 			true,
 			0,

@@ -438,7 +438,7 @@ export async function finishWebsiteAccessUpdate(
 	}
 	try {
 		for (const tabState of await getAllTabStates()) {
-			if (websiteTabConnections.has(tabState.tabId)) continue
+			if (Object.keys(websiteTabConnections.get(tabState.tabId)?.connections ?? {}).length > 0) continue
 			if (tabState.website?.websiteOrigin === undefined) continue
 			addIconRefreshTarget(iconRefreshTargets, tabState.tabId, tabState.website.websiteOrigin)
 		}

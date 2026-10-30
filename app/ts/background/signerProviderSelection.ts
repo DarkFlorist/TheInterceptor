@@ -4,7 +4,7 @@ import { getExplicitSignerSelectionForConnection } from './signerSelectionOwners
 import { isTopFrameId } from '../utils/requests.js'
 import { BeginSignerProviderSelection, FinishSignerProviderSelection, SignerProviderSelected, SignerProvidersChanged, type SelectSignerProvider, type SubscriptionReplyOrCallBack } from '../types/interceptor-messages.js'
 import type { TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
-import type { ProviderMessage } from '../utils/requests.js'
+import type { ProviderMessage, InterceptedRequest } from '../utils/requests.js'
 import { modifyObject } from '../utils/typescript.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
 import { getChainChangeConfirmationPromise, getPendingTransactionsAndMessages, getSignerPreference, getTabState, setSignerPreference, updateTabState } from './storageVariables.js'
@@ -45,6 +45,18 @@ export async function beginSignerProviderSelection(websiteTabConnections: Websit
 	} finally {
 		// Storage and policy failures must release a lease whose token never reached the inpage caller.
 		if (!transferredToCaller) releaseSignerSelectionLease(websiteTabConnections, tabId, token)
+	}
+}
+
+// The selection protocol owns cleanup even if request setup fails before its finish handler runs.
+export async function withSignerSelectionRequestCleanup<T>(websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, processRequest: () => Promise<T>): Promise<T> {
+	try {
+		return await processRequest()
+	} finally {
+		if (request.interceptorInternalRequest === true && request.method === 'finish_signer_provider_selection') {
+			const finish = FinishSignerProviderSelection.safeParse(request)
+			if (finish.success) releaseSignerSelectionLease(websiteTabConnections, request.uniqueRequestIdentifier.requestSocket.tabId, finish.value.params[0])
+		}
 	}
 }
 

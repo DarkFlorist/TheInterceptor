@@ -193,7 +193,7 @@ export type TabConnection = {
 	signerExecutionOwner?: SignerExecutionOwner
 }
 
-// Scope observers to their connection collection so asynchronous mutations cannot notify another collection; feature state and configuration belong to the observer.
+// Scope observers to their connection collection so asynchronous mutations cannot notify another collection. Tab-scoped owners survive transport gaps; a record alone does not imply a live port. Connection consumers must inspect connections, and signer consumers must require a confirmed signer token.
 export type WebsiteTabConnections = Map<number, TabConnection> & { readonly lifecycle?: WebsiteLifecycleCallbacks }
 
 export type TabState = funtypes.Static<typeof TabState>

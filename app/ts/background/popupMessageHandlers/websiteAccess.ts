@@ -21,7 +21,7 @@ const isMissingTabReloadError = (error: unknown) => {
 }
 
 export async function reloadConnectedTabs(websiteTabConnections: WebsiteTabConnections) {
-	const tabIdsToRefresh = Array.from(websiteTabConnections.keys())
+	const tabIdsToRefresh = [...websiteTabConnections].filter(([_tabId, tab]) => Object.keys(tab.connections).length > 0).map(([tabId]) => tabId)
 	const currentTabId = await getLastKnownCurrentTabId()
 	const withCurrentTabId = currentTabId === undefined ? tabIdsToRefresh : [...tabIdsToRefresh, currentTabId]
 	for (const tabId of new Set(withCurrentTabId)) {

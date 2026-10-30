@@ -3,8 +3,7 @@ import { isInternalProviderMethod, type InternalProviderMethod } from '../utils/
 import { isTopFrameId } from '../utils/requests.js'
 import { prepareSafeAppsRequest } from './safeAppsRequestHandler.js'
 import type { RpcRequestContext } from '../types/confirmationRequest.js'
-import { FinishSignerProviderSelection } from '../types/interceptor-messages.js'
-import { getSignerExecutionOwner, releaseSignerSelectionLease } from './signerExecutionAuthority.js'
+import { getSignerExecutionOwner } from './signerExecutionAuthority.js'
 import type { InpageScriptRequest, RPCReply, Settings } from '../types/interceptor-messages.js'
 import 'webextension-polyfill'
 import { getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
@@ -31,7 +30,7 @@ import { buildExecutionSimulationStateFromPreparedInput, getCurrentSimulationInp
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { getWalletSelectedAccount, isActiveSigningSafe } from '../utils/activeAddressSelection.js'
 import { isAccountConnectionMethod, isAccountOnlyMethod } from './accountRequestMethods.js'
-import { beginSignerProviderSelection, finishSignerProviderSelection, signerProviderSelected, signerProvidersChanged } from './signerProviderSelection.js'
+import { beginSignerProviderSelection, finishSignerProviderSelection, signerProviderSelected, signerProvidersChanged, withSignerSelectionRequestCleanup } from './signerProviderSelection.js'
 import { authorizeSignerForward, getSignerExecutionError, isAuthoritativeTopSocket } from './signerExecutionAuthority.js'
 import type { ApprovalState } from './websiteAccessPolicy.js'
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
@@ -421,14 +420,9 @@ function replyWithSignerAccountError(websiteTabConnections: WebsiteTabConnection
 
 export const handleInterceptedRequest = async (port: browser.runtime.Port | undefined, websiteOrigin: string, websitePromise: Promise<Website> | Website, simulationServicesOwner: SimulationServicesOwner, socket: WebsiteSocket, request: InterceptedRequest, websiteTabConnections: WebsiteTabConnections, publishRpcConnectionStatus: PublishRpcConnectionStatus): Promise<unknown> => {
 	try {
-		return await processInterceptedRequest(port, websiteOrigin, websitePromise, simulationServicesOwner, socket, request, websiteTabConnections, publishRpcConnectionStatus)
+		return await withSignerSelectionRequestCleanup(websiteTabConnections, request, () => processInterceptedRequest(port, websiteOrigin, websitePromise, simulationServicesOwner, socket, request, websiteTabConnections, publishRpcConnectionStatus))
 	} catch (error: unknown) {
 		if (request.interceptorInternalRequest !== true) throw error
-		// A finish request must release its token even when setup storage reads fail.
-		if (request.method === 'finish_signer_provider_selection') {
-			const finish = FinishSignerProviderSelection.safeParse(request)
-			if (finish.success) releaseSignerSelectionLease(websiteTabConnections, socket.tabId, finish.value.params[0])
-		}
 		// Include setup reads and settle before reporting: either failure can otherwise hold the selection workflow.
 		const delivered = replyToInterceptedRequest(websiteTabConnections, {
 			type: 'result', method: request.method, uniqueRequestIdentifier: request.uniqueRequestIdentifier,

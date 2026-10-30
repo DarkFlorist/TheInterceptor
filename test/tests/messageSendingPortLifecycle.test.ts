@@ -1,6 +1,7 @@
+import { attemptDeliveryAfterManifestV2Reconnect } from '../../app/ts/background/manifestV2Reconnect.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { replyToInterceptedRequest, replyToInterceptedRequestAfterManifestV2Reconnect, sendSubscriptionReplyOrCallBack, sendSubscriptionReplyOrCallBackAfterManifestV2Reconnect, sendSubscriptionReplyOrCallBackToPort } from '../../app/ts/background/messageSending.js'
+import { replyToInterceptedRequest, sendSubscriptionReplyOrCallBack, sendSubscriptionReplyOrCallBackAfterManifestV2Reconnect, sendSubscriptionReplyOrCallBackToPort } from '../../app/ts/background/messageSending.js'
 import { getSignerExecutionOwner, allowLegacySignerExecution, authorizeSignerForward, blockSignerExecution, getSignerDocumentGeneration, reconcileSignerExecutionDocument, registerAuthoritativeTopSocket } from '../../app/ts/background/signerExecutionAuthority.js'
 import { websiteSocketToString } from '../../app/ts/background/backgroundUtils.js'
 
@@ -173,9 +174,10 @@ describe('background messageSending port lifecycle', () => {
 			uniqueRequestIdentifier: { requestId: 7, requestSocket: socket },
 		}
 
-		assert.equal(await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, message, admission === 'transparent' ? undefined : (attempt) => {
+		assert.equal(await attemptDeliveryAfterManifestV2Reconnect(websiteTabConnections, message, () => {
+			if (admission === 'transparent') return replyToInterceptedRequest(websiteTabConnections, message)
 			admissionChecks += 1
-			return authorizeSignerForward(getSignerExecutionOwner(websiteTabConnections, attempt.uniqueRequestIdentifier.requestSocket.tabId), attempt)
+			return replyToInterceptedRequest(websiteTabConnections, authorizeSignerForward(getSignerExecutionOwner(websiteTabConnections, socket.tabId), message))
 		}), true)
 		assert.deepEqual(reconnectMessages, [{ method: 'interceptor_reconnect_content_script_port', connectionName: '0x123' }])
 		assert.equal(disconnectedPostAttempts, 1)

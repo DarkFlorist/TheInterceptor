@@ -457,6 +457,7 @@ export const ConnectedToSigner = funtypes.ReadonlyObject({
 	params: funtypes.Tuple(funtypes.Boolean, SignerName, funtypes.Number),
 }).asReadonly()
 
+// Recovery carries a fresh catalog as an atomic proof that the already selected provider still exists in this document; it cannot select a different provider or publish a new catalog. The two-field form publishes discovery, while the third-field proof requests only recovery and returns an explicit recovery status.
 export type SignerProvidersChanged = funtypes.Static<typeof SignerProvidersChanged>
 export const SignerProvidersChanged = funtypes.ReadonlyObject({
 	method: funtypes.Literal('signer_providers_changed'),
