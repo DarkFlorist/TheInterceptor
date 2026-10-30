@@ -272,6 +272,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 		const addr = await identifyAddress(ethereum, undefined, pendingTransaction.transactionToSimulate.transaction.to)
 		if (!('abi' in addr) || addr.abi === undefined) return { success: false as const, errorType: 'MissingAbi' as const, errorMessage: 'ABi for the governance contract is missing', errorAddressBookEntry: addr }
 		const settingsSnapshot = await getSettings()
+		// The execution preview continues the vote's own preview, so it shares its what-if state: the opt-in delegate clearing applies only in simulation mode, where nothing is signed, and getWhatIfSimulationOverrides returns no override in signing mode.
 		const simulationInput = await getWhatIfSimulationInput(settingsSnapshot)
 		const executionTransactionMetadata = {
 			website: pendingTransaction.transactionToSimulate.website,
