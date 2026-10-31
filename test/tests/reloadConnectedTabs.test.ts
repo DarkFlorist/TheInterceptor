@@ -1,5 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
+import { createPort } from './backgroundEthAccountsTestHarness.js'
 import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
 
 type RuntimeMessage = {
@@ -87,13 +88,22 @@ async function loadModules() {
 	}
 }
 
-const websiteTabConnections: WebsiteTabConnections = new Map([[10, { connections: {} }]])
-const multiTabWebsiteTabConnections: WebsiteTabConnections = new Map([
-	[10, { connections: {} }],
-	[11, { connections: {} }],
-])
+function connectedTab(tabId: number) {
+	return { connections: { port: { port: createPort(tabId), socket: { tabId, connectionName: 0n }, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true } } }
+}
+
+const websiteTabConnections: WebsiteTabConnections = new Map([[10, connectedTab(10)]])
+const multiTabWebsiteTabConnections: WebsiteTabConnections = new Map([[10, connectedTab(10)], [11, connectedTab(11)]])
 
 describe('reloadConnectedTabs', () => {
+	test('skips retained owners with no live connections', async () => {
+		const { reloadedTabs } = installBrowserMock({})
+		const { reloadConnectedTabs } = await loadModules()
+		const connections: WebsiteTabConnections = new Map([[10, connectedTab(10)], [11, { connections: {}, signerExecutionOwner: { dispose: () => undefined, socketDisconnected: () => undefined } }]])
+		await reloadConnectedTabs(connections)
+		assert.deepEqual(reloadedTabs, [10])
+	})
+
 	test('ignores tabs that disappeared before reload', async () => {
 		const { sentMessages, reloadedTabs } = installBrowserMock({ reloadError: new Error('No tab with id: 10.') })
 		const { reloadConnectedTabs, getLatestUnexpectedError } = await loadModules()

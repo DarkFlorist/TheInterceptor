@@ -31,21 +31,9 @@ import type { RpcEntry } from '../../types/rpc.js'
 import { AsyncActionButton, AsyncStatusIcon } from '../subcomponents/AsyncAction.js'
 import type { ComponentChildren, JSX } from 'preact'
 import { DropDownMenu, DropDownMenuButtonContent } from '../subcomponents/DropDownMenu.js'
+import { scheduleAfterPaint } from '../ui-utils.js'
+import type { EIP6963ProviderInfo } from '../../types/signerTypes.js'
 
-function scheduleAfterPaint(callback: () => void) {
-	if (typeof globalThis.requestAnimationFrame === 'function' && typeof globalThis.cancelAnimationFrame === 'function') {
-		let secondFrame: number | undefined
-		const firstFrame = globalThis.requestAnimationFrame(() => {
-			secondFrame = globalThis.requestAnimationFrame(() => callback())
-		})
-		return () => {
-			globalThis.cancelAnimationFrame(firstFrame)
-			if (secondFrame !== undefined) globalThis.cancelAnimationFrame(secondFrame)
-		}
-	}
-	const timeout = globalThis.setTimeout(callback, 32)
-	return () => globalThis.clearTimeout(timeout)
-}
 
 function WalletSelectedAddressStatus({ signerName, addressBookEntry, renameAddressCallBack, cannotSignSafe = false }: {
 	readonly signerName: string
@@ -237,8 +225,92 @@ function isSignerAvailable(tabState: TabState | undefined) {
 	return tabState !== undefined && (tabState.signerConnected || tabState.signerAccounts.length > 0)
 }
 
+export function signerProviderOptionLabel(provider: { readonly name: string, readonly rdns: string, readonly uuid: string }) {
+	return `${ provider.name } — ${ provider.rdns } — ${ provider.uuid }`
+}
+
+export function signerProviderUuidSuffix(uuid: string) {
+	return uuid.slice(-8)
+}
+
+function SignerProviderLogo({ provider }: { provider: EIP6963ProviderInfo }) {
+	return <span class = 'signer-provider-logo-frame' aria-hidden = 'true'>
+		<img src = { provider.icon } width = '32' height = '32' alt = ''/>
+	</span>
+}
+
+function SignerProviderIdentity({ provider }: { provider: EIP6963ProviderInfo }) {
+	return <span class = 'signer-provider-identity'>
+		<span class = 'signer-provider-name'>{ provider.name }</span>
+		<span class = 'signer-provider-metadata'>
+			<span class = 'signer-provider-rdns'>{ provider.rdns }</span>
+			<span class = 'signer-provider-uuid'>…{ signerProviderUuidSuffix(provider.uuid) }</span>
+		</span>
+	</span>
+}
+
+function SignerProviderSelector(param: { tabState: Signal<TabState | undefined>, isInitialHomeDataLoaded: Signal<boolean> }) {
+	const tabState = param.tabState.value
+	const providers = tabState?.availableSignerProviders ?? []
+	const selected = useComputed(() => param.tabState.value?.selectedSignerProvider)
+	const options = useComputed(() => param.tabState.value?.availableSignerProviders ?? [])
+	if (providers.length === 0 && tabState?.preferredSignerUnavailable !== true && tabState?.signerProviderCatalogOverflowed !== true) return <></>
+	const selectedProvider = selected.value
+
+	const selectProvider = (provider: EIP6963ProviderInfo) => {
+		if (provider.uuid === selectedProvider?.uuid || tabState?.website === undefined) return
+		void sendPopupMessageToBackgroundPage({
+			method: 'popup_selectSignerProvider',
+			data: {
+				tabId: tabState.tabId,
+				websiteOrigin: tabState.website.websiteOrigin,
+				uuid: provider.uuid,
+			},
+		})
+	}
+	const placeholderText = tabState?.preferredSignerUnavailable === true ? 'Preferred signer needs selection' : 'Choose a signer'
+
+	return <div class = 'signer-provider-selector' title = 'Choose a wallet for this page. Your preferred wallet is remembered for this site, but each new page requires selection. Wallet names and icons are self-reported.'>
+		<span class = 'signer-provider-selector-label'>Signer for this tab</span>
+		<DropDownMenu
+			selected = { selected }
+			dropDownOptions = { options }
+			onChangedCallBack = { selectProvider }
+			buttonClassses = 'btn signer-provider-trigger'
+			ariaLabel = 'Selected signer'
+			disabled = { !param.isInitialHomeDataLoaded.value }
+			id = 'signer-provider-selector'
+			optionsId = 'signer-provider-options'
+			optionMounting = 'when-open'
+			triggerLayout = 'custom'
+			placeholder = { placeholderText }
+			getOptionKey = { (provider) => provider.uuid }
+			getOptionLabel = { signerProviderOptionLabel }
+			getOptionAttributes = { (provider) => ({ 'data-provider-uuid': provider.uuid }) }
+			classes = { { trigger: '', container: 'signer-provider-dropdown', menu: 'signer-provider-options', content: 'signer-provider-options-content', option: 'btn signer-provider-option', chevron: 'signer-provider-chevron' } }
+			renderSelected = { (provider) => provider === undefined ? <>
+				<span class = 'signer-provider-logo-frame signer-provider-logo-placeholder' aria-hidden = 'true'>?</span>
+				<span class = 'signer-provider-identity'>
+					<span class = 'signer-provider-name'>{ placeholderText }</span>
+					<span class = 'signer-provider-metadata'>{ providers.length } { providers.length === 1 ? 'wallet' : 'wallets' } available</span>
+				</span>
+			</> : <><SignerProviderLogo provider = { provider }/><SignerProviderIdentity provider = { provider }/></> }
+			renderOption = { (provider, isSelected) => <>
+				<SignerProviderLogo provider = { provider }/>
+				<SignerProviderIdentity provider = { provider }/>
+				<span class = 'signer-provider-selected-mark' aria-hidden = 'true'>{ isSelected ? '✓' : '' }</span>
+			</> }
+		/>
+
+		{ tabState?.signerProviderCatalogOverflowed === true
+			? <p class = 'is-size-7 signer-provider-selector-warning'>Too many wallet announcements were received. Only the bounded list above is available; choose a wallet explicitly.</p>
+			: <></> }
+	</div>
+}
+
 function SignerExplanation(param: SignerExplanationParams) {
 	if (param.activeAddress.value !== undefined || param.tabState.value === undefined || param.tabState.value.signerAccountError !== undefined) return <></>
+	if (param.tabState.value.preferredSignerUnavailable === true && (param.tabState.value.availableSignerProviders?.length ?? 0) > 0) return <ErrorComponent text = 'Choose a signer for this page using the wallet selector above.'/>
 	if (!isSignerAvailable(param.tabState.value)) {
 		if (param.tabState.value.signerName === 'NoSignerDetected' || param.tabState.value.signerName === 'NoSigner') return <ErrorComponent text = 'No signer installed. You need to install a signer, eg. Metamask.'/>
 		return <ErrorComponent text = 'The page you are looking at has NOT CONNECTED to a wallet.'/>
@@ -249,6 +321,7 @@ function SignerExplanation(param: SignerExplanationParams) {
 function FirstCardHeader(param: FirstCardParams) {
 	const tabIconReason = useComputed(() => param.tabIconDetails.value.iconReason)
 	const signerName = useComputed(() => param.tabState.value?.signerName ?? 'NoSignerDetected')
+	const selectedSignerProviderIcon = useComputed(() => param.tabState.value?.selectedSignerProvider?.icon)
 	const { value: setSimulatingState, waitFor: waitForSetSimulating } = useAsyncState<void>()
 	const { value: setSigningState, waitFor: waitForSetSigning } = useAsyncState<void>()
 	const simulatingPending = setSimulatingState.value.state === 'pending'
@@ -301,7 +374,7 @@ function FirstCardHeader(param: FirstCardParams) {
 						disabled = { !param.simulationMode.value || controlsDisabled }
 						keepTextWhilePending = { true }
 						pendingIndicatorPlacement = 'overlay'
-						text = { <SignerLogoText signerName = { signerName } text = 'Signing' reserveLogoSpace = { true } /> }
+						text = { <SignerLogoText signerName = { signerName } text = 'Signing' providerIcon = { selectedSignerProviderIcon } reserveLogoSpace = { true } /> }
 						pendingText = { !param.simulationMode.value ? 'Updating signing mode...' : 'Switching to signing mode...' }
 						onClick = { enableSigning }
 					/>
@@ -630,6 +703,7 @@ function FirstCard(param: FirstCardParams) {
 		<section class = 'card popup-home-card popup-data-reveal'>
 			<FirstCardHeader { ...param }/>
 			<div class = 'card-content'>
+				<SignerProviderSelector tabState = { param.tabState } isInitialHomeDataLoaded = { param.isInitialHomeDataLoaded }/>
 				{ param.useSignersAddressAsActiveAddress.value || !param.simulationMode.value ?
 					<p class = 'popup-home-retrieval-status'>
 						{ param.tabState.value === undefined || param.tabState.value?.signerName === 'NoSigner'

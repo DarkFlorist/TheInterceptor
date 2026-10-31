@@ -109,3 +109,18 @@ export const addressEditEntry = (entry: AddressBookEntry) => {
 		}
 	}
 }
+
+export function scheduleAfterPaint(callback: () => void) {
+	if (typeof globalThis.requestAnimationFrame === 'function' && typeof globalThis.cancelAnimationFrame === 'function') {
+		let secondFrame: number | undefined
+		const firstFrame = globalThis.requestAnimationFrame(() => {
+			secondFrame = globalThis.requestAnimationFrame(() => callback())
+		})
+		return () => {
+			globalThis.cancelAnimationFrame(firstFrame)
+			if (secondFrame !== undefined) globalThis.cancelAnimationFrame(secondFrame)
+		}
+	}
+	const timeout = globalThis.setTimeout(callback, 32)
+	return () => globalThis.clearTimeout(timeout)
+}

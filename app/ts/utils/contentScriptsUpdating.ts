@@ -1,18 +1,12 @@
 import { getSettings } from '../background/settings.js'
 import type { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
-import { checkAndThrowRuntimeLastError, getHostWithPort, getTabIfExists, isMissingBrowserTargetError } from './requests.js'
-import { reportLocalRecoveryBestEffort, reportUnexpectedError } from './errors.js'
+import { reportUnexpectedError } from './errors.js'
+import { Semaphore } from './semaphore.js'
 
 const injectableSitesWildcard = ['file://*/*', 'http://*/*', 'https://*/*']
-const injectableSitesRegexp = [/^file:\/\/.*/, /^http:\/\/.*/, /^https:\/\/.*/]
-const extensionGallerySitesRegexp = [/^https:\/\/chromewebstore\.google\.com(?:[\/?#]|$)/, /^https:\/\/chrome\.google\.com\/webstore(?:[\/?#]|$)/]
-const otherExtensionInjectionTargetErrorMessage = 'Cannot access a chrome-extension:// URL of different extension'
-const extensionGalleryInjectionTargetErrorMessage = 'The extensions gallery cannot be scripted.'
-const isInjectableSite = (url: string) => injectableSitesRegexp.some((regexpPattern) => regexpPattern.test(url)) && !extensionGallerySitesRegexp.some((regexpPattern) => regexpPattern.test(url))
-const isExpectedManifestV2InjectionTargetError = (error: unknown) => error instanceof Error && (error.message === otherExtensionInjectionTargetErrorMessage || error.message === extensionGalleryInjectionTargetErrorMessage)
 export const getInterceptorDisabledSites = (websiteAccess: WebsiteAccessArray) => websiteAccess.filter((entry) => entry.interceptorDisabled === true).map((entry) => entry.website.websiteOrigin)
 
-function getManifestV3ExcludeMatchesForOrigin(origin: string) {
+function getContentScriptExclusionMatchPatternsForOrigin(origin: string) {
 	if (origin === '') return ['file:///*']
 	try {
 		const hasExplicitScheme = origin.includes('://')
@@ -32,17 +26,22 @@ function getManifestV3ExcludeMatchesForOrigin(origin: string) {
 	}
 }
 
-export function getManifestV3ExcludeMatches(origins: readonly string[]) {
+export function getContentScriptExclusionMatchPatterns(origins: readonly string[]) {
 	const patterns = new Set<string>()
 	for (const origin of origins) {
-		for (const pattern of getManifestV3ExcludeMatchesForOrigin(origin)) patterns.add(pattern)
+		for (const pattern of getContentScriptExclusionMatchPatternsForOrigin(origin)) patterns.add(pattern)
 	}
 	return [...patterns]
 }
 
+// Firefox globs require separate root-host and subdomain patterns; their port semantics differ from match patterns.
+export function getFirefoxContentScriptExclusionGlobs(origins: readonly string[]) {
+	return getContentScriptExclusionMatchPatterns(origins).flatMap((pattern) => pattern.includes('://*.') ? [pattern.replace('://*.', '://'), pattern] : [pattern])
+}
+
 export const updateContentScriptInjectionStrategyManifestV3 = async () => {
-	const excludeMatches = getManifestV3ExcludeMatches(getInterceptorDisabledSites((await getSettings()).websiteAccess))
 	try {
+		const excludeMatches = getContentScriptExclusionMatchPatterns(getInterceptorDisabledSites((await getSettings()).websiteAccess))
 		type RegisteredContentScript = Parameters<typeof browser.scripting.registerContentScripts>[0][0]
 		// The browser polyfill types do not expose Chrome's MAIN world or matchOriginAsFallback options.
 		type FixedContentScript = RegisteredContentScript & { world?: 'MAIN' | 'ISOLATED', matchOriginAsFallback: boolean }
@@ -78,31 +77,33 @@ export const updateContentScriptInjectionStrategyManifestV3 = async () => {
 	}
 }
 
-const injectLogic = async (content: browser.webNavigation._OnCommittedDetails) => {
-	if (!isInjectableSite(content.url)) return false
-	const disabledSites = getInterceptorDisabledSites((await getSettings()).websiteAccess)
-	// The tab can navigate while settings are loading, including to another extension page where injection is prohibited.
-	const thisTab = await getTabIfExists(content.tabId)
-	if (thisTab?.url === undefined || !isInjectableSite(thisTab.url)) return false
-	const urls = [content.url, thisTab.url]
-	const hostnames = urls.map((url) => getHostWithPort(url))
-	const noMatches = disabledSites.every(excludeMatch => !hostnames.includes(excludeMatch))
-	if (!noMatches) return false
-	try {
-		await browser.tabs.executeScript(content.tabId, { file: '/vendor/webextension-polyfill/dist/browser-polyfill.js', allFrames: false, runAt: 'document_start' })
-		await browser.tabs.executeScript(content.tabId, { file: '/inpage/js/listenContentScript.js', allFrames: false, runAt: 'document_start' })
-		await browser.tabs.executeScript(content.tabId, { file: '/inpage/js/document_start.js', allFrames: false, runAt: 'document_start' })
-		checkAndThrowRuntimeLastError()
-	} catch(error) {
-		if (isMissingBrowserTargetError(error) || isExpectedManifestV2InjectionTargetError(error)) return false
-		reportLocalRecoveryBestEffort(error, { code: 'manifest_v2_content_script_injection_failed', message: 'Leaving this navigation without early injection.' })
-	}
-	return false
-}
+const firefoxRegistrationGate = new Semaphore(1)
+let firefoxRegistration: browser.contentScripts.RegisteredContentScript | undefined
 
 export const updateContentScriptInjectionStrategyManifestV2 = async () => {
-	browser.webNavigation.onCommitted.removeListener(injectLogic)
-	browser.webNavigation.onCommitted.addListener(injectLogic, { url: injectableSitesWildcard.map((urlMatches) => ({ urlMatches })) })
+	try {
+		await firefoxRegistrationGate.execute(async () => {
+			const disabledSites = getInterceptorDisabledSites((await getSettings()).websiteAccess)
+			// Register ahead of navigation: onCommitted plus asynchronous executeScript can run after hostile page scripts. Globs preserve port-specific exclusions, which Firefox match patterns cannot express.
+			const nextRegistration = await browser.contentScripts.register({
+				matches: injectableSitesWildcard,
+				excludeGlobs: getFirefoxContentScriptExclusionGlobs(disabledSites),
+				allFrames: true,
+				matchAboutBlank: true,
+				runAt: 'document_start',
+				js: [
+					{ file: '/vendor/webextension-polyfill/dist/browser-polyfill.js' },
+					{ file: '/inpage/js/listenContentScript.js' },
+					{ file: '/inpage/js/document_start.js' },
+				],
+			})
+			const previousRegistration = firefoxRegistration
+			firefoxRegistration = nextRegistration
+			await previousRegistration?.unregister()
+		})
+	} catch (error: unknown) {
+		await reportUnexpectedError(error, { code: 'content_script_registration_failed' })
+	}
 }
 
 export const updateContentScriptInjectionStrategy = async () => {

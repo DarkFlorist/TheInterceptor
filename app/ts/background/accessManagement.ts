@@ -1,7 +1,9 @@
+import { hasLiveWebsiteConnections } from './websiteTabConnections.js'
+import { getFrameVisibleAccounts } from './accountIdentityPolicy.js'
 import { getActiveAddress, getActiveAddressesForAllTabs, getWebsiteSocketConnection, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
 import { getActiveAddressEntryForChain, getActiveAddresses } from './metadataUtils.js'
 import { requestAccessFromUser } from './windows/interceptorAccess.js'
-import { retrieveWebsiteDetails, updateExtensionIcon } from './iconHandler.js'
+import { updateExtensionIcon } from './iconHandler.js'
 import type { TabConnection, WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { InpageScriptCallBack, Settings } from '../types/interceptor-messages.js'
 import { getSettings, getWebsiteAccess, updateWebsiteAccess } from './settings.js'
@@ -17,6 +19,7 @@ import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { mergeStoredWebsiteMetadata } from '../utils/websiteIcons.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
+import { getWebsiteDetailsForConnection } from './websiteConnectionMetadata.js'
 import { getActiveAddressForCurrentSignerState } from './signerStateOwnership.js'
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
 import { notifyWebsiteLifecycle } from './websiteLifecycle.js'
@@ -129,7 +132,7 @@ export async function sendActiveAccountChangeToApprovedWebsitePorts(websiteTabCo
 			sendSubscriptionReplyOrCallBack(websiteTabConnections, connection.socket, {
 				type: 'result' as const,
 				method: 'accountsChanged',
-				result: activeAddress !== undefined ? [activeAddress.address] : []
+				result: getFrameVisibleAccounts(websiteTabConnections, settings, connection.socket, activeAddress !== undefined ? [activeAddress.address] : [])
 			})
 		}
 	}
@@ -198,7 +201,7 @@ export function sendProviderConnectionEventsToPort(
 	accounts: readonly bigint[],
 ) {
 	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'connect', result: [settings.activeRpcNetwork.chainId] })
-	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'accountsChanged', result: accounts })
+	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'accountsChanged', result: getFrameVisibleAccounts(websiteTabConnections, settings, socket, accounts) })
 	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'chainChanged', result: settings.activeRpcNetwork.chainId })
 }
 
@@ -207,8 +210,9 @@ export function sendAccountsChangedToPort(
 	socket: WebsiteSocket,
 	accounts: readonly bigint[],
 	requestId: number,
+	settings: Settings,
 ) {
-	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'accountsChanged', result: accounts, requestId })
+	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'accountsChanged', result: getFrameVisibleAccounts(websiteTabConnections, settings, socket, accounts), requestId })
 }
 
 function disconnectFromPort(
@@ -235,7 +239,7 @@ async function askUserForAccessOnConnectionUpdate(simulationServicesOwner: Simul
 	const details = getWebsiteSocketConnection(websiteTabConnections, socket)
 	if (details === undefined) return
 
-	const website = { websiteOrigin, ...await retrieveWebsiteDetails(socket.tabId, websiteOrigin) }
+	const website = { websiteOrigin, ...await getWebsiteDetailsForConnection(socket.tabId, websiteOrigin, details.frameId) }
 	await requestAccessFromUser(simulationServicesOwner, websiteTabConnections, socket, website, undefined, activeAddress, settings, activeAddress, undefined)
 }
 
@@ -435,7 +439,7 @@ export async function finishWebsiteAccessUpdate(
 	}
 	try {
 		for (const tabState of await getAllTabStates()) {
-			if (websiteTabConnections.has(tabState.tabId)) continue
+			if (hasLiveWebsiteConnections(websiteTabConnections, tabState.tabId)) continue
 			if (tabState.website?.websiteOrigin === undefined) continue
 			addIconRefreshTarget(iconRefreshTargets, tabState.tabId, tabState.website.websiteOrigin)
 		}

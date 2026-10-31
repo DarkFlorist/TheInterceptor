@@ -9,11 +9,10 @@ import { getWebsiteSocketConnection, isTopFramePort, websiteSocketToString } fro
 import { reportUnexpectedError } from '../utils/errors.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
 import { getSafeAppsCompatibilityMode, getSettings } from './settings.js'
-import { getConfirmedSignerStateToken } from './signerStateOwnership.js'
+import { getAuthorizedSignerStateToken, getConfirmedSignerStateToken } from './signerStateOwnership.js'
 import { getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
 import { hasAccess, hasAddressAccess } from './websiteAccessPolicy.js'
 import { getWebsiteActiveAddress } from './websiteActiveAddress.js'
-
 
 export async function isSafeAppsConnectionEligible(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, settings: Settings) {
 	const connection = getWebsiteSocketConnection(websiteTabConnections, socket)
@@ -42,7 +41,7 @@ function createSafeAppsCompatibilityCoordinator() {
 	}
 	const requestSignerAccountDiscovery = (websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) => {
 		if (signerAccountDiscoveryTabs.has(socket.tabId)) return true
-		const signerStateToken = getConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
+		const signerStateToken = getAuthorizedSignerStateToken(websiteTabConnections, socket)
 		if (signerStateToken === undefined || signerStateToken.socket.connectionName !== socket.connectionName) return false
 		signerAccountDiscoveryTabs.add(socket.tabId)
 		const sent = sendSubscriptionReplyOrCallBack(websiteTabConnections, signerStateToken.socket, { type: 'result' as const, method: 'request_signer_to_eth_accounts', result: [] })

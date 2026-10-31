@@ -1,5 +1,5 @@
 import * as funtypes from 'funtypes'
-import { EthereumQuantity } from '../types/wire-types.js'
+import { EthereumQuantity, serialize } from '../types/wire-types.js'
 import { anySignal } from './anySignal.js'
 import { createInterceptorInternalError, getErrorMessage, isBrowserFetchTransportError } from './caughtErrors.js'
 
@@ -8,6 +8,9 @@ export const WebsiteSocket = funtypes.ReadonlyObject({
 	tabId: funtypes.Number,
 	connectionName: EthereumQuantity,
 })
+
+// Connection maps and signer authority must use the same socket identity.
+export const websiteSocketToString = (socket: WebsiteSocket) => `${ socket.tabId }-${ serialize(EthereumQuantity, socket.connectionName) }`
 
 export type UniqueRequestIdentifier = funtypes.Static<typeof UniqueRequestIdentifier>
 export const UniqueRequestIdentifier = funtypes.ReadonlyObject({
@@ -171,4 +174,9 @@ export async function promiseAllMapAbortSafe<InputType, OutputType>(values: read
 		return await promise
 	})
 	return await silenceChromeUnCaughtPromise(Promise.all(guardedPromises))
+}
+
+export function isTopFrameId(frameId: number | undefined): frameId is 0 {
+	// Missing metadata cannot establish top-frame authority; see https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/runtime/MessageSender#frameid
+	return frameId === 0
 }

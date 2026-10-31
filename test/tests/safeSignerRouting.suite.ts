@@ -1,3 +1,5 @@
+import { createAuthorizedConnections } from './backgroundEthAccountsTestHarness.js'
+import { getSignerExecutionOwner, authorizeSocketForSignerExecution, blockSignerExecution, getSignerDocumentGeneration, reconcileSignerExecutionDocument, registerAuthoritativeTopSocket, registerCurrentChildSignerSocket, setSignerExecutionTarget } from '../../app/ts/background/signerExecutionAuthority.js'
 import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import { test } from 'bun:test'
@@ -24,7 +26,9 @@ test('accepts a signer reply from the current approved child-frame port', async 
 	const topPort = createWebsitePort(topSocket, 0, topMessages)
 	const childPort = createWebsitePort(childSocket, 2, childMessages)
 	const websiteOrigin = 'https://example.com'
-	const websiteTabConnections = new Map([[topSocket.tabId, {
+	const providerUuid = '22222222-2222-4222-8222-222222222222'
+
+	const websiteTabConnections = createAuthorizedConnections(new Map([[topSocket.tabId, {
 		signerStateOwner: {
 			connectionName: topSocket.connectionName,
 			confirmed: true,
@@ -35,7 +39,14 @@ test('accepts a signer reply from the current approved child-frame port', async 
 			[modules.websiteSocketToString(topSocket)]: { port: topPort, socket: topSocket, websiteOrigin, approved: true, wantsToConnect: true },
 			[modules.websiteSocketToString(childSocket)]: { port: childPort, socket: childSocket, websiteOrigin, approved: true, wantsToConnect: true },
 		},
-	}]])
+	}]]))
+		registerAuthoritativeTopSocket(websiteTabConnections, topSocket, websiteOrigin)
+	const documentGeneration = getSignerDocumentGeneration(getSignerExecutionOwner(websiteTabConnections, topSocket.tabId), topSocket, websiteOrigin)
+		registerCurrentChildSignerSocket(websiteTabConnections, childSocket, 2)
+		reconcileSignerExecutionDocument(getSignerExecutionOwner(websiteTabConnections, topSocket.tabId), topSocket, websiteOrigin, documentGeneration, true, 0)
+		reconcileSignerExecutionDocument(getSignerExecutionOwner(websiteTabConnections, childSocket.tabId), childSocket, websiteOrigin, documentGeneration, false, 2)
+		setSignerExecutionTarget(getSignerExecutionOwner(websiteTabConnections, topSocket.tabId), topSocket.tabId, providerUuid, websiteOrigin)
+		authorizeSocketForSignerExecution(getSignerExecutionOwner(websiteTabConnections, childSocket.tabId), childSocket, providerUuid, websiteOrigin)
 	await modules.browserStorageLocalSet2({
 		pendingTransactionsAndMessages: [{
 			...pendingTransaction,
@@ -72,6 +83,57 @@ test('accepts a signer reply from the current approved child-frame port', async 
 	assert.equal(childReply.result, modules.EthereumBytes32.serialize(signedTransaction.hash))
 })
 
+test.each(['authorized', 'blocked'])('a disconnected personal_sign reply clears WaitingForSigner with %s execution authority', async (authority) => {
+	const socket = uniqueRequestIdentifier.requestSocket
+	const messages: unknown[] = []
+	const port = createWebsitePort(socket, 0, messages)
+	const websiteOrigin = 'https://example.com'
+	const connections = createAuthorizedConnections(new Map([[socket.tabId, {
+		signerStateOwner: { connectionName: socket.connectionName, confirmed: true, generation: 3, providerGeneration: 8 },
+		connections: { [modules.websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true } },
+	}]]))
+	const parameters = { method: 'personal_sign', params: ['0x1234', activeAddress] } as const
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	assert.deepEqual(await modules.openConfirmTransactionDialogForMessage(
+		simulator.ethereum,
+		simulator.tokenPriceService,
+		{ ...parameters, interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier },
+		{ kind: 'message', parameters },
+		false,
+		activeAddress,
+		{ websiteOrigin, icon: undefined, title: undefined },
+		connections,
+	), { type: 'doNotReply' })
+	await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => ({ ...pending, approvalStatus: { status: 'WaitingForSigner' } }))
+	if (authority === 'blocked') blockSignerExecution(getSignerExecutionOwner(connections, socket.tabId), socket.tabId)
+	const disconnect = { code: 4900, message: 'Signer connection recovery was refused.' }
+	assert.deepEqual(await modules.signerReply(createTestSimulationServicesOwner({ ethereum: simulator.ethereum, tokenPriceService: simulator.tokenPriceService }), connections, port, {
+		method: 'signer_reply',
+		params: [{
+			success: false,
+			signerProviderGeneration: 8,
+			forwardRequest: { method: 'personal_sign', params: ['0x1234', addressString(activeAddress)], type: 'forwardToSigner', requestId: uniqueRequestIdentifier.requestId },
+			error: disconnect,
+		}],
+		interceptorRequest: true,
+		interceptorInternalRequest: true,
+		usingInterceptorWithoutSigner: false,
+		uniqueRequestIdentifier: { requestId: 79, requestSocket: socket },
+	}, 'hasAccess', activeAddress), { type: 'doNotReply' })
+
+	const pending = await modules.getPendingTransactionsAndMessages()
+	assert.equal(pending.length, 1, 'The signing approval remains available for retry or rejection')
+	const approval = pending[0]
+	assert.equal(approval?.type, 'SignableMessage')
+	assert.equal(approval?.originalRequestParameters.method, 'personal_sign')
+	assert.equal(approval?.approvalStatus.status, 'SignerError')
+	if (approval?.approvalStatus.status !== 'SignerError') throw new Error('Missing retryable signing error')
+	assert.equal(approval.approvalStatus.code, 4900)
+	if (authority === 'authorized') assert.equal(approval.approvalStatus.message, disconnect.message)
+	assert.deepEqual(messages, [], 'An error callback must neither forward another wallet command nor publish a successful dapp result')
+	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+})
+
 test('preserves a MetaMask keyring scan error on a retryable Safe signature', async () => {
 	const socket = uniqueRequestIdentifier.requestSocket
 	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
@@ -83,7 +145,7 @@ test('preserves a MetaMask keyring scan error on a retryable Safe signature', as
 	const messages: unknown[] = []
 	const port = createWebsitePort(socket, 0, messages)
 	const websiteOrigin = 'https://example.com'
-	const websiteTabConnections = new Map([[socket.tabId, {
+	const websiteTabConnections = createAuthorizedConnections(new Map([[socket.tabId, {
 		signerStateOwner: {
 			connectionName: socket.connectionName,
 			confirmed: true,
@@ -93,7 +155,7 @@ test('preserves a MetaMask keyring scan error on a retryable Safe signature', as
 		connections: {
 			[modules.websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 		},
-	}]])
+	}]]))
 	await modules.browserStorageLocalSet2({
 		pendingTransactionsAndMessages: [{
 			...pendingTransaction,
@@ -161,7 +223,7 @@ test('forwards a Safe transaction to the wallet-selected Safe owner as EIP-712 t
 	const postedMessages: unknown[] = []
 	const socket = uniqueRequestIdentifier.requestSocket
 	const port = createWebsitePort(socket, 0, postedMessages)
-	const websiteTabConnections = new Map([[socket.tabId, {
+	const websiteTabConnections = createAuthorizedConnections(new Map([[socket.tabId, {
 		connections: {
 			[modules.websiteSocketToString(socket)]: {
 				port,
@@ -171,7 +233,7 @@ test('forwards a Safe transaction to the wallet-selected Safe owner as EIP-712 t
 				wantsToConnect: true,
 			},
 		},
-	}]])
+	}]]))
 	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
 		to: recipientAddress,
 		value: 0n,
@@ -293,7 +355,7 @@ test('routes a Safe co-signing request through the wallet-selected owner', async
 			activeAddress,
 		)
 	})
-	websiteTabConnections = new Map([[socket.tabId, {
+	websiteTabConnections = createAuthorizedConnections(new Map([[socket.tabId, {
 		signerStateOwner: {
 			connectionName: socket.connectionName,
 			confirmed: true,
@@ -309,7 +371,7 @@ test('routes a Safe co-signing request through the wallet-selected owner', async
 				wantsToConnect: true,
 			},
 		},
-	}]])
+	}]]))
 	const signRequest = {
 		method: 'eth_signTypedData_v4' as const,
 		params: [activeAddress, EIP712Message.parse(safeTxToTypedDataJson(safeTx))] as const,
@@ -434,7 +496,7 @@ test('returns a Safe signer error when the wallet-selected co-signer is not a cu
 		signerChain: fakeRpcNetwork.chainId,
 	}))
 	const port = createWebsitePort(uniqueRequestIdentifier.requestSocket, 0, [])
-	const websiteTabConnections = new Map([[uniqueRequestIdentifier.requestSocket.tabId, {
+	const websiteTabConnections = createAuthorizedConnections(new Map([[uniqueRequestIdentifier.requestSocket.tabId, {
 		connections: {
 			[modules.websiteSocketToString(uniqueRequestIdentifier.requestSocket)]: {
 				port,
@@ -444,7 +506,7 @@ test('returns a Safe signer error when the wallet-selected co-signer is not a cu
 				wantsToConnect: true,
 			},
 		},
-	}]])
+	}]]))
 	const signRequest = {
 		method: 'eth_signTypedData_v4' as const,
 		params: [activeAddress, EIP712Message.parse(safeTxToTypedDataJson(safeTx))] as const,
@@ -611,7 +673,7 @@ test('shows a Safe signing-account mismatch in the confirmation dialog without r
 	}))
 	const socket = uniqueRequestIdentifier.requestSocket
 	const port = createWebsitePort(socket, 0, [])
-	const websiteTabConnections = new Map([[socket.tabId, {
+	const websiteTabConnections = createAuthorizedConnections(new Map([[socket.tabId, {
 		connections: {
 			[modules.websiteSocketToString(socket)]: {
 				port,
@@ -621,7 +683,7 @@ test('shows a Safe signing-account mismatch in the confirmation dialog without r
 				wantsToConnect: true,
 			},
 		},
-	}]])
+	}]]))
 	const signRequest = {
 		method: 'eth_signTypedData_v4' as const,
 		params: [mismatchedRequestedAccount, EIP712Message.parse(safeTxToTypedDataJson(safeTx))] as const,
@@ -729,7 +791,7 @@ test('signs Safe transaction typed data normally when the active signing address
 	}))
 	const socket = uniqueRequestIdentifier.requestSocket
 	const port = createWebsitePort(socket, 0, [])
-	const websiteTabConnections = new Map([[socket.tabId, {
+	const websiteTabConnections = createAuthorizedConnections(new Map([[socket.tabId, {
 		connections: {
 			[modules.websiteSocketToString(socket)]: {
 				port,
@@ -739,7 +801,7 @@ test('signs Safe transaction typed data normally when the active signing address
 				wantsToConnect: true,
 			},
 		},
-	}]])
+	}]]))
 	const signRequest = {
 		method: 'eth_signTypedData_v4' as const,
 		params: [eoaAddress, EIP712Message.parse(safeTxToTypedDataJson(safeTx))] as const,
@@ -802,7 +864,7 @@ test('uses the configured Safe simulation signer without changing the active Saf
 		...signRequest,
 	}
 	const port = createWebsitePort(uniqueRequestIdentifier.requestSocket, 0, [])
-	const websiteTabConnections = new Map([[uniqueRequestIdentifier.requestSocket.tabId, {
+	const websiteTabConnections = createAuthorizedConnections(new Map([[uniqueRequestIdentifier.requestSocket.tabId, {
 		connections: {
 			[modules.websiteSocketToString(uniqueRequestIdentifier.requestSocket)]: {
 				port,
@@ -812,7 +874,7 @@ test('uses the configured Safe simulation signer without changing the active Saf
 				wantsToConnect: true,
 			},
 		},
-	}]])
+	}]]))
 
 	assert.deepEqual(await modules.openConfirmTransactionDialogForMessage(
 		simulator.ethereum,
@@ -1099,7 +1161,7 @@ test('routes a completed active Safe execution through its configured signer and
 	const postedMessages: unknown[] = []
 	const socket = uniqueRequestIdentifier.requestSocket
 	const port = createWebsitePort(socket, 0, postedMessages)
-	const websiteTabConnections = new Map([[socket.tabId, {
+	const websiteTabConnections = createAuthorizedConnections(new Map([[socket.tabId, {
 		connections: {
 			[modules.websiteSocketToString(socket)]: {
 				port,
@@ -1109,7 +1171,7 @@ test('routes a completed active Safe execution through its configured signer and
 				wantsToConnect: true,
 			},
 		},
-	}]])
+	}]]))
 	const request = {
 		interceptorRequest: true as const,
 		usingInterceptorWithoutSigner: false,
@@ -1388,7 +1450,7 @@ test('blocks direct Safe execution when the configured signer cannot satisfy the
 	const postedMessages: unknown[] = []
 	const socket = uniqueRequestIdentifier.requestSocket
 	const port = createWebsitePort(socket, 0, postedMessages)
-	const websiteTabConnections = new Map([[socket.tabId, {
+	const websiteTabConnections = createAuthorizedConnections(new Map([[socket.tabId, {
 		connections: {
 			[modules.websiteSocketToString(socket)]: {
 				port,
@@ -1398,7 +1460,7 @@ test('blocks direct Safe execution when the configured signer cannot satisfy the
 				wantsToConnect: true,
 			},
 		},
-	}]])
+	}]]))
 
 	assert.deepEqual(await withSilencedConsole(async () => await modules.openConfirmTransactionDialogForTransaction(
 		simulator.ethereum,

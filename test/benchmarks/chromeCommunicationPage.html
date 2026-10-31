@@ -67,6 +67,43 @@
 		</main>
 		<script>
 			(() => {
+				if (new URLSearchParams(location.search).get('bridge-probe') === 'true') {
+					const probe = globalThis.__bridgePrivacyProbe = { publicPortObserved: false, privateEventObserved: false, prototypeCalls: 0, iteratedSecrets: 0, iteratedPorts: 0, prototypePortReads: 0, privateDataReads: 0, regexpUuidObservations: 0, forgedBootstrapAccepted: false }
+					window.addEventListener('interceptor_private_bridge', () => { probe.privateEventObserved = true }, true)
+					window.addEventListener('message', (event) => {
+						if (event.data?.type === 'interceptor_bridge_port') probe.publicPortObserved = true
+					})
+					const nativePostMessage = MessagePort.prototype.postMessage
+					MessagePort.prototype.postMessage = function (...args) {
+						probe.prototypeCalls++
+						return Reflect.apply(nativePostMessage, this, args)
+					}
+					const nativeDataGetter = Object.getOwnPropertyDescriptor(MessageEvent.prototype, 'data').get
+					Object.defineProperty(MessageEvent.prototype, 'data', { configurable: true, get() {
+						if (this.currentTarget instanceof MessagePort) probe.privateDataReads++
+						return Reflect.apply(nativeDataGetter, this, [])
+					} })
+					const nativePortGetter = Object.getOwnPropertyDescriptor(MessageChannel.prototype, 'port2')?.get
+					if (nativePortGetter !== undefined) Object.defineProperty(MessageChannel.prototype, 'port2', { configurable: true, get() {
+						probe.prototypePortReads++
+						return Reflect.apply(nativePortGetter, this, [])
+					} })
+					const nativeSplice = Array.prototype.splice
+					Array.prototype.splice = function (...args) {
+						const input = RegExp.input
+						if (input.length === 36 && input[8] === '-' && input[13] === '-' && RegExp.lastMatch === input) probe.regexpUuidObservations++
+						return Reflect.apply(nativeSplice, this, args)
+					}
+					const nativeIterator = Array.prototype[Symbol.iterator]
+					Array.prototype[Symbol.iterator] = function () {
+						for (let index = 0; index < this.length; index++) {
+							if (this[index] instanceof MessagePort) probe.iteratedPorts++
+							if (typeof this[index] === 'string' && /^[0-9a-f]{64}$/.test(this[index])) probe.iteratedSecrets++
+						}
+						return Reflect.apply(nativeIterator, this, [])
+					}
+					if (typeof globalThis.__interceptorInitializeBridge === 'function') probe.forgedBootstrapAccepted = globalThis.__interceptorInitializeBridge('f'.repeat(64))
+				}
 				const startEarlySafeAppsProbe = () => {
 					if (new URLSearchParams(location.search).get('safe-probe') !== 'early') return
 					const id = crypto.randomUUID()

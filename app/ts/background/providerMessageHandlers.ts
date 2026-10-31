@@ -5,7 +5,7 @@ import type { TabState, WebsiteTabConnections } from '../types/user-interface-ty
 import { EthereumAccountsReply, EthereumChainReply } from '../types/JsonRpc-types.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { getSocketFromPort, isTopFramePort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
-import { getRpcNetworkForChain, setDefaultSignerName, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
+import { getRpcNetworkForChain, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
 import { getMetamaskCompatibilityMode, getSettings } from './settings.js'
 import { applyWalletSwitchReply } from './walletSwitch.js'
 import { verifyAccess, withSuppressedUnscopedConnectionEventsForSocketAsync } from './accessManagement.js'
@@ -17,8 +17,9 @@ import { resolveWatchAssetSignerReply } from './windows/watchAsset.js'
 import { modifyObject } from '../utils/typescript.js'
 import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
+import { getSignerExecutionOwner, socketCanExecuteWithSelectedSigner } from './signerExecutionAuthority.js'
 import { isSignerMissing } from '../utils/signerMetadata.js'
-import { beginSignerStateConfirmation, clearSignerDerivedTabState, confirmSignerState, doesSignerStateTokenMatchIdentity, getConfirmedSignerStateToken, isCurrentWebsiteConnection, isSignerStateTokenCurrent, runSignerStateOperation, signerConnectionReplacedError, tabHasApprovedWebsiteConnection, type SignerStateToken } from './signerStateOwnership.js'
+import { beginSignerStateConfirmation, clearSignerDerivedTabState, confirmSignerState, doesSignerStateTokenMatchIdentity, getAuthorizedSignerStateToken, isCurrentWebsiteConnection, isSignerStateTokenAuthorized, runSignerStateOperation, signerConnectionReplacedError, tabHasApprovedWebsiteConnection, type SignerStateToken } from './signerStateOwnership.js'
 import { getConfiguredSigningSafe, getSigningAddressSelectionTransition } from './signingAddressSelection.js'
 import { getWalletSelectedAccount } from '../utils/activeAddressSelection.js'
 import { getActiveAddressEntryForChain } from './metadataUtils.js'
@@ -28,7 +29,7 @@ import type { ApprovalState } from './websiteAccessPolicy.js'
 function getSignerCallbackToken(websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, signerProviderGeneration: number) {
 	const socket = getSocketFromPort(port)
 	if (socket === undefined) return undefined
-	const token = getConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
+	const token = getAuthorizedSignerStateToken(websiteTabConnections, socket)
 	if (token === undefined) return undefined
 	if (token.socket.connectionName !== socket.connectionName || token.port !== port) return undefined
 	if (token.signerProviderGeneration !== signerProviderGeneration) return undefined
@@ -83,7 +84,7 @@ export async function ethAccountsReply(simulationServicesOwner: SimulationServic
 			if (signerAccountsReply.signerUnavailable !== true) {
 				await updateTabState(tabId, (previousState: TabState) => modifyObject(previousState, { signerAccountError }))
 			}
-			if (!isSignerStateTokenCurrent(websiteTabConnections, signerStateToken)) return returnValue
+			if (!isSignerStateTokenAuthorized(websiteTabConnections, signerStateToken)) return returnValue
 			// Wake requesters waiting for a signer accounts round-trip even when the signer rejected or errored.
 			sendInternalWindowMessage({
 				method: 'window_signer_accounts_changed',
@@ -105,7 +106,7 @@ export async function ethAccountsReply(simulationServicesOwner: SimulationServic
 			signerAccounts,
 			activeSigningAddress,
 		}))
-		if (!isSignerStateTokenCurrent(websiteTabConnections, signerStateToken)) return returnValue
+		if (!isSignerStateTokenAuthorized(websiteTabConnections, signerStateToken)) return returnValue
 		const { ethereum, tokenPriceService } = simulationServicesOwner.getCurrent()
 		await refreshPendingSafeSignerSelectionErrors(ethereum, tokenPriceService, tabId)
 		// Restore this wallet account's most recent EOA-or-Safe selection. This remains inside the signer-state operation so a reconnect cannot interleave with downstream address and chain mutations.
@@ -152,10 +153,11 @@ async function changeSignerChain(simulationServicesOwner: SimulationServicesOwne
 	const tabStateChange = await updateTabState(signerStateToken.socket.tabId, (previousState: TabState) => {
 		return previousState.signerChain === signerChain ? previousState : modifyObject(previousState, { signerChain })
 	})
-	if (!isSignerStateTokenCurrent(websiteTabConnections, signerStateToken)) return
+	if (!isSignerStateTokenAuthorized(websiteTabConnections, signerStateToken)) return
 	const oldSignerChain = tabStateChange.previousState.signerChain
 	// update active address if we are using signers address
 	const settings = await getSettings()
+	if (!isSignerStateTokenAuthorized(websiteTabConnections, signerStateToken)) return
 	const selectedSafe = await getConfiguredSigningSafe(settings, tabStateChange.newState.signerAccounts)
 	if (selectedSafe !== undefined) {
 		// Safe signing is pinned to the Safe's configured Interceptor chain. A signer-wallet chain change only refreshes signer state; it must not move the dapp away from the active Safe.
@@ -212,7 +214,7 @@ export async function connectedToSigner(_simulationServicesOwner: SimulationServ
 	const isTopFrame = isTopFramePort(port)
 	const socket = getSocketFromPort(port)
 	const requestSocket = request.uniqueRequestIdentifier.requestSocket
-	if (socket === undefined || socket.tabId !== requestSocket.tabId || socket.connectionName !== requestSocket.connectionName) return await getConnectedToSignerResult()
+	if (socket === undefined || socket.tabId !== requestSocket.tabId || socket.connectionName !== requestSocket.connectionName || !socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(websiteTabConnections, socket.tabId), socket)) return await getConnectedToSignerResult()
 	// Persisted origin approval must not let a newly connected child frame claim tab-wide signer ownership or bootstrap address access.
 	if (!isTopFrame && !isApprovedWebsitePort(websiteTabConnections, port)) return await getConnectedToSignerResult()
 	let shouldRefreshSignerAccounts = false
@@ -244,11 +246,10 @@ export async function connectedToSigner(_simulationServicesOwner: SimulationServ
 			return await getConnectedToSignerResult()
 		}
 		confirmSignerState(tabConnection, signerProviderGeneration)
-		await setDefaultSignerName(signerName)
 		await sendPopupMessageToOpenWindows({ method: 'popup_signer_name_changed' })
 		if (hasSignerCallbackAccess(websiteTabConnections, socket.tabId, approval)) {
 			const settings = await getSettings()
-			if (!signerMissing && (!settings.simulationMode || settings.useSignersAddressAsActiveAddress)) {
+			if (!signerMissing && (!settings.simulationMode || settings.useSignersAddressAsActiveAddress) && getAuthorizedSignerStateToken(websiteTabConnections, socket)?.port === port) {
 				sendSubscriptionReplyOrCallBackToPort(port, { type: 'result', method: 'request_signer_chainId', result: [] })
 			}
 		}
@@ -266,7 +267,7 @@ export async function connectedToSigner(_simulationServicesOwner: SimulationServ
 		return await getConnectedToSignerResult()
 	})
 	// Passive account refresh is core signer behavior, independent of Safe Apps compatibility.
-	const currentSigner = getConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
+	const currentSigner = getAuthorizedSignerStateToken(websiteTabConnections, socket)
 	const accountsRequested = shouldRefreshSignerAccounts
 		&& currentSigner?.port === port
 		&& currentSigner.signerProviderGeneration === signerProviderGeneration
@@ -304,7 +305,8 @@ export async function signerReply(simulationServicesOwner: SimulationServicesOwn
 		// Signing is routed back through the frame that originated the request, which may be a child frame. Unlike tab-wide account and chain cache updates, this reply is scoped by its request id and exact port; the inpage bridge converts a provider-generation change into a terminal disconnected error.
 		if (!isCurrentWebsiteConnection(tabConnection, socket, port)
 			|| requestSocket.tabId !== socket.tabId
-			|| requestSocket.connectionName !== socket.connectionName) {
+			|| requestSocket.connectionName !== socket.connectionName
+			|| !socketCanExecuteWithSelectedSigner(getSignerExecutionOwner(websiteTabConnections, socket.tabId), socket)) {
 			await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'SignerError', ...signerConnectionReplacedError } }))
 			await updateConfirmTransactionView(ethereum, tokenPriceService)
 			return doNotReply

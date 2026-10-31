@@ -1,0 +1,254 @@
+import { getSignerExecutionOwner, signerExecutionIsPending, recoverSignerExecution, acquireSignerSelectionLease, releaseSignerSelectionLease, signerSelectionLeaseIsActive, allowLegacySignerExecution, authorizeSocketForLegacySignerExecution, authorizeSocketForSignerExecution, blockSignerExecution, getSignerExecutionTargetForSocket, getSignerDocumentGeneration, isAuthoritativeTopSocket, reconcileSignerExecutionDocument, setSignerExecutionTarget, signerSelectionIsUnavailable, signerFrameHasDifferentOrigin, socketIsEligibleForSignerExecution } from './signerExecutionAuthority.js'
+import { probeChildSignerDocument } from './signerDocumentSynchronization.js'
+import { getExplicitSignerSelectionForConnection } from './signerSelectionOwnership.js'
+import { isTopFrameId } from '../utils/requests.js'
+import { BeginSignerProviderSelection, FinishSignerProviderSelection, SignerProviderSelected, SignerProvidersChanged, type SelectSignerProvider, type SubscriptionReplyOrCallBack } from '../types/interceptor-messages.js'
+import type { TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
+import type { ProviderMessage, InterceptedRequest } from '../utils/requests.js'
+import { modifyObject } from '../utils/typescript.js'
+import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
+import { getChainChangeConfirmationPromise, getPendingTransactionsAndMessages, getSignerPreference, getTabState, setSignerPreference, updateTabState } from './storageVariables.js'
+import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
+
+const tabHasPendingSignerWork = async (tabId: number) => {
+	const [pendingSignerRequests, pendingChainChange] = await Promise.all([
+		getPendingTransactionsAndMessages(),
+		getChainChangeConfirmationPromise(),
+	])
+	return pendingSignerRequests.some((pending) => pending.uniqueRequestIdentifier.requestSocket.tabId === tabId)
+		|| pendingChainChange?.request.uniqueRequestIdentifier.requestSocket.tabId === tabId
+}
+
+export function getChildSignerConnectionSynchronization(websiteTabConnections: WebsiteTabConnections, socket: ProviderMessage['uniqueRequestIdentifier']['requestSocket'], websiteOrigin: string, catalogResynchronizationNeeded: boolean): SubscriptionReplyOrCallBack | undefined {
+	if (catalogResynchronizationNeeded) return { type: 'result', method: 'request_signer_provider_catalog', result: [] }
+	const signerExecutionTarget = getSignerExecutionTargetForSocket(getSignerExecutionOwner(websiteTabConnections, socket.tabId), socket, websiteOrigin)
+	if (signerExecutionTarget === undefined) return undefined
+	return { type: 'result', method: 'select_signer_provider', result: signerExecutionTarget }
+}
+
+export async function beginSignerProviderSelection(websiteTabConnections: WebsiteTabConnections, request: ProviderMessage, websiteOrigin: string, isTopFrame: boolean, frameId: number | undefined) {
+	const [providerUuid] = BeginSignerProviderSelection.parse(request).params
+	const socket = request.uniqueRequestIdentifier.requestSocket
+	const tabId = socket.tabId
+	const socketCanSelectProvider = () => isTopFrame
+		? isAuthoritativeTopSocket(getSignerExecutionOwner(websiteTabConnections, socket.tabId), socket)
+		: !isTopFrameId(frameId) && providerUuid !== undefined && getSignerExecutionTargetForSocket(getSignerExecutionOwner(websiteTabConnections, socket.tabId), socket, websiteOrigin) === providerUuid
+	if (!socketCanSelectProvider()) return undefined
+	const token = await acquireSignerSelectionLease(websiteTabConnections, tabId, socket)
+	let transferredToCaller = false
+	try {
+		if (!socketCanSelectProvider()) return undefined
+		const hasPendingSignerWork = await tabHasPendingSignerWork(tabId)
+		if (!socketCanSelectProvider() || !signerSelectionLeaseIsActive(websiteTabConnections, tabId, token) || hasPendingSignerWork) return undefined
+		transferredToCaller = true
+		return token
+	} finally {
+		// Storage and policy failures must release a lease whose token never reached the inpage caller.
+		if (!transferredToCaller) releaseSignerSelectionLease(websiteTabConnections, tabId, token)
+	}
+}
+
+// The selection protocol owns cleanup even if request setup fails before its finish handler runs.
+export async function withSignerSelectionRequestCleanup<T>(websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, processRequest: () => Promise<T>): Promise<T> {
+	try {
+		return await processRequest()
+	} finally {
+		if (request.interceptorInternalRequest === true && request.method === 'finish_signer_provider_selection') {
+			const finish = FinishSignerProviderSelection.safeParse(request)
+			if (finish.success) releaseSignerSelectionLease(websiteTabConnections, request.uniqueRequestIdentifier.requestSocket.tabId, finish.value.params[0])
+		}
+	}
+}
+
+export function finishSignerProviderSelection(websiteTabConnections: WebsiteTabConnections, request: ProviderMessage) {
+	const [token] = FinishSignerProviderSelection.parse(request).params
+	const tabId = request.uniqueRequestIdentifier.requestSocket.tabId
+	return releaseSignerSelectionLease(websiteTabConnections, tabId, token)
+}
+
+export async function signerProvidersChanged(websiteTabConnections: WebsiteTabConnections, request: ProviderMessage, websiteOrigin: string, isTopFrame: boolean, frameId: number | undefined = isTopFrame ? 0 : undefined) {
+	const [announcedProviders, signerProviderCatalogOverflowed, recovery] = SignerProvidersChanged.parse(request).params
+	const socket = request.uniqueRequestIdentifier.requestSocket
+	const childDocument = !isTopFrame && frameId !== undefined ? await probeChildSignerDocument(websiteTabConnections, socket, websiteOrigin, frameId) : undefined
+	const documentGeneration = isTopFrame ? getSignerDocumentGeneration(getSignerExecutionOwner(websiteTabConnections, socket.tabId), socket, websiteOrigin) : childDocument?.status === 'ready' ? childDocument.generation : undefined
+	const signerFrameIneligible = childDocument?.status === 'ineligible' || (!isTopFrame && frameId === undefined) || signerFrameHasDifferentOrigin(getSignerExecutionOwner(websiteTabConnections, socket.tabId), socket, websiteOrigin)
+	if (!reconcileSignerExecutionDocument(getSignerExecutionOwner(websiteTabConnections, socket.tabId), socket, websiteOrigin, documentGeneration, isTopFrame, frameId)) return {
+		preferredSignerRdns: undefined,
+		automaticSelectionAllowed: false,
+		signerSelectionChangeAllowed: false,
+		legacySignerAllowed: false,
+		...(signerFrameIneligible ? { signerFrameIneligible: true } : {}),
+		...(recovery === undefined ? {} : { signerConnectionRecoveryStatus: !signerFrameIneligible && childDocument?.status === 'retry' ? 'retry' as const : 'refused' as const }),
+	}
+	if (recovery !== undefined) {
+		// Recover only this document's already chosen transport. Pending approvals continue to prohibit selecting a different wallet.
+		const owner = getSignerExecutionOwner(websiteTabConnections, socket.tabId)
+		let recovered = false
+		let retryable = false
+		if (isTopFrame) {
+			const state = await getTabState(socket.tabId)
+			const preference = await getSignerPreference(websiteOrigin)
+			const currentOwner = getSignerExecutionOwner(websiteTabConnections, socket.tabId)
+			if (isAuthoritativeTopSocket(currentOwner, socket)) {
+				const selected = getExplicitSignerSelectionForConnection(state, websiteOrigin, socket.connectionName)
+				if (selected !== undefined && selected.uuid === recovery.activeSignerProviderUuid
+					&& announcedProviders.some((candidate) => candidate.uuid === selected.uuid && candidate.rdns === selected.rdns && candidate.name === selected.name && candidate.icon === selected.icon)) {
+					recovered = recoverSignerExecution(currentOwner, socket, websiteOrigin, selected.uuid)
+				} else if (recovery.activeSignerProviderUuid === undefined && state.selectedSignerProvider === undefined && preference === undefined
+					&& state.legacySignerConnection?.websiteOrigin === websiteOrigin && state.legacySignerConnection.connectionName === socket.connectionName) {
+					recovered = recoverSignerExecution(currentOwner, socket, websiteOrigin, undefined)
+				}
+				// A rejected top proof is final for this recovery, including children waiting for its authority.
+				if (!recovered && signerExecutionIsPending(currentOwner, socket.tabId, websiteOrigin)) blockSignerExecution(currentOwner, socket.tabId)
+			}
+		} else {
+			const providerAvailable = recovery.activeSignerProviderUuid === undefined || announcedProviders.some((candidate) => candidate.uuid === recovery.activeSignerProviderUuid)
+			retryable = providerAvailable && signerExecutionIsPending(owner, socket.tabId, websiteOrigin)
+			recovered = recovery.activeSignerProviderUuid === undefined
+				? authorizeSocketForLegacySignerExecution(owner, socket, websiteOrigin)
+				: announcedProviders.some((candidate) => candidate.uuid === recovery.activeSignerProviderUuid)
+					&& authorizeSocketForSignerExecution(owner, socket, recovery.activeSignerProviderUuid, websiteOrigin)
+		}
+		return { preferredSignerRdns: undefined, automaticSelectionAllowed: false, signerSelectionChangeAllowed: false, legacySignerAllowed: false, signerConnectionRecoveryStatus: recovered ? 'recovered' as const : retryable ? 'retry' as const : 'refused' as const }
+	}
+	if (!isTopFrame) {
+		const executionTarget = getSignerExecutionTargetForSocket(getSignerExecutionOwner(websiteTabConnections, socket.tabId), socket, websiteOrigin)
+		const selectedSignerProviderUuid = announcedProviders.some((provider) => provider.uuid === executionTarget) ? executionTarget : undefined
+		const legacySignerAllowed = authorizeSocketForLegacySignerExecution(getSignerExecutionOwner(websiteTabConnections, socket.tabId), socket, websiteOrigin)
+		return {
+			preferredSignerRdns: undefined,
+			automaticSelectionAllowed: false,
+			signerSelectionChangeAllowed: selectedSignerProviderUuid !== undefined || legacySignerAllowed,
+			legacySignerAllowed,
+			...(selectedSignerProviderUuid === undefined ? {} : { selectedSignerProviderUuid }),
+			...(signerSelectionIsUnavailable(getSignerExecutionOwner(websiteTabConnections, socket.tabId), socket, websiteOrigin) || (executionTarget !== undefined && selectedSignerProviderUuid === undefined) ? { signerFrameIneligible: true } : {}),
+		}
+	}
+	const providers = announcedProviders.map((provider) => ({ ...provider, rdns: provider.rdns.toLowerCase() }))
+	const tabId = request.uniqueRequestIdentifier.requestSocket.tabId
+	const [preferredSignerPreference, hasPendingSignerWork] = await Promise.all([
+		getSignerPreference(websiteOrigin),
+		tabHasPendingSignerWork(tabId),
+	])
+	if (!isAuthoritativeTopSocket(getSignerExecutionOwner(websiteTabConnections, socket.tabId), socket)) return { preferredSignerRdns: undefined, automaticSelectionAllowed: false, signerSelectionChangeAllowed: false, legacySignerAllowed: false }
+	const preferredSignerRdns = preferredSignerPreference?.rdns
+	const signerSelectionChangeAllowed = !hasPendingSignerWork
+	await updateTabState(request.uniqueRequestIdentifier.requestSocket.tabId, (previousState: TabState) => {
+		if (!isAuthoritativeTopSocket(getSignerExecutionOwner(websiteTabConnections, request.uniqueRequestIdentifier.requestSocket.tabId), request.uniqueRequestIdentifier.requestSocket)) return previousState
+		if (!signerSelectionChangeAllowed) return modifyObject(previousState, {
+			availableSignerProviders: providers,
+			signerProviderCatalogOverflowed,
+		})
+		const previouslySelectedProvider = previousState.selectedSignerProvider === undefined
+			? undefined
+			: providers.find((provider) => provider.uuid === previousState.selectedSignerProvider?.uuid)
+		const preserveExplicitSelection = previouslySelectedProvider !== undefined
+			&& getExplicitSignerSelectionForConnection(previousState, websiteOrigin, socket.connectionName)?.uuid === previouslySelectedProvider.uuid
+		const preferredSignerUnavailable = preferredSignerRdns !== undefined && !preserveExplicitSelection
+		// Remembered RDNS is a display preference, never proof that a new document's provider is the wallet the user selected.
+		const selectedSignerProvider = preserveExplicitSelection ? previouslySelectedProvider : undefined
+		const clearSignerState = preferredSignerUnavailable
+			|| (previousState.selectedSignerProvider !== undefined && selectedSignerProvider === undefined)
+		return modifyObject(previousState, {
+			availableSignerProviders: providers,
+			selectedSignerProvider,
+			explicitlySelectedSignerProviderUuid: preserveExplicitSelection ? previouslySelectedProvider.uuid : undefined,
+			preferredSignerUnavailable,
+			signerProviderCatalogOverflowed,
+			...(clearSignerState ? {
+				signerName: 'NoSigner',
+				signerConnected: true,
+				signerAccounts: [],
+				signerAccountError: undefined,
+				signerChain: undefined,
+				activeSigningAddress: undefined,
+			} : {}),
+		})
+	})
+	if (!signerSelectionChangeAllowed) {
+		return { preferredSignerRdns, automaticSelectionAllowed: false, signerSelectionChangeAllowed: false, legacySignerAllowed: false }
+	}
+	const updatedState = await getTabState(tabId)
+	if (!isAuthoritativeTopSocket(getSignerExecutionOwner(websiteTabConnections, socket.tabId), socket)) return { preferredSignerRdns: undefined, automaticSelectionAllowed: false, signerSelectionChangeAllowed: false, legacySignerAllowed: false }
+	if (updatedState.selectedSignerProvider !== undefined) {
+		setSignerExecutionTarget(getSignerExecutionOwner(websiteTabConnections, tabId), tabId, updatedState.selectedSignerProvider.uuid, websiteOrigin)
+	} else if (preferredSignerRdns !== undefined) {
+		blockSignerExecution(getSignerExecutionOwner(websiteTabConnections, tabId), tabId)
+	} else {
+		allowLegacySignerExecution(getSignerExecutionOwner(websiteTabConnections, socket.tabId), socket, websiteOrigin)
+		await updateTabState(tabId, (state) => isAuthoritativeTopSocket(getSignerExecutionOwner(websiteTabConnections, socket.tabId), socket)
+			? { ...state, legacySignerConnection: { websiteOrigin, connectionName: socket.connectionName } }
+			: state)
+	}
+	await sendPopupMessageToOpenWindows({ method: 'popup_signer_name_changed' })
+	return { preferredSignerRdns, automaticSelectionAllowed: false, signerSelectionChangeAllowed, legacySignerAllowed: preferredSignerRdns === undefined }
+}
+
+export async function signerProviderSelected(request: ProviderMessage, websiteOrigin: string, isTopFrame: boolean, frameId: number | undefined, websiteTabConnections: WebsiteTabConnections) {
+	const [announcedProvider, selectionKind] = SignerProviderSelected.parse(request).params
+	const provider = { ...announcedProvider, rdns: announcedProvider.rdns.toLowerCase() }
+	const tabId = request.uniqueRequestIdentifier.requestSocket.tabId
+	if (!isTopFrame) {
+		if (isTopFrameId(frameId)) throw new Error('Only a current top frame or child frame can select a signer provider')
+		if (!authorizeSocketForSignerExecution(getSignerExecutionOwner(websiteTabConnections, request.uniqueRequestIdentifier.requestSocket.tabId), request.uniqueRequestIdentifier.requestSocket, provider.uuid, websiteOrigin)) throw new Error('The frame selected a signer outside the tab execution authority')
+		return
+	}
+	const currentTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)
+	if (!isAuthoritativeTopSocket(getSignerExecutionOwner(websiteTabConnections, request.uniqueRequestIdentifier.requestSocket.tabId), request.uniqueRequestIdentifier.requestSocket)) return
+	const matchingProvider = currentTabState.availableSignerProviders?.find((announcedProvider) => announcedProvider.uuid === provider.uuid)
+	if (selectionKind !== 'explicit' && getExplicitSignerSelectionForConnection(currentTabState, websiteOrigin, request.uniqueRequestIdentifier.requestSocket.connectionName)?.uuid !== provider.uuid) throw new Error('Select the signer again for this document; remembered RDNS cannot authorize a provider')
+	if (matchingProvider === undefined
+		|| matchingProvider.rdns !== provider.rdns
+		|| matchingProvider.name !== provider.name
+		|| matchingProvider.icon !== provider.icon) throw new Error('The selected signer was not present in the announced provider catalog')
+	await setSignerPreference(websiteOrigin, provider.rdns)
+	if (!isAuthoritativeTopSocket(getSignerExecutionOwner(websiteTabConnections, request.uniqueRequestIdentifier.requestSocket.tabId), request.uniqueRequestIdentifier.requestSocket)) return
+	if (!setSignerExecutionTarget(getSignerExecutionOwner(websiteTabConnections, tabId), tabId, provider.uuid, websiteOrigin)) return
+	authorizeSocketForSignerExecution(getSignerExecutionOwner(websiteTabConnections, request.uniqueRequestIdentifier.requestSocket.tabId), request.uniqueRequestIdentifier.requestSocket, provider.uuid, websiteOrigin)
+	await updateTabState(request.uniqueRequestIdentifier.requestSocket.tabId, (previousState: TabState) => {
+		if (!isAuthoritativeTopSocket(getSignerExecutionOwner(websiteTabConnections, request.uniqueRequestIdentifier.requestSocket.tabId), request.uniqueRequestIdentifier.requestSocket)) return previousState
+		return modifyObject(previousState, {
+			signerName: 'EIP6963',
+			signerConnected: true,
+			signerAccounts: [],
+			signerAccountError: undefined,
+			signerChain: undefined,
+			activeSigningAddress: undefined,
+			selectedSignerProvider: provider,
+			explicitlySelectedSignerProviderUuid: provider.uuid,
+			selectedSignerConnectionName: request.uniqueRequestIdentifier.requestSocket.connectionName,
+			legacySignerConnection: undefined,
+			preferredSignerUnavailable: false,
+		})
+	})
+	if (!isAuthoritativeTopSocket(getSignerExecutionOwner(websiteTabConnections, request.uniqueRequestIdentifier.requestSocket.tabId), request.uniqueRequestIdentifier.requestSocket)) return
+	await sendPopupMessageToOpenWindows({ method: 'popup_signer_name_changed' })
+	const tabConnections = websiteTabConnections.get(tabId)
+	if (tabConnections === undefined) return
+	for (const connection of Object.values(tabConnections.connections)) {
+		if (connection.socket.connectionName === request.uniqueRequestIdentifier.requestSocket.connectionName) continue
+		if (connection.websiteOrigin !== websiteOrigin) continue
+		if (!socketIsEligibleForSignerExecution(getSignerExecutionOwner(websiteTabConnections, connection.socket.tabId), connection.socket, websiteOrigin)) continue
+		if (isTopFrameId(connection.frameId) && !isAuthoritativeTopSocket(getSignerExecutionOwner(websiteTabConnections, connection.socket.tabId), connection.socket)) continue
+		sendSubscriptionReplyOrCallBack(websiteTabConnections, connection.socket, { type: 'result', method: 'select_signer_provider', result: provider.uuid })
+	}
+}
+
+export async function selectSignerProvider(websiteTabConnections: WebsiteTabConnections, request: SelectSignerProvider) {
+	if (await tabHasPendingSignerWork(request.data.tabId)) throw new Error('Resolve the pending signer request or chain change before switching wallets')
+	const tabState = await getTabState(request.data.tabId)
+	if (tabState.website?.websiteOrigin !== request.data.websiteOrigin) throw new Error('The signer selection does not match the current website')
+	if (tabState.availableSignerProviders?.some((provider) => provider.uuid === request.data.uuid) !== true) throw new Error('The selected signer provider is no longer available')
+
+	const tabConnections = websiteTabConnections.get(request.data.tabId)
+	if (tabConnections === undefined) throw new Error('The selected website is no longer connected')
+	const matchingConnections = Object.values(tabConnections.connections).filter((connection) => connection.websiteOrigin === request.data.websiteOrigin)
+	const connection = matchingConnections.find((candidate) => isTopFrameId(candidate.frameId) && isAuthoritativeTopSocket(getSignerExecutionOwner(websiteTabConnections, candidate.socket.tabId), candidate.socket))
+	if (connection === undefined) throw new Error('The selected website top-frame connection is no longer available')
+	const sent = sendSubscriptionReplyOrCallBack(websiteTabConnections, connection.socket, {
+		type: 'result',
+		method: 'select_signer_provider',
+		result: request.data.uuid,
+	})
+	if (!sent) throw new Error('Failed to deliver the signer selection to the website')
+}
