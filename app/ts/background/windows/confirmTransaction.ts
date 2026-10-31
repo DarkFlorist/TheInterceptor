@@ -270,7 +270,8 @@ export const setGasLimitForTransaction = async (transactionIdentifier: bigint, g
 	})
 }
 
-export async function resolvePendingTransactionOrMessage(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, refreshedSafeSignerSelection?: RefreshedSafeSignerSelection) {
+// simulationModeGenerationAtApproval must be captured before the approval's first await (the default is evaluated on entry), so switching simulation mode on at any point during the approval refuses the signer forward, even if it is switched off again before the mode is read.
+export async function resolvePendingTransactionOrMessage(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, refreshedSafeSignerSelection?: RefreshedSafeSignerSelection, simulationModeGenerationAtApproval = getSimulationModeGeneration()) {
 	let pendingTransactionOrMessage = await getPendingTransactionOrMessageByidentifier(confirmation.data.uniqueRequestIdentifier)
 	if (pendingTransactionOrMessage === undefined) return // no need to resolve as it doesn't exist anymore
 	if (
@@ -390,9 +391,7 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 			await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus }))
 			await updateConfirmTransactionView(ethereum, tokenPriceService)
 		}
-		// Captured before the mode is read, so a switch that completes after the read still invalidates the forward.
-		const simulationModeGenerationAtApproval = getSimulationModeGeneration()
-		if ((await getSettings()).simulationMode) {
+		if ((await getSettings()).simulationMode || !isSimulationModeGenerationCurrent(simulationModeGenerationAtApproval)) {
 			await setApprovalStatusAndUpdateView(SIMULATION_MODE_ENABLED_AFTER_REQUEST)
 			return false
 		}

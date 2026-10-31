@@ -1,6 +1,8 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
-import { activeAddress, addressString, browserMock, createDisconnectedPort, createWebsitePort, isRecord, modules, pendingTransaction, simulator, uniqueRequestIdentifier } from './confirmTransactionTestHarness.js'
+import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
+import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
+import { activeAddress, addressString, browserMock, createDisconnectedPort, createSafeAddressBookEntry, createSafeTx, createWebsitePort, fakeRpcNetwork, getSafeTxHash, isRecord, modules, pendingTransaction, recipientAddress, simulator, type StorageKeys, uniqueRequestIdentifier } from './confirmTransactionTestHarness.js'
 
 const SIMULATION_MODE_ENABLED_AFTER_REQUEST_MESSAGE = 'The Interceptor switched to simulation mode after this request was made. Reject this request and send it again.'
 const socket = uniqueRequestIdentifier.requestSocket
@@ -160,4 +162,100 @@ test('simulation mode enabled during the Manifest V2 reconnect wait refuses the 
 	assert.equal(postAttemptsBeforeReconnect, 1)
 	assert.equal(accepted, false)
 	await assertRefusedAndStillPending(postedMessages)
+})
+
+// Leaves storage in signing mode, so only the simulation-mode generation records that the switch happened.
+async function switchSimulationModeOnAndOff() {
+	await modules.changeSimulationMode({ simulationMode: true })
+	await modules.changeSimulationMode({ simulationMode: false })
+}
+
+const readsPendingRequests = (keys: StorageKeys) => Array.isArray(keys) ? keys.includes('pendingTransactionsAndMessages') : keys === 'pendingTransactionsAndMessages'
+
+async function approveInPopup(websiteTabConnections: WebsiteTabConnections) {
+	await modules.confirmDialog(createTestSimulationServicesOwner(simulator), websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier } })
+}
+
+// After a refused approval the user can either reject the request or, back in signing mode, approve it again and have it forwarded.
+async function assertRejectableOrApprovableAgain(followUp: 'reject' | 'approveAgain', websiteTabConnections: WebsiteTabConnections, postedMessages: readonly unknown[]) {
+	if (followUp === 'reject') return await assertRejectable(websiteTabConnections, postedMessages)
+	await approveInPopup(websiteTabConnections)
+	assert.equal(postedMessages.filter(isForwardToSigner).length, 1)
+	assert.equal((await modules.getPendingTransactionsAndMessages())[0]?.approvalStatus.status, 'WaitingForSigner')
+}
+
+test('simulation mode switched on and off during the popup approval\'s pending-request read refuses the forward', async () => {
+	for (const followUp of ['reject', 'approveAgain'] as const) {
+		const { postedMessages, websiteTabConnections } = await setUpSigningModeRequest()
+		let switched = false
+		browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+			if (!switched && readsPendingRequests(keys)) {
+				switched = true
+				await switchSimulationModeOnAndOff()
+			}
+			return readStoredItems()
+		})
+		await approveInPopup(websiteTabConnections)
+		browserMock.setStorageGetHandler(undefined)
+		assert.equal(switched, true)
+		await assertRefusedAndStillPending(postedMessages)
+		await assertRejectableOrApprovableAgain(followUp, websiteTabConnections, postedMessages)
+	}
+})
+
+// A signing-mode Gnosis Safe proposal whose approval first refreshes the wallet-selected owner through the website's signer connection.
+async function setUpSigningModeSafeProposal(onAccountRequest: () => Promise<void>) {
+	await modules.changeSimulationMode({ simulationMode: false })
+	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeSimulationSignerAddress: recipientAddress })])
+	await modules.updateTabState(socket.tabId, (state) => ({ ...state, signerName: 'MetaMask', signerAccounts: [recipientAddress], activeSigningAddress: recipientAddress, signerChain: fakeRpcNetwork.chainId }))
+	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, { to: recipientAddress, value: 0n, input: new Uint8Array() }, 0n)
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [{
+		...signingModeTransaction,
+		safeTransaction: {
+			safeAddress: activeAddress,
+			safeSignerAddress: recipientAddress,
+			safeVersion: '1.4.1',
+			threshold: 2n,
+			reviewedSafeState: { version: '1.4.1', nonce: 0n, owners: [], threshold: 2n },
+			safeTxHash: BigInt(getSafeTxHash(safeTx)),
+			safeTx,
+		},
+	}] })
+	const postedMessages: unknown[] = []
+	const accountReplies: Promise<unknown>[] = []
+	const port: browser.runtime.Port = createWebsitePort(socket, 0, postedMessages, (message) => {
+		if (!isRecord(message) || message.method !== 'request_signer_to_eth_accounts') return
+		accountReplies.push((async () => {
+			await onAccountRequest()
+			await modules.ethAccountsReply(createTestSimulationServicesOwner(simulator), websiteTabConnections, port, {
+				method: 'eth_accounts_reply',
+				params: [{ signerProviderGeneration: 1, type: 'success', accounts: [addressString(recipientAddress)], requestAccounts: false }],
+			}, 'hasAccess', activeAddress)
+		})())
+	})
+	const websiteTabConnections: WebsiteTabConnections = new Map([[socket.tabId, {
+		signerStateOwner: { connectionName: socket.connectionName, confirmed: true, generation: 1, providerGeneration: 1 },
+		...websiteTabConnection(port),
+	}]])
+	const approve = async () => {
+		await approveInPopup(websiteTabConnections)
+		await Promise.all(accountReplies)
+	}
+	return { postedMessages, websiteTabConnections, approve }
+}
+
+test('simulation mode switched on and off during the Safe signer account refresh refuses the forward', async () => {
+	for (const followUp of ['reject', 'approveAgain'] as const) {
+		let switched = false
+		const { postedMessages, websiteTabConnections, approve } = await setUpSigningModeSafeProposal(async () => {
+			if (switched) return
+			switched = true
+			await switchSimulationModeOnAndOff()
+		})
+		await approve()
+		assert.equal(switched, true)
+		assert.equal(postedMessages.some((message) => isRecord(message) && message.method === 'request_signer_to_eth_accounts'), true)
+		await assertRefusedAndStillPending(postedMessages)
+		await assertRejectableOrApprovableAgain(followUp, websiteTabConnections, postedMessages)
+	}
 })
