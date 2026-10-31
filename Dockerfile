@@ -20,6 +20,7 @@ COPY app/css/ /workspace/app/css/
 COPY app/ts/ /workspace/app/ts/
 COPY app/img/ /workspace/app/img/
 COPY app/inpage/ /workspace/app/inpage/
+COPY app/shared/ /workspace/app/shared/
 COPY app/fonts/ /workspace/app/fonts/
 COPY contracts/ /workspace/contracts/
 COPY build/tsconfig.json build/vendor.mts build/bundler.mts build/cleanOutput.mts build/compileSolidityContracts.mts /workspace/build/

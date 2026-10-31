@@ -18,7 +18,7 @@ import { Semaphore } from '../utils/semaphore.js'
 import { RawInterceptedRequest, checkAndThrowRuntimeLastError, getHostWithPort, isMissingBrowserTargetError, silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { DEFAULT_TAB_CONNECTION, ICON_NOT_ACTIVE } from '../utils/constants.js'
 import { reportUnexpectedError, isExpectedInfrastructureError, printError, reportLocalRecoveryBestEffort } from '../utils/errors.js'
-import { updateContentScriptInjectionStrategyManifestV2 } from '../utils/contentScriptsUpdating.js'
+import { startContentScriptInjectionStrategy } from './contentScriptInjectionStrategy.js'
 import { checkIfInterceptorShouldSleep } from './sleeping.js'
 import { onCloseWindowOrTab, resolvePendingRequestsForMissingConfirmationWindows } from './windows/confirmTransaction.js'
 import { modifyObject } from '../utils/typescript.js'
@@ -39,6 +39,7 @@ import { acknowledgeAndTrackBridgeRequest, INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_ME
 import { registerWebsiteConnectionAndProvisionallyClaimSignerState } from './signerStateOwnership.js'
 import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
 import { initializeTabStateStorage } from './tabStateLifecycle.js'
+import { canHandleSafeAppPreparationMessage } from './safeAppsPreparationSender.js'
 
 const connections = new Map<number, TabConnection>()
 const safeAppsCompatibility = createSafeAppsCompatibilityFeature(connections)
@@ -123,12 +124,9 @@ browser.tabs.onRemoved.addListener(async (tabId: number) => await catchAllErrors
 }))
 
 const manifestVersion = browser.runtime.getManifest().manifest_version
-const isManifestV2 = manifestVersion === 2
 const tabStateInitializationPromise = initializeTabStateStorage(manifestVersion)
 
-if (isManifestV2) {
-	updateContentScriptInjectionStrategyManifestV2()
-}
+startContentScriptInjectionStrategy()
 
 const pendingRequestLimiter = new Semaphore(40) // only allow 40 requests pending globally
 
@@ -350,7 +348,8 @@ browser.tabs.onUpdated.addListener(onTabUpdated)
 browser.runtime.onConnect.addListener((port) => catchAllErrorsAndCall(async () => {
 	return await onContentScriptConnected(waitForBackgroundStartup, port, websiteTabConnections)
 }))
-browser.runtime.onMessage.addListener((message: unknown) => Promise.resolve(catchAllErrorsAndCall(async () => {
+browser.runtime.onMessage.addListener((message: unknown, sender) => Promise.resolve(catchAllErrorsAndCall(async () => {
+	if (!canHandleSafeAppPreparationMessage(message, sender, browser.runtime.id, browser.runtime.getURL('/'))) return undefined
 	const { simulationServicesOwner } = await waitForBackgroundStartup()
 	const settings = await getSettings()
 	return await popupMessageHandler(websiteTabConnections, simulationServicesOwner, message, settings, rpcConnectionStatusPublisher.publishRpcConnectionStatus)
