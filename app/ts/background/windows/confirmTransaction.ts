@@ -13,7 +13,7 @@ import { type InterceptorTransactionStack, PASSTHROUGH_STATE, type WebsiteCreate
 import type { SendRawTransactionParams, SendTransactionParams } from '../../types/JsonRpc-types.js'
 import { refreshConfirmTransactionSimulation } from '../confirmTransactionSimulation.js'
 import { captureSimulationSnapshot, getUpdatedSimulationState } from '../simulationUpdating.js'
-import { getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
+import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getRpcConnectionStatus, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
 import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
 import { replyToInterceptedRequestAfterManifestV2Reconnect } from '../messageSending.js'
@@ -39,6 +39,8 @@ import { getDesiredMaxFeePerGasForBaseFee, getTransactionFeesForBaseFee, hasExpl
 import { parseSendRawTransaction } from '../../utils/sendRawTransactionParsing.js'
 import { normalizeEip7702AuthorizationList } from '../../utils/eip7702Authorization.js'
 import { requiresTransactionOverrideAcknowledgement } from '../../utils/transactionOverrideAcknowledgement.js'
+import { getSignerNonce } from '../../utils/signerFacingTransactionRequest.js'
+import { isWebsiteSocketApprovedForAddress } from '../accessManagement.js'
 import { identifyAddress } from '../metadataUtils.js'
 import { resolveInsufficientBalanceMessage } from '../../utils/insufficientBalance.js'
 import { prepareSafeTransactionConfirmation } from '../safeTransactionConfirmation.js'
@@ -364,13 +366,11 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 		if (pendingTransactionOrMessage.transactionOrMessageCreationStatus !== 'Simulated') {
 			throw new Error('Only fully simulated requests can be forwarded to the signer')
 		}
-		const requestSocket = pendingTransactionOrMessage.uniqueRequestIdentifier.requestSocket
-		const currentConnection = websiteTabConnections.get(requestSocket.tabId)?.connections[websiteSocketToString(requestSocket)]
 		const safeFlow = getSafePendingFlow(pendingTransactionOrMessage)
 		const authorizedWebsiteAddress = safeFlow?.kind === 'directExecution'
 			? safeFlow.pending.safeExecutionOriginalRequestParameters.params[0].from ?? pendingTransactionOrMessage.activeAddress
 			: pendingTransactionOrMessage.activeAddress
-		if (currentConnection?.approved !== true || currentConnection.approvedAddress !== authorizedWebsiteAddress) {
+		if (!isWebsiteSocketApprovedForAddress(websiteTabConnections, pendingTransactionOrMessage.uniqueRequestIdentifier.requestSocket, authorizedWebsiteAddress)) {
 			await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, {
 				approvalStatus: {
 					status: 'SignerError',
@@ -626,16 +626,23 @@ export function toCanonicalSendTransactionParams(transaction: EthereumUnsignedTr
 function getReviewedSignerFacingRequest(pending: PendingTransactionOrSignableMessage): SendTransactionParams | SendRawTransactionParams | SignMessageParams {
 	if (pending.type === 'SignableMessage') return pending.originalRequestParameters
 	if (pending.originalRequestParameters.method !== 'eth_sendTransaction') return pending.originalRequestParameters
-	if (getSafePendingFlow(pending) !== undefined) return pending.originalRequestParameters
+	const safeFlow = getSafePendingFlow(pending)
+	if (safeFlow !== undefined) return pending.originalRequestParameters
 	if (pending.transactionOrMessageCreationStatus !== 'Simulated') return pending.originalRequestParameters
 	// When the confirmation simulation fails, the popup shows only the website's own request and offers only rejection; an accept can only arrive from a stale or non-popup message, which resolvePendingTransactionOrMessage forwards only with forceSend. With no reviewed simulation to bind against, such an override forwards exactly the website's request and leaves omitted gas, fees and nonce to the wallet.
 	if (pending.popupVisualisation.statusCode !== 'success') return pending.originalRequestParameters
 	const reviewedTransaction = getReviewedTransactionForSigning(pending.transactionToSimulate.transaction, pending.popupVisualisation, pending.transactionIdentifier)
-	// The simulator repairs nonces against the latest block only for its preview, so its nonce is never forwarded: an omitted nonce stays wallet-selected because the wallet can see its own pending transactions, and a nonce the website supplied is forwarded unchanged so its ordering and replay protection hold. The popup shows the nonce that will be signed and notes a different simulated one.
-	const websiteNonce = pending.originalRequestParameters.params[0].nonce
-	if (websiteNonce === undefined) return toCanonicalSendTransactionParams(reviewedTransaction, 'wallet-selects-nonce')
-	if (reviewedTransaction.nonce !== websiteNonce) throw new Error('The reviewed transaction nonce does not match the nonce the website requested')
-	return toCanonicalSendTransactionParams(reviewedTransaction, 'forward-reviewed-nonce')
+	// The popup displays this same signer nonce, and notes a different simulated one.
+	const signerNonce = getSignerNonce(pending, safeFlow)
+	switch (signerNonce.kind) {
+		case 'simulated': throw new Error('Only transactions forwarded to the wallet have a signer-facing request')
+		case 'wallet-selected': return toCanonicalSendTransactionParams(reviewedTransaction, 'wallet-selects-nonce')
+		case 'website-requested': {
+			if (reviewedTransaction.nonce !== signerNonce.nonce) throw new Error('The reviewed transaction nonce does not match the nonce the website requested')
+			return toCanonicalSendTransactionParams(reviewedTransaction, 'forward-reviewed-nonce')
+		}
+		default: return assertNever(signerNonce)
+	}
 }
 
 type AuthorizationWithoutSignature = { readonly chainId: bigint, readonly address: bigint, readonly nonce: bigint }

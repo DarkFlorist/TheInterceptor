@@ -125,7 +125,7 @@ function hasWrongSenderNonce(call: unknown, chainNonce: bigint) {
 }
 
 async function getLatestDisplayedTransaction() {
-	const { getSignerNonce } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
+	const { getSignerNonce } = await import('../../app/ts/utils/signerFacingTransactionRequest.js')
 	const { getNonceDisplayText } = await import('../../app/ts/components/simulationExplaining/SimulationSummary.js')
 	const { getSafeTransactionPendingFlow } = await import('../../app/ts/safe/safePendingFlow.js')
 	const popupUpdate = browserMock.sentMessages.findLast((message) => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions')
@@ -276,7 +276,8 @@ test('the simulated transaction guard compares access lists and EIP-7702 authori
 })
 
 async function renderFailedSimulationView(renderInSimulationMode = false) {
-	const { FailedTransactionPreviewDetails, isFailedRequestForwardedToWallet } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
+	const { FailedTransactionPreviewDetails } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
+	const { isTransactionRequestForwardedToWallet } = await import('../../app/ts/utils/signerFacingTransactionRequest.js')
 	const { getSafeTransactionPendingFlow } = await import('../../app/ts/safe/safePendingFlow.js')
 	const popupUpdate = browserMock.sentMessages.findLast((message) => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions')
 	const [displayedRequest] = UpdateConfirmTransactionDialogPendingTransactions.parse(popupUpdate).data.pendingTransactionAndSignableMessages
@@ -289,7 +290,7 @@ async function renderFailedSimulationView(renderInSimulationMode = false) {
 		await act(() => {
 			render(h(FailedTransactionPreviewDetails, {
 				website: displayedRequest.website,
-				forwardsRequestToWallet: isFailedRequestForwardedToWallet(renderedRequest, getSafeTransactionPendingFlow(renderedRequest)),
+				forwardsRequestToWallet: isTransactionRequestForwardedToWallet(renderedRequest, getSafeTransactionPendingFlow(renderedRequest)),
 				transactionIdentifier: displayedRequest.transactionIdentifier,
 				originalRequestParameters: displayedRequest.originalRequestParameters,
 				addressMetaData: [],
@@ -449,7 +450,7 @@ test('a quarantined transaction from a successful simulation is forwarded only w
 })
 
 async function prepareAcceptAndRenderFeeFields(requestFields: Record<string, unknown>) {
-	const { getSignerNonce } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
+	const { getSignerNonce } = await import('../../app/ts/utils/signerFacingTransactionRequest.js')
 	const { RawTransactionDetailsCard } = await import('../../app/ts/components/simulationExplaining/SimulationSummary.js')
 	const { getSafeTransactionPendingFlow } = await import('../../app/ts/safe/safePendingFlow.js')
 	await browser.storage.local.set({ simulationMode: false })

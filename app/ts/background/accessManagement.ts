@@ -86,10 +86,17 @@ type VerifyAccessOptions = {
 	readonly ignoreConnectionApproval?: boolean
 }
 
-export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, askAccessIfUnknown: boolean, websiteOrigin: string, requestAccessForAddress: AddressBookEntry | undefined, settings: Settings, options: VerifyAccessOptions = {}): ApprovalState {
+// An address-bound request may use the socket's existing approval only when that approval was granted for the same address.
+export function isWebsiteSocketApprovedForAddress(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, address: bigint) {
 	const connection = getWebsiteSocketConnection(websiteTabConnections, socket)
-	if (connection?.approved && options.ignoreConnectionApproval !== true
-		&& (requestAccessForAddress === undefined || connection.approvedAddress === requestAccessForAddress.address)) return 'hasAccess'
+	return connection?.approved === true && connection.approvedAddress === address
+}
+
+export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, askAccessIfUnknown: boolean, websiteOrigin: string, requestAccessForAddress: AddressBookEntry | undefined, settings: Settings, options: VerifyAccessOptions = {}): ApprovalState {
+	const isConnectionApproved = requestAccessForAddress === undefined
+		? getWebsiteSocketConnection(websiteTabConnections, socket)?.approved === true
+		: isWebsiteSocketApprovedForAddress(websiteTabConnections, socket, requestAccessForAddress.address)
+	if (isConnectionApproved && options.ignoreConnectionApproval !== true) return 'hasAccess'
 	const access = requestAccessForAddress !== undefined ? hasAddressAccess(settings.websiteAccess, websiteOrigin, requestAccessForAddress) : hasAccess(settings.websiteAccess, websiteOrigin)
 	if (access === 'hasAccess') {
 		const popupRefreshGeneration = bumpPopupRefreshGeneration()

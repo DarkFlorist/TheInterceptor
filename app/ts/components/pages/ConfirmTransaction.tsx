@@ -3,7 +3,7 @@ import { useEffect } from 'preact/hooks'
 import { MessageToPopup, type TransactionConfirmation, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
 import { type CompleteVisualizedSimulation, type EditEnsNamedHashWindowState, type ModifyAddressWindowState, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
 import Hint from '../subcomponents/Hint.js'
-import { GasLimitEditor, RawTransactionDetailsCard, type SignerNonce, GasFee, TokenLogAnalysisCard, SimulatedInBlockNumber, TransactionCreated, TransactionHeader, TransactionHeaderForFailedToSimulate, TransactionsAccountChangesCard, NonTokenLogAnalysisCard, getSimulationDisplayBlockNumber } from '../simulationExplaining/SimulationSummary.js'
+import { GasLimitEditor, RawTransactionDetailsCard, GasFee, TokenLogAnalysisCard, SimulatedInBlockNumber, TransactionCreated, TransactionHeader, TransactionHeaderForFailedToSimulate, TransactionsAccountChangesCard, NonTokenLogAnalysisCard, getSimulationDisplayBlockNumber } from '../simulationExplaining/SimulationSummary.js'
 import { CenterToPageTextSpinner, Spinner } from '../subcomponents/Spinner.js'
 import { AddNewAddress } from './AddNewAddress.js'
 import type { RenameAddressCallBack, RpcConnectionStatus } from '../../types/user-interface-types.js'
@@ -46,6 +46,7 @@ import { AsyncActionButton, AsyncStatusIcon } from '../subcomponents/AsyncAction
 import type { SignerName } from '../../types/signerTypes.js'
 import { assertNever } from '../../utils/typescript.js'
 import { getSafeTransactionPendingFlow } from '../../safe/safePendingFlow.js'
+import { getSignerNonce, isTransactionRequestForwardedToWallet } from '../../utils/signerFacingTransactionRequest.js'
 
 type UnderTransactionsParams = {
 	pendingTransactionsAndSignableMessages: ReadonlySignal<PendingTransactionOrSignableMessage[]>
@@ -96,13 +97,6 @@ export function getAddressBookEntryForEdit(clickedEntry: AddressBookEntry, addre
 }
 
 const HALF_HEADER_HEIGHT = 48 / 2
-
-// Mirrors the background signer request: signing-mode sends forward the website's nonce unchanged or, when it was omitted, let the wallet pick one. Safe proposals are signed as typed data and never send this transaction.
-export function getSignerNonce(pending: SimulatedPendingTransaction, safeFlow: ReturnType<typeof getSafeTransactionPendingFlow>): SignerNonce {
-	if (pending.simulationMode || safeFlow?.kind === 'proposal' || pending.originalRequestParameters.method !== 'eth_sendTransaction') return { kind: 'simulated' }
-	const websiteNonce = pending.originalRequestParameters.params[0].nonce
-	return websiteNonce === undefined ? { kind: 'wallet-selected' } : { kind: 'website-requested', nonce: websiteNonce }
-}
 
 // Quarantined signature requests need this acknowledgement before confirming, so offer it wherever acknowledging lets the request proceed: always in signing mode, and in simulation mode when the simulation signer can sign it or the RPC can simulate it, matching shouldDisableSignableMessageConfirm.
 export function canAcknowledgeQuarantinedSignature(visualizedPersonalSignRequest: VisualizedPersonalSignRequest) {
@@ -250,11 +244,6 @@ type TransactionCardParams = {
 }
 
 const SELECTED_BY_WALLET = 'Selected by your wallet'
-
-// Simulation mode only adds the prepared transaction to the local simulation, and a Safe proposal sends the wallet typed data instead of this request.
-export function isFailedRequestForwardedToWallet(pending: SimulatedPendingTransaction, safeFlow: ReturnType<typeof getSafeTransactionPendingFlow>) {
-	return !pending.simulationMode && safeFlow?.kind !== 'proposal'
-}
 
 function getRequestedFeesText(request: Extract<OriginalSendRequestParameters, { method: 'eth_sendTransaction' }>['params'][0]) {
 	const fees = [
@@ -419,7 +408,7 @@ function TransactionCardContent(param: TransactionCardContentParams) {
 		return <>
 			<FailedTransactionPreviewDetails
 				website = { currentPendingTransaction.transactionToSimulate.website }
-				forwardsRequestToWallet = { isFailedRequestForwardedToWallet(currentPendingTransaction, safeFlow) }
+				forwardsRequestToWallet = { isTransactionRequestForwardedToWallet(currentPendingTransaction, safeFlow) }
 				transactionIdentifier = { currentPendingTransaction.transactionIdentifier }
 				originalRequestParameters = { currentPendingTransaction.originalRequestParameters }
 				addressMetaData = { addressMetaData }

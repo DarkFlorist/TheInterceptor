@@ -32,6 +32,7 @@ import { identifySignature } from './identifySignature.js'
 import { Collapsible } from '../subcomponents/Collapsible.js'
 import { EnsEventsExplainer, getVisibleEnsEvents } from './customExplainers/EnsEventExplainer.js'
 import { assertNever } from '../../utils/typescript.js'
+import type { SignerNonce } from '../../utils/signerFacingTransactionRequest.js'
 
 type Erc20BalanceChangeParams = {
 	erc20TokenBalanceChanges: Erc20TokenBalanceChange[]
@@ -936,9 +937,6 @@ type RawTransactionDetailsCardParams = {
 	isRawTransaction: boolean,
 	signerNonce: SignerNonce,
 }
-
-// The nonce the wallet will sign: the simulated one in simulation mode, one the wallet picks for requests that omitted it, or exactly the one the website requested.
-export type SignerNonce = { readonly kind: 'simulated' } | { readonly kind: 'wallet-selected' } | { readonly kind: 'website-requested', readonly nonce: bigint }
 
 export function getNonceDisplayText(simulatedNonce: bigint, signerNonce: SignerNonce) {
 	switch (signerNonce.kind) {
