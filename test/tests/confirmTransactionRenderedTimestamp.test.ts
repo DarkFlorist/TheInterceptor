@@ -21,6 +21,8 @@ function createBrowserMock() {
 	const storageState: Record<string, unknown> = {}
 	let getCurrentWindow: CurrentWindowProvider = async () => ({ id: 1 })
 	let confirmDialogHandler: ConfirmDialogHandler | undefined
+	const readyAndListeningWithoutBootstrap = { method: 'popup_readyAndListening', data: { popupOrTabId: { type: 'popup', id: 1 } } }
+	let readyAndListeningReply: () => unknown = () => readyAndListeningWithoutBootstrap
 
 	const getStorageItems = (keys?: string | string[] | Record<string, unknown> | null) => {
 		if (keys === undefined || keys === null) return { ...storageState }
@@ -37,9 +39,7 @@ function createBrowserMock() {
 				if (message?.method === 'popup_isMainPopupWindowOpen') {
 					return { method: 'popup_isMainPopupWindowOpen', data: { isOpen: true } }
 				}
-				if (message?.method === 'popup_readyAndListening') {
-					return { method: 'popup_readyAndListening', data: { popupOrTabId: { type: 'popup', id: 1 } } }
-				}
+				if (message?.method === 'popup_readyAndListening') return readyAndListeningReply()
 				if (message?.method === 'popup_confirmDialog') await confirmDialogHandler?.(message)
 				return undefined
 			},
@@ -103,6 +103,8 @@ function createBrowserMock() {
 		},
 		setCurrentWindowProvider(provider: CurrentWindowProvider) { getCurrentWindow = provider },
 		setConfirmDialogHandler(handler: ConfirmDialogHandler) { confirmDialogHandler = handler },
+		// Replies to each ready handshake; the default reply carries no bootstrap data, as before the background has pending requests.
+		setReadyAndListeningReply(reply: (withoutBootstrap: unknown) => unknown) { readyAndListeningReply = () => reply(readyAndListeningWithoutBootstrap) },
 	}
 }
 
@@ -112,6 +114,57 @@ async function unmountConfirmTransaction(dom: ReturnType<typeof installDomMock>)
 	await act(() => {
 		render(null, dom.document.body)
 	})
+}
+
+// A stored personal_sign request that is ready to confirm, as the popup reads it directly from storage.
+function makeStoredSignatureRequest() {
+	const activeAddress = 0x1111111111111111111111111111111111111111n
+	const created = new Date('2024-01-01T00:00:00.000Z')
+	const website = { websiteOrigin: 'https://example.com', icon: undefined, title: undefined }
+	const uniqueRequestIdentifier = { requestId: 1, requestSocket: { tabId: 1, connectionName: 0n } }
+	const originalRequestParameters = { method: 'personal_sign' as const, params: ['0x68656c6c6f', activeAddress] as const }
+	const rpcNetwork = { name: 'Ethereum Mainnet', chainId: 1n, httpsRpc: 'https://rpc.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
+	const signer = { type: 'contact' as const, name: 'Signer', address: activeAddress, entrySource: 'User' as const, chainId: 1n }
+	return {
+		type: 'SignableMessage' as const,
+		popupOrTabId: { type: 'popup' as const, id: 1 },
+		originalRequestParameters,
+		simulationMode: false,
+		uniqueRequestIdentifier,
+		signedMessageTransaction: {
+			website,
+			created,
+			fakeSignedFor: activeAddress,
+			originalRequestParameters,
+			request: { ...originalRequestParameters, interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier },
+			simulationMode: false,
+			messageIdentifier: 1n,
+		},
+		created,
+		website,
+		activeAddress,
+		approvalStatus: { status: 'WaitingForUser' as const },
+		transactionOrMessageCreationStatus: 'Simulated' as const,
+		visualizedPersonalSignRequest: {
+			activeAddress: signer,
+			rpcNetwork,
+			simulationMode: false,
+			signerName: 'NoSignerDetected' as const,
+			quarantineReasons: [],
+			quarantine: false,
+			account: signer,
+			website,
+			created,
+			rawMessage: 'hello',
+			stringifiedMessage: 'hello',
+			messageIdentifier: 1n,
+			isValidMessage: true,
+			method: 'personal_sign' as const,
+			type: 'NotParsed' as const,
+			message: 'hello',
+			messageHash: undefined,
+		},
+	}
 }
 
 function makePendingTransaction(simulationConductedTimestamp: Date, value?: bigint) {
@@ -794,6 +847,49 @@ describe('ConfirmTransaction', () => {
 		await dispatchPendingTransactions(browser, [{ ...newQuarantineReason, uniqueRequestIdentifier: { ...newQuarantineReason.uniqueRequestIdentifier, requestId: 2 } }])
 		assert.equal(isSendAnywayTicked(dom), false, 'the override does not carry over to the next request')
 		assert.equal(isConfirmEnabled(dom), false)
+
+		await unmountConfirmTransaction(dom)
+		dom.restore()
+	})
+
+	test('keeps retrying the bootstrap handshake after the storage first paint until the background copy makes a signature request confirmable', async () => {
+		const dom = installDomMock()
+		const browser = createBrowserMock()
+		const { PendingTransactionOrSignableMessage: StoredRequest } = await import('../../app/ts/types/accessRequest.js')
+		const { PopupRequestsReplies } = await import('../../app/ts/types/interceptor-reply-messages.js')
+		const { createPassthroughCompleteVisualizedSimulation } = await import('../../app/ts/types/visualizer-types.js')
+		const { CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
+		const stored = StoredRequest.parse(serialize(StoredRequest, makeStoredSignatureRequest()))
+		await browser.storage.local.set({ pendingTransactionsAndMessages: [serialize(StoredRequest, stored)] })
+		// The first two handshakes find the background not ready yet; later ones carry the background copy. Signature requests get no block-triggered push to fall back on.
+		let readyHandshakes = 0
+		browser.setReadyAndListeningReply((withoutBootstrap) => {
+			readyHandshakes += 1
+			if (readyHandshakes <= 2) return withoutBootstrap
+			return serialize(PopupRequestsReplies.popup_readyAndListening, {
+				method: 'popup_readyAndListening',
+				data: {
+					popupOrTabId: { type: 'popup', id: 1 },
+					confirmTransactionBootstrap: {
+						pendingTransactionAndSignableMessages: [toPopupPendingTransactionOrSignableMessage(stored)],
+						currentBlockNumber: 123n,
+						rpcConnectionStatus: undefined,
+						visualizedSimulatorState: createPassthroughCompleteVisualizedSimulation(),
+					},
+				},
+			})
+		})
+
+		await act(() => {
+			render(h(ConfirmTransaction, {}), dom.document.body)
+		})
+		for (let turn = 0; turn < 50 && findConfirmButton(dom) === undefined; turn++) await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+		assert.notEqual(findConfirmButton(dom), undefined, 'the stored signature request is shown')
+		assert.equal(isConfirmEnabled(dom), false, 'the storage first paint has no reviewed-result id')
+
+		await act(async () => { await new Promise((resolve) => setTimeout(resolve, CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS * 3)) })
+		assert.equal(readyHandshakes >= 3, true, 'the handshake is retried after the storage first paint')
+		assert.equal(isConfirmEnabled(dom), true, 'the bootstrapped background copy makes the request confirmable without a push update')
 
 		await unmountConfirmTransaction(dom)
 		dom.restore()

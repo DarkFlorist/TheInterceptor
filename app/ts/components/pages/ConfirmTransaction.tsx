@@ -15,7 +15,7 @@ import { identifyTransaction } from '../simulationExplaining/identifyTransaction
 import { DinoSaysNotification } from '../subcomponents/DinoSays.js'
 import { addressEditEntry, tryFocusingTabOrWindow } from '../ui-utils.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
-import type { ShownPendingTransactionOrSignableMessage as PendingTransactionOrSignableMessage, SimulatedPendingTransaction } from '../../types/accessRequest.js'
+import type { PopupPendingTransactionOrSignableMessage, ShownPendingTransactionOrSignableMessage as PendingTransactionOrSignableMessage, SimulatedPendingTransaction } from '../../types/accessRequest.js'
 import { WebsiteOriginText } from '../subcomponents/address.js'
 import { SmallAddress } from '../subcomponents/address.js'
 import { TransactionInput } from '../subcomponents/ParsedInputData.js'
@@ -70,19 +70,22 @@ type ConfirmTransactionBootstrapData = {
 }
 
 async function bootstrapConfirmTransactionDialog(
-	hasLoadedPendingTransaction: () => boolean,
+	hasReceivedBackgroundCopy: () => boolean,
 	applyBootstrapData: (bootstrapData: ConfirmTransactionBootstrapData) => void,
 ) {
 	for (let attempt = 0; attempt < CONFIRM_TRANSACTION_BOOTSTRAP_MAX_ATTEMPTS; attempt++) {
-		if (hasLoadedPendingTransaction()) return
+		if (hasReceivedBackgroundCopy()) return
 		const reply = await sendPopupMessageWithReply({ method: 'popup_readyAndListening', data: { page: 'confirmTransaction' } })
 		if (reply?.method === 'popup_readyAndListening' && reply.data.confirmTransactionBootstrap !== undefined) {
 			applyBootstrapData(reply.data.confirmTransactionBootstrap)
 		}
-		if (hasLoadedPendingTransaction()) return
+		if (hasReceivedBackgroundCopy()) return
 		await waitForDelay(CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS)
 	}
 }
+
+// Only the background's copies carry the reviewed-result id an accept needs; requests read directly from storage for the first paint do not.
+const isBackgroundCopy = (pending: PendingTransactionOrSignableMessage | undefined): pending is PopupPendingTransactionOrSignableMessage => pending !== undefined && 'reviewedResultId' in pending
 
 async function hydratePendingTransactionsFromStorage() {
 	return (await browserStorageLocalGet2('pendingTransactionsAndMessages')).pendingTransactionsAndMessages ?? []
@@ -904,7 +907,8 @@ export function ConfirmTransaction() {
 			if (bootstrapData === undefined) return
 			applyBootstrapData(bootstrapData)
 		})
-		void bootstrapConfirmTransactionDialog(() => cancelled || currentPendingTransactionOrSignableMessage.value !== undefined, applyBootstrapData)
+		// Keeps retrying while only the storage first paint is shown, since confirming needs the background's copy.
+		void bootstrapConfirmTransactionDialog(() => cancelled || isBackgroundCopy(currentPendingTransactionOrSignableMessage.value), applyBootstrapData)
 		sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
 		return () => {
 			cancelled = true
@@ -956,7 +960,7 @@ export function ConfirmTransaction() {
 	}
 	const approve = () => {
 		const pending = currentPendingTransactionOrSignableMessage.value
-		if (pending === undefined || !('reviewedResultId' in pending)) return
+		if (!isBackgroundCopy(pending)) return
 		// Captured at click time, so results that arrive while the approval is in flight cannot change what is accepted.
 		const accept: TransactionConfirmation = { method: 'popup_confirmDialog', data: {
 			uniqueRequestIdentifier: pending.uniqueRequestIdentifier,
@@ -992,9 +996,7 @@ export function ConfirmTransaction() {
 
 	const isConfirmDisabled = useComputed(() => {
 		const pending = currentPendingTransactionOrSignableMessage.value
-		if (pending === undefined) return true
-		// A request read directly from storage has no reviewed-result id until the background's copy of it arrives.
-		if (!('reviewedResultId' in pending)) return true
+		if (!isBackgroundCopy(pending)) return true
 		if (pending.transactionOrMessageCreationStatus !== 'Simulated') return true
 		if (shouldDisableConfirmForApprovalStatus(pending.approvalStatus)) return true
 		if (isRejectOnlyTransaction(pending)) return true
