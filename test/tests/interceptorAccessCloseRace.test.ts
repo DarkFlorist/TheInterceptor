@@ -15,12 +15,15 @@ let activeTabRemovedListeners: Listener[] = []
 let activeStorageState: Record<string, unknown> = {}
 let activePendingAccessClearHook: (() => void) | undefined
 let activePendingAccessReadHook: (() => void) | undefined
+let settingsReadsUntilFailure: number | undefined
 
 function installBrowserMock() {
 	const storageState: Record<string, unknown> = {}
 	activeStorageState = storageState
 	activePendingAccessClearHook = undefined
 	activePendingAccessReadHook = undefined
+	settingsReadsUntilFailure = undefined
+	const removedDialogs: { readonly type: 'popup' | 'tab', readonly id: number }[] = []
 	const windowRemovedListeners = [...registeredWindowRemovedListeners]
 	const tabRemovedListeners = [...registeredTabRemovedListeners]
 	activeWindowRemovedListeners = windowRemovedListeners
@@ -41,6 +44,10 @@ function installBrowserMock() {
 		storage: {
 			local: {
 				async get(keys?: string | string[] | Record<string, unknown> | null) {
+					if (Array.isArray(keys) && keys.includes('websiteAccess') && keys.includes('activeRpcNetwork') && settingsReadsUntilFailure !== undefined) {
+						settingsReadsUntilFailure -= 1
+						if (settingsReadsUntilFailure === 0) throw new Error('Extension storage is temporarily unavailable')
+					}
 					const result = (() => {
 						if (keys === undefined || keys === null) return { ...activeStorageState }
 						if (Array.isArray(keys)) return Object.fromEntries(keys.filter((key) => key in activeStorageState).map((key) => [key, activeStorageState[key]]))
@@ -75,7 +82,10 @@ function installBrowserMock() {
 			async query() { return [] },
 			async get(tabId: number) { return { id: tabId, active: true, status: 'complete', favIconUrl: '' } },
 			async update() { return undefined },
-			async remove() { return undefined },
+			async remove(tabId: number) {
+				removedDialogs.push({ type: 'tab', id: tabId })
+				return undefined
+			},
 			onUpdated: { addListener: (_listener: Listener) => undefined, removeListener: (_listener: Listener) => undefined },
 			onRemoved: {
 				addListener(listener: Listener) {
@@ -96,7 +106,10 @@ function installBrowserMock() {
 			},
 			async get(windowId: number) { return { id: windowId, focused: true } },
 			async update() { return undefined },
-			async remove() { return undefined },
+			async remove(windowId: number) {
+				removedDialogs.push({ type: 'popup', id: windowId })
+				return undefined
+			},
 			onRemoved: {
 				addListener(listener: Listener) {
 					registeredWindowRemovedListeners.add(listener)
@@ -133,6 +146,12 @@ function installBrowserMock() {
 
 	return {
 		postedMessages,
+		removedDialogs,
+		dialogCloseListenerCount: () => windowRemovedListeners.length + tabRemovedListeners.length,
+		// Fails the settings read that is `readNumber` reads from now (1 is the next read).
+		failSettingsRead(readNumber: number) {
+			settingsReadsUntilFailure = readNumber
+		},
 		onPendingAccessClear(hook: () => void) {
 			activePendingAccessClearHook = hook
 		},
@@ -147,6 +166,26 @@ function installBrowserMock() {
 		},
 	}
 }
+
+const hasErrorCode = (message: unknown, code: number) => typeof message === 'object' && message !== null && 'error' in message && typeof message.error === 'object' && message.error !== null && 'code' in message.error && message.error.code === code
+
+const createAccessRequestSettings = (): Settings => ({
+	activeSimulationAddress: undefined,
+	activeSigningAddress: undefined,
+	openedPage: { page: 'Home' },
+	useSignersAddressAsActiveAddress: false,
+	websiteAccess: [],
+	simulationMode: true,
+	activeRpcNetwork: {
+		name: 'Test RPC',
+		chainId: 1n,
+		httpsRpc: 'https://example.invalid',
+		currencyName: 'Ether',
+		currencyTicker: 'ETH',
+		primary: true,
+		minimized: true,
+	},
+})
 
 async function loadModules() {
 	return {
@@ -450,5 +489,56 @@ describe('interceptor access close handling', () => {
 		} finally {
 			await setUseTabsInsteadOfPopup(false)
 		}
+	})
+
+	test.each([false, true])('closes the access dialog it opened when website approvals become unreadable before registration (tabs instead of popups: %p)', async (useTabsInsteadOfPopup) => {
+		const browserMock = installBrowserMock()
+		const { getPendingAccessRequests, requestAccessFromUser, setUseTabsInsteadOfPopup, websiteSocketToString } = await loadModules()
+		const website = { websiteOrigin: 'https://unreadable-registration.example.test', icon: undefined, title: undefined }
+		const socket: WebsiteSocket = { tabId: 1, connectionName: 0n }
+		const port = { name: '0x0', sender: { tab: { id: socket.tabId } }, postMessage(message: unknown) { browserMock.postedMessages.push(message) } } as unknown as browser.runtime.Port
+		const websiteTabConnections: WebsiteTabConnections = new Map([[socket.tabId, { connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin: website.websiteOrigin, approved: false, wantsToConnect: true },
+		} }]])
+		const request: InterceptedRequest = { interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier: { requestId: 31, requestSocket: socket }, method: 'eth_accounts' }
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		await setUseTabsInsteadOfPopup(useTabsInsteadOfPopup)
+		const listenersBeforeRequest = browserMock.dialogCloseListenerCount()
+		// The access check before opening the dialog succeeds; the re-check while registering the pending request fails.
+		browserMock.failSettingsRead(2)
+		try {
+			await requestAccessFromUser(simulationServicesOwner, websiteTabConnections, socket, website, request, undefined, createAccessRequestSettings(), undefined, async () => undefined)
+		} finally {
+			await setUseTabsInsteadOfPopup(false)
+		}
+
+		assert.deepEqual(browserMock.removedDialogs, [{ type: useTabsInsteadOfPopup ? 'tab' : 'popup', id: 1 }])
+		assert.equal(browserMock.dialogCloseListenerCount(), listenersBeforeRequest)
+		assert.deepEqual(await getPendingAccessRequests(), [])
+		assert.equal(browserMock.postedMessages.filter((message) => hasErrorCode(message, 4900)).length, 1)
+	})
+
+	test('keeps an access dialog that serves other pending requests when website approvals become unreadable before registration', async () => {
+		const browserMock = installBrowserMock()
+		const { getPendingAccessRequests, requestAccessFromUser, websiteSocketToString } = await loadModules()
+		const pendingWebsite = { websiteOrigin: 'https://pending.example.test', icon: undefined, title: undefined }
+		const website = { websiteOrigin: 'https://unreadable-follow-up.example.test', icon: undefined, title: undefined }
+		const socket: WebsiteSocket = { tabId: 1, connectionName: 0n }
+		const port = { name: '0x0', sender: { tab: { id: socket.tabId } }, postMessage(message: unknown) { browserMock.postedMessages.push(message) } } as unknown as browser.runtime.Port
+		const websiteTabConnections: WebsiteTabConnections = new Map([[socket.tabId, { connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin: website.websiteOrigin, approved: false, wantsToConnect: true },
+		} }]])
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		await requestAccessFromUser(simulationServicesOwner, websiteTabConnections, socket, pendingWebsite, undefined, undefined, createAccessRequestSettings(), undefined, undefined)
+		assert.equal((await getPendingAccessRequests()).length, 1)
+		const request: InterceptedRequest = { interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier: { requestId: 32, requestSocket: socket }, method: 'eth_accounts' }
+		browserMock.failSettingsRead(2)
+
+		await requestAccessFromUser(simulationServicesOwner, websiteTabConnections, socket, website, request, undefined, createAccessRequestSettings(), undefined, async () => undefined)
+
+		assert.deepEqual(browserMock.removedDialogs, [])
+		assert.deepEqual((await getPendingAccessRequests()).map((pendingRequest) => pendingRequest.website.websiteOrigin), [pendingWebsite.websiteOrigin])
+		assert.equal(browserMock.postedMessages.filter((message) => hasErrorCode(message, 4900)).length, 1)
+		await browserMock.closeAccessDialog()
 	})
 })

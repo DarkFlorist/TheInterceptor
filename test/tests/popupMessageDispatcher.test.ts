@@ -95,7 +95,7 @@ Reflect.set(globalThis, 'browser', {
 const [
 	{ dispatchPopupMessage },
 	{ websiteSocketToString },
-	{ getLatestUnexpectedError, setFetchSimulationStackRequestPromise },
+	{ getLatestUnexpectedError, setFetchSimulationStackRequestPromise, updatePendingAccessRequests },
 	{ EthereumClientService: EthereumClientServiceConstructor },
 	{ TokenPriceService: TokenPriceServiceConstructor },
 	{ MessageToPopup },
@@ -314,6 +314,49 @@ describe('popup message dispatcher seams', () => {
 			ok: false,
 			message: 'Interceptor RPC configuration is unavailable. Network requests are paused until the user restores it.',
 		})
+	})
+
+	test('ready-and-listening bootstraps and publishes pending access requests while the active RPC network is unavailable', async () => {
+		storageState.activeRpcNetwork = 'corrupt'
+		const context = createDispatcherContext(async () => undefined)
+		context.settings = undefined
+		context.rpcConfiguration = { status: 'unavailable', reason: 'corrupt' }
+		context.simulationServicesOwner.clear()
+		const popupOrTabId = { type: 'popup', id: 8 } as const
+		const website = { websiteOrigin: 'pending-access.test', icon: undefined, title: undefined }
+		await updatePendingAccessRequests(async () => [{
+			website,
+			requestAccessToAddress: undefined,
+			originalRequestAccessToAddress: undefined,
+			associatedAddresses: [],
+			signerAccounts: [],
+			signerName: 'NoSigner',
+			simulationMode: true,
+			popupOrTabId,
+			socket: { tabId: 1, connectionName: 0n },
+			request: undefined,
+			activeAddress: undefined,
+			accessRequestId: 'undefined || pending-access.test',
+		}])
+		const originalWarn = console.warn
+		console.warn = () => undefined
+		try {
+			assert.deepEqual(await dispatchPopupMessage(context, { method: 'popup_readyAndListening', data: { page: 'interceptorAccess' } }), {
+				method: 'popup_readyAndListening',
+				ok: true,
+				data: { popupOrTabId, confirmTransactionBootstrap: undefined },
+			})
+		} finally {
+			console.warn = originalWarn
+		}
+
+		const published = sentMessages.flatMap((message) => {
+			const parsed = MessageToPopup.safeParse(message)
+			return parsed.success && parsed.value.method === 'popup_interceptorAccessDialog' ? [parsed.value.data] : []
+		})
+		assert.equal(published.length, 1)
+		assert.deepEqual(published[0]?.activeAddresses, [])
+		assert.deepEqual(published[0]?.pendingAccessRequests.map((pendingRequest) => pendingRequest.website.websiteOrigin), [website.websiteOrigin])
 	})
 
 	test('snapshot registration captures at invocation and keeps one pair across awaits', async () => {

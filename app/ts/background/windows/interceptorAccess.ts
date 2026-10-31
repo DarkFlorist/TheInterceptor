@@ -8,7 +8,7 @@ import { handleInterceptedRequest, refuseAccess } from '../background.js'
 import { activateAddressSelection } from '../activeSettings.js'
 import { INTERNAL_CHANNEL_NAME, createInternalMessageListener, getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
 import { getActiveAddressEntryForChain, getActiveAddresses, getWalletActiveAddressEntryForChain } from '../metadataUtils.js'
-import { captureRpcNetwork, getRequiredSettings, getSettingsForCapturedRpcNetwork } from '../settings.js'
+import { captureRpcNetwork, getRequiredSettings, getSettingsForCapturedRpcNetwork, getSettingsSnapshot } from '../settings.js'
 import { getTabState, updatePendingAccessRequests, getPendingAccessRequests, clearPendingAccessRequests } from '../storageVariables.js'
 import { doesUniqueRequestIdentifiersMatch, type InterceptedRequest, type WebsiteSocket } from '../../utils/requests.js'
 import { replyToInterceptedRequest, sendSubscriptionReplyOrCallBackToPort } from '../messageSending.js'
@@ -31,6 +31,14 @@ type OpenedDialogWithListeners = {
 } | undefined
 
 let openedDialog: OpenedDialogWithListeners 
+
+async function closeOpenedDialog() {
+	if (openedDialog === undefined) return
+	const { popupOrTab, onClosePopup, onCloseTab } = openedDialog
+	removeWindowTabListeners(onClosePopup, onCloseTab)
+	openedDialog = undefined
+	await closePopupOrTabById(popupOrTab)
+}
 
 const pendingInterceptorAccessSemaphore = new Semaphore(1)
 // Signer account replies identify the tab-wide signer owner but not the originating request. Keep one round trip active per tab so requests from sibling frames cannot settle each other.
@@ -150,8 +158,10 @@ export function filterAccessDialogAddressesForChain(activeAddresses: AddressBook
 	return activeAddresses.filter((entry) => entry.type !== 'safe' || entry.chainId === chainId)
 }
 
+// The address selection is chain dependent, so it is empty while the active RPC network is unavailable; pending requests are still published so the dialog can show and refuse them.
 async function getAccessDialogActiveAddresses() {
-	const settings = await getRequiredSettings()
+	const { settings } = await getSettingsSnapshot()
+	if (settings === undefined) return []
 	return filterAccessDialogAddressesForChain(await getActiveAddresses(), settings.activeRpcNetwork.chainId)
 }
 
@@ -420,6 +430,8 @@ export async function requestAccessFromUser(
 		})
 		if (websiteAccessUnreadable) {
 			replyRpcConfigurationUnavailable()
+			// A dialog opened for this request would otherwise stay open and empty; a dialog that still serves other pending requests stays open.
+			if (!justAddToPending && pendingRequests.current.length === 0) await closeOpenedDialog()
 			return undefined
 		}
 		const oldPendingRequest = pendingRequests.previous.find((x) => x.accessRequestId === accessRequestId)
