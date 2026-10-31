@@ -1,7 +1,8 @@
+import { runWithSignerSelectionGate } from './signerExecutionAuthority.js'
 import { getRpcEntryIdentityKey } from '../utils/rpcNetworkChange.js'
 import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
-import type { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, StoredWatchAssetRequest, TabState } from '../types/user-interface-types.js'
+import type { WebsiteTabConnections, PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, StoredWatchAssetRequest, TabState } from '../types/user-interface-types.js'
 import { type PartialIdsOfOpenedTabs, browserStorageLocalGet, browserStorageLocalGet2Result, browserStorageLocalRemove, browserStorageLocalSet, browserStorageLocalSet2, getTabStateFromStorage, parseTabStateItems, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
 import { CompleteVisualizedSimulation, type EthereumSubscriptionsAndFilters, InterceptorTransactionStack, createPassthroughCompleteVisualizedSimulation } from '../types/visualizer-types.js'
 import { browserStorageLocalSafeParseGet } from '../utils/storageUtils.js'
@@ -59,8 +60,19 @@ export async function getPendingTransactionsAndMessages(): Promise<readonly Pend
 	return await pendingTransactionsSemaphore.execute(readPendingTransactionsAndMessagesWithRecovery)
 }
 
+// Creation acquires its selection reservation here; raw list and chain-confirmation writes remain private to this storage module.
+export async function appendPendingTransactionOrMessage(websiteTabConnections: WebsiteTabConnections, pending: PendingTransactionOrSignableMessage) {
+	await runWithSignerSelectionGate(websiteTabConnections, pending.uniqueRequestIdentifier.requestSocket.tabId, async () => await updatePendingTransactionOrMessages(async (previous) => [...previous, pending]))
+}
+
+export async function setChainChangeConfirmationPromise(websiteTabConnections: WebsiteTabConnections, pending: PendingChainChangeConfirmationPromise | undefined) {
+	// Removing work cannot introduce a selection conflict and must not wait behind an active selection.
+	if (pending === undefined) return await writeChainChangeConfirmation(undefined)
+	return await runWithSignerSelectionGate(websiteTabConnections, pending.request.uniqueRequestIdentifier.requestSocket.tabId, async () => await writeChainChangeConfirmation(pending))
+}
+
 export const clearPendingTransactions = async () => await updatePendingTransactionOrMessages(async () => [])
-export async function updatePendingTransactionOrMessages(update: (pendingTransactionsOrMessages: readonly PendingTransactionOrSignableMessage[]) => Promise<readonly PendingTransactionOrSignableMessage[]>) {
+async function updatePendingTransactionOrMessages(update: (pendingTransactionsOrMessages: readonly PendingTransactionOrSignableMessage[]) => Promise<readonly PendingTransactionOrSignableMessage[]>) {
 	return await pendingTransactionsSemaphore.execute(async () => {
 		const pendingTransactionsAndMessages = await update(await readPendingTransactionsAndMessagesWithRecovery())
 		await browserStorageLocalSet2({ pendingTransactionsAndMessages })
@@ -88,7 +100,7 @@ export async function removePendingTransactionOrMessage(uniqueRequestIdentifier:
 }
 
 export const getChainChangeConfirmationPromise = async() => (await browserStorageLocalGet('chainChangeConfirmationPromise'))?.chainChangeConfirmationPromise ?? undefined
-export async function writeChainChangeConfirmation(chainChangeConfirmationPromise: PendingChainChangeConfirmationPromise | undefined) {
+async function writeChainChangeConfirmation(chainChangeConfirmationPromise: PendingChainChangeConfirmationPromise | undefined) {
 	if (chainChangeConfirmationPromise === undefined) return await browserStorageLocalRemove('chainChangeConfirmationPromise')
 	return await browserStorageLocalSet({ chainChangeConfirmationPromise })
 }

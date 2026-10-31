@@ -884,7 +884,11 @@ class InterceptorMessageListener {
 		if (!internal) {
 			if (!this.initialSignerProviderCatalogReconciled) await this.initialSignerProviderCatalogReconciliation
 			// Startup can request another signer status handshake as the initial catalog settles. Wait for its identity before the background captures a request token.
-			await this.waitForLatestSignerConnectionTransition()
+			for (;;) {
+				await this.waitForLatestSignerConnectionTransition()
+				if (!this.signerProviders.isRecoveringSignerConnection()) break
+				await this.signerProviders.waitForSignerConnectionRecovery()
+			}
 		}
 		await this.contentScriptBridgeInitialized
 		if (pendingSignerReply !== undefined) {
@@ -1931,7 +1935,8 @@ class InterceptorMessageListener {
 			if (preserveProviderGeneration) throw error
 			this.reportSignerDiscoveryError('report signer connection status', error)
 		})
-		this.latestSignerConnectionTransition = transition
+		// Public callers wait for completion and the recovery barrier; the coordinator receives the rejecting transition so it can retry. A failed control-plane report must never become a cached dapp error.
+		this.latestSignerConnectionTransition = transition.catch((error: unknown) => this.reportSignerDiscoveryError('report signer recovery status', error))
 		for (const waiter of this.signerConnectionTransitionChangeWaiters) waiter.resolve(undefined)
 		this.signerConnectionTransitionChangeWaiters.clear()
 		return transition

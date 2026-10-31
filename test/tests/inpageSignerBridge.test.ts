@@ -1258,6 +1258,46 @@ describe('inpage signer bridge', () => {
 		})
 	})
 
+	for (const failureMode of ['error', 'reconnect']) test.each(['eth_sendTransaction', 'personal_sign', 'wallet_switchEthereumChain'])(`holds %s through recovery status ${ failureMode } until retry succeeds`, async (method) => {
+		const requests: InpageRequest[] = []
+		let recoveryAttempt = 0
+		let releaseRecoveryRetry: (() => void) | undefined
+		const { fakeWindow, notifyBridgeReconnected } = createFakeWindow({
+			handleRequest: (request, reply) => {
+				requests.push(request)
+				if (request.method === 'signer_providers_changed' && request.params?.[2] !== undefined) {
+					recoveryAttempt++
+					if (recoveryAttempt === 2) {
+						releaseRecoveryRetry = () => reply({ interceptorApproved: true, type: 'result', method: request.method, requestId: request.requestId, result: { signerConnectionRecoveryStatus: 'recovered' } })
+						return true
+					}
+				}
+				if (request.method === 'connected_to_signer' && recoveryAttempt === 1) {
+					if (failureMode === 'reconnect') {
+						queueMicrotask(() => notifyBridgeReconnected())
+						return true
+					}
+					reply({ interceptorApproved: true, type: 'result', method: request.method, requestId: request.requestId, error: { code: -32603, message: 'Recovery status storage read failed' } })
+					return true
+				}
+				return false
+			},
+		})
+		await withFakeInpageWindow(fakeWindow, `../../app/inpage/ts/inpage.js?failed-recovery-status-${ failureMode }-${ method }`, async () => {
+			await fakeWindow.ethereum.request({ method: 'net_version' })
+			notifyBridgeReconnected()
+			await waitFor(() => releaseRecoveryRetry !== undefined)
+			let settled = false
+			const outcome = fakeWindow.ethereum.request({ method }).then((reply) => { settled = true; return { reply } }, (error: unknown) => { settled = true; return { error } })
+			await new Promise((resolve) => setTimeout(resolve, 0))
+			assert.equal(settled, false, 'A failed internal report must not leak into a public request')
+			assert.equal(requests.filter((request) => request.method === method).length, 0, 'Recovery must finish before public dispatch')
+			releaseRecoveryRetry?.()
+			assert.deepEqual(await outcome, { reply: '0x' })
+			assert.equal(requests.filter((request) => request.method === method).length, 1)
+		})
+	})
+
 	test.each(['legacy', 'eip6963'])('recovers an in-flight %s wallet call without changing its provider epoch or applying a queued wallet switch', async (mode) => {
 		const requests: InpageRequest[] = []
 		let signerCallStarted = false

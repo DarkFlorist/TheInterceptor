@@ -1,3 +1,4 @@
+import { hasLiveWebsiteConnections } from './websiteTabConnections.js'
 import { getFrameVisibleAccounts } from './accountIdentityPolicy.js'
 import { getActiveAddress, getActiveAddressesForAllTabs, getWebsiteSocketConnection, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
 import { getActiveAddressEntryForChain, getActiveAddresses } from './metadataUtils.js'
@@ -438,7 +439,7 @@ export async function finishWebsiteAccessUpdate(
 	}
 	try {
 		for (const tabState of await getAllTabStates()) {
-			if (Object.keys(websiteTabConnections.get(tabState.tabId)?.connections ?? {}).length > 0) continue
+			if (hasLiveWebsiteConnections(websiteTabConnections, tabState.tabId)) continue
 			if (tabState.website?.websiteOrigin === undefined) continue
 			addIconRefreshTarget(iconRefreshTargets, tabState.tabId, tabState.website.websiteOrigin)
 		}

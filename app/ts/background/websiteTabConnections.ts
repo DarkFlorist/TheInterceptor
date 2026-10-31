@@ -5,6 +5,15 @@ import { advanceSignerStateGeneration, clearSignerDerivedTabState, getConfirmedS
 import { updateTabState } from './storageVariables.js'
 import { notifyWebsiteLifecycle } from './websiteLifecycle.js'
 
+// Tab keys include retained signer owners; use these accessors whenever the caller needs live page connections.
+export function hasLiveWebsiteConnections(websiteTabConnections: WebsiteTabConnections, tabId: number) {
+	return Object.keys(websiteTabConnections.get(tabId)?.connections ?? {}).length > 0
+}
+
+export function getConnectedTabIds(websiteTabConnections: WebsiteTabConnections) {
+	return [...websiteTabConnections.keys()].filter((tabId) => hasLiveWebsiteConnections(websiteTabConnections, tabId))
+}
+
 export async function removeWebsiteTabConnection(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, disconnectedPort: browser.runtime.Port) {
 	return await runSignerStateOperation(websiteTabConnections, socket.tabId, async () => {
 		const tabConnection = websiteTabConnections.get(socket.tabId)

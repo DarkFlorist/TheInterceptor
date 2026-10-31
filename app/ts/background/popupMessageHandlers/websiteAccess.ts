@@ -1,3 +1,4 @@
+import { getConnectedTabIds } from '../websiteTabConnections.js'
 import { removeSignerPreference } from '../storageVariables.js'
 import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
 import type { AllowOrPreventAddressAccessForWebsite, BlockOrAllowExternalRequests, DisableInterceptor, RemoveWebsiteAccess, RemoveWebsiteAddressAccess, RetrieveWebsiteAccess } from '../../types/interceptor-messages.js'
@@ -21,7 +22,7 @@ const isMissingTabReloadError = (error: unknown) => {
 }
 
 export async function reloadConnectedTabs(websiteTabConnections: WebsiteTabConnections) {
-	const tabIdsToRefresh = [...websiteTabConnections].filter(([_tabId, tab]) => Object.keys(tab.connections).length > 0).map(([tabId]) => tabId)
+	const tabIdsToRefresh = getConnectedTabIds(websiteTabConnections)
 	const currentTabId = await getLastKnownCurrentTabId()
 	const withCurrentTabId = currentTabId === undefined ? tabIdsToRefresh : [...tabIdsToRefresh, currentTabId]
 	for (const tabId of new Set(withCurrentTabId)) {
