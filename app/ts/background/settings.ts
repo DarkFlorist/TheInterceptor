@@ -4,7 +4,7 @@ import { Semaphore } from '../utils/semaphore.js'
 import type { EthereumAddress } from '../types/wire-types.js'
 import type { Website, WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import type { BlockExplorer, RpcNetwork } from '../types/rpc.js'
-import { type RichListElement, browserStorageLocalGet, browserStorageLocalSet, startupStorageValueCodecs, type StartupStorageValues } from '../utils/storageUtils.js'
+import { type RichListElement, browserStorageLocalGet, browserStorageLocalSet, getStartupStorageValueOrDefault, type StartupStorageValues } from '../utils/storageUtils.js'
 import { getUserAddressBookEntries, updateUserAddressBookEntries } from './storageVariables.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
@@ -13,7 +13,6 @@ import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_BLOCK_MANIPULATION, DEFAULT_RPCS } fr
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { mergeStoredWebsiteMetadata, sanitizeWebsiteAccess } from '../utils/websiteIcons.js'
 import type { SigningAddressPreference, SigningAddressPreferences } from '../types/signerTypes.js'
-import { hasOwnKey } from '../utils/typescript.js'
 
 export const defaultActiveAddresses = DEFAULT_ACTIVE_ADDRESSES
 
@@ -42,20 +41,8 @@ export const getDefaultBlockExplorer = (): BlockExplorer => ({ apiUrl: 'https://
 
 export const getWethForChainId = (chainId: bigint) => wethForChainId.get(chainId.toString())
 
-async function getParsedStorageValueOrDefaultFromItems<Key extends keyof StartupStorageValues>(storedItems: Readonly<Record<string, unknown>>, key: Key, defaultValue: StartupStorageValues[Key]): Promise<StartupStorageValues[Key]> {
-	const rawValue = storedItems[key]
-	if (!hasOwnKey(storedItems, key) || rawValue === undefined) return defaultValue
-	// Address codecs parse the value; the own-key check above supplies the same presence rule as storageUtils.
-	const parsedValue = startupStorageValueCodecs[key].safeParse(rawValue)
-	if (parsedValue.success) return parsedValue.value
-	console.warn(`${ key } was corrupt:`)
-	console.warn(rawValue)
-	await browserStorageLocalSet({ [key]: defaultValue })
-	return defaultValue
-}
-
 async function getParsedStorageValueOrDefault<Key extends keyof StartupStorageValues>(key: Key, defaultValue: StartupStorageValues[Key]): Promise<StartupStorageValues[Key]> {
-	return await getParsedStorageValueOrDefaultFromItems(await browser.storage.local.get(key), key, defaultValue)
+	return await getStartupStorageValueOrDefault(await browser.storage.local.get(key), key, defaultValue)
 }
 
 export async function getSettings() : Promise<Settings> {
@@ -70,13 +57,13 @@ export async function getSettings() : Promise<Settings> {
 		'simulationMode',
 		'activeRpcNetwork',
 	]))
-	const activeSimulationAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'independentActiveSimulationAddress', defaultActiveAddresses[0].address))
-	const activeSigningSafeAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'activeSigningSafeAddress', undefined))
-	const openedPagePromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'openedPageV2', defaultPage))
-	const useSignersAddressAsActiveAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'useSignersAddressAsActiveAddress', false))
-	const websiteAccessPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'websiteAccess', []).then(sanitizeWebsiteAccess))
-	const simulationModePromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'simulationMode', defaultSimulationMode))
-	const activeRpcNetworkPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'activeRpcNetwork', defaultRpcs[0]))
+	const activeSimulationAddressPromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'independentActiveSimulationAddress', defaultActiveAddresses[0].address))
+	const activeSigningSafeAddressPromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'activeSigningSafeAddress', undefined))
+	const openedPagePromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'openedPageV2', defaultPage))
+	const useSignersAddressAsActiveAddressPromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'useSignersAddressAsActiveAddress', false))
+	const websiteAccessPromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'websiteAccess', []).then(sanitizeWebsiteAccess))
+	const simulationModePromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'simulationMode', defaultSimulationMode))
+	const activeRpcNetworkPromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'activeRpcNetwork', defaultRpcs[0]))
 	const [activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode] = await Promise.all([
 		activeSimulationAddressPromise,
 		activeSigningSafeAddressPromise,

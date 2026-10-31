@@ -241,20 +241,33 @@ export const InterceptedRequestForward = funtypes.Intersect(
 export type InterceptorMessageToInpage = funtypes.Static<typeof InterceptorMessageToInpage>
 const InterceptorApproval = funtypes.ReadonlyObject({ interceptorApproved: funtypes.Literal(true) })
 // Background senders know whether they are sending a reply or a callback. Keep separate codecs so hot paths do not construct failures for unrelated message shapes.
-export const InterceptorErrorReplyToInpage = funtypes.Intersect(InterceptorApproval, InpageReplyIdentifier, RPCErrorReply)
-export const InterceptorNonErrorReplyToInpage = funtypes.Intersect(
+const InterceptorErrorReplyToInpage = funtypes.Intersect(InterceptorApproval, InpageReplyIdentifier, RPCErrorReply)
+const InterceptorNonErrorReplyToInpage = funtypes.Intersect(
 	InterceptorApproval,
 	InpageReplyIdentifier,
 	funtypes.Union(NonErrorRPCReply, funtypes.Intersect(ResultReplyType, InpageScriptRequestWithoutIdentifier)),
 )
-export const InterceptorErrorCallbackToInpage = funtypes.Intersect(InterceptorApproval, ErrorSubscriptionReplyOrCallBack)
-export const InterceptorNonErrorCallbackToInpage = funtypes.Intersect(InterceptorApproval, NonErrorSubscriptionReplyOrCallBack)
+const InterceptorErrorCallbackToInpage = funtypes.Intersect(InterceptorApproval, ErrorSubscriptionReplyOrCallBack)
+const InterceptorNonErrorCallbackToInpage = funtypes.Intersect(InterceptorApproval, NonErrorSubscriptionReplyOrCallBack)
+// The full wire contract is exactly the union of the codecs used by the serializers below. Senders select a known category to avoid probing unrelated union branches.
 export const InterceptorMessageToInpage = funtypes.Union(
 	InterceptorErrorReplyToInpage,
 	InterceptorNonErrorReplyToInpage,
 	InterceptorErrorCallbackToInpage,
 	InterceptorNonErrorCallbackToInpage,
 )
+
+export function serializeInpageReply(message: funtypes.Static<typeof InterceptorErrorReplyToInpage> | funtypes.Static<typeof InterceptorNonErrorReplyToInpage>) {
+	return message.type === 'result' && 'error' in message
+		? InterceptorErrorReplyToInpage.serialize(message)
+		: InterceptorNonErrorReplyToInpage.serialize(message)
+}
+
+export function serializeInpageCallback(message: funtypes.Static<typeof InterceptorErrorCallbackToInpage> | funtypes.Static<typeof InterceptorNonErrorCallbackToInpage>) {
+	return 'error' in message
+		? InterceptorErrorCallbackToInpage.serialize(message)
+		: InterceptorNonErrorCallbackToInpage.serialize(message)
+}
 
 type RefreshConfirmTransactionMetadata = funtypes.Static<typeof RefreshConfirmTransactionMetadata>
 const RefreshConfirmTransactionMetadata = funtypes.ReadonlyObject({

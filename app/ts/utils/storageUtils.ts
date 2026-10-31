@@ -66,7 +66,19 @@ const startupStorageCodecs = {
 }
 
 export type StartupStorageValues = { [Key in keyof typeof startupStorageCodecs]: funtypes.Static<typeof startupStorageCodecs[Key]> }
-export const startupStorageValueCodecs: { [Key in keyof StartupStorageValues]: funtypes.Codec<StartupStorageValues[Key]> } = startupStorageCodecs
+const startupStorageValueCodecs: { [Key in keyof StartupStorageValues]: funtypes.Codec<StartupStorageValues[Key]> } = startupStorageCodecs
+
+export async function getStartupStorageValueOrDefault<Key extends keyof StartupStorageValues>(storedItems: Readonly<Record<string, unknown>>, key: Key, defaultValue: StartupStorageValues[Key]): Promise<StartupStorageValues[Key]> {
+	const rawValue = storedItems[key]
+	// Check presence before decoding: the stored 'missing' marker decodes to undefined, but represents an explicitly cleared address and must not select the default.
+	if (!hasOwnKey(storedItems, key) || rawValue === undefined) return defaultValue
+	const parsedValue = startupStorageValueCodecs[key].safeParse(rawValue)
+	if (parsedValue.success) return parsedValue.value
+	console.warn(`${ key } was corrupt:`)
+	console.warn(rawValue)
+	await browserStorageLocalSet({ [key]: defaultValue })
+	return defaultValue
+}
 
 const { independentActiveSimulationAddress, activeSigningSafeAddress, ...startupStoragePartialCodecs } = startupStorageCodecs
 

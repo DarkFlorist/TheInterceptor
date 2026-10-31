@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { InterceptorMessageToInpage, InterceptorNonErrorReplyToInpage, InterceptorNonErrorCallbackToInpage } from '../../app/ts/types/interceptor-messages.js'
+import { InterceptorMessageToInpage, serializeInpageReply, serializeInpageCallback } from '../../app/ts/types/interceptor-messages.js'
 
 describe('inpage message serialization', () => {
 	test('matches errors without inspecting method-specific success results', () => {
@@ -16,7 +16,7 @@ describe('inpage message serialization', () => {
 				// A getter detects traversal of the success schemas without relying on machine-dependent timing thresholds.
 				get result() { successResultReads += 1; return undefined },
 			}
-			const wireMessage = InterceptorMessageToInpage.serialize(message)
+			const wireMessage = serializeInpageReply(message)
 			assert.equal(successResultReads, 0, method)
 			assert.deepEqual(JSON.parse(JSON.stringify(wireMessage)), {
 				interceptorApproved: true,
@@ -55,7 +55,7 @@ describe('inpage message serialization', () => {
 				method,
 				get result() { resultReads += 1; return 15n },
 			}
-			const wireMessage = InterceptorNonErrorReplyToInpage.serialize(message)
+			const wireMessage = serializeInpageReply(message)
 			assert.equal(resultReads, 1, method)
 			assert.ok('result' in wireMessage)
 			assert.equal(wireMessage.result, '0xf')
@@ -72,7 +72,7 @@ describe('inpage message serialization', () => {
 			requestId: 11,
 			get result() { resultReads += 1; return [1n] },
 		}
-		const wireMessage = InterceptorNonErrorCallbackToInpage.serialize(message)
+		const wireMessage = serializeInpageCallback(message)
 		assert.equal(resultReads, 1)
 		assert.deepEqual(JSON.parse(JSON.stringify(wireMessage)), {
 			interceptorApproved: true,
@@ -82,5 +82,25 @@ describe('inpage message serialization', () => {
 			result: ['0x0000000000000000000000000000000000000001'],
 		})
 		assert.equal(InterceptorMessageToInpage.safeParse(wireMessage).success, true)
+	})
+
+	test('error callbacks use the shared wire contract without reading success results', () => {
+		let resultReads = 0
+		const message = {
+			interceptorApproved: true as const,
+			type: 'result' as const,
+			method: 'accountsChanged',
+			error: { code: 4100, message: 'Unauthorized' },
+			get result() { resultReads += 1; return undefined },
+		}
+		const wireMessage = serializeInpageCallback(message)
+		assert.equal(resultReads, 0)
+		assert.equal(InterceptorMessageToInpage.safeParse(wireMessage).success, true)
+		assert.deepEqual(JSON.parse(JSON.stringify(wireMessage)), {
+			interceptorApproved: true,
+			type: 'result',
+			method: 'accountsChanged',
+			error: message.error,
+		})
 	})
 })
