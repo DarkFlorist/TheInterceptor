@@ -391,25 +391,43 @@ export type WebsiteAccessUpdate = {
 	readonly iconRefreshTargets: readonly { readonly tabId: number, readonly websiteOrigin: string }[]
 }
 
-// Include post-write setup in the failure boundary: it can reject after permissions have already been committed.
+// A rejected mutation can precede persistence or follow it (content-script setup runs after the write). Reconcile stored authority; never infer a committed revocation from rejection alone.
 export async function applyWebsiteAccessChange<T>(websiteTabConnections: WebsiteTabConnections, change: () => Promise<T>) {
+	let result: T
 	try {
-		const result = await change()
-		const accessUpdate = await reconcileWebsiteApprovalAccesses(websiteTabConnections, await getSettings(), true)
-		return { result, accessUpdate }
+		result = await change()
 	} catch (error) {
-		// Failed settings reads or reconciliation leave approval uncertain: fail closed before propagating, independently of background UI reloads.
-		for (const tab of websiteTabConnections.values()) {
-			for (const connection of Object.values(tab.connections)) connection.approved = false
+		try {
+			await reconcileCommittedWebsiteAccess(websiteTabConnections)
+		} catch (reconciliationError) {
+			await reportUnexpectedError(reconciliationError)
 		}
 		throw error
 	}
+	const accessUpdate = await reconcileCommittedWebsiteAccess(websiteTabConnections)
+	return { result, accessUpdate }
 }
 
-// Use when the mutation has no post-write setup; access mutations with content-script updates use applyWebsiteAccessChange.
+// Use after a mutation with no post-write setup, or to recover the stored authority after an ambiguous failure.
 export async function reconcileCommittedWebsiteAccess(websiteTabConnections: WebsiteTabConnections) {
-	const { accessUpdate } = await applyWebsiteAccessChange(websiteTabConnections, async () => undefined)
-	return accessUpdate
+	try {
+		return await reconcileWebsiteApprovalAccesses(websiteTabConnections, await getSettings(), true)
+	} catch (error) {
+		const connections = [...websiteTabConnections.values()].flatMap(tab => Object.values(tab.connections))
+		const approvedConnections = new Set(connections.filter(connection => connection.approved))
+		// Clear authority before notifying any port; one broken port must not retain another port's approval.
+		for (const connection of connections) connection.approved = false
+		const notificationErrors: unknown[] = []
+		for (const connection of connections) {
+			try {
+				if (approvedConnections.has(connection)) disconnectFromPort(websiteTabConnections, connection.socket)
+				// Invalidate in-flight Safe Apps publications even on ports that were not approved yet.
+				else notifyWebsiteLifecycle(websiteTabConnections.lifecycle?.approvalChanged, connection.socket, false)
+			} catch (notificationError) { notificationErrors.push(notificationError) }
+		}
+		for (const notificationError of notificationErrors) await reportUnexpectedError(notificationError)
+		throw error
+	}
 }
 
 // Reconcile approvals with the committed settings while the caller owns the settings lock.

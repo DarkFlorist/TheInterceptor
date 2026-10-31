@@ -175,6 +175,65 @@ describe('UI mutation completion', () => {
 		} finally { release.resolve(); await waitForBackgroundTasks() }
 	})
 
+	test.each(['before write', 'after write'] as const)('reconciles persisted permissions when a mutation rejects %s', async failure => {
+		const { runtimeMessages } = installBrowserMock()
+		const modules = await loadModules()
+		const { applyWebsiteAccessChange } = await import('../../app/ts/background/accessManagement.js')
+		const address = signedTransaction.from
+		await modules.changeSimulationMode({ simulationMode: true, activeSimulationAddress: address })
+		await modules.updateUserAddressBookEntries(() => [{ type: 'contact', address, name: 'Account', chainId: 'AllChains', entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true }])
+		await modules.updateWebsiteAccess(() => ['edited.test', 'unrelated.test'].map(websiteOrigin => ({ website: { websiteOrigin }, access: true, addressAccess: [{ address, access: true }] })))
+		const approvals: boolean[] = []
+		const connections: WebsiteTabConnections = Object.assign(new Map(), { lifecycle: { approvalChanged: (_socket: unknown, approved: boolean) => { approvals.push(approved) } } })
+		for (const [tabId, websiteOrigin] of [[1, 'edited.test'], [2, 'unrelated.test']] as const) {
+			const socket = { tabId, connectionName: 0n }
+			connections.set(tabId, { connections: { [modules.websiteSocketToString(socket)]: { port: createPort(tabId).port, socket, websiteOrigin, approved: true, wantsToConnect: true } } })
+		}
+		const error = new Error(`Mutation failed ${ failure }`)
+		const originalSet = browser.storage.local.set.bind(browser.storage.local)
+		Object.defineProperty(browser.storage.local, 'set', { configurable: true, value: async (items: Record<string, unknown>) => {
+			if (failure === 'before write' && 'websiteAccess' in items) throw error
+			return await originalSet(items)
+		} })
+		try {
+			await assert.rejects(applyWebsiteAccessChange(connections, async () => {
+				await modules.updateWebsiteAccess(entries => entries.map(entry => entry.website.websiteOrigin === 'edited.test' ? { ...entry, access: false } : entry))
+				// Represents content-script setup rejecting after the permission write has resolved.
+				throw error
+			}), caught => caught === error)
+			assert.equal(Object.values(connections.get(1)?.connections ?? {})[0]?.approved, failure === 'before write')
+			assert.equal(Object.values(connections.get(2)?.connections ?? {})[0]?.approved, true)
+			assert.deepEqual(approvals, failure === 'before write' ? [] : [false])
+			assert.equal(runtimeMessages.some(message => message.method === 'popup_websiteAccess_changed'), false)
+		} finally { Object.defineProperty(browser.storage.local, 'set', { configurable: true, value: originalSet }) }
+	})
+
+	test('failed reconciliation clears every approval and notifies lifecycle despite a broken port', async () => {
+		installBrowserMock()
+		const modules = await loadModules()
+		const { reconcileCommittedWebsiteAccess } = await import('../../app/ts/background/accessManagement.js')
+		const revokedTabs: number[] = []
+		const connections: WebsiteTabConnections = Object.assign(new Map(), { lifecycle: { approvalChanged: (socket: { tabId: number }, approved: boolean) => { if (!approved) revokedTabs.push(socket.tabId) } } })
+		const healthyPort = createPort(2)
+		for (const tabId of [1, 2, 3]) {
+			const socket = { tabId, connectionName: 0n }
+			const port = tabId === 2 ? healthyPort.port : createPort(tabId, () => { throw new Error('Broken port notification') }).port
+			connections.set(tabId, { connections: { [modules.websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'unknown.test', approved: tabId !== 3, wantsToConnect: true } } })
+		}
+		const error = new Error('Cannot read committed settings')
+		const originalGet = browser.storage.local.get.bind(browser.storage.local)
+		Object.defineProperty(browser.storage.local, 'get', { configurable: true, value: async (keys?: string | string[] | Record<string, unknown> | null) => {
+			if (Array.isArray(keys) && keys.includes('openedPageV2')) throw error
+			return await originalGet(keys)
+		} })
+		try {
+			await assert.rejects(reconcileCommittedWebsiteAccess(connections), caught => caught === error)
+			assert.equal([...connections.values()].some(tab => Object.values(tab.connections).some(connection => connection.approved)), false)
+			assert.deepEqual(revokedTabs, [1, 2, 3])
+			assert.deepEqual(healthyPort.messages.map(message => message.method), ['accountsChanged', 'disconnect'])
+		} finally { Object.defineProperty(browser.storage.local, 'get', { configurable: true, value: originalGet }) }
+	})
+
 	test.each([
 		['individual', 'settings read'], ['individual', 'blocking rules'], ['individual', 'tab read'],
 		['bulk', 'settings read'], ['bulk', 'blocking rules'], ['bulk', 'tab read'],
