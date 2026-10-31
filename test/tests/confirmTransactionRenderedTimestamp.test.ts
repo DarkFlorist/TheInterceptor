@@ -2,7 +2,7 @@ import * as assert from 'assert'
 import { encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
-import { describe, test } from 'bun:test'
+import { afterEach, describe, test } from 'bun:test'
 import { clickRenderedElement, findRenderedElement, installDateMock, installDomMock } from './domMock.js'
 import { createSafeTx, getSafeTxSigningHashes } from '../../app/ts/safe/safeCore.js'
 import { getSafeTxHash } from '../../app/ts/utils/eip712.js'
@@ -110,7 +110,19 @@ function createBrowserMock() {
 
 createBrowserMock()
 
+// Popups still mounted, so a test that fails before its own cleanup can still be unmounted, which stops the popup's bootstrap retries and message listener.
+const mountedPopups = new Set<ReturnType<typeof installDomMock>>()
+
+async function renderConfirmTransaction(dom: ReturnType<typeof installDomMock>) {
+	mountedPopups.add(dom)
+	await act(() => {
+		render(h(ConfirmTransaction, {}), dom.document.body)
+	})
+}
+
+// Unmounts once; later calls for the same popup do nothing.
 async function unmountConfirmTransaction(dom: ReturnType<typeof installDomMock>) {
+	if (!mountedPopups.delete(dom)) return
 	await act(() => {
 		render(null, dom.document.body)
 	})
@@ -535,6 +547,10 @@ function makeBootstrapReply(stored: PendingTransactionOrSignableMessage) {
 }
 
 describe('ConfirmTransaction', () => {
+	afterEach(async () => {
+		for (const dom of [...mountedPopups]) await unmountConfirmTransaction(dom)
+	})
+
 	test('shows the proposal notice only for the classifier-selected Safe proposal flow', async () => {
 		const dom = installDomMock()
 		const browser = createBrowserMock()
@@ -558,9 +574,7 @@ describe('ConfirmTransaction', () => {
 			},
 		}
 
-		await act(() => {
-			render(h(ConfirmTransaction, {}), dom.document.body)
-		})
+		await renderConfirmTransaction(dom)
 		const dispatchPending = async (pendingTransaction: typeof proposal) => await act(() => {
 			browser.dispatch({
 				role: 'all',
@@ -595,9 +609,7 @@ describe('ConfirmTransaction', () => {
 		const safeTx = proposal.safeTransaction.safeTx
 		const findSigningRequestCardHeader = () => findRenderedElement(dom.document.body, (node) => node.tagName === 'HEADER' && node.textContent?.includes(SAFE_SIGNING_REQUEST_CARD_TITLE) === true)
 
-		await act(() => {
-			render(h(ConfirmTransaction, {}), dom.document.body)
-		})
+		await renderConfirmTransaction(dom)
 		const dispatchPending = async (pendingTransaction: typeof proposal) => await act(() => {
 			browser.dispatch({
 				role: 'all',
@@ -649,9 +661,7 @@ describe('ConfirmTransaction', () => {
 		const proposal = makeSafeProposal(makeSimulatedPendingTransaction(1_250_000_000_000_000_000n))
 		const { domainHash, messageHash } = getSafeTxSigningHashes(proposal.safeTransaction.safeTx)
 
-		await act(() => {
-			render(h(ConfirmTransaction, {}), dom.document.body)
-		})
+		await renderConfirmTransaction(dom)
 		await act(() => {
 			browser.dispatch({
 				role: 'all',
@@ -691,9 +701,7 @@ describe('ConfirmTransaction', () => {
 		const olderPendingTransaction = makePendingTransaction(new Date('2024-01-01T00:00:05.000Z'))
 		const newerPendingTransaction = makePendingTransaction(new Date('2024-01-01T00:00:09.000Z'))
 
-		await act(() => {
-			render(h(ConfirmTransaction, {}), dom.document.body)
-		})
+		await renderConfirmTransaction(dom)
 
 		await act(() => {
 			browser.dispatch({
@@ -735,9 +743,7 @@ describe('ConfirmTransaction', () => {
 		const clock = installDateMock('2024-01-01T00:00:10.000Z')
 		const browser = createBrowserMock()
 
-		await act(() => {
-			render(h(ConfirmTransaction, {}), dom.document.body)
-		})
+		await renderConfirmTransaction(dom)
 
 		await act(() => {
 			browser.dispatch({
@@ -811,9 +817,7 @@ describe('ConfirmTransaction', () => {
 			olderPendingTransaction.popupVisualisation.data.simulationState.simulationConductedTimestamp.getTime(),
 		)
 
-		await act(() => {
-			render(h(ConfirmTransaction, {}), dom.document.body)
-		})
+		await renderConfirmTransaction(dom)
 
 		await act(() => {
 			browser.dispatch({
@@ -851,9 +855,7 @@ describe('ConfirmTransaction', () => {
 				},
 			},
 		})
-		await act(() => {
-			render(h(ConfirmTransaction, {}), dom.document.body)
-		})
+		await renderConfirmTransaction(dom)
 
 		await dispatchPendingTransactions(browser, [reviewed])
 		assert.equal(isConfirmEnabled(dom), false, 'a failing result needs the override')
@@ -901,30 +903,34 @@ describe('ConfirmTransaction', () => {
 		const timers = runTimersImmediately()
 		try {
 			const stored = await storeSignatureRequest(browser)
-			// Twelve handshakes, more than the rapid retries plus the initial one, find the background not ready; later ones carry its copy. Signature requests get no block-triggered push to fall back on.
+			// Twenty handshakes, past the rapid retries plus the initial one and several retries at the backoff cap, find the background not ready; later ones carry its copy. Signature requests get no block-triggered push to fall back on.
 			let readyHandshakes = 0
 			browser.setReadyAndListeningReply((withoutBootstrap) => {
 				readyHandshakes += 1
-				return readyHandshakes <= 12 ? withoutBootstrap : makeBootstrapReply(stored)
+				return readyHandshakes <= 20 ? withoutBootstrap : makeBootstrapReply(stored)
 			})
 
-			await act(() => {
-				render(h(ConfirmTransaction, {}), dom.document.body)
-			})
+			await renderConfirmTransaction(dom)
 			await settleUntil(() => findConfirmButton(dom) !== undefined)
 			assert.notEqual(findConfirmButton(dom), undefined, 'the stored signature request is shown')
 			await settleUntil(() => isConfirmEnabled(dom))
 
-			assert.equal(readyHandshakes, 13, 'the handshake is retried past the rapid attempts until the background copy arrives')
+			assert.equal(readyHandshakes, 21, 'the handshake is retried past the rapid attempts until the background copy arrives')
 			assert.equal(isConfirmEnabled(dom), true, 'the bootstrapped background copy makes the request confirmable without a push update')
 			const { CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS, CONFIRM_TRANSACTION_BOOTSTRAP_MAX_RETRY_DELAY_MS } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
 			const retryDelays = timers.requestedDelays.filter((delay) => delay >= CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS)
-			assert.equal(retryDelays.some((delay) => delay > CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS), true, 'later retries back off')
-			assert.equal(Math.max(...retryDelays) <= CONFIRM_TRANSACTION_BOOTSTRAP_MAX_RETRY_DELAY_MS, true, 'the backoff is capped')
+			assert.equal(retryDelays.some((delay) => delay > CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS && delay < CONFIRM_TRANSACTION_BOOTSTRAP_MAX_RETRY_DELAY_MS), true, 'later retries back off')
+			const firstCappedRetry = retryDelays.indexOf(CONFIRM_TRANSACTION_BOOTSTRAP_MAX_RETRY_DELAY_MS)
+			assert.notEqual(firstCappedRetry, -1, 'the backoff reaches the cap')
+			assert.deepEqual(retryDelays.slice(firstCappedRetry), retryDelays.slice(firstCappedRetry).map(() => CONFIRM_TRANSACTION_BOOTSTRAP_MAX_RETRY_DELAY_MS), 'the backoff stays at the cap')
+			assert.equal(retryDelays.length - firstCappedRetry >= 3, true, 'several retries run at the cap')
 		} finally {
-			await unmountConfirmTransaction(dom)
-			timers.restore()
-			dom.restore()
+			try {
+				await unmountConfirmTransaction(dom)
+			} finally {
+				timers.restore()
+				dom.restore()
+			}
 		}
 	})
 
@@ -939,9 +945,7 @@ describe('ConfirmTransaction', () => {
 				readyHandshakes += 1
 				return withoutBootstrap
 			})
-			await act(() => {
-				render(h(ConfirmTransaction, {}), dom.document.body)
-			})
+			await renderConfirmTransaction(dom)
 			await settleUntil(() => readyHandshakes >= 15)
 			assert.equal(readyHandshakes >= 15, true, 'the handshake keeps being retried while no background copy arrives')
 
@@ -950,8 +954,12 @@ describe('ConfirmTransaction', () => {
 			await settleUntil(() => false, 100)
 			assert.equal(readyHandshakes, handshakesAtUnmount, 'no handshake is sent after the popup unmounts')
 		} finally {
-			timers.restore()
-			dom.restore()
+			try {
+				await unmountConfirmTransaction(dom)
+			} finally {
+				timers.restore()
+				dom.restore()
+			}
 		}
 	})
 
@@ -972,9 +980,7 @@ describe('ConfirmTransaction', () => {
 			resolved.resolve()
 		})
 
-		await act(async () => {
-			render(h(ConfirmTransaction, {}), dom.document.body)
-		})
+		await renderConfirmTransaction(dom)
 		for (let turn = 0; turn < 50 && findConfirmButton(dom) === undefined; turn++) await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
 		assert.notEqual(findConfirmButton(dom), undefined, 'the request read directly from storage is shown')
 		assert.equal(isConfirmEnabled(dom), false, 'a request read directly from storage has no reviewed-result id, so it cannot be confirmed yet')
@@ -1021,9 +1027,7 @@ describe('ConfirmTransaction', () => {
 			await resolution
 		})
 
-		await act(() => {
-			render(h(ConfirmTransaction, {}), dom.document.body)
-		})
+		await renderConfirmTransaction(dom)
 		const [reviewedAsStored] = await getPendingTransactionsAndMessages()
 		if (reviewedAsStored === undefined) throw new Error('Expected the reviewed request to be stored')
 		await dispatchPendingTransactions(browser, [reviewedAsStored])
