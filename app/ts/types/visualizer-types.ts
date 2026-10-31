@@ -84,6 +84,24 @@ export const NonSimulatedAndVisualizedTransactionBase = funtypes.ReadonlyObject(
 	safeTransaction: SafeStackTransaction,
 }))
 
+// The chain state the protectors read for a simulated transaction besides its simulation result: whether an address had code where the transaction ran ('unverified' when that read failed), and the node's gas price. Recorded with the run, so an address-book re-label can run the protectors again without simulating.
+export type RecordedProtectorChainReads = funtypes.Static<typeof RecordedProtectorChainReads>
+export const RecordedProtectorChainReads = funtypes.ReadonlyObject({
+	addressCode: funtypes.ReadonlyArray(funtypes.ReadonlyObject({
+		address: EthereumAddress,
+		code: funtypes.Union(funtypes.Literal('present'), funtypes.Literal('absent'), funtypes.Literal('unverified')),
+	})),
+}).And(funtypes.ReadonlyPartial({
+	gasPrice: EthereumQuantity,
+}))
+
+// What a simulation run recorded of its lookups, kept with the stored run in background storage only: the protector chain reads of each transaction, by block (none for a failed simulation, which runs no protectors), and every entry its address lookups resolved from the address book, bundled metadata or the chain. An address-book re-label replays it instead of making those lookups (storedRunVisualisation.ts). Popup messages carry the run without it: their codecs have no field for it, so serializing a message drops it.
+export type RecordedVisualisationLookups = funtypes.Static<typeof RecordedVisualisationLookups>
+export const RecordedVisualisationLookups = funtypes.ReadonlyObject({
+	protectorChainReads: funtypes.ReadonlyArray(funtypes.ReadonlyArray(RecordedProtectorChainReads)),
+	identifiedAddressBookEntries: funtypes.ReadonlyArray(AddressBookEntry),
+})
+
 export type SimulatedAndVisualizedTransactionBase = funtypes.Static<typeof SimulatedAndVisualizedTransactionBase>
 export const SimulatedAndVisualizedTransactionBase = funtypes.Intersect(
 	funtypes.ReadonlyObject({
@@ -457,6 +475,12 @@ export const CompleteVisualizedSimulation = funtypes.ReadonlyObject({
 	visualizedSimulationState: VisualizedSimulationState,
 	numberOfAddressesMadeRich: funtypes.Number,
 })
+
+// The stack simulation as background storage keeps it: what popups are sent, and what its run recorded of its lookups. Missing on states that no simulation run visualised and on runs stored by versions that did not record it.
+export type StoredCompleteVisualizedSimulation = funtypes.Static<typeof StoredCompleteVisualizedSimulation>
+export const StoredCompleteVisualizedSimulation = CompleteVisualizedSimulation.And(funtypes.ReadonlyPartial({
+	recordedVisualisationLookups: RecordedVisualisationLookups,
+}))
 
 export const createPassthroughCompleteVisualizedSimulation = (
 	simulationId = 0,

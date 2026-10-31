@@ -11,7 +11,7 @@ export const addressBookPopupMessageHandlers = {
 		return await changeAddOrModifyAddressWindowState(ethereum, request)
 	}),
 	popup_requestAbiAndNameFromBlockExplorer: popupMessageHandler('popup_requestAbiAndNameFromBlockExplorer', async (_context, request) => await requestAbiAndNameFromBlockExplorer(request)),
-	popup_setEnsNameForHash: popupMessageHandler('popup_setEnsNameForHash', async (_context, request) => await setEnsNameForHash(request)),
+	popup_setEnsNameForHash: popupMessageHandler('popup_setEnsNameForHash', async (context, request) => await setEnsNameForHash(context.simulationServicesOwner, request)),
 	popup_requestIdentifyAddress: popupSnapshotMessageHandler('popup_requestIdentifyAddress', async (context, request) => {
 		const { ethereum } = context.services
 		return await requestIdentifyAddress(ethereum, request)

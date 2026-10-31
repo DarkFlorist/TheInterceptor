@@ -3,7 +3,7 @@ import { encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { describe, test } from 'bun:test'
-import { clickRenderedElement, findRenderedElement, installDateMock, installDomMock } from './domMock.js'
+import { clickRenderedElement, findRenderedElement, installDateMock, installDomMock, type RenderedTreeNode } from './domMock.js'
 import { createSafeTx, getSafeTxSigningHashes } from '../../app/ts/safe/safeCore.js'
 import { getSafeTxHash } from '../../app/ts/utils/eip712.js'
 import { bytes32String } from '../../app/ts/utils/bigint.js'
@@ -475,6 +475,49 @@ describe('ConfirmTransaction', () => {
 		await unmountConfirmTransaction(dom)
 		clock.restore()
 		dom.restore()
+	})
+
+	test('a metadata update keeps the block the dialog shows, whether it arrives before or after the regular dialog updates, and a new block still applies', async () => {
+		const { MessageToPopup, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogMetadata } = await import('../../app/ts/types/interceptor-messages.js')
+		const { createPassthroughCompleteVisualizedSimulation } = await import('../../app/ts/types/visualizer-types.js')
+		const getCssText = (node: unknown) => typeof node === 'object' && node !== null && 'style' in node && typeof node.style === 'object' && node.style !== null && 'cssText' in node.style && typeof node.style.cssText === 'string' ? node.style.cssText : ''
+		// The colour of the simulation age shows how fresh the simulation is against the block the dialog knows.
+		const getSimulationAgeColor = (root: RenderedTreeNode) => getCssText(findRenderedElement(root, (node) => node.tagName === 'SPAN' && getCssText(node).includes('monospace'))).match(/color: (var\(--[a-z-]+\))/u)?.[1]
+		const pendingTransaction = makeSimulatedPendingTransaction(1n)
+		const simulationBlock = pendingTransaction.popupVisualisation.data.simulationState.blockNumber
+		// The simulation runs in the block after its base block, so the block after that one, which the regular updates carry, leaves the simulation one block old.
+		const regularUpdateBlock = simulationBlock + 2n
+		const dialogUpdates = {
+			pendingTransactions: serialize(UpdateConfirmTransactionDialogPendingTransactions, { method: 'popup_update_confirm_transaction_dialog_pending_transactions', data: { pendingTransactionAndSignableMessages: [pendingTransaction], currentBlockNumber: regularUpdateBlock, rpcConnectionStatus: undefined } }),
+			stack: serialize(UpdateConfirmTransactionDialog, { method: 'popup_update_confirm_transaction_dialog', data: { visualizedSimulatorState: createPassthroughCompleteVisualizedSimulation(), currentBlockNumber: regularUpdateBlock, rpcConnectionStatus: undefined } }),
+			// Sent after an address-book re-label, without a block number or connection status.
+			metadata: serialize(UpdateConfirmTransactionDialogMetadata, { method: 'popup_update_confirm_transaction_dialog_metadata', data: { pendingTransactionAndSignableMessages: [pendingTransaction], visualizedSimulatorState: createPassthroughCompleteVisualizedSimulation() } }),
+		}
+		const laterBlock = { author: 0n, difficulty: 0n, extraData: new Uint8Array(), gasLimit: 30_000_000n, gasUsed: 21_000n, hash: 0x1234n, logsBloom: 0n, miner: 0n, mixHash: 0n, nonce: 0n, number: regularUpdateBlock + 1n, parentHash: 0x1n, receiptsRoot: 0n, sha3Uncles: 0n, stateRoot: 0n, timestamp: new Date('2024-01-01T00:00:00.000Z'), size: 0n, totalDifficulty: 0n, uncles: [], baseFeePerGas: 1n, transactionsRoot: 0n, transactions: [], withdrawals: [], withdrawalsRoot: 0n }
+		const rpcNetwork = pendingTransaction.popupVisualisation.data.simulationState.rpcNetwork
+		const newBlockArrived = serialize(MessageToPopup, { role: 'all', method: 'popup_new_block_arrived', data: { rpcConnectionStatus: { isConnected: true, lastConnnectionAttempt: new Date('2024-01-01T00:00:00.000Z'), rpcNetwork, latestBlock: laterBlock, retrying: false } } })
+		for (const order of [['pendingTransactions', 'stack', 'metadata'], ['metadata', 'pendingTransactions', 'stack']] as const) {
+			const dom = installDomMock()
+			const browser = createBrowserMock()
+			await act(() => {
+				render(h(ConfirmTransaction, {}), dom.document.body)
+			})
+
+			for (const update of order) {
+				await act(() => {
+					browser.dispatch({ role: 'all', ...dialogUpdates[update] })
+				})
+			}
+			assert.equal(getSimulationAgeColor(dom.document.body), 'var(--warning-color)', order.join(' then '))
+
+			// Two blocks after the simulation's block, the simulation is outdated.
+			await act(() => {
+				browser.dispatch(newBlockArrived)
+			})
+			assert.equal(getSimulationAgeColor(dom.document.body), 'var(--danger-color)', order.join(' then '))
+			await unmountConfirmTransaction(dom)
+			dom.restore()
+		}
 	})
 
 	test('shows gas limit editing for failed transactions', async () => {
