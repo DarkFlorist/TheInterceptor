@@ -28,7 +28,7 @@ import { Link } from '../subcomponents/link.js'
 import { NetworkErrors } from '../subcomponents/NetworkErrors.js'
 import { identifySignature } from '../simulationExplaining/identifySignature.js'
 import { InvalidMessage, SignatureCard, SignatureHeader } from './PersonalSign.js'
-import { type SendAnywayOverrideReason, getResultRevision, getResultsForTransaction, getSendAnywayOverrideReason, isPossibleToSignMessage, isSameSendAnywayConsent } from '../../utils/sendAnywayConsent.js'
+import { type SendAnywayOverrideReason, getResultRevision, getResultsForTransaction, getSendAnywayOverrideReason, getVisualizedTransactionResult, isPossibleToSignMessage, isSameSendAnywayConsent, requiresSendAnywayOverride } from '../../utils/sendAnywayConsent.js'
 import type { EditEnsNamedHashCallBack } from '../subcomponents/ens.js'
 import { EditEnsLabelHash } from './EditEnsLabelHash.js'
 import { type ReadonlySignal, Signal, useComputed, useSignal } from '@preact/signals'
@@ -193,7 +193,7 @@ const TransactionNames = (param: TransactionNamesParams) => {
 		if (currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'Simulated') return getTransactionStatusLabel(currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus)
 		if (currentPendingTransactionOrSignableMessage.type === 'SignableMessage') return identifySignature(currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest).title
 		if (currentPendingTransactionOrSignableMessage.popupVisualisation.statusCode === 'failed') return 'Failing transaction'
-		const lastTx = currentPendingTransactionOrSignableMessage.popupVisualisation.statusCode !== 'success' || currentPendingTransactionOrSignableMessage.popupVisualisation.data.visualizedSimulationState.success === false ? undefined : getResultsForTransaction(currentPendingTransactionOrSignableMessage.popupVisualisation.data.visualizedSimulationState, currentPendingTransactionOrSignableMessage.transactionIdentifier)
+		const lastTx = getVisualizedTransactionResult(currentPendingTransactionOrSignableMessage.popupVisualisation, currentPendingTransactionOrSignableMessage.transactionIdentifier)
 		if (lastTx === undefined) return 'Could not find transaction...'
 		return identifyTransaction(lastTx).title
 	}
@@ -744,7 +744,7 @@ function ConfirmationButtons({ currentPendingTransactionOrSignableMessage, rejec
 	const signerName = currentPendingTransactionOrSignableMessage.type === 'Transaction' ? currentPendingTransactionOrSignableMessage.popupVisualisation.data.signerName : currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest.signerName
 	const identify = () => {
 		if (currentPendingTransactionOrSignableMessage.type === 'SignableMessage') return identifySignature(currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest)
-		const lastTx = currentPendingTransactionOrSignableMessage.popupVisualisation.statusCode !== 'success' || currentPendingTransactionOrSignableMessage.popupVisualisation.data.visualizedSimulationState.success === false ? undefined : getResultsForTransaction(currentPendingTransactionOrSignableMessage.popupVisualisation.data.visualizedSimulationState, currentPendingTransactionOrSignableMessage.transactionIdentifier)
+		const lastTx = getVisualizedTransactionResult(currentPendingTransactionOrSignableMessage.popupVisualisation, currentPendingTransactionOrSignableMessage.transactionIdentifier)
 		if (lastTx === undefined) return undefined
 		return identifyTransaction(lastTx)
 	}
@@ -993,7 +993,7 @@ export function ConfirmTransaction() {
 		if (pending === undefined) return true
 		if (pending.transactionOrMessageCreationStatus !== 'Simulated') return true
 		if (shouldDisableConfirmForApprovalStatus(pending.approvalStatus)) return true
-		if (getSendAnywayOverrideReason(pending) !== undefined && !forceSend.value) return true
+		if (requiresSendAnywayOverride(pending) && !forceSend.value) return true
 		if (pending.type !== 'Transaction') {
 			return shouldDisableSignableMessageConfirm({
 				isValidMessage: pending.visualizedPersonalSignRequest.isValidMessage === true,
@@ -1002,9 +1002,8 @@ export function ConfirmTransaction() {
 				hasSupportedRpc: pending.visualizedPersonalSignRequest.rpcNetwork.httpsRpc !== undefined,
 			})
 		}
-		if (pending.popupVisualisation.statusCode !== 'success') return true
-		if (pending.popupVisualisation.data.visualizedSimulationState.success === false) return true
-		return getResultsForTransaction(pending.popupVisualisation.data.visualizedSimulationState, pending.transactionIdentifier) === undefined
+		// The popup shows no override checkbox for a transaction without a simulated result, so confirm stays disabled even though the background accepts an explicit override.
+		return getVisualizedTransactionResult(pending.popupVisualisation, pending.transactionIdentifier) === undefined
 	})
 	const isAddToSafeStackDisabled = useComputed(() => {
 		const pending = currentPendingTransactionOrSignableMessage.value

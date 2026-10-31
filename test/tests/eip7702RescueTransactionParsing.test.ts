@@ -347,7 +347,8 @@ async function assertAcceptPreservesRawSignedTransaction(signedTransactionBytes:
 			new EthereumClientService(createEip7702TransactionParsingRequestHandler(), async () => undefined, async () => undefined, rpcNetwork),
 			{} as never,
 			browserMock.websiteTabConnections,
-			{ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: pendingTransaction.uniqueRequestIdentifier, action: 'accept', resultRevision: 0, forceSend: false } },
+			// Background-only send-anyway override: the stored fixture has no simulated result for this transaction, so the real popup could not confirm it.
+			{ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: pendingTransaction.uniqueRequestIdentifier, action: 'accept', resultRevision: 0, forceSend: true } },
 		)
 
 		const [postedMessage] = browserMock.postedMessages

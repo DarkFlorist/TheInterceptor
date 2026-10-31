@@ -27,7 +27,8 @@ test('failed signer delivery keeps the request and replaces the waiting spinner 
 			approvalStatus: { status: 'WaitingForUser' },
 		}] })
 
-		const delivered = await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, connectionCase.connections, await createAcceptConfirmation())
+		// Background-only send-anyway override: the stored fixture has no simulated result for this transaction, so the real popup could not confirm it.
+		const delivered = await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, connectionCase.connections, await createAcceptConfirmation(uniqueRequestIdentifier, true))
 		const retainedRequests = await modules.getPendingTransactionsAndMessages()
 		const retainedRequest = retainedRequests[0]
 

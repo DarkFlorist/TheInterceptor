@@ -727,7 +727,8 @@ test('refreshes the selected signer and uses services installed during the walle
 		},
 	}]])
 
-	const confirmation = modules.confirmDialog(owner, websiteTabConnections, await createAcceptConfirmation())
+	// Background-only send-anyway override: the stored fixture has no simulated result for this transaction, so the real popup could not confirm it.
+	const confirmation = modules.confirmDialog(owner, websiteTabConnections, await createAcceptConfirmation(uniqueRequestIdentifier, true))
 	await accountRequestEntered.promise
 	owner.reset(fakeRpcNetwork)
 	releaseAccountReply.resolve(undefined)
@@ -833,11 +834,12 @@ test('rebases a later pending Safe proposal after an earlier nonce is rejected',
 			},
 		},
 	}]])
-	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, await createAcceptConfirmation(secondIdentifier)), false)
+	// Background-only send-anyway override: the stored fixture has no simulated result for this transaction, so the real popup could not confirm it.
+	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, await createAcceptConfirmation(secondIdentifier, true)), false)
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
 	const [refreshedProposal] = await modules.getPendingTransactionsAndMessages()
 	assert.equal(refreshedProposal?.safeTransaction?.safeTx.message.nonce, 0n)
-	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, await createAcceptConfirmation(secondIdentifier)), true)
+	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, await createAcceptConfirmation(secondIdentifier, true)), true)
 	const signerRequest = postedMessages.find((message) => isRecord(message) && message.type === 'forwardToSigner')
 	if (!isRecord(signerRequest) || !Array.isArray(signerRequest.params)) throw new Error('Missing rebased Safe signer request')
 	const typedData = EIP712Message.parse(signerRequest.params[1])
@@ -922,11 +924,12 @@ test('rejects a stale forwarded Safe nonce before persistence and rebases it whe
 			},
 		},
 	}]])
-	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, await createAcceptConfirmation(requestIdentifier)), false)
+	// Background-only send-anyway override: the stored fixture has no simulated result for this transaction, so the real popup could not confirm it.
+	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, await createAcceptConfirmation(requestIdentifier, true)), false)
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
 	const [refreshedPending] = await modules.getPendingTransactionsAndMessages()
 	assert.equal(refreshedPending?.safeTransaction?.safeTx.message.nonce, 0n)
-	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, await createAcceptConfirmation(requestIdentifier)), true)
+	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, await createAcceptConfirmation(requestIdentifier, true)), true)
 	const signerRequest = postedMessages.find((message) => isRecord(message) && message.type === 'forwardToSigner')
 	if (!isRecord(signerRequest) || !Array.isArray(signerRequest.params)) throw new Error('Missing retried Safe signer request')
 	assert.equal(EIP712Message.parse(signerRequest.params[1]).message.nonce, 0n)

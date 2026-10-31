@@ -1,5 +1,6 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
+import { getLatestUnexpectedError } from '../../app/ts/background/storageVariables.js'
 import { activeAddress, addressString, browserMock, createAcceptConfirmation, createSafeAddressBookEntry, createSafeTx, createWebsitePort, created, EIP712Message, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, pendingTransaction, popupVisualisation, recipientAddress, safeTestOwnerAddress, safeTxToTypedDataJson, signedTransaction, simulator, uniqueRequestIdentifier, unsignedTransaction } from './confirmTransactionTestHarness.js'
 
 type TransactionOutcome = { transactionStatus: 'Transaction Succeeded' } | { transactionStatus: 'Transaction Failed', error: { code: number, message: string, decodedErrorMessage: string } }
@@ -175,6 +176,37 @@ test('requires the send-anyway override for failing and quarantined transactions
 	}
 })
 
+test('requires the send-anyway override for a transaction whose simulation failed or has no result for it', async () => {
+	const reviewed = makeReviewedTransaction(succeeded, false)
+	const simulationError = { code: -32000, message: 'simulation failed', decodedErrorMessage: 'simulation failed' }
+	const failedSimulation = { ...reviewed, popupVisualisation: { statusCode: 'failed' as const, data: { ...reviewed.popupVisualisation.data, error: simulationError } } }
+	const failedSimulationState = { ...reviewed, popupVisualisation: { ...reviewed.popupVisualisation, data: { ...reviewed.popupVisualisation.data, visualizedSimulationState: { success: false as const, jsonRpcError: { jsonrpc: '2.0' as const, id: 1, error: simulationError }, visualizedBlocks: [] } } } }
+	const missingResult = { ...reviewed, popupVisualisation: { ...reviewed.popupVisualisation, data: { ...reviewed.popupVisualisation.data, visualizedSimulationState: { success: true as const, visualizedBlocks: [] } } } }
+	for (const undetermined of [failedSimulation, failedSimulationState, missingResult]) {
+		const { websiteTabConnections, wasForwardedToSigner } = createSignerConnection()
+		await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [undetermined] })
+		browserMock.sentMessages.length = 0
+		const unexpectedErrorBeforeAccept = await getLatestUnexpectedError()
+
+		assert.equal(await resolveAccept(websiteTabConnections, await createAcceptConfirmation()), false)
+		assert.equal(wasForwardedToSigner(), false)
+		assert.equal((await getStoredRequest()).approvalStatus.status, 'WaitingForUser')
+		assert.equal(browserMock.sentMessages.some((message) => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions'), true, 'the refusal redraws the popup')
+		assert.deepEqual(await getLatestUnexpectedError(), unexpectedErrorBeforeAccept, 'the refusal is not reported as an unexpected error')
+
+		assert.equal(await resolveAccept(websiteTabConnections, await createAcceptConfirmation(uniqueRequestIdentifier, true)), true)
+		assert.equal(wasForwardedToSigner(), true)
+	}
+})
+
+test('forwards a successful, non-quarantined transaction without the send-anyway override', async () => {
+	const { websiteTabConnections, wasForwardedToSigner } = createSignerConnection()
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [makeReviewedTransaction(succeeded, false)] })
+
+	assert.equal(await resolveAccept(websiteTabConnections, await createAcceptConfirmation()), true)
+	assert.equal(wasForwardedToSigner(), true)
+})
+
 test('requires the send-anyway override for a quarantined signature request', async () => {
 	const { websiteTabConnections, wasForwardedToSigner } = createSignerConnection()
 	const signRequest = { method: 'personal_sign' as const, params: ['0x68656c6c6f', activeAddress] as const }
@@ -201,8 +233,7 @@ test('refuses a Safe proposal accept when the signer refresh during resolution c
 	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' })])
 	await modules.updateSafeTransactionStacks(() => [])
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [{
-		...pendingTransaction,
-		simulationMode: false,
+		...makeReviewedTransaction(succeeded, false),
 		safeTransaction: {
 			safeAddress: activeAddress,
 			safeSignerAddress: reviewedOwner,
