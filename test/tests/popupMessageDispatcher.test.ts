@@ -410,6 +410,18 @@ describe('popup message dispatcher seams', () => {
 		assert.deepEqual(await dispatchPopupMessage(context, { method: 'popup_requestLatestUnexpectedError' }), { method: 'popup_requestLatestUnexpectedError', latestUnexpectedError: undefined })
 	})
 
+	test.each(['corrupt', 'empty'] as const)('block-explorer lookups get a typed unavailable reply for a %s RPC list with a readable active network', async (reason) => {
+		storageState.rpcEntries = reason === 'corrupt' ? 'not-an-rpc-list' : []
+		const context = createDispatcherContext(async () => undefined)
+		context.rpcConfiguration = { status: 'unavailable', reason, activeRpcNetwork: settings.activeRpcNetwork }
+
+		assert.deepEqual(await dispatchPopupMessage(context, { method: 'popup_requestAbiAndNameFromBlockExplorer', data: { address: 0x1234n, chainId: 1n } }), {
+			method: 'popup_requestAbiAndNameFromBlockExplorer',
+			data: { success: false, error: 'Interceptor RPC configuration is unavailable. Network requests are paused until the user restores it.' },
+		})
+		assert.equal(await getLatestUnexpectedError(), undefined)
+	})
+
 	test('snapshot registration captures at invocation and keeps one pair across awaits', async () => {
 		const { popupSnapshotMessageHandler } = await import('../../app/ts/background/popupMessageHandlerRegistry.js')
 		const context = createDispatcherContext(async () => undefined)

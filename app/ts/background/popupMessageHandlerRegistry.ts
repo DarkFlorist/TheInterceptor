@@ -20,6 +20,7 @@ function rpcConfigurationUnavailableReply(request: PopupMessage): PopupReplyOpti
 		case 'popup_setSafeSimulationSigner': return { type: 'SetSafeSimulationSignerReply', ok: false, message: RPC_CONFIGURATION_UNAVAILABLE_MESSAGE }
 		case 'popup_addOrModifyAddressBookEntry': return { type: 'AddOrModifyAddressBookEntryReply', ok: false, message: RPC_CONFIGURATION_UNAVAILABLE_MESSAGE }
 		case 'popup_readyAndListening': return { method: 'popup_readyAndListening', ok: false, message: RPC_CONFIGURATION_UNAVAILABLE_MESSAGE }
+		case 'popup_requestAbiAndNameFromBlockExplorer': return { method: 'popup_requestAbiAndNameFromBlockExplorer', data: { success: false, error: RPC_CONFIGURATION_UNAVAILABLE_MESSAGE } }
 		case 'popup_requestMakeMeRichData':
 		case 'popup_requestActiveAddresses':
 		case 'popup_requestSimulationMode':
@@ -30,7 +31,6 @@ function rpcConfigurationUnavailableReply(request: PopupMessage): PopupReplyOpti
 		case 'popup_importSafeStack':
 		case 'popup_requestCompleteVisualizedSimulation':
 		case 'popup_requestSimulationMetadata':
-		case 'popup_requestAbiAndNameFromBlockExplorer':
 		case 'popup_requestIdentifyAddress':
 		case 'popup_requestSafeContractState':
 		case 'popup_simulateGovernanceContractExecution':
@@ -103,7 +103,7 @@ const POPUP_ADMISSION_MODE = {
 	popup_removeTransactionOrSignedMessage: 'rpc-snapshot',
 	popup_removeWebsiteAccess: 'settings',
 	popup_removeWebsiteAddressAccess: 'settings',
-	popup_requestAbiAndNameFromBlockExplorer: 'settings',
+	popup_requestAbiAndNameFromBlockExplorer: 'rpc-configuration',
 	popup_requestAccountsFromSigner: 'settings',
 	popup_requestActiveAddresses: 'settings',
 	popup_requestCompleteVisualizedSimulation: 'rpc-snapshot',
