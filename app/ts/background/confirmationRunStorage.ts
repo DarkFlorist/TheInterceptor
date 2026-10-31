@@ -2,7 +2,7 @@
 import type { PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import type { RpcNetwork } from '../types/rpc.js'
 import type { UniqueRequestIdentifier } from '../utils/requests.js'
-import { getPublishedAddressBookChangeCount } from './addressBookChangePublication.js'
+import { getPublishedAddressBookChangeCount } from './addressBookChangeCount.js'
 import { getStoredConfirmationRunId, relabelDisplayedConfirmationSimulation } from './confirmationRelabel.js'
 import { relabelReportingUnexpectedErrors } from './simulationRelabel.js'
 import { updatePendingTransactionOrMessage } from './storageVariables.js'

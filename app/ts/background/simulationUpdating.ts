@@ -511,8 +511,15 @@ function lookUpVisualisationOnNode(ethereum: EthereumClientService, tokenPriceSe
 	}
 }
 
-export async function visualizeSimulatorState(simulationState: SimulationState, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, requestAbortController: AbortController | undefined) {
+// For the callers that store the run, the stack and the confirmation runs: the visualisation and, beside it, the run's record of its lookups, which only background storage keeps.
+export async function visualizeSimulatorStateAndRecordLookups(simulationState: SimulationState, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, requestAbortController: AbortController | undefined) {
 	return await visualizeSimulatorStateWithLookups(simulationState, ethereum.getRpcEntry(), lookUpVisualisationOnNode(ethereum, tokenPriceService, requestAbortController))
+}
+
+// For the callers that only reply with the visualisation and store no run, so the result carries no record of the run's lookups.
+export async function visualizeSimulatorState(simulationState: SimulationState, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, requestAbortController: AbortController | undefined): Promise<VisualizedSimulatorState> {
+	const { recordedVisualisationLookups: _recordedVisualisationLookups, ...visualisation } = await visualizeSimulatorStateAndRecordLookups(simulationState, ethereum, tokenPriceService, requestAbortController)
+	return visualisation
 }
 
 // Every lookup goes through lookups, so the visualisation itself reads nothing from the node; rpcNetwork is the services' network. The run's record of its lookups is returned beside the visualisation, for background storage only.

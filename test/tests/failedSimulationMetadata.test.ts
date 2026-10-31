@@ -231,6 +231,8 @@ describe('visualizeSimulatorState failed simulations', () => {
 		assert.equal(visualized.visualizedSimulationState.success, false)
 		assert.equal(visualized.visualizedSimulationState.visualizedBlocks[0]?.simulatedAndVisualizedTransactions[0]?.transaction.from.address, 0n)
 		assert.equal(visualized.visualizedSimulationState.visualizedBlocks[0]?.simulatedAndVisualizedTransactions[0]?.transaction.to?.address, ETHEREUM_LOGS_LOGGER_ADDRESS)
+		// Replies that store no run, such as governance and Safe transaction simulations, get the visualisation without the run's record of its lookups.
+		assert.equal('recordedVisualisationLookups' in visualized, false)
 	})
 
 	test('propagates new-block aborts during delegation lookup without recording an unexpected error', async () => {

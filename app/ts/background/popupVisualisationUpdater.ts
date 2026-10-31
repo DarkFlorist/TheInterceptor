@@ -12,7 +12,7 @@ import { modifyObject } from '../utils/typescript.js'
 import { captureSimulationSnapshot, getSimulationProviderForSnapshot, type SimulationSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
 import { requestIsSimulationDataConsumerOpen, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getPopupVisualisationFingerprint } from './popupSimulationFingerprint.js'
-import { visualizeSimulatorState } from './simulationUpdating.js'
+import { visualizeSimulatorStateAndRecordLookups } from './simulationUpdating.js'
 import { relabelStoredSimulation, type SimulationRunToRelabel } from './simulationRelabel.js'
 import { getPopupVisualisationState, setPopupVisualisationState, updatePopupVisualisationWithCallBack } from './storageVariables.js'
 
@@ -194,7 +194,7 @@ export async function updatePopupVisualisationState(ethereum: EthereumClientServ
 			try {
 				const getUpdatedState = async () => {
 					if (ethereum.getChainId() === simulationState.value.rpcNetwork.chainId) {
-						const refreshed = await visualizeSimulatorState(simulationState.value, ethereum, tokenPriceService, abortController)
+						const refreshed = await visualizeSimulatorStateAndRecordLookups(simulationState.value, ethereum, tokenPriceService, abortController)
 						return await setPopupVisualisationState({ ...refreshed, ...doneState, simulationState: toResolvedSimulationState(refreshed.simulationState), numberOfAddressesMadeRich })
 					}
 					return await setPopupVisualisationState(buildPassthroughVisualizedState(simulationId, numberOfAddressesMadeRich, 'corrupted'))

@@ -1,4 +1,4 @@
-// Visualises a stored simulation run again from stored data alone, for an address-book re-label. It builds the VisualisationLookups that a simulation run builds on the node (visualizeSimulatorState in simulationUpdating.ts) from local data and what the run recorded, so it makes no RPC request; both go through the same visualisation. See "Address-book re-labels" in docs/popup-simulation-refresh.md.
+// Visualises a stored simulation run again from stored data alone, for an address-book re-label. It builds the VisualisationLookups that a simulation run builds on the node (visualizeSimulatorStateAndRecordLookups in simulationUpdating.ts) from local data and what the run recorded, so it makes no RPC request; both go through the same visualisation. See "Address-book re-labels" in docs/popup-simulation-refresh.md.
 import { replayRecordedProtectorChainReads } from '../simulation/protectorChainReads.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
 import type { MetadataLookups } from '../types/metadataLookups.js'

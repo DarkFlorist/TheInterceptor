@@ -21,6 +21,7 @@ const safePendingFlowSource = await Bun.file(new URL('../../app/ts/safe/safePend
 const confirmTransactionSource = await Bun.file(new URL('../../app/ts/background/windows/confirmTransaction.ts', import.meta.url)).text()
 const confirmationRunStorageSource = await Bun.file(new URL('../../app/ts/background/confirmationRunStorage.ts', import.meta.url)).text()
 const confirmationRelabelSource = await Bun.file(new URL('../../app/ts/background/confirmationRelabel.ts', import.meta.url)).text()
+const addressBookChangeCountSource = await Bun.file(new URL('../../app/ts/background/addressBookChangeCount.ts', import.meta.url)).text()
 const addressBookChangePublicationSource = await Bun.file(new URL('../../app/ts/background/addressBookChangePublication.ts', import.meta.url)).text()
 const simulationUpdatingSource = await Bun.file(new URL('../../app/ts/background/simulationUpdating.ts', import.meta.url)).text()
 const storedRunVisualisationSource = await Bun.file(new URL('../../app/ts/background/storedRunVisualisation.ts', import.meta.url)).text()
@@ -155,8 +156,11 @@ test('the simulation and utils layers take the metadata lookup types from types/
 
 test('confirmation runs are stored through the confirmation-run storage, which catches up on address-book changes published during a run', () => {
 	// The publish step only counts its change; each run reads the count before its lookups and after it is stored, so no module marks runs from a distance.
-	assert.match(addressBookChangePublicationSource, /publishedAddressBookChangeCount \+= 1/u)
+	assert.match(addressBookChangePublicationSource, /countPublishedAddressBookChange\(\)[\s\S]*?relabelDisplayedConfirmationSimulation\(/u)
 	assert.doesNotMatch(addressBookChangePublicationSource, /from '\.\/confirmationRunStorage\.js'/u)
+	// The count lives in its own module, so the run storage depends on neither the publication nor the re-labels it starts.
+	assert.doesNotMatch(confirmationRunStorageSource, /from '\.\/addressBookChangePublication\.js'/u)
+	assert.doesNotMatch(addressBookChangeCountSource, /^import /mu)
 	assert.match(confirmationRunStorageSource, /getPublishedAddressBookChangeCount\(\)[\s\S]*?await simulateAndStore\([\s\S]*?getPublishedAddressBookChangeCount\(\)/u)
 	// The re-label does not depend on the storage, so the storage can request it without an import cycle.
 	assert.doesNotMatch(confirmationRelabelSource, /from '\.\/confirmationRunStorage\.js'/u)

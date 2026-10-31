@@ -29,7 +29,7 @@ const { publishAddressBookChangeAndRelabelSimulations } = await import('../../ap
 const { getConfirmTransactionAbortController, refreshConfirmTransactionSimulation } = await import('../../app/ts/background/confirmTransactionSimulation.js')
 const { relabelDisplayedConfirmationSimulation } = await import('../../app/ts/background/confirmationRelabel.js')
 const { relabelStoredSimulation } = await import('../../app/ts/background/simulationRelabel.js')
-const { visualizeSimulatorState } = await import('../../app/ts/background/simulationUpdating.js')
+const { visualizeSimulatorStateAndRecordLookups } = await import('../../app/ts/background/simulationUpdating.js')
 const { createWatchAssetResolutionDependencies } = await import('../../app/ts/background/windows/watchAsset.js')
 const { craftPersonalSignPopupMessage } = await import('../../app/ts/background/windows/personalSign.js')
 const { identifyAddressWith, recordIdentifiedAddresses } = await import('../../app/ts/background/metadataUtils.js')
@@ -485,7 +485,7 @@ async function storeConfirmationRunTransferringToken() {
 			? transaction
 			: { ...transaction, ethSimulateV1CallResult: { ...transaction.ethSimulateV1CallResult, logs: [transferLog] } }),
 	})) }
-	const { simulationState: _visualisedSimulationState, ...visualisedMetadata } = await visualizeSimulatorState(simulationState, simulator.ethereum, simulator.tokenPriceService, undefined)
+	const { simulationState: _visualisedSimulationState, ...visualisedMetadata } = await visualizeSimulatorStateAndRecordLookups(simulationState, simulator.ethereum, simulator.tokenPriceService, undefined)
 	await updateStoredConfirmationVisualisation((data) => ({ ...data, ...visualisedMetadata, simulationState }))
 }
 
