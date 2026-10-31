@@ -5,7 +5,7 @@ import { getSafeTransactionStackInvariantViolation, mapSafeTransactionMetadata, 
 import { SafeStackExport, type SafeTransactionStack } from '../types/safeTypes.js'
 import { checksummedAddress } from '../utils/bigint.js'
 import { getErrorMessage } from '../utils/errors.js'
-import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
+import { schedulePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
 import { getSafeTransactionStacks, updateTransactionState } from './storageVariables.js'
 
 export async function validateSafeTransactionStackForCurrentContract(ethereum: EthereumClientService, stack: SafeTransactionStack) {
@@ -121,7 +121,7 @@ export async function importSafeStack(
 				),
 			}
 		})
-		await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { invalidateOldState: true })
+		await schedulePopupSimulationRefresh({ ethereum, tokenPriceService, invalidateOldState: true })
 		return { type: 'ImportSafeStackReply' as const, ok: true as const }
 	} catch(error) {
 		return {

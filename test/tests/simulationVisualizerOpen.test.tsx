@@ -1243,7 +1243,14 @@ describe('simulation visualizer open replies', () => {
 				await new Promise((resolve) => setTimeout(resolve, 0))
 			})
 			await act(async () => { await import('../../app/ts/components/pages/ChangeActiveAddress.js') })
-			const nextCard = collectElements(dom.document.body, 'div').find((element) => element.getAttribute?.('class') === 'card hoverable' && element.textContent?.includes('Next wallet'))
+			const findNextCard = () => collectElements(dom.document.body, 'div').find((element) => element.getAttribute?.('class') === 'card hoverable' && element.textContent?.includes('Next wallet'))
+			let nextCard = findNextCard()
+			// Dynamic module resolution and the signal-driven render can finish on separate event-loop turns.
+			const pickerDeadline = performance.now() + 1000
+			while (nextCard === undefined && performance.now() < pickerDeadline) {
+				await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
+				nextCard = findNextCard()
+			}
 			if (nextCard === undefined) throw new Error('Expected the next wallet in the address picker')
 			await act(async () => { await clickElement(nextCard) })
 			assert.ok(changeRequested)

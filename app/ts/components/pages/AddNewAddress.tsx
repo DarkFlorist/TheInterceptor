@@ -393,8 +393,15 @@ export function AddNewAddress(param: AddAddressParam) {
 	const safeSimulationSignerAddressBookEntries = useSignal<AddressBookEntries>([])
 	const { value: blockExplorerLookup, waitFor: waitForBlockExplorerLookup, reset: resetBlockExplorerLookup } = useAsyncState<void>()
 	const { value: safeSignerLookup, waitFor: waitForSafeSignerLookup } = useAsyncState<void>()
+	const { value: addressLookup, waitFor: waitForAddressLookup } = useAsyncState<void>()
 	const { value: saveEntryState, waitFor: waitForSaveEntry } = useAsyncState<void>()
 	const isBlockExplorerLookupPending = useComputed(() => blockExplorerLookup.value.state === 'pending')
+	const currentAddressLookupError = useComputed(() => {
+		const lookup = addressLookup.value
+		const identification = getAddressIdentificationKey(param.modifyAddressWindowState.value)
+		return lookup.state === 'rejected' && identification?.requestSafeContractState === false && areAddressIdentificationKeysEqual(lastCompletedIdentification.value, identification)
+			? lookup.error.message : undefined
+	})
 
 	useEffect(() => {
 		const popupMessageListener = (msg: unknown): false => {
@@ -422,16 +429,21 @@ export function AddNewAddress(param: AddAddressParam) {
 			})
 		}
 		const identifyAddress = async (requestedIdentification: AddressIdentificationKey) => {
+			const requestedEntry = param.modifyAddressWindowState.peek().incompleteAddressBookEntry
 			inFlightIdentifications.value = [...inFlightIdentifications.peek(), requestedIdentification]
 			try {
 				const [identifiedAddress, safeContractStateReply] = await Promise.all([
-					requestPopupIdentifyAddress({ address: requestedIdentification.address, chainId: requestedIdentification.chainId }),
+					// Safe state already supplies owner metadata; optional token identification must not delay it.
+					requestedIdentification.requestSafeContractState ? Promise.resolve(undefined)
+						: requestPopupIdentifyAddress({ address: requestedIdentification.address, chainId: requestedIdentification.chainId }),
 					requestedIdentification.requestSafeContractState
 						? requestPopupSafeContractState({ address: requestedIdentification.address, chainId: requestedIdentification.chainId })
 						: Promise.resolve(undefined),
 				])
 				if (!isIdentificationRequestCurrent(param.modifyAddressWindowState.peek(), requestedIdentification)) return
-				lastCompletedIdentification.value = requestedIdentification
+				if (!requestedIdentification.requestSafeContractState && (identifiedAddress === undefined || identifiedAddress.data.chainId !== requestedIdentification.chainId)) {
+					throw new Error(getMissingPopupReplyErrorMessage('Looking up address metadata'))
+				}
 				const identifiedAddressBookEntry = identifiedAddress?.data.chainId === requestedIdentification.chainId ? identifiedAddress.data.addressBookEntry : undefined
 				if (requestedIdentification.requestSafeContractState && (safeContractStateReply === undefined || safeContractStateReply.data.chainId !== requestedIdentification.chainId)) {
 					setSafeContractStateError('Interceptor did not return the current Gnosis Safe signers.')
@@ -462,11 +474,13 @@ export function AddNewAddress(param: AddAddressParam) {
 					const currentState = param.modifyAddressWindowState.peek()
 					param.modifyAddressWindowState.value = modifyObject(currentState, { incompleteAddressBookEntry: {
 						...currentState.incompleteAddressBookEntry,
-						name: identifiedAddressBookEntry.name,
-						decimals: identifiedAddressBookEntry.decimals,
+						name: currentState.incompleteAddressBookEntry.name === requestedEntry.name ? identifiedAddressBookEntry.name : currentState.incompleteAddressBookEntry.name,
+						decimals: currentState.incompleteAddressBookEntry.decimals === requestedEntry.decimals ? identifiedAddressBookEntry.decimals : currentState.incompleteAddressBookEntry.decimals,
 					} })
 				}
 			} finally {
+				// Record failures too: clearing in-flight state must not automatically retry an unchanged key.
+				if (isIdentificationRequestCurrent(param.modifyAddressWindowState.peek(), requestedIdentification)) lastCompletedIdentification.value = requestedIdentification
 				inFlightIdentifications.value = inFlightIdentifications.peek().filter((identification) => !areAddressIdentificationKeysEqual(identification, requestedIdentification))
 			}
 		}
@@ -477,7 +491,7 @@ export function AddNewAddress(param: AddAddressParam) {
 			void waitForSafeSignerLookup(async () => await identifyAddress(currentIdentification))
 			return
 		}
-		void identifyAddress(currentIdentification)
+		void waitForAddressLookup(async () => await identifyAddress(currentIdentification))
 	})
 
 	const refreshSafeSigners = () => {
@@ -705,6 +719,7 @@ export function AddNewAddress(param: AddAddressParam) {
 					{ completeAddressBookEntryOrError.value.type !== 'error' || !isCurrentSafeLookupComplete.value ? <></> : <ErrorText text = { completeAddressBookEntryOrError.value.error } /> }
 
 					{ param.modifyAddressWindowState.value.errorState === undefined ? <></> : <ErrorText text = { param.modifyAddressWindowState.value.errorState.message } /> }
+					{ currentAddressLookupError.value === undefined ? <></> : <ErrorText text = { currentAddressLookupError.value } /> }
 					{ saveEntryState.value.state === 'rejected' ? <ErrorText text = { saveEntryState.value.error.message } /> : <></> }
 					{ !showOnChainVerificationErrorBox.value ? <></> :
 						<ErrorCheckBox
@@ -716,8 +731,8 @@ export function AddNewAddress(param: AddAddressParam) {
 			</section>
 				<footer class = 'modal-card-foot window-footer address-editor-footer'>
 					<button class = 'btn btn--outline' onClick = { param.close } disabled = { isBlockExplorerLookupPending.value }>Cancel</button>
-					{ param.setActiveAddressAndInformAboutIt === undefined || param.modifyAddressWindowState.value.incompleteAddressBookEntry === undefined || activeAddress.value === stringToAddress(param.modifyAddressWindowState.value.incompleteAddressBookEntry.address) ? <></> : <AsyncActionButton class = 'btn btn--outline' state = { saveEntryState.value.state } onClick = { createAndSwitch } disabled = { isSubmitButtonDisabled.value } text = { param.modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress ? 'Create and switch' : 'Modify and switch' } pendingText = { param.modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress ? 'Creating and switching...' : 'Modifying and switching...' } /> }
-					<AsyncActionButton class = 'btn btn--primary' state = { saveEntryState.value.state } onClick = { modifyOrAddEntry } disabled = { isSubmitButtonDisabled.value } text = { param.modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress ? 'Create address' : 'Save changes' } pendingText = { param.modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress ? 'Creating...' : 'Saving...' } />
+					{ param.setActiveAddressAndInformAboutIt === undefined || param.modifyAddressWindowState.value.incompleteAddressBookEntry === undefined || activeAddress.value === stringToAddress(param.modifyAddressWindowState.value.incompleteAddressBookEntry.address) ? <></> : <AsyncActionButton class = 'btn btn--outline' state = { saveEntryState.value.state } onClick = { createAndSwitch } disabled = { isSubmitButtonDisabled.value } text = { param.modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress ? 'Create and switch' : 'Modify and switch' } pendingText = { incompleteAddressBookEntry.value.type === 'safe' ? 'Validating Safe and switching...' : incompleteAddressBookEntry.value.addingAddress ? 'Creating and switching...' : 'Modifying and switching...' } /> }
+					<AsyncActionButton class = 'btn btn--primary' state = { saveEntryState.value.state } onClick = { modifyOrAddEntry } disabled = { isSubmitButtonDisabled.value } text = { param.modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress ? 'Create address' : 'Save changes' } pendingText = { incompleteAddressBookEntry.value.type === 'safe' ? 'Validating Safe...' : incompleteAddressBookEntry.value.addingAddress ? 'Creating...' : 'Saving...' } />
 				</footer>
 		</div>
 	</> )

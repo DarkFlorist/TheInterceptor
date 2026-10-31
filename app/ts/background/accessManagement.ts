@@ -1,3 +1,4 @@
+import { backgroundTaskSupervisor } from './backgroundTasks.js'
 import { getActiveAddress, getActiveAddressesForAllTabs, getWebsiteSocketConnection, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
 import { getActiveAddressEntryForChain, getActiveAddresses } from './metadataUtils.js'
 import { requestAccessFromUser } from './windows/interceptorAccess.js'
@@ -284,7 +285,7 @@ async function promptForWebsiteAccesses(simulationServicesOwner: SimulationServi
 				await askUserForAccessOnConnectionUpdate(simulationServicesOwner, websiteTabConnections, connection.socket, connection.websiteOrigin, activeAddress, settings)
 			} catch (error) {
 				if (throwOnError) throw error
-				await reportUnexpectedError(error)
+				await reportUnexpectedError(error, { source: 'website_access_prompt', details: { websiteOrigin: connection.websiteOrigin, socket: connection.socket } })
 			}
 		}
 	}
@@ -390,6 +391,45 @@ export type WebsiteAccessUpdate = {
 	readonly iconRefreshTargets: readonly { readonly tabId: number, readonly websiteOrigin: string }[]
 }
 
+// A rejected mutation can precede persistence or follow it (content-script setup runs after the write). Reconcile stored authority; never infer a committed revocation from rejection alone.
+export async function applyWebsiteAccessChange<T>(websiteTabConnections: WebsiteTabConnections, change: () => Promise<T>) {
+	let result: T
+	try {
+		result = await change()
+	} catch (error) {
+		try {
+			await reconcileCommittedWebsiteAccess(websiteTabConnections)
+		} catch (reconciliationError) {
+			await reportUnexpectedError(reconciliationError)
+		}
+		throw error
+	}
+	const accessUpdate = await reconcileCommittedWebsiteAccess(websiteTabConnections)
+	return { result, accessUpdate }
+}
+
+// Use after a mutation with no post-write setup, or to recover the stored authority after an ambiguous failure.
+export async function reconcileCommittedWebsiteAccess(websiteTabConnections: WebsiteTabConnections) {
+	try {
+		return await reconcileWebsiteApprovalAccesses(websiteTabConnections, await getSettings(), true)
+	} catch (error) {
+		const connections = [...websiteTabConnections.values()].flatMap(tab => Object.values(tab.connections))
+		const approvedConnections = new Set(connections.filter(connection => connection.approved))
+		// Clear authority before notifying any port; one broken port must not retain another port's approval.
+		for (const connection of connections) connection.approved = false
+		const notificationErrors: unknown[] = []
+		for (const connection of connections) {
+			try {
+				if (approvedConnections.has(connection)) disconnectFromPort(websiteTabConnections, connection.socket)
+				// Invalidate in-flight Safe Apps publications even on ports that were not approved yet.
+				else notifyWebsiteLifecycle(websiteTabConnections.lifecycle?.approvalChanged, connection.socket, false)
+			} catch (notificationError) { notificationErrors.push(notificationError) }
+		}
+		for (const notificationError of notificationErrors) await reportUnexpectedError(notificationError)
+		throw error
+	}
+}
+
 // Reconcile approvals with the committed settings while the caller owns the settings lock.
 export async function reconcileWebsiteApprovalAccesses(
 	websiteTabConnections: WebsiteTabConnections,
@@ -410,7 +450,11 @@ export async function reconcileWebsiteApprovalAccesses(
 		for (const iconRefreshTarget of tabIconRefreshTargets.values()) addIconRefreshTarget(iconRefreshTargets, iconRefreshTarget.tabId, iconRefreshTarget.websiteOrigin)
 	})
 	try {
-		await Promise.all(updatePromises)
+		// Finish every tab before returning an error so callers can fail closed without a later tab reapproving itself.
+		const results = await Promise.allSettled(updatePromises)
+		for (const result of results) {
+			if (result.status === 'rejected') throw result.reason
+		}
 	} catch (error) {
 		if (throwOnError) throw error
 		await reportUnexpectedError(error)
@@ -444,7 +488,7 @@ export async function finishWebsiteAccessUpdate(
 		))
 	} catch (error) {
 		if (throwOnError) throw error
-		await reportUnexpectedError(error)
+		await reportUnexpectedError(error, { source: 'website_access_icons', details: { popupRefreshGeneration: update.popupRefreshGeneration } })
 	}
 }
 
@@ -458,6 +502,17 @@ export async function updateWebsiteApprovalAccesses(
 	const update = await reconcileWebsiteApprovalAccesses(websiteTabConnections, settings, throwOnError)
 	await finishWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, update, promptForAccessesIfNeeded, throwOnError)
 	return update.popupRefreshGeneration
+}
+
+// Schedule only after reconciliation; save success covers committed permissions, while this completion covers prompt/icon work.
+export function scheduleWebsiteAccessUiUpdate(
+	simulationServicesOwner: SimulationServicesOwner | undefined,
+	websiteTabConnections: WebsiteTabConnections,
+	update: WebsiteAccessUpdate,
+	promptForAccessesIfNeeded: boolean,
+) {
+	return backgroundTaskSupervisor.start({ source: 'website_access_ui', details: { popupRefreshGeneration: update.popupRefreshGeneration } },
+		async () => await finishWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, update, promptForAccessesIfNeeded))
 }
 
 export async function finalizeWebsiteAccessChange(

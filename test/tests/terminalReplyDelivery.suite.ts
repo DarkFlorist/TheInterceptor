@@ -713,3 +713,38 @@ test('startup pruning removes terminal replies for missing tabs and preserves li
 })
 
 await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
+
+// Dismissal is independent of simulation readiness: keep a durable rejection for disconnected websites.
+test.each(['Crafting', 'Simulating', 'gas edited'] as const)('closing a confirmation with %s simulation settles its request', async state => {
+	const editedRequest = {
+		...pendingTransaction.originalRequestParameters,
+		params: [{ ...pendingTransaction.originalRequestParameters.params[0], gas: 30_000n }],
+	} as const
+	const pending = state === 'gas edited'
+		? { ...pendingTransaction, originalRequestParameters: editedRequest }
+		: { ...pendingTransaction, transactionOrMessageCreationStatus: state }
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [pending] })
+	await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, new Map(), {
+		method: 'popup_confirmDialog', data: { action: 'noResponse', uniqueRequestIdentifier },
+	})
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	const replies = await modules.getPendingTerminalReplies()
+	assert.equal(replies.length, 1)
+	assert.ok(replies[0] && 'error' in replies[0])
+	assert.equal(replies[0].error.code, 4001)
+})
+
+test('wallet result settles a request even if its gas simulation is stale', async () => {
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [{
+		...pendingTransaction, simulationMode: false,
+		originalRequestParameters: {
+			...pendingTransaction.originalRequestParameters,
+			params: [{ ...pendingTransaction.originalRequestParameters.params[0], gas: 30_000n }],
+		},
+	}] })
+	await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, new Map(), {
+		method: 'popup_confirmDialog', data: { action: 'signerIncluded', signerReply: modules.EthereumBytes32.serialize(signedTransaction.hash), uniqueRequestIdentifier },
+	})
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	assert.equal((await modules.getPendingTerminalReplies())[0]?.result, signedTransaction.hash)
+})
