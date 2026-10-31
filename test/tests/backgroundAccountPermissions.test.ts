@@ -993,6 +993,140 @@ describe('background eth_accounts', () => {
 		assert.equal(messages.some((message) => message.method === 'accountsChanged' && Array.isArray(message.result) && message.result.length > 0), false)
 	})
 
+	test('a reconciliation superseded while its final approvals read is in flight applies nothing', async () => {
+		installBrowserMock()
+		const { changeSimulationMode, getRequiredSettings, updateWebsiteAccess, updateWebsiteApprovalAccesses, websiteSocketToString } = await loadModules()
+		const websiteOrigin = 'https://superseded-reconciliation.example'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const account = 0x4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4fn
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: account })
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
+		const socket = { tabId: 123, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const connection = { port, socket, websiteOrigin, approved: false, wantsToConnect: false }
+		const websiteTabConnections = new Map([[socket.tabId, { connections: { [websiteSocketToString(socket)]: connection } }]])
+		const tabStateReadStarted = createDeferredValue<void>()
+		const releaseTabStateRead = createDeferredValue<void>()
+		const approvalsCaptured = createDeferredValue<void>()
+		const releaseApprovalsRead = createDeferredValue<void>()
+		let pauseNextTabStateRead = true
+		let pauseNextApprovalsRead = false
+		const originalStorageGet = browser.storage.local.get
+		Object.defineProperty(browser.storage.local, 'get', {
+			configurable: true,
+			value: async (keys?: string | string[] | Record<string, unknown> | null) => {
+				if (keys === 'tabState_123' && pauseNextTabStateRead) {
+					pauseNextTabStateRead = false
+					tabStateReadStarted.resolve(undefined)
+					await releaseTabStateRead.promise
+				}
+				const storedItems = await originalStorageGet(keys)
+				if (keys === 'websiteAccess' && pauseNextApprovalsRead) {
+					// The approval has been captured from storage; returning it is delayed.
+					pauseNextApprovalsRead = false
+					approvalsCaptured.resolve(undefined)
+					await releaseApprovalsRead.promise
+				}
+				return storedItems
+			},
+		})
+		try {
+			const olderReconciliation = updateWebsiteApprovalAccesses(undefined, websiteTabConnections, await getRequiredSettings(), false, true)
+			await tabStateReadStarted.promise
+			// The next approvals read is the older reconciliation's final one.
+			pauseNextApprovalsRead = true
+			releaseTabStateRead.resolve(undefined)
+			await approvalsCaptured.promise
+			await updateWebsiteAccess(() => [{ website, access: false, addressAccess: undefined }])
+			await updateWebsiteApprovalAccesses(undefined, websiteTabConnections, await getRequiredSettings(), false, true)
+			releaseApprovalsRead.resolve(undefined)
+			await olderReconciliation
+		} finally {
+			Object.defineProperty(browser.storage.local, 'get', { configurable: true, value: originalStorageGet })
+		}
+
+		assert.equal(connection.approved, false)
+		assert.equal(messages.some((message) => message.method === 'accountsChanged' && Array.isArray(message.result) && message.result.length > 0), false)
+	})
+
+	test.each([false, true])('a connection whose active address cannot be resolved is unapproved while the others reconcile (throwOnError: %p)', async (throwOnError) => {
+		installBrowserMock()
+		const { changeSimulationMode, getRequiredSettings, updateWebsiteAccess, updateWebsiteApprovalAccesses, websiteSocketToString } = await loadModules()
+		const account = 0x5050505050505050505050505050505050505050n
+		const unresolvableWebsite = { websiteOrigin: 'https://unresolvable.example', icon: undefined, title: undefined }
+		const approvedWebsite = { websiteOrigin: 'https://approved.example', icon: undefined, title: undefined }
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: account })
+		await updateWebsiteAccess(() => [unresolvableWebsite, approvedWebsite].map((website) => ({ website, access: true, addressAccess: [{ address: account, access: true }] })))
+		const unresolvableSocket = { tabId: 123, connectionName: 0n }
+		const approvedSocket = { tabId: 124, connectionName: 0n }
+		const unresolvablePort = createPort(unresolvableSocket.tabId)
+		const unresolvableConnection = { port: unresolvablePort.port, socket: unresolvableSocket, websiteOrigin: unresolvableWebsite.websiteOrigin, approved: true, wantsToConnect: false }
+		const approvedConnection = { port: createPort(approvedSocket.tabId).port, socket: approvedSocket, websiteOrigin: approvedWebsite.websiteOrigin, approved: false, wantsToConnect: false }
+		const websiteTabConnections = new Map([
+			[unresolvableSocket.tabId, { connections: { [websiteSocketToString(unresolvableSocket)]: unresolvableConnection } }],
+			[approvedSocket.tabId, { connections: { [websiteSocketToString(approvedSocket)]: approvedConnection } }],
+		])
+		const settings = await getRequiredSettings()
+		const originalStorageGet = browser.storage.local.get
+		Object.defineProperty(browser.storage.local, 'get', {
+			configurable: true,
+			value: async (keys?: string | string[] | Record<string, unknown> | null) => {
+				if (keys === 'tabState_123') throw new Error('Tab state unavailable')
+				return await originalStorageGet(keys)
+			},
+		})
+		try {
+			const reconciliation = updateWebsiteApprovalAccesses(undefined, websiteTabConnections, settings, false, throwOnError)
+			if (throwOnError) await assert.rejects(reconciliation, /Tab state unavailable/)
+			else await reconciliation
+		} finally {
+			Object.defineProperty(browser.storage.local, 'get', { configurable: true, value: originalStorageGet })
+		}
+
+		assert.equal(unresolvableConnection.approved, false)
+		assert.equal(approvedConnection.approved, true)
+		assert.equal(unresolvablePort.messages.some((message) => message.method === 'accountsChanged' && Array.isArray(message.result) && message.result.length > 0), false)
+	})
+
+	test('an unreadable final approvals read unapproves connections, including one whose active address cannot be resolved', async () => {
+		installBrowserMock()
+		const { changeSimulationMode, getRequiredSettings, updateWebsiteAccess, updateWebsiteApprovalAccesses, websiteSocketToString } = await loadModules()
+		const account = 0x5151515151515151515151515151515151515151n
+		const unresolvableWebsite = { websiteOrigin: 'https://unresolvable-unreadable.example', icon: undefined, title: undefined }
+		const resolvableWebsite = { websiteOrigin: 'https://resolvable-unreadable.example', icon: undefined, title: undefined }
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: account })
+		await updateWebsiteAccess(() => [unresolvableWebsite, resolvableWebsite].map((website) => ({ website, access: true, addressAccess: [{ address: account, access: true }] })))
+		const unresolvableSocket = { tabId: 123, connectionName: 0n }
+		const resolvableSocket = { tabId: 124, connectionName: 0n }
+		const unresolvableConnection = { port: createPort(unresolvableSocket.tabId).port, socket: unresolvableSocket, websiteOrigin: unresolvableWebsite.websiteOrigin, approved: true, wantsToConnect: false }
+		const resolvableConnection = { port: createPort(resolvableSocket.tabId).port, socket: resolvableSocket, websiteOrigin: resolvableWebsite.websiteOrigin, approved: true, wantsToConnect: false }
+		const websiteTabConnections = new Map([
+			[unresolvableSocket.tabId, { connections: { [websiteSocketToString(unresolvableSocket)]: unresolvableConnection } }],
+			[resolvableSocket.tabId, { connections: { [websiteSocketToString(resolvableSocket)]: resolvableConnection } }],
+		])
+		const settings = await getRequiredSettings()
+		const originalStorageGet = browser.storage.local.get
+		Object.defineProperty(browser.storage.local, 'get', {
+			configurable: true,
+			value: async (keys?: string | string[] | Record<string, unknown> | null) => {
+				if (keys === 'tabState_123') throw new Error('Tab state unavailable')
+				if (keys === 'websiteAccess') throw new Error('Website access unavailable')
+				return await originalStorageGet(keys)
+			},
+		})
+		const originalWarn = console.warn
+		console.warn = () => undefined
+		try {
+			await updateWebsiteApprovalAccesses(undefined, websiteTabConnections, settings, false)
+		} finally {
+			console.warn = originalWarn
+			Object.defineProperty(browser.storage.local, 'get', { configurable: true, value: originalStorageGet })
+		}
+
+		assert.equal(unresolvableConnection.approved, false)
+		assert.equal(resolvableConnection.approved, false)
+	})
+
 	test('does not enable Safe compatibility or expose an active address to an unapproved connected_to_signer request', async () => {
 		installBrowserMock()
 		const {

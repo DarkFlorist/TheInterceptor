@@ -167,9 +167,17 @@ export function withoutWebsiteApprovals(settings: Settings): Settings {
 	return { ...settings, websiteAccess: [] }
 }
 
-// Website approvals can change while an admitted operation awaits, so reconciliation re-reads them (none when storage is unreadable) and keeps the admitted RPC network and other fields.
-export async function withCurrentWebsiteAccess(admittedSettings: Settings): Promise<Settings> {
-	return { ...admittedSettings, websiteAccess: (await getSettingsSnapshot()).websiteAccess }
+// A narrow read of website approvals for access decisions: unreadable or corrupt storage yields no approvals, and nothing is repaired or written.
+export async function getWebsiteAccessForAccessDecision(): Promise<WebsiteAccessArray> {
+	let storedWebsiteAccess: unknown
+	try {
+		const { websiteAccess } = await browser.storage.local.get('websiteAccess')
+		storedWebsiteAccess = websiteAccess
+	} catch {
+		return []
+	}
+	if (storedWebsiteAccess === undefined) return []
+	return sanitizeWebsiteAccess(browserStorageLocalSafeParse({ websiteAccess: storedWebsiteAccess })?.websiteAccess ?? [])
 }
 
 export const setPage = async (openedPageV2: Page) => await browserStorageLocalSet({ openedPageV2 })

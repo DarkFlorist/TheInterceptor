@@ -4,7 +4,7 @@ import { requestAccessFromUser } from './windows/interceptorAccess.js'
 import { retrieveWebsiteDetails, updateExtensionIcon } from './iconHandler.js'
 import type { TabConnection, WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { InpageScriptCallBack, Settings } from '../types/interceptor-messages.js'
-import { getRequiredSettings, getSettingsSnapshot, getWebsiteAccess, updateWebsiteAccess, withCurrentWebsiteAccess } from './settings.js'
+import { getRequiredSettings, getSettingsSnapshot, getWebsiteAccess, getWebsiteAccessForAccessDecision, updateWebsiteAccess } from './settings.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
 import { type WebsiteSocket, getHostWithPort, silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { getAllTabStates } from './storageVariables.js'
@@ -442,6 +442,27 @@ export type WebsiteAccessUpdate = {
 	readonly iconRefreshTargets: readonly { readonly tabId: number, readonly websiteOrigin: string }[]
 }
 
+// Reconciliations of one connections map are numbered and only the latest may apply connection changes: one that resumes after a newer reconciliation took its number applies nothing, because the newer one reads approvals later. Writers that change approvals reconcile afterwards, so that reconciliation supersedes any still in flight.
+const latestReconciliationNumbers = new WeakMap<WebsiteTabConnections, number>()
+
+function takeReconciliationNumber(websiteTabConnections: WebsiteTabConnections) {
+	const reconciliationNumber = (latestReconciliationNumbers.get(websiteTabConnections) ?? 0) + 1
+	latestReconciliationNumbers.set(websiteTabConnections, reconciliationNumber)
+	return reconciliationNumber
+}
+
+type ConnectionAddressResolution =
+	| { readonly connection: WebsiteConnection, readonly resolved: true, readonly activeAddress: AddressBookEntry | undefined }
+	| { readonly connection: WebsiteConnection, readonly resolved: false, readonly error: unknown }
+
+async function resolveConnectionAddress(websiteTabConnections: WebsiteTabConnections, connection: WebsiteConnection, settings: Settings): Promise<ConnectionAddressResolution> {
+	try {
+		return { connection, resolved: true, activeAddress: await getConnectionActiveAddress(websiteTabConnections, connection, settings) }
+	} catch (error: unknown) {
+		return { connection, resolved: false, error }
+	}
+}
+
 // Reconcile approvals with the committed settings while the caller owns the settings lock.
 export async function reconcileWebsiteApprovalAccesses(
 	websiteTabConnections: WebsiteTabConnections,
@@ -457,22 +478,26 @@ export async function reconcileWebsiteApprovalAccesses(
 		if (throwOnError) throw error
 		await reportUnexpectedError(error)
 	}
+	// Taken after the request-block update, so a reconciliation that throws there does not supersede one that can still apply.
+	const reconciliationNumber = takeReconciliationNumber(websiteTabConnections)
 	// Resolving a connection's active address awaits storage and signer state, so it is done for every connection before approvals are read.
 	const connections = [...websiteTabConnections.values()].flatMap((tabConnection) => Object.values(tabConnection.connections))
-	const addressResolutions = await Promise.allSettled(connections.map(async (connection) => ({ connection, activeAddress: await getConnectionActiveAddress(websiteTabConnections, connection, settings) })))
+	const addressResolutions = await Promise.all(connections.map(async (connection) => await resolveConnectionAddress(websiteTabConnections, connection, settings)))
+	const currentWebsiteAccess = await getWebsiteAccessForAccessDecision()
+	// No await from this check until the changes are applied, so a superseded reconciliation cannot apply approvals older than the newer one's.
+	if (latestReconciliationNumbers.get(websiteTabConnections) !== reconciliationNumber) return { popupRefreshGeneration, iconRefreshTargets: [] }
+	const settingsWithCurrentApprovals = { ...settings, websiteAccess: currentWebsiteAccess }
 	try {
-		// Approvals are read after every other await and applied with none in between, so a reconciliation that resumes after a newer one cannot restore an approval revoked meanwhile; unreadable storage yields none.
-		const settingsWithCurrentApprovals = await withCurrentWebsiteAccess(settings)
 		for (const addressResolution of addressResolutions) {
-			if (addressResolution.status === 'rejected') continue
-			const { connection, activeAddress } = addressResolution.value
+			const { connection } = addressResolution
 			addIconRefreshTarget(iconRefreshTargets, connection.socket.tabId, connection.websiteOrigin)
-			const access = getConnectionAccessForAddress(settingsWithCurrentApprovals.websiteAccess, connection, activeAddress)
+			// Without its active address the connection's approval cannot be verified, so it fails closed.
+			const access = addressResolution.resolved ? getConnectionAccessForAddress(currentWebsiteAccess, connection, addressResolution.activeAddress) : 'noAccess'
 			if (access !== 'hasAccess' && connection.approved) disconnectFromPort(websiteTabConnections, connection.socket)
-			else if (access === 'hasAccess' && !connection.approved) connectToPort(websiteTabConnections, connection.socket, settingsWithCurrentApprovals, activeAddress?.address)
+			else if (access === 'hasAccess' && !connection.approved && addressResolution.resolved) connectToPort(websiteTabConnections, connection.socket, settingsWithCurrentApprovals, addressResolution.activeAddress?.address)
 		}
-		const failedAddressResolution = addressResolutions.find((addressResolution): addressResolution is PromiseRejectedResult => addressResolution.status === 'rejected')
-		if (failedAddressResolution !== undefined) throw failedAddressResolution.reason
+		const failedAddressResolution = addressResolutions.find((addressResolution) => !addressResolution.resolved)
+		if (failedAddressResolution !== undefined && !failedAddressResolution.resolved) throw failedAddressResolution.error
 	} catch (error) {
 		if (throwOnError) throw error
 		await reportUnexpectedError(error)
