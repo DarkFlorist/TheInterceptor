@@ -1,27 +1,10 @@
-import type { ConfirmTransactionTransactionSingleVisualization, PopupPendingTransactionOrSignableMessage } from '../types/accessRequest.js'
-import type { VisualizedPersonalSignRequest } from '../types/personal-message-definitions.js'
-import type { MaybeSimulatedTransaction, VisualizedSimulationState } from '../types/visualizer-types.js'
+import type { PopupPendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import type { DecodedError } from '../types/error.js'
-import { MOCK_PRIVATE_KEYS_ADDRESS } from './constants.js'
+import { isPossibleToSignMessage } from './personalSignRequest.js'
 import { doesUniqueRequestIdentifiersMatch } from './requests.js'
+import { getVisualizedTransactionResult } from './visualizedTransactionResult.js'
 
 export type SendAnywayOverrideReason = 'failingTransaction' | 'quarantinedTransaction' | 'quarantinedSignature'
-
-export const getResultsForTransaction = (visualizedSimulationState: VisualizedSimulationState, transactionIdentifier: bigint) => {
-	return visualizedSimulationState.visualizedBlocks
-		.flatMap((block): readonly MaybeSimulatedTransaction[] => block.simulatedAndVisualizedTransactions)
-		.find((transaction) => transaction.transactionIdentifier === transactionIdentifier)
-}
-
-// The simulated result the popup shows for a transaction, or undefined when the simulation failed or produced no result for it, in which case the popup offers only rejection.
-export const getVisualizedTransactionResult = (popupVisualisation: ConfirmTransactionTransactionSingleVisualization, transactionIdentifier: bigint) => {
-	if (popupVisualisation.statusCode !== 'success' || popupVisualisation.data.visualizedSimulationState.success === false) return undefined
-	return getResultsForTransaction(popupVisualisation.data.visualizedSimulationState, transactionIdentifier)
-}
-
-export function isPossibleToSignMessage(visualizedPersonalSignRequest: VisualizedPersonalSignRequest, activeAddress: bigint) {
-	return !(visualizedPersonalSignRequest.simulationMode && (activeAddress !== MOCK_PRIVATE_KEYS_ADDRESS || visualizedPersonalSignRequest.method !== 'personal_sign'))
-}
 
 type SendAnywayConsent = {
 	readonly reason: SendAnywayOverrideReason
