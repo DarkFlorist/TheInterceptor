@@ -3,7 +3,9 @@ import { describe, test } from 'bun:test'
 import { EthereumClientService, getNextBlockTimeStampOverride } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { captureSigningSimulationSnapshot, captureWhatIfSimulationSnapshot, getCurrentSimulationInput, getGovernanceExecutionSimulationInput, getSimulationInputForPurpose, prepareSimulationInputForRpc } from '../../app/ts/background/simulationUpdating.js'
 import { getSimulationOverridesForPurpose } from '../../app/ts/background/delegateClearingPolicy.js'
-import { clearDelegateClearingHintCache, getCachedDelegateClearingHint, invalidateDelegateClearingHintsForNewBlock, withDelegateClearingHintInvalidation } from '../../app/ts/background/delegateClearingHintCache.js'
+import { createDelegateClearingHintCache } from '../../app/ts/simulation/services/delegateClearingHintCache.js'
+import type { IEthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
+import { createSimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
 import { requestDelegateClearing, setDelegateClearing } from '../../app/ts/background/popupMessageHandlers/delegateClearing.js'
 import { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
 import { changeSimulationMode, isDelegateClearingEnabled, setDelegateClearingEnabled, setMakeCurrentAddressRich } from '../../app/ts/background/settings.js'
@@ -396,12 +398,12 @@ describe('delegate clearing in simulation', () => {
 		}, async () => undefined, async () => undefined, rpcEntry)
 
 		assert.deepEqual(await Promise.all([
-			getCachedDelegateClearingHint(ethereum, activeAddress),
-			getCachedDelegateClearingHint(ethereum, activeAddress),
+			ethereum.getDelegateClearingHint(activeAddress),
+			ethereum.getDelegateClearingHint(activeAddress),
 		]), [delegate, delegate])
-		assert.equal(await getCachedDelegateClearingHint(ethereum, activeAddress), delegate)
-		assert.equal(await getCachedDelegateClearingHint(ethereum, activeAddress + 1n), undefined)
-		assert.equal(await getCachedDelegateClearingHint(ethereum, activeAddress + 1n), undefined)
+		assert.equal(await ethereum.getDelegateClearingHint(activeAddress), delegate)
+		assert.equal(await ethereum.getDelegateClearingHint(activeAddress + 1n), undefined)
+		assert.equal(await ethereum.getDelegateClearingHint(activeAddress + 1n), undefined)
 		assert.equal(codeRequests, 2)
 		const replacementEthereum = new EthereumClientService({
 			rpcUrl: rpcEntry.httpsRpc,
@@ -411,31 +413,26 @@ describe('delegate clearing in simulation', () => {
 				return '0x'
 			},
 		}, async () => undefined, async () => undefined, rpcEntry)
-		assert.equal(await getCachedDelegateClearingHint(replacementEthereum, activeAddress), undefined)
+		assert.equal(await replacementEthereum.getDelegateClearingHint(activeAddress), undefined)
 	})
 
 	test('rechecks an aged delegated hint after a new block but keeps negative hints cached', async () => {
-		let codeRequests = 0
+		let lookups = 0
 		const delegate = 0xabcdefabcdefabcdefabcdefabcdefabcdefabcdn
-		let code = `0xef0100${ addressString(delegate).slice(2) }`
-		const ethereum = new EthereumClientService({
-			rpcUrl: rpcEntry.httpsRpc,
-			clearCache() { return undefined },
-			async jsonRpcRequest(request) {
-				if (request.method !== 'eth_getCode') throw new Error(`Unexpected RPC method ${ request.method }`)
-				codeRequests += 1
-				return code
-			},
-		}, async () => undefined, async () => undefined, rpcEntry)
-		assert.equal(await getCachedDelegateClearingHint(ethereum, activeAddress), delegate)
-		code = '0x'
-		invalidateDelegateClearingHintsForNewBlock(ethereum, Date.now() + 59_000)
-		assert.equal(await getCachedDelegateClearingHint(ethereum, activeAddress), delegate)
-		invalidateDelegateClearingHintsForNewBlock(ethereum, Date.now() + 61_000)
-		assert.equal(await getCachedDelegateClearingHint(ethereum, activeAddress), undefined)
-		invalidateDelegateClearingHintsForNewBlock(ethereum, Date.now() + 600_000)
-		assert.equal(await getCachedDelegateClearingHint(ethereum, activeAddress), undefined)
-		assert.equal(codeRequests, 2)
+		let delegateOnChain: bigint | undefined = delegate
+		const hints = createDelegateClearingHintCache(async () => {
+			lookups += 1
+			return delegateOnChain
+		})
+		assert.equal(await hints.get(activeAddress), delegate)
+		delegateOnChain = undefined
+		hints.invalidateDelegatedForNewBlock(Date.now() + 59_000)
+		assert.equal(await hints.get(activeAddress), delegate)
+		hints.invalidateDelegatedForNewBlock(Date.now() + 61_000)
+		assert.equal(await hints.get(activeAddress), undefined)
+		hints.invalidateDelegatedForNewBlock(Date.now() + 600_000)
+		assert.equal(await hints.get(activeAddress), undefined)
+		assert.equal(lookups, 2)
 	})
 
 	test('retries a lookup started before a new block without caching its stale result', async () => {
@@ -447,10 +444,15 @@ describe('delegate clearing in simulation', () => {
 		let releaseStaleCode = (_code: string) => undefined
 		const staleCode = new Promise<string>((resolve) => { releaseStaleCode = resolve })
 		const staleDelegate = 0xabcdefabcdefabcdefabcdefabcdefabcdefabcdn
+		const latestBlockResponse = JsonRpcResponse.parse(JSON.parse(eth_getBlockByNumber_goerli_8443561_true))
+		if ('error' in latestBlockResponse) throw new Error(latestBlockResponse.error.message)
+		let markNewBlockSeen = () => undefined
+		const newBlockSeen = new Promise<void>((resolve) => { markNewBlockSeen = () => resolve() })
 		const ethereum = new EthereumClientService({
 			rpcUrl: rpcEntry.httpsRpc,
 			clearCache() { return undefined },
 			async jsonRpcRequest(request) {
+				if (request.method === 'eth_getBlockByNumber') return latestBlockResponse.result
 				if (request.method !== 'eth_getCode') throw new Error(`Unexpected RPC method ${ request.method }`)
 				codeRequests += 1
 				if (codeRequests === 1) {
@@ -460,19 +462,19 @@ describe('delegate clearing in simulation', () => {
 				markSecondStarted()
 				return '0x'
 			},
-		}, async () => undefined, async () => undefined, rpcEntry)
-		const pendingHint = getCachedDelegateClearingHint(ethereum, activeAddress)
-		await firstStarted
-		const parentBlockResponse = JsonRpcResponse.parse(JSON.parse(eth_getBlockByNumber_goerli_8443561_true))
-		if ('error' in parentBlockResponse) throw new Error(parentBlockResponse.error.message)
-		const parentBlock = EthereumBlockHeader.parse(parentBlockResponse.result)
-		if (parentBlock === null) throw new Error('Expected a parent block')
-		await withDelegateClearingHintInvalidation(async () => undefined)(parentBlock, ethereum, true)
-		await secondStarted
-		releaseStaleCode(`0xef0100${ addressString(staleDelegate).slice(2) }`)
-		assert.equal(await pendingHint, undefined)
-		assert.equal(await getCachedDelegateClearingHint(ethereum, activeAddress), undefined)
-		assert.equal(codeRequests, 2)
+		}, async (_blockHeader, _ethereum, isNewBlock) => { if (isNewBlock) markNewBlockSeen() }, async (_ethereum, error) => { throw error }, rpcEntry)
+		try {
+			const pendingHint = ethereum.getDelegateClearingHint(activeAddress)
+			await firstStarted
+			// Block polling is the production path that tells the service's hint cache about a new block.
+			ethereum.setBlockPolling(true)
+			await newBlockSeen
+			await secondStarted
+			releaseStaleCode(`0xef0100${ addressString(staleDelegate).slice(2) }`)
+			assert.equal(await pendingHint, undefined)
+			assert.equal(await ethereum.getDelegateClearingHint(activeAddress), undefined)
+			assert.equal(codeRequests, 2)
+		} finally { ethereum.cleanup() }
 	})
 
 	test('reuses the background delegation hint across popup opens and toggles', async () => {
@@ -482,7 +484,7 @@ describe('delegate clearing in simulation', () => {
 		const delegate = 0xabcdefabcdefabcdefabcdefabcdefabcdefabcdn
 		let code = `0xef0100${ addressString(delegate).slice(2) }`
 		let codeRequests = 0
-		const ethereum = new EthereumClientService({
+		const requestHandler: IEthereumJSONRpcRequestHandler = {
 			rpcUrl: rpcEntry.httpsRpc,
 			clearCache() { return undefined },
 			async jsonRpcRequest(request) {
@@ -490,7 +492,8 @@ describe('delegate clearing in simulation', () => {
 				codeRequests += 1
 				return code
 			},
-		}, async () => undefined, async () => undefined, rpcEntry)
+		}
+		const ethereum = new EthereumClientService(requestHandler, async () => undefined, async () => undefined, rpcEntry)
 		const requestReply = await requestDelegateClearing(settings, ethereum, activeAddress, rpcEntry.chainId)
 		assert.deepEqual(requestReply.data.status, { type: 'delegated', delegate })
 		assert.equal(codeRequests, 1)
@@ -501,8 +504,8 @@ describe('delegate clearing in simulation', () => {
 		const toggleReply = await setDelegateClearing(settings, services, activeAddress, rpcEntry.chainId, true)
 		assert.deepEqual(toggleReply.data, { ok: true, address: activeAddress, chainId: rpcEntry.chainId, enabled: true })
 		assert.equal(codeRequests, 1)
-		clearDelegateClearingHintCache(ethereum)
-		const missingReply = await requestDelegateClearing(settings, ethereum, activeAddress, rpcEntry.chainId)
+		const replacementEthereum = new EthereumClientService(requestHandler, async () => undefined, async () => undefined, rpcEntry)
+		const missingReply = await requestDelegateClearing(settings, replacementEthereum, activeAddress, rpcEntry.chainId)
 		assert.deepEqual(missingReply.data.status, { type: 'none' })
 		assert.equal(codeRequests, 2)
 	})
@@ -543,17 +546,17 @@ describe('delegate clearing in simulation', () => {
 			},
 		}, async () => undefined, async () => undefined, rpcEntry)
 
-		await assert.rejects(getCachedDelegateClearingHint(ethereum, address), /RPC unavailable/)
-		assert.equal(await getCachedDelegateClearingHint(ethereum, address), undefined)
+		await assert.rejects(ethereum.getDelegateClearingHint(address), /RPC unavailable/)
+		assert.equal(await ethereum.getDelegateClearingHint(address), undefined)
 		assert.equal(codeRequests, 2)
 	})
 
-	test('keeps an abandoned lookup available to later waiters and invalidates it on cache reset', async () => {
+	test('keeps an abandoned lookup available to later waiters until the service is replaced', async () => {
 		let codeRequests = 0
 		let releaseFirst: (code: string) => void = () => undefined
 		const firstResponse = new Promise<string>((resolve) => { releaseFirst = resolve })
 		const delegate = 0xabcdefabcdefabcdefabcdefabcdefabcdefabcdn
-		const ethereum = new EthereumClientService({
+		const requestHandler: IEthereumJSONRpcRequestHandler = {
 			rpcUrl: rpcEntry.httpsRpc,
 			clearCache() { return undefined },
 			async jsonRpcRequest(request) {
@@ -561,16 +564,17 @@ describe('delegate clearing in simulation', () => {
 				codeRequests += 1
 				return codeRequests === 1 ? await firstResponse : `0xef0100${ addressString(delegate).slice(2) }`
 			},
-		}, async () => undefined, async () => undefined, rpcEntry)
+		}
+		const ethereum = new EthereumClientService(requestHandler, async () => undefined, async () => undefined, rpcEntry)
 		const abortController = new AbortController()
-		const abortedLookup = getCachedDelegateClearingHint(ethereum, activeAddress, abortController)
+		const abortedLookup = ethereum.getDelegateClearingHint(activeAddress, abortController)
 		abortController.abort(new Error('Refresh replaced'))
 		await assert.rejects(abortedLookup, /Refresh replaced/u)
 		releaseFirst('0x')
-		assert.equal(await getCachedDelegateClearingHint(ethereum, activeAddress), undefined)
+		assert.equal(await ethereum.getDelegateClearingHint(activeAddress), undefined)
 		assert.equal(codeRequests, 1)
-		clearDelegateClearingHintCache(ethereum)
-		assert.equal(await getCachedDelegateClearingHint(ethereum, activeAddress), delegate)
+		const replacementEthereum = new EthereumClientService(requestHandler, async () => undefined, async () => undefined, rpcEntry)
+		assert.equal(await replacementEthereum.getDelegateClearingHint(activeAddress), delegate)
 		assert.equal(codeRequests, 2)
 	})
 
@@ -590,36 +594,62 @@ describe('delegate clearing in simulation', () => {
 			},
 		}, async () => undefined, async () => undefined, rpcEntry)
 		const abortController = new AbortController()
-		const aborted = getCachedDelegateClearingHint(ethereum, activeAddress, abortController)
-		const surviving = getCachedDelegateClearingHint(ethereum, activeAddress)
+		const aborted = ethereum.getDelegateClearingHint(activeAddress, abortController)
+		const surviving = ethereum.getDelegateClearingHint(activeAddress)
 		abortController.abort(new Error('Refresh replaced'))
 		await assert.rejects(aborted, /Refresh replaced/u)
 		releaseLookup(`0xef0100${ addressString(delegate).slice(2) }`)
 		assert.equal(await surviving, delegate)
-		assert.equal(await getCachedDelegateClearingHint(ethereum, activeAddress), delegate)
+		assert.equal(await ethereum.getDelegateClearingHint(activeAddress), delegate)
 		assert.equal(codeRequests, 1)
 	})
 
-	test('retries an in-flight delegation lookup after a cache reset invalidates it', async () => {
-		let releaseOldBlock: (code: string) => void = () => undefined
-		const oldBlockResponse = new Promise<string>((resolve) => { releaseOldBlock = resolve })
-		let codeRequests = 0
+	test('retries an in-flight delegation lookup after a new block invalidates it', async () => {
+		let releaseOldBlock: (delegate: bigint | undefined) => void = () => undefined
+		const oldBlockResponse = new Promise<bigint | undefined>((resolve) => { releaseOldBlock = resolve })
+		let lookups = 0
 		const delegate = 0xabcdefabcdefabcdefabcdefabcdefabcdefabcdn
-		const ethereum = new EthereumClientService({
-			rpcUrl: rpcEntry.httpsRpc,
-			clearCache() { return undefined },
-			async jsonRpcRequest(request) {
-				if (request.method !== 'eth_getCode') throw new Error(`Unexpected RPC method ${ request.method }`)
-				codeRequests += 1
-				return codeRequests === 1 ? await oldBlockResponse : '0x'
-			},
-		}, async () => undefined, async () => undefined, rpcEntry)
-		const staleLookup = getCachedDelegateClearingHint(ethereum, activeAddress)
-		clearDelegateClearingHintCache(ethereum)
+		const hints = createDelegateClearingHintCache(async () => {
+			lookups += 1
+			return lookups === 1 ? await oldBlockResponse : undefined
+		})
+		const staleLookup = hints.get(activeAddress)
+		hints.invalidateDelegatedForNewBlock(Date.now())
 		assert.equal(await staleLookup, undefined)
-		releaseOldBlock(`0xef0100${ addressString(delegate).slice(2) }`)
-		assert.equal(await getCachedDelegateClearingHint(ethereum, activeAddress), undefined)
-		assert.equal(codeRequests, 2)
+		releaseOldBlock(delegate)
+		assert.equal(await hints.get(activeAddress), undefined)
+		assert.equal(lookups, 2)
+	})
+
+	test('replacing the simulation services drops cached delegate clearing hints', async () => {
+		const delegate = 0xabcdefabcdefabcdefabcdefabcdefabcdefabcdn
+		let code = `0xef0100${ addressString(delegate).slice(2) }`
+		let codeRequests = 0
+		const server = Bun.serve({
+			hostname: '127.0.0.1', port: 0,
+			async fetch(request) {
+				const message: unknown = await request.json()
+				if (typeof message !== 'object' || message === null || !('id' in message) || !('method' in message)) throw new Error('Missing fixture request fields')
+				if (message.method !== 'eth_getCode') throw new Error(`Unexpected RPC method ${ String(message.method) }`)
+				codeRequests += 1
+				return Response.json({ jsonrpc: '2.0', id: message.id, result: code })
+			},
+		})
+		const network = { ...rpcEntry, httpsRpc: `${ server.url }rpc` }
+		const owner = createSimulationServicesOwner(network, async () => undefined, async (_ethereum, error) => { throw error })
+		try {
+			const original = owner.getCurrent().ethereum
+			assert.equal(await original.getDelegateClearingHint(activeAddress), delegate)
+			code = '0x'
+			assert.equal(await original.getDelegateClearingHint(activeAddress), delegate)
+			assert.equal(codeRequests, 1)
+			const replacement = owner.reset(network).ethereum
+			assert.equal(await replacement.getDelegateClearingHint(activeAddress), undefined)
+			assert.equal(codeRequests, 2)
+		} finally {
+			owner.getCurrent().ethereum.cleanup()
+			server.stop(true)
+		}
 	})
 
 	test('saving delegate clearing does not wait for a pending hint lookup', async () => {
@@ -639,7 +669,7 @@ describe('delegate clearing in simulation', () => {
 			},
 		}, async () => undefined, async () => undefined, rpcEntry)
 		const services = { ethereum, tokenPriceService: new TokenPriceService(ethereum, 60000) }
-		const pendingHint = getCachedDelegateClearingHint(ethereum, activeAddress)
+		const pendingHint = ethereum.getDelegateClearingHint(activeAddress)
 		const enabling = setDelegateClearing(await getSettings(), services, activeAddress, rpcEntry.chainId, true)
 		assert.deepEqual((await enabling).data, { ok: true, address: activeAddress, chainId: rpcEntry.chainId, enabled: true })
 		releaseOldBlock('0x')

@@ -1,7 +1,6 @@
 import { createSafeAppsCompatibilityFeature, initializeSafeAppsCompatibility } from './safeAppsCompatibilityCoordinator.js'
 import 'webextension-polyfill'
 import { getSettings, updateKnownWebsiteMetadata } from './settings.js'
-import { withDelegateClearingHintInvalidation } from './delegateClearingHintCache.js'
 import { DEFAULT_RPCS } from '../config/defaults.js'
 import { handleInterceptedRequest } from './background.js'
 import { captureWhatIfSimulationSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
@@ -282,7 +281,7 @@ async function startup() {
 	const settings = await getSettings()
 	const userSpecifiedSimulatorNetwork = settings.activeRpcNetwork.httpsRpc === undefined ? await getPrimaryRpcForChain(1n) : settings.activeRpcNetwork
 	const simulatorNetwork = userSpecifiedSimulatorNetwork === undefined ? DEFAULT_RPCS[0] : userSpecifiedSimulatorNetwork
-	simulationServicesOwner = createSimulationServicesOwner(simulatorNetwork, withDelegateClearingHintInvalidation(newBlockAttemptCallback), onErrorBlockCallback, rpcRequestLifecycleCallbacks)
+	simulationServicesOwner = createSimulationServicesOwner(simulatorNetwork, newBlockAttemptCallback, onErrorBlockCallback, rpcRequestLifecycleCallbacks)
 	await recoverPendingTerminalState()
 	const recursiveCheckIfInterceptorShouldSleep = async () => {
 		await catchAllErrorsAndCall(async () => checkIfInterceptorShouldSleep(getSimulationServices().ethereum, rpcConnectionStatusPublisher.publishRpcConnectionStatus))

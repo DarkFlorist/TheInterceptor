@@ -1,7 +1,6 @@
 import type { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
 import type { SimulationServices } from '../../simulation/serviceLifecycle.js'
 import type { Settings } from '../../types/interceptor-messages.js'
-import { getCachedDelegateClearingHint } from '../delegateClearingHintCache.js'
 import { isExpectedInfrastructureError, reportLocalRecovery } from '../../utils/errors.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { bumpPopupRefreshGeneration } from '../popupRefreshGeneration.js'
@@ -16,7 +15,7 @@ export async function requestDelegateClearing(settings: Settings, ethereum: Ethe
 		return { method: 'popup_requestDelegateClearing' as const, data: { address, chainId, status: { type: 'unknown' as const } } }
 	}
 	try {
-		const delegate = await getCachedDelegateClearingHint(ethereum, address)
+		const delegate = await ethereum.getDelegateClearingHint(address)
 		return { method: 'popup_requestDelegateClearing' as const, data: { address, chainId, status: delegate === undefined ? { type: 'none' as const } : { type: 'delegated' as const, delegate } } }
 	} catch (error) {
 		if (!isExpectedInfrastructureError(error)) await reportLocalRecovery(error, { code: 'active_delegation_lookup_failed' })

@@ -1,13 +1,12 @@
-import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import type { NewBlockAttemptCallback } from '../simulation/serviceLifecycle.js'
-import { addressString } from '../utils/bigint.js'
-import { NEW_BLOCK_ABORT } from '../utils/constants.js'
+import { addressString } from '../../utils/bigint.js'
+import { NEW_BLOCK_ABORT } from '../../utils/constants.js'
 
 const DELEGATION_CACHE_AGE_MS = 5 * 60 * 1000
 const DELEGATED_HINT_REFRESH_MIN_AGE_MS = 60 * 1000
 type PendingLookup = { promise: Promise<bigint | undefined>, controller: AbortController, generation: number }
 
-function createDelegationCache(lookup: (address: bigint, controller: AbortController) => Promise<bigint | undefined>) {
+// Each EthereumClientService owns one cache for its endpoint, so replacing the service is what resets it.
+export function createDelegateClearingHintCache(lookup: (address: bigint, controller: AbortController) => Promise<bigint | undefined>) {
 	let generation = 0
 	const resolved = new Map<string, { checkedAt: number, delegate: bigint | undefined }>()
 	const pendingByAddress = new Map<string, PendingLookup>()
@@ -16,11 +15,6 @@ function createDelegationCache(lookup: (address: bigint, controller: AbortContro
 		generation += 1
 		for (const pending of pendingByAddress.values()) pending.controller.abort(NEW_BLOCK_ABORT)
 		pendingByAddress.clear()
-	}
-
-	const clear = () => {
-		invalidatePending()
-		resolved.clear()
 	}
 
 	const invalidateDelegatedForNewBlock = (now: number) => {
@@ -80,28 +74,5 @@ function createDelegationCache(lookup: (address: bigint, controller: AbortContro
 		}
 	}
 
-	return { get, clear, invalidateDelegatedForNewBlock }
-}
-
-// Hints belong to the RPC service identity. Switching networks creates a new service and a new cache.
-const hintCaches = new WeakMap<EthereumClientService, ReturnType<typeof createDelegationCache>>()
-
-function getHintCache(ethereum: EthereumClientService) {
-	const existing = hintCaches.get(ethereum)
-	if (existing !== undefined) return existing
-	const created = createDelegationCache((address, controller) => ethereum.getDelegation(address, 'latest', controller))
-	hintCaches.set(ethereum, created)
-	return created
-}
-
-export const getCachedDelegateClearingHint = (ethereum: EthereumClientService, address: bigint, abortController?: AbortController) =>
-	getHintCache(ethereum).get(address, abortController)
-
-export const clearDelegateClearingHintCache = (ethereum: EthereumClientService) => hintCaches.get(ethereum)?.clear()
-
-export const invalidateDelegateClearingHintsForNewBlock = (ethereum: EthereumClientService, now = Date.now()) => hintCaches.get(ethereum)?.invalidateDelegatedForNewBlock(now)
-
-export const withDelegateClearingHintInvalidation = (onBlock: NewBlockAttemptCallback): NewBlockAttemptCallback => async (blockHeader, ethereum, isNewBlock) => {
-	if (isNewBlock) invalidateDelegateClearingHintsForNewBlock(ethereum)
-	await onBlock(blockHeader, ethereum, isNewBlock)
+	return { get, invalidateDelegatedForNewBlock }
 }

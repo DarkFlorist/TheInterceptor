@@ -18,6 +18,7 @@ import { encodeAbiValues } from '../../utils/abiRuntime.js'
 import { getCurrentTimestampString } from '../../utils/time.js'
 import { projectEip7702AuthorizationForRpc } from '../../utils/eip7702Authorization.js'
 import { mapBlocksWithEffectiveStateOverrides } from '../../utils/simulationStateOverrides.js'
+import { createDelegateClearingHintCache } from './delegateClearingHintCache.js'
 
 const parseSignatureHex = (signature: `0x${ string }`) => {
 	const stripped = signature.slice(2)
@@ -122,6 +123,8 @@ export class EthereumClientService {
 	private onErrorBlockCallback: (ethereumClientService: EthereumClientService, error: unknown) => Promise<void>
 	private requestHandler
 	private rpcEntry
+	// Delegate clearing hints describe this endpoint's latest code, so a replacement service starts with an empty cache.
+	private readonly delegateClearingHints = createDelegateClearingHintCache(async (address, controller) => await this.getDelegation(address, 'latest', controller))
 
 	constructor(requestHandler: IEthereumJSONRpcRequestHandler, newBlockAttemptCallback: (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => Promise<void>, onErrorBlockCallback: (ethereumClientService: EthereumClientService, error: unknown) => Promise<void>, rpcEntry: RpcEntry) {
 		this.requestHandler = requestHandler
@@ -181,6 +184,7 @@ export class EthereumClientService {
 			const gotNewBlock = this.cachedBlock?.number !== newBlock.number
 			if (gotNewBlock) {
 				this.requestHandler.clearCache()
+				this.delegateClearingHints.invalidateDelegatedForNewBlock(Date.now())
 			}
 			this.cachedBlock = newBlock
 			await this.newBlockAttemptCallback(newBlock, this, gotNewBlock)
@@ -220,6 +224,8 @@ export class EthereumClientService {
 		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_getCode', params: [address, blockTag] }, requestAbortController)
 		return EthereumData.parse(response)
 	}
+
+	public readonly getDelegateClearingHint = async (address: bigint, abortController?: AbortController) => await this.delegateClearingHints.get(address, abortController)
 
 	public readonly getDelegation = async (address: bigint, blockTag: EthereumBlockTag, requestAbortController: AbortController | undefined) => {
 		const code = await this.getCode(address, blockTag, requestAbortController)
