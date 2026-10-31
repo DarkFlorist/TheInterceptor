@@ -28,7 +28,8 @@ import { Link } from '../subcomponents/link.js'
 import { NetworkErrors } from '../subcomponents/NetworkErrors.js'
 import { identifySignature } from '../simulationExplaining/identifySignature.js'
 import { InvalidMessage, SignatureCard, SignatureHeader } from './PersonalSign.js'
-import { type SendAnywayOverrideReason, getResultRevision, getSendAnywayOverrideReason, isRejectOnlyTransaction, isSameSendAnywayConsent } from '../../utils/sendAnywayConsent.js'
+import { type SendAnywayOverrideReason, getSendAnywayOverrideReason, isRejectOnlyTransaction, isSameSendAnywayConsent } from '../../utils/sendAnywayConsent.js'
+import { getReviewedResultId } from '../../utils/reviewedResult.js'
 import { getResultsForTransaction, getVisualizedTransactionResult } from '../../utils/visualizedTransactionResult.js'
 import { isPossibleToSignMessage } from '../../utils/personalSignRequest.js'
 import type { EditEnsNamedHashCallBack } from '../subcomponents/ens.js'
@@ -961,7 +962,7 @@ export function ConfirmTransaction() {
 		const accept: TransactionConfirmation = { method: 'popup_confirmDialog', data: {
 			uniqueRequestIdentifier: pending.uniqueRequestIdentifier,
 			action: 'accept',
-			resultRevision: getResultRevision(pending),
+			reviewedResultId: getReviewedResultId(pending),
 			forceSend: forceSend.value,
 		} }
 		resetApproveButton()

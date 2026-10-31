@@ -537,7 +537,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 			const visualizedPersonalSignRequestPromise = craftPersonalSignPopupMessage(ethereum, requestAbortController, first.signedMessageTransaction, ethereum.getRpcEntry())
 			silenceChromeUnCaughtPromise(visualizedPersonalSignRequestPromise)
 			const visualizedPersonalSignRequest = await visualizedPersonalSignRequestPromise
-			// Persisting the refreshed visualization bumps the result revision, so the popup only shows content an accept can refer to. A message still being crafted is left to its creation flow.
+			// Persisting the refreshed visualization means the popup only shows content the background will match an accept against. A message still being crafted is left to its creation flow.
 			await updatePendingTransactionOrMessage(first.uniqueRequestIdentifier, async (current) => {
 				if (current.type !== 'SignableMessage' || current.transactionOrMessageCreationStatus !== 'Simulated') return current
 				return { ...current, visualizedPersonalSignRequest }
@@ -579,7 +579,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 				const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {
 					method: 'popup_update_confirm_transaction_dialog_pending_transactions' as const,
 					data: {
-						// Read back from storage so the popup receives the result revision the update assigned.
+						// Read back from storage so the popup shows exactly the stored content an accept is matched against.
 						pendingTransactionAndSignableMessages: (await getPendingTransactionsAndMessages()).map(toPopupPendingTransactionOrSignableMessage),
 						currentBlockNumber: await currentBlockNumberPromise,
 						rpcConnectionStatus: await rpcConnectionStatusPromise,

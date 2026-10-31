@@ -16,6 +16,7 @@ import { EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
 import { encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { Erc20ABI } from '../../app/ts/utils/abi.js'
 import { NEW_BLOCK_ABORT } from '../../app/ts/utils/constants.js'
+import { getReviewedResultId } from '../../app/ts/utils/reviewedResult.js'
 
 const zeroAddress = '0x0000000000000000000000000000000000000000'
 const recipientAddress = '0x0000000000000000000000000000000000000002'
@@ -384,7 +385,7 @@ async function assertAcceptPreservesRawSignedTransaction(signedTransactionBytes:
 			new EthereumClientService(createEip7702TransactionParsingRequestHandler(), async () => undefined, async () => undefined, rpcNetwork),
 			{} as never,
 			browserMock.websiteTabConnections,
-			{ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: pendingTransaction.uniqueRequestIdentifier, action: 'accept', resultRevision: 0, forceSend: false } },
+			{ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: pendingTransaction.uniqueRequestIdentifier, action: 'accept', reviewedResultId: getReviewedResultId(pendingTransaction), forceSend: false } },
 		)
 
 		const [postedMessage] = browserMock.postedMessages

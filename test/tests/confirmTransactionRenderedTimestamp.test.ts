@@ -8,6 +8,7 @@ import { createSafeTx, getSafeTxSigningHashes } from '../../app/ts/safe/safeCore
 import { getSafeTxHash } from '../../app/ts/utils/eip712.js'
 import { bytes32String } from '../../app/ts/utils/bigint.js'
 import { getNativeTokenErc20 } from '../../app/ts/background/metadataUtils.js'
+import { getReviewedResultId } from '../../app/ts/utils/reviewedResult.js'
 
 type RuntimeMessageListener = (message: unknown) => unknown
 type CurrentWindowProvider = () => Promise<{ id: number }>
@@ -738,11 +739,10 @@ describe('ConfirmTransaction', () => {
 	test('keeps the send-anyway override across per-block re-simulations and clears it when the acknowledged failure or request changes', async () => {
 		const dom = installDomMock()
 		const browser = createBrowserMock()
-		const reviewed = { ...makeSimulatedPendingTransaction(0n, revertedOutcome), resultRevision: 1 }
+		const reviewed = makeSimulatedPendingTransaction(0n, revertedOutcome)
 		// A new block re-simulates the request: timestamps, block and base fee change, the failure does not.
-		const resimulated = (resultRevision: number, pending: typeof reviewed) => ({
+		const resimulated = (pending: typeof reviewed) => ({
 			...pending,
-			resultRevision,
 			popupVisualisation: {
 				...pending.popupVisualisation,
 				data: {
@@ -764,12 +764,12 @@ describe('ConfirmTransaction', () => {
 
 		await dispatchPendingTransactions(browser, [reviewed])
 		assert.equal(isSendAnywayTicked(dom), true, 'identical redelivery keeps the override')
-		await dispatchPendingTransactions(browser, [resimulated(2, reviewed)])
+		await dispatchPendingTransactions(browser, [resimulated(reviewed)])
 		assert.equal(isSendAnywayTicked(dom), true, 'a re-simulation with the same failure keeps the override')
 		assert.equal(isConfirmEnabled(dom), true)
 
 		// Different contract reverts share the raw message; the popup shows the decoded reason and revert data.
-		const differentRevertReason = { ...makeSimulatedPendingTransaction(0n, { ...revertedOutcome, error: { ...revertedOutcome.error, decodedErrorMessage: 'Ownable: caller is not the owner', data: '0x08c379a0' } }), resultRevision: 3 }
+		const differentRevertReason = makeSimulatedPendingTransaction(0n, { ...revertedOutcome, error: { ...revertedOutcome.error, decodedErrorMessage: 'Ownable: caller is not the owner', data: '0x08c379a0' } })
 		await dispatchPendingTransactions(browser, [differentRevertReason])
 		assert.equal(dom.document.body.textContent?.includes('Ownable: caller is not the owner'), true)
 		assert.equal(isSendAnywayTicked(dom), false, 'a different decoded revert reason needs a new acknowledgement')
@@ -777,13 +777,13 @@ describe('ConfirmTransaction', () => {
 		await tickSendAnyway(dom)
 
 		const insufficientFunds = { transactionStatus: 'Transaction Failed' as const, error: { code: -32000, message: 'insufficient funds', decodedErrorMessage: 'insufficient funds' } }
-		const differentFailure = { ...makeSimulatedPendingTransaction(0n, insufficientFunds), resultRevision: 4 }
+		const differentFailure = makeSimulatedPendingTransaction(0n, insufficientFunds)
 		await dispatchPendingTransactions(browser, [differentFailure])
 		assert.equal(isSendAnywayTicked(dom), false, 'a different failure needs a new acknowledgement')
 		assert.equal(isConfirmEnabled(dom), false)
 
 		await tickSendAnyway(dom)
-		const newQuarantineReason = { ...makeSimulatedPendingTransaction(0n, { ...insufficientFunds, quarantine: true, quarantineReasons: ['The recipient is a known scam address.'] }), resultRevision: 5 }
+		const newQuarantineReason = makeSimulatedPendingTransaction(0n, { ...insufficientFunds, quarantine: true, quarantineReasons: ['The recipient is a known scam address.'] })
 		await dispatchPendingTransactions(browser, [newQuarantineReason])
 		assert.equal(isSendAnywayTicked(dom), false, 'a new quarantine reason needs a new acknowledgement')
 
@@ -791,6 +791,39 @@ describe('ConfirmTransaction', () => {
 		await dispatchPendingTransactions(browser, [{ ...newQuarantineReason, uniqueRequestIdentifier: { ...newQuarantineReason.uniqueRequestIdentifier, requestId: 2 } }])
 		assert.equal(isSendAnywayTicked(dom), false, 'the override does not carry over to the next request')
 		assert.equal(isConfirmEnabled(dom), false)
+
+		await unmountConfirmTransaction(dom)
+		dom.restore()
+	})
+
+	test('the background honours the accept for the result the popup shows', { timeout: 15_000 }, async () => {
+		const dom = installDomMock()
+		const browser = createBrowserMock()
+		const simulator = await createFakeSimulator()
+		const { TokenPriceService } = await import('../../app/ts/simulation/services/priceEstimator.js')
+		const { TransactionConfirmation } = await import('../../app/ts/types/interceptor-messages.js')
+		const { resolvePendingTransactionOrMessage } = await import('../../app/ts/background/windows/confirmTransaction.js')
+		const { getInterceptorTransactionStack, getPendingTransactionsAndMessages, updateInterceptorTransactionStack } = await import('../../app/ts/background/storageVariables.js')
+		const { browserStorageLocalSet2 } = await import('../../app/ts/utils/storageUtils.js')
+		await browserStorageLocalSet2({ pendingTransactionsAndMessages: [makeSimulatedPendingTransaction(0n)] })
+		await updateInterceptorTransactionStack(() => ({ operations: [] }))
+		const resolved = Promise.withResolvers<void>()
+		browser.setConfirmDialogHandler(async (message) => {
+			await resolvePendingTransactionOrMessage(simulator.ethereum, new TokenPriceService(simulator.ethereum, 60_000), new Map(), TransactionConfirmation.parse(message))
+			resolved.resolve()
+		})
+
+		await act(() => {
+			render(h(ConfirmTransaction, {}), dom.document.body)
+		})
+		await dispatchPendingTransactions(browser, await getPendingTransactionsAndMessages())
+		const confirmButton = findConfirmButton(dom)
+		if (confirmButton === undefined) throw new Error('Expected the confirm button')
+		await act(async () => { await clickRenderedElement(confirmButton) })
+
+		await resolved.promise
+		assert.deepEqual(await getPendingTransactionsAndMessages(), [], 'the reviewed-result id the popup computed matches the stored request, so the accept is honoured')
+		assert.equal((await getInterceptorTransactionStack()).operations.length, 1, 'the accepted transaction is added to the simulation')
 
 		await unmountConfirmTransaction(dom)
 		dom.restore()
@@ -828,7 +861,9 @@ describe('ConfirmTransaction', () => {
 		await act(() => {
 			render(h(ConfirmTransaction, {}), dom.document.body)
 		})
-		await dispatchPendingTransactions(browser, await getPendingTransactionsAndMessages())
+		const [reviewedAsStored] = await getPendingTransactionsAndMessages()
+		if (reviewedAsStored === undefined) throw new Error('Expected the reviewed request to be stored')
+		await dispatchPendingTransactions(browser, [reviewedAsStored])
 		await tickSendAnyway(dom)
 		const confirmButton = findConfirmButton(dom)
 		if (confirmButton === undefined) throw new Error('Expected the confirm button')
@@ -844,10 +879,10 @@ describe('ConfirmTransaction', () => {
 
 		const pendingAfterApproval = await getPendingTransactionsAndMessages()
 		assert.equal(pendingAfterApproval.length, 1, 'the request stays pending')
-		assert.equal(pendingAfterApproval[0]?.resultRevision, 1)
+		assert.notEqual(pendingAfterApproval[0] === undefined ? undefined : getReviewedResultId(pendingAfterApproval[0]), getReviewedResultId(reviewedAsStored), 'the stored result changed after the click')
 		assert.equal(pendingAfterApproval[0]?.approvalStatus.status, 'WaitingForUser')
 		assert.deepEqual((await getInterceptorTransactionStack()).operations, [], 'nothing was added to the simulation')
-		assert.deepEqual(accept, { method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: reviewed.uniqueRequestIdentifier, action: 'accept', resultRevision: 0, forceSend: true } }, 'the accept names the clicked result')
+		assert.deepEqual(accept, { method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: reviewed.uniqueRequestIdentifier, action: 'accept', reviewedResultId: getReviewedResultId(reviewedAsStored), forceSend: true } }, 'the accept names the clicked result')
 		assert.equal(isSendAnywayTicked(dom), false, 'the refreshed result needs a new acknowledgement')
 
 		await unmountConfirmTransaction(dom)

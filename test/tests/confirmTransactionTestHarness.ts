@@ -14,6 +14,9 @@ import { privateKeyToAccount } from '../../app/ts/utils/ethereumPrimitives.js'
 import type { SafeEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { SafeOwnerSignature, SafeStackTransaction, SafeTransactionStack } from '../../app/ts/types/safeTypes.js'
 import { type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../../app/ts/utils/requests.js'
+import { getReviewedResultId } from '../../app/ts/utils/reviewedResult.js'
+import { PopupPendingTransactionOrSignableMessage, type PendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
+import { serialize } from '../../app/ts/types/wire-types.js'
 
 export type RuntimeMessage = {
 	method?: string
@@ -223,6 +226,7 @@ export async function loadModules() {
 		setSafeSimulationSigner: popupMessageHandlers.setSafeSimulationSigner,
 		fetchSimulationStackRequestConfirmation: popupMessageHandlers.fetchSimulationStackRequestConfirmation,
 		resolvePendingTransactionOrMessage: confirmTransaction.resolvePendingTransactionOrMessage,
+		toPopupPendingTransactionOrSignableMessage: confirmTransaction.toPopupPendingTransactionOrSignableMessage,
 		updateConfirmTransactionView: confirmTransaction.updateConfirmTransactionView,
 		formEthSendTransaction: confirmTransaction.formEthSendTransaction,
 		getSafeExecutionSignerRoute: safeExecutionRouting.getSafeExecutionSignerRoute,
@@ -624,10 +628,16 @@ export function withSimulatedTransactionResult<Pending extends { transactionIden
 	}
 }
 
-// Builds the accept the popup sends for the request as currently stored, naming its result revision and the send-anyway override.
+// The reviewed-result id the popup computes for a stored request, after the same conversion and message round trip the popup copy goes through.
+export function getPopupReviewedResultId(pending: PendingTransactionOrSignableMessage) {
+	return getReviewedResultId(PopupPendingTransactionOrSignableMessage.parse(serialize(PopupPendingTransactionOrSignableMessage, modules.toPopupPendingTransactionOrSignableMessage(pending))))
+}
+
+// Builds the accept the popup sends for the request as currently stored, naming its reviewed content and the send-anyway override.
 export async function createAcceptConfirmation(requestIdentifier: UniqueRequestIdentifier = uniqueRequestIdentifier, forceSend = false) {
 	const pending = (await modules.getPendingTransactionsAndMessages()).find((entry) => doesUniqueRequestIdentifiersMatch(entry.uniqueRequestIdentifier, requestIdentifier))
-	return { method: 'popup_confirmDialog' as const, data: { action: 'accept' as const, uniqueRequestIdentifier: requestIdentifier, resultRevision: pending?.resultRevision ?? 0, forceSend } }
+	if (pending === undefined) throw new Error('Expected a stored request to accept')
+	return { method: 'popup_confirmDialog' as const, data: { action: 'accept' as const, uniqueRequestIdentifier: requestIdentifier, reviewedResultId: getPopupReviewedResultId(pending), forceSend } }
 }
 
 export async function resetConfirmTransactionTestState() {

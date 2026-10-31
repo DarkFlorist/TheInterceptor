@@ -44,9 +44,6 @@ export const getSendAnywayConsentFingerprint = (pending: PopupPendingTransaction
 	return consent === undefined ? undefined : JSON.stringify(consent)
 }
 
-// Requests stored before revisions existed start at zero.
-export const getResultRevision = (pending: Pick<PopupPendingTransactionOrSignableMessage, 'resultRevision'>) => pending.resultRevision ?? 0
-
 // The send-anyway override covers one request and the failure or quarantine reasons the user acknowledged for it.
 export const isSameSendAnywayConsent = (first: PopupPendingTransactionOrSignableMessage, second: PopupPendingTransactionOrSignableMessage) => {
 	return doesUniqueRequestIdentifiersMatch(first.uniqueRequestIdentifier, second.uniqueRequestIdentifier) && getSendAnywayConsentFingerprint(first) === getSendAnywayConsentFingerprint(second)

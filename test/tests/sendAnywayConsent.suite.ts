@@ -1,7 +1,8 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
 import { getLatestUnexpectedError } from '../../app/ts/background/storageVariables.js'
-import { activeAddress, addressString, browserMock, createAcceptConfirmation, createSafeAddressBookEntry, createSafeTx, createWebsitePort, EIP712Message, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, pendingTransaction, popupVisualisation, recipientAddress, safeTestOwnerAddress, safeTxToTypedDataJson, type SimulatedTransactionOutcome, simulator, uniqueRequestIdentifier, withSimulatedTransactionResult } from './confirmTransactionTestHarness.js'
+import { getReviewedResultId } from '../../app/ts/utils/reviewedResult.js'
+import { activeAddress, addressString, browserMock, createAcceptConfirmation, createSafeAddressBookEntry, createSafeTx, createWebsitePort, EIP712Message, fakeRpcNetwork, fakeSafeContract, getPopupReviewedResultId, getSafeTxHash, isRecord, modules, pendingTransaction, popupVisualisation, recipientAddress, safeTestOwnerAddress, safeTxToTypedDataJson, type SimulatedTransactionOutcome, simulator, uniqueRequestIdentifier, withSimulatedTransactionResult } from './confirmTransactionTestHarness.js'
 
 const succeeded: SimulatedTransactionOutcome = { transactionStatus: 'Transaction Succeeded' }
 const reverted: SimulatedTransactionOutcome = { transactionStatus: 'Transaction Failed', error: { code: -32000, message: 'execution reverted', decodedErrorMessage: 'execution reverted' } }
@@ -56,18 +57,38 @@ async function getStoredRequest() {
 	return stored
 }
 
-test('keeps the result revision for approval-status updates and identical writes, and bumps it when the stored result changes', async () => {
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [makeReviewedTransaction(succeeded, false)] })
-	await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => ({ ...pending, approvalStatus: { status: 'WaitingForSigner' as const } }))
-	await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => ({ ...pending, approvalStatus: { status: 'WaitingForUser' as const } }))
-	await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => pending)
-	assert.equal((await getStoredRequest()).resultRevision, 0)
-
-	await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async () => makeReviewedTransaction(reverted, false))
-	assert.equal((await getStoredRequest()).resultRevision, 1)
+test('the reviewed-result id ignores approval status, popup window and field order, and changes with the result, request or Safe signer', async () => {
+	const reviewed = makeReviewedTransaction(succeeded, false)
+	const reviewedId = getReviewedResultId(reviewed)
+	assert.equal(getReviewedResultId({ ...reviewed, approvalStatus: { status: 'SignerError' as const, code: 4001, message: 'User rejected' } }), reviewedId)
+	assert.equal(getReviewedResultId({ ...reviewed, popupOrTabId: { type: 'tab' as const, id: 7 } }), reviewedId)
+	assert.equal(getReviewedResultId({ popupVisualisation: reviewed.popupVisualisation, ...reviewed }), reviewedId, 'moving a field first keeps the id')
+	assert.notEqual(getReviewedResultId(makeReviewedTransaction(reverted, false)), reviewedId)
+	assert.notEqual(getReviewedResultId(makeReviewedTransaction(succeeded, true)), reviewedId)
+	assert.notEqual(getReviewedResultId({ ...reviewed, originalRequestParameters: { ...reviewed.originalRequestParameters, params: [{ ...reviewed.originalRequestParameters.params[0], value: 1n }] } }), reviewedId)
+	assert.notEqual(getReviewedResultId({ ...reviewed, safeExecutionSignerAddress: recipientAddress }), reviewedId)
 })
 
-test('refuses an accept that names a stale result revision and keeps the request pending', async () => {
+test('honours an accept across approval-status changes and refuses it after the reviewed result changes', async () => {
+	const { websiteTabConnections, wasForwardedToSigner } = createSignerConnection()
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [makeReviewedTransaction(succeeded, false)] })
+	const acceptBeforeSignerRoundTrip = await createAcceptConfirmation()
+	// A failed signer round trip changes only the approval status, so the result the user reviewed is unchanged.
+	await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => ({ ...pending, approvalStatus: { status: 'SignerError' as const, code: 4001, message: 'User rejected' } }))
+	await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => ({ ...pending, approvalStatus: { status: 'WaitingForUser' as const } }))
+	assert.equal(await resolveAccept(websiteTabConnections, acceptBeforeSignerRoundTrip), true)
+	assert.equal(wasForwardedToSigner(), true)
+
+	const second = createSignerConnection()
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [makeReviewedTransaction(succeeded, false)] })
+	const acceptBeforeResultChange = await createAcceptConfirmation()
+	await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async () => makeReviewedTransaction(succeeded, true))
+	assert.equal(await resolveAccept(second.websiteTabConnections, acceptBeforeResultChange), false)
+	assert.equal(second.wasForwardedToSigner(), false)
+	assert.equal((await getStoredRequest()).approvalStatus.status, 'WaitingForUser')
+})
+
+test('refuses an accept that names stale reviewed content and keeps the request pending', async () => {
 	const { websiteTabConnections, wasForwardedToSigner } = createSignerConnection()
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [makeReviewedTransaction(succeeded, false)] })
 	const acceptForReviewedResult = await createAcceptConfirmation()
@@ -117,7 +138,7 @@ test('refuses an accept when a refresh holding the pending-request lock commits 
 	assert.equal(wasForwardedToSigner(), false)
 	const refreshed = await getStoredRequest()
 	assert.equal(refreshed.approvalStatus.status, 'WaitingForUser', 'the refreshed result is not claimed by the stale accept')
-	assert.equal(refreshed.resultRevision, acceptForReviewedResult.data.resultRevision + 1)
+	assert.notEqual(getPopupReviewedResultId(refreshed), acceptForReviewedResult.data.reviewedResultId)
 
 	assert.equal(await resolveAccept(websiteTabConnections, await createAcceptConfirmation(uniqueRequestIdentifier, true)), true)
 	assert.equal(wasForwardedToSigner(), true)
@@ -213,7 +234,7 @@ test('refuses a Safe proposal accept when the signer refresh during resolution c
 	assert.equal(wasForwardedToSigner(), false)
 	const refreshed = await getStoredRequest()
 	assert.equal(refreshed.type === 'Transaction' ? refreshed.safeTransaction?.safeSignerAddress : undefined, selectedOwner)
-	assert.equal(refreshed.resultRevision, acceptForReviewedOwner.data.resultRevision + 1)
+	assert.notEqual(getPopupReviewedResultId(refreshed), acceptForReviewedOwner.data.reviewedResultId)
 
 	assert.equal(await resolveAccept(websiteTabConnections, await createAcceptConfirmation(), selectedOwner), true)
 	assert.equal(getForwardedSigner(), addressString(selectedOwner))
@@ -239,7 +260,7 @@ test('refuses a Safe co-signing accept when the signer refresh during resolution
 	assert.equal(wasForwardedToSigner(), false)
 	const refreshed = await getStoredRequest()
 	assert.equal(refreshed.type === 'SignableMessage' ? refreshed.safeMessageCoSignSnapshot?.safeSignerAddress : undefined, selectedOwner)
-	assert.equal(refreshed.resultRevision, acceptForReviewedOwner.data.resultRevision + 1)
+	assert.notEqual(getPopupReviewedResultId(refreshed), acceptForReviewedOwner.data.reviewedResultId)
 
 	assert.equal(await resolveAccept(websiteTabConnections, await createAcceptConfirmation(), selectedOwner), true)
 	assert.equal(getForwardedSigner(), addressString(selectedOwner))

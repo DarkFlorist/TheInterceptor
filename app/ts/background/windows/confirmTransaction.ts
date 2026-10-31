@@ -46,7 +46,8 @@ import { getSafePendingFlow } from '../../safe/safePendingFlow.js'
 import { persistUnsignedSafeTransaction, resolveSafeSignerReply } from '../safeConfirmationPersistence.js'
 import { getWalletSelectedAccount } from '../../utils/activeAddressSelection.js'
 import { createSafeSignerErrorStatus } from '../safeSignerErrors.js'
-import { getResultRevision, getSendAnywayOverrideReason, isRejectOnlyTransaction } from '../../utils/sendAnywayConsent.js'
+import { getSendAnywayOverrideReason, isRejectOnlyTransaction } from '../../utils/sendAnywayConsent.js'
+import { getReviewedResultId } from '../../utils/reviewedResult.js'
 
 const pendingConfirmationSemaphore = new Semaphore(1)
 const pendingNoResponseRetryTimers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -164,7 +165,7 @@ export function toPopupPendingTransactionOrSignableMessage(pending: PendingTrans
 				website: pending.website,
 				activeAddress: pending.activeAddress,
 				approvalStatus: pending.approvalStatus,
-				resultRevision: getResultRevision(pending),
+				safeMessageCoSignSnapshot: pending.safeMessageCoSignSnapshot,
 			}
 			const transactionOrMessageCreationStatus = pending.transactionOrMessageCreationStatus
 			switch (transactionOrMessageCreationStatus) {
@@ -264,9 +265,9 @@ export const setGasLimitForTransaction = async (transactionIdentifier: bigint, g
 	})
 }
 
-// An accept authorizes only the stored result revision the user reviewed. A transaction without a reviewable result cannot be accepted at all, and a failing or quarantined result also needs the send-anyway override.
-function isAcceptForStoredResult(pending: PendingTransactionOrSignableMessage, accept: { resultRevision: number, forceSend: boolean }) {
-	if (getResultRevision(pending) !== accept.resultRevision) return false
+// An accept authorizes only the stored request whose reviewed content the user saw. A transaction without a reviewable result cannot be accepted at all, and a failing or quarantined result also needs the send-anyway override.
+function isAcceptForStoredResult(pending: PendingTransactionOrSignableMessage, accept: { reviewedResultId: string, forceSend: boolean }) {
+	if (getReviewedResultId(pending) !== accept.reviewedResultId) return false
 	if (isRejectOnlyTransaction(pending)) return false
 	return accept.forceSend || getSendAnywayOverrideReason(pending) === undefined
 }
@@ -343,7 +344,7 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 			await updateConfirmTransactionView(ethereum, tokenPriceService)
 			return false
 		}
-		// Same revision means the same content as reviewed, so forwarding this snapshot is unaffected by refreshes stored after the claim.
+		// The claimed snapshot has the reviewed content, so forwarding it is unaffected by refreshes stored after the claim.
 		pendingTransactionOrMessage = acceptedPending
 	}
 	const signerFacingRequest: SendTransactionParams | SendRawTransactionParams | SignMessageParams = safeResolution.signerFacingRequest

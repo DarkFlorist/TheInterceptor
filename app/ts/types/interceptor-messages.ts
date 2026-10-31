@@ -256,8 +256,8 @@ export const TransactionConfirmation = funtypes.ReadonlyObject({
 				}),
 				funtypes.ReadonlyObject({
 					action: funtypes.Literal('accept'),
-					// Names the stored result revision the user reviewed and whether they ticked send-anyway for it, so the background can refuse stale or unacknowledged accepts.
-					resultRevision: funtypes.Number,
+					// Names the reviewed content the user saw (getReviewedResultId) and whether they ticked send-anyway for it, so the background can refuse stale or unacknowledged accepts.
+					reviewedResultId: funtypes.String,
 					forceSend: funtypes.Boolean,
 				}),
 				funtypes.ReadonlyObject({
