@@ -707,6 +707,7 @@ function getReviewedTransactionForSigning(prepared: EthereumUnsignedTransaction,
 type SupportedSendTransactionType = Exclude<EthereumUnsignedTransaction['type'], '4844'>
 export type TransactionGasPayment = 'transaction-sender' | 'external-executor'
 
+// The wallet signs this transaction, so it keeps the envelope the website requested, including legacy and EIP-2930; gas estimation instead uses createEip1559Or7702Transaction because at zero fees those envelopes execute like EIP-1559.
 function getSupportedSendTransactionType(transactionDetails: SendTransactionParams['params'][0]): SupportedSendTransactionType {
 	const requestedType = transactionDetails.type
 		?? (transactionDetails.authorizationList !== undefined

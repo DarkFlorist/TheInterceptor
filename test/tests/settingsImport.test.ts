@@ -502,6 +502,22 @@ describe('settings import', () => {
 		}])
 	})
 
+	test('reads stored website access in the same canonical form through getSettings and getWebsiteAccess', async () => {
+		const { getSettings, getWebsiteAccess } = await settingsModulePromise
+		await browserStorageLocalSet({ websiteAccess: [
+			{ website: { websiteOrigin: 'HTTPS://Example.test:443', icon: undefined, title: 'Default port' }, access: true },
+			{ website: { websiteOrigin: 'https://', icon: undefined, title: 'Malformed' }, access: true },
+			{ website: { websiteOrigin: 'legacy.example', icon: 'https://legacy.example/favicon.png', title: 'Legacy' }, access: false },
+		] })
+
+		const websiteAccess = await getWebsiteAccess()
+		assert.deepEqual(websiteAccess, [
+			{ website: { websiteOrigin: 'https://example.test', icon: undefined, title: 'Default port' }, access: true },
+			{ website: { websiteOrigin: 'legacy.example', icon: undefined, title: 'Legacy' }, access: false },
+		])
+		assert.deepEqual((await getSettings()).websiteAccess, websiteAccess)
+	})
+
 	test('exports scheme-aware settings in the current version 1.6', async () => {
 		const { exportSettingsAndAddressBook } = await settingsModulePromise
 		const exported = await exportSettingsAndAddressBook()

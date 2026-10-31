@@ -86,6 +86,7 @@ const normalizeEip7702Authorization = async (authorization: Eip7702Authorization
 	return base
 }
 
+// Used only for zero-fee gas estimation, where legacy and EIP-2930 envelopes execute exactly like EIP-1559, so only an authorization list (EIP-7702) needs a different envelope; transactions prepared for signing keep the website's envelope through getSupportedSendTransactionType in background/windows/confirmTransaction.ts.
 export const createEip1559Or7702Transaction = async <TransactionBase extends object>(
 	transactionBase: TransactionBase,
 	data: { readonly type?: string, readonly authorizationList?: readonly Eip7702Authorization[] },
