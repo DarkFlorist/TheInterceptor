@@ -579,21 +579,30 @@ export async function persistWebsiteAccessChange(
 	)
 }
 
-// Reconciliation needs settings (active addresses resolve on the active RPC network's chain). When they cannot be read after an access write has been committed, every connection of the affected websites loses its runtime approval before the error propagates, so a committed revocation is never left unapplied. A failed disconnect notification does not stop the others; those failures are reported afterwards.
+// Use after committing a write that can change website approvals, address consent, interceptor-disabled state or request blocking. Approval reconciliation needs settings (active addresses resolve on the active RPC network's chain); when they cannot be read, the connections of the affected websites lose their runtime approval so a committed revocation is never left unapplied, request blocks are still reconciled (that works without an active RPC network), and then the unavailable error propagates. A failed disconnect notification or request-block update does not stop the rest; those failures are reported afterwards.
 export async function getSettingsForCommittedAccessChange(websiteTabConnections: WebsiteTabConnections, isAffectedWebsite: (websiteOrigin: string) => boolean): Promise<Settings> {
 	const { settings } = await getSettingsSnapshot()
 	if (settings !== undefined) return settings
-	const notificationErrors: unknown[] = []
+	const followUpErrors: unknown[] = []
 	for (const tabConnection of websiteTabConnections.values()) {
 		for (const connection of Object.values(tabConnection.connections)) {
 			if (!connection.approved || !isAffectedWebsite(connection.websiteOrigin)) continue
 			try {
 				disconnectFromPort(websiteTabConnections, connection.socket)
 			} catch (error: unknown) {
-				notificationErrors.push(error)
+				followUpErrors.push(error)
 			}
 		}
 	}
-	for (const notificationError of notificationErrors) await reportUnexpectedError(notificationError)
+	try {
+		await updateDeclarativeNetRequestBlocks(websiteTabConnections)
+	} catch (error: unknown) {
+		followUpErrors.push(error)
+	}
+	for (const followUpError of followUpErrors) await reportUnexpectedError(followUpError)
 	throw createRpcConfigurationUnavailableError()
 }
+
+// Address-book changes can alter any website's effective address policy, and request-block mode changes alter no approvals.
+export const everyWebsite = () => true
+export const noWebsite = () => false

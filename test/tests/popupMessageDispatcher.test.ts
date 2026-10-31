@@ -15,7 +15,7 @@ const dispatcherEvents: ({ type: 'message', message: unknown } | { type: 'dynami
 let storageSetError: Error | undefined
 let dynamicRuleUpdateError: Error | undefined
 let addressBookBroadcastWait: Promise<void> | undefined
-let afterWebsiteAccessWrite: (() => void) | undefined
+let afterStorageWrite: ((items: Record<string, unknown>) => void) | undefined
 let contentScriptRegistrationWait: { readonly started: () => void, readonly release: Promise<void> } | undefined
 
 const registeredContentScripts = [
@@ -49,7 +49,7 @@ Reflect.set(globalThis, 'browser', {
 			async set(items: Record<string, unknown>) {
 				if (storageSetError !== undefined) throw storageSetError
 				Object.assign(storageState, items)
-				if ('websiteAccess' in items) afterWebsiteAccessWrite?.()
+				afterStorageWrite?.(items)
 			},
 			async remove(keys: string | string[]) {
 				for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
@@ -171,11 +171,20 @@ function createDispatcherContext(resetSimulationState: () => Promise<void>): Pop
 	}
 }
 
+// Makes the RPC configuration unreadable right after the next write of `key` is persisted.
+function corruptActiveRpcNetworkAfterWriting(key: string) {
+	afterStorageWrite = (items) => {
+		if (!(key in items)) return
+		afterStorageWrite = undefined
+		storageState.activeRpcNetwork = 'corrupt'
+	}
+}
+
 beforeEach(() => {
 	storageSetError = undefined
 	dynamicRuleUpdateError = undefined
 	addressBookBroadcastWait = undefined
-	afterWebsiteAccessWrite = undefined
+	afterStorageWrite = undefined
 	contentScriptRegistrationWait = undefined
 	for (const key of Object.keys(storageState)) delete storageState[key]
 	sentMessages.splice(0, sentMessages.length)
@@ -534,10 +543,7 @@ describe('popup message dispatcher seams', () => {
 		const { port, messages } = createPort(socket.tabId)
 		const connection = { port, socket, websiteOrigin, approved: true, wantsToConnect: false }
 		context.websiteTabConnections = new Map([[socket.tabId, { connections: { [websiteSocketToString(socket)]: connection } }]])
-		afterWebsiteAccessWrite = () => {
-			afterWebsiteAccessWrite = undefined
-			storageState.activeRpcNetwork = 'corrupt'
-		}
+		corruptActiveRpcNetworkAfterWriting('websiteAccess')
 		const originalWarn = console.warn
 		console.warn = () => undefined
 		try {
@@ -551,6 +557,68 @@ describe('popup message dispatcher seams', () => {
 
 		assert.equal(connection.approved, false)
 		assert.equal(messages.some((message) => message.method === 'accountsChanged' && Array.isArray(message.result) && message.result.length > 0), false)
+	})
+
+	test('an address-consent change unapproves connections when settings become unreadable right after it is persisted', async () => {
+		const websiteOrigin = 'consent-change-then-corrupted.test'
+		storageState.websiteAccess = [{ website: { websiteOrigin, icon: undefined, title: undefined }, access: true, addressAccess: undefined }]
+		const activeEntry = { type: 'contact' as const, name: 'Active', address: settings.activeSimulationAddress ?? 0n, entrySource: 'User' as const, useAsActiveAddress: true, askForAddressAccess: false }
+		const context = createDispatcherContext(async () => undefined)
+		assert.deepEqual(await dispatchPopupMessage(context, { method: 'popup_addOrModifyAddressBookEntry', data: activeEntry }), { type: 'AddOrModifyAddressBookEntryReply', ok: true })
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const connection = { port, socket, websiteOrigin, approved: true, wantsToConnect: false }
+		context.websiteTabConnections = new Map([[socket.tabId, { connections: { [websiteSocketToString(socket)]: connection } }]])
+		corruptActiveRpcNetworkAfterWriting('userAddressBookEntriesV3')
+		const originalWarn = console.warn
+		console.warn = () => undefined
+		try {
+			// The address now requires per-address consent, which this site never granted.
+			const reply = await dispatchPopupMessage(context, { method: 'popup_addOrModifyAddressBookEntry', data: { ...activeEntry, askForAddressAccess: true } })
+			assert.deepEqual(reply, { type: 'AddOrModifyAddressBookEntryReply', ok: false, message: 'Interceptor RPC configuration is unavailable. Network requests are paused until the user restores it.' })
+		} finally {
+			console.warn = originalWarn
+		}
+
+		assert.equal(connection.approved, false)
+		assert.equal(messages.some((message) => message.method === 'accountsChanged' && Array.isArray(message.result) && message.result.length > 0), false)
+	})
+
+	test('removing an active address unapproves connections when settings become unreadable right after it is persisted', async () => {
+		const websiteOrigin = 'removal-then-corrupted.test'
+		storageState.websiteAccess = [{ website: { websiteOrigin, icon: undefined, title: undefined }, access: true, addressAccess: undefined }]
+		const context = createDispatcherContext(async () => undefined)
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const connection = { port, socket, websiteOrigin, approved: true, wantsToConnect: false }
+		context.websiteTabConnections = new Map([[socket.tabId, { connections: { [websiteSocketToString(socket)]: connection } }]])
+		corruptActiveRpcNetworkAfterWriting('userAddressBookEntriesV3')
+		const originalWarn = console.warn
+		console.warn = () => undefined
+		try {
+			await assert.rejects(dispatchPopupMessage(context, { method: 'popup_removeAddressBookEntry', data: { address: settings.activeSimulationAddress ?? 0n, chainId: 1n, addressBookCategory: 'My Active Addresses' } }), isRpcConfigurationUnavailableError)
+		} finally {
+			console.warn = originalWarn
+		}
+
+		assert.equal(connection.approved, false)
+		assert.equal(messages.some((message) => message.method === 'accountsChanged' && Array.isArray(message.result) && message.result.length > 0), false)
+	})
+
+	test('a block-all toggle installs its request rule when settings become unreadable right after it is persisted', async () => {
+		const websiteOrigin = 'block-then-corrupted.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		storageState.websiteAccess = [{ website, access: true, addressAccess: undefined }]
+		corruptActiveRpcNetworkAfterWriting('websiteAccess')
+		const originalWarn = console.warn
+		console.warn = () => undefined
+		try {
+			await assert.rejects(dispatchPopupMessage(createDispatcherContext(async () => undefined), { method: 'popup_blockOrAllowExternalRequests', data: { website, shouldBlock: true } }), isRpcConfigurationUnavailableError)
+		} finally {
+			console.warn = originalWarn
+		}
+
+		assert.equal(JSON.stringify(dynamicRuleUpdates.at(-1)).includes(websiteOrigin), true)
 	})
 
 	test('returns a save failure when address-book persistence fails', async () => {
