@@ -183,16 +183,43 @@ describe('content script injection strategy', () => {
 			'https://invalid.example/path',
 		]), [
 			'file:///*',
-			'*://*.example.com/*',
+			'http://example.com:80/*',
+			'https://example.com:443/*',
 			'http://localhost:3000/*',
 			'https://localhost:3000/*',
 			'http://127.0.0.1:8545/*',
 			'https://127.0.0.1:8545/*',
 			'http://[::1]:8545/*',
 			'https://[::1]:8545/*',
-			'https://*.secure.example/*',
+			'https://secure.example:443/*',
 			'https://localhost:4443/*',
 		])
+	})
+
+	test('excludes a disabled site on its exact host and port, not on its subdomains or other ports', async () => {
+		installBrowserMock()
+		const { getManifestV3ExcludeMatches } = await loadModules()
+
+		// Each pattern names its port, because a pattern without one would match every port of the host, and its host has no *. prefix, which would match every subdomain.
+		assert.deepEqual(getManifestV3ExcludeMatches(['example.com']), ['http://example.com:80/*', 'https://example.com:443/*'])
+		assert.deepEqual(getManifestV3ExcludeMatches(['app.example.com:8080']), ['http://app.example.com:8080/*', 'https://app.example.com:8080/*'])
+		// A URL never shows its scheme's default port, so these stored origins can only come from the other scheme's URL.
+		assert.deepEqual(getManifestV3ExcludeMatches(['example.com:80']), ['https://example.com:80/*'])
+		assert.deepEqual(getManifestV3ExcludeMatches(['example.com:443']), ['http://example.com:443/*'])
+		assert.deepEqual(getManifestV3ExcludeMatches(['http://plain.example', 'https://secure.example:8443']), ['http://plain.example:80/*', 'https://secure.example:8443/*'])
+	})
+
+	test('skips stored hosts with a * instead of turning them into wildcard or invalid patterns', async () => {
+		installBrowserMock()
+		const { getManifestV3ExcludeMatches } = await loadModules()
+
+		assert.deepEqual(getManifestV3ExcludeMatches([
+			'*.example.com',
+			'https://*.secure.example',
+			'foo*bar.example',
+			'%2A.encoded.example',
+			'example.com',
+		]), ['http://example.com:80/*', 'https://example.com:443/*'])
 	})
 
 	test('exposes every manifest v2 injected file to Firefox', async () => {
