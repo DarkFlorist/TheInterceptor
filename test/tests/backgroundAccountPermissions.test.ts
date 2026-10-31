@@ -903,6 +903,52 @@ describe('background eth_accounts', () => {
 		assert.match(reply?.error?.message ?? '', /RPC configuration is unavailable/)
 	})
 
+	test('refuses a request instead of reusing admitted website approvals when settings become unreadable after admission', async () => {
+		installBrowserMock()
+		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, updateTabState } = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const account = 0x4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4dn
+		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: account })
+		await setUseSignersAddressAsActiveAddress(false)
+		// Approved at admission; the approval could be revoked before the post-admission re-read.
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
+		const socket = { tabId: 1, connectionName: 0n }
+		await updateTabState(socket.tabId, (previousState) => ({ ...previousState, signerAccounts: [account], activeSigningAddress: account }))
+		const { port, messages } = createPort(socket.tabId)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: false, wantsToConnect: true },
+		} }]])
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		const originalStorageGet = browser.storage.local.get
+		let settingsReads = 0
+		Object.defineProperty(browser.storage.local, 'get', {
+			configurable: true,
+			value: async (keys?: string | string[] | Record<string, unknown> | null) => {
+				const readsSettings = Array.isArray(keys) && keys.includes('websiteAccess') && keys.includes('activeRpcNetwork')
+				if (readsSettings) settingsReads += 1
+				// The admission snapshot succeeds; the next settings read after admission fails.
+				if (readsSettings && settingsReads === 2) throw new Error('Extension storage is temporarily unavailable')
+				return await originalStorageGet(keys)
+			},
+		})
+		try {
+			await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
+				interceptorRequest: true,
+				usingInterceptorWithoutSigner: false,
+				uniqueRequestIdentifier: { requestId: 18, requestSocket: socket },
+				method: 'eth_accounts',
+			}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		} finally {
+			Object.defineProperty(browser.storage.local, 'get', { configurable: true, value: originalStorageGet })
+		}
+
+		assert.equal(settingsReads >= 2, true)
+		const reply = messages.find((message) => message.requestId === 18)
+		assert.equal(reply?.error?.code, 4900)
+		assert.equal(messages.some((message) => message.method === 'accountsChanged' || message.method === 'connect'), false)
+	})
+
 	test('does not enable Safe compatibility or expose an active address to an unapproved connected_to_signer request', async () => {
 		installBrowserMock()
 		const {

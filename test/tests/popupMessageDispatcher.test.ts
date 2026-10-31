@@ -1,4 +1,4 @@
-import { createDeferredValue, createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
+import { createDeferredValue, createPort, createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import { beforeEach, describe, test } from 'bun:test'
 import type { PopupMessageDispatcherContext } from '../../app/ts/background/popupMessageDispatcher.js'
@@ -94,12 +94,14 @@ Reflect.set(globalThis, 'browser', {
 
 const [
 	{ dispatchPopupMessage },
+	{ websiteSocketToString },
 	{ getLatestUnexpectedError },
 	{ EthereumClientService: EthereumClientServiceConstructor },
 	{ TokenPriceService: TokenPriceServiceConstructor },
 	{ MessageToPopup },
 ] = await Promise.all([
 	import('../../app/ts/background/popupMessageDispatcher.js'),
+	import('../../app/ts/background/backgroundUtils.js'),
 	import('../../app/ts/background/storageVariables.js'),
 	import('../../app/ts/simulation/services/EthereumClientService.js'),
 	import('../../app/ts/simulation/services/priceEstimator.js'),
@@ -378,6 +380,30 @@ describe('popup message dispatcher seams', () => {
 		}), { type: 'AddOrModifyAddressBookEntryReply', ok: true })
 		assert.equal(Array.isArray(storageState.userAddressBookEntriesV3), true)
 		assert.equal(context.simulationServicesOwner.getCurrent() !== undefined, ownerWasAvailable)
+	})
+
+	test.each([
+		{ method: 'popup_removeAddressBookEntry' },
+		{ method: 'popup_addOrModifyAddressBookEntry' },
+	] as const)('$method reconciles website approvals read after the write instead of the admitted snapshot', async ({ method }) => {
+		const websiteOrigin = 'revoked-after-admission.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		// The site was revoked after the popup request was admitted, so only the admitted snapshot still approves it.
+		storageState.websiteAccess = [{ website, addressAccess: [], access: false }]
+		const context = createDispatcherContext(async () => undefined)
+		context.settings = { ...settings, websiteAccess: [{ website, access: true, addressAccess: [{ address: settings.activeSimulationAddress ?? 0n, access: true }] }] }
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port } = createPort(socket.tabId)
+		const connection = { port, socket, websiteOrigin, approved: true, wantsToConnect: true }
+		context.websiteTabConnections = new Map([[socket.tabId, { connections: { [websiteSocketToString(socket)]: connection } }]])
+
+		if (method === 'popup_removeAddressBookEntry') {
+			await dispatchPopupMessage(context, { method, data: { address: 5n, chainId: 1n, addressBookCategory: 'My Active Addresses' } })
+		} else {
+			assert.deepEqual(await dispatchPopupMessage(context, { method, data: { type: 'contact', name: 'Active contact', address: 5n, entrySource: 'User', useAsActiveAddress: true } }), { type: 'AddOrModifyAddressBookEntryReply', ok: true })
+		}
+
+		assert.equal(connection.approved, false)
 	})
 
 	test('returns a save failure when address-book persistence fails', async () => {

@@ -1457,7 +1457,6 @@ test('changes the Safe simulation signer only after validating current on-chain 
 	const unsupportedVersionSaveFailure = await withSilencedConsole(async () => addOrModifyAddressBookEntry(
 		ethereum,
 		createTestSimulationServicesOwner({ ethereum: ethereum, tokenPriceService: simulator.tokenPriceService }),
-		await getRequiredSettings(),
 		new Map(),
 		{
 			method: 'popup_addOrModifyAddressBookEntry',

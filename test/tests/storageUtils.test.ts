@@ -177,7 +177,7 @@ describe('RPC storage recovery', () => {
 		}
 	})
 
-	test('preserves the complete captured settings after a storage read failure', async () => {
+	test('returns no settings instead of the captured website approvals after a storage read failure', async () => {
 		await browserStorageLocalSet({
 			independentActiveSimulationAddress: 123n,
 			activeSigningSafeAddress: 456n,
@@ -198,7 +198,8 @@ describe('RPC storage recovery', () => {
 
 		const settings = await getSettingsForCapturedRpcNetwork(captureRpcNetwork(initialSnapshot.settings))
 
-		assert.deepEqual(settings, initialSnapshot.settings)
+		// The captured approval may have been revoked since capture, so an unreadable store must not reproduce it.
+		assert.equal(settings, undefined)
 		assert.equal(writes.length, 0)
 	})
 

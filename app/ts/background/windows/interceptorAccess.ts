@@ -20,6 +20,7 @@ import type { PublishRpcConnectionStatus } from '../rpcSlowRequestTracking.js'
 import { type PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab, removeWindowTabListeners, tryFocusingTabOrWindow } from '../../utils/popupOrTab.js'
 import { isAccountConnectionMethod } from '../accountRequestMethods.js'
 import type { ErrorWithCodeAndOptionalData } from '../../types/error.js'
+import { RPC_CONFIGURATION_UNAVAILABLE_ERROR } from '../../types/interceptor-reply-messages.js'
 import { getConfirmedSignerStateToken, isSignerStateTokenCurrent, signerConnectionReplacedError, signerUnavailableError, tabHasApprovedWebsiteConnection, waitForConfirmedSignerStateToken } from '../signerStateOwnership.js'
 import { assertActiveAddressSelectionAllowed, includePersistedAddressBookEntry } from '../../utils/activeAddressSelection.js'
 
@@ -315,6 +316,10 @@ export async function requestAccessFromUser(
 		if (request === undefined || !isAccountConnectionMethod(request.method)) return verify()
 		return withSuppressedUnscopedConnectionEventsForSocket(request.uniqueRequestIdentifier.requestSocket, verify)
 	}
+	// Website approvals are re-read before prompting; when that read fails the request is refused rather than evaluated against approvals that may have been revoked.
+	const replyRpcConfigurationUnavailable = () => {
+		if (request !== undefined) replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: request.method, uniqueRequestIdentifier: request.uniqueRequestIdentifier, error: RPC_CONFIGURATION_UNAVAILABLE_ERROR })
+	}
 	const closeWindowOrTabCallback = (popupOrTabId: PopupOrTabId) => onCloseWindowOrTab(simulationServicesOwner, popupOrTabId, websiteTabConnections)
 	const onCloseWindowCallback = async (id: number) => closeWindowOrTabCallback({ type: 'popup' as const, id })
 	const onCloseTabCallback = async (id: number) => closeWindowOrTabCallback({ type: 'tab' as const, id })
@@ -339,7 +344,12 @@ export async function requestAccessFromUser(
 
 		const previousPendingRequests = await verifyPendingRequests()
 		const justAddToPending = previousPendingRequests.length !== 0
-		const hasAccess = verifyAccessForCurrentRequest(await getSettingsForCapturedRpcNetwork(captureRpcNetwork(settings)))
+		const currentSettings = await getSettingsForCapturedRpcNetwork(captureRpcNetwork(settings))
+		if (currentSettings === undefined) {
+			replyRpcConfigurationUnavailable()
+			return undefined
+		}
+		const hasAccess = verifyAccessForCurrentRequest(currentSettings)
 		if (hasAccess === 'hasAccess') { // we already have access, just reply with the gate keeped request right away
 			if (request !== undefined) {
 				if (publishRpcConnectionStatus === undefined) throw new Error('RPC connection status publisher is required to replay an intercepted request.')
@@ -395,9 +405,12 @@ export async function requestAccessFromUser(
 			activeAddress: activeAddressEntry?.address,
 		}
 
+		let websiteAccessUnreadable = false
 		const pendingRequests = await updatePendingAccessRequests(async (previousPendingAccessRequests) => {
+			const latestSettings = await getSettingsForCapturedRpcNetwork(captureRpcNetwork(settings))
+			websiteAccessUnreadable = latestSettings === undefined
 			// check that it doesn't have access already
-			if (verifyAccessForCurrentRequest(await getSettingsForCapturedRpcNetwork(captureRpcNetwork(settings))) !== 'askAccess') return previousPendingAccessRequests
+			if (latestSettings === undefined || verifyAccessForCurrentRequest(latestSettings) !== 'askAccess') return previousPendingAccessRequests
 
 			// check that we are not tracking it already
 			if (previousPendingAccessRequests.find((x) => x.accessRequestId === accessRequestId) === undefined) {
@@ -405,6 +418,10 @@ export async function requestAccessFromUser(
 			}
 			return previousPendingAccessRequests
 		})
+		if (websiteAccessUnreadable) {
+			replyRpcConfigurationUnavailable()
+			return undefined
+		}
 		const oldPendingRequest = pendingRequests.previous.find((x) => x.accessRequestId === accessRequestId)
 		if (oldPendingRequest !== undefined) {
 			if (openedDialog !== undefined) await tryFocusingTabOrWindow(openedDialog.popupOrTab)

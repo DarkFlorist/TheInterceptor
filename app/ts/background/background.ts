@@ -368,6 +368,9 @@ async function getActiveAddressForRequest(settings: Settings, websiteTabConnecti
 	return await getActiveAddressForCurrentSignerState(websiteTabConnections, settings, tabId, async () => await getActiveAddress(settings, tabId))
 }
 
+// Website approvals are re-read after admission; when that read fails the request is refused rather than evaluated against approvals that may have been revoked since admission.
+const replyRpcConfigurationUnavailable = (websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest) => replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), error: RPC_CONFIGURATION_UNAVAILABLE_ERROR })
+
 async function discoverAccountRequestAddressContext(
 	websiteTabConnections: WebsiteTabConnections,
 	socket: WebsiteSocket,
@@ -376,6 +379,7 @@ async function discoverAccountRequestAddressContext(
 	validatedSettings: Settings,
 ) {
 	const settings = await getSettingsForCapturedRpcNetwork(captureRpcNetwork(validatedSettings))
+	if (settings === undefined) return undefined
 	const activeAddress = await getActiveAddressForRequest(settings, websiteTabConnections, socket.tabId)
 	if (activeAddress !== undefined) return { settings, activeAddress, requestedSignerAccountsForAddressConsent: false, signerAccountError: undefined }
 	if (!isAccountConnectionMethod(request.method)) return { settings, activeAddress, requestedSignerAccountsForAddressConsent: false, signerAccountError: undefined }
@@ -384,6 +388,7 @@ async function discoverAccountRequestAddressContext(
 
 	const signerAccountsResult = await askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections, socket, true)
 	const refreshedSettings = await getSettingsForCapturedRpcNetwork(captureRpcNetwork(settings))
+	if (refreshedSettings === undefined) return undefined
 	const refreshedActiveAddress = await getActiveAddressForRequest(refreshedSettings, websiteTabConnections, socket.tabId)
 	if (refreshedActiveAddress !== undefined) return { settings: refreshedSettings, activeAddress: refreshedActiveAddress, requestedSignerAccountsForAddressConsent: true, signerAccountError: signerAccountsResult.error }
 	const firstSignerAddress = signerAccountsResult.accounts[0] === undefined ? undefined : await getWalletActiveAddressEntryForChain(signerAccountsResult.accounts[0], refreshedSettings.activeRpcNetwork.chainId)
@@ -444,7 +449,9 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 		return replyToInterceptedRequest(websiteTabConnections, { ...getRequestWithDefinedParams(request), ...result })
 	}
 	if (replyIfRpcConfigurationIsUnavailable(simulationServicesOwner, websiteTabConnections, request, initialSnapshot.rpcConfiguration)) return
-	const { settings, activeAddress, requestedSignerAccountsForAddressConsent, signerAccountError } = await discoverAccountRequestAddressContext(websiteTabConnections, socket, request, websiteOrigin, initialSettings)
+	const addressContext = await discoverAccountRequestAddressContext(websiteTabConnections, socket, request, websiteOrigin, initialSettings)
+	if (addressContext === undefined) return replyRpcConfigurationUnavailable(websiteTabConnections, request)
+	const { settings, activeAddress, requestedSignerAccountsForAddressConsent, signerAccountError } = addressContext
 	if (isTerminalSignerAccountConnectionError(signerAccountError)) return replyWithSignerAccountError(websiteTabConnections, request, signerAccountError)
 	if (requestedSignerAccountsForAddressConsent && activeAddress === undefined) {
 		if (getWebsiteAccessApprovalState(settings.websiteAccess, websiteOrigin) === 'interceptorDisabled') return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...ERROR_INTERCEPTOR_DISABLED })
@@ -485,6 +492,7 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 		const firstSignerAccount = signerAccounts[0]
 		if (firstSignerAccount === undefined) return replyWithoutActiveAccount(websiteTabConnections, request)
 		const refreshedSettings = await getSettingsForCapturedRpcNetwork(captureRpcNetwork(settings))
+		if (refreshedSettings === undefined) return replyRpcConfigurationUnavailable(websiteTabConnections, request)
 		let refreshedActiveAddress = await getActiveAddressForRequest(refreshedSettings, websiteTabConnections, socket.tabId)
 		if (refreshedActiveAddress === undefined) {
 			const signerStateToken = getConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
@@ -514,6 +522,7 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 		case 'askAccess': {
 			const website = await websitePromise
 			const currentSettings = await getSettingsForCapturedRpcNetwork(captureRpcNetwork(settings))
+			if (currentSettings === undefined) return replyRpcConfigurationUnavailable(websiteTabConnections, request)
 			return await gateKeepRequestBehindAccessDialog(simulationServicesOwner, websiteTabConnections, socket, request, website, activeAddress, currentSettings, publishRpcConnectionStatus)
 		}
 		case 'noAccess': return refuseAccess(websiteTabConnections, request)

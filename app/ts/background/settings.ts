@@ -147,19 +147,24 @@ export async function getSettingsSnapshot(): Promise<SettingsSnapshot> {
 const capturedRpcNetworkMarker = Symbol('capturedRpcNetwork')
 export type CapturedRpcNetwork = {
 	readonly activeRpcNetwork: RpcNetwork
-	readonly fallbackSettings: Settings
 	readonly [capturedRpcNetworkMarker]: true
 }
 
 // Long-lived mutations use this token only when later settings fields may change but the admitted RPC network must remain pinned.
 export function captureRpcNetwork(settings: Settings): CapturedRpcNetwork {
-	return { activeRpcNetwork: settings.activeRpcNetwork, fallbackSettings: settings, [capturedRpcNetworkMarker]: true }
+	return { activeRpcNetwork: settings.activeRpcNetwork, [capturedRpcNetworkMarker]: true }
 }
 
-export async function getSettingsForCapturedRpcNetwork(capturedRpcNetwork: CapturedRpcNetwork): Promise<Settings> {
+// Returns undefined when storage cannot be read. Earlier settings may hold website approvals revoked since they were read, so callers must fail closed instead of reusing them.
+export async function getSettingsForCapturedRpcNetwork(capturedRpcNetwork: CapturedRpcNetwork): Promise<Settings | undefined> {
 	const { storedItems, rpcConfiguration } = await getRpcConfigurationStateWithStorageSnapshot(SETTINGS_STORAGE_KEYS)
-	if (rpcConfiguration.status === 'unavailable' && rpcConfiguration.reason === 'read-failed') return capturedRpcNetwork.fallbackSettings
+	if (rpcConfiguration.status === 'unavailable' && rpcConfiguration.reason === 'read-failed') return undefined
 	return await getSettingsFromStorageItems(storedItems, capturedRpcNetwork.activeRpcNetwork)
+}
+
+// Settings that must still be published after a failed read carry no website approvals, matching getSettingsSnapshot for unreadable storage.
+export function withoutWebsiteApprovals(settings: Settings): Settings {
+	return { ...settings, websiteAccess: [] }
 }
 
 export const setPage = async (openedPageV2: Page) => await browserStorageLocalSet({ openedPageV2 })
