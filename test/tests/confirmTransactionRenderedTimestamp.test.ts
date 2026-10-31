@@ -9,6 +9,7 @@ import { getSafeTxHash } from '../../app/ts/utils/eip712.js'
 import { bytes32String } from '../../app/ts/utils/bigint.js'
 import { getNativeTokenErc20 } from '../../app/ts/background/metadataUtils.js'
 import { getReviewedResultId } from '../../app/ts/background/reviewedResult.js'
+import { isRecord } from '../../app/ts/utils/runtimeTypeGuards.js'
 import type { PendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
 
 type RuntimeMessageListener = (message: unknown) => unknown
@@ -596,6 +597,72 @@ describe('ConfirmTransaction', () => {
 			safeExecutionOriginalRequestParameters: proposal.originalRequestParameters,
 		})
 		assert.equal(dom.document.body.textContent?.includes('wrapped as Gnosis Safe transaction nonce 3'), false)
+
+		await unmountConfirmTransaction(dom)
+		dom.restore()
+	})
+
+	test('enables Add unsigned only for a Safe proposal whose simulated result succeeds without quarantine', async () => {
+		const dom = installDomMock()
+		const browser = createBrowserMock()
+		const withSafeProposal = (pending: ReturnType<typeof makeSimulatedPendingTransaction>) => {
+			const safeTx = createSafeTx(1n, pending.activeAddress, { to: pending.originalRequestParameters.params[0].to, value: 0n, input: new Uint8Array() }, 3n)
+			return {
+				...pending,
+				simulationMode: false,
+				safeTransaction: {
+					safeAddress: pending.activeAddress,
+					safeSignerAddress: pending.originalRequestParameters.params[0].to,
+					safeVersion: '1.4.1' as const,
+					threshold: 1n,
+					reviewedSafeState: { version: '1.4.1' as const, nonce: 3n, owners: [pending.originalRequestParameters.params[0].to], threshold: 1n },
+					safeTxHash: BigInt(getSafeTxHash(safeTx)),
+					safeTx,
+					executionGasLimit: 21_000n,
+				},
+			}
+		}
+		const isAddUnsignedEnabled = () => {
+			const button = findRenderedElement(dom.document.body, (node) => node.tagName === 'BUTTON' && getRenderedProp(node, 'class') === 'button button--secondary button-overflow dialog-action-button')
+			return button !== undefined && !hasBooleanProp(button, 'disabled')
+		}
+		const succeeded = makeSimulatedPendingTransaction(0n)
+		await renderConfirmTransaction(dom)
+
+		await dispatchPendingTransactions(browser, [withSafeProposal(succeeded)])
+		assert.equal(isAddUnsignedEnabled(), true, 'a succeeding, non-quarantined result can be added unsigned')
+		await dispatchPendingTransactions(browser, [withSafeProposal(makeSimulatedPendingTransaction(0n, revertedOutcome))])
+		assert.equal(isAddUnsignedEnabled(), false, 'a failing result cannot be added unsigned')
+		await dispatchPendingTransactions(browser, [withSafeProposal(makeSimulatedPendingTransaction(0n, { transactionStatus: 'Transaction Succeeded', quarantine: true, quarantineReasons: ['The recipient is a known scam address.'] }))])
+		assert.equal(isAddUnsignedEnabled(), false, 'a quarantined result cannot be added unsigned')
+		const missingResult = { ...succeeded, popupVisualisation: { ...succeeded.popupVisualisation, data: { ...succeeded.popupVisualisation.data, visualizedSimulationState: { success: true as const, visualizedBlocks: [] } } } }
+		await dispatchPendingTransactions(browser, [withSafeProposal(missingResult)])
+		assert.equal(isAddUnsignedEnabled(), false, 'a proposal without a located result cannot be added unsigned')
+
+		await unmountConfirmTransaction(dom)
+		dom.restore()
+	})
+
+	test('sends the located failure as the reject error string and nothing for other results', async () => {
+		const dom = installDomMock()
+		const browser = createBrowserMock()
+		const rejectErrorStrings: unknown[] = []
+		browser.setConfirmDialogHandler(async (message) => {
+			rejectErrorStrings.push(isRecord(message) && isRecord(message.data) ? message.data.errorString : 'unexpected message')
+		})
+		const rejectShown = async (pending: ReturnType<typeof makeSimulatedPendingTransaction>) => {
+			await dispatchPendingTransactions(browser, [pending])
+			const rejectButton = findRenderedElement(dom.document.body, (node) => node.tagName === 'BUTTON' && String(getRenderedProp(node, 'class')).includes('is-danger'))
+			if (rejectButton === undefined) throw new Error('Expected the reject button')
+			await act(async () => { await clickRenderedElement(rejectButton) })
+		}
+		const succeeded = makeSimulatedPendingTransaction(0n)
+		await renderConfirmTransaction(dom)
+
+		await rejectShown(makeSimulatedPendingTransaction(0n, revertedOutcome))
+		await rejectShown(succeeded)
+		await rejectShown({ ...succeeded, popupVisualisation: { ...succeeded.popupVisualisation, data: { ...succeeded.popupVisualisation.data, visualizedSimulationState: { success: true as const, visualizedBlocks: [] } } } })
+		assert.deepEqual(rejectErrorStrings, ['execution reverted', undefined, undefined])
 
 		await unmountConfirmTransaction(dom)
 		dom.restore()

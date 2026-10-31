@@ -944,9 +944,7 @@ export function ConfirmTransaction() {
 			if (pending.transactionOrMessageCreationStatus === 'FailedToSimulate') return pending.transactionToSimulate.error.message
 			if (pending.transactionOrMessageCreationStatus !== 'Simulated') return undefined
 			if (pending.type !== 'Transaction') return undefined
-			if (pending.popupVisualisation.statusCode !== 'success' ) return undefined
-			if (pending.popupVisualisation.data.visualizedSimulationState.success === false) return undefined
-			const results = getResultsForTransaction(pending.popupVisualisation.data.visualizedSimulationState, pending.transactionIdentifier)
+			const results = getVisualizedTransactionResult(pending.popupVisualisation, pending.transactionIdentifier)
 			if (results === undefined) return undefined
 			return results.transactionStatus !== 'Transaction Succeeded' ? results.error.message : undefined
 		}
@@ -1022,10 +1020,9 @@ export function ConfirmTransaction() {
 		const pending = currentPendingTransactionOrSignableMessage.value
 		if (pending?.type !== 'Transaction' || getSafeTransactionPendingFlow(pending)?.kind !== 'proposal') return true
 		if (pending.approvalStatus.status === 'WaitingForSigner') return true
-		if (pending.transactionOrMessageCreationStatus !== 'Simulated' || pending.popupVisualisation.statusCode !== 'success') return true
-		if (pending.popupVisualisation.data.visualizedSimulationState.success === false) return true
-		const lastTx = getResultsForTransaction(pending.popupVisualisation.data.visualizedSimulationState, pending.transactionIdentifier)
-		return lastTx === undefined || lastTx.transactionStatus !== 'Transaction Succeeded' || lastTx.quarantine
+		if (pending.transactionOrMessageCreationStatus !== 'Simulated') return true
+		// Adding to the Safe stack offers no send-anyway override, so it needs a located result that succeeds and is not quarantined.
+		return isRejectOnlyTransaction(pending) || getSendAnywayOverrideReason(pending) !== undefined
 	})
 
 	function getCurrentAddressBookEntries() {
