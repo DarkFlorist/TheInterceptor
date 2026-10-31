@@ -158,7 +158,7 @@ const buildVersion13Import = (): ExportedSettings => ({
 	},
 })
 
-const buildVersion14Import = (useTabsInsteadOfPopup: boolean, metamaskCompatibilityMode: boolean, websiteAccess: ExportedSettings['settings']['websiteAccess'] = []): ExportedSettings => ({
+const buildVersion14Import = (useTabsInsteadOfPopup: boolean, metamaskCompatibilityMode: boolean, websiteAccess: ExportedSettings['settings']['websiteAccess'] = []): Extract<ExportedSettings, { version: '1.4' }> => ({
 	name: 'InterceptorSettingsAndAddressBook',
 	version: '1.4',
 	exportedDate: '2026-05-21',
@@ -174,6 +174,16 @@ const buildVersion14Import = (useTabsInsteadOfPopup: boolean, metamaskCompatibil
 		metamaskCompatibilityMode,
 	},
 })
+
+const buildVersion15Import = (websiteAccess: ExportedSettings['settings']['websiteAccess']): ExportedSettings => {
+	const legacySettings = buildVersion14Import(false, false, websiteAccess).settings
+	return {
+		name: 'InterceptorSettingsAndAddressBook',
+		version: '1.5',
+		exportedDate: '2026-05-21',
+		settings: { ...legacySettings, activeSigningSafeAddress: undefined, signingAddressPreferences: [] },
+	}
+}
 
 describe('settings import', () => {
 	beforeEach(() => {
@@ -470,5 +480,48 @@ describe('settings import', () => {
 		const websiteAccess = await getWebsiteAccess()
 		assert.equal(websiteAccess[0]?.website.icon, undefined)
 		assert.equal(websiteAccess[1]?.website.icon, 'data:image/png;base64,Y2FjaGVk')
+	})
+
+	test('keeps legacy access pending for exact-origin rebinding and drops malformed imported origins', async () => {
+		const { getWebsiteAccess, importSettingsAndAddressBook } = await settingsModulePromise
+		await importSettingsAndAddressBook(buildVersion15Import([
+			{
+				website: { websiteOrigin: 'example.test:8080', icon: undefined, title: 'Legacy test site' },
+				access: true,
+				addressAccess: [{ address: 0x1111111111111111111111111111111111111111n, access: true }],
+			},
+			{ website: { websiteOrigin: 'https://', icon: undefined, title: 'Malformed' }, access: true },
+			{ website: { websiteOrigin: 'https://attacker.invalid@example.test/path', icon: undefined, title: 'Credentialed canonical URL' }, access: true },
+		]))
+
+		const websiteAccess = await getWebsiteAccess()
+		assert.deepEqual(websiteAccess, [{
+			website: { websiteOrigin: 'example.test:8080', icon: undefined, title: 'Legacy test site' },
+			access: true,
+			addressAccess: [{ address: 0x1111111111111111111111111111111111111111n, access: true }],
+		}])
+	})
+
+	test('reads stored website access in the same canonical form through getSettings and getWebsiteAccess', async () => {
+		const { getSettings, getWebsiteAccess } = await settingsModulePromise
+		await browserStorageLocalSet({ websiteAccess: [
+			{ website: { websiteOrigin: 'HTTPS://Example.test:443', icon: undefined, title: 'Default port' }, access: true },
+			{ website: { websiteOrigin: 'https://', icon: undefined, title: 'Malformed' }, access: true },
+			{ website: { websiteOrigin: 'legacy.example', icon: 'https://legacy.example/favicon.png', title: 'Legacy' }, access: false },
+		] })
+
+		const websiteAccess = await getWebsiteAccess()
+		assert.deepEqual(websiteAccess, [
+			{ website: { websiteOrigin: 'https://example.test', icon: undefined, title: 'Default port' }, access: true },
+			{ website: { websiteOrigin: 'legacy.example', icon: undefined, title: 'Legacy' }, access: false },
+		])
+		assert.deepEqual((await getSettings()).websiteAccess, websiteAccess)
+	})
+
+	test('exports scheme-aware settings in the current version 1.6', async () => {
+		const { exportSettingsAndAddressBook } = await settingsModulePromise
+		const exported = await exportSettingsAndAddressBook()
+
+		assert.equal(exported.version, '1.6')
 	})
 })

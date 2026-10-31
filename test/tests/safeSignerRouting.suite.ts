@@ -32,8 +32,8 @@ test('accepts a signer reply from the current approved child-frame port', async 
 			providerGeneration: 8,
 		},
 		connections: {
-			[modules.websiteSocketToString(topSocket)]: { port: topPort, socket: topSocket, websiteOrigin, approved: true, wantsToConnect: true },
-			[modules.websiteSocketToString(childSocket)]: { port: childPort, socket: childSocket, websiteOrigin, approved: true, wantsToConnect: true },
+			[modules.websiteSocketToString(topSocket)]: { port: topPort, socket: topSocket, websiteOrigin, approved: true, approvedAddress: activeAddress, wantsToConnect: true },
+			[modules.websiteSocketToString(childSocket)]: { port: childPort, socket: childSocket, websiteOrigin, approved: true, approvedAddress: activeAddress, wantsToConnect: true },
 		},
 	}]])
 	await modules.browserStorageLocalSet2({
@@ -168,6 +168,7 @@ test('forwards a Safe transaction to the wallet-selected Safe owner as EIP-712 t
 				socket,
 				websiteOrigin: 'https://example.com',
 				approved: true,
+				approvedAddress: activeAddress,
 				wantsToConnect: true,
 			},
 		},
@@ -202,7 +203,7 @@ test('forwards a Safe transaction to the wallet-selected Safe owner as EIP-712 t
 	fakeSafeContract.owners = [0x1111111111111111111111111111111111111111n]
 	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
-		data: { action: 'accept', uniqueRequestIdentifier },
+		data: { action: 'accept', uniqueRequestIdentifier, forceSend: false },
 	}), false)
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
 	const [changedOwnersProposal] = await modules.getPendingTransactionsAndMessages()
@@ -215,9 +216,10 @@ test('forwards a Safe transaction to the wallet-selected Safe owner as EIP-712 t
 		...pending,
 		approvalStatus: { status: 'WaitingForUser' as const },
 	}))
+	// Background-only override: the test harness's confirmation simulation visualizes no transaction, so the popup would keep Confirm disabled and this accept carries forceSend as a stale or non-popup message would.
 	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
-		data: { action: 'accept', uniqueRequestIdentifier },
+		data: { action: 'accept', uniqueRequestIdentifier, forceSend: true },
 	}), true)
 
 	const signerRequest = postedMessages.find((message) => isRecord(message) && message.type === 'forwardToSigner')
@@ -306,6 +308,7 @@ test('routes a Safe co-signing request through the wallet-selected owner', async
 				socket,
 				websiteOrigin: 'https://sealwort.example',
 				approved: true,
+				approvedAddress: activeAddress,
 				wantsToConnect: true,
 			},
 		},
@@ -384,7 +387,7 @@ test('routes a Safe co-signing request through the wallet-selected owner', async
 	assert.equal(refreshedCoSignRequest?.approvalStatus.status, 'WaitingForUser')
 	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
-		data: { action: 'accept', uniqueRequestIdentifier },
+		data: { action: 'accept', uniqueRequestIdentifier, forceSend: false },
 	}), true)
 
 	const signerRequest = postedMessages.find((message) => isRecord(message) && message.type === 'forwardToSigner')
@@ -441,6 +444,7 @@ test('returns a Safe signer error when the wallet-selected co-signer is not a cu
 				socket: uniqueRequestIdentifier.requestSocket,
 				websiteOrigin: 'https://sealwort.example',
 				approved: true,
+				approvedAddress: activeAddress,
 				wantsToConnect: true,
 			},
 		},
@@ -618,6 +622,7 @@ test('shows a Safe signing-account mismatch in the confirmation dialog without r
 				socket,
 				websiteOrigin: 'https://sealwort.example',
 				approved: true,
+				approvedAddress: activeAddress,
 				wantsToConnect: true,
 			},
 		},
@@ -736,6 +741,7 @@ test('signs Safe transaction typed data normally when the active signing address
 				socket,
 				websiteOrigin: 'https://sealwort.example',
 				approved: true,
+				approvedAddress: activeAddress,
 				wantsToConnect: true,
 			},
 		},
@@ -809,6 +815,7 @@ test('uses the configured Safe simulation signer without changing the active Saf
 				socket: uniqueRequestIdentifier.requestSocket,
 				websiteOrigin: 'https://simulation-signer.example',
 				approved: true,
+				approvedAddress: activeAddress,
 				wantsToConnect: true,
 			},
 		},
@@ -1106,6 +1113,7 @@ test('routes a completed active Safe execution through its configured signer and
 				socket,
 				websiteOrigin: 'https://sealwort.example',
 				approved: true,
+				approvedAddress: activeAddress,
 				wantsToConnect: true,
 			},
 		},
@@ -1202,7 +1210,7 @@ test('routes a completed active Safe execution through its configured signer and
 		websiteTabConnections,
 		{
 			method: 'popup_confirmDialog',
-			data: { action: 'accept', uniqueRequestIdentifier },
+			data: { action: 'accept', uniqueRequestIdentifier, forceSend: false },
 		},
 		{ selectedSigner: safeSignerAddress, verificationError: undefined },
 	)), false)
@@ -1215,7 +1223,7 @@ test('routes a completed active Safe execution through its configured signer and
 		websiteTabConnections,
 		{
 			method: 'popup_confirmDialog',
-			data: { action: 'accept', uniqueRequestIdentifier },
+			data: { action: 'accept', uniqueRequestIdentifier, forceSend: false },
 		},
 		{ selectedSigner: alternateSignerAddress, verificationError: undefined },
 	)), false)
@@ -1227,7 +1235,7 @@ test('routes a completed active Safe execution through its configured signer and
 		websiteTabConnections,
 		{
 			method: 'popup_confirmDialog',
-			data: { action: 'accept', uniqueRequestIdentifier },
+			data: { action: 'accept', uniqueRequestIdentifier, forceSend: false },
 		},
 		{ selectedSigner: alternateSignerAddress, verificationError: undefined },
 	), false)
@@ -1253,7 +1261,7 @@ test('routes a completed active Safe execution through its configured signer and
 		websiteTabConnections,
 		{
 			method: 'popup_confirmDialog',
-			data: { action: 'accept', uniqueRequestIdentifier },
+			data: { action: 'accept', uniqueRequestIdentifier, forceSend: false },
 		},
 		{ selectedSigner: safeSignerAddress, verificationError: undefined },
 	), false)
@@ -1275,7 +1283,7 @@ test('routes a completed active Safe execution through its configured signer and
 		websiteTabConnections,
 		{
 			method: 'popup_confirmDialog',
-			data: { action: 'accept', uniqueRequestIdentifier },
+			data: { action: 'accept', uniqueRequestIdentifier, forceSend: false },
 		},
 		{ selectedSigner: safeSignerAddress, verificationError: undefined },
 	), false)
@@ -1290,13 +1298,14 @@ test('routes a completed active Safe execution through its configured signer and
 		...pending,
 		approvalStatus: { status: 'WaitingForUser' as const },
 	}))
+	// Background-only override test: the test chain cannot simulate this Safe execution, so the popup would show its failure view (which offers only rejection) and the background forwards the execution only because this accept carries forceSend.
 	assert.equal(await modules.resolvePendingTransactionOrMessage(
 		simulator.ethereum,
 		simulator.tokenPriceService,
 		websiteTabConnections,
 		{
 			method: 'popup_confirmDialog',
-			data: { action: 'accept', uniqueRequestIdentifier },
+			data: { action: 'accept', uniqueRequestIdentifier, forceSend: true },
 		},
 		{ selectedSigner: safeSignerAddress, verificationError: undefined },
 	), true)
@@ -1340,6 +1349,96 @@ test('routes a completed active Safe execution through its configured signer and
 	)
 	if (!isRecord(dappReply)) throw new Error('Missing direct Safe execution dapp reply')
 	assert.equal(dappReply.result, transactionHash)
+})
+
+test('forwards a direct Safe execution that omits type, gas, and fee fields when its signer was connected at review time', async () => {
+	const { SendTransactionParams } = await import('../../app/ts/types/JsonRpc-types.js')
+	const safeSignerAddress = recipientAddress
+	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
+		to: recipientAddress,
+		value: 0n,
+		input: new Uint8Array(),
+	}, fakeSafeContract.nonce)
+	const existingSignature = await safeTestOwnerAccount.signTypedData(EIP712Message.parse(safeTxToTypedDataJson(safeTx)))
+	fakeSafeContract.owners = [safeTestOwnerAddress, safeSignerAddress]
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.updateSafeTransactionStacks(() => [])
+	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeSignerAddresses: [safeSignerAddress] })])
+	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({
+		...state,
+		signerAccounts: [safeSignerAddress],
+		activeSigningAddress: safeSignerAddress,
+		signerChain: fakeRpcNetwork.chainId,
+	}))
+	const transactionParams = SendTransactionParams.parse({
+		method: 'eth_sendTransaction',
+		params: [{
+			from: addressString(activeAddress),
+			to: addressString(activeAddress),
+			data: encodeFunctionCall(SAFE_EXECUTION_ABI, 'execTransaction', [
+				addressString(recipientAddress),
+				0n,
+				'0x',
+				0n,
+				0n,
+				0n,
+				0n,
+				addressString(0n),
+				addressString(0n),
+				existingSignature,
+			]),
+		}],
+	})
+	const postedMessages: unknown[] = []
+	const socket = uniqueRequestIdentifier.requestSocket
+	const websiteTabConnections = new Map([[socket.tabId, {
+		connections: {
+			[modules.websiteSocketToString(socket)]: {
+				port: createWebsitePort(socket, 0, postedMessages),
+				socket,
+				websiteOrigin: 'https://sealwort.example',
+				approved: true,
+				approvedAddress: activeAddress,
+				wantsToConnect: true,
+			},
+		},
+	}]])
+	assert.deepEqual(await modules.openConfirmTransactionDialogForTransaction(
+		simulator.ethereum,
+		simulator.tokenPriceService,
+		{ interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier, ...transactionParams },
+		{ kind: 'transaction', parameters: transactionParams },
+		false,
+		activeAddress,
+		{ websiteOrigin: 'https://sealwort.example', icon: undefined, title: 'Sealwort' },
+		websiteTabConnections,
+	), { type: 'doNotReply' })
+	const [pendingExecution] = await modules.getPendingTransactionsAndMessages()
+	if (pendingExecution?.type !== 'Transaction' || pendingExecution.originalRequestParameters.method !== 'eth_sendTransaction') throw new Error('Missing direct Safe execution request')
+	assert.equal(pendingExecution.transactionOrMessageCreationStatus, 'Simulated')
+	assert.equal(pendingExecution.approvalStatus.status, 'WaitingForUser')
+	assert.equal(pendingExecution.safeExecutionSignerAddress, safeSignerAddress)
+	// The pending request keeps the routed website inputs; the zero-fee simulation values for the external executor never replace them.
+	assert.equal(pendingExecution.originalRequestParameters.params[0].type, undefined)
+	assert.equal(pendingExecution.originalRequestParameters.params[0].gas, undefined)
+	assert.equal(pendingExecution.originalRequestParameters.params[0].maxFeePerGas, undefined)
+
+	// Background-only override test: the test chain cannot simulate this Safe execution, so the popup would show its failure view (which offers only rejection) and the background forwards the execution only because this accept carries forceSend.
+	assert.equal(await modules.resolvePendingTransactionOrMessage(
+		simulator.ethereum,
+		simulator.tokenPriceService,
+		websiteTabConnections,
+		{ method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier, forceSend: true } },
+		{ selectedSigner: safeSignerAddress, verificationError: undefined },
+	), true)
+	const signerRequest = postedMessages.find((message) => isRecord(message) && message.type === 'forwardToSigner')
+	if (!isRecord(signerRequest) || !Array.isArray(signerRequest.params)) throw new Error('Missing direct Safe execution signer request')
+	const signerTransaction = signerRequest.params[0]
+	if (!isRecord(signerTransaction)) throw new Error('Missing direct Safe execution transaction parameters')
+	assert.equal(signerRequest.method, 'eth_sendTransaction')
+	assert.equal(signerTransaction.from, addressString(safeSignerAddress))
+	assert.equal(signerTransaction.maxFeePerGas, undefined)
+	assert.equal(signerTransaction.maxPriorityFeePerGas, undefined)
 })
 
 test('blocks direct Safe execution when the configured signer cannot satisfy the threshold', async () => {
@@ -1395,6 +1494,7 @@ test('blocks direct Safe execution when the configured signer cannot satisfy the
 				socket,
 				websiteOrigin: 'https://sealwort.example',
 				approved: true,
+				approvedAddress: activeAddress,
 				wantsToConnect: true,
 			},
 		},

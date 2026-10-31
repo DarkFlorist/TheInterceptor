@@ -5,7 +5,7 @@ import type { EthereumClientService } from '../../simulation/services/EthereumCl
 import { getInputFieldFromDataOrInput, getSimulatedBalance, getSimulatedErc20Balance, getSimulatedTransactionCount, simulateEstimateGas } from '../../simulation/services/SimulationModeEthereumClientService.js'
 import { simulatePersonalSign } from '../../simulation/services/simulationPersonalSigning.js'
 import { getSignedTransactionForSimulation } from '../../simulation/services/simulationTransactionSigning.js'
-import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS, METAMASK_ERROR_BLANKET_ERROR, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
+import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS, METAMASK_ERROR_BLANKET_ERROR, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { type TransactionConfirmation, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
 import { Semaphore } from '../../utils/semaphore.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
@@ -19,11 +19,12 @@ import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueReques
 import { replyToInterceptedRequestAfterManifestV2Reconnect } from '../messageSending.js'
 import { attemptQueuedTerminalReplyDelivery, queueTerminalReply, queueTerminalReplyAndAttemptDelivery } from '../terminalReplyDelivery.js'
 import { stringToBytes, keccak256 } from '../../utils/ethereumPrimitives.js'
-import { EthereumBytes32, EthereumQuantity, serialize } from '../../types/wire-types.js'
+import { EthereumBytes32, EthereumQuantity, serialize, type EthereumAccessList, type EthereumSendableSignedTransaction, type EthereumUnsignedTransaction } from '../../types/wire-types.js'
+import { areEqualUint8Arrays } from '../../utils/typed-arrays.js'
 import type { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
 import { getErrorMessage, JsonRpcResponseError, reportUnexpectedError, isExpectedInfrastructureError, isNewBlockAbort, reportLocalRecovery } from '../../utils/errors.js'
-import type { PendingTransactionOrSignableMessage, PopupPendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
-import type { SignMessageParams } from '../../types/jsonRpc-signing-types.js'
+import type { ConfirmTransactionTransactionSingleVisualization, PendingTransactionOrSignableMessage, PopupPendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
+import { getRequestedSignMessageAccount, type SignMessageParams } from '../../types/jsonRpc-signing-types.js'
 import type { SafeSignerErrorDetails } from '../../types/safeTypes.js'
 import { craftPersonalSignPopupMessage } from './personalSign.js'
 import { getSettings } from '../settings.js'
@@ -36,7 +37,10 @@ import type { TokenPriceService } from '../../simulation/services/priceEstimator
 import { closePopupOrTabById, getPopupOrTabById, openPopupOrTab, tryFocusingTabOrWindow } from '../../utils/popupOrTab.js'
 import { getDesiredMaxFeePerGasForBaseFee, getTransactionFeesForBaseFee, hasExplicitMaxFeePerGas } from '../../utils/transactionFees.js'
 import { parseSendRawTransaction } from '../../utils/sendRawTransactionParsing.js'
-import { createEip1559Or7702Transaction } from '../../utils/eip7702Authorization.js'
+import { normalizeEip7702AuthorizationList } from '../../utils/eip7702Authorization.js'
+import { requiresTransactionOverrideAcknowledgement } from '../../utils/transactionOverrideAcknowledgement.js'
+import { getSignerNonce } from '../../utils/signerFacingTransactionRequest.js'
+import { isWebsiteSocketApprovedForAddress } from '../accessManagement.js'
 import { identifyAddress } from '../metadataUtils.js'
 import { resolveInsufficientBalanceMessage } from '../../utils/insufficientBalance.js'
 import { prepareSafeTransactionConfirmation } from '../safeTransactionConfirmation.js'
@@ -311,8 +315,9 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 	if (safeResolution.pendingChanged) {
 		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async () => pendingTransactionOrMessage)
 	}
-	const signerFacingRequest: SendTransactionParams | SendRawTransactionParams | SignMessageParams = safeResolution.signerFacingRequest
-		?? pendingTransactionOrMessage.originalRequestParameters
+	// Derived only when forwarding, after the authorization checks, so rejecting a request never depends on rebuilding its reviewed transaction.
+	const getSignerFacingRequest = (): SendTransactionParams | SendRawTransactionParams | SignMessageParams => safeResolution.signerFacingRequest
+		?? getReviewedSignerFacingRequest(pendingTransactionOrMessage)
 	const removePendingRequestAndUpdateView = async () => {
 		await removePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier)
 		if ((await getPendingTransactionsAndMessages()).length === 0) await tryFocusingTabOrWindow({ type: 'tab', id: pendingTransactionOrMessage.uniqueRequestIdentifier.requestSocket.tabId })
@@ -358,9 +363,45 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 		&& pendingTransactionOrMessage.transactionOrMessageCreationStatus !== 'Simulated'
 	) return false
 	if (confirmation.data.action === 'accept' && pendingTransactionOrMessage.simulationMode === false) {
+		if (pendingTransactionOrMessage.transactionOrMessageCreationStatus !== 'Simulated') {
+			throw new Error('Only fully simulated requests can be forwarded to the signer')
+		}
+		const safeFlow = getSafePendingFlow(pendingTransactionOrMessage)
+		const authorizedWebsiteAddress = safeFlow?.kind === 'directExecution'
+			? safeFlow.pending.safeExecutionOriginalRequestParameters.params[0].from ?? pendingTransactionOrMessage.activeAddress
+			: pendingTransactionOrMessage.activeAddress
+		if (!isWebsiteSocketApprovedForAddress(websiteTabConnections, pendingTransactionOrMessage.uniqueRequestIdentifier.requestSocket, authorizedWebsiteAddress)) {
+			await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, {
+				approvalStatus: {
+					status: 'SignerError',
+					code: METAMASK_ERROR_BLANKET_ERROR,
+					message: 'The website connection was interrupted before the request reached your wallet. Reload the website and try again.',
+				}
+			}))
+			await updateConfirmTransactionView(ethereum, tokenPriceService)
+			return false
+		}
+		// Only requests that ask the wallet to sign are bound to the authorized account. A raw transaction is already signed, so broadcasting it grants no authority over its sender: the website could submit the same bytes to any public RPC.
+		if (pendingTransactionOrMessage.type === 'Transaction'
+			&& pendingTransactionOrMessage.originalRequestParameters.method === 'eth_sendTransaction'
+			&& pendingTransactionOrMessage.transactionToSimulate.transaction.from !== pendingTransactionOrMessage.activeAddress) {
+			throw new Error('The reviewed transaction sender is not the active authorized account')
+		}
+		if (pendingTransactionOrMessage.type === 'SignableMessage'
+			&& pendingTransactionOrMessage.visualizedPersonalSignRequest.quarantine
+			&& !confirmation.data.forceSend) {
+			throw new Error('Quarantined signature requests require explicit user acknowledgement')
+		}
+		// Defence in depth for the popup's disabled Confirm button: a failed, reverting or quarantined transaction is only forwarded with the override acknowledgement. Refusing leaves the request waiting for the user, who can still acknowledge or reject it.
+		if (pendingTransactionOrMessage.type === 'Transaction'
+			&& !confirmation.data.forceSend
+			&& requiresTransactionOverrideAcknowledgement(pendingTransactionOrMessage.popupVisualisation, pendingTransactionOrMessage.transactionIdentifier)) {
+			await updateConfirmTransactionView(ethereum, tokenPriceService)
+			return false
+		}
 		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'WaitingForSigner' } }))
 		await updateConfirmTransactionView(ethereum, tokenPriceService)
-		const requestWasForwarded = await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, { ...signerFacingRequest, type: 'forwardToSigner', uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
+		const requestWasForwarded = await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, { ...getSignerFacingRequest(), type: 'forwardToSigner', uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
 		if (requestWasForwarded) return true
 		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, {
 			approvalStatus: {
@@ -397,7 +438,7 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 			return reply({ type: 'result', result: confirmation.data.signerReply })
 		}
 		await removePendingRequestAndUpdateView()
-		return await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, { ...signerFacingRequest, type: 'forwardToSigner', uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
+		return await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, { ...getSignerFacingRequest(), type: 'forwardToSigner', uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
 	}
 	if (confirmation.data.action === 'signerIncluded') throw new Error('Signer included transaction that was in simulation')
 
@@ -531,16 +572,186 @@ export const formSendRawTransaction = async(_ethereumClientService: EthereumClie
 	}
 }
 
+// 'wallet-selects-nonce' omits the nonce so the wallet keeps choosing its next available nonce, which accounts for transactions still pending in its mempool view.
+export type SignerNonceSelection = 'forward-reviewed-nonce' | 'wallet-selects-nonce'
+
+export function toCanonicalSendTransactionParams(transaction: EthereumUnsignedTransaction, nonceSelection: SignerNonceSelection = 'forward-reviewed-nonce'): SendTransactionParams {
+	const common = {
+		type: transaction.type,
+		from: transaction.from,
+		chainId: transaction.chainId,
+		...(nonceSelection === 'wallet-selects-nonce' ? {} : { nonce: transaction.nonce }),
+		gas: transaction.gas,
+		to: transaction.to,
+		value: transaction.value,
+		data: transaction.input,
+	}
+	switch (transaction.type) {
+		case 'legacy':
+			return { method: 'eth_sendTransaction', params: [{ ...common, gasPrice: transaction.gasPrice }] }
+		case '2930':
+			return { method: 'eth_sendTransaction', params: [{ ...common, gasPrice: transaction.gasPrice, accessList: transaction.accessList }] }
+		case '1559':
+			return { method: 'eth_sendTransaction', params: [{ ...common, maxFeePerGas: transaction.maxFeePerGas, maxPriorityFeePerGas: transaction.maxPriorityFeePerGas, accessList: transaction.accessList }] }
+		case '4844':
+			return { method: 'eth_sendTransaction', params: [{
+				...common,
+				maxFeePerGas: transaction.maxFeePerGas,
+				maxPriorityFeePerGas: transaction.maxPriorityFeePerGas,
+				accessList: transaction.accessList,
+				maxFeePerBlobGas: transaction.maxFeePerBlobGas,
+				blobVersionedHashes: transaction.blobVersionedHashes,
+			}] }
+		case '7702':
+			return { method: 'eth_sendTransaction', params: [{
+				...common,
+				maxFeePerGas: transaction.maxFeePerGas,
+				maxPriorityFeePerGas: transaction.maxPriorityFeePerGas,
+				accessList: transaction.accessList,
+				authorizationList: transaction.authorizationList.map((authorization) => ({
+					chainId: authorization.chainId,
+					address: authorization.address,
+					nonce: authorization.nonce,
+					...(authorization.r === undefined ? {} : { r: authorization.r }),
+					...(authorization.s === undefined ? {} : { s: authorization.s }),
+					...(authorization.yParity === undefined ? {} : { yParity: authorization.yParity }),
+				})),
+			}] }
+		default:
+			return assertNever(transaction)
+	}
+}
+
+// `originalRequestParameters` keeps the website's own inputs so refreshes regenerate omitted fields (nonce, gas and fees) against current chain state, while the wallet receives the reviewed transaction with the fees the popup displayed so it cannot sign values the user did not see. Gnosis Safe flows are excluded: they are simulated with zero fees for an external executor, and the Safe resolver either supplies its own signer-facing request or re-validates the direct execution route against the reviewed Safe state.
+function getReviewedSignerFacingRequest(pending: PendingTransactionOrSignableMessage): SendTransactionParams | SendRawTransactionParams | SignMessageParams {
+	if (pending.type === 'SignableMessage') return pending.originalRequestParameters
+	if (pending.originalRequestParameters.method !== 'eth_sendTransaction') return pending.originalRequestParameters
+	if (getSafePendingFlow(pending) !== undefined) return pending.originalRequestParameters
+	if (pending.transactionOrMessageCreationStatus !== 'Simulated') return pending.originalRequestParameters
+	// When the confirmation simulation fails, the popup shows only the website's own request and offers only rejection; an accept can only arrive from a stale or non-popup message, which resolvePendingTransactionOrMessage forwards only with forceSend. With no reviewed simulation to bind against, such an override forwards exactly the website's request and leaves omitted gas, fees and nonce to the wallet.
+	if (pending.popupVisualisation.statusCode !== 'success') return pending.originalRequestParameters
+	const reviewedTransaction = getReviewedTransactionForSigning(pending.transactionToSimulate.transaction, pending.popupVisualisation, pending.transactionIdentifier)
+	// The popup displays this same signer nonce, and notes a different simulated one. Safe flows returned above, so this is a plain transaction.
+	const signerNonce = getSignerNonce(pending, undefined)
+	switch (signerNonce.kind) {
+		case 'simulated': throw new Error('Only transactions forwarded to the wallet have a signer-facing request')
+		case 'wallet-selected': return toCanonicalSendTransactionParams(reviewedTransaction, 'wallet-selects-nonce')
+		case 'website-requested': {
+			if (reviewedTransaction.nonce !== signerNonce.nonce) throw new Error('The reviewed transaction nonce does not match the nonce the website requested')
+			return toCanonicalSendTransactionParams(reviewedTransaction, 'forward-reviewed-nonce')
+		}
+		default: return assertNever(signerNonce)
+	}
+}
+
+type AuthorizationWithoutSignature = { readonly chainId: bigint, readonly address: bigint, readonly nonce: bigint }
+
+function areAccessListsEqual(first: EthereumAccessList | undefined, second: EthereumAccessList | undefined) {
+	if (first === undefined || second === undefined) return first === second
+	return first.length === second.length && first.every((entry, index) => {
+		const other = second[index]
+		return other !== undefined
+			&& entry.address === other.address
+			&& entry.storageKeys.length === other.storageKeys.length
+			&& entry.storageKeys.every((storageKey, storageKeyIndex) => storageKey === other.storageKeys[storageKeyIndex])
+	})
+}
+
+// Signature fields are ignored because the simulation adds placeholder signatures to unsigned authorizations; the forwarded request keeps the prepared ones.
+function areAuthorizationsEqualIgnoringSignatures(first: readonly AuthorizationWithoutSignature[] | undefined, second: readonly AuthorizationWithoutSignature[] | undefined) {
+	if (first === undefined || second === undefined) return first === second
+	return first.length === second.length && first.every((authorization, index) => {
+		const other = second[index]
+		return other !== undefined && authorization.chainId === other.chainId && authorization.address === other.address && authorization.nonce === other.nonce
+	})
+}
+
+function areBlobVersionedHashesEqual(first: readonly bigint[] | undefined, second: readonly bigint[] | undefined) {
+	if (first === undefined || second === undefined) return first === second
+	return first.length === second.length && first.every((hash, index) => hash === second[index])
+}
+
+export function assertSimulatedTransactionMatchesPrepared(prepared: EthereumUnsignedTransaction, simulated: EthereumSendableSignedTransaction) {
+	if (simulated.type !== prepared.type
+		|| simulated.from !== prepared.from
+		|| simulated.to !== prepared.to
+		|| simulated.value !== prepared.value
+		|| simulated.gas !== prepared.gas
+		|| simulated.chainId !== prepared.chainId
+		|| !areEqualUint8Arrays(simulated.input, prepared.input)
+		|| !areAccessListsEqual('accessList' in simulated ? simulated.accessList : undefined, 'accessList' in prepared ? prepared.accessList : undefined)
+		|| !areAuthorizationsEqualIgnoringSignatures(simulated.type === '7702' ? simulated.authorizationList : undefined, prepared.type === '7702' ? prepared.authorizationList : undefined)
+		|| (simulated.type === '4844' ? simulated.maxFeePerBlobGas : undefined) !== (prepared.type === '4844' ? prepared.maxFeePerBlobGas : undefined)
+		|| !areBlobVersionedHashesEqual(simulated.type === '4844' ? simulated.blobVersionedHashes : undefined, prepared.type === '4844' ? prepared.blobVersionedHashes : undefined)) {
+		throw new Error('The simulated transaction does not match the prepared transaction')
+	}
+}
+
+// The confirmation simulation re-derives interceptor-filled fees for the current base fee, and the popup displays those fees, so the wallet receives them instead of the prepared ones. The simulation may also repair the nonce for its preview, so the nonce is the only other field allowed to differ and is never taken from it. The prepared unsigned authorization list is kept because the simulated one carries placeholder signatures.
+function getReviewedTransactionForSigning(prepared: EthereumUnsignedTransaction, popupVisualisation: Extract<ConfirmTransactionTransactionSingleVisualization, { statusCode: 'success' }>, transactionIdentifier: bigint): EthereumUnsignedTransaction {
+	const simulated = popupVisualisation.data.simulationState.simulationStateInput
+		.flatMap((block) => block.transactions)
+		.find((transaction) => transaction.transactionIdentifier === transactionIdentifier)?.signedTransaction
+	if (simulated === undefined) throw new Error('The reviewed transaction is missing from its confirmation simulation')
+	assertSimulatedTransactionMatchesPrepared(prepared, simulated)
+	switch (prepared.type) {
+		case 'legacy': return simulated.type === 'legacy' ? { ...prepared, gasPrice: simulated.gasPrice } : prepared
+		case '2930': return simulated.type === '2930' ? { ...prepared, gasPrice: simulated.gasPrice } : prepared
+		case '1559': return simulated.type === '1559' ? { ...prepared, maxFeePerGas: simulated.maxFeePerGas, maxPriorityFeePerGas: simulated.maxPriorityFeePerGas } : prepared
+		case '4844': return simulated.type === '4844' ? { ...prepared, maxFeePerGas: simulated.maxFeePerGas, maxPriorityFeePerGas: simulated.maxPriorityFeePerGas } : prepared
+		case '7702': return simulated.type === '7702' ? { ...prepared, maxFeePerGas: simulated.maxFeePerGas, maxPriorityFeePerGas: simulated.maxPriorityFeePerGas } : prepared
+		default: return assertNever(prepared)
+	}
+}
+
+type SupportedSendTransactionType = Exclude<EthereumUnsignedTransaction['type'], '4844'>
 export type TransactionGasPayment = 'transaction-sender' | 'external-executor'
 
+// The wallet signs this transaction, so it keeps the envelope the website requested, including legacy and EIP-2930; gas estimation instead uses createEip1559Or7702Transaction because at zero fees those envelopes execute like EIP-1559.
+function getSupportedSendTransactionType(transactionDetails: SendTransactionParams['params'][0]): SupportedSendTransactionType {
+	const requestedType = transactionDetails.type
+		?? (transactionDetails.authorizationList !== undefined
+			? '7702'
+			: transactionDetails.gasPrice !== undefined
+				? transactionDetails.accessList === undefined ? 'legacy' : '2930'
+				: '1559')
+	if (requestedType === '4844') throw new Error('EIP-4844 eth_sendTransaction requests are not supported')
+
+	// The request schema accepts null fee placeholders (some websites send them), which leave the fee unspecified rather than requesting a dynamic fee.
+	const isFeeSpecified = (fee: bigint | null | undefined) => fee !== undefined && fee !== null
+	const hasDynamicFeeFields = isFeeSpecified(transactionDetails.maxFeePerGas) || isFeeSpecified(transactionDetails.maxPriorityFeePerGas)
+	if ((requestedType === 'legacy' || requestedType === '2930') && hasDynamicFeeFields) {
+		const transactionTypeName = requestedType === 'legacy' ? 'Legacy' : 'EIP-2930'
+		throw new Error(`${ transactionTypeName } transactions cannot include dynamic fee fields`)
+	}
+	if ((requestedType === '1559' || requestedType === '7702') && transactionDetails.gasPrice !== undefined) {
+		throw new Error(`EIP-${ requestedType } transactions cannot include gasPrice`)
+	}
+	if (requestedType === 'legacy' && transactionDetails.accessList !== undefined) {
+		throw new Error('Legacy transactions cannot include an access list')
+	}
+	if (requestedType !== '7702' && transactionDetails.authorizationList !== undefined) {
+		throw new Error('An authorization list requires an EIP-7702 transaction')
+	}
+	return requestedType
+}
+
 export const formEthSendTransaction = async(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, activeAddress: bigint | undefined, website: Website, sendTransactionParams: SendTransactionParams, created: Date, transactionIdentifier: EthereumQuantity, simulationMode = true, gasPayment: TransactionGasPayment = 'transaction-sender'): Promise<WebsiteCreatedEthereumTransactionOrFailed> => {
+	const transactionDetails = sendTransactionParams.params[0]
+	if (activeAddress === undefined) throw new Error('Access to active address is denied')
+	if (transactionDetails.from !== undefined && transactionDetails.from !== activeAddress) throw new Error('The transaction sender is not the active authorized address')
+	if (transactionDetails.chainId !== undefined && transactionDetails.chainId !== ethereumClientService.getChainId()) throw new Error('The transaction chain does not match the active chain')
+	if (transactionDetails.maxFeePerBlobGas !== undefined || transactionDetails.blobVersionedHashes !== undefined) {
+		throw new Error('EIP-4844 eth_sendTransaction requests are not supported')
+	}
+	const requestedType = getSupportedSendTransactionType(transactionDetails)
 	const simulationState = simulationMode || gasPayment === 'external-executor'
 		? await getUpdatedSimulationState(ethereumClientService, await captureSimulationSnapshot())
 		: PASSTHROUGH_STATE
-	const transactionDetails = sendTransactionParams.params[0]
-	if (activeAddress === undefined) throw new Error('Access to active address is denied')
-	const from = simulationMode && transactionDetails.from !== undefined ? transactionDetails.from : activeAddress
-	const transactionCountPromise = silenceChromeUnCaughtPromise(getSimulatedTransactionCount(ethereumClientService, requestAbortController, simulationState, from))
+	const from = activeAddress
+	const transactionCountPromise = transactionDetails.nonce === undefined
+		? silenceChromeUnCaughtPromise(getSimulatedTransactionCount(ethereumClientService, requestAbortController, simulationState, from))
+		: Promise.resolve(transactionDetails.nonce)
 	const parentBlockPromise = gasPayment === 'transaction-sender'
 		? silenceChromeUnCaughtPromise(ethereumClientService.getBlock(requestAbortController)) // the latest real block is the parent of the transaction being prepared
 		: undefined
@@ -569,14 +780,44 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 		from,
 		chainId: ethereumClientService.getChainId(),
 		nonce: await transactionCountPromise,
-		maxFeePerGas: getInitialMaxFeePerGas(),
-		maxPriorityFeePerGas,
 		to: transactionDetails.to === undefined ? null : transactionDetails.to,
 		value,
 		input: getInputFieldFromDataOrInput(transactionDetails),
-		accessList: transactionDetails.accessList ?? [],
 	}
-	const transactionWithoutGas = await createEip1559Or7702Transaction(transactionWithoutGasBase, transactionDetails)
+	const accessList = transactionDetails.accessList ?? []
+	const desiredGasPrice = gasPayment === 'external-executor'
+		? 0n
+		: transactionDetails.gasPrice ?? getInitialMaxFeePerGas()
+	const transactionWithoutGas = requestedType === 'legacy'
+		? { ...transactionWithoutGasBase, type: 'legacy' as const, gasPrice: desiredGasPrice }
+		: requestedType === '2930'
+			? { ...transactionWithoutGasBase, type: '2930' as const, gasPrice: desiredGasPrice, accessList }
+			: requestedType === '7702'
+				? {
+					...transactionWithoutGasBase,
+					type: '7702' as const,
+					maxFeePerGas: getInitialMaxFeePerGas(),
+					maxPriorityFeePerGas,
+					accessList,
+					authorizationList: await normalizeEip7702AuthorizationList(transactionDetails.authorizationList ?? []),
+				}
+				: {
+					...transactionWithoutGasBase,
+					type: '1559' as const,
+					maxFeePerGas: getInitialMaxFeePerGas(),
+					maxPriorityFeePerGas,
+					accessList,
+				}
+	const finalizeTransaction = async (gas: bigint): Promise<EthereumUnsignedTransaction> => {
+		switch (transactionWithoutGas.type) {
+			case 'legacy':
+			case '2930':
+				return { ...transactionWithoutGas, gas }
+			case '1559':
+			case '7702':
+				return { ...transactionWithoutGas, ...await getFeePerGas(gas), gas }
+		}
+	}
 	const extraParams = {
 		website,
 		created,
@@ -600,7 +841,7 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 					success: false,
 				}
 			}
-			return { transaction: { ...transactionWithoutGas, ...await getFeePerGas(estimateGas.gas), gas: estimateGas.gas }, ...extraParams, success: true }
+			return { transaction: await finalizeTransaction(estimateGas.gas), ...extraParams, success: true }
 		} catch(error: unknown) {
 			if (isNewBlockAbort(error)) throw error
 			if (error instanceof JsonRpcResponseError) return { ...extraParams, error: { code: error.code, message: error.message, data: typeof error.data === 'string' ? error.data : '0x' }, success: false }
@@ -609,7 +850,7 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 			return { ...extraParams, error: { code: 123456, message: 'Unknown Error', data: '0x' }, success: false }
 		}
 	}
-	return { transaction: { ...transactionWithoutGas, ...await getFeePerGas(transactionDetails.gas), gas: transactionDetails.gas }, ...extraParams, success: true }
+	return { transaction: await finalizeTransaction(transactionDetails.gas), ...extraParams, success: true }
 }
 
 const getPendingTransactionWindow = async (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections) => {
@@ -637,6 +878,9 @@ export async function openConfirmTransactionDialogForMessage(
 	if (activeAddress === undefined) return { type: 'result' as const, ...ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS }
 	const activeAddressEntry = (await getUserAddressBookEntriesForChainIdMorePreciseFirst(ethereumClientService.getChainId()))
 		.find((entry) => entry.address === activeAddress)
+	if (activeAddressEntry?.type !== 'safe' && getRequestedSignMessageAccount(transactionParams) !== activeAddress) {
+		return formRejectMessage(METAMASK_ERROR_NOT_AUTHORIZED, 'The requested signing account has not been authorized by the user.')
+	}
 	const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)
 	const simulationSignerAddress = activeAddressEntry?.type === 'safe'
 		? simulationMode ? activeAddressEntry.safeSimulationSignerAddress : getWalletSelectedAccount(signerTabState)

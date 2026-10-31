@@ -12,6 +12,7 @@ import type { BlockTimeManipulation } from '../types/visualizer-types.js'
 import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_BLOCK_MANIPULATION, DEFAULT_RPCS } from '../config/defaults.js'
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { mergeStoredWebsiteMetadata, sanitizeWebsiteAccess } from '../utils/websiteIcons.js'
+import { normalizeWebsiteAccessOrigins } from '../utils/websiteOrigin.js'
 import type { SigningAddressPreference, SigningAddressPreferences } from '../types/signerTypes.js'
 import { hasOwnKey } from '../utils/typescript.js'
 
@@ -71,6 +72,11 @@ async function getParsedStorageValueOrDefault<Key extends keyof StartupStorageDe
 	return await getParsedStorageValueOrDefaultFromItems(await browser.storage.local.get(key), key, defaultValue)
 }
 
+// The single producer of the website access every reader sees, so getSettings() and getWebsiteAccess() observe stored records in the same canonical form. Both steps return their input unchanged when it is already canonical.
+function toCanonicalWebsiteAccess(websiteAccess: WebsiteAccessArray) {
+	return normalizeWebsiteAccessOrigins(sanitizeWebsiteAccess(websiteAccess))
+}
+
 export async function getSettings() : Promise<Settings> {
 	if (defaultRpcs[0] === undefined || defaultActiveAddresses[0] === undefined) throw new Error('default rpc or default address was missing')
 	const defaultPage: Page = { page: 'Home' }
@@ -87,7 +93,7 @@ export async function getSettings() : Promise<Settings> {
 	const activeSigningSafeAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'activeSigningSafeAddress', undefined))
 	const openedPagePromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'openedPageV2', defaultPage))
 	const useSignersAddressAsActiveAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'useSignersAddressAsActiveAddress', false))
-	const websiteAccessPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'websiteAccess', []).then(sanitizeWebsiteAccess))
+	const websiteAccessPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'websiteAccess', []).then(toCanonicalWebsiteAccess))
 	const simulationModePromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'simulationMode', defaultSimulationMode))
 	const activeRpcNetworkPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'activeRpcNetwork', defaultRpcs[0]))
 	const [activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode] = await Promise.all([
@@ -217,7 +223,7 @@ async function replaceModeAndSigningPreferencesForImport(changes: SimulationMode
 const websiteAccessSemaphore = new Semaphore(1)
 async function getNormalizedWebsiteAccessFromStorage() {
 	const rawWebsiteAccess = await getParsedStorageValueOrDefault('websiteAccess', [])
-	const sanitizedWebsiteAccess = sanitizeWebsiteAccess(rawWebsiteAccess)
+	const sanitizedWebsiteAccess = toCanonicalWebsiteAccess(rawWebsiteAccess)
 	return { rawWebsiteAccess, sanitizedWebsiteAccess }
 }
 
@@ -228,7 +234,7 @@ export async function getWebsiteAccess() {
 export async function updateWebsiteAccess(updateFunc: (prevState: WebsiteAccessArray) => WebsiteAccessArray) {
 	await websiteAccessSemaphore.execute(async () => {
 		const { rawWebsiteAccess, sanitizedWebsiteAccess } = await getNormalizedWebsiteAccessFromStorage()
-		const nextWebsiteAccess = sanitizeWebsiteAccess(updateFunc(sanitizedWebsiteAccess))
+		const nextWebsiteAccess = toCanonicalWebsiteAccess(updateFunc(sanitizedWebsiteAccess))
 		if (nextWebsiteAccess === sanitizedWebsiteAccess && rawWebsiteAccess === sanitizedWebsiteAccess) return
 		return await browserStorageLocalSet({ websiteAccess: nextWebsiteAccess })
 	})
@@ -317,7 +323,9 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 		await setMetamaskCompatibilityMode(exportedSetings.settings.metamaskCompatibilityMode)
 	}
 	await setSafeAppsCompatibilityMode(exportedSetings.version === '1.6' ? exportedSetings.settings.safeAppsCompatibilityMode : false)
-	if (exportedSetings.version !== '1.4' && exportedSetings.version !== '1.5' && exportedSetings.version !== '1.6') {
+	if (exportedSetings.version === '1.4' || exportedSetings.version === '1.5' || exportedSetings.version === '1.6') {
+		await updateUserAddressBookEntries(() => exportedSetings.settings.addressBookEntries)
+	} else {
 		await updateUserAddressBookEntries((previousEntries) => {
 			const convertActiveAddressToAddressBookEntry = (info: ActiveAddress): AddressBookEntry => ({ ...info, type: 'contact' as const, useAsActiveAddress: true, entrySource: 'User' as const })
 			return getUniqueItemsByProperties(previousEntries.concat(exportedSetings.settings.addressInfos.map((x) => convertActiveAddressToAddressBookEntry(x))).concat(exportedSetings.settings.contacts ?? []), ['address'])

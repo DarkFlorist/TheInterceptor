@@ -1,6 +1,6 @@
 import { ICON_ACCESS_DENIED, ICON_ACTIVE, ICON_ACTIVE_WITH_SHIELD, ICON_INTERCEPTOR_DISABLED, ICON_NOT_ACTIVE, ICON_NOT_ACTIVE_WITH_SHIELD, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIGNING_NOT_SUPPORTED_WITH_SHIELD, ICON_SIGNING_WITH_SHIELD, ICON_SIMULATING, ICON_SIMULATING_WITH_SHIELD, PRIMARY_COLOR, WARNING_COLOR } from '../utils/constants.js'
 import { areWeBlocking } from './accessManagement.js'
-import { hasAccess, hasAddressAccess } from './websiteAccessPolicy.js'
+import { hasAccess, hasAddressAccess, isInterceptorDisabledForWebsiteOrigin } from './websiteAccessPolicy.js'
 import { getActiveAddress, sendPopupMessageToOpenWindows, setExtensionBadgeBackgroundColor, setExtensionBadgeText, setExtensionIcon, setExtensionTitle } from './backgroundUtils.js'
 import { createScopedKeyedSerialExecutor } from '../utils/semaphore.js'
 import { Future } from '../utils/future.js'
@@ -123,7 +123,7 @@ export async function updateExtensionIcon(websiteTabConnections: WebsiteTabConne
 		const setIcon = async (icon: TabIcon, iconReason: string) => setInterceptorIcon(tabId, await addShieldIfNeeded(icon), await blockingWebsitePromise ? `${ iconReason } The Interceptor is blocking external requests made by the website.` : iconReason, popupRefreshGeneration)
 
 		const settings = await getSettings()
-		if (hasAccess(settings.websiteAccess, websiteOrigin) === 'interceptorDisabled') return setIcon(ICON_INTERCEPTOR_DISABLED, `The Interceptor is disabled for ${ websiteOrigin } by user request.`)
+		if (isInterceptorDisabledForWebsiteOrigin(settings.websiteAccess, websiteOrigin)) return setIcon(ICON_INTERCEPTOR_DISABLED, `The Interceptor is disabled for ${ websiteOrigin } by user request.`)
 		const activeAddress = await getActiveAddress(settings, tabId)
 		if (activeAddress === undefined) return setIcon(ICON_NOT_ACTIVE, 'No active address selected.')
 		const addressAccess = hasAddressAccess(settings.websiteAccess, websiteOrigin, activeAddress)

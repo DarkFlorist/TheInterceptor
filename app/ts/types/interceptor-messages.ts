@@ -255,7 +255,12 @@ export const TransactionConfirmation = funtypes.ReadonlyObject({
 					signerReply: funtypes.Unknown,
 				}),
 				funtypes.ReadonlyObject({
-					action: funtypes.Union(funtypes.Literal('accept'), funtypes.Literal('addToSafeStack'), funtypes.Literal('noResponse')),
+					action: funtypes.Literal('accept'),
+					// Carry the existing override checkbox to the background, where signer forwarding is authorized. UI-only gating cannot enforce consent.
+					forceSend: funtypes.Boolean,
+				}),
+				funtypes.ReadonlyObject({
+					action: funtypes.Union(funtypes.Literal('addToSafeStack'), funtypes.Literal('noResponse')),
 				}),
 				funtypes.ReadonlyObject({
 					action: funtypes.Literal('reject'),

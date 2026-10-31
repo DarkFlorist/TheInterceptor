@@ -1,4 +1,5 @@
 import * as funtypes from 'funtypes'
+import { getWebsiteHostWithPortFromStoredOrigin } from './websiteOrigin.js'
 
 type WebsiteMetadataInfo  = funtypes.Static<typeof WebsiteMetadataInfo>
 const WebsiteMetadataInfo = funtypes.Intersect(
@@ -17,7 +18,10 @@ type WebsiteMetaData  = funtypes.Static<typeof WebsiteMetaData>
 const WebsiteMetaData = funtypes.ReadonlyRecord(funtypes.String, WebsiteMetadataInfo)
 
 export const getWebsiteWarningMessage = (websiteOrigin: string, simulationMode: boolean): { message: string, suggestedAlternative: string | undefined } | undefined => {
-	const data = websiteMetaData[websiteOrigin]
+	// Website identities include the scheme so access is never shared across schemes, but this compatibility table is keyed by host.
+	const websiteHost = getWebsiteHostWithPortFromStoredOrigin(websiteOrigin)
+	if (websiteHost === undefined) return undefined
+	const data = websiteMetaData[websiteHost]
 	if (data === undefined) return undefined
 	if (data.message !== undefined) return { message: data.message, suggestedAlternative: data.suggestedAlternative }
 	if (simulationMode === false) return undefined
