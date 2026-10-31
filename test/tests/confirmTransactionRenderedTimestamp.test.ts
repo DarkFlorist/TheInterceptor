@@ -2,19 +2,28 @@ import * as assert from 'assert'
 import { encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
-import { describe, test } from 'bun:test'
+import { afterEach, describe, test } from 'bun:test'
 import { clickRenderedElement, findRenderedElement, installDateMock, installDomMock } from './domMock.js'
 import { createSafeTx, getSafeTxSigningHashes } from '../../app/ts/safe/safeCore.js'
 import { getSafeTxHash } from '../../app/ts/utils/eip712.js'
 import { bytes32String } from '../../app/ts/utils/bigint.js'
 import { getNativeTokenErc20 } from '../../app/ts/background/metadataUtils.js'
+import { getReviewedResultId } from '../../app/ts/background/reviewedResult.js'
+import { isRecord } from '../../app/ts/utils/runtimeTypeGuards.js'
+import type { PendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
 
 type RuntimeMessageListener = (message: unknown) => unknown
+type CurrentWindowProvider = () => Promise<{ id: number }>
+type ConfirmDialogHandler = (message: unknown) => Promise<void>
 const hexToBytes = (hex: string) => Uint8Array.from(Buffer.from(hex.slice(2), 'hex'))
 
 function createBrowserMock() {
 	const listeners: RuntimeMessageListener[] = []
 	const storageState: Record<string, unknown> = {}
+	let getCurrentWindow: CurrentWindowProvider = async () => ({ id: 1 })
+	let confirmDialogHandler: ConfirmDialogHandler | undefined
+	const readyAndListeningWithoutBootstrap = { method: 'popup_readyAndListening', data: { popupOrTabId: { type: 'popup', id: 1 } } }
+	let readyAndListeningReply: () => unknown = () => readyAndListeningWithoutBootstrap
 
 	const getStorageItems = (keys?: string | string[] | Record<string, unknown> | null) => {
 		if (keys === undefined || keys === null) return { ...storageState }
@@ -31,9 +40,8 @@ function createBrowserMock() {
 				if (message?.method === 'popup_isMainPopupWindowOpen') {
 					return { method: 'popup_isMainPopupWindowOpen', data: { isOpen: true } }
 				}
-				if (message?.method === 'popup_readyAndListening') {
-					return { method: 'popup_readyAndListening', data: { popupOrTabId: { type: 'popup', id: 1 } } }
-				}
+				if (message?.method === 'popup_readyAndListening') return readyAndListeningReply()
+				if (message?.method === 'popup_confirmDialog') await confirmDialogHandler?.(message)
 				return undefined
 			},
 			getManifest: () => ({ manifest_version: 3 }),
@@ -70,6 +78,7 @@ function createBrowserMock() {
 		},
 		windows: {
 			async get() { return undefined },
+			async getCurrent() { return await getCurrentWindow() },
 			async update() { return undefined },
 		},
 		action: {
@@ -93,15 +102,82 @@ function createBrowserMock() {
 		dispatch(message: unknown) {
 			for (const listener of [...listeners]) listener(message)
 		},
+		setCurrentWindowProvider(provider: CurrentWindowProvider) { getCurrentWindow = provider },
+		setConfirmDialogHandler(handler: ConfirmDialogHandler) { confirmDialogHandler = handler },
+		// Replies to each ready handshake; the default reply carries no bootstrap data, as before the background has pending requests.
+		setReadyAndListeningReply(reply: (withoutBootstrap: unknown) => unknown) { readyAndListeningReply = () => reply(readyAndListeningWithoutBootstrap) },
 	}
 }
 
 createBrowserMock()
 
+// Popups still mounted, so a test that fails before its own cleanup can still be unmounted, which stops the popup's bootstrap retries and message listener.
+const mountedPopups = new Set<ReturnType<typeof installDomMock>>()
+
+async function renderConfirmTransaction(dom: ReturnType<typeof installDomMock>) {
+	mountedPopups.add(dom)
+	await act(() => {
+		render(h(ConfirmTransaction, {}), dom.document.body)
+	})
+}
+
+// Unmounts once; later calls for the same popup do nothing.
 async function unmountConfirmTransaction(dom: ReturnType<typeof installDomMock>) {
+	if (!mountedPopups.delete(dom)) return
 	await act(() => {
 		render(null, dom.document.body)
 	})
+}
+
+// A stored personal_sign request that is ready to confirm, as the popup reads it directly from storage.
+function makeStoredSignatureRequest() {
+	const activeAddress = 0x1111111111111111111111111111111111111111n
+	const created = new Date('2024-01-01T00:00:00.000Z')
+	const website = { websiteOrigin: 'https://example.com', icon: undefined, title: undefined }
+	const uniqueRequestIdentifier = { requestId: 1, requestSocket: { tabId: 1, connectionName: 0n } }
+	const originalRequestParameters = { method: 'personal_sign' as const, params: ['0x68656c6c6f', activeAddress] as const }
+	const rpcNetwork = { name: 'Ethereum Mainnet', chainId: 1n, httpsRpc: 'https://rpc.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
+	const signer = { type: 'contact' as const, name: 'Signer', address: activeAddress, entrySource: 'User' as const, chainId: 1n }
+	return {
+		type: 'SignableMessage' as const,
+		popupOrTabId: { type: 'popup' as const, id: 1 },
+		originalRequestParameters,
+		simulationMode: false,
+		uniqueRequestIdentifier,
+		signedMessageTransaction: {
+			website,
+			created,
+			fakeSignedFor: activeAddress,
+			originalRequestParameters,
+			request: { ...originalRequestParameters, interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier },
+			simulationMode: false,
+			messageIdentifier: 1n,
+		},
+		created,
+		website,
+		activeAddress,
+		approvalStatus: { status: 'WaitingForUser' as const },
+		transactionOrMessageCreationStatus: 'Simulated' as const,
+		visualizedPersonalSignRequest: {
+			activeAddress: signer,
+			rpcNetwork,
+			simulationMode: false,
+			signerName: 'NoSignerDetected' as const,
+			quarantineReasons: [],
+			quarantine: false,
+			account: signer,
+			website,
+			created,
+			rawMessage: 'hello',
+			stringifiedMessage: 'hello',
+			messageIdentifier: 1n,
+			isValidMessage: true,
+			method: 'personal_sign' as const,
+			type: 'NotParsed' as const,
+			message: 'hello',
+			messageHash: undefined,
+		},
+	}
 }
 
 function makePendingTransaction(simulationConductedTimestamp: Date, value?: bigint) {
@@ -195,7 +271,9 @@ function makeSafeProposal<T extends ReturnType<typeof makePendingTransaction> | 
 	}
 }
 
-function makeSimulatedPendingTransaction(value: bigint) {
+type SimulatedTransactionOutcome = ({ transactionStatus: 'Transaction Succeeded' } | { transactionStatus: 'Transaction Failed', error: { code: number, message: string, decodedErrorMessage: string, data?: string } }) & { quarantine?: boolean, quarantineReasons?: readonly string[] }
+
+function makeSimulatedPendingTransaction(value: bigint, outcome: SimulatedTransactionOutcome = { transactionStatus: 'Transaction Succeeded' }) {
 	const failed = makePendingTransaction(new Date('2024-01-01T00:00:05.000Z'), value)
 	const requested = failed.originalRequestParameters.params[0]
 	const rpcNetwork = { name: 'Ethereum Mainnet', chainId: 1n, httpsRpc: 'https://rpc.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
@@ -235,7 +313,7 @@ function makeSimulatedPendingTransaction(value: bigint) {
 		realizedGasPrice: 1n,
 		quarantine: false,
 		quarantineReasons: [],
-		transactionStatus: 'Transaction Succeeded' as const,
+		...outcome,
 		transaction: { ...transaction, from: safeEntry, to: recipientEntry, rpcNetwork, hash: 1n },
 		events: [],
 	}
@@ -278,10 +356,202 @@ function makeSimulatedPendingTransaction(value: bigint) {
 	}
 }
 
+// A simulation client whose RPC answers every transaction as a successful 21,000 gas call at block 123.
+async function createFakeSimulator() {
+	const { EthereumClientService } = await import('../../app/ts/simulation/services/EthereumClientService.js')
+	const fakeRpcNetwork = {
+		name: 'Test Chain',
+		chainId: 1337n,
+		httpsRpc: 'https://example.invalid',
+		currencyName: 'Ether',
+		currencyTicker: 'ETH',
+		currencyLogoUri: undefined,
+		primary: true,
+		minimized: true,
+	}
+	const fakeBlock = {
+		author: 0n,
+		difficulty: 0n,
+		extraData: new Uint8Array(),
+		gasLimit: 30_000_000n,
+		gasUsed: 21_000n,
+		hash: 0x1234n,
+		logsBloom: 0n,
+		miner: 0n,
+		mixHash: 0n,
+		nonce: 0n,
+		number: 123n,
+		parentHash: 0x1n,
+		receiptsRoot: 0n,
+		sha3Uncles: 0n,
+		stateRoot: 0n,
+		timestamp: new Date('2024-01-01T00:00:00.000Z'),
+		size: 0n,
+		totalDifficulty: 0n,
+		uncles: [],
+		baseFeePerGas: 1n,
+		transactionsRoot: 0n,
+		transactions: [],
+		withdrawals: [],
+		withdrawalsRoot: 0n,
+	}
+	const fakeRequestHandler = {
+		rpcUrl: fakeRpcNetwork.httpsRpc,
+		clearCache() { return undefined },
+		async jsonRpcRequest(rpcRequest: { method: string, params?: readonly unknown[] }) {
+			switch (rpcRequest.method) {
+				case 'eth_getBlockByNumber':
+					return serialize((await import('../../app/ts/types/wire-types.js')).EthereumBlockHeader, fakeBlock)
+				case 'eth_getTransactionCount':
+					return serialize((await import('../../app/ts/types/wire-types.js')).EthereumQuantity, 0n)
+				case 'eth_getBalance':
+					return serialize((await import('../../app/ts/types/wire-types.js')).EthereumQuantity, 0n)
+				case 'eth_blockNumber':
+					return serialize((await import('../../app/ts/types/wire-types.js')).EthereumQuantity, 123n)
+				case 'eth_getCode':
+					return '0x'
+				case 'eth_gasPrice':
+					return serialize((await import('../../app/ts/types/wire-types.js')).EthereumQuantity, 1n)
+				case 'eth_simulateV1':
+					{
+						const multicallAbi = (await import('../../app/ts/utils/constants.js')).Multicall3ABI
+						const balanceResult = encodeFunctionReturn(multicallAbi, 'getEthBalance', [0n])
+						const aggregate3Result = encodeFunctionReturn(multicallAbi, 'aggregate3', [[{ success: true, returnData: balanceResult }]])
+						const blockStateCalls = Array.isArray(rpcRequest.params?.[0]?.blockStateCalls) ? rpcRequest.params[0].blockStateCalls : [{}]
+						return serialize((await import('../../app/ts/types/ethSimulate-types.js')).EthSimulateV1Result, blockStateCalls.map((blockStateCall) => ({
+							number: 123n,
+							hash: 0x9876n,
+							timestamp: 0x65920080n,
+							gasLimit: 30_000_000n,
+							gasUsed: 21_000n,
+							baseFeePerGas: 1n,
+							calls: Array.from({ length: Array.isArray(blockStateCall.calls) ? blockStateCall.calls.length : 0 }, () => ({
+								status: 'success',
+								gasUsed: 21_000n,
+								logs: [],
+								returnData: hexToBytes(aggregate3Result),
+							})),
+						})))
+					}
+				default:
+					throw new Error(`Unexpected RPC method: ${ rpcRequest.method }`)
+			}
+		},
+	}
+	const ethereum = new EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
+	const simulator = {
+		ethereum,
+		tokenPriceService: {
+			estimateEthereumPricesForTokens: async () => [],
+		},
+	}
+	return simulator
+}
+
+const revertedOutcome = { transactionStatus: 'Transaction Failed' as const, error: { code: -32000, message: 'execution reverted', decodedErrorMessage: 'execution reverted' } }
+const CONFIRM_BUTTON_CLASS = 'button is-primary button-overflow dialog-action-button'
+
+type RenderedDom = ReturnType<typeof installDomMock>
+type RenderedElementWithAttributes = { readonly attributes: Record<string, string | undefined> }
+const hasAttributes = (node: object): node is RenderedElementWithAttributes => 'attributes' in node && typeof node.attributes === 'object' && node.attributes !== null
+
+// Preact writes a prop as a property when the element defines one and as an attribute otherwise.
+const getRenderedProp = (node: object, name: string): unknown => name in node ? Reflect.get(node, name) : hasAttributes(node) ? node.attributes[name] : undefined
+const hasBooleanProp = (node: object, name: 'checked' | 'disabled') => name in node ? Reflect.get(node, name) === true : getRenderedProp(node, name) !== undefined
+
+const findSendAnywayCheckbox = (dom: RenderedDom) => findRenderedElement(dom.document.body, (node) => node.tagName === 'INPUT' && getRenderedProp(node, 'type') === 'checkbox')
+const findConfirmButton = (dom: RenderedDom) => findRenderedElement(dom.document.body, (node) => node.tagName === 'BUTTON' && getRenderedProp(node, 'class') === CONFIRM_BUTTON_CLASS)
+
+function isSendAnywayTicked(dom: RenderedDom) {
+	const checkbox = findSendAnywayCheckbox(dom)
+	return checkbox !== undefined && hasBooleanProp(checkbox, 'checked')
+}
+
+function isConfirmEnabled(dom: RenderedDom) {
+	const button = findConfirmButton(dom)
+	return button !== undefined && !hasBooleanProp(button, 'disabled')
+}
+
+// The checkbox handler reads the ticked state from an HTMLInputElement target, which the DOM mock does not define.
+async function tickSendAnyway(dom: RenderedDom) {
+	const inputHandler = Object.entries(findSendAnywayCheckbox(dom)?.l ?? {}).find(([key]) => key.toLowerCase().startsWith('input'))?.[1]
+	if (inputHandler === undefined) throw new Error('Expected the send-anyway checkbox')
+	class TickedCheckbox { readonly checked = true }
+	const previousHtmlInputElement = Object.getOwnPropertyDescriptor(globalThis, 'HTMLInputElement')
+	Object.defineProperty(globalThis, 'HTMLInputElement', { value: TickedCheckbox, configurable: true, writable: true })
+	try {
+		await act(() => { inputHandler({ target: new TickedCheckbox() }) })
+	} finally {
+		if (previousHtmlInputElement === undefined) Reflect.deleteProperty(globalThis, 'HTMLInputElement')
+		else Object.defineProperty(globalThis, 'HTMLInputElement', previousHtmlInputElement)
+	}
+}
+
 const { UpdateConfirmTransactionDialogPendingTransactions } = await import('../../app/ts/types/interceptor-messages.js')
 const { serialize } = await import('../../app/ts/types/wire-types.js')
 const { ConfirmTransaction } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
+// The background sends the popup its copies of stored requests, stamped with their reviewed-result ids.
+const { toPopupPendingTransactionOrSignableMessage } = await import('../../app/ts/background/windows/confirmTransaction.js')
+async function dispatchPendingTransactions(browser: ReturnType<typeof createBrowserMock>, pendingTransactionAndSignableMessages: readonly PendingTransactionOrSignableMessage[]) {
+	await act(() => {
+		browser.dispatch({
+			role: 'all',
+			...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
+				method: 'popup_update_confirm_transaction_dialog_pending_transactions',
+				data: { pendingTransactionAndSignableMessages: pendingTransactionAndSignableMessages.map(toPopupPendingTransactionOrSignableMessage), currentBlockNumber: 123n, rpcConnectionStatus: undefined },
+			}),
+		})
+	})
+}
+
+// Runs every timer immediately while recording the requested delays, so retry backoff can be exercised without waiting for it.
+function runTimersImmediately() {
+	const originalSetTimeout = globalThis.setTimeout
+	const requestedDelays: number[] = []
+	Reflect.set(globalThis, 'setTimeout', (callback: (...args: unknown[]) => void, delay?: number, ...args: unknown[]) => {
+		requestedDelays.push(delay ?? 0)
+		return originalSetTimeout(callback, 0, ...args)
+	})
+	return { requestedDelays, restore: () => { Reflect.set(globalThis, 'setTimeout', originalSetTimeout) } }
+}
+
+// Lets queued timers, messages and renders run until the condition holds or the turns run out.
+async function settleUntil(condition: () => boolean, maxTurns = 500) {
+	for (let turn = 0; turn < maxTurns && !condition(); turn++) await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+}
+
+const { PendingTransactionOrSignableMessage: StoredPendingRequest } = await import('../../app/ts/types/accessRequest.js')
+const { PopupRequestsReplies } = await import('../../app/ts/types/interceptor-reply-messages.js')
+const { createPassthroughCompleteVisualizedSimulation } = await import('../../app/ts/types/visualizer-types.js')
+
+// Stores a ready-to-confirm signature request, which the popup paints from storage before any background copy arrives.
+async function storeSignatureRequest(browser: ReturnType<typeof createBrowserMock>) {
+	const stored = StoredPendingRequest.parse(serialize(StoredPendingRequest, makeStoredSignatureRequest()))
+	await browser.storage.local.set({ pendingTransactionsAndMessages: [serialize(StoredPendingRequest, stored)] })
+	return stored
+}
+
+// The ready-handshake reply once the background has the request, carrying its popup copy.
+function makeBootstrapReply(stored: PendingTransactionOrSignableMessage) {
+	return serialize(PopupRequestsReplies.popup_readyAndListening, {
+		method: 'popup_readyAndListening',
+		data: {
+			popupOrTabId: { type: 'popup', id: 1 },
+			confirmTransactionBootstrap: {
+				pendingTransactionAndSignableMessages: [toPopupPendingTransactionOrSignableMessage(stored)],
+				currentBlockNumber: 123n,
+				rpcConnectionStatus: undefined,
+				visualizedSimulatorState: createPassthroughCompleteVisualizedSimulation(),
+			},
+		},
+	})
+}
+
 describe('ConfirmTransaction', () => {
+	afterEach(async () => {
+		for (const dom of [...mountedPopups]) await unmountConfirmTransaction(dom)
+	})
+
 	test('shows the proposal notice only for the classifier-selected Safe proposal flow', async () => {
 		const dom = installDomMock()
 		const browser = createBrowserMock()
@@ -305,16 +575,14 @@ describe('ConfirmTransaction', () => {
 			},
 		}
 
-		await act(() => {
-			render(h(ConfirmTransaction, {}), dom.document.body)
-		})
+		await renderConfirmTransaction(dom)
 		const dispatchPending = async (pendingTransaction: typeof proposal) => await act(() => {
 			browser.dispatch({
 				role: 'all',
 				...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
 					method: 'popup_update_confirm_transaction_dialog_pending_transactions',
 					data: {
-						pendingTransactionAndSignableMessages: [pendingTransaction],
+						pendingTransactionAndSignableMessages: [pendingTransaction].map(toPopupPendingTransactionOrSignableMessage),
 						currentBlockNumber: 123n,
 						rpcConnectionStatus: undefined,
 					},
@@ -334,6 +602,72 @@ describe('ConfirmTransaction', () => {
 		dom.restore()
 	})
 
+	test('enables Add unsigned only for a Safe proposal whose simulated result succeeds without quarantine', async () => {
+		const dom = installDomMock()
+		const browser = createBrowserMock()
+		const withSafeProposal = (pending: ReturnType<typeof makeSimulatedPendingTransaction>) => {
+			const safeTx = createSafeTx(1n, pending.activeAddress, { to: pending.originalRequestParameters.params[0].to, value: 0n, input: new Uint8Array() }, 3n)
+			return {
+				...pending,
+				simulationMode: false,
+				safeTransaction: {
+					safeAddress: pending.activeAddress,
+					safeSignerAddress: pending.originalRequestParameters.params[0].to,
+					safeVersion: '1.4.1' as const,
+					threshold: 1n,
+					reviewedSafeState: { version: '1.4.1' as const, nonce: 3n, owners: [pending.originalRequestParameters.params[0].to], threshold: 1n },
+					safeTxHash: BigInt(getSafeTxHash(safeTx)),
+					safeTx,
+					executionGasLimit: 21_000n,
+				},
+			}
+		}
+		const isAddUnsignedEnabled = () => {
+			const button = findRenderedElement(dom.document.body, (node) => node.tagName === 'BUTTON' && getRenderedProp(node, 'class') === 'button button--secondary button-overflow dialog-action-button')
+			return button !== undefined && !hasBooleanProp(button, 'disabled')
+		}
+		const succeeded = makeSimulatedPendingTransaction(0n)
+		await renderConfirmTransaction(dom)
+
+		await dispatchPendingTransactions(browser, [withSafeProposal(succeeded)])
+		assert.equal(isAddUnsignedEnabled(), true, 'a succeeding, non-quarantined result can be added unsigned')
+		await dispatchPendingTransactions(browser, [withSafeProposal(makeSimulatedPendingTransaction(0n, revertedOutcome))])
+		assert.equal(isAddUnsignedEnabled(), false, 'a failing result cannot be added unsigned')
+		await dispatchPendingTransactions(browser, [withSafeProposal(makeSimulatedPendingTransaction(0n, { transactionStatus: 'Transaction Succeeded', quarantine: true, quarantineReasons: ['The recipient is a known scam address.'] }))])
+		assert.equal(isAddUnsignedEnabled(), false, 'a quarantined result cannot be added unsigned')
+		const missingResult = { ...succeeded, popupVisualisation: { ...succeeded.popupVisualisation, data: { ...succeeded.popupVisualisation.data, visualizedSimulationState: { success: true as const, visualizedBlocks: [] } } } }
+		await dispatchPendingTransactions(browser, [withSafeProposal(missingResult)])
+		assert.equal(isAddUnsignedEnabled(), false, 'a proposal without a located result cannot be added unsigned')
+
+		await unmountConfirmTransaction(dom)
+		dom.restore()
+	})
+
+	test('sends the located failure as the reject error string and nothing for other results', async () => {
+		const dom = installDomMock()
+		const browser = createBrowserMock()
+		const rejectErrorStrings: unknown[] = []
+		browser.setConfirmDialogHandler(async (message) => {
+			rejectErrorStrings.push(isRecord(message) && isRecord(message.data) ? message.data.errorString : 'unexpected message')
+		})
+		const rejectShown = async (pending: ReturnType<typeof makeSimulatedPendingTransaction>) => {
+			await dispatchPendingTransactions(browser, [pending])
+			const rejectButton = findRenderedElement(dom.document.body, (node) => node.tagName === 'BUTTON' && String(getRenderedProp(node, 'class')).includes('is-danger'))
+			if (rejectButton === undefined) throw new Error('Expected the reject button')
+			await act(async () => { await clickRenderedElement(rejectButton) })
+		}
+		const succeeded = makeSimulatedPendingTransaction(0n)
+		await renderConfirmTransaction(dom)
+
+		await rejectShown(makeSimulatedPendingTransaction(0n, revertedOutcome))
+		await rejectShown(succeeded)
+		await rejectShown({ ...succeeded, popupVisualisation: { ...succeeded.popupVisualisation, data: { ...succeeded.popupVisualisation.data, visualizedSimulationState: { success: true as const, visualizedBlocks: [] } } } })
+		assert.deepEqual(rejectErrorStrings, ['execution reverted', undefined, undefined])
+
+		await unmountConfirmTransaction(dom)
+		dom.restore()
+	})
+
 	test('shows the EIP-712 signing request for a Safe proposal so it can be compared with a hardware signer', async () => {
 		const dom = installDomMock()
 		const browser = createBrowserMock()
@@ -342,16 +676,14 @@ describe('ConfirmTransaction', () => {
 		const safeTx = proposal.safeTransaction.safeTx
 		const findSigningRequestCardHeader = () => findRenderedElement(dom.document.body, (node) => node.tagName === 'HEADER' && node.textContent?.includes(SAFE_SIGNING_REQUEST_CARD_TITLE) === true)
 
-		await act(() => {
-			render(h(ConfirmTransaction, {}), dom.document.body)
-		})
+		await renderConfirmTransaction(dom)
 		const dispatchPending = async (pendingTransaction: typeof proposal) => await act(() => {
 			browser.dispatch({
 				role: 'all',
 				...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
 					method: 'popup_update_confirm_transaction_dialog_pending_transactions',
 					data: {
-						pendingTransactionAndSignableMessages: [pendingTransaction],
+						pendingTransactionAndSignableMessages: [pendingTransaction].map(toPopupPendingTransactionOrSignableMessage),
 						currentBlockNumber: 123n,
 						rpcConnectionStatus: undefined,
 					},
@@ -396,16 +728,14 @@ describe('ConfirmTransaction', () => {
 		const proposal = makeSafeProposal(makeSimulatedPendingTransaction(1_250_000_000_000_000_000n))
 		const { domainHash, messageHash } = getSafeTxSigningHashes(proposal.safeTransaction.safeTx)
 
-		await act(() => {
-			render(h(ConfirmTransaction, {}), dom.document.body)
-		})
+		await renderConfirmTransaction(dom)
 		await act(() => {
 			browser.dispatch({
 				role: 'all',
 				...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
 					method: 'popup_update_confirm_transaction_dialog_pending_transactions',
 					data: {
-						pendingTransactionAndSignableMessages: [proposal],
+						pendingTransactionAndSignableMessages: [proposal].map(toPopupPendingTransactionOrSignableMessage),
 						currentBlockNumber: 123n,
 						rpcConnectionStatus: undefined,
 					},
@@ -438,9 +768,7 @@ describe('ConfirmTransaction', () => {
 		const olderPendingTransaction = makePendingTransaction(new Date('2024-01-01T00:00:05.000Z'))
 		const newerPendingTransaction = makePendingTransaction(new Date('2024-01-01T00:00:09.000Z'))
 
-		await act(() => {
-			render(h(ConfirmTransaction, {}), dom.document.body)
-		})
+		await renderConfirmTransaction(dom)
 
 		await act(() => {
 			browser.dispatch({
@@ -448,7 +776,7 @@ describe('ConfirmTransaction', () => {
 				...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
 				method: 'popup_update_confirm_transaction_dialog_pending_transactions',
 				data: {
-					pendingTransactionAndSignableMessages: [olderPendingTransaction],
+					pendingTransactionAndSignableMessages: [olderPendingTransaction].map(toPopupPendingTransactionOrSignableMessage),
 					currentBlockNumber: 123n,
 					rpcConnectionStatus: undefined,
 				},
@@ -463,7 +791,7 @@ describe('ConfirmTransaction', () => {
 				...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
 				method: 'popup_update_confirm_transaction_dialog_pending_transactions',
 				data: {
-					pendingTransactionAndSignableMessages: [newerPendingTransaction],
+					pendingTransactionAndSignableMessages: [newerPendingTransaction].map(toPopupPendingTransactionOrSignableMessage),
 					currentBlockNumber: 123n,
 					rpcConnectionStatus: undefined,
 				},
@@ -482,9 +810,7 @@ describe('ConfirmTransaction', () => {
 		const clock = installDateMock('2024-01-01T00:00:10.000Z')
 		const browser = createBrowserMock()
 
-		await act(() => {
-			render(h(ConfirmTransaction, {}), dom.document.body)
-		})
+		await renderConfirmTransaction(dom)
 
 		await act(() => {
 			browser.dispatch({
@@ -492,7 +818,7 @@ describe('ConfirmTransaction', () => {
 				...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
 					method: 'popup_update_confirm_transaction_dialog_pending_transactions',
 					data: {
-						pendingTransactionAndSignableMessages: [makePendingTransaction(new Date('2024-01-01T00:00:05.000Z'))],
+						pendingTransactionAndSignableMessages: [makePendingTransaction(new Date('2024-01-01T00:00:05.000Z'))].map(toPopupPendingTransactionOrSignableMessage),
 						currentBlockNumber: 123n,
 						rpcConnectionStatus: undefined,
 					},
@@ -517,7 +843,7 @@ describe('ConfirmTransaction', () => {
 				...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
 					method: 'popup_update_confirm_transaction_dialog_pending_transactions',
 					data: {
-						pendingTransactionAndSignableMessages: [makePendingTransaction(new Date('2024-01-01T00:00:05.000Z'), 1_250_000_000_000_000_000n)],
+						pendingTransactionAndSignableMessages: [makePendingTransaction(new Date('2024-01-01T00:00:05.000Z'), 1_250_000_000_000_000_000n)].map(toPopupPendingTransactionOrSignableMessage),
 						currentBlockNumber: 123n,
 						rpcConnectionStatus: undefined,
 					},
@@ -536,97 +862,11 @@ describe('ConfirmTransaction', () => {
 		const clock = installDateMock('2024-01-01T00:00:10.000Z')
 		const browser = createBrowserMock()
 		const olderPendingTransaction = makePendingTransaction(new Date('2024-01-01T00:00:05.000Z'))
-		const { EthereumClientService } = await import('../../app/ts/simulation/services/EthereumClientService.js')
 		const { updateInterceptorTransactionStack, getPendingTransactionsAndMessages } = await import('../../app/ts/background/storageVariables.js')
 		const { refreshPopupConfirmTransactionSimulation } = await import('../../app/ts/background/popupMessageHandlers.js')
 		const { browserStorageLocalSet2 } = await import('../../app/ts/utils/storageUtils.js')
 
-		const fakeRpcNetwork = {
-			name: 'Test Chain',
-			chainId: 1337n,
-			httpsRpc: 'https://example.invalid',
-			currencyName: 'Ether',
-			currencyTicker: 'ETH',
-			currencyLogoUri: undefined,
-			primary: true,
-			minimized: true,
-		}
-		const fakeBlock = {
-			author: 0n,
-			difficulty: 0n,
-			extraData: new Uint8Array(),
-			gasLimit: 30_000_000n,
-			gasUsed: 21_000n,
-			hash: 0x1234n,
-			logsBloom: 0n,
-			miner: 0n,
-			mixHash: 0n,
-			nonce: 0n,
-			number: 123n,
-			parentHash: 0x1n,
-			receiptsRoot: 0n,
-			sha3Uncles: 0n,
-			stateRoot: 0n,
-			timestamp: new Date('2024-01-01T00:00:00.000Z'),
-			size: 0n,
-			totalDifficulty: 0n,
-			uncles: [],
-			baseFeePerGas: 1n,
-			transactionsRoot: 0n,
-			transactions: [],
-			withdrawals: [],
-			withdrawalsRoot: 0n,
-		}
-		const fakeRequestHandler = {
-			rpcUrl: fakeRpcNetwork.httpsRpc,
-			clearCache() { return undefined },
-			async jsonRpcRequest(rpcRequest: { method: string, params?: readonly unknown[] }) {
-				switch (rpcRequest.method) {
-					case 'eth_getBlockByNumber':
-						return serialize((await import('../../app/ts/types/wire-types.js')).EthereumBlockHeader, fakeBlock)
-					case 'eth_getTransactionCount':
-						return serialize((await import('../../app/ts/types/wire-types.js')).EthereumQuantity, 0n)
-					case 'eth_getBalance':
-						return serialize((await import('../../app/ts/types/wire-types.js')).EthereumQuantity, 0n)
-					case 'eth_blockNumber':
-						return serialize((await import('../../app/ts/types/wire-types.js')).EthereumQuantity, 123n)
-					case 'eth_getCode':
-						return '0x'
-					case 'eth_gasPrice':
-						return serialize((await import('../../app/ts/types/wire-types.js')).EthereumQuantity, 1n)
-					case 'eth_simulateV1':
-						{
-							const multicallAbi = (await import('../../app/ts/utils/constants.js')).Multicall3ABI
-							const balanceResult = encodeFunctionReturn(multicallAbi, 'getEthBalance', [0n])
-							const aggregate3Result = encodeFunctionReturn(multicallAbi, 'aggregate3', [[{ success: true, returnData: balanceResult }]])
-							const blockStateCalls = Array.isArray(rpcRequest.params?.[0]?.blockStateCalls) ? rpcRequest.params[0].blockStateCalls : [{}]
-							return serialize((await import('../../app/ts/types/ethSimulate-types.js')).EthSimulateV1Result, blockStateCalls.map((blockStateCall) => ({
-								number: 123n,
-								hash: 0x9876n,
-								timestamp: 0x65920080n,
-								gasLimit: 30_000_000n,
-								gasUsed: 21_000n,
-								baseFeePerGas: 1n,
-								calls: Array.from({ length: Array.isArray(blockStateCall.calls) ? blockStateCall.calls.length : 0 }, () => ({
-									status: 'success',
-									gasUsed: 21_000n,
-									logs: [],
-									returnData: hexToBytes(aggregate3Result),
-								})),
-							})))
-						}
-					default:
-						throw new Error(`Unexpected RPC method: ${ rpcRequest.method }`)
-				}
-			},
-		}
-		const ethereum = new EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
-		const simulator = {
-			ethereum,
-			tokenPriceService: {
-				estimateEthereumPricesForTokens: async () => [],
-			},
-		}
+		const simulator = await createFakeSimulator()
 
 		await browserStorageLocalSet2({
 			pendingTransactionsAndMessages: [olderPendingTransaction],
@@ -644,9 +884,7 @@ describe('ConfirmTransaction', () => {
 			olderPendingTransaction.popupVisualisation.data.simulationState.simulationConductedTimestamp.getTime(),
 		)
 
-		await act(() => {
-			render(h(ConfirmTransaction, {}), dom.document.body)
-		})
+		await renderConfirmTransaction(dom)
 
 		await act(() => {
 			browser.dispatch({
@@ -654,7 +892,7 @@ describe('ConfirmTransaction', () => {
 				...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
 					method: 'popup_update_confirm_transaction_dialog_pending_transactions',
 					data: {
-						pendingTransactionAndSignableMessages: [refreshedPendingTransaction],
+						pendingTransactionAndSignableMessages: [refreshedPendingTransaction].map(toPopupPendingTransactionOrSignableMessage),
 						currentBlockNumber: 123n,
 						rpcConnectionStatus: undefined,
 					},
@@ -666,6 +904,222 @@ describe('ConfirmTransaction', () => {
 
 		await unmountConfirmTransaction(dom)
 		clock.restore()
+		dom.restore()
+	})
+	test('keeps the send-anyway override across per-block re-simulations and clears it when the acknowledged failure or request changes', async () => {
+		const dom = installDomMock()
+		const browser = createBrowserMock()
+		const reviewed = makeSimulatedPendingTransaction(0n, revertedOutcome)
+		// A new block re-simulates the request: timestamps, block and base fee change, the failure does not.
+		const resimulated = (pending: typeof reviewed) => ({
+			...pending,
+			popupVisualisation: {
+				...pending.popupVisualisation,
+				data: {
+					...pending.popupVisualisation.data,
+					simulationStartedTimestamp: new Date('2024-01-01T00:00:12.000Z'),
+					simulationState: { ...pending.popupVisualisation.data.simulationState, blockNumber: 124n, baseFeePerGas: 7n, simulationConductedTimestamp: new Date('2024-01-01T00:00:13.000Z') },
+				},
+			},
+		})
+		await renderConfirmTransaction(dom)
+
+		await dispatchPendingTransactions(browser, [reviewed])
+		assert.equal(isConfirmEnabled(dom), false, 'a failing result needs the override')
+		await tickSendAnyway(dom)
+		assert.equal(isSendAnywayTicked(dom), true)
+		assert.equal(isConfirmEnabled(dom), true)
+
+		await dispatchPendingTransactions(browser, [reviewed])
+		assert.equal(isSendAnywayTicked(dom), true, 'identical redelivery keeps the override')
+		await dispatchPendingTransactions(browser, [resimulated(reviewed)])
+		assert.equal(isSendAnywayTicked(dom), true, 'a re-simulation with the same failure keeps the override')
+		assert.equal(isConfirmEnabled(dom), true)
+
+		// Different contract reverts share the raw message; the popup shows the decoded reason and revert data.
+		const differentRevertReason = makeSimulatedPendingTransaction(0n, { ...revertedOutcome, error: { ...revertedOutcome.error, decodedErrorMessage: 'Ownable: caller is not the owner', data: '0x08c379a0' } })
+		await dispatchPendingTransactions(browser, [differentRevertReason])
+		assert.equal(dom.document.body.textContent?.includes('Ownable: caller is not the owner'), true)
+		assert.equal(isSendAnywayTicked(dom), false, 'a different decoded revert reason needs a new acknowledgement')
+		assert.equal(isConfirmEnabled(dom), false)
+		await tickSendAnyway(dom)
+
+		const insufficientFunds = { transactionStatus: 'Transaction Failed' as const, error: { code: -32000, message: 'insufficient funds', decodedErrorMessage: 'insufficient funds' } }
+		const differentFailure = makeSimulatedPendingTransaction(0n, insufficientFunds)
+		await dispatchPendingTransactions(browser, [differentFailure])
+		assert.equal(isSendAnywayTicked(dom), false, 'a different failure needs a new acknowledgement')
+		assert.equal(isConfirmEnabled(dom), false)
+
+		await tickSendAnyway(dom)
+		const newQuarantineReason = makeSimulatedPendingTransaction(0n, { ...insufficientFunds, quarantine: true, quarantineReasons: ['The recipient is a known scam address.'] })
+		await dispatchPendingTransactions(browser, [newQuarantineReason])
+		assert.equal(isSendAnywayTicked(dom), false, 'a new quarantine reason needs a new acknowledgement')
+
+		await tickSendAnyway(dom)
+		await dispatchPendingTransactions(browser, [{ ...newQuarantineReason, uniqueRequestIdentifier: { ...newQuarantineReason.uniqueRequestIdentifier, requestId: 2 } }])
+		assert.equal(isSendAnywayTicked(dom), false, 'the override does not carry over to the next request')
+		assert.equal(isConfirmEnabled(dom), false)
+
+		await unmountConfirmTransaction(dom)
+		dom.restore()
+	})
+
+	test('keeps retrying the bootstrap handshake with capped backoff after the storage first paint until the background copy makes a signature request confirmable', async () => {
+		const dom = installDomMock()
+		const browser = createBrowserMock()
+		const timers = runTimersImmediately()
+		try {
+			const stored = await storeSignatureRequest(browser)
+			// Twenty handshakes, past the rapid retries plus the initial one and several retries at the backoff cap, find the background not ready; later ones carry its copy. Signature requests get no block-triggered push to fall back on.
+			let readyHandshakes = 0
+			browser.setReadyAndListeningReply((withoutBootstrap) => {
+				readyHandshakes += 1
+				return readyHandshakes <= 20 ? withoutBootstrap : makeBootstrapReply(stored)
+			})
+
+			await renderConfirmTransaction(dom)
+			await settleUntil(() => findConfirmButton(dom) !== undefined)
+			assert.notEqual(findConfirmButton(dom), undefined, 'the stored signature request is shown')
+			await settleUntil(() => isConfirmEnabled(dom))
+
+			assert.equal(readyHandshakes, 21, 'the handshake is retried past the rapid attempts until the background copy arrives')
+			assert.equal(isConfirmEnabled(dom), true, 'the bootstrapped background copy makes the request confirmable without a push update')
+			const { CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS, CONFIRM_TRANSACTION_BOOTSTRAP_MAX_RETRY_DELAY_MS } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
+			const retryDelays = timers.requestedDelays.filter((delay) => delay >= CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS)
+			assert.equal(retryDelays.some((delay) => delay > CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS && delay < CONFIRM_TRANSACTION_BOOTSTRAP_MAX_RETRY_DELAY_MS), true, 'later retries back off')
+			const firstCappedRetry = retryDelays.indexOf(CONFIRM_TRANSACTION_BOOTSTRAP_MAX_RETRY_DELAY_MS)
+			assert.notEqual(firstCappedRetry, -1, 'the backoff reaches the cap')
+			assert.deepEqual(retryDelays.slice(firstCappedRetry), retryDelays.slice(firstCappedRetry).map(() => CONFIRM_TRANSACTION_BOOTSTRAP_MAX_RETRY_DELAY_MS), 'the backoff stays at the cap')
+			assert.equal(retryDelays.length - firstCappedRetry >= 3, true, 'several retries run at the cap')
+		} finally {
+			try {
+				await unmountConfirmTransaction(dom)
+			} finally {
+				timers.restore()
+				dom.restore()
+			}
+		}
+	})
+
+	test('stops the bootstrap handshake retries once the popup unmounts', async () => {
+		const dom = installDomMock()
+		const browser = createBrowserMock()
+		const timers = runTimersImmediately()
+		try {
+			await storeSignatureRequest(browser)
+			let readyHandshakes = 0
+			browser.setReadyAndListeningReply((withoutBootstrap) => {
+				readyHandshakes += 1
+				return withoutBootstrap
+			})
+			await renderConfirmTransaction(dom)
+			await settleUntil(() => readyHandshakes >= 15)
+			assert.equal(readyHandshakes >= 15, true, 'the handshake keeps being retried while no background copy arrives')
+
+			await unmountConfirmTransaction(dom)
+			const handshakesAtUnmount = readyHandshakes
+			await settleUntil(() => false, 100)
+			assert.equal(readyHandshakes, handshakesAtUnmount, 'no handshake is sent after the popup unmounts')
+		} finally {
+			try {
+				await unmountConfirmTransaction(dom)
+			} finally {
+				timers.restore()
+				dom.restore()
+			}
+		}
+	})
+
+	test('the background honours the accept for the result the popup shows', { timeout: 15_000 }, async () => {
+		const dom = installDomMock()
+		const browser = createBrowserMock()
+		const simulator = await createFakeSimulator()
+		const { TokenPriceService } = await import('../../app/ts/simulation/services/priceEstimator.js')
+		const { TransactionConfirmation } = await import('../../app/ts/types/interceptor-messages.js')
+		const { resolvePendingTransactionOrMessage } = await import('../../app/ts/background/windows/confirmTransaction.js')
+		const { getInterceptorTransactionStack, getPendingTransactionsAndMessages, updateInterceptorTransactionStack } = await import('../../app/ts/background/storageVariables.js')
+		const { browserStorageLocalSet2 } = await import('../../app/ts/utils/storageUtils.js')
+		await browserStorageLocalSet2({ pendingTransactionsAndMessages: [makeSimulatedPendingTransaction(0n)] })
+		await updateInterceptorTransactionStack(() => ({ operations: [] }))
+		const resolved = Promise.withResolvers<void>()
+		browser.setConfirmDialogHandler(async (message) => {
+			await resolvePendingTransactionOrMessage(simulator.ethereum, new TokenPriceService(simulator.ethereum, 60_000), new Map(), TransactionConfirmation.parse(message))
+			resolved.resolve()
+		})
+
+		await renderConfirmTransaction(dom)
+		for (let turn = 0; turn < 50 && findConfirmButton(dom) === undefined; turn++) await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+		assert.notEqual(findConfirmButton(dom), undefined, 'the request read directly from storage is shown')
+		assert.equal(isConfirmEnabled(dom), false, 'a request read directly from storage has no reviewed-result id, so it cannot be confirmed yet')
+		await dispatchPendingTransactions(browser, await getPendingTransactionsAndMessages())
+		assert.equal(isConfirmEnabled(dom), true, 'the background copy carries the reviewed-result id')
+		const confirmButton = findConfirmButton(dom)
+		if (confirmButton === undefined) throw new Error('Expected the confirm button')
+		await act(async () => { await clickRenderedElement(confirmButton) })
+
+		await resolved.promise
+		assert.deepEqual(await getPendingTransactionsAndMessages(), [], 'the reviewed-result id the popup computed matches the stored request, so the accept is honoured')
+		assert.equal((await getInterceptorTransactionStack()).operations.length, 1, 'the accepted transaction is added to the simulation')
+
+		await unmountConfirmTransaction(dom)
+		dom.restore()
+	})
+
+	test('an approval in flight accepts only the result the user clicked on', { timeout: 15_000 }, async () => {
+		const dom = installDomMock()
+		const browser = createBrowserMock()
+		const simulator = await createFakeSimulator()
+		const { TokenPriceService } = await import('../../app/ts/simulation/services/priceEstimator.js')
+		const { TransactionConfirmation } = await import('../../app/ts/types/interceptor-messages.js')
+		const { resolvePendingTransactionOrMessage } = await import('../../app/ts/background/windows/confirmTransaction.js')
+		const { getInterceptorTransactionStack, getPendingTransactionsAndMessages, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } = await import('../../app/ts/background/storageVariables.js')
+		const { browserStorageLocalSet2 } = await import('../../app/ts/utils/storageUtils.js')
+		const reviewed = makeSimulatedPendingTransaction(0n, revertedOutcome)
+		const refreshed = makeSimulatedPendingTransaction(0n, { transactionStatus: 'Transaction Failed', error: { code: -32000, message: 'insufficient funds', decodedErrorMessage: 'insufficient funds' } })
+		await browserStorageLocalSet2({ pendingTransactionsAndMessages: [reviewed] })
+		await updateInterceptorTransactionStack(() => ({ operations: [] }))
+
+		const windowRequested = Promise.withResolvers<void>()
+		const windowReleased = Promise.withResolvers<void>()
+		browser.setCurrentWindowProvider(async () => {
+			windowRequested.resolve()
+			await windowReleased.promise
+			return { id: 1 }
+		})
+		const acceptReachedBackground = Promise.withResolvers<{ accept: unknown, resolution: Promise<boolean | undefined> }>()
+		browser.setConfirmDialogHandler(async (message) => {
+			const accept = TransactionConfirmation.parse(message)
+			const resolution = resolvePendingTransactionOrMessage(simulator.ethereum, new TokenPriceService(simulator.ethereum, 60_000), new Map(), accept)
+			acceptReachedBackground.resolve({ accept, resolution })
+			await resolution
+		})
+
+		await renderConfirmTransaction(dom)
+		const [reviewedAsStored] = await getPendingTransactionsAndMessages()
+		if (reviewedAsStored === undefined) throw new Error('Expected the reviewed request to be stored')
+		await dispatchPendingTransactions(browser, [reviewedAsStored])
+		await tickSendAnyway(dom)
+		const confirmButton = findConfirmButton(dom)
+		if (confirmButton === undefined) throw new Error('Expected the confirm button')
+		await act(async () => { await clickRenderedElement(confirmButton) })
+		await windowRequested.promise
+
+		// A new block re-simulates the request while the approval still waits for its window.
+		await updatePendingTransactionOrMessage(reviewed.uniqueRequestIdentifier, async (pending) => ({ ...pending, popupVisualisation: refreshed.popupVisualisation }))
+		await dispatchPendingTransactions(browser, await getPendingTransactionsAndMessages())
+		windowReleased.resolve()
+		const { accept, resolution } = await acceptReachedBackground.promise
+		await act(async () => { await resolution })
+
+		const pendingAfterApproval = await getPendingTransactionsAndMessages()
+		assert.equal(pendingAfterApproval.length, 1, 'the request stays pending')
+		assert.notEqual(pendingAfterApproval[0] === undefined ? undefined : getReviewedResultId(pendingAfterApproval[0]), getReviewedResultId(reviewedAsStored), 'the stored result changed after the click')
+		assert.equal(pendingAfterApproval[0]?.approvalStatus.status, 'WaitingForUser')
+		assert.deepEqual((await getInterceptorTransactionStack()).operations, [], 'nothing was added to the simulation')
+		assert.deepEqual(accept, { method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: reviewed.uniqueRequestIdentifier, action: 'accept', reviewedResultId: getReviewedResultId(reviewedAsStored), forceSend: true } }, 'the accept names the clicked result')
+		assert.equal(isSendAnywayTicked(dom), false, 'the refreshed result needs a new acknowledgement')
+
+		await unmountConfirmTransaction(dom)
 		dom.restore()
 	})
 })
