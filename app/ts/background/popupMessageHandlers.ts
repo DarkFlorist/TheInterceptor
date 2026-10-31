@@ -1,7 +1,7 @@
 import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { captureSimulationSnapshot, getUpdatedSimulationStackSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
-import { captureRpcNetwork, getRequiredSettings, getSettingsForCapturedRpcNetwork, getSettingsSnapshot, requireSettings, setUseTabsInsteadOfPopup, setPage, getMakeCurrentAddressRich, setMetamaskCompatibilityMode, setSafeAppsCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, updateMakeCurrentAddressRich, updateFixedMakeMeRichList, withCurrentWebsiteAccess, withoutWebsiteApprovals } from './settings.js'
+import { captureRpcNetwork, getRequiredSettings, getSettingsForCapturedRpcNetwork, getSettingsSnapshot, requireSettings, setUseTabsInsteadOfPopup, setPage, getMakeCurrentAddressRich, setMetamaskCompatibilityMode, setSafeAppsCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, updateMakeCurrentAddressRich, updateFixedMakeMeRichList, withoutWebsiteApprovals } from './settings.js'
 import { getPendingTransactionsAndMessages, getTabState, getRpcList, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests, updateTransactionState, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, getSafeTransactionStacks } from './storageVariables.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
 import { type ChangeActiveAddress, type ModifyMakeMeRich, type ChangePage, type RemoveTransaction, type RequestAccountsFromSigner, type TransactionConfirmation, type InterceptorAccess, type ChangeInterceptorAccess, type ChainChangeConfirmation, type WatchAssetConfirmation, type EnableSimulationMode, type ChangeActiveChain, type AddOrEditAddressBookEntry, type GetAddressBookData, type RemoveAddressBookEntry, type InterceptorAccessRefresh, type InterceptorAccessChangeAddress, type Settings, type ChangeSettings, type UpdateHomePage, type SimulateGovernanceContractExecution, type ChangeAddOrModifyAddressWindowState, type OpenWebPage, type SetEnsNameForHash, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions, type ForceSetGasLimitForTransaction, type ChangePreSimulationBlockTimeManipulation, type SetTransactionOrMessageBlockTimeManipulator, type FetchSimulationStackRequestConfirmation, type ImportSimulationStack, type PopupReadyAndListeningPage } from '../types/interceptor-messages.js'
@@ -424,8 +424,8 @@ export async function setSafeSimulationSigner(
 		}
 	}
 	if (updatedEntry.useAsActiveAddress) {
-		// The Safe entry is an active address, so reconcile website approvals against the updated entry and prompt websites that now need an access decision, like the other address-book handlers. Approvals are re-read because Safe validation and the address-book write await after admission.
-		await updateWebsiteApprovalAccesses(accessPromptSimulationServicesOwner, websiteTabConnections, await withCurrentWebsiteAccess(settings), true)
+		// The Safe entry is an active address, so reconcile website approvals against the updated entry and prompt websites that now need an access decision, like the other address-book handlers. Reconciliation re-reads the approvals, which may have changed while Safe validation and the address-book write awaited.
+		await updateWebsiteApprovalAccesses(accessPromptSimulationServicesOwner, websiteTabConnections, settings, true)
 	}
 	await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 	return { type: 'SetSafeSimulationSignerReply' as const, ok: true as const }
@@ -444,8 +444,8 @@ export async function changeInterceptorAccess(simulationServicesOwner: Simulatio
 
 	if (disabledSitesChanged) await reloadConnectedTabs(websiteTabConnections)
 
-	// Reconcile the committed permission edit (and any later one) while retaining the RPC network selected when the request was admitted.
-	await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await withCurrentWebsiteAccess(settingsAtAdmission), true)
+	// Reconcile the committed permission edit (reconciliation re-reads the approvals, including any later edit) while retaining the RPC network selected when the request was admitted.
+	await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, settingsAtAdmission, true)
 	await sendPopupMessageToOpenWindows({ method: 'popup_interceptor_access_changed' })
 }
 

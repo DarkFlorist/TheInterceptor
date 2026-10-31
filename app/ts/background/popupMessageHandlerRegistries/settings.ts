@@ -14,8 +14,9 @@ export const settingsPopupMessageHandlers = {
 		const importSettingsReply = await importSettings(request)
 		await sendPopupMessageToOpenWindows(importSettingsReply)
 		if (!importSettingsReply.data.success) return
-		const importedSettings = await getRequiredSettings()
 		await updateContentScriptInjectionStrategy()
+		// Read after the content-script registration await so the reconciled and published settings include any access change made meanwhile.
+		const importedSettings = await getRequiredSettings()
 		const popupRefreshGeneration = await updateWebsiteApprovalAccesses(context.simulationServicesOwner, context.websiteTabConnections, importedSettings, true)
 		await sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: importedSettings, popupRefreshGeneration })
 	}),

@@ -4,7 +4,7 @@ import { requestAccessFromUser } from './windows/interceptorAccess.js'
 import { retrieveWebsiteDetails, updateExtensionIcon } from './iconHandler.js'
 import type { TabConnection, WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { InpageScriptCallBack, Settings } from '../types/interceptor-messages.js'
-import { getRequiredSettings, getSettingsSnapshot, getWebsiteAccess, updateWebsiteAccess } from './settings.js'
+import { getRequiredSettings, getSettingsSnapshot, getWebsiteAccess, updateWebsiteAccess, withCurrentWebsiteAccess } from './settings.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
 import { type WebsiteSocket, getHostWithPort, silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { getAllTabStates } from './storageVariables.js'
@@ -97,7 +97,7 @@ export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socke
 			settings,
 			requestAccessForAddress?.address,
 		)
-		void updateExtensionIcon(websiteTabConnections, socket.tabId, websiteOrigin, popupRefreshGeneration).catch((error: unknown) => {
+		void updateExtensionIcon(socket.tabId, websiteOrigin, popupRefreshGeneration).catch((error: unknown) => {
 			void reportUnexpectedError(error)
 		})
 		return 'hasAccess'
@@ -349,6 +349,11 @@ const getAppliedTabBlocks = async (): Promise<readonly number[]> => {
 	return (await browser.declarativeNetRequest.getSessionRules()).flatMap((rule) => rule.condition.tabIds ?? [])
 }
 
+const getAppliedSiteBlocks = async (): Promise<readonly string[]> => {
+	if (browser.runtime.getManifest().manifest_version !== 3) return previousSitesToBlock
+	return (await browser.declarativeNetRequest.getDynamicRules()).flatMap((rule) => rule.condition.initiatorDomains ?? [])
+}
+
 const getTabIdsWithAppliedTabBlocks = async (tabIdsToBlock: readonly number[]) => Array.from(new Set([...await getAppliedTabBlocks(), ...tabIdsToBlock]))
 
 const updateDeclarativeNetRequestBlocksSemaphore = new Semaphore(1)
@@ -442,12 +447,10 @@ export async function registerWebsiteConnectionAndReconcileRequestBlocks(website
 	return { ...registration, requestBlocksReconciliation: silenceChromeUnCaughtPromise(updateDeclarativeNetRequestBlocksForRegisteredConnection(websiteTabConnections)) }
 }
 
-export const areWeBlocking = async (websiteTabConnections: WebsiteTabConnections, tabId: number, websiteOrigin: string) => {
-	const requestBlocks = await getTabsAndAddressesToBlock(websiteTabConnections)
-	if (requestBlocks.sitesToBlock.find((blockUrl) => blockUrl === websiteOrigin) !== undefined) return true
-	// A pure query: while blocking is derived from persisted consent it reports the applied tab blocks plus those the next reconciliation adds, which is what updateDeclarativeNetRequestBlocks enforces. Registration awaits that reconciliation before its icon update, so the reported state is the enforced state.
-	const tabIdsToBlock = requestBlocks.keepAppliedTabBlocks ? await getTabIdsWithAppliedTabBlocks(requestBlocks.tabIdsToBlock) : requestBlocks.tabIdsToBlock
-	return tabIdsToBlock.find((blockTab) => blockTab === tabId) !== undefined
+// A pure query of the blocking that is in force: only rules that were successfully applied count, and enforcement belongs to updateDeclarativeNetRequestBlocks.
+export const areWeBlocking = async (tabId: number, websiteOrigin: string) => {
+	const [appliedSiteBlocks, appliedTabBlocks] = await Promise.all([getAppliedSiteBlocks(), getAppliedTabBlocks()])
+	return appliedSiteBlocks.includes(websiteOrigin) || appliedTabBlocks.includes(tabId)
 }
 
 export type WebsiteAccessUpdate = {
@@ -470,8 +473,10 @@ export async function reconcileWebsiteApprovalAccesses(
 		if (throwOnError) throw error
 		await reportUnexpectedError(error)
 	}
+	// Approvals are read after the last await before connections change, so an approval revoked while the caller or the request-block update awaited is not restored from an older snapshot.
+	const settingsWithCurrentApprovals = await withCurrentWebsiteAccess(settings)
 	const updatePromises = [...websiteTabConnections.values()].map(async (tabConnection) => {
-		const tabIconRefreshTargets = await updateTabConnections(websiteTabConnections, tabConnection, settings)
+		const tabIconRefreshTargets = await updateTabConnections(websiteTabConnections, tabConnection, settingsWithCurrentApprovals)
 		for (const iconRefreshTarget of tabIconRefreshTargets.values()) addIconRefreshTarget(iconRefreshTargets, iconRefreshTarget.tabId, iconRefreshTarget.websiteOrigin)
 	})
 	try {
@@ -505,7 +510,7 @@ export async function finishWebsiteAccessUpdate(
 			addIconRefreshTarget(iconRefreshTargets, tabState.tabId, tabState.website.websiteOrigin)
 		}
 		await Promise.all([...iconRefreshTargets.values()].map(({ tabId, websiteOrigin }) =>
-			updateExtensionIcon(websiteTabConnections, tabId, websiteOrigin, update.popupRefreshGeneration)
+			updateExtensionIcon(tabId, websiteOrigin, update.popupRefreshGeneration)
 		))
 	} catch (error) {
 		if (throwOnError) throw error

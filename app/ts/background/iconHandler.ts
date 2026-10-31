@@ -4,7 +4,7 @@ import { hasAccess, hasAddressAccess } from './websiteAccessPolicy.js'
 import { getActiveAddress, sendPopupMessageToOpenWindows, setExtensionBadgeBackgroundColor, setExtensionBadgeText, setExtensionIcon, setExtensionTitle } from './backgroundUtils.js'
 import { createScopedKeyedSerialExecutor } from '../utils/semaphore.js'
 import { Future } from '../utils/future.js'
-import type { TabIcon, TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
+import type { TabIcon, TabState } from '../types/user-interface-types.js'
 import { getSettingsSnapshot, getWebsiteAccess } from './settings.js'
 import { RPC_CONFIGURATION_UNAVAILABLE_MESSAGE } from '../utils/rpcConfigurationError.js'
 import { getRpcConnectionStatus, getTabState, removeTabState, updateTabState } from './storageVariables.js'
@@ -111,14 +111,14 @@ async function waitForLoadedTab(tabId: number) {
 
 const runTabIconUpdate = createScopedKeyedSerialExecutor<object, number>()
 
-export async function updateExtensionIcon(websiteTabConnections: WebsiteTabConnections, tabId: number, websiteOrigin: string, popupRefreshGeneration: number) {
+export async function updateExtensionIcon(tabId: number, websiteOrigin: string, popupRefreshGeneration: number) {
 	// Keep a tab's stored state and browser action writes ordered, without blocking active settings or other tabs.
 	await runTabIconUpdate(browser, tabId, async () => {
 		if (!(await doesTabExist(tabId))) {
 			await removeTabState(tabId)
 			return
 		}
-		const blockingWebsitePromise = areWeBlocking(websiteTabConnections, tabId, websiteOrigin)
+		const blockingWebsitePromise = areWeBlocking(tabId, websiteOrigin)
 		silenceChromeUnCaughtPromise(blockingWebsitePromise)
 		const addShieldIfNeeded = async (icon: TabIcon): Promise<TabIcon> => await blockingWebsitePromise ? addBlockingShieldToIcon(icon) : icon
 		const setIcon = async (icon: TabIcon, iconReason: string) => setInterceptorIcon(tabId, await addShieldIfNeeded(icon), await blockingWebsitePromise ? `${ iconReason } The Interceptor is blocking external requests made by the website.` : iconReason, popupRefreshGeneration)

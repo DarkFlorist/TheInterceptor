@@ -16,6 +16,8 @@ function installBrowserMock(tabs: readonly MockTab[]) {
 	const tabsById = new Map(tabs.map((tab) => [tab.id, tab]))
 	const setIconCalls: browser.action._SetIconDetails[] = []
 	const setTitleCalls: browser.action._SetTitleDetails[] = []
+	type DynamicRule = { readonly id: number, readonly condition: { readonly initiatorDomains?: readonly string[] } }
+	const dynamicRules: DynamicRule[] = []
 
 	globalThis.browser = {
 		runtime: {
@@ -77,9 +79,13 @@ function installBrowserMock(tabs: readonly MockTab[]) {
 			async setBadgeBackgroundColor() { return undefined },
 		},
 		declarativeNetRequest: {
-			async getDynamicRules() { return [] },
+			async getDynamicRules() { return [...dynamicRules] },
 			async getSessionRules() { return [] },
-			async updateDynamicRules() { return undefined },
+			async updateDynamicRules(update: { readonly removeRuleIds?: readonly number[], readonly addRules?: readonly DynamicRule[] }) {
+				const remainingRules = dynamicRules.filter((rule) => update.removeRuleIds?.includes(rule.id) !== true)
+				dynamicRules.splice(0, dynamicRules.length, ...remainingRules, ...(update.addRules ?? []))
+				return undefined
+			},
 			async updateSessionRules() { return undefined },
 		},
 		webRequest: {
@@ -135,11 +141,11 @@ describe('extension icon deduping', () => {
 			},
 		}))
 
-		await updateExtensionIcon(new Map(), 1, 'example.test')
+		await updateExtensionIcon(1, 'example.test')
 		assert.equal(setIconCalls.length, 1)
 		assert.equal(setTitleCalls.length, 1)
 
-		await updateExtensionIcon(new Map(), 1, 'example.test')
+		await updateExtensionIcon(1, 'example.test')
 		assert.equal(setIconCalls.length, 1)
 		assert.equal(setTitleCalls.length, 1)
 	})
@@ -157,7 +163,7 @@ describe('extension icon deduping', () => {
 			},
 		}))
 
-		await updateExtensionIcon(new Map(), 1, 'example.test')
+		await updateExtensionIcon(1, 'example.test')
 		assert.equal(setIconCalls.length, 0)
 		assert.equal(setTitleCalls.length, 1)
 		assert.equal(setTitleCalls[0]?.title, 'No active address selected.')
@@ -176,7 +182,7 @@ describe('extension icon deduping', () => {
 			},
 		}))
 
-		await updateExtensionIcon(new Map(), 1, 'example.test')
+		await updateExtensionIcon(1, 'example.test')
 		assert.equal(setIconCalls.length, 1)
 		assert.equal(setTitleCalls.length, 0)
 		assert.deepEqual(setIconCalls[0]?.path, { 128: ICON_NOT_ACTIVE })
@@ -184,7 +190,7 @@ describe('extension icon deduping', () => {
 
 	test('blocked websites with denied access keep the plain denied icon', async () => {
 		const { setIconCalls, setTitleCalls } = installBrowserMock([{ id: 1, url: 'https://example.test', status: 'complete' }])
-		const { updateExtensionIcon, updateTabState, updateWebsiteAccess } = await loadModules()
+		const { updateDeclarativeNetRequestBlocks, updateExtensionIcon, updateTabState, updateWebsiteAccess } = await loadModules()
 
 		await updateWebsiteAccess(() => [{
 			website: { websiteOrigin: 'example.test', icon: undefined, title: 'Example' },
@@ -192,6 +198,8 @@ describe('extension icon deduping', () => {
 			access: false,
 			declarativeNetRequestBlockMode: 'block-all',
 		}])
+		// The icon reports applied blocking only, so the site rule is applied first.
+		await updateDeclarativeNetRequestBlocks(new Map())
 		await updateTabState(1, (previousState) => ({
 			...previousState,
 			tabIconDetails: {
@@ -200,7 +208,7 @@ describe('extension icon deduping', () => {
 			},
 		}))
 
-		await updateExtensionIcon(new Map(), 1, 'example.test', 0)
+		await updateExtensionIcon(1, 'example.test', 0)
 
 		assert.deepEqual(setIconCalls.at(-1)?.path, { 128: ICON_ACCESS_DENIED })
 		assert.match(setTitleCalls.at(-1)?.title ?? '', /DENIED.*blocking external requests/u)

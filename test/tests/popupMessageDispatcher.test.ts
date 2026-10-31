@@ -14,6 +14,12 @@ const dispatcherEvents: ({ type: 'message', message: unknown } | { type: 'dynami
 let storageSetError: Error | undefined
 let dynamicRuleUpdateError: Error | undefined
 let addressBookBroadcastWait: Promise<void> | undefined
+let contentScriptRegistrationWait: { readonly started: () => void, readonly release: Promise<void> } | undefined
+
+const registeredContentScripts = [
+	{ id: 'inpage', excludeMatches: ['*://*.disabled.test/*'] },
+	{ id: 'inpage2', excludeMatches: ['*://*.disabled.test/*'] },
+]
 
 Reflect.set(globalThis, 'chrome', { runtime: { id: 'test-extension' } })
 Reflect.set(globalThis, 'browser', {
@@ -82,10 +88,11 @@ Reflect.set(globalThis, 'browser', {
 		updateSessionRules: async () => undefined,
 	},
 	scripting: {
-		getRegisteredContentScripts: async () => [
-			{ id: 'inpage', excludeMatches: ['*://*.disabled.test/*'] },
-			{ id: 'inpage2', excludeMatches: ['*://*.disabled.test/*'] },
-		],
+		getRegisteredContentScripts: async () => {
+			contentScriptRegistrationWait?.started()
+			await contentScriptRegistrationWait?.release
+			return registeredContentScripts
+		},
 		registerContentScripts: async () => undefined,
 		updateContentScripts: async (scripts: { readonly id: string, readonly excludeMatches?: readonly string[] }[]) => { contentScriptUpdateBatches.push(scripts) },
 		unregisterContentScripts: async () => undefined,
@@ -96,6 +103,10 @@ const [
 	{ dispatchPopupMessage },
 	{ websiteSocketToString },
 	{ getLatestUnexpectedError, setFetchSimulationStackRequestPromise, updatePendingAccessRequests },
+	{ exportSettingsAndAddressBook, getRequiredSettings, updateWebsiteAccess },
+	{ updateWebsiteApprovalAccesses },
+	{ ExportedSettings },
+	{ serialize },
 	{ EthereumClientService: EthereumClientServiceConstructor },
 	{ TokenPriceService: TokenPriceServiceConstructor },
 	{ MessageToPopup },
@@ -103,6 +114,10 @@ const [
 	import('../../app/ts/background/popupMessageDispatcher.js'),
 	import('../../app/ts/background/backgroundUtils.js'),
 	import('../../app/ts/background/storageVariables.js'),
+	import('../../app/ts/background/settings.js'),
+	import('../../app/ts/background/accessManagement.js'),
+	import('../../app/ts/types/exportedSettingsTypes.js'),
+	import('../../app/ts/types/wire-types.js'),
 	import('../../app/ts/simulation/services/EthereumClientService.js'),
 	import('../../app/ts/simulation/services/priceEstimator.js'),
 	import('../../app/ts/types/interceptor-messages.js'),
@@ -157,6 +172,7 @@ beforeEach(() => {
 	storageSetError = undefined
 	dynamicRuleUpdateError = undefined
 	addressBookBroadcastWait = undefined
+	contentScriptRegistrationWait = undefined
 	for (const key of Object.keys(storageState)) delete storageState[key]
 	sentMessages.splice(0, sentMessages.length)
 	dynamicRuleUpdates.splice(0, dynamicRuleUpdates.length)
@@ -473,6 +489,32 @@ describe('popup message dispatcher seams', () => {
 		}
 
 		assert.equal(connection.approved, false)
+	})
+
+	test('settings import does not restore website access revoked while content-script registration is pending', async () => {
+		const websiteOrigin = 'revoked-during-import.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const context = createDispatcherContext(async () => undefined)
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: settings.activeSimulationAddress ?? 0n, access: true }] }])
+		const exportedSettings = await exportSettingsAndAddressBook()
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const connection = { port, socket, websiteOrigin, approved: false, wantsToConnect: false }
+		context.websiteTabConnections = new Map([[socket.tabId, { connections: { [websiteSocketToString(socket)]: connection } }]])
+		const registrationStarted = createDeferredValue<void>()
+		const releaseRegistration = createDeferredValue<void>()
+		contentScriptRegistrationWait = { started: () => registrationStarted.resolve(undefined), release: releaseRegistration.promise }
+
+		const importing = dispatchPopupMessage(context, { method: 'popup_import_settings', data: { fileContents: JSON.stringify(serialize(ExportedSettings, exportedSettings)) } })
+		await registrationStarted.promise
+		// The imported approval is revoked and reconciled while the import awaits content-script registration.
+		await updateWebsiteAccess(() => [{ website, access: false, addressAccess: undefined }])
+		await updateWebsiteApprovalAccesses(undefined, context.websiteTabConnections, await getRequiredSettings(), false)
+		releaseRegistration.resolve(undefined)
+		await importing
+
+		assert.equal(connection.approved, false)
+		assert.equal(messages.some((message) => message.method === 'accountsChanged' && Array.isArray(message.result) && message.result.length > 0), false)
 	})
 
 	test('returns a save failure when address-book persistence fails', async () => {

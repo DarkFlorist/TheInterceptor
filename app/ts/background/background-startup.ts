@@ -208,12 +208,12 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ simulati
 				})
 			})
 		}
-		// This registration's request-block reconciliation enforces blocking before a new tab's icon reports it.
+		// A new tab's icon reports the applied request blocking, so it is updated after this registration's request-block reconciliation, whether or not that succeeds.
 		void catchAllErrorsAndCall(async () => {
 			try {
 				await registration.requestBlocksReconciliation
 			} finally {
-				if (registration.createdTabConnection) await updateExtensionIcon(websiteTabConnections, socket.tabId, websiteOrigin, bumpPopupRefreshGeneration())
+				if (registration.createdTabConnection) await updateExtensionIcon(socket.tabId, websiteOrigin, bumpPopupRefreshGeneration())
 			}
 		})
 		if (registration.provisionallyClaimedSignerState) {
@@ -341,7 +341,7 @@ const onTabUpdated = async (tabId: number, changeInfo: browser.tabs._OnUpdatedCh
 	await updateKnownWebsiteMetadata(website)
 	await updateTabState(tabId, (previousState: TabState) => modifyObject(previousState, { website, tabIconDetails: DEFAULT_TAB_CONNECTION }))
 	await updateDeclarativeNetRequestBlocks(websiteTabConnections)
-	await updateExtensionIcon(websiteTabConnections, tabId, websiteOrigin, bumpPopupRefreshGeneration())
+	await updateExtensionIcon(tabId, websiteOrigin, bumpPopupRefreshGeneration())
 })
 
 const onCloseWindow = async (id: number) => await catchAllErrorsAndCall(async () => {
