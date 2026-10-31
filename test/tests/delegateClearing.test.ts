@@ -1,5 +1,5 @@
 import * as assert from 'node:assert'
-import { describe, test } from 'bun:test'
+import { describe, setSystemTime, test } from 'bun:test'
 import { EthereumClientService, getNextBlockTimeStampOverride } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { captureSigningSimulationSnapshot, captureWhatIfSimulationSnapshot, getCurrentSimulationInput, getGovernanceExecutionSimulationInput, getSimulationInputForPurpose, prepareSimulationInputForRpc } from '../../app/ts/background/simulationUpdating.js'
 import { getSimulationOverridesForPurpose } from '../../app/ts/background/delegateClearingPolicy.js'
@@ -488,6 +488,71 @@ describe('delegate clearing in simulation', () => {
 		hints.invalidateDelegatedForNewBlock()
 		assert.equal(await hints.get(activeAddress), undefined)
 		assert.equal(lookups, 2)
+	})
+
+	test('refreshes an expired hint from the RPC even while the RPC response cache still holds the old code', async () => {
+		const fiveMinutes = 5 * 60 * 1000
+		const startedAt = new Date('2026-01-01T00:00:00Z').getTime()
+		const delegate = 0xabcdefabcdefabcdefabcdefabcdefabcdefabcdn
+		const delegatedCode = `0xef0100${ addressString(delegate).slice(2) }`
+		const undelegated = activeAddress + 1n
+		const codeByAddress = new Map<string, string>([[addressString(activeAddress), delegatedCode], [addressString(undelegated), '0x']])
+		let codeRequests = 0
+		const server = Bun.serve({
+			hostname: '127.0.0.1', port: 0,
+			async fetch(request) {
+				const message: unknown = await request.json()
+				if (typeof message !== 'object' || message === null || !('id' in message) || !('method' in message) || !('params' in message) || !Array.isArray(message.params)) throw new Error('Missing fixture request fields')
+				if (message.method !== 'eth_getCode') throw new Error(`Unexpected RPC method ${ String(message.method) }`)
+				codeRequests += 1
+				return Response.json({ jsonrpc: '2.0', id: message.id, result: codeByAddress.get(String(message.params[0])) ?? '0x' })
+			},
+		})
+		// Without block polling the RPC response cache is never cleared, as while the extension sleeps.
+		const ethereum = createEthereumClientService({ ...rpcEntry, httpsRpc: `${ server.url }rpc` }, async () => undefined, async () => undefined)
+		try {
+			setSystemTime(startedAt)
+			assert.equal(await ethereum.getDelegateClearingHint(activeAddress), delegate)
+			assert.equal(await ethereum.getDelegateClearingHint(undelegated), undefined)
+			assert.equal(codeRequests, 2)
+			codeByAddress.set(addressString(activeAddress), '0x')
+			codeByAddress.set(addressString(undelegated), delegatedCode)
+			setSystemTime(startedAt + fiveMinutes - 1)
+			assert.equal(await ethereum.getDelegateClearingHint(activeAddress), delegate)
+			assert.equal(await ethereum.getDelegateClearingHint(undelegated), undefined)
+			assert.equal(codeRequests, 2)
+			setSystemTime(startedAt + fiveMinutes)
+			assert.deepEqual(await Promise.all([ethereum.getDelegateClearingHint(activeAddress), ethereum.getDelegateClearingHint(activeAddress)]), [undefined, undefined])
+			assert.deepEqual(await Promise.all([ethereum.getDelegateClearingHint(undelegated), ethereum.getDelegateClearingHint(undelegated)]), [delegate, delegate])
+			assert.equal(codeRequests, 4)
+			assert.equal(await ethereum.getDelegateClearingHint(activeAddress), undefined)
+			assert.equal(await ethereum.getDelegateClearingHint(undelegated), delegate)
+			assert.equal(codeRequests, 4)
+		} finally {
+			setSystemTime()
+			server.stop(true)
+		}
+	})
+
+	test('a first hint lookup shares a same-block eth_getCode response with other callers', async () => {
+		const delegate = 0xabcdefabcdefabcdefabcdefabcdefabcdefabcdn
+		let codeRequests = 0
+		const server = Bun.serve({
+			hostname: '127.0.0.1', port: 0,
+			async fetch(request) {
+				const message: unknown = await request.json()
+				if (typeof message !== 'object' || message === null || !('id' in message) || !('method' in message)) throw new Error('Missing fixture request fields')
+				if (message.method !== 'eth_getCode') throw new Error(`Unexpected RPC method ${ String(message.method) }`)
+				codeRequests += 1
+				return Response.json({ jsonrpc: '2.0', id: message.id, result: `0xef0100${ addressString(delegate).slice(2) }` })
+			},
+		})
+		const ethereum = createEthereumClientService({ ...rpcEntry, httpsRpc: `${ server.url }rpc` }, async () => undefined, async () => undefined)
+		try {
+			assert.equal((await ethereum.getCode(activeAddress, 'latest', undefined)).length, 23)
+			assert.equal(await ethereum.getDelegateClearingHint(activeAddress), delegate)
+			assert.equal(codeRequests, 1)
+		} finally { server.stop(true) }
 	})
 
 	test('retries a lookup started before a new block without caching its stale result', async () => {
