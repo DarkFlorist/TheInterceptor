@@ -49,7 +49,10 @@ export const popupSettingsCommandHandlers = {
 			const services = getRpcServicesAtAdmission(context.rpcConfiguration, context.simulationServicesOwner)
 			if (services !== undefined) {
 				try {
-					await queuePopupSimulationRefresh({ ...services, invalidateOldState: true })
+					const outcome = await queuePopupSimulationRefresh({ ...services, invalidateOldState: true })
+					if (outcome.status === 'observed' && !outcome.available) {
+						return { type: 'PopupSettingsChangeReply', ok: false, message: 'The rich setting was saved, but the latest simulation is unavailable. Please refresh the simulation to retry.' }
+					}
 				} catch (error: unknown) {
 					await reportUnexpectedError(error, {
 						source: 'make_me_rich_simulation_refresh',

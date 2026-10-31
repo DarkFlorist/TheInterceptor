@@ -574,6 +574,47 @@ describe('popup settings changes', () => {
 		assert.equal(refreshRequests(), refreshedCount)
 	})
 
+	test('a saved rich change reports an unavailable simulation when the refresh leaves the visualization failed', async () => {
+		installBrowserMock()
+		const { getRequiredSettings } = await loadModules()
+		const { dispatchPopupMessage } = await import('../../app/ts/background/popupMessageDispatcher.js')
+		const { PopupRequestsReplies } = await import('../../app/ts/types/interceptor-reply-messages.js')
+		const services = createEthereumWithGetBlockCounter({ count: 0 })
+		const context = {
+			...services, settings: await getRequiredSettings(), websiteTabConnections: new Map(),
+			publishRpcConnectionStatus: async () => undefined,
+			simulationAbortController: new AbortController(), confirmTransactionAbortController: new AbortController(),
+			resetSimulationState: async () => undefined,
+		}
+		const sendMessage = browser.runtime.sendMessage
+		// A visualizer is open, so the refresh runs.
+		Object.defineProperty(browser.runtime, 'sendMessage', { configurable: true, writable: true, value: async (message: unknown) => {
+			if (typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_isSimulationVisualizerOpen') return PopupRequestsReplies.popup_isSimulationVisualizerOpen.serialize({ method: 'popup_isSimulationVisualizerOpen', data: { isOpen: true } })
+			return await sendMessage(message)
+		} })
+		// The refresh first stores the invalidated visualization; storing its result then fails, so the stored visualization stays invalid.
+		const setStorage = browser.storage.local.set
+		let visualisationWrites = 0
+		Object.defineProperty(browser.storage.local, 'set', { configurable: true, writable: true, value: async (items: Record<string, unknown>) => {
+			if (Object.keys(items).some((key) => key.startsWith('popupVisualisation'))) {
+				visualisationWrites += 1
+				if (visualisationWrites === 2) throw new Error('Visualization storage unavailable')
+			}
+			return await setStorage(items)
+		} })
+		const originalError = console.error
+		console.error = () => undefined
+		try {
+			const reply = await dispatchPopupMessage(context, { method: 'popup_modifyMakeMeRich', data: { address: 'CurrentAddress', add: true } })
+			assert.deepEqual(reply, { type: 'PopupSettingsChangeReply', ok: false, message: 'The rich setting was saved, but the latest simulation is unavailable. Please refresh the simulation to retry.' })
+		} finally {
+			console.error = originalError
+			Object.defineProperty(browser.runtime, 'sendMessage', { configurable: true, writable: true, value: sendMessage })
+			Object.defineProperty(browser.storage.local, 'set', { configurable: true, writable: true, value: setStorage })
+		}
+		assert.equal(visualisationWrites >= 2, true)
+	})
+
 	for (const outcome of ['accept', 'reject', 'safe', 'metadata after chain event', 'unavailable simulation'] as const) {
 		test(`preserves RPC preferences until a popup wallet switch is accepted (${ outcome })`, async () => {
 			installBrowserMock()
