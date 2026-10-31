@@ -5,24 +5,30 @@ import { isJSON } from '../../utils/json.js'
 import { silenceChromeUnCaughtPromise } from '../../utils/requests.js'
 import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
 import { getPrimaryRpcForChain, getRpcList, setRpcList } from '../storageVariables.js'
-import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettings, getUseTabsInsteadOfPopup, importSettingsAndAddressBook } from '../settings.js'
+import { exportSettingsAndAddressBook, getDelegateClearingPreferences, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettings, getUseTabsInsteadOfPopup, importSettingsAndAddressBook } from '../settings.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
+import { getPopupRefreshGeneration } from '../popupRefreshGeneration.js'
 
 export async function settingsOpened() {
+	const popupRefreshGeneration = getPopupRefreshGeneration()
 	const useTabsInsteadOfPopupPromise = silenceChromeUnCaughtPromise(getUseTabsInsteadOfPopup())
 	const metamaskCompatibilityModePromise = silenceChromeUnCaughtPromise(getMetamaskCompatibilityMode())
 	const safeAppsCompatibilityModePromise = silenceChromeUnCaughtPromise(getSafeAppsCompatibilityMode())
 	const rpcEntriesPromise = silenceChromeUnCaughtPromise(getRpcList())
+	const delegateClearingPreferencesPromise = silenceChromeUnCaughtPromise(getDelegateClearingPreferences())
 	const settingsPromise = silenceChromeUnCaughtPromise(getSettings())
+	const settings = await settingsPromise
 
 	await sendPopupMessageToOpenWindows({
 		method: 'popup_requestSettingsReply' as const,
+		popupRefreshGeneration,
 		data: {
 			useTabsInsteadOfPopup: await useTabsInsteadOfPopupPromise,
 			metamaskCompatibilityMode: await metamaskCompatibilityModePromise,
 			safeAppsCompatibilityMode: await safeAppsCompatibilityModePromise,
 			rpcEntries: await rpcEntriesPromise,
-			activeRpcNetwork: (await settingsPromise).activeRpcNetwork
+			activeRpcNetwork: settings.activeRpcNetwork,
+			delegateClearingPreferences: await delegateClearingPreferencesPromise,
 		}
 	})
 }

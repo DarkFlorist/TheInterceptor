@@ -90,6 +90,15 @@ async function withSilencedConsole<T>(runWithConsoleSilenced: () => Promise<T>) 
 }
 
 describe('backgroundUtils messaging', () => {
+	test('accepts popup messages only from this extension\'s own pages', async () => {
+		const { isExtensionPageMessageSender } = await loadModules()
+		const extensionBaseUrl = 'chrome-extension://abcdefghijklmnop/'
+		assert.equal(isExtensionPageMessageSender({ url: `${ extensionBaseUrl }html3/popupV3.html` }, extensionBaseUrl), true)
+		assert.equal(isExtensionPageMessageSender({ url: `${ extensionBaseUrl }html3/settings.html` }, extensionBaseUrl), true)
+		assert.equal(isExtensionPageMessageSender({ url: 'https://example.com/' }, extensionBaseUrl), false)
+		assert.equal(isExtensionPageMessageSender({ url: 'chrome-extension://abcdefghijklmnop.evil/html3/popupV3.html' }, extensionBaseUrl), false)
+		assert.equal(isExtensionPageMessageSender({}, extensionBaseUrl), false)
+	})
 	test('ignore closed async response errors for popup fire-and-forget messages', async () => {
 		const storageState = installBrowserMock(ASYNC_RESPONSE_CLOSED_MESSAGE)
 		const { sendPopupMessageToBackgroundPage, getLatestUnexpectedError } = await loadModules()

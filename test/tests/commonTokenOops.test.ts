@@ -78,6 +78,7 @@ const ethereum = new EthereumClientService(requestHandler, async () => undefined
 
 const simulationState: SimulationState = {
 	success: false,
+	simulationOverrides: {},
 	simulationStateInput: [],
 	jsonRpcError: {
 		jsonrpc: '2.0',
