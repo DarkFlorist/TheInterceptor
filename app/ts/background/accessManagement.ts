@@ -445,10 +445,9 @@ export async function registerWebsiteConnectionAndReconcileRequestBlocks(website
 export const areWeBlocking = async (websiteTabConnections: WebsiteTabConnections, tabId: number, websiteOrigin: string) => {
 	const requestBlocks = await getTabsAndAddressesToBlock(websiteTabConnections)
 	if (requestBlocks.sitesToBlock.find((blockUrl) => blockUrl === websiteOrigin) !== undefined) return true
-	if (!requestBlocks.keepAppliedTabBlocks) return requestBlocks.tabIdsToBlock.find((blockTab) => blockTab === tabId) !== undefined
-	// Blocking derived from persisted consent is applied before it is reported, so the reported state is always the enforced state even if the active RPC network became unreadable after the last reconciliation.
-	await updateDeclarativeNetRequestBlocks(websiteTabConnections)
-	return (await getAppliedTabBlocks()).find((blockTab) => blockTab === tabId) !== undefined
+	// A pure query: while blocking is derived from persisted consent it reports the applied tab blocks plus those the next reconciliation adds, which is what updateDeclarativeNetRequestBlocks enforces. Registration awaits that reconciliation before its icon update, so the reported state is the enforced state.
+	const tabIdsToBlock = requestBlocks.keepAppliedTabBlocks ? await getTabIdsWithAppliedTabBlocks(requestBlocks.tabIdsToBlock) : requestBlocks.tabIdsToBlock
+	return tabIdsToBlock.find((blockTab) => blockTab === tabId) !== undefined
 }
 
 export type WebsiteAccessUpdate = {

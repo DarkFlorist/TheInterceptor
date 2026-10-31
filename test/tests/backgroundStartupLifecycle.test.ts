@@ -77,7 +77,7 @@ describe('background startup lifecycle', () => {
 
 		assert.equal(listenerRegistration >= 0 && listenerRegistration < startupGate, true)
 		assert.equal(startupGate < connectionRegistration && connectionRegistration < firstTabStateWrite, true)
-		// Every registration, including child frames in an existing tab, hands its request-block reconciliation to the error boundary without a frame or new-tab condition.
-		assert.match(connectionHandler, /\n\t\tvoid catchAllErrorsAndCall\(async \(\) => await registration\.requestBlocksReconciliation\)\n/u)
+		// Every registration, including child frames in an existing tab, hands its request-block reconciliation to the error boundary without a frame or new-tab condition, and a new tab's icon is updated only after it.
+		assert.match(connectionHandler, /\n\t\tvoid catchAllErrorsAndCall\(async \(\) => \{\n\t\t\ttry \{\n\t\t\t\tawait registration\.requestBlocksReconciliation\n\t\t\t\} finally \{\n\t\t\t\tif \(registration\.createdTabConnection\) await updateExtensionIcon\(/u)
 	})
 })

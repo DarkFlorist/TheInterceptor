@@ -93,16 +93,19 @@ describe('background eth_accounts', () => {
 	})
 
 	test('updates the tab icon with the blocking shield while the active RPC network is unreadable', async () => {
-		installBrowserMock({ manifestVersion: 3 })
-		const { registerWebsiteConnectionAndReconcileRequestBlocks, getTabState } = await loadModules()
+		const browserMock = installBrowserMock({ manifestVersion: 3 })
+		const { getTabState, registerWebsiteConnectionAndProvisionallyClaimSignerState } = await loadModules()
 		const { updateExtensionIcon } = await import('../../app/ts/background/iconHandler.js')
 		const consentedWebsiteOrigin = 'consented-icon.example'
 		await setUpAddressLevelBlockAllWithUnreadableActiveRpcNetwork(consentedWebsiteOrigin)
 		const websiteTabConnections: WebsiteTabConnections = new Map()
 		const socket = { tabId: 9882, connectionName: 0n }
-		await withSilencedWarnings(async () => await (await registerWebsiteConnectionAndReconcileRequestBlocks(websiteTabConnections, socket, { port: createPort(socket.tabId).port, socket, websiteOrigin: consentedWebsiteOrigin, approved: false, wantsToConnect: false }, true)).requestBlocksReconciliation)
+		// Registered without its request-block reconciliation, so any request-block write below would come from the icon path.
+		await registerWebsiteConnectionAndProvisionallyClaimSignerState(websiteTabConnections, socket, { port: createPort(socket.tabId).port, socket, websiteOrigin: consentedWebsiteOrigin, approved: false, wantsToConnect: false }, true)
 
 		await withSilencedWarnings(async () => await updateExtensionIcon(websiteTabConnections, socket.tabId, consentedWebsiteOrigin, 1))
+
+		assert.equal(browserMock.requestBlockingCalls.declarativeNetRequestUpdates, 0)
 
 		const { tabIconDetails } = await getTabState(socket.tabId)
 		assert.equal(tabIconDetails.icon, ICON_NOT_ACTIVE_WITH_SHIELD)
@@ -110,7 +113,7 @@ describe('background eth_accounts', () => {
 		assert.match(tabIconDetails.iconReason, /blocking external requests/)
 	})
 
-	test('applies persisted-consent tab blocking before reporting it', async () => {
+	test('reports persisted-consent tab blocking without writing request blocks', async () => {
 		const browserMock = installBrowserMock({ manifestVersion: 3 })
 		const { areWeBlocking } = await loadModules()
 		const { registerWebsiteConnectionAndProvisionallyClaimSignerState } = await import('../../app/ts/background/signerStateOwnership.js')
@@ -121,7 +124,9 @@ describe('background eth_accounts', () => {
 		await registerWebsiteConnectionAndProvisionallyClaimSignerState(websiteTabConnections, socket, { port: createPort(socket.tabId).port, socket, websiteOrigin: consentedWebsiteOrigin, approved: false, wantsToConnect: false }, true)
 
 		assert.equal(await withSilencedWarnings(async () => await areWeBlocking(websiteTabConnections, socket.tabId, consentedWebsiteOrigin)), true)
-		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [socket.tabId])
+		// Enforcement belongs to request-block reconciliation, not to this query.
+		assert.equal(browserMock.requestBlockingCalls.declarativeNetRequestUpdates, 0)
+		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [])
 	})
 
 	test('keeps tab blocking rules applied before a service-worker restart while the active RPC network is unreadable', async () => {

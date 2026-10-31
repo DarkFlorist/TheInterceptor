@@ -200,7 +200,6 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ simulati
 
 	connectionInitializationPromise = initializeContentScriptConnectionAfterBackgroundStartup(waitForStartup, async () => {
 		const registration = await registerWebsiteConnectionAndReconcileRequestBlocks(websiteTabConnections, socket, newConnection, isTopFrame)
-		void catchAllErrorsAndCall(async () => await registration.requestBlocksReconciliation)
 		if (registration.createdTabConnection) {
 			await updateTabState(socket.tabId, (previousState: TabState) => {
 				return modifyObject(previousState, {
@@ -208,8 +207,15 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ simulati
 					tabIconDetails: { icon: ICON_NOT_ACTIVE, iconReason: 'No active address selected.' },
 				})
 			})
-			void catchAllErrorsAndCall(async () => updateExtensionIcon(websiteTabConnections, socket.tabId, websiteOrigin, bumpPopupRefreshGeneration()))
 		}
+		// This registration's request-block reconciliation enforces blocking before a new tab's icon reports it.
+		void catchAllErrorsAndCall(async () => {
+			try {
+				await registration.requestBlocksReconciliation
+			} finally {
+				if (registration.createdTabConnection) await updateExtensionIcon(websiteTabConnections, socket.tabId, websiteOrigin, bumpPopupRefreshGeneration())
+			}
+		})
 		if (registration.provisionallyClaimedSignerState) {
 			sendSubscriptionReplyOrCallBackToPort(port, { type: 'result', method: 'request_signer_connection_status', result: [] })
 		}
