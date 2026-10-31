@@ -393,6 +393,19 @@ describe('popup message dispatcher seams', () => {
 		context.settings = undefined
 		context.rpcConfiguration = { status: 'unavailable', reason: 'read-failed', error: new Error('Storage unavailable') }
 
+		const originalError = console.error
+		console.error = () => undefined
+		try {
+			assert.equal(await dispatchPopupMessage(context, {
+				method: 'popup_UnexpectedErrorOccured',
+				data: { timestamp: new Date('2024-01-01T00:00:00.000Z'), message: 'Popup failure during outage', source: 'popup', code: 'popup_failure', debugId: undefined },
+			}), undefined)
+		} finally {
+			console.error = originalError
+		}
+		const reported = await dispatchPopupMessage(context, { method: 'popup_requestLatestUnexpectedError' })
+		assert.equal(reported !== undefined && 'latestUnexpectedError' in reported ? reported.latestUnexpectedError?.data.message : undefined, 'Popup failure during outage')
+
 		assert.equal(await dispatchPopupMessage(context, { method: 'popup_clearUnexpectedError' }), undefined)
 		assert.deepEqual(await dispatchPopupMessage(context, { method: 'popup_requestLatestUnexpectedError' }), { method: 'popup_requestLatestUnexpectedError', latestUnexpectedError: undefined })
 	})
