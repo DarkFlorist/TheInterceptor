@@ -87,6 +87,11 @@ const PendingTransactionApprovalStatus = funtypes.Union(
 	}).And(funtypes.ReadonlyPartial({ safeSignerErrorDetails: SafeSignerErrorDetails })),
 )
 
+const DeferredSafeSignerReply = funtypes.ReadonlyObject({
+	signerReply: funtypes.String,
+	terminalReplyQueued: funtypes.Boolean,
+})
+
 type SimulatedPendingTransactionBase = funtypes.Static<typeof SimulatedPendingTransactionBase>
 const SimulatedPendingTransactionBase = funtypes.ReadonlyObject({
 	type: funtypes.Literal('Transaction'),
@@ -104,6 +109,7 @@ const SimulatedPendingTransactionBase = funtypes.ReadonlyObject({
 	safeExecutionSignerAddress: EthereumAddress,
 	safeExecutionOriginalRequestParameters: SendTransactionParams,
 	safeExecutionReviewedSafeState: SafeContractStateSnapshot,
+	deferredSafeSignerReply: DeferredSafeSignerReply,
 }))
 
 export type SimulatedPendingTransaction = funtypes.Static<typeof SimulatedPendingTransaction>
@@ -153,7 +159,10 @@ const PendingSignableMessage = funtypes.Intersect(
 		website: Website,
 		activeAddress: EthereumAddress,
 		approvalStatus: PendingTransactionApprovalStatus,
-	}).And(funtypes.ReadonlyPartial({ safeMessageCoSignSnapshot: SafeMessageCoSignSnapshot })),
+	}).And(funtypes.ReadonlyPartial({
+		safeMessageCoSignSnapshot: SafeMessageCoSignSnapshot,
+		deferredSafeSignerReply: DeferredSafeSignerReply,
+	})),
 	funtypes.Union(
 		funtypes.ReadonlyObject({ transactionOrMessageCreationStatus: funtypes.Literal('Simulated'), visualizedPersonalSignRequest: VisualizedPersonalSignRequest }),
 		funtypes.ReadonlyObject({ transactionOrMessageCreationStatus: funtypes.Union(funtypes.Literal('Crafting'), funtypes.Literal('Simulating')) })

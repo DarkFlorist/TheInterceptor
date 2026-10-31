@@ -98,7 +98,7 @@ const LocalStorageItemsRuntype = funtypes.Intersect(funtypes.ReadonlyPartial({
 	popupRefreshGeneration: funtypes.Number,
 	pendingTerminalReplies: funtypes.ReadonlyArray(InterceptedRequestForward),
 }), OptionalActiveSigningAddressStorageProperty, OptionalActiveSigningSafeAddressStorageProperty, OptionalIndependentActiveSimulationAddressStorageProperty)
-type LocalStorageItems = funtypes.Static<typeof LocalStorageItemsRuntype>
+export type LocalStorageItems = funtypes.Static<typeof LocalStorageItemsRuntype>
 const LocalStorageItems: typeof LocalStorageItemsRuntype = LocalStorageItemsRuntype
 
 type LocalStorageKey = funtypes.Static<typeof LocalStorageKey>
@@ -174,23 +174,40 @@ export async function browserStorageLocalSet2(items: LocalStorageItems2) {
 	return await browser.storage.local.set(serialize(LocalStorageItems2, items))
 }
 
+export async function browserStorageLocalSetPendingAndTerminalState(
+	pendingTransactionsAndMessages: readonly PendingTransactionOrSignableMessage[],
+	pendingTerminalReplies: readonly InterceptedRequestForward[],
+) {
+	const pendingItems: LocalStorageItems2 = { pendingTransactionsAndMessages }
+	const terminalItems: LocalStorageItems = { pendingTerminalReplies }
+	return await browser.storage.local.set({
+		...serialize(LocalStorageItems2, pendingItems),
+		...serialize(LocalStorageItems, terminalItems),
+	})
+}
+
 export async function browserStorageLocalGet(keys: LocalStorageKey | LocalStorageKey[]): Promise<LocalStorageItems> {
 	return LocalStorageItems.parse(await browser.storage.local.get(Array.isArray(keys) ? keys : [keys]))
 }
+export const safeParseLocalStorageItems = (items: unknown) => LocalStorageItems.safeParse(items)
 export function browserStorageLocalSafeParse(items: unknown): LocalStorageItems | undefined {
-	const parsed = LocalStorageItems.safeParse(items)
+	const parsed = safeParseLocalStorageItems(items)
 	if (parsed.success) return parsed.value
 	return undefined
 }
-export async function browserStorageLocalSafeParseGet(keys: LocalStorageKey | LocalStorageKey[]): Promise<LocalStorageItems | undefined> {
-	return browserStorageLocalSafeParse(await browser.storage.local.get(Array.isArray(keys) ? keys : [keys]))
+export async function browserStorageLocalSafeParseGet(keys: LocalStorageKey | LocalStorageKey[], onValidationFailure?: (failure: funtypes.Failure) => void): Promise<LocalStorageItems | undefined> {
+	const parsed = safeParseLocalStorageItems(await browser.storage.local.get(Array.isArray(keys) ? keys : [keys]))
+	if (parsed.success) return parsed.value
+	onValidationFailure?.(parsed)
+	return undefined
 }
 
 export async function browserStorageLocalRemove(keys: LocalStorageKey | LocalStorageKey[]) {
 	return await browser.storage.local.remove(Array.isArray(keys) ? keys : [keys])
 }
+export const serializeLocalStorageItems = (items: LocalStorageItems) => serialize(LocalStorageItems, items)
 export async function browserStorageLocalSet(items: LocalStorageItems) {
-	return await browser.storage.local.set(serialize(LocalStorageItems, items))
+	return await browser.storage.local.set(serializeLocalStorageItems(items))
 }
 
 const getTabStateKey = (tabId: number): `tabState_${ number }` => `tabState_${ tabId }`

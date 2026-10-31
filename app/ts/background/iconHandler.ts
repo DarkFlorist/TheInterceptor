@@ -4,8 +4,9 @@ import { hasAccess, hasAddressAccess } from './websiteAccessPolicy.js'
 import { getActiveAddress, sendPopupMessageToOpenWindows, setExtensionBadgeBackgroundColor, setExtensionBadgeText, setExtensionIcon, setExtensionTitle } from './backgroundUtils.js'
 import { createScopedKeyedSerialExecutor } from '../utils/semaphore.js'
 import { Future } from '../utils/future.js'
-import type { TabIcon, TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
-import { getSettings, getWebsiteAccess } from './settings.js'
+import type { TabIcon, TabState } from '../types/user-interface-types.js'
+import { getSettingsSnapshot, getWebsiteAccess } from './settings.js'
+import { RPC_CONFIGURATION_UNAVAILABLE_MESSAGE } from '../utils/rpcConfigurationError.js'
 import { getRpcConnectionStatus, getTabState, removeTabState, updateTabState } from './storageVariables.js'
 import { getLastKnownCurrentTabId } from './currentTab.js'
 import { checkAndPrintRuntimeLastError, doesTabExist, getTabIfExists, isMissingBrowserTargetError, silenceChromeUnCaughtPromise } from '../utils/requests.js'
@@ -110,20 +111,22 @@ async function waitForLoadedTab(tabId: number) {
 
 const runTabIconUpdate = createScopedKeyedSerialExecutor<object, number>()
 
-export async function updateExtensionIcon(websiteTabConnections: WebsiteTabConnections, tabId: number, websiteOrigin: string, popupRefreshGeneration: number) {
+export async function updateExtensionIcon(tabId: number, websiteOrigin: string, popupRefreshGeneration: number) {
 	// Keep a tab's stored state and browser action writes ordered, without blocking active settings or other tabs.
 	await runTabIconUpdate(browser, tabId, async () => {
 		if (!(await doesTabExist(tabId))) {
 			await removeTabState(tabId)
 			return
 		}
-		const blockingWebsitePromise = areWeBlocking(websiteTabConnections, tabId, websiteOrigin)
+		const blockingWebsitePromise = areWeBlocking(tabId, websiteOrigin)
 		silenceChromeUnCaughtPromise(blockingWebsitePromise)
 		const addShieldIfNeeded = async (icon: TabIcon): Promise<TabIcon> => await blockingWebsitePromise ? addBlockingShieldToIcon(icon) : icon
 		const setIcon = async (icon: TabIcon, iconReason: string) => setInterceptorIcon(tabId, await addShieldIfNeeded(icon), await blockingWebsitePromise ? `${ iconReason } The Interceptor is blocking external requests made by the website.` : iconReason, popupRefreshGeneration)
 
-		const settings = await getSettings()
-		if (hasAccess(settings.websiteAccess, websiteOrigin) === 'interceptorDisabled') return setIcon(ICON_INTERCEPTOR_DISABLED, `The Interceptor is disabled for ${ websiteOrigin } by user request.`)
+		const { settings, websiteAccess } = await getSettingsSnapshot()
+		if (hasAccess(websiteAccess, websiteOrigin) === 'interceptorDisabled') return setIcon(ICON_INTERCEPTOR_DISABLED, `The Interceptor is disabled for ${ websiteOrigin } by user request.`)
+		// The active address is resolved on the active RPC network's chain, so while that network is unavailable the icon shows the paused state (with the blocking shield when blocking is applied).
+		if (settings === undefined) return setIcon(ICON_NOT_ACTIVE, RPC_CONFIGURATION_UNAVAILABLE_MESSAGE)
 		const activeAddress = await getActiveAddress(settings, tabId)
 		if (activeAddress === undefined) return setIcon(ICON_NOT_ACTIVE, 'No active address selected.')
 		const addressAccess = hasAddressAccess(settings.websiteAccess, websiteOrigin, activeAddress)

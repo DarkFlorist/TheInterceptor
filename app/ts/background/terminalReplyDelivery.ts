@@ -6,7 +6,7 @@ import { Semaphore } from '../utils/semaphore.js'
 import { websiteSocketToString } from './backgroundUtils.js'
 import { replyToInterceptedRequest } from './messageSending.js'
 import { attemptDeliveryAfterManifestV2Reconnect } from './manifestV2Reconnect.js'
-import { appendPendingTerminalReply, getPendingTerminalReplies, removePendingTerminalReply } from './pendingTerminalReplies.js'
+import { appendPendingTerminalReply, getPendingTerminalReplies, queueDeferredSafeProposalTerminalReply, removePendingTerminalReply } from './pendingTerminalReplies.js'
 
 const terminalReplyProductions = new Map<string, Promise<boolean | undefined>>()
 const terminalReplyReservations = new Set<string>()
@@ -34,6 +34,19 @@ export async function queueTerminalReply(message: InterceptedRequestForward) {
 	try {
 		await terminalReplySemaphore.execute(async () => {
 			await appendPendingTerminalReply(message)
+		})
+	} catch (error) {
+		terminalReplyReservations.delete(identifier)
+		throw error
+	}
+}
+
+export async function queueDeferredSafeProposalReply(uniqueRequestIdentifier: InterceptedRequestForward['uniqueRequestIdentifier'], signerReply: string, message: InterceptedRequestForward) {
+	const identifier = getUniqueRequestIdentifierString(uniqueRequestIdentifier)
+	terminalReplyReservations.add(identifier)
+	try {
+		await terminalReplySemaphore.execute(async () => {
+			await queueDeferredSafeProposalTerminalReply(uniqueRequestIdentifier, signerReply, message)
 		})
 	} catch (error) {
 		terminalReplyReservations.delete(identifier)

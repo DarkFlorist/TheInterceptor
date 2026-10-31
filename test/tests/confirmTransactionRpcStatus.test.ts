@@ -46,7 +46,7 @@ function installBrowserMock(sendMessageOverride?: (message: unknown, sentMessage
 							return { method: 'popup_isMainPopupWindowOpen', data: { isOpen: false } }
 						}
 						if (typedMessage.method === 'popup_readyAndListening') {
-							return { method: 'popup_readyAndListening', data: { popupOrTabId: { type: 'popup', id: 1 } } }
+							return { method: 'popup_readyAndListening', ok: true, data: { popupOrTabId: { type: 'popup', id: 1 } } }
 						}
 					}
 					return undefined
@@ -347,6 +347,7 @@ describe('confirm transaction rpc status bootstrap', () => {
 				if (readyCalls === 1) return undefined
 				return serialize(PopupRequestsReplies.popup_readyAndListening, {
 					method: 'popup_readyAndListening',
+					ok: true,
 					data: {
 						popupOrTabId: { type: 'popup', id: 1 },
 						confirmTransactionBootstrap: {
@@ -398,6 +399,7 @@ describe('confirm transaction rpc status bootstrap', () => {
 				await new Promise((resolve) => setTimeout(resolve, 25))
 				return serialize(PopupRequestsReplies.popup_readyAndListening, {
 					method: 'popup_readyAndListening',
+					ok: true,
 					data: {
 						popupOrTabId: { type: 'popup', id: 1 },
 						confirmTransactionBootstrap: {

@@ -86,6 +86,7 @@ async function launchFirefoxScreenshotBrowser(extensionDirectory: string | undef
 			if (pageName === 'confirmTransaction') {
 				await session?.close()
 				session = undefined
+				await staticSession?.close()
 				staticSession = await launchFirefoxSession(staticExtensionDirectory)
 				if (initializationExpression !== undefined) {
 					const bootstrapPage = await staticSession.openExtensionPage('html/popup.html')

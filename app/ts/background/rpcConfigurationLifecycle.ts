@@ -1,0 +1,87 @@
+import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
+import type { RpcConfigurationState } from './rpcConfigurationStorage.js'
+import { getRpcConfigurationState, setRpcConfiguration, setRpcList } from './rpcConfigurationStorage.js'
+import type { RpcEntries, RpcEntry, RpcNetwork } from '../types/rpc.js'
+import { createRpcConfigurationUnavailableError } from '../utils/rpcConfigurationError.js'
+import { resolveRpcServicesTarget } from './rpcConfigurationAvailability.js'
+
+type RpcListTransitionMode = 'edit' | 'restore-defaults'
+
+export type RpcListTransitionResult = {
+	readonly activeRpcNetwork: RpcNetwork
+	readonly rpcConfigurationAvailable: boolean
+	readonly publishRecovery: boolean
+	readonly forceChainChanged: boolean
+}
+
+function selectRestoredActiveNetwork(previousConfiguration: RpcConfigurationState, rpcEntries: readonly RpcEntry[]) {
+	if ('activeRpcNetwork' in previousConfiguration && previousConfiguration.activeRpcNetwork !== undefined) return previousConfiguration.activeRpcNetwork
+	return rpcEntries.find((rpc) => rpc.primary) ?? rpcEntries[0]
+}
+
+// This single RPC-list transition boundary owns persistence and service recovery; callers only validate input and publish its result.
+export async function transitionRpcList(
+	simulationServicesOwner: SimulationServicesOwner,
+	rpcEntries: readonly RpcEntry[],
+	mode: RpcListTransitionMode,
+): Promise<RpcListTransitionResult> {
+	const previousConfiguration = await getRpcConfigurationState()
+	if (mode === 'restore-defaults') {
+		const activeRpcNetwork = selectRestoredActiveNetwork(previousConfiguration, rpcEntries)
+		if (activeRpcNetwork === undefined) throw new Error('Bundled RPC configuration is empty.')
+		if (previousConfiguration.status === 'ready') {
+			await setRpcList(rpcEntries)
+			const shouldRecoverServices = activeRpcNetwork.httpsRpc !== undefined && simulationServicesOwner.getCurrent() === undefined
+			if (shouldRecoverServices) simulationServicesOwner.recover(activeRpcNetwork)
+			return { activeRpcNetwork, rpcConfigurationAvailable: true, publishRecovery: shouldRecoverServices, forceChainChanged: false }
+		}
+		await setRpcConfiguration(rpcEntries, activeRpcNetwork)
+		if (activeRpcNetwork.httpsRpc === undefined) simulationServicesOwner.clear()
+		else simulationServicesOwner.recover(activeRpcNetwork)
+		const previousActiveRpcNetwork = 'activeRpcNetwork' in previousConfiguration ? previousConfiguration.activeRpcNetwork : undefined
+		return {
+			activeRpcNetwork,
+			rpcConfigurationAvailable: true,
+			publishRecovery: previousConfiguration.status === 'unavailable',
+			forceChainChanged: previousActiveRpcNetwork === undefined,
+		}
+	}
+
+	if (previousConfiguration.status === 'unavailable') {
+		simulationServicesOwner.clear()
+		const activeRpcNetwork = rpcEntries.find((rpc) => rpc.primary) ?? rpcEntries[0]
+		if (previousConfiguration.reason !== 'empty' || activeRpcNetwork === undefined) throw createRpcConfigurationUnavailableError()
+		await setRpcConfiguration(rpcEntries, activeRpcNetwork)
+		simulationServicesOwner.recover(activeRpcNetwork)
+		return { activeRpcNetwork, rpcConfigurationAvailable: true, publishRecovery: true, forceChainChanged: false }
+	}
+
+	const activeRpcNetwork = previousConfiguration.activeRpcNetwork
+	if (activeRpcNetwork.httpsRpc === undefined && simulationServicesOwner.getCurrent() === undefined) {
+		await setRpcList(rpcEntries)
+		return { activeRpcNetwork, rpcConfigurationAvailable: true, publishRecovery: false, forceChainChanged: false }
+	}
+	if (simulationServicesOwner.getCurrent() === undefined) throw createRpcConfigurationUnavailableError()
+	await setRpcList(rpcEntries)
+	if (rpcEntries.length === 0) {
+		simulationServicesOwner.clear()
+		return { activeRpcNetwork, rpcConfigurationAvailable: activeRpcNetwork.httpsRpc === undefined, publishRecovery: false, forceChainChanged: false }
+	}
+	if (simulationServicesOwner.getCurrent() === undefined) throw createRpcConfigurationUnavailableError()
+	const primary = rpcEntries.find((rpc) => rpc.chainId === activeRpcNetwork.chainId && rpc.primary)
+	if (primary !== undefined) simulationServicesOwner.reset(primary)
+	return { activeRpcNetwork, rpcConfigurationAvailable: true, publishRecovery: false, forceChainChanged: false }
+}
+
+// Retry re-reads the stored configuration without writing it. Services pause unless it is ready; a ready configuration resumes them only when it has an RPC endpoint to serve.
+export async function retryRpcConfigurationServices(simulationServicesOwner: SimulationServicesOwner): Promise<{ readonly rpcEntries: RpcEntries } | undefined> {
+	const configuration = await getRpcConfigurationState()
+	if (configuration.status !== 'ready') {
+		simulationServicesOwner.clear()
+		return undefined
+	}
+	const rpcNetwork = resolveRpcServicesTarget(configuration)
+	if (rpcNetwork === undefined) simulationServicesOwner.clear()
+	else simulationServicesOwner.recover(rpcNetwork)
+	return { rpcEntries: configuration.rpcEntries }
+}

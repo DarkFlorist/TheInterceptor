@@ -244,6 +244,7 @@ export function InterceptorAccess() {
 			}
 			if (parsed.method === 'popup_requestSettingsReply') {
 				rpcEntries.value = parsed.data.rpcEntries
+				if (parsed.data.activeRpcNetwork === undefined) return false
 				activeRpcChainId.value = parsed.data.activeRpcNetwork.chainId
 				return false
 			}

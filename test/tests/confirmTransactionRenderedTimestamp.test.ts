@@ -32,7 +32,7 @@ function createBrowserMock() {
 					return { method: 'popup_isMainPopupWindowOpen', data: { isOpen: true } }
 				}
 				if (message?.method === 'popup_readyAndListening') {
-					return { method: 'popup_readyAndListening', data: { popupOrTabId: { type: 'popup', id: 1 } } }
+					return { method: 'popup_readyAndListening', ok: true, data: { popupOrTabId: { type: 'popup', id: 1 } } }
 				}
 				return undefined
 			},

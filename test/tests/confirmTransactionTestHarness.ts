@@ -113,6 +113,7 @@ export function createBrowserMock() {
 			async update() { return undefined },
 			async create() { return { id: 99 } },
 			async remove() { return undefined },
+			onRemoved: { addListener: () => undefined, removeListener: () => undefined },
 		},
 		action: {
 			async setIcon() { return undefined },
@@ -125,6 +126,12 @@ export function createBrowserMock() {
 			async setTitle() { return undefined },
 			async setBadgeText() { return undefined },
 			async setBadgeBackgroundColor() { return undefined },
+		},
+		declarativeNetRequest: {
+			async getDynamicRules() { return [] },
+			async getSessionRules() { return [] },
+			async updateDynamicRules() { return undefined },
+			async updateSessionRules() { return undefined },
 		},
 	}
 	Object.defineProperty(globalThis, 'browser', { value: browser, configurable: true, writable: true })
@@ -231,6 +238,7 @@ export async function loadModules() {
 		onCloseWindowOrTab: confirmTransaction.onCloseWindowOrTab,
 		refreshPendingSafeSignerSelectionErrors: confirmTransaction.refreshPendingSafeSignerSelectionErrors,
 		resolvePendingRequestsForMissingConfirmationWindows: confirmTransaction.resolvePendingRequestsForMissingConfirmationWindows,
+		resolveDeferredSafeSignerReplies: confirmTransaction.resolveDeferredSafeSignerReplies,
 		resolveSafeConfirmation: safeConfirmationResolver.resolveSafeConfirmation,
 		createSafeExecutionPreSimulationTransaction: safeSimulation.createSafeExecutionPreSimulationTransaction,
 		createSafeSigningSimulationInput: safeSimulation.createSafeSigningSimulationInput,
@@ -243,6 +251,7 @@ export async function loadModules() {
 		getUserAddressBookEntries: storageVariables.getUserAddressBookEntries,
 		appendPendingTransactionOrMessage: storageVariables.appendPendingTransactionOrMessage,
 		getPendingTerminalReplies: pendingTerminalReplies.getPendingTerminalReplies,
+		queueDeferredSafeProposalTerminalReply: pendingTerminalReplies.queueDeferredSafeProposalTerminalReply,
 		prunePendingTerminalRepliesForMissingTabs: pendingTerminalReplies.prunePendingTerminalRepliesForMissingTabs,
 		updateInterceptorTransactionStack: storageVariables.updateInterceptorTransactionStack,
 		updatePendingTransactionOrMessage: storageVariables.updatePendingTransactionOrMessage,
@@ -258,6 +267,7 @@ export async function loadModules() {
 		flushPendingTerminalRepliesForSocket,
 		flushPendingTerminalRepliesForConnectedPortWithRetry: terminalReplyDelivery.flushPendingTerminalRepliesForConnectedPortWithRetry,
 		queueTerminalReply: terminalReplyDelivery.queueTerminalReply,
+		queueDeferredSafeProposalReply: terminalReplyDelivery.queueDeferredSafeProposalReply,
 		attemptQueuedTerminalReplyDelivery: terminalReplyDelivery.attemptQueuedTerminalReplyDelivery,
 		queueTerminalReplyAndAttemptDelivery: terminalReplyDelivery.queueTerminalReplyAndAttemptDelivery,
 		signerReply: providerMessageHandlers.signerReply,

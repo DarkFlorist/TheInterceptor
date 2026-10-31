@@ -1,8 +1,433 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { getWalletSwitchRequestId, confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
+import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
+import { ICON_NOT_ACTIVE, ICON_NOT_ACTIVE_WITH_SHIELD } from '../../app/ts/utils/constants.js'
+import { getWalletSwitchRequestId, confirmedSignerOwnership, createDeferredValue, createEthereumWithGetBlockCounter, createPort, createTestSimulationServicesOwner, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
 
 describe('background eth_accounts', () => {
+	const setUpAddressLevelBlockAllWithUnreadableActiveRpcNetwork = async (consentedWebsiteOrigin: string) => {
+		const { changeSimulationMode, updateUserAddressBookEntries, updateWebsiteAccess } = await loadModules()
+		const activeAddress = 0x1010101010101010101010101010101010101010n
+		await updateUserAddressBookEntries(() => [{
+			type: 'contact',
+			name: 'Blocked active address',
+			address: activeAddress,
+			chainId: 'AllChains',
+			entrySource: 'User',
+			useAsActiveAddress: true,
+			askForAddressAccess: false,
+			declarativeNetRequestBlockMode: 'block-all',
+		}])
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: activeAddress })
+		// Persisted consent only; the website itself has no site-level block rule.
+		await updateWebsiteAccess(() => [{ website: { websiteOrigin: consentedWebsiteOrigin, icon: undefined, title: undefined }, access: true }])
+		await browser.storage.local.set({ activeRpcNetwork: 'corrupt' })
+	}
+
+	const withSilencedWarnings = async <T>(operation: () => Promise<T>) => {
+		const originalWarn = console.warn
+		console.warn = () => undefined
+		try {
+			return await operation()
+		} finally {
+			console.warn = originalWarn
+		}
+	}
+
+	test('blocks newly registered tabs with persisted consent while the active RPC network is unreadable', async () => {
+		const browserMock = installBrowserMock({ manifestVersion: 3 })
+		const { registerWebsiteConnectionAndReconcileRequestBlocks, areWeBlocking, updateDeclarativeNetRequestBlocks } = await loadModules()
+		const consentedWebsiteOrigin = 'consented-startup.example'
+		await setUpAddressLevelBlockAllWithUnreadableActiveRpcNetwork(consentedWebsiteOrigin)
+		const consentedSocket = { tabId: 9876, connectionName: 0n }
+		const unconsentedSocket = { tabId: 9877, connectionName: 0n }
+		const websiteTabConnections: WebsiteTabConnections = new Map()
+		// Background startup reconciles before any content script connects.
+		await withSilencedWarnings(async () => await updateDeclarativeNetRequestBlocks(websiteTabConnections))
+		// Connections register unapproved through the same call content-script connection uses; runtime approval is never restored while settings are unavailable.
+		await withSilencedWarnings(async () => await (await registerWebsiteConnectionAndReconcileRequestBlocks(websiteTabConnections, consentedSocket, { port: createPort(consentedSocket.tabId).port, socket: consentedSocket, websiteOrigin: consentedWebsiteOrigin, approved: false, wantsToConnect: false }, true)).requestBlocksReconciliation)
+		await withSilencedWarnings(async () => await (await registerWebsiteConnectionAndReconcileRequestBlocks(websiteTabConnections, unconsentedSocket, { port: createPort(unconsentedSocket.tabId).port, socket: unconsentedSocket, websiteOrigin: 'unconsented.example', approved: false, wantsToConnect: false }, true)).requestBlocksReconciliation)
+
+		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [consentedSocket.tabId])
+		assert.equal(await withSilencedWarnings(async () => await areWeBlocking(consentedSocket.tabId, consentedWebsiteOrigin)), true)
+		assert.equal(await withSilencedWarnings(async () => await areWeBlocking(unconsentedSocket.tabId, 'unconsented.example')), false)
+	})
+
+	test('blocks a consented tab registered after the active RPC network becomes unreadable at runtime', async () => {
+		const browserMock = installBrowserMock({ manifestVersion: 3 })
+		const { registerWebsiteConnectionAndReconcileRequestBlocks, areWeBlocking, changeSimulationMode, updateDeclarativeNetRequestBlocks, updateUserAddressBookEntries, updateWebsiteAccess } = await loadModules()
+		const consentedWebsiteOrigin = 'consented-runtime.example'
+		const activeAddress = 0x1010101010101010101010101010101010101010n
+		await updateUserAddressBookEntries(() => [{ type: 'contact', name: 'Blocked active address', address: activeAddress, chainId: 'AllChains', entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: false, declarativeNetRequestBlockMode: 'block-all' }])
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: activeAddress })
+		await updateWebsiteAccess(() => [{ website: { websiteOrigin: consentedWebsiteOrigin, icon: undefined, title: undefined }, access: true }])
+		const websiteTabConnections: WebsiteTabConnections = new Map()
+		// A healthy reconciliation runs first, so no earlier fail-closed state is carried into the registration below.
+		await updateDeclarativeNetRequestBlocks(websiteTabConnections)
+		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [])
+		await browser.storage.local.set({ activeRpcNetwork: 'corrupt' })
+		const socket = { tabId: 9879, connectionName: 0n }
+
+		await withSilencedWarnings(async () => await (await registerWebsiteConnectionAndReconcileRequestBlocks(websiteTabConnections, socket, { port: createPort(socket.tabId).port, socket, websiteOrigin: consentedWebsiteOrigin, approved: false, wantsToConnect: false }, true)).requestBlocksReconciliation)
+
+		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [socket.tabId])
+		assert.equal(await withSilencedWarnings(async () => await areWeBlocking(socket.tabId, consentedWebsiteOrigin)), true)
+	})
+
+	test('blocks a tab when a consented child frame registers after an unconsented top frame while the active RPC network is unreadable', async () => {
+		const browserMock = installBrowserMock({ manifestVersion: 3 })
+		const { registerWebsiteConnectionAndReconcileRequestBlocks } = await loadModules()
+		const consentedFrameOrigin = 'consented-frame.example'
+		await setUpAddressLevelBlockAllWithUnreadableActiveRpcNetwork(consentedFrameOrigin)
+		const tabId = 9881
+		const topFrameSocket = { tabId, connectionName: 0n }
+		const childFrameSocket = { tabId, connectionName: 1n }
+		const websiteTabConnections: WebsiteTabConnections = new Map()
+		await withSilencedWarnings(async () => await (await registerWebsiteConnectionAndReconcileRequestBlocks(websiteTabConnections, topFrameSocket, { port: createPort(tabId).port, socket: topFrameSocket, websiteOrigin: 'unconsented-top.example', approved: false, wantsToConnect: false }, true)).requestBlocksReconciliation)
+		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [])
+
+		await withSilencedWarnings(async () => await (await registerWebsiteConnectionAndReconcileRequestBlocks(websiteTabConnections, childFrameSocket, { port: createPort(tabId, undefined, 1, childFrameSocket.connectionName).port, socket: childFrameSocket, websiteOrigin: consentedFrameOrigin, approved: false, wantsToConnect: false }, false)).requestBlocksReconciliation)
+
+		// Checked straight after registration, before areWeBlocking or any navigation-completion update could reconcile.
+		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [tabId])
+	})
+
+	test('shows the blocking shield only after persisted-consent tab blocking is applied while the active RPC network is unreadable', async () => {
+		const browserMock = installBrowserMock({ manifestVersion: 3 })
+		const { areWeBlocking, getTabState, registerWebsiteConnectionAndProvisionallyClaimSignerState, updateDeclarativeNetRequestBlocks } = await loadModules()
+		const { updateExtensionIcon } = await import('../../app/ts/background/iconHandler.js')
+		const consentedWebsiteOrigin = 'consented-icon.example'
+		await setUpAddressLevelBlockAllWithUnreadableActiveRpcNetwork(consentedWebsiteOrigin)
+		const websiteTabConnections: WebsiteTabConnections = new Map()
+		const socket = { tabId: 9882, connectionName: 0n }
+		// Registered without its request-block reconciliation, so blocking is not applied yet.
+		await registerWebsiteConnectionAndProvisionallyClaimSignerState(websiteTabConnections, socket, { port: createPort(socket.tabId).port, socket, websiteOrigin: consentedWebsiteOrigin, approved: false, wantsToConnect: false }, true)
+
+		await withSilencedWarnings(async () => await updateExtensionIcon(socket.tabId, consentedWebsiteOrigin, 1))
+
+		// The icon path only reads blocking state, and nothing is applied before reconciliation.
+		assert.equal(browserMock.requestBlockingCalls.declarativeNetRequestUpdates, 0)
+		assert.equal(await areWeBlocking(socket.tabId, consentedWebsiteOrigin), false)
+		assert.equal((await getTabState(socket.tabId)).tabIconDetails.icon, ICON_NOT_ACTIVE)
+
+		await withSilencedWarnings(async () => await updateDeclarativeNetRequestBlocks(websiteTabConnections))
+		await withSilencedWarnings(async () => await updateExtensionIcon(socket.tabId, consentedWebsiteOrigin, 2))
+
+		assert.equal(await areWeBlocking(socket.tabId, consentedWebsiteOrigin), true)
+		const { tabIconDetails } = await getTabState(socket.tabId)
+		assert.equal(tabIconDetails.icon, ICON_NOT_ACTIVE_WITH_SHIELD)
+		assert.match(tabIconDetails.iconReason, /RPC configuration is unavailable/)
+		assert.match(tabIconDetails.iconReason, /blocking external requests/)
+	})
+
+	test('does not show the blocking shield when applying persisted-consent tab blocking fails', async () => {
+		installBrowserMock({ manifestVersion: 3 })
+		const { areWeBlocking, getTabState, registerWebsiteConnectionAndProvisionallyClaimSignerState, updateDeclarativeNetRequestBlocks } = await loadModules()
+		const { updateExtensionIcon } = await import('../../app/ts/background/iconHandler.js')
+		const consentedWebsiteOrigin = 'consented-rejected.example'
+		await setUpAddressLevelBlockAllWithUnreadableActiveRpcNetwork(consentedWebsiteOrigin)
+		const websiteTabConnections: WebsiteTabConnections = new Map()
+		const socket = { tabId: 9883, connectionName: 0n }
+		await registerWebsiteConnectionAndProvisionallyClaimSignerState(websiteTabConnections, socket, { port: createPort(socket.tabId).port, socket, websiteOrigin: consentedWebsiteOrigin, approved: false, wantsToConnect: false }, true)
+		Object.defineProperty(browser.declarativeNetRequest, 'updateSessionRules', { configurable: true, value: async () => { throw new Error('Session rules unavailable') } })
+
+		await assert.rejects(withSilencedWarnings(async () => await updateDeclarativeNetRequestBlocks(websiteTabConnections)), /Session rules unavailable/)
+		await withSilencedWarnings(async () => await updateExtensionIcon(socket.tabId, consentedWebsiteOrigin, 1))
+
+		assert.equal(await areWeBlocking(socket.tabId, consentedWebsiteOrigin), false)
+		const { tabIconDetails } = await getTabState(socket.tabId)
+		assert.equal(tabIconDetails.icon, ICON_NOT_ACTIVE)
+		assert.doesNotMatch(tabIconDetails.iconReason, /blocking external requests/)
+	})
+
+	test('reports MV2 site blocking only after its request listener is installed and retries a failed installation', async () => {
+		const browserMock = installBrowserMock({ manifestVersion: 2 })
+		const { areWeBlocking, updateDeclarativeNetRequestBlocks, updateWebsiteAccess } = await loadModules()
+		const blockedWebsiteOrigin = 'mv2-blocked.example'
+		await updateWebsiteAccess(() => [{ website: { websiteOrigin: blockedWebsiteOrigin, icon: undefined, title: undefined }, access: true, declarativeNetRequestBlockMode: 'block-all' }])
+		const onBeforeRequest = browser.webRequest.onBeforeRequest
+		const installListener = onBeforeRequest.addListener
+		Object.defineProperty(onBeforeRequest, 'addListener', { configurable: true, value: () => { throw new Error('Listener installation failed') } })
+
+		await assert.rejects(updateDeclarativeNetRequestBlocks(new Map()), /Listener installation failed/)
+		assert.equal(await areWeBlocking(1, blockedWebsiteOrigin), false)
+
+		Object.defineProperty(onBeforeRequest, 'addListener', { configurable: true, value: installListener })
+		await updateDeclarativeNetRequestBlocks(new Map())
+
+		assert.equal(browserMock.requestBlockingCalls.webRequestListenerAdds, 1)
+		assert.equal(await areWeBlocking(1, blockedWebsiteOrigin), true)
+	})
+
+	test('keeps tab blocking rules applied before a service-worker restart while the active RPC network is unreadable', async () => {
+		const blockedBeforeRestartTabId = 9878
+		const browserMock = installBrowserMock({ manifestVersion: 3, initialSessionRules: [{ id: 1, condition: { tabIds: [blockedBeforeRestartTabId] } }] })
+		const { areWeBlocking, updateDeclarativeNetRequestBlocks } = await loadModules()
+		await setUpAddressLevelBlockAllWithUnreadableActiveRpcNetwork('consented-restart.example')
+		// Startup reconciles before any content script reconnects.
+		const emptyConnections: WebsiteTabConnections = new Map()
+
+		await withSilencedWarnings(async () => await updateDeclarativeNetRequestBlocks(emptyConnections))
+
+		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [blockedBeforeRestartTabId])
+		assert.equal(await withSilencedWarnings(async () => await areWeBlocking(blockedBeforeRestartTabId, 'consented-restart.example')), true)
+	})
+
+	test('completes signer callbacks but rejects RPC requests while configuration and services are unavailable', async () => {
+		const { readStoredValue } = installBrowserMock()
+		const {
+			changeSimulationMode,
+			getTabState,
+			getPendingWatchAssetRequests,
+			handleInterceptedRequest,
+			updateTabState,
+			updatePendingWatchAssetRequests,
+			websiteSocketToString,
+		} = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const previousAccount = 0x1010101010101010101010101010101010101010n
+		const nextAccount = 0x2020202020202020202020202020202020202020n
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		let signerAccountsChangedCalls = 0
+		const websiteTabConnections = Object.assign(new Map([[socket.tabId, {
+			...confirmedSignerOwnership(socket),
+			connections: {
+				[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+			},
+		}]]), { lifecycle: { signerAccountsChanged: () => { signerAccountsChangedCalls += 1 } } })
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: previousAccount })
+		await updateTabState(socket.tabId, (previousState) => ({
+			...previousState,
+			signerAccounts: [previousAccount],
+			activeSigningAddress: previousAccount,
+		}))
+		const storedActiveRpcNetwork = readStoredValue('activeRpcNetwork')
+		const storedActiveSigningAddress = readStoredValue('activeSigningAddress')
+		await browser.storage.local.set({ rpcEntries: 'corrupt' })
+		simulationServicesOwner.clear()
+
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
+			interceptorRequest: true,
+			interceptorInternalRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 1, requestSocket: socket },
+			method: 'eth_accounts_reply',
+			params: [{
+				signerProviderGeneration: 1,
+				type: 'success',
+				accounts: ['0x2020202020202020202020202020202020202020'],
+				requestAccounts: false,
+			}],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+
+		assert.deepEqual((await getTabState(socket.tabId)).signerAccounts, [nextAccount])
+		assert.equal((await getTabState(socket.tabId)).activeSigningAddress, nextAccount)
+		assert.deepEqual(readStoredValue('activeRpcNetwork'), storedActiveRpcNetwork)
+		assert.deepEqual(readStoredValue('activeSigningAddress'), storedActiveSigningAddress)
+		assert.equal(signerAccountsChangedCalls, 1)
+
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
+			interceptorRequest: true,
+			interceptorInternalRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 2, requestSocket: socket },
+			method: 'signer_chainChanged',
+			params: ['0x2', 1],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		assert.equal((await getTabState(socket.tabId)).signerChain, 2n)
+		assert.deepEqual(readStoredValue('activeRpcNetwork'), storedActiveRpcNetwork)
+
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 3, requestSocket: socket },
+			method: 'eth_chainId',
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		const rpcReply = messages.find((message) => message.method === 'eth_chainId' && message.requestId === 3)
+		assert.equal(rpcReply?.error?.code, 4900)
+
+		const watchAssetIdentifier = { requestId: 4, requestSocket: socket }
+		const signerIdentity = { tabId: socket.tabId, connectionName: socket.connectionName, ownerGeneration: 1, signerProviderGeneration: 1 }
+		const requestedAsset = { type: 'ERC20' as const, options: { address: 0x3030303030303030303030303030303030303030n, chainId: 1 } }
+		const token = {
+			type: 'ERC20' as const,
+			name: 'Test Token',
+			symbol: 'TEST',
+			decimals: 18n,
+			address: requestedAsset.options.address,
+			chainId: 1n,
+			entrySource: 'User' as const,
+		}
+		await updatePendingWatchAssetRequests(() => [{
+			website,
+			popupOrTabId: { type: 'popup', id: 12 },
+			request: {
+				interceptorRequest: true,
+				usingInterceptorWithoutSigner: false,
+				uniqueRequestIdentifier: watchAssetIdentifier,
+				method: 'wallet_watchAsset',
+				params: [{ type: 'ERC20', options: { address: '0x3030303030303030303030303030303030303030', chainId: 1 } }],
+			},
+			requestedAsset,
+			currentToken: token,
+			token,
+			proposedImageUrl: undefined,
+			selectedImageUri: undefined,
+			imageDownloadError: undefined,
+			forwardToSigner: { signerName: 'MetaMask', connectionName: socket.connectionName, ownerGeneration: 1, signerProviderGeneration: 1 },
+			forwardingStatus: { status: 'pending' },
+		}])
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
+			interceptorRequest: true,
+			interceptorInternalRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 5, requestSocket: socket },
+			method: 'signer_reply',
+			params: [{
+				success: true,
+				signerProviderGeneration: 1,
+				forwardRequest: {
+					type: 'forwardToSigner',
+					replyWithSignersReply: true,
+					method: 'wallet_watchAsset',
+					params: {
+						parameters: requestedAsset,
+						uniqueRequestIdentifier: { requestId: watchAssetIdentifier.requestId, requestSocket: { tabId: socket.tabId, connectionName: '0x0' } },
+						signerIdentity: { ...signerIdentity, connectionName: '0x0' },
+					},
+					requestId: watchAssetIdentifier.requestId,
+				},
+				reply: true,
+			}],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		assert.deepEqual((await getPendingWatchAssetRequests())[0]?.forwardingStatus, { status: 'completed', accepted: true })
+	})
+
+	test.each([
+		{ websiteAccess: 'unapproved', expectedSignerChain: 1n },
+		{ websiteAccess: 'denied', expectedSignerChain: 1n },
+		{ websiteAccess: 'approved', expectedSignerChain: 5n },
+	] as const)('uses the stored $websiteAccess website approval for signer callbacks while the active RPC network is unreadable', async ({ websiteAccess, expectedSignerChain }) => {
+		installBrowserMock()
+		const { getTabState, handleInterceptedRequest, updateTabState, updateWebsiteAccess, websiteSocketToString } = await loadModules()
+		const websiteOrigin = `https://${ websiteAccess }-signer-callback.example`
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const socket = { tabId: 4321, connectionName: 0n }
+		const { port } = createPort(socket.tabId)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: false, wantsToConnect: true },
+		} }]])
+		if (websiteAccess !== 'unapproved') await updateWebsiteAccess(() => [{ website, access: websiteAccess === 'approved' }])
+		await updateTabState(socket.tabId, (previousState) => ({ ...previousState, signerChain: 1n }))
+		await browser.storage.local.set({ activeRpcNetwork: 'corrupt' })
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+
+		const originalWarn = console.warn
+		console.warn = () => undefined
+		try {
+			await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
+				interceptorRequest: true,
+				interceptorInternalRequest: true,
+				usingInterceptorWithoutSigner: false,
+				uniqueRequestIdentifier: { requestId: 1, requestSocket: socket },
+				method: 'signer_chainChanged',
+				params: ['0x5', 1],
+			}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		} finally {
+			console.warn = originalWarn
+		}
+
+		assert.equal((await getTabState(socket.tabId)).signerChain, expectedSignerChain)
+	})
+
+	test.each(['reset', 'clear'])('decides a parked chain switch from the live owner when the owner is %s before execution', async (lifecycleChange) => {
+		installBrowserMock()
+		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, getChainChangeConfirmationPromise, resolveChainChange } = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const account = 0x1111111111111111111111111111111111111111n
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: account, activeSigningAddress: undefined })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
+
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const initialServices = createEthereumWithGetBlockCounter({ count: 0 })
+		const replacementServiceState = createEthereumWithGetBlockCounter({ count: 0 }, { initialBlockPolling: false })
+		const replacementNetwork = { ...initialServices.ethereum.getRpcEntry(), name: 'Replacement', chainId: 10n, httpsRpc: 'https://replacement.invalid' }
+		const replacementEthereum = new Proxy(replacementServiceState.ethereum, {
+			get(target, property, receiver) {
+				if (property === 'getRpcEntry') return () => replacementNetwork
+				if (property === 'getChainId') return () => replacementNetwork.chainId
+				return Reflect.get(target, property, receiver)
+			},
+		})
+		const replacementServices = { ethereum: replacementEthereum, tokenPriceService: replacementServiceState.tokenPriceService }
+		const simulationServicesOwner = createTestSimulationServicesOwner(
+			{ ethereum: initialServices.ethereum, tokenPriceService: initialServices.tokenPriceService },
+			() => replacementServices,
+		)
+		const settingsReadStarted = createDeferredValue<void>()
+		const releaseSettingsRead = createDeferredValue<void>()
+		const originalGet = browser.storage.local.get.bind(browser.storage.local)
+		let paused = false
+		let settingsSnapshotReads = 0
+		Object.defineProperty(browser.storage.local, 'get', {
+			configurable: true,
+			value: async (keys: string | readonly string[]) => {
+				const requestedKeys = Array.isArray(keys) ? keys : [keys]
+				if (requestedKeys.includes('simulationMode') && requestedKeys.includes('rpcEntries')) settingsSnapshotReads += 1
+				if (!paused && settingsSnapshotReads === 2) {
+					paused = true
+					settingsReadStarted.resolve(undefined)
+					await releaseSettingsRead.promise
+				}
+				return await originalGet(keys)
+			},
+		})
+		const request = {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 1, requestSocket: socket },
+			method: 'wallet_switchEthereumChain',
+			params: [{ chainId: '0x1' }],
+		}
+
+		const requestPromise = handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
+		await settingsReadStarted.promise
+		initialServices.ethereum.setBlockPolling(false)
+		if (lifecycleChange === 'reset') simulationServicesOwner.reset(replacementNetwork)
+		else simulationServicesOwner.clear()
+		releaseSettingsRead.resolve(undefined)
+		if (lifecycleChange === 'reset') {
+			// The request was admitted on chain 1, but the live owner moved to chain 10 while it was parked, so the switch back to chain 1 must ask the user instead of reporting success.
+			const deadline = Date.now() + 1000
+			let pendingChainChange = await getChainChangeConfirmationPromise()
+			while (pendingChainChange === undefined) {
+				if (Date.now() >= deadline) throw new Error('Expected the chain change dialog to open for the live chain')
+				await new Promise((resolve) => setTimeout(resolve, 0))
+				pendingChainChange = await getChainChangeConfirmationPromise()
+			}
+			await resolveChainChange(simulationServicesOwner, websiteTabConnections, {
+				method: 'popup_changeChainDialog',
+				data: { rpcNetwork: pendingChainChange.rpcNetwork, uniqueRequestIdentifier: request.uniqueRequestIdentifier, accept: false },
+			})
+		}
+		await requestPromise
+
+		const reply = messages.find((message) => message.method === request.method && message.requestId === request.uniqueRequestIdentifier.requestId)
+		assert.equal(reply?.result, undefined)
+		assert.equal(reply?.error?.code, lifecycleChange === 'reset' ? 4001 : 4900)
+		assert.equal(initialServices.ethereum.isBlockPolling(), false)
+		assert.equal(replacementEthereum.isBlockPolling(), lifecycleChange === 'reset')
+	})
+
 	test('awaits retry-state publishing before replying to a waking RPC request', async () => {
 		installBrowserMock()
 		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, setRpcConnectionStatus, getRpcConnectionStatus } = await loadModules()
@@ -499,7 +924,7 @@ describe('background eth_accounts', () => {
 		installBrowserMock()
 		const {
 			changeSimulationMode,
-			getSettings,
+			getRequiredSettings,
 			handleInterceptedRequest,
 			popupChangeActiveRpc,
 			resolveChainChange,

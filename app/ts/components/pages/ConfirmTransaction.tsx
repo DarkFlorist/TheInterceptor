@@ -73,7 +73,7 @@ async function bootstrapConfirmTransactionDialog(
 	for (let attempt = 0; attempt < CONFIRM_TRANSACTION_BOOTSTRAP_MAX_ATTEMPTS; attempt++) {
 		if (hasLoadedPendingTransaction()) return
 		const reply = await sendPopupMessageWithReply({ method: 'popup_readyAndListening', data: { page: 'confirmTransaction' } })
-		if (reply?.method === 'popup_readyAndListening' && reply.data.confirmTransactionBootstrap !== undefined) {
+		if (reply?.method === 'popup_readyAndListening' && reply.ok && reply.data.confirmTransactionBootstrap !== undefined) {
 			applyBootstrapData(reply.data.confirmTransactionBootstrap)
 		}
 		if (hasLoadedPendingTransaction()) return
@@ -909,7 +909,7 @@ export function ConfirmTransaction() {
 			applyPendingTransactions(pendingTransactions, CONFIRM_TRANSACTION_DATA_PRIORITY.storage)
 		})
 		void sendPopupMessageWithReply({ method: 'popup_readyAndListening', data: { page: 'confirmTransaction' } }).then((reply) => {
-			if (cancelled || reply?.method !== 'popup_readyAndListening') return
+			if (cancelled || reply?.method !== 'popup_readyAndListening' || !reply.ok) return
 			const bootstrapData = reply.data.confirmTransactionBootstrap
 			if (bootstrapData === undefined) return
 			applyBootstrapData(bootstrapData)

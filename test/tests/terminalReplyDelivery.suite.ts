@@ -2,6 +2,28 @@ import * as assert from 'assert'
 import { test } from 'bun:test'
 import { browserMock, createDisconnectedPort, createRecordingPort, isRecord, modules, pendingTransaction, signedTransaction, simulator, uniqueRequestIdentifier, waitForPendingTransactionsToClear, withSilencedConsole } from './confirmTransactionTestHarness.js'
 
+test('popup close rejects and removes pending confirmations while RPC services are unavailable', async () => {
+	const postedMessages: unknown[] = []
+	const socketKey = modules.websiteSocketToString(uniqueRequestIdentifier.requestSocket)
+	const websiteTabConnections = new Map([[uniqueRequestIdentifier.requestSocket.tabId, { connections: {
+		[socketKey]: {
+			port: createRecordingPort(postedMessages),
+			socket: uniqueRequestIdentifier.requestSocket,
+			websiteOrigin: 'https://example.com',
+			approved: true,
+			wantsToConnect: true,
+		},
+	} }]])
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [pendingTransaction] })
+
+	await modules.onCloseWindowOrTab(pendingTransaction.popupOrTabId, undefined, undefined, websiteTabConnections)
+
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	assert.equal(postedMessages.length, 1)
+	const reply = postedMessages[0]
+	assert.equal(isRecord(reply) && isRecord(reply.error) ? reply.error.code : undefined, 4001)
+})
+
 test('failed signer delivery keeps the request and replaces the waiting spinner with a wallet-neutral error', async () => {
 	await browser.storage.local.set({ simulationMode: false })
 	const disconnectedPort = createDisconnectedPort()
@@ -294,6 +316,48 @@ test('popup close retries outbox cleanup without reposting after direct delivery
 	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
 	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
 	browserMock.setStorageGetHandler(undefined)
+})
+
+test('popup close retry stops after the request was removed even when follow-up view work failed', async () => {
+	delete browserMock.storageState.pendingTerminalReplies
+	const postedMessages: unknown[] = []
+	const socket = uniqueRequestIdentifier.requestSocket
+	const socketKey = modules.websiteSocketToString(socket)
+	const websiteTabConnections = new Map([[socket.tabId, { connections: {
+		[socketKey]: {
+			port: createRecordingPort(postedMessages),
+			socket,
+			websiteOrigin: 'https://example.com',
+			approved: true,
+			wantsToConnect: true,
+		},
+	} }]])
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [{
+		...pendingTransaction,
+		simulationMode: false,
+		approvalStatus: { status: 'WaitingForUser' },
+	}] })
+	let emptyPendingReads = 0
+	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+		if (Array.isArray(keys) && keys.includes('pendingTransactionsAndMessages') && Array.isArray(browserMock.storageState.pendingTransactionsAndMessages) && browserMock.storageState.pendingTransactionsAndMessages.length === 0) {
+			emptyPendingReads += 1
+			if (emptyPendingReads === 1) throw new Error('follow-up view storage unavailable')
+		}
+		return readStoredItems()
+	})
+
+	await withSilencedConsole(async () => await modules.onCloseWindowOrTab({ type: 'popup', id: 1 }, simulator.ethereum, simulator.tokenPriceService, websiteTabConnections))
+	const retryDeadline = Date.now() + 2_000
+	while (emptyPendingReads < 2) {
+		if (Date.now() > retryDeadline) throw new Error('Timed out waiting for the popup-close retry existence check')
+		await new Promise((resolve) => setTimeout(resolve, 10))
+	}
+
+	assert.equal(postedMessages.length, 1)
+	await new Promise((resolve) => setTimeout(resolve, 100))
+	assert.equal(emptyPendingReads, 2)
+	browserMock.setStorageGetHandler(undefined)
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
 })
 
 test('MV2 reconnect cleanup failure retries without reposting the rejection', async () => {

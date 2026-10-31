@@ -1,12 +1,12 @@
 import { createSafeAppsCompatibilityFeature, initializeSafeAppsCompatibility } from './safeAppsCompatibilityCoordinator.js'
 import 'webextension-polyfill'
-import { getSettings, updateKnownWebsiteMetadata } from './settings.js'
-import { DEFAULT_RPCS } from '../config/defaults.js'
+import { getSettingsSnapshot, requireSettings, updateKnownWebsiteMetadata } from './settings.js'
 import { handleInterceptedRequest } from './background.js'
 import { captureSimulationSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
 import { popupMessageHandler } from './popupMessageRouting.js'
 import { retrieveWebsiteDetails, updateExtensionBadge, updateExtensionIcon } from './iconHandler.js'
-import { getPrimaryRpcForChain, getRpcConnectionStatus, removeTabState, setRpcConnectionStatus, updateTabState } from './storageVariables.js'
+import { getRpcConnectionStatus, removeTabState, setRpcConnectionStatus, updateTabState } from './storageVariables.js'
+import { getRpcConfigurationState } from './rpcConfigurationStorage.js'
 import type { TabConnection, TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { EthereumBlockHeader } from '../types/wire-types.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
@@ -20,13 +20,13 @@ import { DEFAULT_TAB_CONNECTION, ICON_NOT_ACTIVE } from '../utils/constants.js'
 import { reportUnexpectedError, isExpectedInfrastructureError, printError, reportLocalRecoveryBestEffort } from '../utils/errors.js'
 import { updateContentScriptInjectionStrategyManifestV2 } from '../utils/contentScriptsUpdating.js'
 import { checkIfInterceptorShouldSleep } from './sleeping.js'
-import { onCloseWindowOrTab, resolvePendingRequestsForMissingConfirmationWindows } from './windows/confirmTransaction.js'
+import { onCloseWindowOrTab, resolveDeferredSafeSignerReplies, resolvePendingRequestsForMissingConfirmationWindows } from './windows/confirmTransaction.js'
 import { modifyObject } from '../utils/typescript.js'
-import { updateDeclarativeNetRequestBlocks } from './accessManagement.js'
+import { registerWebsiteConnectionAndReconcileRequestBlocks, updateDeclarativeNetRequestBlocks } from './accessManagement.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerformance.js'
 import { removeWebsiteTabConnection } from './websiteTabConnections.js'
-import { createSimulationServicesOwner, type SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
+import { createSimulationServicesOwner, isCurrentSimulationService, type SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { addWindowTabListeners } from '../utils/popupOrTab.js'
 import { migrateAddressBook } from './addressBookMigration.js'
 import { migrateWebsiteAccess } from './websiteAccessMigration.js'
@@ -36,9 +36,9 @@ import { flushPendingTerminalRepliesForConnectedPortWithRetry } from './terminal
 import { prunePendingTerminalRepliesForMissingTabs, removePendingTerminalRepliesForTab } from './pendingTerminalReplies.js'
 import { createRetriableTerminalStateRecovery } from './terminalStateRecovery.js'
 import { acknowledgeAndTrackBridgeRequest, INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE } from './bridgeRequestDelivery.js'
-import { registerWebsiteConnectionAndProvisionallyClaimSignerState } from './signerStateOwnership.js'
 import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
 import { initializeTabStateStorage } from './tabStateLifecycle.js'
+import { resolveRpcServicesTarget, rpcConfigurationIsReady } from './rpcConfigurationAvailability.js'
 
 const connections = new Map<number, TabConnection>()
 const safeAppsCompatibility = createSafeAppsCompatibilityFeature(connections)
@@ -50,7 +50,7 @@ const latestReceivedBridgeRequestIds = new Map<string, number>()
 
 function getSimulationServices() {
 	if (simulationServicesOwner === undefined) throw new Error('Simulation services are not initialized')
-	return simulationServicesOwner.getCurrent()
+	return simulationServicesOwner.requireCurrent()
 }
 
 async function publishRpcConnectionStatus(method: RpcConnectionStatusChangeMethod, rpcConnectionStatus: DefinedRpcConnectionStatus) {
@@ -200,7 +200,7 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ simulati
 	if (!listenersRegistered) return
 
 	connectionInitializationPromise = initializeContentScriptConnectionAfterBackgroundStartup(waitForStartup, async () => {
-		const registration = await registerWebsiteConnectionAndProvisionallyClaimSignerState(websiteTabConnections, socket, newConnection, isTopFrame)
+		const registration = await registerWebsiteConnectionAndReconcileRequestBlocks(websiteTabConnections, socket, newConnection, isTopFrame)
 		if (registration.createdTabConnection) {
 			await updateTabState(socket.tabId, (previousState: TabState) => {
 				return modifyObject(previousState, {
@@ -208,8 +208,15 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ simulati
 					tabIconDetails: { icon: ICON_NOT_ACTIVE, iconReason: 'No active address selected.' },
 				})
 			})
-			void catchAllErrorsAndCall(async () => updateExtensionIcon(websiteTabConnections, socket.tabId, websiteOrigin, bumpPopupRefreshGeneration()))
 		}
+		// A new tab's icon reports the applied request blocking, so it is updated after this registration's request-block reconciliation, whether or not that succeeds.
+		void catchAllErrorsAndCall(async () => {
+			try {
+				await registration.requestBlocksReconciliation
+			} finally {
+				if (registration.createdTabConnection) await updateExtensionIcon(socket.tabId, websiteOrigin, bumpPopupRefreshGeneration())
+			}
+		})
 		if (registration.provisionallyClaimedSignerState) {
 			sendSubscriptionReplyOrCallBackToPort(port, { type: 'result', method: 'request_signer_connection_status', result: [] })
 		}
@@ -227,7 +234,7 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ simulati
 }
 
 async function newBlockAttemptCallback(blockheader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) {
-	if (ethereumClientService !== getSimulationServices().ethereum) return
+	if (!isCurrentSimulationService(simulationServicesOwner, ethereumClientService)) return
 	if (blockheader === null) throw new Error('The latest block is null')
 	try {
 		const rpcConnectionStatus = {
@@ -240,7 +247,12 @@ async function newBlockAttemptCallback(blockheader: EthereumBlockHeader, ethereu
 		await rpcConnectionStatusPublisher.publishRpcConnectionStatus('popup_new_block_arrived', rpcConnectionStatus)
 		if (isNewBlock) {
 			const simulateCurrentStack = async (ethereum: EthereumClientService) => await getUpdatedSimulationState(ethereum, await captureSimulationSnapshot())
-			const settings = await getSettings()
+			const owner = simulationServicesOwner
+			if (owner === undefined) return
+			const settingsSnapshot = await getSettingsSnapshot()
+			if (!rpcConfigurationIsReady(settingsSnapshot.rpcConfiguration)) return
+			const settings = requireSettings(settingsSnapshot)
+			if (!isCurrentSimulationService(simulationServicesOwner, ethereumClientService)) return
 			if (settings.simulationMode) {
 				const { ethereum, tokenPriceService } = getSimulationServices()
 				const updatePopupVisualisationPromise = updatePopupVisualisationIfNeeded(ethereum, tokenPriceService)
@@ -256,7 +268,7 @@ async function newBlockAttemptCallback(blockheader: EthereumBlockHeader, ethereu
 }
 
 async function onErrorBlockCallback(ethereumClientService: EthereumClientService, _error: unknown) {
-	if (ethereumClientService !== getSimulationServices().ethereum) return
+	if (!isCurrentSimulationService(simulationServicesOwner, ethereumClientService)) return
 	try {
 		const rpcConnectionStatus = {
 			isConnected: false,
@@ -278,13 +290,12 @@ async function startup() {
 	await initializeSafeAppsCompatibility(safeAppsCompatibility).catch(async (error: unknown) => { await reportUnexpectedError(error) })
 	await initializePopupRefreshGeneration()
 	bumpPopupRefreshGeneration()
-	const settings = await getSettings()
-	const userSpecifiedSimulatorNetwork = settings.activeRpcNetwork.httpsRpc === undefined ? await getPrimaryRpcForChain(1n) : settings.activeRpcNetwork
-	const simulatorNetwork = userSpecifiedSimulatorNetwork === undefined ? DEFAULT_RPCS[0] : userSpecifiedSimulatorNetwork
-	simulationServicesOwner = createSimulationServicesOwner(simulatorNetwork, newBlockAttemptCallback, onErrorBlockCallback, rpcRequestLifecycleCallbacks)
-	await recoverPendingTerminalState()
+	const rpcConfiguration = await getRpcConfigurationState()
+	const simulatorNetwork = resolveRpcServicesTarget(rpcConfiguration)
+	simulationServicesOwner = createSimulationServicesOwner(simulatorNetwork, newBlockAttemptCallback, onErrorBlockCallback, rpcRequestLifecycleCallbacks, () => { void recoverPendingTerminalState() })
+	if (simulationServicesOwner.getCurrent() !== undefined) await recoverPendingTerminalState()
 	const recursiveCheckIfInterceptorShouldSleep = async () => {
-		await catchAllErrorsAndCall(async () => checkIfInterceptorShouldSleep(getSimulationServices().ethereum, rpcConnectionStatusPublisher.publishRpcConnectionStatus))
+		if (simulationServicesOwner?.getCurrent() !== undefined) await catchAllErrorsAndCall(async () => checkIfInterceptorShouldSleep(getSimulationServices().ethereum, rpcConnectionStatusPublisher.publishRpcConnectionStatus))
 		setTimeout(recursiveCheckIfInterceptorShouldSleep, 1000)
 	}
 
@@ -298,6 +309,7 @@ async function startup() {
 const recoverPendingTerminalState = createRetriableTerminalStateRecovery({
 	recover: async () => {
 		const { ethereum, tokenPriceService } = getSimulationServices()
+		await resolveDeferredSafeSignerReplies({ ethereum, tokenPriceService }, websiteTabConnections)
 		await resolvePendingRequestsForMissingConfirmationWindows(ethereum, tokenPriceService, websiteTabConnections)
 		await prunePendingTerminalRepliesForMissingTabs()
 	},
@@ -330,19 +342,19 @@ const onTabUpdated = async (tabId: number, changeInfo: browser.tabs._OnUpdatedCh
 	await updateKnownWebsiteMetadata(website)
 	await updateTabState(tabId, (previousState: TabState) => modifyObject(previousState, { website, tabIconDetails: DEFAULT_TAB_CONNECTION }))
 	await updateDeclarativeNetRequestBlocks(websiteTabConnections)
-	await updateExtensionIcon(websiteTabConnections, tabId, websiteOrigin, bumpPopupRefreshGeneration())
+	await updateExtensionIcon(tabId, websiteOrigin, bumpPopupRefreshGeneration())
 })
 
 const onCloseWindow = async (id: number) => await catchAllErrorsAndCall(async () => {
-	await waitForBackgroundStartup()
-	const simulationServices = getSimulationServices()
-	return await onCloseWindowOrTab({ type: 'popup' as const, id }, simulationServices.ethereum, simulationServices.tokenPriceService, websiteTabConnections)
+	const { simulationServicesOwner } = await waitForBackgroundStartup()
+	const simulationServices = simulationServicesOwner.getCurrent()
+	return await onCloseWindowOrTab({ type: 'popup' as const, id }, simulationServices?.ethereum, simulationServices?.tokenPriceService, websiteTabConnections)
 })
 
 const onCloseTab = async (id: number) => await catchAllErrorsAndCall(async () => {
-	await waitForBackgroundStartup()
-	const simulationServices = getSimulationServices()
-	return await onCloseWindowOrTab({ type: 'tab' as const, id }, simulationServices.ethereum, simulationServices.tokenPriceService, websiteTabConnections)
+	const { simulationServicesOwner } = await waitForBackgroundStartup()
+	const simulationServices = simulationServicesOwner.getCurrent()
+	return await onCloseWindowOrTab({ type: 'tab' as const, id }, simulationServices?.ethereum, simulationServices?.tokenPriceService, websiteTabConnections)
 })
 
 // MV3 service worker event listeners must be registered synchronously at module load.
@@ -352,7 +364,7 @@ browser.runtime.onConnect.addListener((port) => catchAllErrorsAndCall(async () =
 }))
 browser.runtime.onMessage.addListener((message: unknown) => Promise.resolve(catchAllErrorsAndCall(async () => {
 	const { simulationServicesOwner } = await waitForBackgroundStartup()
-	const settings = await getSettings()
-	return await popupMessageHandler(websiteTabConnections, simulationServicesOwner, message, settings, rpcConnectionStatusPublisher.publishRpcConnectionStatus)
+	const settingsSnapshot = await getSettingsSnapshot()
+	return await popupMessageHandler(websiteTabConnections, simulationServicesOwner, message, settingsSnapshot.settings, settingsSnapshot.rpcConfiguration, rpcConnectionStatusPublisher.publishRpcConnectionStatus)
 })))
 addWindowTabListeners(onCloseWindow, onCloseTab)

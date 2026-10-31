@@ -4,7 +4,7 @@ import { allowOrPreventAddressAccessForWebsite, blockOrAllowExternalRequests, ch
 
 export const websiteAccessPopupMessageHandlers = {
 	popup_interceptorAccess: popupMessageHandler('popup_interceptorAccess', async (context, request) => await confirmRequestAccess(context.simulationServicesOwner, context.websiteTabConnections, request, context.publishRpcConnectionStatus)),
-	popup_changeInterceptorAccess: popupMessageHandler('popup_changeInterceptorAccess', async (context, request) => await changeInterceptorAccess(context.simulationServicesOwner, context.websiteTabConnections, request)),
+	popup_changeInterceptorAccess: popupMessageHandler('popup_changeInterceptorAccess', async (context, request) => await changeInterceptorAccess(context.simulationServicesOwner, context.websiteTabConnections, request, context.settings)),
 	popup_refreshInterceptorAccessMetadata: popupMessageHandler('popup_refreshInterceptorAccessMetadata', async () => await interceptorAccessMetadataRefresh()),
 	popup_interceptorAccessChangeAddress: popupMessageHandler('popup_interceptorAccessChangeAddress', async (context, request) => await interceptorAccessChangeAddressOrRefresh(context.websiteTabConnections, request)),
 	popup_interceptorAccessRefresh: popupMessageHandler('popup_interceptorAccessRefresh', async (context, request) => await interceptorAccessChangeAddressOrRefresh(context.websiteTabConnections, request)),
