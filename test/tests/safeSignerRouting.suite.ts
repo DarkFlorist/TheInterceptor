@@ -1,4 +1,4 @@
-import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
+import { createDeferredValue, createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import { createSimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
 import * as assert from 'assert'
 import { test } from 'bun:test'
@@ -1470,6 +1470,63 @@ test('changes the Safe simulation signer only after validating current on-chain 
 	assert.equal(unsupportedVersionSaveFailure.ok, false)
 	assert.match(unsupportedVersionSaveFailure.message ?? '', /version invalid-version is not supported/u)
 	assert.equal(await getLatestUnexpectedError(), undefined)
+})
+
+test('reconciles website approvals changed while Safe validation is pending instead of the admitted snapshot', async () => {
+	const { updateWebsiteAccess } = await import('../../app/ts/background/settings.js')
+	const { getActiveAddress } = await import('../../app/ts/background/backgroundUtils.js')
+	const alternateSigner = 0x1234567890123456789012345678901234567890n
+	fakeSafeContract.owners = [recipientAddress, alternateSigner]
+	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({
+		useAsActiveAddress: true,
+		safeSimulationSignerAddress: recipientAddress,
+		safeSignerAddresses: [recipientAddress, alternateSigner],
+	})])
+	const revokedSocket = { tabId: 61, connectionName: 0n }
+	const grantedSocket = { tabId: 62, connectionName: 0n }
+	const revokedWebsite = { websiteOrigin: 'https://revoked-during-validation.example', icon: undefined, title: undefined }
+	const grantedWebsite = { websiteOrigin: 'https://granted-during-validation.example', icon: undefined, title: undefined }
+	const activeAddressEntry = await getActiveAddress(await getRequiredSettings(), revokedSocket.tabId)
+	const approval = (website: typeof revokedWebsite) => ({ website, access: true, addressAccess: activeAddressEntry === undefined ? undefined : [{ address: activeAddressEntry.address, access: true }] })
+	await updateWebsiteAccess(() => [approval(revokedWebsite)])
+	const admittedSettings = await getRequiredSettings()
+	const revokedMessages: unknown[] = []
+	const revokedConnection = { port: createWebsitePort(revokedSocket, 0, revokedMessages), socket: revokedSocket, websiteOrigin: revokedWebsite.websiteOrigin, approved: true, wantsToConnect: false }
+	const grantedConnection = { port: createWebsitePort(grantedSocket, 0, []), socket: grantedSocket, websiteOrigin: grantedWebsite.websiteOrigin, approved: false, wantsToConnect: false }
+	const websiteTabConnections = new Map([
+		[revokedSocket.tabId, { connections: { [modules.websiteSocketToString(revokedSocket)]: revokedConnection } }],
+		[grantedSocket.tabId, { connections: { [modules.websiteSocketToString(grantedSocket)]: grantedConnection } }],
+	])
+	const validationStarted = createDeferredValue<void>()
+	const releaseValidation = createDeferredValue<void>()
+	const readBlockNumber = ethereum.getBlockNumber
+	Object.defineProperty(ethereum, 'getBlockNumber', {
+		configurable: true,
+		writable: true,
+		value: async (requestAbortController: AbortController | undefined) => {
+			validationStarted.resolve(undefined)
+			await releaseValidation.promise
+			return await readBlockNumber(requestAbortController)
+		},
+	})
+	try {
+		const reply = modules.setSafeSimulationSigner(ethereum, createTestSimulationServicesOwner(simulator), admittedSettings, websiteTabConnections, {
+			method: 'popup_setSafeSimulationSigner',
+			data: { chainId: fakeRpcNetwork.chainId, safeAddress: activeAddress, safeSimulationSignerAddress: alternateSigner },
+		})
+		await validationStarted.promise
+		// Revoked and granted after admission, while the on-chain validation is in flight.
+		await updateWebsiteAccess(() => [{ website: revokedWebsite, access: false, addressAccess: undefined }, approval(grantedWebsite)])
+		releaseValidation.resolve(undefined)
+		assert.deepEqual(await reply, { type: 'SetSafeSimulationSignerReply', ok: true })
+	} finally {
+		Object.defineProperty(ethereum, 'getBlockNumber', { configurable: true, writable: true, value: readBlockNumber })
+	}
+
+	assert.equal(revokedConnection.approved, false)
+	assert.equal(revokedMessages.some((message) => isRecord(message) && message.method === 'accountsChanged' && Array.isArray(message.result) && message.result.length > 0), false)
+	assert.equal(grantedConnection.approved, true)
+	await updateWebsiteAccess(() => [])
 })
 
 test('refreshes Safe owner metadata and clears a stale simulation signer without choosing a replacement', async () => {
