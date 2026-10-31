@@ -4,13 +4,6 @@ import { modifyObject } from '../utils/typescript.js'
 import { mergeStoredWebsiteMetadata } from '../utils/websiteIcons.js'
 import { isLegacyWebsiteOriginForCanonicalOrigin } from '../utils/websiteOrigin.js'
 
-export function isInterceptorDisabledForWebsiteOrigin(websiteAccess: WebsiteAccessArray, websiteOrigin: string): boolean {
-	return websiteAccess.some((entry) => {
-		if (entry.interceptorDisabled !== true) return false
-		return entry.website.websiteOrigin === websiteOrigin || isLegacyWebsiteOriginForCanonicalOrigin(entry.website.websiteOrigin, websiteOrigin)
-	})
-}
-
 export function applyInterceptorDisabledDecision(previousWebsiteAccess: WebsiteAccessArray, website: Website, interceptorDisabled: boolean): WebsiteAccessArray {
 	let foundExactEntry = false
 	const updatedWebsiteAccess = previousWebsiteAccess.map((entry) => {

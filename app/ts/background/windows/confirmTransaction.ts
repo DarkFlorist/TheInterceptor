@@ -626,14 +626,13 @@ export function toCanonicalSendTransactionParams(transaction: EthereumUnsignedTr
 function getReviewedSignerFacingRequest(pending: PendingTransactionOrSignableMessage): SendTransactionParams | SendRawTransactionParams | SignMessageParams {
 	if (pending.type === 'SignableMessage') return pending.originalRequestParameters
 	if (pending.originalRequestParameters.method !== 'eth_sendTransaction') return pending.originalRequestParameters
-	const safeFlow = getSafePendingFlow(pending)
-	if (safeFlow !== undefined) return pending.originalRequestParameters
+	if (getSafePendingFlow(pending) !== undefined) return pending.originalRequestParameters
 	if (pending.transactionOrMessageCreationStatus !== 'Simulated') return pending.originalRequestParameters
 	// When the confirmation simulation fails, the popup shows only the website's own request and offers only rejection; an accept can only arrive from a stale or non-popup message, which resolvePendingTransactionOrMessage forwards only with forceSend. With no reviewed simulation to bind against, such an override forwards exactly the website's request and leaves omitted gas, fees and nonce to the wallet.
 	if (pending.popupVisualisation.statusCode !== 'success') return pending.originalRequestParameters
 	const reviewedTransaction = getReviewedTransactionForSigning(pending.transactionToSimulate.transaction, pending.popupVisualisation, pending.transactionIdentifier)
-	// The popup displays this same signer nonce, and notes a different simulated one.
-	const signerNonce = getSignerNonce(pending, safeFlow)
+	// The popup displays this same signer nonce, and notes a different simulated one. Safe flows returned above, so this is a plain transaction.
+	const signerNonce = getSignerNonce(pending, undefined)
 	switch (signerNonce.kind) {
 		case 'simulated': throw new Error('Only transactions forwarded to the wallet have a signer-facing request')
 		case 'wallet-selected': return toCanonicalSendTransactionParams(reviewedTransaction, 'wallet-selects-nonce')

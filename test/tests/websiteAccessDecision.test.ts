@@ -1,6 +1,9 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { applyInterceptorDisabledDecision, applyWebsiteAccessDecision, isInterceptorDisabledForWebsiteOrigin } from '../../app/ts/background/websiteAccessDecision.js'
+import type { ContactEntry } from '../../app/ts/types/addressBookTypes.js'
+import type { WebsiteAccessArray } from '../../app/ts/types/websiteAccessTypes.js'
+import { applyInterceptorDisabledDecision, applyWebsiteAccessDecision } from '../../app/ts/background/websiteAccessDecision.js'
+import { hasAccess, hasAddressAccess, isInterceptorDisabledForWebsiteOrigin } from '../../app/ts/background/websiteAccessPolicy.js'
 
 const firstAddress = 0x1111111111111111111111111111111111111111n
 const secondAddress = 0x2222222222222222222222222222222222222222n
@@ -173,5 +176,25 @@ describe('website access legacy rebinding', () => {
 		assert.equal(updated[0]?.website.websiteOrigin, 'example.test')
 		assert.equal(updated[1]?.website.websiteOrigin, 'https://example.test')
 		assert.deepEqual(updated[1]?.addressAccess, [{ address: secondAddress, access: true }])
+	})
+})
+
+describe('interceptor-disabled website access policy', () => {
+	const address: ContactEntry = { type: 'contact', address: firstAddress, name: 'First', entrySource: 'User', askForAddressAccess: false }
+
+	test('access checks report a disabled origin exactly when the shared predicate does', () => {
+		const cases: readonly { readonly websiteAccess: WebsiteAccessArray, readonly disabled: boolean }[] = [
+			{ websiteAccess: [{ website: { websiteOrigin: 'https://example.test' }, access: true, interceptorDisabled: true }], disabled: true },
+			{ websiteAccess: [{ website: { websiteOrigin: 'example.test' }, access: true, interceptorDisabled: true }], disabled: true },
+			// Normalizing stored origins can leave duplicate exact records; any disabled one keeps the origin disabled, as content-script injection does.
+			{ websiteAccess: [{ website: { websiteOrigin: 'https://example.test' }, access: true }, { website: { websiteOrigin: 'https://example.test' }, interceptorDisabled: true }], disabled: true },
+			{ websiteAccess: [{ website: { websiteOrigin: 'https://example.test' }, access: true, interceptorDisabled: false }], disabled: false },
+			{ websiteAccess: [{ website: { websiteOrigin: 'http://example.test' }, access: true, interceptorDisabled: true }], disabled: false },
+		]
+		for (const { websiteAccess, disabled } of cases) {
+			assert.equal(isInterceptorDisabledForWebsiteOrigin(websiteAccess, 'https://example.test'), disabled)
+			assert.equal(hasAccess(websiteAccess, 'https://example.test') === 'interceptorDisabled', disabled)
+			assert.equal(hasAddressAccess(websiteAccess, 'https://example.test', address) === 'interceptorDisabled', disabled)
+		}
 	})
 })

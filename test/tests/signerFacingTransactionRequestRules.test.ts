@@ -28,15 +28,15 @@ function sendRawTransaction(simulationMode: boolean): TransactionRequest {
 describe('signer-facing transaction request rules', () => {
 	test('forwards signing-mode requests to the wallet unless they are Safe proposals', () => {
 		assert.equal(isTransactionRequestForwardedToWallet(sendTransaction(false), undefined), true)
-		assert.equal(isTransactionRequestForwardedToWallet(sendTransaction(false), { kind: 'directExecution' }), true)
-		assert.equal(isTransactionRequestForwardedToWallet(sendTransaction(false), { kind: 'proposal' }), false)
+		assert.equal(isTransactionRequestForwardedToWallet(sendTransaction(false), 'directExecution'), true)
+		assert.equal(isTransactionRequestForwardedToWallet(sendTransaction(false), 'proposal'), false)
 		assert.equal(isTransactionRequestForwardedToWallet(sendTransaction(true), undefined), false)
 		assert.equal(isTransactionRequestForwardedToWallet(sendRawTransaction(false), undefined), true)
 	})
 
 	test('lets the wallet select the nonce only when the website omitted it', () => {
 		assert.deepEqual(getSignerNonce(sendTransaction(false), undefined), { kind: 'wallet-selected' })
-		assert.deepEqual(getSignerNonce(sendTransaction(false), { kind: 'directExecution' }), { kind: 'wallet-selected' })
+		assert.deepEqual(getSignerNonce(sendTransaction(false), 'directExecution'), { kind: 'wallet-selected' })
 	})
 
 	test('forwards the nonce the website requested unchanged', () => {
@@ -47,7 +47,7 @@ describe('signer-facing transaction request rules', () => {
 	test('keeps the simulated nonce for requests the wallet does not sign as this transaction', () => {
 		assert.deepEqual(getSignerNonce(sendTransaction(true, 7n), undefined), { kind: 'simulated' })
 		assert.deepEqual(getSignerNonce(sendTransaction(true), undefined), { kind: 'simulated' })
-		assert.deepEqual(getSignerNonce(sendTransaction(false, 7n), { kind: 'proposal' }), { kind: 'simulated' })
+		assert.deepEqual(getSignerNonce(sendTransaction(false, 7n), 'proposal'), { kind: 'simulated' })
 		assert.deepEqual(getSignerNonce(sendRawTransaction(false), undefined), { kind: 'simulated' })
 	})
 })

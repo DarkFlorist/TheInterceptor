@@ -10,9 +10,15 @@ function getExactAndLegacyWebsiteAccess(websiteAccess: WebsiteAccessArray, websi
 	return { exactAccess, legacyAccessEntries }
 }
 
+// The Interceptor stays disabled for an origin while any exact or scheme-ambiguous legacy record for it is disabled, matching content-script injection, which excludes the origin of every disabled record.
+export function isInterceptorDisabledForWebsiteOrigin(websiteAccess: WebsiteAccessArray, websiteOrigin: string) {
+	return websiteAccess.some((entry) => entry.interceptorDisabled === true
+		&& (entry.website.websiteOrigin === websiteOrigin || isLegacyWebsiteOriginForCanonicalOrigin(entry.website.websiteOrigin, websiteOrigin)))
+}
+
 export function hasAccess(websiteAccess: WebsiteAccessArray, websiteOrigin: string) : ApprovalState {
 	const { exactAccess, legacyAccessEntries } = getExactAndLegacyWebsiteAccess(websiteAccess, websiteOrigin)
-	if (exactAccess?.interceptorDisabled === true || legacyAccessEntries.some((entry) => entry.interceptorDisabled === true)) return 'interceptorDisabled'
+	if (isInterceptorDisabledForWebsiteOrigin(websiteAccess, websiteOrigin)) return 'interceptorDisabled'
 	// Only an exact, scheme-bound record can grant access. Legacy approval remains pending until the user explicitly rebinds it.
 	if (exactAccess?.access === true) return 'hasAccess'
 	// Legacy grants are scheme-ambiguous, but applying a legacy denial to both schemes cannot expose an account that the user did not authorize.
@@ -22,7 +28,7 @@ export function hasAccess(websiteAccess: WebsiteAccessArray, websiteOrigin: stri
 
 export function hasAddressAccess(websiteAccess: WebsiteAccessArray, websiteOrigin: string, address: AddressBookEntry) : ApprovalState {
 	const { exactAccess, legacyAccessEntries } = getExactAndLegacyWebsiteAccess(websiteAccess, websiteOrigin)
-	if (exactAccess?.interceptorDisabled === true || legacyAccessEntries.some((entry) => entry.interceptorDisabled === true)) return 'interceptorDisabled'
+	if (isInterceptorDisabledForWebsiteOrigin(websiteAccess, websiteOrigin)) return 'interceptorDisabled'
 	if (exactAccess?.access === false) return 'noAccess'
 	if (exactAccess?.access === true) {
 		if (exactAccess.addressAccess !== undefined) {
