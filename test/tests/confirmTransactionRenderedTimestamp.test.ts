@@ -491,6 +491,49 @@ async function dispatchPendingTransactions(browser: ReturnType<typeof createBrow
 	})
 }
 
+// Runs every timer immediately while recording the requested delays, so retry backoff can be exercised without waiting for it.
+function runTimersImmediately() {
+	const originalSetTimeout = globalThis.setTimeout
+	const requestedDelays: number[] = []
+	Reflect.set(globalThis, 'setTimeout', (callback: (...args: unknown[]) => void, delay?: number, ...args: unknown[]) => {
+		requestedDelays.push(delay ?? 0)
+		return originalSetTimeout(callback, 0, ...args)
+	})
+	return { requestedDelays, restore: () => { Reflect.set(globalThis, 'setTimeout', originalSetTimeout) } }
+}
+
+// Lets queued timers, messages and renders run until the condition holds or the turns run out.
+async function settleUntil(condition: () => boolean, maxTurns = 500) {
+	for (let turn = 0; turn < maxTurns && !condition(); turn++) await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+}
+
+const { PendingTransactionOrSignableMessage: StoredPendingRequest } = await import('../../app/ts/types/accessRequest.js')
+const { PopupRequestsReplies } = await import('../../app/ts/types/interceptor-reply-messages.js')
+const { createPassthroughCompleteVisualizedSimulation } = await import('../../app/ts/types/visualizer-types.js')
+
+// Stores a ready-to-confirm signature request, which the popup paints from storage before any background copy arrives.
+async function storeSignatureRequest(browser: ReturnType<typeof createBrowserMock>) {
+	const stored = StoredPendingRequest.parse(serialize(StoredPendingRequest, makeStoredSignatureRequest()))
+	await browser.storage.local.set({ pendingTransactionsAndMessages: [serialize(StoredPendingRequest, stored)] })
+	return stored
+}
+
+// The ready-handshake reply once the background has the request, carrying its popup copy.
+function makeBootstrapReply(stored: PendingTransactionOrSignableMessage) {
+	return serialize(PopupRequestsReplies.popup_readyAndListening, {
+		method: 'popup_readyAndListening',
+		data: {
+			popupOrTabId: { type: 'popup', id: 1 },
+			confirmTransactionBootstrap: {
+				pendingTransactionAndSignableMessages: [toPopupPendingTransactionOrSignableMessage(stored)],
+				currentBlockNumber: 123n,
+				rpcConnectionStatus: undefined,
+				visualizedSimulatorState: createPassthroughCompleteVisualizedSimulation(),
+			},
+		},
+	})
+}
+
 describe('ConfirmTransaction', () => {
 	test('shows the proposal notice only for the classifier-selected Safe proposal flow', async () => {
 		const dom = installDomMock()
@@ -852,47 +895,64 @@ describe('ConfirmTransaction', () => {
 		dom.restore()
 	})
 
-	test('keeps retrying the bootstrap handshake after the storage first paint until the background copy makes a signature request confirmable', async () => {
+	test('keeps retrying the bootstrap handshake with capped backoff after the storage first paint until the background copy makes a signature request confirmable', async () => {
 		const dom = installDomMock()
 		const browser = createBrowserMock()
-		const { PendingTransactionOrSignableMessage: StoredRequest } = await import('../../app/ts/types/accessRequest.js')
-		const { PopupRequestsReplies } = await import('../../app/ts/types/interceptor-reply-messages.js')
-		const { createPassthroughCompleteVisualizedSimulation } = await import('../../app/ts/types/visualizer-types.js')
-		const { CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
-		const stored = StoredRequest.parse(serialize(StoredRequest, makeStoredSignatureRequest()))
-		await browser.storage.local.set({ pendingTransactionsAndMessages: [serialize(StoredRequest, stored)] })
-		// The first two handshakes find the background not ready yet; later ones carry the background copy. Signature requests get no block-triggered push to fall back on.
-		let readyHandshakes = 0
-		browser.setReadyAndListeningReply((withoutBootstrap) => {
-			readyHandshakes += 1
-			if (readyHandshakes <= 2) return withoutBootstrap
-			return serialize(PopupRequestsReplies.popup_readyAndListening, {
-				method: 'popup_readyAndListening',
-				data: {
-					popupOrTabId: { type: 'popup', id: 1 },
-					confirmTransactionBootstrap: {
-						pendingTransactionAndSignableMessages: [toPopupPendingTransactionOrSignableMessage(stored)],
-						currentBlockNumber: 123n,
-						rpcConnectionStatus: undefined,
-						visualizedSimulatorState: createPassthroughCompleteVisualizedSimulation(),
-					},
-				},
+		const timers = runTimersImmediately()
+		try {
+			const stored = await storeSignatureRequest(browser)
+			// Twelve handshakes, more than the rapid retries plus the initial one, find the background not ready; later ones carry its copy. Signature requests get no block-triggered push to fall back on.
+			let readyHandshakes = 0
+			browser.setReadyAndListeningReply((withoutBootstrap) => {
+				readyHandshakes += 1
+				return readyHandshakes <= 12 ? withoutBootstrap : makeBootstrapReply(stored)
 			})
-		})
 
-		await act(() => {
-			render(h(ConfirmTransaction, {}), dom.document.body)
-		})
-		for (let turn = 0; turn < 50 && findConfirmButton(dom) === undefined; turn++) await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
-		assert.notEqual(findConfirmButton(dom), undefined, 'the stored signature request is shown')
-		assert.equal(isConfirmEnabled(dom), false, 'the storage first paint has no reviewed-result id')
+			await act(() => {
+				render(h(ConfirmTransaction, {}), dom.document.body)
+			})
+			await settleUntil(() => findConfirmButton(dom) !== undefined)
+			assert.notEqual(findConfirmButton(dom), undefined, 'the stored signature request is shown')
+			await settleUntil(() => isConfirmEnabled(dom))
 
-		await act(async () => { await new Promise((resolve) => setTimeout(resolve, CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS * 3)) })
-		assert.equal(readyHandshakes >= 3, true, 'the handshake is retried after the storage first paint')
-		assert.equal(isConfirmEnabled(dom), true, 'the bootstrapped background copy makes the request confirmable without a push update')
+			assert.equal(readyHandshakes, 13, 'the handshake is retried past the rapid attempts until the background copy arrives')
+			assert.equal(isConfirmEnabled(dom), true, 'the bootstrapped background copy makes the request confirmable without a push update')
+			const { CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS, CONFIRM_TRANSACTION_BOOTSTRAP_MAX_RETRY_DELAY_MS } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
+			const retryDelays = timers.requestedDelays.filter((delay) => delay >= CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS)
+			assert.equal(retryDelays.some((delay) => delay > CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS), true, 'later retries back off')
+			assert.equal(Math.max(...retryDelays) <= CONFIRM_TRANSACTION_BOOTSTRAP_MAX_RETRY_DELAY_MS, true, 'the backoff is capped')
+		} finally {
+			await unmountConfirmTransaction(dom)
+			timers.restore()
+			dom.restore()
+		}
+	})
 
-		await unmountConfirmTransaction(dom)
-		dom.restore()
+	test('stops the bootstrap handshake retries once the popup unmounts', async () => {
+		const dom = installDomMock()
+		const browser = createBrowserMock()
+		const timers = runTimersImmediately()
+		try {
+			await storeSignatureRequest(browser)
+			let readyHandshakes = 0
+			browser.setReadyAndListeningReply((withoutBootstrap) => {
+				readyHandshakes += 1
+				return withoutBootstrap
+			})
+			await act(() => {
+				render(h(ConfirmTransaction, {}), dom.document.body)
+			})
+			await settleUntil(() => readyHandshakes >= 15)
+			assert.equal(readyHandshakes >= 15, true, 'the handshake keeps being retried while no background copy arrives')
+
+			await unmountConfirmTransaction(dom)
+			const handshakesAtUnmount = readyHandshakes
+			await settleUntil(() => false, 100)
+			assert.equal(readyHandshakes, handshakesAtUnmount, 'no handshake is sent after the popup unmounts')
+		} finally {
+			timers.restore()
+			dom.restore()
+		}
 	})
 
 	test('the background honours the accept for the result the popup shows', { timeout: 15_000 }, async () => {

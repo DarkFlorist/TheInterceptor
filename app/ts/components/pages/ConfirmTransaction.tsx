@@ -53,7 +53,14 @@ type UnderTransactionsParams = {
 }
 
 export const CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS = 150
-const CONFIRM_TRANSACTION_BOOTSTRAP_MAX_ATTEMPTS = 10
+const CONFIRM_TRANSACTION_BOOTSTRAP_RAPID_ATTEMPTS = 10
+export const CONFIRM_TRANSACTION_BOOTSTRAP_MAX_RETRY_DELAY_MS = 3000
+
+// Retries quickly at first, then doubles the delay up to a cap, so a popup still showing only the storage first paint keeps asking for the background copy an accept needs.
+export const getConfirmTransactionBootstrapRetryDelay = (attempt: number) => {
+	if (attempt < CONFIRM_TRANSACTION_BOOTSTRAP_RAPID_ATTEMPTS) return CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS
+	return Math.min(CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS * 2 ** (attempt - CONFIRM_TRANSACTION_BOOTSTRAP_RAPID_ATTEMPTS + 1), CONFIRM_TRANSACTION_BOOTSTRAP_MAX_RETRY_DELAY_MS)
+}
 const CONFIRM_TRANSACTION_DATA_PRIORITY = {
 	storage: 1,
 	bootstrap: 2,
@@ -69,18 +76,18 @@ type ConfirmTransactionBootstrapData = {
 	visualizedSimulatorState: CompleteVisualizedSimulation
 }
 
+// Runs until a background copy is shown or the popup unmounts; the background closes the popup once its requests are resolved, which unmounts it.
 async function bootstrapConfirmTransactionDialog(
-	hasReceivedBackgroundCopy: () => boolean,
+	isBootstrapDone: () => boolean,
 	applyBootstrapData: (bootstrapData: ConfirmTransactionBootstrapData) => void,
 ) {
-	for (let attempt = 0; attempt < CONFIRM_TRANSACTION_BOOTSTRAP_MAX_ATTEMPTS; attempt++) {
-		if (hasReceivedBackgroundCopy()) return
+	for (let attempt = 0; !isBootstrapDone(); attempt++) {
 		const reply = await sendPopupMessageWithReply({ method: 'popup_readyAndListening', data: { page: 'confirmTransaction' } })
 		if (reply?.method === 'popup_readyAndListening' && reply.data.confirmTransactionBootstrap !== undefined) {
 			applyBootstrapData(reply.data.confirmTransactionBootstrap)
 		}
-		if (hasReceivedBackgroundCopy()) return
-		await waitForDelay(CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS)
+		if (isBootstrapDone()) return
+		await waitForDelay(getConfirmTransactionBootstrapRetryDelay(attempt))
 	}
 }
 
