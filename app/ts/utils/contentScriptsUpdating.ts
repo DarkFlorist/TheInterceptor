@@ -12,6 +12,13 @@ const isInjectableSite = (url: string) => injectableSitesRegexp.some((regexpPatt
 const isExpectedManifestV2InjectionTargetError = (error: unknown) => error instanceof Error && (error.message === otherExtensionInjectionTargetErrorMessage || error.message === extensionGalleryInjectionTargetErrorMessage)
 export const getInterceptorDisabledSites = (websiteAccess: WebsiteAccessArray) => websiteAccess.filter((entry) => entry.interceptorDisabled === true).map((entry) => entry.website.websiteOrigin)
 
+// A match pattern without a port matches every port of its host, while one with a port compares it with the URL's effective port, so naming the default port too keeps the pattern to that one origin. Chrome rejects a port after the * scheme, so each pattern names its scheme.
+function getExactOriginMatchPattern(url: URL) {
+	const defaultPort = url.protocol === 'https:' ? '443' : '80'
+	return `${ url.protocol }//${ url.hostname }:${ url.port === '' ? defaultPort : url.port }/*`
+}
+
+// Website access, including a disabled Interceptor, is stored per host and port (getHostWithPort), so a disabled site is excluded on exactly that host and port, not on its subdomains or other ports, the way the MV2 injection compares it.
 function getManifestV3ExcludeMatchesForOrigin(origin: string) {
 	if (origin === '') return ['file:///*']
 	try {
@@ -20,13 +27,16 @@ function getManifestV3ExcludeMatchesForOrigin(origin: string) {
 		if (url.protocol === 'file:') return url.hostname === '' ? ['file:///*'] : []
 		if (url.protocol !== 'http:' && url.protocol !== 'https:') return []
 		if (url.username !== '' || url.password !== '' || url.pathname !== '/' || url.search !== '' || url.hash !== '') return []
-		const hostname = url.hostname
-		if (hostname === '') return []
-		const isIpAddressOrLocalhost = hostname === 'localhost' || hostname.startsWith('[') || /^\d+(?:\.\d+){3}$/.test(hostname)
-		const hostPattern = isIpAddressOrLocalhost ? url.host : `*.${ url.host }`
-		if (hasExplicitScheme) return [`${ url.protocol.slice(0, -1) }://${ hostPattern }/*`]
-		if (url.port === '') return [`*://${ hostPattern }/*`]
-		return [`http://${ hostPattern }/*`, `https://${ hostPattern }/*`]
+		if (url.hostname === '') return []
+		// URL parsing keeps a * in a hostname, also one decoded from %2A, but a match pattern reads a leading *. as every subdomain and rejects a * anywhere else, which fails the whole registration, so no pattern can name such a host exactly.
+		if (url.hostname.includes('*')) return []
+		if (hasExplicitScheme) return [getExactOriginMatchPattern(url)]
+		// getHostWithPort leaves out the URL scheme's default port, so a stored port 80 comes from an https URL and a stored port 443 from an http URL.
+		const hasPort = /:\d+$/.test(origin)
+		return ['http', 'https'].flatMap((scheme) => {
+			const schemeUrl = new URL(`${ scheme }://${ origin }`)
+			return hasPort && schemeUrl.port === '' ? [] : [getExactOriginMatchPattern(schemeUrl)]
+		})
 	} catch {
 		return []
 	}
