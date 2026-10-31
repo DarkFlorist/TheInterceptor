@@ -20,7 +20,6 @@ import { isValidErc20Decimals } from '../utils/erc20.js'
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
 import { pendingRequestTerminalStateSemaphore } from './terminalStateSemaphore.js'
 
-export { getPrimaryRpcForChain, getRpcConfigurationState, getRpcConfigurationStateWithStorageSnapshot, getRpcList, getRpcNetworkForChain, promoteRpcAsPrimary, setRpcConfiguration, setRpcList, type RpcConfigurationState } from './rpcConfigurationStorage.js'
 
 const reportCorruptStoredValue = (label: string) => (failure: unknown) => {
 	console.warn(`${ label } was corrupt:`)

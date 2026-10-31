@@ -1,6 +1,6 @@
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
-import type { RpcConfigurationState } from './storageVariables.js'
-import { getRpcConfigurationState, setRpcConfiguration, setRpcList } from './storageVariables.js'
+import type { RpcConfigurationState } from './rpcConfigurationStorage.js'
+import { getRpcConfigurationState, setRpcConfiguration, setRpcList } from './rpcConfigurationStorage.js'
 import type { RpcEntries, RpcEntry, RpcNetwork } from '../types/rpc.js'
 import { createRpcConfigurationUnavailableError } from '../utils/rpcConfigurationError.js'
 import { resolveRpcServicesTarget } from './rpcConfigurationAvailability.js'

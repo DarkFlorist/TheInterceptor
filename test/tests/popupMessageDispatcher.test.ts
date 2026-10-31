@@ -388,6 +388,15 @@ describe('popup message dispatcher seams', () => {
 		assert.deepEqual(published[0]?.pendingAccessRequests.map((pendingRequest) => pendingRequest.website.websiteOrigin), [website.websiteOrigin])
 	})
 
+	test('unexpected-error reporting, fetching and clearing work while settings are unavailable', async () => {
+		const context = createDispatcherContext(async () => undefined)
+		context.settings = undefined
+		context.rpcConfiguration = { status: 'unavailable', reason: 'read-failed', error: new Error('Storage unavailable') }
+
+		assert.equal(await dispatchPopupMessage(context, { method: 'popup_clearUnexpectedError' }), undefined)
+		assert.deepEqual(await dispatchPopupMessage(context, { method: 'popup_requestLatestUnexpectedError' }), { method: 'popup_requestLatestUnexpectedError', latestUnexpectedError: undefined })
+	})
+
 	test('snapshot registration captures at invocation and keeps one pair across awaits', async () => {
 		const { popupSnapshotMessageHandler } = await import('../../app/ts/background/popupMessageHandlerRegistry.js')
 		const context = createDispatcherContext(async () => undefined)

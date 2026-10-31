@@ -1,6 +1,6 @@
 import type { SimulationServices, SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import type { RpcEntry } from '../types/rpc.js'
-import type { RpcConfigurationState } from './storageVariables.js'
+import type { RpcConfigurationState } from './rpcConfigurationStorage.js'
 
 export function rpcConfigurationIsReady(rpcConfiguration: RpcConfigurationState): rpcConfiguration is Extract<RpcConfigurationState, { status: 'ready' }> {
 	return rpcConfiguration.status === 'ready'

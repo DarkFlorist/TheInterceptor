@@ -8,7 +8,7 @@ import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
 import { dispatchPopupMessage } from './popupMessageDispatcher.js'
 import { getConfirmTransactionAbortController } from './confirmTransactionSimulation.js'
 import { resetSimulationStateFromConfig } from './activeSettings.js'
-import type { RpcConfigurationState } from './storageVariables.js'
+import type { RpcConfigurationState } from './rpcConfigurationStorage.js'
 
 const simulationAbortController = new AbortController()
 

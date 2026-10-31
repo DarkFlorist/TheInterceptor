@@ -6,7 +6,7 @@ import { getSimulationStackTargetHash } from '../utils/simulationStackTargets.js
 import { setLatestUnexpectedError } from './storageVariables.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { changeChainDialog, changePage, changePreSimulationBlockTimeManipulation, confirmDialog, fetchSimulationStackRequestConfirmation, forceSetGasLimitForTransaction, importSafeStack, importSimulationStack, openNewTab, openWebPage, popupReadyAndListening, refreshHomeData, refreshPopupConfirmTransactionMetadata, refreshPopupConfirmTransactionSimulation, removeTransactionOrSignedMessage, reportUnexpectedErrorInWindow, requestAccountsFromSigner, requestActiveAddresses, requestCompleteVisualizedSimulation, requestHomePageBootstrap, requestInterceptorSimulationInput, requestLatestUnexpectedError, requestMakeMeRichList, requestNewHomeData, requestSafeStackExport, requestSimulationMetadata, requestSimulationMode, setSafeSimulationSigner, setTransactionOrMessageBlockTimeManipulator, simulateGnosisSafeTransactionOnPass, simulateGovernanceContractExecutionOnPass, watchAssetDialog } from './popupMessageHandlers.js'
-import { popupOptionalSnapshotMessageHandler, popupSnapshotMessageHandler, popupSnapshotWithAccessPromptsMessageHandler, popupMessageHandler, type PopupMessageDispatcherContext, type PopupMessageHandlerMap } from './popupMessageHandlerRegistry.js'
+import { popupOptionalSnapshotMessageHandler, popupRecoveryMessageHandler, popupSnapshotMessageHandler, popupSnapshotWithAccessPromptsMessageHandler, popupMessageHandler, type PopupMessageDispatcherContext, type PopupMessageHandlerMap } from './popupMessageHandlerRegistry.js'
 import { addressBookPopupMessageHandlers } from './popupMessageHandlerRegistries/addressBook.js'
 import { settingsPopupMessageHandlers } from './popupMessageHandlerRegistries/settings.js'
 import { safePopupMessageHandlers } from './popupMessageHandlerRegistries/safe.js'
@@ -58,7 +58,7 @@ const popupMessageHandlers = {
 		return await simulateGnosisSafeTransactionOnPass(ethereum, tokenPriceService, request.data.gnosisSafeMessage)
 	}),
 	popup_openWebPage: popupMessageHandler('popup_openWebPage', async (_context, request) => await openWebPage(request)),
-	popup_clearUnexpectedError: popupMessageHandler('popup_clearUnexpectedError', async () => await setLatestUnexpectedError(undefined)),
+	popup_clearUnexpectedError: popupRecoveryMessageHandler('popup_clearUnexpectedError', async () => await setLatestUnexpectedError(undefined)),
 	popup_openSimulationStack: popupMessageHandler('popup_openSimulationStack', async (_context, request) => await openNewTab('simulationStack', 'data' in request ? getSimulationStackTargetHash(request.data) : undefined)),
 	popup_forceSetGasLimitForTransaction: popupSnapshotMessageHandler('popup_forceSetGasLimitForTransaction', async (context, request) => {
 		const { ethereum, tokenPriceService } = context.services
@@ -78,7 +78,7 @@ const popupMessageHandlers = {
 	}),
 	popup_requestActiveAddresses: popupMessageHandler('popup_requestActiveAddresses', async () => await requestActiveAddresses()),
 	popup_requestSimulationMode: popupMessageHandler('popup_requestSimulationMode', async (context) => requestSimulationMode(context.settings)),
-	popup_requestLatestUnexpectedError: popupMessageHandler('popup_requestLatestUnexpectedError', async () => await requestLatestUnexpectedError()),
+	popup_requestLatestUnexpectedError: popupRecoveryMessageHandler('popup_requestLatestUnexpectedError', async () => await requestLatestUnexpectedError()),
 	popup_fetchSimulationStackRequestConfirmation: popupSnapshotMessageHandler('popup_fetchSimulationStackRequestConfirmation', async (context, request) => {
 		const { ethereum } = context.services
 		return await fetchSimulationStackRequestConfirmation(ethereum, context.websiteTabConnections, request)
@@ -89,7 +89,7 @@ const popupMessageHandlers = {
 		// Only the confirmTransaction bootstrap reads the chain; the other dialogs need their popupOrTabId while RPC services are paused.
 		(request) => request.data.page === 'confirmTransaction',
 	),
-	popup_UnexpectedErrorOccured: popupMessageHandler('popup_UnexpectedErrorOccured', async (_context, request) => await reportUnexpectedErrorInWindow(request)),
+	popup_UnexpectedErrorOccured: popupRecoveryMessageHandler('popup_UnexpectedErrorOccured', async (_context, request) => await reportUnexpectedErrorInWindow(request)),
 	popup_requestInterceptorSimulationInput: popupSnapshotMessageHandler('popup_requestInterceptorSimulationInput', async (context) => {
 		const { ethereum } = context.services
 		return await requestInterceptorSimulationInput(ethereum, context.settings)

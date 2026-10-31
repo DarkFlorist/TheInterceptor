@@ -4,7 +4,7 @@ import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { InterceptedRequest } from '../utils/requests.js'
 import { replyToInterceptedRequest } from './messageSending.js'
 import { rpcConfigurationIsUsable } from './rpcConfigurationAvailability.js'
-import type { RpcConfigurationState } from './storageVariables.js'
+import type { RpcConfigurationState } from './rpcConfigurationStorage.js'
 
 export function replyIfRpcConfigurationIsUnavailable(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest | undefined, rpcConfiguration: RpcConfigurationState) {
 	if (request === undefined || rpcConfigurationIsUsable(rpcConfiguration, simulationServicesOwner)) return false

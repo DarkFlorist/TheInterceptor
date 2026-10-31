@@ -461,7 +461,7 @@ describe('popup settings changes', () => {
 		installBrowserMock()
 		const { changeSimulationMode, getRequiredSettings } = await loadModules()
 		const { changeActiveRpc } = await import('../../app/ts/background/walletSwitch.js')
-		const { setRpcList, getPrimaryRpcForChain } = await import('../../app/ts/background/storageVariables.js')
+		const { setRpcList, getPrimaryRpcForChain } = await import('../../app/ts/background/rpcConfigurationStorage.js')
 		const current = (await getRequiredSettings()).activeRpcNetwork
 		if (current.httpsRpc === undefined) throw new Error('Expected a configured RPC')
 		const selected = { ...current, httpsRpc: 'https://selected.example', primary: false }
@@ -580,7 +580,7 @@ describe('popup settings changes', () => {
 			const { changeSimulationMode, getRequiredSettings, websiteSocketToString, updateTabState, updateUserAddressBookEntries, saveCurrentTabId } = await loadModules()
 			const { popupChangeActiveRpc } = await import('../../app/ts/background/popupMessageHandlers.js')
 			const { walletSwitchEthereumChainReply, signerChainChanged } = await import('../../app/ts/background/providerMessageHandlers.js')
-			const { setRpcList, getRpcList, getPrimaryRpcForChain } = await import('../../app/ts/background/storageVariables.js')
+			const { setRpcList, getRpcList, getPrimaryRpcForChain } = await import('../../app/ts/background/rpcConfigurationStorage.js')
 			const currentRpc = (await getRequiredSettings()).activeRpcNetwork
 			const primaryRpc = { ...currentRpc, chainId: 2n, httpsRpc: 'https://primary.example.test', primary: true }
 			const requestedRpc = { ...primaryRpc, name: 'Requested network', httpsRpc: outcome === 'metadata after chain event' ? primaryRpc.httpsRpc : 'https://alternative.example.test', primary: false }
@@ -640,7 +640,7 @@ describe('popup settings changes', () => {
 		installBrowserMock()
 		const { changeSimulationMode, getRequiredSettings, websiteSocketToString, updateTabState, updateUserAddressBookEntries } = await loadModules()
 		const { changeActiveRpc, isSignerChainChangePending } = await import('../../app/ts/background/walletSwitch.js')
-		const { setRpcList, getRpcList } = await import('../../app/ts/background/storageVariables.js')
+		const { setRpcList, getRpcList } = await import('../../app/ts/background/rpcConfigurationStorage.js')
 		const currentRpc = (await getRequiredSettings()).activeRpcNetwork
 		const requestedRpc = { ...currentRpc, chainId: crossChain ? 2n : currentRpc.chainId, name: 'Alternative RPC', httpsRpc: 'https://alternative.example.test', primary: false }
 		const rpcList = [currentRpc, requestedRpc]

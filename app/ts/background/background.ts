@@ -38,6 +38,7 @@ import { getWalletGetCapabilitiesParseFailureReply } from './walletGetCapabiliti
 import { hasAccess as getWebsiteAccessApprovalState, hasAddressAccess as getWebsiteAddressAccessApprovalState } from './websiteAccessPolicy.js'
 import { replyIfRpcConfigurationIsUnavailable } from './rpcConfigurationRequestGuard.js'
 import { RPC_CONFIGURATION_UNAVAILABLE_ERROR } from '../types/interceptor-reply-messages.js'
+import { isRpcConfigurationUnavailableError } from '../utils/rpcConfigurationError.js'
 
 if (initializeWatchAssetWindowListeners()) {
 	void processWatchAssetQueue(undefined).catch(async (error: unknown) => {
@@ -345,7 +346,12 @@ async function revokeWebsitePermissions(
 		}
 	}))
 	clearWebsiteConnectionIntent(websiteTabConnections, websiteOrigin)
-	await finalizeWebsiteAccessChange(simulationServicesOwner, websiteTabConnections, await getSettingsForCommittedAccessChange(websiteTabConnections, (affectedWebsiteOrigin) => affectedWebsiteOrigin === websiteOrigin), false)
+	try {
+		await finalizeWebsiteAccessChange(simulationServicesOwner, websiteTabConnections, await getSettingsForCommittedAccessChange(websiteTabConnections, (affectedWebsiteOrigin) => affectedWebsiteOrigin === websiteOrigin), false)
+	} catch (error: unknown) {
+		// With unreadable settings the revocation is still committed and the website's connections are already unapproved, so it is answered as successful (EIP-2255, as on main).
+		if (!isRpcConfigurationUnavailableError(error)) throw error
+	}
 	return { type: 'result' as const, method: 'wallet_revokePermissions' as const, result: null }
 }
 
@@ -437,16 +443,16 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 		const message: InpageScriptRequest = { uniqueRequestIdentifier: request.uniqueRequestIdentifier, ...providerHandlerReturn }
 		return replyToInterceptedRequest(websiteTabConnections, message)
 	}
-	if (initialSettings === undefined) {
-		replyIfRpcConfigurationIsUnavailable(simulationServicesOwner, websiteTabConnections, request, initialSnapshot.rpcConfiguration)
-		return
-	}
-	// Revoking only rewrites stored website access and needs no RPC services, so it runs before the RPC availability guard and stays possible while services are paused.
+	// Revoking only rewrites stored website access and needs no RPC services, so it runs before the settings and RPC availability guards and stays possible while they are unavailable.
 	if (request.method === 'wallet_revokePermissions') {
 		const parsedRequest = parseWalletRevokePermissionsRequest(websiteTabConnections, request)
 		if (parsedRequest === undefined) return
 		const result = await revokeWebsitePermissions(simulationServicesOwner, websiteTabConnections, websiteOrigin)
 		return replyToInterceptedRequest(websiteTabConnections, { ...getRequestWithDefinedParams(request), ...result })
+	}
+	if (initialSettings === undefined) {
+		replyIfRpcConfigurationIsUnavailable(simulationServicesOwner, websiteTabConnections, request, initialSnapshot.rpcConfiguration)
+		return
 	}
 	if (replyIfRpcConfigurationIsUnavailable(simulationServicesOwner, websiteTabConnections, request, initialSnapshot.rpcConfiguration)) return
 	const addressContext = await discoverAccountRequestAddressContext(websiteTabConnections, socket, request, websiteOrigin, initialSettings)

@@ -2916,9 +2916,9 @@ describe('background eth_accounts', () => {
 		assert.equal(access?.addressAccess, undefined)
 	})
 
-	test.each(['paused service owner', 'corrupt RPC list'])('wallet_revokePermissions revokes access while the RPC configuration is unavailable because of a %s', async (unavailableState) => {
+	test.each(['paused service owner', 'corrupt RPC list', 'corrupt active RPC network'])('wallet_revokePermissions revokes access while the RPC configuration is unavailable because of a %s', async (unavailableState) => {
 		installBrowserMock()
-		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, getRequiredSettings } = await loadModules()
+		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, getRequiredSettings, getWebsiteAccess } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
 		const account = 0x1111111111111111111111111111111111111111n
@@ -2936,7 +2936,9 @@ describe('background eth_accounts', () => {
 		// Reading settings first persists a readable active RPC network, so only the RPC list is unusable in the corrupt case.
 		await getRequiredSettings()
 		if (unavailableState === 'paused service owner') simulationServicesOwner.clear()
-		else await browser.storage.local.set({ rpcEntries: 'not-an-rpc-list' })
+		else if (unavailableState === 'corrupt RPC list') await browser.storage.local.set({ rpcEntries: 'not-an-rpc-list' })
+		// Without a readable active RPC network the request has no settings at admission at all.
+		else await browser.storage.local.set({ activeRpcNetwork: 'corrupt' })
 
 		const originalWarn = console.warn
 		console.warn = () => undefined
@@ -2956,7 +2958,8 @@ describe('background eth_accounts', () => {
 		assert.equal(revokeReplies.at(-1)?.error, undefined)
 		assert.equal(revokeReplies.at(-1)?.result, null)
 		assert.equal(websiteTabConnections.get(socket.tabId)?.connections[connectionKey]?.approved, false)
-		const access = (await getRequiredSettings()).websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin)
+		assert.equal(messages.some((message) => message.method === 'accountsChanged' && Array.isArray(message.result) && message.result.length > 0), false)
+		const access = (await getWebsiteAccess()).find((entry) => entry.website.websiteOrigin === websiteOrigin)
 		assert.equal(access?.access, undefined)
 		assert.equal(access?.addressAccess, undefined)
 	})

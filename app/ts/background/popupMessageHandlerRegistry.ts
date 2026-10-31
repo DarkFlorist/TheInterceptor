@@ -4,21 +4,40 @@ import type { PopupReplyOption } from '../types/interceptor-reply-messages.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { createMethodHandlerFor } from '../utils/methodHandlers.js'
 import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
-import type { RpcConfigurationState } from './storageVariables.js'
+import type { RpcConfigurationState } from './rpcConfigurationStorage.js'
 import { getRpcServicesAtAdmission, rpcConfigurationIsReady, rpcConfigurationIsUsable } from './rpcConfigurationAvailability.js'
-import { RPC_CONFIGURATION_UNAVAILABLE_ERROR } from '../types/interceptor-reply-messages.js'
+import { PopupRequestsReplies, RPC_CONFIGURATION_UNAVAILABLE_ERROR } from '../types/interceptor-reply-messages.js'
+import { popupSettingsOperations } from '../types/popupSettingsProtocol.js'
+import { assertNever, hasOwnKey } from '../utils/typescript.js'
 import { RPC_CONFIGURATION_UNAVAILABLE_MESSAGE } from '../utils/rpcConfigurationError.js'
 
+// Every popup request that expects a reply must choose its unavailable reply here (the switch is exhaustive); settings commands use the reply type their protocol descriptor declares. Messages without a reply codec get the generic error.
 function rpcConfigurationUnavailableReply(request: PopupMessage): PopupReplyOption {
-	switch (request.method) {
+	const { method } = request
+	if (!hasOwnKey(PopupRequestsReplies, method)) return { error: RPC_CONFIGURATION_UNAVAILABLE_ERROR }
+	if (hasOwnKey(popupSettingsOperations, method)) return { type: popupSettingsOperations[method].replyType, ok: false, message: RPC_CONFIGURATION_UNAVAILABLE_MESSAGE }
+	switch (method) {
 		case 'popup_setSafeSimulationSigner': return { type: 'SetSafeSimulationSignerReply', ok: false, message: RPC_CONFIGURATION_UNAVAILABLE_MESSAGE }
 		case 'popup_addOrModifyAddressBookEntry': return { type: 'AddOrModifyAddressBookEntryReply', ok: false, message: RPC_CONFIGURATION_UNAVAILABLE_MESSAGE }
-		case 'popup_changeActiveAddress': return { type: 'ChangeActiveAddressReply', ok: false, message: RPC_CONFIGURATION_UNAVAILABLE_MESSAGE }
-		case 'popup_enableSimulationMode':
-		case 'popup_changeActiveRpc':
-		case 'popup_modifyMakeMeRich': return { type: 'PopupSettingsChangeReply', ok: false, message: RPC_CONFIGURATION_UNAVAILABLE_MESSAGE }
 		case 'popup_readyAndListening': return { method: 'popup_readyAndListening', ok: false, message: RPC_CONFIGURATION_UNAVAILABLE_MESSAGE }
-		default: return { error: RPC_CONFIGURATION_UNAVAILABLE_ERROR }
+		case 'popup_requestMakeMeRichData':
+		case 'popup_requestActiveAddresses':
+		case 'popup_requestSimulationMode':
+		case 'popup_requestLatestUnexpectedError':
+		case 'popup_requestInterceptorSimulationInput':
+		case 'popup_importSimulationStack':
+		case 'popup_requestSafeStackExport':
+		case 'popup_importSafeStack':
+		case 'popup_requestCompleteVisualizedSimulation':
+		case 'popup_requestSimulationMetadata':
+		case 'popup_requestAbiAndNameFromBlockExplorer':
+		case 'popup_requestIdentifyAddress':
+		case 'popup_requestSafeContractState':
+		case 'popup_simulateGovernanceContractExecution':
+		case 'popup_simulateGnosisSafeTransaction':
+		case 'popup_isMainPopupWindowOpen':
+		case 'popup_isSimulationVisualizerOpen': return { error: RPC_CONFIGURATION_UNAVAILABLE_ERROR }
+		default: return assertNever(method)
 	}
 }
 
@@ -42,7 +61,7 @@ type PopupAdmissionMode = 'settings' | 'recovery' | 'rpc-configuration' | 'rpc-u
 // This exhaustive table is the single source of truth for popup admission. Adding a protocol method requires choosing its availability and snapshot semantics here.
 const POPUP_ADMISSION_MODE = {
 	popup_ChangeSettings: 'settings',
-	popup_UnexpectedErrorOccured: 'settings',
+	popup_UnexpectedErrorOccured: 'recovery',
 	popup_addOrModifyAddressBookEntry: 'optional-rpc-snapshot',
 	popup_allowOrPreventAddressAccessForWebsite: 'settings',
 	popup_blockOrAllowExternalRequests: 'settings',
@@ -53,7 +72,7 @@ const POPUP_ADMISSION_MODE = {
 	popup_changeInterceptorAccess: 'settings',
 	popup_changePage: 'settings',
 	popup_changePreSimulationBlockTimeManipulation: 'rpc-snapshot',
-	popup_clearUnexpectedError: 'settings',
+	popup_clearUnexpectedError: 'recovery',
 	popup_confirmDialog: 'rpc-snapshot',
 	popup_enableSimulationMode: 'rpc-configuration',
 	popup_fetchSimulationStackRequestConfirmation: 'rpc-snapshot',
@@ -91,7 +110,7 @@ const POPUP_ADMISSION_MODE = {
 	popup_requestHomePageBootstrap: 'settings',
 	popup_requestIdentifyAddress: 'rpc-snapshot',
 	popup_requestInterceptorSimulationInput: 'rpc-snapshot',
-	popup_requestLatestUnexpectedError: 'settings',
+	popup_requestLatestUnexpectedError: 'recovery',
 	popup_requestMakeMeRichData: 'rpc-snapshot',
 	popup_requestNewHomeData: 'rpc-snapshot',
 	popup_requestSafeContractState: 'rpc-snapshot',

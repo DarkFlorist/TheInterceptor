@@ -50,7 +50,8 @@ Object.defineProperty(globalThis, 'browser', {
 Object.defineProperty(globalThis, 'chrome', { configurable: true, writable: true, value: { runtime: { id: 'test-extension' } } })
 
 const { browserStorageLocalGet, browserStorageLocalGet2Result, browserStorageLocalSet } = await import('../../app/ts/utils/storageUtils.js')
-const { getRpcConfigurationState, getRpcConfigurationStateWithStorageSnapshot, getRpcConnectionStatus, getRpcList, promoteRpcAsPrimary, setRpcConfiguration } = await import('../../app/ts/background/storageVariables.js')
+const { getRpcConnectionStatus } = await import('../../app/ts/background/storageVariables.js')
+const { getRpcConfigurationState, getRpcConfigurationStateWithStorageSnapshot, getRpcList, promoteRpcAsPrimary, setRpcConfiguration } = await import('../../app/ts/background/rpcConfigurationStorage.js')
 const { createSimulationServicesOwner } = await import('../../app/ts/simulation/serviceLifecycle.js')
 const { captureRpcNetwork, getRequiredSettings, getSettingsForCapturedRpcNetwork, getSettingsSnapshot } = await import('../../app/ts/background/settings.js')
 const { restoreDefaultRpcConfiguration, retryRpcConfiguration, setNewRpcList, settingsOpened } = await import('../../app/ts/background/popupMessageHandlers/settings.js')
