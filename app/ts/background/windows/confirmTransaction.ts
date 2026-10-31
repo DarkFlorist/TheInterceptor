@@ -16,7 +16,8 @@ import { captureSimulationSnapshot, getUpdatedSimulationState } from '../simulat
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getRpcConnectionStatus, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
 import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
-import { replyToInterceptedRequestAfterManifestV2Reconnect } from '../messageSending.js'
+import { replyToInterceptedRequest } from '../messageSending.js'
+import { attemptDeliveryAfterManifestV2Reconnect } from '../manifestV2Reconnect.js'
 import { attemptQueuedTerminalReplyDelivery, queueTerminalReply, queueTerminalReplyAndAttemptDelivery } from '../terminalReplyDelivery.js'
 import { stringToBytes, keccak256 } from '../../utils/ethereumPrimitives.js'
 import { EthereumBytes32, EthereumQuantity, serialize } from '../../types/wire-types.js'
@@ -26,7 +27,7 @@ import type { PendingTransactionOrSignableMessage, PopupPendingTransactionOrSign
 import type { SignMessageParams } from '../../types/jsonRpc-signing-types.js'
 import type { SafeSignerErrorDetails } from '../../types/safeTypes.js'
 import { craftPersonalSignPopupMessage } from './personalSign.js'
-import { getSettings } from '../settings.js'
+import { getSettings, getSimulationModeGeneration, isSimulationModeGenerationCurrent } from '../settings.js'
 import * as funtypes from 'funtypes'
 import { assertNever, modifyObject } from '../../utils/typescript.js'
 import { simulateGnosisSafeTransactionOnPass } from '../popupMessageHandlers.js'
@@ -50,6 +51,13 @@ import { createSafeSignerErrorStatus } from '../safeSignerErrors.js'
 const pendingConfirmationSemaphore = new Semaphore(1)
 const pendingNoResponseRetryTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const NO_RESPONSE_RETRY_DELAY_MS = 50
+
+// A request created in signing mode is not forwarded once the Interceptor has switched to simulation mode; it stays pending so the user can reject it.
+const SIMULATION_MODE_ENABLED_AFTER_REQUEST: PendingTransactionOrSignableMessage['approvalStatus'] = {
+	status: 'SignerError',
+	code: METAMASK_ERROR_BLANKET_ERROR,
+	message: 'The Interceptor switched to simulation mode after this request was made. Reject this request and send it again.',
+}
 
 async function refreshDirectSafeExecutionSimulation(
 	ethereum: EthereumClientService,
@@ -318,8 +326,8 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 		if ((await getPendingTransactionsAndMessages()).length === 0) await tryFocusingTabOrWindow({ type: 'tab', id: pendingTransactionOrMessage.uniqueRequestIdentifier.requestSocket.tabId })
 		if (!(await updateConfirmTransactionView(ethereum, tokenPriceService))) await closePopupOrTabById(pendingTransactionOrMessage.popupOrTabId)
 	}
-	const reply = async (message: { type: 'forwardToSigner' } | { type: 'result', error: { code: number, message: string } } | { type: 'result', result: unknown }) => {
-		if (message.type === 'result' && !('error' in message)) {
+	const reply = async (message: { type: 'result', error: { code: number, message: string } } | { type: 'result', result: unknown }) => {
+		if (!('error' in message)) {
 			if (pendingTransactionOrMessage.originalRequestParameters.method === 'eth_sendRawTransaction' || pendingTransactionOrMessage.originalRequestParameters.method === 'eth_sendTransaction') {
 				const terminalReply = { ...pendingTransactionOrMessage.originalRequestParameters, ...message, result: EthereumBytes32.parse(message.result), uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier }
 				await queueTerminalReply(terminalReply)
@@ -331,14 +339,10 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 			await removePendingRequestAndUpdateView()
 			return await attemptQueuedTerminalReplyDelivery(websiteTabConnections, terminalReply)
 		}
-		if (message.type === 'result') {
-			const terminalReply = { ...pendingTransactionOrMessage.originalRequestParameters, ...message, uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier }
-			await queueTerminalReply(terminalReply)
-			await removePendingRequestAndUpdateView()
-			return await attemptQueuedTerminalReplyDelivery(websiteTabConnections, terminalReply)
-		}
+		const terminalReply = { ...pendingTransactionOrMessage.originalRequestParameters, ...message, uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier }
+		await queueTerminalReply(terminalReply)
 		await removePendingRequestAndUpdateView()
-		return await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, { ...pendingTransactionOrMessage.originalRequestParameters, ...message, uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
+		return await attemptQueuedTerminalReplyDelivery(websiteTabConnections, terminalReply)
 	}
 	if (confirmation.data.action === 'addToSafeStack') {
 		if (pendingTransactionOrMessage.approvalStatus.status === 'WaitingForSigner') return false
@@ -357,21 +361,6 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 		confirmation.data.action === 'accept'
 		&& pendingTransactionOrMessage.transactionOrMessageCreationStatus !== 'Simulated'
 	) return false
-	if (confirmation.data.action === 'accept' && pendingTransactionOrMessage.simulationMode === false) {
-		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'WaitingForSigner' } }))
-		await updateConfirmTransactionView(ethereum, tokenPriceService)
-		const requestWasForwarded = await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, { ...signerFacingRequest, type: 'forwardToSigner', uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
-		if (requestWasForwarded) return true
-		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, {
-			approvalStatus: {
-				status: 'SignerError',
-				code: METAMASK_ERROR_BLANKET_ERROR,
-				message: 'The website connection was interrupted before the request reached your wallet. Reload the website and try again.',
-			}
-		}))
-		await updateConfirmTransactionView(ethereum, tokenPriceService)
-		return false
-	}
 	if (confirmation.data.action === 'noResponse') {
 		const noResponseDelivery = await queueTerminalReplyAndAttemptDelivery(websiteTabConnections, {
 			...pendingTransactionOrMessage.originalRequestParameters,
@@ -396,8 +385,40 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 			if (safeReply.status === 'success') return reply({ type: 'result', result: safeReply.result })
 			return reply({ type: 'result', result: confirmation.data.signerReply })
 		}
-		await removePendingRequestAndUpdateView()
-		return await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, { ...signerFacingRequest, type: 'forwardToSigner', uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
+		// The only popup approval that forwards a request to the signer. A request created in signing mode is refused if the Interceptor has since switched to simulation mode.
+		const setApprovalStatusAndUpdateView = async (approvalStatus: PendingTransactionOrSignableMessage['approvalStatus']) => {
+			await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus }))
+			await updateConfirmTransactionView(ethereum, tokenPriceService)
+		}
+		// Captured before the mode is read, so a switch that completes after the read still invalidates the forward.
+		const simulationModeGenerationAtApproval = getSimulationModeGeneration()
+		if ((await getSettings()).simulationMode) {
+			await setApprovalStatusAndUpdateView(SIMULATION_MODE_ENABLED_AFTER_REQUEST)
+			return false
+		}
+		await setApprovalStatusAndUpdateView({ status: 'WaitingForSigner' })
+		const forward = { ...signerFacingRequest, type: 'forwardToSigner' as const, uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier }
+		let simulationModeEnabledBeforeDelivery = false
+		const requestWasForwarded = await attemptDeliveryAfterManifestV2Reconnect(websiteTabConnections, forward, () => {
+			// Nothing is awaited between this check and posting the forward, so simulation mode was either enabled before the check or only after the request was posted. It also runs before the retry after a Manifest V2 content script reconnect.
+			if (!isSimulationModeGenerationCurrent(simulationModeGenerationAtApproval)) {
+				simulationModeEnabledBeforeDelivery = true
+				// Only a false result makes the reconnect helper retry, so returning undefined ends the delivery without posting.
+				return undefined
+			}
+			return replyToInterceptedRequest(websiteTabConnections, forward)
+		})
+		if (simulationModeEnabledBeforeDelivery) {
+			await setApprovalStatusAndUpdateView(SIMULATION_MODE_ENABLED_AFTER_REQUEST)
+			return false
+		}
+		if (requestWasForwarded) return true
+		await setApprovalStatusAndUpdateView({
+			status: 'SignerError',
+			code: METAMASK_ERROR_BLANKET_ERROR,
+			message: 'The website connection was interrupted before the request reached your wallet. Reload the website and try again.',
+		})
+		return false
 	}
 	if (confirmation.data.action === 'signerIncluded') throw new Error('Signer included transaction that was in simulation')
 
