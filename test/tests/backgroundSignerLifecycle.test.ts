@@ -140,6 +140,25 @@ describe('background eth_accounts', () => {
 		assert.doesNotMatch(tabIconDetails.iconReason, /blocking external requests/)
 	})
 
+	test('reports MV2 site blocking only after its request listener is installed and retries a failed installation', async () => {
+		const browserMock = installBrowserMock({ manifestVersion: 2 })
+		const { areWeBlocking, updateDeclarativeNetRequestBlocks, updateWebsiteAccess } = await loadModules()
+		const blockedWebsiteOrigin = 'mv2-blocked.example'
+		await updateWebsiteAccess(() => [{ website: { websiteOrigin: blockedWebsiteOrigin, icon: undefined, title: undefined }, access: true, declarativeNetRequestBlockMode: 'block-all' }])
+		const onBeforeRequest = browser.webRequest.onBeforeRequest
+		const installListener = onBeforeRequest.addListener
+		Object.defineProperty(onBeforeRequest, 'addListener', { configurable: true, value: () => { throw new Error('Listener installation failed') } })
+
+		await assert.rejects(updateDeclarativeNetRequestBlocks(new Map()), /Listener installation failed/)
+		assert.equal(await areWeBlocking(1, blockedWebsiteOrigin), false)
+
+		Object.defineProperty(onBeforeRequest, 'addListener', { configurable: true, value: installListener })
+		await updateDeclarativeNetRequestBlocks(new Map())
+
+		assert.equal(browserMock.requestBlockingCalls.webRequestListenerAdds, 1)
+		assert.equal(await areWeBlocking(1, blockedWebsiteOrigin), true)
+	})
+
 	test('keeps tab blocking rules applied before a service-worker restart while the active RPC network is unreadable', async () => {
 		const blockedBeforeRestartTabId = 9878
 		const browserMock = installBrowserMock({ manifestVersion: 3, initialSessionRules: [{ id: 1, condition: { tabIds: [blockedBeforeRestartTabId] } }] })

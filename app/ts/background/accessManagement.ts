@@ -245,31 +245,15 @@ function addIconRefreshTarget(iconRefreshTargets: Map<string, { tabId: number, w
 	iconRefreshTargets.set(key, { tabId, websiteOrigin })
 }
 
-async function getConnectionAccess(websiteTabConnections: WebsiteTabConnections, connection: TabConnection['connections'][string], settings: Settings) {
-	const activeAddress = await getActiveAddressForCurrentSignerState(websiteTabConnections, settings, connection.socket.tabId, async () => await getActiveAddress(settings, connection.socket.tabId))
-	const access = activeAddress ? hasAddressAccess(settings.websiteAccess, connection.websiteOrigin, activeAddress) : hasAccess(settings.websiteAccess, connection.websiteOrigin)
-	return { activeAddress, access }
-}
+type WebsiteConnection = TabConnection['connections'][string]
 
-async function updateTabConnections(
-	websiteTabConnections: WebsiteTabConnections,
-	tabConnection: TabConnection,
-	settings: Settings,
-): Promise<Map<string, { tabId: number, websiteOrigin: string }>> {
-	const iconRefreshTargets = new Map<string, { tabId: number, websiteOrigin: string }>()
-	for (const key in tabConnection.connections) {
-		const connection = tabConnection.connections[key]
-		if (connection === undefined) throw new Error('missing connection')
-		const { activeAddress, access } = await getConnectionAccess(websiteTabConnections, connection, settings)
-		addIconRefreshTarget(iconRefreshTargets, connection.socket.tabId, connection.websiteOrigin)
+const getConnectionActiveAddress = async (websiteTabConnections: WebsiteTabConnections, connection: WebsiteConnection, settings: Settings) => await getActiveAddressForCurrentSignerState(websiteTabConnections, settings, connection.socket.tabId, async () => await getActiveAddress(settings, connection.socket.tabId))
 
-		if (access !== 'hasAccess' && connection.approved) {
-			disconnectFromPort(websiteTabConnections, connection.socket)
-		} else if (access === 'hasAccess' && !connection.approved) {
-			connectToPort(websiteTabConnections, connection.socket, settings, activeAddress?.address)
-		}
-	}
-	return iconRefreshTargets
+const getConnectionAccessForAddress = (websiteAccess: WebsiteAccessArray, connection: WebsiteConnection, activeAddress: AddressBookEntry | undefined) => activeAddress ? hasAddressAccess(websiteAccess, connection.websiteOrigin, activeAddress) : hasAccess(websiteAccess, connection.websiteOrigin)
+
+async function getConnectionAccess(websiteTabConnections: WebsiteTabConnections, connection: WebsiteConnection, settings: Settings) {
+	const activeAddress = await getConnectionActiveAddress(websiteTabConnections, connection, settings)
+	return { activeAddress, access: getConnectionAccessForAddress(settings.websiteAccess, connection, activeAddress) }
 }
 
 async function promptForWebsiteAccesses(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, throwOnError = false) {
@@ -409,27 +393,27 @@ export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: W
 			// const a = (data: any) => { console.log(data) }
 			// (browser.declarativeNetRequest as any).onRuleMatchedDebug.addListener(a)
 		} else {
-			if (siteBlocksChanged) {
-				previousSitesToBlock = sitesToBlock
-				previousSiteBlockIdentifier = siteBlockIdentifier
-			}
-			if (tabBlocksChanged) {
-				previousTabIdsToBlock = tabIdsToBlock
-				previousTabBlockIdentifier = tabBlockIdentifier
-			}
 			browser.webRequest.onBeforeRequest.removeListener(webRequestListener)
+			// Nothing is applied until the replacement listener is installed, so a failed installation reports no blocking and the next reconciliation retries it.
+			previousSitesToBlock = []
+			previousTabIdsToBlock = []
+			previousSiteBlockIdentifier = undefined
+			previousTabBlockIdentifier = undefined
 			webRequestListener = (details: browser.webRequest._OnBeforeRequestDetails) => {
-				if (previousTabIdsToBlock.find((tabId) => tabId === details.tabId) !== undefined) return { cancel: true }
+				if (tabIdsToBlock.find((tabId) => tabId === details.tabId) !== undefined) return { cancel: true }
 				if (details.originUrl === undefined) return {}
 				if (details.type === 'main_frame') return {}
 				const websiteOrigin = getHostWithPort(details.originUrl)
 				const destinationHost = getHostWithPort(details.url)
 				if (destinationHost === websiteOrigin) return {}
-				if (previousSitesToBlock.find((blockUrl) => blockUrl === websiteOrigin) !== undefined) return { cancel: true }
+				if (sitesToBlock.find((blockUrl) => blockUrl === websiteOrigin) !== undefined) return { cancel: true }
 				return {}
 			}
-			if (previousSitesToBlock.length === 0 && previousTabIdsToBlock.length === 0) return
-			browser.webRequest.onBeforeRequest.addListener(webRequestListener, { urls: ['<all_urls>'] }, ['blocking'])
+			if (sitesToBlock.length !== 0 || tabIdsToBlock.length !== 0) browser.webRequest.onBeforeRequest.addListener(webRequestListener, { urls: ['<all_urls>'] }, ['blocking'])
+			previousSitesToBlock = sitesToBlock
+			previousTabIdsToBlock = tabIdsToBlock
+			previousSiteBlockIdentifier = siteBlockIdentifier
+			previousTabBlockIdentifier = tabBlockIdentifier
 		}
 	})
 }
@@ -473,14 +457,22 @@ export async function reconcileWebsiteApprovalAccesses(
 		if (throwOnError) throw error
 		await reportUnexpectedError(error)
 	}
-	// Approvals are read after the last await before connections change, so an approval revoked while the caller or the request-block update awaited is not restored from an older snapshot.
-	const settingsWithCurrentApprovals = await withCurrentWebsiteAccess(settings)
-	const updatePromises = [...websiteTabConnections.values()].map(async (tabConnection) => {
-		const tabIconRefreshTargets = await updateTabConnections(websiteTabConnections, tabConnection, settingsWithCurrentApprovals)
-		for (const iconRefreshTarget of tabIconRefreshTargets.values()) addIconRefreshTarget(iconRefreshTargets, iconRefreshTarget.tabId, iconRefreshTarget.websiteOrigin)
-	})
+	// Resolving a connection's active address awaits storage and signer state, so it is done for every connection before approvals are read.
+	const connections = [...websiteTabConnections.values()].flatMap((tabConnection) => Object.values(tabConnection.connections))
+	const addressResolutions = await Promise.allSettled(connections.map(async (connection) => ({ connection, activeAddress: await getConnectionActiveAddress(websiteTabConnections, connection, settings) })))
 	try {
-		await Promise.all(updatePromises)
+		// Approvals are read after every other await and applied with none in between, so a reconciliation that resumes after a newer one cannot restore an approval revoked meanwhile; unreadable storage yields none.
+		const settingsWithCurrentApprovals = await withCurrentWebsiteAccess(settings)
+		for (const addressResolution of addressResolutions) {
+			if (addressResolution.status === 'rejected') continue
+			const { connection, activeAddress } = addressResolution.value
+			addIconRefreshTarget(iconRefreshTargets, connection.socket.tabId, connection.websiteOrigin)
+			const access = getConnectionAccessForAddress(settingsWithCurrentApprovals.websiteAccess, connection, activeAddress)
+			if (access !== 'hasAccess' && connection.approved) disconnectFromPort(websiteTabConnections, connection.socket)
+			else if (access === 'hasAccess' && !connection.approved) connectToPort(websiteTabConnections, connection.socket, settingsWithCurrentApprovals, activeAddress?.address)
+		}
+		const failedAddressResolution = addressResolutions.find((addressResolution): addressResolution is PromiseRejectedResult => addressResolution.status === 'rejected')
+		if (failedAddressResolution !== undefined) throw failedAddressResolution.reason
 	} catch (error) {
 		if (throwOnError) throw error
 		await reportUnexpectedError(error)
