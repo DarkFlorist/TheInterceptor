@@ -1,6 +1,7 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
+import { ICON_NOT_ACTIVE_WITH_SHIELD } from '../../app/ts/utils/constants.js'
 import { getWalletSwitchRequestId, confirmedSignerOwnership, createDeferredValue, createEthereumWithGetBlockCounter, createPort, createTestSimulationServicesOwner, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
 
 describe('background eth_accounts', () => {
@@ -89,6 +90,24 @@ describe('background eth_accounts', () => {
 
 		// Checked straight after registration, before areWeBlocking or any navigation-completion update could reconcile.
 		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [tabId])
+	})
+
+	test('updates the tab icon with the blocking shield while the active RPC network is unreadable', async () => {
+		installBrowserMock({ manifestVersion: 3 })
+		const { registerWebsiteConnectionAndReconcileRequestBlocks, getTabState } = await loadModules()
+		const { updateExtensionIcon } = await import('../../app/ts/background/iconHandler.js')
+		const consentedWebsiteOrigin = 'consented-icon.example'
+		await setUpAddressLevelBlockAllWithUnreadableActiveRpcNetwork(consentedWebsiteOrigin)
+		const websiteTabConnections: WebsiteTabConnections = new Map()
+		const socket = { tabId: 9882, connectionName: 0n }
+		await withSilencedWarnings(async () => await (await registerWebsiteConnectionAndReconcileRequestBlocks(websiteTabConnections, socket, { port: createPort(socket.tabId).port, socket, websiteOrigin: consentedWebsiteOrigin, approved: false, wantsToConnect: false }, true)).requestBlocksReconciliation)
+
+		await withSilencedWarnings(async () => await updateExtensionIcon(websiteTabConnections, socket.tabId, consentedWebsiteOrigin, 1))
+
+		const { tabIconDetails } = await getTabState(socket.tabId)
+		assert.equal(tabIconDetails.icon, ICON_NOT_ACTIVE_WITH_SHIELD)
+		assert.match(tabIconDetails.iconReason, /RPC configuration is unavailable/)
+		assert.match(tabIconDetails.iconReason, /blocking external requests/)
 	})
 
 	test('applies persisted-consent tab blocking before reporting it', async () => {

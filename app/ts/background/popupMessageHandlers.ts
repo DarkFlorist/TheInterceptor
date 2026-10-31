@@ -44,7 +44,7 @@ import { updateInterceptorAccessViewWithPendingRequests } from './windows/interc
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { updateFetchSimulationStackRequestWithPendingRequest } from './windows/fetchSimulationStack.js'
 import { getRpcServicesAtAdmission, rpcConfigurationIsReady } from './rpcConfigurationAvailability.js'
-import { createRpcConfigurationUnavailableError, isRpcConfigurationUnavailableError } from '../utils/rpcConfigurationError.js'
+import { createRpcConfigurationUnavailableError, isRpcConfigurationUnavailableError, RPC_CONFIGURATION_UNAVAILABLE_MESSAGE } from '../utils/rpcConfigurationError.js'
 import { estimateSerializedStateBytes, formatEstimatedBytes } from '../utils/largeStateStore.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerformance.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
@@ -137,13 +137,14 @@ export async function confirmRequestAccess(simulationServicesOwner: SimulationSe
 	await resolveInterceptorAccess(simulationServicesOwner, websiteTabConnections, confirmation.data, publishRpcConnectionStatus)
 }
 
-export async function popupReadyAndListening(ethereum: EthereumClientService, websiteTabConnections: WebsiteTabConnections, page: PopupReadyAndListeningPage) {
+export async function popupReadyAndListening(ethereum: EthereumClientService | undefined, websiteTabConnections: WebsiteTabConnections, page: PopupReadyAndListeningPage) {
 	switch (page) {
 		case 'watchAsset': {
 			const request = await updateWatchAssetViewWithPendingRequest(websiteTabConnections)
 			if (request === undefined) return undefined
 			return {
 				method: 'popup_readyAndListening' as const,
+				ok: true as const,
 				data: {
 					popupOrTabId: request.popupOrTabId,
 					confirmTransactionBootstrap: undefined,
@@ -156,6 +157,7 @@ export async function popupReadyAndListening(ethereum: EthereumClientService, we
 			await updateChainChangeViewWithPendingRequest()
 			return {
 				method: 'popup_readyAndListening' as const,
+				ok: true as const,
 				data: {
 					popupOrTabId: promise.popupOrTabId,
 					confirmTransactionBootstrap: undefined,
@@ -166,11 +168,13 @@ export async function popupReadyAndListening(ethereum: EthereumClientService, we
 			const pendingTransactions = await getPendingTransactionsAndMessages()
 			const firstPendingTransaction = pendingTransactions[0]
 			if (firstPendingTransaction === undefined) return undefined
+			if (ethereum === undefined) return { method: 'popup_readyAndListening' as const, ok: false as const, message: RPC_CONFIGURATION_UNAVAILABLE_MESSAGE }
 			const currentBlockNumber = await ethereum.getBlockNumber(undefined)
 			const rpcConnectionStatus = await getRpcConnectionStatus()
 			const visualizedSimulatorState = await getPopupVisualisationState()
 			return {
 				method: 'popup_readyAndListening' as const,
+				ok: true as const,
 				data: {
 					popupOrTabId: firstPendingTransaction.popupOrTabId,
 					confirmTransactionBootstrap: {
@@ -189,6 +193,7 @@ export async function popupReadyAndListening(ethereum: EthereumClientService, we
 			await updateInterceptorAccessViewWithPendingRequests()
 			return {
 				method: 'popup_readyAndListening' as const,
+				ok: true as const,
 				data: {
 					popupOrTabId: firstPendingAccessRequest.popupOrTabId,
 					confirmTransactionBootstrap: undefined,
@@ -201,6 +206,7 @@ export async function popupReadyAndListening(ethereum: EthereumClientService, we
 			await updateFetchSimulationStackRequestWithPendingRequest()
 			return {
 				method: 'popup_readyAndListening' as const,
+				ok: true as const,
 				data: {
 					popupOrTabId: promise.popupOrTabId,
 					confirmTransactionBootstrap: undefined,

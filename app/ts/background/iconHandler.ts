@@ -5,7 +5,8 @@ import { getActiveAddress, sendPopupMessageToOpenWindows, setExtensionBadgeBackg
 import { createScopedKeyedSerialExecutor } from '../utils/semaphore.js'
 import { Future } from '../utils/future.js'
 import type { TabIcon, TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
-import { getRequiredSettings, getWebsiteAccess } from './settings.js'
+import { getSettingsSnapshot, getWebsiteAccess } from './settings.js'
+import { RPC_CONFIGURATION_UNAVAILABLE_MESSAGE } from '../utils/rpcConfigurationError.js'
 import { getRpcConnectionStatus, getTabState, removeTabState, updateTabState } from './storageVariables.js'
 import { getLastKnownCurrentTabId } from './currentTab.js'
 import { checkAndPrintRuntimeLastError, doesTabExist, getTabIfExists, isMissingBrowserTargetError, silenceChromeUnCaughtPromise } from '../utils/requests.js'
@@ -122,8 +123,10 @@ export async function updateExtensionIcon(websiteTabConnections: WebsiteTabConne
 		const addShieldIfNeeded = async (icon: TabIcon): Promise<TabIcon> => await blockingWebsitePromise ? addBlockingShieldToIcon(icon) : icon
 		const setIcon = async (icon: TabIcon, iconReason: string) => setInterceptorIcon(tabId, await addShieldIfNeeded(icon), await blockingWebsitePromise ? `${ iconReason } The Interceptor is blocking external requests made by the website.` : iconReason, popupRefreshGeneration)
 
-		const settings = await getRequiredSettings()
-		if (hasAccess(settings.websiteAccess, websiteOrigin) === 'interceptorDisabled') return setIcon(ICON_INTERCEPTOR_DISABLED, `The Interceptor is disabled for ${ websiteOrigin } by user request.`)
+		const { settings, websiteAccess } = await getSettingsSnapshot()
+		if (hasAccess(websiteAccess, websiteOrigin) === 'interceptorDisabled') return setIcon(ICON_INTERCEPTOR_DISABLED, `The Interceptor is disabled for ${ websiteOrigin } by user request.`)
+		// The active address is resolved on the active RPC network's chain, so while that network is unavailable the icon shows the paused state (with the blocking shield when blocking is applied).
+		if (settings === undefined) return setIcon(ICON_NOT_ACTIVE, RPC_CONFIGURATION_UNAVAILABLE_MESSAGE)
 		const activeAddress = await getActiveAddress(settings, tabId)
 		if (activeAddress === undefined) return setIcon(ICON_NOT_ACTIVE, 'No active address selected.')
 		const addressAccess = hasAddressAccess(settings.websiteAccess, websiteOrigin, activeAddress)

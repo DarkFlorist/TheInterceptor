@@ -284,13 +284,18 @@ const ConfirmTransactionBootstrapReply = funtypes.ReadonlyObject({
 }).asReadonly()
 
 type PopupReadyAndListeningReply = funtypes.Static<typeof PopupReadyAndListeningReply>
-const PopupReadyAndListeningReply = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_readyAndListening'),
-	data: funtypes.ReadonlyObject({
-		popupOrTabId: PopupOrTabId,
-		confirmTransactionBootstrap: funtypes.Union(ConfirmTransactionBootstrapReply, funtypes.Undefined),
-	}),
-}).asReadonly()
+const PopupReadyAndListeningReply = funtypes.Union(
+	funtypes.ReadonlyObject({
+		method: funtypes.Literal('popup_readyAndListening'),
+		ok: funtypes.Literal(true),
+		data: funtypes.ReadonlyObject({
+			popupOrTabId: PopupOrTabId,
+			confirmTransactionBootstrap: funtypes.Union(ConfirmTransactionBootstrapReply, funtypes.Undefined),
+		}),
+	}).asReadonly(),
+	// Only the confirmTransaction bootstrap needs RPC services; it gets this reply while they are unavailable.
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_readyAndListening'), ok: funtypes.Literal(false), message: funtypes.String }).asReadonly(),
+)
 
 type PopupSettingsReplyCodecs = {
 	ChangeActiveAddressReply: typeof ChangeActiveAddressReply

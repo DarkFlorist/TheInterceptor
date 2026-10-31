@@ -6,7 +6,7 @@ import { getSimulationStackTargetHash } from '../utils/simulationStackTargets.js
 import { setLatestUnexpectedError } from './storageVariables.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { changeChainDialog, changePage, changePreSimulationBlockTimeManipulation, confirmDialog, fetchSimulationStackRequestConfirmation, forceSetGasLimitForTransaction, importSafeStack, importSimulationStack, openNewTab, openWebPage, popupReadyAndListening, refreshHomeData, refreshPopupConfirmTransactionMetadata, refreshPopupConfirmTransactionSimulation, removeTransactionOrSignedMessage, reportUnexpectedErrorInWindow, requestAccountsFromSigner, requestActiveAddresses, requestCompleteVisualizedSimulation, requestHomePageBootstrap, requestInterceptorSimulationInput, requestLatestUnexpectedError, requestMakeMeRichList, requestNewHomeData, requestSafeStackExport, requestSimulationMetadata, requestSimulationMode, setSafeSimulationSigner, setTransactionOrMessageBlockTimeManipulator, simulateGnosisSafeTransactionOnPass, simulateGovernanceContractExecutionOnPass, watchAssetDialog } from './popupMessageHandlers.js'
-import { popupSnapshotMessageHandler, popupSnapshotWithAccessPromptsMessageHandler, popupMessageHandler, type PopupMessageDispatcherContext, type PopupMessageHandlerMap } from './popupMessageHandlerRegistry.js'
+import { popupOptionalSnapshotMessageHandler, popupSnapshotMessageHandler, popupSnapshotWithAccessPromptsMessageHandler, popupMessageHandler, type PopupMessageDispatcherContext, type PopupMessageHandlerMap } from './popupMessageHandlerRegistry.js'
 import { addressBookPopupMessageHandlers } from './popupMessageHandlerRegistries/addressBook.js'
 import { settingsPopupMessageHandlers } from './popupMessageHandlerRegistries/settings.js'
 import { safePopupMessageHandlers } from './popupMessageHandlerRegistries/safe.js'
@@ -83,10 +83,12 @@ const popupMessageHandlers = {
 		const { ethereum } = context.services
 		return await fetchSimulationStackRequestConfirmation(ethereum, context.websiteTabConnections, request)
 	}),
-	popup_readyAndListening: popupSnapshotMessageHandler('popup_readyAndListening', async (context, request) => {
-		const { ethereum } = context.services
-		return await popupReadyAndListening(ethereum, context.websiteTabConnections, request.data.page)
-	}),
+	popup_readyAndListening: popupOptionalSnapshotMessageHandler(
+		'popup_readyAndListening',
+		async (context, request) => await popupReadyAndListening(context.services?.ethereum, context.websiteTabConnections, request.data.page),
+		// Only the confirmTransaction bootstrap reads the chain; the other dialogs need their popupOrTabId while RPC services are paused.
+		(request) => request.data.page === 'confirmTransaction',
+	),
 	popup_UnexpectedErrorOccured: popupMessageHandler('popup_UnexpectedErrorOccured', async (_context, request) => await reportUnexpectedErrorInWindow(request)),
 	popup_requestInterceptorSimulationInput: popupSnapshotMessageHandler('popup_requestInterceptorSimulationInput', async (context) => {
 		const { ethereum } = context.services

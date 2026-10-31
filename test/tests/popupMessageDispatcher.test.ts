@@ -95,7 +95,7 @@ Reflect.set(globalThis, 'browser', {
 const [
 	{ dispatchPopupMessage },
 	{ websiteSocketToString },
-	{ getLatestUnexpectedError },
+	{ getLatestUnexpectedError, setFetchSimulationStackRequestPromise },
 	{ EthereumClientService: EthereumClientServiceConstructor },
 	{ TokenPriceService: TokenPriceServiceConstructor },
 	{ MessageToPopup },
@@ -288,6 +288,32 @@ describe('popup message dispatcher seams', () => {
 			data: { type: 'contact', name: 'Offline contact', address: 4n, entrySource: 'User' },
 		}), { type: 'AddOrModifyAddressBookEntryReply', ok: true })
 		assert.equal(storageState.userAddressBookEntriesV3?.some((entry) => entry.address === '0x0000000000000000000000000000000000000004'), true)
+	})
+
+	test('ready-and-listening bootstraps dialogs without RPC services and gives confirmTransaction a typed unavailable reply', async () => {
+		const context = createDispatcherContext(async () => undefined)
+		context.settings = undefined
+		context.rpcConfiguration = { status: 'unavailable', reason: 'read-failed', error: new Error('Storage unavailable') }
+		context.simulationServicesOwner.clear()
+		const popupOrTabId = { type: 'popup', id: 7 } as const
+		await setFetchSimulationStackRequestPromise({
+			website: { websiteOrigin: 'stack.test', icon: undefined, title: undefined },
+			popupOrTabId,
+			simulationOverlayEnabled: false,
+			simulationStackVersion: '2.0.0',
+			uniqueRequestIdentifier: { requestId: 1, requestSocket: { tabId: 1, connectionName: 0n } },
+		})
+
+		assert.deepEqual(await dispatchPopupMessage(context, { method: 'popup_readyAndListening', data: { page: 'fetchSimulationStack' } }), {
+			method: 'popup_readyAndListening',
+			ok: true,
+			data: { popupOrTabId, confirmTransactionBootstrap: undefined },
+		})
+		assert.deepEqual(await dispatchPopupMessage(context, { method: 'popup_readyAndListening', data: { page: 'confirmTransaction' } }), {
+			method: 'popup_readyAndListening',
+			ok: false,
+			message: 'Interceptor RPC configuration is unavailable. Network requests are paused until the user restores it.',
+		})
 	})
 
 	test('snapshot registration captures at invocation and keeps one pair across awaits', async () => {

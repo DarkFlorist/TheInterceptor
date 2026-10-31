@@ -17,6 +17,7 @@ function rpcConfigurationUnavailableReply(request: PopupMessage): PopupReplyOpti
 		case 'popup_enableSimulationMode':
 		case 'popup_changeActiveRpc':
 		case 'popup_modifyMakeMeRich': return { type: 'PopupSettingsChangeReply', ok: false, message: RPC_CONFIGURATION_UNAVAILABLE_MESSAGE }
+		case 'popup_readyAndListening': return { method: 'popup_readyAndListening', ok: false, message: RPC_CONFIGURATION_UNAVAILABLE_MESSAGE }
 		default: return { error: RPC_CONFIGURATION_UNAVAILABLE_ERROR }
 	}
 }
@@ -73,7 +74,7 @@ const POPUP_ADMISSION_MODE = {
 	popup_openSimulationStack: 'settings',
 	popup_openWebPage: 'settings',
 	popup_openWebsiteAccess: 'settings',
-	popup_readyAndListening: 'rpc-snapshot',
+	popup_readyAndListening: 'optional-rpc-snapshot',
 	popup_refreshConfirmTransactionDialogSimulation: 'rpc-snapshot',
 	popup_refreshConfirmTransactionMetadata: 'rpc-snapshot',
 	popup_refreshHomeData: 'rpc-snapshot',
