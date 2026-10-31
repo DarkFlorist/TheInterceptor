@@ -46,7 +46,7 @@ import { getSafePendingFlow } from '../../safe/safePendingFlow.js'
 import { persistUnsignedSafeTransaction, resolveSafeSignerReply } from '../safeConfirmationPersistence.js'
 import { getWalletSelectedAccount } from '../../utils/activeAddressSelection.js'
 import { createSafeSignerErrorStatus } from '../safeSignerErrors.js'
-import { getResultRevision, requiresSendAnywayOverride } from '../../utils/sendAnywayConsent.js'
+import { getResultRevision, getSendAnywayOverrideReason, isRejectOnlyTransaction } from '../../utils/sendAnywayConsent.js'
 
 const pendingConfirmationSemaphore = new Semaphore(1)
 const pendingNoResponseRetryTimers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -264,10 +264,11 @@ export const setGasLimitForTransaction = async (transactionIdentifier: bigint, g
 	})
 }
 
-// An accept authorizes only the stored result revision the user reviewed, and a failing, quarantined or undetermined result also needs the send-anyway override.
+// An accept authorizes only the stored result revision the user reviewed. A transaction without a reviewable result cannot be accepted at all, and a failing or quarantined result also needs the send-anyway override.
 function isAcceptForStoredResult(pending: PendingTransactionOrSignableMessage, accept: { resultRevision: number, forceSend: boolean }) {
 	if (getResultRevision(pending) !== accept.resultRevision) return false
-	return accept.forceSend || !requiresSendAnywayOverride(pending)
+	if (isRejectOnlyTransaction(pending)) return false
+	return accept.forceSend || getSendAnywayOverrideReason(pending) === undefined
 }
 
 // Checks the accept against the stored request and claims it in the same locked storage update, so a refresh committed in between cannot become the accepted request. Signing-mode requests move to WaitingForSigner; simulation-mode ones are removed once added to the simulation. Returns the accepted snapshot, or undefined when the accept no longer matches.

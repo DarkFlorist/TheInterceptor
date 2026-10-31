@@ -1,53 +1,15 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
 import { getLatestUnexpectedError } from '../../app/ts/background/storageVariables.js'
-import { activeAddress, addressString, browserMock, createAcceptConfirmation, createSafeAddressBookEntry, createSafeTx, createWebsitePort, created, EIP712Message, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, pendingTransaction, popupVisualisation, recipientAddress, safeTestOwnerAddress, safeTxToTypedDataJson, signedTransaction, simulator, uniqueRequestIdentifier, unsignedTransaction } from './confirmTransactionTestHarness.js'
+import { activeAddress, addressString, browserMock, createAcceptConfirmation, createSafeAddressBookEntry, createSafeTx, createWebsitePort, EIP712Message, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, pendingTransaction, popupVisualisation, recipientAddress, safeTestOwnerAddress, safeTxToTypedDataJson, type SimulatedTransactionOutcome, simulator, uniqueRequestIdentifier, withSimulatedTransactionResult } from './confirmTransactionTestHarness.js'
 
-type TransactionOutcome = { transactionStatus: 'Transaction Succeeded' } | { transactionStatus: 'Transaction Failed', error: { code: number, message: string, decodedErrorMessage: string } }
-
-const succeeded: TransactionOutcome = { transactionStatus: 'Transaction Succeeded' }
-const reverted: TransactionOutcome = { transactionStatus: 'Transaction Failed', error: { code: -32000, message: 'execution reverted', decodedErrorMessage: 'execution reverted' } }
-
-const contact = (name: string, address: bigint) => ({ type: 'contact' as const, name, address, entrySource: 'User' as const, chainId: fakeRpcNetwork.chainId })
+const succeeded: SimulatedTransactionOutcome = { transactionStatus: 'Transaction Succeeded' }
+const reverted: SimulatedTransactionOutcome = { transactionStatus: 'Transaction Failed', error: { code: -32000, message: 'execution reverted', decodedErrorMessage: 'execution reverted' } }
 
 // A signing-mode transaction whose simulated result has the given outcome and quarantine flag.
-function makeReviewedTransaction(outcome: TransactionOutcome, quarantine: boolean, simulationConductedTimestamp = popupVisualisation.data.simulationState.simulationConductedTimestamp) {
-	const visualizedTransaction = {
-		website: pendingTransaction.website,
-		created,
-		parsedInputData: { type: 'NonParsed' as const, input: new Uint8Array() },
-		transactionIdentifier: pendingTransaction.transactionIdentifier,
-		originalRequestParameters: pendingTransaction.originalRequestParameters,
-		tokenBalancesAfter: [],
-		tokenPriceEstimates: [],
-		tokenPriceQuoteToken: undefined,
-		gasSpent: 21_000n,
-		realizedGasPrice: 1n,
-		quarantine,
-		quarantineReasons: quarantine ? ['The recipient is a known scam address.'] : [],
-		events: [],
-		transaction: { ...unsignedTransaction, from: contact('Sender', activeAddress), to: contact('Recipient', recipientAddress), rpcNetwork: fakeRpcNetwork, hash: signedTransaction.hash },
-		...outcome,
-	}
-	return {
-		...pendingTransaction,
-		simulationMode: false,
-		popupVisualisation: {
-			...popupVisualisation,
-			data: {
-				...popupVisualisation.data,
-				simulationState: { ...popupVisualisation.data.simulationState, simulationConductedTimestamp },
-				visualizedSimulationState: {
-					success: true as const,
-					visualizedBlocks: [{
-						simulatedAndVisualizedTransactions: [visualizedTransaction],
-						visualizedPersonalSignRequests: [],
-						blockTimeManipulation: { type: 'AddToTimestamp' as const, deltaToAdd: 0n, deltaUnit: 'Seconds' as const },
-					}],
-				},
-			},
-		},
-	}
+function makeReviewedTransaction(outcome: SimulatedTransactionOutcome, quarantine: boolean, simulationConductedTimestamp = popupVisualisation.data.simulationState.simulationConductedTimestamp) {
+	const reviewed = withSimulatedTransactionResult({ ...pendingTransaction, simulationMode: false }, outcome, quarantine)
+	return { ...reviewed, popupVisualisation: { ...reviewed.popupVisualisation, data: { ...reviewed.popupVisualisation.data, simulationState: { ...reviewed.popupVisualisation.data.simulationState, simulationConductedTimestamp } } } }
 }
 
 function createSignerConnection() {
@@ -176,26 +138,25 @@ test('requires the send-anyway override for failing and quarantined transactions
 	}
 })
 
-test('requires the send-anyway override for a transaction whose simulation failed or has no result for it', async () => {
+test('refuses an accept for a transaction whose simulation failed or has no result for it, even with the send-anyway override', async () => {
 	const reviewed = makeReviewedTransaction(succeeded, false)
 	const simulationError = { code: -32000, message: 'simulation failed', decodedErrorMessage: 'simulation failed' }
 	const failedSimulation = { ...reviewed, popupVisualisation: { statusCode: 'failed' as const, data: { ...reviewed.popupVisualisation.data, error: simulationError } } }
 	const failedSimulationState = { ...reviewed, popupVisualisation: { ...reviewed.popupVisualisation, data: { ...reviewed.popupVisualisation.data, visualizedSimulationState: { success: false as const, jsonRpcError: { jsonrpc: '2.0' as const, id: 1, error: simulationError }, visualizedBlocks: [] } } } }
 	const missingResult = { ...reviewed, popupVisualisation: { ...reviewed.popupVisualisation, data: { ...reviewed.popupVisualisation.data, visualizedSimulationState: { success: true as const, visualizedBlocks: [] } } } }
-	for (const undetermined of [failedSimulation, failedSimulationState, missingResult]) {
-		const { websiteTabConnections, wasForwardedToSigner } = createSignerConnection()
-		await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [undetermined] })
-		browserMock.sentMessages.length = 0
-		const unexpectedErrorBeforeAccept = await getLatestUnexpectedError()
+	for (const rejectOnly of [failedSimulation, failedSimulationState, missingResult]) {
+		for (const forceSend of [false, true]) {
+			const { websiteTabConnections, wasForwardedToSigner } = createSignerConnection()
+			await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [rejectOnly] })
+			browserMock.sentMessages.length = 0
+			const unexpectedErrorBeforeAccept = await getLatestUnexpectedError()
 
-		assert.equal(await resolveAccept(websiteTabConnections, await createAcceptConfirmation()), false)
-		assert.equal(wasForwardedToSigner(), false)
-		assert.equal((await getStoredRequest()).approvalStatus.status, 'WaitingForUser')
-		assert.equal(browserMock.sentMessages.some((message) => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions'), true, 'the refusal redraws the popup')
-		assert.deepEqual(await getLatestUnexpectedError(), unexpectedErrorBeforeAccept, 'the refusal is not reported as an unexpected error')
-
-		assert.equal(await resolveAccept(websiteTabConnections, await createAcceptConfirmation(uniqueRequestIdentifier, true)), true)
-		assert.equal(wasForwardedToSigner(), true)
+			assert.equal(await resolveAccept(websiteTabConnections, await createAcceptConfirmation(uniqueRequestIdentifier, forceSend)), false)
+			assert.equal(wasForwardedToSigner(), false)
+			assert.equal((await getStoredRequest()).approvalStatus.status, 'WaitingForUser')
+			assert.equal(browserMock.sentMessages.some((message) => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions'), true, 'the refusal redraws the popup')
+			assert.deepEqual(await getLatestUnexpectedError(), unexpectedErrorBeforeAccept, 'the refusal is not reported as an unexpected error')
+		}
 	}
 })
 

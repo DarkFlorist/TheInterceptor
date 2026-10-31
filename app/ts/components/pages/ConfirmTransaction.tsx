@@ -28,7 +28,7 @@ import { Link } from '../subcomponents/link.js'
 import { NetworkErrors } from '../subcomponents/NetworkErrors.js'
 import { identifySignature } from '../simulationExplaining/identifySignature.js'
 import { InvalidMessage, SignatureCard, SignatureHeader } from './PersonalSign.js'
-import { type SendAnywayOverrideReason, getResultRevision, getResultsForTransaction, getSendAnywayOverrideReason, getVisualizedTransactionResult, isPossibleToSignMessage, isSameSendAnywayConsent, requiresSendAnywayOverride } from '../../utils/sendAnywayConsent.js'
+import { type SendAnywayOverrideReason, getResultRevision, getResultsForTransaction, getSendAnywayOverrideReason, getVisualizedTransactionResult, isPossibleToSignMessage, isRejectOnlyTransaction, isSameSendAnywayConsent } from '../../utils/sendAnywayConsent.js'
 import type { EditEnsNamedHashCallBack } from '../subcomponents/ens.js'
 import { EditEnsLabelHash } from './EditEnsLabelHash.js'
 import { type ReadonlySignal, Signal, useComputed, useSignal } from '@preact/signals'
@@ -993,7 +993,8 @@ export function ConfirmTransaction() {
 		if (pending === undefined) return true
 		if (pending.transactionOrMessageCreationStatus !== 'Simulated') return true
 		if (shouldDisableConfirmForApprovalStatus(pending.approvalStatus)) return true
-		if (requiresSendAnywayOverride(pending) && !forceSend.value) return true
+		if (isRejectOnlyTransaction(pending)) return true
+		if (getSendAnywayOverrideReason(pending) !== undefined && !forceSend.value) return true
 		if (pending.type !== 'Transaction') {
 			return shouldDisableSignableMessageConfirm({
 				isValidMessage: pending.visualizedPersonalSignRequest.isValidMessage === true,
@@ -1002,8 +1003,7 @@ export function ConfirmTransaction() {
 				hasSupportedRpc: pending.visualizedPersonalSignRequest.rpcNetwork.httpsRpc !== undefined,
 			})
 		}
-		// The popup shows no override checkbox for a transaction without a simulated result, so confirm stays disabled even though the background accepts an explicit override.
-		return getVisualizedTransactionResult(pending.popupVisualisation, pending.transactionIdentifier) === undefined
+		return false
 	})
 	const isAddToSafeStackDisabled = useComputed(() => {
 		const pending = currentPendingTransactionOrSignableMessage.value

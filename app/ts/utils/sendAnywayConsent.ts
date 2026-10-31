@@ -47,12 +47,11 @@ function getSendAnywayConsent(pending: PopupPendingTransactionOrSignableMessage)
 	return result.quarantine ? { reason: 'quarantinedTransaction', failure: undefined, quarantineReasons } : undefined
 }
 
-// Decides when the popup shows the send-anyway checkbox. requiresSendAnywayOverride builds on it for the confirm gate shared by the popup and the background.
+// Decides when the popup shows the send-anyway checkbox and keeps confirm disabled until it is ticked. The background uses the same rule to refuse accepts that lack the override.
 export const getSendAnywayOverrideReason = (pending: PopupPendingTransactionOrSignableMessage): SendAnywayOverrideReason | undefined => getSendAnywayConsent(pending)?.reason
 
-// Whether confirming needs the send-anyway override: the popup keeps confirm disabled until it is ticked, and the background refuses accepts without it. A transaction whose simulation failed or has no located result counts too, since the user had no result to review; the popup shows no checkbox there and offers only rejection, so such an override can only come from a caller other than the popup.
-export const requiresSendAnywayOverride = (pending: PopupPendingTransactionOrSignableMessage) => {
-	if (getSendAnywayOverrideReason(pending) !== undefined) return true
+// A transaction whose simulation failed or has no located result gives the user no result to review, so the popup offers only rejection and the background refuses accepts even with the send-anyway override.
+export const isRejectOnlyTransaction = (pending: PopupPendingTransactionOrSignableMessage) => {
 	return pending.type === 'Transaction' && pending.transactionOrMessageCreationStatus === 'Simulated' && getVisualizedTransactionResult(pending.popupVisualisation, pending.transactionIdentifier) === undefined
 }
 

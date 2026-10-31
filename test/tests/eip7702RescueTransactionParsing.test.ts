@@ -269,6 +269,39 @@ function installBrowserMock() {
 
 function makeSimulatedPendingRawTransaction(transactionToSimulate: WebsiteCreatedEthereumTransaction) {
 	const uniqueRequestIdentifier = { requestId: 1, requestSocket: { tabId: 1, connectionName: 0n } }
+	const { transaction, signedTransaction } = transactionToSimulate
+	if (signedTransaction === undefined) throw new Error('Expected raw transaction to carry the original signed transaction')
+	const addressBookEntry = (name: string, address: bigint) => ({ type: 'contact' as const, name, address, entrySource: 'User' as const, chainId: rpcNetwork.chainId })
+	// The background refuses an accept for a transaction without a simulated result, so the stored request carries a successful one; the popup display fields are not under test.
+	const visualizedTransaction = {
+		website: transactionToSimulate.website,
+		created: transactionToSimulate.created,
+		parsedInputData: { type: 'NonParsed' as const, input: transaction.input },
+		transactionIdentifier: transactionToSimulate.transactionIdentifier,
+		originalRequestParameters: transactionToSimulate.originalRequestParameters,
+		tokenBalancesAfter: [],
+		tokenPriceEstimates: [],
+		tokenPriceQuoteToken: undefined,
+		gasSpent: transaction.gas,
+		realizedGasPrice: 1n,
+		quarantine: false,
+		quarantineReasons: [],
+		events: [],
+		transactionStatus: 'Transaction Succeeded' as const,
+		transaction: {
+			type: '1559' as const,
+			from: addressBookEntry('Sender', transaction.from),
+			to: transaction.to === null ? undefined : addressBookEntry('Recipient', transaction.to),
+			value: transaction.value,
+			input: transaction.input,
+			rpcNetwork,
+			hash: signedTransaction.hash,
+			gas: transaction.gas,
+			nonce: transaction.nonce,
+			maxFeePerGas: 2n,
+			maxPriorityFeePerGas: 1n,
+		},
+	}
 	const pendingTransaction: PendingTransactionOrSignableMessageType = {
 		type: 'Transaction',
 		transactionOrMessageCreationStatus: 'Simulated',
@@ -307,7 +340,11 @@ function makeSimulatedPendingRawTransaction(transactionToSimulate: WebsiteCreate
 				},
 				visualizedSimulationState: {
 					success: true,
-					visualizedBlocks: [],
+					visualizedBlocks: [{
+						simulatedAndVisualizedTransactions: [visualizedTransaction],
+						visualizedPersonalSignRequests: [],
+						blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 0n, deltaUnit: 'Seconds' },
+					}],
 				},
 			},
 		},
@@ -347,8 +384,7 @@ async function assertAcceptPreservesRawSignedTransaction(signedTransactionBytes:
 			new EthereumClientService(createEip7702TransactionParsingRequestHandler(), async () => undefined, async () => undefined, rpcNetwork),
 			{} as never,
 			browserMock.websiteTabConnections,
-			// Background-only send-anyway override: the stored fixture has no simulated result for this transaction, so the real popup could not confirm it.
-			{ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: pendingTransaction.uniqueRequestIdentifier, action: 'accept', resultRevision: 0, forceSend: true } },
+			{ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: pendingTransaction.uniqueRequestIdentifier, action: 'accept', resultRevision: 0, forceSend: false } },
 		)
 
 		const [postedMessage] = browserMock.postedMessages
