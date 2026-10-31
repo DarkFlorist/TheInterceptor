@@ -772,6 +772,8 @@ test('refreshes the selected signer and uses services installed during the walle
 })
 
 test('rebases a later pending Safe proposal after an earlier nonce is rejected', async () => {
+	// Approvals of requests created in signing mode are only forwarded while the Interceptor is still in signing mode.
+	await modules.changeSimulationMode({ simulationMode: false })
 	const ownerAccount = safeTestOwnerAccount
 	const safeSignerAddress = safeTestOwnerAddress
 	fakeSafeContract.owners = [safeSignerAddress]
@@ -869,6 +871,8 @@ test('rebases a later pending Safe proposal after an earlier nonce is rejected',
 })
 
 test('rejects a stale forwarded Safe nonce before persistence and rebases it when retried', async () => {
+	// Approvals of requests created in signing mode are only forwarded while the Interceptor is still in signing mode.
+	await modules.changeSimulationMode({ simulationMode: false })
 	const ownerAccount = safeTestOwnerAccount
 	const safeSignerAddress = safeTestOwnerAddress
 	fakeSafeContract.owners = [safeSignerAddress]

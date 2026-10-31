@@ -63,7 +63,12 @@ async function getParsedStorageValueOrDefaultFromItems<Key extends keyof Startup
 	if (rawValue === undefined) return defaultValue
 	console.warn(`${ key } was corrupt:`)
 	console.warn(rawValue)
-	await browserStorageLocalSet({ [key]: defaultValue } as unknown as Parameters<typeof browserStorageLocalSet>[0])
+	// Repairing simulation mode can enable it, so it goes through the generation-tracked writer that the signer-forward guard relies on.
+	if (key === 'simulationMode' && typeof defaultValue === 'boolean') {
+		await writeSimulationModeChanges({ simulationMode: defaultValue })
+	} else {
+		await browserStorageLocalSet({ [key]: defaultValue } as unknown as Parameters<typeof browserStorageLocalSet>[0])
+	}
 	return defaultValue
 }
 
@@ -71,6 +76,7 @@ async function getParsedStorageValueOrDefault<Key extends keyof StartupStorageDe
 	return await getParsedStorageValueOrDefaultFromItems(await browser.storage.local.get(key), key, defaultValue)
 }
 
+// Background-only: repairing a corrupt simulationMode bumps this context's simulation-mode generation, which only the background's signer-forward guard reads.
 export async function getSettings() : Promise<Settings> {
 	if (defaultRpcs[0] === undefined || defaultActiveAddresses[0] === undefined) throw new Error('default rpc or default address was missing')
 	const defaultPage: Page = { page: 'Home' }
@@ -100,6 +106,12 @@ export async function getSettings() : Promise<Settings> {
 		simulationModePromise,
 	])
 	return { activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode }
+}
+
+// Safe for UI contexts: reads only the active RPC network, so it can never repair or write simulationMode.
+export async function getActiveRpcNetwork() {
+	if (defaultRpcs[0] === undefined) throw new Error('default rpc was missing')
+	return await getParsedStorageValueOrDefault('activeRpcNetwork', defaultRpcs[0])
 }
 
 export const setPage = async (openedPageV2: Page) => await browserStorageLocalSet({ openedPageV2 })
@@ -203,15 +215,41 @@ function getSimulationModeStorageUpdate(changes: SimulationModeChanges) {
 	}
 }
 
+// Counts completed writes that enable simulation mode. Only entering simulation mode can invalidate a decision to forward a request to the signer.
+let simulationModeGeneration = 0
+// Enabling writes that have started but not settled; storage may already hold simulationMode: true while one is pending.
+const pendingSimulationModeEnablingWrites = new Set<Promise<void>>()
+
+// Capture before reading the settings a routing decision uses, then check it with isSimulationModeGenerationCurrent right before forwarding.
+export const getSimulationModeGeneration = () => simulationModeGeneration
+
+// False if simulation mode may have been enabled after the captured generation: an enabling write is still in flight or one has completed since.
+export const isSimulationModeGenerationCurrent = (capturedGeneration: number) => pendingSimulationModeEnablingWrites.size === 0 && simulationModeGeneration === capturedGeneration
+
+export async function waitForSimulationModeEnablingWrites() {
+	await Promise.allSettled(pendingSimulationModeEnablingWrites)
+}
+
+async function writeSimulationModeChanges(changes: SimulationModeChanges, otherItems: { readonly signingAddressPreferences?: SigningAddressPreferences } = {}) {
+	const write = browserStorageLocalSet({ ...getSimulationModeStorageUpdate(changes), ...otherItems })
+	if (!changes.simulationMode) return await write
+	// Registered in the same synchronous step that starts the write, so no forward can be committed in between.
+	pendingSimulationModeEnablingWrites.add(write)
+	try {
+		await write
+	} finally {
+		pendingSimulationModeEnablingWrites.delete(write)
+		// Bump on settle so a decision that captured the old generation still sees the change after the write is no longer pending.
+		simulationModeGeneration++
+	}
+}
+
 export async function changeSimulationMode(changes: SimulationModeChanges) {
-	return await browserStorageLocalSet(getSimulationModeStorageUpdate(changes))
+	return await writeSimulationModeChanges(changes)
 }
 
 async function replaceModeAndSigningPreferencesForImport(changes: SimulationModeChanges, signingAddressPreferences: SigningAddressPreferences) {
-	return await signingAddressPreferencesSemaphore.execute(async () => await browserStorageLocalSet({
-		...getSimulationModeStorageUpdate(changes),
-		signingAddressPreferences,
-	}))
+	return await signingAddressPreferencesSemaphore.execute(async () => await writeSimulationModeChanges(changes, { signingAddressPreferences }))
 }
 
 const websiteAccessSemaphore = new Semaphore(1)

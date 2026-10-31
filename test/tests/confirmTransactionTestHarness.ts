@@ -214,6 +214,7 @@ export async function loadModules() {
 		mockSignTransaction: simulationModeEthereumClientService.mockSignTransaction,
 		Multicall3ABI: constants.Multicall3ABI,
 		defaultActiveAddresses: settings.defaultActiveAddresses,
+		changeSimulationMode: settings.changeSimulationMode,
 		refreshPopupConfirmTransactionSimulation: popupMessageHandlers.refreshPopupConfirmTransactionSimulation,
 		confirmDialog: popupMessageHandlers.confirmDialog,
 		getSafeSignerSelectionFromAccountRefresh: popupMessageHandlers.getSafeSignerSelectionFromAccountRefresh,
