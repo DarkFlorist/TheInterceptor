@@ -8,7 +8,6 @@ import { getRequiredSettings, getSettingsSnapshot, getWebsiteAccess, updateWebsi
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
 import { type WebsiteSocket, getHostWithPort, silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { getAllTabStates } from './storageVariables.js'
-import { browserStorageLocalSafeParseGet } from '../utils/storageUtils.js'
 import type { Website, WebsiteAccessArray, WebsiteAddressAccess } from '../types/websiteAccessTypes.js'
 import { getUniqueItemsByProperties, replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
 import { modifyObject } from '../utils/typescript.js'
@@ -325,9 +324,12 @@ type RequestBlocks = {
 
 const getSitesToBlock = (websiteAccess: WebsiteAccessArray) => websiteAccess.filter((access) => access.declarativeNetRequestBlockMode === 'block-all').map((acccess) => acccess.website.websiteOrigin)
 
+// The single tab-blocking mode decision: undefined (the RPC configuration has no usable active network) means tab blocking is derived from persisted consent.
+const getSettingsForTabBlocking = async () => (await getSettingsSnapshot()).settings
+
 const getTabsAndAddressesToBlock = async (websiteTabConnections: WebsiteTabConnections): Promise<RequestBlocks> => {
 	const approvedTabIds = getApprovedTabs(websiteTabConnections)
-	const settings = (await getSettingsSnapshot()).settings
+	const settings = await getSettingsForTabBlocking()
 	if (settings === undefined) {
 		const websiteAccess = await getWebsiteAccess()
 		return { tabIdsToBlock: await getTabIdsToBlockWithoutActiveRpcNetwork(websiteTabConnections, websiteAccess), sitesToBlock: getSitesToBlock(websiteAccess), keepAppliedTabBlocks: true }
@@ -427,18 +429,9 @@ export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: W
 	})
 }
 
-// Lock-free and conservative, so it adds no contention to connection setup: only a stored active RPC network that parses counts as readable. A missing, corrupt or unreadable value makes the caller reconcile.
-async function storedActiveRpcNetworkIsReadable() {
-	try {
-		return (await browserStorageLocalSafeParseGet('activeRpcNetwork'))?.activeRpcNetwork !== undefined
-	} catch {
-		return false
-	}
-}
-
-// Connections register unapproved, so a new connection can only change tab blocking while it is derived from persisted consent. That depends on whether the active RPC network is readable right now (it can become unreadable after the last reconciliation), so check the stored value instead of remembering an earlier mode.
+// Connections register unapproved, so a new connection can only change tab blocking while it is derived from persisted consent. The RPC configuration can become unavailable after the last reconciliation, so the current snapshot decides instead of an earlier mode.
 export async function updateDeclarativeNetRequestBlocksForRegisteredConnection(websiteTabConnections: WebsiteTabConnections) {
-	if (await storedActiveRpcNetworkIsReadable()) return
+	if (await getSettingsForTabBlocking() !== undefined) return
 	await updateDeclarativeNetRequestBlocks(websiteTabConnections)
 }
 

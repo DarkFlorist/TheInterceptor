@@ -1,8 +1,9 @@
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import type { RpcConfigurationState } from './storageVariables.js'
 import { getRpcConfigurationState, setRpcConfiguration, setRpcList } from './storageVariables.js'
-import type { RpcEntry, RpcNetwork } from '../types/rpc.js'
+import type { RpcEntries, RpcEntry, RpcNetwork } from '../types/rpc.js'
 import { createRpcConfigurationUnavailableError } from '../utils/rpcConfigurationError.js'
+import { resolveRpcServicesTarget } from './rpcConfigurationAvailability.js'
 
 type RpcListTransitionMode = 'edit' | 'restore-defaults'
 
@@ -70,4 +71,17 @@ export async function transitionRpcList(
 	const primary = rpcEntries.find((rpc) => rpc.chainId === activeRpcNetwork.chainId && rpc.primary)
 	if (primary !== undefined) simulationServicesOwner.reset(primary)
 	return { activeRpcNetwork, rpcConfigurationAvailable: true, publishRecovery: false, forceChainChanged: false }
+}
+
+// Retry re-reads the stored configuration without writing it. Services pause unless it is ready; a ready configuration resumes them only when it has an RPC endpoint to serve.
+export async function retryRpcConfigurationServices(simulationServicesOwner: SimulationServicesOwner): Promise<{ readonly rpcEntries: RpcEntries } | undefined> {
+	const configuration = await getRpcConfigurationState()
+	if (configuration.status !== 'ready') {
+		simulationServicesOwner.clear()
+		return undefined
+	}
+	const rpcNetwork = resolveRpcServicesTarget(configuration)
+	if (rpcNetwork === undefined) simulationServicesOwner.clear()
+	else simulationServicesOwner.recover(rpcNetwork)
+	return { rpcEntries: configuration.rpcEntries }
 }
