@@ -89,6 +89,38 @@ describe('EthereumJSONRpcRequestHandler caching', () => {
 		}
 	})
 
+	test('clearCache retires in-flight requests so they neither serve nor fill the new cache', async () => {
+		const previousFetch = globalThis.fetch
+		const pendingResponses: ((result: string) => void)[] = []
+		globalThis.fetch = async (_resource, init) => {
+			const body: unknown = JSON.parse(typeof init?.body === 'string' ? init.body : '')
+			if (typeof body !== 'object' || body === null || !('id' in body)) throw new Error('Missing request ID')
+			return await new Promise<Response>((resolve) => {
+				pendingResponses.push((result) => { resolve(Response.json({ jsonrpc: '2.0', id: body.id, result })) })
+			})
+		}
+		const requestHandler = new EthereumJSONRpcRequestHandler('https://example.invalid', true)
+		const getCode = async () => await requestHandler.jsonRpcRequest({ method: 'eth_getCode', params: [testAddress, 'latest'] })
+		try {
+			const previousBlockRequest = getCode()
+			await waitFor(() => pendingResponses.length === 1)
+			requestHandler.clearCache()
+			const currentBlockRequest = getCode()
+			await waitFor(() => pendingResponses.length === 2)
+			pendingResponses[0]?.('0x01')
+			assert.equal(await previousBlockRequest, '0x01')
+			// Joins the current-block request: the previous request's cleanup must not have evicted it.
+			const joiningRequest = getCode()
+			pendingResponses[1]?.('0x')
+			assert.equal(await currentBlockRequest, '0x')
+			assert.equal(await joiningRequest, '0x')
+			assert.equal(await getCode(), '0x')
+			assert.equal(pendingResponses.length, 2)
+		} finally {
+			globalThis.fetch = previousFetch
+		}
+	})
+
 	test('caches deterministic non-ok JSON-RPC failures', async () => {
 		const fetchMock = installFetchMock([
 			new Response(JSON.stringify({ jsonrpc: '2.0', id: 2, error: { code: JSON_RPC_ERROR_CODE_INVALID_PARAMS, message: 'invalid params' } }), { status: HTTP_STATUS_BAD_REQUEST, headers: responseHeaders }),

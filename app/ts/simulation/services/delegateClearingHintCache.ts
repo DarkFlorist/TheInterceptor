@@ -6,7 +6,7 @@ const DELEGATED_HINT_REFRESH_MIN_AGE_MS = 60 * 1000
 type PendingLookup = { promise: Promise<bigint | undefined>, controller: AbortController, generation: number }
 
 // Each EthereumClientService owns one cache for its endpoint, so replacing the service is what resets it.
-export function createDelegateClearingHintCache(lookup: (address: bigint, controller: AbortController) => Promise<bigint | undefined>) {
+export function createDelegateClearingHintCache(lookup: (address: bigint, controller: AbortController) => Promise<bigint | undefined>, now: () => number = Date.now) {
 	let generation = 0
 	const resolved = new Map<string, { checkedAt: number, delegate: bigint | undefined }>()
 	const pendingByAddress = new Map<string, PendingLookup>()
@@ -17,11 +17,12 @@ export function createDelegateClearingHintCache(lookup: (address: bigint, contro
 		pendingByAddress.clear()
 	}
 
-	const invalidateDelegatedForNewBlock = (now: number) => {
+	const invalidateDelegatedForNewBlock = () => {
+		const blockSeenAt = now()
 		// A lookup begun before this block cannot safely publish its result as a fresh hint.
 		invalidatePending()
 		for (const [key, cached] of resolved) {
-			if (cached.delegate !== undefined && now - cached.checkedAt >= DELEGATED_HINT_REFRESH_MIN_AGE_MS) resolved.delete(key)
+			if (cached.delegate !== undefined && blockSeenAt - cached.checkedAt >= DELEGATED_HINT_REFRESH_MIN_AGE_MS) resolved.delete(key)
 		}
 	}
 
@@ -35,7 +36,7 @@ export function createDelegateClearingHintCache(lookup: (address: bigint, contro
 		const pending: PendingLookup = { promise: Promise.race([lookup(address, controller), invalidated]), controller, generation: lookupGeneration }
 		pending.promise = pending.promise.then((delegate) => {
 			if (controller.signal.aborted || generation !== lookupGeneration) throw NEW_BLOCK_ABORT
-			resolved.set(key, { checkedAt: Date.now(), delegate })
+			resolved.set(key, { checkedAt: now(), delegate })
 			return delegate
 		}).finally(() => {
 			controller.signal.removeEventListener('abort', onInvalidate)
@@ -60,7 +61,7 @@ export function createDelegateClearingHintCache(lookup: (address: bigint, contro
 			for (;;) {
 				if (signal?.aborted) throw signal.reason ?? NEW_BLOCK_ABORT
 				const cached = resolved.get(key)
-				if (cached !== undefined && Date.now() - cached.checkedAt < DELEGATION_CACHE_AGE_MS) return cached.delegate
+				if (cached !== undefined && now() - cached.checkedAt < DELEGATION_CACHE_AGE_MS) return cached.delegate
 				const pending = pendingByAddress.get(key) ?? startLookup(address, key)
 				try {
 					return await Promise.race([pending.promise, aborted])

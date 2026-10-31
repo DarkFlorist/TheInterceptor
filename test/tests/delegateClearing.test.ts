@@ -5,7 +5,7 @@ import { captureSigningSimulationSnapshot, captureWhatIfSimulationSnapshot, getC
 import { getSimulationOverridesForPurpose } from '../../app/ts/background/delegateClearingPolicy.js'
 import { createDelegateClearingHintCache } from '../../app/ts/simulation/services/delegateClearingHintCache.js'
 import type { IEthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
-import { createSimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
+import { createEthereumClientService, createSimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
 import { requestDelegateClearing, setDelegateClearing } from '../../app/ts/background/popupMessageHandlers/delegateClearing.js'
 import { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
 import { changeSimulationMode, isDelegateClearingEnabled, setDelegateClearingEnabled, setMakeCurrentAddressRich } from '../../app/ts/background/settings.js'
@@ -417,20 +417,75 @@ describe('delegate clearing in simulation', () => {
 	})
 
 	test('rechecks an aged delegated hint after a new block but keeps negative hints cached', async () => {
-		let lookups = 0
+		let clock = 1_000_000
+		const lookedUp: bigint[] = []
 		const delegate = 0xabcdefabcdefabcdefabcdefabcdefabcdefabcdn
-		let delegateOnChain: bigint | undefined = delegate
+		const undelegated = activeAddress + 1n
+		const delegateOnChain = new Map<bigint, bigint | undefined>([[activeAddress, delegate], [undelegated, undefined]])
+		const hints = createDelegateClearingHintCache(async (address) => {
+			lookedUp.push(address)
+			return delegateOnChain.get(address)
+		}, () => clock)
+		assert.equal(await hints.get(activeAddress), delegate)
+		assert.equal(await hints.get(undelegated), undefined)
+		delegateOnChain.set(activeAddress, undefined)
+		delegateOnChain.set(undelegated, delegate)
+		clock += 59_000
+		hints.invalidateDelegatedForNewBlock()
+		assert.equal(await hints.get(activeAddress), delegate)
+		clock += 2_000
+		hints.invalidateDelegatedForNewBlock()
+		assert.equal(await hints.get(activeAddress), undefined)
+		assert.equal(await hints.get(undelegated), undefined)
+		assert.deepEqual(lookedUp, [activeAddress, undelegated, activeAddress])
+	})
+
+	test('expires positive and negative hints after five minutes without a new block', async () => {
+		const fiveMinutes = 5 * 60 * 1000
+		let clock = 1_000_000
+		const lookedUp: bigint[] = []
+		const delegate = 0xabcdefabcdefabcdefabcdefabcdefabcdefabcdn
+		const undelegated = activeAddress + 1n
+		const delegateOnChain = new Map<bigint, bigint | undefined>([[activeAddress, delegate], [undelegated, undefined]])
+		const hints = createDelegateClearingHintCache(async (address) => {
+			lookedUp.push(address)
+			return delegateOnChain.get(address)
+		}, () => clock)
+		assert.equal(await hints.get(activeAddress), delegate)
+		assert.equal(await hints.get(undelegated), undefined)
+		delegateOnChain.set(activeAddress, undefined)
+		delegateOnChain.set(undelegated, delegate)
+		clock += fiveMinutes - 1
+		assert.equal(await hints.get(activeAddress), delegate)
+		assert.equal(await hints.get(undelegated), undefined)
+		assert.deepEqual(lookedUp, [activeAddress, undelegated])
+		clock += 1
+		assert.equal(await hints.get(activeAddress), undefined)
+		assert.equal(await hints.get(undelegated), delegate)
+		assert.equal(await hints.get(activeAddress), undefined)
+		assert.equal(await hints.get(undelegated), delegate)
+		assert.deepEqual(lookedUp, [activeAddress, undelegated, activeAddress, undelegated])
+	})
+
+	test('expires a negative hint at five minutes even with new blocks in between', async () => {
+		const fiveMinutes = 5 * 60 * 1000
+		let clock = 1_000_000
+		let lookups = 0
 		const hints = createDelegateClearingHintCache(async () => {
 			lookups += 1
-			return delegateOnChain
-		})
-		assert.equal(await hints.get(activeAddress), delegate)
-		delegateOnChain = undefined
-		hints.invalidateDelegatedForNewBlock(Date.now() + 59_000)
-		assert.equal(await hints.get(activeAddress), delegate)
-		hints.invalidateDelegatedForNewBlock(Date.now() + 61_000)
+			return undefined
+		}, () => clock)
 		assert.equal(await hints.get(activeAddress), undefined)
-		hints.invalidateDelegatedForNewBlock(Date.now() + 600_000)
+		for (let elapsed = 60_000; elapsed < fiveMinutes; elapsed += 60_000) {
+			clock = 1_000_000 + elapsed
+			hints.invalidateDelegatedForNewBlock()
+			assert.equal(await hints.get(activeAddress), undefined)
+		}
+		clock = 1_000_000 + fiveMinutes - 1
+		assert.equal(await hints.get(activeAddress), undefined)
+		assert.equal(lookups, 1)
+		clock = 1_000_000 + fiveMinutes
+		hints.invalidateDelegatedForNewBlock()
 		assert.equal(await hints.get(activeAddress), undefined)
 		assert.equal(lookups, 2)
 	})
@@ -439,8 +494,6 @@ describe('delegate clearing in simulation', () => {
 		let codeRequests = 0
 		let markFirstStarted = () => undefined
 		const firstStarted = new Promise<void>((resolve) => { markFirstStarted = () => resolve() })
-		let markSecondStarted = () => undefined
-		const secondStarted = new Promise<void>((resolve) => { markSecondStarted = () => resolve() })
 		let releaseStaleCode = (_code: string) => undefined
 		const staleCode = new Promise<string>((resolve) => { releaseStaleCode = resolve })
 		const staleDelegate = 0xabcdefabcdefabcdefabcdefabcdefabcdefabcdn
@@ -448,33 +501,41 @@ describe('delegate clearing in simulation', () => {
 		if ('error' in latestBlockResponse) throw new Error(latestBlockResponse.error.message)
 		let markNewBlockSeen = () => undefined
 		const newBlockSeen = new Promise<void>((resolve) => { markNewBlockSeen = () => resolve() })
-		const ethereum = new EthereumClientService({
-			rpcUrl: rpcEntry.httpsRpc,
-			clearCache() { return undefined },
-			async jsonRpcRequest(request) {
-				if (request.method === 'eth_getBlockByNumber') return latestBlockResponse.result
-				if (request.method !== 'eth_getCode') throw new Error(`Unexpected RPC method ${ request.method }`)
+		// A real RPC handler and server keep the handler's pending-request sharing in the path the retry takes.
+		const server = Bun.serve({
+			hostname: '127.0.0.1', port: 0,
+			async fetch(request) {
+				const message: unknown = await request.json()
+				if (typeof message !== 'object' || message === null || !('id' in message) || !('method' in message)) throw new Error('Missing fixture request fields')
+				if (message.method === 'eth_getBlockByNumber') return Response.json({ jsonrpc: '2.0', id: message.id, result: latestBlockResponse.result })
+				if (message.method !== 'eth_getCode') throw new Error(`Unexpected RPC method ${ String(message.method) }`)
 				codeRequests += 1
 				if (codeRequests === 1) {
 					markFirstStarted()
-					return await staleCode
+					return Response.json({ jsonrpc: '2.0', id: message.id, result: await staleCode })
 				}
-				markSecondStarted()
-				return '0x'
+				return Response.json({ jsonrpc: '2.0', id: message.id, result: '0x' })
 			},
-		}, async (_blockHeader, _ethereum, isNewBlock) => { if (isNewBlock) markNewBlockSeen() }, async (_ethereum, error) => { throw error }, rpcEntry)
+		})
+		const ethereum = createEthereumClientService({ ...rpcEntry, httpsRpc: `${ server.url }rpc` }, async (_blockHeader, _ethereum, isNewBlock) => { if (isNewBlock) markNewBlockSeen() }, async () => undefined)
 		try {
 			const pendingHint = ethereum.getDelegateClearingHint(activeAddress)
 			await firstStarted
 			// Block polling is the production path that tells the service's hint cache about a new block.
 			ethereum.setBlockPolling(true)
 			await newBlockSeen
-			await secondStarted
-			releaseStaleCode(`0xef0100${ addressString(staleDelegate).slice(2) }`)
 			assert.equal(await pendingHint, undefined)
-			assert.equal(await ethereum.getDelegateClearingHint(activeAddress), undefined)
 			assert.equal(codeRequests, 2)
-		} finally { ethereum.cleanup() }
+			releaseStaleCode(`0xef0100${ addressString(staleDelegate).slice(2) }`)
+			await new Promise((resolve) => setTimeout(resolve, 20))
+			assert.equal(await ethereum.getDelegateClearingHint(activeAddress), undefined)
+			assert.deepEqual(await ethereum.getCode(activeAddress, 'latest', undefined), new Uint8Array())
+			assert.equal(codeRequests, 2)
+		} finally {
+			ethereum.cleanup()
+			releaseStaleCode('0x')
+			server.stop(true)
+		}
 	})
 
 	test('reuses the background delegation hint across popup opens and toggles', async () => {
@@ -614,7 +675,7 @@ describe('delegate clearing in simulation', () => {
 			return lookups === 1 ? await oldBlockResponse : undefined
 		})
 		const staleLookup = hints.get(activeAddress)
-		hints.invalidateDelegatedForNewBlock(Date.now())
+		hints.invalidateDelegatedForNewBlock()
 		assert.equal(await staleLookup, undefined)
 		releaseOldBlock(delegate)
 		assert.equal(await hints.get(activeAddress), undefined)
