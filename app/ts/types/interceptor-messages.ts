@@ -79,9 +79,7 @@ const ErrorReturn = funtypes.ReadonlyObject({
 	error: ErrorWithCodeAndOptionalData
 })
 
-export type InpageScriptCallBack = funtypes.Static<typeof InpageScriptCallBack>
-export const InpageScriptCallBack = funtypes.Union(
-	ErrorReturn,
+const InpageScriptSuccessCallBack = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_connection_status'), result: funtypes.ReadonlyTuple() }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_chainId'), result: funtypes.ReadonlyTuple() }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_to_wallet_switchEthereumChain'), result: EthereumQuantity, walletSwitchRequestId: funtypes.String }),
@@ -93,6 +91,13 @@ export const InpageScriptCallBack = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('accountsChanged'), result: funtypes.ReadonlyArray(EthereumAddress) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('chainChanged'), result: EthereumQuantity }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('safe_apps_compatibility'), result: funtypes.ReadonlyObject({ enabled: funtypes.Boolean }).And(funtypes.ReadonlyPartial({ canRequestAccess: funtypes.Boolean })) }),
+)
+
+export type InpageScriptCallBack = funtypes.Static<typeof InpageScriptCallBack>
+export const InpageScriptCallBack = funtypes.Union(
+	ErrorReturn,
+	// Keep the literal-method union nested so a generic error method does not disable dispatch by method for every callback.
+	funtypes.Intersect(funtypes.ReadonlyObject({ method: funtypes.String }), InpageScriptSuccessCallBack),
 )
 
 export type GetSimulationStackReply = funtypes.Static<typeof GetSimulationStackReply>
@@ -165,11 +170,8 @@ const SubscriptionReturnValue = funtypes.ReadonlyObject({
 	})
 })
 
-type NonForwardingRPCRequestReturnValue = funtypes.Static<typeof NonForwardingRPCRequestReturnValue>
-const NonForwardingRPCRequestReturnValue = funtypes.Intersect(
-	funtypes.ReadonlyObject({ type: funtypes.Literal('result') }),
-	funtypes.Union(NonForwardingRPCRequestSuccessfullReturnValue, ErrorReturn)
-)
+const ResultReplyType = funtypes.ReadonlyObject({ type: funtypes.Literal('result') })
+const RPCErrorReply = funtypes.Intersect(ResultReplyType, ErrorReturn)
 
 type ForwardToWallet = funtypes.Static<typeof ForwardToWallet>
 const ForwardToWalletRequest = funtypes.Union(SendRawTransactionParams, SendTransactionParams, PersonalSignParams, SignTypedDataParams, OldSignTypedDataParams, WalletAddEthereumChain, EthGetStorageAtParams)
@@ -193,20 +195,25 @@ const ReplyWithSignersReplyForward = funtypes.Intersect(
 	),
 )
 
-export type RPCReply = funtypes.Static<typeof RPCReply>
-export const RPCReply = funtypes.Union(
-	NonForwardingRPCRequestReturnValue,
+const NonErrorRPCReply = funtypes.Union(
+	// The intersection keeps funtypes from flattening the success union into generic-method branches, preserving dispatch by method for successful replies.
+	funtypes.Intersect(ResultReplyType, NonForwardingRPCRequestSuccessfullReturnValue),
 	ReplyWithSignersReplyForward,
 	ForwardToWallet,
 	funtypes.ReadonlyObject({ type: funtypes.Literal('doNotReply') }),
 )
 
-export type SubscriptionReplyOrCallBack = funtypes.Static<typeof SubscriptionReplyOrCallBack>
-export const SubscriptionReplyOrCallBack = funtypes.Intersect(
-	funtypes.ReadonlyObject({ type: funtypes.Literal('result') }),
-	funtypes.ReadonlyPartial({ requestId: funtypes.Number }),
+export type RPCReply = funtypes.Static<typeof RPCReply>
+// Errors have no method-specific result. Match them before success schemas when the caller does not already know the reply kind.
+export const RPCReply = funtypes.Union(RPCErrorReply, NonErrorRPCReply)
+
+const CallbackRequestId = funtypes.ReadonlyPartial({ requestId: funtypes.Number })
+const ErrorSubscriptionReplyOrCallBack = funtypes.Intersect(ResultReplyType, CallbackRequestId, ErrorReturn)
+const NonErrorSubscriptionReplyOrCallBack = funtypes.Intersect(
+	ResultReplyType,
+	CallbackRequestId,
 	funtypes.Union(
-		InpageScriptCallBack,
+		funtypes.Intersect(ResultReplyType, InpageScriptSuccessCallBack),
 		funtypes.Intersect(
 			funtypes.ReadonlyObject({
 				method: funtypes.String,
@@ -217,11 +224,12 @@ export const SubscriptionReplyOrCallBack = funtypes.Intersect(
 	)
 )
 
-type InterceptedRequestForwardWithRequestId = funtypes.Static<typeof InterceptedRequestForwardWithRequestId>
-const InterceptedRequestForwardWithRequestId = funtypes.Intersect(
+export type SubscriptionReplyOrCallBack = funtypes.Static<typeof SubscriptionReplyOrCallBack>
+export const SubscriptionReplyOrCallBack = funtypes.Union(ErrorSubscriptionReplyOrCallBack, NonErrorSubscriptionReplyOrCallBack)
+
+const InpageReplyIdentifier = funtypes.Intersect(
 	funtypes.ReadonlyObject({ requestId: funtypes.Number }),
 	funtypes.ReadonlyPartial({ bridgeRequestSettled: funtypes.Literal(true) }),
-	funtypes.Union(RPCReply, funtypes.Intersect(funtypes.ReadonlyObject({ type: funtypes.Literal('result') }), InpageScriptRequestWithoutIdentifier)),
 )
 
 export type InterceptedRequestForward = funtypes.Static<typeof InterceptedRequestForward>
@@ -231,10 +239,35 @@ export const InterceptedRequestForward = funtypes.Intersect(
 )
 
 export type InterceptorMessageToInpage = funtypes.Static<typeof InterceptorMessageToInpage>
-export const InterceptorMessageToInpage = funtypes.Intersect(
-	funtypes.ReadonlyObject({ interceptorApproved: funtypes.Literal(true) }),
-	funtypes.Union(InterceptedRequestForwardWithRequestId, SubscriptionReplyOrCallBack)
+const InterceptorApproval = funtypes.ReadonlyObject({ interceptorApproved: funtypes.Literal(true) })
+// Background senders know whether they are sending a reply or a callback. Keep separate codecs so hot paths do not construct failures for unrelated message shapes.
+const InterceptorErrorReplyToInpage = funtypes.Intersect(InterceptorApproval, InpageReplyIdentifier, RPCErrorReply)
+const InterceptorNonErrorReplyToInpage = funtypes.Intersect(
+	InterceptorApproval,
+	InpageReplyIdentifier,
+	funtypes.Union(NonErrorRPCReply, funtypes.Intersect(ResultReplyType, InpageScriptRequestWithoutIdentifier)),
 )
+const InterceptorErrorCallbackToInpage = funtypes.Intersect(InterceptorApproval, ErrorSubscriptionReplyOrCallBack)
+const InterceptorNonErrorCallbackToInpage = funtypes.Intersect(InterceptorApproval, NonErrorSubscriptionReplyOrCallBack)
+// The full wire contract is exactly the union of the codecs used by the serializers below. Senders select a known category to avoid probing unrelated union branches.
+export const InterceptorMessageToInpage = funtypes.Union(
+	InterceptorErrorReplyToInpage,
+	InterceptorNonErrorReplyToInpage,
+	InterceptorErrorCallbackToInpage,
+	InterceptorNonErrorCallbackToInpage,
+)
+
+export function serializeInpageReply(message: funtypes.Static<typeof InterceptorErrorReplyToInpage> | funtypes.Static<typeof InterceptorNonErrorReplyToInpage>) {
+	return message.type === 'result' && 'error' in message
+		? InterceptorErrorReplyToInpage.serialize(message)
+		: InterceptorNonErrorReplyToInpage.serialize(message)
+}
+
+export function serializeInpageCallback(message: funtypes.Static<typeof InterceptorErrorCallbackToInpage> | funtypes.Static<typeof InterceptorNonErrorCallbackToInpage>) {
+	return 'error' in message
+		? InterceptorErrorCallbackToInpage.serialize(message)
+		: InterceptorNonErrorCallbackToInpage.serialize(message)
+}
 
 type RefreshConfirmTransactionMetadata = funtypes.Static<typeof RefreshConfirmTransactionMetadata>
 const RefreshConfirmTransactionMetadata = funtypes.ReadonlyObject({

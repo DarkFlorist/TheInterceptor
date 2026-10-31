@@ -1,6 +1,125 @@
 import * as assert from 'assert'
-import { test } from 'bun:test'
+import { spyOn, test } from 'bun:test'
 import { browserMock, createDisconnectedPort, createRecordingPort, isRecord, modules, pendingTransaction, signedTransaction, simulator, uniqueRequestIdentifier, waitForPendingTransactionsToClear, withSilencedConsole } from './confirmTransactionTestHarness.js'
+import * as retrySchedulers from '../../app/ts/utils/retryScheduler.js'
+
+async function withControlledRecoveryRetries(run: (fireNext: () => Promise<number>) => Promise<void>) {
+	const scheduled: { retry: () => void, timer: ReturnType<typeof setTimeout>, delayMs: number }[] = []
+	const createScheduler = retrySchedulers.createBackoffRetryScheduler
+	const schedulerSpy = spyOn(retrySchedulers, 'createBackoffRetryScheduler').mockImplementation((initialDelayMs) => createScheduler(initialDelayMs, (retry, delayMs) => {
+		const timer = setTimeout(() => undefined, 60_000)
+		scheduled.push({ retry, timer, delayMs })
+		return timer
+	}))
+	try {
+		await withSilencedConsole(async () => await run(async () => {
+			const next = scheduled.shift()
+			assert.ok(next, 'Expected a scheduled recovery retry')
+			clearTimeout(next.timer)
+			next.retry()
+			await new Promise((resolve) => setTimeout(resolve, 0))
+			return next.delayMs
+		}))
+	} finally {
+		schedulerSpy.mockRestore()
+		for (const retry of scheduled) clearTimeout(retry.timer)
+		browserMock.setStorageGetHandler(undefined)
+	}
+}
+
+test('connected reply recovery backs off and stops after a successful manual flush', async () => {
+	const socket = uniqueRequestIdentifier.requestSocket
+	const socketKey = modules.websiteSocketToString(socket)
+	const port = createRecordingPort([])
+	const connections = new Map([[socket.tabId, { connections: {
+		[socketKey]: { port, socket, websiteOrigin: 'https://example.com', approved: true, wantsToConnect: true },
+	} }]])
+	let reads = 0
+	let fail = true
+	await withControlledRecoveryRetries(async (fireNext) => {
+		browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+			if (Array.isArray(keys) && keys.includes('pendingTerminalReplies')) {
+				reads += 1
+				if (fail) throw new Error('persistent outbox read failure')
+			}
+			return readStoredItems()
+		})
+		await modules.flushPendingTerminalRepliesForConnectedPortWithRetry(connections, socket, port)
+		assert.equal(await fireNext(), 50)
+		assert.equal(await fireNext(), 100)
+		assert.equal(await fireNext(), 200)
+		assert.equal(reads, 4)
+		fail = false
+		await modules.flushPendingTerminalRepliesForConnectedPortWithRetry(connections, socket, port)
+		assert.equal(reads, 5)
+		assert.equal(await fireNext(), 400)
+		assert.equal(reads, 5, 'A cancelled retry must not repeat storage work')
+	})
+})
+
+test('stale port recovery does not cancel retries belonging to its replacement', async () => {
+	const socket = uniqueRequestIdentifier.requestSocket
+	const socketKey = modules.websiteSocketToString(socket)
+	const port = createRecordingPort([])
+	const replacement = createRecordingPort([])
+	const connection = { port, socket, websiteOrigin: 'https://example.com', approved: true, wantsToConnect: true }
+	const connections = new Map([[socket.tabId, { connections: { [socketKey]: connection } }]])
+	let reads = 0
+	await withControlledRecoveryRetries(async (fireNext) => {
+		browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+			if (Array.isArray(keys) && keys.includes('pendingTerminalReplies')) {
+				reads += 1
+				throw new Error('persistent outbox read failure')
+			}
+			return readStoredItems()
+		})
+		await modules.flushPendingTerminalRepliesForConnectedPortWithRetry(connections, socket, port)
+		connection.port = replacement
+		await modules.flushPendingTerminalRepliesForConnectedPortWithRetry(connections, socket, replacement)
+		await modules.flushPendingTerminalRepliesForConnectedPortWithRetry(connections, socket, port)
+		assert.equal(reads, 2)
+		assert.equal(await fireNext(), 50)
+		assert.equal(reads, 2, 'The old port timer must be cancelled')
+		assert.equal(await fireNext(), 50)
+		assert.equal(reads, 3, 'The replacement must retain its recovery timer')
+		connections.clear()
+		assert.equal(await fireNext(), 100)
+		assert.equal(reads, 3, 'Disconnected sockets must stop retrying')
+	})
+})
+
+test('popup-close rejection backs off persistent storage failures and delivers once after recovery', async () => {
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [{ ...pendingTransaction, simulationMode: false, approvalStatus: { status: 'WaitingForUser' } }] })
+	const postedMessages: unknown[] = []
+	const socket = uniqueRequestIdentifier.requestSocket
+	const socketKey = modules.websiteSocketToString(socket)
+	const port = createRecordingPort(postedMessages)
+	const connections = new Map([[socket.tabId, { connections: {
+		[socketKey]: { port, socket, websiteOrigin: 'https://example.com', approved: true, wantsToConnect: true },
+	} }]])
+	let reads = 0
+	let fail = true
+	await withControlledRecoveryRetries(async (fireNext) => {
+		browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+			if (Array.isArray(keys) && keys.includes('pendingTerminalReplies')) {
+				reads += 1
+				if (fail) throw new Error('persistent outbox read failure')
+			}
+			return readStoredItems()
+		})
+		await modules.onCloseWindowOrTab({ type: 'popup', id: 1 }, simulator.ethereum, simulator.tokenPriceService, connections)
+		assert.equal(await fireNext(), 50)
+		assert.equal(await fireNext(), 100)
+		assert.equal(await fireNext(), 200)
+		assert.equal(reads, 4)
+		assert.equal(postedMessages.length, 0)
+		fail = false
+		assert.equal(await fireNext(), 400)
+		assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+		assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+		assert.equal(postedMessages.length, 1)
+	})
+})
 
 test('failed signer delivery keeps the request and replaces the waiting spinner with a wallet-neutral error', async () => {
 	await browser.storage.local.set({ simulationMode: false })

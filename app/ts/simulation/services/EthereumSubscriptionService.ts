@@ -56,7 +56,13 @@ export async function sendSubscriptionMessagesForNewBlock(
 	websiteTabConnections: WebsiteTabConnections,
 	getSimulationState: (ethereumClientService: EthereumClientService) => Promise<ResolvedExecutionSimulationState>,
 ) {
-	const ethereumSubscriptionsAndFilters = await getEthereumSubscriptionsAndFilters()
+	const storedSubscriptions = await getEthereumSubscriptionsAndFilters()
+	const isConnected = (subscription: EthereumSubscriptionsAndFilters[number]) => websiteTabConnections.get(subscription.subscriptionCreatorSocket.tabId)
+		?.connections[websiteSocketToString(subscription.subscriptionCreatorSocket)] !== undefined
+	// Prune in one repository update instead of serializing and writing the remaining list once per stale entry. Recheck connectivity inside the update so concurrent reconnections are preserved.
+	const ethereumSubscriptionsAndFilters = storedSubscriptions.some((subscription) => !isConnected(subscription))
+		? (await updateEthereumSubscriptionsAndFilters((subscriptions) => subscriptions.filter(isConnected))).newSubscriptions
+		: storedSubscriptions
 	let liveBlockPromise: Promise<Awaited<ReturnType<EthereumClientService['getBlock']>>> | undefined
 	let simulationStatePromise: Promise<ResolvedExecutionSimulationState> | undefined
 	let simulatedBlocksPromise: Promise<readonly NonNullable<Awaited<ReturnType<typeof getSimulatedBlockFromInput>>>[]> | undefined
@@ -85,11 +91,8 @@ export async function sendSubscriptionMessagesForNewBlock(
 		return await simulatedBlocksPromise
 	}
 	for (const subscriptionOrFilter of ethereumSubscriptionsAndFilters) {
-		const tabConnection = websiteTabConnections.get(subscriptionOrFilter.subscriptionCreatorSocket.tabId)
-		if (tabConnection?.connections[websiteSocketToString(subscriptionOrFilter.subscriptionCreatorSocket)] === undefined) { // connection removed
-			await removeEthereumSubscription(subscriptionOrFilter.subscriptionCreatorSocket, subscriptionOrFilter.subscriptionOrFilterId)
-			continue
-		}
+		// A socket can disconnect while an earlier subscriber's block fetch is in flight; the next block's bulk cleanup will prune it.
+		if (!isConnected(subscriptionOrFilter)) continue
 		switch (subscriptionOrFilter.type) {
 			case 'newHeads': {
 				const newBlock = await getLiveBlock()

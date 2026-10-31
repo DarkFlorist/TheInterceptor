@@ -1,5 +1,5 @@
 import * as assert from 'assert'
-import { describe, test } from 'bun:test'
+import { describe, spyOn, test } from 'bun:test'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { createExecutionSimulationState, mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../../app/ts/config/defaults.js'
@@ -411,7 +411,7 @@ const blockNumber = 8443561n
 			assert.deepEqual(emittedBlockNumbers, [blockNumber, blockNumber + 1n, blockNumber + 2n])
 		})
 
-		test('newHeads removes a stale socket while another socket in the same tab remains live', async () => {
+		test('newHeads prunes many stale subscriptions in one write while another socket in the same tab remains live', async () => {
 			installBrowserMock()
 			const { createEthereumSubscription, getEthereumSubscriptionsAndFilters, sendSubscriptionMessagesForNewBlock, updateEthereumSubscriptionsAndFilters } = await loadModules()
 			const ethereum = createEthereum()
@@ -440,8 +440,20 @@ const blockNumber = 8443561n
 			await updateEthereumSubscriptionsAndFilters(() => [])
 			const staleSubscriptionId = await createEthereumSubscription({ method: 'eth_subscribe', params: ['newHeads'] }, staleSocket)
 			const liveSubscriptionId = await createEthereumSubscription({ method: 'eth_subscribe', params: ['newHeads'] }, liveSocket)
+			await updateEthereumSubscriptionsAndFilters((subscriptions) => subscriptions.concat(Array.from({ length: 128 }, (_, index) => ({
+				type: 'newHeads',
+				subscriptionOrFilterId: `stale-${index}`,
+				params: { method: 'eth_subscribe', params: ['newHeads'] },
+				subscriptionCreatorSocket: staleSocket,
+			}))))
 
-			await sendSubscriptionMessagesForNewBlock(blockNumber, ethereum, false, websiteTabConnections, async () => PASSTHROUGH_STATE)
+			const writes = spyOn(browser.storage.local, 'set')
+			try {
+				await sendSubscriptionMessagesForNewBlock(blockNumber, ethereum, false, websiteTabConnections, async () => PASSTHROUGH_STATE)
+				assert.equal(writes.mock.calls.length, 1)
+			} finally {
+				writes.mockRestore()
+			}
 
 			const emittedBlockNumbers = postedMessages.flatMap((message) => {
 				if (message.type !== 'result' || !('method' in message) || message.method !== 'newHeads') return []

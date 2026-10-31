@@ -1242,7 +1242,11 @@ describe('simulation visualizer open replies', () => {
 				await clickElement(getButtonByText(dom.document.body, 'Change'))
 				await new Promise((resolve) => setTimeout(resolve, 0))
 			})
-			await act(async () => { await import('../../app/ts/components/pages/ChangeActiveAddress.js') })
+			await act(async () => {
+				await import('../../app/ts/components/pages/ChangeActiveAddress.js')
+				// Module resolution precedes the lazy page's state update; flush that update before inspecting the picker.
+				await new Promise((resolve) => setTimeout(resolve, 0))
+			})
 			const nextCard = collectElements(dom.document.body, 'div').find((element) => element.getAttribute?.('class') === 'card hoverable' && element.textContent?.includes('Next wallet'))
 			if (nextCard === undefined) throw new Error('Expected the next wallet in the address picker')
 			await act(async () => { await clickElement(nextCard) })
