@@ -71,7 +71,7 @@ test('preparation enforces opt-in, targets one top-level origin, and reloads onl
 		storage: { local: { get: async () => ({ safeAppsCompatibilityMode: true, safeAppsHostOrigins: optedIn ? ['https://safe-app.example'] : [], simulationMode, websiteAccess: [{ website: { websiteOrigin: 'safe-app.example', title: undefined, icon: undefined }, addressAccess: [], access, interceptorDisabled }], activeSigningSafeAddress: '0x1234567890123456789012345678901234567890' }) } },
 		tabs: {
 			onRemoved: { addListener: () => undefined, removeListener: () => undefined },
-			query: async () => [{ id: 1, url: 'chrome-extension://test/settings.html' }, { id: 2, url: 'https://safe-app.example:8443/' }, { id: 3, url: 'https://safe-app.example/app' }],
+			query: async () => [{ id: 0, url: '' }, { id: 1, url: 'chrome-extension://test/settings.html' }, { id: 2, url: 'https://safe-app.example:8443/' }, { id: 3, url: 'https://safe-app.example/app' }],
 			get: async () => ({ url: navigationOrigin }),
 			reload: async (id: number) => { assert.equal(id, 3); reloads++ },
 		},
@@ -120,6 +120,10 @@ test('preparation enforces opt-in, targets one top-level origin, and reloads onl
 		navigateDuringRequest = true
 		assert.match(JSON.stringify(await prepareSafeAppTab('https://safe-app.example')), /navigated/)
 		assert.equal(requests, 3)
+		assert.equal(reloads, 1)
+		navigateDuringRequest = false
+		navigationOrigin = 'not a valid URL'
+		assert.match(JSON.stringify(await prepareSafeAppTab('https://safe-app.example')), /navigated/)
 		assert.equal(reloads, 1)
 	} finally {
 		if (previousBrowser === undefined) Reflect.deleteProperty(globalThis, 'browser')

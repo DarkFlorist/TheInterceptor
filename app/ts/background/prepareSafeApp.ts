@@ -9,6 +9,12 @@ import { INPAGE_SCRIPTS } from '../config/injectedScripts.js'
 import safeAppsPreparationMessages from '../../shared/safeAppsPreparationMessages.json'
 import { reportUnexpectedError } from '../utils/errors.js'
 
+function tabHasOrigin(tabUrl: string | undefined, origin: string): boolean {
+	if (tabUrl === undefined) return false
+	// Browser tab URLs can be empty or malformed; skip those tabs during preparation.
+	try { return new URL(tabUrl).origin === origin } catch { return false }
+}
+
 async function prepareSafeAppTabOperation(value: string, operation: PreparationOperation): Promise<PrepareSafeAppReply['data']> {
 	const origin = parseSafeAppsHostOrigin(value)
 	if (browser.runtime.getManifest().manifest_version !== 3) return { success: false, errorMessage: 'Safe Apps hosting requires Chrome.' }
@@ -19,7 +25,7 @@ async function prepareSafeAppTabOperation(value: string, operation: PreparationO
 	if (access === 'interceptorDisabled') return { success: false, errorMessage: 'Enable Interceptor on this website before connecting.' }
 	if (access === 'noAccess') return { success: false, errorMessage: 'Allow this website in Website Access before connecting.' }
 	const tabs = await browser.tabs.query({})
-	const tab = tabs.find((tab) => tab.id !== undefined && tab.url !== undefined && new URL(tab.url).origin === origin)
+	const tab = tabs.find((tab) => tab.id !== undefined && tabHasOrigin(tab.url, origin))
 	if (tab?.id === undefined) return { success: false, errorMessage: 'Open this website in a browser tab before connecting.' }
 	const injectFiles = getChromeFileInjector()
 	if (injectFiles === undefined) return { success: false, errorMessage: 'This browser does not support Safe Apps connection preparation.' }
@@ -49,7 +55,7 @@ async function prepareSafeAppTabOperation(value: string, operation: PreparationO
 	if (latestAccess === 'interceptorDisabled') return { success: false, errorMessage: 'Enable Interceptor on this website before connecting.' }
 	if (latestAccess !== 'hasAccess') return { success: false, errorMessage: 'Allow this website in Website Access before connecting.' }
 	const connectedTab = await browser.tabs.get(tab.id)
-	if (connectedTab.url === undefined || new URL(connectedTab.url).origin !== origin) return { success: false, errorMessage: 'The website navigated during connection.' }
+	if (!tabHasOrigin(connectedTab.url, origin)) return { success: false, errorMessage: 'The website navigated during connection.' }
 	if (operation.abort.signal.aborted) return cancelledReply(operation)
 	await browser.tabs.reload(tab.id)
 	return { success: true }
