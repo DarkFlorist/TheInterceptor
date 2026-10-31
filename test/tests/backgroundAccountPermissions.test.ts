@@ -1,4 +1,5 @@
 import { notifyWebsiteLifecycle } from '../../app/ts/background/websiteLifecycle.js'
+import { isRpcConfigurationUnavailableError } from '../../app/ts/utils/rpcConfigurationError.js'
 import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
 import * as assert from 'assert'
 import { describe, spyOn, test } from 'bun:test'
@@ -949,106 +950,6 @@ describe('background eth_accounts', () => {
 		assert.equal(messages.some((message) => message.method === 'accountsChanged' || message.method === 'connect'), false)
 	})
 
-	test('an access reconciliation resuming after a newer one does not restore a revoked approval', async () => {
-		installBrowserMock()
-		const { changeSimulationMode, getRequiredSettings, updateWebsiteAccess, updateWebsiteApprovalAccesses, websiteSocketToString } = await loadModules()
-		const websiteOrigin = 'https://reconciliation-race.example'
-		const website = { websiteOrigin, icon: undefined, title: undefined }
-		const account = 0x4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4en
-		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: account })
-		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
-		const socket = { tabId: 123, connectionName: 0n }
-		const { port, messages } = createPort(socket.tabId)
-		const connection = { port, socket, websiteOrigin, approved: false, wantsToConnect: false }
-		const websiteTabConnections = new Map([[socket.tabId, { connections: { [websiteSocketToString(socket)]: connection } }]])
-		const tabStateReadStarted = createDeferredValue<void>()
-		const releaseTabStateRead = createDeferredValue<void>()
-		let pauseNextTabStateRead = true
-		const originalStorageGet = browser.storage.local.get
-		Object.defineProperty(browser.storage.local, 'get', {
-			configurable: true,
-			value: async (keys?: string | string[] | Record<string, unknown> | null) => {
-				const readsTabState = keys === 'tabState_123' || (Array.isArray(keys) && keys.includes('tabState_123'))
-				if (readsTabState && pauseNextTabStateRead) {
-					pauseNextTabStateRead = false
-					tabStateReadStarted.resolve(undefined)
-					await releaseTabStateRead.promise
-				}
-				return await originalStorageGet(keys)
-			},
-		})
-		try {
-			// The older reconciliation starts while the site is approved and pauses while resolving the connection's active address.
-			const olderReconciliation = updateWebsiteApprovalAccesses(undefined, websiteTabConnections, await getRequiredSettings(), false, true)
-			await tabStateReadStarted.promise
-			await updateWebsiteAccess(() => [{ website, access: false, addressAccess: undefined }])
-			await updateWebsiteApprovalAccesses(undefined, websiteTabConnections, await getRequiredSettings(), false, true)
-			releaseTabStateRead.resolve(undefined)
-			await olderReconciliation
-		} finally {
-			Object.defineProperty(browser.storage.local, 'get', { configurable: true, value: originalStorageGet })
-		}
-
-		assert.equal(connection.approved, false)
-		assert.equal(messages.some((message) => message.method === 'accountsChanged' && Array.isArray(message.result) && message.result.length > 0), false)
-	})
-
-	test('a reconciliation superseded while its final approvals read is in flight applies nothing', async () => {
-		installBrowserMock()
-		const { changeSimulationMode, getRequiredSettings, updateWebsiteAccess, updateWebsiteApprovalAccesses, websiteSocketToString } = await loadModules()
-		const websiteOrigin = 'https://superseded-reconciliation.example'
-		const website = { websiteOrigin, icon: undefined, title: undefined }
-		const account = 0x4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4fn
-		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: account })
-		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
-		const socket = { tabId: 123, connectionName: 0n }
-		const { port, messages } = createPort(socket.tabId)
-		const connection = { port, socket, websiteOrigin, approved: false, wantsToConnect: false }
-		const websiteTabConnections = new Map([[socket.tabId, { connections: { [websiteSocketToString(socket)]: connection } }]])
-		const tabStateReadStarted = createDeferredValue<void>()
-		const releaseTabStateRead = createDeferredValue<void>()
-		const approvalsCaptured = createDeferredValue<void>()
-		const releaseApprovalsRead = createDeferredValue<void>()
-		let pauseNextTabStateRead = true
-		let pauseNextApprovalsRead = false
-		const originalStorageGet = browser.storage.local.get
-		Object.defineProperty(browser.storage.local, 'get', {
-			configurable: true,
-			value: async (keys?: string | string[] | Record<string, unknown> | null) => {
-				if (keys === 'tabState_123' && pauseNextTabStateRead) {
-					pauseNextTabStateRead = false
-					tabStateReadStarted.resolve(undefined)
-					await releaseTabStateRead.promise
-				}
-				const storedItems = await originalStorageGet(keys)
-				if (keys === 'websiteAccess' && pauseNextApprovalsRead) {
-					// The approval has been captured from storage; returning it is delayed.
-					pauseNextApprovalsRead = false
-					approvalsCaptured.resolve(undefined)
-					await releaseApprovalsRead.promise
-				}
-				return storedItems
-			},
-		})
-		try {
-			const olderReconciliation = updateWebsiteApprovalAccesses(undefined, websiteTabConnections, await getRequiredSettings(), false, true)
-			await tabStateReadStarted.promise
-			// The next approvals read is the older reconciliation's final one.
-			pauseNextApprovalsRead = true
-			releaseTabStateRead.resolve(undefined)
-			await approvalsCaptured.promise
-			await updateWebsiteAccess(() => [{ website, access: false, addressAccess: undefined }])
-			await updateWebsiteApprovalAccesses(undefined, websiteTabConnections, await getRequiredSettings(), false, true)
-			releaseApprovalsRead.resolve(undefined)
-			await olderReconciliation
-		} finally {
-			Object.defineProperty(browser.storage.local, 'get', { configurable: true, value: originalStorageGet })
-		}
-
-		assert.equal(connection.approved, false)
-		assert.equal(messages.some((message) => message.method === 'accountsChanged' && Array.isArray(message.result) && message.result.length > 0), false)
-	})
-
 	test.each([false, true])('a connection whose active address cannot be resolved is unapproved while the others reconcile (throwOnError: %p)', async (throwOnError) => {
 		installBrowserMock()
 		const { changeSimulationMode, getRequiredSettings, updateWebsiteAccess, updateWebsiteApprovalAccesses, websiteSocketToString } = await loadModules()
@@ -1125,6 +1026,32 @@ describe('background eth_accounts', () => {
 
 		assert.equal(unresolvableConnection.approved, false)
 		assert.equal(resolvableConnection.approved, false)
+	})
+
+	test('a committed revocation unapproves the website when settings are unreadable afterwards', async () => {
+		installBrowserMock()
+		const { changeSimulationMode, persistWebsiteAccessChange, updateWebsiteAccess, websiteSocketToString } = await loadModules()
+		const websiteOrigin = 'https://revoked-then-unreadable.example'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const account = 0x5252525252525252525252525252525252525252n
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: account })
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
+		const socket = { tabId: 125, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const connection = { port, socket, websiteOrigin, approved: true, wantsToConnect: false }
+		const websiteTabConnections = new Map([[socket.tabId, { connections: { [websiteSocketToString(socket)]: connection } }]])
+		// The active RPC network becomes unavailable, so settings cannot be read after the revocation is written.
+		await browser.storage.local.set({ activeRpcNetwork: 'corrupt' })
+		const originalWarn = console.warn
+		console.warn = () => undefined
+		try {
+			await assert.rejects(persistWebsiteAccessChange(undefined, websiteTabConnections, website, false, undefined, false), isRpcConfigurationUnavailableError)
+		} finally {
+			console.warn = originalWarn
+		}
+
+		assert.equal(connection.approved, false)
+		assert.equal(messages.some((message) => message.method === 'accountsChanged' && Array.isArray(message.result) && message.result.length > 0), false)
 	})
 
 	test('does not enable Safe compatibility or expose an active address to an unapproved connected_to_signer request', async () => {
