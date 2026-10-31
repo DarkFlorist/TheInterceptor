@@ -574,19 +574,26 @@ export async function persistWebsiteAccessChange(
 	return await finalizeWebsiteAccessChange(
 		simulationServicesOwner,
 		websiteTabConnections,
-		await getSettingsForCommittedAccessChange(websiteTabConnections, website.websiteOrigin),
+		await getSettingsForCommittedAccessChange(websiteTabConnections, (websiteOrigin) => websiteOrigin === website.websiteOrigin),
 		promptForAccessesIfNeeded,
 	)
 }
 
-// Reconciliation needs settings (active addresses resolve on the active RPC network's chain). When they cannot be read after an access write has been committed, the website's connections lose their runtime approval before the error propagates, so a committed revocation is never left unapplied.
-export async function getSettingsForCommittedAccessChange(websiteTabConnections: WebsiteTabConnections, websiteOrigin: string): Promise<Settings> {
+// Reconciliation needs settings (active addresses resolve on the active RPC network's chain). When they cannot be read after an access write has been committed, every connection of the affected websites loses its runtime approval before the error propagates, so a committed revocation is never left unapplied. A failed disconnect notification does not stop the others; those failures are reported afterwards.
+export async function getSettingsForCommittedAccessChange(websiteTabConnections: WebsiteTabConnections, isAffectedWebsite: (websiteOrigin: string) => boolean): Promise<Settings> {
 	const { settings } = await getSettingsSnapshot()
 	if (settings !== undefined) return settings
+	const notificationErrors: unknown[] = []
 	for (const tabConnection of websiteTabConnections.values()) {
 		for (const connection of Object.values(tabConnection.connections)) {
-			if (connection.websiteOrigin === websiteOrigin && connection.approved) disconnectFromPort(websiteTabConnections, connection.socket)
+			if (!connection.approved || !isAffectedWebsite(connection.websiteOrigin)) continue
+			try {
+				disconnectFromPort(websiteTabConnections, connection.socket)
+			} catch (error: unknown) {
+				notificationErrors.push(error)
+			}
 		}
 	}
+	for (const notificationError of notificationErrors) await reportUnexpectedError(notificationError)
 	throw createRpcConfigurationUnavailableError()
 }

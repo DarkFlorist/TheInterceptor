@@ -345,7 +345,7 @@ async function revokeWebsitePermissions(
 		}
 	}))
 	clearWebsiteConnectionIntent(websiteTabConnections, websiteOrigin)
-	await finalizeWebsiteAccessChange(simulationServicesOwner, websiteTabConnections, await getSettingsForCommittedAccessChange(websiteTabConnections, websiteOrigin), false)
+	await finalizeWebsiteAccessChange(simulationServicesOwner, websiteTabConnections, await getSettingsForCommittedAccessChange(websiteTabConnections, (affectedWebsiteOrigin) => affectedWebsiteOrigin === websiteOrigin), false)
 	return { type: 'result' as const, method: 'wallet_revokePermissions' as const, result: null }
 }
 

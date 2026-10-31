@@ -5,6 +5,7 @@ import type { PopupMessageDispatcherContext } from '../../app/ts/background/popu
 import type { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import type { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
 import type { Settings } from '../../app/ts/types/interceptor-messages.js'
+import { isRpcConfigurationUnavailableError } from '../../app/ts/utils/rpcConfigurationError.js'
 
 const storageState: Record<string, unknown> = {}
 const sentMessages: unknown[] = []
@@ -14,6 +15,7 @@ const dispatcherEvents: ({ type: 'message', message: unknown } | { type: 'dynami
 let storageSetError: Error | undefined
 let dynamicRuleUpdateError: Error | undefined
 let addressBookBroadcastWait: Promise<void> | undefined
+let afterWebsiteAccessWrite: (() => void) | undefined
 let contentScriptRegistrationWait: { readonly started: () => void, readonly release: Promise<void> } | undefined
 
 const registeredContentScripts = [
@@ -47,6 +49,7 @@ Reflect.set(globalThis, 'browser', {
 			async set(items: Record<string, unknown>) {
 				if (storageSetError !== undefined) throw storageSetError
 				Object.assign(storageState, items)
+				if ('websiteAccess' in items) afterWebsiteAccessWrite?.()
 			},
 			async remove(keys: string | string[]) {
 				for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
@@ -172,6 +175,7 @@ beforeEach(() => {
 	storageSetError = undefined
 	dynamicRuleUpdateError = undefined
 	addressBookBroadcastWait = undefined
+	afterWebsiteAccessWrite = undefined
 	contentScriptRegistrationWait = undefined
 	for (const key of Object.keys(storageState)) delete storageState[key]
 	sentMessages.splice(0, sentMessages.length)
@@ -512,6 +516,38 @@ describe('popup message dispatcher seams', () => {
 		await updateWebsiteApprovalAccesses(undefined, context.websiteTabConnections, await getRequiredSettings(), false)
 		releaseRegistration.resolve(undefined)
 		await importing
+
+		assert.equal(connection.approved, false)
+		assert.equal(messages.some((message) => message.method === 'accountsChanged' && Array.isArray(message.result) && message.result.length > 0), false)
+	})
+
+	test.each([
+		{ method: 'popup_removeWebsiteAccess' },
+		{ method: 'popup_removeWebsiteAddressAccess' },
+	] as const)('$method unapproves the website when settings become unreadable right after the revocation is persisted', async ({ method }) => {
+		const websiteOrigin = 'revoked-then-corrupted.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const activeAddress = settings.activeSimulationAddress ?? 0n
+		storageState.websiteAccess = [{ website, access: true, addressAccess: [{ address: '0xd8da6bf26964af9d7eed9e03e53415d37aa96045', access: true }] }]
+		const context = createDispatcherContext(async () => undefined)
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const connection = { port, socket, websiteOrigin, approved: true, wantsToConnect: false }
+		context.websiteTabConnections = new Map([[socket.tabId, { connections: { [websiteSocketToString(socket)]: connection } }]])
+		afterWebsiteAccessWrite = () => {
+			afterWebsiteAccessWrite = undefined
+			storageState.activeRpcNetwork = 'corrupt'
+		}
+		const originalWarn = console.warn
+		console.warn = () => undefined
+		try {
+			const removal = method === 'popup_removeWebsiteAccess'
+				? dispatchPopupMessage(context, { method, data: { websiteOrigin } })
+				: dispatchPopupMessage(context, { method, data: { websiteOrigin, address: activeAddress } })
+			await assert.rejects(removal, isRpcConfigurationUnavailableError)
+		} finally {
+			console.warn = originalWarn
+		}
 
 		assert.equal(connection.approved, false)
 		assert.equal(messages.some((message) => message.method === 'accountsChanged' && Array.isArray(message.result) && message.result.length > 0), false)

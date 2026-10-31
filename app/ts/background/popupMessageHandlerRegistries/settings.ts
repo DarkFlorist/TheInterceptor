@@ -1,8 +1,7 @@
-import { updateDeclarativeNetRequestBlocks, updateWebsiteApprovalAccesses } from '../accessManagement.js'
+import { getSettingsForCommittedAccessChange, updateDeclarativeNetRequestBlocks, updateWebsiteApprovalAccesses } from '../accessManagement.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { popupMessageHandler, popupRecoveryMessageHandler, type PopupMessageHandlerMap } from '../popupMessageHandlerRegistry.js'
 import { changeSettings, exportSettings, importSettings, openNewTab, restoreDefaultRpcConfiguration, retryRpcConfiguration, setNewRpcList, settingsOpened } from '../popupMessageHandlers.js'
-import { getRequiredSettings } from '../settings.js'
 import { publishRpcConfigurationRecovery } from '../activeSettings.js'
 import { updateContentScriptInjectionStrategy } from '../../utils/contentScriptsUpdating.js'
 
@@ -15,8 +14,8 @@ export const settingsPopupMessageHandlers = {
 		await sendPopupMessageToOpenWindows(importSettingsReply)
 		if (!importSettingsReply.data.success) return
 		await updateContentScriptInjectionStrategy()
-		// Read after the content-script registration await so the reconciled and published settings include any access change made meanwhile.
-		const importedSettings = await getRequiredSettings()
+		// Read after the content-script registration await so the reconciled and published settings include any access change made meanwhile. The import replaced every website's approvals, so all connections fail closed if settings are unreadable.
+		const importedSettings = await getSettingsForCommittedAccessChange(context.websiteTabConnections, () => true)
 		const popupRefreshGeneration = await updateWebsiteApprovalAccesses(context.simulationServicesOwner, context.websiteTabConnections, importedSettings, true)
 		await sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: importedSettings, popupRefreshGeneration })
 	}),

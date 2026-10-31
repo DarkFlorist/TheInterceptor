@@ -1054,6 +1054,38 @@ describe('background eth_accounts', () => {
 		assert.equal(messages.some((message) => message.method === 'accountsChanged' && Array.isArray(message.result) && message.result.length > 0), false)
 	})
 
+	test('a committed revocation unapproves every tab of the website when settings are unreadable even if one disconnect notification fails', async () => {
+		installBrowserMock()
+		const { changeSimulationMode, persistWebsiteAccessChange, updateWebsiteAccess, websiteSocketToString } = await loadModules()
+		const websiteOrigin = 'https://revoked-notification-failure.example'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const account = 0x5454545454545454545454545454545454545454n
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: account })
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
+		const failingSocket = { tabId: 126, connectionName: 0n }
+		const otherSocket = { tabId: 127, connectionName: 0n }
+		const failingConnection = { port: createPort(failingSocket.tabId, () => { throw new Error('Notification delivery failed') }).port, socket: failingSocket, websiteOrigin, approved: true, wantsToConnect: false }
+		const otherConnection = { port: createPort(otherSocket.tabId).port, socket: otherSocket, websiteOrigin, approved: true, wantsToConnect: false }
+		const websiteTabConnections = new Map([
+			[failingSocket.tabId, { connections: { [websiteSocketToString(failingSocket)]: failingConnection } }],
+			[otherSocket.tabId, { connections: { [websiteSocketToString(otherSocket)]: otherConnection } }],
+		])
+		await browser.storage.local.set({ activeRpcNetwork: 'corrupt' })
+		const originalWarn = console.warn
+		const originalError = console.error
+		console.warn = () => undefined
+		console.error = () => undefined
+		try {
+			await assert.rejects(persistWebsiteAccessChange(undefined, websiteTabConnections, website, false, undefined, false), isRpcConfigurationUnavailableError)
+		} finally {
+			console.warn = originalWarn
+			console.error = originalError
+		}
+
+		assert.equal(failingConnection.approved, false)
+		assert.equal(otherConnection.approved, false)
+	})
+
 	test('does not enable Safe compatibility or expose an active address to an unapproved connected_to_signer request', async () => {
 		installBrowserMock()
 		const {
