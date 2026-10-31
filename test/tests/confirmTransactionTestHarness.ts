@@ -14,7 +14,6 @@ import { privateKeyToAccount } from '../../app/ts/utils/ethereumPrimitives.js'
 import type { SafeEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { SafeOwnerSignature, SafeStackTransaction, SafeTransactionStack } from '../../app/ts/types/safeTypes.js'
 import { type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../../app/ts/utils/requests.js'
-import { getReviewedResultId } from '../../app/ts/utils/reviewedResult.js'
 import { PopupPendingTransactionOrSignableMessage, type PendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
 
@@ -628,9 +627,9 @@ export function withSimulatedTransactionResult<Pending extends { transactionIden
 	}
 }
 
-// The reviewed-result id the popup computes for a stored request, after the same conversion and message round trip the popup copy goes through.
+// The reviewed-result id the popup sends back for a stored request: the one the background stamped on its popup copy, after the message round trip that copy goes through.
 export function getPopupReviewedResultId(pending: PendingTransactionOrSignableMessage) {
-	return getReviewedResultId(PopupPendingTransactionOrSignableMessage.parse(serialize(PopupPendingTransactionOrSignableMessage, modules.toPopupPendingTransactionOrSignableMessage(pending))))
+	return PopupPendingTransactionOrSignableMessage.parse(serialize(PopupPendingTransactionOrSignableMessage, modules.toPopupPendingTransactionOrSignableMessage(pending))).reviewedResultId
 }
 
 // Builds the accept the popup sends for the request as currently stored, naming its reviewed content and the send-anyway override.

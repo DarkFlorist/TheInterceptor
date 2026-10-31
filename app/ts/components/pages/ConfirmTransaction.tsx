@@ -15,7 +15,7 @@ import { identifyTransaction } from '../simulationExplaining/identifyTransaction
 import { DinoSaysNotification } from '../subcomponents/DinoSays.js'
 import { addressEditEntry, tryFocusingTabOrWindow } from '../ui-utils.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
-import type { PopupPendingTransactionOrSignableMessage as PendingTransactionOrSignableMessage, SimulatedPendingTransaction } from '../../types/accessRequest.js'
+import type { ShownPendingTransactionOrSignableMessage as PendingTransactionOrSignableMessage, SimulatedPendingTransaction } from '../../types/accessRequest.js'
 import { WebsiteOriginText } from '../subcomponents/address.js'
 import { SmallAddress } from '../subcomponents/address.js'
 import { TransactionInput } from '../subcomponents/ParsedInputData.js'
@@ -29,7 +29,6 @@ import { NetworkErrors } from '../subcomponents/NetworkErrors.js'
 import { identifySignature } from '../simulationExplaining/identifySignature.js'
 import { InvalidMessage, SignatureCard, SignatureHeader } from './PersonalSign.js'
 import { type SendAnywayOverrideReason, getSendAnywayOverrideReason, isRejectOnlyTransaction, isSameSendAnywayConsent } from '../../utils/sendAnywayConsent.js'
-import { getReviewedResultId } from '../../utils/reviewedResult.js'
 import { getResultsForTransaction, getVisualizedTransactionResult } from '../../utils/visualizedTransactionResult.js'
 import { isPossibleToSignMessage } from '../../utils/personalSignRequest.js'
 import type { EditEnsNamedHashCallBack } from '../subcomponents/ens.js'
@@ -957,12 +956,12 @@ export function ConfirmTransaction() {
 	}
 	const approve = () => {
 		const pending = currentPendingTransactionOrSignableMessage.value
-		if (pending === undefined) return
+		if (pending === undefined || !('reviewedResultId' in pending)) return
 		// Captured at click time, so results that arrive while the approval is in flight cannot change what is accepted.
 		const accept: TransactionConfirmation = { method: 'popup_confirmDialog', data: {
 			uniqueRequestIdentifier: pending.uniqueRequestIdentifier,
 			action: 'accept',
-			reviewedResultId: getReviewedResultId(pending),
+			reviewedResultId: pending.reviewedResultId,
 			forceSend: forceSend.value,
 		} }
 		resetApproveButton()
@@ -994,6 +993,8 @@ export function ConfirmTransaction() {
 	const isConfirmDisabled = useComputed(() => {
 		const pending = currentPendingTransactionOrSignableMessage.value
 		if (pending === undefined) return true
+		// A request read directly from storage has no reviewed-result id until the background's copy of it arrives.
+		if (!('reviewedResultId' in pending)) return true
 		if (pending.transactionOrMessageCreationStatus !== 'Simulated') return true
 		if (shouldDisableConfirmForApprovalStatus(pending.approvalStatus)) return true
 		if (isRejectOnlyTransaction(pending)) return true

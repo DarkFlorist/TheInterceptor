@@ -1,7 +1,7 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
 import { getLatestUnexpectedError } from '../../app/ts/background/storageVariables.js'
-import { getReviewedResultId } from '../../app/ts/utils/reviewedResult.js'
+import { getReviewedResultId } from '../../app/ts/background/reviewedResult.js'
 import { activeAddress, addressString, browserMock, createAcceptConfirmation, createSafeAddressBookEntry, createSafeTx, createWebsitePort, EIP712Message, fakeRpcNetwork, fakeSafeContract, getPopupReviewedResultId, getSafeTxHash, isRecord, modules, pendingTransaction, popupVisualisation, recipientAddress, safeTestOwnerAddress, safeTxToTypedDataJson, type SimulatedTransactionOutcome, simulator, uniqueRequestIdentifier, withSimulatedTransactionResult } from './confirmTransactionTestHarness.js'
 
 const succeeded: SimulatedTransactionOutcome = { transactionStatus: 'Transaction Succeeded' }
@@ -67,6 +67,37 @@ test('the reviewed-result id ignores approval status, popup window and field ord
 	assert.notEqual(getReviewedResultId(makeReviewedTransaction(succeeded, true)), reviewedId)
 	assert.notEqual(getReviewedResultId({ ...reviewed, originalRequestParameters: { ...reviewed.originalRequestParameters, params: [{ ...reviewed.originalRequestParameters.params[0], value: 1n }] } }), reviewedId)
 	assert.notEqual(getReviewedResultId({ ...reviewed, safeExecutionSignerAddress: recipientAddress }), reviewedId)
+})
+
+test('the background stamps the reviewed-result id of the stored request on the popup copy of a transaction, a signature request and a Safe co-signing request', async () => {
+	const assertPopupCopyCarriesStoredId = (stored: Awaited<ReturnType<typeof getStoredRequest>>, kind: string) => {
+		const popupCopy = modules.toPopupPendingTransactionOrSignableMessage(stored)
+		assert.equal(popupCopy.reviewedResultId, getReviewedResultId(stored), `${ kind }: the popup copy carries the stored request's id`)
+		assert.equal(getPopupReviewedResultId(stored), getReviewedResultId(stored), `${ kind }: the id survives the message round trip unchanged`)
+	}
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [makeReviewedTransaction(succeeded, false)] })
+	assertPopupCopyCarriesStoredId(await getStoredRequest(), 'transaction')
+
+	const { websiteTabConnections } = createSignerConnection()
+	const personalSign = { method: 'personal_sign' as const, params: ['0x68656c6c6f', activeAddress] as const }
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, { ...personalSign, interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier }, { kind: 'message', parameters: personalSign }, false, activeAddress, pendingTransaction.website, websiteTabConnections)
+	const signatureRequest = await getStoredRequest()
+	assert.equal(signatureRequest.type, 'SignableMessage')
+	assertPopupCopyCarriesStoredId(signatureRequest, 'signature request')
+
+	const safeTx = prepareSafeWithTwoOwners(recipientAddress, safeTestOwnerAddress)
+	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' })])
+	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({ ...state, signerAccounts: [recipientAddress], activeSigningAddress: recipientAddress, signerChain: fakeRpcNetwork.chainId }))
+	const coSign = { method: 'eth_signTypedData_v4' as const, params: [activeAddress, EIP712Message.parse(safeTxToTypedDataJson(safeTx))] as const }
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, { ...coSign, interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier }, { kind: 'message', parameters: coSign }, false, activeAddress, pendingTransaction.website, websiteTabConnections)
+	const coSignRequest = await getStoredRequest()
+	assert.notEqual(coSignRequest.type === 'SignableMessage' ? coSignRequest.safeMessageCoSignSnapshot : undefined, undefined, 'the stored request is a Safe co-signing request')
+	assertPopupCopyCarriesStoredId(coSignRequest, 'Safe co-signing request')
+	// The Safe signer is reviewed content even though the popup copy does not carry the snapshot.
+	if (coSignRequest.type !== 'SignableMessage' || coSignRequest.safeMessageCoSignSnapshot === undefined) throw new Error('Expected a Safe co-signing request')
+	assert.notEqual(getReviewedResultId({ ...coSignRequest, safeMessageCoSignSnapshot: { ...coSignRequest.safeMessageCoSignSnapshot, safeSignerAddress: safeTestOwnerAddress } }), getReviewedResultId(coSignRequest))
 })
 
 test('honours an accept across approval-status changes and refuses it after the reviewed result changes', async () => {

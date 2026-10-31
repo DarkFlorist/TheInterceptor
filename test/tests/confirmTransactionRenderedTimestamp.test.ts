@@ -8,7 +8,8 @@ import { createSafeTx, getSafeTxSigningHashes } from '../../app/ts/safe/safeCore
 import { getSafeTxHash } from '../../app/ts/utils/eip712.js'
 import { bytes32String } from '../../app/ts/utils/bigint.js'
 import { getNativeTokenErc20 } from '../../app/ts/background/metadataUtils.js'
-import { getReviewedResultId } from '../../app/ts/utils/reviewedResult.js'
+import { getReviewedResultId } from '../../app/ts/background/reviewedResult.js'
+import type { PendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
 
 type RuntimeMessageListener = (message: unknown) => unknown
 type CurrentWindowProvider = () => Promise<{ id: number }>
@@ -423,13 +424,15 @@ async function tickSendAnyway(dom: RenderedDom) {
 const { UpdateConfirmTransactionDialogPendingTransactions } = await import('../../app/ts/types/interceptor-messages.js')
 const { serialize } = await import('../../app/ts/types/wire-types.js')
 const { ConfirmTransaction } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
-async function dispatchPendingTransactions(browser: ReturnType<typeof createBrowserMock>, pendingTransactionAndSignableMessages: readonly unknown[]) {
+// The background sends the popup its copies of stored requests, stamped with their reviewed-result ids.
+const { toPopupPendingTransactionOrSignableMessage } = await import('../../app/ts/background/windows/confirmTransaction.js')
+async function dispatchPendingTransactions(browser: ReturnType<typeof createBrowserMock>, pendingTransactionAndSignableMessages: readonly PendingTransactionOrSignableMessage[]) {
 	await act(() => {
 		browser.dispatch({
 			role: 'all',
 			...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
 				method: 'popup_update_confirm_transaction_dialog_pending_transactions',
-				data: { pendingTransactionAndSignableMessages, currentBlockNumber: 123n, rpcConnectionStatus: undefined },
+				data: { pendingTransactionAndSignableMessages: pendingTransactionAndSignableMessages.map(toPopupPendingTransactionOrSignableMessage), currentBlockNumber: 123n, rpcConnectionStatus: undefined },
 			}),
 		})
 	})
@@ -468,7 +471,7 @@ describe('ConfirmTransaction', () => {
 				...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
 					method: 'popup_update_confirm_transaction_dialog_pending_transactions',
 					data: {
-						pendingTransactionAndSignableMessages: [pendingTransaction],
+						pendingTransactionAndSignableMessages: [pendingTransaction].map(toPopupPendingTransactionOrSignableMessage),
 						currentBlockNumber: 123n,
 						rpcConnectionStatus: undefined,
 					},
@@ -505,7 +508,7 @@ describe('ConfirmTransaction', () => {
 				...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
 					method: 'popup_update_confirm_transaction_dialog_pending_transactions',
 					data: {
-						pendingTransactionAndSignableMessages: [pendingTransaction],
+						pendingTransactionAndSignableMessages: [pendingTransaction].map(toPopupPendingTransactionOrSignableMessage),
 						currentBlockNumber: 123n,
 						rpcConnectionStatus: undefined,
 					},
@@ -559,7 +562,7 @@ describe('ConfirmTransaction', () => {
 				...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
 					method: 'popup_update_confirm_transaction_dialog_pending_transactions',
 					data: {
-						pendingTransactionAndSignableMessages: [proposal],
+						pendingTransactionAndSignableMessages: [proposal].map(toPopupPendingTransactionOrSignableMessage),
 						currentBlockNumber: 123n,
 						rpcConnectionStatus: undefined,
 					},
@@ -602,7 +605,7 @@ describe('ConfirmTransaction', () => {
 				...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
 				method: 'popup_update_confirm_transaction_dialog_pending_transactions',
 				data: {
-					pendingTransactionAndSignableMessages: [olderPendingTransaction],
+					pendingTransactionAndSignableMessages: [olderPendingTransaction].map(toPopupPendingTransactionOrSignableMessage),
 					currentBlockNumber: 123n,
 					rpcConnectionStatus: undefined,
 				},
@@ -617,7 +620,7 @@ describe('ConfirmTransaction', () => {
 				...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
 				method: 'popup_update_confirm_transaction_dialog_pending_transactions',
 				data: {
-					pendingTransactionAndSignableMessages: [newerPendingTransaction],
+					pendingTransactionAndSignableMessages: [newerPendingTransaction].map(toPopupPendingTransactionOrSignableMessage),
 					currentBlockNumber: 123n,
 					rpcConnectionStatus: undefined,
 				},
@@ -646,7 +649,7 @@ describe('ConfirmTransaction', () => {
 				...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
 					method: 'popup_update_confirm_transaction_dialog_pending_transactions',
 					data: {
-						pendingTransactionAndSignableMessages: [makePendingTransaction(new Date('2024-01-01T00:00:05.000Z'))],
+						pendingTransactionAndSignableMessages: [makePendingTransaction(new Date('2024-01-01T00:00:05.000Z'))].map(toPopupPendingTransactionOrSignableMessage),
 						currentBlockNumber: 123n,
 						rpcConnectionStatus: undefined,
 					},
@@ -671,7 +674,7 @@ describe('ConfirmTransaction', () => {
 				...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
 					method: 'popup_update_confirm_transaction_dialog_pending_transactions',
 					data: {
-						pendingTransactionAndSignableMessages: [makePendingTransaction(new Date('2024-01-01T00:00:05.000Z'), 1_250_000_000_000_000_000n)],
+						pendingTransactionAndSignableMessages: [makePendingTransaction(new Date('2024-01-01T00:00:05.000Z'), 1_250_000_000_000_000_000n)].map(toPopupPendingTransactionOrSignableMessage),
 						currentBlockNumber: 123n,
 						rpcConnectionStatus: undefined,
 					},
@@ -722,7 +725,7 @@ describe('ConfirmTransaction', () => {
 				...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
 					method: 'popup_update_confirm_transaction_dialog_pending_transactions',
 					data: {
-						pendingTransactionAndSignableMessages: [refreshedPendingTransaction],
+						pendingTransactionAndSignableMessages: [refreshedPendingTransaction].map(toPopupPendingTransactionOrSignableMessage),
 						currentBlockNumber: 123n,
 						rpcConnectionStatus: undefined,
 					},
@@ -813,10 +816,14 @@ describe('ConfirmTransaction', () => {
 			resolved.resolve()
 		})
 
-		await act(() => {
+		await act(async () => {
 			render(h(ConfirmTransaction, {}), dom.document.body)
 		})
+		for (let turn = 0; turn < 50 && findConfirmButton(dom) === undefined; turn++) await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+		assert.notEqual(findConfirmButton(dom), undefined, 'the request read directly from storage is shown')
+		assert.equal(isConfirmEnabled(dom), false, 'a request read directly from storage has no reviewed-result id, so it cannot be confirmed yet')
 		await dispatchPendingTransactions(browser, await getPendingTransactionsAndMessages())
+		assert.equal(isConfirmEnabled(dom), true, 'the background copy carries the reviewed-result id')
 		const confirmButton = findConfirmButton(dom)
 		if (confirmButton === undefined) throw new Error('Expected the confirm button')
 		await act(async () => { await clickRenderedElement(confirmButton) })

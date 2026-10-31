@@ -24,7 +24,7 @@ import { SafeTxSigningDetails } from '../subcomponents/SafeTxSigningDetails.js'
 import { CollapsibleCard } from '../subcomponents/CollapsibleCard.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
 import type { ReadonlySignal } from '@preact/signals'
-import type { PopupPendingTransactionOrSignableMessage as PendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
+import type { ShownPendingTransactionOrSignableMessage as PendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
 import { identifySignature } from '../simulationExplaining/identifySignature.js'
 
 type SignatureCardParams = {
