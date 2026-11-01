@@ -16,7 +16,7 @@ import { findEntryWithSymbolOrName, getMetadataForAddressBookData } from './meta
 import { getActiveAddressEntryForChain, getActiveAddresses, identifyAddress } from './metadataUtils.js'
 import type { TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { CompleteVisualizedSimulation, InterceptorSimulationExport, type InterceptorStackOperation, InterceptorTransactionStack, type ModifyAddressWindowState, createPassthroughCompleteVisualizedSimulation } from '../types/visualizer-types.js'
+import { authorizesExecutedCall, CompleteVisualizedSimulation, InterceptorSimulationExport, type InterceptorStackOperation, InterceptorTransactionStack, type ModifyAddressWindowState, createPassthroughCompleteVisualizedSimulation } from '../types/visualizer-types.js'
 import { isJSON } from '../utils/json.js'
 import { doAddressBookChainIdsMatch, type AddressBookEntry, type IncompleteAddressBookEntry } from '../types/addressBookTypes.js'
 import { EthereumAddress, serialize } from '../types/wire-types.js'
@@ -484,6 +484,8 @@ export async function removeTransactionOrSignedMessage(ethereum: EthereumClientS
 						&& transaction.originalRequestParameters.method === 'eth_sendTransaction'
 						&& transaction.signedTransaction.from === removedTransaction.signedTransaction.from
 						&& transaction.signedTransaction.nonce > removedTransaction.signedTransaction.nonce
+						// A transaction whose node call is another account's (a Gnosis Safe execution's executor) raised no nonce of its sender, so removing it lowers none.
+						&& !authorizesExecutedCall(removedTransaction.simulationOptions)
 				}
 
 				const newOperations: InterceptorStackOperation[] = []

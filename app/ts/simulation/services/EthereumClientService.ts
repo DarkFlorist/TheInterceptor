@@ -32,10 +32,10 @@ const parseSignatureHex = (signature: `0x${ string }`) => {
 	}
 }
 
-type RpcTransaction = SimulationStateInputMinimalDataBlock['transactions'][number]
+export type RpcTransaction = SimulationStateInputMinimalDataBlock['transactions'][number]
 
 // The call the node runs for a transaction: its executedTransaction when the simulation input was prepared with one, otherwise its signedTransaction. signedTransaction stays the call the transaction shows, which transaction lookups and receipts return.
-const getExecutedTransaction = (transaction: RpcTransaction) => transaction.executedTransaction ?? transaction.signedTransaction
+export const getExecutedTransaction = (transaction: RpcTransaction) => transaction.executedTransaction ?? transaction.signedTransaction
 
 export const getTotalExecutedGasLimit = (transactions: readonly RpcTransaction[]) => transactions.reduce((totalGasLimit, transaction) => totalGasLimit + getExecutedTransaction(transaction).gas, 0n)
 
