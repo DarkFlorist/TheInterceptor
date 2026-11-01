@@ -1,4 +1,5 @@
 import * as funtypes from 'funtypes'
+import { isPlainUrlHostname, isWildcardUrlHostname } from '../utils/chromeMatchPatterns.js'
 
 export const DEFAULT_SAFE_APPS_HOST_ORIGINS: readonly string[] = []
 export const SAFE_APPS_HOST_ORIGIN_LIMIT = 32
@@ -11,7 +12,8 @@ export function parseSafeAppsHostOrigin(value: string) {
 		throw new Error('Enter a valid HTTP or HTTPS website URL.')
 	}
 	if ((url.protocol !== 'https:' && url.protocol !== 'http:') || url.username !== '' || url.password !== '') throw new Error('Safe Apps hosting requires an HTTP or HTTPS URL without credentials.')
-	if (url.hostname.includes('*')) throw new Error('Choose one website; wildcard hosts are not supported.')
+	if (isWildcardUrlHostname(url.hostname)) throw new Error('Choose one website; wildcard hosts are not supported.')
+	if (!isPlainUrlHostname(url.hostname)) throw new Error('Enter a plain website host name without special or percent-encoded characters.')
 	return url.origin
 }
 
