@@ -1200,7 +1200,7 @@ describe('inpage signer bridge', () => {
 		})
 	})
 
-	test.each(['eth_blockNumber', 'eth_call', 'eth_getFilterLogs', 'eth_getFilterChanges', 'eth_newFilter', 'eth_uninstallFilter', 'eth_subscribe', 'eth_unsubscribe'])('settles a lost %s request so signer reconciliation can recover after reconnect', async (method) => {
+	test.each(['eth_blockNumber', 'eth_call', 'eth_getFilterLogs', 'eth_getFilterChanges', 'eth_newFilter', 'eth_uninstallFilter', 'eth_subscribe', 'eth_unsubscribe', 'wallet_revokePermissions'])('settles a lost %s request so signer reconciliation can recover after reconnect', async (method) => {
 		const requests: InpageRequest[] = []
 		const { fakeWindow, notifyBridgeReconnected, sendBackgroundMessage } = createFakeWindow({
 			handleRequest: (request) => {
@@ -1225,7 +1225,7 @@ describe('inpage signer bridge', () => {
 		})
 	})
 
-	test.each(['eth_sendTransaction', 'personal_sign', 'wallet_watchAsset', 'wallet_switchEthereumChain', 'eth_requestAccounts', 'wallet_requestPermissions'])('preserves pending %s approval across reconnect without replaying the wallet command', async (method) => {
+	test.each(['eth_sendTransaction', 'personal_sign', 'wallet_watchAsset', 'wallet_switchEthereumChain', 'eth_requestAccounts', 'wallet_requestPermissions', 'eth_sign', 'wallet_vendorSign'])('preserves pending %s approval across reconnect without replaying the wallet command', async (method) => {
 		const requests: InpageRequest[] = []
 		const { fakeWindow, notifyBridgeReconnected, sendBackgroundMessage } = createFakeWindow({
 			handleRequest: (request) => {

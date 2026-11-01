@@ -506,7 +506,7 @@ type OutstandingRequest = {
 	requestScopedProviderEventCallbacks?: (() => void)[]
 }
 
-// Queries and filter/subscription operations have no durable approval or replay path. Reject them on reconnect without replaying potentially state-changing operations, so lost replies release their selection blockers. Wallet commands and account approvals keep their existing recovery workflows.
+// Queries and filter/subscription operations have no durable approval or replay path. Reject them on reconnect without replaying potentially state-changing operations, so lost replies release their selection blockers. Wallet commands and account approvals keep their existing recovery workflows. Unknown methods can already be executing a wallet-specific approval when the port reconnects. Preserve their pending result and selection blocker: a method-name allowlist of durable commands cannot safely classify them as transient. eth_sign also stays pending: although the local RPC handler rejects it, networks without an HTTPS RPC forward it to the wallet before reaching that handler.
 const PUBLIC_QUERIES_INTERRUPTED_BY_RECONNECT = new Set([
 	'eth_accounts',
 	'eth_blockNumber',
@@ -536,6 +536,7 @@ const PUBLIC_QUERIES_INTERRUPTED_BY_RECONNECT = new Set([
 	'net_version',
 	'wallet_getCapabilities',
 	'wallet_getPermissions',
+	'wallet_revokePermissions',
 	'web3_clientVersion',
 ])
 

@@ -60,7 +60,7 @@ export async function getPendingTransactionsAndMessages(): Promise<readonly Pend
 	return await pendingTransactionsSemaphore.execute(readPendingTransactionsAndMessagesWithRecovery)
 }
 
-// Creation acquires its selection reservation here; raw list and chain-confirmation writes remain private to this storage module.
+// Creation acquires its selection reservation here; raw list and chain-confirmation writes remain private to this storage module. These are domain-specific pending-work operations, not raw persistence helpers. Importing them directly or through pendingSignerWork always acquires the same reservation; exporting an ungated writer would let callers race provider selection.
 export async function appendPendingTransactionOrMessage(websiteTabConnections: WebsiteTabConnections, pending: PendingTransactionOrSignableMessage) {
 	await runWithSignerSelectionGate(websiteTabConnections, pending.uniqueRequestIdentifier.requestSocket.tabId, async () => await updatePendingTransactionOrMessages(async (previous) => [...previous, pending]))
 }
