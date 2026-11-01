@@ -3,7 +3,7 @@ import { sendPopupMessageToBackgroundPage, sendPopupMessageToBackgroundPageWitho
 import { MessageToPopup, type ImportSettingsReply } from '../../types/interceptor-messages.js'
 import { type RpcEntries, RpcEntry } from '../../types/rpc.js'
 import { useEffect } from 'preact/hooks'
-import { ErrorComponent } from '../subcomponents/Error.js'
+import { ErrorComponent, ErrorText } from '../subcomponents/Error.js'
 import { DinoSaysNotification } from '../subcomponents/DinoSays.js'
 import { ConfigureRpcConnection } from '../subcomponents/ConfigureRpcConnection.js'
 import { Collapsible } from '../subcomponents/Collapsible.js'
@@ -12,7 +12,7 @@ import { useComputed, useSignal } from '@preact/signals'
 import { serialize } from '../../types/wire-types.js'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
 import { resolveSignal, type SignalOrValue } from '../../utils/signals.js'
-import { useAsyncState } from '../../utils/preact-utilities.js'
+import { type AsyncStates, useAsyncState } from '../../utils/preact-utilities.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 import { shouldApplyInitialRpcEntries, shouldOfferBundledRpcReset } from '../../utils/rpcConnectionUi.js'
 import { reportUnexpectedError } from '../../utils/errors.js'
@@ -247,25 +247,12 @@ const RpcListings = () => {
 
 	if (status.value === 'loading') return <></>
 	if (status.value === 'unavailable') {
-		return (
-			<aside class = 'report' role = 'alert' style = { { display: 'grid', minHeight: '11rem', textAlign: 'center', rowGap: '0.5rem', padding: '1rem' } }>
-				<p>Interceptor could not safely read your RPC configuration. Network requests are paused to prevent sending them to an endpoint you did not choose.</p>
-				<AsyncActionButton
-					class = 'btn btn--outline'
-					state = { retryRpcListState.value.state }
-					text = 'Retry reading RPC configuration'
-					pendingText = 'Retrying RPC configuration'
-					onClick = { retryRpcList }
-				/>
-				<AsyncActionButton
-					class = 'btn btn--outline'
-					state = { resetRpcListState.value.state }
-					text = 'Restore bundled default RPC list'
-					pendingText = 'Restoring default RPC list'
-					onClick = { loadDefaultRpcs }
-				/>
-			</aside>
-		)
+		return <RpcConfigurationUnavailableAlert
+			retryState = { retryRpcListState.value.state }
+			restoreDefaultsState = { resetRpcListState.value.state }
+			onRetry = { retryRpcList }
+			onRestoreDefaults = { loadDefaultRpcs }
+		/>
 	}
 
 	if (shouldOfferBundledRpcReset(rpcEntries.value)) {
@@ -290,6 +277,34 @@ const RpcListings = () => {
 		</ul>
 	)
 }
+
+type RpcConfigurationUnavailableAlertProps = {
+	retryState: AsyncStates
+	restoreDefaultsState: AsyncStates
+	onRetry: () => void
+	onRestoreDefaults: () => void
+}
+
+// Uses the shared warning text style because the inherited Bulma body colour is unreadable dark grey on the `.report` card.
+export const RpcConfigurationUnavailableAlert = (props: RpcConfigurationUnavailableAlertProps) => (
+	<aside class = 'report' role = 'alert' style = { { display: 'grid', minHeight: '11rem', textAlign: 'center', rowGap: '0.5rem', padding: '1rem' } }>
+		<ErrorText warning = { true } text = 'Interceptor could not safely read your RPC configuration. Network requests are paused to prevent sending them to an endpoint you did not choose.' />
+		<AsyncActionButton
+			class = 'btn btn--outline'
+			state = { props.retryState }
+			text = 'Retry reading RPC configuration'
+			pendingText = 'Retrying RPC configuration'
+			onClick = { props.onRetry }
+		/>
+		<AsyncActionButton
+			class = 'btn btn--outline'
+			state = { props.restoreDefaultsState }
+			text = 'Restore bundled default RPC list'
+			pendingText = 'Restoring default RPC list'
+			onClick = { props.onRestoreDefaults }
+		/>
+	</aside>
+)
 
 const RpcSummary = ({ info }: { info: SignalOrValue<RpcEntry | undefined> }) => {
 	const currentInfo = resolveSignal(info)
