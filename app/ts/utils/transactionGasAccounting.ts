@@ -1,5 +1,5 @@
 import type { SafeStackTransaction } from '../types/safeTypes.js'
-import type { TransactionSimulationOptions } from '../types/visualizer-types.js'
+import { authorizesExecutedCall, type TransactionSimulationOptions } from '../types/visualizer-types.js'
 
 export type TransactionGasAccounting = {
 	readonly gasSpent: bigint
@@ -8,14 +8,9 @@ export type TransactionGasAccounting = {
 	readonly simulationOptions?: TransactionSimulationOptions
 }
 
-// A Gnosis Safe's own call in simulation mode, which the simulation runs as its executor's execTransaction call (prepareSafeExecutionSimulationInput).
-export function runsThroughGnosisSafe(transaction: Pick<TransactionGasAccounting, 'simulationOptions'>) {
-	return transaction.simulationOptions?.executeThroughSafe === true
-}
-
-// A Gnosis Safe never pays for its own transaction: its executor does, whether outside the simulation (a Safe proposal) or inside it (runsThroughGnosisSafe).
+// A Gnosis Safe never pays for its own transaction: its executor does, whether outside the simulation (a Safe proposal) or inside it (a transaction the node runs as its executor's call, authorizesExecutedCall).
 export function isPaidByGnosisSafeExecutor(transaction: Pick<TransactionGasAccounting, 'safeTransaction' | 'simulationOptions'>) {
-	return transaction.safeTransaction !== undefined || runsThroughGnosisSafe(transaction)
+	return transaction.safeTransaction !== undefined || authorizesExecutedCall(transaction.simulationOptions)
 }
 
 export function getGasFeePaidByTransactionSender(transaction: TransactionGasAccounting) {

@@ -9,6 +9,7 @@ export type ImportedSimulationStackAdmission =
 const withoutImportedGnosisSafeExecutions = (operations: readonly InterceptorStackOperation[]): readonly InterceptorStackOperation[] => operations.map((operation) => {
 	if (operation.type !== 'Transaction') return operation
 	const transaction = operation.preSimulationTransaction
+	// Works on the executeThroughSafe field itself rather than authorizesExecutedCall: it removes the field, so no imported value of it, whatever authorizesExecutedCall makes of it, survives.
 	if (transaction.simulationOptions?.executeThroughSafe === undefined) return operation
 	const { executeThroughSafe: _importedExecuteThroughSafe, ...ordinarySimulationOptions } = transaction.simulationOptions
 	return modifyObject(operation, { preSimulationTransaction: modifyObject(transaction, { simulationOptions: ordinarySimulationOptions }) })

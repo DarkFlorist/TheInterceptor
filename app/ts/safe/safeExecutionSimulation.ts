@@ -4,7 +4,7 @@ import { getGasEstimateFromSimulation } from '../simulation/services/simulationG
 import { mockSignTransaction } from '../simulation/services/simulationTransactionSigning.js'
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
 import type { MutableStateOverrides } from '../types/ethSimulate-types.js'
-import type { PreSimulationTransaction, SimulationInputTransaction, SimulationStateInput } from '../types/visualizer-types.js'
+import { authorizesExecutedCall, type PreSimulationTransaction, type SimulationInputTransaction, type SimulationStateInput } from '../types/visualizer-types.js'
 import type { EthereumSendableSignedTransaction, EthereumUnsignedTransaction } from '../types/wire-types.js'
 import { encodeAbiValues, encodeFunctionCall } from '../utils/abiRuntime.js'
 import { addressString, bytes32String, dataStringWith0xStart, generate256BitRandomBigInt, stringToUint8Array } from '../utils/bigint.js'
@@ -17,7 +17,6 @@ import { ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED } from '../utils/constants.js'
 import type { DistributiveOmit } from '../utils/typescript.js'
 import { last } from '../utils/array.js'
 import { isSafeCallRevert, SAFE_CALL_REVERTED_MESSAGE } from './safeExecutionFailure.js'
-import { runsThroughGnosisSafe } from '../utils/transactionGasAccounting.js'
 import { getSimulatedBlockBaseFeePerGas } from '../simulation/services/simulationBlockParameters.js'
 
 // The account that sends simulated Gnosis Safe executions. It is random for each background session, so a called contract can't recognise the simulation by a known tx.origin. On-chain, too, a Safe's transactions are often sent by accounts that aren't its owners, such as relayers.
@@ -74,14 +73,14 @@ function createExecutorTransaction(safeCall: SafeCall, signingOwners: readonly b
 }
 
 /**
- * Prepares every Gnosis Safe execution in the input (runsThroughGnosisSafe) to run the way the Safe runs it on-chain: SAFE_EXECUTION_SIMULATION_EXECUTOR calls the Safe's execTransaction with real fees in a block with the real base fee, and the Safe makes the call. The transaction's signedTransaction stays the Safe's call; the call the node runs is its executedTransaction.
+ * Prepares every Gnosis Safe execution in the input (a transaction whose simulation options authorize an executed call, authorizesExecutedCall) to run the way the Safe runs it on-chain: SAFE_EXECUTION_SIMULATION_EXECUTOR calls the Safe's execTransaction with real fees in a block with the real base fee, and the Safe makes the call. The transaction's signedTransaction stays the Safe's call; the call the node runs is its executedTransaction.
  * The simulation assumes the Safe's owners approved the call. The first block's state overrides mark the call's SafeTx hash as approved (approvedHashes) by every owner of the Safe at the parent block, and the execution carries their pre-validated signatures. The Safe can reach this state on-chain, through approveHash. An owner that an earlier execution on the stack removes still signs, so an execution after such a removal can fail the Safe's signature check (GS026).
  * The approvals are visible: a called contract that reads its Safe's approvedHashes for the current SafeTx hash finds them set, as it would if the owners had approved with approveHash, but not if they sign off-chain. A preview runs before the owners have signed, so it has to make the Safe accept approvals it doesn't have yet. The alternatives can be told apart as well: replacing the ecrecover precompile to accept made-up signatures puts code at its address, and lowering the threshold changes getThreshold. approvedHashes is the one of them the Safe can reach on-chain, and a contract can only see it by inspecting its own Safe, unlike a tx.origin that is a contract or a zero base fee.
  * The SafeTx hash includes the Safe's nonce at execution, and each earlier execution of the same Safe in the input raises it by one if it succeeds: a simulated Safe execution, or a call to the Safe's execTransaction, whether a stacked transaction or a Safe execution makes it. So an execution is approved at every nonce from the Safe's nonce at the parent block up to that nonce plus its number of earlier executions.
  * The first block also funds the executor for every execution's gas at its maximum fee.
  */
 export async function prepareSafeExecutionSimulationInput(input: SimulationStateInput, ethereum: EthereumClientService, parentBlockNumber: bigint, baseFeePerGas: bigint): Promise<SimulationStateInput> {
-	const safeAddresses = new Set(input.flatMap((block) => block.transactions.filter(runsThroughGnosisSafe).map((transaction) => transaction.signedTransaction.from)))
+	const safeAddresses = new Set(input.flatMap((block) => block.transactions.filter((transaction) => authorizesExecutedCall(transaction.simulationOptions)).map((transaction) => transaction.signedTransaction.from)))
 	if (safeAddresses.size === 0 && input.every((block) => block.transactions.every((transaction) => transaction.executedTransaction === undefined))) return input
 	const safeStates = new Map(await Promise.all([...safeAddresses].map(async (safeAddress) => [safeAddress, await getSafeContractStateAtBlock(ethereum, safeAddress, parentBlockNumber)] as const)))
 	const maxFeePerGas = baseFeePerGas * 2n + EXECUTOR_MAX_PRIORITY_FEE_PER_GAS
@@ -95,7 +94,7 @@ export async function prepareSafeExecutionSimulationInput(input: SimulationState
 		if (to !== null && safeStates.has(to) && isSafeExecTransactionCall(input)) countExecution(to)
 	}
 	const preparedInput = input.map((block) => ({ ...block, transactions: block.transactions.map((transaction) => {
-		if (!runsThroughGnosisSafe(transaction)) {
+		if (!authorizesExecutedCall(transaction.simulationOptions)) {
 			countExecTransactionCall(transaction.signedTransaction)
 			return withoutExecutedTransaction(transaction)
 		}

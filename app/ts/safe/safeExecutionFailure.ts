@@ -1,5 +1,5 @@
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
-import type { PreSimulationTransaction } from '../types/visualizer-types.js'
+import { authorizesExecutedCall, type PreSimulationTransaction } from '../types/visualizer-types.js'
 import { dataStringWith0xStart } from '../utils/bigint.js'
 import { decodeEthereumError } from '../utils/errorDecoding.js'
 
@@ -12,6 +12,6 @@ export const isSafeCallRevert = (error: ErrorWithCodeAndOptionalData, returnData
 
 // Only a transaction the simulation runs through the Safe's execTransaction (safe/safeExecutionSimulation.ts) fails with the Safe's GS013.
 export function describeSafeExecutionFailure(transaction: Pick<PreSimulationTransaction, 'simulationOptions'>, failure: { readonly error: ErrorWithCodeAndOptionalData, readonly returnData: Uint8Array }, decodedErrorMessage: string) {
-	if (transaction.simulationOptions?.executeThroughSafe !== true || !isSafeCallRevert(failure.error, failure.returnData)) return decodedErrorMessage
+	if (!authorizesExecutedCall(transaction.simulationOptions) || !isSafeCallRevert(failure.error, failure.returnData)) return decodedErrorMessage
 	return SAFE_CALL_REVERTED_MESSAGE
 }

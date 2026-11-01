@@ -1,6 +1,6 @@
 import type { BlockTimeManipulationWithNoDelay, MaybeSimulatedTransaction, ResolvedSimulationResults, SimulationAndVisualisationResults, TransactionVisualizationParameters } from '../../types/visualizer-types.js'
 import { SmallAddress } from '../subcomponents/address.js'
-import type { NonSimulatedAndVisualizedTransaction, SignedMessageTransaction, TransactionSimulationOptions } from '../../types/visualizer-types.js'
+import { authorizesExecutedCall, type NonSimulatedAndVisualizedTransaction, type SignedMessageTransaction, type TransactionSimulationOptions } from '../../types/visualizer-types.js'
 import { WebsiteOriginText } from '../subcomponents/address.js'
 import { TokenSymbol, TokenAmount, AllApproval } from '../subcomponents/coins.js'
 import type { LogAnalysisParams, NonLogAnalysisParams, RenameAddressCallBack } from '../../types/user-interface-types.js'
@@ -213,7 +213,7 @@ export function TransactionImportanceBlock(param: TransactionImportanceBlockPara
 
 // Shown for a Gnosis Safe's own transaction that the simulation runs through the Safe (safe/safeExecutionSimulation.ts).
 export function SafeExecutionSimulationNotice({ simulationOptions }: { simulationOptions: TransactionSimulationOptions | undefined }) {
-	if (simulationOptions?.executeThroughSafe !== true) return <></>
+	if (!authorizesExecutedCall(simulationOptions)) return <></>
 	return <div class = 'notification is-info' style = 'margin-bottom: 10px;'>
 		<p class = 'paragraph'><strong>Gnosis Safe execution</strong></p>
 		<p class = 'paragraph'>Simulated the way the Gnosis Safe runs it on-chain: an executor account calls the Safe's execTransaction and pays the network fees. The simulation assumes the Safe's owners approved the transaction.</p>

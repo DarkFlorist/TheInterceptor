@@ -5,6 +5,8 @@ import type { SendRawTransactionParams, SendTransactionParams } from '../../app/
 import { InterceptorTransactionStack, PreSimulationTransaction, type SimulationInputTransaction, type SimulationStateInput, toResolvedExecutionSimulationState, toResolvedSimulationInput, toResolvedSimulationState, type TransactionSimulationOptions } from '../../app/ts/types/visualizer-types.js'
 import { EthereumSendableSignedTransaction } from '../../app/ts/types/wire-types.js'
 import { getSignedTransactionForSimulation } from '../../app/ts/simulation/services/simulationTransactionSigning.js'
+import { isUnpreparedSimulationInputError } from '../../app/ts/simulation/services/EthereumClientService.js'
+import { classifyCaughtError } from '../../app/ts/utils/errors.js'
 import { estimateSafeExecutionGas, prepareSafeExecutionSimulationInput, SAFE_EXECUTION_SIMULATION_EXECUTOR } from '../../app/ts/safe/safeExecutionSimulation.js'
 import { describeSafeExecutionFailure } from '../../app/ts/safe/safeExecutionFailure.js'
 import { prepareSafeTransactionConfirmation } from '../../app/ts/background/safeTransactionConfirmation.js'
@@ -221,13 +223,20 @@ test('sends the executor\'s call to the node in place of the Safe\'s call', asyn
 
 test('rejects a Gnosis Safe execution that reaches the node without its executor\'s call', async () => {
 	const unpreparedBlock = createBlock([createSafeCall({ value: 7n, input: new Uint8Array(), gas: 63_000n }, SAFE_EXECUTION_SIMULATION_OPTIONS)])
-	await assert.rejects(ethereum.ethSimulateV1Input([unpreparedBlock], 123n, undefined), /require a prepared executed call reached the node without one/u)
+	// A distinctly named error that is still reported as an unexpected one, since a caller skipped preparing its input.
+	await assert.rejects(ethereum.ethSimulateV1Input([unpreparedBlock], 123n, undefined), (error: unknown) => isUnpreparedSimulationInputError(error)
+		&& error.name === 'UnpreparedSimulationInputError'
+		&& error.violation === 'missing-executed-call'
+		&& /require a prepared executed call reached the node without one/u.test(error.message)
+		&& classifyCaughtError(error) === 'unexpected')
 })
 
 test('rejects a transaction that is not a Gnosis Safe execution but reaches the node with another call to run', async () => {
 	const shownCall = createSafeCall({ value: 7n, input: Uint8Array.from([0x12, 0x34]), gas: 63_000n }, undefined)
 	const otherCall = createSafeCall({ value: 0n, input: new Uint8Array(), gas: 21_000n }, undefined).signedTransaction
-	await assert.rejects(ethereum.ethSimulateV1Input([createBlock([{ ...shownCall, executedTransaction: otherCall }])], 123n, undefined), /reached the node with an executed call other than its signed transaction, which its simulation options do not authorize/u)
+	await assert.rejects(ethereum.ethSimulateV1Input([createBlock([{ ...shownCall, executedTransaction: otherCall }])], 123n, undefined), (error: unknown) => isUnpreparedSimulationInputError(error)
+		&& error.violation === 'unauthorized-executed-call'
+		&& /reached the node with an executed call other than its signed transaction, which its simulation options do not authorize/u.test(error.message))
 })
 
 const staleExecutionCases = [

@@ -54,6 +54,16 @@ test('the RPC client enforces the executed-call invariant without Gnosis Safe do
 	assert.match(ethereumClientServiceSource, /transaction\.executedTransaction !== undefined && !authorizesExecutedCall\(transaction\.simulationOptions\)/u)
 })
 
+test('every decision whether the node runs a transaction as an executed call goes through authorizesExecutedCall', async () => {
+	const readers: string[] = []
+	for await (const file of new Bun.Glob('**/*.{ts,tsx}').scan({ cwd: new URL('../../app/ts/', import.meta.url).pathname })) {
+		const codeLines = (await Bun.file(new URL(`../../app/ts/${ file }`, import.meta.url)).text()).split('\n').filter((line) => !/^\s*(?:\/\/|\*|\/\*)/u.test(line))
+		if (codeLines.some((line) => /simulationOptions\??\.executeThroughSafe/u.test(line))) readers.push(file)
+	}
+	// The import admission removes the field itself, so it reads it directly.
+	assert.deepEqual(readers.sort(), ['background/importedSimulationStack.ts', 'types/visualizer-types.ts'])
+})
+
 test('simulation stack import applies every imported-stack admission rule from one module', () => {
 	assert.match(popupMessageHandlersSource, /const admission = admitImportedSimulationStackOperations\(parsedRequest\.data\.interceptorSimulateStack\.operations\)/u)
 	assert.match(popupMessageHandlersSource, /\.\.\.prevStack\.operations, \.\.\.admission\.operations\]/u)
