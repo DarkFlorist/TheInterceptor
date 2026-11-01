@@ -222,6 +222,22 @@ describe('simulation state publication consumers', () => {
 		}
 	})
 
+	test('a publication sent only to the transaction confirmation dialog is ignored', async () => {
+		const browserMock = installBrowserMock()
+		const receivedStates: CompleteVisualizedSimulation[] = []
+		const unsubscribe = subscribeToSimulationStatePublications((visualizedSimulatorState) => { receivedStates.push(visualizedSimulatorState) })
+		try {
+			browserMock.deliver(serialize(MessageToPopup, { role: 'confirmTransaction', method: 'popup_simulation_state_changed', data: { visualizedSimulatorState: finishedState } }))
+			await settle()
+			assert.deepEqual(receivedStates, [])
+			browserMock.deliver(serialize(MessageToPopup, { role: 'all', method: 'popup_simulation_state_changed', data: { visualizedSimulatorState: finishedState } }))
+			await settle()
+			assert.equal(receivedStates.length, 1)
+		} finally {
+			unsubscribe()
+		}
+	})
+
 	for (const view of PUBLICATION_CONSUMING_VIEWS) test(`the ${ view.name } renders publications without requesting another simulation`, async () => {
 		const dom = installDomMock()
 		const browserMock = installBrowserMock()

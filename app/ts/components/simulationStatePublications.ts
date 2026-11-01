@@ -11,7 +11,9 @@ export function subscribeToSimulationStatePublications(onPublished: (visualizedS
 		// Every other message is left to the view's own listener without parsing it a second time.
 		if (!isSimulationStatePublication(message)) return false
 		const parsed = MessageToPopup.safeParse(message)
-		if (parsed.success && parsed.value.method === 'popup_simulation_state_changed') onPublished(parsed.value.data.visualizedSimulatorState)
+		// Messages sent with the confirmTransaction role are meant only for the transaction confirmation dialog, so popup views ignore them like their own listeners do.
+		if (!parsed.success || parsed.value.role === 'confirmTransaction') return false
+		if (parsed.value.method === 'popup_simulation_state_changed') onPublished(parsed.value.data.visualizedSimulatorState)
 		return false
 	})
 }
