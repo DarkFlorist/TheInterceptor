@@ -185,12 +185,16 @@ describe('content script injection strategy', () => {
 			'https://invalid.example/path',
 		]), [
 			'file:///*',
-			'*://example.com/*',
-			'*://localhost:3000/*',
-			'*://127.0.0.1:8545/*',
-			'*://[::1]:8545/*',
-			'https://secure.example/*',
-			'https://subdomain.example/*',
+			'http://example.com:80/*',
+			'https://example.com:443/*',
+			'http://localhost:3000/*',
+			'https://localhost:3000/*',
+			'http://127.0.0.1:8545/*',
+			'https://127.0.0.1:8545/*',
+			'http://[::1]:8545/*',
+			'https://[::1]:8545/*',
+			'https://secure.example:443/*',
+			'https://subdomain.example:443/*',
 			'https://localhost:4443/*',
 		])
 	})
@@ -226,6 +230,53 @@ describe('content script injection strategy', () => {
 		await getCommittedListener()(committedDetails)
 
 		assert.equal(getExecuteScriptCalls(), 0)
+	})
+
+	test('excludes a disabled site on its exact host and port, not on its subdomains or other ports', async () => {
+		installBrowserMock()
+		const { getManifestV3ExcludeMatches } = await loadModules()
+
+		// Each pattern names its port, because a pattern without one would match every port of the host, and its host has no *. prefix, which would match every subdomain.
+		assert.deepEqual(getManifestV3ExcludeMatches(['example.com']), ['http://example.com:80/*', 'https://example.com:443/*'])
+		assert.deepEqual(getManifestV3ExcludeMatches(['app.example.com:8080']), ['http://app.example.com:8080/*', 'https://app.example.com:8080/*'])
+		// A legacy origin with a default port also names the default-port URL of that port's scheme, as the manifest v2 injection does.
+		assert.deepEqual(getManifestV3ExcludeMatches(['example.com:80']), ['http://example.com:80/*', 'https://example.com:80/*'])
+		assert.deepEqual(getManifestV3ExcludeMatches(['example.com:443']), ['http://example.com:443/*', 'https://example.com:443/*'])
+		assert.deepEqual(getManifestV3ExcludeMatches(['http://plain.example', 'https://secure.example:8443']), ['http://plain.example:80/*', 'https://secure.example:8443/*'])
+	})
+
+	test('excludes exactly the origins that the manifest v2 injection treats as disabled', async () => {
+		installBrowserMock()
+		const { getManifestV3ExcludeMatches } = await loadModules()
+		const { getHostWithPort, getWebsiteOrigin, isLegacyWebsiteOriginForCanonicalOrigin } = await import('../../app/ts/utils/websiteOrigin.js')
+		// Chromium matches a pattern with a port against the URL's scheme, exact host and effective port.
+		const isMatchedBy = (pattern: string, url: string) => {
+			const { protocol, hostname, port } = new URL(url)
+			const effectivePort = port === '' ? (protocol === 'https:' ? '443' : '80') : port
+			return pattern === `${ protocol }//${ hostname }:${ effectivePort }/*`
+		}
+		const isDisabledBy = (disabledSite: string, url: string) => disabledSite === getWebsiteOrigin(url) || isLegacyWebsiteOriginForCanonicalOrigin(disabledSite, getWebsiteOrigin(url))
+		const urls = ['http://example.com/', 'https://example.com/path', 'https://example.com:80/', 'http://example.com:443/', 'http://example.com:8080/', 'https://app.example.com/', 'http://[::1]:8545/']
+		const disabledSites = [...urls.map(getWebsiteOrigin), ...urls.map(getHostWithPort), 'example.com:80', 'example.com:443']
+		for (const disabledSite of disabledSites) {
+			const excludeMatches = getManifestV3ExcludeMatches([disabledSite])
+			for (const url of urls) {
+				assert.equal(excludeMatches.some((pattern) => isMatchedBy(pattern, url)), isDisabledBy(disabledSite, url), `${ url } with ${ disabledSite } disabled`)
+			}
+		}
+	})
+
+	test('skips stored hosts with a * instead of turning them into wildcard or invalid patterns', async () => {
+		installBrowserMock()
+		const { getManifestV3ExcludeMatches } = await loadModules()
+
+		assert.deepEqual(getManifestV3ExcludeMatches([
+			'*.example.com',
+			'https://*.secure.example',
+			'foo*bar.example',
+			'%2A.encoded.example',
+			'example.com',
+		]), ['http://example.com:80/*', 'https://example.com:443/*'])
 	})
 
 	test('exposes every manifest v2 injected file to Firefox', async () => {

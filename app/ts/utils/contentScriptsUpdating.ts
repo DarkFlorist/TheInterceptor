@@ -13,6 +13,16 @@ const isInjectableSite = (url: string) => injectableSitesRegexp.some((regexpPatt
 const isExpectedManifestV2InjectionTargetError = (error: unknown) => error instanceof Error && (error.message === otherExtensionInjectionTargetErrorMessage || error.message === extensionGalleryInjectionTargetErrorMessage)
 export const getInterceptorDisabledSites = (websiteAccess: WebsiteAccessArray) => websiteAccess.filter((entry) => entry.interceptorDisabled === true).map((entry) => entry.website.websiteOrigin)
 
+// A match pattern without a port matches every port of its host, while one with a port compares it with the URL's effective port, so naming the default port too keeps the pattern to that one origin. Chrome rejects a port after the * scheme, so each pattern names its scheme.
+function getExactOriginMatchPattern(url: URL) {
+	const defaultPort = url.protocol === 'https:' ? '443' : '80'
+	return `${ url.protocol }//${ url.hostname }:${ url.port === '' ? defaultPort : url.port }/*`
+}
+
+// URL parsing keeps a * in a hostname, also one decoded from %2A, but a match pattern reads a leading *. as every subdomain and rejects a * anywhere else, which fails the whole registration, so no pattern can name such a host exactly.
+const hasMatchPatternWildcardHost = (url: URL) => url.hostname.includes('*')
+
+// A disabled site is excluded on exactly the origins that the MV2 injection and the access policy treat as disabled: excluding its subdomains or other ports too would leave pages that the popup treats as enabled without the Interceptor provider (#1701).
 function getManifestV3ExcludeMatchesForOrigin(origin: string) {
 	if (/^https?:\/\//iu.test(origin)) {
 		try {
@@ -25,11 +35,18 @@ function getManifestV3ExcludeMatchesForOrigin(origin: string) {
 	const normalizedOrigin = normalizeStoredWebsiteOrigin(origin)
 	if (normalizedOrigin === undefined) return []
 	if (normalizedOrigin === '') return ['file:///*']
-	if (!isCanonicalWebsiteOrigin(normalizedOrigin)) return [`*://${ normalizedOrigin }/*`]
+	if (!isCanonicalWebsiteOrigin(normalizedOrigin)) {
+		// A legacy origin has no scheme, so keep each scheme whose origin the MV2 injection matches with it. A URL leaves out its scheme's default port, so for example a stored port 443 matches both an explicit-port http URL and a default-port https URL.
+		return ['http:', 'https:']
+			.map((scheme) => new URL(`${ scheme }//${ normalizedOrigin }/`))
+			.filter((url) => !hasMatchPatternWildcardHost(url) && isLegacyWebsiteOriginForCanonicalOrigin(normalizedOrigin, url.origin))
+			.map(getExactOriginMatchPattern)
+	}
 	const url = new URL(normalizedOrigin)
 	// Match patterns include the query string, while file identity uses only the path.
 	if (url.protocol === 'file:') return [normalizedOrigin, `${ normalizedOrigin }?*`]
-	return [`${ url.protocol }//${ url.host }/*`]
+	if (hasMatchPatternWildcardHost(url)) return []
+	return [getExactOriginMatchPattern(url)]
 }
 
 export function getManifestV3ExcludeMatches(origins: readonly string[]) {
