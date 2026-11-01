@@ -1182,17 +1182,31 @@ html, body {
 }
 
 .address-book-page,
-.address-book-page > .hint-container,
 .address-book-layout {
 	height: 100%;
 }
 
+.address-book-viewport {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+}
+
+.address-book-viewport > div {
+	flex: 1;
+	min-height: 0;
+}
+
 @media screen and (max-width: 520px) {
 	.address-book-page,
-	.address-book-page > .hint-container,
+	.address-book-viewport,
 	.address-book-layout,
 	.address-book-content {
 		height: auto;
+	}
+
+	.address-book-viewport > div {
+		min-height: auto;
 	}
 }
 

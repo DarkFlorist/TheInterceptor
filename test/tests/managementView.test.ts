@@ -1,7 +1,7 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { getManagementPageFromHash, getManagementPageFromNavigationKey, getManagementPageHash } from '../../app/ts/utils/managementPages.js'
-import { getCanonicalManagementHash } from '../../app/ts/utils/legacyManagementHashes.js'
+import { getCanonicalManagementHash, getManagementPageFromLegacyOrCurrentHash } from '../../app/ts/utils/legacyManagementHashes.js'
 import { getSimulationStackManagementHash, getSimulationStackTargetElementIdFromHash, getSimulationStackTargetHash } from '../../app/ts/utils/simulationStackTargets.js'
 import { getWebsiteOriginFromHash, getWebsiteOriginHash } from '../../app/ts/utils/websiteAccessRoutes.js'
 import type { TransactionOrMessageIdentifier } from '../../app/ts/types/interceptor-messages.js'
@@ -53,6 +53,8 @@ describe('management view routing', () => {
 		assert.equal(getManagementPageFromHash(stackHash ?? ''), 'simulation-stack')
 		assert.equal(getSimulationStackTargetElementIdFromHash(stackHash ?? ''), 'simulation-stack-transaction-0x1')
 		assert.equal(getManagementPageFromHash('#origin:https://example.com'), undefined)
+		assert.equal(getManagementPageFromLegacyOrCurrentHash('#origin:https://example.com'), 'websites')
+		assert.equal(getManagementPageFromLegacyOrCurrentHash('#simulation-stack-target=simulation-stack-transaction-0x1'), 'simulation-stack')
 	})
 
 	test('shows an unavailable route for unknown or malformed hashes', () => {

@@ -1,4 +1,5 @@
 import { getWebsiteOriginHash } from './websiteAccessRoutes.js'
+import { getManagementPageFromHash, getManagementPageHash } from './managementPages.js'
 
 const WEBSITE_ORIGIN_PREFIX = '#origin:'
 const SIMULATION_STACK_TARGET_PREFIX = '#simulation-stack-target='
@@ -8,8 +9,12 @@ export function getCanonicalManagementHash(hash: string): string | undefined {
 		const origin = hash.slice(WEBSITE_ORIGIN_PREFIX.length)
 		return origin === '' ? undefined : getWebsiteOriginHash(origin)
 	}
-	if (hash.startsWith(SIMULATION_STACK_TARGET_PREFIX)) return `#simulation-stack?${ hash.slice(1) }`
+	if (hash.startsWith(SIMULATION_STACK_TARGET_PREFIX)) return `${ getManagementPageHash('simulation-stack') }?${ hash.slice(1) }`
 	return undefined
+}
+
+export function getManagementPageFromLegacyOrCurrentHash(hash: string) {
+	return getManagementPageFromHash(getCanonicalManagementHash(hash) ?? hash)
 }
 
 export function installLegacyManagementHashRedirect() {

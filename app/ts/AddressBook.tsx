@@ -339,6 +339,7 @@ export function AddressBook() {
 	}
 	return (
 		<main class = 'address-book-page'>
+			<div class = 'address-book-viewport'>
 			<Hint>
 				<div class = 'address-book-layout'>
 					<div class = 'address-book-sidebar'>
@@ -407,6 +408,7 @@ export function AddressBook() {
 						: <></> }
 				</div>
 			</Hint>
+			</div>
 		</main>
 	)
 }

@@ -6,17 +6,18 @@ import { WebsiteAccessView } from './WebsiteAccess.js'
 import { SettingsView } from './SettingsView.js'
 import { SimulationStackView } from './SimulationStackPage.js'
 import { DiagnosticsView } from './DiagnosticsView.js'
-import { getManagementPageFromHash, getManagementPageFromNavigationKey, getManagementPageHash, managementPages, type ManagementPage } from '../../utils/managementPages.js'
+import { getManagementPageFromNavigationKey, getManagementPageHash, managementPages, type ManagementPage } from '../../utils/managementPages.js'
 import { assertNever } from '../../utils/typescript.js'
 import { PageContentFrame } from '../subcomponents/PageContentFrame.js'
+import { getManagementPageFromLegacyOrCurrentHash } from '../../utils/legacyManagementHashes.js'
 
-const managementSectionDetails: Readonly<Record<ManagementPage, { label: string, icon: string, description: string }>> = {
-	home: { label: 'Home', icon: '../img/management-home.svg', description: '' },
-	websites: { label: 'Websites', icon: '../img/internet.svg', description: 'Review website access and permissions.' },
-	'address-book': { label: 'Address Book', icon: '../img/address-book.svg', description: 'Manage saved addresses and contacts.' },
-	'simulation-stack': { label: 'Simulation Stack', icon: '../img/simulation-stack.svg', description: 'Inspect pending and simulated activity.' },
-	diagnostics: { label: 'Diagnostics', icon: '../img/diagnostics.svg', description: 'Browse recorded errors and technical details.' },
-	settings: { label: 'Settings', icon: '../img/settings.svg', description: 'Configure networks and extension preferences.' },
+const managementSectionDetails: Readonly<Record<ManagementPage, { label: string, icon: string, description: string, layoutClass: string }>> = {
+	home: { label: 'Home', icon: '../img/management-home.svg', description: '', layoutClass: '' },
+	websites: { label: 'Websites', icon: '../img/internet.svg', description: 'Review website access and permissions.', layoutClass: '' },
+	'address-book': { label: 'Address Book', icon: '../img/address-book.svg', description: 'Manage saved addresses and contacts.', layoutClass: ' management-page--contained management-page--address-book' },
+	'simulation-stack': { label: 'Simulation Stack', icon: '../img/simulation-stack.svg', description: 'Inspect pending and simulated activity.', layoutClass: ' management-page--contained' },
+	diagnostics: { label: 'Diagnostics', icon: '../img/diagnostics.svg', description: 'Browse recorded errors and technical details.', layoutClass: '' },
+	settings: { label: 'Settings', icon: '../img/settings.svg', description: 'Configure networks and extension preferences.', layoutClass: '' },
 }
 
 type ManagementTabParams = {
@@ -80,12 +81,12 @@ function ManagementPanelContent({ page, selectPage }: { page: ManagementPage, se
 }
 
 export function ManagementView() {
-	const initialPage = getManagementPageFromHash(globalThis.location.hash)
+	const initialPage = getManagementPageFromLegacyOrCurrentHash(globalThis.location.hash)
 	const selectedPage = useSignal<ManagementPage | undefined>(initialPage)
 
 	useEffect(() => {
 		const updateSelectedPage = () => {
-			activatePage(getManagementPageFromHash(globalThis.location.hash))
+			activatePage(getManagementPageFromLegacyOrCurrentHash(globalThis.location.hash))
 		}
 		globalThis.addEventListener('hashchange', updateSelectedPage)
 		return () => globalThis.removeEventListener('hashchange', updateSelectedPage)
@@ -125,9 +126,7 @@ export function ManagementView() {
 		globalThis.document.getElementById(`management-tab-${ page }`)?.focus()
 	}
 
-	const pageLayoutClass = selectedPage.value === 'address-book'
-		? ' management-page--contained management-page--address-book'
-		: selectedPage.value === 'simulation-stack' ? ' management-page--contained' : ''
+	const pageLayoutClass = selectedPage.value === undefined ? '' : managementSectionDetails[selectedPage.value].layoutClass
 	return <div class = { `management-page${ pageLayoutClass }` }>
 		<header class = 'management-header window-header'>
 			<div class = 'management-brand'>
