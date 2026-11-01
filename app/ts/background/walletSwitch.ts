@@ -7,17 +7,12 @@ import type { SignerChainChangeConfirmation, WalletSwitchEthereumChainReply } fr
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { changeActiveAddressAndChain } from './activeSettings.js'
 import { getSocketFromPort, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
-import { promoteRpcAsPrimary, getTabState } from './storageVariables.js'
+import { getTabState } from './storageVariables.js'
+import { promoteRpcAsPrimaryAndNotifyPages } from './rpcListUpdates.js'
 import { getRpcNetworkChange, getRpcChangeRoute } from '../utils/rpcNetworkChange.js'
 import type { RpcNetwork } from '../types/rpc.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { sendCallbackToConfirmedSignerOwner, getConfirmedSignerStateToken, runSignerStateOperation, signerConnectionReplacedError, addSignerStateReplacementListener, doSignerStateTokensMatch, signerUnavailableError, type SignerStateToken } from './signerStateOwnership.js'
-
-// Open pages take their RPC list only from popup_update_rpc_list, so the primary flags this rewrites must be broadcast like any other RPC list write.
-async function promoteRpcAsPrimaryAndNotifyPages(rpcNetwork: RpcNetwork) {
-	const { previous, current } = await promoteRpcAsPrimary(rpcNetwork)
-	if (current !== previous) await sendPopupMessageToOpenWindows({ method: 'popup_update_rpc_list', data: current })
-}
 
 type PendingSignerChainChange = {
 	readonly walletSwitchRequestId: string

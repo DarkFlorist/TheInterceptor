@@ -7,7 +7,7 @@ import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/bro
 import { shouldApplyInitialRpcEntries } from '../../utils/rpcConnectionUi.js'
 import { reportUnexpectedError } from '../../utils/errors.js'
 
-// The page's only RPC list source (popup_requestSettingsReply deliberately no longer carries one), seeded from the same storage read SettingsView used before this hook was shared, and the async initial storage read is dropped if a `popup_update_rpc_list` broadcast arrived while it was pending, so a stale read cannot overwrite a newer list.
+// The page's only RPC list source (popup_requestSettingsReply deliberately no longer carries one), seeded from the same storage read SettingsView used before this hook was shared, and the async initial storage read is dropped if a `popup_update_rpc_list` broadcast arrived while it was pending, so a stale read cannot overwrite a newer list. Home is the exception: it gets its list inside popup_requestHomeData together with the rest of the home data, and refetches that on the same broadcast.
 export function useRpcConnectionsList(): ReadonlySignal<RpcEntries> {
 	const entries = useSignal<RpcEntries>([])
 
