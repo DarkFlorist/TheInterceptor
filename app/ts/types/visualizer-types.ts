@@ -151,6 +151,9 @@ export const SimulationInputTransaction = PreSimulationTransaction.And(funtypes.
 	executedTransaction: EthereumSendableSignedTransaction,
 }))
 
+// Whether a transaction's simulation options let the node run an executedTransaction in place of its signedTransaction. EthereumClientService.prepareEthSimulateV1Input requires an executedTransaction exactly when this holds. executeThroughSafe is currently the only option that does.
+export const authorizesExecutedCall = (simulationOptions: TransactionSimulationOptions | undefined) => simulationOptions?.executeThroughSafe === true
+
 export type SimulatedTransaction = funtypes.Static<typeof SimulatedTransaction>
 export const SimulatedTransaction = funtypes.ReadonlyObject({
 	realizedGasPrice: EthereumQuantity,

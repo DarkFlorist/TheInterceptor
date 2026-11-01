@@ -51,7 +51,7 @@ import { serializeSimulateExecutionReply } from '../types/simulateExecutionReply
 import { createSafeContractValidationFailure, getSafeContractSnapshot, validateSafeOwnerIsEoa } from '../safe/safeCore.js'
 import { normalizeConsecutiveTimeManipulations } from '../utils/transactionStack.js'
 import { getPendingTransactionGasPayment, getSafePendingFlow } from '../safe/safePendingFlow.js'
-import { withoutImportedGnosisSafeExecutions } from './safeTransactionConfirmation.js'
+import { admitImportedSimulationStackOperations } from './importedSimulationStack.js'
 import { getOperationsForActiveStackContext, SIMULATION_STACK_CONTEXT } from '../utils/activeStackContext.js'
 import { type ActiveAddressSelection, assertActiveAddressSelectionAllowed, getActiveAddressSelection, getWalletSelectedAccount } from '../utils/activeAddressSelection.js'
 export { importSafeStack, requestSafeStackExport, validateSafeTransactionStackForCurrentContract } from './safeStackHandlers.js'
@@ -1227,17 +1227,11 @@ export async function requestInterceptorSimulationInput(ethereumClientService: E
 export async function importSimulationStack(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, parsedRequest: ImportSimulationStack): Promise<ImportSimulationStackReply> {
 	if (parsedRequest.data.version !== '1.0.0') return importSimulationStackFailure('Only simulation stack export version 1.0.0 is supported.')
 	if (parsedRequest.data.interceptorSimulateStack.operations.length === 0) return importSimulationStackSuccess()
-	if (parsedRequest.data.interceptorSimulateStack.operations.some((operation) =>
-		operation.type === 'Transaction' && operation.preSimulationTransaction.safeTransaction !== undefined
-	)) {
-		return importSimulationStackFailure('Gnosis Safe transactions cannot be imported through simulation stack import. Use Import Gnosis Safe so Gnosis Safe proposals and signatures remain synchronized.')
-	}
+	const admission = admitImportedSimulationStackOperations(parsedRequest.data.interceptorSimulateStack.operations)
+	if (!admission.admitted) return importSimulationStackFailure(admission.rejection)
 
 	const importedStackBytes = estimateSerializedStateBytes(InterceptorTransactionStack, parsedRequest.data.interceptorSimulateStack)
 	console.info(`[simulation-stack import] received ${ parsedRequest.data.interceptorSimulateStack.operations.length } operations (${ formatEstimatedBytes(importedStackBytes) }).`)
-
-	// A simulation-mode Gnosis Safe stack re-imports as ordinary transactions from the Safe, because only a confirmation decides to assume the Safe's owners approved a transaction.
-	const importedOperations = withoutImportedGnosisSafeExecutions(parsedRequest.data.interceptorSimulateStack.operations)
 
 	const websiteAccess = await getWebsiteAccess()
 	const updateWebsiteDetails = (website: Website) => {
@@ -1248,7 +1242,7 @@ export async function importSimulationStack(ethereum: EthereumClientService, tok
 	let updatedStack: InterceptorTransactionStack
 	try {
 		updatedStack = await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => {
-			const newOperations = [...prevStack.operations, ...importedOperations]
+			const newOperations = [...prevStack.operations, ...admission.operations]
 			// generate new ids for operations to prevent duplicated ids
 			return { operations: normalizeConsecutiveTimeManipulations(newOperations.map((operation) => {
 				switch(operation.type) {

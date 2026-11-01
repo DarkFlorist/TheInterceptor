@@ -1,7 +1,8 @@
 import { validateSafeDelegateCode } from './safeDelegateCalls.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { getInputFieldFromDataOrInput } from '../simulation/services/SimulationModeEthereumClientService.js'
-import type { SendTransactionParams } from '../types/JsonRpc-types.js'
+import type { SendRawTransactionParams, SendTransactionParams } from '../types/JsonRpc-types.js'
+import type { EthereumUnsignedTransaction } from '../types/wire-types.js'
 import type { SafeEntry } from '../types/addressBookTypes.js'
 import { areEqualUint8Arrays } from '../utils/typed-arrays.js'
 import { createSafeContractValidationFailure, getSafeContractSnapshot } from './safeCore.js'
@@ -10,6 +11,39 @@ import { completeSafeExecutionWithConfiguredSigner, decodeSafeExecution } from '
 const SAFE_EXEC_TRANSACTION_SELECTOR = Uint8Array.from([0x6a, 0x76, 0x12, 0x02])
 
 export const isSafeExecTransactionCall = (input: Uint8Array) => SAFE_EXEC_TRANSACTION_SELECTOR.every((byte, index) => input[index] === byte)
+
+// Why a Gnosis Safe can't make a transaction through execTransaction.
+export type SafeUnsupportedTransactionReason = 'raw-transaction' | 'eip-7702-authorization' | 'contract-creation'
+
+export const SAFE_UNSUPPORTED_TRANSACTION_MESSAGES: Readonly<Record<SafeUnsupportedTransactionReason, string>> = {
+	'raw-transaction': 'Gnosis Safe wallets do not support eth_sendRawTransaction.',
+	'eip-7702-authorization': 'Gnosis Safe wallets do not support EIP-7702 authorization lists.',
+	'contract-creation': 'Gnosis Safe wallets do not support contract-creation transactions.',
+}
+
+// The request-shape policy for a transaction a page asks a Gnosis Safe to send, checked in this order, before Interceptor forms the transaction. Callers that reject only some of these reasons compare the result themselves.
+export function getSafeUnsupportedRequestReason(transactionParams: SendTransactionParams | SendRawTransactionParams): SafeUnsupportedTransactionReason | undefined {
+	if (transactionParams.method !== 'eth_sendTransaction') return 'raw-transaction'
+	const transaction = transactionParams.params[0]
+	if (transaction.type === '7702' || transaction.authorizationList !== undefined) return 'eip-7702-authorization'
+	if (transaction.to === undefined || transaction.to === null) return 'contract-creation'
+	return undefined
+}
+
+// The same policy for a transaction Interceptor already formed from an eth_sendTransaction request, whose type and recipient are final.
+export function getSafeUnsupportedFormedTransactionReason(transaction: EthereumUnsignedTransaction): SafeUnsupportedTransactionReason | undefined {
+	if (transaction.type === '7702') return 'eip-7702-authorization'
+	if (transaction.to === null) return 'contract-creation'
+	return undefined
+}
+
+// Whether a request is one the Safe at activeAddress can make through execTransaction as the sender: a supported request shape whose `from`, or else the active address, is the active address. Whether activeAddress is a configured, supported Gnosis Safe is the caller's to check.
+export function isSafeExecutableRequestFromActiveAddress(transactionParams: SendTransactionParams | SendRawTransactionParams, activeAddress: bigint) {
+	if (getSafeUnsupportedRequestReason(transactionParams) !== undefined) return false
+	// Already excluded as 'raw-transaction'; repeated so TypeScript narrows the request to eth_sendTransaction.
+	if (transactionParams.method !== 'eth_sendTransaction') return false
+	return (transactionParams.params[0].from ?? activeAddress) === activeAddress
+}
 
 export function areSafeExecutionSignerRequestsEqual(first: SendTransactionParams, second: SendTransactionParams) {
 	const firstTransaction = first.params[0]

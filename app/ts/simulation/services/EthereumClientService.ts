@@ -12,12 +12,11 @@ import { DEFAULT_BLOCK_MANIPULATION } from '../../config/defaults.js'
 import { getEcRecoverOverride } from '../../utils/ethereumByteCodes.js'
 import * as funtypes from 'funtypes'
 import type { RpcEntry } from '../../types/rpc.js'
-import type { BlockTimeManipulation, SimulationStateInputMinimalData, SimulationStateInputMinimalDataBlock } from '../../types/visualizer-types.js'
+import { authorizesExecutedCall, type BlockTimeManipulation, type SimulationStateInputMinimalData, type SimulationStateInputMinimalDataBlock } from '../../types/visualizer-types.js'
 import type { MessageHashAndSignature } from '../../utils/eip712.js'
 import { encodeAbiValues } from '../../utils/abiRuntime.js'
 import { getCurrentTimestampString } from '../../utils/time.js'
 import { projectEip7702AuthorizationForRpc } from '../../utils/eip7702Authorization.js'
-import { runsThroughGnosisSafe } from '../../utils/transactionGasAccounting.js'
 
 const parseSignatureHex = (signature: `0x${ string }`) => {
 	const stripped = signature.slice(2)
@@ -35,7 +34,7 @@ const parseSignatureHex = (signature: `0x${ string }`) => {
 
 type RpcTransaction = SimulationStateInputMinimalDataBlock['transactions'][number]
 
-// The call the node runs for a transaction. A Gnosis Safe execution runs as its executedTransaction (prepareSafeExecutionSimulationInput), while its signedTransaction stays the Safe's own call, which transaction lookups and receipts return.
+// The call the node runs for a transaction: its executedTransaction when the simulation input was prepared with one, otherwise its signedTransaction. signedTransaction stays the call the transaction shows, which transaction lookups and receipts return.
 const getExecutedTransaction = (transaction: RpcTransaction) => transaction.executedTransaction ?? transaction.signedTransaction
 
 export const getTotalExecutedGasLimit = (transactions: readonly RpcTransaction[]) => transactions.reduce((totalGasLimit, transaction) => totalGasLimit + getExecutedTransaction(transaction).gas, 0n)
@@ -328,10 +327,9 @@ export class EthereumClientService {
 	}
 
 	public readonly prepareEthSimulateV1Input = async (simulationStateInput: SimulationStateInputMinimalData, blockNumber: bigint, requestAbortController: AbortController | undefined): Promise<PreparedEthSimulateV1Input> => {
-		// Every simulation input reaches the node through here. A Gnosis Safe execution that skipped prepareSafeExecutionsForRpc would run as the Safe sending its own call, so it fails here instead.
-		if (simulationStateInput.some((block) => block.transactions.some((transaction) => runsThroughGnosisSafe(transaction) && transaction.executedTransaction === undefined))) throw new Error('A Gnosis Safe execution reached the node without its executor\'s call (prepareSafeExecutionsForRpc).')
-		// Conversely, only a prepared Gnosis Safe execution may run a call other than the signedTransaction it shows.
-		if (simulationStateInput.some((block) => block.transactions.some((transaction) => transaction.executedTransaction !== undefined && !runsThroughGnosisSafe(transaction)))) throw new Error('A transaction that is not a Gnosis Safe execution reached the node with a call other than its own.')
+		// Every simulation input reaches the node through here, so this enforces, in both directions, that a transaction runs a call other than its signedTransaction exactly when its simulation options authorize one (authorizesExecutedCall). A transaction whose options ask for an executed call but whose input was not prepared with one would otherwise run as the call it shows.
+		if (simulationStateInput.some((block) => block.transactions.some((transaction) => authorizesExecutedCall(transaction.simulationOptions) && transaction.executedTransaction === undefined))) throw new Error('A transaction whose simulation options require a prepared executed call reached the node without one.')
+		if (simulationStateInput.some((block) => block.transactions.some((transaction) => transaction.executedTransaction !== undefined && !authorizesExecutedCall(transaction.simulationOptions)))) throw new Error('A transaction reached the node with an executed call other than its signed transaction, which its simulation options do not authorize.')
 		const parentBlock = await this.getBlock(requestAbortController, blockNumber)
 		if (parentBlock === null) throw new Error(`The block ${ blockNumber } is null`)
 
@@ -342,7 +340,7 @@ export class EthereumClientService {
 		const gasLimitTransaction = (transaction: RpcTransaction): RpcTransaction => ({
 			signedTransaction: clampGasToBlock(transaction.signedTransaction),
 			...(transaction.executedTransaction === undefined ? {} : { executedTransaction: clampGasToBlock(transaction.executedTransaction) }),
-			// Kept with executedTransaction, so the rpcBlocks hold the same invariant the checks above enforce.
+			// simulationOptions stays with executedTransaction: the rpcBlocks are simulation input blocks too and must satisfy the invariant checked above.
 			...(transaction.simulationOptions === undefined ? {} : { simulationOptions: transaction.simulationOptions }),
 		})
 
