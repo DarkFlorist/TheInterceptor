@@ -478,18 +478,18 @@ function SuccessfulTransactionCardContent(param: SuccessfulTransactionCardConten
 					renameAddressCallBack = { param.renameAddressCallBack }
 				/>
 
-				<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: max-content auto auto; grid-column-gap: 5px;'>
-					<div class = 'log-cell'>
-						{ simTx.transactionStatus === 'Failed To Simulate' ? <></> : <>
-							<span class = 'log-table' style = { { display: 'inline-flex'} }>
-							<GasFee tx = { simTx } rpcNetwork = { rpcNetwork } />
+				<div class = 'transaction-card-footer'>
+					{ simTx.transactionStatus === 'Failed To Simulate' ? <></> :
+						<div class = 'log-cell'>
+							<span class = 'log-table' style = { { display: 'inline-flex' } }>
+								<GasFee tx = { simTx } rpcNetwork = { rpcNetwork } />
 							</span>
-						</> }
-					</div>
-					<div class = 'log-cell' style = 'justify-content: center;'>
+						</div>
+					}
+					<div class = 'log-cell'>
 						<TransactionCreated created = { currentPendingTransaction.created } />
 					</div>
-					<div class = 'log-cell' style = 'justify-content: right;'>
+					<div class = 'log-cell'>
 						<SimulatedInBlockNumber
 							simulationBlockNumber = { simulationBlockNumber }
 							currentBlockNumber = { param.currentBlockNumber }
@@ -497,7 +497,7 @@ function SuccessfulTransactionCardContent(param: SuccessfulTransactionCardConten
 							rpcConnectionStatus = { param.rpcConnectionStatus }
 						/>
 					</div>
-				</span>
+				</div>
 			</div>
 		</div>
 	</>

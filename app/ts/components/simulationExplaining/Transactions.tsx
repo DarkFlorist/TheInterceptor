@@ -307,16 +307,18 @@ export function Transaction(param: TransactionVisualizationParameters & Collapsi
 				<RawTransactionDetailsCard isRawTransaction = { param.simTx.originalRequestParameters.method === 'eth_sendRawTransaction' } transaction = { param.simTx.transaction } transactionIdentifier = { param.simTx.transactionIdentifier } parsedInputData = { param.simTx.parsedInputData } renameAddressCallBack = { param.renameAddressCallBack } gasSpent = { 'gasSpent' in param.simTx ? param.simTx.gasSpent : undefined } addressMetaData = { param.addressMetaData } />
 				<SenderReceiver from = { param.simTx.transaction.from } to = { param.simTx.transaction.to } renameAddressCallBack = { param.renameAddressCallBack }/>
 
-				<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: auto auto;'>
+				<div class = 'transaction-card-footer'>
 					<div class = 'log-cell'>
 						<TransactionCreated created = { param.simTx.created } />
 					</div>
-					<div class = 'log-cell' style = { { display: 'inline-flex', justifyContent: 'right' } }>
-						{ param.simTx.transactionStatus === 'Failed To Simulate' ? <></> : <>
-							<GasFee tx = { param.simTx } rpcNetwork = { rpcNetwork } />
-						</> }
-					</div>
-				</span>
+					{ param.simTx.transactionStatus === 'Failed To Simulate' ? <></> :
+						<div class = 'log-cell'>
+							<span class = 'log-table' style = { { display: 'inline-flex' } }>
+								<GasFee tx = { param.simTx } rpcNetwork = { rpcNetwork } />
+							</span>
+						</div>
+					}
+				</div>
 			</div> }
 		</div>
 	)
