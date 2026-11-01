@@ -569,17 +569,17 @@ export type TransactionGasses = TransactionGasAccounting
 
 export function GasFee({ tx, rpcNetwork }: { tx: TransactionGasses, rpcNetwork: SignalOrValue<RpcNetwork> } ) {
 	return <>
-		<div class = 'log-cell'>
+		<div class = 'log-cell gas-fee-label'>
 			<p class = 'ellipsis' style = { 'color: var(--subtitle-text-color); margin-bottom: 0px' }> { isPaidByGnosisSafeExecutor(tx) ? 'Gnosis Safe gas reimbursement:' : 'Gas fee:' }</p>
 		</div>
-		<div class = 'log-cell'>
+		<div class = 'log-cell gas-fee-value'>
 			<EtherAmount
 				amount = { getGasFeePaidByTransactionSender(tx) }
 				style = { { color: 'var(--subtitle-text-color)' } }
 				fontSize = 'normal'
 			/>
 		</div>
-		<div class = 'log-cell'>
+		<div class = 'log-cell gas-fee-value'>
 			<EtherSymbol
 				style = { { color: 'var(--subtitle-text-color)' } }
 				rpcNetwork = { rpcNetwork }
