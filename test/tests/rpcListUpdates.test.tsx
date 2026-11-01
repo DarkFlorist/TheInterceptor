@@ -144,7 +144,6 @@ async function assertChainSelectorFollowsRpcListUpdates({ page, replyToMessage, 
 				metamaskCompatibilityMode: false,
 				safeAppsCompatibilityMode: false,
 				activeRpcNetwork: ethereumMainnet,
-				rpcEntries: rpcEntriesWhenPageOpened,
 			},
 		})
 		// AddressBook picks its active chain from the settings reply; the RPC list itself comes from storage.
@@ -154,7 +153,7 @@ async function assertChainSelectorFollowsRpcListUpdates({ page, replyToMessage, 
 		await browserMock.deliver({ role: 'all', method: 'popup_update_rpc_list', data: rpcEntriesAfterSettingsChange })
 		assert.deepEqual(readChainSelectorOptions(dom.document.body, chainSelectorContainerClass), chainOptionsAfterSettingsChange)
 
-		// A settings reply that was requested before the change must not bring the old RPC list back.
+		// A settings reply that arrives after the change must leave the RPC list alone.
 		await deliverSettingsReply()
 		assert.deepEqual(readChainSelectorOptions(dom.document.body, chainSelectorContainerClass), chainOptionsAfterSettingsChange)
 	} finally {

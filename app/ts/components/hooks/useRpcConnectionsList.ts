@@ -1,5 +1,5 @@
 import { useEffect } from 'preact/hooks'
-import { useSignal } from '@preact/signals'
+import { type ReadonlySignal, useSignal } from '@preact/signals'
 import { MessageToPopup } from '../../types/interceptor-messages.js'
 import type { RpcEntries } from '../../types/rpc.js'
 import { getRpcList } from '../../background/storageVariables.js'
@@ -7,8 +7,8 @@ import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/bro
 import { shouldApplyInitialRpcEntries } from '../../utils/rpcConnectionUi.js'
 import { reportUnexpectedError } from '../../utils/errors.js'
 
-// The page's only RPC list source: pages must not also copy `rpcEntries` from other replies, and the async initial storage read is dropped if a `popup_update_rpc_list` broadcast arrived while it was pending, so a stale read cannot overwrite a newer list.
-export function useRpcConnectionsList() {
+// The page's only RPC list source (popup_requestSettingsReply deliberately no longer carries one), seeded from the same storage read SettingsView used before this hook was shared, and the async initial storage read is dropped if a `popup_update_rpc_list` broadcast arrived while it was pending, so a stale read cannot overwrite a newer list.
+export function useRpcConnectionsList(): ReadonlySignal<RpcEntries> {
 	const entries = useSignal<RpcEntries>([])
 
 	useEffect(() => {
