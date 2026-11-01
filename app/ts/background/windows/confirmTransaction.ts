@@ -75,6 +75,15 @@ async function showSimulationStackChange(ethereum: EthereumClientService, tokenP
 	}
 }
 
+// Runs one step of the confirmation window work done after a request is resolved. A failing step is reported and does not skip the steps after it, so the window is still updated and closed.
+async function runConfirmationViewStep(step: () => Promise<unknown>) {
+	try {
+		await step()
+	} catch (error: unknown) {
+		await reportUnexpectedError(error, { code: 'confirm_transaction_view_update_failed' })
+	}
+}
+
 async function refreshDirectSafeExecutionSimulation(
 	ethereum: EthereumClientService,
 	tokenPriceService: TokenPriceService,
@@ -339,17 +348,17 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 		?? pendingTransactionOrMessage.originalRequestParameters
 	// Updates the confirmation window once the request has left the confirmation queue: the view of how the simulation stack changed, and the queue view, which focuses the website's tab once the queue is empty and closes the window once no pending request is shown in it. The website's answer never waits for this view work, so a failure in it is reported instead of reaching the caller.
 	const updateViewAfterPendingRequestRemoved = async (simulationStack: SimulationStackChange) => {
-		try {
-			const removedRequestWindow = pendingTransactionOrMessage.popupOrTabId
-			await showSimulationStackChange(ethereum, tokenPriceService, simulationStack)
+		const removedRequestWindow = pendingTransactionOrMessage.popupOrTabId
+		await runConfirmationViewStep(async () => await showSimulationStackChange(ethereum, tokenPriceService, simulationStack))
+		await runConfirmationViewStep(async () => {
 			if ((await getPendingTransactionsAndMessages()).length === 0) await tryFocusingTabOrWindow({ type: 'tab', id: pendingTransactionOrMessage.uniqueRequestIdentifier.requestSocket.tabId })
+		})
+		await runConfirmationViewStep(async () => {
 			const confirmationQueueIsShown = await updateConfirmTransactionView(ethereum, tokenPriceService)
 			// The website may send its next request as soon as it has this answer. Arriving while the queue is empty, that request opens a window of its own, so this window is closed once no pending request is shown in it rather than only once the queue is empty.
 			const windowShowsAPendingRequest = (await getPendingTransactionsAndMessages()).some((pending) => pending.popupOrTabId.type === removedRequestWindow.type && pending.popupOrTabId.id === removedRequestWindow.id)
 			if (!confirmationQueueIsShown || !windowShowsAPendingRequest) await closePopupOrTabById(removedRequestWindow)
-		} catch(error: unknown) {
-			await reportUnexpectedError(error, { code: 'confirm_transaction_view_update_failed' })
-		}
+		})
 	}
 	const removePendingRequestAndUpdateView = async () => {
 		await removePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier)
@@ -359,9 +368,12 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 	const removePendingRequestAndDeliverTerminalReply = async (terminalReply: InterceptedRequestForward, simulationStack: SimulationStackChange) => {
 		await queueTerminalReply(terminalReply)
 		await removePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier)
-		const delivered = await attemptQueuedTerminalReplyDelivery(websiteTabConnections, terminalReply)
-		await updateViewAfterPendingRequestRemoved(simulationStack)
-		return delivered
+		try {
+			return await attemptQueuedTerminalReplyDelivery(websiteTabConnections, terminalReply)
+		} finally {
+			// The request already left the confirmation queue, so its window is updated even when delivery throws. The delivery error still reaches the caller once the window is updated.
+			await updateViewAfterPendingRequestRemoved(simulationStack)
+		}
 	}
 	const reply = async (message: { type: 'forwardToSigner' } | { type: 'result', error: { code: number, message: string } } | { type: 'result', result: unknown }, simulationStack: SimulationStackChange = 'unchanged') => {
 		if (message.type === 'result' && !('error' in message)) {

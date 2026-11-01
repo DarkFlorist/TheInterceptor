@@ -943,4 +943,57 @@ test('a Gnosis Safe owner signature answers the website with the proposal hash b
 	await assertSafeProposalWasStoredAndAnswered(postedMessages, safeTxHash, [{ signer: safeTestOwnerAddress, signature }])
 })
 
+// Records the website tab focused and the windows closed by the confirmation window cleanup, with the confirmation window of the pending request still open.
+function recordConfirmationWindowCleanup() {
+	const focusedTabIds: number[] = []
+	const removedWindowIds: number[] = []
+	browserMock.setLiveTabIds([uniqueRequestIdentifier.requestSocket.tabId])
+	browserMock.setLiveWindowIds([pendingTransaction.popupOrTabId.id])
+	browserMock.setTabUpdateHandler(async (tabId) => { focusedTabIds.push(tabId) })
+	browserMock.setWindowRemoveHandler(async (windowId) => { removedWindowIds.push(windowId) })
+	return { focusedTabIds, removedWindowIds }
+}
+
+test('failing to open the stack window after a Gnosis Safe proposal is stored still focuses the website and closes the confirmation window', async () => {
+	const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
+	const { safeTxHash } = await storeSafeProposalRequest({ status: 'WaitingForUser' })
+	const repliesReceivedBeforeCleanup = failOpeningTheSimulationStackWindow(postedMessages)
+	const { focusedTabIds, removedWindowIds } = recordConfirmationWindowCleanup()
+
+	const delivered = await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+		method: 'popup_confirmDialog',
+		data: { action: 'addToSafeStack', uniqueRequestIdentifier },
+	}))
+
+	assert.equal(delivered, true)
+	assert.deepEqual(repliesReceivedBeforeCleanup, [1])
+	assert.deepEqual(focusedTabIds, [uniqueRequestIdentifier.requestSocket.tabId])
+	assert.deepEqual(removedWindowIds, [pendingTransaction.popupOrTabId.id])
+	await assertSafeProposalWasStoredAndAnswered(postedMessages, safeTxHash, [])
+})
+
+test('a terminal reply delivery that throws still focuses the website and closes the confirmation window, and the delivery error reaches the caller', async () => {
+	const disconnectedPort = createDisconnectedPort()
+	const socket = uniqueRequestIdentifier.requestSocket
+	const websiteTabConnections = new Map([[socket.tabId, { connections: {
+		[modules.websiteSocketToString(socket)]: { port: disconnectedPort.port, socket, websiteOrigin: 'https://example.com', approved: true, wantsToConnect: true },
+	} }]])
+	const { focusedTabIds, removedWindowIds } = recordConfirmationWindowCleanup()
+	// Delivery to the disconnected port fails, so on Manifest V2 the website is asked to reconnect, and that request fails with an error delivery does not handle.
+	const reconnectError = new Error('The website could not be asked to reconnect.')
+	browserMock.setManifestVersion(2)
+	browserMock.setTabMessageHandler(async () => { throw reconnectError })
+
+	await assert.rejects(modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+		method: 'popup_confirmDialog',
+		data: { action: 'reject', errorString: undefined, uniqueRequestIdentifier },
+	}), reconnectError)
+
+	assert.equal(disconnectedPort.getPostAttempts(), 1)
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	assert.equal((await modules.getPendingTerminalReplies()).length, 1)
+	assert.deepEqual(focusedTabIds, [socket.tabId])
+	assert.deepEqual(removedWindowIds, [pendingTransaction.popupOrTabId.id])
+})
+
 await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
