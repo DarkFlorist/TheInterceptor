@@ -23,7 +23,7 @@ export function useRpcConnectionsList() {
 			}
 			return false
 		}
-		const registeredListener = noReplyExpectingBrowserRuntimeOnMessageListener(trackRpcListChanges)
+		const removeRpcListListener = noReplyExpectingBrowserRuntimeOnMessageListener(trackRpcListChanges)
 		const initialUpdateVersion = updateVersion
 		const initiallyLoadEntriesFromStorage = async () => {
 			try {
@@ -41,7 +41,7 @@ export function useRpcConnectionsList() {
 		void initiallyLoadEntriesFromStorage()
 		return () => {
 			disposed = true
-			browser.runtime.onMessage.removeListener(registeredListener)
+			removeRpcListListener()
 		}
 	}, [])
 
