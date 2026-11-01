@@ -262,14 +262,8 @@ export const setMetamaskCompatibilityMode = async(metamaskCompatibilityMode: boo
 export const getSafeAppsCompatibilityMode = async() => (await browserStorageLocalGet('safeAppsCompatibilityMode'))?.safeAppsCompatibilityMode ?? false
 export const setSafeAppsCompatibilityMode = async(safeAppsCompatibilityMode: boolean) => await browserStorageLocalSet({ safeAppsCompatibilityMode })
 
-export async function getSafeAppsHostOrigins() {
-	const storedItems = await browser.storage.local.get('safeAppsHostOrigins')
-	const recoveredOrigins = recoverStoredSafeAppsHostOrigins(storedItems)
-	if (recoveredOrigins === undefined) return await getParsedStorageValueOrDefaultFromItems(storedItems, 'safeAppsHostOrigins', DEFAULT_SAFE_APPS_HOST_ORIGINS)
-	// Drop only invalid stored entries and persist the cleaned list; registration recovers the same list from the same storage value.
-	if (browserStorageLocalSafeParse(storedItems) === undefined) await setSafeAppsHostOrigins(recoveredOrigins)
-	return recoveredOrigins
-}
+// Reads never write back: persisting a recovered snapshot could overwrite a newer selection, so the cleaned list is stored on the next setSafeAppsHostOrigins write.
+export const getSafeAppsHostOrigins = async () => recoverStoredSafeAppsHostOrigins(await browser.storage.local.get('safeAppsHostOrigins')) ?? DEFAULT_SAFE_APPS_HOST_ORIGINS
 
 export const setSafeAppsHostOrigins = async (origins: readonly string[]) => await browserStorageLocalSet({ safeAppsHostOrigins: SafeAppsHostOrigins.parse(origins) })
 

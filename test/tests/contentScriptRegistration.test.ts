@@ -781,13 +781,32 @@ test('stored hosting origins with a Chrome-encoded wildcard keep their valid ori
 	assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'safe-apps-host')?.matches, ['https://swap.cow.fi:443/*'])
 	const { getSafeAppsHostOrigins, getMetamaskCompatibilityMode, getUseTabsInsteadOfPopup, getSafeAppsCompatibilityMode } = await import('../../app/ts/background/settings.js')
 	assert.deepEqual(await getSafeAppsHostOrigins(), ['https://swap.cow.fi'])
-	assert.deepEqual((await browser.storage.local.get('safeAppsHostOrigins')).safeAppsHostOrigins, ['https://swap.cow.fi'])
+	assert.deepEqual((await browser.storage.local.get('safeAppsHostOrigins')).safeAppsHostOrigins, ['https://swap.cow.fi', 'https://%2A.cow.fi'])
 	assert.equal(await getSafeAppsCompatibilityMode(), true)
 	assert.equal(await getMetamaskCompatibilityMode(), true)
 	assert.equal(await getUseTabsInsteadOfPopup(), false)
 	await updateRegistration()
 	assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'safe-apps-host')?.matches, ['https://swap.cow.fi:443/*'])
 	assert.deepEqual(sentMessages, [])
+})
+
+test('reading recovered hosting origins never overwrites a newer replacement or removal', async () => {
+	for (const newerSelection of [['https://new.example'], []]) {
+		let writeNewerSelectionDuringRead = true
+		const { getRegisteredContentScripts } = installBrowserMock({ safeAppsCompatibilityMode: true, safeAppsHostOrigins: ['https://swap.cow.fi', 'https://%2A.cow.fi'], afterStorageRead: async (keys) => {
+			if (keys !== 'safeAppsHostOrigins' || !writeNewerSelectionDuringRead) return
+			writeNewerSelectionDuringRead = false
+			await setSafeAppsHostOrigins(newerSelection)
+		} })
+		const { updateRegistration } = await loadModules()
+		const { getSafeAppsHostOrigins, setSafeAppsHostOrigins } = await import('../../app/ts/background/settings.js')
+		// The read snapshot was taken before the newer write landed, so it still reports the recovered older selection.
+		assert.deepEqual(await getSafeAppsHostOrigins(), ['https://swap.cow.fi'])
+		assert.deepEqual((await browser.storage.local.get('safeAppsHostOrigins')).safeAppsHostOrigins, newerSelection)
+		assert.deepEqual(await getSafeAppsHostOrigins(), newerSelection)
+		await updateRegistration()
+		assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'safe-apps-host')?.matches, newerSelection.length === 0 ? undefined : ['https://new.example:443/*'])
+	}
 })
 
 test('disabled compatibility leaves malformed hosting selections inert without reporting a recovery', async () => {

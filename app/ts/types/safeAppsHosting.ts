@@ -25,7 +25,7 @@ export const SafeAppsHostOrigins = funtypes.ReadonlyArray(SafeAppsHostOrigin).wi
 
 const StoredSafeAppsHostOriginsItem = funtypes.ReadonlyPartial({ safeAppsHostOrigins: funtypes.ReadonlyArray(funtypes.Unknown) })
 
-// Settings reads and content-script registration share this so a stored list with stale invalid entries (e.g. Chrome's '%2A' wildcard) keeps its valid origins; undefined means the stored value is not a list.
+// Settings reads and content-script registration share this read-only recovery so a stored list with stale invalid entries (e.g. Chrome's '%2A' wildcard) keeps its valid origins; undefined means the stored value is not a list.
 export function recoverStoredSafeAppsHostOrigins(storedItems: unknown): readonly string[] | undefined {
 	const stored = StoredSafeAppsHostOriginsItem.safeParse(storedItems)
 	if (!stored.success) return undefined

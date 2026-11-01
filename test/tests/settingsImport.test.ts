@@ -217,7 +217,7 @@ describe('settings import', () => {
 		assert.equal(ExportedSettings.safeParse({ ...legacy, version: '1.7' }).success, false)
 	})
 
-	test('repairs malformed stored hosting origins before settings and export read them', async () => {
+	test('reads malformed stored hosting origins as their valid entries without rewriting storage', async () => {
 		const { exportSettingsAndAddressBook, getEnabledSafeAppsHostOrigins, getSafeAppsHostOrigins, setSafeAppsCompatibilityMode } = await settingsModulePromise
 		await setSafeAppsCompatibilityMode(true)
 		const manyOrigins = Array.from({ length: 33 }, (_, index) => `https://site-${ index }.example`)
@@ -237,7 +237,7 @@ describe('settings import', () => {
 				assert.equal(exported.version, '1.7')
 				assert.deepEqual(exported.settings.safeAppsHostOrigins, repaired)
 			})
-			assert.deepEqual((await browser.storage.local.get('safeAppsHostOrigins')).safeAppsHostOrigins, repaired)
+			assert.deepEqual((await browser.storage.local.get('safeAppsHostOrigins')).safeAppsHostOrigins, stored)
 		}
 	})
 
