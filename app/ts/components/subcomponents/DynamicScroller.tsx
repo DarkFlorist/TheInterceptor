@@ -30,6 +30,11 @@ export const getClampedDynamicScrollStartIndex = (startIndex: number, itemCount:
 	return Math.min(Math.max(0, Math.floor(startIndex)), maximumStartIndex)
 }
 
+export function getNextDynamicScrollItemHeight(measuredHeight: number, currentHeight: number, clampedStartIndex: number) {
+	// At the first item, a stale DOM scrollTop may remain from a list that just shrank.
+	return clampedStartIndex === 0 ? measuredHeight : Math.max(currentHeight, measuredHeight)
+}
+
 export const DynamicScroller = <T extends {}>({ items, renderItem, }: DynamicScrollerProps<T>) => {
 	const startIndex = useSignal(0)
 	const containerHeight = useSignal(0)
@@ -70,10 +75,7 @@ export const DynamicScroller = <T extends {}>({ items, renderItem, }: DynamicScr
 		if (itemRef.current === null) return
 		const observer = new ResizeObserver(([entry]) => {
 			if (entry === undefined || !isPositiveFinite(entry.contentRect.height)) return
-			// A smaller row may change the row under a scrolled viewport; at the top it is safe to remeasure.
-			const nextHeight = clampedStartIndex.peek() === 0 && scrollViewRef.current?.scrollTop === 0
-				? entry.contentRect.height
-				: Math.max(itemHeight.peek(), entry.contentRect.height)
+			const nextHeight = getNextDynamicScrollItemHeight(entry.contentRect.height, itemHeight.peek(), clampedStartIndex.peek())
 			if (nextHeight === itemHeight.peek()) return
 			if (scrollViewRef.current !== null && pendingScrollAdjustment.current === undefined) {
 				pendingScrollAdjustment.current = { scrollTop: scrollViewRef.current.scrollTop, offset: scrollOffset.peek() }

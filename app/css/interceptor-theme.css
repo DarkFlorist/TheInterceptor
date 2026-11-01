@@ -1181,10 +1181,6 @@ html, body {
 	padding-top: 1rem;
 }
 
-.standalone-address-book-frame {
-	height: 100vh;
-}
-
 .address-book-page,
 .address-book-page > .hint-container,
 .address-book-layout {
@@ -1192,7 +1188,6 @@ html, body {
 }
 
 @media screen and (max-width: 520px) {
-	.standalone-address-book-frame,
 	.address-book-page,
 	.address-book-page > .hint-container,
 	.address-book-layout,

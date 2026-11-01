@@ -79,6 +79,6 @@ describe('management view routing', () => {
 	})
 
 	test('hosts the stack view inside the management scroll frame', () => {
-		assert.match(managementViewSource, /<EmbeddedPageFrame scrollable><SimulationStackView \/><\/EmbeddedPageFrame>/)
+		assert.match(managementViewSource, /<PageContentFrame page = 'simulation-stack' scrollable><SimulationStackView \/><\/PageContentFrame>/)
 	})
 })

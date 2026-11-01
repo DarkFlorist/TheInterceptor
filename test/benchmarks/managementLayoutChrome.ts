@@ -93,11 +93,11 @@ try {
 		document.querySelector('.management-header').style.removeProperty('padding-block')
 		location.hash = '#simulation-stack'
 	})()`)
-	await waitForSelector(page, '.management-embedded-frame .simulation-stack-page-header')
-	const embeddedHeaderPosition = await page.evaluate<string>(`getComputedStyle(document.querySelector('.management-embedded-frame .simulation-stack-page-header')).position`)
+	await waitForSelector(page, '.page-content-frame .simulation-stack-page-header')
+	const embeddedHeaderPosition = await page.evaluate<string>(`getComputedStyle(document.querySelector('.page-content-frame .simulation-stack-page-header')).position`)
 	assert.equal(embeddedHeaderPosition, 'sticky')
 	const stickyHeaderGeometry = await page.evaluate<{ frameTop: number, headerTop: number, scrollTop: number }>(`(() => {
-		const frame = document.querySelector('.management-embedded-frame--scrollable')
+		const frame = document.querySelector('.page-content-frame--scrollable')
 		const page = document.querySelector('.simulation-stack-page')
 		const header = document.querySelector('.simulation-stack-page-header')
 		if (!(frame instanceof HTMLElement) || !(page instanceof HTMLElement) || !(header instanceof HTMLElement)) throw new Error('Simulation Stack frame is missing')
@@ -113,7 +113,7 @@ try {
 	await page.send('Emulation.setDeviceMetricsOverride', { width: 480, height: 700, deviceScaleFactor: 1, mobile: false })
 	const narrowStackGeometry = await page.evaluate<{ frameTop: number, navigationBottom: number, headerTop: number, scrollTop: number, navigationIsOnTop: boolean }>(`(() => {
 		const navigation = document.querySelector('.management-header')
-		const frame = document.querySelector('.management-embedded-frame--scrollable')
+		const frame = document.querySelector('.page-content-frame--scrollable')
 		const header = document.querySelector('.simulation-stack-page-header')
 		if (!(navigation instanceof HTMLElement) || !(frame instanceof HTMLElement) || !(header instanceof HTMLElement)) throw new Error('Narrow Simulation Stack frame is missing')
 		frame.scrollTop = 200

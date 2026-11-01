@@ -1,7 +1,7 @@
 import * as assert from 'assert'
 import { signal } from '@preact/signals'
 import { describe, test } from 'bun:test'
-import { getClampedDynamicScrollStartIndex, getDynamicScrollOffset } from '../../app/ts/components/subcomponents/DynamicScroller.js'
+import { calculateMaxVisibleItems, getClampedDynamicScrollStartIndex, getDynamicScrollOffset, getNextDynamicScrollItemHeight } from '../../app/ts/components/subcomponents/DynamicScroller.js'
 import { clearHintTimeouts } from '../../app/ts/components/subcomponents/Hint.js'
 import { scheduleTooltipDismissal, type TooltipConfig } from '../../app/ts/components/subcomponents/Tooltip.js'
 
@@ -57,6 +57,18 @@ describe('dynamic scrolling offset', () => {
 	test('clamps a stale start index when the item list shrinks', () => {
 		assert.equal(getClampedDynamicScrollStartIndex(8, 2, 4), 0)
 		assert.equal(getClampedDynamicScrollStartIndex(8, 10, 4), 6)
+	})
+
+	test('remeasures shorter rows after a scrolled list shrinks to its first item', () => {
+		const clampedStartIndex = getClampedDynamicScrollStartIndex(8, 2, 4)
+		const nextHeight = getNextDynamicScrollItemHeight(20, 40, clampedStartIndex)
+		assert.equal(nextHeight, 20)
+		assert.equal(calculateMaxVisibleItems(80, nextHeight), 4)
+		assert.equal(getDynamicScrollOffset(clampedStartIndex, nextHeight, 2, 4), 0)
+	})
+
+	test('keeps the largest measured row while scrolled past the first item', () => {
+		assert.equal(getNextDynamicScrollItemHeight(20, 40, 3), 40)
 	})
 })
 

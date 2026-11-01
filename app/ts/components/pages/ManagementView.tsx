@@ -1,6 +1,6 @@
 import { useEffect } from 'preact/hooks'
 import { useSignal } from '@preact/signals'
-import type { ComponentChildren, JSX } from 'preact'
+import type { JSX } from 'preact'
 import { AddressBook } from '../../AddressBook.js'
 import { WebsiteAccessView } from './WebsiteAccess.js'
 import { SettingsView } from './SettingsView.js'
@@ -8,6 +8,7 @@ import { SimulationStackView } from './SimulationStackPage.js'
 import { DiagnosticsView } from './DiagnosticsView.js'
 import { getManagementPageFromHash, getManagementPageFromNavigationKey, getManagementPageHash, managementPages, type ManagementPage } from '../../utils/managementPages.js'
 import { assertNever } from '../../utils/typescript.js'
+import { PageContentFrame } from '../subcomponents/PageContentFrame.js'
 
 const managementSectionDetails: Readonly<Record<ManagementPage, { label: string, icon: string, description: string }>> = {
 	home: { label: 'Home', icon: '../img/management-home.svg', description: '' },
@@ -65,17 +66,13 @@ function ManagementHome({ selectPage }: { selectPage: (page: ManagementPage) => 
 	</main>
 }
 
-function EmbeddedPageFrame({ children, scrollable = false }: { children: ComponentChildren, scrollable?: boolean }) {
-	return <div class = { `management-embedded-frame${ scrollable ? ' management-embedded-frame--scrollable' : '' }` }>{ children }</div>
-}
-
 function ManagementPanelContent({ page, selectPage }: { page: ManagementPage, selectPage: (page: ManagementPage) => void }) {
 	// Reuse the page content, while the standalone compatibility entries keep their own shells.
 	switch (page) {
 		case 'home': return <ManagementHome selectPage = { selectPage } />
 		case 'websites': return <WebsiteAccessView />
-		case 'address-book': return <EmbeddedPageFrame><AddressBook /></EmbeddedPageFrame>
-		case 'simulation-stack': return <EmbeddedPageFrame scrollable><SimulationStackView /></EmbeddedPageFrame>
+		case 'address-book': return <PageContentFrame page = 'address-book'><AddressBook /></PageContentFrame>
+		case 'simulation-stack': return <PageContentFrame page = 'simulation-stack' scrollable><SimulationStackView /></PageContentFrame>
 		case 'diagnostics': return <DiagnosticsView />
 		case 'settings': return <SettingsView />
 		default: return assertNever(page)
