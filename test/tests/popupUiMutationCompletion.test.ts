@@ -325,6 +325,26 @@ describe('UI mutation completion', () => {
 		if (operation === 'bulk') assert.equal(saved.find(entry => entry.website.websiteOrigin === anotherWebsite.websiteOrigin)?.interceptorDisabled, true)
 	})
 
+	test.each(['My Active Addresses', 'My Safes'] as const)('notifies persisted %s removal even if permission reconciliation fails', async addressBookCategory => {
+		const { runtimeMessages } = installBrowserMock()
+		const modules = await loadModules()
+		const address = 42n
+		await modules.updateUserAddressBookEntries(() => [{ type: 'contact', address, name: 'Removed account', chainId: 1n, entrySource: 'User', useAsActiveAddress: true }])
+		await modules.updateWebsiteAccess(() => [{ website: { websiteOrigin: 'blocked-removal.test' }, access: true, declarativeNetRequestBlockMode: 'block-all' }])
+		const socket = { tabId: 1, connectionName: 0n }
+		const connection = { port: createPort(1).port, socket, websiteOrigin: 'blocked-removal.test', approved: true, wantsToConnect: true }
+		const connections: WebsiteTabConnections = new Map([[1, { connections: { [modules.websiteSocketToString(socket)]: connection } }]])
+		Object.defineProperty(browser.declarativeNetRequest, 'getDynamicRules', { configurable: true, value: async () => { throw new Error('Cannot reconcile removed account access') } })
+		const { ethereum, tokenPriceService } = createEthereumWithGetBlockCounter({ count: 0 })
+		await modules.removeAddressBookEntry(createTestSimulationServicesOwner({ ethereum, tokenPriceService }), connections, {
+			method: 'popup_removeAddressBookEntry', data: { address, addressBookCategory, chainId: 1n },
+		})
+		assert.deepEqual(await modules.getUserAddressBookEntries(), [])
+		assert.equal(connection.approved, false)
+		assert.equal(runtimeMessages.some(message => message.method === 'popup_addressBookEntriesChanged'), true)
+		assert.equal((await modules.getLatestUnexpectedError())?.data.message, 'Cannot reconcile removed account access')
+	})
+
 	test('address-book save reports permission reconciliation failures before acknowledgement', async () => {
 		installBrowserMock()
 		const modules = await loadModules()

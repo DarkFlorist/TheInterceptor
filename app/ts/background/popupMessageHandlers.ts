@@ -279,14 +279,25 @@ export async function modifyMakeMeRich(makeMeRichChange: ModifyMakeMeRich) {
 	))
 }
 
+// These edits are already persisted. Access recovery still fails closed, but its failure must not suppress the address-book notification or leave a reply request unanswered.
+async function refreshAccessAfterSavedAddressBookEdit(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections) {
+	try {
+		const accessUpdate = await reconcileCommittedWebsiteAccess(websiteTabConnections)
+		scheduleWebsiteAccessUiUpdate(simulationServicesOwner, websiteTabConnections, accessUpdate, true)
+		return undefined
+	} catch (error) {
+		await reportUnexpectedError(error, { source: 'address_book_access_reconciliation', code: 'saved_address_book_access_refresh_failed' })
+		return getErrorMessage(error) ?? 'Website access could not be refreshed.'
+	}
+}
+
 export async function removeAddressBookEntry(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, removeAddressBookEntry: RemoveAddressBookEntry) {
 	await updateUserAddressBookEntries((previousContacts) => previousContacts.filter((contact) =>
 		!(contact.address === removeAddressBookEntry.data.address
 		&& (contact.chainId === removeAddressBookEntry.data.chainId || (contact.chainId === undefined && removeAddressBookEntry.data.chainId === 1n))))
 	)
 	if (removeAddressBookEntry.data.addressBookCategory === 'My Active Addresses' || removeAddressBookEntry.data.addressBookCategory === 'My Safes') {
-		const accessUpdate = await reconcileCommittedWebsiteAccess(websiteTabConnections)
-		scheduleWebsiteAccessUiUpdate(simulationServicesOwner, websiteTabConnections, accessUpdate, true)
+		await refreshAccessAfterSavedAddressBookEdit(simulationServicesOwner, websiteTabConnections)
 	}
 	await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 }
@@ -414,11 +425,15 @@ export async function setSafeSimulationSigner(
 			message: 'The Gnosis Safe address-book entry no longer exists.',
 		}
 	}
-	if (updatedEntry.useAsActiveAddress) {
-		const accessUpdate = await reconcileCommittedWebsiteAccess(websiteTabConnections)
-		scheduleWebsiteAccessUiUpdate(simulationServicesOwner, websiteTabConnections, accessUpdate, true)
-	}
+	const accessRefreshError = updatedEntry.useAsActiveAddress
+		? await refreshAccessAfterSavedAddressBookEdit(simulationServicesOwner, websiteTabConnections)
+		: undefined
 	await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
+	if (accessRefreshError !== undefined) return {
+		type: 'SetSafeSimulationSignerReply' as const,
+		ok: false as const,
+		message: `The Safe simulation signer was saved, but website access could not be refreshed: ${ accessRefreshError }`,
+	}
 	return { type: 'SetSafeSimulationSignerReply' as const, ok: true as const }
 }
 

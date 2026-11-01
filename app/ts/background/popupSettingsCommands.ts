@@ -36,6 +36,7 @@ export const popupSettingsCommandHandlers = {
 		if (await modifyMakeMeRich(request)) {
 			await schedulePopupSimulationRefresh({ ...context.simulationServicesOwner.getCurrent(), invalidateOldState: true })
 		}
+		// This reply confirms the saved rich setting and simulation invalidation; the visualization publishes follow-up simulation success or failure separately.
 		return { type: 'PopupSettingsChangeReply', ok: true }
 	}),
 } satisfies Pick<PopupMessageHandlerMap, PopupSettingsRequest['method'] | 'popup_requestSettingsChangeStatus'>

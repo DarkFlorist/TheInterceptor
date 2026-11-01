@@ -255,7 +255,13 @@ export const TransactionConfirmation = funtypes.ReadonlyObject({
 					signerReply: funtypes.Unknown,
 				}),
 				funtypes.ReadonlyObject({
-					action: funtypes.Union(funtypes.Literal('accept'), funtypes.Literal('addToSafeStack'), funtypes.Literal('noResponse')),
+					action: funtypes.Literal('accept'),
+				}).And(funtypes.ReadonlyPartial({
+					// An explicit override is bound to the gas limit the user approved.
+					forceSendGasLimit: EthereumQuantity,
+				})),
+				funtypes.ReadonlyObject({
+					action: funtypes.Union(funtypes.Literal('addToSafeStack'), funtypes.Literal('noResponse')),
 				}),
 				funtypes.ReadonlyObject({
 					action: funtypes.Literal('reject'),

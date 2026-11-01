@@ -1021,6 +1021,31 @@ test('changes the Safe simulation signer only after validating current on-chain 
 	assert.equal(await getLatestUnexpectedError(), undefined)
 })
 
+test('returns an explicit saved-signer error and refreshes the address book after access reconciliation fails', async () => {
+	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ useAsActiveAddress: true, safeSimulationSignerAddress: recipientAddress })])
+	const socket = { tabId: 1, connectionName: 80n }
+	const connection = { port: createWebsitePort(socket, 0, []), socket, websiteOrigin: 'saved-safe.test', approved: true, wantsToConnect: true }
+	const connections = new Map([[1, { connections: { [modules.websiteSocketToString(socket)]: connection } }]])
+	browserMock.setStorageGetHandler(async (keys, read) => {
+		if (Array.isArray(keys) && keys.includes('openedPageV2')) throw new Error('Cannot read saved signer permissions')
+		return read()
+	})
+	browserMock.sentMessages.length = 0
+	try {
+		const reply = await withSilencedConsole(async () => await modules.setSafeSimulationSigner(
+			createTestSimulationServicesOwner({ ethereum, tokenPriceService: simulator.tokenPriceService }), connections,
+			{ method: 'popup_setSafeSimulationSigner', data: { chainId: fakeRpcNetwork.chainId, safeAddress: activeAddress, safeSimulationSignerAddress: undefined } },
+		))
+		assert.equal(reply.ok, false)
+		assert.match('message' in reply ? reply.message : '', /was saved, but website access could not be refreshed: Cannot read saved signer permissions/u)
+		assert.equal(connection.approved, false)
+		assert.equal(browserMock.sentMessages.some(message => message.method === 'popup_addressBookEntriesChanged'), true)
+	} finally { browserMock.setStorageGetHandler(undefined) }
+	const saved = (await modules.getUserAddressBookEntries())[0]
+	assert.equal(saved?.safeSimulationSignerAddress, undefined)
+	assert.deepEqual(saved?.safeSignerAddresses, fakeSafeContract.owners)
+})
+
 test('refreshes Safe owner metadata and clears a stale simulation signer without choosing a replacement', async () => {
 	const staleSigner = 0x1234567890123456789012345678901234567890n
 	fakeSafeContract.owners = [recipientAddress]

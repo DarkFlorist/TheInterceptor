@@ -1,6 +1,6 @@
 import type { PendingTransactionOrSignableMessage, PopupPendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 
-// A gas edit is saved before resimulation completes. Never approve using results for the previous gas limit.
+// A gas edit is saved before resimulation completes. Ordinary approval must not use results for the previous gas limit; explicit force-send is handled separately.
 export function isPendingTransactionGasLimitCurrent(pending: PendingTransactionOrSignableMessage | PopupPendingTransactionOrSignableMessage) {
 	if (pending.type !== 'Transaction' || pending.originalRequestParameters.method !== 'eth_sendTransaction') return true
 	if (pending.transactionOrMessageCreationStatus !== 'Simulated' && pending.transactionOrMessageCreationStatus !== 'FailedToSimulate') return false
