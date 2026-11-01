@@ -248,7 +248,7 @@ describe('removeTransactionOrSignedMessage', () => {
 		assert.deepEqual(remaining, [0n, 1n])
 	})
 
-	test('renumbers the nonce fields of later executions of the same Gnosis Safe when removing one of its executions', async () => {
+	test('keeps the nonce field of a later execution of the same Gnosis Safe when removing one of its executions, so its sequence number is never reused', async () => {
 		const modules = await loadModules()
 		browserMock.reset()
 		await modules.updateInterceptorTransactionStack(() => ({
@@ -265,6 +265,6 @@ describe('removeTransactionOrSignedMessage', () => {
 
 		const stack = await modules.getInterceptorTransactionStack()
 		const remaining = stack.operations.filter((operation) => operation.type === 'Transaction').map((operation) => operation.preSimulationTransaction.signedTransaction.nonce)
-		assert.deepEqual(remaining, [0n])
+		assert.deepEqual(remaining, [1n])
 	})
 })

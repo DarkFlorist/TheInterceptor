@@ -484,8 +484,9 @@ export async function removeTransactionOrSignedMessage(ethereum: EthereumClientS
 						&& transaction.originalRequestParameters.method === 'eth_sendTransaction'
 						&& transaction.signedTransaction.from === removedTransaction.signedTransaction.from
 						&& transaction.signedTransaction.nonce > removedTransaction.signedTransaction.nonce
-						// A Gnosis Safe execution raised no account nonce of the Safe, only the display sequence of its later executions' nonce fields (getSimulatedSafeCallNonce), so removing it renumbers only those.
-						&& (!authorizesExecutedCall(removedTransaction.simulationOptions) || authorizesExecutedCall(transaction.simulationOptions))
+						// A Gnosis Safe execution raises no account nonce of the Safe, and its own nonce field is a sequence that stays unique only if it is never renumbered (getSimulatedSafeCallNonce).
+						&& !authorizesExecutedCall(removedTransaction.simulationOptions)
+						&& !authorizesExecutedCall(transaction.simulationOptions)
 				}
 
 				const newOperations: InterceptorStackOperation[] = []
