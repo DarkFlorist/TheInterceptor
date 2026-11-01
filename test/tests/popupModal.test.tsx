@@ -9,6 +9,7 @@ import type { AddressBookEntries } from '../../app/ts/types/addressBookTypes.js'
 import type { RpcEntries } from '../../app/ts/types/rpc.js'
 import type { WebsiteAccessArray } from '../../app/ts/types/websiteAccessTypes.js'
 import { installDomMock } from './domMock.js'
+import { waitForRenderedCondition } from './preactRenderWait.js'
 
 type TestNode = {
 	readonly childNodes?: readonly TestNode[]
@@ -28,13 +29,6 @@ async function settleLazyPage() {
 	await Promise.resolve()
 	await Promise.resolve()
 	await new Promise((resolve) => setTimeout(resolve, 0))
-}
-
-async function waitForRealLazyPage(isLoaded: () => boolean) {
-	for (let attempt = 0; attempt < 20; attempt++) {
-		if (isLoaded()) return
-		await new Promise((resolve) => setTimeout(resolve, 0))
-	}
 }
 
 function createPopupModalProps(page: PopupPage): ComponentProps<typeof PopupModal> {
@@ -105,6 +99,29 @@ describe('lazy popup pages', () => {
 		}
 	})
 
+	test('waits for a page whose module finishes loading after many later macrotasks', async () => {
+		const dom = installDomMock()
+		const loaderMacrotaskDelay = 50
+		const LazyPage = createLazyPage(
+			async () => {
+				for (let tick = 0; tick < loaderMacrotaskDelay; tick++) await new Promise((resolve) => setTimeout(resolve, 0))
+				return { TestPage: ({ label }: { label: string }) => <p>{ label }</p> }
+			},
+			'TestPage',
+		)
+		try {
+			await act(() => {
+				render(<LazyPage label = 'Slow popup page' />, dom.document.body)
+			})
+			assert.equal(dom.document.body.textContent.includes('Slow popup page'), false)
+			await waitForRenderedCondition(() => dom.document.body.textContent === 'Slow popup page', 'the slow lazy page')
+			assert.equal(dom.document.body.textContent, 'Slow popup page')
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+		}
+	})
+
 	test('reports module load failures through the existing error boundary', async () => {
 		const dom = installDomMock()
 		const loadError = new Error('Popup page chunk failed to load')
@@ -145,7 +162,7 @@ describe('lazy popup pages', () => {
 			await act(() => {
 				render(<PopupModal { ...createPopupModalProps({ page: 'ImportSimulation', state: signal('') }) } />, dom.document.body)
 			})
-			await act(async () => await waitForRealLazyPage(() => dom.document.body.textContent.includes('Import Interceptor Simulation Stack')))
+			await waitForRenderedCondition(() => dom.document.body.textContent.includes('Import Interceptor Simulation Stack'), 'the import simulation page')
 			assert.notEqual(findByClass(findByClass(dom.document.body, 'modal'), 'is-active'), undefined)
 			assert.match(dom.document.body.textContent, /Import Interceptor Simulation Stack/u)
 		} finally {
@@ -181,7 +198,7 @@ describe('lazy popup pages', () => {
 			await act(() => {
 				render(<PopupModal { ...createPopupModalProps({ page: 'AddNewAddress', state }) } allowCreateAndSwitch = { false } />, dom.document.body)
 			})
-			await act(async () => await waitForRealLazyPage(() => dom.document.body.textContent.includes('Create address')))
+			await waitForRenderedCondition(() => dom.document.body.textContent.includes('Create address'), 'the add address page')
 			assert.equal(dom.document.body.textContent.includes('Create and switch'), false)
 		} finally {
 			render(null, dom.document.body)
