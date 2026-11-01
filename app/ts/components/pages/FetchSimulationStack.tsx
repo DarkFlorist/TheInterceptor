@@ -111,8 +111,7 @@ export function FetchSimulationStack() {
 			changeRequest.value = parsed.data
 			return false
 		}
-		const registeredListener = noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
-		return () => browser.runtime.onMessage.removeListener(registeredListener)
+		return noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
 	}, [])
 
 	const updateSimulation = async () => {

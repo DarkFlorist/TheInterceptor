@@ -42,8 +42,7 @@ export function ChangeChain() {
 			chainChangeData.value = parsed.data
 			return false
 		}
-		const registeredListener = noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
-		return () => browser.runtime.onMessage.removeListener(registeredListener)
+		return noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
 	}, [])
 
 	useEffect(() => { void sendPopupReadyAndListening('changeChain') }, [])

@@ -132,8 +132,7 @@ export function GnosisSafeVisualizer(param: GnosisSafeVisualizerParams) {
 			simulateExecutionReply.value = reply
 			return false
 		}
-		const registeredListener = noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
-		return () => browser.runtime.onMessage.removeListener(registeredListener)
+		return noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
 	}, [])
 
 	const requestToSimulate = () => {

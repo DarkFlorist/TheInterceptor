@@ -18,7 +18,7 @@ async function reportPopupMessageListenerError(error: unknown) {
 	}
 }
 
-// Registers a wrapper around callback and returns that wrapper: unsubscribe by passing the returned listener (not callback) to browser.runtime.onMessage.removeListener.
+// Registers a wrapper around callback and returns a function that unsubscribes it; call that in cleanup instead of removing callback, which the browser never saw.
 export const noReplyExpectingBrowserRuntimeOnMessageListener = (callback: (msg: unknown) => false | Promise<false>) => {
 	const registeredListener = (message: unknown) => {
 		void Promise.resolve(callback(message)).catch((error: unknown) => {
@@ -27,5 +27,5 @@ export const noReplyExpectingBrowserRuntimeOnMessageListener = (callback: (msg: 
 		return undefined
 	}
 	browser.runtime.onMessage.addListener(registeredListener)
-	return registeredListener
+	return () => browser.runtime.onMessage.removeListener(registeredListener)
 }

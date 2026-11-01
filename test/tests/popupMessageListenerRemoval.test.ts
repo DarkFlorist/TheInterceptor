@@ -21,7 +21,7 @@ const installOnMessageMock = () => {
 		},
 	}
 	Object.defineProperty(globalThis, 'browser', { value: browserMock, configurable: true, writable: true })
-	return { listeners, onMessage: browserMock.runtime.onMessage }
+	return listeners
 }
 
 afterEach(() => {
@@ -33,48 +33,45 @@ afterEach(() => {
 })
 
 describe('noReplyExpectingBrowserRuntimeOnMessageListener', () => {
-	test('returns the registered wrapper so removing it unsubscribes the listener', () => {
-		const { listeners, onMessage } = installOnMessageMock()
+	test('registers a wrapper that forwards messages and returns undefined', () => {
+		const listeners = installOnMessageMock()
 		const receivedMessages: unknown[] = []
 		const callback = (message: unknown): false => {
 			receivedMessages.push(message)
 			return false
 		}
 
-		const registeredListener = noReplyExpectingBrowserRuntimeOnMessageListener(callback)
+		noReplyExpectingBrowserRuntimeOnMessageListener(callback)
 
-		assert.deepStrictEqual(listeners, [registeredListener])
-		assert.strictEqual(registeredListener('hello'), undefined)
+		const [registeredListener] = listeners
+		assert.strictEqual(listeners.length, 1)
+		assert.notStrictEqual(registeredListener, callback)
+		assert.strictEqual(registeredListener?.('hello'), undefined)
 		assert.deepStrictEqual(receivedMessages, ['hello'])
+	})
 
-		onMessage.removeListener(callback)
-		assert.strictEqual(listeners.length, 1, 'removing the raw callback must not match the registered wrapper')
+	test('the returned unsubscribe function removes exactly the registered wrapper', () => {
+		const listeners = installOnMessageMock()
+		const otherListener = () => undefined
+		listeners.push(otherListener)
 
-		onMessage.removeListener(registeredListener)
-		assert.deepStrictEqual(listeners, [])
+		const removePopupMessageListener = noReplyExpectingBrowserRuntimeOnMessageListener((): false => false)
+		assert.strictEqual(listeners.length, 2)
+
+		removePopupMessageListener()
+		assert.deepStrictEqual(listeners, [otherListener])
 	})
 })
 
 describe('popup message listener cleanup architecture', () => {
-	const helperCallPattern = /(?<assignment>const\s+[A-Za-z_$][\w$]*\s*=\s*)?noReplyExpectingBrowserRuntimeOnMessageListener\(\s*(?<callbackName>[A-Za-z_$][\w$]*)\s*\)/gu
-
-	const findCleanupViolations = async () => {
-		const violations: string[] = []
+	test('files using the helper unsubscribe through its returned function instead of runtime.onMessage.removeListener', async () => {
 		const appSourceDirectory = new URL('../../app/ts/', import.meta.url).pathname
+		const violations: string[] = []
 		for await (const relativePath of new Bun.Glob('**/*.{ts,tsx}').scan(appSourceDirectory)) {
+			if (relativePath === 'utils/browser.ts') continue
 			const source = await Bun.file(`${ appSourceDirectory }${ relativePath }`).text()
-			for (const match of source.matchAll(helperCallPattern)) {
-				const { assignment, callbackName } = match.groups ?? {}
-				if (assignment === undefined) violations.push(`${ relativePath }: helper return value must be kept so it can be passed to removeListener`)
-				if (callbackName !== undefined && new RegExp(`onMessage\\.removeListener\\(\\s*${ callbackName.replace(/\$/gu, '\\$') }\\s*\\)`, 'u').test(source)) {
-					violations.push(`${ relativePath }: removeListener(${ callbackName }) passes the raw callback instead of the listener returned by noReplyExpectingBrowserRuntimeOnMessageListener`)
-				}
-			}
+			if (source.includes('noReplyExpectingBrowserRuntimeOnMessageListener') && source.includes('runtime.onMessage.removeListener')) violations.push(relativePath)
 		}
-		return violations
-	}
-
-	test('callers remove the returned wrapper instead of the raw callback', async () => {
-		assert.deepStrictEqual(await findCleanupViolations(), [])
+		assert.deepStrictEqual(violations, [])
 	})
 })
