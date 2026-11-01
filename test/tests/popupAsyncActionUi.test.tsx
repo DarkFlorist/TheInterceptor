@@ -1346,15 +1346,15 @@ describe('popup async action UI', () => {
 				simulationRequestCount += 1
 				return simulationRequestCount === 1 ? createGnosisSimulationSuccessReply(7n, 'Original recipient') : direct.promise
 			}
-			const renderGovernance = () => render(h(modules.GovernanceVoteVisualizer, {
+			const renderGovernance = (reason?: string) => render(h(modules.GovernanceVoteVisualizer, {
 				simTx: createGovernanceTransactionFixture(7n),
 				activeAddress: signal(gnosisSignerAddress.address),
 				renameAddressCallBack: () => undefined,
 				editEnsNamedHashCallBack: () => undefined,
-				governanceVoteInputParameters: createGovernanceVoteInputParameters(42n),
+				governanceVoteInputParameters: { ...createGovernanceVoteInputParameters(42n), reason, params: new Uint8Array([1, 2]), signature: new Uint8Array([3, 4]) },
 			}), dom.document.body)
 			try {
-				await act(renderGovernance)
+				await act(() => { renderGovernance() })
 				const button = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Simulate execution on a passing vote'))
 				if (button === undefined) throw new Error('Expected governance simulation button')
 				await act(async () => {
@@ -1365,14 +1365,17 @@ describe('popup async action UI', () => {
 					await emitRuntimeMessage({ role: 'all', method: 'popup_addressBookEntriesChanged' })
 					await settleAsyncUpdates()
 				})
-				if (rerenderTiming === 'during request') await act(renderGovernance)
+				if (rerenderTiming === 'during request') await act(() => { renderGovernance() })
 				await act(async () => {
 					direct.resolve(createGnosisSimulationSuccessReply(7n, 'Current recipient'))
 					await settleAsyncUpdates()
 				})
-				if (rerenderTiming === 'after direct reply') await act(renderGovernance)
+				if (rerenderTiming === 'after direct reply') await act(() => { renderGovernance() })
 				assert.equal(dom.document.body.textContent?.includes('Current recipient'), true)
 				assert.equal(simulationRequestCount, 2)
+				await act(() => { renderGovernance('Changed vote reason') })
+				assert.equal(dom.document.body.textContent?.includes('Current recipient'), false)
+				assert.equal(dom.document.body.textContent?.includes('Simulate execution on a passing vote'), true)
 			} finally {
 				await act(() => { render(null, dom.document.body) })
 				dom.restore()

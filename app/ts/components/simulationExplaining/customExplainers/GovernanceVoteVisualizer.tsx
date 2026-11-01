@@ -1,7 +1,7 @@
 import { type Signal, type ReadonlySignal, useComputed, useSignal } from '@preact/signals'
 import { getMissingPopupReplyErrorMessage, requestPopupSimulateGovernanceContractExecution } from '../../../background/backgroundUtils.js'
 import type { AddressBookEntry } from '../../../types/addressBookTypes.js'
-import type { GovernanceVoteInputParameters, SimulateExecutionReply } from '../../../types/interceptor-messages.js'
+import { GovernanceVoteInputParameters, type SimulateExecutionReply } from '../../../types/interceptor-messages.js'
 import type { RenameAddressCallBack } from '../../../types/user-interface-types.js'
 import type { SimulatedAndVisualizedTransaction } from '../../../types/visualizer-types.js'
 import { checksummedAddress, dataStringWith0xStart } from '../../../utils/bigint.js'
@@ -14,6 +14,7 @@ import { resolveSignal, type SignalOrValue } from '../../../utils/signals.js'
 import { AsyncActionButton } from '../../subcomponents/AsyncAction.js'
 import type { AsyncStates } from '../../../utils/preact-utilities.js'
 import { useExecutionSimulation } from '../../hooks/useExecutionSimulation.js'
+import { serialize } from '../../../types/wire-types.js'
 
 type MissingAbiParams = {
 	errorMessage: string
@@ -189,25 +190,24 @@ export function GovernanceVoteVisualizer(param: GovernanceVoteVisualizerParams) 
 	const governanceVoteInputParameters = useSignal<GovernanceVoteInputParameters | undefined>(undefined)
 	const simTx = useSignal<SimulatedAndVisualizedTransaction | undefined>(undefined)
 	const activeAddress = useSignal<bigint | undefined>(undefined)
-	const { reply: simulateExecutionReply, state: simulationState, pending: requestPending, errorText: requestErrorText, simulate: simulateGovernanceVote, reset } = useExecutionSimulation(
+	const { reply: simulateExecutionReply, state: simulationState, errorText: requestErrorText, simulate: simulateGovernanceVote, reset } = useExecutionSimulation(
 		param.simTx.transactionIdentifier,
 		() => requestPopupSimulateGovernanceContractExecution({ transactionIdentifier: param.simTx.transactionIdentifier }),
 		GOVERNANCE_SIMULATION_REPLY_MISSING_ERROR,
 	)
 
+	// Use the schema's complete wire representation so new vote fields participate in both synchronization and cancellation.
+	const voteIdentity = JSON.stringify(serialize(GovernanceVoteInputParameters, param.governanceVoteInputParameters))
 	useEffect(() => {
 		governanceVoteInputParameters.value = param.governanceVoteInputParameters
 		simTx.value = param.simTx
 		activeAddress.value = param.activeAddress.value
-	}, [param.simTx, param.governanceVoteInputParameters, param.activeAddress.value])
+	}, [param.simTx, voteIdentity, param.activeAddress.value])
 
 	// identifyTransaction rebuilds vote parameters when address metadata rerenders the parent. Reset only for a different vote or signer, not a new object with the same values.
 	useEffect(() => {
 		reset()
-	}, [param.simTx.transactionIdentifier, param.activeAddress.value,
-		param.governanceVoteInputParameters.proposalId, param.governanceVoteInputParameters.support,
-		param.governanceVoteInputParameters.reason, param.governanceVoteInputParameters.voter,
-		param.governanceVoteInputParameters.params?.toString(), param.governanceVoteInputParameters.signature?.toString()])
+	}, [param.simTx.transactionIdentifier, param.activeAddress.value, voteIdentity])
 
 	if (governanceVoteInputParameters.value === undefined || simTx.value === undefined || activeAddress.value === undefined) return <></>
 	return <>
@@ -222,7 +222,7 @@ export function GovernanceVoteVisualizer(param: GovernanceVoteVisualizerParams) 
 						{ simulateExecutionReply.value === undefined ? <></> :
 							<AsyncActionButton
 								class = 'button is-primary is-small'
-								state = { requestPending.value ? 'pending' : simulationState.value }
+								state = { simulationState.value }
 								text = 'Refresh'
 								pendingText = 'Simulating...'
 								onClick = { simulateGovernanceVote }

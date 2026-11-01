@@ -54,7 +54,7 @@ const ShowSuccessOrFailure = ({ simulateExecutionReply, activeAddress, renameAdd
 		}
 	})
 
-	if (gnosisSimulationState === 'pending') {
+	if (gnosisSimulationState === 'pending' && simulateExecutionReply.value === undefined) {
 		return <div class = 'safe-outcome-panel__loading' role = 'status' aria-label = 'Simulating Gnosis Safe transaction'>
 			<AsyncStatusIcon state = 'pending' size = '2.5rem'/>
 			<span>Simulating Gnosis Safe transaction…</span>
@@ -109,7 +109,7 @@ type GnosisSafeVisualizerParams = {
 
 export function GnosisSafeVisualizer(param: GnosisSafeVisualizerParams) {
 	const activeAddress = useSignal<bigint | undefined>(undefined)
-	const { reply: simulateExecutionReply, state: simulationState, pending: requestPending, errorText: requestErrorText, simulate: requestToSimulate, reset } = useExecutionSimulation(
+	const { reply: simulateExecutionReply, state: simulationState, errorText: requestErrorText, simulate: requestToSimulate, reset } = useExecutionSimulation(
 		param.gnosisSafeMessage.messageIdentifier,
 		() => requestPopupSimulateGnosisSafeTransaction({ gnosisSafeMessage: param.gnosisSafeMessage }),
 		GNOSIS_SIMULATION_REPLY_MISSING_ERROR,
@@ -122,7 +122,7 @@ export function GnosisSafeVisualizer(param: GnosisSafeVisualizerParams) {
 		requestToSimulate()
 	}, [param.activeAddress, param.gnosisSafeMessage.messageIdentifier])
 
-	const simulationPending = requestPending.value
+	const simulationPending = simulationState.value === 'pending'
 
 	if (activeAddress.value === undefined) return <></>
 	return <>

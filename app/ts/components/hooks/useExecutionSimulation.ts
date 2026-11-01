@@ -14,9 +14,8 @@ export function useExecutionSimulation(identifier: bigint, request: () => Promis
 	const currentIdentifier = useRef(identifier)
 	currentIdentifier.current = identifier
 	const reply = useComputed(() => requestState.value.state === 'resolved' ? requestState.value.value : broadcastReply.value)
-	const state = useComputed(() => broadcastReply.value !== undefined && requestState.value.state !== 'resolved' ? 'resolved' : requestState.value.state)
-	// A displayed broadcast fallback does not settle the direct request. Refresh controls must still reflect that request's pending state.
-	const pending = useComputed(() => requestState.value.state === 'pending')
+	// A fallback can supply an outcome, but only direct request completion settles pending progress and refresh controls.
+	const state = useComputed(() => requestState.value.state === 'pending' ? 'pending' : broadcastReply.value !== undefined && requestState.value.state !== 'resolved' ? 'resolved' : requestState.value.state)
 	const errorText = useComputed(() => requestState.value.state === 'rejected' && broadcastReply.value === undefined ? requestState.value.error.message : undefined)
 
 	const simulate = () => {
@@ -65,7 +64,7 @@ export function useExecutionSimulation(identifier: bigint, request: () => Promis
 		simulate()
 	}, [addressBookRevision.value, requestState.value.state])
 
-	return { reply, state, pending, errorText, simulate, reset: () => {
+	return { reply, state, errorText, simulate, reset: () => {
 		started.current = false
 		requestedRevision.current = addressBookRevision.value
 		broadcastReply.value = undefined
