@@ -232,9 +232,11 @@ export const setInterceptorStartSleepingTimestamp = async(interceptorStartSleepi
 export const getInterceptorStartSleepingTimestamp = async () => (await browserStorageLocalGet('interceptorStartSleepingTimestamp'))?.interceptorStartSleepingTimestamp ?? 0
 
 export const promoteRpcAsPrimary = async (rpcNetwork: RpcNetwork) => {
-	await rpcListRepository.update((rpcs) => {
+	return await rpcListRepository.update((rpcs) => {
 		const selectedIndex = rpcs.findIndex((rpc) => getRpcEntryIdentityKey(rpc) === getRpcEntryIdentityKey(rpcNetwork))
 		if (selectedIndex === -1) return rpcs
+		// Returning the same list when the flags already match tells callers nothing changed, so they skip the RPC list broadcast.
+		if (rpcs.every((rpc, index) => rpc.chainId !== rpcNetwork.chainId || rpc.primary === (index === selectedIndex))) return rpcs
 		return rpcs.map((rpc, index) => rpc.chainId === rpcNetwork.chainId ? modifyObject(rpc, { primary: index === selectedIndex }) : rpc)
 	})
 }

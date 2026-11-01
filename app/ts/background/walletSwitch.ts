@@ -13,6 +13,12 @@ import type { RpcNetwork } from '../types/rpc.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { sendCallbackToConfirmedSignerOwner, getConfirmedSignerStateToken, runSignerStateOperation, signerConnectionReplacedError, addSignerStateReplacementListener, doSignerStateTokensMatch, signerUnavailableError, type SignerStateToken } from './signerStateOwnership.js'
 
+// Open pages take their RPC list only from popup_update_rpc_list, so the primary flags this rewrites must be broadcast like any other RPC list write.
+async function promoteRpcAsPrimaryAndNotifyPages(rpcNetwork: RpcNetwork) {
+	const { previous, current } = await promoteRpcAsPrimary(rpcNetwork)
+	if (current !== previous) await sendPopupMessageToOpenWindows({ method: 'popup_update_rpc_list', data: current })
+}
+
 type PendingSignerChainChange = {
 	readonly walletSwitchRequestId: string
 	readonly future: Future<
@@ -100,7 +106,7 @@ export async function changeActiveRpc(simulationServicesOwner: SimulationService
 		if (route === 'local') {
 			await changeActiveAddressAndChain(simulationServicesOwner, websiteTabConnections, { simulationMode, rpcNetwork })
 		}
-		await promoteRpcAsPrimary(rpcNetwork)
+		await promoteRpcAsPrimaryAndNotifyPages(rpcNetwork)
 		return { result: null }
 	}
 	if (request.signerTabId === undefined) return { error: signerUnavailableError }
@@ -205,7 +211,7 @@ export async function applyWalletSwitchReply(
 					rejectWalletSwitchReply(callbackSignerStateToken, params, { code: JSON_RPC_ERROR_CODE_INTERNAL_ERROR, message: 'The wallet switched networks, but Interceptor could not activate the requested network.' })
 					return
 				}
-				if (requestedRpc !== undefined) await promoteRpcAsPrimary(requestedRpc)
+				if (requestedRpc !== undefined) await promoteRpcAsPrimaryAndNotifyPages(requestedRpc)
 			}
 			resolveSignerChainChange(callbackSignerStateToken, {
 				method: 'popup_signerChangeChainDialog',
