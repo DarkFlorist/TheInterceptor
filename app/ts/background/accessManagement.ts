@@ -398,7 +398,9 @@ export async function applyWebsiteAccessChange<T>(websiteTabConnections: Website
 		result = await change()
 	} catch (error) {
 		try {
-			await reconcileCommittedWebsiteAccess(websiteTabConnections)
+			const accessUpdate = await reconcileCommittedWebsiteAccess(websiteTabConnections)
+			// Recovery has no success-returning caller to schedule icons, and must not open new access prompts.
+			scheduleWebsiteAccessUiUpdate(undefined, websiteTabConnections, accessUpdate, false)
 		} catch (reconciliationError) {
 			await reportUnexpectedError(reconciliationError)
 		}
@@ -425,6 +427,11 @@ export async function reconcileCommittedWebsiteAccess(websiteTabConnections: Web
 				else notifyWebsiteLifecycle(websiteTabConnections.lifecycle?.approvalChanged, connection.socket, false)
 			} catch (notificationError) { notificationErrors.push(notificationError) }
 		}
+		// Failed reconciliation has no returned update. Refresh icons from current storage after clearing authority, including for address-book callers that will return an error.
+		scheduleWebsiteAccessUiUpdate(undefined, websiteTabConnections, {
+			popupRefreshGeneration: bumpPopupRefreshGeneration(),
+			iconRefreshTargets: connections.map(connection => ({ tabId: connection.socket.tabId, websiteOrigin: connection.websiteOrigin })),
+		}, false)
 		for (const notificationError of notificationErrors) await reportUnexpectedError(notificationError)
 		throw error
 	}

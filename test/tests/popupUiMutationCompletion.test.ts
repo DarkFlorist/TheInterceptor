@@ -204,6 +204,9 @@ describe('UI mutation completion', () => {
 			assert.equal(Object.values(connections.get(1)?.connections ?? {})[0]?.approved, failure === 'before write')
 			assert.equal(Object.values(connections.get(2)?.connections ?? {})[0]?.approved, true)
 			assert.deepEqual(approvals, failure === 'before write' ? [] : [false])
+			await waitForBackgroundTasks()
+			const icon = (await modules.getTabState(1)).tabIconDetails
+			assert.equal(icon.iconReason, failure === 'before write' ? 'The Interceptor simulates your sent transactions.' : 'The access for edited.test has been DENIED!')
 			assert.equal(runtimeMessages.some(message => message.method === 'popup_websiteAccess_changed'), false)
 		} finally { Object.defineProperty(browser.storage.local, 'set', { configurable: true, value: originalSet }) }
 	})
@@ -341,6 +344,8 @@ describe('UI mutation completion', () => {
 		})
 		assert.deepEqual(await modules.getUserAddressBookEntries(), [])
 		assert.equal(connection.approved, false)
+		await waitForBackgroundTasks()
+		assert.equal((await modules.getTabState(1)).tabIconDetails.iconReason, 'The Interceptor simulates your sent transactions. The Interceptor is blocking external requests made by the website.')
 		assert.equal(runtimeMessages.some(message => message.method === 'popup_addressBookEntriesChanged'), true)
 		assert.equal((await modules.getLatestUnexpectedError())?.data.message, 'Cannot reconcile removed account access')
 	})
@@ -349,14 +354,21 @@ describe('UI mutation completion', () => {
 		installBrowserMock()
 		const modules = await loadModules()
 		const { addOrModifyAddressBookEntry } = await import('../../app/ts/background/popupMessageHandlers.js')
+		await modules.changeSimulationMode({ simulationMode: true, activeSimulationAddress: 42n })
+		const socket = { tabId: 1, connectionName: 0n }
+		const connection = { port: createPort(1).port, socket, websiteOrigin: 'https://blocked.invalid', approved: true, wantsToConnect: true }
+		const connections: WebsiteTabConnections = new Map([[1, { connections: { [modules.websiteSocketToString(socket)]: connection } }]])
 		await modules.updateWebsiteAccess(() => [{ website: { websiteOrigin: 'https://blocked.invalid' }, access: true, declarativeNetRequestBlockMode: 'block-all' }])
 		Object.defineProperty(browser.declarativeNetRequest, 'getDynamicRules', { configurable: true, value: async () => { throw new Error('Cannot reconcile request blocking rules') } })
 		const { ethereum, tokenPriceService } = createEthereumWithGetBlockCounter({ count: 0 })
-		const reply = await addOrModifyAddressBookEntry(createTestSimulationServicesOwner({ ethereum, tokenPriceService }), new Map(), {
-			method: 'popup_addOrModifyAddressBookEntry', data: { type: 'contact', address: 42n, name: 'Saved account', entrySource: 'User', useAsActiveAddress: true },
+		const reply = await addOrModifyAddressBookEntry(createTestSimulationServicesOwner({ ethereum, tokenPriceService }), connections, {
+			method: 'popup_addOrModifyAddressBookEntry', data: { type: 'contact', address: 42n, name: 'Saved account', entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true },
 		})
 		assert.equal(reply.ok, false)
 		assert.match('message' in reply ? reply.message : '', /Cannot reconcile request blocking rules/)
+		assert.equal(connection.approved, false)
+		await waitForBackgroundTasks()
+		assert.match((await modules.getTabState(1)).tabIconDetails.iconReason, /has PENDING access request for Saved account/u)
 	})
 
 	test.each([false, true])('access UI failure is awaited only by the synchronous API (deferred=%s)', async deferred => {
