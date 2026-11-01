@@ -92,6 +92,7 @@ function installPopupBrowserMock({ replyToMessage = () => undefined, readStoredR
 	}
 	return {
 		deliverSerialized,
+		countMessageListeners: () => listeners.length,
 		deliver: async (message: MessageToPopup) => await deliverSerialized(MessageToPopup.serialize(message)),
 		restore() {
 			Object.defineProperty(globalThis, 'browser', { configurable: true, writable: true, value: previousBrowser })
@@ -313,12 +314,15 @@ async function renderRpcEntryNamesWithDelayedStorageRead() {
 			await new Promise((resolve) => setTimeout(resolve, 0))
 		})
 	}
-	const cleanup = async () => {
+	const unmount = async () => {
 		await act(() => { render(null, dom.document.body) })
+	}
+	const cleanup = async () => {
+		await unmount()
 		browserMock.restore()
 		dom.restore()
 	}
-	return { root: dom.document.body, browserMock, finishStorageRead, cleanup }
+	return { root: dom.document.body, browserMock, finishStorageRead, unmount, cleanup }
 }
 
 describe('useRpcConnectionsList', () => {
@@ -340,6 +344,17 @@ describe('useRpcConnectionsList', () => {
 			assert.deepEqual(readRenderedRpcEntryNames(page.root), ['Ethereum Mainnet', 'Gnosis'])
 			await page.finishStorageRead(rpcEntriesWhenPageOpened)
 			assert.deepEqual(readRenderedRpcEntryNames(page.root), ['Ethereum Mainnet', 'Gnosis'])
+		} finally {
+			await page.cleanup()
+		}
+	})
+
+	test('unmounting removes its runtime message listener', async () => {
+		const page = await renderRpcEntryNamesWithDelayedStorageRead()
+		try {
+			assert.equal(page.browserMock.countMessageListeners(), 1)
+			await page.unmount()
+			assert.equal(page.browserMock.countMessageListeners(), 0)
 		} finally {
 			await page.cleanup()
 		}
