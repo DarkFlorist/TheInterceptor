@@ -1,7 +1,7 @@
 
 import { sendPopupMessageToBackgroundPage, sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport } from '../../background/backgroundUtils.js'
 import { MessageToPopup, type ImportSettingsReply } from '../../types/interceptor-messages.js'
-import { type RpcEntries, RpcEntry } from '../../types/rpc.js'
+import { RpcEntry } from '../../types/rpc.js'
 import { useEffect } from 'preact/hooks'
 import { ErrorComponent } from '../subcomponents/Error.js'
 import { DinoSaysNotification } from '../subcomponents/DinoSays.js'
@@ -9,15 +9,14 @@ import { ConfigureRpcConnection } from '../subcomponents/ConfigureRpcConnection.
 import { Collapsible } from '../subcomponents/Collapsible.js'
 import { DEFAULT_RPCS } from '../../config/defaults.js'
 import { getChainName } from '../../utils/constants.js'
-import { getRpcList } from '../../background/storageVariables.js'
 import { useComputed, useSignal } from '@preact/signals'
 import { serialize } from '../../types/wire-types.js'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
 import { resolveSignal, type SignalOrValue } from '../../utils/signals.js'
 import { useAsyncState } from '../../utils/preact-utilities.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
-import { shouldApplyInitialRpcEntries, shouldOfferBundledRpcReset } from '../../utils/rpcConnectionUi.js'
-import { reportUnexpectedError } from '../../utils/errors.js'
+import { shouldOfferBundledRpcReset } from '../../utils/rpcConnectionUi.js'
+import { useRpcConnectionsList } from '../hooks/useRpcConnectionsList.js'
 
 type CheckBoxSettingParam = {
 	text: string
@@ -288,44 +287,4 @@ const RpcSummary = ({ info }: { info: SignalOrValue<RpcEntry | undefined> }) => 
 			</div>
 		</li>
 	)
-}
-
-export function useRpcConnectionsList() {
-	const entries = useSignal<RpcEntries>([])
-
-	useEffect(() => {
-		let disposed = false
-		let updateVersion = 0
-		const trackRpcListChanges = (message: unknown): false => {
-			const parsedMessage = MessageToPopup.safeParse(message)
-			if (parsedMessage.success === false) return false
-			if (parsedMessage.value.method === 'popup_update_rpc_list') {
-				updateVersion += 1
-				entries.value = parsedMessage.value.data
-			}
-			return false
-		}
-		noReplyExpectingBrowserRuntimeOnMessageListener(trackRpcListChanges)
-		const initialUpdateVersion = updateVersion
-		const initiallyLoadEntriesFromStorage = async () => {
-			try {
-				const initialEntries = await getRpcList()
-				if (shouldApplyInitialRpcEntries(disposed, initialUpdateVersion, updateVersion)) entries.value = initialEntries
-			} catch(error: unknown) {
-				await reportUnexpectedError(error, {
-					source: 'settingsView',
-					code: 'rpc_list_initial_load_failed',
-					displayMessage: 'Failed to load RPC connections.',
-					suppressExpectedHandledErrors: false,
-				})
-			}
-		}
-		void initiallyLoadEntriesFromStorage()
-		return () => {
-			disposed = true
-			browser.runtime.onMessage.removeListener(trackRpcListChanges)
-		}
-	}, [])
-
-	return entries
 }

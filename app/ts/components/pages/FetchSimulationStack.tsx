@@ -11,6 +11,7 @@ import { SmallAddress } from '../subcomponents/address.js'
 import { AddNewAddress } from './AddNewAddress.js'
 import Hint from '../subcomponents/Hint.js'
 import type { RpcEntries } from '../../types/rpc.js'
+import { useRpcConnectionsList } from '../hooks/useRpcConnectionsList.js'
 import type { SimulationMetadata } from '../../types/interceptor-reply-messages.js'
 import { CenterToPageTextSpinner } from '../subcomponents/Spinner.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../utils/constants.js'
@@ -85,7 +86,7 @@ export function FetchSimulationStack() {
 
 	const completeVisualizedSimulation = useSignal<CompleteVisualizedSimulation>(createPassthroughCompleteVisualizedSimulation())
 	const simulationMetadata = useSignal<SimulationMetadata | undefined>(undefined)
-	const rpcEntries = useSignal<RpcEntries>([])
+	const rpcEntries = useRpcConnectionsList()
 	const { value: rejectRequestState, waitFor: waitForRejectRequest } = useAsyncState<void>()
 	const { value: allowRequestState, waitFor: waitForAllowRequest } = useAsyncState<void>()
 
@@ -101,14 +102,6 @@ export function FetchSimulationStack() {
 			if (parsed.method === 'popup_simulation_state_changed') {
 				updateSimulation()
 				updateMetaData()
-				return false
-			}
-			if (parsed.method === 'popup_requestSettingsReply') {
-				rpcEntries.value = parsed.data.rpcEntries
-				return false
-			}
-			if (parsed.method === 'popup_update_rpc_list') {
-				rpcEntries.value = parsed.data
 				return false
 			}
 			if (parsed.method !== 'popup_fetchSimulationStackRequest') return false
@@ -134,7 +127,6 @@ export function FetchSimulationStack() {
 		void sendPopupReadyAndListening('fetchSimulationStack')
 		updateSimulation()
 		updateMetaData()
-		sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
 	}, [])
 
 	async function approve() {

@@ -3,6 +3,7 @@ import { describe, test } from 'bun:test'
 import { h, render, type FunctionComponent } from 'preact'
 import { act } from 'preact/test-utils'
 import { AddressBook } from '../../app/ts/AddressBook.js'
+import { useRpcConnectionsList } from '../../app/ts/components/hooks/useRpcConnectionsList.js'
 import { ConfirmTransaction } from '../../app/ts/components/pages/ConfirmTransaction.js'
 import { FetchSimulationStack } from '../../app/ts/components/pages/FetchSimulationStack.js'
 import { InterceptorAccess } from '../../app/ts/components/pages/InterceptorAccess.js'
@@ -12,7 +13,7 @@ import type { AddressBookEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { OriginalSendRequestParameters } from '../../app/ts/types/JsonRpc-types.js'
 import { MessageToPopup, UpdateConfirmTransactionDialogPendingTransactions } from '../../app/ts/types/interceptor-messages.js'
 import { PopupRequestsReplies } from '../../app/ts/types/interceptor-reply-messages.js'
-import type { RpcEntries, RpcEntry } from '../../app/ts/types/rpc.js'
+import { RpcEntries, type RpcEntry } from '../../app/ts/types/rpc.js'
 import type { FailedToCreateWebsiteCreatedEthereumTransaction } from '../../app/ts/types/visualizer-types.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
 import { clickRenderedElement, findAllRenderedElements, findRenderedElement, installDomMock, type RenderedTreeNode } from './domMock.js'
@@ -45,7 +46,14 @@ function getMessageMethod(message: unknown) {
 	return message.method
 }
 
-function installPopupBrowserMock(replyToMessage: (message: unknown) => unknown = () => undefined) {
+function requestsStorageKey(keys: unknown, key: string) {
+	return keys === key || (Array.isArray(keys) && keys.includes(key))
+}
+
+function installPopupBrowserMock({ replyToMessage = () => undefined, readStoredRpcEntries }: {
+	replyToMessage?: (message: unknown) => unknown
+	readStoredRpcEntries: () => Promise<RpcEntries>
+}) {
 	const listeners: RuntimeMessageListener[] = []
 	const previousBrowser = globalThis.browser
 	Object.defineProperty(globalThis, 'browser', {
@@ -67,7 +75,10 @@ function installPopupBrowserMock(replyToMessage: (message: unknown) => unknown =
 			},
 			storage: {
 				local: {
-					async get() { return {} },
+					async get(keys: unknown) {
+						if (!requestsStorageKey(keys, 'rpcEntries')) return {}
+						return { rpcEntries: serialize(RpcEntries, await readStoredRpcEntries()) }
+					},
 					async set() { return undefined },
 					async remove() { return undefined },
 				},
@@ -117,14 +128,14 @@ async function assertChainSelectorFollowsRpcListUpdates({ page, replyToMessage, 
 	const dom = installDomMock()
 	// WebsiteAccessView reads the selected website from the URL hash when it mounts.
 	Object.defineProperty(globalThis.window, 'location', { configurable: true, writable: true, value: { hash: '' } })
-	const browserMock = installPopupBrowserMock(replyToMessage)
+	const browserMock = installPopupBrowserMock({ replyToMessage, readStoredRpcEntries: async () => rpcEntriesWhenPageOpened })
 	try {
 		await act(async () => {
 			render(h(page, {}), dom.document.body)
 			await new Promise((resolve) => setTimeout(resolve, 0))
 		})
 		await showChainSelector(dom.document.body, browserMock)
-		await browserMock.deliver({
+		const deliverSettingsReply = async () => await browserMock.deliver({
 			role: 'all',
 			method: 'popup_requestSettingsReply',
 			data: {
@@ -135,9 +146,15 @@ async function assertChainSelectorFollowsRpcListUpdates({ page, replyToMessage, 
 				rpcEntries: rpcEntriesWhenPageOpened,
 			},
 		})
+		// AddressBook picks its active chain from the settings reply; the RPC list itself comes from storage.
+		await deliverSettingsReply()
 		assert.deepEqual(readChainSelectorOptions(dom.document.body, chainSelectorContainerClass), chainOptionsWhenPageOpened)
 
 		await browserMock.deliver({ role: 'all', method: 'popup_update_rpc_list', data: rpcEntriesAfterSettingsChange })
+		assert.deepEqual(readChainSelectorOptions(dom.document.body, chainSelectorContainerClass), chainOptionsAfterSettingsChange)
+
+		// A settings reply that was requested before the change must not bring the old RPC list back.
+		await deliverSettingsReply()
 		assert.deepEqual(readChainSelectorOptions(dom.document.body, chainSelectorContainerClass), chainOptionsAfterSettingsChange)
 	} finally {
 		await act(() => { render(null, dom.document.body) })
@@ -148,7 +165,7 @@ async function assertChainSelectorFollowsRpcListUpdates({ page, replyToMessage, 
 
 const addressEditorChainSelectorClass = 'address-editor-chain-field'
 
-describe('pages that copy the RPC list from the settings reply follow popup_update_rpc_list', () => {
+describe('pages that show RPC connections follow popup_update_rpc_list', () => {
 	test('AddressBook updates its chain filter', async () => {
 		await assertChainSelectorFollowsRpcListUpdates({
 			page: AddressBook,
@@ -270,5 +287,61 @@ describe('pages that copy the RPC list from the settings reply follow popup_upda
 			},
 			chainSelectorContainerClass: addressEditorChainSelectorClass,
 		})
+	})
+})
+
+function RpcEntryNames() {
+	const rpcEntries = useRpcConnectionsList()
+	return <ul>{ rpcEntries.value.map((entry) => <li key = { entry.httpsRpc }>{ entry.name }</li>) }</ul>
+}
+
+function readRenderedRpcEntryNames(root: RenderedTreeNode) {
+	return findAllRenderedElements(root, (node) => node.tagName === 'LI').map((item) => item.textContent?.trim()).sort()
+}
+
+async function renderRpcEntryNamesWithDelayedStorageRead() {
+	const dom = installDomMock()
+	const storageRead = Promise.withResolvers<RpcEntries>()
+	const browserMock = installPopupBrowserMock({ readStoredRpcEntries: async () => await storageRead.promise })
+	await act(async () => {
+		render(h(RpcEntryNames, {}), dom.document.body)
+		await new Promise((resolve) => setTimeout(resolve, 0))
+	})
+	const finishStorageRead = async (entries: RpcEntries) => {
+		await act(async () => {
+			storageRead.resolve(entries)
+			await new Promise((resolve) => setTimeout(resolve, 0))
+		})
+	}
+	const cleanup = async () => {
+		await act(() => { render(null, dom.document.body) })
+		browserMock.restore()
+		dom.restore()
+	}
+	return { root: dom.document.body, browserMock, finishStorageRead, cleanup }
+}
+
+describe('useRpcConnectionsList', () => {
+	test('shows the stored RPC list once the initial read finishes', async () => {
+		const page = await renderRpcEntryNamesWithDelayedStorageRead()
+		try {
+			assert.deepEqual(readRenderedRpcEntryNames(page.root), [])
+			await page.finishStorageRead(rpcEntriesWhenPageOpened)
+			assert.deepEqual(readRenderedRpcEntryNames(page.root), ['Ethereum Mainnet', 'Sepolia'])
+		} finally {
+			await page.cleanup()
+		}
+	})
+
+	test('a late initial read does not overwrite a newer popup_update_rpc_list broadcast', async () => {
+		const page = await renderRpcEntryNamesWithDelayedStorageRead()
+		try {
+			await page.browserMock.deliver({ role: 'all', method: 'popup_update_rpc_list', data: rpcEntriesAfterSettingsChange })
+			assert.deepEqual(readRenderedRpcEntryNames(page.root), ['Ethereum Mainnet', 'Gnosis'])
+			await page.finishStorageRead(rpcEntriesWhenPageOpened)
+			assert.deepEqual(readRenderedRpcEntryNames(page.root), ['Ethereum Mainnet', 'Gnosis'])
+		} finally {
+			await page.cleanup()
+		}
 	})
 })

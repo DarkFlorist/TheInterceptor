@@ -11,7 +11,8 @@ import type { ModifyAddressWindowState } from './types/visualizer-types.js'
 import { XMarkIcon } from './components/subcomponents/icons.js'
 import { DynamicScroller } from './components/subcomponents/DynamicScroller.js'
 import { Signal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
-import type { ChainEntry, RpcEntries } from './types/rpc.js'
+import type { ChainEntry } from './types/rpc.js'
+import { useRpcConnectionsList } from './components/hooks/useRpcConnectionsList.js'
 import { ChainSelector } from './components/subcomponents/ChainSelector.js'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from './utils/browser.js'
 import { addressEditEntry } from './components/ui-utils.js'
@@ -210,7 +211,7 @@ export function AddressBook() {
 	const addressBookEntries = useComputed(() => addressBookEntriesWithFilter.value.addressBookEntries || [])
 	const activeChain = useSignal<ChainEntry | undefined>(undefined)
 	const activeChainId = useComputed(() => activeChain.value?.chainId ?? 1n)
-	const rpcEntries = useSignal<RpcEntries>([])
+	const rpcEntries = useRpcConnectionsList()
 	const viewFilter = useSignal<ViewFilter>({ activeFilter: 'My Active Addresses', searchString: '', chain: undefined })
 	const modalState = useSignal<Modals>({ page: 'noModal' })
 	function sendQuery() {
@@ -239,7 +240,6 @@ export function AddressBook() {
 				return false
 			}
 			if (parsed.method === 'popup_requestSettingsReply') {
-				rpcEntries.value = parsed.data.rpcEntries
 				const prevActiveNetwork = activeChain.peek()
 				if (prevActiveNetwork === undefined || prevActiveNetwork.chainId === parsed.data.activeRpcNetwork.chainId) {
 					activeChain.value = parsed.data.activeRpcNetwork
@@ -247,10 +247,6 @@ export function AddressBook() {
 						viewFilter.value = { ...viewFilter.value, chain: activeChain.value === undefined ? undefined : { name: activeChain.value.name, chainId: activeChain.value.chainId } }
 					}
 				}
-			}
-			if (parsed.method === 'popup_update_rpc_list') {
-				rpcEntries.value = parsed.data
-				return false
 			}
 			if (parsed.method !== 'popup_getAddressBookDataReply') return false
 			const reply = GetAddressBookDataReply.parse(msg)
