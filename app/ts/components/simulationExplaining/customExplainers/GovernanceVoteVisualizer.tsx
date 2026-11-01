@@ -189,7 +189,7 @@ export function GovernanceVoteVisualizer(param: GovernanceVoteVisualizerParams) 
 	const governanceVoteInputParameters = useSignal<GovernanceVoteInputParameters | undefined>(undefined)
 	const simTx = useSignal<SimulatedAndVisualizedTransaction | undefined>(undefined)
 	const activeAddress = useSignal<bigint | undefined>(undefined)
-	const { reply: simulateExecutionReply, state: simulationState, errorText: requestErrorText, simulate: simulateGovernanceVote, reset } = useExecutionSimulation(
+	const { reply: simulateExecutionReply, state: simulationState, pending: requestPending, errorText: requestErrorText, simulate: simulateGovernanceVote, reset } = useExecutionSimulation(
 		param.simTx.transactionIdentifier,
 		() => requestPopupSimulateGovernanceContractExecution({ transactionIdentifier: param.simTx.transactionIdentifier }),
 		GOVERNANCE_SIMULATION_REPLY_MISSING_ERROR,
@@ -199,8 +199,15 @@ export function GovernanceVoteVisualizer(param: GovernanceVoteVisualizerParams) 
 		governanceVoteInputParameters.value = param.governanceVoteInputParameters
 		simTx.value = param.simTx
 		activeAddress.value = param.activeAddress.value
+	}, [param.simTx, param.governanceVoteInputParameters, param.activeAddress.value])
+
+	// identifyTransaction rebuilds vote parameters when address metadata rerenders the parent. Reset only for a different vote or signer, not a new object with the same values.
+	useEffect(() => {
 		reset()
-	}, [param.simTx.transactionIdentifier, param.governanceVoteInputParameters, param.activeAddress.value])
+	}, [param.simTx.transactionIdentifier, param.activeAddress.value,
+		param.governanceVoteInputParameters.proposalId, param.governanceVoteInputParameters.support,
+		param.governanceVoteInputParameters.reason, param.governanceVoteInputParameters.voter,
+		param.governanceVoteInputParameters.params?.toString(), param.governanceVoteInputParameters.signature?.toString()])
 
 	if (governanceVoteInputParameters.value === undefined || simTx.value === undefined || activeAddress.value === undefined) return <></>
 	return <>
@@ -215,7 +222,7 @@ export function GovernanceVoteVisualizer(param: GovernanceVoteVisualizerParams) 
 						{ simulateExecutionReply.value === undefined ? <></> :
 							<AsyncActionButton
 								class = 'button is-primary is-small'
-								state = { simulationState.value }
+								state = { requestPending.value ? 'pending' : simulationState.value }
 								text = 'Refresh'
 								pendingText = 'Simulating...'
 								onClick = { simulateGovernanceVote }

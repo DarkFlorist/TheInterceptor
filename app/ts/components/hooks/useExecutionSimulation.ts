@@ -15,6 +15,8 @@ export function useExecutionSimulation(identifier: bigint, request: () => Promis
 	currentIdentifier.current = identifier
 	const reply = useComputed(() => requestState.value.state === 'resolved' ? requestState.value.value : broadcastReply.value)
 	const state = useComputed(() => broadcastReply.value !== undefined && requestState.value.state !== 'resolved' ? 'resolved' : requestState.value.state)
+	// A displayed broadcast fallback does not settle the direct request. Refresh controls must still reflect that request's pending state.
+	const pending = useComputed(() => requestState.value.state === 'pending')
 	const errorText = useComputed(() => requestState.value.state === 'rejected' && broadcastReply.value === undefined ? requestState.value.error.message : undefined)
 
 	const simulate = () => {
@@ -50,8 +52,7 @@ export function useExecutionSimulation(identifier: bigint, request: () => Promis
 			const result = SimulateExecutionReply.parse(message)
 			if (result.data.transactionOrMessageIdentifier !== currentIdentifier.current) return false
 			started.current = true
-			// Broadcasts have no request ID and can be delayed or come from another window. Show them as a fallback without cancelling an awaited direct reply; useAsyncState owns cancellation when the context changes.
-			if (requestState.value.state !== 'pending') reset()
+			// Broadcasts have no request ID and can be delayed or come from another window. Keep them as a fallback without replacing pending or completed direct replies; useAsyncState owns cancellation when the context changes.
 			broadcastReply.value = result
 			return false
 		}
@@ -64,7 +65,7 @@ export function useExecutionSimulation(identifier: bigint, request: () => Promis
 		simulate()
 	}, [addressBookRevision.value, requestState.value.state])
 
-	return { reply, state, errorText, simulate, reset: () => {
+	return { reply, state, pending, errorText, simulate, reset: () => {
 		started.current = false
 		requestedRevision.current = addressBookRevision.value
 		broadcastReply.value = undefined

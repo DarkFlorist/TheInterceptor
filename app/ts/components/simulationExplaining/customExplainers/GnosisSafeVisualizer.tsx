@@ -109,7 +109,7 @@ type GnosisSafeVisualizerParams = {
 
 export function GnosisSafeVisualizer(param: GnosisSafeVisualizerParams) {
 	const activeAddress = useSignal<bigint | undefined>(undefined)
-	const { reply: simulateExecutionReply, state: simulationState, errorText: requestErrorText, simulate: requestToSimulate, reset } = useExecutionSimulation(
+	const { reply: simulateExecutionReply, state: simulationState, pending: requestPending, errorText: requestErrorText, simulate: requestToSimulate, reset } = useExecutionSimulation(
 		param.gnosisSafeMessage.messageIdentifier,
 		() => requestPopupSimulateGnosisSafeTransaction({ gnosisSafeMessage: param.gnosisSafeMessage }),
 		GNOSIS_SIMULATION_REPLY_MISSING_ERROR,
@@ -122,7 +122,7 @@ export function GnosisSafeVisualizer(param: GnosisSafeVisualizerParams) {
 		requestToSimulate()
 	}, [param.activeAddress, param.gnosisSafeMessage.messageIdentifier])
 
-	const simulationPending = simulationState.value === 'pending'
+	const simulationPending = requestPending.value
 
 	if (activeAddress.value === undefined) return <></>
 	return <>

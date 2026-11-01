@@ -1336,35 +1336,106 @@ describe('popup async action UI', () => {
 
 	}
 
-	test('an older matching broadcast cannot discard the awaited Safe result', async () => {
-		const modules = await modulesPromise
-		const dom = installDomMock()
-		const direct = createDeferred<unknown>()
-		runtimeSendMessage = async () => direct.promise
-		try {
-			await act(() => {
-				render(h(modules.GnosisSafeVisualizer, {
-					gnosisSafeMessage: createGnosisSafeMessageFixture(7n),
-					activeAddress: gnosisSignerAddress.address,
-					renameAddressCallBack: () => undefined,
-					editEnsNamedHashCallBack: () => undefined,
-				}), dom.document.body)
+	for (const rerenderTiming of ['during request', 'after direct reply']) {
+		test(`preserves governance outcome across equivalent input rerenders ${ rerenderTiming }`, async () => {
+			const modules = await modulesPromise
+			const dom = installDomMock()
+			const direct = createDeferred<unknown>()
+			let simulationRequestCount = 0
+			runtimeSendMessage = async () => {
+				simulationRequestCount += 1
+				return simulationRequestCount === 1 ? createGnosisSimulationSuccessReply(7n, 'Original recipient') : direct.promise
+			}
+			const renderGovernance = () => render(h(modules.GovernanceVoteVisualizer, {
+				simTx: createGovernanceTransactionFixture(7n),
+				activeAddress: signal(gnosisSignerAddress.address),
+				renameAddressCallBack: () => undefined,
+				editEnsNamedHashCallBack: () => undefined,
+				governanceVoteInputParameters: createGovernanceVoteInputParameters(42n),
+			}), dom.document.body)
+			try {
+				await act(renderGovernance)
+				const button = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Simulate execution on a passing vote'))
+				if (button === undefined) throw new Error('Expected governance simulation button')
+				await act(async () => {
+					await clickElement(button)
+					await settleAsyncUpdates()
+				})
+				await act(async () => {
+					await emitRuntimeMessage({ role: 'all', method: 'popup_addressBookEntriesChanged' })
+					await settleAsyncUpdates()
+				})
+				if (rerenderTiming === 'during request') await act(renderGovernance)
+				await act(async () => {
+					direct.resolve(createGnosisSimulationSuccessReply(7n, 'Current recipient'))
+					await settleAsyncUpdates()
+				})
+				if (rerenderTiming === 'after direct reply') await act(renderGovernance)
+				assert.equal(dom.document.body.textContent?.includes('Current recipient'), true)
+				assert.equal(simulationRequestCount, 2)
+			} finally {
+				await act(() => { render(null, dom.document.body) })
+				dom.restore()
+			}
+		})
+	}
+
+	for (const visualizer of ['Safe', 'governance']) {
+		for (const broadcastTiming of ['during request', 'after direct reply']) {
+			test(`an older matching broadcast ${ broadcastTiming } cannot discard the awaited ${ visualizer } result`, async () => {
+				const modules = await modulesPromise
+				const dom = installDomMock()
+				const direct = createDeferred<unknown>()
+				runtimeSendMessage = async () => direct.promise
+				try {
+					await act(() => {
+						render(visualizer === 'Safe' ? h(modules.GnosisSafeVisualizer, {
+							gnosisSafeMessage: createGnosisSafeMessageFixture(7n),
+							activeAddress: gnosisSignerAddress.address,
+							renameAddressCallBack: () => undefined,
+							editEnsNamedHashCallBack: () => undefined,
+						}) : h(modules.GovernanceVoteVisualizer, {
+							simTx: createGovernanceTransactionFixture(7n),
+							activeAddress: signal(gnosisSignerAddress.address),
+							renameAddressCallBack: () => undefined,
+							editEnsNamedHashCallBack: () => undefined,
+							governanceVoteInputParameters: createGovernanceVoteInputParameters(42n),
+						}), dom.document.body)
+					})
+					if (visualizer === 'governance') {
+						const button = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Simulate execution on a passing vote'))
+						if (button === undefined) throw new Error('Expected governance simulation button')
+						await act(async () => { await clickElement(button) })
+					}
+					if (broadcastTiming === 'during request') {
+						await act(async () => {
+							await emitRuntimeMessage({ role: 'all', ...createGnosisSimulationSuccessReply(7n, 'Older broadcast name') })
+							await settleAsyncUpdates()
+						})
+						// Broadcast fallback must not expose an enabled refresh control while simulate still guards the pending direct request.
+						assert.equal(collectElements(dom.document.body, 'button').some((button) => button.textContent?.includes('Refresh')), false)
+						if (visualizer === 'governance') assert.equal(dom.document.body.textContent?.includes('Simulating...'), true)
+					}
+					await act(async () => {
+						direct.resolve(createGnosisSimulationSuccessReply(7n, 'Current direct name'))
+						await settleAsyncUpdates()
+					})
+					if (broadcastTiming === 'after direct reply') {
+						await act(async () => {
+							await emitRuntimeMessage({ role: 'all', ...createGnosisSimulationSuccessReply(7n, 'Older broadcast name') })
+							await settleAsyncUpdates()
+						})
+					}
+					assert.equal(dom.document.body.textContent?.includes('Current direct name'), true)
+					assert.equal(dom.document.body.textContent?.includes('Older broadcast name'), false)
+					assert.equal(collectElements(dom.document.body, 'button').some((button) => button.textContent?.includes('Refresh')), true)
+				} finally {
+					await act(() => { render(null, dom.document.body) })
+					dom.restore()
+				}
 			})
-			await act(async () => {
-				await emitRuntimeMessage({ role: 'all', ...createGnosisSimulationSuccessReply(7n, 'Older broadcast name') })
-				await settleAsyncUpdates()
-			})
-			await act(async () => {
-				direct.resolve(createGnosisSimulationSuccessReply(7n, 'Current direct name'))
-				await settleAsyncUpdates()
-			})
-			assert.equal(dom.document.body.textContent?.includes('Current direct name'), true)
-			assert.equal(dom.document.body.textContent?.includes('Older broadcast name'), false)
-		} finally {
-			await act(() => { render(null, dom.document.body) })
-			dom.restore()
 		}
-	})
+	}
 
 	test('shows the dapp-originated Gnosis Safe EIP-712 fields and hashes under the signature card extra details', async () => {
 		const modules = await modulesPromise
