@@ -157,7 +157,7 @@ export async function signerProvidersChanged(websiteTabConnections: WebsiteTabCo
 			signerProviderCatalogOverflowed,
 			...(clearSignerState ? {
 				signerName: 'NoSigner',
-				signerConnected: true,
+				signerConnected: false,
 				signerAccounts: [],
 				signerAccountError: undefined,
 				signerChain: undefined,

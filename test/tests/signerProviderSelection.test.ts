@@ -336,6 +336,7 @@ describe('EIP-6963 signer provider selection', () => {
 		await updateTabState(7, (previousState) => ({
 			...previousState,
 			signerName: 'EIP6963',
+			signerConnected: true,
 			signerAccounts: [1n],
 			activeSigningAddress: 1n,
 			selectedSignerProvider: provider,
@@ -348,6 +349,7 @@ describe('EIP-6963 signer provider selection', () => {
 		assert.equal(tabState.preferredSignerUnavailable, true)
 		assert.equal(tabState.selectedSignerProvider, undefined)
 		assert.equal(tabState.signerName, 'NoSigner')
+		assert.equal(tabState.signerConnected, false)
 		assert.deepEqual(tabState.signerAccounts, [])
 		assert.equal(tabState.activeSigningAddress, undefined)
 	})
@@ -389,6 +391,7 @@ describe('EIP-6963 signer provider selection', () => {
 		await updateTabState(7, (previousState) => ({
 			...previousState,
 			signerName: 'EIP6963',
+			signerConnected: true,
 			signerAccounts: [1n],
 			selectedSignerProvider: provider,
 		}))
@@ -400,6 +403,7 @@ describe('EIP-6963 signer provider selection', () => {
 		assert.equal(tabState.selectedSignerProvider, undefined)
 		assert.equal(tabState.preferredSignerUnavailable, true)
 		assert.equal(tabState.signerName, 'NoSigner')
+		assert.equal(tabState.signerConnected, false)
 	})
 
 	test('defers remembered catalog changes while this tab has a persisted chain confirmation', async () => {

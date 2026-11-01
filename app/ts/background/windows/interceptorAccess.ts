@@ -235,10 +235,12 @@ async function requestSignerAccountsFromSigner(
 			channel.removeEventListener('message', listener)
 			channel.close()
 		}
-		const completedTabState = await getTabState(socket.tabId)
 		// Discovery may confirm a newer provider generation on this port; return its current authorized accounts.
 		const completedSignerStateToken = getAuthorizedSignerStateToken(websiteTabConnections, socket)
 		if (completedSignerStateToken?.port !== signerStateToken.port) return { accounts: [], error: error ?? signerConnectionReplacedError }
+		const completedTabState = await getTabState(socket.tabId)
+		// Bind the storage snapshot to the full token captured before the read; this same port can change provider or owner generation while storage is pending.
+		if (!isSignerStateTokenAuthorized(websiteTabConnections, completedSignerStateToken, socket)) return { accounts: [], error: error ?? signerConnectionReplacedError }
 		return { accounts: completedTabState.signerAccounts, error }
 	})
 }

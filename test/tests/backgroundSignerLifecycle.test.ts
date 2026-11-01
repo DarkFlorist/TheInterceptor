@@ -230,6 +230,47 @@ describe('background eth_accounts', () => {
 		})
 	})
 
+	test.each(['owner generation', 'provider generation', 'execution authority'])('rejects an account snapshot when %s changes during its final storage read', async (replacement) => {
+		installBrowserMock()
+		const { refreshSignerAccountsForTab, updateTabState, websiteSocketToString, sendInternalWindowMessage, signerConnectionReplacedError } = await loadModules()
+		const socket = { tabId: 715, connectionName: 0n }
+		const account = 0x2323232323232323232323232323232323232323n
+		let accountReplySent = false
+		const { port } = createPort(socket.tabId, (message) => {
+			if (message.method !== 'request_signer_to_eth_accounts') return
+			accountReplySent = true
+			sendInternalWindowMessage({ method: 'window_signer_accounts_changed', data: { socket, signerStateOwnerGeneration: 1, signerProviderGeneration: 1 } })
+		})
+		const connections = createAuthorizedConnections(new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true },
+		} }]]))
+		await updateTabState(socket.tabId, (state) => ({ ...state, signerAccounts: [account], activeSigningAddress: account }))
+		const readStorage = browser.storage.local.get
+		let replaced = false
+		browser.storage.local.get = async (keys) => {
+			const snapshot = await readStorage(keys)
+			if (accountReplySent && !replaced && keys === `tabState_${ socket.tabId }`) {
+				replaced = true
+				const owner = connections.get(socket.tabId)?.signerStateOwner
+				if (owner === undefined) throw new Error('Missing fixture signer owner')
+				if (replacement === 'owner generation') owner.generation += 1
+				else if (replacement === 'provider generation') owner.providerGeneration += 1
+				else clearSignerExecutionAuthorityForTab(connections, socket.tabId)
+				await updateTabState(socket.tabId, (state) => ({ ...state, signerAccounts: [], activeSigningAddress: undefined }))
+			}
+			return snapshot
+		}
+		try {
+			const result = await refreshSignerAccountsForTab(connections, socket.tabId, false)
+			assert.equal(replaced, true)
+			assert.deepEqual(result, { accounts: [], error: signerConnectionReplacedError })
+			assert.equal(connections.get(socket.tabId)?.connections[websiteSocketToString(socket)]?.port, port)
+		} finally {
+			browser.storage.local.get = readStorage
+			clearSignerExecutionAuthorityForTab(connections, socket.tabId)
+		}
+	})
+
 	test('routes one tab-wide signer refresh while serializing passive and interactive discovery', async () => {
 		installBrowserMock()
 		const {
