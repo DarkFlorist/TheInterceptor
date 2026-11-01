@@ -308,7 +308,7 @@ describe('content script injection strategy', () => {
 		}] })
 
 		await updateContentScriptInjectionStrategyManifestV3()
-		assert.equal(getRegisteredContentScripts().every(({ excludeMatches }) => excludeMatches?.includes('https://*.disabled.example/*') === true), true)
+		assert.equal(getRegisteredContentScripts().every(({ excludeMatches }) => excludeMatches?.includes('https://disabled.example:443/*') === true), true)
 
 		await updateWebsiteAccessAndContentScriptInjectionStrategy((websiteAccess) => websiteAccess.filter((entry) => entry.website.websiteOrigin !== websiteOrigin))
 		assert.equal(getRegisteredContentScripts().every(({ excludeMatches }) => excludeMatches?.length === 0), true)
@@ -328,7 +328,7 @@ describe('content script injection strategy', () => {
 			method: 'popup_changeInterceptorAccess',
 			data: [{ removed: false, oldEntry: enabledEntry, newEntry: disabledEntry }],
 		})
-		assert.equal(getRegisteredContentScripts().every(({ excludeMatches }) => excludeMatches?.includes('https://*.bulk-disabled.example/*') === true), true)
+		assert.equal(getRegisteredContentScripts().every(({ excludeMatches }) => excludeMatches?.includes('https://bulk-disabled.example:443/*') === true), true)
 
 		await changeInterceptorAccess(simulationServicesOwner, websiteTabConnections, {
 			method: 'popup_changeInterceptorAccess',
@@ -360,7 +360,7 @@ describe('content script injection strategy', () => {
 		await updateContentScriptInjectionStrategyManifestV3()
 
 		assert.equal(getRegisteredContentScripts().length, 2)
-		assert.equal(getRegisteredContentScripts().every(({ excludeMatches }) => excludeMatches?.includes('https://*.disabled-offline.example/*') === true), true)
+		assert.equal(getRegisteredContentScripts().every(({ excludeMatches }) => excludeMatches?.includes('https://disabled-offline.example:443/*') === true), true)
 	})
 
 	test.each([

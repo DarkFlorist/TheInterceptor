@@ -888,8 +888,8 @@ describe('popup message dispatcher seams', () => {
 		assert.equal(messages[1].data.activeRpcNetwork.httpsRpc, 'https://example.test/rpc')
 		assert.equal(messages[1].data.simulationMode, false)
 		assert.deepEqual(contentScriptUpdateBatches.at(-1)?.map(({ id, excludeMatches }) => ({ id, excludeMatches })), [
-			{ id: 'inpage2', excludeMatches: ['*://*.success-refresh.test/*'] },
-			{ id: 'inpage', excludeMatches: ['*://*.success-refresh.test/*'] },
+			{ id: 'inpage2', excludeMatches: ['http://success-refresh.test:80/*', 'https://success-refresh.test:443/*'] },
+			{ id: 'inpage', excludeMatches: ['http://success-refresh.test:80/*', 'https://success-refresh.test:443/*'] },
 		])
 		assert.deepEqual(dynamicRuleUpdates, [{
 			removeRuleIds: [],
