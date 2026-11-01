@@ -108,7 +108,7 @@ export async function getSettings() : Promise<Settings> {
 	return { activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode }
 }
 
-// Safe for UI contexts: reads only the active RPC network, so it can never repair or write simulationMode.
+// Safe for UI contexts: reads only the active RPC network and never repairs simulationMode; the background's getSettings() repairs a corrupt value to simulation on before routing any request, and a UI-side repair would bypass the background's signer-forward guard.
 export async function getActiveRpcNetwork() {
 	if (defaultRpcs[0] === undefined) throw new Error('default rpc was missing')
 	return await getParsedStorageValueOrDefault('activeRpcNetwork', defaultRpcs[0])
