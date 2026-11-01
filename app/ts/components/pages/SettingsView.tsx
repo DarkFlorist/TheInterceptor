@@ -94,9 +94,9 @@ function ImportExport() {
 			downloadFile('interceptorSettingsAndAddressbook.json', parsed.data.fileContents)
 			return false
 		}
-		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
+		const registeredListener = noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
 
-		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
+		return () => browser.runtime.onMessage.removeListener(registeredListener)
 	}, [])
 
 	const importSettings = (inputElement: { target: EventTarget | EventTarget & { files: FileList } | null }) => {
@@ -163,8 +163,8 @@ export function SettingsView() {
 			useTabsInsteadOfPopup.value = parsed.data.useTabsInsteadOfPopup
 			return false
 		}
-		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
-		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
+		const registeredListener = noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
+		return () => browser.runtime.onMessage.removeListener(registeredListener)
 	}, [])
 
 	useEffect(() => { sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' }) }, [])
@@ -305,7 +305,7 @@ export function useRpcConnectionsList() {
 			}
 			return false
 		}
-		noReplyExpectingBrowserRuntimeOnMessageListener(trackRpcListChanges)
+		const registeredListener = noReplyExpectingBrowserRuntimeOnMessageListener(trackRpcListChanges)
 		const initialUpdateVersion = updateVersion
 		const initiallyLoadEntriesFromStorage = async () => {
 			try {
@@ -323,7 +323,7 @@ export function useRpcConnectionsList() {
 		void initiallyLoadEntriesFromStorage()
 		return () => {
 			disposed = true
-			browser.runtime.onMessage.removeListener(trackRpcListChanges)
+			browser.runtime.onMessage.removeListener(registeredListener)
 		}
 	}, [])
 

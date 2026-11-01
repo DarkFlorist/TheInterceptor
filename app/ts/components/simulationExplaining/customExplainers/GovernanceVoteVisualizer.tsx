@@ -211,8 +211,8 @@ export function GovernanceVoteVisualizer(param: GovernanceVoteVisualizerParams) 
 			simulateExecutionReply.value = reply
 			return false
 		}
-		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
-		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
+		const registeredListener = noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
+		return () => browser.runtime.onMessage.removeListener(registeredListener)
 	}, [])
 
 	useEffect(() => {

@@ -409,8 +409,8 @@ export function AddNewAddress(param: AddAddressParam) {
 			}
 			return false
 		}
-		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
-		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
+		const registeredListener = noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
+		return () => browser.runtime.onMessage.removeListener(registeredListener)
 	}, [])
 
 	useSignalEffect(() => {
