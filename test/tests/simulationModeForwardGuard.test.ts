@@ -2,6 +2,7 @@ import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import type { PublishRpcConnectionStatus } from '../../app/ts/background/rpcSlowRequestTracking.js'
 import type { Website } from '../../app/ts/types/websiteAccessTypes.js'
+import { withSilencedConsole } from './consoleSilence.js'
 import { confirmedSignerOwnership, createDeferredValue, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus } from './backgroundEthAccountsTestHarness.js'
 
 const ACCOUNT = 0x1111111111111111111111111111111111111111n
@@ -125,78 +126,34 @@ describe('simulation mode forward guard', () => {
 		assertAnsweredInSimulationMode(replies)
 	})
 
-	test('does not forward when a corrupt simulation mode repair writes simulation mode during the tab-state read', async () => {
-		const { modules, setStorageHooks, sendAddEthereumChainAfterArming } = await setUpSigningModeWebsite()
+	test('routes a request in simulation mode when the stored simulation mode is corrupt, without writing it', async () => {
+		const { modules, readStoredValue, sendAddEthereumChain } = await setUpSigningModeWebsite()
 		await browser.storage.local.set({ simulationMode: 'corrupt' })
-		const repairRelease = createDeferredValue<undefined>()
-		let repairPaused = false
-		setStorageHooks({
-			beforeSet: async (items) => {
-				if (repairPaused || items.simulationMode !== true) return
-				repairPaused = true
-				await repairRelease.promise
-			},
-		})
-		// This read finds the corrupt value and pauses while repairing it to the default, which enables simulation mode.
-		const repairingSettingsRead = modules.getSettings()
-		await new Promise((resolve) => setTimeout(resolve, 0))
-		assert.equal(repairPaused, true)
-		await modules.changeSimulationMode({ simulationMode: false })
-		const replies = await sendAddEthereumChainAfterArming(5, async () => setStorageHooks({
-			afterGet: async (keys) => {
-				if (keys !== 'tabState_1') return
-				setStorageHooks({})
-				repairRelease.resolve(undefined)
-				await repairingSettingsRead
-			},
-		}))
-		assert.equal((await modules.getSettings()).simulationMode, true)
+		const generationBeforeRouting = modules.getSimulationModeGeneration()
+		const replies = await withSilencedConsole(async () => await sendAddEthereumChain(5))
 		assertAnsweredInSimulationMode(replies)
+		assert.equal(readStoredValue('simulationMode'), 'corrupt')
+		assert.equal(modules.getSimulationModeGeneration(), generationBeforeRouting)
 	})
 
-	test('a popup settings read with a corrupt simulation mode cannot enable it behind the background forward guard', async () => {
-		const { modules, setStorageHooks, readStoredValue, sendAddEthereumChainAfterArming } = await setUpSigningModeWebsite()
-		// A separate module instance has its own simulation-mode generation, like the popup's JS context.
+	test('a settings read of a corrupt simulation mode cannot overwrite a later switch to signing mode', async () => {
+		const { modules, setStorageHooks, readStoredValue, sendAddEthereumChain } = await setUpSigningModeWebsite()
+		// A separate module instance has its own simulation-mode generation, like a popup's JS context.
 		const popupSettings = await import('../../app/ts/background/settings.js?popup-context')
 		await browser.storage.local.set({ simulationMode: 'corrupt' })
-		const popupRepairRelease = createDeferredValue<undefined>()
-		let popupRepairPaused = false
-		setStorageHooks({
-			beforeSet: async (items) => {
-				if (popupRepairPaused || items.simulationMode !== true) return
-				popupRepairPaused = true
-				await popupRepairRelease.promise
-			},
+		const simulationModeWrites: unknown[] = []
+		setStorageHooks({ beforeSet: async (items) => { if ('simulationMode' in items) simulationModeWrites.push(items.simulationMode) } })
+		await withSilencedConsole(async () => {
+			const [backgroundSettings, popupContextSettings] = await Promise.all([modules.getSettings(), popupSettings.getSettings()])
+			assert.equal(backgroundSettings.simulationMode, true)
+			assert.equal(popupContextSettings.simulationMode, true)
 		})
-		// The settings read ConfigureRpcConnection uses in the popup.
-		const popupSettingsRead = popupSettings.getActiveRpcNetwork()
-		await new Promise((resolve) => setTimeout(resolve, 0))
 		await modules.changeSimulationMode({ simulationMode: false })
-		const replies = await sendAddEthereumChainAfterArming(6, async () => setStorageHooks({
-			afterGet: async (keys) => {
-				if (keys !== 'tabState_1') return
-				setStorageHooks({})
-				popupRepairRelease.resolve(undefined)
-				await popupSettingsRead
-			},
-		}))
-		// The popup read must not have written simulation mode, so forwarding matches the stored signing mode.
+		setStorageHooks({})
+		// Only the explicit switch wrote simulation mode, so forwarding matches the stored signing mode.
+		assert.deepEqual(simulationModeWrites, [false])
 		assert.equal(readStoredValue('simulationMode'), false)
-		assert.deepEqual(replies.map((reply) => reply.type), ['forwardToSigner'])
-	})
-
-	test('UI code never calls the background-only getSettings()', async () => {
-		const uiSourcePaths = [
-			...Array.from(new Bun.Glob('components/**/*.{ts,tsx}').scanSync({ cwd: new URL('../../app/ts', import.meta.url).pathname })),
-			...Array.from(new Bun.Glob('*.{ts,tsx}').scanSync({ cwd: new URL('../../app/ts', import.meta.url).pathname })).filter((path) => path !== 'backgroundServiceWorker.ts'),
-		]
-		assert.ok(uiSourcePaths.includes('components/subcomponents/ConfigureRpcConnection.tsx'))
-		const offenders: string[] = []
-		for (const path of uiSourcePaths) {
-			const source = await Bun.file(new URL(`../../app/ts/${ path }`, import.meta.url)).text()
-			if (/\bgetSettings\b/u.test(source)) offenders.push(path)
-		}
-		assert.deepEqual(offenders, [])
+		assert.deepEqual((await sendAddEthereumChain(6)).map((reply) => reply.type), ['forwardToSigner'])
 	})
 
 	test('counts every write that enables simulation mode, including settings import', async () => {

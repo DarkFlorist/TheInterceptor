@@ -63,12 +63,9 @@ async function getParsedStorageValueOrDefaultFromItems<Key extends keyof Startup
 	if (rawValue === undefined) return defaultValue
 	console.warn(`${ key } was corrupt:`)
 	console.warn(rawValue)
-	// Repairing simulation mode can enable it, so it goes through the generation-tracked writer that the signer-forward guard relies on.
-	if (key === 'simulationMode' && typeof defaultValue === 'boolean') {
-		await writeSimulationModeChanges({ simulationMode: defaultValue })
-	} else {
-		await browserStorageLocalSet({ [key]: defaultValue } as unknown as Parameters<typeof browserStorageLocalSet>[0])
-	}
+	// A corrupt simulationMode reads as the default (simulation on) but is never written back, so no settings read, in the background or in a UI page, can enable simulation mode behind the signer-forward guard or overwrite a later switch to signing mode; the next changeSimulationMode() replaces the corrupt value.
+	if (key === 'simulationMode') return defaultValue
+	await browserStorageLocalSet({ [key]: defaultValue } as unknown as Parameters<typeof browserStorageLocalSet>[0])
 	return defaultValue
 }
 
@@ -76,7 +73,6 @@ async function getParsedStorageValueOrDefault<Key extends keyof StartupStorageDe
 	return await getParsedStorageValueOrDefaultFromItems(await browser.storage.local.get(key), key, defaultValue)
 }
 
-// Background-only: repairing a corrupt simulationMode bumps this context's simulation-mode generation, which only the background's signer-forward guard reads.
 export async function getSettings() : Promise<Settings> {
 	if (defaultRpcs[0] === undefined || defaultActiveAddresses[0] === undefined) throw new Error('default rpc or default address was missing')
 	const defaultPage: Page = { page: 'Home' }
@@ -106,12 +102,6 @@ export async function getSettings() : Promise<Settings> {
 		simulationModePromise,
 	])
 	return { activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode }
-}
-
-// Safe for UI contexts: reads only the active RPC network and never repairs simulationMode; the background's getSettings() repairs a corrupt value to simulation on before routing any request, and a UI-side repair would bypass the background's signer-forward guard.
-export async function getActiveRpcNetwork() {
-	if (defaultRpcs[0] === undefined) throw new Error('default rpc was missing')
-	return await getParsedStorageValueOrDefault('activeRpcNetwork', defaultRpcs[0])
 }
 
 export const setPage = async (openedPageV2: Page) => await browserStorageLocalSet({ openedPageV2 })

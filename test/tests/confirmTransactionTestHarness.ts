@@ -3,6 +3,7 @@ import signMessageLibrary from '../fixtures/safe-libraries/SignMessageLib.json'
 import { SAFE_MULTI_SEND_CALL_ONLY, SAFE_SIGN_MESSAGE_LIB } from '../../app/ts/safe/safeDelegateCalls.js'
 import { SAFE_MESSAGE_ABI } from '../../app/ts/safe/safeMessage.js'
 import type { flushPendingTerminalRepliesForSocket as flushPendingTerminalRepliesForSocketType } from '../../app/ts/background/terminalReplyDelivery.js'
+import type { resolvePendingTransactionOrMessage as resolvePendingTransactionOrMessageType } from '../../app/ts/background/windows/confirmTransaction.js'
 import { encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { withSilencedConsole } from './consoleSilence.js'
 import { createSafeTx, SAFE_ABI, safeTxToTypedDataJson } from '../../app/ts/safe/safeCore.js'
@@ -13,6 +14,15 @@ import { EIP712Message } from '../../app/ts/types/eip721.js'
 import { privateKeyToAccount } from '../../app/ts/utils/ethereumPrimitives.js'
 import type { SafeEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { SafeOwnerSignature, SafeStackTransaction, SafeTransactionStack } from '../../app/ts/types/safeTypes.js'
+
+type ResolvePendingTransactionOrMessageParameters = Parameters<typeof resolvePendingTransactionOrMessageType>
+type ResolvePendingTransactionOrMessageWithoutGeneration = [
+	ethereum: ResolvePendingTransactionOrMessageParameters[0],
+	tokenPriceService: ResolvePendingTransactionOrMessageParameters[1],
+	websiteTabConnections: ResolvePendingTransactionOrMessageParameters[2],
+	confirmation: ResolvePendingTransactionOrMessageParameters[3],
+	refreshedSafeSignerSelection?: ResolvePendingTransactionOrMessageParameters[5],
+]
 
 export type RuntimeMessage = {
 	method?: string
@@ -222,7 +232,8 @@ export async function loadModules() {
 		requestSafeStackExport: popupMessageHandlers.requestSafeStackExport,
 		setSafeSimulationSigner: popupMessageHandlers.setSafeSimulationSigner,
 		fetchSimulationStackRequestConfirmation: popupMessageHandlers.fetchSimulationStackRequestConfirmation,
-		resolvePendingTransactionOrMessage: confirmTransaction.resolvePendingTransactionOrMessage,
+		// These tests start each approval at this call, so the generation is captured here; tests of a mode switch during an approval go through confirmDialog.
+		resolvePendingTransactionOrMessage: async (...[ethereum, tokenPriceService, websiteTabConnections, confirmation, refreshedSafeSignerSelection]: ResolvePendingTransactionOrMessageWithoutGeneration) => await confirmTransaction.resolvePendingTransactionOrMessage(ethereum, tokenPriceService, websiteTabConnections, confirmation, settings.getSimulationModeGeneration(), refreshedSafeSignerSelection),
 		updateConfirmTransactionView: confirmTransaction.updateConfirmTransactionView,
 		formEthSendTransaction: confirmTransaction.formEthSendTransaction,
 		getSafeExecutionSignerRoute: safeExecutionRouting.getSafeExecutionSignerRoute,
