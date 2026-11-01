@@ -220,16 +220,24 @@ describe('settings import', () => {
 	test('repairs malformed stored hosting origins before settings and export read them', async () => {
 		const { exportSettingsAndAddressBook, getEnabledSafeAppsHostOrigins, getSafeAppsHostOrigins, setSafeAppsCompatibilityMode } = await settingsModulePromise
 		await setSafeAppsCompatibilityMode(true)
-		for (const invalidOrigins of [['https://*.invalid.example'], ['https://duplicate.example', 'https://duplicate.example'], Array.from({ length: 33 }, (_, index) => `https://site-${ index }.example`)]) {
-			await browser.storage.local.set({ safeAppsHostOrigins: invalidOrigins })
+		const manyOrigins = Array.from({ length: 33 }, (_, index) => `https://site-${ index }.example`)
+		const repairs: readonly { readonly stored: unknown, readonly repaired: readonly string[] }[] = [
+			{ stored: 'not-a-list', repaired: [] },
+			{ stored: ['https://*.invalid.example'], repaired: [] },
+			{ stored: ['https://valid.example', 'https://%2A.invalid.example'], repaired: ['https://valid.example'] },
+			{ stored: ['https://duplicate.example', 'https://duplicate.example'], repaired: ['https://duplicate.example'] },
+			{ stored: manyOrigins, repaired: manyOrigins.slice(0, 32) },
+		]
+		for (const { stored, repaired } of repairs) {
+			await browser.storage.local.set({ safeAppsHostOrigins: stored })
 			await withSilencedConsole(async () => {
-				assert.deepEqual(await getSafeAppsHostOrigins(), [])
-				assert.deepEqual(await getEnabledSafeAppsHostOrigins(), [])
+				assert.deepEqual(await getSafeAppsHostOrigins(), repaired)
+				assert.deepEqual(await getEnabledSafeAppsHostOrigins(), repaired)
 				const exported = await exportSettingsAndAddressBook()
 				assert.equal(exported.version, '1.7')
-				assert.deepEqual(exported.settings.safeAppsHostOrigins, [])
+				assert.deepEqual(exported.settings.safeAppsHostOrigins, repaired)
 			})
-			assert.deepEqual((await browser.storage.local.get('safeAppsHostOrigins')).safeAppsHostOrigins, [])
+			assert.deepEqual((await browser.storage.local.get('safeAppsHostOrigins')).safeAppsHostOrigins, repaired)
 		}
 	})
 

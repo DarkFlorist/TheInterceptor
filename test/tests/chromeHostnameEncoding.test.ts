@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
-import { SafeAppsHostOrigins, parseSafeAppsHostOrigin } from '../../app/ts/types/safeAppsHosting.js'
+import { SafeAppsHostOrigins, parseSafeAppsHostOrigin, recoverStoredSafeAppsHostOrigins } from '../../app/ts/types/safeAppsHosting.js'
 import { getChromeMatchPatterns, isPlainUrlHostname, isWildcardUrlHostname } from '../../app/ts/utils/chromeMatchPatterns.js'
 import { getSafeAppsHostMatchPatterns } from '../../app/ts/utils/safeAppsHosting.js'
 
@@ -62,7 +62,10 @@ test('stored Safe Apps origins with Chrome percent-encoded hosts are rejected wh
 			assert.throws(() => getSafeAppsHostMatchPatterns([storedOrigin]))
 		}
 		assert.equal(SafeAppsHostOrigins.safeParse(['https://swap.cow.fi']).success, true)
+		assert.deepEqual(recoverStoredSafeAppsHostOrigins({ safeAppsHostOrigins: ['https://swap.cow.fi', 'https://%2A.cow.fi', 'https://a%21b.example', 42, 'https://swap.cow.fi'] }), ['https://swap.cow.fi'])
 	})
+	assert.deepEqual(recoverStoredSafeAppsHostOrigins({}), [])
+	assert.equal(recoverStoredSafeAppsHostOrigins({ safeAppsHostOrigins: 'not-a-list' }), undefined)
 	for (const storedOrigin of ['https://%2A.cow.fi', 'https://%2a.cow.fi', 'https://%2A']) assert.equal(SafeAppsHostOrigins.safeParse([storedOrigin]).success, false, storedOrigin)
 })
 

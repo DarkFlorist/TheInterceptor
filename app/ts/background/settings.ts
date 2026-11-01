@@ -12,7 +12,7 @@ import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_BLOCK_MANIPULATION, DEFAULT_RPCS } fr
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { mergeStoredWebsiteMetadata, sanitizeWebsiteAccess } from '../utils/websiteIcons.js'
 import type { SigningAddressPreference, SigningAddressPreferences } from '../types/signerTypes.js'
-import { DEFAULT_SAFE_APPS_HOST_ORIGINS, SafeAppsHostOrigins } from '../types/safeAppsHosting.js'
+import { DEFAULT_SAFE_APPS_HOST_ORIGINS, SafeAppsHostOrigins, recoverStoredSafeAppsHostOrigins } from '../types/safeAppsHosting.js'
 import { hasOwnKey } from '../utils/typescript.js'
 
 export const defaultActiveAddresses = DEFAULT_ACTIVE_ADDRESSES
@@ -262,7 +262,15 @@ export const setMetamaskCompatibilityMode = async(metamaskCompatibilityMode: boo
 export const getSafeAppsCompatibilityMode = async() => (await browserStorageLocalGet('safeAppsCompatibilityMode'))?.safeAppsCompatibilityMode ?? false
 export const setSafeAppsCompatibilityMode = async(safeAppsCompatibilityMode: boolean) => await browserStorageLocalSet({ safeAppsCompatibilityMode })
 
-export const getSafeAppsHostOrigins = async () => await getParsedStorageValueOrDefault('safeAppsHostOrigins', DEFAULT_SAFE_APPS_HOST_ORIGINS)
+export async function getSafeAppsHostOrigins() {
+	const storedItems = await browser.storage.local.get('safeAppsHostOrigins')
+	const recoveredOrigins = recoverStoredSafeAppsHostOrigins(storedItems)
+	if (recoveredOrigins === undefined) return await getParsedStorageValueOrDefaultFromItems(storedItems, 'safeAppsHostOrigins', DEFAULT_SAFE_APPS_HOST_ORIGINS)
+	// Drop only invalid stored entries and persist the cleaned list; registration recovers the same list from the same storage value.
+	if (browserStorageLocalSafeParse(storedItems) === undefined) await setSafeAppsHostOrigins(recoveredOrigins)
+	return recoveredOrigins
+}
+
 export const setSafeAppsHostOrigins = async (origins: readonly string[]) => await browserStorageLocalSet({ safeAppsHostOrigins: SafeAppsHostOrigins.parse(origins) })
 
 export async function getEnabledSafeAppsHostOrigins() {

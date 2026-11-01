@@ -24,7 +24,7 @@ type BrowserMockOptions = {
 	readonly tabUrlAfterStorageRead?: string
 	readonly registeredContentScriptIds?: readonly string[]
 	readonly safeAppsCompatibilityMode?: boolean
-	readonly safeAppsHostOrigins?: readonly string[]
+	readonly safeAppsHostOrigins?: unknown
 	readonly beforeRegisterContentScripts?: (scripts: readonly RegisteredContentScript[]) => Promise<void>
 	readonly beforeUpdateContentScripts?: (scripts: readonly RegisteredContentScript[]) => Promise<void>
 }
@@ -346,7 +346,7 @@ describe('content script injection strategy', () => {
 	})
 
 	test('enable/disable awaits recovered registrations, coalesces the storage update, reloads and replies', async () => {
-		const { getRegisteredContentScripts, getScriptingOperations, reloadedTabs, sentMessages, recordAccessRefresh } = installBrowserMock({ emitStorageEvents: true, safeAppsCompatibilityMode: true, safeAppsHostOrigins: ['not-an-origin'], registeredContentScriptIds: ['inpage', 'inpage2'] })
+		const { getRegisteredContentScripts, getScriptingOperations, reloadedTabs, sentMessages, recordAccessRefresh } = installBrowserMock({ emitStorageEvents: true, safeAppsCompatibilityMode: true, safeAppsHostOrigins: 'not-a-list', registeredContentScriptIds: ['inpage', 'inpage2'] })
 		const registration = await import('../../app/ts/background/contentScriptRegistration.js')
 		const { disableInterceptor } = await import('../../app/ts/background/popupMessageHandlers/websiteAccess.js')
 		const { getLatestUnexpectedError } = await import('../../app/ts/background/storageVariables.js')
@@ -771,6 +771,23 @@ test('registration applies the same single snapshot it caches, then observes a s
 	await updateRegistration()
 	assert.equal(reads, 2)
 	assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'safe-apps-host')?.matches, ['https://after.example:443/*'])
+})
+
+test('stored hosting origins with a Chrome-encoded wildcard keep their valid origins in settings and registration', async () => {
+	const { getRegisteredContentScripts, sentMessages } = installBrowserMock({ safeAppsCompatibilityMode: true, safeAppsHostOrigins: ['https://swap.cow.fi', 'https://%2A.cow.fi'] })
+	await browser.storage.local.set({ metamaskCompatibilityMode: true, useTabsInsteadOfPopup: false })
+	const { updateRegistration } = await loadModules()
+	await updateRegistration()
+	assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'safe-apps-host')?.matches, ['https://swap.cow.fi:443/*'])
+	const { getSafeAppsHostOrigins, getMetamaskCompatibilityMode, getUseTabsInsteadOfPopup, getSafeAppsCompatibilityMode } = await import('../../app/ts/background/settings.js')
+	assert.deepEqual(await getSafeAppsHostOrigins(), ['https://swap.cow.fi'])
+	assert.deepEqual((await browser.storage.local.get('safeAppsHostOrigins')).safeAppsHostOrigins, ['https://swap.cow.fi'])
+	assert.equal(await getSafeAppsCompatibilityMode(), true)
+	assert.equal(await getMetamaskCompatibilityMode(), true)
+	assert.equal(await getUseTabsInsteadOfPopup(), false)
+	await updateRegistration()
+	assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'safe-apps-host')?.matches, ['https://swap.cow.fi:443/*'])
+	assert.deepEqual(sentMessages, [])
 })
 
 test('disabled compatibility leaves malformed hosting selections inert without reporting a recovery', async () => {

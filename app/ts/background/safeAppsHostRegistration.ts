@@ -1,5 +1,5 @@
 import { ContentScriptHostingSettings } from '../types/contentScriptSettings.js'
-import { DEFAULT_SAFE_APPS_HOST_ORIGINS } from '../types/safeAppsHosting.js'
+import { recoverStoredSafeAppsHostOrigins } from '../types/safeAppsHosting.js'
 import { getSafeAppsHostMatchPatterns } from '../utils/safeAppsHosting.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 import { SAFE_APPS_HOST_SCRIPTS } from '../config/injectedScripts.js'
@@ -13,9 +13,8 @@ function getHostingConfiguration(storedItems: unknown): HostingConfiguration | u
 	const compatibility = ContentScriptHostingSettings.pick('safeAppsCompatibilityMode').safeParse(storedItems)
 	if (!compatibility.success) return { error: new Error(compatibility.message) }
 	if (compatibility.value.safeAppsCompatibilityMode !== true) return undefined
-	const hosting = ContentScriptHostingSettings.safeParse(storedItems)
-	if (!hosting.success) return { error: new Error(hosting.message) }
-	const origins = hosting.value.safeAppsHostOrigins ?? DEFAULT_SAFE_APPS_HOST_ORIGINS
+	const origins = recoverStoredSafeAppsHostOrigins(storedItems)
+	if (origins === undefined) return { error: new Error('Stored Safe Apps host origins are not a list.') }
 	return { matches: getSafeAppsHostMatchPatterns(origins), origins }
 }
 
