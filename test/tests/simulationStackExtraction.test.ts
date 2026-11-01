@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { getSimulatedStackV1 } from '../../app/ts/simulation/SimulationStackExtraction.js'
+import { getSimulatedStackV1, getSimulatedStackV2 } from '../../app/ts/simulation/SimulationStackExtraction.js'
 import { mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { InterceptorMessageToInpage } from '../../app/ts/types/interceptor-messages.js'
 import type { ResolvedSimulationState } from '../../app/ts/types/visualizer-types.js'
@@ -86,11 +86,30 @@ const simulationStateWithSafeExecution: ResolvedSimulationState = {
 		}],
 	},
 }
+const SENDER_BALANCE_AFTER = 10n ** 18n
+const simulationStateWithSenderBalance: ResolvedSimulationState = {
+	kind: 'simulated',
+	value: {
+		...simulationStateWithBalanceBelowBaseFee.value,
+		simulatedBlocks: [{ ...simulatedBlock, simulatedTransactions: [{ ...simulatedTransaction, tokenBalancesAfter: [{ token: ETHEREUM_LOGS_LOGGER_ADDRESS, tokenId: undefined, owner: SENDER, balance: SENDER_BALANCE_AFTER }] }] }],
+	},
+}
 
 describe('simulation stack extraction', () => {
 	test('version 1.0.1 reports a Gnosis Safe\'s balance without gas, which its executor pays', () => {
 		const payload = getSimulatedStackV1(simulationStateWithSafeExecution, undefined, '1.0.1')
 		assert.deepEqual(payload[0]?.balanceChanges, [{ address: SENDER, before: SAFE_BALANCE, after: SAFE_BALANCE }])
+	})
+
+	test('version 2.0.0 reports an account\'s simulated balance after the transaction, and before it with the gas it paid added back', () => {
+		const [transaction] = getSimulatedStackV2(simulationStateWithSenderBalance).transactions
+		// The fixture's sender pays 21000 gas at a realized gas price of 2 attoeth per gas and moves no ether.
+		assert.deepEqual(transaction?.ethBalanceChanges, [{ address: SENDER, before: SENDER_BALANCE_AFTER + 42_000n, after: SENDER_BALANCE_AFTER }])
+	})
+
+	test('version 2.0.0 adds no gas back to a Gnosis Safe\'s balance, which its executor pays', () => {
+		const [transaction] = getSimulatedStackV2(simulationStateWithSafeExecution).transactions
+		assert.deepEqual(transaction?.ethBalanceChanges, [{ address: SENDER, before: SAFE_BALANCE, after: SAFE_BALANCE }])
 	})
 
 	test('version 1.0.1 remains serializable when the sender balance is below the base fee', () => {
