@@ -275,6 +275,14 @@ export const getSimulatedTransactionCount = async (ethereumClientService: Ethere
 	return (await ethereumClientService.getTransactionCount(address, blockNumToUseForChain, requestAbortController)) + addedTransactions
 }
 
+// The nonce field of a Gnosis Safe execution's own call, which is a display and hash sequence, not the Safe's account nonce: no account sends that call (getExecutedCallNonceContribution). It is the Safe's account nonce plus its earlier stacked executions, so identical stacked Safe calls still get distinct mock-signed hashes.
+export const getSimulatedSafeCallNonce = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: ResolvedSimulationState, safeAddress: bigint) => {
+	const accountNonce = await getSimulatedTransactionCount(ethereumClientService, requestAbortController, simulationState, safeAddress)
+	if (simulationState.kind === 'passthrough') return accountNonce
+	const earlierSafeExecutions = simulationState.value.simulationStateInput.flatMap((block) => block.transactions).filter((transaction) => transaction.signedTransaction.from === safeAddress && authorizesExecutedCall(transaction.simulationOptions)).length
+	return accountNonce + BigInt(earlierSafeExecutions)
+}
+
 type Simulated1559BlockCall = Pick<IUnsignedTransaction1559, 'type' | 'from' | 'chainId' | 'nonce' | 'maxFeePerGas' | 'maxPriorityFeePerGas' | 'to' | 'value' | 'input'> & Partial<Pick<IUnsignedTransaction1559, 'gasLimit' | 'accessList'>>
 type Simulated7702BlockCall = Pick<IUnsignedTransaction7702, 'type' | 'from' | 'chainId' | 'nonce' | 'maxFeePerGas' | 'maxPriorityFeePerGas' | 'to' | 'value' | 'input' | 'authorizationList'> & Partial<Pick<IUnsignedTransaction7702, 'gasLimit' | 'accessList'>>
 type SimulatedBlockCall = Simulated1559BlockCall | Simulated7702BlockCall
