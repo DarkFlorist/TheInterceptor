@@ -7,7 +7,7 @@ import type { InpageScriptCallBack, Settings } from '../types/interceptor-messag
 import { getRequiredSettings, getSettingsSnapshot, getWebsiteAccess, getWebsiteAccessForAccessDecision, updateWebsiteAccess } from './settings.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
 import { type WebsiteSocket, getHostWithPort, silenceChromeUnCaughtPromise } from '../utils/requests.js'
-import { getAllTabStates } from './storageVariables.js'
+import { getAllTabStates, getTabState } from './storageVariables.js'
 import { createRpcConfigurationUnavailableError } from '../utils/rpcConfigurationError.js'
 import type { Website, WebsiteAccessArray, WebsiteAddressAccess } from '../types/websiteAccessTypes.js'
 import { getUniqueItemsByProperties, replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
@@ -453,17 +453,32 @@ export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: W
 	})
 }
 
-// Connections register unapproved, so a new connection can only change tab blocking while it is derived from persisted consent. The RPC configuration can become unavailable after the last reconciliation, so the current snapshot decides instead of an earlier mode.
+// Connections register unapproved, so a new connection can only change tab blocking while it is derived from persisted consent. The RPC configuration can become unavailable after the last reconciliation, so the current snapshot decides instead of an earlier mode. Resolves true when it reconciled, i.e. when this registration may have changed its tab's blocking.
 export async function updateDeclarativeNetRequestBlocksForRegisteredConnection(websiteTabConnections: WebsiteTabConnections) {
-	if (await getSettingsForTabBlocking() !== undefined) return
+	if (await getSettingsForTabBlocking() !== undefined) return false
 	await updateDeclarativeNetRequestBlocks(websiteTabConnections)
+	return true
 }
 
 // Every registered connection, including a child frame in an existing tab, can make its tab eligible for request blocking (persisted consent while the active RPC network is unreadable), so blocking is reconciled for each registration. The reconciliation is returned instead of awaited so connection setup latency is unchanged; the caller must handle its failure.
 export async function registerWebsiteConnectionAndReconcileRequestBlocks(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, connection: TabConnection['connections'][string], isTopFrame: boolean) {
 	const registration = await registerWebsiteConnectionAndProvisionallyClaimSignerState(websiteTabConnections, socket, connection, isTopFrame)
 	// Guarded so a failure before the caller attaches its handler is not reported as an unhandled rejection; the caller still observes it.
-	return { ...registration, requestBlocksReconciliation: silenceChromeUnCaughtPromise(updateDeclarativeNetRequestBlocksForRegisteredConnection(websiteTabConnections)) }
+	return { ...registration, isTopFrame, requestBlocksReconciliation: silenceChromeUnCaughtPromise(updateDeclarativeNetRequestBlocksForRegisteredConnection(websiteTabConnections)) }
+}
+
+// The icon reports applied request blocking, so it is refreshed once the registration's reconciliation settles, whether or not that succeeds (a failure can follow a partial rule update). A new tab always gets its first icon (call this after writing the new tab's state); an existing tab is refreshed whenever the reconciliation ran, because a consented child frame can make the whole tab blocked. A child frame's icon is resolved for the tab's own website, not the frame's.
+export async function updateExtensionIconAfterRegistrationRequestBlocks(registration: Awaited<ReturnType<typeof registerWebsiteConnectionAndReconcileRequestBlocks>>, socket: WebsiteSocket, websiteOrigin: string) {
+	// A rejected reconciliation ran, so its tab blocking may have changed.
+	let reconciled = true
+	try {
+		reconciled = await registration.requestBlocksReconciliation
+	} finally {
+		if (registration.createdTabConnection || reconciled) {
+			const iconWebsiteOrigin = registration.createdTabConnection || registration.isTopFrame ? websiteOrigin : (await getTabState(socket.tabId)).website?.websiteOrigin ?? websiteOrigin
+			await updateExtensionIcon(socket.tabId, iconWebsiteOrigin, bumpPopupRefreshGeneration())
+		}
+	}
 }
 
 // A pure query of the blocking that is in force: only rules that were successfully applied count, and enforcement belongs to updateDeclarativeNetRequestBlocks.

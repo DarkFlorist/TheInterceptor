@@ -92,6 +92,38 @@ describe('background eth_accounts', () => {
 		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [tabId])
 	})
 
+	for (const rpcNetwork of ['unreadable', 'readable'] as const) test(`${ rpcNetwork === 'unreadable' ? 'refreshes' : 'keeps' } an existing tab's icon after a consented child frame registers while the active RPC network is ${ rpcNetwork }`, async () => {
+		installBrowserMock({ manifestVersion: 3 })
+		const { registerWebsiteConnectionAndReconcileRequestBlocks, getTabState, updateExtensionIconAfterRegistrationRequestBlocks, updateTabState } = await loadModules()
+		const consentedFrameOrigin = 'consented-icon-frame.example'
+		const topFrameOrigin = 'unconsented-icon-top.example'
+		await setUpAddressLevelBlockAllWithUnreadableActiveRpcNetwork(consentedFrameOrigin)
+		if (rpcNetwork === 'readable') await browser.storage.local.remove('activeRpcNetwork')
+		const tabId = 9884
+		const topFrameSocket = { tabId, connectionName: 0n }
+		const childFrameSocket = { tabId, connectionName: 1n }
+		const websiteTabConnections: WebsiteTabConnections = new Map()
+		const topFrameRegistration = await withSilencedWarnings(async () => await registerWebsiteConnectionAndReconcileRequestBlocks(websiteTabConnections, topFrameSocket, { port: createPort(tabId).port, socket: topFrameSocket, websiteOrigin: topFrameOrigin, approved: false, wantsToConnect: false }, true))
+		await updateTabState(tabId, (previous) => ({ ...previous, website: { websiteOrigin: topFrameOrigin, icon: undefined, title: undefined } }))
+		await withSilencedWarnings(async () => await updateExtensionIconAfterRegistrationRequestBlocks(topFrameRegistration, topFrameSocket, topFrameOrigin))
+		const topFrameIcon = (await getTabState(tabId)).tabIconDetails
+		assert.doesNotMatch(topFrameIcon.iconReason, /blocking external requests/)
+
+		const childFrameRegistration = await withSilencedWarnings(async () => await registerWebsiteConnectionAndReconcileRequestBlocks(websiteTabConnections, childFrameSocket, { port: createPort(tabId, undefined, 1, childFrameSocket.connectionName).port, socket: childFrameSocket, websiteOrigin: consentedFrameOrigin, approved: false, wantsToConnect: false }, false))
+		assert.equal(childFrameRegistration.createdTabConnection, false)
+		await withSilencedWarnings(async () => await updateExtensionIconAfterRegistrationRequestBlocks(childFrameRegistration, childFrameSocket, consentedFrameOrigin))
+
+		const { tabIconDetails } = await getTabState(tabId)
+		if (rpcNetwork === 'readable') {
+			// A readable active network derives blocking from runtime approvals, which a fresh unapproved frame cannot change, so the icon is left as it was.
+			assert.deepEqual(tabIconDetails, topFrameIcon)
+			return
+		}
+		assert.equal(tabIconDetails.icon, ICON_NOT_ACTIVE_WITH_SHIELD)
+		assert.match(tabIconDetails.iconReason, /blocking external requests/)
+		assert.doesNotMatch(tabIconDetails.iconReason, new RegExp(consentedFrameOrigin.replaceAll('.', '\\.')))
+	})
+
 	test('shows the blocking shield only after persisted-consent tab blocking is applied while the active RPC network is unreadable', async () => {
 		const browserMock = installBrowserMock({ manifestVersion: 3 })
 		const { areWeBlocking, getTabState, registerWebsiteConnectionAndProvisionallyClaimSignerState, updateDeclarativeNetRequestBlocks } = await loadModules()

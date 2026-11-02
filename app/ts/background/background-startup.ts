@@ -22,7 +22,7 @@ import { updateContentScriptInjectionStrategyManifestV2 } from '../utils/content
 import { checkIfInterceptorShouldSleep } from './sleeping.js'
 import { onCloseWindowOrTab, resolveDeferredSafeSignerReplies, resolvePendingRequestsForMissingConfirmationWindows } from './windows/confirmTransaction.js'
 import { modifyObject } from '../utils/typescript.js'
-import { registerWebsiteConnectionAndReconcileRequestBlocks, updateDeclarativeNetRequestBlocks } from './accessManagement.js'
+import { registerWebsiteConnectionAndReconcileRequestBlocks, updateDeclarativeNetRequestBlocks, updateExtensionIconAfterRegistrationRequestBlocks } from './accessManagement.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerformance.js'
 import { removeWebsiteTabConnection } from './websiteTabConnections.js'
@@ -209,14 +209,7 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ simulati
 				})
 			})
 		}
-		// A new tab's icon reports the applied request blocking, so it is updated after this registration's request-block reconciliation, whether or not that succeeds.
-		void catchAllErrorsAndCall(async () => {
-			try {
-				await registration.requestBlocksReconciliation
-			} finally {
-				if (registration.createdTabConnection) await updateExtensionIcon(socket.tabId, websiteOrigin, bumpPopupRefreshGeneration())
-			}
-		})
+		void catchAllErrorsAndCall(async () => await updateExtensionIconAfterRegistrationRequestBlocks(registration, socket, websiteOrigin))
 		if (registration.provisionallyClaimedSignerState) {
 			sendSubscriptionReplyOrCallBackToPort(port, { type: 'result', method: 'request_signer_connection_status', result: [] })
 		}
