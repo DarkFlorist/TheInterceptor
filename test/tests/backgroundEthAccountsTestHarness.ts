@@ -32,10 +32,16 @@ export function installBrowserMock({ deferFirstChainChangeRemoval = false, manif
 	const chainChangeRemovalStarted = createDeferredSignal()
 	const chainChangeRemovalRelease = createDeferredSignal()
 	let chainChangeRemovalDeferred = false
-	const requestBlockingCalls = {
+	const requestBlockingCalls: {
+		declarativeNetRequestUpdates: number
+		webRequestListenerAdds: number
+		webRequestListenerRemovals: number
+		webRequestListener: ((details: browser.webRequest._OnBeforeRequestDetails) => unknown) | undefined
+	} = {
 		declarativeNetRequestUpdates: 0,
 		webRequestListenerAdds: 0,
 		webRequestListenerRemovals: 0,
+		webRequestListener: undefined,
 	}
 	;(globalThis as typeof globalThis & { browser: typeof globalThis.browser }).browser = {
 		runtime: {
@@ -115,8 +121,9 @@ export function installBrowserMock({ deferFirstChainChangeRemoval = false, manif
 		},
 		webRequest: {
 			onBeforeRequest: {
-				addListener() {
+				addListener(listener: (details: browser.webRequest._OnBeforeRequestDetails) => unknown) {
 					requestBlockingCalls.webRequestListenerAdds += 1
+					requestBlockingCalls.webRequestListener = listener
 				},
 				removeListener() {
 					requestBlockingCalls.webRequestListenerRemovals += 1

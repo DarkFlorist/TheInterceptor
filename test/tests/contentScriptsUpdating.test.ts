@@ -128,6 +128,7 @@ function installBrowserMock({ registerError, updateError, executeScriptError, ta
 	Object.defineProperty(globalThis, 'chrome', { configurable: true, writable: true, value: { runtime: { id: 'test-extension' } } })
 
 	return {
+		storageState,
 		sentMessages,
 		getRegisteredContentScripts() { return [...registeredContentScripts.values()] },
 		getScriptingOperations() { return [...scriptingOperations] },
@@ -168,7 +169,7 @@ function getManifestV2WebAccessibleResources() {
 }
 
 describe('content script injection strategy', () => {
-	test('creates valid manifest v3 exclusions without admitting malformed stored origins', async () => {
+	test('creates valid, exact manifest v3 exclusions without admitting malformed stored origins', async () => {
 		installBrowserMock()
 		const { getManifestV3ExcludeMatches } = await loadModules()
 
@@ -179,6 +180,7 @@ describe('content script injection strategy', () => {
 			'127.0.0.1:8545',
 			'[::1]:8545',
 			'https://secure.example',
+			'https://subdomain.example',
 			'https://localhost:4443',
 			'https://invalid.example/path',
 		]), [
@@ -192,8 +194,42 @@ describe('content script injection strategy', () => {
 			'http://[::1]:8545/*',
 			'https://[::1]:8545/*',
 			'https://secure.example:443/*',
+			'https://subdomain.example:443/*',
 			'https://localhost:4443/*',
 		])
+	})
+
+	test('preserves explicit legacy default-port disable decisions during manifest v2 injection', async () => {
+		const { getCommittedListener, getExecuteScriptCalls, storageState } = installBrowserMock({ tabUrl: 'https://example.test/page' })
+		const { updateContentScriptInjectionStrategyManifestV2 } = await loadModules()
+		storageState.websiteAccess = [{ website: { websiteOrigin: 'example.test:443' }, interceptorDisabled: true }]
+		await updateContentScriptInjectionStrategyManifestV2()
+		await getCommittedListener()({ ...committedDetails, url: 'https://example.test/page' })
+		assert.equal(getExecuteScriptCalls(), 0)
+	})
+
+	test('excludes an exact file and its query variants without excluding path suffixes', async () => {
+		installBrowserMock()
+		const { getManifestV3ExcludeMatches } = await loadModules()
+		assert.deepEqual(getManifestV3ExcludeMatches(['file:///tmp/dapp.html']), [
+			'file:///tmp/dapp.html',
+			'file:///tmp/dapp.html?*',
+		])
+	})
+
+	test('preserves legacy manifest v2 interceptor-disabled behavior without treating it as an access grant', async () => {
+		const { getCommittedListener, getExecuteScriptCalls, storageState } = installBrowserMock()
+		const { updateContentScriptInjectionStrategyManifestV2 } = await loadModules()
+		storageState.websiteAccess = [{
+			website: { websiteOrigin: 'example.com', icon: undefined, title: 'Legacy disabled site' },
+			access: true,
+			interceptorDisabled: true,
+		}]
+
+		await updateContentScriptInjectionStrategyManifestV2()
+		await getCommittedListener()(committedDetails)
+
+		assert.equal(getExecuteScriptCalls(), 0)
 	})
 
 	test('excludes a disabled site on its exact host and port, not on its subdomains or other ports', async () => {
@@ -203,31 +239,31 @@ describe('content script injection strategy', () => {
 		// Each pattern names its port, because a pattern without one would match every port of the host, and its host has no *. prefix, which would match every subdomain.
 		assert.deepEqual(getManifestV3ExcludeMatches(['example.com']), ['http://example.com:80/*', 'https://example.com:443/*'])
 		assert.deepEqual(getManifestV3ExcludeMatches(['app.example.com:8080']), ['http://app.example.com:8080/*', 'https://app.example.com:8080/*'])
-		// A URL never shows its scheme's default port, so these stored origins can only come from the other scheme's URL.
-		assert.deepEqual(getManifestV3ExcludeMatches(['example.com:80']), ['https://example.com:80/*'])
-		assert.deepEqual(getManifestV3ExcludeMatches(['example.com:443']), ['http://example.com:443/*'])
+		// A legacy origin with a default port also names the default-port URL of that port's scheme, as the manifest v2 injection does.
+		assert.deepEqual(getManifestV3ExcludeMatches(['example.com:80']), ['http://example.com:80/*', 'https://example.com:80/*'])
+		assert.deepEqual(getManifestV3ExcludeMatches(['example.com:443']), ['http://example.com:443/*', 'https://example.com:443/*'])
 		assert.deepEqual(getManifestV3ExcludeMatches(['http://plain.example', 'https://secure.example:8443']), ['http://plain.example:80/*', 'https://secure.example:8443/*'])
 	})
 
-	test('excludes exactly the URLs that getHostWithPort gives the disabled origin', async () => {
+	test('excludes exactly the origins that the manifest v2 injection treats as disabled', async () => {
 		installBrowserMock()
 		const { getManifestV3ExcludeMatches } = await loadModules()
-		const { getHostWithPort } = await import('../../app/ts/utils/requests.js')
+		const { getHostWithPort, getWebsiteOrigin, isLegacyWebsiteOriginForCanonicalOrigin } = await import('../../app/ts/utils/websiteOrigin.js')
 		// Chromium matches a pattern with a port against the URL's scheme, exact host and effective port.
 		const isMatchedBy = (pattern: string, url: string) => {
 			const { protocol, hostname, port } = new URL(url)
 			const effectivePort = port === '' ? (protocol === 'https:' ? '443' : '80') : port
 			return pattern === `${ protocol }//${ hostname }:${ effectivePort }/*`
 		}
+		const isDisabledBy = (disabledSite: string, url: string) => disabledSite === getWebsiteOrigin(url) || isLegacyWebsiteOriginForCanonicalOrigin(disabledSite, getWebsiteOrigin(url))
 		const urls = ['http://example.com/', 'https://example.com/path', 'https://example.com:80/', 'http://example.com:443/', 'http://example.com:8080/', 'https://app.example.com/', 'http://[::1]:8545/']
-		for (const disabledUrl of urls) {
-			const excludeMatches = getManifestV3ExcludeMatches([getHostWithPort(disabledUrl)])
+		const disabledSites = [...urls.map(getWebsiteOrigin), ...urls.map(getHostWithPort), 'example.com:80', 'example.com:443']
+		for (const disabledSite of disabledSites) {
+			const excludeMatches = getManifestV3ExcludeMatches([disabledSite])
 			for (const url of urls) {
-				assert.equal(excludeMatches.some((pattern) => isMatchedBy(pattern, url)), getHostWithPort(url) === getHostWithPort(disabledUrl), `${ url } with ${ disabledUrl } disabled`)
+				assert.equal(excludeMatches.some((pattern) => isMatchedBy(pattern, url)), isDisabledBy(disabledSite, url), `${ url } with ${ disabledSite } disabled`)
 			}
 		}
-		// getHostWithPort never produces these, so no page has them as its origin.
-		assert.deepEqual(getManifestV3ExcludeMatches(['Example.com', 'example.com:']), [])
 	})
 
 	test('skips stored hosts with a * instead of turning them into wildcard or invalid patterns', async () => {

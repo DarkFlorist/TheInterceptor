@@ -86,15 +86,18 @@ const normalizeEip7702Authorization = async (authorization: Eip7702Authorization
 	return base
 }
 
+// A request names EIP-7702 explicitly or implies it with an authorization list. Both gas estimation and getSupportedSendTransactionType in utils/signerTransactionEnvelope.ts read this rule, so the estimated and the signed envelopes agree on EIP-7702.
+export const requestsEip7702Envelope = (data: { readonly type?: string, readonly authorizationList?: readonly unknown[] }) => data.type === '7702' || data.authorizationList !== undefined
+
+// Used only for zero-fee gas estimation, where legacy and EIP-2930 envelopes execute exactly like EIP-1559, so only an authorization list (EIP-7702) needs a different envelope; transactions prepared for signing keep the website's envelope through getSupportedSendTransactionType in utils/signerTransactionEnvelope.ts.
 export const createEip1559Or7702Transaction = async <TransactionBase extends object>(
 	transactionBase: TransactionBase,
 	data: { readonly type?: string, readonly authorizationList?: readonly Eip7702Authorization[] },
 ): Promise<(TransactionBase & { readonly type: '1559' }) | (TransactionBase & { readonly type: '7702', readonly authorizationList: readonly NormalizedEip7702Authorization[] })> => {
-	const authorizationList = data.authorizationList === undefined ? undefined : await normalizeEip7702AuthorizationList(data.authorizationList)
-	if (data.type === '7702' || authorizationList !== undefined) return {
+	if (requestsEip7702Envelope(data)) return {
 		...transactionBase,
 		type: '7702',
-		authorizationList: authorizationList ?? [],
+		authorizationList: await normalizeEip7702AuthorizationList(data.authorizationList ?? []),
 	}
 	return { ...transactionBase, type: '1559' }
 }

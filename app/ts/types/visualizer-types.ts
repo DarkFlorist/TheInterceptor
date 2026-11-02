@@ -336,7 +336,8 @@ export const TransactionWithAddressBookEntries = funtypes.Intersect(
 			maxFeePerBlobGas: EthereumQuantity,
 			blobVersionedHashes: funtypes.ReadonlyArray(EthereumBytes32),
 		}),
-		funtypes.ReadonlyObject({ type: funtypes.Union(funtypes.Literal('legacy'), funtypes.Literal('2930')) })
+		// gasPrice is optional so visualizations stored before it was carried to the popup still parse.
+		funtypes.ReadonlyObject({ type: funtypes.Union(funtypes.Literal('legacy'), funtypes.Literal('2930')) }).And(funtypes.ReadonlyPartial({ gasPrice: EthereumQuantity }))
 	)
 )
 

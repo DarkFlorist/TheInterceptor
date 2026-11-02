@@ -42,4 +42,68 @@ describe('website access migration', () => {
 		assert.equal(storageState.websiteAccess[0]?.website.icon, undefined)
 		assert.equal(storageState.websiteAccess[1]?.website.icon, 'data:image/png;base64,Y2FjaGVk')
 	})
+
+	test('retains legacy host-only access for explicit rebinding without guessing a scheme', async () => {
+		const storageState = installBrowserMock()
+		const { migrateWebsiteAccess } = await import('../../app/ts/background/websiteAccessMigration.js')
+		storageState.websiteAccess = [
+			{ website: { websiteOrigin: 'example.com', icon: undefined, title: 'Production' }, access: true },
+			{ website: { websiteOrigin: 'example.test:8080', icon: undefined, title: 'Local test' }, access: true },
+			{ website: { websiteOrigin: 'example.test:443', icon: undefined, title: 'HTTP on TLS default port' }, access: true },
+			{ website: { websiteOrigin: '', icon: undefined, title: 'Legacy file page' }, access: true },
+			{ website: { websiteOrigin: 'https://already.example/path', icon: undefined, title: 'Canonical' }, access: true },
+		]
+
+		await migrateWebsiteAccess()
+
+		assert.equal(Array.isArray(storageState.websiteAccess), true)
+		if (!Array.isArray(storageState.websiteAccess)) throw new Error('Expected websiteAccess to remain an array')
+		assert.equal(storageState.websiteAccess[0]?.website.websiteOrigin, 'example.com')
+		assert.equal(storageState.websiteAccess[1]?.website.websiteOrigin, 'example.test:8080')
+		assert.equal(storageState.websiteAccess[2]?.website.websiteOrigin, 'example.test:443')
+		assert.equal(storageState.websiteAccess[3]?.website.websiteOrigin, '')
+		assert.equal(storageState.websiteAccess[4]?.website.websiteOrigin, 'https://already.example')
+	})
+
+	test('merges records that canonicalize to one origin, keeping the more restrictive decision on each field', async () => {
+		const storageState = installBrowserMock()
+		const { migrateWebsiteAccess } = await import('../../app/ts/background/websiteAccessMigration.js')
+		// Storage holds addresses in their serialized form.
+		const firstAddress = '0x1111111111111111111111111111111111111111'
+		const secondAddress = '0x2222222222222222222222222222222222222222'
+		storageState.websiteAccess = [
+			{ website: { websiteOrigin: 'https://example.test/', icon: undefined, title: 'First' }, access: true, addressAccess: [{ address: firstAddress, access: true }, { address: secondAddress, access: true }] },
+			{ website: { websiteOrigin: 'other.test', icon: undefined, title: 'Other' }, access: true, addressAccess: undefined },
+			{ website: { websiteOrigin: 'https://example.test', icon: 'data:image/png;base64,Y2FjaGVk', title: 'Second' }, access: false, interceptorDisabled: true, addressAccess: [{ address: secondAddress, access: false }] },
+		]
+
+		await migrateWebsiteAccess()
+
+		assert.deepEqual(storageState.websiteAccess, [
+			{
+				website: { websiteOrigin: 'https://example.test', icon: 'data:image/png;base64,Y2FjaGVk', title: 'First' },
+				addressAccess: [{ address: firstAddress, access: true }, { address: secondAddress, access: false }],
+				access: false,
+				interceptorDisabled: true,
+			},
+			{ website: { websiteOrigin: 'other.test', icon: undefined, title: 'Other' }, access: true, addressAccess: undefined },
+		])
+	})
+
+	test('removes malformed origins without preventing startup migration', async () => {
+		const storageState = installBrowserMock()
+		const { migrateWebsiteAccess } = await import('../../app/ts/background/websiteAccessMigration.js')
+		storageState.websiteAccess = [
+			{ website: { websiteOrigin: 'https://', icon: undefined, title: 'Malformed scheme' }, access: true },
+			{ website: { websiteOrigin: 'https://attacker.invalid@example.test/path', icon: undefined, title: 'Credentialed canonical URL' }, access: true },
+			{ website: { websiteOrigin: 'example.com/path', icon: undefined, title: 'Malformed legacy host' }, access: true },
+			{ website: { websiteOrigin: 'example.test', icon: undefined, title: 'Valid legacy host' }, access: true },
+		]
+
+		await migrateWebsiteAccess()
+
+		assert.deepEqual(storageState.websiteAccess, [
+			{ website: { websiteOrigin: 'example.test', icon: undefined, title: 'Valid legacy host' }, access: true },
+		])
+	})
 })

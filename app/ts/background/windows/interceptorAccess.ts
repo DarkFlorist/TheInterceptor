@@ -6,7 +6,7 @@ import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { getAssociatedAddresses, persistWebsiteAccessChange, updateWebsiteApprovalAccesses, verifyAccess, withSuppressedUnscopedConnectionEventsForSocket, withSuppressedUnscopedConnectionEventsForSocketAsync } from '../accessManagement.js'
 import { handleInterceptedRequest, refuseAccess } from '../background.js'
 import { activateAddressSelection } from '../activeSettings.js'
-import { INTERNAL_CHANNEL_NAME, createInternalMessageListener, getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
+import { INTERNAL_CHANNEL_NAME, createInternalMessageListener, getActiveAddress, getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
 import { getActiveAddressEntryForChain, getActiveAddresses, getWalletActiveAddressEntryForChain } from '../metadataUtils.js'
 import { getSettings } from '../settings.js'
 import { getTabState, updatePendingAccessRequests, getPendingAccessRequests, clearPendingAccessRequests } from '../storageVariables.js'
@@ -20,7 +20,7 @@ import type { PublishRpcConnectionStatus } from '../rpcSlowRequestTracking.js'
 import { type PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab, removeWindowTabListeners, tryFocusingTabOrWindow } from '../../utils/popupOrTab.js'
 import { isAccountConnectionMethod } from '../accountRequestMethods.js'
 import type { ErrorWithCodeAndOptionalData } from '../../types/error.js'
-import { getConfirmedSignerStateToken, isSignerStateTokenCurrent, signerConnectionReplacedError, signerUnavailableError, tabHasApprovedWebsiteConnection, waitForConfirmedSignerStateToken } from '../signerStateOwnership.js'
+import { getActiveAddressForCurrentSignerState, getConfirmedSignerStateToken, isSignerStateTokenCurrent, signerConnectionReplacedError, signerUnavailableError, tabHasApprovedWebsiteConnection, waitForConfirmedSignerStateToken } from '../signerStateOwnership.js'
 import { assertActiveAddressSelectionAllowed, includePersistedAddressBookEntry } from '../../utils/activeAddressSelection.js'
 
 type OpenedDialogWithListeners = {
@@ -319,6 +319,12 @@ export async function requestAccessFromUser(
 	const onCloseWindowCallback = async (id: number) => closeWindowOrTabCallback({ type: 'popup' as const, id })
 	const onCloseTabCallback = async (id: number) => closeWindowOrTabCallback({ type: 'tab' as const, id })
 	const pendingReplay = await pendingInterceptorAccessSemaphore.execute(async () => {
+		if (request === undefined && activeAddressEntry !== undefined) {
+			// A connection refresh can wait behind an approval that selects another address. Do not reopen consent for the stale selection.
+			const currentSettings = await getSettings()
+			const currentActiveAddress = await getActiveAddressForCurrentSignerState(websiteTabConnections, currentSettings, socket.tabId, async () => await getActiveAddress(currentSettings, socket.tabId))
+			if (currentActiveAddress?.address !== activeAddressEntry?.address) return undefined
+		}
 		const verifyPendingRequests = async () => {
 			const previousRequests = await getPendingAccessRequests()
 			if (previousRequests.length !== 0) {

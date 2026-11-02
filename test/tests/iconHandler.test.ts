@@ -267,12 +267,12 @@ describe('retrieveWebsiteDetails favicon handling', () => {
 	test('fetches same-origin favicon urls once for stored websites that are missing an icon', async () => {
 		installSuccessfulFileReader('data:image/png;base64,b2s=')
 		storageState.websiteAccess = [{
-			website: { websiteOrigin: 'same-origin.test', icon: undefined, title: 'Same origin favicon' },
+			website: { websiteOrigin: 'https://same-origin.test', icon: undefined, title: 'Same origin favicon' },
 			access: true,
 		}]
 		tabsById.set(4, { id: 4, status: 'complete', title: 'Same origin favicon', url: 'https://same-origin.test/page', favIconUrl: '/favicon.png' })
 
-		const result = await retrieveWebsiteDetails(4, 'same-origin.test')
+		const result = await retrieveWebsiteDetails(4, 'https://same-origin.test')
 
 		assert.deepEqual(result, { title: 'Same origin favicon', icon: 'data:image/png;base64,b2s=' })
 		assert.deepEqual(fetchCalls, ['https://same-origin.test/favicon.png'])
@@ -293,12 +293,12 @@ describe('retrieveWebsiteDetails favicon handling', () => {
 
 	test('reuses cached favicon data urls without refetching them', async () => {
 		storageState.websiteAccess = [{
-			website: { websiteOrigin: 'cached.test', icon: 'data:image/png;base64,Y2FjaGVk', title: 'Cached favicon' },
+			website: { websiteOrigin: 'https://cached.test', icon: 'data:image/png;base64,Y2FjaGVk', title: 'Cached favicon' },
 			access: true,
 		}]
 		tabsById.set(8, { id: 8, status: 'complete', title: 'Cached favicon', url: 'https://cached.test/page', favIconUrl: '/favicon.png' })
 
-		const result = await retrieveWebsiteDetails(8, 'cached.test')
+		const result = await retrieveWebsiteDetails(8, 'https://cached.test')
 
 		assert.deepEqual(result, { title: 'Cached favicon', icon: 'data:image/png;base64,Y2FjaGVk' })
 		assert.equal(fetchCalls.length, 0)
@@ -306,14 +306,27 @@ describe('retrieveWebsiteDetails favicon handling', () => {
 		assert.equal(onUpdatedListeners.length, 0)
 	})
 
+	test('reuses the cached favicon of a not-yet-rebound legacy record for its canonical origin', async () => {
+		storageState.websiteAccess = [{
+			website: { websiteOrigin: 'legacy-cached.test', icon: 'data:image/png;base64,Y2FjaGVk', title: 'Legacy cached favicon' },
+			access: true,
+		}]
+		tabsById.set(14, { id: 14, status: 'complete', title: 'Legacy cached favicon', url: 'https://legacy-cached.test/page', favIconUrl: '/favicon.png' })
+
+		const result = await retrieveWebsiteDetails(14, 'https://legacy-cached.test')
+
+		assert.deepEqual(result, { title: 'Legacy cached favicon', icon: 'data:image/png;base64,Y2FjaGVk' })
+		assert.equal(fetchCalls.length, 0)
+	})
+
 	test('allows image data url favicons for stored websites without fetching them in the background', async () => {
 		storageState.websiteAccess = [{
-			website: { websiteOrigin: 'data-icon.test', icon: undefined, title: 'Data favicon' },
+			website: { websiteOrigin: 'https://data-icon.test', icon: undefined, title: 'Data favicon' },
 			access: true,
 		}]
 		tabsById.set(7, { id: 7, status: 'complete', title: 'Data favicon', url: 'https://data-icon.test/page', favIconUrl: 'data:image/png;base64,Zm9v' })
 
-		const result = await retrieveWebsiteDetails(7, 'data-icon.test')
+		const result = await retrieveWebsiteDetails(7, 'https://data-icon.test')
 
 		assert.deepEqual(result, { title: 'Data favicon', icon: 'data:image/png;base64,Zm9v' })
 		assert.equal(fetchCalls.length, 0)

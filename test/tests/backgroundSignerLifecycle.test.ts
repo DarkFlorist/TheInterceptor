@@ -864,6 +864,27 @@ describe('background eth_accounts', () => {
 		assert.deepEqual(siblingMessages.filter((message) => message.method === 'accountsChanged').map((message) => message.result), [[accountString]])
 	})
 
+	test('blocks third-party requests from a block-all file page on manifest v2', async () => {
+		const browserMock = installBrowserMock({ manifestVersion: 2 })
+		const { areWeBlocking, updateDeclarativeNetRequestBlocks, updateWebsiteAccess } = await loadModules()
+		const blockedFile = 'file:///tmp/blocked-dapp.html'
+		await updateWebsiteAccess(() => [
+			{ website: { websiteOrigin: blockedFile, icon: undefined, title: undefined }, addressAccess: undefined, declarativeNetRequestBlockMode: 'block-all' },
+			{ website: { websiteOrigin: 'https://blocked-host.example', icon: undefined, title: undefined }, addressAccess: undefined, declarativeNetRequestBlockMode: 'block-all' },
+		])
+		await updateDeclarativeNetRequestBlocks(new Map())
+		const listener = browserMock.requestBlockingCalls.webRequestListener
+		if (listener === undefined) throw new Error('The manifest v2 request blocking listener was not installed')
+		const requestFrom = (originUrl: string) => listener({ originUrl, url: 'https://third-party.example/script.js', type: 'script', tabId: 3 } as browser.webRequest._OnBeforeRequestDetails)
+
+		assert.deepEqual(requestFrom(`${ blockedFile }?query=1`), { cancel: true })
+		assert.deepEqual(requestFrom('file:///tmp/other-page.html'), {})
+		// A blocked origin's host stays blocked on its other scheme too, as manifest v3 initiator rules do.
+		assert.deepEqual(requestFrom('http://blocked-host.example/page'), { cancel: true })
+		assert.equal(await areWeBlocking(new Map(), 3, blockedFile), true)
+		assert.equal(await areWeBlocking(new Map(), 3, 'file:///tmp/other-page.html'), false)
+	})
+
 	for (const manifestVersion of [2, 3] as const) {
 		test(`replays only accountsChanged before wallet_requestPermissions resolves for manifest v${ manifestVersion }`, async () => {
 			const browserMock = installBrowserMock({ manifestVersion })

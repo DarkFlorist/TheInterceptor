@@ -4,11 +4,11 @@ import { ConnectedToSigner, SignerReply, WalletSwitchEthereumChainReply, WatchAs
 import type { TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import { EthereumAccountsReply, EthereumChainReply } from '../types/JsonRpc-types.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
-import { getSocketFromPort, isTopFramePort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
+import { getActiveAddress, getSocketFromPort, isTopFramePort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getRpcNetworkForChain, setDefaultSignerName, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
 import { getMetamaskCompatibilityMode, getSettings } from './settings.js'
 import { applyWalletSwitchReply } from './walletSwitch.js'
-import { verifyAccess, withSuppressedUnscopedConnectionEventsForSocketAsync } from './accessManagement.js'
+import { suspendWebsitePortApprovalsForTab, verifyAccess, withSuppressedUnscopedConnectionEventsForSocketAsync } from './accessManagement.js'
 import type { ProviderMessage } from '../utils/requests.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import { reportUnexpectedError } from '../utils/errors.js'
@@ -18,7 +18,7 @@ import { modifyObject } from '../utils/typescript.js'
 import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { isSignerMissing } from '../utils/signerMetadata.js'
-import { beginSignerStateConfirmation, clearSignerDerivedTabState, confirmSignerState, doesSignerStateTokenMatchIdentity, getConfirmedSignerStateToken, isCurrentWebsiteConnection, isSignerStateTokenCurrent, runSignerStateOperation, signerConnectionReplacedError, tabHasApprovedWebsiteConnection, type SignerStateToken } from './signerStateOwnership.js'
+import { beginSignerStateConfirmation, clearSignerDerivedTabState, confirmSignerState, doesSignerStateTokenMatchIdentity, getConfirmedSignerStateToken, isActiveAddressBoundToSigner, isCurrentWebsiteConnection, isSignerStateTokenCurrent, runSignerStateOperation, signerConnectionReplacedError, tabHasApprovedWebsiteConnection, type SignerStateToken } from './signerStateOwnership.js'
 import { getConfiguredSigningSafe, getSigningAddressSelectionTransition } from './signingAddressSelection.js'
 import { getWalletSelectedAccount } from '../utils/activeAddressSelection.js'
 import { getActiveAddressEntryForChain } from './metadataUtils.js'
@@ -100,16 +100,26 @@ export async function ethAccountsReply(simulationServicesOwner: SimulationServic
 		}
 		const signerAccounts = signerAccountsReply.accounts
 		const activeSigningAddress = signerAccounts.length > 0 ? signerAccounts[0] : undefined
+		const settings = await getSettings()
 		const tabStateChange = await updateTabState(tabId, (previousState: TabState) => modifyObject(previousState, {
 			...signerAccounts.length > 0 ? { signerAccountError: undefined } : {},
 			signerAccounts,
 			activeSigningAddress,
 		}))
+		const previousActiveSigningAddress = tabStateChange.previousState.activeSigningAddress
+		if (!signerAccountsReply.requestAccounts && isActiveAddressBoundToSigner(settings) && previousActiveSigningAddress !== activeSigningAddress) {
+			if (previousActiveSigningAddress === undefined) {
+				// The first report after signer state was cleared (page load, reload, or signer reconnect) is not an account switch, so it only suspends approvals bound to an account other than the tab's active address for the reported signer accounts. That address is the selected Safe in Safe signing mode, not the signer's own account.
+				const activeAddress = (await getActiveAddress(settings, tabId))?.address
+				suspendWebsitePortApprovalsForTab(websiteTabConnections, tabId, (approvedAddress) => approvedAddress !== undefined && approvedAddress !== activeAddress)
+			} else {
+				suspendWebsitePortApprovalsForTab(websiteTabConnections, tabId)
+			}
+		}
 		if (!isSignerStateTokenCurrent(websiteTabConnections, signerStateToken)) return returnValue
 		const { ethereum, tokenPriceService } = simulationServicesOwner.getCurrent()
 		await refreshPendingSafeSignerSelectionErrors(ethereum, tokenPriceService, tabId)
 		// Restore this wallet account's most recent EOA-or-Safe selection. This remains inside the signer-state operation so a reconnect cannot interleave with downstream address and chain mutations.
-		const settings = await getSettings()
 		const transition = await getSigningAddressSelectionTransition(settings, tabStateChange.previousState, tabStateChange.newState)
 		if (transition.shouldActivate) {
 			const changeActiveAddress = async () => {

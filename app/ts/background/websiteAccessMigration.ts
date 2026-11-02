@@ -1,6 +1,6 @@
 import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { browserStorageLocalSet } from '../utils/storageUtils.js'
-import { sanitizeWebsiteAccess } from '../utils/websiteIcons.js'
+import { toCanonicalWebsiteAccess } from '../utils/canonicalWebsiteAccess.js'
 
 export async function migrateWebsiteAccess() {
 	const storageEntries: Partial<Record<'websiteAccess', unknown>> = await browser.storage.local.get('websiteAccess')
@@ -8,7 +8,7 @@ export async function migrateWebsiteAccess() {
 	if (rawWebsiteAccess === undefined) return
 	const parsedWebsiteAccess = WebsiteAccessArray.safeParse(rawWebsiteAccess)
 	if (!parsedWebsiteAccess.success) return
-	const sanitizedWebsiteAccess = sanitizeWebsiteAccess(parsedWebsiteAccess.value)
+	const sanitizedWebsiteAccess = toCanonicalWebsiteAccess(parsedWebsiteAccess.value)
 	if (sanitizedWebsiteAccess === parsedWebsiteAccess.value) return
 	await browserStorageLocalSet({ websiteAccess: sanitizedWebsiteAccess })
 }
