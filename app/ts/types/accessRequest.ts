@@ -106,6 +106,8 @@ const SimulatedPendingTransactionBase = funtypes.ReadonlyObject({
 	safeExecutionReviewedSafeState: SafeContractStateSnapshot,
 	// The confirmation's decision, made once by prepareSafeTransactionConfirmation in simulation mode, that this is a Gnosis Safe's own transaction. Every refresh forms it from this (getPendingTransactionGasPayment), and forming it gives the transaction simulationOptions.executeThroughSafe, which tells the simulator to run it through the Safe: the pending decision and the transaction's option relate as a Safe proposal's pending safeTransaction and its stacked safeTransaction do.
 	executeThroughSafe: funtypes.Literal(true),
+	// The confirmation decided this is a Gnosis Safe proposal but could not create it, so the transaction stays a failure. Every refresh reads it as a proposal (getPendingTransactionFlowKind) and keeps the failure rather than forming the request as an ordinary transaction from the Safe.
+	safeProposalCreationFailed: funtypes.Literal(true),
 }))
 
 export type SimulatedPendingTransaction = funtypes.Static<typeof SimulatedPendingTransaction>

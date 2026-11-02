@@ -362,6 +362,48 @@ for (const { description, simulationMode, selectedActiveAddress, createParams, e
 	})
 }
 
+// The fake Safe reports a SafeTx hash that matches no proposal, so creating the proposal fails.
+const SAFE_PROPOSAL_CREATION_FAILURE = /locally computed Gnosis Safe transaction hash does not match/u
+
+test('forms a Gnosis Safe proposal whose creation fails with the same fee mode when its confirmation opens and on every refresh', async () => {
+	configureSafe()
+	const { opened, refreshed } = await withSilencedConsole(async () => await getOpenedAndRefreshedGasPayments(await createTransferParams({ from: addressString(SAFE_ADDRESS), gas: '0x5208' }), false, SAFE_ADDRESS))
+	assert.deepEqual({ opened, refreshed }, { opened: 'simulated-safe-executor', refreshed: 'simulated-safe-executor' })
+})
+
+test('keeps a Gnosis Safe proposal whose creation failed a failure through refresh instead of an ordinary transaction from the Safe', async () => {
+	configureSafe()
+	const simulator = createRecordingSimulator()
+	const transactionParams = await createTransferParams({ from: addressString(SAFE_ADDRESS), gas: '0x5208' })
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.updateSafeTransactionStacks(() => [])
+	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry()])
+	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({ simulationMode: false, rpcNetwork: fakeRpcNetwork })
+	assert.deepEqual(await withSilencedConsole(async () => await modules.openConfirmTransactionDialogForTransaction(
+		simulator.ethereum,
+		simulator.tokenPriceService,
+		{ interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier, method: transactionParams.method, params: transactionParams.params },
+		{ kind: 'transaction', parameters: transactionParams },
+		false,
+		SAFE_ADDRESS,
+		SAFE_CALL_WEBSITE,
+		createWebsiteTabConnections([]),
+	)), { type: 'doNotReply' })
+	const assertFailedProposal = async (stage: string) => {
+		const [pending] = await modules.getPendingTransactionsAndMessages()
+		if (pending?.type !== 'Transaction' || !('transactionToSimulate' in pending)) throw new Error(`Expected the pending transaction ${ stage }`)
+		assert.equal(pending.transactionOrMessageCreationStatus, 'FailedToSimulate', stage)
+		assert.equal(pending.safeProposalCreationFailed, true, stage)
+		assert.equal(pending.transactionToSimulate.success, false, stage)
+		assert.match(pending.transactionToSimulate.success ? '' : pending.transactionToSimulate.error.message, SAFE_PROPOSAL_CREATION_FAILURE, stage)
+	}
+	await assertFailedProposal('when the confirmation opens')
+	await withSilencedConsole(async () => await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService))
+	await assertFailedProposal('after a refresh')
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.updateUserAddressBookEntries(() => modules.defaultActiveAddresses)
+})
+
 test('leaves an input without Gnosis Safe executions as it is, without reading any Safe', async () => {
 	const input = [createBlock([createSafeCall({ value: 1n, input: new Uint8Array(), gas: 21_000n }, undefined)])]
 	fakeSafeContract.requestedRpcMethods.length = 0

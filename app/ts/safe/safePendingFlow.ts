@@ -57,6 +57,7 @@ export function getSafeTransactionFlowGasPayment(flowKind: SafeTransactionFlowKi
 // The flow kind prepareSafeTransactionConfirmation decided when the confirmation opened, read back from the pending transaction. A simulation-mode Safe execution (executeThroughSafe) is not a SafePendingFlow: those are the signing-mode flows, which sign, propose or execute with the user's signer, while a simulation-mode transaction only runs through the Safe in the simulation.
 export function getPendingTransactionFlowKind(pending: PendingTransaction): SafeTransactionFlowKind {
 	if (pending.executeThroughSafe === true) return 'simulationModeSafeExecution'
+	if (pending.safeProposalCreationFailed === true) return 'proposal'
 	return getSafeTransactionPendingFlow(pending)?.kind ?? 'ordinary'
 }
 
