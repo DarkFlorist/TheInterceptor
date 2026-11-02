@@ -38,7 +38,7 @@ const popupMessageHandlers = {
 	popup_watchAssetDialog: popupMessageHandler('popup_watchAssetDialog', async (context, request) => await watchAssetDialog(context.websiteTabConnections, request)),
 	popup_setSafeSimulationSigner: popupSnapshotWithAccessPromptsMessageHandler(
 		'popup_setSafeSimulationSigner',
-		async (context, request) => await setSafeSimulationSigner(context.services.ethereum, context.accessPromptSimulationServicesOwner, context.settings, context.websiteTabConnections, request),
+		async (context, request) => await setSafeSimulationSigner(context.services.ethereum, context.accessPromptSimulationServicesOwner, context.websiteTabConnections, request),
 	),
 	popup_requestNewHomeData: popupSnapshotMessageHandler('popup_requestNewHomeData', async (context, request) => {
 		const { ethereum } = context.services

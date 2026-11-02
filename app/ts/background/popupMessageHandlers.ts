@@ -366,7 +366,6 @@ export async function addOrModifyAddressBookEntry(ethereum: EthereumClientServic
 export async function setSafeSimulationSigner(
 	ethereum: EthereumClientService,
 	accessPromptSimulationServicesOwner: SimulationServicesOwner,
-	settings: Settings,
 	websiteTabConnections: WebsiteTabConnections,
 	request: SetSafeSimulationSigner,
 ) {
@@ -425,15 +424,14 @@ export async function setSafeSimulationSigner(
 		}
 	}
 	if (updatedEntry.useAsActiveAddress) {
-		// The Safe entry is an active address, so reconcile website approvals against the updated entry and prompt websites that now need an access decision, like the other address-book handlers. Reconciliation re-reads the approvals, which may have changed while Safe validation and the address-book write awaited.
-		await updateWebsiteApprovalAccesses(accessPromptSimulationServicesOwner, websiteTabConnections, settings, true)
+		// The Safe entry is an active address, so reconcile website approvals against the updated entry and prompt websites that now need an access decision, like the other address-book handlers. Settings are read after the write because the active address may have changed while Safe validation and the write awaited.
+		await updateWebsiteApprovalAccesses(accessPromptSimulationServicesOwner, websiteTabConnections, await getSettingsForCommittedAccessChange(websiteTabConnections, everyWebsite), true)
 	}
 	await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 	return { type: 'SetSafeSimulationSignerReply' as const, ok: true as const }
 }
 
-export async function changeInterceptorAccess(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, accessChange: ChangeInterceptorAccess, admittedSettings?: Settings) {
-	const settingsAtAdmission = admittedSettings ?? await getRequiredSettings()
+export async function changeInterceptorAccess(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, accessChange: ChangeInterceptorAccess) {
 	const disabledSitesChanged = await updateWebsiteAccessAndContentScriptInjectionStrategy((previousAccess) => {
 		const withEntriesRemoved = previousAccess.filter((acc) => accessChange.data.find((change) => change.newEntry.website.websiteOrigin === acc.website.websiteOrigin)?.removed !== true)
 		return withEntriesRemoved.map((entry) => {
@@ -445,8 +443,9 @@ export async function changeInterceptorAccess(simulationServicesOwner: Simulatio
 
 	if (disabledSitesChanged) await reloadConnectedTabs(websiteTabConnections)
 
-	// Reconcile the committed permission edit (reconciliation re-reads the approvals, including any later edit) while retaining the RPC network selected when the request was admitted.
-	await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, settingsAtAdmission, true)
+	// Settings are read after the write and the content-script reload, so active addresses changed meanwhile are the ones reconciled.
+	const isEditedWebsite = (websiteOrigin: string) => accessChange.data.some((change) => change.newEntry.website.websiteOrigin === websiteOrigin)
+	await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettingsForCommittedAccessChange(websiteTabConnections, isEditedWebsite), true)
 	await sendPopupMessageToOpenWindows({ method: 'popup_interceptor_access_changed' })
 }
 

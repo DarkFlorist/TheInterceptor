@@ -1413,7 +1413,6 @@ test('changes the Safe simulation signer only after validating current on-chain 
 	const reply = await modules.setSafeSimulationSigner(
 		ethereum,
 		createTestSimulationServicesOwner(simulator),
-		await getRequiredSettings(),
 		new Map(),
 		{
 			method: 'popup_setSafeSimulationSigner',
@@ -1436,7 +1435,6 @@ test('changes the Safe simulation signer only after validating current on-chain 
 	const unsupportedVersionFailure = await withSilencedConsole(async () => modules.setSafeSimulationSigner(
 		ethereum,
 		createTestSimulationServicesOwner(simulator),
-		await getRequiredSettings(),
 		new Map(),
 		{
 			method: 'popup_setSafeSimulationSigner',
@@ -1489,7 +1487,6 @@ test('reconciles website approvals changed while Safe validation is pending inst
 	const activeAddressEntry = await getActiveAddress(await getRequiredSettings(), revokedSocket.tabId)
 	const approval = (website: typeof revokedWebsite) => ({ website, access: true, addressAccess: activeAddressEntry === undefined ? undefined : [{ address: activeAddressEntry.address, access: true }] })
 	await updateWebsiteAccess(() => [approval(revokedWebsite)])
-	const admittedSettings = await getRequiredSettings()
 	const revokedMessages: unknown[] = []
 	const revokedConnection = { port: createWebsitePort(revokedSocket, 0, revokedMessages), socket: revokedSocket, websiteOrigin: revokedWebsite.websiteOrigin, approved: true, wantsToConnect: false }
 	const grantedConnection = { port: createWebsitePort(grantedSocket, 0, []), socket: grantedSocket, websiteOrigin: grantedWebsite.websiteOrigin, approved: false, wantsToConnect: false }
@@ -1510,7 +1507,7 @@ test('reconciles website approvals changed while Safe validation is pending inst
 		},
 	})
 	try {
-		const reply = modules.setSafeSimulationSigner(ethereum, createTestSimulationServicesOwner(simulator), admittedSettings, websiteTabConnections, {
+		const reply = modules.setSafeSimulationSigner(ethereum, createTestSimulationServicesOwner(simulator), websiteTabConnections, {
 			method: 'popup_setSafeSimulationSigner',
 			data: { chainId: fakeRpcNetwork.chainId, safeAddress: activeAddress, safeSimulationSignerAddress: alternateSigner },
 		})
@@ -1529,6 +1526,58 @@ test('reconciles website approvals changed while Safe validation is pending inst
 	await updateWebsiteAccess(() => [])
 })
 
+test('reconciles website approvals for the active address changed while Safe validation is pending instead of the admitted one', async () => {
+	const { changeSimulationMode, updateWebsiteAccess } = await import('../../app/ts/background/settings.js')
+	const { getActiveAddress } = await import('../../app/ts/background/backgroundUtils.js')
+	const alternateSigner = 0x1234567890123456789012345678901234567890n
+	fakeSafeContract.owners = [recipientAddress, alternateSigner]
+	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({
+		useAsActiveAddress: true,
+		safeSimulationSignerAddress: recipientAddress,
+		safeSignerAddresses: [recipientAddress, alternateSigner],
+	})])
+	const socket = { tabId: 63, connectionName: 0n }
+	const website = { websiteOrigin: 'https://approved-for-admitted-address.example', icon: undefined, title: undefined }
+	const previousSettings = await getRequiredSettings()
+	await changeSimulationMode({ simulationMode: true, rpcNetwork: fakeRpcNetwork, activeSimulationAddress: activeAddress })
+	const admittedSettings = await getRequiredSettings()
+	const admittedActiveAddress = await getActiveAddress(admittedSettings, socket.tabId)
+	if (admittedActiveAddress === undefined) throw new Error('missing admitted active address')
+	// Only the address that was active at admission has access.
+	await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: admittedActiveAddress.address, access: true }] }])
+	const connection = { port: createWebsitePort(socket, 0, []), socket, websiteOrigin: website.websiteOrigin, approved: false, wantsToConnect: false }
+	const websiteTabConnections = new Map([[socket.tabId, { connections: { [modules.websiteSocketToString(socket)]: connection } }]])
+	const validationStarted = createDeferredValue<void>()
+	const releaseValidation = createDeferredValue<void>()
+	const readBlockNumber = ethereum.getBlockNumber
+	Object.defineProperty(ethereum, 'getBlockNumber', {
+		configurable: true,
+		writable: true,
+		value: async (requestAbortController: AbortController | undefined) => {
+			validationStarted.resolve(undefined)
+			await releaseValidation.promise
+			return await readBlockNumber(requestAbortController)
+		},
+	})
+	try {
+		const reply = modules.setSafeSimulationSigner(ethereum, createTestSimulationServicesOwner(simulator), websiteTabConnections, {
+			method: 'popup_setSafeSimulationSigner',
+			data: { chainId: fakeRpcNetwork.chainId, safeAddress: activeAddress, safeSimulationSignerAddress: alternateSigner },
+		})
+		await validationStarted.promise
+		// The active address changes after admission, while the on-chain validation is in flight.
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: alternateSigner })
+		releaseValidation.resolve(undefined)
+		assert.deepEqual(await reply, { type: 'SetSafeSimulationSignerReply', ok: true })
+	} finally {
+		Object.defineProperty(ethereum, 'getBlockNumber', { configurable: true, writable: true, value: readBlockNumber })
+		await changeSimulationMode({ simulationMode: previousSettings.simulationMode, rpcNetwork: previousSettings.activeRpcNetwork, activeSimulationAddress: previousSettings.activeSimulationAddress })
+	}
+
+	assert.equal(connection.approved, false)
+	await updateWebsiteAccess(() => [])
+})
+
 test('refreshes Safe owner metadata and clears a stale simulation signer without choosing a replacement', async () => {
 	const staleSigner = 0x1234567890123456789012345678901234567890n
 	fakeSafeContract.owners = [recipientAddress]
@@ -1542,7 +1591,6 @@ test('refreshes Safe owner metadata and clears a stale simulation signer without
 	const reply = await modules.setSafeSimulationSigner(
 		ethereum,
 		createTestSimulationServicesOwner(simulator),
-		await getRequiredSettings(),
 		new Map(),
 		{
 			method: 'popup_setSafeSimulationSigner',
@@ -1580,7 +1628,6 @@ test('prompts a connected website for access after changing the active Safe simu
 	const reply = await modules.setSafeSimulationSigner(
 		ethereum,
 		createTestSimulationServicesOwner(simulator),
-		await getRequiredSettings(),
 		websiteTabConnections,
 		{
 			method: 'popup_setSafeSimulationSigner',

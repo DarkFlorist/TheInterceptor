@@ -106,7 +106,7 @@ const [
 	{ dispatchPopupMessage },
 	{ websiteSocketToString },
 	{ getLatestUnexpectedError, setFetchSimulationStackRequestPromise, updatePendingAccessRequests },
-	{ exportSettingsAndAddressBook, getRequiredSettings, updateWebsiteAccess },
+	{ changeSimulationMode, exportSettingsAndAddressBook, getRequiredSettings, updateWebsiteAccess },
 	{ updateWebsiteApprovalAccesses },
 	{ ExportedSettings },
 	{ serialize },
@@ -270,6 +270,35 @@ describe('popup message dispatcher seams', () => {
 			{ method: 'accountsChanged', result: [] },
 			{ method: 'disconnect', result: [] },
 		])
+	})
+
+	test('reconciles an access-editor change for the active address committed after admission', async () => {
+		const admittedActiveAddress = settings.activeSimulationAddress
+		if (admittedActiveAddress === undefined) throw new Error('missing admitted active address')
+		const liveActiveAddress = 0x1234567890123456789012345678901234567890n
+		// Only the address that was active at admission has access.
+		const admittedAddressAccess = { ...disabledWebsiteAccess, access: true, interceptorDisabled: false, addressAccess: [{ address: admittedActiveAddress, access: true }] }
+		await updateWebsiteAccess(() => [admittedAddressAccess])
+		const socket = { tabId: 1, connectionName: 0n }
+		const connection = {
+			port: createPort(socket.tabId).port,
+			socket,
+			websiteOrigin: admittedAddressAccess.website.websiteOrigin,
+			approved: false,
+			wantsToConnect: false,
+		}
+		const context = createDispatcherContext(async () => undefined)
+		context.settings = { ...settings, websiteAccess: [admittedAddressAccess] }
+		context.websiteTabConnections.set(socket.tabId, { connections: { '1-0x0': connection } })
+		// A mode switch commits a different active address after the request was admitted.
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: liveActiveAddress })
+
+		await dispatchPopupMessage(context, {
+			method: 'popup_changeInterceptorAccess',
+			data: [{ oldEntry: admittedAddressAccess, newEntry: { ...admittedAddressAccess, website: { ...admittedAddressAccess.website, title: 'Renamed website' } }, removed: false }],
+		})
+
+		assert.equal(connection.approved, false)
 	})
 
 	test('routes recovery handlers through the registry when settings are unavailable', async () => {
