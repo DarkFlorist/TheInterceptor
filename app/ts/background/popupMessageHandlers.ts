@@ -3,7 +3,7 @@ import { activateAddressSelection, changeActiveAddressAndChain } from './activeS
 import { captureSimulationSnapshot, getUpdatedSimulationStackSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
 import { captureRpcNetwork, getRequiredSettings, getSettingsForCapturedRpcNetwork, getSettingsSnapshot, requireSettings, setUseTabsInsteadOfPopup, setPage, getMakeCurrentAddressRich, setMetamaskCompatibilityMode, setSafeAppsCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, updateMakeCurrentAddressRich, updateFixedMakeMeRichList, withoutWebsiteApprovals } from './settings.js'
 import { getPendingTransactionsAndMessages, getTabState, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests, updateTransactionState, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, getSafeTransactionStacks } from './storageVariables.js'
-import { getRpcList } from './rpcConfigurationStorage.js'
+import { getRpcList, selectPrimaryRpc } from './rpcConfigurationStorage.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
 import { type ChangeActiveAddress, type ModifyMakeMeRich, type ChangePage, type RemoveTransaction, type RequestAccountsFromSigner, type TransactionConfirmation, type InterceptorAccess, type ChangeInterceptorAccess, type ChainChangeConfirmation, type WatchAssetConfirmation, type EnableSimulationMode, type ChangeActiveChain, type AddOrEditAddressBookEntry, type GetAddressBookData, type RemoveAddressBookEntry, type InterceptorAccessRefresh, type InterceptorAccessChangeAddress, type Settings, type ChangeSettings, type UpdateHomePage, type SimulateGovernanceContractExecution, type ChangeAddOrModifyAddressWindowState, type OpenWebPage, type SetEnsNameForHash, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions, type ForceSetGasLimitForTransaction, type ChangePreSimulationBlockTimeManipulation, type SetTransactionOrMessageBlockTimeManipulator, type FetchSimulationStackRequestConfirmation, type ImportSimulationStack, type PopupReadyAndListeningPage } from '../types/interceptor-messages.js'
 import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransactionOrMessage, updateConfirmTransactionView, setGasLimitForTransaction, toPopupPendingTransactionOrSignableMessage } from './windows/confirmTransaction.js'
@@ -701,10 +701,6 @@ export async function enableSimulationMode(
 	const settings = admitted?.settings ?? await getRequiredSettings()
 	if (settings.simulationMode === params.data) return
 	const getAvailableRpcEntries = async () => admitted?.rpcConfiguration.rpcEntries ?? await getRpcList()
-	const getRpcForChain = async (chainId: bigint) => {
-		const rpcEntries = await getAvailableRpcEntries()
-		return rpcEntries.find((rpc) => rpc.chainId === chainId && rpc.primary) ?? rpcEntries.find((rpc) => rpc.chainId === chainId)
-	}
 	// if we are on unsupported chain, force change to a supported one
 	if (settings.useSignersAddressAsActiveAddress || params.data === false) {
 		const tabId = await getLastKnownCurrentTabId()
@@ -713,7 +709,7 @@ export async function enableSimulationMode(
 		const chainToSwitch = tabId === undefined ? undefined : (await getTabState(tabId)).signerChain
 		const networkToSwitch = chainToSwitch === undefined
 			? params.data ? (await getAvailableRpcEntries())[0] : undefined
-			: await getRpcForChain(chainToSwitch)
+			: selectPrimaryRpc(await getAvailableRpcEntries(), chainToSwitch)
 		const signerAccount = await getSignerAccount()
 		if (!params.data) {
 			// Without a signer chain the active RPC network is kept, so the signing selection is resolved on that chain instead of the first configured RPC entry.

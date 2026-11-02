@@ -85,7 +85,7 @@ async function resolveRpcConfigurationStateWithoutLock(storedConfiguration: RpcC
 		return { status: 'unavailable', reason: 'empty', activeRpcNetwork }
 	}
 	if (activeRpcNetwork === undefined) {
-		const selectedRpc = rpcEntries.find((entry) => entry.primary) ?? rpcEntries[0]
+		const selectedRpc = selectPrimaryRpc(rpcEntries)
 		if (selectedRpc === undefined) return unavailableRpcConfiguration('incomplete')
 		activeRpcNetwork = selectedRpc
 		try {
@@ -149,10 +149,13 @@ export const promoteRpcAsPrimary = async (rpcNetwork: RpcNetwork) => {
 	})
 }
 
-export const getPrimaryRpcForChain = async (chainId: bigint) => {
-	const rpcs = await getRpcList()
-	return rpcs.find((rpc) => rpc.chainId === chainId && rpc.primary) ?? rpcs.find((rpc) => rpc.chainId === chainId)
+// The single RPC selection policy: the primary entry, otherwise the first one, optionally among the entries of one chain.
+export function selectPrimaryRpc(rpcEntries: RpcEntries, chainId?: bigint) {
+	const candidates = chainId === undefined ? rpcEntries : rpcEntries.filter((rpc) => rpc.chainId === chainId)
+	return candidates.find((rpc) => rpc.primary) ?? candidates[0]
 }
+
+export const getPrimaryRpcForChain = async (chainId: bigint) => selectPrimaryRpc(await getRpcList(), chainId)
 
 export const getRpcNetworkForChain = async (chainId: bigint): Promise<RpcNetwork> => {
 	const rpc = await getPrimaryRpcForChain(chainId)

@@ -1,6 +1,6 @@
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import type { RpcConfigurationState } from './rpcConfigurationStorage.js'
-import { getRpcConfigurationState, setRpcConfiguration, setRpcList } from './rpcConfigurationStorage.js'
+import { getRpcConfigurationState, selectPrimaryRpc, setRpcConfiguration, setRpcList } from './rpcConfigurationStorage.js'
 import type { RpcEntries, RpcEntry, RpcNetwork } from '../types/rpc.js'
 import { createRpcConfigurationUnavailableError } from '../utils/rpcConfigurationError.js'
 import { resolveRpcServicesTarget } from './rpcConfigurationAvailability.js'
@@ -16,7 +16,7 @@ export type RpcListTransitionResult = {
 
 function selectRestoredActiveNetwork(previousConfiguration: RpcConfigurationState, rpcEntries: readonly RpcEntry[]) {
 	if ('activeRpcNetwork' in previousConfiguration && previousConfiguration.activeRpcNetwork !== undefined) return previousConfiguration.activeRpcNetwork
-	return rpcEntries.find((rpc) => rpc.primary) ?? rpcEntries[0]
+	return selectPrimaryRpc(rpcEntries)
 }
 
 // This single RPC-list transition boundary owns persistence and service recovery; callers only validate input and publish its result.

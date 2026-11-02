@@ -51,7 +51,7 @@ Object.defineProperty(globalThis, 'chrome', { configurable: true, writable: true
 
 const { browserStorageLocalGet, browserStorageLocalGet2Result, browserStorageLocalSet } = await import('../../app/ts/utils/storageUtils.js')
 const { getRpcConnectionStatus } = await import('../../app/ts/background/storageVariables.js')
-const { getRpcConfigurationState, getRpcConfigurationStateWithStorageSnapshot, getRpcList, promoteRpcAsPrimary, setRpcConfiguration } = await import('../../app/ts/background/rpcConfigurationStorage.js')
+const { getRpcConfigurationState, getRpcConfigurationStateWithStorageSnapshot, getRpcList, promoteRpcAsPrimary, selectPrimaryRpc, setRpcConfiguration } = await import('../../app/ts/background/rpcConfigurationStorage.js')
 const { createSimulationServicesOwner } = await import('../../app/ts/simulation/serviceLifecycle.js')
 const { captureRpcNetwork, getRequiredSettings, getSettingsForCapturedRpcNetwork, getSettingsSnapshot } = await import('../../app/ts/background/settings.js')
 const { restoreDefaultRpcConfiguration, retryRpcConfiguration, setNewRpcList, settingsOpened } = await import('../../app/ts/background/popupMessageHandlers/settings.js')
@@ -135,6 +135,15 @@ describe('RPC storage recovery', () => {
 		resumeRpcConfigurationRead = undefined
 		await browserStorageLocalSet({ rpcEntries: [customPrimaryRpc, customFallbackRpc], activeRpcNetwork: customPrimaryRpc })
 		writes.length = 0
+	})
+
+	test('selects the primary RPC entry, else the first one, optionally among one chain', () => {
+		const otherChainRpc: RpcEntry = { ...customFallbackRpc, name: 'Other chain', chainId: 5n }
+		assert.equal(selectPrimaryRpc([customFallbackRpc, customPrimaryRpc]), customPrimaryRpc)
+		assert.equal(selectPrimaryRpc([otherChainRpc, customFallbackRpc]), otherChainRpc)
+		assert.equal(selectPrimaryRpc([otherChainRpc, customFallbackRpc, customPrimaryRpc], 1n), customPrimaryRpc)
+		assert.equal(selectPrimaryRpc([customPrimaryRpc, otherChainRpc], 5n), otherChainRpc)
+		assert.equal(selectPrimaryRpc([customPrimaryRpc], 5n), undefined)
 	})
 
 	test('does not overwrite custom RPCs when extension storage temporarily rejects a read', async () => {
