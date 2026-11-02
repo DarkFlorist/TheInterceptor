@@ -10,6 +10,7 @@ import { changeActiveAddress, enableSimulationMode, modifyMakeMeRich, popupChang
 import { queuePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
 import { getRpcServicesAtAdmission, rpcConfigurationIsReady } from './rpcConfigurationAvailability.js'
 import { reportUnexpectedError } from '../utils/errors.js'
+import { isRpcConfigurationUnavailableError, RPC_CONFIGURATION_UNAVAILABLE_MESSAGE } from '../utils/rpcConfigurationError.js'
 
 const settingsCoordinator = createPopupSettingsCoordinator(async (data) => await sendPopupMessageToOpenWindows({ method: 'popup_settingsChangeStatus', data }))
 
@@ -21,7 +22,13 @@ function settingsCommand<Method extends PopupSettingsRequest['method'] & PopupRe
 			const refreshedContext = { ...context, settings: snapshot.settings, rpcConfiguration: snapshot.rpcConfiguration }
 			const refreshedAdmission = admitPopupRequest(refreshedContext, request)
 			if (refreshedAdmission.kind === 'rejected') return refreshedAdmission.reply
-			return await action({ ...refreshedContext, settings: requireSettings(snapshot) }, request)
+			try {
+				return await action({ ...refreshedContext, settings: requireSettings(snapshot) }, request)
+			} catch (error: unknown) {
+				// Services can be cleared or paused after admission (for example by a failed provider reset); every settings command still owes the popup its typed reply.
+				if (!isRpcConfigurationUnavailableError(error)) throw error
+				return { type: descriptor.replyType, ok: false, message: RPC_CONFIGURATION_UNAVAILABLE_MESSAGE }
+			}
 		})
 		return admission.accepted ? admission.result : {
 			type: descriptor.replyType,

@@ -267,6 +267,40 @@ describe('popup settings changes', () => {
 		}
 	})
 
+	for (const pausedAt of ['before admission', 'after admission'] as const) test(`returns a typed unavailable reply when switching simulation mode with services paused ${ pausedAt }`, async () => {
+		installBrowserMock()
+		const { changeSimulationMode, getRequiredSettings } = await loadModules()
+		const { dispatchPopupMessage } = await import('../../app/ts/background/popupMessageDispatcher.js')
+		await changeSimulationMode({ simulationMode: true })
+		const settings = await getRequiredSettings()
+		if (settings.activeRpcNetwork.httpsRpc === undefined) throw new Error('Expected a configured RPC')
+		const services = createEthereumWithGetBlockCounter({ count: 0 })
+		if (pausedAt === 'before admission') services.simulationServicesOwner.clear()
+		const originalQuery = browser.tabs.query
+		// Disabling simulation looks up the current tab after admission, so clearing the owner there reproduces a provider pause racing the command.
+		if (pausedAt === 'after admission') Object.defineProperty(browser.tabs, 'query', { configurable: true, value: async () => { services.simulationServicesOwner.clear(); return [] } })
+		try {
+			const result = await dispatchPopupMessage({
+				...services,
+				settings,
+				rpcConfiguration: { status: 'ready', rpcEntries: [settings.activeRpcNetwork], activeRpcNetwork: settings.activeRpcNetwork },
+				websiteTabConnections: new Map(),
+				publishRpcConnectionStatus: async () => undefined,
+				simulationAbortController: new AbortController(),
+				confirmTransactionAbortController: new AbortController(),
+				resetSimulationState: async () => undefined,
+			}, { method: 'popup_enableSimulationMode', data: false })
+			assert.deepEqual(result, {
+				type: 'PopupSettingsChangeReply',
+				ok: false,
+				message: 'Interceptor RPC configuration is unavailable. Network requests are paused until the user restores it.',
+			})
+			assert.equal((await getRequiredSettings()).simulationMode, true)
+		} finally {
+			Object.defineProperty(browser.tabs, 'query', { configurable: true, value: originalQuery })
+		}
+	})
+
 	test('changes to the signer address without RPC services on a signer-only network', async () => {
 		installBrowserMock()
 		const { changeSimulationMode, getRequiredSettings, saveCurrentTabId, updateTabState } = await loadModules()
