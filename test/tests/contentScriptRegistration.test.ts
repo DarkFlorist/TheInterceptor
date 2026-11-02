@@ -318,12 +318,22 @@ describe('content script injection strategy', () => {
 		assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.excludeMatches, ['https://first.example:443/*'])
 	})
 
-	for (const origins of [['https://*.invalid.example'], ['not-an-origin']]) test(`invalid stored hosting configuration preserves base injection: ${ origins[0] }`, async () => {
+	for (const origins of [['https://*.invalid.example'], ['not-an-origin']]) test(`invalid stored hosting origins are ignored without a registration failure: ${ origins[0] }`, async () => {
 		const { getRegisteredContentScripts } = installBrowserMock({ safeAppsCompatibilityMode: true, safeAppsHostOrigins: origins, registeredContentScriptIds: ['safe-apps-host', 'inpage'] })
-		const { updateRegistration } = await loadModules()
-		await withSilencedConsole(async () => { await updateRegistration() })
+		const { updateRegistration, getLatestUnexpectedError } = await loadModules()
+		assert.equal(await updateRegistration(), 'configuration-applied')
 		assert.deepEqual(getRegisteredContentScripts().map(({ id }) => id).sort(), ['inpage', 'inpage2'])
 		assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.excludeMatches, [])
+		assert.equal(await getLatestUnexpectedError(), undefined)
+	})
+
+	test('a stored hosting selection that is not a list preserves base injection and reports a registration failure', async () => {
+		const { getRegisteredContentScripts } = installBrowserMock({ safeAppsCompatibilityMode: true, safeAppsHostOrigins: 'not-a-list', registeredContentScriptIds: ['safe-apps-host', 'inpage'] })
+		const { updateRegistration, getLatestUnexpectedError } = await loadModules()
+		await withSilencedConsole(async () => { assert.equal(await updateRegistration(), 'hosting-failed') })
+		assert.deepEqual(getRegisteredContentScripts().map(({ id }) => id).sort(), ['inpage', 'inpage2'])
+		assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.excludeMatches, [])
+		assert.equal((await getLatestUnexpectedError())?.data.code, 'safe_apps_host_registration_failed')
 	})
 
 	test('a rejected host registration restores base injection and a later queued update can succeed', async () => {

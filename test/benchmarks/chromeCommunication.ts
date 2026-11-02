@@ -123,17 +123,26 @@ async function main() {
 				const scripts = await browser.scripting.getRegisteredContentScripts()
 				return scripts.find(({ id }) => id === 'safe-apps-host')?.matches.includes('https://[::1]:8443/*') === true
 			})()`), 30_000, 'IPv6 Safe Apps host registration')
-			// Simulate malformed persisted data that bypassed the Settings validator.
-			await workerConnection.evaluate(`browser.storage.local.set({ safeAppsHostOrigins: ['https://*.invalid.example'] })`)
-			await waitForCondition(async () => await workerConnection.evaluate<boolean>(`(async () => {
+			const baseProviderRestored = `(async () => {
 				const scripts = await browser.scripting.getRegisteredContentScripts()
-				const state = await browser.storage.local.get('latestUnexpectedError')
 				return scripts.some(({ id }) => id === 'inpage2')
 					&& scripts.some(({ id }) => id === 'inpage')
 					&& (scripts.find(({ id }) => id === 'inpage')?.excludeMatches?.length ?? 0) === 0
 					&& !scripts.some(({ id }) => id === 'safe-apps-host')
-					&& state.latestUnexpectedError?.data?.code === 'safe_apps_host_registration_failed'
-			})()`), 30_000, 'base provider availability and visible hosting error')
+			})()`
+			const readRegistrationErrorCode = `browser.storage.local.get('latestUnexpectedError').then((state) => state.latestUnexpectedError?.data?.code)`
+			await workerConnection.evaluate(`browser.storage.local.remove('latestUnexpectedError')`)
+			// Simulate persisted entries that bypassed the Settings validator: recovery ignores invalid origins, so the host is dropped without a registration failure.
+			await workerConnection.evaluate(`browser.storage.local.set({ safeAppsHostOrigins: ['https://*.invalid.example'] })`)
+			await waitForCondition(async () => await workerConnection.evaluate<boolean>(baseProviderRestored), 30_000, 'base provider availability after ignoring invalid hosting origins')
+			// A registration failure would be reported after the host rollback, so allow it time to surface before asserting there was none.
+			await sleep(500)
+			const ignoredOriginErrorCode = await workerConnection.evaluate<string | undefined>(readRegistrationErrorCode)
+			if (ignoredOriginErrorCode !== undefined) throw new Error(`Ignoring invalid Safe Apps host origins reported an unexpected error: ${ ignoredOriginErrorCode }`)
+			// A stored value that is not a list cannot be recovered, so the base provider must be restored and the registration failure recorded.
+			await workerConnection.evaluate(`browser.storage.local.set({ safeAppsHostOrigins: 'not-a-list' })`)
+			await waitForCondition(async () => await workerConnection.evaluate<boolean>(baseProviderRestored)
+				&& await workerConnection.evaluate<string | undefined>(readRegistrationErrorCode) === 'safe_apps_host_registration_failed', 30_000, 'base provider availability and visible hosting error')
 			await workerConnection.evaluate('browser.storage.local.set({ safeAppsHostOrigins: [] })')
 			await workerConnection.evaluate(`browser.storage.local.remove('latestUnexpectedError')`)
 		} finally {
