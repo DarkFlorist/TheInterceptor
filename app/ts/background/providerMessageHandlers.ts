@@ -6,7 +6,7 @@ import { EthereumAccountsReply, EthereumChainReply } from '../types/JsonRpc-type
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { getSocketFromPort, isTopFramePort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getRpcNetworkForChain, setDefaultSignerName, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
-import { getMetamaskCompatibilityMode, getSettings, getSimulationModeGeneration } from './settings.js'
+import { getMetamaskCompatibilityMode, getSettings, refuseSignerForwardGuard } from './settings.js'
 import { applyWalletSwitchReply } from './walletSwitch.js'
 import { verifyAccess, withSuppressedUnscopedConnectionEventsForSocketAsync } from './accessManagement.js'
 import type { ProviderMessage } from '../utils/requests.js'
@@ -327,7 +327,7 @@ export async function signerReply(simulationServicesOwner: SimulationServicesOwn
 								action: 'signerIncluded',
 								signerReply: params.reply,
 							}
-						}, getSimulationModeGeneration())
+						}, refuseSignerForwardGuard)
 					} catch(e) {
 						await reportUnexpectedError(e)
 					}

@@ -55,21 +55,27 @@ type StartupStorageDefaults = {
 	signingAddressPreferences: SigningAddressPreferences
 }
 
-async function getParsedStorageValueOrDefaultFromItems<Key extends keyof StartupStorageDefaults>(storedItems: Readonly<Record<string, unknown>>, key: Key, defaultValue: StartupStorageDefaults[Key]): Promise<StartupStorageDefaults[Key]> {
+function parseStorageValueOrDefaultFromItems<Key extends keyof StartupStorageDefaults>(storedItems: Readonly<Record<string, unknown>>, key: Key, defaultValue: StartupStorageDefaults[Key]): { readonly value: StartupStorageDefaults[Key], readonly corrupt: boolean } {
 	const rawValue = storedItems[key]
 	const storedItem = hasOwnKey(storedItems, key) ? { [key]: rawValue } : {}
 	const parsedValue: Readonly<Partial<StartupStorageDefaults>> | undefined = browserStorageLocalSafeParse(storedItem)
-	if (parsedValue !== undefined && key in parsedValue) return parsedValue[key] as StartupStorageDefaults[Key]
-	if (rawValue === undefined) return defaultValue
+	if (parsedValue !== undefined && key in parsedValue) return { value: parsedValue[key] as StartupStorageDefaults[Key], corrupt: false }
+	if (rawValue === undefined) return { value: defaultValue, corrupt: false }
 	console.warn(`${ key } was corrupt:`)
 	console.warn(rawValue)
-	// A corrupt simulationMode reads as the default (simulation on) but is never written back, so no settings read, in the background or in a UI page, can enable simulation mode behind the signer-forward guard or overwrite a later switch to signing mode; the next changeSimulationMode() replaces the corrupt value.
-	if (key === 'simulationMode') return defaultValue
-	await browserStorageLocalSet({ [key]: defaultValue } as unknown as Parameters<typeof browserStorageLocalSet>[0])
-	return defaultValue
+	return { value: defaultValue, corrupt: true }
 }
 
-async function getParsedStorageValueOrDefault<Key extends keyof StartupStorageDefaults>(key: Key, defaultValue: StartupStorageDefaults[Key]): Promise<StartupStorageDefaults[Key]> {
+// Writes the default back over a corrupt value. simulationMode is excluded by type: it is only ever written by writeSimulationModeChanges, which the signer-forward guard tracks.
+type RepairableStorageKey = Exclude<keyof StartupStorageDefaults, 'simulationMode'>
+
+async function getParsedStorageValueOrDefaultFromItems<Key extends RepairableStorageKey>(storedItems: Readonly<Record<string, unknown>>, key: Key, defaultValue: StartupStorageDefaults[Key]): Promise<StartupStorageDefaults[Key]> {
+	const parsed = parseStorageValueOrDefaultFromItems(storedItems, key, defaultValue)
+	if (parsed.corrupt) await browserStorageLocalSet({ [key]: defaultValue } as unknown as Parameters<typeof browserStorageLocalSet>[0])
+	return parsed.value
+}
+
+async function getParsedStorageValueOrDefault<Key extends RepairableStorageKey>(key: Key, defaultValue: StartupStorageDefaults[Key]): Promise<StartupStorageDefaults[Key]> {
 	return await getParsedStorageValueOrDefaultFromItems(await browser.storage.local.get(key), key, defaultValue)
 }
 
@@ -90,16 +96,16 @@ export async function getSettings() : Promise<Settings> {
 	const openedPagePromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'openedPageV2', defaultPage))
 	const useSignersAddressAsActiveAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'useSignersAddressAsActiveAddress', false))
 	const websiteAccessPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'websiteAccess', []).then(sanitizeWebsiteAccess))
-	const simulationModePromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'simulationMode', defaultSimulationMode))
+	// Read without repair: a corrupt simulationMode reads as the default (simulation on) and is left in storage until the next changeSimulationMode(), so no settings read, in the background or in a UI page, writes simulation mode behind the signer-forward guard or overwrites a later switch to signing mode.
+	const simulationMode = parseStorageValueOrDefaultFromItems(storedItems, 'simulationMode', defaultSimulationMode).value
 	const activeRpcNetworkPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'activeRpcNetwork', defaultRpcs[0]))
-	const [activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode] = await Promise.all([
+	const [activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork] = await Promise.all([
 		activeSimulationAddressPromise,
 		activeSigningSafeAddressPromise,
 		openedPagePromise,
 		useSignersAddressAsActiveAddressPromise,
 		websiteAccessPromise,
 		activeRpcNetworkPromise,
-		simulationModePromise,
 	])
 	return { activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode }
 }
@@ -210,16 +216,25 @@ let simulationModeGeneration = 0
 // Enabling writes that have started but not settled; storage may already hold simulationMode: true while one is pending.
 const pendingSimulationModeEnablingWrites = new Set<Promise<void>>()
 
-// Capture before reading the settings a routing decision uses, then check it with isSimulationModeGenerationCurrent right before forwarding.
-export const getSimulationModeGeneration = () => simulationModeGeneration
+// Every forward to the signer is checked with a guard captured where the forwarding decision starts: before the settings it is based on are read, and before the decision's first await.
+export type SimulationModeGuard = {
+	// False if simulation mode may have been enabled since the guard was captured: an enabling write is still in flight or one has completed since. Call it with nothing awaited between the check and posting the forward.
+	readonly allowsSignerForward: () => boolean
+}
 
-// False if simulation mode may have been enabled after the captured generation: an enabling write is still in flight or one has completed since.
-export const isSimulationModeGenerationCurrent = (capturedGeneration: number) => pendingSimulationModeEnablingWrites.size === 0 && simulationModeGeneration === capturedGeneration
+export function captureSimulationModeGuard(): SimulationModeGuard {
+	const capturedGeneration = simulationModeGeneration
+	return { allowsSignerForward: () => pendingSimulationModeEnablingWrites.size === 0 && simulationModeGeneration === capturedGeneration }
+}
+
+// For resolving actions that never forward to the signer; if such a path ever did forward, this guard refuses it.
+export const refuseSignerForwardGuard: SimulationModeGuard = { allowsSignerForward: () => false }
 
 export async function waitForSimulationModeEnablingWrites() {
 	await Promise.allSettled(pendingSimulationModeEnablingWrites)
 }
 
+// The only writer of simulationMode, so the guard above sees every switch into simulation mode.
 async function writeSimulationModeChanges(changes: SimulationModeChanges, otherItems: { readonly signingAddressPreferences?: SigningAddressPreferences } = {}) {
 	const write = browserStorageLocalSet({ ...getSimulationModeStorageUpdate(changes), ...otherItems })
 	if (!changes.simulationMode) return await write

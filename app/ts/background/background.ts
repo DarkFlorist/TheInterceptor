@@ -3,7 +3,7 @@ import type { RpcRequestContext } from '../types/confirmationRequest.js'
 import type { InpageScriptRequest, RPCReply, Settings } from '../types/interceptor-messages.js'
 import 'webextension-polyfill'
 import { getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
-import { getSettings, getSimulationModeGeneration, isSimulationModeGenerationCurrent, updateWebsiteAccess, waitForSimulationModeEnablingWrites } from './settings.js'
+import { captureSimulationModeGuard, getSettings, updateWebsiteAccess, waitForSimulationModeEnablingWrites } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getBlockByHash, getCode, getFilterChanges, getFilterLogs, getLogs, getPermissions, getStorageAt, getTransactionByHash, getTransactionCount, getTransactionReceipt, handleInterceptorError, installNewFilter, maxPriorityFeePerGas, netVersion, personalSign, requestInterceptorSimulatorStack, requestPermissions, sendTransaction, subscribe, switchEthereumChain, ethSimulateV1, feeHistory, uninstallNewFilter, unsubscribe, web3ClientVersion } from './simulationModeHandlers.js'
 import { PASSTHROUGH_STATE, type ResolvedExecutionSimulationState, type ResolvedSimulationInput, toResolvedExecutionSimulationState, toResolvedSimulationInput } from '../types/visualizer-types.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
@@ -505,7 +505,7 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 async function handleContentScriptMessage(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, website: Website, activeAddress: AddressBookEntry, publishRpcConnectionStatus: PublishRpcConnectionStatus, handleRequestAgain: () => Promise<unknown>) {
 	try {
 		const requestWithDefinedParams = getRequestWithDefinedParams(request)
-		const simulationModeGenerationAtRouting = getSimulationModeGeneration()
+		const simulationModeGuard = captureSimulationModeGuard()
 		const settings = await getSettings()
 		const currentChainEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId)
 		const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)
@@ -532,7 +532,7 @@ async function handleContentScriptMessage(simulationServicesOwner: SimulationSer
 		)
 		replayProviderStateForAccountRequest(websiteTabConnections, request, resolved, activeAddress.address)
 		// Simulation mode may have been enabled after the routing settings were read, so let that write settle and route the request again under the current mode instead of forwarding it to the signer.
-		if (resolved.type === 'forwardToSigner' && !isSimulationModeGenerationCurrent(simulationModeGenerationAtRouting)) {
+		if (resolved.type === 'forwardToSigner' && !simulationModeGuard.allowsSignerForward()) {
 			await waitForSimulationModeEnablingWrites()
 			return await handleRequestAgain()
 		}

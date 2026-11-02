@@ -129,16 +129,16 @@ describe('simulation mode forward guard', () => {
 	test('routes a request in simulation mode when the stored simulation mode is corrupt, without writing it', async () => {
 		const { modules, readStoredValue, sendAddEthereumChain } = await setUpSigningModeWebsite()
 		await browser.storage.local.set({ simulationMode: 'corrupt' })
-		const generationBeforeRouting = modules.getSimulationModeGeneration()
+		const guardBeforeRouting = modules.captureSimulationModeGuard()
 		const replies = await withSilencedConsole(async () => await sendAddEthereumChain(5))
 		assertAnsweredInSimulationMode(replies)
 		assert.equal(readStoredValue('simulationMode'), 'corrupt')
-		assert.equal(modules.getSimulationModeGeneration(), generationBeforeRouting)
+		assert.equal(guardBeforeRouting.allowsSignerForward(), true)
 	})
 
 	test('a settings read of a corrupt simulation mode cannot overwrite a later switch to signing mode', async () => {
 		const { modules, setStorageHooks, readStoredValue, sendAddEthereumChain } = await setUpSigningModeWebsite()
-		// A separate module instance has its own simulation-mode generation, like a popup's JS context.
+		// A separate module instance has its own simulation-mode guard state, like a popup's JS context.
 		const popupSettings = await import('../../app/ts/background/settings.js?popup-context')
 		await browser.storage.local.set({ simulationMode: 'corrupt' })
 		const simulationModeWrites: unknown[] = []
@@ -156,16 +156,20 @@ describe('simulation mode forward guard', () => {
 		assert.deepEqual((await sendAddEthereumChain(6)).map((reply) => reply.type), ['forwardToSigner'])
 	})
 
-	test('counts every write that enables simulation mode, including settings import', async () => {
+	test('a guard refuses the signer forward after any write that enables simulation mode, including settings import', async () => {
 		installBrowserMock()
-		const { changeSimulationMode, exportSettingsAndAddressBook, getSimulationModeGeneration, importSettingsAndAddressBook } = await loadModules()
-		const initialGeneration = getSimulationModeGeneration()
+		const { captureSimulationModeGuard, changeSimulationMode, exportSettingsAndAddressBook, importSettingsAndAddressBook, refuseSignerForwardGuard } = await loadModules()
+		const guardBeforeSigningModeWrite = captureSimulationModeGuard()
 		await changeSimulationMode({ simulationMode: false })
-		assert.equal(getSimulationModeGeneration(), initialGeneration)
+		assert.equal(guardBeforeSigningModeWrite.allowsSignerForward(), true)
 		await changeSimulationMode({ simulationMode: true })
-		assert.equal(getSimulationModeGeneration(), initialGeneration + 1)
+		assert.equal(guardBeforeSigningModeWrite.allowsSignerForward(), false)
+		await changeSimulationMode({ simulationMode: false })
+		const guardBeforeImport = captureSimulationModeGuard()
 		const exported = await exportSettingsAndAddressBook()
 		await importSettingsAndAddressBook({ ...exported, settings: { ...exported.settings, simulationMode: true } })
-		assert.equal(getSimulationModeGeneration(), initialGeneration + 2)
+		assert.equal(guardBeforeImport.allowsSignerForward(), false)
+		assert.equal(captureSimulationModeGuard().allowsSignerForward(), true)
+		assert.equal(refuseSignerForwardGuard.allowsSignerForward(), false)
 	})
 })

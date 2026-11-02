@@ -16,7 +16,7 @@ import type { SafeEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { SafeOwnerSignature, SafeStackTransaction, SafeTransactionStack } from '../../app/ts/types/safeTypes.js'
 
 type ResolvePendingTransactionOrMessageParameters = Parameters<typeof resolvePendingTransactionOrMessageType>
-type ResolvePendingTransactionOrMessageWithoutGeneration = [
+type ResolvePendingTransactionOrMessageWithoutGuard = [
 	ethereum: ResolvePendingTransactionOrMessageParameters[0],
 	tokenPriceService: ResolvePendingTransactionOrMessageParameters[1],
 	websiteTabConnections: ResolvePendingTransactionOrMessageParameters[2],
@@ -232,8 +232,8 @@ export async function loadModules() {
 		requestSafeStackExport: popupMessageHandlers.requestSafeStackExport,
 		setSafeSimulationSigner: popupMessageHandlers.setSafeSimulationSigner,
 		fetchSimulationStackRequestConfirmation: popupMessageHandlers.fetchSimulationStackRequestConfirmation,
-		// These tests start each approval at this call, so the generation is captured here; tests of a mode switch during an approval go through confirmDialog.
-		resolvePendingTransactionOrMessage: async (...[ethereum, tokenPriceService, websiteTabConnections, confirmation, refreshedSafeSignerSelection]: ResolvePendingTransactionOrMessageWithoutGeneration) => await confirmTransaction.resolvePendingTransactionOrMessage(ethereum, tokenPriceService, websiteTabConnections, confirmation, settings.getSimulationModeGeneration(), refreshedSafeSignerSelection),
+		// These tests start each approval at this call, so the guard is captured here; tests of a mode switch during an approval go through confirmDialog.
+		resolvePendingTransactionOrMessage: async (...[ethereum, tokenPriceService, websiteTabConnections, confirmation, refreshedSafeSignerSelection]: ResolvePendingTransactionOrMessageWithoutGuard) => await confirmTransaction.resolvePendingTransactionOrMessage(ethereum, tokenPriceService, websiteTabConnections, confirmation, settings.captureSimulationModeGuard(), refreshedSafeSignerSelection),
 		updateConfirmTransactionView: confirmTransaction.updateConfirmTransactionView,
 		formEthSendTransaction: confirmTransaction.formEthSendTransaction,
 		getSafeExecutionSignerRoute: safeExecutionRouting.getSafeExecutionSignerRoute,

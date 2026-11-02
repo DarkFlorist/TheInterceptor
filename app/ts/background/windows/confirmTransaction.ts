@@ -27,7 +27,7 @@ import type { PendingTransactionOrSignableMessage, PopupPendingTransactionOrSign
 import type { SignMessageParams } from '../../types/jsonRpc-signing-types.js'
 import type { SafeSignerErrorDetails } from '../../types/safeTypes.js'
 import { craftPersonalSignPopupMessage } from './personalSign.js'
-import { getSettings, getSimulationModeGeneration, isSimulationModeGenerationCurrent } from '../settings.js'
+import { getSettings, refuseSignerForwardGuard, type SimulationModeGuard } from '../settings.js'
 import * as funtypes from 'funtypes'
 import { assertNever, modifyObject } from '../../utils/typescript.js'
 import { simulateGnosisSafeTransactionOnPass } from '../popupMessageHandlers.js'
@@ -270,8 +270,8 @@ export const setGasLimitForTransaction = async (transactionIdentifier: bigint, g
 	})
 }
 
-// simulationModeGenerationAtApproval is required, with no default: each caller captures getSimulationModeGeneration() before its own first await for the approval, so switching simulation mode on at any point during the approval refuses the signer forward, even if it is switched off again before the mode is read. Only an 'accept' forwards to the signer; callers resolving other actions (noResponse, signerIncluded) pass the current generation.
-export async function resolvePendingTransactionOrMessage(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, simulationModeGenerationAtApproval: number, refreshedSafeSignerSelection?: RefreshedSafeSignerSelection) {
+// simulationModeGuard is required: an approval caller captures it with captureSimulationModeGuard() before its own first await, so switching simulation mode on at any point during the approval refuses the signer forward, even if it is switched off again before the mode is read. Only an 'accept' forwards to the signer; callers resolving other actions (noResponse, signerIncluded) pass refuseSignerForwardGuard.
+export async function resolvePendingTransactionOrMessage(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, simulationModeGuard: SimulationModeGuard, refreshedSafeSignerSelection?: RefreshedSafeSignerSelection) {
 	let pendingTransactionOrMessage = await getPendingTransactionOrMessageByidentifier(confirmation.data.uniqueRequestIdentifier)
 	if (pendingTransactionOrMessage === undefined) return // no need to resolve as it doesn't exist anymore
 	if (
@@ -391,7 +391,7 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 			await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus }))
 			await updateConfirmTransactionView(ethereum, tokenPriceService)
 		}
-		if ((await getSettings()).simulationMode || !isSimulationModeGenerationCurrent(simulationModeGenerationAtApproval)) {
+		if ((await getSettings()).simulationMode || !simulationModeGuard.allowsSignerForward()) {
 			await setApprovalStatusAndUpdateView(SIMULATION_MODE_ENABLED_AFTER_REQUEST)
 			return false
 		}
@@ -400,7 +400,7 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 		let simulationModeEnabledBeforeDelivery = false
 		const requestWasForwarded = await attemptDeliveryAfterManifestV2Reconnect(websiteTabConnections, forward, () => {
 			// Nothing is awaited between this check and posting the forward, so simulation mode was either enabled before the check or only after the request was posted. It also runs before the retry after a Manifest V2 content script reconnect.
-			if (!isSimulationModeGenerationCurrent(simulationModeGenerationAtApproval)) {
+			if (!simulationModeGuard.allowsSignerForward()) {
 				simulationModeEnabledBeforeDelivery = true
 				// Only a false result makes the reconnect helper retry, so returning undefined ends the delivery without posting.
 				return undefined
@@ -471,7 +471,7 @@ export async function resolvePendingRequestsForMissingConfirmationWindows(ethere
 const resolveAllPendingTransactionsAndMessageAsNoResponse = async (transactions: readonly PendingTransactionOrSignableMessage[], ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections) => {
 	for (const transaction of transactions) {
 		try {
-			await resolvePendingTransactionOrMessage(ethereum, tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: transaction.uniqueRequestIdentifier, action: 'noResponse' } }, getSimulationModeGeneration())
+			await resolvePendingTransactionOrMessage(ethereum, tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: transaction.uniqueRequestIdentifier, action: 'noResponse' } }, refuseSignerForwardGuard)
 		} catch(e) {
 			await reportLocalRecovery(e, { code: 'pending_request_no_response_resolution_failed', message: 'Failed to resolve a pending request as no-response after a popup closed.' })
 			schedulePendingNoResponseRetry(transaction, ethereum, tokenPriceService, websiteTabConnections)
@@ -486,7 +486,7 @@ function schedulePendingNoResponseRetry(transaction: PendingTransactionOrSignabl
 		pendingNoResponseRetryTimers.delete(identifier)
 		void (async () => {
 			try {
-				await resolvePendingTransactionOrMessage(ethereum, tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: transaction.uniqueRequestIdentifier, action: 'noResponse' } }, getSimulationModeGeneration())
+				await resolvePendingTransactionOrMessage(ethereum, tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: transaction.uniqueRequestIdentifier, action: 'noResponse' } }, refuseSignerForwardGuard)
 			} catch (error) {
 				await reportLocalRecovery(error, { code: 'pending_request_no_response_retry_failed', message: 'Retrying a pending popup-close rejection after a transient failure.' })
 				schedulePendingNoResponseRetry(transaction, ethereum, tokenPriceService, websiteTabConnections)
