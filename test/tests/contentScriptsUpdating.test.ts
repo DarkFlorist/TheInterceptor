@@ -168,13 +168,13 @@ function getManifestV2WebAccessibleResources() {
 }
 
 describe('content script injection strategy', () => {
-	test('Firefox exclusion globs include root hosts as well as subdomains and preserve explicit ports', async () => {
+	test('Firefox exclusion globs preserve exact hosts and normalize default ports', async () => {
 		installBrowserMock()
 		const { getFirefoxContentScriptExclusionGlobs } = await loadModules()
 		assert.deepEqual(getFirefoxContentScriptExclusionGlobs(['example.com', 'localhost:3000', 'https://secure.test']), [
-			'*://example.com/*', '*://*.example.com/*',
+			'http://example.com/*', 'https://example.com/*',
 			'http://localhost:3000/*', 'https://localhost:3000/*',
-			'https://secure.test/*', 'https://*.secure.test/*',
+			'https://secure.test/*',
 		])
 	})
 
@@ -193,16 +193,66 @@ describe('content script injection strategy', () => {
 			'https://invalid.example/path',
 		]), [
 			'file:///*',
-			'*://*.example.com/*',
+			'http://example.com:80/*',
+			'https://example.com:443/*',
 			'http://localhost:3000/*',
 			'https://localhost:3000/*',
 			'http://127.0.0.1:8545/*',
 			'https://127.0.0.1:8545/*',
 			'http://[::1]:8545/*',
 			'https://[::1]:8545/*',
-			'https://*.secure.example/*',
+			'https://secure.example:443/*',
 			'https://localhost:4443/*',
 		])
+	})
+
+	test('excludes a disabled site on its exact host and port, not on its subdomains or other ports', async () => {
+		installBrowserMock()
+		const { getContentScriptExclusionMatchPatterns } = await loadModules()
+
+		// Each pattern names its port, because a pattern without one would match every port of the host, and its host has no *. prefix, which would match every subdomain.
+		assert.deepEqual(getContentScriptExclusionMatchPatterns(['example.com']), ['http://example.com:80/*', 'https://example.com:443/*'])
+		assert.deepEqual(getContentScriptExclusionMatchPatterns(['app.example.com:8080']), ['http://app.example.com:8080/*', 'https://app.example.com:8080/*'])
+		// A URL never shows its scheme's default port, so these stored origins can only come from the other scheme's URL.
+		assert.deepEqual(getContentScriptExclusionMatchPatterns(['example.com:80']), ['https://example.com:80/*'])
+		assert.deepEqual(getContentScriptExclusionMatchPatterns(['example.com:443']), ['http://example.com:443/*'])
+		assert.deepEqual(getContentScriptExclusionMatchPatterns(['http://plain.example', 'https://secure.example:8443']), ['http://plain.example:80/*', 'https://secure.example:8443/*'])
+	})
+
+	test('excludes exactly the URLs that getHostWithPort gives the disabled origin', async () => {
+		installBrowserMock()
+		const { getContentScriptExclusionMatchPatterns, getFirefoxContentScriptExclusionGlobs } = await loadModules()
+		const { getHostWithPort } = await import('../../app/ts/utils/requests.js')
+		// Chromium matches a pattern with a port against the URL's scheme, exact host and effective port.
+		const isMatchedBy = (pattern: string, url: string) => {
+			const { protocol, hostname, port } = new URL(url)
+			const effectivePort = port === '' ? (protocol === 'https:' ? '443' : '80') : port
+			return pattern === `${ protocol }//${ hostname }:${ effectivePort }/*`
+		}
+		const urls = ['http://example.com/', 'https://example.com/path', 'https://example.com:80/', 'http://example.com:443/', 'http://example.com:8080/', 'https://app.example.com/', 'http://[::1]:8545/']
+		for (const disabledUrl of urls) {
+			const excludeMatches = getContentScriptExclusionMatchPatterns([getHostWithPort(disabledUrl)])
+			const firefoxGlobs = getFirefoxContentScriptExclusionGlobs([getHostWithPort(disabledUrl)])
+			for (const url of urls) {
+				assert.equal(excludeMatches.some((pattern) => isMatchedBy(pattern, url)), getHostWithPort(url) === getHostWithPort(disabledUrl), `${ url } with ${ disabledUrl } disabled`)
+				assert.equal(firefoxGlobs.some((glob) => new URL(url).href.startsWith(glob.slice(0, -1))), getHostWithPort(url) === getHostWithPort(disabledUrl), `Firefox: ${ url } with ${ disabledUrl } disabled`)
+			}
+		}
+		// getHostWithPort never produces these, so no page has them as its origin.
+		assert.deepEqual(getContentScriptExclusionMatchPatterns(['Example.com', 'example.com:']), [])
+	})
+
+	test('skips stored hosts with a * instead of turning them into wildcard or invalid patterns', async () => {
+		installBrowserMock()
+		const { getContentScriptExclusionMatchPatterns } = await loadModules()
+
+		assert.deepEqual(getContentScriptExclusionMatchPatterns([
+			'*.example.com',
+			'https://*.secure.example',
+			'foo*bar.example',
+			'%2A.encoded.example',
+			'example.com',
+		]), ['http://example.com:80/*', 'https://example.com:443/*'])
 	})
 
 	test('registers Firefox scripts before navigation and replaces exclusions without an injection gap', async () => {
@@ -216,7 +266,7 @@ describe('content script injection strategy', () => {
 		])
 		await updateWebsiteAccess(() => [{ website: { websiteOrigin: 'example.com' }, interceptorDisabled: true }, { website: { websiteOrigin: 'localhost:3000' }, interceptorDisabled: true }])
 		await updateContentScriptInjectionStrategyManifestV2()
-		assert.deepEqual(firefoxRegistrations[1]?.excludeGlobs, ['*://example.com/*', '*://*.example.com/*', 'http://localhost:3000/*', 'https://localhost:3000/*'])
+		assert.deepEqual(firefoxRegistrations[1]?.excludeGlobs, ['http://example.com/*', 'https://example.com/*', 'http://localhost:3000/*', 'https://localhost:3000/*'])
 		assert.deepEqual(getScriptingOperations().slice(-2), ['register-firefox', 'unregister-firefox'])
 		assert.deepEqual(getExecutedScriptFiles(), [], 'Firefox must never fall back to late executeScript injection')
 		assert.deepEqual(getManifestV2WebAccessibleResources(), [

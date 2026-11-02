@@ -12,6 +12,7 @@ import { CompleteVisualizedSimulation, type BlockTimeManipulation, type PreSimul
 import { MessageToPopup, PopupMessage, UpdateHomePage, type Settings } from '../../app/ts/types/interceptor-messages.js'
 import { serialize, type EthereumUnsignedTransaction } from '../../app/ts/types/wire-types.js'
 import { installDomMock } from './domMock.js'
+import { waitForRenderedCondition } from './preactRenderWait.js'
 import { getSimulationStackTargetHash } from '../../app/ts/utils/simulationStackTargets.js'
 import type { AddressBookEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { EnrichedRichListElement } from '../../app/ts/types/interceptor-reply-messages.js'
@@ -1238,16 +1239,15 @@ describe('simulation visualizer open replies', () => {
 			await act(() => {
 				listener({ role: 'all', ...serialize(UpdateHomePage, { ...initial, data: { ...initial.data, activeAddresses: [...initial.data.activeAddresses, nextEntry] } }) }, {}, () => undefined)
 			})
-			await act(async () => { await clickElement(getButtonByText(dom.document.body, 'Change')) })
-			const findNextCard = () => collectElements(dom.document.body, 'div').find((element) => element.getAttribute?.('class') === 'card hoverable' && element.textContent?.includes('Next wallet'))
-			let nextCard = findNextCard()
-			const pickerDeadline = Date.now() + 2_000
-			// The lazy module and its scheduled render must both finish before the picker can be clicked.
-			while (nextCard === undefined && Date.now() < pickerDeadline) {
-				await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)) })
-				nextCard = findNextCard()
-			}
-			assert.ok(nextCard, 'Expected the next wallet in the address picker')
+			await act(async () => {
+				await clickElement(getButtonByText(dom.document.body, 'Change'))
+				await new Promise((resolve) => setTimeout(resolve, 0))
+			})
+			// The picker is a lazy popup page; a second import of its module can resolve before the page's own loader, so wait for the rendered card.
+			const findNextWalletCard = () => collectElements(dom.document.body, 'div').find((element) => element.getAttribute?.('class') === 'card hoverable' && element.textContent?.includes('Next wallet'))
+			await waitForRenderedCondition(() => findNextWalletCard() !== undefined, 'the next wallet in the address picker')
+			const nextCard = findNextWalletCard()
+			if (nextCard === undefined) throw new Error('Expected the next wallet in the address picker')
 			await act(async () => { await clickElement(nextCard) })
 			assert.ok(changeRequested)
 			const addressRow = () => collectElements(dom.document.body, 'div').find((element) => hasClass(element, 'active-address-row'))

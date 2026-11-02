@@ -2,10 +2,18 @@ import { getSettings } from '../background/settings.js'
 import type { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { reportUnexpectedError } from './errors.js'
 import { Semaphore } from './semaphore.js'
+import { getHostWithPort } from './requests.js'
 
 const injectableSitesWildcard = ['file://*/*', 'http://*/*', 'https://*/*']
 export const getInterceptorDisabledSites = (websiteAccess: WebsiteAccessArray) => websiteAccess.filter((entry) => entry.interceptorDisabled === true).map((entry) => entry.website.websiteOrigin)
 
+// A match pattern without a port matches every port of its host, while one with a port compares it with the URL's effective port, so naming the default port too keeps the pattern to that one origin. Chrome rejects a port after the * scheme, so each pattern names its scheme.
+function getExactOriginMatchPattern(url: URL) {
+	const defaultPort = url.protocol === 'https:' ? '443' : '80'
+	return `${ url.protocol }//${ url.hostname }:${ url.port === '' ? defaultPort : url.port }/*`
+}
+
+// Website access, including a disabled Interceptor, is stored per getHostWithPort origin and compared as an exact string, as the MV2 injection also does. A disabled site is excluded on exactly the URLs with that origin: excluding its subdomains or other ports too would leave pages that the popup and the access policy treat as enabled without the Interceptor provider (#1701).
 function getContentScriptExclusionMatchPatternsForOrigin(origin: string) {
 	if (origin === '') return ['file:///*']
 	try {
@@ -14,13 +22,15 @@ function getContentScriptExclusionMatchPatternsForOrigin(origin: string) {
 		if (url.protocol === 'file:') return url.hostname === '' ? ['file:///*'] : []
 		if (url.protocol !== 'http:' && url.protocol !== 'https:') return []
 		if (url.username !== '' || url.password !== '' || url.pathname !== '/' || url.search !== '' || url.hash !== '') return []
-		const hostname = url.hostname
-		if (hostname === '') return []
-		const isIpAddressOrLocalhost = hostname === 'localhost' || hostname.startsWith('[') || /^\d+(?:\.\d+){3}$/.test(hostname)
-		const hostPattern = isIpAddressOrLocalhost ? url.host : `*.${ url.host }`
-		if (hasExplicitScheme) return [`${ url.protocol.slice(0, -1) }://${ hostPattern }/*`]
-		if (url.port === '') return [`*://${ hostPattern }/*`]
-		return [`http://${ hostPattern }/*`, `https://${ hostPattern }/*`]
+		if (url.hostname === '') return []
+		// URL parsing keeps a * in a hostname, also one decoded from %2A, but a match pattern reads a leading *. as every subdomain and rejects a * anywhere else, which fails the whole registration, so no pattern can name such a host exactly.
+		if (url.hostname.includes('*')) return []
+		if (hasExplicitScheme) return [getExactOriginMatchPattern(url)]
+		// Keep each scheme whose URLs getHostWithPort maps back to this origin. It leaves out a scheme's default port, so for example a stored port 80 only comes from an https URL.
+		return ['http:', 'https:']
+			.map((scheme) => new URL(`${ scheme }//${ origin }/`))
+			.filter((schemeUrl) => getHostWithPort(schemeUrl.href) === origin)
+			.map(getExactOriginMatchPattern)
 	} catch {
 		return []
 	}
@@ -34,9 +44,12 @@ export function getContentScriptExclusionMatchPatterns(origins: readonly string[
 	return [...patterns]
 }
 
-// Firefox globs require separate root-host and subdomain patterns; their port semantics differ from match patterns.
+// Firefox globs match the serialized URL, which omits default ports. Keep the same exact hosts and origins as the Chrome match patterns, but normalize default ports before constructing globs.
 export function getFirefoxContentScriptExclusionGlobs(origins: readonly string[]) {
-	return getContentScriptExclusionMatchPatterns(origins).flatMap((pattern) => pattern.includes('://*.') ? [pattern.replace('://*.', '://'), pattern] : [pattern])
+	return getContentScriptExclusionMatchPatterns(origins).map((pattern) => {
+		const url = new URL(pattern)
+		return `${ url.protocol }//${ url.host }/*`
+	})
 }
 
 export const updateContentScriptInjectionStrategyManifestV3 = async () => {
