@@ -490,10 +490,10 @@ describe('SimulationModeEthereumClientService', () => {
 			assert.equal('authority' in authorization, false)
 		})
 
-		test('mockSignTransaction should have r=0, s=0 and yParity = "even"', async () => {
+		test('mockSignTransaction should have r=from, s=0 and yParity = "even"', async () => {
 			const signed = mockSignTransaction(exampleTransaction)
 			assert.equal(signed.type, '1559')
-			assert.equal(signed.r, 0n)
+			assert.equal(signed.r, exampleTransaction.from)
 			assert.equal(signed.s, 0n)
 			if (!('yParity' in signed)) throw new Error('yParity missing')
 			if (signed.type === '1559') assert.equal(signed.yParity, 'even')

@@ -1,11 +1,12 @@
-import type { InterceptorStackOperation } from '../types/visualizer-types.js'
+import { getStackTransactionHashes, withUniqueSimulationHash } from '../simulation/services/simulationTransactionSigning.js'
+import type { InterceptorStackOperation, InterceptorTransactionStack } from '../types/visualizer-types.js'
 import { modifyObject } from '../utils/typescript.js'
 
 export type ImportedSimulationStackAdmission =
 	| { readonly admitted: true, readonly operations: readonly InterceptorStackOperation[] }
 	| { readonly admitted: false, readonly rejection: string }
 
-// Running a transaction through a Gnosis Safe assumes the Safe's owners approved it, which only a confirmation decides (isSimulationModeSafeExecution), so every imported transaction's executeThroughSafe is dropped: a file can never make Interceptor assume an owner approval. A simulation-mode Gnosis Safe stack therefore re-imports as ordinary transactions from the Safe, keeping their recorded hashes like any re-imported transaction (shared-hash cases are tracked in #1713).
+// Running a transaction through a Gnosis Safe assumes the Safe's owners approved it, which only a confirmation decides (isSimulationModeSafeExecution), so every imported transaction's executeThroughSafe is dropped: a file can never make Interceptor assume an owner approval. A simulation-mode Gnosis Safe stack therefore re-imports as ordinary transactions from the Safe, keeping their recorded hashes like any re-imported transaction unless a stacked transaction already has one (withUniqueSimulationHash in importSimulationStack).
 const withoutImportedGnosisSafeExecutions = (operations: readonly InterceptorStackOperation[]): readonly InterceptorStackOperation[] => operations.map((operation) => {
 	if (operation.type !== 'Transaction') return operation
 	const transaction = operation.preSimulationTransaction
@@ -22,4 +23,15 @@ export function admitImportedSimulationStackOperations(operations: readonly Inte
 		return { admitted: false, rejection: 'Gnosis Safe transactions cannot be imported through simulation stack import. Use Import Gnosis Safe so Gnosis Safe proposals and signatures remain synchronized.' }
 	}
 	return { admitted: true, operations: withoutImportedGnosisSafeExecutions(operations) }
+}
+
+// Gives every imported transaction a hash that neither a stacked transaction nor a transaction imported before it has (withUniqueSimulationHash), so re-importing an export while its transactions are still stacked never duplicates a hash.
+export function withUniqueImportedSimulationHashes(stack: InterceptorTransactionStack, operations: readonly InterceptorStackOperation[]): readonly InterceptorStackOperation[] {
+	const takenHashes = new Set(getStackTransactionHashes(stack))
+	return operations.map((operation) => {
+		if (operation.type !== 'Transaction') return operation
+		const preSimulationTransaction = withUniqueSimulationHash(operation.preSimulationTransaction, takenHashes)
+		takenHashes.add(preSimulationTransaction.signedTransaction.hash)
+		return modifyObject(operation, { preSimulationTransaction })
+	})
 }

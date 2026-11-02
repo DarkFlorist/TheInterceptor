@@ -51,7 +51,7 @@ import { serializeSimulateExecutionReply } from '../types/simulateExecutionReply
 import { createSafeContractValidationFailure, getSafeContractSnapshot, validateSafeOwnerIsEoa } from '../safe/safeCore.js'
 import { normalizeConsecutiveTimeManipulations } from '../utils/transactionStack.js'
 import { getPendingTransactionGasPayment, getSafePendingFlow } from '../safe/safePendingFlow.js'
-import { admitImportedSimulationStackOperations } from './importedSimulationStack.js'
+import { admitImportedSimulationStackOperations, withUniqueImportedSimulationHashes } from './importedSimulationStack.js'
 import { getOperationsForActiveStackContext, SIMULATION_STACK_CONTEXT } from '../utils/activeStackContext.js'
 import { type ActiveAddressSelection, assertActiveAddressSelectionAllowed, getActiveAddressSelection, getWalletSelectedAccount } from '../utils/activeAddressSelection.js'
 export { importSafeStack, requestSafeStackExport, validateSafeTransactionStackForCurrentContract } from './safeStackHandlers.js'
@@ -1245,7 +1245,7 @@ export async function importSimulationStack(ethereum: EthereumClientService, tok
 	let updatedStack: InterceptorTransactionStack
 	try {
 		updatedStack = await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => {
-			const newOperations = [...prevStack.operations, ...admission.operations]
+			const newOperations = [...prevStack.operations, ...withUniqueImportedSimulationHashes(prevStack, admission.operations)]
 			// generate new ids for operations to prevent duplicated ids
 			return { operations: normalizeConsecutiveTimeManipulations(newOperations.map((operation) => {
 				switch(operation.type) {

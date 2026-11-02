@@ -1,6 +1,6 @@
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { appendTransactionsToInput } from '../simulation/services/SimulationModeEthereumClientService.js'
-import { getSignedTransactionForSimulation } from '../simulation/services/simulationTransactionSigning.js'
+import { getSignedTransactionForSimulation, withUniqueSimulationHash } from '../simulation/services/simulationTransactionSigning.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { createSafeExecutionPreSimulationTransaction, createSafeSigningSimulationInput } from '../safe/safeSimulation.js'
 import type { ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
@@ -49,14 +49,15 @@ export async function refreshConfirmTransactionSimulation(
 		const getNewVisualizedSimulationState = async () => {
 			const preSimulationTransaction = transactionToSimulate.success
 				? safeSigningRequest === undefined
-					? {
+					// Previewed with a hash no stacked transaction has, as accepting it stacks it (withUniqueSimulationHash in confirmTransaction.ts), so the preview's hash lookups find it alone.
+					? withUniqueSimulationHash({
 						signedTransaction: getSignedTransactionForSimulation(transactionToSimulate),
 						website: transactionToSimulate.website,
 						created: transactionToSimulate.created,
 						originalRequestParameters: transactionToSimulate.originalRequestParameters,
 						transactionIdentifier: transactionToSimulate.transactionIdentifier,
 						...(transactionToSimulate.simulationOptions === undefined ? {} : { simulationOptions: transactionToSimulate.simulationOptions }),
-					}
+					}, new Set(simulationInput.flatMap((block) => block.transactions.map((transaction) => transaction.signedTransaction.hash))))
 					: createSafeExecutionPreSimulationTransaction(transactionToSimulate, safeSigningRequest)
 				: undefined
 			const simulationStateWithNewTransaction = preSimulationTransaction === undefined
