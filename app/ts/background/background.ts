@@ -531,8 +531,10 @@ async function handleContentScriptMessage(simulationServicesOwner: SimulationSer
 			activeAddress.address,
 		)
 		replayProviderStateForAccountRequest(websiteTabConnections, request, resolved, activeAddress.address)
-		// Simulation mode may have been enabled after the routing settings were read, so let that write settle and route the request again under the current mode instead of forwarding it to the signer.
-		if (resolved.type === 'forwardToSigner' && !simulationModeGuard.allowsSignerForward()) {
+		// Simulation mode may have been enabled after the routing settings were read; if so, the guard does not post the forward, and the request is routed again under the current mode once that write settles.
+		if (resolved.type === 'forwardToSigner') {
+			const forward = simulationModeGuard.postSignerForwardIfAllowed(() => replyToInterceptedRequest(websiteTabConnections, { ...requestWithDefinedParams, ...resolved }))
+			if (forward.posted) return forward.result
 			await waitForSimulationModeEnablingWrites()
 			return await handleRequestAgain()
 		}

@@ -172,4 +172,31 @@ describe('simulation mode forward guard', () => {
 		assert.equal(captureSimulationModeGuard().allowsSignerForward(), true)
 		assert.equal(refuseSignerForwardGuard.allowsSignerForward(), false)
 	})
+
+	test('a guard posts the forward only while it allows it, in the same synchronous step as the check', async () => {
+		installBrowserMock()
+		const { captureSimulationModeGuard, changeSimulationMode } = await loadModules()
+		await changeSimulationMode({ simulationMode: false })
+		const guard = captureSimulationModeGuard()
+		let posts = 0
+		assert.deepEqual(guard.postSignerForwardIfAllowed(() => ++posts), { posted: true, result: 1 })
+		const enabling = changeSimulationMode({ simulationMode: true })
+		// The enabling write is pending, so the forward is refused without calling the post.
+		assert.deepEqual(guard.postSignerForwardIfAllowed(() => ++posts), { posted: false })
+		await enabling
+		assert.deepEqual(guard.postSignerForwardIfAllowed(() => ++posts), { posted: false })
+		assert.equal(posts, 1)
+	})
+
+	test('only writeSimulationModeChanges writes simulationMode through the storage setter that allows it', async () => {
+		const sourceDirectory = new URL('../../app/ts/', import.meta.url).pathname
+		const callers: string[] = []
+		for await (const path of new Bun.Glob('**/*.{ts,tsx}').scan({ cwd: sourceDirectory })) {
+			const source = await Bun.file(`${ sourceDirectory }${ path }`).text()
+			const calls = source.match(/browserStorageLocalSetWithSimulationMode\(/gu)?.length ?? 0
+			if (calls > 0) callers.push(`${ path }: ${ calls }`)
+		}
+		// One call in settings.ts writeSimulationModeChanges, plus the definition in storageUtils.ts; browserStorageLocalSet rejects simulationMode by type.
+		assert.deepEqual(callers.sort(), ['background/settings.ts: 1', 'utils/storageUtils.ts: 1'])
+	})
 })

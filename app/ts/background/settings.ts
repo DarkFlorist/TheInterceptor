@@ -4,7 +4,7 @@ import { Semaphore } from '../utils/semaphore.js'
 import type { EthereumAddress } from '../types/wire-types.js'
 import type { Website, WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import type { BlockExplorer, RpcNetwork } from '../types/rpc.js'
-import { type RichListElement, browserStorageLocalGet, browserStorageLocalSafeParse, browserStorageLocalSet } from '../utils/storageUtils.js'
+import { type RichListElement, browserStorageLocalGet, browserStorageLocalSafeParse, browserStorageLocalSet, browserStorageLocalSetWithSimulationMode } from '../utils/storageUtils.js'
 import { getUserAddressBookEntries, updateUserAddressBookEntries } from './storageVariables.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
@@ -218,25 +218,34 @@ const pendingSimulationModeEnablingWrites = new Set<Promise<void>>()
 
 // Every forward to the signer is checked with a guard captured where the forwarding decision starts: before the settings it is based on are read, and before the decision's first await.
 export type SimulationModeGuard = {
-	// False if simulation mode may have been enabled since the guard was captured: an enabling write is still in flight or one has completed since. Call it with nothing awaited between the check and posting the forward.
+	// False if simulation mode may have been enabled since the guard was captured: an enabling write is still in flight or one has completed since. Use it to refuse early; the forward itself is posted through postSignerForwardIfAllowed.
 	readonly allowsSignerForward: () => boolean
+	// Checks allowsSignerForward() and runs postForward in the same synchronous step, so no await can come between the check and the post. postForward must post the forward synchronously.
+	readonly postSignerForwardIfAllowed: <Result>(postForward: () => Result) => { readonly posted: true, readonly result: Result } | { readonly posted: false }
+}
+
+function createSimulationModeGuard(allowsSignerForward: () => boolean): SimulationModeGuard {
+	return {
+		allowsSignerForward,
+		postSignerForwardIfAllowed: (postForward) => allowsSignerForward() ? { posted: true, result: postForward() } : { posted: false },
+	}
 }
 
 export function captureSimulationModeGuard(): SimulationModeGuard {
 	const capturedGeneration = simulationModeGeneration
-	return { allowsSignerForward: () => pendingSimulationModeEnablingWrites.size === 0 && simulationModeGeneration === capturedGeneration }
+	return createSimulationModeGuard(() => pendingSimulationModeEnablingWrites.size === 0 && simulationModeGeneration === capturedGeneration)
 }
 
 // For resolving actions that never forward to the signer; if such a path ever did forward, this guard refuses it.
-export const refuseSignerForwardGuard: SimulationModeGuard = { allowsSignerForward: () => false }
+export const refuseSignerForwardGuard = createSimulationModeGuard(() => false)
 
 export async function waitForSimulationModeEnablingWrites() {
 	await Promise.allSettled(pendingSimulationModeEnablingWrites)
 }
 
-// The only writer of simulationMode, so the guard above sees every switch into simulation mode.
+// The only writer of simulationMode (browserStorageLocalSet cannot write it), so the guard above sees every switch into simulation mode.
 async function writeSimulationModeChanges(changes: SimulationModeChanges, otherItems: { readonly signingAddressPreferences?: SigningAddressPreferences } = {}) {
-	const write = browserStorageLocalSet({ ...getSimulationModeStorageUpdate(changes), ...otherItems })
+	const write = browserStorageLocalSetWithSimulationMode({ ...getSimulationModeStorageUpdate(changes), ...otherItems })
 	if (!changes.simulationMode) return await write
 	// Registered in the same synchronous step that starts the write, so no forward can be committed in between.
 	pendingSimulationModeEnablingWrites.add(write)

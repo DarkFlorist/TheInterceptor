@@ -399,13 +399,12 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 		const forward = { ...signerFacingRequest, type: 'forwardToSigner' as const, uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier }
 		let simulationModeEnabledBeforeDelivery = false
 		const requestWasForwarded = await attemptDeliveryAfterManifestV2Reconnect(websiteTabConnections, forward, () => {
-			// Nothing is awaited between this check and posting the forward, so simulation mode was either enabled before the check or only after the request was posted. It also runs before the retry after a Manifest V2 content script reconnect.
-			if (!simulationModeGuard.allowsSignerForward()) {
-				simulationModeEnabledBeforeDelivery = true
-				// Only a false result makes the reconnect helper retry, so returning undefined ends the delivery without posting.
-				return undefined
-			}
-			return replyToInterceptedRequest(websiteTabConnections, forward)
+			// The guard checks and posts in one synchronous step, so simulation mode was either enabled before the check or only after the request was posted. This also runs before the retry after a Manifest V2 content script reconnect.
+			const delivery = simulationModeGuard.postSignerForwardIfAllowed(() => replyToInterceptedRequest(websiteTabConnections, forward))
+			if (delivery.posted) return delivery.result
+			simulationModeEnabledBeforeDelivery = true
+			// Only a false result makes the reconnect helper retry, so returning undefined ends the delivery without posting.
+			return undefined
 		})
 		if (simulationModeEnabledBeforeDelivery) {
 			await setApprovalStatusAndUpdateView(SIMULATION_MODE_ENABLED_AFTER_REQUEST)
