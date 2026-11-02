@@ -3,7 +3,7 @@ import { test } from 'bun:test'
 import { InterceptorSimulationExport, type PreSimulationTransaction, toResolvedExecutionSimulationState, toResolvedSimulationInput } from '../../app/ts/types/visualizer-types.js'
 import { createExecutionSimulationState, getSimulatedTransactionByHashFromInput, getSimulatedTransactionReceipt } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { getSignedTransactionForSimulation, withUniqueSimulationHash } from '../../app/ts/simulation/services/simulationTransactionSigning.js'
-import { addressString, browserMock, createWebsitePort, fakeRpcNetwork, isRecord, modules, simulator, withSilencedConsole } from './confirmTransactionTestHarness.js'
+import { addressString, browserMock, createWebsitePort, fakeRequestHandler, fakeRpcNetwork, isRecord, modules, simulator, withSilencedConsole } from './confirmTransactionTestHarness.js'
 
 // Regression tests for #1713: no two transactions on the simulation stack share a hash, so transaction and receipt lookups by hash find the right one.
 const SENDER = 0x7100000000000000000000000000000000000071n
@@ -211,4 +211,76 @@ test('keeps the Gnosis Safe execution marker of a transaction that needs a new h
 	const { hash: _originalHash, r: _originalR, ...originalFields } = safeExecution.signedTransaction
 	assert.deepEqual(rehashedFields, originalFields, 'only the mock signature and hash change')
 	assert.equal(withUniqueSimulationHash(safeExecution, new Set([safeExecution.signedTransaction.hash, rehashed.signedTransaction.hash])).signedTransaction.r, (2n << 160n) | SENDER, 'the lowest free salt is taken')
+})
+
+test('gives a re-hashed imported typed transaction that carried v as well as yParity one consistent parity', async () => {
+	await startSimulationStack(SENDER)
+	const signedTransaction = {
+		type: '1559' as const,
+		from: SENDER,
+		chainId: fakeRpcNetwork.chainId,
+		nonce: 0n,
+		maxFeePerGas: 0n,
+		maxPriorityFeePerGas: 0n,
+		gas: 21_000n,
+		to: RECIPIENT,
+		value: 1n,
+		input: new Uint8Array(),
+		accessList: [],
+		r: 0x1234n,
+		s: 0x5678n,
+		yParity: 'odd' as const,
+		v: 1n,
+		hash: 0xabcdefn,
+	}
+	const operation = {
+		type: 'Transaction' as const,
+		preSimulationTransaction: {
+			signedTransaction,
+			website: WEBSITE,
+			created: new Date('2024-01-01T00:00:00.000Z'),
+			originalRequestParameters: { method: 'eth_sendTransaction' as const, params: [{ from: SENDER, to: RECIPIENT, value: 1n, input: new Uint8Array() }] },
+			transactionIdentifier: 1n,
+		},
+	}
+	const { importSimulationStack } = await import('../../app/ts/background/popupMessageHandlers.js')
+	const eth_simulateV1 = await simulator.ethereum.ethSimulateV1Input([], 123n, undefined)
+	const reply = await withSilencedConsole(async () => await importSimulationStack(simulator.ethereum, simulator.tokenPriceService, {
+		method: 'popup_importSimulationStack',
+		data: { name: 'Interceptor Simulation Export', version: '1.0.0', eth_simulateV1, interceptorSimulateStack: { operations: [operation, operation] } },
+	}))
+	assert.equal(reply.ok, true)
+	const [kept, rehashed] = await getStackedTransactions()
+	assert.equal(kept?.signedTransaction.hash, signedTransaction.hash, 'the first copy keeps its recorded hash')
+	assert.ok(kept !== undefined && 'v' in kept.signedTransaction && kept.signedTransaction.v === 1n, 'and its recorded signature')
+	if (rehashed?.signedTransaction.type !== '1559') throw new Error('Expected the re-hashed EIP-1559 transaction')
+	assert.notEqual(rehashed.signedTransaction.hash, signedTransaction.hash)
+	assert.equal('v' in rehashed.signedTransaction, false, 'no v of the previous signature is left')
+	assert.equal('yParity' in rehashed.signedTransaction ? rehashed.signedTransaction.yParity : undefined, 'even')
+	assert.equal(rehashed.signedTransaction.s, 0n)
+
+	const simulatedCalls: Record<string, unknown>[] = []
+	const recordingEthereum = new modules.EthereumClientService({
+		rpcUrl: fakeRpcNetwork.httpsRpc,
+		clearCache() { return undefined },
+		async jsonRpcRequest(rpcRequest: { method: string, params?: readonly unknown[] }) {
+			const simulationParams = rpcRequest.params?.[0]
+			if (rpcRequest.method === 'eth_simulateV1' && isRecord(simulationParams) && Array.isArray(simulationParams.blockStateCalls)) {
+				for (const blockStateCall of simulationParams.blockStateCalls) simulatedCalls.push(...blockStateCall.calls)
+			}
+			return await fakeRequestHandler.jsonRpcRequest(rpcRequest)
+		},
+	}, async () => undefined, async () => undefined, fakeRpcNetwork)
+	const { getCurrentSimulationInput } = await import('../../app/ts/background/simulationUpdating.js')
+	const input = await getCurrentSimulationInput()
+	await createExecutionSimulationState(recordingEthereum, undefined, input)
+	const rehashedCall = simulatedCalls.find((call) => call.r === rehashed.signedTransaction.r)
+	if (rehashedCall === undefined) throw new Error('Expected the re-hashed transaction in the eth_simulateV1 request')
+	assert.equal('v' in rehashedCall, false, 'the node gets no v of the previous signature')
+	assert.equal(rehashedCall.yParity, 'even')
+
+	const lookedUp = await getSimulatedTransactionByHashFromInput(simulator.ethereum, undefined, toResolvedSimulationInput(input), rehashed.signedTransaction.hash)
+	if (lookedUp === undefined) throw new Error('Expected the re-hashed transaction to be found by its hash')
+	assert.equal('yParity' in lookedUp ? lookedUp.yParity : undefined, 'even')
+	assert.equal('v' in lookedUp ? lookedUp.v : 0n, 0n, 'a lookup carries no v that contradicts yParity')
 })

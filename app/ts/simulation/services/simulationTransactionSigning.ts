@@ -53,6 +53,18 @@ export const getSignedTransactionForSimulation = (transactionToSimulate: Website
 	transactionToSimulate.signedTransaction ?? mockSignTransaction(transactionToSimulate.transaction, getMockSignatureS(transactionToSimulate.simulationOptions))
 )
 
+// A signed transaction's own fields, without its signature or hash, so mock signing it again leaves no field of its previous signature (an imported typed transaction can carry v as well as yParity).
+const withoutSignature = (transaction: EthereumSendableSignedTransaction): EthereumUnsignedTransaction => {
+	if (transaction.type === 'legacy') {
+		const { r: _r, s: _s, v: _v, hash: _hash, ...unsignedTransaction } = transaction
+		return unsignedTransaction
+	}
+	const { r: _r, s: _s, v: _v, hash: _hash, ...transactionWithParity } = transaction
+	if (!('yParity' in transactionWithParity)) return transactionWithParity
+	const { yParity: _yParity, ...unsignedTransaction } = transactionWithParity
+	return unsignedTransaction
+}
+
 export const getStackTransactionHashes = (stack: InterceptorTransactionStack): ReadonlySet<bigint> => new Set(stack.operations.flatMap((operation) => operation.type === 'Transaction' ? [operation.preSimulationTransaction.signedTransaction.hash] : []))
 
 /**
@@ -63,7 +75,7 @@ export const withUniqueSimulationHash = (transaction: PreSimulationTransaction, 
 	if (!stackHashes.has(transaction.signedTransaction.hash)) return transaction
 	const s = getMockSignatureS(transaction.simulationOptions)
 	for (let salt = 1n; ; salt++) {
-		const signedTransaction = mockSignTransaction(transaction.signedTransaction, s, salt)
+		const signedTransaction = mockSignTransaction(withoutSignature(transaction.signedTransaction), s, salt)
 		if (!stackHashes.has(signedTransaction.hash)) return { ...transaction, signedTransaction }
 	}
 }
