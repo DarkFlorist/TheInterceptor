@@ -3407,4 +3407,44 @@ describe('background eth_accounts', () => {
 		assert.equal(result.sameAccountDisconnected, true)
 		assert.equal(result.otherAccountDisconnected, true)
 	})
+
+	test('keeps a port approved for the selected Safe on the first signer account report after a signer reconnect', async () => {
+		installBrowserMock()
+		const { changeSimulationMode, getSettings, handleInterceptedRequest, updateTabState, updateUserAddressBookEntries, updateWebsiteAccess, websiteSocketToString } = await loadModules()
+		const websiteOrigin = 'https://safe-dapp.example'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const ownerAccount = 0x5454545454545454545454545454545454545454n
+		const safeAddress = 0x5555555555555555555555555555555555555555n
+		const otherAccount = 0x5656565656565656565656565656565656565656n
+		const activeChainId = (await getSettings()).activeRpcNetwork.chainId
+		await updateUserAddressBookEntries(() => [{ type: 'safe', name: 'Owned Safe', address: safeAddress, chainId: activeChainId, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [ownerAccount] }])
+		await changeSimulationMode({ simulationMode: false, activeSigningAddress: undefined, activeSigningSafeAddress: safeAddress })
+		const { rememberSigningAddressPreference } = await import('../../app/ts/background/settings.js')
+		await rememberSigningAddressPreference({ signerAddress: ownerAccount, selection: 'safe', safeAddress, chainId: activeChainId })
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: safeAddress, access: true }] }])
+		// A signer reconnect clears the signer state while the approved connections remain.
+		await updateTabState(1, (previousState) => ({ ...previousState, signerAccounts: [], activeSigningAddress: undefined }))
+		const safeSocket = { tabId: 1, connectionName: 0n }
+		const otherAccountSocket = { tabId: 1, connectionName: 1n }
+		const safePort = createPort(safeSocket.tabId)
+		const otherAccountPort = createPort(otherAccountSocket.tabId, undefined, undefined, otherAccountSocket.connectionName)
+		const websiteTabConnections: WebsiteTabConnections = new Map([[safeSocket.tabId, { ...confirmedSignerOwnership(safeSocket), connections: {
+			[websiteSocketToString(safeSocket)]: { port: safePort.port, socket: safeSocket, websiteOrigin, approved: true, approvedAddress: safeAddress, wantsToConnect: true },
+			[websiteSocketToString(otherAccountSocket)]: { port: otherAccountPort.port, socket: otherAccountSocket, websiteOrigin, approved: true, approvedAddress: otherAccount, wantsToConnect: true },
+		} }]])
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+
+		await handleInterceptedRequest(safePort.port, websiteOrigin, website, simulationServicesOwner, safeSocket, {
+			interceptorRequest: true,
+			interceptorInternalRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 502, requestSocket: safeSocket },
+			method: 'eth_accounts_reply',
+			params: [{ signerProviderGeneration: 1, type: 'success', accounts: [addressString(ownerAccount)], requestAccounts: false }],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+
+		assert.equal(safePort.messages.some((message) => message.method === 'disconnect'), false)
+		assert.equal(websiteTabConnections.get(1)?.connections[websiteSocketToString(safeSocket)]?.approved, true)
+		assert.equal(otherAccountPort.messages.some((message) => message.method === 'disconnect'), true)
+	})
 })

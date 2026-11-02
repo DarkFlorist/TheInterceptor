@@ -4,8 +4,8 @@ import { ConnectedToSigner, SignerReply, WalletSwitchEthereumChainReply, WatchAs
 import type { TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import { EthereumAccountsReply, EthereumChainReply } from '../types/JsonRpc-types.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
-import { getSocketFromPort, isTopFramePort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
-import { getRpcNetworkForChain, getTabState, setDefaultSignerName, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
+import { getActiveAddress, getSocketFromPort, isTopFramePort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
+import { getRpcNetworkForChain, setDefaultSignerName, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
 import { getMetamaskCompatibilityMode, getSettings } from './settings.js'
 import { applyWalletSwitchReply } from './walletSwitch.js'
 import { suspendWebsitePortApprovalsForTab, verifyAccess, withSuppressedUnscopedConnectionEventsForSocketAsync } from './accessManagement.js'
@@ -101,17 +101,21 @@ export async function ethAccountsReply(simulationServicesOwner: SimulationServic
 		const signerAccounts = signerAccountsReply.accounts
 		const activeSigningAddress = signerAccounts.length > 0 ? signerAccounts[0] : undefined
 		const settings = await getSettings()
-		const previousActiveSigningAddress = (await getTabState(tabId)).activeSigningAddress
-		if (!signerAccountsReply.requestAccounts && isActiveAddressBoundToSigner(settings) && previousActiveSigningAddress !== activeSigningAddress) {
-			// The first report after signer state was cleared (page load, reload, or signer reconnect) is not an account switch, so it only suspends approvals bound to a different account.
-			const isInitialSignerAccountReport = previousActiveSigningAddress === undefined
-			suspendWebsitePortApprovalsForTab(websiteTabConnections, tabId, (approvedAddress) => !isInitialSignerAccountReport || (approvedAddress !== undefined && approvedAddress !== activeSigningAddress))
-		}
 		const tabStateChange = await updateTabState(tabId, (previousState: TabState) => modifyObject(previousState, {
 			...signerAccounts.length > 0 ? { signerAccountError: undefined } : {},
 			signerAccounts,
 			activeSigningAddress,
 		}))
+		const previousActiveSigningAddress = tabStateChange.previousState.activeSigningAddress
+		if (!signerAccountsReply.requestAccounts && isActiveAddressBoundToSigner(settings) && previousActiveSigningAddress !== activeSigningAddress) {
+			if (previousActiveSigningAddress === undefined) {
+				// The first report after signer state was cleared (page load, reload, or signer reconnect) is not an account switch, so it only suspends approvals bound to an account other than the tab's active address for the reported signer accounts. That address is the selected Safe in Safe signing mode, not the signer's own account.
+				const activeAddress = (await getActiveAddress(settings, tabId))?.address
+				suspendWebsitePortApprovalsForTab(websiteTabConnections, tabId, (approvedAddress) => approvedAddress !== undefined && approvedAddress !== activeAddress)
+			} else {
+				suspendWebsitePortApprovalsForTab(websiteTabConnections, tabId)
+			}
+		}
 		if (!isSignerStateTokenCurrent(websiteTabConnections, signerStateToken)) return returnValue
 		const { ethereum, tokenPriceService } = simulationServicesOwner.getCurrent()
 		await refreshPendingSafeSignerSelectionErrors(ethereum, tokenPriceService, tabId)

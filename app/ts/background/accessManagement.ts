@@ -21,7 +21,7 @@ import { notifyWebsiteLifecycle } from './websiteLifecycle.js'
 import { findWebsiteAccessEntryForOrigin, hasAccess, hasAddressAccess, type ApprovalState } from './websiteAccessPolicy.js'
 import { getWebsiteActiveAddress } from './websiteActiveAddress.js'
 import { updateWebsiteAccessAndContentScriptInjectionStrategy } from './websiteAccessUpdating.js'
-import { getHostWithPort, getWebsiteHostWithPortFromStoredOrigin } from '../utils/websiteOrigin.js'
+import { getHostWithPort, getWebsiteHostWithPortFromStoredOrigin, getWebsiteOrigin, isLegacyWebsiteOriginForCanonicalOrigin } from '../utils/websiteOrigin.js'
 import { applyInterceptorDisabledDecision, applyWebsiteAccessDecision } from './websiteAccessDecision.js'
 
 function setWebsitePortApproval(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, approved: boolean, approvedAddress?: bigint) {
@@ -299,16 +299,26 @@ const getApprovedTabs = (websiteTabConnections: WebsiteTabConnections) => {
 const getTabsAndAddressesToBlock = async (websiteTabConnections: WebsiteTabConnections) => {
 	const approvedTabIds = getApprovedTabs(websiteTabConnections)
 	const tabIdsToBlock = (await getActiveAddressesForAllTabs(await getSettings())).filter((tabData) => approvedTabIds.has(tabData.tabId)).filter((tabData) => tabData.activeAddress?.declarativeNetRequestBlockMode === 'block-all').map((tabData) => tabData.tabId)
-	const sitesToBlock = (await getWebsiteAccess())
+	const originsToBlock = (await getWebsiteAccess())
 		.filter((access) => access.declarativeNetRequestBlockMode === 'block-all')
-		.flatMap((access) => {
-			const host = getWebsiteHostWithPortFromStoredOrigin(access.website.websiteOrigin)
-			return host === undefined ? [] : [host]
-		})
+		.map((access) => access.website.websiteOrigin)
+	// Blocking matches the initiating page's host, as declarative net request rules do, so a block-all origin also covers its host's other scheme. A file page has no host, so only the origin match below can cover it, and only the MV2 webRequest listener can block it.
+	const initiatorHostsToBlock = originsToBlock.flatMap((origin) => {
+		const host = getWebsiteHostWithPortFromStoredOrigin(origin)
+		return host === undefined ? [] : [host]
+	})
 	return {
 		tabIdsToBlock,
-		sitesToBlock
+		originsToBlock,
+		initiatorHostsToBlock,
 	}
+}
+
+// A page is blocked when its host is blocked or its origin is a block-all origin, which for a legacy record includes the origins it stands for, such as every file page for the legacy empty file origin.
+function isWebsiteOriginBlocked(blocked: { readonly originsToBlock: readonly string[], readonly initiatorHostsToBlock: readonly string[] }, websiteOrigin: string) {
+	const websiteHost = getWebsiteHostWithPortFromStoredOrigin(websiteOrigin)
+	if (websiteHost !== undefined && blocked.initiatorHostsToBlock.includes(websiteHost)) return true
+	return blocked.originsToBlock.some((blockedOrigin) => blockedOrigin === websiteOrigin || isLegacyWebsiteOriginForCanonicalOrigin(blockedOrigin, websiteOrigin))
 }
 
 let webRequestListener: (details: browser.webRequest._OnBeforeRequestDetails) => void = () => undefined
@@ -316,22 +326,22 @@ let previousDecralativeNetRequestBlockIdentifier = ''
 const updateDeclarativeNetRequestBlocksSemaphore = new Semaphore(1)
 export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: WebsiteTabConnections) {
 	return await updateDeclarativeNetRequestBlocksSemaphore.execute(async () => {
-		const { tabIdsToBlock, sitesToBlock } = await getTabsAndAddressesToBlock(websiteTabConnections)
+		const { tabIdsToBlock, originsToBlock, initiatorHostsToBlock } = await getTabsAndAddressesToBlock(websiteTabConnections)
 		// check if the rules would change, if not, just bail out
-		const decralativeNetRequestBlockIdentifier = `${ tabIdsToBlock.join('|') }|a|${ sitesToBlock.join('|') }`
+		const decralativeNetRequestBlockIdentifier = `${ tabIdsToBlock.join('|') }|a|${ originsToBlock.join('|') }`
 		if (decralativeNetRequestBlockIdentifier === previousDecralativeNetRequestBlockIdentifier) return
 
 		if (browser.runtime.getManifest().manifest_version === 3) {
 			const dynamicRuleIds = (await browser.declarativeNetRequest.getDynamicRules()).map((rule) => rule.id)
 			const sessionRuleIds = (await browser.declarativeNetRequest.getSessionRules()).map((rule) => rule.id)
-			if (sitesToBlock.length !== 0) {
+			if (initiatorHostsToBlock.length !== 0) {
 				await browser.declarativeNetRequest.updateDynamicRules({
 					removeRuleIds: dynamicRuleIds,
 					addRules: [{
 						id: dynamicRuleIds.length === 0 ? 1 : Math.max.apply(null, dynamicRuleIds) + 1,
 						priority: 1,
 						action : { type: 'block' as const },
-						condition: { initiatorDomains: sitesToBlock, domainType: 'thirdParty' as const }
+						condition: { initiatorDomains: initiatorHostsToBlock, domainType: 'thirdParty' as const }
 					}]
 				})
 			} else {
@@ -360,13 +370,11 @@ export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: W
 				if (tabIdsToBlock.find((tabId) => tabId === details.tabId) !== undefined) return { cancel: true }
 				if (details.originUrl === undefined) return {}
 				if (details.type === 'main_frame') return {}
-				const websiteOrigin = getHostWithPort(details.originUrl)
-				const destinationHost = getHostWithPort(details.url)
-				if (destinationHost === websiteOrigin) return {}
-				if (sitesToBlock.find((blockUrl) => blockUrl === websiteOrigin) !== undefined) return { cancel: true }
+				if (getHostWithPort(details.url) === getHostWithPort(details.originUrl)) return {}
+				if (isWebsiteOriginBlocked({ originsToBlock, initiatorHostsToBlock }, getWebsiteOrigin(details.originUrl))) return { cancel: true }
 				return {}
 			}
-			if (sitesToBlock.length === 0 && tabIdsToBlock.length === 0) {
+			if (originsToBlock.length === 0 && tabIdsToBlock.length === 0) {
 				previousDecralativeNetRequestBlockIdentifier = decralativeNetRequestBlockIdentifier
 				return
 			}
@@ -377,9 +385,11 @@ export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: W
 }
 
 export const areWeBlocking = async (websiteTabConnections: WebsiteTabConnections, tabId: number, websiteOrigin: string) => {
-	const { tabIdsToBlock, sitesToBlock } = await getTabsAndAddressesToBlock(websiteTabConnections)
-	const websiteHost = getWebsiteHostWithPortFromStoredOrigin(websiteOrigin)
-	if (websiteHost !== undefined && sitesToBlock.includes(websiteHost)) return true
+	const toBlock = await getTabsAndAddressesToBlock(websiteTabConnections)
+	const { tabIdsToBlock } = toBlock
+	// MV3 rules cannot block a file page, so its block-all setting only takes effect on MV2.
+	const blocked = browser.runtime.getManifest().manifest_version === 3 ? { ...toBlock, originsToBlock: [] } : toBlock
+	if (isWebsiteOriginBlocked(blocked, websiteOrigin)) return true
 	if (tabIdsToBlock.find((blockTab) => blockTab === tabId) !== undefined) return true
 	return false
 }
