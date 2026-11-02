@@ -173,6 +173,21 @@ describe('background eth_accounts', () => {
 		assert.equal(await withSilencedWarnings(async () => await areWeBlocking(blockedBeforeRestartTabId, 'consented-restart.example')), true)
 	})
 
+	test('leaves applied request blocks untouched when storage becomes unreadable', async () => {
+		const blockedTabId = 9884
+		const browserMock = installBrowserMock({ manifestVersion: 3, initialSessionRules: [{ id: 1, condition: { tabIds: [blockedTabId] } }] })
+		const { areWeBlocking, updateDeclarativeNetRequestBlocks } = await loadModules()
+		await setUpAddressLevelBlockAllWithUnreadableActiveRpcNetwork('consented-read-failure.example')
+		const updatesBeforeReadFailure = browserMock.requestBlockingCalls.declarativeNetRequestUpdates
+		Object.defineProperty(browser.storage.local, 'get', { configurable: true, value: async () => { throw new Error('Storage read unavailable') } })
+
+		// Unreadable storage yields no website approvals or block lists, so reconciling with them would lift applied blocks; the rejection keeps every applied rule instead.
+		await assert.rejects(withSilencedWarnings(async () => await updateDeclarativeNetRequestBlocks(new Map())), /Storage read unavailable/)
+
+		assert.equal(browserMock.requestBlockingCalls.declarativeNetRequestUpdates, updatesBeforeReadFailure)
+		assert.equal(await areWeBlocking(blockedTabId, 'consented-read-failure.example'), true)
+	})
+
 	test('completes signer callbacks but rejects RPC requests while configuration and services are unavailable', async () => {
 		const { readStoredValue } = installBrowserMock()
 		const {

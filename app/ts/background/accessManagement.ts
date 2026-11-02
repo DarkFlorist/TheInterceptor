@@ -349,6 +349,7 @@ const getTabsAndAddressesToBlock = async (websiteTabConnections: WebsiteTabConne
 	const approvedTabIds = getApprovedTabs(websiteTabConnections)
 	const settings = await getSettingsForTabBlocking()
 	if (settings === undefined) {
+		// A fresh read on purpose: when storage is unreadable the snapshot's fail-closed approvals are empty, which would lift applied site blocks, so this read (like getActiveAddresses) rejects and every applied rule stays in place.
 		const websiteAccess = await getWebsiteAccess()
 		return { tabIdsToBlock: await getTabIdsToBlockWithoutActiveRpcNetwork(websiteTabConnections, websiteAccess), sitesToBlock: getSitesToBlock(websiteAccess), keepAppliedTabBlocks: true }
 	}
