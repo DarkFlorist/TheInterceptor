@@ -1,7 +1,7 @@
 import { DEFAULT_TAB_CONNECTION } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
 import type { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, StoredWatchAssetRequest, TabState } from '../types/user-interface-types.js'
-import { type PartialIdsOfOpenedTabs, browserStorageLocalGet, browserStorageLocalGet2Result, browserStorageLocalRemove, browserStorageLocalSafeParseGet, browserStorageLocalSet, browserStorageLocalSet2, getTabStateFromStorage, parseTabStateItems, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
+import { type PartialIdsOfOpenedTabs, browserStorageLocalGet, browserStorageLocalGet2Result, browserStorageLocalRemove, browserStorageLocalSafeParseGet, browserStorageLocalSet, browserStorageLocalSet2, browserStorageLocalSetPendingAndTerminalState, getTabStateFromStorage, parseTabStateItems, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
 import { CompleteVisualizedSimulation, type EthereumSubscriptionsAndFilters, InterceptorTransactionStack, createPassthroughCompleteVisualizedSimulation } from '../types/visualizer-types.js'
 import { DEFAULT_ACTIVE_ADDRESSES } from '../config/defaults.js'
 import { type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
@@ -12,6 +12,7 @@ import { replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
 import { keccak256, namehash, stringToBytes } from '../utils/ethereumPrimitives.js'
 import { isValidEnsName } from '../utils/ens.js'
 import type { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
+import type { InterceptedRequestForward } from '../types/interceptor-messages.js'
 import { getLargeStateValue, prepareLargeStateWrite, setLargeStateValue, setLargeStateValues } from '../utils/largeStateStore.js'
 import type { InterceptorErrorDiagnostic } from '../types/errorDiagnostics.js'
 import { SafeTransactionStacks } from '../types/safeTypes.js'
@@ -73,6 +74,22 @@ export async function updatePendingTransactionOrMessage(uniqueRequestIdentifier:
 		const updated = await update(found)
 		if (updated === undefined) return pendingTransactionsOrMessages
 		return replaceElementInReadonlyArray(pendingTransactionsOrMessages, match, updated)
+	})
+}
+
+// Updates one pending request and replaces the durable terminal replies in a single storage write inside the shared critical section, so a reply becomes deliverable only together with its request's update. Nothing is written when the request is no longer pending, and corrupt pending storage throws instead of being discarded.
+export async function updatePendingTransactionOrMessageWithTerminalReplies(
+	uniqueRequestIdentifier: UniqueRequestIdentifier,
+	update: (pendingTransactionOrMessage: PendingTransactionOrSignableMessage) => PendingTransactionOrSignableMessage,
+	getUpdatedTerminalReplies: () => Promise<readonly InterceptedRequestForward[]>,
+) {
+	await pendingRequestTerminalStateSemaphore.execute(async () => {
+		const result = await readPendingTransactionsAndMessages()
+		if (!result.success) throw result.error
+		const match = result.value.findIndex((pending) => doesUniqueRequestIdentifiersMatch(pending.uniqueRequestIdentifier, uniqueRequestIdentifier))
+		const found = result.value[match]
+		if (found === undefined) return
+		await browserStorageLocalSetPendingAndTerminalState(replaceElementInReadonlyArray(result.value, match, update(found)), await getUpdatedTerminalReplies())
 	})
 }
 

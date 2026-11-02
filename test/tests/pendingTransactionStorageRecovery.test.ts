@@ -28,7 +28,7 @@ Object.defineProperty(globalThis, 'browser', { configurable: true, value: {
 	},
 } })
 
-const { appendPendingTransactionOrMessage, clearPendingTransactions, getPendingTransactionsAndMessages } = await import('../../app/ts/background/storageVariables.js')
+const { appendPendingTransactionOrMessage, clearPendingTransactions, getPendingTransactionsAndMessages, updatePendingTransactionOrMessageWithTerminalReplies } = await import('../../app/ts/background/storageVariables.js')
 
 const pendingMessage = {
 	type: 'SignableMessage',
@@ -90,5 +90,38 @@ test('does not erase pending transaction storage after a transient read failure'
 	await assert.rejects(clearPendingTransactions(), /Storage temporarily unavailable/)
 
 	assert.deepEqual(storageState.pendingTransactionsAndMessages, [pendingMessage])
+	assert.equal(storageWrites.length, 0)
+})
+
+test('updates a pending request together with its terminal replies in one storage write', async () => {
+	await appendPendingTransactionOrMessage(pendingMessage)
+	storageWrites.length = 0
+	const terminalReply = { method: 'personal_sign' as const, type: 'result' as const, result: '0x01', uniqueRequestIdentifier: pendingMessage.uniqueRequestIdentifier }
+
+	await updatePendingTransactionOrMessageWithTerminalReplies(pendingMessage.uniqueRequestIdentifier, (pending) => ({ ...pending, deferredSafeSignerReply: { signerReply: '0x01', terminalReplyQueued: true } }), async () => [terminalReply])
+
+	assert.equal(storageWrites.length, 1)
+	assert.deepEqual(Object.keys(storageWrites[0] ?? {}).sort(), ['pendingTerminalReplies', 'pendingTransactionsAndMessages'])
+	assert.deepEqual((await getPendingTransactionsAndMessages())[0]?.deferredSafeSignerReply, { signerReply: '0x01', terminalReplyQueued: true })
+})
+
+test('writes nothing when the pending request for terminal replies is gone', async () => {
+	let terminalRepliesRead = false
+
+	await updatePendingTransactionOrMessageWithTerminalReplies(pendingMessage.uniqueRequestIdentifier, (pending) => pending, async () => {
+		terminalRepliesRead = true
+		return []
+	})
+
+	assert.equal(terminalRepliesRead, false)
+	assert.equal(storageWrites.length, 0)
+})
+
+test('keeps corrupt pending storage instead of discarding it when updating terminal replies', async () => {
+	storageState.pendingTransactionsAndMessages = 'corrupt'
+
+	await assert.rejects(updatePendingTransactionOrMessageWithTerminalReplies(pendingMessage.uniqueRequestIdentifier, (pending) => pending, async () => []))
+
+	assert.equal(storageState.pendingTransactionsAndMessages, 'corrupt')
 	assert.equal(storageWrites.length, 0)
 })
