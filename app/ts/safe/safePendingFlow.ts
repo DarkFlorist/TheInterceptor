@@ -39,8 +39,8 @@ export function getSafeTransactionPendingFlow(pending: PendingTransaction): Dire
 	return undefined
 }
 
-// The kind of transaction a confirmation forms, the one input of its fee mode (getSafeTransactionFlowGasPayment): an ordinary transaction, a Safe's own call that the simulation runs through the Safe in simulation mode, or one of the signing-mode Safe transaction flows.
-export type SafeTransactionFlowKind = 'ordinary' | 'simulationModeSafeExecution' | DirectSafeExecutionFlow['kind'] | SafeProposalFlow['kind']
+// The kind of transaction a confirmation forms, the one input of its fee mode (getSafeTransactionFlowGasPayment): an ordinary transaction, a Safe's own call that the simulation runs through the Safe in simulation mode, one of the signing-mode Safe transaction flows, or a request a configured Safe can't make through execTransaction (getSafeUnsupportedRequestReason), which the confirmation shows as a failure.
+export type SafeTransactionFlowKind = 'ordinary' | 'simulationModeSafeExecution' | DirectSafeExecutionFlow['kind'] | SafeProposalFlow['kind'] | 'unsupportedSafeRequest'
 
 // The fee mode of each kind of transaction confirmation. prepareSafeTransactionConfirmation takes it from here when the confirmation opens and getPendingTransactionGasPayment on every refresh, so both form the transaction the same way.
 export function getSafeTransactionFlowGasPayment(flowKind: SafeTransactionFlowKind): TransactionGasPayment {
@@ -48,6 +48,8 @@ export function getSafeTransactionFlowGasPayment(flowKind: SafeTransactionFlowKi
 		case 'ordinary': return 'transaction-sender'
 		// A direct Safe execution is the signer's own execTransaction call, paid outside the simulation.
 		case 'directExecution': return 'external-executor'
+		// Formed without fees, as the Safe never pays for its transaction, only to fail with the request-shape rejection (createSafeSigningRequestForTransaction): the executor's formation can't form a contract creation.
+		case 'unsupportedSafeRequest': return 'external-executor'
 		// A Safe proposal, and in simulation mode a Safe's own call, run as the simulated executor's execTransaction call.
 		case 'proposal':
 		case 'simulationModeSafeExecution': return 'simulated-safe-executor'
@@ -58,8 +60,12 @@ export function getSafeTransactionFlowGasPayment(flowKind: SafeTransactionFlowKi
 export function getPendingTransactionFlowKind(pending: PendingTransaction): SafeTransactionFlowKind {
 	if (pending.executeThroughSafe === true) return 'simulationModeSafeExecution'
 	if (pending.safeProposalCreationFailed === true) return 'proposal'
+	if (pending.unsupportedSafeRequest === true) return 'unsupportedSafeRequest'
 	return getSafeTransactionPendingFlow(pending)?.kind ?? 'ordinary'
 }
+
+// A confirmation whose Gnosis Safe transaction could not be made keeps its failure on refresh: forming the request again would not make the Safe transaction, and could only show it as an ordinary transaction from the Safe.
+export const keepsSafeFailureOnRefresh = (pending: PendingTransaction) => pending.safeProposalCreationFailed === true || pending.unsupportedSafeRequest === true
 
 export function getPendingTransactionGasPayment(pending: PendingTransaction): TransactionGasPayment {
 	return getSafeTransactionFlowGasPayment(getPendingTransactionFlowKind(pending))

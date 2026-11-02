@@ -25,6 +25,8 @@ type PendingSafeFields = {
 	readonly executeThroughSafe: true
 } | {
 	readonly safeProposalCreationFailed: true
+} | {
+	readonly unsupportedSafeRequest: true
 }
 
 export type SafeTransactionConfirmationPreparation = {
@@ -82,7 +84,7 @@ export async function prepareSafeTransactionConfirmation(
 		: (await getUserAddressBookEntriesForChainIdMorePreciseFirst(ethereum.getChainId()))
 			.find((entry): entry is SafeEntry => entry.type === 'safe' && entry.address === activeAddress)
 	if (configuredSafeEntry !== undefined) {
-		// A contract creation is not rejected here: createSafeSigningRequestForTransaction fails it once the transaction is formed, so the window shows the failure.
+		// A contract creation is not rejected here: its flow kind is 'unsupportedSafeRequest', and createSafeSigningRequestForTransaction fails it once the transaction is formed, so the window shows the failure.
 		const unsupportedReason = getSafeUnsupportedRequestReason(transactionParams)
 		if (unsupportedReason === 'raw-transaction' || unsupportedReason === 'eip-7702-authorization') {
 			return createRejectedPreparation(activeAddress, transactionParams, SAFE_UNSUPPORTED_TRANSACTION_MESSAGES[unsupportedReason])
@@ -136,7 +138,7 @@ export async function prepareSafeTransactionConfirmation(
 	const executeThroughSafe = simulationMode && await isSimulationModeSafeExecution(ethereum, transactionParams, activeAddress)
 	// Stored in the pending transaction through pendingSafeFields and the Safe proposal, or its creation failure, from which every refresh reads it back (getPendingTransactionFlowKind).
 	const flowKind: SafeTransactionFlowKind = isDirectSafeExecution ? 'directExecution'
-		: safeEntry !== undefined ? 'proposal'
+		: safeEntry !== undefined ? getSafeUnsupportedRequestReason(transactionParams) === undefined ? 'proposal' : 'unsupportedSafeRequest'
 		: executeThroughSafe ? 'simulationModeSafeExecution'
 		: 'ordinary'
 	const pendingSafeFields: PendingSafeFields | undefined = executeThroughSafe
@@ -220,8 +222,10 @@ export async function prepareSafeTransactionConfirmation(
 					? undefined
 					: await getSafeSignerMismatchApprovalStatus(tabId, safeTransaction.safeSignerAddress)
 			)
-			// A Safe proposal that could not be created leaves the confirmation a failure, which is kept as a proposal's, so a refresh neither forms nor shows it as another kind of transaction.
-			const finalizedPendingSafeFields: PendingSafeFields | undefined = flowKind === 'proposal' && safeTransaction === undefined ? { safeProposalCreationFailed: true } : pendingSafeFields
+			// A Safe proposal that could not be created, or a request the Safe can't make, leaves the confirmation a failure, which is kept with its flow kind, so a refresh neither forms nor shows it as another kind of transaction.
+			const finalizedPendingSafeFields: PendingSafeFields | undefined = flowKind === 'unsupportedSafeRequest' ? { unsupportedSafeRequest: true }
+				: flowKind === 'proposal' && safeTransaction === undefined ? { safeProposalCreationFailed: true }
+				: pendingSafeFields
 			return { transactionToSimulate: finalizedTransaction, safeTransaction, approvalStatus, pendingSafeFields: finalizedPendingSafeFields }
 		},
 	}

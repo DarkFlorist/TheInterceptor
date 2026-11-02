@@ -108,6 +108,8 @@ const SimulatedPendingTransactionBase = funtypes.ReadonlyObject({
 	executeThroughSafe: funtypes.Literal(true),
 	// The confirmation decided this is a Gnosis Safe proposal but could not create it, so the transaction stays a failure. Every refresh reads it as a proposal (getPendingTransactionFlowKind) and keeps the failure rather than forming the request as an ordinary transaction from the Safe.
 	safeProposalCreationFailed: funtypes.Literal(true),
+	// The confirmation found that the configured Gnosis Safe can't make this request through execTransaction (a contract creation), so the transaction stays the request-shape failure. Every refresh reads it as such (getPendingTransactionFlowKind) and keeps the failure.
+	unsupportedSafeRequest: funtypes.Literal(true),
 }))
 
 export type SimulatedPendingTransaction = funtypes.Static<typeof SimulatedPendingTransaction>

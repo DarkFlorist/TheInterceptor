@@ -5,13 +5,14 @@ import type { SendRawTransactionParams, SendTransactionParams } from '../../app/
 import type { SafeTx } from '../../app/ts/types/personal-message-definitions.js'
 import { createSafeTxFromMessage } from '../../app/ts/safe/safeCore.js'
 import { decodeSafeExecution } from '../../app/ts/safe/safeExecution.js'
-import { InterceptorTransactionStack, PreSimulationTransaction, type SimulationInputTransaction, type SimulationStateInput, toResolvedExecutionSimulationState, toResolvedSimulationInput, toResolvedSimulationState, type SimulationStateInputMinimalData, toSimulationStateInputMinimalData, type TransactionSimulationOptions } from '../../app/ts/types/visualizer-types.js'
+import { InterceptorTransactionStack, PreSimulationTransaction, type SimulationInputTransaction, type SimulationStateInput, toResolvedExecutionSimulationState, toResolvedSimulationInput, toResolvedSimulationState, type SimulationStateInputMinimalData, toSimulationStateInputMinimalData, type TransactionSimulationOptions, type WebsiteCreatedEthereumTransactionOrFailed } from '../../app/ts/types/visualizer-types.js'
 import { EthereumSendableSignedTransaction } from '../../app/ts/types/wire-types.js'
 import { getSignedTransactionForSimulation } from '../../app/ts/simulation/services/simulationTransactionSigning.js'
 import { isUnpreparedSimulationInputError } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { classifyCaughtError } from '../../app/ts/utils/errors.js'
 import { estimateSafeExecutionGas, prepareSafeExecutionSimulationInput, SAFE_EXECUTION_SIMULATION_EXECUTOR } from '../../app/ts/safe/safeExecutionSimulation.js'
 import { describeSafeExecutionFailure } from '../../app/ts/safe/safeExecutionFailure.js'
+import { SAFE_UNSUPPORTED_TRANSACTION_MESSAGES } from '../../app/ts/safe/safeExecutionRouting.js'
 import { prepareSafeTransactionConfirmation } from '../../app/ts/background/safeTransactionConfirmation.js'
 import { createExecutionSimulationState, createSimulationState, getNonceFixedSimulationStateInput, getSimulatedTransactionByHashFromInput, getSimulatedTransactionCount, getSimulatedTransactionCountFromInput, getSimulatedTransactionReceipt } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { encodeFunctionCall } from '../../app/ts/utils/abiRuntime.js'
@@ -371,10 +372,9 @@ test('forms a Gnosis Safe proposal whose creation fails with the same fee mode w
 	assert.deepEqual({ opened, refreshed }, { opened: 'simulated-safe-executor', refreshed: 'simulated-safe-executor' })
 })
 
-test('keeps a Gnosis Safe proposal whose creation failed a failure through refresh instead of an ordinary transaction from the Safe', async () => {
-	configureSafe()
+// Opens a signing-mode confirmation of the configured Gnosis Safe, refreshes it, and checks the failure the pending transaction holds when it opens and after the refresh.
+async function assertSafeFailureKeptThroughRefresh(transactionParams: SendTransactionParams, assertPending: (pending: Extract<Awaited<ReturnType<typeof modules.getPendingTransactionsAndMessages>>[number], { readonly type: 'Transaction' }>, stage: string) => void) {
 	const simulator = createRecordingSimulator()
-	const transactionParams = await createTransferParams({ from: addressString(SAFE_ADDRESS), gas: '0x5208' })
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 	await modules.updateSafeTransactionStacks(() => [])
 	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry()])
@@ -389,20 +389,50 @@ test('keeps a Gnosis Safe proposal whose creation failed a failure through refre
 		SAFE_CALL_WEBSITE,
 		createWebsiteTabConnections([]),
 	)), { type: 'doNotReply' })
-	const assertFailedProposal = async (stage: string) => {
+	const assertFailure = async (stage: string) => {
 		const [pending] = await modules.getPendingTransactionsAndMessages()
 		if (pending?.type !== 'Transaction' || !('transactionToSimulate' in pending)) throw new Error(`Expected the pending transaction ${ stage }`)
 		assert.equal(pending.transactionOrMessageCreationStatus, 'FailedToSimulate', stage)
-		assert.equal(pending.safeProposalCreationFailed, true, stage)
 		assert.equal(pending.transactionToSimulate.success, false, stage)
-		assert.match(pending.transactionToSimulate.success ? '' : pending.transactionToSimulate.error.message, SAFE_PROPOSAL_CREATION_FAILURE, stage)
+		assertPending(pending, stage)
 	}
-	await assertFailedProposal('when the confirmation opens')
+	await assertFailure('when the confirmation opens')
 	await withSilencedConsole(async () => await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService))
-	await assertFailedProposal('after a refresh')
+	await assertFailure('after a refresh')
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 	await modules.updateUserAddressBookEntries(() => modules.defaultActiveAddresses)
+}
+
+const getFailureMessage = (transaction: WebsiteCreatedEthereumTransactionOrFailed) => transaction.success ? undefined : transaction.error.message
+
+test('keeps a Gnosis Safe proposal whose creation failed a failure through refresh instead of an ordinary transaction from the Safe', async () => {
+	configureSafe()
+	await assertSafeFailureKeptThroughRefresh(await createTransferParams({ from: addressString(SAFE_ADDRESS), gas: '0x5208' }), (pending, stage) => {
+		assert.equal(pending.safeProposalCreationFailed, true, stage)
+		assert.match(getFailureMessage(pending.transactionToSimulate) ?? '', SAFE_PROPOSAL_CREATION_FAILURE, stage)
+	})
 })
+
+// A contract creation from the configured Safe, which it can't make through execTransaction, with or without the page's gas.
+const createSafeContractCreationParams = async (gas: Record<string, string>) => (await import('../../app/ts/types/JsonRpc-types.js')).SendTransactionParams.parse({ method: 'eth_sendTransaction', params: [{ from: addressString(SAFE_ADDRESS), value: '0x0', data: '0x00', ...gas }] })
+const safeContractCreationCases = [{ description: 'without gas', gas: {} }, { description: 'with gas', gas: { gas: '0x30d40' } }]
+
+for (const { description, gas } of safeContractCreationCases) {
+	test(`forms a contract creation from a configured Gnosis Safe ${ description } with the same fee mode when its confirmation opens and on every refresh`, async () => {
+		configureSafe()
+		const { opened, refreshed } = await withSilencedConsole(async () => await getOpenedAndRefreshedGasPayments(await createSafeContractCreationParams(gas), false, SAFE_ADDRESS))
+		assert.deepEqual({ opened, refreshed }, { opened: 'external-executor', refreshed: 'external-executor' })
+	})
+
+	test(`shows a contract creation from a configured Gnosis Safe ${ description } as the request-shape rejection, not a failed proposal, through refresh`, async () => {
+		configureSafe()
+		await assertSafeFailureKeptThroughRefresh(await createSafeContractCreationParams(gas), (pending, stage) => {
+			assert.equal(getFailureMessage(pending.transactionToSimulate), SAFE_UNSUPPORTED_TRANSACTION_MESSAGES['contract-creation'], stage)
+			assert.equal(pending.safeProposalCreationFailed, undefined, stage)
+			assert.equal(pending.unsupportedSafeRequest, true, stage)
+		})
+	})
+}
 
 test('leaves an input without Gnosis Safe executions as it is, without reading any Safe', async () => {
 	const input = [createBlock([createSafeCall({ value: 1n, input: new Uint8Array(), gas: 21_000n }, undefined)])]
@@ -646,7 +676,8 @@ function createWebsiteTabConnections(postedMessages: unknown[]) {
 
 // Like geth's eth_simulateV1 without validation: a call that pays fees must cover its block's base fee, and a call without fees skips the check. Records every simulated call.
 function createRecordingSimulator() {
-	const simulatedCalls: { readonly from: bigint, readonly to: bigint, readonly maxFeePerGas: bigint, readonly baseFeePerGas: bigint }[] = []
+	// A contract creation's call has no recipient.
+	const simulatedCalls: { readonly from: bigint, readonly to: bigint | undefined, readonly maxFeePerGas: bigint, readonly baseFeePerGas: bigint }[] = []
 	const requestHandler = {
 		rpcUrl: fakeRpcNetwork.httpsRpc,
 		clearCache() { return undefined },
@@ -659,7 +690,7 @@ function createRecordingSimulator() {
 					for (const call of blockStateCall.calls) {
 						const maxFeePerGas = BigInt(call.maxFeePerGas ?? 0n)
 						if (maxFeePerGas !== 0n && maxFeePerGas < baseFeePerGas) throw new Error('max fee per gas less than block base fee')
-						simulatedCalls.push({ from: BigInt(call.from), to: BigInt(call.to), maxFeePerGas, baseFeePerGas })
+						simulatedCalls.push({ from: BigInt(call.from), to: call.to === undefined || call.to === null ? undefined : BigInt(call.to), maxFeePerGas, baseFeePerGas })
 					}
 				}
 			}
