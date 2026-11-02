@@ -228,6 +228,7 @@ export const SimulationStateInput = funtypes.ReadonlyArray(SimulationStateInputB
 export type SimulationStateInputMinimalDataBlock = funtypes.Static<typeof SimulationStateInputMinimalDataBlock>
 export const SimulationStateInputMinimalDataBlock = funtypes.ReadonlyObject({
 	stateOverrides: StateOverrides,
+	// safeTransaction is kept rather than a bare must-be-prepared flag: a Safe proposal executes its SafeTx, whose operation, refund fields and data can differ from the shown signedTransaction, so it is the data the executedTransaction is prepared from and authorizesExecutedCall reads at the RPC boundary.
 	transactions: funtypes.ReadonlyArray(funtypes.ReadonlyObject({ signedTransaction: EthereumSendableSignedTransaction }).And(funtypes.ReadonlyPartial({ executedTransaction: EthereumSendableSignedTransaction, safeTransaction: SafeStackTransaction, simulationOptions: TransactionSimulationOptions }))),
 	signedMessages: funtypes.ReadonlyArray(SignedMessageTransaction),
 	blockTimeManipulation: BlockTimeManipulation,

@@ -352,7 +352,7 @@ export class EthereumClientService {
 		const gasLimitTransaction = (transaction: RpcTransaction): RpcTransaction => ({
 			signedTransaction: clampGasToBlock(transaction.signedTransaction),
 			...(transaction.executedTransaction === undefined ? {} : { executedTransaction: clampGasToBlock(transaction.executedTransaction) }),
-			// safeTransaction and simulationOptions stay with executedTransaction: the rpcBlocks are simulation input blocks too and must satisfy the invariant checked above, which authorizesExecutedCall decides from both.
+			// safeTransaction and simulationOptions stay with executedTransaction: the rpcBlocks are simulation input blocks too and must satisfy the invariant checked above, which authorizesExecutedCall decides from both. safeTransaction carries the SafeTx the executedTransaction runs, which can differ from the shown call, so a bare flag could not stand in for it.
 			...(transaction.safeTransaction === undefined ? {} : { safeTransaction: transaction.safeTransaction }),
 			...(transaction.simulationOptions === undefined ? {} : { simulationOptions: transaction.simulationOptions }),
 		})
