@@ -1,10 +1,10 @@
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { appendTransactionsToInput } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { appendTransactionsToInput, getSimulatedSafeCallNonce } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { getGasEstimateFromSimulation } from '../simulation/services/simulationGasEstimation.js'
 import { mockSignTransaction } from '../simulation/services/simulationTransactionSigning.js'
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
 import type { MutableStateOverrides } from '../types/ethSimulate-types.js'
-import { authorizesExecutedCall, type PreSimulationTransaction, type SimulationInputTransaction, type SimulationStateInput } from '../types/visualizer-types.js'
+import { authorizesExecutedCall, type PreSimulationTransaction, type ResolvedSimulationState, type SimulationInputTransaction, type SimulationStateInput, type TransactionSimulationOptions } from '../types/visualizer-types.js'
 import type { SafeTx } from '../types/personal-message-definitions.js'
 import type { EthereumSendableSignedTransaction, EthereumUnsignedTransaction } from '../types/wire-types.js'
 import { encodeAbiValues, encodeFunctionCall } from '../utils/abiRuntime.js'
@@ -19,6 +19,7 @@ import { last } from '../utils/array.js'
 import { isSafeCallRevert, SAFE_CALL_REVERTED_MESSAGE } from './safeExecutionFailure.js'
 import { SAFE_EXEC_TRANSACTION_SELECTOR } from './safeExecutionRouting.js'
 import { getSimulatedBlockBaseFeePerGas } from '../simulation/services/simulationBlockParameters.js'
+import { JsonRpcResponseError } from '../utils/errors.js'
 
 // The account that sends simulated Gnosis Safe executions. It is random for each background session, so a called contract can't recognise the simulation by a known tx.origin. On-chain, too, a Safe's transactions are often sent by accounts that aren't its owners, such as relayers.
 export const SAFE_EXECUTION_SIMULATION_EXECUTOR = generate256BitRandomBigInt() >> 96n
@@ -162,15 +163,18 @@ export async function prepareSafeExecutionSimulationInput(input: SimulationState
 	return [{ ...firstBlock, stateOverrides }, ...laterBlocks]
 }
 
+// The fields of the Safe's call that its gas estimate stacks it with.
+type SafeCallFields = Pick<PreSimulationTransaction, 'website' | 'created' | 'originalRequestParameters' | 'transactionIdentifier'>
+
 /**
- * Estimates a Gnosis Safe's own call the way the simulation runs it: as the executor's execTransaction call on top of the simulation input, so the call sees the executor as tx.origin and the real base fee, and the estimate covers execTransaction's own work and the Safe's guard. The estimate becomes the gas of the Safe's call, which prepareSafeExecutionSimulationInput turns into the executor's gas limit.
+ * Estimates a Gnosis Safe's call (a Safe proposal's, or in simulation mode the Safe's own) the way the simulation runs it: as the executor's execTransaction call on top of the simulation input, so the call sees the executor as tx.origin and the real base fee, and the estimate covers execTransaction's own work and the Safe's guard. The estimate becomes the gas of the Safe's call, which prepareSafeExecutionSimulationInput turns into the executor's gas limit.
  */
 export async function estimateSafeExecutionGas(
 	ethereum: EthereumClientService,
 	requestAbortController: AbortController | undefined,
 	simulationInput: SimulationStateInput,
 	safeCallWithoutGas: DistributiveOmit<EthereumUnsignedTransaction, 'gas'>,
-	safeCallFields: Pick<PreSimulationTransaction, 'website' | 'created' | 'originalRequestParameters' | 'transactionIdentifier'>,
+	safeCallFields: SafeCallFields,
 ): Promise<{ error: ErrorWithCodeAndOptionalData } | { gas: bigint }> {
 	const parentBlock = await ethereum.getBlock(requestAbortController)
 	if (parentBlock === null) throw new Error('The latest block is null')
@@ -178,7 +182,7 @@ export async function estimateSafeExecutionGas(
 	const safeCall: PreSimulationTransaction = {
 		...safeCallFields,
 		signedTransaction: mockSignTransaction({ ...safeCallWithoutGas, gas: blockGasLimit }),
-		simulationOptions: { requiredChainId: ethereum.getChainId(), executeThroughSafe: true },
+		simulationOptions: createSafeExecutionSimulationOptions(ethereum.getChainId()),
 	}
 	// appendTransactionsToInput puts the Safe's call alone in a new last block.
 	const preparedInput = await prepareSafeExecutionSimulationInput(appendTransactionsToInput(simulationInput, [safeCall]), ethereum, parentBlock.number, getSimulatedBlockBaseFeePerGas(parentBlock))
@@ -199,3 +203,24 @@ export async function estimateSafeExecutionGas(
 	if ('error' in estimate && (safeCallReverted || isSafeCallRevert(estimate.error))) return { error: { ...estimate.error, message: SAFE_CALL_REVERTED_MESSAGE } }
 	return estimate
 }
+
+// The simulation options that mark a Gnosis Safe's call to run through the Safe. Forming the call and estimating its gas both take them from here, so the estimate runs the call as the stack will.
+export const createSafeExecutionSimulationOptions = (chainId: bigint): TransactionSimulationOptions => ({ requiredChainId: chainId, executeThroughSafe: true })
+
+// How formEthSendTransaction forms a transaction that the simulation runs as an executor's call instead of as itself: the options that mark it, the source of its nonce field and its gas estimate.
+export type ExecutedCallFormation = {
+	readonly simulationOptions: TransactionSimulationOptions
+	readonly getNonce: (requestAbortController: AbortController | undefined, simulationState: ResolvedSimulationState, from: bigint) => Promise<bigint>
+	readonly estimateGas: (requestAbortController: AbortController | undefined, simulationState: ResolvedSimulationState, transaction: DistributiveOmit<EthereumUnsignedTransaction, 'gas'>, safeCallFields: SafeCallFields) => Promise<{ error: ErrorWithCodeAndOptionalData } | { gas: bigint }>
+}
+
+// The formation of a Gnosis Safe's call that runs through the Safe, a Safe proposal's or in simulation mode the Safe's own: marked by createSafeExecutionSimulationOptions, numbered by getSimulatedSafeCallNonce and estimated as its executor's call on top of the stack. A failed stack simulation fails the estimate, as in simulateEstimateGas.
+export const createSafeExecutionCallFormation = (ethereum: EthereumClientService): ExecutedCallFormation => ({
+	simulationOptions: createSafeExecutionSimulationOptions(ethereum.getChainId()),
+	getNonce: async (requestAbortController, simulationState, from) => await getSimulatedSafeCallNonce(ethereum, requestAbortController, simulationState, from),
+	estimateGas: async (requestAbortController, simulationState, transaction, safeCallFields) => {
+		if (simulationState.kind === 'passthrough') throw new Error('Gnosis Safe transaction gas estimation requires the Interceptor simulator.')
+		if (simulationState.value.success === false) throw new JsonRpcResponseError(simulationState.value.jsonRpcError)
+		return await estimateSafeExecutionGas(ethereum, requestAbortController, simulationState.value.simulationStateInput, transaction, safeCallFields)
+	},
+})
