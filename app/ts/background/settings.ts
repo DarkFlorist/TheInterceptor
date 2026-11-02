@@ -11,8 +11,8 @@ import type { AddressBookEntry } from '../types/addressBookTypes.js'
 import type { BlockTimeManipulation } from '../types/visualizer-types.js'
 import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_BLOCK_MANIPULATION, DEFAULT_RPCS } from '../config/defaults.js'
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
-import { mergeStoredWebsiteMetadata, sanitizeWebsiteAccess } from '../utils/websiteIcons.js'
-import { normalizeWebsiteAccessOrigins } from '../utils/websiteOrigin.js'
+import { mergeStoredWebsiteMetadata } from '../utils/websiteIcons.js'
+import { toCanonicalWebsiteAccess } from '../utils/canonicalWebsiteAccess.js'
 import type { SigningAddressPreference, SigningAddressPreferences } from '../types/signerTypes.js'
 import { hasOwnKey } from '../utils/typescript.js'
 
@@ -70,11 +70,6 @@ async function getParsedStorageValueOrDefaultFromItems<Key extends keyof Startup
 
 async function getParsedStorageValueOrDefault<Key extends keyof StartupStorageDefaults>(key: Key, defaultValue: StartupStorageDefaults[Key]): Promise<StartupStorageDefaults[Key]> {
 	return await getParsedStorageValueOrDefaultFromItems(await browser.storage.local.get(key), key, defaultValue)
-}
-
-// The single producer of the website access every reader sees, so getSettings() and getWebsiteAccess() observe stored records in the same canonical form. Both steps return their input unchanged when it is already canonical.
-function toCanonicalWebsiteAccess(websiteAccess: WebsiteAccessArray) {
-	return normalizeWebsiteAccessOrigins(sanitizeWebsiteAccess(websiteAccess))
 }
 
 export async function getSettings() : Promise<Settings> {

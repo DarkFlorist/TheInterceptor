@@ -150,10 +150,14 @@ test('signing mode still requires the acknowledgement for a quarantined typed-da
 		const acknowledgement = page.findAcknowledgement()
 		if (acknowledgement === undefined) throw new Error('The signing-mode acknowledgement is missing')
 		assert.equal(page.isConfirmDisabled(), true)
-		await assert.rejects(modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+		// The refusal keeps the request waiting for the user instead of throwing into the popup message router's unexpected-error report.
+		assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
 			method: 'popup_confirmDialog',
 			data: { action: 'accept', uniqueRequestIdentifier, forceSend: false },
-		}), /Quarantined signature requests require explicit user acknowledgement/u)
+		}), false)
+		assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
+		const [pendingRequest] = await modules.getPendingTransactionsAndMessages()
+		assert.equal(pendingRequest?.approvalStatus.status, 'WaitingForUser')
 		await page.tickAcknowledgement(acknowledgement)
 		assert.equal(page.isConfirmDisabled(), false)
 		const confirmation = await page.clickConfirm()

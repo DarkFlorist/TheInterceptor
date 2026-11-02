@@ -65,6 +65,31 @@ describe('website access migration', () => {
 		assert.equal(storageState.websiteAccess[4]?.website.websiteOrigin, 'https://already.example')
 	})
 
+	test('merges records that canonicalize to one origin, keeping the more restrictive decision on each field', async () => {
+		const storageState = installBrowserMock()
+		const { migrateWebsiteAccess } = await import('../../app/ts/background/websiteAccessMigration.js')
+		// Storage holds addresses in their serialized form.
+		const firstAddress = '0x1111111111111111111111111111111111111111'
+		const secondAddress = '0x2222222222222222222222222222222222222222'
+		storageState.websiteAccess = [
+			{ website: { websiteOrigin: 'https://example.test/', icon: undefined, title: 'First' }, access: true, addressAccess: [{ address: firstAddress, access: true }, { address: secondAddress, access: true }] },
+			{ website: { websiteOrigin: 'other.test', icon: undefined, title: 'Other' }, access: true, addressAccess: undefined },
+			{ website: { websiteOrigin: 'https://example.test', icon: 'data:image/png;base64,Y2FjaGVk', title: 'Second' }, access: false, interceptorDisabled: true, addressAccess: [{ address: secondAddress, access: false }] },
+		]
+
+		await migrateWebsiteAccess()
+
+		assert.deepEqual(storageState.websiteAccess, [
+			{
+				website: { websiteOrigin: 'https://example.test', icon: 'data:image/png;base64,Y2FjaGVk', title: 'First' },
+				addressAccess: [{ address: firstAddress, access: true }, { address: secondAddress, access: false }],
+				access: false,
+				interceptorDisabled: true,
+			},
+			{ website: { websiteOrigin: 'other.test', icon: undefined, title: 'Other' }, access: true, addressAccess: undefined },
+		])
+	})
+
 	test('removes malformed origins without preventing startup migration', async () => {
 		const storageState = installBrowserMock()
 		const { migrateWebsiteAccess } = await import('../../app/ts/background/websiteAccessMigration.js')

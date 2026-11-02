@@ -18,7 +18,7 @@ import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { getActiveAddressForCurrentSignerState } from './signerStateOwnership.js'
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
 import { notifyWebsiteLifecycle } from './websiteLifecycle.js'
-import { hasAccess, hasAddressAccess, type ApprovalState } from './websiteAccessPolicy.js'
+import { findWebsiteAccessEntryForOrigin, hasAccess, hasAddressAccess, type ApprovalState } from './websiteAccessPolicy.js'
 import { getWebsiteActiveAddress } from './websiteActiveAddress.js'
 import { updateWebsiteAccessAndContentScriptInjectionStrategy } from './websiteAccessUpdating.js'
 import { getHostWithPort, getWebsiteHostWithPortFromStoredOrigin } from '../utils/websiteOrigin.js'
@@ -144,13 +144,9 @@ export async function sendActiveAccountChangeToApprovedWebsitePorts(websiteTabCo
 	}
 }
 
+// Includes a not-yet-rebound legacy record's address grants, because approving the origin rebinds that record with them, so the consent dialog lists every address the website would be able to associate.
 function getAddressAccesses(websiteAccess: WebsiteAccessArray, websiteOrigin: string) : readonly WebsiteAddressAccess[] {
-	for (const web of websiteAccess) {
-		if (web.website.websiteOrigin === websiteOrigin) {
-			return web.addressAccess === undefined ? [] : web.addressAccess
-		}
-	}
-	return []
+	return findWebsiteAccessEntryForOrigin(websiteAccess, websiteOrigin)?.addressAccess ?? []
 }
 function getAddressesThatDoNotNeedIndividualAccesses(activeAddressEntries: AddressBookEntries) : AddressBookEntries {
 	return activeAddressEntries.filter((x) => x.askForAddressAccess === false)

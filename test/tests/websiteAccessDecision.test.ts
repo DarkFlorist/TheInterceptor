@@ -3,7 +3,7 @@ import { describe, test } from 'bun:test'
 import type { ContactEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { WebsiteAccessArray } from '../../app/ts/types/websiteAccessTypes.js'
 import { applyInterceptorDisabledDecision, applyWebsiteAccessDecision } from '../../app/ts/background/websiteAccessDecision.js'
-import { hasAccess, hasAddressAccess, isInterceptorDisabledForWebsiteOrigin } from '../../app/ts/background/websiteAccessPolicy.js'
+import { findWebsiteAccessEntryForOrigin, hasAccess, hasAddressAccess, isInterceptorDisabledForWebsiteOrigin } from '../../app/ts/background/websiteAccessPolicy.js'
 
 const firstAddress = 0x1111111111111111111111111111111111111111n
 const secondAddress = 0x2222222222222222222222222222222222222222n
@@ -186,7 +186,7 @@ describe('interceptor-disabled website access policy', () => {
 		const cases: readonly { readonly websiteAccess: WebsiteAccessArray, readonly disabled: boolean }[] = [
 			{ websiteAccess: [{ website: { websiteOrigin: 'https://example.test' }, access: true, interceptorDisabled: true }], disabled: true },
 			{ websiteAccess: [{ website: { websiteOrigin: 'example.test' }, access: true, interceptorDisabled: true }], disabled: true },
-			// Normalizing stored origins can leave duplicate exact records; any disabled one keeps the origin disabled, as content-script injection does.
+			// The canonical form merges duplicate exact records, but the policy still treats any disabled one as disabling the origin, as content-script injection does.
 			{ websiteAccess: [{ website: { websiteOrigin: 'https://example.test' }, access: true }, { website: { websiteOrigin: 'https://example.test' }, interceptorDisabled: true }], disabled: true },
 			{ websiteAccess: [{ website: { websiteOrigin: 'https://example.test' }, access: true, interceptorDisabled: false }], disabled: false },
 			{ websiteAccess: [{ website: { websiteOrigin: 'http://example.test' }, access: true, interceptorDisabled: true }], disabled: false },
@@ -196,5 +196,21 @@ describe('interceptor-disabled website access policy', () => {
 			assert.equal(hasAccess(websiteAccess, 'https://example.test') === 'interceptorDisabled', disabled)
 			assert.equal(hasAddressAccess(websiteAccess, 'https://example.test', address) === 'interceptorDisabled', disabled)
 		}
+	})
+})
+
+describe('stored website details lookup', () => {
+	test('reads an exact record first and otherwise the legacy record an access decision would rebind', () => {
+		const legacy = { website: { websiteOrigin: 'example.test', icon: undefined, title: 'Legacy' }, access: true, addressAccess: [{ address: firstAddress, access: true }] }
+		const exact = { website: { websiteOrigin: 'https://example.test', icon: undefined, title: 'Exact' }, access: true, addressAccess: undefined }
+		assert.equal(findWebsiteAccessEntryForOrigin([legacy], 'https://example.test'), legacy)
+		assert.equal(findWebsiteAccessEntryForOrigin([legacy, exact], 'https://example.test'), exact)
+		assert.equal(findWebsiteAccessEntryForOrigin([legacy], 'https://other.test'), undefined)
+		// Reading a legacy record's details never grants access: only an exact record can.
+		assert.equal(hasAccess([legacy], 'https://example.test'), 'askAccess')
+		// The rebinding decision acts on the same record that the lookup reads.
+		const rebound = applyWebsiteAccessDecision([legacy], exact.website, true, undefined)
+		assert.deepEqual(rebound[0]?.addressAccess, legacy.addressAccess)
+		assert.equal(rebound[0]?.website.websiteOrigin, 'https://example.test')
 	})
 })

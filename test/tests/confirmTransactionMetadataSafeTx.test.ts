@@ -643,12 +643,13 @@ describe('SafeTx confirm transaction metadata', () => {
 			},
 		}
 
-		await assert.rejects(async () => await modules.resolvePendingTransactionOrMessage(
+		// The refusal keeps the request waiting for the user instead of throwing.
+		assert.equal(await modules.resolvePendingTransactionOrMessage(
 			ethereum,
 			tokenPriceService,
 			websiteTabConnections,
 			{ ...confirmationBase, data: { ...confirmationBase.data, forceSend: false } },
-		), /require explicit user acknowledgement/)
+		), false)
 		assert.equal(forwardedMessages.length, 0)
 
 		assert.equal(await modules.resolvePendingTransactionOrMessage(

@@ -10,6 +10,12 @@ function getExactAndLegacyWebsiteAccess(websiteAccess: WebsiteAccessArray, websi
 	return { exactAccess, legacyAccessEntries }
 }
 
+// The record that represents an origin's stored website details: its exact record, or before the user has rebound it, the legacy record that an access decision for the origin would rebind (see applyWebsiteAccessDecision). Use it to read details, never to decide access, which only an exact record can grant.
+export function findWebsiteAccessEntryForOrigin(websiteAccess: WebsiteAccessArray, websiteOrigin: string) {
+	return websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin)
+		?? websiteAccess.find((entry) => isLegacyWebsiteOriginForCanonicalOrigin(entry.website.websiteOrigin, websiteOrigin))
+}
+
 // The Interceptor stays disabled for an origin while any exact or scheme-ambiguous legacy record for it is disabled, matching content-script injection, which excludes the origin of every disabled record.
 export function isInterceptorDisabledForWebsiteOrigin(websiteAccess: WebsiteAccessArray, websiteOrigin: string) {
 	return websiteAccess.some((entry) => entry.interceptorDisabled === true

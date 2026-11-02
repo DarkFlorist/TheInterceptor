@@ -605,7 +605,7 @@ test('forwards a pre-signed raw transaction from another sender without requirin
 	assert.deepEqual(signerRequest.params, ['0x0201'])
 })
 
-test('still rejects a reviewed wallet-signed transaction whose sender is not the authorized account', async () => {
+test('still refuses a reviewed wallet-signed transaction whose sender is not the authorized account, without an unexpected error', async () => {
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [{
 		...pendingTransaction,
 		simulationMode: false,
@@ -613,6 +613,10 @@ test('still rejects a reviewed wallet-signed transaction whose sender is not the
 	}] })
 	const postedMessages: unknown[] = []
 
-	await assert.rejects(acceptPendingRequest(postedMessages), /reviewed transaction sender is not the active authorized account/u)
+	assert.equal(await routePopupConfirmation(simulator.ethereum, createApprovedConnections(postedMessages), { action: 'accept', forceSend: true }), undefined)
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
+	const [pendingRequest] = await modules.getPendingTransactionsAndMessages()
+	assert.equal(pendingRequest?.approvalStatus.status, 'SignerError')
+	assert.match(pendingRequest?.approvalStatus.status === 'SignerError' ? pendingRequest.approvalStatus.message : '', /reviewed transaction sender is not the active authorized account/u)
+	assert.equal(await getLatestUnexpectedError(), undefined)
 })

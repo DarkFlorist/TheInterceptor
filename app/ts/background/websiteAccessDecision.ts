@@ -3,6 +3,7 @@ import { replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
 import { modifyObject } from '../utils/typescript.js'
 import { mergeStoredWebsiteMetadata } from '../utils/websiteIcons.js'
 import { isLegacyWebsiteOriginForCanonicalOrigin } from '../utils/websiteOrigin.js'
+import { findWebsiteAccessEntryForOrigin } from './websiteAccessPolicy.js'
 
 export function applyInterceptorDisabledDecision(previousWebsiteAccess: WebsiteAccessArray, website: Website, interceptorDisabled: boolean): WebsiteAccessArray {
 	let foundExactEntry = false
@@ -23,9 +24,8 @@ export function applyInterceptorDisabledDecision(previousWebsiteAccess: WebsiteA
 
 export function applyWebsiteAccessDecision(previousWebsiteAccess: WebsiteAccessArray, website: Website, access: boolean, address: bigint | undefined): WebsiteAccessArray {
 	const exactEntryIndex = previousWebsiteAccess.findIndex((entry) => entry.website.websiteOrigin === website.websiteOrigin)
-	const legacyEntryIndex = previousWebsiteAccess.findIndex((entry) => isLegacyWebsiteOriginForCanonicalOrigin(entry.website.websiteOrigin, website.websiteOrigin))
-	const foundEntryIndex = exactEntryIndex !== -1 ? exactEntryIndex : legacyEntryIndex
-	const foundEntry = previousWebsiteAccess[foundEntryIndex]
+	const foundEntry = findWebsiteAccessEntryForOrigin(previousWebsiteAccess, website.websiteOrigin)
+	const foundEntryIndex = foundEntry === undefined ? -1 : previousWebsiteAccess.indexOf(foundEntry)
 	if (foundEntry === undefined) {
 		return [...previousWebsiteAccess, {
 			website,

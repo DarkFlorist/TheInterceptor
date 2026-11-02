@@ -18,7 +18,7 @@ import { modifyObject } from '../utils/typescript.js'
 import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { isSignerMissing } from '../utils/signerMetadata.js'
-import { beginSignerStateConfirmation, clearSignerDerivedTabState, confirmSignerState, doesSignerStateTokenMatchIdentity, getConfirmedSignerStateToken, isCurrentWebsiteConnection, isSignerStateTokenCurrent, runSignerStateOperation, signerConnectionReplacedError, tabHasApprovedWebsiteConnection, type SignerStateToken } from './signerStateOwnership.js'
+import { beginSignerStateConfirmation, clearSignerDerivedTabState, confirmSignerState, doesSignerStateTokenMatchIdentity, getConfirmedSignerStateToken, isActiveAddressBoundToSigner, isCurrentWebsiteConnection, isSignerStateTokenCurrent, runSignerStateOperation, signerConnectionReplacedError, tabHasApprovedWebsiteConnection, type SignerStateToken } from './signerStateOwnership.js'
 import { getConfiguredSigningSafe, getSigningAddressSelectionTransition } from './signingAddressSelection.js'
 import { getWalletSelectedAccount } from '../utils/activeAddressSelection.js'
 import { getActiveAddressEntryForChain } from './metadataUtils.js'
@@ -102,8 +102,7 @@ export async function ethAccountsReply(simulationServicesOwner: SimulationServic
 		const activeSigningAddress = signerAccounts.length > 0 ? signerAccounts[0] : undefined
 		const settings = await getSettings()
 		const previousActiveSigningAddress = (await getTabState(tabId)).activeSigningAddress
-		const signerAddressControlsWebsiteAccess = !settings.simulationMode || settings.useSignersAddressAsActiveAddress
-		if (!signerAccountsReply.requestAccounts && signerAddressControlsWebsiteAccess && previousActiveSigningAddress !== activeSigningAddress) {
+		if (!signerAccountsReply.requestAccounts && isActiveAddressBoundToSigner(settings) && previousActiveSigningAddress !== activeSigningAddress) {
 			// The first report after signer state was cleared (page load, reload, or signer reconnect) is not an account switch, so it only suspends approvals bound to a different account.
 			const isInitialSignerAccountReport = previousActiveSigningAddress === undefined
 			suspendWebsitePortApprovalsForTab(websiteTabConnections, tabId, (approvedAddress) => !isInitialSignerAccountReport || (approvedAddress !== undefined && approvedAddress !== activeSigningAddress))

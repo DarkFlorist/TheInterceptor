@@ -183,6 +183,7 @@ export async function loadModules() {
 		safeSimulation,
 		safeCore,
 		safeConfirmationPersistence,
+		signerTransactionEnvelope,
 	] = await Promise.all([
 		import('../../app/ts/simulation/services/EthereumClientService.js'),
 		import('../../app/ts/simulation/services/priceEstimator.js'),
@@ -205,6 +206,7 @@ export async function loadModules() {
 		import('../../app/ts/safe/safeSimulation.js'),
 		import('../../app/ts/safe/safeCore.js'),
 		import('../../app/ts/background/safeConfirmationPersistence.js'),
+		import('../../app/ts/utils/signerTransactionEnvelope.js'),
 	])
 	const flushPendingTerminalRepliesForSocket: typeof flushPendingTerminalRepliesForSocketType = terminalReplyDelivery.flushPendingTerminalRepliesForSocket
 
@@ -224,7 +226,7 @@ export async function loadModules() {
 		resolvePendingTransactionOrMessage: confirmTransaction.resolvePendingTransactionOrMessage,
 		updateConfirmTransactionView: confirmTransaction.updateConfirmTransactionView,
 		formEthSendTransaction: confirmTransaction.formEthSendTransaction,
-		assertSimulatedTransactionMatchesPrepared: confirmTransaction.assertSimulatedTransactionMatchesPrepared,
+		assertSimulatedTransactionMatchesPrepared: signerTransactionEnvelope.assertSimulatedTransactionMatchesPrepared,
 		getSafeExecutionSignerRoute: safeExecutionRouting.getSafeExecutionSignerRoute,
 		prepareSafeExecutionSignerRoute: safeExecutionRouting.prepareSafeExecutionSignerRoute,
 		openConfirmTransactionDialogForMessage: confirmTransaction.openConfirmTransactionDialogForMessage,

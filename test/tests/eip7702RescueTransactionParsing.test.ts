@@ -381,7 +381,8 @@ describe('EIP-7702 rescue transaction parsing', () => {
 	test('binds signer-mode transaction sender, chain, nonce, type, fees, and access list to the reviewed request', async () => {
 		const browserMock = installBrowserMock()
 		try {
-			const { formEthSendTransaction, toCanonicalSendTransactionParams } = await import('../../app/ts/background/windows/confirmTransaction.js')
+			const { formEthSendTransaction } = await import('../../app/ts/background/windows/confirmTransaction.js')
+			const { toCanonicalSendTransactionParams } = await import('../../app/ts/utils/signerTransactionEnvelope.js')
 			const sender = 0x0000000000000000000000000000000000000001n
 			const request = SendTransactionParams.parse({
 				method: 'eth_sendTransaction',
@@ -443,7 +444,8 @@ describe('EIP-7702 rescue transaction parsing', () => {
 	test('infers EIP-2930 when gasPrice and an access list are supplied without an explicit type', async () => {
 		const browserMock = installBrowserMock()
 		try {
-			const { formEthSendTransaction, toCanonicalSendTransactionParams } = await import('../../app/ts/background/windows/confirmTransaction.js')
+			const { formEthSendTransaction } = await import('../../app/ts/background/windows/confirmTransaction.js')
+			const { toCanonicalSendTransactionParams } = await import('../../app/ts/utils/signerTransactionEnvelope.js')
 			const sender = 0x0000000000000000000000000000000000000001n
 			const request = SendTransactionParams.parse({
 				method: 'eth_sendTransaction',

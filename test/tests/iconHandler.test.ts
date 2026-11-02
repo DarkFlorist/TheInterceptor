@@ -306,6 +306,19 @@ describe('retrieveWebsiteDetails favicon handling', () => {
 		assert.equal(onUpdatedListeners.length, 0)
 	})
 
+	test('reuses the cached favicon of a not-yet-rebound legacy record for its canonical origin', async () => {
+		storageState.websiteAccess = [{
+			website: { websiteOrigin: 'legacy-cached.test', icon: 'data:image/png;base64,Y2FjaGVk', title: 'Legacy cached favicon' },
+			access: true,
+		}]
+		tabsById.set(14, { id: 14, status: 'complete', title: 'Legacy cached favicon', url: 'https://legacy-cached.test/page', favIconUrl: '/favicon.png' })
+
+		const result = await retrieveWebsiteDetails(14, 'https://legacy-cached.test')
+
+		assert.deepEqual(result, { title: 'Legacy cached favicon', icon: 'data:image/png;base64,Y2FjaGVk' })
+		assert.equal(fetchCalls.length, 0)
+	})
+
 	test('allows image data url favicons for stored websites without fetching them in the background', async () => {
 		storageState.websiteAccess = [{
 			website: { websiteOrigin: 'https://data-icon.test', icon: undefined, title: 'Data favicon' },

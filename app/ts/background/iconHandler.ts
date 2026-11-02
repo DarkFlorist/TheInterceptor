@@ -1,6 +1,6 @@
 import { ICON_ACCESS_DENIED, ICON_ACTIVE, ICON_ACTIVE_WITH_SHIELD, ICON_INTERCEPTOR_DISABLED, ICON_NOT_ACTIVE, ICON_NOT_ACTIVE_WITH_SHIELD, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIGNING_NOT_SUPPORTED_WITH_SHIELD, ICON_SIGNING_WITH_SHIELD, ICON_SIMULATING, ICON_SIMULATING_WITH_SHIELD, PRIMARY_COLOR, WARNING_COLOR } from '../utils/constants.js'
 import { areWeBlocking } from './accessManagement.js'
-import { hasAccess, hasAddressAccess, isInterceptorDisabledForWebsiteOrigin } from './websiteAccessPolicy.js'
+import { findWebsiteAccessEntryForOrigin, hasAccess, hasAddressAccess, isInterceptorDisabledForWebsiteOrigin } from './websiteAccessPolicy.js'
 import { getActiveAddress, sendPopupMessageToOpenWindows, setExtensionBadgeBackgroundColor, setExtensionBadgeText, setExtensionIcon, setExtensionTitle } from './backgroundUtils.js'
 import { createScopedKeyedSerialExecutor } from '../utils/semaphore.js'
 import { Future } from '../utils/future.js'
@@ -39,7 +39,7 @@ export function addBlockingShieldToIcon(icon: TabIcon): TabIcon {
 
 async function getCachedWebsiteIcon(tabId: number, websiteOrigin: string) {
 	const storedWebsiteAccess = await getWebsiteAccess()
-	const storedWebsite = storedWebsiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin)
+	const storedWebsite = findWebsiteAccessEntryForOrigin(storedWebsiteAccess, websiteOrigin)
 	if (storedWebsite === undefined) return { cachedIcon: undefined, hasStoredWebsiteAccess: false as const }
 	const currentWebsite = (await getTabState(tabId)).website
 	if (currentWebsite?.websiteOrigin === websiteOrigin) {
