@@ -69,29 +69,25 @@ export function createContentScriptRegistrationService() {
 			// Read inside the queue so subsequent writes cannot leave the last requested update applying stale state.
 			const configuration = await getContentScriptConfiguration()
 			const settingsKey = configuration.cacheKey
-			// Concurrent callers may retry the failure they observed once; a newer queued attempt owns subsequent retries.
-			const retryObservedFailure = hostRegistration.shouldRetry(failedAttemptToRetry)
-			if (settingsKey === appliedSettingsKey && !retryObservedFailure && !forceReconcile) return hostRegistration.outcome()
+			const baseKey = JSON.stringify(configuration.excludeMatches)
+			const baseContentScripts = getBaseContentScripts(configuration.excludeMatches)
+			// Only website-access exclusions require a core provider update. Hosting is a separate overlay.
+			const baseNeedsReconcile = forceReconcile || baseKey !== appliedBaseKey
 			try {
-				const baseKey = JSON.stringify(configuration.excludeMatches)
-				const baseContentScripts = getBaseContentScripts(configuration.excludeMatches)
-				const hostPlan = hostRegistration.plan(configuration.storedItems, configuration.excludeMatches)
-				const baseWasReconciled = forceReconcile || baseKey !== appliedBaseKey
-				// Only website-access exclusions require a core provider update. Hosting is a separate overlay.
-				if (baseWasReconciled) {
-					await reconcileBaseContentScripts(baseContentScripts, hostPlan.hostScript)
-					appliedBaseKey = baseKey
-				}
-				const outcome = hostRegistration.needsUpdate(hostPlan)
-					? await hostRegistration.apply(hostPlan, baseContentScripts, baseWasReconciled)
-					: hostRegistration.outcome()
+				const outcome = await hostRegistration.reconcile({
+					storedItems: configuration.storedItems,
+					baseScripts: baseContentScripts,
+					reconcileBase: baseNeedsReconcile ? async (hostScript) => await reconcileBaseContentScripts(baseContentScripts, hostScript) : undefined,
+					configurationUnchanged: settingsKey === appliedSettingsKey,
+					failedAttemptToRetry,
+				})
+				appliedBaseKey = baseKey
 				appliedSettingsKey = settingsKey
 				return outcome
 			} catch (error: unknown) {
 				// A failed mutation can leave any script definition unknown, including a previously cached configuration.
 				appliedSettingsKey = undefined
 				appliedBaseKey = undefined
-				hostRegistration.forget()
 				throw error
 			}
 		})

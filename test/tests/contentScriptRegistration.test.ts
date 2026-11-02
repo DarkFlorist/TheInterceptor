@@ -6,6 +6,7 @@ import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHa
 import type { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import type { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
 import { withSilencedConsole } from './consoleSilence.js'
+import type { FixedContentScript } from '../../app/ts/background/contentScriptDefinition.js'
 
 type RuntimeMessage = {
 	readonly method?: string
@@ -819,4 +820,98 @@ test('disabled compatibility leaves malformed hosting selections inert without r
 	assert.deepEqual(getScriptingOperations(), initialOperations)
 	assert.deepEqual(getRegisteredContentScripts().map(({ id }) => id).sort(), ['inpage', 'inpage2'])
 	assert.deepEqual(sentMessages, [])
+})
+
+describe('Safe Apps host registration reconcile entry point', () => {
+	const origin = 'https://hosted.example'
+	const hostMatch = 'https://hosted.example:443/*'
+	const hosted = { safeAppsCompatibilityMode: true, safeAppsHostOrigins: [origin] }
+	const optedOut = { safeAppsCompatibilityMode: true, safeAppsHostOrigins: [] }
+	const baseScripts: [FixedContentScript, FixedContentScript] = [
+		{ id: 'inpage2', allFrames: true, matches: ['<all_urls>'], excludeMatches: [], js: ['/listener.js'], runAt: 'document_start', world: 'ISOLATED', matchOriginAsFallback: true },
+		{ id: 'inpage', allFrames: true, matches: ['<all_urls>'], excludeMatches: [], js: ['/inpage.js'], runAt: 'document_start', world: 'MAIN', matchOriginAsFallback: true },
+	]
+	const changed = { baseScripts, configurationUnchanged: false, failedAttemptToRetry: undefined }
+	const loadHostRegistration = async () => (await import('../../app/ts/background/safeAppsHostRegistration.js')).createSafeAppsHostRegistration()
+
+	test('a requested base reconcile receives the planned host overlay and replaces the separate provider restore', async () => {
+		for (const reconcileBaseOnOptOut of [true, false]) {
+			const updatedScripts: RegisteredContentScript[][] = []
+			const { getScriptingOperations, getRegisteredContentScripts } = installBrowserMock({ registeredContentScriptIds: ['inpage', 'inpage2'], beforeUpdateContentScripts: async (scripts) => { updatedScripts.push([...scripts]) } })
+			const registration = await loadHostRegistration()
+			const baseOverlays: (readonly string[] | undefined)[] = []
+			const reconcileBase = async (hostScript: FixedContentScript | undefined) => { baseOverlays.push(hostScript?.matches) }
+			assert.equal(await registration.reconcile({ ...changed, storedItems: hosted, reconcileBase }), 'configuration-applied')
+			assert.deepEqual(baseOverlays, [[hostMatch]])
+			assert.equal(registration.hasOrigin(origin), true)
+			assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.excludeMatches, [hostMatch])
+			const operationsBeforeOptOut = getScriptingOperations().length
+			const updatesBeforeOptOut = updatedScripts.length
+			assert.equal(await registration.reconcile({ ...changed, storedItems: optedOut, reconcileBase: reconcileBaseOnOptOut ? reconcileBase : undefined }), 'configuration-applied')
+			assert.equal(registration.hasOrigin(origin), false)
+			assert.equal(getRegisteredContentScripts().some(({ id }) => id === 'safe-apps-host'), false)
+			// A base reconcile already rewrote the provider, so only the unreconciled path restores it explicitly.
+			assert.deepEqual(baseOverlays, reconcileBaseOnOptOut ? [[hostMatch], undefined] : [[hostMatch]])
+			assert.deepEqual(getScriptingOperations().slice(operationsBeforeOptOut), reconcileBaseOnOptOut ? ['unregister'] : ['unregister', 'update'])
+			assert.deepEqual(updatedScripts.slice(updatesBeforeOptOut).map((scripts) => scripts.map(({ id, excludeMatches }) => ({ id, excludeMatches }))), reconcileBaseOnOptOut ? [] : [[{ id: 'inpage', excludeMatches: [] }]])
+		}
+	})
+
+	test('an unchanged configuration is skipped unless the caller retries the failure it observed', async () => {
+		let hostAttempts = 0
+		const { getScriptingOperations } = installBrowserMock({ registeredContentScriptIds: ['inpage', 'inpage2'], beforeRegisterContentScripts: async (scripts) => {
+			if (!scripts.some(({ id }) => id === 'safe-apps-host')) return
+			hostAttempts++
+			if (hostAttempts === 1) throw new Error('Transient host failure')
+		} })
+		const registration = await loadHostRegistration()
+		await withSilencedConsole(async () => {
+			assert.equal(registration.observedFailure(), undefined)
+			assert.equal(await registration.reconcile({ ...changed, storedItems: hosted, reconcileBase: undefined }), 'hosting-failed')
+			const observedFailure = registration.observedFailure()
+			assert.notEqual(observedFailure, undefined)
+			const operationsAfterFailure = getScriptingOperations()
+			assert.equal(await registration.reconcile({ ...changed, storedItems: hosted, reconcileBase: undefined, configurationUnchanged: true }), 'hosting-failed')
+			assert.deepEqual(getScriptingOperations(), operationsAfterFailure)
+			assert.equal(await registration.reconcile({ ...changed, storedItems: hosted, reconcileBase: undefined, configurationUnchanged: true, failedAttemptToRetry: observedFailure }), 'configuration-applied')
+			assert.equal(hostAttempts, 2)
+			assert.equal(registration.observedFailure(), undefined)
+			assert.equal(registration.hasOrigin(origin), true)
+		})
+	})
+
+	test('a failed host install rolls the provider back, and a failed rollback or base reconcile forgets applied hosting', async () => {
+		let failHost = false
+		let failProviderRestore = false
+		const { getRegisteredContentScripts } = installBrowserMock({
+			registeredContentScriptIds: ['inpage', 'inpage2'],
+			beforeRegisterContentScripts: async (scripts) => { if (failHost && scripts.some(({ id }) => id === 'safe-apps-host')) throw new Error('host failed') },
+			beforeUpdateContentScripts: async (scripts) => {
+				if (failHost && scripts.some(({ id }) => id === 'safe-apps-host')) throw new Error('host failed')
+				if (failProviderRestore && scripts.some(({ id, excludeMatches }) => id === 'inpage' && excludeMatches?.length === 0)) throw new Error('rollback failed')
+			},
+		})
+		const registration = await loadHostRegistration()
+		failHost = true
+		await withSilencedConsole(async () => { assert.equal(await registration.reconcile({ ...changed, storedItems: hosted, reconcileBase: undefined }), 'hosting-failed') })
+		assert.equal(getRegisteredContentScripts().some(({ id }) => id === 'safe-apps-host'), false)
+		assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.excludeMatches, [])
+		assert.equal(registration.hasOrigin(origin), false)
+
+		failHost = false
+		assert.equal(await registration.reconcile({ ...changed, storedItems: hosted, reconcileBase: undefined }), 'configuration-applied')
+		assert.equal(registration.hasOrigin(origin), true)
+		failHost = true
+		failProviderRestore = true
+		await assert.rejects(registration.reconcile({ ...changed, storedItems: hosted, reconcileBase: undefined }), { name: 'AggregateError', message: 'Safe Apps host registration and provider rollback failed.' })
+		assert.equal(registration.hasOrigin(origin), false)
+		assert.equal(await registration.hasAppliedRegistrations(), false)
+
+		failHost = false
+		failProviderRestore = false
+		assert.equal(await registration.reconcile({ ...changed, storedItems: hosted, reconcileBase: undefined }), 'configuration-applied')
+		assert.equal(registration.hasOrigin(origin), true)
+		await assert.rejects(registration.reconcile({ ...changed, storedItems: hosted, reconcileBase: async () => { throw new Error('base reconcile failed') } }), /base reconcile failed/)
+		assert.equal(registration.hasOrigin(origin), false)
+	})
 })

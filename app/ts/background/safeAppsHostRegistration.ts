@@ -56,59 +56,82 @@ async function applySafeAppsHost(plan: HostingPlan, baseInpageScript: FixedConte
 	}
 }
 
+export type HostRegistrationRequest = {
+	readonly storedItems: unknown
+	// [isolated content listener, MAIN-world provider]; the host shares the provider's website-access exclusions.
+	readonly baseScripts: readonly [FixedContentScript, FixedContentScript]
+	// Present only when the base providers must be reconciled; it runs with this plan's host overlay so a current host is kept and a stale one pruned.
+	readonly reconcileBase: ((hostScript: FixedContentScript | undefined) => Promise<void>) | undefined
+	// Unchanged persisted configuration only reapplies hosting to retry the failure this caller observed.
+	readonly configurationUnchanged: boolean
+	readonly failedAttemptToRetry: number | undefined
+}
+
+function planHosting(storedItems: unknown, excludeMatches: string[] | undefined): HostingPlan {
+	const hosting = getHostingConfiguration(storedItems)
+	const hostScript = hosting === undefined || 'error' in hosting || hosting.matches.length === 0 ? undefined : {
+		id: 'safe-apps-host',
+		allFrames: true,
+		matches: hosting.matches,
+		excludeMatches,
+		// Keep provider injection in embedded app frames, but the host itself only changes top-level pages.
+		js: [...SAFE_APPS_HOST_SCRIPTS],
+		runAt: 'document_start',
+		world: 'MAIN',
+		matchOriginAsFallback: true,
+	} satisfies FixedContentScript
+	return { hosting, hostScript }
+}
+
+// Owns the whole plan -> base reconcile -> host apply -> outcome lifecycle so whether the base was reconciled is never a caller-supplied flag.
 export function createSafeAppsHostRegistration() {
 	let appliedOutcome: HostRegistrationOutcome = 'configuration-applied'
 	let appliedHosting: Extract<HostingConfiguration, { readonly matches: string[] }> | undefined
 	let appliedScripts: readonly FixedContentScript[] | undefined
 	let appliedAttempt = 0
 	let hadHostingPlan = false
-	return {
-		plan(storedItems: unknown, excludeMatches: string[]): HostingPlan {
-			const hosting = getHostingConfiguration(storedItems)
-			const hostScript = hosting === undefined || 'error' in hosting || hosting.matches.length === 0 ? undefined : {
-				id: 'safe-apps-host',
-				allFrames: true,
-				matches: hosting.matches,
-				excludeMatches,
-				// Keep provider injection in embedded app frames, but the host itself only changes top-level pages.
-				js: [...SAFE_APPS_HOST_SCRIPTS],
-				runAt: 'document_start',
-				world: 'MAIN',
-				matchOriginAsFallback: true,
-			} satisfies FixedContentScript
-			return { hosting, hostScript }
-		},
-		observedFailure: () => appliedOutcome === 'hosting-failed' ? appliedAttempt : undefined,
-		outcome: () => appliedOutcome,
-		shouldRetry: (observedAttempt: number | undefined) => appliedOutcome === 'hosting-failed' && observedAttempt === appliedAttempt,
-		needsUpdate: (plan: HostingPlan) => plan.hosting !== undefined || hadHostingPlan || appliedOutcome === 'hosting-failed',
-		async apply(plan: HostingPlan, baseScripts: readonly [FixedContentScript, FixedContentScript], baseWasReconciled: boolean): Promise<HostRegistrationOutcome> {
-			const baseInpageScript = baseScripts[1]
-			if (plan.hosting === undefined) {
-				// Base reconciliation removes stale host scripts on startup; a prior hosting plan still needs explicit reversal.
-				if (hadHostingPlan) {
-					await removeSafeAppsHostScript()
-					if (!baseWasReconciled) await browser.scripting.updateContentScripts([baseInpageScript])
-				}
-				hadHostingPlan = false
-				appliedHosting = undefined
-				appliedScripts = undefined
-				appliedOutcome = 'configuration-applied'
-				appliedAttempt += 1
-				return appliedOutcome
+	const forgetAppliedHosting = () => {
+		appliedHosting = undefined
+		appliedScripts = undefined
+		hadHostingPlan = false
+	}
+	const applyHosting = async (plan: HostingPlan, baseScripts: HostRegistrationRequest['baseScripts'], baseWasReconciled: boolean): Promise<HostRegistrationOutcome> => {
+		const baseInpageScript = baseScripts[1]
+		if (plan.hosting === undefined) {
+			// Base reconciliation removes stale host scripts on startup; a prior hosting plan still needs explicit reversal.
+			if (hadHostingPlan) {
+				await removeSafeAppsHostScript()
+				if (!baseWasReconciled) await browser.scripting.updateContentScripts([baseInpageScript])
 			}
-			const outcome = await applySafeAppsHost(plan, baseInpageScript, baseWasReconciled)
-			hadHostingPlan = true
+			forgetAppliedHosting()
+			appliedOutcome = 'configuration-applied'
 			appliedAttempt += 1
-			appliedOutcome = outcome
-			appliedHosting = outcome === 'configuration-applied' && 'matches' in plan.hosting ? plan.hosting : undefined
-			appliedScripts = appliedHosting === undefined ? undefined : [baseScripts[0], { ...baseInpageScript, excludeMatches: [...(baseInpageScript.excludeMatches ?? []), ...appliedHosting.matches] }, ...(plan.hostScript === undefined ? [] : [plan.hostScript])]
-			return outcome
-		},
-		forget() {
-			appliedHosting = undefined
-			appliedScripts = undefined
-			hadHostingPlan = false
+			return appliedOutcome
+		}
+		const outcome = await applySafeAppsHost(plan, baseInpageScript, baseWasReconciled)
+		hadHostingPlan = true
+		appliedAttempt += 1
+		appliedOutcome = outcome
+		appliedHosting = outcome === 'configuration-applied' && 'matches' in plan.hosting ? plan.hosting : undefined
+		appliedScripts = appliedHosting === undefined ? undefined : [baseScripts[0], { ...baseInpageScript, excludeMatches: [...(baseInpageScript.excludeMatches ?? []), ...appliedHosting.matches] }, ...(plan.hostScript === undefined ? [] : [plan.hostScript])]
+		return outcome
+	}
+	return {
+		// Captured before queueing so concurrent callers retry the failure they observed once; a newer attempt owns subsequent retries.
+		observedFailure: () => appliedOutcome === 'hosting-failed' ? appliedAttempt : undefined,
+		async reconcile({ storedItems, baseScripts, reconcileBase, configurationUnchanged, failedAttemptToRetry }: HostRegistrationRequest): Promise<HostRegistrationOutcome> {
+			const retryObservedFailure = appliedOutcome === 'hosting-failed' && failedAttemptToRetry === appliedAttempt
+			if (configurationUnchanged && reconcileBase === undefined && !retryObservedFailure) return appliedOutcome
+			try {
+				const plan = planHosting(storedItems, baseScripts[1].excludeMatches)
+				if (reconcileBase !== undefined) await reconcileBase(plan.hostScript)
+				const needsUpdate = plan.hosting !== undefined || hadHostingPlan || appliedOutcome === 'hosting-failed'
+				return needsUpdate ? await applyHosting(plan, baseScripts, reconcileBase !== undefined) : appliedOutcome
+			} catch (error: unknown) {
+				// A failed mutation can leave any script definition unknown, so the cached registrations no longer prove anything.
+				forgetAppliedHosting()
+				throw error
+			}
 		},
 		hasOrigin: (origin: string) => appliedHosting?.origins.includes(origin) === true,
 		async hasAppliedRegistrations() {
