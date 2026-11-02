@@ -325,16 +325,42 @@ test('drops the zero base fee flag of a Safe proposal stored by an earlier versi
 	assert.equal(preparedInput.at(-1)?.transactions.at(-1)?.executedTransaction?.from, SAFE_EXECUTION_SIMULATION_EXECUTOR)
 })
 
-test('forms a Safe proposal, but not a direct Safe execution, as a call its executor runs', async () => {
+// Opens a confirmation's Gnosis Safe preparation and stores its Safe fields in the pending transaction as openConfirmTransactionDialogForTransaction does, then returns the fee mode the confirmation formed the transaction with and the one every refresh reads back from the pending transaction.
+async function getOpenedAndRefreshedGasPayments(transactionParams: SendTransactionParams, simulationMode: boolean, selectedActiveAddress: bigint) {
 	const { getPendingTransactionGasPayment } = await import('../../app/ts/safe/safePendingFlow.js')
-	const proposal = createSafeProposal({})
-	if (proposal.safeTransaction === undefined) throw new Error('Expected a Safe proposal')
-	const pendingProposal = { ...pendingTransaction, safeTransaction: { safeAddress: SAFE_ADDRESS, safeTxHash: proposal.safeTransaction.safeTxHash, safeTx: proposal.safeTransaction.safeTx, safeVersion: '1.4.1', threshold: 2n } }
-	assert.equal(getPendingTransactionGasPayment(pendingProposal), 'simulated-safe-executor')
-	const pendingDirectExecution = { ...pendingTransaction, safeExecutionOriginalRequestParameters: await createTransferParams({}) }
-	assert.equal(getPendingTransactionGasPayment(pendingDirectExecution), 'external-executor')
-	assert.equal(getPendingTransactionGasPayment(pendingTransaction), 'transaction-sender')
-})
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.updateSafeTransactionStacks(() => [])
+	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry()])
+	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({ simulationMode, rpcNetwork: fakeRpcNetwork, activeSimulationAddress: selectedActiveAddress })
+	const preparation = await prepareSafeTransactionConfirmation(ethereum, { kind: 'transaction', parameters: transactionParams }, simulationMode, selectedActiveAddress, undefined)
+	if (preparation.effectiveTransactionParams.method !== 'eth_sendTransaction') throw new Error('Expected an eth_sendTransaction request')
+	const website = { websiteOrigin: 'https://example.com', icon: undefined, title: undefined }
+	// As the confirmation does, a preparation failure is shown instead of forming the transaction.
+	const transactionToSimulate = preparation.preparationMessage !== undefined
+		? { website, created, originalRequestParameters: preparation.effectiveTransactionParams, transactionIdentifier: 1n, success: false as const, error: { code: -32700, message: preparation.preparationMessage } }
+		: await modules.formEthSendTransaction(ethereum, undefined, preparation.transactionExecutor, website, preparation.effectiveTransactionParams, created, 1n, simulationMode, preparation.gasPayment)
+	const { safeTransaction, pendingSafeFields } = await preparation.finalize(transactionToSimulate, uniqueRequestIdentifier.requestSocket.tabId)
+	const pending = { ...pendingTransaction, ...(safeTransaction === undefined ? {} : { safeTransaction }), ...(pendingSafeFields ?? {}) }
+	await modules.updateUserAddressBookEntries(() => modules.defaultActiveAddresses)
+	return { opened: preparation.gasPayment, refreshed: getPendingTransactionGasPayment(pending) }
+}
+
+const flowGasPaymentCases = [
+	{ description: 'an ordinary transaction', simulationMode: true, selectedActiveAddress: ORDINARY_ACCOUNT, createParams: async () => await createTransferParams({}), expected: 'transaction-sender' },
+	{ description: 'a Gnosis Safe\'s own call in simulation mode', simulationMode: true, selectedActiveAddress: SAFE_ADDRESS, createParams: async () => await createTransferParams({}), expected: 'simulated-safe-executor' },
+	{ description: 'a Gnosis Safe proposal', simulationMode: false, selectedActiveAddress: SAFE_ADDRESS, createParams: async () => await createTransferParams({ from: addressString(SAFE_ADDRESS), gas: '0x5208' }), expected: 'simulated-safe-executor' },
+	{ description: 'a direct Gnosis Safe execution', simulationMode: false, selectedActiveAddress: SAFE_ADDRESS, createParams: async () => await createTransferParams({ from: addressString(SAFE_ADDRESS), to: addressString(SAFE_ADDRESS), data: encodeFunctionCall(SAFE_EXECUTION_ABI, 'execTransaction', [addressString(CALLED_CONTRACT), 0n, '0x', 0n, 0n, 0n, 0n, addressString(0n), addressString(0n), '0x']) }), expected: 'external-executor' },
+] as const
+
+for (const { description, simulationMode, selectedActiveAddress, createParams, expected } of flowGasPaymentCases) {
+	test(`forms ${ description } with the same fee mode when its confirmation opens and on every refresh`, async () => {
+		configureSafe()
+		// The Safe's hash of the proposal's SafeTx, the transfer at the Safe's nonce, which the proposal is checked against.
+		fakeSafeContract.transactionHash = BigInt(getSafeTxHash(createSafeTx(fakeRpcNetwork.chainId, SAFE_ADDRESS, { to: CALLED_CONTRACT, value: 0n, input: new Uint8Array() }, fakeSafeContract.nonce)))
+		const { opened, refreshed } = await withSilencedConsole(async () => await getOpenedAndRefreshedGasPayments(await createParams(), simulationMode, selectedActiveAddress))
+		assert.deepEqual({ opened, refreshed }, { opened: expected, refreshed: expected })
+	})
+}
 
 test('leaves an input without Gnosis Safe executions as it is, without reading any Safe', async () => {
 	const input = [createBlock([createSafeCall({ value: 1n, input: new Uint8Array(), gas: 21_000n }, undefined)])]

@@ -13,7 +13,7 @@ import { createSafeContractValidationFailure, createSafeTransactionReviewRequest
 import { getSafeExecutionReviewedState, getSafeExecutionSignerRoute, getSafeUnsupportedFormedTransactionReason, getSafeUnsupportedRequestReason, isSafeExecutableRequestFromActiveAddress, isSafeExecutionRequestForActiveSafe, prepareSafeExecutionSignerRoute, SAFE_UNSUPPORTED_TRANSACTION_MESSAGES } from '../safe/safeExecutionRouting.js'
 import { getSafeSignerMismatchApprovalStatus, SAFE_SIGNER_SELECTION_ERROR_CODE } from './safeConfirmationResolver.js'
 import { createSafeSignerErrorStatus, type SafeSignerErrorStatus } from './safeSignerErrors.js'
-import { getSafePendingFlow } from '../safe/safePendingFlow.js'
+import { getSafePendingFlow, getSafeTransactionFlowGasPayment, type SafeTransactionFlowKind } from '../safe/safePendingFlow.js'
 
 type SafeExecutionSignerRoute = NonNullable<Awaited<ReturnType<typeof prepareSafeExecutionSignerRoute>>>
 
@@ -132,13 +132,11 @@ export async function prepareSafeTransactionConfirmation(
 	}
 
 	const executeThroughSafe = simulationMode && await isSimulationModeSafeExecution(ethereum, transactionParams, activeAddress)
-	const getGasPayment = (): TransactionGasPayment => {
-		// A direct Safe execution is the signer's own execTransaction call.
-		if (isDirectSafeExecution) return 'external-executor'
-		// A Safe proposal, or in simulation mode a Safe's own call, runs through the Safe's execTransaction.
-		if (safeEntry !== undefined || executeThroughSafe) return 'simulated-safe-executor'
-		return 'transaction-sender'
-	}
+	// Stored in the pending transaction through pendingSafeFields and the Safe proposal, from which every refresh reads it back (getPendingTransactionFlowKind).
+	const flowKind: SafeTransactionFlowKind = isDirectSafeExecution ? 'directExecution'
+		: safeEntry !== undefined ? 'proposal'
+		: executeThroughSafe ? 'simulationModeSafeExecution'
+		: 'ordinary'
 	const pendingSafeFields: PendingSafeFields | undefined = executeThroughSafe
 		? { executeThroughSafe: true }
 		: !isDirectSafeExecution || transactionParams.method !== 'eth_sendTransaction'
@@ -154,7 +152,7 @@ export async function prepareSafeTransactionConfirmation(
 	return {
 		effectiveTransactionParams: safeExecutionSignerRoute?.transactionParams ?? transactionParams,
 		transactionExecutor: safeExecutionSignerRoute?.executor ?? activeAddress,
-		gasPayment: getGasPayment(),
+		gasPayment: getSafeTransactionFlowGasPayment(flowKind),
 		preparationMessage: directSignerSelectionMessage ?? executionPreparationMessage ?? reconciliationMessage,
 		rejection: undefined,
 		async finalize(transactionToSimulate, tabId) {
@@ -255,7 +253,8 @@ function createRejectedPreparation(
 	return {
 		effectiveTransactionParams: transactionParams,
 		transactionExecutor: activeAddress,
-		gasPayment: 'transaction-sender',
+		// A rejected request forms no transaction, so it gets the ordinary fee mode.
+		gasPayment: getSafeTransactionFlowGasPayment('ordinary'),
 		preparationMessage: undefined,
 		rejection: { code: METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER, message },
 		async finalize(transactionToSimulate) {

@@ -71,6 +71,13 @@ test('simulation stack import applies every imported-stack admission rule from o
 	assert.doesNotMatch(safeTransactionConfirmationSource, /withoutImportedGnosisSafeExecutions/u)
 })
 
+test('a Gnosis Safe confirmation and its refreshes take the fee mode from one mapping of the flow kind', async () => {
+	const safePendingFlowSource = await Bun.file(new URL('../../app/ts/safe/safePendingFlow.ts', import.meta.url)).text()
+	assert.match(safeTransactionConfirmationSource, /gasPayment: getSafeTransactionFlowGasPayment\(flowKind\)/u)
+	assert.match(safePendingFlowSource, /return getSafeTransactionFlowGasPayment\(getPendingTransactionFlowKind\(pending\)\)/u)
+	assert.doesNotMatch(safeTransactionConfirmationSource, /'(?:transaction-sender|external-executor|simulated-safe-executor)'/u)
+})
+
 test('Gnosis Safe confirmation takes its request-shape policy from the Safe domain layer', () => {
 	assert.match(safeTransactionConfirmationSource, /isSafeExecutableRequestFromActiveAddress\(transactionParams, activeAddress\)/u)
 	assert.match(safeTransactionConfirmationSource, /getSafeUnsupportedRequestReason\(transactionParams\)/u)
