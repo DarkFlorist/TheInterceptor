@@ -70,12 +70,26 @@ export const getStackTransactionHashes = (stack: InterceptorTransactionStack): R
 /**
  * Gives a transaction entering the simulation stack a hash that no transaction in stackHashes has, so hash lookups find exactly one transaction. A transaction whose hash is free keeps it; otherwise it is mock-signed again from its own fields, keeping its Gnosis Safe execution marker, with the lowest salt that frees its hash. That includes a duplicate of a stacked raw signed transaction, whose real hash is taken.
  * A new transaction's hash can equal a stacked one's even with the sender in r: removal renumbers later nonces but keeps their hashes, two confirmations pending at once are formed with the same nonce, and an import keeps its recorded hashes. The stacked transaction keeps its hash, because pages may already hold it.
+ * A Gnosis Safe proposal keeps its hash, which is its safeTxHash: the Safe stack mirrors it by that hash (safeTransaction), so a new hash would split the two. Its SafeTx nonce keeps it apart from the Safe's other proposals.
  */
 export const withUniqueSimulationHash = (transaction: PreSimulationTransaction, stackHashes: ReadonlySet<bigint>): PreSimulationTransaction => {
+	if (transaction.safeTransaction !== undefined) return transaction
 	if (!stackHashes.has(transaction.signedTransaction.hash)) return transaction
 	const s = getMockSignatureS(transaction.simulationOptions)
 	for (let salt = 1n; ; salt++) {
 		const signedTransaction = mockSignTransaction(withoutSignature(transaction.signedTransaction), s, salt)
 		if (!stackHashes.has(signedTransaction.hash)) return { ...transaction, signedTransaction }
 	}
+}
+
+// The stack every update stores (storageVariables.ts): each transaction the update adds, one whose identifier the previous stack lacks, gets a hash no other stacked transaction has (withUniqueSimulationHash), in stack order. Transactions the stack already held keep theirs, even duplicates a stack stored before #1713 may hold, so such a stack still loads and updates.
+export const withUniqueAddedTransactionHashes = (previousStack: InterceptorTransactionStack, nextStack: InterceptorTransactionStack): InterceptorTransactionStack => {
+	const previousIdentifiers = new Set(previousStack.operations.flatMap((operation) => operation.type === 'Transaction' ? [operation.preSimulationTransaction.transactionIdentifier] : []))
+	const takenHashes = new Set(nextStack.operations.flatMap((operation) => operation.type === 'Transaction' && previousIdentifiers.has(operation.preSimulationTransaction.transactionIdentifier) ? [operation.preSimulationTransaction.signedTransaction.hash] : []))
+	return { ...nextStack, operations: nextStack.operations.map((operation) => {
+		if (operation.type !== 'Transaction' || previousIdentifiers.has(operation.preSimulationTransaction.transactionIdentifier)) return operation
+		const preSimulationTransaction = withUniqueSimulationHash(operation.preSimulationTransaction, takenHashes)
+		takenHashes.add(preSimulationTransaction.signedTransaction.hash)
+		return preSimulationTransaction === operation.preSimulationTransaction ? operation : { ...operation, preSimulationTransaction }
+	}) }
 }

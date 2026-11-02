@@ -1,9 +1,9 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
-import { InterceptorSimulationExport, type PreSimulationTransaction, toResolvedExecutionSimulationState, toResolvedSimulationInput } from '../../app/ts/types/visualizer-types.js'
+import { InterceptorSimulationExport, InterceptorTransactionStack, type PreSimulationTransaction, toResolvedExecutionSimulationState, toResolvedSimulationInput } from '../../app/ts/types/visualizer-types.js'
 import { createExecutionSimulationState, getSimulatedTransactionByHashFromInput, getSimulatedTransactionReceipt } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { getSignedTransactionForSimulation, withUniqueSimulationHash } from '../../app/ts/simulation/services/simulationTransactionSigning.js'
-import { addressString, browserMock, createWebsitePort, fakeRequestHandler, fakeRpcNetwork, isRecord, modules, simulator, withSilencedConsole } from './confirmTransactionTestHarness.js'
+import { addressString, browserMock, createSafeStackTransactionFixture, createWebsitePort, fakeRequestHandler, fakeRpcNetwork, isRecord, modules, simulator, withSilencedConsole } from './confirmTransactionTestHarness.js'
 
 // Regression tests for #1713: no two transactions on the simulation stack share a hash, so transaction and receipt lookups by hash find the right one.
 const SENDER = 0x7100000000000000000000000000000000000071n
@@ -112,7 +112,12 @@ test('gives a transaction appended after a removal renumbered its sender\'s nonc
 	assert.equal(renumbered?.signedTransaction.hash, second.pageHash, 'and keeps the hash the page already has')
 
 	// The same fields as the renumbered transaction had, at the nonce it had, so mock signing alone gives the renumbered transaction's hash.
-	const appended = await acceptConfirmation(await openConfirmation(3, SENDER, 2n, websiteTabConnections), websiteTabConnections, postedMessages)
+	const appendedRequest = await openConfirmation(3, SENDER, 2n, websiteTabConnections)
+	const appendedPending = (await modules.getPendingTransactionsAndMessages()).find((pending) => pending.uniqueRequestIdentifier.requestId === appendedRequest.requestId)
+	if (appendedPending?.type !== 'Transaction' || appendedPending.popupVisualisation === undefined || appendedPending.popupVisualisation.statusCode !== 'success') throw new Error('Expected a successful preview of the appended transaction')
+	const previewedHash = appendedPending.popupVisualisation.data.simulationState.simulationStateInput.at(-1)?.transactions.at(-1)?.signedTransaction.hash
+	const appended = await acceptConfirmation(appendedRequest, websiteTabConnections, postedMessages)
+	assert.equal(previewedHash, appended.pageHash, 'the preview shows the hash accepting stores')
 	assert.equal(appended.stacked.signedTransaction.nonce, 1n)
 	assert.equal(modules.mockSignTransaction({ ...appended.stacked.signedTransaction }).hash, second.pageHash, 'the appended transaction is the case that collided')
 	assert.notEqual(appended.pageHash, second.pageHash)
@@ -283,4 +288,51 @@ test('gives a re-hashed imported typed transaction that carried v as well as yPa
 	if (lookedUp === undefined) throw new Error('Expected the re-hashed transaction to be found by its hash')
 	assert.equal('yParity' in lookedUp ? lookedUp.yParity : undefined, 'even')
 	assert.equal('v' in lookedUp ? lookedUp.v : 0n, 0n, 'a lookup carries no v that contradicts yParity')
+})
+
+// A stacked transaction that no confirmation or import formed, as any future source of stacked transactions would add it.
+const createStackedTransaction = (transactionIdentifier: bigint, value: bigint): PreSimulationTransaction => ({
+	signedTransaction: modules.mockSignTransaction({ type: '1559', from: SENDER, chainId: fakeRpcNetwork.chainId, nonce: 0n, maxFeePerGas: 0n, maxPriorityFeePerGas: 0n, gas: 21_000n, to: RECIPIENT, value, input: new Uint8Array(), accessList: [] }),
+	website: WEBSITE,
+	created: new Date('2024-01-01T00:00:00.000Z'),
+	originalRequestParameters: { method: 'eth_sendTransaction', params: [{ from: SENDER, to: RECIPIENT, value, input: new Uint8Array() }] },
+	transactionIdentifier,
+})
+const asOperation = (preSimulationTransaction: PreSimulationTransaction) => ({ type: 'Transaction' as const, preSimulationTransaction })
+
+test('gives a transaction that any stack update adds a hash of its own, whichever update function adds it', async () => {
+	await startSimulationStack(SENDER)
+	const stacked = createStackedTransaction(1n, 1n)
+	await modules.updateInterceptorTransactionStack(() => ({ operations: [asOperation(stacked)] }))
+	await modules.updateInterceptorTransactionStack((stack) => ({ operations: [...stack.operations, asOperation(createStackedTransaction(2n, 1n))] }))
+	const { updateTransactionState } = await import('../../app/ts/background/storageVariables.js')
+	await updateTransactionState((state) => ({ ...state, interceptorTransactionStack: { operations: [...state.interceptorTransactionStack.operations, asOperation(createStackedTransaction(3n, 1n))] } }))
+	const hashes = hashesOf(await getStackedTransactions())
+	assert.equal(hashes[0], stacked.signedTransaction.hash, 'the first keeps its hash')
+	assert.equal(new Set(hashes).size, 3)
+})
+
+test('loads and updates a stack stored before #1713 that already holds a duplicate hash, keeping it, while new transactions get their own', async () => {
+	await startSimulationStack(SENDER)
+	const original = createStackedTransaction(1n, 1n)
+	const duplicate = { ...createStackedTransaction(2n, 1n), signedTransaction: original.signedTransaction }
+	const { setLargeStateValue } = await import('../../app/ts/utils/largeStateStore.js')
+	await setLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack, { operations: [asOperation(original), asOperation(duplicate)] })
+	assert.deepEqual(hashesOf(await getStackedTransactions()), [original.signedTransaction.hash, original.signedTransaction.hash], 'the stored stack loads as it is')
+
+	await modules.updateInterceptorTransactionStack((stack) => ({ operations: [...stack.operations, { type: 'TimeManipulation', blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' } }] }))
+	assert.deepEqual(hashesOf(await getStackedTransactions()), [original.signedTransaction.hash, original.signedTransaction.hash], 'an update that adds no transaction keeps the duplicates')
+
+	const added = createStackedTransaction(3n, 1n)
+	await modules.updateInterceptorTransactionStack((stack) => ({ operations: [...stack.operations, asOperation(added)] }))
+	const [firstHash, secondHash, addedHash] = hashesOf(await getStackedTransactions())
+	assert.deepEqual([firstHash, secondHash], [original.signedTransaction.hash, original.signedTransaction.hash], 'the stored duplicates keep the hashes pages have')
+	assert.notEqual(addedHash, original.signedTransaction.hash, 'a new transaction takes no hash already stacked')
+})
+
+test('leaves a Gnosis Safe proposal its safeTxHash even when that hash is already stacked', async () => {
+	const safeTransaction = createSafeStackTransactionFixture({ transactionIdentifier: 2n })
+	const proposal = { ...createStackedTransaction(2n, 1n), safeTransaction }
+	const proposalWithSafeTxHash = { ...proposal, signedTransaction: { ...proposal.signedTransaction, hash: safeTransaction.safeTxHash } }
+	assert.equal(withUniqueSimulationHash(proposalWithSafeTxHash, new Set([safeTransaction.safeTxHash])), proposalWithSafeTxHash)
 })

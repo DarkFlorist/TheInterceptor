@@ -22,6 +22,7 @@ import { SafeTransactionStacks } from '../types/safeTypes.js'
 import { createStoredValueRepository } from '../utils/storedValue.js'
 import { isValidErc20Decimals } from '../utils/erc20.js'
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
+import { withUniqueAddedTransactionHashes } from '../simulation/services/simulationTransactionSigning.js'
 
 const reportCorruptStoredValue = (label: string) => async (error: unknown) => {
 	console.warn(`${ label } was corrupt:`)
@@ -395,7 +396,7 @@ export const getInterceptorTransactionStack = async () => await getLargeStateVal
 export async function updateInterceptorTransactionStack(updateFunc: (prevStack: InterceptorTransactionStack) => InterceptorTransactionStack): Promise<InterceptorTransactionStack> {
 	return await transactionStateSemaphore.execute(async () => {
 		const prevStack = await getInterceptorTransactionStack()
-		const interceptorTransactionStack = updateFunc(prevStack)
+		const interceptorTransactionStack = withUniqueAddedTransactionHashes(prevStack, updateFunc(prevStack))
 		assertUniqueInterceptorTransactionIds(interceptorTransactionStack)
 		await setLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack, interceptorTransactionStack)
 		return interceptorTransactionStack
@@ -422,7 +423,8 @@ export async function updateTransactionState(updateFunc: (previousState: Transac
 			interceptorTransactionStack: await getInterceptorTransactionStack(),
 			safeTransactionStacks: await getSafeTransactionStacks(),
 		}
-		const updatedState = updateFunc(previousState)
+		const proposedState = updateFunc(previousState)
+		const updatedState = { ...proposedState, interceptorTransactionStack: withUniqueAddedTransactionHashes(previousState.interceptorTransactionStack, proposedState.interceptorTransactionStack) }
 		assertUniqueInterceptorTransactionIds(updatedState.interceptorTransactionStack)
 		await setLargeStateValues([
 			prepareLargeStateWrite('interceptorTransactionStack', InterceptorTransactionStack, updatedState.interceptorTransactionStack),

@@ -1,6 +1,6 @@
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { appendTransactionsToInput } from '../simulation/services/SimulationModeEthereumClientService.js'
-import { getSignedTransactionForSimulation, withUniqueSimulationHash } from '../simulation/services/simulationTransactionSigning.js'
+import { getSignedTransactionForSimulation, getStackTransactionHashes, withUniqueSimulationHash } from '../simulation/services/simulationTransactionSigning.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { createSafeExecutionPreSimulationTransaction, createSafeSigningSimulationInput } from '../safe/safeSimulation.js'
 import type { ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
@@ -45,11 +45,12 @@ export async function refreshConfirmTransactionSimulation(
 	const simulationInput = safeSigningRequest === undefined
 		? await getCurrentSimulationInput()
 		: createSafeSigningSimulationInput(await getInterceptorTransactionStack(), safeSigningRequest)
+	const stackTransactionHashes = getStackTransactionHashes(await getInterceptorTransactionStack())
 	try {
 		const getNewVisualizedSimulationState = async () => {
 			const preSimulationTransaction = transactionToSimulate.success
 				? safeSigningRequest === undefined
-					// Previewed with a hash no stacked transaction has, as accepting it stacks it (withUniqueSimulationHash in confirmTransaction.ts), so the preview's hash lookups find it alone.
+					// Previewed with the hash accepting it would store while the stack stays as it is: one no stacked transaction has, from the whole stored stack as withUniqueAddedTransactionHashes takes it, not only the simulated part.
 					? withUniqueSimulationHash({
 						signedTransaction: getSignedTransactionForSimulation(transactionToSimulate),
 						website: transactionToSimulate.website,
@@ -57,7 +58,7 @@ export async function refreshConfirmTransactionSimulation(
 						originalRequestParameters: transactionToSimulate.originalRequestParameters,
 						transactionIdentifier: transactionToSimulate.transactionIdentifier,
 						...(transactionToSimulate.simulationOptions === undefined ? {} : { simulationOptions: transactionToSimulate.simulationOptions }),
-					}, new Set(simulationInput.flatMap((block) => block.transactions.map((transaction) => transaction.signedTransaction.hash))))
+					}, stackTransactionHashes)
 					: createSafeExecutionPreSimulationTransaction(transactionToSimulate, safeSigningRequest)
 				: undefined
 			const simulationStateWithNewTransaction = preSimulationTransaction === undefined

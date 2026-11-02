@@ -4,7 +4,7 @@ import { isSafeMessageCoSignRequest } from '../../safe/safeRequestPolicy.js'
 import type { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
 import { getInputFieldFromDataOrInput, getSimulatedBalance, getSimulatedErc20Balance, getSimulatedTransactionCount, simulateEstimateGas } from '../../simulation/services/SimulationModeEthereumClientService.js'
 import { simulatePersonalSign } from '../../simulation/services/simulationPersonalSigning.js'
-import { getSignedTransactionForSimulation, getStackTransactionHashes, withUniqueSimulationHash } from '../../simulation/services/simulationTransactionSigning.js'
+import { getSignedTransactionForSimulation } from '../../simulation/services/simulationTransactionSigning.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS, METAMASK_ERROR_BLANKET_ERROR, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { type TransactionConfirmation, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
 import { Semaphore } from '../../utils/semaphore.js'
@@ -414,9 +414,9 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 			const transaction = { ...pendingTransactionOrMessage.transactionToSimulate, signedTransaction: getSignedTransactionForSimulation(pendingTransactionOrMessage.transactionToSimulate) }
 			const updatedStack = await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => ({ operations: [
 				...prevStack.operations,
-				{ type: 'Transaction' as const, preSimulationTransaction: withUniqueSimulationHash(transaction, getStackTransactionHashes(prevStack)) }
+				{ type: 'Transaction' as const, preSimulationTransaction: transaction }
 			] }))
-			// The page gets the hash the transaction was stacked with, which withUniqueSimulationHash may have changed.
+			// The page gets the hash the transaction was stacked with, which storing it may have changed to keep it unique (withUniqueAddedTransactionHashes).
 			const stackedTransaction = updatedStack.operations.find((operation) => operation.type === 'Transaction' && operation.preSimulationTransaction.transactionIdentifier === transaction.transactionIdentifier)
 			if (stackedTransaction?.type !== 'Transaction') throw new Error('The accepted transaction is missing from the simulation stack')
 			await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService)

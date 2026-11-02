@@ -51,7 +51,7 @@ import { serializeSimulateExecutionReply } from '../types/simulateExecutionReply
 import { createSafeContractValidationFailure, getSafeContractSnapshot, validateSafeOwnerIsEoa } from '../safe/safeCore.js'
 import { normalizeConsecutiveTimeManipulations } from '../utils/transactionStack.js'
 import { getPendingTransactionGasPayment, getSafePendingFlow } from '../safe/safePendingFlow.js'
-import { admitImportedSimulationStackOperations, withUniqueImportedSimulationHashes } from './importedSimulationStack.js'
+import { admitImportedSimulationStackOperations } from './importedSimulationStack.js'
 import { getOperationsForActiveStackContext, SIMULATION_STACK_CONTEXT } from '../utils/activeStackContext.js'
 import { type ActiveAddressSelection, assertActiveAddressSelectionAllowed, getActiveAddressSelection, getWalletSelectedAccount } from '../utils/activeAddressSelection.js'
 export { importSafeStack, requestSafeStackExport, validateSafeTransactionStackForCurrentContract } from './safeStackHandlers.js'
@@ -1245,16 +1245,16 @@ export async function importSimulationStack(ethereum: EthereumClientService, tok
 	let updatedStack: InterceptorTransactionStack
 	try {
 		updatedStack = await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => {
-			const newOperations = [...prevStack.operations, ...withUniqueImportedSimulationHashes(prevStack, admission.operations)]
-			// generate new ids for operations to prevent duplicated ids
-			return { operations: normalizeConsecutiveTimeManipulations(newOperations.map((operation) => {
+			// New identifiers keep the imported transactions' identifiers apart from the stack's; storing the stack keeps their hashes apart (withUniqueAddedTransactionHashes).
+			const importedOperations = admission.operations.map((operation) => {
 				switch(operation.type) {
 					case 'Message': return modifyObject(operation, { signedMessageTransaction: modifyObject(operation.signedMessageTransaction, { messageIdentifier: generate256BitRandomBigInt(), website: updateWebsiteDetails(operation.signedMessageTransaction.website) }) })
 					case 'TimeManipulation': return operation
 					case 'Transaction': return modifyObject(operation, { preSimulationTransaction: modifyObject(operation.preSimulationTransaction, { transactionIdentifier: generate256BitRandomBigInt(), website: updateWebsiteDetails(operation.preSimulationTransaction.website) }) })
 					default: return assertNever(operation)
 				}
-			})) }
+			})
+			return { operations: normalizeConsecutiveTimeManipulations([...prevStack.operations, ...importedOperations]) }
 		})
 	} catch (error) {
 		return importSimulationStackFailure(`Failed to store the imported simulation stack (${ formatEstimatedBytes(importedStackBytes) }): ${ formatCaughtErrorMessage(error) }`)
