@@ -451,6 +451,41 @@ describe('popup message dispatcher seams', () => {
 		assert.equal(await getLatestUnexpectedError(), undefined)
 	})
 
+	test('admits each admission mode only when its declared requirements are available', async () => {
+		const { admitPopupRequest } = await import('../../app/ts/background/popupMessageHandlerRegistry.js')
+		const availabilities = ['settings unreadable', 'RPC configuration unavailable', 'services paused', 'available'] as const
+		const contextFor = (availability: typeof availabilities[number]): PopupMessageDispatcherContext => {
+			const context = createDispatcherContext(async () => undefined)
+			if (availability === 'settings unreadable') return { ...context, settings: undefined }
+			if (availability === 'RPC configuration unavailable') return { ...context, rpcConfiguration: { status: 'unavailable', reason: 'read-failed', activeRpcNetwork: settings.activeRpcNetwork } }
+			if (availability === 'services paused') context.simulationServicesOwner.clear()
+			return context
+		}
+		const cases = [
+			{ mode: 'settings', request: { method: 'popup_requestSimulationMode' }, admittedWhen: ['RPC configuration unavailable', 'services paused', 'available'] },
+			{ mode: 'recovery', request: { method: 'popup_requestSettings' }, admittedWhen: availabilities },
+			{ mode: 'rpc-configuration', request: { method: 'popup_requestAbiAndNameFromBlockExplorer', data: { address: 0x1234n, chainId: 1n } }, admittedWhen: ['services paused', 'available'] },
+			{ mode: 'rpc-usable', request: { method: 'popup_enableSimulationMode', data: false }, admittedWhen: ['available'] },
+			{ mode: 'rpc-lifecycle', request: { method: 'popup_resetSimulation' }, admittedWhen: ['available'] },
+			{ mode: 'rpc-snapshot', request: { method: 'popup_refreshSimulation' }, admittedWhen: ['available'] },
+			{ mode: 'rpc-snapshot-with-access-prompts', request: { method: 'popup_setSafeSimulationSigner', data: { chainId: 1n, safeAddress: 0x1234n, safeSimulationSignerAddress: undefined } }, admittedWhen: ['available'] },
+		] as const
+		for (const { mode, request, admittedWhen } of cases) for (const availability of availabilities) {
+			const admission = admitPopupRequest(contextFor(availability), request)
+			assert.equal(admission.kind, admittedWhen.some((admitted) => admitted === availability) ? 'admitted' : 'rejected', `${ mode } with ${ availability }`)
+		}
+		const optionalRequest = { method: 'popup_readyAndListening', data: { page: 'changeChain' } } as const
+		const optionalCases = [
+			{ requirements: { requiresSettings: false, requiresRpc: false }, admittedWhen: availabilities },
+			{ requirements: { requiresSettings: true, requiresRpc: false }, admittedWhen: ['RPC configuration unavailable', 'services paused', 'available'] },
+			{ requirements: { requiresSettings: false, requiresRpc: true }, admittedWhen: ['available'] },
+		] as const
+		for (const { requirements, admittedWhen } of optionalCases) for (const availability of availabilities) {
+			const admission = admitPopupRequest(contextFor(availability), optionalRequest, requirements)
+			assert.equal(admission.kind, admittedWhen.some((admitted) => admitted === availability) ? 'admitted' : 'rejected', `optional-rpc-snapshot ${ JSON.stringify(requirements) } with ${ availability }`)
+		}
+	})
+
 	test('snapshot registration captures at invocation and keeps one pair across awaits', async () => {
 		const { popupSnapshotMessageHandler } = await import('../../app/ts/background/popupMessageHandlerRegistry.js')
 		const context = createDispatcherContext(async () => undefined)

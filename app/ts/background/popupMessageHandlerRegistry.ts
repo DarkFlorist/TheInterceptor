@@ -58,6 +58,26 @@ export type PopupReadyMessageDispatcherContext = Omit<PopupMessageDispatcherCont
 
 type PopupAdmissionMode = 'settings' | 'recovery' | 'rpc-configuration' | 'rpc-usable' | 'rpc-lifecycle' | 'rpc-snapshot' | 'rpc-snapshot-with-access-prompts' | 'optional-rpc-snapshot'
 
+// 'per-request' defers to the request-variant requirements an optional-snapshot handler passes to admitPopupRequest.
+type PopupAdmissionRequirements = {
+	readonly settings: boolean | 'per-request'
+	readonly readyRpcConfiguration: boolean
+	readonly usableRpcConfiguration: boolean
+	readonly rpcServices: boolean | 'per-request'
+}
+
+// Exhaustive so that a new admission mode cannot compile without declaring what it requires.
+const POPUP_ADMISSION_REQUIREMENTS = {
+	'settings': { settings: true, readyRpcConfiguration: false, usableRpcConfiguration: false, rpcServices: false },
+	'recovery': { settings: false, readyRpcConfiguration: false, usableRpcConfiguration: false, rpcServices: false },
+	'rpc-configuration': { settings: true, readyRpcConfiguration: true, usableRpcConfiguration: false, rpcServices: false },
+	'rpc-usable': { settings: true, readyRpcConfiguration: true, usableRpcConfiguration: true, rpcServices: false },
+	'rpc-lifecycle': { settings: true, readyRpcConfiguration: false, usableRpcConfiguration: false, rpcServices: true },
+	'rpc-snapshot': { settings: true, readyRpcConfiguration: false, usableRpcConfiguration: false, rpcServices: true },
+	'rpc-snapshot-with-access-prompts': { settings: true, readyRpcConfiguration: false, usableRpcConfiguration: false, rpcServices: true },
+	'optional-rpc-snapshot': { settings: 'per-request', readyRpcConfiguration: false, usableRpcConfiguration: false, rpcServices: 'per-request' },
+} as const satisfies Record<PopupAdmissionMode, PopupAdmissionRequirements>
+
 // This exhaustive table is the single source of truth for popup admission. Adding a protocol method requires choosing its availability and snapshot semantics here.
 const POPUP_ADMISSION_MODE = {
 	popup_ChangeSettings: 'settings',
@@ -150,13 +170,11 @@ export type PopupAdmission =
 
 // All static availability policy is resolved from POPUP_ADMISSION_MODE here. Optional handlers supply only their request-variant requirements.
 export function admitPopupRequest(context: PopupMessageDispatcherContext, request: PopupMessage, optionalRequirements?: { readonly requiresSettings: boolean, readonly requiresRpc: boolean }): PopupAdmission {
-	const mode = POPUP_ADMISSION_MODE[request.method]
-	const requiresSettings = mode === 'settings' || mode === 'rpc-configuration' || mode === 'rpc-usable' || mode === 'rpc-lifecycle' || mode === 'rpc-snapshot' || mode === 'rpc-snapshot-with-access-prompts'
-		|| (mode === 'optional-rpc-snapshot' && optionalRequirements?.requiresSettings === true)
-	const requiresRpcConfiguration = mode === 'rpc-configuration' || mode === 'rpc-usable'
-	const requiresUsableRpcConfiguration = mode === 'rpc-usable'
-	const requiresRpcServices = mode === 'rpc-lifecycle' || mode === 'rpc-snapshot' || mode === 'rpc-snapshot-with-access-prompts'
-		|| (mode === 'optional-rpc-snapshot' && optionalRequirements?.requiresRpc === true)
+	const requirements: PopupAdmissionRequirements = POPUP_ADMISSION_REQUIREMENTS[POPUP_ADMISSION_MODE[request.method]]
+	const requiresSettings = requirements.settings === 'per-request' ? optionalRequirements?.requiresSettings === true : requirements.settings
+	const requiresRpcConfiguration = requirements.readyRpcConfiguration
+	const requiresUsableRpcConfiguration = requirements.usableRpcConfiguration
+	const requiresRpcServices = requirements.rpcServices === 'per-request' ? optionalRequirements?.requiresRpc === true : requirements.rpcServices
 	if (requiresSettings && context.settings === undefined) return { kind: 'rejected', reply: rpcConfigurationUnavailableReply(request) }
 	if (requiresRpcConfiguration && !rpcConfigurationIsReady(context.rpcConfiguration)) return { kind: 'rejected', reply: rpcConfigurationUnavailableReply(request) }
 	if (requiresUsableRpcConfiguration && !rpcConfigurationIsUsable(context.rpcConfiguration, context.simulationServicesOwner)) return { kind: 'rejected', reply: rpcConfigurationUnavailableReply(request) }
