@@ -685,7 +685,7 @@ describe('popup message dispatcher seams', () => {
 
 		assert.equal(storageState.metamaskCompatibilityMode, true)
 		assert.deepEqual(registeredContentScripts.get('inpage')?.js, ['/inpage/js/inpage-metamask-compatibility.js'])
-		assert.deepEqual(registeredContentScripts.get('inpage')?.excludeMatches, ['*://*.legacy-disabled.test/*'])
+		assert.deepEqual(registeredContentScripts.get('inpage')?.excludeMatches, ['http://legacy-disabled.test:80/*', 'https://legacy-disabled.test:443/*'])
 		assert.deepEqual(reloadedTabs, [43])
 	})
 })
