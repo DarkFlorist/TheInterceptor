@@ -419,7 +419,13 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 		const message: InpageScriptRequest = { uniqueRequestIdentifier: request.uniqueRequestIdentifier, ...providerHandlerReturn }
 		return replyToInterceptedRequest(websiteTabConnections, message)
 	}
-	const handleRequestAgain = async () => await handleInterceptedRequest(port, websiteOrigin, websitePromise, simulationServicesOwner, socket, request, websiteTabConnections, publishRpcConnectionStatus)
+	// A request refused at its signer forward has not been answered yet: the forward decision comes before the account side effects and the reply. So when simulation mode was enabled before the forward was posted, the request is handled again from the start under the current mode.
+	const handleContentScriptMessageInCurrentSimulationMode = async (website: Website, activeAddress: AddressBookEntry) => {
+		const reply = await handleContentScriptMessage(simulationServicesOwner, websiteTabConnections, request, website, activeAddress, publishRpcConnectionStatus)
+		if (reply !== SIGNER_FORWARD_REFUSED_AFTER_SIMULATION_MODE_ENABLED) return reply
+		await waitForSimulationModeEnablingWrites()
+		return await handleInterceptedRequest(port, websiteOrigin, websitePromise, simulationServicesOwner, socket, request, websiteTabConnections, publishRpcConnectionStatus)
+	}
 	const { settings, activeAddress, requestedSignerAccountsForAddressConsent, signerAccountError } = await discoverAccountRequestAddressContext(websiteTabConnections, socket, request, websiteOrigin)
 	if (isTerminalSignerAccountConnectionError(signerAccountError)) return replyWithSignerAccountError(websiteTabConnections, request, signerAccountError)
 	if (requestedSignerAccountsForAddressConsent && activeAddress === undefined) {
@@ -472,7 +478,7 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 		if (refreshedActiveAddress === undefined) return replyWithoutActiveAccount(websiteTabConnections, request)
 		const refreshedAccess = verifyAccess(websiteTabConnections, socket, false, websiteOrigin, refreshedActiveAddress, refreshedSettings, { ignoreConnectionApproval: true })
 		if (refreshedAccess !== 'hasAccess') return replyWithoutActiveAccount(websiteTabConnections, request)
-		return await handleContentScriptMessage(simulationServicesOwner, websiteTabConnections, request, await websitePromise, refreshedActiveAddress, publishRpcConnectionStatus, handleRequestAgain)
+		return await handleContentScriptMessageInCurrentSimulationMode(await websitePromise, refreshedActiveAddress)
 	}
 
 	if (access === 'noAccess' || activeAddress === undefined) {
@@ -496,13 +502,15 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 		case 'hasAccess': {
 			if (activeAddress === undefined) return refuseAccess(websiteTabConnections, request)
 			const website = await websitePromise
-			return await handleContentScriptMessage(simulationServicesOwner, websiteTabConnections, request, website, activeAddress, publishRpcConnectionStatus, handleRequestAgain)
+			return await handleContentScriptMessageInCurrentSimulationMode(website, activeAddress)
 		}
 		default: assertNever(access)
 	}
 }
 
-async function handleContentScriptMessage(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, website: Website, activeAddress: AddressBookEntry, publishRpcConnectionStatus: PublishRpcConnectionStatus, handleRequestAgain: () => Promise<unknown>) {
+const SIGNER_FORWARD_REFUSED_AFTER_SIMULATION_MODE_ENABLED = Symbol('signer forward refused after simulation mode was enabled')
+
+async function handleContentScriptMessage(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, website: Website, activeAddress: AddressBookEntry, publishRpcConnectionStatus: PublishRpcConnectionStatus) {
 	try {
 		const requestWithDefinedParams = getRequestWithDefinedParams(request)
 		const simulationModeGuard = captureSimulationModeGuard()
@@ -521,6 +529,11 @@ async function handleContentScriptMessage(simulationServicesOwner: SimulationSer
 		const simulationOverlayEnabled = settings.simulationMode || safeSigningMode
 		const walletSelectedSafeSigner = safeSigningMode ? selectedWalletAccount : undefined
 		const resolved = await handleRPCRequest(simulationServicesOwner, websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, website, rpcContext, settings, activeAddress.address, publishRpcConnectionStatus, simulationOverlayEnabled, safeSigningMode, walletSelectedSafeSigner)
+		// Simulation mode may have been enabled after the routing settings were read; if so, the guard does not post the forward and the caller handles the request again under the current mode.
+		if (resolved.type === 'forwardToSigner') {
+			const forward = simulationModeGuard.postSignerForwardIfAllowed(() => replyToInterceptedRequest(websiteTabConnections, { ...requestWithDefinedParams, ...resolved }))
+			return forward.posted ? forward.result : SIGNER_FORWARD_REFUSED_AFTER_SIMULATION_MODE_ENABLED
+		}
 		// Permission persistence carries the owner through any follow-up access prompts.
 		await persistApprovedAccountsForAccountRequest(
 			simulationServicesOwner,
@@ -531,13 +544,6 @@ async function handleContentScriptMessage(simulationServicesOwner: SimulationSer
 			activeAddress.address,
 		)
 		replayProviderStateForAccountRequest(websiteTabConnections, request, resolved, activeAddress.address)
-		// Simulation mode may have been enabled after the routing settings were read; if so, the guard does not post the forward, and the request is routed again under the current mode once that write settles.
-		if (resolved.type === 'forwardToSigner') {
-			const forward = simulationModeGuard.postSignerForwardIfAllowed(() => replyToInterceptedRequest(websiteTabConnections, { ...requestWithDefinedParams, ...resolved }))
-			if (forward.posted) return forward.result
-			await waitForSimulationModeEnablingWrites()
-			return await handleRequestAgain()
-		}
 		return replyToInterceptedRequest(websiteTabConnections, { ...requestWithDefinedParams, ...resolved })
 	} catch (error: unknown) {
 		if (isFailedToFetchError(error)) {
