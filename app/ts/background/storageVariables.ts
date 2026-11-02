@@ -16,14 +16,9 @@ import type { UnexpectedErrorOccured } from '../types/interceptor-reply-messages
 import { getLargeStateValue, prepareLargeStateWrite, setLargeStateValue, setLargeStateValues } from '../utils/largeStateStore.js'
 import type { InterceptorErrorDiagnostic } from '../types/errorDiagnostics.js'
 import { SafeTransactionStacks } from '../types/safeTypes.js'
-import { createStoredValueRepository } from '../utils/storedValue.js'
+import { createStoredValueRepository, reportCorruptStoredValue } from '../utils/storedValue.js'
 import { isValidErc20Decimals } from '../utils/erc20.js'
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
-
-export const reportCorruptStoredValue = (label: string) => async (error: unknown) => {
-	console.warn(`${ label } was corrupt:`)
-	console.warn(error)
-}
 
 const idsOfOpenedTabsRepository = createStoredValueRepository({
 	read: async () => (await browserStorageLocalGet('idsOfOpenedTabs')).idsOfOpenedTabs,

@@ -4,10 +4,9 @@ import { getChainName } from '../utils/constants.js'
 import { getRpcEntryIdentityKey } from '../utils/rpcNetworkChange.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { browserStorageLocalGet, browserStorageLocalSet } from '../utils/storageUtils.js'
-import { createStoredValueRepository } from '../utils/storedValue.js'
+import { createStoredValueRepository, reportCorruptStoredValue } from '../utils/storedValue.js'
 import { modifyObject } from '../utils/typescript.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
-import { reportCorruptStoredValue } from './storageVariables.js'
 
 // This module owns the stored RPC list. Its raw writers stay private so every write is paired with the popup_update_rpc_list broadcast that open pages (useRpcConnectionsList) rely on.
 const rpcListRepository = createStoredValueRepository<RpcEntries>({
