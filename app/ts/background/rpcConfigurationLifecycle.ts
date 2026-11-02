@@ -49,7 +49,7 @@ export async function transitionRpcList(
 
 	if (previousConfiguration.status === 'unavailable') {
 		simulationServicesOwner.clear()
-		const activeRpcNetwork = rpcEntries.find((rpc) => rpc.primary) ?? rpcEntries[0]
+		const activeRpcNetwork = selectPrimaryRpc(rpcEntries)
 		if (previousConfiguration.reason !== 'empty' || activeRpcNetwork === undefined) throw createRpcConfigurationUnavailableError()
 		await setRpcConfiguration(rpcEntries, activeRpcNetwork)
 		simulationServicesOwner.recover(activeRpcNetwork)

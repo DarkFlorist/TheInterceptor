@@ -56,6 +56,7 @@ const { createSimulationServicesOwner } = await import('../../app/ts/simulation/
 const { captureRpcNetwork, getRequiredSettings, getSettingsForCapturedRpcNetwork, getSettingsSnapshot } = await import('../../app/ts/background/settings.js')
 const { restoreDefaultRpcConfiguration, retryRpcConfiguration, setNewRpcList, settingsOpened } = await import('../../app/ts/background/popupMessageHandlers/settings.js')
 const { MessageToPopup } = await import('../../app/ts/types/interceptor-messages.js')
+const { transitionRpcList } = await import('../../app/ts/background/rpcConfigurationLifecycle.js')
 const ignoreRecoveryPublication = async () => undefined
 
 describe('local storage codecs', () => {
@@ -352,6 +353,21 @@ describe('RPC storage recovery', () => {
 		if (restoredConfiguration.status === 'ready') {
 			assert.deepEqual(restoredConfiguration.rpcEntries, [customFallbackRpc])
 			assert.equal(restoredConfiguration.activeRpcNetwork.httpsRpc, customFallbackRpc.httpsRpc)
+		}
+	})
+
+	test('recovers an empty stored RPC list on the primary entry even when a non-primary entry precedes it', async () => {
+		storedItems.rpcEntries = []
+		const owner = createSimulationServicesOwner(undefined, async () => undefined, async () => undefined)
+		try {
+			const transition = await transitionRpcList(owner, [customFallbackRpc, customPrimaryRpc], 'edit')
+
+			assert.equal(transition.activeRpcNetwork.httpsRpc, customPrimaryRpc.httpsRpc)
+			const restoredConfiguration = await getRpcConfigurationState()
+			assert.equal(restoredConfiguration.status, 'ready')
+			if (restoredConfiguration.status === 'ready') assert.equal(restoredConfiguration.activeRpcNetwork.httpsRpc, customPrimaryRpc.httpsRpc)
+		} finally {
+			owner.clear()
 		}
 	})
 
