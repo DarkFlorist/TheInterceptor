@@ -48,7 +48,7 @@ export function getSafeTransactionFlowGasPayment(flowKind: SafeTransactionFlowKi
 		case 'ordinary': return 'transaction-sender'
 		// A direct Safe execution is the signer's own execTransaction call, paid outside the simulation.
 		case 'directExecution': return 'external-executor'
-		// Formed without fees, as the Safe never pays for its transaction, only to fail with the request-shape rejection (createSafeSigningRequestForTransaction): the executor's formation can't form a contract creation.
+		// Never formed: the confirmation shows its request-shape rejection as the preparation message. Like every Safe transaction, it would not be paid by the Safe.
 		case 'unsupportedSafeRequest': return 'external-executor'
 		// A Safe proposal, and in simulation mode a Safe's own call, run as the simulated executor's execTransaction call.
 		case 'proposal':

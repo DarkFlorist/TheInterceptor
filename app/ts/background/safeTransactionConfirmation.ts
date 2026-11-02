@@ -84,7 +84,7 @@ export async function prepareSafeTransactionConfirmation(
 		: (await getUserAddressBookEntriesForChainIdMorePreciseFirst(ethereum.getChainId()))
 			.find((entry): entry is SafeEntry => entry.type === 'safe' && entry.address === activeAddress)
 	if (configuredSafeEntry !== undefined) {
-		// A contract creation is not rejected here: its flow kind is 'unsupportedSafeRequest', and createSafeSigningRequestForTransaction fails it once the transaction is formed, so the window shows the failure.
+		// A contract creation is not rejected here: its flow kind is 'unsupportedSafeRequest', whose preparation message shows the rejection in the window.
 		const unsupportedReason = getSafeUnsupportedRequestReason(transactionParams)
 		if (unsupportedReason === 'raw-transaction' || unsupportedReason === 'eip-7702-authorization') {
 			return createRejectedPreparation(activeAddress, transactionParams, SAFE_UNSUPPORTED_TRANSACTION_MESSAGES[unsupportedReason])
@@ -136,9 +136,11 @@ export async function prepareSafeTransactionConfirmation(
 	}
 
 	const executeThroughSafe = simulationMode && await isSimulationModeSafeExecution(ethereum, transactionParams, activeAddress)
-	// Stored in the pending transaction through pendingSafeFields and the Safe proposal, or its creation failure, from which every refresh reads it back (getPendingTransactionFlowKind).
+	// Why the configured Safe can't make the request through execTransaction. Only a contract creation gets this far; the other reasons are rejected above.
+	const unsupportedSafeRequestReason = safeEntry === undefined ? undefined : getSafeUnsupportedRequestReason(transactionParams)
+	// Stored in the pending transaction through pendingSafeFields and the Safe proposal, or its creation or request-shape failure, from which every refresh reads it back (getPendingTransactionFlowKind).
 	const flowKind: SafeTransactionFlowKind = isDirectSafeExecution ? 'directExecution'
-		: safeEntry !== undefined ? getSafeUnsupportedRequestReason(transactionParams) === undefined ? 'proposal' : 'unsupportedSafeRequest'
+		: safeEntry !== undefined ? unsupportedSafeRequestReason === undefined ? 'proposal' : 'unsupportedSafeRequest'
 		: executeThroughSafe ? 'simulationModeSafeExecution'
 		: 'ordinary'
 	const pendingSafeFields: PendingSafeFields | undefined = executeThroughSafe
@@ -150,6 +152,8 @@ export async function prepareSafeTransactionConfirmation(
 			...(safeExecutionSignerRoute === undefined ? {} : { safeExecutionSignerAddress: safeExecutionSignerRoute.executor }),
 			...(safeExecutionReviewedState === undefined ? {} : { safeExecutionReviewedSafeState: safeExecutionReviewedState }),
 		}
+	// The window shows an unsupported request's rejection without forming the transaction, so no gas estimate or other formation failure can stand in for it.
+	const unsupportedSafeRequestMessage = unsupportedSafeRequestReason === undefined ? undefined : SAFE_UNSUPPORTED_TRANSACTION_MESSAGES[unsupportedSafeRequestReason]
 	const directSignerSelectionMessage = isDirectSafeExecution && safeExecutionSignerRoute === undefined
 		? executionPreparationMessage ?? 'Connect a signer wallet and select a current Gnosis Safe owner before signing.'
 		: undefined
@@ -157,7 +161,7 @@ export async function prepareSafeTransactionConfirmation(
 		effectiveTransactionParams: safeExecutionSignerRoute?.transactionParams ?? transactionParams,
 		transactionExecutor: safeExecutionSignerRoute?.executor ?? activeAddress,
 		gasPayment: getSafeTransactionFlowGasPayment(flowKind),
-		preparationMessage: directSignerSelectionMessage ?? executionPreparationMessage ?? reconciliationMessage,
+		preparationMessage: unsupportedSafeRequestMessage ?? directSignerSelectionMessage ?? executionPreparationMessage ?? reconciliationMessage,
 		rejection: undefined,
 		async finalize(transactionToSimulate, tabId) {
 			let finalizedTransaction = transactionToSimulate
