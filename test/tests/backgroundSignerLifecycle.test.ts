@@ -105,13 +105,13 @@ describe('background eth_accounts', () => {
 		const websiteTabConnections: WebsiteTabConnections = new Map()
 		const topFrameRegistration = await withSilencedWarnings(async () => await registerWebsiteConnectionAndReconcileRequestBlocks(websiteTabConnections, topFrameSocket, { port: createPort(tabId).port, socket: topFrameSocket, websiteOrigin: topFrameOrigin, approved: false, wantsToConnect: false }, true))
 		await updateTabState(tabId, (previous) => ({ ...previous, website: { websiteOrigin: topFrameOrigin, icon: undefined, title: undefined } }))
-		await withSilencedWarnings(async () => await updateExtensionIconAfterRegistrationRequestBlocks(topFrameRegistration, topFrameSocket, topFrameOrigin))
+		await withSilencedWarnings(async () => await updateExtensionIconAfterRegistrationRequestBlocks(websiteTabConnections, topFrameRegistration, topFrameSocket, topFrameOrigin))
 		const topFrameIcon = (await getTabState(tabId)).tabIconDetails
 		assert.doesNotMatch(topFrameIcon.iconReason, /blocking external requests/)
 
 		const childFrameRegistration = await withSilencedWarnings(async () => await registerWebsiteConnectionAndReconcileRequestBlocks(websiteTabConnections, childFrameSocket, { port: createPort(tabId, undefined, 1, childFrameSocket.connectionName).port, socket: childFrameSocket, websiteOrigin: consentedFrameOrigin, approved: false, wantsToConnect: false }, false))
 		assert.equal(childFrameRegistration.createdTabConnection, false)
-		await withSilencedWarnings(async () => await updateExtensionIconAfterRegistrationRequestBlocks(childFrameRegistration, childFrameSocket, consentedFrameOrigin))
+		await withSilencedWarnings(async () => await updateExtensionIconAfterRegistrationRequestBlocks(websiteTabConnections, childFrameRegistration, childFrameSocket, consentedFrameOrigin))
 
 		const { tabIconDetails } = await getTabState(tabId)
 		if (rpcNetwork === 'readable') {
@@ -122,6 +122,43 @@ describe('background eth_accounts', () => {
 		assert.equal(tabIconDetails.icon, ICON_NOT_ACTIVE_WITH_SHIELD)
 		assert.match(tabIconDetails.iconReason, /blocking external requests/)
 		assert.doesNotMatch(tabIconDetails.iconReason, new RegExp(consentedFrameOrigin.replaceAll('.', '\\.')))
+	})
+
+	for (const topLevelSource of ['top-frame connection', 'tab URL'] as const) test(`resolves a child frame's icon refresh from the ${ topLevelSource }, not from child-frame metadata in tab state`, async () => {
+		const browserMock = installBrowserMock({ manifestVersion: 3 })
+		const { registerWebsiteConnectionAndReconcileRequestBlocks, getTabState, updateExtensionIconAfterRegistrationRequestBlocks, updateTabState, updateWebsiteAccess } = await loadModules()
+		const consentedFrameOrigin = 'consented-metadata-frame.example'
+		const disabledFrameOrigin = 'disabled-metadata-frame.example'
+		const topFrameOrigin = 'unconsented-metadata-top.example'
+		await setUpAddressLevelBlockAllWithUnreadableActiveRpcNetwork(consentedFrameOrigin)
+		await updateWebsiteAccess((previous) => [...previous, { website: { websiteOrigin: disabledFrameOrigin, icon: undefined, title: undefined }, addressAccess: [], access: false, interceptorDisabled: true, declarativeNetRequestBlockMode: 'disabled' }])
+		// Distinct tabs per variant: the applied-block record is module state shared across tests.
+		const tabId = topLevelSource === 'top-frame connection' ? 9885 : 9886
+		const websiteTabConnections: WebsiteTabConnections = new Map()
+		const registerFrame = async (connectionName: bigint, websiteOrigin: string) => {
+			const socket = { tabId, connectionName }
+			const isTopFrame = connectionName === 0n
+			const { port } = isTopFrame ? createPort(tabId) : createPort(tabId, undefined, Number(connectionName), connectionName)
+			return { socket, registration: await withSilencedWarnings(async () => await registerWebsiteConnectionAndReconcileRequestBlocks(websiteTabConnections, socket, { port, socket, websiteOrigin, approved: false, wantsToConnect: false }, isTopFrame)) }
+		}
+		if (topLevelSource === 'top-frame connection') {
+			const topFrame = await registerFrame(0n, topFrameOrigin)
+			await withSilencedWarnings(async () => await updateExtensionIconAfterRegistrationRequestBlocks(websiteTabConnections, topFrame.registration, topFrame.socket, topFrameOrigin))
+		} else {
+			// No top-frame content script connected (for example a restricted top-level page), so the tab's own URL is the top-level website.
+			Object.defineProperty(browser.tabs, 'get', { configurable: true, value: async (requestedTabId: number) => ({ id: requestedTabId, active: true, status: 'complete', url: `https://${ topFrameOrigin }/page` }) })
+		}
+		await registerFrame(1n, disabledFrameOrigin)
+		const consentedFrame = await registerFrame(2n, consentedFrameOrigin)
+		// Child frames publish their website metadata into tab state as they connect; this one lands before the consented frame's reconciliation is observed.
+		await updateTabState(tabId, (previous) => ({ ...previous, website: { websiteOrigin: disabledFrameOrigin, icon: undefined, title: undefined } }))
+		await withSilencedWarnings(async () => await updateExtensionIconAfterRegistrationRequestBlocks(websiteTabConnections, consentedFrame.registration, consentedFrame.socket, consentedFrameOrigin))
+
+		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [tabId])
+		const { tabIconDetails } = await getTabState(tabId)
+		assert.equal(tabIconDetails.icon, ICON_NOT_ACTIVE_WITH_SHIELD)
+		assert.match(tabIconDetails.iconReason, /blocking external requests/)
+		assert.doesNotMatch(tabIconDetails.iconReason, /disabled-metadata-frame/)
 	})
 
 	test('shows the blocking shield only after persisted-consent tab blocking is applied while the active RPC network is unreadable', async () => {

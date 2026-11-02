@@ -78,7 +78,7 @@ describe('background startup lifecycle', () => {
 		assert.equal(listenerRegistration >= 0 && listenerRegistration < startupGate, true)
 		assert.equal(startupGate < connectionRegistration && connectionRegistration < firstTabStateWrite, true)
 		// Every registration, including child frames in an existing tab, hands its request-block reconciliation and the icon refresh that follows it to the error boundary without a frame or new-tab condition, after the new tab's state is written.
-		const iconRefresh = connectionHandler.indexOf('\n\t\tvoid catchAllErrorsAndCall(async () => await updateExtensionIconAfterRegistrationRequestBlocks(registration, socket, websiteOrigin))')
+		const iconRefresh = connectionHandler.indexOf('\n\t\tvoid catchAllErrorsAndCall(async () => await updateExtensionIconAfterRegistrationRequestBlocks(websiteTabConnections, registration, socket, websiteOrigin))')
 		assert.equal(firstTabStateWrite < iconRefresh, true)
 	})
 })

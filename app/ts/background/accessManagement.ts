@@ -1,4 +1,4 @@
-import { getActiveAddress, getActiveAddressesForAllTabs, getWebsiteSocketConnection, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
+import { getActiveAddress, getActiveAddressesForAllTabs, getWebsiteSocketConnection, isTopFramePort, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
 import { getActiveAddressEntryForChain, getActiveAddresses } from './metadataUtils.js'
 import { requestAccessFromUser } from './windows/interceptorAccess.js'
 import { retrieveWebsiteDetails, updateExtensionIcon } from './iconHandler.js'
@@ -6,8 +6,8 @@ import type { TabConnection, WebsiteTabConnections } from '../types/user-interfa
 import type { InpageScriptCallBack, Settings } from '../types/interceptor-messages.js'
 import { getRequiredSettings, getSettingsSnapshot, getWebsiteAccess, getWebsiteAccessForAccessDecision, updateWebsiteAccess } from './settings.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
-import { type WebsiteSocket, getHostWithPort, silenceChromeUnCaughtPromise } from '../utils/requests.js'
-import { getAllTabStates, getTabState } from './storageVariables.js'
+import { type WebsiteSocket, getHostWithPort, getTabIfExists, silenceChromeUnCaughtPromise } from '../utils/requests.js'
+import { getAllTabStates } from './storageVariables.js'
 import { createRpcConfigurationUnavailableError } from '../utils/rpcConfigurationError.js'
 import type { Website, WebsiteAccessArray, WebsiteAddressAccess } from '../types/websiteAccessTypes.js'
 import { getUniqueItemsByProperties, replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
@@ -467,16 +467,26 @@ export async function registerWebsiteConnectionAndReconcileRequestBlocks(website
 	return { ...registration, isTopFrame, requestBlocksReconciliation: silenceChromeUnCaughtPromise(updateDeclarativeNetRequestBlocksForRegisteredConnection(websiteTabConnections)) }
 }
 
-// The icon reports applied request blocking, so it is refreshed once the registration's reconciliation settles, whether or not that succeeds (a failure can follow a partial rule update). A new tab always gets its first icon (call this after writing the new tab's state); an existing tab is refreshed whenever the reconciliation ran, because a consented child frame can make the whole tab blocked. A child frame's icon is resolved for the tab's own website, not the frame's.
-export async function updateExtensionIconAfterRegistrationRequestBlocks(registration: Awaited<ReturnType<typeof registerWebsiteConnectionAndReconcileRequestBlocks>>, socket: WebsiteSocket, websiteOrigin: string) {
+// Child frames publish their own website into tab state, so the tab's top-level website comes from its latest top-frame connection, otherwise from the tab's URL; undefined when neither is known.
+async function getTopLevelWebsiteOrigin(websiteTabConnections: WebsiteTabConnections, tabId: number) {
+	const tabConnection = websiteTabConnections.get(tabId)
+	const topFrameConnection = tabConnection === undefined ? undefined : Object.values(tabConnection.connections).reverse().find((connection) => isTopFramePort(connection.port))
+	if (topFrameConnection !== undefined) return topFrameConnection.websiteOrigin
+	const tabUrl = (await getTabIfExists(tabId))?.url
+	return tabUrl === undefined ? undefined : getHostWithPort(tabUrl)
+}
+
+// The icon reports applied request blocking, so it is refreshed once the registration's reconciliation settles, whether or not that succeeds (a failure can follow a partial rule update). A new tab always gets its first icon (call this after writing the new tab's state); an existing tab is refreshed whenever the reconciliation ran, because a consented child frame can make the whole tab blocked. A child frame's icon is resolved for the tab's top-level website, not the frame's.
+export async function updateExtensionIconAfterRegistrationRequestBlocks(websiteTabConnections: WebsiteTabConnections, registration: Awaited<ReturnType<typeof registerWebsiteConnectionAndReconcileRequestBlocks>>, socket: WebsiteSocket, websiteOrigin: string) {
 	// A rejected reconciliation ran, so its tab blocking may have changed.
 	let reconciled = true
 	try {
 		reconciled = await registration.requestBlocksReconciliation
 	} finally {
 		if (registration.createdTabConnection || reconciled) {
-			const iconWebsiteOrigin = registration.createdTabConnection || registration.isTopFrame ? websiteOrigin : (await getTabState(socket.tabId)).website?.websiteOrigin ?? websiteOrigin
-			await updateExtensionIcon(socket.tabId, iconWebsiteOrigin, bumpPopupRefreshGeneration())
+			const iconWebsiteOrigin = registration.createdTabConnection || registration.isTopFrame ? websiteOrigin : await getTopLevelWebsiteOrigin(websiteTabConnections, socket.tabId)
+			// Without a known top-level website the icon is left to the tab's navigation-complete refresh.
+			if (iconWebsiteOrigin !== undefined) await updateExtensionIcon(socket.tabId, iconWebsiteOrigin, bumpPopupRefreshGeneration())
 		}
 	}
 }

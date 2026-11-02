@@ -209,7 +209,7 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ simulati
 				})
 			})
 		}
-		void catchAllErrorsAndCall(async () => await updateExtensionIconAfterRegistrationRequestBlocks(registration, socket, websiteOrigin))
+		void catchAllErrorsAndCall(async () => await updateExtensionIconAfterRegistrationRequestBlocks(websiteTabConnections, registration, socket, websiteOrigin))
 		if (registration.provisionallyClaimedSignerState) {
 			sendSubscriptionReplyOrCallBackToPort(port, { type: 'result', method: 'request_signer_connection_status', result: [] })
 		}
