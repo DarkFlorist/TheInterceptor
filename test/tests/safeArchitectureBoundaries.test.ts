@@ -58,8 +58,36 @@ test('the RPC client enforces the executed-call invariant without Gnosis Safe do
 	const ethereumClientServiceSource = await Bun.file(new URL('../../app/ts/simulation/services/EthereumClientService.ts', import.meta.url)).text()
 	assert.doesNotMatch(ethereumClientServiceSource, /from '\.\.\/\.\.\/(?:safe\/|utils\/transactionGasAccounting\.js)/u)
 	assert.doesNotMatch(ethereumClientServiceSource, /Gnosis Safe|prepareSafeExecutionsForRpc|runsThroughGnosisSafe/u)
-	assert.match(ethereumClientServiceSource, /authorizesExecutedCall\(transaction\) && transaction\.executedTransaction === undefined/u)
-	assert.match(ethereumClientServiceSource, /transaction\.executedTransaction !== undefined && !authorizesExecutedCall\(transaction\)/u)
+	// The RPC client decides from the minimal input's marker alone, not from the domain predicate or the Safe data it reads.
+	assert.doesNotMatch(ethereumClientServiceSource, /authorizesExecutedCall|SafeStackTransaction|safeTransaction|simulationOptions|executeThroughSafe/u)
+	assert.match(ethereumClientServiceSource, /transaction\.executedCallAuthorized && transaction\.executedTransaction === undefined/u)
+	assert.match(ethereumClientServiceSource, /transaction\.executedTransaction !== undefined && !transaction\.executedCallAuthorized/u)
+	assert.match(ethereumClientServiceSource, /executedCallAuthorized: transaction\.executedCallAuthorized,/u)
+})
+
+test('the minimal simulation input that crosses into the RPC client carries no Gnosis Safe domain type', async () => {
+	const visualizerTypesSource = await Bun.file(new URL('../../app/ts/types/visualizer-types.ts', import.meta.url)).text()
+	const minimalDataBlockDefinition = visualizerTypesSource.match(/export const SimulationStateInputMinimalDataBlock = funtypes\.ReadonlyObject\(\{\n(?:.*\n)*?\}\)\n/u)?.[0]
+	if (minimalDataBlockDefinition === undefined) throw new Error('SimulationStateInputMinimalDataBlock definition not found')
+	assert.match(minimalDataBlockDefinition, /executedCallAuthorized: funtypes\.Boolean,/u)
+	assert.doesNotMatch(minimalDataBlockDefinition.split('\n').filter((line) => !/^\s*\/\//u.test(line)).join('\n'), /Safe|safeTransaction|simulationOptions|TransactionSimulationOptions|PreSimulationTransaction|SimulationInputTransaction/u)
+	const { SimulationStateInputBlock, SimulationStateInputMinimalDataBlock, TransactionSimulationOptions } = await import('../../app/ts/types/visualizer-types.js')
+	const { SafeStackTransaction } = await import('../../app/ts/types/safeTypes.js')
+	const getReachableRuntypes = (runtype: unknown) => {
+		const reachableRuntypes = new Set<unknown>()
+		const visit = (value: unknown) => {
+			if (!(value instanceof Object) || reachableRuntypes.has(value)) return
+			reachableRuntypes.add(value)
+			for (const child of Object.values(value)) visit(child)
+		}
+		visit(runtype)
+		return reachableRuntypes
+	}
+	// The full simulation input block does reach the Safe runtypes, so the walk below would find them.
+	assert.equal(getReachableRuntypes(SimulationStateInputBlock).has(SafeStackTransaction), true)
+	const reachableRuntypes = getReachableRuntypes(SimulationStateInputMinimalDataBlock)
+	assert.equal(reachableRuntypes.has(SafeStackTransaction), false, 'the minimal block reaches no SafeStackTransaction runtype')
+	assert.equal(reachableRuntypes.has(TransactionSimulationOptions), false, 'the minimal block reaches no TransactionSimulationOptions runtype')
 })
 
 test('every decision whether the node runs a transaction as an executed call goes through authorizesExecutedCall', async () => {

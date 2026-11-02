@@ -16,7 +16,7 @@ import { findEntryWithSymbolOrName, getMetadataForAddressBookData } from './meta
 import { getActiveAddressEntryForChain, getActiveAddresses, identifyAddress } from './metadataUtils.js'
 import type { TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { authorizesExecutedCall, CompleteVisualizedSimulation, InterceptorSimulationExport, type InterceptorStackOperation, InterceptorTransactionStack, type ModifyAddressWindowState, createPassthroughCompleteVisualizedSimulation } from '../types/visualizer-types.js'
+import { authorizesExecutedCall, CompleteVisualizedSimulation, InterceptorSimulationExport, type InterceptorStackOperation, InterceptorTransactionStack, type ModifyAddressWindowState, createPassthroughCompleteVisualizedSimulation, toSimulationStateInputMinimalData } from '../types/visualizer-types.js'
 import { isJSON } from '../utils/json.js'
 import { doAddressBookChainIdsMatch, type AddressBookEntry, type IncompleteAddressBookEntry } from '../types/addressBookTypes.js'
 import { EthereumAddress, serialize } from '../types/wire-types.js'
@@ -1207,7 +1207,7 @@ export async function requestInterceptorSimulationInput(ethereumClientService: E
 	const simulationStack = modifyObject(stack, { operations: getOperationsForActiveStackContext(stack, SIMULATION_STACK_CONTEXT) })
 	const simulationInput = await prepareSafeExecutionsForRpc(await getCurrentSimulationInput(), ethereumClientService)
 	const currentBlockNumberPromise = silenceChromeUnCaughtPromise(ethereumClientService.getBlockNumber(undefined))
-	const eth_simulateV1 = await ethereumClientService.ethSimulateV1Input(simulationInput, await currentBlockNumberPromise, undefined)
+	const eth_simulateV1 = await ethereumClientService.ethSimulateV1Input(toSimulationStateInputMinimalData(simulationInput), await currentBlockNumberPromise, undefined)
 
 	const interceptorSimulateStack = modifyObject(simulationStack, { operations: simulationStack.operations.map((operation) => {
 		switch(operation.type) {

@@ -4,7 +4,7 @@ import type { PreparedEthSimulateV1Input } from './EthereumClientService.js'
 import { type EthereumSignedTransactionWithBlockData, type EthereumBlockTag, type EthereumAddress, type EthereumBlockHeader, type EthereumBlockHeaderWithTransactionHashes, EthereumData, EthereumQuantity, EthereumBytes32, type EthereumSendableSignedTransaction } from '../../types/wire-types.js'
 import { addressString, bigintSecondsToDate, bigintToUint8Array, dataStringWith0xStart, dateToBigintSeconds, max, min, stringToUint8Array } from '../../utils/bigint.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, ETHEREUM_LOGS_LOGGER_ADDRESS, MOCK_ADDRESS, MULTICALL3, Multicall3ABI, DEFAULT_CALL_ADDRESS, GAS_PER_BLOB } from '../../utils/constants.js'
-import { authorizesExecutedCall, type SimulatedTransaction, type SimulationState, type TokenBalancesAfter, type PreSimulationTransaction, type SimulationStateBlock, type SimulationStateInput, type SimulationStateInputMinimalData, type SimulationStateInputMinimalDataBlock, type ExecutionSimulatedTransaction, type ExecutionSimulationState, type ResolvedExecutionSimulationState, type ResolvedSimulationInput, type ResolvedSimulationState } from '../../types/visualizer-types.js'
+import { authorizesExecutedCall, type SimulatedTransaction, type SimulationState, type TokenBalancesAfter, type PreSimulationTransaction, type SimulationStateBlock, type SimulationStateInput, type SimulationStateInputMinimalData, type SimulationStateInputMinimalDataBlock, type ExecutionSimulatedTransaction, type ExecutionSimulationState, type ResolvedExecutionSimulationState, type ResolvedSimulationInput, type ResolvedSimulationState, toSimulationStateInputMinimalData, toSimulationStateInputMinimalTransaction } from '../../types/visualizer-types.js'
 import type { Abi } from '../../utils/ethereumPrimitives.js'
 import { stringToBytes, keccak256 } from '../../utils/ethereumPrimitives.js'
 import { type IUnsignedTransaction1559, type IUnsignedTransaction7702, rlpEncode } from '../../utils/ethereum.js'
@@ -133,7 +133,7 @@ const getResolvedSimulationInputValue = (
 ): SimulationStateInputMinimalData | undefined => {
 	if (simulationStateInput === undefined) return undefined
 	if (!('kind' in simulationStateInput)) return simulationStateInput
-	return simulationStateInput.kind === 'passthrough' ? undefined : simulationStateInput.value
+	return simulationStateInput.kind === 'passthrough' ? undefined : toSimulationStateInputMinimalData(simulationStateInput.value)
 }
 
 const getSimulationBlockNumber = (simulationState: SimulationState, blockDelta: number) => simulationState.blockNumber + BigInt(blockDelta) + 1n
@@ -261,7 +261,7 @@ export const getSimulatedTransactionCount = async (ethereumClientService: Ethere
 		// if we are on our simulated block, just count how many transactions we have sent in the simulation to increment transaction count
 		let index = 0
 		// The simulation input the simulated blocks came from, block for block, because only it carries the call the node ran for each transaction (getExecutedCallNonceContribution).
-		for (const block of currentState.simulationStateInput) {
+		for (const block of toSimulationStateInputMinimalData(currentState.simulationStateInput)) {
 			const currBlockNum = currentState.blockNumber + BigInt(index) + 1n
 			if (blockNumToUseForSim < currBlockNum) {
 				break
@@ -320,7 +320,7 @@ const getTransactionNonceContribution = (transaction: EthereumSendableSignedTran
 
 // A transaction raises the nonces the call the node runs raises (getExecutedTransaction). For a Gnosis Safe execution that is its executor's nonce, not the Safe's: no account sends the Safe's own call, so its nonce field raises nothing, also before the input is prepared with the executor's call.
 const getExecutedCallNonceContribution = (transaction: RpcTransaction, address: bigint) => {
-	if (transaction.executedTransaction === undefined && authorizesExecutedCall(transaction)) return 0n
+	if (transaction.executedTransaction === undefined && transaction.executedCallAuthorized) return 0n
 	return getTransactionNonceContribution(getExecutedTransaction(transaction), address)
 }
 
@@ -420,7 +420,7 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 	}
 	const estimateGasTransaction = await createEip1559Or7702Transaction(estimateGasTransactionBase, data)
 	try {
-		const context = await createPreparedSimulationExecutionContext(ethereumClientService, requestAbortController, currentState.simulationStateInput)
+		const context = await createPreparedSimulationExecutionContext(ethereumClientService, requestAbortController, toSimulationStateInputMinimalData(currentState.simulationStateInput))
 		const simulateWithGasLimit = async (gasLimit: bigint) => await simulateBlockCallWithPreparedInputContext(
 			ethereumClientService,
 			requestAbortController,
@@ -487,7 +487,7 @@ const inspectSimulationInput = async (
 		return {
 			success: true,
 			base,
-			groupedEthSimulateV1CallResult: simulationStateInput.map((inputBlock) => {
+			groupedEthSimulateV1CallResult: toSimulationStateInputMinimalData(simulationStateInput).map((inputBlock) => {
 				previousTimestamp = getNextBlockTimeStampOverride(previousTimestamp, inputBlock.blockTimeManipulation || DEFAULT_BLOCK_MANIPULATION)
 				return {
 					inputBlock,
@@ -499,7 +499,7 @@ const inspectSimulationInput = async (
 		}
 	}
 	try {
-		const { prepared, result: ethSimulateV1CallResult } = await ethereumClientService.simulatePrepared(simulationStateInput, parentBlock.number, requestAbortController)
+		const { prepared, result: ethSimulateV1CallResult } = await ethereumClientService.simulatePrepared(toSimulationStateInputMinimalData(simulationStateInput), parentBlock.number, requestAbortController)
 		const groupedEthSimulateV1CallResult = groupEthSimulateV1ResultByInputBlocks(prepared, ethSimulateV1CallResult)
 		return {
 			success: true,
@@ -572,7 +572,7 @@ export const createSimulationState = async (ethereumClientService: EthereumClien
 		executionSimulationState.simulatedBlocks.map((block) => ({
 			inputBlock: {
 				stateOverrides: block.stateOverrides,
-				transactions: block.simulatedTransactions.map((transaction) => ({ signedTransaction: transaction.preSimulationTransaction.signedTransaction })),
+				transactions: block.simulatedTransactions.map((transaction) => toSimulationStateInputMinimalTransaction(transaction.preSimulationTransaction)),
 				signedMessages: block.signedMessages,
 				blockTimeManipulation: block.blockTimeManipulation,
 				simulateWithZeroBaseFee: false,
@@ -1705,7 +1705,7 @@ export const simulatedCall = async (ethereumClientService: EthereumClientService
 
 	//todo, we can optimize this by leaving nonce out
 	try {
-		const callResult = await simulateBlockCallOnTopOfSimulationInput(ethereumClientService, requestAbortController, simulationState.kind === 'passthrough' ? undefined : simulationState.value.simulationStateInput, transaction, { extraOverrides })
+		const callResult = await simulateBlockCallOnTopOfSimulationInput(ethereumClientService, requestAbortController, simulationState.kind === 'passthrough' ? undefined : toSimulationStateInputMinimalData(simulationState.value.simulationStateInput), transaction, { extraOverrides })
 		if (callResult === undefined) throw new Error('failed to get last call in eth simulate')
 		if (callResult?.status === 'failure') return { error: callResult.error }
 		return { result: callResult.returnData }
@@ -1809,7 +1809,7 @@ export const getTokenBalancesAfterForTransaction = async (
 	callResult: EthSimulateV1CallResult,
 	transaction: EthereumSendableSignedTransaction,
 ): Promise<TokenBalancesAfter> => {
-	return getSimulatedTokenBalances(ethereumClientService, requestAbortController, simulationStateInput, getTokenBalanceQueriesForTransaction(callResult, transaction))
+	return getSimulatedTokenBalances(ethereumClientService, requestAbortController, toSimulationStateInputMinimalData(simulationStateInput), getTokenBalanceQueriesForTransaction(callResult, transaction))
 }
 
 const sliceSimulationStateInput = (simulationStateInput: SimulationStateInput, blockIndex: number, transactionIndex: number) => {

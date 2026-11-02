@@ -4,7 +4,7 @@ import { getGasEstimateFromSimulation } from '../simulation/services/simulationG
 import { mockSignTransaction } from '../simulation/services/simulationTransactionSigning.js'
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
 import type { MutableStateOverrides } from '../types/ethSimulate-types.js'
-import { authorizesExecutedCall, type PreSimulationTransaction, type ResolvedSimulationState, type SimulationInputTransaction, type SimulationStateInput, type TransactionSimulationOptions } from '../types/visualizer-types.js'
+import { authorizesExecutedCall, type PreSimulationTransaction, type ResolvedSimulationState, type SimulationInputTransaction, type SimulationStateInput, type TransactionSimulationOptions, toSimulationStateInputMinimalData } from '../types/visualizer-types.js'
 import type { SafeTx } from '../types/personal-message-definitions.js'
 import type { EthereumSendableSignedTransaction, EthereumUnsignedTransaction } from '../types/wire-types.js'
 import { encodeAbiValues, encodeFunctionCall } from '../utils/abiRuntime.js'
@@ -193,7 +193,7 @@ export async function estimateSafeExecutionGas(
 	let safeCallReverted = false
 	const simulateWithGasLimit = async (gasLimit: bigint) => {
 		const input = [...preparedInput.slice(0, -1), { ...lastBlock, transactions: [{ ...safeCall, executedTransaction: { ...executedTransaction, gas: gasLimit } }] }]
-		const result = last(last(await ethereum.simulate(input, parentBlock.number, requestAbortController))?.calls ?? [])
+		const result = last(last(await ethereum.simulate(toSimulationStateInputMinimalData(input), parentBlock.number, requestAbortController))?.calls ?? [])
 		safeCallReverted = result?.status === 'failure' && isSafeCallRevert(result.error, result.returnData)
 		return result
 	}
