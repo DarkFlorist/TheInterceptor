@@ -2,7 +2,7 @@ import * as assert from 'assert'
 import { test } from 'bun:test'
 import { InterceptorSimulationExport, InterceptorTransactionStack, type PreSimulationTransaction, toResolvedExecutionSimulationState, toResolvedSimulationInput } from '../../app/ts/types/visualizer-types.js'
 import { createExecutionSimulationState, getSimulatedTransactionByHashFromInput, getSimulatedTransactionReceipt } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
-import { getSignedTransactionForSimulation, withUniqueSimulationHash } from '../../app/ts/simulation/services/simulationTransactionSigning.js'
+import { createSaltSearch, getSignedTransactionForSimulation, withUniqueSimulationHash } from '../../app/ts/simulation/services/simulationTransactionSigning.js'
 import { addressString, browserMock, createSafeStackTransactionFixture, createWebsitePort, fakeRequestHandler, fakeRpcNetwork, isRecord, modules, simulator, withSilencedConsole } from './confirmTransactionTestHarness.js'
 
 // Regression tests for #1713: no two transactions on the simulation stack share a hash, so transaction and receipt lookups by hash find the right one.
@@ -335,4 +335,34 @@ test('leaves a Gnosis Safe proposal its safeTxHash even when that hash is alread
 	const proposal = { ...createStackedTransaction(2n, 1n), safeTransaction }
 	const proposalWithSafeTxHash = { ...proposal, signedTransaction: { ...proposal.signedTransaction, hash: safeTransaction.safeTxHash } }
 	assert.equal(withUniqueSimulationHash(proposalWithSafeTxHash, new Set([safeTransaction.safeTxHash])), proposalWithSafeTxHash)
+})
+
+const DUPLICATE_COUNT = 200
+const getSalt = (transaction: PreSimulationTransaction) => transaction.signedTransaction.r >> 160n
+
+test('stacks many identical transactions added in one update with consecutive salts', async () => {
+	await startSimulationStack(SENDER)
+	await modules.updateInterceptorTransactionStack(() => ({ operations: Array.from({ length: DUPLICATE_COUNT }, (_, index) => asOperation(createStackedTransaction(BigInt(index + 1), 1n))) }))
+	const stackedTransactions = await getStackedTransactions()
+	assert.equal(new Set(hashesOf(stackedTransactions)).size, DUPLICATE_COUNT)
+	assert.deepEqual(stackedTransactions.map(getSalt), Array.from({ length: DUPLICATE_COUNT }, (_, index) => BigInt(index)))
+})
+
+test('signs each of many identical transactions a constant number of times when they share a salt search', () => {
+	const takenHashes = new Set<bigint>()
+	let candidateChecks = 0
+	const isTaken = takenHashes.has.bind(takenHashes)
+	takenHashes.has = (hash: bigint) => {
+		candidateChecks++
+		return isTaken(hash)
+	}
+	const saltSearch = createSaltSearch()
+	const salts = Array.from({ length: DUPLICATE_COUNT }, (_, index) => {
+		const unique = withUniqueSimulationHash(createStackedTransaction(BigInt(index + 1), 1n), takenHashes, saltSearch)
+		takenHashes.add(unique.signedTransaction.hash)
+		return getSalt(unique)
+	})
+	assert.deepEqual(salts, Array.from({ length: DUPLICATE_COUNT }, (_, index) => BigInt(index)))
+	// One check of the transaction's own hash and one of the salt the search resumes at, instead of one per salt up to its own.
+	assert.equal(candidateChecks, 2 * DUPLICATE_COUNT - 1)
 })

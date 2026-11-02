@@ -67,18 +67,26 @@ const withoutSignature = (transaction: EthereumSendableSignedTransaction): Ether
 
 export const getStackTransactionHashes = (stack: InterceptorTransactionStack): ReadonlySet<bigint> => new Set(stack.operations.flatMap((operation) => operation.type === 'Transaction' ? [operation.preSimulationTransaction.signedTransaction.hash] : []))
 
+// Where withUniqueSimulationHash resumes its salt search for a transaction, by the hash its fields and Gnosis Safe execution marker get without a salt. Shared across the transactions of one stack update, whose taken hashes only grow, so every salt it skips is still taken and N identical transactions take N signings instead of N squared.
+export type SaltSearch = { readonly nextSaltByUnsaltedHash: Map<bigint, bigint> }
+export const createSaltSearch = (): SaltSearch => ({ nextSaltByUnsaltedHash: new Map() })
+
 /**
  * Gives a transaction entering the simulation stack a hash that no transaction in stackHashes has, so hash lookups find exactly one transaction. A transaction whose hash is free keeps it; otherwise it is mock-signed again from its own fields, keeping its Gnosis Safe execution marker, with the lowest salt that frees its hash. That includes a duplicate of a stacked raw signed transaction, whose real hash is taken.
  * A new transaction's hash can equal a stacked one's even with the sender in r: removal renumbers later nonces but keeps their hashes, two confirmations pending at once are formed with the same nonce, and an import keeps its recorded hashes. The stacked transaction keeps its hash, because pages may already hold it.
  * A Gnosis Safe proposal keeps its hash, which is its safeTxHash: the Safe stack mirrors it by that hash (safeTransaction), so a new hash would split the two. Its SafeTx nonce keeps it apart from the Safe's other proposals.
  */
-export const withUniqueSimulationHash = (transaction: PreSimulationTransaction, stackHashes: ReadonlySet<bigint>): PreSimulationTransaction => {
+export const withUniqueSimulationHash = (transaction: PreSimulationTransaction, stackHashes: ReadonlySet<bigint>, saltSearch: SaltSearch = createSaltSearch()): PreSimulationTransaction => {
 	if (transaction.safeTransaction !== undefined) return transaction
 	if (!stackHashes.has(transaction.signedTransaction.hash)) return transaction
 	const s = getMockSignatureS(transaction.simulationOptions)
-	for (let salt = 1n; ; salt++) {
-		const signedTransaction = mockSignTransaction(withoutSignature(transaction.signedTransaction), s, salt)
-		if (!stackHashes.has(signedTransaction.hash)) return { ...transaction, signedTransaction }
+	const unsignedTransaction = withoutSignature(transaction.signedTransaction)
+	const unsaltedHash = mockSignTransaction(unsignedTransaction, s).hash
+	for (let salt = saltSearch.nextSaltByUnsaltedHash.get(unsaltedHash) ?? 1n; ; salt++) {
+		const signedTransaction = mockSignTransaction(unsignedTransaction, s, salt)
+		if (stackHashes.has(signedTransaction.hash)) continue
+		saltSearch.nextSaltByUnsaltedHash.set(unsaltedHash, salt + 1n)
+		return { ...transaction, signedTransaction }
 	}
 }
 
@@ -86,9 +94,10 @@ export const withUniqueSimulationHash = (transaction: PreSimulationTransaction, 
 export const withUniqueAddedTransactionHashes = (previousStack: InterceptorTransactionStack, nextStack: InterceptorTransactionStack): InterceptorTransactionStack => {
 	const previousIdentifiers = new Set(previousStack.operations.flatMap((operation) => operation.type === 'Transaction' ? [operation.preSimulationTransaction.transactionIdentifier] : []))
 	const takenHashes = new Set(nextStack.operations.flatMap((operation) => operation.type === 'Transaction' && previousIdentifiers.has(operation.preSimulationTransaction.transactionIdentifier) ? [operation.preSimulationTransaction.signedTransaction.hash] : []))
+	const saltSearch = createSaltSearch()
 	return { ...nextStack, operations: nextStack.operations.map((operation) => {
 		if (operation.type !== 'Transaction' || previousIdentifiers.has(operation.preSimulationTransaction.transactionIdentifier)) return operation
-		const preSimulationTransaction = withUniqueSimulationHash(operation.preSimulationTransaction, takenHashes)
+		const preSimulationTransaction = withUniqueSimulationHash(operation.preSimulationTransaction, takenHashes, saltSearch)
 		takenHashes.add(preSimulationTransaction.signedTransaction.hash)
 		return preSimulationTransaction === operation.preSimulationTransaction ? operation : { ...operation, preSimulationTransaction }
 	}) }
