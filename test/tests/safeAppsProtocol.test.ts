@@ -1,7 +1,10 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
+import * as fs from 'node:fs'
+import * as path from 'node:path'
 import { getSDKVersion } from '@safe-global/safe-apps-sdk'
-import { createSafeAppsRequest, isSafeAppsRequest, parseSafeAppsRequest, SAFE_APPS_RESPONSE_VERSION } from '../../app/inpage/ts/safeAppsProtocol.js'
+import { createSafeAppsRequest, isSafeAppsRequest, parseSafeAppsRequest, SAFE_APPS_PREPARATION_CANCEL_MESSAGE, SAFE_APPS_RESPONSE_VERSION } from '../../app/inpage/ts/safeAppsProtocol.js'
+import { SAFE_APPS_PREPARATION_CANCEL_MESSAGE as BACKGROUND_SAFE_APPS_PREPARATION_CANCEL_MESSAGE } from '../../app/ts/background/prepareSafeApp.js'
 
 test('the host and provider use one SDK version validator and preserve request parameters', () => {
 	for (const version of ['9.1.0', '1.0.0', '9.1.0-beta.1', '9.1.0+build-2']) {
@@ -16,4 +19,22 @@ test('the host and provider use one SDK version validator and preserve request p
 	}
 	assert.equal(createSafeAppsRequest('prepare', 'getSafeInfo').env.sdkVersion, SAFE_APPS_RESPONSE_VERSION)
 	assert.equal(SAFE_APPS_RESPONSE_VERSION, getSDKVersion())
+})
+
+test('the background reports the same preparation cancellation message as the injected page', () => {
+	assert.equal(BACKGROUND_SAFE_APPS_PREPARATION_CANCEL_MESSAGE, SAFE_APPS_PREPARATION_CANCEL_MESSAGE)
+})
+
+test('page-injected sources import only sibling modules inside app/inpage/ts', () => {
+	const inpageSourceDirectory = 'app/inpage/ts'
+	const moduleSpecifierPattern = /\b(?:import|export)\s[^'"]*?from\s*['"]([^'"]+)['"]|\bimport\s*\(?\s*['"]([^'"]+)['"]/g
+	const sourceFiles = fs.readdirSync(inpageSourceDirectory).filter((file) => file.endsWith('.ts'))
+	assert.ok(sourceFiles.length > 0)
+	for (const file of sourceFiles) {
+		const source = fs.readFileSync(path.join(inpageSourceDirectory, file), 'utf8')
+		for (const match of source.matchAll(moduleSpecifierPattern)) {
+			const specifier = match[1] ?? match[2]
+			assert.match(specifier ?? '', /^\.\/[\w-]+\.js$/, `${ file } imports ${ specifier ?? 'an unknown module' } from outside app/inpage/ts`)
+		}
+	}
 })

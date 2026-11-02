@@ -1,5 +1,3 @@
-import safeAppsPreparationMessages from '../../shared/safeAppsPreparationMessages.json'
-
 // Canonical SDK envelope used by the provider, parent host and Settings preparation.
 export const SAFE_APPS_RESPONSE_VERSION = '9.1.0'
 export const SAFE_APPS_PENDING_REQUEST_LIMIT = 32
@@ -7,7 +5,8 @@ export const SAFE_APPS_REQUEST_TIMEOUT_MS = 5 * 60_000
 export const SAFE_APPS_PREPARATION_TIMEOUT_MS = 30_000
 export const SAFE_APPS_PREPARATION_CANCEL_EVENT = 'interceptor-cancel-safe-preparation'
 export const SAFE_APPS_PREPARATION_CANCEL_MARKER = 'interceptorSafePreparationCancelled'
-export const SAFE_APPS_PREPARATION_CANCEL_MESSAGE = safeAppsPreparationMessages.cancelled
+// The injected bundle imports only modules in app/inpage/ts, so the background keeps its own copy of this message; safeAppsProtocol.test.ts checks they match.
+export const SAFE_APPS_PREPARATION_CANCEL_MESSAGE = 'Safe connection was cancelled.'
 export type SafeAppsRequest = { readonly id: string, readonly method: string, readonly params?: unknown, readonly env: { readonly sdkVersion: string }, readonly bridgeToken?: string }
 export type ParsedSafeAppsRequest = { readonly id: string, readonly request: SafeAppsRequest } | { readonly id: string, readonly error: string }
 export type SafeAppsResponse = { readonly id: string, readonly success: boolean, readonly error?: unknown, readonly bridgeToken?: string }

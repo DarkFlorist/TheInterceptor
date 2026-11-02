@@ -6,7 +6,6 @@ import { getEnabledSafeAppsHostOrigins, getSettings } from './settings.js'
 import { hasAccess } from './websiteAccessPolicy.js'
 import { parseSafeAppsHostOrigin } from '../types/safeAppsHosting.js'
 import { INPAGE_SCRIPTS } from '../config/injectedScripts.js'
-import safeAppsPreparationMessages from '../../shared/safeAppsPreparationMessages.json'
 import { reportUnexpectedError } from '../utils/errors.js'
 
 function tabHasOrigin(tabUrl: string | undefined, origin: string): boolean {
@@ -61,6 +60,9 @@ async function prepareSafeAppTabOperation(value: string, operation: PreparationO
 	return { success: true }
 }
 
+// Matches the injected page's SAFE_APPS_PREPARATION_CANCEL_MESSAGE, which cannot be imported across the inpage bundle boundary; safeAppsProtocol.test.ts checks they match.
+export const SAFE_APPS_PREPARATION_CANCEL_MESSAGE = 'Safe connection was cancelled.'
+
 type PreparationOperation = {
 	readonly abort: AbortController
 	readonly cancelled: Promise<undefined>
@@ -69,7 +71,7 @@ type PreparationOperation = {
 	pageScript?: Promise<unknown>
 	cleanup?: Promise<void>
 }
-const cancelledReply = (operation: PreparationOperation): PrepareSafeAppReply['data'] => ({ success: false, errorMessage: typeof operation.abort.signal.reason === 'string' ? operation.abort.signal.reason : safeAppsPreparationMessages.cancelled })
+const cancelledReply = (operation: PreparationOperation): PrepareSafeAppReply['data'] => ({ success: false, errorMessage: typeof operation.abort.signal.reason === 'string' ? operation.abort.signal.reason : SAFE_APPS_PREPARATION_CANCEL_MESSAGE })
 const isMissingPreparationDocument = (error: unknown) => isMissingBrowserTargetError(error) || error instanceof Error && (error.message.startsWith('No document with id') || error.message === 'The tab was closed.' || error.message === 'The frame was removed.' || /^Frame with ID \d+ was removed\./.test(error.message))
 
 
@@ -105,7 +107,7 @@ function createSafeAppPreparationService() {
 		operation.cleanup ??= clearPreparationScript(operation).catch(async (error: unknown) => {
 			await reportUnexpectedError(error, { code: 'safe_apps_preparation_cleanup_failed' })
 		})
-		operation.abort.abort(safeAppsPreparationMessages.cancelled)
+		operation.abort.abort(SAFE_APPS_PREPARATION_CANCEL_MESSAGE)
 		await operation.cleanup
 	}
 	return { start, cancel }
