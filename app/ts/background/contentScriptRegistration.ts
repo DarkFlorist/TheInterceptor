@@ -111,7 +111,7 @@ export function createContentScriptRegistrationService() {
 		void updateAndReport()
 	}
 	let started = false
-	// Storage changes are the single MV3 settings trigger, including imports and website-access updates.
+	// The storage listener independently reconciles every stored-settings change (settings import, migration and any handler) and reports its own failures; awaited website-access writes also call update() and own the popup's result, so one root cause may also appear once in the diagnostic log.
 	const start = () => {
 		if (started) return
 		started = true

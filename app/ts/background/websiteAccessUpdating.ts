@@ -16,6 +16,7 @@ export async function updateWebsiteAccessAndContentScriptInjectionStrategy(updat
 		disabledSitesChanged = !haveSameDisabledSites(previousWebsiteAccess, nextWebsiteAccess)
 		return nextWebsiteAccess
 	})
+	// This awaited update owns the popup's result: its failure rejects the operation before any tab reload, while the storage listener separately reports its own attempt.
 	if (disabledSitesChanged) await updateContentScriptInjectionStrategy()
 	return disabledSitesChanged
 }

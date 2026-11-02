@@ -395,7 +395,35 @@ describe('content script injection strategy', () => {
 		assert.equal(sentMessages.some(({ method }) => method === 'popup_setDisableInterceptorReply'), false)
 	})
 
-	test('storage is the single settings trigger and reports rejected registration updates', async () => {
+	test('an awaited website-access failure rejects its caller before reload while the storage listener reports independently', async () => {
+		let failProviderUpdates = false
+		const { reloadedTabs, sentMessages } = installBrowserMock({ emitStorageEvents: true, registeredContentScriptIds: ['inpage', 'inpage2'], beforeUpdateContentScripts: async () => {
+			if (failProviderUpdates) throw new Error('Provider update rejected')
+		} })
+		const registration = await import('../../app/ts/background/contentScriptRegistration.js')
+		const { disableInterceptorForPage } = await import('../../app/ts/background/popupMessageHandlers/websiteAccess.js')
+		const isRegistrationFailureReport = ({ method, data }: RuntimeMessage) => method === 'popup_UnexpectedErrorOccured' && data?.code === 'content_script_registration_failed'
+		try {
+			registration.contentScriptRegistration.start()
+			await registration.contentScriptRegistration.update()
+			failProviderUpdates = true
+			await withSilencedConsole(async () => {
+				await assert.rejects(disableInterceptorForPage(new Map(), { websiteOrigin: 'awaited-failure.example', title: undefined, icon: undefined }, true), /Provider update rejected/)
+				await new Promise((resolve) => setTimeout(resolve, 0))
+			})
+			assert.deepEqual(reloadedTabs, [])
+			// The listener's own attempt for the same write is a separate diagnostic, not the popup's result.
+			const reportsAfterWrite = sentMessages.filter(isRegistrationFailureReport).length
+			assert.equal(reportsAfterWrite, 1)
+			await withSilencedConsole(async () => {
+				await browser.storage.local.set({ safeAppsCompatibilityMode: true })
+				await new Promise((resolve) => setTimeout(resolve, 0))
+			})
+			assert.equal(sentMessages.filter(isRegistrationFailureReport).length, reportsAfterWrite + 1)
+		} finally { registration.contentScriptRegistration.stop() }
+	})
+
+	test('storage changes trigger registration updates and report rejected ones', async () => {
 		const { emitStorageChange, getScriptingOperations, sentMessages, getStorageListenerCount } = installBrowserMock({ hostRegistrationError: new Error('Host registration rejected'), safeAppsHostOrigins: ['https://app.example.com'] })
 		const { createContentScriptRegistrationService } = await import('../../app/ts/background/contentScriptRegistration.js')
 		const registration = createContentScriptRegistrationService()
