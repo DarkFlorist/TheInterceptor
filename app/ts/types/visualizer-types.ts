@@ -151,6 +151,9 @@ export const SimulationInputTransaction = PreSimulationTransaction.And(funtypes.
 	executedTransaction: EthereumSendableSignedTransaction,
 }))
 
+// Whether the node runs a transaction as an executedTransaction in place of its signedTransaction. EthereumClientService.prepareEthSimulateV1Input requires an executedTransaction exactly when this holds. Only Gnosis Safe executions do: a Safe proposal (safeTransaction), which runs the SafeTx it holds, and a Safe's own call marked executeThroughSafe.
+export const authorizesExecutedCall = (transaction: Pick<PreSimulationTransaction, 'safeTransaction' | 'simulationOptions'>) => transaction.safeTransaction !== undefined || transaction.simulationOptions?.executeThroughSafe === true
+
 export type SimulatedTransaction = funtypes.Static<typeof SimulatedTransaction>
 export const SimulatedTransaction = funtypes.ReadonlyObject({
 	realizedGasPrice: EthereumQuantity,

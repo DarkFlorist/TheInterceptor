@@ -1,6 +1,6 @@
 import type { BlockTimeManipulationWithNoDelay, MaybeSimulatedTransaction, ResolvedSimulationResults, SimulationAndVisualisationResults, TransactionVisualizationParameters } from '../../types/visualizer-types.js'
 import { SmallAddress } from '../subcomponents/address.js'
-import type { NonSimulatedAndVisualizedTransaction, SignedMessageTransaction } from '../../types/visualizer-types.js'
+import { authorizesExecutedCall, type NonSimulatedAndVisualizedTransaction, type PreSimulationTransaction, type SignedMessageTransaction } from '../../types/visualizer-types.js'
 import { WebsiteOriginText } from '../subcomponents/address.js'
 import { TokenSymbol, TokenAmount, AllApproval } from '../subcomponents/coins.js'
 import type { LogAnalysisParams, NonLogAnalysisParams, RenameAddressCallBack } from '../../types/user-interface-types.js'
@@ -28,7 +28,6 @@ import { insertBetweenElements } from '../subcomponents/misc.js'
 import type { EnrichedEthereumEventWithMetadata, EnrichedEthereumInputData, TokenVisualizerResultWithMetadata } from '../../types/EnrichedEthereumData.js'
 import { type DeltaUnit, TimePicker, type TimePickerMode, getTimeManipulatorFromSignals } from '../subcomponents/TimePicker.js'
 import { type ReadonlySignal, useComputed, useSignal } from '@preact/signals'
-import { isGnosisSafeExecution, type TransactionGasAccounting } from '../../utils/transactionGasAccounting.js'
 import type { VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { useEffect } from 'preact/hooks'
@@ -212,9 +211,9 @@ export function TransactionImportanceBlock(param: TransactionImportanceBlockPara
 	return <ConnectedDelegationStack delegationNotice = { delegationNotice }>{ content }</ConnectedDelegationStack>
 }
 
-// Shown for every Gnosis Safe execution (isGnosisSafeExecution), which the simulation runs through the Safe's execTransaction (safe/safeExecutionSimulation.ts). The simulation stack adds a Safe proposal's nonce and collected signatures as children.
-export function SafeExecutionSimulationNotice({ transaction, children }: { transaction: Pick<TransactionGasAccounting, 'safeTransaction' | 'simulationOptions'>, children?: ComponentChildren }) {
-	if (!isGnosisSafeExecution(transaction)) return <></>
+// Shown for every Gnosis Safe execution, which the simulation runs as its executor's execTransaction call (authorizesExecutedCall, safe/safeExecutionSimulation.ts). The simulation stack adds a Safe proposal's nonce and collected signatures as children.
+export function SafeExecutionSimulationNotice({ transaction, children }: { transaction: Pick<PreSimulationTransaction, 'safeTransaction' | 'simulationOptions'>, children?: ComponentChildren }) {
+	if (!authorizesExecutedCall(transaction)) return <></>
 	return <div class = 'notification is-info' style = 'margin-bottom: 10px;'>
 		<p class = 'paragraph'><strong>Gnosis Safe execution</strong></p>
 		{ children }

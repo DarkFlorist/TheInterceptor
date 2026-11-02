@@ -5,12 +5,15 @@ import type { SendRawTransactionParams, SendTransactionParams } from '../../app/
 import type { SafeTx } from '../../app/ts/types/personal-message-definitions.js'
 import { createSafeTxFromMessage } from '../../app/ts/safe/safeCore.js'
 import { decodeSafeExecution } from '../../app/ts/safe/safeExecution.js'
-import { InterceptorTransactionStack, PreSimulationTransaction, type SimulationInputTransaction, type SimulationStateInput, type TransactionSimulationOptions } from '../../app/ts/types/visualizer-types.js'
+import { InterceptorTransactionStack, PreSimulationTransaction, type SimulationInputTransaction, type SimulationStateInput, toResolvedExecutionSimulationState, toResolvedSimulationInput, toResolvedSimulationState, type TransactionSimulationOptions } from '../../app/ts/types/visualizer-types.js'
 import { EthereumSendableSignedTransaction } from '../../app/ts/types/wire-types.js'
+import { getSignedTransactionForSimulation } from '../../app/ts/simulation/services/simulationTransactionSigning.js'
+import { isUnpreparedSimulationInputError } from '../../app/ts/simulation/services/EthereumClientService.js'
+import { classifyCaughtError } from '../../app/ts/utils/errors.js'
 import { estimateSafeExecutionGas, prepareSafeExecutionSimulationInput, SAFE_EXECUTION_SIMULATION_EXECUTOR } from '../../app/ts/safe/safeExecutionSimulation.js'
 import { describeSafeExecutionFailure } from '../../app/ts/safe/safeExecutionFailure.js'
 import { prepareSafeTransactionConfirmation } from '../../app/ts/background/safeTransactionConfirmation.js'
-import { getSimulatedTransactionByHashFromInput } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
+import { createExecutionSimulationState, createSimulationState, getNonceFixedSimulationStateInput, getSimulatedTransactionByHashFromInput, getSimulatedTransactionCount, getSimulatedTransactionCountFromInput, getSimulatedTransactionReceipt } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { encodeFunctionCall } from '../../app/ts/utils/abiRuntime.js'
 import { decodeEthereumError } from '../../app/ts/utils/errorDecoding.js'
 import { dataStringWith0xStart } from '../../app/ts/utils/bigint.js'
@@ -353,14 +356,21 @@ test('sends the executor\'s call to the node in place of the Safe\'s call', asyn
 
 test('rejects a Gnosis Safe execution or Safe proposal that reaches the node without its executor\'s call', async () => {
 	for (const unpreparedExecution of [createSafeCall({ value: 7n, input: new Uint8Array(), gas: 63_000n }, SAFE_EXECUTION_SIMULATION_OPTIONS), createSafeProposal({})]) {
-		await assert.rejects(ethereum.ethSimulateV1Input([createBlock([unpreparedExecution])], 123n, undefined), /reached the node without its executor's call/u)
+		// A distinctly named error that is still reported as an unexpected one, since a caller skipped preparing its input.
+		await assert.rejects(ethereum.ethSimulateV1Input([createBlock([unpreparedExecution])], 123n, undefined), (error: unknown) => isUnpreparedSimulationInputError(error)
+			&& error.name === 'UnpreparedSimulationInputError'
+			&& error.violation === 'missing-executed-call'
+			&& /requires a prepared executed call reached the node without one/u.test(error.message)
+			&& classifyCaughtError(error) === 'unexpected')
 	}
 })
 
 test('rejects a transaction that is not a Gnosis Safe execution but reaches the node with another call to run', async () => {
 	const shownCall = createSafeCall({ value: 7n, input: Uint8Array.from([0x12, 0x34]), gas: 63_000n }, undefined)
 	const otherCall = createSafeCall({ value: 0n, input: new Uint8Array(), gas: 21_000n }, undefined).signedTransaction
-	await assert.rejects(ethereum.ethSimulateV1Input([createBlock([{ ...shownCall, executedTransaction: otherCall }])], 123n, undefined), /not a Gnosis Safe execution reached the node with a call other than its own/u)
+	await assert.rejects(ethereum.ethSimulateV1Input([createBlock([{ ...shownCall, executedTransaction: otherCall }])], 123n, undefined), (error: unknown) => isUnpreparedSimulationInputError(error)
+		&& error.violation === 'unauthorized-executed-call'
+		&& /reached the node with an executed call other than its signed transaction, which it does not authorize/u.test(error.message))
 })
 
 const staleExecutionCases = [
@@ -406,7 +416,7 @@ test('rejects and clears the executor\'s call of a Safe proposal\'s shown call t
 	const preparedProposal = preparedBlock?.transactions[0]
 	if (preparedProposal?.executedTransaction === undefined) throw new Error('Expected a prepared Safe proposal')
 	const { safeTransaction: _safeTransaction, ...shownCallWithExecutorCall } = preparedProposal
-	await assert.rejects(ethereum.ethSimulateV1Input([createBlock([shownCallWithExecutorCall])], 123n, undefined), /not a Gnosis Safe execution reached the node with a call other than its own/u)
+	await assert.rejects(ethereum.ethSimulateV1Input([createBlock([shownCallWithExecutorCall])], 123n, undefined), (error: unknown) => isUnpreparedSimulationInputError(error) && error.violation === 'unauthorized-executed-call')
 	const [clearedBlock] = await prepareSafeExecutionSimulationInput([createBlock([shownCallWithExecutorCall])], ethereum, 123n, BASE_FEE_PER_GAS)
 	assert.equal(clearedBlock?.transactions[0]?.executedTransaction, undefined)
 })
@@ -444,6 +454,67 @@ test('looks up a simulated Gnosis Safe execution as the Safe\'s own call, as its
 	assert.equal(lookedUp?.from, SAFE_ADDRESS)
 	assert.equal(lookedUp?.to, CALLED_CONTRACT)
 	assert.equal(lookedUp?.value, 7n)
+})
+
+// Two stacked Gnosis Safe executions and an ordinary transaction from the Safe. The fake node reports a nonce of 0 for every account.
+const createSafeExecutionsAndOrdinarySafeTransactionInput = async () => {
+	configureSafe()
+	const firstSafeCall = createSafeCall({ value: 7n, input: new Uint8Array(), gas: 63_000n }, SAFE_EXECUTION_SIMULATION_OPTIONS)
+	const secondSafeCall = createSafeCall({ value: 8n, input: new Uint8Array(), gas: 63_000n }, SAFE_EXECUTION_SIMULATION_OPTIONS)
+	const ordinarySafeTransaction = createSafeCall({ value: 1n, input: new Uint8Array(), gas: 21_000n }, undefined)
+	return await prepareSafeExecutionSimulationInput([createBlock([firstSafeCall, secondSafeCall, ordinarySafeTransaction])], ethereum, 123n, BASE_FEE_PER_GAS)
+}
+
+test('counts a simulated Gnosis Safe execution toward its executor\'s nonce, not the Safe\'s, in a lookup on the simulation input', async () => {
+	const preparedInput = await createSafeExecutionsAndOrdinarySafeTransactionInput()
+	assert.deepEqual(preparedInput[0]?.transactions.map((transaction) => transaction.executedTransaction?.nonce), [0n, 1n, undefined], 'the executor sends its calls in order')
+	const resolvedInput = { kind: 'simulated' as const, value: preparedInput }
+	assert.equal(await getSimulatedTransactionCountFromInput(ethereum, undefined, resolvedInput, SAFE_ADDRESS), 1n, 'only the Safe\'s ordinary transaction raises its nonce')
+	assert.equal(await getSimulatedTransactionCountFromInput(ethereum, undefined, resolvedInput, SAFE_EXECUTION_SIMULATION_EXECUTOR), 2n, 'the executor\'s next call follows its execTransaction calls')
+})
+
+test('counts a simulated Gnosis Safe execution toward its executor\'s nonce, not the Safe\'s, on the simulated stack', async () => {
+	const simulationState = await createSimulationState(ethereum, undefined, await createSafeExecutionsAndOrdinarySafeTransactionInput())
+	if (simulationState.success === false) throw new Error('Expected the simulation to succeed')
+	const resolvedState = toResolvedSimulationState(simulationState)
+	assert.equal(await getSimulatedTransactionCount(ethereum, undefined, resolvedState, SAFE_ADDRESS), 1n, 'a later transaction from the Safe gets the nonce after its ordinary transaction only')
+	assert.equal(await getSimulatedTransactionCount(ethereum, undefined, resolvedState, SAFE_EXECUTION_SIMULATION_EXECUTOR), 2n)
+})
+
+test('counts a Safe proposal toward its executor\'s nonce, not the Safe\'s', async () => {
+	configureSafe()
+	const input = [createBlock([createSafeProposal({}), createSafeCall({ value: 1n, input: new Uint8Array(), gas: 21_000n }, undefined)])]
+	const preparedInput = { kind: 'simulated' as const, value: await prepareSafeExecutionSimulationInput(input, ethereum, 123n, BASE_FEE_PER_GAS) }
+	assert.equal(await getSimulatedTransactionCountFromInput(ethereum, undefined, preparedInput, SAFE_ADDRESS), 1n, 'only the Safe\'s ordinary transaction raises its nonce')
+	assert.equal(await getSimulatedTransactionCountFromInput(ethereum, undefined, preparedInput, SAFE_EXECUTION_SIMULATION_EXECUTOR), 1n, 'the executor sends the proposal\'s execTransaction call')
+})
+
+test('repairs a wrong nonce of an ordinary transaction from a Gnosis Safe without counting the Safe\'s executions', async () => {
+	configureSafe()
+	// The node rejects every call but the executor's for its nonce.
+	const nonceRejectingEthereum = new modules.EthereumClientService({
+		rpcUrl: fakeRpcNetwork.httpsRpc,
+		clearCache() { return undefined },
+		async jsonRpcRequest(rpcRequest: { method: string, params?: readonly unknown[] }) {
+			if (rpcRequest.method !== 'eth_simulateV1') return await fakeRequestHandler.jsonRpcRequest(rpcRequest)
+			const simulationParams = rpcRequest.params?.[0]
+			const blockStateCalls = isRecord(simulationParams) && Array.isArray(simulationParams.blockStateCalls) ? simulationParams.blockStateCalls : []
+			return modules.serialize(modules.EthSimulateV1Result, blockStateCalls.map((blockStateCall) => ({
+				...makeFakeEthSimulateResult(0n, modules.Multicall3ABI, 0),
+				calls: blockStateCall.calls.map((call: { readonly from: string }) => BigInt(call.from) === SAFE_EXECUTION_SIMULATION_EXECUTOR
+					? { status: 'success' as const, gasUsed: 21_000n, logs: [], returnData: new Uint8Array() }
+					: { status: 'failure' as const, gasUsed: 21_000n, returnData: new Uint8Array(), error: { code: -32000, message: 'wrong transaction nonce' } }),
+			})))
+		},
+	}, async () => undefined, async () => undefined, fakeRpcNetwork)
+	const safeCall = createSafeCall({ value: 7n, input: new Uint8Array(), gas: 63_000n }, SAFE_EXECUTION_SIMULATION_OPTIONS)
+	const staleSafeCall = { ...safeCall, signedTransaction: { ...safeCall.signedTransaction, nonce: 5n } }
+	const ordinarySafeTransaction = createSafeCall({ value: 1n, input: new Uint8Array(), gas: 21_000n }, undefined)
+	const wrongNonceTransaction = { ...ordinarySafeTransaction, signedTransaction: { ...ordinarySafeTransaction.signedTransaction, nonce: 9n } }
+	const preparedInput = await prepareSafeExecutionSimulationInput([createBlock([staleSafeCall, wrongNonceTransaction])], nonceRejectingEthereum, 123n, BASE_FEE_PER_GAS)
+	const repaired = await getNonceFixedSimulationStateInput(nonceRejectingEthereum, undefined, preparedInput)
+	assert.equal(repaired.nonceFixed, true)
+	assert.deepEqual(repaired.simulationStateInput[0]?.transactions.map((transaction) => transaction.signedTransaction.nonce), [5n, 0n], 'the ordinary transaction gets the Safe\'s nonce from the node, which the execution before it did not raise')
 })
 
 for (const { description, message, errorData, returnData } of revertResponses) {
@@ -581,6 +652,90 @@ test('simulates a configured Gnosis Safe\'s transaction in simulation mode as th
 	const exportedCalls = isRecord(exportedSimulation) && Array.isArray(exportedSimulation.blockStateCalls) ? exportedSimulation.blockStateCalls.flatMap((blockStateCall) => blockStateCall.calls) : []
 	assert.deepEqual(exportedCalls.map((call) => BigInt(call.from)), [SAFE_EXECUTION_SIMULATION_EXECUTOR], 'the exported request runs the stacked Safe execution as the preview does')
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
+})
+
+const SAFE_CALL_WEBSITE = { websiteOrigin: 'https://example.com', icon: undefined, title: undefined }
+
+// Forms a transaction the way the confirmation does and stacks it as accepting it does, through getSignedTransactionForSimulation.
+async function stackFormedTransaction(simulator: ReturnType<typeof createRecordingSimulator>, transactionParams: SendTransactionParams, transactionIdentifier: bigint, gasPayment: 'simulated-safe-executor' | 'transaction-sender') {
+	const formed = await modules.formEthSendTransaction(simulator.ethereum, undefined, SAFE_ADDRESS, SAFE_CALL_WEBSITE, transactionParams, created, transactionIdentifier, true, gasPayment)
+	if (!formed.success) throw new Error(`Forming the transaction failed: ${ formed.error.message }`)
+	const preSimulationTransaction: PreSimulationTransaction = {
+		signedTransaction: getSignedTransactionForSimulation(formed),
+		website: formed.website,
+		created: formed.created,
+		originalRequestParameters: formed.originalRequestParameters,
+		transactionIdentifier,
+		...(formed.simulationOptions === undefined ? {} : { simulationOptions: formed.simulationOptions }),
+	}
+	await modules.updateInterceptorTransactionStack((stack) => ({ operations: [...stack.operations, { type: 'Transaction', preSimulationTransaction }] }))
+	return preSimulationTransaction
+}
+
+async function startSafeExecutionStack() {
+	configureSafe()
+	const simulator = createRecordingSimulator()
+	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({ simulationMode: true, rpcNetwork: fakeRpcNetwork, activeSimulationAddress: SAFE_ADDRESS })
+	await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
+	return simulator
+}
+
+// Checks that every stacked transaction is found by its own hash, both as a transaction and as a receipt.
+async function assertEachFoundByOwnHash(simulator: ReturnType<typeof createRecordingSimulator>, stackedTransactions: readonly PreSimulationTransaction[]) {
+	assert.equal(new Set(stackedTransactions.map((transaction) => transaction.signedTransaction.hash)).size, stackedTransactions.length, 'every stacked transaction has its own hash')
+	const { getCurrentSimulationInput, prepareSimulationInputForRpc } = await import('../../app/ts/background/simulationUpdating.js')
+	const preparedInput = await prepareSimulationInputForRpc(await getCurrentSimulationInput(), simulator.ethereum)
+	const executionState = await createExecutionSimulationState(simulator.ethereum, undefined, preparedInput)
+	for (const stacked of stackedTransactions) {
+		const lookedUp = await getSimulatedTransactionByHashFromInput(simulator.ethereum, undefined, toResolvedSimulationInput(preparedInput), stacked.signedTransaction.hash)
+		assert.equal(lookedUp?.nonce, stacked.signedTransaction.nonce)
+		assert.equal(lookedUp?.s, stacked.signedTransaction.s)
+		const receipt = await getSimulatedTransactionReceipt(simulator.ethereum, undefined, toResolvedExecutionSimulationState(executionState), stacked.signedTransaction.hash)
+		assert.equal(receipt?.transactionHash, stacked.signedTransaction.hash)
+		assert.equal(receipt?.transactionIndex, BigInt(stackedTransactions.indexOf(stacked)), 'the receipt is the transaction\'s own')
+	}
+	return preparedInput
+}
+
+test('gives identical stacked Gnosis Safe executions distinct nonce fields and hashes without raising the Safe\'s account nonce', async () => {
+	const simulator = await startSafeExecutionStack()
+	const transactionParams = await createTransferParams({})
+	const first = await stackFormedTransaction(simulator, transactionParams, 1n, 'simulated-safe-executor')
+	const second = await stackFormedTransaction(simulator, transactionParams, 2n, 'simulated-safe-executor')
+	assert.deepEqual(second.simulationOptions, SAFE_EXECUTION_SIMULATION_OPTIONS)
+	assert.deepEqual([first.signedTransaction.nonce, second.signedTransaction.nonce], [0n, 1n], 'the nonce field is a display sequence of the Safe\'s executions')
+	const preparedInput = await assertEachFoundByOwnHash(simulator, [first, second])
+	assert.equal(await getSimulatedTransactionCountFromInput(simulator.ethereum, undefined, toResolvedSimulationInput(preparedInput), SAFE_ADDRESS), 0n, 'the Safe\'s account nonce stays the node\'s')
+	await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
+})
+
+test('keeps the hashes of identical Gnosis Safe executions distinct after one is removed and another appended', async () => {
+	const simulator = await startSafeExecutionStack()
+	const transactionParams = await createTransferParams({})
+	await stackFormedTransaction(simulator, transactionParams, 1n, 'simulated-safe-executor')
+	await stackFormedTransaction(simulator, transactionParams, 2n, 'simulated-safe-executor')
+	await (await import('../../app/ts/background/popupMessageHandlers.js')).removeTransactionOrSignedMessage(simulator.ethereum, simulator.tokenPriceService, { method: 'popup_removeTransactionOrSignedMessage', data: { type: 'Transaction', transactionIdentifier: 1n } })
+	const [survivorOperation] = (await modules.getInterceptorTransactionStack()).operations
+	if (survivorOperation?.type !== 'Transaction') throw new Error('Expected the surviving Safe execution')
+	const survivor = survivorOperation.preSimulationTransaction
+	assert.equal(survivor.signedTransaction.nonce, 1n, 'removal does not renumber a Safe execution, whose hash the page already has')
+	const appended = await stackFormedTransaction(simulator, transactionParams, 3n, 'simulated-safe-executor')
+	assert.equal(appended.signedTransaction.nonce, 2n)
+	await assertEachFoundByOwnHash(simulator, [survivor, appended])
+	await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
+})
+
+test('keeps a Gnosis Safe execution\'s hash apart from an ordinary transaction from the Safe with the same fields, fees and nonce', async () => {
+	const simulator = await startSafeExecutionStack()
+	const transactionParams = await createTransferParams({ gas: '0x5208', maxFeePerGas: '0x0', maxPriorityFeePerGas: '0x0' })
+	const safeExecution = await stackFormedTransaction(simulator, transactionParams, 1n, 'simulated-safe-executor')
+	const ordinaryTransaction = await stackFormedTransaction(simulator, transactionParams, 2n, 'transaction-sender')
+	assert.equal(ordinaryTransaction.simulationOptions, undefined)
+	const { hash: _safeExecutionHash, s: _safeExecutionS, ...safeExecutionFields } = safeExecution.signedTransaction
+	const { hash: _ordinaryHash, s: _ordinaryS, ...ordinaryFields } = ordinaryTransaction.signedTransaction
+	assert.deepEqual(safeExecutionFields, ordinaryFields, 'the two transactions differ only in their mock signature')
+	await assertEachFoundByOwnHash(simulator, [safeExecution, ordinaryTransaction])
+	await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
 })
 
 test('simulates a configured Gnosis Safe that the page names as the sender, while another account is active, as an ordinary transaction from the Safe, through refresh', async () => {

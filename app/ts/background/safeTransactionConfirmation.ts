@@ -4,17 +4,16 @@ import type { EthereumClientService } from '../simulation/services/EthereumClien
 import type { SendRawTransactionParams, SendTransactionParams } from '../types/JsonRpc-types.js'
 import type { SafeEntry } from '../types/addressBookTypes.js'
 import type { SafeTransactionSigningRequest } from '../types/safeTypes.js'
-import type { InterceptorStackOperation, TransactionGasPayment, WebsiteCreatedEthereumTransaction, WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
+import type { TransactionGasPayment, WebsiteCreatedEthereumTransaction, WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
 import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER } from '../utils/constants.js'
 import { getErrorMessage, reportLocalRecovery } from '../utils/errors.js'
 import { getPendingTransactionsAndMessages, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
 import { reconcileStoredSafeState, type ReconciledStoredSafeState } from './safeStackState.js'
 import { createSafeContractValidationFailure, createSafeTransactionReviewRequest, createSafeTransactionSigningRequest, getSafeContractSnapshot, isSafeContractValidationFailure, isSafeOwnerValidationFailure } from '../safe/safeCore.js'
-import { getSafeExecutionReviewedState, getSafeExecutionSignerRoute, isSafeExecutionRequestForActiveSafe, prepareSafeExecutionSignerRoute } from '../safe/safeExecutionRouting.js'
+import { getSafeExecutionReviewedState, getSafeExecutionSignerRoute, getSafeUnsupportedFormedTransactionReason, getSafeUnsupportedRequestReason, isSafeExecutableRequestFromActiveAddress, isSafeExecutionRequestForActiveSafe, prepareSafeExecutionSignerRoute, SAFE_UNSUPPORTED_TRANSACTION_MESSAGES } from '../safe/safeExecutionRouting.js'
 import { getSafeSignerMismatchApprovalStatus, SAFE_SIGNER_SELECTION_ERROR_CODE } from './safeConfirmationResolver.js'
 import { createSafeSignerErrorStatus, type SafeSignerErrorStatus } from './safeSignerErrors.js'
 import { getSafePendingFlow } from '../safe/safePendingFlow.js'
-import { modifyObject } from '../utils/typescript.js'
 
 type SafeExecutionSignerRoute = NonNullable<Awaited<ReturnType<typeof prepareSafeExecutionSignerRoute>>>
 
@@ -51,11 +50,7 @@ export type SafeTransactionConfirmationPreparation = {
  * Raw transactions, EIP-7702 authorizations and contract creations, which a Safe can't make through execTransaction, and Safes that aren't deployed on this chain or have a version Interceptor doesn't support, keep the ordinary simulation.
  */
 async function isSimulationModeSafeExecution(ethereum: EthereumClientService, transactionParams: SendTransactionParams | SendRawTransactionParams, activeAddress: bigint) {
-	if (transactionParams.method !== 'eth_sendTransaction') return false
-	const transactionDetails = transactionParams.params[0]
-	if (transactionDetails.type === '7702' || transactionDetails.authorizationList !== undefined) return false
-	if (transactionDetails.to === undefined || transactionDetails.to === null) return false
-	if ((transactionDetails.from ?? activeAddress) !== activeAddress) return false
+	if (!isSafeExecutableRequestFromActiveAddress(transactionParams, activeAddress)) return false
 	const addressBookEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(ethereum.getChainId())
 	if (!addressBookEntries.some((entry) => entry.type === 'safe' && entry.address === activeAddress)) return false
 	try {
@@ -72,17 +67,6 @@ async function isSimulationModeSafeExecution(ethereum: EthereumClientService, tr
 	}
 }
 
-// Running a transaction through a Gnosis Safe assumes the Safe's owners approved it, which only a confirmation decides (isSimulationModeSafeExecution), so every imported transaction's executeThroughSafe is dropped: a file can never make Interceptor assume an owner approval.
-export function withoutImportedGnosisSafeExecutions(operations: readonly InterceptorStackOperation[]): readonly InterceptorStackOperation[] {
-	return operations.map((operation) => {
-		if (operation.type !== 'Transaction') return operation
-		const transaction = operation.preSimulationTransaction
-		if (transaction.simulationOptions?.executeThroughSafe === undefined) return operation
-		const { executeThroughSafe: _importedExecuteThroughSafe, ...ordinarySimulationOptions } = transaction.simulationOptions
-		return modifyObject(operation, { preSimulationTransaction: modifyObject(transaction, { simulationOptions: ordinarySimulationOptions }) })
-	})
-}
-
 export async function prepareSafeTransactionConfirmation(
 	ethereum: EthereumClientService,
 	confirmation: TransactionConfirmationRequest,
@@ -96,12 +80,10 @@ export async function prepareSafeTransactionConfirmation(
 		: (await getUserAddressBookEntriesForChainIdMorePreciseFirst(ethereum.getChainId()))
 			.find((entry): entry is SafeEntry => entry.type === 'safe' && entry.address === activeAddress)
 	if (configuredSafeEntry !== undefined) {
-		if (transactionParams.method === 'eth_sendRawTransaction') {
-			return createRejectedPreparation(activeAddress, transactionParams, 'Gnosis Safe wallets do not support eth_sendRawTransaction.')
-		}
-		const transactionDetails = transactionParams.params[0]
-		if (transactionDetails.type === '7702' || transactionDetails.authorizationList !== undefined) {
-			return createRejectedPreparation(activeAddress, transactionParams, 'Gnosis Safe wallets do not support EIP-7702 authorization lists.')
+		// A contract creation is not rejected here: createSafeSigningRequestForTransaction fails it once the transaction is formed, so the window shows the failure.
+		const unsupportedReason = getSafeUnsupportedRequestReason(transactionParams)
+		if (unsupportedReason === 'raw-transaction' || unsupportedReason === 'eip-7702-authorization') {
+			return createRejectedPreparation(activeAddress, transactionParams, SAFE_UNSUPPORTED_TRANSACTION_MESSAGES[unsupportedReason])
 		}
 	}
 
@@ -298,9 +280,12 @@ async function createSafeSigningRequestForTransaction(
 	validateOwner = true,
 ): Promise<SafeTransactionSigningRequest | undefined> {
 	if (safeEntry === undefined) return undefined
-	if (transactionParams.method !== 'eth_sendTransaction') throw createSafeContractValidationFailure('Gnosis Safe wallets do not support eth_sendRawTransaction.')
-	if (transactionToSimulate.transaction.type === '7702') throw createSafeContractValidationFailure('Gnosis Safe wallets do not support EIP-7702 authorization lists.')
-	if (transactionToSimulate.transaction.to === null) throw createSafeContractValidationFailure('Gnosis Safe wallets do not support contract-creation transactions.')
+	// The request decides only whether it is a raw transaction; the rest is checked on the formed transaction, whose type and recipient are final.
+	const unsupportedReason = getSafeUnsupportedRequestReason(transactionParams) === 'raw-transaction' ? 'raw-transaction' : getSafeUnsupportedFormedTransactionReason(transactionToSimulate.transaction)
+	if (unsupportedReason !== undefined) throw createSafeContractValidationFailure(SAFE_UNSUPPORTED_TRANSACTION_MESSAGES[unsupportedReason])
+	const recipient = transactionToSimulate.transaction.to
+	// Already rejected as 'contract-creation' above; repeated so TypeScript narrows the recipient.
+	if (recipient === null) throw createSafeContractValidationFailure(SAFE_UNSUPPORTED_TRANSACTION_MESSAGES['contract-creation'])
 	if (reconciledStoredSafeState === undefined) throw createSafeContractValidationFailure('The Gnosis Safe stack was not reconciled before preparing the transaction.')
 
 	const { safeState, storedStack } = reconciledStoredSafeState
@@ -319,7 +304,7 @@ async function createSafeSigningRequestForTransaction(
 	while (pendingSafeTransactionNonces.has(nonce)) nonce += 1n
 	const review = safeTransaction?.messageReview
 	const transaction = {
-		to: transactionToSimulate.transaction.to,
+		to: recipient,
 		value: transactionToSimulate.transaction.value,
 		input: transactionToSimulate.transaction.input,
 		gas: transactionToSimulate.transaction.gas,

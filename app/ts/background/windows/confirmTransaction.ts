@@ -2,7 +2,7 @@ import type { MessageConfirmationRequest, TransactionConfirmationRequest } from 
 import { SafeMessage } from '../../safe/safeMessage.js'
 import { isSafeMessageCoSignRequest } from '../../safe/safeRequestPolicy.js'
 import type { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
-import { getInputFieldFromDataOrInput, getSimulatedBalance, getSimulatedErc20Balance, getSimulatedTransactionCount } from '../../simulation/services/SimulationModeEthereumClientService.js'
+import { getInputFieldFromDataOrInput, getSimulatedBalance, getSimulatedErc20Balance, getSimulatedSafeCallNonce, getSimulatedTransactionCount } from '../../simulation/services/SimulationModeEthereumClientService.js'
 import { simulatePersonalSign } from '../../simulation/services/simulationPersonalSigning.js'
 import { getSignedTransactionForSimulation } from '../../simulation/services/simulationTransactionSigning.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS, METAMASK_ERROR_BLANKET_ERROR, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
@@ -539,7 +539,9 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 	const transactionDetails = sendTransactionParams.params[0]
 	if (activeAddress === undefined) throw new Error('Access to active address is denied')
 	const from = simulationMode && transactionDetails.from !== undefined ? transactionDetails.from : activeAddress
-	const transactionCountPromise = silenceChromeUnCaughtPromise(getSimulatedTransactionCount(ethereumClientService, requestAbortController, simulationState, from))
+	const transactionCountPromise = silenceChromeUnCaughtPromise(gasPayment === 'simulated-safe-executor'
+		? getSimulatedSafeCallNonce(ethereumClientService, requestAbortController, simulationState, from)
+		: getSimulatedTransactionCount(ethereumClientService, requestAbortController, simulationState, from))
 	const parentBlockPromise = !paidByExecutor
 		? silenceChromeUnCaughtPromise(ethereumClientService.getBlock(requestAbortController)) // the latest real block is the parent of the transaction being prepared
 		: undefined

@@ -117,6 +117,7 @@ function makePreSimulationTransaction(mockSignTransaction: (transaction: ReturnT
 	nonce: bigint
 	from?: bigint
 	method?: 'eth_sendTransaction' | 'eth_sendRawTransaction'
+	executeThroughSafe?: true
 }) {
 	const method = params.method ?? 'eth_sendTransaction'
 	const signedTransaction = mockSignTransaction({
@@ -133,6 +134,7 @@ function makePreSimulationTransaction(mockSignTransaction: (transaction: ReturnT
 			? { method: 'eth_sendTransaction' as const, params: [{}] }
 			: { method: 'eth_sendRawTransaction' as const, params: [new Uint8Array([Number(params.transactionIdentifier)])] },
 		transactionIdentifier: params.transactionIdentifier,
+		...(params.executeThroughSafe === undefined ? {} : { simulationOptions: { requiredChainId: 1n, executeThroughSafe: params.executeThroughSafe } }),
 	}
 }
 
@@ -223,5 +225,46 @@ describe('removeTransactionOrSignedMessage', () => {
 		if (remaining === undefined) throw new Error('Expected remaining transaction')
 		assert.equal(remaining.originalRequestParameters.method, 'eth_sendTransaction')
 		assert.equal(remaining.signedTransaction.nonce, 0n)
+	})
+
+	test('keeps later same-sender nonces when removing a Gnosis Safe execution, which raised no nonce of the Safe', async () => {
+		const modules = await loadModules()
+		browserMock.reset()
+		await modules.updateInterceptorTransactionStack(() => ({
+			operations: [
+				{ type: 'Transaction' as const, preSimulationTransaction: makePreSimulationTransaction(modules.mockSignTransaction, { transactionIdentifier: 1n, nonce: 0n, executeThroughSafe: true }) },
+				{ type: 'Transaction' as const, preSimulationTransaction: makePreSimulationTransaction(modules.mockSignTransaction, { transactionIdentifier: 2n, nonce: 0n }) },
+				{ type: 'Transaction' as const, preSimulationTransaction: makePreSimulationTransaction(modules.mockSignTransaction, { transactionIdentifier: 3n, nonce: 1n }) },
+			],
+		}))
+
+		await modules.removeTransactionOrSignedMessage({}, undefined, {
+			method: 'popup_removeTransactionOrSignedMessage',
+			data: { type: 'Transaction', transactionIdentifier: 1n },
+		})
+
+		const stack = await modules.getInterceptorTransactionStack()
+		const remaining = stack.operations.filter((operation) => operation.type === 'Transaction').map((operation) => operation.preSimulationTransaction.signedTransaction.nonce)
+		assert.deepEqual(remaining, [0n, 1n])
+	})
+
+	test('keeps the nonce field of a later execution of the same Gnosis Safe when removing one of its executions, so its sequence number is never reused', async () => {
+		const modules = await loadModules()
+		browserMock.reset()
+		await modules.updateInterceptorTransactionStack(() => ({
+			operations: [
+				{ type: 'Transaction' as const, preSimulationTransaction: makePreSimulationTransaction(modules.mockSignTransaction, { transactionIdentifier: 1n, nonce: 0n, executeThroughSafe: true }) },
+				{ type: 'Transaction' as const, preSimulationTransaction: makePreSimulationTransaction(modules.mockSignTransaction, { transactionIdentifier: 2n, nonce: 1n, executeThroughSafe: true }) },
+			],
+		}))
+
+		await modules.removeTransactionOrSignedMessage({}, undefined, {
+			method: 'popup_removeTransactionOrSignedMessage',
+			data: { type: 'Transaction', transactionIdentifier: 1n },
+		})
+
+		const stack = await modules.getInterceptorTransactionStack()
+		const remaining = stack.operations.filter((operation) => operation.type === 'Transaction').map((operation) => operation.preSimulationTransaction.signedTransaction.nonce)
+		assert.deepEqual(remaining, [1n])
 	})
 })
