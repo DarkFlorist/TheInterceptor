@@ -9,7 +9,7 @@ import { PASSTHROUGH_STATE, type ResolvedExecutionSimulationState, type Resolved
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, requestAccessFromUser } from './windows/interceptorAccess.js'
 import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_PROVIDER_DISCONNECTED, METAMASK_ERROR_USER_REJECTED_REQUEST, ERROR_INTERCEPTOR_DISABLED } from '../utils/constants.js'
-import { clearWebsiteConnectionIntent, finalizeWebsiteAccessChange, getSettingsForCommittedAccessChange, persistWebsiteAccessChange, sendAccountsChangedToPort, verifyAccess, withSuppressedUnscopedConnectionEventsForSocket } from './accessManagement.js'
+import { clearWebsiteConnectionIntent, finalizeWebsiteAccessChange, persistWebsiteAccessChange, readSettingsOrRevokeAffectedApprovals, sendAccountsChangedToPort, verifyAccess, withSuppressedUnscopedConnectionEventsForSocket } from './accessManagement.js'
 import { getActiveAddressEntryForChain, getWalletActiveAddressEntryForChain } from './metadataUtils.js'
 import { getActiveAddress } from './backgroundUtils.js'
 import { assertNever, hasOwnKey } from '../utils/typescript.js'
@@ -347,7 +347,7 @@ async function revokeWebsitePermissions(
 	}))
 	clearWebsiteConnectionIntent(websiteTabConnections, websiteOrigin)
 	try {
-		await finalizeWebsiteAccessChange(simulationServicesOwner, websiteTabConnections, await getSettingsForCommittedAccessChange(websiteTabConnections, (affectedWebsiteOrigin) => affectedWebsiteOrigin === websiteOrigin), false)
+		await finalizeWebsiteAccessChange(simulationServicesOwner, websiteTabConnections, await readSettingsOrRevokeAffectedApprovals(websiteTabConnections, { kind: 'websites', websiteOrigins: [websiteOrigin] }), false)
 	} catch (error: unknown) {
 		// With unreadable settings the revocation is still committed and the website's connections are already unapproved, so it is answered as successful (EIP-2255, as on main).
 		if (!isRpcConfigurationUnavailableError(error)) throw error

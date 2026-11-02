@@ -5,7 +5,7 @@ import type { Website } from '../../types/websiteAccessTypes.js'
 import { getErrorMessage, reportUnexpectedError } from '../../utils/errors.js'
 import { checkAndThrowRuntimeLastError } from '../../utils/requests.js'
 import { modifyObject } from '../../utils/typescript.js'
-import { getSettingsForCommittedAccessChange, noWebsite, setInterceptorDisabledForWebsite, updateWebsiteApprovalAccesses } from '../accessManagement.js'
+import { type AffectedWebsites, readSettingsOrRevokeAffectedApprovals, setInterceptorDisabledForWebsite, updateWebsiteApprovalAccesses } from '../accessManagement.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { getLastKnownCurrentTabId } from '../currentTab.js'
 import { getRequiredSettings, updateWebsiteAccess } from '../settings.js'
@@ -14,7 +14,7 @@ import { getAddressMetadataForAccess } from '../windows/interceptorAccess.js'
 import { searchWebsiteAccess } from '../websiteAccessSearch.js'
 import { updateWebsiteAccessAndContentScriptInjectionStrategy } from '../websiteAccessUpdating.js'
 
-const isWebsite = (websiteOrigin: string) => (candidateWebsiteOrigin: string) => candidateWebsiteOrigin === websiteOrigin
+const onlyWebsite = (websiteOrigin: string): AffectedWebsites => ({ kind: 'websites', websiteOrigins: [websiteOrigin] })
 
 const isMissingTabReloadError = (error: unknown) => {
 	const message = getErrorMessage(error)
@@ -43,7 +43,7 @@ export const disableInterceptorForPage = async (websiteTabConnections: WebsiteTa
 
 export async function disableInterceptor(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: DisableInterceptor) {
 	await disableInterceptorForPage(websiteTabConnections, parsedRequest.data.website, parsedRequest.data.interceptorDisabled)
-	await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettingsForCommittedAccessChange(websiteTabConnections, isWebsite(parsedRequest.data.website.websiteOrigin)), true)
+	await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await readSettingsOrRevokeAffectedApprovals(websiteTabConnections, onlyWebsite(parsedRequest.data.website.websiteOrigin)), true)
 	await sendPopupMessageToOpenWindows({ method: 'popup_setDisableInterceptorReply' as const, data: parsedRequest.data })
 }
 
@@ -64,7 +64,7 @@ const blockOrAllowWebsiteExternalRequests = async (websiteTabConnections: Websit
 
 export async function blockOrAllowExternalRequests(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: BlockOrAllowExternalRequests) {
 	await blockOrAllowWebsiteExternalRequests(websiteTabConnections, parsedRequest.data.website, parsedRequest.data.shouldBlock)
-	await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettingsForCommittedAccessChange(websiteTabConnections, noWebsite), true)
+	await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await readSettingsOrRevokeAffectedApprovals(websiteTabConnections, { kind: 'none' }), true)
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }
 
@@ -78,7 +78,7 @@ const removeAddressAccessByAddress = async (websiteOrigin: string, address: Ethe
 export async function removeWebsiteAddressAccess(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: RemoveWebsiteAddressAccess) {
 	await removeAddressAccessByAddress(parsedRequest.data.websiteOrigin, parsedRequest.data.address)
 	await reloadConnectedTabs(websiteTabConnections)
-	await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettingsForCommittedAccessChange(websiteTabConnections, isWebsite(parsedRequest.data.websiteOrigin)), true)
+	await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await readSettingsOrRevokeAffectedApprovals(websiteTabConnections, onlyWebsite(parsedRequest.data.websiteOrigin)), true)
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }
 
@@ -99,6 +99,6 @@ export async function allowOrPreventAddressAccessForWebsite(websiteTabConnection
 
 export async function removeWebsiteAccess(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: RemoveWebsiteAccess) {
 	await updateWebsiteAccessAndContentScriptInjectionStrategy((previousAccess) => previousAccess.filter((access) => access.website.websiteOrigin !== parsedRequest.data.websiteOrigin))
-	await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettingsForCommittedAccessChange(websiteTabConnections, isWebsite(parsedRequest.data.websiteOrigin)), true)
+	await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await readSettingsOrRevokeAffectedApprovals(websiteTabConnections, onlyWebsite(parsedRequest.data.websiteOrigin)), true)
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }
