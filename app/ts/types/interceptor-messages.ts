@@ -1057,6 +1057,7 @@ const PopupMessageRuntype = funtypes.Union(
 	SimulateGovernanceContractExecution,
 	SimulateGnosisSafeTransaction,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestSettings') }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestRpcList') }),
 	ChangeSettings,
 	SetRpcList,
 	ChangeAddOrModifyAddressWindowState,

@@ -13,7 +13,7 @@ import type { AddressBookEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { OriginalSendRequestParameters } from '../../app/ts/types/JsonRpc-types.js'
 import { MessageToPopup, UpdateConfirmTransactionDialogPendingTransactions } from '../../app/ts/types/interceptor-messages.js'
 import { PopupRequestsReplies } from '../../app/ts/types/interceptor-reply-messages.js'
-import { RpcEntries, type RpcEntry } from '../../app/ts/types/rpc.js'
+import type { RpcEntries, RpcEntry } from '../../app/ts/types/rpc.js'
 import type { FailedToCreateWebsiteCreatedEthereumTransaction } from '../../app/ts/types/visualizer-types.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
 import { clickRenderedElement, findAllRenderedElements, findRenderedElement, installDomMock, type RenderedTreeNode } from './domMock.js'
@@ -46,16 +46,22 @@ function getMessageMethod(message: unknown) {
 	return message.method
 }
 
-function requestsStorageKey(keys: unknown, key: string) {
-	return keys === key || (Array.isArray(keys) && keys.includes(key))
-}
-
-function installPopupBrowserMock({ replyToMessage = () => undefined, readStoredRpcEntries }: {
+// The background answers popup_requestRpcList by broadcasting popup_update_rpc_list; the mock answers synchronously, so a page that requested before subscribing would miss the answer.
+function installPopupBrowserMock({ replyToMessage = () => undefined, rpcListRequestAnswer }: {
 	replyToMessage?: (message: unknown) => unknown
-	readStoredRpcEntries: () => Promise<RpcEntries>
+	rpcListRequestAnswer: RpcEntries | undefined
 }) {
 	const listeners: RuntimeMessageListener[] = []
 	const previousBrowser = globalThis.browser
+	let rpcListRequestCount = 0
+	const sendMessage = async (message: unknown) => {
+		if (getMessageMethod(message) !== 'popup_requestRpcList') return replyToMessage(message)
+		rpcListRequestCount += 1
+		if (rpcListRequestAnswer === undefined) return undefined
+		const answer = MessageToPopup.serialize({ role: 'all', method: 'popup_update_rpc_list', data: rpcListRequestAnswer })
+		for (const listener of [...listeners]) listener(answer)
+		return undefined
+	}
 	Object.defineProperty(globalThis, 'browser', {
 		configurable: true,
 		writable: true,
@@ -63,7 +69,7 @@ function installPopupBrowserMock({ replyToMessage = () => undefined, readStoredR
 			runtime: {
 				lastError: undefined,
 				getManifest: () => ({ manifest_version: 3 }),
-				sendMessage: async (message: unknown) => replyToMessage(message),
+				sendMessage,
 				onMessage: {
 					addListener: (listener: RuntimeMessageListener) => { listeners.push(listener) },
 					removeListener: (listener: RuntimeMessageListener) => {
@@ -75,10 +81,7 @@ function installPopupBrowserMock({ replyToMessage = () => undefined, readStoredR
 			},
 			storage: {
 				local: {
-					async get(keys: unknown) {
-						if (!requestsStorageKey(keys, 'rpcEntries')) return {}
-						return { rpcEntries: serialize(RpcEntries, await readStoredRpcEntries()) }
-					},
+					async get() { return {} },
 					async set() { return undefined },
 					async remove() { return undefined },
 				},
@@ -93,6 +96,7 @@ function installPopupBrowserMock({ replyToMessage = () => undefined, readStoredR
 	return {
 		deliverSerialized,
 		countMessageListeners: () => listeners.length,
+		countRpcListRequests: () => rpcListRequestCount,
 		deliver: async (message: MessageToPopup) => await deliverSerialized(MessageToPopup.serialize(message)),
 		restore() {
 			Object.defineProperty(globalThis, 'browser', { configurable: true, writable: true, value: previousBrowser })
@@ -129,7 +133,7 @@ async function assertChainSelectorFollowsRpcListUpdates({ page, replyToMessage, 
 	const dom = installDomMock()
 	// WebsiteAccessView reads the selected website from the URL hash when it mounts.
 	Object.defineProperty(globalThis.window, 'location', { configurable: true, writable: true, value: { hash: '' } })
-	const browserMock = installPopupBrowserMock({ replyToMessage, readStoredRpcEntries: async () => rpcEntriesWhenPageOpened })
+	const browserMock = installPopupBrowserMock({ replyToMessage, rpcListRequestAnswer: rpcEntriesWhenPageOpened })
 	try {
 		await act(async () => {
 			render(h(page, {}), dom.document.body)
@@ -146,7 +150,7 @@ async function assertChainSelectorFollowsRpcListUpdates({ page, replyToMessage, 
 				activeRpcNetwork: ethereumMainnet,
 			},
 		})
-		// AddressBook picks its active chain from the settings reply; the RPC list itself comes from storage.
+		// AddressBook picks its active chain from the settings reply; the RPC list itself comes from the popup_requestRpcList answer.
 		await deliverSettingsReply()
 		assert.deepEqual(readChainSelectorOptions(dom.document.body, chainSelectorContainerClass), chainOptionsWhenPageOpened)
 
@@ -299,20 +303,13 @@ function readRenderedRpcEntryNames(root: RenderedTreeNode) {
 	return findAllRenderedElements(root, (node) => node.tagName === 'LI').map((item) => item.textContent?.trim()).sort()
 }
 
-async function renderRpcEntryNamesWithDelayedStorageRead() {
+async function renderRpcEntryNames(rpcListRequestAnswer: RpcEntries | undefined) {
 	const dom = installDomMock()
-	const storageRead = Promise.withResolvers<RpcEntries>()
-	const browserMock = installPopupBrowserMock({ readStoredRpcEntries: async () => await storageRead.promise })
+	const browserMock = installPopupBrowserMock({ rpcListRequestAnswer })
 	await act(async () => {
 		render(h(RpcEntryNames, {}), dom.document.body)
 		await new Promise((resolve) => setTimeout(resolve, 0))
 	})
-	const finishStorageRead = async (entries: RpcEntries) => {
-		await act(async () => {
-			storageRead.resolve(entries)
-			await new Promise((resolve) => setTimeout(resolve, 0))
-		})
-	}
 	const unmount = async () => {
 		await act(() => { render(null, dom.document.body) })
 	}
@@ -321,27 +318,27 @@ async function renderRpcEntryNamesWithDelayedStorageRead() {
 		browserMock.restore()
 		dom.restore()
 	}
-	return { root: dom.document.body, browserMock, finishStorageRead, unmount, cleanup }
+	return { root: dom.document.body, browserMock, unmount, cleanup }
 }
 
+// Ordering between the request answer and RPC list writes is enforced in the background, see rpcListConcurrency.test.ts.
 describe('useRpcConnectionsList', () => {
-	test('shows the stored RPC list once the initial read finishes', async () => {
-		const page = await renderRpcEntryNamesWithDelayedStorageRead()
+	test('requests the RPC list once on mount and shows the broadcast answer', async () => {
+		const page = await renderRpcEntryNames(rpcEntriesWhenPageOpened)
 		try {
-			assert.deepEqual(readRenderedRpcEntryNames(page.root), [])
-			await page.finishStorageRead(rpcEntriesWhenPageOpened)
+			assert.equal(page.browserMock.countRpcListRequests(), 1)
 			assert.deepEqual(readRenderedRpcEntryNames(page.root), ['Ethereum Mainnet', 'Sepolia'])
 		} finally {
 			await page.cleanup()
 		}
 	})
 
-	test('a late initial read does not overwrite a newer popup_update_rpc_list broadcast', async () => {
-		const page = await renderRpcEntryNamesWithDelayedStorageRead()
+	test('shows the newest popup_update_rpc_list broadcast', async () => {
+		const page = await renderRpcEntryNames(undefined)
 		try {
+			assert.deepEqual(readRenderedRpcEntryNames(page.root), [])
+			await page.browserMock.deliver({ role: 'all', method: 'popup_update_rpc_list', data: rpcEntriesWhenPageOpened })
 			await page.browserMock.deliver({ role: 'all', method: 'popup_update_rpc_list', data: rpcEntriesAfterSettingsChange })
-			assert.deepEqual(readRenderedRpcEntryNames(page.root), ['Ethereum Mainnet', 'Gnosis'])
-			await page.finishStorageRead(rpcEntriesWhenPageOpened)
 			assert.deepEqual(readRenderedRpcEntryNames(page.root), ['Ethereum Mainnet', 'Gnosis'])
 		} finally {
 			await page.cleanup()
@@ -349,7 +346,7 @@ describe('useRpcConnectionsList', () => {
 	})
 
 	test('unmounting removes its runtime message listener', async () => {
-		const page = await renderRpcEntryNamesWithDelayedStorageRead()
+		const page = await renderRpcEntryNames(undefined)
 		try {
 			assert.equal(page.browserMock.countMessageListeners(), 1)
 			await page.unmount()
