@@ -118,12 +118,23 @@ async function getSettingsFromStorageItems(storedItems: Readonly<Record<string, 
 	return { activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode }
 }
 
+// Settings accessors and their failure policies; pick by what the caller must do when storage or the RPC configuration is unavailable:
+// - getSettingsSnapshot: admission boundary. An unavailable RPC configuration does not throw: `settings` is undefined and `websiteAccess` is [] when storage is unreadable.
+// - requireSettings / getRequiredSettings: throw the RPC-configuration-unavailable error, for operations that cannot continue without settings.
+// - getSettingsForCapturedRpcNetwork: re-read pinned to an admitted RPC network; undefined only when storage is unreadable, and the caller must then fail closed.
+// - rereadSettingsForPublication: the same pinned re-read for settings that must still be published; falls back to the given settings without website approvals.
+// - getSettingsAfterStorageUpdates: projects just-committed writes onto earlier settings without reading storage.
+// - getWebsiteAccess: approvals only; throws when storage is unreadable and repairs a corrupt value, so request-block reconciliation keeps applied rules on failure.
+// - getWebsiteAccessForAccessDecision: approvals only; [] for unreadable or corrupt storage and never writes, for granting runtime access.
+// - readSettingsOrRevokeAffectedApprovals (accessManagement.ts): after committing an access-affecting write; when settings are unreadable it revokes affected runtime approvals and reconciles request blocks, then throws.
+
 // Use for standalone operations that have no admitted settings context and must read the latest committed settings.
 export async function getRequiredSettings() : Promise<Settings> {
 	const snapshot = await getSettingsSnapshot()
 	return requireSettings(snapshot)
 }
 
+// Use to continue an admitted operation from its snapshot; throws the RPC-configuration-unavailable error when the snapshot has no settings.
 export function requireSettings(snapshot: { readonly settings: Settings | undefined }): Settings {
 	if (snapshot.settings === undefined) throw createRpcConfigurationUnavailableError()
 	return snapshot.settings
@@ -163,9 +174,9 @@ export async function getSettingsForCapturedRpcNetwork(capturedRpcNetwork: Captu
 	return await getSettingsFromStorageItems(storedItems, capturedRpcNetwork.activeRpcNetwork)
 }
 
-// Settings that must still be published after a failed read carry no website approvals, matching getSettingsSnapshot for unreadable storage.
-export function withoutWebsiteApprovals(settings: Settings): Settings {
-	return { ...settings, websiteAccess: [] }
+// Use for settings that must be published even when they cannot be read back: the latest settings on `settings`' RPC network, or `settings` without website approvals when storage is unreadable (matching getSettingsSnapshot, so revoked approvals are never republished).
+export async function rereadSettingsForPublication(settings: Settings): Promise<Settings> {
+	return await getSettingsForCapturedRpcNetwork(captureRpcNetwork(settings)) ?? { ...settings, websiteAccess: [] }
 }
 
 // A narrow read of website approvals for access decisions: unreadable or corrupt storage yields no approvals, and nothing is repaired or written.
@@ -312,6 +323,7 @@ async function getNormalizedWebsiteAccessFromStorage() {
 	return { rawWebsiteAccess, sanitizedWebsiteAccess }
 }
 
+// Use where a failed read must stop the caller: throws when storage is unreadable and repairs a corrupt value to no approvals.
 export async function getWebsiteAccess() {
 	return (await getNormalizedWebsiteAccessFromStorage()).sanitizedWebsiteAccess
 }

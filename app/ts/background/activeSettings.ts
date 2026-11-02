@@ -10,7 +10,7 @@ import type { WebsiteAccessUpdate } from './accessManagement.js'
 import { reconcileWebsiteApprovalAccesses, finishWebsiteAccessUpdate, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts } from './accessManagement.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
-import { captureRpcNetwork, changeSimulationMode, getRequiredSettings, getSettingsAfterStorageUpdates, getSettingsForCapturedRpcNetwork, getSettingsSnapshot, requireSettings, setUseSignersAddressAsActiveAddress, type SimulationModeChanges, trackPreviousActiveAddressForMakeMeRichList, withoutWebsiteApprovals } from './settings.js'
+import { changeSimulationMode, getRequiredSettings, getSettingsAfterStorageUpdates, getSettingsSnapshot, rereadSettingsForPublication, requireSettings, setUseSignersAddressAsActiveAddress, type SimulationModeChanges, trackPreviousActiveAddressForMakeMeRichList } from './settings.js'
 import { updateTransactionState } from './storageVariables.js'
 import type { RpcConfigurationState } from './rpcConfigurationStorage.js'
 import type { Settings } from '../types/interceptor-messages.js'
@@ -174,7 +174,7 @@ async function runActiveSettingsChange(
 
 			// Derived from the exact items just written; it pins the committed RPC network and is published (without website approvals, which may have been revoked since admission) only when the committed settings cannot be read back, because the writes above have already succeeded.
 			const committedSettings = await getSettingsAfterStorageUpdates(previousSettings, committedStorageUpdates)
-			const updatedSettings = await getSettingsForCapturedRpcNetwork(captureRpcNetwork(committedSettings)) ?? withoutWebsiteApprovals(committedSettings)
+			const updatedSettings = await rereadSettingsForPublication(committedSettings)
 			try {
 				// The preference belongs to the committed selection, even if later provider preparation fails.
 				if (transition.signingPreference !== undefined) await rememberSigningAddressSelection(transition.signingPreference)
