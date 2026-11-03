@@ -259,10 +259,22 @@ export async function updateConfirmTransactionView(ethereum: EthereumClientServi
 	return false
 }
 
+const isSamePopupOrTab = (first: PopupOrTabId, second: PopupOrTabId) => first.type === second.type && first.id === second.id
+
+// The confirmation window showing the queue is the first pending request's window that is still open. A request can outlive its own window (a deferred Gnosis Safe co-signature waits for services for its network), so the queue head does not necessarily own it.
+async function getOpenConfirmationWindow(pendingTransactions: readonly PendingTransactionOrSignableMessage[]) {
+	const checkedWindows: PopupOrTabId[] = []
+	for (const pending of pendingTransactions) {
+		if (checkedWindows.some((checked) => isSamePopupOrTab(checked, pending.popupOrTabId))) continue
+		checkedWindows.push(pending.popupOrTabId)
+		const openWindow = await getPopupOrTabById(pending.popupOrTabId)
+		if (openWindow !== undefined) return openWindow
+	}
+	return undefined
+}
+
 export const isConfirmTransactionFocused = async () => {
-	const pendingTransactions = await getPendingTransactionsAndMessages()
-	if (pendingTransactions[0] === undefined) return false
-	const popup = await getPopupOrTabById(pendingTransactions[0].popupOrTabId)
+	const popup = await getOpenConfirmationWindow(await getPendingTransactionsAndMessages())
 	if (popup === undefined) return false
 	if (popup.type === 'popup') return popup.window.focused
 	return popup.tab.active
@@ -313,7 +325,7 @@ async function updateViewAfterPendingRequestRemoved(pending: PendingTransactionO
 	await runConfirmationViewStep(async () => {
 		const confirmationQueueIsShown = await updateConfirmTransactionView(services.ethereum, services.tokenPriceService)
 		// The website may send its next request as soon as it has this answer. Arriving while the queue is empty, that request opens a window of its own, so this window is closed once no pending request is shown in it rather than only once the queue is empty.
-		const windowShowsAPendingRequest = (await getPendingTransactionsAndMessages()).some((other) => other.popupOrTabId.type === removedRequestWindow.type && other.popupOrTabId.id === removedRequestWindow.id)
+		const windowShowsAPendingRequest = (await getPendingTransactionsAndMessages()).some((other) => isSamePopupOrTab(other.popupOrTabId, removedRequestWindow))
 		if (!confirmationQueueIsShown || !windowShowsAPendingRequest) await closePopupOrTabById(removedRequestWindow)
 	})
 }
@@ -637,11 +649,11 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 }
 
 export const onCloseWindowOrTab = async (popupOrTabs: PopupOrTabId, ethereum: EthereumClientService | undefined, tokenPriceService: TokenPriceService | undefined, websiteTabConnections: WebsiteTabConnections) => { // check if user has closed the window on their own, if so, reject all signatures
-	const transactions = await getPendingTransactionsAndMessages()
-	const [firstTransaction] = transactions
-	if (firstTransaction === undefined || firstTransaction?.popupOrTabId.type !== popupOrTabs.type || firstTransaction.popupOrTabId.id !== popupOrTabs.id) return
+	// Exactly the requests shown in the closed window are answered; requests that live in another window are untouched.
+	const closedWindowRequests = (await getPendingTransactionsAndMessages()).filter((pending) => isSamePopupOrTab(pending.popupOrTabId, popupOrTabs))
+	if (closedWindowRequests.length === 0) return
 	const services = ethereum === undefined || tokenPriceService === undefined ? undefined : { ethereum, tokenPriceService }
-	await resolveAllPendingTransactionsAndMessageAsNoResponse(transactions, services, websiteTabConnections)
+	await resolveAllPendingTransactionsAndMessageAsNoResponse(closedWindowRequests, services, websiteTabConnections)
 }
 
 export async function resolvePendingRequestsForMissingConfirmationWindows(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections) {
@@ -863,12 +875,10 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 
 const getPendingTransactionWindow = async (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections) => {
 	const pendingTransactions = await getPendingTransactionsAndMessages()
-	const [firstPendingTransaction] = pendingTransactions
-	if (firstPendingTransaction !== undefined) {
-		const alreadyOpenWindow = await getPopupOrTabById(firstPendingTransaction.popupOrTabId)
-		if (alreadyOpenWindow) return alreadyOpenWindow
-		await resolveAllPendingTransactionsAndMessageAsNoResponse(pendingTransactions, { ethereum, tokenPriceService }, websiteTabConnections)
-	}
+	const openConfirmationWindow = await getOpenConfirmationWindow(pendingTransactions)
+	if (openConfirmationWindow !== undefined) return openConfirmationWindow
+	// No pending request's window is open, so the requests are answered as no-response, except deferred Gnosis Safe co-signatures, which wait for services for their own network.
+	await resolveAllPendingTransactionsAndMessageAsNoResponse(pendingTransactions.filter((pending) => pending.deferredSafeSignerReply === undefined), { ethereum, tokenPriceService }, websiteTabConnections)
 	return await openPopupOrTab({ url: getHtmlFile('confirmTransaction'), type: 'popup', height: 800, width: 600 })
 }
 

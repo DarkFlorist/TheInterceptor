@@ -1065,3 +1065,55 @@ test('a terminal reply delivery that throws still focuses the website and closes
 })
 
 await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
+
+// A deferred Gnosis Safe co-signature waits for services for its own network after its window closed, so it stays at the queue head with a window that no longer exists.
+function storeDeferredCoSignatureBeforeLaterRequest() {
+	const deferredCoSignature = {
+		...pendingTransaction,
+		uniqueRequestIdentifier: { ...uniqueRequestIdentifier, requestId: 70 },
+		popupOrTabId: { type: 'popup' as const, id: 41 },
+		simulationMode: false,
+		approvalStatus: { status: 'WaitingForSigner' as const },
+		deferredSafeSignerReply: { signerReply: '0x1234', chainId: fakeRpcNetwork.chainId + 1n },
+	}
+	const laterWindow = { type: 'popup' as const, id: 77 }
+	const laterRequest = { ...pendingTransaction, uniqueRequestIdentifier: { ...uniqueRequestIdentifier, requestId: 71 }, popupOrTabId: laterWindow }
+	return { laterWindow, store: async () => await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [deferredCoSignature, laterRequest] }) }
+}
+
+const getRejectionsTo = (postedMessages: readonly unknown[], requestId: number) => getRepliesToWebsite(postedMessages).filter((message) => isRecord(message) && message.requestId === requestId && 'error' in message)
+
+test('closing a later confirmation window answers its request while a deferred co-signature keeps its closed window', async () => {
+	const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
+	const { laterWindow, store } = storeDeferredCoSignatureBeforeLaterRequest()
+	await store()
+	browserMock.setLiveWindowIds([laterWindow.id])
+
+	await modules.onCloseWindowOrTab(laterWindow, simulator.ethereum, simulator.tokenPriceService, websiteTabConnections)
+
+	assert.deepEqual((await modules.getPendingTransactionsAndMessages()).map((pending) => pending.uniqueRequestIdentifier.requestId), [70])
+	assert.equal(getRejectionsTo(postedMessages, 71).length, 1)
+	assert.equal(getRepliesToWebsite(postedMessages).length, 1)
+})
+
+test.each(['open', 'closed'] as const)('a new request joins the open confirmation window, or answers orphaned requests when none is, without touching a deferred co-signature (later window %s)', async (laterWindowState) => {
+	const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
+	const { laterWindow, store } = storeDeferredCoSignatureBeforeLaterRequest()
+	await store()
+	// The mock browser opens every new window with id 99.
+	browserMock.setLiveWindowIds(laterWindowState === 'open' ? [laterWindow.id] : [99])
+	const nextRequestIdentifier = { ...uniqueRequestIdentifier, requestId: 72 }
+	const nextSignRequest = { method: 'personal_sign' as const, params: ['0x68656c6c6f', activeAddress] as const }
+	const nextRequest = { method: 'personal_sign', params: ['0x68656c6c6f', addressString(activeAddress)], interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier: nextRequestIdentifier }
+
+	assert.deepEqual(await withSilencedConsole(async () => await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, nextRequest, { kind: 'message', parameters: nextSignRequest }, true, activeAddress, pendingTransaction.website, websiteTabConnections)), { type: 'doNotReply' })
+
+	const pending = (await modules.getPendingTransactionsAndMessages()).map((request) => ({ requestId: request.uniqueRequestIdentifier.requestId, windowId: request.popupOrTabId.id }))
+	if (laterWindowState === 'open') {
+		assert.deepEqual(pending, [{ requestId: 70, windowId: 41 }, { requestId: 71, windowId: laterWindow.id }, { requestId: 72, windowId: laterWindow.id }])
+		assert.equal(getRejectionsTo(postedMessages, 71).length, 0)
+		return
+	}
+	assert.deepEqual(pending, [{ requestId: 70, windowId: 41 }, { requestId: 72, windowId: 99 }])
+	assert.equal(getRejectionsTo(postedMessages, 71).length, 1)
+})
