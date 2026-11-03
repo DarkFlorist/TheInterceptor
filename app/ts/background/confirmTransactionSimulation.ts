@@ -1,6 +1,6 @@
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { appendTransactionsToInput } from '../simulation/services/SimulationModeEthereumClientService.js'
-import { getSignedTransactionForSimulation, getStackTransactionHashes, withUniqueSimulationHash } from '../simulation/services/simulationTransactionSigning.js'
+import { getSignedTransactionForSimulation } from '../simulation/services/simulationTransactionSigning.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { createSafeExecutionPreSimulationTransaction, createSafeSigningSimulationInput } from '../safe/safeSimulation.js'
 import type { ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
@@ -15,6 +15,7 @@ import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { identifyAddress } from './metadataUtils.js'
 import { getSimulationErrorAbis } from './simulationErrorAbi.js'
 import { createSimulationStateWithNonceAndBaseFeeFixing, getCurrentSimulationInput, visualizeSimulatorState } from './simulationUpdating.js'
+import { asAppendedToStack } from './simulationStackHashes.js'
 import { getInterceptorTransactionStack, getTabState } from './storageVariables.js'
 
 let confirmTransactionAbortController = new AbortController()
@@ -42,23 +43,24 @@ export async function refreshConfirmTransactionSimulation(
 	confirmTransactionAbortController = new AbortController()
 	const thisConfirmTransactionAbortController = confirmTransactionAbortController
 	const simulationStartedTimestamp = new Date()
+	// One stack snapshot builds both the simulation input and the previewed hash.
+	const stack = await getInterceptorTransactionStack()
 	const simulationInput = safeSigningRequest === undefined
-		? await getCurrentSimulationInput()
-		: createSafeSigningSimulationInput(await getInterceptorTransactionStack(), safeSigningRequest)
-	const stackTransactionHashes = getStackTransactionHashes(await getInterceptorTransactionStack())
+		? await getCurrentSimulationInput(undefined, undefined, stack)
+		: createSafeSigningSimulationInput(stack, safeSigningRequest)
 	try {
 		const getNewVisualizedSimulationState = async () => {
 			const preSimulationTransaction = transactionToSimulate.success
 				? safeSigningRequest === undefined
-					// Previewed with the hash accepting it would store while the stack stays as it is: one no stacked transaction has, from the whole stored stack as withUniqueAddedTransactionHashes takes it, not only the simulated part.
-					? withUniqueSimulationHash({
+					// Previewed with the hash accepting it stores if the stack stays as it is.
+					? asAppendedToStack(stack, {
 						signedTransaction: getSignedTransactionForSimulation(transactionToSimulate),
 						website: transactionToSimulate.website,
 						created: transactionToSimulate.created,
 						originalRequestParameters: transactionToSimulate.originalRequestParameters,
 						transactionIdentifier: transactionToSimulate.transactionIdentifier,
 						...(transactionToSimulate.simulationOptions === undefined ? {} : { simulationOptions: transactionToSimulate.simulationOptions }),
-					}, stackTransactionHashes)
+					})
 					: createSafeExecutionPreSimulationTransaction(transactionToSimulate, safeSigningRequest)
 				: undefined
 			const simulationStateWithNewTransaction = preSimulationTransaction === undefined

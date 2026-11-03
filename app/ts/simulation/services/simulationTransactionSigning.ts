@@ -1,4 +1,4 @@
-import { authorizesExecutedCall, type InterceptorTransactionStack, type PreSimulationTransaction, type TransactionSimulationOptions, type WebsiteCreatedEthereumTransaction } from '../../types/visualizer-types.js'
+import { authorizesExecutedCall, type PreSimulationTransaction, type TransactionSimulationOptions, type WebsiteCreatedEthereumTransaction } from '../../types/visualizer-types.js'
 import { EthereumQuantity, type EthereumSendableSignedTransaction, type EthereumUnsignedTransaction } from '../../types/wire-types.js'
 import { EthereumUnsignedTransactionToUnsignedTransaction, type IUnsignedTransaction7702, serializeSignedTransactionToBytes } from '../../utils/ethereum.js'
 import { hasEip7702AuthorizationSignature, hasPartialEip7702AuthorizationSignature } from '../../utils/eip7702Authorization.js'
@@ -53,19 +53,13 @@ export const getSignedTransactionForSimulation = (transactionToSimulate: Website
 	transactionToSimulate.signedTransaction ?? mockSignTransaction(transactionToSimulate.transaction, getMockSignatureS(transactionToSimulate.simulationOptions))
 )
 
-// A signed transaction's own fields, without its signature or hash, so mock signing it again leaves no field of its previous signature (an imported typed transaction can carry v as well as yParity).
+// A signed transaction's own fields, without its signature or hash, so mock signing it again leaves no field of its previous signature (an imported transaction of any type can carry v as well as yParity).
 const withoutSignature = (transaction: EthereumSendableSignedTransaction): EthereumUnsignedTransaction => {
-	if (transaction.type === 'legacy') {
-		const { r: _r, s: _s, v: _v, hash: _hash, ...unsignedTransaction } = transaction
-		return unsignedTransaction
-	}
 	const { r: _r, s: _s, v: _v, hash: _hash, ...transactionWithParity } = transaction
 	if (!('yParity' in transactionWithParity)) return transactionWithParity
 	const { yParity: _yParity, ...unsignedTransaction } = transactionWithParity
 	return unsignedTransaction
 }
-
-export const getStackTransactionHashes = (stack: InterceptorTransactionStack): ReadonlySet<bigint> => new Set(stack.operations.flatMap((operation) => operation.type === 'Transaction' ? [operation.preSimulationTransaction.signedTransaction.hash] : []))
 
 // Where withUniqueSimulationHash resumes its salt search for a transaction, by the hash its fields and Gnosis Safe execution marker get without a salt. Shared across the transactions of one stack update, whose taken hashes only grow, so every salt it skips is still taken and N identical transactions take N signings instead of N squared.
 export type SaltSearch = { readonly nextSaltByUnsaltedHash: Map<bigint, bigint> }
@@ -88,17 +82,4 @@ export const withUniqueSimulationHash = (transaction: PreSimulationTransaction, 
 		saltSearch.nextSaltByUnsaltedHash.set(unsaltedHash, salt + 1n)
 		return { ...transaction, signedTransaction }
 	}
-}
-
-// The stack every update stores (storageVariables.ts): each transaction the update adds, one whose identifier the previous stack lacks, gets a hash no other stacked transaction has (withUniqueSimulationHash), in stack order. Transactions the stack already held keep theirs, even duplicates a stack stored before #1713 may hold, so such a stack still loads and updates.
-export const withUniqueAddedTransactionHashes = (previousStack: InterceptorTransactionStack, nextStack: InterceptorTransactionStack): InterceptorTransactionStack => {
-	const previousIdentifiers = new Set(previousStack.operations.flatMap((operation) => operation.type === 'Transaction' ? [operation.preSimulationTransaction.transactionIdentifier] : []))
-	const takenHashes = new Set(nextStack.operations.flatMap((operation) => operation.type === 'Transaction' && previousIdentifiers.has(operation.preSimulationTransaction.transactionIdentifier) ? [operation.preSimulationTransaction.signedTransaction.hash] : []))
-	const saltSearch = createSaltSearch()
-	return { ...nextStack, operations: nextStack.operations.map((operation) => {
-		if (operation.type !== 'Transaction' || previousIdentifiers.has(operation.preSimulationTransaction.transactionIdentifier)) return operation
-		const preSimulationTransaction = withUniqueSimulationHash(operation.preSimulationTransaction, takenHashes, saltSearch)
-		takenHashes.add(preSimulationTransaction.signedTransaction.hash)
-		return preSimulationTransaction === operation.preSimulationTransaction ? operation : { ...operation, preSimulationTransaction }
-	}) }
 }

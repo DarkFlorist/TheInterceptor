@@ -22,7 +22,7 @@ import { SafeTransactionStacks } from '../types/safeTypes.js'
 import { createStoredValueRepository } from '../utils/storedValue.js'
 import { isValidErc20Decimals } from '../utils/erc20.js'
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
-import { withUniqueAddedTransactionHashes } from '../simulation/services/simulationTransactionSigning.js'
+import { withUniqueAddedTransactionHashes } from './simulationStackHashes.js'
 
 const reportCorruptStoredValue = (label: string) => async (error: unknown) => {
 	console.warn(`${ label } was corrupt:`)
@@ -396,6 +396,7 @@ export const getInterceptorTransactionStack = async () => await getLargeStateVal
 export async function updateInterceptorTransactionStack(updateFunc: (prevStack: InterceptorTransactionStack) => InterceptorTransactionStack): Promise<InterceptorTransactionStack> {
 	return await transactionStateSemaphore.execute(async () => {
 		const prevStack = await getInterceptorTransactionStack()
+		// Applied at the write choke point so no source of stacked transactions can skip it; callers read the stored hash back.
 		const interceptorTransactionStack = withUniqueAddedTransactionHashes(prevStack, updateFunc(prevStack))
 		assertUniqueInterceptorTransactionIds(interceptorTransactionStack)
 		await setLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack, interceptorTransactionStack)
@@ -424,6 +425,7 @@ export async function updateTransactionState(updateFunc: (previousState: Transac
 			safeTransactionStacks: await getSafeTransactionStacks(),
 		}
 		const proposedState = updateFunc(previousState)
+		// The same write choke point; this path adds only Gnosis Safe proposals, whose safeTxHash withUniqueSimulationHash leaves untouched.
 		const updatedState = { ...proposedState, interceptorTransactionStack: withUniqueAddedTransactionHashes(previousState.interceptorTransactionStack, proposedState.interceptorTransactionStack) }
 		assertUniqueInterceptorTransactionIds(updatedState.interceptorTransactionStack)
 		await setLargeStateValues([
