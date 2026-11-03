@@ -37,6 +37,13 @@ test('the Safe layer alone decides how a simulated Gnosis Safe execution is form
 	assert.match(safeExecutionSimulationSource, /simulationOptions: createSafeExecutionSimulationOptions\(ethereum\.getChainId\(\)\),\n\t\}/u)
 })
 
+test('Gnosis Safe persistence only persists, and the confirmation window shows the stored proposal', async () => {
+	const safeConfirmationPersistenceSource = await Bun.file(new URL('../../app/ts/background/safeConfirmationPersistence.ts', import.meta.url)).text()
+	assert.doesNotMatch(safeConfirmationPersistenceSource, /from '(?:\.\.\/utils\/popupOrTab|\.\/popupVisualisationUpdater|\.\/windows\/[^']+)\.js'/u)
+	assert.doesNotMatch(safeConfirmationPersistenceSource, /\b(?:getHtmlFile|openPopupOrTab|updatePopupVisualisationIfNeeded|sendPopupMessageToOpenWindows)\b/u)
+	assert.match(confirmTransactionSource, /async function showStoredSafeProposal\(/u)
+})
+
 test('popup message handlers delegate Gnosis Safe stack import and export', () => {
 	assert.match(popupMessageHandlersSource, /export \{ importSafeStack, requestSafeStackExport, validateSafeTransactionStackForCurrentContract \} from '\.\/safeStackHandlers\.js'/u)
 	assert.doesNotMatch(popupMessageHandlersSource, /function validateSafeTransactionStackForCurrentContract/u)
