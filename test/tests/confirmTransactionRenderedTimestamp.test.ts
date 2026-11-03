@@ -3,7 +3,7 @@ import { encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { afterEach, describe, test } from 'bun:test'
-import { clickRenderedElement, findRenderedElement, installDateMock, installDomMock } from './domMock.js'
+import { clickRenderedElement, findRenderedElement, installDateMock, installDomMock, type RenderedTreeNode } from './domMock.js'
 import { createSafeTx, getSafeTxSigningHashes } from '../../app/ts/safe/safeCore.js'
 import { getSafeTxHash } from '../../app/ts/utils/eip712.js'
 import { bytes32String } from '../../app/ts/utils/bigint.js'
@@ -11,6 +11,7 @@ import { getNativeTokenErc20 } from '../../app/ts/background/metadataUtils.js'
 import { getReviewedResultId } from '../../app/ts/background/reviewedResult.js'
 import { isRecord } from '../../app/ts/utils/runtimeTypeGuards.js'
 import type { PendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
+import type { TransactionSimulationOptions } from '../../app/ts/types/visualizer-types.js'
 
 type RuntimeMessageListener = (message: unknown) => unknown
 type CurrentWindowProvider = () => Promise<{ id: number }>
@@ -273,7 +274,7 @@ function makeSafeProposal<T extends ReturnType<typeof makePendingTransaction> | 
 
 type SimulatedTransactionOutcome = ({ transactionStatus: 'Transaction Succeeded' } | { transactionStatus: 'Transaction Failed', error: { code: number, message: string, decodedErrorMessage: string, data?: string } }) & { quarantine?: boolean, quarantineReasons?: readonly string[] }
 
-function makeSimulatedPendingTransaction(value: bigint, outcome: SimulatedTransactionOutcome = { transactionStatus: 'Transaction Succeeded' }) {
+function makeSimulatedPendingTransaction(value: bigint, outcome: SimulatedTransactionOutcome = { transactionStatus: 'Transaction Succeeded' }, simulationOptions?: TransactionSimulationOptions) {
 	const failed = makePendingTransaction(new Date('2024-01-01T00:00:05.000Z'), value)
 	const requested = failed.originalRequestParameters.params[0]
 	const rpcNetwork = { name: 'Ethereum Mainnet', chainId: 1n, httpsRpc: 'https://rpc.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
@@ -316,6 +317,7 @@ function makeSimulatedPendingTransaction(value: bigint, outcome: SimulatedTransa
 		...outcome,
 		transaction: { ...transaction, from: safeEntry, to: recipientEntry, rpcNetwork, hash: 1n },
 		events: [],
+		...simulationOptions === undefined ? {} : { simulationOptions },
 	}
 	return {
 		...failed,
@@ -756,6 +758,27 @@ describe('ConfirmTransaction', () => {
 		assert.equal(renderedText.includes('Value (attoeth)1250000000000000000'), true)
 		assert.equal(renderedText.includes('Gnosis Safe: Test Safe'), true, 'address-book entries from the simulation name the Safe')
 		assert.equal(renderedText.includes('To: Recipient'), true)
+
+		await unmountConfirmTransaction(dom)
+		dom.restore()
+	})
+
+	test('keeps the Gnosis Safe gas label, creation time and simulation time in one wrapping card footer', async () => {
+		const dom = installDomMock()
+		const browser = createBrowserMock()
+		const safeExecution = makeSimulatedPendingTransaction(1_250_000_000_000_000_000n, { transactionStatus: 'Transaction Succeeded' }, { requiredChainId: 1n, simulateWithZeroBaseFee: false, executeThroughSafe: true })
+
+		await renderConfirmTransaction(dom)
+		await dispatchPendingTransactions(browser, [safeExecution])
+		const hasClass = (node: RenderedTreeNode, className: string) => node.attributes?.class?.split(/\s+/u).includes(className) === true
+		const footer = findRenderedElement(dom.document.body, (node) => hasClass(node, 'transaction-card-footer'))
+		if (footer === undefined) throw new Error('expected the transaction card footer below the simulated transaction')
+		const footerText = footer.textContent ?? ''
+		assert.equal(footerText.includes('Gnosis Safe gas reimbursement:'), true, footerText)
+		assert.equal(footerText.includes('Created'), true, footerText)
+		assert.equal(footerText.includes('Simulated'), true, footerText)
+		const gasLabel = findRenderedElement(footer, (node) => hasClass(node, 'gas-fee-label'))
+		assert.equal(gasLabel?.textContent?.trim(), 'Gnosis Safe gas reimbursement:', 'the long label sits in the cell that may wrap at narrow widths')
 
 		await unmountConfirmTransaction(dom)
 		dom.restore()

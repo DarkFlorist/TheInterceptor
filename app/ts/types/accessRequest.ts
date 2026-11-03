@@ -104,6 +104,8 @@ const SimulatedPendingTransactionBase = funtypes.ReadonlyObject({
 	safeExecutionSignerAddress: EthereumAddress,
 	safeExecutionOriginalRequestParameters: SendTransactionParams,
 	safeExecutionReviewedSafeState: SafeContractStateSnapshot,
+	// The confirmation's decision, made once by prepareSafeTransactionConfirmation in simulation mode, that this is a Gnosis Safe's own transaction. Every refresh forms it from this (getPendingTransactionGasPayment), and forming it gives the transaction simulationOptions.executeThroughSafe, which tells the simulator to run it through the Safe: the pending decision and the transaction's option relate as a Safe proposal's pending safeTransaction and its stacked safeTransaction do.
+	executeThroughSafe: funtypes.Literal(true),
 }))
 
 export type SimulatedPendingTransaction = funtypes.Static<typeof SimulatedPendingTransaction>

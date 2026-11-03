@@ -24,6 +24,8 @@ const IS_REVIEWED_FIELD: Record<PendingRequestField, boolean> = {
 	safeExecutionOriginalRequestParameters: true,
 	safeExecutionReviewedSafeState: true,
 	safeMessageCoSignSnapshot: true,
+	// Whether a simulation-mode transaction runs as the Gnosis Safe executing it, which decides the simulated result and who the popup shows paying for gas.
+	executeThroughSafe: true,
 	// Identity and signer round-trip bookkeeping, which change without changing what the user reviewed.
 	type: false,
 	uniqueRequestIdentifier: false,
