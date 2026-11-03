@@ -597,12 +597,12 @@ export async function persistWebsiteAccessChange(
 	promptForAccessesIfNeeded: boolean,
 ): Promise<Settings> {
 	await setAccess(website, access, address)
-	return await finalizeWebsiteAccessChange(
-		simulationServicesOwner,
-		websiteTabConnections,
-		await readSettingsOrRevokeAffectedApprovals(websiteTabConnections, { kind: 'websites', websiteOrigins: [website.websiteOrigin] }),
-		promptForAccessesIfNeeded,
-	)
+	const committedSettings = await readSettingsForAccessReconciliation()
+	if (committedSettings === undefined) {
+		await revokeAffectedApprovalsBecauseSettingsAreUnreadable(websiteTabConnections, { kind: 'websites', websiteOrigins: [website.websiteOrigin] })
+		throw createRpcConfigurationUnavailableError()
+	}
+	return await finalizeWebsiteAccessChange(simulationServicesOwner, websiteTabConnections, committedSettings, promptForAccessesIfNeeded)
 }
 
 // The websites whose approvals a committed write can change: 'every' for address-book and import changes (they can alter any website's effective address policy), 'none' for request-block mode changes (they alter no approvals).
@@ -620,10 +620,13 @@ const isAffectedWebsite = (affectedWebsites: AffectedWebsites, websiteOrigin: st
 	}
 }
 
-// Use after committing a write that can change website approvals, address consent, interceptor-disabled state or request blocking. Approval reconciliation needs settings (active addresses resolve on the active RPC network's chain); when they cannot be read, this is a command, not a query: the connections of the affected websites lose their runtime approval so a committed revocation is never left unapplied, request blocks are still reconciled (that works without an active RPC network), and then the unavailable error propagates. A failed disconnect notification or request-block update does not stop the rest; those failures are reported afterwards.
-export async function readSettingsOrRevokeAffectedApprovals(websiteTabConnections: WebsiteTabConnections, affectedWebsites: AffectedWebsites): Promise<Settings> {
-	const { settings } = await getSettingsSnapshot()
-	if (settings !== undefined) return settings
+// A pure query for reconciling a committed write that can change website approvals, address consent, interceptor-disabled state or request blocking. Approval reconciliation needs settings (active addresses resolve on the active RPC network's chain); undefined means they cannot be read, and the caller must then run revokeAffectedApprovalsBecauseSettingsAreUnreadable and throw the unavailable error.
+export async function readSettingsForAccessReconciliation(): Promise<Settings | undefined> {
+	return (await getSettingsSnapshot()).settings
+}
+
+// The fail-closed command for a committed access-affecting write whose settings cannot be read: the connections of the affected websites lose their runtime approval so a committed revocation is never left unapplied, and request blocks are still reconciled (that works without an active RPC network). A failed disconnect notification or request-block update does not stop the rest; those failures are reported afterwards.
+export async function revokeAffectedApprovalsBecauseSettingsAreUnreadable(websiteTabConnections: WebsiteTabConnections, affectedWebsites: AffectedWebsites) {
 	const followUpErrors: unknown[] = []
 	for (const tabConnection of websiteTabConnections.values()) {
 		for (const connection of Object.values(tabConnection.connections)) {
@@ -641,5 +644,4 @@ export async function readSettingsOrRevokeAffectedApprovals(websiteTabConnection
 		followUpErrors.push(error)
 	}
 	for (const followUpError of followUpErrors) await reportUnexpectedError(followUpError)
-	throw createRpcConfigurationUnavailableError()
 }

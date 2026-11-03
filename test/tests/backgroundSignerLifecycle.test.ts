@@ -161,6 +161,26 @@ describe('background eth_accounts', () => {
 		assert.doesNotMatch(tabIconDetails.iconReason, /disabled-metadata-frame/)
 	})
 
+	for (const affectedWebsites of [{ kind: 'every' }, { kind: 'none' }, { kind: 'websites', websiteOrigins: ['affected.example'] }] as const) test(`revokes only the ${ affectedWebsites.kind } affected runtime approvals when settings are unreadable, without throwing`, async () => {
+		installBrowserMock({ manifestVersion: 3 })
+		const { readSettingsForAccessReconciliation, revokeAffectedApprovalsBecauseSettingsAreUnreadable, websiteSocketToString } = await loadModules()
+		await browser.storage.local.set({ activeRpcNetwork: 'corrupt' })
+		const connectionFor = (tabId: number, websiteOrigin: string) => {
+			const socket = { tabId, connectionName: 0n }
+			return [tabId, { ...confirmedSignerOwnership(socket), connections: { [websiteSocketToString(socket)]: { port: createPort(tabId).port, socket, websiteOrigin, approved: true, wantsToConnect: true } } }] as const
+		}
+		const websiteTabConnections: WebsiteTabConnections = new Map([connectionFor(9887, 'affected.example'), connectionFor(9888, 'unaffected.example')])
+		const isApproved = (tabId: number) => Object.values(websiteTabConnections.get(tabId)?.connections ?? {}).every((connection) => connection.approved)
+
+		// The read is a pure query: it reports unreadable settings without touching any connection.
+		assert.equal(await withSilencedWarnings(readSettingsForAccessReconciliation), undefined)
+		assert.equal(isApproved(9887) && isApproved(9888), true)
+
+		await withSilencedWarnings(async () => await revokeAffectedApprovalsBecauseSettingsAreUnreadable(websiteTabConnections, affectedWebsites))
+		assert.equal(isApproved(9887), affectedWebsites.kind === 'none')
+		assert.equal(isApproved(9888), affectedWebsites.kind !== 'every')
+	})
+
 	test('shows the blocking shield only after persisted-consent tab blocking is applied while the active RPC network is unreadable', async () => {
 		const browserMock = installBrowserMock({ manifestVersion: 3 })
 		const { areWeBlocking, getTabState, registerWebsiteConnectionAndProvisionallyClaimSignerState, updateDeclarativeNetRequestBlocks } = await loadModules()

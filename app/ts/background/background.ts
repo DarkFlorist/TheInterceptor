@@ -9,7 +9,7 @@ import { PASSTHROUGH_STATE, type ResolvedExecutionSimulationState, type Resolved
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, requestAccessFromUser } from './windows/interceptorAccess.js'
 import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_PROVIDER_DISCONNECTED, METAMASK_ERROR_USER_REJECTED_REQUEST, ERROR_ACTIVE_RPC_NETWORK_CHANGED, ERROR_INTERCEPTOR_DISABLED } from '../utils/constants.js'
-import { clearWebsiteConnectionIntent, finalizeWebsiteAccessChange, persistWebsiteAccessChange, readSettingsOrRevokeAffectedApprovals, sendAccountsChangedToPort, verifyAccess, withSuppressedUnscopedConnectionEventsForSocket } from './accessManagement.js'
+import { clearWebsiteConnectionIntent, finalizeWebsiteAccessChange, persistWebsiteAccessChange, readSettingsForAccessReconciliation, revokeAffectedApprovalsBecauseSettingsAreUnreadable, sendAccountsChangedToPort, verifyAccess, withSuppressedUnscopedConnectionEventsForSocket } from './accessManagement.js'
 import { getActiveAddressEntryForChain, getWalletActiveAddressEntryForChain } from './metadataUtils.js'
 import { getActiveAddress } from './backgroundUtils.js'
 import { assertNever, hasOwnKey } from '../utils/typescript.js'
@@ -38,7 +38,7 @@ import { getWalletGetCapabilitiesParseFailureReply } from './walletGetCapabiliti
 import { hasAccess as getWebsiteAccessApprovalState, hasAddressAccess as getWebsiteAddressAccessApprovalState } from './websiteAccessPolicy.js'
 import { replyIfRpcConfigurationIsUnavailable } from './rpcConfigurationRequestGuard.js'
 import { RPC_CONFIGURATION_UNAVAILABLE_ERROR } from '../types/interceptor-reply-messages.js'
-import { isRpcConfigurationUnavailableError } from '../utils/rpcConfigurationError.js'
+import { createRpcConfigurationUnavailableError, isRpcConfigurationUnavailableError } from '../utils/rpcConfigurationError.js'
 import { getRpcNetworkChange } from '../utils/rpcNetworkChange.js'
 
 if (initializeWatchAssetWindowListeners()) {
@@ -348,7 +348,12 @@ async function revokeWebsitePermissions(
 	}))
 	clearWebsiteConnectionIntent(websiteTabConnections, websiteOrigin)
 	try {
-		await finalizeWebsiteAccessChange(simulationServicesOwner, websiteTabConnections, await readSettingsOrRevokeAffectedApprovals(websiteTabConnections, { kind: 'websites', websiteOrigins: [websiteOrigin] }), false)
+		const committedSettings = await readSettingsForAccessReconciliation()
+		if (committedSettings === undefined) {
+			await revokeAffectedApprovalsBecauseSettingsAreUnreadable(websiteTabConnections, { kind: 'websites', websiteOrigins: [websiteOrigin] })
+			throw createRpcConfigurationUnavailableError()
+		}
+		await finalizeWebsiteAccessChange(simulationServicesOwner, websiteTabConnections, committedSettings, false)
 	} catch (error: unknown) {
 		// With unreadable settings the revocation is still committed and the website's connections are already unapproved, so it is answered as successful (EIP-2255, as on main).
 		if (!isRpcConfigurationUnavailableError(error)) throw error

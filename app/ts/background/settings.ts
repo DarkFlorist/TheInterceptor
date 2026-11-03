@@ -126,7 +126,7 @@ async function getSettingsFromStorageItems(storedItems: Readonly<Record<string, 
 // - getSettingsAfterStorageUpdates: projects just-committed writes onto earlier settings without reading storage.
 // - getWebsiteAccess: approvals only; throws when storage is unreadable and repairs a corrupt value, so request-block reconciliation keeps applied rules on failure.
 // - getWebsiteAccessForAccessDecision: approvals only; [] for unreadable or corrupt storage and never writes, for granting runtime access.
-// - readSettingsOrRevokeAffectedApprovals (accessManagement.ts): after committing an access-affecting write; when settings are unreadable it revokes affected runtime approvals and reconciles request blocks, then throws.
+// - readSettingsForAccessReconciliation (accessManagement.ts): after committing an access-affecting write; undefined when unreadable, and the caller then runs revokeAffectedApprovalsBecauseSettingsAreUnreadable and throws.
 
 // Use for standalone operations that have no admitted settings context and must read the latest committed settings.
 export async function getRequiredSettings() : Promise<Settings> {
