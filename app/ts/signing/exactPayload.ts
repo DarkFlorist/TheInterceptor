@@ -1,5 +1,5 @@
 import { secp256k1 } from '@noble/curves/secp256k1'
-import { bytesFromHex, bytesToHex, ensureHex, getAddress, keccak256, type Hex } from '../utils/ethereumBytes.js'
+import { bytesFromHex, bytesToHex, ensureHex, getAddress, isHexString, keccak256, type Hex } from '../utils/ethereumBytes.js'
 import { hashMessage, hashTypedData, recoverAddress } from '../utils/ethereumSigning.js'
 import { parseTransaction, recoverTransactionSender, serializeTransaction } from '../utils/ethereumTransactions.js'
 import { EIP712Message, Eip712Number } from '../types/eip721.js'
@@ -133,6 +133,21 @@ export async function verifyPersonalSigningResponse(payload: PersonalSigningPayl
 	if (prepared.digest !== payload.digest) throw new Error('Signing payload digest mismatch')
 	const recovered = await recoverAddress({ hash: prepared.digest, signature: signatureParts(signature) })
 	if (recovered.toLowerCase() !== prepared.expectedAddress.toLowerCase()) throw invalidSigningResponse('Signature does not match the expected account and message')
+	return ensureHex(signature)
+}
+
+export type BrowserWalletMessageRequest =
+	| Readonly<{ method: 'personal_sign', message: string }>
+	| Readonly<{ method: 'eth_signTypedData_v4', typedData: EIP712Message }>
+
+/** A browser wallet has already signed the request as the website sent it, so its signature is checked against that request as is. The payload size and format limits of Ledger and AirGap signing do not apply here: they are enforced before those devices sign. */
+export async function verifyBrowserWalletMessageSignature(request: BrowserWalletMessageRequest, expectedAddress: Hex, signature: string): Promise<Hex> {
+	// Like browser wallets, personal_sign treats an even-length hex message as bytes and anything else as UTF-8 text.
+	const digest = request.method === 'personal_sign'
+		? hashMessage(isHexString(request.message) && request.message.length % 2 === 0 ? { raw: request.message } : request.message)
+		: hashTypedData(request.typedData)
+	const recovered = await recoverAddress({ hash: digest, signature: signatureParts(signature) })
+	if (recovered.toLowerCase() !== expectedAddress.toLowerCase()) throw invalidSigningResponse(request.method === 'personal_sign' ? 'Signature does not match the expected account and message' : 'Signature does not match the expected account and typed data')
 	return ensureHex(signature)
 }
 

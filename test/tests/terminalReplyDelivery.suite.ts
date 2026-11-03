@@ -1044,8 +1044,8 @@ for (const signerReply of ['0x1234', 42, new Error('Unexpected verifier failure'
 	})
 	if (signerReply instanceof Error) {
 		const { spyOn } = await import('bun:test')
-		const backend = await import('../../app/ts/signing/backend.js')
-		const verifier = spyOn(backend, 'verifyDirectResult').mockRejectedValue(signerReply)
+		const exactPayload = await import('../../app/ts/signing/exactPayload.js')
+		const verifier = spyOn(exactPayload, 'verifyBrowserWalletMessageSignature').mockRejectedValue(signerReply)
 		try { await assert.rejects(verify(), (error: unknown) => error === signerReply) }
 		finally { verifier.mockRestore() }
 	} else assert.equal(await verify(), false)
@@ -1146,4 +1146,40 @@ for (const walletChain of ['reviewed', 'other'] as const) test(`a reviewed trans
 		if (pending?.approvalStatus.status !== 'SignerError') throw new Error('Expected a chain mismatch signer error')
 		assert.equal(pending.approvalStatus.message, getWalletChainMismatchMessage(walletChainId, reviewedChainId))
 	}
+})
+
+test('a browser wallet signature for a personal message over the Ledger and AirGap payload limit is accepted after the wallet signs', async () => {
+	const { saveAddressSigningWallet } = await import('../../app/ts/background/signingAddressBookCoordinator.js')
+	const { bytesToHex } = await import('../../app/ts/utils/ethereumBytes.js')
+	const signer = privateKeyToAccount(safeTestOwnerPrivateKey)
+	const signerAddress = BigInt(signer.address)
+	await saveAddressSigningWallet(signerAddress, { type: 'browser', address: signerAddress, label: 'Browser account', signerName: 'MetaMask', providerId: 'legacy:MetaMask' }, undefined, 'Browser account')
+	// One byte over the Ledger and AirGap payload limit, which does not apply to a browser wallet.
+	const signedMessage = bytesToHex(new Uint8Array(65_537).fill(0x61))
+	const parameters = { method: 'personal_sign' as const, params: [signedMessage, signerAddress] as const }
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, {
+		...parameters, interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier,
+	}, { kind: 'message', parameters }, false, signerAddress, { websiteOrigin: 'https://example.com' }, new Map())
+	await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => ({ ...pending, approvalStatus: { status: 'WaitingForSigner' } }))
+	const signature = await signer.signMessage({ message: { raw: signedMessage } })
+	const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
+
+	const delivered = await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+		method: 'popup_confirmDialog', data: { action: 'signerIncluded', uniqueRequestIdentifier, signerReply: signature },
+	}))
+
+	assert.equal(delivered, true)
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	const [reply] = getRepliesToWebsite(postedMessages)
+	if (!isRecord(reply)) throw new Error('Missing reply to the website')
+	assert.equal(reply.result, signature)
+})
+
+test('Ledger and AirGap signing enforces its payload limit before the device signs', async () => {
+	const { prepareDirectPayload } = await import('../../app/ts/signing/backend.js')
+	const { bytesToHex } = await import('../../app/ts/utils/ethereumBytes.js')
+	const input = { method: 'personal_sign' as const, address: addressString(safeTestOwnerAddress), chainId: 1n }
+	assert.doesNotThrow(() => prepareDirectPayload({ ...input, data: bytesToHex(new Uint8Array(65_536)) }))
+	assert.throws(() => prepareDirectPayload({ ...input, data: bytesToHex(new Uint8Array(65_537)) }), /Signing payload exceeds size limit/u)
 })

@@ -2,14 +2,12 @@ import { isSigningOperationError } from '../signing/signingOperationError.js'
 import type { SigningRecordReply } from '../types/signingPageReply.js'
 import { isSignatureReadyForApplication } from '../signing/signingProgress.js'
 import type { DirectSigningRecord, DirectSigningRequest } from '../types/directSigning.js'
-import * as funtypes from 'funtypes'
 import { getSafePendingFlow } from '../safe/safePendingFlow.js'
-import { verifyDirectResult } from '../signing/backend.js'
-import { invalidSigningResponse, isInvalidSigningResponse } from '../signing/exactPayload.js'
+import { invalidSigningResponse, isInvalidSigningResponse, verifyBrowserWalletMessageSignature } from '../signing/exactPayload.js'
+import { addressString } from '../utils/bigint.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import type { PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
-import { EIP712Message } from '../types/eip721.js'
 import type { TransactionConfirmation } from '../types/interceptor-messages.js'
 import type { SendRawTransactionParams, SendTransactionParams } from '../types/JsonRpc-types.js'
 import type { SignMessageParams } from '../types/jsonRpc-signing-types.js'
@@ -67,7 +65,7 @@ export async function resolveSigningConfirmationAdmission(
 	} else if (getSafePendingFlow(pending) === undefined && (request.method === 'personal_sign' || request.method === 'eth_signTypedData_v4')) {
 		try {
 			if (typeof confirmation.signerReply !== 'string') throw invalidSigningResponse('Browser wallet returned a non-string message signature')
-			await verifyDirectResult({ method: request.method, data: request.method === 'personal_sign' ? request.params[0] : funtypes.String.parse(EIP712Message.serialize(request.params[1])), address: `0x${ binding.wallet.address.toString(16).padStart(40, '0') }`, chainId: pending.signingChainId ?? ethereum.getChainId() }, confirmation.signerReply)
+			await verifyBrowserWalletMessageSignature(request.method === 'personal_sign' ? { method: 'personal_sign', message: request.params[0] } : { method: 'eth_signTypedData_v4', typedData: request.params[1] }, addressString(binding.wallet.address), confirmation.signerReply)
 		} catch (error) {
 			if (!isInvalidSigningResponse(error)) throw error
 			return selectionFailure(getErrorMessage(error) ?? 'Unable to verify wallet signature')
