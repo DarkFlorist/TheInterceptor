@@ -3,6 +3,7 @@ import type { NamedTokenId, ProtectorResults, SimulatedAndVisualizedTransaction,
 import type { AddressBookEntry, Erc20TokenEntry } from '../types/addressBookTypes.js'
 import { getFailureReasonForDisplay } from '../simulation/failureReasons.js'
 import { appendProtocolRevertReasonHints } from '../simulation/revertReasonHints.js'
+import { describeSafeExecutionFailure } from '../safe/safeExecutionFailure.js'
 import type { MaybeENSLabelHashes, MaybeENSNameHashes } from '../types/ens.js'
 import { assertNever } from '../utils/typescript.js'
 import type { EnrichedEthereumEventWithMetadata, EnrichedEthereumEvents, EnrichedEthereumInputData, ParsedEnsEvent } from '../types/EnrichedEthereumData.js'
@@ -149,7 +150,7 @@ export function formSimulatedAndVisualizedTransactions(simulatedTransactions: re
 				? {
 					error: {
 						...simulatedTx.ethSimulateV1CallResult.error,
-						decodedErrorMessage: getFailureReasonForDisplay(availableAbis, simulatedTx.ethSimulateV1CallResult.error, appendProtocolRevertReasonHints),
+						decodedErrorMessage: describeSafeExecutionFailure(simulatedTx.preSimulationTransaction, simulatedTx.ethSimulateV1CallResult, getFailureReasonForDisplay(availableAbis, simulatedTx.ethSimulateV1CallResult.error, appendProtocolRevertReasonHints)),
 					},
 					transactionStatus: 'Transaction Failed',
 				}
@@ -163,6 +164,7 @@ export function formSimulatedAndVisualizedTransactions(simulatedTransactions: re
 			parsedInputData: singleParsedInputData,
 			originalRequestParameters: simulatedTx.preSimulationTransaction.originalRequestParameters,
 			...(simulatedTx.preSimulationTransaction.safeTransaction === undefined ? {} : { safeTransaction: simulatedTx.preSimulationTransaction.safeTransaction }),
+			...(simulatedTx.preSimulationTransaction.simulationOptions === undefined ? {} : { simulationOptions: simulatedTx.preSimulationTransaction.simulationOptions }),
 		}
 	})
 }
