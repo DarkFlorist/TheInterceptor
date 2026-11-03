@@ -50,6 +50,10 @@ export function createBrowserMock() {
 	let runtimeMessageHandler: ((message: RuntimeMessage) => Promise<unknown>) | undefined
 	let storageGetHandler: ((keys: StorageKeys, readStoredItems: () => Record<string, unknown>) => Promise<Record<string, unknown>>) | undefined
 	let storageSetHandler: ((items: Record<string, unknown>, writeStoredItems: () => void) => Promise<void>) | undefined
+	let tabUpdateHandler: ((tabId: number) => Promise<void>) | undefined
+	let windowRemoveHandler: ((windowId: number) => Promise<void>) | undefined
+	let windowCreateHandler: (() => Promise<void>) | undefined
+	let runtimeSendMessageHandler: ((message: RuntimeMessage) => Promise<void>) | undefined
 
 	const getItems = (keys?: StorageKeys) => {
 		if (keys === undefined || keys === null) return { ...storageState }
@@ -68,6 +72,7 @@ export function createBrowserMock() {
 			lastError: null as browser.runtime._LastError | undefined | null,
 			async sendMessage(message: RuntimeMessage) {
 				sentMessages.push(message)
+				await runtimeSendMessageHandler?.(message)
 				const reply = await runtimeMessageHandler?.(message)
 				if (reply !== undefined) return reply
 				if (message.method === 'popup_isMainPopupWindowOpen') {
@@ -103,7 +108,10 @@ export function createBrowserMock() {
 				if (!liveTabIds.has(tabId)) throw new Error(`No tab with id: ${ tabId }`)
 				return { id: tabId }
 			},
-			async update() { return undefined },
+			async update(tabId: number) {
+				await tabUpdateHandler?.(tabId)
+				return undefined
+			},
 			async remove() { return undefined },
 			onUpdated: { addListener: () => undefined, removeListener: () => undefined },
 			onRemoved: { addListener: () => undefined, removeListener: () => undefined },
@@ -114,8 +122,14 @@ export function createBrowserMock() {
 				return { id: windowId }
 			},
 			async update() { return undefined },
-			async create() { return { id: 99 } },
-			async remove() { return undefined },
+			async create() {
+				await windowCreateHandler?.()
+				return { id: 99 }
+			},
+			async remove(windowId: number) {
+				await windowRemoveHandler?.(windowId)
+				return undefined
+			},
 		},
 		action: {
 			async setIcon() { return undefined },
@@ -151,6 +165,10 @@ export function createBrowserMock() {
 		setTabMessageHandler(handler: ((tabId: number, message: unknown) => unknown | Promise<unknown>) | undefined) { tabMessageHandler = handler },
 		// Lets a test act as an open view that receives, and may answer, popup messages while the background awaits their delivery.
 		setRuntimeMessageHandler(handler: typeof runtimeMessageHandler) { runtimeMessageHandler = handler },
+		setTabUpdateHandler(handler: typeof tabUpdateHandler) { tabUpdateHandler = handler },
+		setWindowRemoveHandler(handler: typeof windowRemoveHandler) { windowRemoveHandler = handler },
+		setWindowCreateHandler(handler: typeof windowCreateHandler) { windowCreateHandler = handler },
+		setRuntimeSendMessageHandler(handler: typeof runtimeSendMessageHandler) { runtimeSendMessageHandler = handler },
 		reset() {
 			for (const key of Object.keys(storageState)) delete storageState[key]
 			sentMessages.length = 0
@@ -162,6 +180,10 @@ export function createBrowserMock() {
 			runtimeMessageHandler = undefined
 			storageGetHandler = undefined
 			storageSetHandler = undefined
+			tabUpdateHandler = undefined
+			windowRemoveHandler = undefined
+			windowCreateHandler = undefined
+			runtimeSendMessageHandler = undefined
 		},
 	}
 }
