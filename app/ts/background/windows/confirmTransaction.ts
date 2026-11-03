@@ -18,7 +18,7 @@ import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getP
 import { allocateSimulationHashReservation, appendAcceptedTransactionToStack, stacksTransactionOnAccept, withSimulationHashLock } from '../simulationStackHashes.js'
 import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
 import { replyToInterceptedRequestAfterManifestV2Reconnect } from '../messageSending.js'
-import { attemptQueuedTerminalReplyDelivery, getQueuedTerminalReply, queueTerminalReply } from '../terminalReplyDelivery.js'
+import { attemptQueuedTerminalReplyDelivery, getQueuedTerminalReply, queueTerminalReply, retireDeliveredTerminalReply } from '../terminalReplyDelivery.js'
 import { stringToBytes, keccak256 } from '../../utils/ethereumPrimitives.js'
 import { EthereumBytes32, EthereumQuantity, serialize } from '../../types/wire-types.js'
 import type { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
@@ -263,107 +263,71 @@ export const setGasLimitForTransaction = async (transactionIdentifier: bigint, g
 	})
 }
 
+type ResolutionContext = { readonly ethereum: EthereumClientService, readonly tokenPriceService: TokenPriceService, readonly websiteTabConnections: WebsiteTabConnections }
+
+// Updates the confirmation window after a request was removed, from the stored request and the requests still pending: it moves to the next request, or closes after the last. Best effort: a failure is reported, never retried.
+async function updateConfirmationWindowAfterRemoving(request: PendingTransactionOrSignableMessage, context: ResolutionContext) {
+	try {
+		if ((await getPendingTransactionsAndMessages()).length === 0) await tryFocusingTabOrWindow({ type: 'tab', id: request.uniqueRequestIdentifier.requestSocket.tabId })
+		if (!(await updateConfirmTransactionView(context.ethereum, context.tokenPriceService))) await closePopupOrTabById(request.popupOrTabId)
+	} catch (error) {
+		await reportLocalRecovery(error, { code: 'resolved_request_view_update_failed', message: 'The request was resolved; only updating the confirmation window failed.' })
+	}
+}
+
+// The scheduled retry and failed attempts of finishing each request, dropped once it is finished.
+const finishingRetries = new Map<string, { readonly timer: ReturnType<typeof setTimeout>, readonly failedAttempts: number }>()
+const FINISHING_RETRY_BASE_DELAY_MS = 50
+const FINISHING_RETRY_LIMIT = 6
+
 /**
- * A resolution commits a request's terminal reply durably, by marking the pending request terminalReplyCommitted, and then finishes it in phases: enqueue the reply in the durable terminal-reply queue, deliver it (a disconnected page gets it from the queue when it reconnects), and remove the pending request, which retires the commitment. A committed request is only ever finished: its queued reply is delivered, or, once the queue no longer holds it, it was delivered, and the request is just removed. A crash between committing and enqueueing loses the reply, as a crash before committing would.
- * While a committed reply is in flight, this records the reply until it is enqueued, the committing resolution's best-effort view update and the failed attempts.
+ * Finishes a request committed to the terminal reply in the durable queue (queueTerminalReply): delivers it unless it was delivered (a disconnected page gets it from the queue when it reconnects), removes the pending request, deletes the delivered entry, and updates the confirmation window. A failed step is reported and the finishing retried with backoff; after the last retry the request stays committed for a later accept, reject or close to finish.
  */
-type CommittedReplyInFlight = {
-	readonly unqueuedReply?: InterceptedRequestForward
-	readonly afterRemoval: () => Promise<void>
-	readonly failedAttempts: number
-}
-const committedRepliesInFlight = new Map<string, CommittedReplyInFlight>()
-// The scheduled retry of each committed reply, cancelled when the reply is retired, so a retry never runs a later resolution of the same request.
-const committedReplyRetries = new Map<string, ReturnType<typeof setTimeout>>()
-const retireCommittedReply = (claim: string) => {
-	committedRepliesInFlight.delete(claim)
-	clearTimeout(committedReplyRetries.get(claim))
-	committedReplyRetries.delete(claim)
-}
-const COMMITTED_REPLY_RETRY_BASE_DELAY_MS = 50
-const COMMITTED_REPLY_RETRY_LIMIT = 6
-const doNothing = async () => undefined
-
-async function runCommittedReplyPhases(uniqueRequestIdentifier: UniqueRequestIdentifier, websiteTabConnections: WebsiteTabConnections) {
-	const claim = getUniqueRequestIdentifierString(uniqueRequestIdentifier)
-	const inFlight = committedRepliesInFlight.get(claim) ?? { afterRemoval: doNothing, failedAttempts: 0 }
-	if (inFlight.unqueuedReply !== undefined) {
-		await queueTerminalReply(inFlight.unqueuedReply)
-		committedRepliesInFlight.set(claim, { afterRemoval: inFlight.afterRemoval, failedAttempts: inFlight.failedAttempts })
-	}
-	const queuedReply = await getQueuedTerminalReply(uniqueRequestIdentifier)
-	const delivered = queuedReply === undefined ? true : await attemptQueuedTerminalReplyDelivery(websiteTabConnections, queuedReply)
-	await removePendingTransactionOrMessage(uniqueRequestIdentifier)
-	retireCommittedReply(claim)
+async function finishCommittedRequest(request: PendingTransactionOrSignableMessage, context: ResolutionContext) {
+	const claim = getUniqueRequestIdentifierString(request.uniqueRequestIdentifier)
 	try {
-		await inFlight.afterRemoval()
+		const committedReply = await getQueuedTerminalReply(request.uniqueRequestIdentifier)
+		const delivered = committedReply === undefined ? true : await attemptQueuedTerminalReplyDelivery(context.websiteTabConnections, committedReply)
+		await removePendingTransactionOrMessage(request.uniqueRequestIdentifier)
+		await retireDeliveredTerminalReply(request.uniqueRequestIdentifier)
+		clearTimeout(finishingRetries.get(claim)?.timer)
+		finishingRetries.delete(claim)
+		await updateConfirmationWindowAfterRemoving(request, context)
+		return delivered
 	} catch (error) {
-		await reportLocalRecovery(error, { code: 'resolved_request_view_update_failed', message: 'The request was resolved; only updating the confirmation view failed.' })
-	}
-	return delivered
-}
-
-// Finishes a committed reply. A failed phase is reported and retried with backoff; after the last retry the committed request stays pending, and its queued reply in the durable queue, for a later accept, reject or close to finish.
-async function finishCommittedReply(uniqueRequestIdentifier: UniqueRequestIdentifier, websiteTabConnections: WebsiteTabConnections) {
-	const claim = getUniqueRequestIdentifierString(uniqueRequestIdentifier)
-	try {
-		return await runCommittedReplyPhases(uniqueRequestIdentifier, websiteTabConnections)
-	} catch (error) {
-		const inFlight = committedRepliesInFlight.get(claim) ?? { afterRemoval: doNothing, failedAttempts: 0 }
-		const failedAttempts = inFlight.failedAttempts + 1
-		committedRepliesInFlight.set(claim, { ...inFlight, failedAttempts })
-		const retrying = failedAttempts < COMMITTED_REPLY_RETRY_LIMIT
+		const failedAttempts = (finishingRetries.get(claim)?.failedAttempts ?? 0) + 1
+		const retrying = failedAttempts < FINISHING_RETRY_LIMIT
 		await reportLocalRecovery(error, retrying
 			? { code: 'committed_request_resolution_retrying', message: 'Retrying the resolution of a request whose reply is committed.' }
 			: { code: 'committed_request_resolution_gave_up', message: 'Stopped retrying the resolution of a request; its queued reply is delivered when the page reconnects.' })
-		if (retrying) {
-			clearTimeout(committedReplyRetries.get(claim))
-			committedReplyRetries.set(claim, setTimeout(() => {
-				committedReplyRetries.delete(claim)
-				void resumeCommittedReply(uniqueRequestIdentifier, websiteTabConnections)
-			}, COMMITTED_REPLY_RETRY_BASE_DELAY_MS * 2 ** (failedAttempts - 1)))
-		}
+		clearTimeout(finishingRetries.get(claim)?.timer)
+		finishingRetries.delete(claim)
+		if (retrying) finishingRetries.set(claim, {
+			failedAttempts,
+			timer: setTimeout(() => { void withResolutionClaim(request.uniqueRequestIdentifier, context, async () => false) }, FINISHING_RETRY_BASE_DELAY_MS * 2 ** (failedAttempts - 1)),
+		})
 		return undefined
 	}
 }
 
-// Commits the pending request to the reply, or to the reply already queued for it when unqueuedReply is undefined, and finishes it. False if the request is no longer pending.
-async function commitTerminalReply(uniqueRequestIdentifier: UniqueRequestIdentifier, unqueuedReply: InterceptedRequestForward | undefined, afterRemoval: () => Promise<void>, websiteTabConnections: WebsiteTabConnections) {
-	await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => ({ ...pending, terminalReplyCommitted: true }))
-	if ((await getPendingTransactionOrMessageByidentifier(uniqueRequestIdentifier))?.terminalReplyCommitted !== true) return false
-	const claim = getUniqueRequestIdentifierString(uniqueRequestIdentifier)
-	retireCommittedReply(claim)
-	committedRepliesInFlight.set(claim, { ...(unqueuedReply === undefined ? {} : { unqueuedReply }), afterRemoval, failedAttempts: 0 })
-	return await finishCommittedReply(uniqueRequestIdentifier, websiteTabConnections)
-}
-
-// Finishes a request's committed reply under its claim.
-const resumeCommittedReply = async (uniqueRequestIdentifier: UniqueRequestIdentifier, websiteTabConnections: WebsiteTabConnections) => await withResolutionClaim(uniqueRequestIdentifier, websiteTabConnections, async () => false)
-
-// The requests whose terminal outcome an accept, reject or close has claimed and is carrying out. A claim is taken synchronously, so of racing resolutions of a request exactly one stacks it or replies; the others return false without either. Under the claim, a committed request is only finished, and a request with a reply already queued, from before commitments were stored, commits to that reply; only otherwise is an outcome chosen (resolve).
+// The requests whose terminal outcome an accept, reject or close has claimed and is carrying out. A claim is taken synchronously, so of racing resolutions of a request exactly one stacks it or replies; the others return false without either. Under the claim, a request with a committed reply is only finished; only a request without one gets an outcome chosen (resolve), which it commits. A committed reply whose request is gone only waits to be deleted once delivered.
 const resolutionClaims = new Set<string>()
 // Closes of a request that lost to a claim, run once the claim is released, so a request whose claimed accept failed is still answered; one that was resolved meanwhile is no longer pending, and the close does nothing.
 const deferredCloses = new Map<string, () => Promise<void>>()
-async function withResolutionClaim<Result>(
-	uniqueRequestIdentifier: UniqueRequestIdentifier,
-	websiteTabConnections: WebsiteTabConnections,
-	resolve: () => Promise<Result>,
-	options: { readonly deferIfClaimed?: () => Promise<void>, readonly afterRemoval?: () => Promise<void> } = {},
-) {
+async function withResolutionClaim<Result>(uniqueRequestIdentifier: UniqueRequestIdentifier, context: ResolutionContext, resolve: () => Promise<Result>, deferIfClaimed?: () => Promise<void>) {
 	const claim = getUniqueRequestIdentifierString(uniqueRequestIdentifier)
 	if (resolutionClaims.has(claim)) {
-		if (options.deferIfClaimed !== undefined) deferredCloses.set(claim, options.deferIfClaimed)
+		if (deferIfClaimed !== undefined) deferredCloses.set(claim, deferIfClaimed)
 		return false
 	}
 	resolutionClaims.add(claim)
 	try {
 		const pending = await getPendingTransactionOrMessageByidentifier(uniqueRequestIdentifier)
 		if (pending === undefined) {
-			retireCommittedReply(claim)
+			await retireDeliveredTerminalReply(uniqueRequestIdentifier)
 			return false
 		}
-		if (pending.terminalReplyCommitted === true) return await finishCommittedReply(uniqueRequestIdentifier, websiteTabConnections)
-		if (await getQueuedTerminalReply(uniqueRequestIdentifier) !== undefined) return await commitTerminalReply(uniqueRequestIdentifier, undefined, options.afterRemoval ?? doNothing, websiteTabConnections)
+		if (await getQueuedTerminalReply(uniqueRequestIdentifier) !== undefined) return await finishCommittedRequest(pending, context)
 		return await resolve()
 	} finally {
 		resolutionClaims.delete(claim)
@@ -379,8 +343,9 @@ type AcceptedTransactionStacking = { readonly kind: 'stacked', readonly transact
 export async function resolvePendingTransactionOrMessage(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, refreshedSafeSignerSelection?: RefreshedSafeSignerSelection) {
 	let pendingTransactionOrMessage = await getPendingTransactionOrMessageByidentifier(confirmation.data.uniqueRequestIdentifier)
 	if (pendingTransactionOrMessage === undefined) return // no need to resolve as it doesn't exist anymore
+	const resolutionContext = { ethereum, tokenPriceService, websiteTabConnections }
 	// A request committed to a reply is only finished, whatever the action, so an accept never follows a delivered rejection.
-	if (pendingTransactionOrMessage.terminalReplyCommitted === true) return await resumeCommittedReply(confirmation.data.uniqueRequestIdentifier, websiteTabConnections)
+	if (await getQueuedTerminalReply(confirmation.data.uniqueRequestIdentifier) !== undefined) return await withResolutionClaim(confirmation.data.uniqueRequestIdentifier, resolutionContext, async () => false)
 	if (
 		confirmation.data.action === 'accept'
 		&& refreshedSafeSignerSelection?.selectedSigner !== undefined
@@ -429,23 +394,25 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 	}
 	const signerFacingRequest: SendTransactionParams | SendRawTransactionParams | SignMessageParams = safeResolution.signerFacingRequest
 		?? pendingTransactionOrMessage.originalRequestParameters
-	const updateViewAfterRemoval = async () => {
+	const removePendingRequestAndUpdateView = async () => {
+		await removePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier)
 		if ((await getPendingTransactionsAndMessages()).length === 0) await tryFocusingTabOrWindow({ type: 'tab', id: pendingTransactionOrMessage.uniqueRequestIdentifier.requestSocket.tabId })
 		if (!(await updateConfirmTransactionView(ethereum, tokenPriceService))) await closePopupOrTabById(pendingTransactionOrMessage.popupOrTabId)
 	}
-	const removePendingRequestAndUpdateView = async () => {
-		await removePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier)
-		await updateViewAfterRemoval()
+	// Commits the request to the terminal reply, unless it is already committed to one, and finishes it.
+	const commitAndFinish = async (terminalReply: InterceptedRequestForward) => {
+		await queueTerminalReply(terminalReply)
+		return await finishCommittedRequest(pendingTransactionOrMessage, resolutionContext)
 	}
 	const reply = async (message: { type: 'forwardToSigner' } | { type: 'result', error: { code: number, message: string } } | { type: 'result', result: unknown }) => {
 		if (message.type === 'result' && !('error' in message)) {
 			if (pendingTransactionOrMessage.originalRequestParameters.method === 'eth_sendRawTransaction' || pendingTransactionOrMessage.originalRequestParameters.method === 'eth_sendTransaction') {
-				return await commitTerminalReply(confirmation.data.uniqueRequestIdentifier, { ...pendingTransactionOrMessage.originalRequestParameters, ...message, result: EthereumBytes32.parse(message.result), uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier }, updateViewAfterRemoval, websiteTabConnections)
+				return await commitAndFinish({ ...pendingTransactionOrMessage.originalRequestParameters, ...message, result: EthereumBytes32.parse(message.result), uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
 			}
-			return await commitTerminalReply(confirmation.data.uniqueRequestIdentifier, { ...pendingTransactionOrMessage.originalRequestParameters, ...message, result: funtypes.String.parse(message.result), uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier }, updateViewAfterRemoval, websiteTabConnections)
+			return await commitAndFinish({ ...pendingTransactionOrMessage.originalRequestParameters, ...message, result: funtypes.String.parse(message.result), uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
 		}
 		if (message.type === 'result') {
-			return await commitTerminalReply(confirmation.data.uniqueRequestIdentifier, { ...pendingTransactionOrMessage.originalRequestParameters, ...message, uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier }, updateViewAfterRemoval, websiteTabConnections)
+			return await commitAndFinish({ ...pendingTransactionOrMessage.originalRequestParameters, ...message, uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
 		}
 		await removePendingRequestAndUpdateView()
 		return await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, { ...pendingTransactionOrMessage.originalRequestParameters, ...message, uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
@@ -499,10 +466,10 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 	}
 	if (confirmation.data.action === 'noResponse') {
 		const unansweredRequest = pendingTransactionOrMessage
-		return await withResolutionClaim(confirmation.data.uniqueRequestIdentifier, websiteTabConnections, async () => await rejectUnlessStacked(formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User denied transaction signature')), { deferIfClaimed: async () => await resolveAllPendingTransactionsAndMessageAsNoResponse([unansweredRequest], ethereum, tokenPriceService, websiteTabConnections), afterRemoval: updateViewAfterRemoval })
+		return await withResolutionClaim(confirmation.data.uniqueRequestIdentifier, resolutionContext, async () => await rejectUnlessStacked(formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User denied transaction signature')), async () => await resolveAllPendingTransactionsAndMessageAsNoResponse([unansweredRequest], ethereum, tokenPriceService, websiteTabConnections))
 	}
-	if (pendingTransactionOrMessage === undefined || pendingTransactionOrMessage.transactionOrMessageCreationStatus !== 'Simulated') return await withResolutionClaim(confirmation.data.uniqueRequestIdentifier, websiteTabConnections, async () => await rejectUnlessStacked(formRejectMessage(METAMASK_ERROR_BLANKET_ERROR, 'The Interceptor failed to process the transaction')), { afterRemoval: updateViewAfterRemoval })
-	if (confirmation.data.action === 'reject') return await withResolutionClaim(confirmation.data.uniqueRequestIdentifier, websiteTabConnections, async () => await rejectUnlessStacked(formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User denied transaction signature')), { afterRemoval: updateViewAfterRemoval })
+	if (pendingTransactionOrMessage === undefined || pendingTransactionOrMessage.transactionOrMessageCreationStatus !== 'Simulated') return await withResolutionClaim(confirmation.data.uniqueRequestIdentifier, resolutionContext, async () => await rejectUnlessStacked(formRejectMessage(METAMASK_ERROR_BLANKET_ERROR, 'The Interceptor failed to process the transaction')))
+	if (confirmation.data.action === 'reject') return await withResolutionClaim(confirmation.data.uniqueRequestIdentifier, resolutionContext, async () => await rejectUnlessStacked(formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User denied transaction signature')))
 	if (!pendingTransactionOrMessage.simulationMode) {
 		if (confirmation.data.action === 'signerIncluded') {
 			const safeReply = await resolveSafeSignerReply(ethereum, tokenPriceService, pendingTransactionOrMessage, confirmation.data.signerReply)
@@ -523,7 +490,7 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 
 	// Accepting stacks the request and replies only if it wins the request's resolution (withResolutionClaim).
 	const simulatedPending = pendingTransactionOrMessage
-	return await withResolutionClaim(confirmation.data.uniqueRequestIdentifier, websiteTabConnections, async () => {
+	return await withResolutionClaim(confirmation.data.uniqueRequestIdentifier, resolutionContext, async () => {
 		switch (simulatedPending.type) {
 			case 'SignableMessage': {
 				// A message an earlier accept already stacked before stopping is not stacked again.
@@ -566,7 +533,7 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 			}
 			default: assertNever(simulatedPending)
 		}
-	}, { afterRemoval: updateViewAfterRemoval })
+	})
 }
 
 export const onCloseWindowOrTab = async (popupOrTabs: PopupOrTabId, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections) => { // check if user has closed the window on their own, if so, reject all signatures

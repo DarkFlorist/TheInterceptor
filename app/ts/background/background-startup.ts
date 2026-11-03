@@ -32,7 +32,7 @@ import { migrateAddressBook } from './addressBookMigration.js'
 import { migrateWebsiteAccess } from './websiteAccessMigration.js'
 import { initializeContentScriptConnectionAfterBackgroundStartup, isIgnorablePortLifecycleError, tryRegisterContentScriptPortListeners } from './contentScriptPortLifecycle.js'
 import { bumpPopupRefreshGeneration, initializePopupRefreshGeneration } from './popupRefreshGeneration.js'
-import { flushPendingTerminalRepliesForConnectedPortWithRetry } from './terminalReplyDelivery.js'
+import { flushPendingTerminalRepliesForConnectedPortWithRetry, pruneDeliveredTerminalReplies } from './terminalReplyDelivery.js'
 import { prunePendingTerminalRepliesForMissingTabs, removePendingTerminalRepliesForTab } from './pendingTerminalReplies.js'
 import { createRetriableTerminalStateRecovery } from './terminalStateRecovery.js'
 import { acknowledgeAndTrackBridgeRequest, INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE } from './bridgeRequestDelivery.js'
@@ -299,6 +299,7 @@ const recoverPendingTerminalState = createRetriableTerminalStateRecovery({
 	recover: async () => {
 		const { ethereum, tokenPriceService } = getSimulationServices()
 		await resolvePendingRequestsForMissingConfirmationWindows(ethereum, tokenPriceService, websiteTabConnections)
+		await pruneDeliveredTerminalReplies()
 		await prunePendingTerminalRepliesForMissingTabs()
 	},
 	onFailure: (error) => {

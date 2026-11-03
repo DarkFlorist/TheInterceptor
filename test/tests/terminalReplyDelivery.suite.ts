@@ -466,6 +466,8 @@ test('popup-close rejection remains queued after reconnect timeout and flushes o
 })
 
 test('same-request terminal reply producers coalesce into one delivery', async () => {
+	// The request was resolved, so a delivered reply is retired.
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 	const postedMessages: unknown[] = []
 	const socket = uniqueRequestIdentifier.requestSocket
 	const socketKey = modules.websiteSocketToString(socket)
@@ -494,6 +496,8 @@ test('same-request terminal reply producers coalesce into one delivery', async (
 })
 
 test('socket flush overlapping terminal reply persistence delivers exactly once', async () => {
+	// The request was resolved, so a delivered reply is retired.
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 	const postedMessages: unknown[] = []
 	const socket = uniqueRequestIdentifier.requestSocket
 	const socketKey = modules.websiteSocketToString(socket)
@@ -529,6 +533,8 @@ test('socket flush overlapping terminal reply persistence delivers exactly once'
 })
 
 test('socket flush during terminal reply queueing keeps the completion marker for the original delivery attempt', async () => {
+	// The request was resolved, so a delivered reply is retired.
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 	const postedMessages: unknown[] = []
 	const socket = uniqueRequestIdentifier.requestSocket
 	const socketKey = modules.websiteSocketToString(socket)
@@ -556,6 +562,8 @@ test('socket flush during terminal reply queueing keeps the completion marker fo
 })
 
 test('corrupt terminal reply storage recovers and delivers the next rejection once', async () => {
+	// The request was resolved, so a delivered reply is retired.
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 	const postedMessages: unknown[] = []
 	const socket = uniqueRequestIdentifier.requestSocket
 	const socketKey = modules.websiteSocketToString(socket)
@@ -588,6 +596,8 @@ test('corrupt terminal reply storage recovers and delivers the next rejection on
 })
 
 test('connected socket retries a transient terminal reply storage read failure without another reconnect', async () => {
+	// The request was resolved, so a delivered reply is retired.
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 	delete browserMock.storageState.pendingTerminalReplies
 	const postedMessages: unknown[] = []
 	const socket = uniqueRequestIdentifier.requestSocket
@@ -635,6 +645,8 @@ test('connected socket retries a transient terminal reply storage read failure w
 })
 
 test('concurrent terminal reply flushes serialize storage reads and deliver once', async () => {
+	// The request was resolved, so a delivered reply is retired.
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 	delete browserMock.storageState.pendingTerminalReplies
 	const postedMessages: unknown[] = []
 	const socket = uniqueRequestIdentifier.requestSocket

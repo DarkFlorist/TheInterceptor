@@ -1,4 +1,4 @@
-import type { InterceptedRequestForward } from '../types/interceptor-messages.js'
+import type { InterceptedRequestForward, StoredTerminalReply } from '../types/interceptor-messages.js'
 import { reportLocalRecovery } from '../utils/errors.js'
 import { doesTabExist, doesUniqueRequestIdentifiersMatch, type UniqueRequestIdentifier } from '../utils/requests.js'
 import { Semaphore } from '../utils/semaphore.js'
@@ -6,7 +6,7 @@ import { browserStorageLocalSafeParseGet, browserStorageLocalSet } from '../util
 
 const pendingTerminalRepliesSemaphore = new Semaphore(1)
 
-export async function getPendingTerminalReplies(): Promise<readonly InterceptedRequestForward[]> {
+export async function getPendingTerminalReplies(): Promise<readonly StoredTerminalReply[]> {
 	const parsedStorage = await browserStorageLocalSafeParseGet('pendingTerminalReplies')
 	if (parsedStorage !== undefined) return parsedStorage.pendingTerminalReplies ?? []
 	const validationError = new Error('Stored pending terminal replies failed runtime validation.')
@@ -19,7 +19,7 @@ export async function getPendingTerminalReplies(): Promise<readonly InterceptedR
 	return []
 }
 
-async function updatePendingTerminalReplies(update: (pendingReplies: readonly InterceptedRequestForward[]) => readonly InterceptedRequestForward[]) {
+async function updatePendingTerminalReplies(update: (pendingReplies: readonly StoredTerminalReply[]) => readonly StoredTerminalReply[]) {
 	return await pendingTerminalRepliesSemaphore.execute(async () => {
 		const pendingTerminalReplies = update(await getPendingTerminalReplies())
 		await browserStorageLocalSet({ pendingTerminalReplies })
@@ -27,11 +27,18 @@ async function updatePendingTerminalReplies(update: (pendingReplies: readonly In
 	})
 }
 
-export async function appendPendingTerminalReply(reply: InterceptedRequestForward) {
-	await updatePendingTerminalReplies((pendingReplies) => [
-		...pendingReplies.filter((pendingReply) => !doesUniqueRequestIdentifiersMatch(pendingReply.uniqueRequestIdentifier, reply.uniqueRequestIdentifier)),
-		reply,
-	])
+// Stores the reply as its request's commitment, unless the request already has one, which is kept: a request is committed to one reply. Returns the stored commitment.
+export async function commitPendingTerminalReply(reply: InterceptedRequestForward) {
+	const pendingReplies = await updatePendingTerminalReplies((pendingReplies) => pendingReplies.some((pendingReply) => doesUniqueRequestIdentifiersMatch(pendingReply.uniqueRequestIdentifier, reply.uniqueRequestIdentifier))
+		? pendingReplies
+		: [...pendingReplies, reply])
+	const committed = pendingReplies.find((pendingReply) => doesUniqueRequestIdentifiersMatch(pendingReply.uniqueRequestIdentifier, reply.uniqueRequestIdentifier))
+	if (committed === undefined) throw new Error('The committed terminal reply is missing')
+	return committed
+}
+
+export async function markPendingTerminalReplyDelivered(uniqueRequestIdentifier: UniqueRequestIdentifier) {
+	await updatePendingTerminalReplies((pendingReplies) => pendingReplies.map((reply) => doesUniqueRequestIdentifiersMatch(reply.uniqueRequestIdentifier, uniqueRequestIdentifier) ? { ...reply, delivered: true } : reply))
 }
 
 export async function removePendingTerminalReply(uniqueRequestIdentifier: UniqueRequestIdentifier) {

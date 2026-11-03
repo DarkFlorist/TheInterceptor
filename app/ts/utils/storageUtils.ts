@@ -11,7 +11,7 @@ import { RpcEntries, RpcNetwork } from '../types/rpc.js'
 import { ENSLabelHashes, ENSNameHashes } from '../types/ens.js'
 import { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { InterceptorErrorDiagnostic } from '../types/errorDiagnostics.js'
-import { InterceptedRequestForward } from '../types/interceptor-messages.js'
+import { StoredTerminalReply } from '../types/interceptor-messages.js'
 import { ICON_ACCESS_DENIED } from './constants.js'
 import { hasOwnKey } from './typescript.js'
 
@@ -96,7 +96,7 @@ const LocalStorageItemsRuntype = funtypes.Intersect(funtypes.ReadonlyPartial({
 	fetchSimulationStackRequestPromise: funtypes.Union(funtypes.Undefined, PendingFetchSimulationStackRequestPromise),
 	pendingWatchAssetRequests: funtypes.ReadonlyArray(StoredWatchAssetRequest),
 	popupRefreshGeneration: funtypes.Number,
-	pendingTerminalReplies: funtypes.ReadonlyArray(InterceptedRequestForward),
+	pendingTerminalReplies: funtypes.ReadonlyArray(StoredTerminalReply),
 }), OptionalActiveSigningAddressStorageProperty, OptionalActiveSigningSafeAddressStorageProperty, OptionalIndependentActiveSimulationAddressStorageProperty)
 type LocalStorageItems = funtypes.Static<typeof LocalStorageItemsRuntype>
 const LocalStorageItems: typeof LocalStorageItemsRuntype = LocalStorageItemsRuntype

@@ -230,6 +230,10 @@ export const InterceptedRequestForward = funtypes.Intersect(
 	funtypes.Union(RPCReply, funtypes.Intersect(funtypes.ReadonlyObject({ type: funtypes.Literal('result') }), InpageScriptRequestWithoutIdentifier)),
 )
 
+// A terminal reply in the durable terminal-reply queue: the commitment to the reply until its request is finished. delivered is set once it is posted; an entry stored before the field existed counts as not delivered.
+export type StoredTerminalReply = funtypes.Static<typeof StoredTerminalReply>
+export const StoredTerminalReply = funtypes.Intersect(InterceptedRequestForward, funtypes.ReadonlyPartial({ delivered: funtypes.Literal(true) }))
+
 export type InterceptorMessageToInpage = funtypes.Static<typeof InterceptorMessageToInpage>
 export const InterceptorMessageToInpage = funtypes.Intersect(
 	funtypes.ReadonlyObject({ interceptorApproved: funtypes.Literal(true) }),

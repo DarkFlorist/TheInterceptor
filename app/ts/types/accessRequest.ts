@@ -108,8 +108,6 @@ const SimulatedPendingTransactionBase = funtypes.ReadonlyObject({
 	executeThroughSafe: funtypes.Literal(true),
 	// The salt and hash a simulation-mode transaction was given when the confirmation was first formed (reserveSimulationHash): the preview shows the hash and accepting stacks it. A request pending from before reservations has none.
 	simulationHashReservation: funtypes.ReadonlyObject({ salt: EthereumQuantity, hash: EthereumBytes32 }),
-	// Set once a resolution committed the request's terminal reply (commitTerminalReply), before enqueueing it: from then on the request is only finished, never resolved again.
-	terminalReplyCommitted: funtypes.Literal(true),
 }))
 
 export type SimulatedPendingTransaction = funtypes.Static<typeof SimulatedPendingTransaction>
@@ -159,11 +157,7 @@ const PendingSignableMessage = funtypes.Intersect(
 		website: Website,
 		activeAddress: EthereumAddress,
 		approvalStatus: PendingTransactionApprovalStatus,
-	}).And(funtypes.ReadonlyPartial({
-		safeMessageCoSignSnapshot: SafeMessageCoSignSnapshot,
-		// As on a pending transaction.
-		terminalReplyCommitted: funtypes.Literal(true),
-	})),
+	}).And(funtypes.ReadonlyPartial({ safeMessageCoSignSnapshot: SafeMessageCoSignSnapshot })),
 	funtypes.Union(
 		funtypes.ReadonlyObject({ transactionOrMessageCreationStatus: funtypes.Literal('Simulated'), visualizedPersonalSignRequest: VisualizedPersonalSignRequest }),
 		funtypes.ReadonlyObject({ transactionOrMessageCreationStatus: funtypes.Union(funtypes.Literal('Crafting'), funtypes.Literal('Simulating')) })
