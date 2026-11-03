@@ -87,13 +87,15 @@ const PendingTransactionApprovalStatus = funtypes.Union(
 	}).And(funtypes.ReadonlyPartial({ safeSignerErrorDetails: SafeSignerErrorDetails })),
 )
 
-export type DeferredSafeSignerReply = funtypes.Static<typeof DeferredSafeSignerReply>
+// A signer reply as it is deferred: always bound to the network it was signed for.
+export type ChainBoundSafeSignerReply = { readonly signerReply: string, readonly chainId: bigint }
 const DeferredSafeSignerReply = funtypes.ReadonlyObject({
 	signerReply: funtypes.String,
 	terminalReplyQueued: funtypes.Boolean,
-	// The network the signer was asked to sign for; the signature is replayed only with services for this network.
+}).And(funtypes.ReadonlyPartial({
+	// The network the signer was asked to sign for; the signature is replayed only with services for this network. Always written, but optional when read so a reply stored without it fails closed on its own instead of invalidating every pending request.
 	chainId: EthereumQuantity,
-})
+}))
 
 type SimulatedPendingTransactionBase = funtypes.Static<typeof SimulatedPendingTransactionBase>
 const SimulatedPendingTransactionBase = funtypes.ReadonlyObject({

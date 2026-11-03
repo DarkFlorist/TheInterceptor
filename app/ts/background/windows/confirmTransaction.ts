@@ -363,6 +363,13 @@ function removeDeferredSafeSignerReply(pending: PendingTransactionOrSignableMess
 	return remaining
 }
 
+// A Safe signature that cannot be bound to the network it was signed for fails closed: it is not kept, and the request asks the user to sign again.
+async function failSafeSignatureWithoutChain(uniqueRequestIdentifier: UniqueRequestIdentifier) {
+	await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (current) => modifyObject(removeDeferredSafeSignerReply(current), {
+		approvalStatus: createSafeSignerErrorStatus('The Gnosis Safe signature could not be matched to its network while the RPC configuration is unavailable. Sign it again once it is restored.'),
+	}))
+}
+
 export async function resolvePendingSignerReply(services: ConfirmationServices | undefined, websiteTabConnections: WebsiteTabConnections, uniqueRequestIdentifier: UniqueRequestIdentifier, params: SignerReply['params'][0]) {
 	if (!params.success) {
 		const approvalStatus = params.error.code === METAMASK_ERROR_USER_REJECTED_REQUEST
@@ -395,9 +402,7 @@ export async function resolvePendingSignerReply(services: ConfirmationServices |
 		const chainId = pending.signerRequestChainId
 		// Without the network the signer signed for, a later replay could validate or store the signature on another network, so it is not kept.
 		if (chainId === undefined) {
-			await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (current) => modifyObject(current, {
-				approvalStatus: createSafeSignerErrorStatus('The Gnosis Safe signature could not be matched to its network while the RPC configuration is unavailable. Sign it again once it is restored.'),
-			}))
+			await failSafeSignatureWithoutChain(uniqueRequestIdentifier)
 			return
 		}
 		const deferredReply = { signerReply: params.reply, chainId }
@@ -418,18 +423,23 @@ export async function resolveDeferredSafeSignerReplies(services: ConfirmationSer
 	return await deferredSafeSignerReplySemaphore.execute(async () => {
 		for (const pending of await getPendingTransactionsAndMessages()) {
 			if (pending.deferredSafeSignerReply === undefined) continue
+			const { chainId } = pending.deferredSafeSignerReply
+			if (chainId === undefined) {
+				await failSafeSignatureWithoutChain(pending.uniqueRequestIdentifier)
+				continue
+			}
 			const safeFlow = getSafePendingFlow(pending)
 			if (safeFlow?.kind === 'proposal' && !pending.deferredSafeSignerReply.terminalReplyQueued) {
 				const terminalReply = createDeferredSafeProposalReply(pending, safeFlow.pending.safeTransaction.safeTxHash)
 				await queueDeferredSafeProposalReply(
 					pending.uniqueRequestIdentifier,
-					{ signerReply: pending.deferredSafeSignerReply.signerReply, chainId: pending.deferredSafeSignerReply.chainId },
+					{ signerReply: pending.deferredSafeSignerReply.signerReply, chainId },
 					terminalReply,
 				)
 				await attemptQueuedTerminalReplyDelivery(websiteTabConnections, terminalReply)
 			}
-			// A signature for another network stays deferred, untouched, until services for its own network are recovered: validating it here could store it in the wrong network's stack or drop it as invalid.
-			if (pending.deferredSafeSignerReply.chainId !== services.ethereum.getChainId()) continue
+			// A signature for another network stays deferred, untouched, until services for its own network are installed: validating it here could store it in the wrong network's stack or drop it as invalid.
+			if (chainId !== services.ethereum.getChainId()) continue
 			await resolvePendingTransactionOrMessage(services.ethereum, services.tokenPriceService, websiteTabConnections, {
 				method: 'popup_confirmDialog',
 				data: {
@@ -446,6 +456,8 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 	if (confirmation.data.action === 'noResponse') return await resolvePendingRequestAsNoResponse(confirmation.data.uniqueRequestIdentifier, { ethereum, tokenPriceService }, websiteTabConnections)
 	let pendingTransactionOrMessage = await getPendingTransactionOrMessageByidentifier(confirmation.data.uniqueRequestIdentifier)
 	if (pendingTransactionOrMessage === undefined) return // no need to resolve as it doesn't exist anymore
+	// A signature the signer already returned is never rejected (the website may already have its success reply): Reject follows the popup-close rules and settles it as signed once services for its network are installed.
+	if (confirmation.data.action === 'reject' && pendingTransactionOrMessage.deferredSafeSignerReply !== undefined) return await resolvePendingRequestAsNoResponse(confirmation.data.uniqueRequestIdentifier, { ethereum, tokenPriceService }, websiteTabConnections)
 	if (
 		confirmation.data.action === 'accept'
 		&& refreshedSafeSignerSelection?.selectedSigner !== undefined
@@ -620,15 +632,24 @@ async function resolvePendingRequestAsNoResponse(uniqueRequestIdentifier: Unique
 	const pending = await getPendingTransactionOrMessageByidentifier(uniqueRequestIdentifier)
 	if (pending === undefined) return undefined
 	if (pending.deferredSafeSignerReply !== undefined) {
+		if (pending.deferredSafeSignerReply.chainId === undefined) {
+			await failSafeSignatureWithoutChain(uniqueRequestIdentifier)
+			return undefined
+		}
 		// Settling the deferred signature needs services for the network it was signed for; until then the request stays pending.
 		if (services === undefined || pending.deferredSafeSignerReply.chainId !== services.ethereum.getChainId()) return undefined
+		const websiteHasItsReply = pending.deferredSafeSignerReply.terminalReplyQueued
 		await resolvePendingTransactionOrMessage(services.ethereum, services.tokenPriceService, websiteTabConnections, {
 			method: 'popup_confirmDialog',
 			data: { uniqueRequestIdentifier, action: 'signerIncluded', signerReply: pending.deferredSafeSignerReply.signerReply },
 		})
 		const unresolvedPending = await getPendingTransactionOrMessageByidentifier(uniqueRequestIdentifier)
-		// A deferred signature that failed validation is dropped from the pending request, which then falls through to the no-response rejection.
 		if (unresolvedPending === undefined || unresolvedPending.deferredSafeSignerReply !== undefined) return undefined
+		// A deferred signature that failed validation is dropped from the pending request. If the website already has its success reply it gets no second, contradicting one; otherwise it falls through to the no-response rejection.
+		if (websiteHasItsReply) {
+			await removeSettledPendingRequest(unresolvedPending, services)
+			return true
+		}
 		return await resolvePendingRequestAsNoResponse(uniqueRequestIdentifier, services, websiteTabConnections)
 	}
 	const delivery = await queueTerminalReplyAndAttemptDelivery(websiteTabConnections, {

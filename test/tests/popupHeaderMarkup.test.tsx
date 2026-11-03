@@ -4,7 +4,7 @@ import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { describe, test } from 'bun:test'
 import { SignatureHeader } from '../../app/ts/components/pages/PersonalSign.js'
-import { CheckBoxes, ConfirmationActionButtons, shouldDisableConfirmForApprovalStatus } from '../../app/ts/components/pages/ConfirmTransaction.js'
+import { ACKNOWLEDGED_SAFE_PROPOSAL_REJECT_EXPLANATION, CheckBoxes, ConfirmationActionButtons, shouldDisableConfirmForApprovalStatus } from '../../app/ts/components/pages/ConfirmTransaction.js'
 import { TransactionHeader } from '../../app/ts/components/simulationExplaining/SimulationSummary.js'
 import { PendingStackHeader } from '../../app/ts/components/simulationExplaining/Transactions.js'
 import { identifyTransaction } from '../../app/ts/components/simulationExplaining/identifyTransaction.js'
@@ -259,6 +259,26 @@ describe('popup header markup', () => {
 		assert.notEqual(waitingLabel, undefined)
 		assert.equal(waitingLabel?.textContent, 'Waiting for MetaMask')
 		assert.notEqual(findFirstByClass(waitingLabel, 'spinner'), undefined)
+
+		assert.equal(findFirstByClass(dom.document.body, 'is-danger')?.getAttribute?.('disabled'), null)
+		// A signed Safe proposal the website already has cannot be rejected; the button says why.
+		await act(() => {
+			render(h(ConfirmationActionButtons, {
+				identified,
+				signerName: 'MetaMask',
+				simulationMode: false,
+				waitingForSigner: true,
+				rejectDisabledReason: ACKNOWLEDGED_SAFE_PROPOSAL_REJECT_EXPLANATION,
+				reject: () => undefined,
+				rejectButtonState: 'inactive',
+				approve: () => undefined,
+				approveButtonState: 'inactive',
+				confirmDisabled: false,
+			}), dom.document.body)
+		})
+		const rejectButton = findFirstByClass(dom.document.body, 'is-danger')
+		assert.equal(rejectButton?.getAttribute?.('title'), ACKNOWLEDGED_SAFE_PROPOSAL_REJECT_EXPLANATION)
+		assert.notEqual(rejectButton?.getAttribute?.('disabled'), null)
 
 		dom.restore()
 	})

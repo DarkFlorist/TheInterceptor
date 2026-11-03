@@ -1,4 +1,4 @@
-import type { DeferredSafeSignerReply } from '../types/accessRequest.js'
+import type { ChainBoundSafeSignerReply } from '../types/accessRequest.js'
 import type { InterceptedRequestForward } from '../types/interceptor-messages.js'
 import { reportLocalRecovery } from '../utils/errors.js'
 import { doesTabExist, doesUniqueRequestIdentifiersMatch, type UniqueRequestIdentifier } from '../utils/requests.js'
@@ -37,7 +37,7 @@ export async function appendPendingTerminalReply(reply: InterceptedRequestForwar
 
 export async function queueDeferredSafeProposalTerminalReply(
 	uniqueRequestIdentifier: UniqueRequestIdentifier,
-	deferredReply: Omit<DeferredSafeSignerReply, 'terminalReplyQueued'>,
+	deferredReply: ChainBoundSafeSignerReply,
 	reply: InterceptedRequestForward,
 ) {
 	await updatePendingTransactionOrMessageWithTerminalReplies(

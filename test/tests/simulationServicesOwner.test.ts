@@ -17,17 +17,18 @@ test('the service owner stays paused until an RPC is explicitly installed', () =
 	assert.equal(owner.requireCurrent(), restored)
 	assert.equal(resumedCount, 1)
 	assert.equal(isCurrentSimulationService(owner, restored.ethereum), true)
+	// A normal network switch installs services too, so work deferred for that network is replayed.
 	owner.reset(rpc)
-	assert.equal(resumedCount, 1)
+	assert.equal(resumedCount, 2)
 	owner.clear()
 	assert.equal(owner.getCurrent() !== undefined, false)
 	assert.equal(isCurrentSimulationService(owner, restored.ethereum), false)
 	assert.throws(() => owner.reset(rpc), isRpcConfigurationUnavailableError)
 	owner.recover(rpc)
-	assert.equal(resumedCount, 2)
+	assert.equal(resumedCount, 3)
 	// Recovery with services still installed (only the RPC configuration was unreadable) must also replay deferred work.
 	owner.recover(rpc)
-	assert.equal(resumedCount, 3)
+	assert.equal(resumedCount, 4)
 	owner.clear()
 })
 

@@ -105,6 +105,18 @@ test('updates a pending request together with its terminal replies in one storag
 	assert.deepEqual((await getPendingTransactionsAndMessages())[0]?.deferredSafeSignerReply, { signerReply: '0x01', terminalReplyQueued: true, chainId: 1n })
 })
 
+test('keeps every pending request readable when a deferred Safe signer reply was stored without its chain', async () => {
+	const unrelatedMessage = { ...pendingMessage, uniqueRequestIdentifier: { requestId: 2, requestSocket: { tabId: 1, connectionName: 1n } } }
+	await appendPendingTransactionOrMessage(pendingMessage)
+	await appendPendingTransactionOrMessage(unrelatedMessage)
+	// Written by an intermediate build before deferred replies recorded their chain.
+	await updatePendingTransactionOrMessageWithTerminalReplies(pendingMessage.uniqueRequestIdentifier, (pending) => ({ ...pending, deferredSafeSignerReply: { signerReply: '0x01', terminalReplyQueued: false } }), async () => [])
+
+	const pendingRequests = await getPendingTransactionsAndMessages()
+	assert.deepEqual(pendingRequests.map((pending) => pending.uniqueRequestIdentifier.requestId), [1, 2])
+	assert.deepEqual(pendingRequests[0]?.deferredSafeSignerReply, { signerReply: '0x01', terminalReplyQueued: false })
+})
+
 test('writes nothing when the pending request for terminal replies is gone', async () => {
 	let terminalRepliesRead = false
 

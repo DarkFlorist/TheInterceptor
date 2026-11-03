@@ -82,8 +82,8 @@ export function createSimulationServicesOwner(
 	newBlockAttemptCallback: NewBlockAttemptCallback,
 	onErrorBlockCallback: OnErrorBlockCallback,
 	rpcRequestLifecycleCallbacks: RpcRequestLifecycleCallbacks = {},
-	// Runs after every recover(), including when services stayed installed through an outage in which only the RPC configuration was unreadable: work deferred during that outage (such as deferred Safe signer replies) must be replayed once the configuration is usable again. The callback must be idempotent.
-	onRecovered: () => void = () => undefined,
+	// Runs after services are installed for a network: every recover() (including when services stayed installed through an outage in which only the RPC configuration was unreadable) and every reset() to another network. Work deferred for a network (such as Safe signer replies deferred for their signing chain) must be replayed once that network's services are back. The callback must be idempotent.
+	onServicesInstalled: () => void = () => undefined,
 ) {
 	let current = rpcNetwork === undefined ? undefined : createSimulationServices(rpcNetwork, newBlockAttemptCallback, onErrorBlockCallback, 60000, rpcRequestLifecycleCallbacks)
 	return {
@@ -95,13 +95,14 @@ export function createSimulationServicesOwner(
 		reset: (nextRpc: RpcEntry): SimulationServices => {
 			if (current === undefined) throw createRpcConfigurationUnavailableError()
 			current = resetSimulationServices(current, nextRpc, newBlockAttemptCallback, onErrorBlockCallback, rpcRequestLifecycleCallbacks)
+			onServicesInstalled()
 			return current
 		},
 		recover: (nextRpc: RpcEntry): SimulationServices => {
 			current = current === undefined
 				? createSimulationServices(nextRpc, newBlockAttemptCallback, onErrorBlockCallback, 60000, rpcRequestLifecycleCallbacks)
 				: resetSimulationServices(current, nextRpc, newBlockAttemptCallback, onErrorBlockCallback, rpcRequestLifecycleCallbacks)
-			onRecovered()
+			onServicesInstalled()
 			return current
 		},
 		clear: () => {
