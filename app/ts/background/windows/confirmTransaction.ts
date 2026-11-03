@@ -266,15 +266,17 @@ export const setGasLimitForTransaction = async (transactionIdentifier: bigint, g
 
 type ResolutionContext = { readonly ethereum: EthereumClientService, readonly tokenPriceService: TokenPriceService, readonly websiteTabConnections: WebsiteTabConnections }
 
-// Updates the confirmation window that showed a removed request: it moves to the next request, or closes after the last. A window the user already closed counts as closed; any other failure throws, for the finishing to retry.
+// Updates the confirmation window that showed a removed request: it closes after the last request, then the window assignment is reconciled, then the window moves to the next request. A window the user already closed counts as closed; any other failure throws, for the finishing to retry, which reconciles again.
 async function updateConfirmationWindowAfterRemoving(confirmationWindow: PopupOrTabId, tabId: number, context: ResolutionContext) {
-	if ((await getPendingTransactionsAndMessages()).length > 0) {
-		if (!(await updateConfirmTransactionView(context.ethereum, context.tokenPriceService))) throw new Error('The confirmation window could not be moved to the next request.')
-		return
+	const requestsRemain = (await getPendingTransactionsAndMessages()).length > 0
+	if (!requestsRemain) {
+		// Only a window the finishing itself closes: requests of a window the user closed are rejected, not moved.
+		if (await getPopupOrTabById(confirmationWindow) !== undefined) windowsClosedByFinishing.add(getWindowKey(confirmationWindow))
+		await tryFocusingTabOrWindow({ type: 'tab', id: tabId })
+		await closePopupOrTabById(confirmationWindow)
 	}
-	await tryFocusingTabOrWindow({ type: 'tab', id: tabId })
-	await closePopupOrTabById(confirmationWindow)
-	await rehomeRequestsOfClosedWindow(confirmationWindow)
+	await reconcileConfirmationWindows()
+	if (requestsRemain && !(await updateConfirmTransactionView(context.ethereum, context.tokenPriceService))) throw new Error('The confirmation window could not be moved to the next request.')
 }
 
 // A reply a resolution chose for a request whose commitment write failed: finishing the request commits it, so the request keeps that outcome.
@@ -618,6 +620,8 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 }
 
 export const onCloseWindowOrTab = async (popupOrTabs: PopupOrTabId, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections) => { // check if user has closed the window on their own, if so, reject all signatures
+	// A window the finishing closed after its last request: a request registered to it meanwhile is moved, not rejected.
+	if (windowsClosedByFinishing.has(getWindowKey(popupOrTabs))) return await reconcileConfirmationWindowsWithRetry(0)
 	const transactions = await getPendingTransactionsAndMessages()
 	const [firstTransaction] = transactions
 	if (firstTransaction === undefined || firstTransaction?.popupOrTabId.type !== popupOrTabs.type || firstTransaction.popupOrTabId.id !== popupOrTabs.id) return
@@ -813,24 +817,68 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 
 const openConfirmationWindow = async () => await openPopupOrTab({ url: getHtmlFile('confirmTransaction'), type: 'popup', height: 800, width: 600 })
 const isSameWindow = (first: PopupOrTabId, second: PopupOrTabId) => first.type === second.type && first.id === second.id
-const confirmationWindowRehomingSemaphore = new Semaphore(1)
+const getWindowKey = (window: PopupOrTabId) => `${ window.type }-${ window.id }`
+
+// The windows the finishing closed after their last request. A request registered to one meanwhile is moved to a live window, where a user closing a window rejects its requests (onCloseWindowOrTab).
+const windowsClosedByFinishing = new Set<string>()
+// A window reconciling opened for stranded requests and has not assigned yet, reused or closed by the next reconciling, so a failure never leaves it without requests or cleanup.
+let unassignedReplacementWindow: PopupOrTabId | undefined
+const confirmationWindowSemaphore = new Semaphore(1)
 
 /**
- * Moves the pending requests registered to a confirmation window that no longer exists into a newly opened one. A request can pick a request's window and register itself after that window's last request was removed and the window closed; registration and closing each rehome afterwards (registration once it registered, closing once it closed), so whichever runs second finds the stranded request.
- * Its own lock, inside the pending-confirmation and claim but around only storage and window calls, lets one of them open the window and the other find the requests already moved.
+ * Makes the window assignment consistent: every pending request registered to a window the finishing closed is moved to one live window, opened for them if needed, and a window opened for requests that are gone meanwhile is closed. Registration, the finishing's window cleanup and its retries, the close event of a window the finishing closed, and the window choice of a new confirmation all run it, so whichever runs last finds a request registered while its window closed.
+ * Under its own lock, inside the pending-confirmation lock and the claims, around only storage and window calls. Every step re-reads the stored requests, so a request removed meanwhile is not moved.
  */
-async function rehomeRequestsOfClosedWindow(confirmationWindow: PopupOrTabId) {
-	await confirmationWindowRehomingSemaphore.execute(async () => {
-		const stranded = (await getPendingTransactionsAndMessages()).filter((pending) => isSameWindow(pending.popupOrTabId, confirmationWindow))
-		if (stranded.length === 0 || await getPopupOrTabById(confirmationWindow) !== undefined) return
-		const openedWindow = await openConfirmationWindow()
-		if (openedWindow === undefined) throw new Error('Failed to open a confirmation window for requests whose window closed')
-		const popupOrTabId = { type: openedWindow.type, id: openedWindow.id }
-		for (const pending of stranded) await updatePendingTransactionOrMessage(pending.uniqueRequestIdentifier, async (request) => isSameWindow(request.popupOrTabId, confirmationWindow) ? { ...request, popupOrTabId } : request)
+async function reconcileConfirmationWindows(whenNoRegistrationInFlight: 'forget-unused-closed-windows' | 'keep-closed-windows' = 'keep-closed-windows') {
+	await confirmationWindowSemaphore.execute(async () => {
+		const findStranded = async () => {
+			const stranded: PendingTransactionOrSignableMessage[] = []
+			for (const pending of await getPendingTransactionsAndMessages()) {
+				if (windowsClosedByFinishing.has(getWindowKey(pending.popupOrTabId)) && await getPopupOrTabById(pending.popupOrTabId) === undefined) stranded.push(pending)
+			}
+			return stranded
+		}
+		if ((await findStranded()).length > 0) {
+			if (unassignedReplacementWindow === undefined || await getPopupOrTabById(unassignedReplacementWindow) === undefined) {
+				const openedWindow = await openConfirmationWindow()
+				if (openedWindow === undefined) throw new Error('Failed to open a confirmation window for requests whose window closed')
+				unassignedReplacementWindow = { type: openedWindow.type, id: openedWindow.id }
+			}
+			const replacementWindow = unassignedReplacementWindow
+			for (const pending of await findStranded()) {
+				await updatePendingTransactionOrMessage(pending.uniqueRequestIdentifier, async (request) => isSameWindow(request.popupOrTabId, pending.popupOrTabId) ? { ...request, popupOrTabId: replacementWindow } : request)
+			}
+		}
+		const pendingRequests = await getPendingTransactionsAndMessages()
+		if (unassignedReplacementWindow !== undefined) {
+			const replacementWindow = unassignedReplacementWindow
+			if (!pendingRequests.some((pending) => isSameWindow(pending.popupOrTabId, replacementWindow))) await closePopupOrTabById(replacementWindow)
+			unassignedReplacementWindow = undefined
+		}
+		// A registration in flight may still register to a closed window, so only a caller that holds the pending-confirmation lock, which registrations hold from choosing their window to registering, forgets the closed windows no request uses.
+		if (whenNoRegistrationInFlight === 'keep-closed-windows') return
+		for (const closedWindow of windowsClosedByFinishing) {
+			if (!pendingRequests.some((pending) => getWindowKey(pending.popupOrTabId) === closedWindow)) windowsClosedByFinishing.delete(closedWindow)
+		}
 	})
 }
 
+// Reconciles for a caller with no retry of its own (registration, a window's close event): a failure is reported and retried with the finishing's backoff and limit.
+async function reconcileConfirmationWindowsWithRetry(failedAttempts: number): Promise<void> {
+	try {
+		await reconcileConfirmationWindows()
+	} catch (error) {
+		const retrying = failedAttempts + 1 < FINISHING_RETRY_LIMIT
+		await reportLocalRecovery(error, retrying
+			? { code: 'confirmation_window_reconciliation_retrying', message: 'Retrying moving requests whose confirmation window closed.' }
+			: { code: 'confirmation_window_reconciliation_gave_up', message: 'Stopped retrying moving requests whose confirmation window closed.' })
+		if (retrying) setTimeout(() => { void reconcileConfirmationWindowsWithRetry(failedAttempts + 1) }, FINISHING_RETRY_BASE_DELAY_MS * 2 ** failedAttempts)
+	}
+}
+
 const getPendingTransactionWindow = async (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections) => {
+	// Requests registered to a window the finishing closed are moved, not rejected as orphans of a window the user closed. Called under the pending-confirmation lock, so no registration is in flight.
+	await reconcileConfirmationWindows('forget-unused-closed-windows')
 	const pendingTransactions = await getPendingTransactionsAndMessages()
 	const [firstPendingTransaction] = pendingTransactions
 	if (firstPendingTransaction !== undefined) {
@@ -918,7 +966,7 @@ export async function openConfirmTransactionDialogForMessage(
 				...(safeMessageCoSignSnapshot === undefined ? {} : { safeMessageCoSignSnapshot }),
 			}
 			await appendPendingTransactionOrMessage(pendingMessage)
-			await rehomeRequestsOfClosedWindow(openedDialog)
+			await reconcileConfirmationWindowsWithRetry(0)
 			await updateConfirmTransactionView(ethereumClientService, tokenPriceService)
 
 			await updatePendingTransactionOrMessage(pendingMessage.uniqueRequestIdentifier, async (message) => {
@@ -1041,7 +1089,7 @@ export async function openConfirmTransactionDialogForTransaction(
 				return reservation
 			})
 			// The window this request picked may have closed with its last other request while this one reserved its hash.
-			await rehomeRequestsOfClosedWindow(openedDialog)
+			await reconcileConfirmationWindowsWithRetry(0)
 			await updateConfirmTransactionView(ethereumClientService, tokenPriceService)
 			markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionSimulationStart)
 			const simulationResultsPromise = silenceChromeUnCaughtPromise(refreshConfirmTransactionSimulation(
