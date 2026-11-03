@@ -24,6 +24,7 @@ const fixtures = {
 	writeThenReconcile: `${ fixtureDirectory }writeThenReconcile.ts`,
 	voidedChange: `${ fixtureDirectory }voidedChange.ts`,
 	reconcileInUncalledClosure: `${ fixtureDirectory }reconcileInUncalledClosure.ts`,
+	overwrittenLetChange: `${ fixtureDirectory }overwrittenLetChange.ts`,
 } as const
 
 function createProgram() {
@@ -144,7 +145,9 @@ function isChangeForwarded(call: ts.CallExpression) {
 	const enclosingFunction = getEnclosingFunction(call)
 	if (isForwardedChange(call, enclosingFunction)) return true
 	const declaration = getConsumedExpression(call).parent
-	if (enclosingFunction === undefined || !ts.isVariableDeclaration(declaration) || !ts.isIdentifier(declaration.name)) return false
+	// Only a `const` keeps the committed change: a reassigned `let` could forward a different value.
+	const isConstDeclaration = ts.isVariableDeclaration(declaration) && ts.isVariableDeclarationList(declaration.parent) && (declaration.parent.flags & ts.NodeFlags.Const) !== 0
+	if (enclosingFunction === undefined || !isConstDeclaration || !ts.isIdentifier(declaration.name)) return false
 	const variable = checker.getSymbolAtLocation(declaration.name)
 	let forwarded = false
 	forEachNodeInOwnBody(enclosingFunction, (node) => { if (ts.isIdentifier(node) && node !== declaration.name && checker.getSymbolAtLocation(node) === variable && isForwardedChange(node, enclosingFunction)) forwarded = true })
@@ -219,10 +222,11 @@ test('handler website-access writes reconcile afterwards or hand their committed
 	assert.deepEqual(unreconciled, KNOWN_UNRECONCILED_WEBSITE_ACCESS_WRITES)
 })
 
-test('the website-access write check rejects unreconciled, discarded, voided and closure-only reconciled writes and accepts reconciled ones', () => {
+test('the website-access write check rejects unreconciled, discarded, voided, overwritten and closure-only reconciled writes and accepts reconciled ones', () => {
 	assert.deepEqual(findUnreconciledWebsiteAccessWrites(fixtures.writeWithoutReconcile).map((location) => location.replace(/^.*:\d+ /u, '')), ['denyWebsite'])
 	assert.deepEqual(findUnreconciledWebsiteAccessWrites(fixtures.discardedChange).map((location) => location.replace(/^.*:\d+ /u, '')), ['discards denyWebsite'])
 	assert.deepEqual(findUnreconciledWebsiteAccessWrites(fixtures.voidedChange).map((location) => location.replace(/^.*:\d+ /u, '')), ['discards denyWebsite'])
+	assert.deepEqual(findUnreconciledWebsiteAccessWrites(fixtures.overwrittenLetChange).map((location) => location.replace(/^.*:\d+ /u, '')), ['discards denyWebsite'])
 	assert.deepEqual(findUnreconciledWebsiteAccessWrites(fixtures.reconcileInUncalledClosure).map((location) => location.replace(/^.*:\d+ /u, '')), ['handler'])
 	assert.deepEqual(findUnreconciledWebsiteAccessWrites(fixtures.writeThenReconcile), [])
 })
