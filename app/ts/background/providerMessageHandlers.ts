@@ -356,13 +356,13 @@ export async function signerReply(simulationServicesOwner: SimulationServicesOwn
 				const simulationServices = await getAvailableSimulationServices(simulationServicesOwner)
 				if (params.success && simulationServices !== undefined) {
 					try {
-						await resolvePendingSignerReply(simulationServices, websiteTabConnections, uniqueRequestIdentifier, params)
+						await resolvePendingSignerReply(simulationServices, async () => await getAvailableSimulationServices(simulationServicesOwner), websiteTabConnections, uniqueRequestIdentifier, params)
 					} catch(e) {
 						await reportUnexpectedError(e)
 					}
 					return doNotReply
 				}
-				await resolvePendingSignerReply(simulationServices, websiteTabConnections, uniqueRequestIdentifier, params)
+				await resolvePendingSignerReply(simulationServices, async () => await getAvailableSimulationServices(simulationServicesOwner), websiteTabConnections, uniqueRequestIdentifier, params)
 				return doNotReply
 			}
 		}

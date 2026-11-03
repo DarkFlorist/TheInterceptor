@@ -3,7 +3,7 @@ import { test } from 'bun:test'
 import { getLatestUnexpectedError } from '../../app/ts/background/storageVariables.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../app/ts/utils/constants.js'
-import { activeAddress, browserMock, bytes32String, createDisconnectedPort, createRecordingPort, createSafeAddressBookEntry, createSafeTx, EIP712Message, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, pendingTransaction, privateKeyToAccount, recipientAddress, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, signedTransaction, simulator, uniqueRequestIdentifier, waitForPendingTransactionsToClear, withSilencedConsole } from './confirmTransactionTestHarness.js'
+import { activeAddress, browserMock, bytes32String, createDisconnectedPort, createRecordingPort, createSafeAddressBookEntry, createSafeTx, EIP712Message, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, pendingTransaction, privateKeyToAccount, recipientAddress, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, signedTransaction, simulator, uniqueRequestIdentifier, waitForPendingTransactionsToClear, withSilencedConsole } from './confirmTransactionTestHarness.js'
 
 test('popup close rejects and removes pending confirmations while RPC services are unavailable', async () => {
 	const postedMessages: unknown[] = []
@@ -1148,4 +1148,66 @@ test('the confirmation window shows, refreshes and approves a later request whil
 	assert.equal(getRepliesToWebsite(postedMessages).filter((message) => isRecord(message) && message.requestId === 71 && 'result' in message).length, 1)
 	assert.deepEqual(requestIdsOf(await modules.getPendingTransactionsAndMessages()), [70])
 	assert.equal(await modules.popupReadyAndListening(simulator.ethereum, websiteTabConnections, 'confirmTransaction'), undefined)
+})
+
+// Opens simulated personal_sign requests in one confirmation window and turns the first into a Gnosis Safe co-signature waiting for its signer on chain A.
+async function openMessagesWithFirstAwaitingSafeCoSignature(requestIds: readonly number[], websiteTabConnections: ReturnType<typeof connectRequestingWebsite>['websiteTabConnections']) {
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	// The mock browser opens every new window with id 99.
+	browserMock.setLiveWindowIds([99])
+	for (const requestId of requestIds) {
+		const requestIdentifier = { ...uniqueRequestIdentifier, requestId }
+		const signRequest = { method: 'personal_sign' as const, params: ['0x68656c6c6f', activeAddress] as const }
+		const request = { method: 'personal_sign', params: ['0x68656c6c6f', addressString(activeAddress)], interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier: requestIdentifier }
+		assert.deepEqual(await withSilencedConsole(async () => await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, request, { kind: 'message', parameters: signRequest }, true, activeAddress, pendingTransaction.website, websiteTabConnections)), { type: 'doNotReply' })
+	}
+	const [firstRequestId] = requestIds
+	if (firstRequestId === undefined) throw new Error('Missing request')
+	const firstRequestIdentifier = { ...uniqueRequestIdentifier, requestId: firstRequestId }
+	await modules.updatePendingTransactionOrMessage(firstRequestIdentifier, async (pending) => ({
+		...pending,
+		simulationMode: false,
+		approvalStatus: { status: 'WaitingForSigner' as const },
+		signerRequestChainId: fakeRpcNetwork.chainId,
+		...(pending.type === 'SignableMessage' ? { safeMessageCoSignSnapshot: { safeAddress: activeAddress, safeSignerAddress: recipientAddress, reviewedSafeState: { version: '1.4.1', nonce: 0n, owners: [recipientAddress], threshold: 1n }, safeMessageHash: 1n } } : {}),
+	}))
+	return firstRequestIdentifier
+}
+
+const otherChainSimulatorForWindowTests = () => {
+	const otherChainEthereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, { ...fakeRpcNetwork, chainId: fakeRpcNetwork.chainId + 1n })
+	return { ethereum: otherChainEthereum, tokenPriceService: new modules.TokenPriceService(otherChainEthereum, 60_000) }
+}
+
+const lastPushedRequestIds = () => {
+	const pushed = browserMock.sentMessages.filter((message) => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions').at(-1)?.data
+	if (!isRecord(pushed) || !Array.isArray(pushed.pendingTransactionAndSignableMessages)) return undefined
+	return pushed.pendingTransactionAndSignableMessages.map((request) => isRecord(request) && isRecord(request.uniqueRequestIdentifier) ? request.uniqueRequestIdentifier.requestId : undefined)
+}
+
+test.each(['services unavailable', 'services on another chain'] as const)('a co-signature becoming deferred moves its open window on to the next request (%s)', async (servicesState) => {
+	const { websiteTabConnections } = connectRequestingWebsite()
+	const coSignature = await openMessagesWithFirstAwaitingSafeCoSignature([1, 2], websiteTabConnections)
+	const removedWindowIds: number[] = []
+	browserMock.setWindowRemoveHandler(async (windowId) => { removedWindowIds.push(windowId) })
+	browserMock.sentMessages.length = 0
+	const services = servicesState === 'services unavailable' ? undefined : otherChainSimulatorForWindowTests()
+
+	await withSilencedConsole(async () => await modules.resolvePendingSignerReply(services, async () => services, websiteTabConnections, coSignature, { success: true, signerProviderGeneration: 0, forwardRequest: { type: 'forwardToSigner', replyWithSignersReply: true, method: 'personal_sign', params: ['0x68656c6c6f', activeAddress], requestId: coSignature.requestId }, reply: '0x1234' }))
+
+	assert.deepEqual((await modules.getPendingTransactionsAndMessages()).map((pending) => ({ requestId: pending.uniqueRequestIdentifier.requestId, deferred: pending.deferredSafeSignerReply !== undefined })), [{ requestId: 1, deferred: true }, { requestId: 2, deferred: false }])
+	assert.deepEqual(lastPushedRequestIds(), [2])
+	assert.deepEqual(removedWindowIds, [])
+})
+
+test('a sole co-signature becoming deferred closes its confirmation window', async () => {
+	const { websiteTabConnections } = connectRequestingWebsite()
+	const coSignature = await openMessagesWithFirstAwaitingSafeCoSignature([1], websiteTabConnections)
+	const removedWindowIds: number[] = []
+	browserMock.setWindowRemoveHandler(async (windowId) => { removedWindowIds.push(windowId) })
+
+	await withSilencedConsole(async () => await modules.resolvePendingSignerReply(undefined, async () => undefined, websiteTabConnections, coSignature, { success: true, signerProviderGeneration: 0, forwardRequest: { type: 'forwardToSigner', replyWithSignersReply: true, method: 'personal_sign', params: ['0x68656c6c6f', activeAddress], requestId: coSignature.requestId }, reply: '0x1234' }))
+
+	assert.equal((await modules.getPendingTransactionsAndMessages())[0]?.deferredSafeSignerReply !== undefined, true)
+	assert.deepEqual(removedWindowIds, [99])
 })

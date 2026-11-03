@@ -316,25 +316,41 @@ type ConfirmationServices = {
 	readonly tokenPriceService: TokenPriceService
 }
 
-// Updates the confirmation window once a request has left the confirmation queue: the view of how the simulation stack changed, and the queue view, which focuses the website's tab once the queue is empty and closes the window once no pending request is shown in it. The website's answer never waits for this view work, so a failure in it is reported instead of reaching the caller.
-async function updateViewAfterPendingRequestRemoved(pending: PendingTransactionOrSignableMessage, services: ConfirmationServices, simulationStack: SimulationStackChange) {
+// Publishes the requests confirmation windows show without RPC services, using the last block the connection status knows; returns whether any request is shown.
+async function publishConfirmationQueueWithoutServices() {
+	const shownRequests = getConfirmationWindowRequests(await getPendingTransactionsAndMessages())
+	if (shownRequests.length === 0) return false
+	const rpcConnectionStatus = await getRpcConnectionStatus()
+	const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {
+		method: 'popup_update_confirm_transaction_dialog_pending_transactions',
+		data: {
+			pendingTransactionAndSignableMessages: shownRequests.map(toPopupPendingTransactionOrSignableMessage),
+			currentBlockNumber: rpcConnectionStatus?.latestBlock?.number ?? undefined,
+			rpcConnectionStatus,
+		},
+	}
+	await sendPopupMessageToOpenWindows(serialize(UpdateConfirmTransactionDialogPendingTransactions, messagePendingTransactions), 'confirmTransaction')
+	return true
+}
+
+// Updates the confirmation window once a request has left the queue it shows, by being removed or by becoming deferred: the view of how the simulation stack changed (with RPC services), and the queue view, which focuses the website's tab once the queue is empty and closes the window once no shown request is in it. Without RPC services the queue is still published. The website's answer never waits for this view work, so a failure in it is reported instead of reaching the caller.
+async function updateViewAfterPendingRequestRemoved(pending: PendingTransactionOrSignableMessage, services: ConfirmationServices | undefined, simulationStack: SimulationStackChange) {
 	const removedRequestWindow = pending.popupOrTabId
-	await runConfirmationViewStep(async () => await showSimulationStackChange(services.ethereum, services.tokenPriceService, simulationStack))
+	if (services !== undefined) await runConfirmationViewStep(async () => await showSimulationStackChange(services.ethereum, services.tokenPriceService, simulationStack))
 	await runConfirmationViewStep(async () => {
 		if (getConfirmationWindowRequests(await getPendingTransactionsAndMessages()).length === 0) await tryFocusingTabOrWindow({ type: 'tab', id: pending.uniqueRequestIdentifier.requestSocket.tabId })
 	})
 	await runConfirmationViewStep(async () => {
-		const confirmationQueueIsShown = await updateConfirmTransactionView(services.ethereum, services.tokenPriceService)
+		const confirmationQueueIsShown = services === undefined ? await publishConfirmationQueueWithoutServices() : await updateConfirmTransactionView(services.ethereum, services.tokenPriceService)
 		// The website may send its next request as soon as it has this answer. Arriving while the queue is empty, that request opens a window of its own, so this window is closed once no pending request is shown in it rather than only once the queue is empty.
 		const windowShowsAPendingRequest = getConfirmationWindowRequests(await getPendingTransactionsAndMessages()).some((other) => isSamePopupOrTab(other.popupOrTabId, removedRequestWindow))
 		if (!confirmationQueueIsShown || !windowShowsAPendingRequest) await closePopupOrTabById(removedRequestWindow)
 	})
 }
 
-// Without RPC services there is no confirmation view to update, so only the request is removed.
 async function removeSettledPendingRequest(pending: PendingTransactionOrSignableMessage, services: ConfirmationServices | undefined) {
 	await removePendingTransactionOrMessage(pending.uniqueRequestIdentifier)
-	if (services !== undefined) await updateViewAfterPendingRequestRemoved(pending, services, 'unchanged')
+	await updateViewAfterPendingRequestRemoved(pending, services, 'unchanged')
 }
 
 function formTerminalReply(pending: PendingTransactionOrSignableMessage, message: { type: 'result', error: { code: number, message: string } } | { type: 'result', result: unknown }): InterceptedRequestForward {
@@ -355,7 +371,7 @@ async function settlePendingTerminalReply(websiteTabConnections: WebsiteTabConne
 		return await attemptQueuedTerminalReplyDelivery(websiteTabConnections, terminalReply)
 	} finally {
 		// The request already left the confirmation queue, so its window is updated even when delivery throws. The delivery error still reaches the caller once the window is updated.
-		if (services !== undefined) await updateViewAfterPendingRequestRemoved(pending, services, simulationStack)
+		await updateViewAfterPendingRequestRemoved(pending, services, simulationStack)
 	}
 }
 
@@ -384,6 +400,13 @@ function getSafeProposalSigningChainId(pending: PendingTransactionOrSignableMess
 	return flow.pending.safeTransaction.safeTx.domain.chainId ?? 0n
 }
 
+// A deferral is written after the reply's services were captured, so services for its chain may have been installed, and finished their replay, before it landed. The installed services are read again and, when they are for its chain, replayed now; the replay is serialized and finds an already settled entry gone, so nothing is stored or answered twice.
+async function replayIfServicesAreInstalledFor(chainId: bigint, getInstalledServices: () => Promise<ConfirmationServices | undefined>, websiteTabConnections: WebsiteTabConnections) {
+	const installedServices = await getInstalledServices()
+	if (installedServices === undefined || installedServices.ethereum.getChainId() !== chainId) return
+	await resolveDeferredSafeSignerReplies(installedServices, websiteTabConnections)
+}
+
 // A Safe signature that cannot be bound to the network it was signed for fails closed: it is not kept, and the request asks the user to sign again.
 async function failSafeSignatureWithoutChain(uniqueRequestIdentifier: UniqueRequestIdentifier) {
 	await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (current) => modifyObject(removeDeferredSafeSignerReply(current), {
@@ -391,7 +414,8 @@ async function failSafeSignatureWithoutChain(uniqueRequestIdentifier: UniqueRequ
 	}))
 }
 
-export async function resolvePendingSignerReply(services: ConfirmationServices | undefined, websiteTabConnections: WebsiteTabConnections, uniqueRequestIdentifier: UniqueRequestIdentifier, params: SignerReply['params'][0]) {
+// `services` were captured when the reply arrived; `getInstalledServices` reads the services installed now.
+export async function resolvePendingSignerReply(services: ConfirmationServices | undefined, getInstalledServices: () => Promise<ConfirmationServices | undefined>, websiteTabConnections: WebsiteTabConnections, uniqueRequestIdentifier: UniqueRequestIdentifier, params: SignerReply['params'][0]) {
 	if (!params.success) {
 		const approvalStatus = params.error.code === METAMASK_ERROR_USER_REJECTED_REQUEST
 			? { status: 'WaitingForUser' as const }
@@ -429,8 +453,15 @@ export async function resolvePendingSignerReply(services: ConfirmationServices |
 			await failSafeSignatureWithoutChain(uniqueRequestIdentifier)
 			return
 		}
-		if (safeFlow.kind === 'proposal') return await moveSignedSafeProposalToOutbox(pending, safeFlow.pending.safeTransaction.safeTxHash, { signerReply, chainId }, websiteTabConnections, services, false)
+		if (safeFlow.kind === 'proposal') {
+			const delivered = await moveSignedSafeProposalToOutbox(pending, safeFlow.pending.safeTransaction.safeTxHash, { signerReply, chainId }, websiteTabConnections, services, false)
+			await replayIfServicesAreInstalledFor(chainId, getInstalledServices, websiteTabConnections)
+			return delivered
+		}
 		await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (current) => modifyObject(current, { deferredSafeSignerReply: { signerReply, chainId } }))
+		// The deferred co-signature leaves the queue its window shows, so the window moves on to the next request or closes.
+		await updateViewAfterPendingRequestRemoved(pending, services, 'unchanged')
+		await replayIfServicesAreInstalledFor(chainId, getInstalledServices, websiteTabConnections)
 		return
 	}
 	return await settlePendingTerminalReply(websiteTabConnections, pending, { type: 'result', result: params.reply }, undefined)
@@ -501,7 +532,7 @@ async function moveSignedSafeProposalToOutbox(
 		await queueSafeProposalReplyAndMoveToOutbox(pending.uniqueRequestIdentifier, createStore, terminalReply)
 		return await attemptQueuedTerminalReplyDelivery(websiteTabConnections, terminalReply)
 	} finally {
-		if (services !== undefined) await updateViewAfterPendingRequestRemoved(pending, services, 'unchanged')
+		await updateViewAfterPendingRequestRemoved(pending, services, 'unchanged')
 	}
 }
 

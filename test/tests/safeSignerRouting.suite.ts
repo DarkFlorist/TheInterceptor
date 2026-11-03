@@ -211,6 +211,18 @@ test('replays a Safe signature deferred while only the RPC configuration was unr
 	simulationServicesOwner.clear()
 })
 
+// Runs `interleaved` once, the first time the signer reply reads the pending requests (after it captured its services, before it writes its deferral).
+function runOnceWhenTheSignerReplyReadsItsRequest(interleaved: () => Promise<void>) {
+	let ran = false
+	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+		if (!ran && Array.isArray(keys) && keys.includes('pendingTransactionsAndMessages')) {
+			ran = true
+			await interleaved()
+		}
+		return readStoredItems()
+	})
+}
+
 const otherChainRpc = { ...fakeRpcNetwork, name: 'Other chain', chainId: fakeRpcNetwork.chainId + 1n }
 // Services for another chain answered by the same fake RPC, so that chain's Safe state would validate a chain-A signature.
 const createOtherChainSimulator = () => {
@@ -218,8 +230,8 @@ const createOtherChainSimulator = () => {
 	return { ethereum: otherChainEthereum, tokenPriceService: new modules.TokenPriceService(otherChainEthereum, 60_000) }
 }
 
-// Defers a signed Safe proposal for chain A (fakeRpcNetwork) while RPC services are unavailable; the website receives its proposal hash right away.
-async function deferSafeProposalSignatureOnChainA(owner: Parameters<typeof modules.signerReply>[0], requestId: number, connectionName: bigint) {
+// Defers a signed Safe proposal for chain A (fakeRpcNetwork) while RPC services are unavailable; the website receives its proposal hash right away. `whileReplyIsResolved` runs once the signer reply has captured its services and before its deferral is written.
+async function deferSafeProposalSignatureOnChainA(owner: Parameters<typeof modules.signerReply>[0], requestId: number, connectionName: bigint, whileReplyIsResolved?: (websiteTabConnections: Parameters<typeof modules.resolveDeferredSafeSignerReplies>[1]) => Promise<void>) {
 	const socket = { tabId: 1, connectionName }
 	const requestIdentifier = { requestId, requestSocket: socket }
 	const messages: unknown[] = []
@@ -254,6 +266,7 @@ async function deferSafeProposalSignatureOnChainA(owner: Parameters<typeof modul
 			},
 		}],
 	})
+	if (whileReplyIsResolved !== undefined) runOnceWhenTheSignerReplyReadsItsRequest(async () => await whileReplyIsResolved(websiteTabConnections))
 	await modules.signerReply(owner, websiteTabConnections, port, {
 		method: 'signer_reply',
 		params: [{
@@ -273,10 +286,12 @@ async function deferSafeProposalSignatureOnChainA(owner: Parameters<typeof modul
 		usingInterceptorWithoutSigner: false,
 		uniqueRequestIdentifier: { requestId: requestId + 1000, requestSocket: socket },
 	}, 'hasAccess', activeAddress)
+	browserMock.setStorageGetHandler(undefined)
 	const dappReplies = () => messages.filter((message) => isRecord(message) && message.method === 'eth_sendTransaction' && message.requestId === requestId)
 	assert.equal(dappReplies().length, 1)
 	// The request is settled like any completed request; the signed proposal waits in the outbox for chain A's services.
 	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	if (whileReplyIsResolved !== undefined) return { requestIdentifier, websiteTabConnections, safeTxHash, signature, dappReplies, messages }
 	assert.deepEqual((await modules.getPendingSafeProposalStores()).map((entry) => ({ chainId: entry.chainId, signerReply: entry.signerReply })), [{ chainId: fakeRpcNetwork.chainId, signerReply: signature }])
 	return { requestIdentifier, websiteTabConnections, safeTxHash, signature, dappReplies, messages }
 }
@@ -356,6 +371,17 @@ test('refuses a proposal prepared for another chain than the services approving 
 	assert.deepEqual(await modules.getSafeTransactionStacks(), [])
 	assert.deepEqual(await modules.getPendingSafeProposalStores(), [])
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'result' && message.requestId === uniqueRequestIdentifier.requestId && 'result' in message), false)
+})
+
+// Recovery on the signature's own chain can finish its replay scan after the reply captured its (missing) services and before the outbox entry is written; the reply then replays the entry itself, once.
+test('stores a proposal signature once when matching recovery finished its scan before the outbox entry was written', async () => {
+	const owner = createTestSimulationServicesOwner(simulator, () => simulator)
+	owner.clear()
+	const deferred = await deferSafeProposalSignatureOnChainA(owner, 108, 59n, async (websiteTabConnections) => {
+		owner.recover(fakeRpcNetwork)
+		await modules.resolveDeferredSafeSignerReplies(simulator, websiteTabConnections)
+	})
+	await assertStoredOnChainAOnce(deferred)
 })
 
 test('replays a deferred Safe signature when a normal network switch returns to its chain', async () => {
@@ -894,7 +920,7 @@ test('forwards a Safe transaction to the wallet-selected Safe owner as EIP-712 t
 	assert.equal(typedData.message.to.toLowerCase(), `0x${ recipientAddress.toString(16).padStart(40, '0') }`)
 })
 
-test('routes a Safe co-signing request through the wallet-selected owner', async () => {
+test.each(['other chain first', 'matching recovery during the reply'] as const)('routes a Safe co-signing request through the wallet-selected owner (%s)', async (signerReplyServices) => {
 	const ownerAccount = privateKeyToAccount('0xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd')
 	const safeSignerAddress = BigInt(ownerAccount.address)
 	const alternateOwnerAccount = privateKeyToAccount('0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef')
@@ -1072,9 +1098,18 @@ test('routes a Safe co-signing request through the wallet-selected owner', async
 			? { ...entry, safeSimulationSignerAddress: 0x2222222222222222222222222222222222222222n }
 			: entry
 	))
-	// Services for another chain arrive before the co-signature: it is deferred for its own chain instead of being validated on the other one.
 	const isCoSignatureReply = (message: unknown) => isRecord(message) && message.type === 'result' && message.requestId === uniqueRequestIdentifier.requestId
-	await modules.signerReply(createTestSimulationServicesOwner(createOtherChainSimulator()), websiteTabConnections, port, {
+	const signerCodeReadsBeforeReply = fakeSafeContract.requestedCodeAddresses.filter((address) => address === alternateOwnerAddress).length
+	// Either services for another chain arrive before the co-signature (it is deferred for its own chain and replayed by a later recovery), or recovery on its own chain finishes its replay scan between the reply capturing its missing services and writing the deferral (the reply replays it itself).
+	const replyOwner = signerReplyServices === 'other chain first' ? createTestSimulationServicesOwner(createOtherChainSimulator()) : createTestSimulationServicesOwner(simulator, () => simulator)
+	if (signerReplyServices === 'matching recovery during the reply') {
+		replyOwner.clear()
+		runOnceWhenTheSignerReplyReadsItsRequest(async () => {
+			replyOwner.recover(fakeRpcNetwork)
+			await modules.resolveDeferredSafeSignerReplies(simulator, websiteTabConnections)
+		})
+	}
+	await modules.signerReply(replyOwner, websiteTabConnections, port, {
 		method: 'signer_reply',
 		params: [{
 			success: true,
@@ -1087,11 +1122,14 @@ test('routes a Safe co-signing request through the wallet-selected owner', async
 		usingInterceptorWithoutSigner: false,
 		uniqueRequestIdentifier: { requestId: uniqueRequestIdentifier.requestId + 1000, requestSocket: socket },
 	}, 'hasAccess', activeAddress)
-	assert.deepEqual((await modules.getPendingTransactionsAndMessages())[0]?.deferredSafeSignerReply, { signerReply: signature, chainId: fakeRpcNetwork.chainId })
-	assert.equal(postedMessages.some(isCoSignatureReply), false)
-	const signerCodeReadsBeforeReply = fakeSafeContract.requestedCodeAddresses.filter((address) => address === alternateOwnerAddress).length
-	await modules.resolveDeferredSafeSignerReplies(simulator, websiteTabConnections)
+	browserMock.setStorageGetHandler(undefined)
+	if (signerReplyServices === 'other chain first') {
+		assert.deepEqual((await modules.getPendingTransactionsAndMessages())[0]?.deferredSafeSignerReply, { signerReply: signature, chainId: fakeRpcNetwork.chainId })
+		assert.equal(postedMessages.some(isCoSignatureReply), false)
+		await modules.resolveDeferredSafeSignerReplies(simulator, websiteTabConnections)
+	}
 	assert.equal(postedMessages.filter(isCoSignatureReply).length, 1)
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
 	const dappReply = postedMessages.find((message) =>
 		isRecord(message) && message.type === 'result' && message.method === 'eth_signTypedData_v4' && message.requestId === uniqueRequestIdentifier.requestId
 	)
