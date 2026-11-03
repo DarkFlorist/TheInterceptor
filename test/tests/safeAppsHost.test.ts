@@ -2,7 +2,6 @@ import * as assert from 'assert'
 import { test } from 'bun:test'
 import SafeAppsSDK from '@safe-global/safe-apps-sdk'
 import { safe } from '@wagmi/connectors/safe'
-import gnosis from '@web3-onboard/gnosis'
 import { installSafeAppsHost } from '../../app/inpage/ts/safeAppsHost.js'
 import { createSafeHostHarness } from '../fixtures/safeAppsHostHarness.js'
 import { getSafeAppsHostMatchPatterns } from '../../app/ts/utils/safeAppsHosting.js'
@@ -31,8 +30,6 @@ for (const origin of ['https://app.example.com', 'https://another.example:8443']
 			const connector = safe()({ chains: [], emitter: { emit: () => undefined } })
 			assert.deepEqual(await connector.getAccounts(), [safeInfo.safeAddress])
 			assert.equal(await connector.getChainId(), 1)
-			// Web3-Onboard requires a real iframe; parent emulation deliberately leaves self/top unchanged.
-			assert.deepEqual(gnosis()(), [])
 		} finally { restoreGlobals() }
 	})
 }

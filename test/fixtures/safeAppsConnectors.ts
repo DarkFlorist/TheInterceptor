@@ -1,16 +1,13 @@
-// These dev-only packages exercise the actual SDK and two connector entry points; the extension bundle uses its own protocol and build/bundler.mts checks the SDK response version.
+// These dev-only packages exercise the actual SDK and Wagmi's Safe connector; the extension bundle uses its own protocol and safeAppsProtocol.test.ts checks the SDK response version.
 import SafeAppsSDK from '@safe-global/safe-apps-sdk'
 import { safe } from '@wagmi/connectors/safe'
-import gnosis from '@web3-onboard/gnosis'
 
-// Gnosis still declares an SDK 8 peer. It is a negative iframe-detection fixture only; real transport uses the pinned SDK 9 and Wagmi.
+// Parent-based discovery does not support Web3-Onboard's Safe connector, which requires a real iframe (self !== top); see test/benchmarks/README.md.
 const state: { phase: string, accounts: string[], error?: string } = { phase: 'requesting-safe-only', accounts: [] }
 Reflect.set(globalThis, '__interceptorChromeCommunicationState', state)
 
 async function connect() {
 	if (window.parent === window) throw new Error('The selected website was not hosted as a Safe App.')
-	// A parent-based host preserves the top-level frame identity used by stricter connectors.
-	if (!Array.isArray(gnosis()())) throw new Error('Web3-Onboard unexpectedly detected a real iframe.')
 	const sdk = new SafeAppsSDK()
 	const safeInfo = await sdk.safe.getInfo()
 	// A real transport may exceed Wagmi's 10 ms default even after authorization.
