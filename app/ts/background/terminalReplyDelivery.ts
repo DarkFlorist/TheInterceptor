@@ -1,5 +1,6 @@
 import type { InterceptedRequestForward, StoredTerminalReply } from '../types/interceptor-messages.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
+import type { PopupOrTabId } from '../types/websiteAccessTypes.js'
 import { reportLocalRecovery } from '../utils/errors.js'
 import { doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, type UniqueRequestIdentifier, type WebsiteSocket } from '../utils/requests.js'
 import { Semaphore } from '../utils/semaphore.js'
@@ -20,10 +21,11 @@ const TERMINAL_REPLY_FLUSH_RETRY_DELAY_MS = 50
 export const getTerminalReplyBookkeepingSize = () => terminalReplyProductions.size + postedUnmarkedTerminalReplies.size
 
 /**
- * The durable terminal-reply queue entry is a request's only commitment to its terminal reply. queueTerminalReply stores it once (a request that has one keeps it); a delivery by any path posts it at most once and marks it delivered, never deleting it while its request is pending; the entry is deleted last, once it is delivered and its request is no longer pending.
+ * The durable terminal-reply queue entry is a request's only commitment to its terminal reply. queueTerminalReply stores it once (a request that has one keeps it); a delivery by any path, the resolution or a reconnect flush, posts it and marks it delivered, never deleting it while its request is pending; the entry is deleted last, once it is delivered and its request is no longer pending.
+ * Within a session a reply is posted once. A restart between posting it and storing its delivered mark posts it again; the page's provider ignores a reply to a request it has already settled or does not know, so the page still settles the request once.
  */
-export async function queueTerminalReply(message: InterceptedRequestForward) {
-	return await terminalReplySemaphore.execute(async () => await commitPendingTerminalReply(message))
+export async function queueTerminalReply(message: InterceptedRequestForward, confirmationWindow?: PopupOrTabId) {
+	return await terminalReplySemaphore.execute(async () => await commitPendingTerminalReply(confirmationWindow === undefined ? message : { ...message, confirmationWindow }))
 }
 
 // The reply committed for the request.
@@ -31,9 +33,9 @@ export const getQueuedTerminalReply = async (uniqueRequestIdentifier: UniqueRequ
 
 const isRequestPending = async (uniqueRequestIdentifier: UniqueRequestIdentifier) => (await getPendingTransactionsAndMessages()).some((pending) => doesUniqueRequestIdentifiersMatch(pending.uniqueRequestIdentifier, uniqueRequestIdentifier))
 
-// Under the terminal-reply lock: deletes a delivered entry whose request is no longer pending.
+// Under the terminal-reply lock: deletes a delivered entry whose request is no longer pending and whose confirmation window was updated.
 async function retireIfFinished(entry: StoredTerminalReply) {
-	if (entry.delivered !== true || await isRequestPending(entry.uniqueRequestIdentifier)) return
+	if (entry.delivered !== true || entry.confirmationWindow !== undefined || await isRequestPending(entry.uniqueRequestIdentifier)) return
 	await removePendingTerminalReply(entry.uniqueRequestIdentifier)
 }
 
@@ -42,7 +44,7 @@ async function deliverEntry(websiteTabConnections: WebsiteTabConnections, entry:
 	const identifier = getUniqueRequestIdentifierString(entry.uniqueRequestIdentifier)
 	if (entry.delivered !== true) {
 		if (!postedUnmarkedTerminalReplies.has(identifier)) {
-			const { delivered: _delivered, ...reply } = entry
+			const { delivered: _delivered, confirmationWindow: _confirmationWindow, ...reply } = entry
 			const delivery = replyToInterceptedRequest(websiteTabConnections, reply)
 			if (delivery !== true) return delivery
 			postedUnmarkedTerminalReplies.add(identifier)
@@ -77,18 +79,11 @@ export async function queueTerminalReplyAndAttemptDelivery(websiteTabConnections
 	return await attemptQueuedTerminalReplyDelivery(websiteTabConnections, message)
 }
 
-// Deletes the request's entry once it is delivered and the request is no longer pending, the last step of finishing a request.
+// Deletes the request's entry once it is delivered, the request is no longer pending and its window was updated: the last step of finishing a request.
 export async function retireDeliveredTerminalReply(uniqueRequestIdentifier: UniqueRequestIdentifier) {
 	await terminalReplySemaphore.execute(async () => {
 		const entry = await getQueuedTerminalReply(uniqueRequestIdentifier)
 		if (entry !== undefined) await retireIfFinished(entry)
-	})
-}
-
-// At startup: deletes the delivered entries whose requests a restart left finished but for deleting the entry.
-export async function pruneDeliveredTerminalReplies() {
-	await terminalReplySemaphore.execute(async () => {
-		for (const entry of await getPendingTerminalReplies()) await retireIfFinished(entry)
 	})
 }
 

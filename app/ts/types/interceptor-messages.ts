@@ -8,7 +8,7 @@ import { UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
 import { EthGetFeeHistoryResponse, EthGetLogsResponse, EthGetStorageAtParams, EthGetStorageAtResponse, EthTransactionReceiptResponse, GetBlockReturn, SendRawTransactionParams, SendTransactionParams, SimulationStackVersion, WalletAddEthereumChain } from './JsonRpc-types.js'
 import { AddressBookEntries, AddressBookEntry, ChainIdWithUniversal } from './addressBookTypes.js'
 import { Page } from './exportedSettingsTypes.js'
-import { Website, WebsiteAccess, WebsiteAccessArray } from './websiteAccessTypes.js'
+import { PopupOrTabId, Website, WebsiteAccess, WebsiteAccessArray } from './websiteAccessTypes.js'
 import { SignerName } from './signerTypes.js'
 import { PendingAccessRequests, PopupPendingTransactionOrSignableMessage } from './accessRequest.js'
 import { RpcEntries, RpcNetwork } from './rpc.js'
@@ -230,9 +230,9 @@ export const InterceptedRequestForward = funtypes.Intersect(
 	funtypes.Union(RPCReply, funtypes.Intersect(funtypes.ReadonlyObject({ type: funtypes.Literal('result') }), InpageScriptRequestWithoutIdentifier)),
 )
 
-// A terminal reply in the durable terminal-reply queue: the commitment to the reply until its request is finished. delivered is set once it is posted; an entry stored before the field existed counts as not delivered.
+// A terminal reply in the durable terminal-reply queue: the commitment to the reply until its request is finished. delivered is set once it is posted; an entry stored before the field existed counts as not delivered. confirmationWindow is the window that showed the request, kept until the window is updated after the request is removed.
 export type StoredTerminalReply = funtypes.Static<typeof StoredTerminalReply>
-export const StoredTerminalReply = funtypes.Intersect(InterceptedRequestForward, funtypes.ReadonlyPartial({ delivered: funtypes.Literal(true) }))
+export const StoredTerminalReply = funtypes.Intersect(InterceptedRequestForward, funtypes.ReadonlyPartial({ delivered: funtypes.Literal(true), confirmationWindow: PopupOrTabId }))
 
 export type InterceptorMessageToInpage = funtypes.Static<typeof InterceptorMessageToInpage>
 export const InterceptorMessageToInpage = funtypes.Intersect(

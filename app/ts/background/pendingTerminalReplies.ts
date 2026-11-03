@@ -1,4 +1,4 @@
-import type { InterceptedRequestForward, StoredTerminalReply } from '../types/interceptor-messages.js'
+import type { StoredTerminalReply } from '../types/interceptor-messages.js'
 import { reportLocalRecovery } from '../utils/errors.js'
 import { doesTabExist, doesUniqueRequestIdentifiersMatch, type UniqueRequestIdentifier } from '../utils/requests.js'
 import { Semaphore } from '../utils/semaphore.js'
@@ -28,7 +28,7 @@ async function updatePendingTerminalReplies(update: (pendingReplies: readonly St
 }
 
 // Stores the reply as its request's commitment, unless the request already has one, which is kept: a request is committed to one reply. Returns the stored commitment.
-export async function commitPendingTerminalReply(reply: InterceptedRequestForward) {
+export async function commitPendingTerminalReply(reply: StoredTerminalReply) {
 	const pendingReplies = await updatePendingTerminalReplies((pendingReplies) => pendingReplies.some((pendingReply) => doesUniqueRequestIdentifiersMatch(pendingReply.uniqueRequestIdentifier, reply.uniqueRequestIdentifier))
 		? pendingReplies
 		: [...pendingReplies, reply])
@@ -39,6 +39,15 @@ export async function commitPendingTerminalReply(reply: InterceptedRequestForwar
 
 export async function markPendingTerminalReplyDelivered(uniqueRequestIdentifier: UniqueRequestIdentifier) {
 	await updatePendingTerminalReplies((pendingReplies) => pendingReplies.map((reply) => doesUniqueRequestIdentifiersMatch(reply.uniqueRequestIdentifier, uniqueRequestIdentifier) ? { ...reply, delivered: true } : reply))
+}
+
+// Drops the entry's confirmation window once the window was updated after its request was removed.
+export async function forgetPendingTerminalReplyWindow(uniqueRequestIdentifier: UniqueRequestIdentifier) {
+	await updatePendingTerminalReplies((pendingReplies) => pendingReplies.map((reply) => {
+		if (!doesUniqueRequestIdentifiersMatch(reply.uniqueRequestIdentifier, uniqueRequestIdentifier)) return reply
+		const { confirmationWindow: _confirmationWindow, ...withoutWindow } = reply
+		return withoutWindow
+	}))
 }
 
 export async function removePendingTerminalReply(uniqueRequestIdentifier: UniqueRequestIdentifier) {

@@ -1074,7 +1074,7 @@ const seedCommittedReply = async (requestId: number, result: { readonly result: 
 	const [pending] = pendingRequests
 	if (pending === undefined) throw new Error('Expected the pending request')
 	const { commitPendingTerminalReply } = await import('../../app/ts/background/pendingTerminalReplies.js')
-	await commitPendingTerminalReply({ ...pending.originalRequestParameters, type: 'result', ...result, uniqueRequestIdentifier: { requestId, requestSocket: REQUEST_SOCKET } })
+	await commitPendingTerminalReply({ ...pending.originalRequestParameters, type: 'result', ...result, uniqueRequestIdentifier: { requestId, requestSocket: REQUEST_SOCKET }, confirmationWindow: pending.popupOrTabId })
 }
 
 const getAllPageResponses = (postedMessages: readonly unknown[], requestId: number) => postedMessages.flatMap((message) => isRecord(message) && message.requestId === requestId && ('result' in message || 'error' in message) ? [isRecord(message.error) ? { error: message.error.code } : { result: message.result }] : [])
@@ -1131,44 +1131,72 @@ test('stacks a message an earlier accept already stacked only once when accepted
 
 // The states an accepted transaction's resolution leaves when the extension restarts at each persistence boundary, from committing its reply to deleting it.
 const restartStates = [
-	{ boundary: 'the commitment write', entry: 'none', pending: true },
-	{ boundary: 'the delivery', entry: 'undelivered', pending: true },
-	{ boundary: 'the pending request removal', entry: 'delivered', pending: true },
-	{ boundary: 'the entry delete', entry: 'delivered', pending: false },
+	{ boundary: 'the commitment write', entry: 'none', pending: true, windowPending: false },
+	{ boundary: 'the delivery', entry: 'undelivered', pending: true, windowPending: true },
+	{ boundary: 'the pending request removal', entry: 'delivered', pending: true, windowPending: true },
+	{ boundary: 'the window update', entry: 'delivered', pending: false, windowPending: true },
+	{ boundary: 'the entry delete', entry: 'delivered', pending: false, windowPending: false },
 ] as const
 
-for (const state of restartStates) {
-	for (const flushFirst of [true, false]) {
-		test(`answers an accepted transaction once with its stacked hash after a restart at ${ state.boundary }, flushing ${ flushFirst ? 'before' : 'after' } recovery`, async () => {
-			await startSimulationStack(SENDER)
-			const postedMessages: unknown[] = []
-			const websiteTabConnections = createWebsiteTabConnections(postedMessages)
-			await openConfirmation(1, SENDER, 1n, websiteTabConnections)
-			const [pending] = await modules.getPendingTransactionsAndMessages()
-			if (pending?.type !== 'Transaction' || pending.transactionOrMessageCreationStatus !== 'Simulated') throw new Error('Expected a simulated pending transaction')
-			const stacked = toPreSimulationTransaction(pending.transactionToSimulate, pending.simulationHashReservation)
-			await modules.updateInterceptorTransactionStack(() => ({ operations: [asOperation(stacked)] }))
-			const { commitPendingTerminalReply, markPendingTerminalReplyDelivered } = await import('../../app/ts/background/pendingTerminalReplies.js')
-			if (state.entry !== 'none') await commitPendingTerminalReply({ ...pending.originalRequestParameters, type: 'result', result: stacked.signedTransaction.hash, uniqueRequestIdentifier: pending.uniqueRequestIdentifier })
-			if (state.entry === 'delivered') await markPendingTerminalReplyDelivered(pending.uniqueRequestIdentifier)
-			if (!state.pending) await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
-			// A delivered entry's reply reached the page before the restart.
-			const expectedNewReplies = state.entry === 'delivered' ? [] : [{ result: modules.EthereumBytes32.serialize(stacked.signedTransaction.hash) }]
+// Counts the confirmation windows closed while running.
+const countingClosedWindows = async (run: () => Promise<void>) => {
+	const windows = Reflect.get(globalThis, 'browser').windows
+	const removeWindow = windows.remove
+	const removedWindows: number[] = []
+	windows.remove = async (windowId: number) => { removedWindows.push(windowId); return await removeWindow(windowId) }
+	try {
+		await run()
+	} finally {
+		windows.remove = removeWindow
+	}
+	return removedWindows
+}
 
-			browserMock.setLiveWindowIds([])
-			const { pruneDeliveredTerminalReplies } = await import('../../app/ts/background/terminalReplyDelivery.js')
-			const recover = async () => await withSilencedConsole(async () => {
-				await modules.resolvePendingRequestsForMissingConfirmationWindows(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections)
-				await pruneDeliveredTerminalReplies()
+for (const state of restartStates) {
+	for (const windowSurvived of [false, true]) {
+		for (const flushFirst of [true, false]) {
+			test(`finishes an accepted transaction once with its stacked hash after a restart at ${ state.boundary }, ${ windowSurvived ? 'with its window open' : 'with its window gone' }, flushing ${ flushFirst ? 'before' : 'after' } startup`, async () => {
+				await startSimulationStack(SENDER)
+				const postedMessages: unknown[] = []
+				const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+				await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+				const [pending] = await modules.getPendingTransactionsAndMessages()
+				if (pending?.type !== 'Transaction' || pending.transactionOrMessageCreationStatus !== 'Simulated') throw new Error('Expected a simulated pending transaction')
+				const stacked = toPreSimulationTransaction(pending.transactionToSimulate, pending.simulationHashReservation)
+				await modules.updateInterceptorTransactionStack(() => ({ operations: [asOperation(stacked)] }))
+				const { commitPendingTerminalReply, markPendingTerminalReplyDelivered } = await import('../../app/ts/background/pendingTerminalReplies.js')
+				if (state.entry !== 'none') await commitPendingTerminalReply({ ...pending.originalRequestParameters, type: 'result', result: stacked.signedTransaction.hash, uniqueRequestIdentifier: pending.uniqueRequestIdentifier, ...(state.windowPending ? { confirmationWindow: pending.popupOrTabId } : {}) })
+				if (state.entry === 'delivered') await markPendingTerminalReplyDelivered(pending.uniqueRequestIdentifier)
+				if (!state.pending) await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+				// A delivered entry's reply reached the page before the restart.
+				const expectedNewReplies = state.entry === 'delivered' ? [] : [{ result: modules.EthereumBytes32.serialize(stacked.signedTransaction.hash) }]
+
+				browserMock.setLiveWindowIds(windowSurvived ? [CONFIRMATION_WINDOW_ID] : [])
+				const { resumeCommittedRequests, getResolutionBookkeepingSize } = await import('../../app/ts/background/windows/confirmTransaction.js')
+				const { getTerminalReplyBookkeepingSize } = await import('../../app/ts/background/terminalReplyDelivery.js')
+				const startUp = async () => await withSilencedConsole(async () => {
+					await modules.resolvePendingRequestsForMissingConfirmationWindows(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections)
+					await resumeCommittedRequests(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections)
+				})
+				const closedWindows = await countingClosedWindows(async () => {
+					if (flushFirst) await modules.flushPendingTerminalRepliesForSocket(websiteTabConnections, REQUEST_SOCKET)
+					await startUp()
+					if (!flushFirst) await modules.flushPendingTerminalRepliesForSocket(websiteTabConnections, REQUEST_SOCKET)
+				})
+				if (state.entry === 'none' && windowSurvived) {
+					// An uncommitted request whose window survived waits for the user, whose accept answers with the stacked hash.
+					assert.equal((await modules.getPendingTransactionsAndMessages()).length, 1)
+					assert.deepEqual(getAllPageResponses(postedMessages, 1), [])
+					await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier: { requestId: 1, requestSocket: REQUEST_SOCKET } } }))
+				}
+				assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [], 'the request completes')
+				assert.deepEqual(getAllPageResponses(postedMessages, 1), expectedNewReplies, 'exactly the original reply, once')
+				assert.deepEqual(await modules.getPendingTerminalReplies(), [], 'the finished request leaves no entry')
+				assert.deepEqual(hashesOf(await getStackedTransactions()), [stacked.signedTransaction.hash], 'the stack keeps the accepted transaction')
+				if (windowSurvived && state.entry !== 'none' && state.windowPending) assert.deepEqual(closedWindows, [CONFIRMATION_WINDOW_ID], 'the window that showed the last request closes')
+				assert.equal(getResolutionBookkeepingSize() + getTerminalReplyBookkeepingSize(), 0, 'no bookkeeping is left')
 			})
-			if (flushFirst) await modules.flushPendingTerminalRepliesForSocket(websiteTabConnections, REQUEST_SOCKET)
-			await recover()
-			if (!flushFirst) await modules.flushPendingTerminalRepliesForSocket(websiteTabConnections, REQUEST_SOCKET)
-			await waitUntilNothingPending()
-			assert.deepEqual(getAllPageResponses(postedMessages, 1), expectedNewReplies, 'exactly the original reply, once')
-			assert.deepEqual(await modules.getPendingTerminalReplies(), [], 'the finished request leaves no entry')
-			assert.deepEqual(hashesOf(await getStackedTransactions()), [stacked.signedTransaction.hash], 'the stack keeps the accepted transaction')
-		})
+		}
 	}
 }
 
@@ -1205,12 +1233,109 @@ test('deletes a finished request\'s delivered reply when the first delete fails'
 		}
 		writeStoredItems()
 	})
-	await rejectRequest(request, websiteTabConnections)
-	await withSilencedConsole(async () => await waitForCondition(async () => (await modules.getPendingTerminalReplies()).length === 0))
+	const closedWindows = await countingClosedWindows(async () => {
+		await rejectRequest(request, websiteTabConnections)
+		await withSilencedConsole(async () => await waitForCondition(async () => (await modules.getPendingTerminalReplies()).length === 0))
+	})
 	browserMock.setStorageSetHandler(undefined)
 	assert.equal(failDelete, false, 'the first delete failed')
 	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [{ error: 4001 }])
 	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	assert.deepEqual(closedWindows, [CONFIRMATION_WINDOW_ID], 'the window closes once')
+	await assertNoResolutionBookkeeping()
+})
+
+const assertNoResolutionBookkeeping = async () => {
+	const { getResolutionBookkeepingSize } = await import('../../app/ts/background/windows/confirmTransaction.js')
+	const { getTerminalReplyBookkeepingSize } = await import('../../app/ts/background/terminalReplyDelivery.js')
+	assert.equal(getResolutionBookkeepingSize() + getTerminalReplyBookkeepingSize(), 0, 'no bookkeeping is left')
+}
+
+// Collects the unhandled promise rejections while running.
+const collectingUnhandledRejections = async (run: () => Promise<void>) => {
+	const rejections: unknown[] = []
+	const onUnhandledRejection = (reason: unknown) => { rejections.push(reason) }
+	process.on('unhandledRejection', onUnhandledRejection)
+	try {
+		await run()
+		await new Promise((resolve) => setTimeout(resolve, 20))
+	} finally {
+		process.off('unhandledRejection', onUnhandledRejection)
+	}
+	return rejections
+}
+
+const scheduledRetryFailures = [
+	{ step: 'its committed reply lookup', fails: (kind: 'get' | 'set', items: unknown) => kind === 'get' && readsKey(items, 'pendingTerminalReplies') },
+	{ step: 'its pending request lookup', fails: (kind: 'get' | 'set', items: unknown) => kind === 'get' && readsKey(items, 'pendingTransactionsAndMessages') },
+	{ step: 'deleting its delivered reply', fails: (kind: 'get' | 'set', items: unknown) => kind === 'set' && isRecord(items) && Array.isArray(items.pendingTerminalReplies) && items.pendingTerminalReplies.length === 0 },
+] as const
+
+for (const { step, fails } of scheduledRetryFailures) {
+	test(`completes a request whose scheduled finishing retry fails at ${ step }, without an unhandled rejection`, async () => {
+		await startSimulationStack(SENDER)
+		const postedMessages: unknown[] = []
+		const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+		const request = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+		// The first attempt fails removing the request, which schedules a retry; that retry then fails once at the step.
+		let removalFailed = false
+		let retryFailed = false
+		browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+			if (!removalFailed && Array.isArray(items.pendingTransactionsAndMessages) && items.pendingTransactionsAndMessages.length === 0) {
+				removalFailed = true
+				throw new Error('transient pending request removal failure')
+			}
+			if (removalFailed && !retryFailed && fails('set', items)) {
+				retryFailed = true
+				throw new Error('transient failure during the scheduled retry')
+			}
+			writeStoredItems()
+		})
+		browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+			if (removalFailed && !retryFailed && fails('get', keys)) {
+				retryFailed = true
+				throw new Error('transient failure during the scheduled retry')
+			}
+			return readStoredItems()
+		})
+		const unhandledRejections = await collectingUnhandledRejections(async () => await withSilencedConsole(async () => {
+			await rejectRequest(request, websiteTabConnections)
+			// Wait without reading storage until the scheduled retry has failed, so only the retry meets the failure.
+			const deadline = Date.now() + 2_000
+			while (!retryFailed && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10))
+			await waitUntilNothingPending()
+			await waitForCondition(async () => (await modules.getPendingTerminalReplies()).length === 0)
+		}))
+		browserMock.setStorageSetHandler(undefined)
+		browserMock.setStorageGetHandler(undefined)
+		assert.deepEqual([removalFailed, retryFailed], [true, true], 'both failures happened')
+		assert.deepEqual(unhandledRejections, [])
+		assert.deepEqual(getPageResponses(postedMessages, request.requestId), [{ error: 4001 }])
+		await assertNoResolutionBookkeeping()
+	})
+}
+
+test('retries an explicit reject whose commitment write failed, keeping the rejection', async () => {
+	await startSimulationStack(SENDER)
+	const postedMessages: unknown[] = []
+	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+	const request = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+	let failedCommits = 0
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		if (failedCommits > 0 || !('pendingTerminalReplies' in items)) return writeStoredItems()
+		failedCommits += 1
+		throw new Error('transient terminal reply queue write failure')
+	})
+	await rejectRequest(request, websiteTabConnections)
+	assert.equal(failedCommits, 1)
+	assert.equal((await modules.getPendingTransactionsAndMessages()).length, 1, 'the request waits for the retried commitment')
+	// An accept meanwhile does not change the chosen outcome.
+	await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier: request } }))
+	await withSilencedConsole(async () => await waitUntilNothingPending())
+	browserMock.setStorageSetHandler(undefined)
+	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [{ error: 4001 }])
+	assert.deepEqual(await getStackedTransactions(), [], 'nothing is stacked')
+	await assertNoResolutionBookkeeping()
 })
 
 for (const requestCount of [1, 2]) {
