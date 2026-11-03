@@ -119,4 +119,3 @@ export async function addUserAddressBookEntryIfItDoesNotExist(newEntry: AddressB
 		return existingEntry !== undefined ? entries : entries.concat(newEntry)
 	})
 }
-

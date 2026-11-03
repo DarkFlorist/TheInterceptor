@@ -15,4 +15,3 @@ export async function readSigningWalletBindings(): Promise<SigningWalletBindings
 export async function getStoredSigningWalletBinding(address: bigint): Promise<SigningWalletBinding | undefined> {
 	return (await readSigningWalletBindings()).find((binding) => binding.wallet.address === address)
 }
-

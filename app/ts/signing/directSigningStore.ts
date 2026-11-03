@@ -65,4 +65,3 @@ async function persistDirectSigningRecord(record: DirectSigningRecord) {
 	await browserStorageLocalSet({ directSigningRequestsV1: next })
 	return record
 }
-

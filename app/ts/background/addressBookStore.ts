@@ -55,4 +55,3 @@ export async function updateUserAddressBookEntriesV2Old(updateFunc: (prevState: 
 		return await browserStorageLocalSet({ userAddressBookEntriesV2: updateFunc(entries) })
 	})
 }
-
