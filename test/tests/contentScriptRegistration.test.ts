@@ -97,6 +97,19 @@ async function loadModules() {
 	}
 }
 
+// Chromium and Firefox match patterns: the scheme, the exact host and effective port when the pattern names a port, and a *-glob over the path and query, never the fragment.
+function isMatchedByPattern(pattern: string, urlString: string) {
+	const parsedPattern = /^(file|https?):\/\/([^/]*)(\/.*)$/.exec(pattern)
+	if (parsedPattern === null) throw new Error(`Unsupported match pattern ${ pattern }`)
+	const [, scheme, host, path = ''] = parsedPattern
+	const url = new URL(urlString)
+	if (url.protocol !== `${ scheme }:`) return false
+	const effectivePort = url.port === '' ? (url.protocol === 'https:' ? '443' : '80') : url.port
+	if (scheme !== 'file' && host !== `${ url.hostname }:${ effectivePort }`) return false
+	const pathExpression = new RegExp(`^${ path.split('*').map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*') }$`)
+	return pathExpression.test(`${ url.pathname }${ url.search }`)
+}
+
 describe('content script injection strategy', () => {
 	test('scopes exclusions to explicit schemes and hosts without inheriting legacy grants', async () => {
 		installBrowserMock()
@@ -105,45 +118,56 @@ describe('content script injection strategy', () => {
 			'', 'example.com', 'localhost:3000', 'https://secure.example', 'http://localhost:3000',
 			'https://[::1]:8545', 'https://invalid.example/path', 'https://secure.example', 'file:///tmp/a.html',
 			'http://localhost', 'https://[::1]',
-		]), ['https://secure.example:443/*', 'http://localhost:3000/*', 'https://[::1]:8545/*', 'file:///tmp/a.html', 'http://localhost:80/*', 'https://[::1]:443/*'])
+		]), ['https://secure.example:443/*', 'http://localhost:3000/*', 'https://[::1]:8545/*', 'file:///tmp/a.html', 'file:///tmp/a.html?*', 'http://localhost:80/*', 'https://[::1]:443/*'])
 	})
 
-	test('uses exact URL globs for Firefox default ports, custom ports, schemes and IPv6 hosts', async () => {
+	test('uses exact URL globs for Firefox default ports, custom ports, schemes and IPv6 hosts, and match patterns for files', async () => {
 		installBrowserMock()
-		const { getManifestV2ExcludeGlobs } = await loadModules()
-		assert.deepEqual(getManifestV2ExcludeGlobs([
+		const { getManifestV2ExcludeGlobs, getManifestV2ExcludeMatches } = await loadModules()
+		const origins = [
 			'http://example.test', 'https://example.test', 'https://example.test:8443',
 			'http://[::1]', 'http://[::1]:3000', 'example.test', 'https://example.test', 'file:///tmp/a.html',
-		]), ['http://example.test/*', 'https://example.test/*', 'https://example.test:8443/*', 'http://[::1]/*', 'http://[::1]:3000/*', 'file:///tmp/a.html'])
+		]
+		assert.deepEqual(getManifestV2ExcludeGlobs(origins), ['http://example.test/*', 'https://example.test/*', 'https://example.test:8443/*', 'http://[::1]/*', 'http://[::1]:3000/*'])
+		assert.deepEqual(getManifestV2ExcludeMatches(origins), ['file:///tmp/a.html', 'file:///tmp/a.html?*'])
+	})
+
+	test('excludes a disabled local file with any query or fragment, but not its similarly named siblings', async () => {
+		installBrowserMock()
+		const { getManifestV2ExcludeMatches, getManifestV3ExcludeMatches } = await loadModules()
+		const { getWebsiteOrigin } = await import('../../app/ts/utils/websiteOrigin.js')
+		const disabledOrigin = getWebsiteOrigin('file:///tmp/wallet.html?session=1#top')
+		assert.equal(disabledOrigin, 'file:///tmp/wallet.html')
+		const urls = ['file:///tmp/wallet.html', 'file:///tmp/wallet.html?session=1', 'file:///tmp/wallet.html?', 'file:///tmp/wallet.html#top', 'file:///tmp/wallet.html?session=1#top', 'file:///tmp/wallet.html.other', 'file:///tmp/wallet.html.other?session=1', 'file:///tmp/wallet.htm', 'file:///tmp/wallet.html/child', 'file:///other/wallet.html']
+		for (const excludeMatches of [getManifestV3ExcludeMatches([disabledOrigin]), getManifestV2ExcludeMatches([disabledOrigin])]) {
+			for (const url of urls) {
+				assert.equal(excludeMatches.some((pattern) => isMatchedByPattern(pattern, url)), getWebsiteOrigin(url) === disabledOrigin, `${ url } with ${ disabledOrigin } disabled`)
+			}
+		}
 	})
 
 	test('excludes exactly the URLs whose website origin is disabled, not their subdomains or other ports', async () => {
 		installBrowserMock()
 		const { getManifestV3ExcludeMatches } = await loadModules()
 		const { getWebsiteOrigin } = await import('../../app/ts/utils/websiteOrigin.js')
-		// Chromium matches a pattern with a port against the URL's scheme, exact host and effective port.
-		const isMatchedBy = (pattern: string, url: string) => {
-			const { protocol, hostname, port } = new URL(url)
-			const effectivePort = port === '' ? (protocol === 'https:' ? '443' : '80') : port
-			return pattern === `${ protocol }//${ hostname }:${ effectivePort }/*`
-		}
 		const urls = ['http://example.com/', 'https://example.com/path', 'https://example.com:80/', 'http://example.com:443/', 'http://example.com:8080/', 'https://app.example.com/', 'http://[::1]:8545/']
 		for (const disabledUrl of urls) {
 			const disabledOrigin = getWebsiteOrigin(disabledUrl)
 			assert.ok(disabledOrigin !== undefined)
 			const excludeMatches = getManifestV3ExcludeMatches([disabledOrigin])
 			for (const url of urls) {
-				assert.equal(excludeMatches.some((pattern) => isMatchedBy(pattern, url)), getWebsiteOrigin(url) === disabledOrigin, `${ url } with ${ disabledUrl } disabled`)
+				assert.equal(excludeMatches.some((pattern) => isMatchedByPattern(pattern, url)), getWebsiteOrigin(url) === disabledOrigin, `${ url } with ${ disabledUrl } disabled`)
 			}
 		}
 	})
 
 	test('skips stored origins with a * instead of turning them into wildcard or invalid exclusions', async () => {
 		installBrowserMock()
-		const { getManifestV2ExcludeGlobs, getManifestV3ExcludeMatches } = await loadModules()
+		const { getManifestV2ExcludeGlobs, getManifestV2ExcludeMatches, getManifestV3ExcludeMatches } = await loadModules()
 		const origins = ['https://*.secure.example', 'http://foo*bar.example', 'https://%2A.encoded.example', 'file:///tmp/*.html', 'https://example.com']
 		assert.deepEqual(getManifestV3ExcludeMatches(origins), ['https://example.com:443/*'])
 		assert.deepEqual(getManifestV2ExcludeGlobs(origins), ['https://example.com/*'])
+		assert.deepEqual(getManifestV2ExcludeMatches(origins), [])
 	})
 
 	test('registers the Firefox bridge at document start before injecting the provider', async () => {
@@ -159,6 +183,14 @@ describe('content script injection strategy', () => {
 		assert.equal(firefoxScripts[1]?.excludeMatches, undefined)
 		assert.deepEqual(firefoxScripts[1]?.excludeGlobs, ['https://disabled.example/*'])
 		assert.equal(getFirefoxUnregisterCalls(), 1)
+		storageState.websiteAccess = [{ website: { websiteOrigin: 'https://disabled.example' }, interceptorDisabled: true }, { website: { websiteOrigin: 'file:///tmp/wallet.html' }, interceptorDisabled: true }]
+		await reconcileContentScriptRegistration()
+		assert.deepEqual(firefoxScripts[2]?.excludeMatches, ['file:///tmp/wallet.html', 'file:///tmp/wallet.html?*'])
+		assert.deepEqual(firefoxScripts[2]?.excludeGlobs, ['https://disabled.example/*'])
+		storageState.websiteAccess = [{ website: { websiteOrigin: 'file:///tmp/wallet.html' }, interceptorDisabled: true }]
+		await reconcileContentScriptRegistration()
+		assert.deepEqual(firefoxScripts[3]?.excludeMatches, ['file:///tmp/wallet.html', 'file:///tmp/wallet.html?*'])
+		assert.equal(firefoxScripts[3]?.excludeGlobs, undefined)
 	})
 
 	test('propagates Firefox registration failures without removing existing protection', async () => {

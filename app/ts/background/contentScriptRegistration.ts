@@ -1,5 +1,5 @@
 import { getWebsiteAccess } from './settings.js'
-import { getInterceptorDisabledSites, getManifestV2ExcludeGlobs, getManifestV3ExcludeMatches } from '../utils/contentScriptExclusions.js'
+import { getInterceptorDisabledSites, getManifestV2ExcludeGlobs, getManifestV2ExcludeMatches, getManifestV3ExcludeMatches } from '../utils/contentScriptExclusions.js'
 import { Semaphore } from '../utils/semaphore.js'
 
 const injectableSitesWildcard = ['file://*/*', 'http://*/*', 'https://*/*']
@@ -70,10 +70,13 @@ async function removeSupersededManifestV2Registrations() {
 const updateContentScriptInjectionStrategyManifestV2 = async (disabledOrigins: readonly string[]) => {
 	// Keep failed removals reachable and finish cleanup before creating another registration.
 	await removeSupersededManifestV2Registrations()
+	const excludeMatches = getManifestV2ExcludeMatches(disabledOrigins)
 	const excludeGlobs = getManifestV2ExcludeGlobs(disabledOrigins)
 	// A late onCommitted/executeScript injection lets page listeners run before the private bridge capture listener.
 	const registered = await browser.contentScripts.register({
 		matches: injectableSitesWildcard,
+		// Firefox rejects empty exclusion lists.
+		...(excludeMatches.length === 0 ? {} : { excludeMatches }),
 		...(excludeGlobs.length === 0 ? {} : { excludeGlobs }),
 		allFrames: true,
 		runAt: 'document_start',
