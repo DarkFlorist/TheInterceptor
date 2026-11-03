@@ -1,7 +1,7 @@
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { getInputFieldFromDataOrInput, getSimulatedBalance, getSimulatedErc20Balance, getSimulatedTransactionCount, simulateEstimateGas, simulateEstimateGasAppendedToSimulation } from '../simulation/services/SimulationModeEthereumClientService.js'
 import type { SendRawTransactionParams, SendTransactionParams } from '../types/JsonRpc-types.js'
-import { PASSTHROUGH_STATE, type ResolvedSimulationState, type WebsiteCreatedEthereumTransaction, type WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
+import { PASSTHROUGH_STATE, type ResolvedSimulationState, type TransactionGasPayment, type TransactionSimulationOptions, type WebsiteCreatedEthereumTransaction, type WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
 import type { EthereumQuantity } from '../types/wire-types.js'
 import type { Website } from '../types/websiteAccessTypes.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK } from '../utils/constants.js'
@@ -12,7 +12,7 @@ import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { parseSendRawTransaction } from '../utils/sendRawTransactionParsing.js'
 import { getDesiredMaxFeePerGasForBaseFee, getTransactionFeesForBaseFee, hasExplicitMaxFeePerGas } from '../utils/transactionFees.js'
 import { identifyAddress } from './metadataUtils.js'
-import { captureSimulationSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
+import { captureSimulationSnapshot, getExecutedCallFormation, getUpdatedSimulationState } from './simulationUpdating.js'
 
 // Prepares the transactions that confirmations simulate and add to the simulation stack: their nonce, fees and gas limit. Both the confirmation window and wallet_sendCalls batches use it.
 
@@ -64,10 +64,8 @@ export const formSendRawTransaction = async(_ethereumClientService: EthereumClie
 	}
 }
 
-export type TransactionGasPayment = 'transaction-sender' | 'external-executor'
-
 export const formEthSendTransaction = async(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, activeAddress: bigint | undefined, website: Website, sendTransactionParams: SendTransactionParams, created: Date, transactionIdentifier: EthereumQuantity, simulationMode = true, gasPayment: TransactionGasPayment = 'transaction-sender'): Promise<WebsiteCreatedEthereumTransactionOrFailed> => {
-	const simulationState = simulationMode || gasPayment === 'external-executor'
+	const simulationState = simulationMode || gasPayment !== 'transaction-sender'
 		? await getUpdatedSimulationState(ethereumClientService, await captureSimulationSnapshot())
 		: PASSTHROUGH_STATE
 	return await formEthSendTransactionOnSimulationState(ethereumClientService, requestAbortController, simulationState, activeAddress, website, sendTransactionParams, created, transactionIdentifier, simulationMode, gasPayment)
@@ -80,12 +78,17 @@ export type GasEstimationPlacement = 'newBlock' | 'appendedToSimulation'
 export const formEthSendTransactionOnSimulationState = async(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: ResolvedSimulationState, activeAddress: bigint | undefined, website: Website, sendTransactionParams: SendTransactionParams, created: Date, transactionIdentifier: EthereumQuantity, simulationMode: boolean, gasPayment: TransactionGasPayment, gasEstimationPlacement: GasEstimationPlacement = 'newBlock'): Promise<WebsiteCreatedEthereumTransactionOrFailed> => {
 	const transactionDetails = sendTransactionParams.params[0]
 	if (activeAddress === undefined) throw new Error('Access to active address is denied')
+	const paidByExecutor = gasPayment !== 'transaction-sender'
 	const from = simulationMode && transactionDetails.from !== undefined ? transactionDetails.from : activeAddress
-	const transactionCountPromise = silenceChromeUnCaughtPromise(getSimulatedTransactionCount(ethereumClientService, requestAbortController, simulationState, from))
-	const parentBlockPromise = gasPayment === 'transaction-sender'
+	// Defined by the Safe layer for a transaction the simulation runs as an executor's call (a Gnosis Safe's own call), so this function picks no Safe-specific option or nonce source itself.
+	const executedCallFormation = getExecutedCallFormation(ethereumClientService, gasPayment)
+	const transactionCountPromise = silenceChromeUnCaughtPromise(executedCallFormation === undefined
+		? getSimulatedTransactionCount(ethereumClientService, requestAbortController, simulationState, from)
+		: executedCallFormation.getNonce(requestAbortController, simulationState, from))
+	const parentBlockPromise = !paidByExecutor
 		? silenceChromeUnCaughtPromise(ethereumClientService.getBlock(requestAbortController)) // the latest real block is the parent of the transaction being prepared
 		: undefined
-	const balancePromise = gasPayment === 'transaction-sender'
+	const balancePromise = !paidByExecutor
 		? silenceChromeUnCaughtPromise(getSimulatedBalance(ethereumClientService, requestAbortController, simulationState, from))
 		: undefined
 	const parentBlock = parentBlockPromise === undefined ? undefined : await parentBlockPromise
@@ -93,15 +96,15 @@ export const formEthSendTransactionOnSimulationState = async(ethereumClientServi
 	if (parentBlock !== undefined && parentBlock.baseFeePerGas === undefined) throw new Error(CANNOT_SIMULATE_OFF_LEGACY_BLOCK)
 	const parentBaseFeePerGas = parentBlock?.baseFeePerGas
 	const requestedMaxPriorityFeePerGas = transactionDetails.maxPriorityFeePerGas !== undefined && transactionDetails.maxPriorityFeePerGas !== null ? transactionDetails.maxPriorityFeePerGas : 10n**8n // 0.1 nanoeth/gas
-	const maxPriorityFeePerGas = gasPayment === 'external-executor' ? 0n : requestedMaxPriorityFeePerGas
+	const maxPriorityFeePerGas = paidByExecutor ? 0n : requestedMaxPriorityFeePerGas
 	const value = transactionDetails.value !== undefined  ? transactionDetails.value : 0n
 	const getFeePerGas = async (gasLimit: bigint) => {
-		if (gasPayment === 'external-executor') return { maxFeePerGas: 0n, maxPriorityFeePerGas: 0n }
+		if (paidByExecutor) return { maxFeePerGas: 0n, maxPriorityFeePerGas: 0n }
 		if (parentBaseFeePerGas === undefined || balancePromise === undefined) throw new Error('Transaction fee context is unavailable')
 		return getTransactionFeesForBaseFee(parentBaseFeePerGas, maxPriorityFeePerGas, transactionDetails.maxFeePerGas, await balancePromise, value, gasLimit)
 	}
 	const getInitialMaxFeePerGas = () => {
-		if (gasPayment === 'external-executor') return 0n
+		if (paidByExecutor) return 0n
 		if (hasExplicitMaxFeePerGas(transactionDetails.maxFeePerGas)) return transactionDetails.maxFeePerGas
 		if (parentBaseFeePerGas === undefined) throw new Error('Transaction fee context is unavailable')
 		return getDesiredMaxFeePerGasForBaseFee(parentBaseFeePerGas, maxPriorityFeePerGas)
@@ -125,14 +128,21 @@ export const formEthSendTransactionOnSimulationState = async(ethereumClientServi
 		transactionIdentifier,
 		error: undefined,
 	}
+	// Carried to the confirmation simulation and the simulation stack, which run the Safe's call through its execTransaction.
+	const simulationOptionsField: { readonly simulationOptions?: TransactionSimulationOptions } = executedCallFormation === undefined ? {} : { simulationOptions: executedCallFormation.simulationOptions }
 	if (transactionDetails.gas === undefined) {
 		try {
-			if (gasPayment === 'external-executor' && simulationState.kind === 'passthrough') {
+			if (paidByExecutor && simulationState.kind === 'passthrough') {
 				throw new Error('Gnosis Safe transaction gas estimation requires the Interceptor simulator.')
 			}
-			const estimateGas = gasEstimationPlacement === 'newBlock'
-				? await simulateEstimateGas(ethereumClientService, requestAbortController, simulationState, transactionWithoutGas)
-				: await simulateEstimateGasAppendedToSimulation(ethereumClientService, requestAbortController, simulationState, transactionWithoutGas)
+			const estimateTransactionGas = async () => {
+				// The executor's call formation estimates the call the simulation runs, which the Safe layer places itself.
+				if (executedCallFormation !== undefined) return await executedCallFormation.estimateGas(requestAbortController, simulationState, transactionWithoutGas, { website, created, originalRequestParameters: sendTransactionParams, transactionIdentifier })
+				return gasEstimationPlacement === 'newBlock'
+					? await simulateEstimateGas(ethereumClientService, requestAbortController, simulationState, transactionWithoutGas)
+					: await simulateEstimateGasAppendedToSimulation(ethereumClientService, requestAbortController, simulationState, transactionWithoutGas)
+			}
+			const estimateGas = await estimateTransactionGas()
 			if ('error' in estimateGas) {
 				const insufficientBalanceMessage = balancePromise === undefined
 					? undefined
@@ -143,7 +153,7 @@ export const formEthSendTransactionOnSimulationState = async(ethereumClientServi
 					success: false,
 				}
 			}
-			return { transaction: { ...transactionWithoutGas, ...await getFeePerGas(estimateGas.gas), gas: estimateGas.gas }, ...extraParams, success: true }
+			return { transaction: { ...transactionWithoutGas, ...await getFeePerGas(estimateGas.gas), gas: estimateGas.gas }, ...extraParams, ...simulationOptionsField, success: true }
 		} catch(error: unknown) {
 			if (isNewBlockAbort(error)) throw error
 			if (error instanceof JsonRpcResponseError) return { ...extraParams, error: { code: error.code, message: error.message, data: typeof error.data === 'string' ? error.data : '0x' }, success: false }
@@ -152,5 +162,5 @@ export const formEthSendTransactionOnSimulationState = async(ethereumClientServi
 			return { ...extraParams, error: { code: 123456, message: 'Unknown Error', data: '0x' }, success: false }
 		}
 	}
-	return { transaction: { ...transactionWithoutGas, ...await getFeePerGas(transactionDetails.gas), gas: transactionDetails.gas }, ...extraParams, success: true }
+	return { transaction: { ...transactionWithoutGas, ...await getFeePerGas(transactionDetails.gas), gas: transactionDetails.gas }, ...extraParams, ...simulationOptionsField, success: true }
 }

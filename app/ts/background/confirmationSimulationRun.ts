@@ -12,6 +12,7 @@ export const toPreSimulationTransaction = (transaction: WebsiteCreatedEthereumTr
 	created: transaction.created,
 	originalRequestParameters: transaction.originalRequestParameters,
 	transactionIdentifier: transaction.transactionIdentifier,
+	...(transaction.simulationOptions === undefined ? {} : { simulationOptions: transaction.simulationOptions }),
 })
 
 let confirmTransactionAbortController = new AbortController()

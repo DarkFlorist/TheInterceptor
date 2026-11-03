@@ -14,7 +14,6 @@ import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueReques
 import { createScopedKeyedSerialExecutor } from '../utils/semaphore.js'
 import { assertNever, modifyObject } from '../utils/typescript.js'
 import { runConfirmationSimulation, startConfirmTransactionSimulation, toPreSimulationTransaction } from './confirmationSimulationRun.js'
-import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
 import { getSimulationSettingsSnapshot } from './settings.js'
 import { captureStackSimulationContext, createSimulationStateWithNonceAndBaseFeeFixing, getSimulationInputForStack, getStackSimulationContextFingerprint, type PendingGovernanceVote, type StackSimulationContext, toStackSimulationContext, visualizeSimulatorState } from './simulationUpdating.js'
 import { getInterceptorTransactionStack, getPendingTransactionsAndMessages, getTabState, updateInterceptorTransactionStackUnlessRefused, updatePendingTransactionOrMessage } from './storageVariables.js'
@@ -149,19 +148,9 @@ export async function refreshPendingTransactionBatchSimulation(ethereumClientSer
 	await refreshUnapprovedTransactionBatchPreview(ethereumClientService, tokenPriceService, pendingBatch)
 }
 
-// Updates the confirmation window once a batch has left the confirmation queue: the simulation stack view when approval changed the stack, and the queue view, which focuses the website's tab or closes the window once the queue is empty. The website's answer never waits for this view work, so a failure in it is reported instead of reaching the caller.
-async function updateViewAfterTransactionBatchRemoved(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, pendingBatch: PendingTransactionBatch, simulationStack: 'changed' | 'unchanged') {
-	try {
-		if (simulationStack === 'changed') await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService)
-		await updateViewAfterPendingRequestRemoved(ethereum, tokenPriceService, pendingBatch)
-	} catch(error: unknown) {
-		await reportUnexpectedError(error, { code: 'wallet_send_calls_confirmation_view_update_failed' })
-	}
-}
-
 async function releaseTransactionBatchAndUpdateView(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, pendingBatch: PendingTransactionBatch) {
 	await releasePendingTransactionBatch(pendingBatch)
-	await updateViewAfterTransactionBatchRemoved(ethereum, tokenPriceService, pendingBatch, 'unchanged')
+	await updateViewAfterPendingRequestRemoved(ethereum, tokenPriceService, pendingBatch, 'unchanged')
 }
 
 // Finishes an approval whose calls are on the simulation stack. The reply with the batch id is queued and the batch is removed from the confirmation queue, keeping its id, so after a restart at most the reply's delivery is left. The reply is delivered before the view work, which cannot hold it back.
@@ -169,9 +158,12 @@ async function finishApprovedTransactionBatch(ethereum: EthereumClientService, t
 	const terminalReply = { ...pendingBatch.originalRequestParameters, type: 'result' as const, result: { id: pendingBatch.batchId }, uniqueRequestIdentifier: pendingBatch.uniqueRequestIdentifier }
 	await queueTerminalReply(terminalReply)
 	await removeApprovedTransactionBatch(pendingBatch)
-	const delivered = await attemptQueuedTerminalReplyDelivery(websiteTabConnections, terminalReply)
-	await updateViewAfterTransactionBatchRemoved(ethereum, tokenPriceService, pendingBatch, 'changed')
-	return delivered
+	try {
+		return await attemptQueuedTerminalReplyDelivery(websiteTabConnections, terminalReply)
+	} finally {
+		// The batch already left the confirmation queue, so its window is updated even when delivery throws. The delivery error still reaches the caller once the window is updated.
+		await updateViewAfterPendingRequestRemoved(ethereum, tokenPriceService, pendingBatch, 'changed')
+	}
 }
 
 // The rejection is queued, the batch is removed and its id released, and the rejection is delivered before the view work, which cannot hold it back.
@@ -179,9 +171,12 @@ async function rejectTransactionBatch(ethereum: EthereumClientService, tokenPric
 	const terminalReply = { ...pendingBatch.originalRequestParameters, ...rejection, uniqueRequestIdentifier: pendingBatch.uniqueRequestIdentifier }
 	await queueTerminalReply(terminalReply)
 	await releasePendingTransactionBatch(pendingBatch)
-	const delivered = await attemptQueuedTerminalReplyDelivery(websiteTabConnections, terminalReply)
-	await updateViewAfterTransactionBatchRemoved(ethereum, tokenPriceService, pendingBatch, 'unchanged')
-	return delivered
+	try {
+		return await attemptQueuedTerminalReplyDelivery(websiteTabConnections, terminalReply)
+	} finally {
+		// As for an approval, the window is updated even when delivery throws.
+		await updateViewAfterPendingRequestRemoved(ethereum, tokenPriceService, pendingBatch, 'unchanged')
+	}
 }
 
 const transactionBatchResolutionScope = {}

@@ -1,6 +1,6 @@
 import type { BlockTimeManipulationWithNoDelay, MaybeSimulatedTransaction, ResolvedSimulationResults, SimulationAndVisualisationResults, TransactionVisualizationParameters } from '../../types/visualizer-types.js'
 import { SmallAddress } from '../subcomponents/address.js'
-import type { NonSimulatedAndVisualizedTransaction, SignedMessageTransaction } from '../../types/visualizer-types.js'
+import { authorizesExecutedCall, type NonSimulatedAndVisualizedTransaction, type SignedMessageTransaction, type TransactionSimulationOptions } from '../../types/visualizer-types.js'
 import { WebsiteOriginText } from '../subcomponents/address.js'
 import { TokenSymbol, TokenAmount, AllApproval } from '../subcomponents/coins.js'
 import type { LogAnalysisParams, NonLogAnalysisParams, RenameAddressCallBack } from '../../types/user-interface-types.js'
@@ -211,6 +211,15 @@ export function TransactionImportanceBlock(param: TransactionImportanceBlockPara
 	return <ConnectedDelegationStack delegationNotice = { delegationNotice }>{ content }</ConnectedDelegationStack>
 }
 
+// Shown for a Gnosis Safe's own transaction that the simulation runs through the Safe (safe/safeExecutionSimulation.ts).
+export function SafeExecutionSimulationNotice({ simulationOptions }: { simulationOptions: TransactionSimulationOptions | undefined }) {
+	if (!authorizesExecutedCall(simulationOptions)) return <></>
+	return <div class = 'notification is-info' style = 'margin-bottom: 10px;'>
+		<p class = 'paragraph'><strong>Gnosis Safe execution</strong></p>
+		<p class = 'paragraph'>Simulated the way the Gnosis Safe runs it on-chain: an executor account calls the Safe's execTransaction and pays the network fees. The simulation assumes the Safe's owners approved the transaction.</p>
+	</div>
+}
+
 export function SenderReceiver({ from, to, renameAddressCallBack }: { from: AddressBookEntry, to: AddressBookEntry | undefined, renameAddressCallBack: (entry: AddressBookEntry) => void, }) {
 	const textColor = 'var(--text-color)'
 	if (to === undefined) {
@@ -283,6 +292,7 @@ export function Transaction(param: TransactionVisualizationParameters & Collapsi
 						<p class = 'paragraph'>Gnosis Safe nonce { param.simTx.safeTransaction.safeTx.message.nonce.toString() }; { param.simTx.safeTransaction.signatures.length } owner signature{ param.simTx.safeTransaction.signatures.length === 1 ? '' : 's' } collected. This optimistic preview simulates the Gnosis Safe calling the destination, but does not model Gnosis Safe guards, modules, events, nonce changes, executor-dependent behavior, or network gas. Nothing has necessarily been executed onchain.</p>
 					</div>
 				}
+				<SafeExecutionSimulationNotice simulationOptions = { param.simTx.simulationOptions }/>
 				<div class = 'container'>
 					<TransactionImportanceBlock { ...param } rpcNetwork = { rpcNetwork } addressMetadata = { param.addressMetaData }/>
 				</div>
@@ -301,16 +311,18 @@ export function Transaction(param: TransactionVisualizationParameters & Collapsi
 				<RawTransactionDetailsCard isRawTransaction = { param.simTx.originalRequestParameters.method === 'eth_sendRawTransaction' } transaction = { param.simTx.transaction } transactionIdentifier = { param.simTx.transactionIdentifier } parsedInputData = { param.simTx.parsedInputData } renameAddressCallBack = { param.renameAddressCallBack } gasSpent = { 'gasSpent' in param.simTx ? param.simTx.gasSpent : undefined } addressMetaData = { param.addressMetaData } gasLimitEditable = { param.gasLimitEditable } />
 				<SenderReceiver from = { param.simTx.transaction.from } to = { param.simTx.transaction.to } renameAddressCallBack = { param.renameAddressCallBack }/>
 
-				<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: auto auto;'>
+				<div class = 'transaction-card-footer'>
 					<div class = 'log-cell'>
 						<TransactionCreated created = { param.simTx.created } />
 					</div>
-					<div class = 'log-cell' style = { { display: 'inline-flex', justifyContent: 'right' } }>
-						{ param.simTx.transactionStatus === 'Failed To Simulate' ? <></> : <>
-							<GasFee tx = { param.simTx } rpcNetwork = { rpcNetwork } />
-						</> }
-					</div>
-				</span>
+					{ param.simTx.transactionStatus === 'Failed To Simulate' ? <></> :
+						<div class = 'log-cell'>
+							<span class = 'log-table' style = { { display: 'inline-flex' } }>
+								<GasFee tx = { param.simTx } rpcNetwork = { rpcNetwork } />
+							</span>
+						</div>
+					}
+				</div>
 			</div> }
 		</div>
 	)

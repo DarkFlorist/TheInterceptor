@@ -4,23 +4,31 @@ import type { EthereumClientService } from '../simulation/services/EthereumClien
 import type { SendRawTransactionParams, SendTransactionParams } from '../types/JsonRpc-types.js'
 import type { SafeEntry } from '../types/addressBookTypes.js'
 import type { SafeTransactionSigningRequest } from '../types/safeTypes.js'
-import type { WebsiteCreatedEthereumTransaction, WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
+import type { TransactionGasPayment, WebsiteCreatedEthereumTransaction, WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
 import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER } from '../utils/constants.js'
 import { getErrorMessage, reportLocalRecovery } from '../utils/errors.js'
 import { getPendingTransactionsAndMessagesExceptBatches, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
 import { reconcileStoredSafeState, type ReconciledStoredSafeState } from './safeStackState.js'
-import { createSafeContractValidationFailure, createSafeTransactionReviewRequest, createSafeTransactionSigningRequest, isSafeContractValidationFailure, isSafeOwnerValidationFailure } from '../safe/safeCore.js'
-import { getSafeExecutionReviewedState, getSafeExecutionSignerRoute, isSafeExecutionRequestForActiveSafe, prepareSafeExecutionSignerRoute } from '../safe/safeExecutionRouting.js'
+import { createSafeContractValidationFailure, createSafeTransactionReviewRequest, createSafeTransactionSigningRequest, getSafeContractSnapshot, isSafeContractValidationFailure, isSafeOwnerValidationFailure } from '../safe/safeCore.js'
+import { getSafeExecutionReviewedState, getSafeExecutionSignerRoute, getSafeUnsupportedFormedTransactionReason, getSafeUnsupportedRequestReason, isSafeExecutableRequestFromActiveAddress, isSafeExecutionRequestForActiveSafe, prepareSafeExecutionSignerRoute, SAFE_UNSUPPORTED_TRANSACTION_MESSAGES } from '../safe/safeExecutionRouting.js'
 import { getSafeSignerMismatchApprovalStatus, SAFE_SIGNER_SELECTION_ERROR_CODE } from './safeConfirmationResolver.js'
 import { createSafeSignerErrorStatus, type SafeSignerErrorStatus } from './safeSignerErrors.js'
 import { getSafePendingFlow } from '../safe/safePendingFlow.js'
 
 type SafeExecutionSignerRoute = NonNullable<Awaited<ReturnType<typeof prepareSafeExecutionSignerRoute>>>
 
+type PendingSafeFields = {
+	readonly safeExecutionSignerAddress?: bigint
+	readonly safeExecutionOriginalRequestParameters: SendTransactionParams
+	readonly safeExecutionReviewedSafeState?: SafeExecutionSignerRoute['safeState']
+} | {
+	readonly executeThroughSafe: true
+}
+
 export type SafeTransactionConfirmationPreparation = {
 	readonly effectiveTransactionParams: SendTransactionParams | SendRawTransactionParams
 	readonly transactionExecutor: bigint
-	readonly gasPayment: 'transaction-sender' | 'external-executor'
+	readonly gasPayment: TransactionGasPayment
 	readonly preparationMessage: string | undefined
 	readonly rejection: {
 		readonly code: number
@@ -33,12 +41,30 @@ export type SafeTransactionConfirmationPreparation = {
 		readonly transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed
 		readonly safeTransaction: SafeTransactionSigningRequest | undefined
 		readonly approvalStatus: Awaited<ReturnType<typeof getSafeSignerMismatchApprovalStatus>> | undefined
-		readonly pendingSafeFields: {
-			readonly safeExecutionSignerAddress?: bigint
-			readonly safeExecutionOriginalRequestParameters: SendTransactionParams
-			readonly safeExecutionReviewedSafeState?: SafeExecutionSignerRoute['safeState']
-		} | undefined
+		readonly pendingSafeFields: PendingSafeFields | undefined
 	}>
+}
+
+/**
+ * In simulation mode, a transaction the user sends as a Gnosis Safe runs the way the Safe runs it on-chain: through the Safe's execTransaction, sent by an executor that pays the fees (safe/safeExecutionSimulation.ts). That assumes the Safe's owners approved it, so it is only assumed for the Safe the user is simulating as: the sender formEthSendTransaction simulates, the page's `from` or else the active address, must be the active address, which must be a Gnosis Safe configured on this chain. A page naming another configured Safe as `from` gets the ordinary simulation of that sender.
+ * Raw transactions, EIP-7702 authorizations and contract creations, which a Safe can't make through execTransaction, and Safes that aren't deployed on this chain or have a version Interceptor doesn't support, keep the ordinary simulation.
+ */
+async function isSimulationModeSafeExecution(ethereum: EthereumClientService, transactionParams: SendTransactionParams | SendRawTransactionParams, activeAddress: bigint) {
+	if (!isSafeExecutableRequestFromActiveAddress(transactionParams, activeAddress)) return false
+	const addressBookEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(ethereum.getChainId())
+	if (!addressBookEntries.some((entry) => entry.type === 'safe' && entry.address === activeAddress)) return false
+	try {
+		await getSafeContractSnapshot(ethereum, activeAddress)
+		return true
+	} catch (error) {
+		if (!isSafeContractValidationFailure(error)) throw error
+		await reportLocalRecovery(error, {
+			code: 'simulated_safe_execution_unavailable',
+			message: 'Simulating the Gnosis Safe\'s transaction as an ordinary transaction.',
+			details: error instanceof Error ? error.stack : undefined,
+		})
+		return false
+	}
 }
 
 export async function prepareSafeTransactionConfirmation(
@@ -54,12 +80,10 @@ export async function prepareSafeTransactionConfirmation(
 		: (await getUserAddressBookEntriesForChainIdMorePreciseFirst(ethereum.getChainId()))
 			.find((entry): entry is SafeEntry => entry.type === 'safe' && entry.address === activeAddress)
 	if (configuredSafeEntry !== undefined) {
-		if (transactionParams.method === 'eth_sendRawTransaction') {
-			return createRejectedPreparation(activeAddress, transactionParams, 'Gnosis Safe wallets do not support eth_sendRawTransaction.')
-		}
-		const transactionDetails = transactionParams.params[0]
-		if (transactionDetails.type === '7702' || transactionDetails.authorizationList !== undefined) {
-			return createRejectedPreparation(activeAddress, transactionParams, 'Gnosis Safe wallets do not support EIP-7702 authorization lists.')
+		// A contract creation is not rejected here: createSafeSigningRequestForTransaction fails it once the transaction is formed, so the window shows the failure.
+		const unsupportedReason = getSafeUnsupportedRequestReason(transactionParams)
+		if (unsupportedReason === 'raw-transaction' || unsupportedReason === 'eip-7702-authorization') {
+			return createRejectedPreparation(activeAddress, transactionParams, SAFE_UNSUPPORTED_TRANSACTION_MESSAGES[unsupportedReason])
 		}
 	}
 
@@ -107,7 +131,10 @@ export async function prepareSafeTransactionConfirmation(
 		}
 	}
 
-	const pendingSafeFields = !isDirectSafeExecution || transactionParams.method !== 'eth_sendTransaction'
+	const executeThroughSafe = simulationMode && await isSimulationModeSafeExecution(ethereum, transactionParams, activeAddress)
+	const pendingSafeFields: PendingSafeFields | undefined = executeThroughSafe
+		? { executeThroughSafe: true }
+		: !isDirectSafeExecution || transactionParams.method !== 'eth_sendTransaction'
 		? undefined
 		: {
 			safeExecutionOriginalRequestParameters: transactionParams,
@@ -120,7 +147,7 @@ export async function prepareSafeTransactionConfirmation(
 	return {
 		effectiveTransactionParams: safeExecutionSignerRoute?.transactionParams ?? transactionParams,
 		transactionExecutor: safeExecutionSignerRoute?.executor ?? activeAddress,
-		gasPayment: safeEntry === undefined && !isDirectSafeExecution ? 'transaction-sender' : 'external-executor',
+		gasPayment: executeThroughSafe ? 'simulated-safe-executor' : safeEntry === undefined && !isDirectSafeExecution ? 'transaction-sender' : 'external-executor',
 		preparationMessage: directSignerSelectionMessage ?? executionPreparationMessage ?? reconciliationMessage,
 		rejection: undefined,
 		async finalize(transactionToSimulate, tabId) {
@@ -246,9 +273,12 @@ async function createSafeSigningRequestForTransaction(
 	validateOwner = true,
 ): Promise<SafeTransactionSigningRequest | undefined> {
 	if (safeEntry === undefined) return undefined
-	if (transactionParams.method !== 'eth_sendTransaction') throw createSafeContractValidationFailure('Gnosis Safe wallets do not support eth_sendRawTransaction.')
-	if (transactionToSimulate.transaction.type === '7702') throw createSafeContractValidationFailure('Gnosis Safe wallets do not support EIP-7702 authorization lists.')
-	if (transactionToSimulate.transaction.to === null) throw createSafeContractValidationFailure('Gnosis Safe wallets do not support contract-creation transactions.')
+	// The request decides only whether it is a raw transaction; the rest is checked on the formed transaction, whose type and recipient are final.
+	const unsupportedReason = getSafeUnsupportedRequestReason(transactionParams) === 'raw-transaction' ? 'raw-transaction' : getSafeUnsupportedFormedTransactionReason(transactionToSimulate.transaction)
+	if (unsupportedReason !== undefined) throw createSafeContractValidationFailure(SAFE_UNSUPPORTED_TRANSACTION_MESSAGES[unsupportedReason])
+	const recipient = transactionToSimulate.transaction.to
+	// Already rejected as 'contract-creation' above; repeated so TypeScript narrows the recipient.
+	if (recipient === null) throw createSafeContractValidationFailure(SAFE_UNSUPPORTED_TRANSACTION_MESSAGES['contract-creation'])
 	if (reconciledStoredSafeState === undefined) throw createSafeContractValidationFailure('The Gnosis Safe stack was not reconciled before preparing the transaction.')
 
 	const { safeState, storedStack } = reconciledStoredSafeState
@@ -267,7 +297,7 @@ async function createSafeSigningRequestForTransaction(
 	while (pendingSafeTransactionNonces.has(nonce)) nonce += 1n
 	const review = safeTransaction?.messageReview
 	const transaction = {
-		to: transactionToSimulate.transaction.to,
+		to: recipient,
 		value: transactionToSimulate.transaction.value,
 		input: transactionToSimulate.transaction.input,
 		gas: transactionToSimulate.transaction.gas,

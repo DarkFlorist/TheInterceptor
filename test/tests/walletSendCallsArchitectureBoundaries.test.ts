@@ -167,8 +167,9 @@ test('the appended gas estimate and simulation preparation fill RPC blocks by on
 	const generalEstimateStart = simulationServiceSource.indexOf('export const simulateEstimateGas =')
 	const generalEstimateSource = simulationServiceSource.slice(generalEstimateStart, simulationServiceSource.indexOf('\n}\n', generalEstimateStart))
 	assert.match(preparationSource, /export const fitsInRpcBlock = \(usedGas: bigint, transactionGas: bigint, blockGasLimit: bigint\) => transactionGas <= getGasLeftInRpcBlock\(usedGas, blockGasLimit\)/u)
-	assert.match(preparationSource, /if \(fitsInRpcBlock\(currentChunkGasSum, transaction\.gas, gasLimit\)\)/u)
-	assert.doesNotMatch(preparationSource, /currentChunkGasSum \+ transaction\.gas <=|calculateTotalGasUsed/u)
+	// Preparation measures each transaction by the call the node runs (getExecutedTransaction), whose gas a Gnosis Safe execution's executor call sets.
+	assert.match(preparationSource, /if \(fitsInRpcBlock\(currentChunkGasSum, gas, gasLimit\)\)/u)
+	assert.doesNotMatch(preparationSource, /currentChunkGasSum \+ (?:transaction\.)?gas <=|calculateTotalGasUsed/u)
 	for (const rule of ['getGasUsedInLastRpcBlock(', 'getGasLeftInRpcBlock(', 'fitsInRpcBlock(']) assert.ok(appendedEstimateSource.includes(rule), rule)
 	assert.doesNotMatch(appendedEstimateSource, /blockGasLimit - |lastRpcBlockGas \+ /u)
 	// The general estimate runs in a new block and carries none of the appended placement.
