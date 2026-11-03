@@ -4,7 +4,7 @@ import { isSafeMessageCoSignRequest } from '../../safe/safeRequestPolicy.js'
 import type { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
 import { getInputFieldFromDataOrInput, getSimulatedBalance, getSimulatedErc20Balance, getSimulatedTransactionCount, simulateEstimateGas } from '../../simulation/services/SimulationModeEthereumClientService.js'
 import { simulatePersonalSign } from '../../simulation/services/simulationPersonalSigning.js'
-import { getSignedTransactionForSimulation } from '../../simulation/services/simulationTransactionSigning.js'
+import { toPreSimulationTransaction } from '../../simulation/services/simulationTransactionSigning.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS, METAMASK_ERROR_BLANKET_ERROR, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { type TransactionConfirmation, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
 import { Semaphore } from '../../utils/semaphore.js'
@@ -15,7 +15,7 @@ import { refreshConfirmTransactionSimulation } from '../confirmTransactionSimula
 import { captureSimulationSnapshot, getExecutedCallFormation, getUpdatedSimulationState } from '../simulationUpdating.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getRpcConnectionStatus, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updateInterceptorTransactionStackWithResult, updatePendingTransactionOrMessage } from '../storageVariables.js'
-import { appendTransactionToStack } from '../simulationStackHashes.js'
+import { appendAcceptedTransactionToStack, getReservedTransactionHashes, reserveTransactionHash } from '../simulationStackHashes.js'
 import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
 import { replyToInterceptedRequestAfterManifestV2Reconnect } from '../messageSending.js'
 import { attemptQueuedTerminalReplyDelivery, queueTerminalReply, queueTerminalReplyAndAttemptDelivery } from '../terminalReplyDelivery.js'
@@ -412,15 +412,22 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 			return reply({ type: 'result', result: (await simulatePersonalSign(pendingTransactionOrMessage.originalRequestParameters, pendingTransactionOrMessage.signedMessageTransaction.fakeSignedFor)).signature })
 		}
 		case 'Transaction': {
-			const transaction = { ...pendingTransactionOrMessage.transactionToSimulate, signedTransaction: getSignedTransactionForSimulation(pendingTransactionOrMessage.transactionToSimulate) }
-			// Appended against the live stack, so its hash, which the page gets, is the authoritative one; the preview's is provisional.
-			const stackedTransaction = await updateInterceptorTransactionStackWithResult((prevStack: InterceptorTransactionStack) => {
-				const { stack, transaction: appended } = appendTransactionToStack(prevStack, transaction)
-				return { stack, result: appended }
+			// Stacked under the hash its preview showed, which the page gets; reserving it kept every other append off it.
+			const transaction = toPreSimulationTransaction(pendingTransactionOrMessage.transactionToSimulate, pendingTransactionOrMessage.reservedTransactionHash)
+			const stacked = await updateInterceptorTransactionStackWithResult((prevStack: InterceptorTransactionStack) => {
+				const stack = appendAcceptedTransactionToStack(prevStack, transaction)
+				return stack === undefined ? { stack: prevStack, result: false } : { stack, result: true }
 			})
+			if (!stacked) {
+				await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (pending) => modifyObject(pending, {
+					approvalStatus: { status: 'SignerError', code: METAMASK_ERROR_BLANKET_ERROR, message: 'A transaction on the simulation stack already uses this transaction\'s hash. Reject this request and send the transaction again.' },
+				}))
+				await updateConfirmTransactionView(ethereum, tokenPriceService)
+				return false
+			}
 			await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService)
 			markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionStackAppended)
-			return reply({ type: 'result', result: EthereumBytes32.serialize(stackedTransaction.signedTransaction.hash) })
+			return reply({ type: 'result', result: EthereumBytes32.serialize(transaction.signedTransaction.hash) })
 		}
 		default: assertNever(pendingTransactionOrMessage)
 	}
@@ -808,6 +815,10 @@ export async function openConfirmTransactionDialogForTransaction(
 			if (openedDialog === undefined) return formRejectMessage(METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, 'Failed to get pending transaction window')
 			markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionConfirmPopupOpened)
 
+			// A simulation-mode transaction that accepting stacks gets its hash once, here, under the pending-confirmation lock, so two confirmations formed at once reserve different hashes.
+			const reservedTransactionHash = simulationMode && safeTransaction === undefined && transactionToSimulate.success
+				? reserveTransactionHash(await getInterceptorTransactionStack(), getReservedTransactionHashes(await getPendingTransactionsAndMessages()), toPreSimulationTransaction(transactionToSimulate, undefined))
+				: undefined
 			const pendingTransaction = {
 				type: 'Transaction' as const,
 				popupOrTabId: openedDialog,
@@ -822,6 +833,7 @@ export async function openConfirmTransactionDialogForTransaction(
 				approvalStatus: safeSignerMismatch ?? { status: 'WaitingForUser' as const },
 				...(safeTransaction === undefined ? {} : { safeTransaction }),
 				...(pendingSafeFields ?? {}),
+				...(reservedTransactionHash === undefined ? {} : { reservedTransactionHash }),
 			}
 			await appendPendingTransactionOrMessage(pendingTransaction)
 			await updateConfirmTransactionView(ethereumClientService, tokenPriceService)
@@ -833,7 +845,7 @@ export async function openConfirmTransactionDialogForTransaction(
 				simulationMode,
 				request.uniqueRequestIdentifier,
 				transactionToSimulate,
-				safeTransaction,
+				{ safeSigningRequest: safeTransaction, reservedTransactionHash },
 			))
 			if (transactionToSimulate.success) {
 				await updatePendingTransactionOrMessage(pendingTransaction.uniqueRequestIdentifier, async (transaction) => ({ ...transaction, transactionToSimulate: transactionToSimulate, transactionOrMessageCreationStatus: 'Simulating' as const }))

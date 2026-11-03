@@ -1,6 +1,6 @@
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { appendTransactionsToInput } from '../simulation/services/SimulationModeEthereumClientService.js'
-import { getSignedTransactionForSimulation } from '../simulation/services/simulationTransactionSigning.js'
+import { toPreSimulationTransaction } from '../simulation/services/simulationTransactionSigning.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { createSafeExecutionPreSimulationTransaction, createSafeSigningSimulationInput } from '../safe/safeSimulation.js'
 import type { ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
@@ -15,7 +15,6 @@ import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { identifyAddress } from './metadataUtils.js'
 import { getSimulationErrorAbis } from './simulationErrorAbi.js'
 import { createSimulationStateWithNonceAndBaseFeeFixing, getCurrentSimulationInput, visualizeSimulatorState } from './simulationUpdating.js'
-import { appendTransactionToStack } from './simulationStackHashes.js'
 import { getInterceptorTransactionStack, getTabState } from './storageVariables.js'
 
 let confirmTransactionAbortController = new AbortController()
@@ -28,8 +27,13 @@ export async function refreshConfirmTransactionSimulation(
 	simulationMode: boolean,
 	uniqueRequestIdentifier: UniqueRequestIdentifier,
 	transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed,
-	safeSigningRequest?: SafeTransactionSigningRequest,
+	options: {
+		readonly safeSigningRequest?: SafeTransactionSigningRequest
+		// The confirmation's reserved hash (reserveTransactionHash), which the preview shows and accepting stacks.
+		readonly reservedTransactionHash?: bigint
+	} = {},
 ): Promise<ConfirmTransactionTransactionSingleVisualization | undefined> {
+	const { safeSigningRequest, reservedTransactionHash } = options
 	const info = {
 		uniqueRequestIdentifier,
 		transactionToSimulate,
@@ -43,24 +47,14 @@ export async function refreshConfirmTransactionSimulation(
 	confirmTransactionAbortController = new AbortController()
 	const thisConfirmTransactionAbortController = confirmTransactionAbortController
 	const simulationStartedTimestamp = new Date()
-	// One stack snapshot builds both the simulation input and the previewed hash.
-	const stack = await getInterceptorTransactionStack()
 	const simulationInput = safeSigningRequest === undefined
-		? await getCurrentSimulationInput(undefined, undefined, stack)
-		: createSafeSigningSimulationInput(stack, safeSigningRequest)
+		? await getCurrentSimulationInput()
+		: createSafeSigningSimulationInput(await getInterceptorTransactionStack(), safeSigningRequest)
 	try {
 		const getNewVisualizedSimulationState = async () => {
 			const preSimulationTransaction = transactionToSimulate.success
 				? safeSigningRequest === undefined
-					// A provisional hash: the one accepting would store on this snapshot. Accepting appends to the live stack, and its hash is the one the page gets; the preview is recomputed on each refresh (new blocks, stack removals).
-					? appendTransactionToStack(stack, {
-						signedTransaction: getSignedTransactionForSimulation(transactionToSimulate),
-						website: transactionToSimulate.website,
-						created: transactionToSimulate.created,
-						originalRequestParameters: transactionToSimulate.originalRequestParameters,
-						transactionIdentifier: transactionToSimulate.transactionIdentifier,
-						...(transactionToSimulate.simulationOptions === undefined ? {} : { simulationOptions: transactionToSimulate.simulationOptions }),
-					}).transaction
+					? toPreSimulationTransaction(transactionToSimulate, reservedTransactionHash)
 					: createSafeExecutionPreSimulationTransaction(transactionToSimulate, safeSigningRequest)
 				: undefined
 			const simulationStateWithNewTransaction = preSimulationTransaction === undefined

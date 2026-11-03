@@ -52,7 +52,7 @@ import { createSafeContractValidationFailure, getSafeContractSnapshot, validateS
 import { normalizeConsecutiveTimeManipulations } from '../utils/transactionStack.js'
 import { getPendingTransactionGasPayment, getSafePendingFlow } from '../safe/safePendingFlow.js'
 import { admitImportedSimulationStackOperations } from './importedSimulationStack.js'
-import { appendOperationsToStack } from './simulationStackHashes.js'
+import { appendOperationsToStack, getReservedTransactionHashes } from './simulationStackHashes.js'
 import { getOperationsForActiveStackContext, SIMULATION_STACK_CONTEXT } from '../utils/activeStackContext.js'
 import { type ActiveAddressSelection, assertActiveAddressSelectionAllowed, getActiveAddressSelection, getWalletSelectedAccount } from '../utils/activeAddressSelection.js'
 export { importSafeStack, requestSafeStackExport, validateSafeTransactionStackForCurrentContract } from './safeStackHandlers.js'
@@ -636,7 +636,7 @@ export async function refreshPopupConfirmTransactionSimulation(ethereum: Ethereu
 		firstTxn.simulationMode,
 		firstTxn.uniqueRequestIdentifier,
 		transactionToSimulate,
-		proposalSafeTransaction,
+		{ safeSigningRequest: proposalSafeTransaction, reservedTransactionHash: firstTxn.reservedTransactionHash },
 	)
 	if (refreshMessage === undefined) return
 	await updatePendingTransactionOrMessage(firstTxn.uniqueRequestIdentifier, async (transactionOrMessage) => {
@@ -1243,10 +1243,11 @@ export async function importSimulationStack(ethereum: EthereumClientService, tok
 		return websiteData ?? website
 	}
 
+	const reservedHashes = getReservedTransactionHashes(await getPendingTransactionsAndMessages())
 	let updatedStack: InterceptorTransactionStack
 	try {
 		updatedStack = await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => {
-			// New identifiers keep the imported transactions' identifiers apart from the stack's; appendOperationsToStack keeps their hashes apart.
+			// New identifiers keep the imported transactions' identifiers apart from the stack's; appendOperationsToStack keeps their hashes apart from the stack's and the pending confirmations' reservations.
 			const importedOperations = admission.operations.map((operation) => {
 				switch(operation.type) {
 					case 'Message': return modifyObject(operation, { signedMessageTransaction: modifyObject(operation.signedMessageTransaction, { messageIdentifier: generate256BitRandomBigInt(), website: updateWebsiteDetails(operation.signedMessageTransaction.website) }) })
@@ -1255,7 +1256,7 @@ export async function importSimulationStack(ethereum: EthereumClientService, tok
 					default: return assertNever(operation)
 				}
 			})
-			return { operations: normalizeConsecutiveTimeManipulations(appendOperationsToStack(prevStack, importedOperations).stack.operations) }
+			return { operations: normalizeConsecutiveTimeManipulations(appendOperationsToStack(prevStack, importedOperations, reservedHashes).stack.operations) }
 		})
 	} catch (error) {
 		return importSimulationStackFailure(`Failed to store the imported simulation stack (${ formatEstimatedBytes(importedStackBytes) }): ${ formatCaughtErrorMessage(error) }`)

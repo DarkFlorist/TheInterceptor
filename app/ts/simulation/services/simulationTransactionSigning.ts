@@ -53,6 +53,19 @@ export const getSignedTransactionForSimulation = (transactionToSimulate: Website
 	transactionToSimulate.signedTransaction ?? mockSignTransaction(transactionToSimulate.transaction, getMockSignatureS(transactionToSimulate.simulationOptions))
 )
 
+// The transaction a simulation-mode confirmation previews and accepting stacks, under its reserved hash when it has one. That hash identifies it from its forming on, as a stacked transaction's does after removal renumbers it, so it need not be the hash of the fields a refresh forms again.
+export const toPreSimulationTransaction = (transactionToSimulate: WebsiteCreatedEthereumTransaction, reservedTransactionHash: bigint | undefined): PreSimulationTransaction => {
+	const signedTransaction = getSignedTransactionForSimulation(transactionToSimulate)
+	return {
+		signedTransaction: reservedTransactionHash === undefined ? signedTransaction : { ...signedTransaction, hash: reservedTransactionHash },
+		website: transactionToSimulate.website,
+		created: transactionToSimulate.created,
+		originalRequestParameters: transactionToSimulate.originalRequestParameters,
+		transactionIdentifier: transactionToSimulate.transactionIdentifier,
+		...(transactionToSimulate.simulationOptions === undefined ? {} : { simulationOptions: transactionToSimulate.simulationOptions }),
+	}
+}
+
 // A signed transaction's own fields, without its signature or hash, so mock signing it again leaves no field of its previous signature (an imported transaction of any type can carry v as well as yParity).
 const withoutSignature = (transaction: EthereumSendableSignedTransaction): EthereumUnsignedTransaction => {
 	const { r: _r, s: _s, v: _v, hash: _hash, ...transactionWithParity } = transaction
