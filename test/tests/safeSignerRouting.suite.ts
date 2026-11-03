@@ -231,7 +231,7 @@ const createOtherChainSimulator = () => {
 }
 
 // Defers a signed Safe proposal for chain A (fakeRpcNetwork) while RPC services are unavailable; the website receives its proposal hash right away. `whileReplyIsResolved` runs once the signer reply has captured its services and before its deferral is written.
-async function deferSafeProposalSignatureOnChainA(owner: Parameters<typeof modules.signerReply>[0], requestId: number, connectionName: bigint, whileReplyIsResolved?: (websiteTabConnections: Parameters<typeof modules.resolveDeferredSafeSignerReplies>[1]) => Promise<void>) {
+async function deferSafeProposalSignatureOnChainA(owner: Parameters<typeof modules.signerReply>[0], requestId: number, connectionName: bigint, whileReplyIsResolved?: (websiteTabConnections: Parameters<typeof modules.resolveDeferredSafeSignerReplies>[1]) => Promise<void>, expectedReplyFailure?: RegExp) {
 	const socket = { tabId: 1, connectionName }
 	const requestIdentifier = { requestId, requestSocket: socket }
 	const messages: unknown[] = []
@@ -267,7 +267,7 @@ async function deferSafeProposalSignatureOnChainA(owner: Parameters<typeof modul
 		}],
 	})
 	if (whileReplyIsResolved !== undefined) runOnceWhenTheSignerReplyReadsItsRequest(async () => await whileReplyIsResolved(websiteTabConnections))
-	await modules.signerReply(owner, websiteTabConnections, port, {
+	const signerReply = modules.signerReply(owner, websiteTabConnections, port, {
 		method: 'signer_reply',
 		params: [{
 			success: true,
@@ -286,6 +286,8 @@ async function deferSafeProposalSignatureOnChainA(owner: Parameters<typeof modul
 		usingInterceptorWithoutSigner: false,
 		uniqueRequestIdentifier: { requestId: requestId + 1000, requestSocket: socket },
 	}, 'hasAccess', activeAddress)
+	if (expectedReplyFailure === undefined) await signerReply
+	else await assert.rejects(signerReply, expectedReplyFailure)
 	browserMock.setStorageGetHandler(undefined)
 	const dappReplies = () => messages.filter((message) => isRecord(message) && message.method === 'eth_sendTransaction' && message.requestId === requestId)
 	assert.equal(dappReplies().length, 1)
@@ -382,6 +384,30 @@ test('stores a proposal signature once when matching recovery finished its scan 
 		await modules.resolveDeferredSafeSignerReplies(simulator, websiteTabConnections)
 	})
 	await assertStoredOnChainAOnce(deferred)
+})
+
+// The reply's delivery bookkeeping fails after the outbox entry was written; the entry is still replayed by the reply itself.
+test('stores a proposal signature once when its reply bookkeeping fails after matching recovery finished its scan', async () => {
+	const owner = createTestSimulationServicesOwner(simulator, () => simulator)
+	owner.clear()
+	let failTerminalReplyCleanup = true
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		if (failTerminalReplyCleanup && Object.keys(items).join() === 'pendingTerminalReplies') {
+			failTerminalReplyCleanup = false
+			throw new Error('Terminal reply cleanup unavailable.')
+		}
+		writeStoredItems()
+	})
+	try {
+		const deferred = await deferSafeProposalSignatureOnChainA(owner, 110, 60n, async (websiteTabConnections) => {
+			owner.recover(fakeRpcNetwork)
+			await modules.resolveDeferredSafeSignerReplies(simulator, websiteTabConnections)
+		}, /Terminal reply cleanup unavailable/u)
+		assert.equal(failTerminalReplyCleanup, false)
+		await assertStoredOnChainAOnce(deferred)
+	} finally {
+		browserMock.setStorageSetHandler(undefined)
+	}
 })
 
 test('replays a deferred Safe signature when a normal network switch returns to its chain', async () => {
@@ -1102,11 +1128,48 @@ test.each(['other chain first', 'matching recovery during the reply'] as const)(
 	const signerCodeReadsBeforeReply = fakeSafeContract.requestedCodeAddresses.filter((address) => address === alternateOwnerAddress).length
 	// Either services for another chain arrive before the co-signature (it is deferred for its own chain and replayed by a later recovery), or recovery on its own chain finishes its replay scan between the reply capturing its missing services and writing the deferral (the reply replays it itself).
 	const replyOwner = signerReplyServices === 'other chain first' ? createTestSimulationServicesOwner(createOtherChainSimulator()) : createTestSimulationServicesOwner(simulator, () => simulator)
+	let windowCloseSettlement: Promise<unknown> | undefined
+	let pausedCodeRead: { readonly mockRestore: () => void } | undefined
+	let codeReads = 0
 	if (signerReplyServices === 'matching recovery during the reply') {
 		replyOwner.clear()
-		runOnceWhenTheSignerReplyReadsItsRequest(async () => {
-			replyOwner.recover(fakeRpcNetwork)
-			await modules.resolveDeferredSafeSignerReplies(simulator, websiteTabConnections)
+		// The deferred request leaves its window empty, so the window is closed, and the browser's close event settles the request concurrently with the reply's own replay.
+		const coSignatureWindow = (await modules.getPendingTransactionsAndMessages())[0]?.popupOrTabId
+		if (coSignatureWindow === undefined) throw new Error('Missing co-signature window')
+		browserMock.setLiveWindowIds([coSignatureWindow.id])
+		browserMock.setWindowRemoveHandler(async (windowId) => {
+			windowCloseSettlement = modules.onCloseWindowOrTab({ type: 'popup', id: windowId }, simulator.ethereum, simulator.tokenPriceService, websiteTabConnections)
+		})
+		// The close event validates first and pauses there until the reply's replay has answered the website (or it is clear the replay waits for it); the replay starts only once that validation began.
+		const closeValidationStarted = createDeferredValue<void>()
+		const waitFor = async (condition: () => boolean, milliseconds: number) => {
+			const deadline = Date.now() + milliseconds
+			while (Date.now() < deadline && !condition()) await new Promise((resolve) => setTimeout(resolve, 5))
+		}
+		let recovered = false
+		let delayedInstalledServicesRead = false
+		browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+			if (Array.isArray(keys) && !recovered && keys.includes('pendingTransactionsAndMessages')) {
+				// Recovery on the signature's chain finishes its scan before the deferral is written.
+				recovered = true
+				replyOwner.recover(fakeRpcNetwork)
+				await modules.resolveDeferredSafeSignerReplies(simulator, websiteTabConnections)
+			} else if (Array.isArray(keys) && recovered && !delayedInstalledServicesRead && windowCloseSettlement !== undefined && keys.length === 2 && keys.includes('rpcEntries')) {
+				// The reply reads the installed services for its replay.
+				delayedInstalledServicesRead = true
+				await Promise.race([closeValidationStarted.promise, new Promise((resolve) => setTimeout(resolve, 200))])
+			}
+			return readStoredItems()
+		})
+		const { spyOn } = await import('bun:test')
+		const readCode = simulator.ethereum.getCode.bind(simulator.ethereum)
+		pausedCodeRead = spyOn(simulator.ethereum, 'getCode').mockImplementation(async (...args: Parameters<typeof readCode>) => {
+			codeReads += 1
+			if (codeReads === 1) {
+				closeValidationStarted.resolve(undefined)
+				await waitFor(() => postedMessages.some(isCoSignatureReply), 200)
+			}
+			return await readCode(...args)
 		})
 	}
 	await modules.signerReply(replyOwner, websiteTabConnections, port, {
@@ -1123,6 +1186,13 @@ test.each(['other chain first', 'matching recovery during the reply'] as const)(
 		uniqueRequestIdentifier: { requestId: uniqueRequestIdentifier.requestId + 1000, requestSocket: socket },
 	}, 'hasAccess', activeAddress)
 	browserMock.setStorageGetHandler(undefined)
+	await windowCloseSettlement
+	pausedCodeRead?.mockRestore()
+	if (signerReplyServices === 'matching recovery during the reply') {
+		assert.notEqual(windowCloseSettlement, undefined)
+		// One validation (the Safe's and the co-signer's code): the close event and the replay never both settle the signature.
+		assert.equal(codeReads, 2)
+	}
 	if (signerReplyServices === 'other chain first') {
 		assert.deepEqual((await modules.getPendingTransactionsAndMessages())[0]?.deferredSafeSignerReply, { signerReply: signature, chainId: fakeRpcNetwork.chainId })
 		assert.equal(postedMessages.some(isCoSignatureReply), false)

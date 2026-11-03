@@ -453,15 +453,21 @@ export async function resolvePendingSignerReply(services: ConfirmationServices |
 			await failSafeSignatureWithoutChain(uniqueRequestIdentifier)
 			return
 		}
+		// Once the deferral is written it is replayed even when delivering the website's reply or updating its window fails; that failure still reaches the caller.
 		if (safeFlow.kind === 'proposal') {
-			const delivered = await moveSignedSafeProposalToOutbox(pending, safeFlow.pending.safeTransaction.safeTxHash, { signerReply, chainId }, websiteTabConnections, services, false)
-			await replayIfServicesAreInstalledFor(chainId, getInstalledServices, websiteTabConnections)
-			return delivered
+			try {
+				return await moveSignedSafeProposalToOutbox(pending, safeFlow.pending.safeTransaction.safeTxHash, { signerReply, chainId }, websiteTabConnections, services, false)
+			} finally {
+				await replayIfServicesAreInstalledFor(chainId, getInstalledServices, websiteTabConnections)
+			}
 		}
 		await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (current) => modifyObject(current, { deferredSafeSignerReply: { signerReply, chainId } }))
-		// The deferred co-signature leaves the queue its window shows, so the window moves on to the next request or closes.
-		await updateViewAfterPendingRequestRemoved(pending, services, 'unchanged')
-		await replayIfServicesAreInstalledFor(chainId, getInstalledServices, websiteTabConnections)
+		try {
+			// The deferred co-signature leaves the queue its window shows, so the window moves on to the next request or closes.
+			await updateViewAfterPendingRequestRemoved(pending, services, 'unchanged')
+		} finally {
+			await replayIfServicesAreInstalledFor(chainId, getInstalledServices, websiteTabConnections)
+		}
 		return
 	}
 	return await settlePendingTerminalReply(websiteTabConnections, pending, { type: 'result', result: params.reply }, undefined)
@@ -736,25 +742,11 @@ const resolveAllPendingTransactionsAndMessageAsNoResponse = async (transactions:
 
 // Single owner of the no-response outcome, whether the popup reports it or the confirmation window disappeared. A Safe signature the signer already returned (`deferredSafeSignerReply`) is settled as signed rather than rejected; settling it needs RPC services, so without them the request stays pending until recovery resolves it. Without a deferred reply the request is rejected, which needs no RPC services.
 async function resolvePendingRequestAsNoResponse(uniqueRequestIdentifier: UniqueRequestIdentifier, services: ConfirmationServices | undefined, websiteTabConnections: WebsiteTabConnections): Promise<boolean | undefined> {
+	const deferredSignature = await settleDeferredSignatureAsNoResponse(uniqueRequestIdentifier, services, websiteTabConnections)
+	if (deferredSignature === 'settled') return true
+	if (deferredSignature === 'gone' || deferredSignature === 'waiting') return undefined
 	const pending = await getPendingTransactionOrMessageByidentifier(uniqueRequestIdentifier)
 	if (pending === undefined) return undefined
-	if (await settleDeferredSafeProposal(pending, websiteTabConnections, services)) return true
-	if (pending.deferredSafeSignerReply !== undefined) {
-		if (pending.deferredSafeSignerReply.chainId === undefined) {
-			await failSafeSignatureWithoutChain(uniqueRequestIdentifier)
-			return undefined
-		}
-		// Settling the deferred co-signature needs services for the network it was signed for; until then the request stays pending.
-		if (services === undefined || pending.deferredSafeSignerReply.chainId !== services.ethereum.getChainId()) return undefined
-		await resolvePendingTransactionOrMessage(services.ethereum, services.tokenPriceService, websiteTabConnections, {
-			method: 'popup_confirmDialog',
-			data: { uniqueRequestIdentifier, action: 'signerIncluded', signerReply: pending.deferredSafeSignerReply.signerReply },
-		})
-		const unresolvedPending = await getPendingTransactionOrMessageByidentifier(uniqueRequestIdentifier)
-		// A deferred co-signature that failed validation is dropped from the pending request, which then falls through to the no-response rejection.
-		if (unresolvedPending === undefined || unresolvedPending.deferredSafeSignerReply !== undefined) return undefined
-		return await resolvePendingRequestAsNoResponse(uniqueRequestIdentifier, services, websiteTabConnections)
-	}
 	const delivery = await queueTerminalReplyAndAttemptDelivery(websiteTabConnections, {
 		...pending.originalRequestParameters,
 		...formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User denied transaction signature'),
@@ -762,6 +754,31 @@ async function resolvePendingRequestAsNoResponse(uniqueRequestIdentifier: Unique
 	})
 	await removeSettledPendingRequest(pending, services)
 	return delivery
+}
+
+// Every settlement of a deferred signature is serialized with the replays and re-reads the request inside, so a concurrent settlement (window close, Reject, recovery or post-write replay) finds it already settled and answers nothing twice. 'rejectable' means the request holds no deferred signature (any more, after one failed validation) and is rejected as usual.
+async function settleDeferredSignatureAsNoResponse(uniqueRequestIdentifier: UniqueRequestIdentifier, services: ConfirmationServices | undefined, websiteTabConnections: WebsiteTabConnections): Promise<'gone' | 'settled' | 'waiting' | 'rejectable'> {
+	return await deferredSafeSignerReplySemaphore.execute(async () => {
+		const pending = await getPendingTransactionOrMessageByidentifier(uniqueRequestIdentifier)
+		if (pending === undefined) return 'gone'
+		if (await settleDeferredSafeProposal(pending, websiteTabConnections, services)) return 'settled'
+		const deferred = pending.deferredSafeSignerReply
+		if (deferred === undefined) return 'rejectable'
+		if (deferred.chainId === undefined) {
+			await failSafeSignatureWithoutChain(uniqueRequestIdentifier)
+			return 'waiting'
+		}
+		// Settling the deferred co-signature needs services for the network it was signed for; until then the request stays pending.
+		if (services === undefined || deferred.chainId !== services.ethereum.getChainId()) return 'waiting'
+		await resolvePendingTransactionOrMessage(services.ethereum, services.tokenPriceService, websiteTabConnections, {
+			method: 'popup_confirmDialog',
+			data: { uniqueRequestIdentifier, action: 'signerIncluded', signerReply: deferred.signerReply },
+		})
+		const unresolvedPending = await getPendingTransactionOrMessageByidentifier(uniqueRequestIdentifier)
+		if (unresolvedPending === undefined || unresolvedPending.deferredSafeSignerReply !== undefined) return 'waiting'
+		// A deferred co-signature that failed validation is dropped from the pending request, which is then rejected as no-response.
+		return 'rejectable'
+	})
 }
 
 function schedulePendingNoResponseRetry(transaction: PendingTransactionOrSignableMessage, services: ConfirmationServices | undefined, websiteTabConnections: WebsiteTabConnections) {
