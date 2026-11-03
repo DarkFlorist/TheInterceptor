@@ -512,17 +512,30 @@ async function rejectUnlessStacked(request: PendingTransactionOrSignableMessage,
  * Never throws. An accept is never retried this way; it stays the user's to repeat.
  */
 async function declineRequest(uniqueRequestIdentifier: UniqueRequestIdentifier, reason: DeclineReason, context: ResolutionContext): Promise<boolean | undefined> {
-	declineIntents.set(getUniqueRequestIdentifierString(uniqueRequestIdentifier), reason)
+	const claim = getUniqueRequestIdentifierString(uniqueRequestIdentifier)
+	declineIntents.set(claim, reason)
+	const storeIntent = async () => await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (request) => request.declineRequested === undefined ? { ...request, declineRequested: reason } : request)
+	// Checked synchronously with the claim attempt below: another resolution (an accept, say) holds the request.
+	const claimedElsewhere = resolutionClaims.has(claim)
 	try {
-		return await withResolutionClaim(uniqueRequestIdentifier, context, async () => {
+		const result = await withResolutionClaim(uniqueRequestIdentifier, context, async () => {
 			const request = await getPendingTransactionOrMessageByidentifier(uniqueRequestIdentifier)
 			return request === undefined ? false : await rejectUnlessStacked(request, reason, context)
 		}, {
 			whenClaimed: { decline: reason },
 			retryActionWhenFinishingRetries: true,
 			// Stored before the commitment is looked up, so it survives any failure after it.
-			afterClaiming: async () => await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (request) => request.declineRequested === undefined ? { ...request, declineRequested: reason } : request),
+			afterClaiming: storeIntent,
 		})
+		// The claim holder runs the decline on release; storing it, only intent, outside the claim lets a restart before then still decline the request. A commitment the holder makes still wins. Not awaited, so the decline never waits on the holder's storage writes; a failure goes to the request's retry.
+		if (claimedElsewhere) void (async () => {
+			try {
+				await storeIntent()
+			} catch (error) {
+				await scheduleRequestRetry(uniqueRequestIdentifier, context, error)
+			}
+		})()
+		return result
 	} catch (error) {
 		// A retrying finishing already scheduled the request's retry.
 		if (!(error instanceof Error && error.name === RESOLUTION_RETRYING_ERROR_NAME)) await scheduleRequestRetry(uniqueRequestIdentifier, context, error)

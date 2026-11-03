@@ -2295,3 +2295,88 @@ test('rejects only the requests whose own window is gone when another confirmati
 	assert.deepEqual(getPageResponses(postedMessages, 1), [{ error: 4001 }], 'the orphan is rejected')
 	assert.deepEqual(getPageResponses(postedMessages, 2), [], 'the live request is not')
 })
+
+for (const acceptStackedBeforeRestart of [false, true]) {
+	test(`stores a reject that competes with an accept, so startup after a restart ${ acceptStackedBeforeRestart ? 'answers with the hash the accept stacked' : 'rejects the request' }`, async () => {
+		await startSimulationStack(SENDER)
+		const firstSessionMessages: unknown[] = []
+		const firstSessionConnections = createWebsiteTabConnections(firstSessionMessages)
+		const request = await openConfirmation(1, SENDER, 1n, firstSessionConnections)
+		const pause = pauseNextStackReadThen()
+		const accepting = withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, firstSessionConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier: request } }))
+		await pause.paused
+		let storedPending: Awaited<ReturnType<typeof modules.getPendingTransactionsAndMessages>>
+		try {
+			assert.equal(await rejectRequest(request, firstSessionConnections), false, 'the reject waits for the accept')
+			await waitForCondition(async () => (await modules.getPendingTransactionsAndMessages())[0]?.declineRequested === 'reject')
+			// The state a restart here leaves: the reject stored with the request, no reply committed.
+			storedPending = await modules.getPendingTransactionsAndMessages()
+		} finally {
+			pause.release(true)
+		}
+		await accepting.then(() => undefined, () => undefined)
+		await withSilencedConsole(async () => await waitUntilNothingPending())
+
+		// The restarted extension starts from that stored state.
+		const [pending] = storedPending
+		if (pending?.type !== 'Transaction' || pending.transactionOrMessageCreationStatus !== 'Simulated') throw new Error('Expected the stored pending transaction')
+		const stackedByAccept = toPreSimulationTransaction(pending.transactionToSimulate, pending.simulationHashReservation)
+		await modules.updateInterceptorTransactionStack(() => ({ operations: acceptStackedBeforeRestart ? [asOperation(stackedByAccept)] : [] }))
+		await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: storedPending })
+		const postedMessages: unknown[] = []
+		const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+		const { resumeCommittedRequests } = await import('../../app/ts/background/windows/confirmTransaction.js')
+		await withSilencedConsole(async () => {
+			await resumeCommittedRequests(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections)
+			await waitUntilNothingPending()
+			await waitForCondition(async () => (await modules.getPendingTerminalReplies()).length === 0)
+		})
+		const stacked = await getStackedTransactions()
+		if (acceptStackedBeforeRestart) {
+			assert.deepEqual(hashesOf(stacked), [stackedByAccept.signedTransaction.hash])
+			assert.deepEqual(getPageResponses(postedMessages, request.requestId), [{ result: stackedByAccept.signedTransaction.hash }], 'the stacked hash, once')
+		} else {
+			assert.deepEqual(stacked, [], 'nothing is stacked')
+			assert.deepEqual(getPageResponses(postedMessages, request.requestId), [{ error: 4001 }], 'one rejection')
+		}
+		await assertNoResolutionBookkeeping()
+	})
+}
+
+test('stops retrying a connected port\'s reply flush when storage keeps failing, and recovers when the port reconnects', async () => {
+	await startSimulationStack(SENDER)
+	const postedMessages: unknown[] = []
+	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+	await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+	await seedCommittedRejection({ delivered: false, withWindow: false })
+	// The request was finished but its reply not delivered, so a reconnect flush delivers it.
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	let failedReads = 0
+	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+		if (!readsKey(keys, 'pendingTerminalReplies')) return readStoredItems()
+		failedReads += 1
+		throw new Error('persistent read failure')
+	})
+	const port = websiteTabConnections.get(REQUEST_SOCKET.tabId)?.connections[modules.websiteSocketToString(REQUEST_SOCKET)]?.port
+	if (port === undefined) throw new Error('missing port')
+	const { getTerminalReplyBookkeepingSize } = await import('../../app/ts/background/terminalReplyDelivery.js')
+	try {
+		await withSilencedConsole(async () => {
+			await modules.flushPendingTerminalRepliesForConnectedPortWithRetry(websiteTabConnections, REQUEST_SOCKET, port)
+			const deadline = Date.now() + 8_000
+			while (getTerminalReplyBookkeepingSize() > 0 && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 20))
+		})
+		const readsWhenStopped = failedReads
+		await new Promise((resolve) => setTimeout(resolve, 1_000))
+		assert.equal(failedReads, readsWhenStopped, 'the retries stopped')
+		assert.ok(readsWhenStopped <= 6, `within the budget (${ readsWhenStopped } reads)`)
+		assert.equal(getTerminalReplyBookkeepingSize(), 0, 'no retry timer remains')
+	} finally {
+		browserMock.setStorageGetHandler(undefined)
+	}
+	assert.deepEqual(getPageResponses(postedMessages, 1), [])
+	// The port reconnects once storage works again.
+	await modules.flushPendingTerminalRepliesForConnectedPortWithRetry(websiteTabConnections, REQUEST_SOCKET, port)
+	assert.deepEqual(getPageResponses(postedMessages, 1), [{ error: 4001 }])
+	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+})
