@@ -14,6 +14,7 @@ import { requestIsSimulationDataConsumerOpen, sendPopupMessageToOpenWindows } fr
 import { getPopupVisualisationFingerprint } from './popupSimulationFingerprint.js'
 import { visualizeSimulatorState } from './simulationUpdating.js'
 import { getPopupVisualisationState, setPopupVisualisationState } from './storageVariables.js'
+import { getSettings } from './settings.js'
 
 let abortController = new AbortController()
 
@@ -63,6 +64,12 @@ const servesSnapshotNetwork = (ethereum: EthereumClientService, snapshot: Simula
 	isSignerOnlyNetwork(snapshot.activeRpcNetwork) || !getRpcNetworkChange(snapshot.activeRpcNetwork, ethereum.getRpcEntry()).endpointChanged
 )
 
+// The shared visualisation follows the active network, so a snapshot whose network was replaced, including one captured part-way through a switch with the new network's stack, neither simulates nor publishes; the switch queues the refresh of its own network, which this module serializes after any write already under way.
+const snapshotNetworkIsActive = async (snapshot: SimulationSnapshot) => {
+	const { chainChanged, endpointChanged } = getRpcNetworkChange(snapshot.activeRpcNetwork, (await getSettings()).activeRpcNetwork)
+	return !chainChanged && !endpointChanged
+}
+
 export type PopupVisualisationOptions = {
 	readonly invalidateOldState?: boolean
 	readonly onlyIfNotAlreadyUpdating?: boolean
@@ -86,7 +93,7 @@ export const updatePopupVisualisationIfNeeded = async (ethereum: EthereumClientS
 		if (!(isSimulationDataConsumerOpenReply?.data.isOpen === true)) return snapshot === undefined ? popupVisualisation : createUnavailableVisualisation()
 		const capturedSnapshot = snapshot ?? await captureSimulationSnapshot()
 		// Services captured before a network change must neither simulate the later network's stack nor cancel or invalidate that network's own refresh.
-		if (!servesSnapshotNetwork(ethereum, capturedSnapshot)) return snapshot === undefined ? popupVisualisation : createUnavailableVisualisation()
+		if (!servesSnapshotNetwork(ethereum, capturedSnapshot) || !await snapshotNetworkIsActive(capturedSnapshot)) return snapshot === undefined ? popupVisualisation : createUnavailableVisualisation()
 		const provider = getSimulationProviderForSnapshot(ethereum, capturedSnapshot)
 		if (skipIfUnchanged && popupVisualisation.simulationState.kind === 'simulated' && provider !== undefined) {
 			const currentSimulationInput = await getCurrentSimulationStateInput(provider, capturedSnapshot)
@@ -184,11 +191,12 @@ export async function updatePopupVisualisationState(ethereum: EthereumClientServ
 			const simulationId = popupVisualisation.simulationId + 1
 			const capturedSnapshot = snapshot ?? await captureSimulationSnapshot()
 			// Services captured before a network change cannot simulate a later network's stack; the refresh that follows the change publishes that network's result.
-			if (!servesSnapshotNetwork(ethereum, capturedSnapshot)) return undefined
+			if (!servesSnapshotNetwork(ethereum, capturedSnapshot) || !await snapshotNetworkIsActive(capturedSnapshot)) return undefined
 			const simulationState = await getUpdatedSimulationState(ethereum, capturedSnapshot)
 			const numberOfAddressesMadeRich = capturedSnapshot.numberOfAddressesMadeRich
 			if (simulationState.kind === 'passthrough' || !hasSimulationInputOperations(simulationState.value)) {
 				const newState = await visualiseSimulationState(simulationState, ethereum, tokenPriceService, abortController, simulationId, numberOfAddressesMadeRich)
+				if (!await snapshotNetworkIsActive(capturedSnapshot)) return undefined
 				await setPopupVisualisationState(newState)
 				await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState: newState } })
 				return newState
@@ -197,6 +205,8 @@ export async function updatePopupVisualisationState(ethereum: EthereumClientServ
 			const changedMessagePromise = silenceChromeUnCaughtPromise(sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState } }))
 			try {
 				const newVisualizedState = await visualiseSimulationState(simulationState, ethereum, tokenPriceService, abortController, simulationId, numberOfAddressesMadeRich)
+				// The simulation ran outside the transition lock; a network that was replaced meanwhile leaves the stored state to the refresh its switch queued.
+				if (!await snapshotNetworkIsActive(capturedSnapshot)) return undefined
 				const storedVisualizedState = await setPopupVisualisationState(newVisualizedState)
 				await changedMessagePromise
 				await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState: storedVisualizedState } })

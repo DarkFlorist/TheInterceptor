@@ -875,7 +875,7 @@ export async function refreshHomeData(
 			const snapshot = await readNetworkSnapshot(simulationServicesOwner)
 			const { ethereum, tokenPriceService } = snapshot.services
 			if (snapshot.settings.simulationMode) await updateSimulationMetadata(ethereum, requestAbortController)
-			if (refreshSimulation) await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { skipIfUnchanged: true })
+			if (refreshSimulation) await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { skipIfUnchanged: true, snapshot: snapshot.simulation })
 			if (!await snapshotNetworkIsStillActive(simulationServicesOwner, snapshot)) continue
 			if (snapshot.settings.activeRpcNetwork.httpsRpc !== undefined) await makeSureInterceptorIsNotSleeping(ethereum, publishRpcConnectionStatus)
 			// The home page reads settings when it is built, so it is sent only if they still describe the snapshot's network.

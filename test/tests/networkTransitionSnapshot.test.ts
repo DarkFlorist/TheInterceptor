@@ -302,6 +302,38 @@ function createStorageReadPause() {
 	return { arm: () => { if (state === 'idle') state = 'armed' }, started: started.promise, release: release.resolve }
 }
 
+// Holds the first settings read issued after arm() once it has returned, so its caller resumes with the settings read before whatever the test does meanwhile.
+function pauseAfterSettingsRead() {
+	const read = createDeferredSignal()
+	const release = createDeferredSignal()
+	const originalGet = browser.storage.local.get.bind(browser.storage.local)
+	let state: 'idle' | 'armed' | 'used' = 'idle'
+	Object.defineProperty(browser.storage.local, 'get', {
+		configurable: true,
+		value: async (keys: Parameters<typeof originalGet>[0]) => {
+			const result = await originalGet(keys)
+			if (state === 'armed' && Array.isArray(keys) && keys.includes('activeRpcNetwork')) {
+				state = 'used'
+				read.resolve()
+				await release.promise
+			}
+			return result
+		},
+	})
+	return { arm: () => { if (state === 'idle') state = 'armed' }, read: read.promise, release: release.resolve }
+}
+
+// The simulated visualisations broadcast to popups in the given runtime messages.
+async function getBroadcastSimulatedVisualisations(runtimeMessages: readonly unknown[]) {
+	const { MessageToPopup } = await import('../../app/ts/types/interceptor-messages.js')
+	return runtimeMessages.flatMap((message) => {
+		const parsed = MessageToPopup.safeParse(message)
+		if (!parsed.success || parsed.value.method !== 'popup_simulation_state_changed') return []
+		const { simulationState } = parsed.value.data.visualizedSimulatorState
+		return simulationState.kind === 'simulated' ? [simulationState.value] : []
+	})
+}
+
 // Holds a network switch inside the transition lock right after it has persisted the new network.
 function pauseAfterActiveNetworkWrite() {
 	const written = createDeferredSignal()
@@ -1294,8 +1326,13 @@ describe('network transition snapshot', () => {
 			const chainAnnounced = whenRuntimeMessageSent((message) => isRecord(message) && message.method === 'popup_chain_update')
 			const switching = modules.changeActiveAddressAndChain(owner, new Map(), { simulationMode: true, rpcNetwork: networkB, promptForAccessesIfNeeded: false })
 			await chainAnnounced
+			// B's stack gains a transaction before A's refresh resumes, so a refresh that publishes for A afterwards would show B's stack or a stale network.
+			await addTransactionToNetworkBStack(modules)
+			const messagesBeforeResume = runtimeMessages.length
 			releaseRequestOnA.resolve()
 			await Promise.all([switching, refresh])
+			assert.equal(getSimulatedCallRecipients(servicesA).includes(STACKED_ON_B_RECIPIENT), false)
+			for (const visualisation of await getBroadcastSimulatedVisualisations(runtimeMessages.slice(messagesBeforeResume))) assert.equal(visualisation.rpcNetwork.chainId, networkB.chainId)
 
 			const homePages = runtimeMessages.slice(messagesBefore).flatMap((message) => {
 				const parsed = MessageToPopup.safeParse(message)
@@ -1312,6 +1349,59 @@ describe('network transition snapshot', () => {
 		} finally {
 			clearTimeout(deadline)
 			releaseRequestOnA.resolve()
+			retireAll()
+		}
+	})
+
+	test('a shared visualisation refresh that read the previous network settings before a switch neither simulates nor publishes the new network stack on the previous client', async () => {
+		const { modules, runtimeMessages, switchToNetworkB } = await createApprovedSimulationDapp({ simulationConsumerOpen: true })
+		const { updatePopupVisualisationIfNeeded } = await import('../../app/ts/background/popupVisualisationUpdater.js')
+		const { owner, installed, retireAll } = createRecordingServicesOwner(networkA)
+		const [servicesA] = installed
+		if (servicesA === undefined) throw new Error('Missing network A services')
+		const settingsRead = pauseAfterSettingsRead()
+		try {
+			// Like a block update, the refresh captures its own snapshot: it reads A's settings, then pauses before it reads the stack.
+			settingsRead.arm()
+			const refresh = updatePopupVisualisationIfNeeded(servicesA.ethereum, servicesA.tokenPriceService)
+			await settingsRead.read
+			await switchToNetworkB(owner)
+			await addTransactionToNetworkBStack(modules)
+			const messagesBeforeResume = runtimeMessages.length
+			settingsRead.release()
+			await refresh
+
+			assert.equal(getSimulatedCallRecipients(servicesA).includes(STACKED_ON_B_RECIPIENT), false)
+			assert.deepEqual(await getBroadcastSimulatedVisualisations(runtimeMessages.slice(messagesBeforeResume)), [])
+			const stored = await modules.getPopupVisualisationState()
+			if (stored.simulationState.kind === 'simulated') assert.equal(stored.simulationState.value.rpcNetwork.chainId, networkB.chainId)
+		} finally {
+			settingsRead.release()
+			retireAll()
+		}
+	})
+
+	test('a metadata refresh with the previous network client leaves a visualisation of the new network untouched', async () => {
+		const { modules, switchToNetworkB } = await createApprovedSimulationDapp({ simulationConsumerOpen: true })
+		const { updatePopupVisualisationIfNeeded } = await import('../../app/ts/background/popupVisualisationUpdater.js')
+		const { updateSimulationMetadata } = await import('../../app/ts/background/simulationUpdating.js')
+		const { owner, installed, getInstalled, retireAll } = createRecordingServicesOwner(networkA)
+		const [servicesA] = installed
+		if (servicesA === undefined) throw new Error('Missing network A services')
+		try {
+			await switchToNetworkB(owner)
+			await addTransactionToNetworkBStack(modules)
+			const servicesB = getInstalled()
+			await updatePopupVisualisationIfNeeded(servicesB.ethereum, servicesB.tokenPriceService, { invalidateOldState: true })
+			const visualisationOfB = await modules.getPopupVisualisationState()
+			if (visualisationOfB.simulationState.kind !== 'simulated') throw new Error('Expected a simulated visualisation of B')
+			const requestsToABefore = servicesA.requests.length
+
+			await updateSimulationMetadata(servicesA.ethereum, undefined)
+
+			assert.equal(servicesA.requests.length, requestsToABefore)
+			assert.deepEqual(await modules.getPopupVisualisationState(), visualisationOfB)
+		} finally {
 			retireAll()
 		}
 	})

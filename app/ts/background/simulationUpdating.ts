@@ -1,6 +1,6 @@
 import type { Settings } from '../types/interceptor-messages.js'
 import type { RpcNetwork } from '../types/rpc.js'
-import { isSignerOnlyNetwork } from '../utils/rpcNetworkChange.js'
+import { getRpcNetworkChange, isSignerOnlyNetwork } from '../utils/rpcNetworkChange.js'
 import { prepareSafeDelegateSimulationInput, prepareSafeDelegateStateOverrides, ORIGINAL_GNOSIS_SAFE, SAFE_DELEGATE_EXECUTE_ABI } from '../safe/safeSimulation.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { appendTransactionToInputAndSimulate, createExecutionSimulationState, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustmentBalances, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfterForTransaction, getWebsiteCreatedEthereumTransactions, simulateEstimateGasFromInput, sliceSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
@@ -466,6 +466,8 @@ export const updateSimulationMetadata = async (ethereum: EthereumClientService, 
 	return await updatePopupVisualisationWithCallBack(async (prevState) => {
 		if (prevState.simulationState.kind === 'passthrough') return prevState
 		if (prevState.simulationState.value.success === false) return prevState
+		// The stored visualisation may already describe a network installed after these services were read; only its own network's client may add metadata to it.
+		if (getRpcNetworkChange(prevState.simulationState.value.rpcNetwork, ethereum.getRpcEntry()).endpointChanged) return prevState
 		try {
 			const eventsForEachBlockAndTransactionPromise = silenceChromeUnCaughtPromise(promiseAllMapAbortSafe(
 				prevState.simulationState.value.simulatedBlocks, async (block) =>
