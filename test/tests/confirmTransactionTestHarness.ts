@@ -245,6 +245,7 @@ export async function loadModules() {
 		defaultActiveAddresses: settings.defaultActiveAddresses,
 		refreshPopupConfirmTransactionSimulation: popupMessageHandlers.refreshPopupConfirmTransactionSimulation,
 		confirmDialog: popupMessageHandlers.confirmDialog,
+		popupReadyAndListening: popupMessageHandlers.popupReadyAndListening,
 		getSafeSignerSelectionFromAccountRefresh: popupMessageHandlers.getSafeSignerSelectionFromAccountRefresh,
 		importSafeStack: popupMessageHandlers.importSafeStack,
 		requestSafeStackExport: popupMessageHandlers.requestSafeStackExport,

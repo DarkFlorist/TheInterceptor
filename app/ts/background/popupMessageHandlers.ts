@@ -1,4 +1,5 @@
 import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
+import { getConfirmationWindowRequests } from '../utils/confirmationQueue.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { captureSimulationSnapshot, getUpdatedSimulationStackSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
 import { getSettingsSnapshot, setUseTabsInsteadOfPopup, setPage, getMakeCurrentAddressRich, setMetamaskCompatibilityMode, setSafeAppsCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, updateMakeCurrentAddressRich, updateFixedMakeMeRichList, requireAvailableSettings, requireReadableApprovals, getWebsiteApprovalsSnapshot, settingsForPublication, captureRpcNetwork } from './settings.js'
@@ -167,7 +168,7 @@ export async function popupReadyAndListening(ethereum: EthereumClientService | u
 			}
 		}
 		case 'confirmTransaction': {
-			const pendingTransactions = await getPendingTransactionsAndMessages()
+			const pendingTransactions = getConfirmationWindowRequests(await getPendingTransactionsAndMessages())
 			const firstPendingTransaction = pendingTransactions[0]
 			if (firstPendingTransaction === undefined) return undefined
 			if (ethereum === undefined) return { method: 'popup_readyAndListening' as const, ok: false as const, message: RPC_CONFIGURATION_UNAVAILABLE_MESSAGE }
@@ -547,7 +548,7 @@ type ConfirmTransactionMetadataDependencies = {
 }
 
 export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, requestAbortController: AbortController | undefined, dependencies: ConfirmTransactionMetadataDependencies = {}) {
-	const promises = await getPendingTransactionsAndMessages()
+	const promises = getConfirmationWindowRequests(await getPendingTransactionsAndMessages())
 	const first = promises[0]
 	if (first === undefined) return
 	const currentBlockNumberPromise = ethereum.getBlockNumber(requestAbortController)
@@ -632,7 +633,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 }
 
 export async function refreshPopupConfirmTransactionSimulation(ethereum: EthereumClientService, tokenPriceService: TokenPriceService) {
-	const [firstTxn] = await getPendingTransactionsAndMessages()
+	const [firstTxn] = getConfirmationWindowRequests(await getPendingTransactionsAndMessages())
 	if (firstTxn === undefined || firstTxn.type !== 'Transaction' || (firstTxn.transactionOrMessageCreationStatus !== 'Simulated' && firstTxn.transactionOrMessageCreationStatus !== 'FailedToSimulate')) return
 	const safeFlow = getSafePendingFlow(firstTxn)
 	const proposalSafeTransaction = safeFlow?.kind === 'proposal' ? safeFlow.pending.safeTransaction : undefined

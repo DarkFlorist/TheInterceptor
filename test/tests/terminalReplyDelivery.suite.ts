@@ -1117,3 +1117,35 @@ test.each(['open', 'closed'] as const)('a new request joins the open confirmatio
 	assert.deepEqual(pending, [{ requestId: 70, windowId: 41 }, { requestId: 72, windowId: 99 }])
 	assert.equal(getRejectionsTo(postedMessages, 71).length, 1)
 })
+
+test('the confirmation window shows, refreshes and approves a later request while a deferred co-signature waits for its chain', async () => {
+	const { getConfirmationWindowRequests } = await import('../../app/ts/utils/confirmationQueue.js')
+	const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
+	const { laterWindow, store } = storeDeferredCoSignatureBeforeLaterRequest()
+	await store()
+	browserMock.setLiveWindowIds([laterWindow.id])
+	const requestIdsOf = (requests: readonly unknown[]) => requests.map((request) => isRecord(request) && isRecord(request.uniqueRequestIdentifier) ? request.uniqueRequestIdentifier.requestId : undefined)
+
+	// Opening (or reloading) the window and storage hydration show the later request in its own window.
+	const bootstrap = await modules.popupReadyAndListening(simulator.ethereum, websiteTabConnections, 'confirmTransaction')
+	if (bootstrap?.ok !== true || bootstrap.data.confirmTransactionBootstrap === undefined) throw new Error('Missing confirmation bootstrap')
+	assert.deepEqual(bootstrap.data.popupOrTabId, laterWindow)
+	assert.deepEqual(requestIdsOf(bootstrap.data.confirmTransactionBootstrap.pendingTransactionAndSignableMessages), [71])
+	assert.deepEqual(requestIdsOf(getConfirmationWindowRequests(await modules.getPendingTransactionsAndMessages())), [71])
+
+	// Pushed updates show it too.
+	browserMock.sentMessages.length = 0
+	await modules.updateConfirmTransactionView(simulator.ethereum, simulator.tokenPriceService)
+	const pushedUpdate = browserMock.sentMessages.filter((message) => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions').at(-1)?.data
+	if (!isRecord(pushedUpdate) || !Array.isArray(pushedUpdate.pendingTransactionAndSignableMessages)) throw new Error('Missing pushed pending transactions')
+	assert.deepEqual(requestIdsOf(pushedUpdate.pendingTransactionAndSignableMessages), [71])
+
+	// The later request can be approved while the deferred co-signature stays in storage.
+	assert.equal(await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+		method: 'popup_confirmDialog',
+		data: { action: 'accept', uniqueRequestIdentifier: { ...uniqueRequestIdentifier, requestId: 71 } },
+	})), true)
+	assert.equal(getRepliesToWebsite(postedMessages).filter((message) => isRecord(message) && message.requestId === 71 && 'result' in message).length, 1)
+	assert.deepEqual(requestIdsOf(await modules.getPendingTransactionsAndMessages()), [70])
+	assert.equal(await modules.popupReadyAndListening(simulator.ethereum, websiteTabConnections, 'confirmTransaction'), undefined)
+})

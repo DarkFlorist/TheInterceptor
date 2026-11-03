@@ -1,0 +1,2 @@
+// The requests a confirmation window shows and acts on. A request holding a deferred Gnosis Safe signature already has the user's decision and only waits for services for its signing network, so it never occupies a confirmation window and never blocks the requests after it; it stays in storage.
+export const getConfirmationWindowRequests = <Request extends { readonly deferredSafeSignerReply?: unknown }>(pendingRequests: readonly Request[]): readonly Request[] => pendingRequests.filter((request) => request.deferredSafeSignerReply === undefined)

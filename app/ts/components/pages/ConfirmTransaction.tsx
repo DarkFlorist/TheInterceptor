@@ -38,6 +38,7 @@ import { getAddressBookEntryOrAFiller } from '../ui-utils.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
 import { bigintToDecimalString, dataStringWith0xStart } from '../../utils/bigint.js'
 import { browserStorageLocalGet2 } from '../../utils/storageUtils.js'
+import { getConfirmationWindowRequests } from '../../utils/confirmationQueue.js'
 import { reportUnexpectedError } from '../../utils/errors.js'
 import { type AsyncStates, useAsyncState } from '../../utils/preact-utilities.js'
 import { AsyncActionButton, AsyncStatusIcon } from '../subcomponents/AsyncAction.js'
@@ -82,7 +83,7 @@ async function bootstrapConfirmTransactionDialog(
 }
 
 async function hydratePendingTransactionsFromStorage() {
-	return (await browserStorageLocalGet2('pendingTransactionsAndMessages')).pendingTransactionsAndMessages ?? []
+	return getConfirmationWindowRequests((await browserStorageLocalGet2('pendingTransactionsAndMessages')).pendingTransactionsAndMessages ?? [])
 }
 
 const getResultsForTransaction = (visualizedSimulationState: VisualizedSimulationState, transactionIdentifier: bigint) => {

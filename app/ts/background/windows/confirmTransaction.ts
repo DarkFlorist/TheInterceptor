@@ -19,6 +19,7 @@ import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueReques
 import { replyToInterceptedRequestAfterManifestV2Reconnect } from '../messageSending.js'
 import { attemptQueuedTerminalReplyDelivery, queueSafeProposalReplyAndMoveToOutbox, queueTerminalReply, queueTerminalReplyAndAttemptDelivery } from '../terminalReplyDelivery.js'
 import { getPendingTerminalReplies } from '../pendingTerminalReplies.js'
+import { getConfirmationWindowRequests } from '../../utils/confirmationQueue.js'
 import { stringToBytes, keccak256 } from '../../utils/ethereumPrimitives.js'
 import { EthereumBytes32, EthereumQuantity, serialize } from '../../types/wire-types.js'
 import type { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
@@ -228,7 +229,7 @@ export async function updateConfirmTransactionView(ethereum: EthereumClientServi
 		const settingsPromise = getSettingsSnapshot().then(requireAvailableSettings)
 		const currentBlockNumberPromise = silenceChromeUnCaughtPromise(ethereum.getBlockNumber(undefined))
 		const rpcConnectionStatusPromise = silenceChromeUnCaughtPromise(getRpcConnectionStatus())
-		const pendingTransactionAndSignableMessages = await getPendingTransactionsAndMessages()
+		const pendingTransactionAndSignableMessages = getConfirmationWindowRequests(await getPendingTransactionsAndMessages())
 		if (pendingTransactionAndSignableMessages.length === 0) return false
 		const settings = await settingsPromise
 		const visualizedSimulatorState = settings.simulationMode
@@ -261,10 +262,10 @@ export async function updateConfirmTransactionView(ethereum: EthereumClientServi
 
 const isSamePopupOrTab = (first: PopupOrTabId, second: PopupOrTabId) => first.type === second.type && first.id === second.id
 
-// The confirmation window showing the queue is the first pending request's window that is still open. A request can outlive its own window (a deferred Gnosis Safe co-signature waits for services for its network), so the queue head does not necessarily own it.
+// The confirmation window showing the queue is the first shown request's window that is still open, so a request that outlived its window never decides it.
 async function getOpenConfirmationWindow(pendingTransactions: readonly PendingTransactionOrSignableMessage[]) {
 	const checkedWindows: PopupOrTabId[] = []
-	for (const pending of pendingTransactions) {
+	for (const pending of getConfirmationWindowRequests(pendingTransactions)) {
 		if (checkedWindows.some((checked) => isSamePopupOrTab(checked, pending.popupOrTabId))) continue
 		checkedWindows.push(pending.popupOrTabId)
 		const openWindow = await getPopupOrTabById(pending.popupOrTabId)
@@ -320,12 +321,12 @@ async function updateViewAfterPendingRequestRemoved(pending: PendingTransactionO
 	const removedRequestWindow = pending.popupOrTabId
 	await runConfirmationViewStep(async () => await showSimulationStackChange(services.ethereum, services.tokenPriceService, simulationStack))
 	await runConfirmationViewStep(async () => {
-		if ((await getPendingTransactionsAndMessages()).length === 0) await tryFocusingTabOrWindow({ type: 'tab', id: pending.uniqueRequestIdentifier.requestSocket.tabId })
+		if (getConfirmationWindowRequests(await getPendingTransactionsAndMessages()).length === 0) await tryFocusingTabOrWindow({ type: 'tab', id: pending.uniqueRequestIdentifier.requestSocket.tabId })
 	})
 	await runConfirmationViewStep(async () => {
 		const confirmationQueueIsShown = await updateConfirmTransactionView(services.ethereum, services.tokenPriceService)
 		// The website may send its next request as soon as it has this answer. Arriving while the queue is empty, that request opens a window of its own, so this window is closed once no pending request is shown in it rather than only once the queue is empty.
-		const windowShowsAPendingRequest = (await getPendingTransactionsAndMessages()).some((other) => isSamePopupOrTab(other.popupOrTabId, removedRequestWindow))
+		const windowShowsAPendingRequest = getConfirmationWindowRequests(await getPendingTransactionsAndMessages()).some((other) => isSamePopupOrTab(other.popupOrTabId, removedRequestWindow))
 		if (!confirmationQueueIsShown || !windowShowsAPendingRequest) await closePopupOrTabById(removedRequestWindow)
 	})
 }
@@ -879,8 +880,8 @@ const getPendingTransactionWindow = async (ethereum: EthereumClientService, toke
 	const pendingTransactions = await getPendingTransactionsAndMessages()
 	const openConfirmationWindow = await getOpenConfirmationWindow(pendingTransactions)
 	if (openConfirmationWindow !== undefined) return openConfirmationWindow
-	// No pending request's window is open, so the requests are answered as no-response, except deferred Gnosis Safe co-signatures, which wait for services for their own network.
-	await resolveAllPendingTransactionsAndMessageAsNoResponse(pendingTransactions.filter((pending) => pending.deferredSafeSignerReply === undefined), { ethereum, tokenPriceService }, websiteTabConnections)
+	// No shown request's window is open, so those requests are answered as no-response; requests holding a deferred signature wait for services for their own network.
+	await resolveAllPendingTransactionsAndMessageAsNoResponse(getConfirmationWindowRequests(pendingTransactions), { ethereum, tokenPriceService }, websiteTabConnections)
 	return await openPopupOrTab({ url: getHtmlFile('confirmTransaction'), type: 'popup', height: 800, width: 600 })
 }
 
