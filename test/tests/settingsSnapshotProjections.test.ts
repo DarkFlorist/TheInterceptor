@@ -28,7 +28,7 @@ Object.defineProperty(globalThis, 'browser', {
 	},
 })
 
-const { approvalsOrNone, getWebsiteApprovalsSnapshot, requireAvailableSettings, requireReadableApprovals, settingsForPublication, settingsIfAvailable } = await import('../../app/ts/background/settings.js')
+const { approvalsOrNone, captureRpcNetwork, getSettingsSnapshot, getWebsiteApprovalsSnapshot, requireAvailableSettings, requireReadableApprovals, settingsForPublication, settingsIfAvailable, settingsOnAdmittedRpcNetwork } = await import('../../app/ts/background/settings.js')
 
 const approvals: WebsiteAccessArray = [{ website: { websiteOrigin: 'approved.example', icon: undefined, title: undefined }, access: true }]
 const settings: Settings = {
@@ -71,11 +71,20 @@ describe('settings snapshot projections', () => {
 		assert.throws(() => requireReadableApprovals({ status: 'unreadable', error: storageError }), (error: unknown) => error === storageError)
 	})
 
-	test('settingsForPublication publishes available settings and otherwise the fallback without approvals', () => {
+	const { activeRpcNetwork: _persistedRpcNetwork, ...storedFields } = settings
+	const admittedRpcNetwork = captureRpcNetwork({ ...settings, activeRpcNetwork: { ...settings.activeRpcNetwork, name: 'Admitted network', chainId: 10n } })
+	const admittedAvailable = { status: 'available', storedFields, admittedRpcNetwork } as const
+	const admittedUnreadable = { status: 'unreadable', error: storageError } as const
+
+	test('settingsOnAdmittedRpcNetwork combines the stored fields with the admitted network and otherwise returns undefined', () => {
+		assert.deepEqual(settingsOnAdmittedRpcNetwork(admittedAvailable), { ...settings, activeRpcNetwork: admittedRpcNetwork.activeRpcNetwork })
+		assert.equal(settingsOnAdmittedRpcNetwork(admittedUnreadable), undefined)
+	})
+
+	test('settingsForPublication publishes the settings on the admitted network and otherwise the fallback without approvals', () => {
 		const fallback = { ...settings, simulationMode: false }
-		assert.equal(settingsForPublication(available, fallback), settings)
-		assert.deepEqual(settingsForPublication(unavailableWithApprovals, fallback), { ...fallback, websiteAccess: [] })
-		assert.deepEqual(settingsForPublication(unavailableUnreadable, fallback), { ...fallback, websiteAccess: [] })
+		assert.deepEqual(settingsForPublication(admittedAvailable, fallback), { ...settings, activeRpcNetwork: admittedRpcNetwork.activeRpcNetwork })
+		assert.deepEqual(settingsForPublication(admittedUnreadable, fallback), { ...fallback, websiteAccess: [] })
 	})
 })
 
@@ -105,5 +114,25 @@ describe('website approvals snapshot', () => {
 		assert.deepEqual(await withSilencedWarnings(async () => await getWebsiteApprovalsSnapshot({ repairCorrupt })), { status: 'readable', websiteAccess: [] })
 		assert.deepEqual(storageWrites, repairCorrupt ? [{ websiteAccess: [] }] : [])
 		delete storageState.websiteAccess
+	})
+})
+
+describe('admitted RPC network snapshot', () => {
+	test('carries the admitted network beside the persisted fields instead of inside a Settings value', async () => {
+		const persistedRpcNetwork = { ...settings.activeRpcNetwork, chainId: '0x1' }
+		Object.assign(storageState, { activeRpcNetwork: persistedRpcNetwork, rpcEntries: [persistedRpcNetwork], simulationMode: false })
+		const admittedRpcNetwork = captureRpcNetwork({ ...settings, activeRpcNetwork: { ...settings.activeRpcNetwork, name: 'Admitted network', chainId: 10n } })
+		try {
+			const pinned = await getSettingsSnapshot({ pinnedRpcNetwork: admittedRpcNetwork })
+			assert.equal(pinned.status, 'available')
+			assert.equal('settings' in pinned, false)
+			assert.equal(pinned.status === 'available' && 'activeRpcNetwork' in pinned.storedFields, false)
+			assert.equal(settingsOnAdmittedRpcNetwork(pinned)?.activeRpcNetwork.chainId, 10n)
+			assert.equal(settingsOnAdmittedRpcNetwork(pinned)?.simulationMode, false)
+			// The unpinned read still reports the persisted network.
+			assert.equal(requireAvailableSettings(await getSettingsSnapshot()).activeRpcNetwork.chainId, 1n)
+		} finally {
+			for (const key of ['activeRpcNetwork', 'rpcEntries', 'simulationMode']) delete storageState[key]
+		}
 	})
 })

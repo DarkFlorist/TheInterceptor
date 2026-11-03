@@ -99,8 +99,19 @@ function getStartupSettingsStorageFields(): SettingsStorageFields {
 	}
 }
 
-// The single storage-to-Settings conversion. Fields missing from `storedItems` take their value from `missingFieldValues`.
-async function getSettingsFromStorageItems(storedItems: Readonly<Record<string, unknown>>, activeRpcNetwork: RpcNetwork, missingFieldValues: SettingsStorageFields = getStartupSettingsStorageFields()): Promise<Settings> {
+// Settings are these stored fields on an active RPC network; this is the only place the two are combined.
+const withActiveRpcNetwork = (fields: SettingsStorageFields, activeRpcNetwork: RpcNetwork): Settings => ({
+	activeSimulationAddress: fields.activeSimulationAddress,
+	activeSigningSafeAddress: fields.activeSigningSafeAddress,
+	openedPage: fields.openedPage,
+	useSignersAddressAsActiveAddress: fields.useSignersAddressAsActiveAddress,
+	websiteAccess: fields.websiteAccess,
+	activeRpcNetwork,
+	simulationMode: fields.simulationMode,
+})
+
+// The single storage-to-settings-fields conversion. Fields missing from `storedItems` take their value from `missingFieldValues`.
+async function getSettingsFieldsFromStorageItems(storedItems: Readonly<Record<string, unknown>>, missingFieldValues: SettingsStorageFields = getStartupSettingsStorageFields()): Promise<SettingsStorageFields> {
 	const activeSimulationAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'independentActiveSimulationAddress', missingFieldValues.activeSimulationAddress))
 	const activeSigningSafeAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'activeSigningSafeAddress', missingFieldValues.activeSigningSafeAddress))
 	const openedPagePromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'openedPageV2', missingFieldValues.openedPage))
@@ -115,8 +126,10 @@ async function getSettingsFromStorageItems(storedItems: Readonly<Record<string, 
 		websiteAccessPromise,
 		simulationModePromise,
 	])
-	return { activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode }
+	return { activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, simulationMode }
 }
+
+const getSettingsFromStorageItems = async (storedItems: Readonly<Record<string, unknown>>, activeRpcNetwork: RpcNetwork, missingFieldValues?: SettingsStorageFields) => withActiveRpcNetwork(await getSettingsFieldsFromStorageItems(storedItems, missingFieldValues), activeRpcNetwork)
 
 // Website approvals are stored apart from the RPC configuration, so they stay readable while settings are unavailable; `unreadable` keeps the storage error for callers that must propagate it.
 export type WebsiteApprovalsSnapshot =
@@ -139,15 +152,24 @@ export function captureRpcNetwork(settings: Settings): CapturedRpcNetwork {
 	return { activeRpcNetwork: settings.activeRpcNetwork, [capturedRpcNetworkMarker]: true }
 }
 
+// A re-read for an admitted operation: `storedFields` are the persisted settings fields and `admittedRpcNetwork` is the operation's own network, which can differ from the persisted RPC configuration, so it is carried separately and is never presented as live settings.
+export type AdmittedRpcNetworkSnapshot =
+	| { readonly status: 'available', readonly storedFields: SettingsStorageFields, readonly admittedRpcNetwork: CapturedRpcNetwork }
+	| { readonly status: 'unreadable', readonly error: unknown }
+
 const getStorageReadError = (rpcConfiguration: RpcConfigurationState) => rpcConfiguration.status === 'unavailable' && rpcConfiguration.reason === 'read-failed' ? { error: 'error' in rpcConfiguration ? rpcConfiguration.error : undefined } : undefined
 
-// The single settings read. With `pinnedRpcNetwork` the settings are built on that admitted network whatever the stored RPC configuration says, and are unavailable only when storage cannot be read.
-export async function getSettingsSnapshot(options: { readonly pinnedRpcNetwork?: CapturedRpcNetwork } = {}): Promise<SettingsSnapshot> {
+// The single settings read. Without options it returns the persisted settings; with `pinnedRpcNetwork` it returns the persisted fields beside that admitted network (whatever the stored RPC configuration says), unreadable only when storage cannot be read.
+export async function getSettingsSnapshot(): Promise<SettingsSnapshot>
+export async function getSettingsSnapshot(options: { readonly pinnedRpcNetwork: CapturedRpcNetwork }): Promise<AdmittedRpcNetworkSnapshot>
+export async function getSettingsSnapshot(options?: { readonly pinnedRpcNetwork: CapturedRpcNetwork }): Promise<SettingsSnapshot | AdmittedRpcNetworkSnapshot> {
 	const { storedItems, rpcConfiguration } = await getRpcConfigurationStateWithStorageSnapshot(SETTINGS_STORAGE_KEYS)
 	const storageReadError = getStorageReadError(rpcConfiguration)
-	const activeRpcNetwork = options.pinnedRpcNetwork !== undefined
-		? storageReadError === undefined ? options.pinnedRpcNetwork.activeRpcNetwork : undefined
-		: 'activeRpcNetwork' in rpcConfiguration ? rpcConfiguration.activeRpcNetwork : undefined
+	if (options !== undefined) {
+		if (storageReadError !== undefined) return { status: 'unreadable', error: storageReadError.error }
+		return { status: 'available', storedFields: await getSettingsFieldsFromStorageItems(storedItems), admittedRpcNetwork: options.pinnedRpcNetwork }
+	}
+	const activeRpcNetwork = 'activeRpcNetwork' in rpcConfiguration ? rpcConfiguration.activeRpcNetwork : undefined
 	if (activeRpcNetwork !== undefined) return { status: 'available', settings: await getSettingsFromStorageItems(storedItems, activeRpcNetwork), rpcConfiguration }
 	const websiteApprovals: WebsiteApprovalsSnapshot = storageReadError === undefined
 		? { status: 'readable', websiteAccess: await getWebsiteAccessFromStorageItems(storedItems) }
@@ -191,9 +213,14 @@ export function requireReadableApprovals(websiteApprovals: WebsiteApprovalsSnaps
 	return websiteApprovals.websiteAccess
 }
 
+// Projection for an admitted operation that continues on its own network: the persisted fields on the admitted RPC network, undefined when storage is unreadable.
+export function settingsOnAdmittedRpcNetwork(snapshot: AdmittedRpcNetworkSnapshot): Settings | undefined {
+	return snapshot.status === 'available' ? withActiveRpcNetwork(snapshot.storedFields, snapshot.admittedRpcNetwork.activeRpcNetwork) : undefined
+}
+
 // Projection for settings that must still be published when they cannot be read back: `fallback` without website approvals, so revoked approvals are never republished.
-export function settingsForPublication(snapshot: SettingsSnapshot, fallback: Settings): Settings {
-	return snapshot.status === 'available' ? snapshot.settings : { ...fallback, websiteAccess: [] }
+export function settingsForPublication(snapshot: AdmittedRpcNetworkSnapshot, fallback: Settings): Settings {
+	return settingsOnAdmittedRpcNetwork(snapshot) ?? { ...fallback, websiteAccess: [] }
 }
 
 export const setPage = async (openedPageV2: Page) => await browserStorageLocalSet({ openedPageV2 })
