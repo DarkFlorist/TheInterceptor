@@ -1641,67 +1641,6 @@ for (const closeDeferred of [false, true]) {
 	})
 }
 
-test('moves a confirmation that picked a window to a new one when that window closed with its last request before the confirmation registered', async () => {
-	await startSimulationStack(SENDER)
-	const postedMessages: unknown[] = []
-	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
-	const first = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
-	// Windows open, close and exist as the browser would.
-	const windows = Reflect.get(globalThis, 'browser').windows
-	const { create: createWindow, remove: removeWindow, get: getWindow } = windows
-	const NEW_WINDOW_ID = 100
-	let liveWindows = [CONFIRMATION_WINDOW_ID]
-	windows.create = async () => {
-		liveWindows = [...liveWindows, NEW_WINDOW_ID]
-		browserMock.setLiveWindowIds(liveWindows)
-		return { id: NEW_WINDOW_ID }
-	}
-	windows.remove = async (windowId: number) => {
-		liveWindows = liveWindows.filter((id) => id !== windowId)
-		browserMock.setLiveWindowIds(liveWindows)
-	}
-	// The second confirmation picks the open window, then pauses reserving its hash, before it registers.
-	let pickedWindow = false
-	windows.get = async (windowId: number) => {
-		const window = await getWindow(windowId)
-		pickedWindow = true
-		return window
-	}
-	let signalPaused = () => undefined
-	const paused = new Promise<void>((resolve) => { signalPaused = () => { resolve() } })
-	let release = () => undefined
-	const released = new Promise<void>((resolve) => { release = () => { resolve() } })
-	let armed = true
-	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
-		// Its reservation reads the pending requests after the stack; the stack read holds the large state lock, so the pause is on this read.
-		if (!pickedWindow || !armed || !readsKey(keys, 'pendingTransactionsAndMessages')) return readStoredItems()
-		armed = false
-		signalPaused()
-		await released
-		return readStoredItems()
-	})
-	try {
-		const opening = openConfirmation(2, SENDER, 2n, websiteTabConnections)
-		await paused
-		// Rejecting the first request removes the last registered request and closes the window.
-		await rejectRequest(first, websiteTabConnections)
-		assert.deepEqual(liveWindows, [], 'the window closed')
-		release()
-		await opening
-	} finally {
-		browserMock.setStorageGetHandler(undefined)
-		windows.create = createWindow
-		windows.remove = removeWindow
-		windows.get = getWindow
-	}
-	const [second] = await modules.getPendingTransactionsAndMessages()
-	assert.equal(second?.uniqueRequestIdentifier.requestId, 2)
-	assert.equal(second?.transactionOrMessageCreationStatus, 'Simulated')
-	assert.deepEqual(second?.popupOrTabId, { type: 'popup', id: NEW_WINDOW_ID }, 'the second request moved to a newly opened window')
-	assert.deepEqual(liveWindows, [NEW_WINDOW_ID])
-	assert.deepEqual(getPageResponses(postedMessages, 1), [{ error: 4001 }])
-	assert.deepEqual(getPageResponses(postedMessages, 2), [])
-})
 
 test('retries listing a closed tab\'s committed replies when the first listing fails', async () => {
 	await startSimulationStack(SENDER)
@@ -1788,81 +1727,83 @@ const pausingRegistrationAfterWindowPick = (gate: ReturnType<typeof createGate>)
 	}
 }
 
-test('gives a confirmation that registered while its window was closing a live window on a later attempt when opening the first replacement fails', async () => {
+
+
+test('moves the window to a confirmation that registers in it before the window\'s last other request is resolved', async () => {
 	await startSimulationStack(SENDER)
 	const postedMessages: unknown[] = []
 	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
 	const first = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
 	const registration = createGate()
-	const firstClose = createGate()
-	await withBrowserWindows({
-		beforeCreate: async (attempt) => { if (attempt === 1) throw new Error('transient window creation failure') },
-		beforeRemove: async () => await firstClose.pass(),
-	}, async ({ liveWindows }) => {
+	await withBrowserWindows({}, async ({ liveWindows, createdWindows }) => {
 		const restore = pausingRegistrationAfterWindowPick(registration)
 		try {
+			// The second confirmation picks the open window and pauses before registering, holding the pending-confirmation lock.
 			const opening = openConfirmation(2, SENDER, 2n, websiteTabConnections)
 			await registration.reached
-			// The first request is rejected: its finishing finds no other request and starts closing the window.
+			// Rejecting the first request decides about the window only once the second registered.
 			const rejecting = withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'reject', uniqueRequestIdentifier: first } }))
-			await firstClose.reached
-			// The second registers while the window still exists, then the window closes.
+			await new Promise((resolve) => setTimeout(resolve, 50))
+			assert.deepEqual(liveWindows(), [CONFIRMATION_WINDOW_ID], 'the window is not closed while the second registers')
+			browserMock.sentMessages.length = 0
 			registration.open()
-			await opening
-			firstClose.open()
-			await rejecting
-			await withSilencedConsole(async () => await waitForCondition(async () => {
-				const [second] = await modules.getPendingTransactionsAndMessages()
-				return second !== undefined && liveWindows().includes(second.popupOrTabId.id)
-			}))
+			await Promise.all([opening, rejecting])
 		} finally {
 			restore()
 		}
+		assert.deepEqual(liveWindows(), [CONFIRMATION_WINDOW_ID], 'the window stays open')
+		assert.deepEqual(createdWindows(), [], 'no other window opens')
 	})
 	const [second] = await modules.getPendingTransactionsAndMessages()
-	assert.equal(second?.uniqueRequestIdentifier.requestId, 2)
-	assert.notEqual(second?.popupOrTabId.id, CONFIRMATION_WINDOW_ID, 'the second request is in a live replacement window')
+	assert.deepEqual(second?.popupOrTabId, { type: 'popup', id: CONFIRMATION_WINDOW_ID }, 'the second request is in the open window')
+	assert.ok(browserMock.sentMessages.some((message) => message.method === 'popup_update_confirm_transaction_dialog'), 'and the window moves to it')
+	assert.deepEqual(getPageResponses(postedMessages, 1), [{ error: 4001 }])
 	assert.deepEqual(getPageResponses(postedMessages, 2), [])
 	await assertNoResolutionBookkeeping()
 })
 
-test('closes a replacement window whose stranded requests were resolved while it opened, so the next request opens one window', async () => {
+test('opens a new window for a confirmation that chooses its window while the window\'s last request is closing it', async () => {
 	await startSimulationStack(SENDER)
 	const postedMessages: unknown[] = []
 	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
 	const first = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
-	const registration = createGate()
-	const firstClose = createGate()
-	const replacementCreation = createGate()
-	await withBrowserWindows({
-		beforeCreate: async (attempt) => { if (attempt === 1) await replacementCreation.pass() },
-		beforeRemove: async (windowId) => { if (windowId === CONFIRMATION_WINDOW_ID) await firstClose.pass() },
-	}, async ({ liveWindows, createdWindows }) => {
-		const restore = pausingRegistrationAfterWindowPick(registration)
-		const second = { requestId: 2, requestSocket: REQUEST_SOCKET }
-		try {
-			const opening = openConfirmation(2, SENDER, 2n, websiteTabConnections)
-			await registration.reached
-			const rejecting = withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'reject', uniqueRequestIdentifier: first } }))
-			await firstClose.reached
-			registration.open()
-			await opening
-			firstClose.open()
-			// While the replacement opens, the stranded second request is rejected.
-			await replacementCreation.reached
-			const rejectingSecond = withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'reject', uniqueRequestIdentifier: second } }))
-			await waitForCondition(async () => (await modules.getPendingTransactionsAndMessages()).length === 0)
-			replacementCreation.open()
-			await Promise.all([rejecting, rejectingSecond])
-			await withSilencedConsole(async () => await waitForCondition(async () => (await modules.getPendingTerminalReplies()).length === 0))
-		} finally {
-			restore()
-		}
-		assert.deepEqual(liveWindows(), [], 'no replacement window remains')
-		assert.deepEqual(getPageResponses(postedMessages, 2), [{ error: 4001 }])
-		const windowsBefore = createdWindows().length
-		await openConfirmation(3, SENDER, 3n, websiteTabConnections)
-		assert.equal(createdWindows().length - windowsBefore, 1, 'the next request opens exactly one window')
+	const windowClose = createGate()
+	await withBrowserWindows({ beforeRemove: async () => await windowClose.pass() }, async ({ liveWindows, createdWindows }) => {
+		// Rejecting the first request closes its window, holding the pending-confirmation lock.
+		const rejecting = withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'reject', uniqueRequestIdentifier: first } }))
+		await windowClose.reached
+		// The second confirmation chooses its window only once the close is done.
+		const opening = openConfirmation(2, SENDER, 2n, websiteTabConnections)
+		await new Promise((resolve) => setTimeout(resolve, 50))
+		windowClose.open()
+		await Promise.all([rejecting, opening])
+		assert.equal(createdWindows().length, 1, 'one new window opens')
+		assert.deepEqual(liveWindows(), createdWindows(), 'only the new window is open')
+		const [second] = await modules.getPendingTransactionsAndMessages()
+		assert.deepEqual(second?.popupOrTabId, { type: 'popup', id: createdWindows()[0] }, 'the second request is in the new window')
 	})
+	assert.deepEqual(getPageResponses(postedMessages, 1), [{ error: 4001 }])
+	assert.deepEqual(getPageResponses(postedMessages, 2), [])
+	await assertNoResolutionBookkeeping()
+})
+
+test('rejects a request once when the user closes a window whose programmatic close failed, opening no new window', async () => {
+	await startSimulationStack(SENDER)
+	const postedMessages: unknown[] = []
+	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+	const first = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+	await withBrowserWindows({ beforeRemove: async () => { throw new Error('transient window removal failure') } }, async ({ createdWindows }) => {
+		// Rejecting the request fails to close its window; the finishing retries.
+		await rejectRequest(first, websiteTabConnections)
+		// The user closes the window before the retry.
+		browserMock.setLiveWindowIds([])
+		await withSilencedConsole(async () => {
+			await modules.onCloseWindowOrTab({ type: 'popup', id: CONFIRMATION_WINDOW_ID }, simulator.ethereum, simulator.tokenPriceService, websiteTabConnections)
+			await waitForCondition(async () => (await modules.getPendingTerminalReplies()).length === 0)
+		})
+		assert.deepEqual(createdWindows(), [], 'no new window opens')
+	})
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	assert.deepEqual(getPageResponses(postedMessages, 1), [{ error: 4001 }], 'the request is rejected once')
 	await assertNoResolutionBookkeeping()
 })
