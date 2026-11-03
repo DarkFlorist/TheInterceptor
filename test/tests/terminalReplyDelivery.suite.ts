@@ -1033,4 +1033,46 @@ test('a terminal reply delivery that throws still focuses the website and closes
 	assert.deepEqual(removedWindowIds, [pendingTransaction.popupOrTabId.id])
 })
 
+test('a reply posted without its delivered mark whose tab then closes is retired with its posted marker', async () => {
+	const postedMessages: unknown[] = []
+	const socket = uniqueRequestIdentifier.requestSocket
+	let failNextTerminalReplyWrite = false
+	const recordingPort = createRecordingPort(postedMessages)
+	// Posting the reply succeeds; the tab then closes and the delivered mark cannot be stored.
+	const closingTabPort: browser.runtime.Port = {
+		...recordingPort,
+		postMessage(message: unknown) {
+			recordingPort.postMessage(message)
+			browserMock.setLiveTabIds([])
+			failNextTerminalReplyWrite = true
+		},
+	}
+	const websiteTabConnections = new Map([[socket.tabId, { connections: {
+		[modules.websiteSocketToString(socket)]: { port: closingTabPort, socket, websiteOrigin: 'https://example.com', approved: true, wantsToConnect: true },
+	} }]])
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		if (failNextTerminalReplyWrite && 'pendingTerminalReplies' in items) {
+			failNextTerminalReplyWrite = false
+			throw new Error('The delivered mark could not be stored.')
+		}
+		writeStoredItems()
+	})
+
+	try {
+		await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+			method: 'popup_confirmDialog',
+			data: { action: 'reject', errorString: undefined, uniqueRequestIdentifier },
+		}))
+
+		assert.equal(getRepliesToWebsite(postedMessages).length, 1)
+		assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+		assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+		const { getResolutionBookkeepingSize } = await import('../../app/ts/background/windows/confirmTransaction.js')
+		const { getTerminalReplyBookkeepingSize } = await import('../../app/ts/background/terminalReplyDelivery.js')
+		assert.equal(getResolutionBookkeepingSize() + getTerminalReplyBookkeepingSize(), 0, 'no bookkeeping is left')
+	} finally {
+		browserMock.setStorageSetHandler(undefined)
+	}
+})
+
 await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))

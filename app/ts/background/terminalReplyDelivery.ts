@@ -90,6 +90,8 @@ export async function retireTerminalReply(uniqueRequestIdentifier: UniqueRequest
 		const entry = await getQueuedTerminalReply(uniqueRequestIdentifier)
 		if (entry === undefined || (entry.delivered !== true && !requestingTabGone) || entry.confirmationWindow !== undefined || await isRequestPending(uniqueRequestIdentifier)) return
 		await removePendingTerminalReply(uniqueRequestIdentifier)
+		// A reply retired undelivered, because its tab is gone, may have been posted without its delivered mark: its posted marker goes with the entry. Coalesced delivery attempts (terminalReplyProductions) clear themselves when they settle.
+		postedUnmarkedTerminalReplies.delete(getUniqueRequestIdentifierString(uniqueRequestIdentifier))
 	})
 }
 
