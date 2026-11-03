@@ -2130,3 +2130,97 @@ test('stops retrying a close whose lookups keep failing at the limit, leaving no
 	}
 	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [])
 })
+
+test('stops a reject\'s retries at one budget when every committed-reply read is slow and fails', async () => {
+	await startSimulationStack(SENDER)
+	const postedMessages: unknown[] = []
+	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+	const request = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+	let failedReads = 0
+	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+		if (!readsKey(keys, 'pendingTerminalReplies')) return readStoredItems()
+		await new Promise((resolve) => setTimeout(resolve, 120))
+		failedReads += 1
+		throw new Error('slow persistent read failure')
+	})
+	try {
+		await withSilencedConsole(async () => {
+			await rejectRequest(request, websiteTabConnections)
+			await waitForNoResolutionBookkeepingWhileFailing()
+		})
+		const readsWhenExhausted = failedReads
+		await new Promise((resolve) => setTimeout(resolve, 2_000))
+		assert.equal(failedReads, readsWhenExhausted, 'nothing retries after the budget is spent')
+		assert.ok(readsWhenExhausted <= 6, `one budget of attempts (${ readsWhenExhausted } reads)`)
+		await assertNoResolutionBookkeeping()
+	} finally {
+		browserMock.setStorageGetHandler(undefined)
+	}
+	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [])
+})
+
+test('finishes a reject whose retries ran out before committing at startup, while its window is still open', async () => {
+	await startSimulationStack(SENDER)
+	const postedMessages: unknown[] = []
+	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+	const request = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+	// Every write of a committed reply fails, so the reject runs out of retries before committing.
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		if ('pendingTerminalReplies' in items) throw new Error('persistent reply write failure')
+		writeStoredItems()
+	})
+	try {
+		await withSilencedConsole(async () => {
+			await rejectRequest(request, websiteTabConnections)
+			await waitForNoResolutionBookkeepingWhileFailing()
+		})
+	} finally {
+		browserMock.setStorageSetHandler(undefined)
+	}
+	const [pending] = await modules.getPendingTransactionsAndMessages()
+	assert.equal(pending?.declineRequested, 'reject', 'the reject is stored with the request')
+	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [])
+	// After a restart with the window open, startup finishes it.
+	const { resumeCommittedRequests } = await import('../../app/ts/background/windows/confirmTransaction.js')
+	await withSilencedConsole(async () => {
+		await resumeCommittedRequests(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections)
+		await waitUntilNothingPending()
+		await waitForCondition(async () => (await modules.getPendingTerminalReplies()).length === 0)
+	})
+	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [{ error: 4001 }])
+	await assertNoResolutionBookkeeping()
+})
+
+for (const closedWindow of [CONFIRMATION_WINDOW_ID, CONFIRMATION_WINDOW_ID + 1]) {
+	test(`declines only the requests of the closed window ${ closedWindow === CONFIRMATION_WINDOW_ID ? 'holding an orphan awaiting its retry' : 'of a later request' }`, async () => {
+		await startSimulationStack(SENDER)
+		const postedMessages: unknown[] = []
+		const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+		await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+		const [orphan] = await modules.getPendingTransactionsAndMessages()
+		if (orphan === undefined) throw new Error('Expected the pending request')
+		// A later request shown in its own window.
+		await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [orphan, { ...orphan, uniqueRequestIdentifier: { requestId: 2, requestSocket: REQUEST_SOCKET }, transactionIdentifier: 2n, popupOrTabId: { type: 'popup', id: CONFIRMATION_WINDOW_ID + 1 } }] })
+		browserMock.setLiveWindowIds([CONFIRMATION_WINDOW_ID + 1])
+		// The orphan's decline fails once and waits for its retry.
+		let failedReads = 0
+		browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+			if (failedReads > 0 || !readsKey(keys, 'pendingTerminalReplies')) return readStoredItems()
+			failedReads += 1
+			throw new Error('transient read failure')
+		})
+		await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'noResponse', uniqueRequestIdentifier: orphan.uniqueRequestIdentifier } }))
+		browserMock.setStorageGetHandler(undefined)
+		assert.equal(failedReads, 1)
+		await withSilencedConsole(async () => {
+			await modules.onCloseWindowOrTab({ type: 'popup', id: closedWindow }, simulator.ethereum, simulator.tokenPriceService, websiteTabConnections)
+			// The orphan's retry declines it in any case; the later request only if its window closed.
+			await waitForCondition(async () => (await modules.getPendingTransactionsAndMessages()).every((pending) => pending.uniqueRequestIdentifier.requestId !== 1))
+			await new Promise((resolve) => setTimeout(resolve, 200))
+		})
+		const remaining = (await modules.getPendingTransactionsAndMessages()).map((pending) => pending.uniqueRequestIdentifier.requestId)
+		assert.deepEqual(remaining, closedWindow === CONFIRMATION_WINDOW_ID ? [2] : [], 'only the closed window\'s requests, and the orphan, are declined')
+		assert.equal(getPageResponses(postedMessages, 1).length, 1, 'the orphan settles once')
+		assert.deepEqual(getPageResponses(postedMessages, 2), closedWindow === CONFIRMATION_WINDOW_ID ? [] : [{ error: 4001 }])
+	})
+}

@@ -77,6 +77,9 @@ const ConfirmTransactionSimulationFailed = funtypes.ReadonlyObject({
 export type ConfirmTransactionTransactionSingleVisualization = funtypes.Static<typeof ConfirmTransactionTransactionSingleVisualization>
 export const ConfirmTransactionTransactionSingleVisualization = funtypes.Union(ConfirmTransactionSimulationFailed, ConfirmTransactionSimulationStateChanged)
 
+// Why a pending request is being declined: the user rejected it, or its confirmation window closed.
+const DeclineRequested = funtypes.Union(funtypes.Literal('reject'), funtypes.Literal('close'))
+
 type PendingTransactionApprovalStatus = funtypes.Static<typeof PendingTransactionApprovalStatus>
 const PendingTransactionApprovalStatus = funtypes.Union(
 	funtypes.ReadonlyObject({ status: funtypes.Union(funtypes.Literal('WaitingForUser'), funtypes.Literal('WaitingForSigner')) }),
@@ -108,6 +111,8 @@ const SimulatedPendingTransactionBase = funtypes.ReadonlyObject({
 	executeThroughSafe: funtypes.Literal(true),
 	// The salt and hash a simulation-mode transaction was given when the confirmation was first formed (reserveSimulationHash): the preview shows the hash and accepting stacks it. A request pending from before reservations has none.
 	simulationHashReservation: funtypes.ReadonlyObject({ salt: EthereumQuantity, hash: EthereumBytes32 }),
+	// A decline asked for (declineRequest): the request is to be rejected unless a reply was committed for it. Kept so startup finishes an interrupted decline.
+	declineRequested: DeclineRequested,
 }))
 
 export type SimulatedPendingTransaction = funtypes.Static<typeof SimulatedPendingTransaction>
@@ -157,7 +162,7 @@ const PendingSignableMessage = funtypes.Intersect(
 		website: Website,
 		activeAddress: EthereumAddress,
 		approvalStatus: PendingTransactionApprovalStatus,
-	}).And(funtypes.ReadonlyPartial({ safeMessageCoSignSnapshot: SafeMessageCoSignSnapshot })),
+	}).And(funtypes.ReadonlyPartial({ safeMessageCoSignSnapshot: SafeMessageCoSignSnapshot, declineRequested: DeclineRequested })),
 	funtypes.Union(
 		funtypes.ReadonlyObject({ transactionOrMessageCreationStatus: funtypes.Literal('Simulated'), visualizedPersonalSignRequest: VisualizedPersonalSignRequest }),
 		funtypes.ReadonlyObject({ transactionOrMessageCreationStatus: funtypes.Union(funtypes.Literal('Crafting'), funtypes.Literal('Simulating')) })
