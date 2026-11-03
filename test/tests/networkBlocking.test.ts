@@ -63,3 +63,50 @@ for (const manifestVersion of [2, 3] as const) {
 		assert.equal(await m.areWeBlocking(connections, 1, httpsOrigin), true)
 	})
 }
+
+for (const manifestVersion of [2, 3] as const) {
+	test(`bulk access saves apply a block toggle to every record of its hostname on MV${ manifestVersion }`, async () => {
+		const mock = installBrowserMock({ manifestVersion })
+		const m = await loadModules()
+		const { createEthereumWithGetBlockCounter } = await import('./backgroundEthAccountsTestHarness.js')
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		const hostname = `bulk-save-mv${ manifestVersion }.example`
+		const httpsOrigin = `https://${ hostname }`
+		const httpOrigin = `http://${ hostname }`
+		const otherHostOrigin = `https://other-${ hostname }`
+		const record = (websiteOrigin: string, declarativeNetRequestBlockMode: 'block-all' | 'disabled') => ({ website: { websiteOrigin, icon: undefined, title: undefined }, access: true, addressAccess: undefined, declarativeNetRequestBlockMode })
+		const blockModes = async () => (await m.getWebsiteAccess()).map((access) => [access.website.websiteOrigin, access.declarativeNetRequestBlockMode, access.access])
+		const save = async (data: { removed: boolean, oldEntry: ReturnType<typeof record> & { access: boolean }, newEntry: ReturnType<typeof record> & { access: boolean } }[]) => await m.changeInterceptorAccess(simulationServicesOwner, connections, { method: 'popup_changeInterceptorAccess', data })
+		const isThirdPartyRequestFromHostBlocked = async () => {
+			if (manifestVersion === 3) return mock.blockedDomains.includes(hostname)
+			return 'cancel' in mock.runWebRequest({ requestId: '1', url: 'https://third-party.example/beacon', method: 'GET', frameId: 0, parentFrameId: -1, tabId: 1, type: 'xmlhttprequest', timeStamp: 0, originUrl: httpOrigin })
+		}
+		const connections = new Map()
+		await m.updateWebsiteAccess(() => [record(httpsOrigin, 'block-all'), record(httpOrigin, 'block-all'), record(otherHostOrigin, 'block-all')])
+		await m.updateDeclarativeNetRequestBlocks(connections)
+		assert.equal(await isThirdPartyRequestFromHostBlocked(), true)
+
+		// Unblocking only the https record unblocks the host, while an unrelated edit to its http record in the same save is kept without restoring its block.
+		await save([
+			{ removed: false, oldEntry: record(httpsOrigin, 'block-all'), newEntry: record(httpsOrigin, 'disabled') },
+			{ removed: false, oldEntry: record(httpOrigin, 'block-all'), newEntry: { ...record(httpOrigin, 'block-all'), access: false } },
+		])
+		assert.deepEqual(await blockModes(), [[httpsOrigin, 'disabled', true], [httpOrigin, 'disabled', false], [otherHostOrigin, 'block-all', true]])
+		assert.equal(await isThirdPartyRequestFromHostBlocked(), false)
+		assert.equal(await m.areWeBlocking(connections, 1, otherHostOrigin), true)
+
+		// Re-blocking only the http record blocks the host again.
+		await save([{ removed: false, oldEntry: { ...record(httpOrigin, 'disabled'), access: false }, newEntry: { ...record(httpOrigin, 'block-all'), access: false } }])
+		assert.deepEqual(await blockModes(), [[httpsOrigin, 'block-all', true], [httpOrigin, 'block-all', false], [otherHostOrigin, 'block-all', true]])
+		assert.equal(await isThirdPartyRequestFromHostBlocked(), true)
+
+		// Contradictory toggles for one hostname are rejected before anything is written.
+		const beforeContradictorySave = await blockModes()
+		await assert.rejects(save([
+			{ removed: false, oldEntry: record(httpsOrigin, 'block-all'), newEntry: record(httpsOrigin, 'disabled') },
+			{ removed: false, oldEntry: { ...record(httpOrigin, 'disabled'), access: false }, newEntry: { ...record(httpOrigin, 'block-all'), access: true } },
+		]), /Cannot both block and allow external requests for bulk-save/)
+		assert.deepEqual(await blockModes(), beforeContradictorySave)
+		assert.equal(await isThirdPartyRequestFromHostBlocked(), true)
+	})
+}

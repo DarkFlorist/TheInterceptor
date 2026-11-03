@@ -1,7 +1,7 @@
 import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
 import type { AllowOrPreventAddressAccessForWebsite, BlockOrAllowExternalRequests, DisableInterceptor, RemoveWebsiteAccess, RemoveWebsiteAddressAccess, RetrieveWebsiteAccess } from '../../types/interceptor-messages.js'
 import type { EthereumAddress } from '../../types/wire-types.js'
-import type { Website, WebsiteAccessArray } from '../../types/websiteAccessTypes.js'
+import type { Website, WebsiteAccess, WebsiteAccessArray } from '../../types/websiteAccessTypes.js'
 import { getErrorMessage, reportUnexpectedError } from '../../utils/errors.js'
 import { checkAndThrowRuntimeLastError } from '../../utils/requests.js'
 import { modifyObject } from '../../utils/typescript.js'
@@ -61,6 +61,36 @@ export function setNetworkBlockModeForHostname(websiteAccess: WebsiteAccessArray
 		if (!sharesBlockedHostname) return access
 		return modifyObject(access, { declarativeNetRequestBlockMode: shouldBlock ? 'block-all' : 'disabled' })
 	})
+}
+
+type NetworkBlockDecision = { readonly websiteOrigin: string, readonly shouldBlock: boolean }
+type WebsiteAccessEdit = { readonly removed: boolean, readonly oldEntry: WebsiteAccess, readonly newEntry: WebsiteAccess }
+
+const blocksNetworkRequests = (access: WebsiteAccess) => access.declarativeNetRequestBlockMode === 'block-all'
+
+// A save's explicit block toggles, one per hostname (or per origin without one). Throws before anything is written when two toggles of one hostname disagree, since enforcement cannot block a hostname for one scheme and not another.
+export function getNetworkBlockDecisions(edits: readonly WebsiteAccessEdit[]): readonly NetworkBlockDecision[] {
+	const decisions = new Map<string, NetworkBlockDecision>()
+	for (const edit of edits) {
+		if (edit.removed || blocksNetworkRequests(edit.oldEntry) === blocksNetworkRequests(edit.newEntry)) continue
+		const websiteOrigin = edit.newEntry.website.websiteOrigin
+		const decision = { websiteOrigin, shouldBlock: blocksNetworkRequests(edit.newEntry) }
+		const hostname = getWebsiteHostname(websiteOrigin)
+		const decisionKey = hostname === undefined ? `origin:${ websiteOrigin }` : `hostname:${ hostname }`
+		const previous = decisions.get(decisionKey)
+		if (previous !== undefined && previous.shouldBlock !== decision.shouldBlock) {
+			throw new Error(`Cannot both block and allow external requests for ${ hostname ?? websiteOrigin }: ${ previous.websiteOrigin } and ${ websiteOrigin } share its network blocking. Set them to the same value.`)
+		}
+		decisions.set(decisionKey, decision)
+	}
+	return [...decisions.values()]
+}
+
+// Apply ordinary record edits first, then each explicit block toggle across its whole hostname, so another edited record of that hostname carrying its old block mode cannot undo the toggle.
+export function applyWebsiteAccessEdits(websiteAccess: WebsiteAccessArray, edits: readonly WebsiteAccessEdit[], networkBlockDecisions: readonly NetworkBlockDecision[]): WebsiteAccessArray {
+	const withEntriesRemoved = websiteAccess.filter((access) => edits.find((edit) => edit.newEntry.website.websiteOrigin === access.website.websiteOrigin)?.removed !== true)
+	const withRecordEdits = withEntriesRemoved.map((access) => edits.find((edit) => edit.newEntry.website.websiteOrigin === access.website.websiteOrigin)?.newEntry ?? access)
+	return networkBlockDecisions.reduce<WebsiteAccessArray>((accessList, decision) => setNetworkBlockModeForHostname(accessList, decision.websiteOrigin, decision.shouldBlock), withRecordEdits)
 }
 
 const blockOrAllowWebsiteExternalRequests = async (websiteTabConnections: WebsiteTabConnections, website: Website, shouldBlock: boolean) => {
