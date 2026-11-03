@@ -1021,6 +1021,48 @@ test('changes the Safe simulation signer only after validating current on-chain 
 	assert.equal(await getLatestUnexpectedError(), undefined)
 })
 
+for (const edit of ['rename', 'owner removed', 'no longer a Safe'] as const) test(`editing a Safe in the address editor keeps the signing accounts it does not manage (${ edit })`, async () => {
+	const { addOrModifyAddressBookEntry } = await import('../../app/ts/background/popupMessageHandlers.js')
+	const ledgerOwner = safeTestOwnerAddress
+	const gasPayer = recipientAddress
+	fakeSafeContract.owners = edit === 'owner removed' ? [gasPayer] : [ledgerOwner, gasPayer]
+	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry({
+		useAsActiveAddress: false,
+		safeSimulationSignerAddress: ledgerOwner,
+		safeSignerAddresses: [ledgerOwner, gasPayer],
+		safeVersion: '1.4.1',
+		safeSigningSignerAddress: ledgerOwner,
+		safeExecutionAddress: gasPayer,
+	})])
+
+	// The address editor sends the entry without the signing accounts saveSafeSigningAccounts manages.
+	const editedEntry = edit === 'no longer a Safe'
+		? { type: 'contact' as const, name: 'Former Safe', address: activeAddress, chainId: fakeRpcNetwork.chainId, entrySource: 'User' as const, useAsActiveAddress: false }
+		: createSafeAddressBookEntry({ name: 'Renamed Safe', useAsActiveAddress: false, safeSimulationSignerAddress: edit === 'owner removed' ? gasPayer : ledgerOwner })
+	const reply = await withSilencedConsole(async () => await addOrModifyAddressBookEntry(
+		createTestSimulationServicesOwner({ ethereum: ethereum, tokenPriceService: simulator.tokenPriceService }),
+		new Map(),
+		{ method: 'popup_addOrModifyAddressBookEntry', data: editedEntry },
+	))
+	fakeSafeContract.owners = [safeTestOwnerAddress]
+
+	assert.equal(reply.ok, true)
+	const entries = (await modules.getUserAddressBookEntries()).filter((entry) => entry.address === activeAddress)
+	assert.equal(entries.length, 1)
+	const [stored] = entries
+	if (edit === 'no longer a Safe') {
+		assert.equal(stored?.type, 'contact')
+		assert.equal(stored !== undefined && 'safeSigningSignerAddress' in stored, false)
+		assert.equal(stored !== undefined && 'safeExecutionAddress' in stored, false)
+		return
+	}
+	if (stored?.type !== 'safe') throw new Error('Expected the edited Safe')
+	assert.equal(stored.name, 'Renamed Safe')
+	// A signing owner that is no longer one of the Safe's owners cannot sign for it, so it is not kept.
+	assert.equal(stored.safeSigningSignerAddress, edit === 'rename' ? ledgerOwner : undefined)
+	assert.equal(stored.safeExecutionAddress, gasPayer)
+})
+
 test('refreshes Safe owner metadata and clears a stale simulation signer without choosing a replacement', async () => {
 	const staleSigner = 0x1234567890123456789012345678901234567890n
 	fakeSafeContract.owners = [recipientAddress]

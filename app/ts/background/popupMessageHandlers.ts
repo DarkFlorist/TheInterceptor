@@ -4,7 +4,7 @@ import { activateAddressSelection, changeActiveAddressAndChain } from './activeS
 import { captureSimulationSnapshot, getUpdatedSimulationStackSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
 import { getSettings, setUseTabsInsteadOfPopup, setPage, getMakeCurrentAddressRich, setMetamaskCompatibilityMode, setSafeAppsCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, updateMakeCurrentAddressRich, updateFixedMakeMeRichList } from './settings.js'
 import { getPendingTransactionsAndMessages, getTabState, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, getPopupVisualisationState, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests, updateTransactionState, getSafeTransactionStacks } from './storageVariables.js'
-import { updateAddressBookAndSigningWalletBindings } from './signingAddressBookCoordinator.js'
+import { keepSafeSigningAccounts, updateAddressBookAndSigningWalletBindings } from './signingAddressBookCoordinator.js'
 import { updateUserAddressBookEntries, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './addressBookStore.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
 import { type ChangeActiveAddress, type ModifyMakeMeRich, type ChangePage, type RemoveTransaction, type RequestAccountsFromSigner, type TransactionConfirmation, type InterceptorAccess, type ChangeInterceptorAccess, type ChainChangeConfirmation, type WatchAssetConfirmation, type EnableSimulationMode, type ChangeActiveChain, type AddOrEditAddressBookEntry, type GetAddressBookData, type RemoveAddressBookEntry, type InterceptorAccessRefresh, type InterceptorAccessChangeAddress, type Settings, type ChangeSettings, type UpdateHomePage, type SimulateGovernanceContractExecution, type ChangeAddOrModifyAddressWindowState, type OpenWebPage, type SetEnsNameForHash, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions, type ForceSetGasLimitForTransaction, type ChangePreSimulationBlockTimeManipulation, type SetTransactionOrMessageBlockTimeManipulator, type FetchSimulationStackRequestConfirmation, type ImportSimulationStack, type PopupReadyAndListeningPage } from '../types/interceptor-messages.js'
@@ -331,8 +331,9 @@ export async function addOrModifyAddressBookEntry(simulationServicesOwner: Simul
 			}
 		}
 		await updateAddressBookAndSigningWalletBindings((previousContacts) => {
-			if (previousContacts.find((previous) => previous.address === entryToStore.address && doAddressBookChainIdsMatch(previous.chainId, entryToStore.chainId)) ) {
-				return previousContacts.map((previous) => previous.address === entryToStore.address && doAddressBookChainIdsMatch(previous.chainId, entryToStore.chainId) ? entryToStore : previous)
+			const isEditedEntry = (previous: AddressBookEntry) => previous.address === entryToStore.address && doAddressBookChainIdsMatch(previous.chainId, entryToStore.chainId)
+			if (previousContacts.some(isEditedEntry)) {
+				return previousContacts.map((previous) => isEditedEntry(previous) ? keepSafeSigningAccounts(previous, entryToStore) : previous)
 			}
 			return previousContacts.concat([entryToStore])
 		})

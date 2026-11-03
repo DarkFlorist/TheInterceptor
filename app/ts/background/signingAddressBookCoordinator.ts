@@ -84,6 +84,18 @@ export async function saveSafeSigningAccounts(chainId: bigint, address: bigint, 
 	})
 }
 
+/** The address editor does not manage a Safe's signing accounts, which saveSafeSigningAccounts sets, so an edit of the same Safe keeps them from the stored entry. The signing owner is kept only while it is still one of the Safe's validated owners. An entry that is no longer a Safe has no signing accounts. */
+export function keepSafeSigningAccounts(stored: AddressBookEntry | undefined, edited: AddressBookEntry): AddressBookEntry {
+	if (stored?.type !== 'safe' || edited.type !== 'safe' || stored.address !== edited.address) return edited
+	const owner = edited.safeSigningSignerAddress ?? stored.safeSigningSignerAddress
+	const executor = edited.safeExecutionAddress ?? stored.safeExecutionAddress
+	return {
+		...edited,
+		...(owner !== undefined && edited.safeSignerAddresses?.includes(owner) === true ? { safeSigningSignerAddress: owner } : {}),
+		...(executor === undefined ? {} : { safeExecutionAddress: executor }),
+	}
+}
+
 /** Address edits atomically prune invalid signing bindings; unchanged eligibility skips signing-storage access. */
 export async function updateAddressBookAndSigningWalletBindings(updateFunc: (prevState: AddressBookEntries) => AddressBookEntries) {
 	await withAddressBookAndSigningWalletStores(async () => {
