@@ -36,12 +36,13 @@ export function haveSameHostForNetworkBlocking(sourceUrl: string, destinationUrl
 	return source !== undefined && destination !== undefined && source.host === destination.host
 }
 
-// Network blocking is enforced per hostname across schemes and ports, so these origins share one block setting. A file has no hostname and only shares it with itself.
-export function shareNetworkBlocking(firstWebsiteOrigin: string, secondWebsiteOrigin: string): boolean {
-	if (firstWebsiteOrigin === secondWebsiteOrigin) return true
-	const hostname = getWebsiteHostname(firstWebsiteOrigin)
-	return hostname !== undefined && getWebsiteHostname(secondWebsiteOrigin) === hostname
+// Network blocking is enforced per hostname across schemes and ports, so origins with the same key share one block setting. A file has no hostname and only shares it with itself.
+export function getNetworkBlockingKey(websiteOrigin: string): string {
+	const hostname = getWebsiteHostname(websiteOrigin)
+	return hostname === undefined ? `origin:${ websiteOrigin }` : `hostname:${ hostname }`
 }
+
+export const shareNetworkBlocking = (firstWebsiteOrigin: string, secondWebsiteOrigin: string) => getNetworkBlockingKey(firstWebsiteOrigin) === getNetworkBlockingKey(secondWebsiteOrigin)
 
 export function getWebsiteOriginForSender(sender: { readonly url?: string, readonly origin?: string } | undefined) {
 	if (sender?.url === undefined) return undefined
