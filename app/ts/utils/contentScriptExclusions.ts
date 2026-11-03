@@ -1,8 +1,9 @@
 import type { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { getWebsiteOrigin } from './websiteOrigin.js'
 
+// URL parsing keeps a * in a hostname (also one decoded from %2A) and in a file path, but a match pattern reads *. at a host's start as every subdomain and rejects a * elsewhere in a host, failing the whole registration, and both a match-pattern path and a Firefox glob read * as any text. No exclusion can name such an origin exactly, so it is skipped rather than widened to other sites (#1701).
 function getCanonicalWebsiteOrigins(origins: readonly string[]) {
-	return [...new Set(origins)].filter((origin) => getWebsiteOrigin(origin) === origin)
+	return [...new Set(origins)].filter((origin) => getWebsiteOrigin(origin) === origin && !origin.includes('*'))
 }
 
 export function getManifestV3ExcludeMatches(origins: readonly string[]) {

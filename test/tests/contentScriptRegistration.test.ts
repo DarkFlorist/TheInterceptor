@@ -117,6 +117,35 @@ describe('content script injection strategy', () => {
 		]), ['http://example.test/*', 'https://example.test/*', 'https://example.test:8443/*', 'http://[::1]/*', 'http://[::1]:3000/*', 'file:///tmp/a.html'])
 	})
 
+	test('excludes exactly the URLs whose website origin is disabled, not their subdomains or other ports', async () => {
+		installBrowserMock()
+		const { getManifestV3ExcludeMatches } = await loadModules()
+		const { getWebsiteOrigin } = await import('../../app/ts/utils/websiteOrigin.js')
+		// Chromium matches a pattern with a port against the URL's scheme, exact host and effective port.
+		const isMatchedBy = (pattern: string, url: string) => {
+			const { protocol, hostname, port } = new URL(url)
+			const effectivePort = port === '' ? (protocol === 'https:' ? '443' : '80') : port
+			return pattern === `${ protocol }//${ hostname }:${ effectivePort }/*`
+		}
+		const urls = ['http://example.com/', 'https://example.com/path', 'https://example.com:80/', 'http://example.com:443/', 'http://example.com:8080/', 'https://app.example.com/', 'http://[::1]:8545/']
+		for (const disabledUrl of urls) {
+			const disabledOrigin = getWebsiteOrigin(disabledUrl)
+			assert.ok(disabledOrigin !== undefined)
+			const excludeMatches = getManifestV3ExcludeMatches([disabledOrigin])
+			for (const url of urls) {
+				assert.equal(excludeMatches.some((pattern) => isMatchedBy(pattern, url)), getWebsiteOrigin(url) === disabledOrigin, `${ url } with ${ disabledUrl } disabled`)
+			}
+		}
+	})
+
+	test('skips stored origins with a * instead of turning them into wildcard or invalid exclusions', async () => {
+		installBrowserMock()
+		const { getManifestV2ExcludeGlobs, getManifestV3ExcludeMatches } = await loadModules()
+		const origins = ['https://*.secure.example', 'http://foo*bar.example', 'https://%2A.encoded.example', 'file:///tmp/*.html', 'https://example.com']
+		assert.deepEqual(getManifestV3ExcludeMatches(origins), ['https://example.com:443/*'])
+		assert.deepEqual(getManifestV2ExcludeGlobs(origins), ['https://example.com/*'])
+	})
+
 	test('registers the Firefox bridge at document start before injecting the provider', async () => {
 		const { firefoxScripts, storageState, getFirefoxUnregisterCalls } = installBrowserMock({ manifestVersion: 2 })
 		const { reconcileContentScriptRegistration } = await loadModules()
