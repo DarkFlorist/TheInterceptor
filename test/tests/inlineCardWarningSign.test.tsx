@@ -13,8 +13,6 @@ type TestNode = {
 	readonly blur?: () => void
 	readonly getAttribute?: (name: string) => unknown
 	readonly parentNode?: TestNode | null
-	readonly style?: Record<string, unknown>
-	readonly tagName?: string
 	readonly textContent?: string
 }
 
@@ -36,34 +34,38 @@ async function renderWarningSigns(dom: ReturnType<typeof installDomMock>, isInsi
 	return { leadingSign, trailingSign }
 }
 
-// The card's spacing rules expect the signs to be its direct children, and its parent's layout expects the card's own box, so the single Hint around a warning card must be a container that adds no box.
-test('wraps a warning card in one inline Hint container that adds no box and keeps the signs direct children of the card', async () => {
-	const dom = installDomMock()
-	try {
-		const { leadingSign, trailingSign } = await renderWarningSigns(dom, false)
-		const card = leadingSign.parentNode
-		assert.equal(card?.getAttribute?.('class'), 'inline-card')
-		assert.equal(trailingSign.parentNode, card)
-		const hintContainer = card?.parentNode
-		assert.equal(hintContainer?.tagName, 'SPAN')
-		assert.equal(hintContainer?.style?.['cssText'], 'display: contents;')
-		assert.equal(hintContainer?.parentNode, dom.document.body)
-	} finally {
-		render(null, dom.document.body)
-		dom.restore()
-	}
-})
-
-test('leaves a card without a warning unwrapped', async () => {
-	const dom = installDomMock()
-	try {
-		await act(() => { render(<InlineCard icon = { () => <span>Address</span> } label = 'Alice' noCopy noExpandButtons />, dom.document.body) })
-		assert.equal(findElementsByClass(dom.document.body, 'inline-card')[0]?.parentNode, dom.document.body)
-	} finally {
-		render(null, dom.document.body)
-		dom.restore()
-	}
-})
+// Selectors such as .safe-signer-option-address > .inline-card expect the card to be the outermost element InlineCard renders, so a warning must not add a wrapper around it; the card's spacing rules also expect the signs to be its direct children.
+for (const warning of [warningMessage, undefined]) {
+	test(`renders the card as its outermost element ${ warning === undefined ? 'without a warning' : 'with a warning, also while it is explained' }`, async () => {
+		const dom = installDomMock()
+		try {
+			await act(() => { render(<InlineCard icon = { () => <span>Token</span> } label = 'TKN' warningMessage = { warning } noCopy noExpandButtons />, dom.document.body) })
+			const [card, ...otherCards] = findElementsByClass(dom.document.body, 'inline-card')
+			assert.equal(otherCards.length, 0)
+			assert.equal(card?.parentNode, dom.document.body)
+			assert.equal(dom.document.body.childNodes.length, 1)
+			const warningSigns = findElementsByClass(dom.document.body, 'inline-card-warning-sign')
+			assert.equal(warningSigns.length, warning === undefined ? 0 : 2)
+			assert.equal(warningSigns.every((warningSign) => warningSign.parentNode === card), true)
+			const [leadingSign] = warningSigns
+			if (leadingSign === undefined) return
+			await act(() => {
+				leadingSign.focus?.()
+				leadingSign.dispatchEvent?.(new Event('focusin', { bubbles: true }))
+			})
+			// The shown explanation is hosted inside the card, so it does not change where the card sits either.
+			const [shownHint] = findElementsByClass(dom.document.body, 'preact-hint')
+			assert.equal(shownHint?.parentNode, card)
+			// Its empty title keeps the card's label title from appearing as a native tooltip over the explanation.
+			assert.equal(shownHint?.getAttribute?.('title'), '')
+			assert.equal(card?.parentNode, dom.document.body)
+			assert.equal(dom.document.body.childNodes.length, 1)
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+		}
+	})
+}
 
 // A warning card brings its own Hint, so the explanation must appear without a page Hint around the card, and only once inside one.
 for (const isInsidePageHint of [false, true]) {

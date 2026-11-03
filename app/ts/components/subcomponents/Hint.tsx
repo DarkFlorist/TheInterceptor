@@ -6,8 +6,6 @@ interface Props {
 	children: ComponentChild | ComponentChild[]
 	attribute?: string
 	template?: (content: string) => ComponentChildren
-	// Renders the container as a span with display: contents instead of the page container's styled div, so wrapping phrasing content such as a card in a Hint leaves that content's own box in its parent's layout.
-	inline?: boolean
 }
 
 const timerAttribute = 'data-hint-clickable-hide-timer-ms'
@@ -37,15 +35,16 @@ export const clearHintTimeouts = (timeoutIds: readonly (ReturnType<typeof setTim
 	for (const timeoutId of timeoutIds) clearTimeoutFunction(timeoutId ?? undefined)
 }
 
-export default function Container(props: Props) {
-	const copyAttribute = props.attribute || 'data-hint'
-	const toolTipAttribute = props.attribute || 'data-tooltip'
+// Shows the hints of the elements inside the element given to setContainerElement, and returns the hint to render inside that element. The page Container below hosts it in its own div, while an element such as an InlineCard can host its own hint without gaining a wrapper element.
+export function useHintContainer(attribute: string | undefined, template: ((content: string) => ComponentChildren) | undefined) {
+	const copyAttribute = attribute || 'data-hint'
+	const toolTipAttribute = attribute || 'data-tooltip'
 
 	const content = useSignal('')
 	const anchor = useSignal<HintAnchor | undefined>(undefined)
 
 	const containerElementRef = useRef<HTMLElement | null>(null)
-	// One callback ref serves both the inline span and the page div container, whose element types differ.
+	// A callback ref, so the page container's div and a host element of another type, such as an InlineCard's span, can both be the container.
 	const setContainerElement = useCallback((element: HTMLElement | null) => { containerElementRef.current = element }, [])
 	const copyMessageTimeoutIdRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 	const toolTipTimeoutIdRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -213,12 +212,16 @@ export default function Container(props: Props) {
 		<Hint
 			key = { content.value }
 			content = { content }
-			template = { props.template }
+			template = { template }
 			anchor = { anchor }
 		/>
 	)
 
-	if (props.inline === true) return <span ref = { setContainerElement } style = 'display: contents;'>{ hint }{ props.children }</span>
+	return { setContainerElement, hint }
+}
+
+export default function Container(props: Props) {
+	const { setContainerElement, hint } = useHintContainer(props.attribute, props.template)
 	return (
 		<div ref = { setContainerElement } style = 'position: relative; overflow-x: hidden;'>
 			{ hint }
@@ -264,9 +267,9 @@ function Hint(props: HintProps) {
 		dialogPosition.value = calculateHintPosition(anchor, { width, height }, { width: globalThis.innerWidth, height: globalThis.innerHeight })
 	})
 
-	// A span, so the hint is valid inside the phrasing content an inline Hint wraps; being positioned, it is laid out as a block either way.
+	// A span, so the hint is valid inside phrasing content such as an InlineCard that hosts its own hint; being positioned, it is laid out as a block either way. The empty title stops a title on the element hosting the hint, such as an InlineCard's label, from appearing as a native tooltip over the hint.
 	return (
-		<span ref = { popoverElementRef } class = 'preact-hint' popover = 'manual' style = { { ...dialogPosition.value, maxWidth: hintMaxWidth } }>
+		<span ref = { popoverElementRef } class = 'preact-hint' popover = 'manual' title = '' style = { { ...dialogPosition.value, maxWidth: hintMaxWidth } }>
 			<span class = 'preact-hint__content' ref = { hintElementRef }>
 				{ props.template ? props.template(props.content.value) : props.content.value }
 			</span>
