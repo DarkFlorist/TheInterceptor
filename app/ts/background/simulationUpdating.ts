@@ -27,6 +27,7 @@ import { CompoundGovernanceAbi } from '../utils/abi.js'
 import type { VisualizedPersonalSignRequestSafeTx } from '../types/personal-message-definitions.js'
 import { getGnosisSafeProxyProxy } from '../utils/ethereumByteCodes.js'
 import { getInterceptorTransactionStack, updatePopupVisualisationWithCallBack } from './storageVariables.js'
+import { getCommittedNetworkChangeGeneration } from './networkChangeGeneration.js'
 import { JsonRpcResponseError, reportUnexpectedError, isExpectedInfrastructureError, getErrorMessage } from '../utils/errors.js'
 import { craftPersonalSignPopupMessage } from './windows/personalSign.js'
 import { formSimulatedAndVisualizedTransactions, getFromAndToMetadata } from '../components/formVisualizerResults.js'
@@ -162,6 +163,8 @@ export type SimulationSnapshot = {
 	readonly activeAddressMadeRich: bigint | undefined
 	// The stack the input was built from; Gnosis Safe signing builds its own input from the same stack.
 	readonly interceptorTransactionStack: InterceptorTransactionStack
+	// The committed network change this snapshot was read after; a later change, even back to the same endpoint, makes the snapshot obsolete for the shared visualisation.
+	readonly networkChangeGeneration: number
 }
 
 // Settings with the simulation state built from them, captured together so a request simulates the stack of its own network. Handlers take the services as separate (ethereum, tokenPriceService) arguments next to NetworkState to keep their existing signatures; callers take both from the same NetworkSnapshot read under the network transition lock.
@@ -173,7 +176,7 @@ export type NetworkState = {
 // A NetworkState together with the services that were installed when it was read.
 export type NetworkSnapshot = NetworkState & { readonly services: SimulationServices }
 
-// Capture selection and input at the storage boundary. An unreadable stack must abort before publishing any fallback.
+// Capture selection and input at the storage boundary. An unreadable stack must abort before publishing any fallback. Call it under the network transition lock (networkTransition.ts reads snapshots that way), so its generation, settings and stack describe one network.
 export async function captureSimulationSnapshot(settingsSnapshot?: Settings): Promise<SimulationSnapshot> {
 	const settings = settingsSnapshot ?? await getSettings()
 	const sources = await readSimulationInputSources(settings)
@@ -188,6 +191,7 @@ export function buildSimulationSnapshot(settings: Settings, sources: SimulationS
 		numberOfAddressesMadeRich: sources.richAddresses.length,
 		activeAddressMadeRich: sources.activeAddressMadeRich,
 		interceptorTransactionStack,
+		networkChangeGeneration: getCommittedNetworkChangeGeneration(),
 	}
 }
 

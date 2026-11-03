@@ -9,6 +9,7 @@ import { Semaphore } from '../utils/semaphore.js'
 import { sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts } from './accessManagement.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
+import { advanceCommittedNetworkChangeGeneration } from './networkChangeGeneration.js'
 import { changeSimulationMode, getSettings, importSettingsAndAddressBook } from './settings.js'
 import type { Settings } from '../types/interceptor-messages.js'
 import type { ExportedSettings } from '../types/exportedSettingsTypes.js'
@@ -31,8 +32,8 @@ async function clearSimulationStackContext() {
 
 const networkTransitionSemaphore = new Semaphore(1)
 
-type NetworkChangeEffect = 'installServices' | 'clearStackForChangedChain' | 'notifyWebsitesOfChainChange' | 'notifyPopupsOfChainChange'
-const NETWORK_CHANGE_EFFECTS = ['installServices', 'clearStackForChangedChain', 'notifyWebsitesOfChainChange', 'notifyPopupsOfChainChange'] as const
+type NetworkChangeEffect = 'retireSnapshotsOfReplacedNetwork' | 'installServices' | 'clearStackForChangedChain' | 'notifyWebsitesOfChainChange' | 'notifyPopupsOfChainChange'
+const NETWORK_CHANGE_EFFECTS = ['retireSnapshotsOfReplacedNetwork', 'installServices', 'clearStackForChangedChain', 'notifyWebsitesOfChainChange', 'notifyPopupsOfChainChange'] as const
 
 type CommittedNetworkChange = {
 	readonly simulationServicesOwner: SimulationServicesOwner
@@ -44,11 +45,16 @@ type CommittedNetworkChange = {
 // Effects that a failed transition could not complete. They belong to the lock rather than to a call chain: the failed transition has already thrown to its caller, so the next lock holder, a read included, completes them before it acts on the committed network. They live in memory only, so after a background restart services are rebuilt from the settings and websites receive the chain when they reconnect, but a stack left from the previous chain is not cleared.
 let unfinishedNetworkChange: CommittedNetworkChange | undefined
 
-// Every effect is idempotent or recorded once it succeeds: installation compares with the installed client, clearing the active stack context twice is harmless, and websites are notified once per committed change. Popup notifications are best-effort.
+// Every effect is idempotent or recorded once it succeeds: installation compares with the installed client, clearing the active stack context twice is harmless, the snapshot generation advances and websites are notified once per committed change. Popup notifications are best-effort.
 async function runNetworkChangeEffect(change: CommittedNetworkChange, effect: NetworkChangeEffect, updatedSettings: Settings) {
 	if (change.completedEffects.has(effect)) return
-	const chainChanged = getRpcNetworkChange(change.settingsBeforeTransition.activeRpcNetwork, updatedSettings.activeRpcNetwork).chainChanged
+	const { chainChanged, endpointChanged } = getRpcNetworkChange(change.settingsBeforeTransition.activeRpcNetwork, updatedSettings.activeRpcNetwork)
 	switch (effect) {
+		case 'retireSnapshotsOfReplacedNetwork': {
+			// Snapshots read before this change no longer describe the active network, so shared visualisation refreshes holding one neither simulate nor publish.
+			if (chainChanged || endpointChanged) advanceCommittedNetworkChangeGeneration()
+			break
+		}
 		case 'installServices': {
 			await installServicesForCommittedNetwork(change.simulationServicesOwner, updatedSettings.activeRpcNetwork)
 			break
@@ -165,7 +171,7 @@ type SettingsTransition = {
 	readonly afterNetworkApplied?: (committedSettings: Settings) => Promise<void>
 }
 
-// Runs settings writes that may commit a new network, then applies the committed network in the order of NETWORK_CHANGE_EFFECTS: install its services, clear the previous chain's stack, notify websites and popups. Each effect is compared with the settings from before the transition. The popup refresh the change needs runs after the lock is released. If the transition fails, every effect that has not succeeded is retried before the lock is released and, if one still fails, kept for the next lock holder; the transition's own error is kept.
+// Runs settings writes that may commit a new network, then applies the committed network in the order of NETWORK_CHANGE_EFFECTS: retire snapshots of the replaced network, install its services, clear the previous chain's stack, notify websites and popups. Each effect is compared with the settings from before the transition. The popup refresh the change needs runs after the lock is released. If the transition fails, every effect that has not succeeded is retried before the lock is released and, if one still fails, kept for the next lock holder; the transition's own error is kept.
 export async function runSettingsTransition(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, transition: SettingsTransition) {
 	const popupRefresh = await runNetworkTransition(async () => {
 		const settingsBeforeTransition = await getSettings()
@@ -174,6 +180,7 @@ export async function runSettingsTransition(simulationServicesOwner: SimulationS
 			if (await transition.writeSettings(settingsBeforeTransition) === 'unchanged') return undefined
 			const committedSettings = await getSettings()
 			try {
+				await runNetworkChangeEffect(change, 'retireSnapshotsOfReplacedNetwork', committedSettings)
 				await runNetworkChangeEffect(change, 'installServices', committedSettings)
 				await runNetworkChangeEffect(change, 'clearStackForChangedChain', committedSettings)
 			} finally {

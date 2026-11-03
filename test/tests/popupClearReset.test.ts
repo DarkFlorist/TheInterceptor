@@ -395,7 +395,7 @@ const fakeEthereum = createFakeEthereum(rpcNetwork) as never as Parameters<typeo
 const fakeTokenPriceService = {} as never as Parameters<typeof updatePopupVisualisationIfNeeded>[1]
 
 describe('popup clear reset', () => {
-	for (const captured of [false, true]) test(`signer-only snapshots read no provider, and publish passthrough only while their network is still active (captured=${ captured })`, async () => {
+	for (const captured of [false, true]) test(`signer-only snapshots publish passthrough without reading the previous provider (captured=${ captured })`, async () => {
 		browserMock.reset()
 		const signerOnly: RpcNetwork = { chainId: 99999n, httpsRpc: undefined, name: 'Signer only', currencyName: 'Ether?', currencyTicker: 'ETH?', primary: false, minimized: true }
 		await browserStorageLocalSet({ activeRpcNetwork: signerOnly, independentActiveSimulationAddress: activeAddress, popupVisualisation: stalePopupVisualisation, interceptorTransactionStack: { operations: [] } })
@@ -412,9 +412,8 @@ describe('popup clear reset', () => {
 			if (snapshot !== undefined) assert.equal((await getUpdatedSimulationState(fakeEthereum, snapshot)).kind, 'passthrough')
 			assert.equal(providerReads, 0)
 			assert.equal(result.simulationState.kind, 'passthrough')
-			// The captured snapshot's network was replaced after the capture, so it publishes nothing and its caller sees the unavailable state.
-			assert.equal(result.simulationUpdatingState, captured ? 'failed' : 'done')
-			assert.equal(result.simulationResultState, captured ? 'invalid' : 'done')
+			assert.equal(result.simulationUpdatingState, 'done')
+			assert.equal(result.simulationResultState, 'done')
 		} finally {
 			fakeEthereum.getBlock = originalBlock
 			fakeEthereum.getBlockNumber = originalNumber

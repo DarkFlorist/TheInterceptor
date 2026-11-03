@@ -302,27 +302,6 @@ function createStorageReadPause() {
 	return { arm: () => { if (state === 'idle') state = 'armed' }, started: started.promise, release: release.resolve }
 }
 
-// Holds the first settings read issued after arm() once it has returned, so its caller resumes with the settings read before whatever the test does meanwhile.
-function pauseAfterSettingsRead() {
-	const read = createDeferredSignal()
-	const release = createDeferredSignal()
-	const originalGet = browser.storage.local.get.bind(browser.storage.local)
-	let state: 'idle' | 'armed' | 'used' = 'idle'
-	Object.defineProperty(browser.storage.local, 'get', {
-		configurable: true,
-		value: async (keys: Parameters<typeof originalGet>[0]) => {
-			const result = await originalGet(keys)
-			if (state === 'armed' && Array.isArray(keys) && keys.includes('activeRpcNetwork')) {
-				state = 'used'
-				read.resolve()
-				await release.promise
-			}
-			return result
-		},
-	})
-	return { arm: () => { if (state === 'idle') state = 'armed' }, read: read.promise, release: release.resolve }
-}
-
 // The simulated visualisations broadcast to popups in the given runtime messages.
 async function getBroadcastSimulatedVisualisations(runtimeMessages: readonly unknown[]) {
 	const { MessageToPopup } = await import('../../app/ts/types/interceptor-messages.js')
@@ -1011,7 +990,7 @@ describe('network transition snapshot', () => {
 		}
 	})
 
-	test('a confirmation metadata refresh whose shared visualisation another network invalidates under a newer id while it computes still shows its own visualisation', async () => {
+	test('a confirmation metadata refresh that another network refresh supersedes while it computes still shows its own visualisation', async () => {
 		const recordingOwner = createRecordingServicesOwner(networkA)
 		try {
 			const { runtimeMessages, servicesA, refreshConfirmation, refreshNetworkB } = await prepareNetworkARefreshAfterNetworkBVisualisation(recordingOwner)
@@ -1026,11 +1005,10 @@ describe('network transition snapshot', () => {
 			const messagesBeforeRefresh = runtimeMessages.length
 			const refresh = refreshConfirmation.metadata()
 			await lookupStarted.promise
-			// B's refresh invalidates the shared visualisation under a newer id outside the serialized section, then waits for A's computation to finish.
+			// B's refresh invalidates the shared visualisation under a newer id in the serialized section, so it does so once A's computation has finished.
 			const superseding = refreshNetworkB()
-			await invalidationPublished
 			releaseLookup.resolve()
-			await Promise.all([refresh, superseding])
+			await Promise.all([refresh, superseding, invalidationPublished])
 
 			const visualisations = await getConfirmationDialogVisualisations(runtimeMessages, messagesBeforeRefresh)
 			assert.equal(visualisations.length, 1)
@@ -1353,30 +1331,83 @@ describe('network transition snapshot', () => {
 		}
 	})
 
-	test('a shared visualisation refresh that read the previous network settings before a switch neither simulates nor publishes the new network stack on the previous client', async () => {
-		const { modules, runtimeMessages, switchToNetworkB } = await createApprovedSimulationDapp({ simulationConsumerOpen: true })
+	test('a shared visualisation refresh that a switch to another network and back interrupts neither simulates nor publishes for the replaced client', async () => {
+		const { modules, runtimeMessages } = await createApprovedSimulationDapp({ simulationConsumerOpen: true })
 		const { updatePopupVisualisationIfNeeded } = await import('../../app/ts/background/popupVisualisationUpdater.js')
+		await modules.updateInterceptorTransactionStack(() => ({ operations: [createStackedTransaction(1n, networkA.chainId, STACKED_ON_A_RECIPIENT)] }))
 		const { owner, installed, retireAll } = createRecordingServicesOwner(networkA)
 		const [servicesA] = installed
 		if (servicesA === undefined) throw new Error('Missing network A services')
-		const settingsRead = pauseAfterSettingsRead()
+		const requestOnAStarted = createDeferredSignal()
+		const releaseRequestOnA = createDeferredSignal()
+		servicesA.interceptRequests(async () => {
+			servicesA.interceptRequests(undefined)
+			requestOnAStarted.resolve()
+			await releaseRequestOnA.promise
+		})
 		try {
-			// Like a block update, the refresh captures its own snapshot: it reads A's settings, then pauses before it reads the stack.
-			settingsRead.arm()
+			// Like a block update, the refresh reads its own snapshot of A, then waits for A's client.
 			const refresh = updatePopupVisualisationIfNeeded(servicesA.ethereum, servicesA.tokenPriceService)
-			await settingsRead.read
-			await switchToNetworkB(owner)
+			await requestOnAStarted.promise
+			// The switches' own refreshes skip the closed popup, so only the interrupted refresh could publish afterwards.
+			reportSimulationConsumer(false)
+			const switchToNetwork = async (rpcNetwork: RpcEntry) => await modules.changeActiveAddressAndChain(owner, new Map(), { simulationMode: true, rpcNetwork, promptForAccessesIfNeeded: false })
+			await switchToNetwork(networkB)
 			await addTransactionToNetworkBStack(modules)
+			// Returning to A's endpoint installs another client and clears B's stack; the endpoint alone no longer tells the snapshots apart.
+			await switchToNetwork(networkA)
 			const messagesBeforeResume = runtimeMessages.length
-			settingsRead.release()
+			const storedBeforeResume = await modules.getPopupVisualisationState()
+			releaseRequestOnA.resolve()
 			await refresh
 
 			assert.equal(getSimulatedCallRecipients(servicesA).includes(STACKED_ON_B_RECIPIENT), false)
 			assert.deepEqual(await getBroadcastSimulatedVisualisations(runtimeMessages.slice(messagesBeforeResume)), [])
-			const stored = await modules.getPopupVisualisationState()
-			if (stored.simulationState.kind === 'simulated') assert.equal(stored.simulationState.value.rpcNetwork.chainId, networkB.chainId)
+			assert.deepEqual(await modules.getPopupVisualisationState(), storedBeforeResume)
 		} finally {
-			settingsRead.release()
+			releaseRequestOnA.resolve()
+			retireAll()
+		}
+	})
+
+	test('an invalidating refresh that a switch interrupts before it invalidates leaves the new network completed visualisation untouched', async () => {
+		const { modules, runtimeMessages, switchToNetworkB } = await createApprovedSimulationDapp({ simulationConsumerOpen: true })
+		const { updatePopupVisualisationIfNeeded } = await import('../../app/ts/background/popupVisualisationUpdater.js')
+		const { MessageToPopup } = await import('../../app/ts/types/interceptor-messages.js')
+		await modules.updateInterceptorTransactionStack(() => ({ operations: [createStackedTransaction(1n, networkA.chainId, STACKED_ON_A_RECIPIENT)] }))
+		const { owner, installed, getInstalled, retireAll } = createRecordingServicesOwner(networkA)
+		const [servicesA] = installed
+		if (servicesA === undefined) throw new Error('Missing network A services')
+		const requestOnAStarted = createDeferredSignal()
+		const releaseRequestOnA = createDeferredSignal()
+		try {
+			await updatePopupVisualisationIfNeeded(servicesA.ethereum, servicesA.tokenPriceService, { invalidateOldState: true })
+			// The next refresh of A pauses on A's client while it compares the stored result with the latest block, before it cancels or invalidates anything.
+			servicesA.interceptRequests(async (request) => {
+				if (request.method !== 'eth_blockNumber') return
+				servicesA.interceptRequests(undefined)
+				requestOnAStarted.resolve()
+				await releaseRequestOnA.promise
+			})
+			const refresh = updatePopupVisualisationIfNeeded(servicesA.ethereum, servicesA.tokenPriceService, { invalidateOldState: true, skipIfUnchanged: true })
+			await requestOnAStarted.promise
+			await switchToNetworkB(owner)
+			const servicesB = getInstalled()
+			await updatePopupVisualisationIfNeeded(servicesB.ethereum, servicesB.tokenPriceService, { invalidateOldState: true })
+			const completedOnB = await modules.getPopupVisualisationState()
+			assert.equal(completedOnB.simulationUpdatingState, 'done')
+			const messagesBeforeResume = runtimeMessages.length
+			releaseRequestOnA.resolve()
+			await refresh
+
+			assert.deepEqual(await modules.getPopupVisualisationState(), completedOnB)
+			const stateChanges = runtimeMessages.slice(messagesBeforeResume).filter((message) => {
+				const parsed = MessageToPopup.safeParse(message)
+				return parsed.success && parsed.value.method === 'popup_simulation_state_changed'
+			})
+			assert.deepEqual(stateChanges, [])
+		} finally {
+			releaseRequestOnA.resolve()
 			retireAll()
 		}
 	})

@@ -3,7 +3,7 @@ import 'webextension-polyfill'
 import { getSettings, updateKnownWebsiteMetadata } from './settings.js'
 import { DEFAULT_RPCS } from '../config/defaults.js'
 import { handleInterceptedRequest } from './background.js'
-import { captureSimulationSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
+import { getUpdatedSimulationState } from './simulationUpdating.js'
 import { popupMessageHandler } from './popupMessageRouting.js'
 import { retrieveWebsiteDetails, updateExtensionBadge, updateExtensionIcon } from './iconHandler.js'
 import { getPrimaryRpcForChain, getRpcConnectionStatus, removeTabState, setRpcConnectionStatus, updateTabState } from './storageVariables.js'
@@ -27,7 +27,7 @@ import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerformance.js'
 import { removeWebsiteTabConnection } from './websiteTabConnections.js'
 import { createSimulationServicesOwner, type SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
-import { readNetworkSnapshot } from './networkTransition.js'
+import { readNetworkSnapshot, readNetworkState } from './networkTransition.js'
 import { addWindowTabListeners } from '../utils/popupOrTab.js'
 import { migrateAddressBook } from './addressBookMigration.js'
 import { migrateWebsiteAccess } from './websiteAccessMigration.js'
@@ -240,7 +240,7 @@ async function newBlockAttemptCallback(blockheader: EthereumBlockHeader, ethereu
 		}
 		await rpcConnectionStatusPublisher.publishRpcConnectionStatus('popup_new_block_arrived', rpcConnectionStatus)
 		if (isNewBlock) {
-			const simulateCurrentStack = async (ethereum: EthereumClientService) => await getUpdatedSimulationState(ethereum, await captureSimulationSnapshot())
+			const simulateCurrentStack = async (ethereum: EthereumClientService) => await getUpdatedSimulationState(ethereum, (await readNetworkState()).simulation)
 			const settings = await getSettings()
 			if (settings.simulationMode) {
 				const { ethereum, tokenPriceService } = getSimulationServices()
