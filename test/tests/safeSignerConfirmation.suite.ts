@@ -1118,7 +1118,6 @@ test('adds an unsigned Safe proposal and merges a later owner signature into bot
 	const signature = await safeTestOwnerAccount.signTypedData(EIP712Message.parse(safeTxToTypedDataJson(safeTx)))
 	const signedResolution = await modules.resolveSafeSignerReply(
 		simulator.ethereum,
-		simulator.tokenPriceService,
 		{ ...safePending, approvalStatus: { status: 'WaitingForSigner' } },
 		signature,
 	)
@@ -1186,7 +1185,7 @@ test('rejects persisting a Safe proposal, unsigned or signed, whose safeTxHash a
 	assert.deepEqual(await storedState(), stateBefore)
 
 	const signature = await safeTestOwnerAccount.signTypedData(EIP712Message.parse(safeTxToTypedDataJson(safeTx)))
-	const signedResolution = await modules.resolveSafeSignerReply(simulator.ethereum, simulator.tokenPriceService, { ...safePending, approvalStatus: { status: 'WaitingForSigner' } }, signature)
+	const signedResolution = await modules.resolveSafeSignerReply(simulator.ethereum, { ...safePending, approvalStatus: { status: 'WaitingForSigner' } }, signature)
 	if (signedResolution.status !== 'error') throw new Error(`Expected a handled Safe persistence error, got ${ signedResolution.status }`)
 	assert.match(signedResolution.approvalStatus.message, actionableMessage)
 	assert.deepEqual(await storedState(), stateBefore)
@@ -1259,7 +1258,7 @@ test('propagates unexpected Safe signer-reply RPC and storage failures', async (
 	fakeSafeContract.safeOwnerLookupFailure = 'unexpected'
 	try {
 		await assert.rejects(
-			modules.resolveSafeSignerReply(ethereum, simulator.tokenPriceService, safePending, signature),
+			modules.resolveSafeSignerReply(ethereum, safePending, signature),
 			/Unexpected Safe owner decoder failure/u,
 		)
 	} finally {
@@ -1267,7 +1266,7 @@ test('propagates unexpected Safe signer-reply RPC and storage failures', async (
 	}
 	fakeSafeContract.safeOwnerLookupFailure = 'expected'
 	try {
-		const expectedFailure = await modules.resolveSafeSignerReply(ethereum, simulator.tokenPriceService, safePending, signature)
+		const expectedFailure = await modules.resolveSafeSignerReply(ethereum, safePending, signature)
 		assert.equal(expectedFailure.status, 'error')
 		assert.match(expectedFailure.status === 'error' ? expectedFailure.approvalStatus.message : '', /Safe owner lookup unavailable/u)
 	} finally {
@@ -1279,7 +1278,7 @@ test('propagates unexpected Safe signer-reply RPC and storage failures', async (
 	})
 	try {
 		await assert.rejects(
-			modules.resolveSafeSignerReply(ethereum, simulator.tokenPriceService, safePending, signature),
+			modules.resolveSafeSignerReply(ethereum, safePending, signature),
 			/Safe stack storage unavailable/u,
 		)
 	} finally {
