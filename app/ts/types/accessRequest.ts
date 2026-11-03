@@ -87,14 +87,14 @@ const PendingTransactionApprovalStatus = funtypes.Union(
 	}).And(funtypes.ReadonlyPartial({ safeSignerErrorDetails: SafeSignerErrorDetails })),
 )
 
-// A signer reply as it is deferred: always bound to the network it was signed for.
-export type ChainBoundSafeSignerReply = { readonly signerReply: string, readonly chainId: bigint }
+// A Gnosis Safe co-signature the signer returned while RPC services were unavailable; the website is answered once it is validated with services for its network.
 const DeferredSafeSignerReply = funtypes.ReadonlyObject({
 	signerReply: funtypes.String,
-	terminalReplyQueued: funtypes.Boolean,
 }).And(funtypes.ReadonlyPartial({
-	// The network the signer was asked to sign for; the signature is replayed only with services for this network. Always written, but optional when read so a reply stored without it fails closed on its own instead of invalidating every pending request.
+	// The network the signer was asked to sign for. Always written, but optional when read so a reply stored without it fails closed on its own instead of invalidating every pending request.
 	chainId: EthereumQuantity,
+	// Only in replies written by earlier builds, which kept a Safe proposal pending after its website reply was queued.
+	terminalReplyQueued: funtypes.Boolean,
 }))
 
 type SimulatedPendingTransactionBase = funtypes.Static<typeof SimulatedPendingTransactionBase>
@@ -209,3 +209,11 @@ export const PendingTransactionOrSignableMessage: typeof PendingTransactionOrSig
 export type PopupPendingTransactionOrSignableMessage = PopupPendingSignableMessage | PendingTransaction
 const PopupPendingTransactionOrSignableMessageRuntype: funtypes.Runtype<PopupPendingTransactionOrSignableMessage> = funtypes.Union(PopupPendingSignableMessage, PendingTransaction)
 export const PopupPendingTransactionOrSignableMessage: typeof PopupPendingTransactionOrSignableMessageRuntype = PopupPendingTransactionOrSignableMessageRuntype
+
+// A signed Gnosis Safe proposal whose website already has (or is queued to get) its proposal hash, waiting for services for its network to add it to the Safe stack. `proposal` is the settled pending request, kept for storing and displaying the proposal.
+export type PendingSafeProposalStore = funtypes.Static<typeof PendingSafeProposalStore>
+export const PendingSafeProposalStore = funtypes.ReadonlyObject({
+	chainId: EthereumQuantity,
+	signerReply: funtypes.String,
+	proposal: PendingTransactionOrSignableMessage,
+})

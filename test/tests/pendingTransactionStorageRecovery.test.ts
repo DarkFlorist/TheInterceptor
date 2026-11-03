@@ -28,7 +28,8 @@ Object.defineProperty(globalThis, 'browser', { configurable: true, value: {
 	},
 } })
 
-const { appendPendingTransactionOrMessage, clearPendingTransactions, getPendingTransactionsAndMessages, updatePendingTransactionOrMessageWithTerminalReplies } = await import('../../app/ts/background/storageVariables.js')
+const { appendPendingTransactionOrMessage, clearPendingTransactions, getPendingSafeProposalStores, getPendingTransactionsAndMessages, movePendingSafeProposalToOutbox, removePendingSafeProposalStore } = await import('../../app/ts/background/storageVariables.js')
+const { browserStorageLocalSet2 } = await import('../../app/ts/utils/storageUtils.js')
 
 const pendingMessage = {
 	type: 'SignableMessage',
@@ -93,34 +94,39 @@ test('does not erase pending transaction storage after a transient read failure'
 	assert.equal(storageWrites.length, 0)
 })
 
-test('updates a pending request together with its terminal replies in one storage write', async () => {
+const outboxEntryFor = (pending: PendingTransactionOrSignableMessage) => ({ chainId: 1n, signerReply: '0x01', proposal: pending })
+
+test('moves a pending request to the Safe proposal outbox together with its terminal replies in one storage write', async () => {
+	const otherMessage = { ...pendingMessage, uniqueRequestIdentifier: { requestId: 2, requestSocket: { tabId: 1, connectionName: 1n } } }
 	await appendPendingTransactionOrMessage(pendingMessage)
+	await appendPendingTransactionOrMessage(otherMessage)
 	storageWrites.length = 0
 	const terminalReply = { method: 'personal_sign' as const, type: 'result' as const, result: '0x01', uniqueRequestIdentifier: pendingMessage.uniqueRequestIdentifier }
 
-	await updatePendingTransactionOrMessageWithTerminalReplies(pendingMessage.uniqueRequestIdentifier, (pending) => ({ ...pending, deferredSafeSignerReply: { signerReply: '0x01', terminalReplyQueued: true, chainId: 1n } }), async () => [terminalReply])
+	await movePendingSafeProposalToOutbox(pendingMessage.uniqueRequestIdentifier, outboxEntryFor, async () => [terminalReply])
 
 	assert.equal(storageWrites.length, 1)
-	assert.deepEqual(Object.keys(storageWrites[0] ?? {}).sort(), ['pendingTerminalReplies', 'pendingTransactionsAndMessages'])
-	assert.deepEqual((await getPendingTransactionsAndMessages())[0]?.deferredSafeSignerReply, { signerReply: '0x01', terminalReplyQueued: true, chainId: 1n })
+	assert.deepEqual(Object.keys(storageWrites[0] ?? {}).sort(), ['pendingSafeProposalStores', 'pendingTerminalReplies', 'pendingTransactionsAndMessages'])
+	assert.deepEqual((await getPendingTransactionsAndMessages()).map((pending) => pending.uniqueRequestIdentifier.requestId), [2])
+	assert.deepEqual((await getPendingSafeProposalStores()).map((entry) => entry.proposal.uniqueRequestIdentifier.requestId), [1])
+	await removePendingSafeProposalStore(pendingMessage.uniqueRequestIdentifier)
+	assert.deepEqual(await getPendingSafeProposalStores(), [])
 })
 
 test('keeps every pending request readable when a deferred Safe signer reply was stored without its chain', async () => {
 	const unrelatedMessage = { ...pendingMessage, uniqueRequestIdentifier: { requestId: 2, requestSocket: { tabId: 1, connectionName: 1n } } }
-	await appendPendingTransactionOrMessage(pendingMessage)
-	await appendPendingTransactionOrMessage(unrelatedMessage)
 	// Written by an intermediate build before deferred replies recorded their chain.
-	await updatePendingTransactionOrMessageWithTerminalReplies(pendingMessage.uniqueRequestIdentifier, (pending) => ({ ...pending, deferredSafeSignerReply: { signerReply: '0x01', terminalReplyQueued: false } }), async () => [])
+	await browserStorageLocalSet2({ pendingTransactionsAndMessages: [{ ...pendingMessage, deferredSafeSignerReply: { signerReply: '0x01', terminalReplyQueued: true } }, unrelatedMessage] })
 
 	const pendingRequests = await getPendingTransactionsAndMessages()
 	assert.deepEqual(pendingRequests.map((pending) => pending.uniqueRequestIdentifier.requestId), [1, 2])
-	assert.deepEqual(pendingRequests[0]?.deferredSafeSignerReply, { signerReply: '0x01', terminalReplyQueued: false })
+	assert.deepEqual(pendingRequests[0]?.deferredSafeSignerReply, { signerReply: '0x01', terminalReplyQueued: true })
 })
 
-test('writes nothing when the pending request for terminal replies is gone', async () => {
+test('writes nothing when the pending request moved to the outbox is gone', async () => {
 	let terminalRepliesRead = false
 
-	await updatePendingTransactionOrMessageWithTerminalReplies(pendingMessage.uniqueRequestIdentifier, (pending) => pending, async () => {
+	await movePendingSafeProposalToOutbox(pendingMessage.uniqueRequestIdentifier, outboxEntryFor, async () => {
 		terminalRepliesRead = true
 		return []
 	})
@@ -129,10 +135,10 @@ test('writes nothing when the pending request for terminal replies is gone', asy
 	assert.equal(storageWrites.length, 0)
 })
 
-test('keeps corrupt pending storage instead of discarding it when updating terminal replies', async () => {
+test('keeps corrupt pending storage instead of discarding it when moving a request to the outbox', async () => {
 	storageState.pendingTransactionsAndMessages = 'corrupt'
 
-	await assert.rejects(updatePendingTransactionOrMessageWithTerminalReplies(pendingMessage.uniqueRequestIdentifier, (pending) => pending, async () => []))
+	await assert.rejects(movePendingSafeProposalToOutbox(pendingMessage.uniqueRequestIdentifier, outboxEntryFor, async () => []))
 
 	assert.equal(storageState.pendingTransactionsAndMessages, 'corrupt')
 	assert.equal(storageWrites.length, 0)

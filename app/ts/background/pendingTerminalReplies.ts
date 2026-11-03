@@ -1,11 +1,10 @@
-import type { ChainBoundSafeSignerReply } from '../types/accessRequest.js'
+import type { PendingSafeProposalStore, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import type { InterceptedRequestForward } from '../types/interceptor-messages.js'
 import { reportLocalRecovery } from '../utils/errors.js'
 import { doesTabExist, doesUniqueRequestIdentifiersMatch, type UniqueRequestIdentifier } from '../utils/requests.js'
 import { browserStorageLocalSafeParseGet, browserStorageLocalSet } from '../utils/storageUtils.js'
-import { updatePendingTransactionOrMessageWithTerminalReplies } from './storageVariables.js'
+import { movePendingSafeProposalToOutbox } from './storageVariables.js'
 import { pendingRequestTerminalStateSemaphore } from './terminalStateSemaphore.js'
-import { modifyObject } from '../utils/typescript.js'
 
 export async function getPendingTerminalReplies(): Promise<readonly InterceptedRequestForward[]> {
 	const parsedStorage = await browserStorageLocalSafeParseGet('pendingTerminalReplies')
@@ -35,14 +34,15 @@ export async function appendPendingTerminalReply(reply: InterceptedRequestForwar
 	])
 }
 
-export async function queueDeferredSafeProposalTerminalReply(
+// Queues the website's proposal-hash reply together with moving the signed proposal from the pending queue to the Safe proposal outbox.
+export async function writeSafeProposalReplyAndOutboxEntry(
 	uniqueRequestIdentifier: UniqueRequestIdentifier,
-	deferredReply: ChainBoundSafeSignerReply,
+	createStore: (pendingProposal: PendingTransactionOrSignableMessage) => PendingSafeProposalStore,
 	reply: InterceptedRequestForward,
 ) {
-	await updatePendingTransactionOrMessageWithTerminalReplies(
+	await movePendingSafeProposalToOutbox(
 		uniqueRequestIdentifier,
-		(pending) => modifyObject(pending, { deferredSafeSignerReply: { ...deferredReply, terminalReplyQueued: true } }),
+		createStore,
 		async () => [...(await getPendingTerminalReplies()).filter((pendingReply) => !doesUniqueRequestIdentifiersMatch(pendingReply.uniqueRequestIdentifier, uniqueRequestIdentifier)), reply],
 	)
 }

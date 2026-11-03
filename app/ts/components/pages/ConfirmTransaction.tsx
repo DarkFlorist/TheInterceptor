@@ -664,9 +664,8 @@ function ConfirmTransactionAlerts({ unexpectedError, clearUnexpectedError, rpcCo
 type RejectButtonParams = {
 	onClick: () => void | Promise<void>
 	state: AsyncStates
-	disabledReason?: string
 }
-const RejectButton = ({ onClick, state, disabledReason }: RejectButtonParams) => {
+const RejectButton = ({ onClick, state }: RejectButtonParams) => {
 	return <div style = 'display: flex;'>
 		<AsyncActionButton
 			class = 'button is-primary is-danger button-overflow dialog-button-left'
@@ -674,16 +673,10 @@ const RejectButton = ({ onClick, state, disabledReason }: RejectButtonParams) =>
 			text = { 'Reject' }
 			pendingText = { 'Rejecting...' }
 			onClick = { onClick }
-			disabled = { disabledReason !== undefined }
-			title = { disabledReason }
 		/>
 	</div>
 }
 
-// The website already received the success reply for a signed Safe proposal whose signature is waiting to be stored, so rejecting it would contradict that reply.
-export const ACKNOWLEDGED_SAFE_PROPOSAL_REJECT_EXPLANATION = 'The website already received this signed Gnosis Safe proposal. It is added to the Safe stack once the Interceptor is connected to its network again.'
-
-export const getRejectDisabledReason = (pending: PendingTransactionOrSignableMessage | undefined) => pending?.type === 'Transaction' && pending.deferredSafeSignerReply?.terminalReplyQueued === true ? ACKNOWLEDGED_SAFE_PROPOSAL_REJECT_EXPLANATION : undefined
 
 type ButtonsParams = {
 	currentPendingTransactionOrSignableMessage: PendingTransactionOrSignableMessage | undefined
@@ -706,18 +699,16 @@ type ConfirmationActionButtonsParams = Omit<ButtonsParams, 'currentPendingTransa
 	signerName: SignerName
 	simulationMode: boolean
 	waitingForSigner: boolean
-	rejectDisabledReason?: string
 }
 
-export function ConfirmationActionButtons({ identified, signerName, simulationMode, waitingForSigner, rejectDisabledReason, reject, rejectButtonState, approve, approveButtonState, confirmDisabled, addToSafeStack, addToSafeStackButtonState = 'inactive', addToSafeStackDisabled = true }: ConfirmationActionButtonsParams) {
+export function ConfirmationActionButtons({ identified, signerName, simulationMode, waitingForSigner, reject, rejectButtonState, approve, approveButtonState, confirmDisabled, addToSafeStack, addToSafeStackButtonState = 'inactive', addToSafeStackDisabled = true }: ConfirmationActionButtonsParams) {
 	const addsSafeProposal = addToSafeStack !== undefined && !simulationMode
 	return <div class = 'confirmation-action-buttons-container'>
 		<div class = { `confirmation-action-buttons${ addsSafeProposal ? ' confirmation-action-buttons--safe' : '' }` }>
 			<AsyncActionButton
 				class = 'button is-primary is-danger button-overflow dialog-action-button'
 				state = { rejectButtonState }
-				disabled = { rejectDisabledReason !== undefined || approveButtonState === 'pending' || addToSafeStackButtonState === 'pending' }
-				title = { rejectDisabledReason }
+				disabled = { approveButtonState === 'pending' || addToSafeStackButtonState === 'pending' }
 				text = { identified.rejectAction }
 				pendingText = 'Rejecting...'
 				onClick = { reject }
@@ -765,9 +756,8 @@ export function ConfirmationActionButtons({ identified, signerName, simulationMo
 export const shouldDisableConfirmForApprovalStatus = (approvalStatus: PendingTransactionOrSignableMessage['approvalStatus']) => approvalStatus.status === 'WaitingForSigner'
 
 function ConfirmationButtons({ currentPendingTransactionOrSignableMessage, reject, rejectButtonState, approve, approveButtonState, confirmDisabled, addToSafeStack, addToSafeStackButtonState, addToSafeStackDisabled }: ButtonsParams) {
-	const rejectDisabledReason = getRejectDisabledReason(currentPendingTransactionOrSignableMessage)
 	if (currentPendingTransactionOrSignableMessage === undefined) return <RejectButton onClick = { reject } state = { rejectButtonState }/>
-	if (currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'Simulated') return <RejectButton onClick = { reject } state = { rejectButtonState } disabledReason = { rejectDisabledReason }/>
+	if (currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'Simulated') return <RejectButton onClick = { reject } state = { rejectButtonState }/>
 
 	const signerName = currentPendingTransactionOrSignableMessage.type === 'Transaction' ? currentPendingTransactionOrSignableMessage.popupVisualisation.data.signerName : currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest.signerName
 	const identify = () => {
@@ -777,14 +767,13 @@ function ConfirmationButtons({ currentPendingTransactionOrSignableMessage, rejec
 		return identifyTransaction(lastTx)
 	}
 	const identified = identify()
-	if (identified === undefined) return <RejectButton onClick = { reject } state = { rejectButtonState } disabledReason = { rejectDisabledReason }/>
+	if (identified === undefined) return <RejectButton onClick = { reject } state = { rejectButtonState }/>
 
 	return <ConfirmationActionButtons
 		identified = { identified }
 		signerName = { signerName }
 		simulationMode = { currentPendingTransactionOrSignableMessage.simulationMode }
 		waitingForSigner = { currentPendingTransactionOrSignableMessage.approvalStatus.status === 'WaitingForSigner' }
-		rejectDisabledReason = { rejectDisabledReason }
 		reject = { reject }
 		rejectButtonState = { rejectButtonState }
 		approve = { approve }

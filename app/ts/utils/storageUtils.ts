@@ -6,7 +6,7 @@ import { AddressBookEntries, AddressBookEntry, EntrySource } from '../types/addr
 import { Page } from '../types/exportedSettingsTypes.js'
 import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { SignerName, SigningAddressPreferences } from '../types/signerTypes.js'
-import { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
+import { PendingAccessRequests, PendingSafeProposalStore, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import { RpcEntries, RpcNetwork } from '../types/rpc.js'
 import { ENSLabelHashes, ENSNameHashes } from '../types/ens.js'
 import { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
@@ -144,8 +144,10 @@ const LocalStorageKey = funtypes.Union(
 
 const LocalStorageItems2Runtype: funtypes.Partial<{
 	pendingTransactionsAndMessages: funtypes.ReadonlyArray<typeof PendingTransactionOrSignableMessage>
+	pendingSafeProposalStores: funtypes.ReadonlyArray<typeof PendingSafeProposalStore>
 }, true> = funtypes.ReadonlyPartial({
-	pendingTransactionsAndMessages: funtypes.ReadonlyArray(PendingTransactionOrSignableMessage)
+	pendingTransactionsAndMessages: funtypes.ReadonlyArray(PendingTransactionOrSignableMessage),
+	pendingSafeProposalStores: funtypes.ReadonlyArray(PendingSafeProposalStore),
 })
 type LocalStorageItems2 = funtypes.Static<typeof LocalStorageItems2Runtype>
 const LocalStorageItems2: typeof LocalStorageItems2Runtype = LocalStorageItems2Runtype
@@ -153,6 +155,7 @@ const LocalStorageItems2: typeof LocalStorageItems2Runtype = LocalStorageItems2R
 type LocalStorageKey2 = funtypes.Static<typeof LocalStorageKey2>
 const LocalStorageKey2 = funtypes.Union(
 	funtypes.Literal('pendingTransactionsAndMessages'),
+	funtypes.Literal('pendingSafeProposalStores'),
 )
 
 // these methods are split to 1 and 2 to make the funtypes types simpler
@@ -177,8 +180,9 @@ export async function browserStorageLocalSet2(items: LocalStorageItems2) {
 export async function browserStorageLocalSetPendingAndTerminalState(
 	pendingTransactionsAndMessages: readonly PendingTransactionOrSignableMessage[],
 	pendingTerminalReplies: readonly InterceptedRequestForward[],
+	pendingSafeProposalStores?: readonly PendingSafeProposalStore[],
 ) {
-	const pendingItems: LocalStorageItems2 = { pendingTransactionsAndMessages }
+	const pendingItems: LocalStorageItems2 = { pendingTransactionsAndMessages, ...(pendingSafeProposalStores === undefined ? {} : { pendingSafeProposalStores }) }
 	const terminalItems: LocalStorageItems = { pendingTerminalReplies }
 	return await browser.storage.local.set({
 		...serialize(LocalStorageItems2, pendingItems),

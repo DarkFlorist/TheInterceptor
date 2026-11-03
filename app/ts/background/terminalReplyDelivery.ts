@@ -1,4 +1,4 @@
-import type { ChainBoundSafeSignerReply } from '../types/accessRequest.js'
+import type { PendingSafeProposalStore, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import type { InterceptedRequestForward } from '../types/interceptor-messages.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { reportLocalRecovery } from '../utils/errors.js'
@@ -7,7 +7,7 @@ import { Semaphore } from '../utils/semaphore.js'
 import { websiteSocketToString } from './backgroundUtils.js'
 import { replyToInterceptedRequest } from './messageSending.js'
 import { attemptDeliveryAfterManifestV2Reconnect } from './manifestV2Reconnect.js'
-import { appendPendingTerminalReply, getPendingTerminalReplies, queueDeferredSafeProposalTerminalReply, removePendingTerminalReply } from './pendingTerminalReplies.js'
+import { appendPendingTerminalReply, getPendingTerminalReplies, writeSafeProposalReplyAndOutboxEntry, removePendingTerminalReply } from './pendingTerminalReplies.js'
 
 const terminalReplyProductions = new Map<string, Promise<boolean | undefined>>()
 const terminalReplyReservations = new Set<string>()
@@ -42,12 +42,13 @@ export async function queueTerminalReply(message: InterceptedRequestForward) {
 	}
 }
 
-export async function queueDeferredSafeProposalReply(uniqueRequestIdentifier: InterceptedRequestForward['uniqueRequestIdentifier'], deferredReply: ChainBoundSafeSignerReply, message: InterceptedRequestForward) {
+// Queues the website's proposal-hash reply and moves the signed proposal to the Safe proposal outbox in one write, reserving the reply like any other queued terminal reply.
+export async function queueSafeProposalReplyAndMoveToOutbox(uniqueRequestIdentifier: InterceptedRequestForward['uniqueRequestIdentifier'], createStore: (pendingProposal: PendingTransactionOrSignableMessage) => PendingSafeProposalStore, message: InterceptedRequestForward) {
 	const identifier = getUniqueRequestIdentifierString(uniqueRequestIdentifier)
 	terminalReplyReservations.add(identifier)
 	try {
 		await terminalReplySemaphore.execute(async () => {
-			await queueDeferredSafeProposalTerminalReply(uniqueRequestIdentifier, deferredReply, message)
+			await writeSafeProposalReplyAndOutboxEntry(uniqueRequestIdentifier, createStore, message)
 		})
 	} catch (error) {
 		terminalReplyReservations.delete(identifier)

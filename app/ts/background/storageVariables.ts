@@ -7,7 +7,7 @@ import { DEFAULT_ACTIVE_ADDRESSES } from '../config/defaults.js'
 import { type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
 import { AddressBookEntry, doAddressBookChainIdsMatch, LegacyErc20TokenEntry, type AddressBookEntries, type ChainIdWithUniversal } from '../types/addressBookTypes.js'
 import type { SignerName } from '../types/signerTypes.js'
-import type { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
+import type { PendingAccessRequests, PendingSafeProposalStore, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import { replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
 import { keccak256, namehash, stringToBytes } from '../utils/ethereumPrimitives.js'
 import { isValidEnsName } from '../utils/ens.js'
@@ -77,19 +77,38 @@ export async function updatePendingTransactionOrMessage(uniqueRequestIdentifier:
 	})
 }
 
-// Updates one pending request and replaces the durable terminal replies in a single storage write inside the shared critical section, so a reply becomes deliverable only together with its request's update. Nothing is written when the request is no longer pending, and corrupt pending storage throws instead of being discarded.
-export async function updatePendingTransactionOrMessageWithTerminalReplies(
+async function readPendingSafeProposalStores(): Promise<readonly PendingSafeProposalStore[]> {
+	const result = await browserStorageLocalGet2Result('pendingSafeProposalStores')
+	if (!result.success) throw result.error
+	return result.value.pendingSafeProposalStores ?? []
+}
+
+// The outbox of signed Gnosis Safe proposals waiting for services for their network to be added to the Safe stack. Corrupt storage throws instead of being discarded, because the entries hold signatures the website was already told about.
+export async function getPendingSafeProposalStores() {
+	return await pendingRequestTerminalStateSemaphore.execute(readPendingSafeProposalStores)
+}
+
+// Settles a pending Safe proposal whose website reply is being queued: in one storage write the request leaves the pending queue, the terminal replies are replaced and the signed proposal enters the outbox (a no-op when the request is no longer pending).
+export async function movePendingSafeProposalToOutbox(
 	uniqueRequestIdentifier: UniqueRequestIdentifier,
-	update: (pendingTransactionOrMessage: PendingTransactionOrSignableMessage) => PendingTransactionOrSignableMessage,
+	createStore: (pendingProposal: PendingTransactionOrSignableMessage) => PendingSafeProposalStore,
 	getUpdatedTerminalReplies: () => Promise<readonly InterceptedRequestForward[]>,
 ) {
 	await pendingRequestTerminalStateSemaphore.execute(async () => {
 		const result = await readPendingTransactionsAndMessages()
 		if (!result.success) throw result.error
-		const match = result.value.findIndex((pending) => doesUniqueRequestIdentifiersMatch(pending.uniqueRequestIdentifier, uniqueRequestIdentifier))
-		const found = result.value[match]
+		const found = result.value.find((pending) => doesUniqueRequestIdentifiersMatch(pending.uniqueRequestIdentifier, uniqueRequestIdentifier))
 		if (found === undefined) return
-		await browserStorageLocalSetPendingAndTerminalState(replaceElementInReadonlyArray(result.value, match, update(found)), await getUpdatedTerminalReplies())
+		const remainingPending = result.value.filter((pending) => pending !== found)
+		const outbox = (await readPendingSafeProposalStores()).filter((entry) => !doesUniqueRequestIdentifiersMatch(entry.proposal.uniqueRequestIdentifier, uniqueRequestIdentifier))
+		await browserStorageLocalSetPendingAndTerminalState(remainingPending, await getUpdatedTerminalReplies(), [...outbox, createStore(found)])
+	})
+}
+
+export async function removePendingSafeProposalStore(uniqueRequestIdentifier: UniqueRequestIdentifier) {
+	await pendingRequestTerminalStateSemaphore.execute(async () => {
+		const outbox = await readPendingSafeProposalStores()
+		await browserStorageLocalSet2({ pendingSafeProposalStores: outbox.filter((entry) => !doesUniqueRequestIdentifiersMatch(entry.proposal.uniqueRequestIdentifier, uniqueRequestIdentifier)) })
 	})
 }
 
