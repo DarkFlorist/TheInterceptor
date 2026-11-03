@@ -36,9 +36,11 @@ const decodedFromMissingFieldAs = <StandIn>(standIn: StandIn) => funtypes.Litera
 // The network the website requested the transaction on. Its preview is only refreshed and approved on this network. A confirmation stored without it decodes as 'unknown', which equals no chain id, so it is never refreshed or approved.
 const RequestedChainId = funtypes.Union(EthereumQuantity, funtypes.Literal('unknown'), decodedFromMissingFieldAs<'unknown'>('unknown'))
 
-// Identifies the confirmation simulation run that produced a visualisation. Runs get positive ids, so a visualisation stored without one decodes as run 0, older than every run.
-export const CONFIRMATION_RUN_ID_OF_UNNUMBERED_RUN = 0
-const ConfirmationRunId = funtypes.Union(funtypes.Number, decodedFromMissingFieldAs(CONFIRMATION_RUN_ID_OF_UNNUMBERED_RUN))
+// Identifies the confirmation simulation run that produced a visualisation: the random id of the background lifetime that ran it and the run's place among that lifetime's runs. A visualisation stored without one decodes as a run of no lifetime, which no run's lifetime matches.
+export type ConfirmationRunId = funtypes.Static<typeof ConfirmationRunIdWithoutStandIn>
+const ConfirmationRunIdWithoutStandIn = funtypes.ReadonlyObject({ lifetime: funtypes.String, sequence: funtypes.Number })
+export const CONFIRMATION_RUN_OF_NO_LIFETIME: ConfirmationRunId = { lifetime: '', sequence: 0 }
+const ConfirmationRunIdCodec = funtypes.Union(ConfirmationRunIdWithoutStandIn, decodedFromMissingFieldAs(CONFIRMATION_RUN_OF_NO_LIFETIME))
 
 type ConfirmTransactionSimulationBaseData = funtypes.Static<typeof ConfirmTransactionSimulationBaseData>
 const ConfirmTransactionSimulationBaseData = funtypes.ReadonlyObject({
@@ -48,7 +50,7 @@ const ConfirmTransactionSimulationBaseData = funtypes.ReadonlyObject({
 	uniqueRequestIdentifier: UniqueRequestIdentifier,
 	transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed,
 	signerName: SignerName,
-	confirmationRunId: ConfirmationRunId,
+	confirmationRunId: ConfirmationRunIdCodec,
 })
 
 type ConfirmTransactionDialogState = funtypes.Static<typeof ConfirmTransactionDialogState>

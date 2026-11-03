@@ -3,7 +3,7 @@ import { appendTransactionsToInput } from '../simulation/services/SimulationMode
 import { getSignedTransactionForSimulation } from '../simulation/services/simulationTransactionSigning.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { createSafeExecutionPreSimulationTransaction, createSafeSigningSimulationInput } from '../safe/safeSimulation.js'
-import { CONFIRMATION_RUN_ID_OF_UNNUMBERED_RUN, type ConfirmTransactionTransactionSingleVisualization, type PendingTransaction } from '../types/accessRequest.js'
+import type { ConfirmationRunId, ConfirmTransactionTransactionSingleVisualization, PendingTransaction } from '../types/accessRequest.js'
 import type { SafeTransactionSigningRequest } from '../types/safeTypes.js'
 import type { SignerName } from '../types/signerTypes.js'
 import type { WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
@@ -17,43 +17,19 @@ import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { identifyAddress } from './metadataUtils.js'
 import { getSimulationErrorAbis } from './simulationErrorAbi.js'
 import { createSimulationStateWithNonceAndBaseFeeFixing, getCurrentSimulationInput, visualizeSimulatorState } from './simulationUpdating.js'
-import { getInterceptorTransactionStack, getPendingTransactionsAndMessages, getTabState } from './storageVariables.js'
+import { getInterceptorTransactionStack, getTabState } from './storageVariables.js'
 
-let latestConfirmationRunId = 0
-// The highest run id among the stored confirmations, including those stored before the background last restarted; 0 when none has one.
-async function getHighestStoredConfirmationRunId() {
-	const storedRunIds = (await getPendingTransactionsAndMessages()).flatMap((pending) => pending.type === 'Transaction' && 'popupVisualisation' in pending ? [pending.popupVisualisation.data.confirmationRunId] : [])
-	return Math.max(CONFIRMATION_RUN_ID_OF_UNNUMBERED_RUN, ...storedRunIds)
+// Every confirmation simulation run gets an id that orders it against the other runs of its request: the random id of this background lifetime and the run's place among this lifetime's runs. Stored timestamps keep only whole seconds, so they cannot. Issuing an id reads neither storage nor the clock, so reserving one cannot fail.
+const confirmationRunLifetime = crypto.randomUUID()
+let latestConfirmationRunSequence = 0
+
+// Reserves the next run id synchronously, so every entry that starts a confirmation run calls it before its first await, and a run that starts first gets the earlier id. A reservation that its entry ends up not using only skips a sequence number.
+export function reserveConfirmationRun(): ConfirmationRunId {
+	latestConfirmationRunSequence += 1
+	return { lifetime: confirmationRunLifetime, sequence: latestConfirmationRunSequence }
 }
 
-// Every confirmation simulation run gets a new id, which orders it against the stored runs; stored timestamps keep only whole seconds, so they cannot. The id is the millisecond clock bumped past both the previous id and every stored id. So ids increase within a background lifetime, and a new run is also later than every run stored before a restart, even if the system clock went back meanwhile. Ids are positive, so none is the run 0 that a visualisation stored without a run id decodes as. The allocations run one at a time, in the order runs reserve them, because each reads the stored ids first: an allocation whose read is slow would otherwise get a higher id than a run that started after it.
-let confirmationRunIdAllocations: Promise<unknown> = Promise.resolve()
-
-// A confirmation run's place in the run order, taken when the run starts and handed to refreshConfirmTransactionSimulation.
-export type ConfirmationRunReservation = { readonly runId: Promise<number> }
-
-// The stored ids an allocation must exceed. A failed read is reported and the stored ids are skipped, so the run still gets an id above the previous one and the clock, and an allocation never fails; only the guarantee that this id exceeds ids stored before a restart, if the clock went back meanwhile, is lost for it.
-async function getHighestStoredConfirmationRunIdOrSkip() {
-	try {
-		return await getHighestStoredConfirmationRunId()
-	} catch (error: unknown) {
-		await reportUnexpectedError(error, { code: 'confirmation_run_id_stored_ids_unreadable' })
-		return CONFIRMATION_RUN_ID_OF_UNNUMBERED_RUN
-	}
-}
-
-// Reserves the next run id synchronously when called, so every entry that starts a confirmation run calls it before its first await, and a run that starts first gets the lower id. A reservation that its entry ends up not using only skips an id.
-export function reserveConfirmationRun(): ConfirmationRunReservation {
-	const allocation = confirmationRunIdAllocations.then(async () => {
-		const highestStoredRunId = await getHighestStoredConfirmationRunIdOrSkip()
-		latestConfirmationRunId = Math.max(latestConfirmationRunId + 1, highestStoredRunId + 1, Date.now())
-		return latestConfirmationRunId
-	})
-	confirmationRunIdAllocations = allocation
-	return { runId: allocation }
-}
-
-type InFlightConfirmationRun = { readonly runId: number, readonly abortController: AbortController }
+type InFlightConfirmationRun = { readonly sequence: number, readonly abortController: AbortController }
 
 // The run in flight for each confirmation request, keyed by its request. A run aborts only the run of its own request that it replaces, and a run that resumes after a later run of its request was installed ends as an aborted run does, so an earlier run never aborts a later one. Runs of different requests never cancel each other, so a run never leaves another confirmation without the run that completes it. An entry is removed when its run finishes, so only runs in flight are kept.
 const inFlightConfirmationRuns = new Map<string, InFlightConfirmationRun>()
@@ -61,20 +37,23 @@ const inFlightConfirmationRuns = new Map<string, InFlightConfirmationRun>()
 // The abort controller of the run in flight for the request, if any, for work that is outdated once a later run of that request starts.
 export const getInFlightConfirmationRunAbortController = (uniqueRequestIdentifier: UniqueRequestIdentifier) => inFlightConfirmationRuns.get(getUniqueRequestIdentifierString(uniqueRequestIdentifier))?.abortController
 
-type ConfirmationRunVisualisation = { readonly data: { readonly confirmationRunId: number } }
+type ConfirmationRunVisualisation = { readonly data: { readonly confirmationRunId: ConfirmationRunId } }
 
-// The one rule for whether a confirmation visualisation may be stored over the stored one. A new run, stored with the transaction it prepared, replaces the stored visualisation unless that came from a later run; a re-visualisation of a stored run's results, stored without a transaction, needs that run to still be stored, so the visualisation stays paired with the transaction the run prepared. Runs are ordered by their ids, which reserveConfirmationRun issues in the order runs start and above every stored id, so a preview stored before a restart never blocks a new run, while of two overlapping runs the one started first stays the older. It answers which confirmation run is current, unlike the fingerprints in popupSimulationFingerprint.ts, which tell whether the inputs of the popup's own simulation changed.
+// The one rule for whether a confirmation visualisation may be stored over the stored one. A new run, stored with the transaction it prepared, replaces the stored visualisation unless that came from a later run of the same background lifetime; a visualisation stored by another lifetime, before a restart or without a run id, never blocks a new run. A re-visualisation of a stored run's results, stored without a transaction, needs that very run to still be stored, so the visualisation stays paired with the transaction the run prepared. It answers which confirmation run is current, unlike the fingerprints in popupSimulationFingerprint.ts, which tell whether the inputs of the popup's own simulation changed.
 export function isConfirmationVisualisationCurrent(stored: ConfirmationRunVisualisation | undefined, candidate: ConfirmationRunVisualisation, candidateKind: 'new run' | 're-visualised run') {
 	if (stored === undefined) return candidateKind === 'new run'
-	if (candidateKind === 're-visualised run') return candidate.data.confirmationRunId === stored.data.confirmationRunId
-	return candidate.data.confirmationRunId >= stored.data.confirmationRunId
+	const storedRun = stored.data.confirmationRunId
+	const candidateRun = candidate.data.confirmationRunId
+	const sameLifetime = candidateRun.lifetime === storedRun.lifetime
+	if (candidateKind === 're-visualised run') return sameLifetime && candidateRun.sequence === storedRun.sequence
+	return !sameLifetime || candidateRun.sequence >= storedRun.sequence
 }
 
 // What a new run prepares the transaction from. A run whose inputs changed while it ran, for example through a gas limit edit or a Gnosis Safe signer change, describes a transaction that is no longer stored, so it is not current whatever its run id.
 export const getConfirmationRunInputs = (pendingTransaction: PendingTransaction) => stringifyJSONWithBigInts([pendingTransaction.originalRequestParameters, pendingTransaction.activeAddress, pendingTransaction.safeTransaction])
 
 export async function refreshConfirmTransactionSimulation(
-	reservation: ConfirmationRunReservation,
+	confirmationRunId: ConfirmationRunId,
 	ethereum: EthereumClientService,
 	tokenPriceService: TokenPriceService,
 	activeAddress: bigint,
@@ -83,7 +62,6 @@ export async function refreshConfirmTransactionSimulation(
 	transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed,
 	safeSigningRequest?: SafeTransactionSigningRequest,
 ): Promise<ConfirmTransactionTransactionSingleVisualization | undefined> {
-	const confirmationRunId = await reservation.runId
 	const info = {
 		uniqueRequestIdentifier,
 		transactionToSimulate,
@@ -95,9 +73,9 @@ export async function refreshConfirmTransactionSimulation(
 	}
 	const requestKey = getUniqueRequestIdentifierString(uniqueRequestIdentifier)
 	const replacedRun = inFlightConfirmationRuns.get(requestKey)
-	if (replacedRun !== undefined && replacedRun.runId > confirmationRunId) return undefined
+	if (replacedRun !== undefined && replacedRun.sequence > confirmationRunId.sequence) return undefined
 	replacedRun?.abortController.abort(NEW_BLOCK_ABORT)
-	const thisRun = { runId: confirmationRunId, abortController: new AbortController() }
+	const thisRun = { sequence: confirmationRunId.sequence, abortController: new AbortController() }
 	inFlightConfirmationRuns.set(requestKey, thisRun)
 	try {
 		return await simulateConfirmationRun(ethereum, tokenPriceService, info, thisRun.abortController, safeSigningRequest)
@@ -113,7 +91,7 @@ type ConfirmationRunInfo = {
 	readonly activeAddress: bigint
 	readonly signerName: SignerName
 	readonly tabIdOpenedFrom: number
-	readonly confirmationRunId: number
+	readonly confirmationRunId: ConfirmationRunId
 }
 
 async function simulateConfirmationRun(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, info: ConfirmationRunInfo, thisConfirmTransactionAbortController: AbortController, safeSigningRequest: SafeTransactionSigningRequest | undefined): Promise<ConfirmTransactionTransactionSingleVisualization | undefined> {

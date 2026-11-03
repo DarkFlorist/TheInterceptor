@@ -186,7 +186,7 @@ function makePendingTransaction(errorMessage = 'simulation failed') {
 				uniqueRequestIdentifier: { requestId: 1, requestSocket: { tabId: 1, connectionName: 0n } },
 				transactionToSimulate,
 				signerName: 'NoSignerDetected' as const,
-				confirmationRunId: 1,
+				confirmationRunId: { lifetime: 'fixture', sequence: 1 },
 				error: {
 					code: -32000,
 					message: errorMessage,

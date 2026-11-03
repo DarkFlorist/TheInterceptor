@@ -4,7 +4,7 @@ import { Transaction } from 'micro-eth-signer'
 import { activeAddress, addressString, browserMock, createDisconnectedPort, createSafeAddressBookEntry, createSafeStackFixture, createSafeTx, createWebsitePort, EIP712Message, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, pendingTransaction, recipientAddress, SAFE_EXECUTION_ABI, safeTestOwnerAccount, safeTestOwnerAddress, safeTestOwnerPrivateKey, safeTxToTypedDataJson, signedTransaction, simulator, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
 import { encodeFunctionCall } from '../../app/ts/utils/abiRuntime.js'
 import { createDeferredValue } from './backgroundEthAccountsTestHarness.js'
-import { CONFIRMATION_RUN_ID_OF_UNNUMBERED_RUN, PendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
+import { CONFIRMATION_RUN_OF_NO_LIFETIME, type ConfirmationRunId, PendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
 import { SendRawTransactionParams, SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
 import { PersonalSignParams } from '../../app/ts/types/jsonRpc-signing-types.js'
@@ -220,7 +220,7 @@ test('a confirmation cannot be serialized without its requested network or simul
 	const decoded = PendingTransactionOrSignableMessage.parse({ ...storedWithoutRequestedChainId, popupVisualisation: { ...storedWithoutRequestedChainId.popupVisualisation, data: storedDataWithoutRunId } })
 	if (decoded.type !== 'Transaction' || !('popupVisualisation' in decoded)) throw new Error('Expected a simulated transaction')
 	assert.equal(decoded.requestedChainId, 'unknown')
-	assert.equal(decoded.popupVisualisation.data.confirmationRunId, CONFIRMATION_RUN_ID_OF_UNNUMBERED_RUN)
+	assert.deepEqual(decoded.popupVisualisation.data.confirmationRunId, CONFIRMATION_RUN_OF_NO_LIFETIME)
 	assert.deepEqual(PendingTransactionOrSignableMessage.parse(serialize(PendingTransactionOrSignableMessage, decoded)), decoded)
 })
 
@@ -231,7 +231,7 @@ test('a confirmation stored without its requested network decodes as requested o
 
 	const storedByOlderVersion = await getPendingTransaction()
 	assert.equal(storedByOlderVersion.requestedChainId, 'unknown')
-	assert.equal(storedByOlderVersion.popupVisualisation.data.confirmationRunId, CONFIRMATION_RUN_ID_OF_UNNUMBERED_RUN)
+	assert.deepEqual(storedByOlderVersion.popupVisualisation.data.confirmationRunId, CONFIRMATION_RUN_OF_NO_LIFETIME)
 
 	// Neither refresh touches its preview, as no client is on its requested network.
 	const { refreshPopupConfirmTransactionMetadata, refreshPopupConfirmTransactionSimulation } = await import('../../app/ts/background/popupMessageHandlers.js')
@@ -354,52 +354,60 @@ test('a metadata refresh of an older simulation run keeps the newer run and gas 
 	assert.equal(pending.popupVisualisation.data.transactionToSimulate.success ? pending.popupVisualisation.data.transactionToSimulate.transaction.gas : undefined, 30_000n)
 })
 
-test('a confirmation visualisation is stored only over one of the same or an earlier run, and a re-visualisation only over its own run', async () => {
+// Whether the run came after the earlier run in the same background lifetime.
+const isLaterRunOfSameLifetime = (run: ConfirmationRunId, earlier: ConfirmationRunId) => run.lifetime === earlier.lifetime && run.sequence > earlier.sequence
+
+test('a confirmation visualisation is stored over one of an earlier run of its lifetime or of another lifetime, and a re-visualisation only over its own run', async () => {
 	const { isConfirmationVisualisationCurrent } = await import('../../app/ts/background/confirmTransactionSimulation.js')
-	const run = (confirmationRunId: number) => ({ data: { confirmationRunId } })
-	assert.equal(isConfirmationVisualisationCurrent(undefined, run(5), 'new run'), true)
-	assert.equal(isConfirmationVisualisationCurrent(run(5), run(6), 'new run'), true)
-	assert.equal(isConfirmationVisualisationCurrent(run(6), run(5), 'new run'), false)
-	assert.equal(isConfirmationVisualisationCurrent(run(CONFIRMATION_RUN_ID_OF_UNNUMBERED_RUN), run(1), 'new run'), true)
-	assert.equal(isConfirmationVisualisationCurrent(run(5), run(5), 're-visualised run'), true)
-	assert.equal(isConfirmationVisualisationCurrent(run(6), run(5), 're-visualised run'), false)
-	assert.equal(isConfirmationVisualisationCurrent(run(5), run(6), 're-visualised run'), false)
-	assert.equal(isConfirmationVisualisationCurrent(undefined, run(5), 're-visualised run'), false)
+	const run = (lifetime: string, sequence: number) => ({ data: { confirmationRunId: { lifetime, sequence } } })
+	assert.equal(isConfirmationVisualisationCurrent(undefined, run('current', 5), 'new run'), true)
+	assert.equal(isConfirmationVisualisationCurrent(run('current', 5), run('current', 6), 'new run'), true)
+	assert.equal(isConfirmationVisualisationCurrent(run('current', 6), run('current', 5), 'new run'), false)
+	assert.equal(isConfirmationVisualisationCurrent(run('previous', 1000), run('current', 1), 'new run'), true)
+	assert.equal(isConfirmationVisualisationCurrent({ data: { confirmationRunId: CONFIRMATION_RUN_OF_NO_LIFETIME } }, run('current', 1), 'new run'), true)
+	assert.equal(isConfirmationVisualisationCurrent(run('current', 5), run('current', 5), 're-visualised run'), true)
+	assert.equal(isConfirmationVisualisationCurrent(run('previous', 5), run('current', 5), 're-visualised run'), false)
+	assert.equal(isConfirmationVisualisationCurrent(run('current', 6), run('current', 5), 're-visualised run'), false)
+	assert.equal(isConfirmationVisualisationCurrent(undefined, run('current', 5), 're-visualised run'), false)
 })
 
-// Stores the preview as run runId, as a previous background lifetime would have, whose clock was ahead of the current one.
-async function storePreviewRunId(runId: number) {
+// Stores the preview as one of a run of a previous background lifetime, which a fresh copy of the run id module stands in for, late in that lifetime.
+async function storePreviewOfPreviousLifetime() {
+	const previousLifetimeModule = '../../app/ts/background/confirmTransactionSimulation.js?previousLifetime'
+	const previousLifetime: typeof import('../../app/ts/background/confirmTransactionSimulation.js') = await import(previousLifetimeModule)
+	for (let reservation = 0; reservation < 1000; reservation++) previousLifetime.reserveConfirmationRun()
+	const runOfPreviousLifetime = previousLifetime.reserveConfirmationRun()
 	await storePendingTransaction((pending) => {
 		if (pending.type !== 'Transaction' || pending.transactionOrMessageCreationStatus !== 'Simulated') throw new Error('Missing simulated transaction confirmation')
-		return { ...pending, popupVisualisation: { ...pending.popupVisualisation, data: { ...pending.popupVisualisation.data, confirmationRunId: runId } } }
+		return { ...pending, popupVisualisation: { ...pending.popupVisualisation, data: { ...pending.popupVisualisation.data, confirmationRunId: runOfPreviousLifetime } } }
 	})
+	return runOfPreviousLifetime
 }
 
-test('a preview stored before a background restart and a clock rollback is replaced by a new simulation and by a gas limit edit', async () => {
+test('a preview stored by a previous background lifetime is replaced by the first new run of this lifetime', async () => {
 	const { websiteTabConnections } = await setUpTransactionApprovalTest(false)
 	await requestTransaction(websiteTabConnections, false)
-	const { isConfirmationVisualisationCurrent } = await import('../../app/ts/background/confirmTransactionSimulation.js')
-	// Issued an hour ahead of the current clock, before the clock was turned back and the background restarted.
-	const runIdBeforeRollback = Date.now() + 3_600_000
-	await storePreviewRunId(runIdBeforeRollback)
-
-	// A restarted background runs a fresh copy of the run id generator, sharing only storage.
-	const restartedModule = '../../app/ts/background/confirmTransactionSimulation.js?restart'
-	const restarted: typeof import('../../app/ts/background/confirmTransactionSimulation.js') = await import(restartedModule)
-	const storedBeforeRestart = await getPendingTransaction()
-	const runAfterRestart = await restarted.refreshConfirmTransactionSimulation(restarted.reserveConfirmationRun(), simulator.ethereum, simulator.tokenPriceService, storedBeforeRestart.activeAddress, false, uniqueRequestIdentifier, storedBeforeRestart.transactionToSimulate)
-	if (runAfterRestart === undefined) throw new Error('The simulation after the restart did not complete')
-	assert.ok(runAfterRestart.data.confirmationRunId > runIdBeforeRollback)
-	assert.equal(isConfirmationVisualisationCurrent(storedBeforeRestart.popupVisualisation, runAfterRestart, 'new run'), true)
+	const thisLifetime = (await getPendingTransaction()).popupVisualisation.data.confirmationRunId.lifetime
+	const runOfPreviousLifetime = await storePreviewOfPreviousLifetime()
+	assert.notEqual(runOfPreviousLifetime.lifetime, thisLifetime)
 
 	await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
-	assert.ok((await getPendingTransaction()).popupVisualisation.data.confirmationRunId > runIdBeforeRollback)
 
-	await storePreviewRunId(runIdBeforeRollback)
+	assert.equal((await getPendingTransaction()).popupVisualisation.data.confirmationRunId.lifetime, thisLifetime)
+})
+
+test('after a background restart, the first refresh of a gas limit edit stores a preview of the requested gas limit', async () => {
+	const { websiteTabConnections } = await setUpTransactionApprovalTest(false)
+	await requestTransaction(websiteTabConnections, false)
+	await storePreviewOfPreviousLifetime()
+
 	await changeGasLimit(30_000n)
+
 	const pending = await getPendingTransaction()
-	assert.ok(pending.popupVisualisation.data.confirmationRunId > runIdBeforeRollback)
+	const visualisedTransaction = pending.popupVisualisation.data.transactionToSimulate
+	assert.equal(getRequestedGasLimit(pending), 30_000n)
 	assert.equal(pending.transactionToSimulate.transaction.gas, 30_000n)
+	assert.equal(visualisedTransaction.success ? visualisedTransaction.transaction.gas : undefined, 30_000n)
 })
 
 test('a run that started before a later run was stored is still not stored over it', async () => {
@@ -413,83 +421,8 @@ test('a run that started before a later run was stored is still not stored over 
 	await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
 
 	const storedLaterRun = (await getPendingTransaction()).popupVisualisation
-	assert.ok(storedLaterRun.data.confirmationRunId > earlierRun.data.confirmationRunId)
+	assert.ok(isLaterRunOfSameLifetime(storedLaterRun.data.confirmationRunId, earlierRun.data.confirmationRunId))
 	assert.equal(isConfirmationVisualisationCurrent(storedLaterRun, earlierRun, 'new run'), false)
-})
-
-test('a run whose read of the stored run ids is slow keeps the lower id and cannot replace the preview of a run that started after it', async () => {
-	const { websiteTabConnections } = await setUpTransactionApprovalTest(false)
-	await requestTransaction(websiteTabConnections, false)
-	const { isConfirmationVisualisationCurrent, refreshConfirmTransactionSimulation, reserveConfirmationRun } = await import('../../app/ts/background/confirmTransactionSimulation.js')
-	const pending = await getPendingTransaction()
-	const earlierRunReadReached = createDeferredValue<undefined>()
-	const releaseEarlierRunRead = createDeferredValue<undefined>()
-	let holdNextConfirmationsRead = true
-	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
-		if (holdNextConfirmationsRead && Array.isArray(keys) && keys.includes('pendingTransactionsAndMessages')) {
-			holdNextConfirmationsRead = false
-			earlierRunReadReached.resolve(undefined)
-			await releaseEarlierRunRead.promise
-		}
-		return readStoredItems()
-	})
-
-	// The earlier run's first storage read is the read of the stored run ids, which is held.
-	const earlierRun = refreshConfirmTransactionSimulation(reserveConfirmationRun(), simulator.ethereum, simulator.tokenPriceService, pending.activeAddress, false, uniqueRequestIdentifier, pending.transactionToSimulate)
-	await earlierRunReadReached.promise
-	const laterRefresh = modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
-	// Gives the later refresh time to finish and store its run, which it can only do if its id is not allocated after the earlier run's.
-	await Promise.race([laterRefresh, new Promise((resolve) => setTimeout(resolve, 250))])
-	releaseEarlierRunRead.resolve(undefined)
-	const [earlierVisualisation] = await Promise.all([earlierRun, laterRefresh])
-
-	const storedLaterRun = (await getPendingTransaction()).popupVisualisation
-	// Starting the later run may abort the earlier one, which then produces nothing; if it completes, it is the older run.
-	if (earlierVisualisation !== undefined) {
-		assert.ok(earlierVisualisation.data.confirmationRunId < storedLaterRun.data.confirmationRunId)
-		assert.equal(isConfirmationVisualisationCurrent(storedLaterRun, earlierVisualisation, 'new run'), false)
-	}
-	assert.ok(storedLaterRun.data.confirmationRunId > pending.popupVisualisation.data.confirmationRunId)
-})
-
-// Makes the next read of the stored confirmations fail, as the read of the stored run ids by the next run id allocation.
-function failNextStoredConfirmationsRead() {
-	let failNextRead = true
-	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
-		if (failNextRead && Array.isArray(keys) && keys.includes('pendingTransactionsAndMessages')) {
-			failNextRead = false
-			throw new Error('storage read failed')
-		}
-		return readStoredItems()
-	})
-}
-
-test('a run whose read of the stored run ids fails is reported and still gets an id above the previous one and completes', async () => {
-	const { websiteTabConnections } = await setUpTransactionApprovalTest(false)
-	await requestTransaction(websiteTabConnections, false)
-	const { refreshConfirmTransactionSimulation, reserveConfirmationRun } = await import('../../app/ts/background/confirmTransactionSimulation.js')
-	const { getLatestUnexpectedError } = await import('../../app/ts/background/storageVariables.js')
-	const pending = await getPendingTransaction()
-	const previousRun = await refreshConfirmTransactionSimulation(reserveConfirmationRun(), simulator.ethereum, simulator.tokenPriceService, pending.activeAddress, false, uniqueRequestIdentifier, pending.transactionToSimulate)
-	if (previousRun === undefined) throw new Error('The previous run did not complete')
-
-	failNextStoredConfirmationsRead()
-	const run = await withSilencedConsole(async () => await refreshConfirmTransactionSimulation(reserveConfirmationRun(), simulator.ethereum, simulator.tokenPriceService, pending.activeAddress, false, uniqueRequestIdentifier, pending.transactionToSimulate))
-
-	assert.ok(run !== undefined && run.data.confirmationRunId > previousRun.data.confirmationRunId)
-	assert.equal((await getLatestUnexpectedError())?.data.code, 'confirmation_run_id_stored_ids_unreadable')
-})
-
-test('a confirmation whose first run id allocation cannot read the stored run ids still becomes reviewable', async () => {
-	const { websiteTabConnections } = await setUpTransactionApprovalTest(false)
-	// The opening reserves its run first, so the first read of the stored confirmations is that allocation's.
-	failNextStoredConfirmationsRead()
-	await withSilencedConsole(async () => await requestTransaction(websiteTabConnections, false))
-
-	const opened = await getPendingTransaction()
-	assert.equal(opened.transactionOrMessageCreationStatus, 'Simulated')
-	await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
-	assert.ok((await getPendingTransaction()).popupVisualisation.data.confirmationRunId > opened.popupVisualisation.data.confirmationRunId)
 })
 
 // Holds the first storage read of the given key until released, and tells when it was reached.
@@ -521,8 +454,8 @@ test('of two overlapping simulation refreshes, the one requested first cannot re
 	earlierRefreshRead.release()
 	await earlierRefresh
 
-	assert.ok(laterRunId > initialRunId)
-	assert.equal((await getPendingTransaction()).popupVisualisation.data.confirmationRunId, laterRunId)
+	assert.ok(isLaterRunOfSameLifetime(laterRunId, initialRunId))
+	assert.deepEqual((await getPendingTransaction()).popupVisualisation.data.confirmationRunId, laterRunId)
 })
 
 test('a simulation refresh that resumes after a later refresh started simulating does not abort it', async () => {
@@ -546,7 +479,7 @@ test('a simulation refresh that resumes after a later refresh started simulating
 	assert.equal(laterRunAbortController.signal.aborted, false)
 	suspended.release()
 	await laterRefresh
-	assert.ok((await getPendingTransaction()).popupVisualisation.data.confirmationRunId > initialRunId)
+	assert.ok(isLaterRunOfSameLifetime((await getPendingTransaction()).popupVisualisation.data.confirmationRunId, initialRunId))
 })
 
 // Opens a direct Gnosis Safe execution while no wallet account is connected, then connects the Safe signer, so the next Gnosis Safe signer refresh rebuilds and simulates it.
@@ -568,7 +501,8 @@ async function openDirectSafeExecutionAwaitingSignerRefresh() {
 			data: encodeFunctionCall(SAFE_EXECUTION_ABI, 'execTransaction', [addressString(recipientAddress), 0n, '0x', 0n, 0n, 0n, 0n, addressString(0n), addressString(0n), existingSignature]),
 		}],
 	})
-	await requestTransaction(websiteTabConnections, false, executionParams)
+	// Its simulation fails against the fake Gnosis Safe, which is reported.
+	await withSilencedConsole(async () => await requestTransaction(websiteTabConnections, false, executionParams))
 	await modules.updateTabState(socket.tabId, (state) => ({ ...state, signerAccounts: [safeSignerAddress], activeSigningAddress: safeSignerAddress }))
 	return { safeSignerAddress, websiteTabConnections }
 }
@@ -644,7 +578,7 @@ test('a Gnosis Safe rebuild is not persisted over the preview of a popup refresh
 	const [afterRebuild] = await modules.getPendingTransactionsAndMessages()
 	if (afterRebuild?.type !== 'Transaction' || !('popupVisualisation' in afterRebuild)) throw new Error('Missing simulated direct Safe execution')
 	assert.equal(persistence.persisted, false)
-	assert.ok(afterRebuild.popupVisualisation.data.confirmationRunId > beforeRebuild.popupVisualisation.data.confirmationRunId)
+	assert.ok(isLaterRunOfSameLifetime(afterRebuild.popupVisualisation.data.confirmationRunId, beforeRebuild.popupVisualisation.data.confirmationRunId))
 	assert.equal(afterRebuild.safeExecutionSignerAddress, beforeRebuild.safeExecutionSignerAddress)
 })
 
@@ -709,7 +643,7 @@ test('a refresh that starts after a gas limit edit was stored keeps its preview 
 		await edit
 
 		const pending = await getPendingTransaction()
-		assert.equal(pending.popupVisualisation.data.confirmationRunId, laterRunId)
+		assert.deepEqual(pending.popupVisualisation.data.confirmationRunId, laterRunId)
 		assert.equal(pending.transactionToSimulate.transaction.gas, 30_000n)
 	} finally {
 		editHold.restore()
