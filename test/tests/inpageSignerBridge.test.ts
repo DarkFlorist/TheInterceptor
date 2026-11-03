@@ -375,6 +375,33 @@ describe('inpage signer bridge', () => {
 		})
 	})
 
+	test('forwards a reviewed transaction only to a wallet on the reviewed chain and names that chain in the transaction', async () => {
+		let walletChainId = '0x1'
+		const signedTransactions: unknown[] = []
+		const { fakeWindow } = createFakeWindow({
+			handleRequest: (request, reply) => {
+				if (request.method !== 'eth_sendTransaction') return false
+				reply({ interceptorApproved: true, requestId: request.requestId, type: 'forwardToSigner', method: request.method, params: request.params, replyWithSignersReply: true, expectedChainId: '0x1' })
+				return true
+			},
+			handleSignerRequest: ({ method, params }) => {
+				if (method === 'eth_chainId') return walletChainId
+				if (method !== 'eth_sendTransaction') return undefined
+				signedTransactions.push(Array.isArray(params) ? params[0] : undefined)
+				return '0x1234'
+			},
+		})
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?reviewed-chain-binding', async () => {
+			const transaction = { from: '0x1111111111111111111111111111111111111111', to: '0x2222222222222222222222222222222222222222', value: '0x0' }
+			const send = () => fakeWindow.ethereum.request({ method: 'eth_sendTransaction', params: [transaction] })
+			assert.equal(await send(), '0x1234')
+			assert.deepEqual(signedTransactions, [{ ...transaction, chainId: '0x1' }])
+			walletChainId = '0x2'
+			await assert.rejects(send(), (error: unknown) => isRecord(error) && error.code === 4901)
+			assert.equal(signedTransactions.length, 1)
+		})
+	})
+
 	test('pins forwarded signing to discovered identity and ignores unsolicited identity poisoning', async () => {
 		let expectedProviderId = 'eip6963:io.metamask'
 		const identities: unknown[] = []

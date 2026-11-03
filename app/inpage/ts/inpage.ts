@@ -292,7 +292,7 @@ type InterceptedRequestForwardWithError = InterceptedRequestBase & {
 	}
 }
 
-type InterceptedRequestForwardToSigner = InterceptedRequestBase & { readonly type: 'forwardToSigner', readonly replyWithSignersReply?: true, readonly expectedProviderId?: string }
+type InterceptedRequestForwardToSigner = InterceptedRequestBase & { readonly type: 'forwardToSigner', readonly replyWithSignersReply?: true, readonly expectedProviderId?: string, readonly expectedChainId?: string }
 
 type InterceptedRequestForward = InterceptedRequestForwardWithResult | InterceptedRequestForwardWithError | InterceptedRequestForwardToSigner
 
@@ -311,6 +311,7 @@ function chainIdToNetworkVersion(chainId: string) {
 
 type InterceptorApprovedMessageCandidate = {
 	readonly expectedProviderId?: unknown
+	readonly expectedChainId?: unknown
 	readonly walletSwitchRequestId?: unknown
 	readonly interceptorApproved?: unknown
 	readonly method?: unknown
@@ -409,6 +410,7 @@ function parseInterceptorApprovedMessage(data: unknown): InterceptedRequestForwa
 		type: 'forwardToSigner',
 		...(data.replyWithSignersReply === true ? { replyWithSignersReply: true as const } : {}),
 		...(typeof data.expectedProviderId === 'string' ? { expectedProviderId: data.expectedProviderId } : {}),
+		...(typeof data.expectedChainId === 'string' ? { expectedChainId: data.expectedChainId } : {}),
 	}
 	const hasResult = 'result' in data
 	const maybeError = data.error
@@ -1372,6 +1374,18 @@ class InterceptorMessageListener {
 		return { type: 'error', requestAccounts, error: { message: 'unknown error', code: METAMASK_ERROR_BLANKET_ERROR } }
 	}
 
+	// Interceptor simulated this transaction on expectedChainId. The wallet must be on that chain, and the transaction names it so that a wallet switching chains before signing refuses it rather than executing it elsewhere.
+	private readonly bindTransactionToReviewedChain = async (expectedChainId: string, params: readonly unknown[] | undefined): Promise<{ readonly params: readonly unknown[] } | { readonly error: { readonly code: number, readonly message: string } }> => {
+		const [transaction, ...rest] = params ?? []
+		if (!isRecord(transaction)) return { error: { code: 4100, message: 'The reviewed transaction is missing its parameters.' } }
+		const walletChain = await this.requestFromCurrentSigner({ method: 'eth_chainId', params: [] })
+		const walletChainId = walletChain.type === 'success' && typeof walletChain.reply === 'string' ? normalizeSignerChainId(walletChain.reply) : undefined
+		if (walletChainId === undefined || !/^0x[0-9a-fA-F]+$/.test(walletChainId) || BigInt(walletChainId) !== BigInt(expectedChainId)) {
+			return { error: { code: 4901, message: `Your wallet is not on chain ${ BigInt(expectedChainId).toString() }, where this transaction was reviewed. Switch your wallet back to chain ${ BigInt(expectedChainId).toString() }, then approve again.` } }
+		}
+		return { params: [{ ...transaction, chainId: expectedChainId }, ...rest] }
+	}
+
 	private readonly requestFromCurrentSigner = async (methodAndParams: { readonly method: string, readonly params?: EthereumRequestParameters }, allowRequestAccountsFallbackToRoot = false): Promise<SignerProviderRequestOutcome> => {
 		const signerProviderGeneration = this.signerProviderGeneration
 		const providerChange = new InterceptorFuture<void>()
@@ -1812,7 +1826,10 @@ class InterceptorMessageListener {
 				if (forwardRequest.expectedProviderId !== undefined && (providerId === undefined || forwardRequest.expectedProviderId !== providerId)) {
 					return { success: false as const, forwardRequest, error: { code: 4100, message: 'Select the expected saved browser wallet before continuing. Provider identity is different or ambiguous.' }, signerProviderGeneration: this.signerProviderGeneration }
 				}
-				const outcome = await this.requestFromCurrentSigner({ method: forwardRequest.method, params: 'params' in forwardRequest ? forwardRequest.params : [] })
+				const params = 'params' in forwardRequest ? forwardRequest.params : []
+				const chainBinding = forwardRequest.expectedChainId === undefined ? { params } : await this.bindTransactionToReviewedChain(forwardRequest.expectedChainId, params)
+				if ('error' in chainBinding) return { success: false as const, forwardRequest, error: chainBinding.error, signerProviderGeneration: this.signerProviderGeneration }
+				const outcome = await this.requestFromCurrentSigner({ method: forwardRequest.method, params: chainBinding.params })
 				if (outcome.type === 'success') return { success: true as const, forwardRequest, reply: outcome.reply, signerProviderGeneration: outcome.signerProviderGeneration }
 				if (outcome.type === 'error') return { success: false as const, forwardRequest, error: this.normalizeSignerErrorForBackground(outcome.error), signerProviderGeneration: outcome.signerProviderGeneration }
 				return {

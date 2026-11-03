@@ -1113,3 +1113,37 @@ test('a hardware-signed Gnosis Safe proposal that the Safe refuses after a delay
 	if (!isRecord(rejection) || !isRecord(rejection.error)) throw new Error('Expected the website request to be rejected')
 	assert.equal(rejection.error.code, METAMASK_ERROR_USER_REJECTED_REQUEST)
 })
+
+for (const walletChain of ['reviewed', 'other'] as const) test(`a reviewed transaction is forwarded to a saved browser wallet only on the chain it was simulated on (wallet on the ${ walletChain } chain)`, async () => {
+	const { saveAddressSigningWallet } = await import('../../app/ts/background/signingAddressBookCoordinator.js')
+	const { getWalletChainMismatchMessage } = await import('../../app/ts/background/signingRequestLifecycle.js')
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	const binding = await saveAddressSigningWallet(activeAddress, { type: 'browser', address: activeAddress, label: 'Browser account', signerName: 'MetaMask', providerId: 'legacy:MetaMask' }, undefined, 'Browser account')
+	if (binding === undefined) throw new Error('Missing browser wallet binding')
+	const reviewedChainId = simulator.ethereum.getChainId()
+	const walletChainId = walletChain === 'reviewed' ? reviewedChainId : reviewedChainId + 1n
+	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (previous) => ({ ...previous, signerName: 'MetaMask', signerProvider: undefined, signerConnected: true, signerAccounts: [activeAddress], activeSigningAddress: activeAddress, signerChain: walletChainId }))
+	await modules.appendPendingTransactionOrMessage({ ...pendingTransaction, simulationMode: false, approvalStatus: { status: 'WaitingForUser' }, signingWalletBinding: binding, signingChainId: reviewedChainId })
+	const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
+
+	const forwarded = await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+		method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier },
+	}))
+
+	const forwardedToWallet = postedMessages.filter((message) => isRecord(message) && message.type === 'forwardToSigner')
+	const [pending] = await modules.getPendingTransactionsAndMessages()
+	if (walletChain === 'reviewed') {
+		assert.equal(forwarded, true)
+		assert.equal(forwardedToWallet.length, 1)
+		const [message] = forwardedToWallet
+		if (!isRecord(message)) throw new Error('Missing forwarded transaction')
+		assert.equal(message.expectedChainId, modules.EthereumQuantity.serialize(reviewedChainId))
+		assert.equal(pending?.approvalStatus.status, 'WaitingForSigner')
+	} else {
+		assert.equal(forwarded, false)
+		assert.deepEqual(forwardedToWallet, [])
+		assert.equal(pending?.approvalStatus.status, 'SignerError')
+		if (pending?.approvalStatus.status !== 'SignerError') throw new Error('Expected a chain mismatch signer error')
+		assert.equal(pending.approvalStatus.message, getWalletChainMismatchMessage(walletChainId, reviewedChainId))
+	}
+})

@@ -174,7 +174,8 @@ const NonForwardingRPCRequestReturnValue = funtypes.Intersect(
 type ForwardToWallet = funtypes.Static<typeof ForwardToWallet>
 const ForwardToWalletRequest = funtypes.Union(SendRawTransactionParams, SendTransactionParams, PersonalSignParams, SignTypedDataParams, OldSignTypedDataParams, WalletAddEthereumChain, EthGetStorageAtParams)
 const ForwardToWallet = funtypes.Intersect( // forward directly to wallet
-	funtypes.ReadonlyObject({ type: funtypes.Literal('forwardToSigner') }).And(funtypes.ReadonlyPartial({ expectedProviderId: funtypes.String })),
+	// expectedChainId binds a reviewed transaction to the chain it was simulated on; the page refuses to forward it to a wallet on another chain.
+	funtypes.ReadonlyObject({ type: funtypes.Literal('forwardToSigner') }).And(funtypes.ReadonlyPartial({ expectedProviderId: funtypes.String, expectedChainId: EthereumQuantity })),
 	ForwardToWalletRequest,
 )
 

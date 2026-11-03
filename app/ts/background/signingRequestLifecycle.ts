@@ -16,18 +16,20 @@ import type { SignMessageParams } from '../types/jsonRpc-signing-types.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { getErrorMessage } from '../utils/errors.js'
 import { doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
-import { getPendingTransactionsAndMessages } from './storageVariables.js'
+import { getPendingTransactionsAndMessages, getTabState } from './storageVariables.js'
 import { prepareSavedBrowserWalletForwarding } from './browserWalletForwarding.js'
 import { openDirectSigning, updateDirectSigning, refreshDirectSigningReview } from './directSigning.js'
 import { getSigningWalletBinding } from './signingAddressBookCoordinator.js'
 import { readDirectSigningRecords } from '../signing/directSigningStore.js'
 
 type SigningAdmission =
-	| { readonly status: 'continue', readonly forwarding: { readonly expectedProviderId?: string } }
+	| { readonly status: 'continue', readonly forwarding: { readonly expectedProviderId?: string, readonly expectedChainId?: bigint } }
 	| { readonly status: 'directSigningOpened' }
 	| { readonly status: 'blocked', readonly error?: { readonly code: number, readonly message: string } }
 
 const selectionFailure = (message: string): SigningAdmission => ({ status: 'blocked', error: { code: 4100, message } })
+
+export const getWalletChainMismatchMessage = (walletChainId: bigint, reviewedChainId: bigint) => `Your wallet is on chain ${ walletChainId.toString() }, but this transaction was reviewed on chain ${ reviewedChainId.toString() }. Switch your wallet back to chain ${ reviewedChainId.toString() }, then approve again.`
 
 /** Resolve the reviewed binding before the window controller forwards or completes a request. Unexpected failures propagate to its diagnostic path. */
 export async function resolveSigningConfirmationAdmission(
@@ -44,9 +46,13 @@ export async function resolveSigningConfirmationAdmission(
 		if (binding.wallet.type === 'browser') {
 			// Browser forwarding checks the revision after any asynchronous account discovery.
 			const forwarding = await prepareSavedBrowserWalletForwarding(connections, pending.uniqueRequestIdentifier.requestSocket, binding)
-			return forwarding.error === undefined
-				? { status: 'continue', forwarding: { expectedProviderId: forwarding.expectedProviderId } }
-				: { status: 'blocked', error: forwarding.error }
+			if (forwarding.error !== undefined) return { status: 'blocked', error: forwarding.error }
+			if (request.method !== 'eth_sendTransaction') return { status: 'continue', forwarding: { expectedProviderId: forwarding.expectedProviderId } }
+			// A saved address does not follow the wallet's chain changes, so the wallet can be on another chain than the one this transaction was simulated on. Refuse a known mismatch here; the page checks the wallet's chain again right before forwarding.
+			const reviewedChainId = pending.signingChainId ?? ethereum.getChainId()
+			const walletChainId = (await getTabState(pending.uniqueRequestIdentifier.requestSocket.tabId)).signerChain
+			if (walletChainId !== undefined && walletChainId !== reviewedChainId) return selectionFailure(getWalletChainMismatchMessage(walletChainId, reviewedChainId))
+			return { status: 'continue', forwarding: { expectedProviderId: forwarding.expectedProviderId, expectedChainId: reviewedChainId } }
 		}
 		if ((await getSigningWalletBinding(binding.wallet.address))?.revision !== binding.revision) return selectionFailure('Signing wallet changed. Reject this request and review a new request.')
 		if (request.method === 'eth_sendRawTransaction') return selectionFailure('Direct wallets do not sign raw transactions')
