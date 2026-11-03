@@ -9,7 +9,7 @@ import { sanitizeStoredWebsiteIcon } from '../../utils/websiteIcons.js'
 import { SignerLogoText, getPrettySignerName } from '../subcomponents/signers.js'
 import { SmallAddress } from '../subcomponents/address.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
-import { getInterceptorModeClass, getToneClass } from '../ui-utils.js'
+import { getStoredRequestModeClass, getToneClass } from '../ui-utils.js'
 
 export const WATCH_ASSET_TITLE = 'Add to Address Book Edit Request'
 
@@ -152,7 +152,7 @@ export function WatchAsset() {
 	if (request.value === undefined) return <main></main>
 	const { website, forwardToSigner } = request.value
 	const websiteIcon = sanitizeStoredWebsiteIcon(website.icon)
-	return <main class = { getInterceptorModeClass(request.value.simulationMode) }>
+	return <main class = { getStoredRequestModeClass(request.value.simulationMode) }>
 		<div class = 'block watch-asset-window'>
 			<header class = 'card-header window-header'>
 				<div class = 'card-header-title'><p class = 'paragraph'>{ WATCH_ASSET_TITLE }</p></div>

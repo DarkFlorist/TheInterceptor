@@ -56,6 +56,12 @@ export function getInterceptorModeClass(simulationMode: boolean) {
 	return simulationMode ? 'interceptor-mode-simulating' : 'interceptor-mode-signing'
 }
 
+// A request stored before the mode travelled with the request has an unknown mode; its page keeps the neutral appearance instead of guessing a tint.
+export function getStoredRequestModeClass(simulationMode: boolean | undefined) {
+	if (simulationMode === undefined) return undefined
+	return getInterceptorModeClass(simulationMode)
+}
+
 export function upperCaseFirstCharacter(text: string) {
 	if (text.length === 0) return text
 	return text.charAt(0).toUpperCase() + text.slice(1)
