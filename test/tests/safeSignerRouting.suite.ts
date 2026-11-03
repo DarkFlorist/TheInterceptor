@@ -443,7 +443,7 @@ async function storeSafeProposalAwaitingSignerOnChainA(requestId: number, connec
 		uniqueRequestIdentifier: { requestId: requestId + 1000, requestSocket: socket },
 	}, 'hasAccess', activeAddress)
 	const repliesToWebsite = () => messages.filter((message) => isRecord(message) && message.type === 'result' && message.requestId === requestId)
-	return { requestIdentifier, websiteTabConnections, deliverSignature, repliesToWebsite, safeTxHash: BigInt(getSafeTxHash(safeTx)), signature, safeTx }
+	return { requestIdentifier, websiteTabConnections, deliverSignature, repliesToWebsite, safeTxHash: BigInt(getSafeTxHash(safeTx)), signature, safeTx, messages }
 }
 
 // A valid-looking signature from an account that is not an owner of the Safe: it passes the string check and fails validation.
@@ -1014,6 +1014,30 @@ test('a signed proposal waiting in the outbox keeps its nonce from a new proposa
 		{ nonce: 0n, safeTxHash: proposal.safeTxHash, signatures: [{ signer: safeTestOwnerAddress, signature: proposal.signature }] },
 		{ nonce: 1n, safeTxHash: newSafeTransaction.safeTxHash, signatures: [{ signer: safeTestOwnerAddress, signature: newSignature }] },
 	])
+})
+
+// Startup recovery runs even while the RPC configuration cannot be read (no services): an ordinary request whose window disappeared is rejected and removed and a reply for a closed tab is pruned, while a claimed Safe signature, whose window is still open, is kept untouched and settles once services for its network are installed.
+test('recovery without RPC services rejects orphaned requests and prunes closed-tab replies while keeping a Safe signature', async () => {
+	const proposal = await storeSafeProposalAwaitingSignerOnChainA(156, 81n)
+	const [base] = await modules.getPendingTransactionsAndMessages()
+	if (base === undefined) throw new Error('Missing stored Safe proposal')
+	const claimedSignature = { ...base, popupOrTabId: { type: 'popup' as const, id: 2 }, deferredSafeSignerReply: { signerReply: proposal.signature, chainId: fakeRpcNetwork.chainId } }
+	const orphanedRequestIdentifier = { ...proposal.requestIdentifier, requestId: 157 }
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [claimedSignature, { ...pendingTransaction, uniqueRequestIdentifier: orphanedRequestIdentifier }] })
+	await appendPendingTerminalReply({ ...pendingTransaction.originalRequestParameters, type: 'result' as const, result: proposal.safeTxHash, uniqueRequestIdentifier: { requestId: 158, requestSocket: { tabId: 99, connectionName: 1n } } })
+	browserMock.setLiveWindowIds([2])
+	browserMock.setLiveTabIds([proposal.requestIdentifier.requestSocket.tabId])
+
+	await withSilencedConsole(async () => await modules.recoverPendingConfirmationState(undefined, proposal.websiteTabConnections))
+
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [claimedSignature])
+	assert.deepEqual(proposal.messages.filter((message) => isRecord(message) && message.requestId === orphanedRequestIdentifier.requestId).map((message) => isRecord(message) && isRecord(message.error) ? message.error.code : undefined), [4001])
+	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+	assert.deepEqual(proposal.repliesToWebsite(), [])
+
+	// Services for the signature's network are installed.
+	await withSilencedConsole(async () => await modules.recoverPendingConfirmationState(simulator, proposal.websiteTabConnections))
+	await assertStoredOnceWithOneSuccess(proposal)
 })
 
 // A metadata refresh reads the request before Accept records the signing network and writes after it: it writes only its visualisation onto the stored request, so the signing network survives and the signature settles.

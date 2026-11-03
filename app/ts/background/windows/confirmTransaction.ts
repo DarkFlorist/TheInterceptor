@@ -694,11 +694,11 @@ async function surfaceIndependentFailures(failures: readonly unknown[]) {
 	throw failures[0]
 }
 
-// The terminal-state recovery run at startup and whenever services are installed. Its phases are independent: a Safe signer-reply item that keeps failing never keeps a request whose window disappeared unanswered, nor its replies to closed tabs queued. The recovery still fails, with its first failure, once every phase ran.
-export async function recoverPendingConfirmationState(services: ConfirmationServices, websiteTabConnections: WebsiteTabConnections) {
+// The terminal-state recovery run at startup (with or without RPC services) and whenever services are installed. Its phases are independent: a Safe signer-reply item that keeps failing never keeps a request whose window disappeared unanswered, nor its replies to closed tabs queued. Rejecting orphaned requests and pruning replies need no RPC services, so they always run; the Safe signer-reply recovery needs services for its network and runs once they are installed (a claim found by the orphan cleanup without them is kept by the lifecycle). The recovery still fails, with its first failure, once every phase ran.
+export async function recoverPendingConfirmationState(services: ConfirmationServices | undefined, websiteTabConnections: WebsiteTabConnections) {
 	const phases = [
-		async () => await resolveDeferredSafeSignerReplies(services, websiteTabConnections),
-		async () => await resolvePendingRequestsForMissingConfirmationWindows(services.ethereum, services.tokenPriceService, websiteTabConnections),
+		async () => { if (services !== undefined) await resolveDeferredSafeSignerReplies(services, websiteTabConnections) },
+		async () => await resolveRequestsForMissingConfirmationWindows(services, websiteTabConnections),
 		prunePendingTerminalRepliesForMissingTabs,
 	]
 	await surfaceIndependentFailures(await runEachIndependently(phases, async (phase) => await phase()))
@@ -1016,6 +1016,11 @@ export const onCloseWindowOrTab = async (popupOrTabs: PopupOrTabId, ethereum: Et
 }
 
 export async function resolvePendingRequestsForMissingConfirmationWindows(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections) {
+	await resolveRequestsForMissingConfirmationWindows({ ethereum, tokenPriceService }, websiteTabConnections)
+}
+
+// Rejects the requests whose confirmation window disappeared, as a window close would; that needs no RPC services.
+async function resolveRequestsForMissingConfirmationWindows(services: ConfirmationServices | undefined, websiteTabConnections: WebsiteTabConnections) {
 	const pendingTransactions = await getPendingTransactionsAndMessages()
 	const missingConfirmationWindows = new Map<string, boolean>()
 	const orphanedTransactions: PendingTransactionOrSignableMessage[] = []
@@ -1028,7 +1033,7 @@ export async function resolvePendingRequestsForMissingConfirmationWindows(ethere
 		}
 		if (confirmationWindowIsMissing) orphanedTransactions.push(transaction)
 	}
-	await resolveAllPendingTransactionsAndMessageAsNoResponse(orphanedTransactions, { ethereum, tokenPriceService }, websiteTabConnections)
+	await resolveAllPendingTransactionsAndMessageAsNoResponse(orphanedTransactions, services, websiteTabConnections)
 }
 
 const resolveAllPendingTransactionsAndMessageAsNoResponse = async (transactions: readonly PendingTransactionOrSignableMessage[], services: ConfirmationServices | undefined, websiteTabConnections: WebsiteTabConnections) => {

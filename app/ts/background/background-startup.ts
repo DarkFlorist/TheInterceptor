@@ -288,7 +288,8 @@ async function startup() {
 	const rpcConfiguration = await getRpcConfigurationState()
 	const simulatorNetwork = resolveRpcServicesTarget(rpcConfiguration)
 	simulationServicesOwner = createSimulationServicesOwner(simulatorNetwork, newBlockAttemptCallback, onErrorBlockCallback, rpcRequestLifecycleCallbacks, () => { void recoverPendingTerminalState() })
-	if (simulationServicesOwner.getCurrent() !== undefined) await recoverPendingTerminalState()
+	// Runs with or without RPC services: orphaned requests and replies to closed tabs are recovered either way.
+	await recoverPendingTerminalState()
 	const recursiveCheckIfInterceptorShouldSleep = async () => {
 		if (simulationServicesOwner?.getCurrent() !== undefined) await catchAllErrorsAndCall(async () => checkIfInterceptorShouldSleep(getSimulationServices().ethereum, rpcConnectionStatusPublisher.publishRpcConnectionStatus))
 		setTimeout(recursiveCheckIfInterceptorShouldSleep, 1000)
@@ -303,8 +304,8 @@ async function startup() {
 
 const recoverPendingTerminalState = createRetriableTerminalStateRecovery({
 	recover: async () => {
-		const { ethereum, tokenPriceService } = getSimulationServices()
-		await recoverPendingConfirmationState({ ethereum, tokenPriceService }, websiteTabConnections)
+		const services = simulationServicesOwner?.getCurrent()
+		await recoverPendingConfirmationState(services === undefined ? undefined : { ethereum: services.ethereum, tokenPriceService: services.tokenPriceService }, websiteTabConnections)
 	},
 	onFailure: (error) => {
 		reportLocalRecoveryBestEffort(error, {
