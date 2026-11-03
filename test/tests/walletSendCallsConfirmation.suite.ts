@@ -396,29 +396,37 @@ test('an older batch simulation that fails after a newer one was stored does not
 	}
 })
 
-// Services for a contract whose 0x…01 call records block.number and whose 0x…02 call reverts unless it runs in that same block.
+// Calls to the recipient that depend on their block: 0xabcd0001 records the block number, 0xabcd0002 reverts in a block where 0xabcd0001 did not record it, and 0xabcd0003 reverts outside the first simulated block. A Gnosis Safe execution runs as its executor's execTransaction call, whose input carries the Safe's call data.
 function createBlockDependentServices() {
-	const isCallWithSelectorEnding = (selectorEnding: number) => (call: unknown) => isRecord(call) && call.to === recipientAddress && call.input instanceof Uint8Array && call.input[3] === selectorEnding
-	const recordsBlockNumber = isCallWithSelectorEnding(1)
-	const requiresRecordedBlockNumber = isCallWithSelectorEnding(2)
+	const isCallWithSelector = (selector: string) => (call: unknown) => isRecord(call) && call.input instanceof Uint8Array && Buffer.from(call.input).toString('hex').includes(selector)
+	const recordsBlockNumber = isCallWithSelector('abcd0001')
+	const requiresRecordedBlockNumber = isCallWithSelector('abcd0002')
+	const requiresFirstBlock = isCallWithSelector('abcd0003')
+	const revertedInDifferentBlock = { status: '0x0', gasUsed: '0x5208', returnData: '0x', error: { code: 3, message: 'execution reverted: different block' } }
 	const blockDependentEthereum = new modules.EthereumClientService({
 		...fakeRequestHandler,
 		async jsonRpcRequest(rpcRequest: RpcRequest) {
 			const result = await fakeRequestHandler.jsonRpcRequest(rpcRequest)
 			const blocks = getSimulatedBlocks(rpcRequest)
+			if (Array.isArray(result) && blocks.slice(1).some((block) => getBlockCalls(block).some(requiresFirstBlock))) {
+				return result.map((block, blockIndex) => blockIndex === 0 || !isRecord(block) || !Array.isArray(block.calls) ? block : {
+					...block,
+					calls: block.calls.map((call, callIndex) => requiresFirstBlock(getBlockCalls(blocks[blockIndex])[callIndex]) ? revertedInDifferentBlock : call),
+				})
+			}
 			const requiringBlockIndex = blocks.findIndex((block) => getBlockCalls(block).some(requiresRecordedBlockNumber))
 			const requiringBlockCalls = getBlockCalls(blocks[requiringBlockIndex])
 			if (requiringBlockIndex < 0 || requiringBlockCalls.some(recordsBlockNumber) || !Array.isArray(result)) return result
 			return result.map((block, blockIndex) => blockIndex !== requiringBlockIndex || !isRecord(block) || !Array.isArray(block.calls) ? block : {
 				...block,
-				calls: block.calls.map((call, callIndex) => requiresRecordedBlockNumber(requiringBlockCalls[callIndex]) ? { status: '0x0', gasUsed: '0x5208', returnData: '0x', error: { code: 3, message: 'execution reverted: different block' } } : call),
+				calls: block.calls.map((call, callIndex) => requiresRecordedBlockNumber(requiringBlockCalls[callIndex]) ? revertedInDifferentBlock : call),
 			})
 		},
 	}, async () => undefined, async () => undefined, fakeRpcNetwork)
 	return { ethereum: blockDependentEthereum, tokenPriceService: new modules.TokenPriceService(blockDependentEthereum, 60_000) }
 }
 
-const blockDependentCalls = (calls: readonly ('0xabcd0001' | '0xabcd0002')[]) => ({ ...walletSendCallsRequest, params: [{ ...walletSendCallsRequest.params[0], calls: calls.map((data) => ({ to: addressString(recipientAddress), data })) }] })
+const blockDependentCalls = (calls: readonly ('0xabcd0001' | '0xabcd0002' | '0xabcd0003')[]) => ({ ...walletSendCallsRequest, params: [{ ...walletSendCallsRequest.params[0], calls: calls.map((data) => ({ to: addressString(recipientAddress), data })) }] })
 
 const getPreparationResults = (pending: Awaited<ReturnType<typeof getPendingBatch>>) => pending.transactionsToSimulate.map((transaction) => transaction.success ? 'prepared' : transaction.error.message)
 
@@ -434,6 +442,54 @@ test('each batch call is prepared in the same block as the calls before it, as t
 
 test('the first batch call is prepared in the stack block that approval adds it to', async () => {
 	const { websiteTabConnections } = await setUpWalletSendCallsTest()
+	const services = createBlockDependentServices()
+	const approvedBatch = { requestId: 76, requestSocket: socket }
+	await requestBatch(websiteTabConnections, blockDependentCalls(['0xabcd0001']), approvedBatch, services)
+	assert.equal(await approveBatch(websiteTabConnections, approvedBatch), true)
+
+	await requestBatch(websiteTabConnections, blockDependentCalls(['0xabcd0002']), batchRequestIdentifier, services)
+
+	assert.deepEqual(getPreparationResults(await getPendingBatch()), ['prepared'])
+})
+
+test('a batch call on an empty stack is prepared in the first block, where the batch is simulated', async () => {
+	const { websiteTabConnections } = await setUpWalletSendCallsTest()
+
+	await requestBatch(websiteTabConnections, blockDependentCalls(['0xabcd0003']), batchRequestIdentifier, createBlockDependentServices())
+
+	assert.deepEqual(getPreparationResults(await getPendingBatch()), ['prepared'])
+})
+
+// A configured Gnosis Safe's batch calls run through the Safe, and are estimated as the executor's call in the RPC block that the preview and approval run them in.
+test('each call of a Gnosis Safe\'s batch is prepared in the same block as the calls before it, as the whole batch is simulated', async () => {
+	const { websiteTabConnections } = await setUpWalletSendCallsTest()
+	await configureBatchAccountAsSafe()
+	const services = createBlockDependentServices()
+
+	await requestBatch(websiteTabConnections, blockDependentCalls(['0xabcd0001', '0xabcd0002']), batchRequestIdentifier, services)
+
+	const pending = await getPendingBatch()
+	assert.deepEqual(getPreparationResults(pending), ['prepared', 'prepared'])
+	assert.deepEqual(pending.transactionsToSimulate.map((call) => call.success ? call.simulationOptions : undefined), [SAFE_EXECUTION_SIMULATION_OPTIONS, SAFE_EXECUTION_SIMULATION_OPTIONS])
+	assert.equal(pending.transactionOrMessageCreationStatus, 'Simulated')
+	assert.equal(await approveBatch(websiteTabConnections), true)
+})
+
+test('a Gnosis Safe\'s batch call on an empty stack is prepared in the first block, where the batch is simulated', async () => {
+	const { websiteTabConnections } = await setUpWalletSendCallsTest()
+	await configureBatchAccountAsSafe()
+
+	await requestBatch(websiteTabConnections, blockDependentCalls(['0xabcd0003']), batchRequestIdentifier, createBlockDependentServices())
+
+	const pending = await getPendingBatch()
+	assert.deepEqual(getPreparationResults(pending), ['prepared'])
+	assert.deepEqual(pending.transactionsToSimulate.map((call) => call.success ? call.simulationOptions : undefined), [SAFE_EXECUTION_SIMULATION_OPTIONS])
+	assert.equal(pending.transactionOrMessageCreationStatus, 'Simulated')
+})
+
+test('the first call of a Gnosis Safe\'s batch is prepared in the stack block that approval adds it to', async () => {
+	const { websiteTabConnections } = await setUpWalletSendCallsTest()
+	await configureBatchAccountAsSafe()
 	const services = createBlockDependentServices()
 	const approvedBatch = { requestId: 76, requestSocket: socket }
 	await requestBatch(websiteTabConnections, blockDependentCalls(['0xabcd0001']), approvedBatch, services)

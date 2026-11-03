@@ -166,6 +166,70 @@ test('estimates a Gnosis Safe\'s call as its executor\'s execTransaction call', 
 })
 
 
+// Records, for every simulation the node runs, how many calls each of its RPC blocks has.
+function createRpcBlockLayoutRecorder() {
+	const requestLayouts: number[][] = []
+	const requestHandler = {
+		rpcUrl: fakeRpcNetwork.httpsRpc,
+		clearCache() { return undefined },
+		async jsonRpcRequest(rpcRequest: { method: string, params?: readonly unknown[] }) {
+			const simulationParams = rpcRequest.params?.[0]
+			if (rpcRequest.method === 'eth_simulateV1' && isRecord(simulationParams) && Array.isArray(simulationParams.blockStateCalls)) requestLayouts.push(simulationParams.blockStateCalls.map((blockStateCall) => isRecord(blockStateCall) && Array.isArray(blockStateCall.calls) ? blockStateCall.calls.length : 0))
+			return await fakeRequestHandler.jsonRpcRequest(rpcRequest)
+		},
+	}
+	return { requestLayouts, ethereum: new modules.EthereumClientService(requestHandler, async () => undefined, async () => undefined, fakeRpcNetwork) }
+}
+
+// The RPC blocks a wallet_sendCalls preview and its approval run the Safe's call in: after the transactions of the input's last block, with the estimated gas.
+async function getRpcBlockLayoutWithSafeCallAppended(recordingEthereum: ReturnType<typeof createRpcBlockLayoutRecorder>['ethereum'], simulationInput: SimulationStateInput, safeCall: PreSimulationTransaction) {
+	const parentBlock = await recordingEthereum.getBlock(undefined)
+	if (parentBlock === null) throw new Error('The latest block is null')
+	const { appendTransactionsToInput } = await import('../../app/ts/simulation/services/SimulationModeEthereumClientService.js')
+	const previewInput = await prepareSafeExecutionSimulationInput(appendTransactionsToInput(simulationInput, [safeCall], simulationInput.length - 1), recordingEthereum, parentBlock.number, BASE_FEE_PER_GAS)
+	const prepared = await recordingEthereum.prepareEthSimulateV1Input(previewInput, parentBlock.number, undefined)
+	return prepared.rpcBlocks.map((block) => block.transactions.length)
+}
+
+const BLOCK_GAS_LIMIT = 30_000_000n
+// An ordinary transaction from the Safe that leaves the given gas of the block gas limit.
+const createBlockFillingTransaction = (gasLeft: bigint) => createSafeCall({ value: 1n, input: new Uint8Array(), gas: BLOCK_GAS_LIMIT - gasLeft }, undefined)
+// The open last block of a wallet_sendCalls preview input on an empty stack: no transaction yet, which the batch's first call joins.
+const emptyOpenBlock = createBlock([])
+
+// A wallet_sendCalls call is estimated where its preview and approval put it (appendedToSimulation): on an empty stack, after an earlier Safe execution of the batch, and after a stack block that leaves room, too little room or no room for the executor's call, which preparation then moves to the next RPC block.
+for (const { description, simulationInput } of [
+	{ description: 'in the open block of an empty stack', simulationInput: [emptyOpenBlock] },
+	{ description: 'after an earlier Safe execution of the same batch', simulationInput: [createBlock([createSafeCall({ value: 2n, input: new Uint8Array(), gas: 63_000n }, SAFE_EXECUTION_SIMULATION_OPTIONS)])] },
+	{ description: 'after a stack block that leaves room for the executor\'s call', simulationInput: [createBlock([createBlockFillingTransaction(2_000_000n)])] },
+	{ description: 'after a stack block that leaves too little gas for the executor\'s call', simulationInput: [createBlock([createBlockFillingTransaction(500_000n)])] },
+	{ description: 'after a full stack block', simulationInput: [createBlock([createBlockFillingTransaction(0n)])] },
+]) {
+	test(`estimates an appended Gnosis Safe call in the RPC block its preview and approval run it in, ${ description }`, async () => {
+		configureSafe()
+		const recorder = createRpcBlockLayoutRecorder()
+		const safeCall = createSafeCall({ value: 7n, input: new Uint8Array(), gas: 0n }, SAFE_EXECUTION_SIMULATION_OPTIONS)
+		const { gas: _gas, hash: _hash, r: _r, s: _s, yParity: _yParity, ...safeCallWithoutGas } = safeCall.signedTransaction
+		const estimate = await estimateSafeExecutionGas(recorder.ethereum, undefined, simulationInput, safeCallWithoutGas, { website: safeCall.website, created: safeCall.created, originalRequestParameters: safeCall.originalRequestParameters, transactionIdentifier: safeCall.transactionIdentifier }, 'appendedToSimulation')
+		if ('error' in estimate) throw new Error(estimate.error.message)
+		const estimateLayout = recorder.requestLayouts.at(-1)
+		const previewLayout = await getRpcBlockLayoutWithSafeCallAppended(recorder.ethereum, simulationInput, { ...safeCall, signedTransaction: { ...safeCall.signedTransaction, gas: estimate.gas } })
+		assert.deepEqual(estimateLayout, previewLayout, 'the estimate that decides the gas runs the call in the RPC block the preview runs it in')
+	})
+}
+
+test('estimates a Gnosis Safe call alone in a new block by default, as a single transaction is', async () => {
+	configureSafe()
+	const recorder = createRpcBlockLayoutRecorder()
+	const safeCall = createSafeCall({ value: 7n, input: new Uint8Array(), gas: 0n }, SAFE_EXECUTION_SIMULATION_OPTIONS)
+	const { gas: _gas, hash: _hash, r: _r, s: _s, yParity: _yParity, ...safeCallWithoutGas } = safeCall.signedTransaction
+	const estimate = await estimateSafeExecutionGas(recorder.ethereum, undefined, [emptyOpenBlock], safeCallWithoutGas, { website: safeCall.website, created: safeCall.created, originalRequestParameters: safeCall.originalRequestParameters, transactionIdentifier: safeCall.transactionIdentifier })
+	if ('error' in estimate) throw new Error(estimate.error.message)
+	assert.ok(recorder.requestLayouts.length > 0)
+	assert.deepEqual(new Set(recorder.requestLayouts.map((layout) => layout.join(','))), new Set(['0,1']))
+})
+
+
 for (const { description, message, errorData, returnData } of revertResponses) {
 	test(`explains a Gnosis Safe's call that reverts while its gas is estimated, reported ${ description }`, async () => {
 		configureSafe()
