@@ -1,4 +1,4 @@
-import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
+import { getConfirmationRunInputs, isConfirmationVisualisationCurrent, refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { captureSimulationSnapshot, getUpdatedSimulationStackSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
 import { getSettings, setUseTabsInsteadOfPopup, setPage, getMakeCurrentAddressRich, setMetamaskCompatibilityMode, setSafeAppsCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, updateMakeCurrentAddressRich, updateFixedMakeMeRichList } from './settings.js'
@@ -17,13 +17,12 @@ import { findEntryWithSymbolOrName, getMetadataForAddressBookData } from './meta
 import { getActiveAddressEntryForChain, getActiveAddresses, identifyAddress } from './metadataUtils.js'
 import type { TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import type { PendingTransaction } from '../types/accessRequest.js'
 import { CompleteVisualizedSimulation, InterceptorSimulationExport, type InterceptorStackOperation, InterceptorTransactionStack, type ModifyAddressWindowState, createPassthroughCompleteVisualizedSimulation } from '../types/visualizer-types.js'
 import { isJSON } from '../utils/json.js'
 import { doAddressBookChainIdsMatch, type AddressBookEntry, type IncompleteAddressBookEntry } from '../types/addressBookTypes.js'
 import { EthereumAddress, serialize } from '../types/wire-types.js'
 import { fetchAbiFromBlockExplorer, isValidAbi } from '../simulation/services/EtherScanAbiFetcher.js'
-import { checksummedAddress, generate256BitRandomBigInt, stringifyJSONWithBigInts, stringToAddress } from '../utils/bigint.js'
+import { checksummedAddress, generate256BitRandomBigInt, stringToAddress } from '../utils/bigint.js'
 import { isAddress } from '../utils/ethereumPrimitives.js'
 import { getIssueWithAddressString } from '../utils/addressValidation.js'
 import type { Website } from '../types/websiteAccessTypes.js'
@@ -63,16 +62,6 @@ import { getLastKnownCurrentTabId } from './currentTab.js'
 import { reloadConnectedTabs } from './popupMessageHandlers/websiteAccess.js'
 import { updateWebsiteAccessAndContentScriptInjectionStrategy } from './websiteAccessUpdating.js'
 import { getConfiguredSigningSafeForChain } from './signingAddressSelection.js'
-
-type TimestampedPopupVisualisation = {
-	data: {
-		simulationState: {
-			simulationConductedTimestamp: Date
-		}
-	}
-}
-
-const getSimulationConductedTimestamp = (popupVisualisation: TimestampedPopupVisualisation) => popupVisualisation.data.simulationState.simulationConductedTimestamp
 
 const formatCaughtErrorMessage = (error: unknown) => getErrorMessage(error) ?? 'Unknown error'
 
@@ -523,11 +512,6 @@ type ConfirmTransactionMetadataDependencies = {
 	readonly visualisation?: OpenConsumerVisualisationDependencies
 }
 
-const isSameConfirmationSimulation = (current: { readonly data: { readonly confirmationRunId: number } }, refreshed: { readonly data: { readonly confirmationRunId: number } }) => current.data.confirmationRunId === refreshed.data.confirmationRunId
-
-// What a simulation refresh prepares the transaction from. If any of it changes while the refresh runs, for example through a gas limit edit or a Gnosis Safe signer change, the refreshed run describes a transaction that is no longer stored.
-const getTransactionSimulationInputs = (pendingTransaction: PendingTransaction) => stringifyJSONWithBigInts([pendingTransaction.originalRequestParameters, pendingTransaction.activeAddress, pendingTransaction.safeTransaction])
-
 export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, requestAbortController: AbortController | undefined, dependencies: ConfirmTransactionMetadataDependencies = {}) {
 	const promises = await getPendingTransactionsAndMessages()
 	const first = promises[0]
@@ -579,7 +563,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 				let stored = false
 				// Applied to the transaction as it is stored now, so an approval made during the lookups is kept, and only the visualisation of the simulation run it was made from is replaced.
 				await updatePendingTransactionOrMessage(first.uniqueRequestIdentifier, async (current) => {
-					if (current.type !== 'Transaction' || current.transactionOrMessageCreationStatus !== 'Simulated' || !isSameConfirmationSimulation(current.popupVisualisation, refreshedVisualisation)) return undefined
+					if (current.type !== 'Transaction' || current.transactionOrMessageCreationStatus !== 'Simulated' || !isConfirmationVisualisationCurrent(current.popupVisualisation, popupVisualisation, 're-visualised run')) return undefined
 					stored = true
 					return modifyObject(current, { popupVisualisation })
 				})
@@ -621,7 +605,7 @@ export async function refreshPopupConfirmTransactionSimulation(ethereum: Ethereu
 	if (!isEthereumClientOnTransactionChain(ethereum, firstTxn)) return
 	// Keep the simulation the user approved while the signer is handling the transaction.
 	if (firstTxn.approvalStatus.status === 'WaitingForSigner') return
-	const simulationInputs = getTransactionSimulationInputs(firstTxn)
+	const runInputs = getConfirmationRunInputs(firstTxn)
 	const safeFlow = getSafePendingFlow(firstTxn)
 	const proposalSafeTransaction = safeFlow?.kind === 'proposal' ? safeFlow.pending.safeTransaction : undefined
 	const transactionToSimulate = firstTxn.originalRequestParameters.method === 'eth_sendTransaction'
@@ -652,11 +636,8 @@ export async function refreshPopupConfirmTransactionSimulation(ethereum: Ethereu
 			case 'SignableMessage': throw new Error('Tried to refresh simulation of a message')
 			case 'Transaction': {
 				if (transactionOrMessage.transactionOrMessageCreationStatus !== 'Simulated' && transactionOrMessage.transactionOrMessageCreationStatus !== 'FailedToSimulate') return transactionOrMessage
-				// The run is stored onto the transaction as it is now, unless the transaction was approved meanwhile or is no longer the one the run was prepared from.
-				if (transactionOrMessage.approvalStatus.status === 'WaitingForSigner' || getTransactionSimulationInputs(transactionOrMessage) !== simulationInputs) return transactionOrMessage
-				const currentTimestamp = getSimulationConductedTimestamp(transactionOrMessage.popupVisualisation)
-				const nextTimestamp = getSimulationConductedTimestamp(refreshMessage)
-				if (currentTimestamp !== undefined && nextTimestamp !== undefined && nextTimestamp.getTime() < currentTimestamp.getTime()) return transactionOrMessage
+				// The run is stored onto the transaction as it is now, unless the transaction was approved meanwhile, is no longer the one the run was prepared from, or holds a later run.
+				if (transactionOrMessage.approvalStatus.status === 'WaitingForSigner' || getConfirmationRunInputs(transactionOrMessage) !== runInputs || !isConfirmationVisualisationCurrent(transactionOrMessage.popupVisualisation, refreshMessage, 'new run')) return transactionOrMessage
 				if (transactionToSimulate.success) {
 					return {
 						...transactionOrMessage,

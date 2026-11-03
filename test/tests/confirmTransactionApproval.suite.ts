@@ -353,6 +353,38 @@ test('a metadata refresh of an older simulation run keeps the newer run and gas 
 	assert.equal(pending.popupVisualisation.data.transactionToSimulate.success ? pending.popupVisualisation.data.transactionToSimulate.transaction.gas : undefined, 30_000n)
 })
 
+test('a confirmation visualisation is stored only over one of the same or an earlier run, and a re-visualisation only over its own run', async () => {
+	const { isConfirmationVisualisationCurrent } = await import('../../app/ts/background/confirmTransactionSimulation.js')
+	const run = (confirmationRunId: number) => ({ data: { confirmationRunId } })
+	assert.equal(isConfirmationVisualisationCurrent(undefined, run(5), 'new run'), true)
+	assert.equal(isConfirmationVisualisationCurrent(run(5), run(6), 'new run'), true)
+	assert.equal(isConfirmationVisualisationCurrent(run(6), run(5), 'new run'), false)
+	assert.equal(isConfirmationVisualisationCurrent(run(CONFIRMATION_RUN_ID_OF_UNNUMBERED_RUN), run(1), 'new run'), true)
+	assert.equal(isConfirmationVisualisationCurrent(run(5), run(5), 're-visualised run'), true)
+	assert.equal(isConfirmationVisualisationCurrent(run(6), run(5), 're-visualised run'), false)
+	assert.equal(isConfirmationVisualisationCurrent(run(5), run(6), 're-visualised run'), false)
+	assert.equal(isConfirmationVisualisationCurrent(undefined, run(5), 're-visualised run'), false)
+})
+
+test('a simulation refresh is not stored over a visualisation of a later run, even one with older timestamps', async () => {
+	const { websiteTabConnections } = await setUpTransactionApprovalTest(false)
+	await requestTransaction(websiteTabConnections, false)
+	const laterRunId = Number.MAX_SAFE_INTEGER
+	await storePendingTransaction((pending) => {
+		if (pending.type !== 'Transaction' || pending.transactionOrMessageCreationStatus !== 'Simulated') throw new Error('Missing simulated transaction confirmation')
+		return { ...pending, popupVisualisation: { ...pending.popupVisualisation, data: { ...pending.popupVisualisation.data, confirmationRunId: laterRunId } } }
+	})
+
+	try {
+		advanceClock()
+		await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
+	} finally {
+		setSystemTime()
+	}
+
+	assert.equal((await getPendingTransaction()).popupVisualisation.data.confirmationRunId, laterRunId)
+})
+
 test('a simulation refresh that finishes after the transaction was approved keeps the approved preview', async () => {
 	const { websiteTabConnections } = await setUpTransactionApprovalTest(false)
 	await requestTransaction(websiteTabConnections, false)

@@ -3,10 +3,11 @@ import { appendTransactionsToInput } from '../simulation/services/SimulationMode
 import { getSignedTransactionForSimulation } from '../simulation/services/simulationTransactionSigning.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { createSafeExecutionPreSimulationTransaction, createSafeSigningSimulationInput } from '../safe/safeSimulation.js'
-import type { ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
+import type { ConfirmTransactionTransactionSingleVisualization, PendingTransaction } from '../types/accessRequest.js'
 import type { SafeTransactionSigningRequest } from '../types/safeTypes.js'
 import type { WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
 import { last } from '../utils/array.js'
+import { stringifyJSONWithBigInts } from '../utils/bigint.js'
 import { NEW_BLOCK_ABORT, JSON_RPC_ERROR_CODE_INTERNAL_ERROR } from '../utils/constants.js'
 import { decodeEthereumError } from '../utils/errorDecoding.js'
 import { JsonRpcResponseError, reportUnexpectedError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
@@ -26,6 +27,18 @@ function getNextConfirmationRunId() {
 	latestConfirmationRunId = Math.max(latestConfirmationRunId + 1, Date.now())
 	return latestConfirmationRunId
 }
+
+type ConfirmationRunVisualisation = { readonly data: { readonly confirmationRunId: number } }
+
+// The one rule for whether a confirmation visualisation may be stored over the stored one. A new run, stored with the transaction it prepared, replaces the stored visualisation unless that came from a later run; a re-visualisation of a stored run's results, stored without a transaction, needs that run to still be stored, so the visualisation stays paired with the transaction the run prepared. Runs are ordered by their ids, as stored timestamps keep only whole seconds. It answers which confirmation run is current, unlike the fingerprints in popupSimulationFingerprint.ts, which tell whether the inputs of the popup's own simulation changed.
+export function isConfirmationVisualisationCurrent(stored: ConfirmationRunVisualisation | undefined, candidate: ConfirmationRunVisualisation, candidateKind: 'new run' | 're-visualised run') {
+	if (stored === undefined) return candidateKind === 'new run'
+	if (candidateKind === 're-visualised run') return candidate.data.confirmationRunId === stored.data.confirmationRunId
+	return candidate.data.confirmationRunId >= stored.data.confirmationRunId
+}
+
+// What a new run prepares the transaction from. A run whose inputs changed while it ran, for example through a gas limit edit or a Gnosis Safe signer change, describes a transaction that is no longer stored, so it is not current whatever its run id.
+export const getConfirmationRunInputs = (pendingTransaction: PendingTransaction) => stringifyJSONWithBigInts([pendingTransaction.originalRequestParameters, pendingTransaction.activeAddress, pendingTransaction.safeTransaction])
 
 export async function refreshConfirmTransactionSimulation(
 	ethereum: EthereumClientService,

@@ -11,7 +11,7 @@ import { createScopedKeyedSerialExecutor, Semaphore } from '../../utils/semaphor
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { type InterceptorTransactionStack, PASSTHROUGH_STATE, type WebsiteCreatedEthereumTransaction, type WebsiteCreatedEthereumTransactionOrFailed, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
 import type { SendRawTransactionParams, SendTransactionParams } from '../../types/JsonRpc-types.js'
-import { refreshConfirmTransactionSimulation } from '../confirmTransactionSimulation.js'
+import { isConfirmationVisualisationCurrent, refreshConfirmTransactionSimulation } from '../confirmTransactionSimulation.js'
 import { captureSimulationSnapshot, getUpdatedSimulationState } from '../simulationUpdating.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getRpcConnectionStatus, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
@@ -128,28 +128,6 @@ export async function refreshPendingSafeSignerSelectionErrors(ethereum: Ethereum
 		})
 	}
 	if (pendingStateChanged) await updateConfirmTransactionView(ethereum, tokenPriceService)
-}
-
-type TimestampedPopupVisualisation = {
-	statusCode: 'success' | 'failed'
-	data: {
-		simulationStartedTimestamp: Date
-		simulationState: {
-			simulationConductedTimestamp: Date
-		}
-	}
-}
-
-const getSimulationStartedTimestamp = (popupVisualisation: TimestampedPopupVisualisation) => popupVisualisation.data.simulationStartedTimestamp
-
-const shouldReplacePopupVisualisation = (
-	currentPopupVisualisation: TimestampedPopupVisualisation | undefined,
-	nextPopupVisualisation: TimestampedPopupVisualisation,
-) => {
-	const currentTimestamp = currentPopupVisualisation === undefined ? undefined : getSimulationStartedTimestamp(currentPopupVisualisation)
-	const nextTimestamp = getSimulationStartedTimestamp(nextPopupVisualisation)
-	if (currentTimestamp === undefined || nextTimestamp === undefined) return true
-	return nextTimestamp.getTime() >= currentTimestamp.getTime()
 }
 
 export function toPopupPendingTransactionOrSignableMessage(pending: PendingTransactionOrSignableMessage): PopupPendingTransactionOrSignableMessage {
@@ -879,7 +857,7 @@ export async function openConfirmTransactionDialogForTransaction(
 				// Keep the simulation the user approved while the signer is handling the transaction.
 				if (transaction.approvalStatus.status === 'WaitingForSigner') return transaction
 				if (transaction.transactionOrMessageCreationStatus === 'Simulated' || transaction.transactionOrMessageCreationStatus === 'FailedToSimulate') {
-					if ('popupVisualisation' in transaction && !shouldReplacePopupVisualisation(transaction.popupVisualisation, popupVisualisation)) return transaction
+					if ('popupVisualisation' in transaction && !isConfirmationVisualisationCurrent(transaction.popupVisualisation, popupVisualisation, 'new run')) return transaction
 				}
 				if (transactionToSimulate.success) return { ...transaction, transactionToSimulate, popupVisualisation, transactionOrMessageCreationStatus: 'Simulated' }
 				return { ...transaction, transactionToSimulate, popupVisualisation, transactionOrMessageCreationStatus: 'FailedToSimulate' }
