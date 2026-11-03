@@ -265,6 +265,7 @@ export async function loadModules() {
 		resolvePendingRequestsForMissingConfirmationWindows: confirmTransaction.resolvePendingRequestsForMissingConfirmationWindows,
 		resolveDeferredSafeSignerReplies: confirmTransaction.resolveDeferredSafeSignerReplies,
 		advanceOutstandingSafeSignerReplies: confirmTransaction.advanceOutstandingSafeSignerReplies,
+		recoverPendingConfirmationState: confirmTransaction.recoverPendingConfirmationState,
 		resolveSafeConfirmation: safeConfirmationResolver.resolveSafeConfirmation,
 		createSafeExecutionPreSimulationTransaction: safeSimulation.createSafeExecutionPreSimulationTransaction,
 		createSafeSigningSimulationInput: safeSimulation.createSafeSigningSimulationInput,

@@ -88,6 +88,11 @@ export async function getPendingSafeProposalStores() {
 	return await pendingRequestTerminalStateSemaphore.execute(readPendingSafeProposalStores)
 }
 
+// Signed Gnosis Safe proposals waiting in the outbox still hold their Safe nonces until they are added to their Safe stack, so nonce allocation and the signing order count them like pending proposals.
+export async function getOutboxSafeProposals() {
+	return (await getPendingSafeProposalStores()).map((entry) => entry.proposal)
+}
+
 // Settles a pending Safe proposal whose website reply is being queued: in one storage write the request leaves the pending queue, the terminal replies are replaced and the signed proposal enters the outbox (a no-op when the request is no longer pending).
 export async function movePendingSafeProposalToOutbox(
 	uniqueRequestIdentifier: UniqueRequestIdentifier,

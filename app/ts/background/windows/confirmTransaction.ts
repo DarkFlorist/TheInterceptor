@@ -18,7 +18,7 @@ import { appendPendingTransactionOrMessage, deferSignatureUnlessAnswered, getInt
 import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
 import { replyToInterceptedRequestAfterManifestV2Reconnect } from '../messageSending.js'
 import { attemptQueuedTerminalReplyDelivery, deliverQueuedTerminalReplyOnce, queueSafeProposalReplyAndMoveToOutbox, queueTerminalReplyUnlessDeferred, releaseTerminalReplyReservation } from '../terminalReplyDelivery.js'
-import { getPendingTerminalReplies } from '../pendingTerminalReplies.js'
+import { getPendingTerminalReplies, prunePendingTerminalRepliesForMissingTabs } from '../pendingTerminalReplies.js'
 import { getConfirmationWindowRequests } from '../../utils/confirmationQueue.js'
 import { isAbiDataDecodeError, stringToBytes, keccak256 } from '../../utils/ethereumPrimitives.js'
 import { EthereumBytes32, EthereumQuantity, serialize } from '../../types/wire-types.js'
@@ -690,8 +690,18 @@ async function runEachIndependently<Item>(items: readonly Item[], run: (item: It
 // The pass as a whole still fails, with its first failure, once every item ran; the other failures are reported so none goes unseen.
 async function surfaceIndependentFailures(failures: readonly unknown[]) {
 	if (failures.length === 0) return
-	for (const failure of failures.slice(1)) await reportLocalRecovery(failure, { code: 'safe_signer_reply_recovery_item_failed', message: 'A Gnosis Safe request failed during recovery; the other requests were still advanced.' })
+	for (const failure of failures.slice(1)) await reportLocalRecovery(failure, { code: 'pending_confirmation_recovery_item_failed', message: 'One item failed during recovery; the other items were still recovered.' })
 	throw failures[0]
+}
+
+// The terminal-state recovery run at startup and whenever services are installed. Its phases are independent: a Safe signer-reply item that keeps failing never keeps a request whose window disappeared unanswered, nor its replies to closed tabs queued. The recovery still fails, with its first failure, once every phase ran.
+export async function recoverPendingConfirmationState(services: ConfirmationServices, websiteTabConnections: WebsiteTabConnections) {
+	const phases = [
+		async () => await resolveDeferredSafeSignerReplies(services, websiteTabConnections),
+		async () => await resolvePendingRequestsForMissingConfirmationWindows(services.ethereum, services.tokenPriceService, websiteTabConnections),
+		prunePendingTerminalRepliesForMissingTabs,
+	]
+	await surfaceIndependentFailures(await runEachIndependently(phases, async (phase) => await phase()))
 }
 
 // At most one advance on new blocks runs at a time; a block arriving meanwhile skips it.
@@ -727,24 +737,39 @@ async function hasOutstandingSafeSignerReplyWork(services: ConfirmationServices)
 	return (await getPendingSafeProposalStores()).some((entry) => entry.chainId === services.ethereum.getChainId())
 }
 
-// Adds every outbox proposal signed for the installed services' network to its Safe stack once, each entry as its own lifecycle step; proposals for other networks stay, and an entry whose storing fails transiently stays for the next pass without holding back the others. The website already has its reply, so a proposal that cannot be stored is dropped with a visible failure and nothing more is sent to the website.
+// Adds every outbox proposal signed for the installed services' network to its Safe stack once, each entry as its own lifecycle step; proposals for other networks stay. Proposals of one Safe may hold consecutive nonces, each stored on top of the one before, so they are stored in nonce order and a transient failure stops only their Safe's group: its later proposals stay untouched for the next pass instead of failing the nonce check, and other Safes go on. The website already has its reply, so a proposal that cannot be stored is dropped with a visible failure and nothing more is sent to the website.
 async function storeSafeProposalsFromOutbox(services: ConfirmationServices) {
 	const entriesForNetwork = (await getPendingSafeProposalStores()).filter((entry) => entry.chainId === services.ethereum.getChainId())
-	return await runEachIndependently(entriesForNetwork, async (entry) => await safeSignerReplyLifecycleSemaphore.execute(async () => {
-		// Read again inside the step: a concurrent pass may already have stored it.
-		if (!(await getPendingSafeProposalStores()).some((current) => doesUniqueRequestIdentifiersMatch(current.proposal.uniqueRequestIdentifier, entry.proposal.uniqueRequestIdentifier))) return
-		const stored = await storeOutboxProposal(services, entry)
-		await removePendingSafeProposalStore(entry.proposal.uniqueRequestIdentifier)
-		if (stored.status === 'failed-permanently') {
-			await reportSafeProposalNotStored(stored.reason)
-			return
-		}
-		if (stored.status === 'success') {
-			await runConfirmationViewStep(async () => await showSimulationStackChange(services.ethereum, services.tokenPriceService, stored.simulationStack))
-			return
-		}
-		await reportSafeProposalNotStored(stored.status === 'error' ? stored.approvalStatus.message : 'It is no longer a Gnosis Safe proposal.')
-	}))
+	return await runEachIndependently(groupOutboxProposalsBySafeInNonceOrder(entriesForNetwork), async (safeGroup) => {
+		for (const entry of safeGroup) await safeSignerReplyLifecycleSemaphore.execute(async () => await storeSafeProposalFromOutbox(services, entry))
+	})
+}
+
+function groupOutboxProposalsBySafeInNonceOrder(entries: readonly PendingSafeProposalStore[]) {
+	const groups = new Map<string, { readonly nonce: bigint, readonly entry: PendingSafeProposalStore }[]>()
+	for (const entry of entries) {
+		const flow = getSafePendingFlow(entry.proposal)
+		const safeTransaction = flow?.kind === 'proposal' ? flow.pending.safeTransaction : undefined
+		const groupKey = safeTransaction === undefined ? `request ${ getUniqueRequestIdentifierString(entry.proposal.uniqueRequestIdentifier) }` : `${ entry.chainId.toString() } ${ safeTransaction.safeAddress.toString() }`
+		groups.set(groupKey, [...groups.get(groupKey) ?? [], { nonce: safeTransaction?.safeTx.message.nonce ?? 0n, entry }])
+	}
+	return [...groups.values()].map((group) => [...group].sort((first, second) => first.nonce < second.nonce ? -1 : first.nonce > second.nonce ? 1 : 0).map(({ entry }) => entry))
+}
+
+async function storeSafeProposalFromOutbox(services: ConfirmationServices, entry: PendingSafeProposalStore) {
+	// Read again inside the step: a concurrent pass may already have stored it.
+	if (!(await getPendingSafeProposalStores()).some((current) => doesUniqueRequestIdentifiersMatch(current.proposal.uniqueRequestIdentifier, entry.proposal.uniqueRequestIdentifier))) return
+	const stored = await storeOutboxProposal(services, entry)
+	await removePendingSafeProposalStore(entry.proposal.uniqueRequestIdentifier)
+	if (stored.status === 'failed-permanently') {
+		await reportSafeProposalNotStored(stored.reason)
+		return
+	}
+	if (stored.status === 'success') {
+		await runConfirmationViewStep(async () => await showSimulationStackChange(services.ethereum, services.tokenPriceService, stored.simulationStack))
+		return
+	}
+	await reportSafeProposalNotStored(stored.status === 'error' ? stored.approvalStatus.message : 'It is no longer a Gnosis Safe proposal.')
 }
 
 // A Safe whose contract answers with a revert or with data that does not decode fails the same way on every attempt (for example after its implementation changed while the proposal waited), so its entry is dropped like one that fails validation. Transport failures and other errors may pass, so they are thrown and the entry stays for the next pass.

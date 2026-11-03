@@ -893,6 +893,129 @@ test('a recovery pass finishes later requests and the outbox while earlier items
 	assert.deepEqual(stacks.map((stack) => stack.transactions.map((transaction) => ({ safeTxHash: transaction.safeTxHash, signatures: transaction.signatures }))), [[{ safeTxHash: proposal.safeTxHash, signatures: [{ signer: safeTestOwnerAddress, signature: proposal.signature }] }]])
 })
 
+// Two signed outbox proposals of one Safe hold consecutive nonces, and storing the first fails once with a transport error: the second is not attempted on top of the missing first (its nonce check would drop it), so both stay, while another Safe's proposal is stored meanwhile. The next pass stores both in nonce order.
+test('keeps consecutive outbox proposals of one Safe in nonce order when storing the first fails transiently', async () => {
+	const proposal = await storeSafeProposalAwaitingSignerOnChainA(148, 78n)
+	const [base] = await modules.getPendingTransactionsAndMessages()
+	if (base === undefined || base.type !== 'Transaction' || base.safeTransaction === undefined) throw new Error('Missing stored Safe proposal')
+	const otherSafeAddress = 0x5afe000000000000000000000000000000000b0bn
+	const signedProposal = async (requestId: number, safeAddress: bigint, nonce: bigint) => {
+		const safeTx = createSafeTx(fakeRpcNetwork.chainId, safeAddress, { to: recipientAddress, value: 0n, input: new Uint8Array() }, nonce)
+		const signature = await safeTestOwnerAccount.signTypedData(EIP712Message.parse(safeTxToTypedDataJson(safeTx)))
+		const safeTxHash = BigInt(getSafeTxHash(safeTx))
+		const outboxProposal = { ...base, uniqueRequestIdentifier: { ...base.uniqueRequestIdentifier, requestId }, safeTransaction: { ...base.safeTransaction, safeAddress, safeTxHash, safeTx } }
+		return { entry: { chainId: fakeRpcNetwork.chainId, signerReply: signature, proposal: outboxProposal }, safeTxHash, signature }
+	}
+	const nonceOne = await signedProposal(149, activeAddress, 1n)
+	const nonceZero = await signedProposal(150, activeAddress, 0n)
+	const otherSafe = await signedProposal(151, otherSafeAddress, 0n)
+	// Stored out of nonce order on purpose.
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [], pendingSafeProposalStores: [nonceOne.entry, nonceZero.entry, otherSafe.entry] })
+	const { spyOn } = await import('bun:test')
+	const readCode = simulator.ethereum.getCode.bind(simulator.ethereum)
+	let failedReads = 0
+	const getCode = spyOn(simulator.ethereum, 'getCode').mockImplementation(async (...args: Parameters<typeof readCode>) => {
+		if (args[0] === activeAddress && failedReads === 0) {
+			failedReads += 1
+			throw new TypeError('Failed to fetch')
+		}
+		// The fake RPC answers every Safe call alike, so the other Safe gets the same deployed code.
+		if (args[0] === otherSafeAddress) return await readCode(activeAddress, args[1], args[2])
+		return await readCode(...args)
+	})
+	const storedProposals = async () => (await modules.getSafeTransactionStacks()).map((stack) => ({ safeAddress: stack.safeAddress, transactions: stack.transactions.map((transaction) => ({ safeTxHash: transaction.safeTxHash, signatures: transaction.signatures })) }))
+	try {
+		await withSilencedConsole(async () => await assert.rejects(modules.advanceOutstandingSafeSignerReplies(simulator, proposal.websiteTabConnections), /Failed to fetch/u))
+		assert.equal(failedReads, 1)
+		assert.deepEqual((await modules.getPendingSafeProposalStores()).map((entry) => entry.proposal.uniqueRequestIdentifier.requestId).sort(), [149, 150])
+		assert.deepEqual(await storedProposals(), [{ safeAddress: otherSafeAddress, transactions: [{ safeTxHash: otherSafe.safeTxHash, signatures: [{ signer: safeTestOwnerAddress, signature: otherSafe.signature }] }] }])
+
+		await withSilencedConsole(async () => await modules.advanceOutstandingSafeSignerReplies(simulator, proposal.websiteTabConnections))
+	} finally {
+		getCode.mockRestore()
+	}
+	assert.deepEqual(await modules.getPendingSafeProposalStores(), [])
+	const activeSafeStack = (await storedProposals()).find((stack) => stack.safeAddress === activeAddress)
+	assert.deepEqual(activeSafeStack?.transactions, [
+		{ safeTxHash: nonceZero.safeTxHash, signatures: [{ signer: safeTestOwnerAddress, signature: nonceZero.signature }] },
+		{ safeTxHash: nonceOne.safeTxHash, signatures: [{ signer: safeTestOwnerAddress, signature: nonceOne.signature }] },
+	])
+})
+
+// The startup and services-installed recovery runs its phases independently: a Safe outbox proposal that keeps failing with a transport error does not keep an ordinary request whose confirmation window disappeared from being rejected and removed.
+test('recovery rejects a request whose window disappeared while a Safe proposal keeps failing', async () => {
+	const proposal = await storeSafeProposalAwaitingSignerOnChainA(152, 79n)
+	const [base] = await modules.getPendingTransactionsAndMessages()
+	if (base === undefined) throw new Error('Missing stored Safe proposal')
+	const orphanedRequest = { ...pendingTransaction, uniqueRequestIdentifier: proposal.requestIdentifier }
+	await modules.browserStorageLocalSet2({
+		pendingTransactionsAndMessages: [orphanedRequest],
+		pendingSafeProposalStores: [{ chainId: fakeRpcNetwork.chainId, signerReply: proposal.signature, proposal: { ...base, uniqueRequestIdentifier: { ...base.uniqueRequestIdentifier, requestId: 153 } } }],
+	})
+	const { spyOn } = await import('bun:test')
+	const getCode = spyOn(simulator.ethereum, 'getCode').mockImplementation(async () => { throw new TypeError('Failed to fetch') })
+	try {
+		await withSilencedConsole(async () => await assert.rejects(modules.recoverPendingConfirmationState(simulator, proposal.websiteTabConnections), /Failed to fetch/u))
+	} finally {
+		getCode.mockRestore()
+	}
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	assert.deepEqual(proposal.repliesToWebsite().map((reply) => isRecord(reply) && isRecord(reply.error) ? reply.error.code : undefined), [4001])
+	// The failing proposal stays for a later pass.
+	assert.equal((await modules.getPendingSafeProposalStores()).length, 1)
+	assert.deepEqual(await modules.getSafeTransactionStacks(), [])
+})
+
+// A signed proposal (nonce 0) waits in the outbox after a transient failure, and the website sends a new proposal for the same Safe: the outbox proposal still holds nonce 0, so the new one is prepared for nonce 1 and cannot be signed before the outbox proposal is in the Safe stack. Both then persist in nonce order with their signatures.
+test('a signed proposal waiting in the outbox keeps its nonce from a new proposal for the same Safe', async () => {
+	const proposal = await storeSafeProposalAwaitingSignerOnChainA(154, 80n)
+	const [base] = await modules.getPendingTransactionsAndMessages()
+	if (base === undefined || base.type !== 'Transaction' || base.safeTransaction === undefined) throw new Error('Missing stored Safe proposal')
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [], pendingSafeProposalStores: [{ chainId: fakeRpcNetwork.chainId, signerReply: proposal.signature, proposal: base }] })
+	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' })])
+	await modules.updateTabState(proposal.requestIdentifier.requestSocket.tabId, (state) => ({ ...state, signerAccounts: [safeTestOwnerAddress], activeSigningAddress: safeTestOwnerAddress, signerChain: fakeRpcNetwork.chainId }))
+	const { spyOn } = await import('bun:test')
+	const failingCode = spyOn(simulator.ethereum, 'getCode').mockImplementation(async () => { throw new TypeError('Failed to fetch') })
+	try {
+		await withSilencedConsole(async () => await assert.rejects(modules.advanceOutstandingSafeSignerReplies(simulator, proposal.websiteTabConnections), /Failed to fetch/u))
+	} finally {
+		failingCode.mockRestore()
+	}
+	assert.equal((await modules.getPendingSafeProposalStores()).length, 1)
+
+	const { SendTransactionParams } = await import('../../app/ts/types/JsonRpc-types.js')
+	const { prepareSafeTransactionConfirmation } = await import('../../app/ts/background/safeTransactionConfirmation.js')
+	const transactionParams = SendTransactionParams.parse({ method: 'eth_sendTransaction', params: [{ from: addressString(activeAddress), to: addressString(recipientAddress), value: '0x1', data: '0x', gas: '0x5208' }] })
+	// The fake Safe contract answers getTransactionHash with one fixed hash: the one of the transaction each step validates.
+	const newProposalHash = BigInt(getSafeTxHash(createSafeTx(fakeRpcNetwork.chainId, activeAddress, { to: recipientAddress, value: 1n, input: new Uint8Array() }, 1n)))
+	fakeSafeContract.transactionHash = newProposalHash
+	const preparation = await prepareSafeTransactionConfirmation(simulator.ethereum, { kind: 'transaction', parameters: transactionParams }, false, activeAddress, safeTestOwnerAddress)
+	const transactionToSimulate = await modules.formEthSendTransaction(simulator.ethereum, undefined, preparation.transactionExecutor, { websiteOrigin: 'https://example.com', icon: undefined, title: undefined }, preparation.effectiveTransactionParams, new Date(), 2n, false, preparation.gasPayment)
+	const finalized = await preparation.finalize(transactionToSimulate, proposal.requestIdentifier.requestSocket.tabId)
+	const newSafeTransaction = finalized.safeTransaction
+	if (newSafeTransaction === undefined || !finalized.transactionToSimulate.success) throw new Error('Missing the new Safe proposal')
+	assert.equal(newSafeTransaction.safeTx.message.nonce, 1n)
+	const newRequestIdentifier = { ...proposal.requestIdentifier, requestId: 155 }
+	const newProposal = { ...base, uniqueRequestIdentifier: newRequestIdentifier, transactionToSimulate: finalized.transactionToSimulate, safeTransaction: newSafeTransaction, approvalStatus: { status: 'WaitingForUser' as const } }
+	const blocked = await modules.resolveSafeConfirmation(simulator.ethereum, newProposal, 'accept', { selectedSigner: safeTestOwnerAddress, verificationError: undefined })
+	assert.equal(blocked.status, 'blocked')
+	assert.match(blocked.status === 'blocked' ? blocked.approvalStatus.message : '', /earlier signed Gnosis Safe proposal is still being added/u)
+
+	fakeSafeContract.transactionHash = proposal.safeTxHash
+	await withSilencedConsole(async () => await modules.advanceOutstandingSafeSignerReplies(simulator, proposal.websiteTabConnections))
+	assert.deepEqual(await modules.getPendingSafeProposalStores(), [])
+	fakeSafeContract.transactionHash = newProposalHash
+	const newSignature = await safeTestOwnerAccount.signTypedData(EIP712Message.parse(safeTxToTypedDataJson(newSafeTransaction.safeTx)))
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [{ ...newProposal, approvalStatus: { status: 'WaitingForSigner' as const }, signerRequestChainId: fakeRpcNetwork.chainId }] })
+	assert.equal(await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, proposal.websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'signerIncluded', signerReply: newSignature, uniqueRequestIdentifier: newRequestIdentifier } })), true)
+
+	const [stack] = await modules.getSafeTransactionStacks()
+	assert.deepEqual(stack?.transactions.map((transaction) => ({ nonce: transaction.safeTx.message.nonce, safeTxHash: transaction.safeTxHash, signatures: transaction.signatures })), [
+		{ nonce: 0n, safeTxHash: proposal.safeTxHash, signatures: [{ signer: safeTestOwnerAddress, signature: proposal.signature }] },
+		{ nonce: 1n, safeTxHash: newSafeTransaction.safeTxHash, signatures: [{ signer: safeTestOwnerAddress, signature: newSignature }] },
+	])
+})
+
 // A metadata refresh reads the request before Accept records the signing network and writes after it: it writes only its visualisation onto the stored request, so the signing network survives and the signature settles.
 test('keeps the signing network an Accept recorded while a confirmation metadata refresh was running', async () => {
 	const proposal = await storeSafeProposalAwaitingSignerOnChainA(130, 70n)

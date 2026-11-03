@@ -20,7 +20,7 @@ import { DEFAULT_TAB_CONNECTION, ICON_NOT_ACTIVE } from '../utils/constants.js'
 import { reportUnexpectedError, isExpectedInfrastructureError, printError, reportLocalRecoveryBestEffort } from '../utils/errors.js'
 import { updateContentScriptInjectionStrategyManifestV2 } from '../utils/contentScriptsUpdating.js'
 import { checkIfInterceptorShouldSleep } from './sleeping.js'
-import { advanceOutstandingSafeSignerReplies, onCloseWindowOrTab, resolveDeferredSafeSignerReplies, resolvePendingRequestsForMissingConfirmationWindows } from './windows/confirmTransaction.js'
+import { advanceOutstandingSafeSignerReplies, onCloseWindowOrTab, recoverPendingConfirmationState } from './windows/confirmTransaction.js'
 import { modifyObject } from '../utils/typescript.js'
 import { registerWebsiteConnectionAndReconcileRequestBlocks, updateDeclarativeNetRequestBlocks, updateExtensionIconAfterRegistrationRequestBlocks } from './accessManagement.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
@@ -33,7 +33,7 @@ import { migrateWebsiteAccess } from './websiteAccessMigration.js'
 import { initializeContentScriptConnectionAfterBackgroundStartup, isIgnorablePortLifecycleError, tryRegisterContentScriptPortListeners } from './contentScriptPortLifecycle.js'
 import { bumpPopupRefreshGeneration, initializePopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { flushPendingTerminalRepliesForConnectedPortWithRetry } from './terminalReplyDelivery.js'
-import { prunePendingTerminalRepliesForMissingTabs, removePendingTerminalRepliesForTab } from './pendingTerminalReplies.js'
+import { removePendingTerminalRepliesForTab } from './pendingTerminalReplies.js'
 import { createRetriableTerminalStateRecovery } from './terminalStateRecovery.js'
 import { acknowledgeAndTrackBridgeRequest, INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE } from './bridgeRequestDelivery.js'
 import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
@@ -304,9 +304,7 @@ async function startup() {
 const recoverPendingTerminalState = createRetriableTerminalStateRecovery({
 	recover: async () => {
 		const { ethereum, tokenPriceService } = getSimulationServices()
-		await resolveDeferredSafeSignerReplies({ ethereum, tokenPriceService }, websiteTabConnections)
-		await resolvePendingRequestsForMissingConfirmationWindows(ethereum, tokenPriceService, websiteTabConnections)
-		await prunePendingTerminalRepliesForMissingTabs()
+		await recoverPendingConfirmationState({ ethereum, tokenPriceService }, websiteTabConnections)
 	},
 	onFailure: (error) => {
 		reportLocalRecoveryBestEffort(error, {
