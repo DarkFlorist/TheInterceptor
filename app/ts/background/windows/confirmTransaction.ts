@@ -263,107 +263,84 @@ export const setGasLimitForTransaction = async (transactionIdentifier: bigint, g
 	})
 }
 
-// Whether a terminal reply is delivered before or after its pending request is removed: a close delivers first, every other reply after.
-type TerminalReplyOrder = 'deliver-then-remove' | 'remove-then-deliver'
-
 /**
- * The terminal reply a resolution committed a request to, kept in memory until its phases are done: it is enqueued in the durable terminal-reply queue, the pending request is removed, and delivery is attempted once (a disconnected page gets it from the queue when it reconnects). Each phase is recorded when done, so a failed one is retried alone, by a bounded retry with backoff or by any later accept, reject or close of the request, which resumes it before anything else.
- * afterRemoval is the committing resolution's best-effort view update, which never decides delivery.
+ * A resolution commits a request's terminal reply durably, by marking the pending request terminalReplyCommitted, and then finishes it in phases: enqueue the reply in the durable terminal-reply queue, deliver it (a disconnected page gets it from the queue when it reconnects), and remove the pending request, which retires the commitment. A committed request is only ever finished: its queued reply is delivered, or, once the queue no longer holds it, it was delivered, and the request is just removed. A crash between committing and enqueueing loses the reply, as a crash before committing would.
+ * While a committed reply is in flight, this records the reply until it is enqueued, the committing resolution's best-effort view update and the failed attempts.
  */
-type CommittedResolution = {
-	readonly reply: InterceptedRequestForward
-	readonly order: TerminalReplyOrder
+type CommittedReplyInFlight = {
+	readonly unqueuedReply?: InterceptedRequestForward
 	readonly afterRemoval: () => Promise<void>
-	readonly enqueued: boolean
-	readonly removed: boolean
-	readonly delivery?: { readonly delivered: boolean | undefined }
 	readonly failedAttempts: number
 }
-const committedResolutions = new Map<string, CommittedResolution>()
-// The scheduled retry of each committed resolution, cleared when the resolution is retired, so a retry never runs a later resolution of the same request.
-const committedResolutionRetries = new Map<string, ReturnType<typeof setTimeout>>()
-const retireCommittedResolution = (claim: string) => {
-	committedResolutions.delete(claim)
-	clearTimeout(committedResolutionRetries.get(claim))
-	committedResolutionRetries.delete(claim)
+const committedRepliesInFlight = new Map<string, CommittedReplyInFlight>()
+// The scheduled retry of each committed reply, cancelled when the reply is retired, so a retry never runs a later resolution of the same request.
+const committedReplyRetries = new Map<string, ReturnType<typeof setTimeout>>()
+const retireCommittedReply = (claim: string) => {
+	committedRepliesInFlight.delete(claim)
+	clearTimeout(committedReplyRetries.get(claim))
+	committedReplyRetries.delete(claim)
 }
-const RESOLUTION_RETRY_BASE_DELAY_MS = 50
-const RESOLUTION_RETRY_LIMIT = 6
+const COMMITTED_REPLY_RETRY_BASE_DELAY_MS = 50
+const COMMITTED_REPLY_RETRY_LIMIT = 6
+const doNothing = async () => undefined
 
-async function runCommittedResolutionPhases(claim: string, websiteTabConnections: WebsiteTabConnections) {
-	const record = (update: Partial<CommittedResolution>) => {
-		const committed = committedResolutions.get(claim)
-		if (committed === undefined) throw new Error('The committed resolution is missing')
-		const updated = { ...committed, ...update }
-		committedResolutions.set(claim, updated)
-		return updated
+async function runCommittedReplyPhases(uniqueRequestIdentifier: UniqueRequestIdentifier, websiteTabConnections: WebsiteTabConnections) {
+	const claim = getUniqueRequestIdentifierString(uniqueRequestIdentifier)
+	const inFlight = committedRepliesInFlight.get(claim) ?? { afterRemoval: doNothing, failedAttempts: 0 }
+	if (inFlight.unqueuedReply !== undefined) {
+		await queueTerminalReply(inFlight.unqueuedReply)
+		committedRepliesInFlight.set(claim, { afterRemoval: inFlight.afterRemoval, failedAttempts: inFlight.failedAttempts })
 	}
-	let committed = record({})
-	if (!committed.enqueued) {
-		await queueTerminalReply(committed.reply)
-		committed = record({ enqueued: true })
+	const queuedReply = await getQueuedTerminalReply(uniqueRequestIdentifier)
+	const delivered = queuedReply === undefined ? true : await attemptQueuedTerminalReplyDelivery(websiteTabConnections, queuedReply)
+	await removePendingTransactionOrMessage(uniqueRequestIdentifier)
+	retireCommittedReply(claim)
+	try {
+		await inFlight.afterRemoval()
+	} catch (error) {
+		await reportLocalRecovery(error, { code: 'resolved_request_view_update_failed', message: 'The request was resolved; only updating the confirmation view failed.' })
 	}
-	const remove = async () => {
-		if (committed.removed) return
-		await removePendingTransactionOrMessage(committed.reply.uniqueRequestIdentifier)
-		committed = record({ removed: true })
-		try {
-			await committed.afterRemoval()
-		} catch (error) {
-			await reportLocalRecovery(error, { code: 'resolved_request_view_update_failed', message: 'The request was resolved; only updating the confirmation view failed.' })
-		}
-	}
-	const deliver = async () => {
-		if (committed.delivery !== undefined) return
-		committed = record({ delivery: { delivered: await attemptQueuedTerminalReplyDelivery(websiteTabConnections, committed.reply) } })
-	}
-	if (committed.order === 'deliver-then-remove') {
-		await deliver()
-		await remove()
-	} else {
-		await remove()
-		await deliver()
-	}
-	retireCommittedResolution(claim)
-	return committed.delivery?.delivered
+	return delivered
 }
 
-// Runs the committed resolution's remaining phases. A failure is reported and retried with backoff; after the last retry the record stays for a later accept, reject or close to resume, and an enqueued reply stays in the durable queue.
-async function finishCommittedResolution(uniqueRequestIdentifier: UniqueRequestIdentifier, websiteTabConnections: WebsiteTabConnections) {
+// Finishes a committed reply. A failed phase is reported and retried with backoff; after the last retry the committed request stays pending, and its queued reply in the durable queue, for a later accept, reject or close to finish.
+async function finishCommittedReply(uniqueRequestIdentifier: UniqueRequestIdentifier, websiteTabConnections: WebsiteTabConnections) {
 	const claim = getUniqueRequestIdentifierString(uniqueRequestIdentifier)
 	try {
-		return await runCommittedResolutionPhases(claim, websiteTabConnections)
+		return await runCommittedReplyPhases(uniqueRequestIdentifier, websiteTabConnections)
 	} catch (error) {
-		const committed = committedResolutions.get(claim)
-		if (committed === undefined) throw error
-		const failedAttempts = committed.failedAttempts + 1
-		committedResolutions.set(claim, { ...committed, failedAttempts })
-		const retrying = failedAttempts < RESOLUTION_RETRY_LIMIT
+		const inFlight = committedRepliesInFlight.get(claim) ?? { afterRemoval: doNothing, failedAttempts: 0 }
+		const failedAttempts = inFlight.failedAttempts + 1
+		committedRepliesInFlight.set(claim, { ...inFlight, failedAttempts })
+		const retrying = failedAttempts < COMMITTED_REPLY_RETRY_LIMIT
 		await reportLocalRecovery(error, retrying
 			? { code: 'committed_request_resolution_retrying', message: 'Retrying the resolution of a request whose reply is committed.' }
 			: { code: 'committed_request_resolution_gave_up', message: 'Stopped retrying the resolution of a request; its queued reply is delivered when the page reconnects.' })
 		if (retrying) {
-			clearTimeout(committedResolutionRetries.get(claim))
-			committedResolutionRetries.set(claim, setTimeout(() => {
-				committedResolutionRetries.delete(claim)
-				void resumeCommittedResolution(uniqueRequestIdentifier, websiteTabConnections)
-			}, RESOLUTION_RETRY_BASE_DELAY_MS * 2 ** (failedAttempts - 1)))
+			clearTimeout(committedReplyRetries.get(claim))
+			committedReplyRetries.set(claim, setTimeout(() => {
+				committedReplyRetries.delete(claim)
+				void resumeCommittedReply(uniqueRequestIdentifier, websiteTabConnections)
+			}, COMMITTED_REPLY_RETRY_BASE_DELAY_MS * 2 ** (failedAttempts - 1)))
 		}
 		return undefined
 	}
 }
 
-async function commitTerminalReply(reply: InterceptedRequestForward, order: TerminalReplyOrder, afterRemoval: () => Promise<void>, websiteTabConnections: WebsiteTabConnections) {
-	const claim = getUniqueRequestIdentifierString(reply.uniqueRequestIdentifier)
-	retireCommittedResolution(claim)
-	committedResolutions.set(claim, { reply, order, afterRemoval, enqueued: false, removed: false, failedAttempts: 0 })
-	return await finishCommittedResolution(reply.uniqueRequestIdentifier, websiteTabConnections)
+// Commits the pending request to the reply, or to the reply already queued for it when unqueuedReply is undefined, and finishes it. False if the request is no longer pending.
+async function commitTerminalReply(uniqueRequestIdentifier: UniqueRequestIdentifier, unqueuedReply: InterceptedRequestForward | undefined, afterRemoval: () => Promise<void>, websiteTabConnections: WebsiteTabConnections) {
+	await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => ({ ...pending, terminalReplyCommitted: true }))
+	if ((await getPendingTransactionOrMessageByidentifier(uniqueRequestIdentifier))?.terminalReplyCommitted !== true) return false
+	const claim = getUniqueRequestIdentifierString(uniqueRequestIdentifier)
+	retireCommittedReply(claim)
+	committedRepliesInFlight.set(claim, { ...(unqueuedReply === undefined ? {} : { unqueuedReply }), afterRemoval, failedAttempts: 0 })
+	return await finishCommittedReply(uniqueRequestIdentifier, websiteTabConnections)
 }
 
-// Resumes a request's committed resolution under its claim, whether or not the request is still pending.
-const resumeCommittedResolution = async (uniqueRequestIdentifier: UniqueRequestIdentifier, websiteTabConnections: WebsiteTabConnections) => await withResolutionClaim(uniqueRequestIdentifier, websiteTabConnections, async () => false)
+// Finishes a request's committed reply under its claim.
+const resumeCommittedReply = async (uniqueRequestIdentifier: UniqueRequestIdentifier, websiteTabConnections: WebsiteTabConnections) => await withResolutionClaim(uniqueRequestIdentifier, websiteTabConnections, async () => false)
 
-// The requests whose terminal outcome an accept, reject or close has claimed and is carrying out. A claim is taken synchronously, so of racing resolutions of a request exactly one stacks it or replies; the others return false without either. Under the claim, a committed resolution of the request is resumed first, then a reply already in the durable queue, whose commitment a restart lost, is finished; only without either is the pending request resolved.
+// The requests whose terminal outcome an accept, reject or close has claimed and is carrying out. A claim is taken synchronously, so of racing resolutions of a request exactly one stacks it or replies; the others return false without either. Under the claim, a committed request is only finished, and a request with a reply already queued, from before commitments were stored, commits to that reply; only otherwise is an outcome chosen (resolve).
 const resolutionClaims = new Set<string>()
 // Closes of a request that lost to a claim, run once the claim is released, so a request whose claimed accept failed is still answered; one that was resolved meanwhile is no longer pending, and the close does nothing.
 const deferredCloses = new Map<string, () => Promise<void>>()
@@ -380,13 +357,13 @@ async function withResolutionClaim<Result>(
 	}
 	resolutionClaims.add(claim)
 	try {
-		if (committedResolutions.has(claim)) return await finishCommittedResolution(uniqueRequestIdentifier, websiteTabConnections)
-		if (await getPendingTransactionOrMessageByidentifier(uniqueRequestIdentifier) === undefined) return false
-		const queuedReply = await getQueuedTerminalReply(uniqueRequestIdentifier)
-		if (queuedReply !== undefined) {
-			committedResolutions.set(claim, { reply: queuedReply, order: 'remove-then-deliver', afterRemoval: options.afterRemoval ?? (async () => undefined), enqueued: true, removed: false, failedAttempts: 0 })
-			return await finishCommittedResolution(uniqueRequestIdentifier, websiteTabConnections)
+		const pending = await getPendingTransactionOrMessageByidentifier(uniqueRequestIdentifier)
+		if (pending === undefined) {
+			retireCommittedReply(claim)
+			return false
 		}
+		if (pending.terminalReplyCommitted === true) return await finishCommittedReply(uniqueRequestIdentifier, websiteTabConnections)
+		if (await getQueuedTerminalReply(uniqueRequestIdentifier) !== undefined) return await commitTerminalReply(uniqueRequestIdentifier, undefined, options.afterRemoval ?? doNothing, websiteTabConnections)
 		return await resolve()
 	} finally {
 		resolutionClaims.delete(claim)
@@ -400,10 +377,10 @@ async function withResolutionClaim<Result>(
 type AcceptedTransactionStacking = { readonly kind: 'stacked', readonly transaction: PreSimulationTransaction } | { readonly kind: 'hash-taken' } | { readonly kind: 'resolved' }
 
 export async function resolvePendingTransactionOrMessage(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, refreshedSafeSignerSelection?: RefreshedSafeSignerSelection) {
-	// A committed reply is finished first, even once its request is no longer pending.
-	if (committedResolutions.has(getUniqueRequestIdentifierString(confirmation.data.uniqueRequestIdentifier))) return await resumeCommittedResolution(confirmation.data.uniqueRequestIdentifier, websiteTabConnections)
 	let pendingTransactionOrMessage = await getPendingTransactionOrMessageByidentifier(confirmation.data.uniqueRequestIdentifier)
 	if (pendingTransactionOrMessage === undefined) return // no need to resolve as it doesn't exist anymore
+	// A request committed to a reply is only finished, whatever the action, so an accept never follows a delivered rejection.
+	if (pendingTransactionOrMessage.terminalReplyCommitted === true) return await resumeCommittedReply(confirmation.data.uniqueRequestIdentifier, websiteTabConnections)
 	if (
 		confirmation.data.action === 'accept'
 		&& refreshedSafeSignerSelection?.selectedSigner !== undefined
@@ -460,33 +437,33 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 		await removePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier)
 		await updateViewAfterRemoval()
 	}
-	const reply = async (message: { type: 'forwardToSigner' } | { type: 'result', error: { code: number, message: string } } | { type: 'result', result: unknown }, { order = 'remove-then-deliver' }: { readonly order?: TerminalReplyOrder } = {}) => {
+	const reply = async (message: { type: 'forwardToSigner' } | { type: 'result', error: { code: number, message: string } } | { type: 'result', result: unknown }) => {
 		if (message.type === 'result' && !('error' in message)) {
 			if (pendingTransactionOrMessage.originalRequestParameters.method === 'eth_sendRawTransaction' || pendingTransactionOrMessage.originalRequestParameters.method === 'eth_sendTransaction') {
-				return await commitTerminalReply({ ...pendingTransactionOrMessage.originalRequestParameters, ...message, result: EthereumBytes32.parse(message.result), uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier }, 'remove-then-deliver', updateViewAfterRemoval, websiteTabConnections)
+				return await commitTerminalReply(confirmation.data.uniqueRequestIdentifier, { ...pendingTransactionOrMessage.originalRequestParameters, ...message, result: EthereumBytes32.parse(message.result), uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier }, updateViewAfterRemoval, websiteTabConnections)
 			}
-			return await commitTerminalReply({ ...pendingTransactionOrMessage.originalRequestParameters, ...message, result: funtypes.String.parse(message.result), uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier }, 'remove-then-deliver', updateViewAfterRemoval, websiteTabConnections)
+			return await commitTerminalReply(confirmation.data.uniqueRequestIdentifier, { ...pendingTransactionOrMessage.originalRequestParameters, ...message, result: funtypes.String.parse(message.result), uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier }, updateViewAfterRemoval, websiteTabConnections)
 		}
 		if (message.type === 'result') {
-			return await commitTerminalReply({ ...pendingTransactionOrMessage.originalRequestParameters, ...message, uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier }, order, updateViewAfterRemoval, websiteTabConnections)
+			return await commitTerminalReply(confirmation.data.uniqueRequestIdentifier, { ...pendingTransactionOrMessage.originalRequestParameters, ...message, uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier }, updateViewAfterRemoval, websiteTabConnections)
 		}
 		await removePendingRequestAndUpdateView()
 		return await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, { ...pendingTransactionOrMessage.originalRequestParameters, ...message, uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
 	}
 	// A rejection, unless the request is already stacked in simulation mode: an accept stacked it and failed before its reply was committed, or its commitment and queued reply were lost. Then the page gets what accepting gives it: a transaction's stacked hash, a message's simulated signature.
-	const rejectUnlessStacked = async (rejection: { type: 'result', error: { code: number, message: string } }, options: { readonly order?: TerminalReplyOrder } = {}) => {
+	const rejectUnlessStacked = async (rejection: { type: 'result', error: { code: number, message: string } }) => {
 		const request = pendingTransactionOrMessage
-		if (!request.simulationMode) return await reply(rejection, options)
+		if (!request.simulationMode) return await reply(rejection)
 		const operations = (await getInterceptorTransactionStack()).operations
 		if (request.type === 'Transaction') {
 			const stacked = operations.find((operation) => operation.type === 'Transaction' && operation.preSimulationTransaction.transactionIdentifier === request.transactionIdentifier)
 			if (stacked?.type === 'Transaction') return await reply({ type: 'result', result: EthereumBytes32.serialize(stacked.preSimulationTransaction.signedTransaction.hash) })
-			return await reply(rejection, options)
+			return await reply(rejection)
 		}
 		if (operations.some((operation) => operation.type === 'Message' && operation.signedMessageTransaction.messageIdentifier === request.signedMessageTransaction.messageIdentifier)) {
 			return await reply({ type: 'result', result: (await simulatePersonalSign(request.originalRequestParameters, request.signedMessageTransaction.fakeSignedFor)).signature })
 		}
-		return await reply(rejection, options)
+		return await reply(rejection)
 	}
 	if (confirmation.data.action === 'addToSafeStack') {
 		if (pendingTransactionOrMessage.approvalStatus.status === 'WaitingForSigner') return false
@@ -522,7 +499,7 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 	}
 	if (confirmation.data.action === 'noResponse') {
 		const unansweredRequest = pendingTransactionOrMessage
-		return await withResolutionClaim(confirmation.data.uniqueRequestIdentifier, websiteTabConnections, async () => await rejectUnlessStacked(formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User denied transaction signature'), { order: 'deliver-then-remove' }), { deferIfClaimed: async () => await resolveAllPendingTransactionsAndMessageAsNoResponse([unansweredRequest], ethereum, tokenPriceService, websiteTabConnections), afterRemoval: updateViewAfterRemoval })
+		return await withResolutionClaim(confirmation.data.uniqueRequestIdentifier, websiteTabConnections, async () => await rejectUnlessStacked(formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User denied transaction signature')), { deferIfClaimed: async () => await resolveAllPendingTransactionsAndMessageAsNoResponse([unansweredRequest], ethereum, tokenPriceService, websiteTabConnections), afterRemoval: updateViewAfterRemoval })
 	}
 	if (pendingTransactionOrMessage === undefined || pendingTransactionOrMessage.transactionOrMessageCreationStatus !== 'Simulated') return await withResolutionClaim(confirmation.data.uniqueRequestIdentifier, websiteTabConnections, async () => await rejectUnlessStacked(formRejectMessage(METAMASK_ERROR_BLANKET_ERROR, 'The Interceptor failed to process the transaction')), { afterRemoval: updateViewAfterRemoval })
 	if (confirmation.data.action === 'reject') return await withResolutionClaim(confirmation.data.uniqueRequestIdentifier, websiteTabConnections, async () => await rejectUnlessStacked(formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User denied transaction signature')), { afterRemoval: updateViewAfterRemoval })
@@ -549,10 +526,10 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 	return await withResolutionClaim(confirmation.data.uniqueRequestIdentifier, websiteTabConnections, async () => {
 		switch (simulatedPending.type) {
 			case 'SignableMessage': {
-				await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => ({ operations: [
-					...prevStack.operations,
-					{ type: 'Message' as const, signedMessageTransaction: simulatedPending.signedMessageTransaction }
-				] }))
+				// A message an earlier accept already stacked before stopping is not stacked again.
+				await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => prevStack.operations.some((operation) => operation.type === 'Message' && operation.signedMessageTransaction.messageIdentifier === simulatedPending.signedMessageTransaction.messageIdentifier)
+					? prevStack
+					: { operations: [...prevStack.operations, { type: 'Message' as const, signedMessageTransaction: simulatedPending.signedMessageTransaction }] })
 				await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService)
 				return reply({ type: 'result', result: (await simulatePersonalSign(simulatedPending.originalRequestParameters, simulatedPending.signedMessageTransaction.fakeSignedFor)).signature })
 			}
