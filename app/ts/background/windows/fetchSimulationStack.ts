@@ -54,11 +54,17 @@ export async function resolveFetchSimulationStackRequest(snapshot: SimulationSta
 		pendForUserReply.resolve({ confirmation, snapshot })
 		return
 	}
+	// No in-memory waiter (e.g. the background restarted while the dialog was open): answer the website from the stored request
 	const data = await getFetchSimulationStackRequestPromise()
 	if (data === undefined || !doesUniqueRequestIdentifiersMatch(confirmation.data.uniqueRequestIdentifier, data.uniqueRequestIdentifier)) throw new Error('Unique request identifier mismatch in change chain')
-	const resolved = await getSimulationStack(snapshot.simulationState, data.simulationStackVersion)
-	replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'interceptor_getSimulationStack' as const, result: resolved, uniqueRequestIdentifier: data.uniqueRequestIdentifier })
-	if (openedDialog) await closePopupOrTabById(openedDialog)
+	if (confirmation.data.accept) {
+		const resolved = await getSimulationStack(snapshot.simulationState, data.simulationStackVersion)
+		replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'interceptor_getSimulationStack' as const, result: resolved, uniqueRequestIdentifier: data.uniqueRequestIdentifier })
+	} else {
+		replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'interceptor_getSimulationStack' as const, error: userDeniedChange.error, uniqueRequestIdentifier: data.uniqueRequestIdentifier })
+	}
+	await setFetchSimulationStackRequestPromise(undefined)
+	await closePopupOrTabById(data.popupOrTabId)
 	openedDialog = undefined
 }
 
