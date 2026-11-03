@@ -392,19 +392,21 @@ export async function resolvePendingSignerReply(services: ConfirmationServices |
 		if (services !== undefined) await updateConfirmTransactionView(services.ethereum, services.tokenPriceService)
 		return
 	}
-	if (services !== undefined) {
+	const pending = await getPendingTransactionOrMessageByidentifier(uniqueRequestIdentifier)
+	if (pending === undefined) return
+	const safeFlow = pending.simulationMode ? undefined : getSafePendingFlow(pending)
+	const isSafeSignature = safeFlow?.kind === 'proposal' || safeFlow?.kind === 'messageCoSign'
+	// A Gnosis Safe signature is bound to the network it was signed for: it is validated now only with services for that network, and is otherwise kept for them exactly as when no services are available.
+	if (services !== undefined && (!isSafeSignature || pending.signerRequestChainId === services.ethereum.getChainId())) {
 		return await resolvePendingTransactionOrMessage(services.ethereum, services.tokenPriceService, websiteTabConnections, {
 			method: 'popup_confirmDialog',
 			data: { uniqueRequestIdentifier, action: 'signerIncluded', signerReply: params.reply },
 		})
 	}
-	const pending = await getPendingTransactionOrMessageByidentifier(uniqueRequestIdentifier)
-	if (pending === undefined) return
 	if (pending.simulationMode) {
 		await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (current) => modifyObject(current, { approvalStatus: { status: 'SignerError', ...RPC_CONFIGURATION_UNAVAILABLE_ERROR } }))
 		return
 	}
-	const safeFlow = getSafePendingFlow(pending)
 	if (safeFlow?.kind === 'proposal' || safeFlow?.kind === 'messageCoSign') {
 		if (typeof params.reply !== 'string') {
 			await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (current) => modifyObject(current, {
@@ -419,7 +421,7 @@ export async function resolvePendingSignerReply(services: ConfirmationServices |
 			await failSafeSignatureWithoutChain(uniqueRequestIdentifier)
 			return
 		}
-		if (safeFlow.kind === 'proposal') return await moveSignedSafeProposalToOutbox(pending, safeFlow.pending.safeTransaction.safeTxHash, { signerReply, chainId }, websiteTabConnections, undefined, false)
+		if (safeFlow.kind === 'proposal') return await moveSignedSafeProposalToOutbox(pending, safeFlow.pending.safeTransaction.safeTxHash, { signerReply, chainId }, websiteTabConnections, services, false)
 		await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (current) => modifyObject(current, { deferredSafeSignerReply: { signerReply, chainId } }))
 		return
 	}

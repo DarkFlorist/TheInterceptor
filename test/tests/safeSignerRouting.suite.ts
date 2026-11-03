@@ -305,6 +305,16 @@ test('keeps an outbox Safe proposal for its own chain until services for that ch
 	await assertStoredOnChainAOnce(deferred)
 })
 
+// Services recovered for chain B before chain A's proposal signature arrives must not validate or store it: it goes to chain A's outbox with its hash reply, as when no services are available.
+test('keeps a proposal signature for its own chain when services for another chain arrive first', async () => {
+	const otherChainOwner = createTestSimulationServicesOwner(createOtherChainSimulator())
+	const deferred = await deferSafeProposalSignatureOnChainA(otherChainOwner, 106, 57n)
+	assert.deepEqual(await modules.getSafeTransactionStacks(), [])
+
+	await modules.resolveDeferredSafeSignerReplies(simulator, deferred.websiteTabConnections)
+	await assertStoredOnChainAOnce(deferred)
+})
+
 test('replays a deferred Safe signature when a normal network switch returns to its chain', async () => {
 	const { changeActiveAddressAndChain } = await import('../../app/ts/background/activeSettings.js')
 	const otherChainSimulator = createOtherChainSimulator()
@@ -1019,11 +1029,26 @@ test('routes a Safe co-signing request through the wallet-selected owner', async
 			? { ...entry, safeSimulationSignerAddress: 0x2222222222222222222222222222222222222222n }
 			: entry
 	))
+	// Services for another chain arrive before the co-signature: it is deferred for its own chain instead of being validated on the other one.
+	const isCoSignatureReply = (message: unknown) => isRecord(message) && message.type === 'result' && message.requestId === uniqueRequestIdentifier.requestId
+	await modules.signerReply(createTestSimulationServicesOwner(createOtherChainSimulator()), websiteTabConnections, port, {
+		method: 'signer_reply',
+		params: [{
+			success: true,
+			signerProviderGeneration: 1,
+			forwardRequest: { type: 'forwardToSigner', replyWithSignersReply: true, method: 'eth_signTypedData_v4', params: [alternateOwnerAddress, EIP712Message.parse(safeTxToTypedDataJson(safeTx))], requestId: uniqueRequestIdentifier.requestId },
+			reply: signature,
+		}],
+		interceptorRequest: true,
+		interceptorInternalRequest: true,
+		usingInterceptorWithoutSigner: false,
+		uniqueRequestIdentifier: { requestId: uniqueRequestIdentifier.requestId + 1000, requestSocket: socket },
+	}, 'hasAccess', activeAddress)
+	assert.deepEqual((await modules.getPendingTransactionsAndMessages())[0]?.deferredSafeSignerReply, { signerReply: signature, chainId: fakeRpcNetwork.chainId })
+	assert.equal(postedMessages.some(isCoSignatureReply), false)
 	const signerCodeReadsBeforeReply = fakeSafeContract.requestedCodeAddresses.filter((address) => address === alternateOwnerAddress).length
-	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
-		method: 'popup_confirmDialog',
-		data: { action: 'signerIncluded', signerReply: signature, uniqueRequestIdentifier },
-	}), true)
+	await modules.resolveDeferredSafeSignerReplies(simulator, websiteTabConnections)
+	assert.equal(postedMessages.filter(isCoSignatureReply).length, 1)
 	const dappReply = postedMessages.find((message) =>
 		isRecord(message) && message.type === 'result' && message.method === 'eth_signTypedData_v4' && message.requestId === uniqueRequestIdentifier.requestId
 	)
