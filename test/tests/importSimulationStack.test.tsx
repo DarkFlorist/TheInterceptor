@@ -341,6 +341,8 @@ describe('import simulation stack', () => {
 		let exportedSimulationInput: SimulatedInput | undefined
 		const ethereum = {
 			async getBlockNumber() { return 1n },
+			// The export prepares the stack's Gnosis Safe executions against the latest block; this stack has none, so it is passed through unchanged.
+			async getBlock() { return { number: 1n, baseFeePerGas: 7n } },
 			async ethSimulateV1Input(simulationInput: SimulatedInput) {
 				exportedSimulationInput = simulationInput
 				return { method: 'eth_simulateV1' as const, params: [{ blockStateCalls: [], traceTransfers: true, validation: true }, 'latest' as const] }
