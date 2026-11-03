@@ -19,6 +19,9 @@ const fixtures = {
 	adjacentStatement: `${ fixtureDirectory }adjacentStatement.ts`,
 	aliasedImport: `${ fixtureDirectory }aliasedImport.ts`,
 	multilineCallback: `${ fixtureDirectory }multilineCallback.ts`,
+	writeWithoutReconcile: `${ fixtureDirectory }writeWithoutReconcile.ts`,
+	discardedChange: `${ fixtureDirectory }discardedChange.ts`,
+	writeThenReconcile: `${ fixtureDirectory }writeThenReconcile.ts`,
 } as const
 
 function createProgram() {
@@ -29,16 +32,23 @@ function createProgram() {
 
 const program = createProgram()
 const checker = program.getTypeChecker()
-const accessManagementFile = program.getSourceFile(accessManagementPath)
-const accessManagementModule = accessManagementFile === undefined ? undefined : checker.getSymbolAtLocation(accessManagementFile)
-const accessManagementExports = accessManagementModule === undefined ? [] : checker.getExportsOfModule(accessManagementModule)
-const exportedSymbol = (name: string) => {
-	const symbol = accessManagementExports.find((candidate) => candidate.name === name)
-	if (symbol === undefined) throw new Error(`accessManagement.ts does not export ${ name }`)
+const exportedSymbol = (modulePath: string, name: string) => {
+	const sourceFile = program.getSourceFile(modulePath)
+	const moduleSymbol = sourceFile === undefined ? undefined : checker.getSymbolAtLocation(sourceFile)
+	const symbol = (moduleSymbol === undefined ? [] : checker.getExportsOfModule(moduleSymbol)).find((candidate) => candidate.name === name)
+	if (symbol === undefined) throw new Error(`${ modulePath } does not export ${ name }`)
 	return symbol
 }
-const reconcileCommand = exportedSymbol('reconcileCommittedAccessChange')
-const reconciliationFunctions = [exportedSymbol('updateWebsiteApprovalAccesses'), exportedSymbol('finalizeWebsiteAccessChange')]
+const reconcileCommand = exportedSymbol(accessManagementPath, 'reconcileCommittedAccessChange')
+const reconciliationFunctions = [exportedSymbol(accessManagementPath, 'updateWebsiteApprovalAccesses'), exportedSymbol(accessManagementPath, 'finalizeWebsiteAccessChange')]
+const committedAccessChangeType = checker.getDeclaredTypeOfSymbol(exportedSymbol(accessManagementPath, 'CommittedAccessChange'))
+// The primitives that write website approvals, address consent or interceptor-disabled state. Settings imports and address-book writes are reconciled by their handlers and covered by the containment check above.
+const websiteAccessWriters = [
+	exportedSymbol(`${ backgroundDirectory }settings.ts`, 'updateWebsiteAccess'),
+	exportedSymbol(`${ backgroundDirectory }websiteAccessUpdating.ts`, 'updateWebsiteAccessAndContentScriptInjectionStrategy'),
+	exportedSymbol(accessManagementPath, 'setInterceptorDisabledForWebsite'),
+	exportedSymbol(accessManagementPath, 'setAccess'),
+]
 
 // Resolves a callee through import aliases to the declaring symbol, so renamed imports are recognised.
 function resolveCallee(call: ts.CallExpression) {
@@ -77,6 +87,64 @@ function findReconciliationCalls(fileName: string) {
 	return { found, uncontained }
 }
 
+type FunctionLikeWithBody = ts.FunctionDeclaration | ts.ArrowFunction | ts.FunctionExpression | ts.MethodDeclaration
+
+function getEnclosingFunction(node: ts.Node): FunctionLikeWithBody | undefined {
+	for (let current = node.parent; current !== undefined; current = current.parent) {
+		if (ts.isFunctionDeclaration(current) || ts.isArrowFunction(current) || ts.isFunctionExpression(current) || ts.isMethodDeclaration(current)) return current
+	}
+	return undefined
+}
+
+function returnsCommittedAccessChange(declaration: ts.SignatureDeclaration) {
+	const signature = checker.getSignatureFromDeclaration(declaration)
+	if (signature === undefined) return false
+	const returnType = checker.getAwaitedType(checker.getReturnTypeOfSignature(signature))
+	// `any` and `never` (for example assertNever) are assignable to everything, so they are not committed changes.
+	return returnType !== undefined && (returnType.flags & (ts.TypeFlags.Any | ts.TypeFlags.Never)) === 0 && checker.isTypeAssignableTo(returnType, committedAccessChangeType)
+}
+
+function callsReconcileAfter(enclosingFunction: FunctionLikeWithBody, position: number) {
+	let found = false
+	const visit = (node: ts.Node) => {
+		if (ts.isCallExpression(node) && node.getStart() > position && resolveCallee(node) === reconcileCommand) found = true
+		if (!found) ts.forEachChild(node, visit)
+	}
+	visit(enclosingFunction)
+	return found
+}
+
+const nameOf = (enclosingFunction: FunctionLikeWithBody) => {
+	if (enclosingFunction.name !== undefined && ts.isIdentifier(enclosingFunction.name)) return enclosingFunction.name.text
+	const { parent } = enclosingFunction
+	return ts.isVariableDeclaration(parent) && ts.isIdentifier(parent.name) ? parent.name.text : '<anonymous>'
+}
+
+// Lists `file:line function` for each website-access write whose function neither reconciles afterwards nor returns the change it committed, and for each such returned change a caller discards.
+function findUnreconciledWebsiteAccessWrites(fileName: string) {
+	const sourceFile = program.getSourceFile(fileName)
+	if (sourceFile === undefined) throw new Error(`Missing source file ${ fileName }`)
+	const unreconciled: string[] = []
+	const locate = (node: ts.Node, name: string) => `${ fileName.replace(repositoryRoot, '') }:${ sourceFile.getLineAndCharacterOfPosition(node.getStart()).line + 1 } ${ name }`
+	const visit = (node: ts.Node) => {
+		if (ts.isCallExpression(node)) {
+			const callee = resolveCallee(node)
+			const enclosingFunction = getEnclosingFunction(node)
+			if (callee !== undefined && websiteAccessWriters.includes(callee)) {
+				if (enclosingFunction === undefined) unreconciled.push(locate(node, '<module>'))
+				else if (!callsReconcileAfter(enclosingFunction, node.getStart()) && !returnsCommittedAccessChange(enclosingFunction)) unreconciled.push(locate(node, nameOf(enclosingFunction)))
+			}
+			const valueDeclaration = callee?.valueDeclaration
+			const calleeDeclaration = valueDeclaration !== undefined && ts.isVariableDeclaration(valueDeclaration) ? valueDeclaration.initializer : valueDeclaration
+			const returnedChangeIsDiscarded = ts.isExpressionStatement(ts.isAwaitExpression(node.parent) ? node.parent.parent : node.parent)
+			if (calleeDeclaration !== undefined && ts.isFunctionLike(calleeDeclaration) && returnsCommittedAccessChange(calleeDeclaration) && returnedChangeIsDiscarded) unreconciled.push(locate(node, `discards ${ callee?.name ?? '' }`))
+		}
+		ts.forEachChild(node, visit)
+	}
+	visit(sourceFile)
+	return unreconciled
+}
+
 test('the fail-closed access reconciliation primitives are private to accessManagement', () => {
 	assert.notEqual(accessManagementSource, '')
 	for (const primitive of failClosedPrimitives) {
@@ -105,4 +173,18 @@ test('the containment check rejects adjacent statements and aliased imports and 
 	const multilineCallback = findReconciliationCalls(fixtures.multilineCallback)
 	assert.equal(multilineCallback.found.length, 2)
 	assert.deepEqual(multilineCallback.uncontained, [])
+})
+
+// setAddressAccessForWebsite (popup_allowOrPreventAddressAccessForWebsite) writes address consent without reconciling exactly as on main; it is tracked separately and listed here so any other unreconciled write fails.
+const KNOWN_UNRECONCILED_WEBSITE_ACCESS_WRITES = ['app/ts/background/popupMessageHandlers/websiteAccess.ts setAddressAccessForWebsite']
+
+test('handler website-access writes reconcile afterwards or hand their committed change to a caller that reconciles it', () => {
+	const unreconciled = handlerPaths.flatMap(findUnreconciledWebsiteAccessWrites).map((location) => location.replace(/:\d+ /u, ' '))
+	assert.deepEqual(unreconciled, KNOWN_UNRECONCILED_WEBSITE_ACCESS_WRITES)
+})
+
+test('the website-access write check rejects unreconciled writes and discarded changes and accepts reconciled ones', () => {
+	assert.deepEqual(findUnreconciledWebsiteAccessWrites(fixtures.writeWithoutReconcile).map((location) => location.replace(/^.*:\d+ /u, '')), ['denyWebsite'])
+	assert.deepEqual(findUnreconciledWebsiteAccessWrites(fixtures.discardedChange).map((location) => location.replace(/^.*:\d+ /u, '')), ['discards denyWebsite'])
+	assert.deepEqual(findUnreconciledWebsiteAccessWrites(fixtures.writeThenReconcile), [])
 })
