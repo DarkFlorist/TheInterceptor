@@ -93,15 +93,48 @@ export async function movePendingSafeProposalToOutbox(
 	uniqueRequestIdentifier: UniqueRequestIdentifier,
 	createStore: (pendingProposal: PendingTransactionOrSignableMessage) => PendingSafeProposalStore,
 	getUpdatedTerminalReplies: () => Promise<readonly InterceptedRequestForward[]>,
-) {
-	await pendingRequestTerminalStateSemaphore.execute(async () => {
+	// Set when the move queues a new reply: a request that already has a queued reply is being answered otherwise and is not moved.
+	hasQueuedTerminalReply?: () => Promise<boolean>,
+): Promise<'moved' | 'answered' | 'gone'> {
+	return await pendingRequestTerminalStateSemaphore.execute(async () => {
 		const result = await readPendingTransactionsAndMessages()
 		if (!result.success) throw result.error
 		const found = result.value.find((pending) => doesUniqueRequestIdentifiersMatch(pending.uniqueRequestIdentifier, uniqueRequestIdentifier))
-		if (found === undefined) return
+		if (found === undefined) return 'gone'
+		if (hasQueuedTerminalReply !== undefined && await hasQueuedTerminalReply()) return 'answered'
 		const remainingPending = result.value.filter((pending) => pending !== found)
 		const outbox = (await readPendingSafeProposalStores()).filter((entry) => !doesUniqueRequestIdentifiersMatch(entry.proposal.uniqueRequestIdentifier, uniqueRequestIdentifier))
 		await browserStorageLocalSetPendingAndTerminalState(remainingPending, await getUpdatedTerminalReplies(), [...outbox, createStore(found)])
+		return 'moved'
+	})
+}
+
+// A pending request is answered either through a queued terminal reply or by deferring the signature the signer returned, never both: each of these writes checks for the other inside the pending-request critical section and writes nothing when the other came first.
+
+// Queues the request's terminal replies unless the request is gone or now holds a deferred Gnosis Safe signature.
+export async function queueTerminalRepliesUnlessDeferred(uniqueRequestIdentifier: UniqueRequestIdentifier, getUpdatedTerminalReplies: () => Promise<readonly InterceptedRequestForward[]>): Promise<'queued' | 'deferred' | 'gone'> {
+	return await pendingRequestTerminalStateSemaphore.execute(async () => {
+		const result = await readPendingTransactionsAndMessages()
+		if (!result.success) throw result.error
+		const found = result.value.find((pending) => doesUniqueRequestIdentifiersMatch(pending.uniqueRequestIdentifier, uniqueRequestIdentifier))
+		if (found === undefined) return 'gone'
+		if (found.deferredSafeSignerReply !== undefined) return 'deferred'
+		await browserStorageLocalSet({ pendingTerminalReplies: await getUpdatedTerminalReplies() })
+		return 'queued'
+	})
+}
+
+// Defers a signature the signer returned unless the request is gone or already has a queued terminal reply (it is being answered).
+export async function deferSignatureUnlessAnswered(uniqueRequestIdentifier: UniqueRequestIdentifier, deferredSafeSignerReply: { readonly signerReply: string, readonly chainId: bigint }, hasQueuedTerminalReply: () => Promise<boolean>): Promise<'deferred' | 'answered' | 'gone'> {
+	return await pendingRequestTerminalStateSemaphore.execute(async () => {
+		const result = await readPendingTransactionsAndMessages()
+		if (!result.success) throw result.error
+		const match = result.value.findIndex((pending) => doesUniqueRequestIdentifiersMatch(pending.uniqueRequestIdentifier, uniqueRequestIdentifier))
+		const found = result.value[match]
+		if (found === undefined) return 'gone'
+		if (await hasQueuedTerminalReply()) return 'answered'
+		await browserStorageLocalSet2({ pendingTransactionsAndMessages: replaceElementInReadonlyArray(result.value, match, { ...found, deferredSafeSignerReply }) })
+		return 'deferred'
 	})
 }
 

@@ -410,6 +410,36 @@ test('stores a proposal signature once when its reply bookkeeping fails after ma
 	}
 })
 
+// The reply's delivery bookkeeping fails and the replay that follows fails too: the delivery error still reaches the caller and the replay error is reported.
+test('keeps both errors observable when the replay after a failed proposal reply bookkeeping fails as well', async () => {
+	const owner = createTestSimulationServicesOwner(simulator, () => simulator)
+	owner.clear()
+	await setLatestUnexpectedError(undefined)
+	let failTerminalReplyCleanup = true
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		if (failTerminalReplyCleanup && Object.keys(items).join() === 'pendingTerminalReplies') {
+			failTerminalReplyCleanup = false
+			throw new Error('Terminal reply cleanup unavailable.')
+		}
+		writeStoredItems()
+	})
+	try {
+		await withSilencedConsole(async () => await deferSafeProposalSignatureOnChainA(owner, 112, 61n, async (websiteTabConnections) => {
+			owner.recover(fakeRpcNetwork)
+			await modules.resolveDeferredSafeSignerReplies(simulator, websiteTabConnections)
+			// Once the reply's cleanup has failed, the outbox cannot be read for the replay.
+			browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+				if (!failTerminalReplyCleanup && Array.isArray(keys) && keys.includes('pendingSafeProposalStores')) throw new Error('Outbox unavailable for the replay.')
+				return readStoredItems()
+			})
+		}, /Terminal reply cleanup unavailable/u))
+		assert.match((await getLatestUnexpectedError())?.data.message ?? '', /Outbox unavailable for the replay/u)
+	} finally {
+		browserMock.setStorageSetHandler(undefined)
+		browserMock.setStorageGetHandler(undefined)
+	}
+})
+
 test('replays a deferred Safe signature when a normal network switch returns to its chain', async () => {
 	const { changeActiveAddressAndChain } = await import('../../app/ts/background/activeSettings.js')
 	const otherChainSimulator = createOtherChainSimulator()
@@ -946,7 +976,7 @@ test('forwards a Safe transaction to the wallet-selected Safe owner as EIP-712 t
 	assert.equal(typedData.message.to.toLowerCase(), `0x${ recipientAddress.toString(16).padStart(40, '0') }`)
 })
 
-test.each(['other chain first', 'matching recovery during the reply'] as const)('routes a Safe co-signing request through the wallet-selected owner (%s)', async (signerReplyServices) => {
+test.each(['other chain first', 'matching recovery during the reply', 'deferral during a window-close rejection'] as const)('routes a Safe co-signing request through the wallet-selected owner (%s)', async (signerReplyServices) => {
 	const ownerAccount = privateKeyToAccount('0xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd')
 	const safeSignerAddress = BigInt(ownerAccount.address)
 	const alternateOwnerAccount = privateKeyToAccount('0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef')
@@ -1172,7 +1202,7 @@ test.each(['other chain first', 'matching recovery during the reply'] as const)(
 			return await readCode(...args)
 		})
 	}
-	await modules.signerReply(replyOwner, websiteTabConnections, port, {
+	const deliverCoSignature = async () => await modules.signerReply(replyOwner, websiteTabConnections, port, {
 		method: 'signer_reply',
 		params: [{
 			success: true,
@@ -1185,6 +1215,31 @@ test.each(['other chain first', 'matching recovery during the reply'] as const)(
 		usingInterceptorWithoutSigner: false,
 		uniqueRequestIdentifier: { requestId: uniqueRequestIdentifier.requestId + 1000, requestSocket: socket },
 	}, 'hasAccess', activeAddress)
+	if (signerReplyServices === 'deferral during a window-close rejection') {
+		// The window closes while services are unavailable; the no-response path finds no deferred signature and decides to reject, and the signer's reply is deferred before that rejection is written.
+		replyOwner.clear()
+		const coSignatureWindow = (await modules.getPendingTransactionsAndMessages())[0]?.popupOrTabId
+		if (coSignatureWindow === undefined) throw new Error('Missing co-signature window')
+		let pendingReads = 0
+		let deferral: Promise<unknown> | undefined
+		browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+			// The third read is the rejection's re-read after the serialized inspection (the close event's own read and the inspection come first).
+			if (deferral === undefined && Array.isArray(keys) && keys.includes('pendingTransactionsAndMessages') && ++pendingReads === 3) {
+				deferral = deliverCoSignature()
+				await deferral
+			}
+			return readStoredItems()
+		})
+		await modules.onCloseWindowOrTab(coSignatureWindow, undefined, undefined, websiteTabConnections)
+		browserMock.setStorageGetHandler(undefined)
+		assert.notEqual(deferral, undefined)
+		assert.equal(postedMessages.some(isCoSignatureReply), false)
+		assert.deepEqual((await modules.getPendingTransactionsAndMessages())[0]?.deferredSafeSignerReply, { signerReply: signature, chainId: fakeRpcNetwork.chainId })
+		// Services for the signature's chain return and settle it once.
+		await modules.resolveDeferredSafeSignerReplies(simulator, websiteTabConnections)
+	} else {
+		await deliverCoSignature()
+	}
 	browserMock.setStorageGetHandler(undefined)
 	await windowCloseSettlement
 	pausedCodeRead?.mockRestore()

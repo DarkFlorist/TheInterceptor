@@ -17,8 +17,8 @@ import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.j
 import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingSafeProposalStores, getPendingTransactionsAndMessages, movePendingSafeProposalToOutbox, removePendingSafeProposalStore, getRpcConnectionStatus, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
 import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
 import { replyToInterceptedRequestAfterManifestV2Reconnect } from '../messageSending.js'
-import { attemptQueuedTerminalReplyDelivery, queueSafeProposalReplyAndMoveToOutbox, queueTerminalReply, queueTerminalReplyAndAttemptDelivery } from '../terminalReplyDelivery.js'
-import { getPendingTerminalReplies } from '../pendingTerminalReplies.js'
+import { attemptQueuedTerminalReplyDelivery, queueSafeProposalReplyAndMoveToOutbox, queueTerminalReply, queueTerminalReplyUnlessDeferred } from '../terminalReplyDelivery.js'
+import { deferSafeSignatureUnlessAnswered, getPendingTerminalReplies } from '../pendingTerminalReplies.js'
 import { getConfirmationWindowRequests } from '../../utils/confirmationQueue.js'
 import { stringToBytes, keccak256 } from '../../utils/ethereumPrimitives.js'
 import { EthereumBytes32, EthereumQuantity, serialize } from '../../types/wire-types.js'
@@ -400,6 +400,23 @@ function getSafeProposalSigningChainId(pending: PendingTransactionOrSignableMess
 	return flow.pending.safeTransaction.safeTx.domain.chainId ?? 0n
 }
 
+// Once a deferral is written it is replayed even when the work after the write (delivering the website's reply, updating its window) fails. That failure still reaches the caller; a replay failing on top of it is reported rather than hiding it.
+async function runThenReplay<Result>(afterWrite: () => Promise<Result>, replay: () => Promise<void>): Promise<Result> {
+	let result: Result
+	try {
+		result = await afterWrite()
+	} catch (afterWriteError: unknown) {
+		try {
+			await replay()
+		} catch (replayError: unknown) {
+			await reportUnexpectedError(replayError, { code: 'deferred_safe_signature_replay_failed' })
+		}
+		throw afterWriteError
+	}
+	await replay()
+	return result
+}
+
 // A deferral is written after the reply's services were captured, so services for its chain may have been installed, and finished their replay, before it landed. The installed services are read again and, when they are for its chain, replayed now; the replay is serialized and finds an already settled entry gone, so nothing is stored or answered twice.
 async function replayIfServicesAreInstalledFor(chainId: bigint, getInstalledServices: () => Promise<ConfirmationServices | undefined>, websiteTabConnections: WebsiteTabConnections) {
 	const installedServices = await getInstalledServices()
@@ -453,21 +470,12 @@ export async function resolvePendingSignerReply(services: ConfirmationServices |
 			await failSafeSignatureWithoutChain(uniqueRequestIdentifier)
 			return
 		}
-		// Once the deferral is written it is replayed even when delivering the website's reply or updating its window fails; that failure still reaches the caller.
-		if (safeFlow.kind === 'proposal') {
-			try {
-				return await moveSignedSafeProposalToOutbox(pending, safeFlow.pending.safeTransaction.safeTxHash, { signerReply, chainId }, websiteTabConnections, services, false)
-			} finally {
-				await replayIfServicesAreInstalledFor(chainId, getInstalledServices, websiteTabConnections)
-			}
-		}
-		await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (current) => modifyObject(current, { deferredSafeSignerReply: { signerReply, chainId } }))
-		try {
-			// The deferred co-signature leaves the queue its window shows, so the window moves on to the next request or closes.
-			await updateViewAfterPendingRequestRemoved(pending, services, 'unchanged')
-		} finally {
-			await replayIfServicesAreInstalledFor(chainId, getInstalledServices, websiteTabConnections)
-		}
+		const replay = async () => await replayIfServicesAreInstalledFor(chainId, getInstalledServices, websiteTabConnections)
+		if (safeFlow.kind === 'proposal') return await runThenReplay(async () => await moveSignedSafeProposalToOutbox(pending, safeFlow.pending.safeTransaction.safeTxHash, { signerReply, chainId }, websiteTabConnections, services, false), replay)
+		// A request whose window close or Reject already queued its rejection keeps that answer; the signature is not deferred.
+		if (await deferSafeSignatureUnlessAnswered(uniqueRequestIdentifier, { signerReply, chainId }) !== 'deferred') return
+		// The deferred co-signature leaves the queue its window shows, so the window moves on to the next request or closes.
+		await runThenReplay(async () => await updateViewAfterPendingRequestRemoved(pending, services, 'unchanged'), replay)
 		return
 	}
 	return await settlePendingTerminalReply(websiteTabConnections, pending, { type: 'result', result: params.reply }, undefined)
@@ -535,7 +543,8 @@ async function moveSignedSafeProposalToOutbox(
 			return true
 		}
 		const terminalReply = createDeferredSafeProposalReply(pending, safeTxHash)
-		await queueSafeProposalReplyAndMoveToOutbox(pending.uniqueRequestIdentifier, createStore, terminalReply)
+		// A request whose window close or Reject already queued its rejection keeps that answer; the proposal is not moved.
+		if (await queueSafeProposalReplyAndMoveToOutbox(pending.uniqueRequestIdentifier, createStore, terminalReply) !== 'moved') return false
 		return await attemptQueuedTerminalReplyDelivery(websiteTabConnections, terminalReply)
 	} finally {
 		await updateViewAfterPendingRequestRemoved(pending, services, 'unchanged')
@@ -747,11 +756,16 @@ async function resolvePendingRequestAsNoResponse(uniqueRequestIdentifier: Unique
 	if (deferredSignature === 'gone' || deferredSignature === 'waiting') return undefined
 	const pending = await getPendingTransactionOrMessageByidentifier(uniqueRequestIdentifier)
 	if (pending === undefined) return undefined
-	const delivery = await queueTerminalReplyAndAttemptDelivery(websiteTabConnections, {
+	const rejection = {
 		...pending.originalRequestParameters,
 		...formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User denied transaction signature'),
 		uniqueRequestIdentifier,
-	})
+	}
+	// The rejection is queued only if the request still holds no deferred signature: a signature deferred since the inspection above is settled as signed instead, and once the rejection is queued a later signer reply is not deferred.
+	const rejectionOutcome = await queueTerminalReplyUnlessDeferred(rejection)
+	if (rejectionOutcome === 'gone') return undefined
+	if (rejectionOutcome === 'deferred') return await resolvePendingRequestAsNoResponse(uniqueRequestIdentifier, services, websiteTabConnections)
+	const delivery = await attemptQueuedTerminalReplyDelivery(websiteTabConnections, rejection)
 	await removeSettledPendingRequest(pending, services)
 	return delivery
 }

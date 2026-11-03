@@ -7,7 +7,7 @@ import { Semaphore } from '../utils/semaphore.js'
 import { websiteSocketToString } from './backgroundUtils.js'
 import { replyToInterceptedRequest } from './messageSending.js'
 import { attemptDeliveryAfterManifestV2Reconnect } from './manifestV2Reconnect.js'
-import { appendPendingTerminalReply, getPendingTerminalReplies, writeSafeProposalReplyAndOutboxEntry, removePendingTerminalReply } from './pendingTerminalReplies.js'
+import { appendPendingTerminalReply, getPendingTerminalReplies, writeSafeProposalReplyAndOutboxEntry, writeTerminalReplyUnlessDeferred, removePendingTerminalReply } from './pendingTerminalReplies.js'
 
 const terminalReplyProductions = new Map<string, Promise<boolean | undefined>>()
 const terminalReplyReservations = new Set<string>()
@@ -47,9 +47,23 @@ export async function queueSafeProposalReplyAndMoveToOutbox(uniqueRequestIdentif
 	const identifier = getUniqueRequestIdentifierString(uniqueRequestIdentifier)
 	terminalReplyReservations.add(identifier)
 	try {
-		await terminalReplySemaphore.execute(async () => {
-			await writeSafeProposalReplyAndOutboxEntry(uniqueRequestIdentifier, createStore, message)
-		})
+		const outcome = await terminalReplySemaphore.execute(async () => await writeSafeProposalReplyAndOutboxEntry(uniqueRequestIdentifier, createStore, message))
+		if (outcome !== 'moved') terminalReplyReservations.delete(identifier)
+		return outcome
+	} catch (error) {
+		terminalReplyReservations.delete(identifier)
+		throw error
+	}
+}
+
+// Queues a terminal reply like queueTerminalReply, unless its request now holds a deferred Gnosis Safe signature; the reservation is released when nothing was queued.
+export async function queueTerminalReplyUnlessDeferred(message: InterceptedRequestForward) {
+	const identifier = getUniqueRequestIdentifierString(message.uniqueRequestIdentifier)
+	terminalReplyReservations.add(identifier)
+	try {
+		const outcome = await terminalReplySemaphore.execute(async () => await writeTerminalReplyUnlessDeferred(message))
+		if (outcome !== 'queued') terminalReplyReservations.delete(identifier)
+		return outcome
 	} catch (error) {
 		terminalReplyReservations.delete(identifier)
 		throw error
