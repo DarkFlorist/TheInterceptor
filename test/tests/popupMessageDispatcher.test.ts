@@ -136,8 +136,25 @@ const disabledWebsiteAccess: Settings['websiteAccess'][number] = {
 	declarativeNetRequestBlockMode: 'disabled',
 }
 
+const isPopupMessage = (message: unknown, method: string) => {
+	const parsed = MessageToPopup.safeParse(message)
+	return parsed.success && parsed.value.method === method
+}
+
+async function waitForPopupMessage(method: string) {
+	const deadline = Date.now() + 2_000
+	while (!sentMessages.some((message) => isPopupMessage(message, method))) {
+		if (Date.now() > deadline) throw new Error(`Timed out waiting for ${ method }`)
+		await new Promise((resolve) => setTimeout(resolve, 0))
+	}
+}
+
+// Address-book saves reply before their broadcast and the background re-label that follows it, so each such test waits for the re-label notification; otherwise it would arrive during a later test that counts messages.
+const waitForAddressBookChangeToSettle = async () => await waitForPopupMessage('popup_simulationsRelabelled')
+
 function createDispatcherContext(resetSimulationState: () => Promise<void>): PopupMessageDispatcherContext {
-	const ethereum: EthereumClientService = Object.create(EthereumClientServiceConstructor.prototype)
+	// After broadcasting an address-book change, the background re-labels stored simulations of the services' network; nothing is stored here, so it only reads the network.
+	const ethereum: EthereumClientService = Object.assign(Object.create(EthereumClientServiceConstructor.prototype), { getChainId: () => settings.activeRpcNetwork.chainId, getRpcEntry: () => settings.activeRpcNetwork })
 	const tokenPriceService: TokenPriceService = Object.create(TokenPriceServiceConstructor.prototype)
 	return {
 		websiteTabConnections: new Map(),
@@ -312,6 +329,7 @@ describe('popup message dispatcher seams', () => {
 			ok: true,
 		})
 		assert.equal(dynamicRuleUpdates.length, 1)
+		await waitForAddressBookChangeToSettle()
 	})
 
 	test('broadcasts address-book saves for metadata consumers to refresh themselves', async () => {
@@ -326,10 +344,8 @@ describe('popup message dispatcher seams', () => {
 		})
 
 		assert.deepEqual(result, { type: 'AddOrModifyAddressBookEntryReply', ok: true })
-		assert.equal(sentMessages.some((message) => {
-			const parsed = MessageToPopup.safeParse(message)
-			return parsed.success && parsed.value.method === 'popup_addressBookEntriesChanged'
-		}), true)
+		await waitForAddressBookChangeToSettle()
+		assert.equal(sentMessages.some((message) => isPopupMessage(message, 'popup_addressBookEntriesChanged')), true)
 	})
 
 	test('returns a successful save reply without waiting for address-book refresh listeners', async () => {
@@ -346,16 +362,14 @@ describe('popup message dispatcher seams', () => {
 			},
 		})
 
-		while (!sentMessages.some((message) => {
-			const parsed = MessageToPopup.safeParse(message)
-			return parsed.success && parsed.value.method === 'popup_addressBookEntriesChanged'
-		})) await Promise.resolve()
+		await waitForPopupMessage('popup_addressBookEntriesChanged')
 		const result = await Promise.race([
 			dispatch,
 			new Promise<'save reply timeout'>((resolve) => { setTimeout(() => resolve('save reply timeout'), 50) }),
 		])
 		releaseBroadcast?.()
 		await dispatch
+		await waitForAddressBookChangeToSettle()
 
 		assert.deepEqual(result, { type: 'AddOrModifyAddressBookEntryReply', ok: true })
 	})
@@ -462,8 +476,10 @@ describe('popup message dispatcher seams', () => {
 			{ method: 'popup_import_settings', data: { fileContents: importedSettings } },
 		)
 
+		await waitForAddressBookChangeToSettle()
 		const messages = sentMessages.map((message) => MessageToPopup.parse(message))
-		assert.equal(messages.length, 2)
+		// The imported address book is published as any address-book change is, after the imported settings.
+		assert.deepEqual(messages.slice(2).map((message) => message.method), ['popup_addressBookEntriesChanged', 'popup_simulationsRelabelled'])
 		const importSuccess = messages[0]
 		assert.equal(importSuccess?.method, 'popup_initiate_export_settings_reply')
 		if (importSuccess?.method !== 'popup_initiate_export_settings_reply') throw new Error('Expected successful import broadcast.')

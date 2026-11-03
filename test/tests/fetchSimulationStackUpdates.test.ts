@@ -70,6 +70,14 @@ describe('applySimulationStackUpdate', () => {
 		}
 	})
 
+	test('an opening reply with a result an address-book re-label replaced under the same simulation id keeps the re-labelled publication', () => {
+		const relabelled: CompleteVisualizedSimulation = { ...createFinishedState(3, publishedEntry), metadataRevision: 1 }
+		const capturedBeforeRelabel = createFinishedState(3, openingEntry)
+		assert.deepEqual(applyInOrder([publication(relabelled), openingVisualisationReply(capturedBeforeRelabel), openingMetadataReply(openingEntry)]), { visualisation: relabelled, addressBookEntries: [publishedEntry] })
+		// A reply that already carries the re-label still replaces the original result published before it.
+		assert.deepEqual(applyInOrder([publication(capturedBeforeRelabel), openingVisualisationReply(relabelled)]).visualisation, relabelled)
+	})
+
 	test('an opening reply from a newer refresh replaces an older published state', () => {
 		const newerStoredState = createFinishedState(4, openingEntry)
 		assert.deepEqual(applyInOrder([publication(createFinishedState(3, publishedEntry)), openingVisualisationReply(newerStoredState)]).visualisation, newerStoredState)

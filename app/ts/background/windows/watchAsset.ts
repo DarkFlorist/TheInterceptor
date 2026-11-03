@@ -20,6 +20,8 @@ import { loadErc1046Metadata, loadLegacyErc20Metadata, loadNftMetadataAndVerifyO
 import { invalidWatchAssetRequest, watchAssetRequestError } from '../watchAssetRpc.js'
 import { isValidAddressBookEntryName, MAX_ADDRESS_BOOK_ENTRY_NAME_LENGTH } from '../../utils/addressBookValidation.js'
 import { isValidErc20Decimals } from '../../utils/erc20.js'
+import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
+import { publishAddressBookChangeAndRelabelSimulations } from '../addressBookChangePublication.js'
 
 export const MAX_PENDING_WATCH_ASSET_REQUESTS = 20
 export const MAX_PENDING_WATCH_ASSET_REQUESTS_PER_ORIGIN = 3
@@ -248,12 +250,12 @@ type ResolutionDependencies = {
 	sendToSigner: (request: StoredWatchAssetRequest) => boolean
 }
 
-function defaultResolutionDependencies(websiteTabConnections: WebsiteTabConnections): ResolutionDependencies {
+export function createWatchAssetResolutionDependencies(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections): ResolutionDependencies {
 	return {
 		getRequests: getPendingWatchAssetRequests,
 		updateRequests: updatePendingWatchAssetRequests,
 		updateAddressBook: updateUserAddressBookEntries,
-		publishAddressBookChanged: async () => await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' }),
+		publishAddressBookChanged: async () => await publishAddressBookChangeAndRelabelSimulations(simulationServicesOwner.getCurrent()),
 		publish: publishWatchAssetRequest,
 		closeDialog: closePopupOrTabById,
 		processQueue: async (connections) => await processWatchAssetQueue(connections),
@@ -311,7 +313,7 @@ function refreshQueuedNftRequests(requests: readonly StoredWatchAssetRequest[], 
 }
 
 let resolutionInProgress = false
-export async function resolveWatchAsset(websiteTabConnections: WebsiteTabConnections, confirmation: WatchAssetConfirmation, dependencies = defaultResolutionDependencies(websiteTabConnections)) {
+export async function resolveWatchAsset(websiteTabConnections: WebsiteTabConnections, confirmation: WatchAssetConfirmation, dependencies: ResolutionDependencies) {
 	if (resolutionInProgress) return
 	resolutionInProgress = true
 	try {
