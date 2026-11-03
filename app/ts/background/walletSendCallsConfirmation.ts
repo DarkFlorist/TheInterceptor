@@ -27,6 +27,8 @@ import { refreshConfirmationMetadata, shouldReplacePopupVisualisation } from './
 import { formRejectMessage } from './confirmationReplies.js'
 import { type AnswerRequestsOfClosedWindow, getPendingTransactionWindow, updateViewAfterPendingRequestRemoved } from './confirmationWindow.js'
 import { formEthSendTransactionOnSimulationState } from './transactionPreparation.js'
+import { isSimulationModeSafeAccount } from './safeTransactionConfirmation.js'
+import { getTransactionBatchCallGasPayment } from '../safe/safePendingFlow.js'
 
 // Confirms simulation-mode wallet_sendCalls batches: admits a batch to the confirmation queue, previews it on top of the simulation stack, and approves or rejects it as a whole. The confirmation window's generic dispatch hands every batch to resolvePendingTransactionBatch.
 
@@ -41,7 +43,8 @@ async function formWalletSendCallsTransactions(ethereumClientService: EthereumCl
 		// The batch is previewed exactly where approval commits it: its calls are appended to the stack's operations, and each call is estimated in the block that approval adds it to.
 		const simulationState = toResolvedSimulationState(await createSimulationStateWithNonceAndBaseFeeFixing(getSimulationInputForStack(stackContext, preparedOperations, true), ethereumClientService))
 		const transactionIdentifier = getWalletSendCallTransactionIdentifier(pendingBatch.uniqueRequestIdentifier, callIndex)
-		const transactionToSimulate = await formEthSendTransactionOnSimulationState(ethereumClientService, undefined, simulationState, pendingBatch.binding.account, pendingBatch.website, transactionParams, pendingBatch.created, transactionIdentifier, pendingBatch.simulationMode, 'transaction-sender', 'appendedToSimulation')
+		const gasPayment = getTransactionBatchCallGasPayment(pendingBatch.executeCallsThroughSafe === true, transactionParams, pendingBatch.binding.account)
+		const transactionToSimulate = await formEthSendTransactionOnSimulationState(ethereumClientService, undefined, simulationState, pendingBatch.binding.account, pendingBatch.website, transactionParams, pendingBatch.created, transactionIdentifier, pendingBatch.simulationMode, gasPayment, 'appendedToSimulation')
 		transactionsToSimulate.push(transactionToSimulate)
 		if (transactionToSimulate.success) preparedOperations.push(toWalletSendCallStackOperation(transactionToSimulate))
 	}
@@ -213,6 +216,8 @@ export async function openConfirmTransactionDialogForTransactionBatch(
 	// Passed in by the caller: answering the requests of a closed window dispatches every kind of request, batches included, back to this module.
 	answerRequestsOfClosedWindow: AnswerRequestsOfClosedWindow,
 ) {
+	// Decided before the confirmation lock, as a single transaction's Gnosis Safe preparation is.
+	const executeCallsThroughSafe = await isSimulationModeSafeAccount(ethereumClientService, binding.account)
 	const outcome = await runWithPendingConfirmationLock(async () => {
 		// Checked and recorded while holding the confirmation lock, so two concurrent requests cannot both claim the same batch id.
 		if (await isWalletSendCallsIdInUse(website.websiteOrigin, batchId)) return formRejectMessage(walletSendCallsIdInUseError.code, walletSendCallsIdInUseError.message)
@@ -230,6 +235,7 @@ export async function openConfirmTransactionDialogForTransactionBatch(
 			approvalStatus: { status: 'WaitingForUser' as const },
 			binding,
 			batchId,
+			...(executeCallsThroughSafe ? { executeCallsThroughSafe: true as const } : {}),
 			transactionOrMessageCreationStatus: 'Crafting' as const,
 		}
 		await addPendingTransactionBatch(pendingBatch)

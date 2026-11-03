@@ -2,6 +2,7 @@ import type { PendingTransactionOrSignableMessageExceptBatch } from '../types/ac
 import type { SendTransactionParams } from '../types/JsonRpc-types.js'
 import type { SafeMessageCoSignSnapshot, SafeTransactionSigningRequest } from '../types/safeTypes.js'
 import type { TransactionGasPayment } from '../types/visualizer-types.js'
+import { isSafeExecutableRequestFromActiveAddress } from './safeExecutionRouting.js'
 
 type PendingTransaction = Extract<PendingTransactionOrSignableMessageExceptBatch, { readonly type: 'Transaction' }>
 type PendingSignableMessage = Extract<PendingTransactionOrSignableMessageExceptBatch, { readonly type: 'SignableMessage' }>
@@ -43,6 +44,11 @@ export function getSafeTransactionPendingFlow(pending: PendingTransaction): Dire
 export function getPendingTransactionGasPayment(pending: PendingTransaction): TransactionGasPayment {
 	if (pending.executeThroughSafe === true) return 'simulated-safe-executor'
 	return getSafeTransactionPendingFlow(pending) === undefined ? 'transaction-sender' : 'external-executor'
+}
+
+// The fee mode of one call of a wallet_sendCalls batch, read back like getPendingTransactionGasPayment so the preview, every refresh and approval form the call the same way. The batch's admission decided once whether its account is a Gnosis Safe the simulation runs transactions through (isSimulationModeSafeAccount). If it is, each call the Safe can make through execTransaction (isSafeExecutableRequestFromActiveAddress) runs through the Safe, like the same call sent on its own, and the others are simulated as ordinary transactions from the Safe.
+export function getTransactionBatchCallGasPayment(batchExecutesCallsThroughSafe: boolean, callParams: SendTransactionParams, batchAccount: bigint): TransactionGasPayment {
+	return batchExecutesCallsThroughSafe && isSafeExecutableRequestFromActiveAddress(callParams, batchAccount) ? 'simulated-safe-executor' : 'transaction-sender'
 }
 
 export function getSafePendingFlow(pending: PendingTransactionOrSignableMessageExceptBatch): SafePendingFlow | undefined {

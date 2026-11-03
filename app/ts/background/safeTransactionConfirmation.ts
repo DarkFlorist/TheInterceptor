@@ -51,6 +51,11 @@ export type SafeTransactionConfirmationPreparation = {
  */
 async function isSimulationModeSafeExecution(ethereum: EthereumClientService, transactionParams: SendTransactionParams | SendRawTransactionParams, activeAddress: bigint) {
 	if (!isSafeExecutableRequestFromActiveAddress(transactionParams, activeAddress)) return false
+	return await isSimulationModeSafeAccount(ethereum, activeAddress)
+}
+
+// Whether the simulation runs the transactions the active address sends through the Gnosis Safe it is (isSimulationModeSafeExecution): a Gnosis Safe configured on this chain, deployed with a version Interceptor supports. A wallet_sendCalls batch decides this once for its account when it is admitted, as a single transaction does, and then runs each of its calls that the Safe can make through execTransaction through the Safe (getTransactionBatchCallGasPayment).
+export async function isSimulationModeSafeAccount(ethereum: EthereumClientService, activeAddress: bigint) {
 	const addressBookEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(ethereum.getChainId())
 	if (!addressBookEntries.some((entry) => entry.type === 'safe' && entry.address === activeAddress)) return false
 	try {

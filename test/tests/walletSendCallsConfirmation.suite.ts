@@ -1,10 +1,10 @@
 import * as assert from 'assert'
 import { setSystemTime, test } from 'bun:test'
-import { activeAddress, addressString, browserMock, createDisconnectedPort, createWebsitePort, fakeBlock, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, isRecord, modules, pendingTransaction, recipientAddress, simulator, withSilencedConsole } from './confirmTransactionTestHarness.js'
+import { activeAddress, addressString, browserMock, createDisconnectedPort, createSafeAddressBookEntry, createWebsitePort, fakeBlock, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, isRecord, modules, pendingTransaction, recipientAddress, simulator, withSilencedConsole } from './confirmTransactionTestHarness.js'
 import { createDeferredValue } from './backgroundEthAccountsTestHarness.js'
 import type { PendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
 import type { InterceptorStackOperation } from '../../app/ts/types/visualizer-types.js'
-import { WalletSendCalls } from '../../app/ts/types/JsonRpc-types.js'
+import { type SendTransactionParams, WalletSendCalls } from '../../app/ts/types/JsonRpc-types.js'
 import { JsonRpcResponseError } from '../../app/ts/utils/errors.js'
 
 const website = { websiteOrigin: 'https://example.com', icon: undefined, title: undefined }
@@ -1431,4 +1431,94 @@ test('approving a batch adds every call to the simulation stack and answers wall
 
 	const duplicate = await requestBatch(websiteTabConnections, { ...walletSendCallsRequest, params: [{ ...walletSendCallsRequest.params[0], id: '0x01' }] })
 	assert.equal('error' in duplicate ? duplicate.error.code : undefined, 5720)
+})
+
+const SAFE_EXECUTION_SIMULATION_OPTIONS = { requiredChainId: fakeRpcNetwork.chainId, simulateWithZeroBaseFee: false, executeThroughSafe: true }
+
+// Configures the batch's account as a Gnosis Safe in the address book, deployed with the given on-chain nonce.
+async function configureBatchAccountAsSafe() {
+	fakeSafeContract.owners = [0x1000000000000000000000000000000000000001n, 0x2000000000000000000000000000000000000002n]
+	fakeSafeContract.threshold = 2n
+	fakeSafeContract.nonce = 5n
+	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry()])
+}
+
+// Forms the call as the same transaction sent on its own would be, to compare a batch call with it.
+async function formCallAsSingleSafeTransaction(transactionParams: SendTransactionParams, transactionIdentifier: bigint) {
+	const formed = await modules.formEthSendTransaction(simulator.ethereum, undefined, activeAddress, website, transactionParams, new Date(), transactionIdentifier, true, 'simulated-safe-executor')
+	if (!formed.success) throw new Error(`Forming the single transaction failed: ${ formed.error.message }`)
+	return formed
+}
+
+async function expectBatchCallsToRunThroughTheSafe(request: typeof walletSendCallsRequest) {
+	const { postedMessages, websiteTabConnections } = await setUpWalletSendCallsTest()
+	await configureBatchAccountAsSafe()
+	const { getWalletSendCallsTransactionParams } = await import('../../app/ts/background/walletSendCalls.js')
+	const callParams = getWalletSendCallsTransactionParams(WalletSendCalls.parse(request), activeAddress)
+	const { SAFE_EXECUTION_SIMULATION_EXECUTOR } = await import('../../app/ts/safe/safeExecutionSimulation.js')
+	const expectedFirstNonce = (await formCallAsSingleSafeTransaction(callParams[0] ?? assert.fail('Missing the first call'), 1n)).transaction.nonce
+
+	const expectEveryCallToBeASafeExecution = (pending: Awaited<ReturnType<typeof getPendingBatch>>) => {
+		assert.equal(pending.transactionOrMessageCreationStatus, 'Simulated')
+		const calls = pending.transactionsToSimulate.map((call) => call.success ? call : assert.fail(`A batch call failed to prepare: ${ call.error.message }`))
+		assert.equal(calls.length, callParams.length)
+		for (const call of calls) {
+			assert.deepEqual(call.simulationOptions, SAFE_EXECUTION_SIMULATION_OPTIONS)
+			assert.equal(call.transaction.from, activeAddress)
+			assert.equal(call.transaction.maxFeePerGas, 0n, 'the Safe pays no fees, its executor does')
+		}
+		// Each call is numbered after the calls before it, as consecutive single Safe transactions are.
+		assert.deepEqual(calls.map((call) => call.transaction.nonce), callParams.map((_, callIndex) => expectedFirstNonce + BigInt(callIndex)))
+		if (pending.popupVisualisation.statusCode !== 'success') throw new Error(`The batch preview failed: ${ pending.popupVisualisation.data.error.message }`)
+		const previewedCalls = pending.popupVisualisation.data.simulationState.simulationStateInput.flatMap((block) => block.transactions).slice(-callParams.length)
+		assert.deepEqual(previewedCalls.map((call) => call.executedTransaction?.from), callParams.map(() => SAFE_EXECUTION_SIMULATION_EXECUTOR), 'the preview runs every call as the executor\'s execTransaction call')
+	}
+
+	assert.deepEqual(await requestBatch(websiteTabConnections, request), { type: 'doNotReply' })
+	const pending = await getPendingBatch()
+	assert.equal(pending.executeCallsThroughSafe, true)
+	expectEveryCallToBeASafeExecution(pending)
+
+	const { refreshPopupConfirmTransactionSimulation } = await import('../../app/ts/background/popupMessageHandlers.js')
+	await refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
+	expectEveryCallToBeASafeExecution(await getPendingBatch())
+
+	assert.equal(await approveBatch(websiteTabConnections), true)
+	const reply = getWalletSendCallsReply(postedMessages)
+	assert.ok(isRecord(reply) && isRecord(reply.result))
+	const stacked = await getStackBatchTransactions()
+	assert.deepEqual(stacked.map((transaction) => transaction.simulationOptions), callParams.map(() => SAFE_EXECUTION_SIMULATION_OPTIONS))
+	assert.deepEqual(stacked.map((transaction) => transaction.signedTransaction.nonce), callParams.map((_, callIndex) => expectedFirstNonce + BigInt(callIndex)))
+	const { getCurrentSimulationInput, prepareSimulationInputForRpc } = await import('../../app/ts/background/simulationUpdating.js')
+	const preparedStack = await prepareSimulationInputForRpc(await getCurrentSimulationInput(), simulator.ethereum)
+	assert.deepEqual(preparedStack.flatMap((block) => block.transactions).map((transaction) => transaction.executedTransaction?.from), callParams.map(() => SAFE_EXECUTION_SIMULATION_EXECUTOR), 'the stacked calls keep running through the Safe')
+}
+
+test('a configured Gnosis Safe\'s one-call batch runs through the Safe like the same transaction sent on its own, through preview, refresh, approval and the stack', async () => {
+	const oneCallRequest = { ...walletSendCallsRequest, params: [{ ...walletSendCallsRequest.params[0], calls: [walletSendCallsRequest.params[0].calls[0]] }] }
+	await expectBatchCallsToRunThroughTheSafe(oneCallRequest)
+})
+
+test('every call of a configured Gnosis Safe\'s batch runs through the Safe with consecutive nonces, through preview, refresh, approval and the stack', async () => {
+	await expectBatchCallsToRunThroughTheSafe(walletSendCallsRequest)
+})
+
+test('a batch call that a Gnosis Safe cannot make through execTransaction is simulated as an ordinary transaction from the Safe', async () => {
+	const { websiteTabConnections } = await setUpWalletSendCallsTest()
+	await configureBatchAccountAsSafe()
+	// A call without `to` deploys a contract, which execTransaction cannot do.
+	const deploymentRequest = { ...walletSendCallsRequest, params: [{ ...walletSendCallsRequest.params[0], calls: [walletSendCallsRequest.params[0].calls[0], { data: '0x6000' }] }] }
+
+	assert.deepEqual(await requestBatch(websiteTabConnections, deploymentRequest), { type: 'doNotReply' })
+	const pending = await getPendingBatch()
+	assert.equal(pending.executeCallsThroughSafe, true)
+	assert.deepEqual(pending.transactionsToSimulate.map((call) => call.success ? call.simulationOptions : 'failed'), [SAFE_EXECUTION_SIMULATION_OPTIONS, undefined])
+})
+
+test('a batch from an account that is not a configured Gnosis Safe runs its calls as ordinary transactions', async () => {
+	const { websiteTabConnections } = await setUpWalletSendCallsTest()
+	assert.deepEqual(await requestBatch(websiteTabConnections), { type: 'doNotReply' })
+	const pending = await getPendingBatch()
+	assert.equal(pending.executeCallsThroughSafe, undefined)
+	assert.deepEqual(pending.transactionsToSimulate.map((call) => call.success ? call.simulationOptions : 'failed'), [undefined, undefined])
 })

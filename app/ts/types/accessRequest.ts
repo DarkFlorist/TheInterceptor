@@ -187,7 +187,10 @@ const PendingTransactionBatchBase = funtypes.ReadonlyObject({
 	binding: WalletSendCallsBinding,
 	// Returned to the website when the batch is added to the simulation stack.
 	batchId: funtypes.String,
-})
+}).And(funtypes.ReadonlyPartial({
+	// The admission's decision, made once like a single transaction's executeThroughSafe, that the batch's account is a Gnosis Safe the simulation runs transactions through (isSimulationModeSafeAccount). Every preparation of the batch forms each call that the Safe can make through execTransaction as a Safe execution from it (getTransactionBatchCallGasPayment), so its calls get simulationOptions.executeThroughSafe and consecutive Safe call nonces.
+	executeCallsThroughSafe: funtypes.Literal(true),
+}))
 
 export type PendingTransactionBatch = funtypes.Static<typeof PendingTransactionBatch>
 export const PendingTransactionBatch = funtypes.Intersect(
