@@ -748,26 +748,39 @@ test('settles a claimed Safe signature once when the RPC connection returns afte
 	await assertStoredOnceWithOneSuccess(proposal)
 })
 
-// Writing the claim fails once: the retried claim step still carries the signature, so the claim is written and the signature settled once.
+// Every claim write fails for as long as the signer reply is being handled, so the signature exists only in the failed claim step. The test runs no other lifecycle entry point, so only the retried claim step, still carrying the signature, can write the claim once storage works again; the signature is then settled once.
 test('claims and settles a Safe signature once after writing its claim failed transiently', async () => {
 	const proposal = await storeSafeProposalAwaitingSignerOnChainA(138, 74n)
+	let signerReplyHandled = false
 	let failedClaimWrites = 0
+	let claimWritesWhileTheReplyWasHandled = 0
+	let claimWritesAfterTheReply = 0
 	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
-		if (failedClaimWrites === 0 && isClaimWrite(items)) {
-			failedClaimWrites += 1
-			throw new Error('Claim write unavailable.')
+		if (isClaimWrite(items)) {
+			if (!signerReplyHandled) {
+				failedClaimWrites += 1
+				throw new Error('Claim write unavailable.')
+			}
+			claimWritesAfterTheReply += 1
 		}
 		writeStoredItems()
 	})
 	try {
 		await withSilencedConsole(async () => {
 			await proposal.deliverSignature(createTestSimulationServicesOwner(simulator))
+			claimWritesWhileTheReplyWasHandled = claimWritesAfterTheReply
+			signerReplyHandled = true
+			// The reply is handled and nothing holds the signature in storage.
+			assert.equal((await modules.getPendingTransactionsAndMessages())[0]?.deferredSafeSignerReply, undefined)
 			await waitUntil(async () => (await modules.getPendingTransactionsAndMessages()).length === 0, 'the signature is settled')
 		})
 	} finally {
 		browserMock.setStorageSetHandler(undefined)
 	}
 	assert.equal(failedClaimWrites, 1)
+	assert.equal(claimWritesWhileTheReplyWasHandled, 0)
+	// Written once, by the retried claim step.
+	assert.equal(claimWritesAfterTheReply, 1)
 	await assertStoredOnceWithOneSuccess(proposal)
 })
 
