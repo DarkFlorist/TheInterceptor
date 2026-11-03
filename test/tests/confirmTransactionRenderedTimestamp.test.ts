@@ -2,6 +2,7 @@ import * as assert from 'assert'
 import { encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { encodeErrorString } from './errorDataFixtures.js'
 import { getTransactionCreationFailureReason } from '../../app/ts/simulation/transactionCreationFailureReason.js'
+import { SAFE_CALL_REVERTED_MESSAGE } from '../../app/ts/safe/safeExecutionFailure.js'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { describe, test } from 'bun:test'
@@ -679,6 +680,46 @@ describe('ConfirmTransaction', () => {
 		assert.equal(text.includes('Gas estimation error'), true)
 		assert.equal(text.includes(stfReason), true)
 		assert.equal(text.includes('eth_simulateV1 rejected the stack'), false)
+
+		await unmountConfirmTransaction(dom)
+		clock.restore()
+		dom.restore()
+	})
+
+	test('shows the Gnosis Safe\'s GS013 explanation of a stored gas estimation failure instead of the bare GS013 its revert data decodes to', async () => {
+		const dom = installDomMock()
+		const clock = installDateMock('2024-01-01T00:00:10.000Z')
+		const browser = createBrowserMock()
+
+		await act(() => {
+			render(h(ConfirmTransaction, {}), dom.document.body)
+		})
+
+		// Stored without transactionCreationFailureReason, so the popup derives it from the estimate error the Safe layer wrote.
+		const failedPendingTransaction = makePendingTransaction(new Date('2024-01-01T00:00:05.000Z'))
+		const transactionToSimulate = { ...failedPendingTransaction.transactionToSimulate, error: { code: 3, message: SAFE_CALL_REVERTED_MESSAGE, data: encodeErrorString('GS013') } }
+		const { transactionCreationFailureReason: _storedReason, ...dataWithoutReason } = failedPendingTransaction.popupVisualisation.data
+		const pendingTransaction = {
+			...failedPendingTransaction,
+			transactionToSimulate,
+			popupVisualisation: { ...failedPendingTransaction.popupVisualisation, data: { ...dataWithoutReason, transactionToSimulate } },
+		}
+		await act(() => {
+			browser.dispatch({
+				role: 'all',
+				...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
+					method: 'popup_update_confirm_transaction_dialog_pending_transactions',
+					data: {
+						pendingTransactionAndSignableMessages: [pendingTransaction],
+						currentBlockNumber: 123n,
+						rpcConnectionStatus: undefined,
+					},
+				}),
+			})
+		})
+
+		const text = dom.document.body.textContent ?? ''
+		assert.equal(text.includes(SAFE_CALL_REVERTED_MESSAGE), true)
 
 		await unmountConfirmTransaction(dom)
 		clock.restore()

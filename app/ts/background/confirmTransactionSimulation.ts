@@ -5,7 +5,7 @@ import type { TokenPriceService } from '../simulation/services/priceEstimator.js
 import { createSafeExecutionPreSimulationTransaction, createSafeSigningSimulationInput } from '../safe/safeSimulation.js'
 import { getFailureReasonForDisplay } from '../simulation/failureReasons.js'
 import { appendProtocolRevertReasonHints } from '../simulation/revertReasonHints.js'
-import { getTransactionCreationFailureReason } from '../simulation/transactionCreationFailureReason.js'
+import { getInterceptorTransactionCreationExplanation, getTransactionCreationFailureReason } from '../simulation/transactionCreationFailureReason.js'
 import type { ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
 import type { SafeTransactionSigningRequest } from '../types/safeTypes.js'
 import type { WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
@@ -45,8 +45,8 @@ export async function refreshConfirmTransactionSimulation(
 	const thisConfirmTransactionAbortController = confirmTransactionAbortController
 	const simulationStartedTimestamp = new Date()
 	const transactionCreationError = transactionToSimulate.success ? undefined : transactionToSimulate.error
-	// getTransactionCreationFailureReason shows the insufficient balance override instead of the decoded reason, so its revert data is never decoded.
-	const transactionCreationErrorDataToDecode = transactionCreationError?.insufficientBalanceMessage === undefined ? transactionCreationError?.data : undefined
+	// getTransactionCreationFailureReason shows an Interceptor explanation instead of the decoded reason, so its revert data is never decoded.
+	const transactionCreationErrorDataToDecode = transactionCreationError === undefined || getInterceptorTransactionCreationExplanation(transactionCreationError) !== undefined ? undefined : transactionCreationError.data
 	// The errors decoded in this function (the transaction creation error, plus the thrown simulation error in the catch path) use the recipient's ABI, a best-effort guess for a simulation error that may come from another stacked transaction, so they share a single lookup that is skipped unless one is a custom error selector.
 	const getRecipientErrorAbis = async (errorDataToDecode: readonly (string | undefined)[]): Promise<readonly string[]> => {
 		const params = transactionToSimulate.originalRequestParameters.params[0]

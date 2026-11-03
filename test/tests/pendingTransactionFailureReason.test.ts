@@ -3,6 +3,7 @@ import { describe, test } from 'bun:test'
 import { encodeErrorString } from './errorDataFixtures.js'
 import { addMissingTransactionCreationFailureReason } from '../../app/ts/simulation/pendingTransactionFailureReason.js'
 import type { TransactionCreationError } from '../../app/ts/types/error.js'
+import { SAFE_CALL_REVERTED_MESSAGE } from '../../app/ts/safe/safeExecutionFailure.js'
 
 const activeAddress = 0x1111111111111111111111111111111111111111n
 const created = new Date('2024-01-01T00:00:00.000Z')
@@ -58,6 +59,10 @@ describe('addMissingTransactionCreationFailureReason', () => {
 		const legacyInsufficientBalanceMessage = 'Insufficient ETH balance. Available: 1 ETH. Attempting to send: 2 ETH.'
 		assert.equal(getFailureReason({ code: -32000, message: legacyInsufficientBalanceMessage, data: '0x' }, undefined), legacyInsufficientBalanceMessage)
 		assert.equal(getFailureReason({ code: -32000, message: legacyInsufficientBalanceMessage, data: encodeErrorString('ERC20: transfer amount exceeds balance') }, undefined), 'ERC20: transfer amount exceeds balance')
+	})
+
+	test('keeps the Gnosis Safe\'s GS013 explanation that the Safe layer stored as the message instead of the bare GS013 its revert data decodes to', () => {
+		assert.equal(getFailureReason({ code: 3, message: SAFE_CALL_REVERTED_MESSAGE, data: encodeErrorString('GS013') }, undefined), SAFE_CALL_REVERTED_MESSAGE)
 	})
 
 	test('never replaces a stored reason', () => {

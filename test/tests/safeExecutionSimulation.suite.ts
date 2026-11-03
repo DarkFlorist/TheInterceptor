@@ -8,14 +8,14 @@ import { getSignedTransactionForSimulation } from '../../app/ts/simulation/servi
 import { isUnpreparedSimulationInputError } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { classifyCaughtError } from '../../app/ts/utils/errors.js'
 import { estimateSafeExecutionGas, prepareSafeExecutionSimulationInput, SAFE_EXECUTION_SIMULATION_EXECUTOR } from '../../app/ts/safe/safeExecutionSimulation.js'
-import { describeSafeExecutionFailure } from '../../app/ts/safe/safeExecutionFailure.js'
+import { describeSafeExecutionFailure, SAFE_CALL_REVERTED_MESSAGE } from '../../app/ts/safe/safeExecutionFailure.js'
 import { prepareSafeTransactionConfirmation } from '../../app/ts/background/safeTransactionConfirmation.js'
 import { createExecutionSimulationState, createSimulationState, getNonceFixedSimulationStateInput, getSimulatedTransactionByHashFromInput, getSimulatedTransactionCount, getSimulatedTransactionCountFromInput, getSimulatedTransactionReceipt } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { encodeFunctionCall } from '../../app/ts/utils/abiRuntime.js'
 import { decodeEthereumError } from '../../app/ts/utils/errorDecoding.js'
 import { dataStringWith0xStart } from '../../app/ts/utils/bigint.js'
 import { getGasFeePaidByTransactionSender } from '../../app/ts/utils/transactionGasAccounting.js'
-import { activeAddress, addressString, created, createSafeAddressBookEntry, createSafeTx, createWebsitePort, ethereum, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, hexToBytes, isRecord, makeFakeEthSimulateResult, modules, recipientAddress, SAFE_EXECUTION_ABI, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
+import { activeAddress, addressString, created, createSafeAddressBookEntry, createSafeTx, createWebsitePort, ethereum, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, hexToBytes, isRecord, makeFakeEthSimulateResult, modules, recipientAddress, SAFE_EXECUTION_ABI, simulator as confirmationSimulator, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
 
 // createSafeAddressBookEntry configures the Safe at activeAddress, the address the fake RPC gives code.
 const SAFE_ADDRESS = activeAddress
@@ -188,6 +188,19 @@ for (const { description, message, errorData, returnData } of revertResponses) {
 		const estimate = await estimateSafeExecutionGas(revertingEthereum, undefined, [], safeCallWithoutGas, { website: safeCall.website, created: safeCall.created, originalRequestParameters: safeCall.originalRequestParameters, transactionIdentifier: safeCall.transactionIdentifier })
 		if (!('error' in estimate)) throw new Error('Expected the estimate to fail')
 		assert.match(estimate.error.message, /Gnosis Safe's call reverted \(GS013\)/u)
+
+		// The estimate keeps the encoded GS013 as its data, which the confirmation must not show as a bare GS013 in place of the Safe's explanation.
+		const { refreshConfirmTransactionSimulation } = await import('../../app/ts/background/confirmTransactionSimulation.js')
+		const popupVisualisation = await refreshConfirmTransactionSimulation(confirmationSimulator.ethereum, confirmationSimulator.tokenPriceService, SAFE_ADDRESS, true, uniqueRequestIdentifier, {
+			website: safeCall.website,
+			created: safeCall.created,
+			originalRequestParameters: safeCall.originalRequestParameters,
+			transactionIdentifier: safeCall.transactionIdentifier,
+			success: false,
+			error: estimate.error,
+		})
+		if (popupVisualisation === undefined) throw new Error('The confirmation simulation did not complete')
+		assert.equal(popupVisualisation.data.transactionCreationFailureReason, SAFE_CALL_REVERTED_MESSAGE)
 	})
 }
 
