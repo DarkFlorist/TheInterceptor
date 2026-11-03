@@ -129,16 +129,21 @@ async function flushConnectedPortWithRetry(websiteTabConnections: WebsiteTabConn
 		return await flushPendingTerminalRepliesForSocket(websiteTabConnections, socket)
 	} catch (error) {
 		const retrying = failedAttempts + 1 < TERMINAL_REPLY_FLUSH_RETRY_LIMIT
+		// The retry is reserved before the report is awaited, replacing (and clearing) any other.
+		if (retrying) {
+			clearTimeout(terminalReplyFlushRetryTimers.get(socketIdentifier))
+			const retryTimer = setTimeout(() => {
+				if (terminalReplyFlushRetryTimers.get(socketIdentifier) !== retryTimer) return
+				terminalReplyFlushRetryTimers.delete(socketIdentifier)
+				const currentPort = websiteTabConnections.get(socket.tabId)?.connections[socketIdentifier]?.port
+				if (currentPort !== port) return
+				void flushConnectedPortWithRetry(websiteTabConnections, socket, port, failedAttempts + 1)
+			}, TERMINAL_REPLY_FLUSH_RETRY_DELAY_MS * 2 ** failedAttempts)
+			terminalReplyFlushRetryTimers.set(socketIdentifier, retryTimer)
+		}
 		await reportLocalRecovery(error, retrying
 			? { source: 'pending_terminal_replies', code: 'pending_terminal_reply_socket_flush_failed', message: 'Retrying terminal reply delivery while the website connection remains active.' }
 			: { source: 'pending_terminal_replies', code: 'pending_terminal_reply_socket_flush_gave_up', message: 'Stopped retrying terminal reply delivery until the website connection reconnects.' })
-		if (!retrying) return 0
-		terminalReplyFlushRetryTimers.set(socketIdentifier, setTimeout(() => {
-			terminalReplyFlushRetryTimers.delete(socketIdentifier)
-			const currentPort = websiteTabConnections.get(socket.tabId)?.connections[socketIdentifier]?.port
-			if (currentPort !== port) return
-			void flushConnectedPortWithRetry(websiteTabConnections, socket, port, failedAttempts + 1)
-		}, TERMINAL_REPLY_FLUSH_RETRY_DELAY_MS * 2 ** failedAttempts))
 		return 0
 	}
 }

@@ -288,7 +288,7 @@ const chosenUncommittedReplies = new Map<string, { readonly reply: InterceptedRe
 const FINISHING_RETRY_BASE_DELAY_MS = 50
 const FINISHING_RETRY_LIMIT = 6
 // The one retry owner of each request, shared by finishing and declining it: one attempt budget and at most one scheduled retry. A completed resolution drops it; an exhausted budget stays exhausted, so automatic follow-ups (deferrals, finishers) never extend it, and only a user action or startup resets it (resetRequestRetryBudget).
-const requestRetries = new Map<string, { readonly failedAttempts: number, readonly timer?: ReturnType<typeof setTimeout> }>()
+const requestRetries = new Map<string, { readonly failedAttempts: number, readonly generation: number, readonly timer?: ReturnType<typeof setTimeout> }>()
 const clearRequestRetry = (claim: string) => {
 	clearTimeout(requestRetries.get(claim)?.timer)
 	requestRetries.delete(claim)
@@ -305,29 +305,31 @@ const resetRequestRetryBudgetAtStartup = (uniqueRequestIdentifier: UniqueRequest
 // The decline each request was asked for in this session, which its retries run (declineRequest); the stored declineRequested of the pending request carries it across a restart.
 const declineIntents = new Map<string, DeclineReason>()
 
-// Reports a failed resolution step of the request and schedules its one retry, unless its budget is exhausted. The retry declines the request if a decline was asked for, else finishes it.
+// Schedules the request's one retry for a failed resolution step, unless its budget is exhausted, then reports the failure. The attempt and the timer are reserved synchronously, before the report is awaited, so concurrent failures each count once against the one budget and a timer is never overwritten without being cleared. Each schedule has its own generation: completion or a budget reset deletes the entry, so a stale timer finds its generation gone and does nothing. The retry declines the request if a decline was asked for, else finishes it.
+let nextRetryGeneration = 0
 async function scheduleRequestRetry(uniqueRequestIdentifier: UniqueRequestIdentifier, context: ResolutionContext, error: unknown) {
 	const claim = getUniqueRequestIdentifierString(uniqueRequestIdentifier)
 	const previous = requestRetries.get(claim)
 	clearTimeout(previous?.timer)
 	const failedAttempts = (previous?.failedAttempts ?? 0) + 1
 	const retrying = failedAttempts < FINISHING_RETRY_LIMIT
+	const generation = nextRetryGeneration++
+	requestRetries.set(claim, {
+		failedAttempts,
+		generation,
+		...(!retrying ? {} : {
+			timer: setTimeout(() => {
+				if (requestRetries.get(claim)?.generation !== generation) return
+				requestRetries.set(claim, { failedAttempts, generation })
+				const retryContext = withoutHeldLocks(context)
+				const decline = declineIntents.get(claim)
+				void (decline === undefined ? resumeRequest(uniqueRequestIdentifier, retryContext) : declineRequest(uniqueRequestIdentifier, decline, retryContext))
+			}, FINISHING_RETRY_BASE_DELAY_MS * 2 ** (failedAttempts - 1)),
+		}),
+	})
 	await reportLocalRecovery(error, retrying
 		? { code: 'request_resolution_retrying', message: 'Retrying the resolution of a request.' }
 		: { code: 'request_resolution_gave_up', message: 'Stopped retrying the resolution of a request until the user acts on it or the extension restarts.' })
-	if (!retrying) {
-		requestRetries.set(claim, { failedAttempts })
-		return
-	}
-	requestRetries.set(claim, {
-		failedAttempts,
-		timer: setTimeout(() => {
-			requestRetries.set(claim, { failedAttempts })
-			const retryContext = withoutHeldLocks(context)
-			const decline = declineIntents.get(claim)
-			void (decline === undefined ? resumeRequest(uniqueRequestIdentifier, retryContext) : declineRequest(uniqueRequestIdentifier, decline, retryContext))
-		}, FINISHING_RETRY_BASE_DELAY_MS * 2 ** (failedAttempts - 1)),
-	})
 }
 
 type FinishingOutcome =
@@ -408,10 +410,11 @@ async function runWithBoundedRetry(work: (context: ResolutionContext) => Promise
 		await work(context)
 	} catch (error) {
 		const retrying = failedAttempts + 1 < FINISHING_RETRY_LIMIT
+		// Scheduled before the report is awaited.
+		if (retrying) setTimeout(() => { void runWithBoundedRetry(work, withoutHeldLocks(context), failure, failedAttempts + 1) }, FINISHING_RETRY_BASE_DELAY_MS * 2 ** failedAttempts)
 		await reportLocalRecovery(error, retrying
 			? { code: `${ failure.code }_retrying`, message: `Retrying ${ failure.description }.` }
 			: { code: `${ failure.code }_gave_up`, message: `Stopped retrying ${ failure.description }; startup recovery handles it.` })
-		if (retrying) setTimeout(() => { void runWithBoundedRetry(work, withoutHeldLocks(context), failure, failedAttempts + 1) }, FINISHING_RETRY_BASE_DELAY_MS * 2 ** failedAttempts)
 	}
 }
 

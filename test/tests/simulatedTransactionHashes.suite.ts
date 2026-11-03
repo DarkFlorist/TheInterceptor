@@ -2380,3 +2380,51 @@ test('stops retrying a connected port\'s reply flush when storage keeps failing,
 	assert.deepEqual(getPageResponses(postedMessages, 1), [{ error: 4001 }])
 	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
 })
+
+test('counts concurrent failures of one request against its one retry budget, with one timer, and cancels it on completion', async () => {
+	await startSimulationStack(SENDER)
+	const postedMessages: unknown[] = []
+	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+	const request = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+	const pause = pauseNextStackReadThen()
+	const accepting = withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier: request } }))
+	await pause.paused
+	// Every write storing the reject on the request fails, as their reports are written slowly.
+	let failedIntentWrites = 0
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		const pending = items.pendingTransactionsAndMessages
+		if (Array.isArray(pending) && pending.some((entry) => isRecord(entry) && entry.declineRequested !== undefined)) {
+			failedIntentWrites += 1
+			throw new Error('persistent intent write failure')
+		}
+		if ('interceptorErrorDiagnostics' in items) await new Promise((resolve) => setTimeout(resolve, 30))
+		writeStoredItems()
+	})
+	const { getResolutionBookkeepingSize } = await import('../../app/ts/background/windows/confirmTransaction.js')
+	try {
+		await withSilencedConsole(async () => {
+			// Two rejects at once, each deferred behind the accept's claim with a failing intent write.
+			await Promise.all([rejectRequest(request, websiteTabConnections), rejectRequest(request, websiteTabConnections)])
+			await waitForCondition(async () => failedIntentWrites >= 2)
+			await new Promise((resolve) => setTimeout(resolve, 40))
+			// The accept's claim, its deferred decline and one retry timer.
+			assert.equal(getResolutionBookkeepingSize(), 3, 'one retry timer')
+			// The retries, still deferred behind the accept, run out within one budget.
+			const deadline = Date.now() + 8_000
+			while (getResolutionBookkeepingSize() > 2 && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 20))
+		})
+		const writesWhenExhausted = failedIntentWrites
+		await new Promise((resolve) => setTimeout(resolve, 500))
+		assert.equal(failedIntentWrites, writesWhenExhausted, 'no more retries')
+		assert.ok(writesWhenExhausted <= 6, `the failures stay within one budget (${ writesWhenExhausted })`)
+	} finally {
+		browserMock.setStorageSetHandler(undefined)
+		pause.release(false)
+	}
+	// The accept completes, and the request's retries are all gone.
+	await accepting
+	await withSilencedConsole(async () => await waitUntilNothingPending())
+	const stacked = await getStackedTransactions()
+	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [{ result: stacked[0]?.signedTransaction.hash }])
+	await waitForNoResolutionBookkeeping()
+})

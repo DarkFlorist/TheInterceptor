@@ -20,12 +20,12 @@ export function createRetriableTerminalStateRecovery({ recover, onFailure, sched
 		} catch (error) {
 			failedAttempts += 1
 			const retrying = failedAttempts < RECOVERY_ATTEMPT_LIMIT
-			onFailure(error, retrying)
-			if (!retrying || retryTimer !== undefined) return
-			retryTimer = scheduleRetry(() => {
+			// The retry is reserved before the failure is reported.
+			if (retrying && retryTimer === undefined) retryTimer = scheduleRetry(() => {
 				retryTimer = undefined
 				void runRecovery()
 			}, RECOVERY_RETRY_BASE_DELAY_MS * 2 ** (failedAttempts - 1))
+			onFailure(error, retrying)
 		}
 	}
 	return runRecovery
