@@ -550,6 +550,31 @@ describe('FetchSimulationStack published simulation states', () => {
 		}
 	})
 
+	test('an opening reply captured before an address-book re-label does not replace the re-labelled publication of the same simulation', async () => {
+		const originalStack = createVisualizedTransactionStack('Original Contract', 3, 101n)
+		const relabelledStack: CompleteVisualizedSimulation = { ...createVisualizedTransactionStack('Renamed Contract', 3, 101n), metadataRevision: 1 }
+		const heldBackground = createBackgroundWithHeldOpeningReplies()
+		const backgroundRequests: (string | undefined)[] = []
+		const background = { ...heldBackground, async handle(message: unknown) {
+			backgroundRequests.push(getMessageMethod(message))
+			return await heldBackground.handle(message)
+		} }
+		const page = await openFetchSimulationStackPage(background)
+		try {
+			await publishSimulationState(relabelledStack)
+			assert.ok(page.getText().includes('Renamed Contract'))
+			background.releaseVisualisation(originalStack)
+			background.releaseAddressBookEntries(originalStack.addressBookEntries)
+			await settleMessageFlow()
+			assert.ok(page.getText().includes('Renamed Contract'))
+			assert.ok(!page.getText().includes('Original Contract'))
+			// Only the page's two opening requests; neither the publication nor the late reply makes it request a simulation.
+			assert.deepEqual(backgroundRequests.filter((method) => method === 'popup_requestCompleteVisualizedSimulation' || method === 'popup_requestSimulationMetadata').toSorted(), ['popup_requestCompleteVisualizedSimulation', 'popup_requestSimulationMetadata'])
+		} finally {
+			await page.close()
+		}
+	})
+
 	test('the opening address references still fill in when only an updating publication arrived first', async () => {
 		const openingStack = createVisualizedTransactionStack('Opening Contract', 2, 100n)
 		const background = createBackgroundWithHeldOpeningReplies()

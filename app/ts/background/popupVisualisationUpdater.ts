@@ -129,7 +129,8 @@ function getStackRunToRelabel(visualisation: StoredCompleteVisualizedSimulation,
 	if (visualisation.simulationState.kind !== 'simulated') return undefined
 	const simulationState = visualisation.simulationState.value
 	if (simulationState.rpcNetwork.chainId !== chainId || !hasSimulationInputOperations(simulationState)) return undefined
-	return { runId: visualisation.simulationId, simulationState, storedMetadata: visualisation, withMetadata: (metadata) => ({ ...visualisation, ...metadata }) }
+	// The re-labelled state keeps the simulation id and raises the metadata revision, so a view orders it after the result it replaces (predatesVisualisation).
+	return { runId: visualisation.simulationId, simulationState, storedMetadata: visualisation, withMetadata: (metadata) => ({ ...visualisation, ...metadata, metadataRevision: (visualisation.metadataRevision ?? 0) + 1 }) }
 }
 
 // publishFailedPopupVisualisation aborts the shared controller without replacing it, and direct refreshes such as imports do not replace it either. A re-label requested afterwards must not inherit that stale cancellation, while any later refresh still aborts the controller returned here.

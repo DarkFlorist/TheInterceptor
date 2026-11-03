@@ -503,7 +503,10 @@ export const CompleteVisualizedSimulation = funtypes.ReadonlyObject({
 	simulationId: funtypes.Number,
 	visualizedSimulationState: VisualizedSimulationState,
 	numberOfAddressesMadeRich: funtypes.Number,
-})
+}).And(funtypes.ReadonlyPartial({
+	// How many address-book re-labels replaced this simulation id's metadata; absent, meaning 0, on a simulation's own result. A re-label keeps the simulation id, so this orders same-id results (predatesVisualisation).
+	metadataRevision: funtypes.Number,
+}))
 
 // The stack simulation as background storage keeps it: what popups are sent, and what its run recorded of its lookups. Missing on states that no simulation run visualised and on runs stored by versions that did not record it.
 export type StoredCompleteVisualizedSimulation = funtypes.Static<typeof StoredCompleteVisualizedSimulation>

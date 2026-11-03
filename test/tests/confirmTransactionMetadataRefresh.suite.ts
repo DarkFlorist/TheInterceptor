@@ -308,7 +308,9 @@ test('address-book changes re-label the stored confirmation and stack without si
 	// The change is broadcast once, the re-labelled stack is published for the views that render publications, such as the FetchSimulationStack sharing dialog, and the finished re-label is announced for the views that re-read stored state, the home popup, the simulation stack page and the confirmation dialog.
 	assert.deepEqual(browserMock.sentMessages.map((message) => message.method), ['popup_addressBookEntriesChanged', 'popup_simulation_state_changed', 'popup_simulationsRelabelled'])
 	// The publication is the re-labelled finished run itself, not the updating state a refresh publishes first.
-	assert.deepEqual(getPublishedStackStates().map((published) => ({ simulationId: published.simulationId, simulationUpdatingState: published.simulationUpdatingState, recipientName: getRecipientName(published.visualizedSimulationState) })), [{ simulationId: stackBefore.stored.simulationId, simulationUpdatingState: 'done', recipientName: recipientContact.name }])
+	assert.deepEqual(getPublishedStackStates().map((published) => ({ simulationId: published.simulationId, simulationUpdatingState: published.simulationUpdatingState, metadataRevision: published.metadataRevision, recipientName: getRecipientName(published.visualizedSimulationState) })), [{ simulationId: stackBefore.stored.simulationId, simulationUpdatingState: 'done', metadataRevision: 1, recipientName: recipientContact.name }])
+	assert.equal(stackBefore.stored.metadataRevision, undefined, 'a simulation stores its own result without a re-label revision')
+	assert.equal(stackAfter.stored.metadataRevision, 1)
 })
 
 // What the stored runs keep for re-labels in background storage only, never in a popup message.
