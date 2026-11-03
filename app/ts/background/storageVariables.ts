@@ -1,32 +1,24 @@
-import { getRpcEntryIdentityKey } from '../utils/rpcNetworkChange.js'
-import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
+import { DEFAULT_TAB_CONNECTION } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
 import type { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, StoredWatchAssetRequest, TabState } from '../types/user-interface-types.js'
 import { type PartialIdsOfOpenedTabs, browserStorageLocalGet, browserStorageLocalGet2Result, browserStorageLocalRemove, browserStorageLocalSet, browserStorageLocalSet2, getTabStateFromStorage, parseTabStateItems, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
 import { CompleteVisualizedSimulation, type EthereumSubscriptionsAndFilters, InterceptorTransactionStack, createPassthroughCompleteVisualizedSimulation } from '../types/visualizer-types.js'
 import { browserStorageLocalSafeParseGet } from '../utils/storageUtils.js'
-import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_RPCS } from '../config/defaults.js'
+import { DEFAULT_ACTIVE_ADDRESSES } from '../config/defaults.js'
 import { type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
 import { AddressBookEntry, doAddressBookChainIdsMatch, LegacyErc20TokenEntry, type AddressBookEntries, type ChainIdWithUniversal } from '../types/addressBookTypes.js'
 import type { SignerName } from '../types/signerTypes.js'
 import type { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
-import type { RpcEntries, RpcNetwork } from '../types/rpc.js'
 import { replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
 import { keccak256, namehash, stringToBytes } from '../utils/ethereumPrimitives.js'
 import { isValidEnsName } from '../utils/ens.js'
-import { modifyObject } from '../utils/typescript.js'
 import type { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { getLargeStateValue, prepareLargeStateWrite, setLargeStateValue, setLargeStateValues } from '../utils/largeStateStore.js'
 import type { InterceptorErrorDiagnostic } from '../types/errorDiagnostics.js'
 import { SafeTransactionStacks } from '../types/safeTypes.js'
-import { createStoredValueRepository } from '../utils/storedValue.js'
+import { createStoredValueRepository, reportCorruptStoredValue } from '../utils/storedValue.js'
 import { isValidErc20Decimals } from '../utils/erc20.js'
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
-
-const reportCorruptStoredValue = (label: string) => async (error: unknown) => {
-	console.warn(`${ label } was corrupt:`)
-	console.warn(error)
-}
 
 const idsOfOpenedTabsRepository = createStoredValueRepository({
 	read: async () => (await browserStorageLocalGet('idsOfOpenedTabs')).idsOfOpenedTabs,
@@ -218,51 +210,9 @@ export async function updateEthereumSubscriptionsAndFilters(updateFunc: (prevSta
 	return { oldSubscriptions: previous, newSubscriptions: current }
 }
 
-const rpcListRepository = createStoredValueRepository<RpcEntries>({
-	read: async () => (await browserStorageLocalGet('rpcEntries')).rpcEntries,
-	write: async (rpcEntries) => { await browserStorageLocalSet({ rpcEntries }) },
-	getDefault: () => DEFAULT_RPCS,
-	recover: reportCorruptStoredValue('Rpc entries'),
-})
-export const setRpcList = rpcListRepository.set
-export const getRpcList = rpcListRepository.get
-
 export const setInterceptorStartSleepingTimestamp = async(interceptorStartSleepingTimestamp: number) => await browserStorageLocalSet({ interceptorStartSleepingTimestamp })
 
 export const getInterceptorStartSleepingTimestamp = async () => (await browserStorageLocalGet('interceptorStartSleepingTimestamp'))?.interceptorStartSleepingTimestamp ?? 0
-
-export const promoteRpcAsPrimary = async (rpcNetwork: RpcNetwork) => {
-	await rpcListRepository.update((rpcs) => {
-		const selectedIndex = rpcs.findIndex((rpc) => getRpcEntryIdentityKey(rpc) === getRpcEntryIdentityKey(rpcNetwork))
-		if (selectedIndex === -1) return rpcs
-		return rpcs.map((rpc, index) => rpc.chainId === rpcNetwork.chainId ? modifyObject(rpc, { primary: index === selectedIndex }) : rpc)
-	})
-}
-
-export const getPrimaryRpcForChain = async (chainId: bigint) => {
-	const rpcs = await getRpcList()
-	const primary = rpcs.find((rpc) => rpc.chainId === chainId && rpc.primary)
-	if (primary) return primary
-
-	// no primary was found, try to find what ever we have for that chain id
-	const nonPrimary = rpcs.find((rpc) => rpc.chainId === chainId)
-	if (nonPrimary) return nonPrimary
-	return undefined
-}
-
-export const getRpcNetworkForChain = async (chainId: bigint): Promise<RpcNetwork> => {
-	const rpc = await getPrimaryRpcForChain(chainId)
-	if (rpc !== undefined) return rpc
-	return {
-		chainId: chainId,
-		currencyName: 'Ether?',
-		currencyTicker: 'ETH?',
-		name: getChainName(chainId),
-		httpsRpc: undefined,
-		primary: false,
-		minimized: true,
-	}
-}
 
 export function repairLegacyAddressBookEntry(rawEntry: unknown): AddressBookEntry | undefined {
 	const parsedEntry = AddressBookEntry.safeParse(rawEntry)

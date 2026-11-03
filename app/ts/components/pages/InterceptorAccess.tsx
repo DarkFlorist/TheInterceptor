@@ -14,7 +14,7 @@ import type { AddressBookEntries, AddressBookEntry } from '../../types/addressBo
 import type { Website } from '../../types/websiteAccessTypes.js'
 import type { PendingAccessRequest, PendingAccessRequests } from '../../types/accessRequest.js'
 import { type ReadonlySignal, Signal, useComputed, useSignal } from '@preact/signals'
-import type { RpcEntries } from '../../types/rpc.js'
+import { useRpcConnectionsList } from '../hooks/useRpcConnectionsList.js'
 import type { ModifyAddressWindowState } from '../../types/visualizer-types.js'
 import { ChevronIcon } from '../subcomponents/icons.js'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
@@ -221,7 +221,7 @@ export function InterceptorAccess() {
 	const appPage = useSignal<Page>({ page: 'Home', accessRequestId: '' })
 	const informationUpdatedTimestamp = useSignal<number>(0)
 	const timeTicker = useSignal<number>(0)
-	const rpcEntries = useSignal<RpcEntries>([])
+	const rpcEntries = useRpcConnectionsList()
 	const activeRpcChainId = useSignal<bigint | undefined>(undefined)
 	const selectedPendingAccessRequest = useComputed(() => getSelectedPendingAccessRequest(
 		pendingAccessRequests.value,
@@ -243,7 +243,6 @@ export function InterceptorAccess() {
 				return false
 			}
 			if (parsed.method === 'popup_requestSettingsReply') {
-				rpcEntries.value = parsed.data.rpcEntries
 				activeRpcChainId.value = parsed.data.activeRpcNetwork.chainId
 				return false
 			}
@@ -265,8 +264,7 @@ export function InterceptorAccess() {
 			}
 			return false
 		}
-		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
-		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
+		return noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
 	}, [])
 
 	useEffect(() => {

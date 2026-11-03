@@ -7,7 +7,8 @@ import type { SignerChainChangeConfirmation, WalletSwitchEthereumChainReply } fr
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { changeActiveAddressAndChain } from './activeSettings.js'
 import { getSocketFromPort, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
-import { promoteRpcAsPrimary, getTabState } from './storageVariables.js'
+import { getTabState } from './storageVariables.js'
+import { promoteRpcAsPrimaryAndNotifyPages } from './rpcList.js'
 import { getRpcNetworkChange, getRpcChangeRoute } from '../utils/rpcNetworkChange.js'
 import type { RpcNetwork } from '../types/rpc.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
@@ -100,7 +101,7 @@ export async function changeActiveRpc(simulationServicesOwner: SimulationService
 		if (route === 'local') {
 			await changeActiveAddressAndChain(simulationServicesOwner, websiteTabConnections, { simulationMode, rpcNetwork })
 		}
-		await promoteRpcAsPrimary(rpcNetwork)
+		await promoteRpcAsPrimaryAndNotifyPages(rpcNetwork)
 		return { result: null }
 	}
 	if (request.signerTabId === undefined) return { error: signerUnavailableError }
@@ -205,7 +206,7 @@ export async function applyWalletSwitchReply(
 					rejectWalletSwitchReply(callbackSignerStateToken, params, { code: JSON_RPC_ERROR_CODE_INTERNAL_ERROR, message: 'The wallet switched networks, but Interceptor could not activate the requested network.' })
 					return
 				}
-				if (requestedRpc !== undefined) await promoteRpcAsPrimary(requestedRpc)
+				if (requestedRpc !== undefined) await promoteRpcAsPrimaryAndNotifyPages(requestedRpc)
 			}
 			resolveSignerChainChange(callbackSignerStateToken, {
 				method: 'popup_signerChangeChainDialog',
