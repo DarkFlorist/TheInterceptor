@@ -10,7 +10,7 @@ import type { WebsiteAccessUpdate } from './accessManagement.js'
 import { reconcileWebsiteApprovalAccesses, finishWebsiteAccessUpdate, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts } from './accessManagement.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
-import { changeSimulationMode, getSettingsAfterStorageUpdates, getSettingsSnapshot, setUseSignersAddressAsActiveAddress, type SimulationModeChanges, trackPreviousActiveAddressForMakeMeRichList, requireAvailableSettings, settingsForPublication, captureRpcNetwork } from './settings.js'
+import { changeSimulationMode, getSettingsAfterStorageUpdates, getSettingsSnapshot, setUseSignersAddressAsActiveAddress, type SimulationModeChanges, trackPreviousActiveAddressForMakeMeRichList, requireAvailableSettings, settingsForPublication, captureRpcNetwork, settingsIfAvailable } from './settings.js'
 import { updateTransactionState } from './storageVariables.js'
 import type { RpcConfigurationState } from './rpcConfigurationStorage.js'
 import type { Settings } from '../types/interceptor-messages.js'
@@ -159,13 +159,14 @@ async function runActiveSettingsChange(
 	try {
 		// Settings, approvals, resets, notifications and selection preferences form one ordered transition.
 		await changeActiveAddressAndChainSemaphore.execute(async () => {
-			// The baseline is read under the semaphore so a network change committed after admission is not overwritten by the admitted network; the admitted snapshot is used only when the RPC configuration became unavailable since admission, so the admitted transition still completes.
+			// The baseline is the settings committed when the semaphore is acquired, so a network change made after admission is never overwritten; the admitted settings stand in only when the live settings cannot be read.
 			const liveSnapshot = await getSettingsSnapshot()
-			const previousSnapshot = transition.admittedSnapshot !== undefined && (liveSnapshot.status === 'unavailable' || !rpcConfigurationIsReady(liveSnapshot.rpcConfiguration)) ? transition.admittedSnapshot : { settings: requireAvailableSettings(liveSnapshot), rpcConfiguration: liveSnapshot.rpcConfiguration }
-			const previousSettings = previousSnapshot.settings
-			const rpcServicesOptional = rpcServicesAreOptional(previousSnapshot.rpcConfiguration)
+			const previousSettings = settingsIfAvailable(liveSnapshot) ?? transition.admittedSnapshot?.settings ?? requireAvailableSettings(liveSnapshot)
+			// Authorization is separate from the baseline: an admitted transition may still complete after the RPC configuration became unreadable since admission, so the admitted configuration authorizes it when the live one is not ready.
+			const authorizingRpcConfiguration = transition.admittedSnapshot === undefined || rpcConfigurationIsReady(liveSnapshot.rpcConfiguration) ? liveSnapshot.rpcConfiguration : transition.admittedSnapshot.rpcConfiguration
+			const rpcServicesOptional = rpcServicesAreOptional(authorizingRpcConfiguration)
 			const recoverServicesOnRpcSelection = simulationServicesOwner.getCurrent() === undefined && rpcServicesOptional
-			if (!rpcConfigurationIsUsable(previousSnapshot.rpcConfiguration, simulationServicesOwner)) throw createRpcConfigurationUnavailableError()
+			if (!rpcConfigurationIsUsable(authorizingRpcConfiguration, simulationServicesOwner)) throw createRpcConfigurationUnavailableError()
 			const committedStorageUpdates: LocalStorageItems[] = []
 			if (transition.simulationSignerSelection !== undefined) {
 				const { useSignerAddress, signerAddress } = transition.simulationSignerSelection

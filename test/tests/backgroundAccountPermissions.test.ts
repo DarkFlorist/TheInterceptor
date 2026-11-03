@@ -2741,7 +2741,7 @@ describe('background eth_accounts', () => {
 		assert.deepEqual(messages.find((message) => message.method === 'accountsChanged')?.result, ['0x2222222222222222222222222222222222222222'])
 	})
 
-	test('publishes the network committed after admission instead of the admitted one when a settings transition runs', async () => {
+	for (const rpcListAfterSwitch of ['readable', 'corrupt'] as const) test(`publishes the network committed after admission instead of the admitted one when a settings transition runs (RPC list ${ rpcListAfterSwitch })`, async () => {
 		const { runtimeMessages } = installBrowserMock()
 		const { changeActiveAddressAndChain, changeSimulationMode, getRequiredSettings, getSettingsSnapshot, saveCurrentTabId, setRpcConfiguration, setUseSignersAddressAsActiveAddress, updateTabState, updateUserAddressBookEntries, updateWebsiteAccess, websiteSocketToString } = await loadModules()
 		const { MessageToPopup } = await import('../../app/ts/types/interceptor-messages.js')
@@ -2768,6 +2768,8 @@ describe('background eth_accounts', () => {
 		if (admitted.status === 'unavailable') throw new Error('Expected readable settings at admission')
 		assert.equal(admitted.settings.activeRpcNetwork.chainId, chainARpc.chainId)
 		await setRpcConfiguration([chainARpc, chainBRpc], chainBRpc)
+		// A corrupt RPC list leaves the chain-B settings readable but the RPC configuration unready; the admitted configuration still authorizes the transition without replacing its chain-B baseline.
+		if (rpcListAfterSwitch === 'corrupt') await browser.storage.local.set({ rpcEntries: 'not-an-rpc-list' })
 		const messageCountBeforeTransition = runtimeMessages.length
 
 		await changeActiveAddressAndChain(simulationServicesOwner, websiteTabConnections, { simulationMode: false, activeAddress: chainBSafe, signingAddressSelection: 'safe' }, { settings: admitted.settings, rpcConfiguration: admitted.rpcConfiguration })
