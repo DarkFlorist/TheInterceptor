@@ -1937,3 +1937,70 @@ test('closes a resolved request\'s window on the retry of a failed close after t
 	assert.deepEqual(getPageResponses(postedMessages, 1), [{ error: 4001 }])
 	await assertNoResolutionBookkeeping()
 })
+
+// Fails the given read of the committed replies, counted from now, once.
+const failingCommittedReplyRead = (failingRead: number) => {
+	let reads = 0
+	let failed = 0
+	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+		if (!readsKey(keys, 'pendingTerminalReplies')) return readStoredItems()
+		reads += 1
+		if (reads !== failingRead) return readStoredItems()
+		failed += 1
+		throw new Error('transient committed reply read failure')
+	})
+	return () => failed
+}
+
+test('rejects a request once when its window closes and the finishing first fails to look up its committed reply', async () => {
+	await startSimulationStack(SENDER)
+	const postedMessages: unknown[] = []
+	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+	const request = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+	browserMock.setLiveWindowIds([])
+	// The close checks for a committed reply (the first read), then its finishing looks it up again (the second), which fails.
+	const failures = failingCommittedReplyRead(2)
+	await withSilencedConsole(async () => {
+		await modules.onCloseWindowOrTab({ type: 'popup', id: CONFIRMATION_WINDOW_ID }, simulator.ethereum, simulator.tokenPriceService, websiteTabConnections)
+		await waitUntilNothingPending()
+		await waitForCondition(async () => (await modules.getPendingTerminalReplies()).length === 0)
+	})
+	browserMock.setStorageGetHandler(undefined)
+	assert.equal(failures(), 1)
+	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [{ error: 4001 }])
+	await withSilencedConsole(async () => await waitForCondition(async () => {
+		const { getResolutionBookkeepingSize } = await import('../../app/ts/background/windows/confirmTransaction.js')
+		return getResolutionBookkeepingSize() === 0
+	}))
+	await assertNoResolutionBookkeeping()
+})
+
+test('rejects a request once when a close deferred behind a failed accept first fails to look up its committed reply', async () => {
+	await startSimulationStack(SENDER)
+	const postedMessages: unknown[] = []
+	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+	const request = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+	const pause = pauseNextStackReadThen()
+	const accepting = withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier: request } }))
+	await pause.paused
+	try {
+		await withSilencedConsole(async () => await modules.onCloseWindowOrTab({ type: 'popup', id: CONFIRMATION_WINDOW_ID }, simulator.ethereum, simulator.tokenPriceService, websiteTabConnections))
+	} finally {
+		pause.release(true)
+	}
+	// After the failed accept, its claim release finishes it again (the first read), then the deferred close checks for a committed reply (the second) and finishes (the third), which fails.
+	const failures = failingCommittedReplyRead(3)
+	await accepting.then(() => undefined, () => undefined)
+	await withSilencedConsole(async () => {
+		await waitUntilNothingPending()
+		await waitForCondition(async () => (await modules.getPendingTerminalReplies()).length === 0)
+	})
+	browserMock.setStorageGetHandler(undefined)
+	assert.equal(failures(), 1)
+	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [{ error: 4001 }])
+	await withSilencedConsole(async () => await waitForCondition(async () => {
+		const { getResolutionBookkeepingSize } = await import('../../app/ts/background/windows/confirmTransaction.js')
+		return getResolutionBookkeepingSize() === 0
+	}))
+	await assertNoResolutionBookkeeping()
+})

@@ -359,7 +359,7 @@ async function commitAndFinish(request: PendingTransactionOrSignableMessage, rep
 }
 
 // Finishes a committed request under its claim; it never throws, so a scheduled retry or startup can run it unattended.
-const resumeRequest = async (uniqueRequestIdentifier: UniqueRequestIdentifier, context: ResolutionContext): Promise<boolean | undefined> => await withResolutionClaim(uniqueRequestIdentifier, context, async () => false, 'finish-again')
+const resumeRequest = async (uniqueRequestIdentifier: UniqueRequestIdentifier, context: ResolutionContext): Promise<boolean | undefined> => await withResolutionClaim(uniqueRequestIdentifier, context, async () => false, { whenClaimed: 'finish-again' })
 
 // The size of the in-memory resolution bookkeeping, which is empty whenever no resolution is in flight or awaiting a retry.
 export const getResolutionBookkeepingSize = () => resolutionClaims.size + deferredResolutions.size + chosenUncommittedReplies.size + finishingRetries.size
@@ -407,7 +407,12 @@ const resolutionClaims = new Set<string>()
 type DeferredResolution = { readonly closeRequested: boolean }
 const deferredResolutions = new Map<string, DeferredResolution>()
 type WhenClaimed = 'finish-again' | 'close' | 'nothing'
-async function withResolutionClaim<Result>(uniqueRequestIdentifier: UniqueRequestIdentifier, context: ResolutionContext, resolve: () => Promise<Result>, whenClaimed: WhenClaimed = 'nothing') {
+// Thrown for a reject or close whose finishing could not tell whether the request is committed (finishCommittedRequest returned retrying): the finishing's own retry only finishes committed requests, so the action is retried by its caller instead of being lost.
+const RESOLUTION_RETRYING_ERROR_NAME = 'ResolutionRetrying'
+const isResolutionRetryingError = (error: unknown) => error instanceof Error && error.name === RESOLUTION_RETRYING_ERROR_NAME
+type ClaimOptions = { readonly whenClaimed?: WhenClaimed, readonly retryActionWhenFinishingRetries?: true }
+async function withResolutionClaim<Result>(uniqueRequestIdentifier: UniqueRequestIdentifier, context: ResolutionContext, resolve: () => Promise<Result>, options: ClaimOptions = {}) {
+	const whenClaimed = options.whenClaimed ?? 'nothing'
 	const claim = getUniqueRequestIdentifierString(uniqueRequestIdentifier)
 	if (resolutionClaims.has(claim)) {
 		if (whenClaimed !== 'nothing') deferredResolutions.set(claim, { closeRequested: whenClaimed === 'close' || deferredResolutions.get(claim)?.closeRequested === true })
@@ -420,7 +425,10 @@ async function withResolutionClaim<Result>(uniqueRequestIdentifier: UniqueReques
 			case 'uncommitted': return await resolve()
 			case 'absent': return false
 			case 'finished': return outcome.delivered
-			case 'retrying': return undefined
+			case 'retrying': {
+				if (options.retryActionWhenFinishingRetries === true) throw Object.assign(new Error('The resolution of the request is retried'), { name: RESOLUTION_RETRYING_ERROR_NAME })
+				return undefined
+			}
 			default: return assertNever(outcome)
 		}
 	} finally {
@@ -442,7 +450,19 @@ async function withResolutionClaim<Result>(uniqueRequestIdentifier: UniqueReques
 type AcceptedTransactionStacking = { readonly kind: 'stacked', readonly transaction: PreSimulationTransaction } | { readonly kind: 'hash-taken' } | { readonly kind: 'resolved' }
 
 export async function resolvePendingTransactionOrMessage(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, refreshedSafeSignerSelection?: RefreshedSafeSignerSelection) {
-	return await resolvePendingRequest({ ethereum, tokenPriceService, websiteTabConnections }, confirmation, refreshedSafeSignerSelection)
+	const context = { ethereum, tokenPriceService, websiteTabConnections }
+	try {
+		return await resolvePendingRequest(context, confirmation, refreshedSafeSignerSelection)
+	} catch (error) {
+		if (!isResolutionRetryingError(error)) throw error
+		// A reject or close whose finishing is retried is run again later, as a whole and with bounded retries; an accept is the user's to repeat.
+		const { action } = confirmation.data
+		if (action !== 'reject' && action !== 'noResponse') return undefined
+		setTimeout(() => {
+			void runWithBoundedRetry(async (attemptContext) => { await resolvePendingRequest(attemptContext, confirmation) }, context, { code: `request_${ action }_resolution`, description: `the ${ action === 'reject' ? 'rejection' : 'popup close' } of a request` }, 0)
+		}, FINISHING_RETRY_BASE_DELAY_MS)
+		return undefined
+	}
 }
 
 async function resolvePendingRequest(resolutionContext: ResolutionContext, confirmation: TransactionConfirmation, refreshedSafeSignerSelection?: RefreshedSafeSignerSelection) {
@@ -566,10 +586,10 @@ async function resolvePendingRequest(resolutionContext: ResolutionContext, confi
 		return false
 	}
 	if (confirmation.data.action === 'noResponse') {
-		return await withResolutionClaim(confirmation.data.uniqueRequestIdentifier, resolutionContext, async () => await rejectUnlessStacked(formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User denied transaction signature')), 'close')
+		return await withResolutionClaim(confirmation.data.uniqueRequestIdentifier, resolutionContext, async () => await rejectUnlessStacked(formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User denied transaction signature')), { whenClaimed: 'close', retryActionWhenFinishingRetries: true })
 	}
 	if (pendingTransactionOrMessage === undefined || pendingTransactionOrMessage.transactionOrMessageCreationStatus !== 'Simulated') return await withResolutionClaim(confirmation.data.uniqueRequestIdentifier, resolutionContext, async () => await rejectUnlessStacked(formRejectMessage(METAMASK_ERROR_BLANKET_ERROR, 'The Interceptor failed to process the transaction')))
-	if (confirmation.data.action === 'reject') return await withResolutionClaim(confirmation.data.uniqueRequestIdentifier, resolutionContext, async () => await rejectUnlessStacked(formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User denied transaction signature')))
+	if (confirmation.data.action === 'reject') return await withResolutionClaim(confirmation.data.uniqueRequestIdentifier, resolutionContext, async () => await rejectUnlessStacked(formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User denied transaction signature')), { retryActionWhenFinishingRetries: true })
 	if (!pendingTransactionOrMessage.simulationMode) {
 		if (confirmation.data.action === 'signerIncluded') {
 			const safeReply = await resolveSafeSignerReply(ethereum, tokenPriceService, pendingTransactionOrMessage, confirmation.data.signerReply)
