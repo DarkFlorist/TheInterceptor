@@ -66,10 +66,27 @@ const simulationStateWithBalanceBelowBaseFee: ResolvedSimulationState = {
 	},
 }
 
-const SENDER_BALANCE_AFTER = 10n ** 18n
+const SAFE_BALANCE = 10n ** 18n
 const [simulatedBlock] = simulationStateWithBalanceBelowBaseFee.kind === 'simulated' && simulationStateWithBalanceBelowBaseFee.value.success ? simulationStateWithBalanceBelowBaseFee.value.simulatedBlocks : []
 const [simulatedTransaction] = simulatedBlock?.simulatedTransactions ?? []
 if (simulationStateWithBalanceBelowBaseFee.kind !== 'simulated' || !simulationStateWithBalanceBelowBaseFee.value.success || simulatedBlock === undefined || simulatedTransaction === undefined) throw new Error('missing simulation fixture')
+// The sender is a Gnosis Safe whose execution the simulation runs through its execTransaction (safe/safeExecutionSimulation.ts), in a block with a real base fee.
+const simulationStateWithSafeExecution: ResolvedSimulationState = {
+	kind: 'simulated',
+	value: {
+		...simulationStateWithBalanceBelowBaseFee.value,
+		baseFeePerGas: 1_000n,
+		simulatedBlocks: [{
+			...simulatedBlock,
+			simulatedTransactions: [{
+				...simulatedTransaction,
+				preSimulationTransaction: { ...simulatedTransaction.preSimulationTransaction, simulationOptions: { requiredChainId: 1n, simulateWithZeroBaseFee: false, executeThroughSafe: true } },
+				tokenBalancesAfter: [{ token: ETHEREUM_LOGS_LOGGER_ADDRESS, tokenId: undefined, owner: SENDER, balance: SAFE_BALANCE }],
+			}],
+		}],
+	},
+}
+const SENDER_BALANCE_AFTER = 10n ** 18n
 const simulationStateWithSenderBalance: ResolvedSimulationState = {
 	kind: 'simulated',
 	value: {
@@ -87,10 +104,20 @@ describe('simulation stack extraction', () => {
 		assert.deepEqual(payload[0]?.balanceChanges, [{ address: RECIPIENT, before: 0n, after: configuredAmount }])
 	})
 
+	test('version 1.0.1 reports a Gnosis Safe\'s balance without gas, which its executor pays', () => {
+		const payload = getSimulatedStackV1(simulationStateWithSafeExecution, undefined, MAKE_YOU_RICH_TRANSACTION.transaction.value, '1.0.1')
+		assert.deepEqual(payload[0]?.balanceChanges, [{ address: SENDER, before: SAFE_BALANCE, after: SAFE_BALANCE }])
+	})
+
 	test('version 2.0.0 reports an account\'s simulated balance after the transaction, and before it with the gas it paid added back', () => {
 		const [transaction] = getSimulatedStackV2(simulationStateWithSenderBalance).transactions
 		// The fixture's sender pays 21000 gas at a realized gas price of 2 attoeth per gas and moves no ether.
 		assert.deepEqual(transaction?.ethBalanceChanges, [{ address: SENDER, before: SENDER_BALANCE_AFTER + 42_000n, after: SENDER_BALANCE_AFTER }])
+	})
+
+	test('version 2.0.0 adds no gas back to a Gnosis Safe\'s balance, which its executor pays', () => {
+		const [transaction] = getSimulatedStackV2(simulationStateWithSafeExecution).transactions
+		assert.deepEqual(transaction?.ethBalanceChanges, [{ address: SENDER, before: SAFE_BALANCE, after: SAFE_BALANCE }])
 	})
 
 	test('version 1.0.1 remains serializable when the sender balance is below the base fee', () => {

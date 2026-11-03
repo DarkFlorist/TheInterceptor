@@ -433,6 +433,7 @@ export function installDateMock(initialNow: Date | string | number) {
 // Preact keeps its registered handlers on the element's minified `l` record; the DOM mock does not synthesize click events.
 export type RenderedTreeNode = {
 	readonly tagName?: string
+	readonly attributes?: Readonly<AttributeMap>
 	readonly textContent?: string
 	readonly childNodes?: readonly RenderedTreeNode[]
 	readonly l?: Record<string, (event: unknown) => unknown>

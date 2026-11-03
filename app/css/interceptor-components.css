@@ -121,6 +121,26 @@
 	width: 100%;
 	gap: 0.45ch;
 }
+
+/* Gas fee, creation time and simulation time below a transaction card. A long gas label (Gnosis Safe gas reimbursement) would squeeze fixed grid columns into ellipses, so the pieces wrap onto further rows instead. */
+.transaction-card-footer {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	column-gap: 1ch;
+	margin-top: 10px;
+}
+
+/* The gas fee label wraps onto a second line in narrow cards instead of truncating, while the amount and currency symbol beside it keep their full width. */
+.log-cell.gas-fee-label {
+	white-space: normal;
+}
+
+.log-cell.gas-fee-value {
+	flex-shrink: 0;
+}
+
 .nontoken-log-table {
 	display: grid;
 	grid-template-columns: auto auto auto;
