@@ -618,24 +618,81 @@ test('a batch id is recorded in the storage write that queues its batch and rele
 	assert.deepEqual(await requestBatch(websiteTabConnections, withBatchId('0x01'), { requestId: 78, requestSocket: socket }), { type: 'doNotReply' })
 })
 
-test('a batch whose preparation fails releases its id', async () => {
-	const { websiteTabConnections } = await setUpWalletSendCallsTest()
+// Fails the batch's preparation: the first simulation settings snapshot is the one the batch preparation takes.
+function failBatchPreparation() {
 	let failedPreparation = false
 	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
-		// The first simulation settings snapshot is the one the batch preparation takes.
 		if (failedPreparation || !Array.isArray(keys) || !keys.includes('fixedAddressRichList') || !keys.includes('websiteAccess')) return readStoredItems()
 		failedPreparation = true
 		throw new Error('Storage read failed')
 	})
+	return { preparationFailed: () => failedPreparation }
+}
+
+const getWalletSendCallsReplies = (postedMessages: readonly unknown[]) => postedMessages.filter((message) => isRecord(message) && message.type === 'result' && message.method === 'wallet_sendCalls')
+
+test('a batch whose preparation fails releases its id', async () => {
+	const { postedMessages, websiteTabConnections } = await setUpWalletSendCallsTest()
+	const preparation = failBatchPreparation()
 
 	const reply = await withSilencedConsole(async () => await requestBatch(websiteTabConnections, withBatchId('0x01')))
 	browserMock.setStorageGetHandler(undefined)
 
-	assert.equal(failedPreparation, true)
-	assert.equal('error' in reply ? reply.error.code : undefined, -32603)
+	assert.equal(preparation.preparationFailed(), true)
+	// The rejection was delivered through the queued terminal reply, so the admission does not answer a second time.
+	assert.deepEqual(reply, { type: 'doNotReply' })
+	const replies = getWalletSendCallsReplies(postedMessages)
+	assert.deepEqual(replies.map((message) => isRecord(message) && isRecord(message.error) ? message.error.code : undefined), [-32603])
 	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
 	assert.deepEqual(await getBatchIdRecords(), [])
 	assert.deepEqual(await requestBatch(websiteTabConnections, withBatchId('0x01'), { requestId: 78, requestSocket: socket }), { type: 'doNotReply' })
+})
+
+test('a batch whose preparation fails is rejected before the confirmation window work after its removal', async () => {
+	const { postedMessages, websiteTabConnections } = await setUpWalletSendCallsTest()
+	failBatchPreparation()
+	// The window work focuses the website's tab once the confirmation queue is empty. It records how many answers the website had received when that work started.
+	const repliesReceivedBeforeWindowWork: number[] = []
+	browserMock.setLiveTabIds([socket.tabId])
+	const updateTab = browser.tabs.update
+	browser.tabs.update = async (...parameters: Parameters<typeof browser.tabs.update>) => {
+		repliesReceivedBeforeWindowWork.push(getWalletSendCallsReplies(postedMessages).length)
+		return await updateTab(...parameters)
+	}
+	try {
+		assert.deepEqual(await withSilencedConsole(async () => await requestBatch(websiteTabConnections, withBatchId('0x01'))), { type: 'doNotReply' })
+	} finally {
+		browser.tabs.update = updateTab
+		browserMock.setStorageGetHandler(undefined)
+	}
+
+	assert.deepEqual(repliesReceivedBeforeWindowWork, [1])
+	assert.equal(getWalletSendCallsReplies(postedMessages).length, 1)
+	const { getPendingTerminalReplies } = await import('../../app/ts/background/pendingTerminalReplies.js')
+	assert.deepEqual(await getPendingTerminalReplies(), [])
+})
+
+test('a batch whose preparation fails keeps its rejection queued when delivery is interrupted, and the admission does not answer instead', async () => {
+	const { postedMessages, websiteTabConnections } = await setUpWalletSendCallsTest()
+	const connection = websiteTabConnections.get(socket.tabId)?.connections[modules.websiteSocketToString(socket)]
+	if (connection === undefined) throw new Error('Missing website connection')
+	const websitePort = connection.port
+	connection.port = createDisconnectedPort().port
+	failBatchPreparation()
+	try {
+		assert.deepEqual(await withSilencedConsole(async () => await requestBatch(websiteTabConnections, withBatchId('0x01'))), { type: 'doNotReply' })
+	} finally {
+		connection.port = websitePort
+		browserMock.setStorageGetHandler(undefined)
+	}
+
+	// The batch already left the confirmation queue and released its id, so after a restart only the queued rejection is left to deliver.
+	assert.deepEqual(getWalletSendCallsReplies(postedMessages), [])
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	assert.equal(await isBatchIdInUse('0x01'), false)
+	assert.equal(await modules.flushPendingTerminalRepliesForSocket(websiteTabConnections, socket), 1)
+	const replies = getWalletSendCallsReplies(postedMessages)
+	assert.deepEqual(replies.map((message) => isRecord(message) && isRecord(message.error) ? message.error.code : undefined), [-32603])
 })
 
 test('an approved batch keeps its id until its calls leave the simulation stack, and the next batch drops its record', async () => {

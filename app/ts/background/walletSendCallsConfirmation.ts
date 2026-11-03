@@ -241,10 +241,9 @@ export async function openConfirmTransactionDialogForTransactionBatch(
 			return { success: true }
 		} catch(error: unknown) {
 			await reportLocalRecovery(error, { code: 'send_calls_preparation_failed', message: 'Removing the batch confirmation and returning a wallet-compatible rejection to the requesting page.', details: error instanceof Error ? error.stack : undefined })
-			const ending = await resolveTransactionBatchSerially(ethereumClientService, tokenPriceService, websiteTabConnections, pendingBatch.uniqueRequestIdentifier, async (storedBatch) => await releaseTransactionBatchAndUpdateView(ethereumClientService, tokenPriceService, storedBatch))
-			// Only a batch that this cleanup removed unapproved gets the preparation rejection. Otherwise the batch was already approved or rejected once its preview was shown, and that resolution answers the website.
-			if (ending.kind !== 'resolved') return { success: true }
-			return formRejectMessage(METAMASK_ERROR_BLANKET_ERROR, 'The Interceptor failed to simulate the batch of calls')
+			// The preparation rejection takes the same durable path as a user's rejection: it is queued, the batch is removed and its id released, and it is delivered before the confirmation window work. Only a batch that this cleanup removes unapproved gets it. Otherwise the batch was already approved or rejected once its preview was shown, and that resolution answered the website. Either way the website has its answer, so the admission itself does not reply.
+			await resolveTransactionBatchSerially(ethereumClientService, tokenPriceService, websiteTabConnections, pendingBatch.uniqueRequestIdentifier, async (storedBatch) => await rejectTransactionBatch(ethereumClientService, tokenPriceService, websiteTabConnections, storedBatch, formRejectMessage(METAMASK_ERROR_BLANKET_ERROR, 'The Interceptor failed to simulate the batch of calls')))
+			return { success: true }
 		}
 	})
 	if (!('success' in outcome)) return formRejectMessage(outcome.error.code, outcome.error.message)
