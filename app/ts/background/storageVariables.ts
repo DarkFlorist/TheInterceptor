@@ -130,25 +130,26 @@ export async function getPopupVisualisationState() {
 
 export const setPopupVisualisationState = async (newResults: CompleteVisualizedSimulation) => await updatePopupVisualisationWithCallBack(async () => newResults)
 
-// Like setPopupVisualisationState, but evaluates isCurrent once the storage semaphore is held and the stored results are read, so validity cannot lapse while the write waits for another update; returns undefined when it skipped the write.
-export async function setPopupVisualisationStateIfCurrent(newResults: CompleteVisualizedSimulation, isCurrent: () => boolean) {
-	let skipped = false
-	const stored = await updatePopupVisualisationWithCallBack(async () => {
-		if (isCurrent()) return newResults
-		skipped = true
-		return undefined
+// The one serialized update of the stored visualisation. isCurrent is checked before the write is queued, and evaluated again by the large state store immediately before it starts the write, after every lock and wait; a write that passes there is ordered before any network change that invalidates it, whose own refresh then overwrites it.
+async function writePopupVisualisation(update: (oldResults: CompleteVisualizedSimulation) => Promise<CompleteVisualizedSimulation | undefined>, isCurrent: () => boolean) {
+	return await simulationResultsSemaphore.execute(async (): Promise<{ readonly status: 'written' | 'unchanged' | 'obsolete', readonly results: CompleteVisualizedSimulation }> => {
+		const oldResults = await getPopupVisualisationState()
+		const newResults = await update(oldResults)
+		if (newResults === undefined || newResults.simulationId < oldResults.simulationId) return { status: 'unchanged', results: oldResults } // do not update state with older state
+		if (!isCurrent()) return { status: 'obsolete', results: oldResults }
+		const written = await setLargeStateValue('popupVisualisation', CompleteVisualizedSimulation, newResults, isCurrent)
+		return written ? { status: 'written', results: newResults } : { status: 'obsolete', results: oldResults }
 	})
-	return skipped ? undefined : stored
 }
 
-export async function updatePopupVisualisationWithCallBack(update: (oldResults: CompleteVisualizedSimulation) => Promise<CompleteVisualizedSimulation | undefined>) {
-	return await simulationResultsSemaphore.execute(async () => {
-		const oldResults = await getPopupVisualisationState()
-		const newRequests = await update(oldResults)
-		if (newRequests === undefined || newRequests.simulationId < oldResults.simulationId) return oldResults // do not update state with older state
-		await setLargeStateValue('popupVisualisation', CompleteVisualizedSimulation, newRequests)
-		return newRequests
-	})
+// Like setPopupVisualisationState, but writes only while isCurrent holds at the moment the write starts; returns undefined when it skipped the write as obsolete.
+export async function setPopupVisualisationStateIfCurrent(newResults: CompleteVisualizedSimulation, isCurrent: () => boolean) {
+	const { status, results } = await writePopupVisualisation(async () => newResults, isCurrent)
+	return status === 'obsolete' ? undefined : results
+}
+
+export async function updatePopupVisualisationWithCallBack(update: (oldResults: CompleteVisualizedSimulation) => Promise<CompleteVisualizedSimulation | undefined>, isCurrent: () => boolean = () => true) {
+	return (await writePopupVisualisation(update, isCurrent)).results
 }
 
 const defaultSignerNameRepository = createStoredValueRepository<SignerName>({

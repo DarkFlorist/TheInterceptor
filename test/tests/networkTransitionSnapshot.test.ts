@@ -323,6 +323,51 @@ function pauseNextStorageReadOf(key: string) {
 	return { started: started.promise, release: release.resolve }
 }
 
+const readsStorageKey = (keys: unknown, key: string) => keys === key || (Array.isArray(keys) && keys.includes(key))
+
+// Resolves once the given number of storage reads of the key have returned, counting from now.
+function whenStorageReadsReturned(key: string, count: number) {
+	const returned = createDeferredSignal()
+	const originalGet = browser.storage.local.get.bind(browser.storage.local)
+	let reads = 0
+	Object.defineProperty(browser.storage.local, 'get', {
+		configurable: true,
+		value: async (keys: Parameters<typeof originalGet>[0]) => {
+			const result = await originalGet(keys)
+			if (readsStorageKey(keys, key)) {
+				reads += 1
+				if (reads === count) returned.resolve()
+			}
+			return result
+		},
+	})
+	return returned.promise
+}
+
+// The next read of the stored visualisation queues a read of the Gnosis Safe stacks while it holds the large state semaphore, so that read runs next and holds the semaphore, blocked, until released; anything queued after the visualisation read waits behind it.
+function queueBlockedLargeStateReadAfterNextVisualisationRead(getSafeTransactionStacks: () => Promise<unknown>) {
+	const blocked = createDeferredSignal()
+	const release = createDeferredSignal()
+	const originalGet = browser.storage.local.get.bind(browser.storage.local)
+	let state: 'waitingForVisualisationRead' | 'waitingForCompetingRead' | 'used' = 'waitingForVisualisationRead'
+	let competingRead: Promise<unknown> | undefined
+	Object.defineProperty(browser.storage.local, 'get', {
+		configurable: true,
+		value: async (keys: Parameters<typeof originalGet>[0]) => {
+			if (state === 'waitingForVisualisationRead' && readsStorageKey(keys, 'popupVisualisation')) {
+				state = 'waitingForCompetingRead'
+				competingRead = getSafeTransactionStacks()
+			} else if (state === 'waitingForCompetingRead' && readsStorageKey(keys, 'safeTransactionStacks')) {
+				state = 'used'
+				blocked.resolve()
+				await release.promise
+			}
+			return await originalGet(keys)
+		},
+	})
+	return { blocked: blocked.promise, release: release.resolve, finished: async () => await competingRead }
+}
+
 // Counts the writes of the stored popup visualisation from now on.
 function countPopupVisualisationWrites() {
 	const originalSet = browser.storage.local.set.bind(browser.storage.local)
@@ -1573,9 +1618,10 @@ describe('network transition snapshot', () => {
 			addressBookRead = pauseNextStorageReadOf('userAddressBookEntriesV3')
 			const metadata = updateSimulationMetadata(servicesA.ethereum, simulation, undefined)
 			await addressBookRead.started
-			// A's invalidating refresh passes its network checks, then waits for the held update before it can store its invalidation.
+			// A's invalidating refresh passes its network checks and reads the stored visualisation twice, first to compare and then inside its serialized section; from there it queues its invalidation behind the held update without touching storage again.
+			const refreshReadStoredVisualisation = whenStorageReadsReturned('popupVisualisation', 2)
 			const refresh = updatePopupVisualisationIfNeeded(servicesA.ethereum, servicesA.tokenPriceService, { invalidateOldState: true, snapshot: simulation })
-			await new Promise((resolve) => setTimeout(resolve, 20))
+			await refreshReadStoredVisualisation
 			reportSimulationConsumer(false)
 			const switchToNetwork = async (rpcNetwork: RpcEntry) => await modules.changeActiveAddressAndChain(owner, new Map(), { simulationMode: true, rpcNetwork, promptForAccessesIfNeeded: false })
 			await switchToNetwork(networkB)
@@ -1641,6 +1687,51 @@ describe('network transition snapshot', () => {
 			assert.ok(homePages.length > 0)
 			for (const homePage of homePages) assert.equal(homePage.settings.activeRpcNetwork.chainId, finalNetwork.chainId)
 		} finally {
+			retireAll()
+		}
+	})
+
+	test.each(['visualisation store', 'metadata update'] as const)('a %s whose write waits behind a large state read while an endpoint switch commits writes and broadcasts nothing', async (path) => {
+		const { modules, runtimeMessages } = await createApprovedSimulationDapp()
+		const { getCommittedNetworkChangeGeneration } = await import('../../app/ts/background/networkChangeGeneration.js')
+		const { getSafeTransactionStacks, setPopupVisualisationStateIfCurrent, updatePopupVisualisationWithCallBack } = await import('../../app/ts/background/storageVariables.js')
+		const { MessageToPopup } = await import('../../app/ts/types/interceptor-messages.js')
+		const networkAOnAnotherEndpoint = { ...networkA, name: 'Network A on another endpoint', httpsRpc: 'https://network-a-other.invalid' }
+		const { owner, retireAll } = createRecordingServicesOwner(networkA)
+		const storedBefore = await modules.getPopupVisualisationState()
+		const generationBefore = getCommittedNetworkChangeGeneration()
+		// The check runs right before the write is queued for the large state semaphore, so its first call shows that the write has reached that wait.
+		const writeQueued = createDeferredSignal()
+		const isCurrent = () => {
+			writeQueued.resolve()
+			return getCommittedNetworkChangeGeneration() === generationBefore
+		}
+		const competingRead = queueBlockedLargeStateReadAfterNextVisualisationRead(getSafeTransactionStacks)
+		try {
+			const write = path === 'visualisation store'
+				? setPopupVisualisationStateIfCurrent({ ...storedBefore, simulationId: storedBefore.simulationId + 1, simulationResultState: 'invalid', simulationUpdatingState: 'updating' }, isCurrent)
+				: updatePopupVisualisationWithCallBack(async (oldResults) => ({ ...oldResults, simulationId: oldResults.simulationId + 1 }), isCurrent)
+			await competingRead.blocked
+			await writeQueued.promise
+			// A same-chain endpoint change in signing mode needs no large state, so it commits while the write waits.
+			await modules.changeActiveAddressAndChain(owner, new Map(), { simulationMode: false, rpcNetwork: networkAOnAnotherEndpoint, promptForAccessesIfNeeded: false })
+			assert.equal(getCommittedNetworkChangeGeneration(), generationBefore + 1)
+			const getWrites = countPopupVisualisationWrites()
+			const messagesBeforeRelease = runtimeMessages.length
+			competingRead.release()
+			const result = await write
+			await competingRead.finished()
+
+			assert.equal(getWrites(), 0)
+			assert.deepEqual(result, path === 'visualisation store' ? undefined : storedBefore)
+			assert.deepEqual(await modules.getPopupVisualisationState(), storedBefore)
+			const stateChanges = runtimeMessages.slice(messagesBeforeRelease).filter((message) => {
+				const parsed = MessageToPopup.safeParse(message)
+				return parsed.success && parsed.value.method === 'popup_simulation_state_changed'
+			})
+			assert.deepEqual(stateChanges, [])
+		} finally {
+			competingRead.release()
 			retireAll()
 		}
 	})

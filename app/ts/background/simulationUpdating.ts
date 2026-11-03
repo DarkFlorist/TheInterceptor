@@ -466,7 +466,7 @@ export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: Visua
 	}
 }
 
-// Adds metadata to the stored visualisation with the client of the refresh's snapshot. Returning undefined from the storage callback writes nothing, so a refresh whose network was replaced, or whose client does not serve the stored visualisation, leaves storage as it is; the generation check is synchronous and needs no transition lock.
+// Adds metadata to the stored visualisation with the client of the refresh's snapshot. Returning undefined from the storage callback writes nothing, so a refresh whose network was replaced, or whose client does not serve the stored visualisation, leaves storage as it is; the storage update checks the generation again immediately before it starts the write. The checks are synchronous and need no transition lock.
 export const updateSimulationMetadata = async (ethereum: EthereumClientService, snapshot: SimulationSnapshot, requestAbortController: AbortController | undefined) => {
 	const networkIsActive = () => snapshot.networkChangeGeneration === getCommittedNetworkChangeGeneration()
 	return await updatePopupVisualisationWithCallBack(async (prevState) => {
@@ -501,7 +501,7 @@ export const updateSimulationMetadata = async (ethereum: EthereumClientService, 
 			await reportUnexpectedError(error)
 			return undefined
 		}
-	})
+	}, networkIsActive)
 }
 
 export const prepareSimulationInputForRpc = async (simulationInput: SimulationStateInput, ethereum: EthereumClientService) => {

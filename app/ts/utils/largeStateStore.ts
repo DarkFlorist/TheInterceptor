@@ -40,6 +40,10 @@ let indexedDbPromise: Promise<IDBDatabase | undefined> | undefined
 let indexedDbSource: IDBFactory | undefined
 const largeStateSemaphore = new Semaphore(1)
 
+// Evaluated synchronously immediately before the storage write is started, after the large state semaphore and every preparatory wait; a write that passes is ordered before any later change that invalidates it, whose own update then overwrites it.
+export type LargeStateWriteCondition = () => boolean
+const alwaysWrite: LargeStateWriteCondition = () => true
+
 function canUseIndexedDb() {
 	return typeof indexedDB !== 'undefined'
 }
@@ -122,10 +126,12 @@ async function setIndexedDbValue(key: LargeStateStorageKey, value: unknown) {
 }
 
 // Failure is recoverable only by committing the requested values and authority markers to storage.local.
-async function setIndexedDbValues(writes: readonly PreparedLargeStateWrite[]) {
+async function setIndexedDbValues(writes: readonly PreparedLargeStateWrite[], shouldWrite: LargeStateWriteCondition): Promise<'stored' | 'skipped' | 'unavailable'> {
 	try {
 		const db = await openLargeStateDb()
-		if (db === undefined) return false
+		if (db === undefined) return 'unavailable'
+		// The promise executor below starts the transaction synchronously, so nothing runs between this check and the write.
+		if (!shouldWrite()) return 'skipped'
 		await new Promise<void>((resolve, reject) => {
 			const transaction = db.transaction(LARGE_STATE_STORE_NAME, 'readwrite')
 			const store = transaction.objectStore(LARGE_STATE_STORE_NAME)
@@ -137,10 +143,10 @@ async function setIndexedDbValues(writes: readonly PreparedLargeStateWrite[]) {
 			transaction.onabort = () => reject(transaction.error ?? new Error('Large state IndexedDB batch transaction aborted'))
 			transaction.onerror = () => reject(transaction.error ?? new Error('Large state IndexedDB batch transaction failed'))
 		})
-		return true
+		return 'stored'
 	} catch (error) {
 		warnIndexedDbRequestFailure('batch write', error)
-		return false
+		return 'unavailable'
 	}
 }
 
@@ -201,14 +207,16 @@ async function setLegacyLocalMigrated(key: LargeStateStorageKey) {
 	})
 }
 
-async function setLegacyLocalValues(writes: readonly PreparedLargeStateWrite[]) {
+async function setLegacyLocalValues(writes: readonly PreparedLargeStateWrite[], shouldWrite: LargeStateWriteCondition) {
 	const values: Record<string, unknown> = {}
 	for (const write of writes) {
 		values[write.key] = write.serializedValue
 		values[getLegacyDeleteMarkerKey(write.key)] = false
 		values[getLegacyMigratedMarkerKey(write.key)] = false
 	}
+	if (!shouldWrite()) return false
 	await browser.storage.local.set(values)
+	return true
 }
 
 async function setLegacyLocalValuesMigrated(writes: readonly PreparedLargeStateWrite[]) {
@@ -264,30 +272,32 @@ export async function getLargeStateValue<T>(key: LargeStateStorageKey, codec: fu
 	return await largeStateSemaphore.execute(async () => await getLargeStateValueUnlocked(key, codec))
 }
 
-export async function setLargeStateValue<T>(key: LargeStateStorageKey, codec: funtypes.Codec<T>, value: T) {
-	await setLargeStateValues([prepareLargeStateWrite(key, codec, value)])
+// Returns whether the value was written; it is not written only when shouldWrite fails.
+export async function setLargeStateValue<T>(key: LargeStateStorageKey, codec: funtypes.Codec<T>, value: T, shouldWrite: LargeStateWriteCondition = alwaysWrite) {
+	return await setLargeStateValues([prepareLargeStateWrite(key, codec, value)], shouldWrite)
 }
 
 export function prepareLargeStateWrite<T>(key: LargeStateStorageKey, codec: funtypes.Codec<T>, value: T): PreparedLargeStateWrite {
 	return { key, serializedValue: serialize(codec, value) }
 }
 
-async function setLargeStateValuesUnlocked(writes: readonly PreparedLargeStateWrite[]) {
-	if (writes.length === 0) return
+async function setLargeStateValuesUnlocked(writes: readonly PreparedLargeStateWrite[], shouldWrite: LargeStateWriteCondition) {
+	if (writes.length === 0) return true
 	if (new Set(writes.map(({ key }) => key)).size !== writes.length) throw new Error('Large state batch contains duplicate keys.')
 	if (canUseIndexedDb()) {
-		const wasStoredInIndexedDb = await setIndexedDbValues(writes)
-		if (wasStoredInIndexedDb) {
+		const indexedDbWrite = await setIndexedDbValues(writes, shouldWrite)
+		if (indexedDbWrite === 'skipped') return false
+		if (indexedDbWrite === 'stored') {
 			await setLegacyLocalValuesMigrated(writes)
-			return
+			return true
 		}
 	}
-	await setLegacyLocalValues(writes)
+	return await setLegacyLocalValues(writes, shouldWrite)
 }
 
-/** Commits to IndexedDB or an authoritative local fallback; rejects if persistence cannot complete. */
-export async function setLargeStateValues(writes: readonly PreparedLargeStateWrite[]) {
-	await largeStateSemaphore.execute(async () => await setLargeStateValuesUnlocked(writes))
+/** Commits to IndexedDB or an authoritative local fallback; rejects if persistence cannot complete. Returns whether the writes were made; they are skipped only when shouldWrite fails. */
+export async function setLargeStateValues(writes: readonly PreparedLargeStateWrite[], shouldWrite: LargeStateWriteCondition = alwaysWrite) {
+	return await largeStateSemaphore.execute(async () => await setLargeStateValuesUnlocked(writes, shouldWrite))
 }
 
 async function removeLargeStateValueUnlocked(key: LargeStateStorageKey) {
