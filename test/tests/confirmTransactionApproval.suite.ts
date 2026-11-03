@@ -386,7 +386,7 @@ test('a preview stored before a background restart and a clock rollback is repla
 	const restartedModule = '../../app/ts/background/confirmTransactionSimulation.js?restart'
 	const restarted: typeof import('../../app/ts/background/confirmTransactionSimulation.js') = await import(restartedModule)
 	const storedBeforeRestart = await getPendingTransaction()
-	const runAfterRestart = await restarted.refreshConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService, storedBeforeRestart.activeAddress, false, uniqueRequestIdentifier, storedBeforeRestart.transactionToSimulate)
+	const runAfterRestart = await restarted.refreshConfirmTransactionSimulation(restarted.reserveConfirmationRun(), simulator.ethereum, simulator.tokenPriceService, storedBeforeRestart.activeAddress, false, uniqueRequestIdentifier, storedBeforeRestart.transactionToSimulate)
 	if (runAfterRestart === undefined) throw new Error('The simulation after the restart did not complete')
 	assert.ok(runAfterRestart.data.confirmationRunId > runIdBeforeRollback)
 	assert.equal(isConfirmationVisualisationCurrent(storedBeforeRestart.popupVisualisation, runAfterRestart, 'new run'), true)
@@ -404,9 +404,9 @@ test('a preview stored before a background restart and a clock rollback is repla
 test('a run that started before a later run was stored is still not stored over it', async () => {
 	const { websiteTabConnections } = await setUpTransactionApprovalTest(false)
 	await requestTransaction(websiteTabConnections, false)
-	const { isConfirmationVisualisationCurrent, refreshConfirmTransactionSimulation } = await import('../../app/ts/background/confirmTransactionSimulation.js')
+	const { isConfirmationVisualisationCurrent, refreshConfirmTransactionSimulation, reserveConfirmationRun } = await import('../../app/ts/background/confirmTransactionSimulation.js')
 	const pending = await getPendingTransaction()
-	const earlierRun = await refreshConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService, pending.activeAddress, false, uniqueRequestIdentifier, pending.transactionToSimulate)
+	const earlierRun = await refreshConfirmTransactionSimulation(reserveConfirmationRun(), simulator.ethereum, simulator.tokenPriceService, pending.activeAddress, false, uniqueRequestIdentifier, pending.transactionToSimulate)
 	if (earlierRun === undefined) throw new Error('The earlier run did not complete')
 
 	await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
@@ -419,7 +419,7 @@ test('a run that started before a later run was stored is still not stored over 
 test('a run whose read of the stored run ids is slow keeps the lower id and cannot replace the preview of a run that started after it', async () => {
 	const { websiteTabConnections } = await setUpTransactionApprovalTest(false)
 	await requestTransaction(websiteTabConnections, false)
-	const { isConfirmationVisualisationCurrent, refreshConfirmTransactionSimulation } = await import('../../app/ts/background/confirmTransactionSimulation.js')
+	const { isConfirmationVisualisationCurrent, refreshConfirmTransactionSimulation, reserveConfirmationRun } = await import('../../app/ts/background/confirmTransactionSimulation.js')
 	const pending = await getPendingTransaction()
 	const earlierRunReadReached = createDeferredValue<undefined>()
 	const releaseEarlierRunRead = createDeferredValue<undefined>()
@@ -434,7 +434,7 @@ test('a run whose read of the stored run ids is slow keeps the lower id and cann
 	})
 
 	// The earlier run's first storage read is the read of the stored run ids, which is held.
-	const earlierRun = refreshConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService, pending.activeAddress, false, uniqueRequestIdentifier, pending.transactionToSimulate)
+	const earlierRun = refreshConfirmTransactionSimulation(reserveConfirmationRun(), simulator.ethereum, simulator.tokenPriceService, pending.activeAddress, false, uniqueRequestIdentifier, pending.transactionToSimulate)
 	await earlierRunReadReached.promise
 	const laterRefresh = modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
 	// Gives the later refresh time to finish and store its run, which it can only do if its id is not allocated after the earlier run's.
@@ -454,7 +454,7 @@ test('a run whose read of the stored run ids is slow keeps the lower id and cann
 test('a run whose read of the stored run ids fails is rejected alone, and the next run still gets an id', async () => {
 	const { websiteTabConnections } = await setUpTransactionApprovalTest(false)
 	await requestTransaction(websiteTabConnections, false)
-	const { refreshConfirmTransactionSimulation } = await import('../../app/ts/background/confirmTransactionSimulation.js')
+	const { refreshConfirmTransactionSimulation, reserveConfirmationRun } = await import('../../app/ts/background/confirmTransactionSimulation.js')
 	const pending = await getPendingTransaction()
 	let failNextConfirmationsRead = true
 	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
@@ -465,9 +465,65 @@ test('a run whose read of the stored run ids fails is rejected alone, and the ne
 		return readStoredItems()
 	})
 
-	await assert.rejects(refreshConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService, pending.activeAddress, false, uniqueRequestIdentifier, pending.transactionToSimulate), /storage read failed/)
-	const nextRun = await refreshConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService, pending.activeAddress, false, uniqueRequestIdentifier, pending.transactionToSimulate)
+	await assert.rejects(refreshConfirmTransactionSimulation(reserveConfirmationRun(), simulator.ethereum, simulator.tokenPriceService, pending.activeAddress, false, uniqueRequestIdentifier, pending.transactionToSimulate), /storage read failed/)
+	const nextRun = await refreshConfirmTransactionSimulation(reserveConfirmationRun(), simulator.ethereum, simulator.tokenPriceService, pending.activeAddress, false, uniqueRequestIdentifier, pending.transactionToSimulate)
 	assert.ok(nextRun !== undefined && nextRun.data.confirmationRunId > pending.popupVisualisation.data.confirmationRunId)
+})
+
+// Holds the first storage read of the given key until released, and tells when it was reached.
+function holdFirstStorageRead(isHeldRead: (keys: unknown) => boolean) {
+	const reached = createDeferredValue<undefined>()
+	const release = createDeferredValue<undefined>()
+	let held = false
+	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+		if (!held && isHeldRead(keys)) {
+			held = true
+			reached.resolve(undefined)
+			await release.promise
+		}
+		return readStoredItems()
+	})
+	return { reached: reached.promise, release: () => release.resolve(undefined) }
+}
+
+test('of two overlapping simulation refreshes, the one requested first cannot replace the preview of the later one, even if its first read is slow', async () => {
+	const { websiteTabConnections } = await setUpTransactionApprovalTest(false)
+	await requestTransaction(websiteTabConnections, false)
+	const initialRunId = (await getPendingTransaction()).popupVisualisation.data.confirmationRunId
+	const earlierRefreshRead = holdFirstStorageRead((keys) => Array.isArray(keys) && keys.includes('pendingTransactionsAndMessages'))
+
+	const earlierRefresh = modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
+	await earlierRefreshRead.reached
+	await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
+	const laterRunId = (await getPendingTransaction()).popupVisualisation.data.confirmationRunId
+	earlierRefreshRead.release()
+	await earlierRefresh
+
+	assert.ok(laterRunId > initialRunId)
+	assert.equal((await getPendingTransaction()).popupVisualisation.data.confirmationRunId, laterRunId)
+})
+
+test('a simulation refresh that resumes after a later refresh started simulating does not abort it', async () => {
+	const { websiteTabConnections } = await setUpTransactionApprovalTest(false)
+	await requestTransaction(websiteTabConnections, false)
+	const initialRunId = (await getPendingTransaction()).popupVisualisation.data.confirmationRunId
+	const { getConfirmTransactionAbortController } = await import('../../app/ts/background/confirmTransactionSimulation.js')
+	// The first tab state read of a refresh is the one its simulation makes after its run id was allocated.
+	const earlierRunTabStateRead = holdFirstStorageRead((keys) => keys === `tabState_${ socket.tabId }`)
+
+	const earlierRefresh = modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
+	await earlierRunTabStateRead.reached
+	const suspended = createSuspendedServices('eth_simulateV1')
+	const laterRefresh = modules.refreshPopupConfirmTransactionSimulation(suspended.ethereum, suspended.tokenPriceService)
+	await suspended.reached
+	const laterRunAbortController = getConfirmTransactionAbortController()
+	earlierRunTabStateRead.release()
+	await earlierRefresh
+
+	assert.equal(laterRunAbortController.signal.aborted, false)
+	suspended.release()
+	await laterRefresh
+	assert.ok((await getPendingTransaction()).popupVisualisation.data.confirmationRunId > initialRunId)
 })
 
 test('a simulation refresh that finishes after the transaction was approved keeps the approved preview', async () => {

@@ -11,7 +11,7 @@ import { stringifyJSONWithBigInts } from '../utils/bigint.js'
 import { NEW_BLOCK_ABORT, JSON_RPC_ERROR_CODE_INTERNAL_ERROR } from '../utils/constants.js'
 import { decodeEthereumError } from '../utils/errorDecoding.js'
 import { JsonRpcResponseError, reportUnexpectedError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
-import type { UniqueRequestIdentifier } from '../utils/requests.js'
+import { type UniqueRequestIdentifier, silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { identifyAddress } from './metadataUtils.js'
 import { getSimulationErrorAbis } from './simulationErrorAbi.js'
@@ -31,20 +31,26 @@ async function getHighestStoredConfirmationRunId() {
 // Every confirmation simulation run gets a new id, which orders it against the stored runs; stored timestamps keep only whole seconds, so they cannot. The id is the millisecond clock bumped past both the previous id and every stored id. So ids increase within a background lifetime, and a new run is also later than every run stored before a restart, even if the system clock went back meanwhile. Ids are positive, so none is the run 0 that a visualisation stored without a run id decodes as. The allocations run one at a time, in the order runs reserve them, because each reads the stored ids first: an allocation whose read is slow would otherwise get a higher id than a run that started after it.
 let confirmationRunIdAllocations: Promise<unknown> = Promise.resolve()
 
-// Reserves the next run id synchronously when called, so a run that calls it first gets the lower id. The returned promise rejects only for this run if its read of the stored ids fails; the next allocation still runs.
-function reserveNextConfirmationRunId(): Promise<number> {
+// A confirmation run's place in the run order, taken when the run starts and handed to refreshConfirmTransactionSimulation.
+export type ConfirmationRunReservation = { readonly runId: Promise<number> }
+
+// Reserves the next run id synchronously when called, so every entry that starts a confirmation run calls it before its first await, and a run that starts first gets the lower id. The id rejects only for this run if its read of the stored ids fails; the next allocation still runs. A reservation that its entry ends up not using only skips an id.
+export function reserveConfirmationRun(): ConfirmationRunReservation {
 	const allocation = confirmationRunIdAllocations.then(async () => {
 		const highestStoredRunId = await getHighestStoredConfirmationRunId()
 		latestConfirmationRunId = Math.max(latestConfirmationRunId + 1, highestStoredRunId + 1, Date.now())
 		return latestConfirmationRunId
 	})
 	confirmationRunIdAllocations = allocation.then(() => undefined, () => undefined)
-	return allocation
+	return { runId: silenceChromeUnCaughtPromise(allocation) }
 }
+
+// The run whose abort controller is installed. Runs install theirs in run order: a run that resumes after a later run installed its controller ends as an aborted run does, so an earlier run never aborts a later one.
+let abortControllerRunId = CONFIRMATION_RUN_ID_OF_UNNUMBERED_RUN
 
 type ConfirmationRunVisualisation = { readonly data: { readonly confirmationRunId: number } }
 
-// The one rule for whether a confirmation visualisation may be stored over the stored one. A new run, stored with the transaction it prepared, replaces the stored visualisation unless that came from a later run; a re-visualisation of a stored run's results, stored without a transaction, needs that run to still be stored, so the visualisation stays paired with the transaction the run prepared. Runs are ordered by their ids, which reserveNextConfirmationRunId issues in the order runs start and above every stored id, so a preview stored before a restart never blocks a new run, while of two overlapping runs the one started first stays the older. It answers which confirmation run is current, unlike the fingerprints in popupSimulationFingerprint.ts, which tell whether the inputs of the popup's own simulation changed.
+// The one rule for whether a confirmation visualisation may be stored over the stored one. A new run, stored with the transaction it prepared, replaces the stored visualisation unless that came from a later run; a re-visualisation of a stored run's results, stored without a transaction, needs that run to still be stored, so the visualisation stays paired with the transaction the run prepared. Runs are ordered by their ids, which reserveConfirmationRun issues in the order runs start and above every stored id, so a preview stored before a restart never blocks a new run, while of two overlapping runs the one started first stays the older. It answers which confirmation run is current, unlike the fingerprints in popupSimulationFingerprint.ts, which tell whether the inputs of the popup's own simulation changed.
 export function isConfirmationVisualisationCurrent(stored: ConfirmationRunVisualisation | undefined, candidate: ConfirmationRunVisualisation, candidateKind: 'new run' | 're-visualised run') {
 	if (stored === undefined) return candidateKind === 'new run'
 	if (candidateKind === 're-visualised run') return candidate.data.confirmationRunId === stored.data.confirmationRunId
@@ -55,6 +61,7 @@ export function isConfirmationVisualisationCurrent(stored: ConfirmationRunVisual
 export const getConfirmationRunInputs = (pendingTransaction: PendingTransaction) => stringifyJSONWithBigInts([pendingTransaction.originalRequestParameters, pendingTransaction.activeAddress, pendingTransaction.safeTransaction])
 
 export async function refreshConfirmTransactionSimulation(
+	reservation: ConfirmationRunReservation,
 	ethereum: EthereumClientService,
 	tokenPriceService: TokenPriceService,
 	activeAddress: bigint,
@@ -63,8 +70,7 @@ export async function refreshConfirmTransactionSimulation(
 	transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed,
 	safeSigningRequest?: SafeTransactionSigningRequest,
 ): Promise<ConfirmTransactionTransactionSingleVisualization | undefined> {
-	// Reserved before anything is awaited, so the ids follow the order in which runs start.
-	const confirmationRunId = await reserveNextConfirmationRunId()
+	const confirmationRunId = await reservation.runId
 	const info = {
 		uniqueRequestIdentifier,
 		transactionToSimulate,
@@ -74,6 +80,8 @@ export async function refreshConfirmTransactionSimulation(
 		tabIdOpenedFrom: uniqueRequestIdentifier.requestSocket.tabId,
 		confirmationRunId,
 	}
+	if (abortControllerRunId > confirmationRunId) return undefined
+	abortControllerRunId = confirmationRunId
 	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' }, 'confirmTransaction')
 	confirmTransactionAbortController.abort(NEW_BLOCK_ABORT)
 	confirmTransactionAbortController = new AbortController()

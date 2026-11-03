@@ -11,7 +11,7 @@ import { createScopedKeyedSerialExecutor, Semaphore } from '../../utils/semaphor
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { type InterceptorTransactionStack, PASSTHROUGH_STATE, type WebsiteCreatedEthereumTransaction, type WebsiteCreatedEthereumTransactionOrFailed, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
 import type { SendRawTransactionParams, SendTransactionParams } from '../../types/JsonRpc-types.js'
-import { isConfirmationVisualisationCurrent, refreshConfirmTransactionSimulation } from '../confirmTransactionSimulation.js'
+import { isConfirmationVisualisationCurrent, refreshConfirmTransactionSimulation, reserveConfirmationRun } from '../confirmTransactionSimulation.js'
 import { captureSimulationSnapshot, getUpdatedSimulationState } from '../simulationUpdating.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getRpcConnectionStatus, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
@@ -63,6 +63,8 @@ async function refreshDirectSafeExecutionSimulation(
 	pending = flow.pending
 	const originalRequestParameters = pending.originalRequestParameters
 	if (originalRequestParameters.method !== 'eth_sendTransaction') return pending
+	// The rebuild starts its run here, before anything is awaited.
+	const confirmationRun = reserveConfirmationRun()
 	const transactionToSimulate = await formEthSendTransaction(
 		ethereum,
 		undefined,
@@ -75,6 +77,7 @@ async function refreshDirectSafeExecutionSimulation(
 		'external-executor',
 	)
 	const popupVisualisation = await refreshConfirmTransactionSimulation(
+		confirmationRun,
 		ethereum,
 		tokenPriceService,
 		pending.activeAddress,
@@ -762,6 +765,8 @@ export async function openConfirmTransactionDialogForTransaction(
 	const transactionIdentifier = EthereumQuantity.parse(keccak256(stringToBytes(uniqueRequestIdentifierString)))
 	const created = new Date()
 	if (activeAddress === undefined) return { type: 'result' as const, ...ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS }
+	// Reserved before anything is awaited, so the first simulation of this request is ordered before any refresh requested after it.
+	const confirmationRun = reserveConfirmationRun()
 	const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)
 	const walletSignerAddress = getWalletSelectedAccount(signerTabState)
 	const safePreparation = await prepareSafeTransactionConfirmation(
@@ -837,6 +842,7 @@ export async function openConfirmTransactionDialogForTransaction(
 			await updateConfirmTransactionView(ethereumClientService, tokenPriceService)
 			markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionSimulationStart)
 			const simulationResultsPromise = silenceChromeUnCaughtPromise(refreshConfirmTransactionSimulation(
+				confirmationRun,
 				ethereumClientService,
 				tokenPriceService,
 				transactionExecutor,
