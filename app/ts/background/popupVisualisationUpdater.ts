@@ -9,10 +9,10 @@ import { NEW_BLOCK_ABORT, TIME_BETWEEN_BLOCKS } from '../utils/constants.js'
 import { reportUnexpectedError, isExpectedInfrastructureError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { modifyObject } from '../utils/typescript.js'
 import { captureSimulationSnapshot, getSimulationProviderForSnapshot, type SimulationSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
 import { requestIsSimulationDataConsumerOpen, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getPopupVisualisationFingerprint } from './popupSimulationFingerprint.js'
+import { retainPreviousVisualisation } from '../utils/popupVisualisationLifecycle.js'
 import { visualizeSimulatorState } from './simulationUpdating.js'
 import { getPopupVisualisationState, setPopupVisualisationState, updatePopupVisualisationWithCallBack } from './storageVariables.js'
 
@@ -139,11 +139,10 @@ export async function publishPendingPopupVisualisation(invalidateOldState: boole
 }
 
 async function publishUpdatingPopupVisualisation(invalidateOldState: boolean, generation: number) {
-	const pending = await updatePopupVisualisationWithCallBack(async previous => generation !== publicationGeneration ? undefined : ({
-		...previous,
+	const pending = await updatePopupVisualisationWithCallBack(async previous => generation !== publicationGeneration ? undefined : retainPreviousVisualisation(previous, {
 		simulationId: previous.simulationId + 1,
 		simulationUpdatingState: 'updating',
-		simulationResultState: invalidateOldState ? 'invalid' : previous.simulationResultState,
+		simulationResultState: invalidateOldState ? 'invalid' : undefined,
 	}))
 	if (generation === publicationGeneration) await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState: pending } })
 }
@@ -244,7 +243,7 @@ async function executePopupVisualisationState(ethereum: EthereumClientService, t
 				await publishCurrentState(newState)
 				return
 			}
-			const visualizedSimulatorState = await storeCurrentState(modifyObject(popupVisualisation, { simulationId, simulationUpdatingState: 'updating' }))
+			const visualizedSimulatorState = await storeCurrentState(retainPreviousVisualisation(popupVisualisation, { simulationId, simulationUpdatingState: 'updating' }))
 			const changedMessagePromise = silenceChromeUnCaughtPromise(publishCurrentState(visualizedSimulatorState))
 			try {
 				const getUpdatedState = async () => {
@@ -262,12 +261,12 @@ async function executePopupVisualisationState(ethereum: EthereumClientService, t
 			} catch (error) {
 				if (isNewBlockAbort(error)) return
 				if (isFailedToFetchError(error)) {
-					const state = await storeCurrentState(modifyObject(popupVisualisation, { simulationId, simulationUpdatingState: 'updating' }))
+					const state = await storeCurrentState(retainPreviousVisualisation(popupVisualisation, { simulationId, simulationUpdatingState: 'updating' }))
 					await publishCurrentState(state)
 					return
 				}
 				if (throwOnUnexpectedError) throw error
-				const state = await storeCurrentState(modifyObject(popupVisualisation, { simulationId, simulationUpdatingState: 'failed' }))
+				const state = await storeCurrentState(retainPreviousVisualisation(popupVisualisation, { simulationId, simulationUpdatingState: 'failed' }))
 				await publishCurrentState(state)
 				await reportUnexpectedError(error)
 			}
