@@ -9,7 +9,7 @@ import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS, 
 import { type TransactionConfirmation, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
 import { Semaphore } from '../../utils/semaphore.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
-import { type InterceptorTransactionStack, PASSTHROUGH_STATE, type TransactionGasPayment, type TransactionSimulationOptions, type WebsiteCreatedEthereumTransaction, type WebsiteCreatedEthereumTransactionOrFailed, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
+import { type InterceptorTransactionStack, PASSTHROUGH_STATE, type PreSimulationTransaction, type TransactionGasPayment, type TransactionSimulationOptions, type WebsiteCreatedEthereumTransaction, type WebsiteCreatedEthereumTransactionOrFailed, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
 import type { SendRawTransactionParams, SendTransactionParams } from '../../types/JsonRpc-types.js'
 import { refreshConfirmTransactionSimulation } from '../confirmTransactionSimulation.js'
 import { captureSimulationSnapshot, getExecutedCallFormation, getUpdatedSimulationState } from '../simulationUpdating.js'
@@ -263,6 +263,9 @@ export const setGasLimitForTransaction = async (transactionIdentifier: bigint, g
 	})
 }
 
+// What accepting a simulation-mode transaction did: stacked it (or found it stacked), found its hash taken, or found the request resolved meanwhile.
+type AcceptedTransactionStacking = { readonly kind: 'stacked', readonly transaction: PreSimulationTransaction } | { readonly kind: 'hash-taken' } | { readonly kind: 'resolved' }
+
 export async function resolvePendingTransactionOrMessage(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, refreshedSafeSignerSelection?: RefreshedSafeSignerSelection) {
 	let pendingTransactionOrMessage = await getPendingTransactionOrMessageByidentifier(confirmation.data.uniqueRequestIdentifier)
 	if (pendingTransactionOrMessage === undefined) return // no need to resolve as it doesn't exist anymore
@@ -412,26 +415,32 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 			return reply({ type: 'result', result: (await simulatePersonalSign(pendingTransactionOrMessage.originalRequestParameters, pendingTransactionOrMessage.signedMessageTransaction.fakeSignedFor)).signature })
 		}
 		case 'Transaction': {
-			// Stacked under the hash its preview showed, which the page gets; reserving it kept every other append off it. A request pending from before reservations reserves one now.
+			// Stacked under the hash its preview showed, which the page gets; reserving it kept every other append off it. A request pending from before reservations reserves one now, stored first, so a repeated accept stacks the same hash.
 			const pendingTransaction = pendingTransactionOrMessage
-			const transaction = await withSimulationHashLock(async () => {
+			const acceptance = await withSimulationHashLock(async () => {
 				const current = (await getPendingTransactionsAndMessages()).find((request) => doesUniqueRequestIdentifiersMatch(request.uniqueRequestIdentifier, pendingTransaction.uniqueRequestIdentifier))
-				const storedReservation = current?.type === 'Transaction' ? current.simulationHashReservation : undefined
-				const reservation = storedReservation ?? (stacksTransactionOnAccept(pendingTransaction) ? await allocateSimulationHashReservation(pendingTransaction.transactionToSimulate, pendingTransaction.uniqueRequestIdentifier) : undefined)
-				const stackedTransaction = toPreSimulationTransaction(pendingTransaction.transactionToSimulate, reservation)
-				const stacked = await updateInterceptorTransactionStackWithResult((prevStack: InterceptorTransactionStack) => {
-					const stack = appendAcceptedTransactionToStack(prevStack, stackedTransaction)
-					return stack === undefined ? { stack: prevStack, result: false } : { stack, result: true }
+				if (current?.type !== 'Transaction') return { kind: 'resolved' } satisfies AcceptedTransactionStacking
+				const allocatedReservation = current.simulationHashReservation === undefined && stacksTransactionOnAccept(current) ? await allocateSimulationHashReservation(pendingTransaction.transactionToSimulate, pendingTransaction.uniqueRequestIdentifier) : undefined
+				if (allocatedReservation !== undefined) await updatePendingTransactionOrMessage(pendingTransaction.uniqueRequestIdentifier, async (request) => request.type === 'Transaction' ? { ...request, simulationHashReservation: allocatedReservation } : request)
+				const transactionToStack = toPreSimulationTransaction(pendingTransaction.transactionToSimulate, current.simulationHashReservation ?? allocatedReservation)
+				return await updateInterceptorTransactionStackWithResult<AcceptedTransactionStacking>((prevStack: InterceptorTransactionStack) => {
+					// An accept repeated while the first one replies, or retried after it stacked the transaction, replies with the stacked hash again.
+					const alreadyStacked = prevStack.operations.find((operation) => operation.type === 'Transaction' && operation.preSimulationTransaction.transactionIdentifier === pendingTransaction.transactionIdentifier)
+					if (alreadyStacked?.type === 'Transaction') return { stack: prevStack, result: { kind: 'stacked', transaction: alreadyStacked.preSimulationTransaction } }
+					const stack = appendAcceptedTransactionToStack(prevStack, transactionToStack)
+					return stack === undefined ? { stack: prevStack, result: { kind: 'hash-taken' } } : { stack, result: { kind: 'stacked', transaction: transactionToStack } }
 				})
-				return stacked ? stackedTransaction : undefined
 			})
-			if (transaction === undefined) {
+			// Another accept, reject or close resolved the request while this one waited.
+			if (acceptance.kind === 'resolved') return false
+			if (acceptance.kind === 'hash-taken') {
 				await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (pending) => modifyObject(pending, {
 					approvalStatus: { status: 'SignerError', code: METAMASK_ERROR_BLANKET_ERROR, message: 'A transaction on the simulation stack already uses this transaction\'s hash. Reject this request and send the transaction again.' },
 				}))
 				await updateConfirmTransactionView(ethereum, tokenPriceService)
 				return false
 			}
+			const { transaction } = acceptance
 			await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService)
 			markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionStackAppended)
 			return reply({ type: 'result', result: EthereumBytes32.serialize(transaction.signedTransaction.hash) })

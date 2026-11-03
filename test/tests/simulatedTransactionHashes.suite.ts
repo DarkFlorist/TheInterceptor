@@ -582,3 +582,61 @@ test('signs each of many identical transactions a constant number of times when 
 	// One check of the transaction's own hash and one of the salt the search resumes at, instead of one per salt up to its own.
 	assert.equal(candidateChecks, 2 * DUPLICATE_COUNT - 1)
 })
+
+const getReplyHashes = (postedMessages: readonly unknown[], requestId: number) => postedMessages.flatMap((message) => isRecord(message) && message.requestId === requestId && typeof message.result === 'string' ? [BigInt(message.result)] : [])
+
+for (const reserved of [false, true]) {
+	test(`stacks a confirmation accepted twice at once only once, under one hash, when it is ${ reserved ? 'reserved' : 'unreserved' }`, async () => {
+		await startSimulationStack(SENDER)
+		const postedMessages: unknown[] = []
+		const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+		const request = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+		if (!reserved) await withoutReservations([1])
+		const accept = async () => await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier: request } }))
+		const outcomes = await Promise.allSettled([accept(), accept()])
+		assert.deepEqual(outcomes.map((outcome) => outcome.status), ['fulfilled', 'fulfilled'], 'no accept rejects')
+		const stacked = await getStackedTransactions()
+		assert.equal(stacked.length, 1, 'the transaction is stacked once')
+		const replyHashes = getReplyHashes(postedMessages, request.requestId)
+		assert.ok(replyHashes.length > 0, 'the page gets the hash')
+		assert.deepEqual([...new Set(replyHashes)], [stacked[0]?.signedTransaction.hash], 'every reply carries the stacked hash')
+		assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	})
+}
+
+test('replies with the stacked hash again when an unreserved confirmation\'s accept is retried after it stacked the transaction', async () => {
+	await startSimulationStack(SENDER)
+	const postedMessages: unknown[] = []
+	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+	const request = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+	await withoutReservations([1])
+	const [unreserved] = await modules.getPendingTransactionsAndMessages()
+	if (unreserved === undefined) throw new Error('Expected the pending confirmation')
+	const first = await acceptConfirmation(request, websiteTabConnections, postedMessages)
+	// The request is pending again, as if the first accept stacked the transaction but stopped before resolving it.
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [unreserved] })
+	const retried = await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier: request } }))
+	assert.notEqual(retried, false)
+	assert.equal((await getStackedTransactions()).length, 1, 'the retry stacks nothing more')
+	assert.deepEqual([...new Set(getReplyHashes(postedMessages, request.requestId))], [first.pageHash], 'the retry replies with the same hash')
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+})
+
+test('stops an accept whose request was resolved while it waited', async () => {
+	await startSimulationStack(SENDER)
+	const postedMessages: unknown[] = []
+	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+	const request = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+	const { withSimulationHashLock } = await import('../../app/ts/background/simulationStackHashes.js')
+	let releaseLock = () => undefined
+	const lockReleased = new Promise<void>((resolve) => { releaseLock = () => { resolve() } })
+	const holdingLock = withSimulationHashLock(async () => await lockReleased)
+	const accepting = withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier: request } }))
+	await new Promise((resolve) => setTimeout(resolve, 20))
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	releaseLock()
+	await holdingLock
+	assert.equal(await accepting, false)
+	assert.deepEqual(await getStackedTransactions(), [], 'nothing is stacked')
+	assert.deepEqual(getReplyHashes(postedMessages, request.requestId), [])
+})
