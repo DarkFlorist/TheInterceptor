@@ -873,3 +873,113 @@ test('answers a popup close with the stacked hash when the request\'s transactio
 	await waitUntilNothingPending()
 	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [{ result: stackedTransaction.signedTransaction.hash }])
 })
+
+const rejectRequest = async (request: Awaited<ReturnType<typeof openConfirmation>>, websiteTabConnections: ReturnType<typeof createWebsiteTabConnections>) => await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'reject', uniqueRequestIdentifier: request } }))
+const readsKey = (keys: unknown, key: string) => keys === key || (Array.isArray(keys) && keys.includes(key))
+
+test('delivers a rejection once when only the view update after removing the request fails', async () => {
+	await startSimulationStack(SENDER)
+	const postedMessages: unknown[] = []
+	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+	const request = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+	let removed = false
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		writeStoredItems()
+		if (Array.isArray(items.pendingTransactionsAndMessages) && items.pendingTransactionsAndMessages.length === 0) removed = true
+	})
+	let failedViewReads = 0
+	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+		if (!removed || failedViewReads > 0 || !readsKey(keys, 'pendingTransactionsAndMessages')) return readStoredItems()
+		failedViewReads += 1
+		throw new Error('transient pending request read failure')
+	})
+	await rejectRequest(request, websiteTabConnections)
+	browserMock.setStorageSetHandler(undefined)
+	browserMock.setStorageGetHandler(undefined)
+	assert.equal(failedViewReads, 1, 'the view update after the removal failed')
+	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [{ error: 4001 }], 'the rejection is delivered anyway')
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	await new Promise((resolve) => setTimeout(resolve, 200))
+	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [{ error: 4001 }], 'nothing retries it')
+})
+
+test('delivers a rejection once when cleaning up the delivered reply\'s queue entry fails', async () => {
+	await startSimulationStack(SENDER)
+	const postedMessages: unknown[] = []
+	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+	const request = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+	let failQueueRead = false
+	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+		if (!failQueueRead || !readsKey(keys, 'pendingTerminalReplies')) return readStoredItems()
+		failQueueRead = false
+		throw new Error('transient terminal reply queue read failure')
+	})
+	// The page receives the reply, and the delivery then fails to remove it from the durable queue.
+	const connection = websiteTabConnections.get(REQUEST_SOCKET.tabId)?.connections[modules.websiteSocketToString(REQUEST_SOCKET)]
+	if (connection === undefined) throw new Error('missing connection')
+	const port = connection.port
+	connection.port = { ...port, postMessage(message: unknown) { port.postMessage(message); failQueueRead = true } }
+	await rejectRequest(request, websiteTabConnections)
+	await waitForCondition(async () => (await modules.getPendingTerminalReplies()).length === 0)
+	browserMock.setStorageGetHandler(undefined)
+	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [{ error: 4001 }], 'the retry does not repost it')
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+})
+
+test('keeps a rejection whose enqueue failed while the page was disconnected, and delivers it once the page reconnects', async () => {
+	await startSimulationStack(SENDER)
+	const postedMessages: unknown[] = []
+	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+	const request = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+	const disconnected = new Map()
+	let failedEnqueues = 0
+	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+		if (failedEnqueues > 0 || !readsKey(keys, 'pendingTerminalReplies')) return readStoredItems()
+		failedEnqueues += 1
+		throw new Error('transient terminal reply queue read failure')
+	})
+	await rejectRequest(request, disconnected)
+	await waitUntilNothingPending()
+	browserMock.setStorageGetHandler(undefined)
+	assert.equal(failedEnqueues, 1)
+	assert.equal((await modules.getPendingTerminalReplies()).length, 1, 'the retried enqueue keeps the reply durably')
+	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [])
+	await modules.flushPendingTerminalRepliesForSocket(websiteTabConnections, REQUEST_SOCKET)
+	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [{ error: 4001 }], 'the reconnected page gets it once')
+	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+})
+
+test('stops retrying a resolution whose removal keeps failing, keeps its queued reply, and finishes it on a later close', async () => {
+	await startSimulationStack(SENDER)
+	const postedMessages: unknown[] = []
+	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+	const request = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+	let failedRemovals = 0
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		if (!('pendingTransactionsAndMessages' in items)) return writeStoredItems()
+		failedRemovals += 1
+		throw new Error('persistent pending request write failure')
+	})
+	await rejectRequest(request, websiteTabConnections)
+	await withSilencedConsole(async () => await new Promise((resolve) => setTimeout(resolve, 2_000)))
+	const removalsWhenGivenUp = failedRemovals
+	assert.equal(removalsWhenGivenUp, 6, 'the first attempt and five retries')
+	await new Promise((resolve) => setTimeout(resolve, 500))
+	assert.equal(failedRemovals, removalsWhenGivenUp, 'no more retries')
+	browserMock.setStorageSetHandler(undefined)
+	assert.equal((await modules.getPendingTerminalReplies()).length, 1, 'the queued reply stays')
+	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [], 'a rejection is delivered after the removal')
+
+	await withSilencedConsole(async () => await modules.onCloseWindowOrTab({ type: 'popup', id: CONFIRMATION_WINDOW_ID }, simulator.ethereum, simulator.tokenPriceService, websiteTabConnections))
+	await waitUntilNothingPending()
+	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [{ error: 4001 }], 'the close finishes the committed rejection, once')
+	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+})
+
+const waitForCondition = async (condition: () => Promise<boolean>) => {
+	const deadline = Date.now() + 2_000
+	while (!(await condition())) {
+		if (Date.now() > deadline) throw new Error('Timed out waiting for the condition')
+		await new Promise((resolve) => setTimeout(resolve, 10))
+	}
+}
