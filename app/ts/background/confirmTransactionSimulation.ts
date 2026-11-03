@@ -3,7 +3,7 @@ import { appendTransactionsToInput } from '../simulation/services/SimulationMode
 import { getSignedTransactionForSimulation } from '../simulation/services/simulationTransactionSigning.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { createSafeExecutionPreSimulationTransaction, createSafeSigningSimulationInput } from '../safe/safeSimulation.js'
-import type { ConfirmTransactionTransactionSingleVisualization, PendingTransaction } from '../types/accessRequest.js'
+import { CONFIRMATION_RUN_ID_OF_UNNUMBERED_RUN, type ConfirmTransactionTransactionSingleVisualization, type PendingTransaction } from '../types/accessRequest.js'
 import type { SafeTransactionSigningRequest } from '../types/safeTypes.js'
 import type { WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
 import { last } from '../utils/array.js'
@@ -16,21 +16,28 @@ import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { identifyAddress } from './metadataUtils.js'
 import { getSimulationErrorAbis } from './simulationErrorAbi.js'
 import { createSimulationStateWithNonceAndBaseFeeFixing, getCurrentSimulationInput, visualizeSimulatorState } from './simulationUpdating.js'
-import { getInterceptorTransactionStack, getTabState } from './storageVariables.js'
+import { getInterceptorTransactionStack, getPendingTransactionsAndMessages, getTabState } from './storageVariables.js'
 
 let confirmTransactionAbortController = new AbortController()
 export const getConfirmTransactionAbortController = () => confirmTransactionAbortController
 
 let latestConfirmationRunId = 0
-// Every confirmation simulation run gets a new id, which a refresh that finishes later uses to tell the run it worked on from a newer one; stored timestamps keep only whole seconds, so they cannot. The id is the millisecond clock bumped past the previous id, so ids increase within a background session. Unlike the popup refresh generation it is not persisted, so ids stored before a background restart are not handed out again only as long as the system clock has not gone backwards. Ids are positive, so none is the run 0 that a visualisation stored without a run id decodes as.
-function getNextConfirmationRunId() {
-	latestConfirmationRunId = Math.max(latestConfirmationRunId + 1, Date.now())
+// The highest run id among the stored confirmations, including those stored before the background last restarted; 0 when none has one.
+async function getHighestStoredConfirmationRunId() {
+	const storedRunIds = (await getPendingTransactionsAndMessages()).flatMap((pending) => pending.type === 'Transaction' && 'popupVisualisation' in pending ? [pending.popupVisualisation.data.confirmationRunId] : [])
+	return Math.max(CONFIRMATION_RUN_ID_OF_UNNUMBERED_RUN, ...storedRunIds)
+}
+
+// Every confirmation simulation run gets a new id, which orders it against the stored runs; stored timestamps keep only whole seconds, so they cannot. The id is the millisecond clock bumped past both the previous id and every stored id, set synchronously after the stored ids are read. So ids increase within a background lifetime, and a new run is also later than every run stored before a restart, even if the system clock went back meanwhile. Ids are positive, so none is the run 0 that a visualisation stored without a run id decodes as.
+async function getNextConfirmationRunId() {
+	const highestStoredRunId = await getHighestStoredConfirmationRunId()
+	latestConfirmationRunId = Math.max(latestConfirmationRunId + 1, highestStoredRunId + 1, Date.now())
 	return latestConfirmationRunId
 }
 
 type ConfirmationRunVisualisation = { readonly data: { readonly confirmationRunId: number } }
 
-// The one rule for whether a confirmation visualisation may be stored over the stored one. A new run, stored with the transaction it prepared, replaces the stored visualisation unless that came from a later run; a re-visualisation of a stored run's results, stored without a transaction, needs that run to still be stored, so the visualisation stays paired with the transaction the run prepared. Runs are ordered by their ids, as stored timestamps keep only whole seconds. It answers which confirmation run is current, unlike the fingerprints in popupSimulationFingerprint.ts, which tell whether the inputs of the popup's own simulation changed.
+// The one rule for whether a confirmation visualisation may be stored over the stored one. A new run, stored with the transaction it prepared, replaces the stored visualisation unless that came from a later run; a re-visualisation of a stored run's results, stored without a transaction, needs that run to still be stored, so the visualisation stays paired with the transaction the run prepared. Runs are ordered by their ids, which getNextConfirmationRunId issues above every stored id, so a preview stored before a restart never blocks a new run, while of two overlapping runs the one started first stays the older. It answers which confirmation run is current, unlike the fingerprints in popupSimulationFingerprint.ts, which tell whether the inputs of the popup's own simulation changed.
 export function isConfirmationVisualisationCurrent(stored: ConfirmationRunVisualisation | undefined, candidate: ConfirmationRunVisualisation, candidateKind: 'new run' | 're-visualised run') {
 	if (stored === undefined) return candidateKind === 'new run'
 	if (candidateKind === 're-visualised run') return candidate.data.confirmationRunId === stored.data.confirmationRunId
@@ -56,7 +63,7 @@ export async function refreshConfirmTransactionSimulation(
 		activeAddress,
 		signerName: (await getTabState(uniqueRequestIdentifier.requestSocket.tabId)).signerName,
 		tabIdOpenedFrom: uniqueRequestIdentifier.requestSocket.tabId,
-		confirmationRunId: getNextConfirmationRunId(),
+		confirmationRunId: await getNextConfirmationRunId(),
 	}
 	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' }, 'confirmTransaction')
 	confirmTransactionAbortController.abort(NEW_BLOCK_ABORT)
