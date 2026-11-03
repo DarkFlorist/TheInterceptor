@@ -167,16 +167,8 @@ export function App() {
 		sendPopupMessageToBackgroundPage({ method: 'popup_changePage', data: newPage })
 	}
 
-	async function openWebsiteAccess() {
-		await sendPopupMessageToBackgroundPage({ method: 'popup_openWebsiteAccess' })
-		return globalThis.close() // close extension popup, chrome closes it by default, but firefox does not
-	}
-	async function openAddressBook() {
-		await sendPopupMessageToBackgroundPage({ method: 'popup_openAddressBook' })
-		return globalThis.close() // close extension popup, chrome closes it by default, but firefox does not
-	}
-	async function openSettings() {
-		await sendPopupMessageToBackgroundPage({ method: 'popup_openSettings' })
+	async function openManagement() {
+		await sendPopupMessageToBackgroundPage({ method: 'popup_openManagement' })
 		return globalThis.close() // close extension popup, chrome closes it by default, but firefox does not
 	}
 	function onRenderError(error: Error) {
@@ -212,11 +204,9 @@ export function App() {
 									<span style = 'color: var(--unimportant-text-color); font-size: 0.8em; padding-left: 5px;' > { `${ version } - ${ gitCommitSha.slice(0, 8) }`  } </span>
 								</p>
 							</a>
-							<a class = 'navbar-item' style = 'margin-left: auto; margin-right: 0;'>
-								<img src = '../img/internet.svg' width = '32' height = '32' onClick = { openWebsiteAccess }/>
-								<img src = '../img/address-book.svg' width = '32' height = '32' onClick = { openAddressBook }/>
-								<img src = '../img/settings.svg' width = '32' height = '32' onClick = { openSettings }/>
-							</a>
+							<button type = 'button' class = 'navbar-item' style = 'margin-left: auto; margin-right: 0; display: flex; align-items: center; background: transparent; border: 0; cursor: pointer;' aria-label = 'Open management' title = 'Open management' onClick = { openManagement }>
+								<img src = '../img/management-menu.svg' width = '32' height = '32' alt = '' />
+							</button>
 						</div>
 					</nav>
 
