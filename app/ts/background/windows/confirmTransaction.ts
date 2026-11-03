@@ -374,14 +374,14 @@ export async function resumeCommittedRequests(ethereum: EthereumClientService, t
 
 // The requests whose terminal outcome an accept, reject or close has claimed and is carrying out. A claim is taken synchronously, so of racing resolutions of a request exactly one stacks it or replies; the others return false without either. Under the claim, a committed request is only finished (finishCommittedRequest); only an uncommitted pending request gets an outcome chosen (resolve).
 const resolutionClaims = new Set<string>()
-// What to run for a request once its claim is released, recorded by a resolution that found it claimed: a close, so a request whose claimed accept failed is still answered, or else finishing it again, so the second pass sees what changed meanwhile (its requesting tab closing, say). Coalesced: a close also finishes a committed request. A request resolved meanwhile is no longer pending, and either does nothing.
+// What to run for a request once its claim is released, recorded by a resolution that found it claimed, coalesced into one entry. The request is always finished again first, so that pass sees what changed meanwhile (its requesting tab closing, say); then a recorded close runs, which answers a request still pending and uncommitted, such as one whose claimed accept failed, and does nothing for one that was resolved. Each follow-up runs once per recording, so the passes stop once nothing records more.
 type DeferredResolution = { readonly close?: () => Promise<void> }
 const deferredResolutions = new Map<string, DeferredResolution>()
 type WhenClaimed = 'finish-again' | 'nothing' | { readonly close: () => Promise<void> }
 async function withResolutionClaim<Result>(uniqueRequestIdentifier: UniqueRequestIdentifier, context: ResolutionContext, resolve: () => Promise<Result>, whenClaimed: WhenClaimed = 'nothing') {
 	const claim = getUniqueRequestIdentifierString(uniqueRequestIdentifier)
 	if (resolutionClaims.has(claim)) {
-		if (whenClaimed !== 'nothing') deferredResolutions.set(claim, whenClaimed === 'finish-again' ? (deferredResolutions.get(claim) ?? {}) : whenClaimed)
+		if (whenClaimed !== 'nothing') deferredResolutions.set(claim, whenClaimed === 'finish-again' ? (deferredResolutions.get(claim) ?? {}) : { close: whenClaimed.close })
 		return false
 	}
 	resolutionClaims.add(claim)
@@ -398,8 +398,10 @@ async function withResolutionClaim<Result>(uniqueRequestIdentifier: UniqueReques
 		resolutionClaims.delete(claim)
 		const deferred = deferredResolutions.get(claim)
 		deferredResolutions.delete(claim)
-		if (deferred?.close !== undefined) await deferred.close()
-		else if (deferred !== undefined) await resumeRequest(uniqueRequestIdentifier, context)
+		if (deferred !== undefined) {
+			await resumeRequest(uniqueRequestIdentifier, context)
+			if (deferred.close !== undefined) await deferred.close()
+		}
 	}
 }
 

@@ -1597,34 +1597,46 @@ test('finishes a request once when a reconnect flush overlaps its finishing, clo
 	await assertNoResolutionBookkeeping()
 })
 
-test('finishes a request again when its requesting tab closes after the finishing checked it, retiring the undeliverable reply', async () => {
-	await startSimulationStack(SENDER)
-	const postedMessages: unknown[] = []
-	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
-	const request = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
-	const confirmTransaction = await import('../../app/ts/background/windows/confirmTransaction.js')
-	// The page is disconnected, so the rejection stays undelivered; the tab closes while the finishing closes the window, after it found the tab open.
-	const windows = Reflect.get(globalThis, 'browser').windows
-	const removeWindow = windows.remove
-	let tabClosings = 0
-	windows.remove = async (windowId: number) => {
-		if (tabClosings === 0) {
-			tabClosings += 1
-			browserMock.setLiveTabIds([])
-			await confirmTransaction.finishCommittedRequestsOfTab(REQUEST_SOCKET.tabId, simulator.ethereum, simulator.tokenPriceService, new Map())
-		}
-		return await removeWindow(windowId)
-	}
-	try {
-		await withSilencedConsole(async () => {
-			await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, new Map(), { method: 'popup_confirmDialog', data: { action: 'reject', uniqueRequestIdentifier: request } })
-			await waitForCondition(async () => (await modules.getPendingTerminalReplies()).length === 0)
+for (const closeDeferred of [false, true]) {
+	test(`finishes a request again when its requesting tab closes after the finishing checked it, retiring the undeliverable reply${ closeDeferred ? ', also after a popup close deferred before the commitment' : '' }`, async () => {
+		await startSimulationStack(SENDER)
+		const postedMessages: unknown[] = []
+		const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+		const request = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+		const confirmTransaction = await import('../../app/ts/background/windows/confirmTransaction.js')
+		// A popup close arriving while the reject holds the claim, before its reply is committed, is deferred.
+		let closesDeferred = 0
+		browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+			if (closeDeferred && closesDeferred === 0 && 'pendingTerminalReplies' in items) {
+				closesDeferred += 1
+				await modules.onCloseWindowOrTab({ type: 'popup', id: CONFIRMATION_WINDOW_ID }, simulator.ethereum, simulator.tokenPriceService, new Map())
+			}
+			writeStoredItems()
 		})
-	} finally {
-		windows.remove = removeWindow
-	}
-	assert.equal(tabClosings, 1)
-	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
-	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [], 'the closed tab gets no reply')
-	await assertNoResolutionBookkeeping()
-})
+		// The page is disconnected, so the rejection stays undelivered; the tab closes while the finishing closes the window, after it found the tab open.
+		const windows = Reflect.get(globalThis, 'browser').windows
+		const removeWindow = windows.remove
+		let tabClosings = 0
+		windows.remove = async (windowId: number) => {
+			if (tabClosings === 0) {
+				tabClosings += 1
+				browserMock.setLiveTabIds([])
+				await confirmTransaction.finishCommittedRequestsOfTab(REQUEST_SOCKET.tabId, simulator.ethereum, simulator.tokenPriceService, new Map())
+			}
+			return await removeWindow(windowId)
+		}
+		try {
+			await withSilencedConsole(async () => {
+				await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, new Map(), { method: 'popup_confirmDialog', data: { action: 'reject', uniqueRequestIdentifier: request } })
+				await waitForCondition(async () => (await modules.getPendingTerminalReplies()).length === 0)
+			})
+		} finally {
+			windows.remove = removeWindow
+			browserMock.setStorageSetHandler(undefined)
+		}
+		assert.deepEqual([tabClosings, closesDeferred], [1, closeDeferred ? 1 : 0])
+		assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+		assert.deepEqual(getPageResponses(postedMessages, request.requestId), [], 'the closed tab gets no reply')
+		await assertNoResolutionBookkeeping()
+	})
+}
