@@ -9,17 +9,16 @@ import { getRuntimeDependencies } from './runtimeDependencyGraph.js'
 const repositoryRoot = path.join(import.meta.dir, '..', '..')
 const appRoot = path.join(repositoryRoot, 'app')
 const settingsModule = path.join(appRoot, 'ts', 'background', 'settings.ts')
+const activeNetworkStorageModule = path.join(appRoot, 'ts', 'background', 'activeNetworkStorage.ts')
+const pageSafeSettingsModule = path.join(appRoot, 'ts', 'background', 'pageSafeSettings.ts')
 const storageUtilsModule = path.join(appRoot, 'ts', 'utils', 'storageUtils.ts')
 
-// Settings exports that never write the active network. Page contexts run their own copy of settings.ts and storageUtils.ts, whose network write counts the background's freshness checks never see, so only the background may write the active network.
-const settingsExportsAllowedInPageContexts = new Set(['getActiveRpcNetworkWithoutRepair', 'getDefaultBlockExplorer', 'getMakeCurrentAddressRich', 'getUseTabsInsteadOfPopup', 'networkPriceSources'])
-
-// Which names page-reachable code may import from each module that can write the active network.
+// Which names page-reachable code may import from a module that page contexts must not use freely.
 type ImportRules = ReadonlyMap<string, (name: string, importer: string) => boolean>
+// Page contexts compile their own copy of every module they import, whose active network write counts the background's freshness checks never see. So no page bundle may reach activeNetworkStorage.ts, which writes and counts the active network, or settings.ts, which writes it through activeNetworkStorage.ts; pages use pageSafeSettings.ts instead.
 const pageContextImportRules: ImportRules = new Map([
-	[settingsModule, (name: string) => settingsExportsAllowedInPageContexts.has(name)],
-	// settings.ts writes the network itself, but only from exports that the settings rule above keeps out of page code.
-	[storageUtilsModule, (name: string, importer: string) => importer === settingsModule || name !== 'browserStorageLocalSetActiveNetwork'],
+	[settingsModule, () => false],
+	[activeNetworkStorageModule, () => false],
 ])
 
 // Walks every module the entrypoints load at runtime and lists each import that the rules do not allow there.
@@ -66,31 +65,21 @@ function getSourceFiles(directory: string): readonly string[] {
 const getApplicationSourceFiles = () => [...getSourceFiles(path.join(appRoot, 'ts')), ...getSourceFiles(path.join(appRoot, 'inpage', 'ts'))]
 
 describe('page contexts and the active network', () => {
-	test('page contexts never import a settings read or storage write that can write the active network', () => {
+	test('page contexts never reach the modules that write the active network', () => {
 		const entrypoints = getPageContextEntrypoints(fs.readFileSync(path.join(repositoryRoot, 'build', 'bundler.mts'), 'utf8'), appRoot)
 		assert.deepEqual(entrypoints.filter((entrypoint) => !fs.existsSync(entrypoint)), [])
 		for (const expected of [path.join(appRoot, 'ts', 'popup.ts'), path.join(appRoot, 'inpage', 'ts', 'listenContentScript.ts')]) assert.ok(entrypoints.includes(expected), expected)
 		const { disallowed, reached } = findDisallowedImports(entrypoints, pageContextImportRules, repositoryRoot)
-		assert.ok(reached.has(settingsModule), 'The page bundles are expected to reach settings.ts')
+		assert.ok(reached.has(pageSafeSettingsModule), 'The page bundles are expected to read settings through pageSafeSettings.ts')
 		assert.deepEqual(disallowed, [])
+		assert.deepEqual([settingsModule, activeNetworkStorageModule].filter((module) => reached.has(module)).map((module) => path.relative(repositoryRoot, module)), [])
 	})
 
-	// The freshness check of readActiveNetworkSnapshot counts only the network writes made through browserStorageLocalSetActiveNetwork, the only typed setter that accepts the key and which only settings.ts calls; this also catches writes that bypass the typed setters, such as a raw browser.storage.local.set.
-	test('only settings.ts writes the active network to storage', () => {
-		const writersOfTheActiveNetwork = getApplicationSourceFiles()
-			.filter((file) => file !== settingsModule && file !== storageUtilsModule)
-			.filter((file) => {
-				const source = fs.readFileSync(file, 'utf8')
-				return /browserStorageLocalSet|storage\.local\.set/u.test(source) && /\bactiveRpcNetwork\s*[:,}]/u.test(source)
-			})
-			.map((file) => path.relative(repositoryRoot, file))
-		assert.deepEqual(writersOfTheActiveNetwork, [])
-	})
-
-	// A raw browser.storage write bypasses the typed setters, and with them the active network write counts in storageUtils.ts, whatever key it writes. Of the modules that write browser storage directly, largeStateStore.ts writes only its LargeStateStorageKey values and their marker keys, and storageVariables.ts removes only tabState_ keys; a new direct writer has to be listed here after checking that it can never write the active network.
+	// A raw browser.storage write bypasses the typed setters, and with them the active network write counts in activeNetworkStorage.ts, whatever key it writes. Of the modules that write browser storage directly, storageUtils.ts writes only through its typed setters, whose types exclude the active network, and names the key only in its storage schema and those types; largeStateStore.ts writes only its LargeStateStorageKey values and their marker keys, and storageVariables.ts removes only tabState_ keys. A new direct writer has to be listed here after checking that it can never write the active network.
 	test('browser storage is written directly only by the counted writer and reviewed writers of other keys', () => {
 		const rawStorageAccess: ReadonlyMap<string, RawStorageAccess> = new Map([
-			[storageUtilsModule, 'counted writer'],
+			[activeNetworkStorageModule, 'counted writer'],
+			[storageUtilsModule, 'typed writer'],
 			[path.join(appRoot, 'ts', 'utils', 'largeStateStore.ts'), 'reviewed writer of other keys'],
 			[path.join(appRoot, 'ts', 'background', 'storageVariables.ts'), 'reviewed writer of other keys'],
 		])
@@ -138,7 +127,7 @@ describe('uncounted browser storage access checker', () => {
 
 	test('rejects runtime import aliases of the storage API, but not erased qualified names', () => {
 		const importAliasViolation = 'aliases browser through an import declaration, which could hide a storage write'
-		const everyAccess: readonly RawStorageAccess[] = ['reads only', 'reviewed writer of other keys', 'counted writer']
+		const everyAccess: readonly RawStorageAccess[] = ['reads only', 'reviewed writer of other keys', 'typed writer', 'counted writer']
 		for (const access of everyAccess) assert.deepEqual(check('import local = browser.storage.local\nexport const clear = async () => await local.clear()\nexport const write = async () => await local.set({ openedPageV2: page })\n', access), [`line 1: ${ importAliasViolation }`])
 		assert.deepEqual(check('export import storage = browser.storage\nawait storage.local.set({ activeRpcNetwork: network })\nawait storage.local.clear()\n', 'counted writer'), [`line 1: ${ importAliasViolation }`])
 		assert.deepEqual(check('import api = browser\nawait api.storage.local.clear()\n', 'reads only'), ['line 1: uses browser other than through a property access, which could hide a storage write'])

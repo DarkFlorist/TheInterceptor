@@ -3,8 +3,10 @@ import type { Settings } from '../types/interceptor-messages.js'
 import { Semaphore } from '../utils/semaphore.js'
 import type { EthereumAddress } from '../types/wire-types.js'
 import type { Website, WebsiteAccessArray } from '../types/websiteAccessTypes.js'
-import type { BlockExplorer, RpcNetwork } from '../types/rpc.js'
-import { type RichListElement, beginActiveNetworkRead, browserStorageLocalGet, browserStorageLocalSafeParse, browserStorageLocalSet, browserStorageLocalSetActiveNetwork } from '../utils/storageUtils.js'
+import type { RpcNetwork } from '../types/rpc.js'
+import { type RichListElement, browserStorageLocalGet, browserStorageLocalSafeParse, browserStorageLocalSet } from '../utils/storageUtils.js'
+import { getActiveRpcNetworkOrRepairFromItems, writeActiveNetwork } from './activeNetworkStorage.js'
+import { getUseTabsInsteadOfPopup } from './pageSafeSettings.js'
 import { getUserAddressBookEntries, updateUserAddressBookEntries } from './storageVariables.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
@@ -17,15 +19,6 @@ import { hasOwnKey } from '../utils/typescript.js'
 
 export const defaultActiveAddresses = DEFAULT_ACTIVE_ADDRESSES
 
-export const networkPriceSources = {
-	uniswapV2Like: [
-		{ factory: 0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6fn, initCodeHash: '0x96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f' }, // Uniswap V2
-	],
-	uniswapV3Like: [
-		{ factory: 0x1F98431c8aD98523631AE4a59f267346ea31F984n, initCodeHash: '0xe34f199b19b2b4f47f68442619d555527d244f78a3297ea89325f843f87b8b54' } // Uniswap V3
-	]
-} as const
-
 export const defaultRpcs = DEFAULT_RPCS
 
 export const defaultSimulationMode = true
@@ -37,8 +30,6 @@ const wethForChainId = new Map<string, EthereumAddress>([
 	['8453', 0x4200000000000000000000000000000000000006n], // Base
 	['42161', 0x82af49447d8a07e3bd95bd0d56f35241523fbab1n], // Arbitrum
 ])
-
-export const getDefaultBlockExplorer = (): BlockExplorer => ({ apiUrl: 'https://api.etherscan.io/v2/api', apiKey: 'PSW8C433Q667DVEX5BCRMGNAH9FSGFZ7Q8' })
 
 export const getWethForChainId = (chainId: bigint) => wethForChainId.get(chainId.toString())
 
@@ -55,7 +46,7 @@ type StartupStorageDefaults = {
 	signingAddressPreferences: SigningAddressPreferences
 }
 
-// Every write of the active network, whether a network switch, a settings import or the repair of a corrupt stored value, goes through browserStorageLocalSetActiveNetwork, the only storage setter whose type accepts the key, which counts it for readActiveNetworkSnapshot. Types cannot tell which bundle a module runs in: a page context, such as the popup, runs its own copy of storageUtils.ts and this module, whose counts the background never sees, so page code reads the network with getActiveRpcNetworkWithoutRepair and never writes it, which pageContextSettingsImports.test.ts checks.
+// This module is background-only; page contexts use pageSafeSettings.ts. Every write of the active network, whether a network switch, a settings import or the repair of a corrupt stored value, goes through writeActiveNetwork in activeNetworkStorage.ts, which counts it, so the active network is left out of these generic reads and their repair.
 type StartupStorageKeyOtherThanActiveNetwork = Exclude<keyof StartupStorageDefaults, 'activeRpcNetwork'>
 
 async function getParsedStorageValueOrDefaultFromItems<Key extends StartupStorageKeyOtherThanActiveNetwork>(storedItems: Readonly<Record<string, unknown>>, key: Key, defaultValue: StartupStorageDefaults[Key]): Promise<StartupStorageDefaults[Key]> {
@@ -68,18 +59,6 @@ async function getParsedStorageValueOrDefaultFromItems<Key extends StartupStorag
 	console.warn(rawValue)
 	await browserStorageLocalSet({ [key]: defaultValue } as unknown as Parameters<typeof browserStorageLocalSet>[0])
 	return defaultValue
-}
-
-// Reads the active network like getParsedStorageValueOrDefaultFromItems reads the other settings, but repairs a corrupt stored value through browserStorageLocalSetActiveNetwork.
-async function getActiveRpcNetworkOrRepairFromItems(storedItems: Readonly<Record<string, unknown>>, defaultRpcNetwork: RpcNetwork): Promise<RpcNetwork> {
-	const { activeRpcNetwork: rawValue } = storedItems
-	const storedNetwork = browserStorageLocalSafeParse(hasOwnKey(storedItems, 'activeRpcNetwork') ? { activeRpcNetwork: rawValue } : {})?.activeRpcNetwork
-	if (storedNetwork !== undefined) return storedNetwork
-	if (rawValue === undefined) return defaultRpcNetwork
-	console.warn('activeRpcNetwork was corrupt:')
-	console.warn(rawValue)
-	await browserStorageLocalSetActiveNetwork({ activeRpcNetwork: defaultRpcNetwork })
-	return defaultRpcNetwork
 }
 
 async function getParsedStorageValueOrDefault<Key extends StartupStorageKeyOtherThanActiveNetwork>(key: Key, defaultValue: StartupStorageDefaults[Key]): Promise<StartupStorageDefaults[Key]> {
@@ -117,28 +96,6 @@ export async function getSettings() : Promise<Settings> {
 	return { activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode }
 }
 
-// Reads the active network for a page context: a corrupt stored value is read as the default network but left for the background to repair, because only the background writes the active network.
-export async function getActiveRpcNetworkWithoutRepair(): Promise<RpcNetwork> {
-	const defaultRpcNetwork = defaultRpcs[0]
-	if (defaultRpcNetwork === undefined) throw new Error('default rpc was missing')
-	return browserStorageLocalSafeParse(await browser.storage.local.get('activeRpcNetwork'))?.activeRpcNetwork ?? defaultRpcNetwork
-}
-
-export type ActiveNetworkSnapshot = {
-	readonly activeRpcNetwork: RpcNetwork
-	// Whether the network read is still the stored active network. It is not once a write of the active network was running when the read started, or has started since.
-	readonly isStillCurrent: () => boolean
-}
-
-// Reads only the active network, repairing a corrupt stored value as getSettings does, together with a synchronous check of whether it is still current, for a reader that must act on the network that is stored when it acts.
-export async function readActiveNetworkSnapshot(): Promise<ActiveNetworkSnapshot> {
-	const defaultRpcNetwork = defaultRpcs[0]
-	if (defaultRpcNetwork === undefined) throw new Error('default rpc was missing')
-	const isStillCurrent = beginActiveNetworkRead()
-	const activeRpcNetwork = await getActiveRpcNetworkOrRepairFromItems(await browser.storage.local.get(['activeRpcNetwork']), defaultRpcNetwork)
-	return { activeRpcNetwork, isStillCurrent }
-}
-
 export const setPage = async (openedPageV2: Page) => await browserStorageLocalSet({ openedPageV2 })
 export const getPage = async() => (await browserStorageLocalGet('openedPageV2'))?.openedPageV2 ?? { page: 'Home' }
 
@@ -162,6 +119,11 @@ export async function rememberSigningAddressPreference(preference: SigningAddres
 
 export const setMakeCurrentAddressRich = async (makeCurrentAddressRich: boolean) => await browserStorageLocalSet({ makeCurrentAddressRich })
 export const getMakeCurrentAddressRich = async() => await getParsedStorageValueOrDefault('makeCurrentAddressRich', false)
+
+export const getAddressToMakeRich = async (settings: Settings) => {
+	if (!settings.simulationMode) return undefined
+	return await getMakeCurrentAddressRich() ? settings.activeSimulationAddress : undefined
+}
 
 const makeMeRichSettingsSemaphore = new Semaphore(1)
 
@@ -239,10 +201,10 @@ function getSimulationModeStorageUpdate(changes: SimulationModeChanges) {
 	}
 }
 
-// Changes that name a network write it with the rest of the update through browserStorageLocalSetActiveNetwork, the only setter of the active network.
+// Changes that name a network write it with the rest of the update through writeActiveNetwork, the only setter of the active network.
 async function writeSimulationModeUpdate(update: Parameters<typeof browserStorageLocalSet>[0], rpcNetwork: RpcNetwork | undefined) {
 	if (rpcNetwork === undefined) return await browserStorageLocalSet(update)
-	return await browserStorageLocalSetActiveNetwork({ ...update, activeRpcNetwork: rpcNetwork })
+	return await writeActiveNetwork({ ...update, activeRpcNetwork: rpcNetwork })
 }
 
 export async function changeSimulationMode(changes: SimulationModeChanges) {
@@ -290,7 +252,6 @@ export async function updateKnownWebsiteMetadata(website: Website) {
 	})
 }
 
-export const getUseTabsInsteadOfPopup = async() => (await browserStorageLocalGet('useTabsInsteadOfPopup'))?.useTabsInsteadOfPopup ?? false
 export const setUseTabsInsteadOfPopup = async(useTabsInsteadOfPopup: boolean) => await browserStorageLocalSet({ useTabsInsteadOfPopup })
 
 export const getMetamaskCompatibilityMode = async() => (await browserStorageLocalGet('metamaskCompatibilityMode'))?.metamaskCompatibilityMode ?? false

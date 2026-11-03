@@ -833,9 +833,9 @@ test('a repair of a corrupt active network still running when the network is rea
 test('a page context reads a corrupt active network without writing it, so a guarded write commits only on the network that stays stored', async () => {
 	const { updateInterceptorTransactionStackOnRequestedNetwork } = await import('../../app/ts/background/transactionNetwork.js')
 	const backgroundSettings = await import('../../app/ts/background/settings.js')
-	// A popup bundle runs its own copy of the settings module, sharing only storage with the background.
-	const popupSettingsModule = '../../app/ts/background/settings.js?popup'
-	const popupSettings: typeof backgroundSettings = await import(popupSettingsModule)
+	// A popup bundle runs its own copy of the page-safe settings module, sharing only storage with the background.
+	const popupSettingsModule = '../../app/ts/background/pageSafeSettings.js?popup'
+	const popupSettings: typeof import('../../app/ts/background/pageSafeSettings.js') = await import(popupSettingsModule)
 	await setUpTransactionApprovalTest(false)
 	const stackOperation = { type: 'Transaction' as const, preSimulationTransaction: { ...pendingTransaction.transactionToSimulate, signedTransaction } }
 	const guardReadNetwork = createDeferredValue<undefined>()
@@ -867,7 +867,8 @@ test('a page context reads a corrupt active network without writing it, so a gua
 })
 
 test('a network snapshot reads only the active network, and a repair of a corrupt one makes it read again', async () => {
-	const { defaultRpcs, readActiveNetworkSnapshot } = await import('../../app/ts/background/settings.js')
+	const { defaultRpcs } = await import('../../app/ts/background/settings.js')
+	const { readActiveNetworkSnapshot } = await import('../../app/ts/background/activeNetworkStorage.js')
 	await setUpTransactionApprovalTest(false)
 	const keysRead: unknown[] = []
 	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {

@@ -2,7 +2,7 @@ import type { Abi } from './ethereumPrimitives.js'
 import { encodePacked, getCreate2Address, keccak256 } from './ethereumPrimitives.js'
 import { EthereumAddress } from '../types/wire-types.js'
 import { addressString } from './bigint.js'
-import { networkPriceSources } from '../background/settings.js'
+import { networkPriceSources } from '../background/pageSafeSettings.js'
 import { decodeFunctionOutput, encodeAbiValues, encodeFunctionCall } from './abiRuntime.js'
 
 interface UniswapPools {

@@ -94,6 +94,7 @@ function createBrowserStorageMock() {
 
 const browserMock = createBrowserStorageMock()
 const settingsModulePromise = import('../../app/ts/background/settings.js')
+const pageSafeSettingsModulePromise = import('../../app/ts/background/pageSafeSettings.js')
 const signingAddressSelectionModulePromise = import('../../app/ts/background/signingAddressSelection.js')
 const storageVariablesModulePromise = import('../../app/ts/background/storageVariables.js')
 
@@ -433,7 +434,8 @@ describe('settings import', () => {
 	})
 
 	test('restores metamask compatibility mode from version 1.4 exports', async () => {
-		const { getMetamaskCompatibilityMode, getUseTabsInsteadOfPopup, importSettingsAndAddressBook, setMetamaskCompatibilityMode, setUseTabsInsteadOfPopup } = await settingsModulePromise
+		const { getMetamaskCompatibilityMode, importSettingsAndAddressBook, setMetamaskCompatibilityMode, setUseTabsInsteadOfPopup } = await settingsModulePromise
+		const { getUseTabsInsteadOfPopup } = await pageSafeSettingsModulePromise
 		await setUseTabsInsteadOfPopup(true)
 		await setMetamaskCompatibilityMode(false)
 
@@ -444,7 +446,8 @@ describe('settings import', () => {
 	})
 
 	test('does not import version 1.2 metamask mode into the tab-popup preference', async () => {
-		const { getMetamaskCompatibilityMode, getUseTabsInsteadOfPopup, importSettingsAndAddressBook, setMetamaskCompatibilityMode, setUseTabsInsteadOfPopup } = await settingsModulePromise
+		const { getMetamaskCompatibilityMode, importSettingsAndAddressBook, setMetamaskCompatibilityMode, setUseTabsInsteadOfPopup } = await settingsModulePromise
+		const { getUseTabsInsteadOfPopup } = await pageSafeSettingsModulePromise
 		await setUseTabsInsteadOfPopup(true)
 		await setMetamaskCompatibilityMode(false)
 

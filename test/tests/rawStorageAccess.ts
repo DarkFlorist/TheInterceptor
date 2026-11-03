@@ -1,7 +1,7 @@
 import * as ts from 'typescript'
 
-// How a module may use the browser storage API directly. Every module may read through a direct browser.storage.local.get call and listen through browser.storage.onChanged. Only the counted writer, storageUtils.ts, and reviewed writers of other keys may call browser.storage.local.set or remove directly, and a reviewed writer must never name the active network.
-export type RawStorageAccess = 'counted writer' | 'reviewed writer of other keys' | 'reads only'
+// How a module may use the browser storage API directly. Every module may read through a direct browser.storage.local.get call and listen through browser.storage.onChanged. Only the counted writer of the active network, activeNetworkStorage.ts, the typed writer, storageUtils.ts, whose setter types exclude the active network, and reviewed writers of other keys may call browser.storage.local.set or remove directly, and a reviewed writer must never name the active network.
+export type RawStorageAccess = 'counted writer' | 'typed writer' | 'reviewed writer of other keys' | 'reads only'
 
 const browserApiNames = new Set(['browser', 'chrome'])
 const allowedStorageCalls: ReadonlyMap<string, ReadonlySet<string>> = new Map([
@@ -46,7 +46,7 @@ function checkBrowserApiReference(reference: ts.Identifier, access: RawStorageAc
 	return undefined
 }
 
-// Lists, with their line numbers, the uses of the browser storage API in a source file that could change the stored active network without passing through the counted writer in storageUtils.ts. Syntactic: it finds the storage API only where the code names browser or chrome. identityKeyCallees names the functions that may receive browser or chrome itself as their first argument because they only use it as an identity key.
+// Lists, with their line numbers, the uses of the browser storage API in a source file that could change the stored active network without passing through the counted writer in activeNetworkStorage.ts. Syntactic: it finds the storage API only where the code names browser or chrome. identityKeyCallees names the functions that may receive browser or chrome itself as their first argument because they only use it as an identity key.
 export function findUncountedStorageAccess(fileName: string, sourceText: string, access: RawStorageAccess, identityKeyCallees: ReadonlySet<string> = new Set()): readonly string[] {
 	const sourceFile = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true, fileName.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS)
 	const violations: string[] = []

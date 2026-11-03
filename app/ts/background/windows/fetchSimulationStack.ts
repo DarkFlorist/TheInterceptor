@@ -11,8 +11,7 @@ import type { GetSimulationStack, SimulationStackVersion } from '../../types/Jso
 import type { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
 import type { ResolvedSimulationInput, ResolvedSimulationState } from '../../types/visualizer-types.js'
 import { getSimulatedStackV1, getSimulatedStackV2 } from '../../simulation/SimulationStackExtraction.js'
-import { getAddressToMakeRich } from '../../simulation/services/SimulationModeEthereumClientService.js'
-import { getSettings } from '../settings.js'
+import { getAddressToMakeRich, getSettings } from '../settings.js'
 import { assertNever } from '../../utils/typescript.js'
 import { type PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab, removeWindowTabListeners } from '../../utils/popupOrTab.js'
 
