@@ -467,11 +467,12 @@ export async function registerWebsiteConnectionAndReconcileRequestBlocks(website
 	return { ...registration, isTopFrame, requestBlocksReconciliation: silenceChromeUnCaughtPromise(updateDeclarativeNetRequestBlocksForRegisteredConnection(websiteTabConnections)) }
 }
 
-// Child frames publish their own website into tab state, so the tab's top-level website comes from its latest top-frame connection, otherwise from the tab's URL; undefined when neither is known.
+// Child frames publish their own website into tab state, so the tab's top-level website is its top-frame connection's when exactly one top-level website is connected. When none is, or a navigation left the previous page's port registered beside the new one, the tab's URL decides instead of connection order; undefined when neither is known.
 async function getTopLevelWebsiteOrigin(websiteTabConnections: WebsiteTabConnections, tabId: number) {
-	const tabConnection = websiteTabConnections.get(tabId)
-	const topFrameConnection = tabConnection === undefined ? undefined : Object.values(tabConnection.connections).reverse().find((connection) => isTopFramePort(connection.port))
-	if (topFrameConnection !== undefined) return topFrameConnection.websiteOrigin
+	const connections = Object.values(websiteTabConnections.get(tabId)?.connections ?? {})
+	const topFrameOrigins = new Set(connections.filter((connection) => isTopFramePort(connection.port)).map((connection) => connection.websiteOrigin))
+	const [onlyTopFrameOrigin] = topFrameOrigins
+	if (topFrameOrigins.size === 1 && onlyTopFrameOrigin !== undefined) return onlyTopFrameOrigin
 	const tabUrl = (await getTabIfExists(tabId))?.url
 	return tabUrl === undefined ? undefined : getHostWithPort(tabUrl)
 }

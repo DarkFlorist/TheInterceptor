@@ -161,6 +161,43 @@ describe('background eth_accounts', () => {
 		assert.doesNotMatch(tabIconDetails.iconReason, /disabled-metadata-frame/)
 	})
 
+	for (const tabUrl of ['current page', 'unknown'] as const) test(`resolves an icon refresh from the tab URL (${ tabUrl }) when two top-level websites are registered, regardless of registration order`, async () => {
+		const browserMock = installBrowserMock({ manifestVersion: 3 })
+		const { registerWebsiteConnectionAndReconcileRequestBlocks, getTabState, updateExtensionIconAfterRegistrationRequestBlocks, updateTabState, updateWebsiteAccess } = await loadModules()
+		const consentedFrameOrigin = 'consented-navigation-frame.example'
+		const currentTopOrigin = 'current-navigation-top.example'
+		const staleTopOrigin = 'stale-navigation-top.example'
+		await setUpAddressLevelBlockAllWithUnreadableActiveRpcNetwork(consentedFrameOrigin)
+		// The stale page's website is interceptor-disabled, so resolving the icon for it would show the disabled icon instead of the blocking shield.
+		await updateWebsiteAccess((previous) => [...previous, { website: { websiteOrigin: staleTopOrigin, icon: undefined, title: undefined }, addressAccess: [], access: false, interceptorDisabled: true, declarativeNetRequestBlockMode: 'disabled' }])
+		const tabId = tabUrl === 'current page' ? 9889 : 9890
+		if (tabUrl === 'current page') Object.defineProperty(browser.tabs, 'get', { configurable: true, value: async (requestedTabId: number) => ({ id: requestedTabId, active: true, status: 'complete', url: `https://${ currentTopOrigin }/page` }) })
+		const websiteTabConnections: WebsiteTabConnections = new Map()
+		const register = async (connectionName: bigint, websiteOrigin: string, isTopFrame: boolean) => {
+			const socket = { tabId, connectionName }
+			const { port } = isTopFrame ? createPort(tabId, undefined, undefined, connectionName) : createPort(tabId, undefined, Number(connectionName), connectionName)
+			return { socket, registration: await withSilencedWarnings(async () => await registerWebsiteConnectionAndReconcileRequestBlocks(websiteTabConnections, socket, { port, socket, websiteOrigin, approved: false, wantsToConnect: false }, isTopFrame)) }
+		}
+		// The current page's top frame registers first and the previous page's top-frame port is still registered after it, so the last-inserted top frame is the stale one.
+		const currentTop = await register(1n, currentTopOrigin, true)
+		await withSilencedWarnings(async () => await updateExtensionIconAfterRegistrationRequestBlocks(websiteTabConnections, currentTop.registration, currentTop.socket, currentTopOrigin))
+		await register(2n, staleTopOrigin, true)
+		const iconBeforeChildFrame = (await getTabState(tabId)).tabIconDetails
+		await updateTabState(tabId, (previous) => ({ ...previous, website: { websiteOrigin: staleTopOrigin, icon: undefined, title: undefined } }))
+		const consentedFrame = await register(3n, consentedFrameOrigin, false)
+		await withSilencedWarnings(async () => await updateExtensionIconAfterRegistrationRequestBlocks(websiteTabConnections, consentedFrame.registration, consentedFrame.socket, consentedFrameOrigin))
+
+		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [tabId])
+		const { tabIconDetails } = await getTabState(tabId)
+		if (tabUrl === 'unknown') {
+			// With two top-level websites and no tab URL there is no reliable top-level website, so the icon is left to the navigation-complete refresh.
+			assert.deepEqual(tabIconDetails, iconBeforeChildFrame)
+			return
+		}
+		assert.equal(tabIconDetails.icon, ICON_NOT_ACTIVE_WITH_SHIELD)
+		assert.match(tabIconDetails.iconReason, /blocking external requests/)
+	})
+
 	const createTwoApprovedTabs = async () => {
 		const { websiteSocketToString } = await loadModules()
 		const connectionFor = (tabId: number, websiteOrigin: string) => {
