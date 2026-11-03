@@ -947,6 +947,8 @@ async function storeSafeProposalRequest(approvalStatus: { readonly status: 'Wait
 		...pendingTransaction,
 		simulationMode: false,
 		approvalStatus,
+		// Recorded by the Accept that forwarded the proposal to its signer.
+		signerRequestChainId: fakeRpcNetwork.chainId,
 		safeTransaction: {
 			safeAddress: activeAddress,
 			safeSignerAddress: safeTestOwnerAddress,

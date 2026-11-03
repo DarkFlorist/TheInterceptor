@@ -902,6 +902,7 @@ test('rejects a stale forwarded Safe nonce before persistence and rebases it whe
 			uniqueRequestIdentifier: requestIdentifier,
 			simulationMode: false,
 			approvalStatus: { status: 'WaitingForSigner' },
+			signerRequestChainId: fakeRpcNetwork.chainId,
 			safeTransaction: {
 				safeAddress: activeAddress,
 				safeSignerAddress,
@@ -994,6 +995,7 @@ test('persists and simulates a valid Safe owner signature before replying with t
 			...pendingTransaction,
 			simulationMode: false,
 			approvalStatus: { status: 'WaitingForSigner' },
+			signerRequestChainId: fakeRpcNetwork.chainId,
 			safeTransaction: {
 				safeAddress: activeAddress,
 				safeSignerAddress,
@@ -1145,6 +1147,7 @@ test('invalid Safe owner signatures retain the request as a signer error without
 			...pendingTransaction,
 			simulationMode: false,
 			approvalStatus: { status: 'WaitingForSigner' },
+			signerRequestChainId: fakeRpcNetwork.chainId,
 			safeTransaction: {
 				safeAddress: activeAddress,
 				safeSignerAddress: recipientAddress,

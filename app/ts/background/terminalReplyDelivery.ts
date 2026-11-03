@@ -2,7 +2,7 @@ import type { PendingSafeProposalStore, PendingTransactionOrSignableMessage } fr
 import type { InterceptedRequestForward } from '../types/interceptor-messages.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { reportLocalRecovery } from '../utils/errors.js'
-import { getUniqueRequestIdentifierString, type WebsiteSocket } from '../utils/requests.js'
+import { doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, type UniqueRequestIdentifier, type WebsiteSocket } from '../utils/requests.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { websiteSocketToString } from './backgroundUtils.js'
 import { replyToInterceptedRequest } from './messageSending.js'
@@ -90,6 +90,29 @@ export async function attemptQueuedTerminalReplyDelivery(websiteTabConnections: 
 		if (terminalReplyProductions.get(identifier) === production) terminalReplyProductions.delete(identifier)
 		terminalReplyReservations.delete(identifier)
 	}
+}
+
+// Releases the reservation of a queued reply whose flow stops before attempting its delivery (its request removal failed), so the cleanup that later delivers the reply does not leave a completion marker for that flow.
+export function releaseTerminalReplyReservation(uniqueRequestIdentifier: UniqueRequestIdentifier) {
+	terminalReplyReservations.delete(getUniqueRequestIdentifierString(uniqueRequestIdentifier))
+}
+
+// Delivers the reply already queued for an answered request, if it is still queued; a reply formed later is never sent. Like the socket flush, a reply that the flow which queued it is still delivering keeps its completion marker, so that flow finds it delivered and does not send it again.
+export async function deliverQueuedTerminalReplyOnce(websiteTabConnections: WebsiteTabConnections, uniqueRequestIdentifier: UniqueRequestIdentifier) {
+	const identifier = getUniqueRequestIdentifierString(uniqueRequestIdentifier)
+	const existingProduction = terminalReplyProductions.get(identifier)
+	if (existingProduction !== undefined) return await existingProduction
+	const findQueuedReply = async () => (await getPendingTerminalReplies()).find((reply) => doesUniqueRequestIdentifiersMatch(reply.uniqueRequestIdentifier, uniqueRequestIdentifier))
+	const queuedReply = await findQueuedReply()
+	if (queuedReply === undefined) return true
+	const deliver = async () => await terminalReplySemaphore.execute(async () => {
+		if (await finishPreviouslyDeliveredTerminalReply(identifier, queuedReply)) return true
+		if (await findQueuedReply() === undefined) return true
+		const delivery = replyToInterceptedRequest(websiteTabConnections, queuedReply)
+		if (delivery === true) await recordSuccessfulTerminalReplyDelivery(identifier, queuedReply, terminalReplyReservations.has(identifier))
+		return delivery
+	})
+	return await attemptDeliveryAfterManifestV2Reconnect(websiteTabConnections, queuedReply, deliver)
 }
 
 export async function queueTerminalReplyAndAttemptDelivery(websiteTabConnections: WebsiteTabConnections, message: InterceptedRequestForward) {

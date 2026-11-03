@@ -540,12 +540,17 @@ describe('popup message dispatcher seams', () => {
 		assert.deepEqual(await dispatchPopupMessage(context, { method: 'popup_refreshSimulation' }), unavailableReply)
 		assert.deepEqual(await dispatchPopupMessage(context, {
 			method: 'popup_confirmDialog',
+			data: { action: 'accept', uniqueRequestIdentifier: { requestId: 1, requestSocket: { tabId: 1, connectionName: 1n } } },
+		}), unavailableReply)
+		// Reject settles without RPC services (here there is no such pending request, so nothing is answered).
+		assert.equal(await dispatchPopupMessage(context, {
+			method: 'popup_confirmDialog',
 			data: {
 				action: 'reject',
 				errorString: undefined,
 				uniqueRequestIdentifier: { requestId: 1, requestSocket: { tabId: 1, connectionName: 1n } },
 			},
-		}), unavailableReply)
+		}), undefined)
 		assert.deepEqual(await dispatchPopupMessage(context, { method: 'popup_resetSimulation' }), unavailableReply)
 		assert.deepEqual(await dispatchPopupMessage(context, {
 			method: 'popup_setSafeSimulationSigner',

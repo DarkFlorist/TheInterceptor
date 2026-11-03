@@ -5,6 +5,7 @@ import { test } from 'bun:test'
 import { encodeFunctionCall } from '../../app/ts/utils/abiRuntime.js'
 import { getLatestUnexpectedError, getPendingAccessRequests, setLatestUnexpectedError } from '../../app/ts/background/storageVariables.js'
 import { getRequiredSettings } from './requiredSettings.js'
+import { appendPendingTerminalReply } from '../../app/ts/background/pendingTerminalReplies.js'
 import { activeAddress, addressString, browserMock, createSafeAddressBookEntry, createSafeTx, createWebsitePort, EIP712Message, ethereum, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, oldTimestamp, pendingTransaction, privateKeyToAccount, recipientAddress, SAFE_EXECUTION_ABI, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, signedTransaction, simulator, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
 
 test('refreshing confirm transaction updates the persisted simulation timestamp', async () => {
@@ -669,6 +670,128 @@ test('settles a Safe proposal signature once after settling it with the services
 	}
 	assert.equal(failedCodeReads, 1)
 	await assertStoredOnceWithOneSuccess(proposal)
+})
+
+// A popup's signerIncluded is a step of the lifecycle like the signer's own reply: while a Reject's step is answering the request, the signature waits for it and then finds the request settled, so nothing is stored for a rejected request.
+test('stores nothing for a popup-delivered Safe signature whose request a concurrent Reject answers', async () => {
+	const proposal = await storeSafeProposalAwaitingSignerOnChainA(132, 71n)
+	let popupSignature: Promise<unknown> | undefined
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		writeStoredItems()
+		if (popupSignature !== undefined || Object.keys(items).sort().join() !== 'pendingTerminalReplies,pendingTransactionsAndMessages') return
+		// The rejection is queued; the Reject pauses here until the popup's signature finished (or clearly waits for the Reject).
+		popupSignature = modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, proposal.websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'signerIncluded', signerReply: proposal.signature, uniqueRequestIdentifier: proposal.requestIdentifier } })
+		await Promise.race([popupSignature, new Promise((resolve) => setTimeout(resolve, 300))])
+	})
+	try {
+		await withSilencedConsole(async () => {
+			await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, proposal.websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'reject', uniqueRequestIdentifier: proposal.requestIdentifier } })
+			await popupSignature
+		})
+	} finally {
+		browserMock.setStorageSetHandler(undefined)
+	}
+	assert.notEqual(popupSignature, undefined)
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	await assertOnlyTheRejectionAnswered(proposal)
+})
+
+// After a restart, a request whose reply was queued (and whose claim was cleared in that write) but whose removal failed is finished by startup and services-installed recovery even while its confirmation window is still open.
+test('finishes an answered request with its originally queued reply on recovery while its window is open', async () => {
+	const proposal = await storeSafeProposalAwaitingSignerOnChainA(134, 72n)
+	const queuedReply = { ...pendingTransaction.originalRequestParameters, type: 'result' as const, result: modules.EthereumBytes32.parse(modules.EthereumBytes32.serialize(proposal.safeTxHash)), uniqueRequestIdentifier: proposal.requestIdentifier }
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: (await modules.getPendingTransactionsAndMessages()).map((pending) => ({ ...pending, websiteReplyQueued: true as const })) })
+	// Queued without the in-memory reservation of the flow that queued it, as after a restart.
+	await appendPendingTerminalReply(queuedReply)
+	browserMock.setLiveWindowIds([pendingTransaction.popupOrTabId.id])
+
+	await modules.resolveDeferredSafeSignerReplies(simulator, proposal.websiteTabConnections)
+	await modules.resolvePendingRequestsForMissingConfirmationWindows(simulator.ethereum, simulator.tokenPriceService, proposal.websiteTabConnections)
+
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+	assert.deepEqual(proposal.repliesToWebsite().map((reply) => isRecord(reply) ? reply.result : undefined), [modules.EthereumBytes32.serialize(proposal.safeTxHash)])
+	assert.deepEqual(await modules.getSafeTransactionStacks(), [])
+})
+
+// An RPC outage outlasts the bounded retries: the signature stays claimed, the spent retries are reported visibly even though the failure is a connectivity error, and the recovery that runs when the RPC connection returns (with the same services) settles it once.
+test('settles a claimed Safe signature once when the RPC connection returns after its retries were spent', async () => {
+	const proposal = await storeSafeProposalAwaitingSignerOnChainA(136, 73n)
+	await setLatestUnexpectedError(undefined)
+	const { spyOn } = await import('bun:test')
+	const readCode = simulator.ethereum.getCode.bind(simulator.ethereum)
+	let rpcAvailable = false
+	let failedCodeReads = 0
+	const getCode = spyOn(simulator.ethereum, 'getCode').mockImplementation(async (...args: Parameters<typeof readCode>) => {
+		if (!rpcAvailable) {
+			failedCodeReads += 1
+			throw new TypeError('Failed to fetch')
+		}
+		return await readCode(...args)
+	})
+	try {
+		await withSilencedConsole(async () => {
+			await proposal.deliverSignature(createTestSimulationServicesOwner(simulator))
+			await waitUntil(async () => (await getLatestUnexpectedError())?.data.code === 'safe_signer_reply_retries_exhausted', 'the spent retries are reported')
+		})
+		// The first attempt and its three bounded retries.
+		assert.equal(failedCodeReads, 4)
+		assert.notEqual((await modules.getPendingTransactionsAndMessages())[0]?.deferredSafeSignerReply, undefined)
+		assert.match((await getLatestUnexpectedError())?.data.message ?? '', /settled once the RPC connection returns/u)
+		assert.deepEqual(proposal.repliesToWebsite(), [])
+
+		rpcAvailable = true
+		await withSilencedConsole(async () => await modules.resolveDeferredSafeSignerReplies(simulator, proposal.websiteTabConnections))
+	} finally {
+		getCode.mockRestore()
+	}
+	await assertStoredOnceWithOneSuccess(proposal)
+})
+
+// Writing the claim fails once: the retried claim step still carries the signature, so the claim is written and the signature settled once.
+test('claims and settles a Safe signature once after writing its claim failed transiently', async () => {
+	const proposal = await storeSafeProposalAwaitingSignerOnChainA(138, 74n)
+	let failedClaimWrites = 0
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		if (failedClaimWrites === 0 && isClaimWrite(items)) {
+			failedClaimWrites += 1
+			throw new Error('Claim write unavailable.')
+		}
+		writeStoredItems()
+	})
+	try {
+		await withSilencedConsole(async () => {
+			await proposal.deliverSignature(createTestSimulationServicesOwner(simulator))
+			await waitUntil(async () => (await modules.getPendingTransactionsAndMessages()).length === 0, 'the signature is settled')
+		})
+	} finally {
+		browserMock.setStorageSetHandler(undefined)
+	}
+	assert.equal(failedClaimWrites, 1)
+	await assertStoredOnceWithOneSuccess(proposal)
+})
+
+// During an RPC outage the popup's Reject is admitted without RPC services or settings, and the rejection lifecycle answers the website and removes the request.
+test('a popup Reject during an RPC outage rejects the website and removes the request', async () => {
+	const { dispatchPopupMessage } = await import('../../app/ts/background/popupMessageDispatcher.js')
+	const proposal = await storeSafeProposalAwaitingSignerOnChainA(140, 75n)
+	const owner = createTestSimulationServicesOwner(simulator)
+	owner.clear()
+	const context = {
+		websiteTabConnections: proposal.websiteTabConnections,
+		simulationServicesOwner: owner,
+		settings: undefined,
+		rpcConfiguration: { status: 'unavailable' as const, reason: 'corrupt' as const },
+		publishRpcConnectionStatus: async () => undefined,
+		simulationAbortController: new AbortController(),
+		confirmTransactionAbortController: new AbortController(),
+		resetSimulationState: async () => { throw new Error('reset must not run') },
+	}
+
+	assert.equal(await dispatchPopupMessage(context, { method: 'popup_confirmDialog', data: { action: 'reject', errorString: undefined, uniqueRequestIdentifier: proposal.requestIdentifier } }), undefined)
+
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	await assertOnlyTheRejectionAnswered(proposal)
 })
 
 // A metadata refresh reads the request before Accept records the signing network and writes after it: it writes only its visualisation onto the stored request, so the signing network survives and the signature settles.

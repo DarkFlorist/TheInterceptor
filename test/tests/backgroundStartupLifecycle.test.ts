@@ -81,4 +81,18 @@ describe('background startup lifecycle', () => {
 		const iconRefresh = connectionHandler.indexOf('\n\t\tvoid catchAllErrorsAndCall(async () => await updateExtensionIconAfterRegistrationRequestBlocks(websiteTabConnections, registration, socket, websiteOrigin))')
 		assert.equal(firstTabStateWrite < iconRefresh, true)
 	})
+
+	// Retries of a Gnosis Safe signature are bounded; when the RPC connection returns with the same services installed (no reinstall), the terminal-state recovery advances what they left.
+	test('runs terminal-state recovery when a new block arrives after the RPC connection was down', async () => {
+		const source = await Bun.file(backgroundStartupSourcePath).text()
+		const callbackStart = source.indexOf('async function newBlockAttemptCallback')
+		const callbackEnd = source.indexOf('async function onErrorBlockCallback', callbackStart)
+		assert.notEqual(callbackStart, -1)
+		assert.notEqual(callbackEnd, -1)
+		const callback = source.slice(callbackStart, callbackEnd)
+		const previousStatusRead = callback.indexOf('const connectionWasDown = (await getRpcConnectionStatus())?.isConnected !== true')
+		const connectedStatusPublished = callback.indexOf('publishRpcConnectionStatus(\'popup_new_block_arrived\'')
+		const recovery = callback.indexOf('if (connectionWasDown) void recoverPendingTerminalState()')
+		assert.equal(previousStatusRead >= 0 && previousStatusRead < connectedStatusPublished && connectedStatusPublished < recovery, true)
+	})
 })

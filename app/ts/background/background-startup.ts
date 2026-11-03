@@ -230,6 +230,7 @@ async function newBlockAttemptCallback(blockheader: EthereumBlockHeader, ethereu
 	if (!isCurrentSimulationService(simulationServicesOwner, ethereumClientService)) return
 	if (blockheader === null) throw new Error('The latest block is null')
 	try {
+		const connectionWasDown = (await getRpcConnectionStatus())?.isConnected !== true
 		const rpcConnectionStatus = {
 			isConnected: true,
 			lastConnnectionAttempt: new Date(),
@@ -238,6 +239,8 @@ async function newBlockAttemptCallback(blockheader: EthereumBlockHeader, ethereu
 			retrying: ethereumClientService.isBlockPolling(),
 		}
 		await rpcConnectionStatusPublisher.publishRpcConnectionStatus('popup_new_block_arrived', rpcConnectionStatus)
+		// The RPC connection returned with the same services installed: a Gnosis Safe signature whose bounded retries were spent during the outage is advanced again by the terminal-state recovery.
+		if (connectionWasDown) void recoverPendingTerminalState()
 		if (isNewBlock) {
 			const simulateCurrentStack = async (ethereum: EthereumClientService) => await getUpdatedSimulationState(ethereum, await captureSimulationSnapshot())
 			const owner = simulationServicesOwner

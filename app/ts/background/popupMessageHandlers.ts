@@ -7,7 +7,7 @@ import { getPendingTransactionsAndMessages, getTabState, getRpcConnectionStatus,
 import { getRpcList, selectPrimaryRpc } from './rpcConfigurationStorage.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
 import { type ChangeActiveAddress, type ModifyMakeMeRich, type ChangePage, type RemoveTransaction, type RequestAccountsFromSigner, type TransactionConfirmation, type InterceptorAccess, type ChangeInterceptorAccess, type ChainChangeConfirmation, type WatchAssetConfirmation, type EnableSimulationMode, type ChangeActiveChain, type AddOrEditAddressBookEntry, type GetAddressBookData, type RemoveAddressBookEntry, type InterceptorAccessRefresh, type InterceptorAccessChangeAddress, type Settings, type ChangeSettings, type UpdateHomePage, type SimulateGovernanceContractExecution, type ChangeAddOrModifyAddressWindowState, type OpenWebPage, type SetEnsNameForHash, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions, type ForceSetGasLimitForTransaction, type ChangePreSimulationBlockTimeManipulation, type SetTransactionOrMessageBlockTimeManipulator, type FetchSimulationStackRequestConfirmation, type ImportSimulationStack, type PopupReadyAndListeningPage } from '../types/interceptor-messages.js'
-import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransactionOrMessage, updateConfirmTransactionView, setGasLimitForTransaction, toPopupPendingTransactionOrSignableMessage } from './windows/confirmTransaction.js'
+import { formEthSendTransaction, formSendRawTransaction, resolveConfirmationWithoutServices, resolvePendingTransactionOrMessage, updateConfirmTransactionView, setGasLimitForTransaction, toPopupPendingTransactionOrSignableMessage } from './windows/confirmTransaction.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, getAddressMetadataForAccess, refreshSignerAccountsForTab, refreshSignerAccountsFromApprovedWebsitePorts, requestAddressChange, resolveInterceptorAccess, type SignerAccountRefreshOptions } from './windows/interceptorAccess.js'
 import { resolveChainChange } from './windows/changeChain.js'
 import { changeActiveRpc } from './walletSwitch.js'
@@ -115,6 +115,15 @@ export function getSafeSignerSelectionFromAccountRefresh(refreshResult: SafeSign
 		selectedSigner: refreshResult?.error === undefined ? refreshResult?.accounts[0] : undefined,
 		verificationError: refreshResult?.error?.message ?? (refreshResult === undefined ? 'The connected signer wallet is unavailable.' : undefined),
 	}
+}
+
+// Reject and no-response are admitted without RPC services and settle without them; with services available they update the confirmation window as usual.
+export async function confirmDialogWithAvailableServices(services: { readonly ethereum: EthereumClientService, readonly tokenPriceService: TokenPriceService } | undefined, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
+	if (services === undefined) {
+		await resolveConfirmationWithoutServices(websiteTabConnections, confirmation)
+		return
+	}
+	await confirmDialog(services.ethereum, services.tokenPriceService, websiteTabConnections, confirmation)
 }
 
 export async function confirmDialog(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {

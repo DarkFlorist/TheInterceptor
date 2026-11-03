@@ -93,7 +93,7 @@ const POPUP_ADMISSION_MODE = {
 	popup_changePage: 'settings',
 	popup_changePreSimulationBlockTimeManipulation: 'rpc-snapshot',
 	popup_clearUnexpectedError: 'recovery',
-	popup_confirmDialog: 'rpc-snapshot',
+	popup_confirmDialog: 'optional-rpc-snapshot',
 	popup_enableSimulationMode: 'rpc-usable',
 	popup_fetchSimulationStackRequestConfirmation: 'rpc-snapshot',
 	popup_forceSetGasLimitForTransaction: 'rpc-snapshot',
