@@ -71,6 +71,8 @@ export async function queuePopupSimulationRefresh(services: PopupSimulationRefre
 		block.hash,
 		snapshot.numberOfAddressesMadeRich,
 		snapshot.activeStackContext,
+		// A refresh read before a later network change is discarded when it runs, so a refresh of the same network read after the change, even with the same client and input, must not join it.
+		snapshot.networkChangeGeneration,
 	])
 	return await refreshRevision({ ...services, revision, snapshot })
 }

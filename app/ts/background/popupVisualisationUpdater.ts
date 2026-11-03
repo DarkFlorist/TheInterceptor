@@ -96,7 +96,9 @@ export const updatePopupVisualisationIfNeeded = async (ethereum: EthereumClientS
 		// Services captured before a network change must neither simulate the later network's stack nor cancel or invalidate that network's own refresh.
 		if (!servesSnapshotNetwork(ethereum, capturedSnapshot) || !snapshotNetworkIsActive(capturedSnapshot)) return snapshot === undefined ? popupVisualisation : createUnavailableVisualisation()
 		const provider = getSimulationProviderForSnapshot(ethereum, capturedSnapshot)
-		if (skipIfUnchanged && popupVisualisation.simulationState.kind === 'simulated' && provider !== undefined) {
+		// Only a completed result may stand in for this refresh: a refresh discarded after its network was replaced can leave the stored result marked updating or invalid, with the same input.
+		const storedResultIsComplete = popupVisualisation.simulationUpdatingState === 'done' && popupVisualisation.simulationResultState === 'done'
+		if (skipIfUnchanged && storedResultIsComplete && popupVisualisation.simulationState.kind === 'simulated' && provider !== undefined) {
 			const currentSimulationInput = await getCurrentSimulationStateInput(provider, capturedSnapshot)
 			const currentFingerprint = getPopupVisualisationFingerprint(currentSimulationInput.simulationStateInput, currentSimulationInput.rpcNetwork, currentSimulationInput.blockNumber)
 			const cachedFingerprint = getPopupVisualisationFingerprint(

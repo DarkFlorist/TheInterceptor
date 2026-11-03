@@ -1736,6 +1736,99 @@ describe('network transition snapshot', () => {
 		}
 	})
 
+	test('a popup refresh queued on returning to A through a signer-only network runs and publishes instead of joining the obsolete refresh of A', async () => {
+		const { modules, runtimeMessages } = await createApprovedSimulationDapp()
+		const { queuePopupSimulationRefresh } = await import('../../app/ts/background/popupSimulationRefreshQueue.js')
+		const { getCommittedNetworkChangeGeneration } = await import('../../app/ts/background/networkChangeGeneration.js')
+		const { MessageToPopup } = await import('../../app/ts/types/interceptor-messages.js')
+		const signerOnlyB: RpcNetwork = { chainId: networkB.chainId, httpsRpc: undefined, name: 'Signer-only B', currencyName: 'Ether?', currencyTicker: 'ETH?', primary: false, minimized: true }
+		const { owner, installed, retireAll } = createRecordingServicesOwner(networkA)
+		const [servicesA] = installed
+		if (servicesA === undefined) throw new Error('Missing network A services')
+		// A fresh cached head gives both refreshes of A a comparable revision; the queue reads it when it computes one.
+		const head = await servicesA.ethereum.getBlock(undefined)
+		const transitionRefreshQueued = createDeferredSignal()
+		let nextHeadReadIsTransitionRefresh = false
+		servicesA.ethereum.getCachedBlock = () => {
+			if (nextHeadReadIsTransitionRefresh) {
+				nextHeadReadIsTransitionRefresh = false
+				transitionRefreshQueued.resolve()
+			}
+			return { ...head, timestamp: new Date() }
+		}
+		// The popup answers the first visibility probe only once the test releases it.
+		const firstProbeSent = createDeferredSignal()
+		const releaseFirstProbe = createDeferredSignal()
+		let probes = 0
+		const originalSendMessage = browser.runtime.sendMessage.bind(browser.runtime)
+		Object.defineProperty(browser.runtime, 'sendMessage', {
+			configurable: true,
+			value: async (message: unknown) => {
+				if (!isRecord(message) || message.method !== 'popup_isSimulationVisualizerOpen') return await originalSendMessage(message)
+				probes += 1
+				if (probes === 1) {
+					firstProbeSent.resolve()
+					await releaseFirstProbe.promise
+				}
+				return { method: 'popup_isSimulationVisualizerOpen', data: { isOpen: true } }
+			},
+		})
+		// A signer-only network is selected in signing mode; neither switch replaces A's client.
+		const switchToNetwork = async (rpcNetwork: RpcNetwork) => await modules.changeActiveAddressAndChain(owner, new Map(), { simulationMode: rpcNetwork.httpsRpc !== undefined, rpcNetwork, promptForAccessesIfNeeded: false })
+		try {
+			const generationBefore = getCommittedNetworkChangeGeneration()
+			const { services, simulation } = await modules.readNetworkSnapshot(owner)
+			const obsoleteRefresh = queuePopupSimulationRefresh(services, simulation)
+			await firstProbeSent.promise
+			await switchToNetwork(signerOnlyB)
+			nextHeadReadIsTransitionRefresh = true
+			const returnToA = switchToNetwork(networkA)
+			// The head read happens while the return to A queues its refresh, which joins or follows the held one in the same call.
+			await transitionRefreshQueued.promise
+			assert.equal(getCommittedNetworkChangeGeneration(), generationBefore + 2)
+			const storedBeforeRelease = await modules.getPopupVisualisationState()
+			const messagesBeforeRelease = runtimeMessages.length
+			releaseFirstProbe.resolve()
+			await Promise.all([obsoleteRefresh, returnToA])
+
+			assert.equal(installed.length, 1)
+			assert.equal(probes, 2)
+			assert.ok((await modules.getPopupVisualisationState()).simulationId > storedBeforeRelease.simulationId)
+			const stateChanges = runtimeMessages.slice(messagesBeforeRelease).filter((message) => {
+				const parsed = MessageToPopup.safeParse(message)
+				return parsed.success && parsed.value.method === 'popup_simulation_state_changed'
+			})
+			assert.ok(stateChanges.length > 0)
+		} finally {
+			releaseFirstProbe.resolve()
+			retireAll()
+		}
+	})
+
+	test('a refresh whose input is unchanged still runs when a discarded refresh left the stored result updating', async () => {
+		const { modules } = await createApprovedSimulationDapp({ simulationConsumerOpen: true })
+		const { updatePopupVisualisationIfNeeded } = await import('../../app/ts/background/popupVisualisationUpdater.js')
+		const { owner, retireAll } = createRecordingServicesOwner(networkA)
+		try {
+			// With an empty stack only the made-rich address is simulated, so the stored input matches the snapshot's and the fingerprints agree.
+			const { services, simulation } = await modules.readNetworkSnapshot(owner)
+			await updatePopupVisualisationIfNeeded(services.ethereum, services.tokenPriceService, { invalidateOldState: true, snapshot: simulation })
+			const completed = await modules.getPopupVisualisationState()
+			assert.equal(completed.simulationState.kind, 'simulated')
+			// Like a refresh that stored its updating state and was then discarded because its network was replaced, with the same input.
+			const { setPopupVisualisationState } = await import('../../app/ts/background/storageVariables.js')
+			await setPopupVisualisationState({ ...completed, simulationId: completed.simulationId + 1, simulationUpdatingState: 'updating' })
+
+			await updatePopupVisualisationIfNeeded(services.ethereum, services.tokenPriceService, { skipIfUnchanged: true, snapshot: simulation })
+
+			const refreshed = await modules.getPopupVisualisationState()
+			assert.equal(refreshed.simulationUpdatingState, 'done')
+			assert.ok(refreshed.simulationId > completed.simulationId + 1)
+		} finally {
+			retireAll()
+		}
+	})
+
 	test('a Gnosis Safe confirmation re-read continues its request only if no network change committed since, even one back to the same endpoint', async () => {
 		installBrowserMock()
 		const modules = await loadModules()
