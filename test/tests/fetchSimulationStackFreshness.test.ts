@@ -199,6 +199,29 @@ describe('fetch simulation stack freshness', () => {
 		assert.equal(warnings.includes('Pending watch asset requests was corrupt:'), true)
 	})
 
+	test('propagates a failing storage read instead of writing an empty request queue', async () => {
+		for (const key of Object.keys(storageState)) delete storageState[key]
+		const storage = await import('../../app/ts/background/storageVariables.js')
+		const queuedRecord = { stays: 'untouched' }
+		storageState.pendingWatchAssetRequests = [queuedRecord]
+		const localStorage = Reflect.get(globalThis, 'browser').storage.local
+		const originalGet = localStorage.get
+		const originalSet = localStorage.set
+		const writes: unknown[] = []
+		localStorage.get = async () => { throw new Error('storage read failed') }
+		localStorage.set = async (items: Record<string, unknown>) => { writes.push(items) }
+		try {
+			await assert.rejects(storage.updatePendingWatchAssetRequests((requests) => requests), /storage read failed/)
+			await assert.rejects(storage.getPendingWatchAssetRequests(), /storage read failed/)
+			await assert.rejects(storage.getFetchSimulationStackRequestPromise(), /storage read failed/)
+		} finally {
+			localStorage.get = originalGet
+			localStorage.set = originalSet
+		}
+		assert.deepEqual(writes, [])
+		assert.deepEqual(storageState.pendingWatchAssetRequests, [queuedRecord])
+	})
+
 	test('returns and fingerprints the confirmation-time snapshot', async () => {
 		for (const key of Object.keys(storageState)) delete storageState[key]
 		popupWindowExists = false
