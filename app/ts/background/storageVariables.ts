@@ -111,7 +111,7 @@ export async function movePendingSafeProposalToOutbox(
 
 // A pending request is answered either through a queued website reply or by deferring the signature the signer returned, never both: the reply is queued together with marking the request answered (websiteReplyQueued), and each writer checks the other's mark inside the pending-request critical section and writes nothing when the other came first.
 
-// Queues the request's website reply and marks the request answered in one write, unless the request is gone, already answered (a retry after its removal failed: nothing is queued again) or holds a deferred Gnosis Safe signature other than `settledSignerReply` (the signature this reply settles).
+// Queues the request's website reply and marks the request answered in one write, unless the request is gone, already answered (a retry after its removal failed: nothing is queued again) or holds a deferred Gnosis Safe signature other than `settledSignerReply` (the signature this reply settles). The settled signature's claim is cleared in the same write, so an answered request never also holds a claim.
 export async function queueTerminalRepliesUnlessDeferred(uniqueRequestIdentifier: UniqueRequestIdentifier, getUpdatedTerminalReplies: () => Promise<readonly InterceptedRequestForward[]>, settledSignerReply?: string): Promise<'queued' | 'already-answered' | 'deferred' | 'gone'> {
 	return await pendingRequestTerminalStateSemaphore.execute(async () => {
 		const result = await readPendingTransactionsAndMessages()
@@ -121,7 +121,8 @@ export async function queueTerminalRepliesUnlessDeferred(uniqueRequestIdentifier
 		if (found === undefined) return 'gone'
 		if (found.websiteReplyQueued === true) return 'already-answered'
 		if (found.deferredSafeSignerReply !== undefined && found.deferredSafeSignerReply.signerReply !== settledSignerReply) return 'deferred'
-		await browserStorageLocalSetPendingAndTerminalState(replaceElementInReadonlyArray(result.value, match, { ...found, websiteReplyQueued: true }), await getUpdatedTerminalReplies())
+		const { deferredSafeSignerReply: _settledClaim, ...unclaimed } = found
+		await browserStorageLocalSetPendingAndTerminalState(replaceElementInReadonlyArray(result.value, match, { ...unclaimed, websiteReplyQueued: true }), await getUpdatedTerminalReplies())
 		return 'queued'
 	})
 }

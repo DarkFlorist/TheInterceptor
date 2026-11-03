@@ -53,7 +53,6 @@ import { createSafeSignerErrorStatus } from '../safeSignerErrors.js'
 import { RPC_CONFIGURATION_UNAVAILABLE_ERROR } from '../../types/interceptor-reply-messages.js'
 
 const pendingConfirmationSemaphore = new Semaphore(1)
-const deferredSafeSignerReplySemaphore = new Semaphore(1)
 const pendingNoResponseRetryTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const NO_RESPONSE_RETRY_DELAY_MS = 50
 
@@ -365,8 +364,12 @@ function formTerminalReply(pending: PendingTransactionOrSignableMessage, message
 // A request already answered (its removal failed after its reply was queued) is not answered again: only its own reply still waiting in the queue is delivered.
 async function deliverQueuedReply(websiteTabConnections: WebsiteTabConnections, reply: InterceptedRequestForward, queued: 'queued' | 'already-answered') {
 	if (queued === 'queued') return await attemptQueuedTerminalReplyDelivery(websiteTabConnections, reply)
-	// The reply that answered the request first is the one still queued (if it was not delivered yet); the caller's newly formed reply is never sent.
-	const answeredReply = (await getPendingTerminalReplies()).find((pendingReply) => doesUniqueRequestIdentifiersMatch(pendingReply.uniqueRequestIdentifier, reply.uniqueRequestIdentifier))
+	return await deliverAnsweredReply(websiteTabConnections, reply.uniqueRequestIdentifier)
+}
+
+// The reply that answered the request first is the one still queued (if it was not delivered yet); a reply formed later is never sent.
+async function deliverAnsweredReply(websiteTabConnections: WebsiteTabConnections, uniqueRequestIdentifier: UniqueRequestIdentifier) {
+	const answeredReply = (await getPendingTerminalReplies()).find((pendingReply) => doesUniqueRequestIdentifiersMatch(pendingReply.uniqueRequestIdentifier, uniqueRequestIdentifier))
 	if (answeredReply === undefined) return true
 	return await attemptQueuedTerminalReplyDelivery(websiteTabConnections, answeredReply)
 }
@@ -410,28 +413,11 @@ function getSafeProposalSigningChainId(pending: PendingTransactionOrSignableMess
 	return flow.pending.safeTransaction.safeTx.domain.chainId ?? 0n
 }
 
-// Once a deferral is written it is replayed even when the work after the write (delivering the website's reply, updating its window) fails. That failure still reaches the caller; a replay failing on top of it is reported rather than hiding it.
-async function runThenReplay<Result>(afterWrite: () => Promise<Result>, replay: () => Promise<void>): Promise<Result> {
-	let result: Result
-	try {
-		result = await afterWrite()
-	} catch (afterWriteError: unknown) {
-		try {
-			await replay()
-		} catch (replayError: unknown) {
-			await reportUnexpectedError(replayError, { code: 'deferred_safe_signature_replay_failed' })
-		}
-		throw afterWriteError
-	}
-	await replay()
-	return result
-}
-
-// A deferral is written after the reply's services were captured, so services for its chain may have been installed, and finished their replay, before it landed. The installed services are read again and, when they are for its chain, replayed now; the replay is serialized and finds an already settled entry gone, so nothing is stored or answered twice.
-async function replayIfServicesAreInstalledFor(chainId: bigint, getInstalledServices: () => Promise<ConfirmationServices | undefined>, websiteTabConnections: WebsiteTabConnections) {
-	const installedServices = await getInstalledServices()
-	if (installedServices === undefined || installedServices.ethereum.getChainId() !== chainId) return
-	await resolveDeferredSafeSignerReplies(installedServices, websiteTabConnections)
+// The Gnosis Safe flows whose signer reply is a Safe signature settled through the signer-reply lifecycle below.
+function getSafeSignerReplyFlow(pending: PendingTransactionOrSignableMessage) {
+	if (pending.simulationMode) return undefined
+	const flow = getSafePendingFlow(pending)
+	return flow?.kind === 'proposal' || flow?.kind === 'messageCoSign' ? flow : undefined
 }
 
 // A Safe signature that cannot be bound to the network it was signed for fails closed: it is not kept, and the request asks the user to sign again.
@@ -439,6 +425,128 @@ async function failSafeSignatureWithoutChain(uniqueRequestIdentifier: UniqueRequ
 	await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (current) => modifyObject(removeDeferredSafeSignerReply(current), {
 		approvalStatus: createSafeSignerErrorStatus('The Gnosis Safe signature could not be matched to its network while the RPC configuration is unavailable. Sign it again once it is restored.'),
 	}))
+}
+
+// Gnosis Safe signer-reply lifecycle. Its single owner is advanceSafeSignerReply, which only runs inside runSafeSignerReplyLifecycle (one lock for every request) and re-reads the request before each transition. Every entry point goes through it: a signer reply (claimSafeSignature), popup close, no-response and Reject (resolvePendingRequestAsNoResponse), recovery at startup and every services installation (resolveDeferredSafeSignerReplies), and the retry after an unexpected failure.
+// 1) States of a pending request:
+// - waiting-for-signer: no deferredSafeSignerReply and no websiteReplyQueued (as is every request outside these Safe flows).
+// - claimed(signature, chain): deferredSafeSignerReply with its chainId; hidden from the confirmation window.
+// - answered: websiteReplyQueued, written together with its queued website reply; it wins over a claim stored beside it.
+// - settled: the request is gone: stored (Safe stack or proposal outbox) with its success reply, rejected, or answered and cleaned up.
+// 2) Allowed transitions:
+// - waiting-for-signer -> claimed: a string signature for a request with a recorded signing network (a request without one fails closed back to waiting-for-signer with an error).
+// - waiting-for-signer -> answered -> settled: Reject or no-response queues the rejection, delivers it and removes the request.
+// - claimed -> answered: services for its network validate and store the signature; its success reply is queued with the claim cleared in one write.
+// - claimed -> waiting-for-signer: the signature fails validation (discarded with an error the user sees).
+// - claimed proposal -> settled: without services for its network the success reply is queued and the proposal moved to the outbox in one write; the outbox stores it once services for its network are installed.
+// - claimed co-signature -> claimed: without services for its network it waits for them.
+// - answered -> settled: only the reply queued when it was answered is delivered (if still queued) and the request removed; nothing is validated, stored or queued again.
+// - claims written by earlier builds: a proposal claim whose reply was already queued (terminalReplyQueued) -> settled through the outbox without a second reply (dropped visibly without a network), and a claim without its network -> waiting-for-signer with an error.
+// 3) An unexpected failure keeps the stored state, so the request stays recoverable: a bounded retry advances it again, and every services installation advances every claimed request.
+type SafeSignerReplyState = 'gone' | 'waiting-for-signer' | 'claimed' | 'settled'
+
+type SafeSignerReplyContext = {
+	// The services captured with the entry point; they also update the confirmation window.
+	readonly services: ConfirmationServices | undefined
+	// Reads the services installed now, for a signature whose network the captured services are not for.
+	readonly getInstalledServices: () => Promise<ConfirmationServices | undefined>
+	readonly websiteTabConnections: WebsiteTabConnections
+}
+
+const safeSignerReplyLifecycleSemaphore = new Semaphore(1)
+const safeSignerReplyRetryTimers = new Map<string, ReturnType<typeof setTimeout>>()
+// Bounded: once these retries are spent, the next services installation advances the request.
+const SAFE_SIGNER_REPLY_RETRY_DELAYS_MS = [50, 250, 1000, 5000]
+
+async function runSafeSignerReplyLifecycle<Result>(uniqueRequestIdentifier: UniqueRequestIdentifier, context: SafeSignerReplyContext, step: () => Promise<Result>, retryAttempt = 0): Promise<Result> {
+	try {
+		return await safeSignerReplyLifecycleSemaphore.execute(step)
+	} catch (error: unknown) {
+		scheduleSafeSignerReplyRetry(uniqueRequestIdentifier, context, retryAttempt)
+		throw error
+	}
+}
+
+// The retry has no caller to report to, so its own failure is reported here before the next bounded attempt.
+function scheduleSafeSignerReplyRetry(uniqueRequestIdentifier: UniqueRequestIdentifier, context: SafeSignerReplyContext, attempt: number) {
+	const delay = SAFE_SIGNER_REPLY_RETRY_DELAYS_MS[attempt]
+	const identifier = getUniqueRequestIdentifierString(uniqueRequestIdentifier)
+	if (delay === undefined || safeSignerReplyRetryTimers.has(identifier)) return
+	safeSignerReplyRetryTimers.set(identifier, setTimeout(() => {
+		safeSignerReplyRetryTimers.delete(identifier)
+		void (async () => {
+			try {
+				await runSafeSignerReplyLifecycle(uniqueRequestIdentifier, context, async () => await advanceSafeSignerReply(uniqueRequestIdentifier, context), attempt + 1)
+			} catch (error: unknown) {
+				await reportUnexpectedError(error, { code: 'safe_signer_reply_retry_failed' })
+			}
+		})()
+	}, delay))
+}
+
+// A signature is bound to the network it was signed for: it is settled only with services for that network, the captured ones or else the ones installed now.
+async function getServicesForChain(context: SafeSignerReplyContext, chainId: bigint) {
+	if (context.services !== undefined && context.services.ethereum.getChainId() === chainId) return context.services
+	const installedServices = await context.getInstalledServices()
+	if (installedServices === undefined || installedServices.ethereum.getChainId() !== chainId) return undefined
+	return installedServices
+}
+
+// Takes the one transition the request's stored state allows; must run inside runSafeSignerReplyLifecycle.
+async function advanceSafeSignerReply(uniqueRequestIdentifier: UniqueRequestIdentifier, context: SafeSignerReplyContext): Promise<SafeSignerReplyState> {
+	const pending = await getPendingTransactionOrMessageByidentifier(uniqueRequestIdentifier)
+	if (pending === undefined) return 'gone'
+	if (pending.websiteReplyQueued === true) {
+		await deliverAnsweredReply(context.websiteTabConnections, uniqueRequestIdentifier)
+		await removeSettledPendingRequest(pending, context.services)
+		return 'settled'
+	}
+	const claim = pending.deferredSafeSignerReply
+	if (claim === undefined) return 'waiting-for-signer'
+	const flow = getSafePendingFlow(pending)
+	if (flow?.kind === 'proposal' && claim.terminalReplyQueued === true) {
+		await settleAcknowledgedSafeProposal(pending, flow.pending.safeTransaction.safeTxHash, claim.signerReply, claim.chainId, context)
+		return 'settled'
+	}
+	if (claim.chainId === undefined) {
+		await failSafeSignatureWithoutChain(uniqueRequestIdentifier)
+		return 'waiting-for-signer'
+	}
+	const services = await getServicesForChain(context, claim.chainId)
+	if (services !== undefined) {
+		await resolvePendingTransactionOrMessage(services.ethereum, services.tokenPriceService, context.websiteTabConnections, {
+			method: 'popup_confirmDialog',
+			data: { uniqueRequestIdentifier, action: 'signerIncluded', signerReply: claim.signerReply },
+		})
+		const validated = await getPendingTransactionOrMessageByidentifier(uniqueRequestIdentifier)
+		if (validated === undefined) return 'settled'
+		if (validated.websiteReplyQueued === true) return await advanceSafeSignerReply(uniqueRequestIdentifier, context)
+		return validated.deferredSafeSignerReply === undefined ? 'waiting-for-signer' : 'claimed'
+	}
+	if (flow?.kind === 'proposal') {
+		await moveSignedSafeProposalToOutbox(pending, flow.pending.safeTransaction.safeTxHash, { signerReply: claim.signerReply, chainId: claim.chainId }, context.websiteTabConnections, context.services, false)
+		return 'settled'
+	}
+	return 'claimed'
+}
+
+// waiting-for-signer -> claimed, advanced at once in the same lifecycle step, so no other entry point sees the claim before its first transition.
+async function claimSafeSignature(uniqueRequestIdentifier: UniqueRequestIdentifier, signerReply: string, context: SafeSignerReplyContext) {
+	const claimed = await runSafeSignerReplyLifecycle(uniqueRequestIdentifier, context, async () => {
+		const pending = await getPendingTransactionOrMessageByidentifier(uniqueRequestIdentifier)
+		if (pending === undefined) return undefined
+		const chainId = pending.signerRequestChainId
+		// Without the network the signer signed for, the signature could be validated or stored on another network, so it is not kept.
+		if (chainId === undefined) {
+			await failSafeSignatureWithoutChain(uniqueRequestIdentifier)
+			return undefined
+		}
+		// An answered request (its window close or Reject won) refuses the claim and keeps its own answer, which this step then finishes.
+		if (await deferSignatureUnlessAnswered(uniqueRequestIdentifier, { signerReply, chainId }) === 'gone') return undefined
+		return await advanceSafeSignerReply(uniqueRequestIdentifier, context) === 'claimed' ? pending : undefined
+	})
+	// The waiting co-signature left the queue its window shows, so the window moves on to the next request or closes.
+	if (claimed !== undefined) await updateViewAfterPendingRequestRemoved(claimed, context.services, 'unchanged')
 }
 
 // `services` were captured when the reply arrived; `getInstalledServices` reads the services installed now.
@@ -453,8 +561,7 @@ export async function resolvePendingSignerReply(services: ConfirmationServices |
 	}
 	const pending = await getPendingTransactionOrMessageByidentifier(uniqueRequestIdentifier)
 	if (pending === undefined) return
-	const safeFlow = pending.simulationMode ? undefined : getSafePendingFlow(pending)
-	if (safeFlow?.kind !== 'proposal' && safeFlow?.kind !== 'messageCoSign') {
+	if (getSafeSignerReplyFlow(pending) === undefined) {
 		if (services !== undefined) {
 			return await resolvePendingTransactionOrMessage(services.ethereum, services.tokenPriceService, websiteTabConnections, {
 				method: 'popup_confirmDialog',
@@ -473,56 +580,17 @@ export async function resolvePendingSignerReply(services: ConfirmationServices |
 		}))
 		return
 	}
-	const signerReply = params.reply
-	const chainId = pending.signerRequestChainId
-	// Without the network the signer signed for, a later replay could validate or store the signature on another network, so it is not kept.
-	if (chainId === undefined) {
-		await failSafeSignatureWithoutChain(uniqueRequestIdentifier)
-		return
-	}
-	// The Gnosis Safe signature first claims its request, atomically with the check that no website reply was queued for it: a request already answered (a window close or Reject won) keeps that answer and the signature is discarded, and once claimed no rejection can answer it. Nothing is stored before the claim.
-	if (await deferSignatureUnlessAnswered(uniqueRequestIdentifier, { signerReply, chainId }) !== 'deferred') return
-	// A signature is bound to the network it was signed for: it is settled now only with services for that network, and is otherwise kept for them.
-	if (services !== undefined && services.ethereum.getChainId() === chainId) return await settleClaimedSafeSignature(uniqueRequestIdentifier, services, websiteTabConnections)
-	const replay = async () => await replayIfServicesAreInstalledFor(chainId, getInstalledServices, websiteTabConnections)
-	if (safeFlow.kind === 'proposal') return await runThenReplay(async () => await moveSignedSafeProposalToOutbox(pending, safeFlow.pending.safeTransaction.safeTxHash, { signerReply, chainId }, websiteTabConnections, services, false), replay)
-	// The deferred co-signature leaves the queue its window shows, so the window moves on to the next request or closes.
-	await runThenReplay(async () => await updateViewAfterPendingRequestRemoved(pending, services, 'unchanged'), replay)
-	return
+	return await claimSafeSignature(uniqueRequestIdentifier, params.reply, { services, getInstalledServices, websiteTabConnections })
 }
 
-// Settles a claimed Gnosis Safe signature with services for its network, serialized with every other settlement of deferred signatures; a concurrent settlement that already answered the request leaves nothing to do. A signature that fails validation is dropped from the request, which can then be signed again.
-async function settleClaimedSafeSignature(uniqueRequestIdentifier: UniqueRequestIdentifier, services: ConfirmationServices, websiteTabConnections: WebsiteTabConnections) {
-	return await deferredSafeSignerReplySemaphore.execute(async () => {
-		const deferred = (await getPendingTransactionOrMessageByidentifier(uniqueRequestIdentifier))?.deferredSafeSignerReply
-		if (deferred === undefined || deferred.chainId !== services.ethereum.getChainId()) return undefined
-		return await resolvePendingTransactionOrMessage(services.ethereum, services.tokenPriceService, websiteTabConnections, {
-			method: 'popup_confirmDialog',
-			data: { uniqueRequestIdentifier, action: 'signerIncluded', signerReply: deferred.signerReply },
-		})
-	})
-}
-
-// Runs whenever services are installed for a network: earlier builds' pending proposals leave the pending queue, deferred co-signatures for that network are settled, and outbox proposals for it are added to the Safe stack.
+// Runs at startup and whenever services are installed for a network: every claimed signature is advanced (settled with these services when they are for its network), then outbox proposals for that network are added to the Safe stack.
 export async function resolveDeferredSafeSignerReplies(services: ConfirmationServices, websiteTabConnections: WebsiteTabConnections) {
-	return await deferredSafeSignerReplySemaphore.execute(async () => {
-		for (const pending of await getPendingTransactionsAndMessages()) {
-			const deferred = pending.deferredSafeSignerReply
-			if (deferred === undefined) continue
-			if (await settleDeferredSafeProposal(pending, websiteTabConnections, services)) continue
-			if (deferred.chainId === undefined) {
-				await failSafeSignatureWithoutChain(pending.uniqueRequestIdentifier)
-				continue
-			}
-			// A co-signature for another network stays deferred, untouched, until services for its own network are installed: validating it here could reject it as invalid.
-			if (deferred.chainId !== services.ethereum.getChainId()) continue
-			await resolvePendingTransactionOrMessage(services.ethereum, services.tokenPriceService, websiteTabConnections, {
-				method: 'popup_confirmDialog',
-				data: { uniqueRequestIdentifier: pending.uniqueRequestIdentifier, action: 'signerIncluded', signerReply: deferred.signerReply },
-			})
-		}
-		await storeSafeProposalsFromOutbox(services)
-	})
+	const context: SafeSignerReplyContext = { services, getInstalledServices: async () => services, websiteTabConnections }
+	for (const pending of await getPendingTransactionsAndMessages()) {
+		if (pending.deferredSafeSignerReply === undefined) continue
+		await runSafeSignerReplyLifecycle(pending.uniqueRequestIdentifier, context, async () => await advanceSafeSignerReply(pending.uniqueRequestIdentifier, context))
+	}
+	await safeSignerReplyLifecycleSemaphore.execute(async () => await storeSafeProposalsFromOutbox(services))
 }
 
 // Adds every outbox proposal signed for the installed services' network to its Safe stack once; proposals for other networks stay. The website already has its reply, so a proposal that cannot be stored is dropped with a visible failure and nothing more is sent to the website.
@@ -565,7 +633,6 @@ async function moveSignedSafeProposalToOutbox(
 			return true
 		}
 		const terminalReply = createDeferredSafeProposalReply(pending, safeTxHash)
-		// A request whose window close or Reject already queued its rejection keeps that answer; the proposal is not moved.
 		if (await queueSafeProposalReplyAndMoveToOutbox(pending.uniqueRequestIdentifier, createStore, terminalReply) !== 'moved') return false
 		return await attemptQueuedTerminalReplyDelivery(websiteTabConnections, terminalReply)
 	} finally {
@@ -573,31 +640,35 @@ async function moveSignedSafeProposalToOutbox(
 	}
 }
 
-// A pending proposal still holding its signature was written by an earlier build. It leaves the pending queue for the outbox, or, when its signing network was not recorded, is either signed again (the website has no reply yet) or dropped with a visible failure (the website already has its reply, so it is not retried through the completed request).
-async function settleDeferredSafeProposal(pending: PendingTransactionOrSignableMessage, websiteTabConnections: WebsiteTabConnections, services: ConfirmationServices | undefined) {
-	const deferred = pending.deferredSafeSignerReply
-	const flow = getSafePendingFlow(pending)
-	if (deferred === undefined || flow?.kind !== 'proposal') return false
-	const websiteHasItsReply = deferred.terminalReplyQueued === true
-	if (deferred.chainId !== undefined) {
-		await moveSignedSafeProposalToOutbox(pending, flow.pending.safeTransaction.safeTxHash, { signerReply: deferred.signerReply, chainId: deferred.chainId }, websiteTabConnections, services, websiteHasItsReply)
-		return true
+// Earlier builds kept a Safe proposal pending, claimed, after its website reply was queued (`terminalReplyQueued`). It leaves the pending queue for the outbox without a second reply, or, when its signing network was not recorded, is dropped with a visible failure (re-signing through the completed request is impossible).
+async function settleAcknowledgedSafeProposal(pending: PendingTransactionOrSignableMessage, safeTxHash: bigint, signerReply: string, chainId: bigint | undefined, context: SafeSignerReplyContext) {
+	if (chainId !== undefined) {
+		await moveSignedSafeProposalToOutbox(pending, safeTxHash, { signerReply, chainId }, context.websiteTabConnections, context.services, true)
+		return
 	}
-	if (!websiteHasItsReply) {
-		await failSafeSignatureWithoutChain(pending.uniqueRequestIdentifier)
-		return true
-	}
-	await removeSettledPendingRequest(pending, services)
+	await removeSettledPendingRequest(pending, context.services)
 	await reportSafeProposalNotStored('Its network was not recorded.')
-	return true
+}
+
+// A review refresh is formed from the request as read when the confirmation began, so it is written only while the stored request still awaits the user's review (not waiting for its signer, claimed or answered), keeping the stored signing network; returns whether it was written.
+async function writeReviewRefresh(refreshed: PendingTransactionOrSignableMessage) {
+	let written = false
+	await updatePendingTransactionOrMessage(refreshed.uniqueRequestIdentifier, async (current) => {
+		if (current.approvalStatus.status === 'WaitingForSigner' || current.deferredSafeSignerReply !== undefined || current.websiteReplyQueued === true) return current
+		written = true
+		return current.signerRequestChainId === undefined ? refreshed : modifyObject(refreshed, { signerRequestChainId: current.signerRequestChainId })
+	})
+	return written
 }
 
 export async function resolvePendingTransactionOrMessage(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, refreshedSafeSignerSelection?: RefreshedSafeSignerSelection) {
 	if (confirmation.data.action === 'noResponse') return await resolvePendingRequestAsNoResponse(confirmation.data.uniqueRequestIdentifier, { ethereum, tokenPriceService }, websiteTabConnections)
 	let pendingTransactionOrMessage = await getPendingTransactionOrMessageByidentifier(confirmation.data.uniqueRequestIdentifier)
 	if (pendingTransactionOrMessage === undefined) return // no need to resolve as it doesn't exist anymore
-	// A signature the signer already returned is never rejected: Reject follows the popup-close rules and settles it as signed once services for its network are installed.
-	if (confirmation.data.action === 'reject' && pendingTransactionOrMessage.deferredSafeSignerReply !== undefined) return await resolvePendingRequestAsNoResponse(confirmation.data.uniqueRequestIdentifier, { ethereum, tokenPriceService }, websiteTabConnections)
+	// Reject of a request the Safe signer-reply lifecycle owns (or that is claimed or answered) is a step of that lifecycle: it follows the popup-close rules, so a signature the signer already returned is settled as signed rather than rejected.
+	if (confirmation.data.action === 'reject' && (getSafeSignerReplyFlow(pendingTransactionOrMessage) !== undefined || pendingTransactionOrMessage.deferredSafeSignerReply !== undefined || pendingTransactionOrMessage.websiteReplyQueued === true)) {
+		return await resolvePendingRequestAsNoResponse(confirmation.data.uniqueRequestIdentifier, { ethereum, tokenPriceService }, websiteTabConnections)
+	}
 	if (
 		confirmation.data.action === 'accept'
 		&& refreshedSafeSignerSelection?.selectedSigner !== undefined
@@ -636,13 +707,14 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 	}
 	if (safeResolution.status === 'refreshed') {
 		pendingTransactionOrMessage = safeResolution.pending
-		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async () => pendingTransactionOrMessage)
+		await writeReviewRefresh(pendingTransactionOrMessage)
 		await updateConfirmTransactionView(ethereum, tokenPriceService)
 		return false
 	}
 	pendingTransactionOrMessage = safeResolution.pending
-	if (safeResolution.pendingChanged) {
-		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async () => pendingTransactionOrMessage)
+	if (safeResolution.pendingChanged && !await writeReviewRefresh(pendingTransactionOrMessage)) {
+		await updateConfirmTransactionView(ethereum, tokenPriceService)
+		return false
 	}
 	const signerFacingRequest: SendTransactionParams | SendRawTransactionParams | SignMessageParams = safeResolution.signerFacingRequest
 		?? pendingTransactionOrMessage.originalRequestParameters
@@ -773,49 +845,26 @@ const resolveAllPendingTransactionsAndMessageAsNoResponse = async (transactions:
 	}
 }
 
-// Single owner of the no-response outcome, whether the popup reports it or the confirmation window disappeared. A Safe signature the signer already returned (`deferredSafeSignerReply`) is settled as signed rather than rejected; settling it needs RPC services, so without them the request stays pending until recovery resolves it. Without a deferred reply the request is rejected, which needs no RPC services.
+// Single owner of the no-response outcome (popup report, Reject of a Safe signer-reply request, or a confirmation window that disappeared), run as one step of the Safe signer-reply lifecycle: the request is first advanced, so a claimed signature is settled as signed rather than rejected (with services for its network; otherwise it stays pending) and an answered request only finishes its own answer. A request waiting for its signer is rejected, which needs no RPC services.
 async function resolvePendingRequestAsNoResponse(uniqueRequestIdentifier: UniqueRequestIdentifier, services: ConfirmationServices | undefined, websiteTabConnections: WebsiteTabConnections): Promise<boolean | undefined> {
-	const deferredSignature = await settleDeferredSignatureAsNoResponse(uniqueRequestIdentifier, services, websiteTabConnections)
-	if (deferredSignature === 'settled') return true
-	if (deferredSignature === 'gone' || deferredSignature === 'waiting') return undefined
-	const pending = await getPendingTransactionOrMessageByidentifier(uniqueRequestIdentifier)
-	if (pending === undefined) return undefined
-	const rejection = {
-		...pending.originalRequestParameters,
-		...formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User denied transaction signature'),
-		uniqueRequestIdentifier,
-	}
-	// The rejection is queued only if the request still holds no deferred signature: a signature deferred since the inspection above is settled as signed instead, and once the rejection is queued a later signer reply is not deferred.
-	const rejectionOutcome = await queueTerminalReplyUnlessDeferred(rejection)
-	if (rejectionOutcome === 'gone') return undefined
-	if (rejectionOutcome === 'deferred') return await resolvePendingRequestAsNoResponse(uniqueRequestIdentifier, services, websiteTabConnections)
-	const delivery = await deliverQueuedReply(websiteTabConnections, rejection, rejectionOutcome)
-	await removeSettledPendingRequest(pending, services)
-	return delivery
-}
-
-// Every settlement of a deferred signature is serialized with the replays and re-reads the request inside, so a concurrent settlement (window close, Reject, recovery or post-write replay) finds it already settled and answers nothing twice. 'rejectable' means the request holds no deferred signature (any more, after one failed validation) and is rejected as usual.
-async function settleDeferredSignatureAsNoResponse(uniqueRequestIdentifier: UniqueRequestIdentifier, services: ConfirmationServices | undefined, websiteTabConnections: WebsiteTabConnections): Promise<'gone' | 'settled' | 'waiting' | 'rejectable'> {
-	return await deferredSafeSignerReplySemaphore.execute(async () => {
+	const context: SafeSignerReplyContext = { services, getInstalledServices: async () => services, websiteTabConnections }
+	return await runSafeSignerReplyLifecycle(uniqueRequestIdentifier, context, async () => {
+		const state = await advanceSafeSignerReply(uniqueRequestIdentifier, context)
+		if (state === 'settled') return true
+		if (state !== 'waiting-for-signer') return undefined
 		const pending = await getPendingTransactionOrMessageByidentifier(uniqueRequestIdentifier)
-		if (pending === undefined) return 'gone'
-		if (await settleDeferredSafeProposal(pending, websiteTabConnections, services)) return 'settled'
-		const deferred = pending.deferredSafeSignerReply
-		if (deferred === undefined) return 'rejectable'
-		if (deferred.chainId === undefined) {
-			await failSafeSignatureWithoutChain(uniqueRequestIdentifier)
-			return 'waiting'
+		if (pending === undefined) return undefined
+		const rejection = {
+			...pending.originalRequestParameters,
+			...formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User denied transaction signature'),
+			uniqueRequestIdentifier,
 		}
-		// Settling the deferred co-signature needs services for the network it was signed for; until then the request stays pending.
-		if (services === undefined || deferred.chainId !== services.ethereum.getChainId()) return 'waiting'
-		await resolvePendingTransactionOrMessage(services.ethereum, services.tokenPriceService, websiteTabConnections, {
-			method: 'popup_confirmDialog',
-			data: { uniqueRequestIdentifier, action: 'signerIncluded', signerReply: deferred.signerReply },
-		})
-		const unresolvedPending = await getPendingTransactionOrMessageByidentifier(uniqueRequestIdentifier)
-		if (unresolvedPending === undefined || unresolvedPending.deferredSafeSignerReply !== undefined) return 'waiting'
-		// A deferred co-signature that failed validation is dropped from the pending request, which is then rejected as no-response.
-		return 'rejectable'
+		// Claims are only written inside a lifecycle step, so this request is still unclaimed; the storage check refuses the rejection should it not be.
+		const rejectionOutcome = await queueTerminalReplyUnlessDeferred(rejection)
+		if (rejectionOutcome === 'gone' || rejectionOutcome === 'deferred') return undefined
+		const delivery = await deliverQueuedReply(websiteTabConnections, rejection, rejectionOutcome)
+		await removeSettledPendingRequest(pending, services)
+		return delivery
 	})
 }
 

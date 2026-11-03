@@ -592,14 +592,17 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 			if (first.transactionOrMessageCreationStatus !== 'Simulated' || first.popupVisualisation.statusCode === 'failed') return
 			try {
 				const visualizedSimulationState = await visualizeSimulatorState(first.popupVisualisation.data.simulationState, ethereum, tokenPriceService, requestAbortController)
-				const updatedFirst = modifyObject(first,
-					{
-						popupVisualisation: {
-							statusCode: 'success',
-							data: modifyObject(first.popupVisualisation.data, { ...visualizedSimulationState })
-						}
-					})
-				await updatePendingTransactionOrMessage(first.uniqueRequestIdentifier, async () => updatedFirst)
+				const visualizedPopupVisualisation = {
+					statusCode: 'success' as const,
+					data: modifyObject(first.popupVisualisation.data, { ...visualizedSimulationState })
+				}
+				const updatedFirst = modifyObject(first, { popupVisualisation: visualizedPopupVisualisation })
+				// Only the visualisation is written, onto the stored request, so fields written while it was formed (an Accept's signerRequestChainId and approval status, a signature's claim or the answered marker) are kept, and a simulation stored meanwhile is not replaced by this older one.
+				await updatePendingTransactionOrMessage(first.uniqueRequestIdentifier, async (current) => {
+					if (current.type !== 'Transaction' || current.transactionOrMessageCreationStatus !== 'Simulated' || current.popupVisualisation.statusCode === 'failed') return current
+					if (getSimulationConductedTimestamp(current.popupVisualisation).getTime() !== getSimulationConductedTimestamp(first.popupVisualisation).getTime()) return current
+					return modifyObject(current, { popupVisualisation: visualizedPopupVisualisation })
+				})
 				const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {
 					method: 'popup_update_confirm_transaction_dialog_pending_transactions' as const,
 					data: {

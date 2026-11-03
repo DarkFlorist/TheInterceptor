@@ -87,7 +87,7 @@ const PendingTransactionApprovalStatus = funtypes.Union(
 	}).And(funtypes.ReadonlyPartial({ safeSignerErrorDetails: SafeSignerErrorDetails })),
 )
 
-// A Gnosis Safe co-signature the signer returned while RPC services were unavailable; the website is answered once it is validated with services for its network.
+// The claim of a Gnosis Safe signature the signer returned, bound to the network it was signed for; its states and transitions are listed at the Safe signer-reply lifecycle in windows/confirmTransaction.ts.
 const DeferredSafeSignerReply = funtypes.ReadonlyObject({
 	signerReply: funtypes.String,
 }).And(funtypes.ReadonlyPartial({
