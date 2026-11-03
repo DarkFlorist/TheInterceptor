@@ -55,14 +55,18 @@ describe('addMissingTransactionCreationFailureReason', () => {
 		assert.equal(getFailureReason({ code: -32000, message: 'execution reverted', data: '0x01020304' }, undefined), 'execution reverted')
 	})
 
-	test('shows the insufficient balance explanation that older versions stored as the message only when the revert data has no reason', () => {
+	test('keeps the insufficient balance explanation, with its amounts, that older versions stored as the message even when the revert data has a reason', () => {
 		const legacyInsufficientBalanceMessage = 'Insufficient ETH balance. Available: 1 ETH. Attempting to send: 2 ETH.'
 		assert.equal(getFailureReason({ code: -32000, message: legacyInsufficientBalanceMessage, data: '0x' }, undefined), legacyInsufficientBalanceMessage)
-		assert.equal(getFailureReason({ code: -32000, message: legacyInsufficientBalanceMessage, data: encodeErrorString('ERC20: transfer amount exceeds balance') }, undefined), 'ERC20: transfer amount exceeds balance')
+		assert.equal(getFailureReason({ code: -32000, message: legacyInsufficientBalanceMessage, data: encodeErrorString('ERC20: transfer amount exceeds balance') }, undefined), legacyInsufficientBalanceMessage)
 	})
 
 	test('keeps the Gnosis Safe\'s GS013 explanation that the Safe layer stored as the message instead of the bare GS013 its revert data decodes to', () => {
 		assert.equal(getFailureReason({ code: 3, message: SAFE_CALL_REVERTED_MESSAGE, data: encodeErrorString('GS013') }, undefined), SAFE_CALL_REVERTED_MESSAGE)
+	})
+
+	test('decodes the revert reason when a contract\'s own message only resembles an Interceptor explanation', () => {
+		assert.equal(getFailureReason({ code: -32000, message: 'Insufficient ETH balance', data: encodeErrorString('STF') }, undefined), 'STF - possible Uniswap V3 error: Token transfer from the sender via safeTransferFrom failed, usually due to insufficient token balance or allowance')
 	})
 
 	test('never replaces a stored reason', () => {
