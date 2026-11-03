@@ -1,5 +1,5 @@
 import { getRpcNetworkChange } from '../../utils/rpcNetworkChange.js'
-import type { HomeParams, FirstCardParams, SimulationStateParam, RenameAddressCallBack, TabState } from '../../types/user-interface-types.js'
+import type { HomeParams, FirstCardParams, HomeProtection, SimulationStateParam, RenameAddressCallBack, TabState } from '../../types/user-interface-types.js'
 import { type SimulationAndVisualisationResults, isEmptySimulationAndVisualisationResults } from '../../types/visualizer-types.js'
 import { ActiveAddressComponent, SmallAddress, StaticBigAddress, WebsiteOriginText, getActiveAddressEntry } from '../subcomponents/address.js'
 import { SimulationSummary } from '../simulationExplaining/SimulationSummary.js'
@@ -26,7 +26,7 @@ import { getSelectableActiveAddresses, getWalletSelectedAccount } from '../../ut
 import { useModeActiveAddress } from '../hooks/useModeActiveAddress.js'
 import { updateRichListAddress } from '../../utils/richList.js'
 import { useAsyncState } from '../../utils/preact-utilities.js'
-import type { RpcEntry } from '../../types/rpc.js'
+import type { RpcEntry, RpcNetwork } from '../../types/rpc.js'
 import { AsyncActionButton, AsyncStatusIcon } from '../subcomponents/AsyncAction.js'
 import type { ComponentChildren, JSX } from 'preact'
 import { DropDownMenu, DropDownMenuButtonContent } from '../subcomponents/DropDownMenu.js'
@@ -252,10 +252,34 @@ function getSignerDisplayName(signerName: SignerName) {
 	return signerName === 'NoSigner' || signerName === 'NoSignerDetected' ? 'your wallet' : getPrettySignerName(signerName)
 }
 
-// States what the current mode does with a confirmed transaction. Home mounts it only after the initial home data has loaded, so it never shows the pre-load default mode. A website the Interceptor is disabled for gets no Interceptor provider and transacts through the wallet directly, so neither mode applies to it and the banner says so instead.
-function ModeBanner({ simulationMode, signerName, interceptorDisabledForWebsite }: { simulationMode: boolean, signerName: SignerName, interceptorDisabledForWebsite: boolean }) {
-	if (interceptorDisabledForWebsite) return <p class = 'popup-mode-banner' role = 'note'>
-		<strong>Interceptor disabled on this website.</strong> The website talks to { getSignerDisplayName(signerName) } directly, so its transactions are neither simulated nor reviewed.
+// Derives the one protection state that every protection promise on the home page is chosen from. A disabled website is reported first because it is specific to the active tab.
+function getHomeProtection(interceptorDisabled: boolean, rpcNetwork: RpcNetwork | undefined): HomeProtection {
+	if (interceptorDisabled) return 'disabledOnWebsite'
+	if (rpcNetwork !== undefined && rpcNetwork.httpsRpc === undefined) return 'unsupportedNetwork'
+	return 'active'
+}
+
+// Says why the Interceptor neither simulates nor reviews the active tab's transactions; shown instead of any protection promise.
+function getProtectionUnavailableText(protection: Exclude<HomeProtection, 'active'>, signerName: SignerName) {
+	switch (protection) {
+		case 'disabledOnWebsite': return `The website talks to ${ getSignerDisplayName(signerName) } directly, so its transactions are neither simulated nor reviewed.`
+		case 'unsupportedNetwork': return 'The Interceptor neither simulates nor reviews transactions on an unsupported network.'
+		default: return assertNever(protection)
+	}
+}
+
+function getProtectionUnavailableTitle(protection: Exclude<HomeProtection, 'active'>) {
+	switch (protection) {
+		case 'disabledOnWebsite': return 'Interceptor disabled on this website.'
+		case 'unsupportedNetwork': return 'Interceptor inactive on this network.'
+		default: return assertNever(protection)
+	}
+}
+
+// States what the current mode does with a confirmed transaction. Home mounts it only after the initial home data has loaded, so it never shows the pre-load default mode.
+function ModeBanner({ simulationMode, signerName, protection }: { simulationMode: boolean, signerName: SignerName, protection: HomeProtection }) {
+	if (protection !== 'active') return <p class = 'popup-mode-banner' role = 'note'>
+		<strong>{ getProtectionUnavailableTitle(protection) }</strong> { getProtectionUnavailableText(protection, signerName) }
 	</p>
 	return <p class = 'popup-mode-banner' role = 'note'>
 		{ simulationMode
@@ -328,7 +352,7 @@ function FirstCardHeader(param: FirstCardParams) {
 				<RpcSelector rpcEntries = { param.rpcEntries } rpcNetwork = { param.rpcNetwork } changeRpc = { changeRpc } disabled = { controlsDisabled } pendingText = { rpcPending ? (!param.simulationMode.value && requestedRpc.value?.chainId !== param.rpcNetwork.value?.chainId ? 'Waiting for wallet to switch network...' : 'Updating network...') : undefined }/>
 			</div>
 		</header>
-		<ModeBanner simulationMode = { param.simulationMode.value } signerName = { signerName.value } interceptorDisabledForWebsite = { param.interceptorDisabled.value }/>
+		<ModeBanner simulationMode = { param.simulationMode.value } signerName = { signerName.value } protection = { param.protection.value }/>
 		{ setSimulatingState.value.state === 'rejected' ? <ErrorComponent text = { setSimulatingState.value.error.message }/> : <></> }
 		{ setSigningState.value.state === 'rejected' ? <ErrorComponent text = { setSigningState.value.error.message }/> : <></> }
 		{ rpcChangeState.value.state === 'rejected' ? <ErrorComponent text = { rpcChangeState.value.error.message }/> : <></> }
@@ -842,11 +866,13 @@ function RichAddressesTitleCard({ numberOfAddressesMadeRich, openSimulationStack
 	</section>
 }
 
-function EmptySimulationStack() {
+function EmptySimulationStack({ protection, signerName }: { protection: HomeProtection, signerName: SignerName }) {
+	if (protection !== 'active') return <EmptyState title = 'Nothing simulated yet' text = { getProtectionUnavailableText(protection, signerName) }/>
 	return <EmptyState title = 'Give me some transactions to munch on!' text = 'Use a dapp as usual. Each transaction it sends is simulated and stacked here instead of being sent.'/>
 }
 
-function SigningModeHint({ signerName }: { signerName: SignerName }) {
+function SigningModeHint({ protection, signerName }: { protection: HomeProtection, signerName: SignerName }) {
+	if (protection !== 'active') return <EmptyState title = 'Nothing to review' text = { getProtectionUnavailableText(protection, signerName) }/>
 	return <EmptyState title = 'Nothing to review yet' text = { `When a dapp asks for a transaction or a signature, the Interceptor shows what it does before ${ getSignerDisplayName(signerName) } signs it.` }/>
 }
 
@@ -869,7 +895,7 @@ function PopupVisualisation(param: SimulationStateParam) {
 		return <div class = 'popup-data-reveal'>
 			<SimulationResultsHeader openSimulationStack = { param.openSimulationStack } />
 			{ isEmpty.value ?
-				<EmptySimulationStack/>
+				<EmptySimulationStack protection = { param.protection.value } signerName = { param.signerName.value }/>
 			: <RichAddressesTitleCard numberOfAddressesMadeRich = { param.numberOfAddressesMadeRich.value } openSimulationStack = { param.openSimulationStack } /> }
 		</div>
 	}
@@ -895,7 +921,7 @@ function PopupVisualisation(param: SimulationStateParam) {
 			/>
 		</> : <>
 			{ isEmpty.value ?
-				<EmptySimulationStack/>
+				<EmptySimulationStack protection = { param.protection.value } signerName = { param.signerName.value }/>
 			: <>
 				<div class = { param.simulationResultState.value === 'invalid' || param.simulationUpdatingState.value === 'failed' ? 'blur' : '' }>
 					<RichAddressesTitleCard numberOfAddressesMadeRich = { param.numberOfAddressesMadeRich.value } openSimulationStack = { param.openSimulationStack } />
@@ -933,6 +959,8 @@ export function Home(param: HomeParams) {
 	const removedTransactionOrSignedMessages = useSignal<readonly TransactionOrMessageIdentifier[]>([])
 	const showPopupVisualisation = useSignal<boolean>(false)
 	const tabWebsite = useComputed(() => param.tabState.value?.website)
+	const signerName = useComputed(() => param.tabState.value?.signerName ?? 'NoSignerDetected')
+	const protection = useComputed(() => getHomeProtection(param.interceptorDisabled.value, param.rpcNetwork.value))
 	const disableResetUntilHomeDataLoaded = useComputed(() => disableReset.value || !param.isInitialHomeDataLoaded.value)
 
 	const modeActiveAddress = useModeActiveAddress(param)
@@ -1011,7 +1039,7 @@ export function Home(param: HomeParams) {
 			rpcNetwork = { param.rpcNetwork }
 			changeActiveRpc = { param.setActiveRpcAndInformAboutIt }
 			simulationMode = { param.simulationMode }
-			interceptorDisabled = { param.interceptorDisabled }
+			protection = { protection }
 			changeActiveAddress = { param.changeActiveAddress }
 			makeCurrentAddressRich = { param.makeCurrentAddressRich }
 			richList = { param.fixedAddressRichList }
@@ -1027,6 +1055,8 @@ export function Home(param: HomeParams) {
 			? showPopupVisualisation.value
 				? <PopupVisualisation
 					simulationMode = { param.simulationMode }
+					protection = { protection }
+					signerName = { signerName }
 					simulationAndVisualisationResults = { param.simVisResults }
 					removeTransactionOrSignedMessage = { removeTransactionOrSignedMessage }
 					disableReset = { disableResetUntilHomeDataLoaded }
@@ -1043,7 +1073,7 @@ export function Home(param: HomeParams) {
 					numberOfAddressesMadeRich = { param.numberOfAddressesMadeRich }
 				/>
 				: <SimulationLoadingSkeleton/>
-			: param.simulationMode.value || !param.isFreshHomeDataLoaded.value ? <></> : <SigningModeHint signerName = { param.tabState.value?.signerName ?? 'NoSignerDetected' }/> }
+			: param.simulationMode.value || !param.isFreshHomeDataLoaded.value ? <></> : <SigningModeHint protection = { protection.value } signerName = { signerName.value }/> }
 		{ tabWebsite.value === undefined ? <></> : <>
 			<div class = 'home-footer-spacer' />
 			<div class = 'popup-footer popup-data-reveal'>

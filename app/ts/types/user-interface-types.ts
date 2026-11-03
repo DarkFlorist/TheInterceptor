@@ -91,8 +91,7 @@ export type FirstCardParams = {
 	changeActiveRpc: (rpcEntry: RpcEntry) => Promise<void>
 	rpcNetwork: Signal<RpcNetwork | undefined>
 	simulationMode: Signal<boolean>
-	// Whether the user disabled the Interceptor for the active tab's website
-	interceptorDisabled: ReadonlySignal<boolean>
+	protection: ReadonlySignal<HomeProtection>
 	changeActiveAddress: () => void
 	makeCurrentAddressRich: Signal<boolean>
 	richList: Signal<readonly EnrichedRichListElement[]>
@@ -105,8 +104,13 @@ export type FirstCardParams = {
 	isFreshHomeDataLoaded: Signal<boolean>
 }
 
+// Whether the Interceptor simulates and reviews the active tab's requests. A website the user disabled the Interceptor for gets no Interceptor provider, and on an unsupported network the Interceptor neither simulates nor reviews, so the popup makes no protection promise unless this is 'active'.
+export type HomeProtection = 'active' | 'disabledOnWebsite' | 'unsupportedNetwork'
+
 export type SimulationStateParam = {
 	simulationMode: ReadonlySignal<boolean>
+	protection: ReadonlySignal<HomeProtection>
+	signerName: ReadonlySignal<SignerName>
 	simulationAndVisualisationResults: ReadonlySignal<ResolvedSimulationResults>
 	removeTransactionOrSignedMessage: (transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void
 	currentBlockNumber: Signal<bigint | undefined>

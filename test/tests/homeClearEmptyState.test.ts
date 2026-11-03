@@ -433,18 +433,46 @@ describe('Home popup clear empty state', () => {
 		}
 	})
 
-	test('does not promise simulation for a website the Interceptor is disabled for', async () => {
+	// Each phrase promises that the Interceptor simulates or reviews the active tab's requests, which is false while protection is unavailable.
+	const protectionPromises = [/never sent to the chain/, /simulated[^.]*instead of being sent/, /shows what it does before[^.]*signs/, /to be signed and sent to the chain/]
+	const findProtectionPromises = (text: string) => protectionPromises.filter((promise) => promise.test(text)).map((promise) => promise.source)
+	const unsupportedRpcNetwork = { name: 'Unsupported Chain', chainId: 999n, httpsRpc: undefined, currencyName: 'Ether?', currencyTicker: 'ETH?', primary: false, minimized: true }
+	const unavailableProtections = [
+		{ protection: 'a disabled website', notice: 'Interceptor disabled on this website.', overrides: () => ({ interceptorDisabled: new Signal(true) }), restore: (params: HomeParams) => { params.interceptorDisabled.value = false } },
+		{ protection: 'an unsupported network', notice: 'Interceptor inactive on this network.', overrides: () => ({ rpcNetwork: new Signal(unsupportedRpcNetwork) }), restore: (params: HomeParams) => { params.rpcNetwork.value = rpcNetwork } },
+	] as const
+	for (const { protection, notice, overrides, restore } of unavailableProtections) for (const simulationMode of [true, false]) {
+		test(`makes no protection promise anywhere on the page in ${ simulationMode ? 'simulation' : 'signing' } mode on ${ protection } and restores it when protection returns`, async () => {
+			const dom = installDomMock()
+			const params = createHomeParams({ simulationMode: new Signal(simulationMode), simVisResults: new Signal<ResolvedSimulationResults>(toResolvedSimulationResults(createEmptySimulationResults())), ...overrides() })
+			try {
+				await act(() => { render(h(Home, params), dom.document.body) })
+				// Let the deferred empty state and hint render before reading the whole page.
+				await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+				const unprotectedText = dom.document.body.textContent ?? ''
+				assert.deepEqual(findProtectionPromises(unprotectedText), [])
+				assert.equal(unprotectedText.includes(notice), true)
+				// The empty state or signing hint is still shown, with the reason instead of a promise.
+				assert.equal(unprotectedText.includes(simulationMode ? 'Nothing simulated yet' : 'Nothing to review'), true)
+				await act(() => { restore(params) })
+				await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+				const protectedText = dom.document.body.textContent ?? ''
+				assert.equal(protectedText.includes(notice), false)
+				assert.equal(protectedText.includes(simulationMode ? 'Transactions are only simulated and are never sent to the chain.' : 'to be signed and sent to the chain'), true)
+				assert.equal(protectedText.includes(simulationMode ? 'Each transaction it sends is simulated and stacked here instead of being sent.' : 'the Interceptor shows what it does before'), true)
+			} finally {
+				render(undefined, dom.document.body)
+				dom.restore()
+			}
+		})
+	}
+
+	test('keeps showing the existing simulation stack on a website the Interceptor is disabled for', async () => {
 		const dom = installDomMock()
-		const params = createHomeParams({ simulationMode: new Signal(true), interceptorDisabled: new Signal(true) })
 		try {
-			await act(() => { render(h(Home, params), dom.document.body) })
-			// A disabled website transacts through the wallet directly, so the simulation promise would be false.
-			assert.equal(dom.document.body.textContent?.includes('never sent to the chain'), false)
-			assert.equal(dom.document.body.textContent?.includes('Interceptor disabled on this website.'), true)
-			// Enabling the Interceptor for the website again brings back the mode's own banner.
-			await act(() => { params.interceptorDisabled.value = false })
-			assert.equal(dom.document.body.textContent?.includes('never sent to the chain'), true)
-			assert.equal(dom.document.body.textContent?.includes('Interceptor disabled on this website.'), false)
+			await act(() => { render(h(Home, createHomeParams({ interceptorDisabled: new Signal(true) })), dom.document.body) })
+			assert.equal(dom.document.body.textContent?.includes('Simulation Outcome'), true)
+			assert.deepEqual(findProtectionPromises(dom.document.body.textContent ?? ''), [])
 		} finally {
 			render(undefined, dom.document.body)
 			dom.restore()
