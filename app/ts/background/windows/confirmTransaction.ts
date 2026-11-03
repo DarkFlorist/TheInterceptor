@@ -14,11 +14,11 @@ import type { SendRawTransactionParams, SendTransactionParams } from '../../type
 import { refreshConfirmTransactionSimulation } from '../confirmTransactionSimulation.js'
 import { captureSimulationSnapshot, getExecutedCallFormation, getUpdatedSimulationState } from '../simulationUpdating.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
-import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingSafeProposalStores, getPendingTransactionsAndMessages, movePendingSafeProposalToOutbox, removePendingSafeProposalStore, getRpcConnectionStatus, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
+import { appendPendingTransactionOrMessage, deferSignatureUnlessAnswered, getInterceptorTransactionStack, getPendingSafeProposalStores, getPendingTransactionsAndMessages, movePendingSafeProposalToOutbox, removePendingSafeProposalStore, getRpcConnectionStatus, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
 import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
 import { replyToInterceptedRequestAfterManifestV2Reconnect } from '../messageSending.js'
-import { attemptQueuedTerminalReplyDelivery, queueSafeProposalReplyAndMoveToOutbox, queueTerminalReply, queueTerminalReplyUnlessDeferred } from '../terminalReplyDelivery.js'
-import { deferSafeSignatureUnlessAnswered, getPendingTerminalReplies } from '../pendingTerminalReplies.js'
+import { attemptQueuedTerminalReplyDelivery, queueSafeProposalReplyAndMoveToOutbox, queueTerminalReplyUnlessDeferred } from '../terminalReplyDelivery.js'
+import { getPendingTerminalReplies } from '../pendingTerminalReplies.js'
 import { getConfirmationWindowRequests } from '../../utils/confirmationQueue.js'
 import { stringToBytes, keccak256 } from '../../utils/ethereumPrimitives.js'
 import { EthereumBytes32, EthereumQuantity, serialize } from '../../types/wire-types.js'
@@ -362,13 +362,20 @@ function formTerminalReply(pending: PendingTransactionOrSignableMessage, message
 	return { ...pending.originalRequestParameters, ...message, result: funtypes.String.parse(message.result), uniqueRequestIdentifier }
 }
 
-// The reply is queued and the request is removed from the confirmation queue, so after a restart at most the reply's delivery is left. The reply is delivered before the view work, which cannot hold it back.
-async function settlePendingTerminalReply(websiteTabConnections: WebsiteTabConnections, pending: PendingTransactionOrSignableMessage, message: { type: 'result', error: { code: number, message: string } } | { type: 'result', result: unknown }, services: ConfirmationServices | undefined, simulationStack: SimulationStackChange = 'unchanged') {
+// A request already answered (its removal failed after its reply was queued) is not answered again: only a reply still waiting in the queue is delivered.
+async function deliverQueuedReply(websiteTabConnections: WebsiteTabConnections, reply: InterceptedRequestForward, queued: 'queued' | 'already-answered') {
+	if (queued === 'already-answered' && !(await getPendingTerminalReplies()).some((pendingReply) => doesUniqueRequestIdentifiersMatch(pendingReply.uniqueRequestIdentifier, reply.uniqueRequestIdentifier))) return true
+	return await attemptQueuedTerminalReplyDelivery(websiteTabConnections, reply)
+}
+
+// The reply is queued and the request is removed from the confirmation queue, so after a restart at most the reply's delivery is left. The reply is delivered before the view work, which cannot hold it back. A request holding a deferred Gnosis Safe signature is answered only by settling that signature (`settledSignerReply`); any other reply, such as a Reject made after the deferral, is refused and the request stays for its deferred settlement.
+async function settlePendingTerminalReply(websiteTabConnections: WebsiteTabConnections, pending: PendingTransactionOrSignableMessage, message: { type: 'result', error: { code: number, message: string } } | { type: 'result', result: unknown }, services: ConfirmationServices | undefined, simulationStack: SimulationStackChange = 'unchanged', settledSignerReply?: string) {
 	const terminalReply = formTerminalReply(pending, message)
-	await queueTerminalReply(terminalReply)
+	const queued = await queueTerminalReplyUnlessDeferred(terminalReply, settledSignerReply)
+	if (queued === 'gone' || queued === 'deferred') return false
 	await removePendingTransactionOrMessage(pending.uniqueRequestIdentifier)
 	try {
-		return await attemptQueuedTerminalReplyDelivery(websiteTabConnections, terminalReply)
+		return await deliverQueuedReply(websiteTabConnections, terminalReply, queued)
 	} finally {
 		// The request already left the confirmation queue, so its window is updated even when delivery throws. The delivery error still reaches the caller once the window is updated.
 		await updateViewAfterPendingRequestRemoved(pending, services, simulationStack)
@@ -473,7 +480,7 @@ export async function resolvePendingSignerReply(services: ConfirmationServices |
 		const replay = async () => await replayIfServicesAreInstalledFor(chainId, getInstalledServices, websiteTabConnections)
 		if (safeFlow.kind === 'proposal') return await runThenReplay(async () => await moveSignedSafeProposalToOutbox(pending, safeFlow.pending.safeTransaction.safeTxHash, { signerReply, chainId }, websiteTabConnections, services, false), replay)
 		// A request whose window close or Reject already queued its rejection keeps that answer; the signature is not deferred.
-		if (await deferSafeSignatureUnlessAnswered(uniqueRequestIdentifier, { signerReply, chainId }) !== 'deferred') return
+		if (await deferSignatureUnlessAnswered(uniqueRequestIdentifier, { signerReply, chainId }) !== 'deferred') return
 		// The deferred co-signature leaves the queue its window shows, so the window moves on to the next request or closes.
 		await runThenReplay(async () => await updateViewAfterPendingRequestRemoved(pending, services, 'unchanged'), replay)
 		return
@@ -627,8 +634,10 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 	const removePendingRequestAndUpdateView = async () => {
 		await removeSettledPendingRequest(pendingTransactionOrMessage, { ethereum, tokenPriceService })
 	}
+	// Settling the signer's signature may answer a request holding that signature deferred; any other reply is refused while a signature is deferred.
+	const settledSignerReply = confirmation.data.action === 'signerIncluded' && typeof confirmation.data.signerReply === 'string' ? confirmation.data.signerReply : undefined
 	const reply = async (message: { type: 'forwardToSigner' } | { type: 'result', error: { code: number, message: string } } | { type: 'result', result: unknown }, simulationStack: SimulationStackChange = 'unchanged') => {
-		if (message.type === 'result') return await settlePendingTerminalReply(websiteTabConnections, pendingTransactionOrMessage, message, { ethereum, tokenPriceService }, simulationStack)
+		if (message.type === 'result') return await settlePendingTerminalReply(websiteTabConnections, pendingTransactionOrMessage, message, { ethereum, tokenPriceService }, simulationStack, settledSignerReply)
 		await removePendingRequestAndUpdateView()
 		return await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, { ...pendingTransactionOrMessage.originalRequestParameters, ...message, uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
 	}
@@ -765,7 +774,7 @@ async function resolvePendingRequestAsNoResponse(uniqueRequestIdentifier: Unique
 	const rejectionOutcome = await queueTerminalReplyUnlessDeferred(rejection)
 	if (rejectionOutcome === 'gone') return undefined
 	if (rejectionOutcome === 'deferred') return await resolvePendingRequestAsNoResponse(uniqueRequestIdentifier, services, websiteTabConnections)
-	const delivery = await attemptQueuedTerminalReplyDelivery(websiteTabConnections, rejection)
+	const delivery = await deliverQueuedReply(websiteTabConnections, rejection, rejectionOutcome)
 	await removeSettledPendingRequest(pending, services)
 	return delivery
 }

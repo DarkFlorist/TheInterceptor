@@ -3,7 +3,7 @@ import type { InterceptedRequestForward } from '../types/interceptor-messages.js
 import { reportLocalRecovery } from '../utils/errors.js'
 import { doesTabExist, doesUniqueRequestIdentifiersMatch, type UniqueRequestIdentifier } from '../utils/requests.js'
 import { browserStorageLocalSafeParseGet, browserStorageLocalSet } from '../utils/storageUtils.js'
-import { deferSignatureUnlessAnswered, movePendingSafeProposalToOutbox, queueTerminalRepliesUnlessDeferred } from './storageVariables.js'
+import { movePendingSafeProposalToOutbox, queueTerminalRepliesUnlessDeferred } from './storageVariables.js'
 import { pendingRequestTerminalStateSemaphore } from './terminalStateSemaphore.js'
 
 export async function getPendingTerminalReplies(): Promise<readonly InterceptedRequestForward[]> {
@@ -34,26 +34,20 @@ export async function appendPendingTerminalReply(reply: InterceptedRequestForwar
 	])
 }
 
-const hasQueuedTerminalReplyFor = (uniqueRequestIdentifier: UniqueRequestIdentifier) => async () => (await getPendingTerminalReplies()).some((pendingReply) => doesUniqueRequestIdentifiersMatch(pendingReply.uniqueRequestIdentifier, uniqueRequestIdentifier))
 const withTerminalReply = (reply: InterceptedRequestForward) => async () => [...(await getPendingTerminalReplies()).filter((pendingReply) => !doesUniqueRequestIdentifiersMatch(pendingReply.uniqueRequestIdentifier, reply.uniqueRequestIdentifier)), reply]
 
-// Queues the website's proposal-hash reply together with moving the signed proposal from the pending queue to the Safe proposal outbox, unless the request is already being answered.
+// Queues the website's proposal-hash reply together with moving the signed proposal from the pending queue to the Safe proposal outbox, unless the request is already answered.
 export async function writeSafeProposalReplyAndOutboxEntry(
 	uniqueRequestIdentifier: UniqueRequestIdentifier,
 	createStore: (pendingProposal: PendingTransactionOrSignableMessage) => PendingSafeProposalStore,
 	reply: InterceptedRequestForward,
 ) {
-	return await movePendingSafeProposalToOutbox(uniqueRequestIdentifier, createStore, withTerminalReply(reply), hasQueuedTerminalReplyFor(uniqueRequestIdentifier))
+	return await movePendingSafeProposalToOutbox(uniqueRequestIdentifier, createStore, withTerminalReply(reply), true)
 }
 
-// Queues a terminal reply unless its request now holds a deferred Gnosis Safe signature.
-export async function writeTerminalReplyUnlessDeferred(reply: InterceptedRequestForward) {
-	return await queueTerminalRepliesUnlessDeferred(reply.uniqueRequestIdentifier, withTerminalReply(reply))
-}
-
-// Defers a Gnosis Safe signature unless its request already has a queued terminal reply.
-export async function deferSafeSignatureUnlessAnswered(uniqueRequestIdentifier: UniqueRequestIdentifier, deferredSafeSignerReply: { readonly signerReply: string, readonly chainId: bigint }) {
-	return await deferSignatureUnlessAnswered(uniqueRequestIdentifier, deferredSafeSignerReply, hasQueuedTerminalReplyFor(uniqueRequestIdentifier))
+// Queues a pending request's website reply unless the request holds a deferred Gnosis Safe signature this reply does not settle.
+export async function writeTerminalReplyUnlessDeferred(reply: InterceptedRequestForward, settledSignerReply?: string) {
+	return await queueTerminalRepliesUnlessDeferred(reply.uniqueRequestIdentifier, withTerminalReply(reply), settledSignerReply)
 }
 
 export async function removePendingTerminalReply(uniqueRequestIdentifier: UniqueRequestIdentifier) {

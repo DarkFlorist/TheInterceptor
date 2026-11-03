@@ -117,6 +117,8 @@ const SimulatedPendingTransactionBase = funtypes.ReadonlyObject({
 	deferredSafeSignerReply: DeferredSafeSignerReply,
 	// The network of the services that forwarded this request to the signer, recorded so a signature returned while RPC services are unavailable is bound to it.
 	signerRequestChainId: EthereumQuantity,
+	// Set in the same write that queues the request's website reply and kept until the request is removed: the request is answered, so no signature returned later is deferred or moved to the outbox for it.
+	websiteReplyQueued: funtypes.Literal(true),
 	// The confirmation's decision, made once by prepareSafeTransactionConfirmation in simulation mode, that this is a Gnosis Safe's own transaction. Every refresh forms it from this (getPendingTransactionGasPayment), and forming it gives the transaction simulationOptions.executeThroughSafe, which tells the simulator to run it through the Safe: the pending decision and the transaction's option relate as a Safe proposal's pending safeTransaction and its stacked safeTransaction do.
 	executeThroughSafe: funtypes.Literal(true),
 }))
@@ -173,6 +175,8 @@ const PendingSignableMessage = funtypes.Intersect(
 		deferredSafeSignerReply: DeferredSafeSignerReply,
 		// The network of the services that forwarded this request to the signer, recorded so a signature returned while RPC services are unavailable is bound to it.
 		signerRequestChainId: EthereumQuantity,
+		// Set in the same write that queues the request's website reply and kept until the request is removed: the request is answered, so no signature returned later is deferred or moved to the outbox for it.
+		websiteReplyQueued: funtypes.Literal(true),
 	})),
 	funtypes.Union(
 		funtypes.ReadonlyObject({ transactionOrMessageCreationStatus: funtypes.Literal('Simulated'), visualizedPersonalSignRequest: VisualizedPersonalSignRequest }),

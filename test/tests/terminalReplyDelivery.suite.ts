@@ -1211,3 +1211,37 @@ test('a sole co-signature becoming deferred closes its confirmation window', asy
 	assert.equal((await modules.getPendingTransactionsAndMessages())[0]?.deferredSafeSignerReply !== undefined, true)
 	assert.deepEqual(removedWindowIds, [99])
 })
+
+test('a rejected request stays answered when its removal fails, so a later signature is not deferred and the cleanup retry removes it', async () => {
+	const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
+	const coSignature = await openMessagesWithFirstAwaitingSafeCoSignature([1], websiteTabConnections)
+	// The rejection reaches the website, then removing the request fails once.
+	let failRequestRemoval = true
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		if (failRequestRemoval && getRejectionsTo(postedMessages, 1).length === 1 && Object.keys(items).join() === 'pendingTransactionsAndMessages') {
+			failRequestRemoval = false
+			throw new Error('Pending request removal unavailable.')
+		}
+		writeStoredItems()
+	})
+	try {
+		await withSilencedConsole(async () => await modules.onCloseWindowOrTab({ type: 'popup', id: 99 }, undefined, undefined, websiteTabConnections))
+		assert.equal(failRequestRemoval, false)
+		assert.equal(getRejectionsTo(postedMessages, 1).length, 1)
+		assert.equal((await modules.getPendingTransactionsAndMessages()).length, 1)
+
+		// The signer's reply arrives before the cleanup retry: the request is already answered, so the signature is not deferred.
+		await withSilencedConsole(async () => await modules.resolvePendingSignerReply(undefined, async () => undefined, websiteTabConnections, coSignature, { success: true, signerProviderGeneration: 0, forwardRequest: { type: 'forwardToSigner', replyWithSignersReply: true, method: 'personal_sign', params: ['0x68656c6c6f', activeAddress], requestId: coSignature.requestId }, reply: '0x1234' }))
+		assert.equal((await modules.getPendingTransactionsAndMessages())[0]?.deferredSafeSignerReply, undefined)
+
+		const retryDeadline = Date.now() + 2_000
+		while ((await modules.getPendingTransactionsAndMessages()).length > 0) {
+			if (Date.now() > retryDeadline) throw new Error('Timed out waiting for the cleanup retry')
+			await new Promise((resolve) => setTimeout(resolve, 10))
+		}
+		assert.equal(getRepliesToWebsite(postedMessages).filter((message) => isRecord(message) && message.requestId === 1).length, 1)
+		assert.deepEqual(await modules.getPendingSafeProposalStores(), [])
+	} finally {
+		browserMock.setStorageSetHandler(undefined)
+	}
+})

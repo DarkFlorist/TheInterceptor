@@ -976,7 +976,7 @@ test('forwards a Safe transaction to the wallet-selected Safe owner as EIP-712 t
 	assert.equal(typedData.message.to.toLowerCase(), `0x${ recipientAddress.toString(16).padStart(40, '0') }`)
 })
 
-test.each(['other chain first', 'matching recovery during the reply', 'deferral during a window-close rejection'] as const)('routes a Safe co-signing request through the wallet-selected owner (%s)', async (signerReplyServices) => {
+test.each(['other chain first', 'matching recovery during the reply', 'deferral during a window-close rejection', 'deferral during a Reject'] as const)('routes a Safe co-signing request through the wallet-selected owner (%s)', async (signerReplyServices) => {
 	const ownerAccount = privateKeyToAccount('0xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd')
 	const safeSignerAddress = BigInt(ownerAccount.address)
 	const alternateOwnerAccount = privateKeyToAccount('0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef')
@@ -1157,7 +1157,8 @@ test.each(['other chain first', 'matching recovery during the reply', 'deferral 
 	const isCoSignatureReply = (message: unknown) => isRecord(message) && message.type === 'result' && message.requestId === uniqueRequestIdentifier.requestId
 	const signerCodeReadsBeforeReply = fakeSafeContract.requestedCodeAddresses.filter((address) => address === alternateOwnerAddress).length
 	// Either services for another chain arrive before the co-signature (it is deferred for its own chain and replayed by a later recovery), or recovery on its own chain finishes its replay scan between the reply capturing its missing services and writing the deferral (the reply replays it itself).
-	const replyOwner = signerReplyServices === 'other chain first' ? createTestSimulationServicesOwner(createOtherChainSimulator()) : createTestSimulationServicesOwner(simulator, () => simulator)
+	const otherChainSimulator = createOtherChainSimulator()
+	const replyOwner = signerReplyServices === 'other chain first' || signerReplyServices === 'deferral during a Reject' ? createTestSimulationServicesOwner(otherChainSimulator) : createTestSimulationServicesOwner(simulator, () => simulator)
 	let windowCloseSettlement: Promise<unknown> | undefined
 	let pausedCodeRead: { readonly mockRestore: () => void } | undefined
 	let codeReads = 0
@@ -1231,6 +1232,30 @@ test.each(['other chain first', 'matching recovery during the reply', 'deferral 
 			return readStoredItems()
 		})
 		await modules.onCloseWindowOrTab(coSignatureWindow, undefined, undefined, websiteTabConnections)
+		browserMock.setStorageGetHandler(undefined)
+		assert.notEqual(deferral, undefined)
+		assert.equal(postedMessages.some(isCoSignatureReply), false)
+		assert.deepEqual((await modules.getPendingTransactionsAndMessages())[0]?.deferredSafeSignerReply, { signerReply: signature, chainId: fakeRpcNetwork.chainId })
+		// Services for the signature's chain return and settle it once.
+		await modules.resolveDeferredSafeSignerReplies(simulator, websiteTabConnections)
+	} else if (signerReplyServices === 'deferral during a Reject') {
+		// Reject reads the request before the co-signature is deferred (services are on chain B), and only then decides; the deferral must win.
+		let rejectStarted = false
+		let deferral: Promise<unknown> | undefined
+		browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+			if (rejectStarted && deferral === undefined && Array.isArray(keys) && keys.includes('pendingTransactionsAndMessages')) {
+				const readBeforeTheDeferral = await readStoredItems()
+				deferral = deliverCoSignature()
+				await deferral
+				return readBeforeTheDeferral
+			}
+			return readStoredItems()
+		})
+		rejectStarted = true
+		await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(otherChainSimulator.ethereum, otherChainSimulator.tokenPriceService, websiteTabConnections, {
+			method: 'popup_confirmDialog',
+			data: { action: 'reject', uniqueRequestIdentifier },
+		}))
 		browserMock.setStorageGetHandler(undefined)
 		assert.notEqual(deferral, undefined)
 		assert.equal(postedMessages.some(isCoSignatureReply), false)

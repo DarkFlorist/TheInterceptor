@@ -56,12 +56,12 @@ export async function queueSafeProposalReplyAndMoveToOutbox(uniqueRequestIdentif
 	}
 }
 
-// Queues a terminal reply like queueTerminalReply, unless its request now holds a deferred Gnosis Safe signature; the reservation is released when nothing was queued.
-export async function queueTerminalReplyUnlessDeferred(message: InterceptedRequestForward) {
+// The only way to queue a pending confirmation request's website reply: like queueTerminalReply, but marking the request answered in the same write and refusing while it holds a deferred Gnosis Safe signature other than `settledSignerReply`; the reservation is released when nothing was queued.
+export async function queueTerminalReplyUnlessDeferred(message: InterceptedRequestForward, settledSignerReply?: string) {
 	const identifier = getUniqueRequestIdentifierString(message.uniqueRequestIdentifier)
 	terminalReplyReservations.add(identifier)
 	try {
-		const outcome = await terminalReplySemaphore.execute(async () => await writeTerminalReplyUnlessDeferred(message))
+		const outcome = await terminalReplySemaphore.execute(async () => await writeTerminalReplyUnlessDeferred(message, settledSignerReply))
 		if (outcome !== 'queued') terminalReplyReservations.delete(identifier)
 		return outcome
 	} catch (error) {

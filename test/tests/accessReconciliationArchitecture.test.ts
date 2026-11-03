@@ -230,3 +230,11 @@ test('the website-access write check rejects unreconciled, discarded, voided, ov
 	assert.deepEqual(findUnreconciledWebsiteAccessWrites(fixtures.reconcileInUncalledClosure).map((location) => location.replace(/^.*:\d+ /u, '')), ['handler'])
 	assert.deepEqual(findUnreconciledWebsiteAccessWrites(fixtures.writeThenReconcile), [])
 })
+
+// A pending confirmation request's website reply must be queued conditionally, so that it never answers a request holding a deferred Gnosis Safe signature.
+test('pending confirmation requests queue website replies only through the conditional queue', () => {
+	const confirmTransactionSource = appSources.find(({ path }) => path === 'background/windows/confirmTransaction.ts')?.source ?? ''
+	assert.notEqual(confirmTransactionSource, '')
+	assert.doesNotMatch(confirmTransactionSource, /\bqueueTerminalReply(?:AndAttemptDelivery)?\b/u)
+	assert.match(confirmTransactionSource, /\bqueueTerminalReplyUnlessDeferred\(/u)
+})
