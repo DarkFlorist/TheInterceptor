@@ -35,8 +35,8 @@ export const clearHintTimeouts = (timeoutIds: readonly (ReturnType<typeof setTim
 	for (const timeoutId of timeoutIds) clearTimeoutFunction(timeoutId ?? undefined)
 }
 
-// Shows the hints of the elements inside the element given to setContainerElement, and returns the hint to render inside that element. The page Container below hosts it in its own div, while an element such as an InlineCard can host its own hint without gaining a wrapper element.
-export function useHintContainer(attribute: string | undefined, template: ((content: string) => ComponentChildren) | undefined) {
+// Shows the hints of the elements inside the element given to setContainerElement, and returns the hint to render inside that element. The page Container below hosts it in its own div, while an element such as an InlineCard can host its own hint without gaining a wrapper element. While isActive is false it listens to nothing and shows no hint, so a host that stays mounted after its hinted content goes away, such as a card whose warning is removed, drops an explanation that was open along with its pending timers.
+export function useHintContainer(attribute: string | undefined, template: ((content: string) => ComponentChildren) | undefined, isActive: boolean) {
 	const copyAttribute = attribute || 'data-hint'
 	const toolTipAttribute = attribute || 'data-tooltip'
 
@@ -52,6 +52,13 @@ export function useHintContainer(attribute: string | undefined, template: ((cont
 	const displayedTooltipOwnerRef = useRef<Element | undefined>(undefined)
 
 	useEffect(() => {
+		// The cleanup of the previous active run already cancelled the pending timers; this hides a hint that was open when the host deactivated, which no later event inside the host would dismiss, and forgets it so reactivating cannot show it again.
+		if (!isActive) {
+			content.value = ''
+			anchor.value = undefined
+			displayedTooltipOwnerRef.current = undefined
+			return
+		}
 		const containerElement = containerElementRef.current
 		if (!containerElement) return
 
@@ -205,7 +212,7 @@ export function useHintContainer(attribute: string | undefined, template: ((cont
 			containerElement.removeEventListener('focusout', focusout)
 			containerElement.removeEventListener(showHintEventName, show)
 		}
-	}, [copyAttribute, toolTipAttribute])
+	}, [copyAttribute, toolTipAttribute, isActive])
 
 	const hint = content.value && anchor.value && (
 		// Keyed by content because a shown Hint measures itself as soon as its anchor changes, before Preact renders the new text, so reusing it would place new text by the size of the previous one; a fresh Hint is measured after its text renders.
@@ -221,7 +228,7 @@ export function useHintContainer(attribute: string | undefined, template: ((cont
 }
 
 export default function Container(props: Props) {
-	const { setContainerElement, hint } = useHintContainer(props.attribute, props.template)
+	const { setContainerElement, hint } = useHintContainer(props.attribute, props.template, true)
 	return (
 		<div ref = { setContainerElement } style = 'position: relative; overflow-x: hidden;'>
 			{ hint }

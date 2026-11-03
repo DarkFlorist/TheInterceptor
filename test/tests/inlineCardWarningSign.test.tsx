@@ -133,3 +133,56 @@ for (const isInsidePageHint of [false, true]) {
 		})
 	})
 }
+
+// The card stays mounted when its warning is removed, so its hint must be deactivated then rather than wait for an event inside the card that may never come.
+describe('InlineCard whose warning is removed while the card stays mounted', () => {
+	const renderCard = (dom: ReturnType<typeof installDomMock>, warning: string | undefined) => act(() => {
+		render(<InlineCard icon = { () => <span>Token</span> } label = 'TKN' warningMessage = { warning } noCopy noExpandButtons />, dom.document.body)
+	})
+
+	test('dismisses an open explanation at once and does not show it again when the warning returns', async () => {
+		const dom = installDomMock()
+		try {
+			const { leadingSign } = await renderWarningSigns(dom, false)
+			const [warnedCard] = findElementsByClass(dom.document.body, 'inline-card')
+			await act(() => {
+				leadingSign.focus?.()
+				leadingSign.dispatchEvent?.(new Event('focusin', { bubbles: true }))
+			})
+			assert.deepEqual(findDisplayedHintTexts(dom), [warningMessage])
+
+			await renderCard(dom, undefined)
+			assert.deepEqual(findDisplayedHintTexts(dom), [])
+			assert.deepEqual(findElementsByClass(dom.document.body, 'inline-card-warning-sign'), [])
+			// The same card element stays the outermost element, so only its hint was reset.
+			assert.equal(findElementsByClass(dom.document.body, 'inline-card')[0], warnedCard)
+			assert.equal(warnedCard?.parentNode, dom.document.body)
+
+			await renderCard(dom, warningMessage)
+			await act(async () => { await new Promise((resolve) => setTimeout(resolve, 300)) })
+			assert.deepEqual(findDisplayedHintTexts(dom), [])
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+		}
+	})
+
+	test('cancels an explanation still pending from the pointer over a warning sign', async () => {
+		const dom = installDomMock()
+		try {
+			const { trailingSign } = await renderWarningSigns(dom, false)
+			await act(() => { trailingSign.dispatchEvent?.(new Event('mouseover', { bubbles: true })) })
+
+			await renderCard(dom, undefined)
+			await act(async () => { await new Promise((resolve) => setTimeout(resolve, 300)) })
+			assert.deepEqual(findDisplayedHintTexts(dom), [])
+
+			await renderCard(dom, warningMessage)
+			await act(async () => { await new Promise((resolve) => setTimeout(resolve, 300)) })
+			assert.deepEqual(findDisplayedHintTexts(dom), [])
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+		}
+	})
+})

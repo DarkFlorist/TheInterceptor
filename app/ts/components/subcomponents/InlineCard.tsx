@@ -22,8 +22,8 @@ type InlineCardProps = {
 
 export const InlineCard = (props: InlineCardProps) => {
 	const tooltip = useSignal<TooltipConfig | undefined>(undefined)
-	// The card element itself is the warning hint's container rather than a Hint wrapped around the card or around each sign: a wrapper only around warned cards would change the depth of .inline-card in selectors such as .safe-signer-option-address > .inline-card, and a Hint per sign would show the explanation twice while the leading sign has focus and the pointer is over the trailing sign. It watches data-warning-tooltip, which a page Hint ignores.
-	const warningHint = useHintContainer('data-warning-tooltip', undefined)
+	// The card element itself is the warning hint's container rather than a Hint wrapped around the card or around each sign: a wrapper only around warned cards would change the depth of .inline-card in selectors such as .safe-signer-option-address > .inline-card, and a Hint per sign would show the explanation twice while the leading sign has focus and the pointer is over the trailing sign. It watches data-warning-tooltip, which a page Hint ignores, and only while the card has a warning, so removing the warning also dismisses an open explanation and cards without one listen to nothing.
+	const warningHint = useHintContainer('data-warning-tooltip', undefined, props.warningMessage !== undefined)
 
 	const copyTextToClipboard = async (event: JSX.TargetedMouseEvent<HTMLButtonElement>) => {
 		event.stopPropagation()
