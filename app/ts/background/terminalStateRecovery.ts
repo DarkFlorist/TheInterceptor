@@ -2,22 +2,30 @@ type RecoveryTimer = ReturnType<typeof setTimeout>
 
 type RetriableRecoveryOptions = {
 	readonly recover: () => Promise<void>
-	readonly onFailure: (error: unknown) => void
-	readonly scheduleRetry?: (retry: () => void) => RecoveryTimer
+	readonly onFailure: (error: unknown, retrying: boolean) => void
+	readonly scheduleRetry?: (retry: () => void, delayMs: number) => RecoveryTimer
 }
 
-export function createRetriableTerminalStateRecovery({ recover, onFailure, scheduleRetry = (retry) => setTimeout(retry, 100) }: RetriableRecoveryOptions) {
+const RECOVERY_RETRY_BASE_DELAY_MS = 100
+const RECOVERY_ATTEMPT_LIMIT = 6
+
+// Runs the startup recovery, retrying a failed pass with backoff (100 ms, doubling) up to a limit of attempts; onFailure tells whether another attempt follows, so the last failure is reported as giving up.
+export function createRetriableTerminalStateRecovery({ recover, onFailure, scheduleRetry = (retry, delayMs) => setTimeout(retry, delayMs) }: RetriableRecoveryOptions) {
 	let retryTimer: RecoveryTimer | undefined
+	let failedAttempts = 0
 	const runRecovery = async (): Promise<void> => {
 		try {
 			await recover()
+			failedAttempts = 0
 		} catch (error) {
-			onFailure(error)
-			if (retryTimer !== undefined) return
+			failedAttempts += 1
+			const retrying = failedAttempts < RECOVERY_ATTEMPT_LIMIT
+			onFailure(error, retrying)
+			if (!retrying || retryTimer !== undefined) return
 			retryTimer = scheduleRetry(() => {
 				retryTimer = undefined
 				void runRecovery()
-			})
+			}, RECOVERY_RETRY_BASE_DELAY_MS * 2 ** (failedAttempts - 1))
 		}
 	}
 	return runRecovery

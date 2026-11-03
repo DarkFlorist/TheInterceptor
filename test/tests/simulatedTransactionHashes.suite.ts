@@ -2157,6 +2157,16 @@ test('stops a reject\'s retries at one budget when every committed-reply read is
 		browserMock.setStorageGetHandler(undefined)
 	}
 	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [])
+	// The reject was stored with the request before its failing lookups, so startup with the window open finishes it.
+	assert.equal((await modules.getPendingTransactionsAndMessages())[0]?.declineRequested, 'reject')
+	const { resumeCommittedRequests } = await import('../../app/ts/background/windows/confirmTransaction.js')
+	await withSilencedConsole(async () => {
+		await resumeCommittedRequests(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections)
+		await waitUntilNothingPending()
+		await waitForCondition(async () => (await modules.getPendingTerminalReplies()).length === 0)
+	})
+	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [{ error: 4001 }])
+	await assertNoResolutionBookkeeping()
 })
 
 test('finishes a reject whose retries ran out before committing at startup, while its window is still open', async () => {
@@ -2224,3 +2234,64 @@ for (const closedWindow of [CONFIRMATION_WINDOW_ID, CONFIRMATION_WINDOW_ID + 1])
 		assert.deepEqual(getPageResponses(postedMessages, 2), closedWindow === CONFIRMATION_WINDOW_ID ? [] : [{ error: 4001 }])
 	})
 }
+
+test('stops the startup recovery composition when its committed-reply reads keep failing, with an orphan pending', async () => {
+	await startSimulationStack(SENDER)
+	const postedMessages: unknown[] = []
+	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+	await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+	browserMock.setLiveWindowIds([])
+	let failedReads = 0
+	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+		if (!readsKey(keys, 'pendingTerminalReplies')) return readStoredItems()
+		failedReads += 1
+		throw new Error('persistent read failure')
+	})
+	const { createRetriableTerminalStateRecovery } = await import('../../app/ts/background/terminalStateRecovery.js')
+	const { resumeCommittedRequests } = await import('../../app/ts/background/windows/confirmTransaction.js')
+	const recoveryFailures: boolean[] = []
+	// As the background composes it at startup.
+	const recover = createRetriableTerminalStateRecovery({
+		recover: async () => {
+			await modules.resolvePendingRequestsForMissingConfirmationWindows(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections)
+			await resumeCommittedRequests(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections)
+		},
+		onFailure: (_error, retrying) => { recoveryFailures.push(retrying) },
+	})
+	try {
+		await withSilencedConsole(async () => {
+			await recover()
+			const deadline = Date.now() + 8_000
+			while (recoveryFailures.at(-1) !== false && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 20))
+			await waitForNoResolutionBookkeepingWhileFailing()
+		})
+		const readsWhenStopped = failedReads
+		await new Promise((resolve) => setTimeout(resolve, 1_000))
+		assert.equal(recoveryFailures.at(-1), false, 'the recovery gave up')
+		assert.ok(recoveryFailures.length <= 6, 'within its attempt limit')
+		assert.equal(failedReads, readsWhenStopped, 'nothing retries afterwards')
+		await assertNoResolutionBookkeeping()
+	} finally {
+		browserMock.setStorageGetHandler(undefined)
+	}
+})
+
+test('rejects only the requests whose own window is gone when another confirmation opens, reusing a live window', async () => {
+	await startSimulationStack(SENDER)
+	const postedMessages: unknown[] = []
+	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+	await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+	const [orphan] = await modules.getPendingTransactionsAndMessages()
+	if (orphan === undefined) throw new Error('Expected the pending request')
+	const LIVE_WINDOW_ID = CONFIRMATION_WINDOW_ID + 1
+	// The first request's window is gone; the second request is shown in a live window.
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [orphan, { ...orphan, uniqueRequestIdentifier: { requestId: 2, requestSocket: REQUEST_SOCKET }, transactionIdentifier: 2n, popupOrTabId: { type: 'popup', id: LIVE_WINDOW_ID } }] })
+	browserMock.setLiveWindowIds([LIVE_WINDOW_ID])
+	await withSilencedConsole(async () => await openConfirmation(3, SENDER, 3n, websiteTabConnections))
+	await withSilencedConsole(async () => await waitForCondition(async () => (await modules.getPendingTransactionsAndMessages()).every((pending) => pending.uniqueRequestIdentifier.requestId !== 1)))
+	const remaining = await modules.getPendingTransactionsAndMessages()
+	assert.deepEqual(remaining.map((pending) => pending.uniqueRequestIdentifier.requestId), [2, 3], 'the live window\'s request stays pending')
+	assert.deepEqual(remaining.map((pending) => pending.popupOrTabId.id), [LIVE_WINDOW_ID, LIVE_WINDOW_ID], 'the new request reuses the live window')
+	assert.deepEqual(getPageResponses(postedMessages, 1), [{ error: 4001 }], 'the orphan is rejected')
+	assert.deepEqual(getPageResponses(postedMessages, 2), [], 'the live request is not')
+})

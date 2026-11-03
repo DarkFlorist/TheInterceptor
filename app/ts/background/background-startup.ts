@@ -302,12 +302,10 @@ const recoverPendingTerminalState = createRetriableTerminalStateRecovery({
 		await resolvePendingRequestsForMissingConfirmationWindows(ethereum, tokenPriceService, websiteTabConnections)
 		await resumeCommittedRequests(ethereum, tokenPriceService, websiteTabConnections)
 	},
-	onFailure: (error) => {
-		reportLocalRecoveryBestEffort(error, {
-			source: 'pending_terminal_replies',
-			code: 'pending_terminal_state_startup_recovery_failed',
-			message: 'Retrying pending terminal state recovery without blocking background startup.',
-		})
+	onFailure: (error, retrying) => {
+		reportLocalRecoveryBestEffort(error, retrying
+			? { source: 'pending_terminal_replies', code: 'pending_terminal_state_startup_recovery_failed', message: 'Retrying pending terminal state recovery without blocking background startup.' }
+			: { source: 'pending_terminal_replies', code: 'pending_terminal_state_startup_recovery_gave_up', message: 'Stopped retrying pending terminal state recovery; the next user action or startup recovers the requests.' })
 	},
 })
 
