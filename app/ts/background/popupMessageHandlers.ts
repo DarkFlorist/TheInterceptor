@@ -523,8 +523,7 @@ type ConfirmTransactionMetadataDependencies = {
 	readonly visualisation?: OpenConsumerVisualisationDependencies
 }
 
-// A visualisation stored without a confirmationRunId by an older version cannot be told apart from a newer run, so it never matches.
-const isSameConfirmationSimulation = (current: { readonly data: { readonly confirmationRunId?: number } }, refreshed: { readonly data: { readonly confirmationRunId?: number } }) => current.data.confirmationRunId !== undefined && current.data.confirmationRunId === refreshed.data.confirmationRunId
+const isSameConfirmationSimulation = (current: { readonly data: { readonly confirmationRunId: number } }, refreshed: { readonly data: { readonly confirmationRunId: number } }) => current.data.confirmationRunId === refreshed.data.confirmationRunId
 
 // What a simulation refresh prepares the transaction from. If any of it changes while the refresh runs, for example through a gas limit edit or a Gnosis Safe signer change, the refreshed run describes a transaction that is no longer stored.
 const getTransactionSimulationInputs = (pendingTransaction: PendingTransaction) => stringifyJSONWithBigInts([pendingTransaction.originalRequestParameters, pendingTransaction.activeAddress, pendingTransaction.safeTransaction])

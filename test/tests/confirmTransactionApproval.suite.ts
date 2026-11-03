@@ -3,7 +3,8 @@ import { setSystemTime, test } from 'bun:test'
 import { Transaction } from 'micro-eth-signer'
 import { activeAddress, addressString, browserMock, createDisconnectedPort, createSafeAddressBookEntry, createSafeStackFixture, createSafeTx, createWebsitePort, EIP712Message, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, pendingTransaction, recipientAddress, safeTestOwnerAccount, safeTestOwnerAddress, safeTestOwnerPrivateKey, safeTxToTypedDataJson, signedTransaction, simulator, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
 import { createDeferredValue } from './backgroundEthAccountsTestHarness.js'
-import type { PendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
+import { CONFIRMATION_RUN_ID_OF_UNNUMBERED_RUN, PendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
+import { serialize } from '../../app/ts/types/wire-types.js'
 import { SendRawTransactionParams, SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
 import { PersonalSignParams } from '../../app/ts/types/jsonRpc-signing-types.js'
 import { METAMASK_ERROR_NOT_CONNECTED_TO_APPROPRIATE_CHAIN } from '../../app/ts/utils/constants.js'
@@ -193,13 +194,53 @@ test('a network change after the transaction was requested invalidates its appro
 	await expectApprovalToBeInvalidated(websiteTabConnections, postedMessages, otherNetworkServices.ethereum, otherNetworkServices.tokenPriceService)
 })
 
-test('a confirmation stored without its requested network cannot be approved', async () => {
+// Rewrites the stored confirmations as a version that recorded neither the requested network nor the simulation run stored them.
+async function storePendingTransactionsAsOlderVersion() {
+	const { pendingTransactionsAndMessages } = await browser.storage.local.get('pendingTransactionsAndMessages')
+	if (!Array.isArray(pendingTransactionsAndMessages)) throw new Error('Missing stored confirmations')
+	const storedByOlderVersion = pendingTransactionsAndMessages.map((pending) => {
+		if (!isRecord(pending) || !isRecord(pending.popupVisualisation) || !isRecord(pending.popupVisualisation.data)) throw new Error('Unexpected stored confirmation')
+		const { requestedChainId: _requestedChainId, ...pendingWithoutRequestedChainId } = pending
+		const { confirmationRunId: _confirmationRunId, ...dataWithoutRunId } = pending.popupVisualisation.data
+		return { ...pendingWithoutRequestedChainId, popupVisualisation: { ...pending.popupVisualisation, data: dataWithoutRunId } }
+	})
+	await browser.storage.local.set({ pendingTransactionsAndMessages: storedByOlderVersion })
+}
+
+test('a confirmation cannot be serialized without its requested network or simulation run, and one stored without them decodes with stand-ins', () => {
+	const { requestedChainId: _requestedChainId, ...withoutRequestedChainId } = pendingTransaction
+	assert.throws(() => serialize(PendingTransactionOrSignableMessage, withoutRequestedChainId))
+	const { confirmationRunId: _confirmationRunId, ...dataWithoutRunId } = pendingTransaction.popupVisualisation.data
+	assert.throws(() => serialize(PendingTransactionOrSignableMessage, { ...pendingTransaction, popupVisualisation: { ...pendingTransaction.popupVisualisation, data: dataWithoutRunId } }))
+
+	const { requestedChainId: _storedChainId, ...storedWithoutRequestedChainId } = serialize(PendingTransactionOrSignableMessage, pendingTransaction)
+	if (!isRecord(storedWithoutRequestedChainId.popupVisualisation) || !isRecord(storedWithoutRequestedChainId.popupVisualisation.data)) throw new Error('Unexpected serialized confirmation')
+	const { confirmationRunId: _storedRunId, ...storedDataWithoutRunId } = storedWithoutRequestedChainId.popupVisualisation.data
+	const decoded = PendingTransactionOrSignableMessage.parse({ ...storedWithoutRequestedChainId, popupVisualisation: { ...storedWithoutRequestedChainId.popupVisualisation, data: storedDataWithoutRunId } })
+	if (decoded.type !== 'Transaction' || !('popupVisualisation' in decoded)) throw new Error('Expected a simulated transaction')
+	assert.equal(decoded.requestedChainId, 'unknown')
+	assert.equal(decoded.popupVisualisation.data.confirmationRunId, CONFIRMATION_RUN_ID_OF_UNNUMBERED_RUN)
+	assert.deepEqual(PendingTransactionOrSignableMessage.parse(serialize(PendingTransactionOrSignableMessage, decoded)), decoded)
+})
+
+test('a confirmation stored without its requested network decodes as requested on an unknown network and cannot be approved', async () => {
 	const { postedMessages, websiteTabConnections } = await setUpTransactionApprovalTest(false)
 	await requestTransaction(websiteTabConnections, false)
-	const { requestedChainId: _requestedChainId, ...storedByOlderVersion } = await getPendingTransaction()
-	await storePendingTransaction(() => storedByOlderVersion)
+	await storePendingTransactionsAsOlderVersion()
+
+	const storedByOlderVersion = await getPendingTransaction()
+	assert.equal(storedByOlderVersion.requestedChainId, 'unknown')
+	assert.equal(storedByOlderVersion.popupVisualisation.data.confirmationRunId, CONFIRMATION_RUN_ID_OF_UNNUMBERED_RUN)
+
+	// Neither refresh touches its preview, as no client is on its requested network.
+	const { refreshPopupConfirmTransactionMetadata, refreshPopupConfirmTransactionSimulation } = await import('../../app/ts/background/popupMessageHandlers.js')
+	await refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
+	await refreshPopupConfirmTransactionMetadata(simulator.ethereum, simulator.tokenPriceService, undefined)
+	assert.deepEqual(await getPendingTransaction(), storedByOlderVersion)
 
 	await expectApprovalToBeInvalidated(websiteTabConnections, postedMessages)
+	// Written back, it keeps decoding the same way.
+	assert.equal((await getPendingTransaction()).requestedChainId, 'unknown')
 })
 
 test('a network round trip keeps the transaction preview of the network the transaction was requested for', async () => {

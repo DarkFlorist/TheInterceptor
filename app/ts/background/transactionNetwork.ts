@@ -22,7 +22,7 @@ export type TransactionNetworkError = ReturnType<typeof transactionApprovalInval
 // A transaction is never signed, added to a stack or stored on another network than it was requested and previewed on. Synchronous, so the final check can run with nothing awaited before the request is committed.
 function getTransactionNetworkError(activeChainId: bigint, ethereum: EthereumClientService, pendingTransaction: PendingTransaction): TransactionNetworkError | undefined {
 	const { requestedChainId } = pendingTransaction
-	if (requestedChainId === undefined || activeChainId !== requestedChainId || ethereum.getChainId() !== requestedChainId) return transactionApprovalInvalidated('The active network changed after this transaction was requested.')
+	if (activeChainId !== requestedChainId || ethereum.getChainId() !== requestedChainId) return transactionApprovalInvalidated('The active network changed after this transaction was requested.')
 	// A Gnosis Safe proposal is signed as EIP-712 data whose domain names the network of the Safe.
 	if (pendingTransaction.safeTransaction !== undefined && pendingTransaction.safeTransaction.safeTx.domain.chainId !== requestedChainId) return transactionApprovalInvalidated('The Gnosis Safe transaction was prepared for another network than the transaction was requested for.')
 	if (pendingTransaction.transactionOrMessageCreationStatus === 'Simulated' && !isTransactionPreviewOnRequestedChain(pendingTransaction, requestedChainId)) return transactionApprovalInvalidated('The transaction preview was not simulated on the network the transaction was requested for.')

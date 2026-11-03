@@ -537,6 +537,7 @@ export const popupVisualisation = {
 			transaction: unsignedTransaction,
 		},
 		signerName: 'NoSignerDetected',
+		confirmationRunId: 1,
 		addressBookEntries: [],
 		tokenPriceEstimates: [],
 		namedTokenIds: [],

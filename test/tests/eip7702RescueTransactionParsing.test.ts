@@ -292,6 +292,7 @@ function makeSimulatedPendingRawTransaction(transactionToSimulate: WebsiteCreate
 				uniqueRequestIdentifier,
 				transactionToSimulate,
 				signerName: 'NoSignerDetected',
+				confirmationRunId: 1,
 				addressBookEntries: [],
 				tokenPriceEstimates: [],
 				tokenPriceQuoteToken: undefined,

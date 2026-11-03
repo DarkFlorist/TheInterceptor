@@ -143,6 +143,7 @@ function makePendingTransaction(simulationConductedTimestamp: Date, value?: bigi
 		activeAddress,
 		created,
 		transactionIdentifier,
+		requestedChainId: 1n,
 		transactionToSimulate,
 		website,
 		approvalStatus: { status: 'WaitingForUser' as const },
@@ -155,6 +156,7 @@ function makePendingTransaction(simulationConductedTimestamp: Date, value?: bigi
 				uniqueRequestIdentifier: { requestId: 1, requestSocket: { tabId: 1, connectionName: 0n } },
 				transactionToSimulate,
 				signerName: 'NoSignerDetected' as const,
+				confirmationRunId: 1,
 				error: {
 					code: -32000,
 					message: 'simulation failed',
@@ -252,6 +254,7 @@ function makeSimulatedPendingTransaction(value: bigint) {
 				uniqueRequestIdentifier: failed.uniqueRequestIdentifier,
 				transactionToSimulate,
 				signerName: 'NoSignerDetected' as const,
+				confirmationRunId: 2,
 				addressBookEntries: [safeEntry, recipientEntry, getNativeTokenErc20(rpcNetwork)],
 				tokenPriceEstimates: [],
 				namedTokenIds: [],

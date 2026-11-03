@@ -173,6 +173,7 @@ function makePendingTransaction(errorMessage = 'simulation failed') {
 		activeAddress,
 		created,
 		transactionIdentifier,
+		requestedChainId: 1n,
 		transactionToSimulate,
 		website,
 		approvalStatus: { status: 'WaitingForUser' as const },
@@ -185,6 +186,7 @@ function makePendingTransaction(errorMessage = 'simulation failed') {
 				uniqueRequestIdentifier: { requestId: 1, requestSocket: { tabId: 1, connectionName: 0n } },
 				transactionToSimulate,
 				signerName: 'NoSignerDetected' as const,
+				confirmationRunId: 1,
 				error: {
 					code: -32000,
 					message: errorMessage,
