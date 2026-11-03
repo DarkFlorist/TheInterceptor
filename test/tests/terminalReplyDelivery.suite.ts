@@ -1285,3 +1285,54 @@ test('cleanup after a failed removal delivers the queued success reply, never a 
 	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
 	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
 })
+
+// The flow that queued a reply still owns its delivery while the answered request's cleanup runs: the cleanup read the queued reply, a socket flush then delivered it (leaving a completion marker for that flow), and the cleanup resumed. The cleanup leaves the reply and the marker to the flow, which then finds it delivered, so the website receives one reply.
+test('an answered request\'s cleanup never consumes the completion marker of the flow still delivering its reply', async () => {
+	const postedMessages: unknown[] = []
+	const socket = uniqueRequestIdentifier.requestSocket
+	const websiteTabConnections = new Map([[socket.tabId, { connections: {
+		[modules.websiteSocketToString(socket)]: { port: createRecordingPort(postedMessages), socket, websiteOrigin: 'https://example.com', approved: true, wantsToConnect: true },
+	} }]])
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [pendingTransaction] })
+	const reply = { ...pendingTransaction.originalRequestParameters, type: 'result' as const, result: signedTransaction.hash, uniqueRequestIdentifier }
+	assert.equal(await modules.queueTerminalReplyUnlessDeferred(reply), 'queued')
+	let cleanupReadPaused = false
+	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+		const readsReplies = Array.isArray(keys) ? keys.includes('pendingTerminalReplies') : keys === 'pendingTerminalReplies'
+		if (cleanupReadPaused || !readsReplies) return readStoredItems()
+		cleanupReadPaused = true
+		const readBeforeTheFlush = readStoredItems()
+		assert.equal(await modules.flushPendingTerminalRepliesForSocket(websiteTabConnections, socket), 1)
+		return readBeforeTheFlush
+	})
+	try {
+		await modules.resolveDeferredSafeSignerReplies(simulator, websiteTabConnections)
+	} finally {
+		browserMock.setStorageGetHandler(undefined)
+	}
+	assert.equal(cleanupReadPaused, true)
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+
+	assert.equal(await modules.attemptQueuedTerminalReplyDelivery(websiteTabConnections, reply), true)
+
+	assert.equal(postedMessages.filter((message) => isRecord(message) && message.type === 'result' && message.requestId === uniqueRequestIdentifier.requestId).length, 1)
+	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+})
+
+// The last confirmation left the queue while the stored RPC configuration is corrupt: the view update returns early without reading the unavailable settings, so nothing rejects unhandled.
+test('updating the confirmation view after its last request left reads no unavailable settings', async () => {
+	const unhandledRejections: unknown[] = []
+	const recordUnhandledRejection = (reason: unknown) => { unhandledRejections.push(reason) }
+	const storedRpcNetwork = await browser.storage.local.get('activeRpcNetwork')
+	process.on('unhandledRejection', recordUnhandledRejection)
+	try {
+		await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+		await browser.storage.local.set({ activeRpcNetwork: 'corrupt' })
+		assert.equal(await modules.updateConfirmTransactionView(simulator.ethereum, simulator.tokenPriceService), false)
+		await new Promise((resolve) => setTimeout(resolve, 20))
+	} finally {
+		process.off('unhandledRejection', recordUnhandledRejection)
+		await browser.storage.local.set(storedRpcNetwork)
+	}
+	assert.deepEqual(unhandledRejections, [])
+})

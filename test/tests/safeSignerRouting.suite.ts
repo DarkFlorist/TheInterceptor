@@ -714,16 +714,16 @@ test('finishes an answered request with its originally queued reply on recovery 
 	assert.deepEqual(await modules.getSafeTransactionStacks(), [])
 })
 
-// An RPC outage outlasts the bounded retries: the signature stays claimed, the spent retries are reported visibly even though the failure is a connectivity error, and the recovery that runs when the RPC connection returns (with the same services) settles it once.
-test('settles a claimed Safe signature once when the RPC connection returns after its retries were spent', async () => {
+// Only signature validation fails (block requests keep succeeding, so the connection status never goes down) for longer than the bounded retries: the signature stays claimed and the spent retries are reported visibly even though the failure is a connectivity error. Once validation works again, the advance that runs on every new block with the unchanged services settles it exactly once; concurrent blocks coalesce, and a block with nothing outstanding does nothing.
+test('settles a claimed Safe signature once on a new block after its retries were spent while the connection stayed up', async () => {
 	const proposal = await storeSafeProposalAwaitingSignerOnChainA(136, 73n)
 	await setLatestUnexpectedError(undefined)
 	const { spyOn } = await import('bun:test')
 	const readCode = simulator.ethereum.getCode.bind(simulator.ethereum)
-	let rpcAvailable = false
+	let validationAvailable = false
 	let failedCodeReads = 0
 	const getCode = spyOn(simulator.ethereum, 'getCode').mockImplementation(async (...args: Parameters<typeof readCode>) => {
-		if (!rpcAvailable) {
+		if (!validationAvailable) {
 			failedCodeReads += 1
 			throw new TypeError('Failed to fetch')
 		}
@@ -737,13 +737,49 @@ test('settles a claimed Safe signature once when the RPC connection returns afte
 		// The first attempt and its three bounded retries.
 		assert.equal(failedCodeReads, 4)
 		assert.notEqual((await modules.getPendingTransactionsAndMessages())[0]?.deferredSafeSignerReply, undefined)
-		assert.match((await getLatestUnexpectedError())?.data.message ?? '', /settled once the RPC connection returns/u)
+		assert.match((await getLatestUnexpectedError())?.data.message ?? '', /It is kept and settled once the RPC connection/u)
 		assert.deepEqual(proposal.repliesToWebsite(), [])
 
-		rpcAvailable = true
-		await withSilencedConsole(async () => await modules.resolveDeferredSafeSignerReplies(simulator, proposal.websiteTabConnections))
+		validationAvailable = true
+		await withSilencedConsole(async () => await Promise.all([
+			modules.advanceOutstandingSafeSignerReplies(simulator, proposal.websiteTabConnections),
+			modules.advanceOutstandingSafeSignerReplies(simulator, proposal.websiteTabConnections),
+		]))
+		await assertStoredOnceWithOneSuccess(proposal)
+		const codeReadsAfterSettling = getCode.mock.calls.length
+		await modules.advanceOutstandingSafeSignerReplies(simulator, proposal.websiteTabConnections)
+		assert.equal(getCode.mock.calls.length, codeReadsAfterSettling)
 	} finally {
 		getCode.mockRestore()
+	}
+	await assertStoredOnceWithOneSuccess(proposal)
+})
+
+// Every claim write fails for longer than the bounded retries, so the signature is never saved: the request leaves waiting-for-signer for a retryable signer error, so signing is available again, and a signature delivered once storage works is settled once.
+test('makes signing available again after the claim of a Safe signature could never be saved', async () => {
+	const { shouldDisableConfirmForApprovalStatus } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
+	const proposal = await storeSafeProposalAwaitingSignerOnChainA(142, 76n)
+	await setLatestUnexpectedError(undefined)
+	let claimWritesAvailable = false
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		if (!claimWritesAvailable && isClaimWrite(items)) throw new Error('Claim write unavailable.')
+		writeStoredItems()
+	})
+	try {
+		await withSilencedConsole(async () => {
+			await proposal.deliverSignature(createTestSimulationServicesOwner(simulator))
+			await waitUntil(async () => (await modules.getPendingTransactionsAndMessages())[0]?.approvalStatus.status === 'SignerError', 'signing is available again')
+		})
+		const [unsaved] = await modules.getPendingTransactionsAndMessages()
+		assert.equal(unsaved?.deferredSafeSignerReply, undefined)
+		assert.equal(unsaved === undefined ? true : shouldDisableConfirmForApprovalStatus(unsaved.approvalStatus), false)
+		assert.match((await getLatestUnexpectedError())?.data.message ?? '', /could not be saved after repeated failures\. Sign the request again/u)
+		assert.deepEqual(proposal.repliesToWebsite(), [])
+
+		claimWritesAvailable = true
+		await withSilencedConsole(async () => await proposal.deliverSignature(createTestSimulationServicesOwner(simulator)))
+	} finally {
+		browserMock.setStorageSetHandler(undefined)
 	}
 	await assertStoredOnceWithOneSuccess(proposal)
 })

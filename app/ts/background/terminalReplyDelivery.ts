@@ -92,12 +92,12 @@ export async function attemptQueuedTerminalReplyDelivery(websiteTabConnections: 
 	}
 }
 
-// Releases the reservation of a queued reply whose flow stops before attempting its delivery (its request removal failed), so the cleanup that later delivers the reply does not leave a completion marker for that flow.
+// Releases the reservation of a queued reply whose flow stops before attempting its delivery (its request removal failed), handing that delivery to the answered request's cleanup.
 export function releaseTerminalReplyReservation(uniqueRequestIdentifier: UniqueRequestIdentifier) {
 	terminalReplyReservations.delete(getUniqueRequestIdentifierString(uniqueRequestIdentifier))
 }
 
-// Delivers the reply already queued for an answered request, if it is still queued; a reply formed later is never sent. Like the socket flush, a reply that the flow which queued it is still delivering keeps its completion marker, so that flow finds it delivered and does not send it again.
+// Delivers the reply already queued for an answered request, if it is still queued; a reply formed later is never sent. While the flow that queued the reply still holds its reservation, that flow owns the delivery (and any completion marker a socket flush left for it), so this leaves the reply and its marker untouched.
 export async function deliverQueuedTerminalReplyOnce(websiteTabConnections: WebsiteTabConnections, uniqueRequestIdentifier: UniqueRequestIdentifier) {
 	const identifier = getUniqueRequestIdentifierString(uniqueRequestIdentifier)
 	const existingProduction = terminalReplyProductions.get(identifier)
@@ -106,10 +106,11 @@ export async function deliverQueuedTerminalReplyOnce(websiteTabConnections: Webs
 	const queuedReply = await findQueuedReply()
 	if (queuedReply === undefined) return true
 	const deliver = async () => await terminalReplySemaphore.execute(async () => {
+		if (terminalReplyReservations.has(identifier) || terminalReplyProductions.has(identifier)) return true
 		if (await finishPreviouslyDeliveredTerminalReply(identifier, queuedReply)) return true
 		if (await findQueuedReply() === undefined) return true
 		const delivery = replyToInterceptedRequest(websiteTabConnections, queuedReply)
-		if (delivery === true) await recordSuccessfulTerminalReplyDelivery(identifier, queuedReply, terminalReplyReservations.has(identifier))
+		if (delivery === true) await recordSuccessfulTerminalReplyDelivery(identifier, queuedReply, false)
 		return delivery
 	})
 	return await attemptDeliveryAfterManifestV2Reconnect(websiteTabConnections, queuedReply, deliver)

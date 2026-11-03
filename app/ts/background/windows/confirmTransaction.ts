@@ -225,12 +225,12 @@ export function toPopupPendingTransactionOrSignableMessage(pending: PendingTrans
 
 export async function updateConfirmTransactionView(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, onlyIfNotAlreadyUpdating = false) {
 	try {
-		const settingsPromise = getSettingsSnapshot().then(requireAvailableSettings)
 		const currentBlockNumberPromise = silenceChromeUnCaughtPromise(ethereum.getBlockNumber(undefined))
 		const rpcConnectionStatusPromise = silenceChromeUnCaughtPromise(getRpcConnectionStatus())
 		const pendingTransactionAndSignableMessages = getConfirmationWindowRequests(await getPendingTransactionsAndMessages())
 		if (pendingTransactionAndSignableMessages.length === 0) return false
-		const settings = await settingsPromise
+		// Read only once there is a queue to show, so unavailable settings never fail an update that returns early.
+		const settings = requireAvailableSettings(await getSettingsSnapshot())
 		const visualizedSimulatorState = settings.simulationMode
 			? await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { onlyIfNotAlreadyUpdating })
 			: createPassthroughCompleteVisualizedSimulation()
@@ -431,7 +431,7 @@ async function failSafeSignatureWithoutChain(uniqueRequestIdentifier: UniqueRequ
 	}))
 }
 
-// Gnosis Safe signer-reply lifecycle. Its single owner is advanceSafeSignerReply, which only runs inside runSafeSignerReplyLifecycle (one lock for every request) and re-reads the request before each transition. Every entry point goes through it: a signature from the signer or a popup's signerIncluded (resolveSafeSignature), popup close, no-response and Reject (resolvePendingRequestAsNoResponse), recovery at startup, on every services installation and when the RPC connection returns (resolveDeferredSafeSignerReplies), and the retry of a failed step.
+// Gnosis Safe signer-reply lifecycle. Its single owner is advanceSafeSignerReply, which only runs inside runSafeSignerReplyLifecycle (one lock for every request) and re-reads the request before each transition. Every entry point goes through it: a signature from the signer or a popup's signerIncluded (resolveSafeSignature), popup close, no-response and Reject (resolvePendingRequestAsNoResponse), recovery at startup, on every services installation and on new blocks while work is outstanding (resolveDeferredSafeSignerReplies, advanceOutstandingSafeSignerReplies), and the retry of a failed step.
 // 1) States of a pending request:
 // - waiting-for-signer: no deferredSafeSignerReply and no websiteReplyQueued (as is every request outside these Safe flows).
 // - claimed(signature, chain): deferredSafeSignerReply with its chainId; hidden from the confirmation window.
@@ -446,7 +446,7 @@ async function failSafeSignatureWithoutChain(uniqueRequestIdentifier: UniqueRequ
 // - claimed co-signature -> claimed: without services for its network it waits for them.
 // - answered -> settled: only the reply queued when it was answered is delivered (if still queued) and the request removed; nothing is validated, stored or queued again.
 // - claims written by earlier builds: a proposal claim whose reply was already queued (terminalReplyQueued) -> settled through the outbox without a second reply (dropped visibly without a network), and a claim without its network -> waiting-for-signer with an error.
-// 3) An unexpected failure keeps the stored state, so the request stays recoverable: a failed step is retried a bounded number of times (a claim with the signature it carries, any other step as an advance), then recovery advances every claimed or answered request; spent retries are reported visibly.
+// 3) An unexpected failure keeps the stored state, so the request stays recoverable: a failed step is retried a bounded number of times (a claim with the signature it carries, any other step as an advance), then recovery advances every claimed or answered request, and an unsaved claim moves to a retryable signer error; spent retries are reported visibly.
 type SafeSignerReplyState = 'gone' | 'waiting-for-signer' | 'claimed' | 'settled'
 
 type SafeSignerReplyContext = {
@@ -459,44 +459,72 @@ type SafeSignerReplyContext = {
 
 const safeSignerReplyLifecycleSemaphore = new Semaphore(1)
 const safeSignerReplyRetryTimers = new Map<string, ReturnType<typeof setTimeout>>()
-// Bounded: once these retries are spent, the step runs again only through recovery (startup, every services installation, and the RPC connection returning).
+// Bounded: once these retries are spent, the step runs again only through recovery (startup, every services installation, and every new block while work is outstanding).
 const SAFE_SIGNER_REPLY_RETRY_DELAYS_MS = [50, 250, 1000]
 
 // A failed claim is retried as itself, so the retry still carries the signature it was claiming; any other failed step is retried as an advance of the request, which never rejects it (a failed rejection is retried by its own caller). Claims and advances of one request are retried independently of each other.
-type SafeSignerReplyStepName = 'claim' | 'advance'
+type SafeSignerReplyStep<Result> = {
+	readonly name: 'claim' | 'advance'
+	readonly run: () => Promise<Result>
+	// Retried in place of `run`; defaults to it.
+	readonly retry?: () => Promise<unknown>
+	// The transition taken, as a lifecycle step of its own, once the bounded retries are spent.
+	readonly afterRetriesSpent?: () => Promise<void>
+}
 
-async function runSafeSignerReplyLifecycle<Result>(uniqueRequestIdentifier: UniqueRequestIdentifier, stepName: SafeSignerReplyStepName, step: () => Promise<Result>, retryAttempt = 0, retriedStep: () => Promise<unknown> = step): Promise<Result> {
+// Transitions whose run after spent retries failed as well; the advance on every new block runs them again.
+const pendingRetriesSpentTransitions = new Map<string, () => Promise<void>>()
+// Spent retries are reported visibly once per request and step, not on every later advance that fails again.
+const reportedSpentSafeSignerReplyRetries = new Set<string>()
+
+async function runSafeSignerReplyLifecycle<Result>(uniqueRequestIdentifier: UniqueRequestIdentifier, step: SafeSignerReplyStep<Result>, retryAttempt = 0): Promise<Result> {
 	try {
-		return await safeSignerReplyLifecycleSemaphore.execute(step)
+		return await safeSignerReplyLifecycleSemaphore.execute(step.run)
 	} catch (error: unknown) {
-		scheduleSafeSignerReplyRetry(uniqueRequestIdentifier, stepName, retriedStep, retryAttempt)
+		scheduleSafeSignerReplyRetry(uniqueRequestIdentifier, step, retryAttempt)
 		throw error
 	}
 }
 
 // The retry has no caller to report to, so its failures are reported here: as a local recovery while retries remain, and visibly once they are spent.
-function scheduleSafeSignerReplyRetry(uniqueRequestIdentifier: UniqueRequestIdentifier, stepName: SafeSignerReplyStepName, step: () => Promise<unknown>, attempt: number) {
+function scheduleSafeSignerReplyRetry<Result>(uniqueRequestIdentifier: UniqueRequestIdentifier, step: SafeSignerReplyStep<Result>, attempt: number) {
 	const delay = SAFE_SIGNER_REPLY_RETRY_DELAYS_MS[attempt]
-	const retryIdentifier = `${ getUniqueRequestIdentifierString(uniqueRequestIdentifier) } ${ stepName }`
+	const retryIdentifier = `${ getUniqueRequestIdentifierString(uniqueRequestIdentifier) } ${ step.name }`
 	if (delay === undefined || safeSignerReplyRetryTimers.has(retryIdentifier)) return
+	const retriedStep = { ...step, run: step.retry ?? step.run, retry: undefined }
 	safeSignerReplyRetryTimers.set(retryIdentifier, setTimeout(() => {
 		safeSignerReplyRetryTimers.delete(retryIdentifier)
 		void (async () => {
 			try {
-				await runSafeSignerReplyLifecycle(uniqueRequestIdentifier, stepName, step, attempt + 1)
+				await runSafeSignerReplyLifecycle(uniqueRequestIdentifier, retriedStep, attempt + 1)
 			} catch (error: unknown) {
 				if (SAFE_SIGNER_REPLY_RETRY_DELAYS_MS[attempt + 1] !== undefined) {
 					await reportLocalRecovery(error, { code: 'safe_signer_reply_retry_failed', message: 'Retrying a Gnosis Safe signature step after a transient failure.' })
 					return
 				}
-				await reportSafeSignerReplyRetriesExhausted(error, uniqueRequestIdentifier, stepName)
+				await finishSpentSafeSignerReplyRetries(error, uniqueRequestIdentifier, retryIdentifier, step)
 			}
 		})()
 	}, delay))
 }
 
+async function finishSpentSafeSignerReplyRetries<Result>(error: unknown, uniqueRequestIdentifier: UniqueRequestIdentifier, retryIdentifier: string, step: SafeSignerReplyStep<Result>) {
+	if (!reportedSpentSafeSignerReplyRetries.has(retryIdentifier)) {
+		reportedSpentSafeSignerReplyRetries.add(retryIdentifier)
+		await reportSafeSignerReplyRetriesExhausted(error, uniqueRequestIdentifier, step.name)
+	}
+	const transition = step.afterRetriesSpent
+	if (transition === undefined) return
+	try {
+		await safeSignerReplyLifecycleSemaphore.execute(transition)
+	} catch (transitionError: unknown) {
+		pendingRetriesSpentTransitions.set(retryIdentifier, transition)
+		await reportLocalRecovery(transitionError, { code: 'safe_signer_reply_spent_retries_transition_failed', message: 'Keeping a Gnosis Safe request\'s transition after spent retries for the next new block.' })
+	}
+}
+
 // Shown even for connectivity errors: the user has signed and the website is still waiting. The message says whether the signature is kept for recovery, as far as storage can still tell.
-async function reportSafeSignerReplyRetriesExhausted(error: unknown, uniqueRequestIdentifier: UniqueRequestIdentifier, stepName: SafeSignerReplyStepName) {
+async function reportSafeSignerReplyRetriesExhausted(error: unknown, uniqueRequestIdentifier: UniqueRequestIdentifier, stepName: SafeSignerReplyStep<unknown>['name']) {
 	await reportUnexpectedError(error, {
 		code: 'safe_signer_reply_retries_exhausted',
 		displayMessage: await describeSpentSafeSignerReplyRetries(uniqueRequestIdentifier, stepName),
@@ -504,8 +532,8 @@ async function reportSafeSignerReplyRetriesExhausted(error: unknown, uniqueReque
 	})
 }
 
-async function describeSpentSafeSignerReplyRetries(uniqueRequestIdentifier: UniqueRequestIdentifier, stepName: SafeSignerReplyStepName) {
-	const unfinished = 'A Gnosis Safe confirmation could not be finished after repeated failures. It is finished once the RPC connection returns or the extension restarts.'
+async function describeSpentSafeSignerReplyRetries(uniqueRequestIdentifier: UniqueRequestIdentifier, stepName: SafeSignerReplyStep<unknown>['name']) {
+	const unfinished = 'A Gnosis Safe confirmation could not be finished after repeated failures. It is finished once the RPC connection works again or the extension restarts.'
 	let pending: PendingTransactionOrSignableMessage | undefined
 	try {
 		pending = await getPendingTransactionOrMessageByidentifier(uniqueRequestIdentifier)
@@ -513,9 +541,22 @@ async function describeSpentSafeSignerReplyRetries(uniqueRequestIdentifier: Uniq
 		await reportLocalRecovery(readError, { code: 'safe_signer_reply_state_unreadable', message: 'Describing spent Gnosis Safe signature retries without the stored request.' })
 		return unfinished
 	}
-	if (pending?.deferredSafeSignerReply !== undefined) return 'A Gnosis Safe signature could not be settled after repeated failures. It is kept and settled once the RPC connection returns.'
+	if (pending?.deferredSafeSignerReply !== undefined) return 'A Gnosis Safe signature could not be settled after repeated failures. It is kept and settled once the RPC connection works again.'
 	if (stepName === 'claim' && pending !== undefined && pending.websiteReplyQueued !== true) return 'A Gnosis Safe signature could not be saved after repeated failures. Sign the request again.'
 	return unfinished
+}
+
+// Claim retries spent with the signature never saved: waiting-for-signer moves to a retryable signer error, so signing is available again and the window shows it. A claim or answer written meanwhile, or any other approval state, is kept.
+async function failUnsavedSafeSignature(uniqueRequestIdentifier: UniqueRequestIdentifier, context: SafeSignerReplyContext) {
+	let failed = false
+	await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (current) => {
+		if (current.deferredSafeSignerReply !== undefined || current.websiteReplyQueued === true || current.approvalStatus.status !== 'WaitingForSigner') return current
+		failed = true
+		return modifyObject(current, { approvalStatus: createSafeSignerErrorStatus('The Gnosis Safe signature could not be saved after repeated failures. Sign the request again.') })
+	})
+	if (!failed) return
+	const services = context.services
+	await runConfirmationViewStep(async () => services === undefined ? await publishConfirmationQueueWithoutServices() : await updateConfirmTransactionView(services.ethereum, services.tokenPriceService))
 }
 
 // A signature is bound to the network it was signed for: it is settled only with services for that network, the captured ones or else the ones installed now.
@@ -566,7 +607,7 @@ async function advanceSafeSignerReply(uniqueRequestIdentifier: UniqueRequestIden
 
 // waiting-for-signer -> claimed, advanced at once in the same lifecycle step, so no other entry point sees the claim before its first transition. A claim already stored for the request is advanced rather than replaced, so a retried claim never overwrites a newer one. Returns whether the request was settled (undefined when it was already gone).
 async function claimSafeSignature(uniqueRequestIdentifier: UniqueRequestIdentifier, signerReply: string, context: SafeSignerReplyContext) {
-	const claim = await runSafeSignerReplyLifecycle(uniqueRequestIdentifier, 'claim', async () => {
+	const claim = await runSafeSignerReplyLifecycle(uniqueRequestIdentifier, { name: 'claim', afterRetriesSpent: async () => await failUnsavedSafeSignature(uniqueRequestIdentifier, context), run: async () => {
 		const pending = await getPendingTransactionOrMessageByidentifier(uniqueRequestIdentifier)
 		if (pending === undefined) return { pending, state: 'gone' as const }
 		if (pending.deferredSafeSignerReply === undefined && pending.websiteReplyQueued !== true) {
@@ -580,7 +621,7 @@ async function claimSafeSignature(uniqueRequestIdentifier: UniqueRequestIdentifi
 			if (await deferSignatureUnlessAnswered(uniqueRequestIdentifier, { signerReply, chainId }) === 'gone') return { pending, state: 'gone' as const }
 		}
 		return { pending, state: await advanceSafeSignerReply(uniqueRequestIdentifier, context) }
-	})
+	} })
 	// The waiting co-signature left the queue its window shows, so the window moves on to the next request or closes.
 	if (claim.state === 'claimed' && claim.pending !== undefined) await updateViewAfterPendingRequestRemoved(claim.pending, context.services, 'unchanged')
 	if (claim.state === 'gone') return undefined
@@ -624,14 +665,41 @@ export async function resolvePendingSignerReply(services: ConfirmationServices |
 	return await settlePendingTerminalReply(websiteTabConnections, pending, { type: 'result', result: params.reply }, undefined)
 }
 
-// Recovery of the lifecycle, run at startup, whenever services are installed for a network and when the RPC connection returns: every claimed or answered request is advanced (a claim settled with these services when they are for its network, an answered request finished whatever its window), then outbox proposals for that network are added to the Safe stack.
+// Recovery of the lifecycle, run at startup, whenever services are installed for a network and on new blocks while work is outstanding (advanceOutstandingSafeSignerReplies): every claimed or answered request is advanced (a claim settled with these services when they are for its network, an answered request finished whatever its window), then outbox proposals for that network are added to the Safe stack.
 export async function resolveDeferredSafeSignerReplies(services: ConfirmationServices, websiteTabConnections: WebsiteTabConnections) {
 	const context: SafeSignerReplyContext = { services, getInstalledServices: async () => services, websiteTabConnections }
 	for (const pending of await getPendingTransactionsAndMessages()) {
 		if (pending.deferredSafeSignerReply === undefined && pending.websiteReplyQueued !== true) continue
-		await runSafeSignerReplyLifecycle(pending.uniqueRequestIdentifier, 'advance', async () => await advanceSafeSignerReply(pending.uniqueRequestIdentifier, context))
+		await runSafeSignerReplyLifecycle(pending.uniqueRequestIdentifier, { name: 'advance', run: async () => await advanceSafeSignerReply(pending.uniqueRequestIdentifier, context) })
 	}
 	await safeSignerReplyLifecycleSemaphore.execute(async () => await storeSafeProposalsFromOutbox(services))
+}
+
+// At most one advance on new blocks runs at a time; a block arriving meanwhile skips it.
+const safeSignerReplyAdvancesOnNewBlock = new Set<Promise<void>>()
+
+// Runs on every new block with the installed services: lifecycle work left after its bounded retries (a claim, an answered request, an outbox proposal for these services' network, or a transition after spent retries) is advanced even when the RPC connection status never went down, for example when only signature validation failed. Nothing runs when nothing is outstanding.
+export async function advanceOutstandingSafeSignerReplies(services: ConfirmationServices, websiteTabConnections: WebsiteTabConnections) {
+	if (safeSignerReplyAdvancesOnNewBlock.size > 0) return
+	const advance = (async () => {
+		for (const [retryIdentifier, transition] of pendingRetriesSpentTransitions) {
+			await safeSignerReplyLifecycleSemaphore.execute(transition)
+			pendingRetriesSpentTransitions.delete(retryIdentifier)
+		}
+		if (!await hasOutstandingSafeSignerReplyWork(services)) return
+		await resolveDeferredSafeSignerReplies(services, websiteTabConnections)
+	})()
+	safeSignerReplyAdvancesOnNewBlock.add(advance)
+	try {
+		await advance
+	} finally {
+		safeSignerReplyAdvancesOnNewBlock.delete(advance)
+	}
+}
+
+async function hasOutstandingSafeSignerReplyWork(services: ConfirmationServices) {
+	if ((await getPendingTransactionsAndMessages()).some((pending) => pending.deferredSafeSignerReply !== undefined || pending.websiteReplyQueued === true)) return true
+	return (await getPendingSafeProposalStores()).some((entry) => entry.chainId === services.ethereum.getChainId())
 }
 
 // Adds every outbox proposal signed for the installed services' network to its Safe stack once; proposals for other networks stay. The website already has its reply, so a proposal that cannot be stored is dropped with a visible failure and nothing more is sent to the website.
@@ -910,7 +978,7 @@ const resolveAllPendingTransactionsAndMessageAsNoResponse = async (transactions:
 async function resolvePendingRequestAsNoResponse(uniqueRequestIdentifier: UniqueRequestIdentifier, services: ConfirmationServices | undefined, websiteTabConnections: WebsiteTabConnections): Promise<boolean | undefined> {
 	const context: SafeSignerReplyContext = { services, getInstalledServices: async () => services, websiteTabConnections }
 	const advance = async () => await advanceSafeSignerReply(uniqueRequestIdentifier, context)
-	return await runSafeSignerReplyLifecycle(uniqueRequestIdentifier, 'advance', async () => {
+	return await runSafeSignerReplyLifecycle(uniqueRequestIdentifier, { name: 'advance', retry: advance, run: async () => {
 		const state = await advance()
 		if (state === 'settled') return true
 		if (state !== 'waiting-for-signer') return undefined
@@ -927,7 +995,7 @@ async function resolvePendingRequestAsNoResponse(uniqueRequestIdentifier: Unique
 		const delivery = await deliverQueuedReply(websiteTabConnections, rejection, rejectionOutcome)
 		await removeSettledPendingRequest(pending, services)
 		return delivery
-	}, 0, advance)
+	} })
 }
 
 function schedulePendingNoResponseRetry(transaction: PendingTransactionOrSignableMessage, services: ConfirmationServices | undefined, websiteTabConnections: WebsiteTabConnections) {
