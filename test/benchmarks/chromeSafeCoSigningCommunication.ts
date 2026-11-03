@@ -218,7 +218,8 @@ async function cancelPendingSafeAppPreparation(browserConnection: CdpConnection,
 	try {
 		await waitForText(settings, 'Authorize and reload open tab')
 		await settings.evaluate(`(() => {
-			const row = [...document.querySelectorAll('.row')].find((row) => row.querySelector('span')?.textContent === ${ JSON.stringify(origin) })
+			// The hosting row is labelled with its origin, so this lookup does not depend on styling classes.
+			const row = [...document.querySelectorAll('li[aria-label]')].find((row) => row.getAttribute('aria-label') === ${ JSON.stringify(origin) })
 			const button = [...(row?.querySelectorAll('button') ?? [])].find((button) => button.textContent === 'Authorize and reload open tab')
 			if (button === undefined || button.disabled) throw new Error('Missing preparation button for selected origin.')
 			button.click()

@@ -11,6 +11,7 @@ type TestNode = {
 	readonly tagName?: string
 	readonly textContent?: string
 	readonly hasAttribute?: (name: string) => boolean
+	readonly getAttribute?: (name: string) => string | null
 	readonly l?: Record<string, (event: { currentTarget: TestNode }) => unknown>
 }
 
@@ -42,6 +43,8 @@ test('Safe Apps website edits require compatibility to be enabled', async () => 
 		assert.equal(findElement(dom.document.body, 'BUTTON', 'Authorize and reload open tab')?.hasAttribute?.('disabled'), false)
 		assert.equal(findElement(dom.document.body, 'BUTTON', 'Remove')?.hasAttribute?.('disabled'), false)
 		assert.equal(findElement(dom.document.body, 'INPUT')?.hasAttribute?.('disabled'), false)
+		// Browser checks find a website's actions through this label rather than styling classes.
+		assert.equal(findElement(dom.document.body, 'LI')?.getAttribute?.('aria-label'), 'https://host.example')
 	} finally {
 		render(null, dom.document.body)
 		dom.restore()

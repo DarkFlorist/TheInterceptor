@@ -8,7 +8,7 @@ import { ErrorComponent } from './Error.js'
 function SafeAppsHostRow({ origin, enabled, removeDisabled, onRemove }: { origin: string, enabled: boolean, removeDisabled: boolean, onRemove: () => void }) {
 	const { value: preparation, waitFor: waitForPreparation } = useAsyncState<void>()
 	const { value: cancellation, waitFor: waitForCancellation } = useAsyncState<void>()
-	return <li class = 'grid brief'>
+	return <li class = 'grid brief' aria-label = { origin }>
 		<strong class = 'truncate' title = { origin }>{ origin }</strong>
 		<div class = 'actions'>
 			<AsyncActionButton state = { preparation.value.state } disabled = { !enabled } text = 'Authorize and reload open tab' pendingText = 'Connecting…' onClick = { () => waitForPreparation(async () => await requestPopupPrepareSafeApp(origin)) } class = 'btn btn--primary' />
