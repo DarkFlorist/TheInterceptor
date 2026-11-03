@@ -10,7 +10,7 @@ import type { WebsiteAccessUpdate } from './accessManagement.js'
 import { reconcileWebsiteApprovalAccesses, finishWebsiteAccessUpdate, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts } from './accessManagement.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
-import { changeSimulationMode, getRequiredSettings, getSettingsAfterStorageUpdates, getSettingsSnapshot, setUseSignersAddressAsActiveAddress, type SimulationModeChanges, trackPreviousActiveAddressForMakeMeRichList, requireAvailableSettings, settingsForPublication, captureRpcNetwork } from './settings.js'
+import { changeSimulationMode, getSettingsAfterStorageUpdates, getSettingsSnapshot, setUseSignersAddressAsActiveAddress, type SimulationModeChanges, trackPreviousActiveAddressForMakeMeRichList, requireAvailableSettings, settingsForPublication, captureRpcNetwork } from './settings.js'
 import { updateTransactionState } from './storageVariables.js'
 import type { RpcConfigurationState } from './rpcConfigurationStorage.js'
 import type { Settings } from '../types/interceptor-messages.js'
@@ -21,8 +21,8 @@ import { activeStackContextsEqual, getActiveStackContext, operationBelongsToActi
 import { rpcConfigurationIsReady, rpcConfigurationIsUsable, rpcServicesAreOptional } from './rpcConfigurationAvailability.js'
 import { createRpcConfigurationUnavailableError } from '../utils/rpcConfigurationError.js'
 
-async function clearSimulationStateFromConfig(settingsSnapshot?: Awaited<ReturnType<typeof getRequiredSettings>>) {
-	const settings = settingsSnapshot ?? await getRequiredSettings()
+async function clearSimulationStateFromConfig(settingsSnapshot?: Settings) {
+	const settings = settingsSnapshot ?? requireAvailableSettings(await getSettingsSnapshot())
 	const activeStackContext = getActiveStackContext(settings)
 	await updateTransactionState((previousState) => {
 		if (settings.simulationMode) {
@@ -77,8 +77,8 @@ const changeActiveAddressAndChainSemaphore = new Semaphore(1)
 async function publishCommittedSettingsTransition(
 	simulationServicesOwner: SimulationServicesOwner,
 	websiteTabConnections: WebsiteTabConnections,
-	previousSettings: Awaited<ReturnType<typeof getRequiredSettings>>,
-	updatedSettings: Awaited<ReturnType<typeof getRequiredSettings>>,
+	previousSettings: Settings,
+	updatedSettings: Settings,
 	onAccessReconciled: (accessUpdate: WebsiteAccessUpdate) => void,
 	forceChainChanged = false,
 ) {
@@ -128,13 +128,13 @@ function getSimulationModeChanges(change: ActiveAddressAndChainChange): Simulati
 export async function publishRpcConfigurationRecovery(
 	simulationServicesOwner: SimulationServicesOwner,
 	websiteTabConnections: WebsiteTabConnections,
-	previousSettings: Awaited<ReturnType<typeof getRequiredSettings>>,
+	previousSettings: Settings,
 	activeRpcNetwork: RpcNetwork,
 	forceChainChanged = false,
 ) {
 	let accessUpdate: WebsiteAccessUpdate | undefined
 	try {
-		const updatedSettings = await getRequiredSettings()
+		const updatedSettings = requireAvailableSettings(await getSettingsSnapshot())
 		if (getRpcNetworkChange(updatedSettings.activeRpcNetwork, activeRpcNetwork).selectionChanged) throw new Error('Recovered RPC network does not match the committed configuration.')
 		await publishCommittedSettingsTransition(
 			simulationServicesOwner,

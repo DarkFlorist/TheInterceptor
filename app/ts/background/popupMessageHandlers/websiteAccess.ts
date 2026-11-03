@@ -8,7 +8,7 @@ import { modifyObject } from '../../utils/typescript.js'
 import { type CommittedAccessChange, reconcileCommittedAccessChange, setInterceptorDisabledForWebsite, updateWebsiteApprovalAccesses } from '../accessManagement.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { getLastKnownCurrentTabId } from '../currentTab.js'
-import { getRequiredSettings, updateWebsiteAccess } from '../settings.js'
+import { updateWebsiteAccess, getSettingsSnapshot, requireAvailableSettings } from '../settings.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { getAddressMetadataForAccess } from '../windows/interceptorAccess.js'
 import { searchWebsiteAccess } from '../websiteAccessSearch.js'
@@ -50,7 +50,7 @@ export async function disableInterceptor(simulationServicesOwner: SimulationServ
 }
 
 export async function retrieveWebsiteAccess(parsedRequest: RetrieveWebsiteAccess) {
-	const settings = await getRequiredSettings()
+	const settings = requireAvailableSettings(await getSettingsSnapshot())
 	const websiteAccess = searchWebsiteAccess(parsedRequest.data.query, settings.websiteAccess)
 	const addressAccessMetadata = await getAddressMetadataForAccess(websiteAccess, settings.activeRpcNetwork.chainId)
 	await sendPopupMessageToOpenWindows({ method: 'popup_retrieveWebsiteAccessReply', data: { websiteAccess, addressAccessMetadata } })

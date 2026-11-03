@@ -1,3 +1,4 @@
+import { getRequiredSettings } from './requiredSettings.js'
 import * as assert from 'assert'
 import { test } from 'bun:test'
 import { Settings } from '../../app/ts/types/interceptor-messages.js'
@@ -68,10 +69,10 @@ Object.defineProperty(globalThis, 'browser', {
 	},
 })
 
-const { captureRpcNetwork, getRequiredSettings, getSettingsSnapshot, settingsForPublication } = await import('../../app/ts/background/settings.js')
+const { captureRpcNetwork, getSettingsSnapshot, settingsForPublication } = await import('../../app/ts/background/settings.js')
 const rereadSettingsForPublication = async (settings: Awaited<ReturnType<typeof getRequiredSettings>>) => settingsForPublication(await getSettingsSnapshot({ pinnedRpcNetwork: captureRpcNetwork(settings) }), settings)
 
-test('getRequiredSettings returns one atomic browser storage snapshot', async () => {
+test('a required settings read is one atomic browser storage snapshot', async () => {
 	storageReadCount = 0
 
 	const settings = await getRequiredSettings()

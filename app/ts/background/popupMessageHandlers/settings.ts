@@ -4,7 +4,7 @@ import { serialize } from '../../types/wire-types.js'
 import { isJSON } from '../../utils/json.js'
 import { silenceChromeUnCaughtPromise } from '../../utils/requests.js'
 import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
-import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getRequiredSettings, getSettingsSnapshot, getUseTabsInsteadOfPopup, importSettingsAndAddressBook, settingsIfAvailable } from '../settings.js'
+import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettingsSnapshot, getUseTabsInsteadOfPopup, importSettingsAndAddressBook, settingsIfAvailable, requireAvailableSettings } from '../settings.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { DEFAULT_RPCS } from '../../config/defaults.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
@@ -74,7 +74,7 @@ export async function setNewRpcList(simulationServicesOwner: SimulationServicesO
 export async function restoreDefaultRpcConfiguration(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, settings: Settings | undefined, publishRecovery: PublishRpcConfigurationRecovery) {
 	const transition = await transitionRpcList(simulationServicesOwner, DEFAULT_RPCS, 'restore-defaults')
 	await sendRpcListUpdate(DEFAULT_RPCS, true)
-	if (transition.publishRecovery) await publishRecovery(simulationServicesOwner, websiteTabConnections, settings ?? await getRequiredSettings(), transition.activeRpcNetwork, transition.forceChainChanged)
+	if (transition.publishRecovery) await publishRecovery(simulationServicesOwner, websiteTabConnections, settings ?? requireAvailableSettings(await getSettingsSnapshot()), transition.activeRpcNetwork, transition.forceChainChanged)
 }
 
 export async function retryRpcConfiguration(simulationServicesOwner: SimulationServicesOwner, reconcileAccessRules: () => Promise<void>) {

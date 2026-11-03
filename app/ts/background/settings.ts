@@ -118,11 +118,6 @@ async function getSettingsFromStorageItems(storedItems: Readonly<Record<string, 
 	return { activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode }
 }
 
-// Use for standalone operations that have no admitted settings context and must read the latest committed settings.
-export async function getRequiredSettings() : Promise<Settings> {
-	return requireAvailableSettings(await getSettingsSnapshot())
-}
-
 // Website approvals are stored apart from the RPC configuration, so they stay readable while settings are unavailable; `unreadable` keeps the storage error for callers that must propagate it.
 export type WebsiteApprovalsSnapshot =
 	| { readonly status: 'readable', readonly websiteAccess: WebsiteAccessArray }
@@ -367,7 +362,7 @@ export const setSafeAppsCompatibilityMode = async(safeAppsCompatibilityMode: boo
 export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> {
 	const exportDate = (new Date).toISOString().split('T')[0]
 	if (exportDate === undefined) throw new Error('Datestring did not contain Date')
-	const [settings, signingAddressPreferences] = await Promise.all([getRequiredSettings(), getSigningAddressPreferences()])
+	const [settings, signingAddressPreferences] = await Promise.all([getSettingsSnapshot().then(requireAvailableSettings), getSigningAddressPreferences()])
 	return {
 		name: 'InterceptorSettingsAndAddressBook' as const,
 		version: '1.6' as const,

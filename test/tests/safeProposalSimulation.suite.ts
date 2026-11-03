@@ -1,3 +1,4 @@
+import { getRequiredSettings } from './requiredSettings.js'
 import * as assert from 'assert'
 import { test } from 'bun:test'
 import { activeAddress, addressString, browserMock, created, createSafeAddressBookEntry, createSafeTx, createWebsitePort, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, hexToBytes, isRecord, modules, pendingTransaction, recipientAddress, signedTransaction, simulator, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
@@ -424,7 +425,7 @@ test('returns the current Safe overlay when a simulation-stack request is confir
 	await modules.updateInterceptorTransactionStack(() => ({
 		operations: [{ type: 'Transaction', preSimulationTransaction }],
 	}))
-	assert.equal((await (await import('../../app/ts/background/settings.js')).getRequiredSettings()).activeSigningSafeAddress, activeAddress)
+	assert.equal((await getRequiredSettings()).activeSigningSafeAddress, activeAddress)
 	assert.equal((await (await import('../../app/ts/background/simulationUpdating.js')).getCurrentSimulationInput())[0]?.transactions.length, 1)
 	await modules.setFetchSimulationStackRequestPromise({
 		website: { websiteOrigin: 'https://example.com', icon: undefined, title: undefined },

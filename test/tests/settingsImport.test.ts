@@ -1,3 +1,4 @@
+import { getRequiredSettings } from './requiredSettings.js'
 import * as assert from 'assert'
 import { beforeEach, describe, test } from 'bun:test'
 import type { ExportedSettings } from '../../app/ts/types/exportedSettingsTypes.js'
@@ -109,7 +110,7 @@ function createBrowserStorageMock() {
 }
 
 const browserMock = createBrowserStorageMock()
-const settingsModulePromise = import('../../app/ts/background/settings.js')
+const settingsModulePromise = import('../../app/ts/background/settings.js').then((settings) => ({ ...settings, getRequiredSettings }))
 const signingAddressSelectionModulePromise = import('../../app/ts/background/signingAddressSelection.js')
 const storageVariablesModulePromise = import('../../app/ts/background/storageVariables.js')
 

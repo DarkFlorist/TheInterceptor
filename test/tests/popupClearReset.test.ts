@@ -1,3 +1,4 @@
+import { getRequiredSettings } from './requiredSettings.js'
 import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import * as funtypes from 'funtypes'
@@ -193,6 +194,7 @@ async function loadModules() {
 		...popupMessageHandlers,
 		...storageUtils,
 		...settings,
+		getRequiredSettings,
 		...background,
 		...activeSettings,
 		...walletSwitch,

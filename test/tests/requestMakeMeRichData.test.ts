@@ -1,3 +1,4 @@
+import { getRequiredSettings } from './requiredSettings.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { addressString, checksummedAddress } from '../../app/ts/utils/bigint.js'
@@ -67,6 +68,7 @@ async function loadModules() {
 	return {
 		...await import('../../app/ts/background/popupMessageHandlers.js'),
 		...await import('../../app/ts/background/settings.js'),
+		getRequiredSettings,
 		...await import('../../app/ts/background/simulationUpdating.js'),
 		...await import('../../app/ts/background/storageVariables.js'),
 	}

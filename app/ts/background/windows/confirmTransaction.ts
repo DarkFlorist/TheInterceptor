@@ -26,7 +26,7 @@ import type { PendingTransactionOrSignableMessage, PopupPendingTransactionOrSign
 import type { SignMessageParams } from '../../types/jsonRpc-signing-types.js'
 import type { SafeSignerErrorDetails } from '../../types/safeTypes.js'
 import { craftPersonalSignPopupMessage } from './personalSign.js'
-import { getRequiredSettings } from '../settings.js'
+import { getSettingsSnapshot, requireAvailableSettings } from '../settings.js'
 import * as funtypes from 'funtypes'
 import { assertNever, modifyObject } from '../../utils/typescript.js'
 import { simulateGnosisSafeTransactionOnPass } from '../popupMessageHandlers.js'
@@ -191,7 +191,7 @@ export function toPopupPendingTransactionOrSignableMessage(pending: PendingTrans
 
 export async function updateConfirmTransactionView(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, onlyIfNotAlreadyUpdating = false) {
 	try {
-		const settingsPromise = getRequiredSettings()
+		const settingsPromise = getSettingsSnapshot().then(requireAvailableSettings)
 		const currentBlockNumberPromise = silenceChromeUnCaughtPromise(ethereum.getBlockNumber(undefined))
 		const rpcConnectionStatusPromise = silenceChromeUnCaughtPromise(getRpcConnectionStatus())
 		const pendingTransactionAndSignableMessages = await getPendingTransactionsAndMessages()

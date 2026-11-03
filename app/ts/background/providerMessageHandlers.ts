@@ -7,7 +7,7 @@ import { activateAddressSelection, changeActiveAddressAndChain } from './activeS
 import { getSocketFromPort, isTopFramePort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { setDefaultSignerName, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
 import { getRpcConfigurationState, getRpcNetworkForChain } from './rpcConfigurationStorage.js'
-import { getMetamaskCompatibilityMode, getRequiredSettings, getSettingsSnapshot, settingsIfAvailable, requireAvailableSettings } from './settings.js'
+import { getMetamaskCompatibilityMode, getSettingsSnapshot, settingsIfAvailable, requireAvailableSettings } from './settings.js'
 import { applyWalletSwitchReply } from './walletSwitch.js'
 import { verifyAccess, withSuppressedUnscopedConnectionEventsForSocketAsync } from './accessManagement.js'
 import type { ProviderMessage } from '../utils/requests.js'
@@ -168,7 +168,7 @@ export async function ethAccountsReply(simulationServicesOwner: SimulationServic
 		if (transition.shouldActivate) {
 			await sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
 		}
-		const updatedSettings = shouldActivateAddressSelection ? await getRequiredSettings() : settings
+		const updatedSettings = shouldActivateAddressSelection ? requireAvailableSettings(await getSettingsSnapshot()) : settings
 		const displayedSigningSafe = await getConfiguredSigningSafe(updatedSettings, signerAccounts)
 		await publishSignerAccountsChanged(websiteTabConnections, signerStateToken, { type: 'active-selection',
 			tabId,

@@ -1,3 +1,4 @@
+import { getRequiredSettings } from './requiredSettings.js'
 import { createEthereumWithGetBlockCounter } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
@@ -190,6 +191,7 @@ const createAccessRequestSettings = (): Settings => ({
 async function loadModules() {
 	return {
 		...await import('../../app/ts/background/settings.js'),
+		getRequiredSettings,
 		...await import('../../app/ts/background/storageVariables.js'),
 		...await import('../../app/ts/background/backgroundUtils.js'),
 		...await import('../../app/ts/background/windows/interceptorAccess.js'),

@@ -1,3 +1,4 @@
+import { getRequiredSettings } from './requiredSettings.js'
 import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
@@ -132,6 +133,7 @@ async function loadModules() {
 	return {
 		...await import('../../app/ts/utils/storageUtils.js'),
 		...await import('../../app/ts/background/settings.js'),
+		getRequiredSettings,
 		...storageVariables,
 		...await import('../../app/ts/background/popupMessageHandlers.js'),
 		...await import('../../app/ts/background/backgroundUtils.js'),

@@ -3,7 +3,7 @@ import type { RpcRequestContext } from '../types/confirmationRequest.js'
 import type { InpageScriptRequest, RPCReply, Settings } from '../types/interceptor-messages.js'
 import 'webextension-polyfill'
 import { getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
-import { captureRpcNetwork, getRequiredSettings, getSettingsSnapshot, updateWebsiteAccess, settingsIfAvailable, approvalsOrNone } from './settings.js'
+import { captureRpcNetwork, getSettingsSnapshot, updateWebsiteAccess, settingsIfAvailable, approvalsOrNone, requireAvailableSettings } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getBlockByHash, getCode, getFilterChanges, getFilterLogs, getLogs, getPermissions, getStorageAt, getTransactionByHash, getTransactionCount, getTransactionReceipt, handleInterceptorError, installNewFilter, maxPriorityFeePerGas, netVersion, personalSign, requestInterceptorSimulatorStack, requestPermissions, sendTransaction, subscribe, switchEthereumChain, ethSimulateV1, feeHistory, uninstallNewFilter, unsubscribe, web3ClientVersion } from './simulationModeHandlers.js'
 import { PASSTHROUGH_STATE, type ResolvedExecutionSimulationState, type ResolvedSimulationInput, toResolvedExecutionSimulationState, toResolvedSimulationInput } from '../types/visualizer-types.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
@@ -315,7 +315,7 @@ async function persistApprovedAccountsForAccountRequest(
 	const accounts = getApprovedAccountsForAccountRequest(request, resolved, activeAddress)
 	if (accounts === undefined || accounts.length === 0) return
 
-	const settings = await getRequiredSettings()
+	const settings = requireAvailableSettings(await getSettingsSnapshot())
 	for (const account of accounts) {
 		const addressEntry = await getActiveAddressEntryForChain(account, settings.activeRpcNetwork.chainId)
 		const existingApprovalState = getWebsiteAddressAccessApprovalState(settings.websiteAccess, website.websiteOrigin, addressEntry)

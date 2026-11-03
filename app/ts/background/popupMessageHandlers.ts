@@ -1,7 +1,7 @@
 import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { captureSimulationSnapshot, getUpdatedSimulationStackSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
-import { getRequiredSettings, getSettingsSnapshot, setUseTabsInsteadOfPopup, setPage, getMakeCurrentAddressRich, setMetamaskCompatibilityMode, setSafeAppsCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, updateMakeCurrentAddressRich, updateFixedMakeMeRichList, requireAvailableSettings, requireReadableApprovals, getWebsiteApprovalsSnapshot, settingsForPublication, captureRpcNetwork } from './settings.js'
+import { getSettingsSnapshot, setUseTabsInsteadOfPopup, setPage, getMakeCurrentAddressRich, setMetamaskCompatibilityMode, setSafeAppsCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, updateMakeCurrentAddressRich, updateFixedMakeMeRichList, requireAvailableSettings, requireReadableApprovals, getWebsiteApprovalsSnapshot, settingsForPublication, captureRpcNetwork } from './settings.js'
 import { getPendingTransactionsAndMessages, getTabState, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests, updateTransactionState, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, getSafeTransactionStacks } from './storageVariables.js'
 import { getRpcList, selectPrimaryRpc } from './rpcConfigurationStorage.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
@@ -239,7 +239,7 @@ export async function changeActiveAddress(
 		await refreshSignerAccountsFromApprovedWebsitePorts(websiteTabConnections, false)
 		sendCallbackToAllConfirmedSignerOwners(websiteTabConnections, { method: 'request_signer_chainId', result: [] })
 	}
-	const settings = admittedSnapshot?.settings ?? await getRequiredSettings()
+	const settings = admittedSnapshot?.settings ?? requireAvailableSettings(await getSettingsSnapshot())
 	const signerAccount = await getSignerAccount()
 	const activeAddresses = await getActiveAddresses()
 	const signerAccounts = signerAccount === undefined ? [] : [signerAccount]
@@ -701,7 +701,7 @@ export async function enableSimulationMode(
 	signerAccountRefreshOptions: SignerAccountRefreshOptions = {},
 	admitted?: { readonly settings: Settings, readonly rpcConfiguration: Extract<RpcConfigurationState, { readonly status: 'ready' }> },
 ) {
-	const settings = admitted?.settings ?? await getRequiredSettings()
+	const settings = admitted?.settings ?? requireAvailableSettings(await getSettingsSnapshot())
 	if (settings.simulationMode === params.data) return
 	const getAvailableRpcEntries = async () => admitted?.rpcConfiguration.rpcEntries ?? await getRpcList()
 	// if we are on unsupported chain, force change to a supported one
@@ -873,7 +873,7 @@ export async function refreshHomeData(
 	admittedSettings?: Settings,
 ) {
 	const newPopupRefreshGeneration = popupRefreshGeneration
-	const settings = admittedSettings ?? await getRequiredSettings()
+	const settings = admittedSettings ?? requireAvailableSettings(await getSettingsSnapshot())
 	markPerformance(POPUP_PERFORMANCE_MARKS.backgroundRefreshStart)
 	try {
 		if (settings.simulationMode) await updateSimulationMetadata(ethereum, requestAbortController)
@@ -1128,7 +1128,7 @@ export async function requestMakeMeRichList(ethereumClientService: EthereumClien
 export const requestActiveAddresses = async () => ({ method: 'popup_requestActiveAddresses' as const, activeAddresses: await getActiveAddresses() })
 
 export const requestSimulationMode = async (admittedSettings?: Settings) => {
-	const settings = admittedSettings ?? await getRequiredSettings()
+	const settings = admittedSettings ?? requireAvailableSettings(await getSettingsSnapshot())
 	return { method: 'popup_requestSimulationMode' as const, simulationMode: settings.simulationMode }
 }
 
@@ -1171,7 +1171,7 @@ async function buildHomePageUpdate(
 		admittedSettings?: Settings
 	}
 ): Promise<UpdateHomePage> {
-	const settingsPromise = silenceChromeUnCaughtPromise(admittedSettings === undefined ? getRequiredSettings() : Promise.resolve(admittedSettings))
+	const settingsPromise = silenceChromeUnCaughtPromise(admittedSettings === undefined ? getSettingsSnapshot().then(requireAvailableSettings) : Promise.resolve(admittedSettings))
 	const rpcConnectionStatusPromise = silenceChromeUnCaughtPromise(getRpcConnectionStatus())
 	const rpcEntriesPromise = silenceChromeUnCaughtPromise(getRpcList())
 	const preSimulationBlockTimeManipulationPromise = silenceChromeUnCaughtPromise(getPreSimulationBlockTimeManipulation())
@@ -1243,7 +1243,7 @@ export async function reportUnexpectedErrorInWindow(parsedRequest: UnexpectedErr
 }
 
 export async function requestInterceptorSimulationInput(ethereumClientService: EthereumClientService, admittedSettings?: Settings) {
-	const settings = admittedSettings ?? await getRequiredSettings()
+	const settings = admittedSettings ?? requireAvailableSettings(await getSettingsSnapshot())
 	const stack = await getInterceptorTransactionStack()
 	if (!settings.simulationMode) {
 		return {
@@ -1334,7 +1334,7 @@ export async function requestCompleteVisualizedSimulation(ethereum: EthereumClie
 }
 
 export async function requestSimulationMetadata(ethereumClientService: EthereumClientService, admittedSettings?: Settings) {
-	const settings = admittedSettings ?? await getRequiredSettings()
+	const settings = admittedSettings ?? requireAvailableSettings(await getSettingsSnapshot())
 	const simulationState = settings.simulationMode ? await getUpdatedSimulationState(ethereumClientService, await captureSimulationSnapshot()) : { kind: 'passthrough' as const }
 	if (simulationState.kind === 'passthrough' || simulationState.value.success === false) return {
 		method: 'popup_requestSimulationMetadata' as const,

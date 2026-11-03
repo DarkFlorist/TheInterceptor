@@ -1,3 +1,4 @@
+import { getRequiredSettings } from './requiredSettings.js'
 import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
 import type { SimulationServices, SimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
 import { EthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
@@ -162,6 +163,7 @@ export async function loadModules() {
 		},
 		...await import('../../app/ts/background/websiteLifecycle.js'),
 		...await import('../../app/ts/background/settings.js'),
+		getRequiredSettings,
 		...await import('../../app/ts/background/storageVariables.js'),
 		...await import('../../app/ts/background/rpcConfigurationStorage.js'),
 		...await import('../../app/ts/background/websiteAccessPolicy.js'),

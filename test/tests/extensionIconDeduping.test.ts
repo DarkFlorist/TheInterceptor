@@ -1,3 +1,4 @@
+import { getRequiredSettings } from './requiredSettings.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { ICON_ACCESS_DENIED, ICON_NOT_ACTIVE, ICON_SIMULATING } from '../../app/ts/utils/constants.js'
@@ -106,6 +107,7 @@ async function loadModules() {
 		...await import('../../app/ts/background/backgroundUtils.js'),
 		...await import('../../app/ts/background/iconHandler.js'),
 		...await import('../../app/ts/background/settings.js'),
+		getRequiredSettings,
 		...await import('../../app/ts/background/popupMessageHandlers.js'),
 		...await import('../../app/ts/background/storageVariables.js'),
 		...await import('../../app/ts/background/websiteTabConnections.js'),

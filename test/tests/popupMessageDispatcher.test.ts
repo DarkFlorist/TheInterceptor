@@ -1,3 +1,4 @@
+import { getRequiredSettings } from './requiredSettings.js'
 import { createDeferredValue, createPort, createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import { beforeEach, describe, test } from 'bun:test'
@@ -106,7 +107,7 @@ const [
 	{ dispatchPopupMessage },
 	{ websiteSocketToString },
 	{ getLatestUnexpectedError, setFetchSimulationStackRequestPromise, updatePendingAccessRequests },
-	{ changeSimulationMode, exportSettingsAndAddressBook, getRequiredSettings, updateWebsiteAccess },
+	{ changeSimulationMode, exportSettingsAndAddressBook, updateWebsiteAccess },
 	{ updateWebsiteApprovalAccesses },
 	{ ExportedSettings },
 	{ serialize },

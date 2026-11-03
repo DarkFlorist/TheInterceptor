@@ -1,3 +1,4 @@
+import { getRequiredSettings } from './requiredSettings.js'
 import { createDeferredValue, createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import { test } from 'bun:test'
@@ -1034,7 +1035,7 @@ test('persists and simulates a valid Safe owner signature before replying with t
 		requiredChainId: fakeRpcNetwork.chainId,
 		simulateWithZeroBaseFee: true,
 	})
-	assert.equal((await (await import('../../app/ts/background/settings.js')).getRequiredSettings()).activeSigningSafeAddress, activeAddress)
+	assert.equal((await getRequiredSettings()).activeSigningSafeAddress, activeAddress)
 	const simulationInput = await (await import('../../app/ts/background/simulationUpdating.js')).getCurrentSimulationInput()
 	const safeSimulationBlock = simulationInput.find((block) => block.transactions.some((transaction) =>
 		transaction.safeTransaction?.safeTxHash === safeTxHash
