@@ -741,7 +741,7 @@ const waitUntilNothingPending = async () => {
 	}
 }
 
-for (const failure of ['throws before stacking', 'finds its hash taken'] as const) {
+for (const failure of ['throws before stacking', 'finds its hash taken', 'throws before stacking, and the deferred close fails looking the request up once'] as const) {
 	test(`answers a popup close that lost to an accept once the accept ${ failure }`, async () => {
 		await startSimulationStack(SENDER)
 		const postedMessages: unknown[] = []
@@ -750,6 +750,7 @@ for (const failure of ['throws before stacking', 'finds its hash taken'] as cons
 		const [pending] = await modules.getPendingTransactionsAndMessages()
 		if (pending?.type !== 'Transaction' || pending.simulationHashReservation === undefined) throw new Error('Expected a reserved confirmation')
 		// A transaction stacked under the reserved hash by a write that ignored the reservation makes the accept find it taken.
+		const acceptThrows = failure !== 'finds its hash taken'
 		const stackBefore = failure === 'finds its hash taken'
 			? { operations: [asOperation({ ...createStackedTransaction(99n, 7n), signedTransaction: { ...createStackedTransaction(99n, 7n).signedTransaction, hash: pending.simulationHashReservation.hash } })] }
 			: { operations: [] }
@@ -762,12 +763,30 @@ for (const failure of ['throws before stacking', 'finds its hash taken'] as cons
 			await withSilencedConsole(async () => await modules.onCloseWindowOrTab({ type: 'popup', id: CONFIRMATION_WINDOW_ID }, simulator.ethereum, simulator.tokenPriceService, websiteTabConnections))
 			assert.equal((await modules.getPendingTransactionsAndMessages()).length, 1, 'the close waits for the claimed accept')
 		} finally {
-			pause.release(failure === 'throws before stacking')
+			pause.release(acceptThrows)
+		}
+		// After the failed accept, its claim release finishes the request again (one pending read), then looks the request up for the deferred close (the next), which fails once.
+		let failedLookups = 0
+		if (failure === 'throws before stacking, and the deferred close fails looking the request up once') {
+			let pendingReads = 0
+			browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+				if (!readsKey(keys, 'pendingTransactionsAndMessages')) return readStoredItems()
+				pendingReads += 1
+				if (pendingReads !== 2) return readStoredItems()
+				failedLookups += 1
+				throw new Error('transient pending request read failure')
+			})
 		}
 		const accepted = await accepting.then((result) => ({ result }), (error: unknown) => ({ error }))
-		if (failure === 'throws before stacking') assert.ok('error' in accepted, 'the accept fails')
+		if (acceptThrows) assert.ok('error' in accepted, 'the accept fails')
 		else assert.deepEqual(accepted, { result: false })
-		await waitUntilNothingPending()
+		await withSilencedConsole(async () => await waitUntilNothingPending())
+		browserMock.setStorageGetHandler(undefined)
+		if (failure === 'throws before stacking, and the deferred close fails looking the request up once') {
+			assert.equal(failedLookups, 1, 'the deferred close\'s lookup failed')
+			await withSilencedConsole(async () => await waitForCondition(async () => (await modules.getPendingTerminalReplies()).length === 0))
+			await assertNoResolutionBookkeeping()
+		}
 		assert.deepEqual(getPageResponses(postedMessages, request.requestId), [{ error: 4001 }], 'the page gets exactly one rejection')
 		assert.deepEqual(hashesOf(await getStackedTransactions()), hashesOf(stackBefore.operations.map((operation) => operation.preSimulationTransaction)), 'nothing new is stacked')
 	})

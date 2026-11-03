@@ -371,25 +371,29 @@ export const registerCommittedRequestFinisher = (getServices: () => { readonly e
 
 // When a tab closes, finishes its requests' committed replies, which it can no longer receive.
 export async function finishCommittedRequestsOfTab(tabId: number, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections) {
-	await finishCommittedRequestsOfClosedTab(tabId, { ethereum, tokenPriceService, websiteTabConnections }, 0)
+	await finishCommittedRequestsOfClosedTab(tabId, { ethereum, tokenPriceService, websiteTabConnections })
 }
 
-// Lists the closed tab's committed replies and finishes each request; a failed listing is reported and retried with the finishing's backoff and limit, since the closed tab triggers no other cleanup.
-async function finishCommittedRequestsOfClosedTab(tabId: number, context: ResolutionContext, failedAttempts: number) {
-	let committedReplies: Awaited<ReturnType<typeof getPendingTerminalReplies>>
+// Runs work whose effect recovery depends on, so its intent is never dropped before the work succeeded: a failure is reported and the work retried with the finishing's backoff and limit. The first attempt runs in the caller's context; retries run later, without the caller's locks.
+async function runWithBoundedRetry(work: (context: ResolutionContext) => Promise<void>, context: ResolutionContext, failure: { readonly code: string, readonly description: string }, failedAttempts: number): Promise<void> {
 	try {
-		committedReplies = await getPendingTerminalReplies()
+		await work(context)
 	} catch (error) {
 		const retrying = failedAttempts + 1 < FINISHING_RETRY_LIMIT
 		await reportLocalRecovery(error, retrying
-			? { code: 'closed_tab_resolution_retrying', message: 'Retrying the cleanup of a closed tab\'s committed requests.' }
-			: { code: 'closed_tab_resolution_gave_up', message: 'Stopped retrying the cleanup of a closed tab\'s committed requests; startup finishes them.' })
-		if (retrying) setTimeout(() => { void finishCommittedRequestsOfClosedTab(tabId, context, failedAttempts + 1) }, FINISHING_RETRY_BASE_DELAY_MS * 2 ** failedAttempts)
-		return
+			? { code: `${ failure.code }_retrying`, message: `Retrying ${ failure.description }.` }
+			: { code: `${ failure.code }_gave_up`, message: `Stopped retrying ${ failure.description }; startup recovery handles it.` })
+		if (retrying) setTimeout(() => { void runWithBoundedRetry(work, withoutHeldLocks(context), failure, failedAttempts + 1) }, FINISHING_RETRY_BASE_DELAY_MS * 2 ** failedAttempts)
 	}
-	for (const committedReply of committedReplies) {
-		if (committedReply.uniqueRequestIdentifier.requestSocket.tabId === tabId) await resumeRequest(committedReply.uniqueRequestIdentifier, context)
-	}
+}
+
+// Lists the closed tab's committed replies and finishes each request.
+async function finishCommittedRequestsOfClosedTab(tabId: number, context: ResolutionContext) {
+	await runWithBoundedRetry(async (attemptContext) => {
+		for (const committedReply of await getPendingTerminalReplies()) {
+			if (committedReply.uniqueRequestIdentifier.requestSocket.tabId === tabId) await resumeRequest(committedReply.uniqueRequestIdentifier, attemptContext)
+		}
+	}, context, { code: 'closed_tab_resolution', description: 'the cleanup of a closed tab\'s committed requests' }, 0)
 }
 
 // At startup, finishes every request with a committed reply, whatever its confirmation window's state.
@@ -425,8 +429,11 @@ async function withResolutionClaim<Result>(uniqueRequestIdentifier: UniqueReques
 		deferredResolutions.delete(claim)
 		if (deferred !== undefined) {
 			await resumeRequest(uniqueRequestIdentifier, context)
-			const stillPending = deferred.closeRequested ? await getPendingTransactionOrMessageByidentifier(uniqueRequestIdentifier) : undefined
-			if (stillPending !== undefined) await resolveAllPendingTransactionsAndMessageAsNoResponse([stillPending], context)
+			// The close is kept by its retries until the request is rejected or found resolved.
+			if (deferred.closeRequested) await runWithBoundedRetry(async (attemptContext) => {
+				const stillPending = await getPendingTransactionOrMessageByidentifier(uniqueRequestIdentifier)
+				if (stillPending !== undefined) await resolveAllPendingTransactionsAndMessageAsNoResponse([stillPending], attemptContext)
+			}, context, { code: 'deferred_close', description: 'a popup close deferred behind another resolution of the request' }, 0)
 		}
 	}
 }
@@ -630,10 +637,13 @@ async function resolvePendingRequest(resolutionContext: ResolutionContext, confi
 }
 
 export const onCloseWindowOrTab = async (popupOrTabs: PopupOrTabId, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections) => { // check if user has closed the window on their own, if so, reject all signatures
-	const transactions = await getPendingTransactionsAndMessages()
-	const [firstTransaction] = transactions
-	if (firstTransaction === undefined || firstTransaction?.popupOrTabId.type !== popupOrTabs.type || firstTransaction.popupOrTabId.id !== popupOrTabs.id) return
-	await resolveAllPendingTransactionsAndMessageAsNoResponse(transactions, { ethereum, tokenPriceService, websiteTabConnections })
+	// The close event comes once, so reading the requests it rejects is retried rather than dropped.
+	await runWithBoundedRetry(async (context) => {
+		const transactions = await getPendingTransactionsAndMessages()
+		const [firstTransaction] = transactions
+		if (firstTransaction === undefined || firstTransaction?.popupOrTabId.type !== popupOrTabs.type || firstTransaction.popupOrTabId.id !== popupOrTabs.id) return
+		await resolveAllPendingTransactionsAndMessageAsNoResponse(transactions, context)
+	}, { ethereum, tokenPriceService, websiteTabConnections }, { code: 'window_close_resolution', description: 'the rejection of requests whose confirmation window closed' }, 0)
 }
 
 export async function resolvePendingRequestsForMissingConfirmationWindows(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections) {
