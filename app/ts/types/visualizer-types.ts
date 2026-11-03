@@ -543,6 +543,9 @@ export const InterceptorTransactionStack = funtypes.ReadonlyObject({
 	operations: funtypes.ReadonlyArray(InterceptorStackOperation),
 })
 
+// How resolving a pending request changed the simulation stack, which decides the view work done once the website has its answer.
+export type SimulationStackChange = 'changed' | 'unchanged' | 'safeProposalStored'
+
 export type InterceptorSimulationExport = funtypes.Static<typeof InterceptorSimulationExport>
 export const InterceptorSimulationExport = funtypes.ReadonlyObject({
 	name: funtypes.Literal('Interceptor Simulation Export'),
