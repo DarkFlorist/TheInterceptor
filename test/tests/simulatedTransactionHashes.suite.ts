@@ -933,14 +933,14 @@ test('keeps a rejection whose enqueue failed while the page was disconnected, an
 	const request = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
 	const disconnected = new Map()
 	let failedEnqueues = 0
-	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
-		if (failedEnqueues > 0 || !readsKey(keys, 'pendingTerminalReplies')) return readStoredItems()
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		if (failedEnqueues > 0 || !('pendingTerminalReplies' in items)) return writeStoredItems()
 		failedEnqueues += 1
-		throw new Error('transient terminal reply queue read failure')
+		throw new Error('transient terminal reply queue write failure')
 	})
 	await rejectRequest(request, disconnected)
 	await waitUntilNothingPending()
-	browserMock.setStorageGetHandler(undefined)
+	browserMock.setStorageSetHandler(undefined)
 	assert.equal(failedEnqueues, 1)
 	assert.equal((await modules.getPendingTerminalReplies()).length, 1, 'the retried enqueue keeps the reply durably')
 	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [])
@@ -982,4 +982,81 @@ const waitForCondition = async (condition: () => Promise<boolean>) => {
 		if (Date.now() > deadline) throw new Error('Timed out waiting for the condition')
 		await new Promise((resolve) => setTimeout(resolve, 10))
 	}
+}
+
+test('delivers a reply once when its delivery throws before posting and a reconnect flush runs during the retry\'s backoff', async () => {
+	await startSimulationStack(SENDER)
+	const postedMessages: unknown[] = []
+	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+	const request = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+	// The delivery's lookup of the page's connection throws once, before anything is posted.
+	const getConnection = websiteTabConnections.get.bind(websiteTabConnections)
+	let failNextLookup = false
+	websiteTabConnections.get = (tabId: number) => {
+		if (!failNextLookup) return getConnection(tabId)
+		failNextLookup = false
+		throw new Error('transient connection lookup failure')
+	}
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		writeStoredItems()
+		if (Array.isArray(items.pendingTransactionsAndMessages) && items.pendingTransactionsAndMessages.length === 0) failNextLookup = true
+	})
+	await rejectRequest(request, websiteTabConnections)
+	browserMock.setStorageSetHandler(undefined)
+	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [], 'the delivery failed before posting')
+	await modules.flushPendingTerminalRepliesForSocket(websiteTabConnections, REQUEST_SOCKET)
+	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [{ error: 4001 }], 'the reconnect flush delivers it')
+	await new Promise((resolve) => setTimeout(resolve, 300))
+	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [{ error: 4001 }], 'the scheduled retry does not deliver it again')
+})
+
+// Persists what an accept leaves when a restart interrupts it after enqueueing its reply and before removing the request: the stacked operation and the queued success reply, with nothing in memory. Then the restarted extension resolves the request, whose window is gone.
+const recoverAfterRestart = async (requestId: number, operation: Parameters<typeof asOperation>[0] | { readonly type: 'Message', readonly signedMessageTransaction: unknown }, queuedResult: bigint | string | undefined, websiteTabConnections: ReturnType<typeof createWebsiteTabConnections>) => {
+	await modules.updateInterceptorTransactionStack((stack) => ({ operations: [...stack.operations, 'signedMessageTransaction' in operation ? operation : asOperation(operation)] }))
+	const [pending] = await modules.getPendingTransactionsAndMessages()
+	if (pending === undefined) throw new Error('Expected the pending request')
+	if (queuedResult !== undefined) {
+		const { appendPendingTerminalReply } = await import('../../app/ts/background/pendingTerminalReplies.js')
+		await appendPendingTerminalReply({ ...pending.originalRequestParameters, type: 'result', result: queuedResult, uniqueRequestIdentifier: { requestId, requestSocket: REQUEST_SOCKET } })
+	}
+	browserMock.setLiveWindowIds([])
+	await withSilencedConsole(async () => await modules.resolvePendingRequestsForMissingConfirmationWindows(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections))
+	await waitUntilNothingPending()
+}
+
+test('finishes an accepted transaction\'s queued reply on recovery after a restart, never rejecting it', async () => {
+	await startSimulationStack(SENDER)
+	const postedMessages: unknown[] = []
+	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+	await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+	const [pending] = await modules.getPendingTransactionsAndMessages()
+	if (pending?.type !== 'Transaction' || pending.transactionOrMessageCreationStatus !== 'Simulated') throw new Error('Expected a simulated pending transaction')
+	const stacked = toPreSimulationTransaction(pending.transactionToSimulate, pending.simulationHashReservation)
+	await recoverAfterRestart(1, stacked, stacked.signedTransaction.hash, websiteTabConnections)
+	assert.deepEqual(getPageResponses(postedMessages, 1), [{ result: stacked.signedTransaction.hash }])
+	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+})
+
+const openMessageConfirmation = async (websiteTabConnections: ReturnType<typeof createWebsiteTabConnections>) => {
+	const signRequest = (await import('../../app/ts/types/jsonRpc-signing-types.js')).PersonalSignParams.parse({ method: 'personal_sign', params: ['0x68656c6c6f', addressString(SENDER)] })
+	const uniqueRequestIdentifier = { requestId: 1, requestSocket: REQUEST_SOCKET }
+	const opened = await withSilencedConsole(async () => await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, { interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier, ...signRequest }, { kind: 'message', parameters: signRequest }, true, SENDER, WEBSITE, websiteTabConnections))
+	const [pending] = await modules.getPendingTransactionsAndMessages()
+	if (pending?.type !== 'SignableMessage' || pending.transactionOrMessageCreationStatus !== 'Simulated') throw new Error(`Expected a simulated pending message, got ${ JSON.stringify(opened) }`)
+	const { simulatePersonalSign } = await import('../../app/ts/simulation/services/simulationPersonalSigning.js')
+	const signature = (await simulatePersonalSign(pending.originalRequestParameters, pending.signedMessageTransaction.fakeSignedFor)).signature
+	return { operation: { type: 'Message' as const, signedMessageTransaction: pending.signedMessageTransaction }, signature }
+}
+
+for (const queued of [true, false]) {
+	test(`answers an accepted message with its signature on recovery after a restart, never a rejection, when its reply ${ queued ? 'was queued' : 'was lost' }`, async () => {
+		await startSimulationStack(SENDER)
+		const postedMessages: unknown[] = []
+		const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+		const { operation, signature } = await openMessageConfirmation(websiteTabConnections)
+		await recoverAfterRestart(1, operation, queued ? signature : undefined, websiteTabConnections)
+		const responses = postedMessages.flatMap((message) => isRecord(message) && message.requestId === 1 && ('result' in message || 'error' in message) ? [isRecord(message.error) ? { error: message.error.code } : { result: message.result }] : [])
+		assert.deepEqual(responses, [{ result: signature }])
+		assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+	})
 }

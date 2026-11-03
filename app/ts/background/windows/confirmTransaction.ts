@@ -18,7 +18,7 @@ import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getP
 import { allocateSimulationHashReservation, appendAcceptedTransactionToStack, stacksTransactionOnAccept, withSimulationHashLock } from '../simulationStackHashes.js'
 import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
 import { replyToInterceptedRequestAfterManifestV2Reconnect } from '../messageSending.js'
-import { attemptQueuedTerminalReplyDelivery, queueTerminalReply } from '../terminalReplyDelivery.js'
+import { attemptQueuedTerminalReplyDelivery, getQueuedTerminalReply, queueTerminalReply } from '../terminalReplyDelivery.js'
 import { stringToBytes, keccak256 } from '../../utils/ethereumPrimitives.js'
 import { EthereumBytes32, EthereumQuantity, serialize } from '../../types/wire-types.js'
 import type { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
@@ -363,20 +363,30 @@ async function commitTerminalReply(reply: InterceptedRequestForward, order: Term
 // Resumes a request's committed resolution under its claim, whether or not the request is still pending.
 const resumeCommittedResolution = async (uniqueRequestIdentifier: UniqueRequestIdentifier, websiteTabConnections: WebsiteTabConnections) => await withResolutionClaim(uniqueRequestIdentifier, websiteTabConnections, async () => false)
 
-// The requests whose terminal outcome an accept, reject or close has claimed and is carrying out. A claim is taken synchronously, so of racing resolutions of a request exactly one stacks it or replies; the others return false without either. Under the claim, a committed resolution of the request is resumed first; only without one is the pending request resolved.
+// The requests whose terminal outcome an accept, reject or close has claimed and is carrying out. A claim is taken synchronously, so of racing resolutions of a request exactly one stacks it or replies; the others return false without either. Under the claim, a committed resolution of the request is resumed first, then a reply already in the durable queue, whose commitment a restart lost, is finished; only without either is the pending request resolved.
 const resolutionClaims = new Set<string>()
 // Closes of a request that lost to a claim, run once the claim is released, so a request whose claimed accept failed is still answered; one that was resolved meanwhile is no longer pending, and the close does nothing.
 const deferredCloses = new Map<string, () => Promise<void>>()
-async function withResolutionClaim<Result>(uniqueRequestIdentifier: UniqueRequestIdentifier, websiteTabConnections: WebsiteTabConnections, resolve: () => Promise<Result>, deferIfClaimed?: () => Promise<void>) {
+async function withResolutionClaim<Result>(
+	uniqueRequestIdentifier: UniqueRequestIdentifier,
+	websiteTabConnections: WebsiteTabConnections,
+	resolve: () => Promise<Result>,
+	options: { readonly deferIfClaimed?: () => Promise<void>, readonly afterRemoval?: () => Promise<void> } = {},
+) {
 	const claim = getUniqueRequestIdentifierString(uniqueRequestIdentifier)
 	if (resolutionClaims.has(claim)) {
-		if (deferIfClaimed !== undefined) deferredCloses.set(claim, deferIfClaimed)
+		if (options.deferIfClaimed !== undefined) deferredCloses.set(claim, options.deferIfClaimed)
 		return false
 	}
 	resolutionClaims.add(claim)
 	try {
 		if (committedResolutions.has(claim)) return await finishCommittedResolution(uniqueRequestIdentifier, websiteTabConnections)
 		if (await getPendingTransactionOrMessageByidentifier(uniqueRequestIdentifier) === undefined) return false
+		const queuedReply = await getQueuedTerminalReply(uniqueRequestIdentifier)
+		if (queuedReply !== undefined) {
+			committedResolutions.set(claim, { reply: queuedReply, order: 'remove-then-deliver', afterRemoval: options.afterRemoval ?? (async () => undefined), enqueued: true, removed: false, failedAttempts: 0 })
+			return await finishCommittedResolution(uniqueRequestIdentifier, websiteTabConnections)
+		}
 		return await resolve()
 	} finally {
 		resolutionClaims.delete(claim)
@@ -463,13 +473,19 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 		await removePendingRequestAndUpdateView()
 		return await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, { ...pendingTransactionOrMessage.originalRequestParameters, ...message, uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
 	}
-	// A rejection, unless the request's simulation-mode transaction is already stacked: an accept stacked it and failed before its reply was committed, or its commitment was lost with a restart. Then the page gets the stacked hash.
+	// A rejection, unless the request is already stacked in simulation mode: an accept stacked it and failed before its reply was committed, or its commitment and queued reply were lost. Then the page gets what accepting gives it: a transaction's stacked hash, a message's simulated signature.
 	const rejectUnlessStacked = async (rejection: { type: 'result', error: { code: number, message: string } }, options: { readonly order?: TerminalReplyOrder } = {}) => {
 		const request = pendingTransactionOrMessage
-		const stacked = request.type === 'Transaction' && request.simulationMode
-			? (await getInterceptorTransactionStack()).operations.find((operation) => operation.type === 'Transaction' && operation.preSimulationTransaction.transactionIdentifier === request.transactionIdentifier)
-			: undefined
-		if (stacked?.type === 'Transaction') return await reply({ type: 'result', result: EthereumBytes32.serialize(stacked.preSimulationTransaction.signedTransaction.hash) })
+		if (!request.simulationMode) return await reply(rejection, options)
+		const operations = (await getInterceptorTransactionStack()).operations
+		if (request.type === 'Transaction') {
+			const stacked = operations.find((operation) => operation.type === 'Transaction' && operation.preSimulationTransaction.transactionIdentifier === request.transactionIdentifier)
+			if (stacked?.type === 'Transaction') return await reply({ type: 'result', result: EthereumBytes32.serialize(stacked.preSimulationTransaction.signedTransaction.hash) })
+			return await reply(rejection, options)
+		}
+		if (operations.some((operation) => operation.type === 'Message' && operation.signedMessageTransaction.messageIdentifier === request.signedMessageTransaction.messageIdentifier)) {
+			return await reply({ type: 'result', result: (await simulatePersonalSign(request.originalRequestParameters, request.signedMessageTransaction.fakeSignedFor)).signature })
+		}
 		return await reply(rejection, options)
 	}
 	if (confirmation.data.action === 'addToSafeStack') {
@@ -506,10 +522,10 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 	}
 	if (confirmation.data.action === 'noResponse') {
 		const unansweredRequest = pendingTransactionOrMessage
-		return await withResolutionClaim(confirmation.data.uniqueRequestIdentifier, websiteTabConnections, async () => await rejectUnlessStacked(formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User denied transaction signature'), { order: 'deliver-then-remove' }), async () => await resolveAllPendingTransactionsAndMessageAsNoResponse([unansweredRequest], ethereum, tokenPriceService, websiteTabConnections))
+		return await withResolutionClaim(confirmation.data.uniqueRequestIdentifier, websiteTabConnections, async () => await rejectUnlessStacked(formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User denied transaction signature'), { order: 'deliver-then-remove' }), { deferIfClaimed: async () => await resolveAllPendingTransactionsAndMessageAsNoResponse([unansweredRequest], ethereum, tokenPriceService, websiteTabConnections), afterRemoval: updateViewAfterRemoval })
 	}
-	if (pendingTransactionOrMessage === undefined || pendingTransactionOrMessage.transactionOrMessageCreationStatus !== 'Simulated') return await withResolutionClaim(confirmation.data.uniqueRequestIdentifier, websiteTabConnections, async () => await rejectUnlessStacked(formRejectMessage(METAMASK_ERROR_BLANKET_ERROR, 'The Interceptor failed to process the transaction')))
-	if (confirmation.data.action === 'reject') return await withResolutionClaim(confirmation.data.uniqueRequestIdentifier, websiteTabConnections, async () => await rejectUnlessStacked(formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User denied transaction signature')))
+	if (pendingTransactionOrMessage === undefined || pendingTransactionOrMessage.transactionOrMessageCreationStatus !== 'Simulated') return await withResolutionClaim(confirmation.data.uniqueRequestIdentifier, websiteTabConnections, async () => await rejectUnlessStacked(formRejectMessage(METAMASK_ERROR_BLANKET_ERROR, 'The Interceptor failed to process the transaction')), { afterRemoval: updateViewAfterRemoval })
+	if (confirmation.data.action === 'reject') return await withResolutionClaim(confirmation.data.uniqueRequestIdentifier, websiteTabConnections, async () => await rejectUnlessStacked(formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User denied transaction signature')), { afterRemoval: updateViewAfterRemoval })
 	if (!pendingTransactionOrMessage.simulationMode) {
 		if (confirmation.data.action === 'signerIncluded') {
 			const safeReply = await resolveSafeSignerReply(ethereum, tokenPriceService, pendingTransactionOrMessage, confirmation.data.signerReply)
@@ -573,7 +589,7 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 			}
 			default: assertNever(simulatedPending)
 		}
-	})
+	}, { afterRemoval: updateViewAfterRemoval })
 }
 
 export const onCloseWindowOrTab = async (popupOrTabs: PopupOrTabId, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections) => { // check if user has closed the window on their own, if so, reject all signatures

@@ -1,7 +1,7 @@
 import type { InterceptedRequestForward } from '../types/interceptor-messages.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { reportLocalRecovery } from '../utils/errors.js'
-import { getUniqueRequestIdentifierString, type WebsiteSocket } from '../utils/requests.js'
+import { doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, type UniqueRequestIdentifier, type WebsiteSocket } from '../utils/requests.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { websiteSocketToString } from './backgroundUtils.js'
 import { replyToInterceptedRequest } from './messageSending.js'
@@ -41,6 +41,9 @@ export async function queueTerminalReply(message: InterceptedRequestForward) {
 	}
 }
 
+// The reply queued for the request, if it is still owed.
+export const getQueuedTerminalReply = async (uniqueRequestIdentifier: UniqueRequestIdentifier) => (await getPendingTerminalReplies()).find((reply) => doesUniqueRequestIdentifiersMatch(reply.uniqueRequestIdentifier, uniqueRequestIdentifier))
+
 export async function attemptQueuedTerminalReplyDelivery(websiteTabConnections: WebsiteTabConnections, message: InterceptedRequestForward) {
 	const identifier = getUniqueRequestIdentifierString(message.uniqueRequestIdentifier)
 	const existingProduction = terminalReplyProductions.get(identifier)
@@ -48,6 +51,8 @@ export async function attemptQueuedTerminalReplyDelivery(websiteTabConnections: 
 	const production = (async () => {
 		const deliver = async () => await terminalReplySemaphore.execute(async () => {
 			if (await finishPreviouslyDeliveredTerminalReply(identifier, message)) return true
+			// The queue entry is the single record of whether the reply is still owed: a delivery by any path, this one or a reconnect flush, removes it, so an attempt that finds it gone never posts the reply again.
+			if (await getQueuedTerminalReply(message.uniqueRequestIdentifier) === undefined) return true
 			const delivery = replyToInterceptedRequest(websiteTabConnections, message)
 			if (delivery === true) await recordSuccessfulTerminalReplyDelivery(identifier, message, false)
 			return delivery
