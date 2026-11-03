@@ -263,11 +263,14 @@ export const setGasLimitForTransaction = async (transactionIdentifier: bigint, g
 	})
 }
 
-// The terminal reply a resolution committed a request to, with the cleanup of the committing resolution, kept until both finish: a later accept, reject, close or retry of the request completes this reply instead of choosing another, and attempts its delivery once. A close delivers before it cleans up, other replies after.
+// Whether a terminal reply is delivered before or after the request's cleanup: a close delivers first, every other reply after.
+type TerminalReplyOrder = 'deliver-then-clean-up' | 'clean-up-then-deliver'
+
+// The terminal reply a resolution committed a request to, with the cleanup of the committing resolution, kept until both finish: a later accept, reject, close or retry of the request completes this reply instead of choosing another, and attempts its delivery once.
 type CommittedResolution = {
 	readonly reply: InterceptedRequestForward
 	readonly cleanUp: () => Promise<void>
-	readonly deliverBeforeCleanUp: boolean
+	readonly order: TerminalReplyOrder
 	readonly delivery?: { readonly delivered: boolean | undefined }
 }
 const committedResolutions = new Map<string, CommittedResolution>()
@@ -276,7 +279,7 @@ async function finishCommittedResolution(claim: string, websiteTabConnections: W
 	const committed = committedResolutions.get(claim)
 	if (committed === undefined) return false
 	const deliver = async () => committed.delivery?.delivered ?? await attemptQueuedTerminalReplyDelivery(websiteTabConnections, committed.reply)
-	if (committed.deliverBeforeCleanUp) {
+	if (committed.order === 'deliver-then-clean-up') {
 		const delivered = await deliver()
 		committedResolutions.set(claim, { ...committed, delivery: { delivered } })
 		await committed.cleanUp()
@@ -289,9 +292,9 @@ async function finishCommittedResolution(claim: string, websiteTabConnections: W
 	return delivered
 }
 
-async function commitTerminalReply(reply: InterceptedRequestForward, cleanUp: () => Promise<void>, websiteTabConnections: WebsiteTabConnections, deliverBeforeCleanUp = false) {
+async function commitTerminalReply(reply: InterceptedRequestForward, cleanUp: () => Promise<void>, websiteTabConnections: WebsiteTabConnections, order: TerminalReplyOrder) {
 	const claim = getUniqueRequestIdentifierString(reply.uniqueRequestIdentifier)
-	committedResolutions.set(claim, { reply, cleanUp, deliverBeforeCleanUp })
+	committedResolutions.set(claim, { reply, cleanUp, order })
 	await queueTerminalReply(reply)
 	return await finishCommittedResolution(claim, websiteTabConnections)
 }
@@ -378,27 +381,27 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 		if ((await getPendingTransactionsAndMessages()).length === 0) await tryFocusingTabOrWindow({ type: 'tab', id: pendingTransactionOrMessage.uniqueRequestIdentifier.requestSocket.tabId })
 		if (!(await updateConfirmTransactionView(ethereum, tokenPriceService))) await closePopupOrTabById(pendingTransactionOrMessage.popupOrTabId)
 	}
-	const reply = async (message: { type: 'forwardToSigner' } | { type: 'result', error: { code: number, message: string } } | { type: 'result', result: unknown }, deliverBeforeCleanUp = false) => {
+	const reply = async (message: { type: 'forwardToSigner' } | { type: 'result', error: { code: number, message: string } } | { type: 'result', result: unknown }, { order = 'clean-up-then-deliver' }: { readonly order?: TerminalReplyOrder } = {}) => {
 		if (message.type === 'result' && !('error' in message)) {
 			if (pendingTransactionOrMessage.originalRequestParameters.method === 'eth_sendRawTransaction' || pendingTransactionOrMessage.originalRequestParameters.method === 'eth_sendTransaction') {
-				return await commitTerminalReply({ ...pendingTransactionOrMessage.originalRequestParameters, ...message, result: EthereumBytes32.parse(message.result), uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier }, removePendingRequestAndUpdateView, websiteTabConnections)
+				return await commitTerminalReply({ ...pendingTransactionOrMessage.originalRequestParameters, ...message, result: EthereumBytes32.parse(message.result), uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier }, removePendingRequestAndUpdateView, websiteTabConnections, 'clean-up-then-deliver')
 			}
-			return await commitTerminalReply({ ...pendingTransactionOrMessage.originalRequestParameters, ...message, result: funtypes.String.parse(message.result), uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier }, removePendingRequestAndUpdateView, websiteTabConnections)
+			return await commitTerminalReply({ ...pendingTransactionOrMessage.originalRequestParameters, ...message, result: funtypes.String.parse(message.result), uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier }, removePendingRequestAndUpdateView, websiteTabConnections, 'clean-up-then-deliver')
 		}
 		if (message.type === 'result') {
-			return await commitTerminalReply({ ...pendingTransactionOrMessage.originalRequestParameters, ...message, uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier }, removePendingRequestAndUpdateView, websiteTabConnections, deliverBeforeCleanUp)
+			return await commitTerminalReply({ ...pendingTransactionOrMessage.originalRequestParameters, ...message, uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier }, removePendingRequestAndUpdateView, websiteTabConnections, order)
 		}
 		await removePendingRequestAndUpdateView()
 		return await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, { ...pendingTransactionOrMessage.originalRequestParameters, ...message, uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
 	}
 	// A rejection, unless the request's simulation-mode transaction is already stacked: an accept stacked it and failed before its reply was committed, or its commitment was lost with a restart. Then the page gets the stacked hash.
-	const rejectUnlessStacked = async (rejection: { type: 'result', error: { code: number, message: string } }, deliverBeforeCleanUp = false) => {
+	const rejectUnlessStacked = async (rejection: { type: 'result', error: { code: number, message: string } }, options: { readonly order?: TerminalReplyOrder } = {}) => {
 		const request = pendingTransactionOrMessage
 		const stacked = request.type === 'Transaction' && request.simulationMode
 			? (await getInterceptorTransactionStack()).operations.find((operation) => operation.type === 'Transaction' && operation.preSimulationTransaction.transactionIdentifier === request.transactionIdentifier)
 			: undefined
 		if (stacked?.type === 'Transaction') return await reply({ type: 'result', result: EthereumBytes32.serialize(stacked.preSimulationTransaction.signedTransaction.hash) })
-		return await reply(rejection, deliverBeforeCleanUp)
+		return await reply(rejection, options)
 	}
 	if (confirmation.data.action === 'addToSafeStack') {
 		if (pendingTransactionOrMessage.approvalStatus.status === 'WaitingForSigner') return false
@@ -434,7 +437,7 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 	}
 	if (confirmation.data.action === 'noResponse') {
 		const unansweredRequest = pendingTransactionOrMessage
-		return await withResolutionClaim(confirmation.data.uniqueRequestIdentifier, websiteTabConnections, async () => await rejectUnlessStacked(formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User denied transaction signature'), true), async () => await resolveAllPendingTransactionsAndMessageAsNoResponse([unansweredRequest], ethereum, tokenPriceService, websiteTabConnections))
+		return await withResolutionClaim(confirmation.data.uniqueRequestIdentifier, websiteTabConnections, async () => await rejectUnlessStacked(formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User denied transaction signature'), { order: 'deliver-then-clean-up' }), async () => await resolveAllPendingTransactionsAndMessageAsNoResponse([unansweredRequest], ethereum, tokenPriceService, websiteTabConnections))
 	}
 	if (pendingTransactionOrMessage === undefined || pendingTransactionOrMessage.transactionOrMessageCreationStatus !== 'Simulated') return await withResolutionClaim(confirmation.data.uniqueRequestIdentifier, websiteTabConnections, async () => await rejectUnlessStacked(formRejectMessage(METAMASK_ERROR_BLANKET_ERROR, 'The Interceptor failed to process the transaction')))
 	if (confirmation.data.action === 'reject') return await withResolutionClaim(confirmation.data.uniqueRequestIdentifier, websiteTabConnections, async () => await rejectUnlessStacked(formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User denied transaction signature')))
