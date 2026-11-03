@@ -1640,3 +1640,90 @@ for (const closeDeferred of [false, true]) {
 		await assertNoResolutionBookkeeping()
 	})
 }
+
+test('moves a confirmation that picked a window to a new one when that window closed with its last request before the confirmation registered', async () => {
+	await startSimulationStack(SENDER)
+	const postedMessages: unknown[] = []
+	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+	const first = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+	// Windows open, close and exist as the browser would.
+	const windows = Reflect.get(globalThis, 'browser').windows
+	const { create: createWindow, remove: removeWindow, get: getWindow } = windows
+	const NEW_WINDOW_ID = 100
+	let liveWindows = [CONFIRMATION_WINDOW_ID]
+	windows.create = async () => {
+		liveWindows = [...liveWindows, NEW_WINDOW_ID]
+		browserMock.setLiveWindowIds(liveWindows)
+		return { id: NEW_WINDOW_ID }
+	}
+	windows.remove = async (windowId: number) => {
+		liveWindows = liveWindows.filter((id) => id !== windowId)
+		browserMock.setLiveWindowIds(liveWindows)
+	}
+	// The second confirmation picks the open window, then pauses reserving its hash, before it registers.
+	let pickedWindow = false
+	windows.get = async (windowId: number) => {
+		const window = await getWindow(windowId)
+		pickedWindow = true
+		return window
+	}
+	let signalPaused = () => undefined
+	const paused = new Promise<void>((resolve) => { signalPaused = () => { resolve() } })
+	let release = () => undefined
+	const released = new Promise<void>((resolve) => { release = () => { resolve() } })
+	let armed = true
+	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+		// Its reservation reads the pending requests after the stack; the stack read holds the large state lock, so the pause is on this read.
+		if (!pickedWindow || !armed || !readsKey(keys, 'pendingTransactionsAndMessages')) return readStoredItems()
+		armed = false
+		signalPaused()
+		await released
+		return readStoredItems()
+	})
+	try {
+		const opening = openConfirmation(2, SENDER, 2n, websiteTabConnections)
+		await paused
+		// Rejecting the first request removes the last registered request and closes the window.
+		await rejectRequest(first, websiteTabConnections)
+		assert.deepEqual(liveWindows, [], 'the window closed')
+		release()
+		await opening
+	} finally {
+		browserMock.setStorageGetHandler(undefined)
+		windows.create = createWindow
+		windows.remove = removeWindow
+		windows.get = getWindow
+	}
+	const [second] = await modules.getPendingTransactionsAndMessages()
+	assert.equal(second?.uniqueRequestIdentifier.requestId, 2)
+	assert.equal(second?.transactionOrMessageCreationStatus, 'Simulated')
+	assert.deepEqual(second?.popupOrTabId, { type: 'popup', id: NEW_WINDOW_ID }, 'the second request moved to a newly opened window')
+	assert.deepEqual(liveWindows, [NEW_WINDOW_ID])
+	assert.deepEqual(getPageResponses(postedMessages, 1), [{ error: 4001 }])
+	assert.deepEqual(getPageResponses(postedMessages, 2), [])
+})
+
+test('retries listing a closed tab\'s committed replies when the first listing fails', async () => {
+	await startSimulationStack(SENDER)
+	const postedMessages: unknown[] = []
+	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+	await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+	await seedCommittedRejection({ delivered: false, withWindow: true })
+	browserMock.setLiveTabIds([])
+	let failedListings = 0
+	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+		if (failedListings > 0 || !readsKey(keys, 'pendingTerminalReplies')) return readStoredItems()
+		failedListings += 1
+		throw new Error('transient terminal reply queue read failure')
+	})
+	const { finishCommittedRequestsOfTab } = await import('../../app/ts/background/windows/confirmTransaction.js')
+	await withSilencedConsole(async () => {
+		await finishCommittedRequestsOfTab(REQUEST_SOCKET.tabId, simulator.ethereum, simulator.tokenPriceService, new Map())
+		await waitForCondition(async () => (await modules.getPendingTerminalReplies()).length === 0)
+	})
+	browserMock.setStorageGetHandler(undefined)
+	assert.equal(failedListings, 1)
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	assert.deepEqual(getPageResponses(postedMessages, 1), [])
+	await assertNoResolutionBookkeeping()
+})

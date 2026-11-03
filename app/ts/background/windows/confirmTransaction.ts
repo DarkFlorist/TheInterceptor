@@ -274,6 +274,7 @@ async function updateConfirmationWindowAfterRemoving(confirmationWindow: PopupOr
 	}
 	await tryFocusingTabOrWindow({ type: 'tab', id: tabId })
 	await closePopupOrTabById(confirmationWindow)
+	await rehomeRequestsOfClosedWindow(confirmationWindow)
 }
 
 // A reply a resolution chose for a request whose commitment write failed: finishing the request commits it, so the request keeps that outcome.
@@ -362,8 +363,24 @@ export const registerCommittedRequestFinisher = (getServices: () => { readonly e
 
 // When a tab closes, finishes its requests' committed replies, which it can no longer receive.
 export async function finishCommittedRequestsOfTab(tabId: number, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections) {
-	for (const committedReply of await getPendingTerminalReplies()) {
-		if (committedReply.uniqueRequestIdentifier.requestSocket.tabId === tabId) await resumeRequest(committedReply.uniqueRequestIdentifier, { ethereum, tokenPriceService, websiteTabConnections })
+	await finishCommittedRequestsOfClosedTab(tabId, { ethereum, tokenPriceService, websiteTabConnections }, 0)
+}
+
+// Lists the closed tab's committed replies and finishes each request; a failed listing is reported and retried with the finishing's backoff and limit, since the closed tab triggers no other cleanup.
+async function finishCommittedRequestsOfClosedTab(tabId: number, context: ResolutionContext, failedAttempts: number) {
+	let committedReplies: Awaited<ReturnType<typeof getPendingTerminalReplies>>
+	try {
+		committedReplies = await getPendingTerminalReplies()
+	} catch (error) {
+		const retrying = failedAttempts + 1 < FINISHING_RETRY_LIMIT
+		await reportLocalRecovery(error, retrying
+			? { code: 'closed_tab_resolution_retrying', message: 'Retrying the cleanup of a closed tab\'s committed requests.' }
+			: { code: 'closed_tab_resolution_gave_up', message: 'Stopped retrying the cleanup of a closed tab\'s committed requests; startup finishes them.' })
+		if (retrying) setTimeout(() => { void finishCommittedRequestsOfClosedTab(tabId, context, failedAttempts + 1) }, FINISHING_RETRY_BASE_DELAY_MS * 2 ** failedAttempts)
+		return
+	}
+	for (const committedReply of committedReplies) {
+		if (committedReply.uniqueRequestIdentifier.requestSocket.tabId === tabId) await resumeRequest(committedReply.uniqueRequestIdentifier, context)
 	}
 }
 
@@ -794,6 +811,25 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 	return { transaction: { ...transactionWithoutGas, ...await getFeePerGas(transactionDetails.gas), gas: transactionDetails.gas }, ...extraParams, ...simulationOptionsField, success: true }
 }
 
+const openConfirmationWindow = async () => await openPopupOrTab({ url: getHtmlFile('confirmTransaction'), type: 'popup', height: 800, width: 600 })
+const isSameWindow = (first: PopupOrTabId, second: PopupOrTabId) => first.type === second.type && first.id === second.id
+const confirmationWindowRehomingSemaphore = new Semaphore(1)
+
+/**
+ * Moves the pending requests registered to a confirmation window that no longer exists into a newly opened one. A request can pick a request's window and register itself after that window's last request was removed and the window closed; registration and closing each rehome afterwards (registration once it registered, closing once it closed), so whichever runs second finds the stranded request.
+ * Its own lock, inside the pending-confirmation and claim but around only storage and window calls, lets one of them open the window and the other find the requests already moved.
+ */
+async function rehomeRequestsOfClosedWindow(confirmationWindow: PopupOrTabId) {
+	await confirmationWindowRehomingSemaphore.execute(async () => {
+		const stranded = (await getPendingTransactionsAndMessages()).filter((pending) => isSameWindow(pending.popupOrTabId, confirmationWindow))
+		if (stranded.length === 0 || await getPopupOrTabById(confirmationWindow) !== undefined) return
+		const openedWindow = await openConfirmationWindow()
+		if (openedWindow === undefined) throw new Error('Failed to open a confirmation window for requests whose window closed')
+		const popupOrTabId = { type: openedWindow.type, id: openedWindow.id }
+		for (const pending of stranded) await updatePendingTransactionOrMessage(pending.uniqueRequestIdentifier, async (request) => isSameWindow(request.popupOrTabId, confirmationWindow) ? { ...request, popupOrTabId } : request)
+	})
+}
+
 const getPendingTransactionWindow = async (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections) => {
 	const pendingTransactions = await getPendingTransactionsAndMessages()
 	const [firstPendingTransaction] = pendingTransactions
@@ -802,7 +838,7 @@ const getPendingTransactionWindow = async (ethereum: EthereumClientService, toke
 		if (alreadyOpenWindow) return alreadyOpenWindow
 		await resolveAllPendingTransactionsAndMessageAsNoResponse(pendingTransactions, ethereum, tokenPriceService, websiteTabConnections)
 	}
-	return await openPopupOrTab({ url: getHtmlFile('confirmTransaction'), type: 'popup', height: 800, width: 600 })
+	return await openConfirmationWindow()
 }
 
 export async function openConfirmTransactionDialogForMessage(
@@ -882,6 +918,7 @@ export async function openConfirmTransactionDialogForMessage(
 				...(safeMessageCoSignSnapshot === undefined ? {} : { safeMessageCoSignSnapshot }),
 			}
 			await appendPendingTransactionOrMessage(pendingMessage)
+			await rehomeRequestsOfClosedWindow(openedDialog)
 			await updateConfirmTransactionView(ethereumClientService, tokenPriceService)
 
 			await updatePendingTransactionOrMessage(pendingMessage.uniqueRequestIdentifier, async (message) => {
@@ -1003,6 +1040,8 @@ export async function openConfirmTransactionDialogForTransaction(
 				await appendPendingTransactionOrMessage(reservation === undefined ? pendingTransaction : { ...pendingTransaction, simulationHashReservation: reservation })
 				return reservation
 			})
+			// The window this request picked may have closed with its last other request while this one reserved its hash.
+			await rehomeRequestsOfClosedWindow(openedDialog)
 			await updateConfirmTransactionView(ethereumClientService, tokenPriceService)
 			markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionSimulationStart)
 			const simulationResultsPromise = silenceChromeUnCaughtPromise(refreshConfirmTransactionSimulation(
