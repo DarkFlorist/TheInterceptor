@@ -1,3 +1,4 @@
+import type { DeferredSafeSignerReply } from '../types/accessRequest.js'
 import type { InterceptedRequestForward } from '../types/interceptor-messages.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { reportLocalRecovery } from '../utils/errors.js'
@@ -41,12 +42,12 @@ export async function queueTerminalReply(message: InterceptedRequestForward) {
 	}
 }
 
-export async function queueDeferredSafeProposalReply(uniqueRequestIdentifier: InterceptedRequestForward['uniqueRequestIdentifier'], signerReply: string, message: InterceptedRequestForward) {
+export async function queueDeferredSafeProposalReply(uniqueRequestIdentifier: InterceptedRequestForward['uniqueRequestIdentifier'], deferredReply: Omit<DeferredSafeSignerReply, 'terminalReplyQueued'>, message: InterceptedRequestForward) {
 	const identifier = getUniqueRequestIdentifierString(uniqueRequestIdentifier)
 	terminalReplyReservations.add(identifier)
 	try {
 		await terminalReplySemaphore.execute(async () => {
-			await queueDeferredSafeProposalTerminalReply(uniqueRequestIdentifier, signerReply, message)
+			await queueDeferredSafeProposalTerminalReply(uniqueRequestIdentifier, deferredReply, message)
 		})
 	} catch (error) {
 		terminalReplyReservations.delete(identifier)

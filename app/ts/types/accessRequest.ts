@@ -87,9 +87,12 @@ const PendingTransactionApprovalStatus = funtypes.Union(
 	}).And(funtypes.ReadonlyPartial({ safeSignerErrorDetails: SafeSignerErrorDetails })),
 )
 
+export type DeferredSafeSignerReply = funtypes.Static<typeof DeferredSafeSignerReply>
 const DeferredSafeSignerReply = funtypes.ReadonlyObject({
 	signerReply: funtypes.String,
 	terminalReplyQueued: funtypes.Boolean,
+	// The network the signer was asked to sign for; the signature is replayed only with services for this network.
+	chainId: EthereumQuantity,
 })
 
 type SimulatedPendingTransactionBase = funtypes.Static<typeof SimulatedPendingTransactionBase>
@@ -110,6 +113,8 @@ const SimulatedPendingTransactionBase = funtypes.ReadonlyObject({
 	safeExecutionOriginalRequestParameters: SendTransactionParams,
 	safeExecutionReviewedSafeState: SafeContractStateSnapshot,
 	deferredSafeSignerReply: DeferredSafeSignerReply,
+	// The network of the services that forwarded this request to the signer, recorded so a signature returned while RPC services are unavailable is bound to it.
+	signerRequestChainId: EthereumQuantity,
 	// The confirmation's decision, made once by prepareSafeTransactionConfirmation in simulation mode, that this is a Gnosis Safe's own transaction. Every refresh forms it from this (getPendingTransactionGasPayment), and forming it gives the transaction simulationOptions.executeThroughSafe, which tells the simulator to run it through the Safe: the pending decision and the transaction's option relate as a Safe proposal's pending safeTransaction and its stacked safeTransaction do.
 	executeThroughSafe: funtypes.Literal(true),
 }))
@@ -164,6 +169,8 @@ const PendingSignableMessage = funtypes.Intersect(
 	}).And(funtypes.ReadonlyPartial({
 		safeMessageCoSignSnapshot: SafeMessageCoSignSnapshot,
 		deferredSafeSignerReply: DeferredSafeSignerReply,
+		// The network of the services that forwarded this request to the signer, recorded so a signature returned while RPC services are unavailable is bound to it.
+		signerRequestChainId: EthereumQuantity,
 	})),
 	funtypes.Union(
 		funtypes.ReadonlyObject({ transactionOrMessageCreationStatus: funtypes.Literal('Simulated'), visualizedPersonalSignRequest: VisualizedPersonalSignRequest }),

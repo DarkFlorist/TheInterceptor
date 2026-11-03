@@ -151,6 +151,7 @@ test('replays a Safe signature deferred while only the RPC configuration was unr
 			uniqueRequestIdentifier: requestIdentifier,
 			simulationMode: false,
 			approvalStatus: { status: 'WaitingForSigner' },
+			signerRequestChainId: fakeRpcNetwork.chainId,
 			safeTransaction: {
 				safeAddress: activeAddress,
 				safeSignerAddress: safeTestOwnerAddress,
@@ -208,6 +209,150 @@ test('replays a Safe signature deferred while only the RPC configuration was unr
 	simulationServicesOwner.clear()
 })
 
+// A signature deferred on chain A is bound to that chain: services recovered on chain B must neither store it in B's Safe stack nor drop it as invalid.
+test('keeps a Safe signature deferred for its own chain until services for that chain are recovered', async () => {
+	const { spyOn } = await import('bun:test')
+	const socket = { tabId: 1, connectionName: 47n }
+	const requestIdentifier = { requestId: 86, requestSocket: socket }
+	const messages: unknown[] = []
+	const port = createWebsitePort(socket, 0, messages)
+	const websiteTabConnections = new Map([[socket.tabId, {
+		signerStateOwner: { connectionName: socket.connectionName, confirmed: true, generation: 3, providerGeneration: 8 },
+		connections: {
+			[modules.websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.com', approved: true, wantsToConnect: true },
+		},
+	}]])
+	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, { to: recipientAddress, value: 0n, input: new Uint8Array() }, 0n)
+	const safeTxHash = BigInt(getSafeTxHash(safeTx))
+	fakeSafeContract.nonce = 0n
+	fakeSafeContract.threshold = 2n
+	fakeSafeContract.owners = [safeTestOwnerAddress]
+	const signature = await safeTestOwnerAccount.signTypedData(EIP712Message.parse(safeTxToTypedDataJson(safeTx)))
+	await modules.browserStorageLocalSet2({
+		pendingTransactionsAndMessages: [{
+			...pendingTransaction,
+			uniqueRequestIdentifier: requestIdentifier,
+			simulationMode: false,
+			approvalStatus: { status: 'WaitingForSigner' },
+			signerRequestChainId: fakeRpcNetwork.chainId,
+			safeTransaction: {
+				safeAddress: activeAddress,
+				safeSignerAddress: safeTestOwnerAddress,
+				safeVersion: '1.4.1',
+				threshold: 2n,
+				reviewedSafeState: { version: '1.4.1', nonce: 0n, owners: [safeTestOwnerAddress], threshold: 2n },
+				safeTxHash,
+				safeTx,
+			},
+		}],
+	})
+	const owner = createTestSimulationServicesOwner({ ethereum: simulator.ethereum, tokenPriceService: simulator.tokenPriceService })
+	owner.clear()
+	await modules.signerReply(owner, websiteTabConnections, port, {
+		method: 'signer_reply',
+		params: [{
+			success: true,
+			signerProviderGeneration: 8,
+			forwardRequest: {
+				type: 'forwardToSigner',
+				replyWithSignersReply: true,
+				method: 'eth_signTypedData_v4',
+				params: [recipientAddress, EIP712Message.parse(safeTxToTypedDataJson(safeTx))],
+				requestId: requestIdentifier.requestId,
+			},
+			reply: signature,
+		}],
+		interceptorRequest: true,
+		interceptorInternalRequest: true,
+		usingInterceptorWithoutSigner: false,
+		uniqueRequestIdentifier: { requestId: 87, requestSocket: socket },
+	}, 'hasAccess', activeAddress)
+	const deferredOnChainA = (await modules.getPendingTransactionsAndMessages())[0]
+	assert.deepEqual(deferredOnChainA?.deferredSafeSignerReply, { signerReply: signature, terminalReplyQueued: true, chainId: fakeRpcNetwork.chainId })
+
+	// Recovery installs services for another chain whose Safe state would otherwise validate the signature.
+	const otherChainId = spyOn(simulator.ethereum, 'getChainId').mockReturnValue(fakeRpcNetwork.chainId + 1n)
+	try {
+		await modules.resolveDeferredSafeSignerReplies({ ethereum: simulator.ethereum, tokenPriceService: simulator.tokenPriceService }, websiteTabConnections)
+		await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+			method: 'popup_confirmDialog',
+			data: { uniqueRequestIdentifier: requestIdentifier, action: 'noResponse' },
+		})
+	} finally {
+		otherChainId.mockRestore()
+	}
+	assert.deepEqual(await modules.getSafeTransactionStacks(), [])
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [deferredOnChainA])
+
+	await modules.resolveDeferredSafeSignerReplies({ ethereum: simulator.ethereum, tokenPriceService: simulator.tokenPriceService }, websiteTabConnections)
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	const stacks = await modules.getSafeTransactionStacks()
+	assert.deepEqual(stacks.map((stack) => stack.chainId), [fakeRpcNetwork.chainId])
+	assert.deepEqual(stacks[0]?.transactions.map((transaction) => ({ safeTxHash: transaction.safeTxHash, signatures: transaction.signatures })), [{ safeTxHash, signatures: [{ signer: safeTestOwnerAddress, signature }] }])
+	assert.equal(messages.filter((message) => isRecord(message) && message.method === 'eth_sendTransaction' && message.requestId === requestIdentifier.requestId).length, 1)
+})
+
+test('does not defer a Safe signature whose signing network was not recorded', async () => {
+	const socket = { tabId: 1, connectionName: 48n }
+	const requestIdentifier = { requestId: 88, requestSocket: socket }
+	const messages: unknown[] = []
+	const port = createWebsitePort(socket, 0, messages)
+	const websiteTabConnections = new Map([[socket.tabId, {
+		signerStateOwner: { connectionName: socket.connectionName, confirmed: true, generation: 3, providerGeneration: 8 },
+		connections: {
+			[modules.websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.com', approved: true, wantsToConnect: true },
+		},
+	}]])
+	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, { to: recipientAddress, value: 0n, input: new Uint8Array() }, 0n)
+	const safeTxHash = BigInt(getSafeTxHash(safeTx))
+	const signature = await safeTestOwnerAccount.signTypedData(EIP712Message.parse(safeTxToTypedDataJson(safeTx)))
+	// Forwarded before the signing network was recorded (for example by an earlier version).
+	await modules.browserStorageLocalSet2({
+		pendingTransactionsAndMessages: [{
+			...pendingTransaction,
+			uniqueRequestIdentifier: requestIdentifier,
+			simulationMode: false,
+			approvalStatus: { status: 'WaitingForSigner' },
+			safeTransaction: {
+				safeAddress: activeAddress,
+				safeSignerAddress: safeTestOwnerAddress,
+				safeVersion: '1.4.1',
+				threshold: 2n,
+				reviewedSafeState: { version: '1.4.1', nonce: 0n, owners: [safeTestOwnerAddress], threshold: 2n },
+				safeTxHash,
+				safeTx,
+			},
+		}],
+	})
+	const owner = createTestSimulationServicesOwner({ ethereum: simulator.ethereum, tokenPriceService: simulator.tokenPriceService })
+	owner.clear()
+	await modules.signerReply(owner, websiteTabConnections, port, {
+		method: 'signer_reply',
+		params: [{
+			success: true,
+			signerProviderGeneration: 8,
+			forwardRequest: {
+				type: 'forwardToSigner',
+				replyWithSignersReply: true,
+				method: 'eth_signTypedData_v4',
+				params: [recipientAddress, EIP712Message.parse(safeTxToTypedDataJson(safeTx))],
+				requestId: requestIdentifier.requestId,
+			},
+			reply: signature,
+		}],
+		interceptorRequest: true,
+		interceptorInternalRequest: true,
+		usingInterceptorWithoutSigner: false,
+		uniqueRequestIdentifier: { requestId: 89, requestSocket: socket },
+	}, 'hasAccess', activeAddress)
+
+	const [pending] = await modules.getPendingTransactionsAndMessages()
+	assert.equal(pending?.deferredSafeSignerReply, undefined)
+	assert.equal(pending?.approvalStatus.status, 'SignerError')
+	assert.equal(messages.some((message) => isRecord(message) && message.method === 'eth_sendTransaction' && message.requestId === requestIdentifier.requestId), false)
+	assert.deepEqual(await modules.getSafeTransactionStacks(), [])
+})
+
 // Recovery and a popup that reports no decision share one no-response owner, so neither may discard a signature the signer already returned.
 test.each(['recovery', 'popup no-response'] as const)('delivers an already-signed Safe proposal while unavailable and persists its signature on %s', async (settlement) => {
 	const socket = { tabId: 1, connectionName: 45n }
@@ -241,6 +386,7 @@ test.each(['recovery', 'popup no-response'] as const)('delivers an already-signe
 			uniqueRequestIdentifier: requestIdentifier,
 			simulationMode: false,
 			approvalStatus: { status: 'WaitingForSigner' },
+			signerRequestChainId: fakeRpcNetwork.chainId,
 			safeTransaction: {
 				safeAddress: activeAddress,
 				safeSignerAddress: safeTestOwnerAddress,
@@ -281,14 +427,14 @@ test.each(['recovery', 'popup no-response'] as const)('delivers an already-signe
 	}, 'hasAccess', activeAddress)
 
 	const [deferredProposal] = await modules.getPendingTransactionsAndMessages()
-	assert.deepEqual(deferredProposal?.deferredSafeSignerReply, { signerReply: signature, terminalReplyQueued: true })
+	assert.deepEqual(deferredProposal?.deferredSafeSignerReply, { signerReply: signature, terminalReplyQueued: true, chainId: fakeRpcNetwork.chainId })
 	assert.deepEqual(await modules.getSafeTransactionStacks(), [])
 	const dappReply = messages.find((message) => isRecord(message) && message.method === 'eth_sendTransaction' && message.requestId === requestIdentifier.requestId)
 	if (!isRecord(dappReply)) throw new Error('Missing Safe proposal reply while services were unavailable')
 	assert.equal(dappReply.result, modules.EthereumBytes32.serialize(safeTxHash))
 	await modules.onCloseWindowOrTab(pendingTransaction.popupOrTabId, undefined, undefined, websiteTabConnections)
 	const [deferredAfterPopupClose] = await modules.getPendingTransactionsAndMessages()
-	assert.deepEqual(deferredAfterPopupClose?.deferredSafeSignerReply, { signerReply: signature, terminalReplyQueued: true })
+	assert.deepEqual(deferredAfterPopupClose?.deferredSafeSignerReply, { signerReply: signature, terminalReplyQueued: true, chainId: fakeRpcNetwork.chainId })
 	assert.equal(messages.filter((message) => isRecord(message) && message.method === 'eth_sendTransaction' && message.requestId === requestIdentifier.requestId).length, 1)
 
 	if (settlement === 'recovery') {
@@ -333,7 +479,7 @@ test('atomically queues a deferred Safe proposal result before recovery delivery
 		uniqueRequestIdentifier: requestIdentifier,
 		simulationMode: false,
 		approvalStatus: { status: 'WaitingForSigner' as const },
-		deferredSafeSignerReply: { signerReply: signature, terminalReplyQueued: false },
+		deferredSafeSignerReply: { signerReply: signature, terminalReplyQueued: false, chainId: fakeRpcNetwork.chainId },
 		safeTransaction: {
 			safeAddress: activeAddress,
 			safeSignerAddress: safeTestOwnerAddress,
@@ -360,15 +506,15 @@ test('atomically queues a deferred Safe proposal result before recovery delivery
 		writeStoredItems()
 	})
 	await assert.rejects(
-		modules.queueDeferredSafeProposalTerminalReply(requestIdentifier, signature, terminalReply),
+		modules.queueDeferredSafeProposalTerminalReply(requestIdentifier, { signerReply: signature, chainId: fakeRpcNetwork.chainId }, terminalReply),
 		/Atomic terminal state write unavailable/u,
 	)
 	browserMock.setStorageSetHandler(undefined)
 	const [pendingAfterFailedWrite] = await modules.getPendingTransactionsAndMessages()
-	assert.deepEqual(pendingAfterFailedWrite?.deferredSafeSignerReply, { signerReply: signature, terminalReplyQueued: false })
+	assert.deepEqual(pendingAfterFailedWrite?.deferredSafeSignerReply, { signerReply: signature, terminalReplyQueued: false, chainId: fakeRpcNetwork.chainId })
 	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
 	assert.equal(await modules.flushPendingTerminalRepliesForSocket(websiteTabConnections, socket), 0)
-	await modules.queueDeferredSafeProposalReply(requestIdentifier, signature, terminalReply)
+	await modules.queueDeferredSafeProposalReply(requestIdentifier, { signerReply: signature, chainId: fakeRpcNetwork.chainId }, terminalReply)
 	assert.equal(await modules.flushPendingTerminalRepliesForSocket(websiteTabConnections, socket), 1)
 	assert.equal(await modules.attemptQueuedTerminalReplyDelivery(websiteTabConnections, terminalReply), true)
 	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
@@ -535,6 +681,7 @@ test('preserves a MetaMask keyring scan error on a retryable Safe signature', as
 			...pendingTransaction,
 			simulationMode: false,
 			approvalStatus: { status: 'WaitingForSigner' },
+			signerRequestChainId: fakeRpcNetwork.chainId,
 			safeTransaction: {
 				safeAddress: activeAddress,
 				safeSignerAddress: recipientAddress,
@@ -831,7 +978,7 @@ test('routes a Safe co-signing request through the wallet-selected owner', async
 
 	await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => ({
 		...pending,
-		deferredSafeSignerReply: { signerReply: '0x1234', terminalReplyQueued: false },
+		deferredSafeSignerReply: { signerReply: '0x1234', terminalReplyQueued: false, chainId: fakeRpcNetwork.chainId },
 	}))
 	await modules.resolveDeferredSafeSignerReplies({ ethereum: simulator.ethereum, tokenPriceService: simulator.tokenPriceService }, websiteTabConnections)
 	const [invalidDeferredCoSignRequest] = await modules.getPendingTransactionsAndMessages()

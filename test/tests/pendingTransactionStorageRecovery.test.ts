@@ -98,11 +98,11 @@ test('updates a pending request together with its terminal replies in one storag
 	storageWrites.length = 0
 	const terminalReply = { method: 'personal_sign' as const, type: 'result' as const, result: '0x01', uniqueRequestIdentifier: pendingMessage.uniqueRequestIdentifier }
 
-	await updatePendingTransactionOrMessageWithTerminalReplies(pendingMessage.uniqueRequestIdentifier, (pending) => ({ ...pending, deferredSafeSignerReply: { signerReply: '0x01', terminalReplyQueued: true } }), async () => [terminalReply])
+	await updatePendingTransactionOrMessageWithTerminalReplies(pendingMessage.uniqueRequestIdentifier, (pending) => ({ ...pending, deferredSafeSignerReply: { signerReply: '0x01', terminalReplyQueued: true, chainId: 1n } }), async () => [terminalReply])
 
 	assert.equal(storageWrites.length, 1)
 	assert.deepEqual(Object.keys(storageWrites[0] ?? {}).sort(), ['pendingTerminalReplies', 'pendingTransactionsAndMessages'])
-	assert.deepEqual((await getPendingTransactionsAndMessages())[0]?.deferredSafeSignerReply, { signerReply: '0x01', terminalReplyQueued: true })
+	assert.deepEqual((await getPendingTransactionsAndMessages())[0]?.deferredSafeSignerReply, { signerReply: '0x01', terminalReplyQueued: true, chainId: 1n })
 })
 
 test('writes nothing when the pending request for terminal replies is gone', async () => {

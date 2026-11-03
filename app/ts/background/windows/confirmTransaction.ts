@@ -392,13 +392,21 @@ export async function resolvePendingSignerReply(services: ConfirmationServices |
 			}))
 			return
 		}
-		const signerReply = params.reply
+		const chainId = pending.signerRequestChainId
+		// Without the network the signer signed for, a later replay could validate or store the signature on another network, so it is not kept.
+		if (chainId === undefined) {
+			await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (current) => modifyObject(current, {
+				approvalStatus: createSafeSignerErrorStatus('The Gnosis Safe signature could not be matched to its network while the RPC configuration is unavailable. Sign it again once it is restored.'),
+			}))
+			return
+		}
+		const deferredReply = { signerReply: params.reply, chainId }
 		await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (current) => modifyObject(current, {
-			deferredSafeSignerReply: { signerReply, terminalReplyQueued: false },
+			deferredSafeSignerReply: { ...deferredReply, terminalReplyQueued: false },
 		}))
 		if (safeFlow.kind === 'proposal') {
 			const terminalReply = createDeferredSafeProposalReply(pending, safeFlow.pending.safeTransaction.safeTxHash)
-			await queueDeferredSafeProposalReply(uniqueRequestIdentifier, signerReply, terminalReply)
+			await queueDeferredSafeProposalReply(uniqueRequestIdentifier, deferredReply, terminalReply)
 			return await attemptQueuedTerminalReplyDelivery(websiteTabConnections, terminalReply)
 		}
 		return
@@ -415,11 +423,13 @@ export async function resolveDeferredSafeSignerReplies(services: ConfirmationSer
 				const terminalReply = createDeferredSafeProposalReply(pending, safeFlow.pending.safeTransaction.safeTxHash)
 				await queueDeferredSafeProposalReply(
 					pending.uniqueRequestIdentifier,
-					pending.deferredSafeSignerReply.signerReply,
+					{ signerReply: pending.deferredSafeSignerReply.signerReply, chainId: pending.deferredSafeSignerReply.chainId },
 					terminalReply,
 				)
 				await attemptQueuedTerminalReplyDelivery(websiteTabConnections, terminalReply)
 			}
+			// A signature for another network stays deferred, untouched, until services for its own network are recovered: validating it here could store it in the wrong network's stack or drop it as invalid.
+			if (pending.deferredSafeSignerReply.chainId !== services.ethereum.getChainId()) continue
 			await resolvePendingTransactionOrMessage(services.ethereum, services.tokenPriceService, websiteTabConnections, {
 				method: 'popup_confirmDialog',
 				data: {
@@ -510,7 +520,7 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 		&& pendingTransactionOrMessage.transactionOrMessageCreationStatus !== 'Simulated'
 	) return false
 	if (confirmation.data.action === 'accept' && pendingTransactionOrMessage.simulationMode === false) {
-		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'WaitingForSigner' } }))
+		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'WaitingForSigner' }, signerRequestChainId: ethereum.getChainId() }))
 		await updateConfirmTransactionView(ethereum, tokenPriceService)
 		const requestWasForwarded = await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, { ...signerFacingRequest, type: 'forwardToSigner', uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
 		if (requestWasForwarded) return true
@@ -610,7 +620,8 @@ async function resolvePendingRequestAsNoResponse(uniqueRequestIdentifier: Unique
 	const pending = await getPendingTransactionOrMessageByidentifier(uniqueRequestIdentifier)
 	if (pending === undefined) return undefined
 	if (pending.deferredSafeSignerReply !== undefined) {
-		if (services === undefined) return undefined
+		// Settling the deferred signature needs services for the network it was signed for; until then the request stays pending.
+		if (services === undefined || pending.deferredSafeSignerReply.chainId !== services.ethereum.getChainId()) return undefined
 		await resolvePendingTransactionOrMessage(services.ethereum, services.tokenPriceService, websiteTabConnections, {
 			method: 'popup_confirmDialog',
 			data: { uniqueRequestIdentifier, action: 'signerIncluded', signerReply: pending.deferredSafeSignerReply.signerReply },
