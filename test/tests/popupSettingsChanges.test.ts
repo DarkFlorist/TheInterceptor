@@ -620,6 +620,41 @@ test('a pinned signing address ignores the wallet\'s own chain changes but appli
 	assert.notEqual(settings.activeSigningAddress, walletAccount)
 })
 
+for (const source of ['dapp', 'popup'] as const) test(`a selected Ledger account switches networks without a browser wallet (${ source })`, async () => {
+	installBrowserMock()
+	const { getSettings, saveCurrentTabId } = await loadModules()
+	const { secp256k1 } = await import('@noble/curves/secp256k1')
+	const { bytesFromHex, bytesToHex } = await import('../../app/ts/utils/ethereumBytes.js')
+	const { privateKeyToAccount } = await import('../../app/ts/utils/ethereumSigning.js')
+	const { browserStorageLocalSet } = await import('../../app/ts/utils/storageUtils.js')
+	const { saveAddressSigningWallet } = await import('../../app/ts/background/signingAddressBookCoordinator.js')
+	const { changeActiveRpc, isSignerChainChangePending } = await import('../../app/ts/background/walletSwitch.js')
+	const { popupChangeActiveRpc } = await import('../../app/ts/background/popupMessageHandlers.js')
+	const { setRpcList } = await import('../../app/ts/background/storageVariables.js')
+	const privateKey = '0x0000000000000000000000000000000000000000000000000000000000000001'
+	const ledgerAddress = BigInt(privateKeyToAccount(privateKey).address)
+	await saveAddressSigningWallet(ledgerAddress, { type: 'ledger', label: 'Main Ledger', address: ledgerAddress, publicKey: bytesToHex(secp256k1.getPublicKey(bytesFromHex(privateKey), false)), derivationPath: 'm/44\'/60\'/0\'/0/0' }, undefined, 'Ledger account')
+	const originalRpc = (await getSettings()).activeRpcNetwork
+	const requestedRpc = { ...originalRpc, chainId: 2n, name: 'Configured network B', httpsRpc: 'https://network-b.example.test', primary: true }
+	await setRpcList([originalRpc, requestedRpc])
+	await browserStorageLocalSet({ simulationMode: false, selectedSigningAddress: ledgerAddress, useSignersAddressAsActiveAddress: false })
+	await saveCurrentTabId(1)
+	const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+	// No website has a browser wallet connected, so asking one to switch would fail as signer-unavailable.
+	const noBrowserWallet = new Map()
+
+	if (source === 'dapp') {
+		assert.deepEqual(await changeActiveRpc(simulationServicesOwner, noBrowserWallet, requestedRpc, { source: 'dapp', signerTabId: 1, simulationMode: false }, 10), { result: null })
+	} else {
+		assert.equal((await popupChangeActiveRpc(simulationServicesOwner, noBrowserWallet, { method: 'popup_changeActiveRpc', data: requestedRpc })).ok, true)
+	}
+
+	const settings = await getSettings()
+	assert.deepEqual(settings.activeRpcNetwork, requestedRpc)
+	assert.equal(settings.selectedSigningAddress, ledgerAddress)
+	assert.equal(isSignerChainChangePending(), false)
+})
+
 test('pinned signing selections retain the supported-network fallback when switching modes', async () => {
 	installBrowserMock()
 	const { changeSimulationMode, getSettings } = await loadModules()
