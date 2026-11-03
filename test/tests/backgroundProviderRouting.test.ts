@@ -1420,6 +1420,74 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		assert.deepEqual(await getPendingTransactionsAndMessages(), [])
 	})
 
+	for (const routing of [
+		{ simulationMode: true, usingInterceptorWithoutSigner: false, forwardsToSigner: false },
+		{ simulationMode: false, usingInterceptorWithoutSigner: true, forwardsToSigner: false },
+		{ simulationMode: false, usingInterceptorWithoutSigner: false, forwardsToSigner: true },
+	] as const) test(`${ routing.forwardsToSigner ? 'forwards' : 'intercepts' } message signing on a network without an RPC (simulation mode: ${ routing.simulationMode }, signer available: ${ !routing.usingInterceptorWithoutSigner })`, async () => {
+		installBrowserMock()
+		const {
+			changeSimulationMode,
+			getPendingTransactionsAndMessages,
+			handleInterceptedRequest,
+			setUseSignersAddressAsActiveAddress,
+			updateTabState,
+			updateWebsiteAccess,
+			websiteSocketToString,
+		} = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const account = 0x6262626262626262626262626262626262626262n
+		await changeSimulationMode({
+			simulationMode: routing.simulationMode,
+			rpcNetwork: {
+				name: 'Signer only',
+				chainId: 1n,
+				httpsRpc: undefined,
+				currencyName: 'Ether?',
+				currencyTicker: 'ETH?',
+				primary: false,
+				minimized: true,
+			},
+			activeSimulationAddress: account,
+			activeSigningAddress: account,
+		})
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
+
+		const socket = { tabId: 1, connectionName: 0n }
+		await updateTabState(socket.tabId, (previousState) => ({
+			...previousState,
+			signerAccounts: [account],
+			activeSigningAddress: account,
+			signerChain: 1n,
+		}))
+		const { port, messages } = createPort(socket.tabId)
+		const connectionKey = websiteSocketToString(socket)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		// Opening the message confirmation only needs to identify the signer as an EOA and read the current block number.
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 }, { getCodeResult: new Uint8Array(), getBlockNumberResult: 1n })
+
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: routing.usingInterceptorWithoutSigner,
+			uniqueRequestIdentifier: { requestId: 217, requestSocket: socket },
+			method: 'personal_sign',
+			params: ['0x68656c6c6f', addressString(account)],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+
+		const pendingRequests = await getPendingTransactionsAndMessages()
+		if (routing.forwardsToSigner) {
+			assert.equal(messages.some((message) => message.type === 'forwardToSigner' && message.requestId === 217), true)
+			assert.deepEqual(pendingRequests, [])
+			return
+		}
+		assert.equal(messages.some((message) => message.type === 'forwardToSigner'), false)
+		assert.deepEqual(pendingRequests.map((pendingRequest) => pendingRequest.uniqueRequestIdentifier.requestId), [217])
+	})
+
 	test('never exposes a configured Safe selected from another chain while signing', async () => {
 		installBrowserMock()
 		const {

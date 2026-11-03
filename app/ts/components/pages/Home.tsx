@@ -27,7 +27,9 @@ import { getSelectableActiveAddresses, getWalletSelectedAccount } from '../../ut
 import { useModeActiveAddress } from '../hooks/useModeActiveAddress.js'
 import { updateRichListAddress } from '../../utils/richList.js'
 import { useAsyncState } from '../../utils/preact-utilities.js'
-import type { RpcEntry } from '../../types/rpc.js'
+import type { RpcEntry, RpcNetwork } from '../../types/rpc.js'
+import { isBypassingInterceptorOnNetworkWithoutRpc } from '../../utils/requestRouting.js'
+import { isSignerMissing } from '../../utils/signerMetadata.js'
 import { AsyncActionButton, AsyncStatusIcon } from '../subcomponents/AsyncAction.js'
 import type { ComponentChildren, JSX } from 'preact'
 import { DropDownMenu, DropDownMenuButtonContent } from '../subcomponents/DropDownMenu.js'
@@ -902,6 +904,16 @@ function PopupVisualisation(param: SimulationStateParam) {
 	</div>
 }
 
+function NetworkWithoutRpcError({ rpcNetwork, simulationMode, tabState }: { rpcNetwork: RpcNetwork, simulationMode: boolean, tabState: TabState | undefined }) {
+	if (rpcNetwork.httpsRpc !== undefined) return <></>
+	// Mirror the background routing so the popup only claims the Interceptor is disabled when requests really bypass it.
+	const signerAvailable = tabState !== undefined && !isSignerMissing(tabState.signerName)
+	if (isBypassingInterceptorOnNetworkWithoutRpc(rpcNetwork, { simulationMode, signerAvailable })) {
+		return <ErrorComponent text = { `${ rpcNetwork.name } is not a supported network. The Interceptor is disabled while you are using ${ rpcNetwork.name }.` }/>
+	}
+	return <ErrorComponent text = { `${ rpcNetwork.name } has no configured RPC. Select or configure an RPC for ${ rpcNetwork.name }.` }/>
+}
+
 export function Home(param: HomeParams) {
 	const { disableReset, resetSimulation, markSimulationDataReceived } = useResetSimulation()
 	const removedTransactionOrSignedMessages = useSignal<readonly TransactionOrMessageIdentifier[]>([])
@@ -967,9 +979,7 @@ export function Home(param: HomeParams) {
 	if (param.rpcNetwork.value === undefined) return <></>
 
 	return <>
-		{ param.rpcNetwork.value.httpsRpc === undefined ?
-			<ErrorComponent text = { `${ param.rpcNetwork.value.name } is not a supported network. The Interceptor is disabled while you are using ${ param.rpcNetwork.value.name }.` }/>
-		: <></> }
+		<NetworkWithoutRpcError rpcNetwork = { param.rpcNetwork.value } simulationMode = { param.simulationMode.value } tabState = { param.tabState.value }/>
 
 		<FirstCard
 			isActiveAddressChanging = { param.isActiveAddressChanging }

@@ -33,6 +33,7 @@ import { handleWatchAssetRequest, initializeWatchAssetWindowListeners, processWa
 import { getSafeModeRpcPolicyReply } from '../safe/safeRequestPolicy.js'
 import { getWatchAssetRpcParseFailureReply } from './watchAssetRpc.js'
 import { createMethodHandlerFor } from '../utils/methodHandlers.js'
+import { isBypassingInterceptorOnNetworkWithoutRpc, isForwardingRequestsToSigner } from '../utils/requestRouting.js'
 import { getWalletCapabilities } from './walletCapabilities.js'
 import { getWalletGetCapabilitiesParseFailureReply } from './walletGetCapabilitiesRpc.js'
 import { hasAccess as getWebsiteAccessApprovalState, hasAddressAccess as getWebsiteAddressAccessApprovalState } from './websiteAccessPolicy.js'
@@ -92,7 +93,9 @@ async function handleRPCRequest(
 	const maybeParsedRequest = confirmation === undefined
 		? EthereumJsonRpcRequest.safeParse(request)
 		: { success: true as const, value: confirmation.parameters }
-	const forwardToSigner = !settings.simulationMode && !request.usingInterceptorWithoutSigner
+	const requestRoutingState = { simulationMode: settings.simulationMode, signerAvailable: !request.usingInterceptorWithoutSigner }
+	const forwardToSigner = isForwardingRequestsToSigner(requestRoutingState)
+	const bypassInterceptorOnNetworkWithoutRpc = isBypassingInterceptorOnNetworkWithoutRpc(settings.activeRpcNetwork, requestRoutingState)
 	const getForwardingMessage = (request: SendRawTransactionParams | SendTransactionParams | WalletAddEthereumChain | EthGetStorageAtParams) => {
 		if (!forwardToSigner) throw new Error('Should not forward to signer')
 		return { type: 'forwardToSigner' as const, ...request }
@@ -141,7 +144,7 @@ async function handleRPCRequest(
 	})
 	if (safePolicyReply !== undefined) return safePolicyReply
 	const accountOnlyMethod = isAccountOnlyMethod(parsedRequest.method)
-	if (settings.activeRpcNetwork.httpsRpc === undefined && forwardToSigner && !accountOnlyMethod) {
+	if (bypassInterceptorOnNetworkWithoutRpc && !accountOnlyMethod) {
 		// we are using network that is not supported by us
 		return { type: 'forwardToSigner' as const, replyWithSignersReply: true, ...request }
 	}
@@ -153,7 +156,7 @@ async function handleRPCRequest(
 	const rpcRequestHandler = createMethodHandlerFor<ParsedRpcRequest, undefined, Promise<RPCReply>>()
 	const signMessage = async (signRequest: Extract<ParsedRpcRequest, { readonly method: 'personal_sign' | 'eth_signTypedData' | 'eth_signTypedData_v1' | 'eth_signTypedData_v2' | 'eth_signTypedData_v3' | 'eth_signTypedData_v4' }>) => await personalSign(ethereum, tokenPriceService, activeAddress, confirmation?.kind === 'message' ? confirmation : { kind: 'message', parameters: signRequest }, request, website, websiteTabConnections, !forwardToSigner)
 	const sendEthereumTransaction = async (transactionRequest: Extract<ParsedRpcRequest, { readonly method: 'eth_sendRawTransaction' | 'eth_sendTransaction' }>) => {
-		if (forwardToSigner && settings.activeRpcNetwork.httpsRpc === undefined) return getForwardingMessage(transactionRequest)
+		if (bypassInterceptorOnNetworkWithoutRpc) return getForwardingMessage(transactionRequest)
 		return await sendTransaction(ethereum, tokenPriceService, activeAddress, confirmation?.kind === 'transaction' ? confirmation : { kind: 'transaction', parameters: transactionRequest }, request, website, websiteTabConnections, !forwardToSigner)
 	}
 	const rpcRequestHandlers = {
