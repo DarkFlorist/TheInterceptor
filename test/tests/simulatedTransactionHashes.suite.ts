@@ -2004,3 +2004,129 @@ test('rejects a request once when a close deferred behind a failed accept first 
 	}))
 	await assertNoResolutionBookkeeping()
 })
+
+const waitForNoResolutionBookkeeping = async () => await withSilencedConsole(async () => await waitForCondition(async () => {
+	const { getResolutionBookkeepingSize } = await import('../../app/ts/background/windows/confirmTransaction.js')
+	const { getTerminalReplyBookkeepingSize } = await import('../../app/ts/background/terminalReplyDelivery.js')
+	return getResolutionBookkeepingSize() + getTerminalReplyBookkeepingSize() === 0
+}))
+
+for (const lookup of ['its committed reply', 'the stack'] as const) {
+	test(`rejects a request once when a reject first fails to look up ${ lookup }`, async () => {
+		await startSimulationStack(SENDER)
+		const postedMessages: unknown[] = []
+		const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+		const request = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+		let failed = 0
+		browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+			if (failed > 0 || !readsKey(keys, lookup === 'the stack' ? 'interceptorTransactionStack' : 'pendingTerminalReplies')) return readStoredItems()
+			failed += 1
+			throw new Error('transient read failure')
+		})
+		await withSilencedConsole(async () => {
+			await rejectRequest(request, websiteTabConnections)
+			await waitUntilNothingPending()
+			await waitForCondition(async () => (await modules.getPendingTerminalReplies()).length === 0)
+		})
+		browserMock.setStorageGetHandler(undefined)
+		assert.equal(failed, 1)
+		assert.deepEqual(getPageResponses(postedMessages, request.requestId), [{ error: 4001 }])
+		await waitForNoResolutionBookkeeping()
+	})
+}
+
+test('rejects a request that is still simulating once when the reject\'s finishing fails first', async () => {
+	await startSimulationStack(SENDER)
+	const postedMessages: unknown[] = []
+	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+	const request = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: (await modules.getPendingTransactionsAndMessages()).map((pending) => pending.type === 'Transaction' && pending.transactionOrMessageCreationStatus === 'Simulated' ? { ...pending, transactionOrMessageCreationStatus: 'Simulating' as const, transactionToSimulate: pending.transactionToSimulate } : pending) })
+	assert.equal((await modules.getPendingTransactionsAndMessages())[0]?.transactionOrMessageCreationStatus, 'Simulating')
+	let failed = 0
+	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+		if (failed > 0 || !readsKey(keys, 'pendingTerminalReplies')) return readStoredItems()
+		failed += 1
+		throw new Error('transient read failure')
+	})
+	await withSilencedConsole(async () => {
+		await rejectRequest(request, websiteTabConnections)
+		await waitUntilNothingPending()
+		await waitForCondition(async () => (await modules.getPendingTerminalReplies()).length === 0)
+	})
+	browserMock.setStorageGetHandler(undefined)
+	assert.equal(failed, 1)
+	const responses = getPageResponses(postedMessages, request.requestId)
+	assert.equal(responses.length, 1, 'one settlement')
+	assert.ok(responses.every((response) => 'error' in response), 'a rejection')
+	await waitForNoResolutionBookkeeping()
+})
+
+for (const acceptOutcome of ['succeeds', 'fails'] as const) {
+	test(`settles a request once when a reject competes with an accept that ${ acceptOutcome }`, async () => {
+		await startSimulationStack(SENDER)
+		const postedMessages: unknown[] = []
+		const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+		const request = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+		const pause = pauseNextStackReadThen()
+		const accepting = withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier: request } }))
+		await pause.paused
+		try {
+			// The reject finds the request claimed by the accept, so its decline waits for the accept.
+			assert.equal(await rejectRequest(request, websiteTabConnections), false)
+		} finally {
+			pause.release(acceptOutcome === 'fails')
+		}
+		await accepting.then(() => undefined, () => undefined)
+		await withSilencedConsole(async () => {
+			await waitUntilNothingPending()
+			await waitForCondition(async () => (await modules.getPendingTerminalReplies()).length === 0)
+		})
+		const responses = getPageResponses(postedMessages, request.requestId)
+		const stacked = await getStackedTransactions()
+		if (acceptOutcome === 'succeeds') {
+			assert.equal(stacked.length, 1)
+			assert.deepEqual(responses, [{ result: stacked[0]?.signedTransaction.hash }], 'exactly the accepted hash')
+		} else {
+			assert.deepEqual(stacked, [])
+			assert.deepEqual(responses, [{ error: 4001 }], 'exactly one rejection')
+		}
+		await waitForNoResolutionBookkeeping()
+	})
+}
+
+const waitForNoResolutionBookkeepingWhileFailing = async () => {
+	const { getResolutionBookkeepingSize } = await import('../../app/ts/background/windows/confirmTransaction.js')
+	const deadline = Date.now() + 10_000
+	while (getResolutionBookkeepingSize() > 0) {
+		if (Date.now() > deadline) throw new Error('The retries did not stop')
+		await new Promise((resolve) => setTimeout(resolve, 20))
+	}
+}
+
+test('stops retrying a close whose lookups keep failing at the limit, leaving no retry bookkeeping', async () => {
+	await startSimulationStack(SENDER)
+	const postedMessages: unknown[] = []
+	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+	const request = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+	let failedLookups = 0
+	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+		if (!readsKey(keys, 'pendingTerminalReplies')) return readStoredItems()
+		failedLookups += 1
+		throw new Error('persistent read failure')
+	})
+	try {
+		await withSilencedConsole(async () => {
+			await modules.onCloseWindowOrTab({ type: 'popup', id: CONFIRMATION_WINDOW_ID }, simulator.ethereum, simulator.tokenPriceService, websiteTabConnections)
+			// The decline and the finishing it starts each retry at most five times, with backoff from 50 ms to 800 ms.
+			await waitForNoResolutionBookkeepingWhileFailing()
+		})
+		const lookupsAtLimit = failedLookups
+		await new Promise((resolve) => setTimeout(resolve, 1_000))
+		assert.equal(failedLookups, lookupsAtLimit, 'the retries stopped')
+		assert.ok(lookupsAtLimit > 1, 'it retried')
+		await assertNoResolutionBookkeeping()
+	} finally {
+		browserMock.setStorageGetHandler(undefined)
+	}
+	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [])
+})
