@@ -12,7 +12,7 @@ import { stringifyJSONWithBigInts } from '../utils/bigint.js'
 import { NEW_BLOCK_ABORT, JSON_RPC_ERROR_CODE_INTERNAL_ERROR } from '../utils/constants.js'
 import { decodeEthereumError } from '../utils/errorDecoding.js'
 import { JsonRpcResponseError, reportUnexpectedError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
-import { type UniqueRequestIdentifier, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../utils/requests.js'
+import { type UniqueRequestIdentifier, getUniqueRequestIdentifierString } from '../utils/requests.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { identifyAddress } from './metadataUtils.js'
 import { getSimulationErrorAbis } from './simulationErrorAbi.js'
@@ -32,15 +32,25 @@ let confirmationRunIdAllocations: Promise<unknown> = Promise.resolve()
 // A confirmation run's place in the run order, taken when the run starts and handed to refreshConfirmTransactionSimulation.
 export type ConfirmationRunReservation = { readonly runId: Promise<number> }
 
-// Reserves the next run id synchronously when called, so every entry that starts a confirmation run calls it before its first await, and a run that starts first gets the lower id. The id rejects only for this run if its read of the stored ids fails; the next allocation still runs. A reservation that its entry ends up not using only skips an id.
+// The stored ids an allocation must exceed. A failed read is reported and the stored ids are skipped, so the run still gets an id above the previous one and the clock, and an allocation never fails; only the guarantee that this id exceeds ids stored before a restart, if the clock went back meanwhile, is lost for it.
+async function getHighestStoredConfirmationRunIdOrSkip() {
+	try {
+		return await getHighestStoredConfirmationRunId()
+	} catch (error: unknown) {
+		await reportUnexpectedError(error, { code: 'confirmation_run_id_stored_ids_unreadable' })
+		return CONFIRMATION_RUN_ID_OF_UNNUMBERED_RUN
+	}
+}
+
+// Reserves the next run id synchronously when called, so every entry that starts a confirmation run calls it before its first await, and a run that starts first gets the lower id. A reservation that its entry ends up not using only skips an id.
 export function reserveConfirmationRun(): ConfirmationRunReservation {
 	const allocation = confirmationRunIdAllocations.then(async () => {
-		const highestStoredRunId = await getHighestStoredConfirmationRunId()
+		const highestStoredRunId = await getHighestStoredConfirmationRunIdOrSkip()
 		latestConfirmationRunId = Math.max(latestConfirmationRunId + 1, highestStoredRunId + 1, Date.now())
 		return latestConfirmationRunId
 	})
-	confirmationRunIdAllocations = allocation.then(() => undefined, () => undefined)
-	return { runId: silenceChromeUnCaughtPromise(allocation) }
+	confirmationRunIdAllocations = allocation
+	return { runId: allocation }
 }
 
 type InFlightConfirmationRun = { readonly runId: number, readonly abortController: AbortController }

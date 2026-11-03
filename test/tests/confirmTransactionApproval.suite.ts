@@ -452,23 +452,44 @@ test('a run whose read of the stored run ids is slow keeps the lower id and cann
 	assert.ok(storedLaterRun.data.confirmationRunId > pending.popupVisualisation.data.confirmationRunId)
 })
 
-test('a run whose read of the stored run ids fails is rejected alone, and the next run still gets an id', async () => {
-	const { websiteTabConnections } = await setUpTransactionApprovalTest(false)
-	await requestTransaction(websiteTabConnections, false)
-	const { refreshConfirmTransactionSimulation, reserveConfirmationRun } = await import('../../app/ts/background/confirmTransactionSimulation.js')
-	const pending = await getPendingTransaction()
-	let failNextConfirmationsRead = true
+// Makes the next read of the stored confirmations fail, as the read of the stored run ids by the next run id allocation.
+function failNextStoredConfirmationsRead() {
+	let failNextRead = true
 	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
-		if (failNextConfirmationsRead && Array.isArray(keys) && keys.includes('pendingTransactionsAndMessages')) {
-			failNextConfirmationsRead = false
+		if (failNextRead && Array.isArray(keys) && keys.includes('pendingTransactionsAndMessages')) {
+			failNextRead = false
 			throw new Error('storage read failed')
 		}
 		return readStoredItems()
 	})
+}
 
-	await assert.rejects(refreshConfirmTransactionSimulation(reserveConfirmationRun(), simulator.ethereum, simulator.tokenPriceService, pending.activeAddress, false, uniqueRequestIdentifier, pending.transactionToSimulate), /storage read failed/)
-	const nextRun = await refreshConfirmTransactionSimulation(reserveConfirmationRun(), simulator.ethereum, simulator.tokenPriceService, pending.activeAddress, false, uniqueRequestIdentifier, pending.transactionToSimulate)
-	assert.ok(nextRun !== undefined && nextRun.data.confirmationRunId > pending.popupVisualisation.data.confirmationRunId)
+test('a run whose read of the stored run ids fails is reported and still gets an id above the previous one and completes', async () => {
+	const { websiteTabConnections } = await setUpTransactionApprovalTest(false)
+	await requestTransaction(websiteTabConnections, false)
+	const { refreshConfirmTransactionSimulation, reserveConfirmationRun } = await import('../../app/ts/background/confirmTransactionSimulation.js')
+	const { getLatestUnexpectedError } = await import('../../app/ts/background/storageVariables.js')
+	const pending = await getPendingTransaction()
+	const previousRun = await refreshConfirmTransactionSimulation(reserveConfirmationRun(), simulator.ethereum, simulator.tokenPriceService, pending.activeAddress, false, uniqueRequestIdentifier, pending.transactionToSimulate)
+	if (previousRun === undefined) throw new Error('The previous run did not complete')
+
+	failNextStoredConfirmationsRead()
+	const run = await withSilencedConsole(async () => await refreshConfirmTransactionSimulation(reserveConfirmationRun(), simulator.ethereum, simulator.tokenPriceService, pending.activeAddress, false, uniqueRequestIdentifier, pending.transactionToSimulate))
+
+	assert.ok(run !== undefined && run.data.confirmationRunId > previousRun.data.confirmationRunId)
+	assert.equal((await getLatestUnexpectedError())?.data.code, 'confirmation_run_id_stored_ids_unreadable')
+})
+
+test('a confirmation whose first run id allocation cannot read the stored run ids still becomes reviewable', async () => {
+	const { websiteTabConnections } = await setUpTransactionApprovalTest(false)
+	// The opening reserves its run first, so the first read of the stored confirmations is that allocation's.
+	failNextStoredConfirmationsRead()
+	await withSilencedConsole(async () => await requestTransaction(websiteTabConnections, false))
+
+	const opened = await getPendingTransaction()
+	assert.equal(opened.transactionOrMessageCreationStatus, 'Simulated')
+	await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
+	assert.ok((await getPendingTransaction()).popupVisualisation.data.confirmationRunId > opened.popupVisualisation.data.confirmationRunId)
 })
 
 // Holds the first storage read of the given key until released, and tells when it was reached.
