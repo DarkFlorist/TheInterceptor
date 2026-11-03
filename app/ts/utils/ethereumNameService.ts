@@ -24,7 +24,8 @@ function encodeEthereumNameServiceString(data: string): string | undefined {
 		}
 	}
 	if (encodedData.length === 0) return undefined
-	return encodedData.map((part) => new TextDecoder().decode(stringToUint8Array(`0x${ part }`))).join('.')
+	const textDecoder = new TextDecoder()
+	return encodedData.map((part) => textDecoder.decode(stringToUint8Array(`0x${ part }`))).join('.')
 }
 
 export const getEthereumNameServiceNameFromTokenId = async (ethereumMainnet: EthereumClientService, requestAbortController: AbortController | undefined, tokenId: bigint) : Promise<string | undefined> => {

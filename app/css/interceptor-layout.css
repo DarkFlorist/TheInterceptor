@@ -602,6 +602,9 @@ p.paragraph.summary-transaction-input-label {
 	justify-content: right;
 }
 
+/* The gas fee inside the wrapping transaction-card-footer of a transaction card */
+.transaction-card-footer-gas-fee { display: inline-flex }
+
 /* Transaction event logs */
 .transaction-token-log-table {
 	justify-content: center;
@@ -658,16 +661,6 @@ p.paragraph.summary-transaction-input-label {
 	margin-top: 10px;
 	margin-bottom: 10px;
 }
-
-.confirm-transaction-meta-row {
-	margin-top: 10px;
-	grid-template-columns: max-content auto auto;
-	column-gap: 5px;
-}
-
-.confirm-gas-fee { display: inline-flex }
-
-.confirm-transaction-created-cell { justify-content: center }
 
 .confirm-footer {
 	position: sticky;
