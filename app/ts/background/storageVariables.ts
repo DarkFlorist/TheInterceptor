@@ -130,6 +130,17 @@ export async function getPopupVisualisationState() {
 
 export const setPopupVisualisationState = async (newResults: CompleteVisualizedSimulation) => await updatePopupVisualisationWithCallBack(async () => newResults)
 
+// Like setPopupVisualisationState, but evaluates isCurrent once the storage semaphore is held and the stored results are read, so validity cannot lapse while the write waits for another update; returns undefined when it skipped the write.
+export async function setPopupVisualisationStateIfCurrent(newResults: CompleteVisualizedSimulation, isCurrent: () => boolean) {
+	let skipped = false
+	const stored = await updatePopupVisualisationWithCallBack(async () => {
+		if (isCurrent()) return newResults
+		skipped = true
+		return undefined
+	})
+	return skipped ? undefined : stored
+}
+
 export async function updatePopupVisualisationWithCallBack(update: (oldResults: CompleteVisualizedSimulation) => Promise<CompleteVisualizedSimulation | undefined>) {
 	return await simulationResultsSemaphore.execute(async () => {
 		const oldResults = await getPopupVisualisationState()

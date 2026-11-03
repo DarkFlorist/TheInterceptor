@@ -13,7 +13,7 @@ import { getSimulationProviderForSnapshot, type SimulationSnapshot, getUpdatedSi
 import { requestIsSimulationDataConsumerOpen, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getPopupVisualisationFingerprint } from './popupSimulationFingerprint.js'
 import { visualizeSimulatorState } from './simulationUpdating.js'
-import { getPopupVisualisationState, setPopupVisualisationState } from './storageVariables.js'
+import { getPopupVisualisationState, setPopupVisualisationState, setPopupVisualisationStateIfCurrent } from './storageVariables.js'
 import { getCommittedNetworkChangeGeneration } from './networkChangeGeneration.js'
 import { readNetworkState } from './networkTransition.js'
 
@@ -189,7 +189,7 @@ export async function updatePopupVisualisationState(ethereum: EthereumClientServ
 			// Services captured before a network change cannot simulate a later network's stack; the refresh that follows the change publishes that network's result.
 			if (!servesSnapshotNetwork(ethereum, capturedSnapshot) || !snapshotNetworkIsActive(capturedSnapshot)) return undefined
 			// Every store and broadcast of this refresh first checks that its network is still active, so a replaced network's result never overwrites or announces over the newer network's.
-			const storeIfNetworkActive = async (state: CompleteVisualizedSimulation) => snapshotNetworkIsActive(capturedSnapshot) ? await setPopupVisualisationState(state) : undefined
+			const storeIfNetworkActive = async (state: CompleteVisualizedSimulation) => await setPopupVisualisationStateIfCurrent(state, () => snapshotNetworkIsActive(capturedSnapshot))
 			const broadcastIfNetworkActive = async (visualizedSimulatorState: CompleteVisualizedSimulation) => {
 				if (snapshotNetworkIsActive(capturedSnapshot)) await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState } })
 			}

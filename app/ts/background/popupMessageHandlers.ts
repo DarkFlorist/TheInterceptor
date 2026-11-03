@@ -803,22 +803,18 @@ export const openNewTab = async (tabName: ExtensionTabName, targetHash = '') => 
 }
 
 export async function requestNewHomeData(
-	ethereum: EthereumClientService,
+	simulationServicesOwner: Pick<SimulationServicesOwner, 'getCurrent'>,
 	websiteTabConnections: WebsiteTabConnections,
 	shouldRefreshSignerAccounts: boolean,
 	includeWebsiteAccessAddressMetadata: boolean,
 	requestAbortController: AbortController | undefined,
 	popupRefreshGeneration: number,
 ) {
-	const newPopupRefreshGeneration = popupRefreshGeneration
-	const updatedPage = await buildHomePageUpdate(ethereum, websiteTabConnections, {
-		requestAbortController,
-		richDataSource: 'cached',
-		shouldRefreshSignerAccounts,
-		includeWebsiteAccessAddressMetadata,
-		popupRefreshGeneration: newPopupRefreshGeneration,
-	})
-	await sendPopupMessageToOpenWindows(updatedPage)
+	// Like refreshHomeData, a network change that commits while the page is built starts it over on the new network.
+	for (;;) {
+		const snapshot = await readNetworkSnapshot(simulationServicesOwner)
+		if (await sendHomePageIfNetworkStillActive(snapshot, websiteTabConnections, { requestAbortController, richDataSource: 'cached', shouldRefreshSignerAccounts, includeWebsiteAccessAddressMetadata, popupRefreshGeneration })) return
+	}
 }
 
 export async function requestHomePageBootstrap(websiteTabConnections: WebsiteTabConnections, popupRefreshGeneration: number) {
@@ -855,6 +851,15 @@ export async function requestHomePageBootstrap(websiteTabConnections: WebsiteTab
 // A refresh's services and settings serve one network only while no network change commits after its snapshot was read. The generation tells the networks apart even when a change keeps the client, as a signer-only network does, or returns to the same endpoint; reading it waits for a transition in progress, so settings the refresh read meanwhile are covered.
 const snapshotNetworkIsStillActive = async (snapshot: NetworkSnapshot) => await readCommittedNetworkChangeGeneration() === snapshot.simulation.networkChangeGeneration
 
+// The home page reads settings when it is built, so it is built with the snapshot's client and sent only if no network change committed since the snapshot was read. Returns whether it was sent, so the caller can start over on the new network.
+async function sendHomePageIfNetworkStillActive(snapshot: NetworkSnapshot, websiteTabConnections: WebsiteTabConnections, options: HomePageUpdateOptions) {
+	const updatedPage = await buildHomePageUpdate(snapshot.services.ethereum, websiteTabConnections, options)
+	// Nothing is awaited between this check and the broadcast, so no network change commits in between.
+	if (!await snapshotNetworkIsStillActive(snapshot)) return false
+	await sendPopupMessageToOpenWindows(updatedPage)
+	return true
+}
+
 export async function refreshHomeData(
 	simulationServicesOwner: Pick<SimulationServicesOwner, 'getCurrent'>,
 	websiteTabConnections: WebsiteTabConnections,
@@ -874,18 +879,7 @@ export async function refreshHomeData(
 			if (refreshSimulation) await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { skipIfUnchanged: true, snapshot: snapshot.simulation })
 			if (!await snapshotNetworkIsStillActive(snapshot)) continue
 			if (snapshot.settings.activeRpcNetwork.httpsRpc !== undefined) await makeSureInterceptorIsNotSleeping(ethereum, publishRpcConnectionStatus)
-			// The home page reads settings when it is built, so it is sent only if they still describe the snapshot's network.
-			const updatedPage = await buildHomePageUpdate(ethereum, websiteTabConnections, {
-				requestAbortController,
-				richDataSource: 'fresh',
-				shouldRefreshSignerAccounts,
-				includeWebsiteAccessAddressMetadata: true,
-				popupRefreshGeneration,
-			})
-			// Nothing is awaited between this check and the broadcast, so no network change commits in between.
-			if (!await snapshotNetworkIsStillActive(snapshot)) continue
-			await sendPopupMessageToOpenWindows(updatedPage)
-			return
+			if (await sendHomePageIfNetworkStillActive(snapshot, websiteTabConnections, { requestAbortController, richDataSource: 'fresh', shouldRefreshSignerAccounts, includeWebsiteAccessAddressMetadata: true, popupRefreshGeneration })) return
 		}
 	} finally {
 		markPerformance(POPUP_PERFORMANCE_MARKS.backgroundRefreshEnd)
@@ -902,7 +896,7 @@ export async function changeSettings(simulationServicesOwner: SimulationServices
 	if (parsedRequest.data.safeAppsCompatibilityMode !== undefined) {
 		await setSafeAppsCompatibilityMode(parsedRequest.data.safeAppsCompatibilityMode)
 	}
-	return await requestNewHomeData(simulationServicesOwner.getCurrent().ethereum, websiteTabConnections, false, true, requestAbortController, bumpPopupRefreshGeneration())
+	return await requestNewHomeData(simulationServicesOwner, websiteTabConnections, false, true, requestAbortController, bumpPopupRefreshGeneration())
 }
 
 export async function simulateGovernanceContractExecutionOnPass(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, simulation: SimulationSnapshot, request: SimulateGovernanceContractExecution) {
@@ -1134,6 +1128,14 @@ async function getActiveAddressForCurrentPopupSignerState(settings: Settings, we
 	return await getActiveAddressForCurrentSignerState(websiteTabConnections, settings, tabId, async () => await getActiveOrFirstSignerAddress(settings, tabId))
 }
 
+type HomePageUpdateOptions = {
+	requestAbortController?: AbortController | undefined
+	richDataSource: 'cached' | 'fresh'
+	shouldRefreshSignerAccounts: boolean
+	includeWebsiteAccessAddressMetadata: boolean
+	popupRefreshGeneration: number
+}
+
 async function buildHomePageUpdate(
 	ethereum: EthereumClientService,
 	websiteTabConnections: WebsiteTabConnections,
@@ -1143,13 +1145,7 @@ async function buildHomePageUpdate(
 		shouldRefreshSignerAccounts,
 		includeWebsiteAccessAddressMetadata,
 		popupRefreshGeneration,
-	}: {
-		requestAbortController?: AbortController
-		richDataSource: 'cached' | 'fresh'
-		shouldRefreshSignerAccounts: boolean
-		includeWebsiteAccessAddressMetadata: boolean
-		popupRefreshGeneration: number
-	}
+	}: HomePageUpdateOptions
 ): Promise<UpdateHomePage> {
 	const settingsPromise = silenceChromeUnCaughtPromise(getSettings())
 	const rpcConnectionStatusPromise = silenceChromeUnCaughtPromise(getRpcConnectionStatus())

@@ -1556,6 +1556,95 @@ describe('network transition snapshot', () => {
 		}
 	})
 
+	test.each(['to B', 'to B and back to A'] as const)('an invalidating refresh of A that waits for a metadata write while a switch %s commits writes and broadcasts nothing', async (switches) => {
+		const { modules, runtimeMessages } = await createApprovedSimulationDapp({ simulationConsumerOpen: true })
+		const { updatePopupVisualisationIfNeeded } = await import('../../app/ts/background/popupVisualisationUpdater.js')
+		const { updateSimulationMetadata } = await import('../../app/ts/background/simulationUpdating.js')
+		const { MessageToPopup } = await import('../../app/ts/types/interceptor-messages.js')
+		await modules.updateInterceptorTransactionStack(() => ({ operations: [createStackedTransaction(1n, networkA.chainId, STACKED_ON_A_RECIPIENT)] }))
+		const { owner, installed, retireAll } = createRecordingServicesOwner(networkA)
+		const [servicesA] = installed
+		if (servicesA === undefined) throw new Error('Missing network A services')
+		let addressBookRead: ReturnType<typeof pauseNextStorageReadOf> | undefined
+		try {
+			await updatePopupVisualisationIfNeeded(servicesA.ethereum, servicesA.tokenPriceService, { invalidateOldState: true })
+			const { simulation } = await modules.readNetworkSnapshot(owner)
+			// The metadata refresh holds the stored visualisation's update while it looks up its addresses.
+			addressBookRead = pauseNextStorageReadOf('userAddressBookEntriesV3')
+			const metadata = updateSimulationMetadata(servicesA.ethereum, simulation, undefined)
+			await addressBookRead.started
+			// A's invalidating refresh passes its network checks, then waits for the held update before it can store its invalidation.
+			const refresh = updatePopupVisualisationIfNeeded(servicesA.ethereum, servicesA.tokenPriceService, { invalidateOldState: true, snapshot: simulation })
+			await new Promise((resolve) => setTimeout(resolve, 20))
+			reportSimulationConsumer(false)
+			const switchToNetwork = async (rpcNetwork: RpcEntry) => await modules.changeActiveAddressAndChain(owner, new Map(), { simulationMode: true, rpcNetwork, promptForAccessesIfNeeded: false })
+			await switchToNetwork(networkB)
+			if (switches === 'to B and back to A') await switchToNetwork(networkA)
+			const getWrites = countPopupVisualisationWrites()
+			const messagesBeforeRelease = runtimeMessages.length
+			addressBookRead.release()
+			await Promise.all([metadata, refresh])
+
+			assert.equal(getWrites(), 0)
+			const stateChanges = runtimeMessages.slice(messagesBeforeRelease).filter((message) => {
+				const parsed = MessageToPopup.safeParse(message)
+				return parsed.success && parsed.value.method === 'popup_simulation_state_changed'
+			})
+			assert.deepEqual(stateChanges, [])
+		} finally {
+			addressBookRead?.release()
+			retireAll()
+		}
+	})
+
+	test.each(['to B', 'to signer-only B and back to A'] as const)('a cached home data request that a switch %s interrupts sends only a home page of the active network', async (switches) => {
+		const { modules, runtimeMessages, createPopupContext } = await createApprovedSimulationDapp({ simulationConsumerOpen: true })
+		const { dispatchPopupMessage } = await import('../../app/ts/background/popupMessageDispatcher.js')
+		const { MessageToPopup } = await import('../../app/ts/types/interceptor-messages.js')
+		const signerOnlyB: RpcNetwork = { chainId: networkB.chainId, httpsRpc: undefined, name: 'Signer-only B', currencyName: 'Ether?', currencyTicker: 'ETH?', primary: false, minimized: true }
+		const { owner, retireAll } = createRecordingServicesOwner(networkA)
+		// A signer-only network is selected in signing mode.
+		const switchToNetwork = async (rpcNetwork: RpcNetwork) => await modules.changeActiveAddressAndChain(owner, new Map(), { simulationMode: rpcNetwork.httpsRpc !== undefined, rpcNetwork, promptForAccessesIfNeeded: false })
+		const finalNetwork = switches === 'to B' ? networkB : networkA
+		// The home page reads the settings, then the current tab; refreshing the tab's signer accounts makes its last read a settings re-read. Without that refresh it keeps the settings read before the switch to B; with it, it reads signer-only B's settings before A is selected again.
+		const refreshSignerAccounts = switches !== 'to B'
+		const originalGet = browser.storage.local.get.bind(browser.storage.local)
+		let step: 'waitingForCurrentTab' | 'switching' | 'waitingForSettingsReRead' | 'done' = 'waitingForCurrentTab'
+		Object.defineProperty(browser.storage.local, 'get', {
+			configurable: true,
+			value: async (keys: Parameters<typeof originalGet>[0]) => {
+				if (step === 'waitingForCurrentTab' && (keys === 'currentTabId' || (Array.isArray(keys) && keys.includes('currentTabId')))) {
+					step = 'switching'
+					await switchToNetwork(switches === 'to B' ? networkB : signerOnlyB)
+					step = switches === 'to B' ? 'done' : 'waitingForSettingsReRead'
+					return await originalGet(keys)
+				}
+				const result = await originalGet(keys)
+				if (step === 'waitingForSettingsReRead' && Array.isArray(keys) && keys.includes('activeRpcNetwork')) {
+					step = 'done'
+					// The page has read signer-only B's settings; selecting A again keeps A's client.
+					await switchToNetwork(networkA)
+				}
+				return result
+			},
+		})
+		try {
+			const messagesBefore = runtimeMessages.length
+			await dispatchPopupMessage(await createPopupContext(owner), { method: 'popup_requestNewHomeData', data: { refreshSignerAccounts, includeWebsiteAccessAddressMetadata: false } })
+
+			assert.equal(step, 'done')
+			assert.deepEqual((await modules.getSettings()).activeRpcNetwork, finalNetwork)
+			const homePages = runtimeMessages.slice(messagesBefore).flatMap((message) => {
+				const parsed = MessageToPopup.safeParse(message)
+				return parsed.success && parsed.value.method === 'popup_UpdateHomePage' ? [parsed.value.data] : []
+			})
+			assert.ok(homePages.length > 0)
+			for (const homePage of homePages) assert.equal(homePage.settings.activeRpcNetwork.chainId, finalNetwork.chainId)
+		} finally {
+			retireAll()
+		}
+	})
+
 	test('a Gnosis Safe confirmation re-read continues its request only if no network change committed since, even one back to the same endpoint', async () => {
 		installBrowserMock()
 		const modules = await loadModules()
