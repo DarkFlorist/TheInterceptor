@@ -137,6 +137,8 @@ export const ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS = { error: { code: 2, message: 
 export const METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN = { error: { code: METAMASK_ERROR_PROVIDER_DISCONNECTED, message: 'Interceptor: Not connected to chain' } }
 // EIP-1193 4901 (chain disconnected): the request was admitted on a network that is no longer the active one.
 export const ERROR_ACTIVE_RPC_NETWORK_CHANGED = { error: { code: 4901, message: 'Interceptor: The active network changed while the request was pending. Send the request again.' } }
+// The chain is still served, so this is a retryable internal error rather than a chain or provider disconnection.
+export const ERROR_ACTIVE_RPC_ENDPOINT_CHANGED = { error: { code: JSON_RPC_ERROR_CODE_INTERNAL_ERROR, message: 'Interceptor: The RPC endpoint changed while the request was pending. Send the request again.' } }
 export const ERROR_INTERCEPTOR_GET_CODE_FAILED = { error: { code: -40001, message: 'Interceptor: Get code failed' } } // I wonder how we should come up with these numbers?
 export const ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED = -40002
 // const ERROR_INTERCEPTOR_NOT_READY = { error: { code: 1, message: 'Interceptor: Not ready' } }

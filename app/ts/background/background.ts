@@ -8,7 +8,7 @@ import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBala
 import { PASSTHROUGH_STATE, type ResolvedExecutionSimulationState, type ResolvedSimulationInput, toResolvedExecutionSimulationState, toResolvedSimulationInput } from '../types/visualizer-types.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, requestAccessFromUser } from './windows/interceptorAccess.js'
-import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_PROVIDER_DISCONNECTED, METAMASK_ERROR_USER_REJECTED_REQUEST, ERROR_ACTIVE_RPC_NETWORK_CHANGED, ERROR_INTERCEPTOR_DISABLED } from '../utils/constants.js'
+import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_PROVIDER_DISCONNECTED, METAMASK_ERROR_USER_REJECTED_REQUEST, ERROR_ACTIVE_RPC_ENDPOINT_CHANGED, ERROR_ACTIVE_RPC_NETWORK_CHANGED, ERROR_INTERCEPTOR_DISABLED } from '../utils/constants.js'
 import { clearWebsiteConnectionIntent, finalizeWebsiteAccessChange, persistWebsiteAccessChange, readSettingsForAccessReconciliation, revokeAffectedApprovalsBecauseSettingsAreUnreadable, sendAccountsChangedToPort, verifyAccess, withSuppressedUnscopedConnectionEventsForSocket } from './accessManagement.js'
 import { getActiveAddressEntryForChain, getWalletActiveAddressEntryForChain } from './metadataUtils.js'
 import { getActiveAddress } from './backgroundUtils.js'
@@ -550,13 +550,17 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 type LiveSettingsOnAdmittedRpcNetwork =
 	| { readonly kind: 'ready', readonly settings: Settings }
 	| { readonly kind: 'unavailable' }
-	| { readonly kind: 'network-changed' }
+	| { readonly kind: 'chain-changed' }
+	| { readonly kind: 'endpoint-changed' }
 
-// A request can be parked on the website lookup or signer prompts after admission, so routing reads one live settings snapshot (simulation mode, signing Safe). Its addresses belong to its own active network, so when that is no longer the admitted service pair's network the request fails closed instead of mixing two snapshots into one Settings.
+// A request can be parked on the website lookup or signer prompts after admission, so routing reads one live settings snapshot (simulation mode, signing Safe) and uses it unmixed. A metadata-only change (name, explorer, list preferences) keeps the chain and endpoint, so the live snapshot still matches the admitted service pair; a chain change invalidates the live selection's chain-dependent decisions for the admitted pair.
 async function getLiveSettingsOnAdmittedRpcNetwork(admittedSettings: Settings): Promise<LiveSettingsOnAdmittedRpcNetwork> {
 	const { settings: liveSettings } = await getSettingsSnapshot()
 	if (liveSettings === undefined) return { kind: 'unavailable' }
-	if (getRpcNetworkChange(admittedSettings.activeRpcNetwork, liveSettings.activeRpcNetwork).selectionChanged) return { kind: 'network-changed' }
+	const rpcNetworkChange = getRpcNetworkChange(admittedSettings.activeRpcNetwork, liveSettings.activeRpcNetwork)
+	if (rpcNetworkChange.chainChanged) return { kind: 'chain-changed' }
+	// Rejected rather than continued: the admitted service pair still talks to the deselected endpoint (which the user may have left for privacy or reliability), and a signer-only selection's fallback service may serve another chain.
+	if (rpcNetworkChange.endpointChanged) return { kind: 'endpoint-changed' }
 	return { kind: 'ready', settings: liveSettings }
 }
 
@@ -573,7 +577,8 @@ async function handleContentScriptMessage(simulationServicesOwner: SimulationSer
 		const requestWithDefinedParams = getRequestWithDefinedParams(request)
 		const liveSettings = await getLiveSettingsOnAdmittedRpcNetwork(admittedSettings)
 		if (liveSettings.kind === 'unavailable') return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...requestWithDefinedParams, error: RPC_CONFIGURATION_UNAVAILABLE_ERROR })
-		if (liveSettings.kind === 'network-changed') return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...requestWithDefinedParams, ...ERROR_ACTIVE_RPC_NETWORK_CHANGED })
+		if (liveSettings.kind === 'chain-changed') return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...requestWithDefinedParams, ...ERROR_ACTIVE_RPC_NETWORK_CHANGED })
+		if (liveSettings.kind === 'endpoint-changed') return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...requestWithDefinedParams, ...ERROR_ACTIVE_RPC_ENDPOINT_CHANGED })
 		const { settings } = liveSettings
 		const currentChainEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId)
 		const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)

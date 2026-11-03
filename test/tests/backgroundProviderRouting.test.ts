@@ -1,3 +1,4 @@
+import type { RpcNetwork } from '../../app/ts/types/rpc.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import type { SimulationStateInput } from '../../app/ts/types/visualizer-types.js'
@@ -370,9 +371,9 @@ describe('background eth_accounts', () => {
 		assert.equal(getReply()?.error?.code, 10000)
 	})
 
-	test('fails closed instead of routing with a signing Safe selected on another network while the request is parked', async () => {
-		installBrowserMock()
-		const { getRequiredSettings, setRpcConfiguration, changeSimulationMode, updateUserAddressBookEntries } = await loadModules()
+	// Parks a signing-mode request after its settings are read, applies an active RPC change, then releases it.
+	const runParkedRequestAcrossActiveRpcChange = async (changeActiveRpc: (admittedRpc: RpcNetwork) => Promise<void>) => {
+		const { getRequiredSettings } = await loadModules()
 		const parkedWebsite = createDeferredValue<{ readonly websiteOrigin: string, readonly icon: undefined, readonly title: undefined }>()
 		const signingModeSettingsRead = createDeferredValue<void>()
 		observeStorageReads(async ({ settingsSnapshotReads }) => {
@@ -380,19 +381,52 @@ describe('background eth_accounts', () => {
 		})
 		const { website, requestPromise, getReply, wasForwardedToSigner } = await startSigningModeAddEthereumChainRequest({ websitePromise: parkedWebsite.promise })
 		await signingModeSettingsRead.promise
-		// The user switches to chain B and selects a signing Safe that exists only there; the request was admitted on chain A.
-		const admittedRpc = (await getRequiredSettings()).activeRpcNetwork
-		const otherChainRpc = { ...admittedRpc, name: 'Other chain', chainId: admittedRpc.chainId + 1n, httpsRpc: 'https://other-chain.example.test' }
-		const signer = 0x1111111111111111111111111111111111111111n
-		const otherChainSafe = 0x2222222222222222222222222222222222222222n
-		await updateUserAddressBookEntries(() => [{ type: 'safe', name: 'Other chain Safe', address: otherChainSafe, chainId: otherChainRpc.chainId, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [signer] }])
-		await setRpcConfiguration([admittedRpc, otherChainRpc], otherChainRpc)
-		await changeSimulationMode({ simulationMode: false, activeSigningSafeAddress: otherChainSafe })
+		await changeActiveRpc((await getRequiredSettings()).activeRpcNetwork)
 		parkedWebsite.resolve(website)
 		await requestPromise
+		return { getReply, wasForwardedToSigner }
+	}
+
+	test('fails closed with 4901 instead of routing with a signing Safe selected on another chain while the request is parked', async () => {
+		installBrowserMock()
+		const { setRpcConfiguration, changeSimulationMode, updateUserAddressBookEntries } = await loadModules()
+		// The user switches to chain B and selects a signing Safe that exists only there; the request was admitted on chain A.
+		const { getReply, wasForwardedToSigner } = await runParkedRequestAcrossActiveRpcChange(async (admittedRpc) => {
+			const otherChainRpc = { ...admittedRpc, name: 'Other chain', chainId: admittedRpc.chainId + 1n, httpsRpc: 'https://other-chain.example.test' }
+			const signer = 0x1111111111111111111111111111111111111111n
+			const otherChainSafe = 0x2222222222222222222222222222222222222222n
+			await updateUserAddressBookEntries(() => [{ type: 'safe', name: 'Other chain Safe', address: otherChainSafe, chainId: otherChainRpc.chainId, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [signer] }])
+			await setRpcConfiguration([admittedRpc, otherChainRpc], otherChainRpc)
+			await changeSimulationMode({ simulationMode: false, activeSigningSafeAddress: otherChainSafe })
+		})
 
 		assert.equal(wasForwardedToSigner(), false)
 		assert.equal(getReply()?.error?.code, 4901)
+	})
+
+	test('rejects a parked request with a retryable error when the active endpoint changed on the same chain', async () => {
+		installBrowserMock()
+		const { setRpcConfiguration } = await loadModules()
+		const { getReply, wasForwardedToSigner } = await runParkedRequestAcrossActiveRpcChange(async (admittedRpc) => {
+			const sameChainRpc = { ...admittedRpc, name: 'Same chain, other endpoint', httpsRpc: 'https://same-chain-other-endpoint.example.test' }
+			await setRpcConfiguration([admittedRpc, sameChainRpc], sameChainRpc)
+		})
+
+		assert.equal(wasForwardedToSigner(), false)
+		assert.equal(getReply()?.error?.code, -32603)
+		assert.match(getReply()?.error?.message ?? '', /RPC endpoint changed/)
+	})
+
+	test('continues a parked request when only the active RPC network metadata changed', async () => {
+		installBrowserMock()
+		const { setRpcConfiguration } = await loadModules()
+		const { getReply, wasForwardedToSigner } = await runParkedRequestAcrossActiveRpcChange(async (admittedRpc) => {
+			const renamedRpc = { ...admittedRpc, name: 'Renamed network' }
+			await setRpcConfiguration([renamedRpc], renamedRpc)
+		})
+
+		assert.equal(wasForwardedToSigner(), true)
+		assert.equal(getReply()?.error, undefined)
 	})
 
 	test('does not forward to the signer when simulation mode is enabled while the tab state is being read', async () => {
