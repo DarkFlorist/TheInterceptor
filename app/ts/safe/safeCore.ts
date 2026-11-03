@@ -367,6 +367,14 @@ function assertSafeTransactionContext(
 	assertInterceptorSafeTransactionPolicy(safeTx)
 }
 
+// A Safe proposal's EIP-712 domain fixes the chain it executes on, so it can only be signed or stacked while connected to that chain.
+export function assertSafeProposalChainMatchesConnectedNetwork(ethereum: EthereumClientService, safeTx: SafeTx) {
+	const connectedChainId = ethereum.getChainId()
+	if (safeTx.domain.chainId === connectedChainId) return
+	const proposalChain = safeTx.domain.chainId === undefined ? 'an unspecified chain' : `chain ${ safeTx.domain.chainId.toString() }`
+	throw createSafeContractValidationFailure(`This Gnosis Safe proposal was prepared for ${ proposalChain }, but the connected network is chain ${ connectedChainId.toString() }. Propose it again on the current network.`)
+}
+
 function validateSafeTransactionState(
 	state: SafeContractState,
 	safeTx: SafeTx,
