@@ -62,6 +62,8 @@ function getSourceFiles(directory: string): readonly string[] {
 	})
 }
 
+const getApplicationSourceFiles = () => [...getSourceFiles(path.join(appRoot, 'ts')), ...getSourceFiles(path.join(appRoot, 'inpage', 'ts'))]
+
 describe('page contexts and the active network', () => {
 	test('page contexts never import a settings read or storage write that can write the active network', () => {
 		const entrypoints = getPageContextEntrypoints(fs.readFileSync(path.join(repositoryRoot, 'build', 'bundler.mts'), 'utf8'), appRoot)
@@ -74,14 +76,25 @@ describe('page contexts and the active network', () => {
 
 	// The freshness check of readActiveNetworkSnapshot counts only the network writes made through browserStorageLocalSetActiveNetwork, the only typed setter that accepts the key and which only settings.ts calls; this also catches writes that bypass the typed setters, such as a raw browser.storage.local.set.
 	test('only settings.ts writes the active network to storage', () => {
-		const writersOfTheActiveNetwork = [...getSourceFiles(path.join(appRoot, 'ts')), ...getSourceFiles(path.join(appRoot, 'inpage', 'ts'))]
-			.filter((file) => file !== settingsModule && file !== path.join(appRoot, 'ts', 'utils', 'storageUtils.ts'))
+		const writersOfTheActiveNetwork = getApplicationSourceFiles()
+			.filter((file) => file !== settingsModule && file !== storageUtilsModule)
 			.filter((file) => {
 				const source = fs.readFileSync(file, 'utf8')
 				return /browserStorageLocalSet|storage\.local\.set/u.test(source) && /\bactiveRpcNetwork\s*[:,}]/u.test(source)
 			})
 			.map((file) => path.relative(repositoryRoot, file))
 		assert.deepEqual(writersOfTheActiveNetwork, [])
+	})
+
+	// A raw browser.storage.local write bypasses the typed setters, and with them the active network write counts in storageUtils.ts, whatever key it writes, including a computed one or a clear. So raw writes are allowed only in these modules; a new one has to be listed here after checking that it can never write the active network.
+	test('only the listed storage modules write browser storage directly, and only storageUtils.ts of them names the active network', () => {
+		const rawStorageWriters = [storageUtilsModule, path.join(appRoot, 'ts', 'utils', 'largeStateStore.ts'), path.join(appRoot, 'ts', 'background', 'storageVariables.ts')]
+		const filesWithRawStorageWrites = getApplicationSourceFiles().filter((file) => /\bstorage\.local\.(?:set|remove|clear)\b/u.test(fs.readFileSync(file, 'utf8')))
+		assert.deepEqual([...filesWithRawStorageWrites].sort(), [...rawStorageWriters].sort())
+		const rawWritersNamingTheActiveNetwork = rawStorageWriters
+			.filter((file) => file !== storageUtilsModule && fs.readFileSync(file, 'utf8').includes('activeRpcNetwork'))
+			.map((file) => path.relative(repositoryRoot, file))
+		assert.deepEqual(rawWritersNamingTheActiveNetwork, [])
 	})
 })
 

@@ -199,7 +199,7 @@ export async function browserStorageLocalSet(items: WritableLocalStorageItems) {
 	return await browser.storage.local.set(serializeLocalStorageItems(items))
 }
 
-// Counts the writes of the active network that started and finished, for beginActiveNetworkRead.
+// Counts the writes of the active network that started and finished, for beginActiveNetworkRead, through which readActiveNetworkSnapshot tells whether the network it read is still stored when a transaction approval commits. The counters sit beside the only code that performs the write, not beside their readers in settings.ts or transactionNetwork.ts, where they would see only the writes whose callers remember to update them; here the write and its count cannot be separated. The generic setter and remover above exclude the key at the type level, so browserStorageLocalSetActiveNetwork is the only typed way to write it. A raw browser.storage.local write would bypass both the types and the counters, so pageContextSettingsImports.test.ts allows raw storage writes only in listed modules that never name the active network.
 let activeNetworkWritesStarted = 0
 let activeNetworkWritesFinished = 0
 
