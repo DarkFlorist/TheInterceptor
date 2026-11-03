@@ -64,8 +64,8 @@ export async function resolveFetchSimulationStackRequest(snapshot: SimulationSta
 		replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'interceptor_getSimulationStack' as const, error: userDeniedChange.error, uniqueRequestIdentifier: data.uniqueRequestIdentifier })
 	}
 	await setFetchSimulationStackRequestPromise(undefined)
+	// Do not reset openedDialog here: it never refers to this restarted request's dialog, and a new request may have opened its own dialog while this one closes
 	await closePopupOrTabById(data.popupOrTabId)
-	openedDialog = undefined
 }
 
 function getRejectMessage(uniqueRequestIdentifier: UniqueRequestIdentifier, simulationStackVersion: SimulationStackVersion) {
