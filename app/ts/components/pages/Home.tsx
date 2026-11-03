@@ -1,4 +1,6 @@
 import { getRpcNetworkChange } from '../../utils/rpcNetworkChange.js'
+import { isBypassingInterceptorOnNetworkWithoutRpc, isForwardingRequestsToSigner } from '../../utils/requestRouting.js'
+import { isSignerMissing } from '../../utils/signerMetadata.js'
 import type { HomeParams, FirstCardParams, HomeProtection, SimulationStateParam, RenameAddressCallBack, TabState } from '../../types/user-interface-types.js'
 import { type SimulationAndVisualisationResults, isEmptySimulationAndVisualisationResults } from '../../types/visualizer-types.js'
 import { ActiveAddressComponent, SmallAddress, StaticBigAddress, WebsiteOriginText, getActiveAddressEntry } from '../subcomponents/address.js'
@@ -252,26 +254,29 @@ function getSignerDisplayName(signerName: SignerName) {
 	return signerName === 'NoSigner' || signerName === 'NoSignerDetected' ? 'your wallet' : getPrettySignerName(signerName)
 }
 
-// Derives the one protection state that every protection promise on the home page is chosen from. A disabled website is reported first because it is specific to the active tab.
-function getHomeProtection(interceptorDisabled: boolean, rpcNetwork: RpcNetwork | undefined): HomeProtection {
+// Derives the one protection state that every protection promise on the home page is chosen from. A disabled website is reported first because it is specific to the active tab. On a network without an RPC it follows the background's routing (utils/requestRouting.ts): requests skip the Interceptor only when they are forwarded to a wallet, which the popup knows from the tab's detected signer.
+function getHomeProtection(interceptorDisabled: boolean, simulationMode: boolean, tabState: TabState | undefined, rpcNetwork: RpcNetwork | undefined): HomeProtection {
 	if (interceptorDisabled) return 'disabledOnWebsite'
-	if (rpcNetwork !== undefined && rpcNetwork.httpsRpc === undefined) return 'unsupportedNetwork'
-	return 'active'
+	if (rpcNetwork === undefined || rpcNetwork.httpsRpc !== undefined) return 'active'
+	const signerAvailable = tabState !== undefined && !isSignerMissing(tabState.signerName)
+	return isBypassingInterceptorOnNetworkWithoutRpc(isForwardingRequestsToSigner(simulationMode, signerAvailable), rpcNetwork) ? 'unsupportedNetwork' : 'networkWithoutRpc'
 }
 
-// Says why the Interceptor neither simulates nor reviews the active tab's transactions; shown instead of any protection promise.
-function getProtectionUnavailableText(protection: Exclude<HomeProtection, 'active'>, signerName: SignerName) {
+// Shown instead of any protection promise while the protection state is not 'active'. Only the first two states turn the Interceptor off; without an RPC requests are still intercepted, so that text only asks for an RPC.
+function getProtectionNoticeText(protection: Exclude<HomeProtection, 'active'>, signerName: SignerName) {
 	switch (protection) {
 		case 'disabledOnWebsite': return `The website talks to ${ getSignerDisplayName(signerName) } directly, so its transactions are neither simulated nor reviewed.`
-		case 'unsupportedNetwork': return 'The Interceptor neither simulates nor reviews transactions on an unsupported network.'
+		case 'unsupportedNetwork': return `Requests on a network without an RPC go to ${ getSignerDisplayName(signerName) } directly, so they are neither simulated nor reviewed.`
+		case 'networkWithoutRpc': return 'The selected network has no configured RPC. Select or configure an RPC for it so the Interceptor can simulate transactions.'
 		default: return assertNever(protection)
 	}
 }
 
-function getProtectionUnavailableTitle(protection: Exclude<HomeProtection, 'active'>) {
+function getProtectionNoticeTitle(protection: Exclude<HomeProtection, 'active'>) {
 	switch (protection) {
 		case 'disabledOnWebsite': return 'Interceptor disabled on this website.'
 		case 'unsupportedNetwork': return 'Interceptor inactive on this network.'
+		case 'networkWithoutRpc': return 'No RPC for this network.'
 		default: return assertNever(protection)
 	}
 }
@@ -279,7 +284,7 @@ function getProtectionUnavailableTitle(protection: Exclude<HomeProtection, 'acti
 // States what the current mode does with a confirmed transaction. Home mounts it only after the initial home data has loaded, so it never shows the pre-load default mode.
 function ModeBanner({ simulationMode, signerName, protection }: { simulationMode: boolean, signerName: SignerName, protection: HomeProtection }) {
 	if (protection !== 'active') return <p class = 'popup-mode-banner' role = 'note'>
-		<strong>{ getProtectionUnavailableTitle(protection) }</strong> { getProtectionUnavailableText(protection, signerName) }
+		<strong>{ getProtectionNoticeTitle(protection) }</strong> { getProtectionNoticeText(protection, signerName) }
 	</p>
 	return <p class = 'popup-mode-banner' role = 'note'>
 		{ simulationMode
@@ -867,12 +872,12 @@ function RichAddressesTitleCard({ numberOfAddressesMadeRich, openSimulationStack
 }
 
 function EmptySimulationStack({ protection, signerName }: { protection: HomeProtection, signerName: SignerName }) {
-	if (protection !== 'active') return <EmptyState title = 'Nothing simulated yet' text = { getProtectionUnavailableText(protection, signerName) }/>
+	if (protection !== 'active') return <EmptyState title = 'Nothing simulated yet' text = { getProtectionNoticeText(protection, signerName) }/>
 	return <EmptyState title = 'Give me some transactions to munch on!' text = 'Use a dapp as usual. Each transaction it sends is simulated and stacked here instead of being sent.'/>
 }
 
 function SigningModeHint({ protection, signerName }: { protection: HomeProtection, signerName: SignerName }) {
-	if (protection !== 'active') return <EmptyState title = 'Nothing to review' text = { getProtectionUnavailableText(protection, signerName) }/>
+	if (protection !== 'active') return <EmptyState title = 'Nothing to review' text = { getProtectionNoticeText(protection, signerName) }/>
 	return <EmptyState title = 'Nothing to review yet' text = { `When a dapp asks for a transaction or a signature, the Interceptor shows what it does before ${ getSignerDisplayName(signerName) } signs it.` }/>
 }
 
@@ -960,7 +965,7 @@ export function Home(param: HomeParams) {
 	const showPopupVisualisation = useSignal<boolean>(false)
 	const tabWebsite = useComputed(() => param.tabState.value?.website)
 	const signerName = useComputed(() => param.tabState.value?.signerName ?? 'NoSignerDetected')
-	const protection = useComputed(() => getHomeProtection(param.interceptorDisabled.value, param.rpcNetwork.value))
+	const protection = useComputed(() => getHomeProtection(param.interceptorDisabled.value, param.simulationMode.value, param.tabState.value, param.rpcNetwork.value))
 	const disableResetUntilHomeDataLoaded = useComputed(() => disableReset.value || !param.isInitialHomeDataLoaded.value)
 
 	const modeActiveAddress = useModeActiveAddress(param)

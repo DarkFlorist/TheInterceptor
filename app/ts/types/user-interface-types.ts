@@ -104,8 +104,8 @@ export type FirstCardParams = {
 	isFreshHomeDataLoaded: Signal<boolean>
 }
 
-// Whether the Interceptor simulates and reviews the active tab's requests. A website the user disabled the Interceptor for gets no Interceptor provider, and on an unsupported network the Interceptor neither simulates nor reviews, so the popup makes no protection promise unless this is 'active'.
-export type HomeProtection = 'active' | 'disabledOnWebsite' | 'unsupportedNetwork'
+// Whether the Interceptor simulates and reviews the active tab's requests; the popup makes no protection promise unless this is 'active'. A website the user disabled the Interceptor for gets no Interceptor provider ('disabledOnWebsite'). On a network without an RPC, signing mode with a wallet sends requests straight to the wallet ('unsupportedNetwork'), while otherwise requests are still intercepted but cannot be simulated until an RPC is configured ('networkWithoutRpc').
+export type HomeProtection = 'active' | 'disabledOnWebsite' | 'unsupportedNetwork' | 'networkWithoutRpc'
 
 export type SimulationStateParam = {
 	simulationMode: ReadonlySignal<boolean>
