@@ -12,7 +12,7 @@ import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { type InterceptorTransactionStack, PASSTHROUGH_STATE, type WebsiteCreatedEthereumTransaction, type WebsiteCreatedEthereumTransactionOrFailed, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
 import type { SendRawTransactionParams, SendTransactionParams } from '../../types/JsonRpc-types.js'
 import { refreshConfirmTransactionSimulation } from '../confirmTransactionSimulation.js'
-import { getUpdatedSimulationState, type NetworkState, type SimulationSnapshot } from '../simulationUpdating.js'
+import { getUpdatedSimulationState, type NetworkSnapshot, type NetworkState, type SimulationSnapshot } from '../simulationUpdating.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getRpcConnectionStatus, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
 import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
@@ -271,9 +271,9 @@ const refreshSharedVisualisationAfterAppend = async ({ ethereum, tokenPriceServi
 
 // The services owner lets an accepted simulated confirmation read the installed services together with the stack it appends to.
 export async function resolvePendingTransactionOrMessage(simulationServicesOwner: SimulationServicesOwner, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, network: NetworkState, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, refreshedSafeSignerSelection?: RefreshedSafeSignerSelection) {
-	// After this confirmation appends to the stack, later view updates use the services and snapshot read with that append.
-	let currentNetwork = network
-	let currentServices = { ethereum, tokenPriceService }
+	// One snapshot holds the settings, stack and services together, so they are replaced at once: after this confirmation appends to the stack, later view updates use the snapshot read with that append.
+	let current: NetworkSnapshot = { ...network, services: { ethereum, tokenPriceService } }
+	const updateViewOnCurrentSnapshot = async () => await updateConfirmTransactionView(current.services.ethereum, current.services.tokenPriceService, current)
 	let pendingTransactionOrMessage = await getPendingTransactionOrMessageByidentifier(confirmation.data.uniqueRequestIdentifier)
 	if (pendingTransactionOrMessage === undefined) return // no need to resolve as it doesn't exist anymore
 	if (
@@ -290,11 +290,11 @@ export async function resolvePendingTransactionOrMessage(simulationServicesOwner
 		)
 		const refreshResult = refresh.refreshResult
 		if (refresh.refreshRequired && refreshResult.status !== 'unchanged' && !refresh.persisted) {
-			await updateConfirmTransactionView(ethereum, tokenPriceService, currentNetwork)
+			await updateViewOnCurrentSnapshot()
 			return false
 		}
 		if (refresh.refreshRequired && (refreshResult.status === 'blocked' || directSafeExecution && refreshResult.status === 'refreshed')) {
-			await updateConfirmTransactionView(ethereum, tokenPriceService, currentNetwork)
+			await updateViewOnCurrentSnapshot()
 			return false
 		}
 		if (refresh.persistedPending !== undefined) pendingTransactionOrMessage = refresh.persistedPending
@@ -309,13 +309,13 @@ export async function resolvePendingTransactionOrMessage(simulationServicesOwner
 		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (pending) => modifyObject(pending, {
 			approvalStatus: safeResolution.approvalStatus,
 		}))
-		await updateConfirmTransactionView(ethereum, tokenPriceService, currentNetwork)
+		await updateViewOnCurrentSnapshot()
 		return false
 	}
 	if (safeResolution.status === 'refreshed') {
 		pendingTransactionOrMessage = safeResolution.pending
 		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async () => pendingTransactionOrMessage)
-		await updateConfirmTransactionView(ethereum, tokenPriceService, currentNetwork)
+		await updateViewOnCurrentSnapshot()
 		return false
 	}
 	pendingTransactionOrMessage = safeResolution.pending
@@ -327,7 +327,7 @@ export async function resolvePendingTransactionOrMessage(simulationServicesOwner
 	const removePendingRequestAndUpdateView = async () => {
 		await removePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier)
 		if ((await getPendingTransactionsAndMessages()).length === 0) await tryFocusingTabOrWindow({ type: 'tab', id: pendingTransactionOrMessage.uniqueRequestIdentifier.requestSocket.tabId })
-		if (!(await updateConfirmTransactionView(currentServices.ethereum, currentServices.tokenPriceService, currentNetwork))) await closePopupOrTabById(pendingTransactionOrMessage.popupOrTabId)
+		if (!(await updateViewOnCurrentSnapshot())) await closePopupOrTabById(pendingTransactionOrMessage.popupOrTabId)
 	}
 	const reply = async (message: { type: 'forwardToSigner' } | { type: 'result', error: { code: number, message: string } } | { type: 'result', result: unknown }) => {
 		if (message.type === 'result' && !('error' in message)) {
@@ -358,7 +358,7 @@ export async function resolvePendingTransactionOrMessage(simulationServicesOwner
 			await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (pending) => modifyObject(pending, {
 				approvalStatus: safeReply.approvalStatus,
 			}))
-			await updateConfirmTransactionView(ethereum, tokenPriceService, currentNetwork)
+			await updateViewOnCurrentSnapshot()
 			return false
 		}
 		if (safeReply.status === 'success') return reply({ type: 'result', result: safeReply.result })
@@ -370,7 +370,7 @@ export async function resolvePendingTransactionOrMessage(simulationServicesOwner
 	) return false
 	if (confirmation.data.action === 'accept' && pendingTransactionOrMessage.simulationMode === false) {
 		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'WaitingForSigner' } }))
-		await updateConfirmTransactionView(ethereum, tokenPriceService, currentNetwork)
+		await updateViewOnCurrentSnapshot()
 		const requestWasForwarded = await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, { ...signerFacingRequest, type: 'forwardToSigner', uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
 		if (requestWasForwarded) return true
 		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, {
@@ -380,7 +380,7 @@ export async function resolvePendingTransactionOrMessage(simulationServicesOwner
 				message: 'The website connection was interrupted before the request reached your wallet. Reload the website and try again.',
 			}
 		}))
-		await updateConfirmTransactionView(ethereum, tokenPriceService, currentNetwork)
+		await updateViewOnCurrentSnapshot()
 		return false
 	}
 	if (confirmation.data.action === 'noResponse') {
@@ -401,7 +401,7 @@ export async function resolvePendingTransactionOrMessage(simulationServicesOwner
 				await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (pending) => modifyObject(pending, {
 					approvalStatus: safeReply.approvalStatus,
 				}))
-				await updateConfirmTransactionView(ethereum, tokenPriceService, currentNetwork)
+				await updateViewOnCurrentSnapshot()
 				return false
 			}
 			if (safeReply.status === 'success') return reply({ type: 'result', result: safeReply.result })
@@ -421,7 +421,7 @@ export async function resolvePendingTransactionOrMessage(simulationServicesOwner
 				message: 'The active network changed after this request was simulated. Switch back to its network to add it to the simulation, or reject it.',
 			}
 		}))
-		await updateConfirmTransactionView(ethereum, tokenPriceService, currentNetwork)
+		await updateViewOnCurrentSnapshot()
 		return false
 	}
 	switch (pendingTransactionOrMessage.type) {
@@ -432,8 +432,7 @@ export async function resolvePendingTransactionOrMessage(simulationServicesOwner
 				pendingTransactionOrMessage.simulationChainId,
 			)
 			if (appended === undefined) return await keepPendingAfterNetworkChange()
-			currentNetwork = appended
-			currentServices = appended.services
+			current = appended
 			await refreshSharedVisualisationAfterAppend(appended.services)
 			return reply({ type: 'result', result: (await simulatePersonalSign(pendingTransactionOrMessage.originalRequestParameters, pendingTransactionOrMessage.signedMessageTransaction.fakeSignedFor)).signature })
 		}
@@ -443,8 +442,7 @@ export async function resolvePendingTransactionOrMessage(simulationServicesOwner
 			const appended = await appendToActiveSimulationStack(simulationServicesOwner, { type: 'Transaction', preSimulationTransaction: transaction }, pendingTransactionOrMessage.simulationChainId)
 			if (appended === undefined) return await keepPendingAfterNetworkChange()
 			if (appended.stackedOperation.type !== 'Transaction') throw new Error('The stacked operation of this transaction is not a transaction.')
-			currentNetwork = appended
-			currentServices = appended.services
+			current = appended
 			await refreshSharedVisualisationAfterAppend(appended.services)
 			markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionStackAppended)
 			return reply({ type: 'result', result: EthereumBytes32.serialize(appended.stackedOperation.preSimulationTransaction.signedTransaction.hash) })

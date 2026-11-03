@@ -12,7 +12,7 @@ import { updateTransactionState } from './storageVariables.js'
 import type { ActiveAddressSelection } from '../utils/activeAddressSelection.js'
 import { rememberSigningAddressSelection } from './signingAddressSelection.js'
 import { getActiveStackContext, operationBelongsToActiveStackContext } from '../utils/activeStackContext.js'
-import { publishCommittedSettingsChange, readNetworkSnapshot, runPendingPopupRefresh, runSettingsTransition } from './networkTransition.js'
+import { readNetworkSnapshot, runSettingsTransition } from './networkTransition.js'
 
 async function clearSimulationStateFromConfig() {
 	const settings = await getSettings()
@@ -77,50 +77,49 @@ async function runActiveSettingsChange(
 	let accessUpdate: WebsiteAccessUpdate | undefined
 	try {
 		// Settings, approvals, resets, notifications and selection preferences form one ordered transition.
-		const popupRefresh = await runSettingsTransition(simulationServicesOwner, websiteTabConnections, async (previousSettings, effects) => {
-			// These writes keep the network, mode and stack context of the settings read before the transition.
-			if (transition.simulationSignerSelection !== undefined) {
-				const { useSignerAddress, signerAddress } = transition.simulationSignerSelection
-				await setUseSignersAddressAsActiveAddress(useSignerAddress, signerAddress)
-			}
-			if (change.simulationMode && change.activeAddress !== undefined) await keepTrackOfPreviousAddressForRichList()
+		await runSettingsTransition(simulationServicesOwner, websiteTabConnections, {
+			writeSettings: async () => {
+				// These writes keep the network, mode and stack context of the settings read before the transition.
+				if (transition.simulationSignerSelection !== undefined) {
+					const { useSignerAddress, signerAddress } = transition.simulationSignerSelection
+					await setUseSignersAddressAsActiveAddress(useSignerAddress, signerAddress)
+				}
+				if (change.simulationMode && change.activeAddress !== undefined) await keepTrackOfPreviousAddressForRichList()
 
-			if (change.simulationMode) {
-				await changeSimulationMode({
-					simulationMode: change.simulationMode,
-					...('activeAddress' in change ? { activeSimulationAddress: change.activeAddress } : {}),
-					...(change.rpcNetwork !== undefined ? { rpcNetwork: change.rpcNetwork } : {}),
-				})
-			} else {
-				if ('activeAddress' in change && change.signingAddressSelection === undefined) throw new Error('Signing address changes must identify whether the selection is the signer or a Safe.')
-				const selectsSafe = change.signingAddressSelection === 'safe'
-				await changeSimulationMode({
-					simulationMode: change.simulationMode,
-					...(!selectsSafe && 'activeAddress' in change ? { activeSigningAddress: change.activeAddress } : {}),
-					...('activeAddress' in change ? { activeSigningSafeAddress: selectsSafe ? change.activeAddress : undefined } : {}),
-					...(change.rpcNetwork !== undefined ? { rpcNetwork: change.rpcNetwork } : {}),
-				})
-			}
-
-			const updatedSettings = await getSettings()
-			try {
-				try {
-					// The preference belongs to the committed selection, even if later provider preparation fails.
-					if (transition.signingPreference !== undefined) await rememberSigningAddressSelection(transition.signingPreference)
-					await effects.installServices(updatedSettings)
-					await effects.clearStackForChangedChain(updatedSettings)
-				} finally {
-					// Publish committed settings even if installing their services fails.
-					await sendPopupMessageToOpenWindows({
-						method: 'popup_settingsUpdated', data: updatedSettings, popupRefreshGeneration: bumpPopupRefreshGeneration(),
+				if (change.simulationMode) {
+					await changeSimulationMode({
+						simulationMode: change.simulationMode,
+						...('activeAddress' in change ? { activeSimulationAddress: change.activeAddress } : {}),
+						...(change.rpcNetwork !== undefined ? { rpcNetwork: change.rpcNetwork } : {}),
+					})
+				} else {
+					if ('activeAddress' in change && change.signingAddressSelection === undefined) throw new Error('Signing address changes must identify whether the selection is the signer or a Safe.')
+					const selectsSafe = change.signingAddressSelection === 'safe'
+					await changeSimulationMode({
+						simulationMode: change.simulationMode,
+						...(!selectsSafe && 'activeAddress' in change ? { activeSigningAddress: change.activeAddress } : {}),
+						...('activeAddress' in change ? { activeSigningSafeAddress: selectsSafe ? change.activeAddress : undefined } : {}),
+						...(change.rpcNetwork !== undefined ? { rpcNetwork: change.rpcNetwork } : {}),
 					})
 				}
-			} finally {
-				accessUpdate = await reconcileWebsiteApprovalAccesses(websiteTabConnections, updatedSettings)
-			}
-			return await publishCommittedSettingsChange(simulationServicesOwner, websiteTabConnections, effects, previousSettings, updatedSettings)
+				return 'committed'
+			},
+			afterNetworkApplied: async (updatedSettings) => {
+				try {
+					try {
+						// The preference belongs to the committed selection, even if installing its services failed.
+						if (transition.signingPreference !== undefined) await rememberSigningAddressSelection(transition.signingPreference)
+					} finally {
+						// Publish committed settings even if installing their services fails.
+						await sendPopupMessageToOpenWindows({
+							method: 'popup_settingsUpdated', data: updatedSettings, popupRefreshGeneration: bumpPopupRefreshGeneration(),
+						})
+					}
+				} finally {
+					accessUpdate = await reconcileWebsiteApprovalAccesses(websiteTabConnections, updatedSettings)
+				}
+			},
 		})
-		await runPendingPopupRefresh(popupRefresh)
 	} finally {
 		// Complete committed access updates after releasing the semaphore, even if a later reset or notification fails.
 		if (accessUpdate !== undefined) {

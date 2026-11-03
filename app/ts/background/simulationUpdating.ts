@@ -8,6 +8,7 @@ import { calculateRealizedEffectiveGasPrice } from '../simulation/services/simul
 import { mockSignTransaction } from '../simulation/services/simulationTransactionSigning.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../config/defaults.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
+import type { SimulationServices } from '../simulation/serviceLifecycle.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
 import { runProtectorsForTransaction } from '../simulation/protectorRunner.js'
 import type { EnrichedEthereumEvents, EnrichedEthereumInputData } from '../types/EnrichedEthereumData.js'
@@ -162,11 +163,14 @@ export type SimulationSnapshot = {
 	readonly interceptorTransactionStack: InterceptorTransactionStack
 }
 
-// Settings with the simulation state built from them, captured together so a request simulates the stack of its own network.
+// Settings with the simulation state built from them, captured together so a request simulates the stack of its own network. Handlers take the services as separate (ethereum, tokenPriceService) arguments next to NetworkState to keep their existing signatures; callers take both from the same NetworkSnapshot read under the network transition lock.
 export type NetworkState = {
 	readonly settings: Settings
 	readonly simulation: SimulationSnapshot
 }
+
+// A NetworkState together with the services that were installed when it was read.
+export type NetworkSnapshot = NetworkState & { readonly services: SimulationServices }
 
 // Capture selection and input at the storage boundary. An unreadable stack must abort before publishing any fallback.
 export async function captureSimulationSnapshot(settingsSnapshot?: Settings): Promise<SimulationSnapshot> {

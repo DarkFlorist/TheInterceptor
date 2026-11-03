@@ -1377,6 +1377,53 @@ describe('network transition snapshot', () => {
 		}
 	})
 
+	test.each(['switch', 'settings import'] as const)('a %s that commits another chain installs its services and clears the stack before websites and popups hear of the chain', async (kind) => {
+		installBrowserMock()
+		const modules = await loadModules()
+		await modules.changeSimulationMode({ simulationMode: true, rpcNetwork: networkA })
+		await modules.updateWebsiteAccess(() => [{ website, access: true, addressAccess: undefined }])
+		await modules.updateInterceptorTransactionStack(() => ({ operations: [createStackedTransaction(1n, networkA.chainId, STACKED_ON_A_RECIPIENT)] }))
+		const recording = createRecordingServicesOwner(networkA)
+		const importRequest = await createImportRequest(modules.exportSettingsAndAddressBook, networkB)
+		const events: string[] = []
+		const owner: SimulationServicesOwner = {
+			getCurrent: recording.owner.getCurrent,
+			reset: (rpcNetwork) => {
+				events.push('installServices')
+				return recording.owner.reset(rpcNetwork)
+			},
+		}
+		const originalSet = browser.storage.local.set.bind(browser.storage.local)
+		Object.defineProperty(browser.storage.local, 'set', {
+			configurable: true,
+			value: async (items: Record<string, unknown>) => {
+				await originalSet(items)
+				if ('interceptorTransactionStack' in items) events.push('clearStack')
+			},
+		})
+		const originalSendMessage = browser.runtime.sendMessage.bind(browser.runtime)
+		Object.defineProperty(browser.runtime, 'sendMessage', {
+			configurable: true,
+			value: async (message: unknown) => {
+				if (isRecord(message) && message.method === 'popup_chain_update') events.push('popup_chain_update')
+				return await originalSendMessage(message)
+			},
+		})
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port } = createPort(socket.tabId, (message) => { if (message.method === 'chainChanged') events.push('chainChanged') })
+		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+			[modules.websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		try {
+			if (kind === 'switch') await modules.changeActiveAddressAndChain(owner, websiteTabConnections, { simulationMode: true, rpcNetwork: networkB, promptForAccessesIfNeeded: false })
+			else await modules.importSettings(owner, websiteTabConnections, importRequest)
+			assert.deepEqual(events, ['installServices', 'clearStack', 'chainChanged', 'popup_chain_update'])
+			assert.deepEqual((await modules.getInterceptorTransactionStack()).operations, [])
+		} finally {
+			recording.retireAll()
+		}
+	})
+
 	test('a settings import that fails after storing its network still completes that network change, and so does its retry', async () => {
 		installBrowserMock()
 		const modules = await loadModules()
@@ -1472,7 +1519,7 @@ describe('network transition snapshot', () => {
 			promptForAccessesIfNeeded: false,
 		})
 		try {
-			// The switch remembers the signing preference after it has stored the new network and before it installs services.
+			// The switch remembers the signing preference after it has stored the new network and installed its services, before it notifies websites.
 			const failure = new Error('Injected signing preference write failure')
 			failNextStorageWrite('signingAddressPreferences', failure)
 			await assert.rejects(switchSignerToNetworkB(), (error) => error === failure)
