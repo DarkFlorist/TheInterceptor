@@ -5,7 +5,8 @@ import { TabState } from './user-interface-types.js'
 
 const Failure = funtypes.ReadonlyObject({ ok: funtypes.Literal(false), message: funtypes.String })
 const MutationReply = funtypes.Union(Failure, funtypes.ReadonlyObject({ ok: funtypes.Literal(true) }))
-const RecordReply = funtypes.Union(Failure, funtypes.ReadonlyObject({ ok: funtypes.Literal(true), record: DirectSigningRecord }))
+// A verified signature can still be refused when Interceptor resolves the website request with it, for example when a Gnosis Safe's nonce changed while the device was signing. The website request then stays pending with this reason as its signer error, and the signing page must not claim the signature was returned.
+const RecordReply = funtypes.Union(Failure, funtypes.ReadonlyObject({ ok: funtypes.Literal(true), record: DirectSigningRecord }).And(funtypes.ReadonlyPartial({ signatureRefusalReason: funtypes.String })))
 const WalletsReply = funtypes.Union(Failure, funtypes.ReadonlyObject({ ok: funtypes.Literal(true), bindings: SigningWalletBindings, tabs: funtypes.ReadonlyArray(TabState) }))
 
 export const signingPageReplyCodecs = {
@@ -25,3 +26,4 @@ export type SigningPageReply = funtypes.Static<typeof SigningPageReply>
 export type SigningWalletsSuccess = Extract<funtypes.Static<typeof WalletsReply>, { ok: true }>
 export type SigningMutationSuccess = Extract<funtypes.Static<typeof MutationReply>, { ok: true }>
 export type SigningRecordSuccess = Extract<funtypes.Static<typeof RecordReply>, { ok: true }>
+export type SigningRecordReply = funtypes.Static<typeof RecordReply>

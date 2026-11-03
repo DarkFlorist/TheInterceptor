@@ -2,7 +2,7 @@ import { SigningPageRequest } from '../types/directSigning.js'
 import { SigningPageReply } from '../types/signingPageReply.js'
 import type { SimulationServices } from '../simulation/serviceLifecycle.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
-import { advanceDirectSigning } from './signingRequestLifecycle.js'
+import { advanceDirectSigning, getSignatureRefusalReason } from './signingRequestLifecycle.js'
 import { getSigningWallets, saveSigningWallet } from './signingWalletHandlers.js'
 import { setSafeSigningAccounts } from './safeSigningAccountHandler.js'
 import { resolvePendingTransactionOrMessage, updateConfirmTransactionView } from './windows/confirmTransaction.js'
@@ -21,7 +21,10 @@ export async function dispatchSigningPageRequest(request: SigningPageRequest, se
 			const outcome = await advanceDirectSigning(request, services.ethereum, services.tokenPriceService)
 			if (outcome.refreshConfirmation) await updateConfirmTransactionView(services.ethereum, services.tokenPriceService)
 			if (outcome.confirmation !== undefined) await resolvePendingTransactionOrMessage(services.ethereum, services.tokenPriceService, connections, outcome.confirmation)
-			return outcome.reply
+			if (!outcome.reply.ok) return outcome.reply
+			// Obtaining a signature does not mean the website received it: resolving can refuse it and leave the website request pending with a signer error. That stored error, rather than the resolver's return value, is the record of the refusal, so a reloaded signing page reports it as well.
+			const signatureRefusalReason = await getSignatureRefusalReason(outcome.reply.record)
+			return signatureRefusalReason === undefined ? outcome.reply : { ...outcome.reply, signatureRefusalReason }
 		}
 	}
 }

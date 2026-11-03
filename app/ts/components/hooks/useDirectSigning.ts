@@ -11,9 +11,12 @@ import { createAirGapUrDecoder } from '../../signing/airgapUr.js'
 import { ensureHex } from '../../utils/ethereumBytes.js'
 import { parseTransaction } from '../../utils/ethereumTransactions.js'
 
+const signatureRefusedStatus = 'Interceptor did not return the signature to the originating application. See the reason below.'
+
 export function useDirectSigning() {
 	const id = new URLSearchParams(location.search).get('id') ?? ''
 	const [record, setRecord] = useState<DirectSigningRecord>()
+	const [signatureRefusalReason, setSignatureRefusalReason] = useState<string>()
 	const [error, setError] = useState<string>()
 	const [status, setStatus] = useState('Loading request…')
 	const [busy, setBusy] = useState(false)
@@ -30,14 +33,16 @@ export function useDirectSigning() {
 	const command = async (request: DirectSigningRequest) => {
 		try {
 			const reply = await sendSigningPageRequest(request)
-			const next = reply.record
-			setRecord(next)
-			return next
+			setRecord(reply.record)
+			setSignatureRefusalReason(reply.signatureRefusalReason)
+			return reply
 		} catch (failure) {
 			// A command can persist a new phase before its RPC or application reply fails.
 			if (request.method !== 'signing_get') {
-				const recovered = (await sendSigningPageRequest({ method: 'signing_get', id })).record
+				const recoveredReply = await sendSigningPageRequest({ method: 'signing_get', id })
+				const recovered = recoveredReply.record
 				setRecord(recovered)
+				setSignatureRefusalReason(recoveredReply.signatureRefusalReason)
 				setStatus(recovered.phase === 'submitting' ? 'Submission outcome is uncertain. Reconcile by hash before taking further action.' : `Current request status: ${ recovered.phase }.`)
 			}
 			throw failure
@@ -56,13 +61,14 @@ export function useDirectSigning() {
 	}
 	useEffect(() => {
 		void run(async () => {
-			const next = await command({ method: 'signing_get', id })
+			const { record: next, signatureRefusalReason: refusalReason } = await command({ method: 'signing_get', id })
 			if (next.input.method === 'eth_sendTransaction') {
 				const transaction = parseTransaction(ensureHex(next.input.data))
 				setNonce(String(transaction.nonce)); setGas(String(transaction.gas)); setMaxFee(String(transaction.maxFeePerGas)); setPriority(String(transaction.maxPriorityFeePerGas))
 			}
 			if (next.phase === 'review') setStatus('Review the exact payload before approving.')
 			else if (next.phase === 'approved') setStatus('Approval recovered. Resume this exact request or cancel it.')
+			else if (refusalReason !== undefined) setStatus(signatureRefusedStatus)
 			else if (next.phase === 'signed') setStatus(next.input.method === 'eth_sendTransaction'
 				? 'Signature recovered. Review the transaction before broadcasting.'
 				: 'Message signature recovered and returned to the originating application.')
@@ -74,21 +80,21 @@ export function useDirectSigning() {
 		if (record === undefined) return
 		// Device selection requires the click's user activation, before asynchronous extension messages.
 		const device = record.binding.wallet.type === 'ledger' ? await selectLedgerDevice() : undefined
-		const approved = record.phase === 'review' ? await command({ method: 'signing_approve', id, revision: record.revision }) : record
+		const approved = record.phase === 'review' ? (await command({ method: 'signing_approve', id, revision: record.revision })).record : record
 		if (approved.phase !== 'approved') throw new Error('This request is no longer waiting for a signature')
 		const wallet = approved.binding.wallet
 		const payload = prepareDirectPayload(approved.input)
 		if (wallet.type === 'ledger' && device !== undefined) {
 			setStatus('Unlock Ledger and open Ethereum. Check the account and approve on your device.')
 			controller.current = new AbortController()
-			await withLedgerDevice(device, controller.current.signal, async (exchange) => {
+			const signed = await withLedgerDevice(device, controller.current.signal, async (exchange) => {
 				const current = (await sendSigningPageRequest({ method: 'signing_get', id })).record
 				if (current.phase !== 'approved' || current.revision !== approved.revision) throw new Error('Another signing window completed or cancelled this approval')
 				const result = await signWithLedger(exchange, { address: ensureHex(approved.input.address), publicKey: ensureHex(wallet.publicKey), derivationPath: wallet.derivationPath }, payload)
 				setStatus('Verifying signature against the approved account and exact payload…')
-				await command({ method: 'signing_result', id, revision: approved.revision, result })
+				return await command({ method: 'signing_result', id, revision: approved.revision, result })
 			})
-			setStatus(payload.method === 'eth_sendTransaction' ? 'Signature verified. Review the fees and broadcast when ready.' : 'Message signature verified and returned to the originating application.')
+			setStatus(signed.signatureRefusalReason !== undefined ? signatureRefusedStatus : payload.method === 'eth_sendTransaction' ? 'Signature verified. Review the fees and broadcast when ready.' : 'Message signature verified and returned to the originating application.')
 		} else if (wallet.type === 'airgap') {
 			setQr(encodeAirGapSigningRequest({ address: ensureHex(approved.input.address), publicKey: ensureHex(wallet.publicKey), derivationPath: wallet.derivationPath, sourceFingerprint: wallet.sourceFingerprint }, payload, approved.input.chainId, approved.revision))
 			decoder.current = createAirGapUrDecoder('eth-signature')
@@ -117,8 +123,10 @@ export function useDirectSigning() {
 	}
 	const broadcastTransaction = () => run(async () => {
 		if (record === undefined) return
-		const next = await command({ method: 'signing_broadcast', id, revision: record.revision })
-		if (next.phase === 'confirmed') {
+		const { record: next, signatureRefusalReason: refusalReason } = await command({ method: 'signing_broadcast', id, revision: record.revision })
+		if (refusalReason !== undefined) {
+			setStatus(signatureRefusedStatus)
+		} else if (next.phase === 'confirmed') {
 			setStatus(next.executionSucceeded ? 'Transaction confirmed on the configured RPC.' : 'Transaction confirmed but execution reverted.')
 		} else {
 			setStatus('Transaction submitted. Its hash was returned to the originating application.')
@@ -150,12 +158,12 @@ export function useDirectSigning() {
 		}
 		setStatus('Verifying signature…')
 		const result = await verifyAirGapSigningResponse(decoded.payload, record.revision, prepareDirectPayload(record.input))
-		await command({ method: 'signing_result', id, revision: record.revision, result })
+		const signed = await command({ method: 'signing_result', id, revision: record.revision, result })
 		setScanning(false)
 		setQr(undefined)
-		setStatus(record.input.method !== 'eth_sendTransaction' ? 'Signature verified and returned to the originating application.' : 'Signature verified. Confirm broadcast below.')
+		setStatus(signed.signatureRefusalReason !== undefined ? signatureRefusedStatus : record.input.method !== 'eth_sendTransaction' ? 'Signature verified and returned to the originating application.' : 'Signature verified. Confirm broadcast below.')
 		return true
 	}
 	const resetResponseScan = () => { decoder.current = createAirGapUrDecoder('eth-signature'); setStatus('Waiting for the response QR from Vault.') }
-	return { record, error, status, busy, qr, scanning, nonce, setNonce, gas, setGas, maxFee, setMaxFee, priority, setPriority, errorPanel, sign, changeSigningWallet, applyFeeChanges, startResponseScan, broadcastTransaction, returnToApplication, cancelRequest, receiveSignedResponse, setStatus, resetResponseScan }
+	return { record, signatureRefusalReason, error, status, busy, qr, scanning, nonce, setNonce, gas, setGas, maxFee, setMaxFee, priority, setPriority, errorPanel, sign, changeSigningWallet, applyFeeChanges, startResponseScan, broadcastTransaction, returnToApplication, cancelRequest, receiveSignedResponse, setStatus, resetResponseScan }
 }

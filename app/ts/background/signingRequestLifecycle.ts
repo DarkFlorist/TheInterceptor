@@ -1,6 +1,7 @@
 import { isSigningOperationError } from '../signing/signingOperationError.js'
-import type { SigningPageReply } from '../types/signingPageReply.js'
-import type { DirectSigningRequest } from '../types/directSigning.js'
+import type { SigningRecordReply } from '../types/signingPageReply.js'
+import { isSignatureReadyForApplication } from '../signing/signingProgress.js'
+import type { DirectSigningRecord, DirectSigningRequest } from '../types/directSigning.js'
 import * as funtypes from 'funtypes'
 import { getSafePendingFlow } from '../safe/safePendingFlow.js'
 import { verifyDirectResult } from '../signing/backend.js'
@@ -15,6 +16,7 @@ import type { SignMessageParams } from '../types/jsonRpc-signing-types.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { getErrorMessage } from '../utils/errors.js'
 import { doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
+import { getPendingTransactionsAndMessages } from './storageVariables.js'
 import { prepareSavedBrowserWalletForwarding } from './browserWalletForwarding.js'
 import { openDirectSigning, updateDirectSigning, refreshDirectSigningReview } from './directSigning.js'
 import { getSigningWalletBinding } from './signingAddressBookCoordinator.js'
@@ -55,7 +57,7 @@ export async function resolveSigningConfirmationAdmission(
 	if (binding.wallet.type !== 'browser') {
 		const record = (await readDirectSigningRecords()).find((item) => doesUniqueRequestIdentifiersMatch(item.request, pending.uniqueRequestIdentifier))
 		const expected = record?.input.method === 'eth_sendTransaction' ? record.transactionHash : record?.result
-		if (record === undefined || expected !== confirmation.signerReply || !(record.input.method === 'eth_sendTransaction' ? ['submitted', 'confirmed'].includes(record.phase) : record.phase === 'signed')) return { status: 'blocked' }
+		if (record === undefined || expected !== confirmation.signerReply || !isSignatureReadyForApplication(record)) return { status: 'blocked' }
 	} else if (getSafePendingFlow(pending) === undefined && (request.method === 'personal_sign' || request.method === 'eth_signTypedData_v4')) {
 		try {
 			if (typeof confirmation.signerReply !== 'string') throw invalidSigningResponse('Browser wallet returned a non-string message signature')
@@ -69,7 +71,7 @@ export async function resolveSigningConfirmationAdmission(
 }
 
 type DirectSigningOutcome = {
-	readonly reply: SigningPageReply
+	readonly reply: SigningRecordReply
 	readonly confirmation?: TransactionConfirmation
 	readonly refreshConfirmation?: boolean
 }
@@ -80,7 +82,7 @@ export async function advanceDirectSigning(request: DirectSigningRequest, ethere
 		const record = await updateDirectSigning(request, async (edited) => await refreshDirectSigningReview(edited, ethereum, prices))
 		const confirmation: TransactionConfirmation | undefined = record.phase === 'cancelled'
 			? { method: 'popup_confirmDialog', data: { action: 'reject', errorString: undefined, uniqueRequestIdentifier: record.request } }
-			: (record.input.method === 'eth_sendTransaction' ? ['submitted', 'confirmed'].includes(record.phase) : record.phase === 'signed')
+			: isSignatureReadyForApplication(record)
 				? { method: 'popup_confirmDialog', data: { action: 'signerIncluded', uniqueRequestIdentifier: record.request, signerReply: record.input.method === 'eth_sendTransaction' ? record.transactionHash : record.result } }
 				: undefined
 		return { reply: { ok: true, record }, confirmation, refreshConfirmation: request.method === 'signing_editFees' }
@@ -88,4 +90,11 @@ export async function advanceDirectSigning(request: DirectSigningRequest, ethere
 		if (!isSigningOperationError(error) && !isInvalidSigningResponse(error)) throw error
 		return { reply: { ok: false, message: error.message } }
 	}
+}
+
+/** Why Interceptor refused to return this record's signature to the website, read from the website request's stored signer error so that a reloaded signing page shows it too. Undefined while the signature is not ready for the website, and once the website request is resolved. */
+export async function getSignatureRefusalReason(record: DirectSigningRecord) {
+	if (!isSignatureReadyForApplication(record)) return undefined
+	const pending = (await getPendingTransactionsAndMessages()).find((item) => doesUniqueRequestIdentifiersMatch(item.uniqueRequestIdentifier, record.request))
+	return pending?.approvalStatus.status === 'SignerError' ? pending.approvalStatus.message : undefined
 }

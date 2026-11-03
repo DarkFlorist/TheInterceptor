@@ -3,7 +3,7 @@ import { test } from 'bun:test'
 import { getLatestUnexpectedError } from '../../app/ts/background/storageVariables.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../app/ts/utils/constants.js'
-import { activeAddress, browserMock, bytes32String, createDisconnectedPort, createRecordingPort, createSafeAddressBookEntry, createSafeTx, EIP712Message, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, pendingTransaction, privateKeyToAccount, recipientAddress, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, signedTransaction, simulator, uniqueRequestIdentifier, waitForPendingTransactionsToClear, withSilencedConsole } from './confirmTransactionTestHarness.js'
+import { activeAddress, browserMock, bytes32String, createDisconnectedPort, createRecordingPort, createSafeAddressBookEntry, createSafeTx, EIP712Message, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, pendingTransaction, privateKeyToAccount, recipientAddress, safeTestOwnerAccount, safeTestOwnerAddress, safeTestOwnerPrivateKey, safeTxToTypedDataJson, signedTransaction, simulator, uniqueRequestIdentifier, waitForPendingTransactionsToClear, withSilencedConsole } from './confirmTransactionTestHarness.js'
 
 test('closing a newly opened confirmation waits for its pending request to be persisted', async () => {
 	let releaseWrite: (() => void) | undefined
@@ -1054,4 +1054,62 @@ for (const signerReply of ['0x1234', 42, new Error('Unexpected verifier failure'
 	if (pending?.approvalStatus.status !== 'SignerError') throw new Error('Missing signature verification error')
 	assert.equal(pending.approvalStatus.code, 4100)
 	assert.ok(pending.approvalStatus.message.length > 0)
+})
+
+test('a hardware-signed Gnosis Safe proposal that the Safe refuses after a delayed signature keeps the website request pending and shows the refusal on the signing page', async () => {
+	const { secp256k1 } = await import('@noble/curves/secp256k1')
+	const { bytesFromHex, bytesToHex } = await import('../../app/ts/utils/ethereumBytes.js')
+	const { DirectSigningRecords } = await import('../../app/ts/types/directSigning.js')
+	const { saveAddressSigningWallet } = await import('../../app/ts/background/signingAddressBookCoordinator.js')
+	const { dispatchSigningPageRequest } = await import('../../app/ts/background/signingRequestService.js')
+	const { getDirectSigningCompletion } = await import('../../app/ts/signing/signingProgress.js')
+	const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
+	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry({ safeSimulationSignerAddress: safeTestOwnerAddress })])
+	const binding = await saveAddressSigningWallet(safeTestOwnerAddress, { type: 'ledger', label: 'Owner Ledger', address: safeTestOwnerAddress, publicKey: bytesToHex(secp256k1.getPublicKey(bytesFromHex(safeTestOwnerPrivateKey), false)), derivationPath: 'm/44\'/60\'/0\'/0/0' }, undefined, 'Safe owner')
+	if (binding === undefined) throw new Error('Missing Ledger binding for the Safe owner')
+	const { safeTx } = await storeSafeProposalRequest({ status: 'WaitingForSigner' })
+	await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => ({ ...pending, signingWalletBinding: binding, signingChainId: fakeRpcNetwork.chainId }))
+	const record = {
+		id: crypto.randomUUID(),
+		request: uniqueRequestIdentifier,
+		binding,
+		websiteOrigin: pendingTransaction.website.websiteOrigin,
+		rpcUrl: 'https://rpc.example.test',
+		input: { method: 'eth_signTypedData_v4' as const, data: safeTxToTypedDataJson(safeTx), address: addressString(safeTestOwnerAddress), chainId: fakeRpcNetwork.chainId },
+		revision: crypto.randomUUID(),
+		created: Date.now(),
+		phase: 'approved' as const,
+	}
+	await browser.storage.local.set({ directSigningRequestsV1: DirectSigningRecords.serialize([record]) })
+	// While the owner signs offline, another proposal executes and advances the Safe's nonce past the reviewed one.
+	fakeSafeContract.nonce = 1n
+	const signature = await safeTestOwnerAccount.signTypedData(EIP712Message.parse(safeTxToTypedDataJson(safeTx)))
+
+	const reply = await withSilencedConsole(async () => await dispatchSigningPageRequest({ method: 'signing_result', id: record.id, revision: record.revision, result: signature }, simulator, websiteTabConnections))
+
+	if (!reply.ok || !('record' in reply)) throw new Error('Expected the verified signature to be stored')
+	assert.equal(reply.record.phase, 'signed')
+	assert.ok('signatureRefusalReason' in reply)
+	assert.match(reply.signatureRefusalReason ?? '', /nonce changed from 0 to 1/u)
+	assert.deepEqual(getRepliesToWebsite(postedMessages), [])
+	const [pending] = await modules.getPendingTransactionsAndMessages()
+	assert.equal(pending?.approvalStatus.status, 'SignerError')
+	if (pending?.approvalStatus.status !== 'SignerError') throw new Error('Expected the Safe refusal on the website request')
+	assert.equal(reply.signatureRefusalReason, pending.approvalStatus.message)
+	const completion = getDirectSigningCompletion(reply.record, reply.signatureRefusalReason)
+	assert.equal(completion.complete, false)
+	assert.equal(completion.title, 'Signature not returned to application')
+	assert.equal(completion.refusal?.reason, pending.approvalStatus.message)
+	assert.equal(completion.refusal?.canCancel, true)
+
+	const reloaded = await dispatchSigningPageRequest({ method: 'signing_get', id: record.id }, simulator, websiteTabConnections)
+	assert.ok(reloaded.ok && 'signatureRefusalReason' in reloaded && reloaded.signatureRefusalReason === pending.approvalStatus.message)
+
+	const cancelled = await withSilencedConsole(async () => await dispatchSigningPageRequest({ method: 'signing_cancel', id: record.id }, simulator, websiteTabConnections))
+	if (!cancelled.ok || !('record' in cancelled)) throw new Error('Expected cancelling the refused signature to succeed')
+	assert.equal(cancelled.record.phase, 'cancelled')
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	const [rejection] = getRepliesToWebsite(postedMessages)
+	if (!isRecord(rejection) || !isRecord(rejection.error)) throw new Error('Expected the website request to be rejected')
+	assert.equal(rejection.error.code, METAMASK_ERROR_USER_REJECTED_REQUEST)
 })
