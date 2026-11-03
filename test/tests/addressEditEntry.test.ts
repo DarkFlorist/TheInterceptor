@@ -2,7 +2,7 @@ import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { addressEditEntry } from '../../app/ts/components/ui-utils.js'
 import { getAddressBookEntryForEdit } from '../../app/ts/components/pages/ConfirmTransaction.js'
-import { doAddressBookChainIdsMatch } from '../../app/ts/types/addressBookTypes.js'
+import { doAddressBookChainIdsMatch, EntrySource, isCuratedEntrySource } from '../../app/ts/types/addressBookTypes.js'
 
 describe('address edit entry state', () => {
 	test('preserves chain ID zero when opening an address for editing', () => {
@@ -42,5 +42,10 @@ describe('address edit entry state', () => {
 		const editState = addressEditEntry(getAddressBookEntryForEdit(staleClickedEntry, [currentSavedEntry]))
 
 		assert.equal(editState.incompleteAddressBookEntry.abi, undefined)
+	})
+
+	test('treats only entries that ship with The Interceptor as curated, so only they are locked in the editor', () => {
+		const curatedEntrySources = EntrySource.alternatives.map((alternative) => alternative.value).filter((entrySource) => isCuratedEntrySource(entrySource))
+		assert.deepEqual(curatedEntrySources, ['DarkFloristMetadata', 'Interceptor'])
 	})
 })

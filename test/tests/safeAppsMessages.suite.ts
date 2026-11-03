@@ -64,18 +64,18 @@ test('Safe message review shows authenticated text, forwards to the selected own
 	assert.deepEqual(Object.keys(resolution.signerFacingRequest.params[1]).sort(), ['domain', 'message', 'primaryType', 'types'])
 	assert.deepEqual(isValidMessage(resolution.signerFacingRequest), { valid: true })
 	const signature = await safeTestOwnerAccount.signTypedData(typedData())
-	assert.deepEqual(await modules.resolveSafeSignerReply(simulator.ethereum, simulator.tokenPriceService, pending, signature), { status: 'success', result: signature })
+	assert.deepEqual(await modules.resolveSafeSignerReply(simulator.ethereum, pending, signature), { status: 'success', result: signature, simulationStack: 'unchanged' })
 	const wrongSignature = await safeTestOwnerAccount.signMessage({ message: originalMessage })
-	assert.equal((await modules.resolveSafeSignerReply(simulator.ethereum, simulator.tokenPriceService, pending, wrongSignature)).status, 'error')
+	assert.equal((await modules.resolveSafeSignerReply(simulator.ethereum, pending, wrongSignature)).status, 'error')
 	const alteredTransport = { ...pending, signedMessageTransaction: { ...pending.signedMessageTransaction, request: { ...pending.signedMessageTransaction.request, params: ['unrelated transport metadata'] } } }
-	assert.equal((await modules.resolveSafeSignerReply(simulator.ethereum, simulator.tokenPriceService, alteredTransport, signature)).status, 'success')
+	assert.equal((await modules.resolveSafeSignerReply(simulator.ethereum, alteredTransport, signature)).status, 'success')
 	const alteredReview = { ...pending, signedMessageTransaction: { ...pending.signedMessageTransaction, safeMessageReview: { text: 'Altered review text', isTypedData: false } } }
-	assert.equal((await modules.resolveSafeSignerReply(simulator.ethereum, simulator.tokenPriceService, alteredReview, signature)).status, 'error')
+	assert.equal((await modules.resolveSafeSignerReply(simulator.ethereum, alteredReview, signature)).status, 'error')
 	fakeSafeContract.messageHash = 0n
-	assert.equal((await modules.resolveSafeSignerReply(simulator.ethereum, simulator.tokenPriceService, pending, signature)).status, 'error')
+	assert.equal((await modules.resolveSafeSignerReply(simulator.ethereum, pending, signature)).status, 'error')
 	fakeSafeContract.messageHash = BigInt(hashTypedData(typedData()))
 	fakeSafeContract.threshold = 2n
-	assert.equal((await modules.resolveSafeSignerReply(simulator.ethereum, simulator.tokenPriceService, pending, signature)).status, 'error')
+	assert.equal((await modules.resolveSafeSignerReply(simulator.ethereum, pending, signature)).status, 'error')
 })
 
 test('Safe message service submits validated owner signatures and requires the live threshold for retrieval', async () => {
@@ -142,7 +142,7 @@ test('Safe typed messages authenticate the original EIP-712 data through review,
 	assert.equal(resolution.signerFacingRequest.params[0], safeTestOwnerAddress)
 	assert.equal(hashTypedData(resolution.signerFacingRequest.params[1]), hashTypedData(envelope))
 	const signature = await safeTestOwnerAccount.signTypedData(envelope)
-	assert.equal((await modules.resolveSafeSignerReply(simulator.ethereum, simulator.tokenPriceService, pending, signature)).status, 'success')
+	assert.equal((await modules.resolveSafeSignerReply(simulator.ethereum, pending, signature)).status, 'success')
 	assert.equal(SafeMessage.safeParse({ typedData: EIP712Message.parse(JSON.stringify(envelope)), review: { text: original, isTypedData: false } }).success, false)
 	const services = createSafeAppsMessageServices(simulator.ethereum, activeAddress, fakeRpcNetwork.chainId)
 	const messageHash = hashTypedData(envelope)
