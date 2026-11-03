@@ -103,6 +103,8 @@ export function getSafeSignerSelectionFromAccountRefresh(refreshResult: SafeSign
 }
 
 export async function confirmDialog(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
+	// An approval may rebuild a Gnosis Safe execution after refreshing the wallet's accounts, so its run is reserved before anything is awaited and is ordered from when the approval started.
+	const safeRebuildRun = confirmation.data.action === 'accept' ? reserveConfirmationRun() : undefined
 	const pending = confirmation.data.action === 'accept'
 		? (await getPendingTransactionsAndMessages()).find((entry) =>
 			doesUniqueRequestIdentifiersMatch(entry.uniqueRequestIdentifier, confirmation.data.uniqueRequestIdentifier)
@@ -120,7 +122,7 @@ export async function confirmDialog(simulationServicesOwner: SimulationServicesO
 		: undefined
 	// Wallet account refresh may outlive an RPC switch; resolution starts with the installed pair.
 	const { ethereum, tokenPriceService } = simulationServicesOwner.getCurrent()
-	await resolvePendingTransactionOrMessage(ethereum, tokenPriceService, websiteTabConnections, confirmation, refreshedSafeSignerSelection)
+	await resolvePendingTransactionOrMessage(ethereum, tokenPriceService, websiteTabConnections, confirmation, refreshedSafeSignerSelection, safeRebuildRun)
 }
 
 export async function confirmRequestAccess(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, confirmation: InterceptorAccess, publishRpcConnectionStatus: PublishRpcConnectionStatus) {

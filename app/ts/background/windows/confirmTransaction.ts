@@ -11,7 +11,7 @@ import { createScopedKeyedSerialExecutor, Semaphore } from '../../utils/semaphor
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { type InterceptorTransactionStack, PASSTHROUGH_STATE, type WebsiteCreatedEthereumTransaction, type WebsiteCreatedEthereumTransactionOrFailed, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
 import type { SendRawTransactionParams, SendTransactionParams } from '../../types/JsonRpc-types.js'
-import { isConfirmationVisualisationCurrent, refreshConfirmTransactionSimulation, reserveConfirmationRun } from '../confirmTransactionSimulation.js'
+import { type ConfirmationRunReservation, isConfirmationVisualisationCurrent, refreshConfirmTransactionSimulation, reserveConfirmationRun } from '../confirmTransactionSimulation.js'
 import { captureSimulationSnapshot, getUpdatedSimulationState } from '../simulationUpdating.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getRpcConnectionStatus, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
@@ -53,7 +53,9 @@ const pendingConfirmationSemaphore = new Semaphore(1)
 const pendingNoResponseRetryTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const NO_RESPONSE_RETRY_DELAY_MS = 50
 
+// The rebuild runs as the confirmation run that its entry reserved before its first await, so it is ordered by when that entry started.
 async function refreshDirectSafeExecutionSimulation(
+	confirmationRun: ConfirmationRunReservation,
 	ethereum: EthereumClientService,
 	tokenPriceService: TokenPriceService,
 	pending: PendingTransactionOrSignableMessage,
@@ -63,8 +65,6 @@ async function refreshDirectSafeExecutionSimulation(
 	pending = flow.pending
 	const originalRequestParameters = pending.originalRequestParameters
 	if (originalRequestParameters.method !== 'eth_sendTransaction') return pending
-	// The rebuild starts its run here, before anything is awaited.
-	const confirmationRun = reserveConfirmationRun()
 	const transactionToSimulate = await formEthSendTransaction(
 		ethereum,
 		undefined,
@@ -92,6 +92,8 @@ async function refreshDirectSafeExecutionSimulation(
 }
 
 export async function refreshPendingSafeSignerSelectionErrors(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, tabId: number) {
+	// Reserved before anything is awaited, so the Gnosis Safe rebuilds below are ordered from when this refresh started. They run one after another, so they share it.
+	const confirmationRun = reserveConfirmationRun()
 	const tabState = await getTabState(tabId)
 	const refreshedSelection = {
 		selectedSigner: getWalletSelectedAccount(tabState),
@@ -108,7 +110,7 @@ export async function refreshPendingSafeSignerSelectionErrors(ethereum: Ethereum
 				ethereum,
 				pending,
 				refreshedSelection.selectedSigner,
-				async (refreshedPending) => await refreshDirectSafeExecutionSimulation(ethereum, tokenPriceService, refreshedPending),
+				async (refreshedPending) => await refreshDirectSafeExecutionSimulation(confirmationRun, ethereum, tokenPriceService, refreshedPending),
 			)
 			if (refresh.persisted) pendingStateChanged = true
 			if (refresh.refreshRequired && refresh.refreshResult.status !== 'unchanged') continue
@@ -267,12 +269,16 @@ async function resolvePendingTransactionOrMessageSerially<T>(uniqueRequestIdenti
 	})
 }
 
-// Forwarding to the signer only posts the request, so the lock is not held while the user decides in the wallet. The signer's reply is resolved later as a separate signerIncluded resolution.
-export async function resolvePendingTransactionOrMessage(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, refreshedSafeSignerSelection?: RefreshedSafeSignerSelection) {
-	return await resolvePendingTransactionOrMessageSerially(confirmation.data.uniqueRequestIdentifier, async (storedPendingTransactionOrMessage) => await resolveStoredPendingTransactionOrMessage(ethereum, tokenPriceService, websiteTabConnections, confirmation, storedPendingTransactionOrMessage, refreshedSafeSignerSelection))
+// A wallet-confirmed Gnosis Safe signer selection, with the confirmation run reserved for the rebuild it may need.
+type SafeSignerRefreshAtApproval = { readonly selection: RefreshedSafeSignerSelection, readonly confirmationRun: ConfirmationRunReservation }
+
+// Forwarding to the signer only posts the request, so the lock is not held while the user decides in the wallet. The signer's reply is resolved later as a separate signerIncluded resolution. A caller that refreshed the Gnosis Safe signer selection before calling passes the run it reserved when it started, as confirmDialog does; otherwise the run is reserved here, before anything is awaited.
+export async function resolvePendingTransactionOrMessage(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, refreshedSafeSignerSelection?: RefreshedSafeSignerSelection, safeRebuildRun?: ConfirmationRunReservation) {
+	const safeSignerRefresh = refreshedSafeSignerSelection === undefined ? undefined : { selection: refreshedSafeSignerSelection, confirmationRun: safeRebuildRun ?? reserveConfirmationRun() }
+	return await resolvePendingTransactionOrMessageSerially(confirmation.data.uniqueRequestIdentifier, async (storedPendingTransactionOrMessage) => await resolveStoredPendingTransactionOrMessage(ethereum, tokenPriceService, websiteTabConnections, confirmation, storedPendingTransactionOrMessage, safeSignerRefresh))
 }
 
-async function resolveStoredPendingTransactionOrMessage(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, storedPendingTransactionOrMessage: PendingTransactionOrSignableMessage, refreshedSafeSignerSelection?: RefreshedSafeSignerSelection) {
+async function resolveStoredPendingTransactionOrMessage(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, storedPendingTransactionOrMessage: PendingTransactionOrSignableMessage, safeSignerRefresh?: SafeSignerRefreshAtApproval) {
 	let pendingTransactionOrMessage = storedPendingTransactionOrMessage
 	if (confirmation.data.action === 'accept' || confirmation.data.action === 'addToSafeStack') {
 		// A request that was already forwarded can only be completed by the signer's reply, so it is not approved or added to a Gnosis Safe stack again.
@@ -283,15 +289,15 @@ async function resolveStoredPendingTransactionOrMessage(ethereum: EthereumClient
 	}
 	if (
 		confirmation.data.action === 'accept'
-		&& refreshedSafeSignerSelection?.selectedSigner !== undefined
-		&& refreshedSafeSignerSelection.verificationError === undefined
+		&& safeSignerRefresh?.selection.selectedSigner !== undefined
+		&& safeSignerRefresh.selection.verificationError === undefined
 	) {
 		const directSafeExecution = getSafePendingFlow(pendingTransactionOrMessage)?.kind === 'directExecution'
 		const refresh = await refreshAndPersistSafeSignerSelection(
 			ethereum,
 			pendingTransactionOrMessage,
-			refreshedSafeSignerSelection.selectedSigner,
-			async (refreshedPending) => await refreshDirectSafeExecutionSimulation(ethereum, tokenPriceService, refreshedPending),
+			safeSignerRefresh.selection.selectedSigner,
+			async (refreshedPending) => await refreshDirectSafeExecutionSimulation(safeSignerRefresh.confirmationRun, ethereum, tokenPriceService, refreshedPending),
 		)
 		const refreshResult = refresh.refreshResult
 		if (refresh.refreshRequired && refreshResult.status !== 'unchanged' && !refresh.persisted) {
@@ -308,7 +314,7 @@ async function resolveStoredPendingTransactionOrMessage(ethereum: EthereumClient
 		ethereum,
 		pendingTransactionOrMessage,
 		confirmation.data.action,
-		refreshedSafeSignerSelection,
+		safeSignerRefresh?.selection,
 	)
 	if (safeResolution.status === 'blocked') {
 		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (pending) => modifyObject(pending, {

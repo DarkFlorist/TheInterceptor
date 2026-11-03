@@ -15,6 +15,7 @@ import { assertSafeContractStateUnchanged, createSafeContractValidationFailure, 
 import { areSafeExecutionSignerRequestsEqual, prepareSafeExecutionSignerRoute } from '../safe/safeExecutionRouting.js'
 import { getUserAddressBookEntriesForChainIdMorePreciseFirst, updatePendingTransactionOrMessage } from './storageVariables.js'
 import { createSafeSignerErrorStatus, type SafeSignerErrorStatus } from './safeSignerErrors.js'
+import { isConfirmationVisualisationCurrent } from './confirmTransactionSimulation.js'
 import { getSafePendingFlow, type DirectSafeExecutionFlow, type SafeMessageCoSignFlow, type SafePendingFlow, type SafeProposalFlow } from '../safe/safePendingFlow.js'
 
 export const SAFE_SIGNER_SELECTION_ERROR_CODE = -32010
@@ -476,6 +477,9 @@ export async function refreshAndPersistSafeSignerSelection(
 		const currentFlow = getSafePendingFlow(current)
 		if (currentFlow === undefined || !shouldRefreshSafeSignerSelection(currentFlow, selectedSigner)) return current
 		if (!pendingSafeRefreshBaseMatches(current, pending)) return current
+		// A rebuilt Gnosis Safe execution brings its own preview, which replaces the stored one only under the shared rule, so it never replaces the preview of a run that started after the rebuild.
+		const rebuiltFlow = refreshResult.status === 'refreshed' ? getSafePendingFlow(refreshResult.pending) : undefined
+		if (rebuiltFlow?.kind === 'directExecution' && 'popupVisualisation' in rebuiltFlow.pending && !isConfirmationVisualisationCurrent('popupVisualisation' in current ? current.popupVisualisation : undefined, rebuiltFlow.pending.popupVisualisation, 'new run')) return current
 		persistedPending = refreshResult.status === 'refreshed'
 			? mergeSafeSignerSelectionRefresh(current, refreshResult.pending)
 			: modifyObject(current, { approvalStatus: refreshResult.approvalStatus })

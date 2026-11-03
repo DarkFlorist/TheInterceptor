@@ -1,7 +1,8 @@
 import * as assert from 'assert'
 import { setSystemTime, test } from 'bun:test'
 import { Transaction } from 'micro-eth-signer'
-import { activeAddress, addressString, browserMock, createDisconnectedPort, createSafeAddressBookEntry, createSafeStackFixture, createSafeTx, createWebsitePort, EIP712Message, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, pendingTransaction, recipientAddress, safeTestOwnerAccount, safeTestOwnerAddress, safeTestOwnerPrivateKey, safeTxToTypedDataJson, signedTransaction, simulator, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
+import { activeAddress, addressString, browserMock, createDisconnectedPort, createSafeAddressBookEntry, createSafeStackFixture, createSafeTx, createWebsitePort, EIP712Message, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, pendingTransaction, recipientAddress, SAFE_EXECUTION_ABI, safeTestOwnerAccount, safeTestOwnerAddress, safeTestOwnerPrivateKey, safeTxToTypedDataJson, signedTransaction, simulator, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
+import { encodeFunctionCall } from '../../app/ts/utils/abiRuntime.js'
 import { createDeferredValue } from './backgroundEthAccountsTestHarness.js'
 import { CONFIRMATION_RUN_ID_OF_UNNUMBERED_RUN, PendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
@@ -524,6 +525,104 @@ test('a simulation refresh that resumes after a later refresh started simulating
 	suspended.release()
 	await laterRefresh
 	assert.ok((await getPendingTransaction()).popupVisualisation.data.confirmationRunId > initialRunId)
+})
+
+// Opens a direct Gnosis Safe execution while no wallet account is connected, then connects the Safe signer, so the next Gnosis Safe signer refresh rebuilds and simulates it.
+async function openDirectSafeExecutionAwaitingSignerRefresh() {
+	const safeSignerAddress = recipientAddress
+	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, { to: recipientAddress, value: 0n, input: new Uint8Array() }, fakeSafeContract.nonce)
+	const existingSignature = await safeTestOwnerAccount.signTypedData(EIP712Message.parse(safeTxToTypedDataJson(safeTx)))
+	fakeSafeContract.owners = [safeTestOwnerAddress, safeSignerAddress]
+	const { websiteTabConnections } = await setUpTransactionApprovalTest(false)
+	await modules.updateSafeTransactionStacks(() => [])
+	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeSignerAddresses: [safeSignerAddress] })])
+	await modules.updateTabState(socket.tabId, (state) => ({ ...state, signerAccounts: [], activeSigningAddress: undefined, signerChain: fakeRpcNetwork.chainId }))
+	const executionParams = SendTransactionParams.parse({
+		method: 'eth_sendTransaction',
+		params: [{
+			from: addressString(activeAddress),
+			to: addressString(activeAddress),
+			value: '0x0',
+			data: encodeFunctionCall(SAFE_EXECUTION_ABI, 'execTransaction', [addressString(recipientAddress), 0n, '0x', 0n, 0n, 0n, 0n, addressString(0n), addressString(0n), existingSignature]),
+		}],
+	})
+	await requestTransaction(websiteTabConnections, false, executionParams)
+	await modules.updateTabState(socket.tabId, (state) => ({ ...state, signerAccounts: [safeSignerAddress], activeSigningAddress: safeSignerAddress }))
+	return { safeSignerAddress, websiteTabConnections }
+}
+
+// Starts an earlier Gnosis Safe rebuild entry, holds it at its first matching storage read, starts a popup refresh and holds it once it installed its abort controller, then releases the earlier entry, which ends as an aborted rebuild does. Returns whether the popup refresh's abort controller was aborted.
+async function wasLaterPopupRefreshAborted(startEarlierEntry: () => Promise<unknown>, isEarlierEntryHeldRead: (keys: unknown) => boolean) {
+	const { getConfirmTransactionAbortController } = await import('../../app/ts/background/confirmTransactionSimulation.js')
+	const earlierEntryReadReached = createDeferredValue<undefined>()
+	const releaseEarlierEntryRead = createDeferredValue<undefined>()
+	const laterRunSimulationInputReached = createDeferredValue<undefined>()
+	const releaseLaterRunSimulationInput = createDeferredValue<undefined>()
+	let holdEarlierEntryRead = true
+	let laterRunStage: 'not started' | 'preparing' | 'simulating' | 'held' = 'not started'
+	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+		if (holdEarlierEntryRead && isEarlierEntryHeldRead(keys)) {
+			holdEarlierEntryRead = false
+			earlierEntryReadReached.resolve(undefined)
+			await releaseEarlierEntryRead.promise
+		} else if (laterRunStage === 'preparing' && keys === `tabState_${ socket.tabId }`) {
+			// The later run reads tab state right before it installs its abort controller.
+			laterRunStage = 'simulating'
+		} else if (laterRunStage === 'simulating' && Array.isArray(keys) && keys.includes('preSimulationBlockTimeManipulation')) {
+			// Read for its simulation input, after it installed its abort controller.
+			laterRunStage = 'held'
+			laterRunSimulationInputReached.resolve(undefined)
+			await releaseLaterRunSimulationInput.promise
+		}
+		return readStoredItems()
+	})
+
+	return await withSilencedConsole(async () => {
+		const earlierEntry = startEarlierEntry()
+		await earlierEntryReadReached.promise
+		laterRunStage = 'preparing'
+		const laterRefresh = modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
+		await laterRunSimulationInputReached.promise
+		const laterRunAbortController = getConfirmTransactionAbortController()
+		releaseEarlierEntryRead.resolve(undefined)
+		await assert.rejects(earlierEntry, /The refreshed Gnosis Safe execution simulation did not complete/)
+		const abortedBeforeLaterRunFinished = laterRunAbortController.signal.aborted
+		releaseLaterRunSimulationInput.resolve(undefined)
+		await laterRefresh
+		return abortedBeforeLaterRunFinished || laterRunAbortController.signal.aborted
+	})
+}
+
+test('a Gnosis Safe signer refresh that started before a popup refresh does not abort that refresh', async () => {
+	await openDirectSafeExecutionAwaitingSignerRefresh()
+	// The signer refresh first reads the tab state, before its rebuild.
+	assert.equal(await wasLaterPopupRefreshAborted(async () => await modules.refreshPendingSafeSignerSelectionErrors(simulator.ethereum, simulator.tokenPriceService, socket.tabId), (keys) => keys === `tabState_${ socket.tabId }`), false)
+})
+
+test('a Gnosis Safe approval that started before a popup refresh does not abort that refresh with its rebuild', async () => {
+	const { safeSignerAddress, websiteTabConnections } = await openDirectSafeExecutionAwaitingSignerRefresh()
+	const approval = async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier } }, { selectedSigner: safeSignerAddress, verificationError: undefined })
+	// The approval reads the active network for its network check before its rebuild.
+	assert.equal(await wasLaterPopupRefreshAborted(approval, (keys) => Array.isArray(keys) && keys.length === 1 && keys[0] === 'activeRpcNetwork'), false)
+})
+
+test('a Gnosis Safe rebuild is not persisted over the preview of a popup refresh that started after it', async () => {
+	const { safeSignerAddress } = await openDirectSafeExecutionAwaitingSignerRefresh()
+	const { refreshAndPersistSafeSignerSelection } = await import('../../app/ts/background/safeSignerSelectionRefresh.js')
+	const [beforeRebuild] = await modules.getPendingTransactionsAndMessages()
+	if (beforeRebuild?.type !== 'Transaction' || !('popupVisualisation' in beforeRebuild)) throw new Error('Missing simulated direct Safe execution')
+
+	// The rebuild returns a preview of a run older than the popup refresh that stores its preview while the rebuild runs.
+	const persistence = await withSilencedConsole(async () => await refreshAndPersistSafeSignerSelection(simulator.ethereum, beforeRebuild, safeSignerAddress, async (rebuilt) => {
+		await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
+		return rebuilt
+	}))
+
+	const [afterRebuild] = await modules.getPendingTransactionsAndMessages()
+	if (afterRebuild?.type !== 'Transaction' || !('popupVisualisation' in afterRebuild)) throw new Error('Missing simulated direct Safe execution')
+	assert.equal(persistence.persisted, false)
+	assert.ok(afterRebuild.popupVisualisation.data.confirmationRunId > beforeRebuild.popupVisualisation.data.confirmationRunId)
+	assert.equal(afterRebuild.safeExecutionSignerAddress, beforeRebuild.safeExecutionSignerAddress)
 })
 
 test('a simulation refresh that finishes after the transaction was approved keeps the approved preview', async () => {
