@@ -8,12 +8,14 @@ import { retainPreviousVisualisation } from '../../app/ts/utils/popupVisualisati
 import { getNativeTokenErc20 } from '../../app/ts/background/metadataUtils.js'
 import { mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import type { AddressBookEntry } from '../../app/ts/types/addressBookTypes.js'
-import { MessageToPopup } from '../../app/ts/types/interceptor-messages.js'
+import { AddOrEditAddressBookEntry, MessageToPopup } from '../../app/ts/types/interceptor-messages.js'
 import { PopupRequestsReplies } from '../../app/ts/types/interceptor-reply-messages.js'
 import type { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import type { PendingFetchSimulationStackRequestPromise } from '../../app/ts/types/user-interface-types.js'
 import { type CompleteVisualizedSimulation, createPassthroughCompleteVisualizedSimulation } from '../../app/ts/types/visualizer-types.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
+import { decodeFunctionDataStrict, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
+import { MULTICALL3, Multicall3ABI } from '../../app/ts/utils/constants.js'
 import { eth_getBlockByNumber_goerli_8443561_true, eth_simulateV1_dummy_call_result } from '../RPCResponses.js'
 import { installDomMock } from './domMock.js'
 
@@ -157,6 +159,14 @@ const simulatedBlockFixture = (() => {
 	return { ...blocks[0], calls: [] }
 })()
 
+const simulatedBalance = 10n ** 20n
+function getSimulatedCallReturnData(call: { readonly to?: string, readonly input?: string }) {
+	if (call.to === undefined || BigInt(call.to) !== MULTICALL3 || call.input === undefined) return '0x'
+	const { args } = decodeFunctionDataStrict(Multicall3ABI, call.input)
+	const queries = Array.isArray(args?.[0]) ? args[0] : []
+	return encodeFunctionReturn(Multicall3ABI, 'aggregate3', [queries.map(() => ({ success: true, returnData: encodeFunctionReturn(Multicall3ABI, 'getEthBalance', [simulatedBalance]) }))])
+}
+
 const requestHandler = {
 	rpcUrl: rpcNetwork.httpsRpc,
 	clearCache: () => undefined,
@@ -166,9 +176,13 @@ const requestHandler = {
 			case 'eth_getBlockByNumber': return latestBlock
 			case 'eth_blockNumber': return '0x80d6a9'
 			case 'eth_getCode': return '0x'
+			// Read when a stacked transaction's fees and nonce are repaired.
+			case 'eth_getBalance': return '0x56bc75e2d63100000'
+			case 'eth_getTransactionCount': return '0x0'
 			case 'eth_simulateV1': {
 				messageCounts.ethSimulateV1Requests += 1
-				return rpcRequest.params[0].blockStateCalls.map(() => simulatedBlockFixture)
+				// One successful call without logs for each simulated call; a Multicall3 balance lookup gets a balance for each of its queries.
+				return rpcRequest.params[0].blockStateCalls.map((blockStateCall: { readonly calls: readonly { readonly to?: string, readonly input?: string }[] }) => ({ ...simulatedBlockFixture, calls: blockStateCall.calls.map((call) => ({ returnData: getSimulatedCallReturnData(call), logs: [], gasUsed: '0x5208', status: '0x1' })) }))
 			}
 			default: throw new Error(`Unexpected RPC request: ${ rpcRequest.method }`)
 		}
@@ -563,6 +577,51 @@ describe('FetchSimulationStack published simulation states', () => {
 			assert.ok(page.getText().includes('Changed Contract'))
 			assert.ok(!page.getText().includes('Original Contract'))
 			assert.equal(background.simulationRequests.length, 2)
+		} finally {
+			await page.close()
+		}
+	})
+})
+
+describe('FetchSimulationStack address-book re-labels', () => {
+	test('renaming an address while the page is open shows the new name in its rows without simulating again', async () => {
+		const { updatePopupVisualisationState } = await import('../../app/ts/background/popupVisualisationUpdater.js')
+		for (const key of Object.keys(storageState)) delete storageState[key]
+		const unsignedTransaction = { type: '1559' as const, from: signerAddress, nonce: 0n, maxFeePerGas: 10n ** 12n, maxPriorityFeePerGas: 1n, gas: 21_000n, to: contractAddress, value: 0n, input: new Uint8Array(), chainId: rpcNetwork.chainId, accessList: [] }
+		const website = { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' }
+		await browserStorageLocalSet({
+			activeRpcNetwork: rpcNetwork,
+			simulationMode: true,
+			independentActiveSimulationAddress: signerAddress,
+			makeCurrentAddressRich: false,
+			userAddressBookEntriesV3: [signerEntry, createContractEntry('Original Contract')],
+			interceptorTransactionStack: { operations: [{ type: 'Transaction', preSimulationTransaction: {
+				signedTransaction: mockSignTransaction(unsignedTransaction),
+				website,
+				created,
+				originalRequestParameters: { method: 'eth_sendTransaction', params: [{ from: signerAddress, to: contractAddress, value: 0n, input: new Uint8Array() }] },
+				transactionIdentifier: 1n,
+			} }] },
+		})
+		await setFetchSimulationStackRequestPromise(pendingFetchSimulationStackRequest)
+		await updatePopupVisualisationState(ethereum, tokenPriceService, undefined, true)
+		const page = await openFetchSimulationStackPage({ handle: dispatchToBackground })
+		try {
+			assert.ok(page.getText().includes('Original Contract'))
+			resetMessageCounts()
+
+			// Saved as the address editor this page opens saves it.
+			const reply = await popupMessageHandler(new Map(), simulationServicesOwner, serialize(AddOrEditAddressBookEntry, { method: 'popup_addOrModifyAddressBookEntry', data: createContractEntry('Renamed Contract') }), await getSettings(), async () => undefined)
+			assert.deepEqual(reply, { type: 'AddOrModifyAddressBookEntryReply', ok: true })
+			for (let tick = 0; tick < MAX_SETTLE_TICKS && !page.getText().includes('Renamed Contract'); tick++) {
+				await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+			}
+			await settleMessageFlow()
+
+			assert.ok(page.getText().includes('Renamed Contract'))
+			assert.ok(!page.getText().includes('Original Contract'))
+			assert.deepEqual(messageCounts, { simulationStatePublishes: 1, ethSimulateV1Requests: 0 })
+			assert.equal(await getLatestUnexpectedError(), undefined)
 		} finally {
 			await page.close()
 		}

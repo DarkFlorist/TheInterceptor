@@ -23,7 +23,7 @@ export function hasCurrentAddressBookEntries({ simulationUpdatingState }: Pick<C
 	}
 }
 
-// Within one simulation id, the updater stores the retained 'updating' state first and then at most one result: 'done', 'failed', or 'updating' again when the node cannot be reached, which repeats the first state. A new updating state fails typecheck here until its place in the refresh is decided.
+// Within one simulation id, the updater stores the retained 'updating' state first and then at most one result: 'done', 'failed', or 'updating' again when the node cannot be reached, which repeats the first state. An address-book re-label may store a 'done' result again with new names under the same id; as a refresh result it never predates the 'done' state it replaces. A new updating state fails typecheck here until its place in the refresh is decided.
 function isRefreshResult(simulationUpdatingState: SimulationUpdatingState) {
 	switch (simulationUpdatingState) {
 		case 'done':

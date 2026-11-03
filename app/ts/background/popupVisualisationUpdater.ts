@@ -138,17 +138,23 @@ function getUncancelledAbortController() {
 	return abortController
 }
 
-// Re-labels the stored stack simulation without simulating or publishing popup_simulation_state_changed; see "Address-book re-labels" in docs/popup-simulation-refresh.md.
+// Re-labels the stored stack simulation without simulating, and publishes the re-labelled state; see "Address-book re-labels" in docs/popup-simulation-refresh.md.
 export async function relabelPopupVisualisation(rpcNetwork: RpcNetwork) {
 	// Captured at request time, so a newer block, stack or failure refresh also cancels a re-label still waiting for the semaphore.
 	const thisAbortController = getUncancelledAbortController()
 	await executeVisualisationUpdate(thisAbortController, async () => {
+		let relabelledState: StoredCompleteVisualizedSimulation | undefined
 		await relabelStoredSimulation(rpcNetwork, {
 			stored: await getPopupVisualisationState(),
 			getRunToRelabel: (visualisation) => getStackRunToRelabel(visualisation, rpcNetwork.chainId),
-			updateStored: async (relabel) => await updatePopupVisualisationWithCallBack(async (current) => relabel(current)),
+			updateStored: async (relabel) => await updatePopupVisualisationWithCallBack(async (current) => {
+				relabelledState = relabel(current)
+				return relabelledState
+			}),
 			abortController: thisAbortController,
 		})
+		// Views that render publications, such as the FetchSimulationStack sharing dialog, get the new names this way. Published under the semaphore, as every refresh's result is, so it reaches views in order with them; views render a publication without requesting a simulation (components/simulationStatePublications.ts).
+		if (relabelledState !== undefined) await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState: relabelledState } })
 	})
 }
 

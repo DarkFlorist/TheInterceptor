@@ -277,7 +277,15 @@ async function relabelStoredStack() {
 	}
 }
 
-test('address-book changes re-label the stored confirmation and stack without simulating again or publishing simulation state', async () => {
+// The stack states the background published with popup_simulation_state_changed since the observed messages were last cleared.
+function getPublishedStackStates() {
+	return browserMock.sentMessages.filter((message) => message.method === 'popup_simulation_state_changed').map((message) => {
+		if (!isRecord(message.data)) throw new Error('Expected a published simulation state')
+		return CompleteVisualizedSimulation.parse(message.data.visualizedSimulatorState)
+	})
+}
+
+test('address-book changes re-label the stored confirmation and stack without simulating again, publishing only the re-labelled stack', async () => {
 	await openSimulationModeConfirmationSendingEther()
 	const pendingBefore = await getStoredPendingTransactionVisualisation()
 	const stackBefore = await getStoredStackVisualisation()
@@ -297,8 +305,10 @@ test('address-book changes re-label the stored confirmation and stack without si
 	assert.equal(getRecipientName(stackAfter.stored.visualizedSimulationState), recipientContact.name)
 	assert.equal(stackAfter.stored.simulationId, stackBefore.stored.simulationId)
 	assert.equal(stackAfter.simulationState.simulationConductedTimestamp.getTime(), stackBefore.simulationState.simulationConductedTimestamp.getTime())
-	// The change is broadcast once and the finished re-label is announced. No popup_simulation_state_changed is published, which FetchSimulationStack would answer by requesting new simulations.
-	assert.deepEqual(browserMock.sentMessages.map((message) => message.method), ['popup_addressBookEntriesChanged', 'popup_simulationsRelabelled'])
+	// The change is broadcast once, the re-labelled stack is published for the views that render publications, such as the FetchSimulationStack sharing dialog, and the finished re-label is announced for the views that re-read stored state, the home popup, the simulation stack page and the confirmation dialog.
+	assert.deepEqual(browserMock.sentMessages.map((message) => message.method), ['popup_addressBookEntriesChanged', 'popup_simulation_state_changed', 'popup_simulationsRelabelled'])
+	// The publication is the re-labelled finished run itself, not the updating state a refresh publishes first.
+	assert.deepEqual(getPublishedStackStates().map((published) => ({ simulationId: published.simulationId, simulationUpdatingState: published.simulationUpdatingState, recipientName: getRecipientName(published.visualizedSimulationState) })), [{ simulationId: stackBefore.stored.simulationId, simulationUpdatingState: 'done', recipientName: recipientContact.name }])
 })
 
 // What the stored runs keep for re-labels in background storage only, never in a popup message.
@@ -797,7 +807,8 @@ test('a confirmation dialog answering the change and re-label notifications ends
 	assert.equal(getRecipientName(getSimulatedPendingTransaction(pendingTransactions[0]).visualizedSimulationState), recipientContact.name)
 	assert.equal(getRecipientName(visualizedSimulatorState.visualizedSimulationState), recipientContact.name)
 	assert.equal(fakeSafeContract.requestedRpcMethods.includes('eth_simulateV1'), false)
-	assert.equal(browserMock.sentMessages.some((message) => message.method === 'popup_simulation_state_changed'), false)
+	// The only simulation state published is the re-labelled stack, never the updating state of a new simulation.
+	assert.deepEqual(getPublishedStackStates().map((published) => ({ simulationUpdatingState: published.simulationUpdatingState, recipientName: getRecipientName(published.visualizedSimulationState) })), [{ simulationUpdatingState: 'done', recipientName: recipientContact.name }])
 })
 
 // The recipient's name in the last updates the open confirmation dialog and home popup received: the dialog's confirmation and stack, and the home popup's stack.
@@ -1152,7 +1163,9 @@ test('an unexpected re-label failure is reported and the re-label is still annou
 	await withSilencedConsole(async () => await publishAddressBookChangeAndWaitForRelabel())
 	browserMock.setStorageSetHandler(undefined)
 
-	assert.deepEqual(browserMock.sentMessages.map((message) => message.method), ['popup_addressBookEntriesChanged', 'popup_UnexpectedErrorOccured', 'popup_simulationsRelabelled'])
+	// The stack re-label, which succeeds, publishes its state while the failing confirmation re-label reports, so only the order of the other messages is fixed.
+	assert.deepEqual(browserMock.sentMessages.map((message) => message.method).filter((method) => method !== 'popup_simulation_state_changed'), ['popup_addressBookEntriesChanged', 'popup_UnexpectedErrorOccured', 'popup_simulationsRelabelled'])
+	assert.deepEqual(getPublishedStackStates().map((published) => getRecipientName(published.visualizedSimulationState)), [recipientContact.name])
 	assert.equal(getRecipientName((await getStoredStackVisualisation()).stored.visualizedSimulationState), recipientContact.name)
 })
 
