@@ -4,7 +4,9 @@ import { InterceptorSimulationExport, InterceptorTransactionStack, type PreSimul
 import { createExecutionSimulationState, getSimulatedTransactionByHashFromInput, getSimulatedTransactionReceipt } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { createSaltSearch, getSignedTransactionForSimulation, toPreSimulationTransaction, withUniqueSimulationHash } from '../../app/ts/simulation/services/simulationTransactionSigning.js'
 import { appendOperationsToStack } from '../../app/ts/background/simulationStackHashes.js'
-import { addressString, browserMock, createSafeStackTransactionFixture, createWebsitePort, fakeRequestHandler, fakeRpcNetwork, isRecord, modules, simulator, withSilencedConsole } from './confirmTransactionTestHarness.js'
+import { EthereumSignedTransactionToSignedTransaction, serializeSignedTransactionToBytes } from '../../app/ts/utils/ethereum.js'
+import { keccak256 } from '../../app/ts/utils/ethereumPrimitives.js'
+import { addressString, browserMock, createSafeStackTransactionFixture, createWebsitePort, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, isRecord, modules, simulator, withSilencedConsole } from './confirmTransactionTestHarness.js'
 
 // Regression tests for #1713: no two transactions on the simulation stack share a hash, so transaction and receipt lookups by hash find the right one.
 const SENDER = 0x7100000000000000000000000000000000000071n
@@ -176,7 +178,8 @@ test('keeps an import off the hash a pending confirmation reserved', async () =>
 	const pending = (await modules.getPendingTransactionsAndMessages()).find((candidate) => candidate.uniqueRequestIdentifier.requestId === request.requestId)
 	if (pending?.type !== 'Transaction' || pending.transactionOrMessageCreationStatus !== 'Simulated') throw new Error('Expected a simulated pending transaction')
 	// An imported transaction recorded under the reserved hash, as a stacked copy of the same transaction would be.
-	const imported = { ...toPreSimulationTransaction(pending.transactionToSimulate, previewedHash), transactionIdentifier: 99n }
+	const imported = { ...toPreSimulationTransaction(pending.transactionToSimulate, pending.simulationHashReservation), transactionIdentifier: 99n }
+	assert.equal(imported.signedTransaction.hash, previewedHash)
 	const { importSimulationStack } = await import('../../app/ts/background/popupMessageHandlers.js')
 	const reply = await withSilencedConsole(async () => await importSimulationStack(simulator.ethereum, simulator.tokenPriceService, {
 		method: 'popup_importSimulationStack',
@@ -212,19 +215,147 @@ test('fails accepting a confirmation, as a handled error, when its reserved hash
 	assert.equal(postedMessages.some((message) => isRecord(message) && 'result' in message), false, 'the page gets no hash')
 })
 
+// Drops the reservations of the pending confirmations, as requests pending from before reservations have none.
+const withoutReservations = async (requestIds: readonly number[]) => await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: (await modules.getPendingTransactionsAndMessages()).map((pending) => {
+	if (pending.type !== 'Transaction' || !requestIds.includes(pending.uniqueRequestIdentifier.requestId)) return pending
+	const { simulationHashReservation: _simulationHashReservation, ...withoutReservation } = pending
+	return withoutReservation
+}) })
+
 test('accepts a confirmation pending from before reservations under its own hash', async () => {
 	await startSimulationStack(SENDER)
 	const postedMessages: unknown[] = []
 	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
 	const request = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: (await modules.getPendingTransactionsAndMessages()).map((pending) => {
-		if (pending.type !== 'Transaction') return pending
-		const { reservedTransactionHash: _reservedTransactionHash, ...withoutReservation } = pending
-		return withoutReservation
-	}) })
+	await withoutReservations([1])
 	const accepted = await acceptConfirmation(request, websiteTabConnections, postedMessages)
 	assert.equal(accepted.pageHash, accepted.stacked.signedTransaction.hash)
 	assert.equal(accepted.pageHash, modules.mockSignTransaction(accepted.stacked.signedTransaction).hash, 'its mock-signed hash')
+	await assertEachStackedTransactionFoundByOwnHash()
+})
+
+// Hashes the transaction's signed bytes, as a node would.
+const hashOfSignedBytes = (transaction: PreSimulationTransaction) => BigInt(keccak256(serializeSignedTransactionToBytes(EthereumSignedTransactionToSignedTransaction(transaction.signedTransaction))))
+
+for (const acceptOrder of [[1, 2], [2, 1]]) {
+	test(`gives a confirmation pending from before reservations and an identical reserved one distinct previews and stacks both, accepted in order ${ acceptOrder.join(', ') }`, async () => {
+		await startSimulationStack(SENDER)
+		const postedMessages: unknown[] = []
+		const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+		const requests = [await openConfirmation(1, SENDER, 1n, websiteTabConnections)]
+		await withoutReservations([1])
+		requests.push(await openConfirmation(2, SENDER, 1n, websiteTabConnections))
+		const previewedHashes = [await getPreviewedHash(1), await getPreviewedHash(2)]
+		assert.notEqual(previewedHashes[0], previewedHashes[1], 'the reserved confirmation keeps off the hash the unreserved one would take')
+		const accepted = []
+		for (const requestId of acceptOrder) {
+			const request = requests[requestId - 1]
+			if (request === undefined) throw new Error('missing request')
+			accepted.push(await acceptConfirmation(request, websiteTabConnections, postedMessages))
+		}
+		assert.equal(new Set(accepted.map(({ pageHash }) => pageHash)).size, 2)
+		assert.deepEqual(accepted.map(({ pageHash }) => pageHash), acceptOrder.map((requestId) => previewedHashes[requestId - 1]), 'each page gets the hash its preview showed')
+		await assertEachStackedTransactionFoundByOwnHash()
+	})
+
+	test(`reserves a hash for a confirmation whose transaction first forms on a refresh, apart from an identical later one, accepted in order ${ acceptOrder.join(', ') }`, async () => {
+		await startSimulationStack(SENDER)
+		const postedMessages: unknown[] = []
+		const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+		fakeSafeContract.failEthSimulate = true
+		const recovering = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+		const [failed] = await modules.getPendingTransactionsAndMessages()
+		if (failed?.type !== 'Transaction') throw new Error('Expected the pending transaction')
+		assert.equal(failed.transactionOrMessageCreationStatus, 'FailedToSimulate')
+		assert.equal(failed.simulationHashReservation, undefined, 'a confirmation that failed to form reserves nothing')
+		fakeSafeContract.failEthSimulate = false
+		await withSilencedConsole(async () => await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService))
+		const [recovered] = await modules.getPendingTransactionsAndMessages()
+		assert.notEqual(recovered?.type === 'Transaction' ? recovered.simulationHashReservation : undefined, undefined, 'the refresh that forms it reserves its hash')
+		const later = await openConfirmation(2, SENDER, 1n, websiteTabConnections)
+		const previewedHashes = [await getPreviewedHash(1), await getPreviewedHash(2)]
+		assert.notEqual(previewedHashes[0], previewedHashes[1])
+		const requests = [recovering, later]
+		const accepted = []
+		for (const requestId of acceptOrder) {
+			const request = requests[requestId - 1]
+			if (request === undefined) throw new Error('missing request')
+			accepted.push(await acceptConfirmation(request, websiteTabConnections, postedMessages))
+		}
+		assert.deepEqual(accepted.map(({ pageHash }) => pageHash), acceptOrder.map((requestId) => previewedHashes[requestId - 1]), 'each page gets the hash its preview showed')
+		await assertEachStackedTransactionFoundByOwnHash()
+	})
+}
+
+test('signs colliding confirmations with their reserved salt, so the signed bytes hash to the reserved hash', async () => {
+	await startSimulationStack(SENDER)
+	const postedMessages: unknown[] = []
+	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+	const firstRequest = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+	const secondRequest = await openConfirmation(2, SENDER, 1n, websiteTabConnections)
+	const reservations = (await modules.getPendingTransactionsAndMessages()).map((pending) => pending.type === 'Transaction' ? pending.simulationHashReservation : undefined)
+	assert.deepEqual(reservations.map((reservation) => reservation?.salt), [0n, 1n], 'the second collides and takes salt 1')
+	const secondPending = (await modules.getPendingTransactionsAndMessages())[1]
+	if (secondPending?.type !== 'Transaction' || secondPending.popupVisualisation === undefined || secondPending.popupVisualisation.statusCode !== 'success') throw new Error('Expected the previewed second confirmation')
+	const previewed = secondPending.popupVisualisation.data.simulationState.simulationStateInput.at(-1)?.transactions.at(-1)
+	if (previewed === undefined) throw new Error('Expected the previewed transaction')
+	assert.equal(getSalt(previewed), 1n, 'the preview is signed with the reserved salt')
+	assert.equal(hashOfSignedBytes(previewed), reservations[1]?.hash)
+
+	await acceptConfirmation(firstRequest, websiteTabConnections, postedMessages)
+	const second = await acceptConfirmation(secondRequest, websiteTabConnections, postedMessages)
+	assert.equal(getSalt(second.stacked), 1n, 'the stacked transaction keeps the reserved salt')
+	assert.equal(hashOfSignedBytes(second.stacked), second.pageHash, 'its signed bytes hash to the hash the page got')
+	assert.equal(second.pageHash, reservations[1]?.hash)
+})
+
+test('stores an import and a confirmation reserving at the same time under distinct hashes', async () => {
+	await startSimulationStack(SENDER)
+	const postedMessages: unknown[] = []
+	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+	// The transaction the confirmation forms, and the hash it reserves on an empty stack, which the import carries.
+	await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+	const [formed] = await modules.getPendingTransactionsAndMessages()
+	if (formed?.type !== 'Transaction' || formed.transactionOrMessageCreationStatus !== 'Simulated' || formed.simulationHashReservation === undefined) throw new Error('Expected a reserved confirmation')
+	const contestedHash = formed.simulationHashReservation.hash
+	const imported = { ...toPreSimulationTransaction(formed.transactionToSimulate, formed.simulationHashReservation), transactionIdentifier: 99n }
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+
+	// The import's read of the pending confirmations returns what storage held when it read, but only once released.
+	let signalImportRead = () => undefined
+	const importRead = new Promise<void>((resolve) => { signalImportRead = () => { resolve() } })
+	let releaseImportRead = () => undefined
+	const importReadReleased = new Promise<void>((resolve) => { releaseImportRead = () => { resolve() } })
+	let deferNextPendingRead = true
+	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+		const readsPending = keys === 'pendingTransactionsAndMessages' || (Array.isArray(keys) && keys.includes('pendingTransactionsAndMessages'))
+		if (!readsPending || !deferNextPendingRead) return readStoredItems()
+		deferNextPendingRead = false
+		const items = readStoredItems()
+		signalImportRead()
+		await importReadReleased
+		return items
+	})
+	const { importSimulationStack } = await import('../../app/ts/background/popupMessageHandlers.js')
+	const importing = withSilencedConsole(async () => await importSimulationStack(simulator.ethereum, simulator.tokenPriceService, {
+		method: 'popup_importSimulationStack',
+		data: { name: 'Interceptor Simulation Export', version: '1.0.0', eth_simulateV1: await simulator.ethereum.ethSimulateV1Input([], 123n, undefined), interceptorSimulateStack: { operations: [asOperation(imported)] } },
+	}))
+	await importRead
+	// The confirmation forms while the import waits on its read, and reaches its reservation.
+	const simulationsBefore = fakeSafeContract.requestedRpcMethods.filter((method) => method === 'eth_simulateV1').length
+	const confirming = openConfirmation(2, SENDER, 1n, websiteTabConnections)
+	while (fakeSafeContract.requestedRpcMethods.filter((method) => method === 'eth_simulateV1').length === simulationsBefore) await new Promise((resolve) => setTimeout(resolve, 5))
+	await new Promise((resolve) => setTimeout(resolve, 50))
+	releaseImportRead()
+	browserMock.setStorageGetHandler(undefined)
+	assert.equal((await importing).ok, true)
+	const request = await confirming
+
+	const [importedStacked] = await getStackedTransactions()
+	const accepted = await acceptConfirmation(request, websiteTabConnections, postedMessages)
+	assert.notEqual(importedStacked?.signedTransaction.hash, accepted.pageHash)
+	assert.ok([importedStacked?.signedTransaction.hash, accepted.pageHash].includes(contestedHash), 'one of them keeps the contested hash')
 	await assertEachStackedTransactionFoundByOwnHash()
 })
 

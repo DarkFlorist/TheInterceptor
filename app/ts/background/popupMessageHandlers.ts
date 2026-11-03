@@ -52,7 +52,7 @@ import { createSafeContractValidationFailure, getSafeContractSnapshot, validateS
 import { normalizeConsecutiveTimeManipulations } from '../utils/transactionStack.js'
 import { getPendingTransactionGasPayment, getSafePendingFlow } from '../safe/safePendingFlow.js'
 import { admitImportedSimulationStackOperations } from './importedSimulationStack.js'
-import { appendOperationsToStack, getReservedTransactionHashes } from './simulationStackHashes.js'
+import { appendOperationsToStack, ensureSimulationHashReservation, getReservedTransactionHashes, withSimulationHashLock } from './simulationStackHashes.js'
 import { getOperationsForActiveStackContext, SIMULATION_STACK_CONTEXT } from '../utils/activeStackContext.js'
 import { type ActiveAddressSelection, assertActiveAddressSelectionAllowed, getActiveAddressSelection, getWalletSelectedAccount } from '../utils/activeAddressSelection.js'
 export { importSafeStack, requestSafeStackExport, validateSafeTransactionStackForCurrentContract } from './safeStackHandlers.js'
@@ -629,6 +629,8 @@ export async function refreshPopupConfirmTransactionSimulation(ethereum: Ethereu
 			getPendingTransactionGasPayment(firstTxn),
 		)
 		: await formSendRawTransaction(ethereum, firstTxn.originalRequestParameters, firstTxn.transactionToSimulate.website, firstTxn.created, firstTxn.transactionIdentifier)
+	// A confirmation whose transaction first forms on a refresh reserves its hash here, before its first preview.
+	const simulationHashReservation = transactionToSimulate.success ? await ensureSimulationHashReservation(firstTxn.uniqueRequestIdentifier, transactionToSimulate) : firstTxn.simulationHashReservation
 	const refreshMessage = await refreshConfirmTransactionSimulation(
 		ethereum,
 		tokenPriceService,
@@ -636,7 +638,7 @@ export async function refreshPopupConfirmTransactionSimulation(ethereum: Ethereu
 		firstTxn.simulationMode,
 		firstTxn.uniqueRequestIdentifier,
 		transactionToSimulate,
-		{ safeSigningRequest: proposalSafeTransaction, reservedTransactionHash: firstTxn.reservedTransactionHash },
+		{ safeSigningRequest: proposalSafeTransaction, simulationHashReservation },
 	)
 	if (refreshMessage === undefined) return
 	await updatePendingTransactionOrMessage(firstTxn.uniqueRequestIdentifier, async (transactionOrMessage) => {
@@ -1243,20 +1245,23 @@ export async function importSimulationStack(ethereum: EthereumClientService, tok
 		return websiteData ?? website
 	}
 
-	const reservedHashes = getReservedTransactionHashes(await getPendingTransactionsAndMessages())
 	let updatedStack: InterceptorTransactionStack
 	try {
-		updatedStack = await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => {
-			// New identifiers keep the imported transactions' identifiers apart from the stack's; appendOperationsToStack keeps their hashes apart from the stack's and the pending confirmations' reservations.
-			const importedOperations = admission.operations.map((operation) => {
-				switch(operation.type) {
-					case 'Message': return modifyObject(operation, { signedMessageTransaction: modifyObject(operation.signedMessageTransaction, { messageIdentifier: generate256BitRandomBigInt(), website: updateWebsiteDetails(operation.signedMessageTransaction.website) }) })
-					case 'TimeManipulation': return operation
-					case 'Transaction': return modifyObject(operation, { preSimulationTransaction: modifyObject(operation.preSimulationTransaction, { transactionIdentifier: generate256BitRandomBigInt(), website: updateWebsiteDetails(operation.preSimulationTransaction.website) }) })
-					default: return assertNever(operation)
-				}
+		// Under the hash lock, so no confirmation reserves a hash between reading the reservations and storing the import.
+		updatedStack = await withSimulationHashLock(async () => {
+			const reservedHashes = getReservedTransactionHashes(await getPendingTransactionsAndMessages())
+			return await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => {
+				// New identifiers keep the imported transactions' identifiers apart from the stack's; appendOperationsToStack keeps their hashes apart from the stack's and the pending confirmations' reservations.
+				const importedOperations = admission.operations.map((operation) => {
+					switch(operation.type) {
+						case 'Message': return modifyObject(operation, { signedMessageTransaction: modifyObject(operation.signedMessageTransaction, { messageIdentifier: generate256BitRandomBigInt(), website: updateWebsiteDetails(operation.signedMessageTransaction.website) }) })
+						case 'TimeManipulation': return operation
+						case 'Transaction': return modifyObject(operation, { preSimulationTransaction: modifyObject(operation.preSimulationTransaction, { transactionIdentifier: generate256BitRandomBigInt(), website: updateWebsiteDetails(operation.preSimulationTransaction.website) }) })
+						default: return assertNever(operation)
+					}
+				})
+				return { operations: normalizeConsecutiveTimeManipulations(appendOperationsToStack(prevStack, importedOperations, reservedHashes).stack.operations) }
 			})
-			return { operations: normalizeConsecutiveTimeManipulations(appendOperationsToStack(prevStack, importedOperations, reservedHashes).stack.operations) }
 		})
 	} catch (error) {
 		return importSimulationStackFailure(`Failed to store the imported simulation stack (${ formatEstimatedBytes(importedStackBytes) }): ${ formatCaughtErrorMessage(error) }`)

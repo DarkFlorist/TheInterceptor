@@ -53,17 +53,23 @@ export const getSignedTransactionForSimulation = (transactionToSimulate: Website
 	transactionToSimulate.signedTransaction ?? mockSignTransaction(transactionToSimulate.transaction, getMockSignatureS(transactionToSimulate.simulationOptions))
 )
 
-// The transaction a simulation-mode confirmation previews and accepting stacks, under its reserved hash when it has one. That hash identifies it from its forming on, as a stacked transaction's does after removal renumbers it, so it need not be the hash of the fields a refresh forms again.
-export const toPreSimulationTransaction = (transactionToSimulate: WebsiteCreatedEthereumTransaction, reservedTransactionHash: bigint | undefined): PreSimulationTransaction => {
-	const signedTransaction = getSignedTransactionForSimulation(transactionToSimulate)
-	return {
-		signedTransaction: reservedTransactionHash === undefined ? signedTransaction : { ...signedTransaction, hash: reservedTransactionHash },
+// The salt a simulation-mode confirmation's transaction is signed with and the hash that gives it, reserved once when the confirmation is formed.
+export type SimulationHashReservation = { readonly salt: bigint, readonly hash: bigint }
+
+// The transaction a simulation-mode confirmation previews and accepting stacks, signed with its reserved salt, so its signed bytes hash to its reserved hash. If a refresh formed other fields, the reserved hash stays its identity anyway, as a stacked transaction's hash does when removal renumbers it.
+export const toPreSimulationTransaction = (transactionToSimulate: WebsiteCreatedEthereumTransaction, reservation: SimulationHashReservation | undefined): PreSimulationTransaction => {
+	const unreserved = {
+		signedTransaction: getSignedTransactionForSimulation(transactionToSimulate),
 		website: transactionToSimulate.website,
 		created: transactionToSimulate.created,
 		originalRequestParameters: transactionToSimulate.originalRequestParameters,
 		transactionIdentifier: transactionToSimulate.transactionIdentifier,
 		...(transactionToSimulate.simulationOptions === undefined ? {} : { simulationOptions: transactionToSimulate.simulationOptions }),
 	}
+	if (reservation === undefined) return unreserved
+	const salted = withSimulationSalt(unreserved, reservation.salt)
+	if (salted.signedTransaction.hash === reservation.hash) return salted
+	return { ...salted, signedTransaction: { ...salted.signedTransaction, hash: reservation.hash } }
 }
 
 // A signed transaction's own fields, without its signature or hash, so mock signing it again leaves no field of its previous signature (an imported transaction of any type can carry v as well as yParity).
@@ -78,21 +84,31 @@ const withoutSignature = (transaction: EthereumSendableSignedTransaction): Ether
 export type SaltSearch = { readonly nextSaltByUnsaltedHash: Map<bigint, bigint> }
 export const createSaltSearch = (): SaltSearch => ({ nextSaltByUnsaltedHash: new Map() })
 
+// The transaction mock-signed again from its own fields with the salt, keeping its Gnosis Safe execution marker; salt 0 keeps it as it is signed. A Gnosis Safe proposal is never re-signed (withUniqueSimulationHash).
+export const withSimulationSalt = (transaction: PreSimulationTransaction, salt: bigint): PreSimulationTransaction => {
+	if (salt === 0n || transaction.safeTransaction !== undefined) return transaction
+	return { ...transaction, signedTransaction: mockSignTransaction(withoutSignature(transaction.signedTransaction), getMockSignatureS(transaction.simulationOptions), salt) }
+}
+
+// The lowest salt that gives the transaction a hash outside takenHashes (withSimulationSalt), 0 if its own hash is free.
+export const findFreeSimulationSalt = (transaction: PreSimulationTransaction, takenHashes: ReadonlySet<bigint>, saltSearch: SaltSearch = createSaltSearch()): bigint => {
+	if (transaction.safeTransaction !== undefined) return 0n
+	if (!takenHashes.has(transaction.signedTransaction.hash)) return 0n
+	const s = getMockSignatureS(transaction.simulationOptions)
+	const unsignedTransaction = withoutSignature(transaction.signedTransaction)
+	const unsaltedHash = mockSignTransaction(unsignedTransaction, s).hash
+	for (let salt = saltSearch.nextSaltByUnsaltedHash.get(unsaltedHash) ?? 1n; ; salt++) {
+		if (takenHashes.has(mockSignTransaction(unsignedTransaction, s, salt).hash)) continue
+		saltSearch.nextSaltByUnsaltedHash.set(unsaltedHash, salt + 1n)
+		return salt
+	}
+}
+
 /**
  * Gives a transaction entering the simulation stack a hash that no transaction in stackHashes has, so hash lookups find exactly one transaction. A transaction whose hash is free keeps it; otherwise it is mock-signed again from its own fields, keeping its Gnosis Safe execution marker, with the lowest salt that frees its hash. That includes a duplicate of a stacked raw signed transaction, whose real hash is taken.
  * A new transaction's hash can equal a stacked one's even with the sender in r: removal renumbers later nonces but keeps their hashes, two confirmations pending at once are formed with the same nonce, and an import keeps its recorded hashes. The stacked transaction keeps its hash, because pages may already hold it.
  * A Gnosis Safe proposal keeps its hash, which is its safeTxHash: the Safe stack mirrors it by that hash (safeTransaction), so a new hash would split the two. Its SafeTx nonce keeps it apart from the Safe's other proposals.
  */
-export const withUniqueSimulationHash = (transaction: PreSimulationTransaction, stackHashes: ReadonlySet<bigint>, saltSearch: SaltSearch = createSaltSearch()): PreSimulationTransaction => {
-	if (transaction.safeTransaction !== undefined) return transaction
-	if (!stackHashes.has(transaction.signedTransaction.hash)) return transaction
-	const s = getMockSignatureS(transaction.simulationOptions)
-	const unsignedTransaction = withoutSignature(transaction.signedTransaction)
-	const unsaltedHash = mockSignTransaction(unsignedTransaction, s).hash
-	for (let salt = saltSearch.nextSaltByUnsaltedHash.get(unsaltedHash) ?? 1n; ; salt++) {
-		const signedTransaction = mockSignTransaction(unsignedTransaction, s, salt)
-		if (stackHashes.has(signedTransaction.hash)) continue
-		saltSearch.nextSaltByUnsaltedHash.set(unsaltedHash, salt + 1n)
-		return { ...transaction, signedTransaction }
-	}
-}
+export const withUniqueSimulationHash = (transaction: PreSimulationTransaction, stackHashes: ReadonlySet<bigint>, saltSearch: SaltSearch = createSaltSearch()): PreSimulationTransaction => (
+	withSimulationSalt(transaction, findFreeSimulationSalt(transaction, stackHashes, saltSearch))
+)

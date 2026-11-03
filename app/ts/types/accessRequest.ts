@@ -106,8 +106,8 @@ const SimulatedPendingTransactionBase = funtypes.ReadonlyObject({
 	safeExecutionReviewedSafeState: SafeContractStateSnapshot,
 	// The confirmation's decision, made once by prepareSafeTransactionConfirmation in simulation mode, that this is a Gnosis Safe's own transaction. Every refresh forms it from this (getPendingTransactionGasPayment), and forming it gives the transaction simulationOptions.executeThroughSafe, which tells the simulator to run it through the Safe: the pending decision and the transaction's option relate as a Safe proposal's pending safeTransaction and its stacked safeTransaction do.
 	executeThroughSafe: funtypes.Literal(true),
-	// The hash a simulation-mode transaction was given when the confirmation was formed (reserveTransactionHash): the preview shows it and accepting stacks it. A request pending from before reservations has none.
-	reservedTransactionHash: EthereumBytes32,
+	// The salt and hash a simulation-mode transaction was given when the confirmation was first formed (reserveSimulationHash): the preview shows the hash and accepting stacks it. A request pending from before reservations has none.
+	simulationHashReservation: funtypes.ReadonlyObject({ salt: EthereumQuantity, hash: EthereumBytes32 }),
 }))
 
 export type SimulatedPendingTransaction = funtypes.Static<typeof SimulatedPendingTransaction>

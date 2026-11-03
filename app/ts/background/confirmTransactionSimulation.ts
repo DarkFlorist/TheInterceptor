@@ -1,6 +1,6 @@
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { appendTransactionsToInput } from '../simulation/services/SimulationModeEthereumClientService.js'
-import { toPreSimulationTransaction } from '../simulation/services/simulationTransactionSigning.js'
+import { type SimulationHashReservation, toPreSimulationTransaction } from '../simulation/services/simulationTransactionSigning.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { createSafeExecutionPreSimulationTransaction, createSafeSigningSimulationInput } from '../safe/safeSimulation.js'
 import type { ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
@@ -29,11 +29,11 @@ export async function refreshConfirmTransactionSimulation(
 	transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed,
 	options: {
 		readonly safeSigningRequest?: SafeTransactionSigningRequest
-		// The confirmation's reserved hash (reserveTransactionHash), which the preview shows and accepting stacks.
-		readonly reservedTransactionHash?: bigint
+		// The confirmation's reserved salt and hash (allocateSimulationHashReservation): the preview shows the hash and accepting stacks it.
+		readonly simulationHashReservation?: SimulationHashReservation
 	} = {},
 ): Promise<ConfirmTransactionTransactionSingleVisualization | undefined> {
-	const { safeSigningRequest, reservedTransactionHash } = options
+	const { safeSigningRequest, simulationHashReservation } = options
 	const info = {
 		uniqueRequestIdentifier,
 		transactionToSimulate,
@@ -54,7 +54,7 @@ export async function refreshConfirmTransactionSimulation(
 		const getNewVisualizedSimulationState = async () => {
 			const preSimulationTransaction = transactionToSimulate.success
 				? safeSigningRequest === undefined
-					? toPreSimulationTransaction(transactionToSimulate, reservedTransactionHash)
+					? toPreSimulationTransaction(transactionToSimulate, simulationHashReservation)
 					: createSafeExecutionPreSimulationTransaction(transactionToSimulate, safeSigningRequest)
 				: undefined
 			const simulationStateWithNewTransaction = preSimulationTransaction === undefined
