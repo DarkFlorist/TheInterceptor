@@ -1807,3 +1807,114 @@ test('rejects a request once when the user closes a window whose programmatic cl
 	assert.deepEqual(getPageResponses(postedMessages, 1), [{ error: 4001 }], 'the request is rejected once')
 	await assertNoResolutionBookkeeping()
 })
+
+test('runs a popup close deferred behind an orphan rejection in the claim holder\'s context, so registration under the pending-confirmation lock completes', async () => {
+	await startSimulationStack(SENDER)
+	const postedMessages: unknown[] = []
+	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+	const orphan = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+	const orphanStackRead = createGate()
+	await withBrowserWindows({}, async ({ createdWindows }) => {
+		// The orphan's window is gone, so the next registration rejects it under the pending-confirmation lock.
+		browserMock.setLiveWindowIds([])
+		const windows = Reflect.get(globalThis, 'browser').windows
+		const getWindow = windows.get
+		let choosingWindow = false
+		windows.get = async (windowId: number) => {
+			choosingWindow = true
+			return await getWindow(windowId)
+		}
+		// The orphan's rejection reads the stack after claiming it; that read is held, then fails once.
+		let armed = true
+		browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+			if (!choosingWindow || !armed || !readsKey(keys, 'interceptorTransactionStack')) return readStoredItems()
+			armed = false
+			await orphanStackRead.pass()
+			throw new Error('transient stack read failure')
+		})
+		try {
+			const registering = openConfirmation(2, SENDER, 2n, websiteTabConnections)
+			await orphanStackRead.reached
+			// A close event for the orphan's window arrives meanwhile and is deferred behind the claim.
+			await withSilencedConsole(async () => await modules.onCloseWindowOrTab({ type: 'popup', id: CONFIRMATION_WINDOW_ID }, simulator.ethereum, simulator.tokenPriceService, websiteTabConnections))
+			orphanStackRead.open()
+			await withSilencedConsole(async () => await registering)
+		} finally {
+			windows.get = getWindow
+			browserMock.setStorageGetHandler(undefined)
+		}
+		await withSilencedConsole(async () => await waitForCondition(async () => (await modules.getPendingTransactionsAndMessages()).every((pending) => pending.uniqueRequestIdentifier.requestId !== orphan.requestId)))
+		// A later registration completes too.
+		await openConfirmation(3, SENDER, 3n, websiteTabConnections)
+		assert.equal(createdWindows().length, 1, 'one window opened for the new requests')
+	})
+	assert.deepEqual((await modules.getPendingTransactionsAndMessages()).map((pending) => pending.uniqueRequestIdentifier.requestId), [2, 3])
+	assert.deepEqual(getPageResponses(postedMessages, orphan.requestId), [{ error: 4001 }], 'the orphan is rejected once')
+	await withSilencedConsole(async () => await waitForCondition(async () => {
+		const { getResolutionBookkeepingSize } = await import('../../app/ts/background/windows/confirmTransaction.js')
+		return getResolutionBookkeepingSize() === 0
+	}))
+	await assertNoResolutionBookkeeping()
+})
+
+test('closes a resolved request\'s window when the next request, choosing its window while holding the lock, already sees the request removed and opens its own', async () => {
+	await startSimulationStack(SENDER)
+	const postedMessages: unknown[] = []
+	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+	const first = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+	const windowChoice = createGate()
+	await withBrowserWindows({}, async ({ liveWindows, createdWindows }) => {
+		// The next request's window choice reads the pending requests under the pending-confirmation lock; that read is held, and returns what is stored once released.
+		let armed = true
+		browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+			if (!armed || !readsKey(keys, 'pendingTransactionsAndMessages')) return readStoredItems()
+			armed = false
+			await windowChoice.pass()
+			return readStoredItems()
+		})
+		try {
+			const opening = openConfirmation(2, SENDER, 2n, websiteTabConnections)
+			await windowChoice.reached
+			// The first request is rejected and removed; its window cleanup waits for the lock.
+			const rejecting = withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'reject', uniqueRequestIdentifier: first } }))
+			await waitForCondition(async () => (await modules.getPendingTransactionsAndMessages()).length === 0)
+			await new Promise((resolve) => setTimeout(resolve, 50))
+			assert.deepEqual(liveWindows(), [CONFIRMATION_WINDOW_ID], 'the cleanup waits for the lock')
+			windowChoice.open()
+			await Promise.all([opening, rejecting])
+		} finally {
+			browserMock.setStorageGetHandler(undefined)
+		}
+		const [second] = await modules.getPendingTransactionsAndMessages()
+		assert.equal(createdWindows().length, 1)
+		assert.deepEqual(second?.popupOrTabId, { type: 'popup', id: createdWindows()[0] }, 'the second request is in its own window')
+		assert.deepEqual(liveWindows(), createdWindows(), 'the first request\'s window, without requests, closed')
+	})
+	assert.deepEqual(getPageResponses(postedMessages, 1), [{ error: 4001 }])
+	await assertNoResolutionBookkeeping()
+})
+
+test('closes a resolved request\'s window on the retry of a failed close after the next request opened its own window', async () => {
+	await startSimulationStack(SENDER)
+	const postedMessages: unknown[] = []
+	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+	const first = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+	let removals = 0
+	await withBrowserWindows({
+		beforeRemove: async () => {
+			removals += 1
+			if (removals === 1) throw new Error('transient window removal failure')
+		},
+	}, async ({ liveWindows, createdWindows }) => {
+		await rejectRequest(first, websiteTabConnections)
+		// The next request sees no pending request and opens its own window before the retry.
+		await openConfirmation(2, SENDER, 2n, websiteTabConnections)
+		await withSilencedConsole(async () => await waitForCondition(async () => !liveWindows().includes(CONFIRMATION_WINDOW_ID)))
+		const [second] = await modules.getPendingTransactionsAndMessages()
+		assert.equal(createdWindows().length, 1)
+		assert.deepEqual(second?.popupOrTabId, { type: 'popup', id: createdWindows()[0] })
+		assert.deepEqual(liveWindows(), createdWindows(), 'exactly the second request\'s window is open')
+	})
+	assert.deepEqual(getPageResponses(postedMessages, 1), [{ error: 4001 }])
+	await assertNoResolutionBookkeeping()
+})

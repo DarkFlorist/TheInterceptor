@@ -269,14 +269,16 @@ type ResolutionContext = { readonly ethereum: EthereumClientService, readonly to
 // The context for work that runs later, when the caller no longer holds the pending-confirmation lock.
 const withoutHeldLocks = ({ ethereum, tokenPriceService, websiteTabConnections }: ResolutionContext): ResolutionContext => ({ ethereum, tokenPriceService, websiteTabConnections })
 
-// Updates the confirmation window that showed a removed request: it moves to the next request, or closes after the last. A window the user already closed counts as closed; any other failure throws, for the finishing to retry. Deciding and closing hold the pending-confirmation lock, as choosing a window and registering a new request in it do, so a request never registers in a window that is being closed: it either registers first, and the window moves to it, or chooses its window after the close and opens a new one. A resolution that runs while its caller holds the lock (holdsPendingConfirmationLock) does not take it again.
+// Updates the confirmation window that showed a removed request: it moves to the next of its own requests, or closes after its last. A window the user already closed counts as closed; any other failure throws, for the finishing to retry. Deciding and closing hold the pending-confirmation lock, as choosing a window and registering a new request in it do, so a request never registers in a window that is being closed: it either registers first, and the window moves to it, or chooses its window after the close and opens a new one. A resolution that runs while its caller holds the lock (holdsPendingConfirmationLock) does not take it again.
 async function updateConfirmationWindowAfterRemoving(confirmationWindow: PopupOrTabId, tabId: number, context: ResolutionContext) {
 	const decideAndUpdate = async () => {
-		if ((await getPendingTransactionsAndMessages()).length > 0) {
+		const pendingRequests = await getPendingTransactionsAndMessages()
+		// Decided for this window: requests in another window never keep it open.
+		if (pendingRequests.some((pending) => pending.popupOrTabId.type === confirmationWindow.type && pending.popupOrTabId.id === confirmationWindow.id)) {
 			if (!(await updateConfirmTransactionView(context.ethereum, context.tokenPriceService))) throw new Error('The confirmation window could not be moved to the next request.')
 			return
 		}
-		await tryFocusingTabOrWindow({ type: 'tab', id: tabId })
+		if (pendingRequests.length === 0) await tryFocusingTabOrWindow({ type: 'tab', id: tabId })
 		await closePopupOrTabById(confirmationWindow)
 	}
 	if (context.holdsPendingConfirmationLock === true) await decideAndUpdate()
@@ -397,14 +399,14 @@ export async function resumeCommittedRequests(ethereum: EthereumClientService, t
 
 // The requests whose terminal outcome an accept, reject or close has claimed and is carrying out. A claim is taken synchronously, so of racing resolutions of a request exactly one stacks it or replies; the others return false without either. Under the claim, a committed request is only finished (finishCommittedRequest); only an uncommitted pending request gets an outcome chosen (resolve).
 const resolutionClaims = new Set<string>()
-// What to run for a request once its claim is released, recorded by a resolution that found it claimed, coalesced into one entry. The request is always finished again first, so that pass sees what changed meanwhile (its requesting tab closing, say); then a recorded close runs, which answers a request still pending and uncommitted, such as one whose claimed accept failed, and does nothing for one that was resolved. Each follow-up runs once per recording, so the passes stop once nothing records more.
-type DeferredResolution = { readonly close?: () => Promise<void> }
+// What to run for a request once its claim is released, recorded by a resolution that found it claimed, coalesced into one entry. Only data: the claim holder runs it in its own context (which knows whether it holds the pending-confirmation lock). The request is always finished again first, so that pass sees what changed meanwhile (its requesting tab closing, say); then a requested close runs, which answers a request still pending and uncommitted, such as one whose claimed accept failed, and does nothing for one that was resolved. Each follow-up runs once per recording, so the passes stop once nothing records more.
+type DeferredResolution = { readonly closeRequested: boolean }
 const deferredResolutions = new Map<string, DeferredResolution>()
-type WhenClaimed = 'finish-again' | 'nothing' | { readonly close: () => Promise<void> }
+type WhenClaimed = 'finish-again' | 'close' | 'nothing'
 async function withResolutionClaim<Result>(uniqueRequestIdentifier: UniqueRequestIdentifier, context: ResolutionContext, resolve: () => Promise<Result>, whenClaimed: WhenClaimed = 'nothing') {
 	const claim = getUniqueRequestIdentifierString(uniqueRequestIdentifier)
 	if (resolutionClaims.has(claim)) {
-		if (whenClaimed !== 'nothing') deferredResolutions.set(claim, whenClaimed === 'finish-again' ? (deferredResolutions.get(claim) ?? {}) : { close: whenClaimed.close })
+		if (whenClaimed !== 'nothing') deferredResolutions.set(claim, { closeRequested: whenClaimed === 'close' || deferredResolutions.get(claim)?.closeRequested === true })
 		return false
 	}
 	resolutionClaims.add(claim)
@@ -423,7 +425,8 @@ async function withResolutionClaim<Result>(uniqueRequestIdentifier: UniqueReques
 		deferredResolutions.delete(claim)
 		if (deferred !== undefined) {
 			await resumeRequest(uniqueRequestIdentifier, context)
-			if (deferred.close !== undefined) await deferred.close()
+			const stillPending = deferred.closeRequested ? await getPendingTransactionOrMessageByidentifier(uniqueRequestIdentifier) : undefined
+			if (stillPending !== undefined) await resolveAllPendingTransactionsAndMessageAsNoResponse([stillPending], context)
 		}
 	}
 }
@@ -556,8 +559,7 @@ async function resolvePendingRequest(resolutionContext: ResolutionContext, confi
 		return false
 	}
 	if (confirmation.data.action === 'noResponse') {
-		const unansweredRequest = pendingTransactionOrMessage
-		return await withResolutionClaim(confirmation.data.uniqueRequestIdentifier, resolutionContext, async () => await rejectUnlessStacked(formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User denied transaction signature')), { close: async () => await resolveAllPendingTransactionsAndMessageAsNoResponse([unansweredRequest], resolutionContext) })
+		return await withResolutionClaim(confirmation.data.uniqueRequestIdentifier, resolutionContext, async () => await rejectUnlessStacked(formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User denied transaction signature')), 'close')
 	}
 	if (pendingTransactionOrMessage === undefined || pendingTransactionOrMessage.transactionOrMessageCreationStatus !== 'Simulated') return await withResolutionClaim(confirmation.data.uniqueRequestIdentifier, resolutionContext, async () => await rejectUnlessStacked(formRejectMessage(METAMASK_ERROR_BLANKET_ERROR, 'The Interceptor failed to process the transaction')))
 	if (confirmation.data.action === 'reject') return await withResolutionClaim(confirmation.data.uniqueRequestIdentifier, resolutionContext, async () => await rejectUnlessStacked(formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User denied transaction signature')))
