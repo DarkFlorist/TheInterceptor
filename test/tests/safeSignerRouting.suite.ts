@@ -315,6 +315,49 @@ test('keeps a proposal signature for its own chain when services for another cha
 	await assertStoredOnChainAOnce(deferred)
 })
 
+// The signature of a proposal prepared on chain A is valid only for chain A's EIP-712 domain: approving it after services moved to chain B is refused, and a valid signature delivered anyway reaches neither chain B's stack nor the outbox.
+test('refuses a proposal prepared for another chain than the services approving it', async () => {
+	const otherChainSimulator = createOtherChainSimulator()
+	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({ ...state, signerAccounts: [safeTestOwnerAddress], activeSigningAddress: safeTestOwnerAddress }))
+	// The Safe exists with the same owners and nonce on both chains.
+	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeSimulationSignerAddress: activeAddress }), createSafeAddressBookEntry({ chainId: otherChainRpc.chainId, safeSimulationSignerAddress: activeAddress })])
+	const postedMessages: unknown[] = []
+	const socket = uniqueRequestIdentifier.requestSocket
+	const port = createWebsitePort(socket, 0, postedMessages)
+	const websiteTabConnections = new Map([[socket.tabId, { connections: { [modules.websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.com', approved: true, wantsToConnect: true } } }]])
+	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, { to: recipientAddress, value: 0n, input: new Uint8Array() }, 0n)
+	fakeSafeContract.nonce = 0n
+	fakeSafeContract.threshold = 2n
+	fakeSafeContract.owners = [safeTestOwnerAddress]
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [{
+		...pendingTransaction,
+		simulationMode: false,
+		safeTransaction: { safeAddress: activeAddress, safeSignerAddress: safeTestOwnerAddress, safeVersion: '1.4.1', threshold: 2n, reviewedSafeState: { version: '1.4.1', nonce: 0n, owners: [safeTestOwnerAddress], threshold: 2n }, safeTxHash: BigInt(getSafeTxHash(safeTx)), safeTx },
+	}] })
+
+	assert.equal(await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(otherChainSimulator.ethereum, otherChainSimulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier } })), false)
+	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
+	const [refused] = await modules.getPendingTransactionsAndMessages()
+	assert.equal(refused?.approvalStatus.status, 'SignerError')
+	assert.equal(refused?.signerRequestChainId, undefined)
+
+	// A valid chain-A signature delivered with chain-B services, through the signer reply or straight to validation.
+	const signature = await safeTestOwnerAccount.signTypedData(EIP712Message.parse(safeTxToTypedDataJson(safeTx)))
+	await modules.signerReply(createTestSimulationServicesOwner(otherChainSimulator), websiteTabConnections, port, {
+		method: 'signer_reply',
+		params: [{ success: true, signerProviderGeneration: 0, forwardRequest: { type: 'forwardToSigner', replyWithSignersReply: true, method: 'eth_signTypedData_v4', params: [safeTestOwnerAddress, EIP712Message.parse(safeTxToTypedDataJson(safeTx))], requestId: uniqueRequestIdentifier.requestId }, reply: signature }],
+		interceptorRequest: true,
+		interceptorInternalRequest: true,
+		usingInterceptorWithoutSigner: false,
+		uniqueRequestIdentifier: { requestId: uniqueRequestIdentifier.requestId + 1000, requestSocket: socket },
+	}, 'hasAccess', activeAddress)
+	await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(otherChainSimulator.ethereum, otherChainSimulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'signerIncluded', signerReply: signature, uniqueRequestIdentifier } }))
+
+	assert.deepEqual(await modules.getSafeTransactionStacks(), [])
+	assert.deepEqual(await modules.getPendingSafeProposalStores(), [])
+	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'result' && message.requestId === uniqueRequestIdentifier.requestId && 'result' in message), false)
+})
+
 test('replays a deferred Safe signature when a normal network switch returns to its chain', async () => {
 	const { changeActiveAddressAndChain } = await import('../../app/ts/background/activeSettings.js')
 	const otherChainSimulator = createOtherChainSimulator()

@@ -377,6 +377,13 @@ function removeDeferredSafeSignerReply(pending: PendingTransactionOrSignableMess
 	return remaining
 }
 
+// The network a Gnosis Safe proposal's signature is valid on: the chain of its EIP-712 domain (a proposal without one has no signing network and cannot be signed).
+function getSafeProposalSigningChainId(pending: PendingTransactionOrSignableMessage) {
+	const flow = getSafePendingFlow(pending)
+	if (flow?.kind !== 'proposal') return undefined
+	return flow.pending.safeTransaction.safeTx.domain.chainId ?? 0n
+}
+
 // A Safe signature that cannot be bound to the network it was signed for fails closed: it is not kept, and the request asks the user to sign again.
 async function failSafeSignatureWithoutChain(uniqueRequestIdentifier: UniqueRequestIdentifier) {
 	await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (current) => modifyObject(removeDeferredSafeSignerReply(current), {
@@ -597,7 +604,17 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 		&& pendingTransactionOrMessage.transactionOrMessageCreationStatus !== 'Simulated'
 	) return false
 	if (confirmation.data.action === 'accept' && pendingTransactionOrMessage.simulationMode === false) {
-		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'WaitingForSigner' }, signerRequestChainId: ethereum.getChainId() }))
+		// A Gnosis Safe proposal's signature is bound to its EIP-712 domain's network, which is recorded as its signing network; services on another network cannot forward, validate or store it, so the proposal must be reviewed again there.
+		const proposalChainId = getSafeProposalSigningChainId(pendingTransactionOrMessage)
+		if (proposalChainId !== undefined && proposalChainId !== ethereum.getChainId()) {
+			await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, {
+				approvalStatus: createSafeSignerErrorStatus('This Gnosis Safe proposal was prepared for another network than the one the Interceptor is connected to. Reject it and propose it again from the website on the current network.'),
+			}))
+			await updateConfirmTransactionView(ethereum, tokenPriceService)
+			return false
+		}
+		const signerRequestChainId = proposalChainId ?? ethereum.getChainId()
+		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'WaitingForSigner' }, signerRequestChainId }))
 		await updateConfirmTransactionView(ethereum, tokenPriceService)
 		const requestWasForwarded = await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, { ...signerFacingRequest, type: 'forwardToSigner', uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
 		if (requestWasForwarded) return true
