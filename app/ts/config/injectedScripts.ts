@@ -1,4 +1,4 @@
-// Runtime paths consumed by Chrome scripting and the runtime bundler. Every file is emitted from app/inpage/ts.
+// Runtime paths consumed by Chrome scripting. Every file is emitted from app/inpage/ts, and build/bundler.mts keeps a matching INPAGE_RUNTIME_SCRIPTS list checked by injectedScripts.test.ts.
 export const INPAGE_SCRIPTS = {
 	documentStart: '/inpage/js/document_start.js',
 	provider: '/inpage/js/inpage.js',

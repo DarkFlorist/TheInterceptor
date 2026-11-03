@@ -18,6 +18,10 @@ test('the host and provider use one SDK version validator and preserve request p
 		assert.deepEqual(parseSafeAppsRequest(request), { id: request.id, error: 'Safe Apps env.sdkVersion must be a supported semantic version.' })
 	}
 	assert.equal(createSafeAppsRequest('prepare', 'getSafeInfo').env.sdkVersion, SAFE_APPS_RESPONSE_VERSION)
+})
+
+// The SDK is only a test dependency, so this check guards version drift without the production bundler loading it.
+test('the Safe Apps response version matches the installed Safe Apps SDK', () => {
 	assert.equal(SAFE_APPS_RESPONSE_VERSION, getSDKVersion())
 })
 

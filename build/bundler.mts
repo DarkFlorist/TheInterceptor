@@ -2,8 +2,6 @@ import * as path from 'node:path'
 import * as url from 'node:url'
 import * as fs from 'node:fs'
 import * as ts from 'typescript'
-import { INPAGE_SCRIPTS } from '../app/ts/config/injectedScripts.js'
-import { SAFE_APPS_RESPONSE_VERSION } from '../app/inpage/ts/safeAppsProtocol.js'
 
 const directoryOfThisFile = path.dirname(url.fileURLToPath(import.meta.url))
 const appDirectory = path.join(directoryOfThisFile, '..', 'app')
@@ -369,6 +367,20 @@ function formatBunBuildLogs(logs: readonly BuildMessage[]) {
 		.join('\n')
 }
 
+// The build package stays self-contained, so it lists the injected classic scripts itself; injectedScripts.test.ts checks this matches INPAGE_SCRIPTS in app/ts/config/injectedScripts.ts.
+export const INPAGE_RUNTIME_SCRIPTS = {
+	documentStart: '/inpage/js/document_start.js',
+	provider: '/inpage/js/inpage.js',
+	contentListener: '/inpage/js/listenContentScript.js',
+	contentListenerBootstrap: '/inpage/js/listenContentScriptBootstrap.js',
+	safeAppsHost: '/inpage/js/safeAppsHostBootstrap.js',
+	prepareSafeApp: '/inpage/js/prepareSafeAppBootstrap.js',
+	cancelSafeAppPreparation: '/inpage/js/cancelSafeAppPreparationBootstrap.js',
+	clearSafeAppPreparationCancellation: '/inpage/js/clearSafeAppPreparationCancellationBootstrap.js',
+	readDocumentOrigin: '/inpage/js/readDocumentOrigin.js',
+} as const
+const inpageRuntimeScriptPaths = Object.values(INPAGE_RUNTIME_SCRIPTS).map((file) => path.join(appDirectory, file.slice(1)))
+
 const runtimeEntrypointPaths = [
 	path.join(appDirectory, 'js', 'backgroundServiceWorker.js'),
 	path.join(appDirectory, 'js', 'background', 'background-startup.js'),
@@ -382,13 +394,11 @@ const runtimeEntrypointPaths = [
 	path.join(appDirectory, 'js', 'settingsView.js'),
 	path.join(appDirectory, 'js', 'simulationStack.js'),
 	path.join(appDirectory, 'js', 'websiteAccess.js'),
-	...Object.values(INPAGE_SCRIPTS).map((file) => path.join(appDirectory, file.slice(1))),
+	...inpageRuntimeScriptPaths,
 	path.join(appDirectory, 'js', 'utils', 'ethereumPrimitives.js'),
 ]
 
-const classicRuntimeEntrypointPaths = new Set([
-	...Object.values(INPAGE_SCRIPTS).map((file) => path.join(appDirectory, file.slice(1))),
-])
+const classicRuntimeEntrypointPaths = new Set(inpageRuntimeScriptPaths)
 
 export function assertClassicEntrypointHasNoModuleSyntax(filePath: string, source: string) {
 	try {
@@ -480,8 +490,8 @@ async function bundleRuntimeEntrypoints() {
 		copyRuntimeEntrypoints(await buildRuntimeEntrypoints(existingEntrypoints, {
 			root: appDirectory,
 			outdir: bundledOutputDirectory,
-			inpagePath: path.join(appDirectory, INPAGE_SCRIPTS.provider.slice(1)),
-			documentStartPath: path.join(appDirectory, INPAGE_SCRIPTS.documentStart.slice(1)),
+			inpagePath: path.join(appDirectory, INPAGE_RUNTIME_SCRIPTS.provider.slice(1)),
+			documentStartPath: path.join(appDirectory, INPAGE_RUNTIME_SCRIPTS.documentStart.slice(1)),
 		}))
 	} finally {
 		fs.rmSync(bundledOutputDirectory, { recursive: true, force: true })
@@ -619,9 +629,6 @@ export function stripSourceMappingUrlComment(text: string) {
 }
 
 export async function replaceImportsInJSFiles() {
-	// The SDK is a build/test dependency; its code must not enter the inpage runtime bundle.
-	const { getSDKVersion } = await import('@safe-global/safe-apps-sdk')
-	if (SAFE_APPS_RESPONSE_VERSION !== getSDKVersion()) throw new Error('The Safe Apps response version must match the installed Safe Apps SDK.')
 	await bundleRuntimeEntrypoints()
 	for (const folder of getRuntimeFiles()) ensureDirectoryExists(folder)
 	const runtimeDependencyGraph = rewriteRuntimeImportsAndCollectDependencyGraph()
