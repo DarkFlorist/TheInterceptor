@@ -3,6 +3,7 @@ import { describe, test } from 'bun:test'
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
+import { type RawStorageAccess, findUncountedStorageAccess } from './rawStorageAccess.js'
 import { getRuntimeDependencies } from './runtimeDependencyGraph.js'
 
 const repositoryRoot = path.join(import.meta.dir, '..', '..')
@@ -86,15 +87,62 @@ describe('page contexts and the active network', () => {
 		assert.deepEqual(writersOfTheActiveNetwork, [])
 	})
 
-	// A raw browser.storage.local write bypasses the typed setters, and with them the active network write counts in storageUtils.ts, whatever key it writes, including a computed one or a clear. So raw writes are allowed only in these modules; a new one has to be listed here after checking that it can never write the active network.
-	test('only the listed storage modules write browser storage directly, and only storageUtils.ts of them names the active network', () => {
-		const rawStorageWriters = [storageUtilsModule, path.join(appRoot, 'ts', 'utils', 'largeStateStore.ts'), path.join(appRoot, 'ts', 'background', 'storageVariables.ts')]
-		const filesWithRawStorageWrites = getApplicationSourceFiles().filter((file) => /\bstorage\.local\.(?:set|remove|clear)\b/u.test(fs.readFileSync(file, 'utf8')))
-		assert.deepEqual([...filesWithRawStorageWrites].sort(), [...rawStorageWriters].sort())
-		const rawWritersNamingTheActiveNetwork = rawStorageWriters
-			.filter((file) => file !== storageUtilsModule && fs.readFileSync(file, 'utf8').includes('activeRpcNetwork'))
-			.map((file) => path.relative(repositoryRoot, file))
-		assert.deepEqual(rawWritersNamingTheActiveNetwork, [])
+	// A raw browser.storage write bypasses the typed setters, and with them the active network write counts in storageUtils.ts, whatever key it writes. Of the modules that write browser storage directly, largeStateStore.ts writes only its LargeStateStorageKey values and their marker keys, and storageVariables.ts removes only tabState_ keys; a new direct writer has to be listed here after checking that it can never write the active network.
+	test('browser storage is written directly only by the counted writer and reviewed writers of other keys', () => {
+		const rawStorageAccess: ReadonlyMap<string, RawStorageAccess> = new Map([
+			[storageUtilsModule, 'counted writer'],
+			[path.join(appRoot, 'ts', 'utils', 'largeStateStore.ts'), 'reviewed writer of other keys'],
+			[path.join(appRoot, 'ts', 'background', 'storageVariables.ts'), 'reviewed writer of other keys'],
+		])
+		// iconHandler.ts passes browser to runTabIconUpdate only as the scope of its locks, which createScopedKeyedSerialExecutor in semaphore.ts uses solely as a WeakMap key.
+		const identityKeyCallees = new Set(['runTabIconUpdate'])
+		const violations = getApplicationSourceFiles().flatMap((file) => findUncountedStorageAccess(file, fs.readFileSync(file, 'utf8'), rawStorageAccess.get(file) ?? 'reads only', identityKeyCallees).map((violation) => `${ path.relative(repositoryRoot, file) } ${ violation }`))
+		assert.deepEqual(violations, [])
+	})
+})
+
+describe('uncounted browser storage access checker', () => {
+	const check = (source: string, access: RawStorageAccess) => findUncountedStorageAccess('fixture.ts', source, access)
+
+	test('allows direct reads, change listeners and storage types everywhere', () => {
+		assert.deepEqual(check('const stored = await browser.storage.local.get(\'activeRpcNetwork\')\nbrowser.storage.onChanged.addListener(listener)\nbrowser.storage.onChanged.removeListener(listener)\ntype Change = browser.storage.StorageChange\nawait browser.tabs.query({})\n', 'reads only'), [])
+	})
+
+	test('allows direct writes of other keys in a reviewed writer, but not one that names the active network', () => {
+		assert.deepEqual(check('await browser.storage.local.set({ openedPageV2: page })\nawait browser.storage.local.remove(key)\n', 'reviewed writer of other keys'), [])
+		assert.deepEqual(check('await browser.storage.local.set({ activeRpcNetwork: network })\n', 'reviewed writer of other keys'), ['names activeRpcNetwork although it writes browser storage directly, outside the counted writer'])
+	})
+
+	test('rejects clear even in a reviewed writer, because it removes the active network without naming it', () => {
+		assert.deepEqual(check('await browser.storage.local.clear()\n', 'reviewed writer of other keys'), ['line 1: uses browser.storage other than through a direct call of local.get, local.set, local.remove or onChanged listeners'])
+		assert.deepEqual(check('await chrome.storage.local.clear()\n', 'counted writer'), ['line 1: uses chrome.storage other than through a direct call of local.get, local.set, local.remove or onChanged listeners'])
+	})
+
+	test('rejects direct writes outside the listed writers', () => {
+		assert.deepEqual(check('await browser.storage.local.set({ activeRpcNetwork: network })\nawait globalThis.browser.storage.local.remove(\'activeRpcNetwork\')\n', 'reads only'), [
+			'line 1: calls browser.storage.local.set directly outside the listed storage writers',
+			'line 2: calls browser.storage.local.remove directly outside the listed storage writers',
+		])
+	})
+
+	test('rejects aliases of the storage API, which could write without a visible set call', () => {
+		const storageAliasViolation = 'uses browser.storage other than through a direct call of local.get, local.set, local.remove or onChanged listeners'
+		assert.deepEqual(check('const local = browser.storage.local\nawait local.set({ activeRpcNetwork: network })\n', 'reads only'), [`line 1: ${ storageAliasViolation }`])
+		assert.deepEqual(check('const { local } = browser.storage\nconst setter = browser.storage.local.set\nawait browser.storage.local[\'set\']({ activeRpcNetwork: network })\nawait (browser.storage.local).set({ activeRpcNetwork: network })\n', 'reads only'), [1, 2, 3, 4].map((line) => `line ${ line }: ${ storageAliasViolation }`))
+		assert.deepEqual(check('const api = browser\nconst { storage } = chrome\nawait browser[\'storage\'].local.clear()\n', 'counted writer'), [
+			'line 1: uses browser other than through a property access, which could hide a storage write',
+			'line 2: uses chrome other than through a property access, which could hide a storage write',
+			'line 3: uses browser other than through a property access, which could hide a storage write',
+		])
+	})
+
+	test('accepts browser itself only as the first argument of a callee reviewed to use it as an identity key', () => {
+		const identityKeyCallees = new Set(['runWithScope'])
+		assert.deepEqual(findUncountedStorageAccess('fixture.ts', 'await runWithScope(browser, key, task)\n', 'reads only', identityKeyCallees), [])
+		assert.deepEqual(findUncountedStorageAccess('fixture.ts', 'await writeThrough(browser)\nawait runWithScope(key, browser)\n', 'reads only', identityKeyCallees), [
+			'line 1: uses browser other than through a property access, which could hide a storage write',
+			'line 2: uses browser other than through a property access, which could hide a storage write',
+		])
 	})
 })
 
