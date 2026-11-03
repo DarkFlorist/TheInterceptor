@@ -10,7 +10,7 @@ import type { RenameAddressCallBack, RpcConnectionStatus } from '../../types/use
 import { sendPopupMessageToBackgroundPage, sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport, sendPopupMessageWithReply } from '../../background/backgroundUtils.js'
 import { SignerLogoText, SignersLogoName } from '../subcomponents/signers.js'
 import { type CaughtError, ErrorCheckBox, UnexpectedError } from '../subcomponents/Error.js'
-import { QuarantineReasons, SenderReceiver, TransactionImportanceBlock } from '../simulationExplaining/Transactions.js'
+import { QuarantineReasons, SafeExecutionSimulationNotice, SenderReceiver, TransactionImportanceBlock } from '../simulationExplaining/Transactions.js'
 import { identifyTransaction } from '../simulationExplaining/identifyTransaction.js'
 import { DinoSaysNotification } from '../subcomponents/DinoSays.js'
 import { addressEditEntry, tryFocusingTabOrWindow } from '../ui-utils.js'
@@ -464,6 +464,8 @@ function SuccessfulTransactionCardContent(param: SuccessfulTransactionCardConten
 
 				<RawTransactionDetailsCard isRawTransaction = { simTx.originalRequestParameters.method === 'eth_sendRawTransaction' } transaction = { simTx.transaction } transactionIdentifier = { simTx.transactionIdentifier } parsedInputData = { simTx.parsedInputData } renameAddressCallBack = { param.renameAddressCallBack } gasSpent = { 'gasSpent' in simTx ? simTx.gasSpent : undefined } addressMetaData = { addressMetaData } />
 
+				<SafeExecutionSimulationNotice simulationOptions = { simTx.simulationOptions }/>
+
 				{ safeFlow?.kind !== 'proposal' ? <></> : <SafeProposalSigningRequestCard
 					safeTransaction = { safeFlow.pending.safeTransaction }
 					addressMetaData = { addressMetaData.value }
@@ -477,18 +479,18 @@ function SuccessfulTransactionCardContent(param: SuccessfulTransactionCardConten
 					renameAddressCallBack = { param.renameAddressCallBack }
 				/>
 
-				<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: max-content auto auto; grid-column-gap: 5px;'>
-					<div class = 'log-cell'>
-						{ simTx.transactionStatus === 'Failed To Simulate' ? <></> : <>
-							<span class = 'log-table' style = { { display: 'inline-flex'} }>
-							<GasFee tx = { simTx } rpcNetwork = { rpcNetwork } />
+				<div class = 'transaction-card-footer'>
+					{ simTx.transactionStatus === 'Failed To Simulate' ? <></> :
+						<div class = 'log-cell'>
+							<span class = 'log-table' style = { { display: 'inline-flex' } }>
+								<GasFee tx = { simTx } rpcNetwork = { rpcNetwork } />
 							</span>
-						</> }
-					</div>
-					<div class = 'log-cell' style = 'justify-content: center;'>
+						</div>
+					}
+					<div class = 'log-cell'>
 						<TransactionCreated created = { currentPendingTransaction.created } />
 					</div>
-					<div class = 'log-cell' style = 'justify-content: right;'>
+					<div class = 'log-cell'>
 						<SimulatedInBlockNumber
 							simulationBlockNumber = { simulationBlockNumber }
 							currentBlockNumber = { param.currentBlockNumber }
@@ -496,7 +498,7 @@ function SuccessfulTransactionCardContent(param: SuccessfulTransactionCardConten
 							rpcConnectionStatus = { param.rpcConnectionStatus }
 						/>
 					</div>
-				</span>
+				</div>
 			</div>
 		</div>
 	</>
