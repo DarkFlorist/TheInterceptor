@@ -6,7 +6,7 @@ import { InlineCard } from '../../app/ts/components/subcomponents/InlineCard.js'
 import { MultilineCard } from '../../app/ts/components/subcomponents/MultilineCard.js'
 import { installDomMock } from './domMock.js'
 import { interceptorAppStylesheetPaths, readInterceptorAppCss } from './cssTestUtils.js'
-import { getToneClass, toneClassFamilies } from '../../app/ts/components/ui-utils.js'
+import { getInterceptorModeClass, getStoredRequestModeClass, getToneClass, toneClassFamilies } from '../../app/ts/components/ui-utils.js'
 import { pageDefinitions, stylesheetFilenames } from '../../scripts/generate-extension-pages.mts'
 
 type TestNode = {
@@ -383,11 +383,14 @@ describe('UI audit fixes', () => {
 			assert.doesNotMatch(await Bun.file(file).text(), toneClassPattern, file)
 		}
 		for (const requestWindow of ['App.tsx', 'pages/ConfirmTransaction.tsx', 'pages/InterceptorAccess.tsx', 'pages/ChangeChain.tsx', 'pages/WatchAsset.tsx', 'pages/FetchSimulationStack.tsx']) {
-			assert.match(await Bun.file(`app/ts/components/${ requestWindow }`).text(), /<main class = \{[^\n]*(getInterceptorModeClass\(|modeClass)/, requestWindow)
+			assert.match(await Bun.file(`app/ts/components/${ requestWindow }`).text(), /<main class = \{[^\n]*(getInterceptorModeClass\(|getStoredRequestModeClass\(|modeClass)/, requestWindow)
 		}
-		// Every request carries the mode it was made in, set by the background; no window reads the mode from storage on its own.
-		assert.match(await Bun.file('app/ts/components/pages/WatchAsset.tsx').text(), /getInterceptorModeClass\(request\.value\.simulationMode\)/)
-		assert.match(await Bun.file('app/ts/components/pages/FetchSimulationStack.tsx').text(), /getInterceptorModeClass\(changeRequest\.value\.simulationMode\)/)
+		// Every request carries the mode it was made in, set by the background; no window reads the mode from storage on its own. A stored request from before the mode was recorded has no mode and keeps the neutral appearance.
+		assert.match(await Bun.file('app/ts/components/pages/WatchAsset.tsx').text(), /getStoredRequestModeClass\(request\.value\.simulationMode\)/)
+		assert.match(await Bun.file('app/ts/components/pages/FetchSimulationStack.tsx').text(), /getStoredRequestModeClass\(changeRequest\.value\.simulationMode\)/)
+		assert.equal(getStoredRequestModeClass(undefined), undefined)
+		assert.equal(getStoredRequestModeClass(true), getInterceptorModeClass(true))
+		assert.equal(getStoredRequestModeClass(false), getInterceptorModeClass(false))
 		const backgroundSource = await Bun.file('app/ts/background/background.ts').text()
 		assert.match(backgroundSource, /handleWatchAssetRequest\(ethereum, websiteTabConnections, request, website, rpcRequest, settings\.simulationMode,/)
 		assert.match(backgroundSource, /requestInterceptorSimulatorStack\(await getUpdatedSimulationStackSnapshot\(ethereum, simulationOverlayEnabled\), settings\.simulationMode,/)
