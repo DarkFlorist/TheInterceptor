@@ -9,8 +9,8 @@ const transportModules = [backgroundModule('messageSending.ts'), backgroundModul
 const networkRuleModule = backgroundModule('transactionNetwork.ts')
 const forwardingModule = backgroundModule('requestedNetworkForwarding.ts')
 const networkPolicyModules = [networkRuleModule, forwardingModule]
-// storageUtils.ts owns the counted active-network writer and its freshness counters, so it counts as storage here.
-const storageModules = [backgroundModule('settings.ts'), backgroundModule('storageVariables.ts'), path.join(import.meta.dir, '..', '..', 'app', 'ts', 'utils', 'storageUtils.ts')]
+// activeNetworkStorage.ts owns the counted active-network writer and its freshness counters, and storageUtils.ts the generic storage setters, so both count as storage here.
+const storageModules = [backgroundModule('settings.ts'), backgroundModule('storageVariables.ts'), backgroundModule('activeNetworkStorage.ts'), path.join(import.meta.dir, '..', '..', 'app', 'ts', 'utils', 'storageUtils.ts')]
 
 const listReached = (from: readonly string[], forbidden: readonly string[]) => from.flatMap((module) => [...getRuntimeModulesReachableFrom([module])]
 	.filter((reached) => forbidden.includes(reached))
