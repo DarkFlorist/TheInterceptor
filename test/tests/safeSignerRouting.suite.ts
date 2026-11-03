@@ -440,6 +440,99 @@ test('keeps both errors observable when the replay after a failed proposal reply
 	}
 })
 
+// A Safe proposal for chain A waiting for its signer in confirmation window 1, with a valid owner signature ready to be delivered.
+async function storeSafeProposalAwaitingSignerOnChainA(requestId: number, connectionName: bigint) {
+	const socket = { tabId: 1, connectionName }
+	const requestIdentifier = { requestId, requestSocket: socket }
+	const messages: unknown[] = []
+	const port = createWebsitePort(socket, 0, messages)
+	const websiteTabConnections = new Map([[socket.tabId, {
+		signerStateOwner: { connectionName: socket.connectionName, confirmed: true, generation: 3, providerGeneration: 8 },
+		connections: { [modules.websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.com', approved: true, wantsToConnect: true } },
+	}]])
+	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, { to: recipientAddress, value: 0n, input: new Uint8Array() }, 0n)
+	fakeSafeContract.nonce = 0n
+	fakeSafeContract.threshold = 2n
+	fakeSafeContract.owners = [safeTestOwnerAddress]
+	const signature = await safeTestOwnerAccount.signTypedData(EIP712Message.parse(safeTxToTypedDataJson(safeTx)))
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [{
+		...pendingTransaction,
+		uniqueRequestIdentifier: requestIdentifier,
+		simulationMode: false,
+		approvalStatus: { status: 'WaitingForSigner' },
+		signerRequestChainId: fakeRpcNetwork.chainId,
+		safeTransaction: { safeAddress: activeAddress, safeSignerAddress: safeTestOwnerAddress, safeVersion: '1.4.1', threshold: 2n, reviewedSafeState: { version: '1.4.1', nonce: 0n, owners: [safeTestOwnerAddress], threshold: 2n }, safeTxHash: BigInt(getSafeTxHash(safeTx)), safeTx },
+	}] })
+	const deliverSignature = async (owner: Parameters<typeof modules.signerReply>[0]) => await modules.signerReply(owner, websiteTabConnections, port, {
+		method: 'signer_reply',
+		params: [{ success: true, signerProviderGeneration: 8, forwardRequest: { type: 'forwardToSigner', replyWithSignersReply: true, method: 'eth_signTypedData_v4', params: [recipientAddress, EIP712Message.parse(safeTxToTypedDataJson(safeTx))], requestId }, reply: signature }],
+		interceptorRequest: true,
+		interceptorInternalRequest: true,
+		usingInterceptorWithoutSigner: false,
+		uniqueRequestIdentifier: { requestId: requestId + 1000, requestSocket: socket },
+	}, 'hasAccess', activeAddress)
+	const repliesToWebsite = () => messages.filter((message) => isRecord(message) && message.type === 'result' && message.requestId === requestId)
+	return { requestIdentifier, websiteTabConnections, deliverSignature, repliesToWebsite }
+}
+
+const assertOnlyTheRejectionAnswered = async (proposal: { readonly repliesToWebsite: () => unknown[] }) => {
+	const replies = proposal.repliesToWebsite()
+	assert.equal(replies.length, 1)
+	assert.equal(isRecord(replies[0]) && isRecord(replies[0].error) ? replies[0].error.code : undefined, 4001)
+	assert.deepEqual(await modules.getSafeTransactionStacks(), [])
+	assert.deepEqual(await modules.getPendingSafeProposalStores(), [])
+	assert.deepEqual((await modules.getInterceptorTransactionStack()).operations, [])
+}
+
+// The rejection reached the website but removing the request failed: a valid signature arriving with matching services then adds nothing.
+test('discards a Safe proposal signature for a request whose rejection was delivered but not cleaned up', async () => {
+	const proposal = await storeSafeProposalAwaitingSignerOnChainA(114, 62n)
+	let rejectionQueued = false
+	let failRequestRemoval = true
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		const keys = Object.keys(items).sort().join()
+		if (keys === 'pendingTerminalReplies,pendingTransactionsAndMessages') rejectionQueued = true
+		else if (rejectionQueued && failRequestRemoval && keys === 'pendingTransactionsAndMessages') {
+			failRequestRemoval = false
+			throw new Error('Pending request removal unavailable.')
+		}
+		writeStoredItems()
+	})
+	try {
+		await withSilencedConsole(async () => await modules.onCloseWindowOrTab(pendingTransaction.popupOrTabId, simulator.ethereum, simulator.tokenPriceService, proposal.websiteTabConnections))
+		assert.equal(failRequestRemoval, false)
+		assert.equal((await modules.getPendingTransactionsAndMessages()).length, 1)
+		await withSilencedConsole(async () => await proposal.deliverSignature(createTestSimulationServicesOwner(simulator)))
+	} finally {
+		browserMock.setStorageSetHandler(undefined)
+	}
+	await assertOnlyTheRejectionAnswered(proposal)
+})
+
+// A Reject lands between the signer reply's read of the request and its handling: the rejection keeps the request answered and the signature adds nothing.
+test('discards a Safe proposal signature when a Reject answers the request while the signer reply is handled', async () => {
+	const proposal = await storeSafeProposalAwaitingSignerOnChainA(116, 63n)
+	let signerReplyStarted = false
+	let rejection: Promise<unknown> | undefined
+	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+		if (signerReplyStarted && rejection === undefined && Array.isArray(keys) && keys.includes('pendingTransactionsAndMessages')) {
+			const readBeforeTheRejection = await readStoredItems()
+			rejection = modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, proposal.websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'reject', uniqueRequestIdentifier: proposal.requestIdentifier } })
+			await rejection
+			return readBeforeTheRejection
+		}
+		return readStoredItems()
+	})
+	try {
+		signerReplyStarted = true
+		await withSilencedConsole(async () => await proposal.deliverSignature(createTestSimulationServicesOwner(simulator)))
+	} finally {
+		browserMock.setStorageGetHandler(undefined)
+	}
+	assert.notEqual(rejection, undefined)
+	await assertOnlyTheRejectionAnswered(proposal)
+})
+
 test('replays a deferred Safe signature when a normal network switch returns to its chain', async () => {
 	const { changeActiveAddressAndChain } = await import('../../app/ts/background/activeSettings.js')
 	const otherChainSimulator = createOtherChainSimulator()

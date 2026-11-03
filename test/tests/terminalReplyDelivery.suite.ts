@@ -1245,3 +1245,41 @@ test('a rejected request stays answered when its removal fails, so a later signa
 		browserMock.setStorageSetHandler(undefined)
 	}
 })
+
+test('cleanup after a failed removal delivers the queued success reply, never a rejection', async () => {
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [pendingTransaction] })
+	const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
+	// The approved transaction's result is queued (marking the request answered), then removing the request fails once.
+	let resultQueued = false
+	let failRequestRemoval = true
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		const keys = Object.keys(items).sort().join()
+		if (keys === 'pendingTerminalReplies,pendingTransactionsAndMessages') resultQueued = true
+		else if (resultQueued && failRequestRemoval && keys === 'pendingTransactionsAndMessages') {
+			failRequestRemoval = false
+			throw new Error('Pending request removal unavailable.')
+		}
+		writeStoredItems()
+	})
+	try {
+		await assert.rejects(withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier } })), /Pending request removal unavailable/u)
+	} finally {
+		browserMock.setStorageSetHandler(undefined)
+	}
+	assert.equal((await modules.getPendingTransactionsAndMessages()).length, 1)
+	const [queuedResult] = await modules.getPendingTerminalReplies()
+	if (queuedResult === undefined || !('result' in queuedResult)) throw new Error('Missing the queued transaction result')
+	// The answered request only waits for its cleanup, so the confirmation window no longer shows it.
+	assert.equal(await modules.popupReadyAndListening(simulator.ethereum, websiteTabConnections, 'confirmTransaction'), undefined)
+
+	// The popup closes and later startup recovery runs: the website gets exactly the queued result.
+	await withSilencedConsole(async () => await modules.onCloseWindowOrTab(pendingTransaction.popupOrTabId, simulator.ethereum, simulator.tokenPriceService, websiteTabConnections))
+	await withSilencedConsole(async () => await modules.resolvePendingRequestsForMissingConfirmationWindows(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections))
+	await modules.flushPendingTerminalRepliesForSocket(websiteTabConnections, uniqueRequestIdentifier.requestSocket)
+
+	const replies = getRepliesToWebsite(postedMessages)
+	assert.equal(replies.length, 1)
+	assert.equal(isRecord(replies[0]) ? replies[0].result : undefined, modules.EthereumBytes32.serialize(queuedResult.result))
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+})

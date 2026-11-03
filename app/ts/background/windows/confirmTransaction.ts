@@ -362,10 +362,13 @@ function formTerminalReply(pending: PendingTransactionOrSignableMessage, message
 	return { ...pending.originalRequestParameters, ...message, result: funtypes.String.parse(message.result), uniqueRequestIdentifier }
 }
 
-// A request already answered (its removal failed after its reply was queued) is not answered again: only a reply still waiting in the queue is delivered.
+// A request already answered (its removal failed after its reply was queued) is not answered again: only its own reply still waiting in the queue is delivered.
 async function deliverQueuedReply(websiteTabConnections: WebsiteTabConnections, reply: InterceptedRequestForward, queued: 'queued' | 'already-answered') {
-	if (queued === 'already-answered' && !(await getPendingTerminalReplies()).some((pendingReply) => doesUniqueRequestIdentifiersMatch(pendingReply.uniqueRequestIdentifier, reply.uniqueRequestIdentifier))) return true
-	return await attemptQueuedTerminalReplyDelivery(websiteTabConnections, reply)
+	if (queued === 'queued') return await attemptQueuedTerminalReplyDelivery(websiteTabConnections, reply)
+	// The reply that answered the request first is the one still queued (if it was not delivered yet); the caller's newly formed reply is never sent.
+	const answeredReply = (await getPendingTerminalReplies()).find((pendingReply) => doesUniqueRequestIdentifiersMatch(pendingReply.uniqueRequestIdentifier, reply.uniqueRequestIdentifier))
+	if (answeredReply === undefined) return true
+	return await attemptQueuedTerminalReplyDelivery(websiteTabConnections, answeredReply)
 }
 
 // The reply is queued and the request is removed from the confirmation queue, so after a restart at most the reply's delivery is left. The reply is delivered before the view work, which cannot hold it back. A request holding a deferred Gnosis Safe signature is answered only by settling that signature (`settledSignerReply`); any other reply, such as a Reject made after the deferral, is refused and the request stays for its deferred settlement.
@@ -451,41 +454,53 @@ export async function resolvePendingSignerReply(services: ConfirmationServices |
 	const pending = await getPendingTransactionOrMessageByidentifier(uniqueRequestIdentifier)
 	if (pending === undefined) return
 	const safeFlow = pending.simulationMode ? undefined : getSafePendingFlow(pending)
-	const isSafeSignature = safeFlow?.kind === 'proposal' || safeFlow?.kind === 'messageCoSign'
-	// A Gnosis Safe signature is bound to the network it was signed for: it is validated now only with services for that network, and is otherwise kept for them exactly as when no services are available.
-	if (services !== undefined && (!isSafeSignature || pending.signerRequestChainId === services.ethereum.getChainId())) {
+	if (safeFlow?.kind !== 'proposal' && safeFlow?.kind !== 'messageCoSign') {
+		if (services !== undefined) {
+			return await resolvePendingTransactionOrMessage(services.ethereum, services.tokenPriceService, websiteTabConnections, {
+				method: 'popup_confirmDialog',
+				data: { uniqueRequestIdentifier, action: 'signerIncluded', signerReply: params.reply },
+			})
+		}
+		if (pending.simulationMode) {
+			await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (current) => modifyObject(current, { approvalStatus: { status: 'SignerError', ...RPC_CONFIGURATION_UNAVAILABLE_ERROR } }))
+			return
+		}
+		return await settlePendingTerminalReply(websiteTabConnections, pending, { type: 'result', result: params.reply }, undefined)
+	}
+	if (typeof params.reply !== 'string') {
+		await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (current) => modifyObject(current, {
+			approvalStatus: createSafeSignerErrorStatus('The signer returned a non-string Gnosis Safe signature.'),
+		}))
+		return
+	}
+	const signerReply = params.reply
+	const chainId = pending.signerRequestChainId
+	// Without the network the signer signed for, a later replay could validate or store the signature on another network, so it is not kept.
+	if (chainId === undefined) {
+		await failSafeSignatureWithoutChain(uniqueRequestIdentifier)
+		return
+	}
+	// The Gnosis Safe signature first claims its request, atomically with the check that no website reply was queued for it: a request already answered (a window close or Reject won) keeps that answer and the signature is discarded, and once claimed no rejection can answer it. Nothing is stored before the claim.
+	if (await deferSignatureUnlessAnswered(uniqueRequestIdentifier, { signerReply, chainId }) !== 'deferred') return
+	// A signature is bound to the network it was signed for: it is settled now only with services for that network, and is otherwise kept for them.
+	if (services !== undefined && services.ethereum.getChainId() === chainId) return await settleClaimedSafeSignature(uniqueRequestIdentifier, services, websiteTabConnections)
+	const replay = async () => await replayIfServicesAreInstalledFor(chainId, getInstalledServices, websiteTabConnections)
+	if (safeFlow.kind === 'proposal') return await runThenReplay(async () => await moveSignedSafeProposalToOutbox(pending, safeFlow.pending.safeTransaction.safeTxHash, { signerReply, chainId }, websiteTabConnections, services, false), replay)
+	// The deferred co-signature leaves the queue its window shows, so the window moves on to the next request or closes.
+	await runThenReplay(async () => await updateViewAfterPendingRequestRemoved(pending, services, 'unchanged'), replay)
+	return
+}
+
+// Settles a claimed Gnosis Safe signature with services for its network, serialized with every other settlement of deferred signatures; a concurrent settlement that already answered the request leaves nothing to do. A signature that fails validation is dropped from the request, which can then be signed again.
+async function settleClaimedSafeSignature(uniqueRequestIdentifier: UniqueRequestIdentifier, services: ConfirmationServices, websiteTabConnections: WebsiteTabConnections) {
+	return await deferredSafeSignerReplySemaphore.execute(async () => {
+		const deferred = (await getPendingTransactionOrMessageByidentifier(uniqueRequestIdentifier))?.deferredSafeSignerReply
+		if (deferred === undefined || deferred.chainId !== services.ethereum.getChainId()) return undefined
 		return await resolvePendingTransactionOrMessage(services.ethereum, services.tokenPriceService, websiteTabConnections, {
 			method: 'popup_confirmDialog',
-			data: { uniqueRequestIdentifier, action: 'signerIncluded', signerReply: params.reply },
+			data: { uniqueRequestIdentifier, action: 'signerIncluded', signerReply: deferred.signerReply },
 		})
-	}
-	if (pending.simulationMode) {
-		await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (current) => modifyObject(current, { approvalStatus: { status: 'SignerError', ...RPC_CONFIGURATION_UNAVAILABLE_ERROR } }))
-		return
-	}
-	if (safeFlow?.kind === 'proposal' || safeFlow?.kind === 'messageCoSign') {
-		if (typeof params.reply !== 'string') {
-			await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (current) => modifyObject(current, {
-				approvalStatus: createSafeSignerErrorStatus('The signer returned a non-string Gnosis Safe signature.'),
-			}))
-			return
-		}
-		const signerReply = params.reply
-		const chainId = pending.signerRequestChainId
-		// Without the network the signer signed for, a later replay could validate or store the signature on another network, so it is not kept.
-		if (chainId === undefined) {
-			await failSafeSignatureWithoutChain(uniqueRequestIdentifier)
-			return
-		}
-		const replay = async () => await replayIfServicesAreInstalledFor(chainId, getInstalledServices, websiteTabConnections)
-		if (safeFlow.kind === 'proposal') return await runThenReplay(async () => await moveSignedSafeProposalToOutbox(pending, safeFlow.pending.safeTransaction.safeTxHash, { signerReply, chainId }, websiteTabConnections, services, false), replay)
-		// A request whose window close or Reject already queued its rejection keeps that answer; the signature is not deferred.
-		if (await deferSignatureUnlessAnswered(uniqueRequestIdentifier, { signerReply, chainId }) !== 'deferred') return
-		// The deferred co-signature leaves the queue its window shows, so the window moves on to the next request or closes.
-		await runThenReplay(async () => await updateViewAfterPendingRequestRemoved(pending, services, 'unchanged'), replay)
-		return
-	}
-	return await settlePendingTerminalReply(websiteTabConnections, pending, { type: 'result', result: params.reply }, undefined)
+	})
 }
 
 // Runs whenever services are installed for a network: earlier builds' pending proposals leave the pending queue, deferred co-signatures for that network are settled, and outbox proposals for it are added to the Safe stack.
