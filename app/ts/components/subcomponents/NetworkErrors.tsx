@@ -1,7 +1,7 @@
 import type { Signal } from '@preact/signals'
 import type { RpcNetwork } from '../../types/rpc.js'
 import type { RpcConnectionStatus } from '../../types/user-interface-types.js'
-import { isBypassingInterceptorOnNetworkWithoutRpc } from '../../utils/requestRouting.js'
+import { getNetworkWithoutRpcWarning } from '../../utils/requestRouting.js'
 import { getRpcWarningState, shouldShowRpcWarningCountdown } from '../../utils/rpcConnectionUi.js'
 import { humanReadableDate } from '../ui-utils.js'
 import { ErrorComponent } from './Error.js'
@@ -52,10 +52,8 @@ type NetworkWithoutRpcErrorParams = {
 }
 
 export function NetworkWithoutRpcError({ rpcNetwork, simulationMode, signerAvailable }: NetworkWithoutRpcErrorParams) {
-	if (rpcNetwork === undefined || rpcNetwork.httpsRpc !== undefined) return <></>
-	// Mirror the background routing so the page only claims the Interceptor is disabled when requests really bypass it.
-	const mayBypassInterceptor = isBypassingInterceptorOnNetworkWithoutRpc(rpcNetwork, { simulationMode, signerAvailable: signerAvailable ?? true })
-	if (!mayBypassInterceptor) return <ErrorComponent text = { `${ rpcNetwork.name } has no configured RPC. Select or configure an RPC for ${ rpcNetwork.name }.` }/>
-	if (signerAvailable === undefined) return <ErrorComponent text = { `${ rpcNetwork.name } has no configured RPC. Until one is configured, the Interceptor cannot simulate requests on ${ rpcNetwork.name }; in signing mode with a connected wallet they go to the wallet directly.` }/>
-	return <ErrorComponent text = { `${ rpcNetwork.name } is not a supported network. The Interceptor is disabled while you are using ${ rpcNetwork.name }.` }/>
+	if (rpcNetwork === undefined) return <></>
+	const warning = getNetworkWithoutRpcWarning(rpcNetwork, simulationMode, signerAvailable)
+	if (warning === undefined) return <></>
+	return <ErrorComponent text = { warning }/>
 }

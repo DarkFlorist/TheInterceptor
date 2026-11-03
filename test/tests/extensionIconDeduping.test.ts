@@ -458,4 +458,41 @@ describe('extension icon deduping', () => {
 		assert.equal(tabState.signerChain, undefined)
 		assert.equal(tabState.activeSigningAddress, undefined)
 	})
+
+	async function getSigningTooltipOnNetworkWithoutRpc(signerName: 'MetaMask' | 'NoSigner') {
+		const { setTitleCalls } = installBrowserMock([{ id: 1, url: 'https://example.test', status: 'complete' }])
+		const { changeSimulationMode, updateExtensionIcon, updateTabState, updateWebsiteAccess } = await loadModules()
+		const signerAccount = 0x6363636363636363636363636363636363636363n
+		await changeSimulationMode({
+			simulationMode: false,
+			rpcNetwork: { name: 'Signer only', chainId: 1n, httpsRpc: undefined, currencyName: 'Ether?', currencyTicker: 'ETH?', primary: false, minimized: true },
+			activeSigningAddress: undefined,
+		})
+		await updateWebsiteAccess(() => [{
+			website: { websiteOrigin: 'example.test', icon: undefined, title: 'Example' },
+			access: true,
+			addressAccess: [{ address: signerAccount, access: true }],
+		}])
+		await updateTabState(1, (previousState) => ({
+			...previousState,
+			signerName,
+			signerConnected: true,
+			signerAccounts: [signerAccount],
+			signerChain: 1n,
+			activeSigningAddress: signerAccount,
+		}))
+
+		await updateExtensionIcon(new Map(), 1, 'example.test', 0)
+		return setTitleCalls.at(-1)?.title ?? ''
+	}
+
+	test('signing mode tooltip says the Interceptor is disabled on a network without an RPC only when a signer receives the requests', async () => {
+		assert.equal(await getSigningTooltipOnNetworkWithoutRpc('MetaMask'), 'Signer only is not a supported network. The Interceptor is disabled while you are using Signer only.')
+	})
+
+	test('signing mode tooltip asks for an RPC on a network without an RPC when no signer is available', async () => {
+		const title = await getSigningTooltipOnNetworkWithoutRpc('NoSigner')
+		assert.equal(title.includes('The Interceptor is disabled'), false)
+		assert.equal(title, 'Signer only has no configured RPC. Select or configure an RPC for Signer only.')
+	})
 })
