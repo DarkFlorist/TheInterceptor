@@ -466,12 +466,15 @@ export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: Visua
 	}
 }
 
-export const updateSimulationMetadata = async (ethereum: EthereumClientService, requestAbortController: AbortController | undefined) => {
+// Adds metadata to the stored visualisation with the client of the refresh's snapshot. Returning undefined from the storage callback writes nothing, so a refresh whose network was replaced, or whose client does not serve the stored visualisation, leaves storage as it is; the generation check is synchronous and needs no transition lock.
+export const updateSimulationMetadata = async (ethereum: EthereumClientService, snapshot: SimulationSnapshot, requestAbortController: AbortController | undefined) => {
+	const networkIsActive = () => snapshot.networkChangeGeneration === getCommittedNetworkChangeGeneration()
 	return await updatePopupVisualisationWithCallBack(async (prevState) => {
-		if (prevState.simulationState.kind === 'passthrough') return prevState
-		if (prevState.simulationState.value.success === false) return prevState
+		if (!networkIsActive()) return undefined
+		if (prevState.simulationState.kind === 'passthrough') return undefined
+		if (prevState.simulationState.value.success === false) return undefined
 		// The stored visualisation may already describe a network installed after these services were read; only its own network's client may add metadata to it.
-		if (getRpcNetworkChange(prevState.simulationState.value.rpcNetwork, ethereum.getRpcEntry()).endpointChanged) return prevState
+		if (getRpcNetworkChange(prevState.simulationState.value.rpcNetwork, ethereum.getRpcEntry()).endpointChanged) return undefined
 		try {
 			const eventsForEachBlockAndTransactionPromise = silenceChromeUnCaughtPromise(promiseAllMapAbortSafe(
 				prevState.simulationState.value.simulatedBlocks, async (block) =>
@@ -492,11 +495,11 @@ export const updateSimulationMetadata = async (ethereum: EthereumClientService, 
 			const inputData = (await parsedInputDataForEachBlockAndTransactionPromise).flat()
 
 			const metadata = await getMetadataForSimulation(prevState.simulationState.value, ethereum, requestAbortController, events, inputData)
-			return { ...prevState, ...metadata }
+			return networkIsActive() ? { ...prevState, ...metadata } : undefined
 		} catch (error) {
-			if (isExpectedInfrastructureError(error)) return prevState
+			if (isExpectedInfrastructureError(error)) return undefined
 			await reportUnexpectedError(error)
-			return prevState
+			return undefined
 		}
 	})
 }

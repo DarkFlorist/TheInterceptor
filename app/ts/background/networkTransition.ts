@@ -9,7 +9,7 @@ import { Semaphore } from '../utils/semaphore.js'
 import { sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts } from './accessManagement.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
-import { advanceCommittedNetworkChangeGeneration } from './networkChangeGeneration.js'
+import { advanceCommittedNetworkChangeGeneration, getCommittedNetworkChangeGeneration } from './networkChangeGeneration.js'
 import { changeSimulationMode, getSettings, importSettingsAndAddressBook } from './settings.js'
 import type { Settings } from '../types/interceptor-messages.js'
 import type { ExportedSettings } from '../types/exportedSettingsTypes.js'
@@ -103,6 +103,11 @@ async function captureNetworkState(): Promise<NetworkState> {
 // Reading these under the transition lock keeps a request from pairing one network's settings, stack or services with another network's; it reads storage only, so RPC work stays outside the lock. Like every lock holder, a read first finishes the effects of a committed network change whose transition failed part-way, such as dropping the previous chain's stack, and rejects with that failure rather than return a snapshot that mixes two networks.
 export async function readNetworkSnapshot(simulationServicesOwner: Pick<SimulationServicesOwner, 'getCurrent'>): Promise<NetworkSnapshot> {
 	return await runNetworkTransition(async () => ({ ...await captureNetworkState(), services: simulationServicesOwner.getCurrent() }))
+}
+
+// The committed network change generation once any transition in progress has finished, so settings read before this call belong to the returned generation or an earlier one.
+export async function readCommittedNetworkChangeGeneration() {
+	return await runNetworkTransition(async () => getCommittedNetworkChangeGeneration())
 }
 
 // The settings and stack as they are now, for work that changed the stack after its snapshot was read.

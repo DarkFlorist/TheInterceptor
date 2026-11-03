@@ -31,7 +31,6 @@ import { assertNever, modifyObject } from '../../utils/typescript.js'
 import { simulateGnosisSafeTransactionOnPass } from '../popupMessageHandlers.js'
 import { appendToActiveSimulationStack, readNetworkState } from '../networkTransition.js'
 import type { SimulationServices, SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
-import { getRpcNetworkChange } from '../../utils/rpcNetworkChange.js'
 import { activeStackContextsEqual, getActiveStackContext } from '../../utils/activeStackContext.js'
 import { computeConfirmationVisualisation, updatePopupVisualisationIfNeeded } from '../popupVisualisationUpdater.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../../utils/popupPerformance.js'
@@ -502,10 +501,10 @@ function schedulePendingNoResponseRetry(simulationServicesOwner: SimulationServi
 	pendingNoResponseRetryTimers.set(identifier, retryTimer)
 }
 
-// The request's services serve one endpoint, so a re-read that names another endpoint, even on the same chain, does not continue the request.
-const continuesStackContext = (requestSettings: NetworkState['settings'], currentSettings: NetworkState['settings']) => (
-	!getRpcNetworkChange(requestSettings.activeRpcNetwork, currentSettings.activeRpcNetwork).endpointChanged
-	&& activeStackContextsEqual(getActiveStackContext(requestSettings), getActiveStackContext(currentSettings))
+// A re-read continues the request only if no network change committed since the request's snapshot, even one that returned to the same endpoint, and its stack context is the same.
+export const continuesStackContext = (requestNetwork: NetworkState, currentNetwork: NetworkState) => (
+	requestNetwork.simulation.networkChangeGeneration === currentNetwork.simulation.networkChangeGeneration
+	&& activeStackContextsEqual(getActiveStackContext(requestNetwork.settings), getActiveStackContext(currentNetwork.settings))
 )
 
 const formRejectMessage = (code: number, errorString: string) => {
@@ -796,7 +795,7 @@ export async function openConfirmTransactionDialogForTransaction(
 	}
 	// Reconciliation removed executed Gnosis Safe operations from storage, so simulate with the stack as it is now while the request's chain and stack context are still active.
 	const network = safePreparation.storedSafeStackReconciled ? await readNetworkState() : requestNetwork
-	if (!continuesStackContext(requestNetwork.settings, network.settings)) {
+	if (!continuesStackContext(requestNetwork, network)) {
 		return formRejectMessage(METAMASK_ERROR_BLANKET_ERROR, 'The active network changed while the Interceptor prepared this request. Send it again.')
 	}
 	const {

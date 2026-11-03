@@ -6,7 +6,7 @@ import { TokenPriceService } from '../../app/ts/simulation/services/priceEstimat
 import { ExportedSettings } from '../../app/ts/types/exportedSettingsTypes.js'
 import type { PopupMessageDispatcherContext } from '../../app/ts/background/popupMessageDispatcher.js'
 import { type EthereumJsonRpcRequest, JsonRpcResponse } from '../../app/ts/types/JsonRpc-types.js'
-import type { RpcEntry } from '../../app/ts/types/rpc.js'
+import type { RpcEntry, RpcNetwork } from '../../app/ts/types/rpc.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
 import { addressString, dataStringWith0xStart } from '../../app/ts/utils/bigint.js'
 import { decodeFunctionDataStrict, encodeAbiValues, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
@@ -300,6 +300,41 @@ function createStorageReadPause() {
 		},
 	})
 	return { arm: () => { if (state === 'idle') state = 'armed' }, started: started.promise, release: release.resolve }
+}
+
+// Holds the first storage read of the key until released.
+function pauseNextStorageReadOf(key: string) {
+	const started = createDeferredSignal()
+	const release = createDeferredSignal()
+	const originalGet = browser.storage.local.get.bind(browser.storage.local)
+	let used = false
+	Object.defineProperty(browser.storage.local, 'get', {
+		configurable: true,
+		value: async (keys: Parameters<typeof originalGet>[0]) => {
+			const readsKey = keys === key || (Array.isArray(keys) && keys.includes(key))
+			if (!used && readsKey) {
+				used = true
+				started.resolve()
+				await release.promise
+			}
+			return await originalGet(keys)
+		},
+	})
+	return { started: started.promise, release: release.resolve }
+}
+
+// Counts the writes of the stored popup visualisation from now on.
+function countPopupVisualisationWrites() {
+	const originalSet = browser.storage.local.set.bind(browser.storage.local)
+	let writes = 0
+	Object.defineProperty(browser.storage.local, 'set', {
+		configurable: true,
+		value: async (items: Record<string, unknown>) => {
+			if ('popupVisualisation' in items) writes += 1
+			await originalSet(items)
+		},
+	})
+	return () => writes
 }
 
 // The simulated visualisations broadcast to popups in the given runtime messages.
@@ -1427,11 +1462,116 @@ describe('network transition snapshot', () => {
 			const visualisationOfB = await modules.getPopupVisualisationState()
 			if (visualisationOfB.simulationState.kind !== 'simulated') throw new Error('Expected a simulated visualisation of B')
 			const requestsToABefore = servicesA.requests.length
+			// A current snapshot, so only the stored visualisation's network tells this client apart.
+			const { simulation } = await modules.readNetworkSnapshot(owner)
 
-			await updateSimulationMetadata(servicesA.ethereum, undefined)
+			await updateSimulationMetadata(servicesA.ethereum, simulation, undefined)
 
 			assert.equal(servicesA.requests.length, requestsToABefore)
 			assert.deepEqual(await modules.getPopupVisualisationState(), visualisationOfB)
+		} finally {
+			retireAll()
+		}
+	})
+
+	test.each(['to B', 'to B and back to A'] as const)('a metadata refresh of A that a switch %s interrupts writes nothing to the stored visualisation', async (switches) => {
+		const { modules } = await createApprovedSimulationDapp({ simulationConsumerOpen: true })
+		const { updatePopupVisualisationIfNeeded } = await import('../../app/ts/background/popupVisualisationUpdater.js')
+		const { updateSimulationMetadata } = await import('../../app/ts/background/simulationUpdating.js')
+		await modules.updateInterceptorTransactionStack(() => ({ operations: [createStackedTransaction(1n, networkA.chainId, STACKED_ON_A_RECIPIENT)] }))
+		const { owner, installed, retireAll } = createRecordingServicesOwner(networkA)
+		const [servicesA] = installed
+		if (servicesA === undefined) throw new Error('Missing network A services')
+		let addressBookRead: ReturnType<typeof pauseNextStorageReadOf> | undefined
+		let deadline: ReturnType<typeof setTimeout> | undefined
+		try {
+			await updatePopupVisualisationIfNeeded(servicesA.ethereum, servicesA.tokenPriceService, { invalidateOldState: true })
+			const { simulation } = await modules.readNetworkSnapshot(owner)
+			// The metadata refresh pauses while it looks up its addresses in the address book.
+			addressBookRead = pauseNextStorageReadOf('userAddressBookEntriesV3')
+			const metadata = updateSimulationMetadata(servicesA.ethereum, simulation, undefined)
+			await Promise.race([
+				addressBookRead.started,
+				new Promise<never>((_resolve, reject) => { deadline = setTimeout(() => reject(new Error('The metadata refresh read no address book entries')), 1000) }),
+			])
+			// With the popup closed the switches write no visualisation of their own, so any write after A resumes would be A's.
+			reportSimulationConsumer(false)
+			const switchToNetwork = async (rpcNetwork: RpcEntry) => await modules.changeActiveAddressAndChain(owner, new Map(), { simulationMode: true, rpcNetwork, promptForAccessesIfNeeded: false })
+			await switchToNetwork(networkB)
+			if (switches === 'to B and back to A') await switchToNetwork(networkA)
+			const getWrites = countPopupVisualisationWrites()
+			addressBookRead.release()
+			await metadata
+
+			assert.equal(getWrites(), 0)
+		} finally {
+			clearTimeout(deadline)
+			addressBookRead?.release()
+			retireAll()
+		}
+	})
+
+	test('a home data refresh that sees a signer-only network between two selections of A, which keep A\'s client, sends only a home page of A', async () => {
+		const { modules, runtimeMessages, websiteTabConnections } = await createApprovedSimulationDapp({ simulationConsumerOpen: true })
+		const { refreshHomeData } = await import('../../app/ts/background/popupMessageHandlers.js')
+		const { setFixedMakeMeRichList } = await import('../../app/ts/background/settings.js')
+		const { setRpcConnectionStatus } = await import('../../app/ts/background/storageVariables.js')
+		const { MessageToPopup } = await import('../../app/ts/types/interceptor-messages.js')
+		const signerOnlyB: RpcNetwork = { chainId: networkB.chainId, httpsRpc: undefined, name: 'Signer-only B', currencyName: 'Ether?', currencyTicker: 'ETH?', primary: false, minimized: true }
+		// The home page identifies this rich address with the client, so building it sends a request that the test can hold.
+		await setFixedMakeMeRichList([{ address: 0x3333333333333333333333333333333333333333n, makingRich: true, type: 'UserAdded' }])
+		await setRpcConnectionStatus({ isConnected: false, lastConnnectionAttempt: new Date('2024-01-01T00:00:00.000Z'), latestBlock: undefined, rpcNetwork: networkA, retrying: false })
+		const { owner, installed, retireAll } = createRecordingServicesOwner(networkA)
+		const [servicesA] = installed
+		if (servicesA === undefined) throw new Error('Missing network A services')
+		// A signer-only network is selected in signing mode.
+		const switchToNetwork = async (rpcNetwork: RpcNetwork) => await modules.changeActiveAddressAndChain(owner, new Map(), { simulationMode: rpcNetwork.httpsRpc !== undefined, rpcNetwork, promptForAccessesIfNeeded: false })
+		let switchedToB = false
+		// Waking A's client publishes its connection status after the refresh checked its network, and before the home page reads the settings.
+		const publishRpcConnectionStatus = async () => {
+			if (switchedToB) return
+			switchedToB = true
+			await switchToNetwork(signerOnlyB)
+			// The home page has read B's settings once it identifies the rich address with A's client, which B kept; selecting A again keeps that client too.
+			servicesA.interceptRequests(async (request) => {
+				if (request.method === 'eth_getBlockByNumber' || request.method === 'eth_blockNumber') return
+				servicesA.interceptRequests(undefined)
+				await switchToNetwork(networkA)
+			})
+		}
+		try {
+			const messagesBefore = runtimeMessages.length
+			await refreshHomeData(owner, websiteTabConnections, false, 1, publishRpcConnectionStatus)
+
+			assert.equal(switchedToB, true)
+			assert.equal(installed.length, 1)
+			const homePages = runtimeMessages.slice(messagesBefore).flatMap((message) => {
+				const parsed = MessageToPopup.safeParse(message)
+				return parsed.success && parsed.value.method === 'popup_UpdateHomePage' ? [parsed.value.data] : []
+			})
+			assert.ok(homePages.length > 0)
+			for (const homePage of homePages) assert.equal(homePage.settings.activeRpcNetwork.chainId, networkA.chainId)
+		} finally {
+			retireAll()
+		}
+	})
+
+	test('a Gnosis Safe confirmation re-read continues its request only if no network change committed since, even one back to the same endpoint', async () => {
+		installBrowserMock()
+		const modules = await loadModules()
+		const { continuesStackContext } = await import('../../app/ts/background/windows/confirmTransaction.js')
+		const { readNetworkState } = await import('../../app/ts/background/networkTransition.js')
+		await modules.changeSimulationMode({ simulationMode: true, rpcNetwork: networkA })
+		const { owner, retireAll } = createRecordingServicesOwner(networkA)
+		try {
+			const requestNetwork = await readNetworkState()
+			assert.equal(continuesStackContext(requestNetwork, await readNetworkState()), true)
+
+			await modules.changeActiveAddressAndChain(owner, new Map(), { simulationMode: true, rpcNetwork: networkB, promptForAccessesIfNeeded: false })
+			await modules.changeActiveAddressAndChain(owner, new Map(), { simulationMode: true, rpcNetwork: networkA, promptForAccessesIfNeeded: false })
+			const afterReturningToA = await readNetworkState()
+			assert.deepEqual(afterReturningToA.settings.activeRpcNetwork, requestNetwork.settings.activeRpcNetwork)
+			assert.equal(continuesStackContext(requestNetwork, afterReturningToA), false)
 		} finally {
 			retireAll()
 		}
