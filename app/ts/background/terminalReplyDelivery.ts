@@ -7,7 +7,7 @@ import { Semaphore } from '../utils/semaphore.js'
 import { websiteSocketToString } from './backgroundUtils.js'
 import { replyToInterceptedRequest } from './messageSending.js'
 import { attemptDeliveryAfterManifestV2Reconnect } from './manifestV2Reconnect.js'
-import { commitPendingTerminalReply, getPendingTerminalReplies, markPendingTerminalReplyDelivered, removePendingTerminalReply } from './pendingTerminalReplies.js'
+import { commitPendingTerminalReply, forgetPendingTerminalReplyWindow, getPendingTerminalReplies, markPendingTerminalReplyDelivered, rememberPendingTerminalReplyWindow, removePendingTerminalReply } from './pendingTerminalReplies.js'
 import { getPendingTransactionsAndMessages } from './storageVariables.js'
 
 const terminalReplyProductions = new Map<string, Promise<boolean | undefined>>()
@@ -33,12 +33,6 @@ export const getQueuedTerminalReply = async (uniqueRequestIdentifier: UniqueRequ
 
 const isRequestPending = async (uniqueRequestIdentifier: UniqueRequestIdentifier) => (await getPendingTransactionsAndMessages()).some((pending) => doesUniqueRequestIdentifiersMatch(pending.uniqueRequestIdentifier, uniqueRequestIdentifier))
 
-// Under the terminal-reply lock: deletes a delivered entry whose request is no longer pending and whose confirmation window was updated.
-async function retireIfFinished(entry: StoredTerminalReply) {
-	if (entry.delivered !== true || entry.confirmationWindow !== undefined || await isRequestPending(entry.uniqueRequestIdentifier)) return
-	await removePendingTerminalReply(entry.uniqueRequestIdentifier)
-}
-
 // Under the terminal-reply lock: posts the entry unless it was posted already, and marks it delivered. Whether it is delivered.
 async function deliverEntry(websiteTabConnections: WebsiteTabConnections, entry: StoredTerminalReply) {
 	const identifier = getUniqueRequestIdentifierString(entry.uniqueRequestIdentifier)
@@ -52,7 +46,6 @@ async function deliverEntry(websiteTabConnections: WebsiteTabConnections, entry:
 		await markPendingTerminalReplyDelivered(entry.uniqueRequestIdentifier)
 		postedUnmarkedTerminalReplies.delete(identifier)
 	}
-	await retireIfFinished({ ...entry, delivered: true })
 	return true
 }
 
@@ -74,30 +67,48 @@ export async function attemptQueuedTerminalReplyDelivery(websiteTabConnections: 
 	}
 }
 
-export async function queueTerminalReplyAndAttemptDelivery(websiteTabConnections: WebsiteTabConnections, message: InterceptedRequestForward) {
-	await queueTerminalReply(message)
-	return await attemptQueuedTerminalReplyDelivery(websiteTabConnections, message)
-}
+// The routine that finishes a committed request (finishCommittedRequest), registered by the background; a flush runs it for the requests whose replies it delivered.
+type CommittedRequestFinisher = (uniqueRequestIdentifier: UniqueRequestIdentifier, websiteTabConnections: WebsiteTabConnections) => Promise<unknown>
+let committedRequestFinisher: CommittedRequestFinisher | undefined
+export const setCommittedRequestFinisher = (finisher: CommittedRequestFinisher) => { committedRequestFinisher = finisher }
 
-// Deletes the request's entry once it is delivered, the request is no longer pending and its window was updated: the last step of finishing a request.
-export async function retireDeliveredTerminalReply(uniqueRequestIdentifier: UniqueRequestIdentifier) {
+// Records the window that shows the entry's request, unless the entry has one, under the terminal-reply lock.
+export async function attachTerminalReplyWindow(uniqueRequestIdentifier: UniqueRequestIdentifier, confirmationWindow: PopupOrTabId) {
 	await terminalReplySemaphore.execute(async () => {
-		const entry = await getQueuedTerminalReply(uniqueRequestIdentifier)
-		if (entry !== undefined) await retireIfFinished(entry)
+		if ((await getQueuedTerminalReply(uniqueRequestIdentifier))?.confirmationWindow === undefined) await rememberPendingTerminalReplyWindow(uniqueRequestIdentifier, confirmationWindow)
 	})
 }
 
+export async function forgetTerminalReplyWindow(uniqueRequestIdentifier: UniqueRequestIdentifier) {
+	await terminalReplySemaphore.execute(async () => await forgetPendingTerminalReplyWindow(uniqueRequestIdentifier))
+}
+
+// The last step of finishing a request, and the only deletion of an entry: under the terminal-reply lock, it deletes the stored entry once it is delivered (or its requesting tab is gone, so it cannot be), its window was updated, and its request is no longer pending.
+export async function retireTerminalReply(uniqueRequestIdentifier: UniqueRequestIdentifier, requestingTabGone: boolean) {
+	await terminalReplySemaphore.execute(async () => {
+		const entry = await getQueuedTerminalReply(uniqueRequestIdentifier)
+		if (entry === undefined || (entry.delivered !== true && !requestingTabGone) || entry.confirmationWindow !== undefined || await isRequestPending(uniqueRequestIdentifier)) return
+		await removePendingTerminalReply(uniqueRequestIdentifier)
+	})
+}
+
+// Delivers the socket's undelivered replies, then finishes their requests (setCommittedRequestFinisher), which is what deletes a delivered entry.
 export async function flushPendingTerminalRepliesForSocket(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
-	return await terminalReplySemaphore.execute(async () => {
+	const { deliveredReplies, delivered } = await terminalReplySemaphore.execute(async () => {
 		let deliveredReplies = 0
+		const delivered: UniqueRequestIdentifier[] = []
 		for (const entry of await getPendingTerminalReplies()) {
 			const replySocket = entry.uniqueRequestIdentifier.requestSocket
 			if (replySocket.tabId !== socket.tabId || replySocket.connectionName !== socket.connectionName) continue
 			const newlyDelivered = entry.delivered !== true && !postedUnmarkedTerminalReplies.has(getUniqueRequestIdentifierString(entry.uniqueRequestIdentifier))
-			if (await deliverEntry(websiteTabConnections, entry) === true && newlyDelivered) deliveredReplies += 1
+			if (await deliverEntry(websiteTabConnections, entry) !== true) continue
+			delivered.push(entry.uniqueRequestIdentifier)
+			if (newlyDelivered) deliveredReplies += 1
 		}
-		return deliveredReplies
+		return { deliveredReplies, delivered }
 	})
+	for (const uniqueRequestIdentifier of delivered) await committedRequestFinisher?.(uniqueRequestIdentifier, websiteTabConnections)
+	return deliveredReplies
 }
 
 export async function flushPendingTerminalRepliesForConnectedPortWithRetry(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, port: browser.runtime.Port) {

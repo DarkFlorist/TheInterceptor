@@ -243,7 +243,6 @@ export async function loadModules() {
 		getUserAddressBookEntries: storageVariables.getUserAddressBookEntries,
 		appendPendingTransactionOrMessage: storageVariables.appendPendingTransactionOrMessage,
 		getPendingTerminalReplies: pendingTerminalReplies.getPendingTerminalReplies,
-		prunePendingTerminalRepliesForMissingTabs: pendingTerminalReplies.prunePendingTerminalRepliesForMissingTabs,
 		updateInterceptorTransactionStack: storageVariables.updateInterceptorTransactionStack,
 		updatePendingTransactionOrMessage: storageVariables.updatePendingTransactionOrMessage,
 		updateSafeTransactionStacks: async (update: (previous: Awaited<ReturnType<typeof storageVariables.getSafeTransactionStacks>>) => Awaited<ReturnType<typeof storageVariables.getSafeTransactionStacks>>) => {
@@ -259,7 +258,10 @@ export async function loadModules() {
 		flushPendingTerminalRepliesForConnectedPortWithRetry: terminalReplyDelivery.flushPendingTerminalRepliesForConnectedPortWithRetry,
 		queueTerminalReply: terminalReplyDelivery.queueTerminalReply,
 		attemptQueuedTerminalReplyDelivery: terminalReplyDelivery.attemptQueuedTerminalReplyDelivery,
-		queueTerminalReplyAndAttemptDelivery: terminalReplyDelivery.queueTerminalReplyAndAttemptDelivery,
+		queueTerminalReplyAndAttemptDelivery: async (...[websiteTabConnections, message]: Parameters<typeof terminalReplyDelivery.attemptQueuedTerminalReplyDelivery>) => {
+			await terminalReplyDelivery.queueTerminalReply(message)
+			return await terminalReplyDelivery.attemptQueuedTerminalReplyDelivery(websiteTabConnections, message)
+		},
 		signerReply: providerMessageHandlers.signerReply,
 		ethAccountsReply: providerMessageHandlers.ethAccountsReply,
 		browserStorageLocalSet2: storageUtils.browserStorageLocalSet2,
@@ -451,6 +453,8 @@ export const simulator = {
 	ethereum,
 	tokenPriceService: new modules.TokenPriceService(ethereum, 60_000),
 }
+// As the background does, so a reconnect flush finishes the requests whose replies it delivered.
+;(await import('../../app/ts/background/windows/confirmTransaction.js')).registerCommittedRequestFinisher(() => simulator)
 
 export const activeAddress = modules.defaultActiveAddresses[0]?.address
 export const recipientAddress = modules.defaultActiveAddresses[1]?.address
@@ -571,6 +575,8 @@ export const pendingTransaction = {
 
 export async function resetConfirmTransactionTestState() {
 	browserMock.reset()
+	// The requesting tab is open unless a test closes it.
+	browserMock.setLiveTabIds([uniqueRequestIdentifier.requestSocket.tabId])
 	resetFakeSafeContractState()
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [pendingTransaction] })
 	await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))

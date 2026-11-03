@@ -1,7 +1,7 @@
 import type { StoredTerminalReply } from '../types/interceptor-messages.js'
 import type { PopupOrTabId } from '../types/websiteAccessTypes.js'
 import { reportLocalRecovery } from '../utils/errors.js'
-import { doesTabExist, doesUniqueRequestIdentifiersMatch, type UniqueRequestIdentifier } from '../utils/requests.js'
+import { doesUniqueRequestIdentifiersMatch, type UniqueRequestIdentifier } from '../utils/requests.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { browserStorageLocalSafeParseGet, browserStorageLocalSet } from '../utils/storageUtils.js'
 
@@ -58,20 +58,4 @@ export async function forgetPendingTerminalReplyWindow(uniqueRequestIdentifier: 
 
 export async function removePendingTerminalReply(uniqueRequestIdentifier: UniqueRequestIdentifier) {
 	await updatePendingTerminalReplies((pendingReplies) => pendingReplies.filter((reply) => !doesUniqueRequestIdentifiersMatch(reply.uniqueRequestIdentifier, uniqueRequestIdentifier)))
-}
-
-export async function removePendingTerminalRepliesForTab(tabId: number) {
-	await updatePendingTerminalReplies((pendingReplies) => pendingReplies.filter((reply) => reply.uniqueRequestIdentifier.requestSocket.tabId !== tabId))
-}
-
-export async function prunePendingTerminalRepliesForMissingTabs() {
-	const pendingReplies = await getPendingTerminalReplies()
-	const tabIds = [...new Set(pendingReplies.map((reply) => reply.uniqueRequestIdentifier.requestSocket.tabId))]
-	const missingTabIds = new Set<number>()
-	for (const tabId of tabIds) {
-		if (!await doesTabExist(tabId)) missingTabIds.add(tabId)
-	}
-	if (missingTabIds.size === 0) return 0
-	const remainingReplies = await updatePendingTerminalReplies((replies) => replies.filter((reply) => !missingTabIds.has(reply.uniqueRequestIdentifier.requestSocket.tabId)))
-	return pendingReplies.length - remainingReplies.length
 }

@@ -20,7 +20,7 @@ import { DEFAULT_TAB_CONNECTION, ICON_NOT_ACTIVE } from '../utils/constants.js'
 import { reportUnexpectedError, isExpectedInfrastructureError, printError, reportLocalRecoveryBestEffort } from '../utils/errors.js'
 import { updateContentScriptInjectionStrategyManifestV2 } from '../utils/contentScriptsUpdating.js'
 import { checkIfInterceptorShouldSleep } from './sleeping.js'
-import { onCloseWindowOrTab, resolvePendingRequestsForMissingConfirmationWindows, resumeCommittedRequests } from './windows/confirmTransaction.js'
+import { finishCommittedRequestsOfTab, onCloseWindowOrTab, registerCommittedRequestFinisher, resolvePendingRequestsForMissingConfirmationWindows, resumeCommittedRequests } from './windows/confirmTransaction.js'
 import { modifyObject } from '../utils/typescript.js'
 import { updateDeclarativeNetRequestBlocks } from './accessManagement.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
@@ -33,7 +33,6 @@ import { migrateWebsiteAccess } from './websiteAccessMigration.js'
 import { initializeContentScriptConnectionAfterBackgroundStartup, isIgnorablePortLifecycleError, tryRegisterContentScriptPortListeners } from './contentScriptPortLifecycle.js'
 import { bumpPopupRefreshGeneration, initializePopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { flushPendingTerminalRepliesForConnectedPortWithRetry } from './terminalReplyDelivery.js'
-import { prunePendingTerminalRepliesForMissingTabs, removePendingTerminalRepliesForTab } from './pendingTerminalReplies.js'
 import { createRetriableTerminalStateRecovery } from './terminalStateRecovery.js'
 import { acknowledgeAndTrackBridgeRequest, INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE } from './bridgeRequestDelivery.js'
 import { registerWebsiteConnectionAndProvisionallyClaimSignerState } from './signerStateOwnership.js'
@@ -52,6 +51,7 @@ function getSimulationServices() {
 	if (simulationServicesOwner === undefined) throw new Error('Simulation services are not initialized')
 	return simulationServicesOwner.getCurrent()
 }
+registerCommittedRequestFinisher(getSimulationServices)
 
 async function publishRpcConnectionStatus(method: RpcConnectionStatusChangeMethod, rpcConnectionStatus: DefinedRpcConnectionStatus) {
 	await setRpcConnectionStatus(rpcConnectionStatus)
@@ -119,7 +119,8 @@ browser.tabs.onRemoved.addListener(async (tabId: number) => await catchAllErrors
 		if (socketIdentifier.startsWith(`${ tabId }-`)) latestReceivedBridgeRequestIds.delete(socketIdentifier)
 	}
 	await removeTabState(tabId)
-	await removePendingTerminalRepliesForTab(tabId)
+	const { ethereum, tokenPriceService } = getSimulationServices()
+	await finishCommittedRequestsOfTab(tabId, ethereum, tokenPriceService, websiteTabConnections)
 }))
 
 const manifestVersion = browser.runtime.getManifest().manifest_version
@@ -300,7 +301,6 @@ const recoverPendingTerminalState = createRetriableTerminalStateRecovery({
 		const { ethereum, tokenPriceService } = getSimulationServices()
 		await resolvePendingRequestsForMissingConfirmationWindows(ethereum, tokenPriceService, websiteTabConnections)
 		await resumeCommittedRequests(ethereum, tokenPriceService, websiteTabConnections)
-		await prunePendingTerminalRepliesForMissingTabs()
 	},
 	onFailure: (error) => {
 		reportLocalRecoveryBestEffort(error, {

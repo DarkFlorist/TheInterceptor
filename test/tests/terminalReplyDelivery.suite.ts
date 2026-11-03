@@ -405,11 +405,9 @@ test('startup recovery removes the unreachable rejection created for an orphaned
 	browserMock.setLiveTabIds([])
 	browserMock.setLiveWindowIds([])
 
+	// The rejection can never reach the missing tab, so finishing the request retires it.
 	await modules.resolvePendingRequestsForMissingConfirmationWindows(simulator.ethereum, simulator.tokenPriceService, new Map())
 	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
-	assert.equal((await modules.getPendingTerminalReplies()).length, 1)
-
-	assert.equal(await modules.prunePendingTerminalRepliesForMissingTabs(), 1)
 	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
 })
 
@@ -492,7 +490,8 @@ test('same-request terminal reply producers coalesce into one delivery', async (
 		modules.queueTerminalReplyAndAttemptDelivery(websiteTabConnections, terminalReply),
 	]), [true, true])
 	assert.equal(postedMessages.length, 1)
-	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+	// Only finishing its request deletes the reply; delivery marks it delivered.
+	assert.deepEqual((await modules.getPendingTerminalReplies()).map((reply) => reply.delivered), [true])
 })
 
 test('socket flush overlapping terminal reply persistence delivers exactly once', async () => {
@@ -588,7 +587,7 @@ test('corrupt terminal reply storage recovers and delivers the next rejection on
 	assert.equal(await withSilencedConsole(async () => await modules.queueTerminalReplyAndAttemptDelivery(websiteTabConnections, terminalReply)), true)
 
 	assert.equal(postedMessages.length, 1)
-	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+	assert.deepEqual((await modules.getPendingTerminalReplies()).map((reply) => reply.delivered), [true])
 	assert.equal(browserMock.storageState.popupRefreshGeneration, 17)
 	const diagnostics = browserMock.storageState.interceptorErrorDiagnostics
 	assert.ok(Array.isArray(diagnostics))
@@ -694,7 +693,7 @@ test('concurrent terminal reply flushes serialize storage reads and deliver once
 	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
 })
 
-test('startup pruning removes terminal replies for missing tabs and preserves live tabs', async () => {
+test('startup recovery retires committed replies for missing tabs and keeps those for live tabs', async () => {
 	delete browserMock.storageState.pendingTerminalReplies
 	const missingTabReply = {
 		...pendingTransaction.originalRequestParameters,
@@ -716,7 +715,7 @@ test('startup pruning removes terminal replies for missing tabs and preserves li
 	browserMock.storageState.popupRefreshGeneration = 23
 	browserMock.setLiveTabIds([liveTabId])
 
-	assert.equal(await modules.prunePendingTerminalRepliesForMissingTabs(), 1)
+	await (await import('../../app/ts/background/windows/confirmTransaction.js')).resumeCommittedRequests(simulator.ethereum, simulator.tokenPriceService, noConnections)
 	const remainingReplies = await modules.getPendingTerminalReplies()
 	assert.equal(remainingReplies.length, 1)
 	assert.equal(remainingReplies[0]?.uniqueRequestIdentifier.requestSocket.tabId, liveTabId)

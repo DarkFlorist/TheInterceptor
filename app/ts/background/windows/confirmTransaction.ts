@@ -16,10 +16,10 @@ import { captureSimulationSnapshot, getExecutedCallFormation, getUpdatedSimulati
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getRpcConnectionStatus, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updateInterceptorTransactionStackWithResult, updatePendingTransactionOrMessage } from '../storageVariables.js'
 import { allocateSimulationHashReservation, appendAcceptedTransactionToStack, stacksTransactionOnAccept, withSimulationHashLock } from '../simulationStackHashes.js'
-import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
+import { type InterceptedRequest, type UniqueRequestIdentifier, doesTabExist, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
 import { replyToInterceptedRequestAfterManifestV2Reconnect } from '../messageSending.js'
-import { attemptQueuedTerminalReplyDelivery, getQueuedTerminalReply, queueTerminalReply, retireDeliveredTerminalReply } from '../terminalReplyDelivery.js'
-import { forgetPendingTerminalReplyWindow, getPendingTerminalReplies, rememberPendingTerminalReplyWindow } from '../pendingTerminalReplies.js'
+import { attachTerminalReplyWindow, attemptQueuedTerminalReplyDelivery, forgetTerminalReplyWindow, getQueuedTerminalReply, queueTerminalReply, retireTerminalReply, setCommittedRequestFinisher } from '../terminalReplyDelivery.js'
+import { getPendingTerminalReplies } from '../pendingTerminalReplies.js'
 import { stringToBytes, keccak256 } from '../../utils/ethereumPrimitives.js'
 import { EthereumBytes32, EthereumQuantity, serialize } from '../../types/wire-types.js'
 import type { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
@@ -294,7 +294,7 @@ type FinishingOutcome =
 	| { readonly kind: 'retrying' }
 
 /**
- * Finishes a request committed to its terminal reply, under its claim, in resumable steps that each check the stored state: commit a chosen reply whose commitment write failed; deliver the reply unless it was delivered (a disconnected page gets it from the queue when it reconnects); store the request's confirmation window with the reply and remove the pending request; update that window, then forget it; and delete the delivered reply last. An uncommitted pending request is left to be resolved.
+ * Finishes a request committed to its terminal reply, under its claim, in resumable steps that each check the stored state: commit a chosen reply whose commitment write failed; deliver the reply unless it was delivered (a disconnected page gets it from the queue when it reconnects); store the request's confirmation window with the reply and remove the pending request; update that window, then forget it; and delete the delivered reply last, the only deletion of a reply (retireTerminalReply). An uncommitted pending request is left to be resolved.
  * Every step, lookups included, is guarded: a failure is reported and the whole routine retried with backoff, up to a limit, after which a later accept, reject, close or restart resumes it.
  */
 async function finishCommittedRequest(uniqueRequestIdentifier: UniqueRequestIdentifier, context: ResolutionContext): Promise<FinishingOutcome> {
@@ -312,17 +312,19 @@ async function finishCommittedRequest(uniqueRequestIdentifier: UniqueRequestIden
 			return pending === undefined ? { kind: 'absent' } : { kind: 'uncommitted', request: pending }
 		}
 		const delivered = committedReply.delivered === true ? true : await attemptQueuedTerminalReplyDelivery(context.websiteTabConnections, committedReply)
+		// An undelivered reply whose requesting tab is gone can never be delivered, and is finished without it.
+		const requestingTabGone = delivered !== true && !(await doesTabExist(uniqueRequestIdentifier.requestSocket.tabId))
 		// The window is stored with the reply before the request is removed, also for a reply stored before windows were, so its cleanup survives a failure or restart.
 		const confirmationWindow = committedReply.confirmationWindow ?? pending?.popupOrTabId
 		if (pending !== undefined) {
-			if (committedReply.confirmationWindow === undefined) await rememberPendingTerminalReplyWindow(uniqueRequestIdentifier, pending.popupOrTabId)
+			await attachTerminalReplyWindow(uniqueRequestIdentifier, pending.popupOrTabId)
 			await removePendingTransactionOrMessage(uniqueRequestIdentifier)
 		}
 		if (confirmationWindow !== undefined) {
 			await updateConfirmationWindowAfterRemoving(confirmationWindow, uniqueRequestIdentifier.requestSocket.tabId, context)
-			await forgetPendingTerminalReplyWindow(uniqueRequestIdentifier)
+			await forgetTerminalReplyWindow(uniqueRequestIdentifier)
 		}
-		await retireDeliveredTerminalReply(uniqueRequestIdentifier)
+		await retireTerminalReply(uniqueRequestIdentifier, requestingTabGone)
 		clearFinishingRetry(claim)
 		return { kind: 'finished', delivered }
 	} catch (error) {
@@ -352,6 +354,18 @@ const resumeRequest = async (uniqueRequestIdentifier: UniqueRequestIdentifier, c
 
 // The size of the in-memory resolution bookkeeping, which is empty whenever no resolution is in flight or awaiting a retry.
 export const getResolutionBookkeepingSize = () => resolutionClaims.size + deferredCloses.size + chosenUncommittedReplies.size + finishingRetries.size
+
+// Lets a reconnect flush finish the requests whose replies it delivered, with the background's current services.
+export const registerCommittedRequestFinisher = (getServices: () => { readonly ethereum: EthereumClientService, readonly tokenPriceService: TokenPriceService }) => {
+	setCommittedRequestFinisher(async (uniqueRequestIdentifier, websiteTabConnections) => await resumeRequest(uniqueRequestIdentifier, { ...getServices(), websiteTabConnections }))
+}
+
+// When a tab closes, finishes its requests' committed replies, which it can no longer receive.
+export async function finishCommittedRequestsOfTab(tabId: number, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections) {
+	for (const committedReply of await getPendingTerminalReplies()) {
+		if (committedReply.uniqueRequestIdentifier.requestSocket.tabId === tabId) await resumeRequest(committedReply.uniqueRequestIdentifier, { ethereum, tokenPriceService, websiteTabConnections })
+	}
+}
 
 // At startup, finishes every request with a committed reply, whatever its confirmation window's state.
 export async function resumeCommittedRequests(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections) {

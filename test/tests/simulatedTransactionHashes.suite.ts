@@ -1512,3 +1512,87 @@ test('leaves no delivery bookkeeping behind when a reconnect flush delivers a re
 	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [{ error: 4001 }])
 	assert.equal(getTerminalReplyBookkeepingSize(), bookkeepingBefore)
 })
+
+// Fails the first confirmation window removal while running, then lets removals through.
+const failingFirstWindowRemoval = async (run: () => Promise<void>) => {
+	const windows = Reflect.get(globalThis, 'browser').windows
+	const removeWindow = windows.remove
+	const removalAttempts: number[] = []
+	windows.remove = async (windowId: number) => {
+		removalAttempts.push(windowId)
+		if (removalAttempts.length === 1) throw new Error('transient window removal failure')
+		return await removeWindow(windowId)
+	}
+	try {
+		await run()
+	} finally {
+		windows.remove = removeWindow
+	}
+	return removalAttempts
+}
+
+const seedCommittedRejection = async (options: { readonly delivered: boolean, readonly withWindow: boolean }) => {
+	const [pending] = await modules.getPendingTransactionsAndMessages()
+	if (pending === undefined) throw new Error('Expected the pending request')
+	const { commitPendingTerminalReply, markPendingTerminalReplyDelivered } = await import('../../app/ts/background/pendingTerminalReplies.js')
+	await commitPendingTerminalReply({ ...pending.originalRequestParameters, type: 'result', error: { code: 4001, message: 'User denied transaction signature' }, uniqueRequestIdentifier: pending.uniqueRequestIdentifier, ...(options.withWindow ? { confirmationWindow: pending.popupOrTabId } : {}) })
+	if (options.delivered) await markPendingTerminalReplyDelivered(pending.uniqueRequestIdentifier)
+}
+
+for (const trigger of ['startup', 'the requesting tab closing'] as const) {
+	test(`finishes a committed request whose requesting tab is gone on ${ trigger }, closing its window despite a failed first close`, async () => {
+		await startSimulationStack(SENDER)
+		const postedMessages: unknown[] = []
+		const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+		await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+		await seedCommittedRejection({ delivered: false, withWindow: true })
+		browserMock.setLiveTabIds([])
+		const confirmTransaction = await import('../../app/ts/background/windows/confirmTransaction.js')
+		const removalAttempts = await failingFirstWindowRemoval(async () => await withSilencedConsole(async () => {
+			if (trigger === 'startup') await confirmTransaction.resumeCommittedRequests(simulator.ethereum, simulator.tokenPriceService, new Map())
+			else await confirmTransaction.finishCommittedRequestsOfTab(REQUEST_SOCKET.tabId, simulator.ethereum, simulator.tokenPriceService, new Map())
+			await waitForCondition(async () => (await modules.getPendingTerminalReplies()).length === 0)
+		}))
+		assert.deepEqual(removalAttempts, [CONFIRMATION_WINDOW_ID, CONFIRMATION_WINDOW_ID], 'the window closes on the retry')
+		assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+		assert.deepEqual(getPageResponses(postedMessages, 1), [], 'the gone tab gets nothing')
+		await assertNoResolutionBookkeeping()
+	})
+}
+
+test('finishes a request once when a reconnect flush overlaps its finishing, closing its window despite a failed first close', async () => {
+	await startSimulationStack(SENDER)
+	const postedMessages: unknown[] = []
+	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+	await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+	// A reply queued before windows were stored, not yet delivered.
+	await seedCommittedRejection({ delivered: false, withWindow: false })
+	// The flush's read of the queue is held while the finishing starts; storing the window takes the same lock as the flush, so it waits for the flush instead of racing it.
+	let signalFlushRead = () => undefined
+	const flushRead = new Promise<void>((resolve) => { signalFlushRead = () => { resolve() } })
+	let releaseFlushRead = () => undefined
+	const flushReadReleased = new Promise<void>((resolve) => { releaseFlushRead = () => { resolve() } })
+	let holdNextQueueRead = true
+	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+		if (!holdNextQueueRead || !readsKey(keys, 'pendingTerminalReplies')) return readStoredItems()
+		holdNextQueueRead = false
+		signalFlushRead()
+		await flushReadReleased
+		return readStoredItems()
+	})
+	const { resumeCommittedRequests } = await import('../../app/ts/background/windows/confirmTransaction.js')
+	const removalAttempts = await failingFirstWindowRemoval(async () => await withSilencedConsole(async () => {
+		const flushing = modules.flushPendingTerminalRepliesForSocket(websiteTabConnections, REQUEST_SOCKET)
+		await flushRead
+		browserMock.setStorageGetHandler(undefined)
+		const finishing = resumeCommittedRequests(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections)
+		await new Promise((resolve) => setTimeout(resolve, 20))
+		releaseFlushRead()
+		await Promise.all([flushing, finishing])
+		await waitForCondition(async () => (await modules.getPendingTerminalReplies()).length === 0)
+	}))
+	assert.deepEqual(removalAttempts, [CONFIRMATION_WINDOW_ID, CONFIRMATION_WINDOW_ID], 'the window closes on the retry')
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	assert.deepEqual(getPageResponses(postedMessages, 1), [{ error: 4001 }], 'the page settles once')
+	await assertNoResolutionBookkeeping()
+})
