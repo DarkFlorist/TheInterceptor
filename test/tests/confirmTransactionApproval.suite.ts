@@ -416,6 +416,60 @@ test('a run that started before a later run was stored is still not stored over 
 	assert.equal(isConfirmationVisualisationCurrent(storedLaterRun, earlierRun, 'new run'), false)
 })
 
+test('a run whose read of the stored run ids is slow keeps the lower id and cannot replace the preview of a run that started after it', async () => {
+	const { websiteTabConnections } = await setUpTransactionApprovalTest(false)
+	await requestTransaction(websiteTabConnections, false)
+	const { isConfirmationVisualisationCurrent, refreshConfirmTransactionSimulation } = await import('../../app/ts/background/confirmTransactionSimulation.js')
+	const pending = await getPendingTransaction()
+	const earlierRunReadReached = createDeferredValue<undefined>()
+	const releaseEarlierRunRead = createDeferredValue<undefined>()
+	let holdNextConfirmationsRead = true
+	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+		if (holdNextConfirmationsRead && Array.isArray(keys) && keys.includes('pendingTransactionsAndMessages')) {
+			holdNextConfirmationsRead = false
+			earlierRunReadReached.resolve(undefined)
+			await releaseEarlierRunRead.promise
+		}
+		return readStoredItems()
+	})
+
+	// The earlier run's first storage read is the read of the stored run ids, which is held.
+	const earlierRun = refreshConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService, pending.activeAddress, false, uniqueRequestIdentifier, pending.transactionToSimulate)
+	await earlierRunReadReached.promise
+	const laterRefresh = modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
+	// Gives the later refresh time to finish and store its run, which it can only do if its id is not allocated after the earlier run's.
+	await Promise.race([laterRefresh, new Promise((resolve) => setTimeout(resolve, 250))])
+	releaseEarlierRunRead.resolve(undefined)
+	const [earlierVisualisation] = await Promise.all([earlierRun, laterRefresh])
+
+	const storedLaterRun = (await getPendingTransaction()).popupVisualisation
+	// Starting the later run may abort the earlier one, which then produces nothing; if it completes, it is the older run.
+	if (earlierVisualisation !== undefined) {
+		assert.ok(earlierVisualisation.data.confirmationRunId < storedLaterRun.data.confirmationRunId)
+		assert.equal(isConfirmationVisualisationCurrent(storedLaterRun, earlierVisualisation, 'new run'), false)
+	}
+	assert.ok(storedLaterRun.data.confirmationRunId > pending.popupVisualisation.data.confirmationRunId)
+})
+
+test('a run whose read of the stored run ids fails is rejected alone, and the next run still gets an id', async () => {
+	const { websiteTabConnections } = await setUpTransactionApprovalTest(false)
+	await requestTransaction(websiteTabConnections, false)
+	const { refreshConfirmTransactionSimulation } = await import('../../app/ts/background/confirmTransactionSimulation.js')
+	const pending = await getPendingTransaction()
+	let failNextConfirmationsRead = true
+	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+		if (failNextConfirmationsRead && Array.isArray(keys) && keys.includes('pendingTransactionsAndMessages')) {
+			failNextConfirmationsRead = false
+			throw new Error('storage read failed')
+		}
+		return readStoredItems()
+	})
+
+	await assert.rejects(refreshConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService, pending.activeAddress, false, uniqueRequestIdentifier, pending.transactionToSimulate), /storage read failed/)
+	const nextRun = await refreshConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService, pending.activeAddress, false, uniqueRequestIdentifier, pending.transactionToSimulate)
+	assert.ok(nextRun !== undefined && nextRun.data.confirmationRunId > pending.popupVisualisation.data.confirmationRunId)
+})
+
 test('a simulation refresh that finishes after the transaction was approved keeps the approved preview', async () => {
 	const { websiteTabConnections } = await setUpTransactionApprovalTest(false)
 	await requestTransaction(websiteTabConnections, false)
