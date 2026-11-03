@@ -877,7 +877,7 @@ test('answers a popup close with the stacked hash when the request\'s transactio
 const rejectRequest = async (request: Awaited<ReturnType<typeof openConfirmation>>, websiteTabConnections: ReturnType<typeof createWebsiteTabConnections>) => await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'reject', uniqueRequestIdentifier: request } }))
 const readsKey = (keys: unknown, key: string) => keys === key || (Array.isArray(keys) && keys.includes(key))
 
-test('delivers a rejection once when only the view update after removing the request fails', async () => {
+test('delivers a rejection once and closes the window when a read after removing the request fails', async () => {
 	await startSimulationStack(SENDER)
 	const postedMessages: unknown[] = []
 	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
@@ -893,14 +893,138 @@ test('delivers a rejection once when only the view update after removing the req
 		failedViewReads += 1
 		throw new Error('transient pending request read failure')
 	})
-	await rejectRequest(request, websiteTabConnections)
+	const closedWindows = await countingClosedWindows(async () => {
+		await rejectRequest(request, websiteTabConnections)
+		await new Promise((resolve) => setTimeout(resolve, 200))
+	})
 	browserMock.setStorageSetHandler(undefined)
 	browserMock.setStorageGetHandler(undefined)
-	assert.equal(failedViewReads, 1, 'the view update after the removal failed')
-	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [{ error: 4001 }], 'the rejection is delivered anyway')
+	assert.equal(failedViewReads, 1, 'a read after the removal failed')
+	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [{ error: 4001 }], 'the rejection is delivered once')
 	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
-	await new Promise((resolve) => setTimeout(resolve, 200))
-	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [{ error: 4001 }], 'nothing retries it')
+	assert.deepEqual(closedWindows, [CONFIRMATION_WINDOW_ID], 'the window closes')
+	await assertNoResolutionBookkeeping()
+})
+
+test('retries closing the confirmation window when removing it fails, delivering the reply once', async () => {
+	await startSimulationStack(SENDER)
+	const postedMessages: unknown[] = []
+	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+	const request = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+	const windows = Reflect.get(globalThis, 'browser').windows
+	const removeWindow = windows.remove
+	const removalAttempts: number[] = []
+	windows.remove = async (windowId: number) => {
+		removalAttempts.push(windowId)
+		if (removalAttempts.length === 1) throw new Error('transient window removal failure')
+		return await removeWindow(windowId)
+	}
+	try {
+		await withSilencedConsole(async () => {
+			await rejectRequest(request, websiteTabConnections)
+			await waitForCondition(async () => removalAttempts.length === 2 && (await modules.getPendingTerminalReplies()).length === 0)
+		})
+	} finally {
+		windows.remove = removeWindow
+	}
+	assert.deepEqual(removalAttempts, [CONFIRMATION_WINDOW_ID, CONFIRMATION_WINDOW_ID], 'the failed removal is retried')
+	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [{ error: 4001 }], 'the page settles once')
+	await assertNoResolutionBookkeeping()
+})
+
+test('retries moving the confirmation window to the next request when that update fails', async () => {
+	await startSimulationStack(SENDER)
+	const postedMessages: unknown[] = []
+	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+	const request = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+	await openConfirmation(2, SENDER, 2n, websiteTabConnections)
+	// The view update reads the block number; it fails once after the first request is removed.
+	let removed = false
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		writeStoredItems()
+		if (Array.isArray(items.pendingTransactionsAndMessages) && items.pendingTransactionsAndMessages.length === 1) removed = true
+	})
+	const getBlockNumber = simulator.ethereum.getBlockNumber
+	let failedViewUpdates = 0
+	simulator.ethereum.getBlockNumber = async (...args: Parameters<typeof getBlockNumber>) => {
+		if (removed && failedViewUpdates === 0) {
+			failedViewUpdates += 1
+			throw new Error('transient block number failure')
+		}
+		return await getBlockNumber.apply(simulator.ethereum, args)
+	}
+	browserMock.sentMessages.length = 0
+	try {
+		await withSilencedConsole(async () => {
+			await rejectRequest(request, websiteTabConnections)
+			await waitForCondition(async () => (await modules.getPendingTerminalReplies()).length === 0)
+		})
+	} finally {
+		simulator.ethereum.getBlockNumber = getBlockNumber
+		browserMock.setStorageSetHandler(undefined)
+	}
+	assert.equal(failedViewUpdates, 1)
+	assert.ok(browserMock.sentMessages.some((message) => message.method === 'popup_update_confirm_transaction_dialog'), 'the window moves to the next request')
+	assert.deepEqual((await modules.getPendingTransactionsAndMessages()).map((pending) => pending.uniqueRequestIdentifier.requestId), [2])
+	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [{ error: 4001 }])
+	await assertNoResolutionBookkeeping()
+})
+
+for (const flushFirst of [true, false]) {
+	test(`closes the live window of a request whose reply was queued before windows were stored, at startup, flushing ${ flushFirst ? 'before' : 'after' }`, async () => {
+		await startSimulationStack(SENDER)
+		const postedMessages: unknown[] = []
+		const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+		const request = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+		const [pending] = await modules.getPendingTransactionsAndMessages()
+		if (pending === undefined) throw new Error('Expected the pending request')
+		const { commitPendingTerminalReply } = await import('../../app/ts/background/pendingTerminalReplies.js')
+		await commitPendingTerminalReply({ ...pending.originalRequestParameters, type: 'result', error: { code: 4001, message: 'User denied transaction signature' }, uniqueRequestIdentifier: pending.uniqueRequestIdentifier })
+		const { resumeCommittedRequests } = await import('../../app/ts/background/windows/confirmTransaction.js')
+		const closedWindows = await countingClosedWindows(async () => {
+			if (flushFirst) await modules.flushPendingTerminalRepliesForSocket(websiteTabConnections, REQUEST_SOCKET)
+			await withSilencedConsole(async () => await resumeCommittedRequests(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections))
+			if (!flushFirst) await modules.flushPendingTerminalRepliesForSocket(websiteTabConnections, REQUEST_SOCKET)
+		})
+		assert.deepEqual(closedWindows, [CONFIRMATION_WINDOW_ID], 'the live window closes')
+		assert.deepEqual(getPageResponses(postedMessages, request.requestId), [{ error: 4001 }])
+		assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+		assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+		await assertNoResolutionBookkeeping()
+	})
+}
+
+test('closes the live window of a request whose reply was queued before windows were stored after a restart interrupts its cleanup', async () => {
+	await startSimulationStack(SENDER)
+	const postedMessages: unknown[] = []
+	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+	const request = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+	const [pending] = await modules.getPendingTransactionsAndMessages()
+	if (pending === undefined) throw new Error('Expected the pending request')
+	const { commitPendingTerminalReply } = await import('../../app/ts/background/pendingTerminalReplies.js')
+	await commitPendingTerminalReply({ ...pending.originalRequestParameters, type: 'result', error: { code: 4001, message: 'User denied transaction signature' }, uniqueRequestIdentifier: pending.uniqueRequestIdentifier })
+	const { resumeCommittedRequests } = await import('../../app/ts/background/windows/confirmTransaction.js')
+	// The first startup removes the request but cannot close the window, until its retries give up.
+	const windows = Reflect.get(globalThis, 'browser').windows
+	const removeWindow = windows.remove
+	windows.remove = async () => { throw new Error('window removal unavailable') }
+	try {
+		await withSilencedConsole(async () => {
+			await resumeCommittedRequests(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections)
+			await new Promise((resolve) => setTimeout(resolve, 2_000))
+		})
+	} finally {
+		windows.remove = removeWindow
+	}
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [], 'the request was removed')
+	assert.equal((await modules.getPendingTerminalReplies())[0]?.confirmationWindow?.id, CONFIRMATION_WINDOW_ID, 'its window is kept with the reply')
+	await assertNoResolutionBookkeeping()
+
+	const closedWindows = await countingClosedWindows(async () => await withSilencedConsole(async () => await resumeCommittedRequests(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections)))
+	assert.deepEqual(closedWindows, [CONFIRMATION_WINDOW_ID], 'the next startup closes it')
+	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [{ error: 4001 }])
+	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+	await assertNoResolutionBookkeeping()
 })
 
 test('delivers a rejection once when cleaning up the delivered reply\'s queue entry fails', async () => {

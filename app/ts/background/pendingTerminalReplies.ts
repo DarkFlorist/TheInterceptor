@@ -1,4 +1,5 @@
 import type { StoredTerminalReply } from '../types/interceptor-messages.js'
+import type { PopupOrTabId } from '../types/websiteAccessTypes.js'
 import { reportLocalRecovery } from '../utils/errors.js'
 import { doesTabExist, doesUniqueRequestIdentifiersMatch, type UniqueRequestIdentifier } from '../utils/requests.js'
 import { Semaphore } from '../utils/semaphore.js'
@@ -39,6 +40,11 @@ export async function commitPendingTerminalReply(reply: StoredTerminalReply) {
 
 export async function markPendingTerminalReplyDelivered(uniqueRequestIdentifier: UniqueRequestIdentifier) {
 	await updatePendingTerminalReplies((pendingReplies) => pendingReplies.map((reply) => doesUniqueRequestIdentifiersMatch(reply.uniqueRequestIdentifier, uniqueRequestIdentifier) ? { ...reply, delivered: true } : reply))
+}
+
+// Records the window that shows the entry's request, for an entry stored without it, before the request is removed.
+export async function rememberPendingTerminalReplyWindow(uniqueRequestIdentifier: UniqueRequestIdentifier, confirmationWindow: PopupOrTabId) {
+	await updatePendingTerminalReplies((pendingReplies) => pendingReplies.map((reply) => doesUniqueRequestIdentifiersMatch(reply.uniqueRequestIdentifier, uniqueRequestIdentifier) ? { ...reply, confirmationWindow } : reply))
 }
 
 // Drops the entry's confirmation window once the window was updated after its request was removed.

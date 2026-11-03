@@ -19,7 +19,7 @@ import { allocateSimulationHashReservation, appendAcceptedTransactionToStack, st
 import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
 import { replyToInterceptedRequestAfterManifestV2Reconnect } from '../messageSending.js'
 import { attemptQueuedTerminalReplyDelivery, getQueuedTerminalReply, queueTerminalReply, retireDeliveredTerminalReply } from '../terminalReplyDelivery.js'
-import { forgetPendingTerminalReplyWindow, getPendingTerminalReplies } from '../pendingTerminalReplies.js'
+import { forgetPendingTerminalReplyWindow, getPendingTerminalReplies, rememberPendingTerminalReplyWindow } from '../pendingTerminalReplies.js'
 import { stringToBytes, keccak256 } from '../../utils/ethereumPrimitives.js'
 import { EthereumBytes32, EthereumQuantity, serialize } from '../../types/wire-types.js'
 import type { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
@@ -266,10 +266,14 @@ export const setGasLimitForTransaction = async (transactionIdentifier: bigint, g
 
 type ResolutionContext = { readonly ethereum: EthereumClientService, readonly tokenPriceService: TokenPriceService, readonly websiteTabConnections: WebsiteTabConnections }
 
-// Updates the confirmation window that showed a removed request: it moves to the next request, or closes after the last.
+// Updates the confirmation window that showed a removed request: it moves to the next request, or closes after the last. A window the user already closed counts as closed; any other failure throws, for the finishing to retry.
 async function updateConfirmationWindowAfterRemoving(confirmationWindow: PopupOrTabId, tabId: number, context: ResolutionContext) {
-	if ((await getPendingTransactionsAndMessages()).length === 0) await tryFocusingTabOrWindow({ type: 'tab', id: tabId })
-	if (!(await updateConfirmTransactionView(context.ethereum, context.tokenPriceService))) await closePopupOrTabById(confirmationWindow)
+	if ((await getPendingTransactionsAndMessages()).length > 0) {
+		if (!(await updateConfirmTransactionView(context.ethereum, context.tokenPriceService))) throw new Error('The confirmation window could not be moved to the next request.')
+		return
+	}
+	await tryFocusingTabOrWindow({ type: 'tab', id: tabId })
+	await closePopupOrTabById(confirmationWindow)
 }
 
 // A reply a resolution chose for a request whose commitment write failed: finishing the request commits it, so the request keeps that outcome.
@@ -290,7 +294,7 @@ type FinishingOutcome =
 	| { readonly kind: 'retrying' }
 
 /**
- * Finishes a request committed to its terminal reply, under its claim, in resumable steps that each check the stored state: commit a chosen reply whose commitment write failed; deliver the reply unless it was delivered (a disconnected page gets it from the queue when it reconnects); remove the pending request; update the confirmation window stored with the reply, then forget it; and delete the delivered reply last. An uncommitted pending request is left to be resolved.
+ * Finishes a request committed to its terminal reply, under its claim, in resumable steps that each check the stored state: commit a chosen reply whose commitment write failed; deliver the reply unless it was delivered (a disconnected page gets it from the queue when it reconnects); store the request's confirmation window with the reply and remove the pending request; update that window, then forget it; and delete the delivered reply last. An uncommitted pending request is left to be resolved.
  * Every step, lookups included, is guarded: a failure is reported and the whole routine retried with backoff, up to a limit, after which a later accept, reject, close or restart resumes it.
  */
 async function finishCommittedRequest(uniqueRequestIdentifier: UniqueRequestIdentifier, context: ResolutionContext): Promise<FinishingOutcome> {
@@ -308,13 +312,14 @@ async function finishCommittedRequest(uniqueRequestIdentifier: UniqueRequestIden
 			return pending === undefined ? { kind: 'absent' } : { kind: 'uncommitted', request: pending }
 		}
 		const delivered = committedReply.delivered === true ? true : await attemptQueuedTerminalReplyDelivery(context.websiteTabConnections, committedReply)
-		if (pending !== undefined) await removePendingTransactionOrMessage(uniqueRequestIdentifier)
-		if (committedReply.confirmationWindow !== undefined) {
-			try {
-				await updateConfirmationWindowAfterRemoving(committedReply.confirmationWindow, uniqueRequestIdentifier.requestSocket.tabId, context)
-			} catch (error) {
-				await reportLocalRecovery(error, { code: 'resolved_request_view_update_failed', message: 'The request was resolved; only updating the confirmation window failed.' })
-			}
+		// The window is stored with the reply before the request is removed, also for a reply stored before windows were, so its cleanup survives a failure or restart.
+		const confirmationWindow = committedReply.confirmationWindow ?? pending?.popupOrTabId
+		if (pending !== undefined) {
+			if (committedReply.confirmationWindow === undefined) await rememberPendingTerminalReplyWindow(uniqueRequestIdentifier, pending.popupOrTabId)
+			await removePendingTransactionOrMessage(uniqueRequestIdentifier)
+		}
+		if (confirmationWindow !== undefined) {
+			await updateConfirmationWindowAfterRemoving(confirmationWindow, uniqueRequestIdentifier.requestSocket.tabId, context)
 			await forgetPendingTerminalReplyWindow(uniqueRequestIdentifier)
 		}
 		await retireDeliveredTerminalReply(uniqueRequestIdentifier)
