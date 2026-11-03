@@ -10,7 +10,7 @@ import { createSafeTx } from '../../app/ts/safe/safeCore.js'
 import { getSafeTxHash } from '../../app/ts/utils/eip712.js'
 import { createSafeMessageTypedData } from '../../app/ts/safe/safeMessage.js'
 import { EIP712Message } from '../../app/ts/types/eip721.js'
-import type { SignedMessageTransaction } from '../../app/ts/types/visualizer-types.js'
+import type { ExportedSignedMessageTransaction, SignedMessageTransaction } from '../../app/ts/types/visualizer-types.js'
 import { IMPORTED_SIGNATURE_QUARANTINE_REASON } from '../../app/ts/background/importedStackTrust.js'
 
 const storageState: Record<string, unknown> = {}
@@ -426,17 +426,39 @@ describe('import simulation stack', () => {
 		assert.deepEqual(visualizedCrafted.quarantineReasons, [IMPORTED_SIGNATURE_QUARANTINE_REASON])
 	})
 
-	test('marks every imported message whatever the export file says about it', async () => {
+	test('export file schema has no import marker, so serializing a marked message leaves it out', () => {
+		// Compile-time: the message type of the export schema cannot name the marker, so code typed against the export format cannot read or set it.
+		const exportedMessageHasNoImportMarker: 'importedFromExport' extends keyof ExportedSignedMessageTransaction ? false : true = true
+		assert.equal(exportedMessageHasNoImportMarker, true)
+		const message = createMessageOperation(1n, personalSignRequest())
+		const markedMessageTransaction: SignedMessageTransaction = { ...message.signedMessageTransaction, importedFromExport: true }
+		const markedMessage = { ...message, signedMessageTransaction: markedMessageTransaction }
+		const serializedExport = InterceptorSimulationExport.serialize({ ...exportPayload, interceptorSimulateStack: { operations: [markedMessage] } })
+		assert.equal(JSON.stringify(serializedExport).includes('importedFromExport'), false)
+	})
+
+	test('ignores whatever an import file claims about the import marker and marks every imported message itself', async () => {
+		const modules = await modulesPromise
 		resetEnvironment()
-		const withMarker = createMessageOperation(1n, personalSignRequest())
-		const markedExport = InterceptorSimulationExport.serialize({ ...exportPayload, interceptorSimulateStack: { operations: [{ ...withMarker, signedMessageTransaction: { ...withMarker.signedMessageTransaction, importedFromExport: true } }] } })
-		// The marker can only be `true`, so an export claiming `false` is not a valid export and never reaches the import.
-		const [markedOperation] = markedExport.interceptorSimulateStack.operations
-		if (markedOperation?.type !== 'Message') throw new Error('Expected the exported message')
-		assert.equal(InterceptorSimulationExport.safeParse({ ...markedExport, interceptorSimulateStack: { operations: [{ ...markedOperation, signedMessageTransaction: { ...markedOperation.signedMessageTransaction, importedFromExport: false } }] } }).success, false)
-		// Without the marker or with it already set, the import marks the message.
-		const importedMessages = await importMessageOperations([createMessageOperation(2n, personalSignRequest()), { ...withMarker, signedMessageTransaction: { ...withMarker.signedMessageTransaction, importedFromExport: true } }])
-		assert.deepEqual(importedMessages.map((message) => message.importedFromExport), [true, true])
+		// A hand-edited file: three messages claim the marker with different values, the last one does not mention it.
+		const claimedMarkers: readonly unknown[] = [true, false, 'yes']
+		const serializedExport = InterceptorSimulationExport.serialize({ ...exportPayload, interceptorSimulateStack: { operations: [1n, 2n, 3n, 4n].map((messageIdentifier) => createMessageOperation(messageIdentifier, personalSignRequest())) } })
+		const importFile = JSON.parse(JSON.stringify({ ...serializedExport, interceptorSimulateStack: { operations: serializedExport.interceptorSimulateStack.operations.map((operation, index) => (
+			index < claimedMarkers.length ? { ...operation, signedMessageTransaction: { ...operation.signedMessageTransaction, importedFromExport: claimedMarkers[index] } } : operation
+		)) } }))
+		assert.equal(JSON.stringify(importFile).match(/importedFromExport/g)?.length, claimedMarkers.length)
+
+		const parsedFile = InterceptorSimulationExport.safeParse(importFile)
+		if (!parsedFile.success) throw new Error('Expected the import file to parse; the export schema ignores fields it does not declare')
+		assert.equal(JSON.stringify(InterceptorSimulationExport.serialize(parsedFile.value)).includes('importedFromExport'), false)
+
+		const reply = await modules.importSimulationStack(expectedInfrastructureEthereum as never, {} as never, { method: 'popup_importSimulationStack', data: parsedFile.value })
+		assert.equal(reply.ok, true)
+		const importedMessages = InterceptorTransactionStack.parse(storageState.interceptorTransactionStack).operations.map((operation) => {
+			if (operation.type !== 'Message') throw new Error('Expected only message operations')
+			return operation.signedMessageTransaction
+		})
+		assert.deepEqual(importedMessages.map((message) => message.importedFromExport), [true, true, true, true])
 	})
 
 	test('keeps the import marker through the id regeneration of a later import and through stack persistence', async () => {
@@ -468,7 +490,7 @@ describe('import simulation stack', () => {
 		const exported = InterceptorSimulationExport.parse(JSON.parse(exportReply.ethSimulateV1InputString))
 		const [exportedMessage] = exported.interceptorSimulateStack.operations
 		if (exportedMessage?.type !== 'Message') throw new Error('Expected the exported message')
-		assert.equal(exportedMessage.signedMessageTransaction.importedFromExport, undefined)
+		assert.equal('importedFromExport' in exportedMessage.signedMessageTransaction, false)
 
 		resetEnvironment()
 		const [reimported] = await importMessageOperations([exportedMessage])
