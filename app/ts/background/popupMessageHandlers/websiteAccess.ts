@@ -1,10 +1,11 @@
 import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
 import type { AllowOrPreventAddressAccessForWebsite, BlockOrAllowExternalRequests, DisableInterceptor, RemoveWebsiteAccess, RemoveWebsiteAddressAccess, RetrieveWebsiteAccess } from '../../types/interceptor-messages.js'
 import type { EthereumAddress } from '../../types/wire-types.js'
-import type { Website } from '../../types/websiteAccessTypes.js'
+import type { Website, WebsiteAccessArray } from '../../types/websiteAccessTypes.js'
 import { getErrorMessage, reportUnexpectedError } from '../../utils/errors.js'
 import { checkAndThrowRuntimeLastError } from '../../utils/requests.js'
 import { modifyObject } from '../../utils/typescript.js'
+import { getWebsiteHostname } from '../../utils/websiteOrigin.js'
 import { setInterceptorDisabledForWebsite, updateWebsiteApprovalAccesses } from '../accessManagement.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { getLastKnownCurrentTabId } from '../currentTab.js'
@@ -52,11 +53,18 @@ export async function retrieveWebsiteAccess(parsedRequest: RetrieveWebsiteAccess
 	await sendPopupMessageToOpenWindows({ method: 'popup_retrieveWebsiteAccessReply', data: { websiteAccess, addressAccessMetadata } })
 }
 
-const blockOrAllowWebsiteExternalRequests = async (websiteTabConnections: WebsiteTabConnections, website: Website, shouldBlock: boolean) => {
-	await updateWebsiteAccess((previousAccessList) => previousAccessList.map((access) => {
-		if (access.website.websiteOrigin !== website.websiteOrigin) return access
+// Network blocking is enforced per hostname across every scheme and port (updateDeclarativeNetRequestBlocks), so a toggle sets every record sharing the hostname. Updating only the selected origin would let another scheme's record keep blocking it while its toggle shows it as unblocked.
+export function setNetworkBlockModeForHostname(websiteAccess: WebsiteAccessArray, websiteOrigin: string, shouldBlock: boolean): WebsiteAccessArray {
+	const hostname = getWebsiteHostname(websiteOrigin)
+	return websiteAccess.map((access) => {
+		const sharesBlockedHostname = access.website.websiteOrigin === websiteOrigin || (hostname !== undefined && getWebsiteHostname(access.website.websiteOrigin) === hostname)
+		if (!sharesBlockedHostname) return access
 		return modifyObject(access, { declarativeNetRequestBlockMode: shouldBlock ? 'block-all' : 'disabled' })
-	}))
+	})
+}
+
+const blockOrAllowWebsiteExternalRequests = async (websiteTabConnections: WebsiteTabConnections, website: Website, shouldBlock: boolean) => {
+	await updateWebsiteAccess((previousAccessList) => setNetworkBlockModeForHostname(previousAccessList, website.websiteOrigin, shouldBlock))
 	await reloadConnectedTabs(websiteTabConnections)
 }
 
