@@ -8,10 +8,10 @@ import { reportUnexpectedError, isExpectedInfrastructureError, isFailedToFetchEr
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { getRpcNetworkChange, isSignerOnlyNetwork } from '../utils/rpcNetworkChange.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { modifyObject } from '../utils/typescript.js'
 import { getSimulationProviderForSnapshot, type SimulationSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
 import { requestIsSimulationDataConsumerOpen, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getPopupVisualisationFingerprint } from './popupSimulationFingerprint.js'
+import { retainPreviousVisualisation } from '../utils/popupVisualisationLifecycle.js'
 import { visualizeSimulatorState } from './simulationUpdating.js'
 import { getPopupVisualisationState, setPopupVisualisationState, setPopupVisualisationStateIfCurrent } from './storageVariables.js'
 import { getCommittedNetworkChangeGeneration } from './networkChangeGeneration.js'
@@ -197,7 +197,7 @@ export async function updatePopupVisualisationState(ethereum: EthereumClientServ
 			}
 			let popupVisualisation = await getPopupVisualisationState()
 			if (invalidateOldState) {
-				const invalidated = await storeIfNetworkActive(modifyObject(popupVisualisation, { simulationId: popupVisualisation.simulationId + 1, simulationResultState: 'invalid', simulationUpdatingState: 'updating' }))
+				const invalidated = await storeIfNetworkActive(retainPreviousVisualisation(popupVisualisation, { simulationId: popupVisualisation.simulationId + 1, simulationUpdatingState: 'updating', simulationResultState: 'invalid' }))
 				if (invalidated === undefined) return undefined
 				await broadcastIfNetworkActive(invalidated)
 				popupVisualisation = invalidated
@@ -211,7 +211,7 @@ export async function updatePopupVisualisationState(ethereum: EthereumClientServ
 				await broadcastIfNetworkActive(newState)
 				return newState
 			}
-			const visualizedSimulatorState = await storeIfNetworkActive(modifyObject(popupVisualisation, { simulationId, simulationUpdatingState: 'updating' }))
+			const visualizedSimulatorState = await storeIfNetworkActive(retainPreviousVisualisation(popupVisualisation, { simulationId, simulationUpdatingState: 'updating' }))
 			if (visualizedSimulatorState === undefined) return undefined
 			const changedMessagePromise = silenceChromeUnCaughtPromise(broadcastIfNetworkActive(visualizedSimulatorState))
 			try {
@@ -224,12 +224,12 @@ export async function updatePopupVisualisationState(ethereum: EthereumClientServ
 			} catch (error) {
 				if (isNewBlockAbort(error)) return undefined
 				if (isFailedToFetchError(error)) {
-					const state = await storeIfNetworkActive(modifyObject(popupVisualisation, { simulationId, simulationUpdatingState: 'updating' }))
+					const state = await storeIfNetworkActive(retainPreviousVisualisation(popupVisualisation, { simulationId, simulationUpdatingState: 'updating' }))
 					if (state !== undefined) await broadcastIfNetworkActive(state)
 					return undefined
 				}
 				if (throwOnUnexpectedError) throw error
-				const state = await storeIfNetworkActive(modifyObject(popupVisualisation, { simulationId, simulationUpdatingState: 'failed' }))
+				const state = await storeIfNetworkActive(retainPreviousVisualisation(popupVisualisation, { simulationId, simulationUpdatingState: 'failed' }))
 				if (state !== undefined) await broadcastIfNetworkActive(state)
 				await reportUnexpectedError(error)
 				return undefined
