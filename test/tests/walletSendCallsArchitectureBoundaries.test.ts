@@ -171,12 +171,12 @@ test('the appended gas estimate and simulation preparation fill RPC blocks by on
 	assert.match(preparationSource, /if \(fitsInRpcBlock\(currentChunkGasSum, gas, gasLimit\)\)/u)
 	assert.doesNotMatch(preparationSource, /currentChunkGasSum \+ (?:transaction\.)?gas <=|calculateTotalGasUsed/u)
 	for (const rule of ['getGasUsedInLastRpcBlock(', 'getGasLeftInRpcBlock(', 'fitsInRpcBlock(']) assert.ok(appendedEstimateSource.includes(rule), rule)
-	// A Gnosis Safe's own call, which a configured Safe's batch call is, is estimated by the Safe layer with the same rule, applied to the executor's call.
+	// A Gnosis Safe's own call, which a configured Safe's batch call is, is estimated by the Safe layer. It keeps its runs in the last RPC block by the same rule, and checks the RPC block of the executor's call with the estimated gas by preparing the input as preview and approval do, instead of by repeating preparation's rules.
 	const safeExecutionSimulationSource = await readSource('safe/safeExecutionSimulation.ts')
 	const safeEstimateStart = safeExecutionSimulationSource.indexOf('export async function estimateSafeExecutionGas(')
 	const safeEstimateSource = safeExecutionSimulationSource.slice(safeEstimateStart, safeExecutionSimulationSource.indexOf('\n}\n', safeEstimateStart))
-	for (const rule of ['getGasUsedInLastRpcBlock(', 'getGasLeftInRpcBlock(', 'fitsInRpcBlock(']) assert.ok(safeEstimateSource.includes(rule), rule)
-	assert.doesNotMatch(safeEstimateSource, /blockGasLimit - |lastRpcBlockGas \+ /u)
+	for (const rule of ['getGasUsedInLastRpcBlock(', 'getGasLeftInRpcBlock(', 'ethereum.prepareEthSimulateV1Input(', 'getSafeExecutorGasLimit(']) assert.ok(safeEstimateSource.includes(rule), rule)
+	assert.doesNotMatch(safeEstimateSource, /fitsInRpcBlock\(|blockGasLimit - |lastRpcBlockGas \+ |\* 64n \/ 63n/u)
 	assert.doesNotMatch(appendedEstimateSource, /blockGasLimit - |lastRpcBlockGas \+ /u)
 	// The general estimate runs in a new block and carries none of the appended placement.
 	assert.doesNotMatch(generalEstimateSource, /appendToLastPrefixBlock|RpcBlock/u)
