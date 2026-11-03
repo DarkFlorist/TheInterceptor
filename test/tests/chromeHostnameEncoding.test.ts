@@ -73,12 +73,12 @@ test('Chrome match patterns ignore percent-encoded and wildcard hosts in both sc
 	const rejectedHosts = ['https://*.cow.fi', 'https://%2A.cow.fi', '%2A.cow.fi', '*.cow.fi', 'https://a!b.example', 'a+b.example']
 	withChromeLikeUrlParser(() => {
 		assert.deepEqual(getChromeMatchPatterns('https://swap.cow.fi', 'exact-origin'), ['https://swap.cow.fi:443/*'])
-		assert.deepEqual(getChromeMatchPatterns('cow.fi', 'site-with-subdomains'), ['*://*.cow.fi/*'])
+		assert.deepEqual(getChromeMatchPatterns('cow.fi', 'disabled-site'), ['http://cow.fi:80/*', 'https://cow.fi:443/*'])
 		for (const value of rejectedHosts) {
-			for (const intent of ['exact-origin', 'site-with-subdomains'] as const) assert.deepEqual(getChromeMatchPatterns(value, intent), [], `${ value } ${ intent }`)
+			for (const intent of ['exact-origin', 'disabled-site'] as const) assert.deepEqual(getChromeMatchPatterns(value, intent), [], `${ value } ${ intent }`)
 		}
 	})
 	for (const value of rejectedHosts) {
-		for (const intent of ['exact-origin', 'site-with-subdomains'] as const) assert.deepEqual(getChromeMatchPatterns(value, intent), [], `${ value } ${ intent }`)
+		for (const intent of ['exact-origin', 'disabled-site'] as const) assert.deepEqual(getChromeMatchPatterns(value, intent), [], `${ value } ${ intent }`)
 	}
 })
