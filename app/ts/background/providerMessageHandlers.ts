@@ -7,7 +7,7 @@ import { activateAddressSelection, changeActiveAddressAndChain } from './activeS
 import { getSocketFromPort, isTopFramePort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { setDefaultSignerName, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
 import { getRpcConfigurationState, getRpcNetworkForChain } from './rpcConfigurationStorage.js'
-import { getMetamaskCompatibilityMode, getRequiredSettings, getSettingsSnapshot, requireSettings } from './settings.js'
+import { getMetamaskCompatibilityMode, getRequiredSettings, getSettingsSnapshot, settingsIfAvailable, requireAvailableSettings } from './settings.js'
 import { applyWalletSwitchReply } from './walletSwitch.js'
 import { verifyAccess, withSuppressedUnscopedConnectionEventsForSocketAsync } from './accessManagement.js'
 import type { ProviderMessage } from '../utils/requests.js'
@@ -135,7 +135,7 @@ export async function ethAccountsReply(simulationServicesOwner: SimulationServic
 		if (!isSignerStateTokenCurrent(websiteTabConnections, signerStateToken)) return returnValue
 		const snapshot = await getSettingsSnapshot()
 		const { rpcConfiguration } = snapshot
-		if (snapshot.settings === undefined) {
+		if (snapshot.status === 'unavailable') {
 			await publishSignerAccountsChanged(websiteTabConnections, signerStateToken, { type: 'active-selection',
 				tabId,
 				activeSigningAddress,
@@ -143,7 +143,7 @@ export async function ethAccountsReply(simulationServicesOwner: SimulationServic
 			})
 			return returnValue
 		}
-		const settings = requireSettings(snapshot)
+		const settings = requireAvailableSettings(snapshot)
 		const simulationServices = getRpcServicesAtAdmission(rpcConfiguration, simulationServicesOwner)
 		if (simulationServices !== undefined) await refreshPendingSafeSignerSelectionErrors(simulationServices.ethereum, simulationServices.tokenPriceService, tabId)
 		// Restore this wallet account's most recent EOA-or-Safe selection. This remains inside the signer-state operation so a reconnect cannot interleave with downstream address and chain mutations.
@@ -189,8 +189,8 @@ async function changeSignerChain(simulationServicesOwner: SimulationServicesOwne
 	// update active address if we are using signers address
 	const snapshot = await getSettingsSnapshot()
 	const { rpcConfiguration } = snapshot
-	if (snapshot.settings === undefined) return
-	const settings = requireSettings(snapshot)
+	if (snapshot.status === 'unavailable') return
+	const settings = requireAvailableSettings(snapshot)
 	const selectedSafe = await getConfiguredSigningSafe(settings, tabStateChange.newState.signerAccounts)
 	if (selectedSafe !== undefined) {
 		// Safe signing is pinned to the Safe's configured Interceptor chain. A signer-wallet chain change only refreshes signer state; it must not move the dapp away from the active Safe.
@@ -282,7 +282,7 @@ export async function connectedToSigner(_simulationServicesOwner: SimulationServ
 		confirmSignerState(tabConnection, signerProviderGeneration)
 		await setDefaultSignerName(signerName)
 		await sendPopupMessageToOpenWindows({ method: 'popup_signer_name_changed' })
-		const settings = (await getSettingsSnapshot()).settings
+		const settings = settingsIfAvailable(await getSettingsSnapshot())
 		if (settings !== undefined && hasSignerCallbackAccess(websiteTabConnections, socket.tabId, approval)) {
 			if (!signerMissing && (!settings.simulationMode || settings.useSignersAddressAsActiveAddress)) {
 				sendSubscriptionReplyOrCallBackToPort(port, { type: 'result', method: 'request_signer_chainId', result: [] })

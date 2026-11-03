@@ -1,6 +1,6 @@
 import { createSafeAppsCompatibilityFeature, initializeSafeAppsCompatibility } from './safeAppsCompatibilityCoordinator.js'
 import 'webextension-polyfill'
-import { getSettingsSnapshot, requireSettings, updateKnownWebsiteMetadata } from './settings.js'
+import { getSettingsSnapshot, updateKnownWebsiteMetadata, settingsIfAvailable, requireAvailableSettings } from './settings.js'
 import { handleInterceptedRequest } from './background.js'
 import { captureSimulationSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
 import { popupMessageHandler } from './popupMessageRouting.js'
@@ -244,7 +244,7 @@ async function newBlockAttemptCallback(blockheader: EthereumBlockHeader, ethereu
 			if (owner === undefined) return
 			const settingsSnapshot = await getSettingsSnapshot()
 			if (!rpcConfigurationIsReady(settingsSnapshot.rpcConfiguration)) return
-			const settings = requireSettings(settingsSnapshot)
+			const settings = requireAvailableSettings(settingsSnapshot)
 			if (!isCurrentSimulationService(simulationServicesOwner, ethereumClientService)) return
 			if (settings.simulationMode) {
 				const { ethereum, tokenPriceService } = getSimulationServices()
@@ -358,6 +358,6 @@ browser.runtime.onConnect.addListener((port) => catchAllErrorsAndCall(async () =
 browser.runtime.onMessage.addListener((message: unknown) => Promise.resolve(catchAllErrorsAndCall(async () => {
 	const { simulationServicesOwner } = await waitForBackgroundStartup()
 	const settingsSnapshot = await getSettingsSnapshot()
-	return await popupMessageHandler(websiteTabConnections, simulationServicesOwner, message, settingsSnapshot.settings, settingsSnapshot.rpcConfiguration, rpcConnectionStatusPublisher.publishRpcConnectionStatus)
+	return await popupMessageHandler(websiteTabConnections, simulationServicesOwner, message, settingsIfAvailable(settingsSnapshot), settingsSnapshot.rpcConfiguration, rpcConnectionStatusPublisher.publishRpcConnectionStatus)
 })))
 addWindowTabListeners(onCloseWindow, onCloseTab)

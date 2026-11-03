@@ -355,14 +355,14 @@ describe('startup storage recovery', () => {
 
 	test('sanitizes remote website access icons in returned settings without mutating storage', async () => {
 		const storageState = installBrowserMock()
-		const { getRequiredSettings, getWebsiteAccess } = await loadModules()
+		const { getRequiredSettings, getWebsiteApprovalsSnapshot, requireReadableApprovals } = await loadModules()
 		storageState.websiteAccess = [
 			{ website: { websiteOrigin: 'remote.example', icon: 'https://remote.example/favicon.png', title: 'Remote' }, access: true },
 			{ website: { websiteOrigin: 'cached.example', icon: 'data:image/png;base64,Y2FjaGVk', title: 'Cached' }, access: true },
 		]
 
 		const settings = await withSilencedConsole(async () => await getRequiredSettings())
-		const websiteAccess = await withSilencedConsole(async () => await getWebsiteAccess())
+		const websiteAccess = await withSilencedConsole(async () => requireReadableApprovals(await getWebsiteApprovalsSnapshot({ repairCorrupt: true })))
 
 		assert.equal(settings.websiteAccess[0]?.website.icon, undefined)
 		assert.equal(settings.websiteAccess[1]?.website.icon, 'data:image/png;base64,Y2FjaGVk')

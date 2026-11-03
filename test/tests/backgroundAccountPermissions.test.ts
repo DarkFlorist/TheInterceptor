@@ -2765,7 +2765,7 @@ describe('background eth_accounts', () => {
 		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 		// The popup change is admitted on chain A, then a switch to chain B commits before the transition acquires the settings semaphore.
 		const admitted = await getSettingsSnapshot()
-		if (admitted.settings === undefined) throw new Error('Expected readable settings at admission')
+		if (admitted.status === 'unavailable') throw new Error('Expected readable settings at admission')
 		assert.equal(admitted.settings.activeRpcNetwork.chainId, chainARpc.chainId)
 		await setRpcConfiguration([chainARpc, chainBRpc], chainBRpc)
 		const messageCountBeforeTransition = runtimeMessages.length
@@ -2957,7 +2957,7 @@ describe('background eth_accounts', () => {
 
 	test.each(['paused service owner', 'corrupt RPC list', 'corrupt active RPC network'])('wallet_revokePermissions revokes access while the RPC configuration is unavailable because of a %s', async (unavailableState) => {
 		installBrowserMock()
-		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, getRequiredSettings, getWebsiteAccess } = await loadModules()
+		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, getRequiredSettings, getWebsiteApprovalsSnapshot, requireReadableApprovals } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
 		const account = 0x1111111111111111111111111111111111111111n
@@ -2998,7 +2998,7 @@ describe('background eth_accounts', () => {
 		assert.equal(revokeReplies.at(-1)?.result, null)
 		assert.equal(websiteTabConnections.get(socket.tabId)?.connections[connectionKey]?.approved, false)
 		assert.equal(messages.some((message) => message.method === 'accountsChanged' && Array.isArray(message.result) && message.result.length > 0), false)
-		const access = (await getWebsiteAccess()).find((entry) => entry.website.websiteOrigin === websiteOrigin)
+		const access = (requireReadableApprovals(await getWebsiteApprovalsSnapshot({ repairCorrupt: true }))).find((entry) => entry.website.websiteOrigin === websiteOrigin)
 		assert.equal(access?.access, undefined)
 		assert.equal(access?.addressAccess, undefined)
 	})

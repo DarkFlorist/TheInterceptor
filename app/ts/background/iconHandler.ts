@@ -5,7 +5,7 @@ import { getActiveAddress, sendPopupMessageToOpenWindows, setExtensionBadgeBackg
 import { createScopedKeyedSerialExecutor } from '../utils/semaphore.js'
 import { Future } from '../utils/future.js'
 import type { TabIcon, TabState } from '../types/user-interface-types.js'
-import { getSettingsSnapshot, getWebsiteAccess } from './settings.js'
+import { getSettingsSnapshot, settingsIfAvailable, approvalsOrNone, requireReadableApprovals, getWebsiteApprovalsSnapshot } from './settings.js'
 import { RPC_CONFIGURATION_UNAVAILABLE_MESSAGE } from '../utils/rpcConfigurationError.js'
 import { getRpcConnectionStatus, getTabState, removeTabState, updateTabState } from './storageVariables.js'
 import { getLastKnownCurrentTabId } from './currentTab.js'
@@ -39,7 +39,7 @@ export function addBlockingShieldToIcon(icon: TabIcon): TabIcon {
 }
 
 async function getCachedWebsiteIcon(tabId: number, websiteOrigin: string) {
-	const storedWebsiteAccess = await getWebsiteAccess()
+	const storedWebsiteAccess = requireReadableApprovals(await getWebsiteApprovalsSnapshot({ repairCorrupt: true }))
 	const storedWebsite = storedWebsiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin)
 	if (storedWebsite === undefined) return { cachedIcon: undefined, hasStoredWebsiteAccess: false as const }
 	const currentWebsite = (await getTabState(tabId)).website
@@ -123,7 +123,9 @@ export async function updateExtensionIcon(tabId: number, websiteOrigin: string, 
 		const addShieldIfNeeded = async (icon: TabIcon): Promise<TabIcon> => await blockingWebsitePromise ? addBlockingShieldToIcon(icon) : icon
 		const setIcon = async (icon: TabIcon, iconReason: string) => setInterceptorIcon(tabId, await addShieldIfNeeded(icon), await blockingWebsitePromise ? `${ iconReason } The Interceptor is blocking external requests made by the website.` : iconReason, popupRefreshGeneration)
 
-		const { settings, websiteAccess } = await getSettingsSnapshot()
+		const snapshot = await getSettingsSnapshot()
+		const settings = settingsIfAvailable(snapshot)
+		const websiteAccess = approvalsOrNone(snapshot)
 		if (hasAccess(websiteAccess, websiteOrigin) === 'interceptorDisabled') return setIcon(ICON_INTERCEPTOR_DISABLED, `The Interceptor is disabled for ${ websiteOrigin } by user request.`)
 		// The active address is resolved on the active RPC network's chain, so while that network is unavailable the icon shows the paused state (with the blocking shield when blocking is applied).
 		if (settings === undefined) return setIcon(ICON_NOT_ACTIVE, RPC_CONFIGURATION_UNAVAILABLE_MESSAGE)

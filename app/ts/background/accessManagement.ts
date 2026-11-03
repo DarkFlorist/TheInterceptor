@@ -4,7 +4,7 @@ import { requestAccessFromUser } from './windows/interceptorAccess.js'
 import { retrieveWebsiteDetails, updateExtensionIcon } from './iconHandler.js'
 import type { TabConnection, WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { InpageScriptCallBack, Settings } from '../types/interceptor-messages.js'
-import { getRequiredSettings, getSettingsSnapshot, getWebsiteAccess, getWebsiteAccessForAccessDecision, updateWebsiteAccess } from './settings.js'
+import { getRequiredSettings, getSettingsSnapshot, updateWebsiteAccess, settingsIfAvailable, approvalsOrNone, requireReadableApprovals, getWebsiteApprovalsSnapshot } from './settings.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
 import { type WebsiteSocket, getHostWithPort, getTabIfExists, silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { getAllTabStates } from './storageVariables.js'
@@ -278,7 +278,7 @@ async function updateTabConnections(
 		if (connection === undefined) throw new Error('missing connection')
 		const activeAddress = await getConnectionActiveAddressOrDisconnect(websiteTabConnections, connection, settings)
 		// Approvals are read right before they are applied, so an access change made while the caller awaited (for example a settings import awaiting content-script registration) is not undone; unreadable storage yields none.
-		const websiteAccess = await getWebsiteAccessForAccessDecision()
+		const websiteAccess = approvalsOrNone(await getWebsiteApprovalsSnapshot({ repairCorrupt: false }))
 		addIconRefreshTarget(iconRefreshTargets, connection.socket.tabId, connection.websiteOrigin)
 		const access = getConnectionAccessForAddress(websiteAccess, connection, activeAddress)
 		if (access !== 'hasAccess' && connection.approved) {
@@ -343,18 +343,18 @@ type RequestBlocks = {
 const getSitesToBlock = (websiteAccess: WebsiteAccessArray) => websiteAccess.filter((access) => access.declarativeNetRequestBlockMode === 'block-all').map((acccess) => acccess.website.websiteOrigin)
 
 // The single tab-blocking mode decision: undefined (the RPC configuration has no usable active network) means tab blocking is derived from persisted consent.
-const getSettingsForTabBlocking = async () => (await getSettingsSnapshot()).settings
+const getSettingsForTabBlocking = async () => settingsIfAvailable(await getSettingsSnapshot())
 
 const getTabsAndAddressesToBlock = async (websiteTabConnections: WebsiteTabConnections): Promise<RequestBlocks> => {
 	const approvedTabIds = getApprovedTabs(websiteTabConnections)
 	const settings = await getSettingsForTabBlocking()
 	if (settings === undefined) {
 		// A fresh read on purpose: when storage is unreadable the snapshot's fail-closed approvals are empty, which would lift applied site blocks, so this read (like getActiveAddresses) rejects and every applied rule stays in place.
-		const websiteAccess = await getWebsiteAccess()
+		const websiteAccess = requireReadableApprovals(await getWebsiteApprovalsSnapshot({ repairCorrupt: true }))
 		return { tabIdsToBlock: await getTabIdsToBlockWithoutActiveRpcNetwork(websiteTabConnections, websiteAccess), sitesToBlock: getSitesToBlock(websiteAccess), keepAppliedTabBlocks: true }
 	}
 	const tabIdsToBlock = (await getActiveAddressesForAllTabs(settings)).filter((tabData) => approvedTabIds.has(tabData.tabId)).filter((tabData) => tabData.activeAddress?.declarativeNetRequestBlockMode === 'block-all').map((tabData) => tabData.tabId)
-	return { tabIdsToBlock, sitesToBlock: getSitesToBlock(await getWebsiteAccess()), keepAppliedTabBlocks: false }
+	return { tabIdsToBlock, sitesToBlock: getSitesToBlock(requireReadableApprovals(await getWebsiteApprovalsSnapshot({ repairCorrupt: true }))), keepAppliedTabBlocks: false }
 }
 
 let webRequestListener: (details: browser.webRequest._OnBeforeRequestDetails) => void = () => undefined
@@ -637,7 +637,7 @@ const isAffectedWebsite = (affectedWebsites: AffectedWebsites, websiteOrigin: st
 
 // Approval reconciliation needs settings (active addresses resolve on the active RPC network's chain); undefined means they cannot be read.
 async function readSettingsForAccessReconciliation(): Promise<Settings | undefined> {
-	return (await getSettingsSnapshot()).settings
+	return settingsIfAvailable(await getSettingsSnapshot())
 }
 
 // The connections of the affected websites lose their runtime approval so a committed revocation is never left unapplied, and request blocks are still reconciled (that works without an active RPC network). A failed disconnect notification or request-block update does not stop the rest; those failures are reported afterwards.

@@ -53,7 +53,7 @@ const { browserStorageLocalGet, browserStorageLocalGet2Result, browserStorageLoc
 const { getRpcConnectionStatus } = await import('../../app/ts/background/storageVariables.js')
 const { getRpcConfigurationState, getRpcConfigurationStateWithStorageSnapshot, getRpcList, promoteRpcAsPrimary, selectPrimaryRpc, setRpcConfiguration } = await import('../../app/ts/background/rpcConfigurationStorage.js')
 const { createSimulationServicesOwner } = await import('../../app/ts/simulation/serviceLifecycle.js')
-const { captureRpcNetwork, getRequiredSettings, getSettingsForCapturedRpcNetwork, getSettingsSnapshot } = await import('../../app/ts/background/settings.js')
+const { captureRpcNetwork, getRequiredSettings, getSettingsSnapshot, settingsIfAvailable } = await import('../../app/ts/background/settings.js')
 const { restoreDefaultRpcConfiguration, retryRpcConfiguration, setNewRpcList, settingsOpened } = await import('../../app/ts/background/popupMessageHandlers/settings.js')
 const { MessageToPopup } = await import('../../app/ts/types/interceptor-messages.js')
 const { transitionRpcList } = await import('../../app/ts/background/rpcConfigurationLifecycle.js')
@@ -165,7 +165,8 @@ describe('RPC storage recovery', () => {
 		const snapshot = await getSettingsSnapshot()
 
 		assert.deepEqual(snapshot.rpcConfiguration, { status: 'unavailable', reason: 'read-failed', error: readError })
-		assert.equal(snapshot.settings, undefined)
+		assert.equal(snapshot.status, 'unavailable')
+		assert.deepEqual(snapshot.status === 'unavailable' ? snapshot.websiteApprovals : undefined, { status: 'unreadable', error: readError })
 		assert.equal(writes.length, 0)
 	})
 
@@ -202,12 +203,12 @@ describe('RPC storage recovery', () => {
 			simulationMode: false,
 		})
 		const initialSnapshot = await getSettingsSnapshot()
-		if (initialSnapshot.settings === undefined) throw new Error('Expected initial settings')
+		if (initialSnapshot.status === 'unavailable') throw new Error('Expected initial settings')
 		writes.length = 0
 		const readError = new Error('Extension storage is temporarily unavailable')
 		nextStorageReadError = readError
 
-		const settings = await getSettingsForCapturedRpcNetwork(captureRpcNetwork(initialSnapshot.settings))
+		const settings = settingsIfAvailable(await getSettingsSnapshot({ pinnedRpcNetwork: captureRpcNetwork(initialSnapshot.settings) }))
 
 		// The captured approval may have been revoked since capture, so an unreadable store must not reproduce it.
 		assert.equal(settings, undefined)
@@ -272,7 +273,7 @@ describe('RPC storage recovery', () => {
 		try {
 			const snapshot = await getSettingsSnapshot()
 			assert.equal(snapshot.rpcConfiguration.status, 'unavailable')
-			assert.equal(snapshot.settings, undefined)
+			assert.equal(snapshot.status, 'unavailable')
 			await assert.rejects(getRequiredSettings(), isRpcConfigurationUnavailableError)
 		} finally {
 			console.warn = originalWarn

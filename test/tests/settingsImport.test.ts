@@ -486,7 +486,7 @@ describe('settings import', () => {
 	})
 
 	test('sanitizes imported website access icons before persisting them', async () => {
-		const { getWebsiteAccess, importSettingsAndAddressBook } = await settingsModulePromise
+		const { getWebsiteApprovalsSnapshot, importSettingsAndAddressBook, requireReadableApprovals } = await settingsModulePromise
 		await importSettingsAndAddressBook(buildVersion14Import(false, false, [
 			{ website: { websiteOrigin: 'remote.example', icon: 'https://remote.example/favicon.png', title: 'Remote' }, access: true },
 			{ website: { websiteOrigin: 'cached.example', icon: 'data:image/png;base64,Y2FjaGVk', title: 'Cached' }, access: true },
@@ -498,7 +498,7 @@ describe('settings import', () => {
 		assert.equal(storedWebsiteAccess[0]?.website.icon, undefined)
 		assert.equal(storedWebsiteAccess[1]?.website.icon, 'data:image/png;base64,Y2FjaGVk')
 
-		const websiteAccess = await getWebsiteAccess()
+		const websiteAccess = requireReadableApprovals(await getWebsiteApprovalsSnapshot({ repairCorrupt: true }))
 		assert.equal(websiteAccess[0]?.website.icon, undefined)
 		assert.equal(websiteAccess[1]?.website.icon, 'data:image/png;base64,Y2FjaGVk')
 	})

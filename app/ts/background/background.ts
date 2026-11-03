@@ -3,7 +3,7 @@ import type { RpcRequestContext } from '../types/confirmationRequest.js'
 import type { InpageScriptRequest, RPCReply, Settings } from '../types/interceptor-messages.js'
 import 'webextension-polyfill'
 import { getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
-import { captureRpcNetwork, getRequiredSettings, getSettingsForCapturedRpcNetwork, getSettingsSnapshot, updateWebsiteAccess } from './settings.js'
+import { captureRpcNetwork, getRequiredSettings, getSettingsSnapshot, updateWebsiteAccess, settingsIfAvailable, approvalsOrNone } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getBlockByHash, getCode, getFilterChanges, getFilterLogs, getLogs, getPermissions, getStorageAt, getTransactionByHash, getTransactionCount, getTransactionReceipt, handleInterceptorError, installNewFilter, maxPriorityFeePerGas, netVersion, personalSign, requestInterceptorSimulatorStack, requestPermissions, sendTransaction, subscribe, switchEthereumChain, ethSimulateV1, feeHistory, uninstallNewFilter, unsubscribe, web3ClientVersion } from './simulationModeHandlers.js'
 import { PASSTHROUGH_STATE, type ResolvedExecutionSimulationState, type ResolvedSimulationInput, toResolvedExecutionSimulationState, toResolvedSimulationInput } from '../types/visualizer-types.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
@@ -385,7 +385,7 @@ async function discoverAccountRequestAddressContext(
 	websiteOrigin: string,
 	validatedSettings: Settings,
 ) {
-	const settings = await getSettingsForCapturedRpcNetwork(captureRpcNetwork(validatedSettings))
+	const settings = settingsIfAvailable(await getSettingsSnapshot({ pinnedRpcNetwork: captureRpcNetwork(validatedSettings) }))
 	if (settings === undefined) return undefined
 	const activeAddress = await getActiveAddressForRequest(settings, websiteTabConnections, socket.tabId)
 	if (activeAddress !== undefined) return { settings, activeAddress, requestedSignerAccountsForAddressConsent: false, signerAccountError: undefined }
@@ -394,7 +394,7 @@ async function discoverAccountRequestAddressContext(
 	if (websiteAccess === 'noAccess' || websiteAccess === 'interceptorDisabled') return { settings, activeAddress, requestedSignerAccountsForAddressConsent: false, signerAccountError: undefined }
 
 	const signerAccountsResult = await askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections, socket, true)
-	const refreshedSettings = await getSettingsForCapturedRpcNetwork(captureRpcNetwork(settings))
+	const refreshedSettings = settingsIfAvailable(await getSettingsSnapshot({ pinnedRpcNetwork: captureRpcNetwork(settings) }))
 	if (refreshedSettings === undefined) return undefined
 	const refreshedActiveAddress = await getActiveAddressForRequest(refreshedSettings, websiteTabConnections, socket.tabId)
 	if (refreshedActiveAddress !== undefined) return { settings: refreshedSettings, activeAddress: refreshedActiveAddress, requestedSignerAccountsForAddressConsent: true, signerAccountError: signerAccountsResult.error }
@@ -423,14 +423,14 @@ function replyWithSignerAccountError(websiteTabConnections: WebsiteTabConnection
 export const handleInterceptedRequest = async (port: browser.runtime.Port | undefined, websiteOrigin: string, websitePromise: Promise<Website> | Website, simulationServicesOwner: SimulationServicesOwner, socket: WebsiteSocket, request: InterceptedRequest, websiteTabConnections: WebsiteTabConnections, publishRpcConnectionStatus: PublishRpcConnectionStatus): Promise<unknown> => {
 	const initialSnapshot = await getSettingsSnapshot()
 	const admittedSimulationServices = simulationServicesOwner.getCurrent()
-	const initialSettings = initialSnapshot.settings
+	const initialSettings = settingsIfAvailable(initialSnapshot)
 	if (request.interceptorInternalRequest !== true && isInternalProviderMethod(request.method)) return refusePublicInternalProviderMethod(websiteTabConnections, request)
 	const providerHandler = getProviderHandler(request.method)
 	const identifiedMethod = providerHandler.method
 	if (identifiedMethod !== 'notProviderMethod') {
 		if (port === undefined) return
 		// Website approval is read from the same snapshot whether or not the RPC configuration is readable, so an unapproved site stays unapproved while settings are unavailable.
-		const { websiteAccess } = initialSnapshot
+		const websiteAccess = approvalsOrNone(initialSnapshot)
 		const providerCallbackApproval = request.method === 'eth_accounts_reply'
 			? 'hasAccess'
 			: getWebsiteAccessApprovalState(websiteAccess, websiteOrigin)
@@ -498,7 +498,7 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 		if (signerAccounts.length === 0) return replyWithoutActiveAccount(websiteTabConnections, request)
 		const firstSignerAccount = signerAccounts[0]
 		if (firstSignerAccount === undefined) return replyWithoutActiveAccount(websiteTabConnections, request)
-		const refreshedSettings = await getSettingsForCapturedRpcNetwork(captureRpcNetwork(settings))
+		const refreshedSettings = settingsIfAvailable(await getSettingsSnapshot({ pinnedRpcNetwork: captureRpcNetwork(settings) }))
 		if (refreshedSettings === undefined) return replyRpcConfigurationUnavailable(websiteTabConnections, request)
 		let refreshedActiveAddress = await getActiveAddressForRequest(refreshedSettings, websiteTabConnections, socket.tabId)
 		if (refreshedActiveAddress === undefined) {
@@ -528,7 +528,7 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 	switch (access) {
 		case 'askAccess': {
 			const website = await websitePromise
-			const currentSettings = await getSettingsForCapturedRpcNetwork(captureRpcNetwork(settings))
+			const currentSettings = settingsIfAvailable(await getSettingsSnapshot({ pinnedRpcNetwork: captureRpcNetwork(settings) }))
 			if (currentSettings === undefined) return replyRpcConfigurationUnavailable(websiteTabConnections, request)
 			return await gateKeepRequestBehindAccessDialog(simulationServicesOwner, websiteTabConnections, socket, request, website, activeAddress, currentSettings, publishRpcConnectionStatus)
 		}
@@ -550,7 +550,7 @@ type LiveSettingsOnAdmittedRpcNetwork =
 
 // A request can be parked on the website lookup or signer prompts after admission, so routing reads one live settings snapshot (simulation mode, signing Safe) and uses it unmixed. A metadata-only change (name, explorer, list preferences) keeps the chain and endpoint, so the live snapshot still matches the admitted service pair; a chain change invalidates the live selection's chain-dependent decisions for the admitted pair.
 async function getLiveSettingsOnAdmittedRpcNetwork(admittedSettings: Settings): Promise<LiveSettingsOnAdmittedRpcNetwork> {
-	const { settings: liveSettings } = await getSettingsSnapshot()
+	const liveSettings = settingsIfAvailable(await getSettingsSnapshot())
 	if (liveSettings === undefined) return { kind: 'unavailable' }
 	const rpcNetworkChange = getRpcNetworkChange(admittedSettings.activeRpcNetwork, liveSettings.activeRpcNetwork)
 	if (rpcNetworkChange.chainChanged) return { kind: 'chain-changed' }
@@ -562,7 +562,7 @@ async function getLiveSettingsOnAdmittedRpcNetwork(admittedSettings: Settings): 
 // Storage reads, Safe preparation and wake-status publishing all await after routing is decided, so a signer forward is rechecked against the live simulation mode at the last await before it is posted.
 async function recheckSignerForwardBeforePosting(resolved: RPCReply): Promise<'post' | 'reroute' | 'unavailable'> {
 	if (resolved.type !== 'forwardToSigner') return 'post'
-	const { settings: liveSettings } = await getSettingsSnapshot()
+	const liveSettings = settingsIfAvailable(await getSettingsSnapshot())
 	if (liveSettings === undefined) return 'unavailable'
 	return liveSettings.simulationMode ? 'reroute' : 'post'
 }

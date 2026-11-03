@@ -10,7 +10,7 @@ import type { WebsiteAccessUpdate } from './accessManagement.js'
 import { reconcileWebsiteApprovalAccesses, finishWebsiteAccessUpdate, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts } from './accessManagement.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
-import { changeSimulationMode, getRequiredSettings, getSettingsAfterStorageUpdates, getSettingsSnapshot, rereadSettingsForPublication, requireSettings, setUseSignersAddressAsActiveAddress, type SimulationModeChanges, trackPreviousActiveAddressForMakeMeRichList } from './settings.js'
+import { changeSimulationMode, getRequiredSettings, getSettingsAfterStorageUpdates, getSettingsSnapshot, setUseSignersAddressAsActiveAddress, type SimulationModeChanges, trackPreviousActiveAddressForMakeMeRichList, requireAvailableSettings, settingsForPublication, captureRpcNetwork } from './settings.js'
 import { updateTransactionState } from './storageVariables.js'
 import type { RpcConfigurationState } from './rpcConfigurationStorage.js'
 import type { Settings } from '../types/interceptor-messages.js'
@@ -161,8 +161,8 @@ async function runActiveSettingsChange(
 		await changeActiveAddressAndChainSemaphore.execute(async () => {
 			// The baseline is read under the semaphore so a network change committed after admission is not overwritten by the admitted network; the admitted snapshot is used only when the RPC configuration became unavailable since admission, so the admitted transition still completes.
 			const liveSnapshot = await getSettingsSnapshot()
-			const previousSnapshot = transition.admittedSnapshot !== undefined && (liveSnapshot.settings === undefined || !rpcConfigurationIsReady(liveSnapshot.rpcConfiguration)) ? transition.admittedSnapshot : liveSnapshot
-			const previousSettings = requireSettings(previousSnapshot)
+			const previousSnapshot = transition.admittedSnapshot !== undefined && (liveSnapshot.status === 'unavailable' || !rpcConfigurationIsReady(liveSnapshot.rpcConfiguration)) ? transition.admittedSnapshot : { settings: requireAvailableSettings(liveSnapshot), rpcConfiguration: liveSnapshot.rpcConfiguration }
+			const previousSettings = previousSnapshot.settings
 			const rpcServicesOptional = rpcServicesAreOptional(previousSnapshot.rpcConfiguration)
 			const recoverServicesOnRpcSelection = simulationServicesOwner.getCurrent() === undefined && rpcServicesOptional
 			if (!rpcConfigurationIsUsable(previousSnapshot.rpcConfiguration, simulationServicesOwner)) throw createRpcConfigurationUnavailableError()
@@ -176,7 +176,7 @@ async function runActiveSettingsChange(
 
 			// Derived from the exact items just written; it pins the committed RPC network and is published (without website approvals, which may have been revoked since admission) only when the committed settings cannot be read back, because the writes above have already succeeded.
 			const committedSettings = await getSettingsAfterStorageUpdates(previousSettings, committedStorageUpdates)
-			const updatedSettings = await rereadSettingsForPublication(committedSettings)
+			const updatedSettings = settingsForPublication(await getSettingsSnapshot({ pinnedRpcNetwork: captureRpcNetwork(committedSettings) }), committedSettings)
 			try {
 				// The preference belongs to the committed selection, even if later provider preparation fails.
 				if (transition.signingPreference !== undefined) await rememberSigningAddressSelection(transition.signingPreference)

@@ -4,7 +4,7 @@ import { serialize } from '../../types/wire-types.js'
 import { isJSON } from '../../utils/json.js'
 import { silenceChromeUnCaughtPromise } from '../../utils/requests.js'
 import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
-import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getRequiredSettings, getSettingsSnapshot, getUseTabsInsteadOfPopup, importSettingsAndAddressBook } from '../settings.js'
+import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getRequiredSettings, getSettingsSnapshot, getUseTabsInsteadOfPopup, importSettingsAndAddressBook, settingsIfAvailable } from '../settings.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { DEFAULT_RPCS } from '../../config/defaults.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
@@ -28,7 +28,8 @@ export async function settingsOpened(simulationServicesOwner: SimulationServices
 		safeAppsCompatibilityModePromise,
 		settingsSnapshotPromise,
 	])
-	const { rpcConfiguration, settings } = settingsSnapshot
+	const { rpcConfiguration } = settingsSnapshot
+	const settings = settingsIfAvailable(settingsSnapshot)
 	const rpcConfigurationAvailable = rpcConfigurationIsUsable(rpcConfiguration, simulationServicesOwner)
 
 	await sendPopupMessageToOpenWindows({

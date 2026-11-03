@@ -118,43 +118,20 @@ async function getSettingsFromStorageItems(storedItems: Readonly<Record<string, 
 	return { activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode }
 }
 
-// Settings accessors and their failure policies; pick by what the caller must do when storage or the RPC configuration is unavailable:
-// - getSettingsSnapshot: admission boundary. An unavailable RPC configuration does not throw: `settings` is undefined and `websiteAccess` is [] when storage is unreadable.
-// - requireSettings / getRequiredSettings: throw the RPC-configuration-unavailable error, for operations that cannot continue without settings.
-// - getSettingsForCapturedRpcNetwork: re-read pinned to an admitted RPC network; undefined only when storage is unreadable, and the caller must then fail closed.
-// - rereadSettingsForPublication: the same pinned re-read for settings that must still be published; falls back to the given settings without website approvals.
-// - getSettingsAfterStorageUpdates: projects just-committed writes onto earlier settings without reading storage.
-// - getWebsiteAccess: approvals only; throws when storage is unreadable and repairs a corrupt value, so request-block reconciliation keeps applied rules on failure.
-// - getWebsiteAccessForAccessDecision: approvals only; [] for unreadable or corrupt storage and never writes, for granting runtime access.
-// - reconcileCommittedAccessChange (accessManagement.ts): after committing an access-affecting write; when settings are unreadable it revokes the change's affected runtime approvals and reconciles request blocks, then throws.
-
 // Use for standalone operations that have no admitted settings context and must read the latest committed settings.
 export async function getRequiredSettings() : Promise<Settings> {
-	const snapshot = await getSettingsSnapshot()
-	return requireSettings(snapshot)
+	return requireAvailableSettings(await getSettingsSnapshot())
 }
 
-// Use to continue an admitted operation from its snapshot; throws the RPC-configuration-unavailable error when the snapshot has no settings.
-export function requireSettings(snapshot: { readonly settings: Settings | undefined }): Settings {
-	if (snapshot.settings === undefined) throw createRpcConfigurationUnavailableError()
-	return snapshot.settings
-}
+// Website approvals are stored apart from the RPC configuration, so they stay readable while settings are unavailable; `unreadable` keeps the storage error for callers that must propagate it.
+export type WebsiteApprovalsSnapshot =
+	| { readonly status: 'readable', readonly websiteAccess: WebsiteAccessArray }
+	| { readonly status: 'unreadable', readonly error: unknown }
 
-export type SettingsSnapshot = {
-	readonly settings: Settings | undefined
-	readonly rpcConfiguration: RpcConfigurationState
-	// Website approvals do not depend on the RPC configuration, so access decisions keep using the stored approvals even when `settings` is unavailable. An unreadable store yields no approvals, which fails closed.
-	readonly websiteAccess: WebsiteAccessArray
-}
-
-// Admission boundary: settings and RPC configuration come from one storage read and must travel together through the admitted operation.
-export async function getSettingsSnapshot(): Promise<SettingsSnapshot> {
-	const { storedItems, rpcConfiguration } = await getRpcConfigurationStateWithStorageSnapshot(SETTINGS_STORAGE_KEYS)
-	const activeRpcNetwork = 'activeRpcNetwork' in rpcConfiguration ? rpcConfiguration.activeRpcNetwork : undefined
-	const settings = activeRpcNetwork === undefined ? undefined : await getSettingsFromStorageItems(storedItems, activeRpcNetwork)
-	const websiteAccess = settings === undefined ? await getWebsiteAccessFromStorageItems(storedItems) : settings.websiteAccess
-	return { settings, rpcConfiguration, websiteAccess }
-}
+// Settings and the RPC configuration come from one storage read and must travel together through an admitted operation. Settings need an active RPC network, so `unavailable` carries only the approvals' own availability.
+export type SettingsSnapshot =
+	| { readonly status: 'available', readonly settings: Settings, readonly rpcConfiguration: RpcConfigurationState }
+	| { readonly status: 'unavailable', readonly rpcConfiguration: RpcConfigurationState, readonly websiteApprovals: WebsiteApprovalsSnapshot }
 
 const capturedRpcNetworkMarker = Symbol('capturedRpcNetwork')
 export type CapturedRpcNetwork = {
@@ -167,29 +144,61 @@ export function captureRpcNetwork(settings: Settings): CapturedRpcNetwork {
 	return { activeRpcNetwork: settings.activeRpcNetwork, [capturedRpcNetworkMarker]: true }
 }
 
-// Returns undefined when storage cannot be read. Earlier settings may hold website approvals revoked since they were read, so callers must fail closed instead of reusing them.
-export async function getSettingsForCapturedRpcNetwork(capturedRpcNetwork: CapturedRpcNetwork): Promise<Settings | undefined> {
+const getStorageReadError = (rpcConfiguration: RpcConfigurationState) => rpcConfiguration.status === 'unavailable' && rpcConfiguration.reason === 'read-failed' ? { error: 'error' in rpcConfiguration ? rpcConfiguration.error : undefined } : undefined
+
+// The single settings read. With `pinnedRpcNetwork` the settings are built on that admitted network whatever the stored RPC configuration says, and are unavailable only when storage cannot be read.
+export async function getSettingsSnapshot(options: { readonly pinnedRpcNetwork?: CapturedRpcNetwork } = {}): Promise<SettingsSnapshot> {
 	const { storedItems, rpcConfiguration } = await getRpcConfigurationStateWithStorageSnapshot(SETTINGS_STORAGE_KEYS)
-	if (rpcConfiguration.status === 'unavailable' && rpcConfiguration.reason === 'read-failed') return undefined
-	return await getSettingsFromStorageItems(storedItems, capturedRpcNetwork.activeRpcNetwork)
+	const storageReadError = getStorageReadError(rpcConfiguration)
+	const activeRpcNetwork = options.pinnedRpcNetwork !== undefined
+		? storageReadError === undefined ? options.pinnedRpcNetwork.activeRpcNetwork : undefined
+		: 'activeRpcNetwork' in rpcConfiguration ? rpcConfiguration.activeRpcNetwork : undefined
+	if (activeRpcNetwork !== undefined) return { status: 'available', settings: await getSettingsFromStorageItems(storedItems, activeRpcNetwork), rpcConfiguration }
+	const websiteApprovals: WebsiteApprovalsSnapshot = storageReadError === undefined
+		? { status: 'readable', websiteAccess: await getWebsiteAccessFromStorageItems(storedItems) }
+		: { status: 'unreadable', error: storageReadError.error }
+	return { status: 'unavailable', rpcConfiguration, websiteApprovals }
 }
 
-// Use for settings that must be published even when they cannot be read back: the latest settings on `settings`' RPC network, or `settings` without website approvals when storage is unreadable (matching getSettingsSnapshot, so revoked approvals are never republished).
-export async function rereadSettingsForPublication(settings: Settings): Promise<Settings> {
-	return await getSettingsForCapturedRpcNetwork(captureRpcNetwork(settings)) ?? { ...settings, websiteAccess: [] }
-}
-
-// A narrow read of website approvals for access decisions: unreadable or corrupt storage yields no approvals, and nothing is repaired or written.
-export async function getWebsiteAccessForAccessDecision(): Promise<WebsiteAccessArray> {
-	let storedWebsiteAccess: unknown
+// The approvals-only read, for paths that must not wait on the RPC configuration lock. `repairCorrupt` writes no approvals over a corrupt value (a failed write is unreadable); without it a corrupt value reads as no approvals and nothing is written.
+export async function getWebsiteApprovalsSnapshot(options: { readonly repairCorrupt: boolean }): Promise<WebsiteApprovalsSnapshot> {
 	try {
-		const { websiteAccess } = await browser.storage.local.get('websiteAccess')
-		storedWebsiteAccess = websiteAccess
-	} catch {
-		return []
+		if (options.repairCorrupt) return { status: 'readable', websiteAccess: sanitizeWebsiteAccess(await getParsedStorageValueOrDefault('websiteAccess', [])) }
+		const { websiteAccess: storedWebsiteAccess } = await browser.storage.local.get('websiteAccess')
+		if (storedWebsiteAccess === undefined) return { status: 'readable', websiteAccess: [] }
+		return { status: 'readable', websiteAccess: sanitizeWebsiteAccess(browserStorageLocalSafeParse({ websiteAccess: storedWebsiteAccess })?.websiteAccess ?? []) }
+	} catch (error: unknown) {
+		return { status: 'unreadable', error }
 	}
-	if (storedWebsiteAccess === undefined) return []
-	return sanitizeWebsiteAccess(browserStorageLocalSafeParse({ websiteAccess: storedWebsiteAccess })?.websiteAccess ?? [])
+}
+
+// Projection for operations that cannot continue without settings: throws the RPC-configuration-unavailable error.
+export function requireAvailableSettings(snapshot: SettingsSnapshot): Settings {
+	if (snapshot.status === 'unavailable') throw createRpcConfigurationUnavailableError()
+	return snapshot.settings
+}
+
+// Projection for callers that branch on availability themselves.
+export function settingsIfAvailable(snapshot: SettingsSnapshot): Settings | undefined {
+	return snapshot.status === 'available' ? snapshot.settings : undefined
+}
+
+// Projection for granting access: unreadable approvals fail closed to none.
+export function approvalsOrNone(snapshot: SettingsSnapshot | WebsiteApprovalsSnapshot): WebsiteAccessArray {
+	if (snapshot.status === 'available') return snapshot.settings.websiteAccess
+	const websiteApprovals = snapshot.status === 'unavailable' ? snapshot.websiteApprovals : snapshot
+	return websiteApprovals.status === 'readable' ? websiteApprovals.websiteAccess : []
+}
+
+// Projection for paths where a failed read must stop the caller (for example so applied request blocks stay in place): rethrows the storage error.
+export function requireReadableApprovals(websiteApprovals: WebsiteApprovalsSnapshot): WebsiteAccessArray {
+	if (websiteApprovals.status === 'unreadable') throw websiteApprovals.error
+	return websiteApprovals.websiteAccess
+}
+
+// Projection for settings that must still be published when they cannot be read back: `fallback` without website approvals, so revoked approvals are never republished.
+export function settingsForPublication(snapshot: SettingsSnapshot, fallback: Settings): Settings {
+	return snapshot.status === 'available' ? snapshot.settings : { ...fallback, websiteAccess: [] }
 }
 
 export const setPage = async (openedPageV2: Page) => await browserStorageLocalSet({ openedPageV2 })
@@ -321,11 +330,6 @@ async function getNormalizedWebsiteAccessFromStorage() {
 	const rawWebsiteAccess = await getParsedStorageValueOrDefault('websiteAccess', [])
 	const sanitizedWebsiteAccess = sanitizeWebsiteAccess(rawWebsiteAccess)
 	return { rawWebsiteAccess, sanitizedWebsiteAccess }
-}
-
-// Use where a failed read must stop the caller: throws when storage is unreadable and repairs a corrupt value to no approvals.
-export async function getWebsiteAccess() {
-	return (await getNormalizedWebsiteAccessFromStorage()).sanitizedWebsiteAccess
 }
 
 export async function updateWebsiteAccess(updateFunc: (prevState: WebsiteAccessArray) => WebsiteAccessArray) {

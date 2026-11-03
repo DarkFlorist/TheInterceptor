@@ -5,7 +5,7 @@ import type { PopupSettingsRequest } from '../types/popupSettingsRequests.js'
 import type { PopupMessage } from '../types/interceptor-messages.js'
 import type { PopupReplyOption } from '../types/interceptor-reply-messages.js'
 import { admitPopupRequest, popupMessageHandler, type PopupMessageHandlerMap, type PopupReadyAdmissionMethod, type PopupReadyMessageDispatcherContext } from './popupMessageHandlerRegistry.js'
-import { getSettingsSnapshot, requireSettings } from './settings.js'
+import { getSettingsSnapshot, settingsIfAvailable, requireAvailableSettings } from './settings.js'
 import { changeActiveAddress, enableSimulationMode, modifyMakeMeRich, popupChangeActiveRpc } from './popupMessageHandlers.js'
 import { queuePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
 import { getRpcServicesAtAdmission, rpcConfigurationIsReady } from './rpcConfigurationAvailability.js'
@@ -19,11 +19,11 @@ function settingsCommand<Method extends PopupSettingsRequest['method'] & PopupRe
 		const descriptor = popupSettingsOperations[method]
 		const admission = await settingsCoordinator.run(descriptor.operation, async () => {
 			const snapshot = await getSettingsSnapshot()
-			const refreshedContext = { ...context, settings: snapshot.settings, rpcConfiguration: snapshot.rpcConfiguration }
+			const refreshedContext = { ...context, settings: settingsIfAvailable(snapshot), rpcConfiguration: snapshot.rpcConfiguration }
 			const refreshedAdmission = admitPopupRequest(refreshedContext, request)
 			if (refreshedAdmission.kind === 'rejected') return refreshedAdmission.reply
 			try {
-				return await action({ ...refreshedContext, settings: requireSettings(snapshot) }, request)
+				return await action({ ...refreshedContext, settings: requireAvailableSettings(snapshot) }, request)
 			} catch (error: unknown) {
 				// Services can be cleared or paused after admission (for example by a failed provider reset); every settings command still owes the popup its typed reply.
 				if (!isRpcConfigurationUnavailableError(error)) throw error
