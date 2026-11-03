@@ -960,7 +960,7 @@ test('adding a Gnosis Safe proposal to its stack answers the website with the pr
 
 test('a Gnosis Safe owner signature answers the website with the proposal hash before opening the stack window, whose failure is reported', async () => {
 	const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
-	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeSimulationSignerAddress: safeTestOwnerAddress })])
+	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry({ safeSimulationSignerAddress: safeTestOwnerAddress })])
 	const { safeTx, safeTxHash } = await storeSafeProposalRequest({ status: 'WaitingForSigner' })
 	const signature = await safeTestOwnerAccount.signTypedData(EIP712Message.parse(safeTxToTypedDataJson(safeTx)))
 	const repliesReceivedBeforeCleanup = failOpeningTheSimulationStackWindow(postedMessages)

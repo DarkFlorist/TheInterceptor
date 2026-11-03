@@ -401,7 +401,7 @@ function createRecordingSimulator() {
 
 async function openSimulationModeConfirmation(simulator: ReturnType<typeof createRecordingSimulator>, selectedActiveAddress: bigint, transactionParams: SendTransactionParams, websiteTabConnections: ReturnType<typeof createWebsiteTabConnections>) {
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
-	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry()])
+	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry()])
 	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({ simulationMode: true, rpcNetwork: fakeRpcNetwork, activeSimulationAddress: selectedActiveAddress })
 	assert.deepEqual(await withSilencedConsole(async () => await modules.openConfirmTransactionDialogForTransaction(
 		simulator.ethereum,
@@ -574,7 +574,7 @@ test('simulates a configured Gnosis Safe that the page names as the sender, whil
 })
 
 const isSimulationModeSafeExecution = async (selectedActiveAddress: bigint, transactionParams: SendTransactionParams | SendRawTransactionParams) => {
-	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry()])
+	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry()])
 	const preparation = await prepareSafeTransactionConfirmation(ethereum, { kind: 'transaction', parameters: transactionParams }, true, selectedActiveAddress, undefined)
 	return preparation.gasPayment === 'simulated-safe-executor'
 }
@@ -622,7 +622,7 @@ const importCases = [
 
 for (const { description, imported } of importCases) {
 	test(description, async () => {
-		await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry()])
+		await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry()])
 		await (await import('../../app/ts/background/settings.js')).changeSimulationMode({ simulationMode: true, rpcNetwork: fakeRpcNetwork, activeSimulationAddress: SAFE_ADDRESS })
 		assert.deepEqual(await importStackedTransaction(createSafeCall({ value: 7n, input: new Uint8Array(), gas: 63_000n }, imported)), ORDINARY_SIMULATION_OPTIONS)
 	})
