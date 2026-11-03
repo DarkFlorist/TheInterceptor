@@ -5,7 +5,7 @@ import type { Website, WebsiteAccess, WebsiteAccessArray } from '../../types/web
 import { getErrorMessage, reportUnexpectedError } from '../../utils/errors.js'
 import { checkAndThrowRuntimeLastError } from '../../utils/requests.js'
 import { modifyObject } from '../../utils/typescript.js'
-import { getWebsiteHostname } from '../../utils/websiteOrigin.js'
+import { getWebsiteHostname, shareNetworkBlocking } from '../../utils/websiteOrigin.js'
 import { setInterceptorDisabledForWebsite, updateWebsiteApprovalAccesses } from '../accessManagement.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { getLastKnownCurrentTabId } from '../currentTab.js'
@@ -55,10 +55,8 @@ export async function retrieveWebsiteAccess(parsedRequest: RetrieveWebsiteAccess
 
 // Network blocking is enforced per hostname across every scheme and port (updateDeclarativeNetRequestBlocks), so a toggle sets every record sharing the hostname. Updating only the selected origin would let another scheme's record keep blocking it while its toggle shows it as unblocked.
 export function setNetworkBlockModeForHostname(websiteAccess: WebsiteAccessArray, websiteOrigin: string, shouldBlock: boolean): WebsiteAccessArray {
-	const hostname = getWebsiteHostname(websiteOrigin)
 	return websiteAccess.map((access) => {
-		const sharesBlockedHostname = access.website.websiteOrigin === websiteOrigin || (hostname !== undefined && getWebsiteHostname(access.website.websiteOrigin) === hostname)
-		if (!sharesBlockedHostname) return access
+		if (!shareNetworkBlocking(access.website.websiteOrigin, websiteOrigin)) return access
 		return modifyObject(access, { declarativeNetRequestBlockMode: shouldBlock ? 'block-all' : 'disabled' })
 	})
 }
@@ -68,7 +66,7 @@ type WebsiteAccessEdit = { readonly removed: boolean, readonly oldEntry: Website
 
 const blocksNetworkRequests = (access: WebsiteAccess) => access.declarativeNetRequestBlockMode === 'block-all'
 
-// A save's explicit block toggles, one per hostname (or per origin without one). Throws before anything is written when two toggles of one hostname disagree, since enforcement cannot block a hostname for one scheme and not another.
+// A save's explicit block toggles, one per hostname (or per origin without one). Throws before anything is written when two toggles of one hostname disagree, since enforcement cannot block a hostname for one scheme and not another. The access-list editor keeps a hostname's toggles equal (setEditableNetworkBlockMode), so this only rejects a crafted or stale message.
 export function getNetworkBlockDecisions(edits: readonly WebsiteAccessEdit[]): readonly NetworkBlockDecision[] {
 	const decisions = new Map<string, NetworkBlockDecision>()
 	for (const edit of edits) {
