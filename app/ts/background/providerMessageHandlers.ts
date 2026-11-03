@@ -158,8 +158,18 @@ async function changeSignerChain(simulationServicesOwner: SimulationServicesOwne
 	// update active address if we are using signers address
 	const settings = await getSettings()
 	const selectedSafe = await getConfiguredSigningSafe(settings, tabStateChange.newState.signerAccounts)
-	if (!settings.simulationMode && await hasPinnedSigningAddress(settings) || selectedSafe !== undefined) {
-		// Safe signing is pinned to the Safe's configured Interceptor chain. A signer-wallet chain change only refreshes signer state; it must not move the dapp away from the active Safe.
+	const signingAddressIsPinned = !settings.simulationMode && await hasPinnedSigningAddress(settings)
+	// A network switch Interceptor requested (requestedRpcNetwork) is applied for a pinned address, which keeps its selection; only the wallet's own chain events are ignored for it.
+	if (selectedSafe === undefined && signingAddressIsPinned && requestedRpcNetwork !== undefined) {
+		if (getRpcNetworkChange(settings.activeRpcNetwork, requestedRpcNetwork).selectionChanged) {
+			await changeActiveAddressAndChain(simulationServicesOwner, websiteTabConnections, { simulationMode: settings.simulationMode, rpcNetwork: requestedRpcNetwork })
+		} else if (oldSignerChain !== signerChain) {
+			await sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
+		}
+		return
+	}
+	if (signingAddressIsPinned || selectedSafe !== undefined) {
+		// Safe signing is pinned to the Safe's configured Interceptor chain, and a saved signing address does not follow the browser wallet. A signer-wallet chain change only refreshes signer state; it must not move the dapp away from the pinned selection.
 		if (oldSignerChain !== signerChain) {
 			await sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
 			await sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })

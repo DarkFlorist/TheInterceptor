@@ -577,6 +577,49 @@ describe('popup settings changes', () => {
 	}
 })
 
+test('a pinned signing address ignores the wallet\'s own chain changes but applies a network switch Interceptor requested', async () => {
+	installBrowserMock()
+	const { getSettings, websiteSocketToString, updateTabState, saveCurrentTabId } = await loadModules()
+	const { browserStorageLocalSet } = await import('../../app/ts/utils/storageUtils.js')
+	const { popupChangeActiveRpc } = await import('../../app/ts/background/popupMessageHandlers.js')
+	const { walletSwitchEthereumChainReply, signerChainChanged } = await import('../../app/ts/background/providerMessageHandlers.js')
+	const { setRpcList } = await import('../../app/ts/background/storageVariables.js')
+	const pinnedAddress = 1n
+	const walletAccount = 5n
+	const originalRpc = (await getSettings()).activeRpcNetwork
+	const walletChosenRpc = { ...originalRpc, chainId: 3n, name: 'Wallet-chosen network', httpsRpc: 'https://wallet-chosen.example.test', primary: true }
+	const requestedRpc = { ...originalRpc, chainId: 2n, name: 'Requested network', httpsRpc: 'https://requested.example.test', primary: true }
+	await setRpcList([originalRpc, walletChosenRpc, requestedRpc])
+	await browserStorageLocalSet({ simulationMode: false, selectedSigningAddress: pinnedAddress, useSignersAddressAsActiveAddress: false })
+	await updateTabState(1, (previous) => ({ ...previous, signerAccounts: [walletAccount], activeSigningAddress: walletAccount, signerChain: originalRpc.chainId }))
+	await saveCurrentTabId(1)
+	const socket = { tabId: 1, connectionName: 0n }
+	const { port, messages } = createPort(1)
+	const connections = new Map([[1, { ...confirmedSignerOwnership(socket), connections: {
+		[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true },
+	} }]])
+	const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+
+	// The wallet switching networks on its own does not move Interceptor away from the pinned address's network.
+	await signerChainChanged(simulationServicesOwner, connections, port, { method: 'signer_chainChanged', params: ['0x3', 1] }, 'hasAccess', pinnedAddress)
+	assert.deepEqual((await getSettings()).activeRpcNetwork, originalRpc)
+
+	const pending = popupChangeActiveRpc(simulationServicesOwner, connections, { method: 'popup_changeActiveRpc', data: requestedRpc })
+	await waitForPortMessageCount(messages, 'request_signer_to_wallet_switchEthereumChain', 1)
+	await walletSwitchEthereumChainReply(simulationServicesOwner, connections, port, {
+		method: 'wallet_switchEthereumChain_reply',
+		params: [{ accept: true, chainId: '0x2', walletSwitchRequestId: getWalletSwitchRequestId(messages), signerProviderGeneration: 1 }],
+	}, 'hasAccess', pinnedAddress)
+	const reply = await pending
+
+	assert.equal(reply.ok, true)
+	const settings = await getSettings()
+	assert.deepEqual(settings.activeRpcNetwork, requestedRpc)
+	assert.equal(settings.selectedSigningAddress, pinnedAddress)
+	// Applying the requested network must not adopt the browser wallet's account in place of the pinned address.
+	assert.notEqual(settings.activeSigningAddress, walletAccount)
+})
+
 test('pinned signing selections retain the supported-network fallback when switching modes', async () => {
 	installBrowserMock()
 	const { changeSimulationMode, getSettings } = await loadModules()
