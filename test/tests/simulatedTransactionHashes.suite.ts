@@ -772,3 +772,104 @@ for (const failure of ['throws before stacking', 'finds its hash taken'] as cons
 		assert.deepEqual(hashesOf(await getStackedTransactions()), hashesOf(stackBefore.operations.map((operation) => operation.preSimulationTransaction)), 'nothing new is stacked')
 	})
 }
+
+// Pauses the next write of the pending requests, the removal that resolving a request makes, and then fails it once or lets it through, as chosen when released.
+const pauseNextPendingWriteThen = () => {
+	let signalPaused = () => undefined
+	const paused = new Promise<void>((resolve) => { signalPaused = () => { resolve() } })
+	let release: (fail: boolean) => void = () => undefined
+	const released = new Promise<boolean>((resolve) => { release = resolve })
+	let armed = true
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		if (!armed || !('pendingTransactionsAndMessages' in items)) return writeStoredItems()
+		armed = false
+		signalPaused()
+		if (await released) throw new Error('transient pending request write failure')
+		writeStoredItems()
+	})
+	return { paused, release: (fail: boolean) => { release(fail) } }
+}
+
+// Fails the next write of the pending requests once.
+const failNextPendingWrite = () => {
+	let armed = true
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		if (!armed || !('pendingTransactionsAndMessages' in items)) return writeStoredItems()
+		armed = false
+		throw new Error('transient pending request write failure')
+	})
+}
+
+test('delivers the accepted hash, never a rejection, when the removal after stacking fails behind a popup close', async () => {
+	await startSimulationStack(SENDER)
+	const postedMessages: unknown[] = []
+	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+	const request = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+	const pause = pauseNextPendingWriteThen()
+	const accepting = withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier: request } })).then(() => undefined, () => undefined)
+	await pause.paused
+	try {
+		assert.equal((await getStackedTransactions()).length, 1, 'the accept stacked the transaction before removing the request')
+		await withSilencedConsole(async () => await modules.onCloseWindowOrTab({ type: 'popup', id: CONFIRMATION_WINDOW_ID }, simulator.ethereum, simulator.tokenPriceService, websiteTabConnections))
+	} finally {
+		pause.release(true)
+	}
+	await accepting
+	browserMock.setStorageSetHandler(undefined)
+	await waitUntilNothingPending()
+	const stacked = await getStackedTransactions()
+	assert.equal(stacked.length, 1)
+	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [{ result: stacked[0]?.signedTransaction.hash }], 'the page gets exactly the stacked hash')
+})
+
+test('rejects a request once when the removal after a deferred close\'s rejection fails and is retried', async () => {
+	await startSimulationStack(SENDER)
+	const postedMessages: unknown[] = []
+	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+	const request = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+	const pause = pauseNextStackReadThen()
+	const accepting = withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier: request } })).then(() => undefined, () => undefined)
+	await pause.paused
+	try {
+		await withSilencedConsole(async () => await modules.onCloseWindowOrTab({ type: 'popup', id: CONFIRMATION_WINDOW_ID }, simulator.ethereum, simulator.tokenPriceService, websiteTabConnections))
+		failNextPendingWrite()
+	} finally {
+		pause.release(true)
+	}
+	await withSilencedConsole(async () => {
+		await accepting
+		await waitUntilNothingPending()
+	})
+	browserMock.setStorageSetHandler(undefined)
+	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [{ error: 4001 }], 'the retry sends no second rejection')
+	assert.deepEqual(await getStackedTransactions(), [])
+})
+
+test('rejects a request once when a reject\'s removal fails and a popup close follows', async () => {
+	await startSimulationStack(SENDER)
+	const postedMessages: unknown[] = []
+	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+	const request = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+	failNextPendingWrite()
+	await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'reject', uniqueRequestIdentifier: request } })).then(() => undefined, () => undefined)
+	browserMock.setStorageSetHandler(undefined)
+	assert.equal((await modules.getPendingTransactionsAndMessages()).length, 1, 'the failed removal left the request pending')
+	await withSilencedConsole(async () => await modules.onCloseWindowOrTab({ type: 'popup', id: CONFIRMATION_WINDOW_ID }, simulator.ethereum, simulator.tokenPriceService, websiteTabConnections))
+	await waitUntilNothingPending()
+	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [{ error: 4001 }])
+})
+
+test('answers a popup close with the stacked hash when the request\'s transaction is already stacked but no reply was committed', async () => {
+	await startSimulationStack(SENDER)
+	const postedMessages: unknown[] = []
+	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+	const request = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+	const [pending] = await modules.getPendingTransactionsAndMessages()
+	if (pending?.type !== 'Transaction' || pending.transactionOrMessageCreationStatus !== 'Simulated') throw new Error('Expected a simulated pending transaction')
+	// As an accept leaves it that stacked the transaction and stopped before committing its reply, or one whose commitment a restart lost.
+	const stackedTransaction = toPreSimulationTransaction(pending.transactionToSimulate, pending.simulationHashReservation)
+	await modules.updateInterceptorTransactionStack(() => ({ operations: [asOperation(stackedTransaction)] }))
+	await withSilencedConsole(async () => await modules.onCloseWindowOrTab({ type: 'popup', id: CONFIRMATION_WINDOW_ID }, simulator.ethereum, simulator.tokenPriceService, websiteTabConnections))
+	await waitUntilNothingPending()
+	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [{ result: stackedTransaction.signedTransaction.hash }])
+})
