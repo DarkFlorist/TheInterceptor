@@ -321,23 +321,28 @@ async function scheduleRequestRetry(uniqueRequestIdentifier: UniqueRequestIdenti
 		failedAttempts,
 		generation,
 		...(!retrying ? {} : {
-			timer: setTimeout(function runRetry() {
+			timer: setTimeout(() => {
 				if (requestRetries.get(claim)?.generation !== generation) return
-				// While another resolution holds the request, the retry waits for it, counting no attempt, instead of leaving it a follow-up.
+				requestRetries.set(claim, { failedAttempts, generation })
+				// While another resolution holds the request, the retry is parked on its claim, counting no attempt, and runs once when the claim is released.
 				if (resolutionClaims.has(claim)) {
-					requestRetries.set(claim, { failedAttempts, generation, timer: setTimeout(runRetry, FINISHING_RETRY_BASE_DELAY_MS) })
+					const parked = deferredResolutions.get(claim)
+					deferredResolutions.set(claim, { ...(parked ?? { automaticOnly: true, followUp: false }), parkedRetryGeneration: generation })
 					return
 				}
-				requestRetries.set(claim, { failedAttempts, generation })
-				const retryContext = withoutHeldLocks(context)
-				const decline = declineIntents.get(claim)
-				void (decline === undefined ? resumeRequest(uniqueRequestIdentifier, retryContext) : declineRequest(uniqueRequestIdentifier, decline, retryContext))
+				void runRequestRetry(uniqueRequestIdentifier, withoutHeldLocks(context))
 			}, FINISHING_RETRY_BASE_DELAY_MS * 2 ** (failedAttempts - 1)),
 		}),
 	})
 	await reportLocalRecovery(error, retrying
 		? { code: 'request_resolution_retrying', message: 'Retrying the resolution of a request.' }
 		: { code: 'request_resolution_gave_up', message: 'Stopped retrying the resolution of a request until the user acts on it or the extension restarts.' })
+}
+
+// A retry of the request, automatic so it passes the budget gate: it declines the request if a decline was asked for, else finishes it.
+async function runRequestRetry(uniqueRequestIdentifier: UniqueRequestIdentifier, retryContext: ResolutionContext) {
+	const decline = declineIntents.get(getUniqueRequestIdentifierString(uniqueRequestIdentifier))
+	return decline === undefined ? await resumeRequest(uniqueRequestIdentifier, retryContext) : await declineRequest(uniqueRequestIdentifier, decline, retryContext)
 }
 
 type FinishingOutcome =
@@ -454,8 +459,8 @@ export async function resumeCommittedRequests(ethereum: EthereumClientService, t
 
 // The requests whose terminal outcome an accept, reject or close has claimed and is carrying out. A claim is taken synchronously, so of racing resolutions of a request exactly one stacks it or replies; the others return false without either. Under the claim, a committed request is only finished (finishCommittedRequest); only an uncommitted pending request gets an outcome chosen (resolve).
 const resolutionClaims = new Set<string>()
-// What to run for a request once its claim is released, recorded by a resolution that found it claimed, coalesced into one entry. Only data: the claim holder runs it in its own context (which knows whether it holds the pending-confirmation lock). The request is always finished again first, so that pass sees what changed meanwhile (its requesting tab closing, say); then a requested decline runs (declineRequest), which rejects a request still pending and uncommitted, such as one whose claimed accept failed, and does nothing for one that was resolved. Each follow-up runs once per recording, so the passes stop once nothing records more. automaticOnly: every resolution that recorded it was automatic, so it runs only while the budget lasts.
-type DeferredResolution = { readonly decline?: DeclineReason, readonly automaticOnly: boolean }
+// What to run for a request once its claim is released, recorded by a resolution that found it claimed, coalesced into one entry. Only data: the claim holder runs it in its own context (which knows whether it holds the pending-confirmation lock). The request is always finished again first, so that pass sees what changed meanwhile (its requesting tab closing, say); then a requested decline runs (declineRequest), which rejects a request still pending and uncommitted, such as one whose claimed accept failed, and does nothing for one that was resolved. Each follow-up runs once per recording, so the passes stop once nothing records more. automaticOnly: every resolution that recorded it was automatic, so it runs only while the budget lasts. followUp: a resolution recorded work to follow; parkedRetryGeneration: a scheduled retry came due meanwhile, which runs on release if it is still the request's current one. Parked retries collapse into one entry.
+type DeferredResolution = { readonly decline?: DeclineReason, readonly automaticOnly: boolean, readonly followUp: boolean, readonly parkedRetryGeneration?: number }
 const deferredResolutions = new Map<string, DeferredResolution>()
 type WhenClaimed = 'finish-again' | 'nothing' | { readonly decline: DeclineReason }
 // Thrown for a decline whose finishing could not tell whether the request is committed (finishCommittedRequest returned retrying): the finishing's own retry only finishes committed requests, so the decline retries itself.
@@ -472,7 +477,12 @@ async function withResolutionClaim<Result>(uniqueRequestIdentifier: UniqueReques
 			const previous = deferredResolutions.get(claim)
 			const decline = whenClaimed === 'finish-again' ? previous?.decline : whenClaimed.decline
 			const automaticOnly = (previous?.automaticOnly ?? true) && context.automatic === true
-			deferredResolutions.set(claim, decline === undefined ? { automaticOnly } : { decline, automaticOnly })
+			deferredResolutions.set(claim, {
+				automaticOnly,
+				followUp: true,
+				...(decline === undefined ? {} : { decline }),
+				...(previous?.parkedRetryGeneration === undefined ? {} : { parkedRetryGeneration: previous.parkedRetryGeneration }),
+			})
 		}
 		return false
 	}
@@ -494,11 +504,15 @@ async function withResolutionClaim<Result>(uniqueRequestIdentifier: UniqueReques
 		resolutionClaims.delete(claim)
 		const deferred = deferredResolutions.get(claim)
 		deferredResolutions.delete(claim)
-		if (deferred !== undefined) {
-			// Follow-ups only automatic resolutions recorded are automatic, and pass the budget gate; one a user action recorded runs regardless.
+		const parkedRetryIsCurrent = deferred?.parkedRetryGeneration !== undefined && requestRetries.get(claim)?.generation === deferred.parkedRetryGeneration
+		if (deferred?.followUp === true) {
+			// Follow-ups only automatic resolutions recorded are automatic, and pass the budget gate; one a user action recorded runs regardless. A parked retry's decline joins them.
 			const followUpContext: ResolutionContext = deferred.automaticOnly ? { ...context, automatic: true } : { ethereum: context.ethereum, tokenPriceService: context.tokenPriceService, websiteTabConnections: context.websiteTabConnections, ...(context.holdsPendingConfirmationLock === true ? { holdsPendingConfirmationLock: true } : {}) }
 			await resumeRequest(uniqueRequestIdentifier, followUpContext)
-			if (deferred.decline !== undefined) await declineRequest(uniqueRequestIdentifier, deferred.decline, followUpContext)
+			const decline = deferred.decline ?? (parkedRetryIsCurrent ? declineIntents.get(claim) : undefined)
+			if (decline !== undefined) await declineRequest(uniqueRequestIdentifier, decline, followUpContext)
+		} else if (parkedRetryIsCurrent) {
+			await runRequestRetry(uniqueRequestIdentifier, { ...context, automatic: true })
 		}
 	}
 }

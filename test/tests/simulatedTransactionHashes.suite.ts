@@ -2389,7 +2389,7 @@ test('stops retrying a connected port\'s reply flush when storage keeps failing,
 	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
 })
 
-test('counts concurrent failures of one request against its one retry budget, with one timer, and cancels it on completion', async () => {
+test('counts concurrent failures of one request against its one retry budget, with one timer that parks on the claim, and cancels it on completion', async () => {
 	await startSimulationStack(SENDER)
 	const postedMessages: unknown[] = []
 	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
@@ -2415,11 +2415,10 @@ test('counts concurrent failures of one request against its one retry budget, wi
 			await Promise.all([rejectRequest(request, websiteTabConnections), rejectRequest(request, websiteTabConnections)])
 			await waitForCondition(async () => failedIntentWrites >= 2)
 			await new Promise((resolve) => setTimeout(resolve, 40))
-			// The accept's claim, its deferred decline and one retry timer.
-			assert.equal(getResolutionBookkeepingSize(), 3, 'one retry timer')
-			// While the accept holds the request, the retry waits for it rather than attempting or deferring more.
+			// The accept's claim and its deferred decline, with at most one retry timer, which parks on the claim when it comes due.
+			assert.ok(getResolutionBookkeepingSize() <= 3, 'at most one retry timer')
 			await new Promise((resolve) => setTimeout(resolve, 500))
-			assert.equal(getResolutionBookkeepingSize(), 3)
+			assert.equal(getResolutionBookkeepingSize(), 2, 'the retry is parked, not polling')
 		})
 		assert.equal(failedIntentWrites, 2, 'each failure counted once, and no attempts while the request is claimed')
 	} finally {
@@ -2486,3 +2485,52 @@ for (const recovery of ['a new reject', 'startup'] as const) {
 		await waitForNoResolutionBookkeeping()
 	}, 90_000)
 }
+
+test('parks a retry that comes due while the request is claimed, without polling, and runs it once the claim is released', async () => {
+	await startSimulationStack(SENDER)
+	const postedMessages: unknown[] = []
+	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+	const request = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+	// The reject's first committed-reply read fails, and reporting that failure is held, so its retry comes due while the reject still holds the claim.
+	let failedReads = 0
+	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+		if (failedReads > 0 || !readsKey(keys, 'pendingTerminalReplies')) return readStoredItems()
+		failedReads += 1
+		throw new Error('transient read failure')
+	})
+	const report = createGate()
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		if ('interceptorErrorDiagnostics' in items) await report.pass()
+		writeStoredItems()
+	})
+	// Counts the timers scheduled while the report is held.
+	const realSetTimeout = globalThis.setTimeout
+	let schedules = 0
+	const countingSetTimeout = (...args: Parameters<typeof setTimeout>) => {
+		schedules += 1
+		return realSetTimeout(...args)
+	}
+	try {
+		const rejecting = withSilencedConsole(async () => await rejectRequest(request, websiteTabConnections))
+		await report.reached
+		// The retry comes due within 50 ms and parks.
+		await new Promise((resolve) => realSetTimeout(resolve, 100))
+		globalThis.setTimeout = Object.assign(countingSetTimeout, realSetTimeout)
+		await new Promise((resolve) => realSetTimeout(resolve, 1_000))
+		globalThis.setTimeout = realSetTimeout
+		assert.equal(schedules, 0, 'nothing is scheduled while the claim is held')
+		report.open()
+		await rejecting
+		await withSilencedConsole(async () => {
+			await waitUntilNothingPending()
+			await waitForCondition(async () => (await modules.getPendingTerminalReplies()).length === 0)
+		})
+	} finally {
+		globalThis.setTimeout = realSetTimeout
+		browserMock.setStorageGetHandler(undefined)
+		browserMock.setStorageSetHandler(undefined)
+	}
+	assert.equal(failedReads, 1)
+	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [{ error: 4001 }], 'one settlement')
+	await waitForNoResolutionBookkeeping()
+})
