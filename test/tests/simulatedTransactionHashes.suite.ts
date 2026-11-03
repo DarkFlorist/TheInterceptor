@@ -640,3 +640,78 @@ test('stops an accept whose request was resolved while it waited', async () => {
 	assert.deepEqual(await getStackedTransactions(), [], 'nothing is stacked')
 	assert.deepEqual(getReplyHashes(postedMessages, request.requestId), [])
 })
+
+// The page's terminal responses to a request: success hashes and error codes.
+const getPageResponses = (postedMessages: readonly unknown[], requestId: number) => postedMessages.flatMap((message) => {
+	if (!isRecord(message) || message.requestId !== requestId) return []
+	if (typeof message.result === 'string') return [{ result: BigInt(message.result) }]
+	if (isRecord(message.error) && typeof message.error.code === 'number') return [{ error: message.error.code }]
+	return []
+})
+
+// Pauses the next stack read, which an unreserved request's acceptance makes while allocating its reservation, after it claimed the request.
+const pauseNextStackRead = () => {
+	let signalPaused = () => undefined
+	const paused = new Promise<void>((resolve) => { signalPaused = () => { resolve() } })
+	let release = () => undefined
+	const released = new Promise<void>((resolve) => { release = () => { resolve() } })
+	let armed = true
+	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+		if (!armed || !Array.isArray(keys) || !keys.includes('interceptorTransactionStack')) return readStoredItems()
+		armed = false
+		signalPaused()
+		await released
+		return readStoredItems()
+	})
+	return { paused, release: () => { browserMock.setStorageGetHandler(undefined); release() } }
+}
+
+for (const competitor of ['reject', 'popup close'] as const) {
+	test(`lets an accept paused while it allocates win over a ${ competitor }, so the stack and the page agree`, async () => {
+		await startSimulationStack(SENDER)
+		const postedMessages: unknown[] = []
+		const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+		const request = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+		await withoutReservations([1])
+		const pause = pauseNextStackRead()
+		const accepting = withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier: request } }))
+		await pause.paused
+		try {
+			const competing = competitor === 'reject'
+				? await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'reject', uniqueRequestIdentifier: request } }))
+				: await withSilencedConsole(async () => await modules.onCloseWindowOrTab({ type: 'popup', id: CONFIRMATION_WINDOW_ID }, simulator.ethereum, simulator.tokenPriceService, websiteTabConnections))
+			if (competitor === 'reject') assert.equal(competing, false, 'the reject loses to the claimed accept')
+		} finally {
+			pause.release()
+			await accepting
+		}
+		const stacked = await getStackedTransactions()
+		assert.equal(stacked.length, 1)
+		assert.deepEqual(getPageResponses(postedMessages, request.requestId), [{ result: stacked[0]?.signedTransaction.hash }], 'the page gets only the accepted hash')
+		assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	})
+}
+
+test('stacks nothing for an accept that comes after a reject resolved the request', async () => {
+	await startSimulationStack(SENDER)
+	const postedMessages: unknown[] = []
+	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+	const request = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+	await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'reject', uniqueRequestIdentifier: request } }))
+	const accepted = await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier: request } }))
+	assert.notEqual(accepted, true)
+	assert.deepEqual(await getStackedTransactions(), [])
+	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [{ error: 4001 }], 'the page gets only the rejection')
+})
+
+test('lets a reject that claimed the request first win over an accept that starts while it replies', async () => {
+	await startSimulationStack(SENDER)
+	const postedMessages: unknown[] = []
+	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+	const request = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+	const resolve = (action: 'accept' | 'reject') => withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action, uniqueRequestIdentifier: request } }))
+	const outcomes = await Promise.allSettled([resolve('reject'), resolve('accept')])
+	assert.deepEqual(outcomes.map((outcome) => outcome.status), ['fulfilled', 'fulfilled'])
+	assert.deepEqual(await getStackedTransactions(), [])
+	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [{ error: 4001 }])
+})
