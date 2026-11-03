@@ -1,4 +1,5 @@
 import { getBrowserProviderId } from '../utils/browserProviderIdentity.js'
+import { EthereumAddress } from '../types/wire-types.js'
 import type { EthereumJsonRpcRequest } from '../types/JsonRpc-types.js'
 import type { TabState } from '../types/user-interface-types.js'
 import type { SigningWallet } from '../types/signingWallet.js'
@@ -40,4 +41,16 @@ export function browserSigningRequestAccount(request: EthereumJsonRpcRequest): b
 		case 'eth_signTypedData_v4': return request.params[0]
 		default: return undefined
 	}
+}
+
+export type UnparsedSigningRequestAccount = { readonly readable: true, readonly address: bigint | undefined } | { readonly readable: false }
+
+/** The account of a signing request Interceptor has no schema for. EIP-5792 wallet_sendCalls names it in an optional `from`, and without one the wallet signs with its selected account. Other unparsed signing methods have no account Interceptor can read. */
+export function unparsedSigningRequestAccount(request: { readonly method: string, readonly params?: unknown }): UnparsedSigningRequestAccount {
+	if (request.method !== 'wallet_sendCalls' || !Array.isArray(request.params)) return { readable: false }
+	const [calls] = request.params
+	if (typeof calls !== 'object' || calls === null) return { readable: false }
+	if (!('from' in calls) || calls.from === undefined) return { readable: true, address: undefined }
+	const from = EthereumAddress.safeParse(calls.from)
+	return from.success ? { readable: true, address: from.value } : { readable: false }
 }

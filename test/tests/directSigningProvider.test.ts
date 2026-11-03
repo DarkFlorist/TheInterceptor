@@ -212,3 +212,33 @@ test('request admission with uncached browser accounts fails promptly without pr
 	expect(admission.admissionError).toMatchObject({ code: 4100 })
 	expect(messages).toEqual([])
 })
+
+for (const scenario of [
+	{ name: 'an unbound selected address refuses a batch for another wallet account', bound: false, method: 'wallet_sendCalls', from: 2n, error: 4100 },
+	{ name: 'a bound selected address refuses a batch naming another account', bound: true, method: 'wallet_sendCalls', from: 2n, error: 4100 },
+	{ name: 'a bound selected address forwards a batch naming it', bound: true, method: 'wallet_sendCalls', from: 1n, error: undefined },
+	{ name: 'a bound selected address forwards a batch for the wallet\'s selected account', bound: true, method: 'wallet_sendCalls', from: undefined, error: undefined },
+	{ name: 'a bound selected address refuses an unknown signing method whose account it cannot read', bound: true, method: 'eth_signFutureFormat', from: 1n, error: 4200 },
+]) test(`signing admission does not depend on a request schema: ${ scenario.name }`, async () => {
+	installBrowserMock()
+	const { updateTabState } = await loadModules()
+	const { resolveSigningRequest } = await import('../../app/ts/background/signingRequestResolver.js')
+	const { EthereumJsonRpcRequest } = await import('../../app/ts/types/JsonRpc-types.js')
+	await saveAddressSigningWallet(1n, scenario.bound ? { type: 'browser', address: 1n, label: 'Saved', signerName: 'MetaMask', providerId: 'eip6963:io.metamask' } : undefined, undefined, 'Selected address')
+	await browserStorageLocalSet({ selectedSigningAddress: 1n })
+	// The connected browser wallet has the selected address and another account.
+	await updateTabState(1, (tab) => ({ ...tab, signerConnected: true, signerName: 'MetaMask', signerProvider: { rdns: 'io.metamask', ambiguous: false }, signerAccounts: scenario.bound ? [1n, 2n] : [2n] }))
+	const socket = { tabId: 1, connectionName: 0n }
+	const batch = { version: '2.0.0', chainId: '0x1', atomicRequired: false, calls: [{ to: '0x0000000000000000000000000000000000000003', value: '0x0' }], ...(scenario.from === undefined ? {} : { from: `0x${ scenario.from.toString(16).padStart(40, '0') }` }) }
+	const request = { method: scenario.method, params: [batch], interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier: { requestId: 1, requestSocket: socket } }
+	const parsed = EthereumJsonRpcRequest.safeParse(request)
+	expect(parsed.success).toBe(false)
+	const result = await resolveSigningRequest(new Map(), socket, request, undefined, { ...await getSettings(), simulationMode: false }, 1n, undefined, false, false, undefined)
+	if (scenario.error === undefined) {
+		expect(result.admissionError).toBeUndefined()
+		expect(result.forwardingReply).toMatchObject({ type: 'forwardToSigner', method: scenario.method, expectedProviderId: 'eip6963:io.metamask' })
+	} else {
+		expect(result.admissionError).toMatchObject({ code: scenario.error })
+		expect(result.forwardingReply).toBeUndefined()
+	}
+})
