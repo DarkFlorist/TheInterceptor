@@ -8,7 +8,7 @@ import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBala
 import { PASSTHROUGH_STATE, type ResolvedExecutionSimulationState, type ResolvedSimulationInput, toResolvedExecutionSimulationState, toResolvedSimulationInput } from '../types/visualizer-types.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, requestAccessFromUser } from './windows/interceptorAccess.js'
-import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_PROVIDER_DISCONNECTED, METAMASK_ERROR_USER_REJECTED_REQUEST, ERROR_INTERCEPTOR_DISABLED } from '../utils/constants.js'
+import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_PROVIDER_DISCONNECTED, METAMASK_ERROR_USER_REJECTED_REQUEST, ERROR_ACTIVE_RPC_NETWORK_CHANGED, ERROR_INTERCEPTOR_DISABLED } from '../utils/constants.js'
 import { clearWebsiteConnectionIntent, finalizeWebsiteAccessChange, persistWebsiteAccessChange, readSettingsOrRevokeAffectedApprovals, sendAccountsChangedToPort, verifyAccess, withSuppressedUnscopedConnectionEventsForSocket } from './accessManagement.js'
 import { getActiveAddressEntryForChain, getWalletActiveAddressEntryForChain } from './metadataUtils.js'
 import { getActiveAddress } from './backgroundUtils.js'
@@ -39,6 +39,7 @@ import { hasAccess as getWebsiteAccessApprovalState, hasAddressAccess as getWebs
 import { replyIfRpcConfigurationIsUnavailable } from './rpcConfigurationRequestGuard.js'
 import { RPC_CONFIGURATION_UNAVAILABLE_ERROR } from '../types/interceptor-reply-messages.js'
 import { isRpcConfigurationUnavailableError } from '../utils/rpcConfigurationError.js'
+import { getRpcNetworkChange } from '../utils/rpcNetworkChange.js'
 
 if (initializeWatchAssetWindowListeners()) {
 	void processWatchAssetQueue(undefined).catch(async (error: unknown) => {
@@ -541,11 +542,17 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 	}
 }
 
-// A request can be parked on the website lookup or signer prompts after admission, so routing reads the live simulation mode and signing settings while the RPC network stays pinned to the admitted service pair.
-async function getLiveSettingsForAdmittedRpcNetwork(admittedSettings: Settings): Promise<Settings | undefined> {
+type LiveSettingsOnAdmittedRpcNetwork =
+	| { readonly kind: 'ready', readonly settings: Settings }
+	| { readonly kind: 'unavailable' }
+	| { readonly kind: 'network-changed' }
+
+// A request can be parked on the website lookup or signer prompts after admission, so routing reads one live settings snapshot (simulation mode, signing Safe). Its addresses belong to its own active network, so when that is no longer the admitted service pair's network the request fails closed instead of mixing two snapshots into one Settings.
+async function getLiveSettingsOnAdmittedRpcNetwork(admittedSettings: Settings): Promise<LiveSettingsOnAdmittedRpcNetwork> {
 	const { settings: liveSettings } = await getSettingsSnapshot()
-	if (liveSettings === undefined) return undefined
-	return { ...liveSettings, activeRpcNetwork: admittedSettings.activeRpcNetwork }
+	if (liveSettings === undefined) return { kind: 'unavailable' }
+	if (getRpcNetworkChange(admittedSettings.activeRpcNetwork, liveSettings.activeRpcNetwork).selectionChanged) return { kind: 'network-changed' }
+	return { kind: 'ready', settings: liveSettings }
 }
 
 // Storage reads, Safe preparation and wake-status publishing all await after routing is decided, so a signer forward is rechecked against the live simulation mode at the last await before it is posted.
@@ -559,8 +566,10 @@ async function recheckSignerForwardBeforePosting(resolved: RPCReply): Promise<'p
 async function handleContentScriptMessage(simulationServicesOwner: SimulationServicesOwner, simulationServices: SimulationServices | undefined, websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, website: Website, activeAddress: AddressBookEntry, admittedSettings: Settings, publishRpcConnectionStatus: PublishRpcConnectionStatus) {
 	try {
 		const requestWithDefinedParams = getRequestWithDefinedParams(request)
-		const settings = await getLiveSettingsForAdmittedRpcNetwork(admittedSettings)
-		if (settings === undefined) return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...requestWithDefinedParams, error: RPC_CONFIGURATION_UNAVAILABLE_ERROR })
+		const liveSettings = await getLiveSettingsOnAdmittedRpcNetwork(admittedSettings)
+		if (liveSettings.kind === 'unavailable') return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...requestWithDefinedParams, error: RPC_CONFIGURATION_UNAVAILABLE_ERROR })
+		if (liveSettings.kind === 'network-changed') return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...requestWithDefinedParams, ...ERROR_ACTIVE_RPC_NETWORK_CHANGED })
+		const { settings } = liveSettings
 		const currentChainEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId)
 		const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)
 		const safeSigningMode = isActiveSigningSafe(activeAddress, settings.simulationMode, settings.activeSigningSafeAddress, settings.activeRpcNetwork.chainId, signerTabState.signerAccounts, currentChainEntries)

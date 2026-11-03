@@ -370,6 +370,31 @@ describe('background eth_accounts', () => {
 		assert.equal(getReply()?.error?.code, 10000)
 	})
 
+	test('fails closed instead of routing with a signing Safe selected on another network while the request is parked', async () => {
+		installBrowserMock()
+		const { getRequiredSettings, setRpcConfiguration, changeSimulationMode, updateUserAddressBookEntries } = await loadModules()
+		const parkedWebsite = createDeferredValue<{ readonly websiteOrigin: string, readonly icon: undefined, readonly title: undefined }>()
+		const signingModeSettingsRead = createDeferredValue<void>()
+		observeStorageReads(async ({ settingsSnapshotReads }) => {
+			if (settingsSnapshotReads === 2) signingModeSettingsRead.resolve(undefined)
+		})
+		const { website, requestPromise, getReply, wasForwardedToSigner } = await startSigningModeAddEthereumChainRequest({ websitePromise: parkedWebsite.promise })
+		await signingModeSettingsRead.promise
+		// The user switches to chain B and selects a signing Safe that exists only there; the request was admitted on chain A.
+		const admittedRpc = (await getRequiredSettings()).activeRpcNetwork
+		const otherChainRpc = { ...admittedRpc, name: 'Other chain', chainId: admittedRpc.chainId + 1n, httpsRpc: 'https://other-chain.example.test' }
+		const signer = 0x1111111111111111111111111111111111111111n
+		const otherChainSafe = 0x2222222222222222222222222222222222222222n
+		await updateUserAddressBookEntries(() => [{ type: 'safe', name: 'Other chain Safe', address: otherChainSafe, chainId: otherChainRpc.chainId, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [signer] }])
+		await setRpcConfiguration([admittedRpc, otherChainRpc], otherChainRpc)
+		await changeSimulationMode({ simulationMode: false, activeSigningSafeAddress: otherChainSafe })
+		parkedWebsite.resolve(website)
+		await requestPromise
+
+		assert.equal(wasForwardedToSigner(), false)
+		assert.equal(getReply()?.error?.code, 4901)
+	})
+
 	test('does not forward to the signer when simulation mode is enabled while the tab state is being read', async () => {
 		installBrowserMock()
 		const tabStateReadStarted = createDeferredValue<void>()
