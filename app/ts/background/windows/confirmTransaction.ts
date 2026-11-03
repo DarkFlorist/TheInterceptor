@@ -263,9 +263,10 @@ export const setGasLimitForTransaction = async (transactionIdentifier: bigint, g
 	})
 }
 
-type ResolutionContext = { readonly ethereum: EthereumClientService, readonly tokenPriceService: TokenPriceService, readonly websiteTabConnections: WebsiteTabConnections, readonly holdsPendingConfirmationLock?: true }
-// The context for work that runs later, when the caller no longer holds the pending-confirmation lock.
-const withoutHeldLocks = ({ ethereum, tokenPriceService, websiteTabConnections }: ResolutionContext): ResolutionContext => ({ ethereum, tokenPriceService, websiteTabConnections })
+// automatic marks a resolution no user started (a scheduled retry, a reconnect flush, startup, a follow-up on claim release): it only runs while the request's retry budget lasts (withResolutionClaim).
+type ResolutionContext = { readonly ethereum: EthereumClientService, readonly tokenPriceService: TokenPriceService, readonly websiteTabConnections: WebsiteTabConnections, readonly holdsPendingConfirmationLock?: true, readonly automatic?: true }
+// The context for a retry that runs later: without the caller's locks, and automatic.
+const withoutHeldLocks = ({ ethereum, tokenPriceService, websiteTabConnections }: ResolutionContext): ResolutionContext => ({ ethereum, tokenPriceService, websiteTabConnections, automatic: true })
 
 // Updates the confirmation window that showed a removed request: it moves to the next of its own requests, or closes after its last. A window the user already closed counts as closed; any other failure throws, for the finishing to retry. Deciding and closing hold the pending-confirmation lock, as choosing a window and registering a new request in it do, so a request never registers in a window that is being closed: it either registers first, and the window moves to it, or chooses its window after the close and opens a new one. A resolution that runs while its caller holds the lock (holdsPendingConfirmationLock) does not take it again.
 async function updateConfirmationWindowAfterRemoving(confirmationWindow: PopupOrTabId, tabId: number, context: ResolutionContext) {
@@ -293,9 +294,11 @@ const clearRequestRetry = (claim: string) => {
 	clearTimeout(requestRetries.get(claim)?.timer)
 	requestRetries.delete(claim)
 }
+const retryBudgetLasts = (claim: string) => (requestRetries.get(claim)?.failedAttempts ?? 0) < FINISHING_RETRY_LIMIT
 const resetRequestRetryBudget = (uniqueRequestIdentifier: UniqueRequestIdentifier) => clearRequestRetry(getUniqueRequestIdentifierString(uniqueRequestIdentifier))
-// The requests whose budget startup recovery already reset: the startup recovery's own retries are automatic, so only its first pass over a request gives it a new budget.
+// The requests whose budget startup recovery already reset: the startup recovery's own retries are automatic, so only its first pass over a request gives it a new budget. A startup begins with none (beginStartupRecovery).
 const requestsResetByStartup = new Set<string>()
+export const beginStartupRecovery = () => requestsResetByStartup.clear()
 const resetRequestRetryBudgetAtStartup = (uniqueRequestIdentifier: UniqueRequestIdentifier) => {
 	const claim = getUniqueRequestIdentifierString(uniqueRequestIdentifier)
 	if (requestsResetByStartup.has(claim)) return
@@ -318,8 +321,13 @@ async function scheduleRequestRetry(uniqueRequestIdentifier: UniqueRequestIdenti
 		failedAttempts,
 		generation,
 		...(!retrying ? {} : {
-			timer: setTimeout(() => {
+			timer: setTimeout(function runRetry() {
 				if (requestRetries.get(claim)?.generation !== generation) return
+				// While another resolution holds the request, the retry waits for it, counting no attempt, instead of leaving it a follow-up.
+				if (resolutionClaims.has(claim)) {
+					requestRetries.set(claim, { failedAttempts, generation, timer: setTimeout(runRetry, FINISHING_RETRY_BASE_DELAY_MS) })
+					return
+				}
 				requestRetries.set(claim, { failedAttempts, generation })
 				const retryContext = withoutHeldLocks(context)
 				const decline = declineIntents.get(claim)
@@ -396,7 +404,7 @@ export const getResolutionBookkeepingSize = () => resolutionClaims.size + deferr
 
 // Lets a reconnect flush finish the requests whose replies it delivered, with the background's current services.
 export const registerCommittedRequestFinisher = (getServices: () => { readonly ethereum: EthereumClientService, readonly tokenPriceService: TokenPriceService }) => {
-	setCommittedRequestFinisher(async (uniqueRequestIdentifier, websiteTabConnections) => await resumeRequest(uniqueRequestIdentifier, { ...getServices(), websiteTabConnections }))
+	setCommittedRequestFinisher(async (uniqueRequestIdentifier, websiteTabConnections) => await resumeRequest(uniqueRequestIdentifier, { ...getServices(), websiteTabConnections, automatic: true }))
 }
 
 // When a tab closes, finishes its requests' committed replies, which it can no longer receive.
@@ -431,7 +439,7 @@ async function finishCommittedRequestsOfClosedTab(tabId: number, context: Resolu
 
 // At startup, finishes every request with a committed reply or an asked-for decline, whatever its confirmation window's state, with a new retry budget.
 export async function resumeCommittedRequests(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections) {
-	const context = { ethereum, tokenPriceService, websiteTabConnections }
+	const context: ResolutionContext = { ethereum, tokenPriceService, websiteTabConnections, automatic: true }
 	for (const committedReply of await getPendingTerminalReplies()) {
 		resetRequestRetryBudgetAtStartup(committedReply.uniqueRequestIdentifier)
 		await resumeRequest(committedReply.uniqueRequestIdentifier, context)
@@ -446,8 +454,8 @@ export async function resumeCommittedRequests(ethereum: EthereumClientService, t
 
 // The requests whose terminal outcome an accept, reject or close has claimed and is carrying out. A claim is taken synchronously, so of racing resolutions of a request exactly one stacks it or replies; the others return false without either. Under the claim, a committed request is only finished (finishCommittedRequest); only an uncommitted pending request gets an outcome chosen (resolve).
 const resolutionClaims = new Set<string>()
-// What to run for a request once its claim is released, recorded by a resolution that found it claimed, coalesced into one entry. Only data: the claim holder runs it in its own context (which knows whether it holds the pending-confirmation lock). The request is always finished again first, so that pass sees what changed meanwhile (its requesting tab closing, say); then a requested decline runs (declineRequest), which rejects a request still pending and uncommitted, such as one whose claimed accept failed, and does nothing for one that was resolved. Each follow-up runs once per recording, so the passes stop once nothing records more.
-type DeferredResolution = { readonly decline?: DeclineReason }
+// What to run for a request once its claim is released, recorded by a resolution that found it claimed, coalesced into one entry. Only data: the claim holder runs it in its own context (which knows whether it holds the pending-confirmation lock). The request is always finished again first, so that pass sees what changed meanwhile (its requesting tab closing, say); then a requested decline runs (declineRequest), which rejects a request still pending and uncommitted, such as one whose claimed accept failed, and does nothing for one that was resolved. Each follow-up runs once per recording, so the passes stop once nothing records more. automaticOnly: every resolution that recorded it was automatic, so it runs only while the budget lasts.
+type DeferredResolution = { readonly decline?: DeclineReason, readonly automaticOnly: boolean }
 const deferredResolutions = new Map<string, DeferredResolution>()
 type WhenClaimed = 'finish-again' | 'nothing' | { readonly decline: DeclineReason }
 // Thrown for a decline whose finishing could not tell whether the request is committed (finishCommittedRequest returned retrying): the finishing's own retry only finishes committed requests, so the decline retries itself.
@@ -457,10 +465,14 @@ type ClaimOptions = { readonly whenClaimed?: WhenClaimed, readonly retryActionWh
 async function withResolutionClaim<Result>(uniqueRequestIdentifier: UniqueRequestIdentifier, context: ResolutionContext, resolve: () => Promise<Result>, options: ClaimOptions = {}) {
 	const whenClaimed = options.whenClaimed ?? 'nothing'
 	const claim = getUniqueRequestIdentifierString(uniqueRequestIdentifier)
+	// The one gate of automatic attempts: none runs once the request's retry budget is spent; only a user action or the first startup pass renews it.
+	if (context.automatic === true && !retryBudgetLasts(claim)) return false
 	if (resolutionClaims.has(claim)) {
 		if (whenClaimed !== 'nothing') {
-			const decline = whenClaimed === 'finish-again' ? deferredResolutions.get(claim)?.decline : whenClaimed.decline
-			deferredResolutions.set(claim, decline === undefined ? {} : { decline })
+			const previous = deferredResolutions.get(claim)
+			const decline = whenClaimed === 'finish-again' ? previous?.decline : whenClaimed.decline
+			const automaticOnly = (previous?.automaticOnly ?? true) && context.automatic === true
+			deferredResolutions.set(claim, decline === undefined ? { automaticOnly } : { decline, automaticOnly })
 		}
 		return false
 	}
@@ -483,8 +495,10 @@ async function withResolutionClaim<Result>(uniqueRequestIdentifier: UniqueReques
 		const deferred = deferredResolutions.get(claim)
 		deferredResolutions.delete(claim)
 		if (deferred !== undefined) {
-			await resumeRequest(uniqueRequestIdentifier, context)
-			if (deferred.decline !== undefined) await declineRequest(uniqueRequestIdentifier, deferred.decline, context)
+			// Follow-ups only automatic resolutions recorded are automatic, and pass the budget gate; one a user action recorded runs regardless.
+			const followUpContext: ResolutionContext = deferred.automaticOnly ? { ...context, automatic: true } : { ethereum: context.ethereum, tokenPriceService: context.tokenPriceService, websiteTabConnections: context.websiteTabConnections, ...(context.holdsPendingConfirmationLock === true ? { holdsPendingConfirmationLock: true } : {}) }
+			await resumeRequest(uniqueRequestIdentifier, followUpContext)
+			if (deferred.decline !== undefined) await declineRequest(uniqueRequestIdentifier, deferred.decline, followUpContext)
 		}
 	}
 }
@@ -754,7 +768,7 @@ export async function resolvePendingRequestsForMissingConfirmationWindows(ethere
 		if (confirmationWindowIsMissing) orphanedTransactions.push(transaction)
 	}
 	for (const orphan of orphanedTransactions) resetRequestRetryBudgetAtStartup(orphan.uniqueRequestIdentifier)
-	await resolveAllPendingTransactionsAndMessageAsNoResponse(orphanedTransactions, { ethereum, tokenPriceService, websiteTabConnections })
+	await resolveAllPendingTransactionsAndMessageAsNoResponse(orphanedTransactions, { ethereum, tokenPriceService, websiteTabConnections, automatic: true })
 }
 
 const resolveAllPendingTransactionsAndMessageAsNoResponse = async (transactions: readonly PendingTransactionOrSignableMessage[], context: ResolutionContext) => {

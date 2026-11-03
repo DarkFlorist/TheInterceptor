@@ -20,7 +20,7 @@ import { DEFAULT_TAB_CONNECTION, ICON_NOT_ACTIVE } from '../utils/constants.js'
 import { reportUnexpectedError, isExpectedInfrastructureError, printError, reportLocalRecoveryBestEffort } from '../utils/errors.js'
 import { updateContentScriptInjectionStrategyManifestV2 } from '../utils/contentScriptsUpdating.js'
 import { checkIfInterceptorShouldSleep } from './sleeping.js'
-import { finishCommittedRequestsOfTab, onCloseWindowOrTab, registerCommittedRequestFinisher, resolvePendingRequestsForMissingConfirmationWindows, resumeCommittedRequests } from './windows/confirmTransaction.js'
+import { beginStartupRecovery, finishCommittedRequestsOfTab, onCloseWindowOrTab, registerCommittedRequestFinisher, resolvePendingRequestsForMissingConfirmationWindows, resumeCommittedRequests } from './windows/confirmTransaction.js'
 import { modifyObject } from '../utils/typescript.js'
 import { updateDeclarativeNetRequestBlocks } from './accessManagement.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
@@ -296,6 +296,7 @@ async function startup() {
 	markPerformance(POPUP_PERFORMANCE_MARKS.backgroundStartupReady)
 }
 
+beginStartupRecovery()
 const recoverPendingTerminalState = createRetriableTerminalStateRecovery({
 	recover: async () => {
 		const { ethereum, tokenPriceService } = getSimulationServices()
