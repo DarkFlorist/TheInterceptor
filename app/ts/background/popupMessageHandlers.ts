@@ -1,7 +1,7 @@
 import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { readNetworkSnapshot } from './networkTransition.js'
-import { getUpdatedSimulationStackSnapshot, getUpdatedSimulationState, type NetworkState, type SimulationSnapshot } from './simulationUpdating.js'
+import { getUpdatedSimulationStackSnapshot, getUpdatedSimulationState, type NetworkSnapshot, type NetworkState, type SimulationSnapshot } from './simulationUpdating.js'
 import { getSettings, setUseTabsInsteadOfPopup, setPage, getMakeCurrentAddressRich, setMetamaskCompatibilityMode, setSafeAppsCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, updateMakeCurrentAddressRich, updateFixedMakeMeRichList } from './settings.js'
 import { getPendingTransactionsAndMessages, getTabState, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests, updateTransactionState, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, getSafeTransactionStacks } from './storageVariables.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
@@ -852,6 +852,13 @@ export async function requestHomePageBootstrap(websiteTabConnections: WebsiteTab
 	})
 }
 
+// A refresh's services and settings serve one network only while no network change commits after its snapshot was read; a change installs another client or selects another active network, so either differing means the refresh would mix two networks.
+const snapshotNetworkIsStillActive = async (simulationServicesOwner: Pick<SimulationServicesOwner, 'getCurrent'>, snapshot: NetworkSnapshot) => {
+	const latest = await readNetworkSnapshot(simulationServicesOwner)
+	const { chainChanged, endpointChanged } = getRpcNetworkChange(snapshot.settings.activeRpcNetwork, latest.settings.activeRpcNetwork)
+	return latest.services.ethereum === snapshot.services.ethereum && !chainChanged && !endpointChanged
+}
+
 export async function refreshHomeData(
 	simulationServicesOwner: Pick<SimulationServicesOwner, 'getCurrent'>,
 	websiteTabConnections: WebsiteTabConnections,
@@ -861,24 +868,28 @@ export async function refreshHomeData(
 	refreshSimulation = true,
 	requestAbortController: AbortController | undefined = undefined,
 ) {
-	const newPopupRefreshGeneration = popupRefreshGeneration
-	const { ethereum, tokenPriceService } = simulationServicesOwner.getCurrent()
 	markPerformance(POPUP_PERFORMANCE_MARKS.backgroundRefreshStart)
 	try {
-		const currentSettings = await getSettings()
-		if (currentSettings.simulationMode) await updateSimulationMetadata(ethereum, requestAbortController)
-		if (refreshSimulation) await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { skipIfUnchanged: true })
-		const settings = await getSettings()
-		// Wake the installed client; a network switch during the refresh above may have retired the captured one.
-		if (settings.activeRpcNetwork.httpsRpc !== undefined) await makeSureInterceptorIsNotSleeping(simulationServicesOwner.getCurrent().ethereum, publishRpcConnectionStatus)
-		const updatedPage = await buildHomePageUpdate(ethereum, websiteTabConnections, {
-			requestAbortController,
-			richDataSource: 'fresh',
-			shouldRefreshSignerAccounts,
-			includeWebsiteAccessAddressMetadata: true,
-			popupRefreshGeneration: newPopupRefreshGeneration,
-		})
-		await sendPopupMessageToOpenWindows(updatedPage)
+		// The metadata, the wake-up and the home page all serve the services and settings of one snapshot. A network change that commits meanwhile starts the refresh over on the new network, so it wakes the newly installed client; each restart follows a committed change, so the refresh ends once switching stops.
+		for (;;) {
+			const snapshot = await readNetworkSnapshot(simulationServicesOwner)
+			const { ethereum, tokenPriceService } = snapshot.services
+			if (snapshot.settings.simulationMode) await updateSimulationMetadata(ethereum, requestAbortController)
+			if (refreshSimulation) await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { skipIfUnchanged: true })
+			if (!await snapshotNetworkIsStillActive(simulationServicesOwner, snapshot)) continue
+			if (snapshot.settings.activeRpcNetwork.httpsRpc !== undefined) await makeSureInterceptorIsNotSleeping(ethereum, publishRpcConnectionStatus)
+			// The home page reads settings when it is built, so it is sent only if they still describe the snapshot's network.
+			const updatedPage = await buildHomePageUpdate(ethereum, websiteTabConnections, {
+				requestAbortController,
+				richDataSource: 'fresh',
+				shouldRefreshSignerAccounts,
+				includeWebsiteAccessAddressMetadata: true,
+				popupRefreshGeneration,
+			})
+			if (!await snapshotNetworkIsStillActive(simulationServicesOwner, snapshot)) continue
+			await sendPopupMessageToOpenWindows(updatedPage)
+			return
+		}
 	} finally {
 		markPerformance(POPUP_PERFORMANCE_MARKS.backgroundRefreshEnd)
 	}

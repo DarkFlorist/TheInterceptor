@@ -95,7 +95,7 @@ async function captureNetworkState(): Promise<NetworkState> {
 }
 
 // Reading these under the transition lock keeps a request from pairing one network's settings, stack or services with another network's; it reads storage only, so RPC work stays outside the lock. Like every lock holder, a read first finishes the effects of a committed network change whose transition failed part-way, such as dropping the previous chain's stack, and rejects with that failure rather than return a snapshot that mixes two networks.
-export async function readNetworkSnapshot(simulationServicesOwner: SimulationServicesOwner): Promise<NetworkSnapshot> {
+export async function readNetworkSnapshot(simulationServicesOwner: Pick<SimulationServicesOwner, 'getCurrent'>): Promise<NetworkSnapshot> {
 	return await runNetworkTransition(async () => ({ ...await captureNetworkState(), services: simulationServicesOwner.getCurrent() }))
 }
 

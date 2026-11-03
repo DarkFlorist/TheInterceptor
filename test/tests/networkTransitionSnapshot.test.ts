@@ -1247,6 +1247,75 @@ describe('network transition snapshot', () => {
 		}
 	})
 
+	test('a home data refresh that a network switch interrupts sends a home page of the new network only, built and woken on its client', async () => {
+		const { modules, runtimeMessages, websiteTabConnections } = await createApprovedSimulationDapp({ simulationConsumerOpen: true })
+		const { refreshHomeData } = await import('../../app/ts/background/popupMessageHandlers.js')
+		const { updateTransactionState } = await import('../../app/ts/background/storageVariables.js')
+		const { createSafeTx } = await import('../../app/ts/safe/safeCore.js')
+		const { MessageToPopup } = await import('../../app/ts/types/interceptor-messages.js')
+		// A Safe stack on A's chain: a home page built with A's client reports it as exportable, one built with B's does not.
+		await updateTransactionState((previousState) => ({
+			...previousState,
+			safeTransactionStacks: [{
+				chainId: networkA.chainId,
+				safeAddress: firstAddress,
+				safeVersion: '1.4.1',
+				baseNonce: 0n,
+				threshold: 1n,
+				transactions: [{
+					safeTx: createSafeTx(networkA.chainId, firstAddress, { to: secondAddress, value: 0n, input: new Uint8Array() }, 0n),
+					safeTxHash: 0n,
+					created: new Date('2024-01-01T00:00:00.000Z'),
+					websiteOrigin,
+					transactionIdentifier: 1n,
+					signatures: [],
+				}],
+			}],
+		}))
+		const { owner, installed, getInstalled, retireAll } = createRecordingServicesOwner(networkA)
+		const [servicesA] = installed
+		if (servicesA === undefined) throw new Error('Missing network A services')
+		const requestOnAStarted = createDeferredSignal()
+		const releaseRequestOnA = createDeferredSignal()
+		servicesA.interceptRequests(async () => {
+			servicesA.interceptRequests(undefined)
+			requestOnAStarted.resolve()
+			await releaseRequestOnA.promise
+		})
+		let deadline: ReturnType<typeof setTimeout> | undefined
+		try {
+			const messagesBefore = runtimeMessages.length
+			const refresh = refreshHomeData(owner, websiteTabConnections, false, 1, noopPublishRpcConnectionStatus)
+			await Promise.race([
+				requestOnAStarted.promise,
+				new Promise<never>((_resolve, reject) => { deadline = setTimeout(() => reject(new Error('The refresh sent no request to network A')), 1000) }),
+			])
+			// The switch commits B and announces its chain while A's request is held; its own popup refresh then queues behind the held refresh.
+			const chainAnnounced = whenRuntimeMessageSent((message) => isRecord(message) && message.method === 'popup_chain_update')
+			const switching = modules.changeActiveAddressAndChain(owner, new Map(), { simulationMode: true, rpcNetwork: networkB, promptForAccessesIfNeeded: false })
+			await chainAnnounced
+			releaseRequestOnA.resolve()
+			await Promise.all([switching, refresh])
+
+			const homePages = runtimeMessages.slice(messagesBefore).flatMap((message) => {
+				const parsed = MessageToPopup.safeParse(message)
+				return parsed.success && parsed.value.method === 'popup_UpdateHomePage' ? [parsed.value.data] : []
+			})
+			assert.ok(homePages.length > 0)
+			for (const homePage of homePages) {
+				assert.equal(homePage.settings.activeRpcNetwork.chainId, networkB.chainId)
+				assert.equal(homePage.hasSafeTransactionsToExport, false)
+			}
+			assert.deepEqual(getInstalled().ethereum.getRpcEntry(), networkB)
+			assert.equal(getInstalled().ethereum.isBlockPolling(), true)
+			assert.equal(servicesA.ethereum.isBlockPolling(), false)
+		} finally {
+			clearTimeout(deadline)
+			releaseRequestOnA.resolve()
+			retireAll()
+		}
+	})
+
 	test('a request that arrives during a network switch waits for it and uses the new network', async () => {
 		const { sendEthSimulateV1, switchToNetworkB, assertRequestSucceeded } = await createApprovedSimulationDapp()
 		const { owner, installed, retireAll } = createRecordingServicesOwner(networkA)

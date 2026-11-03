@@ -73,7 +73,7 @@ async function handleRPCRequest(
 	safeSigningMode: boolean,
 	activeSafeSigner: bigint | undefined,
 ): Promise<RPCReply> {
-	// Execute on the services and stack captured with the request's settings; the owner is only used for network switches and wake-ups.
+	// Execute on the services and stack captured with the request's settings; the owner is only used for network switches and wake-ups. services, settings and simulation come from one readNetworkSnapshot call under the network transition lock and stay separate parameters on purpose to keep the existing handler signatures (see NetworkState).
 	const { ethereum, tokenPriceService } = services
 	const network = { settings, simulation }
 	let simulationInputPromise: Promise<ResolvedSimulationInput> | undefined
@@ -511,6 +511,7 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 async function handleContentScriptMessage(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, website: Website, activeAddress: AddressBookEntry, publishRpcConnectionStatus: PublishRpcConnectionStatus) {
 	try {
 		const requestWithDefinedParams = getRequestWithDefinedParams(request)
+		// The one locked read whose services, settings and simulation handleRPCRequest receives as separate arguments.
 		const { settings, simulation, services } = await readNetworkSnapshot(simulationServicesOwner)
 		const currentChainEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId)
 		const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)

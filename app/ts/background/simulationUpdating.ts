@@ -152,6 +152,7 @@ function buildSimulationStateInput(settings: Settings, sources: SimulationInputS
 	return inputBlocks
 }
 
+// Built only by buildSimulationSnapshot, which derives simulationStateInput from interceptorTransactionStack and, like both rich-address fields, from the same settings and rich-address sources in one step, so they cannot drift; build a new snapshot rather than copying one with changed fields.
 export type SimulationSnapshot = {
 	readonly activeRpcNetwork: RpcNetwork
 	readonly activeStackContext: ReturnType<typeof getActiveStackContext>

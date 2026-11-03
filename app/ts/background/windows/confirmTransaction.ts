@@ -271,7 +271,7 @@ const refreshSharedVisualisationAfterAppend = async ({ ethereum, tokenPriceServi
 
 // The services owner lets an accepted simulated confirmation read the installed services together with the stack it appends to.
 export async function resolvePendingTransactionOrMessage(simulationServicesOwner: SimulationServicesOwner, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, network: NetworkState, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, refreshedSafeSignerSelection?: RefreshedSafeSignerSelection) {
-	// One snapshot holds the settings, stack and services together, so they are replaced at once: after this confirmation appends to the stack, later view updates use the snapshot read with that append.
+	// ethereum, tokenPriceService and network come from one readNetworkSnapshot call under the network transition lock and stay separate parameters on purpose to keep the existing handler signatures (see NetworkState); they are joined back into one snapshot here, which holds the settings, stack and services together so they are replaced at once: after this confirmation appends to the stack, later view updates use the snapshot read with that append.
 	let current: NetworkSnapshot = { ...network, services: { ethereum, tokenPriceService } }
 	const updateViewOnCurrentSnapshot = async () => await updateConfirmTransactionView(current.services.ethereum, current.services.tokenPriceService, current)
 	let pendingTransactionOrMessage = await getPendingTransactionOrMessageByidentifier(confirmation.data.uniqueRequestIdentifier)
