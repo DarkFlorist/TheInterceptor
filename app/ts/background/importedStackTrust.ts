@@ -11,7 +11,7 @@ export function toImportedStackOperation(operation: ExportedInterceptorStackOper
 	switch (operation.type) {
 		// A message's active address and simulation signer cannot be re-derived from the message (for a Safe, an owner rather than the Safe signs), so they are kept for the simulation but the message is marked, and flagImportedSignature then flags it instead of trusting its account check. Its `safeMessageReview` stays, because a Safe message is only shown with its review when the review text hashes to the digest it signs.
 		case 'Message': return { type: 'Message', signedMessageTransaction: { ...operation.signedMessageTransaction, importedFromExport: true } }
-		// Only Safe proposals, which cannot be imported this way, set `simulationOptions`. A claimed `requiredChainId` decides on which chain the transaction is simulated at all, and a claimed zero base fee lets a contract detect the simulation (`block.basefee == 0`) and behave differently in it, so both are dropped.
+		// Only Gnosis Safe transactions set `simulationOptions`: Safe proposals, which cannot be imported this way, and simulation-mode Safe executions, whose `executeThroughSafe` admitImportedSimulationStackOperations also drops. A claimed `requiredChainId` decides on which chain the transaction is simulated at all, and a claimed zero base fee lets a contract detect the simulation (`block.basefee == 0`) and behave differently in it, so both are dropped.
 		case 'Transaction': {
 			const { simulationOptions: _unobservedSimulationOptions, ...preSimulationTransaction } = operation.preSimulationTransaction
 			return modifyObject(operation, { preSimulationTransaction })
