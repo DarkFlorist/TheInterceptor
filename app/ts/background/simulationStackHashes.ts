@@ -1,23 +1,24 @@
 import { createSaltSearch, withUniqueSimulationHash } from '../simulation/services/simulationTransactionSigning.js'
-import type { InterceptorTransactionStack, PreSimulationTransaction } from '../types/visualizer-types.js'
-import { last } from '../utils/array.js'
+import type { InterceptorStackOperation, InterceptorTransactionStack, PreSimulationTransaction } from '../types/visualizer-types.js'
 
-// The stack normalization that keeps stacked transaction hashes unique: each transaction nextStack adds, one whose identifier previousStack lacks, gets a hash no other stacked transaction has, in stack order. Transactions previousStack held keep theirs, even duplicates stored before #1713, so such a stack still loads and updates.
-export const withUniqueAddedTransactionHashes = (previousStack: InterceptorTransactionStack, nextStack: InterceptorTransactionStack): InterceptorTransactionStack => {
-	const previousIdentifiers = new Set(previousStack.operations.flatMap((operation) => operation.type === 'Transaction' ? [operation.preSimulationTransaction.transactionIdentifier] : []))
-	const takenHashes = new Set(nextStack.operations.flatMap((operation) => operation.type === 'Transaction' && previousIdentifiers.has(operation.preSimulationTransaction.transactionIdentifier) ? [operation.preSimulationTransaction.signedTransaction.hash] : []))
+const getTransactionHashes = (operations: readonly InterceptorStackOperation[]) => operations.flatMap((operation) => operation.type === 'Transaction' ? [operation.preSimulationTransaction.signedTransaction.hash] : [])
+
+// Appends operations to the stack, giving each appended transaction, in order, a hash no other stacked transaction has (withUniqueSimulationHash). The stacked transactions keep theirs, even duplicates a stack stored before #1713 holds. Returns the operations as appended, whose hashes are the stored ones.
+export const appendOperationsToStack = (stack: InterceptorTransactionStack, operations: readonly InterceptorStackOperation[]) => {
+	const takenHashes = new Set(getTransactionHashes(stack.operations))
 	const saltSearch = createSaltSearch()
-	return { ...nextStack, operations: nextStack.operations.map((operation) => {
-		if (operation.type !== 'Transaction' || previousIdentifiers.has(operation.preSimulationTransaction.transactionIdentifier)) return operation
+	const appended = operations.map((operation): InterceptorStackOperation => {
+		if (operation.type !== 'Transaction') return operation
 		const preSimulationTransaction = withUniqueSimulationHash(operation.preSimulationTransaction, takenHashes, saltSearch)
 		takenHashes.add(preSimulationTransaction.signedTransaction.hash)
 		return preSimulationTransaction === operation.preSimulationTransaction ? operation : { ...operation, preSimulationTransaction }
-	}) }
+	})
+	return { stack: { ...stack, operations: [...stack.operations, ...appended] }, appended }
 }
 
-// The transaction as appending it to stack stores it, so a confirmation preview shows the hash accepting it stores.
-export const asAppendedToStack = (stack: InterceptorTransactionStack, transaction: PreSimulationTransaction): PreSimulationTransaction => {
-	const appended = last(withUniqueAddedTransactionHashes(stack, { operations: [...stack.operations, { type: 'Transaction', preSimulationTransaction: transaction }] }).operations)
+// Appends one transaction to the stack and returns it as stacked, with the hash it is stored under.
+export const appendTransactionToStack = (stack: InterceptorTransactionStack, transaction: PreSimulationTransaction) => {
+	const { stack: updatedStack, appended: [appended] } = appendOperationsToStack(stack, [{ type: 'Transaction', preSimulationTransaction: transaction }])
 	if (appended?.type !== 'Transaction') throw new Error('The appended transaction is missing from the stack')
-	return appended.preSimulationTransaction
+	return { stack: updatedStack, transaction: appended.preSimulationTransaction }
 }

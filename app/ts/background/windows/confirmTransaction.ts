@@ -14,7 +14,8 @@ import type { SendRawTransactionParams, SendTransactionParams } from '../../type
 import { refreshConfirmTransactionSimulation } from '../confirmTransactionSimulation.js'
 import { captureSimulationSnapshot, getExecutedCallFormation, getUpdatedSimulationState } from '../simulationUpdating.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
-import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getRpcConnectionStatus, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
+import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getRpcConnectionStatus, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updateInterceptorTransactionStackWithResult, updatePendingTransactionOrMessage } from '../storageVariables.js'
+import { appendTransactionToStack } from '../simulationStackHashes.js'
 import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
 import { replyToInterceptedRequestAfterManifestV2Reconnect } from '../messageSending.js'
 import { attemptQueuedTerminalReplyDelivery, queueTerminalReply, queueTerminalReplyAndAttemptDelivery } from '../terminalReplyDelivery.js'
@@ -412,16 +413,14 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 		}
 		case 'Transaction': {
 			const transaction = { ...pendingTransactionOrMessage.transactionToSimulate, signedTransaction: getSignedTransactionForSimulation(pendingTransactionOrMessage.transactionToSimulate) }
-			const updatedStack = await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => ({ operations: [
-				...prevStack.operations,
-				{ type: 'Transaction' as const, preSimulationTransaction: transaction }
-			] }))
-			// The page gets the hash the transaction was stacked with, which storing it may have changed to keep it unique (withUniqueAddedTransactionHashes).
-			const stackedTransaction = updatedStack.operations.find((operation) => operation.type === 'Transaction' && operation.preSimulationTransaction.transactionIdentifier === transaction.transactionIdentifier)
-			if (stackedTransaction?.type !== 'Transaction') throw new Error('The accepted transaction is missing from the simulation stack')
+			// Appended against the live stack, so its hash, which the page gets, is the authoritative one; the preview's is provisional.
+			const stackedTransaction = await updateInterceptorTransactionStackWithResult((prevStack: InterceptorTransactionStack) => {
+				const { stack, transaction: appended } = appendTransactionToStack(prevStack, transaction)
+				return { stack, result: appended }
+			})
 			await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService)
 			markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionStackAppended)
-			return reply({ type: 'result', result: EthereumBytes32.serialize(stackedTransaction.preSimulationTransaction.signedTransaction.hash) })
+			return reply({ type: 'result', result: EthereumBytes32.serialize(stackedTransaction.signedTransaction.hash) })
 		}
 		default: assertNever(pendingTransactionOrMessage)
 	}

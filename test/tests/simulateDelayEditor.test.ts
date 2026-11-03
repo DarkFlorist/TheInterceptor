@@ -79,7 +79,8 @@ const baseTransaction = {
 } as const
 
 const makePreSimulationTransaction = (transactionIdentifier: bigint) => ({
-	signedTransaction: mockSignTransaction(baseTransaction),
+	// A nonce of its own gives every stacked fixture its own hash, as the stack requires.
+	signedTransaction: mockSignTransaction({ ...baseTransaction, nonce: transactionIdentifier }),
 	website: { websiteOrigin: 'https://example.com', icon: undefined, title: undefined },
 	created: new Date('2024-01-01T00:00:00.000Z'),
 	originalRequestParameters: {

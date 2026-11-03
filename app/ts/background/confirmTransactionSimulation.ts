@@ -15,7 +15,7 @@ import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { identifyAddress } from './metadataUtils.js'
 import { getSimulationErrorAbis } from './simulationErrorAbi.js'
 import { createSimulationStateWithNonceAndBaseFeeFixing, getCurrentSimulationInput, visualizeSimulatorState } from './simulationUpdating.js'
-import { asAppendedToStack } from './simulationStackHashes.js'
+import { appendTransactionToStack } from './simulationStackHashes.js'
 import { getInterceptorTransactionStack, getTabState } from './storageVariables.js'
 
 let confirmTransactionAbortController = new AbortController()
@@ -52,15 +52,15 @@ export async function refreshConfirmTransactionSimulation(
 		const getNewVisualizedSimulationState = async () => {
 			const preSimulationTransaction = transactionToSimulate.success
 				? safeSigningRequest === undefined
-					// Previewed with the hash accepting it stores if the stack stays as it is.
-					? asAppendedToStack(stack, {
+					// A provisional hash: the one accepting would store on this snapshot. Accepting appends to the live stack, and its hash is the one the page gets; the preview is recomputed on each refresh (new blocks, stack removals).
+					? appendTransactionToStack(stack, {
 						signedTransaction: getSignedTransactionForSimulation(transactionToSimulate),
 						website: transactionToSimulate.website,
 						created: transactionToSimulate.created,
 						originalRequestParameters: transactionToSimulate.originalRequestParameters,
 						transactionIdentifier: transactionToSimulate.transactionIdentifier,
 						...(transactionToSimulate.simulationOptions === undefined ? {} : { simulationOptions: transactionToSimulate.simulationOptions }),
-					})
+					}).transaction
 					: createSafeExecutionPreSimulationTransaction(transactionToSimulate, safeSigningRequest)
 				: undefined
 			const simulationStateWithNewTransaction = preSimulationTransaction === undefined

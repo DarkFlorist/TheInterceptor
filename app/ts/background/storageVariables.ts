@@ -22,7 +22,6 @@ import { SafeTransactionStacks } from '../types/safeTypes.js'
 import { createStoredValueRepository } from '../utils/storedValue.js'
 import { isValidErc20Decimals } from '../utils/erc20.js'
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
-import { withUniqueAddedTransactionHashes } from './simulationStackHashes.js'
 
 const reportCorruptStoredValue = (label: string) => async (error: unknown) => {
 	console.warn(`${ label } was corrupt:`)
@@ -393,14 +392,22 @@ export async function addEnsLabelHash(label: string) {
 
 const transactionStateSemaphore = new Semaphore(1)
 export const getInterceptorTransactionStack = async () => await getLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack) ?? { operations: [] }
-export async function updateInterceptorTransactionStack(updateFunc: (prevStack: InterceptorTransactionStack) => InterceptorTransactionStack): Promise<InterceptorTransactionStack> {
+// Updates the stack and returns what the update computed alongside it, such as the hash an appended transaction is stored under (appendTransactionToStack).
+export async function updateInterceptorTransactionStackWithResult<Result>(updateFunc: (prevStack: InterceptorTransactionStack) => { readonly stack: InterceptorTransactionStack, readonly result: Result }): Promise<Result> {
 	return await transactionStateSemaphore.execute(async () => {
 		const prevStack = await getInterceptorTransactionStack()
-		// Applied at the write choke point so no source of stacked transactions can skip it; callers read the stored hash back.
-		const interceptorTransactionStack = withUniqueAddedTransactionHashes(prevStack, updateFunc(prevStack))
+		const { stack: interceptorTransactionStack, result } = updateFunc(prevStack)
 		assertUniqueInterceptorTransactionIds(interceptorTransactionStack)
+		assertNoAddedDuplicateTransactionHash(prevStack, interceptorTransactionStack)
 		await setLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack, interceptorTransactionStack)
-		return interceptorTransactionStack
+		return result
+	})
+}
+
+export async function updateInterceptorTransactionStack(updateFunc: (prevStack: InterceptorTransactionStack) => InterceptorTransactionStack): Promise<InterceptorTransactionStack> {
+	return await updateInterceptorTransactionStackWithResult((prevStack) => {
+		const stack = updateFunc(prevStack)
+		return { stack, result: stack }
 	})
 }
 
@@ -411,6 +418,21 @@ function assertUniqueInterceptorTransactionIds(interceptorTransactionStack: Inte
 		.map((operation) => operation.type === 'Transaction' ? operation.preSimulationTransaction.transactionIdentifier : undefined)
 		.filter((identifier): identifier is bigint => identifier !== undefined)
 	if (new Set(ids).size !== ids.length) throw new Error('duplicated IDs')
+}
+
+// An update may keep duplicate hashes a stack stored before #1713 holds, but every transaction it adds (one whose identifier the previous stack lacks) needs a hash of its own, which appending through appendOperationsToStack gives it.
+function assertNoAddedDuplicateTransactionHash(previousStack: InterceptorTransactionStack, nextStack: InterceptorTransactionStack) {
+	const previousIdentifiers = new Set(previousStack.operations.flatMap((operation) => operation.type === 'Transaction' ? [operation.preSimulationTransaction.transactionIdentifier] : []))
+	const hashCounts = new Map<bigint, number>()
+	for (const operation of nextStack.operations) {
+		if (operation.type !== 'Transaction') continue
+		const hash = operation.preSimulationTransaction.signedTransaction.hash
+		hashCounts.set(hash, (hashCounts.get(hash) ?? 0) + 1)
+	}
+	const addsDuplicate = nextStack.operations.some((operation) => operation.type === 'Transaction'
+		&& !previousIdentifiers.has(operation.preSimulationTransaction.transactionIdentifier)
+		&& (hashCounts.get(operation.preSimulationTransaction.signedTransaction.hash) ?? 0) > 1)
+	if (addsDuplicate) throw new Error('duplicated transaction hashes')
 }
 
 type TransactionState = {
@@ -424,10 +446,9 @@ export async function updateTransactionState(updateFunc: (previousState: Transac
 			interceptorTransactionStack: await getInterceptorTransactionStack(),
 			safeTransactionStacks: await getSafeTransactionStacks(),
 		}
-		const proposedState = updateFunc(previousState)
-		// The same write choke point; this path adds only Gnosis Safe proposals, whose safeTxHash withUniqueSimulationHash leaves untouched.
-		const updatedState = { ...proposedState, interceptorTransactionStack: withUniqueAddedTransactionHashes(previousState.interceptorTransactionStack, proposedState.interceptorTransactionStack) }
+		const updatedState = updateFunc(previousState)
 		assertUniqueInterceptorTransactionIds(updatedState.interceptorTransactionStack)
+		assertNoAddedDuplicateTransactionHash(previousState.interceptorTransactionStack, updatedState.interceptorTransactionStack)
 		await setLargeStateValues([
 			prepareLargeStateWrite('interceptorTransactionStack', InterceptorTransactionStack, updatedState.interceptorTransactionStack),
 			prepareLargeStateWrite('safeTransactionStacks', SafeTransactionStacks, updatedState.safeTransactionStacks),

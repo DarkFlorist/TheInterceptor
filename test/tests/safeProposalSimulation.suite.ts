@@ -196,7 +196,8 @@ test('reconciles executed Safe operations before simulating the next proposal', 
 			type: 'Transaction' as const,
 			preSimulationTransaction: {
 				...pendingTransaction.transactionToSimulate,
-				signedTransaction,
+				// A stacked Safe proposal's hash is its safeTxHash (createSafeExecutionPreSimulationTransaction).
+				signedTransaction: { ...signedTransaction, hash: safeTransaction.safeTxHash },
 				transactionIdentifier: safeTransaction.transactionIdentifier,
 				safeTransaction,
 			},
