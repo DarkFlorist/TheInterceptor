@@ -597,19 +597,34 @@ export async function persistWebsiteAccessChange(
 	promptForAccessesIfNeeded: boolean,
 ): Promise<Settings> {
 	await setAccess(website, access, address)
-	const committedSettings = await readSettingsForAccessReconciliation()
-	if (committedSettings === undefined) {
-		await revokeAffectedApprovalsBecauseSettingsAreUnreadable(websiteTabConnections, { kind: 'websites', websiteOrigins: [website.websiteOrigin] })
-		throw createRpcConfigurationUnavailableError()
-	}
-	return await finalizeWebsiteAccessChange(simulationServicesOwner, websiteTabConnections, committedSettings, promptForAccessesIfNeeded)
+	return await reconcileCommittedAccessChange(websiteTabConnections, { kind: 'website-access', websiteOrigins: [website.websiteOrigin] }, async (committedSettings) => await finalizeWebsiteAccessChange(simulationServicesOwner, websiteTabConnections, committedSettings, promptForAccessesIfNeeded))
 }
 
-// The websites whose approvals a committed write can change: 'every' for address-book and import changes (they can alter any website's effective address policy), 'none' for request-block mode changes (they alter no approvals).
-export type AffectedWebsites =
+// A committed write that can change website approvals, address consent, interceptor-disabled state or request blocking. Its kind, not the call site, decides which websites' runtime approvals fail closed when settings are unreadable (see getAffectedWebsites).
+export type CommittedAccessChange =
+	// Approvals, address consent or interceptor-disabled state of these websites.
+	| { readonly kind: 'website-access', readonly websiteOrigins: readonly string[] }
+	// Address-book entries, which can alter any website's effective address policy.
+	| { readonly kind: 'address-book' }
+	// An imported settings file, which replaces every website's approvals.
+	| { readonly kind: 'settings-import' }
+	// A website's request-block mode, which alters no approvals.
+	| { readonly kind: 'request-block-mode' }
+
+type AffectedWebsites =
 	| { readonly kind: 'every' }
 	| { readonly kind: 'none' }
 	| { readonly kind: 'websites', readonly websiteOrigins: readonly string[] }
+
+function getAffectedWebsites(change: CommittedAccessChange): AffectedWebsites {
+	switch (change.kind) {
+		case 'website-access': return { kind: 'websites', websiteOrigins: change.websiteOrigins }
+		case 'address-book': return { kind: 'every' }
+		case 'settings-import': return { kind: 'every' }
+		case 'request-block-mode': return { kind: 'none' }
+		default: return assertNever(change)
+	}
+}
 
 const isAffectedWebsite = (affectedWebsites: AffectedWebsites, websiteOrigin: string) => {
 	switch (affectedWebsites.kind) {
@@ -620,13 +635,13 @@ const isAffectedWebsite = (affectedWebsites: AffectedWebsites, websiteOrigin: st
 	}
 }
 
-// A pure query for reconciling a committed write that can change website approvals, address consent, interceptor-disabled state or request blocking. Approval reconciliation needs settings (active addresses resolve on the active RPC network's chain); undefined means they cannot be read, and the caller must then run revokeAffectedApprovalsBecauseSettingsAreUnreadable and throw the unavailable error.
-export async function readSettingsForAccessReconciliation(): Promise<Settings | undefined> {
+// Approval reconciliation needs settings (active addresses resolve on the active RPC network's chain); undefined means they cannot be read.
+async function readSettingsForAccessReconciliation(): Promise<Settings | undefined> {
 	return (await getSettingsSnapshot()).settings
 }
 
-// The fail-closed command for a committed access-affecting write whose settings cannot be read: the connections of the affected websites lose their runtime approval so a committed revocation is never left unapplied, and request blocks are still reconciled (that works without an active RPC network). A failed disconnect notification or request-block update does not stop the rest; those failures are reported afterwards.
-export async function revokeAffectedApprovalsBecauseSettingsAreUnreadable(websiteTabConnections: WebsiteTabConnections, affectedWebsites: AffectedWebsites) {
+// The connections of the affected websites lose their runtime approval so a committed revocation is never left unapplied, and request blocks are still reconciled (that works without an active RPC network). A failed disconnect notification or request-block update does not stop the rest; those failures are reported afterwards.
+async function revokeAffectedApprovalsBecauseSettingsAreUnreadable(websiteTabConnections: WebsiteTabConnections, affectedWebsites: AffectedWebsites) {
 	const followUpErrors: unknown[] = []
 	for (const tabConnection of websiteTabConnections.values()) {
 		for (const connection of Object.values(tabConnection.connections)) {
@@ -644,4 +659,14 @@ export async function revokeAffectedApprovalsBecauseSettingsAreUnreadable(websit
 		followUpErrors.push(error)
 	}
 	for (const followUpError of followUpErrors) await reportUnexpectedError(followUpError)
+}
+
+// The only entry point for reconciling a committed access-affecting write: `reconcile` runs with the committed settings, and when they cannot be read the change's affected runtime approvals are revoked and request blocks reconciled, then the unavailable error is thrown without running `reconcile`.
+export async function reconcileCommittedAccessChange<Result>(websiteTabConnections: WebsiteTabConnections, change: CommittedAccessChange, reconcile: (committedSettings: Settings) => Promise<Result>): Promise<Result> {
+	const committedSettings = await readSettingsForAccessReconciliation()
+	if (committedSettings === undefined) {
+		await revokeAffectedApprovalsBecauseSettingsAreUnreadable(websiteTabConnections, getAffectedWebsites(change))
+		throw createRpcConfigurationUnavailableError()
+	}
+	return await reconcile(committedSettings)
 }

@@ -1,5 +1,4 @@
-import { readSettingsForAccessReconciliation, revokeAffectedApprovalsBecauseSettingsAreUnreadable, updateDeclarativeNetRequestBlocks, updateWebsiteApprovalAccesses } from '../accessManagement.js'
-import { createRpcConfigurationUnavailableError } from '../../utils/rpcConfigurationError.js'
+import { reconcileCommittedAccessChange, updateDeclarativeNetRequestBlocks, updateWebsiteApprovalAccesses } from '../accessManagement.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { popupMessageHandler, popupRecoveryMessageHandler, type PopupMessageHandlerMap } from '../popupMessageHandlerRegistry.js'
 import { changeSettings, exportSettings, importSettings, openNewTab, restoreDefaultRpcConfiguration, retryRpcConfiguration, setNewRpcList, settingsOpened } from '../popupMessageHandlers.js'
@@ -16,13 +15,10 @@ export const settingsPopupMessageHandlers = {
 		if (!importSettingsReply.data.success) return
 		await updateContentScriptInjectionStrategy()
 		// Read after the content-script registration await so the reconciled and published settings include any access change made meanwhile. The import replaced every website's approvals, so all connections fail closed if settings are unreadable.
-		const importedSettings = await readSettingsForAccessReconciliation()
-		if (importedSettings === undefined) {
-			await revokeAffectedApprovalsBecauseSettingsAreUnreadable(context.websiteTabConnections, { kind: 'every' })
-			throw createRpcConfigurationUnavailableError()
-		}
-		const popupRefreshGeneration = await updateWebsiteApprovalAccesses(context.simulationServicesOwner, context.websiteTabConnections, importedSettings, true)
-		await sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: importedSettings, popupRefreshGeneration })
+		await reconcileCommittedAccessChange(context.websiteTabConnections, { kind: 'settings-import' }, async (importedSettings) => {
+			const popupRefreshGeneration = await updateWebsiteApprovalAccesses(context.simulationServicesOwner, context.websiteTabConnections, importedSettings, true)
+			await sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: importedSettings, popupRefreshGeneration })
+		})
 	}),
 	popup_get_export_settings: popupMessageHandler('popup_get_export_settings', async () => await exportSettings()),
 	popup_retryRpcConfiguration: popupRecoveryMessageHandler('popup_retryRpcConfiguration', async (context) => await retryRpcConfiguration(

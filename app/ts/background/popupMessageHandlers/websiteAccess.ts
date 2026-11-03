@@ -4,9 +4,8 @@ import type { EthereumAddress } from '../../types/wire-types.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
 import { getErrorMessage, reportUnexpectedError } from '../../utils/errors.js'
 import { checkAndThrowRuntimeLastError } from '../../utils/requests.js'
-import { createRpcConfigurationUnavailableError } from '../../utils/rpcConfigurationError.js'
 import { modifyObject } from '../../utils/typescript.js'
-import { type AffectedWebsites, readSettingsForAccessReconciliation, revokeAffectedApprovalsBecauseSettingsAreUnreadable, setInterceptorDisabledForWebsite, updateWebsiteApprovalAccesses } from '../accessManagement.js'
+import { type CommittedAccessChange, reconcileCommittedAccessChange, setInterceptorDisabledForWebsite, updateWebsiteApprovalAccesses } from '../accessManagement.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { getLastKnownCurrentTabId } from '../currentTab.js'
 import { getRequiredSettings, updateWebsiteAccess } from '../settings.js'
@@ -15,7 +14,8 @@ import { getAddressMetadataForAccess } from '../windows/interceptorAccess.js'
 import { searchWebsiteAccess } from '../websiteAccessSearch.js'
 import { updateWebsiteAccessAndContentScriptInjectionStrategy } from '../websiteAccessUpdating.js'
 
-const onlyWebsite = (websiteOrigin: string): AffectedWebsites => ({ kind: 'websites', websiteOrigins: [websiteOrigin] })
+// Each website-access write below returns the change it committed, so its reconciliation scope comes from the write itself.
+const websiteAccessChange = (websiteOrigin: string): CommittedAccessChange => ({ kind: 'website-access', websiteOrigins: [websiteOrigin] })
 
 const isMissingTabReloadError = (error: unknown) => {
 	const message = getErrorMessage(error)
@@ -40,16 +40,12 @@ export async function reloadConnectedTabs(websiteTabConnections: WebsiteTabConne
 export const disableInterceptorForPage = async (websiteTabConnections: WebsiteTabConnections, website: Website, interceptorDisabled: boolean) => {
 	await setInterceptorDisabledForWebsite(website, interceptorDisabled)
 	await reloadConnectedTabs(websiteTabConnections)
+	return websiteAccessChange(website.websiteOrigin)
 }
 
 export async function disableInterceptor(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: DisableInterceptor) {
-	await disableInterceptorForPage(websiteTabConnections, parsedRequest.data.website, parsedRequest.data.interceptorDisabled)
-	const committedSettings = await readSettingsForAccessReconciliation()
-	if (committedSettings === undefined) {
-		await revokeAffectedApprovalsBecauseSettingsAreUnreadable(websiteTabConnections, onlyWebsite(parsedRequest.data.website.websiteOrigin))
-		throw createRpcConfigurationUnavailableError()
-	}
-	await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, committedSettings, true)
+	const change = await disableInterceptorForPage(websiteTabConnections, parsedRequest.data.website, parsedRequest.data.interceptorDisabled)
+	await reconcileCommittedAccessChange(websiteTabConnections, change, async (committedSettings) => await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, committedSettings, true))
 	await sendPopupMessageToOpenWindows({ method: 'popup_setDisableInterceptorReply' as const, data: parsedRequest.data })
 }
 
@@ -60,22 +56,18 @@ export async function retrieveWebsiteAccess(parsedRequest: RetrieveWebsiteAccess
 	await sendPopupMessageToOpenWindows({ method: 'popup_retrieveWebsiteAccessReply', data: { websiteAccess, addressAccessMetadata } })
 }
 
-const blockOrAllowWebsiteExternalRequests = async (websiteTabConnections: WebsiteTabConnections, website: Website, shouldBlock: boolean) => {
+const blockOrAllowWebsiteExternalRequests = async (websiteTabConnections: WebsiteTabConnections, website: Website, shouldBlock: boolean): Promise<CommittedAccessChange> => {
 	await updateWebsiteAccess((previousAccessList) => previousAccessList.map((access) => {
 		if (access.website.websiteOrigin !== website.websiteOrigin) return access
 		return modifyObject(access, { declarativeNetRequestBlockMode: shouldBlock ? 'block-all' : 'disabled' })
 	}))
 	await reloadConnectedTabs(websiteTabConnections)
+	return { kind: 'request-block-mode' }
 }
 
 export async function blockOrAllowExternalRequests(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: BlockOrAllowExternalRequests) {
-	await blockOrAllowWebsiteExternalRequests(websiteTabConnections, parsedRequest.data.website, parsedRequest.data.shouldBlock)
-	const committedSettings = await readSettingsForAccessReconciliation()
-	if (committedSettings === undefined) {
-		await revokeAffectedApprovalsBecauseSettingsAreUnreadable(websiteTabConnections, { kind: 'none' })
-		throw createRpcConfigurationUnavailableError()
-	}
-	await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, committedSettings, true)
+	const change = await blockOrAllowWebsiteExternalRequests(websiteTabConnections, parsedRequest.data.website, parsedRequest.data.shouldBlock)
+	await reconcileCommittedAccessChange(websiteTabConnections, change, async (committedSettings) => await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, committedSettings, true))
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }
 
@@ -84,17 +76,13 @@ const removeAddressAccessByAddress = async (websiteOrigin: string, address: Ethe
 		if (access.website.websiteOrigin !== websiteOrigin || !access.addressAccess) return access
 		return modifyObject(access, { addressAccess: access.addressAccess.filter((addressAccess) => addressAccess.address !== address) })
 	}))
+	return websiteAccessChange(websiteOrigin)
 }
 
 export async function removeWebsiteAddressAccess(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: RemoveWebsiteAddressAccess) {
-	await removeAddressAccessByAddress(parsedRequest.data.websiteOrigin, parsedRequest.data.address)
+	const change = await removeAddressAccessByAddress(parsedRequest.data.websiteOrigin, parsedRequest.data.address)
 	await reloadConnectedTabs(websiteTabConnections)
-	const committedSettings = await readSettingsForAccessReconciliation()
-	if (committedSettings === undefined) {
-		await revokeAffectedApprovalsBecauseSettingsAreUnreadable(websiteTabConnections, onlyWebsite(parsedRequest.data.websiteOrigin))
-		throw createRpcConfigurationUnavailableError()
-	}
-	await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, committedSettings, true)
+	await reconcileCommittedAccessChange(websiteTabConnections, change, async (committedSettings) => await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, committedSettings, true))
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }
 
@@ -113,13 +101,13 @@ export async function allowOrPreventAddressAccessForWebsite(websiteTabConnection
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }
 
+const removeWebsiteAccessEntry = async (websiteOrigin: string) => {
+	await updateWebsiteAccessAndContentScriptInjectionStrategy((previousAccess) => previousAccess.filter((access) => access.website.websiteOrigin !== websiteOrigin))
+	return websiteAccessChange(websiteOrigin)
+}
+
 export async function removeWebsiteAccess(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: RemoveWebsiteAccess) {
-	await updateWebsiteAccessAndContentScriptInjectionStrategy((previousAccess) => previousAccess.filter((access) => access.website.websiteOrigin !== parsedRequest.data.websiteOrigin))
-	const committedSettings = await readSettingsForAccessReconciliation()
-	if (committedSettings === undefined) {
-		await revokeAffectedApprovalsBecauseSettingsAreUnreadable(websiteTabConnections, onlyWebsite(parsedRequest.data.websiteOrigin))
-		throw createRpcConfigurationUnavailableError()
-	}
-	await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, committedSettings, true)
+	const change = await removeWebsiteAccessEntry(parsedRequest.data.websiteOrigin)
+	await reconcileCommittedAccessChange(websiteTabConnections, change, async (committedSettings) => await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, committedSettings, true))
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }

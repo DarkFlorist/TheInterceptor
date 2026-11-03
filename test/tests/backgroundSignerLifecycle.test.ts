@@ -161,24 +161,46 @@ describe('background eth_accounts', () => {
 		assert.doesNotMatch(tabIconDetails.iconReason, /disabled-metadata-frame/)
 	})
 
-	for (const affectedWebsites of [{ kind: 'every' }, { kind: 'none' }, { kind: 'websites', websiteOrigins: ['affected.example'] }] as const) test(`revokes only the ${ affectedWebsites.kind } affected runtime approvals when settings are unreadable, without throwing`, async () => {
-		installBrowserMock({ manifestVersion: 3 })
-		const { readSettingsForAccessReconciliation, revokeAffectedApprovalsBecauseSettingsAreUnreadable, websiteSocketToString } = await loadModules()
-		await browser.storage.local.set({ activeRpcNetwork: 'corrupt' })
+	const createTwoApprovedTabs = async () => {
+		const { websiteSocketToString } = await loadModules()
 		const connectionFor = (tabId: number, websiteOrigin: string) => {
 			const socket = { tabId, connectionName: 0n }
 			return [tabId, { ...confirmedSignerOwnership(socket), connections: { [websiteSocketToString(socket)]: { port: createPort(tabId).port, socket, websiteOrigin, approved: true, wantsToConnect: true } } }] as const
 		}
 		const websiteTabConnections: WebsiteTabConnections = new Map([connectionFor(9887, 'affected.example'), connectionFor(9888, 'unaffected.example')])
 		const isApproved = (tabId: number) => Object.values(websiteTabConnections.get(tabId)?.connections ?? {}).every((connection) => connection.approved)
+		return { websiteTabConnections, isApproved }
+	}
 
-		// The read is a pure query: it reports unreadable settings without touching any connection.
-		assert.equal(await withSilencedWarnings(readSettingsForAccessReconciliation), undefined)
+	// Each committed change kind fixes which websites fail closed: the edited website, every website, or none.
+	for (const { change, revokesAffected, revokesUnaffected } of [
+		{ change: { kind: 'website-access', websiteOrigins: ['affected.example'] }, revokesAffected: true, revokesUnaffected: false },
+		{ change: { kind: 'address-book' }, revokesAffected: true, revokesUnaffected: true },
+		{ change: { kind: 'settings-import' }, revokesAffected: true, revokesUnaffected: true },
+		{ change: { kind: 'request-block-mode' }, revokesAffected: false, revokesUnaffected: false },
+	] as const) test(`reconciling a committed ${ change.kind } change with unreadable settings revokes its scope and throws without reconciling`, async () => {
+		installBrowserMock({ manifestVersion: 3 })
+		const { reconcileCommittedAccessChange } = await loadModules()
+		const { isRpcConfigurationUnavailableError } = await import('../../app/ts/utils/rpcConfigurationError.js')
+		await browser.storage.local.set({ activeRpcNetwork: 'corrupt' })
+		const { websiteTabConnections, isApproved } = await createTwoApprovedTabs()
+		let reconciled = false
+
+		await assert.rejects(withSilencedWarnings(async () => await reconcileCommittedAccessChange(websiteTabConnections, change, async () => { reconciled = true })), isRpcConfigurationUnavailableError)
+		assert.equal(reconciled, false)
+		assert.equal(isApproved(9887), !revokesAffected)
+		assert.equal(isApproved(9888), !revokesUnaffected)
+	})
+
+	test('reconciling a committed change with readable settings only runs the reconciliation', async () => {
+		installBrowserMock({ manifestVersion: 3 })
+		const { reconcileCommittedAccessChange, getRequiredSettings } = await loadModules()
+		const { websiteTabConnections, isApproved } = await createTwoApprovedTabs()
+		const expectedSettings = await getRequiredSettings()
+
+		const result = await reconcileCommittedAccessChange(websiteTabConnections, { kind: 'address-book' }, async (committedSettings) => committedSettings)
+		assert.deepEqual(result, expectedSettings)
 		assert.equal(isApproved(9887) && isApproved(9888), true)
-
-		await withSilencedWarnings(async () => await revokeAffectedApprovalsBecauseSettingsAreUnreadable(websiteTabConnections, affectedWebsites))
-		assert.equal(isApproved(9887), affectedWebsites.kind === 'none')
-		assert.equal(isApproved(9888), affectedWebsites.kind !== 'every')
 	})
 
 	test('shows the blocking shield only after persisted-consent tab blocking is applied while the active RPC network is unreadable', async () => {
