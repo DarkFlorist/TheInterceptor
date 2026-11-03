@@ -18,7 +18,7 @@ import type { LocalStorageItems } from '../utils/storageUtils.js'
 import type { ActiveAddressSelection } from '../utils/activeAddressSelection.js'
 import { rememberSigningAddressSelection } from './signingAddressSelection.js'
 import { activeStackContextsEqual, getActiveStackContext, operationBelongsToActiveStackContext } from '../utils/activeStackContext.js'
-import { rpcConfigurationIsUsable, rpcServicesAreOptional } from './rpcConfigurationAvailability.js'
+import { rpcConfigurationIsReady, rpcConfigurationIsUsable, rpcServicesAreOptional } from './rpcConfigurationAvailability.js'
 import { createRpcConfigurationUnavailableError } from '../utils/rpcConfigurationError.js'
 
 async function clearSimulationStateFromConfig(settingsSnapshot?: Awaited<ReturnType<typeof getRequiredSettings>>) {
@@ -159,7 +159,9 @@ async function runActiveSettingsChange(
 	try {
 		// Settings, approvals, resets, notifications and selection preferences form one ordered transition.
 		await changeActiveAddressAndChainSemaphore.execute(async () => {
-			const previousSnapshot = transition.admittedSnapshot ?? await getSettingsSnapshot()
+			// The baseline is read under the semaphore so a network change committed after admission is not overwritten by the admitted network; the admitted snapshot is used only when the RPC configuration became unavailable since admission, so the admitted transition still completes.
+			const liveSnapshot = await getSettingsSnapshot()
+			const previousSnapshot = transition.admittedSnapshot !== undefined && (liveSnapshot.settings === undefined || !rpcConfigurationIsReady(liveSnapshot.rpcConfiguration)) ? transition.admittedSnapshot : liveSnapshot
 			const previousSettings = requireSettings(previousSnapshot)
 			const rpcServicesOptional = rpcServicesAreOptional(previousSnapshot.rpcConfiguration)
 			const recoverServicesOnRpcSelection = simulationServicesOwner.getCurrent() === undefined && rpcServicesOptional

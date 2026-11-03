@@ -2741,6 +2741,45 @@ describe('background eth_accounts', () => {
 		assert.deepEqual(messages.find((message) => message.method === 'accountsChanged')?.result, ['0x2222222222222222222222222222222222222222'])
 	})
 
+	test('publishes the network committed after admission instead of the admitted one when a settings transition runs', async () => {
+		const { runtimeMessages } = installBrowserMock()
+		const { changeActiveAddressAndChain, changeSimulationMode, getRequiredSettings, getSettingsSnapshot, saveCurrentTabId, setRpcConfiguration, setUseSignersAddressAsActiveAddress, updateTabState, updateUserAddressBookEntries, updateWebsiteAccess, websiteSocketToString } = await loadModules()
+		const { MessageToPopup } = await import('../../app/ts/types/interceptor-messages.js')
+		const websiteOrigin = 'https://app.safe.global'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const chainBSafe = 0x2525252525252525252525252525252525252525n
+		const signerAddress = 0x2626262626262626262626262626262626262626n
+		const socket = { tabId: 175, connectionName: 0n }
+		const chainARpc = (await getRequiredSettings()).activeRpcNetwork
+		const chainBRpc = { ...chainARpc, name: 'Chain B', chainId: 10n, httpsRpc: 'https://chain-b.example.test' }
+		await changeSimulationMode({ simulationMode: false, activeSigningAddress: signerAddress, activeSigningSafeAddress: chainBSafe })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateUserAddressBookEntries(() => [{ type: 'safe', name: 'Chain B Safe', address: chainBSafe, chainId: chainBRpc.chainId, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [signerAddress], safeVersion: '1.4.1' }])
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: chainBSafe, access: true }, { address: signerAddress, access: true }] }])
+		await updateTabState(socket.tabId, (previousState) => ({ ...previousState, signerAccounts: [signerAddress], activeSigningAddress: signerAddress, signerChain: chainBRpc.chainId }))
+		await saveCurrentTabId(socket.tabId)
+		const { port, messages } = createPort(socket.tabId)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		// The popup change is admitted on chain A, then a switch to chain B commits before the transition acquires the settings semaphore.
+		const admitted = await getSettingsSnapshot()
+		if (admitted.settings === undefined) throw new Error('Expected readable settings at admission')
+		assert.equal(admitted.settings.activeRpcNetwork.chainId, chainARpc.chainId)
+		await setRpcConfiguration([chainARpc, chainBRpc], chainBRpc)
+		const messageCountBeforeTransition = runtimeMessages.length
+
+		await changeActiveAddressAndChain(simulationServicesOwner, websiteTabConnections, { simulationMode: false, activeAddress: chainBSafe, signingAddressSelection: 'safe' }, { settings: admitted.settings, rpcConfiguration: admitted.rpcConfiguration })
+
+		const settingsUpdates = runtimeMessages.slice(messageCountBeforeTransition).flatMap((message) => {
+			const parsed = MessageToPopup.safeParse(message)
+			return parsed.success && parsed.value.method === 'popup_settingsUpdated' ? [parsed.value.data] : []
+		})
+		assert.deepEqual(settingsUpdates.map((update) => update.activeRpcNetwork.chainId), [chainBRpc.chainId])
+		assert.deepEqual(messages.filter((message) => message.method === 'accountsChanged').map((message) => message.result), [[addressString(chainBSafe)]])
+	})
+
 	test('advertises the signer account when switching from a Safe to the MetaMask address', async () => {
 		installBrowserMock()
 		const {
