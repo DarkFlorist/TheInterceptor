@@ -433,6 +433,24 @@ describe('Home popup clear empty state', () => {
 		}
 	})
 
+	test('does not promise simulation for a website the Interceptor is disabled for', async () => {
+		const dom = installDomMock()
+		const params = createHomeParams({ simulationMode: new Signal(true), interceptorDisabled: new Signal(true) })
+		try {
+			await act(() => { render(h(Home, params), dom.document.body) })
+			// A disabled website transacts through the wallet directly, so the simulation promise would be false.
+			assert.equal(dom.document.body.textContent?.includes('never sent to the chain'), false)
+			assert.equal(dom.document.body.textContent?.includes('Interceptor disabled on this website.'), true)
+			// Enabling the Interceptor for the website again brings back the mode's own banner.
+			await act(() => { params.interceptorDisabled.value = false })
+			assert.equal(dom.document.body.textContent?.includes('never sent to the chain'), true)
+			assert.equal(dom.document.body.textContent?.includes('Interceptor disabled on this website.'), false)
+		} finally {
+			render(undefined, dom.document.body)
+			dom.restore()
+		}
+	})
+
 	for (const selection of ['other chain', 'metadata edit'] as const) test(`selects an RPC with the same URL and a different ${ selection }`, async () => {
 		const dom = installDomMock()
 		const nextRpc = { ...rpcNetwork, name: 'Requested network', chainId: selection === 'other chain' ? rpcNetwork.chainId + 1n : rpcNetwork.chainId }

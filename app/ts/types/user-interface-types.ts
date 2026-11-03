@@ -91,6 +91,8 @@ export type FirstCardParams = {
 	changeActiveRpc: (rpcEntry: RpcEntry) => Promise<void>
 	rpcNetwork: Signal<RpcNetwork | undefined>
 	simulationMode: Signal<boolean>
+	// Whether the user disabled the Interceptor for the active tab's website
+	interceptorDisabled: ReadonlySignal<boolean>
 	changeActiveAddress: () => void
 	makeCurrentAddressRich: Signal<boolean>
 	richList: Signal<readonly EnrichedRichListElement[]>

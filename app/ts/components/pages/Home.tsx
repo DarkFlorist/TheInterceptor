@@ -253,7 +253,11 @@ function getSignerDisplayName(signerName: SignerName) {
 }
 
 // States what the current mode does with a confirmed transaction. Home mounts it only after the initial home data has loaded, so it never shows the pre-load default mode.
-function ModeBanner({ simulationMode, signerName }: { simulationMode: boolean, signerName: SignerName }) {
+// A website the Interceptor is disabled for gets no Interceptor provider and transacts through the wallet directly, so neither mode applies to it and the banner says so instead.
+function ModeBanner({ simulationMode, signerName, interceptorDisabledForWebsite }: { simulationMode: boolean, signerName: SignerName, interceptorDisabledForWebsite: boolean }) {
+	if (interceptorDisabledForWebsite) return <p class = 'popup-mode-banner' role = 'note'>
+		<strong>Interceptor disabled on this website.</strong> The website talks to { getSignerDisplayName(signerName) } directly, so its transactions are neither simulated nor reviewed.
+	</p>
 	return <p class = 'popup-mode-banner' role = 'note'>
 		{ simulationMode
 			? <><strong>Simulation mode.</strong> Transactions are only simulated and are never sent to the chain.</>
@@ -325,7 +329,7 @@ function FirstCardHeader(param: FirstCardParams) {
 				<RpcSelector rpcEntries = { param.rpcEntries } rpcNetwork = { param.rpcNetwork } changeRpc = { changeRpc } disabled = { controlsDisabled } pendingText = { rpcPending ? (!param.simulationMode.value && requestedRpc.value?.chainId !== param.rpcNetwork.value?.chainId ? 'Waiting for wallet to switch network...' : 'Updating network...') : undefined }/>
 			</div>
 		</header>
-		<ModeBanner simulationMode = { param.simulationMode.value } signerName = { signerName.value }/>
+		<ModeBanner simulationMode = { param.simulationMode.value } signerName = { signerName.value } interceptorDisabledForWebsite = { param.interceptorDisabled.value }/>
 		{ setSimulatingState.value.state === 'rejected' ? <ErrorComponent text = { setSimulatingState.value.error.message }/> : <></> }
 		{ setSigningState.value.state === 'rejected' ? <ErrorComponent text = { setSigningState.value.error.message }/> : <></> }
 		{ rpcChangeState.value.state === 'rejected' ? <ErrorComponent text = { rpcChangeState.value.error.message }/> : <></> }
@@ -1008,6 +1012,7 @@ export function Home(param: HomeParams) {
 			rpcNetwork = { param.rpcNetwork }
 			changeActiveRpc = { param.setActiveRpcAndInformAboutIt }
 			simulationMode = { param.simulationMode }
+			interceptorDisabled = { param.interceptorDisabled }
 			changeActiveAddress = { param.changeActiveAddress }
 			makeCurrentAddressRich = { param.makeCurrentAddressRich }
 			richList = { param.fixedAddressRichList }
