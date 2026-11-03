@@ -1,4 +1,4 @@
-import { getConfirmationRunInputs, isConfirmationVisualisationCurrent, refreshConfirmTransactionSimulation, reserveConfirmationRun } from './confirmTransactionSimulation.js'
+import { type ConfirmationRunReservation, getConfirmationRunInputs, getInFlightConfirmationRunAbortController, isConfirmationVisualisationCurrent, refreshConfirmTransactionSimulation, reserveConfirmationRun } from './confirmTransactionSimulation.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { captureSimulationSnapshot, getUpdatedSimulationStackSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
 import { getSettings, setUseTabsInsteadOfPopup, setPage, getMakeCurrentAddressRich, setMetamaskCompatibilityMode, setSafeAppsCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, updateMakeCurrentAddressRich, updateFixedMakeMeRichList } from './settings.js'
@@ -514,10 +514,12 @@ type ConfirmTransactionMetadataDependencies = {
 	readonly visualisation?: OpenConsumerVisualisationDependencies
 }
 
-export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, requestAbortController: AbortController | undefined, dependencies: ConfirmTransactionMetadataDependencies = {}) {
+// Without an abort controller of its own, the refresh is aborted when a later confirmation run of the request it refreshes replaces the run in flight, as its lookups are then outdated.
+export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, callerAbortController: AbortController | undefined, dependencies: ConfirmTransactionMetadataDependencies = {}) {
 	const promises = await getPendingTransactionsAndMessages()
 	const first = promises[0]
 	if (first === undefined) return
+	const requestAbortController = callerAbortController ?? getInFlightConfirmationRunAbortController(first.uniqueRequestIdentifier)
 	const currentBlockNumberPromise = ethereum.getBlockNumber(requestAbortController)
 	silenceChromeUnCaughtPromise(currentBlockNumberPromise)
 	const rpcConnectionStatusPromise = silenceChromeUnCaughtPromise(getRpcConnectionStatus())
@@ -600,9 +602,8 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 	}
 }
 
-export async function refreshPopupConfirmTransactionSimulation(ethereum: EthereumClientService, tokenPriceService: TokenPriceService) {
-	// Reserved before anything is awaited, so overlapping refreshes are ordered by when they were requested.
-	const confirmationRun = reserveConfirmationRun()
+// The run is reserved before anything is awaited, so overlapping refreshes are ordered by when they were requested; an entry that awaits before refreshing, such as a gas limit edit, reserves it itself and passes it in.
+export async function refreshPopupConfirmTransactionSimulation(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, confirmationRun: ConfirmationRunReservation = reserveConfirmationRun()) {
 	const [firstTxn] = await getPendingTransactionsAndMessages()
 	if (firstTxn === undefined || firstTxn.type !== 'Transaction' || (firstTxn.transactionOrMessageCreationStatus !== 'Simulated' && firstTxn.transactionOrMessageCreationStatus !== 'FailedToSimulate')) return
 	// The same transaction can do something else on another network, so after a network switch it keeps the preview of the network it was requested for. A client serves one network for its whole lifetime, so a refresh that passes this check only stores results from that network, even if the user switches networks while it runs.
@@ -999,8 +1000,10 @@ export async function setEnsNameForHash(parsedRequest: SetEnsNameForHash) {
 
 export async function forceSetGasLimitForTransaction(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, parsedRequest: ForceSetGasLimitForTransaction) {
 	await setGasLimitForTransaction(parsedRequest.data.transactionIdentifier, parsedRequest.data.gasLimit)
+	// Reserved once the new gas limit is stored, before anything else is awaited: a run that reads the transaction before the edit must not outrank the edit's run, or it would keep a preview of a gas limit that is no longer requested, while a refresh that starts later is ordered after the edit.
+	const confirmationRun = reserveConfirmationRun()
 	await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { invalidateOldState: true })
-	await refreshPopupConfirmTransactionSimulation(ethereum, tokenPriceService)
+	await refreshPopupConfirmTransactionSimulation(ethereum, tokenPriceService, confirmationRun)
 }
 
 export async function changePreSimulationBlockTimeManipulation(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, parsedRequest: ChangePreSimulationBlockTimeManipulation) {

@@ -5,21 +5,19 @@ import type { TokenPriceService } from '../simulation/services/priceEstimator.js
 import { createSafeExecutionPreSimulationTransaction, createSafeSigningSimulationInput } from '../safe/safeSimulation.js'
 import { CONFIRMATION_RUN_ID_OF_UNNUMBERED_RUN, type ConfirmTransactionTransactionSingleVisualization, type PendingTransaction } from '../types/accessRequest.js'
 import type { SafeTransactionSigningRequest } from '../types/safeTypes.js'
+import type { SignerName } from '../types/signerTypes.js'
 import type { WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
 import { last } from '../utils/array.js'
 import { stringifyJSONWithBigInts } from '../utils/bigint.js'
 import { NEW_BLOCK_ABORT, JSON_RPC_ERROR_CODE_INTERNAL_ERROR } from '../utils/constants.js'
 import { decodeEthereumError } from '../utils/errorDecoding.js'
 import { JsonRpcResponseError, reportUnexpectedError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
-import { type UniqueRequestIdentifier, silenceChromeUnCaughtPromise } from '../utils/requests.js'
+import { type UniqueRequestIdentifier, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { identifyAddress } from './metadataUtils.js'
 import { getSimulationErrorAbis } from './simulationErrorAbi.js'
 import { createSimulationStateWithNonceAndBaseFeeFixing, getCurrentSimulationInput, visualizeSimulatorState } from './simulationUpdating.js'
 import { getInterceptorTransactionStack, getPendingTransactionsAndMessages, getTabState } from './storageVariables.js'
-
-let confirmTransactionAbortController = new AbortController()
-export const getConfirmTransactionAbortController = () => confirmTransactionAbortController
 
 let latestConfirmationRunId = 0
 // The highest run id among the stored confirmations, including those stored before the background last restarted; 0 when none has one.
@@ -45,8 +43,13 @@ export function reserveConfirmationRun(): ConfirmationRunReservation {
 	return { runId: silenceChromeUnCaughtPromise(allocation) }
 }
 
-// The run whose abort controller is installed. Runs install theirs in run order: a run that resumes after a later run installed its controller ends as an aborted run does, so an earlier run never aborts a later one.
-let abortControllerRunId = CONFIRMATION_RUN_ID_OF_UNNUMBERED_RUN
+type InFlightConfirmationRun = { readonly runId: number, readonly abortController: AbortController }
+
+// The run in flight for each confirmation request, keyed by its request. A run aborts only the run of its own request that it replaces, and a run that resumes after a later run of its request was installed ends as an aborted run does, so an earlier run never aborts a later one. Runs of different requests never cancel each other, so a run never leaves another confirmation without the run that completes it. An entry is removed when its run finishes, so only runs in flight are kept.
+const inFlightConfirmationRuns = new Map<string, InFlightConfirmationRun>()
+
+// The abort controller of the run in flight for the request, if any, for work that is outdated once a later run of that request starts.
+export const getInFlightConfirmationRunAbortController = (uniqueRequestIdentifier: UniqueRequestIdentifier) => inFlightConfirmationRuns.get(getUniqueRequestIdentifierString(uniqueRequestIdentifier))?.abortController
 
 type ConfirmationRunVisualisation = { readonly data: { readonly confirmationRunId: number } }
 
@@ -80,12 +83,32 @@ export async function refreshConfirmTransactionSimulation(
 		tabIdOpenedFrom: uniqueRequestIdentifier.requestSocket.tabId,
 		confirmationRunId,
 	}
-	if (abortControllerRunId > confirmationRunId) return undefined
-	abortControllerRunId = confirmationRunId
+	const requestKey = getUniqueRequestIdentifierString(uniqueRequestIdentifier)
+	const replacedRun = inFlightConfirmationRuns.get(requestKey)
+	if (replacedRun !== undefined && replacedRun.runId > confirmationRunId) return undefined
+	replacedRun?.abortController.abort(NEW_BLOCK_ABORT)
+	const thisRun = { runId: confirmationRunId, abortController: new AbortController() }
+	inFlightConfirmationRuns.set(requestKey, thisRun)
+	try {
+		return await simulateConfirmationRun(ethereum, tokenPriceService, info, thisRun.abortController, safeSigningRequest)
+	} finally {
+		if (inFlightConfirmationRuns.get(requestKey) === thisRun) inFlightConfirmationRuns.delete(requestKey)
+	}
+}
+
+type ConfirmationRunInfo = {
+	readonly uniqueRequestIdentifier: UniqueRequestIdentifier
+	readonly transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed
+	readonly simulationMode: boolean
+	readonly activeAddress: bigint
+	readonly signerName: SignerName
+	readonly tabIdOpenedFrom: number
+	readonly confirmationRunId: number
+}
+
+async function simulateConfirmationRun(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, info: ConfirmationRunInfo, thisConfirmTransactionAbortController: AbortController, safeSigningRequest: SafeTransactionSigningRequest | undefined): Promise<ConfirmTransactionTransactionSingleVisualization | undefined> {
+	const { transactionToSimulate } = info
 	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' }, 'confirmTransaction')
-	confirmTransactionAbortController.abort(NEW_BLOCK_ABORT)
-	confirmTransactionAbortController = new AbortController()
-	const thisConfirmTransactionAbortController = confirmTransactionAbortController
 	const simulationStartedTimestamp = new Date()
 	const simulationInput = safeSigningRequest === undefined
 		? await getCurrentSimulationInput()

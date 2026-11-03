@@ -123,7 +123,7 @@ describe('popup settings changes', () => {
 		const context = {
 			...createEthereumWithGetBlockCounter({ count: 0 }), settings, websiteTabConnections: connections,
 			publishRpcConnectionStatus: async () => undefined,
-			simulationAbortController: new AbortController(), confirmTransactionAbortController: new AbortController(), resetSimulationState: async () => undefined,
+			simulationAbortController: new AbortController(), resetSimulationState: async () => undefined,
 		}
 		const rpc = { ...settings.activeRpcNetwork, chainId: 2n, httpsRpc: 'https://other.example.test' }
 		const pending = dispatchPopupMessage(context, { method: 'popup_changeActiveRpc', data: rpc })
@@ -307,7 +307,7 @@ describe('popup settings changes', () => {
 		const context = {
 			...services, settings: await getSettings(), websiteTabConnections: new Map(),
 			publishRpcConnectionStatus: async () => undefined,
-			simulationAbortController: new AbortController(), confirmTransactionAbortController: new AbortController(),
+			simulationAbortController: new AbortController(),
 			resetSimulationState: async () => undefined,
 		}
 		const refreshRequests = () => runtimeMessages.filter((message) => {

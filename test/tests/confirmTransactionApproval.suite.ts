@@ -508,7 +508,7 @@ test('a simulation refresh that resumes after a later refresh started simulating
 	const { websiteTabConnections } = await setUpTransactionApprovalTest(false)
 	await requestTransaction(websiteTabConnections, false)
 	const initialRunId = (await getPendingTransaction()).popupVisualisation.data.confirmationRunId
-	const { getConfirmTransactionAbortController } = await import('../../app/ts/background/confirmTransactionSimulation.js')
+	const { getInFlightConfirmationRunAbortController } = await import('../../app/ts/background/confirmTransactionSimulation.js')
 	// The first tab state read of a refresh is the one its simulation makes after its run id was allocated.
 	const earlierRunTabStateRead = holdFirstStorageRead((keys) => keys === `tabState_${ socket.tabId }`)
 
@@ -517,7 +517,8 @@ test('a simulation refresh that resumes after a later refresh started simulating
 	const suspended = createSuspendedServices('eth_simulateV1')
 	const laterRefresh = modules.refreshPopupConfirmTransactionSimulation(suspended.ethereum, suspended.tokenPriceService)
 	await suspended.reached
-	const laterRunAbortController = getConfirmTransactionAbortController()
+	const laterRunAbortController = getInFlightConfirmationRunAbortController(uniqueRequestIdentifier)
+	if (laterRunAbortController === undefined) throw new Error('The later run is not in flight')
 	earlierRunTabStateRead.release()
 	await earlierRefresh
 
@@ -553,7 +554,7 @@ async function openDirectSafeExecutionAwaitingSignerRefresh() {
 
 // Starts an earlier Gnosis Safe rebuild entry, holds it at its first matching storage read, starts a popup refresh and holds it once it installed its abort controller, then releases the earlier entry, which ends as an aborted rebuild does. Returns whether the popup refresh's abort controller was aborted.
 async function wasLaterPopupRefreshAborted(startEarlierEntry: () => Promise<unknown>, isEarlierEntryHeldRead: (keys: unknown) => boolean) {
-	const { getConfirmTransactionAbortController } = await import('../../app/ts/background/confirmTransactionSimulation.js')
+	const { getInFlightConfirmationRunAbortController } = await import('../../app/ts/background/confirmTransactionSimulation.js')
 	const earlierEntryReadReached = createDeferredValue<undefined>()
 	const releaseEarlierEntryRead = createDeferredValue<undefined>()
 	const laterRunSimulationInputReached = createDeferredValue<undefined>()
@@ -583,7 +584,8 @@ async function wasLaterPopupRefreshAborted(startEarlierEntry: () => Promise<unkn
 		laterRunStage = 'preparing'
 		const laterRefresh = modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
 		await laterRunSimulationInputReached.promise
-		const laterRunAbortController = getConfirmTransactionAbortController()
+		const laterRunAbortController = getInFlightConfirmationRunAbortController(uniqueRequestIdentifier)
+		if (laterRunAbortController === undefined) throw new Error('The later run is not in flight')
 		releaseEarlierEntryRead.resolve(undefined)
 		await assert.rejects(earlierEntry, /The refreshed Gnosis Safe execution simulation did not complete/)
 		const abortedBeforeLaterRunFinished = laterRunAbortController.signal.aborted
@@ -623,6 +625,119 @@ test('a Gnosis Safe rebuild is not persisted over the preview of a popup refresh
 	assert.equal(persistence.persisted, false)
 	assert.ok(afterRebuild.popupVisualisation.data.confirmationRunId > beforeRebuild.popupVisualisation.data.confirmationRunId)
 	assert.equal(afterRebuild.safeExecutionSignerAddress, beforeRebuild.safeExecutionSignerAddress)
+})
+
+test('a confirmation whose first simulation started before a refresh of another confirmation still completes it, and neither cancels the other', async () => {
+	const { websiteTabConnections } = await setUpTransactionApprovalTest(false)
+	await requestTransaction(websiteTabConnections, false)
+	const { getInFlightConfirmationRunAbortController } = await import('../../app/ts/background/confirmTransactionSimulation.js')
+	const otherRequest = { ...uniqueRequestIdentifier, requestId: uniqueRequestIdentifier.requestId + 1 }
+	const otherRequestTabStateRead = holdFirstStorageRead((keys) => keys === `tabState_${ socket.tabId }`)
+
+	// The other confirmation reserves its first run before the refresh below, then waits on its first read.
+	const otherRequestOpening = modules.openConfirmTransactionDialogForTransaction(simulator.ethereum, simulator.tokenPriceService, { interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier: otherRequest, method: transactionParams.method, params: transactionParams.params }, { kind: 'transaction', parameters: transactionParams }, false, activeAddress, website, websiteTabConnections)
+	await otherRequestTabStateRead.reached
+	await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
+	const suspended = createSuspendedServices('eth_simulateV1')
+	const laterRefresh = modules.refreshPopupConfirmTransactionSimulation(suspended.ethereum, suspended.tokenPriceService)
+	await suspended.reached
+	const laterRunAbortController = getInFlightConfirmationRunAbortController(uniqueRequestIdentifier)
+	if (laterRunAbortController === undefined) throw new Error('The later run is not in flight')
+	otherRequestTabStateRead.release()
+	assert.deepEqual(await otherRequestOpening, { type: 'doNotReply' })
+
+	assert.equal(laterRunAbortController.signal.aborted, false)
+	suspended.release()
+	await laterRefresh
+	const otherPending = (await modules.getPendingTransactionsAndMessages()).find((pending) => pending.uniqueRequestIdentifier.requestId === otherRequest.requestId)
+	assert.equal(otherPending?.type === 'Transaction' ? otherPending.transactionOrMessageCreationStatus : undefined, 'Simulated')
+	// Once the first confirmation is gone, the other one is the one refreshed.
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: (await modules.getPendingTransactionsAndMessages()).filter((pending) => pending.uniqueRequestIdentifier.requestId === otherRequest.requestId) })
+	await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
+	const [refreshedOther] = await modules.getPendingTransactionsAndMessages()
+	assert.equal(refreshedOther?.type === 'Transaction' ? refreshedOther.transactionOrMessageCreationStatus : undefined, 'Simulated')
+})
+
+// Holds a gas limit edit at its check whether the simulation visualizer is open, which comes after the new gas limit was stored.
+function holdGasLimitEditAfterItsWrite() {
+	const reached = createDeferredValue<undefined>()
+	const release = createDeferredValue<undefined>()
+	const sendMessage = browser.runtime.sendMessage
+	let held = false
+	browser.runtime.sendMessage = async (message: Parameters<typeof sendMessage>[0]) => {
+		if (!held && isRecord(message) && message.method === 'popup_isSimulationVisualizerOpen') {
+			held = true
+			reached.resolve(undefined)
+			await release.promise
+		}
+		return await sendMessage(message)
+	}
+	return { reached: reached.promise, release: () => release.resolve(undefined), restore: () => { browser.runtime.sendMessage = sendMessage } }
+}
+
+test('a refresh that starts after a gas limit edit was stored keeps its preview over the refresh of the edit', async () => {
+	const { websiteTabConnections } = await setUpTransactionApprovalTest(false)
+	await requestTransaction(websiteTabConnections, false)
+	const editHold = holdGasLimitEditAfterItsWrite()
+	try {
+		const edit = changeGasLimit(30_000n)
+		await editHold.reached
+		await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
+		const laterRunId = (await getPendingTransaction()).popupVisualisation.data.confirmationRunId
+		editHold.release()
+		await edit
+
+		const pending = await getPendingTransaction()
+		assert.equal(pending.popupVisualisation.data.confirmationRunId, laterRunId)
+		assert.equal(pending.transactionToSimulate.transaction.gas, 30_000n)
+	} finally {
+		editHold.restore()
+	}
+})
+
+test('a refresh that starts after a gas limit edit was stored is not aborted by the refresh of the edit', async () => {
+	const { websiteTabConnections } = await setUpTransactionApprovalTest(false)
+	await requestTransaction(websiteTabConnections, false)
+	const { getInFlightConfirmationRunAbortController } = await import('../../app/ts/background/confirmTransactionSimulation.js')
+	const editHold = holdGasLimitEditAfterItsWrite()
+	try {
+		const edit = changeGasLimit(30_000n)
+		await editHold.reached
+		const suspended = createSuspendedServices('eth_simulateV1')
+		const laterRefresh = modules.refreshPopupConfirmTransactionSimulation(suspended.ethereum, suspended.tokenPriceService)
+		await suspended.reached
+		const laterRunAbortController = getInFlightConfirmationRunAbortController(uniqueRequestIdentifier)
+		if (laterRunAbortController === undefined) throw new Error('The later run is not in flight')
+		editHold.release()
+		await edit
+
+		assert.equal(laterRunAbortController.signal.aborted, false)
+		suspended.release()
+		await laterRefresh
+		assert.equal((await getPendingTransaction()).transactionToSimulate.transaction.gas, 30_000n)
+	} finally {
+		editHold.restore()
+	}
+})
+
+test('a refresh that read the transaction before a gas limit edit does not keep its preview over the refresh of the edit', async () => {
+	const { websiteTabConnections } = await setUpTransactionApprovalTest(false)
+	await requestTransaction(websiteTabConnections, false)
+	const { forceSetGasLimitForTransaction } = await import('../../app/ts/background/popupMessageHandlers.js')
+	const { transactionIdentifier } = await getPendingTransaction()
+	// Holds the edit at its own first read, after it started but before it stores the new gas limit.
+	const editRead = holdFirstStorageRead((keys) => Array.isArray(keys) && keys.includes('pendingTransactionsAndMessages'))
+
+	const edit = forceSetGasLimitForTransaction(simulator.ethereum, simulator.tokenPriceService, { method: 'popup_forceSetGasLimitForTransaction', data: { transactionIdentifier, gasLimit: 30_000n } })
+	await editRead.reached
+	await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
+	assert.equal((await getPendingTransaction()).transactionToSimulate.transaction.gas, 21_000n)
+	editRead.release()
+	await edit
+
+	const pending = await getPendingTransaction()
+	assert.equal(getRequestedGasLimit(pending), 30_000n)
+	assert.equal(pending.transactionToSimulate.transaction.gas, 30_000n)
 })
 
 test('a simulation refresh that finishes after the transaction was approved keeps the approved preview', async () => {
