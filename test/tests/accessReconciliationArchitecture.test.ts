@@ -22,6 +22,8 @@ const fixtures = {
 	writeWithoutReconcile: `${ fixtureDirectory }writeWithoutReconcile.ts`,
 	discardedChange: `${ fixtureDirectory }discardedChange.ts`,
 	writeThenReconcile: `${ fixtureDirectory }writeThenReconcile.ts`,
+	voidedChange: `${ fixtureDirectory }voidedChange.ts`,
+	reconcileInUncalledClosure: `${ fixtureDirectory }reconcileInUncalledClosure.ts`,
 } as const
 
 function createProgram() {
@@ -91,7 +93,7 @@ type FunctionLikeWithBody = ts.FunctionDeclaration | ts.ArrowFunction | ts.Funct
 
 function getEnclosingFunction(node: ts.Node): FunctionLikeWithBody | undefined {
 	for (let current = node.parent; current !== undefined; current = current.parent) {
-		if (ts.isFunctionDeclaration(current) || ts.isArrowFunction(current) || ts.isFunctionExpression(current) || ts.isMethodDeclaration(current)) return current
+		if (isFunctionLikeWithBody(current)) return current
 	}
 	return undefined
 }
@@ -104,14 +106,49 @@ function returnsCommittedAccessChange(declaration: ts.SignatureDeclaration) {
 	return returnType !== undefined && (returnType.flags & (ts.TypeFlags.Any | ts.TypeFlags.Never)) === 0 && checker.isTypeAssignableTo(returnType, committedAccessChangeType)
 }
 
+const isFunctionLikeWithBody = (node: ts.Node): node is FunctionLikeWithBody => ts.isFunctionDeclaration(node) || ts.isArrowFunction(node) || ts.isFunctionExpression(node) || ts.isMethodDeclaration(node)
+
+// Visits the nodes of a function's own body: nested functions may never run, so nothing inside them counts for the enclosing function.
+function forEachNodeInOwnBody(enclosingFunction: FunctionLikeWithBody, onNode: (node: ts.Node) => void) {
+	const visit = (node: ts.Node) => {
+		onNode(node)
+		if (!isFunctionLikeWithBody(node)) ts.forEachChild(node, visit)
+	}
+	if (enclosingFunction.body !== undefined) ts.forEachChild(enclosingFunction.body, visit)
+}
+
+const isReconcileCommandCall = (node: ts.Node): node is ts.CallExpression => ts.isCallExpression(node) && resolveCallee(node) === reconcileCommand
+
 function callsReconcileAfter(enclosingFunction: FunctionLikeWithBody, position: number) {
 	let found = false
-	const visit = (node: ts.Node) => {
-		if (ts.isCallExpression(node) && node.getStart() > position && resolveCallee(node) === reconcileCommand) found = true
-		if (!found) ts.forEachChild(node, visit)
-	}
-	visit(enclosingFunction)
+	forEachNodeInOwnBody(enclosingFunction, (node) => { if (isReconcileCommandCall(node) && node.getStart() > position) found = true })
 	return found
+}
+
+// The expression a value is consumed as, skipping `await` and parentheses.
+function getConsumedExpression(expression: ts.Expression): ts.Expression {
+	const { parent } = expression
+	return ts.isAwaitExpression(parent) || ts.isParenthesizedExpression(parent) ? getConsumedExpression(parent) : expression
+}
+
+// A committed change is forwarded when it is returned or passed to reconcileCommittedAccessChange in the same function body.
+function isForwardedChange(expression: ts.Expression, enclosingFunction: FunctionLikeWithBody | undefined) {
+	const consumed = getConsumedExpression(expression)
+	const { parent } = consumed
+	if (ts.isReturnStatement(parent) || (ts.isArrowFunction(parent) && parent.body === consumed)) return getEnclosingFunction(consumed) === enclosingFunction
+	return isReconcileCommandCall(parent) && parent.arguments.some((argument) => argument === consumed) && getEnclosingFunction(parent) === enclosingFunction
+}
+
+// A returned change is consumed only by forwarding it, either directly or through the const it is assigned to.
+function isChangeForwarded(call: ts.CallExpression) {
+	const enclosingFunction = getEnclosingFunction(call)
+	if (isForwardedChange(call, enclosingFunction)) return true
+	const declaration = getConsumedExpression(call).parent
+	if (enclosingFunction === undefined || !ts.isVariableDeclaration(declaration) || !ts.isIdentifier(declaration.name)) return false
+	const variable = checker.getSymbolAtLocation(declaration.name)
+	let forwarded = false
+	forEachNodeInOwnBody(enclosingFunction, (node) => { if (ts.isIdentifier(node) && node !== declaration.name && checker.getSymbolAtLocation(node) === variable && isForwardedChange(node, enclosingFunction)) forwarded = true })
+	return forwarded
 }
 
 const nameOf = (enclosingFunction: FunctionLikeWithBody) => {
@@ -120,7 +157,7 @@ const nameOf = (enclosingFunction: FunctionLikeWithBody) => {
 	return ts.isVariableDeclaration(parent) && ts.isIdentifier(parent.name) ? parent.name.text : '<anonymous>'
 }
 
-// Lists `file:line function` for each website-access write whose function neither reconciles afterwards nor returns the change it committed, and for each such returned change a caller discards.
+// Lists `file:line function` for each website-access write whose function neither reconciles afterwards in its own body nor returns the change it committed, and for each such returned change a caller does not forward.
 function findUnreconciledWebsiteAccessWrites(fileName: string) {
 	const sourceFile = program.getSourceFile(fileName)
 	if (sourceFile === undefined) throw new Error(`Missing source file ${ fileName }`)
@@ -136,8 +173,7 @@ function findUnreconciledWebsiteAccessWrites(fileName: string) {
 			}
 			const valueDeclaration = callee?.valueDeclaration
 			const calleeDeclaration = valueDeclaration !== undefined && ts.isVariableDeclaration(valueDeclaration) ? valueDeclaration.initializer : valueDeclaration
-			const returnedChangeIsDiscarded = ts.isExpressionStatement(ts.isAwaitExpression(node.parent) ? node.parent.parent : node.parent)
-			if (calleeDeclaration !== undefined && ts.isFunctionLike(calleeDeclaration) && returnsCommittedAccessChange(calleeDeclaration) && returnedChangeIsDiscarded) unreconciled.push(locate(node, `discards ${ callee?.name ?? '' }`))
+			if (calleeDeclaration !== undefined && ts.isFunctionLike(calleeDeclaration) && returnsCommittedAccessChange(calleeDeclaration) && !isChangeForwarded(node)) unreconciled.push(locate(node, `discards ${ callee?.name ?? '' }`))
 		}
 		ts.forEachChild(node, visit)
 	}
@@ -183,8 +219,10 @@ test('handler website-access writes reconcile afterwards or hand their committed
 	assert.deepEqual(unreconciled, KNOWN_UNRECONCILED_WEBSITE_ACCESS_WRITES)
 })
 
-test('the website-access write check rejects unreconciled writes and discarded changes and accepts reconciled ones', () => {
+test('the website-access write check rejects unreconciled, discarded, voided and closure-only reconciled writes and accepts reconciled ones', () => {
 	assert.deepEqual(findUnreconciledWebsiteAccessWrites(fixtures.writeWithoutReconcile).map((location) => location.replace(/^.*:\d+ /u, '')), ['denyWebsite'])
 	assert.deepEqual(findUnreconciledWebsiteAccessWrites(fixtures.discardedChange).map((location) => location.replace(/^.*:\d+ /u, '')), ['discards denyWebsite'])
+	assert.deepEqual(findUnreconciledWebsiteAccessWrites(fixtures.voidedChange).map((location) => location.replace(/^.*:\d+ /u, '')), ['discards denyWebsite'])
+	assert.deepEqual(findUnreconciledWebsiteAccessWrites(fixtures.reconcileInUncalledClosure).map((location) => location.replace(/^.*:\d+ /u, '')), ['handler'])
 	assert.deepEqual(findUnreconciledWebsiteAccessWrites(fixtures.writeThenReconcile), [])
 })
