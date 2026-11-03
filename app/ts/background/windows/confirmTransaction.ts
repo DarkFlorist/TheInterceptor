@@ -350,10 +350,10 @@ async function commitAndFinish(request: PendingTransactionOrSignableMessage, rep
 }
 
 // Finishes a committed request under its claim; it never throws, so a scheduled retry or startup can run it unattended.
-const resumeRequest = async (uniqueRequestIdentifier: UniqueRequestIdentifier, context: ResolutionContext) => await withResolutionClaim(uniqueRequestIdentifier, context, async () => false)
+const resumeRequest = async (uniqueRequestIdentifier: UniqueRequestIdentifier, context: ResolutionContext): Promise<boolean | undefined> => await withResolutionClaim(uniqueRequestIdentifier, context, async () => false, 'finish-again')
 
 // The size of the in-memory resolution bookkeeping, which is empty whenever no resolution is in flight or awaiting a retry.
-export const getResolutionBookkeepingSize = () => resolutionClaims.size + deferredCloses.size + chosenUncommittedReplies.size + finishingRetries.size
+export const getResolutionBookkeepingSize = () => resolutionClaims.size + deferredResolutions.size + chosenUncommittedReplies.size + finishingRetries.size
 
 // Lets a reconnect flush finish the requests whose replies it delivered, with the background's current services.
 export const registerCommittedRequestFinisher = (getServices: () => { readonly ethereum: EthereumClientService, readonly tokenPriceService: TokenPriceService }) => {
@@ -374,12 +374,14 @@ export async function resumeCommittedRequests(ethereum: EthereumClientService, t
 
 // The requests whose terminal outcome an accept, reject or close has claimed and is carrying out. A claim is taken synchronously, so of racing resolutions of a request exactly one stacks it or replies; the others return false without either. Under the claim, a committed request is only finished (finishCommittedRequest); only an uncommitted pending request gets an outcome chosen (resolve).
 const resolutionClaims = new Set<string>()
-// Closes of a request that lost to a claim, run once the claim is released, so a request whose claimed accept failed is still answered; one that was resolved meanwhile is no longer pending, and the close does nothing.
-const deferredCloses = new Map<string, () => Promise<void>>()
-async function withResolutionClaim<Result>(uniqueRequestIdentifier: UniqueRequestIdentifier, context: ResolutionContext, resolve: () => Promise<Result>, deferIfClaimed?: () => Promise<void>) {
+// What to run for a request once its claim is released, recorded by a resolution that found it claimed: a close, so a request whose claimed accept failed is still answered, or else finishing it again, so the second pass sees what changed meanwhile (its requesting tab closing, say). Coalesced: a close also finishes a committed request. A request resolved meanwhile is no longer pending, and either does nothing.
+type DeferredResolution = { readonly close?: () => Promise<void> }
+const deferredResolutions = new Map<string, DeferredResolution>()
+type WhenClaimed = 'finish-again' | 'nothing' | { readonly close: () => Promise<void> }
+async function withResolutionClaim<Result>(uniqueRequestIdentifier: UniqueRequestIdentifier, context: ResolutionContext, resolve: () => Promise<Result>, whenClaimed: WhenClaimed = 'nothing') {
 	const claim = getUniqueRequestIdentifierString(uniqueRequestIdentifier)
 	if (resolutionClaims.has(claim)) {
-		if (deferIfClaimed !== undefined) deferredCloses.set(claim, deferIfClaimed)
+		if (whenClaimed !== 'nothing') deferredResolutions.set(claim, whenClaimed === 'finish-again' ? (deferredResolutions.get(claim) ?? {}) : whenClaimed)
 		return false
 	}
 	resolutionClaims.add(claim)
@@ -394,9 +396,10 @@ async function withResolutionClaim<Result>(uniqueRequestIdentifier: UniqueReques
 		}
 	} finally {
 		resolutionClaims.delete(claim)
-		const deferredClose = deferredCloses.get(claim)
-		deferredCloses.delete(claim)
-		if (deferredClose !== undefined) await deferredClose()
+		const deferred = deferredResolutions.get(claim)
+		deferredResolutions.delete(claim)
+		if (deferred?.close !== undefined) await deferred.close()
+		else if (deferred !== undefined) await resumeRequest(uniqueRequestIdentifier, context)
 	}
 }
 
@@ -525,7 +528,7 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 	}
 	if (confirmation.data.action === 'noResponse') {
 		const unansweredRequest = pendingTransactionOrMessage
-		return await withResolutionClaim(confirmation.data.uniqueRequestIdentifier, resolutionContext, async () => await rejectUnlessStacked(formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User denied transaction signature')), async () => await resolveAllPendingTransactionsAndMessageAsNoResponse([unansweredRequest], ethereum, tokenPriceService, websiteTabConnections))
+		return await withResolutionClaim(confirmation.data.uniqueRequestIdentifier, resolutionContext, async () => await rejectUnlessStacked(formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User denied transaction signature')), { close: async () => await resolveAllPendingTransactionsAndMessageAsNoResponse([unansweredRequest], ethereum, tokenPriceService, websiteTabConnections) })
 	}
 	if (pendingTransactionOrMessage === undefined || pendingTransactionOrMessage.transactionOrMessageCreationStatus !== 'Simulated') return await withResolutionClaim(confirmation.data.uniqueRequestIdentifier, resolutionContext, async () => await rejectUnlessStacked(formRejectMessage(METAMASK_ERROR_BLANKET_ERROR, 'The Interceptor failed to process the transaction')))
 	if (confirmation.data.action === 'reject') return await withResolutionClaim(confirmation.data.uniqueRequestIdentifier, resolutionContext, async () => await rejectUnlessStacked(formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User denied transaction signature')))

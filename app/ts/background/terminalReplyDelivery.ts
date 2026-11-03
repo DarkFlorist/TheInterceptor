@@ -107,7 +107,11 @@ export async function flushPendingTerminalRepliesForSocket(websiteTabConnections
 		}
 		return { deliveredReplies, delivered }
 	})
-	for (const uniqueRequestIdentifier of delivered) await committedRequestFinisher?.(uniqueRequestIdentifier, websiteTabConnections)
+	if (committedRequestFinisher === undefined) {
+		if (delivered.length > 0) await reportLocalRecovery(new Error('No committed request finisher is registered'), { source: 'pending_terminal_replies', code: 'committed_request_finisher_missing', message: 'Delivered terminal replies stay queued until startup finishes their requests.' })
+		return deliveredReplies
+	}
+	for (const uniqueRequestIdentifier of delivered) await committedRequestFinisher(uniqueRequestIdentifier, websiteTabConnections)
 	return deliveredReplies
 }
 

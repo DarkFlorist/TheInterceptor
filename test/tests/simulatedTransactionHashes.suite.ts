@@ -1596,3 +1596,35 @@ test('finishes a request once when a reconnect flush overlaps its finishing, clo
 	assert.deepEqual(getPageResponses(postedMessages, 1), [{ error: 4001 }], 'the page settles once')
 	await assertNoResolutionBookkeeping()
 })
+
+test('finishes a request again when its requesting tab closes after the finishing checked it, retiring the undeliverable reply', async () => {
+	await startSimulationStack(SENDER)
+	const postedMessages: unknown[] = []
+	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+	const request = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+	const confirmTransaction = await import('../../app/ts/background/windows/confirmTransaction.js')
+	// The page is disconnected, so the rejection stays undelivered; the tab closes while the finishing closes the window, after it found the tab open.
+	const windows = Reflect.get(globalThis, 'browser').windows
+	const removeWindow = windows.remove
+	let tabClosings = 0
+	windows.remove = async (windowId: number) => {
+		if (tabClosings === 0) {
+			tabClosings += 1
+			browserMock.setLiveTabIds([])
+			await confirmTransaction.finishCommittedRequestsOfTab(REQUEST_SOCKET.tabId, simulator.ethereum, simulator.tokenPriceService, new Map())
+		}
+		return await removeWindow(windowId)
+	}
+	try {
+		await withSilencedConsole(async () => {
+			await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, new Map(), { method: 'popup_confirmDialog', data: { action: 'reject', uniqueRequestIdentifier: request } })
+			await waitForCondition(async () => (await modules.getPendingTerminalReplies()).length === 0)
+		})
+	} finally {
+		windows.remove = removeWindow
+	}
+	assert.equal(tabClosings, 1)
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [], 'the closed tab gets no reply')
+	await assertNoResolutionBookkeeping()
+})
