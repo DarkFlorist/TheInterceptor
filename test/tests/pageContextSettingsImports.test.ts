@@ -136,6 +136,15 @@ describe('uncounted browser storage access checker', () => {
 		])
 	})
 
+	test('rejects runtime import aliases of the storage API, but not erased qualified names', () => {
+		const importAliasViolation = 'aliases browser through an import declaration, which could hide a storage write'
+		const everyAccess: readonly RawStorageAccess[] = ['reads only', 'reviewed writer of other keys', 'counted writer']
+		for (const access of everyAccess) assert.deepEqual(check('import local = browser.storage.local\nexport const clear = async () => await local.clear()\nexport const write = async () => await local.set({ openedPageV2: page })\n', access), [`line 1: ${ importAliasViolation }`])
+		assert.deepEqual(check('export import storage = browser.storage\nawait storage.local.set({ activeRpcNetwork: network })\nawait storage.local.clear()\n', 'counted writer'), [`line 1: ${ importAliasViolation }`])
+		assert.deepEqual(check('import api = browser\nawait api.storage.local.clear()\n', 'reads only'), ['line 1: uses browser other than through a property access, which could hide a storage write'])
+		assert.deepEqual(check('import type StorageArea = browser.storage.StorageArea\ntype Local = typeof browser.storage.local\nconst change: browser.storage.StorageChange | undefined = undefined\n', 'reads only'), [])
+	})
+
 	test('accepts browser itself only as the first argument of a callee reviewed to use it as an identity key', () => {
 		const identityKeyCallees = new Set(['runWithScope'])
 		assert.deepEqual(findUncountedStorageAccess('fixture.ts', 'await runWithScope(browser, key, task)\n', 'reads only', identityKeyCallees), [])

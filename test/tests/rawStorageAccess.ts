@@ -21,10 +21,17 @@ function isPassedAsIdentityKey(apiObject: ts.Expression, identityKeyCallees: Rea
 	return ts.isCallExpression(call) && call.arguments[0] === apiObject && ts.isIdentifier(call.expression) && identityKeyCallees.has(call.expression.text)
 }
 
+// Whether the qualified name, or the qualified name it is part of, is the target of a runtime import alias, with or without export.
+function isRuntimeImportAliasTarget(name: ts.QualifiedName) {
+	let outermostName: ts.Node = name
+	while (ts.isQualifiedName(outermostName.parent)) outermostName = outermostName.parent
+	return ts.isImportEqualsDeclaration(outermostName.parent) && outermostName.parent.moduleReference === outermostName && !outermostName.parent.isTypeOnly
+}
+
 // Checks one browser or chrome reference: it must be the object of a property access, unless it is passed as an identity key, and when that property is storage, the whole access must be a direct call of an allowed storage method. Returns a description of the violation, or undefined.
 function checkBrowserApiReference(reference: ts.Identifier, access: RawStorageAccess, identityKeyCallees: ReadonlySet<string>): string | undefined {
-	// browser.storage.StorageChange and other type positions are erased at runtime.
-	if (ts.isQualifiedName(reference.parent)) return undefined
+	// A qualified name is erased at runtime, as in the type browser.storage.StorageChange, except as the target of an import alias such as import local = browser.storage.local, which is a runtime value unless the import is type-only.
+	if (ts.isQualifiedName(reference.parent)) return isRuntimeImportAliasTarget(reference.parent) ? `aliases ${ reference.text } through an import declaration, which could hide a storage write` : undefined
 	const apiObject = getAccessNamedBy(reference) ?? reference
 	const apiAccess = getAccessOn(apiObject)
 	if (apiAccess === undefined && isPassedAsIdentityKey(apiObject, identityKeyCallees)) return undefined
