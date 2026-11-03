@@ -715,3 +715,60 @@ test('lets a reject that claimed the request first win over an accept that start
 	assert.deepEqual(await getStackedTransactions(), [])
 	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [{ error: 4001 }])
 })
+
+// Pauses the next stack read and then fails it or lets it through, as chosen when released.
+const pauseNextStackReadThen = () => {
+	let signalPaused = () => undefined
+	const paused = new Promise<void>((resolve) => { signalPaused = () => { resolve() } })
+	let release: (fail: boolean) => void = () => undefined
+	const released = new Promise<boolean>((resolve) => { release = resolve })
+	let armed = true
+	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+		if (!armed || !Array.isArray(keys) || !keys.includes('interceptorTransactionStack')) return readStoredItems()
+		armed = false
+		signalPaused()
+		if (await released) throw new Error('transient stack read failure')
+		return readStoredItems()
+	})
+	return { paused, release: (fail: boolean) => { browserMock.setStorageGetHandler(undefined); release(fail) } }
+}
+
+const waitUntilNothingPending = async () => {
+	const deadline = Date.now() + 2_000
+	while ((await modules.getPendingTransactionsAndMessages()).length > 0) {
+		if (Date.now() > deadline) throw new Error('The request stayed pending')
+		await new Promise((resolve) => setTimeout(resolve, 10))
+	}
+}
+
+for (const failure of ['throws before stacking', 'finds its hash taken'] as const) {
+	test(`answers a popup close that lost to an accept once the accept ${ failure }`, async () => {
+		await startSimulationStack(SENDER)
+		const postedMessages: unknown[] = []
+		const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+		const request = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+		const [pending] = await modules.getPendingTransactionsAndMessages()
+		if (pending?.type !== 'Transaction' || pending.simulationHashReservation === undefined) throw new Error('Expected a reserved confirmation')
+		// A transaction stacked under the reserved hash by a write that ignored the reservation makes the accept find it taken.
+		const stackBefore = failure === 'finds its hash taken'
+			? { operations: [asOperation({ ...createStackedTransaction(99n, 7n), signedTransaction: { ...createStackedTransaction(99n, 7n).signedTransaction, hash: pending.simulationHashReservation.hash } })] }
+			: { operations: [] }
+		const { setLargeStateValue } = await import('../../app/ts/utils/largeStateStore.js')
+		await setLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack, stackBefore)
+		const pause = pauseNextStackReadThen()
+		const accepting = withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier: request } }))
+		await pause.paused
+		try {
+			await withSilencedConsole(async () => await modules.onCloseWindowOrTab({ type: 'popup', id: CONFIRMATION_WINDOW_ID }, simulator.ethereum, simulator.tokenPriceService, websiteTabConnections))
+			assert.equal((await modules.getPendingTransactionsAndMessages()).length, 1, 'the close waits for the claimed accept')
+		} finally {
+			pause.release(failure === 'throws before stacking')
+		}
+		const accepted = await accepting.then((result) => ({ result }), (error: unknown) => ({ error }))
+		if (failure === 'throws before stacking') assert.ok('error' in accepted, 'the accept fails')
+		else assert.deepEqual(accepted, { result: false })
+		await waitUntilNothingPending()
+		assert.deepEqual(getPageResponses(postedMessages, request.requestId), [{ error: 4001 }], 'the page gets exactly one rejection')
+		assert.deepEqual(hashesOf(await getStackedTransactions()), hashesOf(stackBefore.operations.map((operation) => operation.preSimulationTransaction)), 'nothing new is stacked')
+	})
+}

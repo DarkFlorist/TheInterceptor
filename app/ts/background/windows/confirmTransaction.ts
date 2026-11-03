@@ -265,15 +265,23 @@ export const setGasLimitForTransaction = async (transactionIdentifier: bigint, g
 
 // The requests whose terminal outcome an accept, reject or close has claimed and is carrying out. A claim is taken synchronously, so of racing resolutions of a request exactly one stacks it or replies; the others return false without either. It is released when the outcome is carried out, by when a resolved request is no longer pending.
 const resolutionClaims = new Set<string>()
-async function withResolutionClaim<Result>(uniqueRequestIdentifier: UniqueRequestIdentifier, resolve: () => Promise<Result>): Promise<Result | false> {
+// Closes of a request that lost to a claim, run once the claim is released, so a request whose claimed accept failed is still answered; one that was resolved meanwhile is no longer pending, and the close does nothing.
+const deferredCloses = new Map<string, () => Promise<void>>()
+async function withResolutionClaim<Result>(uniqueRequestIdentifier: UniqueRequestIdentifier, resolve: () => Promise<Result>, deferIfClaimed?: () => Promise<void>): Promise<Result | false> {
 	const claim = getUniqueRequestIdentifierString(uniqueRequestIdentifier)
-	if (resolutionClaims.has(claim)) return false
+	if (resolutionClaims.has(claim)) {
+		if (deferIfClaimed !== undefined) deferredCloses.set(claim, deferIfClaimed)
+		return false
+	}
 	resolutionClaims.add(claim)
 	try {
 		if (await getPendingTransactionOrMessageByidentifier(uniqueRequestIdentifier) === undefined) return false
 		return await resolve()
 	} finally {
 		resolutionClaims.delete(claim)
+		const deferredClose = deferredCloses.get(claim)
+		deferredCloses.delete(claim)
+		if (deferredClose !== undefined) await deferredClose()
 	}
 }
 
@@ -400,7 +408,7 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 			})
 			await removePendingRequestAndUpdateView()
 			return noResponseDelivery
-		})
+		}, async () => await resolveAllPendingTransactionsAndMessageAsNoResponse([unansweredRequest], ethereum, tokenPriceService, websiteTabConnections))
 	}
 	if (pendingTransactionOrMessage === undefined || pendingTransactionOrMessage.transactionOrMessageCreationStatus !== 'Simulated') return await withResolutionClaim(confirmation.data.uniqueRequestIdentifier, async () => await reply(formRejectMessage(METAMASK_ERROR_BLANKET_ERROR, 'The Interceptor failed to process the transaction')))
 	if (confirmation.data.action === 'reject') return await withResolutionClaim(confirmation.data.uniqueRequestIdentifier, async () => await reply(formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User denied transaction signature')))
