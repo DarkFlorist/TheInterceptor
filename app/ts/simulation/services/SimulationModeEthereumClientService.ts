@@ -1,9 +1,9 @@
-import { type EthereumClientService, getNextBlockTimeStampOverride } from './EthereumClientService.js'
+import { type EthereumClientService, getExecutedTransaction, getNextBlockTimeStampOverride, getTotalExecutedGasLimit, type RpcTransaction } from './EthereumClientService.js'
 import type { PreparedEthSimulateV1Input } from './EthereumClientService.js'
 import { type EthereumSignedTransactionWithBlockData, type EthereumBlockTag, type EthereumAddress, type EthereumBlockHeader, type EthereumBlockHeaderWithTransactionHashes, EthereumData, EthereumQuantity, EthereumBytes32, type EthereumSendableSignedTransaction } from '../../types/wire-types.js'
 import { addressString, bigintSecondsToDate, bigintToUint8Array, dataStringWith0xStart, dateToBigintSeconds, max, min, stringToUint8Array } from '../../utils/bigint.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, ETHEREUM_LOGS_LOGGER_ADDRESS, MOCK_ADDRESS, MULTICALL3, Multicall3ABI, DEFAULT_CALL_ADDRESS, GAS_PER_BLOB } from '../../utils/constants.js'
-import type { SimulatedTransaction, SimulationState, TokenBalancesAfter, PreSimulationTransaction, SimulationStateBlock, SimulationStateInput, SimulationStateInputMinimalData, SimulationStateInputMinimalDataBlock, ExecutionSimulatedTransaction, ExecutionSimulationState, ResolvedExecutionSimulationState, ResolvedSimulationInput, ResolvedSimulationState } from '../../types/visualizer-types.js'
+import { authorizesExecutedCall, type SimulatedTransaction, type SimulationState, type TokenBalancesAfter, type PreSimulationTransaction, type SimulationStateBlock, type SimulationStateInput, type SimulationStateInputMinimalData, type SimulationStateInputMinimalDataBlock, type ExecutionSimulatedTransaction, type ExecutionSimulationState, type ResolvedExecutionSimulationState, type ResolvedSimulationInput, type ResolvedSimulationState } from '../../types/visualizer-types.js'
 import type { Abi } from '../../utils/ethereumPrimitives.js'
 import { stringToBytes, keccak256 } from '../../utils/ethereumPrimitives.js'
 import { type IUnsignedTransaction1559, type IUnsignedTransaction7702, rlpEncode } from '../../utils/ethereum.js'
@@ -25,7 +25,7 @@ import { getCodeByteCode } from '../../utils/ethereumByteCodes.js'
 import { createStorageReaderAccountOverride, decodeStorageReaderResult, encodeStorageReaderCall, PRECOMPILE_RESERVED_ADDRESS_MAX } from '../storageReader.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../../config/defaults.js'
 import { getGasEstimateFromSimulation, jsonRpcErrorToGasEstimate } from './simulationGasEstimation.js'
-import { calculateRealizedEffectiveGasPrice, getBlockTimeManipulationSeconds, getNextBaseFeePerGas } from './simulationBlockParameters.js'
+import { calculateRealizedEffectiveGasPrice, getBlockTimeManipulationSeconds, getNextBaseFeePerGas, getSimulatedBlockBaseFeePerGas } from './simulationBlockParameters.js'
 import { getSignedTransactionForSimulation, mockSignTransaction } from './simulationTransactionSigning.js'
 import { getMessageHashForPersonalSign, simulatePersonalSign } from './simulationPersonalSigning.js'
 import { type BalanceQuery, getTokenBalanceQueriesForTransaction } from './simulationTokenBalanceQueries.js'
@@ -121,7 +121,7 @@ const transactionQueueTotalGasUsed = (simulatedTransactions: readonly SimulatedT
 
 const transactionQueueTotalGasLimitFromInput = (block: SimulationStateInputMinimalDataBlock | undefined) => {
 	if (block === undefined) return 0n
-	return block.transactions.reduce((totalGasUsed, transaction) => totalGasUsed + transaction.signedTransaction.gas, 0n)
+	return getTotalExecutedGasLimit(block.transactions)
 }
 
 const isEmptySimulationInput = (simulationStateInput: SimulationStateInput | SimulationStateInputMinimalData) => simulationStateInput.length === 0
@@ -258,19 +258,28 @@ export const getSimulatedTransactionCount = async (ethereumClientService: Ethere
 	if (blockTag === 'latest' || blockTag === 'pending' || blockTag > currentState.blockNumber) {
 		// if we are on our simulated block, just count how many transactions we have sent in the simulation to increment transaction count
 		let index = 0
-		for (const block of currentState.simulatedBlocks) {
+		// The simulation input the simulated blocks came from, block for block, because only it carries the call the node ran for each transaction (getExecutedCallNonceContribution).
+		for (const block of currentState.simulationStateInput) {
 			const currBlockNum = currentState.blockNumber + BigInt(index) + 1n
 			if (blockNumToUseForSim < currBlockNum) {
 				break
 			}
-			for (const signed of block.simulatedTransactions) {
-				const transaction = signed.preSimulationTransaction.signedTransaction
-				addedTransactions += getTransactionNonceContribution(transaction, address)
+			for (const transaction of block.transactions) {
+				addedTransactions += getExecutedCallNonceContribution(transaction, address)
 			}
 			index++
 		}
 	}
 	return (await ethereumClientService.getTransactionCount(address, blockNumToUseForChain, requestAbortController)) + addedTransactions
+}
+
+// The nonce field of a Gnosis Safe execution's own call, which is a display and hash sequence, not the Safe's account nonce: no account sends that call (getExecutedCallNonceContribution). It is one more than the highest such field of the Safe's stacked executions, which stack removal never renumbers, so a removal can't make a stacked execution's number, and with it its hash, reusable. Its mock signature keeps it apart from ordinary transactions (getSignedTransactionForSimulation). Like ordinary transactions, two identical calls formed while both are pending confirmation still share a number and hash; that general mock-hash limitation is tracked in #1713.
+export const getSimulatedSafeCallNonce = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: ResolvedSimulationState, safeAddress: bigint) => {
+	const stackedSafeCallNonces = simulationState.kind === 'passthrough' ? [] : simulationState.value.simulationStateInput.flatMap((block) => block.transactions)
+		.filter((transaction) => transaction.signedTransaction.from === safeAddress && authorizesExecutedCall(transaction.simulationOptions))
+		.map((transaction) => transaction.signedTransaction.nonce)
+	if (stackedSafeCallNonces.length === 0) return await getSimulatedTransactionCount(ethereumClientService, requestAbortController, simulationState, safeAddress)
+	return stackedSafeCallNonces.reduce((highest, nonce) => max(highest, nonce)) + 1n
 }
 
 type Simulated1559BlockCall = Pick<IUnsignedTransaction1559, 'type' | 'from' | 'chainId' | 'nonce' | 'maxFeePerGas' | 'maxPriorityFeePerGas' | 'to' | 'value' | 'input'> & Partial<Pick<IUnsignedTransaction1559, 'gasLimit' | 'accessList'>>
@@ -305,6 +314,12 @@ const getTransactionNonceContribution = (transaction: EthereumSendableSignedTran
 		(contribution, authorization) => authorization.authority === address ? contribution + 1n : contribution,
 		senderContribution,
 	)
+}
+
+// A transaction raises the nonces the call the node runs raises (getExecutedTransaction). For a Gnosis Safe execution that is its executor's nonce, not the Safe's: no account sends the Safe's own call, so its nonce field raises nothing, also before the input is prepared with the executor's call.
+const getExecutedCallNonceContribution = (transaction: RpcTransaction, address: bigint) => {
+	if (transaction.executedTransaction === undefined && authorizesExecutedCall(transaction.simulationOptions)) return 0n
+	return getTransactionNonceContribution(getExecutedTransaction(transaction), address)
 }
 
 const createSimulatedBlockCall = (transaction: SimulatedBlockCall): SimulateBlockCalls['calls'][number] => {
@@ -343,7 +358,7 @@ const simulateBlockCallWithPreparedInputContext = async (
 	const simulationPrefix = context?.prepared.request.params[0].blockStateCalls.slice(0, simulationPrefixBlockCount) ?? []
 	const previousBlockOverride = simulationPrefixBlockCount === 0 ? undefined : context?.prepared.blockOverrides[simulationPrefixBlockCount - 1]
 	const previousBlockTime = previousBlockOverride?.time ?? parentBlock.timestamp
-	const baseFeePerGas = parentBlock.baseFeePerGas === undefined ? 15_000_000n : parentBlock.baseFeePerGas
+	const baseFeePerGas = getSimulatedBlockBaseFeePerGas(parentBlock)
 	const blockStateCalls: readonly SimulateBlockCalls[] = [
 		...simulationPrefix,
 		{
@@ -648,6 +663,8 @@ export const getNonceFixedSimulationStateInput = async(ethereumClientService: Et
 		return callResult.status === 'failure'
 		&& callResult.error.message === 'wrong transaction nonce' //TODO, change to error code
 		&& transaction.originalRequestParameters.method === 'eth_sendTransaction'
+		// The node runs a Gnosis Safe execution as its executor's call, whose nonce its preparation sets, so the Safe's own nonce field can't fix it.
+		&& !authorizesExecutedCall(transaction.simulationOptions)
 	}
 	const simulationInspection = await inspectSimulationInput(ethereumClientService, requestAbortController, simulationStateInput)
 	if (simulationInspection.success === false) return { nonceFixed: false, simulationStateInput }
@@ -678,7 +695,8 @@ export const getNonceFixedSimulationStateInput = async(ethereumClientService: Et
 			}
 			const fixedTransaction = await fixTransaction()
 			processedTransactions.push(fixedTransaction)
-			knownPreviousNonce.set(fromString, fixedTransaction.signedTransaction.nonce)
+			// A Gnosis Safe execution raises no nonce of the Safe (getExecutedCallNonceContribution).
+			if (!authorizesExecutedCall(fixedTransaction.simulationOptions)) knownPreviousNonce.set(fromString, fixedTransaction.signedTransaction.nonce)
 		}
 		const oldBlock = simulationStateInput[blockIndex]
 		if (oldBlock === undefined) throw new Error('missing block when checking for nonces')
@@ -707,6 +725,8 @@ const usesInterceptorFilledMaxFeePerGas = (transaction: PreSimulationTransaction
 	return transaction.originalRequestParameters.method === 'eth_sendTransaction'
 		&& isFeeMarketPreSimulationTransaction(transaction)
 		&& !hasExplicitMaxFeePerGas(transaction.originalRequestParameters.params[0].maxFeePerGas)
+		// A Gnosis Safe execution's own call has no fees: its executor pays them (prepareSafeExecutionSimulationInput).
+		&& !authorizesExecutedCall(transaction.simulationOptions)
 }
 
 const getBaseFeeAdjustedTransaction = (
@@ -1013,7 +1033,7 @@ const getSimulatedTransactionCountFromPreparedInputContext = async (
 	let addedTransactions = 0n
 	for (const block of getExecutionBlocksUpToTag(context, blockTag)) {
 		for (const transaction of block.inputBlock.transactions) {
-			addedTransactions += getTransactionNonceContribution(transaction.signedTransaction, address)
+			addedTransactions += getExecutedCallNonceContribution(transaction, address)
 		}
 	}
 	return (await ethereumClientService.getTransactionCount(address, blockNumToUseForChain, requestAbortController)) + addedTransactions
