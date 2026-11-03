@@ -20,11 +20,11 @@ import { replyToInterceptedRequestAfterManifestV2Reconnect } from '../messageSen
 import { attemptQueuedTerminalReplyDelivery, deliverQueuedTerminalReplyOnce, queueSafeProposalReplyAndMoveToOutbox, queueTerminalReplyUnlessDeferred, releaseTerminalReplyReservation } from '../terminalReplyDelivery.js'
 import { getPendingTerminalReplies } from '../pendingTerminalReplies.js'
 import { getConfirmationWindowRequests } from '../../utils/confirmationQueue.js'
-import { stringToBytes, keccak256 } from '../../utils/ethereumPrimitives.js'
+import { isAbiDataDecodeError, stringToBytes, keccak256 } from '../../utils/ethereumPrimitives.js'
 import { EthereumBytes32, EthereumQuantity, serialize } from '../../types/wire-types.js'
 import type { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
 import { getErrorMessage, JsonRpcResponseError, reportUnexpectedError, isExpectedInfrastructureError, isNewBlockAbort, reportLocalRecovery } from '../../utils/errors.js'
-import type { PendingTransactionOrSignableMessage, PopupPendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
+import type { PendingSafeProposalStore, PendingTransactionOrSignableMessage, PopupPendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
 import type { SignMessageParams } from '../../types/jsonRpc-signing-types.js'
 import type { InterceptedRequestForward } from '../../types/interceptor-messages.js'
 import type { SimulationStackChange } from '../../types/visualizer-types.js'
@@ -376,7 +376,7 @@ async function settlePendingTerminalReply(websiteTabConnections: WebsiteTabConne
 		await removePendingTransactionOrMessage(pending.uniqueRequestIdentifier)
 	} catch (removalError: unknown) {
 		// The answered request stays for its cleanup, which delivers the queued reply; this flow will not.
-		if (queued === 'queued') releaseTerminalReplyReservation(terminalReply.uniqueRequestIdentifier)
+		if (queued === 'queued') releaseTerminalReplyReservation(terminalReply)
 		throw removalError
 	}
 	try {
@@ -668,11 +668,30 @@ export async function resolvePendingSignerReply(services: ConfirmationServices |
 // Recovery of the lifecycle, run at startup, whenever services are installed for a network and on new blocks while work is outstanding (advanceOutstandingSafeSignerReplies): every claimed or answered request is advanced (a claim settled with these services when they are for its network, an answered request finished whatever its window), then outbox proposals for that network are added to the Safe stack.
 export async function resolveDeferredSafeSignerReplies(services: ConfirmationServices, websiteTabConnections: WebsiteTabConnections) {
 	const context: SafeSignerReplyContext = { services, getInstalledServices: async () => services, websiteTabConnections }
-	for (const pending of await getPendingTransactionsAndMessages()) {
-		if (pending.deferredSafeSignerReply === undefined && pending.websiteReplyQueued !== true) continue
-		await runSafeSignerReplyLifecycle(pending.uniqueRequestIdentifier, { name: 'advance', run: async () => await advanceSafeSignerReply(pending.uniqueRequestIdentifier, context) })
+	const outstandingRequests = (await getPendingTransactionsAndMessages()).filter((pending) => pending.deferredSafeSignerReply !== undefined || pending.websiteReplyQueued === true)
+	const requestFailures = await runEachIndependently(outstandingRequests, async (pending) => await runSafeSignerReplyLifecycle(pending.uniqueRequestIdentifier, { name: 'advance', run: async () => await advanceSafeSignerReply(pending.uniqueRequestIdentifier, context) }))
+	const outboxFailures = await storeSafeProposalsFromOutbox(services)
+	await surfaceIndependentFailures([...requestFailures, ...outboxFailures])
+}
+
+// Each item of a recovery pass is its own lifecycle step: one failing item (keeping its own retry state) never holds back the items after it.
+async function runEachIndependently<Item>(items: readonly Item[], run: (item: Item) => Promise<unknown>) {
+	const failures: unknown[] = []
+	for (const item of items) {
+		try {
+			await run(item)
+		} catch (error: unknown) {
+			failures.push(error)
+		}
 	}
-	await safeSignerReplyLifecycleSemaphore.execute(async () => await storeSafeProposalsFromOutbox(services))
+	return failures
+}
+
+// The pass as a whole still fails, with its first failure, once every item ran; the other failures are reported so none goes unseen.
+async function surfaceIndependentFailures(failures: readonly unknown[]) {
+	if (failures.length === 0) return
+	for (const failure of failures.slice(1)) await reportLocalRecovery(failure, { code: 'safe_signer_reply_recovery_item_failed', message: 'A Gnosis Safe request failed during recovery; the other requests were still advanced.' })
+	throw failures[0]
 }
 
 // At most one advance on new blocks runs at a time; a block arriving meanwhile skips it.
@@ -682,12 +701,18 @@ const safeSignerReplyAdvancesOnNewBlock = new Set<Promise<void>>()
 export async function advanceOutstandingSafeSignerReplies(services: ConfirmationServices, websiteTabConnections: WebsiteTabConnections) {
 	if (safeSignerReplyAdvancesOnNewBlock.size > 0) return
 	const advance = (async () => {
-		for (const [retryIdentifier, transition] of pendingRetriesSpentTransitions) {
+		const failures = await runEachIndependently([...pendingRetriesSpentTransitions], async ([retryIdentifier, transition]) => {
 			await safeSignerReplyLifecycleSemaphore.execute(transition)
 			pendingRetriesSpentTransitions.delete(retryIdentifier)
+		})
+		if (await hasOutstandingSafeSignerReplyWork(services)) {
+			try {
+				await resolveDeferredSafeSignerReplies(services, websiteTabConnections)
+			} catch (passFailure: unknown) {
+				failures.push(passFailure)
+			}
 		}
-		if (!await hasOutstandingSafeSignerReplyWork(services)) return
-		await resolveDeferredSafeSignerReplies(services, websiteTabConnections)
+		await surfaceIndependentFailures(failures)
 	})()
 	safeSignerReplyAdvancesOnNewBlock.add(advance)
 	try {
@@ -702,17 +727,35 @@ async function hasOutstandingSafeSignerReplyWork(services: ConfirmationServices)
 	return (await getPendingSafeProposalStores()).some((entry) => entry.chainId === services.ethereum.getChainId())
 }
 
-// Adds every outbox proposal signed for the installed services' network to its Safe stack once; proposals for other networks stay. The website already has its reply, so a proposal that cannot be stored is dropped with a visible failure and nothing more is sent to the website.
+// Adds every outbox proposal signed for the installed services' network to its Safe stack once, each entry as its own lifecycle step; proposals for other networks stay, and an entry whose storing fails transiently stays for the next pass without holding back the others. The website already has its reply, so a proposal that cannot be stored is dropped with a visible failure and nothing more is sent to the website.
 async function storeSafeProposalsFromOutbox(services: ConfirmationServices) {
-	for (const entry of await getPendingSafeProposalStores()) {
-		if (entry.chainId !== services.ethereum.getChainId()) continue
-		const stored = await resolveSafeSignerReply(services.ethereum, entry.proposal, entry.signerReply)
+	const entriesForNetwork = (await getPendingSafeProposalStores()).filter((entry) => entry.chainId === services.ethereum.getChainId())
+	return await runEachIndependently(entriesForNetwork, async (entry) => await safeSignerReplyLifecycleSemaphore.execute(async () => {
+		// Read again inside the step: a concurrent pass may already have stored it.
+		if (!(await getPendingSafeProposalStores()).some((current) => doesUniqueRequestIdentifiersMatch(current.proposal.uniqueRequestIdentifier, entry.proposal.uniqueRequestIdentifier))) return
+		const stored = await storeOutboxProposal(services, entry)
 		await removePendingSafeProposalStore(entry.proposal.uniqueRequestIdentifier)
+		if (stored.status === 'failed-permanently') {
+			await reportSafeProposalNotStored(stored.reason)
+			return
+		}
 		if (stored.status === 'success') {
 			await runConfirmationViewStep(async () => await showSimulationStackChange(services.ethereum, services.tokenPriceService, stored.simulationStack))
-			continue
+			return
 		}
 		await reportSafeProposalNotStored(stored.status === 'error' ? stored.approvalStatus.message : 'It is no longer a Gnosis Safe proposal.')
+	}))
+}
+
+// A Safe whose contract answers with a revert or with data that does not decode fails the same way on every attempt (for example after its implementation changed while the proposal waited), so its entry is dropped like one that fails validation. Transport failures and other errors may pass, so they are thrown and the entry stays for the next pass.
+const isPermanentSafeProposalStoreFailure = (error: unknown) => isAbiDataDecodeError(error) || error instanceof JsonRpcResponseError && (error.code === 3 || /revert/iu.test(error.message))
+
+async function storeOutboxProposal(services: ConfirmationServices, entry: PendingSafeProposalStore) {
+	try {
+		return await resolveSafeSignerReply(services.ethereum, entry.proposal, entry.signerReply)
+	} catch (error: unknown) {
+		if (!isPermanentSafeProposalStoreFailure(error)) throw error
+		return { status: 'failed-permanently' as const, reason: `Its Gnosis Safe could not be read: ${ getErrorMessage(error) ?? 'the contract call failed.' }` }
 	}
 }
 

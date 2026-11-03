@@ -843,6 +843,56 @@ test('a popup Reject during an RPC outage rejects the website and removes the re
 	await assertOnlyTheRejectionAnswered(proposal)
 })
 
+// A recovery pass advances each request and outbox entry as its own step. A claimed request whose validation fails transiently (only for its Safe) comes first, and an outbox proposal whose Safe now reverts on every call comes before a healthy one: the answered request after the claim is finished with its own reply, the healthy outbox proposal is stored, and the reverting one is dropped with a visible failure (its website already has its reply) instead of being retried on every block. The pass still fails with the transient error, and the claim stays for its retries.
+test('a recovery pass finishes later requests and the outbox while earlier items keep failing', async () => {
+	const { JsonRpcResponseError } = await import('../../app/ts/utils/errors.js')
+	const proposal = await storeSafeProposalAwaitingSignerOnChainA(144, 77n)
+	const [base] = await modules.getPendingTransactionsAndMessages()
+	if (base === undefined || base.type !== 'Transaction' || base.safeTransaction === undefined) throw new Error('Missing stored Safe proposal')
+	await setLatestUnexpectedError(undefined)
+	const unreachableSafeAddress = 0x5afe00000000000000000000000000000000beefn
+	const revertingSafeAddress = 0x5afe00000000000000000000000000000000deadn
+	const failingClaim = { ...base, uniqueRequestIdentifier: { ...base.uniqueRequestIdentifier, requestId: 145 }, safeTransaction: { ...base.safeTransaction, safeAddress: unreachableSafeAddress }, deferredSafeSignerReply: { signerReply: proposal.signature, chainId: fakeRpcNetwork.chainId } }
+	const answered = { ...base, websiteReplyQueued: true as const }
+	const revertingOutboxProposal = { ...base, uniqueRequestIdentifier: { ...base.uniqueRequestIdentifier, requestId: 147 }, safeTransaction: { ...base.safeTransaction, safeAddress: revertingSafeAddress } }
+	const healthyOutboxProposal = { ...base, uniqueRequestIdentifier: { ...base.uniqueRequestIdentifier, requestId: 146 } }
+	await modules.browserStorageLocalSet2({
+		pendingTransactionsAndMessages: [failingClaim, answered],
+		pendingSafeProposalStores: [
+			{ chainId: fakeRpcNetwork.chainId, signerReply: proposal.signature, proposal: revertingOutboxProposal },
+			{ chainId: fakeRpcNetwork.chainId, signerReply: proposal.signature, proposal: healthyOutboxProposal },
+		],
+	})
+	await appendPendingTerminalReply({ ...pendingTransaction.originalRequestParameters, type: 'result' as const, result: proposal.safeTxHash, uniqueRequestIdentifier: proposal.requestIdentifier })
+	assert.equal((await modules.getPendingSafeProposalStores()).length, 2)
+	const { spyOn } = await import('bun:test')
+	const readCode = simulator.ethereum.getCode.bind(simulator.ethereum)
+	const revertingSafeReads = () => getCode.mock.calls.filter((call) => call[0] === revertingSafeAddress).length
+	const getCode = spyOn(simulator.ethereum, 'getCode').mockImplementation(async (...args: Parameters<typeof readCode>) => {
+		if (args[0] === unreachableSafeAddress) throw new TypeError('Failed to fetch')
+		if (args[0] === revertingSafeAddress) throw new JsonRpcResponseError({ jsonrpc: '2.0', id: 1, error: { code: 3, message: 'execution reverted' } })
+		return await readCode(...args)
+	})
+	try {
+		await withSilencedConsole(async () => await assert.rejects(modules.advanceOutstandingSafeSignerReplies(simulator, proposal.websiteTabConnections), /Failed to fetch/u))
+		assert.equal(revertingSafeReads(), 1)
+		assert.match((await getLatestUnexpectedError())?.data.message ?? '', /could not be added to the Safe stack.*could not be read: execution reverted/u)
+		// The next block reads the reverting Safe no more.
+		await withSilencedConsole(async () => await assert.rejects(modules.advanceOutstandingSafeSignerReplies(simulator, proposal.websiteTabConnections), /Failed to fetch/u))
+		assert.equal(revertingSafeReads(), 1)
+	} finally {
+		getCode.mockRestore()
+	}
+	const remaining = await modules.getPendingTransactionsAndMessages()
+	assert.deepEqual(remaining.map((pending) => pending.uniqueRequestIdentifier.requestId), [145])
+	assert.notEqual(remaining[0]?.deferredSafeSignerReply, undefined)
+	assert.deepEqual(proposal.repliesToWebsite().map((reply) => isRecord(reply) ? reply.result : undefined), [modules.EthereumBytes32.serialize(proposal.safeTxHash)])
+	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+	assert.deepEqual(await modules.getPendingSafeProposalStores(), [])
+	const stacks = await modules.getSafeTransactionStacks()
+	assert.deepEqual(stacks.map((stack) => stack.transactions.map((transaction) => ({ safeTxHash: transaction.safeTxHash, signatures: transaction.signatures }))), [[{ safeTxHash: proposal.safeTxHash, signatures: [{ signer: safeTestOwnerAddress, signature: proposal.signature }] }]])
+})
+
 // A metadata refresh reads the request before Accept records the signing network and writes after it: it writes only its visualisation onto the stored request, so the signing network survives and the signature settles.
 test('keeps the signing network an Accept recorded while a confirmation metadata refresh was running', async () => {
 	const proposal = await storeSafeProposalAwaitingSignerOnChainA(130, 70n)

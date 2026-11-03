@@ -10,7 +10,17 @@ import { attemptDeliveryAfterManifestV2Reconnect } from './manifestV2Reconnect.j
 import { appendPendingTerminalReply, getPendingTerminalReplies, writeSafeProposalReplyAndOutboxEntry, writeTerminalReplyUnlessDeferred, removePendingTerminalReply } from './pendingTerminalReplies.js'
 
 const terminalReplyProductions = new Map<string, Promise<boolean | undefined>>()
-const terminalReplyReservations = new Set<string>()
+// A queued reply's reservation is owned by its producer: the reply object it queued. Only a successful queue write creates one, in the same critical section as the write, and only that producer, passing the same reply object, releases it; a queue attempt that queued nothing never touches another producer's reservation.
+const terminalReplyReservations = new Map<string, InterceptedRequestForward>()
+
+function reserveTerminalReply(producedReply: InterceptedRequestForward) {
+	terminalReplyReservations.set(getUniqueRequestIdentifierString(producedReply.uniqueRequestIdentifier), producedReply)
+}
+
+function releaseOwnTerminalReplyReservation(producedReply: InterceptedRequestForward) {
+	const identifier = getUniqueRequestIdentifierString(producedReply.uniqueRequestIdentifier)
+	if (terminalReplyReservations.get(identifier) === producedReply) terminalReplyReservations.delete(identifier)
+}
 const completedTerminalReplies = new Set<string>()
 const terminalReplySemaphore = new Semaphore(1)
 const terminalReplyFlushRetryTimers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -30,44 +40,28 @@ async function recordSuccessfulTerminalReplyDelivery(identifier: string, message
 }
 
 export async function queueTerminalReply(message: InterceptedRequestForward) {
-	const identifier = getUniqueRequestIdentifierString(message.uniqueRequestIdentifier)
-	terminalReplyReservations.add(identifier)
-	try {
-		await terminalReplySemaphore.execute(async () => {
-			await appendPendingTerminalReply(message)
-		})
-	} catch (error) {
-		terminalReplyReservations.delete(identifier)
-		throw error
-	}
+	await terminalReplySemaphore.execute(async () => {
+		await appendPendingTerminalReply(message)
+		reserveTerminalReply(message)
+	})
 }
 
 // Queues the website's proposal-hash reply and moves the signed proposal to the Safe proposal outbox in one write, reserving the reply like any other queued terminal reply.
 export async function queueSafeProposalReplyAndMoveToOutbox(uniqueRequestIdentifier: InterceptedRequestForward['uniqueRequestIdentifier'], createStore: (pendingProposal: PendingTransactionOrSignableMessage) => PendingSafeProposalStore, message: InterceptedRequestForward) {
-	const identifier = getUniqueRequestIdentifierString(uniqueRequestIdentifier)
-	terminalReplyReservations.add(identifier)
-	try {
-		const outcome = await terminalReplySemaphore.execute(async () => await writeSafeProposalReplyAndOutboxEntry(uniqueRequestIdentifier, createStore, message))
-		if (outcome !== 'moved') terminalReplyReservations.delete(identifier)
+	return await terminalReplySemaphore.execute(async () => {
+		const outcome = await writeSafeProposalReplyAndOutboxEntry(uniqueRequestIdentifier, createStore, message)
+		if (outcome === 'moved') reserveTerminalReply(message)
 		return outcome
-	} catch (error) {
-		terminalReplyReservations.delete(identifier)
-		throw error
-	}
+	})
 }
 
-// The only way to queue a pending confirmation request's website reply: like queueTerminalReply, but marking the request answered in the same write and refusing while it holds a deferred Gnosis Safe signature other than `settledSignerReply`; the reservation is released when nothing was queued.
+// The only way to queue a pending confirmation request's website reply: like queueTerminalReply, but marking the request answered in the same write and refusing while it holds a deferred Gnosis Safe signature other than `settledSignerReply`; only a reply actually queued is reserved.
 export async function queueTerminalReplyUnlessDeferred(message: InterceptedRequestForward, settledSignerReply?: string) {
-	const identifier = getUniqueRequestIdentifierString(message.uniqueRequestIdentifier)
-	terminalReplyReservations.add(identifier)
-	try {
-		const outcome = await terminalReplySemaphore.execute(async () => await writeTerminalReplyUnlessDeferred(message, settledSignerReply))
-		if (outcome !== 'queued') terminalReplyReservations.delete(identifier)
+	return await terminalReplySemaphore.execute(async () => {
+		const outcome = await writeTerminalReplyUnlessDeferred(message, settledSignerReply)
+		if (outcome === 'queued') reserveTerminalReply(message)
 		return outcome
-	} catch (error) {
-		terminalReplyReservations.delete(identifier)
-		throw error
-	}
+	})
 }
 
 export async function attemptQueuedTerminalReplyDelivery(websiteTabConnections: WebsiteTabConnections, message: InterceptedRequestForward) {
@@ -88,13 +82,13 @@ export async function attemptQueuedTerminalReplyDelivery(websiteTabConnections: 
 		return await production
 	} finally {
 		if (terminalReplyProductions.get(identifier) === production) terminalReplyProductions.delete(identifier)
-		terminalReplyReservations.delete(identifier)
+		releaseOwnTerminalReplyReservation(message)
 	}
 }
 
-// Releases the reservation of a queued reply whose flow stops before attempting its delivery (its request removal failed), handing that delivery to the answered request's cleanup.
-export function releaseTerminalReplyReservation(uniqueRequestIdentifier: UniqueRequestIdentifier) {
-	terminalReplyReservations.delete(getUniqueRequestIdentifierString(uniqueRequestIdentifier))
+// Releases the producer's own reservation when it stops before attempting its delivery (its request removal failed), handing that delivery to the answered request's cleanup.
+export function releaseTerminalReplyReservation(producedReply: InterceptedRequestForward) {
+	releaseOwnTerminalReplyReservation(producedReply)
 }
 
 // Delivers the reply already queued for an answered request, if it is still queued; a reply formed later is never sent. While the flow that queued the reply still holds its reservation, that flow owns the delivery (and any completion marker a socket flush left for it), so this leaves the reply and its marker untouched.
