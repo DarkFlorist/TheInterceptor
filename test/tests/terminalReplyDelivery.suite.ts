@@ -1507,4 +1507,71 @@ for (const signerResult of signerResults) {
 	})
 }
 
+// The actions that resolve a request with an outcome of their own, each from its starting state.
+const outcomeActions = [
+	{ name: 'a simulated accept', prepare: async () => ({ action: 'accept' as const, uniqueRequestIdentifier }) },
+	{
+		name: 'adding a Gnosis Safe proposal to its stack',
+		prepare: async () => {
+			await storeSafeProposalRequest({ status: 'WaitingForUser' })
+			return { action: 'addToSafeStack' as const, uniqueRequestIdentifier }
+		},
+	},
+	{
+		name: 'an accept that forwards to the signer',
+		prepare: async () => {
+			await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [{ ...pendingTransaction, simulationMode: false, approvalStatus: { status: 'WaitingForUser' } }] })
+			return { action: 'accept' as const, uniqueRequestIdentifier }
+		},
+	},
+] as const
+
+// The website got exactly one message, the rejection: nothing was forwarded to its signer, no Gnosis Safe proposal or simulation stack entry was persisted, and the request is cleaned up.
+async function assertOnlyTheRejection(postedMessages: readonly unknown[]) {
+	assert.equal(postedMessages.filter((message) => isRecord(message) && message.type === 'forwardToSigner').length, 0, 'nothing was forwarded to the signer')
+	const replies = getRepliesToWebsite(postedMessages)
+	assert.equal(replies.length, 1, 'exactly one reply')
+	const [rejection] = replies
+	if (!isRecord(rejection) || !isRecord(rejection.error)) throw new Error('Missing rejection sent to the website')
+	assert.equal(rejection.error.code, METAMASK_ERROR_USER_REJECTED_REQUEST)
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+	await assertNoOutcomePersisted()
+}
+
+for (const outcomeAction of outcomeActions) {
+	test(`${ outcomeAction.name } after a reject whose lookup failed is overruled by that reject`, async () => {
+		const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
+		const data = await outcomeAction.prepare()
+		let failNextCommittedReplyLookup = true
+		browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+			if (failNextCommittedReplyLookup && Array.isArray(keys) && keys.includes('pendingTerminalReplies')) {
+				failNextCommittedReplyLookup = false
+				throw new Error('The committed reply could not be read.')
+			}
+			return readStoredItems()
+		})
+		try {
+			await withSilencedConsole(async () => await rejectRequest(websiteTabConnections))
+			assert.equal((await modules.getPendingTransactionsAndMessages())[0]?.declineRequested, 'reject', 'the reject is stored and retried')
+			await resolveRequest(websiteTabConnections, data)
+			await withSilencedConsole(waitForResolutionRetriesToFinish)
+		} finally {
+			browserMock.setStorageGetHandler(undefined)
+		}
+		await assertOnlyTheRejection(postedMessages)
+	})
+
+	test(`${ outcomeAction.name } after a restart is overruled by the decline stored before it`, async () => {
+		const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
+		const data = await outcomeAction.prepare()
+		await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => ({ ...pending, declineRequested: 'reject' as const }))
+		const { beginStartupRecovery } = await import('../../app/ts/background/requestResolution.js')
+		beginStartupRecovery()
+		await resolveRequest(websiteTabConnections, data)
+		await withSilencedConsole(waitForResolutionRetriesToFinish)
+		await assertOnlyTheRejection(postedMessages)
+	})
+}
+
 await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
