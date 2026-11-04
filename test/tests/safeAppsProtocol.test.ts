@@ -3,7 +3,7 @@ import { test } from 'bun:test'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { getSDKVersion } from '@safe-global/safe-apps-sdk'
-import { createSafeAppsRequest, isSafeAppsRequest, parseSafeAppsRequest, SAFE_APPS_PREPARATION_CANCEL_MESSAGE, SAFE_APPS_RESPONSE_VERSION } from '../../app/inpage/ts/safeAppsProtocol.js'
+import { createSafeAppsErrorResponse, createSafeAppsRequest, isSafeAppsRequest, parseSafeAppsRequest, SAFE_APPS_PREPARATION_CANCEL_MESSAGE, SAFE_APPS_RESPONSE_VERSION } from '../../app/inpage/ts/safeAppsProtocol.js'
 import { SAFE_APPS_PREPARATION_CANCEL_MESSAGE as BACKGROUND_SAFE_APPS_PREPARATION_CANCEL_MESSAGE } from '../../app/ts/background/prepareSafeApp.js'
 
 test('the host and provider use one SDK version validator and preserve request parameters', () => {
@@ -18,6 +18,20 @@ test('the host and provider use one SDK version validator and preserve request p
 		assert.deepEqual(parseSafeAppsRequest(request), { id: request.id, error: 'Safe Apps env.sdkVersion must be a supported semantic version.' })
 	}
 	assert.equal(createSafeAppsRequest('prepare', 'getSafeInfo').env.sdkVersion, SAFE_APPS_RESPONSE_VERSION)
+})
+
+test('provider rejections of host-forwarded requests echo the bridge token the host requires', () => {
+	const bridgeToken = 'host-token'
+	const rejections: readonly { readonly request: { readonly id: string }, readonly error: string }[] = [
+		{ request: { id: 'bad-version', method: 'getSafeInfo', env: { sdkVersion: 'invalid' }, bridgeToken }, error: 'Safe Apps env.sdkVersion must be a supported semantic version.' },
+		{ request: { id: 'bad-method', method: 1, env: { sdkVersion: '9.1.0' }, bridgeToken }, error: 'Safe Apps method must be a string.' },
+	]
+	for (const { request, error } of rejections) {
+		const parsed = parseSafeAppsRequest(request)
+		assert.deepEqual(parsed, { id: request.id, error, bridgeToken })
+		assert.ok(parsed !== undefined && 'error' in parsed)
+		assert.deepEqual(createSafeAppsErrorResponse(parsed, parsed.error), { id: request.id, success: false, error, version: SAFE_APPS_RESPONSE_VERSION, bridgeToken })
+	}
 })
 
 // The SDK is only a test dependency, so this check guards version drift without the production bundler loading it.

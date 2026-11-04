@@ -33,7 +33,7 @@ export function installSafeAppsHost() {
 		if (typeof sdkData === 'object' && sdkData !== null) Reflect.deleteProperty(sdkData, 'bridgeToken')
 		windowObject.dispatchEvent(new MessageEvent('message', { data: sdkData, origin: windowObject.location.origin, source: apparentParent }))
 	}
-	const pendingRequests = createSafeAppsRequestQueue<SafeAppsRequest>({
+	const pendingRequests = createSafeAppsRequestQueue<SafeAppsRequest & { readonly bridgeToken: string }>({
 		replaceOldestSafeInfo: true,
 		timers: { setTimeout: windowObject.setTimeout.bind(windowObject), clearTimeout: windowObject.clearTimeout.bind(windowObject) },
 		// A cancellation only stops discovery in the provider; an operation such as sendTransactions or signMessage is already in the background and can still be approved after any deadline. Reporting a timeout for it would invite a duplicate retry, so operations stay pending until the provider answers.
@@ -65,9 +65,10 @@ export function installSafeAppsHost() {
 	apparentParent.addEventListener('message', onRequest)
 	const unsubscribe = transport.subscribe(({ data }) => {
 		if (disposed || !isSafeAppsResponse(data)) return
-		const pending = pendingRequests.values().find((request) => request.id === data.id)
-		if (pending === undefined || data.bridgeToken !== undefined && data.bridgeToken !== pending.bridgeToken) return
-		pendingRequests.take(data.id)
+		// The provider echoes the assigned token on every reply, so an untokened or mismatched reply is spoofed or stale (for example, for a reused SDK ID).
+		const pending = pendingRequests.values().find((request) => request.id === data.id && request.bridgeToken === data.bridgeToken)
+		if (pending === undefined) return
+		pendingRequests.take(pending.id)
 		deliver(data)
 	})
 	return {

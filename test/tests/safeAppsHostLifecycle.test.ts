@@ -34,6 +34,31 @@ test('reused SDK IDs get distinct bridge tokens and stale provider replies canno
 	} finally { restoreGlobals() }
 })
 
+test('host ignores untokened and wrong-token replies for a pending ID and delivers only the reply with its assigned token', async () => {
+	const { fakeWindow, framePort, emitMessage, restoreGlobals } = createSafeHostHarness()
+	try {
+		const host = installSafeAppsHost()
+		assert.ok(host)
+		let bridgeToken: string | undefined
+		const sdkReplies: unknown[] = []
+		fakeWindow.addEventListener('message', ({ data, source }) => {
+			if (typeof data !== 'object' || data === null || !('id' in data) || data.id !== 'transaction') return
+			if (source === fakeWindow && 'method' in data && 'bridgeToken' in data && typeof data.bridgeToken === 'string') bridgeToken = data.bridgeToken
+			if (source === framePort) sdkReplies.push(data)
+		})
+		framePort.postMessage({ id: 'transaction', method: 'sendTransactions', params: { txs: [] }, env: { sdkVersion: '9.1.0' } })
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		assert.ok(bridgeToken)
+		emitMessage({ id: 'transaction', success: true, data: { safeTxHash: '0xspoofed' }, version: '9.1.0' })
+		emitMessage({ id: 'transaction', success: true, data: { safeTxHash: '0xstale' }, version: '9.1.0', bridgeToken: `${ bridgeToken }-stale` })
+		assert.deepEqual(sdkReplies, [])
+		emitMessage({ id: 'transaction', success: true, data: { safeTxHash: '0x01' }, version: '9.1.0', bridgeToken })
+		emitMessage({ id: 'transaction', success: true, data: { safeTxHash: '0xreplayed' }, version: '9.1.0', bridgeToken })
+		assert.deepEqual(sdkReplies, [{ id: 'transaction', success: true, data: { safeTxHash: '0x01' }, version: '9.1.0' }])
+		host.dispose()
+	} finally { restoreGlobals() }
+})
+
 test('operations awaiting approval outlive the request deadline and still deliver their result, while discovery expires', async () => {
 	const { fakeWindow, framePort, emitMessage, activeTimeouts, fireTimeouts, restoreGlobals } = createSafeHostHarness()
 	try {
@@ -81,14 +106,16 @@ test('Safe Apps host respects site discovery deadlines and relays eventual SDK r
 		let overflowRejected = false
 		let overflowSdkCallbackReceived = false
 		const timedOutRequestIds = new Set<string>()
+		const forwardedTokens = new Map<string, string>()
 		fakeWindow.addEventListener('message', (event) => {
 			if (!('data' in event) || !('source' in event)) return
+			if (event.source === fakeWindow && typeof event.data === 'object' && event.data !== null && 'id' in event.data && typeof event.data.id === 'string' && 'bridgeToken' in event.data && typeof event.data.bridgeToken === 'string') forwardedTokens.set(event.data.id, event.data.bridgeToken)
 			if (event.source === fakeWindow && typeof event.data === 'object' && event.data !== null && 'method' in event.data && event.data.method === 'getSafeInfo' && 'id' in event.data && event.data.id === 'sdk-request') {
-				postMessage({ id: 'sdk-request', success: true, data: { safeAddress: '0x123' }, version: '9.1.0' }, origin)
+				postMessage({ id: 'sdk-request', success: true, data: { safeAddress: '0x123' }, version: '9.1.0', bridgeToken: forwardedTokens.get('sdk-request') }, origin)
 			}
 			if (event.source === fakeWindow && typeof event.data === 'object' && event.data !== null && 'method' in event.data && event.data.method === 'getChainInfo' && 'id' in event.data && typeof event.data.id === 'string' && event.data.id.startsWith('bulk-')) {
 				forwardedBulkRequests.add(event.data.id)
-				postMessage({ id: event.data.id, success: true, data: {}, version: '9.1.0' }, origin)
+				postMessage({ id: event.data.id, success: true, data: {}, version: '9.1.0', bridgeToken: forwardedTokens.get(event.data.id) }, origin)
 			}
 			if (event.source === framePort && typeof event.data === 'object' && event.data !== null && 'id' in event.data && typeof event.data.id === 'string' && event.data.id.startsWith('bulk-')) {
 				bulkReplies.add(event.data.id)
@@ -131,7 +158,7 @@ test('Safe Apps host respects site discovery deadlines and relays eventual SDK r
 			assert.equal(discoverySettled, true)
 			assert.equal(await discovery, false)
 			assert.deepEqual(sdkReplies, [])
-			postMessage({ id, success: approved, ...(approved ? { data: { safeAddress: '0x123' } } : { error: 'User rejected access.' }), version: '9.1.0' }, origin)
+			postMessage({ id, success: approved, ...(approved ? { data: { safeAddress: '0x123' } } : { error: 'User rejected access.' }), version: '9.1.0', bridgeToken: forwardedTokens.get(id) }, origin)
 			assert.equal(await sdkReply, approved)
 			assert.equal(await discovery, false)
 			assert.deepEqual(sdkReplies, [approved])
@@ -228,10 +255,14 @@ test('host disposal rejects pending SDK requests, cancels provider discovery and
 		const cancellations: string[] = []
 		const sdkReplies: unknown[] = []
 		const forwarded: string[] = []
+		const forwardedTokens = new Map<string, unknown>()
 		fakeWindow.addEventListener('message', (event) => {
 			if (!('data' in event) || !('source' in event) || typeof event.data !== 'object' || event.data === null || !('id' in event.data) || typeof event.data.id !== 'string') return
 			if (event.source === framePort) sdkReplies.push(event.data)
-			if (event.source === fakeWindow && 'method' in event.data) forwarded.push(event.data.id)
+			if (event.source === fakeWindow && 'method' in event.data) {
+				forwarded.push(event.data.id)
+				if ('bridgeToken' in event.data) forwardedTokens.set(event.data.id, event.data.bridgeToken)
+			}
 			if (event.source === fakeWindow && 'type' in event.data && event.data.type === 'interceptor_safe_apps_cancel') cancellations.push(event.data.id)
 		})
 		emitParentMessage({ id: 'pending', method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } })
@@ -245,7 +276,7 @@ test('host disposal rejects pending SDK requests, cancels provider discovery and
 		await Promise.resolve()
 		assert.deepEqual(cancellations, ['pending'])
 		assert.deepEqual(sdkReplies, [{ id: 'pending', success: false, error: 'Safe Apps hosting was disconnected.', version: '9.1.0' }])
-		emitMessage({ id: 'pending', success: true })
+		emitMessage({ id: 'pending', success: true, bridgeToken: forwardedTokens.get('pending') })
 		emitParentMessage({ id: 'after-disposal', method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } })
 		await Promise.resolve()
 		assert.deepEqual(forwarded, ['pending'])
@@ -254,7 +285,7 @@ test('host disposal rejects pending SDK requests, cancels provider discovery and
 		assert.ok(replacement)
 		emitParentMessage({ id: 'reinstalled', method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } })
 		await Promise.resolve()
-		emitMessage({ id: 'reinstalled', success: true })
+		emitMessage({ id: 'reinstalled', success: true, bridgeToken: forwardedTokens.get('reinstalled') })
 		assert.deepEqual(forwarded, ['pending', 'reinstalled'])
 		assert.equal(sdkReplies.length, 2)
 		replacement.dispose()

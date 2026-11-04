@@ -88,7 +88,7 @@ function createSafeAppsBridge(windowObject: SafeAppsWindow, requestSafeApps: (re
 	}
 	const answerRequest = (parsedRequest: ParsedSafeAppsRequest, origin: string) => {
 		if ('error' in parsedRequest) {
-			transport.post({ id: parsedRequest.id, success: false, error: parsedRequest.error, version: SAFE_APPS_RESPONSE_VERSION }, origin)
+			transport.post(createSafeAppsErrorResponse(parsedRequest, parsedRequest.error), origin)
 			return
 		}
 		const request = parsedRequest.request

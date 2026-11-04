@@ -8,7 +8,7 @@ export const SAFE_APPS_PREPARATION_CANCEL_MARKER = 'interceptorSafePreparationCa
 // The injected bundle imports only modules in app/inpage/ts, so the background keeps its own copy of this message; safeAppsProtocol.test.ts checks they match.
 export const SAFE_APPS_PREPARATION_CANCEL_MESSAGE = 'Safe connection was cancelled.'
 export type SafeAppsRequest = { readonly id: string, readonly method: string, readonly params?: unknown, readonly env: { readonly sdkVersion: string }, readonly bridgeToken?: string }
-export type ParsedSafeAppsRequest = { readonly id: string, readonly request: SafeAppsRequest } | { readonly id: string, readonly error: string }
+export type ParsedSafeAppsRequest = { readonly id: string, readonly request: SafeAppsRequest } | { readonly id: string, readonly error: string, readonly bridgeToken?: string }
 export type SafeAppsResponse = { readonly id: string, readonly success: boolean, readonly error?: unknown, readonly bridgeToken?: string }
 
 // Read-only startup queries. Only these may be retried, replayed after eligibility changes, or expired: every other method can reach the background, wait for user approval and still complete after any deadline.
@@ -22,9 +22,11 @@ export function parseSafeAppsRequest(data: unknown): ParsedSafeAppsRequest | und
 	if (typeof data !== 'object' || data === null || !('id' in data) || typeof data.id !== 'string') return undefined
 	// An SDK envelope distinguishes requests from unrelated page postMessage protocols.
 	if (!('env' in data) || typeof data.env !== 'object' || data.env === null) return undefined
-	if (!('sdkVersion' in data.env) || typeof data.env.sdkVersion !== 'string' || !/^[1-9][0-9]*\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$/.test(data.env.sdkVersion)) return { id: data.id, error: 'Safe Apps env.sdkVersion must be a supported semantic version.' }
-	if (!('method' in data) || typeof data.method !== 'string') return { id: data.id, error: 'Safe Apps method must be a string.' }
-	return { id: data.id, request: { id: data.id, method: data.method, env: { sdkVersion: data.env.sdkVersion }, ...('params' in data && data.params !== undefined ? { params: data.params } : {}), ...('bridgeToken' in data && typeof data.bridgeToken === 'string' ? { bridgeToken: data.bridgeToken } : {}) } }
+	// Echo the token on rejections as well: the host accepts only responses carrying the token it assigned.
+	const bridgeTokenField = 'bridgeToken' in data && typeof data.bridgeToken === 'string' ? { bridgeToken: data.bridgeToken } : {}
+	if (!('sdkVersion' in data.env) || typeof data.env.sdkVersion !== 'string' || !/^[1-9][0-9]*\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$/.test(data.env.sdkVersion)) return { id: data.id, error: 'Safe Apps env.sdkVersion must be a supported semantic version.', ...bridgeTokenField }
+	if (!('method' in data) || typeof data.method !== 'string') return { id: data.id, error: 'Safe Apps method must be a string.', ...bridgeTokenField }
+	return { id: data.id, request: { id: data.id, method: data.method, env: { sdkVersion: data.env.sdkVersion }, ...('params' in data && data.params !== undefined ? { params: data.params } : {}), ...bridgeTokenField } }
 }
 
 export function isSafeAppsRequest(value: unknown): value is SafeAppsRequest {

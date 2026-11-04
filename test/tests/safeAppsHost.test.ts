@@ -22,8 +22,8 @@ for (const origin of ['https://app.example.com', 'https://another.example:8443']
 			fakeWindow.addEventListener('message', (event) => {
 				if (!('source' in event) || event.source !== fakeWindow || !('data' in event)) return
 				const request: unknown = event.data
-				if (typeof request !== 'object' || request === null || !('method' in request) || request.method !== 'getSafeInfo' || !('id' in request)) return
-				postMessage({ id: request.id, success: true, data: safeInfo, version: '9.1.0' }, origin)
+				if (typeof request !== 'object' || request === null || !('method' in request) || request.method !== 'getSafeInfo' || !('id' in request) || !('bridgeToken' in request)) return
+				postMessage({ id: request.id, success: true, data: safeInfo, version: '9.1.0', bridgeToken: request.bridgeToken }, origin)
 			})
 			const sdk = new SafeAppsSDK()
 			assert.deepEqual(await sdk.safe.getInfo(), safeInfo)
@@ -62,10 +62,13 @@ test('shared SDK transport waits for authorization, ignores unrelated responses,
 	try {
 		installSafeAppsHost()
 		let requestId: string | undefined
+		let bridgeToken: string | undefined
 		fakeWindow.addEventListener('message', (event) => {
 			if (!('source' in event) || event.source !== fakeWindow || !('data' in event)) return
 			const request: unknown = event.data
-			if (typeof request === 'object' && request !== null && 'method' in request && request.method === 'getSafeInfo' && 'id' in request && typeof request.id === 'string') requestId = request.id
+			if (typeof request !== 'object' || request === null || !('method' in request) || request.method !== 'getSafeInfo' || !('id' in request) || typeof request.id !== 'string') return
+			requestId = request.id
+			if ('bridgeToken' in request && typeof request.bridgeToken === 'string') bridgeToken = request.bridgeToken
 		})
 		const sdk = new SafeAppsSDK()
 		let settled = false
@@ -73,12 +76,12 @@ test('shared SDK transport waits for authorization, ignores unrelated responses,
 		void result.then(() => { settled = true }, () => { settled = true })
 		await new Promise((resolve) => setTimeout(resolve, 0))
 		assert.notEqual(requestId, undefined)
-		const response = { id: requestId, success: true, data: safeInfo, version: '9.1.0' }
+		const response = { id: requestId, success: true, data: safeInfo, version: '9.1.0', bridgeToken }
 		emitMessage(response, 'https://unrelated.example')
 		emitMessage(response, origin, new EventTarget())
 		await Promise.resolve()
 		assert.equal(settled, false)
-		emitMessage({ id: requestId, success: false, error: 'User rejected access.', version: '9.1.0' })
+		emitMessage({ id: requestId, success: false, error: 'User rejected access.', version: '9.1.0', bridgeToken })
 		await assert.rejects(result, /User rejected access/)
 	} finally { restoreGlobals() }
 })
