@@ -557,6 +557,7 @@ export async function reconcileWebsiteApprovalAccesses(
 		} catch (error: unknown) {
 			runFailures.push(error)
 		}
+		// This read inside the lock is authoritative: when it succeeds it may grant from the current persisted state, even if the committing operation's own earlier read-back failed, because that failure only limits what the operation publishes.
 		const currentSettings = await readSettingsForAccessReconciliation()
 		if (currentSettings.status === 'unavailable') runFailures.push(currentSettings.failure)
 		const inputs: AccessReconciliationInputs = currentSettings.status === 'available'
