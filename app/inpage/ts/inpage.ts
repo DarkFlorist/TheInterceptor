@@ -1,4 +1,4 @@
-import { SAFE_APPS_REQUEST_TIMEOUT_MS, SAFE_APPS_RESPONSE_VERSION, createSafeAppsErrorResponse, isSafeAppsCancellation, parseSafeAppsRequest, type ParsedSafeAppsRequest, type SafeAppsRequest } from './safeAppsProtocol.js'
+import { SAFE_APPS_REQUEST_TIMEOUT_MS, SAFE_APPS_RESPONSE_VERSION, createSafeAppsErrorResponse, isSafeAppsCancellation, isSafeAppsDiscoveryMethod, parseSafeAppsRequest, type ParsedSafeAppsRequest, type SafeAppsRequest } from './safeAppsProtocol.js'
 import { createSafeAppsRequestQueue } from './safeAppsRequestQueue.js'
 import { createSafeAppsTransport, type SafeAppsWindow } from './safeAppsTransport.js'
 
@@ -36,7 +36,7 @@ async function executeSafeAppsCommand(command: unknown, requestEthereum: Ethereu
 }
 
 // Retain read-only discovery while ineligible and reissue it after eligibility changes so stale account data is never published.
-const isSafeAppsDiscoveryRequest = (request: ParsedSafeAppsRequest) => 'request' in request && (request.request.method === 'getSafeInfo' || request.request.method === 'getChainInfo' || request.request.method === 'getEnvironmentInfo')
+const isSafeAppsDiscoveryRequest = (request: ParsedSafeAppsRequest) => 'request' in request && isSafeAppsDiscoveryMethod(request.request.method)
 
 function createSafeAppsRequestHandler(requestBackground: (request: unknown) => Promise<unknown>, requestEthereum: EthereumRequest) {
 	let offChainSigning = true

@@ -11,6 +11,9 @@ export type SafeAppsRequest = { readonly id: string, readonly method: string, re
 export type ParsedSafeAppsRequest = { readonly id: string, readonly request: SafeAppsRequest } | { readonly id: string, readonly error: string }
 export type SafeAppsResponse = { readonly id: string, readonly success: boolean, readonly error?: unknown, readonly bridgeToken?: string }
 
+// Read-only startup queries. Only these may be retried, replayed after eligibility changes, or expired: every other method can reach the background, wait for user approval and still complete after any deadline.
+export const isSafeAppsDiscoveryMethod = (method: string) => method === 'getSafeInfo' || method === 'getChainInfo' || method === 'getEnvironmentInfo'
+
 export function createSafeAppsRequest(id: string, method: string): SafeAppsRequest {
 	return { id, method, env: { sdkVersion: SAFE_APPS_RESPONSE_VERSION } }
 }

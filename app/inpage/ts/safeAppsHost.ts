@@ -1,4 +1,4 @@
-import { createSafeAppsErrorResponse, createSafeAppsCancellation, parseSafeAppsRequest, isSafeAppsResponse, type SafeAppsRequest } from './safeAppsProtocol.js'
+import { createSafeAppsErrorResponse, createSafeAppsCancellation, isSafeAppsDiscoveryMethod, parseSafeAppsRequest, isSafeAppsResponse, type SafeAppsRequest } from './safeAppsProtocol.js'
 import { createSafeAppsRequestQueue } from './safeAppsRequestQueue.js'
 import { createSafeAppsTransport } from './safeAppsTransport.js'
 
@@ -36,6 +36,8 @@ export function installSafeAppsHost() {
 	const pendingRequests = createSafeAppsRequestQueue<SafeAppsRequest>({
 		replaceOldestSafeInfo: true,
 		timers: { setTimeout: windowObject.setTimeout.bind(windowObject), clearTimeout: windowObject.clearTimeout.bind(windowObject) },
+		// A cancellation only stops discovery in the provider; an operation such as sendTransactions or signMessage is already in the background and can still be approved after any deadline. Reporting a timeout for it would invite a duplicate retry, so operations stay pending until the provider answers.
+		expires: ({ method }) => isSafeAppsDiscoveryMethod(method),
 		onRejected: (request, error, reason) => {
 			if (reason === 'expired' || reason === 'superseded') transport.post(createSafeAppsCancellation(request.id, request.bridgeToken))
 			const reject = () => { if (!disposed) deliver(createSafeAppsErrorResponse(request, error)) }

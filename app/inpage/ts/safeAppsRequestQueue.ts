@@ -13,11 +13,13 @@ type QueueOptions<T> = {
 	readonly replaceOldestSafeInfo?: boolean
 	// Without a scheduler, callers expire entries on messages and eligibility changes.
 	readonly timers?: { readonly setTimeout: (callback: () => void, delay: number) => number, readonly clearTimeout: (id: number) => void }
+	// Defaults to expiring every entry. Return false for requests that may still complete after the deadline, so they stay pending until answered or taken.
+	readonly expires?: (request: T) => boolean
 }
 
 // Shared capacity, duplicate-ID, expiry and removal policy; callers own message delivery and eligibility.
 export function createSafeAppsRequestQueue<T extends Pick<SafeAppsRequest, 'id' | 'method'>>(options: QueueOptions<T>) {
-	type Entry = { readonly request: T, readonly expiresAt: number, timeoutId?: number }
+	type Entry = { readonly request: T, readonly expiresAt: number | undefined, timeoutId?: number }
 	const entries = new Map<string, Entry>()
 	const take = (id: string) => {
 		const entry = entries.get(id)
@@ -32,7 +34,7 @@ export function createSafeAppsRequestQueue<T extends Pick<SafeAppsRequest, 'id' 
 	}
 	const expire = () => {
 		const now = Date.now()
-		for (const [id, entry] of entries) if (entry.expiresAt <= now) reject(id, 'expired')
+		for (const [id, entry] of entries) if (entry.expiresAt !== undefined && entry.expiresAt <= now) reject(id, 'expired')
 	}
 	return {
 		add(request: T) {
@@ -48,6 +50,10 @@ export function createSafeAppsRequestQueue<T extends Pick<SafeAppsRequest, 'id' 
 			if (entries.size >= SAFE_APPS_PENDING_REQUEST_LIMIT) {
 				options.onRejected(request, rejectionMessages.capacity, 'capacity')
 				return false
+			}
+			if (options.expires?.(request) === false) {
+				entries.set(request.id, { request, expiresAt: undefined })
+				return true
 			}
 			const entry: Entry = { request, expiresAt: Date.now() + SAFE_APPS_REQUEST_TIMEOUT_MS }
 			entries.set(request.id, entry)

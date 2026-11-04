@@ -34,6 +34,41 @@ test('reused SDK IDs get distinct bridge tokens and stale provider replies canno
 	} finally { restoreGlobals() }
 })
 
+test('operations awaiting approval outlive the request deadline and still deliver their result, while discovery expires', async () => {
+	const { fakeWindow, framePort, emitMessage, activeTimeouts, fireTimeouts, restoreGlobals } = createSafeHostHarness()
+	try {
+		const host = installSafeAppsHost()
+		assert.ok(host)
+		const forwardedTokens = new Map<string, string>()
+		const cancellations: string[] = []
+		const sdkReplies: unknown[] = []
+		fakeWindow.addEventListener('message', ({ data, source }) => {
+			if (typeof data !== 'object' || data === null || !('id' in data) || typeof data.id !== 'string') return
+			if (source === fakeWindow && 'method' in data && 'bridgeToken' in data && typeof data.bridgeToken === 'string') forwardedTokens.set(data.id, data.bridgeToken)
+			if (source === fakeWindow && 'type' in data && data.type === 'interceptor_safe_apps_cancel') cancellations.push(data.id)
+			if (source === framePort) sdkReplies.push(data)
+		})
+		framePort.postMessage({ id: 'transaction', method: 'sendTransactions', params: { txs: [] }, env: { sdkVersion: '9.1.0' } })
+		framePort.postMessage({ id: 'signature', method: 'signMessage', params: { message: 'hello' }, env: { sdkVersion: '9.1.0' } })
+		framePort.postMessage({ id: 'discovery', method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } })
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		assert.deepEqual([...forwardedTokens.keys()], ['transaction', 'signature', 'discovery'])
+		// Only the discovery request schedules a deadline.
+		assert.deepEqual(activeTimeouts(), [5 * 60_000])
+		fireTimeouts(5 * 60_000)
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		assert.deepEqual(cancellations, ['discovery'])
+		assert.deepEqual(sdkReplies, [{ id: 'discovery', success: false, error: 'Safe Apps request timed out.', version: '9.1.0' }])
+		emitMessage({ id: 'transaction', success: true, data: { safeTxHash: '0x01' }, version: '9.1.0', bridgeToken: forwardedTokens.get('transaction') })
+		emitMessage({ id: 'signature', success: true, data: { safeTxHash: '0x02' }, version: '9.1.0', bridgeToken: forwardedTokens.get('signature') })
+		assert.deepEqual(sdkReplies.slice(1), [
+			{ id: 'transaction', success: true, data: { safeTxHash: '0x01' }, version: '9.1.0' },
+			{ id: 'signature', success: true, data: { safeTxHash: '0x02' }, version: '9.1.0' },
+		])
+		host.dispose()
+	} finally { restoreGlobals() }
+})
+
 test('Safe Apps host respects site discovery deadlines and relays eventual SDK replies within its capacity', async () => {
 	const { fakeWindow, framePort, origin, activeTimeouts, fireTimeouts, postMessage, frameWasAppended, restoreGlobals } = createSafeHostHarness()
 	try {

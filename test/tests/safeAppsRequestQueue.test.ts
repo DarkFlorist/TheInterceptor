@@ -4,12 +4,13 @@ import { createSafeAppsRequestQueue } from '../../app/inpage/ts/safeAppsRequestQ
 import { SAFE_APPS_PENDING_REQUEST_LIMIT, SAFE_APPS_REQUEST_TIMEOUT_MS } from '../../app/inpage/ts/safeAppsProtocol.js'
 
 type Request = { readonly id: string, readonly method: string }
-function createQueueHarness(replaceOldestSafeInfo = false, scheduled = true) {
+function createQueueHarness(replaceOldestSafeInfo = false, scheduled = true, expires?: (request: Request) => boolean) {
 	const callbacks: (() => void)[] = []
 	const active = new Set<number>()
 	const rejected: { readonly id: string, readonly error: string, readonly reason: string }[] = []
 	const queue = createSafeAppsRequestQueue<Request>({
 		replaceOldestSafeInfo,
+		...(expires === undefined ? {} : { expires }),
 		onRejected: ({ id }, error, reason) => rejected.push({ id, error, reason }),
 		...(scheduled ? { timers: {
 			setTimeout: (callback: () => void, delay: number) => {
@@ -84,5 +85,23 @@ test('Safe Apps queue lazy expiry uses the same deadline and rejection as timer 
 		queue.add({ id: 'fresh', method: 'getChainInfo' })
 		assert.deepEqual(rejected, [{ id: 'expired', error: 'Safe Apps request timed out.', reason: 'expired' }])
 		assert.deepEqual(queue.drain(), [{ id: 'fresh', method: 'getChainInfo' }])
+	} finally { Date.now = originalNow }
+})
+
+test('Safe Apps queue never expires requests its caller marks as non-expiring', () => {
+	const originalNow = Date.now
+	let now = 0
+	Date.now = () => now
+	try {
+		const { queue, callbacks, active, rejected } = createQueueHarness(false, true, ({ method }) => method === 'getSafeInfo')
+		queue.add({ id: 'operation', method: 'sendTransactions' })
+		queue.add({ id: 'discovery', method: 'getSafeInfo' })
+		assert.equal(callbacks.length, 1)
+		now = SAFE_APPS_REQUEST_TIMEOUT_MS
+		queue.expire()
+		callbacks[0]?.()
+		assert.deepEqual(rejected, [{ id: 'discovery', error: 'Safe Apps request timed out.', reason: 'expired' }])
+		assert.equal(queue.take('operation')?.method, 'sendTransactions')
+		assert.equal(active.size, 0)
 	} finally { Date.now = originalNow }
 })
