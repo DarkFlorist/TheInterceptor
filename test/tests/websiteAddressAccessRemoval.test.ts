@@ -84,6 +84,7 @@ describe('removeWebsiteAddressAccess', () => {
 			await assert.rejects(removeAddressAccess(), (error) => {
 				assert.ok(error instanceof AggregateError)
 				assert.deepEqual(error.errors, [reloadStepError, reconcileError])
+				assert.equal(error.message, 'Reloading connected tabs failed (reload failure report failed) and reconciling website approvals failed (reconciliation failed)')
 				return true
 			})
 		} finally {

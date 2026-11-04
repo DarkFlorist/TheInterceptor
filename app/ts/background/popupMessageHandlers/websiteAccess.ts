@@ -44,6 +44,8 @@ export async function reloadConnectedTabs(websiteTabConnections: WebsiteTabConne
 	}
 }
 
+const describeFailure = (error: unknown) => getErrorMessage(error) ?? 'unknown error'
+
 // Reload first so outgoing pages drop their connections before reconciliation can re-prompt them; always reconcile so a stored revocation reaches open connections even if the reload fails.
 async function reloadConnectedTabsThenReconcileApprovals(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections) {
 	let reloadFailure: { readonly error: unknown } | undefined
@@ -55,8 +57,8 @@ async function reloadConnectedTabsThenReconcileApprovals(simulationServicesOwner
 	try {
 		await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
 	} catch (reconcileError) {
-		// Throw both failures together so neither hides the other.
-		if (reloadFailure !== undefined) throw new AggregateError([reloadFailure.error, reconcileError], 'Reloading connected tabs and reconciling website approvals both failed')
+		// Throw both failures together so neither hides the other; the message names both because reports keep only the outer message.
+		if (reloadFailure !== undefined) throw new AggregateError([reloadFailure.error, reconcileError], `Reloading connected tabs failed (${ describeFailure(reloadFailure.error) }) and reconciling website approvals failed (${ describeFailure(reconcileError) })`)
 		throw reconcileError
 	}
 	if (reloadFailure !== undefined) throw reloadFailure.error
