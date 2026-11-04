@@ -5,7 +5,7 @@ import { personalEcRecover } from '../../app/ts/background/personalEcRecoverRpc.
 import { getSafeModeRpcPolicyReply } from '../../app/ts/safe/safeRequestPolicy.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import type { IEthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
-import { getSimulatedMessageSignature, hashPersonalSignMessage, simulatePersonalSign } from '../../app/ts/simulation/services/simulationPersonalSigning.js'
+import { getSimulatedMessageSignature, simulatePersonalSign } from '../../app/ts/simulation/services/simulationPersonalSigning.js'
 import { JsonRpcResponse } from '../../app/ts/types/JsonRpc-types.js'
 import type { PersonalSignParams } from '../../app/ts/types/jsonRpc-signing-types.js'
 import type { RpcEntry, RpcNetwork } from '../../app/ts/types/rpc.js'
@@ -164,7 +164,8 @@ describe('personal_ecRecover recovery', () => {
 			const signedMessage = createSignedMessage(simulatedSigner, message, socket)
 			const simulatedSigning = await simulatePersonalSign(signedMessage.originalRequestParameters, simulatedSigner)
 			assert.equal(simulatedSigning.messageHash, hashMessage({ raw: signedBytes }), message)
-			assert.equal(hashPersonalSignMessage(message), simulatedSigning.messageHash, message)
+			// With no stacked messages this is a real recovery, so it proves the simulated signature covers exactly the bytes personal_ecRecover hashes for this message.
+			assert.deepEqual(await personalEcRecover(parsePersonalEcRecover([message, simulatedSigning.signature]), [], websiteOrigin), { type: 'result', method: 'personal_ecRecover', result: mockSimulationKeyAddress }, message)
 			assert.deepEqual(await personalEcRecover(parsePersonalEcRecover([message, simulatedSigning.signature]), [signedMessage], websiteOrigin), { type: 'result', method: 'personal_ecRecover', result: simulatedSigner }, message)
 		}
 	})

@@ -37,6 +37,13 @@ export const bytesToHex = (bytes: Uint8Array): Hex => `0x${ nobleBytesToHex(byte
 
 export const stringToBytes = (value: string): Uint8Array => utf8ToBytes(value)
 
+// MetaMask's string-to-bytes rule (eth-sig-util legacyToBuffer), used for personal_sign messages and EIP-712 bytes values: a 0x-prefixed hex string is raw bytes, left-padded to whole bytes, and any other string is UTF-8 text.
+export const hexOrUtf8StringToBytes = (value: string): Uint8Array => {
+	if (!isHexString(value)) return stringToBytes(value)
+	const hex = value.slice(2)
+	return hexToBytes(hex.length % 2 === 0 ? hex : `0${ hex }`)
+}
+
 export const keccak256 = (value: Hex | Uint8Array): Hex => bytesToHex(keccak_256(bytesFromHexOrBytes(value)))
 
 export const getAddress = (address: string): Hex => {

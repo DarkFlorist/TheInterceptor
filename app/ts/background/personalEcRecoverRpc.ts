@@ -32,7 +32,7 @@ const findSimulatedPersonalSignSigner = async (signedMessages: readonly SignedMe
 	for (const signedMessage of [...signedMessages].reverse()) {
 		if (signedMessage.originalRequestParameters.method !== 'personal_sign') continue
 		const simulatedSignature = await getSimulatedMessageSignature(signedMessage)
-		// Compares hashes of the signed bytes, so personal_ecRecover's reading of its message string only has to agree with personal_sign's on which bytes were signed, not on how the strings are written.
+		// Matching on the hash of the signed bytes lets 'hello' and '0x68656c6c6f' find the same signed message.
 		if (simulatedSignature.messageHash !== messageHash) continue
 		if (areSameSignatures(RecoverableMessageSignature.parse(simulatedSignature.signature), signature)) return simulatedSignature.signer
 	}
