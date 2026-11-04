@@ -55,8 +55,8 @@ async function reloadConnectedTabsThenReconcileApprovals(simulationServicesOwner
 	try {
 		await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
 	} catch (reconcileError) {
-		// Report the reload failure so the reconciliation error thrown next does not hide it.
-		if (reloadFailure !== undefined) await reportUnexpectedError(reloadFailure.error, { code: 'connected_tab_reload_failed' })
+		// Throw both failures together so neither hides the other.
+		if (reloadFailure !== undefined) throw new AggregateError([reloadFailure.error, reconcileError], 'Reloading connected tabs and reconciling website approvals both failed')
 		throw reconcileError
 	}
 	if (reloadFailure !== undefined) throw reloadFailure.error

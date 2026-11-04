@@ -41,6 +41,12 @@ async function setUpApprovedConnectionAndOtherTab(browserMockOptions: Parameters
 	return { modules, reloadedTabIds, connectedTabIds: [approvedSocket.tabId, otherSocket.tabId], removeAddressAccess, assertConnectionDeApproved }
 }
 
+// Reporting the per-tab reload failure throws, so the rejection escapes reloadConnectedTabs.
+function makeReloadStepReject(reloadStepError: Error) {
+	spyOn(browser.tabs, 'reload').mockImplementation(async () => { throw new Error('reload failed') })
+	return spyOn(errors, 'reportUnexpectedError').mockImplementationOnce(async () => { throw reloadStepError })
+}
+
 describe('removeWebsiteAddressAccess', () => {
 	test('de-approves the connection and reloads connected tabs when the current tab lookup fails', async () => {
 		const { modules, reloadedTabIds, connectedTabIds, removeAddressAccess, assertConnectionDeApproved } = await setUpApprovedConnectionAndOtherTab({ firstCurrentTabIdReadError: new Error('current tab lookup failed') })
@@ -56,10 +62,8 @@ describe('removeWebsiteAddressAccess', () => {
 
 	test('still de-approves the connection and rethrows when the reload step rejects', async () => {
 		const { removeAddressAccess, assertConnectionDeApproved } = await setUpApprovedConnectionAndOtherTab({})
-		spyOn(browser.tabs, 'reload').mockImplementation(async () => { throw new Error('reload failed') })
-		// Reporting the per-tab reload failure throws, so the rejection escapes reloadConnectedTabs.
 		const reloadStepError = new Error('reload failure report failed')
-		const reportUnexpectedError = spyOn(errors, 'reportUnexpectedError').mockImplementationOnce(async () => { throw reloadStepError })
+		const reportUnexpectedError = makeReloadStepReject(reloadStepError)
 		try {
 			await assert.rejects(removeAddressAccess(), (error) => error === reloadStepError)
 		} finally {
@@ -67,5 +71,24 @@ describe('removeWebsiteAddressAccess', () => {
 		}
 
 		await assertConnectionDeApproved()
+	})
+
+	test('rejects with both errors, reload first, when the reload step and reconciliation both reject', async () => {
+		const { removeAddressAccess } = await setUpApprovedConnectionAndOtherTab({})
+		const reloadStepError = new Error('reload failure report failed')
+		const reconcileError = new Error('reconciliation failed')
+		const reportUnexpectedError = makeReloadStepReject(reloadStepError)
+		const accessManagement = await import('../../app/ts/background/accessManagement.js')
+		const updateWebsiteApprovalAccesses = spyOn(accessManagement, 'updateWebsiteApprovalAccesses').mockImplementationOnce(async () => { throw reconcileError })
+		try {
+			await assert.rejects(removeAddressAccess(), (error) => {
+				assert.ok(error instanceof AggregateError)
+				assert.deepEqual(error.errors, [reloadStepError, reconcileError])
+				return true
+			})
+		} finally {
+			reportUnexpectedError.mockRestore()
+			updateWebsiteApprovalAccesses.mockRestore()
+		}
 	})
 })
