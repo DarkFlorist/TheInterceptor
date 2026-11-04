@@ -326,7 +326,7 @@ test('drops the zero base fee flag of a Safe proposal stored by an earlier versi
 	assert.equal(preparedInput.at(-1)?.transactions.at(-1)?.executedTransaction?.from, SAFE_EXECUTION_SIMULATION_EXECUTOR)
 })
 
-// Opens a confirmation's Gnosis Safe preparation and stores its Safe fields in the pending transaction as openConfirmTransactionDialogForTransaction does, then returns the fee mode the confirmation formed the transaction with and the one every refresh reads back from the pending transaction.
+// Opens a confirmation's Gnosis Safe preparation and stores its flow in the pending transaction as openConfirmTransactionDialogForTransaction does, then returns the fee mode the confirmation formed the transaction with and the one every refresh reads back from the pending transaction.
 async function getOpenedAndRefreshedGasPayments(transactionParams: SendTransactionParams, simulationMode: boolean, selectedActiveAddress: bigint) {
 	const { getPendingTransactionGasPayment } = await import('../../app/ts/safe/safePendingFlow.js')
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
@@ -340,8 +340,8 @@ async function getOpenedAndRefreshedGasPayments(transactionParams: SendTransacti
 	const transactionToSimulate = preparation.preparationMessage !== undefined
 		? { website, created, originalRequestParameters: preparation.effectiveTransactionParams, transactionIdentifier: 1n, success: false as const, error: { code: -32700, message: preparation.preparationMessage } }
 		: await modules.formEthSendTransaction(ethereum, undefined, preparation.transactionExecutor, website, preparation.effectiveTransactionParams, created, 1n, simulationMode, preparation.gasPayment)
-	const { safeTransaction, pendingSafeFields } = await preparation.finalize(transactionToSimulate, uniqueRequestIdentifier.requestSocket.tabId)
-	const pending = { ...pendingTransaction, ...(safeTransaction === undefined ? {} : { safeTransaction }), ...(pendingSafeFields ?? {}) }
+	const { safeFlow } = await preparation.finalize(transactionToSimulate, uniqueRequestIdentifier.requestSocket.tabId)
+	const pending = { ...pendingTransaction, safeFlow }
 	await modules.updateUserAddressBookEntries(() => modules.defaultActiveAddresses)
 	return { opened: preparation.gasPayment, refreshed: getPendingTransactionGasPayment(pending) }
 }
@@ -408,7 +408,7 @@ const getFailureMessage = (transaction: WebsiteCreatedEthereumTransactionOrFaile
 test('keeps a Gnosis Safe proposal whose creation failed a failure through refresh instead of an ordinary transaction from the Safe', async () => {
 	configureSafe()
 	await assertSafeFailureKeptThroughRefresh(await createTransferParams({ from: addressString(SAFE_ADDRESS), gas: '0x5208' }), (pending, stage) => {
-		assert.equal(pending.safeProposalCreationFailed, true, stage)
+		assert.deepEqual(pending.safeFlow, { kind: 'proposal', state: 'creationFailed' }, stage)
 		assert.match(getFailureMessage(pending.transactionToSimulate) ?? '', SAFE_PROPOSAL_CREATION_FAILURE, stage)
 	})
 })
@@ -433,8 +433,7 @@ for (const { description, gas, contractCreationSimulationOutcome } of safeContra
 		configureSafe()
 		const simulator = await assertSafeFailureKeptThroughRefresh(await createSafeContractCreationParams(gas), (pending, stage) => {
 			assert.equal(getFailureMessage(pending.transactionToSimulate), SAFE_UNSUPPORTED_TRANSACTION_MESSAGES['contract-creation'], stage)
-			assert.equal(pending.safeProposalCreationFailed, undefined, stage)
-			assert.equal(pending.unsupportedSafeRequest, true, stage)
+			assert.deepEqual(pending.safeFlow, { kind: 'unsupportedSafeRequest' }, stage)
 		}, createRecordingSimulator(contractCreationSimulationOutcome))
 		assert.equal(simulator.simulatedCalls.some((call) => call.to === undefined), false, 'the unsupported request is neither estimated nor simulated')
 	})
@@ -746,8 +745,7 @@ test('simulates a configured Gnosis Safe\'s transaction in simulation mode as th
 	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
 	const pending = await openSimulationModeConfirmation(simulator, SAFE_ADDRESS, await createTransferParams({}), websiteTabConnections)
 
-	assert.equal(pending.executeThroughSafe, true)
-	assert.equal(pending.safeTransaction, undefined, 'simulation mode stacks the transaction instead of proposing it to the Safe')
+	assert.deepEqual(pending.safeFlow, { kind: 'simulationModeSafeExecution' }, 'simulation mode stacks the transaction instead of proposing it to the Safe')
 	assert.equal(pending.transactionToSimulate.transaction.from, SAFE_ADDRESS)
 	assert.equal(pending.transactionToSimulate.transaction.maxFeePerGas, 0n, 'the Safe pays no fees')
 	assert.deepEqual(pending.transactionToSimulate.simulationOptions, SAFE_EXECUTION_SIMULATION_OPTIONS)
@@ -882,7 +880,7 @@ test('simulates a configured Gnosis Safe that the page names as the sender, whil
 	const simulator = createRecordingSimulator()
 	const pending = await openSimulationModeConfirmation(simulator, ORDINARY_ACCOUNT, await createTransferParams({ from: addressString(SAFE_ADDRESS) }), createWebsiteTabConnections([]))
 
-	assert.equal(pending.executeThroughSafe, undefined, 'owner approval is only assumed for the Safe the user is simulating as')
+	assert.deepEqual(pending.safeFlow, { kind: 'ordinary' }, 'owner approval is only assumed for the Safe the user is simulating as')
 	assert.equal(pending.transactionToSimulate.transaction.from, SAFE_ADDRESS, 'the page\'s sender is simulated as before')
 	assert.equal(pending.transactionToSimulate.simulationOptions?.executeThroughSafe, undefined)
 	assert.equal(simulator.simulatedCalls.some((call) => call.from === SAFE_EXECUTION_SIMULATION_EXECUTOR), false, 'no executor calls the Safe\'s execTransaction')

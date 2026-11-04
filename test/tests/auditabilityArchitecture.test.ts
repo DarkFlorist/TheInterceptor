@@ -46,9 +46,8 @@ const hasDuplicatedSafePendingFlowDiscriminant = (source: string) => {
 	}
 	const normalizedSource = source.replace(/\s+/gu, ' ')
 	return [
-		/\b([A-Za-z_$][A-Za-z0-9_$]*)\.type === 'Transaction' && ([A-Za-z_$][A-Za-z0-9_$]*)\.safeExecutionOriginalRequestParameters(?: !== undefined|\?\.)/gu,
+		/\b([A-Za-z_$][A-Za-z0-9_$]*)\.type === 'Transaction' && ([A-Za-z_$][A-Za-z0-9_$]*)\.safeFlow\.(?:kind|state) [!=]==/gu,
 		/\b([A-Za-z_$][A-Za-z0-9_$]*)\.type === 'SignableMessage' && ([A-Za-z_$][A-Za-z0-9_$]*)\.safeMessageCoSignSnapshot(?: !== undefined|\?\.)/gu,
-		/\b([A-Za-z_$][A-Za-z0-9_$]*)\.type === 'Transaction' && ([A-Za-z_$][A-Za-z0-9_$]*)\.safeTransaction(?: !== undefined|\?\.)/gu,
 	].some((discriminant) => Array.from(normalizedSource.matchAll(discriminant)).some((match) => {
 		const typeOwner = match[1]
 		const safeFieldOwner = match[2]
@@ -58,7 +57,7 @@ const hasDuplicatedSafePendingFlowDiscriminant = (source: string) => {
 
 const hasRawSafeFieldAfterTransactionNarrowing = (source: string) => {
 	const normalizedSource = source.replace(/\s+/gu, ' ')
-	return /\b([A-Za-z_$][A-Za-z0-9_$]*)\.type !== 'Transaction'.{0,3000}\b\1\.(?:safeExecutionOriginalRequestParameters|safeTransaction)\b/u.test(normalizedSource)
+	return /\b([A-Za-z_$][A-Za-z0-9_$]*)\.type !== 'Transaction'.{0,3000}\b\1\.safeFlow\.(?:kind|state|safeExecutionOriginalRequestParameters|safeTransaction)\b/u.test(normalizedSource)
 }
 
 const getDeclaredPopupHandlerMethods = async (source: Bun.BunFile) => {
@@ -142,16 +141,16 @@ test('Safe pending flow discrimination has one owner', () => {
 	assert.match(safePendingFlowSource, /kind: 'proposal'/u)
 	assert.equal(hasDuplicatedSafePendingFlowDiscriminant(`
 		candidate.type === 'Transaction'
-			&& candidate.safeTransaction?.safeAddress !== undefined
+			&& candidate.safeFlow.kind === 'proposal'
 	`), true)
 	assert.equal(hasRawSafeFieldAfterTransactionNarrowing(`
 		if (candidate.type !== 'Transaction') return
-		use(candidate.safeTransaction)
+		use(candidate.safeFlow.safeTransaction)
 	`), true)
 	assert.equal(hasDuplicatedSafePendingFlowDiscriminant(`
 		const alias = candidate
 		candidate.type === 'Transaction'
-			&& alias.safeTransaction !== undefined
+			&& alias.safeFlow.state === 'created'
 	`), true)
 	assert.equal(hasDuplicatedSafePendingFlowDiscriminant(safeConfirmationResolverSource), false)
 	assert.equal(hasDuplicatedSafePendingFlowDiscriminant(safeConfirmationPersistenceSource), false)
@@ -161,7 +160,7 @@ test('Safe pending flow discrimination has one owner', () => {
 	assert.equal(hasDuplicatedSafePendingFlowDiscriminant(popupMessageHandlersSource), false)
 	assert.equal(hasDuplicatedSafePendingFlowDiscriminant(confirmTransactionPageSource), false)
 	assert.equal(hasRawSafeFieldAfterTransactionNarrowing(refreshPopupSimulationSource), false)
-	assert.doesNotMatch(confirmTransactionPageSource, /currentPendingTransactionOrSignableMessage\.value\.(?:safeExecutionOriginalRequestParameters|safeTransaction)/u)
+	assert.doesNotMatch(confirmTransactionPageSource, /currentPendingTransactionOrSignableMessage\.value\.safeFlow/u)
 })
 
 
