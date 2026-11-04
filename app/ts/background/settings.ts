@@ -224,7 +224,7 @@ export function settingsOnAdmittedRpcNetwork(snapshot: AdmittedRpcNetworkSnapsho
 	return snapshot.status === 'available' ? withActiveRpcNetwork(snapshot.storedFields, snapshot.admittedRpcNetwork.activeRpcNetwork) : undefined
 }
 
-// Settings published (and reconciled, which then only revokes) when they cannot be read back: without website approvals, so revoked approvals are never republished.
+// Settings a committing operation publishes when it cannot read them back: without website approvals, so revoked approvals are never republished. This limits only the publication; access reconciliation decides with its own read inside its lock, and only when that read also fails does it use these settings, revoke-only (see reconcileWebsiteApprovalAccesses).
 export const settingsWithoutApprovals = (settings: Settings): Settings => ({ ...settings, websiteAccess: [] })
 
 // Projection for settings that must still be published when they cannot be read back: `fallback` without website approvals.
