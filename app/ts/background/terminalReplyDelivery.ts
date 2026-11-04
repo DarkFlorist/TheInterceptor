@@ -110,6 +110,12 @@ export async function deliverQueuedTerminalReplyOnce(websiteTabConnections: Webs
 	return await attemptDeliveryAfterManifestV2Reconnect(websiteTabConnections, queuedReply, deliver)
 }
 
+// Delivers the reply a flow just queued. A request already answered (its removal failed after its reply was queued) is not answered again: only its own reply still waiting in the queue is delivered.
+export async function deliverOwnQueuedTerminalReply(websiteTabConnections: WebsiteTabConnections, reply: InterceptedRequestForward, queued: 'queued' | 'already-answered') {
+	if (queued === 'queued') return await attemptQueuedTerminalReplyDelivery(websiteTabConnections, reply)
+	return await deliverQueuedTerminalReplyOnce(websiteTabConnections, reply.uniqueRequestIdentifier)
+}
+
 export async function queueTerminalReplyAndAttemptDelivery(websiteTabConnections: WebsiteTabConnections, message: InterceptedRequestForward) {
 	await queueTerminalReply(message)
 	return await attemptQueuedTerminalReplyDelivery(websiteTabConnections, message)

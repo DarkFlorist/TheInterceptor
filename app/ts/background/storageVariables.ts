@@ -57,6 +57,10 @@ export async function getPendingTransactionsAndMessages(): Promise<readonly Pend
 	return await pendingRequestTerminalStateSemaphore.execute(readPendingTransactionsAndMessagesWithRecovery)
 }
 
+export async function getPendingTransactionOrMessage(uniqueRequestIdentifier: UniqueRequestIdentifier) {
+	return (await getPendingTransactionsAndMessages()).find((pending) => doesUniqueRequestIdentifiersMatch(pending.uniqueRequestIdentifier, uniqueRequestIdentifier))
+}
+
 export const clearPendingTransactions = async () => await updatePendingTransactionOrMessages(async () => [])
 async function updatePendingTransactionOrMessages(update: (pendingTransactionsOrMessages: readonly PendingTransactionOrSignableMessage[]) => Promise<readonly PendingTransactionOrSignableMessage[]>) {
 	return await pendingRequestTerminalStateSemaphore.execute(async () => {
