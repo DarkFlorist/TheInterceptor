@@ -223,7 +223,7 @@ type WhenClaimed = 'finish-again' | 'nothing' | { readonly decline: DeclineReaso
 const RESOLUTION_RETRYING_ERROR_NAME = 'ResolutionRetrying'
 // afterClaiming runs as soon as the claim is taken, before any lookup that can fail.
 type ClaimOptions = { readonly whenClaimed?: WhenClaimed, readonly retryActionWhenFinishingRetries?: true, readonly afterClaiming?: () => Promise<void> }
-export async function withResolutionClaim<Result>(uniqueRequestIdentifier: UniqueRequestIdentifier, context: ResolutionContext, resolve: () => Promise<Result>, options: ClaimOptions = {}) {
+export async function withResolutionClaim<Result>(uniqueRequestIdentifier: UniqueRequestIdentifier, context: ResolutionContext, resolve: (pending: PendingTransactionOrSignableMessage) => Promise<Result>, options: ClaimOptions = {}) {
 	const whenClaimed = options.whenClaimed ?? 'nothing'
 	const claim = getUniqueRequestIdentifierString(uniqueRequestIdentifier)
 	// The one gate of automatic attempts: none runs once the request's retry budget is spent; only a user action or the first startup pass renews it.
@@ -247,7 +247,7 @@ export async function withResolutionClaim<Result>(uniqueRequestIdentifier: Uniqu
 		await options.afterClaiming?.()
 		const outcome = await finishCommittedRequest(uniqueRequestIdentifier, context)
 		switch (outcome.kind) {
-			case 'uncommitted': return await resolve()
+			case 'uncommitted': return await resolve(outcome.request)
 			case 'absent': return false
 			case 'finished': return outcome.delivered
 			case 'retrying': {

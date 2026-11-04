@@ -393,9 +393,12 @@ async function resolvePendingRequest(ethereum: EthereumClientService, tokenPrice
 		await removePendingRequestAndUpdateView()
 		return await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, { ...pendingTransactionOrMessage.originalRequestParameters, ...message, uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
 	}
-	if (confirmation.data.action === 'addToSafeStack') {
-		if (pendingTransactionOrMessage.approvalStatus.status === 'WaitingForSigner') return false
-		const safeReply = await persistUnsignedSafeTransaction(ethereum, pendingTransactionOrMessage)
+	// The request as the Gnosis Safe resolution above left it, which the Safe paths persist.
+	const requestAsReviewed = pendingTransactionOrMessage
+	// Every path that persists an outcome (a Gnosis Safe proposal, a signer's result, a forward to the signer, a stacked request) or commits a reply runs under the request's resolution claim, which first finishes a committed request and runs the path only for one still pending and uncommitted. So a reject that won never sees a later success, and a reject arriving meanwhile is deferred to the claim's release, where the commitment wins.
+	if (confirmation.data.action === 'addToSafeStack') return await withResolutionClaim(confirmation.data.uniqueRequestIdentifier, resolutionContext, async (current) => {
+		if (current.approvalStatus.status === 'WaitingForSigner') return false
+		const safeReply = await persistUnsignedSafeTransaction(ethereum, requestAsReviewed)
 		if (safeReply.status === 'error') {
 			await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (pending) => modifyObject(pending, {
 				approvalStatus: safeReply.approvalStatus,
@@ -403,14 +406,14 @@ async function resolvePendingRequest(ethereum: EthereumClientService, tokenPrice
 			await updateConfirmTransactionView(ethereum, tokenPriceService)
 			return false
 		}
-		if (safeReply.status === 'success') return reply({ type: 'result', result: safeReply.result }, safeReply.simulationStack)
+		if (safeReply.status === 'success') return await reply({ type: 'result', result: safeReply.result }, safeReply.simulationStack)
 		return false
-	}
+	})
 	if (
 		confirmation.data.action === 'accept'
 		&& pendingTransactionOrMessage.transactionOrMessageCreationStatus !== 'Simulated'
 	) return false
-	if (confirmation.data.action === 'accept' && pendingTransactionOrMessage.simulationMode === false) {
+	if (confirmation.data.action === 'accept' && pendingTransactionOrMessage.simulationMode === false) return await withResolutionClaim(confirmation.data.uniqueRequestIdentifier, resolutionContext, async () => {
 		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'WaitingForSigner' } }))
 		await updateConfirmTransactionView(ethereum, tokenPriceService)
 		const requestWasForwarded = await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, { ...signerFacingRequest, type: 'forwardToSigner', uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
@@ -424,24 +427,27 @@ async function resolvePendingRequest(ethereum: EthereumClientService, tokenPrice
 		}))
 		await updateConfirmTransactionView(ethereum, tokenPriceService)
 		return false
-	}
+	})
 	// Only a signer reply gets here for a request that is not simulated: an accept returned early, a reject or close was declined.
 	if (pendingTransactionOrMessage.transactionOrMessageCreationStatus !== 'Simulated') return await withResolutionClaim(confirmation.data.uniqueRequestIdentifier, resolutionContext, async () => await reply(formRejectMessage(METAMASK_ERROR_BLANKET_ERROR, 'The Interceptor failed to process the transaction')))
 	if (!pendingTransactionOrMessage.simulationMode) {
-		if (confirmation.data.action === 'signerIncluded') {
-			const safeReply = await resolveSafeSignerReply(ethereum, pendingTransactionOrMessage, confirmation.data.signerReply)
-			if (safeReply.status === 'error') {
-				await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (pending) => modifyObject(pending, {
-					approvalStatus: safeReply.approvalStatus,
-				}))
-				await updateConfirmTransactionView(ethereum, tokenPriceService)
-				return false
+		const signerReply = confirmation.data.action === 'signerIncluded' ? confirmation.data.signerReply : undefined
+		return await withResolutionClaim(confirmation.data.uniqueRequestIdentifier, resolutionContext, async () => {
+			if (signerReply !== undefined) {
+				const safeReply = await resolveSafeSignerReply(ethereum, requestAsReviewed, signerReply)
+				if (safeReply.status === 'error') {
+					await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (pending) => modifyObject(pending, {
+						approvalStatus: safeReply.approvalStatus,
+					}))
+					await updateConfirmTransactionView(ethereum, tokenPriceService)
+					return false
+				}
+				if (safeReply.status === 'success') return await reply({ type: 'result', result: safeReply.result }, safeReply.simulationStack)
+				return await reply({ type: 'result', result: signerReply })
 			}
-			if (safeReply.status === 'success') return reply({ type: 'result', result: safeReply.result }, safeReply.simulationStack)
-			return reply({ type: 'result', result: confirmation.data.signerReply })
-		}
-		await removePendingRequestAndUpdateView()
-		return await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, { ...signerFacingRequest, type: 'forwardToSigner', uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
+			await removePendingRequestAndUpdateView()
+			return await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, { ...signerFacingRequest, type: 'forwardToSigner', uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
+		})
 	}
 	if (confirmation.data.action === 'signerIncluded') throw new Error('Signer included transaction that was in simulation')
 

@@ -1154,4 +1154,99 @@ test('closing a tab before the simulation services exist still finishes its comm
 	assert.deepEqual((await modules.getPendingTransactionsAndMessages()).map((pending) => pending.uniqueRequestIdentifier.requestId), [2])
 })
 
+// The resolutions that persist an outcome besides the stack (a Gnosis Safe proposal, a signer's result) and the reply each gives the website.
+const outcomePersistingResolutions = [
+	{
+		name: 'adding a Gnosis Safe proposal to its stack',
+		prepare: async () => {
+			const { safeTxHash } = await storeSafeProposalRequest({ status: 'WaitingForUser' })
+			return { data: { action: 'addToSafeStack' as const, uniqueRequestIdentifier }, result: modules.EthereumBytes32.serialize(safeTxHash) }
+		},
+	},
+	{
+		name: 'a Gnosis Safe owner signature',
+		prepare: async () => {
+			await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeSimulationSignerAddress: safeTestOwnerAddress })])
+			const { safeTx, safeTxHash } = await storeSafeProposalRequest({ status: 'WaitingForSigner' })
+			const signature = await safeTestOwnerAccount.signTypedData(EIP712Message.parse(safeTxToTypedDataJson(safeTx)))
+			return { data: { action: 'signerIncluded' as const, signerReply: signature, uniqueRequestIdentifier }, result: modules.EthereumBytes32.serialize(safeTxHash) }
+		},
+	},
+	{
+		name: 'a signer\'s transaction hash',
+		prepare: async () => {
+			await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [{ ...pendingTransaction, simulationMode: false, approvalStatus: { status: 'WaitingForSigner' } }] })
+			const signerReply = modules.EthereumBytes32.serialize(signedTransaction.hash)
+			return { data: { action: 'signerIncluded' as const, signerReply, uniqueRequestIdentifier }, result: signerReply }
+		},
+	},
+] as const
+
+const rejectRequest = async (websiteTabConnections: ReturnType<typeof connectRequestingWebsite>['websiteTabConnections']) => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+	method: 'popup_confirmDialog',
+	data: { action: 'reject', errorString: undefined, uniqueRequestIdentifier },
+})
+
+// Nothing the resolution persists besides its reply: no Gnosis Safe proposal and no simulation stack entry.
+async function assertNoOutcomePersisted() {
+	assert.deepEqual((await modules.getSafeTransactionStacks()).flatMap((stack) => stack.transactions), [])
+	assert.deepEqual((await modules.getInterceptorTransactionStack()).operations, [])
+}
+
+for (const resolution of outcomePersistingResolutions) {
+	test(`a reject that wins while ${ resolution.name } waits on its read of the request leaves it without effect`, async () => {
+		const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
+		const { data } = await resolution.prepare()
+		// Pauses the resolution right after it read the pending request.
+		let pauseNextPendingRead = true
+		let signalPaused: (() => void) | undefined
+		const paused = new Promise<void>((resolve) => { signalPaused = resolve })
+		let resume: (() => void) | undefined
+		const resumed = new Promise<void>((resolve) => { resume = resolve })
+		browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+			const items = readStoredItems()
+			if (!pauseNextPendingRead || !Array.isArray(keys) || !keys.includes('pendingTransactionsAndMessages')) return items
+			pauseNextPendingRead = false
+			signalPaused?.()
+			await resumed
+			return items
+		})
+		try {
+			const resolving = withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data }))
+			await paused
+			assert.equal(await withSilencedConsole(async () => await rejectRequest(websiteTabConnections)), true)
+			assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+			resume?.()
+			assert.equal(await resolving, false)
+		} finally {
+			browserMock.setStorageGetHandler(undefined)
+		}
+
+		const replies = getRepliesToWebsite(postedMessages)
+		assert.equal(replies.length, 1, 'no second reply')
+		const [rejection] = replies
+		if (!isRecord(rejection) || !isRecord(rejection.error)) throw new Error('Missing rejection sent to the website')
+		assert.equal(rejection.error.code, METAMASK_ERROR_USER_REJECTED_REQUEST)
+		assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+		assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+		await assertNoOutcomePersisted()
+	})
+
+	test(`a reject after ${ resolution.name } completed does nothing`, async () => {
+		const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
+		const { data, result } = await resolution.prepare()
+		assert.equal(await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data })), true)
+		assert.equal(await withSilencedConsole(async () => await rejectRequest(websiteTabConnections)), false)
+
+		const replies = getRepliesToWebsite(postedMessages)
+		assert.equal(replies.length, 1, 'exactly one reply')
+		const [success] = replies
+		if (!isRecord(success)) throw new Error('Missing reply to the website')
+		assert.equal(success.result, result)
+		assert.equal('error' in success, false)
+		assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+		assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+	})
+}
+
 await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
