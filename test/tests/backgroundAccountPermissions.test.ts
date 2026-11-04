@@ -1400,6 +1400,45 @@ describe('background eth_accounts', () => {
 		}
 	})
 
+	test('a committed active-address switch is still reconciled, and its read-back failure surfaced, when the read-back repair write rejects', async () => {
+		installBrowserMock()
+		const { changeActiveAddressAndChain, changeSimulationMode, getRequiredSettings, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, websiteSocketToString } = await loadModules()
+		const approvedAddress = 0x6464646464646464646464646464646464646464n
+		const unapprovedAddress = 0x6565656565656565656565656565656565656565n
+		const website = { websiteOrigin: 'https://switch-read-back.example', icon: undefined, title: undefined }
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: approvedAddress })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: approvedAddress, access: true }] }])
+		const socket = { tabId: 137, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const connection = { port, socket, websiteOrigin: website.websiteOrigin, approved: true, wantsToConnect: false }
+		const websiteTabConnections = new Map([[socket.tabId, { connections: { [websiteSocketToString(socket)]: connection } }]])
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		const writeStorageDirectly = browser.storage.local.set
+		let repairWritesFail = false
+		const originalWarn = console.warn
+		const originalError = console.error
+		console.warn = () => undefined
+		console.error = () => undefined
+		// Right after the transition's write the opened page is corrupted, and every repair write of it fails, so the post-commit read-back rejects.
+		await withStorageWrites(async (items, write) => {
+			if (repairWritesFail && 'openedPageV2' in items) throw new Error('Repair write failed')
+			await write()
+			if (!('independentActiveSimulationAddress' in items) || repairWritesFail) return
+			await writeStorageDirectly(CORRUPT_OPENED_PAGE)
+			repairWritesFail = true
+		}, async () => await assert.rejects(changeActiveAddressAndChain(simulationServicesOwner, websiteTabConnections, { simulationMode: true, activeAddress: unapprovedAddress, promptForAccessesIfNeeded: false }), /Repair write failed/)).finally(() => {
+			console.warn = originalWarn
+			console.error = originalError
+		})
+
+		console.warn = () => undefined
+		const persistedSettings = await getRequiredSettings().finally(() => { console.warn = originalWarn })
+		assert.equal(persistedSettings.activeSimulationAddress, unapprovedAddress)
+		assert.equal(connection.approved, false)
+		assert.equal(messages.some((message) => message.method === 'disconnect'), true)
+	})
+
 	test('a committed revocation unapproves the website when settings are unreadable afterwards', async () => {
 		installBrowserMock()
 		const { changeSimulationMode, persistWebsiteAccessChange, updateWebsiteAccess, websiteSocketToString } = await loadModules()

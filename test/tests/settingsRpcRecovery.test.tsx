@@ -22,8 +22,11 @@ const storedItems: Record<string, unknown> = {}
 let everyStorageReadError: Error | undefined
 // While set, the next read of `key` waits for `settled`, then rejects with the error it settles to, or reads normally when it settles to undefined.
 let heldRead: { readonly key: string, readonly settled: Promise<Error | undefined> } | undefined
+// While set, every write of `key` rejects with `error`.
+let failingWrite: { readonly key: string, readonly error: Error } | undefined
 
 type RuntimeListener = (message: unknown) => unknown
+const noopEvent = { addListener: () => undefined, removeListener: () => undefined }
 const runtimeListeners = new Set<RuntimeListener>()
 const backgroundFailures: unknown[] = []
 let openSettingsInBackground: () => Promise<void> = async () => undefined
@@ -54,6 +57,9 @@ Object.defineProperty(globalThis, 'browser', {
 				removeListener: (listener: RuntimeListener) => { runtimeListeners.delete(listener) },
 			},
 		},
+		// Listener registrations made when the background message entry point is imported.
+		windows: { onRemoved: noopEvent },
+		tabs: { onRemoved: noopEvent, onUpdated: noopEvent },
 		storage: {
 			local: {
 				async get(keys: string | readonly string[]) {
@@ -67,7 +73,10 @@ Object.defineProperty(globalThis, 'browser', {
 					}
 					return Object.fromEntries(requestedKeys.filter((key) => key in storedItems).map((key) => [key, storedItems[key]]))
 				},
-				async set(items: Record<string, unknown>) { Object.assign(storedItems, items) },
+				async set(items: Record<string, unknown>) {
+					if (failingWrite !== undefined && failingWrite.key in items) throw failingWrite.error
+					Object.assign(storedItems, items)
+				},
 				async remove() { return undefined },
 			},
 		},
@@ -76,6 +85,7 @@ Object.defineProperty(globalThis, 'browser', {
 Object.defineProperty(globalThis, 'chrome', { configurable: true, writable: true, value: { runtime: { id: 'test-extension' } } })
 
 const { settingsOpened } = await import('../../app/ts/background/popupMessageHandlers/settings.js')
+const { handlePopupRuntimeMessage } = await import('../../app/ts/background/popupMessageRouting.js')
 const { createSimulationServicesOwner } = await import('../../app/ts/simulation/serviceLifecycle.js')
 const { SettingsView } = await import('../../app/ts/components/pages/SettingsView.js')
 const { serializeLocalStorageItems } = await import('../../app/ts/utils/storageUtils.js')
@@ -104,6 +114,7 @@ afterEach(() => {
 	for (const key of Object.keys(storedItems)) delete storedItems[key]
 	everyStorageReadError = undefined
 	heldRead = undefined
+	failingWrite = undefined
 	backgroundFailures.length = 0
 })
 
@@ -142,6 +153,28 @@ const renderSettingsView = async (dom: ReturnType<typeof installDomMock>) => {
 	})
 	await flushAsyncWork()
 }
+
+test('Settings opened through the background message entry point while a corrupt field cannot be repaired shows the RPC recovery controls', async () => {
+	const owner = createSimulationServicesOwner(undefined, async () => undefined, async (_ethereum, error) => { throw error })
+	// The real entry point: its admission settings read rejects before popup_requestSettings is dispatched.
+	openSettingsInBackground = async () => { await handlePopupRuntimeMessage(new Map(), owner, { method: 'popup_requestSettings' }, async () => undefined) }
+	storeReadableRpcConfiguration()
+	storedItems.openedPageV2 = 'not-a-page'
+	failingWrite = { key: 'openedPageV2', error: new Error('Repair write failed') }
+	const dom = installDomMock()
+	try {
+		await withSilencedWarnings(async () => await renderSettingsView(dom))
+
+		assert.equal(backgroundFailures.length > 0, true, 'the background request itself failed')
+		const alert = findRpcAlert(dom.document.body)
+		assert.match(alert?.textContent ?? '', /could not safely read your RPC configuration/)
+		assert.deepEqual(collectElements(alert, 'button').map((button) => button.textContent), ['Retry reading RPC configuration', 'Restore bundled default RPC list'])
+	} finally {
+		render(null, dom.document.body)
+		dom.restore()
+		owner.clear()
+	}
+})
 
 test('a Settings request whose preference read fails never leaves its older outage shown over the newer available RPC list', async () => {
 	const owner = createSimulationServicesOwner(configuredRpc, async () => undefined, async (_ethereum, error) => { throw error })

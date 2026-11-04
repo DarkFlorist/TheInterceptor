@@ -18,6 +18,8 @@ let dynamicRuleUpdateError: Error | undefined
 let addressBookBroadcastWait: Promise<void> | undefined
 let afterStorageWrite: ((items: Record<string, unknown>) => void) | undefined
 let contentScriptRegistrationWait: { readonly started: () => void, readonly release: Promise<void> } | undefined
+// While set, the next approvals-only read (the bare 'websiteAccess' key) rejects with it.
+let nextApprovalsReadError: Error | undefined
 
 const registeredContentScripts = [
 	{ id: 'inpage', excludeMatches: ['*://*.disabled.test/*'] },
@@ -44,6 +46,11 @@ Reflect.set(globalThis, 'browser', {
 			async get(keys?: string | string[] | Record<string, unknown> | null) {
 				if (keys === undefined || keys === null) return { ...storageState }
 				if (Array.isArray(keys)) return Object.fromEntries(keys.filter((key) => key in storageState).map((key) => [key, storageState[key]]))
+				if (keys === 'websiteAccess' && nextApprovalsReadError !== undefined) {
+					const error = nextApprovalsReadError
+					nextApprovalsReadError = undefined
+					throw error
+				}
 				if (typeof keys === 'string') return keys in storageState ? { [keys]: storageState[keys] } : {}
 				return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
 			},
@@ -187,6 +194,7 @@ beforeEach(() => {
 	addressBookBroadcastWait = undefined
 	afterStorageWrite = undefined
 	contentScriptRegistrationWait = undefined
+	nextApprovalsReadError = undefined
 	for (const key of Object.keys(storageState)) delete storageState[key]
 	sentMessages.splice(0, sentMessages.length)
 	dynamicRuleUpdates.splice(0, dynamicRuleUpdates.length)
@@ -632,6 +640,33 @@ describe('popup message dispatcher seams', () => {
 
 		assert.equal(connection.approved, false)
 		assert.equal(messages.some((message) => message.method === 'accountsChanged' && Array.isArray(message.result) && message.result.length > 0), false)
+	})
+
+	test('a settings import that denies an approved website unapproves it even when the content-script update fails, and surfaces that failure', async () => {
+		const websiteOrigin = 'denied-by-import.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const activeAddress = settings.activeSimulationAddress ?? 0n
+		const context = createDispatcherContext(async () => undefined)
+		// The exported settings deny the website; it is approved again before the import.
+		await updateWebsiteAccess(() => [{ website, access: false, addressAccess: undefined }])
+		const exportedSettings = await exportSettingsAndAddressBook()
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: activeAddress, access: true }] }])
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const connection = { port, socket, websiteOrigin, approved: true, wantsToConnect: false }
+		context.websiteTabConnections = new Map([[socket.tabId, { connections: { [websiteSocketToString(socket)]: connection } }]])
+		// Once the imported approvals are persisted, the content-script update's approvals read fails.
+		afterStorageWrite = (items) => {
+			if (!('websiteAccess' in items)) return
+			afterStorageWrite = undefined
+			nextApprovalsReadError = new Error('Approvals read failed')
+		}
+
+		await assert.rejects(dispatchPopupMessage(context, { method: 'popup_import_settings', data: { fileContents: JSON.stringify(serialize(ExportedSettings, exportedSettings)) } }), /Approvals read failed/)
+
+		assert.equal((await getRequiredSettings()).websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin)?.access, false)
+		assert.equal(connection.approved, false)
+		assert.equal(messages.some((message) => message.method === 'disconnect'), true)
 	})
 
 	test.each([

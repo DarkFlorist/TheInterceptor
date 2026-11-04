@@ -255,6 +255,47 @@ describe('active settings concurrency', () => {
 		assert.deepEqual(messages.filter(({ method }) => method === 'chainChanged').map(({ result }) => result), ['0xa'])
 	})
 
+	test('a recovered RPC configuration whose settings read-back rejects still fails every runtime approval closed before the failure is thrown', async () => {
+		installBrowserMock()
+		const { changeSimulationMode, publishRpcConfigurationRecovery, setRpcConfiguration, updateWebsiteAccess, websiteSocketToString } = await loadModules()
+		await changeSimulationMode({ simulationMode: false })
+		const websiteOrigin = 'recovery-read-back.test'
+		await updateWebsiteAccess(() => [{ website: { websiteOrigin }, access: true }])
+		const recoveredNetwork = { name: 'Recovered network', chainId: 10n, httpsRpc: 'https://recovered.invalid', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: true } satisfies RpcEntry
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const connection = { port, socket, websiteOrigin, approved: true, wantsToConnect: false }
+		const connections: WebsiteTabConnections = new Map([[socket.tabId, { connections: { [websiteSocketToString(socket)]: connection } }]])
+		const { ethereum, tokenPriceService } = createEthereumWithGetBlockCounter({ count: 0 })
+		const owner = createTestSimulationServicesOwner({ ethereum, tokenPriceService }, () => ({ ethereum, tokenPriceService }))
+		await setRpcConfiguration([recoveredNetwork], recoveredNetwork)
+		// A corrupt opened page whose repair write fails makes every settings read after the RPC configuration write reject.
+		await browser.storage.local.set({ openedPageV2: 'not-a-page' })
+		const originalStorageSet = browser.storage.local.set
+		Object.defineProperty(browser.storage.local, 'set', {
+			configurable: true,
+			value: async (items: Record<string, unknown>) => {
+				if ('openedPageV2' in items) throw new Error('Repair write failed')
+				await originalStorageSet(items)
+			},
+		})
+		const originalWarn = console.warn
+		const originalError = console.error
+		console.warn = () => undefined
+		console.error = () => undefined
+		try {
+			// Recovery from an unreadable configuration passes no previous settings, so nothing is read before the recovery's own read-back.
+			await assert.rejects(publishRpcConfigurationRecovery(owner, connections, undefined, recoveredNetwork), /Repair write failed/)
+		} finally {
+			Object.defineProperty(browser.storage.local, 'set', { configurable: true, value: originalStorageSet })
+			console.warn = originalWarn
+			console.error = originalError
+		}
+
+		assert.equal(connection.approved, false)
+		assert.equal(messages.some(({ method }) => method === 'disconnect'), true)
+	})
+
 	test('publishes RPC configuration recovery after an active settings transition in flight, never before it', async () => {
 		const { runtimeMessages } = installBrowserMock()
 		const { changeActiveAddressAndChain, changeSimulationMode, getRequiredSettings, publishRpcConfigurationRecovery, updateUserAddressBookEntries } = await loadModules()
