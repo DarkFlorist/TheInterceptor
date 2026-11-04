@@ -13,7 +13,8 @@ import { requestIsSimulationDataConsumerOpen, sendPopupMessageToOpenWindows } fr
 import { getPopupVisualisationFingerprint } from './popupSimulationFingerprint.js'
 import { retainPreviousVisualisation } from '../utils/popupVisualisationLifecycle.js'
 import { visualizeSimulatorState } from './simulationUpdating.js'
-import { getPopupVisualisationState, setPopupVisualisationState, setPopupVisualisationStateIfCurrent } from './storageVariables.js'
+import { getPopupVisualisationState, setPopupVisualisationState } from './storageVariables.js'
+import { alwaysWrite } from '../utils/largeStateStore.js'
 import { getCommittedNetworkChangeGeneration } from './networkChangeGeneration.js'
 import { readNetworkState } from './networkTransitionLock.js'
 
@@ -144,10 +145,11 @@ export async function publishFailedPopupVisualisation() {
 	abortController.abort(NEW_BLOCK_ABORT)
 	await updateSimulationVisualisationSemaphore.execute(async () => {
 		const previous = await getPopupVisualisationState()
-		const failed = await setPopupVisualisationState({
+		// A failed provider installation retires whatever is stored, whichever network it describes, so the write is unconditioned.
+		const { results: failed } = await setPopupVisualisationState({
 			...createPassthroughCompleteVisualizedSimulation(previous.simulationId + 1, 'invalid'),
 			simulationUpdatingState: 'failed',
-		})
+		}, alwaysWrite)
 		await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState: failed } })
 	})
 }
@@ -191,7 +193,10 @@ export async function updatePopupVisualisationState(ethereum: EthereumClientServ
 			// Services captured before a network change cannot simulate a later network's stack; the refresh that follows the change publishes that network's result.
 			if (!servesSnapshotNetwork(ethereum, capturedSnapshot) || !snapshotNetworkIsActive(capturedSnapshot)) return undefined
 			// Every store and broadcast of this refresh first checks that its network is still active, so a replaced network's result never overwrites or announces over the newer network's.
-			const storeIfNetworkActive = async (state: CompleteVisualizedSimulation) => await setPopupVisualisationStateIfCurrent(state, () => snapshotNetworkIsActive(capturedSnapshot))
+			const storeIfNetworkActive = async (state: CompleteVisualizedSimulation) => {
+				const { status, results } = await setPopupVisualisationState(state, () => snapshotNetworkIsActive(capturedSnapshot))
+				return status === 'obsolete' ? undefined : results
+			}
 			const broadcastIfNetworkActive = async (visualizedSimulatorState: CompleteVisualizedSimulation) => {
 				if (snapshotNetworkIsActive(capturedSnapshot)) await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState } })
 			}

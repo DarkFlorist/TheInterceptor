@@ -578,7 +578,7 @@ describe('Gnosis Safe stack simulation', () => {
 		})
 
 		const safeMessage = createSafeMessage(fakeRpcNetwork, activeAddress, stackRecipient, operation)
-		const snapshot = await modules.captureSimulationSnapshot()
+		const { simulation: snapshot } = await (await import('../../app/ts/background/networkTransitionLock.js')).readNetworkState()
 		assert.equal(snapshot.simulationStateInput.length, seedStack ? 1 : 0)
 		assert.equal(snapshot.simulationStateInput[0]?.transactions.length, seedStack ? 1 : undefined)
 

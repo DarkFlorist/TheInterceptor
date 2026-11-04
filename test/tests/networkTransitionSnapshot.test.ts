@@ -502,21 +502,28 @@ function failFirstStorageReadAfterWrite(key: string, error: Error) {
 }
 
 describe('network transition snapshot', () => {
-	test('a retired client stays asleep when something tries to wake it', async () => {
+	test('a retired client stays asleep and publishes no connection status when something tries to wake it', async () => {
 		installBrowserMock()
 		const { makeSureInterceptorIsNotSleeping } = await import('../../app/ts/background/sleeping.js')
+		const { setRpcConnectionStatus } = await import('../../app/ts/background/storageVariables.js')
 		const retired = createNetworkServices(networkA)
 		const installed = createNetworkServices(networkB)
+		// A stored status, so a wake-up of a sleeping client publishes one.
+		await setRpcConnectionStatus({ isConnected: true, lastConnnectionAttempt: new Date(), rpcNetwork: networkB, latestBlock: undefined, retrying: false })
+		const publishedStatuses: unknown[] = []
+		const recordPublishedStatus: typeof noopPublishRpcConnectionStatus = async (_method, status) => { publishedStatuses.push(status) }
 		try {
 			retired.ethereum.cleanup()
 			retired.ethereum.setBlockPolling(true)
 			assert.equal(retired.ethereum.isBlockPolling(), false)
-			await makeSureInterceptorIsNotSleeping(retired.ethereum, noopPublishRpcConnectionStatus)
+			await makeSureInterceptorIsNotSleeping(retired.ethereum, recordPublishedStatus)
 			assert.equal(retired.ethereum.isBlockPolling(), false)
 			assert.deepEqual(retired.requests, [])
+			assert.deepEqual(publishedStatuses, [])
 
-			await makeSureInterceptorIsNotSleeping(installed.ethereum, noopPublishRpcConnectionStatus)
+			await makeSureInterceptorIsNotSleeping(installed.ethereum, recordPublishedStatus)
 			assert.equal(installed.ethereum.isBlockPolling(), true)
+			assert.equal(publishedStatuses.length, 1)
 		} finally {
 			retired.ethereum.cleanup()
 			installed.ethereum.cleanup()
@@ -553,9 +560,9 @@ describe('network transition snapshot', () => {
 			assert.ok(getSimulatedCallRecipients(servicesA).includes(STACKED_ON_A_RECIPIENT))
 			assert.ok(!getSimulatedCallRecipients(servicesA).includes(STACKED_ON_B_RECIPIENT))
 			assert.deepEqual(getSimulateV1Requests(servicesB), [])
-			// The wake-up reached the installed client, not the retired one the request still holds.
+			// The request wakes only the client it runs on, which the switch retired, so neither client polls; the installed client is woken by work on its own network.
 			assert.equal(servicesA.ethereum.isBlockPolling(), false)
-			assert.equal(servicesB.ethereum.isBlockPolling(), true)
+			assert.equal(servicesB.ethereum.isBlockPolling(), false)
 		} finally {
 			readPause.release()
 			retireAll()
@@ -1293,8 +1300,8 @@ describe('network transition snapshot', () => {
 			// The in-lock retry failed too: A's stack is still stored and websites have not been told about B yet.
 			assert.equal((await modules.getInterceptorTransactionStack()).operations.length, 1)
 			assert.deepEqual(getChainChangedResults(), [])
-			// While the repair keeps failing, no snapshot of the inconsistent state is admitted.
-			if (failures === 3) await assert.rejects(modules.readNetworkSnapshot(owner), (error) => error === failure)
+			// While the repair keeps failing, no snapshot of the inconsistent state is admitted, and the read names the unfinished network change rather than reporting the bare write failure as its own.
+			if (failures === 3) await assert.rejects(modules.readNetworkSnapshot(owner), (error: unknown) => error instanceof Error && error.message.startsWith('An earlier network change committed its settings but could not finish applying them') && error.message.endsWith(failure.message))
 			await assertCommittedNetworkBEffects(modules, owner, getChainChangedResults, 0)
 		} finally {
 			retireAll()
@@ -1747,7 +1754,7 @@ describe('network transition snapshot', () => {
 	test.each(['visualisation store', 'metadata update'] as const)('a %s whose write waits behind a large state read while an endpoint switch commits writes and broadcasts nothing', async (path) => {
 		const { modules, runtimeMessages } = await createApprovedSimulationDapp()
 		const { getCommittedNetworkChangeGeneration } = await import('../../app/ts/background/networkChangeGeneration.js')
-		const { getSafeTransactionStacks, setPopupVisualisationStateIfCurrent, updatePopupVisualisationWithCallBack } = await import('../../app/ts/background/storageVariables.js')
+		const { getSafeTransactionStacks, setPopupVisualisationState, updatePopupVisualisationWithCallBack } = await import('../../app/ts/background/storageVariables.js')
 		const { MessageToPopup } = await import('../../app/ts/types/interceptor-messages.js')
 		const networkAOnAnotherEndpoint = { ...networkA, name: 'Network A on another endpoint', httpsRpc: 'https://network-a-other.invalid' }
 		const { owner, retireAll } = createRecordingServicesOwner(networkA)
@@ -1762,7 +1769,7 @@ describe('network transition snapshot', () => {
 		const competingRead = queueBlockedLargeStateReadAfterNextVisualisationRead(getSafeTransactionStacks)
 		try {
 			const write = path === 'visualisation store'
-				? setPopupVisualisationStateIfCurrent({ ...storedBefore, simulationId: storedBefore.simulationId + 1, simulationResultState: 'invalid', simulationUpdatingState: 'updating' }, isCurrent)
+				? setPopupVisualisationState({ ...storedBefore, simulationId: storedBefore.simulationId + 1, simulationResultState: 'invalid', simulationUpdatingState: 'updating' }, isCurrent)
 				: updatePopupVisualisationWithCallBack(async (oldResults) => ({ ...oldResults, simulationId: oldResults.simulationId + 1 }), isCurrent)
 			await competingRead.blocked
 			await writeQueued.promise
@@ -1776,7 +1783,7 @@ describe('network transition snapshot', () => {
 			await competingRead.finished()
 
 			assert.equal(getWrites(), 0)
-			assert.deepEqual(result, path === 'visualisation store' ? undefined : storedBefore)
+			assert.deepEqual(result, { status: 'obsolete', results: storedBefore })
 			assert.deepEqual(await modules.getPopupVisualisationState(), storedBefore)
 			const stateChanges = runtimeMessages.slice(messagesBeforeRelease).filter((message) => {
 				const parsed = MessageToPopup.safeParse(message)
@@ -1870,7 +1877,8 @@ describe('network transition snapshot', () => {
 			assert.equal(completed.simulationState.kind, 'simulated')
 			// Like a refresh that stored its updating state and was then discarded because its network was replaced, with the same input.
 			const { setPopupVisualisationState } = await import('../../app/ts/background/storageVariables.js')
-			await setPopupVisualisationState({ ...completed, simulationId: completed.simulationId + 1, simulationUpdatingState: 'updating' })
+			const { alwaysWrite } = await import('../../app/ts/utils/largeStateStore.js')
+			await setPopupVisualisationState({ ...completed, simulationId: completed.simulationId + 1, simulationUpdatingState: 'updating' }, alwaysWrite)
 
 			await updatePopupVisualisationIfNeeded(services.ethereum, services.tokenPriceService, { skipIfUnchanged: true, snapshot: simulation })
 

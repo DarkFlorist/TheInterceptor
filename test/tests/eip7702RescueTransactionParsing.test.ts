@@ -18,13 +18,8 @@ import { Erc20ABI } from '../../app/ts/utils/abi.js'
 import { NEW_BLOCK_ABORT } from '../../app/ts/utils/constants.js'
 import { fixedServicesOwner } from './backgroundEthAccountsTestHarness.js'
 
-// Confirmation flows take the settings that belong to their client; these sequential tests read the current pair.
-const readSettings = async () => await (await import('../../app/ts/background/settings.js')).getSettings()
-// Like a request snapshot, confirmations read the settings together with the simulation stack built from them.
-const readNetworkState = async () => {
-	const settings = await readSettings()
-	return { settings, simulation: await (await import('../../app/ts/background/simulationUpdating.js')).captureSimulationSnapshot(settings) }
-}
+// Like a request snapshot, confirmations read the settings together with the simulation stack built from them, under the network transition lock.
+const readNetworkState = async () => await (await import('../../app/ts/background/networkTransitionLock.js')).readNetworkState()
 
 const zeroAddress = '0x0000000000000000000000000000000000000000'
 const recipientAddress = '0x0000000000000000000000000000000000000002'

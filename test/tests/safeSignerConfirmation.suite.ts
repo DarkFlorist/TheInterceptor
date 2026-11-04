@@ -4,13 +4,8 @@ import { test } from 'bun:test'
 import { getLatestUnexpectedError } from '../../app/ts/background/storageVariables.js'
 import { activeAddress, addressString, browserMock, createSafeAddressBookEntry, createSafeTx, createWebsitePort, EIP712Message, ethereum, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, pendingTransaction, recipientAddress, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, simulator, uniqueRequestIdentifier } from './confirmTransactionTestHarness.js'
 
-// Confirmation flows take the settings that belong to their client; these sequential tests read the current pair.
-const readSettings = async () => await (await import('../../app/ts/background/settings.js')).getSettings()
-// Like a request snapshot, confirmations read the settings together with the simulation stack built from them.
-const readNetworkState = async () => {
-	const settings = await readSettings()
-	return { settings, simulation: await (await import('../../app/ts/background/simulationUpdating.js')).captureSimulationSnapshot(settings) }
-}
+// Like a request snapshot, confirmations read the settings together with the simulation stack built from them, under the network transition lock.
+const readNetworkState = async () => await (await import('../../app/ts/background/networkTransitionLock.js')).readNetworkState()
 
 test('maps signer account refresh replies into Safe confirmation selections', () => {
 	const walletError = Object.assign(new Error('Wallet account verification failed.'), { code: 4001 })
@@ -169,6 +164,7 @@ test('keeps a disconnected Safe proposal reviewable and attaches the owner after
 	}, 0n)
 	fakeSafeContract.transactionHash = BigInt(getSafeTxHash(safeTx))
 	const preparation = await prepareSafeTransactionConfirmation(simulator.ethereum, { kind: 'transaction', parameters: transactionParams }, false, activeAddress, undefined)
+	if (preparation.rejection !== undefined) throw new Error('Expected the Gnosis Safe transaction to be prepared')
 	const website = { websiteOrigin: 'https://disconnected-safe.example', icon: undefined, title: 'Disconnected Safe' }
 	const transactionToSimulate = await modules.formEthSendTransaction(
 		simulator.ethereum,

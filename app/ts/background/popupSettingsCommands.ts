@@ -8,7 +8,7 @@ import { popupMessageHandler, type PopupMessageDispatcherContext, type PopupMess
 import { getSettings } from './settings.js'
 import { changeActiveAddress, enableSimulationMode, modifyMakeMeRich, popupChangeActiveRpc } from './popupMessageHandlers.js'
 import { queuePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
-import { readNetworkSnapshot } from './networkTransition.js'
+import { readNetworkSnapshot } from './networkTransitionLock.js'
 
 const settingsCoordinator = createPopupSettingsCoordinator(async (data) => await sendPopupMessageToOpenWindows({ method: 'popup_settingsChangeStatus', data }))
 

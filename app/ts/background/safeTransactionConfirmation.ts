@@ -25,17 +25,14 @@ type PendingSafeFields = {
 	readonly executeThroughSafe: true
 }
 
-export type SafeTransactionConfirmationPreparation = {
+type PreparedSafeTransactionConfirmation = {
+	readonly rejection: undefined
 	readonly effectiveTransactionParams: SendTransactionParams | SendRawTransactionParams
 	readonly transactionExecutor: bigint
 	readonly gasPayment: TransactionGasPayment
 	readonly preparationMessage: string | undefined
-	// Reconciliation removed executed Gnosis Safe operations from storage, so a stack read before preparation is out of date.
-	readonly storedSafeStackReconciled: boolean
-	readonly rejection: {
-		readonly code: number
-		readonly message: string
-	} | undefined
+	// What reconciling the stored Gnosis Safe stack with the Safe's on-chain nonce changed: 'removed-executed-operations' when it dropped operations the Safe has executed, so a stack read before preparation is out of date; 'unchanged' when it changed nothing or there was nothing to reconcile.
+	readonly storedSafeStackChange: 'removed-executed-operations' | 'unchanged'
 	readonly finalize: (
 		transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed,
 		tabId: number,
@@ -46,6 +43,16 @@ export type SafeTransactionConfirmationPreparation = {
 		readonly pendingSafeFields: PendingSafeFields | undefined
 	}>
 }
+
+// A request the Gnosis Safe cannot make; it is rejected before anything is prepared or reconciled.
+type RejectedSafeTransactionConfirmation = {
+	readonly rejection: {
+		readonly code: number
+		readonly message: string
+	}
+}
+
+export type SafeTransactionConfirmationPreparation = PreparedSafeTransactionConfirmation | RejectedSafeTransactionConfirmation
 
 /**
  * In simulation mode, a transaction the user sends as a Gnosis Safe runs the way the Safe runs it on-chain: through the Safe's execTransaction, sent by an executor that pays the fees (safe/safeExecutionSimulation.ts). That assumes the Safe's owners approved it, so it is only assumed for the Safe the user is simulating as: the sender formEthSendTransaction simulates, the page's `from` or else the active address, must be the active address, which must be a Gnosis Safe configured on this chain. A page naming another configured Safe as `from` gets the ordinary simulation of that sender.
@@ -85,7 +92,7 @@ export async function prepareSafeTransactionConfirmation(
 		// A contract creation is not rejected here: createSafeSigningRequestForTransaction fails it once the transaction is formed, so the window shows the failure.
 		const unsupportedReason = getSafeUnsupportedRequestReason(transactionParams)
 		if (unsupportedReason === 'raw-transaction' || unsupportedReason === 'eip-7702-authorization') {
-			return createRejectedPreparation(activeAddress, transactionParams, SAFE_UNSUPPORTED_TRANSACTION_MESSAGES[unsupportedReason])
+			return createRejectedPreparation(SAFE_UNSUPPORTED_TRANSACTION_MESSAGES[unsupportedReason])
 		}
 	}
 
@@ -151,7 +158,7 @@ export async function prepareSafeTransactionConfirmation(
 		transactionExecutor: safeExecutionSignerRoute?.executor ?? activeAddress,
 		gasPayment: executeThroughSafe ? 'simulated-safe-executor' : safeEntry === undefined && !isDirectSafeExecution ? 'transaction-sender' : 'external-executor',
 		preparationMessage: directSignerSelectionMessage ?? executionPreparationMessage ?? reconciliationMessage,
-		storedSafeStackReconciled: reconciledStoredSafeState !== undefined,
+		storedSafeStackChange: reconciledStoredSafeState?.removedExecutedOperations === true ? 'removed-executed-operations' : 'unchanged',
 		rejection: undefined,
 		async finalize(transactionToSimulate, tabId) {
 			let finalizedTransaction = transactionToSimulate
@@ -243,27 +250,8 @@ async function createFailedSafeTransaction(
 	}
 }
 
-function createRejectedPreparation(
-	activeAddress: bigint,
-	transactionParams: SendTransactionParams | SendRawTransactionParams,
-	message: string,
-): SafeTransactionConfirmationPreparation {
-	return {
-		effectiveTransactionParams: transactionParams,
-		transactionExecutor: activeAddress,
-		gasPayment: 'transaction-sender',
-		preparationMessage: undefined,
-		storedSafeStackReconciled: false,
-		rejection: { code: METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER, message },
-		async finalize(transactionToSimulate) {
-			return {
-				transactionToSimulate,
-				safeTransaction: undefined,
-				approvalStatus: undefined,
-				pendingSafeFields: undefined,
-			}
-		},
-	}
+function createRejectedPreparation(message: string): RejectedSafeTransactionConfirmation {
+	return { rejection: { code: METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER, message } }
 }
 
 async function createSafeSigningRequestForTransaction(

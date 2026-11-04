@@ -851,8 +851,8 @@ export async function openConfirmTransactionDialogForTransaction(
 	if (safePreparation.rejection !== undefined) {
 		return formRejectMessage(safePreparation.rejection.code, safePreparation.rejection.message)
 	}
-	// Reconciliation removed executed Gnosis Safe operations from storage, so simulate with the stack as it is now while the request's chain and stack context are still active.
-	const network = safePreparation.storedSafeStackReconciled ? await readNetworkState() : requestNetwork
+	// Only when reconciliation removed executed Gnosis Safe operations from storage is the request's stack out of date; it is then re-read and simulated as it is now, provided no network change committed since the request was admitted. Otherwise the request stays on the network it was admitted on, even if a switch committed during preparation.
+	const network = safePreparation.storedSafeStackChange === 'removed-executed-operations' ? await readNetworkState() : requestNetwork
 	if (!continuesStackContext(requestNetwork, network)) {
 		return formRejectMessage(METAMASK_ERROR_BLANKET_ERROR, 'The active network changed while the Interceptor prepared this request. Send it again.')
 	}

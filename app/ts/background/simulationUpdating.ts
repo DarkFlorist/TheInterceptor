@@ -76,7 +76,7 @@ type SimulationInputSources = {
 }
 
 // A snapshot also records which of the rich addresses is the active one.
-type SimulationSnapshotSources = SimulationInputSources & { readonly activeAddressMadeRich: bigint | undefined }
+export type SimulationSnapshotSources = SimulationInputSources & { readonly activeAddressMadeRich: bigint | undefined }
 
 export async function readSimulationInputSources(settings: Settings): Promise<SimulationSnapshotSources> {
 	const [activeAddressMadeRich, preSimulationBlockTimeManipulation] = await Promise.all([getAddressToMakeRich(settings), getPreSimulationBlockTimeManipulation()])
@@ -84,7 +84,7 @@ export async function readSimulationInputSources(settings: Settings): Promise<Si
 }
 
 // Builds the input without reading storage, so callers decide when every source was read.
-function buildSimulationStateInput(settings: Settings, sources: SimulationInputSources, stack: InterceptorTransactionStack): SimulationStateInput {
+export function buildSimulationStateInput(settings: Settings, sources: SimulationInputSources, stack: InterceptorTransactionStack): SimulationStateInput {
 	const inputBlocks: SimulationStateInputBlock[] = []
 	let currentBlockTransactions: PreSimulationTransaction[] = []
 	let currentBlockSignedMessages: SignedMessageTransaction[] = []
@@ -154,7 +154,7 @@ function buildSimulationStateInput(settings: Settings, sources: SimulationInputS
 	return inputBlocks
 }
 
-// Built only by buildSimulationSnapshot, which derives simulationStateInput from interceptorTransactionStack and, like both rich-address fields, from the same settings and rich-address sources in one step, so they cannot drift; build a new snapshot rather than copying one with changed fields.
+// Built only under the network transition lock, by buildSimulationSnapshot in networkTransitionLock.ts, which stamps the committed network change generation and derives simulationStateInput from interceptorTransactionStack and, like both rich-address fields, from the same settings and rich-address sources in one step, so they cannot drift; build a new snapshot rather than copying one with changed fields.
 export type SimulationSnapshot = {
 	readonly activeRpcNetwork: RpcNetwork
 	readonly activeStackContext: ReturnType<typeof getActiveStackContext>
@@ -176,25 +176,6 @@ export type NetworkState = {
 
 // A NetworkState together with the services that were installed when it was read.
 export type NetworkSnapshot = NetworkState & { readonly services: SimulationServices }
-
-// Capture selection and input at the storage boundary. An unreadable stack must abort before publishing any fallback. Call it under the network transition lock (networkTransition.ts and networkTransitionLock.ts read snapshots that way), so its generation, settings and stack describe one network.
-export async function captureSimulationSnapshot(settingsSnapshot?: Settings): Promise<SimulationSnapshot> {
-	const settings = settingsSnapshot ?? await getSettings()
-	const sources = await readSimulationInputSources(settings)
-	return buildSimulationSnapshot(settings, sources, await getInterceptorTransactionStack())
-}
-
-export function buildSimulationSnapshot(settings: Settings, sources: SimulationSnapshotSources, interceptorTransactionStack: InterceptorTransactionStack): SimulationSnapshot {
-	return {
-		activeRpcNetwork: settings.activeRpcNetwork,
-		activeStackContext: getActiveStackContext(settings),
-		simulationStateInput: buildSimulationStateInput(settings, sources, interceptorTransactionStack),
-		numberOfAddressesMadeRich: sources.richAddresses.length,
-		activeAddressMadeRich: sources.activeAddressMadeRich,
-		interceptorTransactionStack,
-		networkChangeGeneration: getCommittedNetworkChangeGeneration(),
-	}
-}
 
 export const getSimulationProviderForSnapshot = (ethereum: EthereumClientService, snapshot: SimulationSnapshot) => (
 	isSignerOnlyNetwork(snapshot.activeRpcNetwork) ? undefined : ethereum

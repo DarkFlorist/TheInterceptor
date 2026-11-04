@@ -182,6 +182,7 @@ async function loadModules() {
 	const background = await import('../../app/ts/background/background.js')
 	const activeSettings = await import('../../app/ts/background/activeSettings.js')
 	const networkTransition = await import('../../app/ts/background/networkTransition.js')
+	const networkTransitionLock = await import('../../app/ts/background/networkTransitionLock.js')
 	const walletSwitch = await import('../../app/ts/background/walletSwitch.js')
 	const popupMessageRouting = await import('../../app/ts/background/popupMessageRouting.js')
 	const storageVariables = await import('../../app/ts/background/storageVariables.js')
@@ -197,6 +198,7 @@ async function loadModules() {
 		...background,
 		...activeSettings,
 		...networkTransition,
+		...networkTransitionLock,
 		...walletSwitch,
 		...popupMessageRouting,
 		updateTransactionState: storageVariables.updateTransactionState,
@@ -267,6 +269,9 @@ function createFakeEthereum(rpcNetwork: TestModules['defaultRpcs'][number]) {
 		},
 		setBlockPolling(enabled: boolean) {
 			blockPolling = enabled
+		},
+		isRetired() {
+			return false
 		},
 		async getBlockNumber() {
 			return 123n
@@ -399,8 +404,9 @@ describe('popup clear reset', () => {
 		browserMock.reset()
 		const signerOnly: RpcNetwork = { chainId: 99999n, httpsRpc: undefined, name: 'Signer only', currencyName: 'Ether?', currencyTicker: 'ETH?', primary: false, minimized: true }
 		await browserStorageLocalSet({ activeRpcNetwork: signerOnly, independentActiveSimulationAddress: activeAddress, popupVisualisation: stalePopupVisualisation, interceptorTransactionStack: { operations: [] } })
-		const { captureSimulationSnapshot, getUpdatedSimulationState } = await import('../../app/ts/background/simulationUpdating.js')
-		const snapshot = captured ? await captureSimulationSnapshot() : undefined
+		const { getUpdatedSimulationState } = await import('../../app/ts/background/simulationUpdating.js')
+		const { readNetworkState } = await import('../../app/ts/background/networkTransitionLock.js')
+		const snapshot = captured ? (await readNetworkState()).simulation : undefined
 		if (captured) await browserStorageLocalSet({ activeRpcNetwork: rpcNetwork })
 		const originalBlock = fakeEthereum.getBlock
 		const originalNumber = fakeEthereum.getBlockNumber
@@ -423,7 +429,7 @@ describe('popup clear reset', () => {
 	for (const nextSimulationMode of [true, false]) test(`capture keeps the original rich address and stack mode during a settings change (nextSimulationMode=${ nextSimulationMode })`, async () => {
 		browserMock.reset()
 		await browserStorageLocalSet({ activeRpcNetwork: rpcNetwork, independentActiveSimulationAddress: activeAddress, simulationMode: true, makeCurrentAddressRich: true, interceptorTransactionStack: { operations: [] } })
-		const { captureSimulationSnapshot } = await import('../../app/ts/background/simulationUpdating.js')
+		const { readNetworkState } = await import('../../app/ts/background/networkTransitionLock.js')
 		const originalGet = browser.storage.local.get
 		let changed = false
 		browser.storage.local.get = async keys => {
@@ -436,7 +442,7 @@ describe('popup clear reset', () => {
 			return result
 		}
 		try {
-			const snapshot = await captureSimulationSnapshot()
+			const { simulation: snapshot } = await readNetworkState()
 			assert.equal(changed, true)
 			assert.deepEqual(snapshot.activeStackContext, { simulationMode: true })
 			assert.equal(snapshot.numberOfAddressesMadeRich, 1)
@@ -450,7 +456,7 @@ describe('popup clear reset', () => {
 		const { queuePopupSimulationRefresh } = await import('../../app/ts/background/popupSimulationRefreshQueue.js')
 		const { requestCompleteVisualizedSimulation } = await import('../../app/ts/background/popupMessageHandlers.js')
 		const { Future } = await import('../../app/ts/utils/future.js')
-		const { captureSimulationSnapshot } = await import('../../app/ts/background/simulationUpdating.js')
+		const { readNetworkState } = await import('../../app/ts/background/networkTransitionLock.js')
 		const started = new Future<void>()
 		const release = new Future<void>()
 		const originalSend = browser.runtime.sendMessage
@@ -463,7 +469,7 @@ describe('popup clear reset', () => {
 			}
 			return await originalSend(message)
 		}
-		const queued = queuePopupSimulationRefresh({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService, invalidateOldState: true }, await captureSimulationSnapshot())
+		const queued = queuePopupSimulationRefresh({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService, invalidateOldState: true }, (await readNetworkState()).simulation)
 		let timeout: ReturnType<typeof setTimeout> | undefined
 		try {
 			await started
@@ -520,8 +526,8 @@ describe('popup clear reset', () => {
 		browserMock.reset()
 		await browserStorageLocalSet({ independentActiveSimulationAddress: activeAddress, makeCurrentAddressRich: false, interceptorTransactionStack: { operations: [] } })
 		const modules = await modulesPromise
-		const { captureSimulationSnapshot } = await import('../../app/ts/background/simulationUpdating.js')
-		const snapshot = await captureSimulationSnapshot()
+		const { readNetworkState } = await import('../../app/ts/background/networkTransitionLock.js')
+		const { simulation: snapshot } = await readNetworkState()
 		await browserStorageLocalSet({ makeCurrentAddressRich: true })
 		assert.notDeepEqual(await modules.getCurrentSimulationInput(), snapshot.simulationStateInput)
 		const result = await updatePopupVisualisationIfNeeded(fakeEthereum, fakeTokenPriceService, { snapshot })

@@ -2,14 +2,10 @@ import * as assert from 'assert'
 import { test } from 'bun:test'
 import { activeAddress, addressString, browserMock, created, createSafeAddressBookEntry, createSafeTx, createWebsitePort, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, hexToBytes, isRecord, modules, pendingTransaction, recipientAddress, signedTransaction, simulator, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
 import { fixedServicesOwner } from './backgroundEthAccountsTestHarness.js'
+import { METAMASK_ERROR_BLANKET_ERROR } from '../../app/ts/utils/constants.js'
 
-// Confirmation flows take the settings that belong to their client; these sequential tests read the current pair.
-const readSettings = async () => await (await import('../../app/ts/background/settings.js')).getSettings()
-// Like a request snapshot, confirmations read the settings together with the simulation stack built from them.
-const readNetworkState = async () => {
-	const settings = await readSettings()
-	return { settings, simulation: await (await import('../../app/ts/background/simulationUpdating.js')).captureSimulationSnapshot(settings) }
-}
+// Like a request snapshot, confirmations read the settings together with the simulation stack built from them, under the network transition lock.
+const readNetworkState = async () => await (await import('../../app/ts/background/networkTransitionLock.js')).readNetworkState()
 
 test('rejects EIP-7702 authorization lists before creating a Safe proposal', async () => {
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
@@ -284,6 +280,105 @@ test('reconciles executed Safe operations before simulating the next proposal', 
 	const simulatedIdentifiers = pendingProposal.popupVisualisation.data.simulationState.simulationStateInput.flatMap((block) => block.transactions.map(({ transactionIdentifier }) => transactionIdentifier))
 	assert.ok(simulatedIdentifiers.includes(81n))
 	assert.ok(!simulatedIdentifiers.includes(80n))
+})
+
+// Proposes a Gnosis Safe transaction admitted on the current network while a switch to another chain commits during its preparation, when the Safe's on-chain state is read to reconcile the stored stack. With an executed stacked operation, reconciliation removes it from storage.
+async function proposeSafeTransactionWhileNetworkSwitchCommits(stack: 'executed-operation-stacked' | 'nothing-to-reconcile') {
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({
+		...state,
+		signerAccounts: [recipientAddress],
+		activeSigningAddress: recipientAddress,
+		signerChain: fakeRpcNetwork.chainId,
+	}))
+	fakeSafeContract.owners = [recipientAddress]
+	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeSimulationSignerAddress: recipientAddress, safeVersion: '1.4.1' })])
+	if (stack === 'executed-operation-stacked') {
+		const executedSafeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, { to: recipientAddress, value: 0n, input: new Uint8Array() }, 0n)
+		await modules.updateSafeTransactionStacks(() => [{
+			chainId: fakeRpcNetwork.chainId,
+			safeAddress: activeAddress,
+			safeVersion: '1.4.1',
+			baseNonce: 0n,
+			threshold: 2n,
+			transactions: [{ safeTx: executedSafeTx, safeTxHash: BigInt(getSafeTxHash(executedSafeTx)), created, websiteOrigin: 'https://example.com', transactionIdentifier: 80n, signatures: [] }],
+		}])
+		fakeSafeContract.nonce = 1n
+	} else {
+		await modules.updateSafeTransactionStacks(() => [])
+		fakeSafeContract.nonce = 0n
+	}
+	const proposalNonce = fakeSafeContract.nonce
+	fakeSafeContract.transactionHash = BigInt(getSafeTxHash(createSafeTx(fakeRpcNetwork.chainId, activeAddress, { to: recipientAddress, value: 2n, input: new Uint8Array() }, proposalNonce)))
+	const { SendTransactionParams } = await import('../../app/ts/types/JsonRpc-types.js')
+	const transactionParams = SendTransactionParams.parse({
+		method: 'eth_sendTransaction',
+		params: [{ from: addressString(activeAddress), to: addressString(recipientAddress), value: '0x2', data: '0x' }],
+	})
+	const port = createWebsitePort(uniqueRequestIdentifier.requestSocket, 0, [])
+	const websiteTabConnections = new Map([[uniqueRequestIdentifier.requestSocket.tabId, {
+		connections: {
+			[modules.websiteSocketToString(uniqueRequestIdentifier.requestSocket)]: {
+				port,
+				socket: uniqueRequestIdentifier.requestSocket,
+				websiteOrigin: 'https://example.com',
+				approved: true,
+				wantsToConnect: true,
+			},
+		},
+	}]])
+	const servicesOwner = fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService)
+	const requestNetwork = await readNetworkState()
+	const otherChain = { ...fakeRpcNetwork, name: 'Other Test Chain', chainId: requestNetwork.settings.activeRpcNetwork.chainId + 1n, httpsRpc: 'https://other-chain.invalid' }
+	const { changeActiveAddressAndChain } = await import('../../app/ts/background/activeSettings.js')
+	let switchCommitted = false
+	fakeSafeContract.beforeVersionResponse = async () => {
+		if (switchCommitted) return
+		switchCommitted = true
+		await changeActiveAddressAndChain(servicesOwner, new Map(), { simulationMode: false, rpcNetwork: otherChain, promptForAccessesIfNeeded: false })
+	}
+	try {
+		const reply = await modules.openConfirmTransactionDialogForTransaction(
+			servicesOwner,
+			simulator.ethereum,
+			simulator.tokenPriceService,
+			requestNetwork,
+			{
+				interceptorRequest: true,
+				usingInterceptorWithoutSigner: false,
+				uniqueRequestIdentifier,
+				method: transactionParams.method,
+				params: transactionParams.params,
+			},
+			{ kind: 'transaction', parameters: transactionParams },
+			false,
+			activeAddress,
+			{ websiteOrigin: 'https://example.com', icon: undefined, title: undefined },
+			websiteTabConnections,
+		)
+		assert.equal(switchCommitted, true)
+		assert.equal((await readNetworkState()).settings.activeRpcNetwork.chainId, otherChain.chainId)
+		const pendingProposal = (await modules.getPendingTransactionsAndMessages()).find((pending) => pending.uniqueRequestIdentifier.requestId === uniqueRequestIdentifier.requestId)
+		return { reply, requestNetwork, pendingProposal, proposalNonce }
+	} finally {
+		fakeSafeContract.beforeVersionResponse = undefined
+	}
+}
+
+test('a Gnosis Safe proposal whose reconciliation changes nothing opens on the network it was admitted on when a switch commits during its preparation', async () => {
+	const { reply, requestNetwork, pendingProposal, proposalNonce } = await proposeSafeTransactionWhileNetworkSwitchCommits('nothing-to-reconcile')
+	assert.deepEqual(reply, { type: 'doNotReply' })
+	if (pendingProposal?.type !== 'Transaction') throw new Error('Expected the Gnosis Safe proposal to open a confirmation')
+	assert.equal(pendingProposal.simulationChainId, requestNetwork.settings.activeRpcNetwork.chainId)
+	assert.equal(pendingProposal.safeTransaction?.safeTx.message.nonce, proposalNonce)
+})
+
+test('a Gnosis Safe proposal whose reconciliation removes executed operations is rejected when a switch commits during its preparation', async () => {
+	const { reply, pendingProposal } = await proposeSafeTransactionWhileNetworkSwitchCommits('executed-operation-stacked')
+	assert.deepEqual(reply, { type: 'result', error: { code: METAMASK_ERROR_BLANKET_ERROR, message: 'The active network changed while the Interceptor prepared this request. Send it again.' } })
+	assert.equal(pendingProposal, undefined)
+	// Reconciliation still removed the executed operation from storage.
+	assert.deepEqual(await modules.getSafeTransactionStacks(), [])
 })
 
 test('uses zero-reimbursement Safe semantics in the pre-sign confirmation simulation', async () => {
@@ -580,6 +675,7 @@ test('propagates unexpected Safe proposal RPC and reconciliation storage failure
 	fakeSafeContract.safeOwnerLookupFailure = 'expected'
 	try {
 		const expectedFailure = await prepareSafeTransactionConfirmation(simulator.ethereum, { kind: 'transaction', parameters: transactionParams }, false, activeAddress, recipientAddress)
+		if (expectedFailure.rejection !== undefined) throw new Error('Expected the Gnosis Safe transaction to be prepared')
 		assert.match(expectedFailure.preparationMessage ?? '', /Safe owner lookup unavailable/u)
 	} finally {
 		fakeSafeContract.safeOwnerLookupFailure = undefined
@@ -661,6 +757,7 @@ test('reserves proposal nonces without counting overlapping direct Safe executio
 		activeAddress,
 		recipientAddress,
 	)
+	if (preparation.rejection !== undefined) throw new Error('Expected the Gnosis Safe transaction to be prepared')
 	const finalized = await preparation.finalize(pendingTransaction.transactionToSimulate, uniqueRequestIdentifier.requestSocket.tabId)
 	assert.equal(finalized.safeTransaction?.safeTx.message.nonce, 1n)
 })
@@ -809,6 +906,7 @@ test('atomic Safe batch preparation and simulation preserve one nonce and delega
 	const params = SendTransactionParams.parse({ method: 'eth_sendTransaction', params: [{ from: addressString(activeAddress), to: addressString(SAFE_MULTI_SEND_CALL_ONLY), value: '0x0', data: dataStringWith0xStart(input), gas: '0x989680' }] })
 	const websiteTransaction = { ...pendingTransaction.transactionToSimulate, originalRequestParameters: params, transaction: { ...pendingTransaction.transactionToSimulate.transaction, to: SAFE_MULTI_SEND_CALL_ONLY, input, value: 0n, gas: 10_000_000n } }
 	const preparation = await (await import('../../app/ts/background/safeTransactionConfirmation.js')).prepareSafeTransactionConfirmation(simulator.ethereum, { kind: 'transaction', parameters: params, safeTransaction: { operation: 1 } }, false, activeAddress, recipientAddress)
+	if (preparation.rejection !== undefined) throw new Error('Expected the Gnosis Safe transaction to be prepared')
 	const finalized = await preparation.finalize(websiteTransaction, uniqueRequestIdentifier.requestSocket.tabId)
 	assert.deepEqual(finalized.safeTransaction?.safeTx, safeTx)
 	if (finalized.safeTransaction === undefined) throw new Error('Missing batch proposal')
@@ -842,12 +940,14 @@ test('on-chain Safe message review context is bound to calldata and stays outsid
 	const params = SendTransactionParams.parse({ method: 'eth_sendTransaction', params: [{ from: addressString(activeAddress), to: addressString(SAFE_SIGN_MESSAGE_LIB), value: '0x0', data, gas: '0x989680' }] })
 	const websiteTransaction = { ...pendingTransaction.transactionToSimulate, originalRequestParameters: params, transaction: { ...pendingTransaction.transactionToSimulate.transaction, to: SAFE_SIGN_MESSAGE_LIB, input, value: 0n, gas: 10_000_000n } }
 	const preparation = await prepareSafeTransactionConfirmation(simulator.ethereum, { kind: 'transaction', parameters: params, safeTransaction: { operation: 1, messageReview: review } }, false, activeAddress, recipientAddress)
+	if (preparation.rejection !== undefined) throw new Error('Expected the Gnosis Safe transaction to be prepared')
 	const finalized = await preparation.finalize(websiteTransaction, uniqueRequestIdentifier.requestSocket.tabId)
 	assert.deepEqual(finalized.safeTransaction?.messageReview, review)
 	assert.deepEqual(finalized.safeTransaction?.safeTx, safeTx)
 	assert.equal('safeMessageText' in params.params[0], false)
 	assert.equal('safeOperation' in params.params[0], false)
 	const mismatched = await prepareSafeTransactionConfirmation(simulator.ethereum, { kind: 'transaction', parameters: params, safeTransaction: { operation: 1, messageReview: { ...review, text: 'Different message' } } }, false, activeAddress, recipientAddress)
+	if (mismatched.rejection !== undefined) throw new Error('Expected the Gnosis Safe transaction to be prepared')
 	const rejected = await withSilencedConsole(async () => await mismatched.finalize(websiteTransaction, uniqueRequestIdentifier.requestSocket.tabId))
 	assert.equal(rejected.transactionToSimulate.success, false)
 	assert.equal(rejected.safeTransaction, undefined)

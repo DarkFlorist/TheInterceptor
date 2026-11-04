@@ -7,14 +7,10 @@ import type { SafeTx, VisualizedPersonalSignRequestSafeTx } from '../../app/ts/t
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
 import { stringifyJSONWithBigInts } from '../../app/ts/utils/bigint.js'
+import { alwaysWrite } from '../../app/ts/utils/largeStateStore.js'
 
-// Confirmation flows take the settings that belong to their client; these sequential tests read the current pair.
-const readSettings = async () => await (await import('../../app/ts/background/settings.js')).getSettings()
-// Like a request snapshot, confirmations read the settings together with the simulation stack built from them.
-const readNetworkState = async () => {
-	const settings = await readSettings()
-	return { settings, simulation: await (await import('../../app/ts/background/simulationUpdating.js')).captureSimulationSnapshot(settings) }
-}
+// Like a request snapshot, confirmations read the settings together with the simulation stack built from them, under the network transition lock.
+const readNetworkState = async () => await (await import('../../app/ts/background/networkTransitionLock.js')).readNetworkState()
 
 type RuntimeMessage = {
 	method?: string
@@ -414,7 +410,7 @@ describe('SafeTx confirm transaction metadata', () => {
 		}, async () => undefined, async () => undefined, fakeRpcNetwork)
 		const tokenPriceService = new modules.TokenPriceService(ethereum, 0)
 		// The stored result may come from a refresh of another network or stack, so the failed refresh must not show it.
-		const storedVisualisation = await modules.setPopupVisualisationState({ ...await modules.getPopupVisualisationState(), simulationId: 77 })
+		const { results: storedVisualisation } = await modules.setPopupVisualisationState({ ...await modules.getPopupVisualisationState(), simulationId: 77 }, alwaysWrite)
 		const refreshError = new Error('Unexpected visualizer failure')
 		let reportedError: unknown
 
@@ -463,7 +459,7 @@ describe('SafeTx confirm transaction metadata', () => {
 			userAddressBookEntriesV3: modules.defaultActiveAddresses,
 		})
 		await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [createPendingSafeTxMessage(modules, fakeRpcNetwork)] })
-		await modules.setPopupVisualisationState({ ...await modules.getPopupVisualisationState(), simulationId: 77 })
+		await modules.setPopupVisualisationState({ ...await modules.getPopupVisualisationState(), simulationId: 77 }, alwaysWrite)
 		const refreshError = new Error('Unexpected visualizer failure')
 		let reportedError: unknown
 		let reportCalls = 0

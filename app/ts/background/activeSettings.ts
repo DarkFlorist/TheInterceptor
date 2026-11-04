@@ -12,7 +12,8 @@ import { updateTransactionState } from './storageVariables.js'
 import type { ActiveAddressSelection } from '../utils/activeAddressSelection.js'
 import { rememberSigningAddressSelection } from './signingAddressSelection.js'
 import { getActiveStackContext, operationBelongsToActiveStackContext } from '../utils/activeStackContext.js'
-import { readNetworkSnapshot, runSettingsTransition } from './networkTransition.js'
+import { runSettingsTransition } from './networkTransition.js'
+import { readNetworkSnapshot } from './networkTransitionLock.js'
 
 async function clearSimulationStateFromConfig() {
 	const settings = await getSettings()

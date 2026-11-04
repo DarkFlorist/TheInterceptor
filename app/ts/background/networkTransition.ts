@@ -13,8 +13,8 @@ import { changeSimulationMode, getSettings, importSettingsAndAddressBook } from 
 import type { Settings } from '../types/interceptor-messages.js'
 import type { ExportedSettings } from '../types/exportedSettingsTypes.js'
 import { getPrimaryRpcForChain, updateInterceptorTransactionStack, updateTransactionState } from './storageVariables.js'
-import { buildSimulationSnapshot, captureSimulationSnapshot, type NetworkSnapshot, readSimulationInputSources, type SimulationSnapshot } from './simulationUpdating.js'
-import { captureNetworkState, completeUnfinishedNetworkChange, recordUnfinishedNetworkChange, runNetworkTransition } from './networkTransitionLock.js'
+import { type NetworkSnapshot, readSimulationInputSources, type SimulationSnapshot } from './simulationUpdating.js'
+import { completeUnfinishedNetworkChange, type LockedNetworkReads, recordUnfinishedNetworkChange, runNetworkTransition } from './networkTransitionLock.js'
 import { assertNever } from '../utils/typescript.js'
 import type { InterceptorStackOperation } from '../types/visualizer-types.js'
 import { activeStackContextsEqual, getActiveStackContext, operationBelongsToActiveStackContext, SIMULATION_STACK_CONTEXT } from '../utils/activeStackContext.js'
@@ -79,11 +79,6 @@ async function completeNetworkChangeEffects(change: CommittedNetworkChange) {
 	for (const effect of NETWORK_CHANGE_EFFECTS) await runNetworkChangeEffect(change, effect, committedSettings)
 }
 
-// Reading these under the transition lock keeps a request from pairing one network's settings, stack or services with another network's; it reads storage only, so RPC work stays outside the lock. Like every lock holder, a read first finishes the effects of a committed network change whose transition failed part-way, such as dropping the previous chain's stack, and rejects with that failure rather than return a snapshot that mixes two networks.
-export async function readNetworkSnapshot(simulationServicesOwner: Pick<SimulationServicesOwner, 'getCurrent'>): Promise<NetworkSnapshot> {
-	return await runNetworkTransition(async () => ({ ...await captureNetworkState(), services: simulationServicesOwner.getCurrent() }))
-}
-
 // The committed network change generation once any transition in progress has finished, so settings read before this call belong to the returned generation or an earlier one.
 export async function readCommittedNetworkChangeGeneration() {
 	return await runNetworkTransition(async () => getCommittedNetworkChangeGeneration())
@@ -97,7 +92,7 @@ const isSameStackOperation = (stacked: InterceptorStackOperation, operation: Int
 
 // A confirmed simulation operation joins the stack only while the chain it was simulated on is still active in simulation mode. Returns the stacked operation with the settings, stack snapshot and services read under the same lock, or undefined if that network went away.
 export async function appendToActiveSimulationStack(simulationServicesOwner: SimulationServicesOwner, operation: InterceptorStackOperation, simulatedChainId: bigint | undefined): Promise<(NetworkSnapshot & { readonly stackedOperation: InterceptorStackOperation }) | undefined> {
-	return await runNetworkTransition(async () => {
+	return await runNetworkTransition(async (reads) => {
 		const settings = await getSettings()
 		if (!settings.simulationMode) return undefined
 		if (simulatedChainId !== undefined && simulatedChainId !== settings.activeRpcNetwork.chainId) return undefined
@@ -109,7 +104,7 @@ export async function appendToActiveSimulationStack(simulationServicesOwner: Sim
 			: { operations: [...previousStack.operations, operation] })
 		// The confirmation reports the stacked operation, which an earlier attempt may have prepared differently.
 		const stackedOperation = interceptorTransactionStack.operations.find((stacked) => isSameStackOperation(stacked, operation)) ?? operation
-		return { stackedOperation, settings, simulation: buildSimulationSnapshot(settings, sources, interceptorTransactionStack), services: simulationServicesOwner.getCurrent() }
+		return { stackedOperation, settings, simulation: reads.buildSimulationSnapshot(settings, sources, interceptorTransactionStack), services: simulationServicesOwner.getCurrent() }
 	})
 }
 
@@ -130,7 +125,7 @@ async function installServicesForCommittedNetwork(simulationServicesOwner: Simul
 type PendingPopupRefresh = { readonly services: SimulationServices, readonly snapshot: SimulationSnapshot }
 
 // Notifies popups and approved websites inside the lock, so they see network changes in commit order. Only runSettingsTransition calls this, after it has installed the committed network's services and cleared the previous chain's stack. Returns the popup refresh to run after the lock.
-async function publishCommittedSettingsChange(change: CommittedNetworkChange, updatedSettings: Settings): Promise<PendingPopupRefresh | undefined> {
+async function publishCommittedSettingsChange(reads: LockedNetworkReads, change: CommittedNetworkChange, updatedSettings: Settings): Promise<PendingPopupRefresh | undefined> {
 	const previousSettings = change.settingsBeforeTransition
 	const { endpointChanged } = getRpcNetworkChange(previousSettings.activeRpcNetwork, updatedSettings.activeRpcNetwork)
 	await sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
@@ -138,7 +133,7 @@ async function publishCommittedSettingsChange(change: CommittedNetworkChange, up
 	await runNetworkChangeEffect(change, 'notifyPopupsOfChainChange', updatedSettings)
 	// External-wallet signing has no simulated stack; Safe signing retains its separate stack visualization.
 	const needsPopupRefresh = (updatedSettings.simulationMode || updatedSettings.activeSigningSafeAddress !== undefined) && (endpointChanged || !activeStackContextsEqual(getActiveStackContext(previousSettings), getActiveStackContext(updatedSettings)))
-	const popupRefresh = needsPopupRefresh ? { services: change.simulationServicesOwner.getCurrent(), snapshot: await captureSimulationSnapshot() } : undefined
+	const popupRefresh = needsPopupRefresh ? { services: change.simulationServicesOwner.getCurrent(), snapshot: (await reads.captureNetworkState()).simulation } : undefined
 	await sendActiveAccountChangeToApprovedWebsitePorts(change.websiteTabConnections, await getSettings())
 	return popupRefresh
 }
@@ -152,7 +147,7 @@ type SettingsTransition = {
 
 // Runs settings writes that may commit a new network, then applies the committed network in the order of NETWORK_CHANGE_EFFECTS: retire snapshots of the replaced network, install its services, clear the previous chain's stack, notify websites and popups. Each effect is compared with the settings from before the transition. The popup refresh the change needs runs after the lock is released. If the transition fails, every effect that has not succeeded is retried before the lock is released and, if one still fails, kept for the next lock holder; the transition's own error is kept.
 export async function runSettingsTransition(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, transition: SettingsTransition) {
-	const popupRefresh = await runNetworkTransition(async () => {
+	const popupRefresh = await runNetworkTransition(async (reads) => {
 		const settingsBeforeTransition = await getSettings()
 		const change: CommittedNetworkChange = { simulationServicesOwner, websiteTabConnections, settingsBeforeTransition, completedEffects: new Set() }
 		try {
@@ -165,7 +160,7 @@ export async function runSettingsTransition(simulationServicesOwner: SimulationS
 			} finally {
 				await transition.afterNetworkApplied?.(committedSettings)
 			}
-			return await publishCommittedSettingsChange(change, committedSettings)
+			return await publishCommittedSettingsChange(reads, change, committedSettings)
 		} catch (error) {
 			recordUnfinishedNetworkChange(async () => await completeNetworkChangeEffects(change))
 			try {

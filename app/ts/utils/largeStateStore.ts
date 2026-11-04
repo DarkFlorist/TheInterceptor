@@ -40,9 +40,10 @@ let indexedDbPromise: Promise<IDBDatabase | undefined> | undefined
 let indexedDbSource: IDBFactory | undefined
 const largeStateSemaphore = new Semaphore(1)
 
-// Evaluated synchronously immediately before the storage write is started, after the large state semaphore and every preparatory wait; a write that passes is ordered before any later change that invalidates it, whose own update then overwrites it.
+// Evaluated synchronously immediately before the storage write is started, after the large state semaphore and every preparatory wait; a write that passes is ordered before any later change that invalidates it, whose own update then overwrites it. Every write names its condition, so a write that should be skipped once it is obsolete cannot omit the check by accident.
 export type LargeStateWriteCondition = () => boolean
-const alwaysWrite: LargeStateWriteCondition = () => true
+// The condition of writes that are never obsolete, such as writes serialized with every other update of their key or writes that retire stored results unconditionally.
+export const alwaysWrite: LargeStateWriteCondition = () => true
 
 function canUseIndexedDb() {
 	return typeof indexedDB !== 'undefined'
@@ -273,7 +274,7 @@ export async function getLargeStateValue<T>(key: LargeStateStorageKey, codec: fu
 }
 
 // Returns whether the value was written; it is not written only when shouldWrite fails.
-export async function setLargeStateValue<T>(key: LargeStateStorageKey, codec: funtypes.Codec<T>, value: T, shouldWrite: LargeStateWriteCondition = alwaysWrite) {
+export async function setLargeStateValue<T>(key: LargeStateStorageKey, codec: funtypes.Codec<T>, value: T, shouldWrite: LargeStateWriteCondition) {
 	return await setLargeStateValues([prepareLargeStateWrite(key, codec, value)], shouldWrite)
 }
 
@@ -296,7 +297,7 @@ async function setLargeStateValuesUnlocked(writes: readonly PreparedLargeStateWr
 }
 
 /** Commits to IndexedDB or an authoritative local fallback; rejects if persistence cannot complete. Returns whether the writes were made; they are skipped only when shouldWrite fails. */
-export async function setLargeStateValues(writes: readonly PreparedLargeStateWrite[], shouldWrite: LargeStateWriteCondition = alwaysWrite) {
+export async function setLargeStateValues(writes: readonly PreparedLargeStateWrite[], shouldWrite: LargeStateWriteCondition) {
 	return await largeStateSemaphore.execute(async () => await setLargeStateValuesUnlocked(writes, shouldWrite))
 }
 

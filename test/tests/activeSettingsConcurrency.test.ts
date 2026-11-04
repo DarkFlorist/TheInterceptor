@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test'
 import type { ContactEntry, SafeEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { TabConnection, WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
 import { ICON_NOT_ACTIVE } from '../../app/ts/utils/constants.js'
+import { alwaysWrite } from '../../app/ts/utils/largeStateStore.js'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
 import { createTestSimulationServicesOwner, createDeferredSignal, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus } from './backgroundEthAccountsTestHarness.js'
 
@@ -170,7 +171,7 @@ describe('active settings concurrency', () => {
 		const services = createEthereumWithGetBlockCounter({ count: 0 })
 		const owner = createTestSimulationServicesOwner(services)
 		const previousVisualisation = { ...await getPopupVisualisationState(), simulationId: 42 }
-		await setPopupVisualisationState(previousVisualisation)
+		await setPopupVisualisationState(previousVisualisation, alwaysWrite)
 		const originalSet = browser.storage.local.set.bind(browser.storage.local)
 		const originalSend = browser.runtime.sendMessage.bind(browser.runtime)
 		const failure = new Error(`Injected ${ failurePoint } failure`)
@@ -231,8 +232,8 @@ describe('active settings concurrency', () => {
 		await assert.rejects(activateAddressSelection(owner, new Map(), { type: 'addressBookEntry', entry: safe }, {
 			simulationMode: false, signerAddress: firstAddress.address, rpcNetwork, promptForAccessesIfNeeded: false,
 		}), error => error === failure)
-		// While the provider cannot be installed, no lock holder may proceed with the committed network.
-		await assert.rejects(readNetworkSnapshot(owner), error => error === failure)
+		// While the provider cannot be installed, no lock holder may proceed with the committed network; they reject with an error that names the unfinished network change.
+		await assert.rejects(readNetworkSnapshot(owner), (error: unknown) => error instanceof Error && error.message.startsWith('An earlier network change committed its settings but could not finish applying them') && error.message.endsWith(failure.message))
 		assert.equal((await getSettings()).activeSigningSafeAddress, safe.address)
 		assert.deepEqual(await getSigningAddressPreferences(), [{ signerAddress: firstAddress.address, selection: 'safe', safeAddress: safe.address, chainId: safe.chainId }])
 		const visualisation = await getPopupVisualisationState()

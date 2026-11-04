@@ -18,13 +18,8 @@ import { getGasFeePaidByTransactionSender } from '../../app/ts/utils/transaction
 import { activeAddress, addressString, created, createSafeAddressBookEntry, createSafeTx, createWebsitePort, ethereum, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, hexToBytes, isRecord, makeFakeEthSimulateResult, modules, recipientAddress, SAFE_EXECUTION_ABI, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
 import { fixedServicesOwner } from './backgroundEthAccountsTestHarness.js'
 
-// Confirmation flows take the settings that belong to their client; these sequential tests read the current pair.
-const readSettings = async () => await (await import('../../app/ts/background/settings.js')).getSettings()
-// Like a request snapshot, confirmations read the settings together with the simulation stack built from them.
-const readNetworkState = async () => {
-	const settings = await readSettings()
-	return { settings, simulation: await (await import('../../app/ts/background/simulationUpdating.js')).captureSimulationSnapshot(settings) }
-}
+// Like a request snapshot, confirmations read the settings together with the simulation stack built from them, under the network transition lock.
+const readNetworkState = async () => await (await import('../../app/ts/background/networkTransitionLock.js')).readNetworkState()
 
 // createSafeAddressBookEntry configures the Safe at activeAddress, the address the fake RPC gives code.
 const SAFE_ADDRESS = activeAddress
@@ -587,7 +582,7 @@ test('simulates a configured Gnosis Safe that the page names as the sender, whil
 const isSimulationModeSafeExecution = async (selectedActiveAddress: bigint, transactionParams: SendTransactionParams | SendRawTransactionParams) => {
 	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry()])
 	const preparation = await prepareSafeTransactionConfirmation(ethereum, { kind: 'transaction', parameters: transactionParams }, true, selectedActiveAddress, undefined)
-	return preparation.gasPayment === 'simulated-safe-executor'
+	return preparation.rejection === undefined && preparation.gasPayment === 'simulated-safe-executor'
 }
 
 const simulationModeCases = [

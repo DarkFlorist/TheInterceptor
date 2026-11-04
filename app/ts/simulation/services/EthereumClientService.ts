@@ -169,6 +169,7 @@ export class EthereumClientService {
 	}
 
 	public readonly isBlockPolling = () => this.cacheRefreshTimer !== undefined
+	public readonly isRetired = () => this.retired
 
 	public readonly setBlockPolling = (enabled: boolean) => {
 		if (enabled && this.retired) return

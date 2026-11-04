@@ -24,7 +24,7 @@ import { makeSureInterceptorIsNotSleeping } from './sleeping.js'
 import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
 import { buildExecutionSimulationStateFromPreparedInput, getUpdatedSimulationStackSnapshot, prepareSimulationInputForRpc, type SimulationSnapshot } from './simulationUpdating.js'
 import type { SimulationServices, SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
-import { readNetworkSnapshot } from './networkTransition.js'
+import { readNetworkSnapshot } from './networkTransitionLock.js'
 import { getWalletSelectedAccount, isActiveSigningSafe } from '../utils/activeAddressSelection.js'
 import { isAccountConnectionMethod, isAccountOnlyMethod } from './accountRequestMethods.js'
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
@@ -73,7 +73,7 @@ async function handleRPCRequest(
 	safeSigningMode: boolean,
 	activeSafeSigner: bigint | undefined,
 ): Promise<RPCReply> {
-	// Execute on the services and stack captured with the request's settings; the owner is only used for network switches and wake-ups. services, settings and simulation always come from one readNetworkSnapshot call under the network transition lock; keeping them separate parameters rather than one NetworkSnapshot is a deliberate maintainer decision that keeps the existing handler signatures (see NetworkState).
+	// Execute on the services and stack captured with the request's settings; the owner is only passed on to network switches and to confirmation flows, which read the services again together with the stack they append to. services, settings and simulation always come from one readNetworkSnapshot call under the network transition lock; keeping them separate parameters rather than one NetworkSnapshot is a deliberate maintainer decision that keeps the existing handler signatures (see NetworkState).
 	const { ethereum, tokenPriceService } = services
 	const network = { settings, simulation }
 	let simulationInputPromise: Promise<ResolvedSimulationInput> | undefined
@@ -151,8 +151,8 @@ async function handleRPCRequest(
 	}
 	const withSimulationInput = async (handler: (simulationInput: ResolvedSimulationInput) => Promise<RPCReply>) => await handler(await getSimulationInput())
 	const withExecutionSimulationState = async (handler: (simulationState: ResolvedExecutionSimulationState) => Promise<RPCReply>) => await handler(await getExecutionSimulationState())
-	// Wake the installed client; a network switch after admission may have retired the captured one.
-	if (!accountOnlyMethod) await makeSureInterceptorIsNotSleeping(simulationServicesOwner.getCurrent().ethereum, publishRpcConnectionStatus)
+	// Wakes the client this request runs on. If a network switch after admission retired it, it stays asleep, and the switch's own services serve the active network.
+	if (!accountOnlyMethod) await makeSureInterceptorIsNotSleeping(ethereum, publishRpcConnectionStatus)
 	type ParsedRpcRequest = typeof parsedRequest
 	type RpcRequestHandler = (context: undefined, request: ParsedRpcRequest) => Promise<RPCReply>
 	const rpcRequestHandler = createMethodHandlerFor<ParsedRpcRequest, undefined, Promise<RPCReply>>()
