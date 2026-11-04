@@ -296,6 +296,93 @@ describe('active settings concurrency', () => {
 		assert.equal(messages.some(({ method }) => method === 'disconnect'), true)
 	})
 
+	// A runtime-approved connection of a website without persisted consent, which reconciling the committed RPC configuration must unapprove.
+	const createUnconsentedApprovedConnection = (websiteSocketToString: (socket: { tabId: number, connectionName: bigint }) => string) => {
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const connection = { port, socket, websiteOrigin: 'unconsented-rpc-recovery.test', approved: true, wantsToConnect: false }
+		const connections: WebsiteTabConnections = new Map([[socket.tabId, { connections: { [websiteSocketToString(socket)]: connection } }]])
+		return { connection, connections, messages }
+	}
+
+	const createOwnerWhoseRecoveryFails = () => {
+		const { ethereum, tokenPriceService } = createEthereumWithGetBlockCounter({ count: 0 })
+		return createTestSimulationServicesOwner({ ethereum, tokenPriceService }, () => { throw new Error('Provider recovery failed') })
+	}
+
+	test.each(['restore defaults', 'edit an empty RPC list'] as const)('a committed RPC configuration is reconciled and the failure surfaced when provider recovery throws (%s)', async (operation) => {
+		installBrowserMock()
+		const { changeSimulationMode, getRequiredSettings, getRpcConfigurationState, websiteSocketToString } = await loadModules()
+		const { handlePopupRuntimeMessage } = await import('../../app/ts/background/popupMessageRouting.js')
+		const { PopupMessage } = await import('../../app/ts/types/interceptor-messages.js')
+		await changeSimulationMode({ simulationMode: false })
+		const configuredNetwork = (await getRequiredSettings()).activeRpcNetwork
+		const { connection, connections, messages } = createUnconsentedApprovedConnection(websiteSocketToString)
+		// Restore recovers from an unreadable configuration; the edit recovers from an empty RPC list.
+		if (operation === 'restore defaults') await browser.storage.local.set({ activeRpcNetwork: 'corrupt' })
+		else await browser.storage.local.set({ rpcEntries: [] })
+		const request = operation === 'restore defaults' ? { method: 'popup_restoreDefaultRpcConfiguration' as const } : { method: 'popup_set_rpc_list' as const, data: [configuredNetwork] }
+		const originalWarn = console.warn
+		const originalError = console.error
+		console.warn = () => undefined
+		console.error = () => undefined
+		try {
+			await assert.rejects(handlePopupRuntimeMessage(connections, createOwnerWhoseRecoveryFails(), serialize(PopupMessage, request), noopPublishRpcConnectionStatus), /Provider recovery failed/)
+		} finally {
+			console.warn = originalWarn
+			console.error = originalError
+		}
+
+		assert.equal((await getRpcConfigurationState()).status, 'ready')
+		assert.equal(connection.approved, false)
+		assert.equal(messages.some(({ method }) => method === 'disconnect'), true)
+	})
+
+	test('every failure of a committed RPC configuration restore is surfaced, the first thrown and the rest reported in order, after access is reconciled', async () => {
+		const { runtimeMessages } = installBrowserMock()
+		const { changeSimulationMode, publishRpcConfigurationRecovery, restoreDefaultRpcConfiguration, websiteSocketToString } = await loadModules()
+		const { MessageToPopup } = await import('../../app/ts/types/interceptor-messages.js')
+		await changeSimulationMode({ simulationMode: false })
+		const { connection, connections } = createUnconsentedApprovedConnection(websiteSocketToString)
+		await browser.storage.local.set({ activeRpcNetwork: 'corrupt' })
+		// The RPC status read is the first settings read after the restore; its repair write of a corrupt opened page fails once.
+		await browser.storage.local.set({ openedPageV2: 'not-a-page' })
+		const originalStorageSet = browser.storage.local.set
+		let statusReadRepairFailed = false
+		Object.defineProperty(browser.storage.local, 'set', {
+			configurable: true,
+			value: async (items: Record<string, unknown>) => {
+				if ('openedPageV2' in items && !statusReadRepairFailed) {
+					statusReadRepairFailed = true
+					throw new Error('Status read failed')
+				}
+				await originalStorageSet(items)
+			},
+		})
+		const publishRecoveryThenFail: typeof publishRpcConfigurationRecovery = async (...recovery) => {
+			await publishRpcConfigurationRecovery(...recovery)
+			throw new Error('Recovery publication failed')
+		}
+		const originalWarn = console.warn
+		const originalError = console.error
+		console.warn = () => undefined
+		console.error = () => undefined
+		try {
+			await assert.rejects(restoreDefaultRpcConfiguration(createOwnerWhoseRecoveryFails(), connections, undefined, publishRecoveryThenFail), /Provider recovery failed/)
+		} finally {
+			Object.defineProperty(browser.storage.local, 'set', { configurable: true, value: originalStorageSet })
+			console.warn = originalWarn
+			console.error = originalError
+		}
+
+		assert.equal(connection.approved, false)
+		const reportedFailures = runtimeMessages.flatMap((message) => {
+			const parsed = MessageToPopup.safeParse(message)
+			return parsed.success && parsed.value.method === 'popup_UnexpectedErrorOccured' && ['Provider recovery failed', 'Status read failed', 'Recovery publication failed'].includes(parsed.value.data.message) ? [parsed.value.data.message] : []
+		})
+		assert.deepEqual(reportedFailures, ['Status read failed', 'Recovery publication failed'])
+	})
+
 	test('publishes RPC configuration recovery after an active settings transition in flight, never before it', async () => {
 		const { runtimeMessages } = installBrowserMock()
 		const { changeActiveAddressAndChain, changeSimulationMode, getRequiredSettings, publishRpcConfigurationRecovery, updateUserAddressBookEntries } = await loadModules()
