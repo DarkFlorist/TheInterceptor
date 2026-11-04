@@ -92,6 +92,34 @@ describe('background eth_accounts', () => {
 		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [tabId])
 	})
 
+	test('a rejected registration reconciliation is thrown and a failed icon refresh is reported after it', async () => {
+		const { runtimeMessages } = installBrowserMock({ manifestVersion: 3 })
+		const { registerWebsiteConnectionAndReconcileRequestBlocks, updateExtensionIconAfterRegistrationRequestBlocks } = await loadModules()
+		const { MessageToPopup } = await import('../../app/ts/types/interceptor-messages.js')
+		const tabId = 9886
+		const socket = { tabId, connectionName: 0n }
+		const websiteOrigin = 'icon-after-failed-reconciliation.example'
+		const websiteTabConnections: WebsiteTabConnections = new Map()
+		const registration = await withSilencedWarnings(async () => await registerWebsiteConnectionAndReconcileRequestBlocks(websiteTabConnections, socket, { port: createPort(tabId).port, socket, websiteOrigin, approved: false, wantsToConnect: false }, true))
+		await withSilencedWarnings(async () => await registration.requestBlocksReconciliation)
+		// The icon reads the applied session rules, which now fail.
+		Object.defineProperty(browser.declarativeNetRequest, 'getSessionRules', { configurable: true, value: async () => { throw new Error('Icon refresh failed') } })
+		const originalError = console.error
+		console.error = () => undefined
+		try {
+			await withSilencedWarnings(async () => await assert.rejects(updateExtensionIconAfterRegistrationRequestBlocks(websiteTabConnections, { ...registration, requestBlocksReconciliation: Promise.reject(new Error('Request-block reconciliation failed')) }, socket, websiteOrigin), /Request-block reconciliation failed/))
+		} finally {
+			console.error = originalError
+		}
+
+		const reportedFailures = runtimeMessages.flatMap((message) => {
+			const parsed = MessageToPopup.safeParse(message)
+			return parsed.success && parsed.value.method === 'popup_UnexpectedErrorOccured' ? [parsed.value.data.message] : []
+		})
+		assert.ok(reportedFailures.includes('Icon refresh failed'), `reported: ${ reportedFailures.join(' | ') }`)
+		assert.equal(reportedFailures.includes('Request-block reconciliation failed'), false)
+	})
+
 	for (const rpcNetwork of ['unreadable', 'readable'] as const) test(`${ rpcNetwork === 'unreadable' ? 'refreshes' : 'keeps' } an existing tab's icon after a consented child frame registers while the active RPC network is ${ rpcNetwork }`, async () => {
 		installBrowserMock({ manifestVersion: 3 })
 		const { registerWebsiteConnectionAndReconcileRequestBlocks, getTabState, updateExtensionIconAfterRegistrationRequestBlocks, updateTabState } = await loadModules()

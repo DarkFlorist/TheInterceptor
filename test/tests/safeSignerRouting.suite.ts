@@ -893,6 +893,49 @@ test('a recovery pass finishes later requests and the outbox while earlier items
 	assert.deepEqual(stacks.map((stack) => stack.transactions.map((transaction) => ({ safeTxHash: transaction.safeTxHash, signatures: transaction.signatures }))), [[{ safeTxHash: proposal.safeTxHash, signatures: [{ signer: safeTestOwnerAddress, signature: proposal.signature }] }]])
 })
 
+// A recovery pass collects a claimed request's settlement failure, and its later outbox read then rejects: that rejection is collected after the settlement failure instead of replacing it, so the settlement failure is thrown and the read failure reported. The next pass, with both working again, stores the outbox proposal.
+test('a recovery pass surfaces an earlier settlement failure when its later outbox read rejects', async () => {
+	const proposal = await storeSafeProposalAwaitingSignerOnChainA(152, 79n)
+	const [base] = await modules.getPendingTransactionsAndMessages()
+	if (base === undefined || base.type !== 'Transaction' || base.safeTransaction === undefined) throw new Error('Missing stored Safe proposal')
+	const unreachableSafeAddress = 0x5afe00000000000000000000000000000000cafen
+	const failingClaim = { ...base, uniqueRequestIdentifier: { ...base.uniqueRequestIdentifier, requestId: 153 }, safeTransaction: { ...base.safeTransaction, safeAddress: unreachableSafeAddress }, deferredSafeSignerReply: { signerReply: proposal.signature, chainId: fakeRpcNetwork.chainId } }
+	const outboxProposal = { ...base, uniqueRequestIdentifier: { ...base.uniqueRequestIdentifier, requestId: 154 } }
+	await modules.browserStorageLocalSet2({
+		pendingTransactionsAndMessages: [failingClaim],
+		pendingSafeProposalStores: [{ chainId: fakeRpcNetwork.chainId, signerReply: proposal.signature, proposal: outboxProposal }],
+	})
+	const { spyOn } = await import('bun:test')
+	const { getInterceptorErrorDiagnostics } = await import('../../app/ts/background/storageVariables.js')
+	const readCode = simulator.ethereum.getCode.bind(simulator.ethereum)
+	let settlementFailed = false
+	const getCode = spyOn(simulator.ethereum, 'getCode').mockImplementation(async (...args: Parameters<typeof readCode>) => {
+		if (args[0] === unreachableSafeAddress) {
+			settlementFailed = true
+			throw new TypeError('Failed to fetch')
+		}
+		return await readCode(...args)
+	})
+	const readStorage = browser.storage.local.get
+	// Once the settlement has failed, the outbox read of the same pass rejects.
+	Object.defineProperty(browser.storage.local, 'get', { configurable: true, value: async (...args: Parameters<typeof readStorage>) => {
+		const keys = args[0]
+		if (settlementFailed && Array.isArray(keys) && keys.includes('pendingSafeProposalStores')) throw new Error('Outbox read failed')
+		return await readStorage(...args)
+	} })
+	try {
+		await withSilencedConsole(async () => await assert.rejects(modules.advanceOutstandingSafeSignerReplies(simulator, proposal.websiteTabConnections), /Failed to fetch/u))
+	} finally {
+		Object.defineProperty(browser.storage.local, 'get', { configurable: true, value: readStorage })
+		getCode.mockRestore()
+	}
+	assert.ok((await getInterceptorErrorDiagnostics()).some((diagnostic) => diagnostic.code === 'pending_confirmation_recovery_item_failed' && (diagnostic.cause ?? '').includes('Outbox read failed')))
+	assert.deepEqual((await modules.getPendingSafeProposalStores()).map((entry) => entry.proposal.uniqueRequestIdentifier.requestId), [154])
+
+	await withSilencedConsole(async () => await modules.advanceOutstandingSafeSignerReplies(simulator, proposal.websiteTabConnections))
+	assert.deepEqual(await modules.getPendingSafeProposalStores(), [])
+})
+
 // Two signed outbox proposals of one Safe hold consecutive nonces, and storing the first fails once with a transport error: the second is not attempted on top of the missing first (its nonce check would drop it), so both stay, while another Safe's proposal is stored meanwhile. The next pass stores both in nonce order.
 test('keeps consecutive outbox proposals of one Safe in nonce order when storing the first fails transiently', async () => {
 	const proposal = await storeSafeProposalAwaitingSignerOnChainA(148, 78n)

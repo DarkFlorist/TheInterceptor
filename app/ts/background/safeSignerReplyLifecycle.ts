@@ -310,7 +310,13 @@ export async function recoverSafeSignerReplies(services: SimulationServices, web
 	const context: SafeSignerReplyContext = { services, getInstalledServices: async () => services, websiteTabConnections, confirmationWindow }
 	const outstandingRequests = (await getPendingTransactionsAndMessages()).filter((pending) => pending.deferredSafeSignerReply !== undefined || pending.websiteReplyQueued === true)
 	const requestFailures = await runEachIndependently(outstandingRequests, async (pending) => await runSafeSignerReplyLifecycle(pending.uniqueRequestIdentifier, { name: 'advance', run: async () => await advanceSafeSignerReply(pending.uniqueRequestIdentifier, context) }))
-	const outboxFailures = await storeSafeProposalsFromOutbox(services, confirmationWindow)
+	let outboxFailures: readonly unknown[]
+	try {
+		outboxFailures = await storeSafeProposalsFromOutbox(services, confirmationWindow)
+	} catch (outboxReadFailure: unknown) {
+		// A rejected outbox read is collected after the request failures instead of replacing them.
+		outboxFailures = [outboxReadFailure]
+	}
 	await surfaceIndependentFailures([...requestFailures, ...outboxFailures])
 }
 
@@ -325,12 +331,11 @@ export async function advanceSafeSignerRepliesOnNewBlock(services: SimulationSer
 			await safeSignerReplyLifecycleSemaphore.execute(transition)
 			pendingRetriesSpentTransitions.delete(retryIdentifier)
 		})
-		if (await hasOutstandingSafeSignerReplyWork(services)) {
-			try {
-				await recoverSafeSignerReplies(services, websiteTabConnections, confirmationWindow)
-			} catch (passFailure: unknown) {
-				failures.push(passFailure)
-			}
+		// The outstanding-work read is inside the collection boundary too, so its rejection is collected after the transition failures instead of replacing them.
+		try {
+			if (await hasOutstandingSafeSignerReplyWork(services)) await recoverSafeSignerReplies(services, websiteTabConnections, confirmationWindow)
+		} catch (passFailure: unknown) {
+			failures.push(passFailure)
 		}
 		await surfaceIndependentFailures(failures)
 	})()
@@ -422,6 +427,7 @@ async function moveSignedSafeProposalToOutbox(
 		if (await queueSafeProposalReplyAndMoveToOutbox(pending.uniqueRequestIdentifier, createStore, terminalReply) !== 'moved') return false
 		return await attemptQueuedTerminalReplyDelivery(context.websiteTabConnections, terminalReply)
 	} finally {
+		// The window update reports its own failures (each view step does), so awaiting it here never replaces the delivery outcome.
 		await context.confirmationWindow.updateAfterRequestLeftQueue(pending, context.services)
 	}
 }

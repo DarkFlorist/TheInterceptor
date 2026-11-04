@@ -17,7 +17,7 @@ import { Semaphore } from '../utils/semaphore.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { mergeStoredWebsiteMetadata } from '../utils/websiteIcons.js'
 import { reportUnexpectedError } from '../utils/errors.js'
-import { throwFirstAndReportRest } from './committedWriteReconciliation.js'
+import { throwAfterFollowUp, throwFirstAndReportRest } from './committedWriteReconciliation.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { getActiveAddressForCurrentSignerState, registerWebsiteConnectionAndProvisionallyClaimSignerState } from './signerStateOwnership.js'
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
@@ -499,17 +499,20 @@ async function getTopLevelWebsiteOrigin(websiteTabConnections: WebsiteTabConnect
 
 // The icon reports applied request blocking, so it is refreshed once the registration's reconciliation settles, whether or not that succeeds (a failure can follow a partial rule update). A new tab always gets its first icon (call this after writing the new tab's state); an existing tab is refreshed whenever the reconciliation ran, because a consented child frame can make the whole tab blocked. A child frame's icon is resolved for the tab's top-level website, not the frame's.
 export async function updateExtensionIconAfterRegistrationRequestBlocks(websiteTabConnections: WebsiteTabConnections, registration: Awaited<ReturnType<typeof registerWebsiteConnectionAndReconcileRequestBlocks>>, socket: WebsiteSocket, websiteOrigin: string) {
-	// A rejected reconciliation ran, so its tab blocking may have changed.
-	let reconciled = true
+	const refreshIcon = async (reconciled: boolean) => {
+		if (!registration.createdTabConnection && !reconciled) return
+		const iconWebsiteOrigin = registration.createdTabConnection || registration.isTopFrame ? websiteOrigin : await getTopLevelWebsiteOrigin(websiteTabConnections, socket.tabId)
+		// Without a known top-level website the icon is left to the tab's navigation-complete refresh.
+		if (iconWebsiteOrigin !== undefined) await updateExtensionIcon(socket.tabId, iconWebsiteOrigin, bumpPopupRefreshGeneration())
+	}
+	let reconciled: boolean
 	try {
 		reconciled = await registration.requestBlocksReconciliation
-	} finally {
-		if (registration.createdTabConnection || reconciled) {
-			const iconWebsiteOrigin = registration.createdTabConnection || registration.isTopFrame ? websiteOrigin : await getTopLevelWebsiteOrigin(websiteTabConnections, socket.tabId)
-			// Without a known top-level website the icon is left to the tab's navigation-complete refresh.
-			if (iconWebsiteOrigin !== undefined) await updateExtensionIcon(socket.tabId, iconWebsiteOrigin, bumpPopupRefreshGeneration())
-		}
+	} catch (reconciliationFailure: unknown) {
+		// A rejected reconciliation ran, so its tab blocking may have changed: the icon is still refreshed, and a refresh failure is reported after the reconciliation failure instead of replacing it.
+		return await throwAfterFollowUp(reconciliationFailure, async () => await refreshIcon(true))
 	}
+	await refreshIcon(reconciled)
 }
 
 // A pure query of the blocking that is in force: only rules that were successfully applied count, and enforcement belongs to updateDeclarativeNetRequestBlocks.

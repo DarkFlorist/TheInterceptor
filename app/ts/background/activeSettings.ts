@@ -152,6 +152,7 @@ export async function publishRpcConfigurationRecovery(
 			)
 		}))
 	} finally {
+		// Completing the access update reports its own failures, so it never replaces the failures returned above.
 		if (accessUpdate !== undefined) await finishWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, accessUpdate, true)
 	}
 }
