@@ -1142,7 +1142,7 @@ test('closing a tab before the simulation services exist still finishes its comm
 		return true
 	}
 
-	await withSilencedConsole(async () => await finishCommittedRequestsOfClosedTab(uniqueRequestIdentifier.requestSocket.tabId, { websiteTabConnections: new Map(), refreshConfirmationWindow }))
+	await withSilencedConsole(async () => await finishCommittedRequestsOfClosedTab(uniqueRequestIdentifier.requestSocket.tabId, { ...testResolutionContext(new Map()), refreshConfirmationWindow }))
 	assert.deepEqual((await modules.getPendingTransactionsAndMessages()).map((pending) => pending.uniqueRequestIdentifier.requestId), [2], 'the closed tab\'s request is removed without the services')
 	assert.deepEqual((await modules.getPendingTerminalReplies()).map((entry) => entry.confirmationWindow), [pendingTransaction.popupOrTabId], 'the window update is owed')
 
@@ -1165,6 +1165,8 @@ const outcomePersistingResolutions = [
 	},
 	{
 		name: 'a Gnosis Safe owner signature',
+		// Accepting a Gnosis Safe proposal again reviews it before taking the claim, so a reconnecting page finishing the request holds the claim instead.
+		claimHolder: 'reconnecting page',
 		prepare: async () => {
 			await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeSimulationSignerAddress: safeTestOwnerAddress })])
 			const { safeTx, safeTxHash } = await storeSafeProposalRequest({ status: 'WaitingForSigner' })
@@ -1174,6 +1176,7 @@ const outcomePersistingResolutions = [
 	},
 	{
 		name: 'a signer\'s transaction hash',
+		claimHolder: 'repeated accept',
 		prepare: async () => {
 			await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [{ ...pendingTransaction, simulationMode: false, approvalStatus: { status: 'WaitingForSigner' } }] })
 			const signerReply = modules.EthereumBytes32.serialize(signedTransaction.hash)
@@ -1193,34 +1196,95 @@ async function assertNoOutcomePersisted() {
 	assert.deepEqual((await modules.getInterceptorTransactionStack()).operations, [])
 }
 
-for (const resolution of outcomePersistingResolutions) {
-	test(`a reject that wins while ${ resolution.name } waits on its read of the request leaves it without effect`, async () => {
-		const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
-		const { data } = await resolution.prepare()
-		// Pauses the resolution right after it read the pending request.
-		let pauseNextPendingRead = true
-		let signalPaused: (() => void) | undefined
-		const paused = new Promise<void>((resolve) => { signalPaused = resolve })
-		let resume: (() => void) | undefined
-		const resumed = new Promise<void>((resolve) => { resume = resolve })
+// Pauses the next storage read (or write) of the pending requests until resumed; resuming more than once is harmless.
+function pauseNextPendingRequestsAccess(access: 'read' | 'write') {
+	let signalPaused: (() => void) | undefined
+	const paused = new Promise<void>((resolve) => { signalPaused = resolve })
+	let resume: () => void = () => undefined
+	const resumed = new Promise<void>((resolve) => { resume = resolve })
+	let armed = true
+	if (access === 'read') {
 		browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
 			const items = readStoredItems()
-			if (!pauseNextPendingRead || !Array.isArray(keys) || !keys.includes('pendingTransactionsAndMessages')) return items
-			pauseNextPendingRead = false
+			if (!armed || !Array.isArray(keys) || !keys.includes('pendingTransactionsAndMessages')) return items
+			armed = false
 			signalPaused?.()
 			await resumed
 			return items
 		})
-		try {
-			const resolving = withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data }))
-			await paused
-			assert.equal(await withSilencedConsole(async () => await rejectRequest(websiteTabConnections)), true)
-			assert.deepEqual(await modules.getPendingTerminalReplies(), [])
-			resume?.()
-			assert.equal(await resolving, false)
-		} finally {
-			browserMock.setStorageGetHandler(undefined)
-		}
+	} else {
+		browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+			if (armed && 'pendingTransactionsAndMessages' in items) {
+				armed = false
+				signalPaused?.()
+				await resumed
+			}
+			writeStoredItems()
+		})
+	}
+	return { paused, resume: () => resume() }
+}
+
+const resolveRequest = async (websiteTabConnections: ReturnType<typeof connectRequestingWebsite>['websiteTabConnections'], data: TransactionConfirmationData) => await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data }))
+type TransactionConfirmationData = Parameters<typeof modules.resolvePendingTransactionOrMessage>[3]['data']
+
+// The website got exactly one reply, the success, and the request is cleaned up.
+async function assertSettledOnceWithSuccess(postedMessages: readonly unknown[], result: string) {
+	const replies = getRepliesToWebsite(postedMessages)
+	assert.equal(replies.length, 1, 'exactly one reply')
+	const [success] = replies
+	if (!isRecord(success)) throw new Error('Missing reply to the website')
+	assert.equal(success.result, result)
+	assert.equal('error' in success, false)
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+}
+
+const [addToSafeStackResolution, ...signerResults] = outcomePersistingResolutions
+
+test(`a reject that wins while ${ addToSafeStackResolution.name } waits on its read of the request leaves it without effect`, async () => {
+	const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
+	const { data } = await addToSafeStackResolution.prepare()
+	// Pauses the resolution right after it read the pending request, before it takes the request's claim.
+	const { paused, resume } = pauseNextPendingRequestsAccess('read')
+	try {
+		const resolving = resolveRequest(websiteTabConnections, data)
+		await paused
+		assert.equal(await withSilencedConsole(async () => await rejectRequest(websiteTabConnections)), true)
+		assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+		resume()
+		assert.equal(await resolving, false)
+	} finally {
+		resume()
+		browserMock.setStorageGetHandler(undefined)
+	}
+
+	const replies = getRepliesToWebsite(postedMessages)
+	assert.equal(replies.length, 1, 'no second reply')
+	const [rejection] = replies
+	if (!isRecord(rejection) || !isRecord(rejection.error)) throw new Error('Missing rejection sent to the website')
+	assert.equal(rejection.error.code, METAMASK_ERROR_USER_REJECTED_REQUEST)
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+	await assertNoOutcomePersisted()
+})
+
+for (const resolution of outcomePersistingResolutions) {
+	test(`a reject after ${ resolution.name } completed does nothing`, async () => {
+		const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
+		const { data, result } = await resolution.prepare()
+		assert.equal(await resolveRequest(websiteTabConnections, data), true)
+		assert.equal(await withSilencedConsole(async () => await rejectRequest(websiteTabConnections)), false)
+		await assertSettledOnceWithSuccess(postedMessages, result)
+	})
+}
+
+for (const signerResult of signerResults) {
+	test(`${ signerResult.name } after a completed reject does nothing`, async () => {
+		const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
+		const { data } = await signerResult.prepare()
+		assert.equal(await withSilencedConsole(async () => await rejectRequest(websiteTabConnections)), true)
+		assert.equal(await resolveRequest(websiteTabConnections, data), false)
 
 		const replies = getRepliesToWebsite(postedMessages)
 		assert.equal(replies.length, 1, 'no second reply')
@@ -1232,20 +1296,66 @@ for (const resolution of outcomePersistingResolutions) {
 		await assertNoOutcomePersisted()
 	})
 
-	test(`a reject after ${ resolution.name } completed does nothing`, async () => {
+	test(`a reject arriving while ${ signerResult.name } is settled is deferred, and the signer result, first to arrive, wins`, async () => {
 		const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
-		const { data, result } = await resolution.prepare()
-		assert.equal(await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data })), true)
-		assert.equal(await withSilencedConsole(async () => await rejectRequest(websiteTabConnections)), false)
+		const { data, result } = await signerResult.prepare()
+		// Pauses the settlement under the request's claim, at its first read of the pending request.
+		const { paused, resume } = pauseNextPendingRequestsAccess('read')
+		try {
+			const settling = resolveRequest(websiteTabConnections, data)
+			await paused
+			assert.equal(await withSilencedConsole(async () => await rejectRequest(websiteTabConnections)), false, 'the reject is deferred to the claim\'s release')
+			resume()
+			assert.equal(await settling, true)
+		} finally {
+			resume()
+			browserMock.setStorageGetHandler(undefined)
+		}
+		await withSilencedConsole(waitForResolutionRetriesToFinish)
+		await assertSettledOnceWithSuccess(postedMessages, result)
+	})
 
-		const replies = getRepliesToWebsite(postedMessages)
-		assert.equal(replies.length, 1, 'exactly one reply')
-		const [success] = replies
-		if (!isRecord(success)) throw new Error('Missing reply to the website')
-		assert.equal(success.result, result)
-		assert.equal('error' in success, false)
-		assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
-		assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+	test(`${ signerResult.name } arriving while a ${ signerResult.claimHolder } holds the request's claim is kept and settled once the claim is released`, async () => {
+		const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
+		const { data, result } = await signerResult.prepare()
+		// A repeated accept forwards the request to the signer again under the request's claim, and pauses on storing that it waits for its signer; a reconnecting page's finishing pauses on reading the pending request.
+		const { paused, resume } = pauseNextPendingRequestsAccess(signerResult.claimHolder === 'repeated accept' ? 'write' : 'read')
+		try {
+			const { resumeRequest } = await import('../../app/ts/background/requestResolution.js')
+			const holding = signerResult.claimHolder === 'repeated accept'
+				? resolveRequest(websiteTabConnections, { action: 'accept', uniqueRequestIdentifier })
+				: resumeRequest(uniqueRequestIdentifier, { ...testResolutionContext(websiteTabConnections), automatic: true })
+			await paused
+			assert.equal(await resolveRequest(websiteTabConnections, data), false, 'the signer result waits for the claim')
+			resume()
+			await holding
+		} finally {
+			resume()
+			browserMock.setStorageGetHandler(undefined)
+			browserMock.setStorageSetHandler(undefined)
+		}
+		await withSilencedConsole(waitForResolutionRetriesToFinish)
+		await assertSettledOnceWithSuccess(postedMessages, result)
+	})
+
+	test(`${ signerResult.name } whose committed-reply lookup fails once is kept and settled by the request's retry`, async () => {
+		const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
+		const { data, result } = await signerResult.prepare()
+		let failNextCommittedReplyLookup = true
+		browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+			if (failNextCommittedReplyLookup && Array.isArray(keys) && keys.includes('pendingTerminalReplies')) {
+				failNextCommittedReplyLookup = false
+				throw new Error('The committed reply could not be read.')
+			}
+			return readStoredItems()
+		})
+		try {
+			assert.equal(await resolveRequest(websiteTabConnections, data), undefined, 'the settlement is retried')
+			await withSilencedConsole(waitForResolutionRetriesToFinish)
+		} finally {
+			browserMock.setStorageGetHandler(undefined)
+		}
+		await assertSettledOnceWithSuccess(postedMessages, result)
 	})
 }
 

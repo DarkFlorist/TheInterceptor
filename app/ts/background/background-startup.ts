@@ -20,8 +20,8 @@ import { DEFAULT_TAB_CONNECTION, ICON_NOT_ACTIVE } from '../utils/constants.js'
 import { reportUnexpectedError, isExpectedInfrastructureError, printError, reportLocalRecoveryBestEffort } from '../utils/errors.js'
 import { updateContentScriptInjectionStrategyManifestV2 } from '../utils/contentScriptsUpdating.js'
 import { checkIfInterceptorShouldSleep } from './sleeping.js'
-import { onCloseWindowOrTab, resolvePendingRequestsForMissingConfirmationWindows, updateConfirmTransactionView } from './windows/confirmTransaction.js'
-import { beginStartupRecovery, finishCommittedRequestsOfClosedTab, resumeCommittedRequests, resumeRequest, type ResolutionContext } from './requestResolution.js'
+import { createResolutionContextWithServices, onCloseWindowOrTab, resolvePendingRequestsForMissingConfirmationWindows } from './windows/confirmTransaction.js'
+import { beginStartupRecovery, finishCommittedRequestsOfClosedTab, resumeCommittedRequests, resumeRequest } from './requestResolution.js'
 import { modifyObject } from '../utils/typescript.js'
 import { updateDeclarativeNetRequestBlocks } from './accessManagement.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
@@ -53,14 +53,10 @@ function getSimulationServices() {
 	return simulationServicesOwner.getCurrent()
 }
 
-// The request resolution's one service-dependent step: showing the confirmation queue in a window that still has requests. Before the simulation services exist it fails, and the request's finishing retries it, or startup recovery finishes the request once they exist; every other resolution step needs only storage and the browser.
-const refreshConfirmationWindow = async () => {
-	const { ethereum, tokenPriceService } = getSimulationServices()
-	return await updateConfirmTransactionView(ethereum, tokenPriceService)
-}
-const resolutionContext: ResolutionContext = { websiteTabConnections, refreshConfirmationWindow }
+// The request resolution gets the simulation services only for its service-dependent steps, showing the confirmation queue in a window and settling a signer's result. Before the services exist those steps fail, and the request's finishing retries them, or startup recovery finishes the request once they exist; every other resolution step needs only storage and the browser.
+const resolutionContext = createResolutionContextWithServices(getSimulationServices, websiteTabConnections)
 // A reconnect flush finishes the requests whose replies it delivered.
-const finishCommittedRequest: CommittedRequestFinisher = async (uniqueRequestIdentifier, connections) => await resumeRequest(uniqueRequestIdentifier, { refreshConfirmationWindow, websiteTabConnections: connections, automatic: true })
+const finishCommittedRequest: CommittedRequestFinisher = async (uniqueRequestIdentifier, connections) => await resumeRequest(uniqueRequestIdentifier, { ...createResolutionContextWithServices(getSimulationServices, connections), automatic: true })
 
 async function publishRpcConnectionStatus(method: RpcConnectionStatusChangeMethod, rpcConnectionStatus: DefinedRpcConnectionStatus) {
 	await setRpcConnectionStatus(rpcConnectionStatus)

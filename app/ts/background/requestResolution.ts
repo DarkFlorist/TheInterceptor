@@ -15,13 +15,15 @@ import { attachTerminalReplyWindow, attemptQueuedTerminalReplyDelivery, forgetTe
 
 /**
  * The resolution of pending requests: how a request gets its terminal outcome and is finished, whatever starts it (a user action in the confirmation window, a closed window or tab, a reconnecting page, startup). The module owns all resolution state: claims, deferred resolutions, chosen replies, decline intents and each request's one retry budget.
- * It needs no simulation services: the only step that does, showing the confirmation queue in a window that still has requests, comes in the context (refreshConfirmationWindow), and a failure in it is retried like any other step.
+ * It needs no simulation services: the steps that do, showing the confirmation queue in a window that still has requests and settling a signer's result, come in the context (refreshConfirmationWindow, settleSignerResult), and a failure in them is retried like any other step.
  */
 
 // automatic marks a resolution no user started (a scheduled retry, a reconnect flush, startup, a follow-up on claim release): it only runs while the request's retry budget lasts (withResolutionClaim).
-export type ResolutionContext = ConfirmationWindowAccess & { readonly websiteTabConnections: WebsiteTabConnections, readonly automatic?: true }
+export type ResolutionContext = ConfirmationWindowAccess & { readonly websiteTabConnections: WebsiteTabConnections, readonly settleSignerResult: SignerResultSettlement, readonly automatic?: true }
+// Settles a signer's result for a request still pending and uncommitted, run under its claim: it persists what the result stands for and commits the reply (commitAndFinish), or records why the result was refused.
+export type SignerResultSettlement = (request: PendingTransactionOrSignableMessage, signerReply: unknown, context: ResolutionContext) => Promise<boolean | undefined>
 // The context for a retry that runs later: without the caller's locks, and automatic.
-const withoutHeldLocks = ({ refreshConfirmationWindow, websiteTabConnections }: ResolutionContext): ResolutionContext => ({ refreshConfirmationWindow, websiteTabConnections, automatic: true })
+const withoutHeldLocks = ({ refreshConfirmationWindow, websiteTabConnections, settleSignerResult }: ResolutionContext): ResolutionContext => ({ refreshConfirmationWindow, websiteTabConnections, settleSignerResult, automatic: true })
 
 const getPendingRequest = async (uniqueRequestIdentifier: UniqueRequestIdentifier) => (await getPendingTransactionsAndMessages()).find((pending) => doesUniqueRequestIdentifiersMatch(pending.uniqueRequestIdentifier, uniqueRequestIdentifier))
 
@@ -50,6 +52,22 @@ const resetRequestRetryBudgetAtStartup = (uniqueRequestIdentifier: UniqueRequest
 }
 // The decline each request was asked for in this session, which its retries run (declineRequest); the stored declineRequested of the pending request carries it across a restart.
 const declineIntents = new Map<string, DeclineReason>()
+// The signer results that arrived for each request and are not processed yet, an external one-time input kept until its request's claim processes it (submitSignerResult). Kept in memory only: a restart loses the signer connection that produced the result, and the request stays waiting for its signer, for the user to reject.
+const keptSignerResults = new Map<string, { readonly signerReply: unknown, readonly arrival: number }>()
+// When each request's decline intent and kept signer result arrived, so that of a decline and a signer result the first to arrive wins.
+const firstDeclineArrivals = new Map<string, number>()
+let nextInputArrival = 0
+const signerResultPrecedesDecline = (claim: string) => {
+	const signerResult = keptSignerResults.get(claim)
+	const declineArrival = firstDeclineArrivals.get(claim)
+	return signerResult !== undefined && (declineArrival === undefined || signerResult.arrival < declineArrival)
+}
+// Drops the inputs kept for a request that is finished or gone.
+const forgetRequestInputs = (claim: string) => {
+	declineIntents.delete(claim)
+	firstDeclineArrivals.delete(claim)
+	keptSignerResults.delete(claim)
+}
 
 // Schedules the request's one retry for a failed resolution step, unless its budget is exhausted, then reports the failure. The attempt and the timer are reserved synchronously, before the report is awaited, so concurrent failures each count once against the one budget and a timer is never overwritten without being cleared. Each schedule has its own generation: completion or a budget reset deletes the entry, so a stale timer finds its generation gone and does nothing. The retry declines the request if a decline was asked for, else finishes it.
 let nextRetryGeneration = 0
@@ -82,10 +100,11 @@ async function scheduleRequestRetry(uniqueRequestIdentifier: UniqueRequestIdenti
 		: { code: 'request_resolution_gave_up', message: 'Stopped retrying the resolution of a request until the user acts on it or the extension restarts.' })
 }
 
-// A retry of the request, automatic so it passes the budget gate: it declines the request if a decline was asked for, else finishes it.
+// A retry of the request, automatic so it passes the budget gate: it declines the request if a decline was asked for before any kept signer result, else finishes it, settling a kept signer result.
 async function runRequestRetry(uniqueRequestIdentifier: UniqueRequestIdentifier, retryContext: ResolutionContext) {
-	const decline = declineIntents.get(getUniqueRequestIdentifierString(uniqueRequestIdentifier))
-	return decline === undefined ? await resumeRequest(uniqueRequestIdentifier, retryContext) : await declineRequest(uniqueRequestIdentifier, decline, retryContext)
+	const claim = getUniqueRequestIdentifierString(uniqueRequestIdentifier)
+	const decline = declineIntents.get(claim)
+	return decline === undefined || signerResultPrecedesDecline(claim) ? await resumeRequest(uniqueRequestIdentifier, retryContext) : await declineRequest(uniqueRequestIdentifier, decline, retryContext)
 }
 
 // Delivers a committed reply unless it was delivered; a delivery that throws is returned as its error, for finishing to throw once the request is removed and its window updated.
@@ -123,7 +142,7 @@ async function finishCommittedRequest(uniqueRequestIdentifier: UniqueRequestIden
 		if (committedReply === undefined) {
 			if (pending !== undefined) return { kind: 'uncommitted', request: pending }
 			clearRequestRetry(claim)
-			declineIntents.delete(claim)
+			forgetRequestInputs(claim)
 			return { kind: 'absent' }
 		}
 		// A delivery that throws does not hold back removing the request and updating its window (#1650); its error is thrown after them, for the retry to deliver the reply again.
@@ -144,7 +163,7 @@ async function finishCommittedRequest(uniqueRequestIdentifier: UniqueRequestIden
 		await retireTerminalReply(uniqueRequestIdentifier, requestingTabGone)
 		if ('error' in delivery && !requestingTabGone) throw delivery.error
 		clearRequestRetry(claim)
-		declineIntents.delete(claim)
+		forgetRequestInputs(claim)
 		return { kind: 'finished', delivered }
 	} catch (error) {
 		await scheduleRequestRetry(uniqueRequestIdentifier, context, error)
@@ -159,10 +178,35 @@ export async function commitAndFinish(request: PendingTransactionOrSignableMessa
 	return outcome.kind === 'finished' || outcome.kind === 'retrying' ? outcome.delivered : undefined
 }
 
-// Finishes a committed request under its claim; it never throws, so a scheduled retry, a reconnect flush or startup can run it unattended.
-export const resumeRequest = async (uniqueRequestIdentifier: UniqueRequestIdentifier, context: ResolutionContext): Promise<boolean | undefined> => await withResolutionClaim(uniqueRequestIdentifier, context, async () => false, { whenClaimed: 'finish-again' })
+// Finishes a committed request under its claim, and settles a signer result kept for one still pending and uncommitted, unless a decline arrived before it. It never throws, so a scheduled retry, a reconnect flush or startup can run it unattended: a failure goes to the request's retry, which keeps the signer result.
+export async function resumeRequest(uniqueRequestIdentifier: UniqueRequestIdentifier, context: ResolutionContext): Promise<boolean | undefined> {
+	const claim = getUniqueRequestIdentifierString(uniqueRequestIdentifier)
+	try {
+		return await withResolutionClaim(uniqueRequestIdentifier, context, async (current) => {
+			const signerResult = keptSignerResults.get(claim)
+			if (signerResult === undefined) return false
+			// The decline that arrived first wins: it rejects the request, and the signer result is dropped.
+			if (!signerResultPrecedesDecline(claim)) {
+				keptSignerResults.delete(claim)
+				return false
+			}
+			const settled = await context.settleSignerResult(current, signerResult.signerReply, context)
+			keptSignerResults.delete(claim)
+			return settled
+		}, { whenClaimed: 'finish-again' })
+	} catch (error) {
+		await scheduleRequestRetry(uniqueRequestIdentifier, context, error)
+		return undefined
+	}
+}
 
-// The size of the in-memory resolution activity: claims held, follow-ups deferred and retries scheduled (of requests and of bounded work), which is empty whenever no resolution is in flight or awaiting a retry. Intent kept for a later user action or startup (chosen replies, decline intents, exhausted budgets) is not activity.
+// A signer's result for a request: kept until the request's claim processes it, so a busy claim or a failed step defers it rather than dropping it. The signer is no user, so its result gives the request no new retry budget, but a deferral it records is not automatic-only: it runs on release whatever the budget.
+export async function submitSignerResult(uniqueRequestIdentifier: UniqueRequestIdentifier, signerReply: unknown, context: ResolutionContext) {
+	keptSignerResults.set(getUniqueRequestIdentifierString(uniqueRequestIdentifier), { signerReply, arrival: nextInputArrival++ })
+	return await resumeRequest(uniqueRequestIdentifier, context)
+}
+
+// The size of the in-memory resolution activity: claims held, follow-ups deferred and retries scheduled (of requests and of bounded work), which is empty whenever no resolution is in flight or awaiting a retry. Intent kept for a later user action or startup (chosen replies, decline intents, kept signer results, exhausted budgets) is not activity.
 export const getResolutionBookkeepingSize = () => resolutionClaims.size + deferredResolutions.size + [...requestRetries.values()].filter((retry) => retry.timer !== undefined).length + boundedRetryTimers.size
 
 // The scheduled retries of runWithBoundedRetry.
@@ -263,7 +307,7 @@ export async function withResolutionClaim<Result>(uniqueRequestIdentifier: Uniqu
 		const parkedRetryIsCurrent = deferred?.parkedRetryGeneration !== undefined && requestRetries.get(claim)?.generation === deferred.parkedRetryGeneration
 		if (deferred?.followUp === true) {
 			// Follow-ups only automatic resolutions recorded are automatic, and pass the budget gate; one a user action recorded runs regardless. A parked retry's decline joins them.
-			const followUpContext: ResolutionContext = deferred.automaticOnly ? { ...context, automatic: true } : { refreshConfirmationWindow: context.refreshConfirmationWindow, websiteTabConnections: context.websiteTabConnections, ...(context.holdsPendingConfirmationLock === true ? { holdsPendingConfirmationLock: true } : {}) }
+			const followUpContext: ResolutionContext = deferred.automaticOnly ? { ...context, automatic: true } : { refreshConfirmationWindow: context.refreshConfirmationWindow, websiteTabConnections: context.websiteTabConnections, settleSignerResult: context.settleSignerResult, ...(context.holdsPendingConfirmationLock === true ? { holdsPendingConfirmationLock: true } : {}) }
 			await resumeRequest(uniqueRequestIdentifier, followUpContext)
 			const decline = deferred.decline ?? (parkedRetryIsCurrent ? declineIntents.get(claim) : undefined)
 			if (decline !== undefined) await declineRequest(uniqueRequestIdentifier, decline, followUpContext)
@@ -301,6 +345,7 @@ async function rejectUnlessStacked(request: PendingTransactionOrSignableMessage,
 export async function declineRequest(uniqueRequestIdentifier: UniqueRequestIdentifier, reason: DeclineReason, context: ResolutionContext): Promise<boolean | undefined> {
 	const claim = getUniqueRequestIdentifierString(uniqueRequestIdentifier)
 	declineIntents.set(claim, reason)
+	if (!firstDeclineArrivals.has(claim)) firstDeclineArrivals.set(claim, nextInputArrival++)
 	const storeIntent = async () => await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (request) => request.declineRequested === undefined ? { ...request, declineRequested: reason } : request)
 	// Checked synchronously with the claim attempt below: another resolution (an accept, say) holds the request.
 	const claimedElsewhere = resolutionClaims.has(claim)
