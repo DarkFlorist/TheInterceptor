@@ -609,7 +609,9 @@ describe('RPC storage recovery', () => {
 				simulationMode: true,
 			}, ignoreRecoveryPublication), isRpcConfigurationUnavailableError)
 			assert.equal(owner.getCurrent() !== undefined, false)
-			assert.equal(runtimeMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_update_rpc_list'), false)
+			// The list write is committed, so its status is still published after the failed services change, and it reports the paused services instead of a resumed configuration.
+			const rpcListUpdates = runtimeMessages.flatMap((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_update_rpc_list' && 'data' in message ? [message.data] : [])
+			assert.deepEqual(rpcListUpdates, [{ rpcEntries: [], rpcConfigurationAvailable: false }])
 		} finally {
 			Object.defineProperty(browser.storage.local, 'set', { configurable: true, value: originalSet })
 			owner.clear()

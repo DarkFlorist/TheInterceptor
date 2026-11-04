@@ -9,7 +9,8 @@ import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeApps
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { DEFAULT_RPCS } from '../../config/defaults.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
-import { retryRpcConfigurationServices, transitionRpcList } from '../rpcConfigurationLifecycle.js'
+import { applyRpcServicesChange, readRpcConfigurationRetry, type RpcListTransitionResult, transitionRpcList } from '../rpcConfigurationLifecycle.js'
+import { reconcileAfterIndependentSteps } from '../committedWriteReconciliation.js'
 import { rpcConfigurationIsReady, rpcConfigurationIsUsable } from '../rpcConfigurationAvailability.js'
 
 type PublishRpcConfigurationRecovery = (simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, previousSettings: Settings | undefined, activeRpcNetwork: Settings['activeRpcNetwork'], forceChainChanged?: boolean) => Promise<void>
@@ -91,32 +92,31 @@ export async function exportSettings() {
 	})
 }
 
-export async function setNewRpcList(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: SetRpcList, settings: Settings, publishRecovery: PublishRpcConfigurationRecovery) {
-	const transition = await transitionRpcList(simulationServicesOwner, request.data, 'edit')
-	try {
-		await publishCurrentRpcStatus(simulationServicesOwner)
-	} finally {
-		// The transition is committed, so its recovery is published even if its RPC status could not be.
+// A committed RPC configuration write runs under the committed-write rule (reconcileAfterIndependentSteps): its services change and then its RPC status publication are independent steps, its recovery publication (which reconciles website access) always runs after them, and every failure is surfaced afterwards, the first thrown and the rest reported in order.
+async function completeRpcListTransition(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, transition: RpcListTransitionResult, settings: Settings | undefined, publishRecovery: PublishRpcConfigurationRecovery) {
+	await reconcileAfterIndependentSteps([
+		async () => applyRpcServicesChange(simulationServicesOwner, transition.servicesChange),
+		async () => await publishCurrentRpcStatus(simulationServicesOwner),
+	], async () => {
 		if (transition.publishRecovery) await publishRecovery(simulationServicesOwner, websiteTabConnections, settings, transition.activeRpcNetwork, transition.forceChainChanged)
-	}
+	})
+}
+
+export async function setNewRpcList(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: SetRpcList, settings: Settings, publishRecovery: PublishRpcConfigurationRecovery) {
+	await completeRpcListTransition(simulationServicesOwner, websiteTabConnections, await transitionRpcList(simulationServicesOwner, request.data, 'edit'), settings, publishRecovery)
 }
 
 export async function restoreDefaultRpcConfiguration(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, settings: Settings | undefined, publishRecovery: PublishRpcConfigurationRecovery) {
-	const transition = await transitionRpcList(simulationServicesOwner, DEFAULT_RPCS, 'restore-defaults')
-	try {
-		await publishCurrentRpcStatus(simulationServicesOwner)
-	} finally {
-		// The transition is committed, so its recovery is published even if its RPC status could not be.
-		if (transition.publishRecovery) await publishRecovery(simulationServicesOwner, websiteTabConnections, settings, transition.activeRpcNetwork, transition.forceChainChanged)
-	}
+	await completeRpcListTransition(simulationServicesOwner, websiteTabConnections, await transitionRpcList(simulationServicesOwner, DEFAULT_RPCS, 'restore-defaults'), settings, publishRecovery)
 }
 
+// Retry writes nothing, but follows the same rule: the services change and the RPC status publication are independent steps, and a ready configuration's access rules are reconciled after them even if either failed.
 export async function retryRpcConfiguration(simulationServicesOwner: SimulationServicesOwner, reconcileAccessRules: () => Promise<void>) {
-	const retriedConfiguration = await retryRpcConfigurationServices(simulationServicesOwner)
-	try {
-		await publishCurrentRpcStatus(simulationServicesOwner)
-	} finally {
-		// Services already resumed, so their access rules are reconciled even if the RPC status could not be published.
+	const { retriedConfiguration, servicesChange } = await readRpcConfigurationRetry()
+	await reconcileAfterIndependentSteps([
+		async () => applyRpcServicesChange(simulationServicesOwner, servicesChange),
+		async () => await publishCurrentRpcStatus(simulationServicesOwner),
+	], async () => {
 		if (retriedConfiguration !== undefined) await reconcileAccessRules()
-	}
+	})
 }

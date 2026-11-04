@@ -17,7 +17,7 @@ import { Semaphore } from '../utils/semaphore.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { mergeStoredWebsiteMetadata } from '../utils/websiteIcons.js'
 import { reportUnexpectedError } from '../utils/errors.js'
-import { runEachIndependently } from './terminalStateRecovery.js'
+import { throwFirstAndReportRest } from './committedWriteReconciliation.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { getActiveAddressForCurrentSignerState, registerWebsiteConnectionAndProvisionallyClaimSignerState } from './signerStateOwnership.js'
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
@@ -535,31 +535,11 @@ async function withAccessReconciliationLock<Result>(websiteTabConnections: Websi
 	return await lock.execute(run)
 }
 
-// Every failure is surfaced: the first is thrown and every other one is reported. Callers pass at least one failure.
-async function throwFirstAndReportRest(failures: readonly unknown[]): Promise<never> {
-	const [firstFailure, ...otherFailures] = failures
-	for (const failure of otherFailures) await reportUnexpectedError(failure)
-	throw firstFailure
-}
-
 // Surfaced only after every step ran and the lock is released: thrown (first) and reported (the rest) when the caller handles failures, otherwise all reported, so none is dropped.
 async function surfaceAccessReconciliationFailures(failures: readonly unknown[], throwOnError: boolean) {
 	if (failures.length === 0) return
 	if (throwOnError) return await throwFirstAndReportRest(failures)
 	for (const failure of failures) await reportUnexpectedError(failure)
-}
-
-// Work between a committed access-affecting write and its reconciliation (a reply, content-script registration, a settings read-back, provider installation) must never skip that reconciliation. Each preceding step runs independently and `reconcile` always runs after them; then every failure, in order, is surfaced: the first is thrown and every other one is reported.
-export async function reconcileAfterIndependentSteps<Result>(precedingSteps: readonly (() => Promise<unknown>)[], reconcile: () => Promise<Result>): Promise<Result> {
-	const precedingFailures = await runEachIndependently(precedingSteps, async (step) => await step())
-	let result: Result
-	try {
-		result = await reconcile()
-	} catch (reconcileFailure: unknown) {
-		return await throwFirstAndReportRest([...precedingFailures, reconcileFailure])
-	}
-	if (precedingFailures.length > 0) return await throwFirstAndReportRest(precedingFailures)
-	return result
 }
 
 // The access reconciliation rule. Runs are serialized under accessReconciliationLocks. Access is granted only from the current persisted state read inside the lock: the unpinned settings snapshot (active RPC network and approvals, so connection events use the current network too) and, per connection, tab state, address book and signer state; a run that waited for the lock therefore never applies state older than an earlier run's, and the reconciliation that follows a committed write applies after every run already in flight. Anything that keeps the settings read from producing available settings (an unavailable snapshot or a rejected read) makes the run revoke-only with `committedSettings`, which the caller read after its committed write. Every connection is reconciled, and each step's failure (request-block update, settings read, active-address lookup, disconnect or connect notification) is collected independently, in order, and surfaced at the end.
