@@ -4,7 +4,7 @@ import { requestAccessFromUser } from './windows/interceptorAccess.js'
 import { retrieveWebsiteDetails, updateExtensionIcon } from './iconHandler.js'
 import type { TabConnection, WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { InpageScriptCallBack, Settings } from '../types/interceptor-messages.js'
-import { getSettingsSnapshot, updateWebsiteAccess, settingsIfAvailable, approvalsOrNone, requireReadableApprovals, getWebsiteApprovalsSnapshot, requireAvailableSettings } from './settings.js'
+import { getSettingsSnapshot, updateWebsiteAccess, settingsIfAvailable, requireReadableApprovals, getWebsiteApprovalsSnapshot, requireAvailableSettings } from './settings.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
 import { type WebsiteSocket, getHostWithPort, getTabIfExists, silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { getAllTabStates } from './storageVariables.js'
@@ -267,26 +267,37 @@ async function getConnectionActiveAddressOrDisconnect(websiteTabConnections: Web
 	}
 }
 
+// One approvals snapshot per tab, read after every active address is resolved and applied with no further await, so every connection of the tab sees the same approvals and an access change made while the caller awaited (for example a settings import awaiting content-script registration) is not undone. Unreadable approvals: `settings` (the caller's committed settings, read after any committed access write) still decides revocations, so a committed revocation is applied; connections it grants stay approved, nothing new is granted, and the read error is thrown so reconcileWebsiteApprovalAccesses reports or rethrows it. The failure is never silent and never leaves a committed revocation unapplied.
 async function updateTabConnections(
 	websiteTabConnections: WebsiteTabConnections,
 	tabConnection: TabConnection,
 	settings: Settings,
 ): Promise<Map<string, { tabId: number, websiteOrigin: string }>> {
 	const iconRefreshTargets = new Map<string, { tabId: number, websiteOrigin: string }>()
-	for (const key in tabConnection.connections) {
-		const connection = tabConnection.connections[key]
-		if (connection === undefined) throw new Error('missing connection')
-		const activeAddress = await getConnectionActiveAddressOrDisconnect(websiteTabConnections, connection, settings)
-		// Approvals are read right before they are applied, so an access change made while the caller awaited (for example a settings import awaiting content-script registration) is not undone; unreadable storage yields none.
-		const websiteAccess = approvalsOrNone(await getWebsiteApprovalsSnapshot({ repairCorrupt: false }))
+	const resolvedConnections: { readonly connection: WebsiteConnection, readonly activeAddress: AddressBookEntry | undefined }[] = []
+	let addressResolutionFailure: { readonly error: unknown } | undefined
+	for (const connection of Object.values(tabConnection.connections)) {
 		addIconRefreshTarget(iconRefreshTargets, connection.socket.tabId, connection.websiteOrigin)
+		try {
+			resolvedConnections.push({ connection, activeAddress: await getConnectionActiveAddressOrDisconnect(websiteTabConnections, connection, settings) })
+		} catch (error: unknown) {
+			// getConnectionActiveAddressOrDisconnect already unapproved the connection; the rest of the tab is still reconciled before this failure is thrown below.
+			addressResolutionFailure ??= { error }
+		}
+	}
+	const approvalsSnapshot = await getWebsiteApprovalsSnapshot({ repairCorrupt: false })
+	const approvalsAreReadable = approvalsSnapshot.status === 'readable'
+	const websiteAccess = approvalsAreReadable ? approvalsSnapshot.websiteAccess : settings.websiteAccess
+	for (const { connection, activeAddress } of resolvedConnections) {
 		const access = getConnectionAccessForAddress(websiteAccess, connection, activeAddress)
 		if (access !== 'hasAccess' && connection.approved) {
 			disconnectFromPort(websiteTabConnections, connection.socket)
-		} else if (access === 'hasAccess' && !connection.approved) {
+		} else if (access === 'hasAccess' && !connection.approved && approvalsAreReadable) {
 			connectToPort(websiteTabConnections, connection.socket, { ...settings, websiteAccess }, activeAddress?.address)
 		}
 	}
+	if (addressResolutionFailure !== undefined) throw addressResolutionFailure.error
+	if (approvalsSnapshot.status === 'unreadable') throw approvalsSnapshot.error
 	return iconRefreshTargets
 }
 

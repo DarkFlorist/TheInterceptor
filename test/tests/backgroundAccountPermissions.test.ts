@@ -989,7 +989,7 @@ describe('background eth_accounts', () => {
 		assert.equal(unresolvablePort.messages.some((message) => message.method === 'accountsChanged' && Array.isArray(message.result) && message.result.length > 0), false)
 	})
 
-	test('an unreadable final approvals read unapproves connections, including one whose active address cannot be resolved', async () => {
+	test('an unreadable final approvals read still unapproves a connection whose active address cannot be resolved and keeps the approvals the committed settings grant', async () => {
 		installBrowserMock()
 		const { changeSimulationMode, getRequiredSettings, updateWebsiteAccess, updateWebsiteApprovalAccesses, websiteSocketToString } = await loadModules()
 		const account = 0x5151515151515151515151515151515151515151n
@@ -1025,7 +1025,7 @@ describe('background eth_accounts', () => {
 		}
 
 		assert.equal(unresolvableConnection.approved, false)
-		assert.equal(resolvableConnection.approved, false)
+		assert.equal(resolvableConnection.approved, true)
 	})
 
 	test('a committed revocation unapproves the website when settings are unreadable afterwards', async () => {
