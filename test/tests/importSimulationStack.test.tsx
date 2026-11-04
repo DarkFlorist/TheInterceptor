@@ -10,7 +10,7 @@ import { createSafeTx } from '../../app/ts/safe/safeCore.js'
 import { getSafeTxHash } from '../../app/ts/utils/eip712.js'
 import { createSafeMessageTypedData } from '../../app/ts/safe/safeMessage.js'
 import { EIP712Message } from '../../app/ts/types/eip721.js'
-import type { ExportedSignedMessageTransaction, SignedMessageTransaction } from '../../app/ts/types/visualizer-types.js'
+import type { ExportedSignedMessageTransaction, SignedMessageTransaction, TransactionSimulationOptions } from '../../app/ts/types/visualizer-types.js'
 import { IMPORTED_SIGNATURE_QUARANTINE_REASON } from '../../app/ts/background/importedStackTrust.js'
 
 const storageState: Record<string, unknown> = {}
@@ -500,7 +500,7 @@ describe('import simulation stack', () => {
 	test('drops the simulation options an imported transaction claims, while a transaction already in the stack keeps its own', async () => {
 		const modules = await modulesPromise
 		resetEnvironment()
-		const withSimulationOptions = (transactionIdentifier: bigint, simulationOptions: { readonly requiredChainId: bigint, readonly simulateWithZeroBaseFee: boolean }) => {
+		const withSimulationOptions = (transactionIdentifier: bigint, simulationOptions: TransactionSimulationOptions) => {
 			const [operation] = create7702ExportPayload().interceptorSimulateStack.operations
 			if (operation === undefined) throw new Error('Expected transaction fixture')
 			return { ...operation, preSimulationTransaction: { ...operation.preSimulationTransaction, transactionIdentifier, simulationOptions } }
@@ -513,6 +513,8 @@ describe('import simulation stack', () => {
 				withSimulationOptions(2n, { requiredChainId: 1n, simulateWithZeroBaseFee: true }),
 				// A required chain decides on which chain the transaction is simulated at all.
 				withSimulationOptions(3n, { requiredChainId: 5n, simulateWithZeroBaseFee: false }),
+				// Running through a Gnosis Safe assumes its owners approved the transaction, which only a confirmation decides.
+				withSimulationOptions(4n, { requiredChainId: 1n, simulateWithZeroBaseFee: false, executeThroughSafe: true }),
 			] },
 		}))
 
@@ -523,7 +525,7 @@ describe('import simulation stack', () => {
 			if (operation.type !== 'Transaction') throw new Error('Expected only transaction operations')
 			return operation.preSimulationTransaction
 		})
-		assert.deepEqual(storedTransactions.map((transaction) => transaction.simulationOptions), [{ requiredChainId: 1n, simulateWithZeroBaseFee: true }, undefined, undefined])
+		assert.deepEqual(storedTransactions.map((transaction) => transaction.simulationOptions), [{ requiredChainId: 1n, simulateWithZeroBaseFee: true }, undefined, undefined, undefined])
 		assert.equal(storedTransactions.every((transaction) => transaction.signedTransaction.type === '7702'), true)
 	})
 
