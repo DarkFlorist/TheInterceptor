@@ -40,15 +40,15 @@ const rpcStatusPublicationSemaphore = new Semaphore(1)
 
 const publishRpcListUpdate = async (rpcStatus: SettingsRpcStatus) => await sendPopupMessageToOpenWindows(formRpcListUpdate(rpcStatus))
 
+// A failed storage read is not thrown: getSettingsSnapshot returns it as the 'read-failed' unavailable configuration, published here as an unavailable status, and the Settings alert with Retry and Restore is how it is surfaced (deliberately not as an unexpected error). The catch handles only an unexpected exception while reading or forming the status: it still publishes the unreadable status so the RPC section leaves loading, then rethrows for the caller to report once.
 async function publishCurrentRpcStatus(simulationServicesOwner: SimulationServicesOwner, publish: (rpcStatus: SettingsRpcStatus) => Promise<void> = publishRpcListUpdate) {
 	await rpcStatusPublicationSemaphore.execute(async () => {
 		let rpcStatus: SettingsRpcStatus
 		try {
 			rpcStatus = getSettingsRpcStatus(await getSettingsSnapshot(), simulationServicesOwner)
-		} catch (readError: unknown) {
-			// The RPC section still leaves its loading state, showing Retry and Restore; the read error then reaches the caller.
+		} catch (unexpectedError: unknown) {
 			await publishRpcListUpdate(UNREADABLE_RPC_STATUS)
-			throw readError
+			throw unexpectedError
 		}
 		await publish(rpcStatus)
 	})
@@ -60,7 +60,7 @@ async function readSettingsPreferences() {
 	return { useTabsInsteadOfPopup, metamaskCompatibilityMode, safeAppsCompatibilityMode }
 }
 
-// The reply's RPC status and preferences are both read and published inside the publication lock, so replies go out in the order they were read and none shows values older than an earlier reply. The RPC section leaves its loading state only on a published RPC status, so when the preferences cannot be read the status is still published, as an RPC list update, and the preference error then reaches the caller, which reports it.
+// The reply's RPC status and preferences are both read and published inside the publication lock, so replies go out in the order they were read and none shows values older than an earlier reply. An unreadable RPC configuration is part of the reply (see publishCurrentRpcStatus). When the preferences cannot be read, the RPC status is still published, as an RPC list update, so the RPC section leaves loading, and the preference error reaches the caller, which reports it.
 export async function settingsOpened(simulationServicesOwner: SimulationServicesOwner) {
 	await publishCurrentRpcStatus(simulationServicesOwner, async (rpcStatus) => {
 		const preferences = await readSettingsPreferences().catch(async (preferenceError: unknown) => {

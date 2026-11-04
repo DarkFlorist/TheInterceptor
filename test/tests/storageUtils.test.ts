@@ -450,6 +450,30 @@ describe('RPC storage recovery', () => {
 		}
 	})
 
+	test('an unreadable RPC configuration is published as unavailable with the readable preferences, not reported as an unexpected error', async () => {
+		const owner = createSimulationServicesOwner(customPrimaryRpc, async () => undefined, async (_ethereum, error) => { throw error })
+		await browserStorageLocalSet({ useTabsInsteadOfPopup: true, metamaskCompatibilityMode: false, safeAppsCompatibilityMode: true })
+		writes.length = 0
+		// Only the RPC configuration read fails; the preference reads succeed.
+		failRpcConfigurationReadAt = 1
+		try {
+			await settingsOpened(owner)
+			assert.equal(runtimeMessages.length, 1, 'only the settings reply is sent, no unexpected-error message')
+			const settingsReply = MessageToPopup.parse(runtimeMessages[0])
+			assert.equal(settingsReply.method, 'popup_requestSettingsReply')
+			if (settingsReply.method !== 'popup_requestSettingsReply') return
+			assert.equal(settingsReply.data.rpcConfigurationAvailable, false)
+			assert.deepEqual(settingsReply.data.rpcEntries, [])
+			assert.equal(settingsReply.data.useTabsInsteadOfPopup, true)
+			assert.equal(settingsReply.data.metamaskCompatibilityMode, false)
+			assert.equal(settingsReply.data.safeAppsCompatibilityMode, true)
+			// An unexpected-error report would store the error and its diagnostic.
+			assert.equal(writes.some((items) => 'latestUnexpectedError' in items || 'interceptorErrorDiagnostics' in items), false)
+		} finally {
+			owner.clear()
+		}
+	})
+
 	test('settings uses one coherent RPC configuration snapshot', async () => {
 		const owner = createSimulationServicesOwner(customPrimaryRpc, async () => undefined, async (_ethereum, error) => { throw error })
 		failRpcConfigurationReadAt = 2
