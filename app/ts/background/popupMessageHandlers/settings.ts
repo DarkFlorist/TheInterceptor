@@ -10,7 +10,7 @@ import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { DEFAULT_RPCS } from '../../config/defaults.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { applyRpcServicesChange, readRpcConfigurationRetry, type RpcListTransitionResult, transitionRpcList } from '../rpcConfigurationLifecycle.js'
-import { reconcileAfterIndependentSteps } from '../committedWriteReconciliation.js'
+import { reconcileAfterIndependentSteps, throwAfterFollowUp } from '../committedWriteReconciliation.js'
 import { rpcConfigurationIsReady, rpcConfigurationIsUsable } from '../rpcConfigurationAvailability.js'
 
 type PublishRpcConfigurationRecovery = (simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, previousSettings: Settings | undefined, activeRpcNetwork: Settings['activeRpcNetwork'], forceChainChanged?: boolean) => Promise<readonly unknown[]>
@@ -48,8 +48,7 @@ async function publishCurrentRpcStatus(simulationServicesOwner: SimulationServic
 		try {
 			rpcStatus = getSettingsRpcStatus(await getSettingsSnapshot(), simulationServicesOwner)
 		} catch (unexpectedError: unknown) {
-			await publishRpcListUpdate(UNREADABLE_RPC_STATUS)
-			throw unexpectedError
+			return await throwAfterFollowUp(unexpectedError, async () => await publishRpcListUpdate(UNREADABLE_RPC_STATUS))
 		}
 		await publish(rpcStatus)
 	})
@@ -64,10 +63,7 @@ async function readSettingsPreferences() {
 // The reply's RPC status and preferences are both read and published inside the publication lock, so replies go out in the order they were read and none shows values older than an earlier reply. An unreadable RPC configuration is part of the reply (see publishCurrentRpcStatus). When the preferences cannot be read, the RPC status is still published, as an RPC list update, so the RPC section leaves loading, and the preference error reaches the caller, which reports it.
 export async function settingsOpened(simulationServicesOwner: SimulationServicesOwner) {
 	await publishCurrentRpcStatus(simulationServicesOwner, async (rpcStatus) => {
-		const preferences = await readSettingsPreferences().catch(async (preferenceError: unknown) => {
-			await publishRpcListUpdate(rpcStatus)
-			throw preferenceError
-		})
+		const preferences = await readSettingsPreferences().catch(async (preferenceError: unknown) => await throwAfterFollowUp(preferenceError, async () => await publishRpcListUpdate(rpcStatus)))
 		await sendPopupMessageToOpenWindows({ method: 'popup_requestSettingsReply', data: { ...preferences, ...rpcStatus } })
 	})
 }

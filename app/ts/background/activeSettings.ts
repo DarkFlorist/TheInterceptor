@@ -186,6 +186,8 @@ async function runActiveSettingsChange(
 			const committedSettings = await getSettingsAfterStorageUpdates(previousSettings, committedStorageUpdates)
 			// Published without website approvals (which may have been revoked since admission) unless the read-back below succeeds.
 			let updatedSettings = settingsWithoutApprovals(committedSettings)
+			// Set before provider installation and cleared once it succeeds, so the step after it knows whether a failed installation invalidated simulation output.
+			let providerInstallationFailed = false
 			// The writes above are committed, so neither the read-back nor provider preparation may skip publishing and reconciling them; their failures are surfaced afterwards.
 			await reconcileAfterIndependentSteps([
 				async () => { updatedSettings = settingsForPublication(await getAdmittedRpcNetworkSnapshot(captureRpcNetwork(committedSettings)), committedSettings) },
@@ -195,16 +197,14 @@ async function runActiveSettingsChange(
 					const { endpointChanged: rpcEndpointChanged } = getRpcNetworkChange(previousSettings.activeRpcNetwork, committedSettings.activeRpcNetwork)
 					// A signer-only chain has no provider to install; simulation is disabled until a configured endpoint is selected.
 					if (!rpcEndpointChanged || change.rpcNetwork?.httpsRpc === undefined) return
-					try {
-						if (simulationServicesOwner.getCurrent() !== undefined) simulationServicesOwner.reset(change.rpcNetwork)
-						else if (recoverServicesOnRpcSelection) simulationServicesOwner.recover(change.rpcNetwork)
-						else throw createRpcConfigurationUnavailableError()
-					} catch (error) {
-						// Only failed provider installation invalidates simulation output here.
-						await publishFailedPopupVisualisation()
-						throw error
-					}
+					providerInstallationFailed = true
+					if (simulationServicesOwner.getCurrent() !== undefined) simulationServicesOwner.reset(change.rpcNetwork)
+					else if (recoverServicesOnRpcSelection) simulationServicesOwner.recover(change.rpcNetwork)
+					else throw createRpcConfigurationUnavailableError()
+					providerInstallationFailed = false
 				},
+				// Only failed provider installation invalidates simulation output. Published as its own step, so its failure is collected after the installation's instead of replacing it.
+				async () => { if (providerInstallationFailed) await publishFailedPopupVisualisation() },
 			], async () => await publishCommittedSettingsTransition(simulationServicesOwner, websiteTabConnections, previousSettings, updatedSettings, (update) => { accessUpdate = update }))
 		})
 	} finally {

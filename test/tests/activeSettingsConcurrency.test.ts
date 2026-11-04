@@ -428,6 +428,49 @@ describe('active settings concurrency', () => {
 		assert.deepEqual(reportedFailures, allStepsFail ? ['Status read failed', 'Disconnect notification failed'] : [])
 	})
 
+	test('a failed provider installation is thrown first and a failed visualisation publication reported after it while the transition is still reconciled', async () => {
+		const { runtimeMessages } = installBrowserMock()
+		const { changeActiveAddressAndChain, changeSimulationMode, getRequiredSettings, websiteSocketToString } = await loadModules()
+		const { MessageToPopup } = await import('../../app/ts/types/interceptor-messages.js')
+		await changeSimulationMode({ simulationMode: true })
+		const previousNetwork = (await getRequiredSettings()).activeRpcNetwork
+		// Same chain, another endpoint: the provider is reset but simulation state is not cleared.
+		const replacementNetwork = { ...previousNetwork, name: 'Replacement endpoint', httpsRpc: 'https://replacement-endpoint.invalid' }
+		const { connection, connections } = createUnconsentedApprovedConnection(websiteSocketToString)
+		const { ethereum, tokenPriceService } = createEthereumWithGetBlockCounter({ count: 0 })
+		const owner = createTestSimulationServicesOwner({ ethereum, tokenPriceService }, () => { throw new Error('Provider reset failed') })
+		const originalStorageGet = browser.storage.local.get
+		Object.defineProperty(browser.storage.local, 'get', {
+			configurable: true,
+			value: async (...args: Parameters<typeof originalStorageGet>) => {
+				const keys = args[0]
+				if (Array.isArray(keys) && keys.includes('popupVisualisation')) throw new Error('Visualisation read failed')
+				return await originalStorageGet(...args)
+			},
+		})
+		const originalWarn = console.warn
+		const originalError = console.error
+		console.warn = () => undefined
+		console.error = () => undefined
+		try {
+			await assert.rejects(changeActiveAddressAndChain(owner, connections, { simulationMode: true, rpcNetwork: replacementNetwork, promptForAccessesIfNeeded: false }), /Provider reset failed/)
+		} finally {
+			Object.defineProperty(browser.storage.local, 'get', { configurable: true, value: originalStorageGet })
+			console.warn = originalWarn
+			console.error = originalError
+		}
+
+		assert.equal((await getRequiredSettings()).activeRpcNetwork.httpsRpc, replacementNetwork.httpsRpc)
+		assert.equal(connection.approved, false)
+		const reportedFailures = runtimeMessages.flatMap((message) => {
+			const parsed = MessageToPopup.safeParse(message)
+			return parsed.success && parsed.value.method === 'popup_UnexpectedErrorOccured' && ['Provider reset failed', 'Visualisation read failed'].includes(parsed.value.data.message) ? [parsed.value.data.message] : []
+		})
+		// The provider failure is the one thrown; the visualisation failure (also hit by later simulation refreshes) is reported.
+		assert.equal(reportedFailures.includes('Provider reset failed'), false)
+		assert.equal(reportedFailures[0], 'Visualisation read failed')
+	})
+
 	test('publishes RPC configuration recovery after an active settings transition in flight, never before it', async () => {
 		const { runtimeMessages } = installBrowserMock()
 		const { changeActiveAddressAndChain, changeSimulationMode, getRequiredSettings, publishRpcConfigurationRecovery, updateUserAddressBookEntries } = await loadModules()
