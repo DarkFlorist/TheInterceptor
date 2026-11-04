@@ -73,13 +73,13 @@ describe('background startup lifecycle', () => {
 		const listenerRegistration = connectionHandler.indexOf('tryRegisterContentScriptPortListeners(')
 		const startupGate = connectionHandler.indexOf('connectionInitializationPromise = initializeContentScriptConnectionAfterBackgroundStartup(')
 		const connectionRegistration = connectionHandler.indexOf('registerWebsiteConnectionAndReconcileRequestBlocks(')
-		const firstTabStateWrite = connectionHandler.indexOf('await updateTabState(')
+		// The new tab's first state write happens in initializeRegisteredConnectionTab (accessManagement), whose behaviour is tested in backgroundSignerLifecycle.
+		const firstTabStateWrite = connectionHandler.indexOf('await initializeRegisteredConnectionTab(')
 
 		assert.equal(listenerRegistration >= 0 && listenerRegistration < startupGate, true)
 		assert.equal(startupGate < connectionRegistration && connectionRegistration < firstTabStateWrite, true)
-		// Every registration, including child frames in an existing tab, hands its request-block reconciliation and the icon refresh that follows it to the error boundary without a frame or new-tab condition, after the new tab's state is written.
-		const iconRefresh = connectionHandler.indexOf('\n\t\tvoid catchAllErrorsAndCall(async () => await updateExtensionIconAfterRegistrationRequestBlocks(websiteTabConnections, registration, socket, websiteOrigin))')
-		assert.equal(firstTabStateWrite < iconRefresh, true)
+		// Every registration, including child frames in an existing tab, hands its request-block reconciliation and the icon refresh that follows it to the error boundary without a frame or new-tab condition.
+		assert.equal(connectionHandler.includes('\n\t\tawait initializeRegisteredConnectionTab(websiteTabConnections, registration, socket, websiteOrigin, (refreshIconAfterRequestBlocks) => { void catchAllErrorsAndCall(refreshIconAfterRequestBlocks) })'), true)
 	})
 
 	// The behaviour of the advance is tested in the Safe signer routing suite; background startup cannot be loaded in a unit test, so this checks only that every new block runs it, with no connection-status condition.

@@ -92,6 +92,58 @@ describe('background eth_accounts', () => {
 		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [tabId])
 	})
 
+	test('a failed initial tab-state write and a rejected registration reconciliation are each surfaced exactly once', async () => {
+		const { runtimeMessages } = installBrowserMock({ manifestVersion: 3 })
+		const { initializeRegisteredConnectionTab, registerWebsiteConnectionAndReconcileRequestBlocks } = await loadModules()
+		const { MessageToPopup } = await import('../../app/ts/types/interceptor-messages.js')
+		const tabId = 9887
+		const socket = { tabId, connectionName: 0n }
+		const websiteOrigin = 'failed-initial-tab-state.example'
+		const websiteTabConnections: WebsiteTabConnections = new Map()
+		// Without a readable active RPC network the registration reconciles request blocks from persisted approvals, whose read rejects.
+		await browser.storage.local.set({ activeRpcNetwork: 'corrupt' })
+		const readStorage = browser.storage.local.get
+		Object.defineProperty(browser.storage.local, 'get', { configurable: true, value: async (...args: Parameters<typeof readStorage>) => {
+			if (args[0] === 'websiteAccess') throw new Error('Reconciliation rule read failed')
+			return await readStorage(...args)
+		} })
+		const writeStorage = browser.storage.local.set
+		let initialTabStateWriteFails = false
+		Object.defineProperty(browser.storage.local, 'set', { configurable: true, value: async (items: Record<string, unknown>) => {
+			if (initialTabStateWriteFails && `tabState_${ tabId }` in items) {
+				initialTabStateWriteFails = false
+				throw new Error('Initial tab state write failed')
+			}
+			await writeStorage(items)
+		} })
+		const originalError = console.error
+		console.error = () => undefined
+		let observedReconciliation: Promise<unknown> = Promise.resolve(undefined)
+		let tabStateFailure: unknown
+		try {
+			const registration = await withSilencedWarnings(async () => await registerWebsiteConnectionAndReconcileRequestBlocks(websiteTabConnections, socket, { port: createPort(tabId).port, socket, websiteOrigin, approved: false, wantsToConnect: false }, true))
+			assert.equal(registration.createdTabConnection, true)
+			initialTabStateWriteFails = true
+			tabStateFailure = await withSilencedWarnings(async () => await initializeRegisteredConnectionTab(websiteTabConnections, registration, socket, websiteOrigin, (refreshIconAfterRequestBlocks) => {
+				observedReconciliation = refreshIconAfterRequestBlocks().then(() => undefined, (failure: unknown) => failure)
+			}).then(() => undefined, (failure: unknown) => failure))
+			observedReconciliation = await withSilencedWarnings(async () => await observedReconciliation)
+		} finally {
+			Object.defineProperty(browser.storage.local, 'get', { configurable: true, value: readStorage })
+			Object.defineProperty(browser.storage.local, 'set', { configurable: true, value: writeStorage })
+			console.error = originalError
+		}
+
+		const reconciliationFailure = await observedReconciliation
+		const reportedFailures = runtimeMessages.flatMap((message) => {
+			const parsed = MessageToPopup.safeParse(message)
+			return parsed.success && parsed.value.method === 'popup_UnexpectedErrorOccured' ? [parsed.value.data.message] : []
+		})
+		const surfacedFailures = [tabStateFailure, reconciliationFailure].map((failure) => failure instanceof Error ? failure.message : String(failure)).concat(reportedFailures)
+		assert.equal(surfacedFailures.filter((message) => message === 'Initial tab state write failed').length, 1, `surfaced: ${ surfacedFailures.join(' | ') }`)
+		assert.equal(surfacedFailures.filter((message) => message === 'Reconciliation rule read failed').length, 1, `surfaced: ${ surfacedFailures.join(' | ') }`)
+	})
+
 	test('a rejected registration reconciliation is thrown and a failed icon refresh is reported after it', async () => {
 		const { runtimeMessages } = installBrowserMock({ manifestVersion: 3 })
 		const { registerWebsiteConnectionAndReconcileRequestBlocks, updateExtensionIconAfterRegistrationRequestBlocks } = await loadModules()

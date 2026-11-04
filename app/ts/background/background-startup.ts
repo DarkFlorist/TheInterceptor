@@ -16,13 +16,13 @@ import { getSocketFromPort, isTopFramePort, sendPopupMessageToOpenWindows, websi
 import { sendSubscriptionMessagesForNewBlock } from '../simulation/services/EthereumSubscriptionService.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { RawInterceptedRequest, checkAndThrowRuntimeLastError, getHostWithPort, isMissingBrowserTargetError, silenceChromeUnCaughtPromise } from '../utils/requests.js'
-import { DEFAULT_TAB_CONNECTION, ICON_NOT_ACTIVE } from '../utils/constants.js'
+import { DEFAULT_TAB_CONNECTION } from '../utils/constants.js'
 import { reportUnexpectedError, isExpectedInfrastructureError, printError, reportLocalRecoveryBestEffort } from '../utils/errors.js'
 import { updateContentScriptInjectionStrategyManifestV2 } from '../utils/contentScriptsUpdating.js'
 import { checkIfInterceptorShouldSleep } from './sleeping.js'
 import { advanceOutstandingSafeSignerReplies, onCloseWindowOrTab, recoverPendingConfirmationState } from './windows/confirmTransaction.js'
 import { modifyObject } from '../utils/typescript.js'
-import { registerWebsiteConnectionAndReconcileRequestBlocks, updateDeclarativeNetRequestBlocks, updateExtensionIconAfterRegistrationRequestBlocks } from './accessManagement.js'
+import { initializeRegisteredConnectionTab, registerWebsiteConnectionAndReconcileRequestBlocks, updateDeclarativeNetRequestBlocks } from './accessManagement.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerformance.js'
 import { removeWebsiteTabConnection } from './websiteTabConnections.js'
@@ -201,15 +201,7 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ simulati
 
 	connectionInitializationPromise = initializeContentScriptConnectionAfterBackgroundStartup(waitForStartup, async () => {
 		const registration = await registerWebsiteConnectionAndReconcileRequestBlocks(websiteTabConnections, socket, newConnection, isTopFrame)
-		if (registration.createdTabConnection) {
-			await updateTabState(socket.tabId, (previousState: TabState) => {
-				return modifyObject(previousState, {
-					website: { websiteOrigin, icon: undefined, title: undefined },
-					tabIconDetails: { icon: ICON_NOT_ACTIVE, iconReason: 'No active address selected.' },
-				})
-			})
-		}
-		void catchAllErrorsAndCall(async () => await updateExtensionIconAfterRegistrationRequestBlocks(websiteTabConnections, registration, socket, websiteOrigin))
+		await initializeRegisteredConnectionTab(websiteTabConnections, registration, socket, websiteOrigin, (refreshIconAfterRequestBlocks) => { void catchAllErrorsAndCall(refreshIconAfterRequestBlocks) })
 		if (registration.provisionallyClaimedSignerState) {
 			sendSubscriptionReplyOrCallBackToPort(port, { type: 'result', method: 'request_signer_connection_status', result: [] })
 		}

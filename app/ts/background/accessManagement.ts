@@ -2,16 +2,17 @@ import { getActiveAddress, getActiveAddressesForAllTabs, getWebsiteSocketConnect
 import { getActiveAddressEntryForChain, getActiveAddresses } from './metadataUtils.js'
 import { requestAccessFromUser } from './windows/interceptorAccess.js'
 import { retrieveWebsiteDetails, updateExtensionIcon } from './iconHandler.js'
-import type { TabConnection, WebsiteTabConnections } from '../types/user-interface-types.js'
+import type { TabConnection, TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { InpageScriptCallBack, Settings } from '../types/interceptor-messages.js'
 import { getSettingsSnapshot, updateWebsiteAccess, settingsIfAvailable, requireReadableApprovals, getWebsiteApprovalsSnapshot, requireAvailableSettings } from './settings.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
 import { type WebsiteSocket, getHostWithPort, getTabIfExists, silenceChromeUnCaughtPromise } from '../utils/requests.js'
-import { getAllTabStates } from './storageVariables.js'
+import { getAllTabStates, updateTabState } from './storageVariables.js'
 import { createRpcConfigurationUnavailableError } from '../utils/rpcConfigurationError.js'
 import type { Website, WebsiteAccessArray, WebsiteAddressAccess } from '../types/websiteAccessTypes.js'
 import { getUniqueItemsByProperties, replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
 import { assertNever, modifyObject } from '../utils/typescript.js'
+import { ICON_NOT_ACTIVE } from '../utils/constants.js'
 import type { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
 import { Semaphore } from '../utils/semaphore.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
@@ -485,6 +486,20 @@ export async function registerWebsiteConnectionAndReconcileRequestBlocks(website
 	const registration = await registerWebsiteConnectionAndProvisionallyClaimSignerState(websiteTabConnections, socket, connection, isTopFrame)
 	// Guarded so a failure before the caller attaches its handler is not reported as an unhandled rejection; the caller still observes it.
 	return { ...registration, isTopFrame, requestBlocksReconciliation: silenceChromeUnCaughtPromise(updateDeclarativeNetRequestBlocksForRegisteredConnection(websiteTabConnections)) }
+}
+
+// Writes a new tab's initial state, then hands the icon refresh that observes the registration's started request-block reconciliation to `observe` (the caller's error boundary). It is handed over after the write, so the icon follows the new tab's state, and even when the write fails, so the reconciliation is always observed while the write failure still propagates; the refresh only reads state and writes the icon, so it is harmless after a failed write.
+export async function initializeRegisteredConnectionTab(websiteTabConnections: WebsiteTabConnections, registration: Awaited<ReturnType<typeof registerWebsiteConnectionAndReconcileRequestBlocks>>, socket: WebsiteSocket, websiteOrigin: string, observe: (refreshIconAfterRequestBlocks: () => Promise<void>) => void) {
+	try {
+		if (registration.createdTabConnection) {
+			await updateTabState(socket.tabId, (previousState: TabState) => modifyObject(previousState, {
+				website: { websiteOrigin, icon: undefined, title: undefined },
+				tabIconDetails: { icon: ICON_NOT_ACTIVE, iconReason: 'No active address selected.' },
+			}))
+		}
+	} finally {
+		observe(async () => await updateExtensionIconAfterRegistrationRequestBlocks(websiteTabConnections, registration, socket, websiteOrigin))
+	}
 }
 
 // Child frames publish their own website into tab state, so the tab's top-level website is its top-frame connection's when exactly one top-level website is connected. When none is, or a navigation left the previous page's port registered beside the new one, the tab's URL decides instead of connection order; undefined when neither is known.
