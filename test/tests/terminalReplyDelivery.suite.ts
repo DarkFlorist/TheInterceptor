@@ -1421,6 +1421,25 @@ for (const signerResult of signerResults) {
 		await assertRejectedOnce(postedMessages)
 	})
 
+	test(`a decline stored before a restart wins over ${ signerResult.name } kept for its retry, even when startup recovery records the decline after it`, async () => {
+		const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
+		const { data } = await signerResult.prepare()
+		await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => ({ ...pending, declineRequested: 'reject' as const }))
+		browserMock.setLiveWindowIds([pendingTransaction.popupOrTabId.id])
+		const { beginStartupRecovery, resumeCommittedRequests } = await import('../../app/ts/background/requestResolution.js')
+		beginStartupRecovery()
+		failNextCommittedReplyLookup()
+		try {
+			assert.equal(await resolveRequest(websiteTabConnections, data), undefined, 'the signer result is kept for its retry')
+			// Startup recovery runs before that retry and records the stored decline, later than the signer result.
+			await withSilencedConsole(async () => await resumeCommittedRequests(testResolutionContext(websiteTabConnections)))
+			await withSilencedConsole(waitForResolutionRetriesToFinish)
+		} finally {
+			browserMock.setStorageGetHandler(undefined)
+		}
+		await assertRejectedOnce(postedMessages)
+	})
+
 	test(`a reject of this session whose lookup failed still wins over ${ signerResult.name } that arrives after it`, async () => {
 		const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
 		const { data } = await signerResult.prepare()

@@ -62,8 +62,11 @@ const signerResultPrecedesDecline = (claim: string) => {
 	const declineArrival = firstDeclineArrivals.get(claim)
 	return signerResult !== undefined && (declineArrival === undefined || signerResult.arrival < declineArrival)
 }
+// The requests whose stored declineRequested this session wrote (declineRequest); a stored decline missing here came from an earlier session.
+const declinesPersistedThisSession = new Set<string>()
 // Drops the inputs kept for a request that is finished or gone.
 const forgetRequestInputs = (claim: string) => {
+	declinesPersistedThisSession.delete(claim)
 	declineIntents.delete(claim)
 	firstDeclineArrivals.delete(claim)
 	keptSignerResults.delete(claim)
@@ -194,8 +197,8 @@ export async function resumeRequest(uniqueRequestIdentifier: UniqueRequestIdenti
  */
 async function resolveKeptInputs(current: PendingTransactionOrSignableMessage, context: ResolutionContext): Promise<boolean | undefined> {
 	const claim = getUniqueRequestIdentifierString(current.uniqueRequestIdentifier)
-	// A decline stored on the request that this session never recorded came from an earlier session, so it arrived before every input of this session; one this session recorded keeps its in-memory order.
-	const earlierSessionDecline = declineIntents.has(claim) ? undefined : current.declineRequested
+	// A decline stored on the request that this session did not write came from an earlier session, so it arrived before every input of this session, whatever this session's own decline intents record; one this session wrote keeps its in-memory order.
+	const earlierSessionDecline = declinesPersistedThisSession.has(claim) ? undefined : current.declineRequested
 	if (earlierSessionDecline !== undefined) {
 		keptSignerResults.delete(claim)
 		return await rejectUnlessStacked(current, earlierSessionDecline, context)
@@ -362,7 +365,12 @@ export async function declineRequest(uniqueRequestIdentifier: UniqueRequestIdent
 	const claim = getUniqueRequestIdentifierString(uniqueRequestIdentifier)
 	declineIntents.set(claim, reason)
 	if (!firstDeclineArrivals.has(claim)) firstDeclineArrivals.set(claim, nextInputArrival++)
-	const storeIntent = async () => await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (request) => request.declineRequested === undefined ? { ...request, declineRequested: reason } : request)
+	// Marked as this session's within the write, so no read of the stored decline sees it unmarked; a mark whose write fails is harmless, as only a stored decline is looked up in it.
+	const storeIntent = async () => await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (request) => {
+		if (request.declineRequested !== undefined) return request
+		declinesPersistedThisSession.add(claim)
+		return { ...request, declineRequested: reason }
+	})
 	// Checked synchronously with the claim attempt below: another resolution (an accept, say) holds the request.
 	const claimedElsewhere = resolutionClaims.has(claim)
 	try {
