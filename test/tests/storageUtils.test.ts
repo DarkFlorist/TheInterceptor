@@ -9,6 +9,7 @@ const writes: Record<string, unknown>[] = []
 const runtimeMessages: unknown[] = []
 let nextStorageReadError: Error | undefined
 let everyStorageReadError: Error | undefined
+let preferenceReadError: Error | undefined
 let rpcConfigurationReadCount = 0
 let failRpcConfigurationReadAt: number | undefined
 let rpcConfigurationReadStarted: (() => void) | undefined
@@ -26,6 +27,7 @@ Object.defineProperty(globalThis, 'browser', {
 			local: {
 				get: async (keys: string | readonly string[]) => {
 					if (everyStorageReadError !== undefined) throw everyStorageReadError
+					if (preferenceReadError !== undefined && (Array.isArray(keys) ? keys : [keys]).includes('useTabsInsteadOfPopup')) throw preferenceReadError
 					const requestedKeys = Array.isArray(keys) ? keys : [keys]
 					const result = Object.fromEntries(requestedKeys.filter((key) => key in storedItems).map((key) => [key, storedItems[key]]))
 					if (requestedKeys.includes('rpcEntries') && requestedKeys.includes('activeRpcNetwork')) {
@@ -69,6 +71,7 @@ describe('local storage codecs', () => {
 		runtimeMessages.length = 0
 		nextStorageReadError = undefined
 		everyStorageReadError = undefined
+		preferenceReadError = undefined
 		rpcConfigurationReadCount = 0
 		failRpcConfigurationReadAt = undefined
 		rpcConfigurationReadStarted = undefined
@@ -135,6 +138,7 @@ describe('RPC storage recovery', () => {
 		runtimeMessages.length = 0
 		nextStorageReadError = undefined
 		everyStorageReadError = undefined
+		preferenceReadError = undefined
 		rpcConfigurationReadCount = 0
 		failRpcConfigurationReadAt = undefined
 		rpcConfigurationReadStarted = undefined
@@ -413,11 +417,11 @@ describe('RPC storage recovery', () => {
 
 	test('settings still publishes the RPC status when a preference read fails', async () => {
 		const owner = createSimulationServicesOwner(customPrimaryRpc, async () => undefined, async (_ethereum, error) => { throw error })
-		const preferenceReadError = new Error('Preference read failed')
-		// The first read is a preference read; the RPC configuration is read normally.
-		nextStorageReadError = preferenceReadError
+		const failedPreferenceRead = new Error('Preference read failed')
+		// Only the preference read fails; the RPC configuration is read normally.
+		preferenceReadError = failedPreferenceRead
 		try {
-			await assert.rejects(settingsOpened(owner), (error: unknown) => error === preferenceReadError)
+			await assert.rejects(settingsOpened(owner), (error: unknown) => error === failedPreferenceRead)
 			const rpcStatus = MessageToPopup.parse(runtimeMessages.at(-1))
 			assert.equal(rpcStatus.method, 'popup_update_rpc_list')
 			if (rpcStatus.method !== 'popup_update_rpc_list') return

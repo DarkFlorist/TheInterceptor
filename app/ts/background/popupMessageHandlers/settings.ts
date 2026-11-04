@@ -4,7 +4,6 @@ import { ExportedSettings } from '../../types/exportedSettingsTypes.js'
 import { serialize } from '../../types/wire-types.js'
 import { isJSON } from '../../utils/json.js'
 import { Semaphore } from '../../utils/semaphore.js'
-import { reportUnexpectedError } from '../../utils/errors.js'
 import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
 import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettingsSnapshot, getUseTabsInsteadOfPopup, importSettingsAndAddressBook, settingsIfAvailable, requireAvailableSettings, type SettingsSnapshot } from '../settings.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
@@ -39,42 +38,37 @@ const formRpcListUpdate = ({ rpcEntries, rpcConfigurationAvailable }: SettingsRp
 // Every RPC status the Settings page is sent (the settings reply and every RPC list update) is read and published inside this lock, from the configuration stored when the lock is held. Publications therefore go out in the order they were read, so a slow request can never publish a status older than one already published.
 const rpcStatusPublicationSemaphore = new Semaphore(1)
 
-async function publishCurrentRpcStatus(simulationServicesOwner: SimulationServicesOwner, formMessage: (rpcStatus: SettingsRpcStatus) => MessageToPopupPayload = formRpcListUpdate) {
+const publishRpcListUpdate = async (rpcStatus: SettingsRpcStatus) => await sendPopupMessageToOpenWindows(formRpcListUpdate(rpcStatus))
+
+async function publishCurrentRpcStatus(simulationServicesOwner: SimulationServicesOwner, publish: (rpcStatus: SettingsRpcStatus) => Promise<void> = publishRpcListUpdate) {
 	await rpcStatusPublicationSemaphore.execute(async () => {
 		let rpcStatus: SettingsRpcStatus
 		try {
 			rpcStatus = getSettingsRpcStatus(await getSettingsSnapshot(), simulationServicesOwner)
 		} catch (readError: unknown) {
 			// The RPC section still leaves its loading state, showing Retry and Restore; the read error then reaches the caller.
-			await sendPopupMessageToOpenWindows(formRpcListUpdate(UNREADABLE_RPC_STATUS))
+			await publishRpcListUpdate(UNREADABLE_RPC_STATUS)
 			throw readError
 		}
-		await sendPopupMessageToOpenWindows(formMessage(rpcStatus))
+		await publish(rpcStatus)
 	})
 }
 
+// The preference getters read storage directly and take no lock, so they are safe to read inside the publication lock.
 async function readSettingsPreferences() {
-	try {
-		const [useTabsInsteadOfPopup, metamaskCompatibilityMode, safeAppsCompatibilityMode] = await Promise.all([getUseTabsInsteadOfPopup(), getMetamaskCompatibilityMode(), getSafeAppsCompatibilityMode()])
-		return { status: 'read' as const, preferences: { useTabsInsteadOfPopup, metamaskCompatibilityMode, safeAppsCompatibilityMode } }
-	} catch (error: unknown) {
-		return { status: 'failed' as const, error }
-	}
+	const [useTabsInsteadOfPopup, metamaskCompatibilityMode, safeAppsCompatibilityMode] = await Promise.all([getUseTabsInsteadOfPopup(), getMetamaskCompatibilityMode(), getSafeAppsCompatibilityMode()])
+	return { useTabsInsteadOfPopup, metamaskCompatibilityMode, safeAppsCompatibilityMode }
 }
 
-// The Settings RPC section leaves its loading state only on an RPC status published here, so the status is published even when the preferences cannot be read: as the settings reply when they were read, otherwise as an RPC list update, after which the preference failure reaches the caller and is reported.
+// The reply's RPC status and preferences are both read and published inside the publication lock, so replies go out in the order they were read and none shows values older than an earlier reply. The RPC section leaves its loading state only on a published RPC status, so when the preferences cannot be read the status is still published, as an RPC list update, and the preference error then reaches the caller, which reports it.
 export async function settingsOpened(simulationServicesOwner: SimulationServicesOwner) {
-	const preferences = await readSettingsPreferences()
-	try {
-		await publishCurrentRpcStatus(simulationServicesOwner, preferences.status === 'read'
-			? (rpcStatus) => ({ method: 'popup_requestSettingsReply', data: { ...preferences.preferences, ...rpcStatus } })
-			: formRpcListUpdate)
-	} catch (publicationError: unknown) {
-		// Only one error reaches the caller, so a preference failure of the same request is reported here.
-		if (preferences.status === 'failed') await reportUnexpectedError(preferences.error)
-		throw publicationError
-	}
-	if (preferences.status === 'failed') throw preferences.error
+	await publishCurrentRpcStatus(simulationServicesOwner, async (rpcStatus) => {
+		const preferences = await readSettingsPreferences().catch(async (preferenceError: unknown) => {
+			await publishRpcListUpdate(rpcStatus)
+			throw preferenceError
+		})
+		await sendPopupMessageToOpenWindows({ method: 'popup_requestSettingsReply', data: { ...preferences, ...rpcStatus } })
+	})
 }
 
 export async function importSettings(settingsData: ImportSettings): Promise<ImportSettingsReply> {

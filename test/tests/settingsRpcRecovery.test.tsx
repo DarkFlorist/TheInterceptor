@@ -20,8 +20,8 @@ function collectElements(node: TestNode | undefined, tagName: string, results: T
 const storedItems: Record<string, unknown> = {}
 // While set, every storage read rejects with it.
 let everyStorageReadError: Error | undefined
-// While set, the next preference read waits for it and rejects with what it settles to.
-let heldPreferenceRead: Promise<Error> | undefined
+// While set, the next read of `key` waits for `settled`, then rejects with the error it settles to, or reads normally when it settles to undefined.
+let heldRead: { readonly key: string, readonly settled: Promise<Error | undefined> } | undefined
 
 type RuntimeListener = (message: unknown) => unknown
 const runtimeListeners = new Set<RuntimeListener>()
@@ -59,10 +59,11 @@ Object.defineProperty(globalThis, 'browser', {
 				async get(keys: string | readonly string[]) {
 					if (everyStorageReadError !== undefined) throw everyStorageReadError
 					const requestedKeys = typeof keys === 'string' ? [keys] : keys
-					const preferenceRead = heldPreferenceRead
-					if (preferenceRead !== undefined && requestedKeys.includes('useTabsInsteadOfPopup')) {
-						heldPreferenceRead = undefined
-						throw await preferenceRead
+					const read = heldRead
+					if (read !== undefined && requestedKeys.includes(read.key)) {
+						heldRead = undefined
+						const error = await read.settled
+						if (error !== undefined) throw error
 					}
 					return Object.fromEntries(requestedKeys.filter((key) => key in storedItems).map((key) => [key, storedItems[key]]))
 				},
@@ -102,7 +103,7 @@ const withSilencedWarnings = async <T,>(operation: () => Promise<T>) => {
 afterEach(() => {
 	for (const key of Object.keys(storedItems)) delete storedItems[key]
 	everyStorageReadError = undefined
-	heldPreferenceRead = undefined
+	heldRead = undefined
 	backgroundFailures.length = 0
 })
 
@@ -128,38 +129,80 @@ test('Settings opened while storage reads reject shows the RPC recovery controls
 	}
 })
 
-test('a slower Settings request whose preference read fails never replaces a newer available RPC list with its older outage', async () => {
+// Holds the next read of `key` until the returned function settles it (with an error to reject it).
+function holdNextRead(key: string) {
+	let settle: (error: Error | undefined) => void = () => undefined
+	heldRead = { key, settled: new Promise<Error | undefined>((resolve) => { settle = resolve }) }
+	return (error?: Error) => settle(error)
+}
+
+const renderSettingsView = async (dom: ReturnType<typeof installDomMock>) => {
+	await act(() => {
+		render(<SettingsView />, dom.document.body)
+	})
+	await flushAsyncWork()
+}
+
+test('a Settings request whose preference read fails never leaves its older outage shown over the newer available RPC list', async () => {
 	const owner = createSimulationServicesOwner(configuredRpc, async () => undefined, async (_ethereum, error) => { throw error })
 	openSettingsInBackground = async () => await settingsOpened(owner)
 	storeReadableRpcConfiguration()
 	const dom = installDomMock()
 	try {
-		await act(() => {
-			render(<SettingsView />, dom.document.body)
-		})
-		await flushAsyncWork()
+		await renderSettingsView(dom)
 		assert.deepEqual(getShownRpcNames(dom.document.body), [configuredRpc.name])
 
-		// A starts while the RPC configuration is unreadable, and its preference read is held.
+		// A reads the RPC configuration while it is unreadable, and its preference read is held.
 		storedItems.rpcEntries = 'not-an-rpc-list'
-		let failPreferenceRead: (error: Error) => void = () => undefined
-		heldPreferenceRead = new Promise<Error>((resolve) => { failPreferenceRead = resolve })
+		const failPreferenceRead = holdNextRead('useTabsInsteadOfPopup')
 		const preferenceReadError = new Error('Preference read failed')
 		const requestA = withSilencedWarnings(async () => await settingsOpened(owner))
 		await flushAsyncWork()
-
-		// B runs to completion once the configuration is readable again and publishes the available list.
+		// B starts once the configuration is readable again.
 		storeReadableRpcConfiguration()
-		await settingsOpened(owner)
+		const requestB = settingsOpened(owner)
 		await flushAsyncWork()
-		assert.deepEqual(getShownRpcNames(dom.document.body), [configuredRpc.name])
 
-		// A's preference read now rejects: its error still propagates, and the list stays available.
+		// A's preference read now rejects: its error still propagates, and the newer available list is what stays shown.
 		failPreferenceRead(preferenceReadError)
 		await act(async () => { await assert.rejects(requestA, (error: unknown) => error === preferenceReadError) })
+		await act(async () => { await requestB })
 		await flushAsyncWork()
 		assert.equal(findRpcAlert(dom.document.body), undefined)
 		assert.deepEqual(getShownRpcNames(dom.document.body), [configuredRpc.name])
+	} finally {
+		render(null, dom.document.body)
+		dom.restore()
+		owner.clear()
+	}
+})
+
+test('a slower Settings request never replaces newer preferences with the ones it read earlier', async () => {
+	const owner = createSimulationServicesOwner(configuredRpc, async () => undefined, async (_ethereum, error) => { throw error })
+	openSettingsInBackground = async () => await settingsOpened(owner)
+	storeReadableRpcConfiguration()
+	storedItems.useTabsInsteadOfPopup = false
+	const dom = installDomMock()
+	const findTabsCheckbox = () => collectElements(dom.document.body, 'label').find((label) => label.textContent?.includes('Open popups as tabs') === true)
+	try {
+		await renderSettingsView(dom)
+
+		// A reads useTabsInsteadOfPopup = false and waits on another preference read.
+		const releaseMetamaskRead = holdNextRead('metamaskCompatibilityMode')
+		const requestA = settingsOpened(owner)
+		await flushAsyncWork()
+		// B starts after the preference is changed to true.
+		storedItems.useTabsInsteadOfPopup = true
+		const requestB = settingsOpened(owner)
+		await flushAsyncWork()
+
+		releaseMetamaskRead()
+		await act(async () => { await Promise.all([requestA, requestB]) })
+		await flushAsyncWork()
+		// Preact sets a checked box as the attribute, as this DOM mock has no `checked` property.
+		const tabsCheckbox = collectElements(findTabsCheckbox(), 'input')[0]
+		assert.notEqual(tabsCheckbox, undefined)
+		assert.notEqual(tabsCheckbox?.getAttribute?.('checked') ?? null, null)
 	} finally {
 		render(null, dom.document.body)
 		dom.restore()
