@@ -12,6 +12,8 @@ const dynamicRuleUpdates: unknown[] = []
 const contentScriptUpdateBatches: { readonly id: string, readonly excludeMatches?: readonly string[] }[][] = []
 const dispatcherEvents: ({ type: 'message', message: unknown } | { type: 'dynamicRuleUpdate' })[] = []
 let storageSetError: Error | undefined
+let storageGetErrors: Error[] = []
+let storageGetErrorsAfterImportSuccessBroadcast: Error[] = []
 let dynamicRuleUpdateError: Error | undefined
 let addressBookBroadcastWait: Promise<void> | undefined
 
@@ -24,6 +26,10 @@ Reflect.set(globalThis, 'browser', {
 			sentMessages.push(message)
 			dispatcherEvents.push({ type: 'message', message })
 			const parsed = MessageToPopup.safeParse(message)
+			if (parsed.success && parsed.value.method === 'popup_initiate_export_settings_reply' && parsed.value.data.success) {
+				storageGetErrors = storageGetErrorsAfterImportSuccessBroadcast
+				storageGetErrorsAfterImportSuccessBroadcast = []
+			}
 			if (parsed.success && parsed.value.method === 'popup_addressBookEntriesChanged') await addressBookBroadcastWait
 			return undefined
 		},
@@ -33,6 +39,8 @@ Reflect.set(globalThis, 'browser', {
 	storage: {
 		local: {
 			async get(keys?: string | string[] | Record<string, unknown> | null) {
+				const storageGetError = storageGetErrors.shift()
+				if (storageGetError !== undefined) throw storageGetError
 				if (keys === undefined || keys === null) return { ...storageState }
 				if (Array.isArray(keys)) return Object.fromEntries(keys.filter((key) => key in storageState).map((key) => [key, storageState[key]]))
 				if (typeof keys === 'string') return keys in storageState ? { [keys]: storageState[keys] } : {}
@@ -136,6 +144,38 @@ const disabledWebsiteAccess: Settings['websiteAccess'][number] = {
 	declarativeNetRequestBlockMode: 'disabled',
 }
 
+const buildImportedSettingsFile = (websiteAccess: readonly unknown[]) => JSON.stringify({
+	name: 'InterceptorSettingsAndAddressBook',
+	version: '1.4',
+	exportedDate: '2026-11-04',
+	settings: {
+		activeSimulationAddress: '0x0000000000000000000000000000000000000002',
+		rpcNetwork: {
+			name: 'Imported network',
+			chainId: '0x1',
+			httpsRpc: 'https://example.test/rpc',
+			currencyName: 'Ether',
+			currencyTicker: 'ETH',
+			primary: true,
+			minimized: true,
+		},
+		openedPage: { page: 'Home' },
+		useSignersAddressAsActiveAddress: false,
+		websiteAccess,
+		simulationMode: false,
+		addressBookEntries: [],
+		useTabsInsteadOfPopup: false,
+		metamaskCompatibilityMode: false,
+	},
+})
+
+const importedDisabledWebsiteAccess = {
+	website: { websiteOrigin: 'imported-disabled.test', title: 'Imported disabled website' },
+	addressAccess: [],
+	access: false,
+	interceptorDisabled: true,
+}
+
 function createDispatcherContext(resetSimulationState: () => Promise<void>): PopupMessageDispatcherContext {
 	const ethereum: EthereumClientService = Object.create(EthereumClientServiceConstructor.prototype)
 	const tokenPriceService: TokenPriceService = Object.create(TokenPriceServiceConstructor.prototype)
@@ -152,6 +192,8 @@ function createDispatcherContext(resetSimulationState: () => Promise<void>): Pop
 
 beforeEach(() => {
 	storageSetError = undefined
+	storageGetErrors = []
+	storageGetErrorsAfterImportSuccessBroadcast = []
 	dynamicRuleUpdateError = undefined
 	addressBookBroadcastWait = undefined
 	for (const key of Object.keys(storageState)) delete storageState[key]
@@ -487,5 +529,71 @@ describe('popup message dispatcher seams', () => {
 		const settingsUpdatedEventIndex = dispatcherEvents.findIndex((event) => event.type === 'message' && MessageToPopup.parse(event.message).method === 'popup_settingsUpdated')
 		assert.ok(successReplyEventIndex < dynamicRuleEventIndex)
 		assert.ok(dynamicRuleEventIndex < settingsUpdatedEventIndex)
+	})
+
+	test('refreshes manifest v3 content script exclusions with the imported disabled websites', async () => {
+		storageState.websiteAccess = [disabledWebsiteAccess]
+
+		await dispatchPopupMessage(
+			createDispatcherContext(async () => undefined),
+			{ method: 'popup_import_settings', data: { fileContents: buildImportedSettingsFile([importedDisabledWebsiteAccess]) } },
+		)
+
+		assert.equal(contentScriptUpdateBatches.length, 1)
+		assert.deepEqual(contentScriptUpdateBatches.at(-1)?.map(({ id, excludeMatches }) => ({ id, excludeMatches })), [
+			{ id: 'inpage2', excludeMatches: ['http://imported-disabled.test:80/*', 'https://imported-disabled.test:443/*'] },
+			{ id: 'inpage', excludeMatches: ['http://imported-disabled.test:80/*', 'https://imported-disabled.test:443/*'] },
+		])
+	})
+
+	test('leaves settings unchanged and skips every follow-up when storing an import fails', async () => {
+		storageState.websiteAccess = [disabledWebsiteAccess]
+		storageState.simulationMode = true
+		const storageBeforeImport = structuredClone(storageState)
+		const storageFailure = new Error('Settings storage unavailable.')
+		storageSetError = storageFailure
+
+		await assert.rejects(dispatchPopupMessage(
+			createDispatcherContext(async () => undefined),
+			{ method: 'popup_import_settings', data: { fileContents: buildImportedSettingsFile([importedDisabledWebsiteAccess]) } },
+		), storageFailure)
+
+		assert.deepEqual(storageState, storageBeforeImport)
+		assert.deepEqual(sentMessages, [])
+		assert.deepEqual(dynamicRuleUpdates, [])
+		assert.equal(contentScriptUpdateBatches.length, 0)
+	})
+
+	test('applies a committed import to access and open popups when an earlier follow-up fails', async () => {
+		const followUpFailure = new Error('Settings read unavailable.')
+		storageGetErrorsAfterImportSuccessBroadcast = [followUpFailure]
+
+		await assert.rejects(dispatchPopupMessage(
+			createDispatcherContext(async () => undefined),
+			{ method: 'popup_import_settings', data: { fileContents: buildImportedSettingsFile([{ ...importedDisabledWebsiteAccess, access: true, interceptorDisabled: false, declarativeNetRequestBlockMode: 'block-all' }]) } },
+		), followUpFailure)
+
+		assert.equal(contentScriptUpdateBatches.length, 0)
+		assert.equal(dynamicRuleUpdates.length, 1)
+		const messages = sentMessages.map((message) => MessageToPopup.parse(message))
+		assert.deepEqual(messages.map(({ method }) => method), ['popup_initiate_export_settings_reply', 'popup_settingsUpdated'])
+	})
+
+	test('rethrows every failed follow-up of a committed import together', async () => {
+		const contentScriptFailure = new Error('Content script settings read unavailable.')
+		const reconciliationFailure = new Error('Reconciliation settings read unavailable.')
+		storageGetErrorsAfterImportSuccessBroadcast = [contentScriptFailure, reconciliationFailure]
+
+		const importResult = dispatchPopupMessage(
+			createDispatcherContext(async () => undefined),
+			{ method: 'popup_import_settings', data: { fileContents: buildImportedSettingsFile([]) } },
+		)
+
+		await assert.rejects(importResult, (error: unknown) => {
+			assert.ok(error instanceof AggregateError)
+			assert.deepEqual(error.errors, [contentScriptFailure, reconciliationFailure])
+			assert.equal(error.message, 'Applying the imported settings failed: Content script settings read unavailable.; Reconciliation settings read unavailable.')
+			return true
+		})
 	})
 })

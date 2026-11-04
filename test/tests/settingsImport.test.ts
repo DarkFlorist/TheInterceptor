@@ -2,7 +2,7 @@ import * as assert from 'assert'
 import { beforeEach, describe, test } from 'bun:test'
 import type { ExportedSettings } from '../../app/ts/types/exportedSettingsTypes.js'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
-import { browserStorageLocalSet } from '../../app/ts/utils/storageUtils.js'
+import { browserStorageLocalGet, browserStorageLocalSet } from '../../app/ts/utils/storageUtils.js'
 
 type StorageKeyInput = string | string[] | Record<string, unknown> | undefined | null
 
@@ -10,6 +10,8 @@ function createBrowserStorageMock() {
 	const storageState: Record<string, unknown> = {}
 	let signingPreferenceWriteGate: { started: () => void, waitForRelease: Promise<void> } | undefined
 	let addressBookWriteGate: { started: () => void, waitForRelease: Promise<void> } | undefined
+	let websiteAccessWriteGate: { started: () => void, waitForRelease: Promise<void> } | undefined
+	let writeFailure: { key: string, error: Error } | undefined
 
 	const getItems = (keys?: StorageKeyInput) => {
 		if (keys === undefined || keys === null) return { ...storageState }
@@ -38,9 +40,20 @@ function createBrowserStorageMock() {
 					return getItems(keys)
 				},
 				async set(items: Record<string, unknown>) {
+					if (writeFailure !== undefined && writeFailure.key in items) {
+						const { error } = writeFailure
+						writeFailure = undefined
+						throw error
+					}
 					if ('userAddressBookEntriesV3' in items && addressBookWriteGate !== undefined) {
 						const gate = addressBookWriteGate
 						addressBookWriteGate = undefined
+						gate.started()
+						await gate.waitForRelease
+					}
+					if ('websiteAccess' in items && websiteAccessWriteGate !== undefined) {
+						const gate = websiteAccessWriteGate
+						websiteAccessWriteGate = undefined
 						gate.started()
 						await gate.waitForRelease
 					}
@@ -67,12 +80,23 @@ function createBrowserStorageMock() {
 	installGlobals()
 
 	return {
+		failNextWriteOf(key: string, error: Error) {
+			writeFailure = { key, error }
+		},
 		blockNextAddressBookWrite() {
 			let markStarted: () => void = () => undefined
 			let release: () => void = () => undefined
 			const started = new Promise<void>((resolve) => { markStarted = resolve })
 			const waitForRelease = new Promise<void>((resolve) => { release = resolve })
 			addressBookWriteGate = { started: markStarted, waitForRelease }
+			return { started, release }
+		},
+		blockNextWebsiteAccessWrite() {
+			let markStarted: () => void = () => undefined
+			let release: () => void = () => undefined
+			const started = new Promise<void>((resolve) => { markStarted = resolve })
+			const waitForRelease = new Promise<void>((resolve) => { release = resolve })
+			websiteAccessWriteGate = { started: markStarted, waitForRelease }
 			return { started, release }
 		},
 		blockNextSigningPreferenceWrite() {
@@ -86,7 +110,9 @@ function createBrowserStorageMock() {
 		reset() {
 			for (const key of Object.keys(storageState)) delete storageState[key]
 			addressBookWriteGate = undefined
+			websiteAccessWriteGate = undefined
 			signingPreferenceWriteGate = undefined
+			writeFailure = undefined
 			installGlobals()
 		},
 	}
@@ -174,6 +200,87 @@ const buildVersion14Import = (useTabsInsteadOfPopup: boolean, metamaskCompatibil
 		metamaskCompatibilityMode,
 	},
 })
+
+const previousSafeAddress = 0x9090909090909090909090909090909090909090n
+const previousSignerAddress = 0x9191919191919191919191919191919191919191n
+const previousSimulationAddress = 0x9292929292929292929292929292929292929292n
+const previousRpcNetwork: RpcNetwork = { ...testRpcNetwork, name: 'Previous network', httpsRpc: 'https://previous.example.test/rpc' }
+const previousAddressBookEntry = { type: 'safe' as const, name: 'Previous Safe', address: previousSafeAddress, chainId: 1n, entrySource: 'User' as const, useAsActiveAddress: true, safeSignerAddresses: [previousSignerAddress] }
+const previousWebsiteAccess = { website: { websiteOrigin: 'previous.example', icon: undefined, title: 'Previous' }, addressAccess: [], access: true }
+
+const importedSafeAddress = 0xa0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0n
+const importedSignerAddress = 0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1n
+const importedSimulationAddress = 0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2n
+const importedLegacyActiveAddress = 0xa3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3n
+const importedLegacyContactAddress = 0xa4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4n
+const importedWebsiteAccess: ExportedSettings['settings']['websiteAccess'] = [
+	{ website: { websiteOrigin: 'imported.example', icon: 'https://imported.example/favicon.png', title: 'Imported' }, addressAccess: [], access: true, interceptorDisabled: true },
+]
+const sanitizedImportedWebsiteAccess = [{ website: { websiteOrigin: 'imported.example', icon: undefined, title: 'Imported' }, addressAccess: [], access: true, interceptorDisabled: true }]
+
+const buildVersion16Import = (): ExportedSettings => ({
+	name: 'InterceptorSettingsAndAddressBook',
+	version: '1.6',
+	exportedDate: '2026-11-04',
+	settings: {
+		activeSimulationAddress: importedSimulationAddress,
+		activeSigningSafeAddress: importedSafeAddress,
+		signingAddressPreferences: [{ signerAddress: importedSignerAddress, selection: 'safe', safeAddress: importedSafeAddress, chainId: testRpcNetwork.chainId }],
+		rpcNetwork: testRpcNetwork,
+		openedPage: { page: 'Settings' },
+		useSignersAddressAsActiveAddress: false,
+		websiteAccess: importedWebsiteAccess,
+		simulationMode: false,
+		addressBookEntries: [{ type: 'safe', name: 'Imported Safe', address: importedSafeAddress, chainId: testRpcNetwork.chainId, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [importedSignerAddress] }],
+		useTabsInsteadOfPopup: false,
+		metamaskCompatibilityMode: false,
+		safeAppsCompatibilityMode: false,
+	},
+})
+
+const buildLegacyAddressImport = (version: '1.0' | '1.3'): ExportedSettings => {
+	const legacySettings = {
+		activeSimulationAddress: importedLegacyActiveAddress,
+		useSignersAddressAsActiveAddress: false,
+		websiteAccess: importedWebsiteAccess,
+		simulationMode: false,
+		addressInfos: [{ name: 'Imported active address', address: importedLegacyActiveAddress, askForAddressAccess: false }],
+		contacts: [{ type: 'contact' as const, name: 'Imported contact', address: importedLegacyContactAddress, entrySource: 'User' as const }],
+		useTabsInsteadOfPopup: false,
+	}
+	if (version === '1.0') return { name: 'InterceptorSettingsAndAddressBook', version, exportedDate: '2026-11-04', settings: { ...legacySettings, activeChain: 1n } }
+	return { name: 'InterceptorSettingsAndAddressBook', version, exportedDate: '2026-11-04', settings: { ...legacySettings, rpcNetwork: testRpcNetwork, openedPage: { page: 'Settings' }, metamaskCompatibilityMode: false } }
+}
+
+const importedStorageKeys = [
+	'openedPageV2',
+	'userAddressBookEntriesV3',
+	'simulationMode',
+	'activeRpcNetwork',
+	'independentActiveSimulationAddress',
+	'activeSigningAddress',
+	'activeSigningSafeAddress',
+	'signingAddressPreferences',
+	'useSignersAddressAsActiveAddress',
+	'websiteAccess',
+	'useTabsInsteadOfPopup',
+	'metamaskCompatibilityMode',
+	'safeAppsCompatibilityMode',
+] as const
+
+async function storePreviousSettings() {
+	const settingsModule = await settingsModulePromise
+	const { updateUserAddressBookEntries } = await storageVariablesModulePromise
+	await updateUserAddressBookEntries(() => [previousAddressBookEntry])
+	await settingsModule.changeSimulationMode({ simulationMode: true, rpcNetwork: previousRpcNetwork, activeSimulationAddress: previousSimulationAddress, activeSigningAddress: previousSignerAddress, activeSigningSafeAddress: previousSafeAddress })
+	await settingsModule.rememberSigningAddressPreference({ signerAddress: previousSignerAddress, selection: 'safe', safeAddress: previousSafeAddress, chainId: 1n })
+	await settingsModule.setPage({ page: 'Home' })
+	await settingsModule.setUseSignersAddressAsActiveAddress(true, previousSignerAddress)
+	await settingsModule.updateWebsiteAccess(() => [previousWebsiteAccess])
+	await settingsModule.setUseTabsInsteadOfPopup(true)
+	await settingsModule.setMetamaskCompatibilityMode(true)
+	await settingsModule.setSafeAppsCompatibilityMode(true)
+}
 
 describe('settings import', () => {
 	beforeEach(() => {
@@ -342,6 +449,8 @@ describe('settings import', () => {
 		await writeGate.started
 
 		const legacyImport = importSettingsAndAddressBook(buildVersion14Import(false, false))
+		// Give an import that ignored the signing preference lock time to write before the earlier preference lands.
+		await new Promise((resolve) => setTimeout(resolve, 0))
 		writeGate.release()
 		await Promise.all([preferenceWrite, legacyImport])
 
@@ -470,5 +579,131 @@ describe('settings import', () => {
 		const websiteAccess = await getWebsiteAccess()
 		assert.equal(websiteAccess[0]?.website.icon, undefined)
 		assert.equal(websiteAccess[1]?.website.icon, 'data:image/png;base64,Y2FjaGVk')
+	})
+
+	for (const { version, buildImport, failingKey } of [
+		{ version: '1.6', buildImport: buildVersion16Import, failingKey: 'websiteAccess' },
+		{ version: '1.3', buildImport: () => buildLegacyAddressImport('1.3'), failingKey: 'userAddressBookEntriesV3' },
+		{ version: '1.0', buildImport: () => buildLegacyAddressImport('1.0'), failingKey: 'safeAppsCompatibilityMode' },
+	]) {
+		test(`keeps every previous setting when storing a version ${ version } import fails`, async () => {
+			const { importSettingsAndAddressBook } = await settingsModulePromise
+			await storePreviousSettings()
+			const storageBeforeImport = await browser.storage.local.get([...importedStorageKeys])
+			const storageFailure = new Error('Storage write failed')
+			browserMock.failNextWriteOf(failingKey, storageFailure)
+
+			await assert.rejects(importSettingsAndAddressBook(buildImport()), storageFailure)
+
+			assert.deepEqual(await browser.storage.local.get([...importedStorageKeys]), storageBeforeImport)
+		})
+	}
+
+	test('merges a legacy import into an address book update that is still being written', async () => {
+		const { importSettingsAndAddressBook } = await settingsModulePromise
+		const { getUserAddressBookEntries, updateUserAddressBookEntries } = await storageVariablesModulePromise
+		const addressBookWriteGate = browserMock.blockNextAddressBookWrite()
+		const addressBookUpdate = updateUserAddressBookEntries(() => [previousAddressBookEntry])
+		await addressBookWriteGate.started
+
+		const legacyImport = importSettingsAndAddressBook(buildLegacyAddressImport('1.3'))
+		// Give an import that ignored the address book lock time to read and write the entries before the earlier update lands.
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		addressBookWriteGate.release()
+		await Promise.all([addressBookUpdate, legacyImport])
+
+		assert.deepEqual((await getUserAddressBookEntries()).map(({ address }) => address), [previousSafeAddress, importedLegacyActiveAddress, importedLegacyContactAddress])
+	})
+
+	test('replaces website access after a website access update that is still being written', async () => {
+		const { getWebsiteAccess, importSettingsAndAddressBook, updateWebsiteAccess } = await settingsModulePromise
+		const websiteAccessWriteGate = browserMock.blockNextWebsiteAccessWrite()
+		const websiteAccessUpdate = updateWebsiteAccess(() => [previousWebsiteAccess])
+		await websiteAccessWriteGate.started
+
+		const importPromise = importSettingsAndAddressBook(buildVersion16Import())
+		// Give an import that ignored the website access lock time to write before the earlier update lands.
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		websiteAccessWriteGate.release()
+		await Promise.all([websiteAccessUpdate, importPromise])
+
+		assert.deepEqual(await getWebsiteAccess(), sanitizedImportedWebsiteAccess)
+	})
+
+	test('replaces every imported setting from a version 1.6 export', async () => {
+		const { importSettingsAndAddressBook } = await settingsModulePromise
+		await storePreviousSettings()
+
+		await importSettingsAndAddressBook(buildVersion16Import())
+
+		assert.deepEqual(await browserStorageLocalGet([...importedStorageKeys]), {
+			openedPageV2: { page: 'Settings' },
+			userAddressBookEntriesV3: [{ type: 'safe', name: 'Imported Safe', address: importedSafeAddress, chainId: testRpcNetwork.chainId, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [importedSignerAddress] }],
+			simulationMode: false,
+			activeRpcNetwork: testRpcNetwork,
+			independentActiveSimulationAddress: importedSimulationAddress,
+			activeSigningAddress: undefined,
+			activeSigningSafeAddress: importedSafeAddress,
+			signingAddressPreferences: [{ signerAddress: importedSignerAddress, selection: 'safe', safeAddress: importedSafeAddress, chainId: testRpcNetwork.chainId }],
+			useSignersAddressAsActiveAddress: false,
+			websiteAccess: sanitizedImportedWebsiteAccess,
+			useTabsInsteadOfPopup: false,
+			metamaskCompatibilityMode: false,
+			safeAppsCompatibilityMode: false,
+		})
+	})
+
+	test('merges legacy addresses into the address book and resets signing state from a version 1.3 export', async () => {
+		const { defaultActiveAddresses, importSettingsAndAddressBook } = await settingsModulePromise
+		await storePreviousSettings()
+
+		await importSettingsAndAddressBook(buildLegacyAddressImport('1.3'))
+
+		assert.deepEqual(await browserStorageLocalGet([...importedStorageKeys]), {
+			openedPageV2: { page: 'Settings' },
+			userAddressBookEntriesV3: [
+				previousAddressBookEntry,
+				{ name: 'Imported active address', address: importedLegacyActiveAddress, askForAddressAccess: false, type: 'contact', useAsActiveAddress: true, entrySource: 'User' },
+				{ type: 'contact', name: 'Imported contact', address: importedLegacyContactAddress, entrySource: 'User' },
+			],
+			simulationMode: false,
+			activeRpcNetwork: testRpcNetwork,
+			independentActiveSimulationAddress: defaultActiveAddresses[0]?.address,
+			activeSigningAddress: undefined,
+			activeSigningSafeAddress: undefined,
+			signingAddressPreferences: [],
+			useSignersAddressAsActiveAddress: false,
+			websiteAccess: sanitizedImportedWebsiteAccess,
+			useTabsInsteadOfPopup: false,
+			metamaskCompatibilityMode: false,
+			safeAppsCompatibilityMode: false,
+		})
+	})
+
+	test('keeps the opened page and metamask mode and uses the default network for a version 1.0 export', async () => {
+		const { defaultActiveAddresses, defaultRpcs, importSettingsAndAddressBook } = await settingsModulePromise
+		await storePreviousSettings()
+
+		await importSettingsAndAddressBook(buildLegacyAddressImport('1.0'))
+
+		assert.deepEqual(await browserStorageLocalGet([...importedStorageKeys]), {
+			openedPageV2: { page: 'Home' },
+			userAddressBookEntriesV3: [
+				previousAddressBookEntry,
+				{ name: 'Imported active address', address: importedLegacyActiveAddress, askForAddressAccess: false, type: 'contact', useAsActiveAddress: true, entrySource: 'User' },
+				{ type: 'contact', name: 'Imported contact', address: importedLegacyContactAddress, entrySource: 'User' },
+			],
+			simulationMode: false,
+			activeRpcNetwork: defaultRpcs[0],
+			independentActiveSimulationAddress: defaultActiveAddresses[0]?.address,
+			activeSigningAddress: undefined,
+			activeSigningSafeAddress: undefined,
+			signingAddressPreferences: [],
+			useSignersAddressAsActiveAddress: false,
+			websiteAccess: sanitizedImportedWebsiteAccess,
+			useTabsInsteadOfPopup: false,
+			metamaskCompatibilityMode: true,
+			safeAppsCompatibilityMode: false,
+		})
 	})
 })
