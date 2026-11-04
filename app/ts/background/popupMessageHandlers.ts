@@ -880,7 +880,8 @@ export async function refreshHomeData(
 			const snapshot = await readNetworkSnapshot(simulationServicesOwner)
 			const { ethereum, tokenPriceService } = snapshot.services
 			if (snapshot.settings.simulationMode) await updateSimulationMetadata(ethereum, snapshot.simulation, requestAbortController)
-			if (refreshSimulation) await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { skipIfUnchanged: true, snapshot: snapshot.simulation })
+			// The shared visualisation follows the latest stack, which a request accepted on the same network may have changed since this snapshot was read, so it reads its own snapshot under the transition lock; that snapshot's network checks keep these services from publishing for a replaced network.
+			if (refreshSimulation) await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { skipIfUnchanged: true })
 			if (!await snapshotNetworkIsStillActive(snapshot)) continue
 			if (snapshot.settings.activeRpcNetwork.httpsRpc !== undefined) await makeSureInterceptorIsNotSleeping(ethereum, publishRpcConnectionStatus)
 			if (await sendHomePageIfNetworkStillActive(snapshot, websiteTabConnections, { requestAbortController, richDataSource: 'fresh', shouldRefreshSignerAccounts, includeWebsiteAccessAddressMetadata: true, popupRefreshGeneration })) return

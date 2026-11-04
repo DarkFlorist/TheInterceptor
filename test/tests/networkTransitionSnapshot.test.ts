@@ -1411,6 +1411,59 @@ describe('network transition snapshot', () => {
 		}
 	})
 
+	test('a home data refresh that a same-network stack change interrupts leaves the shared visualisation on the changed stack', async () => {
+		const { modules, runtimeMessages, websiteTabConnections, sendDappRequest } = await createApprovedSimulationDapp({ simulationConsumerOpen: true })
+		const { refreshHomeData } = await import('../../app/ts/background/popupMessageHandlers.js')
+		const { updatePopupVisualisationIfNeeded } = await import('../../app/ts/background/popupVisualisationUpdater.js')
+		await modules.updateInterceptorTransactionStack(() => ({ operations: [createStackedTransaction(1n, networkA.chainId, STACKED_ON_A_RECIPIENT)] }))
+		const { owner, installed, retireAll } = createRecordingServicesOwner(networkA)
+		const [servicesA] = installed
+		if (servicesA === undefined) throw new Error('Missing network A services')
+		// The stored visualisation simulates the stack, so the refresh's metadata update looks up its addresses.
+		await updatePopupVisualisationIfNeeded(servicesA.ethereum, servicesA.tokenPriceService, { invalidateOldState: true })
+		await sendDappRequest(owner, { method: 'eth_sendTransaction', params: [{ from: addressString(firstAddress), to: addressString(secondAddress), value: '0x0', data: '0x' }] })
+		const [pending] = await modules.getPendingTransactionsAndMessages()
+		if (pending?.type !== 'Transaction') throw new Error('Expected a pending transaction')
+		const countStackedTransactions = (visualisation: { readonly simulationStateInput: readonly { readonly transactions: readonly unknown[] }[] }) => visualisation.simulationStateInput.reduce((count, block) => count + block.transactions.length, 0)
+		const acceptSimulationStarted = createDeferredSignal()
+		let addressBookRead: ReturnType<typeof pauseNextStorageReadOf> | undefined
+		let deadline: ReturnType<typeof setTimeout> | undefined
+		try {
+			// The refresh reads its snapshot of the one-transaction stack, then pauses in its metadata update while it looks up the stored visualisation's addresses.
+			addressBookRead = pauseNextStorageReadOf('userAddressBookEntriesV3')
+			const refresh = refreshHomeData(owner, websiteTabConnections, false, 1, noopPublishRpcConnectionStatus)
+			await Promise.race([
+				addressBookRead.started,
+				new Promise<never>((_resolve, reject) => { deadline = setTimeout(() => reject(new Error('The metadata update read no address book entries')), 1000) }),
+			])
+			// Accepting the request appends it to the same network's stack, then refreshes the shared visualisation from that stack; no network change commits, so the generation stays the same.
+			const acceptRefreshProbed = whenRuntimeMessageSent((message) => isRecord(message) && message.method === 'popup_isSimulationVisualizerOpen')
+			const acceptance = modules.confirmDialog(owner, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier: pending.uniqueRequestIdentifier } })
+			await acceptRefreshProbed
+			assert.equal((await modules.getInterceptorTransactionStack()).operations.length, 2)
+			servicesA.interceptRequests(async (request) => {
+				if (request.method !== 'eth_simulateV1') return
+				servicesA.interceptRequests(undefined)
+				acceptSimulationStarted.resolve()
+			})
+			await acceptSimulationStarted.promise
+			const messagesBeforeResume = runtimeMessages.length
+			addressBookRead.release()
+			await Promise.all([refresh, acceptance])
+
+			const stored = await modules.getPopupVisualisationState()
+			if (stored.simulationState.kind !== 'simulated') throw new Error('Expected a simulated shared visualisation')
+			assert.equal(countStackedTransactions(stored.simulationState.value), 2)
+			const lastBroadcast = (await getBroadcastSimulatedVisualisations(runtimeMessages.slice(messagesBeforeResume))).at(-1)
+			if (lastBroadcast === undefined) throw new Error('Expected a broadcast shared visualisation')
+			assert.equal(countStackedTransactions(lastBroadcast), 2)
+		} finally {
+			clearTimeout(deadline)
+			addressBookRead?.release()
+			retireAll()
+		}
+	})
+
 	test('a shared visualisation refresh that a switch to another network and back interrupts neither simulates nor publishes for the replaced client', async () => {
 		const { modules, runtimeMessages } = await createApprovedSimulationDapp({ simulationConsumerOpen: true })
 		const { updatePopupVisualisationIfNeeded } = await import('../../app/ts/background/popupVisualisationUpdater.js')
