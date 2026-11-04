@@ -15,8 +15,6 @@ import { visualizeSimulatorState } from './simulationUpdating.js'
 import { getPopupVisualisationState, setPopupVisualisationState } from './storageVariables.js'
 
 let abortController = new AbortController()
-// Each refresh takes the next ticket before it captures the stack, so a higher ticket never runs on an older stack. A refresh that resumes after a newer one took a ticket must leave cancelling, executing and publishing to the newer one.
-let latestRefreshTicket = 0
 
 function buildPassthroughVisualizedState(
 	simulationId: number,
@@ -74,21 +72,19 @@ export const updatePopupVisualisationIfNeeded = async (ethereum: EthereumClientS
 		}
 		const isSimulationDataConsumerOpenReply = await requestIsSimulationDataConsumerOpen()
 		if (!(isSimulationDataConsumerOpenReply?.data.isOpen === true)) return popupVisualisation
-		const refreshTicket = ++latestRefreshTicket
-		const capturedSnapshot = snapshot ?? await captureSimulationSnapshot()
-		const provider = getSimulationProviderForSnapshot(ethereum, capturedSnapshot)
+		// Only decides whether to skip: the stack can change while this check awaits, so it is never what gets executed.
+		const checkedSnapshot = snapshot ?? await captureSimulationSnapshot()
+		const provider = getSimulationProviderForSnapshot(ethereum, checkedSnapshot)
 		if (skipIfUnchanged && popupVisualisation.simulationState.kind === 'simulated' && provider !== undefined) {
-			const currentSimulationInput = await getCurrentSimulationStateInput(provider, capturedSnapshot)
+			const currentSimulationInput = await getCurrentSimulationStateInput(provider, checkedSnapshot)
 			const currentFingerprint = getPopupVisualisationFingerprint(currentSimulationInput.simulationStateInput, currentSimulationInput.rpcNetwork, currentSimulationInput.blockNumber)
 			const cachedFingerprint = getPopupVisualisationFingerprint(
 				popupVisualisation.simulationState.value.simulationStateInput,
 				popupVisualisation.simulationState.value.rpcNetwork,
 				popupVisualisation.simulationState.value.blockNumber,
 			)
-			if (currentFingerprint === cachedFingerprint && (capturedSnapshot.numberOfAddressesMadeRich === popupVisualisation.numberOfAddressesMadeRich)) return popupVisualisation
+			if (currentFingerprint === cachedFingerprint && (checkedSnapshot.numberOfAddressesMadeRich === popupVisualisation.numberOfAddressesMadeRich)) return popupVisualisation
 		}
-		// No await may sit between this check and replacing the abort controller, or a newer refresh could start in between and be cancelled.
-		if (refreshTicket !== latestRefreshTicket) return await getPopupVisualisationState()
 		abortController.abort(NEW_BLOCK_ABORT)
 		abortController = new AbortController()
 		const thisAbortController = abortController
@@ -97,7 +93,8 @@ export const updatePopupVisualisationIfNeeded = async (ethereum: EthereumClientS
 			const visualizedSimulatorState = await setPopupVisualisationState(retainPreviousVisualisation(popupVisualisation, { simulationId, simulationUpdatingState: 'updating', simulationResultState: 'invalid' }))
 			await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState } })
 		}
-		await updatePopupVisualisationState(ethereum, tokenPriceService, thisAbortController, false, capturedSnapshot)
+		// Without a supplied snapshot, execution captures the stack inside the semaphore. Executions run one at a time, so a later one never reads an older stack than an earlier one published, and a refresh that cancels another then runs the current stack itself. A supplied snapshot (the interactive queue) is rendered as captured; keeping it current is the queue's responsibility.
+		await updatePopupVisualisationState(ethereum, tokenPriceService, thisAbortController, false, snapshot)
 	} catch(error: unknown) {
 		if (isExpectedInfrastructureError(error)) return await getPopupVisualisationState()
 		await reportUnexpectedError(error)
