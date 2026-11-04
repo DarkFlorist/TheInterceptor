@@ -67,7 +67,15 @@ async function updatePendingTransactionOrMessages(update: (pendingTransactionsOr
 	})
 }
 
-export async function updatePendingTransactionOrMessage(uniqueRequestIdentifier: UniqueRequestIdentifier, update: (pendingTransactionOrMessage: PendingTransactionOrSignableMessage) => Promise<PendingTransactionOrSignableMessage | undefined>) {
+// The fields of a pending request that one layer owns: its resolution inputs (requestResolution.ts) and its simulation hash reservation (simulationStackHashes.ts). Only the owner writes one (updateOwnedPendingRequestField); every other update keeps them from the stored request, so a request replaced from a snapshot taken earlier never loses or rewinds them.
+export type OwnedPendingRequestField = 'resolutionInputs' | 'simulationHashReservation'
+function withStoredOwnedFields(stored: PendingTransactionOrSignableMessage, updated: PendingTransactionOrSignableMessage, writtenField: OwnedPendingRequestField | undefined): PendingTransactionOrSignableMessage {
+	const withInputs = writtenField === 'resolutionInputs' ? updated : { ...updated, resolutionInputs: stored.resolutionInputs }
+	if (withInputs.type !== 'Transaction' || writtenField === 'simulationHashReservation') return withInputs
+	return { ...withInputs, simulationHashReservation: stored.type === 'Transaction' ? stored.simulationHashReservation : undefined }
+}
+
+async function updatePendingRequest(uniqueRequestIdentifier: UniqueRequestIdentifier, update: (pendingTransactionOrMessage: PendingTransactionOrSignableMessage) => Promise<PendingTransactionOrSignableMessage | undefined>, writtenField: OwnedPendingRequestField | undefined) {
 	await updatePendingTransactionOrMessages(async (pendingTransactionsOrMessages) => {
 		const match = pendingTransactionsOrMessages.findIndex((pending) => doesUniqueRequestIdentifiersMatch(pending.uniqueRequestIdentifier, uniqueRequestIdentifier))
 		if (match < 0) return pendingTransactionsOrMessages
@@ -75,9 +83,15 @@ export async function updatePendingTransactionOrMessage(uniqueRequestIdentifier:
 		if (found === undefined) return pendingTransactionsOrMessages
 		const updated = await update(found)
 		if (updated === undefined) return pendingTransactionsOrMessages
-		return replaceElementInReadonlyArray(pendingTransactionsOrMessages, match, updated)
+		return replaceElementInReadonlyArray(pendingTransactionsOrMessages, match, withStoredOwnedFields(found, updated, writtenField))
 	})
 }
+
+// Updates a pending request, keeping its owned fields (OwnedPendingRequestField) as stored.
+export const updatePendingTransactionOrMessage = async (uniqueRequestIdentifier: UniqueRequestIdentifier, update: (pendingTransactionOrMessage: PendingTransactionOrSignableMessage) => Promise<PendingTransactionOrSignableMessage | undefined>) => await updatePendingRequest(uniqueRequestIdentifier, update, undefined)
+
+// Updates a pending request as the owner of one of its owned fields, which it writes; the other owned field is kept as stored.
+export const updateOwnedPendingRequestField = async (uniqueRequestIdentifier: UniqueRequestIdentifier, field: OwnedPendingRequestField, update: (pendingTransactionOrMessage: PendingTransactionOrSignableMessage) => Promise<PendingTransactionOrSignableMessage | undefined>) => await updatePendingRequest(uniqueRequestIdentifier, update, field)
 
 export async function appendPendingTransactionOrMessage(pendingTransactionOrMessage: PendingTransactionOrSignableMessage) {
 	await updatePendingTransactionOrMessages(async (pendingTransactionsOrMessages) => [...pendingTransactionsOrMessages, pendingTransactionOrMessage])

@@ -3,7 +3,7 @@ import type { PendingTransactionOrSignableMessage } from '../types/accessRequest
 import type { InterceptorStackOperation, InterceptorTransactionStack, PreSimulationTransaction, WebsiteCreatedEthereumTransaction } from '../types/visualizer-types.js'
 import { doesUniqueRequestIdentifiersMatch, type UniqueRequestIdentifier } from '../utils/requests.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { getInterceptorTransactionStack, getPendingTransactionsAndMessages, updatePendingTransactionOrMessage } from './storageVariables.js'
+import { getInterceptorTransactionStack, getPendingTransactionsAndMessages, updateOwnedPendingRequestField } from './storageVariables.js'
 
 const getTransactionHashes = (operations: readonly InterceptorStackOperation[]) => operations.flatMap((operation) => operation.type === 'Transaction' ? [operation.preSimulationTransaction.signedTransaction.hash] : [])
 
@@ -37,7 +37,7 @@ export const ensureSimulationHashReservation = async (requestIdentifier: UniqueR
 	if (pending?.type !== 'Transaction' || !stacksTransactionOnAccept(pending)) return undefined
 	if (pending.simulationHashReservation !== undefined) return pending.simulationHashReservation
 	const simulationHashReservation = await allocateSimulationHashReservation(transactionToSimulate, requestIdentifier)
-	await updatePendingTransactionOrMessage(requestIdentifier, async (request) => request.type === 'Transaction' ? { ...request, simulationHashReservation } : request)
+	await updateOwnedPendingRequestField(requestIdentifier, 'simulationHashReservation', async (request) => request.type === 'Transaction' ? { ...request, simulationHashReservation } : request)
 	return simulationHashReservation
 })
 

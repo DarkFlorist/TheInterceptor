@@ -13,7 +13,7 @@ import type { SendRawTransactionParams, SendTransactionParams } from '../../type
 import { refreshConfirmTransactionSimulation } from '../confirmTransactionSimulation.js'
 import { captureSimulationSnapshot, getExecutedCallFormation, getUpdatedSimulationState } from '../simulationUpdating.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
-import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getRpcConnectionStatus, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, updateInterceptorTransactionStack, updateInterceptorTransactionStackWithResult, updatePendingTransactionOrMessage } from '../storageVariables.js'
+import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getRpcConnectionStatus, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, updateInterceptorTransactionStack, updateInterceptorTransactionStackWithResult, updateOwnedPendingRequestField, updatePendingTransactionOrMessage } from '../storageVariables.js'
 import { allocateSimulationHashReservation, appendAcceptedTransactionToStack, stacksTransactionOnAccept, withSimulationHashLock } from '../simulationStackHashes.js'
 import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
 import { replyToInterceptedRequestAfterManifestV2Reconnect } from '../messageSending.js'
@@ -453,7 +453,7 @@ async function resolvePendingRequest(ethereum: EthereumClientService, tokenPrice
 					const current = (await getPendingTransactionsAndMessages()).find((request) => doesUniqueRequestIdentifiersMatch(request.uniqueRequestIdentifier, pendingTransaction.uniqueRequestIdentifier))
 					if (current?.type !== 'Transaction') return { kind: 'resolved' } satisfies AcceptedTransactionStacking
 					const allocatedReservation = current.simulationHashReservation === undefined && stacksTransactionOnAccept(current) ? await allocateSimulationHashReservation(pendingTransaction.transactionToSimulate, pendingTransaction.uniqueRequestIdentifier) : undefined
-					if (allocatedReservation !== undefined) await updatePendingTransactionOrMessage(pendingTransaction.uniqueRequestIdentifier, async (request) => request.type === 'Transaction' ? { ...request, simulationHashReservation: allocatedReservation } : request)
+					if (allocatedReservation !== undefined) await updateOwnedPendingRequestField(pendingTransaction.uniqueRequestIdentifier, 'simulationHashReservation', async (request) => request.type === 'Transaction' ? { ...request, simulationHashReservation: allocatedReservation } : request)
 					const transactionToStack = toPreSimulationTransaction(pendingTransaction.transactionToSimulate, current.simulationHashReservation ?? allocatedReservation)
 					return await updateInterceptorTransactionStackWithResult<AcceptedTransactionStacking>((prevStack: InterceptorTransactionStack) => {
 						// An accept repeated while the first one replies, or retried after it stacked the transaction, replies with the stacked hash again.

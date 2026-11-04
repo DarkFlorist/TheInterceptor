@@ -11,7 +11,7 @@ import { Semaphore } from '../utils/semaphore.js'
 import { assertNever } from '../utils/typescript.js'
 import { type ConfirmationWindowAccess, updateConfirmationWindowAfterRemoving } from './confirmationWindowLifecycle.js'
 import { getPendingTerminalReplies } from './pendingTerminalReplies.js'
-import { getInterceptorTransactionStack, getPendingTransactionsAndMessages, removePendingTransactionOrMessage, updatePendingTransactionOrMessage } from './storageVariables.js'
+import { getInterceptorTransactionStack, getPendingTransactionsAndMessages, removePendingTransactionOrMessage, updateOwnedPendingRequestField } from './storageVariables.js'
 import { attachTerminalReplyWindow, attemptQueuedTerminalReplyDelivery, forgetTerminalReplyWindow, getQueuedTerminalReply, queueTerminalReply, retireTerminalReply } from './terminalReplyDelivery.js'
 
 /**
@@ -72,7 +72,7 @@ async function writeRecordedInputs(uniqueRequestIdentifier: UniqueRequestIdentif
 		const recorded = recordedInputs.get(claim)
 		const [next] = recorded?.unwritten ?? []
 		if (recorded === undefined || next === undefined || recorded.writtenCount >= targetCount) return
-		await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (request) => withInputLogged(request, next))
+		await updateOwnedPendingRequestField(uniqueRequestIdentifier, 'resolutionInputs', async (request) => withInputLogged(request, next))
 		const afterWrite = recordedInputs.get(claim)
 		if (afterWrite === undefined) return
 		recordedInputs.set(claim, { unwritten: afterWrite.unwritten.slice(1), writtenCount: afterWrite.writtenCount + 1 })
@@ -226,7 +226,7 @@ async function resolveKeptInputs(current: PendingTransactionOrSignableMessage, c
 		const stillPending = await getPendingRequest(current.uniqueRequestIdentifier)
 		// A reply the settlement chose, committed or with its commitment write still to retry, ends the arbitration.
 		if (stillPending === undefined || chosenUncommittedReplies.has(claim) || await getQueuedTerminalReply(current.uniqueRequestIdentifier) !== undefined) return settled
-		await updatePendingTransactionOrMessage(current.uniqueRequestIdentifier, async (pending) => isSameInput(pending.resolutionInputs?.[0], input) ? { ...pending, resolutionInputs: (pending.resolutionInputs ?? []).slice(1) } : pending)
+		await updateOwnedPendingRequestField(current.uniqueRequestIdentifier, 'resolutionInputs', async (pending) => isSameInput(pending.resolutionInputs?.[0], input) ? { ...pending, resolutionInputs: (pending.resolutionInputs ?? []).slice(1) } : pending)
 		remainingEarlierInputs -= 1
 		const afterRemoval = await getPendingRequest(current.uniqueRequestIdentifier)
 		if (afterRemoval === undefined) return settled

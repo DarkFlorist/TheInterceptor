@@ -244,6 +244,7 @@ export async function loadModules() {
 		Multicall3ABI: constants.Multicall3ABI,
 		defaultActiveAddresses: settings.defaultActiveAddresses,
 		refreshPopupConfirmTransactionSimulation: popupMessageHandlers.refreshPopupConfirmTransactionSimulation,
+		refreshPopupConfirmTransactionMetadata: popupMessageHandlers.refreshPopupConfirmTransactionMetadata,
 		confirmDialog: popupMessageHandlers.confirmDialog,
 		getSafeSignerSelectionFromAccountRefresh: popupMessageHandlers.getSafeSignerSelectionFromAccountRefresh,
 		importSafeStack: popupMessageHandlers.importSafeStack,
@@ -275,6 +276,7 @@ export async function loadModules() {
 		getPendingTerminalReplies: pendingTerminalReplies.getPendingTerminalReplies,
 		updateInterceptorTransactionStack: storageVariables.updateInterceptorTransactionStack,
 		updatePendingTransactionOrMessage: storageVariables.updatePendingTransactionOrMessage,
+		updateOwnedPendingRequestField: storageVariables.updateOwnedPendingRequestField,
 		updateSafeTransactionStacks: async (update: (previous: Awaited<ReturnType<typeof storageVariables.getSafeTransactionStacks>>) => Awaited<ReturnType<typeof storageVariables.getSafeTransactionStacks>>) => {
 			const updated = await storageVariables.updateTransactionState((previous) => ({
 				...previous,
