@@ -3,7 +3,7 @@ import { test } from 'bun:test'
 import { getInterceptorErrorDiagnostics, getLatestUnexpectedError } from '../../app/ts/background/storageVariables.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../app/ts/utils/constants.js'
-import { activeAddress, browserMock, bytes32String, createDisconnectedPort, createRecordingPort, createSafeAddressBookEntry, createSafeTx, EIP712Message, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, pendingTransaction, privateKeyToAccount, recipientAddress, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, signedTransaction, simulator, uniqueRequestIdentifier, waitForPendingTransactionsToClear, withSilencedConsole } from './confirmTransactionTestHarness.js'
+import { activeAddress, browserMock, bytes32String, createDisconnectedPort, createRecordingPort, createSafeAddressBookEntry, createSafeTx, EIP712Message, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, pendingTransaction, privateKeyToAccount, recipientAddress, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, signedTransaction, simulator, testResolutionContext, uniqueRequestIdentifier, waitForPendingTransactionsToClear, withSilencedConsole } from './confirmTransactionTestHarness.js'
 
 test('failed signer delivery keeps the request and replaces the waiting spinner with a wallet-neutral error', async () => {
 	await browser.storage.local.set({ simulationMode: false })
@@ -720,7 +720,7 @@ test('startup recovery retires committed replies for missing tabs and keeps thos
 	browserMock.storageState.popupRefreshGeneration = 23
 	browserMock.setLiveTabIds([liveTabId])
 
-	await (await import('../../app/ts/background/windows/confirmTransaction.js')).resumeCommittedRequests(simulator.ethereum, simulator.tokenPriceService, noConnections)
+	await (await import('../../app/ts/background/requestResolution.js')).resumeCommittedRequests(testResolutionContext(noConnections))
 	const remainingReplies = await modules.getPendingTerminalReplies()
 	assert.equal(remainingReplies.length, 1)
 	assert.equal(remainingReplies[0]?.uniqueRequestIdentifier.requestSocket.tabId, liveTabId)
@@ -783,7 +783,7 @@ test('approving a simulated transaction answers the website before the window cl
 
 // Waits until no resolution of a request is in flight or awaiting a retry.
 async function waitForResolutionRetriesToFinish() {
-	const { getResolutionBookkeepingSize } = await import('../../app/ts/background/windows/confirmTransaction.js')
+	const { getResolutionBookkeepingSize } = await import('../../app/ts/background/requestResolution.js')
 	for (let attempt = 0; attempt < 200 && getResolutionBookkeepingSize() > 0; attempt++) await new Promise((resolve) => setTimeout(resolve, 25))
 	assert.equal(getResolutionBookkeepingSize(), 0, 'the resolution retries finished')
 }
@@ -1067,12 +1067,91 @@ test('a reply posted without its delivered mark whose tab then closes is retired
 		assert.equal(getRepliesToWebsite(postedMessages).length, 1)
 		assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
 		assert.deepEqual(await modules.getPendingTerminalReplies(), [])
-		const { getResolutionBookkeepingSize } = await import('../../app/ts/background/windows/confirmTransaction.js')
+		const { getResolutionBookkeepingSize } = await import('../../app/ts/background/requestResolution.js')
 		const { getTerminalReplyBookkeepingSize } = await import('../../app/ts/background/terminalReplyDelivery.js')
 		assert.equal(getResolutionBookkeepingSize() + getTerminalReplyBookkeepingSize(), 0, 'no bookkeeping is left')
 	} finally {
 		browserMock.setStorageSetHandler(undefined)
 	}
+})
+
+// Rejects the pending transaction while its confirmation window cannot be closed, until the finishing runs out of retries: the reply is delivered and the request removed, and the committed reply is left owing its window update.
+async function strandCommittedRejectionOnItsWindow(postedMessages: unknown[], websiteTabConnections: ReturnType<typeof connectRequestingWebsite>['websiteTabConnections']) {
+	browserMock.setLiveWindowIds([pendingTransaction.popupOrTabId.id])
+	browserMock.setWindowRemoveHandler(async () => { throw new Error(TAB_DRAG_ERROR_MESSAGE) })
+	await withSilencedConsole(async () => {
+		await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+			method: 'popup_confirmDialog',
+			data: { action: 'reject', errorString: undefined, uniqueRequestIdentifier },
+		})
+		await waitForResolutionRetriesToFinish()
+	})
+	assert.equal(getRepliesToWebsite(postedMessages).length, 1)
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	assert.deepEqual((await modules.getPendingTerminalReplies()).map((entry) => entry.confirmationWindow), [pendingTransaction.popupOrTabId])
+	const removedWindowIds: number[] = []
+	browserMock.setWindowRemoveHandler(async (windowId) => { removedWindowIds.push(windowId) })
+	return removedWindowIds
+}
+
+test('the user closing the window of a committed reply whose window update ran out of retries finishes it', async () => {
+	const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
+	const removedWindowIds = await strandCommittedRejectionOnItsWindow(postedMessages, websiteTabConnections)
+
+	await modules.onCloseWindowOrTab(pendingTransaction.popupOrTabId, simulator.ethereum, simulator.tokenPriceService, websiteTabConnections)
+
+	assert.deepEqual(removedWindowIds, [pendingTransaction.popupOrTabId.id])
+	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+	assert.equal(getRepliesToWebsite(postedMessages).length, 1)
+	await waitForResolutionRetriesToFinish()
+})
+
+test('a user action on a request whose committed reply ran out of retries for its window update finishes it', async () => {
+	const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
+	const removedWindowIds = await strandCommittedRejectionOnItsWindow(postedMessages, websiteTabConnections)
+
+	await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+		method: 'popup_confirmDialog',
+		data: { action: 'accept', uniqueRequestIdentifier },
+	})
+
+	assert.deepEqual(removedWindowIds, [pendingTransaction.popupOrTabId.id])
+	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+	const replies = getRepliesToWebsite(postedMessages)
+	assert.equal(replies.length, 1, 'the accept never follows the delivered rejection')
+	assert.deepEqual((await modules.getInterceptorTransactionStack()).operations, [])
+	await waitForResolutionRetriesToFinish()
+})
+
+test('closing a tab before the simulation services exist still finishes its committed request, once they do', async () => {
+	const { finishCommittedRequestsOfClosedTab } = await import('../../app/ts/background/requestResolution.js')
+	// The closed tab's request and another tab's request share the confirmation window, so finishing must show the queue in it, the one step that needs the services.
+	const otherTabRequest = { ...pendingTransaction, uniqueRequestIdentifier: { ...uniqueRequestIdentifier, requestId: 2, requestSocket: { ...uniqueRequestIdentifier.requestSocket, tabId: uniqueRequestIdentifier.requestSocket.tabId + 1 } } }
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [pendingTransaction, otherTabRequest] })
+	await modules.queueTerminalReply({ ...pendingTransaction.originalRequestParameters, type: 'result' as const, error: { code: METAMASK_ERROR_USER_REJECTED_REQUEST, message: 'User denied transaction signature' }, uniqueRequestIdentifier })
+	browserMock.setLiveTabIds([])
+	browserMock.setLiveWindowIds([pendingTransaction.popupOrTabId.id])
+	const removedWindowIds: number[] = []
+	browserMock.setWindowRemoveHandler(async (windowId) => { removedWindowIds.push(windowId) })
+	// As the background composes it (background-startup.ts): before the services exist the window refresh fails.
+	let servicesExist = false
+	let refreshes = 0
+	const refreshConfirmationWindow = async () => {
+		if (!servicesExist) throw new Error('Simulation services are not initialized, so the confirmation window cannot be refreshed yet')
+		refreshes += 1
+		return true
+	}
+
+	await withSilencedConsole(async () => await finishCommittedRequestsOfClosedTab(uniqueRequestIdentifier.requestSocket.tabId, { websiteTabConnections: new Map(), refreshConfirmationWindow }))
+	assert.deepEqual((await modules.getPendingTransactionsAndMessages()).map((pending) => pending.uniqueRequestIdentifier.requestId), [2], 'the closed tab\'s request is removed without the services')
+	assert.deepEqual((await modules.getPendingTerminalReplies()).map((entry) => entry.confirmationWindow), [pendingTransaction.popupOrTabId], 'the window update is owed')
+
+	servicesExist = true
+	await withSilencedConsole(waitForResolutionRetriesToFinish)
+	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+	assert.equal(refreshes, 1, 'the window is refreshed once')
+	assert.deepEqual(removedWindowIds, [], 'the window still shows the other tab\'s request')
+	assert.deepEqual((await modules.getPendingTransactionsAndMessages()).map((pending) => pending.uniqueRequestIdentifier.requestId), [2])
 })
 
 await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))

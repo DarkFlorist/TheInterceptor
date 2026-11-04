@@ -6,7 +6,7 @@ import { createSaltSearch, getSignedTransactionForSimulation, toPreSimulationTra
 import { appendOperationsToStack } from '../../app/ts/background/simulationStackHashes.js'
 import { EthereumSignedTransactionToSignedTransaction, serializeSignedTransactionToBytes } from '../../app/ts/utils/ethereum.js'
 import { keccak256 } from '../../app/ts/utils/ethereumPrimitives.js'
-import { addressString, browserMock, createSafeStackTransactionFixture, createWebsitePort, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, isRecord, modules, simulator, withSilencedConsole } from './confirmTransactionTestHarness.js'
+import { addressString, browserMock, createSafeStackTransactionFixture, createWebsitePort, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, isRecord, modules, simulator, testResolutionContext, withSilencedConsole } from './confirmTransactionTestHarness.js'
 
 // Regression tests for #1713: no two transactions on the simulation stack share a hash, so transaction and receipt lookups by hash find the right one.
 const SENDER = 0x7100000000000000000000000000000000000071n
@@ -999,11 +999,11 @@ for (const flushFirst of [true, false]) {
 		if (pending === undefined) throw new Error('Expected the pending request')
 		const { commitPendingTerminalReply } = await import('../../app/ts/background/pendingTerminalReplies.js')
 		await commitPendingTerminalReply({ ...pending.originalRequestParameters, type: 'result', error: { code: 4001, message: 'User denied transaction signature' }, uniqueRequestIdentifier: pending.uniqueRequestIdentifier })
-		const { beginStartupRecovery, resumeCommittedRequests } = await import('../../app/ts/background/windows/confirmTransaction.js')
+		const { beginStartupRecovery, resumeCommittedRequests } = await import('../../app/ts/background/requestResolution.js')
 	beginStartupRecovery()
 		const closedWindows = await countingClosedWindows(async () => {
 			if (flushFirst) await modules.flushPendingTerminalRepliesForSocket(websiteTabConnections, REQUEST_SOCKET)
-			await withSilencedConsole(async () => await resumeCommittedRequests(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections))
+			await withSilencedConsole(async () => await resumeCommittedRequests(testResolutionContext(websiteTabConnections)))
 			if (!flushFirst) await modules.flushPendingTerminalRepliesForSocket(websiteTabConnections, REQUEST_SOCKET)
 		})
 		assert.deepEqual(closedWindows, [CONFIRMATION_WINDOW_ID], 'the live window closes')
@@ -1023,7 +1023,7 @@ test('closes the live window of a request whose reply was queued before windows 
 	if (pending === undefined) throw new Error('Expected the pending request')
 	const { commitPendingTerminalReply } = await import('../../app/ts/background/pendingTerminalReplies.js')
 	await commitPendingTerminalReply({ ...pending.originalRequestParameters, type: 'result', error: { code: 4001, message: 'User denied transaction signature' }, uniqueRequestIdentifier: pending.uniqueRequestIdentifier })
-	const { beginStartupRecovery, resumeCommittedRequests } = await import('../../app/ts/background/windows/confirmTransaction.js')
+	const { beginStartupRecovery, resumeCommittedRequests } = await import('../../app/ts/background/requestResolution.js')
 	beginStartupRecovery()
 	// The first startup removes the request but cannot close the window, until its retries give up.
 	const windows = Reflect.get(globalThis, 'browser').windows
@@ -1031,7 +1031,7 @@ test('closes the live window of a request whose reply was queued before windows 
 	windows.remove = async () => { throw new Error('window removal unavailable') }
 	try {
 		await withSilencedConsole(async () => {
-			await resumeCommittedRequests(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections)
+			await resumeCommittedRequests(testResolutionContext(websiteTabConnections))
 			await new Promise((resolve) => setTimeout(resolve, 2_000))
 		})
 	} finally {
@@ -1042,7 +1042,7 @@ test('closes the live window of a request whose reply was queued before windows 
 	await assertNoResolutionBookkeeping()
 
 	beginStartupRecovery()
-	const closedWindows = await countingClosedWindows(async () => await withSilencedConsole(async () => await resumeCommittedRequests(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections)))
+	const closedWindows = await countingClosedWindows(async () => await withSilencedConsole(async () => await resumeCommittedRequests(testResolutionContext(websiteTabConnections))))
 	assert.deepEqual(closedWindows, [CONFIRMATION_WINDOW_ID], 'the next startup closes it')
 	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [{ error: 4001 }])
 	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
@@ -1318,11 +1318,11 @@ for (const state of restartStates) {
 				const expectedNewReplies = state.entry === 'delivered' ? [] : [{ result: modules.EthereumBytes32.serialize(stacked.signedTransaction.hash) }]
 
 				browserMock.setLiveWindowIds(windowSurvived ? [CONFIRMATION_WINDOW_ID] : [])
-				const { resumeCommittedRequests, getResolutionBookkeepingSize } = await import('../../app/ts/background/windows/confirmTransaction.js')
+				const { resumeCommittedRequests, getResolutionBookkeepingSize } = await import('../../app/ts/background/requestResolution.js')
 				const { getTerminalReplyBookkeepingSize } = await import('../../app/ts/background/terminalReplyDelivery.js')
 				const startUp = async () => await withSilencedConsole(async () => {
 					await modules.resolvePendingRequestsForMissingConfirmationWindows(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections)
-					await resumeCommittedRequests(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections)
+					await resumeCommittedRequests(testResolutionContext(websiteTabConnections))
 				})
 				const closedWindows = await countingClosedWindows(async () => {
 					if (flushFirst) await modules.flushPendingTerminalRepliesForSocket(websiteTabConnections, REQUEST_SOCKET)
@@ -1392,7 +1392,7 @@ test('deletes a finished request\'s delivered reply when the first delete fails'
 })
 
 const assertNoResolutionBookkeeping = async () => {
-	const { getResolutionBookkeepingSize } = await import('../../app/ts/background/windows/confirmTransaction.js')
+	const { getResolutionBookkeepingSize } = await import('../../app/ts/background/requestResolution.js')
 	const { getTerminalReplyBookkeepingSize } = await import('../../app/ts/background/terminalReplyDelivery.js')
 	assert.equal(getResolutionBookkeepingSize() + getTerminalReplyBookkeepingSize(), 0, 'no bookkeeping is left')
 }
@@ -1569,10 +1569,10 @@ for (const trigger of ['startup', 'the requesting tab closing'] as const) {
 		await openConfirmation(1, SENDER, 1n, websiteTabConnections)
 		await seedCommittedRejection({ delivered: false, withWindow: true })
 		browserMock.setLiveTabIds([])
-		const confirmTransaction = await import('../../app/ts/background/windows/confirmTransaction.js')
+		const requestResolution = await import('../../app/ts/background/requestResolution.js')
 		const removalAttempts = await failingFirstWindowRemoval(async () => await withSilencedConsole(async () => {
-			if (trigger === 'startup') await confirmTransaction.resumeCommittedRequests(simulator.ethereum, simulator.tokenPriceService, new Map())
-			else await confirmTransaction.finishCommittedRequestsOfTab(REQUEST_SOCKET.tabId, simulator.ethereum, simulator.tokenPriceService, new Map())
+			if (trigger === 'startup') await requestResolution.resumeCommittedRequests(testResolutionContext(new Map()))
+			else await requestResolution.finishCommittedRequestsOfClosedTab(REQUEST_SOCKET.tabId, testResolutionContext(new Map()))
 			await waitForCondition(async () => (await modules.getPendingTerminalReplies()).length === 0)
 		}))
 		assert.deepEqual(removalAttempts, [CONFIRMATION_WINDOW_ID, CONFIRMATION_WINDOW_ID], 'the window closes on the retry')
@@ -1602,13 +1602,13 @@ test('finishes a request once when a reconnect flush overlaps its finishing, clo
 		await flushReadReleased
 		return readStoredItems()
 	})
-	const { beginStartupRecovery, resumeCommittedRequests } = await import('../../app/ts/background/windows/confirmTransaction.js')
+	const { beginStartupRecovery, resumeCommittedRequests } = await import('../../app/ts/background/requestResolution.js')
 	beginStartupRecovery()
 	const removalAttempts = await failingFirstWindowRemoval(async () => await withSilencedConsole(async () => {
 		const flushing = modules.flushPendingTerminalRepliesForSocket(websiteTabConnections, REQUEST_SOCKET)
 		await flushRead
 		browserMock.setStorageGetHandler(undefined)
-		const finishing = resumeCommittedRequests(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections)
+		const finishing = resumeCommittedRequests(testResolutionContext(websiteTabConnections))
 		await new Promise((resolve) => setTimeout(resolve, 20))
 		releaseFlushRead()
 		await Promise.all([flushing, finishing])
@@ -1626,7 +1626,7 @@ for (const closeDeferred of [false, true]) {
 		const postedMessages: unknown[] = []
 		const websiteTabConnections = createWebsiteTabConnections(postedMessages)
 		const request = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
-		const confirmTransaction = await import('../../app/ts/background/windows/confirmTransaction.js')
+		const requestResolution = await import('../../app/ts/background/requestResolution.js')
 		// A popup close arriving while the reject holds the claim, before its reply is committed, is deferred.
 		let closesDeferred = 0
 		browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
@@ -1644,7 +1644,7 @@ for (const closeDeferred of [false, true]) {
 			if (tabClosings === 0) {
 				tabClosings += 1
 				browserMock.setLiveTabIds([])
-				await confirmTransaction.finishCommittedRequestsOfTab(REQUEST_SOCKET.tabId, simulator.ethereum, simulator.tokenPriceService, new Map())
+				await requestResolution.finishCommittedRequestsOfClosedTab(REQUEST_SOCKET.tabId, testResolutionContext(new Map()))
 			}
 			return await removeWindow(windowId)
 		}
@@ -1678,9 +1678,9 @@ test('retries listing a closed tab\'s committed replies when the first listing f
 		failedListings += 1
 		throw new Error('transient terminal reply queue read failure')
 	})
-	const { finishCommittedRequestsOfTab } = await import('../../app/ts/background/windows/confirmTransaction.js')
+	const { finishCommittedRequestsOfClosedTab } = await import('../../app/ts/background/requestResolution.js')
 	await withSilencedConsole(async () => {
-		await finishCommittedRequestsOfTab(REQUEST_SOCKET.tabId, simulator.ethereum, simulator.tokenPriceService, new Map())
+		await finishCommittedRequestsOfClosedTab(REQUEST_SOCKET.tabId, testResolutionContext(new Map()))
 		await waitForCondition(async () => (await modules.getPendingTerminalReplies()).length === 0)
 	})
 	browserMock.setStorageGetHandler(undefined)
@@ -1874,7 +1874,7 @@ test('runs a popup close deferred behind an orphan rejection in the claim holder
 	assert.deepEqual((await modules.getPendingTransactionsAndMessages()).map((pending) => pending.uniqueRequestIdentifier.requestId), [2, 3])
 	assert.deepEqual(getPageResponses(postedMessages, orphan.requestId), [{ error: 4001 }], 'the orphan is rejected once')
 	await withSilencedConsole(async () => await waitForCondition(async () => {
-		const { getResolutionBookkeepingSize } = await import('../../app/ts/background/windows/confirmTransaction.js')
+		const { getResolutionBookkeepingSize } = await import('../../app/ts/background/requestResolution.js')
 		return getResolutionBookkeepingSize() === 0
 	}))
 	await assertNoResolutionBookkeeping()
@@ -1973,7 +1973,7 @@ test('rejects a request once when its window closes and the finishing first fail
 	assert.equal(failures(), 1)
 	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [{ error: 4001 }])
 	await withSilencedConsole(async () => await waitForCondition(async () => {
-		const { getResolutionBookkeepingSize } = await import('../../app/ts/background/windows/confirmTransaction.js')
+		const { getResolutionBookkeepingSize } = await import('../../app/ts/background/requestResolution.js')
 		return getResolutionBookkeepingSize() === 0
 	}))
 	await assertNoResolutionBookkeeping()
@@ -2003,14 +2003,14 @@ test('rejects a request once when a close deferred behind a failed accept first 
 	assert.equal(failures(), 1)
 	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [{ error: 4001 }])
 	await withSilencedConsole(async () => await waitForCondition(async () => {
-		const { getResolutionBookkeepingSize } = await import('../../app/ts/background/windows/confirmTransaction.js')
+		const { getResolutionBookkeepingSize } = await import('../../app/ts/background/requestResolution.js')
 		return getResolutionBookkeepingSize() === 0
 	}))
 	await assertNoResolutionBookkeeping()
 })
 
 const waitForNoResolutionBookkeeping = async () => await withSilencedConsole(async () => await waitForCondition(async () => {
-	const { getResolutionBookkeepingSize } = await import('../../app/ts/background/windows/confirmTransaction.js')
+	const { getResolutionBookkeepingSize } = await import('../../app/ts/background/requestResolution.js')
 	const { getTerminalReplyBookkeepingSize } = await import('../../app/ts/background/terminalReplyDelivery.js')
 	return getResolutionBookkeepingSize() + getTerminalReplyBookkeepingSize() === 0
 }))
@@ -2099,7 +2099,7 @@ for (const acceptOutcome of ['succeeds', 'fails'] as const) {
 }
 
 const waitForNoResolutionBookkeepingWhileFailing = async () => {
-	const { getResolutionBookkeepingSize } = await import('../../app/ts/background/windows/confirmTransaction.js')
+	const { getResolutionBookkeepingSize } = await import('../../app/ts/background/requestResolution.js')
 	const deadline = Date.now() + 10_000
 	while (getResolutionBookkeepingSize() > 0) {
 		if (Date.now() > deadline) throw new Error('The retries did not stop')
@@ -2163,10 +2163,10 @@ test('stops a reject\'s retries at one budget when every committed-reply read is
 	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [])
 	// The reject was stored with the request before its failing lookups, so startup with the window open finishes it.
 	assert.equal((await modules.getPendingTransactionsAndMessages())[0]?.declineRequested, 'reject')
-	const { beginStartupRecovery, resumeCommittedRequests } = await import('../../app/ts/background/windows/confirmTransaction.js')
+	const { beginStartupRecovery, resumeCommittedRequests } = await import('../../app/ts/background/requestResolution.js')
 	beginStartupRecovery()
 	await withSilencedConsole(async () => {
-		await resumeCommittedRequests(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections)
+		await resumeCommittedRequests(testResolutionContext(websiteTabConnections))
 		await waitUntilNothingPending()
 		await waitForCondition(async () => (await modules.getPendingTerminalReplies()).length === 0)
 	})
@@ -2196,10 +2196,10 @@ test('finishes a reject whose retries ran out before committing at startup, whil
 	assert.equal(pending?.declineRequested, 'reject', 'the reject is stored with the request')
 	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [])
 	// After a restart with the window open, startup finishes it.
-	const { beginStartupRecovery, resumeCommittedRequests } = await import('../../app/ts/background/windows/confirmTransaction.js')
+	const { beginStartupRecovery, resumeCommittedRequests } = await import('../../app/ts/background/requestResolution.js')
 	beginStartupRecovery()
 	await withSilencedConsole(async () => {
-		await resumeCommittedRequests(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections)
+		await resumeCommittedRequests(testResolutionContext(websiteTabConnections))
 		await waitUntilNothingPending()
 		await waitForCondition(async () => (await modules.getPendingTerminalReplies()).length === 0)
 	})
@@ -2254,14 +2254,14 @@ test('stops the startup recovery composition when its committed-reply reads keep
 		throw new Error('persistent read failure')
 	})
 	const { createRetriableTerminalStateRecovery } = await import('../../app/ts/background/terminalStateRecovery.js')
-	const { beginStartupRecovery, resumeCommittedRequests } = await import('../../app/ts/background/windows/confirmTransaction.js')
+	const { beginStartupRecovery, resumeCommittedRequests } = await import('../../app/ts/background/requestResolution.js')
 	beginStartupRecovery()
 	const recoveryFailures: boolean[] = []
 	// As the background composes it at startup.
 	const recover = createRetriableTerminalStateRecovery({
 		recover: async () => {
 			await modules.resolvePendingRequestsForMissingConfirmationWindows(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections)
-			await resumeCommittedRequests(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections)
+			await resumeCommittedRequests(testResolutionContext(websiteTabConnections))
 		},
 		onFailure: (_error, retrying) => { recoveryFailures.push(retrying) },
 	})
@@ -2332,10 +2332,10 @@ for (const acceptStackedBeforeRestart of [false, true]) {
 		await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: storedPending })
 		const postedMessages: unknown[] = []
 		const websiteTabConnections = createWebsiteTabConnections(postedMessages)
-		const { beginStartupRecovery, resumeCommittedRequests } = await import('../../app/ts/background/windows/confirmTransaction.js')
+		const { beginStartupRecovery, resumeCommittedRequests } = await import('../../app/ts/background/requestResolution.js')
 	beginStartupRecovery()
 		await withSilencedConsole(async () => {
-			await resumeCommittedRequests(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections)
+			await resumeCommittedRequests(testResolutionContext(websiteTabConnections))
 			await waitUntilNothingPending()
 			await waitForCondition(async () => (await modules.getPendingTerminalReplies()).length === 0)
 		})
@@ -2408,7 +2408,7 @@ test('counts concurrent failures of one request against its one retry budget, wi
 		if ('interceptorErrorDiagnostics' in items) await new Promise((resolve) => setTimeout(resolve, 30))
 		writeStoredItems()
 	})
-	const { getResolutionBookkeepingSize } = await import('../../app/ts/background/windows/confirmTransaction.js')
+	const { getResolutionBookkeepingSize } = await import('../../app/ts/background/requestResolution.js')
 	try {
 		await withSilencedConsole(async () => {
 			// Two rejects at once, each deferred behind the accept's claim with a failing intent write.
@@ -2450,7 +2450,7 @@ for (const recovery of ['a new reject', 'startup'] as const) {
 			if ('interceptorErrorDiagnostics' in items) await new Promise((resolve) => setTimeout(resolve, 1_800))
 			writeStoredItems()
 		})
-		const { getResolutionBookkeepingSize } = await import('../../app/ts/background/windows/confirmTransaction.js')
+		const { getResolutionBookkeepingSize } = await import('../../app/ts/background/requestResolution.js')
 		try {
 			await withSilencedConsole(async () => {
 				await rejectRequest(request, websiteTabConnections)
@@ -2474,9 +2474,9 @@ for (const recovery of ['a new reject', 'startup'] as const) {
 		await withSilencedConsole(async () => {
 			if (recovery === 'a new reject') await rejectRequest(request, websiteTabConnections)
 			else {
-				const { beginStartupRecovery, resumeCommittedRequests } = await import('../../app/ts/background/windows/confirmTransaction.js')
+				const { beginStartupRecovery, resumeCommittedRequests } = await import('../../app/ts/background/requestResolution.js')
 				beginStartupRecovery()
-				await resumeCommittedRequests(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections)
+				await resumeCommittedRequests(testResolutionContext(websiteTabConnections))
 			}
 			await waitUntilNothingPending()
 			await waitForCondition(async () => (await modules.getPendingTerminalReplies()).length === 0)

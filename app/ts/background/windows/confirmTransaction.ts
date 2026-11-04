@@ -5,9 +5,8 @@ import type { EthereumClientService } from '../../simulation/services/EthereumCl
 import { getInputFieldFromDataOrInput, getSimulatedBalance, getSimulatedErc20Balance, getSimulatedTransactionCount, simulateEstimateGas } from '../../simulation/services/SimulationModeEthereumClientService.js'
 import { simulatePersonalSign } from '../../simulation/services/simulationPersonalSigning.js'
 import { toPreSimulationTransaction } from '../../simulation/services/simulationTransactionSigning.js'
-import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS, METAMASK_ERROR_BLANKET_ERROR, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
-import { type InterceptedRequestForward, type StoredTerminalReply, type TransactionConfirmation, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
-import { Semaphore } from '../../utils/semaphore.js'
+import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS, METAMASK_ERROR_BLANKET_ERROR, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST } from '../../utils/constants.js'
+import { type InterceptedRequestForward, type TransactionConfirmation, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { type InterceptorTransactionStack, PASSTHROUGH_STATE, type PreSimulationTransaction, type TransactionGasPayment, type TransactionSimulationOptions, type WebsiteCreatedEthereumTransaction, type WebsiteCreatedEthereumTransactionOrFailed, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
 import type { SendRawTransactionParams, SendTransactionParams } from '../../types/JsonRpc-types.js'
@@ -16,10 +15,11 @@ import { captureSimulationSnapshot, getExecutedCallFormation, getUpdatedSimulati
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getRpcConnectionStatus, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updateInterceptorTransactionStackWithResult, updatePendingTransactionOrMessage } from '../storageVariables.js'
 import { allocateSimulationHashReservation, appendAcceptedTransactionToStack, stacksTransactionOnAccept, withSimulationHashLock } from '../simulationStackHashes.js'
-import { type InterceptedRequest, type UniqueRequestIdentifier, doesTabExist, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
+import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
 import { replyToInterceptedRequestAfterManifestV2Reconnect } from '../messageSending.js'
-import { attachTerminalReplyWindow, attemptQueuedTerminalReplyDelivery, forgetTerminalReplyWindow, getQueuedTerminalReply, queueTerminalReply, retireTerminalReply, setCommittedRequestFinisher } from '../terminalReplyDelivery.js'
-import { getPendingTerminalReplies } from '../pendingTerminalReplies.js'
+import { getQueuedTerminalReply } from '../terminalReplyDelivery.js'
+import { commitAndFinish, declineOrphanedRequestsAtStartup, declinePendingRequests, declineRequest, formRejectMessage, resetRequestRetryBudget, resolveRequestsOfClosedWindow, resumeRequest, withResolutionClaim, type ResolutionContext } from '../requestResolution.js'
+import { runConfirmationViewStep, withPendingConfirmationLock } from '../confirmationWindowLifecycle.js'
 import { stringToBytes, keccak256 } from '../../utils/ethereumPrimitives.js'
 import { EthereumBytes32, EthereumQuantity, serialize } from '../../types/wire-types.js'
 import type { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
@@ -50,9 +50,6 @@ import { persistUnsignedSafeTransaction, resolveSafeSignerReply } from '../safeC
 import { getWalletSelectedAccount } from '../../utils/activeAddressSelection.js'
 import { createSafeSignerErrorStatus } from '../safeSignerErrors.js'
 
-// Serializes choosing a confirmation window and registering a request in it with deciding to close a window after its last request (updateConfirmationWindowAfterRemoving). Lock order: this lock, then the hash lock (simulationStackHashes.ts), then the terminal-reply lock (terminalReplyDelivery.ts), then the storage locks. A resolution claim is not a lock: a resolution run while this lock is held (the orphans of getPendingTransactionWindow) is told so and does not take it again, and scheduled retries run without it.
-const pendingConfirmationSemaphore = new Semaphore(1)
-
 // Shows a proposal that was just stored in the Gnosis Safe stack: the simulation is refreshed with it and the simulation stack window opens, where the user continues with the proposal.
 async function showStoredSafeProposal(ethereum: EthereumClientService, tokenPriceService: TokenPriceService) {
 	await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { invalidateOldState: true })
@@ -72,15 +69,6 @@ async function showSimulationStackChange(ethereum: EthereumClientService, tokenP
 			return
 		}
 		default: assertNever(simulationStack)
-	}
-}
-
-// Runs one step of the confirmation window work done after a request is resolved. A failing step is reported and does not skip the steps after it, so the window is still updated and closed.
-async function runConfirmationViewStep(step: () => Promise<unknown>) {
-	try {
-		await step()
-	} catch (error: unknown) {
-		await reportUnexpectedError(error, { code: 'confirm_transaction_view_update_failed' })
 	}
 }
 
@@ -295,332 +283,11 @@ export const setGasLimitForTransaction = async (transactionIdentifier: bigint, g
 	})
 }
 
-// automatic marks a resolution no user started (a scheduled retry, a reconnect flush, startup, a follow-up on claim release): it only runs while the request's retry budget lasts (withResolutionClaim).
-type ResolutionContext = { readonly ethereum: EthereumClientService, readonly tokenPriceService: TokenPriceService, readonly websiteTabConnections: WebsiteTabConnections, readonly holdsPendingConfirmationLock?: true, readonly automatic?: true }
-// The context for a retry that runs later: without the caller's locks, and automatic.
-const withoutHeldLocks = ({ ethereum, tokenPriceService, websiteTabConnections }: ResolutionContext): ResolutionContext => ({ ethereum, tokenPriceService, websiteTabConnections, automatic: true })
-
-// Updates the confirmation window that showed a removed request: it moves to the next of its own requests, or closes after its last. A window the user already closed counts as closed; any other failure throws, for the finishing to retry. Deciding and closing hold the pending-confirmation lock, as choosing a window and registering a new request in it do, so a request never registers in a window that is being closed: it either registers first, and the window moves to it, or chooses its window after the close and opens a new one. A resolution that runs while its caller holds the lock (holdsPendingConfirmationLock) does not take it again.
-async function updateConfirmationWindowAfterRemoving(confirmationWindow: PopupOrTabId, tabId: number, context: ResolutionContext) {
-	const decideAndUpdate = async () => {
-		const pendingRequests = await getPendingTransactionsAndMessages()
-		// Decided for this window: requests in another window never keep it open.
-		if (pendingRequests.some((pending) => pending.popupOrTabId.type === confirmationWindow.type && pending.popupOrTabId.id === confirmationWindow.id)) {
-			if (!(await updateConfirmTransactionView(context.ethereum, context.tokenPriceService))) throw new Error('The confirmation window could not be moved to the next request.')
-			return
-		}
-		// Focusing the website is view work, as on main (#1650): its failure is reported, not retried, and never keeps the window open.
-		if (pendingRequests.length === 0) await runConfirmationViewStep(async () => await tryFocusingTabOrWindow({ type: 'tab', id: tabId }))
-		await closePopupOrTabById(confirmationWindow)
-	}
-	if (context.holdsPendingConfirmationLock === true) await decideAndUpdate()
-	else await pendingConfirmationSemaphore.execute(decideAndUpdate)
-}
-
-// A reply a resolution chose for a request whose commitment write failed: finishing the request commits it, so the request keeps that outcome.
-const chosenUncommittedReplies = new Map<string, { readonly reply: InterceptedRequestForward, readonly confirmationWindow: PopupOrTabId }>()
-const FINISHING_RETRY_BASE_DELAY_MS = 50
-const FINISHING_RETRY_LIMIT = 6
-// The one retry owner of each request, shared by finishing and declining it: one attempt budget and at most one scheduled retry. A completed resolution drops it; an exhausted budget stays exhausted, so automatic follow-ups (deferrals, finishers) never extend it, and only a user action or startup resets it (resetRequestRetryBudget).
-const requestRetries = new Map<string, { readonly failedAttempts: number, readonly generation: number, readonly timer?: ReturnType<typeof setTimeout> }>()
-const clearRequestRetry = (claim: string) => {
-	clearTimeout(requestRetries.get(claim)?.timer)
-	requestRetries.delete(claim)
-}
-const retryBudgetLasts = (claim: string) => (requestRetries.get(claim)?.failedAttempts ?? 0) < FINISHING_RETRY_LIMIT
-const resetRequestRetryBudget = (uniqueRequestIdentifier: UniqueRequestIdentifier) => clearRequestRetry(getUniqueRequestIdentifierString(uniqueRequestIdentifier))
-// The requests whose budget startup recovery already reset: the startup recovery's own retries are automatic, so only its first pass over a request gives it a new budget. A startup begins with none (beginStartupRecovery).
-const requestsResetByStartup = new Set<string>()
-export const beginStartupRecovery = () => requestsResetByStartup.clear()
-const resetRequestRetryBudgetAtStartup = (uniqueRequestIdentifier: UniqueRequestIdentifier) => {
-	const claim = getUniqueRequestIdentifierString(uniqueRequestIdentifier)
-	if (requestsResetByStartup.has(claim)) return
-	requestsResetByStartup.add(claim)
-	clearRequestRetry(claim)
-}
-// The decline each request was asked for in this session, which its retries run (declineRequest); the stored declineRequested of the pending request carries it across a restart.
-const declineIntents = new Map<string, DeclineReason>()
-
-// Schedules the request's one retry for a failed resolution step, unless its budget is exhausted, then reports the failure. The attempt and the timer are reserved synchronously, before the report is awaited, so concurrent failures each count once against the one budget and a timer is never overwritten without being cleared. Each schedule has its own generation: completion or a budget reset deletes the entry, so a stale timer finds its generation gone and does nothing. The retry declines the request if a decline was asked for, else finishes it.
-let nextRetryGeneration = 0
-async function scheduleRequestRetry(uniqueRequestIdentifier: UniqueRequestIdentifier, context: ResolutionContext, error: unknown) {
-	const claim = getUniqueRequestIdentifierString(uniqueRequestIdentifier)
-	const previous = requestRetries.get(claim)
-	clearTimeout(previous?.timer)
-	const failedAttempts = (previous?.failedAttempts ?? 0) + 1
-	const retrying = failedAttempts < FINISHING_RETRY_LIMIT
-	const generation = nextRetryGeneration++
-	requestRetries.set(claim, {
-		failedAttempts,
-		generation,
-		...(!retrying ? {} : {
-			timer: setTimeout(() => {
-				if (requestRetries.get(claim)?.generation !== generation) return
-				requestRetries.set(claim, { failedAttempts, generation })
-				// While another resolution holds the request, the retry is parked on its claim, counting no attempt, and runs once when the claim is released.
-				if (resolutionClaims.has(claim)) {
-					const parked = deferredResolutions.get(claim)
-					deferredResolutions.set(claim, { ...(parked ?? { automaticOnly: true, followUp: false }), parkedRetryGeneration: generation })
-					return
-				}
-				void runRequestRetry(uniqueRequestIdentifier, withoutHeldLocks(context))
-			}, FINISHING_RETRY_BASE_DELAY_MS * 2 ** (failedAttempts - 1)),
-		}),
-	})
-	await reportLocalRecovery(error, retrying
-		? { code: 'request_resolution_retrying', message: 'Retrying the resolution of a request.' }
-		: { code: 'request_resolution_gave_up', message: 'Stopped retrying the resolution of a request until the user acts on it or the extension restarts.' })
-}
-
-// A retry of the request, automatic so it passes the budget gate: it declines the request if a decline was asked for, else finishes it.
-async function runRequestRetry(uniqueRequestIdentifier: UniqueRequestIdentifier, retryContext: ResolutionContext) {
-	const decline = declineIntents.get(getUniqueRequestIdentifierString(uniqueRequestIdentifier))
-	return decline === undefined ? await resumeRequest(uniqueRequestIdentifier, retryContext) : await declineRequest(uniqueRequestIdentifier, decline, retryContext)
-}
-
-// Delivers a committed reply unless it was delivered; a delivery that throws is returned as its error, for finishing to throw once the request is removed and its window updated.
-async function attemptCommittedReplyDelivery(websiteTabConnections: WebsiteTabConnections, committedReply: StoredTerminalReply): Promise<{ readonly delivered: boolean | undefined } | { readonly delivered: false, readonly error: unknown }> {
-	if (committedReply.delivered === true) return { delivered: true }
-	try {
-		return { delivered: await attemptQueuedTerminalReplyDelivery(websiteTabConnections, committedReply) }
-	} catch (error) {
-		return { delivered: false, error }
-	}
-}
-
-type FinishingOutcome =
-	| { readonly kind: 'uncommitted', readonly request: PendingTransactionOrSignableMessage }
-	| { readonly kind: 'absent' }
-	| { readonly kind: 'finished', readonly delivered: boolean | undefined }
-	| { readonly kind: 'retrying', readonly delivered: boolean | undefined }
-
-/**
- * Finishes a request committed to its terminal reply, under its claim, in resumable steps that each check the stored state: commit a chosen reply whose commitment write failed; deliver the reply unless it was delivered (a disconnected page gets it from the queue when it reconnects); store the request's confirmation window with the reply and remove the pending request; update that window, then forget it; and delete the delivered reply last, the only deletion of a reply (retireTerminalReply). An uncommitted pending request is left to be resolved.
- * Every step, lookups included, is guarded: a failure is reported and the request retried by its one retry owner (scheduleRequestRetry), up to its budget, after which a later user action or restart resumes it.
- */
-async function finishCommittedRequest(uniqueRequestIdentifier: UniqueRequestIdentifier, context: ResolutionContext): Promise<FinishingOutcome> {
-	const claim = getUniqueRequestIdentifierString(uniqueRequestIdentifier)
-	// The delivery result reaches the resolution's caller even when a later step fails and is retried.
-	let delivered: boolean | undefined
-	try {
-		const chosen = chosenUncommittedReplies.get(claim)
-		if (chosen !== undefined) {
-			await queueTerminalReply(chosen.reply, chosen.confirmationWindow)
-			chosenUncommittedReplies.delete(claim)
-		}
-		const committedReply = await getQueuedTerminalReply(uniqueRequestIdentifier)
-		const pending = await getPendingTransactionOrMessageByidentifier(uniqueRequestIdentifier)
-		if (committedReply === undefined) {
-			if (pending !== undefined) return { kind: 'uncommitted', request: pending }
-			clearRequestRetry(claim)
-			declineIntents.delete(claim)
-			return { kind: 'absent' }
-		}
-		// A delivery that throws does not hold back removing the request and updating its window (#1650); its error is thrown after them, for the retry to deliver the reply again.
-		const delivery = await attemptCommittedReplyDelivery(context.websiteTabConnections, committedReply)
-		delivered = delivery.delivered
-		// An undelivered reply whose requesting tab is gone can never be delivered, and is finished without it.
-		const requestingTabGone = delivered !== true && !(await doesTabExist(uniqueRequestIdentifier.requestSocket.tabId))
-		// The window is stored with the reply before the request is removed, also for a reply stored before windows were, so its cleanup survives a failure or restart.
-		const confirmationWindow = committedReply.confirmationWindow ?? pending?.popupOrTabId
-		if (pending !== undefined) {
-			await attachTerminalReplyWindow(uniqueRequestIdentifier, pending.popupOrTabId)
-			await removePendingTransactionOrMessage(uniqueRequestIdentifier)
-		}
-		if (confirmationWindow !== undefined) {
-			await updateConfirmationWindowAfterRemoving(confirmationWindow, uniqueRequestIdentifier.requestSocket.tabId, context)
-			await forgetTerminalReplyWindow(uniqueRequestIdentifier)
-		}
-		await retireTerminalReply(uniqueRequestIdentifier, requestingTabGone)
-		if ('error' in delivery && !requestingTabGone) throw delivery.error
-		clearRequestRetry(claim)
-		declineIntents.delete(claim)
-		return { kind: 'finished', delivered }
-	} catch (error) {
-		await scheduleRequestRetry(uniqueRequestIdentifier, context, error)
-		return { kind: 'retrying', delivered }
-	}
-}
-
-// Commits the request to the reply a resolution chose and finishes it. A failed commitment write is retried by finishing, with the same reply.
-async function commitAndFinish(request: PendingTransactionOrSignableMessage, reply: InterceptedRequestForward, context: ResolutionContext) {
-	chosenUncommittedReplies.set(getUniqueRequestIdentifierString(request.uniqueRequestIdentifier), { reply, confirmationWindow: request.popupOrTabId })
-	const outcome = await finishCommittedRequest(request.uniqueRequestIdentifier, context)
-	return outcome.kind === 'finished' || outcome.kind === 'retrying' ? outcome.delivered : undefined
-}
-
-// Finishes a committed request under its claim; it never throws, so a scheduled retry or startup can run it unattended.
-const resumeRequest = async (uniqueRequestIdentifier: UniqueRequestIdentifier, context: ResolutionContext): Promise<boolean | undefined> => await withResolutionClaim(uniqueRequestIdentifier, context, async () => false, { whenClaimed: 'finish-again' })
-
-// The size of the in-memory resolution activity: claims held, follow-ups deferred and retries scheduled, which is empty whenever no resolution is in flight or awaiting a retry. Intent kept for a later user action or startup (chosen replies, decline intents, exhausted budgets) is not activity.
-export const getResolutionBookkeepingSize = () => resolutionClaims.size + deferredResolutions.size + [...requestRetries.values()].filter((retry) => retry.timer !== undefined).length
-
-// Lets a reconnect flush finish the requests whose replies it delivered, with the background's current services.
-export const registerCommittedRequestFinisher = (getServices: () => { readonly ethereum: EthereumClientService, readonly tokenPriceService: TokenPriceService }) => {
-	setCommittedRequestFinisher(async (uniqueRequestIdentifier, websiteTabConnections) => await resumeRequest(uniqueRequestIdentifier, { ...getServices(), websiteTabConnections, automatic: true }))
-}
-
-// When a tab closes, finishes its requests' committed replies, which it can no longer receive.
-export async function finishCommittedRequestsOfTab(tabId: number, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections) {
-	await finishCommittedRequestsOfClosedTab(tabId, { ethereum, tokenPriceService, websiteTabConnections })
-}
-
-// Runs work whose effect recovery depends on, so its intent is never dropped before the work succeeded: a failure is reported and the work retried with the finishing's backoff and limit. The first attempt runs in the caller's context; retries run later, without the caller's locks.
-async function runWithBoundedRetry(work: (context: ResolutionContext) => Promise<void>, context: ResolutionContext, failure: { readonly code: string, readonly description: string }, failedAttempts: number): Promise<void> {
-	try {
-		await work(context)
-	} catch (error) {
-		const retrying = failedAttempts + 1 < FINISHING_RETRY_LIMIT
-		// Scheduled before the report is awaited.
-		if (retrying) setTimeout(() => { void runWithBoundedRetry(work, withoutHeldLocks(context), failure, failedAttempts + 1) }, FINISHING_RETRY_BASE_DELAY_MS * 2 ** failedAttempts)
-		await reportLocalRecovery(error, retrying
-			? { code: `${ failure.code }_retrying`, message: `Retrying ${ failure.description }.` }
-			: { code: `${ failure.code }_gave_up`, message: `Stopped retrying ${ failure.description }; startup recovery handles it.` })
-	}
-}
-
-// Lists the closed tab's committed replies and finishes each request.
-async function finishCommittedRequestsOfClosedTab(tabId: number, context: ResolutionContext) {
-	await runWithBoundedRetry(async (attemptContext) => {
-		for (const committedReply of await getPendingTerminalReplies()) {
-			if (committedReply.uniqueRequestIdentifier.requestSocket.tabId !== tabId) continue
-			resetRequestRetryBudget(committedReply.uniqueRequestIdentifier)
-			await resumeRequest(committedReply.uniqueRequestIdentifier, attemptContext)
-		}
-	}, context, { code: 'closed_tab_resolution', description: 'the cleanup of a closed tab\'s committed requests' }, 0)
-}
-
-// At startup, finishes every request with a committed reply or an asked-for decline, whatever its confirmation window's state, with a new retry budget.
-export async function resumeCommittedRequests(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections) {
-	const context: ResolutionContext = { ethereum, tokenPriceService, websiteTabConnections, automatic: true }
-	for (const committedReply of await getPendingTerminalReplies()) {
-		resetRequestRetryBudgetAtStartup(committedReply.uniqueRequestIdentifier)
-		await resumeRequest(committedReply.uniqueRequestIdentifier, context)
-	}
-	// An interrupted decline is finished whatever its window's state; other requests with live windows are left to the user.
-	for (const pending of await getPendingTransactionsAndMessages()) {
-		if (pending.declineRequested === undefined) continue
-		resetRequestRetryBudgetAtStartup(pending.uniqueRequestIdentifier)
-		await declineRequest(pending.uniqueRequestIdentifier, pending.declineRequested, context)
-	}
-}
-
-// The requests whose terminal outcome an accept, reject or close has claimed and is carrying out. A claim is taken synchronously, so of racing resolutions of a request exactly one stacks it or replies; the others return false without either. Under the claim, a committed request is only finished (finishCommittedRequest); only an uncommitted pending request gets an outcome chosen (resolve).
-const resolutionClaims = new Set<string>()
-// What to run for a request once its claim is released, recorded by a resolution that found it claimed, coalesced into one entry. Only data: the claim holder runs it in its own context (which knows whether it holds the pending-confirmation lock). The request is always finished again first, so that pass sees what changed meanwhile (its requesting tab closing, say); then a requested decline runs (declineRequest), which rejects a request still pending and uncommitted, such as one whose claimed accept failed, and does nothing for one that was resolved. Each follow-up runs once per recording, so the passes stop once nothing records more. automaticOnly: every resolution that recorded it was automatic, so it runs only while the budget lasts. followUp: a resolution recorded work to follow; parkedRetryGeneration: a scheduled retry came due meanwhile, which runs on release if it is still the request's current one. Parked retries collapse into one entry.
-type DeferredResolution = { readonly decline?: DeclineReason, readonly automaticOnly: boolean, readonly followUp: boolean, readonly parkedRetryGeneration?: number }
-const deferredResolutions = new Map<string, DeferredResolution>()
-type WhenClaimed = 'finish-again' | 'nothing' | { readonly decline: DeclineReason }
-// Thrown for a decline whose finishing could not tell whether the request is committed (finishCommittedRequest returned retrying): the finishing's own retry only finishes committed requests, so the decline retries itself.
-const RESOLUTION_RETRYING_ERROR_NAME = 'ResolutionRetrying'
-// afterClaiming runs as soon as the claim is taken, before any lookup that can fail.
-type ClaimOptions = { readonly whenClaimed?: WhenClaimed, readonly retryActionWhenFinishingRetries?: true, readonly afterClaiming?: () => Promise<void> }
-async function withResolutionClaim<Result>(uniqueRequestIdentifier: UniqueRequestIdentifier, context: ResolutionContext, resolve: () => Promise<Result>, options: ClaimOptions = {}) {
-	const whenClaimed = options.whenClaimed ?? 'nothing'
-	const claim = getUniqueRequestIdentifierString(uniqueRequestIdentifier)
-	// The one gate of automatic attempts: none runs once the request's retry budget is spent; only a user action or the first startup pass renews it.
-	if (context.automatic === true && !retryBudgetLasts(claim)) return false
-	if (resolutionClaims.has(claim)) {
-		if (whenClaimed !== 'nothing') {
-			const previous = deferredResolutions.get(claim)
-			const decline = whenClaimed === 'finish-again' ? previous?.decline : whenClaimed.decline
-			const automaticOnly = (previous?.automaticOnly ?? true) && context.automatic === true
-			deferredResolutions.set(claim, {
-				automaticOnly,
-				followUp: true,
-				...(decline === undefined ? {} : { decline }),
-				...(previous?.parkedRetryGeneration === undefined ? {} : { parkedRetryGeneration: previous.parkedRetryGeneration }),
-			})
-		}
-		return false
-	}
-	resolutionClaims.add(claim)
-	try {
-		await options.afterClaiming?.()
-		const outcome = await finishCommittedRequest(uniqueRequestIdentifier, context)
-		switch (outcome.kind) {
-			case 'uncommitted': return await resolve()
-			case 'absent': return false
-			case 'finished': return outcome.delivered
-			case 'retrying': {
-				if (options.retryActionWhenFinishingRetries === true) throw Object.assign(new Error('The resolution of the request is retried'), { name: RESOLUTION_RETRYING_ERROR_NAME })
-				return undefined
-			}
-			default: return assertNever(outcome)
-		}
-	} finally {
-		resolutionClaims.delete(claim)
-		const deferred = deferredResolutions.get(claim)
-		deferredResolutions.delete(claim)
-		const parkedRetryIsCurrent = deferred?.parkedRetryGeneration !== undefined && requestRetries.get(claim)?.generation === deferred.parkedRetryGeneration
-		if (deferred?.followUp === true) {
-			// Follow-ups only automatic resolutions recorded are automatic, and pass the budget gate; one a user action recorded runs regardless. A parked retry's decline joins them.
-			const followUpContext: ResolutionContext = deferred.automaticOnly ? { ...context, automatic: true } : { ethereum: context.ethereum, tokenPriceService: context.tokenPriceService, websiteTabConnections: context.websiteTabConnections, ...(context.holdsPendingConfirmationLock === true ? { holdsPendingConfirmationLock: true } : {}) }
-			await resumeRequest(uniqueRequestIdentifier, followUpContext)
-			const decline = deferred.decline ?? (parkedRetryIsCurrent ? declineIntents.get(claim) : undefined)
-			if (decline !== undefined) await declineRequest(uniqueRequestIdentifier, decline, followUpContext)
-		} else if (parkedRetryIsCurrent) {
-			await runRequestRetry(uniqueRequestIdentifier, { ...context, automatic: true })
-		}
-	}
-}
-
-// Why a request is declined: the user rejected it, or its confirmation window closed. Both answer it with the user's rejection, except a reject of a request that never finished simulating, answered as unprocessable.
-type DeclineReason = 'reject' | 'close'
-
-// Answers a request that is declined: a rejection, unless it is already stacked in simulation mode (an accept stacked it and failed before its reply was committed, or its commitment and queued reply were lost), when it gets what accepting gives it: a transaction's stacked hash, a message's simulated signature.
-async function rejectUnlessStacked(request: PendingTransactionOrSignableMessage, reason: DeclineReason, context: ResolutionContext) {
-	const rejection = reason === 'reject' && request.transactionOrMessageCreationStatus !== 'Simulated'
-		? formRejectMessage(METAMASK_ERROR_BLANKET_ERROR, 'The Interceptor failed to process the transaction')
-		: formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User denied transaction signature')
-	const replyWithRejection = async () => await commitAndFinish(request, { ...request.originalRequestParameters, ...rejection, uniqueRequestIdentifier: request.uniqueRequestIdentifier }, context)
-	if (!request.simulationMode) return await replyWithRejection()
-	const operations = (await getInterceptorTransactionStack()).operations
-	if (request.type === 'Transaction') {
-		const stacked = operations.find((operation) => operation.type === 'Transaction' && operation.preSimulationTransaction.transactionIdentifier === request.transactionIdentifier)
-		if (stacked?.type !== 'Transaction') return await replyWithRejection()
-		return await commitAndFinish(request, { ...request.originalRequestParameters, type: 'result', result: stacked.preSimulationTransaction.signedTransaction.hash, uniqueRequestIdentifier: request.uniqueRequestIdentifier }, context)
-	}
-	if (!operations.some((operation) => operation.type === 'Message' && operation.signedMessageTransaction.messageIdentifier === request.signedMessageTransaction.messageIdentifier)) return await replyWithRejection()
-	const signature = (await simulatePersonalSign(request.originalRequestParameters, request.signedMessageTransaction.fakeSignedFor)).signature
-	return await commitAndFinish(request, { ...request.originalRequestParameters, type: 'result', result: funtypes.String.parse(signature), uniqueRequestIdentifier: request.uniqueRequestIdentifier }, context)
-}
-
-/**
- * The one entry point of a decline, an explicit reject or a closed confirmation window. It records the intent first in memory, for its retries and a claim holder; under the request's claim, the request is finished first; a committed request is only finished, a gone one left alone, and a pending uncommitted one rejected (rejectUnlessStacked). As soon as the claim is taken, before any lookup that can fail, the intent is stored on the pending request (declineRequested, which only means "reject it if uncommitted", so a commitment always wins, and lets startup finish an interrupted decline). Any failure goes to the request's one retry owner (scheduleRequestRetry). A request claimed by another resolution (an accept, say) records the decline, which its claim holder runs on release.
- * Never throws. An accept is never retried this way; it stays the user's to repeat.
- */
-async function declineRequest(uniqueRequestIdentifier: UniqueRequestIdentifier, reason: DeclineReason, context: ResolutionContext): Promise<boolean | undefined> {
-	const claim = getUniqueRequestIdentifierString(uniqueRequestIdentifier)
-	declineIntents.set(claim, reason)
-	const storeIntent = async () => await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (request) => request.declineRequested === undefined ? { ...request, declineRequested: reason } : request)
-	// Checked synchronously with the claim attempt below: another resolution (an accept, say) holds the request.
-	const claimedElsewhere = resolutionClaims.has(claim)
-	try {
-		const result = await withResolutionClaim(uniqueRequestIdentifier, context, async () => {
-			const request = await getPendingTransactionOrMessageByidentifier(uniqueRequestIdentifier)
-			return request === undefined ? false : await rejectUnlessStacked(request, reason, context)
-		}, {
-			whenClaimed: { decline: reason },
-			retryActionWhenFinishingRetries: true,
-			// Stored before the commitment is looked up, so it survives any failure after it.
-			afterClaiming: storeIntent,
-		})
-		// The claim holder runs the decline on release; storing it, only intent, outside the claim lets a restart before then still decline the request. A commitment the holder makes still wins. Not awaited, so the decline never waits on the holder's storage writes; a failure goes to the request's retry.
-		if (claimedElsewhere) void (async () => {
-			try {
-				await storeIntent()
-			} catch (error) {
-				await scheduleRequestRetry(uniqueRequestIdentifier, context, error)
-			}
-		})()
-		return result
-	} catch (error) {
-		// A retrying finishing already scheduled the request's retry.
-		if (!(error instanceof Error && error.name === RESOLUTION_RETRYING_ERROR_NAME)) await scheduleRequestRetry(uniqueRequestIdentifier, context, error)
-		return undefined
-	}
-}
+// The context of a resolution started with the simulation services at hand, which refresh the confirmation window.
+export const createResolutionContext = (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections): ResolutionContext => ({
+	websiteTabConnections,
+	refreshConfirmationWindow: async () => await updateConfirmTransactionView(ethereum, tokenPriceService),
+})
 
 // What accepting a simulation-mode transaction did: stacked it (or found it stacked), found its hash taken, or found the request resolved meanwhile.
 type AcceptedTransactionStacking = { readonly kind: 'stacked', readonly transaction: PreSimulationTransaction } | { readonly kind: 'hash-taken' } | { readonly kind: 'resolved' }
@@ -628,17 +295,17 @@ type AcceptedTransactionStacking = { readonly kind: 'stacked', readonly transact
 export async function resolvePendingTransactionOrMessage(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, refreshedSafeSignerSelection?: RefreshedSafeSignerSelection) {
 	// A user's action on the request gives its resolution a new retry budget.
 	resetRequestRetryBudget(confirmation.data.uniqueRequestIdentifier)
-	return await resolvePendingRequest({ ethereum, tokenPriceService, websiteTabConnections }, confirmation, refreshedSafeSignerSelection)
+	return await resolvePendingRequest(ethereum, tokenPriceService, createResolutionContext(ethereum, tokenPriceService, websiteTabConnections), confirmation, refreshedSafeSignerSelection)
 }
 
-async function resolvePendingRequest(resolutionContext: ResolutionContext, confirmation: TransactionConfirmation, refreshedSafeSignerSelection?: RefreshedSafeSignerSelection) {
-	const { ethereum, tokenPriceService, websiteTabConnections } = resolutionContext
+async function resolvePendingRequest(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resolutionContext: ResolutionContext, confirmation: TransactionConfirmation, refreshedSafeSignerSelection?: RefreshedSafeSignerSelection) {
+	const { websiteTabConnections } = resolutionContext
 	// A reject and a closed window are one decline, with its own retries.
 	if (confirmation.data.action === 'reject' || confirmation.data.action === 'noResponse') return await declineRequest(confirmation.data.uniqueRequestIdentifier, confirmation.data.action === 'reject' ? 'reject' : 'close', resolutionContext)
+	// A request committed to a reply is only finished, whatever the action, so an accept never follows a delivered rejection. Checked before the pending request is looked up: a request whose finishing removed it but ran out of retries for its window update still has a committed reply to finish.
+	if (await getQueuedTerminalReply(confirmation.data.uniqueRequestIdentifier) !== undefined) return await resumeRequest(confirmation.data.uniqueRequestIdentifier, resolutionContext)
 	let pendingTransactionOrMessage = await getPendingTransactionOrMessageByidentifier(confirmation.data.uniqueRequestIdentifier)
 	if (pendingTransactionOrMessage === undefined) return // no need to resolve as it doesn't exist anymore
-	// A request committed to a reply is only finished, whatever the action, so an accept never follows a delivered rejection.
-	if (await getQueuedTerminalReply(confirmation.data.uniqueRequestIdentifier) !== undefined) return await resumeRequest(confirmation.data.uniqueRequestIdentifier, resolutionContext)
 	if (
 		confirmation.data.action === 'accept'
 		&& refreshedSafeSignerSelection?.selectedSigner !== undefined
@@ -824,15 +491,7 @@ async function resolvePendingRequest(resolutionContext: ResolutionContext, confi
 	})
 }
 
-export const onCloseWindowOrTab = async (popupOrTabs: PopupOrTabId, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections) => { // check if user has closed the window on their own, if so, reject all signatures
-	// The close event comes once, so reading the requests it rejects is retried rather than dropped.
-	await runWithBoundedRetry(async (context) => {
-		// Only the closed window's own requests are declined, as the user closing that window.
-		const closedWindowRequests = (await getPendingTransactionsAndMessages()).filter((pending) => pending.popupOrTabId.type === popupOrTabs.type && pending.popupOrTabId.id === popupOrTabs.id)
-		for (const pending of closedWindowRequests) resetRequestRetryBudget(pending.uniqueRequestIdentifier)
-		await resolveAllPendingTransactionsAndMessageAsNoResponse(closedWindowRequests, context)
-	}, { ethereum, tokenPriceService, websiteTabConnections }, { code: 'window_close_resolution', description: 'the rejection of requests whose confirmation window closed' }, 0)
-}
+export const onCloseWindowOrTab = async (popupOrTabs: PopupOrTabId, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections) => await resolveRequestsOfClosedWindow(popupOrTabs, createResolutionContext(ethereum, tokenPriceService, websiteTabConnections))
 
 export async function resolvePendingRequestsForMissingConfirmationWindows(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections) {
 	const pendingTransactions = await getPendingTransactionsAndMessages()
@@ -847,19 +506,7 @@ export async function resolvePendingRequestsForMissingConfirmationWindows(ethere
 		}
 		if (confirmationWindowIsMissing) orphanedTransactions.push(transaction)
 	}
-	for (const orphan of orphanedTransactions) resetRequestRetryBudgetAtStartup(orphan.uniqueRequestIdentifier)
-	await resolveAllPendingTransactionsAndMessageAsNoResponse(orphanedTransactions, { ethereum, tokenPriceService, websiteTabConnections, automatic: true })
-}
-
-const resolveAllPendingTransactionsAndMessageAsNoResponse = async (transactions: readonly PendingTransactionOrSignableMessage[], context: ResolutionContext) => {
-	for (const transaction of transactions) await declineRequest(transaction.uniqueRequestIdentifier, 'close', context)
-}
-
-const formRejectMessage = (code: number, errorString: string) => {
-	return {
-		type: 'result' as const,
-		error: { code, message: errorString }
-	}
+	await declineOrphanedRequestsAtStartup(orphanedTransactions, createResolutionContext(ethereum, tokenPriceService, websiteTabConnections))
 }
 
 const resolveInsufficientBalanceMessageForTransaction = async (
@@ -999,7 +646,7 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 }
 
 const openConfirmationWindow = async () => await openPopupOrTab({ url: getHtmlFile('confirmTransaction'), type: 'popup', height: 800, width: 600 })
-// Called under the pending-confirmation lock. Requests whose window is gone are rejected as for a window the user closed, by resolutions that know the lock is held.
+// Called under the pending-confirmation lock (confirmationWindowLifecycle.ts). Requests whose window is gone are rejected as for a window the user closed, by resolutions that know the lock is held.
 const getPendingTransactionWindow = async (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections) => {
 	// Each request is checked against its own window: requests whose window is gone are rejected, and a live confirmation window of another request is reused.
 	let liveWindow: Awaited<ReturnType<typeof getPopupOrTabById>>
@@ -1009,7 +656,7 @@ const getPendingTransactionWindow = async (ethereum: EthereumClientService, toke
 		if (window === undefined) orphanedRequests.push(pending)
 		else liveWindow ??= window
 	}
-	if (orphanedRequests.length > 0) await resolveAllPendingTransactionsAndMessageAsNoResponse(orphanedRequests, { ethereum, tokenPriceService, websiteTabConnections, holdsPendingConfirmationLock: true })
+	if (orphanedRequests.length > 0) await declinePendingRequests(orphanedRequests, { ...createResolutionContext(ethereum, tokenPriceService, websiteTabConnections), holdsPendingConfirmationLock: true })
 	return liveWindow ?? await openConfirmationWindow()
 }
 
@@ -1069,7 +716,7 @@ export async function openConfirmTransactionDialogForMessage(
 					safeMessageValidationDetails = isSafeMessageAccountMismatchFailure(error) ? error.safeSignerErrorDetails : undefined
 			}
 		}
-		await pendingConfirmationSemaphore.execute(async () => {
+		await withPendingConfirmationLock(async () => {
 			const openedDialog = await getPendingTransactionWindow(ethereumClientService, tokenPriceService, websiteTabConnections)
 			if (openedDialog === undefined) throw new Error('Failed to get pending transaction window!')
 
@@ -1179,7 +826,7 @@ export async function openConfirmTransactionDialogForTransaction(
 		)
 		: formSendRawTransaction(ethereumClientService, effectiveTransactionParams, website, created, transactionIdentifier)
 	silenceChromeUnCaughtPromise(transactionToSimulatePromise)
-	const outcome = await pendingConfirmationSemaphore.execute(async () => {
+	const outcome = await withPendingConfirmationLock(async () => {
 		const finalizedSafePreparation = await safePreparation.finalize(
 			await transactionToSimulatePromise,
 			request.uniqueRequestIdentifier.requestSocket.tabId,

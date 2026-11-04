@@ -2,7 +2,9 @@ import multiSendLibrary from '../fixtures/safe-libraries/MultiSendCallOnly.json'
 import signMessageLibrary from '../fixtures/safe-libraries/SignMessageLib.json'
 import { SAFE_MULTI_SEND_CALL_ONLY, SAFE_SIGN_MESSAGE_LIB } from '../../app/ts/safe/safeDelegateCalls.js'
 import { SAFE_MESSAGE_ABI } from '../../app/ts/safe/safeMessage.js'
-import type { flushPendingTerminalRepliesForSocket as flushPendingTerminalRepliesForSocketType } from '../../app/ts/background/terminalReplyDelivery.js'
+import type { CommittedRequestFinisher } from '../../app/ts/background/terminalReplyDelivery.js'
+import type { WebsiteSocket } from '../../app/ts/utils/requests.js'
+import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
 import { encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { withSilencedConsole } from './consoleSilence.js'
 import { createSafeTx, SAFE_ABI, safeTxToTypedDataJson } from '../../app/ts/safe/safeCore.js'
@@ -228,7 +230,12 @@ export async function loadModules() {
 		import('../../app/ts/safe/safeCore.js'),
 		import('../../app/ts/background/safeConfirmationPersistence.js'),
 	])
-	const flushPendingTerminalRepliesForSocket: typeof flushPendingTerminalRepliesForSocketType = terminalReplyDelivery.flushPendingTerminalRepliesForSocket
+	// As the background composes it (background-startup.ts): a reconnect flush finishes the requests whose replies it delivered, here with the test simulator's services.
+	const finishCommittedRequest: CommittedRequestFinisher = async (uniqueRequestIdentifier, websiteTabConnections) => {
+		const { resumeRequest } = await import('../../app/ts/background/requestResolution.js')
+		return await resumeRequest(uniqueRequestIdentifier, { ...confirmTransaction.createResolutionContext(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections), automatic: true })
+	}
+	const flushPendingTerminalRepliesForSocket = async (websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) => await terminalReplyDelivery.flushPendingTerminalRepliesForSocket(websiteTabConnections, socket, finishCommittedRequest)
 
 	return {
 		EthereumClientService: ethereumClientService.EthereumClientService,
@@ -251,6 +258,7 @@ export async function loadModules() {
 		openConfirmTransactionDialogForMessage: confirmTransaction.openConfirmTransactionDialogForMessage,
 		openConfirmTransactionDialogForTransaction: confirmTransaction.openConfirmTransactionDialogForTransaction,
 		onCloseWindowOrTab: confirmTransaction.onCloseWindowOrTab,
+		createResolutionContext: confirmTransaction.createResolutionContext,
 		refreshPendingSafeSignerSelectionErrors: confirmTransaction.refreshPendingSafeSignerSelectionErrors,
 		resolvePendingRequestsForMissingConfirmationWindows: confirmTransaction.resolvePendingRequestsForMissingConfirmationWindows,
 		resolveSafeConfirmation: safeConfirmationResolver.resolveSafeConfirmation,
@@ -277,7 +285,7 @@ export async function loadModules() {
 		updateTabState: storageVariables.updateTabState,
 		updateUserAddressBookEntries: storageVariables.updateUserAddressBookEntries,
 		flushPendingTerminalRepliesForSocket,
-		flushPendingTerminalRepliesForConnectedPortWithRetry: terminalReplyDelivery.flushPendingTerminalRepliesForConnectedPortWithRetry,
+		flushPendingTerminalRepliesForConnectedPortWithRetry: async (websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, port: browser.runtime.Port) => await terminalReplyDelivery.flushPendingTerminalRepliesForConnectedPortWithRetry(websiteTabConnections, socket, port, finishCommittedRequest),
 		queueTerminalReply: terminalReplyDelivery.queueTerminalReply,
 		attemptQueuedTerminalReplyDelivery: terminalReplyDelivery.attemptQueuedTerminalReplyDelivery,
 		queueTerminalReplyAndAttemptDelivery: async (...[websiteTabConnections, message]: Parameters<typeof terminalReplyDelivery.attemptQueuedTerminalReplyDelivery>) => {
@@ -475,8 +483,9 @@ export const simulator = {
 	ethereum,
 	tokenPriceService: new modules.TokenPriceService(ethereum, 60_000),
 }
-// As the background does, so a reconnect flush finishes the requests whose replies it delivered.
-;(await import('../../app/ts/background/windows/confirmTransaction.js')).registerCommittedRequestFinisher(() => simulator)
+
+// The resolution context the background gives a resolution, with the test simulator's services.
+export const testResolutionContext = (websiteTabConnections: WebsiteTabConnections) => modules.createResolutionContext(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections)
 
 export const activeAddress = modules.defaultActiveAddresses[0]?.address
 export const recipientAddress = modules.defaultActiveAddresses[1]?.address

@@ -68,10 +68,8 @@ export async function attemptQueuedTerminalReplyDelivery(websiteTabConnections: 
 	}
 }
 
-// The routine that finishes a committed request (finishCommittedRequest), registered by the background; a flush runs it for the requests whose replies it delivered.
-type CommittedRequestFinisher = (uniqueRequestIdentifier: UniqueRequestIdentifier, websiteTabConnections: WebsiteTabConnections) => Promise<unknown>
-let committedRequestFinisher: CommittedRequestFinisher | undefined
-export const setCommittedRequestFinisher = (finisher: CommittedRequestFinisher) => { committedRequestFinisher = finisher }
+// Finishes a committed request (requestResolution.ts), which is what deletes a delivered entry: a flush is given it by its caller, the composition root.
+export type CommittedRequestFinisher = (uniqueRequestIdentifier: UniqueRequestIdentifier, websiteTabConnections: WebsiteTabConnections) => Promise<unknown>
 
 // Records the window that shows the entry's request, unless the entry has one, under the terminal-reply lock.
 export async function attachTerminalReplyWindow(uniqueRequestIdentifier: UniqueRequestIdentifier, confirmationWindow: PopupOrTabId) {
@@ -95,8 +93,8 @@ export async function retireTerminalReply(uniqueRequestIdentifier: UniqueRequest
 	})
 }
 
-// Delivers the socket's undelivered replies, then finishes their requests (setCommittedRequestFinisher), which is what deletes a delivered entry.
-export async function flushPendingTerminalRepliesForSocket(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
+// Delivers the socket's undelivered replies, then finishes their requests with the given finisher.
+export async function flushPendingTerminalRepliesForSocket(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, finishCommittedRequest: CommittedRequestFinisher) {
 	const { deliveredReplies, delivered } = await terminalReplySemaphore.execute(async () => {
 		let deliveredReplies = 0
 		const delivered: UniqueRequestIdentifier[] = []
@@ -110,25 +108,21 @@ export async function flushPendingTerminalRepliesForSocket(websiteTabConnections
 		}
 		return { deliveredReplies, delivered }
 	})
-	if (committedRequestFinisher === undefined) {
-		if (delivered.length > 0) await reportLocalRecovery(new Error('No committed request finisher is registered'), { source: 'pending_terminal_replies', code: 'committed_request_finisher_missing', message: 'Delivered terminal replies stay queued until startup finishes their requests.' })
-		return deliveredReplies
-	}
-	for (const uniqueRequestIdentifier of delivered) await committedRequestFinisher(uniqueRequestIdentifier, websiteTabConnections)
+	for (const uniqueRequestIdentifier of delivered) await finishCommittedRequest(uniqueRequestIdentifier, websiteTabConnections)
 	return deliveredReplies
 }
 
 // Flushes a newly connected port's replies, the external trigger that gives the connection a new retry budget: a failed flush is retried with backoff (50 ms, doubling) while the same port stays connected, up to a limit, then reported as given up until the port reconnects.
-export async function flushPendingTerminalRepliesForConnectedPortWithRetry(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, port: browser.runtime.Port) {
-	return await flushConnectedPortWithRetry(websiteTabConnections, socket, port, 0)
+export async function flushPendingTerminalRepliesForConnectedPortWithRetry(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, port: browser.runtime.Port, finishCommittedRequest: CommittedRequestFinisher) {
+	return await flushConnectedPortWithRetry(websiteTabConnections, socket, port, finishCommittedRequest, 0)
 }
 
-async function flushConnectedPortWithRetry(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, port: browser.runtime.Port, failedAttempts: number): Promise<number> {
+async function flushConnectedPortWithRetry(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, port: browser.runtime.Port, finishCommittedRequest: CommittedRequestFinisher, failedAttempts: number): Promise<number> {
 	const socketIdentifier = websiteSocketToString(socket)
 	clearTimeout(terminalReplyFlushRetryTimers.get(socketIdentifier))
 	terminalReplyFlushRetryTimers.delete(socketIdentifier)
 	try {
-		return await flushPendingTerminalRepliesForSocket(websiteTabConnections, socket)
+		return await flushPendingTerminalRepliesForSocket(websiteTabConnections, socket, finishCommittedRequest)
 	} catch (error) {
 		const retrying = failedAttempts + 1 < TERMINAL_REPLY_FLUSH_RETRY_LIMIT
 		// The retry is reserved before the report is awaited, replacing (and clearing) any other.
@@ -139,7 +133,7 @@ async function flushConnectedPortWithRetry(websiteTabConnections: WebsiteTabConn
 				terminalReplyFlushRetryTimers.delete(socketIdentifier)
 				const currentPort = websiteTabConnections.get(socket.tabId)?.connections[socketIdentifier]?.port
 				if (currentPort !== port) return
-				void flushConnectedPortWithRetry(websiteTabConnections, socket, port, failedAttempts + 1)
+				void flushConnectedPortWithRetry(websiteTabConnections, socket, port, finishCommittedRequest, failedAttempts + 1)
 			}, TERMINAL_REPLY_FLUSH_RETRY_DELAY_MS * 2 ** failedAttempts)
 			terminalReplyFlushRetryTimers.set(socketIdentifier, retryTimer)
 		}
