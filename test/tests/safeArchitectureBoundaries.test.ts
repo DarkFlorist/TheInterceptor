@@ -44,6 +44,41 @@ test('Gnosis Safe persistence only persists, and the confirmation window shows t
 	assert.match(confirmTransactionSource, /async function showStoredSafeProposal\(/u)
 })
 
+// Runtime imports only (type-only imports are erased), followed through every module the given one loads.
+async function getRuntimeImportClosure(entryPath: string) {
+	const transpiler = new Bun.Transpiler({ loader: 'ts' })
+	const visited = new Set<string>()
+	const pending = [entryPath]
+	for (let path = pending.pop(); path !== undefined; path = pending.pop()) {
+		if (visited.has(path)) continue
+		visited.add(path)
+		const directory = path.slice(0, path.lastIndexOf('/') + 1)
+		for (const { path: specifier } of transpiler.scanImports(await Bun.file(path).text())) {
+			if (!specifier.startsWith('.')) continue
+			for (const extension of ['.ts', '.tsx']) {
+				const resolved = new URL(specifier.replace(/\.js$/u, extension), `file://${ directory }`).pathname
+				if (await Bun.file(resolved).exists()) pending.push(resolved)
+			}
+		}
+	}
+	return [...visited]
+}
+
+test('the Gnosis Safe signer-reply lifecycle reaches the confirmation window only through the callbacks it is given', async () => {
+	const lifecycleUrl = new URL('../../app/ts/background/safeSignerReplyLifecycle.ts', import.meta.url)
+	const lifecycleSource = await Bun.file(lifecycleUrl).text()
+	assert.doesNotMatch(lifecycleSource, /from '(?:\.\.\/utils\/popupOrTab|\.\/popupVisualisationUpdater|\.\/popupMessageHandlers|\.\/windows\/[^']+|\.\.\/components\/[^']+)\.js'/u)
+	assert.doesNotMatch(lifecycleSource, /\b(?:getHtmlFile|openPopupOrTab|closePopupOrTabById|tryFocusingTabOrWindow|updatePopupVisualisationIfNeeded|sendPopupMessageToOpenWindows|updateConfirmTransactionView)\b/u)
+	const appRoot = new URL('../../app/ts/', import.meta.url).pathname
+	const viewModules = (await getRuntimeImportClosure(lifecycleUrl.pathname))
+		.map((path) => path.slice(appRoot.length))
+		.filter((path) => /^(?:background\/windows\/|components\/)|^background\/popup(?:MessageHandlers|VisualisationUpdater)\.ts$|^utils\/popupOrTab\.ts$/u.test(path))
+	assert.deepEqual(viewModules, [])
+	// The confirmation window calls into the lifecycle and keeps none of its state.
+	assert.match(confirmTransactionSource, /from '\.\.\/safeSignerReplyLifecycle\.js'/u)
+	assert.doesNotMatch(confirmTransactionSource, /safeSignerReplyLifecycleSemaphore|safeSignerReplyRetryTimers|pendingRetriesSpentTransitions|reportedSpentSafeSignerReplyRetries|safeSignerReplyAdvancesOnNewBlock|function advanceSafeSignerReply\b/u)
+})
+
 test('popup message handlers delegate Gnosis Safe stack import and export', () => {
 	assert.match(popupMessageHandlersSource, /export \{ importSafeStack, requestSafeStackExport, validateSafeTransactionStackForCurrentContract \} from '\.\/safeStackHandlers\.js'/u)
 	assert.doesNotMatch(popupMessageHandlersSource, /function validateSafeTransactionStackForCurrentContract/u)
