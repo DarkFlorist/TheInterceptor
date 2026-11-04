@@ -31,6 +31,9 @@ const unavailableRpcConfiguration = (reason: Exclude<Exclude<RpcConfigurationSta
 	...(error === undefined ? {} : { error }),
 })
 
+// The configuration state of a settings read that rejected, so it is admitted and published exactly like an unreadable configuration.
+export const readFailedRpcConfiguration = (error: unknown) => unavailableRpcConfiguration('read-failed', undefined, error)
+
 async function resolveRpcConfigurationStateWithoutLock(storedConfiguration: RpcConfigurationStorageItems): Promise<RpcConfigurationState> {
 	const hasRpcEntries = hasOwnKey(storedConfiguration, 'rpcEntries') && storedConfiguration.rpcEntries !== undefined
 	const hasActiveRpcNetwork = hasOwnKey(storedConfiguration, 'activeRpcNetwork') && storedConfiguration.activeRpcNetwork !== undefined

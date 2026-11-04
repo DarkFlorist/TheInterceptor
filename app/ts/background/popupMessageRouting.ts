@@ -3,12 +3,13 @@ import { PopupReplyOption } from '../types/interceptor-reply-messages.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST } from '../utils/constants.js'
-import { isExpectedInfrastructureError } from '../utils/errors.js'
 import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
 import { dispatchPopupMessage } from './popupMessageDispatcher.js'
 import { getConfirmTransactionAbortController } from './confirmTransactionSimulation.js'
 import { resetSimulationStateFromConfig } from './activeSettings.js'
-import type { RpcConfigurationState } from './rpcConfigurationStorage.js'
+import { readFailedRpcConfiguration, type RpcConfigurationState } from './rpcConfigurationStorage.js'
+import { getSettingsSnapshot, settingsIfAvailable, type SettingsSnapshot } from './settings.js'
+import { isExpectedInfrastructureError, reportUnexpectedError } from '../utils/errors.js'
 
 const simulationAbortController = new AbortController()
 
@@ -48,4 +49,25 @@ export async function popupMessageHandler(
 		if (isExpectedInfrastructureError(error)) return
 		throw error
 	}
+}
+
+// The admission read never rejects: a rejected settings read (for example a failed repair write of a corrupt field) is reported and admitted as an unreadable RPC configuration. Recovery-class requests (Settings, Retry and Restore) therefore still run and publish the unreadable status, and every request that needs settings is refused exactly as it is for an unreadable configuration.
+async function getSettingsSnapshotForAdmission(): Promise<SettingsSnapshot> {
+	try {
+		return await getSettingsSnapshot()
+	} catch (error: unknown) {
+		await reportUnexpectedError(error)
+		return { status: 'unavailable', rpcConfiguration: readFailedRpcConfiguration(error), websiteApprovals: { status: 'unreadable', error } }
+	}
+}
+
+// The background's entry point for popup runtime messages.
+export async function handlePopupRuntimeMessage(
+	websiteTabConnections: WebsiteTabConnections,
+	simulationServicesOwner: SimulationServicesOwner,
+	message: unknown,
+	publishRpcConnectionStatus: PublishRpcConnectionStatus,
+) {
+	const settingsSnapshot = await getSettingsSnapshotForAdmission()
+	return await popupMessageHandler(websiteTabConnections, simulationServicesOwner, message, settingsIfAvailable(settingsSnapshot), settingsSnapshot.rpcConfiguration, publishRpcConnectionStatus)
 }

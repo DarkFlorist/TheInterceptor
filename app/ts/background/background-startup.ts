@@ -1,9 +1,9 @@
 import { createSafeAppsCompatibilityFeature, initializeSafeAppsCompatibility } from './safeAppsCompatibilityCoordinator.js'
 import 'webextension-polyfill'
-import { getSettingsSnapshot, updateKnownWebsiteMetadata, settingsIfAvailable, requireAvailableSettings } from './settings.js'
+import { getSettingsSnapshot, updateKnownWebsiteMetadata, requireAvailableSettings } from './settings.js'
 import { handleInterceptedRequest } from './background.js'
 import { captureSimulationSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
-import { popupMessageHandler } from './popupMessageRouting.js'
+import { handlePopupRuntimeMessage } from './popupMessageRouting.js'
 import { retrieveWebsiteDetails, updateExtensionBadge, updateExtensionIcon } from './iconHandler.js'
 import { getRpcConnectionStatus, removeTabState, setRpcConnectionStatus, updateTabState } from './storageVariables.js'
 import { getRpcConfigurationState } from './rpcConfigurationStorage.js'
@@ -358,7 +358,6 @@ browser.runtime.onConnect.addListener((port) => catchAllErrorsAndCall(async () =
 }))
 browser.runtime.onMessage.addListener((message: unknown) => Promise.resolve(catchAllErrorsAndCall(async () => {
 	const { simulationServicesOwner } = await waitForBackgroundStartup()
-	const settingsSnapshot = await getSettingsSnapshot()
-	return await popupMessageHandler(websiteTabConnections, simulationServicesOwner, message, settingsIfAvailable(settingsSnapshot), settingsSnapshot.rpcConfiguration, rpcConnectionStatusPublisher.publishRpcConnectionStatus)
+	return await handlePopupRuntimeMessage(websiteTabConnections, simulationServicesOwner, message, rpcConnectionStatusPublisher.publishRpcConnectionStatus)
 })))
 addWindowTabListeners(onCloseWindow, onCloseTab)
