@@ -5,7 +5,7 @@ import type { EthereumAddress } from '../types/wire-types.js'
 import type { Website, WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import type { BlockExplorer, RpcNetwork } from '../types/rpc.js'
 import { type RichListElement, browserStorageLocalGet, browserStorageLocalSafeParse, browserStorageLocalSet } from '../utils/storageUtils.js'
-import { executeWithUserAddressBookEntriesLock, getUserAddressBookEntries } from './storageVariables.js'
+import { executeWithUserAddressBookEntriesLock, getUserAddressBookEntries, readUserAddressBookEntriesWithoutRepairWrite } from './storageVariables.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import type { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
 import type { BlockTimeManipulation } from '../types/visualizer-types.js'
@@ -279,7 +279,8 @@ async function getImportedUserAddressBookEntries(exportedSettings: ExportedSetti
 	if (exportedSettings.version === '1.4' || exportedSettings.version === '1.5' || exportedSettings.version === '1.6') return exportedSettings.settings.addressBookEntries
 	// Pre-1.4 exports only contain active addresses and contacts, which are merged into the existing address book instead of replacing it.
 	const convertActiveAddressToAddressBookEntry = (info: ActiveAddress): AddressBookEntry => ({ ...info, type: 'contact' as const, useAsActiveAddress: true, entrySource: 'User' as const })
-	const previousEntries = await getUserAddressBookEntries()
+	// A repairable or corrupt stored address book is not repaired here: the merge below is stored by the import's single write, so a failed import leaves the stored value untouched.
+	const { entries: previousEntries } = await readUserAddressBookEntriesWithoutRepairWrite()
 	return getUniqueItemsByProperties(previousEntries.concat(exportedSettings.settings.addressInfos.map((x) => convertActiveAddressToAddressBookEntry(x))).concat(exportedSettings.settings.contacts ?? []), ['address'])
 }
 

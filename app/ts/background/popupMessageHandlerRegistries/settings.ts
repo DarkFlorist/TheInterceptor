@@ -6,7 +6,7 @@ import { getSettings } from '../settings.js'
 import { updateContentScriptInjectionStrategy } from '../../utils/contentScriptsUpdating.js'
 import { getErrorMessage } from '../../utils/errors.js'
 
-// The imported settings are already stored when these run, so a failing step must not keep the later ones from applying them. Every step runs, and the failures are then rethrown for the caller's unexpected-error reporting.
+// The imported settings are already stored when these run, so every step runs even after an earlier one fails. Each step either reports its own failure and resolves (the popup broadcast helper, the content script updater and reconciliation, which is called without throwOnError) or rejects; only rejections, such as a failed settings read, are collected and rethrown here for the caller's unexpected-error reporting, so every failure is either reported or rethrown.
 async function runEveryFollowUpOfCommittedImport(followUps: readonly (() => Promise<void>)[]) {
 	const failures: unknown[] = []
 	for (const followUp of followUps) {

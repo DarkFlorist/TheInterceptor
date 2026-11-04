@@ -12,6 +12,7 @@ function createBrowserStorageMock() {
 	let addressBookWriteGate: { started: () => void, waitForRelease: Promise<void> } | undefined
 	let websiteAccessWriteGate: { started: () => void, waitForRelease: Promise<void> } | undefined
 	let writeFailure: { key: string, error: Error } | undefined
+	let setCallCount = 0
 
 	const getItems = (keys?: StorageKeyInput) => {
 		if (keys === undefined || keys === null) return { ...storageState }
@@ -40,6 +41,7 @@ function createBrowserStorageMock() {
 					return getItems(keys)
 				},
 				async set(items: Record<string, unknown>) {
+					setCallCount += 1
 					if (writeFailure !== undefined && writeFailure.key in items) {
 						const { error } = writeFailure
 						writeFailure = undefined
@@ -80,6 +82,7 @@ function createBrowserStorageMock() {
 	installGlobals()
 
 	return {
+		getSetCallCount: () => setCallCount,
 		failNextWriteOf(key: string, error: Error) {
 			writeFailure = { key, error }
 		},
@@ -113,6 +116,7 @@ function createBrowserStorageMock() {
 			websiteAccessWriteGate = undefined
 			signingPreferenceWriteGate = undefined
 			writeFailure = undefined
+			setCallCount = 0
 			installGlobals()
 		},
 	}
@@ -598,6 +602,42 @@ describe('settings import', () => {
 			assert.deepEqual(await browser.storage.local.get([...importedStorageKeys]), storageBeforeImport)
 		})
 	}
+
+	const repairableLegacyTokenAddress = 0xb0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0n
+	const repairableStoredAddressBook = [{ type: 'ERC20', name: 'Legacy token', address: '0xb0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0', symbol: 'LGC', decimals: '0x100', entrySource: 'User' }]
+	for (const { description, storedAddressBook } of [
+		{ description: 'a repairable legacy', storedAddressBook: repairableStoredAddressBook },
+		{ description: 'a corrupt', storedAddressBook: 'not an address book' },
+	]) {
+		test(`leaves ${ description } stored address book untouched when storing a legacy import fails`, async () => {
+			const { importSettingsAndAddressBook } = await settingsModulePromise
+			await browser.storage.local.set({ userAddressBookEntriesV3: storedAddressBook })
+			const storageBeforeImport = structuredClone(await browser.storage.local.get())
+			const storageFailure = new Error('Storage write failed')
+			// The address book is written by the same commit, so failing on a key written only there also catches a repair stored by an earlier write.
+			browserMock.failNextWriteOf('websiteAccess', storageFailure)
+
+			await assert.rejects(importSettingsAndAddressBook(buildLegacyAddressImport('1.3')), storageFailure)
+
+			assert.deepStrictEqual(await browser.storage.local.get(), storageBeforeImport)
+		})
+	}
+
+	test('stores a legacy import merged with a repaired address book in one storage write', async () => {
+		const { importSettingsAndAddressBook } = await settingsModulePromise
+		const { getUserAddressBookEntries } = await storageVariablesModulePromise
+		await browser.storage.local.set({ userAddressBookEntriesV3: repairableStoredAddressBook })
+		const setCallCountBeforeImport = browserMock.getSetCallCount()
+
+		await importSettingsAndAddressBook(buildLegacyAddressImport('1.3'))
+
+		assert.equal(browserMock.getSetCallCount() - setCallCountBeforeImport, 1)
+		assert.deepEqual(await getUserAddressBookEntries(), [
+			{ type: 'contract', name: 'Legacy token', address: repairableLegacyTokenAddress, entrySource: 'User' },
+			{ name: 'Imported active address', address: importedLegacyActiveAddress, askForAddressAccess: false, type: 'contact', useAsActiveAddress: true, entrySource: 'User' },
+			{ type: 'contact', name: 'Imported contact', address: importedLegacyContactAddress, entrySource: 'User' },
+		])
+	})
 
 	test('merges a legacy import into an address book update that is still being written', async () => {
 		const { importSettingsAndAddressBook } = await settingsModulePromise
