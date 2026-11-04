@@ -7,9 +7,10 @@ import type { RpcNetwork } from '../types/rpc.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { Semaphore } from '../utils/semaphore.js'
 import type { WebsiteAccessUpdate } from './accessManagement.js'
-import { reconcileCommittedAccessChange, reconcileWebsiteApprovalAccesses, finishWebsiteAccessUpdate, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts } from './accessManagement.js'
+import { reconcileCommittedAccessChangeCollectingFailures, reconcileWebsiteApprovalAccessesCollectingFailures, finishWebsiteAccessUpdate, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts } from './accessManagement.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { reconcileAfterIndependentSteps } from './committedWriteReconciliation.js'
+import { runEachIndependently } from './terminalStateRecovery.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { changeSimulationMode, getSettingsAfterStorageUpdates, getSettingsSnapshot, getAdmittedRpcNetworkSnapshot, setUseSignersAddressAsActiveAddress, type SimulationModeChanges, trackPreviousActiveAddressForMakeMeRichList, requireAvailableSettings, settingsForPublication, settingsWithoutApprovals, captureRpcNetwork, settingsIfAvailable } from './settings.js'
 import { updateTransactionState } from './storageVariables.js'
@@ -75,6 +76,7 @@ type ActiveSettingsTransition = {
 
 const changeActiveAddressAndChainSemaphore = new Semaphore(1)
 
+// Publishes a committed settings transition and reconciles website access with it. It never throws: the failures are returned in the order they occurred for the committing operation's single collector to surface. A failure before the reconciliation (clearing simulation state, publishing the settings) still lets the reconciliation run, but skips the notifications after it.
 async function publishCommittedSettingsTransition(
 	simulationServicesOwner: SimulationServicesOwner,
 	websiteTabConnections: WebsiteTabConnections,
@@ -82,30 +84,31 @@ async function publishCommittedSettingsTransition(
 	updatedSettings: Settings,
 	onAccessReconciled: (accessUpdate: WebsiteAccessUpdate) => void,
 	forceChainChanged = false,
-) {
+): Promise<readonly unknown[]> {
 	const networkChange = getRpcNetworkChange(previousSettings.activeRpcNetwork, updatedSettings.activeRpcNetwork)
 	const rpcChainChanged = forceChainChanged || networkChange.chainChanged
 	const rpcEndpointChanged = forceChainChanged || networkChange.endpointChanged
+	const publicationFailures = await runEachIndependently([
+		async () => { if (updatedSettings.simulationMode && rpcChainChanged) await clearSimulationStateFromConfig(updatedSettings) },
+		async () => await sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: updatedSettings, popupRefreshGeneration: bumpPopupRefreshGeneration() }),
+	], async (step) => await step())
+	const reconciliation = await reconcileWebsiteApprovalAccessesCollectingFailures(websiteTabConnections, updatedSettings)
+	onAccessReconciled(reconciliation.update)
+	if (publicationFailures.length > 0) return [...publicationFailures, ...reconciliation.failures]
 	try {
-		try {
-			if (updatedSettings.simulationMode && rpcChainChanged) await clearSimulationStateFromConfig(updatedSettings)
-		} finally {
-			await sendPopupMessageToOpenWindows({
-				method: 'popup_settingsUpdated', data: updatedSettings, popupRefreshGeneration: bumpPopupRefreshGeneration(),
-			})
+		await sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
+		if (rpcChainChanged) {
+			sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'chainChanged', result: updatedSettings.activeRpcNetwork.chainId })
+			await sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
 		}
-	} finally {
-		onAccessReconciled(await reconcileWebsiteApprovalAccesses(websiteTabConnections, updatedSettings))
+		if (simulationServicesOwner.getCurrent() !== undefined && (updatedSettings.simulationMode || updatedSettings.activeSigningSafeAddress !== undefined) && (rpcEndpointChanged || !activeStackContextsEqual(getActiveStackContext(previousSettings), getActiveStackContext(updatedSettings)))) {
+			await queuePopupSimulationRefresh({ ...simulationServicesOwner.requireCurrent(), settingsSnapshot: updatedSettings })
+		}
+		await sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, updatedSettings)
+	} catch (notificationFailure: unknown) {
+		return [...reconciliation.failures, notificationFailure]
 	}
-	await sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
-	if (rpcChainChanged) {
-		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'chainChanged', result: updatedSettings.activeRpcNetwork.chainId })
-		await sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
-	}
-	if (simulationServicesOwner.getCurrent() !== undefined && (updatedSettings.simulationMode || updatedSettings.activeSigningSafeAddress !== undefined) && (rpcEndpointChanged || !activeStackContextsEqual(getActiveStackContext(previousSettings), getActiveStackContext(updatedSettings)))) {
-		await queuePopupSimulationRefresh({ ...simulationServicesOwner.requireCurrent(), settingsSnapshot: updatedSettings })
-	}
-	await sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, updatedSettings)
+	return reconciliation.failures
 }
 
 function getSimulationModeChanges(change: ActiveAddressAndChainChange): SimulationModeChanges {
@@ -126,19 +129,20 @@ function getSimulationModeChanges(change: ActiveAddressAndChainChange): Simulati
 	}
 }
 
+// The recovery step of a committed RPC configuration write. It never throws: its failures are returned, in order, for the write's single collector (see completeRpcListTransition) to surface.
 export async function publishRpcConfigurationRecovery(
 	simulationServicesOwner: SimulationServicesOwner,
 	websiteTabConnections: WebsiteTabConnections,
 	previousSettings: Settings | undefined,
 	activeRpcNetwork: RpcNetwork,
 	forceChainChanged = false,
-) {
+): Promise<readonly unknown[]> {
 	let accessUpdate: WebsiteAccessUpdate | undefined
 	try {
-		// Read and published in the same lock as active-settings transitions, so a transition committed meanwhile is never overwritten by these older settings. The RPC configuration write is committed, so it is reconciled like any committed access change: when its settings cannot be read back, every runtime approval fails closed before the failure is thrown.
-		await changeActiveAddressAndChainSemaphore.execute(async () => await reconcileCommittedAccessChange(websiteTabConnections, { kind: 'rpc-configuration' }, async (updatedSettings) => {
+		// Read and published in the same lock as active-settings transitions, so a transition committed meanwhile is never overwritten by these older settings. The RPC configuration write is committed, so it is reconciled like any committed access change: when its settings cannot be read back, every runtime approval fails closed.
+		return await changeActiveAddressAndChainSemaphore.execute(async () => await reconcileCommittedAccessChangeCollectingFailures(websiteTabConnections, { kind: 'rpc-configuration' }, async (updatedSettings) => {
 			if (getRpcNetworkChange(updatedSettings.activeRpcNetwork, activeRpcNetwork).selectionChanged) throw new Error('Recovered RPC network does not match the committed configuration.')
-			await publishCommittedSettingsTransition(
+			return await publishCommittedSettingsTransition(
 				simulationServicesOwner,
 				websiteTabConnections,
 				previousSettings ?? updatedSettings,

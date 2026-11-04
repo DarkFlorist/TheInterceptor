@@ -258,17 +258,17 @@ async function getConnectionAccess(websiteTabConnections: WebsiteTabConnections,
 	return { activeAddress, access: getConnectionAccessForAddress(settings.websiteAccess, connection, activeAddress) }
 }
 
-// The current persisted settings: active RPC network, active-address fields and approvals. Anything that keeps them from being available is returned as a failure instead of thrown: an unavailable snapshot as the RPC-configuration-unavailable error, and a rejected read (for example a failed repair write of a corrupt field) as its rejection.
+// The current persisted settings: active RPC network, active-address fields and approvals. Anything that keeps them from being available is returned instead of thrown, with the failure a committed write's entry point surfaces: an `unavailable` snapshot (the RPC configuration is unavailable, an expected state the RPC status publishes) as the RPC-configuration-unavailable error, and a `rejected` read (an unexpected failure, for example a failed repair write of a corrupt field) as its rejection.
 type AccessReconciliationSettingsRead =
 	| { readonly status: 'available', readonly settings: Settings }
-	| { readonly status: 'unavailable', readonly failure: unknown }
+	| { readonly status: 'unavailable' | 'rejected', readonly failure: unknown }
 
 async function readSettingsForAccessReconciliation(): Promise<AccessReconciliationSettingsRead> {
 	try {
 		const snapshot = await getSettingsSnapshot()
 		if (snapshot.status === 'available') return { status: 'available', settings: snapshot.settings }
 	} catch (error: unknown) {
-		return { status: 'unavailable', failure: error }
+		return { status: 'rejected', failure: error }
 	}
 	return { status: 'unavailable', failure: createRpcConfigurationUnavailableError() }
 }
@@ -542,12 +542,22 @@ async function surfaceAccessReconciliationFailures(failures: readonly unknown[],
 	for (const failure of failures) await reportUnexpectedError(failure)
 }
 
-// The access reconciliation rule. Runs are serialized under accessReconciliationLocks. Access is granted only from the current persisted state read inside the lock: the unpinned settings snapshot (active RPC network and approvals, so connection events use the current network too) and, per connection, tab state, address book and signer state; a run that waited for the lock therefore never applies state older than an earlier run's, and the reconciliation that follows a committed write applies after every run already in flight. Anything that keeps the settings read from producing available settings (an unavailable snapshot or a rejected read) makes the run revoke-only with `committedSettings`, which the caller read after its committed write. Every connection is reconciled, and each step's failure (request-block update, settings read, active-address lookup, disconnect or connect notification) is collected independently, in order, and surfaced at the end.
+// The access reconciliation rule. Runs are serialized under accessReconciliationLocks. Access is granted only from the current persisted state read inside the lock: the unpinned settings snapshot (active RPC network and approvals, so connection events use the current network too) and, per connection, tab state, address book and signer state; a run that waited for the lock therefore never applies state older than an earlier run's, and the reconciliation that follows a committed write applies after every run already in flight. Anything that keeps the settings read from producing available settings (an unavailable snapshot or a rejected read) makes the run revoke-only with `committedSettings`, which the caller read after its committed write. Every connection is reconciled, and each step's failure (request-block update, a rejected settings read, active-address lookup, disconnect or connect notification) is collected independently, in order: reconcileWebsiteApprovalAccesses surfaces them itself, and the collecting variant returns them to the committed-write operation's single collector.
 export async function reconcileWebsiteApprovalAccesses(
 	websiteTabConnections: WebsiteTabConnections,
 	committedSettings: Settings,
 	throwOnError = false,
 ): Promise<WebsiteAccessUpdate> {
+	const { update, failures } = await reconcileWebsiteApprovalAccessesCollectingFailures(websiteTabConnections, committedSettings)
+	await surfaceAccessReconciliationFailures(failures, throwOnError)
+	return update
+}
+
+// The same reconciliation for a step of a larger committed-write operation: the failures are returned, in order, for that operation's single collector (reconcileAfterIndependentSteps) to surface, instead of being reported here.
+export async function reconcileWebsiteApprovalAccessesCollectingFailures(
+	websiteTabConnections: WebsiteTabConnections,
+	committedSettings: Settings,
+): Promise<{ readonly update: WebsiteAccessUpdate, readonly failures: readonly unknown[] }> {
 	const popupRefreshGeneration = bumpPopupRefreshGeneration()
 	const iconRefreshTargets = new Map<string, { tabId: number, websiteOrigin: string }>()
 	const failures = await withAccessReconciliationLock(websiteTabConnections, async () => {
@@ -557,9 +567,9 @@ export async function reconcileWebsiteApprovalAccesses(
 		} catch (error: unknown) {
 			runFailures.push(error)
 		}
-		// This read inside the lock is authoritative: when it succeeds it may grant from the current persisted state, even if the committing operation's own earlier read-back failed, because that failure only limits what the operation publishes.
+		// This read inside the lock is authoritative: when it succeeds it may grant from the current persisted state, even if the committing operation's own earlier read-back failed, because that failure only limits what the operation publishes. When it does not, the run is revoke-only; only a rejected read is a failure of the run, while an unavailable RPC configuration is the expected state the RPC status already publishes (and an admitted operation completes under it).
 		const currentSettings = await readSettingsForAccessReconciliation()
-		if (currentSettings.status === 'unavailable') runFailures.push(currentSettings.failure)
+		if (currentSettings.status === 'rejected') runFailures.push(currentSettings.failure)
 		const inputs: AccessReconciliationInputs = currentSettings.status === 'available'
 			? { settings: currentSettings.settings, grantsAllowed: true }
 			: { settings: committedSettings, grantsAllowed: false }
@@ -575,8 +585,7 @@ export async function reconcileWebsiteApprovalAccesses(
 		return [...runFailures, ...tabFailures.flat()]
 	})
 	notifyWebsiteLifecycle(websiteTabConnections.lifecycle?.accessReconciled)
-	await surfaceAccessReconciliationFailures(failures, throwOnError)
-	return { popupRefreshGeneration, iconRefreshTargets: [...iconRefreshTargets.values()] }
+	return { update: { popupRefreshGeneration, iconRefreshTargets: [...iconRefreshTargets.values()] }, failures }
 }
 
 // Call after releasing the settings lock: access dialogs can activate another address.
@@ -686,9 +695,9 @@ const isAffectedWebsite = (affectedWebsites: AffectedWebsites, websiteOrigin: st
 }
 
 // The connections of the affected websites lose their runtime approval so a committed revocation is never left unapplied, and request blocks are still reconciled (that works without an active RPC network). A failed disconnect notification or request-block update does not stop the rest; those failures are reported afterwards.
-async function revokeAffectedApprovalsBecauseSettingsAreUnreadable(websiteTabConnections: WebsiteTabConnections, affectedWebsites: AffectedWebsites) {
+async function revokeAffectedApprovalsBecauseSettingsAreUnreadable(websiteTabConnections: WebsiteTabConnections, affectedWebsites: AffectedWebsites): Promise<readonly unknown[]> {
 	// Under the reconciliation lock, so a run already in flight cannot approve a revoked connection again after it.
-	const followUpErrors = await withAccessReconciliationLock(websiteTabConnections, async () => {
+	return await withAccessReconciliationLock(websiteTabConnections, async () => {
 		const affectedConnections = [...websiteTabConnections.values()].flatMap((tabConnection) => Object.values(tabConnection.connections)).filter((connection) => isAffectedWebsite(affectedWebsites, connection.websiteOrigin))
 		const failures = affectedConnections.flatMap((connection) => disconnectIfApproved(websiteTabConnections, connection))
 		try {
@@ -698,15 +707,22 @@ async function revokeAffectedApprovalsBecauseSettingsAreUnreadable(websiteTabCon
 		}
 		return failures
 	})
-	for (const followUpError of followUpErrors) await reportUnexpectedError(followUpError)
 }
 
-// The only entry point for reconciling a committed access-affecting write: `reconcile` runs with the committed settings. When they are not available (an unavailable snapshot or a rejected read, see readSettingsForAccessReconciliation) the change's affected runtime approvals are revoked and request blocks reconciled, then that failure is thrown without running `reconcile`.
+// The only entry point for reconciling a committed access-affecting write: `reconcile` runs with the committed settings. When they are not available (an unavailable snapshot or a rejected read, see readSettingsForAccessReconciliation) the change's affected runtime approvals are revoked and request blocks reconciled, then that failure is thrown, and any failure of the revocation reported, without running `reconcile`.
 export async function reconcileCommittedAccessChange<Result>(websiteTabConnections: WebsiteTabConnections, change: CommittedAccessChange, reconcile: (committedSettings: Settings) => Promise<Result>): Promise<Result> {
 	const committedSettings = await readSettingsForAccessReconciliation()
-	if (committedSettings.status === 'unavailable') {
-		await revokeAffectedApprovalsBecauseSettingsAreUnreadable(websiteTabConnections, getAffectedWebsites(change))
-		throw committedSettings.failure
-	}
+	if (committedSettings.status !== 'available') return await throwFirstAndReportRest([committedSettings.failure, ...await revokeAffectedApprovalsBecauseSettingsAreUnreadable(websiteTabConnections, getAffectedWebsites(change))])
 	return await reconcile(committedSettings.settings)
+}
+
+// The same entry point for a step of a larger committed-write operation: it never throws, and returns every failure in order (the unavailable read and the revocation's, or the failures `reconcile` returns or throws) for that operation's single collector to surface.
+export async function reconcileCommittedAccessChangeCollectingFailures(websiteTabConnections: WebsiteTabConnections, change: CommittedAccessChange, reconcile: (committedSettings: Settings) => Promise<readonly unknown[]>): Promise<readonly unknown[]> {
+	const committedSettings = await readSettingsForAccessReconciliation()
+	if (committedSettings.status !== 'available') return [committedSettings.failure, ...await revokeAffectedApprovalsBecauseSettingsAreUnreadable(websiteTabConnections, getAffectedWebsites(change))]
+	try {
+		return await reconcile(committedSettings.settings)
+	} catch (error: unknown) {
+		return [error]
+	}
 }

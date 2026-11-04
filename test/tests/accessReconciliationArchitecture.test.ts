@@ -42,8 +42,9 @@ const exportedSymbol = (modulePath: string, name: string) => {
 	if (symbol === undefined) throw new Error(`${ modulePath } does not export ${ name }`)
 	return symbol
 }
-const reconcileCommand = exportedSymbol(accessManagementPath, 'reconcileCommittedAccessChange')
-const reconciliationFunctions = [exportedSymbol(accessManagementPath, 'updateWebsiteApprovalAccesses'), exportedSymbol(accessManagementPath, 'finalizeWebsiteAccessChange')]
+// Both entry points for a committed access-affecting write: the collecting variant serves a write whose operation surfaces every failure through one collector.
+const reconcileCommands = [exportedSymbol(accessManagementPath, 'reconcileCommittedAccessChange'), exportedSymbol(accessManagementPath, 'reconcileCommittedAccessChangeCollectingFailures')]
+const reconciliationFunctions = [exportedSymbol(accessManagementPath, 'updateWebsiteApprovalAccesses'), exportedSymbol(accessManagementPath, 'finalizeWebsiteAccessChange'), exportedSymbol(accessManagementPath, 'reconcileWebsiteApprovalAccessesCollectingFailures')]
 const committedAccessChangeType = checker.getDeclaredTypeOfSymbol(exportedSymbol(accessManagementPath, 'CommittedAccessChange'))
 // The primitives that write website approvals, address consent or interceptor-disabled state. Settings imports and address-book writes are reconciled by their handlers and covered by the containment check above.
 const websiteAccessWriters = [
@@ -64,7 +65,7 @@ function isInsideReconcileCallback(node: ts.Node) {
 	for (let current: ts.Node | undefined = node; current !== undefined; current = current.parent) {
 		if (!ts.isArrowFunction(current) && !ts.isFunctionExpression(current)) continue
 		const { parent } = current
-		if (ts.isCallExpression(parent) && parent.arguments.some((argument) => argument === current) && resolveCallee(parent) === reconcileCommand) return true
+		if (ts.isCallExpression(parent) && parent.arguments.some((argument) => argument === current) && reconcileCommands.includes(resolveCallee(parent))) return true
 	}
 	return false
 }
@@ -118,7 +119,7 @@ function forEachNodeInOwnBody(enclosingFunction: FunctionLikeWithBody, onNode: (
 	if (enclosingFunction.body !== undefined) ts.forEachChild(enclosingFunction.body, visit)
 }
 
-const isReconcileCommandCall = (node: ts.Node): node is ts.CallExpression => ts.isCallExpression(node) && resolveCallee(node) === reconcileCommand
+const isReconcileCommandCall = (node: ts.Node): node is ts.CallExpression => ts.isCallExpression(node) && reconcileCommands.includes(resolveCallee(node))
 
 function callsReconcileAfter(enclosingFunction: FunctionLikeWithBody, position: number) {
 	let found = false

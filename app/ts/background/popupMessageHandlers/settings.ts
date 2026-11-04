@@ -13,7 +13,7 @@ import { applyRpcServicesChange, readRpcConfigurationRetry, type RpcListTransiti
 import { reconcileAfterIndependentSteps } from '../committedWriteReconciliation.js'
 import { rpcConfigurationIsReady, rpcConfigurationIsUsable } from '../rpcConfigurationAvailability.js'
 
-type PublishRpcConfigurationRecovery = (simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, previousSettings: Settings | undefined, activeRpcNetwork: Settings['activeRpcNetwork'], forceChainChanged?: boolean) => Promise<void>
+type PublishRpcConfigurationRecovery = (simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, previousSettings: Settings | undefined, activeRpcNetwork: Settings['activeRpcNetwork'], forceChainChanged?: boolean) => Promise<readonly unknown[]>
 
 type SettingsRpcStatus = {
 	readonly rpcConfigurationAvailable: boolean
@@ -92,14 +92,12 @@ export async function exportSettings() {
 	})
 }
 
-// A committed RPC configuration write runs under the committed-write rule (reconcileAfterIndependentSteps): its services change and then its RPC status publication are independent steps, its recovery publication (which reconciles website access) always runs after them, and every failure is surfaced afterwards, the first thrown and the rest reported in order.
+// A committed RPC configuration write runs under the committed-write rule with one failure collector (reconcileAfterIndependentSteps): its services change and then its RPC status publication are independent steps, its recovery publication (which reconciles website access and returns its own failures) always runs after them, and every failure is surfaced afterwards in the order it occurred, the first thrown and the rest reported.
 async function completeRpcListTransition(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, transition: RpcListTransitionResult, settings: Settings | undefined, publishRecovery: PublishRpcConfigurationRecovery) {
 	await reconcileAfterIndependentSteps([
 		async () => applyRpcServicesChange(simulationServicesOwner, transition.servicesChange),
 		async () => await publishCurrentRpcStatus(simulationServicesOwner),
-	], async () => {
-		if (transition.publishRecovery) await publishRecovery(simulationServicesOwner, websiteTabConnections, settings, transition.activeRpcNetwork, transition.forceChainChanged)
-	})
+	], async () => transition.publishRecovery ? await publishRecovery(simulationServicesOwner, websiteTabConnections, settings, transition.activeRpcNetwork, transition.forceChainChanged) : [])
 }
 
 export async function setNewRpcList(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: SetRpcList, settings: Settings, publishRecovery: PublishRpcConfigurationRecovery) {
@@ -118,5 +116,6 @@ export async function retryRpcConfiguration(simulationServicesOwner: SimulationS
 		async () => await publishCurrentRpcStatus(simulationServicesOwner),
 	], async () => {
 		if (retriedConfiguration !== undefined) await reconcileAccessRules()
+		return []
 	})
 }

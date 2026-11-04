@@ -62,7 +62,7 @@ const { captureRpcNetwork, getAdmittedRpcNetworkSnapshot, getSettingsSnapshot, s
 const { restoreDefaultRpcConfiguration, retryRpcConfiguration, setNewRpcList, settingsOpened } = await import('../../app/ts/background/popupMessageHandlers/settings.js')
 const { MessageToPopup } = await import('../../app/ts/types/interceptor-messages.js')
 const { transitionRpcList } = await import('../../app/ts/background/rpcConfigurationLifecycle.js')
-const ignoreRecoveryPublication = async () => undefined
+const ignoreRecoveryPublication = async (): Promise<readonly unknown[]> => []
 
 describe('local storage codecs', () => {
 	beforeEach(() => {

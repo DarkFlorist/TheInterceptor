@@ -1,4 +1,4 @@
-import { reconcileCommittedAccessChange, updateDeclarativeNetRequestBlocks, updateWebsiteApprovalAccesses } from '../accessManagement.js'
+import { finishWebsiteAccessUpdate, reconcileCommittedAccessChangeCollectingFailures, reconcileWebsiteApprovalAccessesCollectingFailures, updateDeclarativeNetRequestBlocks } from '../accessManagement.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { reconcileAfterIndependentSteps } from '../committedWriteReconciliation.js'
 import { popupMessageHandler, popupRecoveryMessageHandler, type PopupMessageHandlerMap } from '../popupMessageHandlerRegistry.js'
@@ -20,13 +20,17 @@ export const settingsPopupMessageHandlers = {
 		await reconcileAfterIndependentSteps([
 			async () => await sendPopupMessageToOpenWindows(importSettingsReply),
 			async () => await updateContentScriptInjectionStrategy(),
-		], async () => {
-			// Read after the content-script registration so the reconciled and published settings include any access change made meanwhile. The import replaced every website's approvals, so all connections fail closed if settings are unreadable.
-			await reconcileCommittedAccessChange(context.websiteTabConnections, { kind: 'settings-import' }, async (importedSettings) => {
-				const popupRefreshGeneration = await updateWebsiteApprovalAccesses(context.simulationServicesOwner, context.websiteTabConnections, importedSettings, true)
-				await sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: importedSettings, popupRefreshGeneration })
-			})
-		})
+		], async () => await reconcileCommittedAccessChangeCollectingFailures(context.websiteTabConnections, { kind: 'settings-import' }, async (importedSettings) => {
+			// Read after the content-script registration so the reconciled and published settings include any access change made meanwhile. The import replaced every website's approvals, so all connections fail closed if settings are unreadable. The reconciliation's failures go to the import's single collector; completing the access update (prompts and icons) reports its own.
+			const { update, failures } = await reconcileWebsiteApprovalAccessesCollectingFailures(context.websiteTabConnections, importedSettings)
+			try {
+				await finishWebsiteAccessUpdate(context.simulationServicesOwner, context.websiteTabConnections, update, true)
+				await sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: importedSettings, popupRefreshGeneration: update.popupRefreshGeneration })
+			} catch (publicationFailure: unknown) {
+				return [...failures, publicationFailure]
+			}
+			return failures
+		}))
 	}),
 	popup_get_export_settings: popupMessageHandler('popup_get_export_settings', async () => await exportSettings()),
 	popup_retryRpcConfiguration: popupRecoveryMessageHandler('popup_retryRpcConfiguration', async (context) => await retryRpcConfiguration(

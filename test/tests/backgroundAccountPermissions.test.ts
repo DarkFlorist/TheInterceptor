@@ -1040,7 +1040,7 @@ describe('background eth_accounts', () => {
 		assert.equal(unresolvablePort.messages.some((message) => message.method === 'accountsChanged' && Array.isArray(message.result) && message.result.length > 0), false)
 	})
 
-	test.each([false, true])('an unresolvable active address and an unreadable settings re-read are both surfaced while revocations still apply (throwOnError: %p)', async (throwOnError) => {
+	test.each([false, true])('an unresolvable active address and a rejected settings re-read are both surfaced while revocations still apply (throwOnError: %p)', async (throwOnError) => {
 		const { runtimeMessages } = installBrowserMock()
 		const { changeSimulationMode, getRequiredSettings, updateWebsiteAccess, updateWebsiteApprovalAccesses, websiteSocketToString } = await loadModules()
 		const account = 0x5151515151515151515151515151515151515151n
@@ -1059,11 +1059,15 @@ describe('background eth_accounts', () => {
 		const settings = await getRequiredSettings()
 		const originalWarn = console.warn
 		console.warn = () => undefined
-		const thrownFailure = await withStorageReads(async (keys, readStored) => {
+		// The re-read rejects: a corrupt opened page whose repair write fails.
+		await browser.storage.local.set(CORRUPT_OPENED_PAGE)
+		const thrownFailure = await withStorageWrites(async (items, write) => {
+			if ('openedPageV2' in items) throw new Error('Settings read rejected')
+			await write()
+		}, async () => await withStorageReads(async (keys, readStored) => {
 			if (keys === 'tabState_123') throw new Error('Tab state unavailable')
-			if (isSettingsRead(keys)) throw new Error('Settings storage unavailable')
 			return await readStored()
-		}, async () => await runAndCaptureFailure(async () => await updateWebsiteApprovalAccesses(undefined, websiteTabConnections, settings, false, throwOnError))).finally(() => { console.warn = originalWarn })
+		}, async () => await runAndCaptureFailure(async () => await updateWebsiteApprovalAccesses(undefined, websiteTabConnections, settings, false, throwOnError)))).finally(() => { console.warn = originalWarn })
 
 		assert.equal(unresolvableConnection.approved, false)
 		// The committed settings still grant this connection, so it stays approved although nothing can be granted.
@@ -1071,10 +1075,14 @@ describe('background eth_accounts', () => {
 		assert.equal(thrownFailure === undefined, !throwOnError)
 		const surfacedFailures = [...(thrownFailure === undefined ? [] : [thrownFailure]), ...await getReportedUnexpectedErrorMessages(runtimeMessages)]
 		assert.ok(surfacedFailures.some((message) => message.includes('Tab state unavailable')), `surfaced: ${ surfacedFailures.join(' | ') }`)
-		assert.ok(surfacedFailures.some((message) => message === RPC_CONFIGURATION_UNAVAILABLE_MESSAGE), `surfaced: ${ surfacedFailures.join(' | ') }`)
+		assert.ok(surfacedFailures.some((message) => message.includes('Settings read rejected')), `surfaced: ${ surfacedFailures.join(' | ') }`)
 	})
 
-	test.each([false, true])('routine reconciliation keeps the approvals the committed settings grant, grants nothing and surfaces the failure when settings cannot be re-read (throwOnError: %p)', async (throwOnError) => {
+	test.each([
+		{ readFailure: 'rejected', throwOnError: false },
+		{ readFailure: 'rejected', throwOnError: true },
+		{ readFailure: 'unavailable', throwOnError: true },
+	] as const)('routine reconciliation keeps the approvals the committed settings grant and grants nothing when the settings re-read is $readFailure, surfacing only a rejection (throwOnError: $throwOnError)', async ({ readFailure, throwOnError }) => {
 		const { runtimeMessages } = installBrowserMock()
 		const { changeSimulationMode, getRequiredSettings, updateWebsiteAccess, updateWebsiteApprovalAccesses, websiteSocketToString } = await loadModules()
 		const account = 0x5555555555555555555555555555555555555555n
@@ -1092,10 +1100,15 @@ describe('background eth_accounts', () => {
 		const settings = await getRequiredSettings()
 		const originalWarn = console.warn
 		console.warn = () => undefined
-		const thrownFailure = await withStorageReads(async (keys, readStored) => {
-			if (isSettingsRead(keys)) throw new Error('Settings storage unavailable')
+		// A rejected re-read is a corrupt opened page whose repair write fails; an unavailable one is a failed storage read, which the RPC status publishes as an unavailable configuration.
+		if (readFailure === 'rejected') await browser.storage.local.set(CORRUPT_OPENED_PAGE)
+		const thrownFailure = await withStorageWrites(async (items, write) => {
+			if ('openedPageV2' in items) throw new Error('Settings read rejected')
+			await write()
+		}, async () => await withStorageReads(async (keys, readStored) => {
+			if (readFailure === 'unavailable' && isSettingsRead(keys)) throw new Error('Settings storage unavailable')
 			return await readStored()
-		}, async () => await runAndCaptureFailure(async () => await updateWebsiteApprovalAccesses(undefined, websiteTabConnections, settings, false, throwOnError))).finally(() => { console.warn = originalWarn })
+		}, async () => await runAndCaptureFailure(async () => await updateWebsiteApprovalAccesses(undefined, websiteTabConnections, settings, false, throwOnError)))).finally(() => { console.warn = originalWarn })
 
 		assert.equal(approvedConnection.approved, true)
 		assert.equal(approvedPort.messages.some((message) => message.method === 'disconnect'), false)
@@ -1104,11 +1117,18 @@ describe('background eth_accounts', () => {
 		// The committed settings still decide revocations, which also shows every connection was reconciled.
 		assert.equal(ungrantedConnection.approved, false)
 		const reportedFailures = await getReportedUnexpectedErrorMessages(runtimeMessages)
-		if (throwOnError) assert.equal(thrownFailure, RPC_CONFIGURATION_UNAVAILABLE_MESSAGE)
-		else assert.ok(reportedFailures.includes(RPC_CONFIGURATION_UNAVAILABLE_MESSAGE))
+		if (readFailure === 'unavailable') {
+			// An unavailable configuration is not a failure of the reconciliation: it is revoke-only, and the RPC status publishes the unavailable configuration.
+			assert.equal(thrownFailure, undefined)
+			assert.equal(reportedFailures.includes(RPC_CONFIGURATION_UNAVAILABLE_MESSAGE), false)
+		} else if (throwOnError) {
+			assert.equal(thrownFailure, 'Settings read rejected')
+		} else {
+			assert.ok(reportedFailures.includes('Settings read rejected'))
+		}
 	})
 
-	test('a committed revocation is applied when the reconciliation cannot re-read settings after the committed settings were read', async () => {
+	test('a committed revocation is applied when the reconciliation settings re-read rejects after the committed settings were read', async () => {
 		const { runtimeMessages } = installBrowserMock()
 		const { changeSimulationMode, getRequiredSettings, persistWebsiteAccessChange, updateWebsiteAccess, websiteSocketToString } = await loadModules()
 		const account = 0x5656565656565656565656565656565656565656n
@@ -1122,22 +1142,28 @@ describe('background eth_accounts', () => {
 		const keptConnection = { port: createPort(tabId).port, socket: { tabId, connectionName: 1n }, websiteOrigin: keptWebsite.websiteOrigin, approved: true, wantsToConnect: false }
 		const websiteTabConnections = new Map([[tabId, { connections: Object.fromEntries([revokedConnection, keptConnection].map((connection) => [websiteSocketToString(connection.socket), connection])) }]])
 		let settingsReads = 0
+		let repairWritesFail = false
 		const originalWarn = console.warn
 		console.warn = () => undefined
-		// The first settings read after the revocation write is reconcileCommittedAccessChange's committed read; every later one fails.
-		await withStorageReads(async (keys, readStored) => {
-			if (!isSettingsRead(keys)) return await readStored()
-			settingsReads += 1
-			if (settingsReads === 1) return await readStored()
-			throw new Error('Settings storage unavailable')
-		}, async () => await persistWebsiteAccessChange(undefined, websiteTabConnections, revokedWebsite, false, undefined, false)).finally(() => { console.warn = originalWarn })
+		// The first settings read after the revocation write is reconcileCommittedAccessChange's committed read; the opened page is then corrupted and its repair writes fail, so every later settings read rejects.
+		await withStorageWrites(async (items, write) => {
+			if (repairWritesFail && 'openedPageV2' in items) throw new Error('Settings read rejected')
+			await write()
+		}, async () => await withStorageReads(async (keys, readStored) => {
+			const stored = await readStored()
+			if (isSettingsRead(keys) && ++settingsReads === 1) {
+				await browser.storage.local.set(CORRUPT_OPENED_PAGE)
+				repairWritesFail = true
+			}
+			return stored
+		}, async () => await persistWebsiteAccessChange(undefined, websiteTabConnections, revokedWebsite, false, undefined, false))).finally(() => { console.warn = originalWarn })
 
 		assert.ok(settingsReads >= 2)
 		assert.equal((await getRequiredSettings()).websiteAccess.find((entry) => entry.website.websiteOrigin === revokedWebsite.websiteOrigin)?.access, false)
 		assert.equal(revokedConnection.approved, false)
 		assert.equal(revokedPort.messages.some((message) => message.method === 'accountsChanged' && Array.isArray(message.result) && message.result.length > 0), false)
 		assert.equal(keptConnection.approved, true)
-		assert.ok((await getReportedUnexpectedErrorMessages(runtimeMessages)).includes(RPC_CONFIGURATION_UNAVAILABLE_MESSAGE))
+		assert.ok((await getReportedUnexpectedErrorMessages(runtimeMessages)).includes('Settings read rejected'))
 	})
 
 	test('an address-consent change saved through the address-book handler is applied when the request-block approvals read fails', async () => {
