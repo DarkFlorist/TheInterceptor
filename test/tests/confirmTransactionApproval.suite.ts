@@ -1172,6 +1172,39 @@ test('a repair of a corrupt active network still running when the network is rea
 	assert.deepEqual((await modules.getInterceptorTransactionStack()).operations, [])
 })
 
+test('a repair of a corrupt active network read before a network switch committed leaves the switched network stored', async () => {
+	const { changeSimulationMode, getSettings, defaultRpcs } = await import('../../app/ts/background/settings.js')
+	await setUpTransactionApprovalTest(false)
+	const networkWrites: unknown[] = []
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		if ('activeRpcNetwork' in items) networkWrites.push(items.activeRpcNetwork)
+		writeStoredItems()
+	})
+	// The settings read gets the corrupt network, and then waits before acting on it until a network switch has committed.
+	const corruptNetworkRead = createDeferredValue<undefined>()
+	const networkSwitchCommitted = createDeferredValue<undefined>()
+	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+		const items = readStoredItems()
+		if (Array.isArray(keys) && keys.includes('activeRpcNetwork')) {
+			browserMock.setStorageGetHandler(undefined)
+			corruptNetworkRead.resolve(undefined)
+			await networkSwitchCommitted.promise
+		}
+		return items
+	})
+
+	browserMock.storageState.activeRpcNetwork = { corrupt: true }
+	const repairingRead = withSilencedConsole(async () => await getSettings())
+	await corruptNetworkRead.promise
+	await changeSimulationMode({ simulationMode: false, rpcNetwork: otherNetwork })
+	networkSwitchCommitted.resolve(undefined)
+
+	// The stale read still reports the default network it read, but does not write it over the switch.
+	assert.equal((await repairingRead).activeRpcNetwork.chainId, defaultRpcs[0]?.chainId)
+	assert.equal(networkWrites.length, 1)
+	assert.equal((await getSettings()).activeRpcNetwork.chainId, otherNetwork.chainId)
+})
+
 test('a page context reads a corrupt active network without writing it, so a guarded write commits only on the network that stays stored', async () => {
 	const { updateInterceptorTransactionStackOnRequestedNetwork } = await import('../../app/ts/background/transactionNetwork.js')
 	const backgroundSettings = await import('../../app/ts/background/settings.js')
