@@ -6,7 +6,7 @@ import type { Website, WebsiteAccessArray } from '../types/websiteAccessTypes.js
 import type { RpcNetwork } from '../types/rpc.js'
 import { type RichListElement, browserStorageLocalGet, browserStorageLocalSafeParse, browserStorageLocalSet } from '../utils/storageUtils.js'
 import { getActiveRpcNetworkOrRepairFromItems, writeActiveNetwork } from './activeNetworkStorage.js'
-import { getUseTabsInsteadOfPopup } from './pageSafeSettings.js'
+import { getUseTabsInsteadOfPopup } from '../utils/pageSafeSettings.js'
 import { getUserAddressBookEntries, updateUserAddressBookEntries } from './storageVariables.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'

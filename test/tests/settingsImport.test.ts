@@ -94,7 +94,7 @@ function createBrowserStorageMock() {
 
 const browserMock = createBrowserStorageMock()
 const settingsModulePromise = import('../../app/ts/background/settings.js')
-const pageSafeSettingsModulePromise = import('../../app/ts/background/pageSafeSettings.js')
+const pageSafeSettingsModulePromise = import('../../app/ts/utils/pageSafeSettings.js')
 const signingAddressSelectionModulePromise = import('../../app/ts/background/signingAddressSelection.js')
 const storageVariablesModulePromise = import('../../app/ts/background/storageVariables.js')
 

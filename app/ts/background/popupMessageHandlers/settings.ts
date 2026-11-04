@@ -6,7 +6,7 @@ import { silenceChromeUnCaughtPromise } from '../../utils/requests.js'
 import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
 import { getPrimaryRpcForChain, getRpcList, setRpcList } from '../storageVariables.js'
 import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettings, importSettingsAndAddressBook } from '../settings.js'
-import { getUseTabsInsteadOfPopup } from '../pageSafeSettings.js'
+import { getUseTabsInsteadOfPopup } from '../../utils/pageSafeSettings.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 
 export async function settingsOpened() {

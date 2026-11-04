@@ -1176,8 +1176,8 @@ test('a page context reads a corrupt active network without writing it, so a gua
 	const { updateInterceptorTransactionStackOnRequestedNetwork } = await import('../../app/ts/background/transactionNetwork.js')
 	const backgroundSettings = await import('../../app/ts/background/settings.js')
 	// A popup bundle runs its own copy of the page-safe settings module, sharing only storage with the background.
-	const popupSettingsModule = '../../app/ts/background/pageSafeSettings.js?popup'
-	const popupSettings: typeof import('../../app/ts/background/pageSafeSettings.js') = await import(popupSettingsModule)
+	const popupSettingsModule = '../../app/ts/utils/pageSafeSettings.js?popup'
+	const popupSettings: typeof import('../../app/ts/utils/pageSafeSettings.js') = await import(popupSettingsModule)
 	await setUpTransactionApprovalTest(false)
 	const stackOperation = { type: 'Transaction' as const, preSimulationTransaction: { ...pendingTransaction.transactionToSimulate, signedTransaction } }
 	const guardReadNetwork = createDeferredValue<undefined>()

@@ -10,7 +10,7 @@ const repositoryRoot = path.join(import.meta.dir, '..', '..')
 const appRoot = path.join(repositoryRoot, 'app')
 const settingsModule = path.join(appRoot, 'ts', 'background', 'settings.ts')
 const activeNetworkStorageModule = path.join(appRoot, 'ts', 'background', 'activeNetworkStorage.ts')
-const pageSafeSettingsModule = path.join(appRoot, 'ts', 'background', 'pageSafeSettings.ts')
+const pageSafeSettingsModule = path.join(appRoot, 'ts', 'utils', 'pageSafeSettings.ts')
 const storageUtilsModule = path.join(appRoot, 'ts', 'utils', 'storageUtils.ts')
 
 // Which names page-reachable code may import from a module that page contexts must not use freely.
