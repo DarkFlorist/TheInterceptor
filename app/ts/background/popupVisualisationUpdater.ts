@@ -15,6 +15,8 @@ import { visualizeSimulatorState } from './simulationUpdating.js'
 import { getPopupVisualisationState, setPopupVisualisationState } from './storageVariables.js'
 
 let abortController = new AbortController()
+// Each refresh takes the next ticket before it captures the stack, so a higher ticket never runs on an older stack. A refresh that resumes after a newer one took a ticket must leave cancelling, executing and publishing to the newer one.
+let latestRefreshTicket = 0
 
 function buildPassthroughVisualizedState(
 	simulationId: number,
@@ -72,6 +74,7 @@ export const updatePopupVisualisationIfNeeded = async (ethereum: EthereumClientS
 		}
 		const isSimulationDataConsumerOpenReply = await requestIsSimulationDataConsumerOpen()
 		if (!(isSimulationDataConsumerOpenReply?.data.isOpen === true)) return popupVisualisation
+		const refreshTicket = ++latestRefreshTicket
 		const capturedSnapshot = snapshot ?? await captureSimulationSnapshot()
 		const provider = getSimulationProviderForSnapshot(ethereum, capturedSnapshot)
 		if (skipIfUnchanged && popupVisualisation.simulationState.kind === 'simulated' && provider !== undefined) {
@@ -84,6 +87,8 @@ export const updatePopupVisualisationIfNeeded = async (ethereum: EthereumClientS
 			)
 			if (currentFingerprint === cachedFingerprint && (capturedSnapshot.numberOfAddressesMadeRich === popupVisualisation.numberOfAddressesMadeRich)) return popupVisualisation
 		}
+		// No await may sit between this check and replacing the abort controller, or a newer refresh could start in between and be cancelled.
+		if (refreshTicket !== latestRefreshTicket) return await getPopupVisualisationState()
 		abortController.abort(NEW_BLOCK_ABORT)
 		abortController = new AbortController()
 		const thisAbortController = abortController
