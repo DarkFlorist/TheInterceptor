@@ -634,6 +634,7 @@ export async function finalizeWebsiteAccessChange(
 	settings: Settings,
 	promptForAccessesIfNeeded: boolean,
 ): Promise<Settings> {
+	// Report-and-resolve is right here: the revocation is applied before any notification can fail, so a failed notification is reported, not lost.
 	await updateWebsiteApprovalAccesses(
 		simulationServicesOwner,
 		websiteTabConnections,

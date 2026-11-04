@@ -340,7 +340,7 @@ describe('active settings concurrency', () => {
 		assert.equal(messages.some(({ method }) => method === 'disconnect'), true)
 	})
 
-	test('every failure of a committed RPC configuration restore is surfaced, the first thrown and the rest reported in order, after access is reconciled', async () => {
+	test('the step failures of a committed RPC configuration restore are surfaced, the first thrown and the rest reported in order, after access is reconciled', async () => {
 		const { runtimeMessages } = installBrowserMock()
 		const { changeSimulationMode, publishRpcConfigurationRecovery, restoreDefaultRpcConfiguration, websiteSocketToString } = await loadModules()
 		const { MessageToPopup } = await import('../../app/ts/types/interceptor-messages.js')
@@ -382,7 +382,7 @@ describe('active settings concurrency', () => {
 		assert.deepEqual(reportedFailures, ['Status read failed', 'Recovery publication failed'])
 	})
 
-	test.each(['provider recovery, status read and disconnect notification', 'disconnect notification only'] as const)('a dispatched RPC restore surfaces every failure through one collector in the order it occurred (%s)', async (failingSteps) => {
+	test.each(['provider recovery, status read and disconnect notification', 'disconnect notification only'] as const)('a dispatched RPC restore surfaces its step failures through one collector in the order they occurred (%s)', async (failingSteps) => {
 		const { runtimeMessages } = installBrowserMock()
 		const { changeSimulationMode, websiteSocketToString } = await loadModules()
 		const { handlePopupRuntimeMessage } = await import('../../app/ts/background/popupMessageRouting.js')

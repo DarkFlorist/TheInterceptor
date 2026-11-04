@@ -92,7 +92,7 @@ export async function exportSettings() {
 	})
 }
 
-// A committed RPC configuration write runs under the committed-write rule with one failure collector (reconcileAfterIndependentSteps): its services change and then its RPC status publication are independent steps, its recovery publication (which reconciles website access and returns its own failures) always runs after them, and every failure is surfaced afterwards in the order it occurred, the first thrown and the rest reported.
+// A committed RPC configuration write runs under the committed-write rule with one failure collector (reconcileAfterIndependentSteps): its services change and then its RPC status publication are independent steps, its recovery publication (which reconciles website access and returns its own failures) always runs after them, and their failures are surfaced afterwards in the order they occurred, the first thrown and the rest reported.
 async function completeRpcListTransition(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, transition: RpcListTransitionResult, settings: Settings | undefined, publishRecovery: PublishRpcConfigurationRecovery) {
 	await reconcileAfterIndependentSteps([
 		async () => applyRpcServicesChange(simulationServicesOwner, transition.servicesChange),
