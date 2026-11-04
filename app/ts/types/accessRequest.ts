@@ -87,7 +87,7 @@ const PendingTransactionApprovalStatus = funtypes.Union(
 	}).And(funtypes.ReadonlyPartial({ safeSignerErrorDetails: SafeSignerErrorDetails })),
 )
 
-// The claim of a Gnosis Safe signature the signer returned, bound to the network it was signed for; its states and transitions are listed at the Safe signer-reply lifecycle in windows/confirmTransaction.ts.
+// The claim of a Gnosis Safe signature the signer returned, bound to the network it was signed for; its states and transitions are listed at the Safe signer-reply lifecycle in background/safeSignerReplyLifecycle.ts.
 const DeferredSafeSignerReply = funtypes.ReadonlyObject({
 	signerReply: funtypes.String,
 }).And(funtypes.ReadonlyPartial({
