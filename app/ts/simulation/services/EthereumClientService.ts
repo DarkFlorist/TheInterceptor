@@ -7,7 +7,7 @@ import { addressString, bigintSecondsToDate, bytes32String, dataString, dateToBi
 import { type BlockCalls, type BlockOverrides, EthSimulateV1Result, type EthSimulateV1Params } from '../../types/ethSimulate-types.js'
 import { EthGetFeeHistoryResponse, EthGetStorageAtResponse, EthTransactionReceiptResponse, type FeeHistory, type EthGetLogsRequest, EthGetLogsResponse, type PartialEthereumTransaction } from '../../types/JsonRpc-types.js'
 import { getBlockTimeManipulationSeconds } from './simulationBlockParameters.js'
-import { simulatePersonalSign } from './simulationPersonalSigning.js'
+import { getSimulatedMessageSignature } from './simulationPersonalSigning.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../../config/defaults.js'
 import { getEcRecoverOverride } from '../../utils/ethereumByteCodes.js'
 import * as funtypes from 'funtypes'
@@ -397,9 +397,10 @@ export class EthereumClientService {
 
 			// set mapping storage mapping() (instructed here: https://docs.soliditylang.org/en/latest/internals/layout_in_storage.html)
 			const getMappingsMemorySlot = (hash: EthereumBytes32) => keccak256(encodeAbiValues(['bytes32', 'uint256'], [bytes32String(hash), 0n]))
-			const signatureStructs = await Promise.all(block.signedMessages.map(async (sign) => {
-				const messageHashAndSignature = await simulatePersonalSign(sign.originalRequestParameters, sign.fakeSignedFor)
-				return { key: getMappingsMemorySlot(encodePackedHash(messageHashAndSignature)), value: sign.fakeSignedFor }
+			// Every signed message in the block is mapped, whichever website requested it, so contracts verifying a simulated signature see its simulated signer.
+			const signatureStructs = await Promise.all(block.signedMessages.map(async (signedMessage) => {
+				const simulatedSignature = await getSimulatedMessageSignature(signedMessage)
+				return { key: getMappingsMemorySlot(encodePackedHash(simulatedSignature)), value: simulatedSignature.signer }
 			}))
 			const stateSets = signatureStructs.reduce((acc, current) => {
 				acc[current.key] = current.value
