@@ -13,7 +13,7 @@ import { createSafeContractValidationFailure, createSafeTransactionReviewRequest
 import { getSafeExecutionReviewedState, getSafeExecutionSignerRoute, getSafeUnsupportedFormedTransactionReason, getSafeUnsupportedRequestReason, isSafeExecutableRequestFromActiveAddress, isSafeExecutionRequestForActiveSafe, prepareSafeExecutionSignerRoute, SAFE_UNSUPPORTED_TRANSACTION_MESSAGES } from '../safe/safeExecutionRouting.js'
 import { getSafeSignerMismatchApprovalStatus, SAFE_SIGNER_SELECTION_ERROR_CODE } from './safeConfirmationResolver.js'
 import { createSafeSignerErrorStatus, type SafeSignerErrorStatus } from './safeSignerErrors.js'
-import { createCreatedSafeProposalSafeFlow, getSafePendingFlow, getSafeTransactionFlowGasPayment } from '../safe/safePendingFlow.js'
+import { createCreatedSafeProposalSafeFlow, getSafePendingFlow, getSafeTransactionFlowGasPayment, type SafeTransactionFlowKind } from '../safe/safePendingFlow.js'
 import type { PendingTransactionSafeFlow } from '../types/accessRequest.js'
 
 type SafeExecutionSignerRoute = NonNullable<Awaited<ReturnType<typeof prepareSafeExecutionSignerRoute>>>
@@ -24,6 +24,7 @@ type OpenedSafeFlow = Exclude<PendingTransactionSafeFlow, { readonly kind: 'prop
 export type SafeTransactionConfirmationPreparation = {
 	readonly effectiveTransactionParams: SendTransactionParams | SendRawTransactionParams
 	readonly transactionExecutor: bigint
+	readonly flowKind: SafeTransactionFlowKind
 	readonly gasPayment: TransactionGasPayment
 	readonly preparationMessage: string | undefined
 	readonly rejection: {
@@ -148,6 +149,7 @@ export async function prepareSafeTransactionConfirmation(
 	return {
 		effectiveTransactionParams: safeExecutionSignerRoute?.transactionParams ?? transactionParams,
 		transactionExecutor: safeExecutionSignerRoute?.executor ?? activeAddress,
+		flowKind: openedSafeFlow.kind,
 		gasPayment: getSafeTransactionFlowGasPayment(openedSafeFlow.kind),
 		preparationMessage: unsupportedSafeRequestMessage ?? directSignerSelectionMessage ?? executionPreparationMessage ?? reconciliationMessage,
 		rejection: undefined,
@@ -214,10 +216,12 @@ export async function prepareSafeTransactionConfirmation(
 					? undefined
 					: await getSafeSignerMismatchApprovalStatus(tabId, safeTransaction.safeSignerAddress)
 			)
-			// A Safe proposal that could not be created leaves the confirmation a failure, which is kept with its flow kind, so a refresh neither forms nor shows it as another kind of transaction.
 			const safeFlow: PendingTransactionSafeFlow = openedSafeFlow.kind !== 'proposal' ? openedSafeFlow
-				: safeTransaction === undefined ? { kind: 'proposal', state: 'creationFailed' }
-				: createCreatedSafeProposalSafeFlow(safeTransaction)
+				: safeTransaction !== undefined ? createCreatedSafeProposalSafeFlow(safeTransaction)
+				// The transaction did not form, so no proposal was attempted: every refresh prepares the confirmation again until it forms.
+				: !transactionToSimulate.success ? { kind: 'proposal', state: 'formationFailed', ...(confirmation.safeTransaction === undefined ? {} : { safeRequestContext: confirmation.safeTransaction }) }
+				// The transaction formed but the Gnosis Safe transaction could not be made from it, so the confirmation keeps that failure.
+				: { kind: 'proposal', state: 'creationFailed' }
 			return { transactionToSimulate: finalizedTransaction, safeFlow, approvalStatus }
 		},
 	}
@@ -254,6 +258,7 @@ function createRejectedPreparation(
 		effectiveTransactionParams: transactionParams,
 		transactionExecutor: activeAddress,
 		// A rejected request forms no transaction, so it gets the ordinary fee mode.
+		flowKind: 'ordinary',
 		gasPayment: getSafeTransactionFlowGasPayment('ordinary'),
 		preparationMessage: undefined,
 		rejection: { code: METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER, message },

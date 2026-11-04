@@ -22,11 +22,11 @@ import { stringToBytes, keccak256 } from '../../utils/ethereumPrimitives.js'
 import { EthereumBytes32, EthereumQuantity, serialize } from '../../types/wire-types.js'
 import type { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
 import { getErrorMessage, JsonRpcResponseError, reportUnexpectedError, isExpectedInfrastructureError, isNewBlockAbort, reportLocalRecovery } from '../../utils/errors.js'
-import type { PendingTransactionOrSignableMessage, PopupPendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
+import type { PendingTransactionOrSignableMessage, PopupPendingTransactionOrSignableMessage, SimulatedPendingTransaction } from '../../types/accessRequest.js'
 import type { SignMessageParams } from '../../types/jsonRpc-signing-types.js'
 import type { InterceptedRequestForward } from '../../types/interceptor-messages.js'
 import type { SimulationStackChange } from '../../types/visualizer-types.js'
-import type { SafeSignerErrorDetails } from '../../types/safeTypes.js'
+import type { SafeSignerErrorDetails, SafeTransactionRequestContext } from '../../types/safeTypes.js'
 import { craftPersonalSignPopupMessage } from './personalSign.js'
 import { getSettings } from '../settings.js'
 import * as funtypes from 'funtypes'
@@ -41,7 +41,7 @@ import { parseSendRawTransaction } from '../../utils/sendRawTransactionParsing.j
 import { createEip1559Or7702Transaction } from '../../utils/eip7702Authorization.js'
 import { identifyAddress } from '../metadataUtils.js'
 import { resolveInsufficientBalanceMessage } from '../../utils/insufficientBalance.js'
-import { prepareSafeTransactionConfirmation } from '../safeTransactionConfirmation.js'
+import { prepareSafeTransactionConfirmation, type SafeTransactionConfirmationPreparation } from '../safeTransactionConfirmation.js'
 import { createSafeMessageCoSignSnapshot, getPendingSafeSignerAddress, getSafeSignerMismatchApprovalStatus, isExpectedSafeMessageCoSignSnapshotFailure, isSafeMessageAccountMismatchFailure, isSafeSignerSelectionFailure, resolveSafeConfirmation, SAFE_SIGNER_SELECTION_ERROR_CODE, type RefreshedSafeSignerSelection } from '../safeConfirmationResolver.js'
 import { createSafeOffChainMessageSnapshot, refreshAndPersistSafeSignerSelection } from '../safeSignerSelectionRefresh.js'
 import { getCreatedSafeProposal, getSafePendingFlow, getSafeTransactionFlowGasPayment } from '../../safe/safePendingFlow.js'
@@ -50,6 +50,8 @@ import { getWalletSelectedAccount } from '../../utils/activeAddressSelection.js'
 import { createSafeSignerErrorStatus } from '../safeSignerErrors.js'
 
 const pendingConfirmationSemaphore = new Semaphore(1)
+// Runs work that creates a pending confirmation's Gnosis Safe proposal, as opening a confirmation does, one at a time, so each proposal reserves its Safe nonce against the pending proposals stored before it (createSafeSigningRequestForTransaction).
+export const runWithPendingConfirmationLock = async <T>(work: () => Promise<T>) => await pendingConfirmationSemaphore.execute(work)
 const pendingNoResponseRetryTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const NO_RESPONSE_RETRY_DELAY_MS = 50
 
@@ -787,6 +789,58 @@ export async function openConfirmTransactionDialogForMessage(
 	return { type: 'doNotReply' as const }
 }
 
+// Forms the transaction a confirmation's Gnosis Safe preparation decided on. A preparation failure stands in for the transaction, which is then not formed.
+async function formPreparedTransaction(
+	ethereumClientService: EthereumClientService,
+	safePreparation: SafeTransactionConfirmationPreparation,
+	website: Website,
+	created: Date,
+	transactionIdentifier: bigint,
+	simulationMode: boolean,
+): Promise<WebsiteCreatedEthereumTransactionOrFailed> {
+	const { effectiveTransactionParams, transactionExecutor, gasPayment, preparationMessage } = safePreparation
+	if (preparationMessage !== undefined) return {
+		website,
+		created,
+		originalRequestParameters: effectiveTransactionParams,
+		transactionIdentifier,
+		success: false,
+		error: { code: METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, message: preparationMessage },
+	}
+	if (effectiveTransactionParams.method === 'eth_sendTransaction') return await formEthSendTransaction(
+		ethereumClientService,
+		undefined,
+		transactionExecutor,
+		website,
+		effectiveTransactionParams,
+		created,
+		transactionIdentifier,
+		simulationMode,
+		gasPayment,
+	)
+	return await formSendRawTransaction(ethereumClientService, effectiveTransactionParams, website, created, transactionIdentifier)
+}
+
+// A refresh of a Gnosis Safe proposal whose transaction did not form when its confirmation opened (getPendingTransactionRefresh): prepares the confirmation again as opening it did, which forms the transaction and creates the proposal from it, and returns the flow and approval status to store with it. Returns undefined, keeping the pending transaction as it is, if the request is no longer a proposal of a configured Gnosis Safe. Run it with runWithPendingConfirmationLock, holding the lock until the proposal is stored.
+export async function prepareUnformedSafeProposalAgain(
+	ethereumClientService: EthereumClientService,
+	pending: SimulatedPendingTransaction,
+	safeRequestContext: SafeTransactionRequestContext | undefined,
+) {
+	const tabId = pending.uniqueRequestIdentifier.requestSocket.tabId
+	const safePreparation = await prepareSafeTransactionConfirmation(
+		ethereumClientService,
+		{ kind: 'transaction', parameters: pending.originalRequestParameters, ...(safeRequestContext === undefined ? {} : { safeTransaction: safeRequestContext }) },
+		pending.simulationMode,
+		pending.activeAddress,
+		getWalletSelectedAccount(await getTabState(tabId)),
+	)
+	if (safePreparation.flowKind !== 'proposal') return undefined
+	const formedTransaction = await formPreparedTransaction(ethereumClientService, safePreparation, pending.website, pending.created, pending.transactionIdentifier, pending.simulationMode)
+	const { transactionToSimulate, safeFlow, approvalStatus } = await safePreparation.finalize(formedTransaction, tabId)
+	return { transactionToSimulate, preparedSafeProposal: { safeFlow, approvalStatus: approvalStatus ?? { status: 'WaitingForUser' as const } } }
+}
+
 export async function openConfirmTransactionDialogForTransaction(
 	ethereumClientService: EthereumClientService,
 	tokenPriceService: TokenPriceService,
@@ -813,37 +867,8 @@ export async function openConfirmTransactionDialogForTransaction(
 	if (safePreparation.rejection !== undefined) {
 		return formRejectMessage(safePreparation.rejection.code, safePreparation.rejection.message)
 	}
-	const {
-		effectiveTransactionParams,
-		transactionExecutor,
-		gasPayment,
-		preparationMessage: safePreparationMessage,
-	} = safePreparation
-	const transactionToSimulatePromise = safePreparationMessage !== undefined
-		? Promise.resolve({
-			website,
-			created,
-			originalRequestParameters: effectiveTransactionParams,
-			transactionIdentifier,
-			success: false as const,
-			error: {
-				code: METAMASK_ERROR_FAILED_TO_PARSE_REQUEST,
-				message: safePreparationMessage,
-			},
-		})
-		: effectiveTransactionParams.method === 'eth_sendTransaction'
-		? formEthSendTransaction(
-			ethereumClientService,
-			undefined,
-			transactionExecutor,
-			website,
-			effectiveTransactionParams,
-			created,
-			transactionIdentifier,
-			simulationMode,
-			gasPayment,
-		)
-		: formSendRawTransaction(ethereumClientService, effectiveTransactionParams, website, created, transactionIdentifier)
+	const { effectiveTransactionParams, transactionExecutor } = safePreparation
+	const transactionToSimulatePromise = formPreparedTransaction(ethereumClientService, safePreparation, website, created, transactionIdentifier, simulationMode)
 	silenceChromeUnCaughtPromise(transactionToSimulatePromise)
 	const outcome = await pendingConfirmationSemaphore.execute(async () => {
 		const finalizedSafePreparation = await safePreparation.finalize(

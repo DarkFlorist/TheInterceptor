@@ -1,5 +1,5 @@
 import type { PendingTransactionOrSignableMessage, PendingTransactionSafeFlow } from '../types/accessRequest.js'
-import type { SafeMessageCoSignSnapshot, SafeTransactionSigningRequest } from '../types/safeTypes.js'
+import type { SafeMessageCoSignSnapshot, SafeTransactionRequestContext, SafeTransactionSigningRequest } from '../types/safeTypes.js'
 import type { TransactionGasPayment } from '../types/visualizer-types.js'
 
 type PendingTransaction = Extract<PendingTransactionOrSignableMessage, { readonly type: 'Transaction' }>
@@ -57,15 +57,24 @@ export function getSafeTransactionFlowGasPayment(flowKind: SafeTransactionFlowKi
 // The flow kind prepareSafeTransactionConfirmation decided when the confirmation opened, read back from the pending transaction.
 export const getPendingTransactionFlowKind = (pending: PendingTransaction): SafeTransactionFlowKind => pending.safeFlow.kind
 
-// A confirmation whose Gnosis Safe transaction could not be made keeps its failure on refresh: forming the request again would not make the Safe transaction, and could only show it as an ordinary transaction from the Safe.
-export function keepsSafeFailureOnRefresh(pending: PendingTransaction) {
+// How a refresh forms a pending transaction again, decided by its flow:
+// - 'formTransaction': forms its request again with the fee mode of its flow (getPendingTransactionGasPayment).
+// - 'prepareSafeProposal': a Gnosis Safe proposal whose transaction did not form, so the proposal was never attempted. The refresh prepares the confirmation again, as opening it did with the page's safeRequestContext, which forms the transaction and creates the proposal from it.
+// - 'keepFailure': its Gnosis Safe transaction could not be made. Forming the request again would not make it, and could only show it as an ordinary transaction from the Safe.
+export type PendingTransactionRefresh = { readonly kind: 'formTransaction' | 'keepFailure' } | { readonly kind: 'prepareSafeProposal', readonly safeRequestContext: SafeTransactionRequestContext | undefined }
+
+export function getPendingTransactionRefresh(pending: PendingTransaction): PendingTransactionRefresh {
 	const safeFlow = pending.safeFlow
 	switch (safeFlow.kind) {
 		case 'ordinary':
 		case 'simulationModeSafeExecution':
-		case 'directExecution': return false
-		case 'unsupportedSafeRequest': return true
-		case 'proposal': return safeFlow.state === 'creationFailed'
+		case 'directExecution': return { kind: 'formTransaction' }
+		case 'unsupportedSafeRequest': return { kind: 'keepFailure' }
+		case 'proposal': switch (safeFlow.state) {
+			case 'created': return { kind: 'formTransaction' }
+			case 'formationFailed': return { kind: 'prepareSafeProposal', safeRequestContext: safeFlow.safeRequestContext }
+			case 'creationFailed': return { kind: 'keepFailure' }
+		}
 	}
 }
 

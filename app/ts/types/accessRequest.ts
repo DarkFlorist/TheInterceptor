@@ -9,7 +9,7 @@ import { VisualizedPersonalSignRequest } from './personal-message-definitions.js
 import { OriginalSendRequestParameters, SendTransactionParams } from './JsonRpc-types.js'
 import { SignMessageParams } from './jsonRpc-signing-types.js'
 import { DecodedError } from './error.js'
-import { SafeContractStateSnapshot, SafeMessageCoSignSnapshot, SafeSignerErrorDetails, SafeTransactionSigningRequest } from './safeTypes.js'
+import { SafeContractStateSnapshot, SafeMessageCoSignSnapshot, SafeSignerErrorDetails, SafeTransactionRequestContext, SafeTransactionSigningRequest } from './safeTypes.js'
 
 export type PendingAccessRequest = funtypes.Static<typeof PendingAccessRequest>
 export const PendingAccessRequest = funtypes.ReadonlyObject({
@@ -91,7 +91,7 @@ const PendingTransactionApprovalStatus = funtypes.Union(
 // - ordinary: a transaction from the active address, or a raw transaction.
 // - simulationModeSafeExecution: in simulation mode, a Gnosis Safe's own transaction. Forming it gives the transaction simulationOptions.executeThroughSafe, which tells the simulator to run it through the Safe.
 // - directExecution: a signer's execTransaction call executing a SafeTx of the configured Safe.
-// - proposal: a transaction of the configured Safe, proposed as a SafeTx. It is 'created' with its Gnosis Safe transaction, or its creation failed ('creationFailed') and the confirmation keeps that failure.
+// - proposal: a transaction of the configured Safe, proposed as a SafeTx. It is 'created' with its Gnosis Safe transaction. If the transaction did not form ('formationFailed': a gas estimate that reverted, a node error), the proposal was never attempted, so every refresh prepares the confirmation again, with the page's safeRequestContext, until it forms. If the transaction formed but the Gnosis Safe transaction could not be made from it ('creationFailed'), the confirmation keeps that failure.
 // - unsupportedSafeRequest: a request the configured Safe can't make through execTransaction (a contract creation), which the confirmation keeps as its request-shape failure.
 export type PendingTransactionSafeFlow = funtypes.Static<typeof PendingTransactionSafeFlow>
 export const PendingTransactionSafeFlow = funtypes.Union(
@@ -105,6 +105,7 @@ export const PendingTransactionSafeFlow = funtypes.Union(
 		safeExecutionReviewedSafeState: SafeContractStateSnapshot,
 	})),
 	funtypes.ReadonlyObject({ kind: funtypes.Literal('proposal'), state: funtypes.Literal('created'), safeTransaction: SafeTransactionSigningRequest }),
+	funtypes.ReadonlyObject({ kind: funtypes.Literal('proposal'), state: funtypes.Literal('formationFailed') }).And(funtypes.ReadonlyPartial({ safeRequestContext: SafeTransactionRequestContext })),
 	funtypes.ReadonlyObject({ kind: funtypes.Literal('proposal'), state: funtypes.Literal('creationFailed') }),
 	funtypes.ReadonlyObject({ kind: funtypes.Literal('unsupportedSafeRequest') }),
 )

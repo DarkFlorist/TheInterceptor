@@ -372,8 +372,10 @@ test('forms a Gnosis Safe proposal whose creation fails with the same fee mode w
 	assert.deepEqual({ opened, refreshed }, { opened: 'simulated-safe-executor', refreshed: 'simulated-safe-executor' })
 })
 
-// Opens a signing-mode confirmation of the configured Gnosis Safe, refreshes it, and checks the failure the pending transaction holds when it opens and after the refresh.
-async function assertSafeFailureKeptThroughRefresh(transactionParams: SendTransactionParams, assertPending: (pending: Extract<Awaited<ReturnType<typeof modules.getPendingTransactionsAndMessages>>[number], { readonly type: 'Transaction' }>, stage: string) => void, simulator = createRecordingSimulator()) {
+type PendingTransaction = Extract<Awaited<ReturnType<typeof modules.getPendingTransactionsAndMessages>>[number], { readonly type: 'Transaction' }>
+
+// Opens a signing-mode confirmation of the configured Gnosis Safe.
+async function openSigningModeSafeConfirmation(simulator: ReturnType<typeof createRecordingSimulator>, transactionParams: SendTransactionParams, safeRequestContext?: { readonly operation: 0 | 1 }) {
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 	await modules.updateSafeTransactionStacks(() => [])
 	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry()])
@@ -382,15 +384,25 @@ async function assertSafeFailureKeptThroughRefresh(transactionParams: SendTransa
 		simulator.ethereum,
 		simulator.tokenPriceService,
 		{ interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier, method: transactionParams.method, params: transactionParams.params },
-		{ kind: 'transaction', parameters: transactionParams },
+		{ kind: 'transaction', parameters: transactionParams, ...(safeRequestContext === undefined ? {} : { safeTransaction: safeRequestContext }) },
 		false,
 		SAFE_ADDRESS,
 		SAFE_CALL_WEBSITE,
 		createWebsiteTabConnections([]),
 	)), { type: 'doNotReply' })
+}
+
+const getFirstPendingTransaction = async (stage: string) => {
+	const [pending] = await modules.getPendingTransactionsAndMessages()
+	if (pending?.type !== 'Transaction' || !('transactionToSimulate' in pending)) throw new Error(`Expected the pending transaction ${ stage }`)
+	return pending
+}
+
+// Opens a signing-mode confirmation of the configured Gnosis Safe, refreshes it, and checks the failure the pending transaction holds when it opens and after the refresh.
+async function assertSafeFailureKeptThroughRefresh(transactionParams: SendTransactionParams, assertPending: (pending: PendingTransaction, stage: string) => void, simulator = createRecordingSimulator()) {
+	await openSigningModeSafeConfirmation(simulator, transactionParams)
 	const assertFailure = async (stage: string) => {
-		const [pending] = await modules.getPendingTransactionsAndMessages()
-		if (pending?.type !== 'Transaction' || !('transactionToSimulate' in pending)) throw new Error(`Expected the pending transaction ${ stage }`)
+		const pending = await getFirstPendingTransaction(stage)
 		assert.equal(pending.transactionOrMessageCreationStatus, 'FailedToSimulate', stage)
 		assert.equal(pending.transactionToSimulate.success, false, stage)
 		assertPending(pending, stage)
@@ -405,12 +417,67 @@ async function assertSafeFailureKeptThroughRefresh(transactionParams: SendTransa
 
 const getFailureMessage = (transaction: WebsiteCreatedEthereumTransactionOrFailed) => transaction.success ? undefined : transaction.error.message
 
-test('keeps a Gnosis Safe proposal whose creation failed a failure through refresh instead of an ordinary transaction from the Safe', async () => {
+test('keeps a Gnosis Safe proposal whose transaction formed but whose Gnosis Safe transaction could not be made a failure through refresh instead of an ordinary transaction from the Safe', async () => {
 	configureSafe()
-	await assertSafeFailureKeptThroughRefresh(await createTransferParams({ from: addressString(SAFE_ADDRESS), gas: '0x5208' }), (pending, stage) => {
+	const simulator = await assertSafeFailureKeptThroughRefresh(await createTransferParams({ from: addressString(SAFE_ADDRESS), gas: '0x5208' }), (pending, stage) => {
 		assert.deepEqual(pending.safeFlow, { kind: 'proposal', state: 'creationFailed' }, stage)
 		assert.match(getFailureMessage(pending.transactionToSimulate) ?? '', SAFE_PROPOSAL_CREATION_FAILURE, stage)
 	})
+	assert.equal(simulator.simulatedCalls.some((call) => call.from === SAFE_EXECUTION_SIMULATION_EXECUTOR), false, 'the refresh neither forms nor simulates the transaction again')
+})
+
+// What fails while the proposal's transaction forms when its confirmation opens: its gas estimate, the Safe executor's execTransaction call, reverts or meets a network error.
+const safeProposalFormationFailures = [
+	{ description: 'a gas estimate that reverts', outcome: 'revert' },
+	{ description: 'a network error', outcome: 'network-error' },
+] as const
+
+for (const { description, outcome } of safeProposalFormationFailures) {
+	test(`retries a Gnosis Safe proposal whose transaction did not form because of ${ description } as a proposal on every refresh, and creates the proposal once it forms`, async () => {
+		configureSafe()
+		const { getPendingTransactionGasPayment } = await import('../../app/ts/safe/safePendingFlow.js')
+		// The Safe's hash of the proposal's SafeTx, the transfer at the Safe's nonce, which the proposal is checked against.
+		const safeTxHash = BigInt(getSafeTxHash(createSafeTx(fakeRpcNetwork.chainId, SAFE_ADDRESS, { to: CALLED_CONTRACT, value: 0n, input: new Uint8Array() }, fakeSafeContract.nonce)))
+		fakeSafeContract.transactionHash = safeTxHash
+		const executorCall: { outcome: SimulationOutcome } = { outcome }
+		const simulator = createRecordingSimulator('fake-node', () => executorCall.outcome)
+		// Without a gas limit, so forming the transaction estimates its gas.
+		await openSigningModeSafeConfirmation(simulator, await createTransferParams({ from: addressString(SAFE_ADDRESS) }), { operation: 0 })
+		const refresh = async () => await withSilencedConsole(async () => await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService))
+		const assertProposalRetried = async (stage: string) => {
+			const pending = await getFirstPendingTransaction(stage)
+			assert.equal(pending.transactionOrMessageCreationStatus, 'FailedToSimulate', stage)
+			assert.deepEqual(pending.safeFlow, { kind: 'proposal', state: 'formationFailed', safeRequestContext: { operation: 0 } }, stage)
+			assert.equal(getPendingTransactionGasPayment(pending), 'simulated-safe-executor', `${ stage }: formed as a proposal, not as an ordinary transaction from the Safe`)
+		}
+		await assertProposalRetried('when the confirmation opens')
+		await refresh()
+		await assertProposalRetried('after a refresh whose transaction does not form either')
+		executorCall.outcome = 'fake-node'
+		await refresh()
+		const formed = await getFirstPendingTransaction('after a refresh whose transaction forms')
+		assert.equal(formed.transactionOrMessageCreationStatus, 'Simulated')
+		if (formed.safeFlow.kind !== 'proposal' || formed.safeFlow.state !== 'created') throw new Error(`Expected a created Safe proposal, got ${ JSON.stringify(formed.safeFlow.kind) }`)
+		assert.equal(formed.safeFlow.safeTransaction.safeTxHash, safeTxHash)
+		assert.equal(formed.safeFlow.safeTransaction.safeTx.message.operation, 0n)
+		assert.equal(getPendingTransactionGasPayment(formed), 'simulated-safe-executor')
+		await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+		await modules.updateUserAddressBookEntries(() => modules.defaultActiveAddresses)
+	})
+}
+
+test('keeps a Gnosis Safe proposal whose transaction did not form as it is when a refresh finds its Safe is no longer configured, instead of forming it as an ordinary transaction from the Safe', async () => {
+	configureSafe()
+	const simulator = createRecordingSimulator('fake-node', () => 'revert')
+	await openSigningModeSafeConfirmation(simulator, await createTransferParams({ from: addressString(SAFE_ADDRESS) }))
+	const opened = await getFirstPendingTransaction('when the confirmation opens')
+	assert.deepEqual(opened.safeFlow, { kind: 'proposal', state: 'formationFailed' })
+	await modules.updateUserAddressBookEntries(() => modules.defaultActiveAddresses)
+	const simulatedCallCount = simulator.simulatedCalls.length
+	await withSilencedConsole(async () => await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService))
+	assert.deepEqual(await getFirstPendingTransaction('after the refresh'), opened)
+	assert.equal(simulator.simulatedCalls.length, simulatedCallCount, 'nothing is formed or simulated')
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 })
 
 // A contract creation from the configured Safe, which it can't make through execTransaction, with or without the page's gas.
@@ -679,11 +746,11 @@ function createWebsiteTabConnections(postedMessages: unknown[]) {
 	}]])
 }
 
-// How the recording simulator answers a simulation that contains a contract creation: as the fake node does, with every call reverting, or with a network error.
-type ContractCreationSimulationOutcome = 'fake-node' | 'revert' | 'network-error'
+// How the recording simulator answers a simulation: as the fake node does, with every call reverting, or with a network error.
+type SimulationOutcome = 'fake-node' | 'revert' | 'network-error'
 
-// Like geth's eth_simulateV1 without validation: a call that pays fees must cover its block's base fee, and a call without fees skips the check. Records every simulated call.
-function createRecordingSimulator(contractCreationSimulationOutcome: ContractCreationSimulationOutcome = 'fake-node') {
+// Like geth's eth_simulateV1 without validation: a call that pays fees must cover its block's base fee, and a call without fees skips the check. Records every simulated call. A simulation with a contract creation gets contractCreationSimulationOutcome, and one with the Safe executor's call the outcome getExecutorCallSimulationOutcome returns when it runs, so a test can change it between opening a confirmation and refreshing it.
+function createRecordingSimulator(contractCreationSimulationOutcome: SimulationOutcome = 'fake-node', getExecutorCallSimulationOutcome: () => SimulationOutcome = () => 'fake-node') {
 	// A contract creation's call has no recipient.
 	const simulatedCalls: { readonly from: bigint, readonly to: bigint | undefined, readonly maxFeePerGas: bigint, readonly baseFeePerGas: bigint }[] = []
 	const requestHandler = {
@@ -694,6 +761,7 @@ function createRecordingSimulator(contractCreationSimulationOutcome: ContractCre
 				const simulationParams = rpcRequest.params?.[0]
 				const blockStateCalls = isRecord(simulationParams) && Array.isArray(simulationParams.blockStateCalls) ? simulationParams.blockStateCalls : []
 				let simulatesContractCreation = false
+				let simulatesExecutorCall = false
 				for (const blockStateCall of blockStateCalls) {
 					const baseFeePerGas = BigInt(blockStateCall.blockOverrides?.baseFeePerGas ?? 0n)
 					for (const call of blockStateCall.calls) {
@@ -701,11 +769,13 @@ function createRecordingSimulator(contractCreationSimulationOutcome: ContractCre
 						if (maxFeePerGas !== 0n && maxFeePerGas < baseFeePerGas) throw new Error('max fee per gas less than block base fee')
 						const to = call.to === undefined || call.to === null ? undefined : BigInt(call.to)
 						if (to === undefined) simulatesContractCreation = true
+						if (BigInt(call.from) === SAFE_EXECUTION_SIMULATION_EXECUTOR) simulatesExecutorCall = true
 						simulatedCalls.push({ from: BigInt(call.from), to, maxFeePerGas, baseFeePerGas })
 					}
 				}
-				if (simulatesContractCreation && contractCreationSimulationOutcome === 'network-error') throw new Error('fetch failed')
-				if (simulatesContractCreation && contractCreationSimulationOutcome === 'revert') {
+				const outcome = simulatesContractCreation ? contractCreationSimulationOutcome : simulatesExecutorCall ? getExecutorCallSimulationOutcome() : 'fake-node'
+				if (outcome === 'network-error') throw new Error('fetch failed')
+				if (outcome === 'revert') {
 					return modules.serialize(modules.EthSimulateV1Result, blockStateCalls.map((blockStateCall) => ({
 						...makeFakeEthSimulateResult(0n, modules.Multicall3ABI, 0),
 						calls: blockStateCall.calls.map(() => ({ status: 'failure' as const, gasUsed: 21_000n, returnData: new Uint8Array(), error: { code: 3, message: 'execution reverted' } })),

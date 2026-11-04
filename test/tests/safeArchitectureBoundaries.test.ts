@@ -135,6 +135,12 @@ test('a pending transaction records its flow once, as the safeFlow that the conf
 	assert.match(safeTransactionConfirmationSource, /readonly safeFlow: PendingTransactionSafeFlow\n/u)
 })
 
+test('a refresh creates a Gnosis Safe proposal whose transaction did not form under the lock that opening a confirmation holds, so it reserves its own Safe nonce', () => {
+	assert.match(confirmTransactionSource, /const outcome = await pendingConfirmationSemaphore\.execute\(async \(\) => \{\n\t\tconst finalizedSafePreparation = await safePreparation\.finalize\(/u)
+	assert.match(confirmTransactionSource, /export const runWithPendingConfirmationLock = async <T>\(work: \(\) => Promise<T>\) => await pendingConfirmationSemaphore\.execute\(work\)/u)
+	assert.match(popupMessageHandlersSource, /case 'prepareSafeProposal': return await runWithPendingConfirmationLock\(async \(\) => \{\n\t\t\tconst prepared = await prepareUnformedSafeProposalAgain\(/u)
+})
+
 test('Gnosis Safe confirmation takes its request-shape policy from the Safe domain layer', () => {
 	assert.match(safeTransactionConfirmationSource, /isSafeExecutableRequestFromActiveAddress\(transactionParams, activeAddress\)/u)
 	assert.match(safeTransactionConfirmationSource, /getSafeUnsupportedRequestReason\(transactionParams\)/u)
