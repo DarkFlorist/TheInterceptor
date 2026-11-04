@@ -1,5 +1,5 @@
 import type { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
-import { getInterceptorDisabledSites, updateContentScriptInjectionStrategy } from '../utils/contentScriptsUpdating.js'
+import { getInterceptorDisabledSites } from '../utils/contentScriptsUpdating.js'
 import { updateWebsiteAccess } from './settings.js'
 
 function haveSameDisabledSites(previousWebsiteAccess: WebsiteAccessArray, nextWebsiteAccess: WebsiteAccessArray) {
@@ -8,13 +8,13 @@ function haveSameDisabledSites(previousWebsiteAccess: WebsiteAccessArray, nextWe
 	return previousDisabledSites.size === nextDisabledSites.size && [...previousDisabledSites].every((origin) => nextDisabledSites.has(origin))
 }
 
-export async function updateWebsiteAccessAndContentScriptInjectionStrategy(update: (previousWebsiteAccess: WebsiteAccessArray) => WebsiteAccessArray) {
+// Saves the change without updating the content script injection, so a caller can still reconcile the saved access when that update fails.
+export async function updateWebsiteAccessAndDetectDisabledSitesChange(update: (previousWebsiteAccess: WebsiteAccessArray) => WebsiteAccessArray) {
 	let disabledSitesChanged = false
 	await updateWebsiteAccess((previousWebsiteAccess) => {
 		const nextWebsiteAccess = update(previousWebsiteAccess)
 		disabledSitesChanged = !haveSameDisabledSites(previousWebsiteAccess, nextWebsiteAccess)
 		return nextWebsiteAccess
 	})
-	if (disabledSitesChanged) await updateContentScriptInjectionStrategy()
 	return disabledSitesChanged
 }

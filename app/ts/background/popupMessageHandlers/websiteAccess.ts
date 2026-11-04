@@ -4,6 +4,7 @@ import type { EthereumAddress } from '../../types/wire-types.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
 import { getErrorMessage, reportUnexpectedError } from '../../utils/errors.js'
 import { checkAndThrowRuntimeLastError } from '../../utils/requests.js'
+import { updateContentScriptInjectionStrategy } from '../../utils/contentScriptsUpdating.js'
 import { modifyObject } from '../../utils/typescript.js'
 import { setInterceptorDisabledForWebsite, updateWebsiteApprovalAccesses } from '../accessManagement.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
@@ -12,7 +13,7 @@ import { getSettings, updateWebsiteAccess } from '../settings.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { getAddressMetadataForAccess } from '../windows/interceptorAccess.js'
 import { searchWebsiteAccess } from '../websiteAccessSearch.js'
-import { updateWebsiteAccessAndContentScriptInjectionStrategy } from '../websiteAccessUpdating.js'
+import { updateWebsiteAccessAndDetectDisabledSitesChange } from '../websiteAccessUpdating.js'
 
 const isMissingTabReloadError = (error: unknown) => {
 	const message = getErrorMessage(error)
@@ -44,29 +45,51 @@ export async function reloadConnectedTabs(websiteTabConnections: WebsiteTabConne
 	}
 }
 
-const describeFailure = (error: unknown) => getErrorMessage(error) ?? 'unknown error'
+type WebsiteAccessFollowUpStep = { readonly name: string, readonly run: () => Promise<void> }
+type StepFailure = { readonly name: string, readonly error: unknown }
 
-// Reload first so outgoing pages drop their connections before reconciliation can re-prompt them; always reconcile so a stored revocation reaches open connections even if the reload fails.
-async function reloadConnectedTabsThenReconcileApprovals(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections) {
-	let reloadFailure: { readonly error: unknown } | undefined
-	try {
-		await reloadConnectedTabs(websiteTabConnections)
-	} catch (error) {
-		reloadFailure = { error }
+export const updateContentScriptInjectionStep: WebsiteAccessFollowUpStep = {
+	name: 'updating the content script injection',
+	run: async () => await updateContentScriptInjectionStrategy(),
+}
+
+export const reloadConnectedTabsStep = (websiteTabConnections: WebsiteTabConnections): WebsiteAccessFollowUpStep => ({
+	name: 'reloading connected tabs',
+	run: async () => await reloadConnectedTabs(websiteTabConnections),
+})
+
+// The message names every failure because reports keep only the outer message, e.g. "Reloading connected tabs failed (a) and reconciling website approvals failed (b)".
+function describeStepFailures(failures: readonly StepFailure[]) {
+	const sentence = new Intl.ListFormat('en', { style: 'long', type: 'conjunction' }).format(failures.map(({ name, error }) => `${ name } failed (${ getErrorMessage(error) ?? 'unknown error' })`))
+	return `${ sentence.charAt(0).toUpperCase() }${ sentence.slice(1) }`
+}
+
+// Call this once a website-access change is saved. Steps run in order and a failing step does not stop the later ones, so the saved change always reaches open connections. Reload before reconciling so outgoing pages drop their connections before reconciliation can re-prompt them. One failure is rethrown as is; several are thrown together in step order so none hides another.
+export async function runStepsThenReconcileApprovals(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, stepsBeforeReconciliation: readonly WebsiteAccessFollowUpStep[]) {
+	const reconcileApprovalsStep: WebsiteAccessFollowUpStep = {
+		name: 'reconciling website approvals',
+		run: async () => { await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true) },
 	}
-	try {
-		await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
-	} catch (reconcileError) {
-		// Throw both failures together so neither hides the other; the message names both because reports keep only the outer message.
-		if (reloadFailure !== undefined) throw new AggregateError([reloadFailure.error, reconcileError], `Reloading connected tabs failed (${ describeFailure(reloadFailure.error) }) and reconciling website approvals failed (${ describeFailure(reconcileError) })`)
-		throw reconcileError
+	const failures: StepFailure[] = []
+	for (const step of [...stepsBeforeReconciliation, reconcileApprovalsStep]) {
+		try {
+			await step.run()
+		} catch (error) {
+			failures.push({ name: step.name, error })
+		}
 	}
-	if (reloadFailure !== undefined) throw reloadFailure.error
+	const [firstFailure, ...laterFailures] = failures
+	if (firstFailure === undefined) return
+	if (laterFailures.length === 0) throw firstFailure.error
+	throw new AggregateError(failures.map(({ error }) => error), describeStepFailures(failures))
 }
 
 export async function disableInterceptor(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: DisableInterceptor) {
-	await setInterceptorDisabledForWebsite(parsedRequest.data.website, parsedRequest.data.interceptorDisabled)
-	await reloadConnectedTabsThenReconcileApprovals(simulationServicesOwner, websiteTabConnections)
+	const disabledSitesChanged = await setInterceptorDisabledForWebsite(parsedRequest.data.website, parsedRequest.data.interceptorDisabled)
+	await runStepsThenReconcileApprovals(simulationServicesOwner, websiteTabConnections, [
+		...(disabledSitesChanged ? [updateContentScriptInjectionStep] : []),
+		reloadConnectedTabsStep(websiteTabConnections),
+	])
 	await sendPopupMessageToOpenWindows({ method: 'popup_setDisableInterceptorReply' as const, data: parsedRequest.data })
 }
 
@@ -86,7 +109,7 @@ const blockOrAllowWebsiteExternalRequests = async (website: Website, shouldBlock
 
 export async function blockOrAllowExternalRequests(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: BlockOrAllowExternalRequests) {
 	await blockOrAllowWebsiteExternalRequests(parsedRequest.data.website, parsedRequest.data.shouldBlock)
-	await reloadConnectedTabsThenReconcileApprovals(simulationServicesOwner, websiteTabConnections)
+	await runStepsThenReconcileApprovals(simulationServicesOwner, websiteTabConnections, [reloadConnectedTabsStep(websiteTabConnections)])
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }
 
@@ -99,7 +122,7 @@ const removeAddressAccessByAddress = async (websiteOrigin: string, address: Ethe
 
 export async function removeWebsiteAddressAccess(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: RemoveWebsiteAddressAccess) {
 	await removeAddressAccessByAddress(parsedRequest.data.websiteOrigin, parsedRequest.data.address)
-	await reloadConnectedTabsThenReconcileApprovals(simulationServicesOwner, websiteTabConnections)
+	await runStepsThenReconcileApprovals(simulationServicesOwner, websiteTabConnections, [reloadConnectedTabsStep(websiteTabConnections)])
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }
 
@@ -119,7 +142,7 @@ export async function allowOrPreventAddressAccessForWebsite(websiteTabConnection
 }
 
 export async function removeWebsiteAccess(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: RemoveWebsiteAccess) {
-	await updateWebsiteAccessAndContentScriptInjectionStrategy((previousAccess) => previousAccess.filter((access) => access.website.websiteOrigin !== parsedRequest.data.websiteOrigin))
-	await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
+	const disabledSitesChanged = await updateWebsiteAccessAndDetectDisabledSitesChange((previousAccess) => previousAccess.filter((access) => access.website.websiteOrigin !== parsedRequest.data.websiteOrigin))
+	await runStepsThenReconcileApprovals(simulationServicesOwner, websiteTabConnections, disabledSitesChanged ? [updateContentScriptInjectionStep] : [])
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }

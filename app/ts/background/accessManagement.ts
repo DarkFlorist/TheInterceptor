@@ -22,7 +22,7 @@ import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addres
 import { notifyWebsiteLifecycle } from './websiteLifecycle.js'
 import { hasAccess, hasAddressAccess, type ApprovalState } from './websiteAccessPolicy.js'
 import { getWebsiteActiveAddress } from './websiteActiveAddress.js'
-import { updateWebsiteAccessAndContentScriptInjectionStrategy } from './websiteAccessUpdating.js'
+import { updateWebsiteAccessAndDetectDisabledSitesChange } from './websiteAccessUpdating.js'
 
 function setWebsitePortApproval(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, approved: boolean) {
 	const connection = getWebsiteSocketConnection(websiteTabConnections, socket)
@@ -148,7 +148,7 @@ function getAddressesThatDoNotNeedIndividualAccesses(activeAddressEntries: Addre
 }
 
 export async function setInterceptorDisabledForWebsite(website: Website, interceptorDisabled: boolean) {
-	return await updateWebsiteAccessAndContentScriptInjectionStrategy((previousWebsiteAccess) => {
+	return await updateWebsiteAccessAndDetectDisabledSitesChange((previousWebsiteAccess) => {
 		const index = previousWebsiteAccess.findIndex((entry) => entry.website.websiteOrigin === website.websiteOrigin)
 		const previousAccess = index !== -1 ? previousWebsiteAccess[index] : undefined;
 		if (previousAccess === undefined) return [...previousWebsiteAccess, { website, addressAccess: [], interceptorDisabled } ]
