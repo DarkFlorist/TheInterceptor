@@ -133,6 +133,80 @@ test('a metadata refresh that finishes after the request was approved keeps it w
 	}
 })
 
+async function getOnlySimulatedVisualisation() {
+	const pending = await getOnlyPendingRequest()
+	if (pending.type !== 'Transaction' || pending.transactionOrMessageCreationStatus !== 'Simulated' || pending.popupVisualisation.statusCode !== 'success') throw new Error('Expected a successfully simulated pending transaction')
+	return { pending, visualisation: pending.popupVisualisation }
+}
+
+type SimulatedVisualisation = Awaited<ReturnType<typeof getOnlySimulatedVisualisation>>
+
+// Stores the pending transaction with its visualisation data changed, keeping everything else as stored.
+async function storeVisualisationData({ pending, visualisation }: SimulatedVisualisation, data: SimulatedVisualisation['visualisation']['data']) {
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [{ ...pending, popupVisualisation: { ...visualisation, data } }] })
+}
+
+// Clears the visualised address book entries of the stored run, so a test can see whether a metadata refresh stored its re-visualisation of that run.
+async function sendTransactionWithClearedAddressBookEntries(page: PageConnection) {
+	await sendTransactionFromPage(page)
+	const simulated = await getOnlySimulatedVisualisation()
+	assert.notDeepEqual(simulated.visualisation.data.addressBookEntries, [], 'the simulation visualises the addresses it touches')
+	await storeVisualisationData(simulated, { ...simulated.visualisation.data, addressBookEntries: [] })
+	return await getOnlySimulatedVisualisation()
+}
+
+test('a metadata refresh stores its re-visualisation of the run it read, which keeps its run id', async () => {
+	const page = await startPageConnection([])
+	const { visualisation } = await sendTransactionWithClearedAddressBookEntries(page)
+	await modules.refreshPopupConfirmTransactionMetadata(simulator.ethereum, simulator.tokenPriceService, undefined)
+	const refreshed = await getOnlySimulatedVisualisation()
+	assert.equal(refreshed.visualisation.data.simulationRunId, visualisation.data.simulationRunId)
+	assert.notDeepEqual(refreshed.visualisation.data.addressBookEntries, [])
+})
+
+test('a metadata refresh still stores its re-visualisation when a field of the same run changed while it ran', async () => {
+	const page = await startPageConnection([])
+	await sendTransactionWithClearedAddressBookEntries(page)
+	const pause = pauseFirstRpcRequest('eth_getCode')
+	try {
+		const refresh = modules.refreshPopupConfirmTransactionMetadata(simulator.ethereum, simulator.tokenPriceService, undefined)
+		await pause.reached
+		// The run itself is unchanged, but a field stored with it differs from what the refresh read, here the time its simulation state was recorded.
+		const stored = await getOnlySimulatedVisualisation()
+		const { simulationState } = stored.visualisation.data
+		await storeVisualisationData(stored, { ...stored.visualisation.data, simulationState: { ...simulationState, simulationConductedTimestamp: new Date(simulationState.simulationConductedTimestamp.getTime() + 60_000) } })
+		pause.release()
+		await refresh
+	} finally {
+		pause.release()
+		pause.restore()
+	}
+	assert.notDeepEqual((await getOnlySimulatedVisualisation()).visualisation.data.addressBookEntries, [])
+})
+
+test('a metadata refresh does not store its re-visualisation over a newer run of the same transaction, even one that simulated identically', async () => {
+	const page = await startPageConnection([])
+	const { visualisation: readRun } = await sendTransactionWithClearedAddressBookEntries(page)
+	const pause = pauseFirstRpcRequest('eth_getCode')
+	let newerRun: SimulatedVisualisation['visualisation'] | undefined
+	try {
+		const refresh = modules.refreshPopupConfirmTransactionMetadata(simulator.ethereum, simulator.tokenPriceService, undefined)
+		await pause.reached
+		// The transaction is simulated again while the refresh visualises the run it read. The newer run is stored as producing exactly what the read run did, so only its run id tells them apart.
+		await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
+		const stored = await getOnlySimulatedVisualisation()
+		await storeVisualisationData(stored, { ...readRun.data, simulationRunId: stored.visualisation.data.simulationRunId })
+		newerRun = (await getOnlySimulatedVisualisation()).visualisation
+		assert.notEqual(newerRun.data.simulationRunId, readRun.data.simulationRunId)
+		pause.release()
+		await refresh
+	} finally {
+		pause.release()
+		pause.restore()
+	}
+	assert.deepEqual((await getOnlySimulatedVisualisation()).visualisation, newerRun)
+})
+
 // Terminal replies are the results and errors posted to the page for the request id; forwards to the wallet are not terminal.
 const getTerminalRepliesTo = (messagesPostedToPage: readonly unknown[], requestId: number) => messagesPostedToPage.filter((message) => isRecord(message) && message.type === 'result' && message.requestId === requestId)
 
