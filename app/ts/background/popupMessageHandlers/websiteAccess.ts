@@ -20,7 +20,7 @@ const isMissingTabReloadError = (error: unknown) => {
 	return message !== undefined && (message.startsWith('No tab with id') || message.includes('Invalid tab ID'))
 }
 
-// A failed current-tab lookup must not stop the known connected tabs from reloading.
+// A failed current-tab lookup is handled like a per-tab reload failure: reported, not thrown. That is safe because the connected tabs still reload and reconciliation still runs, and missing the current tab is the same outcome as one failed tab reload. runStepsThenReconcileApprovals rethrows only failures that escape reloadConnectedTabs.
 const getCurrentTabIdToReload = async () => {
 	try {
 		return await getLastKnownCurrentTabId()

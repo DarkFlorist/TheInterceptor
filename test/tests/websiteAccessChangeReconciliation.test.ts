@@ -8,7 +8,7 @@ import { withSilencedConsole } from './consoleSilence.js'
 type SetUpOptions = { readonly browserMockOptions?: Parameters<typeof installBrowserMock>[0], readonly interceptorDisabled?: boolean }
 
 async function setUpApprovedConnectionAndOtherTab({ browserMockOptions = {}, interceptorDisabled = false }: SetUpOptions = {}) {
-	const { reloadedTabIds } = installBrowserMock(browserMockOptions)
+	const { reloadedTabIds, runtimeMessages } = installBrowserMock(browserMockOptions)
 	const modules = await loadModules()
 	const websiteOrigin = 'https://example.test'
 	const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -20,7 +20,9 @@ async function setUpApprovedConnectionAndOtherTab({ browserMockOptions = {}, int
 	const approvedSocket = { tabId: 1, connectionName: 0n }
 	const otherSocket = { tabId: 3, connectionName: 0n }
 	await modules.updateTabState(approvedSocket.tabId, (previousState) => ({ ...previousState, signerAccounts: [account], activeSigningAddress: account }))
-	const { port: approvedPort, messages } = createPort(approvedSocket.tabId)
+	// Records the side effects of each step in the order they happen, for tests that check the step order.
+	const sideEffectOrder: string[] = []
+	const { port: approvedPort, messages } = createPort(approvedSocket.tabId, (message) => { sideEffectOrder.push(`port ${ String(message.method) }`) })
 	const { port: otherPort } = createPort(otherSocket.tabId)
 	const approvedConnectionKey = modules.websiteSocketToString(approvedSocket)
 	const websiteTabConnections = new Map([
@@ -51,12 +53,17 @@ async function setUpApprovedConnectionAndOtherTab({ browserMockOptions = {}, int
 			data: { website, interceptorDisabled: true },
 		})),
 	}
+	const assertConnectionStillApproved = () => {
+		assert.equal(websiteTabConnections.get(approvedSocket.tabId)?.connections[approvedConnectionKey]?.approved, true)
+		assert.equal(messages.some((message) => message.method === 'accountsChanged' || message.method === 'disconnect'), false)
+	}
 	const assertConnectionDeApproved = () => {
 		assert.equal(websiteTabConnections.get(approvedSocket.tabId)?.connections[approvedConnectionKey]?.approved, false)
 		assert.deepEqual(messages.filter((message) => message.method === 'accountsChanged').at(-1)?.result, [])
 		assert.equal(messages.some((message) => message.method === 'disconnect'), true)
 	}
-	return { modules, reloadedTabIds, connectedTabIds: [approvedSocket.tabId, otherSocket.tabId], handlers, assertConnectionDeApproved }
+	const sentPopupMessageMethods = () => runtimeMessages.flatMap((message) => typeof message === 'object' && message !== null && 'method' in message ? [message.method] : [])
+	return { modules, reloadedTabIds, connectedTabIds: [approvedSocket.tabId, otherSocket.tabId], handlers, assertConnectionDeApproved, assertConnectionStillApproved, sentPopupMessageMethods, sideEffectOrder }
 }
 
 // Reporting the per-tab reload failure throws, so the rejection escapes reloadConnectedTabs.
@@ -69,8 +76,11 @@ const mockContentScriptInjectionUpdate = (contentScriptUpdateError?: Error) => s
 	if (contentScriptUpdateError !== undefined) throw contentScriptUpdateError
 })
 
+// Imported only after the harness installs the browser mock, which the background modules need when they load.
+const importAccessManagement = async () => await import('../../app/ts/background/accessManagement.js')
+
 const makeReconciliationReject = async (reconcileError: Error) => {
-	const accessManagement = await import('../../app/ts/background/accessManagement.js')
+	const accessManagement = await importAccessManagement()
 	spyOn(accessManagement, 'updateWebsiteApprovalAccesses').mockImplementationOnce(async () => { throw reconcileError })
 }
 
@@ -80,7 +90,7 @@ afterEach(() => {
 
 describe('removeWebsiteAddressAccess', () => {
 	test('de-approves the connection and reloads connected tabs when the current tab lookup fails', async () => {
-		const { modules, reloadedTabIds, connectedTabIds, handlers, assertConnectionDeApproved } = await setUpApprovedConnectionAndOtherTab({ browserMockOptions: { firstCurrentTabIdReadError: new Error('current tab lookup failed') } })
+		const { modules, reloadedTabIds, connectedTabIds, handlers, assertConnectionDeApproved, sentPopupMessageMethods } = await setUpApprovedConnectionAndOtherTab({ browserMockOptions: { firstCurrentTabIdReadError: new Error('current tab lookup failed') } })
 
 		await handlers.removeWebsiteAddressAccess()
 
@@ -90,10 +100,11 @@ describe('removeWebsiteAddressAccess', () => {
 		assert.equal(latestUnexpectedError?.data.message, 'current tab lookup failed')
 		assert.equal(latestUnexpectedError?.data.code, 'connected_tab_reload_current_tab_lookup_failed')
 		assert.deepEqual(reloadedTabIds, connectedTabIds)
+		assert.equal(sentPopupMessageMethods().includes('popup_websiteAccess_changed'), true)
 	})
 
-	test('still de-approves the connection and rethrows when the reload step rejects', async () => {
-		const { modules, handlers, assertConnectionDeApproved } = await setUpApprovedConnectionAndOtherTab()
+	test('still de-approves the connection and rethrows without notifying the popup when the reload step rejects', async () => {
+		const { modules, handlers, assertConnectionDeApproved, sentPopupMessageMethods } = await setUpApprovedConnectionAndOtherTab()
 		const reloadStepError = new Error('reload failure report failed')
 		makeReloadStepReject(reloadStepError)
 
@@ -101,6 +112,7 @@ describe('removeWebsiteAddressAccess', () => {
 
 		assert.deepEqual((await modules.getSettings()).websiteAccess[0]?.addressAccess, [])
 		assertConnectionDeApproved()
+		assert.equal(sentPopupMessageMethods().includes('popup_websiteAccess_changed'), false)
 	})
 
 	test('rejects with both errors, reload first, when the reload step and reconciliation both reject', async () => {
@@ -120,8 +132,8 @@ describe('removeWebsiteAddressAccess', () => {
 })
 
 describe('removeWebsiteAccess', () => {
-	test('still de-approves the connection and rethrows when the content script injection update rejects', async () => {
-		const { modules, handlers, assertConnectionDeApproved } = await setUpApprovedConnectionAndOtherTab({ interceptorDisabled: true })
+	test('still de-approves the connection and rethrows without notifying the popup when the content script injection update rejects', async () => {
+		const { modules, handlers, assertConnectionDeApproved, sentPopupMessageMethods } = await setUpApprovedConnectionAndOtherTab({ interceptorDisabled: true })
 		const contentScriptUpdateError = new Error('content script update failed')
 		const contentScriptInjectionUpdate = mockContentScriptInjectionUpdate(contentScriptUpdateError)
 
@@ -130,12 +142,47 @@ describe('removeWebsiteAccess', () => {
 		assert.equal(contentScriptInjectionUpdate.mock.calls.length, 1)
 		assert.deepEqual((await modules.getSettings()).websiteAccess, [])
 		assertConnectionDeApproved()
+		assert.equal(sentPopupMessageMethods().includes('popup_websiteAccess_changed'), false)
 	})
 })
 
 describe('changeInterceptorAccess', () => {
-	test('still de-approves the connection and rethrows when the reload step rejects', async () => {
-		const { handlers, assertConnectionDeApproved } = await setUpApprovedConnectionAndOtherTab()
+	test('updates the content scripts, then reloads the connected tabs, then reconciles, then notifies the popup', async () => {
+		const { handlers, sentPopupMessageMethods, sideEffectOrder } = await setUpApprovedConnectionAndOtherTab()
+		spyOn(contentScriptsUpdating, 'updateContentScriptInjectionStrategy').mockImplementation(async () => { sideEffectOrder.push('content script update') })
+		spyOn(browser.tabs, 'reload').mockImplementation(async (tabId) => { sideEffectOrder.push(`reload tab ${ String(tabId) }`) })
+		const accessManagement = await importAccessManagement()
+		const reconcileApprovals = accessManagement.updateWebsiteApprovalAccesses
+		spyOn(accessManagement, 'updateWebsiteApprovalAccesses').mockImplementation(async (...reconcileArguments) => {
+			sideEffectOrder.push('reconcile')
+			return await reconcileApprovals(...reconcileArguments)
+		})
+
+		await handlers.denyAccessAndDisableInterceptorInAccessEditor()
+
+		assert.deepEqual(sideEffectOrder, ['content script update', 'reload tab 1', 'reload tab 3', 'reconcile', 'port accountsChanged', 'port disconnect'])
+		assert.equal(sentPopupMessageMethods().at(-1), 'popup_interceptor_access_changed')
+	})
+
+	test('throws without updating the content scripts, reloading tabs, reconciling or notifying the popup when the website access write rejects', async () => {
+		const { modules, reloadedTabIds, handlers, assertConnectionStillApproved, sentPopupMessageMethods } = await setUpApprovedConnectionAndOtherTab()
+		const contentScriptInjectionUpdate = mockContentScriptInjectionUpdate()
+		const reconcile = spyOn(await importAccessManagement(), 'updateWebsiteApprovalAccesses')
+		const writeError = new Error('storage write failed')
+		spyOn(browser.storage.local, 'set').mockImplementation(async () => { throw writeError })
+
+		await assert.rejects(handlers.denyAccessAndDisableInterceptorInAccessEditor(), (error) => error === writeError)
+
+		assert.equal((await modules.getSettings()).websiteAccess[0]?.access, true)
+		assert.equal(contentScriptInjectionUpdate.mock.calls.length, 0)
+		assert.deepEqual(reloadedTabIds, [])
+		assert.equal(reconcile.mock.calls.length, 0)
+		assertConnectionStillApproved()
+		assert.equal(sentPopupMessageMethods().includes('popup_interceptor_access_changed'), false)
+	})
+
+	test('still de-approves the connection and rethrows without notifying the popup when the reload step rejects', async () => {
+		const { handlers, assertConnectionDeApproved, sentPopupMessageMethods } = await setUpApprovedConnectionAndOtherTab()
 		const contentScriptInjectionUpdate = mockContentScriptInjectionUpdate()
 		const reloadStepError = new Error('reload failure report failed')
 		makeReloadStepReject(reloadStepError)
@@ -144,6 +191,7 @@ describe('changeInterceptorAccess', () => {
 
 		assert.equal(contentScriptInjectionUpdate.mock.calls.length, 1)
 		assertConnectionDeApproved()
+		assert.equal(sentPopupMessageMethods().includes('popup_interceptor_access_changed'), false)
 	})
 
 	test('still attempts the reload and de-approves the connection, then rejects with both errors in step order, when the content script update and the reload step reject', async () => {
