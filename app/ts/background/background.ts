@@ -73,7 +73,7 @@ async function handleRPCRequest(
 	safeSigningMode: boolean,
 	activeSafeSigner: bigint | undefined,
 ): Promise<RPCReply> {
-	// Execute on the services and stack captured with the request's settings; the owner is only used for network switches and wake-ups. services, settings and simulation come from one readNetworkSnapshot call under the network transition lock and stay separate parameters on purpose to keep the existing handler signatures (see NetworkState).
+	// Execute on the services and stack captured with the request's settings; the owner is only used for network switches and wake-ups. services, settings and simulation always come from one readNetworkSnapshot call under the network transition lock; keeping them separate parameters rather than one NetworkSnapshot is a deliberate maintainer decision that keeps the existing handler signatures (see NetworkState).
 	const { ethereum, tokenPriceService } = services
 	const network = { settings, simulation }
 	let simulationInputPromise: Promise<ResolvedSimulationInput> | undefined

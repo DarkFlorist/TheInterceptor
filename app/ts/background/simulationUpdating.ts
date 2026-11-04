@@ -168,7 +168,7 @@ export type SimulationSnapshot = {
 	readonly networkChangeGeneration: number
 }
 
-// Settings with the simulation state built from them, captured together so a request simulates the stack of its own network. Handlers take the services as separate (ethereum, tokenPriceService) arguments next to NetworkState to keep their existing signatures; callers take both from the same NetworkSnapshot read under the network transition lock.
+// Settings with the simulation state built from them, captured together so a request simulates the stack of its own network. Handlers take the services as separate (ethereum, tokenPriceService) arguments next to NetworkState, a deliberate maintainer decision that keeps their existing signatures; callers always take both from one readNetworkSnapshot call under the network transition lock.
 export type NetworkState = {
 	readonly settings: Settings
 	readonly simulation: SimulationSnapshot
