@@ -1455,6 +1455,25 @@ for (const signerResult of signerResults) {
 		await assertRejectedOnce(postedMessages)
 	})
 
+	test(`${ signerResult.name } submitted again after a later reject keeps its first arrival and wins`, async () => {
+		const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
+		const { data, result } = await signerResult.prepare()
+		try {
+			failNextCommittedReplyLookup()
+			assert.equal(await resolveRequest(websiteTabConnections, data), undefined, 'the signer result is kept for its retry')
+			failNextCommittedReplyLookup()
+			await withSilencedConsole(async () => await rejectRequest(websiteTabConnections))
+			assert.deepEqual(getRepliesToWebsite(postedMessages), [], 'the reject is kept for its retry')
+			// The signer answers again, as it does for a request forwarded to it twice.
+			await resolveRequest(websiteTabConnections, data)
+			await withSilencedConsole(waitForResolutionRetriesToFinish)
+		} finally {
+			browserMock.setStorageGetHandler(undefined)
+		}
+		await assertSettledOnceWithSuccess(postedMessages, result)
+		await assertSignerOutcomePersisted(signerResult.name, data)
+	})
+
 	test(`${ signerResult.name } whose settlement throws wins over a later decline on the request's retry`, async () => {
 		const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
 		const { data, result } = await signerResult.prepare()
