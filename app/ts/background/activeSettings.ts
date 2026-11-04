@@ -134,16 +134,19 @@ export async function publishRpcConfigurationRecovery(
 ) {
 	let accessUpdate: WebsiteAccessUpdate | undefined
 	try {
-		const updatedSettings = requireAvailableSettings(await getSettingsSnapshot())
-		if (getRpcNetworkChange(updatedSettings.activeRpcNetwork, activeRpcNetwork).selectionChanged) throw new Error('Recovered RPC network does not match the committed configuration.')
-		await publishCommittedSettingsTransition(
-			simulationServicesOwner,
-			websiteTabConnections,
-			previousSettings,
-			updatedSettings,
-			(update) => { accessUpdate = update },
-			forceChainChanged,
-		)
+		// Read and published in the same lock as active-settings transitions, so a transition committed meanwhile is never overwritten by these older settings.
+		await changeActiveAddressAndChainSemaphore.execute(async () => {
+			const updatedSettings = requireAvailableSettings(await getSettingsSnapshot())
+			if (getRpcNetworkChange(updatedSettings.activeRpcNetwork, activeRpcNetwork).selectionChanged) throw new Error('Recovered RPC network does not match the committed configuration.')
+			await publishCommittedSettingsTransition(
+				simulationServicesOwner,
+				websiteTabConnections,
+				previousSettings,
+				updatedSettings,
+				(update) => { accessUpdate = update },
+				forceChainChanged,
+			)
+		})
 	} finally {
 		if (accessUpdate !== undefined) await finishWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, accessUpdate, true)
 	}

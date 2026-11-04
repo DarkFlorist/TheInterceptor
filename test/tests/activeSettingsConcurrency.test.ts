@@ -255,6 +255,46 @@ describe('active settings concurrency', () => {
 		assert.deepEqual(messages.filter(({ method }) => method === 'chainChanged').map(({ result }) => result), ['0xa'])
 	})
 
+	test('publishes RPC configuration recovery after an active settings transition in flight, never before it', async () => {
+		const { runtimeMessages } = installBrowserMock()
+		const { changeActiveAddressAndChain, changeSimulationMode, getRequiredSettings, publishRpcConfigurationRecovery, updateUserAddressBookEntries } = await loadModules()
+		await updateUserAddressBookEntries(() => [firstAddress, secondAddress])
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: firstAddress.address })
+		const previousSettings = await getRequiredSettings()
+		const services = createEthereumWithGetBlockCounter({ count: 0 })
+		const owner = createTestSimulationServicesOwner(services, () => services)
+		// Hold the transition right after it writes the new address, while it still owns the active-settings lock.
+		const transitionWritten = createDeferredSignal()
+		const releaseTransition = createDeferredSignal()
+		const originalSet = browser.storage.local.set.bind(browser.storage.local)
+		let held = false
+		Object.defineProperty(browser.storage.local, 'set', { configurable: true, value: async (items: Record<string, unknown>) => {
+			await originalSet(items)
+			if (held || !('independentActiveSimulationAddress' in items)) return
+			held = true
+			transitionWritten.resolve()
+			await releaseTransition.promise
+		} })
+		const settingsPublications = () => runtimeMessages.filter((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_settingsUpdated')
+
+		const transition = changeActiveAddressAndChain(owner, new Map(), { simulationMode: true, activeAddress: secondAddress.address, promptForAccessesIfNeeded: false })
+		await transitionWritten.promise
+		const recovery = publishRpcConfigurationRecovery(owner, new Map(), previousSettings, previousSettings.activeRpcNetwork)
+		try {
+			for (let tick = 0; tick < 5; tick += 1) await new Promise((resolve) => setTimeout(resolve, 0))
+			assert.equal(settingsPublications().length, 0, 'the recovery waits for the transition holding the active-settings lock')
+		} finally {
+			// Released even when the assertion fails, so the held transition never blocks later tests.
+			releaseTransition.resolve()
+			await Promise.all([transition, recovery])
+		}
+		const publications = settingsPublications()
+		assert.equal(publications.length, 2)
+		const lastPublication = publications.at(-1)
+		const lastData = typeof lastPublication === 'object' && lastPublication !== null && 'data' in lastPublication ? lastPublication.data : undefined
+		assert.equal(typeof lastData === 'object' && lastData !== null && 'activeSimulationAddress' in lastData ? lastData.activeSimulationAddress : undefined, serialize(OptionalEthereumAddress, secondAddress.address))
+	})
+
 	test('forces a chain update when recovery could not parse the previous selection', async () => {
 		installBrowserMock()
 		const { getRequiredSettings, publishRpcConfigurationRecovery, updateWebsiteAccess, websiteSocketToString } = await loadModules()

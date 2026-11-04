@@ -19,7 +19,7 @@ function selectRestoredActiveNetwork(previousConfiguration: RpcConfigurationStat
 	return selectPrimaryRpc(rpcEntries)
 }
 
-// This single RPC-list transition boundary owns persistence and service recovery; callers only validate input and publish its result.
+// This single RPC-list transition boundary owns persistence and service recovery; callers only validate input, then publish the RPC status stored afterwards and its recovery.
 export async function transitionRpcList(
 	simulationServicesOwner: SimulationServicesOwner,
 	rpcEntries: readonly RpcEntry[],

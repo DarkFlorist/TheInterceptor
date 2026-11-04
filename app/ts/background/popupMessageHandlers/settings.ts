@@ -1,9 +1,10 @@
-import type { ImportSettings, ImportSettingsReply, SetRpcList, Settings } from '../../types/interceptor-messages.js'
+import type { ImportSettings, ImportSettingsReply, MessageToPopupPayload, SetRpcList, Settings } from '../../types/interceptor-messages.js'
 import type { RpcEntries, RpcNetwork } from '../../types/rpc.js'
 import { ExportedSettings } from '../../types/exportedSettingsTypes.js'
 import { serialize } from '../../types/wire-types.js'
 import { isJSON } from '../../utils/json.js'
-import { silenceChromeUnCaughtPromise } from '../../utils/requests.js'
+import { Semaphore } from '../../utils/semaphore.js'
+import { reportUnexpectedError } from '../../utils/errors.js'
 import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
 import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettingsSnapshot, getUseTabsInsteadOfPopup, importSettingsAndAddressBook, settingsIfAvailable, requireAvailableSettings, type SettingsSnapshot } from '../settings.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
@@ -14,17 +15,13 @@ import { rpcConfigurationIsReady, rpcConfigurationIsUsable } from '../rpcConfigu
 
 type PublishRpcConfigurationRecovery = (simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, previousSettings: Settings, activeRpcNetwork: Settings['activeRpcNetwork'], forceChainChanged?: boolean) => Promise<void>
 
-async function sendRpcListUpdate(rpcEntries: SetRpcList['data'], rpcConfigurationAvailable: boolean) {
-	await sendPopupMessageToOpenWindows({ method: 'popup_update_rpc_list', data: { rpcEntries, rpcConfigurationAvailable } })
-}
-
 type SettingsRpcStatus = {
 	readonly rpcConfigurationAvailable: boolean
 	readonly rpcEntries: RpcEntries
 	readonly activeRpcNetwork: RpcNetwork | undefined
 }
 
-// Shown when the RPC configuration could not be read at all: the Settings RPC section then offers Retry and Restore.
+// Published when the RPC configuration could not be read at all: the Settings RPC section then offers Retry and Restore.
 const UNREADABLE_RPC_STATUS: SettingsRpcStatus = { rpcConfigurationAvailable: false, rpcEntries: [], activeRpcNetwork: undefined }
 
 function getSettingsRpcStatus(settingsSnapshot: SettingsSnapshot, simulationServicesOwner: SimulationServicesOwner): SettingsRpcStatus {
@@ -37,21 +34,47 @@ function getSettingsRpcStatus(settingsSnapshot: SettingsSnapshot, simulationServ
 	}
 }
 
-// The Settings RPC section leaves its loading state only on the RPC status this publishes, so the status is published even when the request fails, for example when a preference read rejects: it is sent as an RPC list update (unreadable when the RPC configuration itself could not be read) before the failure reaches the caller, and the section shows the RPC list or its Retry and Restore controls.
-export async function settingsOpened(simulationServicesOwner: SimulationServicesOwner) {
-	const preferencesPromise = silenceChromeUnCaughtPromise(Promise.all([getUseTabsInsteadOfPopup(), getMetamaskCompatibilityMode(), getSafeAppsCompatibilityMode()]))
-	let rpcStatus = UNREADABLE_RPC_STATUS
+const formRpcListUpdate = ({ rpcEntries, rpcConfigurationAvailable }: SettingsRpcStatus): MessageToPopupPayload => ({ method: 'popup_update_rpc_list', data: { rpcEntries, rpcConfigurationAvailable } })
+
+// Every RPC status the Settings page is sent (the settings reply and every RPC list update) is read and published inside this lock, from the configuration stored when the lock is held. Publications therefore go out in the order they were read, so a slow request can never publish a status older than one already published.
+const rpcStatusPublicationSemaphore = new Semaphore(1)
+
+async function publishCurrentRpcStatus(simulationServicesOwner: SimulationServicesOwner, formMessage: (rpcStatus: SettingsRpcStatus) => MessageToPopupPayload = formRpcListUpdate) {
+	await rpcStatusPublicationSemaphore.execute(async () => {
+		let rpcStatus: SettingsRpcStatus
+		try {
+			rpcStatus = getSettingsRpcStatus(await getSettingsSnapshot(), simulationServicesOwner)
+		} catch (readError: unknown) {
+			// The RPC section still leaves its loading state, showing Retry and Restore; the read error then reaches the caller.
+			await sendPopupMessageToOpenWindows(formRpcListUpdate(UNREADABLE_RPC_STATUS))
+			throw readError
+		}
+		await sendPopupMessageToOpenWindows(formMessage(rpcStatus))
+	})
+}
+
+async function readSettingsPreferences() {
 	try {
-		rpcStatus = getSettingsRpcStatus(await getSettingsSnapshot(), simulationServicesOwner)
-		const [useTabsInsteadOfPopup, metamaskCompatibilityMode, safeAppsCompatibilityMode] = await preferencesPromise
-		await sendPopupMessageToOpenWindows({
-			method: 'popup_requestSettingsReply' as const,
-			data: { useTabsInsteadOfPopup, metamaskCompatibilityMode, safeAppsCompatibilityMode, ...rpcStatus },
-		})
+		const [useTabsInsteadOfPopup, metamaskCompatibilityMode, safeAppsCompatibilityMode] = await Promise.all([getUseTabsInsteadOfPopup(), getMetamaskCompatibilityMode(), getSafeAppsCompatibilityMode()])
+		return { status: 'read' as const, preferences: { useTabsInsteadOfPopup, metamaskCompatibilityMode, safeAppsCompatibilityMode } }
 	} catch (error: unknown) {
-		await sendRpcListUpdate(rpcStatus.rpcEntries, rpcStatus.rpcConfigurationAvailable)
-		throw error
+		return { status: 'failed' as const, error }
 	}
+}
+
+// The Settings RPC section leaves its loading state only on an RPC status published here, so the status is published even when the preferences cannot be read: as the settings reply when they were read, otherwise as an RPC list update, after which the preference failure reaches the caller and is reported.
+export async function settingsOpened(simulationServicesOwner: SimulationServicesOwner) {
+	const preferences = await readSettingsPreferences()
+	try {
+		await publishCurrentRpcStatus(simulationServicesOwner, preferences.status === 'read'
+			? (rpcStatus) => ({ method: 'popup_requestSettingsReply', data: { ...preferences.preferences, ...rpcStatus } })
+			: formRpcListUpdate)
+	} catch (publicationError: unknown) {
+		// Only one error reaches the caller, so a preference failure of the same request is reported here.
+		if (preferences.status === 'failed') await reportUnexpectedError(preferences.error)
+		throw publicationError
+	}
+	if (preferences.status === 'failed') throw preferences.error
 }
 
 export async function importSettings(settingsData: ImportSettings): Promise<ImportSettingsReply> {
@@ -76,22 +99,30 @@ export async function exportSettings() {
 
 export async function setNewRpcList(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: SetRpcList, settings: Settings, publishRecovery: PublishRpcConfigurationRecovery) {
 	const transition = await transitionRpcList(simulationServicesOwner, request.data, 'edit')
-	await sendRpcListUpdate(request.data, transition.rpcConfigurationAvailable)
-	if (transition.publishRecovery) await publishRecovery(simulationServicesOwner, websiteTabConnections, settings, transition.activeRpcNetwork, transition.forceChainChanged)
+	try {
+		await publishCurrentRpcStatus(simulationServicesOwner)
+	} finally {
+		// The transition is committed, so its recovery is published even if its RPC status could not be.
+		if (transition.publishRecovery) await publishRecovery(simulationServicesOwner, websiteTabConnections, settings, transition.activeRpcNetwork, transition.forceChainChanged)
+	}
 }
 
 export async function restoreDefaultRpcConfiguration(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, settings: Settings | undefined, publishRecovery: PublishRpcConfigurationRecovery) {
 	const transition = await transitionRpcList(simulationServicesOwner, DEFAULT_RPCS, 'restore-defaults')
-	await sendRpcListUpdate(DEFAULT_RPCS, true)
-	if (transition.publishRecovery) await publishRecovery(simulationServicesOwner, websiteTabConnections, settings ?? requireAvailableSettings(await getSettingsSnapshot()), transition.activeRpcNetwork, transition.forceChainChanged)
+	try {
+		await publishCurrentRpcStatus(simulationServicesOwner)
+	} finally {
+		// The transition is committed, so its recovery is published even if its RPC status could not be.
+		if (transition.publishRecovery) await publishRecovery(simulationServicesOwner, websiteTabConnections, settings ?? requireAvailableSettings(await getSettingsSnapshot()), transition.activeRpcNetwork, transition.forceChainChanged)
+	}
 }
 
 export async function retryRpcConfiguration(simulationServicesOwner: SimulationServicesOwner, reconcileAccessRules: () => Promise<void>) {
 	const retriedConfiguration = await retryRpcConfigurationServices(simulationServicesOwner)
-	if (retriedConfiguration === undefined) {
-		await sendRpcListUpdate([], false)
-		return
+	try {
+		await publishCurrentRpcStatus(simulationServicesOwner)
+	} finally {
+		// Services already resumed, so their access rules are reconciled even if the RPC status could not be published.
+		if (retriedConfiguration !== undefined) await reconcileAccessRules()
 	}
-	await sendRpcListUpdate(retriedConfiguration.rpcEntries, true)
-	await reconcileAccessRules()
 }
