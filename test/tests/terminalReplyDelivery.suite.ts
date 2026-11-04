@@ -1574,4 +1574,82 @@ for (const outcomeAction of outcomeActions) {
 	})
 }
 
+// Pauses the claimed resolution at its first committed-reply lookup under the claim: the resolution reads the committed replies once before claiming, so the second read is the claim's.
+function pauseTheClaimsCommittedReplyLookup() {
+	let reads = 0
+	let signalPaused: (() => void) | undefined
+	const paused = new Promise<void>((resolve) => { signalPaused = resolve })
+	let resume: () => void = () => undefined
+	const resumed = new Promise<void>((resolve) => { resume = resolve })
+	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+		const items = readStoredItems()
+		if (!Array.isArray(keys) || !keys.includes('pendingTerminalReplies')) return items
+		reads += 1
+		if (reads !== 2) return items
+		signalPaused?.()
+		await resumed
+		return items
+	})
+	return { paused, resume: () => resume() }
+}
+
+for (const outcomeAction of outcomeActions) {
+	for (const decline of ['reject', 'close'] as const) {
+		test(`a ${ decline } arriving while ${ outcomeAction.name } holds the claim comes after it`, async () => {
+			const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
+			const data = await outcomeAction.prepare()
+			browserMock.setLiveWindowIds([pendingTransaction.popupOrTabId.id])
+			const { paused, resume } = pauseTheClaimsCommittedReplyLookup()
+			try {
+				const acting = resolveRequest(websiteTabConnections, data)
+				await paused
+				const declining = decline === 'reject'
+					? withSilencedConsole(async () => await rejectRequest(websiteTabConnections))
+					: withSilencedConsole(async () => await modules.onCloseWindowOrTab(pendingTransaction.popupOrTabId, simulator.ethereum, simulator.tokenPriceService, websiteTabConnections))
+				if (decline === 'reject') assert.equal(await declining, false, 'the reject is deferred to the claim\'s release')
+				resume()
+				await acting
+				await declining
+				await withSilencedConsole(waitForResolutionRetriesToFinish)
+			} finally {
+				resume()
+				browserMock.setStorageGetHandler(undefined)
+			}
+			const forwards = postedMessages.filter((message) => isRecord(message) && message.type === 'forwardToSigner')
+			const replies = getRepliesToWebsite(postedMessages)
+			assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+			assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+			const stackOperations = (await modules.getInterceptorTransactionStack()).operations
+			const safeProposals = (await modules.getSafeTransactionStacks()).flatMap((stack) => stack.transactions)
+			if (outcomeAction.name === 'an accept that forwards to the signer') {
+				// A forward commits no reply: the request waits for its signer, so the later decline rejects it, after the forward.
+				assert.equal(forwards.length, 1, 'the request was forwarded to its signer first')
+				assert.equal(replies.length, 1)
+				const [rejection] = replies
+				if (!isRecord(rejection) || !isRecord(rejection.error)) throw new Error('Missing rejection sent to the website')
+				assert.equal(rejection.error.code, METAMASK_ERROR_USER_REJECTED_REQUEST)
+				assert.equal(postedMessages.indexOf(forwards[0]) < postedMessages.indexOf(rejection), true)
+				assert.deepEqual(stackOperations, [])
+				assert.deepEqual(safeProposals, [])
+				return
+			}
+			assert.equal(replies.length, 1, 'exactly one reply, the action\'s success')
+			const [success] = replies
+			if (!isRecord(success)) throw new Error('Missing reply to the website')
+			assert.equal('error' in success, false)
+			if (outcomeAction.name === 'a simulated accept') {
+				assert.equal(stackOperations.length, 1)
+				const [stacked] = stackOperations
+				if (stacked?.type !== 'Transaction') throw new Error('Missing stacked transaction')
+				assert.equal(success.result, modules.EthereumBytes32.serialize(stacked.preSimulationTransaction.signedTransaction.hash))
+				assert.deepEqual(safeProposals, [])
+				return
+			}
+			assert.equal(safeProposals.length, 1)
+			assert.equal(success.result, modules.EthereumBytes32.serialize(safeProposals[0]?.safeTxHash ?? 0n))
+			assert.equal(stackOperations.filter((operation) => operation.type === 'Transaction' && operation.preSimulationTransaction.safeTransaction?.safeTxHash === safeProposals[0]?.safeTxHash).length, 1)
+		})
+	}
+}
+
 await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))

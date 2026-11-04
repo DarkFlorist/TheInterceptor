@@ -54,14 +54,9 @@ const resetRequestRetryBudgetAtStartup = (uniqueRequestIdentifier: UniqueRequest
 const declineIntents = new Map<string, DeclineReason>()
 // The signer results that arrived for each request and are not processed yet, an external one-time input kept until its request's claim processes it (submitSignerResult). Kept in memory only: a restart loses the signer connection that produced the result, and the request stays waiting for its signer, for the user to reject.
 const keptSignerResults = new Map<string, { readonly signerReply: unknown, readonly arrival: number }>()
-// When each request's decline intent and kept signer result arrived, so that of a decline and a signer result the first to arrive wins.
+// When each request's decline intent arrived; with the arrivals of kept signer results and of actions taking a claim (withResolutionClaim), from one counter, so that of the inputs and actions the first to arrive wins.
 const firstDeclineArrivals = new Map<string, number>()
 let nextInputArrival = 0
-const signerResultPrecedesDecline = (claim: string) => {
-	const signerResult = keptSignerResults.get(claim)
-	const declineArrival = firstDeclineArrivals.get(claim)
-	return signerResult !== undefined && (declineArrival === undefined || signerResult.arrival < declineArrival)
-}
 // The requests whose stored declineRequested this session wrote (declineRequest); a stored decline missing here came from an earlier session.
 const declinesPersistedThisSession = new Set<string>()
 // Drops the inputs kept for a request that is finished or gone.
@@ -185,45 +180,57 @@ export async function commitAndFinish(request: PendingTransactionOrSignableMessa
 export async function resumeRequest(uniqueRequestIdentifier: UniqueRequestIdentifier, context: ResolutionContext): Promise<boolean | undefined> {
 	try {
 		// The claim arbitrates the kept inputs (resolveKeptInputs) before this resolution, which has nothing more to do.
-		return await withResolutionClaim(uniqueRequestIdentifier, context, async () => false, { whenClaimed: 'finish-again' })
+		return await withResolutionClaim(uniqueRequestIdentifier, context, async () => false, { whenClaimed: 'finish-again', arbitratesEveryInput: true })
 	} catch (error) {
 		await scheduleRequestRetry(uniqueRequestIdentifier, context, error)
 		return undefined
 	}
 }
 
-/**
- * The one arbitration between a request's kept inputs, run by withResolutionClaim before any resolution of the request, a signer result (submitSignerResult) and a decline (declineRequest, or the declineRequested a pending request carries from an earlier session), run under the request's claim for a request still pending and uncommitted, from every path: a decline, direct or deferred, a retry, resumeRequest and submitSignerResult. The first to arrive wins: a signer result that arrived first is settled, and the decline only runs if the request is still pending and uncommitted afterwards (its result was refused); a decline that arrived first rejects the request and the signer result is dropped.
- * A settlement that throws keeps both inputs, in their order, for the request's retry.
- */
-// Whether the request has inputs the claim arbitrates before a resolution runs (resolveKeptInputs).
-const hasOutstandingInputs = (request: PendingTransactionOrSignableMessage) => {
+// The kept inputs that arrived before a claimed resolution, whose arrival is before; a decline stored by an earlier session always did. Inputs that arrived later are left to the claim's release, where the resolution's commitment wins over them.
+const getEarlierInputs = (request: PendingTransactionOrSignableMessage, before: number) => {
 	const claim = getUniqueRequestIdentifierString(request.uniqueRequestIdentifier)
-	return keptSignerResults.has(claim) || declineIntents.has(claim) || request.declineRequested !== undefined
+	// A decline stored on the request that this session did not write came from an earlier session, so it arrived before every input of this session, whatever this session's own decline intents record; one this session wrote keeps its in-memory order.
+	const earlierSessionDecline = declinesPersistedThisSession.has(claim) ? undefined : request.declineRequested
+	const signerResult = keptSignerResults.get(claim)
+	const declineArrival = firstDeclineArrivals.get(claim)
+	const decline = declineArrival !== undefined && declineArrival < before ? declineIntents.get(claim) : undefined
+	return {
+		earlierSessionDecline,
+		signerResult: signerResult !== undefined && signerResult.arrival < before ? signerResult : undefined,
+		decline: decline === undefined || declineArrival === undefined ? undefined : { reason: decline, arrival: declineArrival },
+	}
 }
 
-async function resolveKeptInputs(current: PendingTransactionOrSignableMessage, context: ResolutionContext): Promise<boolean | undefined> {
+// Whether the request has inputs that arrived before a claimed resolution, which the claim arbitrates first (resolveKeptInputs).
+const hasEarlierInputs = (request: PendingTransactionOrSignableMessage, before: number) => {
+	const { earlierSessionDecline, signerResult, decline } = getEarlierInputs(request, before)
+	return earlierSessionDecline !== undefined || signerResult !== undefined || decline !== undefined
+}
+
+/**
+ * The one arbitration between a request's kept inputs, a signer result (submitSignerResult) and a decline (declineRequest, or the declineRequested a pending request carries from an earlier session), run by withResolutionClaim under the request's claim, for a request still pending and uncommitted, before any resolution of it; it considers the inputs that arrived before the resolution (getEarlierInputs). The first to arrive wins: a signer result that arrived first is settled, and the decline only runs if the request is still pending and uncommitted afterwards (its result was refused); a decline that arrived first rejects the request and the signer result is dropped.
+ * A settlement that throws keeps both inputs, in their order, for the request's retry.
+ */
+async function resolveKeptInputs(current: PendingTransactionOrSignableMessage, context: ResolutionContext, before: number): Promise<boolean | undefined> {
 	const claim = getUniqueRequestIdentifierString(current.uniqueRequestIdentifier)
-	// A decline stored on the request that this session did not write came from an earlier session, so it arrived before every input of this session, whatever this session's own decline intents record; one this session wrote keeps its in-memory order.
-	const earlierSessionDecline = declinesPersistedThisSession.has(claim) ? undefined : current.declineRequested
+	const { earlierSessionDecline, signerResult, decline } = getEarlierInputs(current, before)
 	if (earlierSessionDecline !== undefined) {
 		keptSignerResults.delete(claim)
 		return await rejectUnlessStacked(current, earlierSessionDecline, context)
 	}
-	const signerResult = keptSignerResults.get(claim)
-	if (signerResult !== undefined && signerResultPrecedesDecline(claim)) {
+	if (signerResult !== undefined && (decline === undefined || signerResult.arrival < decline.arrival)) {
 		const settled = await context.settleSignerResult(current, signerResult.signerReply, context)
 		keptSignerResults.delete(claim)
-		const decline = declineIntents.get(claim)
 		if (decline === undefined) return settled
 		const stillPending = await getPendingRequest(current.uniqueRequestIdentifier)
 		// A reply the settlement chose, committed or with its commitment write still to retry, wins over the decline.
 		if (stillPending === undefined || chosenUncommittedReplies.has(claim) || await getQueuedTerminalReply(current.uniqueRequestIdentifier) !== undefined) return settled
-		return await rejectUnlessStacked(stillPending, decline, context)
+		return await rejectUnlessStacked(stillPending, decline.reason, context)
 	}
-	keptSignerResults.delete(claim)
-	const decline = declineIntents.get(claim)
-	return decline === undefined ? false : await rejectUnlessStacked(current, decline, context)
+	// The decline arrived first: the signer result is dropped.
+	if (signerResult !== undefined) keptSignerResults.delete(claim)
+	return decline === undefined ? false : await rejectUnlessStacked(current, decline.reason, context)
 }
 
 // A signer's result for a request: kept until the request's claim processes it, so a busy claim or a failed step defers it rather than dropping it. The signer is no user, so its result gives the request no new retry budget, but a deferral it records is not automatic-only: it runs on release whatever the budget.
@@ -291,8 +298,8 @@ const deferredResolutions = new Map<string, DeferredResolution>()
 type WhenClaimed = 'finish-again' | 'nothing' | { readonly decline: DeclineReason }
 // Thrown for a decline whose finishing could not tell whether the request is committed (finishCommittedRequest returned retrying): the finishing's own retry only finishes committed requests, so the decline retries itself.
 const RESOLUTION_RETRYING_ERROR_NAME = 'ResolutionRetrying'
-// afterClaiming runs as soon as the claim is taken, before any lookup that can fail.
-type ClaimOptions = { readonly whenClaimed?: WhenClaimed, readonly retryActionWhenFinishingRetries?: true, readonly afterClaiming?: () => Promise<void> }
+// afterClaiming runs as soon as the claim is taken, before any lookup that can fail. arbitratesEveryInput: the claim is taken to arbitrate the kept inputs themselves (resumeRequest, declineRequest), so every kept input counts; any other claim carries an action, which arrives when it takes the claim, and only inputs that arrived before it count.
+type ClaimOptions = { readonly whenClaimed?: WhenClaimed, readonly retryActionWhenFinishingRetries?: true, readonly afterClaiming?: () => Promise<void>, readonly arbitratesEveryInput?: true }
 export async function withResolutionClaim<Result>(uniqueRequestIdentifier: UniqueRequestIdentifier, context: ResolutionContext, resolve: (pending: PendingTransactionOrSignableMessage) => Promise<Result>, options: ClaimOptions = {}) {
 	const whenClaimed = options.whenClaimed ?? 'nothing'
 	const claim = getUniqueRequestIdentifierString(uniqueRequestIdentifier)
@@ -313,15 +320,17 @@ export async function withResolutionClaim<Result>(uniqueRequestIdentifier: Uniqu
 		return false
 	}
 	resolutionClaims.add(claim)
+	// Taken synchronously with the claim, so an input that arrives while the claim is held is later than the action.
+	const arrival = options.arbitratesEveryInput === true ? Number.POSITIVE_INFINITY : nextInputArrival++
 	try {
 		await options.afterClaiming?.()
 		const outcome = await finishCommittedRequest(uniqueRequestIdentifier, context)
 		switch (outcome.kind) {
 			case 'uncommitted': {
-				// The one gate of every claimed outcome: the inputs the request already has (a kept signer result, a decline intent, a stored decline) arrived before this resolution, so they are arbitrated first, and the resolution runs only for a request they leave pending and uncommitted.
-				if (!hasOutstandingInputs(outcome.request)) return await resolve(outcome.request)
+				// The one gate of every claimed outcome: the inputs that arrived before this resolution (a kept signer result, a decline intent, a stored decline) are arbitrated first, and the resolution runs only for a request they leave pending and uncommitted.
+				if (!hasEarlierInputs(outcome.request, arrival)) return await resolve(outcome.request)
 				try {
-					const arbitrated = await resolveKeptInputs(outcome.request, context)
+					const arbitrated = await resolveKeptInputs(outcome.request, context, arrival)
 					const afterArbitration = await getPendingRequest(uniqueRequestIdentifier)
 					if (afterArbitration === undefined || chosenUncommittedReplies.has(claim) || await getQueuedTerminalReply(uniqueRequestIdentifier) !== undefined) return arbitrated
 					return await resolve(afterArbitration)
@@ -398,6 +407,7 @@ export async function declineRequest(uniqueRequestIdentifier: UniqueRequestIdent
 		const result = await withResolutionClaim(uniqueRequestIdentifier, context, async () => false, {
 			whenClaimed: { decline: reason },
 			retryActionWhenFinishingRetries: true,
+			arbitratesEveryInput: true,
 			// Stored before the commitment is looked up, so it survives any failure after it.
 			afterClaiming: storeIntent,
 		})
