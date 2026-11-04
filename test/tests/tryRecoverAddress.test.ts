@@ -24,6 +24,17 @@ describe('tryRecoverAddress', () => {
 		assert.deepEqual(await tryRecoverAddress({ hash: messageHash, signature }), { type: 'recovered', address: account.address })
 	})
 
+	test('recovers the same signer from the high-s form of a valid signature', async () => {
+		const signature = await account.signMessage({ message: 'hello' })
+		const r = BigInt(signature.slice(0, 66))
+		const s = BigInt(`0x${ signature.slice(66, 130) }`)
+		const yParity = signature.endsWith('1b') ? 0 : 1
+		const highS = secp256k1.CURVE.n - s
+		assert.ok(highS > secp256k1.CURVE.n / 2n)
+		assert.deepEqual(await tryRecoverAddress({ hash: messageHash, signature: toSignatureHex(r, highS, 1 - yParity) }), { type: 'recovered', address: account.address })
+	})
+
+	// Each case covers one unrecoverable input; the point-at-infinity case is classified by the library's error text, so a reworded message makes it fail here.
 	test('reports signatures that recover to no address as unrecoverable', async () => {
 		const validSignature = await account.signMessage({ message: 'hello' })
 		const validR = BigInt(validSignature.slice(0, 66))

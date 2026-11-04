@@ -5,7 +5,7 @@ import { personalEcRecover } from '../../app/ts/background/personalEcRecoverRpc.
 import { getSafeModeRpcPolicyReply } from '../../app/ts/safe/safeRequestPolicy.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import type { IEthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
-import { getSimulatedMessageSignature, simulatePersonalSign } from '../../app/ts/simulation/services/simulationPersonalSigning.js'
+import { getSimulatedMessageSignature, hashPersonalSignMessage, simulatePersonalSign } from '../../app/ts/simulation/services/simulationPersonalSigning.js'
 import { JsonRpcResponse } from '../../app/ts/types/JsonRpc-types.js'
 import type { PersonalSignParams } from '../../app/ts/types/jsonRpc-signing-types.js'
 import type { RpcEntry, RpcNetwork } from '../../app/ts/types/rpc.js'
@@ -148,6 +148,24 @@ describe('personal_ecRecover recovery', () => {
 			getSignatureRecoveringToInfinity(helloMessage),
 		]) {
 			assert.deepEqual(await personalEcRecover(parsePersonalEcRecover([helloMessage, signature]), [], websiteOrigin), invalidSignatureReply, signature)
+		}
+	})
+
+	test('hashes hex and plain text messages exactly as simulated personal_sign signs them', async () => {
+		const socket = { tabId: 1, connectionName: 0n }
+		const messages = [
+			{ message: helloMessage, signedBytes: '0x68656c6c6f' },
+			{ message: 'hello', signedBytes: '0x68656c6c6f' },
+			{ message: '0x00ff4578616d706c65', signedBytes: '0x00ff4578616d706c65' },
+			{ message: '0x123', signedBytes: '0x0123' },
+			{ message: '68656c6c6f', signedBytes: '0x36383635366336633666' },
+		] as const
+		for (const { message, signedBytes } of messages) {
+			const signedMessage = createSignedMessage(simulatedSigner, message, socket)
+			const simulatedSigning = await simulatePersonalSign(signedMessage.originalRequestParameters, simulatedSigner)
+			assert.equal(simulatedSigning.messageHash, hashMessage({ raw: signedBytes }), message)
+			assert.equal(hashPersonalSignMessage(message), simulatedSigning.messageHash, message)
+			assert.deepEqual(await personalEcRecover(parsePersonalEcRecover([message, simulatedSigning.signature]), [signedMessage], websiteOrigin), { type: 'result', method: 'personal_ecRecover', result: simulatedSigner }, message)
 		}
 	})
 
