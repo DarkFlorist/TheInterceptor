@@ -1,7 +1,8 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
-import { activeAddress, addressString, browserMock, created, createSafeAddressBookEntry, createSafeTx, createWebsitePort, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, hexToBytes, isRecord, modules, pendingTransaction, recipientAddress, signedTransaction, simulator, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
-import { fixedServicesOwner } from './backgroundEthAccountsTestHarness.js'
+import { activeAddress, addressString, browserMock, created, createSafeAddressBookEntry, createSafeTx, createWebsitePort, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, hexToBytes, isRecord, modules, pendingTransaction, recipientAddress, signedTransaction, simulator, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
+import { createTestSimulationServicesOwner, fixedServicesOwner } from './backgroundEthAccountsTestHarness.js'
+import { getLatestUnexpectedError } from '../../app/ts/background/storageVariables.js'
 import { METAMASK_ERROR_BLANKET_ERROR } from '../../app/ts/utils/constants.js'
 
 // Like a request snapshot, confirmations read the settings together with the simulation stack built from them, under the network transition lock.
@@ -327,7 +328,12 @@ async function proposeSafeTransactionWhileNetworkSwitchCommits(stack: 'executed-
 			},
 		},
 	}]])
-	const servicesOwner = fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService)
+	// The request is admitted on its own client, which the switch retires when it installs the other chain's services, as the background's owner does.
+	const { resetSimulationServices } = await import('../../app/ts/simulation/serviceLifecycle.js')
+	const ignoreBlockCallback = async () => undefined
+	const admittedEthereum = new modules.EthereumClientService(fakeRequestHandler, ignoreBlockCallback, ignoreBlockCallback, fakeRpcNetwork)
+	const admittedServices = { ethereum: admittedEthereum, tokenPriceService: new modules.TokenPriceService(admittedEthereum, 60_000) }
+	const servicesOwner = createTestSimulationServicesOwner(admittedServices, (network) => resetSimulationServices(servicesOwner.getCurrent(), network, ignoreBlockCallback, ignoreBlockCallback))
 	const requestNetwork = await readNetworkState()
 	const otherChain = { ...fakeRpcNetwork, name: 'Other Test Chain', chainId: requestNetwork.settings.activeRpcNetwork.chainId + 1n, httpsRpc: 'https://other-chain.invalid' }
 	const { changeActiveAddressAndChain } = await import('../../app/ts/background/activeSettings.js')
@@ -340,8 +346,8 @@ async function proposeSafeTransactionWhileNetworkSwitchCommits(stack: 'executed-
 	try {
 		const reply = await modules.openConfirmTransactionDialogForTransaction(
 			servicesOwner,
-			simulator.ethereum,
-			simulator.tokenPriceService,
+			admittedServices.ethereum,
+			admittedServices.tokenPriceService,
 			requestNetwork,
 			{
 				interceptorRequest: true,
@@ -358,10 +364,18 @@ async function proposeSafeTransactionWhileNetworkSwitchCommits(stack: 'executed-
 		)
 		assert.equal(switchCommitted, true)
 		assert.equal((await readNetworkState()).settings.activeRpcNetwork.chainId, otherChain.chainId)
+		// The switch retired the admitted client and installed the other chain's.
+		assert.equal(admittedServices.ethereum.isRetired(), true)
+		const installedServices = servicesOwner.getCurrent()
+		assert.notEqual(installedServices, admittedServices)
+		assert.equal(installedServices.ethereum.isRetired(), false)
+		assert.deepEqual(installedServices.ethereum.getRpcEntry(), otherChain)
+		assert.equal(await getLatestUnexpectedError(), undefined)
 		const pendingProposal = (await modules.getPendingTransactionsAndMessages()).find((pending) => pending.uniqueRequestIdentifier.requestId === uniqueRequestIdentifier.requestId)
 		return { reply, requestNetwork, pendingProposal, proposalNonce }
 	} finally {
 		fakeSafeContract.beforeVersionResponse = undefined
+		servicesOwner.getCurrent().ethereum.cleanup()
 	}
 }
 

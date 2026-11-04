@@ -140,6 +140,13 @@ export function createBrowserMock() {
 			async setBadgeText() { return undefined },
 			async setBadgeBackgroundColor() { return undefined },
 		},
+		// Network and website access changes refresh request blocking; these flows have no blocked requests to check.
+		declarativeNetRequest: {
+			async getDynamicRules() { return [] },
+			async getSessionRules() { return [] },
+			async updateDynamicRules() { return undefined },
+			async updateSessionRules() { return undefined },
+		},
 	}
 	Object.defineProperty(globalThis, 'browser', { value: browser, configurable: true, writable: true })
 	Object.defineProperty(globalThis, 'chrome', { value: { runtime: { id: 'test-extension' } }, configurable: true, writable: true })
