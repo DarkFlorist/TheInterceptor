@@ -1240,6 +1240,17 @@ async function assertSettledOnceWithSuccess(postedMessages: readonly unknown[], 
 	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
 }
 
+// A Gnosis Safe owner signature is stored with its proposal; an ordinary signer's result persists nothing besides its reply.
+async function assertSignerOutcomePersisted(name: string, data: TransactionConfirmationData) {
+	const storedSignatures = (await modules.getSafeTransactionStacks()).flatMap((stack) => stack.transactions.map((transaction) => transaction.signatures))
+	if (name !== 'a Gnosis Safe owner signature') {
+		assert.deepEqual(storedSignatures, [])
+		return
+	}
+	if (data.action !== 'signerIncluded') throw new Error('Expected a signer result')
+	assert.deepEqual(storedSignatures, [[{ signer: safeTestOwnerAddress, signature: data.signerReply }]])
+}
+
 const [addToSafeStackResolution, ...signerResults] = outcomePersistingResolutions
 
 test(`a reject that wins while ${ addToSafeStackResolution.name } waits on its read of the request leaves it without effect`, async () => {
@@ -1336,6 +1347,63 @@ for (const signerResult of signerResults) {
 		}
 		await withSilencedConsole(waitForResolutionRetriesToFinish)
 		await assertSettledOnceWithSuccess(postedMessages, result)
+	})
+
+	for (const decline of ['reject', 'close'] as const) {
+		test(`${ signerResult.name } whose committed-reply lookup fails once wins over a ${ decline } that arrives before the retry`, async () => {
+			const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
+			const { data, result } = await signerResult.prepare()
+			browserMock.setLiveWindowIds([pendingTransaction.popupOrTabId.id])
+			let failNextCommittedReplyLookup = true
+			browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+				if (failNextCommittedReplyLookup && Array.isArray(keys) && keys.includes('pendingTerminalReplies')) {
+					failNextCommittedReplyLookup = false
+					throw new Error('The committed reply could not be read.')
+				}
+				return readStoredItems()
+			})
+			try {
+				assert.equal(await resolveRequest(websiteTabConnections, data), undefined, 'the settlement is retried')
+				if (decline === 'reject') await withSilencedConsole(async () => await rejectRequest(websiteTabConnections))
+				else await withSilencedConsole(async () => await modules.onCloseWindowOrTab(pendingTransaction.popupOrTabId, simulator.ethereum, simulator.tokenPriceService, websiteTabConnections))
+				await withSilencedConsole(waitForResolutionRetriesToFinish)
+			} finally {
+				browserMock.setStorageGetHandler(undefined)
+			}
+			await assertSettledOnceWithSuccess(postedMessages, result)
+			await assertSignerOutcomePersisted(signerResult.name, data)
+		})
+	}
+
+	test(`${ signerResult.name } whose settlement throws wins over a later decline on the request's retry`, async () => {
+		const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
+		const { data, result } = await signerResult.prepare()
+		if (data.action !== 'signerIncluded') throw new Error('Expected a signer result')
+		const { declinePendingRequests, submitSignerResult } = await import('../../app/ts/background/requestResolution.js')
+		// The first two settlements throw: the signer result's own, and the one the decline arbitrates; the request's retry settles it.
+		let failedSettlements = 0
+		const realContext = testResolutionContext(websiteTabConnections)
+		const failingContext = {
+			...realContext,
+			settleSignerResult: async (...settlement: Parameters<typeof realContext.settleSignerResult>) => {
+				if (failedSettlements < 2) {
+					failedSettlements += 1
+					throw new Error('The signer result could not be settled.')
+				}
+				return await realContext.settleSignerResult(...settlement)
+			},
+		}
+		await withSilencedConsole(async () => {
+			assert.equal(await submitSignerResult(uniqueRequestIdentifier, data.signerReply, failingContext), undefined)
+			const [pending] = await modules.getPendingTransactionsAndMessages()
+			if (pending === undefined) throw new Error('Missing pending request')
+			await declinePendingRequests([pending], failingContext)
+			assert.equal(failedSettlements, 2, 'the decline arbitrated the earlier signer result first')
+			assert.deepEqual(getRepliesToWebsite(postedMessages), [], 'nothing was answered yet')
+			await waitForResolutionRetriesToFinish()
+		})
+		await assertSettledOnceWithSuccess(postedMessages, result)
+		await assertSignerOutcomePersisted(signerResult.name, data)
 	})
 
 	test(`${ signerResult.name } whose committed-reply lookup fails once is kept and settled by the request's retry`, async () => {
