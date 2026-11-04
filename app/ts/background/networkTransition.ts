@@ -5,7 +5,6 @@ import { getRpcNetworkChange, isSignerOnlyNetwork } from '../utils/rpcNetworkCha
 import type { RpcNetwork } from '../types/rpc.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
-import { Semaphore } from '../utils/semaphore.js'
 import { sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts } from './accessManagement.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
@@ -14,12 +13,13 @@ import { changeSimulationMode, getSettings, importSettingsAndAddressBook } from 
 import type { Settings } from '../types/interceptor-messages.js'
 import type { ExportedSettings } from '../types/exportedSettingsTypes.js'
 import { getPrimaryRpcForChain, updateInterceptorTransactionStack, updateTransactionState } from './storageVariables.js'
-import { buildSimulationSnapshot, captureSimulationSnapshot, type NetworkSnapshot, type NetworkState, readSimulationInputSources, type SimulationSnapshot } from './simulationUpdating.js'
+import { buildSimulationSnapshot, captureSimulationSnapshot, type NetworkSnapshot, readSimulationInputSources, type SimulationSnapshot } from './simulationUpdating.js'
+import { captureNetworkState, completeUnfinishedNetworkChange, recordUnfinishedNetworkChange, runNetworkTransition } from './networkTransitionLock.js'
 import { assertNever } from '../utils/typescript.js'
 import type { InterceptorStackOperation } from '../types/visualizer-types.js'
 import { activeStackContextsEqual, getActiveStackContext, operationBelongsToActiveStackContext, SIMULATION_STACK_CONTEXT } from '../utils/activeStackContext.js'
 
-// The lock that every writer of the active network or of the installed services runs in, the effects a committed network change still owes, and the network snapshots that requests read under the same lock. activeSettings.ts builds address and chain changes on top of it.
+// The effects a committed network change owes, run under the lock of networkTransitionLock.ts, and the network snapshots that requests read under the same lock. activeSettings.ts builds address and chain changes on top of it.
 
 async function clearSimulationStackContext() {
 	await updateTransactionState((previousState) => ({
@@ -30,8 +30,6 @@ async function clearSimulationStackContext() {
 	}))
 }
 
-const networkTransitionSemaphore = new Semaphore(1)
-
 type NetworkChangeEffect = 'retireSnapshotsOfReplacedNetwork' | 'installServices' | 'clearStackForChangedChain' | 'notifyWebsitesOfChainChange' | 'notifyPopupsOfChainChange'
 const NETWORK_CHANGE_EFFECTS = ['retireSnapshotsOfReplacedNetwork', 'installServices', 'clearStackForChangedChain', 'notifyWebsitesOfChainChange', 'notifyPopupsOfChainChange'] as const
 
@@ -41,9 +39,6 @@ type CommittedNetworkChange = {
 	readonly settingsBeforeTransition: Settings
 	readonly completedEffects: Set<NetworkChangeEffect>
 }
-
-// Effects that a failed transition could not complete. They belong to the lock rather than to a call chain: the failed transition has already thrown to its caller, so the next lock holder, a read included, completes them before it acts on the committed network. They live in memory only, so after a background restart services are rebuilt from the settings and websites receive the chain when they reconnect, but a stack left from the previous chain is not cleared.
-let unfinishedNetworkChange: CommittedNetworkChange | undefined
 
 // Every effect is idempotent or recorded once it succeeds: installation compares with the installed client, clearing the active stack context twice is harmless, the snapshot generation advances and websites are notified once per committed change. Popup notifications are best-effort.
 async function runNetworkChangeEffect(change: CommittedNetworkChange, effect: NetworkChangeEffect, updatedSettings: Settings) {
@@ -78,26 +73,10 @@ async function runNetworkChangeEffect(change: CommittedNetworkChange, effect: Ne
 	change.completedEffects.add(effect)
 }
 
-// Retries the unfinished effects in commit order against the committed settings, so websites hear of the chain only once its state is complete. While one still fails, the rest stay recorded and this throws, so no lock holder proceeds on a network whose effects are incomplete.
-async function completeUnfinishedNetworkChange() {
-	const change = unfinishedNetworkChange
-	if (change === undefined) return
+// Retries the effects that have not succeeded in commit order against the committed settings, so websites hear of the chain only once its state is complete. While one still fails, the completed ones stay recorded in the change and this throws.
+async function completeNetworkChangeEffects(change: CommittedNetworkChange) {
 	const committedSettings = await getSettings()
 	for (const effect of NETWORK_CHANGE_EFFECTS) await runNetworkChangeEffect(change, effect, committedSettings)
-	unfinishedNetworkChange = undefined
-}
-
-// Every writer of the active network or of the installed services runs inside this lock, after the effects of an earlier failed transition are completed. It is not reentrant, so the task must not start another transition or read a network snapshot.
-export async function runNetworkTransition<T>(task: () => Promise<T>): Promise<T> {
-	return await networkTransitionSemaphore.execute(async () => {
-		await completeUnfinishedNetworkChange()
-		return await task()
-	})
-}
-
-async function captureNetworkState(): Promise<NetworkState> {
-	const settings = await getSettings()
-	return { settings, simulation: await captureSimulationSnapshot(settings) }
 }
 
 // Reading these under the transition lock keeps a request from pairing one network's settings, stack or services with another network's; it reads storage only, so RPC work stays outside the lock. Like every lock holder, a read first finishes the effects of a committed network change whose transition failed part-way, such as dropping the previous chain's stack, and rejects with that failure rather than return a snapshot that mixes two networks.
@@ -108,11 +87,6 @@ export async function readNetworkSnapshot(simulationServicesOwner: Pick<Simulati
 // The committed network change generation once any transition in progress has finished, so settings read before this call belong to the returned generation or an earlier one.
 export async function readCommittedNetworkChangeGeneration() {
 	return await runNetworkTransition(async () => getCommittedNetworkChangeGeneration())
-}
-
-// The settings and stack as they are now, for work that changed the stack after its snapshot was read.
-export async function readNetworkState() {
-	return await runNetworkTransition(captureNetworkState)
 }
 
 const isSameStackOperation = (stacked: InterceptorStackOperation, operation: InterceptorStackOperation) => {
@@ -193,7 +167,7 @@ export async function runSettingsTransition(simulationServicesOwner: SimulationS
 			}
 			return await publishCommittedSettingsChange(change, committedSettings)
 		} catch (error) {
-			unfinishedNetworkChange = change
+			recordUnfinishedNetworkChange(async () => await completeNetworkChangeEffects(change))
 			try {
 				await completeUnfinishedNetworkChange()
 			} catch (repairError: unknown) {

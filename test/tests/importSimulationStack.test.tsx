@@ -80,6 +80,7 @@ async function loadModules() {
 		...await import('../../app/ts/background/popupMessageHandlers.js'),
 		...await import('../../app/ts/background/activeSettings.js'),
 		...await import('../../app/ts/background/networkTransition.js'),
+		...await import('../../app/ts/background/networkTransitionLock.js'),
 		...await import('../../app/ts/components/pages/ImportSimulationStack.js'),
 	}
 }

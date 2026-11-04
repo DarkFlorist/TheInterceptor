@@ -15,7 +15,7 @@ import { retainPreviousVisualisation } from '../utils/popupVisualisationLifecycl
 import { visualizeSimulatorState } from './simulationUpdating.js'
 import { getPopupVisualisationState, setPopupVisualisationState, setPopupVisualisationStateIfCurrent } from './storageVariables.js'
 import { getCommittedNetworkChangeGeneration } from './networkChangeGeneration.js'
-import { readNetworkState } from './networkTransition.js'
+import { readNetworkState } from './networkTransitionLock.js'
 
 let abortController = new AbortController()
 

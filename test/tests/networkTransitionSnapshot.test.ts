@@ -1833,7 +1833,7 @@ describe('network transition snapshot', () => {
 		installBrowserMock()
 		const modules = await loadModules()
 		const { continuesStackContext } = await import('../../app/ts/background/windows/confirmTransaction.js')
-		const { readNetworkState } = await import('../../app/ts/background/networkTransition.js')
+		const { readNetworkState } = await import('../../app/ts/background/networkTransitionLock.js')
 		await modules.changeSimulationMode({ simulationMode: true, rpcNetwork: networkA })
 		const { owner, retireAll } = createRecordingServicesOwner(networkA)
 		try {

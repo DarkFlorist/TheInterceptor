@@ -177,7 +177,7 @@ export type NetworkState = {
 // A NetworkState together with the services that were installed when it was read.
 export type NetworkSnapshot = NetworkState & { readonly services: SimulationServices }
 
-// Capture selection and input at the storage boundary. An unreadable stack must abort before publishing any fallback. Call it under the network transition lock (networkTransition.ts reads snapshots that way), so its generation, settings and stack describe one network.
+// Capture selection and input at the storage boundary. An unreadable stack must abort before publishing any fallback. Call it under the network transition lock (networkTransition.ts and networkTransitionLock.ts read snapshots that way), so its generation, settings and stack describe one network.
 export async function captureSimulationSnapshot(settingsSnapshot?: Settings): Promise<SimulationSnapshot> {
 	const settings = settingsSnapshot ?? await getSettings()
 	const sources = await readSimulationInputSources(settings)
