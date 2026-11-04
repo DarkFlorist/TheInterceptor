@@ -257,7 +257,7 @@ function buildStalePopupVisualisationState(
 	}
 }
 
-function createFakeEthereum(rpcNetwork: TestModules['defaultRpcs'][number]) {
+function createFakeEthereum(rpcNetwork: RpcNetwork) {
 	let blockPolling = false
 	return {
 		isBlockPolling() {
@@ -391,6 +391,8 @@ function createResetTestTransaction(transactionIdentifier: bigint, requiredChain
 const stalePopupVisualisation = buildStalePopupVisualisationState(rpcNetwork, DEFAULT_BLOCK_MANIPULATION)
 const fakeEthereum = createFakeEthereum(rpcNetwork) as never as Parameters<typeof updatePopupVisualisationIfNeeded>[0]
 const fakeTokenPriceService = {} as never as Parameters<typeof updatePopupVisualisationIfNeeded>[1]
+// Selecting another endpoint installs services for it, which refresh the visualisation for that network.
+const otherChainFakeEthereum = createFakeEthereum(otherChainRpcNetwork) as never as Parameters<typeof updatePopupVisualisationIfNeeded>[0]
 
 describe('popup clear reset', () => {
 	for (const captured of [false, true]) test(`signer-only snapshots publish passthrough without reading the previous provider (captured=${ captured })`, async () => {
@@ -707,7 +709,7 @@ describe('popup clear reset', () => {
 		const resets: RpcNetwork[] = []
 		const simulationServicesOwner = createTestSimulationServicesOwner({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService }, (nextRpcEntry: RpcNetwork) => {
 			resets.push(nextRpcEntry)
-			return { ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService }
+			return { ethereum: otherChainFakeEthereum, tokenPriceService: fakeTokenPriceService }
 		})
 		await browserStorageLocalSet({
 			independentActiveSimulationAddress: activeAddress,

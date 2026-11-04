@@ -13,8 +13,14 @@ import { getPopupVisualisationFingerprint } from './popupSimulationFingerprint.j
 import { retainPreviousVisualisation } from '../utils/popupVisualisationLifecycle.js'
 import { visualizeSimulatorState } from './simulationUpdating.js'
 import { getPopupVisualisationState, setPopupVisualisationState } from './storageVariables.js'
+import { getSettings } from './settings.js'
+import type { RpcNetwork } from '../types/rpc.js'
+import { getRpcNetworkChange, isSignerOnlyNetwork } from '../utils/rpcNetworkChange.js'
 
 let abortController = new AbortController()
+
+// Selecting another endpoint installs new services and queues their own refresh (activeSettings.ts), so services for another endpoint must leave that network to it. Signer-only networks render passthrough without using the services.
+const servicesServeNetwork = (ethereum: EthereumClientService, network: RpcNetwork) => isSignerOnlyNetwork(network) || !getRpcNetworkChange(ethereum.getRpcEntry(), network).endpointChanged
 
 function buildPassthroughVisualizedState(
 	simulationId: number,
@@ -85,6 +91,9 @@ export const updatePopupVisualisationIfNeeded = async (ethereum: EthereumClientS
 			)
 			if (currentFingerprint === cachedFingerprint && (checkedSnapshot.numberOfAddressesMadeRich === popupVisualisation.numberOfAddressesMadeRich)) return popupVisualisation
 		}
+		// Checked with no await before the abort: once another endpoint is selected, this refresh must not cancel or invalidate the refresh its services were replaced for.
+		const selectedNetwork = snapshot?.activeRpcNetwork ?? (await getSettings()).activeRpcNetwork
+		if (!servicesServeNetwork(ethereum, selectedNetwork)) return await getPopupVisualisationState()
 		abortController.abort(NEW_BLOCK_ABORT)
 		abortController = new AbortController()
 		const thisAbortController = abortController
@@ -140,6 +149,8 @@ export async function updatePopupVisualisationState(ethereum: EthereumClientServ
 			const popupVisualisation = await getPopupVisualisationState()
 			const simulationId = popupVisualisation.simulationId + 1
 			const capturedSnapshot = snapshot ?? await captureSimulationSnapshot()
+			// Another endpoint was selected after this refresh committed; its services' own refresh publishes it.
+			if (!servicesServeNetwork(ethereum, capturedSnapshot.activeRpcNetwork)) return
 			const simulationState = await getUpdatedSimulationState(ethereum, capturedSnapshot)
 			const doneState = { simulationUpdatingState: 'done' as const, simulationResultState: 'done' as const, simulationId }
 			const numberOfAddressesMadeRich = capturedSnapshot.numberOfAddressesMadeRich
