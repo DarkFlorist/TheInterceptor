@@ -1,8 +1,7 @@
 import type { PersonalSignParams, SignMessageParams } from '../../types/jsonRpc-signing-types.js'
 import type { SignedMessageTransaction } from '../../types/visualizer-types.js'
 import type { EthereumAddress } from '../../types/wire-types.js'
-import { bytes32String } from '../../utils/bigint.js'
-import { hexOrUtf8StringToBytes } from '../../utils/ethereumBytes.js'
+import { bytes32String, stringToUint8Array } from '../../utils/bigint.js'
 import { hashMessage, hashTypedData, privateKeyToAccount } from '../../utils/ethereumPrimitives.js'
 import { assertNever } from '../../utils/typescript.js'
 
@@ -10,12 +9,10 @@ const MOCK_PUBLIC_PRIVATE_KEY = 0x1n
 const MOCK_SIMULATION_PRIVATE_KEY = 0x2n
 const ADDRESS_FOR_PRIVATE_KEY_ONE = 0x7E5F4552091A69125d5DfCb7b8C2659029395Bdfn
 
-// Simulated personal_sign signs, and personal_ecRecover hashes, the bytes this same decoding yields, so a simulated signature is found again by its message hash.
-const getPersonalSignMessageBytes = (message: string) => hexOrUtf8StringToBytes(message)
+// The bytes simulated personal_sign signs. Both the simulated signature and its message hash come from these bytes, so the hash always describes exactly what was signed.
+const getSimulatedPersonalSignBytes = (params: PersonalSignParams) => stringToUint8Array(params.params[0])
 
-export const hashPersonalSignMessage = (message: string) => hashMessage({ raw: getPersonalSignMessageBytes(message) })
-
-export const getMessageHashForPersonalSign = (params: PersonalSignParams) => hashPersonalSignMessage(params.params[0])
+export const getMessageHashForPersonalSign = (params: PersonalSignParams) => hashMessage({ raw: getSimulatedPersonalSignBytes(params) })
 
 export const simulatePersonalSign = async (params: SignMessageParams, signingAddress: EthereumAddress) => {
 	const account = privateKeyToAccount(bytes32String(signingAddress === ADDRESS_FOR_PRIVATE_KEY_ONE ? MOCK_PUBLIC_PRIVATE_KEY : MOCK_SIMULATION_PRIVATE_KEY))
@@ -30,7 +27,7 @@ export const simulatePersonalSign = async (params: SignMessageParams, signingAdd
 			return { signature, messageHash }
 		}
 		case 'personal_sign': return {
-			signature: await account.signMessage({ message: { raw: getPersonalSignMessageBytes(params.params[0]) } }),
+			signature: await account.signMessage({ message: { raw: getSimulatedPersonalSignBytes(params) } }),
 			messageHash: getMessageHashForPersonalSign(params)
 		}
 		default: assertNever(params)

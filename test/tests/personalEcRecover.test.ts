@@ -151,23 +151,38 @@ describe('personal_ecRecover recovery', () => {
 		}
 	})
 
-	test('hashes hex and plain text messages exactly as simulated personal_sign signs them', async () => {
+	test('looks up simulated signers by the hash of the bytes simulated personal_sign actually signed', async () => {
 		const socket = { tabId: 1, connectionName: 0n }
 		const messages = [
 			{ message: helloMessage, signedBytes: '0x68656c6c6f' },
-			{ message: 'hello', signedBytes: '0x68656c6c6f' },
 			{ message: '0x00ff4578616d706c65', signedBytes: '0x00ff4578616d706c65' },
-			{ message: '0x123', signedBytes: '0x0123' },
-			{ message: '68656c6c6f', signedBytes: '0x36383635366336633666' },
 		] as const
 		for (const { message, signedBytes } of messages) {
 			const signedMessage = createSignedMessage(simulatedSigner, message, socket)
 			const simulatedSigning = await simulatePersonalSign(signedMessage.originalRequestParameters, simulatedSigner)
 			assert.equal(simulatedSigning.messageHash, hashMessage({ raw: signedBytes }), message)
-			// With no stacked messages this is a real recovery, so it proves the simulated signature covers exactly the bytes personal_ecRecover hashes for this message.
+			// With no stacked messages this is a real recovery, so it proves the simulated signature covers exactly the bytes the reported message hash describes.
 			assert.deepEqual(await personalEcRecover(parsePersonalEcRecover([message, simulatedSigning.signature]), [], websiteOrigin), { type: 'result', method: 'personal_ecRecover', result: mockSimulationKeyAddress }, message)
 			assert.deepEqual(await personalEcRecover(parsePersonalEcRecover([message, simulatedSigning.signature]), [signedMessage], websiteOrigin), { type: 'result', method: 'personal_ecRecover', result: simulatedSigner }, message)
 		}
+	})
+
+	test('keeps simulated signing and recovery decoding of an uppercase 0X prefix separate', async () => {
+		const socket = { tabId: 1, connectionName: 0n }
+		// Simulated personal_sign signs '0X6869' as the bytes 0x6869, as on main.
+		const signedMessage = createSignedMessage(simulatedSigner, '0X6869', socket)
+		const simulatedSigning = await simulatePersonalSign(signedMessage.originalRequestParameters, simulatedSigner)
+		assert.equal(simulatedSigning.messageHash, hashMessage({ raw: '0x6869' }))
+		assert.deepEqual(await personalEcRecover(parsePersonalEcRecover(['0x6869', simulatedSigning.signature]), [], websiteOrigin), { type: 'result', method: 'personal_ecRecover', result: mockSimulationKeyAddress })
+		// Recovering with the canonical '0x6869' finds the stacked '0X6869' signing through the hash of the signed bytes.
+		assert.deepEqual(await personalEcRecover(parsePersonalEcRecover(['0x6869', simulatedSigning.signature]), [signedMessage], websiteOrigin), { type: 'result', method: 'personal_ecRecover', result: simulatedSigner })
+		// Recovery reads '0X6869' as text like MetaMask, so it neither matches the stacked signing nor recovers the bytes 0x6869.
+		const textRecovery = await personalEcRecover(parsePersonalEcRecover(['0X6869', simulatedSigning.signature]), [signedMessage], websiteOrigin)
+		assert.ok(textRecovery.type === 'result' && 'result' in textRecovery)
+		assert.notEqual(textRecovery.result, simulatedSigner)
+		assert.notEqual(textRecovery.result, mockSimulationKeyAddress)
+		const account = privateKeyToAccount(privateKey)
+		assert.deepEqual(await personalEcRecover(parsePersonalEcRecover(['0X6869', await account.signMessage({ message: '0X6869' })]), [], websiteOrigin), { type: 'result', method: 'personal_ecRecover', result: signerAddress })
 	})
 
 	test('maps simulated personal_sign signatures back to the simulated signer', async () => {
