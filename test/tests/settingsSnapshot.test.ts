@@ -69,8 +69,8 @@ Object.defineProperty(globalThis, 'browser', {
 	},
 })
 
-const { captureRpcNetwork, getSettingsSnapshot, settingsForPublication } = await import('../../app/ts/background/settings.js')
-const rereadSettingsForPublication = async (settings: Awaited<ReturnType<typeof getRequiredSettings>>) => settingsForPublication(await getSettingsSnapshot({ pinnedRpcNetwork: captureRpcNetwork(settings) }), settings)
+const { captureRpcNetwork, getAdmittedRpcNetworkSnapshot, settingsForPublication } = await import('../../app/ts/background/settings.js')
+const rereadSettingsForPublication = async (settings: Awaited<ReturnType<typeof getRequiredSettings>>) => settingsForPublication(await getAdmittedRpcNetworkSnapshot(captureRpcNetwork(settings)), settings)
 
 test('a required settings read is one atomic browser storage snapshot', async () => {
 	storageReadCount = 0
@@ -90,7 +90,7 @@ test('a required settings read is one atomic browser storage snapshot', async ()
 	assert.deepEqual(Settings.parse(serializedSettings), settings)
 })
 
-test('a pinned snapshot published through settingsForPublication keeps the given RPC network and drops approvals when storage is unreadable', async () => {
+test('an admitted RPC network snapshot published through settingsForPublication keeps the given RPC network and drops approvals when storage is unreadable', async () => {
 	storageReadCount = 0
 	storageReadError = undefined
 	const settings = { ...await getRequiredSettings(), websiteAccess: [{ website: { websiteOrigin: 'approved.example', icon: undefined, title: undefined }, access: true }] }

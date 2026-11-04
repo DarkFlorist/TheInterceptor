@@ -8,7 +8,7 @@ import { handleInterceptedRequest, refuseAccess } from '../background.js'
 import { activateAddressSelection } from '../activeSettings.js'
 import { INTERNAL_CHANNEL_NAME, createInternalMessageListener, getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
 import { getActiveAddressEntryForChain, getActiveAddresses, getWalletActiveAddressEntryForChain } from '../metadataUtils.js'
-import { captureRpcNetwork, getSettingsSnapshot, settingsIfAvailable, requireAvailableSettings, settingsOnAdmittedRpcNetwork } from '../settings.js'
+import { captureRpcNetwork, getAdmittedRpcNetworkSnapshot, getSettingsSnapshot, settingsIfAvailable, requireAvailableSettings, settingsOnAdmittedRpcNetwork } from '../settings.js'
 import { getTabState, updatePendingAccessRequests, getPendingAccessRequests, clearPendingAccessRequests } from '../storageVariables.js'
 import { doesUniqueRequestIdentifiersMatch, type InterceptedRequest, type WebsiteSocket } from '../../utils/requests.js'
 import { replyToInterceptedRequest, sendSubscriptionReplyOrCallBackToPort } from '../messageSending.js'
@@ -354,7 +354,7 @@ export async function requestAccessFromUser(
 
 		const previousPendingRequests = await verifyPendingRequests()
 		const justAddToPending = previousPendingRequests.length !== 0
-		const currentSettings = settingsOnAdmittedRpcNetwork(await getSettingsSnapshot({ pinnedRpcNetwork: captureRpcNetwork(settings) }))
+		const currentSettings = settingsOnAdmittedRpcNetwork(await getAdmittedRpcNetworkSnapshot(captureRpcNetwork(settings)))
 		if (currentSettings === undefined) {
 			replyRpcConfigurationUnavailable()
 			return undefined
@@ -417,7 +417,7 @@ export async function requestAccessFromUser(
 
 		let websiteAccessUnreadable = false
 		const pendingRequests = await updatePendingAccessRequests(async (previousPendingAccessRequests) => {
-			const latestSettings = settingsOnAdmittedRpcNetwork(await getSettingsSnapshot({ pinnedRpcNetwork: captureRpcNetwork(settings) }))
+			const latestSettings = settingsOnAdmittedRpcNetwork(await getAdmittedRpcNetworkSnapshot(captureRpcNetwork(settings)))
 			websiteAccessUnreadable = latestSettings === undefined
 			// check that it doesn't have access already
 			if (latestSettings === undefined || verifyAccessForCurrentRequest(latestSettings) !== 'askAccess') return previousPendingAccessRequests

@@ -2,7 +2,7 @@ import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulat
 import { getConfirmationWindowRequests } from '../utils/confirmationQueue.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { captureSimulationSnapshot, getUpdatedSimulationStackSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
-import { getSettingsSnapshot, setUseTabsInsteadOfPopup, setPage, getMakeCurrentAddressRich, setMetamaskCompatibilityMode, setSafeAppsCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, updateMakeCurrentAddressRich, updateFixedMakeMeRichList, requireAvailableSettings, requireReadableApprovals, getWebsiteApprovalsSnapshot, settingsForPublication, captureRpcNetwork } from './settings.js'
+import { getAdmittedRpcNetworkSnapshot, getSettingsSnapshot, setUseTabsInsteadOfPopup, setPage, getMakeCurrentAddressRich, setMetamaskCompatibilityMode, setSafeAppsCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, updateMakeCurrentAddressRich, updateFixedMakeMeRichList, requireAvailableSettings, requireReadableApprovals, getWebsiteApprovalsSnapshot, settingsForPublication, captureRpcNetwork } from './settings.js'
 import { getPendingTransactionsAndMessages, getTabState, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests, updateTransactionState, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, getSafeTransactionStacks } from './storageVariables.js'
 import { getRpcList, selectPrimaryRpc } from './rpcConfigurationStorage.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
@@ -1209,7 +1209,7 @@ async function buildHomePageUpdate(
 	let tabState = await tabStatePromise
 	tabState = await refreshSignerAccountsForTabIfNeeded(websiteTabConnections, tabId, tabState, shouldRefreshSignerAccounts)
 	// Signer refresh may update address selection. Reload those fields without switching away from the admitted provider's network.
-	if (shouldRefreshSignerAccounts) settings = settingsForPublication(await getSettingsSnapshot({ pinnedRpcNetwork: captureRpcNetwork(settings) }), settings)
+	if (shouldRefreshSignerAccounts) settings = settingsForPublication(await getAdmittedRpcNetworkSnapshot(captureRpcNetwork(settings)), settings)
 	const activeSigningAddress = tabId === undefined ? undefined : (await getActiveAddressForCurrentPopupSignerState(settings, websiteTabConnections, tabId))?.address
 	const walletSelectedAddressBookEntry = await getWalletSelectedAddressBookEntry(tabState, settings.activeRpcNetwork.chainId)
 	const interceptorDisabled = isInterceptorDisabledForWebsite(settings, tabState.website?.websiteOrigin)

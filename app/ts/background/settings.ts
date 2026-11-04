@@ -159,22 +159,28 @@ export type AdmittedRpcNetworkSnapshot =
 
 const getStorageReadError = (rpcConfiguration: RpcConfigurationState) => rpcConfiguration.status === 'unavailable' && rpcConfiguration.reason === 'read-failed' ? { error: 'error' in rpcConfiguration ? rpcConfiguration.error : undefined } : undefined
 
-// The single settings read. Without options it returns the persisted settings; with `pinnedRpcNetwork` it returns the persisted fields beside that admitted network (whatever the stored RPC configuration says), unreadable only when storage cannot be read.
-export async function getSettingsSnapshot(): Promise<SettingsSnapshot>
-export async function getSettingsSnapshot(options: { readonly pinnedRpcNetwork: CapturedRpcNetwork }): Promise<AdmittedRpcNetworkSnapshot>
-export async function getSettingsSnapshot(options?: { readonly pinnedRpcNetwork: CapturedRpcNetwork }): Promise<SettingsSnapshot | AdmittedRpcNetworkSnapshot> {
+// The one storage read both settings reads share, so they always agree on what was stored and whether storage could be read.
+async function readSettingsStorage() {
 	const { storedItems, rpcConfiguration } = await getRpcConfigurationStateWithStorageSnapshot(SETTINGS_STORAGE_KEYS)
-	const storageReadError = getStorageReadError(rpcConfiguration)
-	if (options !== undefined) {
-		if (storageReadError !== undefined) return { status: 'unreadable', error: storageReadError.error }
-		return { status: 'available', storedFields: await getSettingsFieldsFromStorageItems(storedItems), admittedRpcNetwork: options.pinnedRpcNetwork }
-	}
+	return { storedItems, rpcConfiguration, storageReadError: getStorageReadError(rpcConfiguration) }
+}
+
+// The persisted settings, available only while the stored RPC configuration has an active RPC network.
+export async function getSettingsSnapshot(): Promise<SettingsSnapshot> {
+	const { storedItems, rpcConfiguration, storageReadError } = await readSettingsStorage()
 	const activeRpcNetwork = 'activeRpcNetwork' in rpcConfiguration ? rpcConfiguration.activeRpcNetwork : undefined
 	if (activeRpcNetwork !== undefined) return { status: 'available', settings: await getSettingsFromStorageItems(storedItems, activeRpcNetwork), rpcConfiguration }
 	const websiteApprovals: WebsiteApprovalsSnapshot = storageReadError === undefined
 		? { status: 'readable', websiteAccess: await getWebsiteAccessFromStorageItems(storedItems) }
 		: { status: 'unreadable', error: storageReadError.error }
 	return { status: 'unavailable', rpcConfiguration, websiteApprovals }
+}
+
+// The re-read for an admitted operation: the persisted settings fields beside the operation's own admitted network, whatever the stored RPC configuration says; unreadable only when storage cannot be read. Project it with settingsOnAdmittedRpcNetwork or settingsForPublication.
+export async function getAdmittedRpcNetworkSnapshot(admittedRpcNetwork: CapturedRpcNetwork): Promise<AdmittedRpcNetworkSnapshot> {
+	const { storedItems, storageReadError } = await readSettingsStorage()
+	if (storageReadError !== undefined) return { status: 'unreadable', error: storageReadError.error }
+	return { status: 'available', storedFields: await getSettingsFieldsFromStorageItems(storedItems), admittedRpcNetwork }
 }
 
 // The approvals-only read, for paths that must not wait on the RPC configuration lock. `repairCorrupt` writes no approvals over a corrupt value (a failed write is unreadable); without it a corrupt value reads as no approvals and nothing is written.
