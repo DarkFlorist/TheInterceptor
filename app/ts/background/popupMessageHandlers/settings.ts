@@ -5,14 +5,14 @@ import { serialize } from '../../types/wire-types.js'
 import { isJSON } from '../../utils/json.js'
 import { Semaphore } from '../../utils/semaphore.js'
 import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
-import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettingsSnapshot, getUseTabsInsteadOfPopup, importSettingsAndAddressBook, settingsIfAvailable, requireAvailableSettings, type SettingsSnapshot } from '../settings.js'
+import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettingsSnapshot, getUseTabsInsteadOfPopup, importSettingsAndAddressBook, settingsIfAvailable, type SettingsSnapshot } from '../settings.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { DEFAULT_RPCS } from '../../config/defaults.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { retryRpcConfigurationServices, transitionRpcList } from '../rpcConfigurationLifecycle.js'
 import { rpcConfigurationIsReady, rpcConfigurationIsUsable } from '../rpcConfigurationAvailability.js'
 
-type PublishRpcConfigurationRecovery = (simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, previousSettings: Settings, activeRpcNetwork: Settings['activeRpcNetwork'], forceChainChanged?: boolean) => Promise<void>
+type PublishRpcConfigurationRecovery = (simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, previousSettings: Settings | undefined, activeRpcNetwork: Settings['activeRpcNetwork'], forceChainChanged?: boolean) => Promise<void>
 
 type SettingsRpcStatus = {
 	readonly rpcConfigurationAvailable: boolean
@@ -107,7 +107,7 @@ export async function restoreDefaultRpcConfiguration(simulationServicesOwner: Si
 		await publishCurrentRpcStatus(simulationServicesOwner)
 	} finally {
 		// The transition is committed, so its recovery is published even if its RPC status could not be.
-		if (transition.publishRecovery) await publishRecovery(simulationServicesOwner, websiteTabConnections, settings ?? requireAvailableSettings(await getSettingsSnapshot()), transition.activeRpcNetwork, transition.forceChainChanged)
+		if (transition.publishRecovery) await publishRecovery(simulationServicesOwner, websiteTabConnections, settings, transition.activeRpcNetwork, transition.forceChainChanged)
 	}
 }
 

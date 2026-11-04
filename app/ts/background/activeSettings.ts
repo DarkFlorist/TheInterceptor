@@ -7,10 +7,10 @@ import type { RpcNetwork } from '../types/rpc.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { Semaphore } from '../utils/semaphore.js'
 import type { WebsiteAccessUpdate } from './accessManagement.js'
-import { reconcileWebsiteApprovalAccesses, finishWebsiteAccessUpdate, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts } from './accessManagement.js'
+import { reconcileAfterIndependentSteps, reconcileCommittedAccessChange, reconcileWebsiteApprovalAccesses, finishWebsiteAccessUpdate, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts } from './accessManagement.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
-import { changeSimulationMode, getSettingsAfterStorageUpdates, getSettingsSnapshot, getAdmittedRpcNetworkSnapshot, setUseSignersAddressAsActiveAddress, type SimulationModeChanges, trackPreviousActiveAddressForMakeMeRichList, requireAvailableSettings, settingsForPublication, captureRpcNetwork, settingsIfAvailable } from './settings.js'
+import { changeSimulationMode, getSettingsAfterStorageUpdates, getSettingsSnapshot, getAdmittedRpcNetworkSnapshot, setUseSignersAddressAsActiveAddress, type SimulationModeChanges, trackPreviousActiveAddressForMakeMeRichList, requireAvailableSettings, settingsForPublication, settingsWithoutApprovals, captureRpcNetwork, settingsIfAvailable } from './settings.js'
 import { updateTransactionState } from './storageVariables.js'
 import type { RpcConfigurationState } from './rpcConfigurationStorage.js'
 import type { Settings } from '../types/interceptor-messages.js'
@@ -128,25 +128,24 @@ function getSimulationModeChanges(change: ActiveAddressAndChainChange): Simulati
 export async function publishRpcConfigurationRecovery(
 	simulationServicesOwner: SimulationServicesOwner,
 	websiteTabConnections: WebsiteTabConnections,
-	previousSettings: Settings,
+	previousSettings: Settings | undefined,
 	activeRpcNetwork: RpcNetwork,
 	forceChainChanged = false,
 ) {
 	let accessUpdate: WebsiteAccessUpdate | undefined
 	try {
-		// Read and published in the same lock as active-settings transitions, so a transition committed meanwhile is never overwritten by these older settings.
-		await changeActiveAddressAndChainSemaphore.execute(async () => {
-			const updatedSettings = requireAvailableSettings(await getSettingsSnapshot())
+		// Read and published in the same lock as active-settings transitions, so a transition committed meanwhile is never overwritten by these older settings. The RPC configuration write is committed, so it is reconciled like any committed access change: when its settings cannot be read back, every runtime approval fails closed before the failure is thrown.
+		await changeActiveAddressAndChainSemaphore.execute(async () => await reconcileCommittedAccessChange(websiteTabConnections, { kind: 'rpc-configuration' }, async (updatedSettings) => {
 			if (getRpcNetworkChange(updatedSettings.activeRpcNetwork, activeRpcNetwork).selectionChanged) throw new Error('Recovered RPC network does not match the committed configuration.')
 			await publishCommittedSettingsTransition(
 				simulationServicesOwner,
 				websiteTabConnections,
-				previousSettings,
+				previousSettings ?? updatedSettings,
 				updatedSettings,
 				(update) => { accessUpdate = update },
 				forceChainChanged,
 			)
-		})
+		}))
 	} finally {
 		if (accessUpdate !== undefined) await finishWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, accessUpdate, true)
 	}
@@ -178,15 +177,19 @@ async function runActiveSettingsChange(
 			if (change.simulationMode && change.activeAddress !== undefined) await keepTrackOfPreviousAddressForRichList(previousSettings)
 			committedStorageUpdates.push(await changeSimulationMode(getSimulationModeChanges(change)))
 
-			// Derived from the exact items just written; it pins the committed RPC network and is published (without website approvals, which may have been revoked since admission) only when the committed settings cannot be read back, because the writes above have already succeeded.
+			// Derived from the exact items just written; it pins the committed RPC network.
 			const committedSettings = await getSettingsAfterStorageUpdates(previousSettings, committedStorageUpdates)
-			const updatedSettings = settingsForPublication(await getAdmittedRpcNetworkSnapshot(captureRpcNetwork(committedSettings)), committedSettings)
-			try {
-				// The preference belongs to the committed selection, even if later provider preparation fails.
-				if (transition.signingPreference !== undefined) await rememberSigningAddressSelection(transition.signingPreference)
-				const { endpointChanged: rpcEndpointChanged } = getRpcNetworkChange(previousSettings.activeRpcNetwork, updatedSettings.activeRpcNetwork)
-				// A signer-only chain has no provider to install; simulation is disabled until a configured endpoint is selected.
-				if (rpcEndpointChanged && change.rpcNetwork?.httpsRpc !== undefined) {
+			// Published without website approvals (which may have been revoked since admission) unless the read-back below succeeds.
+			let updatedSettings = settingsWithoutApprovals(committedSettings)
+			// The writes above are committed, so neither the read-back nor provider preparation may skip publishing and reconciling them; their failures are surfaced afterwards.
+			await reconcileAfterIndependentSteps([
+				async () => { updatedSettings = settingsForPublication(await getAdmittedRpcNetworkSnapshot(captureRpcNetwork(committedSettings)), committedSettings) },
+				async () => {
+					// The preference belongs to the committed selection, even if later provider preparation fails.
+					if (transition.signingPreference !== undefined) await rememberSigningAddressSelection(transition.signingPreference)
+					const { endpointChanged: rpcEndpointChanged } = getRpcNetworkChange(previousSettings.activeRpcNetwork, committedSettings.activeRpcNetwork)
+					// A signer-only chain has no provider to install; simulation is disabled until a configured endpoint is selected.
+					if (!rpcEndpointChanged || change.rpcNetwork?.httpsRpc === undefined) return
 					try {
 						if (simulationServicesOwner.getCurrent() !== undefined) simulationServicesOwner.reset(change.rpcNetwork)
 						else if (recoverServicesOnRpcSelection) simulationServicesOwner.recover(change.rpcNetwork)
@@ -196,11 +199,8 @@ async function runActiveSettingsChange(
 						await publishFailedPopupVisualisation()
 						throw error
 					}
-				}
-			} finally {
-				// Publish committed settings and access state even if installing their services fails.
-				await publishCommittedSettingsTransition(simulationServicesOwner, websiteTabConnections, previousSettings, updatedSettings, (update) => { accessUpdate = update })
-			}
+				},
+			], async () => await publishCommittedSettingsTransition(simulationServicesOwner, websiteTabConnections, previousSettings, updatedSettings, (update) => { accessUpdate = update }))
 		})
 	} finally {
 		// Complete committed access updates after releasing the semaphore, even if a later reset or notification fails.

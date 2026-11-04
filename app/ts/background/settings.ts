@@ -224,9 +224,12 @@ export function settingsOnAdmittedRpcNetwork(snapshot: AdmittedRpcNetworkSnapsho
 	return snapshot.status === 'available' ? withActiveRpcNetwork(snapshot.storedFields, snapshot.admittedRpcNetwork.activeRpcNetwork) : undefined
 }
 
-// Projection for settings that must still be published when they cannot be read back: `fallback` without website approvals, so revoked approvals are never republished.
+// Settings published (and reconciled, which then only revokes) when they cannot be read back: without website approvals, so revoked approvals are never republished.
+export const settingsWithoutApprovals = (settings: Settings): Settings => ({ ...settings, websiteAccess: [] })
+
+// Projection for settings that must still be published when they cannot be read back: `fallback` without website approvals.
 export function settingsForPublication(snapshot: AdmittedRpcNetworkSnapshot, fallback: Settings): Settings {
-	return settingsOnAdmittedRpcNetwork(snapshot) ?? { ...fallback, websiteAccess: [] }
+	return settingsOnAdmittedRpcNetwork(snapshot) ?? settingsWithoutApprovals(fallback)
 }
 
 export const setPage = async (openedPageV2: Page) => await browserStorageLocalSet({ openedPageV2 })
