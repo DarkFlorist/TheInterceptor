@@ -12,6 +12,25 @@ async function refreshSafeAppsPorts(connections: WebsiteTabConnections) {
 	await new Promise((resolve) => setTimeout(resolve, 0))
 }
 
+// Every approvals read (the write path, request-block reconciliation, connection reconciliation and icon refreshes) asks storage for the bare 'websiteAccess' key; settings reads ask for key arrays. `onRead` receives the 1-based number of the read.
+async function withWebsiteAccessReads<Result>(onRead: (readNumber: number, readStoredApprovals: () => Promise<Record<string, unknown>>) => Promise<Record<string, unknown>>, run: () => Promise<Result>) {
+	const originalStorageGet = browser.storage.local.get
+	let readCount = 0
+	Object.defineProperty(browser.storage.local, 'get', {
+		configurable: true,
+		value: async (keys?: string | string[] | Record<string, unknown>) => {
+			if (keys !== 'websiteAccess') return await originalStorageGet(keys)
+			readCount += 1
+			return await onRead(readCount, async () => await originalStorageGet(keys))
+		},
+	})
+	try {
+		return await run()
+	} finally {
+		Object.defineProperty(browser.storage.local, 'get', { configurable: true, value: originalStorageGet })
+	}
+}
+
 describe('background eth_accounts', () => {
 	test('confirms a persisted popup address before slow permission work completes', async () => {
 		const { runtimeMessages } = installBrowserMock()
@@ -1026,6 +1045,116 @@ describe('background eth_accounts', () => {
 
 		assert.equal(unresolvableConnection.approved, false)
 		assert.equal(resolvableConnection.approved, true)
+	})
+
+	test.each([false, true])('routine reconciliation keeps applied approvals, grants nothing and surfaces the failure when the approvals read fails (throwOnError: %p)', async (throwOnError) => {
+		const { runtimeMessages } = installBrowserMock()
+		const { changeSimulationMode, getRequiredSettings, updateWebsiteAccess, updateWebsiteApprovalAccesses, websiteSocketToString } = await loadModules()
+		const { MessageToPopup } = await import('../../app/ts/types/interceptor-messages.js')
+		const account = 0x5555555555555555555555555555555555555555n
+		const approvedWebsite = { websiteOrigin: 'https://approved-routine-unreadable.example', icon: undefined, title: undefined }
+		const pendingWebsite = { websiteOrigin: 'https://pending-routine-unreadable.example', icon: undefined, title: undefined }
+		const ungrantedWebsite = { websiteOrigin: 'https://ungranted-routine-unreadable.example', icon: undefined, title: undefined }
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: account })
+		await updateWebsiteAccess(() => [approvedWebsite, pendingWebsite].map((website) => ({ website, access: true, addressAccess: [{ address: account, access: true }] })))
+		const approvedSocket = { tabId: 128, connectionName: 0n }
+		const pendingSocket = { tabId: 128, connectionName: 1n }
+		const approvedPort = createPort(approvedSocket.tabId)
+		const approvedConnection = { port: approvedPort.port, socket: approvedSocket, websiteOrigin: approvedWebsite.websiteOrigin, approved: true, wantsToConnect: false }
+		const pendingConnection = { port: createPort(pendingSocket.tabId).port, socket: pendingSocket, websiteOrigin: pendingWebsite.websiteOrigin, approved: false, wantsToConnect: false }
+		const ungrantedSocket = { tabId: 128, connectionName: 2n }
+		const ungrantedConnection = { port: createPort(ungrantedSocket.tabId).port, socket: ungrantedSocket, websiteOrigin: ungrantedWebsite.websiteOrigin, approved: true, wantsToConnect: false }
+		const websiteTabConnections = new Map([[approvedSocket.tabId, { connections: {
+			[websiteSocketToString(approvedSocket)]: approvedConnection,
+			[websiteSocketToString(pendingSocket)]: pendingConnection,
+			[websiteSocketToString(ungrantedSocket)]: ungrantedConnection,
+		} }]])
+		const settings = await getRequiredSettings()
+		const originalWarn = console.warn
+		console.warn = () => undefined
+		try {
+			// The first read is request-block reconciliation's; the connection reconciliation's read after it fails.
+			await withWebsiteAccessReads(async (readNumber, readStoredApprovals) => {
+				if (readNumber === 1) return await readStoredApprovals()
+				throw new Error('Website access unavailable')
+			}, async () => {
+				const reconciliation = updateWebsiteApprovalAccesses(undefined, websiteTabConnections, settings, false, throwOnError)
+				if (throwOnError) await assert.rejects(reconciliation, /Website access unavailable/)
+				else await reconciliation
+			})
+		} finally {
+			console.warn = originalWarn
+		}
+
+		assert.equal(approvedConnection.approved, true)
+		assert.equal(approvedPort.messages.some((message) => message.method === 'disconnect'), false)
+		// A granted but unapproved connection is not approved from approvals that could not be read.
+		assert.equal(pendingConnection.approved, false)
+		// The committed settings still decide revocations, which also shows the connection reconciliation ran.
+		assert.equal(ungrantedConnection.approved, false)
+		const reportedFailure = runtimeMessages.map((message) => MessageToPopup.safeParse(message)).some((parsed) => parsed.success && parsed.value.method === 'popup_UnexpectedErrorOccured' && parsed.value.data.message.includes('Website access unavailable'))
+		assert.equal(reportedFailure, !throwOnError)
+	})
+
+	test('a committed revocation is applied when the approvals read fails after settings were read', async () => {
+		const { runtimeMessages } = installBrowserMock()
+		const { changeSimulationMode, getRequiredSettings, persistWebsiteAccessChange, updateWebsiteAccess, websiteSocketToString } = await loadModules()
+		const { MessageToPopup } = await import('../../app/ts/types/interceptor-messages.js')
+		const account = 0x5656565656565656565656565656565656565656n
+		const revokedWebsite = { websiteOrigin: 'https://revoked-approvals-unreadable.example', icon: undefined, title: undefined }
+		const keptWebsite = { websiteOrigin: 'https://kept-approvals-unreadable.example', icon: undefined, title: undefined }
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: account })
+		await updateWebsiteAccess(() => [revokedWebsite, keptWebsite].map((website) => ({ website, access: true, addressAccess: [{ address: account, access: true }] })))
+		const revokedSocket = { tabId: 129, connectionName: 0n }
+		const keptSocket = { tabId: 129, connectionName: 1n }
+		const revokedPort = createPort(revokedSocket.tabId)
+		const revokedConnection = { port: revokedPort.port, socket: revokedSocket, websiteOrigin: revokedWebsite.websiteOrigin, approved: true, wantsToConnect: false }
+		const keptConnection = { port: createPort(keptSocket.tabId).port, socket: keptSocket, websiteOrigin: keptWebsite.websiteOrigin, approved: true, wantsToConnect: false }
+		const websiteTabConnections = new Map([[revokedSocket.tabId, { connections: {
+			[websiteSocketToString(revokedSocket)]: revokedConnection,
+			[websiteSocketToString(keptSocket)]: keptConnection,
+		} }]])
+		const originalWarn = console.warn
+		console.warn = () => undefined
+		try {
+			// The revocation write's read and the committed settings read succeed; every approvals read after the write fails.
+			await withWebsiteAccessReads(async (readNumber, readStoredApprovals) => {
+				if (readNumber === 1) return await readStoredApprovals()
+				throw new Error('Website access unavailable')
+			}, async () => await persistWebsiteAccessChange(undefined, websiteTabConnections, revokedWebsite, false, undefined, false))
+		} finally {
+			console.warn = originalWarn
+		}
+
+		assert.equal((await getRequiredSettings()).websiteAccess.find((entry) => entry.website.websiteOrigin === revokedWebsite.websiteOrigin)?.access, false)
+		assert.equal(revokedConnection.approved, false)
+		assert.equal(revokedPort.messages.some((message) => message.method === 'accountsChanged' && Array.isArray(message.result) && message.result.length > 0), false)
+		assert.equal(keptConnection.approved, true)
+		const reportedFailure = runtimeMessages.map((message) => MessageToPopup.safeParse(message)).some((parsed) => parsed.success && parsed.value.method === 'popup_UnexpectedErrorOccured' && parsed.value.data.message.includes('Website access unavailable'))
+		assert.equal(reportedFailure, true)
+	})
+
+	test('every connection of a tab is reconciled against one approvals read', async () => {
+		installBrowserMock()
+		const { changeSimulationMode, getRequiredSettings, updateWebsiteAccess, updateWebsiteApprovalAccesses, websiteSocketToString } = await loadModules()
+		const account = 0x5757575757575757575757575757575757575757n
+		const websites = ['https://first-snapshot.example', 'https://second-snapshot.example', 'https://third-snapshot.example'].map((websiteOrigin) => ({ websiteOrigin, icon: undefined, title: undefined }))
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: account })
+		await updateWebsiteAccess(() => websites.map((website) => ({ website, access: true, addressAccess: [{ address: account, access: true }] })))
+		const { websiteAccess: storedGrantedApprovals } = await browser.storage.local.get('websiteAccess')
+		const tabId = 130
+		const connections = websites.map((website, index) => ({ port: createPort(tabId).port, socket: { tabId, connectionName: BigInt(index) }, websiteOrigin: website.websiteOrigin, approved: true, wantsToConnect: false }))
+		const websiteTabConnections = new Map([[tabId, { connections: Object.fromEntries(connections.map((connection) => [websiteSocketToString(connection.socket), connection])) }]])
+		const settings = await getRequiredSettings()
+		// Storage alternates between revoking and granting every approval after each read, so connections reconciled against separate reads would end up split.
+		await withWebsiteAccessReads(async (readNumber, readStoredApprovals) => {
+			const storedApprovals = await readStoredApprovals()
+			await browser.storage.local.set({ websiteAccess: readNumber % 2 === 1 ? [] : storedGrantedApprovals })
+			return storedApprovals
+		}, async () => await updateWebsiteApprovalAccesses(undefined, websiteTabConnections, settings, false, true))
+
+		const approvedStates = connections.map((connection) => connection.approved)
+		assert.ok(approvedStates.every((approved) => approved === approvedStates[0]), `connections were reconciled against different approvals: ${ approvedStates.join(', ') }`)
 	})
 
 	test('a committed revocation unapproves the website when settings are unreadable afterwards', async () => {
