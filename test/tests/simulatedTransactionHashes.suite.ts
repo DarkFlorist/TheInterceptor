@@ -2162,7 +2162,7 @@ test('stops a reject\'s retries at one budget when every committed-reply read is
 	}
 	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [])
 	// The reject was stored with the request before its failing lookups, so startup with the window open finishes it.
-	assert.equal((await modules.getPendingTransactionsAndMessages())[0]?.declineRequested, 'reject')
+	assert.deepEqual((await modules.getPendingTransactionsAndMessages())[0]?.resolutionInputs, [{ kind: 'decline', reason: 'reject' }])
 	const { beginStartupRecovery, resumeCommittedRequests } = await import('../../app/ts/background/requestResolution.js')
 	beginStartupRecovery()
 	await withSilencedConsole(async () => {
@@ -2193,7 +2193,7 @@ test('finishes a reject whose retries ran out before committing at startup, whil
 		browserMock.setStorageSetHandler(undefined)
 	}
 	const [pending] = await modules.getPendingTransactionsAndMessages()
-	assert.equal(pending?.declineRequested, 'reject', 'the reject is stored with the request')
+	assert.deepEqual(pending?.resolutionInputs, [{ kind: 'decline', reason: 'reject' }], 'the reject is stored with the request')
 	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [])
 	// After a restart with the window open, startup finishes it.
 	const { beginStartupRecovery, resumeCommittedRequests } = await import('../../app/ts/background/requestResolution.js')
@@ -2315,7 +2315,7 @@ for (const acceptStackedBeforeRestart of [false, true]) {
 		let storedPending: Awaited<ReturnType<typeof modules.getPendingTransactionsAndMessages>>
 		try {
 			assert.equal(await rejectRequest(request, firstSessionConnections), false, 'the reject waits for the accept')
-			await waitForCondition(async () => (await modules.getPendingTransactionsAndMessages())[0]?.declineRequested === 'reject')
+			await waitForCondition(async () => (await modules.getPendingTransactionsAndMessages())[0]?.resolutionInputs?.some((input) => input.kind === 'decline' && input.reason === 'reject') === true)
 			// The state a restart here leaves: the reject stored with the request, no reply committed.
 			storedPending = await modules.getPendingTransactionsAndMessages()
 		} finally {
@@ -2401,7 +2401,7 @@ test('counts concurrent failures of one request against its one retry budget, wi
 	let failedIntentWrites = 0
 	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
 		const pending = items.pendingTransactionsAndMessages
-		if (Array.isArray(pending) && pending.some((entry) => isRecord(entry) && entry.declineRequested !== undefined)) {
+		if (Array.isArray(pending) && pending.some((entry) => isRecord(entry) && entry.resolutionInputs !== undefined)) {
 			failedIntentWrites += 1
 			throw new Error('persistent intent write failure')
 		}

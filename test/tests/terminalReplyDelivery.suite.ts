@@ -1402,7 +1402,7 @@ for (const signerResult of signerResults) {
 	test(`a decline stored before a restart wins over ${ signerResult.name } that arrives before startup recovery's retry`, async () => {
 		const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
 		const { data } = await signerResult.prepare()
-		await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => ({ ...pending, declineRequested: 'reject' as const }))
+		await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => ({ ...pending, resolutionInputs: [{ kind: 'decline' as const, reason: 'reject' as const }] }))
 		browserMock.setLiveWindowIds([pendingTransaction.popupOrTabId.id])
 		const { beginStartupRecovery, resumeCommittedRequests } = await import('../../app/ts/background/requestResolution.js')
 		beginStartupRecovery()
@@ -1424,7 +1424,7 @@ for (const signerResult of signerResults) {
 	test(`a decline stored before a restart wins over ${ signerResult.name } kept for its retry, even when startup recovery records the decline after it`, async () => {
 		const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
 		const { data } = await signerResult.prepare()
-		await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => ({ ...pending, declineRequested: 'reject' as const }))
+		await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => ({ ...pending, resolutionInputs: [{ kind: 'decline' as const, reason: 'reject' as const }] }))
 		browserMock.setLiveWindowIds([pendingTransaction.popupOrTabId.id])
 		const { beginStartupRecovery, resumeCommittedRequests } = await import('../../app/ts/background/requestResolution.js')
 		beginStartupRecovery()
@@ -1470,6 +1470,35 @@ for (const signerResult of signerResults) {
 		} finally {
 			browserMock.setStorageGetHandler(undefined)
 		}
+		await assertSettledOnceWithSuccess(postedMessages, result)
+		await assertSignerOutcomePersisted(signerResult.name, data)
+	})
+
+	test(`${ signerResult.name } that arrived before a reject wins after a restart, from the stored order of the two`, async () => {
+		const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
+		const { data, result } = await signerResult.prepare()
+		// Every committed-reply lookup fails before the restart: the signer result, then the reject, are stored and retried until their budget runs out.
+		browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+			if (Array.isArray(keys) && keys.includes('pendingTerminalReplies')) throw new Error('The committed reply could not be read.')
+			return readStoredItems()
+		})
+		try {
+			await resolveRequest(websiteTabConnections, data)
+			await withSilencedConsole(async () => await rejectRequest(websiteTabConnections))
+			await withSilencedConsole(waitForResolutionRetriesToFinish)
+		} finally {
+			browserMock.setStorageGetHandler(undefined)
+		}
+		assert.deepEqual(getRepliesToWebsite(postedMessages), [], 'nothing was answered before the restart')
+		assert.deepEqual((await modules.getPendingTransactionsAndMessages())[0]?.resolutionInputs?.map((input) => input.kind), ['signerResult', 'decline'])
+
+		// The restarted extension: a fresh resolution module, with nothing in memory, recovers from the saved storage.
+		const restarted = await import(`../../app/ts/background/requestResolution.js?restart=${ encodeURIComponent(signerResult.name) }`)
+		assert.notEqual(restarted.resumeRequest, (await import('../../app/ts/background/requestResolution.js')).resumeRequest, 'the restarted module is a fresh one')
+		restarted.beginStartupRecovery()
+		await withSilencedConsole(async () => await restarted.resumeCommittedRequests(testResolutionContext(websiteTabConnections)))
+		await withSilencedConsole(waitForResolutionRetriesToFinish)
+		assert.equal(restarted.getResolutionBookkeepingSize(), 0)
 		await assertSettledOnceWithSuccess(postedMessages, result)
 		await assertSignerOutcomePersisted(signerResult.name, data)
 	})
@@ -1572,7 +1601,7 @@ for (const outcomeAction of outcomeActions) {
 		})
 		try {
 			await withSilencedConsole(async () => await rejectRequest(websiteTabConnections))
-			assert.equal((await modules.getPendingTransactionsAndMessages())[0]?.declineRequested, 'reject', 'the reject is stored and retried')
+			assert.deepEqual((await modules.getPendingTransactionsAndMessages())[0]?.resolutionInputs, [{ kind: 'decline', reason: 'reject' }], 'the reject is stored and retried')
 			await resolveRequest(websiteTabConnections, data)
 			await withSilencedConsole(waitForResolutionRetriesToFinish)
 		} finally {
@@ -1584,7 +1613,7 @@ for (const outcomeAction of outcomeActions) {
 	test(`${ outcomeAction.name } after a restart is overruled by the decline stored before it`, async () => {
 		const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
 		const data = await outcomeAction.prepare()
-		await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => ({ ...pending, declineRequested: 'reject' as const }))
+		await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => ({ ...pending, resolutionInputs: [{ kind: 'decline' as const, reason: 'reject' as const }] }))
 		const { beginStartupRecovery } = await import('../../app/ts/background/requestResolution.js')
 		beginStartupRecovery()
 		await resolveRequest(websiteTabConnections, data)

@@ -302,7 +302,7 @@ async function commitReplyAndShowStackChange({ ethereum, tokenPriceService }: Si
 }
 
 // Settles a signer's result under the request's claim, for the request as stored now (SignerResultSettlement): a request that never finished simulating is answered as unprocessable; a Gnosis Safe owner signature is persisted with its proposal, or refused with the reason shown in the window; any other result is the website's reply. A request in simulation mode never went to a signer, so a result for it is ignored.
-async function settleSignerResult(services: SimulationServices, request: PendingTransactionOrSignableMessage, signerReply: unknown, context: ResolutionContext) {
+async function settleSignerResult(services: SimulationServices, request: PendingTransactionOrSignableMessage, signerReply: string, context: ResolutionContext) {
 	if (request.transactionOrMessageCreationStatus !== 'Simulated') return await commitReplyAndShowStackChange(services, request, formRejectMessage(METAMASK_ERROR_BLANKET_ERROR, 'The Interceptor failed to process the transaction'), 'unchanged', context)
 	if (request.simulationMode) return false
 	const safeReply = await resolveSafeSignerReply(services.ethereum, request, signerReply)
@@ -343,8 +343,8 @@ async function resolvePendingRequest(ethereum: EthereumClientService, tokenPrice
 	const { websiteTabConnections } = resolutionContext
 	// A reject and a closed window are one decline, with its own retries.
 	if (confirmation.data.action === 'reject' || confirmation.data.action === 'noResponse') return await declineRequest(confirmation.data.uniqueRequestIdentifier, confirmation.data.action === 'reject' ? 'reject' : 'close', resolutionContext)
-	// A signer's result is kept before any lookup that can fail, and settled under the request's claim (settleSignerResult).
-	if (confirmation.data.action === 'signerIncluded') return await submitSignerResult(confirmation.data.uniqueRequestIdentifier, confirmation.data.signerReply, resolutionContext)
+	// A signer's result, the transaction hash or signature string it answered with, is stored with the request before any lookup that can fail, and settled under the request's claim (settleSignerResult).
+	if (confirmation.data.action === 'signerIncluded') return await submitSignerResult(confirmation.data.uniqueRequestIdentifier, funtypes.String.parse(confirmation.data.signerReply), resolutionContext)
 	// A request committed to a reply is only finished, whatever the action, so an accept never follows a delivered rejection. Checked before the pending request is looked up: a request whose finishing removed it but ran out of retries for its window update still has a committed reply to finish.
 	if (await getQueuedTerminalReply(confirmation.data.uniqueRequestIdentifier) !== undefined) return await resumeRequest(confirmation.data.uniqueRequestIdentifier, resolutionContext)
 	let pendingTransactionOrMessage = await getPendingTransactionOrMessageByidentifier(confirmation.data.uniqueRequestIdentifier)

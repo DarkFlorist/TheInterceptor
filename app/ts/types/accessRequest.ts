@@ -77,8 +77,12 @@ const ConfirmTransactionSimulationFailed = funtypes.ReadonlyObject({
 export type ConfirmTransactionTransactionSingleVisualization = funtypes.Static<typeof ConfirmTransactionTransactionSingleVisualization>
 export const ConfirmTransactionTransactionSingleVisualization = funtypes.Union(ConfirmTransactionSimulationFailed, ConfirmTransactionSimulationStateChanged)
 
-// Why a pending request is being declined: the user rejected it, or its confirmation window closed.
-const DeclineRequested = funtypes.Union(funtypes.Literal('reject'), funtypes.Literal('close'))
+// An input that resolves a pending request, stored on it in arrival order (resolutionInputs) until a resolution processes it: a decline, because the user rejected the request or its confirmation window closed, or a signer's result, the transaction hash or signature string the signer answered with (an ordinary signer's result or a Gnosis Safe owner signature).
+export type ResolutionInput = funtypes.Static<typeof ResolutionInput>
+export const ResolutionInput = funtypes.Union(
+	funtypes.ReadonlyObject({ kind: funtypes.Literal('decline'), reason: funtypes.Union(funtypes.Literal('reject'), funtypes.Literal('close')) }),
+	funtypes.ReadonlyObject({ kind: funtypes.Literal('signerResult'), signerReply: funtypes.String }),
+)
 
 type PendingTransactionApprovalStatus = funtypes.Static<typeof PendingTransactionApprovalStatus>
 const PendingTransactionApprovalStatus = funtypes.Union(
@@ -111,8 +115,8 @@ const SimulatedPendingTransactionBase = funtypes.ReadonlyObject({
 	executeThroughSafe: funtypes.Literal(true),
 	// The salt and hash a simulation-mode transaction was given when the confirmation was first formed (reserveSimulationHash): the preview shows the hash and accepting stacks it. A request pending from before reservations has none.
 	simulationHashReservation: funtypes.ReadonlyObject({ salt: EthereumQuantity, hash: EthereumBytes32 }),
-	// A decline asked for (declineRequest): the request is to be rejected unless a reply was committed for it. Kept so startup finishes an interrupted decline.
-	declineRequested: DeclineRequested,
+	// The inputs that arrived for the request and are not processed yet, in arrival order (requestResolution.ts), kept so their order and a restart survive.
+	resolutionInputs: funtypes.ReadonlyArray(ResolutionInput),
 }))
 
 export type SimulatedPendingTransaction = funtypes.Static<typeof SimulatedPendingTransaction>
@@ -162,7 +166,7 @@ const PendingSignableMessage = funtypes.Intersect(
 		website: Website,
 		activeAddress: EthereumAddress,
 		approvalStatus: PendingTransactionApprovalStatus,
-	}).And(funtypes.ReadonlyPartial({ safeMessageCoSignSnapshot: SafeMessageCoSignSnapshot, declineRequested: DeclineRequested })),
+	}).And(funtypes.ReadonlyPartial({ safeMessageCoSignSnapshot: SafeMessageCoSignSnapshot, resolutionInputs: funtypes.ReadonlyArray(ResolutionInput) })),
 	funtypes.Union(
 		funtypes.ReadonlyObject({ transactionOrMessageCreationStatus: funtypes.Literal('Simulated'), visualizedPersonalSignRequest: VisualizedPersonalSignRequest }),
 		funtypes.ReadonlyObject({ transactionOrMessageCreationStatus: funtypes.Union(funtypes.Literal('Crafting'), funtypes.Literal('Simulating')) })
