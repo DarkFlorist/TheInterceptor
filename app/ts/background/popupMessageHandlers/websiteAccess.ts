@@ -19,9 +19,19 @@ const isMissingTabReloadError = (error: unknown) => {
 	return message !== undefined && (message.startsWith('No tab with id') || message.includes('Invalid tab ID'))
 }
 
+// A failed current-tab lookup must not stop the known connected tabs from reloading.
+const getCurrentTabIdToReload = async () => {
+	try {
+		return await getLastKnownCurrentTabId()
+	} catch (error) {
+		await reportUnexpectedError(error, { code: 'connected_tab_reload_current_tab_lookup_failed' })
+		return undefined
+	}
+}
+
 export async function reloadConnectedTabs(websiteTabConnections: WebsiteTabConnections) {
 	const tabIdsToRefresh = Array.from(websiteTabConnections.keys())
-	const currentTabId = await getLastKnownCurrentTabId()
+	const currentTabId = await getCurrentTabIdToReload()
 	const withCurrentTabId = currentTabId === undefined ? tabIdsToRefresh : [...tabIdsToRefresh, currentTabId]
 	for (const tabId of new Set(withCurrentTabId)) {
 		try {
@@ -34,14 +44,18 @@ export async function reloadConnectedTabs(websiteTabConnections: WebsiteTabConne
 	}
 }
 
-export const disableInterceptorForPage = async (websiteTabConnections: WebsiteTabConnections, website: Website, interceptorDisabled: boolean) => {
-	await setInterceptorDisabledForWebsite(website, interceptorDisabled)
-	await reloadConnectedTabs(websiteTabConnections)
+// Reload first so outgoing pages drop their connections before reconciliation can re-prompt them; always reconcile so a stored revocation reaches open connections even if the reload fails.
+async function reloadConnectedTabsThenReconcileApprovals(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections) {
+	try {
+		await reloadConnectedTabs(websiteTabConnections)
+	} finally {
+		await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
+	}
 }
 
 export async function disableInterceptor(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: DisableInterceptor) {
-	await disableInterceptorForPage(websiteTabConnections, parsedRequest.data.website, parsedRequest.data.interceptorDisabled)
-	await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
+	await setInterceptorDisabledForWebsite(parsedRequest.data.website, parsedRequest.data.interceptorDisabled)
+	await reloadConnectedTabsThenReconcileApprovals(simulationServicesOwner, websiteTabConnections)
 	await sendPopupMessageToOpenWindows({ method: 'popup_setDisableInterceptorReply' as const, data: parsedRequest.data })
 }
 
@@ -52,17 +66,16 @@ export async function retrieveWebsiteAccess(parsedRequest: RetrieveWebsiteAccess
 	await sendPopupMessageToOpenWindows({ method: 'popup_retrieveWebsiteAccessReply', data: { websiteAccess, addressAccessMetadata } })
 }
 
-const blockOrAllowWebsiteExternalRequests = async (websiteTabConnections: WebsiteTabConnections, website: Website, shouldBlock: boolean) => {
+const blockOrAllowWebsiteExternalRequests = async (website: Website, shouldBlock: boolean) => {
 	await updateWebsiteAccess((previousAccessList) => previousAccessList.map((access) => {
 		if (access.website.websiteOrigin !== website.websiteOrigin) return access
 		return modifyObject(access, { declarativeNetRequestBlockMode: shouldBlock ? 'block-all' : 'disabled' })
 	}))
-	await reloadConnectedTabs(websiteTabConnections)
 }
 
 export async function blockOrAllowExternalRequests(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: BlockOrAllowExternalRequests) {
-	await blockOrAllowWebsiteExternalRequests(websiteTabConnections, parsedRequest.data.website, parsedRequest.data.shouldBlock)
-	await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
+	await blockOrAllowWebsiteExternalRequests(parsedRequest.data.website, parsedRequest.data.shouldBlock)
+	await reloadConnectedTabsThenReconcileApprovals(simulationServicesOwner, websiteTabConnections)
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }
 
@@ -75,8 +88,7 @@ const removeAddressAccessByAddress = async (websiteOrigin: string, address: Ethe
 
 export async function removeWebsiteAddressAccess(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: RemoveWebsiteAddressAccess) {
 	await removeAddressAccessByAddress(parsedRequest.data.websiteOrigin, parsedRequest.data.address)
-	await reloadConnectedTabs(websiteTabConnections)
-	await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
+	await reloadConnectedTabsThenReconcileApprovals(simulationServicesOwner, websiteTabConnections)
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }
 
