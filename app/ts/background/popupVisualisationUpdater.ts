@@ -7,7 +7,7 @@ import { NEW_BLOCK_ABORT, TIME_BETWEEN_BLOCKS } from '../utils/constants.js'
 import { reportUnexpectedError, isExpectedInfrastructureError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { captureSimulationSnapshot, getSimulationProviderForSnapshot, type SimulationSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
+import { captureSimulationSnapshot, getSimulationProviderForSnapshot, recaptureSimulationStack, type SimulationSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
 import { requestIsSimulationDataConsumerOpen, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getPopupVisualisationFingerprint } from './popupSimulationFingerprint.js'
 import { retainPreviousVisualisation } from '../utils/popupVisualisationLifecycle.js'
@@ -102,7 +102,7 @@ export const updatePopupVisualisationIfNeeded = async (ethereum: EthereumClientS
 			const visualizedSimulatorState = await setPopupVisualisationState(retainPreviousVisualisation(popupVisualisation, { simulationId, simulationUpdatingState: 'updating', simulationResultState: 'invalid' }))
 			await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState } })
 		}
-		// Without a supplied snapshot, execution captures the stack inside the semaphore. Executions run one at a time, so a later one never reads an older stack than an earlier one published, and a refresh that cancels another then runs the current stack itself. A supplied snapshot (the interactive queue) is rendered as captured; keeping it current is the queue's responsibility.
+		// Execution reads the stack inside the semaphore; a supplied snapshot (the interactive queue) fixes only the selection and rich addresses. Executions run one at a time, so a later one never reads an older stack than an earlier one published, and a refresh that cancels another then runs the current stack itself.
 		await updatePopupVisualisationState(ethereum, tokenPriceService, thisAbortController, false, snapshot)
 	} catch(error: unknown) {
 		if (isExpectedInfrastructureError(error)) return await getPopupVisualisationState()
@@ -148,7 +148,8 @@ export async function updatePopupVisualisationState(ethereum: EthereumClientServ
 			if (abortController?.signal.aborted) return
 			const popupVisualisation = await getPopupVisualisationState()
 			const simulationId = popupVisualisation.simulationId + 1
-			const capturedSnapshot = snapshot ?? await captureSimulationSnapshot()
+			// The stack can change while a refresh waits, including after a supplied snapshot was captured: stack edits refresh directly, and onlyIfNotAlreadyUpdating edits skip their refresh while this one runs.
+			const capturedSnapshot = snapshot === undefined ? await captureSimulationSnapshot() : await recaptureSimulationStack(snapshot)
 			// Another endpoint was selected after this refresh committed; its services' own refresh publishes it.
 			if (!servicesServeNetwork(ethereum, capturedSnapshot.activeRpcNetwork)) return
 			const simulationState = await getUpdatedSimulationState(ethereum, capturedSnapshot)

@@ -135,6 +135,9 @@ export type SimulationSnapshot = {
 	readonly activeStackContext: ReturnType<typeof getActiveStackContext>
 	readonly simulationStateInput: SimulationStateInput
 	readonly numberOfAddressesMadeRich: number
+	// The settings and rich addresses the input was built from, so the stack can be read again under the same selection.
+	readonly settings: Settings
+	readonly richAddresses: readonly bigint[]
 }
 
 // Capture selection and input at the storage boundary. An unreadable stack must abort before publishing any fallback.
@@ -146,7 +149,14 @@ export async function captureSimulationSnapshot(): Promise<SimulationSnapshot> {
 		activeStackContext: getActiveStackContext(settings),
 		simulationStateInput: await getCurrentSimulationInput(richAddresses, settings),
 		numberOfAddressesMadeRich: richAddresses.length,
+		settings,
+		richAddresses,
 	}
+}
+
+// Rebuilds the input from the stack stored now while keeping the snapshot's selection and rich addresses.
+export async function recaptureSimulationStack(snapshot: SimulationSnapshot): Promise<SimulationSnapshot> {
+	return { ...snapshot, simulationStateInput: await getCurrentSimulationInput(snapshot.richAddresses, snapshot.settings) }
 }
 
 export const getSimulationProviderForSnapshot = (ethereum: EthereumClientService, snapshot: SimulationSnapshot) => (

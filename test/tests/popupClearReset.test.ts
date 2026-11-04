@@ -3,8 +3,10 @@ import * as assert from 'assert'
 import * as funtypes from 'funtypes'
 import type { CompleteVisualizedSimulation } from '../../app/ts/types/visualizer-types.js'
 import { CompleteVisualizedSimulation as CompleteVisualizedSimulationCodec, toResolvedSimulationState } from '../../app/ts/types/visualizer-types.js'
-import { serialize } from '../../app/ts/types/wire-types.js'
-import type { RpcNetwork } from '../../app/ts/types/rpc.js'
+import { EthereumBlockHeader, EthereumQuantity, serialize } from '../../app/ts/types/wire-types.js'
+import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
+import { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
+import type { RpcEntry, RpcNetwork } from '../../app/ts/types/rpc.js'
 import { createSafeTx } from '../../app/ts/safe/safeCore.js'
 import { mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import type { PreSimulationTransaction } from '../../app/ts/types/visualizer-types.js'
@@ -257,7 +259,7 @@ function buildStalePopupVisualisationState(
 	}
 }
 
-function createFakeEthereum(rpcNetwork: RpcNetwork) {
+function createFakeEthereum(rpcNetwork: TestModules['defaultRpcs'][number]) {
 	let blockPolling = false
 	return {
 		isBlockPolling() {
@@ -343,7 +345,7 @@ const sameChainRpcNetwork: RpcNetwork = {
 	httpsRpc: 'https://mainnet.example.com',
 	primary: false,
 }
-const otherChainRpcNetwork: RpcNetwork = {
+const otherChainRpcNetwork: RpcEntry = {
 	...rpcNetwork,
 	name: 'Test Chain',
 	chainId: 2n,
@@ -392,7 +394,44 @@ const stalePopupVisualisation = buildStalePopupVisualisationState(rpcNetwork, DE
 const fakeEthereum = createFakeEthereum(rpcNetwork) as never as Parameters<typeof updatePopupVisualisationIfNeeded>[0]
 const fakeTokenPriceService = {} as never as Parameters<typeof updatePopupVisualisationIfNeeded>[1]
 // Selecting another endpoint installs services for it, which refresh the visualisation for that network.
-const otherChainFakeEthereum = createFakeEthereum(otherChainRpcNetwork) as never as Parameters<typeof updatePopupVisualisationIfNeeded>[0]
+const otherChainLatestBlock = serialize(EthereumBlockHeader, {
+	author: 0n,
+	difficulty: 0n,
+	extraData: new Uint8Array(),
+	gasLimit: 30_000_000n,
+	gasUsed: 0n,
+	hash: 0x1234n,
+	logsBloom: 0n,
+	miner: 0n,
+	mixHash: 0n,
+	nonce: 0n,
+	number: 123n,
+	parentHash: 0x1n,
+	receiptsRoot: 0n,
+	sha3Uncles: 0n,
+	stateRoot: 0n,
+	timestamp: new Date('2024-01-01T00:00:00.000Z'),
+	size: 0n,
+	totalDifficulty: 0n,
+	uncles: [],
+	baseFeePerGas: 1n,
+	transactionsRoot: 0n,
+	transactions: [],
+	withdrawals: [],
+	withdrawalsRoot: 0n,
+})
+const otherChainEthereum = new EthereumClientService({
+	rpcUrl: otherChainRpcNetwork.httpsRpc,
+	clearCache() { return undefined },
+	async jsonRpcRequest(rpcRequest: { method: string }) {
+		switch (rpcRequest.method) {
+			case 'eth_blockNumber': return EthereumQuantity.serialize(123n)
+			case 'eth_getBlockByNumber': return otherChainLatestBlock
+			default: throw new Error(`Unexpected RPC method: ${ rpcRequest.method }`)
+		}
+	},
+}, async () => undefined, async () => undefined, otherChainRpcNetwork)
+const otherChainServices = { ethereum: otherChainEthereum, tokenPriceService: new TokenPriceService(otherChainEthereum, 60_000) }
 
 describe('popup clear reset', () => {
 	for (const captured of [false, true]) test(`signer-only snapshots publish passthrough without reading the previous provider (captured=${ captured })`, async () => {
@@ -709,7 +748,7 @@ describe('popup clear reset', () => {
 		const resets: RpcNetwork[] = []
 		const simulationServicesOwner = createTestSimulationServicesOwner({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService }, (nextRpcEntry: RpcNetwork) => {
 			resets.push(nextRpcEntry)
-			return { ethereum: otherChainFakeEthereum, tokenPriceService: fakeTokenPriceService }
+			return otherChainServices
 		})
 		await browserStorageLocalSet({
 			independentActiveSimulationAddress: activeAddress,

@@ -7,8 +7,15 @@ import { CompleteVisualizedSimulation, createPassthroughCompleteVisualizedSimula
 import { Future } from '../../app/ts/utils/future.js'
 import { captureSimulationSnapshot } from '../../app/ts/background/simulationUpdating.js'
 import type { SimulationServices, SimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
+import { queuePopupSimulationRefresh } from '../../app/ts/background/popupSimulationRefreshQueue.js'
 
-test('an older popup refresh held in its unchanged-input check does not replace the refresh for a newer stack', async () => {
+// Both entry points: a direct refresh captures its snapshot itself, the interactive queue supplies one captured before it runs.
+const olderRefreshEntryPoints = [
+	{ name: 'an older popup refresh', start: async (services: SimulationServices) => await updatePopupVisualisationIfNeeded(services.ethereum, services.tokenPriceService, { skipIfUnchanged: true }) },
+	{ name: 'an older queued popup refresh', start: async (services: SimulationServices) => await queuePopupSimulationRefresh(services) },
+]
+
+for (const entryPoint of olderRefreshEntryPoints) test(`${ entryPoint.name } held in its unchanged-input check does not replace the refresh for a newer stack`, async () => {
 	await modules.browserStorageLocalSet({ simulationMode: true, activeRpcNetwork: fakeRpcNetwork })
 	// A finished visualisation for another block, so the older refresh's unchanged-input check reads the block number and then decides to refresh.
 	await setPopupVisualisationState({
@@ -50,7 +57,7 @@ test('an older popup refresh held in its unchanged-input check does not replace 
 	}
 	try {
 		// The older refresh captures the empty stack, then waits inside its unchanged-input check.
-		const olderRefresh = updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { skipIfUnchanged: true })
+		const olderRefresh = entryPoint.start({ ethereum, tokenPriceService })
 		await olderRefreshReadsBlockNumber
 
 		// Accepting the simulation-mode request appends it to the stack and refreshes the visualisation for the newer stack.
