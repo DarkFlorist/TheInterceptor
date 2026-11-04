@@ -1,10 +1,11 @@
 import type { ImportSettings, ImportSettingsReply, SetRpcList, Settings } from '../../types/interceptor-messages.js'
+import type { RpcEntries, RpcNetwork } from '../../types/rpc.js'
 import { ExportedSettings } from '../../types/exportedSettingsTypes.js'
 import { serialize } from '../../types/wire-types.js'
 import { isJSON } from '../../utils/json.js'
 import { silenceChromeUnCaughtPromise } from '../../utils/requests.js'
 import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
-import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettingsSnapshot, getUseTabsInsteadOfPopup, importSettingsAndAddressBook, settingsIfAvailable, requireAvailableSettings } from '../settings.js'
+import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettingsSnapshot, getUseTabsInsteadOfPopup, importSettingsAndAddressBook, settingsIfAvailable, requireAvailableSettings, type SettingsSnapshot } from '../settings.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { DEFAULT_RPCS } from '../../config/defaults.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
@@ -17,32 +18,40 @@ async function sendRpcListUpdate(rpcEntries: SetRpcList['data'], rpcConfiguratio
 	await sendPopupMessageToOpenWindows({ method: 'popup_update_rpc_list', data: { rpcEntries, rpcConfigurationAvailable } })
 }
 
-export async function settingsOpened(simulationServicesOwner: SimulationServicesOwner) {
-	const useTabsInsteadOfPopupPromise = silenceChromeUnCaughtPromise(getUseTabsInsteadOfPopup())
-	const metamaskCompatibilityModePromise = silenceChromeUnCaughtPromise(getMetamaskCompatibilityMode())
-	const safeAppsCompatibilityModePromise = silenceChromeUnCaughtPromise(getSafeAppsCompatibilityMode())
-	const settingsSnapshotPromise = silenceChromeUnCaughtPromise(getSettingsSnapshot())
-	const [useTabsInsteadOfPopup, metamaskCompatibilityMode, safeAppsCompatibilityMode, settingsSnapshot] = await Promise.all([
-		useTabsInsteadOfPopupPromise,
-		metamaskCompatibilityModePromise,
-		safeAppsCompatibilityModePromise,
-		settingsSnapshotPromise,
-	])
-	const { rpcConfiguration } = settingsSnapshot
-	const settings = settingsIfAvailable(settingsSnapshot)
-	const rpcConfigurationAvailable = rpcConfigurationIsUsable(rpcConfiguration, simulationServicesOwner)
+type SettingsRpcStatus = {
+	readonly rpcConfigurationAvailable: boolean
+	readonly rpcEntries: RpcEntries
+	readonly activeRpcNetwork: RpcNetwork | undefined
+}
 
-	await sendPopupMessageToOpenWindows({
-		method: 'popup_requestSettingsReply' as const,
-		data: {
-			useTabsInsteadOfPopup,
-			metamaskCompatibilityMode,
-			safeAppsCompatibilityMode,
-			rpcConfigurationAvailable,
-			rpcEntries: rpcConfigurationAvailable && rpcConfigurationIsReady(rpcConfiguration) ? rpcConfiguration.rpcEntries : [],
-			activeRpcNetwork: settings?.activeRpcNetwork
-		}
-	})
+// Shown when the RPC configuration could not be read at all: the Settings RPC section then offers Retry and Restore.
+const UNREADABLE_RPC_STATUS: SettingsRpcStatus = { rpcConfigurationAvailable: false, rpcEntries: [], activeRpcNetwork: undefined }
+
+function getSettingsRpcStatus(settingsSnapshot: SettingsSnapshot, simulationServicesOwner: SimulationServicesOwner): SettingsRpcStatus {
+	const { rpcConfiguration } = settingsSnapshot
+	const rpcConfigurationAvailable = rpcConfigurationIsUsable(rpcConfiguration, simulationServicesOwner)
+	return {
+		rpcConfigurationAvailable,
+		rpcEntries: rpcConfigurationAvailable && rpcConfigurationIsReady(rpcConfiguration) ? rpcConfiguration.rpcEntries : [],
+		activeRpcNetwork: settingsIfAvailable(settingsSnapshot)?.activeRpcNetwork,
+	}
+}
+
+// The Settings RPC section leaves its loading state only on the RPC status this publishes, so the status is published even when the request fails, for example when a preference read rejects: it is sent as an RPC list update (unreadable when the RPC configuration itself could not be read) before the failure reaches the caller, and the section shows the RPC list or its Retry and Restore controls.
+export async function settingsOpened(simulationServicesOwner: SimulationServicesOwner) {
+	const preferencesPromise = silenceChromeUnCaughtPromise(Promise.all([getUseTabsInsteadOfPopup(), getMetamaskCompatibilityMode(), getSafeAppsCompatibilityMode()]))
+	let rpcStatus = UNREADABLE_RPC_STATUS
+	try {
+		rpcStatus = getSettingsRpcStatus(await getSettingsSnapshot(), simulationServicesOwner)
+		const [useTabsInsteadOfPopup, metamaskCompatibilityMode, safeAppsCompatibilityMode] = await preferencesPromise
+		await sendPopupMessageToOpenWindows({
+			method: 'popup_requestSettingsReply' as const,
+			data: { useTabsInsteadOfPopup, metamaskCompatibilityMode, safeAppsCompatibilityMode, ...rpcStatus },
+		})
+	} catch (error: unknown) {
+		await sendRpcListUpdate(rpcStatus.rpcEntries, rpcStatus.rpcConfigurationAvailable)
+		throw error
+	}
 }
 
 export async function importSettings(settingsData: ImportSettings): Promise<ImportSettingsReply> {

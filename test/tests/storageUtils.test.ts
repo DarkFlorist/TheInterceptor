@@ -8,6 +8,7 @@ const storedItems: Record<string, unknown> = {}
 const writes: Record<string, unknown>[] = []
 const runtimeMessages: unknown[] = []
 let nextStorageReadError: Error | undefined
+let everyStorageReadError: Error | undefined
 let rpcConfigurationReadCount = 0
 let failRpcConfigurationReadAt: number | undefined
 let rpcConfigurationReadStarted: (() => void) | undefined
@@ -24,6 +25,7 @@ Object.defineProperty(globalThis, 'browser', {
 		storage: {
 			local: {
 				get: async (keys: string | readonly string[]) => {
+					if (everyStorageReadError !== undefined) throw everyStorageReadError
 					const requestedKeys = Array.isArray(keys) ? keys : [keys]
 					const result = Object.fromEntries(requestedKeys.filter((key) => key in storedItems).map((key) => [key, storedItems[key]]))
 					if (requestedKeys.includes('rpcEntries') && requestedKeys.includes('activeRpcNetwork')) {
@@ -66,6 +68,7 @@ describe('local storage codecs', () => {
 		writes.length = 0
 		runtimeMessages.length = 0
 		nextStorageReadError = undefined
+		everyStorageReadError = undefined
 		rpcConfigurationReadCount = 0
 		failRpcConfigurationReadAt = undefined
 		rpcConfigurationReadStarted = undefined
@@ -131,6 +134,7 @@ describe('RPC storage recovery', () => {
 		writes.length = 0
 		runtimeMessages.length = 0
 		nextStorageReadError = undefined
+		everyStorageReadError = undefined
 		rpcConfigurationReadCount = 0
 		failRpcConfigurationReadAt = undefined
 		rpcConfigurationReadStarted = undefined
@@ -405,6 +409,41 @@ describe('RPC storage recovery', () => {
 		await retryRpcConfiguration(owner, ignoreRecoveryPublication)
 		assert.equal(owner.getCurrent() !== undefined, true)
 		owner.clear()
+	})
+
+	test('settings still publishes the RPC status when a preference read fails', async () => {
+		const owner = createSimulationServicesOwner(customPrimaryRpc, async () => undefined, async (_ethereum, error) => { throw error })
+		const preferenceReadError = new Error('Preference read failed')
+		// The first read is a preference read; the RPC configuration is read normally.
+		nextStorageReadError = preferenceReadError
+		try {
+			await assert.rejects(settingsOpened(owner), (error: unknown) => error === preferenceReadError)
+			const rpcStatus = MessageToPopup.parse(runtimeMessages.at(-1))
+			assert.equal(rpcStatus.method, 'popup_update_rpc_list')
+			if (rpcStatus.method !== 'popup_update_rpc_list') return
+			assert.equal(rpcStatus.data.rpcConfigurationAvailable, true)
+			assert.deepEqual(rpcStatus.data.rpcEntries, [customPrimaryRpc, customFallbackRpc])
+		} finally {
+			owner.clear()
+		}
+	})
+
+	test('settings publishes an unavailable RPC status when no storage read succeeds', async () => {
+		const owner = createSimulationServicesOwner(customPrimaryRpc, async () => undefined, async (_ethereum, error) => { throw error })
+		const storageError = new Error('Storage unavailable')
+		everyStorageReadError = storageError
+		try {
+			await assert.rejects(settingsOpened(owner), (error: unknown) => error === storageError)
+			assert.equal(runtimeMessages.some((message) => MessageToPopup.parse(message).method === 'popup_requestSettingsReply'), false)
+			const rpcStatus = MessageToPopup.parse(runtimeMessages.at(-1))
+			assert.equal(rpcStatus.method, 'popup_update_rpc_list')
+			if (rpcStatus.method !== 'popup_update_rpc_list') return
+			assert.equal(rpcStatus.data.rpcConfigurationAvailable, false)
+			assert.deepEqual(rpcStatus.data.rpcEntries, [])
+		} finally {
+			everyStorageReadError = undefined
+			owner.clear()
+		}
 	})
 
 	test('settings uses one coherent RPC configuration snapshot', async () => {

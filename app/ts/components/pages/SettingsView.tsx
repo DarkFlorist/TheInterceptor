@@ -359,7 +359,8 @@ export function useRpcConnectionsState() {
 		}
 		noReplyExpectingBrowserRuntimeOnMessageListener(trackRpcListChanges)
 		const initialUpdateVersion = updateVersion
-		void sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' }).catch(async (error: unknown) => {
+		// The section leaves `loading` on the RPC status the background publishes for this request, which it publishes even when the request fails (settingsOpened); a request that cannot be sent at all rejects here, so it shows the unavailable alert with its Retry and Restore controls instead of staying blank.
+		void sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport({ method: 'popup_requestSettings' }).catch(async (error: unknown) => {
 			if (shouldApplyInitialRpcEntries(disposed, initialUpdateVersion, updateVersion)) status.value = 'unavailable'
 			await reportUnexpectedError(error, {
 				source: 'settingsView',
