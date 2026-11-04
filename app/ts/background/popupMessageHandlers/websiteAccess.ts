@@ -46,11 +46,20 @@ export async function reloadConnectedTabs(websiteTabConnections: WebsiteTabConne
 
 // Reload first so outgoing pages drop their connections before reconciliation can re-prompt them; always reconcile so a stored revocation reaches open connections even if the reload fails.
 async function reloadConnectedTabsThenReconcileApprovals(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections) {
+	let reloadFailure: { readonly error: unknown } | undefined
 	try {
 		await reloadConnectedTabs(websiteTabConnections)
-	} finally {
-		await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
+	} catch (error) {
+		reloadFailure = { error }
 	}
+	try {
+		await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
+	} catch (reconcileError) {
+		// Report the reload failure so the reconciliation error thrown next does not hide it.
+		if (reloadFailure !== undefined) await reportUnexpectedError(reloadFailure.error, { code: 'connected_tab_reload_failed' })
+		throw reconcileError
+	}
+	if (reloadFailure !== undefined) throw reloadFailure.error
 }
 
 export async function disableInterceptor(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: DisableInterceptor) {
