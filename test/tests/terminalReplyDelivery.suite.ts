@@ -1375,6 +1375,67 @@ for (const signerResult of signerResults) {
 		})
 	}
 
+	// Fails the next read of the committed replies once.
+	const failNextCommittedReplyLookup = () => {
+		let failing = true
+		browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+			if (failing && Array.isArray(keys) && keys.includes('pendingTerminalReplies')) {
+				failing = false
+				throw new Error('The committed reply could not be read.')
+			}
+			return readStoredItems()
+		})
+	}
+
+	// The website got exactly one reply, the rejection, nothing the signer result stands for was persisted, and the request is cleaned up.
+	const assertRejectedOnce = async (postedMessages: readonly unknown[]) => {
+		const replies = getRepliesToWebsite(postedMessages)
+		assert.equal(replies.length, 1, 'exactly one reply')
+		const [rejection] = replies
+		if (!isRecord(rejection) || !isRecord(rejection.error)) throw new Error('Missing rejection sent to the website')
+		assert.equal(rejection.error.code, METAMASK_ERROR_USER_REJECTED_REQUEST)
+		assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+		assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+		await assertNoOutcomePersisted()
+	}
+
+	test(`a decline stored before a restart wins over ${ signerResult.name } that arrives before startup recovery's retry`, async () => {
+		const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
+		const { data } = await signerResult.prepare()
+		await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => ({ ...pending, declineRequested: 'reject' as const }))
+		browserMock.setLiveWindowIds([pendingTransaction.popupOrTabId.id])
+		const { beginStartupRecovery, resumeCommittedRequests } = await import('../../app/ts/background/requestResolution.js')
+		beginStartupRecovery()
+		failNextCommittedReplyLookup()
+		try {
+			await assert.rejects(resumeCommittedRequests(testResolutionContext(websiteTabConnections)), /The committed reply could not be read/)
+			// Arbitrated under the claim, the earlier decline wins and is delivered.
+			await resolveRequest(websiteTabConnections, data)
+			assert.equal(getRepliesToWebsite(postedMessages).length, 1)
+			// Startup recovery's retry finds the request resolved.
+			await withSilencedConsole(async () => await resumeCommittedRequests(testResolutionContext(websiteTabConnections)))
+			await withSilencedConsole(waitForResolutionRetriesToFinish)
+		} finally {
+			browserMock.setStorageGetHandler(undefined)
+		}
+		await assertRejectedOnce(postedMessages)
+	})
+
+	test(`a reject of this session whose lookup failed still wins over ${ signerResult.name } that arrives after it`, async () => {
+		const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
+		const { data } = await signerResult.prepare()
+		failNextCommittedReplyLookup()
+		try {
+			await withSilencedConsole(async () => await rejectRequest(websiteTabConnections))
+			assert.deepEqual(getRepliesToWebsite(postedMessages), [], 'the reject is retried')
+			await resolveRequest(websiteTabConnections, data)
+			await withSilencedConsole(waitForResolutionRetriesToFinish)
+		} finally {
+			browserMock.setStorageGetHandler(undefined)
+		}
+		await assertRejectedOnce(postedMessages)
+	})
+
 	test(`${ signerResult.name } whose settlement throws wins over a later decline on the request's retry`, async () => {
 		const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
 		const { data, result } = await signerResult.prepare()

@@ -189,11 +189,17 @@ export async function resumeRequest(uniqueRequestIdentifier: UniqueRequestIdenti
 }
 
 /**
- * The one arbitration between a request's kept inputs, a signer result (submitSignerResult) and a decline (declineRequest), run under the request's claim for a request still pending and uncommitted, from every path: a decline, direct or deferred, a retry, resumeRequest and submitSignerResult. The first to arrive wins: a signer result that arrived first is settled, and the decline only runs if the request is still pending and uncommitted afterwards (its result was refused); a decline that arrived first rejects the request and the signer result is dropped.
+ * The one arbitration between a request's kept inputs, a signer result (submitSignerResult) and a decline (declineRequest, or the declineRequested a pending request carries from an earlier session), run under the request's claim for a request still pending and uncommitted, from every path: a decline, direct or deferred, a retry, resumeRequest and submitSignerResult. The first to arrive wins: a signer result that arrived first is settled, and the decline only runs if the request is still pending and uncommitted afterwards (its result was refused); a decline that arrived first rejects the request and the signer result is dropped.
  * A settlement that throws keeps both inputs, in their order, for the request's retry.
  */
 async function resolveKeptInputs(current: PendingTransactionOrSignableMessage, context: ResolutionContext): Promise<boolean | undefined> {
 	const claim = getUniqueRequestIdentifierString(current.uniqueRequestIdentifier)
+	// A decline stored on the request that this session never recorded came from an earlier session, so it arrived before every input of this session; one this session recorded keeps its in-memory order.
+	const earlierSessionDecline = declineIntents.has(claim) ? undefined : current.declineRequested
+	if (earlierSessionDecline !== undefined) {
+		keptSignerResults.delete(claim)
+		return await rejectUnlessStacked(current, earlierSessionDecline, context)
+	}
 	const signerResult = keptSignerResults.get(claim)
 	if (signerResult !== undefined && signerResultPrecedesDecline(claim)) {
 		const settled = await context.settleSignerResult(current, signerResult.signerReply, context)
