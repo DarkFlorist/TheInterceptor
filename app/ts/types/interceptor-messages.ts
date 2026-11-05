@@ -715,7 +715,7 @@ export const SetRpcList = funtypes.ReadonlyObject({
 	data: RpcEntries,
 })
 
-// The RPC configuration as the popup pages see it. An unavailable status has no list or network, so a page has to narrow on `available` before it can read either, and keeps what it last showed.
+// The RPC configuration as the popup pages see it. An unavailable status has no list, so a page has to narrow on `available` before it can read one, and keeps what it last showed. Its `readableActiveRpcNetwork` is the stored active network when that can still be read, for browsing local data such as the address book; it says nothing about the network being usable.
 export type PopupRpcStatus = funtypes.Static<typeof PopupRpcStatus>
 const PopupRpcStatus = funtypes.Union(
 	funtypes.ReadonlyObject({
@@ -723,7 +723,10 @@ const PopupRpcStatus = funtypes.Union(
 		rpcEntries: RpcEntries,
 		activeRpcNetwork: RpcNetwork,
 	}),
-	funtypes.ReadonlyObject({ available: funtypes.Literal(false) }),
+	funtypes.ReadonlyObject({
+		available: funtypes.Literal(false),
+		readableActiveRpcNetwork: funtypes.Union(RpcNetwork, funtypes.Undefined),
+	}),
 )
 
 type UpdateRPCList = funtypes.Static<typeof UpdateRPCList>

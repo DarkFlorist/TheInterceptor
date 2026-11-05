@@ -4,7 +4,7 @@ import { serialize } from '../../types/wire-types.js'
 import { isJSON } from '../../utils/json.js'
 import { Semaphore } from '../../utils/semaphore.js'
 import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
-import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettingsSnapshot, getUseTabsInsteadOfPopup, importSettingsAndAddressBook, type SettingsSnapshot } from '../settings.js'
+import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettingsSnapshot, getUseTabsInsteadOfPopup, importSettingsAndAddressBook, settingsIfAvailable, type SettingsSnapshot } from '../settings.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { DEFAULT_RPCS } from '../../config/defaults.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
@@ -14,11 +14,12 @@ import { rpcConfigurationIsReady, rpcConfigurationIsUsable } from '../rpcConfigu
 
 type PublishRpcConfigurationRecovery = (simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, previousSettings: Settings | undefined, activeRpcNetwork: Settings['activeRpcNetwork'], forceChainChanged?: boolean) => Promise<readonly unknown[]>
 
-// Published whenever the RPC configuration is not usable: the Settings RPC section then offers Retry and Restore.
-const UNAVAILABLE_RPC_STATUS: PopupRpcStatus = { available: false }
+// Published when the RPC configuration could not be read at all: the Settings RPC section then offers Retry and Restore.
+const UNREADABLE_RPC_STATUS: PopupRpcStatus = { available: false, readableActiveRpcNetwork: undefined }
 
-function getPopupRpcStatus({ rpcConfiguration }: SettingsSnapshot, simulationServicesOwner: SimulationServicesOwner): PopupRpcStatus {
-	if (!rpcConfigurationIsReady(rpcConfiguration) || !rpcConfigurationIsUsable(rpcConfiguration, simulationServicesOwner)) return UNAVAILABLE_RPC_STATUS
+function getPopupRpcStatus(settingsSnapshot: SettingsSnapshot, simulationServicesOwner: SimulationServicesOwner): PopupRpcStatus {
+	const { rpcConfiguration } = settingsSnapshot
+	if (!rpcConfigurationIsReady(rpcConfiguration) || !rpcConfigurationIsUsable(rpcConfiguration, simulationServicesOwner)) return { available: false, readableActiveRpcNetwork: settingsIfAvailable(settingsSnapshot)?.activeRpcNetwork }
 	return { available: true, rpcEntries: rpcConfiguration.rpcEntries, activeRpcNetwork: rpcConfiguration.activeRpcNetwork }
 }
 
@@ -34,7 +35,7 @@ async function publishCurrentRpcStatus(simulationServicesOwner: SimulationServic
 		try {
 			rpcStatus = getPopupRpcStatus(await getSettingsSnapshot(), simulationServicesOwner)
 		} catch (unexpectedError: unknown) {
-			return await throwAfterFollowUp(unexpectedError, async () => await publishRpcListUpdate(UNAVAILABLE_RPC_STATUS))
+			return await throwAfterFollowUp(unexpectedError, async () => await publishRpcListUpdate(UNREADABLE_RPC_STATUS))
 		}
 		await publish(rpcStatus)
 	})

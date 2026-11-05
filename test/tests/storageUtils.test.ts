@@ -406,7 +406,9 @@ describe('RPC storage recovery', () => {
 		const settingsReply = MessageToPopup.parse(runtimeMessages.at(-1))
 		assert.equal(settingsReply.method, 'popup_requestSettingsReply')
 		if (settingsReply.method !== 'popup_requestSettingsReply') return
-		assert.deepEqual(settingsReply.data.rpcStatus, { available: false })
+		assert.equal(settingsReply.data.rpcStatus.available, false)
+		// Paused services leave the stored network readable, so pages can still browse local data for it.
+		if (!settingsReply.data.rpcStatus.available) assert.equal(settingsReply.data.rpcStatus.readableActiveRpcNetwork?.name, customPrimaryRpc.name)
 		assert.equal(owner.getCurrent() !== undefined, false)
 
 		await retryRpcConfiguration(owner, ignoreRecoveryPublication)
@@ -440,7 +442,7 @@ describe('RPC storage recovery', () => {
 			const rpcStatus = MessageToPopup.parse(runtimeMessages.at(-1))
 			assert.equal(rpcStatus.method, 'popup_update_rpc_list')
 			if (rpcStatus.method !== 'popup_update_rpc_list') return
-			assert.deepEqual(rpcStatus.data, { available: false })
+			assert.equal(rpcStatus.data.available, false)
 		} finally {
 			everyStorageReadError = undefined
 			owner.clear()
@@ -459,7 +461,7 @@ describe('RPC storage recovery', () => {
 			const settingsReply = MessageToPopup.parse(runtimeMessages[0])
 			assert.equal(settingsReply.method, 'popup_requestSettingsReply')
 			if (settingsReply.method !== 'popup_requestSettingsReply') return
-			assert.deepEqual(settingsReply.data.rpcStatus, { available: false })
+			assert.deepEqual(settingsReply.data.rpcStatus, { available: false, readableActiveRpcNetwork: undefined })
 			assert.equal(settingsReply.data.useTabsInsteadOfPopup, true)
 			assert.equal(settingsReply.data.metamaskCompatibilityMode, false)
 			assert.equal(settingsReply.data.safeAppsCompatibilityMode, true)
@@ -613,7 +615,7 @@ describe('RPC storage recovery', () => {
 			assert.equal(owner.getCurrent() !== undefined, false)
 			// The list write is committed, so its status is still published after the failed services change, and it reports the paused services instead of a resumed configuration.
 			const rpcListUpdates = runtimeMessages.flatMap((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_update_rpc_list' && 'data' in message ? [message.data] : [])
-			assert.deepEqual(rpcListUpdates, [{ available: false }])
+			assert.deepEqual(rpcListUpdates.map((rpcStatus) => rpcStatus.available), [false])
 		} finally {
 			Object.defineProperty(browser.storage.local, 'set', { configurable: true, value: originalSet })
 			owner.clear()
@@ -662,7 +664,7 @@ describe('RPC storage recovery', () => {
 		const unavailableListUpdate = MessageToPopup.parse(runtimeMessages.at(-1))
 		assert.equal(unavailableListUpdate.method, 'popup_update_rpc_list')
 		if (unavailableListUpdate.method === 'popup_update_rpc_list') {
-			assert.deepEqual(unavailableListUpdate.data, { available: false })
+			assert.equal(unavailableListUpdate.data.available, false)
 		}
 
 		await setNewRpcList(owner, new Map(), { method: 'popup_set_rpc_list', data: [customFallbackRpc] }, settings, ignoreRecoveryPublication)

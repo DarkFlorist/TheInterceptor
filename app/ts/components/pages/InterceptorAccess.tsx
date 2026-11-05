@@ -18,6 +18,7 @@ import type { RpcEntries } from '../../types/rpc.js'
 import type { ModifyAddressWindowState } from '../../types/visualizer-types.js'
 import { ChevronIcon } from '../subcomponents/icons.js'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
+import { getReadableRpcNetwork } from '../../utils/rpcNetworkChange.js'
 import { sendPopupReadyAndListening } from '../../background/backgroundUtils.js'
 import { sanitizeStoredWebsiteIcon } from '../../utils/websiteIcons.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
@@ -244,9 +245,9 @@ export function InterceptorAccess() {
 			}
 			if (parsed.method === 'popup_requestSettingsReply') {
 				const { rpcStatus } = parsed.data
-				if (!rpcStatus.available) return false
-				rpcEntries.value = rpcStatus.rpcEntries
-				activeRpcChainId.value = rpcStatus.activeRpcNetwork.chainId
+				if (rpcStatus.available) rpcEntries.value = rpcStatus.rpcEntries
+				const readableRpcNetwork = getReadableRpcNetwork(rpcStatus)
+				if (readableRpcNetwork !== undefined) activeRpcChainId.value = readableRpcNetwork.chainId
 				return false
 			}
 			if (parsed.method === 'popup_addressBookEntriesChanged') {
