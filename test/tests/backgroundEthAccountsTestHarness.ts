@@ -9,6 +9,7 @@ import type { PublishRpcConnectionStatus } from '../../app/ts/background/rpcSlow
 import { createSafeTx, safeTxToTypedDataJson } from '../../app/ts/safe/safeCore.js'
 import { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
+import { DEFAULT_RPCS } from '../../app/ts/config/defaults.js'
 
 type Listener = () => void
 type PortMessage = { walletSwitchRequestId?: unknown, type?: unknown, method?: unknown, result?: unknown, requestId?: unknown, error?: { code?: unknown, message?: unknown } }
@@ -220,10 +221,11 @@ export function createEthereumWithGetBlockCounter(
 		readonly getStorageAtResult?: bigint
 	} = {},
 ) {
+	// On the default network the empty mock storage resolves to: request handling refuses services that do not serve the stored network.
 	const rpcEntry: RpcEntry = {
 		name: 'Test RPC',
 		chainId: 1n,
-		httpsRpc: 'http://127.0.0.1:8545',
+		httpsRpc: DEFAULT_RPCS[0].httpsRpc,
 		currencyName: 'Ether',
 		currencyTicker: 'ETH',
 		primary: true,

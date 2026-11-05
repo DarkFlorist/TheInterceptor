@@ -35,6 +35,8 @@ import { getWatchAssetRpcParseFailureReply } from './watchAssetRpc.js'
 import { createMethodHandlerFor } from '../utils/methodHandlers.js'
 import { getWalletCapabilities } from './walletCapabilities.js'
 import { getWalletGetCapabilitiesParseFailureReply } from './walletGetCapabilitiesRpc.js'
+import { rpcServicesServeNetwork } from './rpcConfigurationAvailability.js'
+import type { RpcNetwork } from '../types/rpc.js'
 import { hasAccess as getWebsiteAccessApprovalState, hasAddressAccess as getWebsiteAddressAccessApprovalState } from './websiteAccessPolicy.js'
 import { replyIfRpcConfigurationIsUnavailable } from './rpcConfigurationRequestGuard.js'
 import { RPC_CONFIGURATION_UNAVAILABLE_ERROR } from '../types/interceptor-reply-messages.js'
@@ -566,12 +568,21 @@ async function recheckSignerForwardBeforePosting(resolved: RPCReply): Promise<'p
 	return liveSettings.simulationMode ? 'reroute' : 'post'
 }
 
-async function handleContentScriptMessage(simulationServicesOwner: SimulationServicesOwner, simulationServices: SimulationServices | undefined, websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, website: Website, activeAddress: AddressBookEntry, admittedSettings: Settings, publishRpcConnectionStatus: PublishRpcConnectionStatus) {
+// A request can capture its services between a transition's settings write and its services installation. Those services belong to the previous network, so the request moves on to the installed services once they serve its network; while they do not, it is refused so that the website sends it again.
+function getServicesForLiveNetwork(simulationServicesOwner: SimulationServicesOwner, admittedServices: SimulationServices | undefined, liveRpcNetwork: RpcNetwork) {
+	if (admittedServices === undefined || rpcServicesServeNetwork(admittedServices, liveRpcNetwork)) return admittedServices
+	const installedServices = simulationServicesOwner.getCurrent()
+	return installedServices !== undefined && rpcServicesServeNetwork(installedServices, liveRpcNetwork) ? installedServices : 'transition-in-progress'
+}
+
+async function handleContentScriptMessage(simulationServicesOwner: SimulationServicesOwner, admittedSimulationServices: SimulationServices | undefined, websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, website: Website, activeAddress: AddressBookEntry, admittedSettings: Settings, publishRpcConnectionStatus: PublishRpcConnectionStatus) {
 	try {
 		const requestWithDefinedParams = getRequestWithDefinedParams(request)
 		const liveSettings = await getLiveSettingsOnAdmittedRpcNetwork(admittedSettings)
 		if (liveSettings.kind !== 'ready') return replyAdmittedRpcNetworkNoLongerLive(websiteTabConnections, request, liveSettings.kind)
 		const { settings } = liveSettings
+		const simulationServices = getServicesForLiveNetwork(simulationServicesOwner, admittedSimulationServices, settings.activeRpcNetwork)
+		if (simulationServices === 'transition-in-progress') return replyAdmittedRpcNetworkNoLongerLive(websiteTabConnections, request, 'chain-changed')
 		const currentChainEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId)
 		const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)
 		const safeSigningMode = isActiveSigningSafe(activeAddress, settings.simulationMode, settings.activeSigningSafeAddress, settings.activeRpcNetwork.chainId, signerTabState.signerAccounts, currentChainEntries)
@@ -599,7 +610,7 @@ async function handleContentScriptMessage(simulationServicesOwner: SimulationSer
 		const signerForwardRecheck = await recheckSignerForwardBeforePosting(resolved)
 		if (signerForwardRecheck === 'unavailable') return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...requestWithDefinedParams, error: RPC_CONFIGURATION_UNAVAILABLE_ERROR })
 		// Simulation mode was enabled after routing was decided, so the request is routed again under the live mode instead of reaching the real signer.
-		if (signerForwardRecheck === 'reroute') return await handleContentScriptMessage(simulationServicesOwner, simulationServices, websiteTabConnections, request, website, activeAddress, admittedSettings, publishRpcConnectionStatus)
+		if (signerForwardRecheck === 'reroute') return await handleContentScriptMessage(simulationServicesOwner, admittedSimulationServices, websiteTabConnections, request, website, activeAddress, admittedSettings, publishRpcConnectionStatus)
 		replayProviderStateForAccountRequest(websiteTabConnections, request, resolved, activeAddress.address)
 		return replyToInterceptedRequest(websiteTabConnections, { ...requestWithDefinedParams, ...resolved })
 	} catch (error: unknown) {

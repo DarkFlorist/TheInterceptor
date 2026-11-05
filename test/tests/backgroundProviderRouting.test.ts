@@ -477,6 +477,61 @@ describe('background eth_accounts', () => {
 		return context
 	}
 
+	// A network transition stores the new network before it installs that network's services; this request is admitted between the two and parked on the website lookup.
+	const admitRequestBetweenNetworkWriteAndServicesInstallation = async (nextNetworkOf: (network: RpcNetwork) => RpcNetwork & { readonly httpsRpc: string }) => {
+		const { changeSimulationMode, getRequiredSettings, handleInterceptedRequest, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, websiteSocketToString } = await loadModules()
+		const website = { websiteOrigin: 'https://admitted-mid-transition.example', icon: undefined, title: undefined }
+		const account = 1n
+		await setUseSignersAddressAsActiveAddress(false)
+		const original = createEthereumWithGetBlockCounter({ count: 0 })
+		const installed = createEthereumWithGetBlockCounter({ count: 0 })
+		const nextNetwork = nextNetworkOf((await getRequiredSettings()).activeRpcNetwork)
+		installed.ethereum.getChainId = () => nextNetwork.chainId
+		installed.ethereum.getRpcEntry = () => nextNetwork
+		const owner = createTestSimulationServicesOwner(original, () => installed)
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: account, rpcNetwork: nextNetwork })
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin: website.websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const parkedWebsite = createDeferredValue<typeof website>()
+		const requestPromise = handleInterceptedRequest(port, website.websiteOrigin, parkedWebsite.promise, owner, socket, {
+			interceptorRequest: true, usingInterceptorWithoutSigner: true,
+			uniqueRequestIdentifier: { requestId: 991, requestSocket: socket }, method: 'eth_chainId', params: [],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		const finish = async () => {
+			parkedWebsite.resolve(website)
+			await requestPromise
+			return messages.find((message) => message.requestId === 991)
+		}
+		return { finish, installServices: () => owner.reset(nextNetwork) }
+	}
+
+	test('a request admitted between the network write and the services installation uses the new network once they are installed', async () => {
+		installBrowserMock()
+		const { finish, installServices } = await admitRequestBetweenNetworkWriteAndServicesInstallation(otherChainRpcOf)
+
+		installServices()
+
+		assert.equal((await finish())?.result, '0x2')
+	})
+
+	test.each([
+		{ description: 'chain', nextNetworkOf: otherChainRpcOf },
+		{ description: 'endpoint', nextNetworkOf: otherEndpointRpcOf },
+	])('a request is not served by the previous $description while the transition has not installed the new services', async ({ nextNetworkOf }) => {
+		installBrowserMock()
+		const { finish } = await admitRequestBetweenNetworkWriteAndServicesInstallation(nextNetworkOf)
+
+		const reply = await finish()
+
+		assert.equal(reply?.error?.code, 4901)
+		assert.equal(reply?.result, undefined)
+	})
+
 	test('does not re-approve a connection that a chain switch unapproved while the request was parked', async () => {
 		installBrowserMock()
 		const { changeActiveAddressAndChain } = await loadModules()

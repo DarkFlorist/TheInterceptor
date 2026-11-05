@@ -1,5 +1,6 @@
 import type { SimulationServices, SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
-import type { RpcEntry } from '../types/rpc.js'
+import type { RpcEntry, RpcNetwork } from '../types/rpc.js'
+import { getRpcNetworkChange } from '../utils/rpcNetworkChange.js'
 import type { RpcConfigurationState } from './rpcConfigurationStorage.js'
 
 export function rpcConfigurationIsReady(rpcConfiguration: RpcConfigurationState): rpcConfiguration is Extract<RpcConfigurationState, { status: 'ready' }> {
@@ -26,6 +27,11 @@ export function rpcServicesAreAvailable(rpcConfiguration: RpcConfigurationState,
 export function getRpcServicesAtAdmission(rpcConfiguration: RpcConfigurationState, simulationServicesOwner: SimulationServicesOwner): SimulationServices | undefined {
 	if (!rpcConfigurationIsReady(rpcConfiguration)) return undefined
 	return simulationServicesOwner.getCurrent()
+}
+
+// A network transition stores the new network before it installs that network's services, so services captured beside settings can still belong to the previous network. A signer-only network has no services of its own and keeps a fallback, which serves it by definition.
+export function rpcServicesServeNetwork({ ethereum }: SimulationServices, rpcNetwork: RpcNetwork) {
+	return rpcNetwork.httpsRpc === undefined || !getRpcNetworkChange(ethereum.getRpcEntry(), rpcNetwork).endpointChanged
 }
 
 export function rpcConfigurationIsUsable(rpcConfiguration: RpcConfigurationState, simulationServicesOwner: SimulationServicesOwner) {
