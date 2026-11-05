@@ -1,5 +1,5 @@
 import { reportUnexpectedError } from '../utils/errors.js'
-import { runEachIndependently } from './terminalStateRecovery.js'
+import { runEachIndependently } from '../utils/array.js'
 
 // Every failure is surfaced: the first is thrown and every other one is reported. Callers pass at least one failure.
 export async function throwFirstAndReportRest(failures: readonly unknown[]): Promise<never> {

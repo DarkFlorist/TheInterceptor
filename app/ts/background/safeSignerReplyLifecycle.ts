@@ -15,7 +15,8 @@ import { createSafeSignerErrorStatus } from './safeSignerErrors.js'
 import { deferSignatureUnlessAnswered, getPendingSafeProposalStores, getPendingTransactionOrMessage, getPendingTransactionsAndMessages, movePendingSafeProposalToOutbox, removePendingSafeProposalStore, removePendingTransactionOrMessage, updatePendingTransactionOrMessage } from './storageVariables.js'
 import { getPendingTerminalReplies } from './pendingTerminalReplies.js'
 import { attemptQueuedTerminalReplyDelivery, deliverOwnQueuedTerminalReply, deliverQueuedTerminalReplyOnce, queueSafeProposalReplyAndMoveToOutbox, queueTerminalReplyUnlessDeferred } from './terminalReplyDelivery.js'
-import { runEachIndependently, surfaceIndependentFailures } from './terminalStateRecovery.js'
+import { surfaceIndependentFailures } from './terminalStateRecovery.js'
+import { runEachIndependently } from '../utils/array.js'
 
 // The confirmation window work the lifecycle asks for. The lifecycle never imports the confirmation window or popup code: windows/confirmTransaction.ts supplies these callbacks, and tests can supply stubs. The website's answer never waits on view work, so each view callback reports its own failures instead of throwing.
 export type SafeSignerReplyConfirmationWindow = {
