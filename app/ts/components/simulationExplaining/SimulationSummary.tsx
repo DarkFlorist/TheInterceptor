@@ -26,7 +26,7 @@ import { createAsyncActionRunner, useAsyncState } from '../../utils/preact-utili
 import { useOptionalSignal } from '../../utils/OptionalSignal.js'
 import { type ReadonlySignal, type Signal, useComputed, useSignal } from '@preact/signals'
 import type { SignalOrValue } from '../../utils/signals.js'
-import { getGasFeePaidByTransactionSender, type TransactionGasAccounting } from '../../utils/transactionGasAccounting.js'
+import { getGasFeePaidByTransactionSender, isPaidByGnosisSafeExecutor, type TransactionGasAccounting } from '../../utils/transactionGasAccounting.js'
 import type { VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
 import { identifySignature } from './identifySignature.js'
 import { Collapsible } from '../subcomponents/Collapsible.js'
@@ -569,17 +569,17 @@ export type TransactionGasses = TransactionGasAccounting
 
 export function GasFee({ tx, rpcNetwork }: { tx: TransactionGasses, rpcNetwork: SignalOrValue<RpcNetwork> } ) {
 	return <>
-		<div class = 'log-cell'>
-			<p class = 'ellipsis' style = { 'color: var(--subtitle-text-color); margin-bottom: 0px' }> { tx.safeTransaction === undefined ? 'Gas fee:' : 'Gnosis Safe gas reimbursement:' }</p>
+		<div class = 'log-cell gas-fee-label'>
+			<p class = 'ellipsis' style = { 'color: var(--subtitle-text-color); margin-bottom: 0px' }> { isPaidByGnosisSafeExecutor(tx) ? 'Gnosis Safe gas reimbursement:' : 'Gas fee:' }</p>
 		</div>
-		<div class = 'log-cell'>
+		<div class = 'log-cell gas-fee-value'>
 			<EtherAmount
 				amount = { getGasFeePaidByTransactionSender(tx) }
 				style = { { color: 'var(--subtitle-text-color)' } }
 				fontSize = 'normal'
 			/>
 		</div>
-		<div class = 'log-cell'>
+		<div class = 'log-cell gas-fee-value'>
 			<EtherSymbol
 				style = { { color: 'var(--subtitle-text-color)' } }
 				rpcNetwork = { rpcNetwork }
