@@ -3,7 +3,7 @@ import { test } from 'bun:test'
 import { getLatestUnexpectedError } from '../../app/ts/background/storageVariables.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../app/ts/utils/constants.js'
-import { activeAddress, browserMock, bytes32String, createDisconnectedPort, createRecordingPort, createSafeAddressBookEntry, createSafeTx, EIP712Message, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, pendingTransaction, privateKeyToAccount, recipientAddress, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, signedTransaction, simulator, uniqueRequestIdentifier, waitForPendingTransactionsToClear, withSilencedConsole } from './confirmTransactionTestHarness.js'
+import { activeAddress, browserMock, bytes32String, createDisconnectedPort, createRecordingPort, createSafeAddressBookEntry, createSafeTx, createWebsitePort, EIP712Message, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, pendingTransaction, privateKeyToAccount, recipientAddress, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, signedTransaction, simulator, uniqueRequestIdentifier, waitForPendingTransactionsToClear, withSilencedConsole } from './confirmTransactionTestHarness.js'
 import { fixedServicesOwner } from './backgroundEthAccountsTestHarness.js'
 
 // Like a request snapshot, confirmations read the settings together with the simulation stack built from them, under the network transition lock.
@@ -191,7 +191,7 @@ test('MV2 popup close rejects its captured requests without deleting a concurren
 	})
 
 	try {
-		await modules.onCloseWindowOrTab(fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService), { type: 'popup', id: 1 }, simulator.ethereum, simulator.tokenPriceService, await readNetworkState(), websiteTabConnections)
+		await modules.onCloseWindowOrTab(fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService), { type: 'popup', id: 1 }, websiteTabConnections)
 	} finally {
 		browserMock.setManifestVersion(3)
 		browserMock.setTabMessageHandler(undefined)
@@ -240,7 +240,7 @@ test('popup close keeps the pending request when durable rejection enqueue fails
 		return readStoredItems()
 	})
 
-	await withSilencedConsole(async () => await modules.onCloseWindowOrTab(fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService), { type: 'popup', id: 1 }, simulator.ethereum, simulator.tokenPriceService, await readNetworkState(), websiteTabConnections))
+	await withSilencedConsole(async () => await modules.onCloseWindowOrTab(fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService), { type: 'popup', id: 1 }, websiteTabConnections))
 	assert.equal((await modules.getPendingTransactionsAndMessages()).length, 1)
 	assert.equal(postedMessages.length, 0)
 	assert.equal(browserMock.storageState.pendingTerminalReplies, undefined)
@@ -253,6 +253,123 @@ test('popup close keeps the pending request when durable rejection enqueue fails
 	const rejection = postedMessages[0]
 	if (!isRecord(rejection) || !isRecord(rejection.error)) throw new Error('missing popup-close rejection after storage recovery')
 	assert.equal(rejection.error.code, 4001)
+})
+
+// Like an IndexedDB failure of the simulation stack: storage.local keeps working, so everything but the stack can still be read.
+async function withUnreadableSimulationStack(run: () => Promise<void>) {
+	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+		if (Array.isArray(keys) && keys.includes('interceptorTransactionStack')) throw new Error('the simulation stack cannot be read')
+		return readStoredItems()
+	})
+	try {
+		await assert.rejects(readNetworkState(), /the simulation stack cannot be read/u)
+		await withSilencedConsole(run)
+	} finally {
+		browserMock.setStorageGetHandler(undefined)
+	}
+}
+
+function createConnectionRecordingReplies(pendingRequests: readonly (typeof pendingTransaction)[]) {
+	delete browserMock.storageState.pendingTerminalReplies
+	const postedMessages: unknown[] = []
+	const socket = uniqueRequestIdentifier.requestSocket
+	const port = createWebsitePort(socket, 0, postedMessages)
+	const websiteTabConnections = new Map([[socket.tabId, {
+		signerStateOwner: { connectionName: socket.connectionName, confirmed: true, generation: 1, providerGeneration: 1 },
+		connections: { [modules.websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.com', approved: true, wantsToConnect: true } },
+	}]])
+	return { port, postedMessages, websiteTabConnections, storePendingRequests: async () => await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [...pendingRequests] }) }
+}
+
+const assertRejectedOnlyOnce = async (postedMessages: readonly unknown[]) => {
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+	const replies = getRepliesToWebsite(postedMessages)
+	assert.equal(replies.length, 1)
+	const [rejection] = replies
+	if (!isRecord(rejection) || !isRecord(rejection.error)) throw new Error('missing rejection to the website')
+	assert.equal(rejection.error.code, METAMASK_ERROR_USER_REJECTED_REQUEST)
+}
+
+test('popup close delivers the rejection while the simulation stack cannot be read', async () => {
+	const { postedMessages, websiteTabConnections, storePendingRequests } = createConnectionRecordingReplies([pendingTransaction])
+	await storePendingRequests()
+	await withUnreadableSimulationStack(async () => {
+		await modules.onCloseWindowOrTab(fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService), { type: 'popup', id: 1 }, websiteTabConnections)
+		await assertRejectedOnlyOnce(postedMessages)
+	})
+})
+
+test('startup recovery delivers the rejection of an orphaned request while the simulation stack cannot be read', async () => {
+	const { postedMessages, websiteTabConnections, storePendingRequests } = createConnectionRecordingReplies([pendingTransaction])
+	await storePendingRequests()
+	browserMock.setLiveWindowIds([])
+	await withUnreadableSimulationStack(async () => {
+		await modules.resolvePendingRequestsForMissingConfirmationWindows(fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService), websiteTabConnections)
+		await assertRejectedOnlyOnce(postedMessages)
+	})
+})
+
+test('rejecting in the confirmation window reaches the website and closes the window while the simulation stack cannot be read', async () => {
+	const { postedMessages, websiteTabConnections, storePendingRequests } = createConnectionRecordingReplies([pendingTransaction])
+	await storePendingRequests()
+	browserMock.setLiveWindowIds([1])
+	const removedWindowIds: number[] = []
+	browserMock.setWindowRemoveHandler(async (windowId) => { removedWindowIds.push(windowId) })
+	await withUnreadableSimulationStack(async () => {
+		await modules.confirmDialog(fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService), websiteTabConnections, {
+			method: 'popup_confirmDialog',
+			data: { action: 'reject', errorString: undefined, uniqueRequestIdentifier },
+		})
+		await assertRejectedOnlyOnce(postedMessages)
+	})
+	assert.deepEqual(removedWindowIds, [1])
+	browserMock.setWindowRemoveHandler(undefined)
+	browserMock.setLiveWindowIds([])
+})
+
+const createSignerReply = (reply: { readonly success: true, readonly reply: string } | { readonly success: false, readonly error: { readonly code: number, readonly message: string } }) => ({
+	method: 'signer_reply' as const,
+	params: [{
+		...reply,
+		signerProviderGeneration: 1,
+		forwardRequest: {
+			type: 'forwardToSigner' as const,
+			replyWithSignersReply: true as const,
+			method: pendingTransaction.originalRequestParameters.method,
+			params: pendingTransaction.originalRequestParameters.params,
+			requestId: uniqueRequestIdentifier.requestId,
+		},
+	}],
+	interceptorRequest: true as const,
+	interceptorInternalRequest: true as const,
+	usingInterceptorWithoutSigner: false,
+	uniqueRequestIdentifier,
+})
+
+test('a transaction the wallet sent reaches the website while the simulation stack cannot be read', async () => {
+	const waitingForSigner = { ...pendingTransaction, simulationMode: false, approvalStatus: { status: 'WaitingForSigner' } } as const
+	const { port, postedMessages, websiteTabConnections } = createConnectionRecordingReplies([])
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [waitingForSigner] })
+	const transactionHash = bytes32String(0x1234n)
+	await withUnreadableSimulationStack(async () => {
+		await modules.signerReply(fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService), websiteTabConnections, port, createSignerReply({ success: true, reply: transactionHash }), 'hasAccess', activeAddress)
+		assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+		const [reply] = getRepliesToWebsite(postedMessages)
+		if (!isRecord(reply)) throw new Error('missing the wallet result')
+		assert.equal(reply.result, transactionHash)
+	})
+})
+
+test('a rejection in the wallet returns the request to the user while the simulation stack cannot be read', async () => {
+	const waitingForSigner = { ...pendingTransaction, simulationMode: false, approvalStatus: { status: 'WaitingForSigner' } } as const
+	const { port, websiteTabConnections } = createConnectionRecordingReplies([])
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [waitingForSigner] })
+	await withUnreadableSimulationStack(async () => {
+		await modules.signerReply(fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService), websiteTabConnections, port, createSignerReply({ success: false, error: { code: METAMASK_ERROR_USER_REJECTED_REQUEST, message: 'User rejected' } }), 'hasAccess', activeAddress)
+		const [pending] = await modules.getPendingTransactionsAndMessages()
+		assert.equal(pending?.approvalStatus.status, 'WaitingForUser')
+	})
 })
 
 test('popup close retries outbox cleanup without reposting after direct delivery', async () => {
@@ -291,7 +408,7 @@ test('popup close retries outbox cleanup without reposting after direct delivery
 		return readStoredItems()
 	})
 
-	await withSilencedConsole(async () => await modules.onCloseWindowOrTab(fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService), { type: 'popup', id: 1 }, simulator.ethereum, simulator.tokenPriceService, await readNetworkState(), websiteTabConnections))
+	await withSilencedConsole(async () => await modules.onCloseWindowOrTab(fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService), { type: 'popup', id: 1 }, websiteTabConnections))
 	assert.equal(postedMessages.length, 1)
 	assert.equal((await modules.getPendingTransactionsAndMessages()).length, 1)
 	assert.equal((await modules.getPendingTerminalReplies()).length, 1)
@@ -355,7 +472,7 @@ test('MV2 reconnect cleanup failure retries without reposting the rejection', as
 	})
 
 	try {
-		await withSilencedConsole(async () => await modules.onCloseWindowOrTab(fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService), { type: 'popup', id: 1 }, simulator.ethereum, simulator.tokenPriceService, await readNetworkState(), websiteTabConnections))
+		await withSilencedConsole(async () => await modules.onCloseWindowOrTab(fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService), { type: 'popup', id: 1 }, websiteTabConnections))
 		assert.equal(postedMessages.length, 1)
 		assert.equal((await modules.getPendingTransactionsAndMessages()).length, 1)
 		assert.equal((await modules.getPendingTerminalReplies()).length, 1)
@@ -394,7 +511,7 @@ test('startup recovery rejects orphaned requests and preserves requests with liv
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [pendingTransaction, livePendingTransaction] })
 	browserMock.setLiveWindowIds([livePopupId])
 
-	await modules.resolvePendingRequestsForMissingConfirmationWindows(fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService), simulator.ethereum, simulator.tokenPriceService, await readNetworkState(), websiteTabConnections)
+	await modules.resolvePendingRequestsForMissingConfirmationWindows(fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService), websiteTabConnections)
 	const remainingTransactions = await modules.getPendingTransactionsAndMessages()
 	assert.deepEqual(remainingTransactions.map((transaction) => transaction.uniqueRequestIdentifier.requestId), [livePendingTransaction.uniqueRequestIdentifier.requestId])
 	assert.equal(postedMessages.length, 1)
@@ -412,7 +529,7 @@ test('startup recovery removes the unreachable rejection created for an orphaned
 	browserMock.setLiveTabIds([])
 	browserMock.setLiveWindowIds([])
 
-	await modules.resolvePendingRequestsForMissingConfirmationWindows(fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService), simulator.ethereum, simulator.tokenPriceService, await readNetworkState(), new Map())
+	await modules.resolvePendingRequestsForMissingConfirmationWindows(fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService), new Map())
 	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
 	assert.equal((await modules.getPendingTerminalReplies()).length, 1)
 
@@ -444,7 +561,7 @@ test('popup-close rejection remains queued after reconnect timeout and flushes o
 	browserMock.setTabMessageHandler(async () => ({ reconnected: true }))
 
 	try {
-		await modules.onCloseWindowOrTab(fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService), { type: 'popup', id: 1 }, simulator.ethereum, simulator.tokenPriceService, await readNetworkState(), websiteTabConnections)
+		await modules.onCloseWindowOrTab(fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService), { type: 'popup', id: 1 }, websiteTabConnections)
 		await new Promise((resolve) => setTimeout(resolve, 1_050))
 		assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
 		assert.equal((await modules.getPendingTerminalReplies()).length, 1)

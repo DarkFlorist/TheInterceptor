@@ -32,7 +32,7 @@ import * as funtypes from 'funtypes'
 import { assertNever, modifyObject } from '../../utils/typescript.js'
 import { simulateGnosisSafeTransactionOnPass } from '../popupMessageHandlers.js'
 import { appendToActiveSimulationStack } from '../networkTransition.js'
-import { readNetworkState } from '../networkTransitionLock.js'
+import { readNetworkSnapshot, readNetworkState } from '../networkTransitionLock.js'
 import type { SimulationServices, SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
 import { activeStackContextsEqual, getActiveStackContext } from '../../utils/activeStackContext.js'
 import { computeConfirmationVisualisation, updatePopupVisualisationIfNeeded } from '../popupVisualisationUpdater.js'
@@ -263,6 +263,20 @@ export async function updateConfirmTransactionView(ethereum: EthereumClientServi
 	return false
 }
 
+// The view after a request's state was already persisted, for callers that hold no snapshot: nothing is read while no request is pending, and a stack that cannot be read leaves only this view out of date, like any failed view update.
+async function updateConfirmTransactionViewFromRead(readNetwork: () => Promise<NetworkSnapshot>) {
+	try {
+		if ((await getPendingTransactionsAndMessages()).length === 0) return false
+		const network = await readNetwork()
+		return await updateConfirmTransactionView(network.services.ethereum, network.services.tokenPriceService, network)
+	} catch(error: unknown) {
+		if (!isExpectedInfrastructureError(error)) await reportUnexpectedError(error)
+		return false
+	}
+}
+
+export const updateConfirmTransactionViewOnActiveNetwork = async (simulationServicesOwner: SimulationServicesOwner) => await updateConfirmTransactionViewFromRead(async () => await readNetworkSnapshot(simulationServicesOwner))
+
 export const isConfirmTransactionFocused = async () => {
 	const pendingTransactions = await getPendingTransactionsAndMessages()
 	if (pendingTransactions[0] === undefined) return false
@@ -304,9 +318,28 @@ export const setGasLimitForTransaction = async (transactionIdentifier: bigint, g
 
 // The services owner lets an accepted simulated confirmation read the installed services together with the stack it appends to.
 export async function resolvePendingTransactionOrMessage(simulationServicesOwner: SimulationServicesOwner, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, network: NetworkState, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, refreshedSafeSignerSelection?: RefreshedSafeSignerSelection) {
-	// See NetworkState for why these are separate parameters and what keeps them on one network. One snapshot holds them here so they are replaced at once: after this confirmation appends to the stack, later view updates use the snapshot read with that append.
-	let current: NetworkSnapshot = { ...network, services: { ethereum, tokenPriceService } }
-	const updateViewOnCurrentSnapshot = async () => await updateConfirmTransactionView(current.services.ethereum, current.services.tokenPriceService, current)
+	// See NetworkState for why these are separate parameters and what keeps them on one network.
+	const snapshot: NetworkSnapshot = { ...network, services: { ethereum, tokenPriceService } }
+	return await resolvePendingRequest(simulationServicesOwner, ethereum, tokenPriceService, async () => snapshot, websiteTabConnections, confirmation, refreshedSafeSignerSelection)
+}
+
+// Actions that end a request with a reply decided without the simulation stack.
+type SnapshotFreeConfirmation = TransactionConfirmation & { readonly data: { readonly action: 'reject' | 'noResponse' | 'signerIncluded' } }
+
+export const isSnapshotFreeConfirmation = (confirmation: TransactionConfirmation): confirmation is SnapshotFreeConfirmation => (
+	confirmation.data.action === 'reject' || confirmation.data.action === 'noResponse' || confirmation.data.action === 'signerIncluded'
+)
+
+// The website's reply must not wait for a stack that cannot be read, so the snapshot is read only for the view work that follows the reply.
+export async function resolvePendingRequestWithoutSnapshot(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, confirmation: SnapshotFreeConfirmation) {
+	const { ethereum, tokenPriceService } = simulationServicesOwner.getCurrent()
+	return await resolvePendingRequest(simulationServicesOwner, ethereum, tokenPriceService, async () => await readNetworkSnapshot(simulationServicesOwner), websiteTabConnections, confirmation)
+}
+
+async function resolvePendingRequest(simulationServicesOwner: SimulationServicesOwner, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, readNetwork: () => Promise<NetworkSnapshot>, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, refreshedSafeSignerSelection?: RefreshedSafeSignerSelection) {
+	// The services and the snapshot read are replaced at once: after this confirmation appends to the stack, later view updates use the snapshot read with that append.
+	let current = { services: { ethereum, tokenPriceService }, readNetwork }
+	const updateViewOnCurrentSnapshot = async () => await updateConfirmTransactionViewFromRead(current.readNetwork)
 	let pendingTransactionOrMessage = await getPendingTransactionOrMessageByidentifier(confirmation.data.uniqueRequestIdentifier)
 	if (pendingTransactionOrMessage === undefined) return // no need to resolve as it doesn't exist anymore
 	if (
@@ -319,7 +352,7 @@ export async function resolvePendingTransactionOrMessage(simulationServicesOwner
 			ethereum,
 			pendingTransactionOrMessage,
 			refreshedSafeSignerSelection.selectedSigner,
-			async (refreshedPending) => await refreshDirectSafeExecutionSimulation(ethereum, tokenPriceService, network.simulation, refreshedPending),
+			async (refreshedPending) => await refreshDirectSafeExecutionSimulation(ethereum, tokenPriceService, (await readNetwork()).simulation, refreshedPending),
 		)
 		const refreshResult = refresh.refreshResult
 		if (refresh.refreshRequired && refreshResult.status !== 'unchanged' && !refresh.persisted) {
@@ -484,7 +517,7 @@ export async function resolvePendingTransactionOrMessage(simulationServicesOwner
 				pendingTransactionOrMessage.simulationChainId,
 			)
 			if (appended === undefined) return await keepPendingAfterNetworkChange()
-			current = appended
+			current = { services: appended.services, readNetwork: async () => appended }
 			return reply({ type: 'result', result: (await simulatePersonalSign(pendingTransactionOrMessage.originalRequestParameters, pendingTransactionOrMessage.signedMessageTransaction.fakeSignedFor)).signature }, 'changed')
 		}
 		case 'Transaction': {
@@ -493,7 +526,7 @@ export async function resolvePendingTransactionOrMessage(simulationServicesOwner
 			const appended = await appendToActiveSimulationStack(simulationServicesOwner, { type: 'Transaction', preSimulationTransaction: transaction }, pendingTransactionOrMessage.simulationChainId)
 			if (appended === undefined) return await keepPendingAfterNetworkChange()
 			if (appended.stackedOperation.type !== 'Transaction') throw new Error('The stacked operation of this transaction is not a transaction.')
-			current = appended
+			current = { services: appended.services, readNetwork: async () => appended }
 			markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionStackAppended)
 			return reply({ type: 'result', result: EthereumBytes32.serialize(appended.stackedOperation.preSimulationTransaction.signedTransaction.hash) }, 'changed')
 		}
@@ -501,14 +534,14 @@ export async function resolvePendingTransactionOrMessage(simulationServicesOwner
 	}
 }
 
-export const onCloseWindowOrTab = async (simulationServicesOwner: SimulationServicesOwner, popupOrTabs: PopupOrTabId, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, network: NetworkState, websiteTabConnections: WebsiteTabConnections) => { // check if user has closed the window on their own, if so, reject all signatures
+export const onCloseWindowOrTab = async (simulationServicesOwner: SimulationServicesOwner, popupOrTabs: PopupOrTabId, websiteTabConnections: WebsiteTabConnections) => { // check if user has closed the window on their own, if so, reject signature
 	const transactions = await getPendingTransactionsAndMessages()
 	const [firstTransaction] = transactions
 	if (firstTransaction === undefined || firstTransaction?.popupOrTabId.type !== popupOrTabs.type || firstTransaction.popupOrTabId.id !== popupOrTabs.id) return
-	await resolveAllPendingTransactionsAndMessageAsNoResponse(simulationServicesOwner, transactions, ethereum, tokenPriceService, network, websiteTabConnections)
+	await resolveAllPendingTransactionsAndMessageAsNoResponse(simulationServicesOwner, transactions, websiteTabConnections)
 }
 
-export async function resolvePendingRequestsForMissingConfirmationWindows(simulationServicesOwner: SimulationServicesOwner, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, network: NetworkState, websiteTabConnections: WebsiteTabConnections) {
+export async function resolvePendingRequestsForMissingConfirmationWindows(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections) {
 	const pendingTransactions = await getPendingTransactionsAndMessages()
 	const missingConfirmationWindows = new Map<string, boolean>()
 	const orphanedTransactions: PendingTransactionOrSignableMessage[] = []
@@ -521,31 +554,35 @@ export async function resolvePendingRequestsForMissingConfirmationWindows(simula
 		}
 		if (confirmationWindowIsMissing) orphanedTransactions.push(transaction)
 	}
-	await resolveAllPendingTransactionsAndMessageAsNoResponse(simulationServicesOwner, orphanedTransactions, ethereum, tokenPriceService, network, websiteTabConnections)
+	await resolveAllPendingTransactionsAndMessageAsNoResponse(simulationServicesOwner, orphanedTransactions, websiteTabConnections)
 }
 
-const resolveAllPendingTransactionsAndMessageAsNoResponse = async (simulationServicesOwner: SimulationServicesOwner, transactions: readonly PendingTransactionOrSignableMessage[], ethereum: EthereumClientService, tokenPriceService: TokenPriceService, network: NetworkState, websiteTabConnections: WebsiteTabConnections) => {
+const resolveAsNoResponse = async (simulationServicesOwner: SimulationServicesOwner, transaction: PendingTransactionOrSignableMessage, websiteTabConnections: WebsiteTabConnections) => (
+	await resolvePendingRequestWithoutSnapshot(simulationServicesOwner, websiteTabConnections, { method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: transaction.uniqueRequestIdentifier, action: 'noResponse' } })
+)
+
+const resolveAllPendingTransactionsAndMessageAsNoResponse = async (simulationServicesOwner: SimulationServicesOwner, transactions: readonly PendingTransactionOrSignableMessage[], websiteTabConnections: WebsiteTabConnections) => {
 	for (const transaction of transactions) {
 		try {
-			await resolvePendingTransactionOrMessage(simulationServicesOwner, ethereum, tokenPriceService, network, websiteTabConnections, { method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: transaction.uniqueRequestIdentifier, action: 'noResponse' } })
+			await resolveAsNoResponse(simulationServicesOwner, transaction, websiteTabConnections)
 		} catch(e) {
 			await reportLocalRecovery(e, { code: 'pending_request_no_response_resolution_failed', message: 'Failed to resolve a pending request as no-response after a popup closed.' })
-			schedulePendingNoResponseRetry(simulationServicesOwner, transaction, ethereum, tokenPriceService, network, websiteTabConnections)
+			schedulePendingNoResponseRetry(simulationServicesOwner, transaction, websiteTabConnections)
 		}
 	}
 }
 
-function schedulePendingNoResponseRetry(simulationServicesOwner: SimulationServicesOwner, transaction: PendingTransactionOrSignableMessage, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, network: NetworkState, websiteTabConnections: WebsiteTabConnections) {
+function schedulePendingNoResponseRetry(simulationServicesOwner: SimulationServicesOwner, transaction: PendingTransactionOrSignableMessage, websiteTabConnections: WebsiteTabConnections) {
 	const identifier = getUniqueRequestIdentifierString(transaction.uniqueRequestIdentifier)
 	if (pendingNoResponseRetryTimers.has(identifier)) return
 	const retryTimer = setTimeout(() => {
 		pendingNoResponseRetryTimers.delete(identifier)
 		void (async () => {
 			try {
-				await resolvePendingTransactionOrMessage(simulationServicesOwner, ethereum, tokenPriceService, network, websiteTabConnections, { method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: transaction.uniqueRequestIdentifier, action: 'noResponse' } })
+				await resolveAsNoResponse(simulationServicesOwner, transaction, websiteTabConnections)
 			} catch (error) {
 				await reportLocalRecovery(error, { code: 'pending_request_no_response_retry_failed', message: 'Retrying a pending popup-close rejection after a transient failure.' })
-				schedulePendingNoResponseRetry(simulationServicesOwner, transaction, ethereum, tokenPriceService, network, websiteTabConnections)
+				schedulePendingNoResponseRetry(simulationServicesOwner, transaction, websiteTabConnections)
 			}
 		})()
 	}, NO_RESPONSE_RETRY_DELAY_MS)
@@ -701,13 +738,13 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 	return { transaction: { ...transactionWithoutGas, ...await getFeePerGas(transactionDetails.gas), gas: transactionDetails.gas }, ...extraParams, ...simulationOptionsField, success: true }
 }
 
-const getPendingTransactionWindow = async (simulationServicesOwner: SimulationServicesOwner, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, network: NetworkState, websiteTabConnections: WebsiteTabConnections) => {
+const getPendingTransactionWindow = async (simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections) => {
 	const pendingTransactions = await getPendingTransactionsAndMessages()
 	const [firstPendingTransaction] = pendingTransactions
 	if (firstPendingTransaction !== undefined) {
 		const alreadyOpenWindow = await getPopupOrTabById(firstPendingTransaction.popupOrTabId)
 		if (alreadyOpenWindow) return alreadyOpenWindow
-		await resolveAllPendingTransactionsAndMessageAsNoResponse(simulationServicesOwner, pendingTransactions, ethereum, tokenPriceService, network, websiteTabConnections)
+		await resolveAllPendingTransactionsAndMessageAsNoResponse(simulationServicesOwner, pendingTransactions, websiteTabConnections)
 	}
 	return await openPopupOrTab({ url: getHtmlFile('confirmTransaction'), type: 'popup', height: 800, width: 600 })
 }
@@ -771,7 +808,7 @@ export async function openConfirmTransactionDialogForMessage(
 			}
 		}
 		await pendingConfirmationSemaphore.execute(async () => {
-			const openedDialog = await getPendingTransactionWindow(simulationServicesOwner, ethereumClientService, tokenPriceService, network, websiteTabConnections)
+			const openedDialog = await getPendingTransactionWindow(simulationServicesOwner, websiteTabConnections)
 			if (openedDialog === undefined) throw new Error('Failed to get pending transaction window!')
 
 			const pendingMessage = {
@@ -896,7 +933,7 @@ export async function openConfirmTransactionDialogForTransaction(
 		)
 		try {
 			const { transactionToSimulate, safeTransaction, approvalStatus: safeSignerMismatch, pendingSafeFields } = finalizedSafePreparation
-			const openedDialog = await getPendingTransactionWindow(simulationServicesOwner, ethereumClientService, tokenPriceService, network, websiteTabConnections)
+			const openedDialog = await getPendingTransactionWindow(simulationServicesOwner, websiteTabConnections)
 			if (openedDialog === undefined) return formRejectMessage(METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, 'Failed to get pending transaction window')
 			markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionConfirmPopupOpened)
 

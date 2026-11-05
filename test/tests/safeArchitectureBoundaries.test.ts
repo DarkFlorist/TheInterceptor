@@ -136,6 +136,11 @@ test('signer ownership and Safe Apps eligibility use the same top-frame predicat
 })
 
 
+test('closing a window and startup recovery reject without reading the simulation stack first', async () => {
+	const startup = await Bun.file(new URL('../../app/ts/background/background-startup.ts', import.meta.url)).text()
+	assert.doesNotMatch(startup, /\breadNetwork(?:Snapshot|State)\b/u)
+})
+
 test('dialog and RPC delegate simulation share state-override construction', async () => {
 	const safeSimulation = await Bun.file(new URL('../../app/ts/safe/safeSimulation.ts', import.meta.url)).text()
 	assert.match(simulationUpdatingSource, /return prepareSafeDelegateStateOverrides\(/u)

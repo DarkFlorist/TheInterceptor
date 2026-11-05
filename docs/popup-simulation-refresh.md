@@ -32,6 +32,8 @@ Active settings commands receive `SimulationServicesOwner`, not a service pair c
 
 The intercepted-request pipeline also carries only the service owner. Provider callbacks obtain services when their work starts. Access admission, dialog callbacks, resolution, and permission persistence carry only the owner across user waits; replayed requests select the current services after approval. RPC execution captures one pair after admission and uses it for both lazy simulation preparation and RPC handling; permission persistence carries the owner into any subsequent prompts. An in-flight RPC does not switch providers halfway through execution.
 
+Ending a request must not depend on the simulation stack. Closing a confirmation window, startup recovery of orphaned requests, a reject action and a wallet's reply go through `resolvePendingRequestWithoutSnapshot`, which queues and delivers the website's reply first and reads a snapshot only for the view work after it. If that read fails, only the view is out of date.
+
 ## Popup handler service contracts
 
 Choose the registration that describes the operation:
