@@ -491,7 +491,7 @@ async function tickSendAnyway(dom: RenderedDom) {
 
 const { UpdateConfirmTransactionDialogPendingTransactions } = await import('../../app/ts/types/interceptor-messages.js')
 const { serialize } = await import('../../app/ts/types/wire-types.js')
-const { ConfirmTransaction } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
+const { ConfirmTransaction, CONFIRM_TRANSACTION_BOOTSTRAP_HANDSHAKE_TIMEOUT_MS, CONFIRM_TRANSACTION_BOOTSTRAP_MAX_ATTEMPTS, CONFIRM_TRANSACTION_BOOTSTRAP_MAX_RETRY_DELAY_MS, CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
 // The background sends the popup its copies of stored requests, stamped with their reviewed-result ids.
 const { toPopupPendingTransactionOrSignableMessage } = await import('../../app/ts/background/windows/confirmTransaction.js')
 async function dispatchPendingTransactions(browser: ReturnType<typeof createBrowserMock>, pendingTransactionAndSignableMessages: readonly PendingTransactionOrSignableMessage[]) {
@@ -547,6 +547,28 @@ function makeBootstrapReply(stored: PendingTransactionOrSignableMessage) {
 			},
 		},
 	})
+}
+
+// The separate first handshake plus every attempt of the retry loop.
+const MAX_READY_HANDSHAKES = CONFIRM_TRANSACTION_BOOTSTRAP_MAX_ATTEMPTS + 1
+
+const showsBootstrapError = (dom: RenderedDom) => dom.document.body.textContent?.includes('could not be loaded from the background') === true
+
+// Renders the popup with timers running immediately and always unmounts it, so bootstrap retries cannot outlive the test.
+async function withImmediateTimers(run: (dom: RenderedDom, browser: ReturnType<typeof createBrowserMock>) => Promise<void>) {
+	const dom = installDomMock()
+	const browser = createBrowserMock()
+	const timers = runTimersImmediately()
+	try {
+		await run(dom, browser)
+	} finally {
+		try {
+			await unmountConfirmTransaction(dom)
+		} finally {
+			timers.restore()
+			dom.restore()
+		}
+	}
 }
 
 describe('ConfirmTransaction', () => {
@@ -1007,8 +1029,7 @@ describe('ConfirmTransaction', () => {
 
 			assert.equal(readyHandshakes, 21, 'the handshake is retried past the rapid attempts until the background copy arrives')
 			assert.equal(isConfirmEnabled(dom), true, 'the bootstrapped background copy makes the request confirmable without a push update')
-			const { CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS, CONFIRM_TRANSACTION_BOOTSTRAP_MAX_RETRY_DELAY_MS } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
-			const retryDelays = timers.requestedDelays.filter((delay) => delay >= CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS)
+			const retryDelays = timers.requestedDelays.filter((delay) => delay >= CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS && delay !== CONFIRM_TRANSACTION_BOOTSTRAP_HANDSHAKE_TIMEOUT_MS)
 			assert.equal(retryDelays.some((delay) => delay > CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS && delay < CONFIRM_TRANSACTION_BOOTSTRAP_MAX_RETRY_DELAY_MS), true, 'later retries back off')
 			const firstCappedRetry = retryDelays.indexOf(CONFIRM_TRANSACTION_BOOTSTRAP_MAX_RETRY_DELAY_MS)
 			assert.notEqual(firstCappedRetry, -1, 'the backoff reaches the cap')
@@ -1051,6 +1072,104 @@ describe('ConfirmTransaction', () => {
 				dom.restore()
 			}
 		}
+	})
+
+	test('stops the bootstrap handshake after the attempt limit and shows an error, keeping confirm disabled and reject available', async () => {
+		await withImmediateTimers(async (dom, browser) => {
+			await storeSignatureRequest(browser)
+			let readyHandshakes = 0
+			browser.setReadyAndListeningReply((withoutBootstrap) => {
+				readyHandshakes += 1
+				return withoutBootstrap
+			})
+			const confirmDialogActions: unknown[] = []
+			browser.setConfirmDialogHandler(async (message) => {
+				confirmDialogActions.push(isRecord(message) && isRecord(message.data) ? message.data.action : 'unexpected message')
+			})
+
+			await renderConfirmTransaction(dom)
+			await settleUntil(() => showsBootstrapError(dom))
+			assert.equal(showsBootstrapError(dom), true, 'running out of attempts is shown to the user')
+			await settleUntil(() => false, 100)
+
+			assert.equal(readyHandshakes, MAX_READY_HANDSHAKES, 'no handshake is sent after giving up')
+			assert.notEqual(findConfirmButton(dom), undefined, 'the stored signature request stays shown')
+			assert.equal(isConfirmEnabled(dom), false, 'a request without a background copy cannot be confirmed')
+			const rejectButton = findRenderedElement(dom.document.body, (node) => node.tagName === 'BUTTON' && String(getRenderedProp(node, 'class')).includes('is-danger'))
+			if (rejectButton === undefined) throw new Error('Expected the reject button')
+			await act(async () => { await clickRenderedElement(rejectButton) })
+			await settleUntil(() => confirmDialogActions.length > 0)
+			assert.deepEqual(confirmDialogActions, ['reject'])
+		})
+	})
+
+	test('shows the bootstrap error on the loading screen when no pending request could be read at all', async () => {
+		await withImmediateTimers(async (dom) => {
+			await renderConfirmTransaction(dom)
+			await settleUntil(() => showsBootstrapError(dom))
+			assert.equal(showsBootstrapError(dom), true)
+			assert.equal(dom.document.body.textContent?.includes('Initializing...'), true)
+			assert.equal(findConfirmButton(dom), undefined)
+		})
+	})
+
+	test('a background copy pushed after the bootstrap gave up clears the error and enables confirm without restarting the polling', async () => {
+		await withImmediateTimers(async (dom, browser) => {
+			const stored = await storeSignatureRequest(browser)
+			let readyHandshakes = 0
+			browser.setReadyAndListeningReply((withoutBootstrap) => {
+				readyHandshakes += 1
+				return withoutBootstrap
+			})
+			await renderConfirmTransaction(dom)
+			await settleUntil(() => showsBootstrapError(dom))
+			assert.equal(isConfirmEnabled(dom), false)
+
+			await dispatchPendingTransactions(browser, [stored])
+			await settleUntil(() => false, 100)
+
+			assert.equal(showsBootstrapError(dom), false, 'the background copy clears the error')
+			assert.equal(isConfirmEnabled(dom), true, 'the background copy makes the request confirmable')
+			assert.equal(readyHandshakes, MAX_READY_HANDSHAKES, 'the push does not restart the handshake')
+		})
+	})
+
+	test('shows no bootstrap error when the last allowed handshake delivers the background copy', async () => {
+		await withImmediateTimers(async (dom, browser) => {
+			const stored = await storeSignatureRequest(browser)
+			let readyHandshakes = 0
+			browser.setReadyAndListeningReply((withoutBootstrap) => {
+				readyHandshakes += 1
+				return readyHandshakes < MAX_READY_HANDSHAKES ? withoutBootstrap : makeBootstrapReply(stored)
+			})
+			await renderConfirmTransaction(dom)
+			await settleUntil(() => isConfirmEnabled(dom))
+			await settleUntil(() => false, 100)
+
+			assert.equal(isConfirmEnabled(dom), true)
+			assert.equal(showsBootstrapError(dom), false, 'a background copy that arrives in time leaves no error behind')
+			assert.equal(readyHandshakes, MAX_READY_HANDSHAKES)
+		})
+	})
+
+	test('gives up on schedule when handshake replies stall and still applies a stalled reply that arrives late', async () => {
+		await withImmediateTimers(async (dom, browser) => {
+			const stored = await storeSignatureRequest(browser)
+			const stalledReplies: ((reply: unknown) => void)[] = []
+			browser.setReadyAndListeningReply(async () => await new Promise((resolve) => { stalledReplies.push(resolve) }))
+
+			await renderConfirmTransaction(dom)
+			await settleUntil(() => showsBootstrapError(dom))
+			assert.equal(showsBootstrapError(dom), true, 'replies that never come do not postpone giving up')
+			assert.equal(stalledReplies.length, MAX_READY_HANDSHAKES)
+			assert.equal(isConfirmEnabled(dom), false)
+
+			await act(async () => { stalledReplies.at(-1)?.(makeBootstrapReply(stored)) })
+			await settleUntil(() => isConfirmEnabled(dom))
+
+			assert.equal(isConfirmEnabled(dom), true, 'the late reply carries the background copy')
+			assert.equal(showsBootstrapError(dom), false)
+		})
 	})
 
 	test('the background honours the accept for the result the popup shows', { timeout: 15_000 }, async () => {

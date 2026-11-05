@@ -55,6 +55,9 @@ type UnderTransactionsParams = {
 export const CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS = 150
 const CONFIRM_TRANSACTION_BOOTSTRAP_RAPID_ATTEMPTS = 10
 export const CONFIRM_TRANSACTION_BOOTSTRAP_MAX_RETRY_DELAY_MS = 3000
+// About 24 seconds of retry delays. The 1.5 seconds that sufficed when any shown request ended the handshake is too short now that it must reach a background copy, and signature requests have no block-triggered update to recover through.
+export const CONFIRM_TRANSACTION_BOOTSTRAP_MAX_ATTEMPTS = 20
+export const CONFIRM_TRANSACTION_BOOTSTRAP_HANDSHAKE_TIMEOUT_MS = 1000
 
 // Retries quickly at first, then doubles the delay up to a cap, so a popup still showing only the storage first paint keeps asking for the background copy an accept needs.
 export const getConfirmTransactionBootstrapRetryDelay = (attempt: number) => {
@@ -76,19 +79,24 @@ type ConfirmTransactionBootstrapData = {
 	visualizedSimulatorState: CompleteVisualizedSimulation
 }
 
-// Runs until a background copy is shown or the popup unmounts; the background closes the popup once its requests are resolved, which unmounts it.
+// Runs until a background copy is shown, the popup unmounts or the attempts run out. Giving up only stops the polling: a background copy that arrives later is still applied.
 async function bootstrapConfirmTransactionDialog(
 	isBootstrapDone: () => boolean,
 	applyBootstrapData: (bootstrapData: ConfirmTransactionBootstrapData) => void,
+	giveUp: () => void,
 ) {
-	for (let attempt = 0; !isBootstrapDone(); attempt++) {
-		const reply = await sendPopupMessageWithReply({ method: 'popup_readyAndListening', data: { page: 'confirmTransaction' } })
-		if (reply?.method === 'popup_readyAndListening' && reply.data.confirmTransactionBootstrap !== undefined) {
-			applyBootstrapData(reply.data.confirmTransactionBootstrap)
-		}
+	for (let attempt = 0; attempt < CONFIRM_TRANSACTION_BOOTSTRAP_MAX_ATTEMPTS && !isBootstrapDone(); attempt++) {
+		const handshake = sendPopupMessageWithReply({ method: 'popup_readyAndListening', data: { page: 'confirmTransaction' } }).then((reply) => {
+			if (reply?.method === 'popup_readyAndListening' && reply.data.confirmTransactionBootstrap !== undefined) {
+				applyBootstrapData(reply.data.confirmTransactionBootstrap)
+			}
+		})
+		// A reply can wait up to a minute on the RPC behind it, which must not postpone giving up.
+		await Promise.race([handshake, waitForDelay(CONFIRM_TRANSACTION_BOOTSTRAP_HANDSHAKE_TIMEOUT_MS)])
 		if (isBootstrapDone()) return
 		await waitForDelay(getConfirmTransactionBootstrapRetryDelay(attempt))
 	}
+	if (!isBootstrapDone()) giveUp()
 }
 
 // Only the background's copies carry the reviewed-result id an accept needs; requests read directly from storage for the first paint do not.
@@ -644,14 +652,19 @@ function ConfirmTransactionModal({ modalState, activeAddress, rpcEntries }: {
 	</div>
 }
 
-function ConfirmTransactionAlerts({ unexpectedError, clearUnexpectedError, rpcConnectionStatus, currentPendingTransaction }: {
+function ConfirmTransactionAlerts({ unexpectedError, clearUnexpectedError, rpcConnectionStatus, currentPendingTransaction, backgroundCopyUnavailable }: {
 	unexpectedError: CaughtError | undefined
 	clearUnexpectedError: () => Promise<void>
 	rpcConnectionStatus: ReadonlySignal<RpcConnectionStatus>
 	currentPendingTransaction: ReadonlySignal<PendingTransactionOrSignableMessage | undefined>
+	backgroundCopyUnavailable: ReadonlySignal<boolean>
 }) {
 	return <>
 		<UnexpectedError close = { clearUnexpectedError } error = { unexpectedError }/>
+		{ backgroundCopyUnavailable.value
+			? <ErrorComponent text = { 'This request could not be loaded from the background, so it cannot be confirmed. Confirming becomes available if the background responds later.' }/>
+			: <></>
+		}
 		<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
 		<WebsiteErrors currentPendingTransactionOrSignableMessage = { currentPendingTransaction }/>
 		<InvalidMessage pendingTransactionOrSignableMessage = { currentPendingTransaction }/>
@@ -800,6 +813,9 @@ export function ConfirmTransaction() {
 	const pendingTransactionsDataPriority = useSignal(0)
 	const simulationDataPriority = useSignal(0)
 	const networkDataPriority = useSignal(0)
+	const bootstrapGaveUp = useSignal<boolean>(false)
+	// Derived from the shown request, so any background copy clears the error however it arrives.
+	const backgroundCopyUnavailable = useComputed(() => bootstrapGaveUp.value && !isBackgroundCopy(currentPendingTransactionOrSignableMessage.value))
 
 	const applyPendingTransactions = (pendingTransactions: readonly PendingTransactionOrSignableMessage[], priority: number) => {
 		if (priority < pendingTransactionsDataPriority.value) return
@@ -917,7 +933,7 @@ export function ConfirmTransaction() {
 			applyBootstrapData(bootstrapData)
 		})
 		// Keeps retrying while only the storage first paint is shown, since confirming needs the background's copy.
-		void bootstrapConfirmTransactionDialog(() => cancelled || isBackgroundCopy(currentPendingTransactionOrSignableMessage.value), applyBootstrapData)
+		void bootstrapConfirmTransactionDialog(() => cancelled || isBackgroundCopy(currentPendingTransactionOrSignableMessage.value), applyBootstrapData, () => { bootstrapGaveUp.value = true })
 		sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
 		return () => {
 			cancelled = true
@@ -1068,7 +1084,7 @@ export function ConfirmTransaction() {
 					<Hint>
 						<ConfirmTransactionModal modalState = { modalState } activeAddress = { currentPendingTransactionOrSignableMessage.value?.activeAddress } rpcEntries = { rpcEntries }/>
 						<div class = 'block popup-block popup-block-scroll' style = 'padding: 0px;'>
-							<ConfirmTransactionAlerts unexpectedError = { unexpectedError.value } clearUnexpectedError = { clearUnexpectedError } rpcConnectionStatus = { rpcConnectionStatus } currentPendingTransaction = { currentPendingTransactionOrSignableMessage }/>
+							<ConfirmTransactionAlerts unexpectedError = { unexpectedError.value } clearUnexpectedError = { clearUnexpectedError } rpcConnectionStatus = { rpcConnectionStatus } currentPendingTransaction = { currentPendingTransactionOrSignableMessage } backgroundCopyUnavailable = { backgroundCopyUnavailable }/>
 								<CenterToPageTextSpinner text = { loadingText }/>
 					</div>
 				</Hint>
@@ -1081,7 +1097,7 @@ export function ConfirmTransaction() {
 					<ConfirmTransactionModal modalState = { modalState } activeAddress = { currentPendingTransactionOrSignableMessage.value?.activeAddress } rpcEntries = { rpcEntries }/>
 					<div class = 'block popup-block popup-block-scroll' style = 'padding: 0px'>
 						<div style = 'position: sticky; top: 0; z-index: 1;'>
-							<ConfirmTransactionAlerts unexpectedError = { unexpectedError.value } clearUnexpectedError = { clearUnexpectedError } rpcConnectionStatus = { rpcConnectionStatus } currentPendingTransaction = { currentPendingTransactionOrSignableMessage }/>
+							<ConfirmTransactionAlerts unexpectedError = { unexpectedError.value } clearUnexpectedError = { clearUnexpectedError } rpcConnectionStatus = { rpcConnectionStatus } currentPendingTransaction = { currentPendingTransactionOrSignableMessage } backgroundCopyUnavailable = { backgroundCopyUnavailable }/>
 					</div>
 					<div class = 'popup-contents'>
 						<div style = 'margin: 10px'>
