@@ -10,6 +10,8 @@ import type { AddressBookEntry } from '../../app/ts/types/addressBookTypes.js'
 import { checksummedAddress } from '../../app/ts/utils/bigint.js'
 import { EthereumAddress } from '../../app/ts/types/wire-types.js'
 import { MockRequestHandler } from '../MockRequestHandler.js'
+import { VisualizedPersonalSignRequestPermit2SignatureTransfer } from '../../app/ts/types/personal-message-definitions.js'
+import { getMessageAndDomainHash } from '../../app/ts/utils/eip712.js'
 import { clickRenderedElement, findRenderedElement, installDomMock } from './domMock.js'
 import { permit2BatchTransferFromMessage, permit2BatchWitnessTransferFromMessage, permit2Message, permit2PermitBatchMessage, permit2Signer, permit2TransferFromMessage, permit2UniswapXWitnessTransferFromMessage, permit2WitnessTransferFromWitnessNotLastMessage, uniswapUniversalRouter, uniswapXExclusiveDutchOrderReactor } from './data/eip712Data.js'
 
@@ -372,12 +374,44 @@ describe('Permit2 signature requests', () => {
 		for (const { typedData, ...expected } of expectedKinds) {
 			const visualized = await visualizeTypedData(typedData)
 			if (visualized.type !== 'Permit2SignatureTransfer') throw new Error(`Expected a Permit2 signature transfer, got ${ visualized.type }`)
-			const { isBatch, hasWitness, permitted } = getPermit2SignatureTransferKind(visualized.message)
-			assert.deepEqual({ primaryType: visualized.message.primaryType, isBatch, hasWitness, tokenCount: permitted.length }, expected)
+			const { isBatch, hasWitness, permitted } = getPermit2SignatureTransferKind(visualized.permit2TransferWithoutWitness)
+			assert.deepEqual({ primaryType: visualized.permit2TransferWithoutWitness.primaryType, isBatch, hasWitness, tokenCount: permitted.length }, expected)
 			assert.deepEqual(visualized.permitted.map(({ token, amount }) => ({ token: token.address, amount })), permitted)
 			assert.equal(visualized.witness !== undefined, hasWitness)
 			assert.equal(identifySignature(visualized).title === 'Permit2 batch transfer', isBatch)
 		}
+	})
+
+	test('keeps message, stringifiedMessage and rawMessage renderings of the same full signed payload for every SignatureTransfer primary type', async () => {
+		for (const typedData of [permit2TransferFromMessage, permit2BatchTransferFromMessage, permit2UniswapXWitnessTransferFromMessage, permit2BatchWitnessTransferFromMessage]) {
+			const visualized = await visualizeTypedData(typedData)
+			if (visualized.type !== 'Permit2SignatureTransfer') throw new Error(`Expected a Permit2 signature transfer, got ${ visualized.type }`)
+			const signedPayload = EIP712Message.parse(typedData)
+			assert.deepEqual(visualized.message, signedPayload)
+			assert.deepEqual(JSON.parse(visualized.rawMessage), signedPayload)
+			assert.deepEqual(JSON.parse(visualized.stringifiedMessage), signedPayload)
+			// Re-hashing needs the witness and its struct types, so this fails if `message` ever loses them.
+			assert.deepEqual(getMessageAndDomainHash({ method: visualized.method, params: [signer, visualized.message] }), { messageHash: visualized.messageHash, domainHash: visualized.domainHash })
+			// Storage and popup messaging go through the codec, which must not strip the payload either.
+			const storedRequest = JSON.parse(JSON.stringify(VisualizedPersonalSignRequestPermit2SignatureTransfer.serialize(visualized)))
+			assert.deepEqual(VisualizedPersonalSignRequestPermit2SignatureTransfer.parse(storedRequest).message, signedPayload)
+		}
+	})
+
+	test('separates the signed witness in message from the witness-stripped Permit2 fields', async () => {
+		const visualized = await visualizeTypedData(permit2UniswapXWitnessTransferFromMessage)
+		if (visualized.type !== 'Permit2SignatureTransfer') throw new Error(`Expected a Permit2 signature transfer, got ${ visualized.type }`)
+		assert.equal(Object.keys(visualized.message.message).includes('witness'), true)
+		assert.equal(Object.keys(visualized.message.types).includes('ExclusiveDutchOrder'), true)
+		assert.equal(Object.keys(visualized.permit2TransferWithoutWitness.message).includes('witness'), false)
+		assert.equal(Object.keys(visualized.permit2TransferWithoutWitness.types).includes('ExclusiveDutchOrder'), false)
+	})
+
+	test('rejects a stored request that holds the witness-stripped value in message', async () => {
+		const visualized = await visualizeTypedData(permit2UniswapXWitnessTransferFromMessage)
+		if (visualized.type !== 'Permit2SignatureTransfer') throw new Error(`Expected a Permit2 signature transfer, got ${ visualized.type }`)
+		const { message: _signedPayload, permit2TransferWithoutWitness, ...otherFields } = JSON.parse(JSON.stringify(VisualizedPersonalSignRequestPermit2SignatureTransfer.serialize(visualized)))
+		assert.equal(VisualizedPersonalSignRequestPermit2SignatureTransfer.safeParse({ ...otherFields, message: permit2TransferWithoutWitness }).success, false)
 	})
 
 	test('finds the Permit2 witness field by name wherever it is declared and never takes a Permit2 field instead', () => {
