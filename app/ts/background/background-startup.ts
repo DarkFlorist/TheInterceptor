@@ -22,7 +22,8 @@ import { updateContentScriptInjectionStrategyManifestV2 } from '../utils/content
 import { checkIfInterceptorShouldSleep } from './sleeping.js'
 import { advanceOutstandingSafeSignerReplies, onCloseWindowOrTab, recoverPendingConfirmationState } from './windows/confirmTransaction.js'
 import { modifyObject } from '../utils/typescript.js'
-import { initializeRegisteredConnectionTab, registerWebsiteConnectionAndReconcileRequestBlocks, updateDeclarativeNetRequestBlocks } from './accessManagement.js'
+import { updateDeclarativeNetRequestBlocks } from './accessManagement.js'
+import { registerWebsiteConnection } from './connectionRegistration.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerformance.js'
 import { removeWebsiteTabConnection } from './websiteTabConnections.js'
@@ -200,8 +201,7 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ simulati
 	if (!listenersRegistered) return
 
 	connectionInitializationPromise = initializeContentScriptConnectionAfterBackgroundStartup(waitForStartup, async () => {
-		const registration = await registerWebsiteConnectionAndReconcileRequestBlocks(websiteTabConnections, socket, newConnection, isTopFrame)
-		await initializeRegisteredConnectionTab(websiteTabConnections, registration, socket, websiteOrigin, (refreshIconAfterRequestBlocks) => { void catchAllErrorsAndCall(refreshIconAfterRequestBlocks) })
+		const registration = await registerWebsiteConnection(websiteTabConnections, socket, newConnection, isTopFrame, (refreshIcon) => { void catchAllErrorsAndCall(refreshIcon) })
 		if (registration.provisionallyClaimedSignerState) {
 			sendSubscriptionReplyOrCallBackToPort(port, { type: 'result', method: 'request_signer_connection_status', result: [] })
 		}

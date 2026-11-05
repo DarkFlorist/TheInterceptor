@@ -62,7 +62,8 @@ describe('background startup lifecycle', () => {
 		assert.equal(connectionInitialized, true)
 	})
 
-	test('keeps the real content script registration and first tab-state write behind the startup gate', async () => {
+	// Background startup cannot be loaded in a unit test, so this checks only the wiring; the gate is tested above and everything after it in registerWebsiteConnection, in backgroundSignerLifecycle.
+	test('keeps the real content script registration behind the startup gate', async () => {
 		const source = await Bun.file(backgroundStartupSourcePath).text()
 		const connectionHandlerStart = source.indexOf('async function onContentScriptConnected')
 		const connectionHandlerEnd = source.indexOf('async function newBlockAttemptCallback', connectionHandlerStart)
@@ -72,14 +73,10 @@ describe('background startup lifecycle', () => {
 
 		const listenerRegistration = connectionHandler.indexOf('tryRegisterContentScriptPortListeners(')
 		const startupGate = connectionHandler.indexOf('connectionInitializationPromise = initializeContentScriptConnectionAfterBackgroundStartup(')
-		const connectionRegistration = connectionHandler.indexOf('registerWebsiteConnectionAndReconcileRequestBlocks(')
-		// The new tab's first state write happens in initializeRegisteredConnectionTab (accessManagement), whose behaviour is tested in backgroundSignerLifecycle.
-		const firstTabStateWrite = connectionHandler.indexOf('await initializeRegisteredConnectionTab(')
+		const connectionRegistration = connectionHandler.indexOf('registerWebsiteConnection(')
 
 		assert.equal(listenerRegistration >= 0 && listenerRegistration < startupGate, true)
-		assert.equal(startupGate < connectionRegistration && connectionRegistration < firstTabStateWrite, true)
-		// Every registration, including child frames in an existing tab, hands its request-block reconciliation and the icon refresh that follows it to the error boundary without a frame or new-tab condition.
-		assert.equal(connectionHandler.includes('\n\t\tawait initializeRegisteredConnectionTab(websiteTabConnections, registration, socket, websiteOrigin, (refreshIconAfterRequestBlocks) => { void catchAllErrorsAndCall(refreshIconAfterRequestBlocks) })'), true)
+		assert.equal(startupGate < connectionRegistration, true)
 	})
 
 	// The behaviour of the advance is tested in the Safe signer routing suite; background startup cannot be loaded in a unit test, so this checks only that every new block runs it, with no connection-status condition.

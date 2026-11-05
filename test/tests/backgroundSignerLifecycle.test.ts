@@ -1,6 +1,7 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
+import type { TabConnection, WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
+import type { WebsiteSocket } from '../../app/ts/utils/requests.js'
 import { ICON_NOT_ACTIVE, ICON_NOT_ACTIVE_WITH_SHIELD } from '../../app/ts/utils/constants.js'
 import { getWalletSwitchRequestId, confirmedSignerOwnership, createDeferredValue, createEthereumWithGetBlockCounter, createPort, createTestSimulationServicesOwner, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
 
@@ -34,9 +35,20 @@ describe('background eth_accounts', () => {
 		}
 	}
 
+	// Registers like the content-script connection handler and returns the icon refresh that handler gives its error boundary, so a test decides when the refresh runs.
+	const registerConnection = async (websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, connection: TabConnection['connections'][string], isTopFrame: boolean) => {
+		const { registerWebsiteConnection } = await loadModules()
+		let observedRefresh: (() => Promise<void>) | undefined
+		await withSilencedWarnings(async () => await registerWebsiteConnection(websiteTabConnections, socket, connection, isTopFrame, (refreshIcon) => { observedRefresh = refreshIcon }))
+		if (observedRefresh === undefined) throw new Error('The registration did not hand over its icon refresh')
+		return observedRefresh
+	}
+
+	const registerConnectionAndSettle = async (...registration: Parameters<typeof registerConnection>) => await withSilencedWarnings(await registerConnection(...registration))
+
 	test('blocks newly registered tabs with persisted consent while the active RPC network is unreadable', async () => {
 		const browserMock = installBrowserMock({ manifestVersion: 3 })
-		const { registerWebsiteConnectionAndReconcileRequestBlocks, areWeBlocking, updateDeclarativeNetRequestBlocks } = await loadModules()
+		const { areWeBlocking, updateDeclarativeNetRequestBlocks } = await loadModules()
 		const consentedWebsiteOrigin = 'consented-startup.example'
 		await setUpAddressLevelBlockAllWithUnreadableActiveRpcNetwork(consentedWebsiteOrigin)
 		const consentedSocket = { tabId: 9876, connectionName: 0n }
@@ -45,8 +57,8 @@ describe('background eth_accounts', () => {
 		// Background startup reconciles before any content script connects.
 		await withSilencedWarnings(async () => await updateDeclarativeNetRequestBlocks(websiteTabConnections))
 		// Connections register unapproved through the same call content-script connection uses; runtime approval is never restored while settings are unavailable.
-		await withSilencedWarnings(async () => await (await registerWebsiteConnectionAndReconcileRequestBlocks(websiteTabConnections, consentedSocket, { port: createPort(consentedSocket.tabId).port, socket: consentedSocket, websiteOrigin: consentedWebsiteOrigin, approved: false, wantsToConnect: false }, true)).requestBlocksReconciliation)
-		await withSilencedWarnings(async () => await (await registerWebsiteConnectionAndReconcileRequestBlocks(websiteTabConnections, unconsentedSocket, { port: createPort(unconsentedSocket.tabId).port, socket: unconsentedSocket, websiteOrigin: 'unconsented.example', approved: false, wantsToConnect: false }, true)).requestBlocksReconciliation)
+		await registerConnectionAndSettle(websiteTabConnections, consentedSocket, { port: createPort(consentedSocket.tabId).port, socket: consentedSocket, websiteOrigin: consentedWebsiteOrigin, approved: false, wantsToConnect: false }, true)
+		await registerConnectionAndSettle(websiteTabConnections, unconsentedSocket, { port: createPort(unconsentedSocket.tabId).port, socket: unconsentedSocket, websiteOrigin: 'unconsented.example', approved: false, wantsToConnect: false }, true)
 
 		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [consentedSocket.tabId])
 		assert.equal(await withSilencedWarnings(async () => await areWeBlocking(consentedSocket.tabId, consentedWebsiteOrigin)), true)
@@ -69,7 +81,7 @@ describe('background eth_accounts', () => {
 
 	test.each(unusableRpcEntriesWithReadableActiveNetwork)('blocks a consented tab after a restart while the RPC entries are $description and the active network is readable', async ({ storedRpcEntries }) => {
 		const browserMock = installBrowserMock({ manifestVersion: 3 })
-		const { registerWebsiteConnectionAndReconcileRequestBlocks, areWeBlocking, getTabState, updateDeclarativeNetRequestBlocks } = await loadModules()
+		const { areWeBlocking, getTabState, updateDeclarativeNetRequestBlocks } = await loadModules()
 		const { updateExtensionIcon } = await import('../../app/ts/background/iconHandler.js')
 		const { bumpPopupRefreshGeneration } = await import('../../app/ts/background/popupRefreshGeneration.js')
 		const websiteOrigin = 'consented-unusable-entries.example'
@@ -80,7 +92,7 @@ describe('background eth_accounts', () => {
 		const websiteTabConnections: WebsiteTabConnections = new Map()
 		await withSilencedWarnings(async () => await updateDeclarativeNetRequestBlocks(websiteTabConnections))
 
-		await withSilencedWarnings(async () => await (await registerWebsiteConnectionAndReconcileRequestBlocks(websiteTabConnections, socket, { port: createPort(socket.tabId).port, socket, websiteOrigin, approved: false, wantsToConnect: false }, true)).requestBlocksReconciliation)
+		await registerConnectionAndSettle(websiteTabConnections, socket, { port: createPort(socket.tabId).port, socket, websiteOrigin, approved: false, wantsToConnect: false }, true)
 
 		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [socket.tabId])
 		assert.equal(await withSilencedWarnings(async () => await areWeBlocking(socket.tabId, websiteOrigin)), true)
@@ -92,14 +104,14 @@ describe('background eth_accounts', () => {
 
 	test('derives tab blocking from approved connections on a signer-only network, whose empty RPC entries are a ready configuration', async () => {
 		const browserMock = installBrowserMock({ manifestVersion: 3 })
-		const { registerWebsiteConnectionAndReconcileRequestBlocks, setRpcConfiguration } = await loadModules()
+		const { setRpcConfiguration } = await loadModules()
 		const websiteOrigin = 'consented-signer-only.example'
 		const { activeRpcNetwork } = await setUpBlockAllWithPersistedConsent(websiteOrigin)
 		await setRpcConfiguration([], { name: 'Signer only', chainId: activeRpcNetwork.chainId + 1n, httpsRpc: undefined, currencyName: 'Ether?', currencyTicker: 'ETH?', primary: false, minimized: true })
 		const socket = { tabId: 9884, connectionName: 0n }
 		const websiteTabConnections: WebsiteTabConnections = new Map()
 
-		await withSilencedWarnings(async () => await (await registerWebsiteConnectionAndReconcileRequestBlocks(websiteTabConnections, socket, { port: createPort(socket.tabId).port, socket, websiteOrigin, approved: false, wantsToConnect: false }, true)).requestBlocksReconciliation)
+		await registerConnectionAndSettle(websiteTabConnections, socket, { port: createPort(socket.tabId).port, socket, websiteOrigin, approved: false, wantsToConnect: false }, true)
 
 		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [])
 	})
@@ -132,7 +144,7 @@ describe('background eth_accounts', () => {
 
 	test('blocks a consented tab registered after the active RPC network becomes unreadable at runtime', async () => {
 		const browserMock = installBrowserMock({ manifestVersion: 3 })
-		const { registerWebsiteConnectionAndReconcileRequestBlocks, areWeBlocking, changeSimulationMode, updateDeclarativeNetRequestBlocks, updateUserAddressBookEntries, updateWebsiteAccess } = await loadModules()
+		const { areWeBlocking, changeSimulationMode, updateDeclarativeNetRequestBlocks, updateUserAddressBookEntries, updateWebsiteAccess } = await loadModules()
 		const consentedWebsiteOrigin = 'consented-runtime.example'
 		const activeAddress = 0x1010101010101010101010101010101010101010n
 		await updateUserAddressBookEntries(() => [{ type: 'contact', name: 'Blocked active address', address: activeAddress, chainId: 'AllChains', entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: false, declarativeNetRequestBlockMode: 'block-all' }])
@@ -145,7 +157,7 @@ describe('background eth_accounts', () => {
 		await browser.storage.local.set({ activeRpcNetwork: 'corrupt' })
 		const socket = { tabId: 9879, connectionName: 0n }
 
-		await withSilencedWarnings(async () => await (await registerWebsiteConnectionAndReconcileRequestBlocks(websiteTabConnections, socket, { port: createPort(socket.tabId).port, socket, websiteOrigin: consentedWebsiteOrigin, approved: false, wantsToConnect: false }, true)).requestBlocksReconciliation)
+		await registerConnectionAndSettle(websiteTabConnections, socket, { port: createPort(socket.tabId).port, socket, websiteOrigin: consentedWebsiteOrigin, approved: false, wantsToConnect: false }, true)
 
 		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [socket.tabId])
 		assert.equal(await withSilencedWarnings(async () => await areWeBlocking(socket.tabId, consentedWebsiteOrigin)), true)
@@ -153,17 +165,16 @@ describe('background eth_accounts', () => {
 
 	test('blocks a tab when a consented child frame registers after an unconsented top frame while the active RPC network is unreadable', async () => {
 		const browserMock = installBrowserMock({ manifestVersion: 3 })
-		const { registerWebsiteConnectionAndReconcileRequestBlocks } = await loadModules()
 		const consentedFrameOrigin = 'consented-frame.example'
 		await setUpAddressLevelBlockAllWithUnreadableActiveRpcNetwork(consentedFrameOrigin)
 		const tabId = 9881
 		const topFrameSocket = { tabId, connectionName: 0n }
 		const childFrameSocket = { tabId, connectionName: 1n }
 		const websiteTabConnections: WebsiteTabConnections = new Map()
-		await withSilencedWarnings(async () => await (await registerWebsiteConnectionAndReconcileRequestBlocks(websiteTabConnections, topFrameSocket, { port: createPort(tabId).port, socket: topFrameSocket, websiteOrigin: 'unconsented-top.example', approved: false, wantsToConnect: false }, true)).requestBlocksReconciliation)
+		await registerConnectionAndSettle(websiteTabConnections, topFrameSocket, { port: createPort(tabId).port, socket: topFrameSocket, websiteOrigin: 'unconsented-top.example', approved: false, wantsToConnect: false }, true)
 		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [])
 
-		await withSilencedWarnings(async () => await (await registerWebsiteConnectionAndReconcileRequestBlocks(websiteTabConnections, childFrameSocket, { port: createPort(tabId, undefined, 1, childFrameSocket.connectionName).port, socket: childFrameSocket, websiteOrigin: consentedFrameOrigin, approved: false, wantsToConnect: false }, false)).requestBlocksReconciliation)
+		await registerConnectionAndSettle(websiteTabConnections, childFrameSocket, { port: createPort(tabId, undefined, 1, childFrameSocket.connectionName).port, socket: childFrameSocket, websiteOrigin: consentedFrameOrigin, approved: false, wantsToConnect: false }, false)
 
 		// Checked straight after registration, before areWeBlocking or any navigation-completion update could reconcile.
 		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [tabId])
@@ -171,7 +182,7 @@ describe('background eth_accounts', () => {
 
 	test('a failed initial tab-state write and a rejected registration reconciliation are each surfaced exactly once', async () => {
 		const { runtimeMessages } = installBrowserMock({ manifestVersion: 3 })
-		const { initializeRegisteredConnectionTab, registerWebsiteConnectionAndReconcileRequestBlocks } = await loadModules()
+		const { registerWebsiteConnection } = await loadModules()
 		const { MessageToPopup } = await import('../../app/ts/types/interceptor-messages.js')
 		const tabId = 9887
 		const socket = { tabId, connectionName: 0n }
@@ -185,11 +196,12 @@ describe('background eth_accounts', () => {
 			return await readStorage(...args)
 		} })
 		const writeStorage = browser.storage.local.set
-		let initialTabStateWriteFails = false
+		// A top frame first clears the tab's signer state; the new tab's initial state write is the one after it.
+		let tabStateWrites = 0
 		Object.defineProperty(browser.storage.local, 'set', { configurable: true, value: async (items: Record<string, unknown>) => {
-			if (initialTabStateWriteFails && `tabState_${ tabId }` in items) {
-				initialTabStateWriteFails = false
-				throw new Error('Initial tab state write failed')
+			if (`tabState_${ tabId }` in items) {
+				tabStateWrites += 1
+				if (tabStateWrites === 2) throw new Error('Initial tab state write failed')
 			}
 			await writeStorage(items)
 		} })
@@ -198,11 +210,8 @@ describe('background eth_accounts', () => {
 		let observedReconciliation: Promise<unknown> = Promise.resolve(undefined)
 		let tabStateFailure: unknown
 		try {
-			const registration = await withSilencedWarnings(async () => await registerWebsiteConnectionAndReconcileRequestBlocks(websiteTabConnections, socket, { port: createPort(tabId).port, socket, websiteOrigin, approved: false, wantsToConnect: false }, true))
-			assert.equal(registration.createdTabConnection, true)
-			initialTabStateWriteFails = true
-			tabStateFailure = await withSilencedWarnings(async () => await initializeRegisteredConnectionTab(websiteTabConnections, registration, socket, websiteOrigin, (refreshIconAfterRequestBlocks) => {
-				observedReconciliation = refreshIconAfterRequestBlocks().then(() => undefined, (failure: unknown) => failure)
+			tabStateFailure = await withSilencedWarnings(async () => await registerWebsiteConnection(websiteTabConnections, socket, { port: createPort(tabId).port, socket, websiteOrigin, approved: false, wantsToConnect: false }, true, (refreshIcon) => {
+				observedReconciliation = refreshIcon().then(() => undefined, (failure: unknown) => failure)
 			}).then(() => undefined, (failure: unknown) => failure))
 			observedReconciliation = await withSilencedWarnings(async () => await observedReconciliation)
 		} finally {
@@ -221,23 +230,41 @@ describe('background eth_accounts', () => {
 		assert.equal(surfacedFailures.filter((message) => message === 'Reconciliation rule read failed').length, 1, `surfaced: ${ surfacedFailures.join(' | ') }`)
 	})
 
+	test('hands over the icon refresh after the first state write of a new tab, so the icon follows that state', async () => {
+		installBrowserMock({ manifestVersion: 3 })
+		const { getTabState, registerWebsiteConnection } = await loadModules()
+		const socket = { tabId: 9888, connectionName: 0n }
+		const websiteOrigin = 'first-tab-state.example'
+		let tabStateAtHandover: ReturnType<typeof getTabState> | undefined
+
+		await registerWebsiteConnection(new Map(), socket, { port: createPort(socket.tabId).port, socket, websiteOrigin, approved: false, wantsToConnect: false }, true, () => { tabStateAtHandover = getTabState(socket.tabId) })
+
+		assert.equal((await tabStateAtHandover)?.website?.websiteOrigin, websiteOrigin)
+	})
+
 	test('a rejected registration reconciliation is thrown and a failed icon refresh is reported after it', async () => {
 		const { runtimeMessages } = installBrowserMock({ manifestVersion: 3 })
-		const { registerWebsiteConnectionAndReconcileRequestBlocks, updateExtensionIconAfterRegistrationRequestBlocks } = await loadModules()
 		const { MessageToPopup } = await import('../../app/ts/types/interceptor-messages.js')
 		const tabId = 9886
 		const socket = { tabId, connectionName: 0n }
 		const websiteOrigin = 'icon-after-failed-reconciliation.example'
 		const websiteTabConnections: WebsiteTabConnections = new Map()
-		const registration = await withSilencedWarnings(async () => await registerWebsiteConnectionAndReconcileRequestBlocks(websiteTabConnections, socket, { port: createPort(tabId).port, socket, websiteOrigin, approved: false, wantsToConnect: false }, true))
-		await withSilencedWarnings(async () => await registration.requestBlocksReconciliation)
-		// The icon reads the applied session rules, which now fail.
+		// Without a ready RPC configuration the registration reconciles request blocks from persisted approvals, whose read rejects.
+		await browser.storage.local.set({ activeRpcNetwork: 'corrupt' })
+		const readStorage = browser.storage.local.get
+		Object.defineProperty(browser.storage.local, 'get', { configurable: true, value: async (...args: Parameters<typeof readStorage>) => {
+			if (args[0] === 'websiteAccess') throw new Error('Request-block reconciliation failed')
+			return await readStorage(...args)
+		} })
+		// The icon reads the applied session rules, which fail as well.
 		Object.defineProperty(browser.declarativeNetRequest, 'getSessionRules', { configurable: true, value: async () => { throw new Error('Icon refresh failed') } })
 		const originalError = console.error
 		console.error = () => undefined
 		try {
-			await withSilencedWarnings(async () => await assert.rejects(updateExtensionIconAfterRegistrationRequestBlocks(websiteTabConnections, { ...registration, requestBlocksReconciliation: Promise.reject(new Error('Request-block reconciliation failed')) }, socket, websiteOrigin), /Request-block reconciliation failed/))
+			const refreshIcon = await registerConnection(websiteTabConnections, socket, { port: createPort(tabId).port, socket, websiteOrigin, approved: false, wantsToConnect: false }, true)
+			await withSilencedWarnings(async () => await assert.rejects(refreshIcon(), /Request-block reconciliation failed/))
 		} finally {
+			Object.defineProperty(browser.storage.local, 'get', { configurable: true, value: readStorage })
 			console.error = originalError
 		}
 
@@ -251,7 +278,7 @@ describe('background eth_accounts', () => {
 
 	for (const rpcNetwork of ['unreadable', 'readable'] as const) test(`${ rpcNetwork === 'unreadable' ? 'refreshes' : 'keeps' } an existing tab's icon after a consented child frame registers while the active RPC network is ${ rpcNetwork }`, async () => {
 		installBrowserMock({ manifestVersion: 3 })
-		const { registerWebsiteConnectionAndReconcileRequestBlocks, getTabState, updateExtensionIconAfterRegistrationRequestBlocks, updateTabState } = await loadModules()
+		const { getTabState, updateTabState } = await loadModules()
 		const consentedFrameOrigin = 'consented-icon-frame.example'
 		const topFrameOrigin = 'unconsented-icon-top.example'
 		await setUpAddressLevelBlockAllWithUnreadableActiveRpcNetwork(consentedFrameOrigin)
@@ -260,15 +287,14 @@ describe('background eth_accounts', () => {
 		const topFrameSocket = { tabId, connectionName: 0n }
 		const childFrameSocket = { tabId, connectionName: 1n }
 		const websiteTabConnections: WebsiteTabConnections = new Map()
-		const topFrameRegistration = await withSilencedWarnings(async () => await registerWebsiteConnectionAndReconcileRequestBlocks(websiteTabConnections, topFrameSocket, { port: createPort(tabId).port, socket: topFrameSocket, websiteOrigin: topFrameOrigin, approved: false, wantsToConnect: false }, true))
+		const topFrameRegistration = await registerConnection(websiteTabConnections, topFrameSocket, { port: createPort(tabId).port, socket: topFrameSocket, websiteOrigin: topFrameOrigin, approved: false, wantsToConnect: false }, true)
 		await updateTabState(tabId, (previous) => ({ ...previous, website: { websiteOrigin: topFrameOrigin, icon: undefined, title: undefined } }))
-		await withSilencedWarnings(async () => await updateExtensionIconAfterRegistrationRequestBlocks(websiteTabConnections, topFrameRegistration, topFrameSocket, topFrameOrigin))
+		await withSilencedWarnings(topFrameRegistration)
 		const topFrameIcon = (await getTabState(tabId)).tabIconDetails
 		assert.doesNotMatch(topFrameIcon.iconReason, /blocking external requests/)
 
-		const childFrameRegistration = await withSilencedWarnings(async () => await registerWebsiteConnectionAndReconcileRequestBlocks(websiteTabConnections, childFrameSocket, { port: createPort(tabId, undefined, 1, childFrameSocket.connectionName).port, socket: childFrameSocket, websiteOrigin: consentedFrameOrigin, approved: false, wantsToConnect: false }, false))
-		assert.equal(childFrameRegistration.createdTabConnection, false)
-		await withSilencedWarnings(async () => await updateExtensionIconAfterRegistrationRequestBlocks(websiteTabConnections, childFrameRegistration, childFrameSocket, consentedFrameOrigin))
+		const childFrameRegistration = await registerConnection(websiteTabConnections, childFrameSocket, { port: createPort(tabId, undefined, 1, childFrameSocket.connectionName).port, socket: childFrameSocket, websiteOrigin: consentedFrameOrigin, approved: false, wantsToConnect: false }, false)
+		await withSilencedWarnings(childFrameRegistration)
 
 		const { tabIconDetails } = await getTabState(tabId)
 		if (rpcNetwork === 'readable') {
@@ -283,7 +309,7 @@ describe('background eth_accounts', () => {
 
 	for (const topLevelSource of ['top-frame connection', 'tab URL'] as const) test(`resolves a child frame's icon refresh from the ${ topLevelSource }, not from child-frame metadata in tab state`, async () => {
 		const browserMock = installBrowserMock({ manifestVersion: 3 })
-		const { registerWebsiteConnectionAndReconcileRequestBlocks, getTabState, updateExtensionIconAfterRegistrationRequestBlocks, updateTabState, updateWebsiteAccess } = await loadModules()
+		const { getTabState, updateTabState, updateWebsiteAccess } = await loadModules()
 		const consentedFrameOrigin = 'consented-metadata-frame.example'
 		const disabledFrameOrigin = 'disabled-metadata-frame.example'
 		const topFrameOrigin = 'unconsented-metadata-top.example'
@@ -296,11 +322,11 @@ describe('background eth_accounts', () => {
 			const socket = { tabId, connectionName }
 			const isTopFrame = connectionName === 0n
 			const { port } = isTopFrame ? createPort(tabId) : createPort(tabId, undefined, Number(connectionName), connectionName)
-			return { socket, registration: await withSilencedWarnings(async () => await registerWebsiteConnectionAndReconcileRequestBlocks(websiteTabConnections, socket, { port, socket, websiteOrigin, approved: false, wantsToConnect: false }, isTopFrame)) }
+			return { socket, refreshIcon: await registerConnection(websiteTabConnections, socket, { port, socket, websiteOrigin, approved: false, wantsToConnect: false }, isTopFrame) }
 		}
 		if (topLevelSource === 'top-frame connection') {
 			const topFrame = await registerFrame(0n, topFrameOrigin)
-			await withSilencedWarnings(async () => await updateExtensionIconAfterRegistrationRequestBlocks(websiteTabConnections, topFrame.registration, topFrame.socket, topFrameOrigin))
+			await withSilencedWarnings(topFrame.refreshIcon)
 		} else {
 			// No top-frame content script connected (for example a restricted top-level page), so the tab's own URL is the top-level website.
 			Object.defineProperty(browser.tabs, 'get', { configurable: true, value: async (requestedTabId: number) => ({ id: requestedTabId, active: true, status: 'complete', url: `https://${ topFrameOrigin }/page` }) })
@@ -309,7 +335,7 @@ describe('background eth_accounts', () => {
 		const consentedFrame = await registerFrame(2n, consentedFrameOrigin)
 		// Child frames publish their website metadata into tab state as they connect; this one lands before the consented frame's reconciliation is observed.
 		await updateTabState(tabId, (previous) => ({ ...previous, website: { websiteOrigin: disabledFrameOrigin, icon: undefined, title: undefined } }))
-		await withSilencedWarnings(async () => await updateExtensionIconAfterRegistrationRequestBlocks(websiteTabConnections, consentedFrame.registration, consentedFrame.socket, consentedFrameOrigin))
+		await withSilencedWarnings(consentedFrame.refreshIcon)
 
 		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [tabId])
 		const { tabIconDetails } = await getTabState(tabId)
@@ -320,7 +346,7 @@ describe('background eth_accounts', () => {
 
 	for (const tabUrl of ['current page', 'unknown'] as const) test(`resolves an icon refresh from the tab URL (${ tabUrl }) when two top-level websites are registered, regardless of registration order`, async () => {
 		const browserMock = installBrowserMock({ manifestVersion: 3 })
-		const { registerWebsiteConnectionAndReconcileRequestBlocks, getTabState, updateExtensionIconAfterRegistrationRequestBlocks, updateTabState, updateWebsiteAccess } = await loadModules()
+		const { getTabState, updateTabState, updateWebsiteAccess } = await loadModules()
 		const consentedFrameOrigin = 'consented-navigation-frame.example'
 		const currentTopOrigin = 'current-navigation-top.example'
 		const staleTopOrigin = 'stale-navigation-top.example'
@@ -333,16 +359,16 @@ describe('background eth_accounts', () => {
 		const register = async (connectionName: bigint, websiteOrigin: string, isTopFrame: boolean) => {
 			const socket = { tabId, connectionName }
 			const { port } = isTopFrame ? createPort(tabId, undefined, undefined, connectionName) : createPort(tabId, undefined, Number(connectionName), connectionName)
-			return { socket, registration: await withSilencedWarnings(async () => await registerWebsiteConnectionAndReconcileRequestBlocks(websiteTabConnections, socket, { port, socket, websiteOrigin, approved: false, wantsToConnect: false }, isTopFrame)) }
+			return { socket, refreshIcon: await registerConnection(websiteTabConnections, socket, { port, socket, websiteOrigin, approved: false, wantsToConnect: false }, isTopFrame) }
 		}
 		// The current page's top frame registers first and the previous page's top-frame port is still registered after it, so the last-inserted top frame is the stale one.
 		const currentTop = await register(1n, currentTopOrigin, true)
-		await withSilencedWarnings(async () => await updateExtensionIconAfterRegistrationRequestBlocks(websiteTabConnections, currentTop.registration, currentTop.socket, currentTopOrigin))
+		await withSilencedWarnings(currentTop.refreshIcon)
 		await register(2n, staleTopOrigin, true)
 		const iconBeforeChildFrame = (await getTabState(tabId)).tabIconDetails
 		await updateTabState(tabId, (previous) => ({ ...previous, website: { websiteOrigin: staleTopOrigin, icon: undefined, title: undefined } }))
 		const consentedFrame = await register(3n, consentedFrameOrigin, false)
-		await withSilencedWarnings(async () => await updateExtensionIconAfterRegistrationRequestBlocks(websiteTabConnections, consentedFrame.registration, consentedFrame.socket, consentedFrameOrigin))
+		await withSilencedWarnings(consentedFrame.refreshIcon)
 
 		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [tabId])
 		const { tabIconDetails } = await getTabState(tabId)

@@ -1,26 +1,24 @@
-import { getActiveAddress, getActiveAddressesForAllTabs, getWebsiteSocketConnection, isTopFramePort, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
+import { getActiveAddress, getActiveAddressesForAllTabs, getWebsiteSocketConnection, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
 import { getActiveAddressEntryForChain, getActiveAddresses } from './metadataUtils.js'
 import { requestAccessFromUser } from './windows/interceptorAccess.js'
 import { retrieveWebsiteDetails, updateExtensionIcon } from './iconHandler.js'
-import type { TabConnection, TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
+import type { TabConnection, WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { InpageScriptCallBack, Settings } from '../types/interceptor-messages.js'
 import { getSettingsSnapshot, updateWebsiteAccess, settingsIfRpcConfigurationReady, requireReadableApprovals, getWebsiteApprovalsSnapshot, requireAvailableSettings } from './settings.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
-import { type WebsiteSocket, getHostWithPort, getTabIfExists, silenceChromeUnCaughtPromise } from '../utils/requests.js'
-import { getAllTabStates, updateTabState } from './storageVariables.js'
+import { type WebsiteSocket, getHostWithPort } from '../utils/requests.js'
+import { getAllTabStates } from './storageVariables.js'
 import { createRpcConfigurationUnavailableError } from '../utils/rpcConfigurationError.js'
 import type { Website, WebsiteAccessArray, WebsiteAddressAccess } from '../types/websiteAccessTypes.js'
 import { getUniqueItemsByProperties, replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
 import { assertNever, modifyObject } from '../utils/typescript.js'
-import { ICON_NOT_ACTIVE } from '../utils/constants.js'
 import type { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
 import { Semaphore } from '../utils/semaphore.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { mergeStoredWebsiteMetadata } from '../utils/websiteIcons.js'
 import { reportAsUnexpectedError, reportUnexpectedError, surfaceFailures } from '../utils/errors.js'
-import { throwAfterFollowUp } from './committedWriteReconciliation.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
-import { getActiveAddressForCurrentSignerState, registerWebsiteConnectionAndProvisionallyClaimSignerState } from './signerStateOwnership.js'
+import { getActiveAddressForCurrentSignerState } from './signerStateOwnership.js'
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
 import { notifyWebsiteLifecycle } from './websiteLifecycle.js'
 import { hasAccess, hasAddressAccess, type ApprovalState } from './websiteAccessPolicy.js'
@@ -480,55 +478,6 @@ export async function updateDeclarativeNetRequestBlocksForRegisteredConnection(w
 	if (await getSettingsForTabBlocking() !== undefined) return false
 	await updateDeclarativeNetRequestBlocks(websiteTabConnections)
 	return true
-}
-
-// Every registered connection, including a child frame in an existing tab, can make its tab eligible for request blocking (persisted consent while the active RPC network is unreadable), so blocking is reconciled for each registration. The reconciliation is returned instead of awaited so connection setup latency is unchanged; the caller must handle its failure.
-export async function registerWebsiteConnectionAndReconcileRequestBlocks(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, connection: TabConnection['connections'][string], isTopFrame: boolean) {
-	const registration = await registerWebsiteConnectionAndProvisionallyClaimSignerState(websiteTabConnections, socket, connection, isTopFrame)
-	// Guarded so a failure before the caller attaches its handler is not reported as an unhandled rejection; the caller still observes it.
-	return { ...registration, isTopFrame, requestBlocksReconciliation: silenceChromeUnCaughtPromise(updateDeclarativeNetRequestBlocksForRegisteredConnection(websiteTabConnections)) }
-}
-
-// Writes a new tab's initial state, then hands the icon refresh that observes the registration's started request-block reconciliation to `observe` (the caller's error boundary). It is handed over after the write, so the icon follows the new tab's state, and even when the write fails, so the reconciliation is always observed while the write failure still propagates; the refresh only reads state and writes the icon, so it is harmless after a failed write.
-export async function initializeRegisteredConnectionTab(websiteTabConnections: WebsiteTabConnections, registration: Awaited<ReturnType<typeof registerWebsiteConnectionAndReconcileRequestBlocks>>, socket: WebsiteSocket, websiteOrigin: string, observe: (refreshIconAfterRequestBlocks: () => Promise<void>) => void) {
-	try {
-		if (registration.createdTabConnection) {
-			await updateTabState(socket.tabId, (previousState: TabState) => modifyObject(previousState, {
-				website: { websiteOrigin, icon: undefined, title: undefined },
-				tabIconDetails: { icon: ICON_NOT_ACTIVE, iconReason: 'No active address selected.' },
-			}))
-		}
-	} finally {
-		observe(async () => await updateExtensionIconAfterRegistrationRequestBlocks(websiteTabConnections, registration, socket, websiteOrigin))
-	}
-}
-
-// Child frames publish their own website into tab state, so the tab's top-level website is its top-frame connection's when exactly one top-level website is connected. When none is, or a navigation left the previous page's port registered beside the new one, the tab's URL decides instead of connection order; undefined when neither is known.
-async function getTopLevelWebsiteOrigin(websiteTabConnections: WebsiteTabConnections, tabId: number) {
-	const connections = Object.values(websiteTabConnections.get(tabId)?.connections ?? {})
-	const topFrameOrigins = new Set(connections.filter((connection) => isTopFramePort(connection.port)).map((connection) => connection.websiteOrigin))
-	const [onlyTopFrameOrigin] = topFrameOrigins
-	if (topFrameOrigins.size === 1 && onlyTopFrameOrigin !== undefined) return onlyTopFrameOrigin
-	const tabUrl = (await getTabIfExists(tabId))?.url
-	return tabUrl === undefined ? undefined : getHostWithPort(tabUrl)
-}
-
-// The icon reports applied request blocking, so it is refreshed once the registration's reconciliation settles, whether or not that succeeds (a failure can follow a partial rule update). A new tab always gets its first icon (call this after writing the new tab's state); an existing tab is refreshed whenever the reconciliation ran, because a consented child frame can make the whole tab blocked. A child frame's icon is resolved for the tab's top-level website, not the frame's.
-export async function updateExtensionIconAfterRegistrationRequestBlocks(websiteTabConnections: WebsiteTabConnections, registration: Awaited<ReturnType<typeof registerWebsiteConnectionAndReconcileRequestBlocks>>, socket: WebsiteSocket, websiteOrigin: string) {
-	const refreshIcon = async (reconciled: boolean) => {
-		if (!registration.createdTabConnection && !reconciled) return
-		const iconWebsiteOrigin = registration.createdTabConnection || registration.isTopFrame ? websiteOrigin : await getTopLevelWebsiteOrigin(websiteTabConnections, socket.tabId)
-		// Without a known top-level website the icon is left to the tab's navigation-complete refresh.
-		if (iconWebsiteOrigin !== undefined) await updateExtensionIcon(socket.tabId, iconWebsiteOrigin, bumpPopupRefreshGeneration())
-	}
-	let reconciled: boolean
-	try {
-		reconciled = await registration.requestBlocksReconciliation
-	} catch (reconciliationFailure: unknown) {
-		// A rejected reconciliation ran, so its tab blocking may have changed: the icon is still refreshed, and a refresh failure is reported after the reconciliation failure instead of replacing it.
-		return await throwAfterFollowUp(reconciliationFailure, async () => await refreshIcon(true))
-	}
-	await refreshIcon(reconciled)
 }
 
 // A pure query of the blocking that is in force: only rules that were successfully applied count, and enforcement belongs to updateDeclarativeNetRequestBlocks.

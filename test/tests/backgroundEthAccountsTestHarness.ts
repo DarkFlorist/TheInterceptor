@@ -154,6 +154,7 @@ export async function loadModules() {
 		...await import('../../app/ts/background/activeSettings.js'),
 		...await import('../../app/ts/background/background.js'),
 		...await import('../../app/ts/background/backgroundUtils.js'),
+		...await import('../../app/ts/background/connectionRegistration.js'),
 		...await import('../../app/ts/background/popupMessageHandlers.js'),
 		...safeApps,
 		initializeSafeAppsCompatibility: async (connections: WebsiteTabConnections) => {
