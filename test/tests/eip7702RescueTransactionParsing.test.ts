@@ -327,7 +327,7 @@ async function assertAcceptPreservesRawSignedTransaction(signedTransactionBytes:
 			import('../../app/ts/utils/storageUtils.js'),
 			import('../../app/ts/background/windows/confirmTransaction.js'),
 			import('../../app/ts/background/storageVariables.js'),
-			import('../../app/ts/background/settings.js'),
+			import('../../app/ts/background/simulationModeGuard.js'),
 		])
 		const request = SendRawTransactionParams.parse({
 			method: 'eth_sendRawTransaction',

@@ -257,7 +257,7 @@ describe('simulation mode forward guard', () => {
 
 	test('a settings read of a corrupt simulation mode cannot overwrite a later switch to signing mode', async () => {
 		const { modules, setStorageHooks, readStoredValue, sendAddEthereumChain } = await setUpSigningModeWebsite()
-		// A separate module instance has its own simulation-mode guard state, like a popup's JS context.
+		// A separate instance of the settings module reads the settings like a popup's JS context does.
 		const popupSettings = await import('../../app/ts/background/settings.js?popup-context')
 		await browser.storage.local.set({ simulationMode: 'corrupt' })
 		const simulationModeWrites: unknown[] = []
@@ -307,19 +307,10 @@ describe('simulation mode forward guard', () => {
 		assert.equal(posts, 1)
 	})
 
-	test('only writeSimulationModeChanges writes simulationMode through the storage setter that allows it', async () => {
-		const callers = (await readAppSources()).flatMap(({ path, source }) => {
-			const calls = source.match(/browserStorageLocalSetWithSimulationMode\(/gu)?.length ?? 0
-			return calls > 0 ? [`${ path }: ${ calls }`] : []
-		})
-		// One call in settings.ts writeSimulationModeChanges, plus the definition in storageUtils.ts; browserStorageLocalSet rejects simulationMode by type.
-		assert.deepEqual(callers.sort(), ['background/settings.ts: 1', 'utils/storageUtils.ts: 1'])
-	})
-
-	test('raw storage writes stay in the storage modules and none of them names simulationMode', async () => {
+	test('raw storage writes stay in the storage modules and only the guard module writes simulationMode', async () => {
 		const rawWrites = (await readAppSources()).flatMap(({ path, source }) => getRawStorageWriteArguments(source).map((writtenItems) => ({ path, writtenItems })))
-		assert.deepEqual([...new Set(rawWrites.map(({ path }) => path))].sort(), ['utils/largeStateStore.ts', 'utils/storageUtils.ts'])
-		assert.deepEqual(rawWrites.filter(({ writtenItems }) => writtenItems.includes('simulationMode')), [])
+		assert.deepEqual([...new Set(rawWrites.map(({ path }) => path))].sort(), ['background/simulationModeGuard.ts', 'utils/largeStateStore.ts', 'utils/storageUtils.ts'])
+		assert.deepEqual(rawWrites.filter(({ path, writtenItems }) => path !== 'background/simulationModeGuard.ts' && writtenItems.includes('simulationMode')), [])
 	})
 
 	test('browserStorageLocalSet2 cannot write simulationMode because the key is not in its runtype', async () => {

@@ -874,7 +874,7 @@ async function storeSafeProposalRequest(approvalStatus: { readonly status: 'Wait
 	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, { to: recipientAddress, value: 0n, input: new Uint8Array() }, 0n)
 	const safeTxHash = BigInt(getSafeTxHash(safeTx))
 	await modules.updateSafeTransactionStacks(() => [])
-	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({ simulationMode: false, rpcNetwork: fakeRpcNetwork, activeSigningSafeAddress: activeAddress })
+	await (await import('../../app/ts/background/simulationModeGuard.js')).changeSimulationMode({ simulationMode: false, rpcNetwork: fakeRpcNetwork, activeSigningSafeAddress: activeAddress })
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [{
 		...pendingTransaction,
 		simulationMode: false,

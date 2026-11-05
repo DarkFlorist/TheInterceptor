@@ -265,7 +265,7 @@ test('reconciles executed Safe operations before simulating the next proposal', 
 
 test('uses zero-reimbursement Safe semantics in the pre-sign confirmation simulation', async () => {
 	await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
-	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({
+	await (await import('../../app/ts/background/simulationModeGuard.js')).changeSimulationMode({
 		simulationMode: false,
 		rpcNetwork: fakeRpcNetwork,
 		activeSigningSafeAddress: activeAddress,
@@ -398,7 +398,7 @@ test('does not show simulation-mode stack setup in a Safe signing confirmation',
 })
 
 test('returns the current Safe overlay when a simulation-stack request is confirmed', async () => {
-	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({
+	await (await import('../../app/ts/background/simulationModeGuard.js')).changeSimulationMode({
 		simulationMode: false,
 		rpcNetwork: fakeRpcNetwork,
 		activeSigningSafeAddress: activeAddress,
@@ -641,7 +641,7 @@ test('reserves proposal nonces without counting overlapping direct Safe executio
 
 test('refreshes pending Safe intent without charging gas to the Safe', async () => {
 	await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
-	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({
+	await (await import('../../app/ts/background/simulationModeGuard.js')).changeSimulationMode({
 		simulationMode: false,
 		rpcNetwork: fakeRpcNetwork,
 	})
@@ -706,7 +706,7 @@ test('refreshes pending Safe intent without charging gas to the Safe', async () 
 })
 
 test('refreshes direct Safe execution without charging gas to the signer', async () => {
-	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({
+	await (await import('../../app/ts/background/simulationModeGuard.js')).changeSimulationMode({
 		simulationMode: false,
 		rpcNetwork: fakeRpcNetwork,
 	})

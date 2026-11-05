@@ -25,7 +25,7 @@ test('recovers a Safe proposal after the wallet switches from a non-owner to a c
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 	await modules.updateSafeTransactionStacks(() => [])
 	await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
-	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({
+	await (await import('../../app/ts/background/simulationModeGuard.js')).changeSimulationMode({
 		simulationMode: false,
 		rpcNetwork: fakeRpcNetwork,
 		activeSigningSafeAddress: activeAddress,
@@ -986,7 +986,7 @@ test('persists and simulates a valid Safe owner signature before replying with t
 	}]])
 	await modules.updateSafeTransactionStacks(() => [])
 	await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
-	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({
+	await (await import('../../app/ts/background/simulationModeGuard.js')).changeSimulationMode({
 		simulationMode: false,
 		rpcNetwork: fakeRpcNetwork,
 		activeSigningSafeAddress: activeAddress,
@@ -1076,7 +1076,7 @@ test('adds an unsigned Safe proposal and merges a later owner signature into bot
 	}]])
 	await modules.updateSafeTransactionStacks(() => [])
 	await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
-	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({
+	await (await import('../../app/ts/background/simulationModeGuard.js')).changeSimulationMode({
 		simulationMode: false,
 		rpcNetwork: fakeRpcNetwork,
 		activeSigningSafeAddress: activeAddress,

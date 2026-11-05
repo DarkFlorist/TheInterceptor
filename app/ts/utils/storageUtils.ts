@@ -189,16 +189,13 @@ export async function browserStorageLocalSafeParseGet(keys: LocalStorageKey | Lo
 export async function browserStorageLocalRemove(keys: LocalStorageKey | LocalStorageKey[]) {
 	return await browser.storage.local.remove(Array.isArray(keys) ? keys : [keys])
 }
-// simulationMode is excluded by type so that a stray write through this setter is a compile error; a settings-owned writer alone would leave this generic setter open. The signer-forward guard in settings.ts tracks every switch into simulation mode, so only browserStorageLocalSetWithSimulationMode may write it.
+// simulationMode is excluded by type so that a stray write through this setter is a compile error; the only writer is the private setter in background/simulationModeGuard.ts, because that guard tracks every switch into simulation mode.
 export async function browserStorageLocalSet(items: LocalStorageItems & { readonly simulationMode?: never }) {
 	const storageItems: LocalStorageItems = items
 	return await browser.storage.local.set(serialize(LocalStorageItems, storageItems))
 }
 
-// Only settings.ts writeSimulationModeChanges calls this (checked by simulationModeForwardGuard.test.ts).
-export async function browserStorageLocalSetWithSimulationMode(items: LocalStorageItems) {
-	return await browser.storage.local.set(serialize(LocalStorageItems, items))
-}
+export const serializeLocalStorageItems = (items: LocalStorageItems) => serialize(LocalStorageItems, items)
 
 const getTabStateKey = (tabId: number): `tabState_${ number }` => `tabState_${ tabId }`
 
