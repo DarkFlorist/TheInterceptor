@@ -8,7 +8,7 @@ import { readNetworkState } from './networkTransitionLock.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
 import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
 import { getSettings } from './settings.js'
-import { getUpdatedSimulationState } from './simulationUpdating.js'
+import { getUpdatedSimulationState, requireSimulationSnapshot } from './simulationUpdating.js'
 
 type NewBlockHandlerDependencies = {
 	readonly getSimulationServices: () => SimulationServices
@@ -30,7 +30,7 @@ export const createNewBlockAttemptCallback = ({ getSimulationServices, publishRp
 		}
 		await publishRpcConnectionStatus('popup_new_block_arrived', rpcConnectionStatus)
 		if (isNewBlock) {
-			const simulateCurrentStack = async (ethereum: EthereumClientService) => await getUpdatedSimulationState(ethereum, (await readNetworkState()).simulation)
+			const simulateCurrentStack = async (ethereum: EthereumClientService) => await getUpdatedSimulationState(ethereum, requireSimulationSnapshot((await readNetworkState()).simulation))
 			const settings = await getSettings()
 			if (settings.simulationMode) {
 				const { ethereum, tokenPriceService } = getSimulationServices()

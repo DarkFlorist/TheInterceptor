@@ -7,7 +7,7 @@ import { NEW_BLOCK_ABORT, TIME_BETWEEN_BLOCKS } from '../utils/constants.js'
 import { reportUnexpectedError, isExpectedInfrastructureError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { getSimulationProviderForSnapshot, servesSnapshotNetwork, type SimulationSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
+import { getSimulationProviderForSnapshot, requireSimulationSnapshot, servesSnapshotNetwork, type SimulationRead, type SimulationSnapshot, type UnavailableSimulation, getUpdatedSimulationState } from './simulationUpdating.js'
 import { requestIsSimulationDataConsumerOpen, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getPopupVisualisationFingerprint } from './popupSimulationFingerprint.js'
 import { retainPreviousVisualisation } from '../utils/popupVisualisationLifecycle.js'
@@ -61,10 +61,10 @@ const hasSimulationInputOperations = (simulationState: SimulationState) => (
 export const createUnavailableVisualisation = (): CompleteVisualizedSimulation => ({ ...createPassthroughCompleteVisualizedSimulation(0, 'invalid'), simulationUpdatingState: 'failed' })
 
 // The shared visualisation follows the active network, so a refresh whose snapshot was read before a later committed network change, including a return to the same endpoint, neither cancels, simulates, stores nor broadcasts; the change queues the refresh of its own network. The check is synchronous, so nothing commits between it and the start of the step it guards; a change that commits while a write is in flight has its refresh serialized after that write.
-const snapshotNetworkIsActive = (snapshot: SimulationSnapshot) => snapshot.networkChangeGeneration === getCommittedNetworkChangeGeneration()
+const snapshotNetworkIsActive = (snapshot: SimulationRead) => snapshot.networkChangeGeneration === getCommittedNetworkChangeGeneration()
 
 // A refresh without a snapshot of its own reads one under the network transition lock, so its settings and stack describe one network. It reads it before waiting for the visualisation semaphore, which a transition takes while holding its lock to publish a failed provider installation.
-const readSharedRefreshSnapshot = async (snapshot: SimulationSnapshot | undefined) => snapshot ?? (await readNetworkState()).simulation
+const readSharedRefreshSnapshot = async (snapshot: SimulationSnapshot | undefined) => snapshot ?? requireSimulationSnapshot((await readNetworkState()).simulation)
 
 type VisualisationRefreshOptions = {
 	readonly invalidateOldState?: boolean
@@ -144,10 +144,10 @@ export type ConfirmationVisualisationDependencies = {
 	readonly reportError?: typeof reportUnexpectedError
 }
 
-// A confirmation window shows the visualisation of its own snapshot, so it is computed for that window and never stored or broadcast as the shared visualisation, which follows the latest stack. A failed computation shows the unavailable state, so the rest of the dialog still updates.
-export async function computeConfirmationVisualisation(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, simulation: SimulationSnapshot, dependencies: ConfirmationVisualisationDependencies = {}) {
+// A confirmation window shows the visualisation of its own snapshot, so it is computed for that window and never stored or broadcast as the shared visualisation, which follows the latest stack. A failed computation or an unreadable stack shows the unavailable state, so the rest of the dialog still updates and its queue stays open.
+export async function computeConfirmationVisualisation(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, simulation: SimulationRead, dependencies: ConfirmationVisualisationDependencies = {}) {
 	try {
-		return await (dependencies.compute ?? computeSnapshotVisualisation)(ethereum, tokenPriceService, simulation) ?? createUnavailableVisualisation()
+		return await (dependencies.compute ?? computeSnapshotVisualisation)(ethereum, tokenPriceService, requireSimulationSnapshot(simulation)) ?? createUnavailableVisualisation()
 	} catch (error) {
 		if (!isExpectedInfrastructureError(error)) await (dependencies.reportError ?? reportUnexpectedError)(error)
 		return createUnavailableVisualisation()
@@ -155,18 +155,28 @@ export async function computeConfirmationVisualisation(ethereum: EthereumClientS
 }
 
 const updateSimulationVisualisationSemaphore = new Semaphore(1)
-// Failed provider preparation must retire old results without executing the retained provider.
-export async function publishFailedPopupVisualisation() {
-	abortController.abort(NEW_BLOCK_ABORT)
+async function storeAndBroadcastFailedVisualisation(shouldWrite: () => boolean) {
 	await updateSimulationVisualisationSemaphore.execute(async () => {
 		const previous = await getPopupVisualisationState()
-		// A failed provider installation retires whatever is stored, whichever network it describes, so the write is unconditioned.
-		const { results: failed } = await setPopupVisualisationState({
+		const { status, results: failed } = await setPopupVisualisationState({
 			...createPassthroughCompleteVisualizedSimulation(previous.simulationId + 1, 'invalid'),
 			simulationUpdatingState: 'failed',
-		}, alwaysWrite)
-		await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState: failed } })
+		}, shouldWrite)
+		if (status !== 'obsolete') await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState: failed } })
 	})
+}
+
+// Failed provider preparation must retire old results without executing the retained provider. A failed provider installation retires whatever is stored, whichever network it describes, so the write is unconditioned.
+export async function publishFailedPopupVisualisation() {
+	abortController.abort(NEW_BLOCK_ABORT)
+	await storeAndBroadcastFailedVisualisation(alwaysWrite)
+}
+
+// A stack that could not be read retires the stored result too, which may describe a replaced network, but only while its own network is active: a later network's refresh must be neither cancelled nor overwritten.
+export async function publishUnavailableSimulationVisualisation(simulation: UnavailableSimulation) {
+	if (!snapshotNetworkIsActive(simulation)) return
+	abortController.abort(NEW_BLOCK_ABORT)
+	await storeAndBroadcastFailedVisualisation(() => snapshotNetworkIsActive(simulation))
 }
 
 // Builds the visualisation of one simulation without storing it. Visualising operations queries the services, so abort and fetch errors propagate to the caller.

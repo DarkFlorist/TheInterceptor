@@ -57,8 +57,8 @@ test('Safe transaction confirmation owns stored stack reconciliation', () => {
 
 test('everything that sends the simulation stack to the node runs its Gnosis Safe executions through the Safe', () => {
 	assert.match(simulationUpdatingSource, /export const prepareSimulationInputForRpc = [^\n]*\n(?:.*\n){0,4}?\tsimulationInput = await prepareSafeExecutionsForRpc\(simulationInput, ethereum\)/u)
-	assert.match(simulationUpdatingSource, /export const simulateGnosisSafeMetaTransaction = [^\n]*\n(?:.*\n){0,3}?\t\tconst simulationInput = await prepareSafeExecutionsForRpc\(snapshot\.simulationStateInput, ethereumClientService\)/u)
-	assert.match(popupMessageHandlersSource, /const simulationInput = await prepareSafeExecutionsForRpc\(network\.simulation\.simulationStateInput, ethereumClientService\)/u)
+	assert.match(simulationUpdatingSource, /export const simulateGnosisSafeMetaTransaction = [^\n]*\n(?:.*\n){0,4}?\t\tconst simulationInput = await prepareSafeExecutionsForRpc\(snapshot\.simulationStateInput, ethereumClientService\)/u)
+	assert.match(popupMessageHandlersSource, /const simulationInput = await prepareSafeExecutionsForRpc\(simulation\.simulationStateInput, ethereumClientService\)/u)
 	assert.match(simulationUpdatingSource, /export const simulateGovernanceContractExecution = [^\n]*\n(?:.*\n){0,30}?\t\tconst simulationInput = await prepareSafeExecutionsForRpc\(simulation\.simulationStateInput, ethereum\)/u)
 })
 
@@ -136,7 +136,7 @@ test('signer ownership and Safe Apps eligibility use the same top-frame predicat
 })
 
 
-test('closing a window and startup recovery reject without reading the simulation stack first', async () => {
+test('closing a window and startup recovery read the network inside the no-response retry, not before it', async () => {
 	const startup = await Bun.file(new URL('../../app/ts/background/background-startup.ts', import.meta.url)).text()
 	assert.doesNotMatch(startup, /\breadNetwork(?:Snapshot|State)\b/u)
 })

@@ -574,6 +574,25 @@ describe('popup clear reset', () => {
 		}
 	})
 
+	test('a refresh of an unreadable stack retires the stored visualisation only while its network is active', async () => {
+		browserMock.reset()
+		await browserStorageLocalSet({ independentActiveSimulationAddress: activeAddress, interceptorTransactionStack: { operations: [] } })
+		const { readNetworkState } = await import('../../app/ts/background/networkTransitionLock.js')
+		const { queuePopupSimulationRefresh } = await import('../../app/ts/background/popupSimulationRefreshQueue.js')
+		const { simulation: { activeRpcNetwork, activeStackContext, networkChangeGeneration } } = await readNetworkState()
+		const unavailable = { kind: 'unavailable' as const, error: new Error('Failed to fetch'), activeRpcNetwork, activeStackContext }
+		await browserStorageLocalSet({ popupVisualisation: stalePopupVisualisation })
+
+		const staleOutcome = await queuePopupSimulationRefresh({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService }, { ...unavailable, networkChangeGeneration: networkChangeGeneration - 1 })
+		assert.deepEqual(staleOutcome, { status: 'observed', available: false })
+		assert.equal((await browserStorageLocalGet('popupVisualisation')).popupVisualisation?.simulationResultState, stalePopupVisualisation.simulationResultState)
+		assert.equal(getSimulationStateChangedMessages(browserMock.sentMessages).length, 0)
+
+		await queuePopupSimulationRefresh({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService }, { ...unavailable, networkChangeGeneration })
+		assert.equal((await browserStorageLocalGet('popupVisualisation')).popupVisualisation?.simulationUpdatingState, 'failed')
+		assert.equal(getSimulationStateChangedMessages(browserMock.sentMessages).length, 1)
+	})
+
 	test('renders the captured refresh input and rich count after live settings change', async () => {
 		browserMock.reset()
 		await browserStorageLocalSet({ independentActiveSimulationAddress: activeAddress, makeCurrentAddressRich: false, interceptorTransactionStack: { operations: [] } })

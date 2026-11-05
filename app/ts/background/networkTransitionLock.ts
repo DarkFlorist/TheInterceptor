@@ -7,7 +7,7 @@ import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { getSettings } from './settings.js'
 import { getInterceptorTransactionStack } from './storageVariables.js'
 import { getCommittedNetworkChangeGeneration } from './networkChangeGeneration.js'
-import { buildSimulationStateInput, readSimulationInputSources, type NetworkSnapshot, type NetworkState, type SimulationSnapshot, type SimulationSnapshotSources } from './simulationUpdating.js'
+import { buildSimulationStateInput, readSimulationInputSources, type NetworkSnapshot, type NetworkState, type SimulationRead, type SimulationSnapshot, type SimulationSnapshotSources } from './simulationUpdating.js'
 
 // The lock that every writer of the active network or of the installed services runs in, and the only place network snapshots are built. networkTransition.ts runs network changes in this lock and leaves here the repair of a change that failed part-way, as a callback, so this module imports neither the transition module nor the popup visualisation layer. The visualisation layer reads network state through this module: networkTransition.ts publishes to that layer, so importing it there would make the modules import each other.
 
@@ -41,6 +41,7 @@ async function completeUnfinishedNetworkChangeForLockHolder() {
 // Stamps the committed network change generation onto the settings, sources and stack it is given. Only lock holders build snapshots, so no network change commits between reading those and stamping the generation.
 function buildSimulationSnapshot(settings: Settings, sources: SimulationSnapshotSources, interceptorTransactionStack: InterceptorTransactionStack): SimulationSnapshot {
 	return {
+		kind: 'loaded',
 		activeRpcNetwork: settings.activeRpcNetwork,
 		activeStackContext: getActiveStackContext(settings),
 		simulationStateInput: buildSimulationStateInput(settings, sources, interceptorTransactionStack),
@@ -51,11 +52,19 @@ function buildSimulationSnapshot(settings: Settings, sources: SimulationSnapshot
 	}
 }
 
-// Reads the settings and the stack built on them. An unreadable stack aborts before anything is published.
+// A stack that cannot be read becomes an explicit result rather than a failed read, so everything that needs only the settings and services carries on; the type makes each user of the stack handle it.
+async function readSimulation(settings: Settings): Promise<SimulationRead> {
+	try {
+		const sources = await readSimulationInputSources(settings)
+		return buildSimulationSnapshot(settings, sources, await getInterceptorTransactionStack())
+	} catch (error: unknown) {
+		return { kind: 'unavailable', error, activeRpcNetwork: settings.activeRpcNetwork, activeStackContext: getActiveStackContext(settings), networkChangeGeneration: getCommittedNetworkChangeGeneration() }
+	}
+}
+
 async function captureNetworkState(): Promise<NetworkState> {
 	const settings = await getSettings()
-	const sources = await readSimulationInputSources(settings)
-	return { settings, simulation: buildSimulationSnapshot(settings, sources, await getInterceptorTransactionStack()) }
+	return { settings, simulation: await readSimulation(settings) }
 }
 
 // The snapshot builders, handed only to tasks that hold the lock: they read storage without taking it, so outside the lock they could pair one network's settings or stack with a later network's generation.
@@ -74,7 +83,7 @@ export async function runNetworkTransition<T>(task: (reads: LockedNetworkReads) 
 	})
 }
 
-// The read of the active network: its settings, the stack built on them and the services installed for them, all read under the lock so they describe one network. It reads storage only, so RPC work stays outside the lock.
+// The read of the active network: its settings, the stack built on them and the services installed for them, all read under the lock so they describe one network. It reads storage only, so RPC work stays outside the lock. Settings and services always come back together; a stack that cannot be read comes back as an unavailable simulation.
 export async function readNetworkSnapshot(simulationServicesOwner: Pick<SimulationServicesOwner, 'getCurrent'>): Promise<NetworkSnapshot> {
 	return await runNetworkTransition(async (reads) => ({ ...await reads.captureNetworkState(), services: simulationServicesOwner.getCurrent() }))
 }

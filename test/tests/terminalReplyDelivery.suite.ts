@@ -262,7 +262,7 @@ async function withUnreadableSimulationStack(run: () => Promise<void>) {
 		return readStoredItems()
 	})
 	try {
-		await assert.rejects(readNetworkState(), /the simulation stack cannot be read/u)
+		assert.equal((await readNetworkState()).simulation.kind, 'unavailable')
 		await withSilencedConsole(run)
 	} finally {
 		browserMock.setStorageGetHandler(undefined)
@@ -326,6 +326,55 @@ test('rejecting in the confirmation window reaches the website and closes the wi
 	assert.deepEqual(removedWindowIds, [1])
 	browserMock.setWindowRemoveHandler(undefined)
 	browserMock.setLiveWindowIds([])
+})
+
+test('rejecting one of two requests keeps the window and the other request while the simulation stack cannot be read', async () => {
+	await browser.storage.local.set({ simulationMode: true })
+	const nextRequest = { ...pendingTransaction, transactionIdentifier: 2n, uniqueRequestIdentifier: { ...uniqueRequestIdentifier, requestId: uniqueRequestIdentifier.requestId + 1 } }
+	const { postedMessages, websiteTabConnections, storePendingRequests } = createConnectionRecordingReplies([pendingTransaction, nextRequest])
+	await storePendingRequests()
+	browserMock.setLiveWindowIds([1])
+	const removedWindowIds: number[] = []
+	browserMock.setWindowRemoveHandler(async (windowId) => { removedWindowIds.push(windowId) })
+	await withUnreadableSimulationStack(async () => {
+		await modules.confirmDialog(fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService), websiteTabConnections, {
+			method: 'popup_confirmDialog',
+			data: { action: 'reject', errorString: undefined, uniqueRequestIdentifier },
+		})
+	})
+	assert.deepEqual(removedWindowIds, [])
+	assert.deepEqual((await modules.getPendingTransactionsAndMessages()).map((pending) => pending.uniqueRequestIdentifier.requestId), [nextRequest.uniqueRequestIdentifier.requestId])
+	assert.equal(getRepliesToWebsite(postedMessages).length, 1)
+	browserMock.setWindowRemoveHandler(undefined)
+	browserMock.setLiveWindowIds([])
+})
+
+test('a wallet account change with an ordinary pending request completes while the simulation stack cannot be read', async () => {
+	await browser.storage.local.set({ simulationMode: false })
+	const nextAccount = 0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7an
+	const signerAccountsChanged: unknown[] = []
+	const { port, websiteTabConnections, storePendingRequests } = createConnectionRecordingReplies([pendingTransaction])
+	await storePendingRequests()
+	const tabId = uniqueRequestIdentifier.requestSocket.tabId
+	await modules.updateTabState(tabId, (previousState) => ({ ...previousState, signerAccounts: [activeAddress], activeSigningAddress: activeAddress }))
+	const connectionsWithLifecycle = Object.assign(websiteTabConnections, { lifecycle: { signerAccountsChanged: (socket: unknown) => { signerAccountsChanged.push(socket) } } })
+	browserMock.sentMessages.length = 0
+	await withUnreadableSimulationStack(async () => {
+		await modules.ethAccountsReply(fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService), connectionsWithLifecycle, port, {
+			method: 'eth_accounts_reply',
+			params: [{ signerProviderGeneration: 1, type: 'success', accounts: [addressString(nextAccount)], requestAccounts: false }],
+			interceptorRequest: true,
+			interceptorInternalRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier,
+		}, 'hasAccess', activeAddress)
+	})
+	const { getSigningAddressPreferences } = await import('../../app/ts/background/settings.js')
+	assert.ok((await getSigningAddressPreferences()).some((preference) => preference.signerAddress === nextAccount && preference.selection === 'signer'))
+	const sentMethods = browserMock.sentMessages.map((message) => message.method)
+	assert.ok(sentMethods.includes('popup_activeSigningAddressChanged'))
+	assert.equal(signerAccountsChanged.length, 1)
+	assert.equal((await modules.getPendingTransactionsAndMessages()).length, 1)
 })
 
 const createSignerReply = (reply: { readonly success: true, readonly reply: string } | { readonly success: false, readonly error: { readonly code: number, readonly message: string } }) => ({

@@ -5,7 +5,7 @@ import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { createMethodHandlerFor } from '../utils/methodHandlers.js'
 import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
 import { readNetworkSnapshot } from './networkTransitionLock.js'
-import type { SimulationSnapshot } from './simulationUpdating.js'
+import type { SimulationRead } from './simulationUpdating.js'
 
 export type PopupMessageDispatcherContext = {
 	websiteTabConnections: WebsiteTabConnections
@@ -24,7 +24,7 @@ export const popupMessageHandler = createMethodHandlerFor<PopupMessage, PopupMes
 // One fixed-provider operation: settings, stack and services are read together under the transition lock, and the context exposes neither reset nor the live owner.
 export type PopupSnapshotContext = Omit<PopupMessageDispatcherContext, 'simulationServicesOwner' | 'resetSimulationState'> & {
 	readonly services: SimulationServices
-	readonly simulation: SimulationSnapshot
+	readonly simulation: SimulationRead
 }
 
 export function popupSnapshotMessageHandler<Method extends PopupMessage['method']>(

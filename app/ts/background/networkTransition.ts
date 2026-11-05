@@ -13,7 +13,7 @@ import { changeSimulationMode, getSettings, importSettingsAndAddressBook } from 
 import type { Settings } from '../types/interceptor-messages.js'
 import type { ExportedSettings } from '../types/exportedSettingsTypes.js'
 import { getPrimaryRpcForChain, updateInterceptorTransactionStack, updateTransactionState } from './storageVariables.js'
-import { type NetworkSnapshot, readSimulationInputSources, type SimulationSnapshot } from './simulationUpdating.js'
+import { type NetworkSnapshot, readSimulationInputSources, type SimulationRead } from './simulationUpdating.js'
 import { completeUnfinishedNetworkChange, type LockedNetworkReads, recordUnfinishedNetworkChange, runNetworkTransition } from './networkTransitionLock.js'
 import { assertNever } from '../utils/typescript.js'
 import type { InterceptorStackOperation } from '../types/visualizer-types.js'
@@ -122,7 +122,7 @@ async function installServicesForCommittedNetwork(simulationServicesOwner: Simul
 }
 
 // A popup refresh that a committed change needs: its services and snapshot are read under the lock, and it is simulated after the lock is released, so requests waiting for the lock do not wait for the simulation.
-type PendingPopupRefresh = { readonly services: SimulationServices, readonly snapshot: SimulationSnapshot }
+type PendingPopupRefresh = { readonly services: SimulationServices, readonly snapshot: SimulationRead }
 
 // Notifies popups and approved websites inside the lock, so they see network changes in commit order. Only runSettingsTransition calls this, after it has installed the committed network's services and cleared the previous chain's stack. Returns the popup refresh to run after the lock.
 async function publishCommittedSettingsChange(reads: LockedNetworkReads, change: CommittedNetworkChange, updatedSettings: Settings): Promise<PendingPopupRefresh | undefined> {

@@ -22,7 +22,7 @@ import { serialize } from '../types/wire-types.js'
 import { connectedToSigner, ethAccountsReply, signerChainChanged, signerReply, walletSwitchEthereumChainReply } from './providerMessageHandlers.js'
 import { makeSureInterceptorIsNotSleeping } from './sleeping.js'
 import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
-import { buildExecutionSimulationStateFromPreparedInput, getUpdatedSimulationStackSnapshot, prepareSimulationInputForRpc, type SimulationSnapshot } from './simulationUpdating.js'
+import { buildExecutionSimulationStateFromPreparedInput, getUpdatedSimulationStackSnapshot, prepareSimulationInputForRpc, requireSimulationSnapshot, type SimulationRead } from './simulationUpdating.js'
 import type { SimulationServices, SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { readNetworkSnapshot } from './networkTransitionLock.js'
 import { getWalletSelectedAccount, isActiveSigningSafe } from '../utils/activeAddressSelection.js'
@@ -66,7 +66,7 @@ async function handleRPCRequest(
 	website: Website,
 	context: RpcRequestContext,
 	settings: Settings,
-	simulation: SimulationSnapshot,
+	simulation: SimulationRead,
 	activeAddress: bigint | undefined,
 	publishRpcConnectionStatus: PublishRpcConnectionStatus,
 	simulationOverlayEnabled: boolean,
@@ -80,7 +80,7 @@ async function handleRPCRequest(
 	let executionSimulationStatePromise: Promise<ResolvedExecutionSimulationState> | undefined
 	const getSimulationInput = async () => {
 		if (!simulationOverlayEnabled) return PASSTHROUGH_STATE
-		if (simulationInputPromise === undefined) simulationInputPromise = (async () => toResolvedSimulationInput(await prepareSimulationInputForRpc(simulation.simulationStateInput, ethereum)))()
+		if (simulationInputPromise === undefined) simulationInputPromise = (async () => toResolvedSimulationInput(await prepareSimulationInputForRpc(requireSimulationSnapshot(simulation).simulationStateInput, ethereum)))()
 		return await simulationInputPromise
 	}
 	const getExecutionSimulationState = async () => {

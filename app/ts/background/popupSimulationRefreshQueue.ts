@@ -1,10 +1,11 @@
 // Coalesce interactive requests only; popupVisualisationUpdater owns execution, cancellation and stored state. See docs/popup-simulation-refresh.md.
 import { Future } from '../utils/future.js'
 import type { SimulationServices } from '../simulation/serviceLifecycle.js'
-import { getSimulationProviderForSnapshot, type SimulationSnapshot } from './simulationUpdating.js'
+import { getSimulationProviderForSnapshot, type SimulationRead, type SimulationSnapshot, type UnavailableSimulation } from './simulationUpdating.js'
 import { getPopupVisualisationFingerprint } from './popupSimulationFingerprint.js'
 import { stringifyJSONWithBigInts } from '../utils/bigint.js'
-import { updatePopupVisualisationForSnapshot } from './popupVisualisationUpdater.js'
+import { reportUnexpectedError } from '../utils/errors.js'
+import { publishUnavailableSimulationVisualisation, updatePopupVisualisationForSnapshot } from './popupVisualisationUpdater.js'
 
 export type PopupSimulationRefresh = SimulationServices & { readonly invalidateOldState?: boolean }
 export type RevisionedPopupSimulationRefresh = PopupSimulationRefresh & { readonly revision: string | symbol }
@@ -61,8 +62,20 @@ const refreshRevision = createPopupSimulationRefresher<RevisionedPopupSimulation
 	return result.simulationUpdatingState !== 'failed' && result.simulationResultState !== 'invalid'
 })
 
+// With no stack there is nothing to simulate. Both failures end here, so a settings change that queued this refresh still completes.
+async function publishUnavailableSimulation(simulation: UnavailableSimulation): Promise<PopupSimulationRefreshOutcome> {
+	await reportUnexpectedError(simulation.error)
+	try {
+		await publishUnavailableSimulationVisualisation(simulation)
+	} catch (error: unknown) {
+		await reportUnexpectedError(error)
+	}
+	return { status: 'observed', available: false }
+}
+
 // Callers read the snapshot under the transition lock, so its settings and stack describe one network; the simulation itself runs outside the lock.
-export async function queuePopupSimulationRefresh(services: PopupSimulationRefresh, snapshot: SimulationSnapshot) {
+export async function queuePopupSimulationRefresh(services: PopupSimulationRefresh, snapshot: SimulationRead) {
+	if (snapshot.kind === 'unavailable') return await publishUnavailableSimulation(snapshot)
 	const provider = getSimulationProviderForSnapshot(services.ethereum, snapshot)
 	const block = provider?.getCachedBlock()
 	// Without a cached head we cannot prove that two requests cover the same block; keep the follow-up refresh.

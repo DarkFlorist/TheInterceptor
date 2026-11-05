@@ -155,30 +155,49 @@ export function buildSimulationStateInput(settings: Settings, sources: Simulatio
 }
 
 // Built only under the network transition lock, by buildSimulationSnapshot in networkTransitionLock.ts, which stamps the committed network change generation and derives simulationStateInput from interceptorTransactionStack and, like both rich-address fields, from the same settings and rich-address sources in one step, so they cannot drift; build a new snapshot rather than copying one with changed fields.
-export type SimulationSnapshot = {
-	readonly activeRpcNetwork: RpcNetwork
-	readonly activeStackContext: ReturnType<typeof getActiveStackContext>
+export type SimulationSnapshot = SimulationReadIdentity & {
+	readonly kind: 'loaded'
 	readonly simulationStateInput: SimulationStateInput
 	readonly numberOfAddressesMadeRich: number
 	// The active address among the rich addresses; 1.0.x simulation stack replies list its funding as a transaction.
 	readonly activeAddressMadeRich: bigint | undefined
 	// The stack the input was built from; Gnosis Safe signing builds its own input from the same stack.
 	readonly interceptorTransactionStack: InterceptorTransactionStack
-	// The committed network change this snapshot was read after; a later change, even back to the same endpoint, makes the snapshot obsolete for the shared visualisation.
+}
+
+// What every simulation read knows, also when the stack could not be read: these come from the settings and the lock, not from the stack.
+type SimulationReadIdentity = {
+	readonly activeRpcNetwork: RpcNetwork
+	readonly activeStackContext: ReturnType<typeof getActiveStackContext>
+	// The committed network change this read was made after; a later change, even back to the same endpoint, makes it obsolete for the shared visualisation.
 	readonly networkChangeGeneration: number
+}
+
+// A simulation read whose stack or input sources failed. Settings and services do not depend on them, so only work that uses the stack fails, with this error.
+export type UnavailableSimulation = SimulationReadIdentity & {
+	readonly kind: 'unavailable'
+	readonly error: unknown
+}
+
+export type SimulationRead = SimulationSnapshot | UnavailableSimulation
+
+// The snapshot for work that uses the stack. There is no later read to fall back on, because that read could describe another network.
+export const requireSimulationSnapshot = (simulation: SimulationRead) => {
+	if (simulation.kind === 'unavailable') throw simulation.error
+	return simulation
 }
 
 // Settings with the simulation state built from them, captured together so a request simulates the stack of its own network. Handlers take the services as separate (ethereum, tokenPriceService) arguments next to NetworkState, a maintainer decision that keeps their signatures. Callers take both from one readNetworkSnapshot call under the network transition lock; if a pair still mismatches, getSimulationProviderForSnapshot refuses it, so getUpdatedSimulationState cannot simulate it. Code that hands the client to the simulation directly, such as an RPC request's overlay or a confirmation's simulation, has only the single read.
 export type NetworkState = {
 	readonly settings: Settings
-	readonly simulation: SimulationSnapshot
+	readonly simulation: SimulationRead
 }
 
 // A NetworkState together with the services that were installed when it was read.
 export type NetworkSnapshot = NetworkState & { readonly services: SimulationServices }
 
 // Whether the client and the snapshot describe the same network. A caller that holds a client and reads a snapshot later can end up with two networks, because that read waits for a network change in progress. Signer-only networks are not simulated, so they keep the previous network's services. Both values are immutable, so the answer stays true for as long as the caller holds them.
-export const servesSnapshotNetwork = (ethereum: EthereumClientService, snapshot: SimulationSnapshot) => (
+export const servesSnapshotNetwork = (ethereum: EthereumClientService, snapshot: SimulationReadIdentity) => (
 	isSignerOnlyNetwork(snapshot.activeRpcNetwork) || !getRpcNetworkChange(snapshot.activeRpcNetwork, ethereum.getRpcEntry()).endpointChanged
 )
 
@@ -201,8 +220,9 @@ export async function getUpdatedSimulationState(ethereum: EthereumClientService,
 }
 
 /** Builds the simulation-stack overlay used by simulation mode and Gnosis Safe signing mode. */
-export async function getUpdatedSimulationStackSnapshot(ethereum: EthereumClientService, simulationOverlayEnabled: boolean, snapshot: SimulationSnapshot) {
+export async function getUpdatedSimulationStackSnapshot(ethereum: EthereumClientService, simulationOverlayEnabled: boolean, simulation: SimulationRead) {
 	if (!simulationOverlayEnabled) return { simulationInput: PASSTHROUGH_STATE, simulationState: PASSTHROUGH_STATE, activeAddressMadeRich: undefined }
+	const snapshot = requireSimulationSnapshot(simulation)
 	return {
 		simulationInput: toResolvedSimulationInput(snapshot.simulationStateInput),
 		simulationState: await getUpdatedSimulationState(ethereum, snapshot),
@@ -303,7 +323,7 @@ export const getGovernanceExecutionTokenBalancesAfter = async (
 	)
 }
 
-export const simulateGovernanceContractExecution = async (pendingTransaction: PendingTransaction, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, simulation: SimulationSnapshot): Promise<DistributiveOmit<SimulateExecutionReplyData, 'transactionOrMessageIdentifier'>> => {
+export const simulateGovernanceContractExecution = async (pendingTransaction: PendingTransaction, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, simulationRead: SimulationRead): Promise<DistributiveOmit<SimulateExecutionReplyData, 'transactionOrMessageIdentifier'>> => {
 	const returnError = (errorMessage: string) => ({ success: false as const, errorType: 'Other' as const, errorMessage })
 	try {
 		// identifies compound governane call and performs simulation if the vote passes
@@ -332,6 +352,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 		const parentBlock = await ethereum.getBlock(undefined)
 		if (parentBlock === null) throw new Error('The latest block is null')
 		if (parentBlock.baseFeePerGas === undefined) return returnError('cannot build simulation from legacy block')
+		const simulation = requireSimulationSnapshot(simulationRead)
 		const simulationInput = await prepareSafeExecutionsForRpc(simulation.simulationStateInput, ethereum)
 		const signedExecutionTransaction = mockSignTransaction({ ...contractExecutionResult.executingTransaction, gas: contractExecutionResult.ethSimulateV1CallResult.gasUsed })
 		const executionTransaction: PreSimulationTransaction = {
@@ -386,10 +407,11 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 	}
 }
 
-export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: VisualizedPersonalSignRequestSafeTx, snapshot: SimulationSnapshot, ethereumClientService: EthereumClientService, tokenPriceService: TokenPriceService): Promise<DistributiveOmit<SimulateExecutionReplyData, 'transactionOrMessageIdentifier'>> => {
+export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: VisualizedPersonalSignRequestSafeTx, simulation: SimulationRead, ethereumClientService: EthereumClientService, tokenPriceService: TokenPriceService): Promise<DistributiveOmit<SimulateExecutionReplyData, 'transactionOrMessageIdentifier'>> => {
 	const returnError = (errorMessage: string) => ({ success: false as const, errorType: 'Other' as const, errorMessage })
 	try {
 		// One snapshot provides both the stack state and the input the meta-transaction is appended to.
+		const snapshot = requireSimulationSnapshot(simulation)
 		const simulationInput = await prepareSafeExecutionsForRpc(snapshot.simulationStateInput, ethereumClientService)
 		// Call: 0x0, DelegateCall: 0x1
 		// https://github.com/safe-global/safe-smart-account/blob/main/contracts/libraries/Enum.sol

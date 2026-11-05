@@ -12,7 +12,7 @@ import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { type InterceptorTransactionStack, PASSTHROUGH_STATE, type TransactionGasPayment, type TransactionSimulationOptions, type WebsiteCreatedEthereumTransaction, type WebsiteCreatedEthereumTransactionOrFailed, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
 import type { SendRawTransactionParams, SendTransactionParams } from '../../types/JsonRpc-types.js'
 import { refreshConfirmTransactionSimulation } from '../confirmTransactionSimulation.js'
-import { getExecutedCallFormation, getUpdatedSimulationState, type NetworkSnapshot, type NetworkState, type SimulationSnapshot } from '../simulationUpdating.js'
+import { getExecutedCallFormation, getUpdatedSimulationState, requireSimulationSnapshot, type NetworkSnapshot, type NetworkState, type SimulationSnapshot } from '../simulationUpdating.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getRpcConnectionStatus, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
 import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
@@ -143,7 +143,7 @@ export async function refreshPendingSafeSignerSelectionErrors(ethereum: Ethereum
 				ethereum,
 				pending,
 				refreshedSelection.selectedSigner,
-				async (refreshedPending) => await refreshDirectSafeExecutionSimulation(ethereum, tokenPriceService, network.simulation, refreshedPending),
+				async (refreshedPending) => await refreshDirectSafeExecutionSimulation(ethereum, tokenPriceService, requireSimulationSnapshot(network.simulation), refreshedPending),
 			)
 			if (refresh.persisted) pendingStateChanged = true
 			if (refresh.refreshRequired && refresh.refreshResult.status !== 'unchanged') continue
@@ -263,20 +263,6 @@ export async function updateConfirmTransactionView(ethereum: EthereumClientServi
 	return false
 }
 
-// The view after a request's state was already persisted, for callers that hold no snapshot: nothing is read while no request is pending, and a stack that cannot be read leaves only this view out of date, like any failed view update.
-async function updateConfirmTransactionViewFromRead(readNetwork: () => Promise<NetworkSnapshot>) {
-	try {
-		if ((await getPendingTransactionsAndMessages()).length === 0) return false
-		const network = await readNetwork()
-		return await updateConfirmTransactionView(network.services.ethereum, network.services.tokenPriceService, network)
-	} catch(error: unknown) {
-		if (!isExpectedInfrastructureError(error)) await reportUnexpectedError(error)
-		return false
-	}
-}
-
-export const updateConfirmTransactionViewOnActiveNetwork = async (simulationServicesOwner: SimulationServicesOwner) => await updateConfirmTransactionViewFromRead(async () => await readNetworkSnapshot(simulationServicesOwner))
-
 export const isConfirmTransactionFocused = async () => {
 	const pendingTransactions = await getPendingTransactionsAndMessages()
 	if (pendingTransactions[0] === undefined) return false
@@ -318,28 +304,9 @@ export const setGasLimitForTransaction = async (transactionIdentifier: bigint, g
 
 // The services owner lets an accepted simulated confirmation read the installed services together with the stack it appends to.
 export async function resolvePendingTransactionOrMessage(simulationServicesOwner: SimulationServicesOwner, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, network: NetworkState, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, refreshedSafeSignerSelection?: RefreshedSafeSignerSelection) {
-	// See NetworkState for why these are separate parameters and what keeps them on one network.
-	const snapshot: NetworkSnapshot = { ...network, services: { ethereum, tokenPriceService } }
-	return await resolvePendingRequest(simulationServicesOwner, ethereum, tokenPriceService, async () => snapshot, websiteTabConnections, confirmation, refreshedSafeSignerSelection)
-}
-
-// Actions that end a request with a reply decided without the simulation stack.
-type SnapshotFreeConfirmation = TransactionConfirmation & { readonly data: { readonly action: 'reject' | 'noResponse' | 'signerIncluded' } }
-
-export const isSnapshotFreeConfirmation = (confirmation: TransactionConfirmation): confirmation is SnapshotFreeConfirmation => (
-	confirmation.data.action === 'reject' || confirmation.data.action === 'noResponse' || confirmation.data.action === 'signerIncluded'
-)
-
-// The website's reply must not wait for a stack that cannot be read, so the snapshot is read only for the view work that follows the reply.
-export async function resolvePendingRequestWithoutSnapshot(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, confirmation: SnapshotFreeConfirmation) {
-	const { ethereum, tokenPriceService } = simulationServicesOwner.getCurrent()
-	return await resolvePendingRequest(simulationServicesOwner, ethereum, tokenPriceService, async () => await readNetworkSnapshot(simulationServicesOwner), websiteTabConnections, confirmation)
-}
-
-async function resolvePendingRequest(simulationServicesOwner: SimulationServicesOwner, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, readNetwork: () => Promise<NetworkSnapshot>, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, refreshedSafeSignerSelection?: RefreshedSafeSignerSelection) {
-	// The services and the snapshot read are replaced at once: after this confirmation appends to the stack, later view updates use the snapshot read with that append.
-	let current = { services: { ethereum, tokenPriceService }, readNetwork }
-	const updateViewOnCurrentSnapshot = async () => await updateConfirmTransactionViewFromRead(current.readNetwork)
+	// See NetworkState for why these are separate parameters and what keeps them on one network. One snapshot holds them here so they are replaced at once: after this confirmation appends to the stack, later view updates use the snapshot read with that append.
+	let current: NetworkSnapshot = { ...network, services: { ethereum, tokenPriceService } }
+	const updateViewOnCurrentSnapshot = async () => await updateConfirmTransactionView(current.services.ethereum, current.services.tokenPriceService, current)
 	let pendingTransactionOrMessage = await getPendingTransactionOrMessageByidentifier(confirmation.data.uniqueRequestIdentifier)
 	if (pendingTransactionOrMessage === undefined) return // no need to resolve as it doesn't exist anymore
 	if (
@@ -352,7 +319,7 @@ async function resolvePendingRequest(simulationServicesOwner: SimulationServices
 			ethereum,
 			pendingTransactionOrMessage,
 			refreshedSafeSignerSelection.selectedSigner,
-			async (refreshedPending) => await refreshDirectSafeExecutionSimulation(ethereum, tokenPriceService, (await readNetwork()).simulation, refreshedPending),
+			async (refreshedPending) => await refreshDirectSafeExecutionSimulation(ethereum, tokenPriceService, requireSimulationSnapshot(network.simulation), refreshedPending),
 		)
 		const refreshResult = refresh.refreshResult
 		if (refresh.refreshRequired && refreshResult.status !== 'unchanged' && !refresh.persisted) {
@@ -517,7 +484,7 @@ async function resolvePendingRequest(simulationServicesOwner: SimulationServices
 				pendingTransactionOrMessage.simulationChainId,
 			)
 			if (appended === undefined) return await keepPendingAfterNetworkChange()
-			current = { services: appended.services, readNetwork: async () => appended }
+			current = appended
 			return reply({ type: 'result', result: (await simulatePersonalSign(pendingTransactionOrMessage.originalRequestParameters, pendingTransactionOrMessage.signedMessageTransaction.fakeSignedFor)).signature }, 'changed')
 		}
 		case 'Transaction': {
@@ -526,7 +493,7 @@ async function resolvePendingRequest(simulationServicesOwner: SimulationServices
 			const appended = await appendToActiveSimulationStack(simulationServicesOwner, { type: 'Transaction', preSimulationTransaction: transaction }, pendingTransactionOrMessage.simulationChainId)
 			if (appended === undefined) return await keepPendingAfterNetworkChange()
 			if (appended.stackedOperation.type !== 'Transaction') throw new Error('The stacked operation of this transaction is not a transaction.')
-			current = { services: appended.services, readNetwork: async () => appended }
+			current = appended
 			markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionStackAppended)
 			return reply({ type: 'result', result: EthereumBytes32.serialize(appended.stackedOperation.preSimulationTransaction.signedTransaction.hash) }, 'changed')
 		}
@@ -557,9 +524,11 @@ export async function resolvePendingRequestsForMissingConfirmationWindows(simula
 	await resolveAllPendingTransactionsAndMessageAsNoResponse(simulationServicesOwner, orphanedTransactions, websiteTabConnections)
 }
 
-const resolveAsNoResponse = async (simulationServicesOwner: SimulationServicesOwner, transaction: PendingTransactionOrSignableMessage, websiteTabConnections: WebsiteTabConnections) => (
-	await resolvePendingRequestWithoutSnapshot(simulationServicesOwner, websiteTabConnections, { method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: transaction.uniqueRequestIdentifier, action: 'noResponse' } })
-)
+// The network is read here, inside the retry, so a read that fails is retried like a failed rejection rather than losing it.
+const resolveAsNoResponse = async (simulationServicesOwner: SimulationServicesOwner, transaction: PendingTransactionOrSignableMessage, websiteTabConnections: WebsiteTabConnections) => {
+	const network = await readNetworkSnapshot(simulationServicesOwner)
+	return await resolvePendingTransactionOrMessage(simulationServicesOwner, network.services.ethereum, network.services.tokenPriceService, network, websiteTabConnections, { method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: transaction.uniqueRequestIdentifier, action: 'noResponse' } })
+}
 
 const resolveAllPendingTransactionsAndMessageAsNoResponse = async (simulationServicesOwner: SimulationServicesOwner, transactions: readonly PendingTransactionOrSignableMessage[], websiteTabConnections: WebsiteTabConnections) => {
 	for (const transaction of transactions) {
@@ -893,6 +862,8 @@ export async function openConfirmTransactionDialogForTransaction(
 	if (!continuesStackContext(requestNetwork, network)) {
 		return formRejectMessage(METAMASK_ERROR_BLANKET_ERROR, 'The active network changed while the Interceptor prepared this request. Send it again.')
 	}
+	// Checked before the request joins the confirmation queue, so a stack that cannot be read fails the request rather than leaving it pending.
+	const simulation = requireSimulationSnapshot(network.simulation)
 	const {
 		effectiveTransactionParams,
 		transactionExecutor,
@@ -914,7 +885,7 @@ export async function openConfirmTransactionDialogForTransaction(
 		: effectiveTransactionParams.method === 'eth_sendTransaction'
 		? formEthSendTransaction(
 			ethereumClientService,
-			network.simulation,
+			simulation,
 			undefined,
 			transactionExecutor,
 			website,
@@ -959,7 +930,7 @@ export async function openConfirmTransactionDialogForTransaction(
 			const simulationResultsPromise = silenceChromeUnCaughtPromise(refreshConfirmTransactionSimulation(
 				ethereumClientService,
 				tokenPriceService,
-				network.simulation,
+				simulation,
 				transactionExecutor,
 				simulationMode,
 				request.uniqueRequestIdentifier,
