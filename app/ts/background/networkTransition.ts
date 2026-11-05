@@ -1,7 +1,7 @@
 import { publishFailedPopupVisualisation } from './popupVisualisationUpdater.js'
 import { queuePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
 import type { SimulationServices, SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
-import { getRpcNetworkChange, isSignerOnlyNetwork } from '../utils/rpcNetworkChange.js'
+import { getRpcEntryIdentityKey, getRpcNetworkChange, isSignerOnlyNetwork } from '../utils/rpcNetworkChange.js'
 import type { RpcNetwork } from '../types/rpc.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
@@ -12,7 +12,7 @@ import { advanceCommittedNetworkChangeGeneration, getCommittedNetworkChangeGener
 import { changeSimulationMode, getSettings, importSettingsAndAddressBook } from './settings.js'
 import type { Settings } from '../types/interceptor-messages.js'
 import type { ExportedSettings } from '../types/exportedSettingsTypes.js'
-import { getPrimaryRpcForChain, updateInterceptorTransactionStack, updateTransactionState } from './storageVariables.js'
+import { getPrimaryRpcForChain, getRpcList, updateInterceptorTransactionStack, updateTransactionState } from './storageVariables.js'
 import { type NetworkSnapshot, readSimulationInputSources, type SimulationRead } from './simulationUpdating.js'
 import { completeUnfinishedNetworkChange, type LockedNetworkReads, recordUnfinishedNetworkChange, runNetworkTransition, runStackIndependentNetworkTask } from './networkTransitionLock.js'
 import { assertNever } from '../utils/typescript.js'
@@ -111,7 +111,11 @@ export async function appendToActiveSimulationStack(simulationServicesOwner: Sim
 // Compares with the installed client rather than the previous settings, so a transition that failed part-way is repaired by its retry. A signer-only network keeps the previous provider because it has no endpoint to install.
 async function installServicesForCommittedNetwork(simulationServicesOwner: SimulationServicesOwner, committedRpcNetwork: RpcNetwork) {
 	if (committedRpcNetwork.httpsRpc === undefined) return
-	if (!getRpcNetworkChange(simulationServicesOwner.getCurrent().ethereum.getRpcEntry(), committedRpcNetwork).endpointChanged) return
+	const installedClient = simulationServicesOwner.getCurrent().ethereum
+	if (!getRpcNetworkChange(installedClient.getRpcEntry(), committedRpcNetwork).endpointChanged) {
+		installedClient.updateRpcEntryMetadata(committedRpcNetwork)
+		return
+	}
 	try {
 		simulationServicesOwner.reset(committedRpcNetwork)
 	} catch (error) {
@@ -174,14 +178,17 @@ export async function runSettingsTransition(simulationServicesOwner: SimulationS
 	if (popupRefresh !== undefined) await queuePopupSimulationRefresh(popupRefresh.services, popupRefresh.snapshot)
 }
 
-// An RPC list update can make another endpoint the active chain's primary. Settings then select that primary together with its services, like a switch to it would; a signer-only selection has no endpoint to replace.
+// An RPC list update can make another endpoint the active chain's primary, or edit the active entry's metadata so the selection no longer exists. Settings then select that primary together with its services, like a switch to it would; a signer-only selection has no endpoint to replace. A selection that is still listed on the primary's endpoint stays selected.
 export async function selectUpdatedPrimaryRpcTransition(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections) {
 	await runSettingsTransition(simulationServicesOwner, websiteTabConnections, {
 		// The new primary is on the active chain, so the transition installs its services but keeps the stack.
 		writeSettings: async (previousSettings) => {
 			if (isSignerOnlyNetwork(previousSettings.activeRpcNetwork)) return 'unchanged'
 			const primary = await getPrimaryRpcForChain(previousSettings.activeRpcNetwork.chainId)
-			if (primary === undefined || !getRpcNetworkChange(previousSettings.activeRpcNetwork, primary).endpointChanged) return 'unchanged'
+			if (primary === undefined) return 'unchanged'
+			const activeEntryKey = getRpcEntryIdentityKey(previousSettings.activeRpcNetwork)
+			const selectionIsListed = (await getRpcList()).some((entry) => getRpcEntryIdentityKey(entry) === activeEntryKey)
+			if (selectionIsListed && !getRpcNetworkChange(previousSettings.activeRpcNetwork, primary).endpointChanged) return 'unchanged'
 			await changeSimulationMode({ simulationMode: previousSettings.simulationMode, rpcNetwork: primary })
 			return 'committed'
 		},

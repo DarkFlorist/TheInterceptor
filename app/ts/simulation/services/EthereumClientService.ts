@@ -153,6 +153,12 @@ export class EthereumClientService {
 
 	public readonly getRpcEntry = () => this.rpcEntry
 
+	// A new name, currency or explorer for the same endpoint: this client keeps serving it, so work in flight and snapshots of this network stay valid.
+	public readonly updateRpcEntryMetadata = (rpcEntry: RpcEntry) => {
+		if (rpcEntry.httpsRpc !== this.rpcEntry.httpsRpc || rpcEntry.chainId !== this.rpcEntry.chainId) throw new Error('Only the metadata of an installed RPC entry can be updated')
+		this.rpcEntry = rpcEntry
+	}
+
 	public readonly getNewBlockAttemptCallback = () => this.newBlockAttemptCallback
 	public readonly getOnErrorBlockCallback = () => this.onErrorBlockCallback
 

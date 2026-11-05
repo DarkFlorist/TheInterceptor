@@ -1911,6 +1911,44 @@ describe('network transition snapshot', () => {
 		}
 	})
 
+	test.each(['the selection and then the list, as the editor does', 'only the list'] as const)('a currency edit of the active RPC that saves %s reaches the installed client without replacing it or retiring its snapshots', async (saved) => {
+		installBrowserMock()
+		const modules = await loadModules()
+		const { getUpdatedSimulationState, getSimulationProviderForSnapshot } = await import('../../app/ts/background/simulationUpdating.js')
+		const { setNewRpcList } = await import('../../app/ts/background/popupMessageHandlers/settings.js')
+		const { setRpcList } = await import('../../app/ts/background/storageVariables.js')
+		await setRpcList([{ ...networkA, primary: true }])
+		await modules.changeSimulationMode({ simulationMode: true, rpcNetwork: { ...networkA, primary: true } })
+		await modules.updateInterceptorTransactionStack(() => ({ operations: [createStackedTransaction(1n, networkA.chainId, STACKED_ON_A_RECIPIENT)] }))
+		const { owner, retireAll } = createRecordingServicesOwner(networkA)
+		const { websiteTabConnections } = createApprovedConnection(modules.websiteSocketToString)
+		try {
+			const before = await modules.readNetworkSnapshot(owner)
+			const client = before.services.ethereum
+			const editedNetwork = { ...networkA, primary: true, currencyName: 'Edited ether', currencyTicker: 'EDIT' }
+
+			if (saved !== 'only the list') await modules.changeActiveAddressAndChain(owner, websiteTabConnections, { simulationMode: true, rpcNetwork: editedNetwork, promptForAccessesIfNeeded: false })
+			await setNewRpcList(owner, websiteTabConnections, { method: 'popup_set_rpc_list', data: [{ ...editedNetwork, primary: true }] })
+
+			const after = await modules.readNetworkSnapshot(owner)
+			assert.equal(after.services.ethereum, client)
+			assert.equal(client.getRpcEntry().currencyName, 'Edited ether')
+			assert.equal(client.getRpcEntry().currencyTicker, 'EDIT')
+			assert.equal(after.settings.activeRpcNetwork.currencyTicker, 'EDIT')
+			if (after.simulation.kind !== 'loaded' || before.simulation.kind !== 'loaded') throw new Error('Expected loaded simulations')
+			assert.equal(after.simulation.networkChangeGeneration, before.simulation.networkChangeGeneration)
+			assert.equal(after.simulation.interceptorTransactionStack.operations.length, 1)
+			// The snapshot read before the edit still matches the client, so work in flight is not refused.
+			assert.equal(getSimulationProviderForSnapshot(client, before.simulation), client)
+			assert.equal(getSimulationProviderForSnapshot(client, after.simulation), client)
+			const simulated = await getUpdatedSimulationState(client, after.simulation)
+			if (simulated.kind !== 'simulated') throw new Error('Expected a simulation')
+			assert.equal(simulated.value.rpcNetwork.currencyTicker, 'EDIT')
+		} finally {
+			retireAll()
+		}
+	})
+
 	test('a Gnosis Safe confirmation re-read continues its request only if no network change committed since, even one back to the same endpoint', async () => {
 		installBrowserMock()
 		const modules = await loadModules()
