@@ -1,6 +1,8 @@
 import { notifyWebsiteLifecycle } from '../../app/ts/background/websiteLifecycle.js'
 import { isRpcConfigurationUnavailableError, RPC_CONFIGURATION_UNAVAILABLE_MESSAGE } from '../../app/ts/utils/rpcConfigurationError.js'
 import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
+import { PopupMessage } from '../../app/ts/types/interceptor-messages.js'
+import { serialize } from '../../app/ts/types/wire-types.js'
 import * as assert from 'assert'
 import { describe, spyOn, test } from 'bun:test'
 import { addressString, confirmedSignerOwnership, createDeferredValue, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
@@ -2062,6 +2064,159 @@ describe('background eth_accounts', () => {
 		assert.equal(messages.some((message) => message.method === 'connect' || message.method === 'accountsChanged'), false)
 		assert.equal(messages.filter((message) => message.method === 'eth_requestAccounts' && message.requestId === 22).at(-1)?.error?.code, 4100)
 		assert.equal((await getPendingAccessRequests()).length, 0)
+	})
+
+	const sendPopupMessage = async (websiteTabConnections: WebsiteTabConnections, simulationServicesOwner: ReturnType<typeof createEthereumWithGetBlockCounter>['simulationServicesOwner'], message: PopupMessage) => {
+		const { handlePopupRuntimeMessage } = await import('../../app/ts/background/popupMessageRouting.js')
+		const originalWarn = console.warn
+		const originalError = console.error
+		console.warn = () => undefined
+		console.error = () => undefined
+		try {
+			// A committed revocation still reports the unavailable settings; only its effects are asserted here.
+			await handlePopupRuntimeMessage(websiteTabConnections, simulationServicesOwner, serialize(PopupMessage, message), noopPublishRpcConnectionStatus).catch((error: unknown) => {
+				if (!isRpcConfigurationUnavailableError(error)) throw error
+			})
+		} finally {
+			console.warn = originalWarn
+			console.error = originalError
+		}
+	}
+
+	const openAccessDialogThenCorruptActiveNetwork = async () => {
+		const { changeSimulationMode, getPendingAccessRequests, handleInterceptedRequest, setUseSignersAddressAsActiveAddress, websiteSocketToString } = await loadModules()
+		const websiteOrigin = 'https://reject-without-settings.example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const account = 0x6161616161616161616161616161616161616161n
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: account })
+		await setUseSignersAddressAsActiveAddress(false)
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const connection = { port, socket, websiteOrigin, approved: false, wantsToConnect: true }
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: { [websiteSocketToString(socket)]: connection } }]])
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, { interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier: { requestId: 61, requestSocket: socket }, method: 'eth_requestAccounts' }, websiteTabConnections, noopPublishRpcConnectionStatus)
+		const pendingRequest = (await getPendingAccessRequests())[0]
+		if (pendingRequest === undefined) throw new Error('Missing access request')
+		await browser.storage.local.set({ activeRpcNetwork: 'corrupt' })
+		const reply = (userReply: 'Approved' | 'Rejected'): PopupMessage => ({ method: 'popup_interceptorAccess', data: { userReply, accessRequestId: pendingRequest.accessRequestId, requestAccessToAddress: account, originalRequestAccessToAddress: account } })
+		const getReply = () => messages.find((message) => message.method === 'eth_requestAccounts' && message.requestId === 61)
+		return { connection, getReply, messages, reply, simulationServicesOwner, websiteTabConnections }
+	}
+
+	test('rejecting an access request with an unreadable active network saves the denial and answers the website', async () => {
+		installBrowserMock()
+		const { getPendingAccessRequests, getWebsiteApprovalsSnapshot } = await loadModules()
+		const { connection, getReply, reply, simulationServicesOwner, websiteTabConnections } = await openAccessDialogThenCorruptActiveNetwork()
+
+		await sendPopupMessage(websiteTabConnections, simulationServicesOwner, reply('Rejected'))
+
+		const approvals = await getWebsiteApprovalsSnapshot({ repairCorrupt: false })
+		assert.equal(approvals.status === 'readable' ? approvals.websiteAccess[0]?.access : undefined, false)
+		assert.equal(getReply()?.error?.code, 4100)
+		assert.deepEqual(await getPendingAccessRequests(), [])
+		assert.equal(connection.approved, false)
+	})
+
+	test('approving an access request with an unreadable active network does not grant', async () => {
+		installBrowserMock()
+		const { getPendingAccessRequests, getWebsiteApprovalsSnapshot } = await loadModules()
+		const { connection, getReply, messages, reply, simulationServicesOwner, websiteTabConnections } = await openAccessDialogThenCorruptActiveNetwork()
+
+		await sendPopupMessage(websiteTabConnections, simulationServicesOwner, reply('Approved'))
+
+		const approvals = await getWebsiteApprovalsSnapshot({ repairCorrupt: false })
+		assert.deepEqual(approvals.status === 'readable' ? approvals.websiteAccess : undefined, [])
+		assert.equal(getReply(), undefined)
+		assert.equal((await getPendingAccessRequests()).length, 1)
+		assert.equal(connection.approved, false)
+		assert.equal(messages.some((message) => message.method === 'connect'), false)
+	})
+
+	test('approving a website-level access request with an unreadable active network does not save a grant', async () => {
+		installBrowserMock()
+		const { getPendingAccessRequests, getRequiredSettings, getWebsiteApprovalsSnapshot, requestAccessFromUser, websiteSocketToString } = await loadModules()
+		const websiteOrigin = 'https://website-level-approve.example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port } = createPort(socket.tabId)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: { [websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: false, wantsToConnect: true } } }]])
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		await requestAccessFromUser(simulationServicesOwner, websiteTabConnections, socket, website, undefined, undefined, await getRequiredSettings(), undefined, undefined)
+		const pendingRequest = (await getPendingAccessRequests())[0]
+		if (pendingRequest === undefined) throw new Error('Missing access request')
+		await browser.storage.local.set({ activeRpcNetwork: 'corrupt' })
+
+		await sendPopupMessage(websiteTabConnections, simulationServicesOwner, { method: 'popup_interceptorAccess', data: { userReply: 'Approved', accessRequestId: pendingRequest.accessRequestId, requestAccessToAddress: undefined, originalRequestAccessToAddress: undefined } })
+
+		const approvals = await getWebsiteApprovalsSnapshot({ repairCorrupt: false })
+		assert.deepEqual(approvals.status === 'readable' ? approvals.websiteAccess : undefined, [])
+	})
+
+	const setUpStoredAccessThenCorruptActiveNetwork = async () => {
+		const { updateWebsiteAccess, websiteSocketToString } = await loadModules()
+		const websiteOrigin = 'https://stored-access.example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const address = 0x6262626262626262626262626262626262626262n
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address, access: true }], declarativeNetRequestBlockMode: 'disabled' }])
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port } = createPort(socket.tabId)
+		const connection = { port, socket, websiteOrigin, approved: true, wantsToConnect: true }
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: { [websiteSocketToString(socket)]: connection } }]])
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		await browser.storage.local.set({ activeRpcNetwork: 'corrupt' })
+		const readStoredEntry = async () => {
+			const { getWebsiteApprovalsSnapshot } = await loadModules()
+			const approvals = await getWebsiteApprovalsSnapshot({ repairCorrupt: false })
+			return approvals.status === 'readable' ? approvals.websiteAccess[0] : undefined
+		}
+		return { address, connection, readStoredEntry, simulationServicesOwner, website, websiteOrigin, websiteTabConnections }
+	}
+
+	test.each([
+		{ method: 'popup_removeWebsiteAccess' },
+		{ method: 'popup_removeWebsiteAddressAccess' },
+		{ method: 'popup_changeInterceptorAccess' },
+	] as const)('$method applies its revocation with an unreadable active network', async ({ method }) => {
+		installBrowserMock()
+		const { address, connection, readStoredEntry, simulationServicesOwner, website, websiteOrigin, websiteTabConnections } = await setUpStoredAccessThenCorruptActiveNetwork()
+		const message: PopupMessage = method === 'popup_removeWebsiteAccess' ? { method, data: { websiteOrigin } }
+			: method === 'popup_removeWebsiteAddressAccess' ? { method, data: { websiteOrigin, address } }
+				: { method, data: [{ oldEntry: { website, access: true, addressAccess: [{ address, access: true }] }, newEntry: { website, access: true, addressAccess: [{ address, access: true }] }, removed: true }] }
+
+		await sendPopupMessage(websiteTabConnections, simulationServicesOwner, message)
+
+		const storedEntry = await readStoredEntry()
+		assert.equal(storedEntry === undefined || storedEntry.addressAccess?.length === 0, true)
+		assert.equal(connection.approved, false)
+	})
+
+	test('preventing address access and adding a request block apply with an unreadable active network', async () => {
+		installBrowserMock()
+		const { address, readStoredEntry, simulationServicesOwner, website, websiteTabConnections } = await setUpStoredAccessThenCorruptActiveNetwork()
+
+		await sendPopupMessage(websiteTabConnections, simulationServicesOwner, { method: 'popup_allowOrPreventAddressAccessForWebsite', data: { website, address, allowAccess: false } })
+		await sendPopupMessage(websiteTabConnections, simulationServicesOwner, { method: 'popup_blockOrAllowExternalRequests', data: { website, shouldBlock: true } })
+
+		const storedEntry = await readStoredEntry()
+		assert.deepEqual(storedEntry?.addressAccess, [{ address, access: false }])
+		assert.equal(storedEntry?.declarativeNetRequestBlockMode, 'block-all')
+	})
+
+	test('whatever can grant or lift a block still needs readable settings', async () => {
+		installBrowserMock()
+		const { updateWebsiteAccess } = await loadModules()
+		const { address, readStoredEntry, simulationServicesOwner, website, websiteTabConnections } = await setUpStoredAccessThenCorruptActiveNetwork()
+		await updateWebsiteAccess(() => [{ website, access: false, addressAccess: [{ address, access: false }], declarativeNetRequestBlockMode: 'block-all' }])
+
+		await sendPopupMessage(websiteTabConnections, simulationServicesOwner, { method: 'popup_allowOrPreventAddressAccessForWebsite', data: { website, address, allowAccess: true } })
+		await sendPopupMessage(websiteTabConnections, simulationServicesOwner, { method: 'popup_blockOrAllowExternalRequests', data: { website, shouldBlock: false } })
+		await sendPopupMessage(websiteTabConnections, simulationServicesOwner, { method: 'popup_changeInterceptorAccess', data: [{ oldEntry: { website, access: false, addressAccess: [{ address, access: false }] }, newEntry: { website, access: true, addressAccess: [{ address, access: true }] }, removed: false }] })
+
+		const storedEntry = await readStoredEntry()
+		assert.equal(storedEntry?.access, false)
+		assert.deepEqual(storedEntry?.addressAccess, [{ address, access: false }])
+		assert.equal(storedEntry?.declarativeNetRequestBlockMode, 'block-all')
 	})
 
 	test('does not approve the port before site-approved eth_requestAccounts receives address consent', async () => {

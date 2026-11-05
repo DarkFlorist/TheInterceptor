@@ -22,6 +22,7 @@ import { isAccountConnectionMethod } from '../accountRequestMethods.js'
 import type { ErrorWithCodeAndOptionalData } from '../../types/error.js'
 import { getConfirmedSignerStateToken, isSignerStateTokenCurrent, signerConnectionReplacedError, signerUnavailableError, tabHasApprovedWebsiteConnection, waitForConfirmedSignerStateToken } from '../signerStateOwnership.js'
 import { assertActiveAddressSelectionAllowed, includePersistedAddressBookEntry } from '../../utils/activeAddressSelection.js'
+import { isRpcConfigurationUnavailableError } from '../../utils/rpcConfigurationError.js'
 
 type OpenedDialogWithListeners = {
 	popupOrTab: PopupOrTab
@@ -122,13 +123,19 @@ export async function resolveInterceptorAccess(simulationServicesOwner: Simulati
 				: undefined,
 		}
 	})
-	if (resolution.promptForFollowUpAccesses) {
+	const settingsAfterReply = settingsIfAvailable(await getSettingsSnapshot())
+	if (resolution.promptForFollowUpAccesses && settingsAfterReply !== undefined) {
 		await updateWebsiteApprovalAccesses(
 			simulationServicesOwner,
 			websiteTabConnections,
-			requireAvailableSettings(await getSettingsSnapshot()),
+			settingsAfterReply,
 			true,
 		)
+	}
+	// A rejection needs no settings, but a replay without them would only report them unavailable, so the website gets the refusal the user gave.
+	if (reply.userReply === 'Rejected' && settingsAfterReply === undefined) {
+		for (const pendingRequest of resolution.pendingRequestsToReplay) refuseAccess(websiteTabConnections, pendingRequest.request)
+		return
 	}
 	const replayPendingRequests = async () => await Promise.all(resolution.pendingRequestsToReplay.map((pendingRequest) => handleInterceptedRequest(
 			undefined,
@@ -510,10 +517,15 @@ async function resolve(simulationServicesOwner: SimulationServicesOwner, website
 				promptForAccessesIfNeeded: false,
 			})
 		}
-		if (accountRequestSocket === undefined) {
-			await applyAccessReply()
-		} else {
-			await withSuppressedUnscopedConnectionEventsForSocketAsync(accountRequestSocket, applyAccessReply)
+		const applyAccessReplyToSocket = async () => {
+			if (accountRequestSocket === undefined) return await applyAccessReply()
+			return await withSuppressedUnscopedConnectionEventsForSocketAsync(accountRequestSocket, applyAccessReply)
+		}
+		try {
+			await applyAccessReplyToSocket()
+		} catch (error: unknown) {
+			// A rejection is saved and its connections revoked by the time unavailable settings are reported, and the request is still answered below.
+			if (accessReply.userReply !== 'Rejected' || !isRpcConfigurationUnavailableError(error)) throw error
 		}
 	}
 
