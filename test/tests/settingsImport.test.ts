@@ -716,6 +716,29 @@ describe('settings import', () => {
 		assert.deepEqual(browserMock.contentScriptUpdateBatches, [])
 	})
 
+	test('keeps the stored optional settings that a commit omits', async () => {
+		const { commitImportedSettings, defaultActiveAddresses } = await settingsModulePromise
+		await storePreviousSettings()
+
+		await commitImportedSettings({
+			updateAddressBookEntries: (previousEntries) => previousEntries,
+			simulationMode: false,
+			activeSimulationAddress: defaultActiveAddresses[0]?.address,
+			activeSigningSafeAddress: undefined,
+			signingAddressPreferences: [],
+			useSignersAddressAsActiveAddress: false,
+			websiteAccess: [],
+			useTabsInsteadOfPopup: false,
+			safeAppsCompatibilityMode: false,
+		})
+
+		const { openedPageV2, activeRpcNetwork, metamaskCompatibilityMode, simulationMode } = await browserStorageLocalGet([...importedStorageKeys])
+		assert.deepEqual(openedPageV2, { page: 'Home' })
+		assert.deepEqual(activeRpcNetwork, previousRpcNetwork)
+		assert.equal(metamaskCompatibilityMode, true)
+		assert.equal(simulationMode, false)
+	})
+
 	test('replaces every imported setting from a version 1.6 export', async () => {
 		await storePreviousSettings()
 
