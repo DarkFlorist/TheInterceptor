@@ -179,6 +179,74 @@ describe('background eth_accounts', () => {
 		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [socket.tabId])
 	})
 
+	test.each([
+		{ description: 'the website', revokedAddress: undefined, tabId: 9908 },
+		{ description: 'the active address', revokedAddress: 0x1010101010101010101010101010101010101010n, tabId: 9909 },
+	])('revoking $description after recovery and approval lifts the retained block by the time the revocation completes', async ({ revokedAddress, tabId }) => {
+		const browserMock = installBrowserMock({ manifestVersion: 3 })
+		const { persistWebsiteAccessChange, reconcileWebsiteApprovalAccesses } = await loadModules()
+		const { connection, endOutage, getRequiredSettings, websiteOrigin, websiteTabConnections } = await registerConsentedTabDuringOutage(tabId)
+		await endOutage()
+		await reconcileWebsiteApprovalAccesses(websiteTabConnections, await getRequiredSettings(), true)
+		assert.equal(connection.approved, true)
+		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [tabId])
+
+		await persistWebsiteAccessChange(undefined, websiteTabConnections, { websiteOrigin, icon: undefined, title: undefined }, false, revokedAddress, false)
+
+		assert.equal(connection.approved, false)
+		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [])
+	})
+
+	const createConsentedBlockAllConnectionWithFailingConnectEvent = async (tabId: number) => {
+		const { websiteSocketToString } = await loadModules()
+		const websiteOrigin = `failing-connect-event-${ tabId.toString() }.example`
+		const settings = await setUpBlockAllWithPersistedConsent(websiteOrigin)
+		const socket = { tabId, connectionName: 0n }
+		const { port } = createPort(socket.tabId, (message) => {
+			if (message.method === 'connect') throw new Error('Connect event delivery failed')
+		})
+		const connection = { port, socket, websiteOrigin, approved: false, wantsToConnect: false }
+		const websiteTabConnections: WebsiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: { [websiteSocketToString(socket)]: connection } }]])
+		const { updateTabState } = await loadModules()
+		await updateTabState(socket.tabId, (previous) => ({ ...previous, website: { websiteOrigin, icon: undefined, title: undefined } }))
+		return { connection, port, settings, socket, websiteOrigin, websiteTabConnections }
+	}
+
+	test('a connection event that cannot be delivered during a direct access check does not skip the block rule, and is reported', async () => {
+		const { runtimeMessages, requestBlockingCalls } = installBrowserMock({ manifestVersion: 3 })
+		const { handleInterceptedRequest } = await loadModules()
+		const { MessageToPopup } = await import('../../app/ts/types/interceptor-messages.js')
+		const { connection, port, socket, websiteOrigin, websiteTabConnections } = await createConsentedBlockAllConnectionWithFailingConnectEvent(9910)
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		const originalError = console.error
+		console.error = () => undefined
+		try {
+			await withSilencedWarnings(async () => await handleInterceptedRequest(port, websiteOrigin, { websiteOrigin, icon: undefined, title: undefined }, simulationServicesOwner, socket, { interceptorRequest: true, usingInterceptorWithoutSigner: true, uniqueRequestIdentifier: { requestId: 93, requestSocket: socket }, method: 'eth_chainId', params: [] }, websiteTabConnections, noopPublishRpcConnectionStatus))
+			await new Promise((resolve) => setTimeout(resolve, 10))
+		} finally {
+			console.error = originalError
+		}
+
+		assert.equal(connection.approved, true)
+		assert.deepEqual(requestBlockingCalls.blockedSessionTabIds, [socket.tabId])
+		const reportedFailures = runtimeMessages.flatMap((message) => {
+			const parsed = MessageToPopup.safeParse(message)
+			return parsed.success && parsed.value.method === 'popup_UnexpectedErrorOccured' ? [parsed.value.data.message] : []
+		})
+		assert.ok(reportedFailures.includes('Connect event delivery failed'), `reported: ${ reportedFailures.join(' | ') }`)
+	})
+
+	test('a connection event that cannot be delivered during reconciliation does not skip the block rule, and is thrown', async () => {
+		const { requestBlockingCalls } = installBrowserMock({ manifestVersion: 3 })
+		const { reconcileWebsiteApprovalAccesses } = await loadModules()
+		const { connection, settings, socket, websiteTabConnections } = await createConsentedBlockAllConnectionWithFailingConnectEvent(9911)
+
+		await assert.rejects(reconcileWebsiteApprovalAccesses(websiteTabConnections, settings, true), /Connect event delivery failed/)
+
+		assert.equal(connection.approved, true)
+		assert.deepEqual(requestBlockingCalls.blockedSessionTabIds, [socket.tabId])
+	})
+
 	test('derives tab blocking from approved connections on a signer-only network, whose empty RPC entries are a ready configuration', async () => {
 		const browserMock = installBrowserMock({ manifestVersion: 3 })
 		const { setRpcConfiguration } = await loadModules()
