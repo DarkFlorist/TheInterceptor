@@ -22,6 +22,7 @@ import { SafeTransactionStacks } from '../types/safeTypes.js'
 import { createStoredValueRepository } from '../utils/storedValue.js'
 import { isValidErc20Decimals } from '../utils/erc20.js'
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
+import { withSettingsStorageLock } from './settingsStorageLock.js'
 
 const reportCorruptStoredValue = (label: string) => async (error: unknown) => {
 	console.warn(`${ label } was corrupt:`)
@@ -301,25 +302,22 @@ export async function getUserAddressBookEntries(): Promise<AddressBookEntries> {
 export const getUserAddressBookEntriesForChainId = async (chainId: ChainIdWithUniversal) => (await getUserAddressBookEntries()).filter((entry) => entry.chainId === chainId || (entry.chainId === undefined && chainId === 1n) || entry.chainId === 'AllChains')
 export const getUserAddressBookEntriesForChainIdMorePreciseFirst = async (chainId: ChainIdWithUniversal) => getAddressBookEntriesForChainIdMorePreciseFirst(await getUserAddressBookEntries(), chainId)
 
-const userAddressBookEntriesSemaphore = new Semaphore(1)
-// For an operation that writes userAddressBookEntriesV3 together with other keys in one storage write: it keeps the address book updaters below from interleaving with it.
-export const executeWithUserAddressBookEntriesLock = async <T>(operation: () => Promise<T>) => await userAddressBookEntriesSemaphore.execute(operation)
 export async function updateUserAddressBookEntries(updateFunc: (prevState: AddressBookEntries) => AddressBookEntries) {
-	await userAddressBookEntriesSemaphore.execute(async () => {
+	await withSettingsStorageLock(async () => {
 		const entries = await getUserAddressBookEntries()
 		return await browserStorageLocalSet({ userAddressBookEntriesV3: updateFunc(entries) })
 	})
 }
 
 export async function updateUserAddressBookEntriesV2Old(updateFunc: (prevState: AddressBookEntries) => AddressBookEntries) {
-	await userAddressBookEntriesSemaphore.execute(async () => {
+	await withSettingsStorageLock(async () => {
 		const entries = (await browserStorageLocalGet('userAddressBookEntriesV2')).userAddressBookEntriesV2 ?? DEFAULT_ACTIVE_ADDRESSES
 		return await browserStorageLocalSet({ userAddressBookEntriesV2: updateFunc(entries) })
 	})
 }
 
 export async function addUserAddressBookEntryIfItDoesNotExist(newEntry: AddressBookEntry) {
-	await userAddressBookEntriesSemaphore.execute(async () => {
+	await withSettingsStorageLock(async () => {
 		const entries = await getUserAddressBookEntries()
 		const existingEntry = entries.find((entry) => entry.address === newEntry.address && doAddressBookChainIdsMatch(entry.chainId, newEntry.chainId))
 		if (existingEntry !== undefined) return

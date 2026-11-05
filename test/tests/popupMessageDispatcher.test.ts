@@ -12,8 +12,8 @@ const dynamicRuleUpdates: unknown[] = []
 const contentScriptUpdateBatches: { readonly id: string, readonly excludeMatches?: readonly string[] }[][] = []
 const dispatcherEvents: ({ type: 'message', message: unknown } | { type: 'dynamicRuleUpdate' })[] = []
 let storageSetError: Error | undefined
-let storageGetErrors: Error[] = []
-let storageGetErrorsAfterImportSuccessBroadcast: Error[] = []
+let storageGetError: Error | undefined
+let storageGetErrorAfterWebsiteAccessWrite: Error | undefined
 let dynamicRuleUpdateError: Error | undefined
 let addressBookBroadcastWait: Promise<void> | undefined
 
@@ -26,10 +26,6 @@ Reflect.set(globalThis, 'browser', {
 			sentMessages.push(message)
 			dispatcherEvents.push({ type: 'message', message })
 			const parsed = MessageToPopup.safeParse(message)
-			if (parsed.success && parsed.value.method === 'popup_initiate_export_settings_reply' && parsed.value.data.success) {
-				storageGetErrors = storageGetErrorsAfterImportSuccessBroadcast
-				storageGetErrorsAfterImportSuccessBroadcast = []
-			}
 			if (parsed.success && parsed.value.method === 'popup_addressBookEntriesChanged') await addressBookBroadcastWait
 			return undefined
 		},
@@ -39,8 +35,11 @@ Reflect.set(globalThis, 'browser', {
 	storage: {
 		local: {
 			async get(keys?: string | string[] | Record<string, unknown> | null) {
-				const storageGetError = storageGetErrors.shift()
-				if (storageGetError !== undefined) throw storageGetError
+				if (storageGetError !== undefined) {
+					const error = storageGetError
+					storageGetError = undefined
+					throw error
+				}
 				if (keys === undefined || keys === null) return { ...storageState }
 				if (Array.isArray(keys)) return Object.fromEntries(keys.filter((key) => key in storageState).map((key) => [key, storageState[key]]))
 				if (typeof keys === 'string') return keys in storageState ? { [keys]: storageState[keys] } : {}
@@ -49,6 +48,10 @@ Reflect.set(globalThis, 'browser', {
 			async set(items: Record<string, unknown>) {
 				if (storageSetError !== undefined) throw storageSetError
 				Object.assign(storageState, items)
+				if ('websiteAccess' in items) {
+					storageGetError = storageGetErrorAfterWebsiteAccessWrite
+					storageGetErrorAfterWebsiteAccessWrite = undefined
+				}
 			},
 			async remove(keys: string | string[]) {
 				for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
@@ -192,8 +195,8 @@ function createDispatcherContext(resetSimulationState: () => Promise<void>): Pop
 
 beforeEach(() => {
 	storageSetError = undefined
-	storageGetErrors = []
-	storageGetErrorsAfterImportSuccessBroadcast = []
+	storageGetError = undefined
+	storageGetErrorAfterWebsiteAccessWrite = undefined
 	dynamicRuleUpdateError = undefined
 	addressBookBroadcastWait = undefined
 	for (const key of Object.keys(storageState)) delete storageState[key]
@@ -564,36 +567,20 @@ describe('popup message dispatcher seams', () => {
 		assert.equal(contentScriptUpdateBatches.length, 0)
 	})
 
-	test('applies a committed import to access and open popups when an earlier follow-up fails', async () => {
-		const followUpFailure = new Error('Settings read unavailable.')
-		storageGetErrorsAfterImportSuccessBroadcast = [followUpFailure]
+	test('reports a failed content script update of a committed import and still applies the import', async () => {
+		storageGetErrorAfterWebsiteAccessWrite = new Error('Settings read unavailable.')
 
-		await assert.rejects(dispatchPopupMessage(
+		await dispatchPopupMessage(
 			createDispatcherContext(async () => undefined),
 			{ method: 'popup_import_settings', data: { fileContents: buildImportedSettingsFile([{ ...importedDisabledWebsiteAccess, access: true, interceptorDisabled: false, declarativeNetRequestBlockMode: 'block-all' }]) } },
-		), followUpFailure)
-
-		assert.equal(contentScriptUpdateBatches.length, 0)
-		assert.equal(dynamicRuleUpdates.length, 1)
-		const messages = sentMessages.map((message) => MessageToPopup.parse(message))
-		assert.deepEqual(messages.map(({ method }) => method), ['popup_initiate_export_settings_reply', 'popup_settingsUpdated'])
-	})
-
-	test('rethrows every failed follow-up of a committed import together', async () => {
-		const contentScriptFailure = new Error('Content script settings read unavailable.')
-		const reconciliationFailure = new Error('Reconciliation settings read unavailable.')
-		storageGetErrorsAfterImportSuccessBroadcast = [contentScriptFailure, reconciliationFailure]
-
-		const importResult = dispatchPopupMessage(
-			createDispatcherContext(async () => undefined),
-			{ method: 'popup_import_settings', data: { fileContents: buildImportedSettingsFile([]) } },
 		)
 
-		await assert.rejects(importResult, (error: unknown) => {
-			assert.ok(error instanceof AggregateError)
-			assert.deepEqual(error.errors, [contentScriptFailure, reconciliationFailure])
-			assert.equal(error.message, 'Applying the imported settings failed: Content script settings read unavailable.; Reconciliation settings read unavailable.')
-			return true
-		})
+		const latestUnexpectedError = await getLatestUnexpectedError()
+		assert.equal(latestUnexpectedError?.data.code, 'settings_import_content_script_update_failed')
+		assert.equal(contentScriptUpdateBatches.length, 0)
+		assert.equal(dynamicRuleUpdates.length, 1)
+		const methods = sentMessages.map((message) => MessageToPopup.parse(message).method)
+		assert.ok(methods.includes('popup_initiate_export_settings_reply'))
+		assert.ok(methods.includes('popup_settingsUpdated'))
 	})
 })
