@@ -1,5 +1,5 @@
 import type { PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
-import { dataStringWith0xStart } from '../utils/bigint.js'
+import { encodeBigIntOrBytesForJson } from '../utils/bigint.js'
 import { keccak256, stringToBytes } from '../utils/ethereumPrimitives.js'
 import { isRecord } from '../utils/runtimeTypeGuards.js'
 
@@ -38,11 +38,9 @@ const IS_REVIEWED_FIELD: Record<PendingRequestField, boolean> = {
 const isReviewedField = (field: string) => Object.entries(IS_REVIEWED_FIELD).some(([reviewedField, isReviewed]) => isReviewed && reviewedField === field)
 
 // Sorts object keys so the id does not depend on the order fields were written in.
-const stringifyCanonically = (value: unknown) => JSON.stringify(value, (_key, nested: unknown) => {
-	if (typeof nested === 'bigint') return `0x${ nested.toString(16) }`
-	if (nested instanceof Uint8Array) return dataStringWith0xStart(nested)
-	if (isRecord(nested)) return Object.fromEntries(Object.entries(nested).sort(([first], [second]) => first < second ? -1 : 1))
-	return nested
+export const stringifyCanonically = (value: unknown) => JSON.stringify(value, (_key, nested: unknown) => {
+	const encoded = encodeBigIntOrBytesForJson(nested)
+	return isRecord(encoded) ? Object.fromEntries(Object.entries(encoded).sort(([first], [second]) => first < second ? -1 : 1)) : encoded
 })
 
 // Identifies what the user reviews for a stored pending request. The background stamps each popup copy with it, the popup returns it unchanged with an accept, and the background honours the accept only while the stored request still has that id, so approval-status changes keep it while a changed result, request or signer does not. It answers whether an accept is for exactly the result on screen, so any shown change invalidates it, per-block re-simulations included, and an accept that races one is refused and needs a re-click on the refreshed result.

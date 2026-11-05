@@ -1,7 +1,7 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
 import { getLatestUnexpectedError } from '../../app/ts/background/storageVariables.js'
-import { getReviewedResultId } from '../../app/ts/background/reviewedResult.js'
+import { getReviewedResultId, stringifyCanonically } from '../../app/ts/background/reviewedResult.js'
 import { activeAddress, addressString, browserMock, createAcceptConfirmation, createSafeAddressBookEntry, createSafeTx, createWebsitePort, EIP712Message, fakeRpcNetwork, fakeSafeContract, getPopupReviewedResultId, getSafeTxHash, isRecord, modules, pendingTransaction, popupVisualisation, recipientAddress, safeTestOwnerAddress, safeTxToTypedDataJson, type SimulatedTransactionOutcome, simulator, uniqueRequestIdentifier, withSimulatedTransactionResult } from './confirmTransactionTestHarness.js'
 
 const succeeded: SimulatedTransactionOutcome = { transactionStatus: 'Transaction Succeeded' }
@@ -103,6 +103,21 @@ test('the reviewed-result id ignores approval status, popup window and field ord
 	assert.notEqual(getReviewedResultId(makeReviewedTransaction(succeeded, true)), reviewedId)
 	assert.notEqual(getReviewedResultId({ ...reviewed, originalRequestParameters: { ...reviewed.originalRequestParameters, params: [{ ...reviewed.originalRequestParameters.params[0], value: 1n }] } }), reviewedId)
 	assert.notEqual(getReviewedResultId({ ...reviewed, safeExecutionSignerAddress: recipientAddress }), reviewedId)
+})
+
+test('the canonical encoding sorts nested keys, keeps array order, encodes bigints and bytes as hex and drops undefined object fields', () => {
+	const encoded = stringifyCanonically({
+		b: 255n,
+		a: { z: new Uint8Array([0, 255]), y: new Uint8Array(), x: undefined },
+		list: [{ d: -1n, c: null }, undefined, [2n, 1n]],
+		when: new Date(0),
+	})
+	assert.equal(encoded, '{"a":{"y":"0x","z":"0x00ff"},"b":"0xff","list":[{"c":null,"d":"0x-1"},null,["0x2","0x1"]],"when":"1970-01-01T00:00:00.000Z"}')
+})
+
+// Pinned so a change to the encoding is a deliberate one; update it only together with the fixture or the set of reviewed fields.
+test('the reviewed-result id of a fixed request does not change', () => {
+	assert.equal(getReviewedResultId(pendingTransaction), '0xd67bc1ad4cfd5bde6edd3e0d82df19f68e48a79f5387a2d7613be027a3fd676b')
 })
 
 test('the background stamps the reviewed-result id of the stored request on the popup copy of a transaction, a signature request and a Safe co-signing request', async () => {
