@@ -575,11 +575,9 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 			try {
 				const visualizedSimulationState = await visualizeSimulatorState(visualisedRun.data.simulationState, ethereum, tokenPriceService, requestAbortController)
 				const popupVisualisation = { statusCode: 'success' as const, data: modifyObject(visualisedRun.data, { ...visualizedSimulationState }) }
-				let visualisationStored = false
 				// Only the visualisation is replaced, on the request as it is stored now, so an approval or other change made while this ran is kept. Nothing is stored if the page replaced the request under the same request id, or if a re-simulation meanwhile stored a new run, which has its own run id.
-				await updatePendingTransactionOrMessageInstance(first, async (current) => {
+				const visualisationStored = await updatePendingTransactionOrMessageInstance(first, (current) => {
 					if (current.type !== 'Transaction' || current.transactionOrMessageCreationStatus !== 'Simulated' || current.popupVisualisation.data.simulationRunId !== visualisedRun.data.simulationRunId) return undefined
-					visualisationStored = true
 					return modifyObject(current, { popupVisualisation })
 				})
 				if (!visualisationStored) return
@@ -645,7 +643,7 @@ export async function refreshPopupConfirmTransactionSimulation(ethereum: Ethereu
 	)
 	if (refreshMessage === undefined) return
 	// Stored only on the instance whose parameters were simulated, so a refresh that finishes after the page replaced the request under the same id leaves the replacement's simulation alone.
-	await updatePendingTransactionOrMessageInstance(firstTxn, async (transactionOrMessage) => {
+	await updatePendingTransactionOrMessageInstance(firstTxn, (transactionOrMessage) => {
 		switch (transactionOrMessage.type) {
 			case 'SignableMessage': throw new Error('Tried to refresh simulation of a message')
 			case 'Transaction': {

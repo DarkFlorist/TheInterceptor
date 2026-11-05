@@ -6,7 +6,8 @@ import { Semaphore } from '../utils/semaphore.js'
 import { websiteSocketToString } from './backgroundUtils.js'
 import { replyToInterceptedRequest } from './messageSending.js'
 import { attemptDeliveryAfterManifestV2Reconnect } from './manifestV2Reconnect.js'
-import { appendPendingTerminalReply, getPendingTerminalReplies, removePendingTerminalReply } from './pendingTerminalReplies.js'
+import { appendPendingTerminalReply, appendPendingTerminalReplyWithPendingRequestDecision, getPendingTerminalReplies, removePendingTerminalReply } from './pendingTerminalReplies.js'
+import type { DecidePendingRequestInstance, PendingRequestInstance } from './storageVariables.js'
 
 const terminalReplyProductions = new Map<string, Promise<boolean | undefined>>()
 const terminalReplyReservations = new Set<string>()
@@ -35,6 +36,25 @@ export async function queueTerminalReply(message: InterceptedRequestForward) {
 		await terminalReplySemaphore.execute(async () => {
 			await appendPendingTerminalReply(message)
 		})
+	} catch (error) {
+		terminalReplyReservations.delete(identifier)
+		throw error
+	}
+}
+
+// Queues the terminal reply in the same storage write as the decision on the pending request instance it answers. Whether a crash or a failed write comes before or after that write, the reply is queued exactly when the decision happened: a website is never answered for an instance that stayed pending, and an instance never leaves the queue with its reply lost. Waits for terminalReplySemaphore without holding the pending-request lock.
+export async function queueTerminalReplyWithPendingRequestDecision(message: InterceptedRequestForward, instance: PendingRequestInstance, decide: DecidePendingRequestInstance) {
+	const identifier = getUniqueRequestIdentifierString(message.uniqueRequestIdentifier)
+	terminalReplyReservations.add(identifier)
+	try {
+		const outcome = await terminalReplySemaphore.execute(async () => {
+			const decided = await appendPendingTerminalReplyWithPendingRequestDecision(message, instance, decide)
+			// Nothing was queued, so no delivery follows that would finish an earlier reply under this id, which a flush may have delivered while this reservation kept its completion marker.
+			if (decided === 'unchanged') await finishPreviouslyDeliveredTerminalReply(identifier, message)
+			return decided
+		})
+		if (outcome === 'unchanged') terminalReplyReservations.delete(identifier)
+		return outcome
 	} catch (error) {
 		terminalReplyReservations.delete(identifier)
 		throw error

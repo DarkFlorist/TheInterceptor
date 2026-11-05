@@ -2,7 +2,7 @@ import { getRpcEntryIdentityKey } from '../utils/rpcNetworkChange.js'
 import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
 import type { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, StoredWatchAssetRequest, TabState } from '../types/user-interface-types.js'
-import { type PartialIdsOfOpenedTabs, browserStorageLocalGet, browserStorageLocalGet2Result, browserStorageLocalRemove, browserStorageLocalSet, browserStorageLocalSet2, getTabStateFromStorage, parseTabStateItems, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
+import { type PartialIdsOfOpenedTabs, browserStorageLocalGet, browserStorageLocalGet2Result, browserStorageLocalRemove, browserStorageLocalSet, browserStorageLocalSet2, browserStorageLocalSetAtomically, getTabStateFromStorage, parseTabStateItems, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
 import { CompleteVisualizedSimulation, type EthereumSubscriptionsAndFilters, InterceptorTransactionStack, createPassthroughCompleteVisualizedSimulation } from '../types/visualizer-types.js'
 import { browserStorageLocalSafeParseGet } from '../utils/storageUtils.js'
 import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_RPCS } from '../config/defaults.js'
@@ -10,6 +10,7 @@ import { type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from 
 import { AddressBookEntry, doAddressBookChainIdsMatch, LegacyErc20TokenEntry, type AddressBookEntries, type ChainIdWithUniversal } from '../types/addressBookTypes.js'
 import type { SignerName } from '../types/signerTypes.js'
 import type { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
+import type { InterceptedRequestForward } from '../types/interceptor-messages.js'
 import type { RpcEntries, RpcNetwork } from '../types/rpc.js'
 import { replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
 import { keccak256, namehash, stringToBytes } from '../utils/ethereumPrimitives.js'
@@ -37,6 +38,7 @@ const idsOfOpenedTabsRepository = createStoredValueRepository({
 export const getIdsOfOpenedTabs = idsOfOpenedTabsRepository.get
 export const setIdsOfOpenedTabs = async (ids: PartialIdsOfOpenedTabs) => { await idsOfOpenedTabsRepository.update((previous) => ({ ...previous, ...ids })) }
 
+// The innermost lock: its holder only reads the pending requests, applies a synchronous function and makes one storage write, so it never waits on another lock and nothing run under it can reach back into pending requests. Every update below takes a synchronous function to keep it so; what must be stored together with a pending request is passed in as data, not as a callback. The lock order is terminalReplySemaphore, pendingTerminalRepliesSemaphore, then this lock.
 const pendingTransactionsSemaphore = new Semaphore(1)
 async function readPendingTransactionsAndMessages() {
 	const result = await browserStorageLocalGet2Result('pendingTransactionsAndMessages')
@@ -59,83 +61,70 @@ export async function getPendingTransactionsAndMessages(): Promise<readonly Pend
 	return await pendingTransactionsSemaphore.execute(readPendingTransactionsAndMessagesWithRecovery)
 }
 
-export const clearPendingTransactions = async () => await updatePendingTransactionOrMessages(async () => [])
-async function updatePendingTransactionOrMessages(update: (pendingTransactionsOrMessages: readonly PendingTransactionOrSignableMessage[]) => Promise<readonly PendingTransactionOrSignableMessage[]>) {
+export const clearPendingTransactions = async () => await updatePendingTransactionOrMessages(() => [])
+async function updatePendingTransactionOrMessages(update: (pendingTransactionsOrMessages: readonly PendingTransactionOrSignableMessage[]) => readonly PendingTransactionOrSignableMessage[]) {
 	return await pendingTransactionsSemaphore.execute(async () => {
-		const pendingTransactionsAndMessages = await update(await readPendingTransactionsAndMessagesWithRecovery())
+		const pendingTransactionsAndMessages = update(await readPendingTransactionsAndMessagesWithRecovery())
 		await browserStorageLocalSet2({ pendingTransactionsAndMessages })
 	})
 }
 
-export async function updatePendingTransactionOrMessage(uniqueRequestIdentifier: UniqueRequestIdentifier, update: (pendingTransactionOrMessage: PendingTransactionOrSignableMessage) => Promise<PendingTransactionOrSignableMessage | undefined>) {
-	await updatePendingTransactionOrMessages(async (pendingTransactionsOrMessages) => {
-		const match = pendingTransactionsOrMessages.findIndex((pending) => doesUniqueRequestIdentifiersMatch(pending.uniqueRequestIdentifier, uniqueRequestIdentifier))
-		if (match < 0) return pendingTransactionsOrMessages
-		const found = pendingTransactionsOrMessages[match]
-		if (found === undefined) return pendingTransactionsOrMessages
-		const updated = await update(found)
-		if (updated === undefined) return pendingTransactionsOrMessages
-		return replaceElementInReadonlyArray(pendingTransactionsOrMessages, match, updated)
-	})
-}
-
-type PendingRequestInstance = Pick<PendingTransactionOrSignableMessage, 'uniqueRequestIdentifier' | 'instanceId'>
+export type PendingRequestInstance = Pick<PendingTransactionOrSignableMessage, 'uniqueRequestIdentifier' | 'instanceId'>
 
 export const isSamePendingRequestInstance = (first: PendingRequestInstance, second: PendingRequestInstance) => {
 	return first.instanceId === second.instanceId && doesUniqueRequestIdentifiersMatch(first.uniqueRequestIdentifier, second.uniqueRequestIdentifier)
 }
 
-// Updates only the pending request instance that was read earlier, so work that awaited in between never stores into a different request the page sent under the same request id. Returns whether that instance is still pending.
-export async function updatePendingTransactionOrMessageInstance(instance: PendingRequestInstance, update: (pendingTransactionOrMessage: PendingTransactionOrSignableMessage) => Promise<PendingTransactionOrSignableMessage | undefined>) {
-	let instanceIsPending = false
-	await updatePendingTransactionOrMessages(async (pendingTransactionsOrMessages) => {
+// Decides what happens to a pending request instance from how it is stored now; undefined leaves it alone. Synchronous, as it runs under the pending-request lock.
+export type DecidePendingRequestInstance = (pendingTransactionOrMessage: PendingTransactionOrSignableMessage) => { type: 'store', pending: PendingTransactionOrSignableMessage } | { type: 'remove' } | undefined
+
+// Applies a decision to the pending request instance that was read earlier, so work that awaited in between never touches a different request the page sent under the same request id. Reports what happened to the instance: nothing is written when it is 'unchanged', because the instance is gone or the decision left it alone. pendingTerminalReplies is the outbox to store in that same storage write; only appendPendingTerminalReplyWithPendingRequestDecision passes it, while holding the outbox lock.
+export async function applyPendingRequestInstanceDecision(instance: PendingRequestInstance, decide: DecidePendingRequestInstance, pendingTerminalReplies?: readonly InterceptedRequestForward[]) {
+	return await pendingTransactionsSemaphore.execute(async () => {
+		const pendingTransactionsOrMessages = await readPendingTransactionsAndMessagesWithRecovery()
 		const match = pendingTransactionsOrMessages.findIndex((pending) => isSamePendingRequestInstance(pending, instance))
-		if (match < 0) return pendingTransactionsOrMessages
 		const found = pendingTransactionsOrMessages[match]
-		if (found === undefined) return pendingTransactionsOrMessages
-		instanceIsPending = true
-		const updated = await update(found)
-		if (updated === undefined) return pendingTransactionsOrMessages
-		return replaceElementInReadonlyArray(pendingTransactionsOrMessages, match, updated)
+		const decision = found === undefined ? undefined : decide(found)
+		if (decision === undefined) return 'unchanged' as const
+		const pendingTransactionsAndMessages = decision.type === 'remove'
+			? pendingTransactionsOrMessages.filter((_pending, index) => index !== match)
+			: replaceElementInReadonlyArray(pendingTransactionsOrMessages, match, decision.pending)
+		await browserStorageLocalSetAtomically(pendingTerminalReplies === undefined ? {} : { pendingTerminalReplies }, { pendingTransactionsAndMessages })
+		return decision.type === 'remove' ? 'removed' as const : 'stored' as const
 	})
-	return instanceIsPending
 }
 
-// Removes the pending request instance that was read earlier, only while it is still pending and isRemovable accepts it as stored now. beforeRemoval runs first under the same lock, so a terminal reply is queued only for the instance actually removed, and is stored before the removal. Returns whether the instance was removed.
-export async function removePendingTransactionOrMessageInstance(instance: PendingRequestInstance, isRemovable: (pendingTransactionOrMessage: PendingTransactionOrSignableMessage) => boolean, beforeRemoval: () => Promise<void>) {
-	let removed = false
-	await updatePendingTransactionOrMessages(async (pendingTransactionsOrMessages) => {
-		const found = pendingTransactionsOrMessages.find((pending) => isSamePendingRequestInstance(pending, instance))
-		if (found === undefined || !isRemovable(found)) return pendingTransactionsOrMessages
-		await beforeRemoval()
-		removed = true
-		return pendingTransactionsOrMessages.filter((pending) => !isSamePendingRequestInstance(pending, instance))
+// Updates only the pending request instance that was read earlier; update returns undefined to leave it as it is. Returns whether an update was stored.
+export async function updatePendingTransactionOrMessageInstance(instance: PendingRequestInstance, update: (pendingTransactionOrMessage: PendingTransactionOrSignableMessage) => PendingTransactionOrSignableMessage | undefined) {
+	const outcome = await applyPendingRequestInstanceDecision(instance, (current) => {
+		const pending = update(current)
+		return pending === undefined ? undefined : { type: 'store', pending }
 	})
-	return removed
+	return outcome === 'stored'
 }
 
-// For signer replies, which name only the request id. The wallet answers over the page's own connection, so the page owns that channel and could forge a reply for any of its ids; this is no defence against the page itself. It does make sure a reply only reaches the request under that id once it was forwarded to the signer, never a request the user has not approved, such as a newer request under a reused id. Work that read a pending request and writes back uses updatePendingTransactionOrMessageInstance.
-export async function updatePendingRequestWaitingForSigner(uniqueRequestIdentifier: UniqueRequestIdentifier, update: (pendingTransactionOrMessage: PendingTransactionOrSignableMessage) => Promise<PendingTransactionOrSignableMessage | undefined>) {
-	await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => pending.approvalStatus.status === 'WaitingForSigner' ? await update(pending) : undefined)
+// Removes only the pending request instance that was read earlier, while isRemovable accepts it as stored now. Returns whether it was removed. A removal that answers the website goes through queueTerminalReplyWithPendingRequestDecision instead, which stores the reply in the same write.
+export async function removePendingTransactionOrMessageInstance(instance: PendingRequestInstance, isRemovable: (pendingTransactionOrMessage: PendingTransactionOrSignableMessage) => boolean) {
+	return await applyPendingRequestInstanceDecision(instance, (current) => isRemovable(current) ? { type: 'remove' } : undefined) === 'removed'
+}
+
+// The one write by request id, for signer replies, which name only the id. The wallet answers over the page's own connection, so the page owns that channel and could forge a reply for any of its ids; this is no defence against the page itself. It does make sure a reply only reaches the request under that id once it was forwarded to the signer, never a request the user has not approved, such as a newer request under a reused id. Work that read a pending request and writes back uses updatePendingTransactionOrMessageInstance.
+export async function setApprovalStatusOfRequestWaitingForSignerById(uniqueRequestIdentifier: UniqueRequestIdentifier, approvalStatus: PendingTransactionOrSignableMessage['approvalStatus']) {
+	await updatePendingTransactionOrMessages((pendingTransactionsOrMessages) => pendingTransactionsOrMessages.map((pending) => {
+		if (!doesUniqueRequestIdentifiersMatch(pending.uniqueRequestIdentifier, uniqueRequestIdentifier) || pending.approvalStatus.status !== 'WaitingForSigner') return pending
+		return modifyObject(pending, { approvalStatus })
+	}))
 }
 
 // Returns false without appending when a request with the same id is already pending. Pages choose request ids and the bridge does not deduplicate negative ones, so refusing duplicates here, atomically with the append, keeps every lookup of a pending request by id unambiguous.
 export async function appendPendingTransactionOrMessage(pendingTransactionOrMessage: PendingTransactionOrSignableMessage) {
 	let appended = false
-	await updatePendingTransactionOrMessages(async (pendingTransactionsOrMessages) => {
+	await updatePendingTransactionOrMessages((pendingTransactionsOrMessages) => {
 		if (pendingTransactionsOrMessages.some((pending) => doesUniqueRequestIdentifiersMatch(pending.uniqueRequestIdentifier, pendingTransactionOrMessage.uniqueRequestIdentifier))) return pendingTransactionsOrMessages
 		appended = true
 		return [...pendingTransactionsOrMessages, pendingTransactionOrMessage]
 	})
 	return appended
-}
-
-export async function removePendingTransactionOrMessage(uniqueRequestIdentifier: UniqueRequestIdentifier) {
-	await updatePendingTransactionOrMessages(async (pendingTransactionsOrMessages) => {
-		const foundPromise = pendingTransactionsOrMessages.find((pendingTransactionsOrMessages) => doesUniqueRequestIdentifiersMatch(pendingTransactionsOrMessages.uniqueRequestIdentifier, uniqueRequestIdentifier))
-		if (foundPromise === undefined) return pendingTransactionsOrMessages
-		return pendingTransactionsOrMessages.filter((pendingTransactionOrMessage) => !doesUniqueRequestIdentifiersMatch(pendingTransactionOrMessage.uniqueRequestIdentifier, uniqueRequestIdentifier))
-	})
 }
 
 export const getChainChangeConfirmationPromise = async() => (await browserStorageLocalGet('chainChangeConfirmationPromise'))?.chainChangeConfirmationPromise ?? undefined

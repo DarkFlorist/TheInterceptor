@@ -174,6 +174,11 @@ export async function browserStorageLocalSet2(items: LocalStorageItems2) {
 	return await browser.storage.local.set(serialize(LocalStorageItems2, items))
 }
 
+// One storage.local.set call, which Chromium applies as one leveldb write batch and Firefox as one IndexedDB transaction, so a crash or a failed write stores all of these items or none of them.
+export async function browserStorageLocalSetAtomically(items: LocalStorageItems, items2: LocalStorageItems2) {
+	return await browser.storage.local.set({ ...serialize(LocalStorageItems, items), ...serialize(LocalStorageItems2, items2) })
+}
+
 export async function browserStorageLocalGet(keys: LocalStorageKey | LocalStorageKey[]): Promise<LocalStorageItems> {
 	return LocalStorageItems.parse(await browser.storage.local.get(Array.isArray(keys) ? keys : [keys]))
 }

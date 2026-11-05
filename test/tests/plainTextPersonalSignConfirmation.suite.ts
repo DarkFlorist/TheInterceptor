@@ -313,7 +313,7 @@ test('flags a 0x-prefixed message with invalid hex digits, shows it as written w
 const getPendingRequests = async () => await modules.getPendingTransactionsAndMessages()
 // Blocks the request with an error the user has to clear, so each reply branch shows whether it touched it, including a user-rejected reply that would reset it to waiting for the user.
 const blockWithUserFacingError = async (requestId: number) => {
-	await modules.updatePendingTransactionOrMessage({ requestId, requestSocket: defaultUniqueRequestIdentifier.requestSocket }, async (pending) => ({ ...pending, approvalStatus: { status: 'SignerError' as const, code: -32010, message: 'Select a current Gnosis Safe owner in the signer wallet.' } }))
+	await modules.updateStoredPendingRequest({ requestId, requestSocket: defaultUniqueRequestIdentifier.requestSocket }, (pending) => ({ ...pending, approvalStatus: { status: 'SignerError' as const, code: -32010, message: 'Select a current Gnosis Safe owner in the signer wallet.' } }))
 	return await getPendingRequests()
 }
 

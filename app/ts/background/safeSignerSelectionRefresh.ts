@@ -349,13 +349,7 @@ function mergeSafeSignerSelectionRefresh(
 
 // Stores a Gnosis Safe confirmation refresh on the request as it is stored now: only the Safe fields and approval status the refresh rebuilt, so other changes made meanwhile are kept. A request forwarded to the signer meanwhile is left for the signer's reply. Returns whether the refresh was stored.
 export async function persistSafeConfirmationRefresh(refreshed: PendingTransactionOrSignableMessage) {
-	let persisted = false
-	await updatePendingTransactionOrMessageInstance(refreshed, async (current) => {
-		if (isPastUserDecision(current.approvalStatus)) return undefined
-		persisted = true
-		return mergeSafeSignerSelectionRefresh(current, refreshed)
-	})
-	return persisted
+	return await updatePendingTransactionOrMessageInstance(refreshed, (current) => isPastUserDecision(current.approvalStatus) ? undefined : mergeSafeSignerSelectionRefresh(current, refreshed))
 }
 
 type RefreshDirectSafeExecutionSimulation = (
@@ -430,7 +424,7 @@ async function recoverSafeMessageReview(ethereum: EthereumClientService, pending
 	}
 	let persistedPending: PendingTransactionOrSignableMessage | undefined
 	// Stored only into the request instance the refresh started from, never a request the page sent later under the same request id.
-	await updatePendingTransactionOrMessageInstance(pending, async (current) => {
+	await updatePendingTransactionOrMessageInstance(pending, (current) => {
 		// Do not overwrite a cancellation, another completed refresh, or changed review data while the owner lookup was pending.
 		if (current.type !== 'SignableMessage' || current.safeMessageCoSignSnapshot !== undefined || current.activeAddress !== pending.activeAddress
 			|| current.approvalStatus.status !== 'SignerError' || current.approvalStatus.code !== SAFE_SIGNER_SELECTION_ERROR_CODE
@@ -485,7 +479,7 @@ export async function refreshAndPersistSafeSignerSelection(
 	}
 	let persistedPending: PendingTransactionOrSignableMessage | undefined
 	// Stored only into the request instance the refresh started from, never a request the page sent later under the same request id.
-	await updatePendingTransactionOrMessageInstance(pending, async (current) => {
+	await updatePendingTransactionOrMessageInstance(pending, (current) => {
 		const currentFlow = getSafePendingFlow(current)
 		if (currentFlow === undefined || !shouldRefreshSafeSignerSelection(currentFlow, selectedSigner)) return current
 		if (!pendingSafeRefreshBaseMatches(current, pending)) return current

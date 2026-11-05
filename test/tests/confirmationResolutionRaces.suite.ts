@@ -436,3 +436,201 @@ for (const cleanup of ['held', 'failing'] as const) {
 		assert.equal(isCloseRejection(terminalReplies[0]), true)
 	})
 }
+
+const rejectionOf = (pending: Awaited<ReturnType<typeof getOnlyPendingRequest>>) => ({
+	...pending.originalRequestParameters,
+	type: 'result' as const,
+	error: { code: 4001, message: 'User denied transaction signature' },
+	uniqueRequestIdentifier: pending.uniqueRequestIdentifier,
+})
+
+// Resolves to 'blocked' when the promise is still waiting on a lock after a moment.
+const settledOrBlocked = async <T>(promise: Promise<T>) => await Promise.race([promise, new Promise<'blocked'>((resolve) => { setTimeout(() => { resolve('blocked') }, 200) })])
+
+// A background restart can cut a resolution off after any storage write, so each write has to leave a state the next start can continue from: a reply queued exactly when the request's outcome is decided, which means it left the queue or was claimed by its popup closing.
+async function assertEveryStorageWriteKeepsReplyAndRequestConsistent(resolve: () => Promise<unknown>) {
+	delete browserMock.storageState.pendingTerminalReplies
+	const statesAfterEachWrite: { readonly replyIsQueued: boolean, readonly approvalStatus: string | undefined }[] = []
+	browserMock.setStorageSetHandler(async (_items, writeStoredItems) => {
+		writeStoredItems()
+		const [pending] = await modules.getPendingTransactionsAndMessages()
+		statesAfterEachWrite.push({ replyIsQueued: (await modules.getPendingTerminalReplies()).length > 0, approvalStatus: pending?.approvalStatus.status })
+	})
+	try {
+		await resolve()
+	} finally {
+		browserMock.setStorageSetHandler(undefined)
+	}
+	assert.equal(statesAfterEachWrite.at(-1)?.replyIsQueued, true)
+	for (const { replyIsQueued, approvalStatus } of statesAfterEachWrite) {
+		assert.equal(replyIsQueued, approvalStatus === undefined || approvalStatus === 'ClosedWithoutResponse', `reply queued: ${ replyIsQueued }, request status: ${ approvalStatus }`)
+	}
+}
+
+test('a crash after any storage write of a rejection leaves the reply queued exactly when the request left the queue', async () => {
+	const page = await startPageConnection([])
+	await sendPersonalSignFromPage(page, 'first message')
+	const { instanceId } = await getOnlyPendingRequest()
+	await assertEveryStorageWriteKeepsReplyAndRequestConsistent(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, new Map(), { method: 'popup_confirmDialog', data: { action: 'reject', errorString: undefined, uniqueRequestIdentifier: pageRequestIdentifier, instanceId } }))
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+})
+
+test('a crash after any storage write of a wallet reply leaves the reply queued exactly when the request left the queue', async () => {
+	const page = await startPageConnection([])
+	await sendPersonalSignFromPage(page, 'first message')
+	await approveAndForwardToSigner(page)
+	await assertEveryStorageWriteKeepsReplyAndRequestConsistent(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, new Map(), { method: 'popup_confirmDialog', data: { action: 'signerIncluded', signerReply: OLD_SIGNATURE, uniqueRequestIdentifier: pageRequestIdentifier } }))
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+})
+
+test('a crash after any storage write of a popup-close rejection leaves the rejection queued exactly when the request is claimed for it', async () => {
+	const page = await startPageConnection([])
+	await sendPersonalSignFromPage(page, 'first message')
+	const { instanceId } = await getOnlyPendingRequest()
+	await assertEveryStorageWriteKeepsReplyAndRequestConsistent(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, new Map(), { method: 'popup_confirmDialog', data: { action: 'noResponse', uniqueRequestIdentifier: pageRequestIdentifier, instanceId } }))
+})
+
+test('a failed storage write of a terminal outcome answers nothing and keeps the request, so the decision can be made again', async () => {
+	const messagesPostedToPage: unknown[] = []
+	const page = await startPageConnection(messagesPostedToPage)
+	await sendPersonalSignFromPage(page, 'first message')
+	delete browserMock.storageState.pendingTerminalReplies
+	const { instanceId } = await getOnlyPendingRequest()
+	const reject = async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, page.connections, { method: 'popup_confirmDialog', data: { action: 'reject', errorString: undefined, uniqueRequestIdentifier: pageRequestIdentifier, instanceId } })
+	let failuresRemaining = 1
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		if (failuresRemaining > 0 && 'pendingTransactionsAndMessages' in items) {
+			failuresRemaining -= 1
+			throw new Error('storage write failed')
+		}
+		writeStoredItems()
+	})
+	try {
+		await assert.rejects(reject(), /storage write failed/u)
+	} finally {
+		browserMock.setStorageSetHandler(undefined)
+	}
+	assert.equal((await getOnlyPendingRequest()).approvalStatus.status, 'WaitingForUser')
+	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+	assert.equal(getTerminalRepliesTo(messagesPostedToPage, pageRequestIdentifier.requestId).length, 0)
+
+	await reject()
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	assert.equal(getTerminalRepliesTo(messagesPostedToPage, pageRequestIdentifier.requestId).length, 1)
+})
+
+test('a terminal reply waiting for the reply outbox does not hold up other pending requests', async () => {
+	const page = await startPageConnection([])
+	await sendPersonalSignFromPage(page, 'first message')
+	const pending = await getOnlyPendingRequest()
+	const outboxRead = holdNextStorageRead((key) => key === 'pendingTerminalReplies')
+	try {
+		// The flush holds the reply delivery lock while its outbox read is held, so the rejection below waits for that lock.
+		const flush = modules.flushPendingTerminalRepliesForSocket(page.connections, pageRequestIdentifier.requestSocket)
+		await outboxRead.reached
+		const rejection = modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, page.connections, { method: 'popup_confirmDialog', data: { action: 'reject', errorString: undefined, uniqueRequestIdentifier: pageRequestIdentifier, instanceId: pending.instanceId } })
+		assert.equal(await settledOrBlocked(rejection), 'blocked')
+		const unrelatedRequest = { ...pending, uniqueRequestIdentifier: { ...pageRequestIdentifier, requestId: -3 }, instanceId: 'unrelated instance' }
+		assert.equal(await settledOrBlocked(modules.appendPendingTransactionOrMessage(unrelatedRequest)), true)
+		outboxRead.release()
+		await Promise.all([flush, rejection])
+	} finally {
+		outboxRead.release()
+		outboxRead.restore()
+	}
+	assert.deepEqual((await modules.getPendingTransactionsAndMessages()).map(({ instanceId }) => instanceId), ['unrelated instance'])
+})
+
+test('a wallet reply is not queued for a request that left the signer while the reply waited for the reply outbox', async () => {
+	const messagesPostedToPage: unknown[] = []
+	const page = await startPageConnection(messagesPostedToPage)
+	await sendPersonalSignFromPage(page, 'first message')
+	await approveAndForwardToSigner(page)
+	delete browserMock.storageState.pendingTerminalReplies
+	const outboxRead = holdNextStorageRead((key) => key === 'pendingTerminalReplies')
+	try {
+		const walletReply = modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, page.connections, { method: 'popup_confirmDialog', data: { action: 'signerIncluded', signerReply: OLD_SIGNATURE, uniqueRequestIdentifier: pageRequestIdentifier } })
+		await outboxRead.reached
+		assert.equal(await settledOrBlocked(modules.updateStoredPendingRequest(pageRequestIdentifier, (pending) => ({ ...pending, approvalStatus: { status: 'SignerError', code: 123, message: 'wallet failed' } }))), true)
+		outboxRead.release()
+		assert.equal(await walletReply, false)
+	} finally {
+		outboxRead.release()
+		outboxRead.restore()
+	}
+	assert.equal((await getOnlyPendingRequest()).approvalStatus.status, 'SignerError')
+	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+	assert.equal(getTerminalRepliesTo(messagesPostedToPage, pageRequestIdentifier.requestId).length, 0)
+})
+
+test('a terminal reply is stored with its decision only: a decision that leaves the instance alone keeps the outbox as it was', async () => {
+	const page = await startPageConnection([])
+	await sendPersonalSignFromPage(page, 'first message')
+	const pending = await getOnlyPendingRequest()
+	const earlierReply = rejectionOf(pending)
+	delete browserMock.storageState.pendingTerminalReplies
+	await modules.queueTerminalReply(earlierReply)
+	const outboxBefore = await modules.getPendingTerminalReplies()
+	const reply = { ...earlierReply, error: { code: 4100, message: 'a different reply' } }
+
+	assert.equal(await modules.queueTerminalReplyWithPendingRequestDecision(reply, pending, () => undefined), 'unchanged')
+	assert.equal(await modules.queueTerminalReplyWithPendingRequestDecision(reply, { ...pending, instanceId: 'another instance' }, () => ({ type: 'remove' })), 'unchanged')
+	assert.deepEqual(await modules.getPendingTerminalReplies(), outboxBefore)
+	assert.deepEqual(await getOnlyPendingRequest(), pending)
+
+	assert.equal(await modules.queueTerminalReplyWithPendingRequestDecision(reply, pending, (current) => ({ type: 'store', pending: { ...current, approvalStatus: { status: 'ClosedWithoutResponse' } } })), 'stored')
+	assert.equal((await getOnlyPendingRequest()).approvalStatus.status, 'ClosedWithoutResponse')
+	assert.equal(await modules.queueTerminalReplyWithPendingRequestDecision(reply, pending, () => ({ type: 'remove' })), 'removed')
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	const queued = await modules.getPendingTerminalReplies()
+	assert.equal(queued.length, 1)
+	assert.equal(isRecord(queued[0]) && isRecord(queued[0].error) && queued[0].error.code, 4100)
+})
+
+test('a decision that queues nothing still finishes an earlier reply delivered while it waited, so the next reply under the id reaches the page', async () => {
+	const messagesPostedToPage: unknown[] = []
+	const page = await startPageConnection(messagesPostedToPage)
+	await sendPersonalSignFromPage(page, 'first message')
+	const pending = await getOnlyPendingRequest()
+	const earlierReply = rejectionOf(pending)
+	delete browserMock.storageState.pendingTerminalReplies
+	await modules.queueTerminalReply(earlierReply)
+	const outboxRead = holdNextStorageRead((key) => key === 'pendingTerminalReplies')
+	try {
+		const flush = modules.flushPendingTerminalRepliesForSocket(page.connections, pageRequestIdentifier.requestSocket)
+		await outboxRead.reached
+		const unchanged = modules.queueTerminalReplyWithPendingRequestDecision(earlierReply, pending, () => undefined)
+		outboxRead.release()
+		assert.equal(await flush, 1)
+		assert.equal(await unchanged, 'unchanged')
+	} finally {
+		outboxRead.release()
+		outboxRead.restore()
+	}
+	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+	assert.equal(getTerminalRepliesTo(messagesPostedToPage, pageRequestIdentifier.requestId).length, 1)
+
+	const nextReply = { ...earlierReply, error: { code: 4100, message: 'the next reply' } }
+	assert.equal(await modules.queueTerminalReplyAndAttemptDelivery(page.connections, nextReply), true)
+	assert.equal(getTerminalRepliesTo(messagesPostedToPage, pageRequestIdentifier.requestId).length, 2)
+})
+
+test('an instance update reports whether it stored, and a removal whether it removed', async () => {
+	const page = await startPageConnection([])
+	await sendPersonalSignFromPage(page, 'first message')
+	const pending = await getOnlyPendingRequest()
+	const anotherInstance = { ...pending, instanceId: 'another instance' }
+	const waitingForSigner = (current: typeof pending) => ({ ...current, approvalStatus: { status: 'WaitingForSigner' as const } })
+
+	assert.equal(await modules.updatePendingTransactionOrMessageInstance(pending, () => undefined), false)
+	assert.equal(await modules.updatePendingTransactionOrMessageInstance(anotherInstance, waitingForSigner), false)
+	assert.equal((await getOnlyPendingRequest()).approvalStatus.status, 'WaitingForUser')
+	assert.equal(await modules.updatePendingTransactionOrMessageInstance(pending, waitingForSigner), true)
+	assert.equal((await getOnlyPendingRequest()).approvalStatus.status, 'WaitingForSigner')
+
+	assert.equal(await modules.removePendingTransactionOrMessageInstance(pending, () => false), false)
+	assert.equal(await modules.removePendingTransactionOrMessageInstance(anotherInstance, () => true), false)
+	assert.equal((await modules.getPendingTransactionsAndMessages()).length, 1)
+	assert.equal(await modules.removePendingTransactionOrMessageInstance(pending, () => true), true)
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+})

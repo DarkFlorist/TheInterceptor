@@ -3,6 +3,7 @@ import { reportLocalRecovery } from '../utils/errors.js'
 import { doesTabExist, doesUniqueRequestIdentifiersMatch, type UniqueRequestIdentifier } from '../utils/requests.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { browserStorageLocalSafeParseGet, browserStorageLocalSet } from '../utils/storageUtils.js'
+import { applyPendingRequestInstanceDecision, type DecidePendingRequestInstance, type PendingRequestInstance } from './storageVariables.js'
 
 const pendingTerminalRepliesSemaphore = new Semaphore(1)
 
@@ -27,11 +28,18 @@ async function updatePendingTerminalReplies(update: (pendingReplies: readonly In
 	})
 }
 
+const withPendingTerminalReply = (pendingReplies: readonly InterceptedRequestForward[], reply: InterceptedRequestForward) => [
+	...pendingReplies.filter((pendingReply) => !doesUniqueRequestIdentifiersMatch(pendingReply.uniqueRequestIdentifier, reply.uniqueRequestIdentifier)),
+	reply,
+]
+
 export async function appendPendingTerminalReply(reply: InterceptedRequestForward) {
-	await updatePendingTerminalReplies((pendingReplies) => [
-		...pendingReplies.filter((pendingReply) => !doesUniqueRequestIdentifiersMatch(pendingReply.uniqueRequestIdentifier, reply.uniqueRequestIdentifier)),
-		reply,
-	])
+	await updatePendingTerminalReplies((pendingReplies) => withPendingTerminalReply(pendingReplies, reply))
+}
+
+// Stores the reply and the decision on the pending request instance it answers in one storage write, and neither when the decision leaves the instance 'unchanged'. The outbox is read before the pending-request lock is taken, so that lock only spans its own read and the write.
+export async function appendPendingTerminalReplyWithPendingRequestDecision(reply: InterceptedRequestForward, instance: PendingRequestInstance, decide: DecidePendingRequestInstance) {
+	return await pendingTerminalRepliesSemaphore.execute(async () => await applyPendingRequestInstanceDecision(instance, decide, withPendingTerminalReply(await getPendingTerminalReplies(), reply)))
 }
 
 export async function removePendingTerminalReply(uniqueRequestIdentifier: UniqueRequestIdentifier) {

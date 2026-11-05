@@ -5,6 +5,7 @@ import { SAFE_MESSAGE_ABI } from '../../app/ts/safe/safeMessage.js'
 import type { flushPendingTerminalRepliesForSocket as flushPendingTerminalRepliesForSocketType } from '../../app/ts/background/terminalReplyDelivery.js'
 import { encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { withSilencedConsole } from './consoleSilence.js'
+import { doesUniqueRequestIdentifiersMatch, type UniqueRequestIdentifier } from '../../app/ts/utils/requests.js'
 import { createSafeTx, SAFE_ABI, safeTxToTypedDataJson } from '../../app/ts/safe/safeCore.js'
 import { SAFE_EXECUTION_ABI } from '../../app/ts/safe/safeExecution.js'
 import { getSafeTxHash } from '../../app/ts/utils/eip712.js'
@@ -268,7 +269,14 @@ export async function loadModules() {
 		getPendingTerminalReplies: pendingTerminalReplies.getPendingTerminalReplies,
 		prunePendingTerminalRepliesForMissingTabs: pendingTerminalReplies.prunePendingTerminalRepliesForMissingTabs,
 		updateInterceptorTransactionStack: storageVariables.updateInterceptorTransactionStack,
-		updatePendingTransactionOrMessage: storageVariables.updatePendingTransactionOrMessage,
+		updatePendingTransactionOrMessageInstance: storageVariables.updatePendingTransactionOrMessageInstance,
+		removePendingTransactionOrMessageInstance: storageVariables.removePendingTransactionOrMessageInstance,
+		// Test setup names a request by id, so it reads the instance stored under that id first.
+		updateStoredPendingRequest: async (uniqueRequestIdentifier: UniqueRequestIdentifier, update: Parameters<typeof storageVariables.updatePendingTransactionOrMessageInstance>[1]) => {
+			const stored = (await storageVariables.getPendingTransactionsAndMessages()).find((pending) => doesUniqueRequestIdentifiersMatch(pending.uniqueRequestIdentifier, uniqueRequestIdentifier))
+			if (stored === undefined) throw new Error('Expected a pending request under the test request id')
+			return await storageVariables.updatePendingTransactionOrMessageInstance(stored, update)
+		},
 		updateSafeTransactionStacks: async (update: (previous: Awaited<ReturnType<typeof storageVariables.getSafeTransactionStacks>>) => Awaited<ReturnType<typeof storageVariables.getSafeTransactionStacks>>) => {
 			const updated = await storageVariables.updateTransactionState((previous) => ({
 				...previous,
@@ -281,6 +289,7 @@ export async function loadModules() {
 		flushPendingTerminalRepliesForSocket,
 		flushPendingTerminalRepliesForConnectedPortWithRetry: terminalReplyDelivery.flushPendingTerminalRepliesForConnectedPortWithRetry,
 		queueTerminalReply: terminalReplyDelivery.queueTerminalReply,
+		queueTerminalReplyWithPendingRequestDecision: terminalReplyDelivery.queueTerminalReplyWithPendingRequestDecision,
 		attemptQueuedTerminalReplyDelivery: terminalReplyDelivery.attemptQueuedTerminalReplyDelivery,
 		queueTerminalReplyAndAttemptDelivery: terminalReplyDelivery.queueTerminalReplyAndAttemptDelivery,
 		signerReply: providerMessageHandlers.signerReply,
