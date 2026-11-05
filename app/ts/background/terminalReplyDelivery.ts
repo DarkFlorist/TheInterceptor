@@ -6,7 +6,7 @@ import { Semaphore } from '../utils/semaphore.js'
 import { websiteSocketToString } from './backgroundUtils.js'
 import { replyToInterceptedRequest } from './messageSending.js'
 import { attemptDeliveryAfterManifestV2Reconnect } from './manifestV2Reconnect.js'
-import { appendPendingTerminalReply, appendPendingTerminalReplyWithPendingRequestDecision, getPendingTerminalReplies, removePendingTerminalReply } from './pendingTerminalReplies.js'
+import { appendPendingTerminalReplyWithPendingRequestDecision, getPendingTerminalReplies, removePendingTerminalReply } from './pendingTerminalReplies.js'
 import type { DecidePendingRequestInstance, PendingRequestInstance } from './storageVariables.js'
 
 const terminalReplyProductions = new Map<string, Promise<boolean | undefined>>()
@@ -29,20 +29,7 @@ async function recordSuccessfulTerminalReplyDelivery(identifier: string, message
 	if (!keepCompletionMarker) completedTerminalReplies.delete(identifier)
 }
 
-export async function queueTerminalReply(message: InterceptedRequestForward) {
-	const identifier = getUniqueRequestIdentifierString(message.uniqueRequestIdentifier)
-	terminalReplyReservations.add(identifier)
-	try {
-		await terminalReplySemaphore.execute(async () => {
-			await appendPendingTerminalReply(message)
-		})
-	} catch (error) {
-		terminalReplyReservations.delete(identifier)
-		throw error
-	}
-}
-
-// Queues the terminal reply in the same storage write as the decision on the pending request instance it answers. Whether a crash or a failed write comes before or after that write, the reply is queued exactly when the decision happened: a website is never answered for an instance that stayed pending, and an instance never leaves the queue with its reply lost. Waits for terminalReplySemaphore without holding the pending-request lock.
+// Queues the terminal reply in the same storage write as the decision on the pending request instance it answers. Whether a crash or a failed write comes before or after that write, the reply is queued exactly when the decision happened: a website is never answered for an instance that stayed pending, and an instance never leaves the queue with its reply lost. Waits for terminalReplySemaphore without holding the pending-request lock. The crash guarantee relies on a multi-key storage.local.set committing atomically, which current Chromium and Firefox do but neither documents.
 export async function queueTerminalReplyWithPendingRequestDecision(message: InterceptedRequestForward, instance: PendingRequestInstance, decide: DecidePendingRequestInstance) {
 	const identifier = getUniqueRequestIdentifierString(message.uniqueRequestIdentifier)
 	terminalReplyReservations.add(identifier)
@@ -81,11 +68,6 @@ export async function attemptQueuedTerminalReplyDelivery(websiteTabConnections: 
 		if (terminalReplyProductions.get(identifier) === production) terminalReplyProductions.delete(identifier)
 		terminalReplyReservations.delete(identifier)
 	}
-}
-
-export async function queueTerminalReplyAndAttemptDelivery(websiteTabConnections: WebsiteTabConnections, message: InterceptedRequestForward) {
-	await queueTerminalReply(message)
-	return await attemptQueuedTerminalReplyDelivery(websiteTabConnections, message)
 }
 
 export async function flushPendingTerminalRepliesForSocket(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {

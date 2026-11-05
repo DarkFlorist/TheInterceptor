@@ -10,7 +10,7 @@ const MOCK_PUBLIC_PRIVATE_KEY = 0x1n
 const MOCK_SIMULATION_PRIVATE_KEY = 0x2n
 const ADDRESS_FOR_PRIVATE_KEY_ONE = 0x7E5F4552091A69125d5DfCb7b8C2659029395Bdfn
 
-// The bytes simulated personal_sign signs. The Interceptor signs these requests itself, so it reads every message one way, as MetaMask does, and the simulation-mode popup shows that same reading. Both the simulated signature and its message hash come from these bytes, so the hash always describes exactly what was signed.
+// The bytes simulated personal_sign signs. The Interceptor signs these requests itself, so it reads every message one way, as MetaMask does, and the simulation-mode popup shows that same reading. Both the simulated signature and its message hash come from these bytes, so the hash always describes exactly what was signed. Stored messages carry no decoding version, so a signature handed out before this reading was adopted is rebuilt differently, and then recovers to the mock key's address, for the few messages the old reading signed differently: any two-character message such as '0x', '12' or 'hi', and digit strings or other forms that BigInt parsed. That is the limit: well-formed 0x hex reads the same, every other message failed to sign before, and simulated signatures are throwaway, so no version is kept.
 const getSimulatedPersonalSignBytes = (params: PersonalSignParams) => getMetaMaskPersonalSignMessageBytes(params.params[0])
 
 export const getMessageHashForPersonalSign = (params: PersonalSignParams) => hashMessage({ raw: getSimulatedPersonalSignBytes(params) })

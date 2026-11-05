@@ -3,7 +3,23 @@ import { test } from 'bun:test'
 import { getLatestUnexpectedError } from '../../app/ts/background/storageVariables.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../app/ts/utils/constants.js'
+import type { InterceptedRequestForward } from '../../app/ts/types/interceptor-messages.js'
+import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
 import { activeAddress, browserMock, bytes32String, createDisconnectedPort, createRecordingPort, createSafeAddressBookEntry, createSafeTx, EIP712Message, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, pendingTransaction, privateKeyToAccount, recipientAddress, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, signedTransaction, simulator, uniqueRequestIdentifier, waitForPendingTransactionsToClear, withSilencedConsole, getPendingInstanceId } from './confirmTransactionTestHarness.js'
+
+// Production stores a terminal reply only together with a decision on the pending request it answers, so each reply here gets a request under its id. Queueing keeps that request pending, as a popup-close rejection does until it is delivered, so one reply can be queued more than once.
+const REPLY_REQUEST_INSTANCE_ID = 'instance answered by the terminal reply'
+const storePendingRequestsFor = async (...replies: readonly InterceptedRequestForward[]) => await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: replies.map((reply) => ({ ...pendingTransaction, instanceId: REPLY_REQUEST_INSTANCE_ID, uniqueRequestIdentifier: reply.uniqueRequestIdentifier })) })
+
+async function queueReplyToStoredRequest(reply: InterceptedRequestForward) {
+	const instance = { uniqueRequestIdentifier: reply.uniqueRequestIdentifier, instanceId: REPLY_REQUEST_INSTANCE_ID }
+	assert.equal(await modules.queueTerminalReplyWithPendingRequestDecision(reply, instance, (pending) => ({ type: 'store', pending })), 'stored')
+}
+
+async function queueReplyAndAttemptDelivery(websiteTabConnections: WebsiteTabConnections, reply: InterceptedRequestForward) {
+	await queueReplyToStoredRequest(reply)
+	return await modules.attemptQueuedTerminalReplyDelivery(websiteTabConnections, reply)
+}
 
 test('failed signer delivery keeps the request and replaces the waiting spinner with a wallet-neutral error', async () => {
 	await browser.storage.local.set({ simulationMode: false })
@@ -488,9 +504,10 @@ test('same-request terminal reply producers coalesce into one delivery', async (
 		uniqueRequestIdentifier,
 	}
 
+	await storePendingRequestsFor(terminalReply)
 	assert.deepEqual(await Promise.all([
-		modules.queueTerminalReplyAndAttemptDelivery(websiteTabConnections, terminalReply),
-		modules.queueTerminalReplyAndAttemptDelivery(websiteTabConnections, terminalReply),
+		queueReplyAndAttemptDelivery(websiteTabConnections, terminalReply),
+		queueReplyAndAttemptDelivery(websiteTabConnections, terminalReply),
 	]), [true, true])
 	assert.equal(postedMessages.length, 1)
 	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
@@ -514,7 +531,8 @@ test('socket flush overlapping terminal reply persistence delivers exactly once'
 		uniqueRequestIdentifier,
 	}
 
-	const production = modules.queueTerminalReplyAndAttemptDelivery(websiteTabConnections, terminalReply)
+	await storePendingRequestsFor(terminalReply)
+	const production = queueReplyAndAttemptDelivery(websiteTabConnections, terminalReply)
 	websiteTabConnections.set(socket.tabId, { connections: {
 		[socketKey]: {
 			port: createRecordingPort(postedMessages),
@@ -551,7 +569,8 @@ test('socket flush during terminal reply queueing keeps the completion marker fo
 		},
 	} }]])
 
-	await modules.queueTerminalReply(terminalReply)
+	await storePendingRequestsFor(terminalReply)
+	await queueReplyToStoredRequest(terminalReply)
 	assert.equal(await modules.flushPendingTerminalRepliesForSocket(websiteTabConnections, socket), 1)
 	assert.equal(await modules.attemptQueuedTerminalReplyDelivery(websiteTabConnections, terminalReply), true)
 	assert.equal(postedMessages.length, 1)
@@ -580,7 +599,8 @@ test('corrupt terminal reply storage recovers and delivers the next rejection on
 	browserMock.storageState.pendingTerminalReplies = { malformed: true }
 	browserMock.storageState.popupRefreshGeneration = 17
 
-	assert.equal(await withSilencedConsole(async () => await modules.queueTerminalReplyAndAttemptDelivery(websiteTabConnections, terminalReply)), true)
+	await storePendingRequestsFor(terminalReply)
+	assert.equal(await withSilencedConsole(async () => await queueReplyAndAttemptDelivery(websiteTabConnections, terminalReply)), true)
 
 	assert.equal(postedMessages.length, 1)
 	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
@@ -601,7 +621,8 @@ test('connected socket retries a transient terminal reply storage read failure w
 		error: { code: 4001, message: 'User denied transaction signature' },
 		uniqueRequestIdentifier,
 	}
-	await modules.queueTerminalReplyAndAttemptDelivery(new Map(), terminalReply)
+	await storePendingRequestsFor(terminalReply)
+	await queueReplyAndAttemptDelivery(new Map(), terminalReply)
 	const storedReplyBeforeFailure = structuredClone(browserMock.storageState.pendingTerminalReplies)
 	const websiteTabConnections = new Map([[socket.tabId, { connections: {
 		[socketKey]: {
@@ -648,7 +669,8 @@ test('concurrent terminal reply flushes serialize storage reads and deliver once
 		error: { code: 4001, message: 'User denied transaction signature' },
 		uniqueRequestIdentifier,
 	}
-	await modules.queueTerminalReplyAndAttemptDelivery(new Map(), terminalReply)
+	await storePendingRequestsFor(terminalReply)
+	await queueReplyAndAttemptDelivery(new Map(), terminalReply)
 	const websiteTabConnections = new Map([[socket.tabId, { connections: {
 		[socketKey]: {
 			port: createRecordingPort(postedMessages),
@@ -702,8 +724,9 @@ test('startup pruning removes terminal replies for missing tabs and preserves li
 		},
 	}
 	const noConnections = new Map()
-	await modules.queueTerminalReplyAndAttemptDelivery(noConnections, missingTabReply)
-	await modules.queueTerminalReplyAndAttemptDelivery(noConnections, liveTabReply)
+	await storePendingRequestsFor(missingTabReply, liveTabReply)
+	await queueReplyAndAttemptDelivery(noConnections, missingTabReply)
+	await queueReplyAndAttemptDelivery(noConnections, liveTabReply)
 	browserMock.storageState.popupRefreshGeneration = 23
 	browserMock.setLiveTabIds([liveTabId])
 

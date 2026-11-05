@@ -444,6 +444,9 @@ const rejectionOf = (pending: Awaited<ReturnType<typeof getOnlyPendingRequest>>)
 	uniqueRequestIdentifier: pending.uniqueRequestIdentifier,
 })
 
+// Queues a reply while its request stays pending, the state a popup-close rejection is in until it is delivered.
+const keepPendingRequest = (pending: Awaited<ReturnType<typeof getOnlyPendingRequest>>) => ({ type: 'store' as const, pending })
+
 // Resolves to 'blocked' when the promise is still waiting on a lock after a moment.
 const settledOrBlocked = async <T>(promise: Promise<T>) => await Promise.race([promise, new Promise<'blocked'>((resolve) => { setTimeout(() => { resolve('blocked') }, 200) })])
 
@@ -569,7 +572,7 @@ test('a terminal reply is stored with its decision only: a decision that leaves 
 	const pending = await getOnlyPendingRequest()
 	const earlierReply = rejectionOf(pending)
 	delete browserMock.storageState.pendingTerminalReplies
-	await modules.queueTerminalReply(earlierReply)
+	await modules.queueTerminalReplyWithPendingRequestDecision(earlierReply, pending, keepPendingRequest)
 	const outboxBefore = await modules.getPendingTerminalReplies()
 	const reply = { ...earlierReply, error: { code: 4100, message: 'a different reply' } }
 
@@ -594,7 +597,7 @@ test('a decision that queues nothing still finishes an earlier reply delivered w
 	const pending = await getOnlyPendingRequest()
 	const earlierReply = rejectionOf(pending)
 	delete browserMock.storageState.pendingTerminalReplies
-	await modules.queueTerminalReply(earlierReply)
+	await modules.queueTerminalReplyWithPendingRequestDecision(earlierReply, pending, keepPendingRequest)
 	const outboxRead = holdNextStorageRead((key) => key === 'pendingTerminalReplies')
 	try {
 		const flush = modules.flushPendingTerminalRepliesForSocket(page.connections, pageRequestIdentifier.requestSocket)
@@ -611,7 +614,8 @@ test('a decision that queues nothing still finishes an earlier reply delivered w
 	assert.equal(getTerminalRepliesTo(messagesPostedToPage, pageRequestIdentifier.requestId).length, 1)
 
 	const nextReply = { ...earlierReply, error: { code: 4100, message: 'the next reply' } }
-	assert.equal(await modules.queueTerminalReplyAndAttemptDelivery(page.connections, nextReply), true)
+	assert.equal(await modules.queueTerminalReplyWithPendingRequestDecision(nextReply, pending, () => ({ type: 'remove' })), 'removed')
+	assert.equal(await modules.attemptQueuedTerminalReplyDelivery(page.connections, nextReply), true)
 	assert.equal(getTerminalRepliesTo(messagesPostedToPage, pageRequestIdentifier.requestId).length, 2)
 })
 

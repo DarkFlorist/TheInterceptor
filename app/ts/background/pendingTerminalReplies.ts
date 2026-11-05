@@ -28,18 +28,12 @@ async function updatePendingTerminalReplies(update: (pendingReplies: readonly In
 	})
 }
 
-const withPendingTerminalReply = (pendingReplies: readonly InterceptedRequestForward[], reply: InterceptedRequestForward) => [
-	...pendingReplies.filter((pendingReply) => !doesUniqueRequestIdentifiersMatch(pendingReply.uniqueRequestIdentifier, reply.uniqueRequestIdentifier)),
-	reply,
-]
-
-export async function appendPendingTerminalReply(reply: InterceptedRequestForward) {
-	await updatePendingTerminalReplies((pendingReplies) => withPendingTerminalReply(pendingReplies, reply))
-}
-
 // Stores the reply and the decision on the pending request instance it answers in one storage write, and neither when the decision leaves the instance 'unchanged'. The outbox is read before the pending-request lock is taken, so that lock only spans its own read and the write.
 export async function appendPendingTerminalReplyWithPendingRequestDecision(reply: InterceptedRequestForward, instance: PendingRequestInstance, decide: DecidePendingRequestInstance) {
-	return await pendingTerminalRepliesSemaphore.execute(async () => await applyPendingRequestInstanceDecision(instance, decide, withPendingTerminalReply(await getPendingTerminalReplies(), reply)))
+	return await pendingTerminalRepliesSemaphore.execute(async () => {
+		const otherReplies = (await getPendingTerminalReplies()).filter((pendingReply) => !doesUniqueRequestIdentifiersMatch(pendingReply.uniqueRequestIdentifier, reply.uniqueRequestIdentifier))
+		return await applyPendingRequestInstanceDecision(instance, decide, [...otherReplies, reply])
+	})
 }
 
 export async function removePendingTerminalReply(uniqueRequestIdentifier: UniqueRequestIdentifier) {
