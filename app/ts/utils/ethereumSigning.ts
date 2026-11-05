@@ -1,3 +1,5 @@
+import { bytesToNumberBE } from '@noble/curves/abstract/utils'
+import { secp256k1 } from '@noble/curves/secp256k1'
 import { concatBytes, hexToBytes, utf8ToBytes } from '@noble/hashes/utils'
 import { addr, eip191Signer } from 'micro-eth-signer'
 import { initSig, sign as signDigestWithMicro } from 'micro-eth-signer/utils.js'
@@ -218,22 +220,33 @@ const isCurveXCoordinate = (x: bigint) => modularPower(x ** 3n + 7n, (SECP256K1_
 // Checked here rather than inferred from library errors: r and s must be in 1..n-1 and r must be a curve x-coordinate for recovery to have a nonce point to start from.
 const hasRecoverableRAndS = (signature: SignatureParts) => isSignatureScalar(signature.r) && isSignatureScalar(signature.s) && isCurveXCoordinate(signature.r)
 
-// The one unrecoverable case left after hasRecoverableRAndS is a recovery that lands on the point at infinity (s * R = hash * G), which takes curve arithmetic to detect, so it is recognised by the micro-eth-signer @noble/curves error text (including its 'infinify' typo). tryRecoverAddress.test.ts triggers it with a real signature, so a reworded message fails that test instead of silently turning the RPC reply into an internal error.
-const isRecoveryAtInfinityError = (error: unknown) => error instanceof Error && error.message.startsWith('invalid recovery: point at infinify')
+// ECDSA signs the integer in the leftmost 256 bits of the digest, reduced mod n.
+const digestToScalar = (digest: Uint8Array) => bytesToNumberBE(digest.subarray(0, 32)) % SECP256K1_GROUP_ORDER
+
+// Recovery computes r^-1 * (s * R - hash * G), which is the point at infinity exactly when s * R - hash * G is, and multiplyAndAddUnsafe returns undefined for that sum. Call only after hasRecoverableRAndS, which guarantees r names the nonce point R. Keep this on multiplyAndAddUnsafe: in @noble/curves 1.9.1, BASE.multiplyUnsafe is wrong for full-size scalars.
+const recoversToPointAtInfinity = (digest: Uint8Array, { r, s, yParity }: SignatureParts) => {
+	const noncePoint = secp256k1.ProjectivePoint.fromHex(`0${ 2 + yParity }${ r.toString(16).padStart(64, '0') }`)
+	const negatedDigestScalar = (SECP256K1_GROUP_ORDER - digestToScalar(digest)) % SECP256K1_GROUP_ORDER
+	return secp256k1.ProjectivePoint.BASE.multiplyAndAddUnsafe(noncePoint, negatedDigestScalar, s) === undefined
+}
+
+// For a signature recoversToPointAtInfinity accepted, s * R = hash * G with both sides nonzero, so the opposite nonce point -R sums to -2 * hash * G and never reaches infinity. Recovering from -R therefore runs all of the library's digest checks, whose errors outrank the 'unrecoverable' result, without hitting its own infinity error.
+const assertRecoveryAcceptsDigest = (digest: Uint8Array, signature: SignatureParts) => {
+	recoverAddressFromParts(digest, { ...signature, yParity: 1 - signature.yParity })
+}
 
 export type AddressRecovery = { readonly type: 'recovered', readonly address: Hex } | { readonly type: 'unrecoverable' }
 
-// Like recoverAddress, but reports a signature whose r and s recover to no address as 'unrecoverable' instead of throwing; any other failure is unexpected and still throws.
+// Like recoverAddress, but reports a signature whose r and s recover to no address as 'unrecoverable' instead of throwing. That is decided from the signature and digest alone, so every error the recovery itself throws is unexpected and propagates.
 export const tryRecoverAddress = async ({ hash, signature }: Parameters<typeof recoverAddress>[0]): Promise<AddressRecovery> => {
 	const digest = bytesFromHexOrBytes(hash)
 	const signatureParts = toSignatureParts(signature)
 	if (!hasRecoverableRAndS(signatureParts)) return { type: 'unrecoverable' }
-	try {
-		return { type: 'recovered', address: recoverAddressFromParts(digest, signatureParts) }
-	} catch (error: unknown) {
-		if (isRecoveryAtInfinityError(error)) return { type: 'unrecoverable' }
-		throw error
+	if (recoversToPointAtInfinity(digest, signatureParts)) {
+		assertRecoveryAcceptsDigest(digest, signatureParts)
+		return { type: 'unrecoverable' }
 	}
+	return { type: 'recovered', address: recoverAddressFromParts(digest, signatureParts) }
 }
 
 const signatureToParts = (signature: Hex): SignatureParts => {
