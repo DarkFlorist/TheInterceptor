@@ -1898,4 +1898,37 @@ test('resetting the resolution state drops the kept intent and the scheduled ret
 	assert.equal((await modules.getPendingTransactionsAndMessages()).length, 1)
 })
 
+for (const stackedKind of ['transaction', 'message'] as const) {
+	for (const decline of ['reject', 'noResponse'] as const) {
+		test(`the page gets the same serialized reply for a ${ stackedKind } from its accept and from a ${ decline } of it stacked before its reply was committed`, async () => {
+			const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
+			if (stackedKind === 'message') {
+				await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+				const message = '0x68656c6c6f'
+				const request = { method: 'personal_sign', params: [message, addressString(activeAddress)], interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier }
+				const website = { websiteOrigin: 'https://example.com', icon: undefined, title: undefined }
+				assert.deepEqual(await withSilencedConsole(async () => await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, request, { kind: 'message', parameters: { method: 'personal_sign' as const, params: [message, activeAddress] as const } }, true, activeAddress, website, websiteTabConnections)), { type: 'doNotReply' })
+			}
+			const pendingBeforeAccept = await modules.getPendingTransactionsAndMessages()
+			await resolveRequest(websiteTabConnections, { action: 'accept', uniqueRequestIdentifier })
+			const [acceptReply] = getRepliesToWebsite(postedMessages)
+			assert.ok(isRecord(acceptReply) && 'result' in acceptReply, 'the accept answered the page')
+			const stackAfterAccept = await modules.getInterceptorTransactionStack()
+			assert.equal(stackAfterAccept.operations.length, 1)
+
+			// What a restart leaves when it interrupts the accept after stacking and before committing its reply: the request pending, its operation stacked.
+			await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: pendingBeforeAccept })
+			await resolveRequest(websiteTabConnections, decline === 'reject' ? { action: 'reject', errorString: undefined, uniqueRequestIdentifier } : { action: 'noResponse', uniqueRequestIdentifier })
+
+			const replies = getRepliesToWebsite(postedMessages)
+			assert.equal(replies.length, 2)
+			assert.deepEqual(replies[1], acceptReply)
+			assert.equal(typeof (isRecord(replies[1]) ? replies[1].result : undefined), 'string', 'the reply is serialized')
+			assert.deepEqual(await modules.getInterceptorTransactionStack(), stackAfterAccept, 'the stack is unchanged')
+			assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+			assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+		})
+	}
+}
+
 await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))

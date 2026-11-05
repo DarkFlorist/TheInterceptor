@@ -2,6 +2,8 @@ import * as funtypes from 'funtypes'
 import type { PendingTransactionOrSignableMessage, ResolutionInput } from '../types/accessRequest.js'
 import type { InterceptedRequestForward, StoredTerminalReply } from '../types/interceptor-messages.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
+import type { InterceptorStackOperation } from '../types/visualizer-types.js'
+import { EthereumBytes32 } from '../types/wire-types.js'
 import type { PopupOrTabId } from '../types/websiteAccessTypes.js'
 import { simulatePersonalSign } from '../simulation/services/simulationPersonalSigning.js'
 import { createBoundedRetries } from '../utils/boundedRetry.js'
@@ -376,22 +378,41 @@ export async function withResolutionClaim<Result>(uniqueRequestIdentifier: Uniqu
 // Why a request is declined: the user rejected it, or its confirmation window closed. Both answer it with the user's rejection, except a reject of a request that never finished simulating, answered as unprocessable.
 type DeclineReason = Extract<ResolutionInput, { readonly kind: 'decline' }>['reason']
 
+// The terminal reply that a result or error message gives a request.
+export function toTerminalReply(request: PendingTransactionOrSignableMessage, message: { type: 'result', error: { code: number, message: string } } | { type: 'result', result: unknown }): InterceptedRequestForward {
+	if ('error' in message) return { ...request.originalRequestParameters, ...message, uniqueRequestIdentifier: request.uniqueRequestIdentifier }
+	if (request.originalRequestParameters.method === 'eth_sendRawTransaction' || request.originalRequestParameters.method === 'eth_sendTransaction') return { ...request.originalRequestParameters, ...message, result: EthereumBytes32.parse(message.result), uniqueRequestIdentifier: request.uniqueRequestIdentifier }
+	return { ...request.originalRequestParameters, ...message, result: funtypes.String.parse(message.result), uniqueRequestIdentifier: request.uniqueRequestIdentifier }
+}
+
+// What a request can leave on the simulation stack.
+type StackedRequestOperation = Extract<InterceptorStackOperation, { readonly type: 'Transaction' | 'Message' }>
+
+// The operation on the simulation stack that the request stacked, if any.
+function findStackedOperation(request: PendingTransactionOrSignableMessage, operations: readonly InterceptorStackOperation[]): StackedRequestOperation | undefined {
+	switch (request.type) {
+		case 'Transaction': return operations.flatMap((operation) => operation.type === 'Transaction' && operation.preSimulationTransaction.transactionIdentifier === request.transactionIdentifier ? [operation] : [])[0]
+		case 'SignableMessage': return operations.flatMap((operation) => operation.type === 'Message' && operation.signedMessageTransaction.messageIdentifier === request.signedMessageTransaction.messageIdentifier ? [operation] : [])[0]
+		default: return assertNever(request)
+	}
+}
+
+// The one terminal reply of a request stacked on the simulation stack, whichever resolution commits it (an accept, or a decline of a request stacked before its reply was committed): a transaction's stacked hash, a message's simulated signature.
+export async function toStackedTerminalReply(request: PendingTransactionOrSignableMessage, stacked: StackedRequestOperation) {
+	switch (stacked.type) {
+		case 'Transaction': return toTerminalReply(request, { type: 'result', result: EthereumBytes32.serialize(stacked.preSimulationTransaction.signedTransaction.hash) })
+		case 'Message': return toTerminalReply(request, { type: 'result', result: (await simulatePersonalSign(stacked.signedMessageTransaction.originalRequestParameters, stacked.signedMessageTransaction.fakeSignedFor)).signature })
+		default: return assertNever(stacked)
+	}
+}
+
 // Answers a request that is declined: a rejection, unless it is already stacked in simulation mode (an accept stacked it and failed before its reply was committed, or its commitment and queued reply were lost), when it gets what accepting gives it: a transaction's stacked hash, a message's simulated signature. Its identifier is unique to it (createRequestIdentity), so what is found on the stack was stacked by this request, even when a page reused its request id.
 async function rejectUnlessStacked(request: PendingTransactionOrSignableMessage, reason: DeclineReason, context: ResolutionContext) {
 	const rejection = reason === 'reject' && request.transactionOrMessageCreationStatus !== 'Simulated'
 		? formRejectMessage(METAMASK_ERROR_BLANKET_ERROR, 'The Interceptor failed to process the transaction')
 		: formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User denied transaction signature')
-	const replyWithRejection = async () => await commitAndFinish(request, { ...request.originalRequestParameters, ...rejection, uniqueRequestIdentifier: request.uniqueRequestIdentifier }, context)
-	if (!request.simulationMode) return await replyWithRejection()
-	const operations = (await getInterceptorTransactionStack()).operations
-	if (request.type === 'Transaction') {
-		const stacked = operations.find((operation) => operation.type === 'Transaction' && operation.preSimulationTransaction.transactionIdentifier === request.transactionIdentifier)
-		if (stacked?.type !== 'Transaction') return await replyWithRejection()
-		return await commitAndFinish(request, { ...request.originalRequestParameters, type: 'result', result: stacked.preSimulationTransaction.signedTransaction.hash, uniqueRequestIdentifier: request.uniqueRequestIdentifier }, context)
-	}
-	if (!operations.some((operation) => operation.type === 'Message' && operation.signedMessageTransaction.messageIdentifier === request.signedMessageTransaction.messageIdentifier)) return await replyWithRejection()
-	const signature = (await simulatePersonalSign(request.originalRequestParameters, request.signedMessageTransaction.fakeSignedFor)).signature
-	return await commitAndFinish(request, { ...request.originalRequestParameters, type: 'result', result: funtypes.String.parse(signature), uniqueRequestIdentifier: request.uniqueRequestIdentifier }, context)
+	const stacked = request.simulationMode ? findStackedOperation(request, (await getInterceptorTransactionStack()).operations) : undefined
+	return await commitAndFinish(request, stacked === undefined ? toTerminalReply(request, rejection) : await toStackedTerminalReply(request, stacked), context)
 }
 
 // The one entry point of a decline, an explicit reject or a closed confirmation window: an input stored on the request in arrival order and arbitrated under its claim (resolveKeptInputs), which only rejects a request still pending and uncommitted, so a commitment always wins, and a signer result that arrived first is settled first. Never throws; any failure goes to the request's one retry owner (scheduleRequestRetry). An accept is never retried this way; it stays the user's to repeat.
