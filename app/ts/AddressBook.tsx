@@ -239,11 +239,12 @@ export function AddressBook() {
 				return false
 			}
 			if (parsed.method === 'popup_requestSettingsReply') {
-				rpcEntries.value = parsed.data.rpcEntries
-				if (parsed.data.activeRpcNetwork === undefined) return false
+				const { rpcStatus } = parsed.data
+				if (!rpcStatus.available) return false
+				rpcEntries.value = rpcStatus.rpcEntries
 				const prevActiveNetwork = activeChain.peek()
-				if (prevActiveNetwork === undefined || prevActiveNetwork.chainId === parsed.data.activeRpcNetwork.chainId) {
-					activeChain.value = parsed.data.activeRpcNetwork
+				if (prevActiveNetwork === undefined || prevActiveNetwork.chainId === rpcStatus.activeRpcNetwork.chainId) {
+					activeChain.value = rpcStatus.activeRpcNetwork
 					if (prevActiveNetwork === undefined || viewFilter.value.chain === undefined) {
 						viewFilter.value = { ...viewFilter.value, chain: activeChain.value === undefined ? undefined : { name: activeChain.value.name, chainId: activeChain.value.chainId } }
 					}

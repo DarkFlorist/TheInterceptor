@@ -1,6 +1,6 @@
 
 import { sendPopupMessageToBackgroundPage, sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport } from '../../background/backgroundUtils.js'
-import { MessageToPopup, type ImportSettingsReply } from '../../types/interceptor-messages.js'
+import { MessageToPopup, type ImportSettingsReply, type PopupRpcStatus } from '../../types/interceptor-messages.js'
 import { type RpcEntries, RpcEntry } from '../../types/rpc.js'
 import { useEffect } from 'preact/hooks'
 import { ErrorComponent, ErrorText } from '../subcomponents/Error.js'
@@ -342,19 +342,16 @@ export function useRpcConnectionsState() {
 	useEffect(() => {
 		let disposed = false
 		let updateVersion = 0
+		const applyRpcStatus = (rpcStatus: PopupRpcStatus) => {
+			updateVersion += 1
+			status.value = rpcStatus.available ? 'ready' : 'unavailable'
+			if (rpcStatus.available) entries.value = rpcStatus.rpcEntries
+		}
 		const trackRpcListChanges = (message: unknown): false => {
 			const parsedMessage = MessageToPopup.safeParse(message)
 			if (parsedMessage.success === false) return false
-			if (parsedMessage.value.method === 'popup_update_rpc_list') {
-				updateVersion += 1
-				entries.value = parsedMessage.value.data.rpcEntries
-				status.value = parsedMessage.value.data.rpcConfigurationAvailable ? 'ready' : 'unavailable'
-			}
-			if (parsedMessage.value.method === 'popup_requestSettingsReply') {
-				updateVersion += 1
-				entries.value = parsedMessage.value.data.rpcEntries
-				status.value = parsedMessage.value.data.rpcConfigurationAvailable ? 'ready' : 'unavailable'
-			}
+			if (parsedMessage.value.method === 'popup_update_rpc_list') applyRpcStatus(parsedMessage.value.data)
+			if (parsedMessage.value.method === 'popup_requestSettingsReply') applyRpcStatus(parsedMessage.value.data.rpcStatus)
 			return false
 		}
 		noReplyExpectingBrowserRuntimeOnMessageListener(trackRpcListChanges)

@@ -406,8 +406,7 @@ describe('RPC storage recovery', () => {
 		const settingsReply = MessageToPopup.parse(runtimeMessages.at(-1))
 		assert.equal(settingsReply.method, 'popup_requestSettingsReply')
 		if (settingsReply.method !== 'popup_requestSettingsReply') return
-		assert.equal(settingsReply.data.rpcConfigurationAvailable, false)
-		assert.deepEqual(settingsReply.data.rpcEntries, [])
+		assert.deepEqual(settingsReply.data.rpcStatus, { available: false })
 		assert.equal(owner.getCurrent() !== undefined, false)
 
 		await retryRpcConfiguration(owner, ignoreRecoveryPublication)
@@ -425,8 +424,7 @@ describe('RPC storage recovery', () => {
 			const rpcStatus = MessageToPopup.parse(runtimeMessages.at(-1))
 			assert.equal(rpcStatus.method, 'popup_update_rpc_list')
 			if (rpcStatus.method !== 'popup_update_rpc_list') return
-			assert.equal(rpcStatus.data.rpcConfigurationAvailable, true)
-			assert.deepEqual(rpcStatus.data.rpcEntries, [customPrimaryRpc, customFallbackRpc])
+			assert.deepEqual(rpcStatus.data, { available: true, rpcEntries: [customPrimaryRpc, customFallbackRpc], activeRpcNetwork: customPrimaryRpc })
 		} finally {
 			owner.clear()
 		}
@@ -442,8 +440,7 @@ describe('RPC storage recovery', () => {
 			const rpcStatus = MessageToPopup.parse(runtimeMessages.at(-1))
 			assert.equal(rpcStatus.method, 'popup_update_rpc_list')
 			if (rpcStatus.method !== 'popup_update_rpc_list') return
-			assert.equal(rpcStatus.data.rpcConfigurationAvailable, false)
-			assert.deepEqual(rpcStatus.data.rpcEntries, [])
+			assert.deepEqual(rpcStatus.data, { available: false })
 		} finally {
 			everyStorageReadError = undefined
 			owner.clear()
@@ -462,8 +459,7 @@ describe('RPC storage recovery', () => {
 			const settingsReply = MessageToPopup.parse(runtimeMessages[0])
 			assert.equal(settingsReply.method, 'popup_requestSettingsReply')
 			if (settingsReply.method !== 'popup_requestSettingsReply') return
-			assert.equal(settingsReply.data.rpcConfigurationAvailable, false)
-			assert.deepEqual(settingsReply.data.rpcEntries, [])
+			assert.deepEqual(settingsReply.data.rpcStatus, { available: false })
 			assert.equal(settingsReply.data.useTabsInsteadOfPopup, true)
 			assert.equal(settingsReply.data.metamaskCompatibilityMode, false)
 			assert.equal(settingsReply.data.safeAppsCompatibilityMode, true)
@@ -474,6 +470,13 @@ describe('RPC storage recovery', () => {
 		}
 	})
 
+	test('an available RPC status needs its list and active network, and an unavailable one parses without them', () => {
+		const rpcListUpdate = (data: unknown) => MessageToPopup.safeParse({ role: 'all', method: 'popup_update_rpc_list', data }).success
+		assert.equal(rpcListUpdate({ available: false }), true)
+		assert.equal(rpcListUpdate({ available: true }), false)
+		assert.equal(rpcListUpdate({ available: true, rpcEntries: [] }), false)
+	})
+
 	test('settings uses one coherent RPC configuration snapshot', async () => {
 		const owner = createSimulationServicesOwner(customPrimaryRpc, async () => undefined, async (_ethereum, error) => { throw error })
 		failRpcConfigurationReadAt = 2
@@ -482,8 +485,7 @@ describe('RPC storage recovery', () => {
 		const settingsReply = MessageToPopup.parse(runtimeMessages.at(-1))
 		assert.equal(settingsReply.method, 'popup_requestSettingsReply')
 		if (settingsReply.method !== 'popup_requestSettingsReply') return
-		assert.equal(settingsReply.data.rpcConfigurationAvailable, true)
-		assert.deepEqual(settingsReply.data.rpcEntries, [customPrimaryRpc, customFallbackRpc])
+		assert.deepEqual(settingsReply.data.rpcStatus, { available: true, rpcEntries: [customPrimaryRpc, customFallbackRpc], activeRpcNetwork: customPrimaryRpc })
 		assert.equal(rpcConfigurationReadCount, 1)
 		assert.equal(owner.getCurrent() !== undefined, true)
 		owner.clear()
@@ -611,7 +613,7 @@ describe('RPC storage recovery', () => {
 			assert.equal(owner.getCurrent() !== undefined, false)
 			// The list write is committed, so its status is still published after the failed services change, and it reports the paused services instead of a resumed configuration.
 			const rpcListUpdates = runtimeMessages.flatMap((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_update_rpc_list' && 'data' in message ? [message.data] : [])
-			assert.deepEqual(rpcListUpdates, [{ rpcEntries: [], rpcConfigurationAvailable: false }])
+			assert.deepEqual(rpcListUpdates, [{ available: false }])
 		} finally {
 			Object.defineProperty(browser.storage.local, 'set', { configurable: true, value: originalSet })
 			owner.clear()
@@ -660,7 +662,7 @@ describe('RPC storage recovery', () => {
 		const unavailableListUpdate = MessageToPopup.parse(runtimeMessages.at(-1))
 		assert.equal(unavailableListUpdate.method, 'popup_update_rpc_list')
 		if (unavailableListUpdate.method === 'popup_update_rpc_list') {
-			assert.deepEqual(unavailableListUpdate.data, { rpcEntries: [], rpcConfigurationAvailable: false })
+			assert.deepEqual(unavailableListUpdate.data, { available: false })
 		}
 
 		await setNewRpcList(owner, new Map(), { method: 'popup_set_rpc_list', data: [customFallbackRpc] }, settings, ignoreRecoveryPublication)
@@ -701,7 +703,8 @@ describe('RPC storage recovery', () => {
 		const emptyListUpdate = MessageToPopup.parse(runtimeMessages.at(-1))
 		assert.equal(emptyListUpdate.method, 'popup_update_rpc_list')
 		if (emptyListUpdate.method === 'popup_update_rpc_list') {
-			assert.deepEqual(emptyListUpdate.data, { rpcEntries: [], rpcConfigurationAvailable: true })
+			assert.equal(emptyListUpdate.data.available, true)
+			if (emptyListUpdate.data.available) assert.deepEqual(emptyListUpdate.data.rpcEntries, [])
 		}
 
 		await retryRpcConfiguration(owner, ignoreRecoveryPublication)
@@ -709,13 +712,14 @@ describe('RPC storage recovery', () => {
 		const retryListUpdate = MessageToPopup.parse(runtimeMessages.at(-1))
 		assert.equal(retryListUpdate.method, 'popup_update_rpc_list')
 		if (retryListUpdate.method === 'popup_update_rpc_list') {
-			assert.deepEqual(retryListUpdate.data, { rpcEntries: [], rpcConfigurationAvailable: true })
+			assert.equal(retryListUpdate.data.available, true)
+			if (retryListUpdate.data.available) assert.deepEqual(retryListUpdate.data.rpcEntries, [])
 		}
 
 		await settingsOpened(owner)
 		const settingsReply = MessageToPopup.parse(runtimeMessages.at(-1))
 		assert.equal(settingsReply.method, 'popup_requestSettingsReply')
-		if (settingsReply.method === 'popup_requestSettingsReply') assert.equal(settingsReply.data.rpcConfigurationAvailable, true)
+		if (settingsReply.method === 'popup_requestSettingsReply') assert.equal(settingsReply.data.rpcStatus.available, true)
 
 		await setNewRpcList(owner, new Map(), { method: 'popup_set_rpc_list', data: [customFallbackRpc] }, settings, ignoreRecoveryPublication)
 		assert.equal(owner.getCurrent() !== undefined, false)

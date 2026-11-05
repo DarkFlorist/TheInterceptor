@@ -243,9 +243,10 @@ export function InterceptorAccess() {
 				return false
 			}
 			if (parsed.method === 'popup_requestSettingsReply') {
-				rpcEntries.value = parsed.data.rpcEntries
-				if (parsed.data.activeRpcNetwork === undefined) return false
-				activeRpcChainId.value = parsed.data.activeRpcNetwork.chainId
+				const { rpcStatus } = parsed.data
+				if (!rpcStatus.available) return false
+				rpcEntries.value = rpcStatus.rpcEntries
+				activeRpcChainId.value = rpcStatus.activeRpcNetwork.chainId
 				return false
 			}
 			if (parsed.method === 'popup_addressBookEntriesChanged') {

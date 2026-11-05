@@ -715,13 +715,21 @@ export const SetRpcList = funtypes.ReadonlyObject({
 	data: RpcEntries,
 })
 
+// The RPC configuration as the popup pages see it. An unavailable status has no list or network, so a page has to narrow on `available` before it can read either, and keeps what it last showed.
+export type PopupRpcStatus = funtypes.Static<typeof PopupRpcStatus>
+const PopupRpcStatus = funtypes.Union(
+	funtypes.ReadonlyObject({
+		available: funtypes.Literal(true),
+		rpcEntries: RpcEntries,
+		activeRpcNetwork: RpcNetwork,
+	}),
+	funtypes.ReadonlyObject({ available: funtypes.Literal(false) }),
+)
+
 type UpdateRPCList = funtypes.Static<typeof UpdateRPCList>
 const UpdateRPCList = funtypes.ReadonlyObject({
 	method: funtypes.Union(funtypes.Literal('popup_update_rpc_list')),
-	data: funtypes.ReadonlyObject({
-		rpcEntries: RpcEntries,
-		rpcConfigurationAvailable: funtypes.Boolean,
-	}),
+	data: PopupRpcStatus,
 })
 
 export { ChangeActiveChain } from './popupSettingsRequests.js'
@@ -819,9 +827,7 @@ const SettingsOpenedReply = funtypes.ReadonlyObject({
 		useTabsInsteadOfPopup: funtypes.Boolean,
 		metamaskCompatibilityMode: funtypes.Boolean,
 		safeAppsCompatibilityMode: funtypes.Boolean,
-		rpcConfigurationAvailable: funtypes.Boolean,
-		activeRpcNetwork: funtypes.Union(RpcNetwork, funtypes.Undefined),
-		rpcEntries: RpcEntries,
+		rpcStatus: PopupRpcStatus,
 	})
 }).asReadonly()
 

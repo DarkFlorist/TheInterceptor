@@ -1,11 +1,10 @@
-import type { ImportSettings, ImportSettingsReply, MessageToPopupPayload, SetRpcList, Settings } from '../../types/interceptor-messages.js'
-import type { RpcEntries, RpcNetwork } from '../../types/rpc.js'
+import type { ImportSettings, ImportSettingsReply, PopupRpcStatus, SetRpcList, Settings } from '../../types/interceptor-messages.js'
 import { ExportedSettings } from '../../types/exportedSettingsTypes.js'
 import { serialize } from '../../types/wire-types.js'
 import { isJSON } from '../../utils/json.js'
 import { Semaphore } from '../../utils/semaphore.js'
 import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
-import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettingsSnapshot, getUseTabsInsteadOfPopup, importSettingsAndAddressBook, settingsIfAvailable, type SettingsSnapshot } from '../settings.js'
+import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettingsSnapshot, getUseTabsInsteadOfPopup, importSettingsAndAddressBook, type SettingsSnapshot } from '../settings.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { DEFAULT_RPCS } from '../../config/defaults.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
@@ -15,40 +14,27 @@ import { rpcConfigurationIsReady, rpcConfigurationIsUsable } from '../rpcConfigu
 
 type PublishRpcConfigurationRecovery = (simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, previousSettings: Settings | undefined, activeRpcNetwork: Settings['activeRpcNetwork'], forceChainChanged?: boolean) => Promise<readonly unknown[]>
 
-type SettingsRpcStatus = {
-	readonly rpcConfigurationAvailable: boolean
-	readonly rpcEntries: RpcEntries
-	readonly activeRpcNetwork: RpcNetwork | undefined
+// Published whenever the RPC configuration is not usable: the Settings RPC section then offers Retry and Restore.
+const UNAVAILABLE_RPC_STATUS: PopupRpcStatus = { available: false }
+
+function getPopupRpcStatus({ rpcConfiguration }: SettingsSnapshot, simulationServicesOwner: SimulationServicesOwner): PopupRpcStatus {
+	if (!rpcConfigurationIsReady(rpcConfiguration) || !rpcConfigurationIsUsable(rpcConfiguration, simulationServicesOwner)) return UNAVAILABLE_RPC_STATUS
+	return { available: true, rpcEntries: rpcConfiguration.rpcEntries, activeRpcNetwork: rpcConfiguration.activeRpcNetwork }
 }
-
-// Published when the RPC configuration could not be read at all: the Settings RPC section then offers Retry and Restore.
-const UNREADABLE_RPC_STATUS: SettingsRpcStatus = { rpcConfigurationAvailable: false, rpcEntries: [], activeRpcNetwork: undefined }
-
-function getSettingsRpcStatus(settingsSnapshot: SettingsSnapshot, simulationServicesOwner: SimulationServicesOwner): SettingsRpcStatus {
-	const { rpcConfiguration } = settingsSnapshot
-	const rpcConfigurationAvailable = rpcConfigurationIsUsable(rpcConfiguration, simulationServicesOwner)
-	return {
-		rpcConfigurationAvailable,
-		rpcEntries: rpcConfigurationAvailable && rpcConfigurationIsReady(rpcConfiguration) ? rpcConfiguration.rpcEntries : [],
-		activeRpcNetwork: settingsIfAvailable(settingsSnapshot)?.activeRpcNetwork,
-	}
-}
-
-const formRpcListUpdate = ({ rpcEntries, rpcConfigurationAvailable }: SettingsRpcStatus): MessageToPopupPayload => ({ method: 'popup_update_rpc_list', data: { rpcEntries, rpcConfigurationAvailable } })
 
 // Every RPC status the Settings page is sent (the settings reply and every RPC list update) is read and published inside this lock, from the configuration stored when the lock is held. Publications therefore go out in the order they were read, so a slow request can never publish a status older than one already published.
 const rpcStatusPublicationSemaphore = new Semaphore(1)
 
-const publishRpcListUpdate = async (rpcStatus: SettingsRpcStatus) => await sendPopupMessageToOpenWindows(formRpcListUpdate(rpcStatus))
+const publishRpcListUpdate = async (rpcStatus: PopupRpcStatus) => await sendPopupMessageToOpenWindows({ method: 'popup_update_rpc_list', data: rpcStatus })
 
 // A failed storage read is not thrown: getSettingsSnapshot returns it as the 'read-failed' unavailable configuration, published here as an unavailable status, and the Settings alert with Retry and Restore is how it is surfaced (deliberately not as an unexpected error). The catch handles only an unexpected exception while reading or forming the status: it still publishes the unreadable status so the RPC section leaves loading, then rethrows for the caller to report once.
-async function publishCurrentRpcStatus(simulationServicesOwner: SimulationServicesOwner, publish: (rpcStatus: SettingsRpcStatus) => Promise<void> = publishRpcListUpdate) {
+async function publishCurrentRpcStatus(simulationServicesOwner: SimulationServicesOwner, publish: (rpcStatus: PopupRpcStatus) => Promise<void> = publishRpcListUpdate) {
 	await rpcStatusPublicationSemaphore.execute(async () => {
-		let rpcStatus: SettingsRpcStatus
+		let rpcStatus: PopupRpcStatus
 		try {
-			rpcStatus = getSettingsRpcStatus(await getSettingsSnapshot(), simulationServicesOwner)
+			rpcStatus = getPopupRpcStatus(await getSettingsSnapshot(), simulationServicesOwner)
 		} catch (unexpectedError: unknown) {
-			return await throwAfterFollowUp(unexpectedError, async () => await publishRpcListUpdate(UNREADABLE_RPC_STATUS))
+			return await throwAfterFollowUp(unexpectedError, async () => await publishRpcListUpdate(UNAVAILABLE_RPC_STATUS))
 		}
 		await publish(rpcStatus)
 	})
@@ -64,7 +50,7 @@ async function readSettingsPreferences() {
 export async function settingsOpened(simulationServicesOwner: SimulationServicesOwner) {
 	await publishCurrentRpcStatus(simulationServicesOwner, async (rpcStatus) => {
 		const preferences = await readSettingsPreferences().catch(async (preferenceError: unknown) => await throwAfterFollowUp(preferenceError, async () => await publishRpcListUpdate(rpcStatus)))
-		await sendPopupMessageToOpenWindows({ method: 'popup_requestSettingsReply', data: { ...preferences, ...rpcStatus } })
+		await sendPopupMessageToOpenWindows({ method: 'popup_requestSettingsReply', data: { ...preferences, rpcStatus } })
 	})
 }
 

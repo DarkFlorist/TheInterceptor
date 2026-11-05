@@ -87,7 +87,7 @@ Object.defineProperty(globalThis, 'chrome', { configurable: true, writable: true
 const { settingsOpened } = await import('../../app/ts/background/popupMessageHandlers/settings.js')
 const { handlePopupRuntimeMessage } = await import('../../app/ts/background/popupMessageRouting.js')
 const { createSimulationServicesOwner } = await import('../../app/ts/simulation/serviceLifecycle.js')
-const { SettingsView } = await import('../../app/ts/components/pages/SettingsView.js')
+const { SettingsView, useRpcConnectionsList } = await import('../../app/ts/components/pages/SettingsView.js')
 const { serializeLocalStorageItems } = await import('../../app/ts/utils/storageUtils.js')
 
 const configuredRpc = { name: 'Configured RPC', chainId: 1n, httpsRpc: 'https://configured.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: true }
@@ -203,6 +203,30 @@ test('a Settings request whose preference read fails never leaves its older outa
 		await flushAsyncWork()
 		assert.equal(findRpcAlert(dom.document.body), undefined)
 		assert.deepEqual(getShownRpcNames(dom.document.body), [configuredRpc.name])
+	} finally {
+		render(null, dom.document.body)
+		dom.restore()
+		owner.clear()
+	}
+})
+
+test('an unavailable RPC status does not overwrite the RPC list a page already shows', async () => {
+	const owner = createSimulationServicesOwner(configuredRpc, async () => undefined, async (_ethereum, error) => { throw error })
+	openSettingsInBackground = async () => await settingsOpened(owner)
+	storeReadableRpcConfiguration()
+	const RpcListConsumer = () => <ol>{ useRpcConnectionsList().value.map((rpc) => <li>{ rpc.name }</li>) }</ol>
+	const dom = installDomMock()
+	const getListedRpcNames = () => collectElements(dom.document.body, 'li').map((item) => item.textContent)
+	try {
+		await act(() => { render(<RpcListConsumer />, dom.document.body) })
+		await flushAsyncWork()
+		assert.deepEqual(getListedRpcNames(), [configuredRpc.name])
+
+		storedItems.rpcEntries = 'not-an-rpc-list'
+		await withSilencedWarnings(async () => { await act(async () => { await settingsOpened(owner) }) })
+		await flushAsyncWork()
+
+		assert.deepEqual(getListedRpcNames(), [configuredRpc.name])
 	} finally {
 		render(null, dom.document.body)
 		dom.restore()

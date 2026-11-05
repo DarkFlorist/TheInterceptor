@@ -35,7 +35,6 @@ export function applyRpcServicesChange(simulationServicesOwner: SimulationServic
 
 export type RpcListTransitionResult = {
 	readonly activeRpcNetwork: RpcNetwork
-	readonly rpcConfigurationAvailable: boolean
 	readonly publishRecovery: boolean
 	readonly forceChainChanged: boolean
 	readonly servicesChange: RpcServicesChange
@@ -59,13 +58,12 @@ export async function transitionRpcList(
 		if (previousConfiguration.status === 'ready') {
 			await setRpcList(rpcEntries)
 			const shouldRecoverServices = activeRpcNetwork.httpsRpc !== undefined && simulationServicesOwner.getCurrent() === undefined
-			return { activeRpcNetwork, rpcConfigurationAvailable: true, publishRecovery: shouldRecoverServices, forceChainChanged: false, servicesChange: shouldRecoverServices ? { kind: 'recover', rpcNetwork: activeRpcNetwork } : { kind: 'none' } }
+			return { activeRpcNetwork, publishRecovery: shouldRecoverServices, forceChainChanged: false, servicesChange: shouldRecoverServices ? { kind: 'recover', rpcNetwork: activeRpcNetwork } : { kind: 'none' } }
 		}
 		await setRpcConfiguration(rpcEntries, activeRpcNetwork)
 		const previousActiveRpcNetwork = 'activeRpcNetwork' in previousConfiguration ? previousConfiguration.activeRpcNetwork : undefined
 		return {
 			activeRpcNetwork,
-			rpcConfigurationAvailable: true,
 			publishRecovery: previousConfiguration.status === 'unavailable',
 			forceChainChanged: previousActiveRpcNetwork === undefined,
 			servicesChange: activeRpcNetwork.httpsRpc === undefined ? { kind: 'clear' } : { kind: 'recover', rpcNetwork: activeRpcNetwork },
@@ -77,19 +75,19 @@ export async function transitionRpcList(
 		const activeRpcNetwork = selectPrimaryRpc(rpcEntries)
 		if (previousConfiguration.reason !== 'empty' || activeRpcNetwork === undefined) throw createRpcConfigurationUnavailableError()
 		await setRpcConfiguration(rpcEntries, activeRpcNetwork)
-		return { activeRpcNetwork, rpcConfigurationAvailable: true, publishRecovery: true, forceChainChanged: false, servicesChange: { kind: 'recover', rpcNetwork: activeRpcNetwork } }
+		return { activeRpcNetwork, publishRecovery: true, forceChainChanged: false, servicesChange: { kind: 'recover', rpcNetwork: activeRpcNetwork } }
 	}
 
 	const activeRpcNetwork = previousConfiguration.activeRpcNetwork
 	if (activeRpcNetwork.httpsRpc === undefined && simulationServicesOwner.getCurrent() === undefined) {
 		await setRpcList(rpcEntries)
-		return { activeRpcNetwork, rpcConfigurationAvailable: true, publishRecovery: false, forceChainChanged: false, servicesChange: { kind: 'none' } }
+		return { activeRpcNetwork, publishRecovery: false, forceChainChanged: false, servicesChange: { kind: 'none' } }
 	}
 	if (simulationServicesOwner.getCurrent() === undefined) throw createRpcConfigurationUnavailableError()
 	await setRpcList(rpcEntries)
-	if (rpcEntries.length === 0) return { activeRpcNetwork, rpcConfigurationAvailable: activeRpcNetwork.httpsRpc === undefined, publishRecovery: false, forceChainChanged: false, servicesChange: { kind: 'clear' } }
+	if (rpcEntries.length === 0) return { activeRpcNetwork, publishRecovery: false, forceChainChanged: false, servicesChange: { kind: 'clear' } }
 	const primary = rpcEntries.find((rpc) => rpc.chainId === activeRpcNetwork.chainId && rpc.primary)
-	return { activeRpcNetwork, rpcConfigurationAvailable: true, publishRecovery: false, forceChainChanged: false, servicesChange: { kind: 'keep-running', rpcNetwork: primary } }
+	return { activeRpcNetwork, publishRecovery: false, forceChainChanged: false, servicesChange: { kind: 'keep-running', rpcNetwork: primary } }
 }
 
 // Retry re-reads the stored configuration without writing it. Services pause unless it is ready; a ready configuration resumes them only when it has an RPC endpoint to serve. The services change is returned for the caller to apply (applyRpcServicesChange).
