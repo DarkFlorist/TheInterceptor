@@ -250,25 +250,26 @@ async function advanceSafeSignerReply(uniqueRequestIdentifier: UniqueRequestIden
 
 // waiting-for-signer -> claimed, advanced at once in the same lifecycle step, so no other entry point sees the claim before its first transition. A claim already stored for the request is advanced rather than replaced, so a retried claim never overwrites a newer one. Returns whether the request was settled (undefined when it was already gone).
 async function claimSafeSignature(uniqueRequestIdentifier: UniqueRequestIdentifier, signerReply: string, context: SafeSignerReplyContext) {
-	const claim = await runSafeSignerReplyLifecycle(uniqueRequestIdentifier, { name: 'claim', afterRetriesSpent: async () => await failUnsavedSafeSignature(uniqueRequestIdentifier, context), run: async () => {
+	const claimState = await runSafeSignerReplyLifecycle(uniqueRequestIdentifier, { name: 'claim', afterRetriesSpent: async () => await failUnsavedSafeSignature(uniqueRequestIdentifier, context), run: async () => {
 		const pending = await getPendingTransactionOrMessage(uniqueRequestIdentifier)
-		if (pending === undefined) return { pending, state: 'gone' as const }
+		if (pending === undefined) return 'gone' as const
 		if (pending.deferredSafeSignerReply === undefined && pending.websiteReplyQueued !== true) {
 			const chainId = pending.signerRequestChainId
 			// Without the network the signer signed for, the signature could be validated or stored on another network, so it is not kept.
 			if (chainId === undefined) {
 				await failSafeSignatureWithoutChain(uniqueRequestIdentifier)
-				return { pending, state: 'waiting-for-signer' as const }
+				return 'waiting-for-signer' as const
 			}
 			// An answered request (its window close or Reject won) refuses the claim and keeps its own answer, which this step then finishes.
-			if (await deferSignatureUnlessAnswered(uniqueRequestIdentifier, { signerReply, chainId }) === 'gone') return { pending, state: 'gone' as const }
+			if (await deferSignatureUnlessAnswered(uniqueRequestIdentifier, { signerReply, chainId }) === 'gone') return 'gone' as const
 		}
-		return { pending, state: await advanceSafeSignerReply(uniqueRequestIdentifier, context) }
+		const state = await advanceSafeSignerReply(uniqueRequestIdentifier, context)
+		// The waiting co-signature left the queue its window shows, so the window moves on to the next request or closes. This is part of the step so that a claim stored by a scheduled retry, which has no caller, moves the window too.
+		if (state === 'claimed') await context.confirmationWindow.updateAfterRequestLeftQueue(pending, context.services)
+		return state
 	} })
-	// The waiting co-signature left the queue its window shows, so the window moves on to the next request or closes.
-	if (claim.state === 'claimed' && claim.pending !== undefined) await context.confirmationWindow.updateAfterRequestLeftQueue(claim.pending, context.services)
-	if (claim.state === 'gone') return undefined
-	return claim.state === 'settled'
+	if (claimState === 'gone') return undefined
+	return claimState === 'settled'
 }
 
 // Every Safe signature, from the signer reply or a popup's signerIncluded, enters the lifecycle here.

@@ -112,6 +112,57 @@ describe('Gnosis Safe signer-reply lifecycle with stub confirmation-window callb
 		assert.deepEqual(claimed?.deferredSafeSignerReply, { signerReply: SIGNATURE, chainId: SIGNING_CHAIN_ID })
 	})
 
+	const waitForCondition = async (condition: () => boolean) => {
+		for (let attempt = 0; attempt < 100 && !condition(); attempt += 1) await new Promise((resolve) => setTimeout(resolve, 10))
+		assert.equal(condition(), true)
+	}
+
+	test('moves the window past the request when a scheduled retry stores the claim, exactly once', async () => {
+		const { calls, confirmationWindow } = createStubConfirmationWindow()
+		const writeStorage = browser.storage.local.set
+		let firstWriteFails = true
+		Object.defineProperty(browser.storage.local, 'set', { configurable: true, value: async (items: Record<string, unknown>) => {
+			if (firstWriteFails) {
+				firstWriteFails = false
+				throw new Error('Claim write failed')
+			}
+			await writeStorage(items)
+		} })
+		try {
+			await assert.rejects(resolveSafeSignature(uniqueRequestIdentifier, SIGNATURE, { services: undefined, getInstalledServices: async () => createServices(2n), websiteTabConnections, confirmationWindow }), /Claim write failed/)
+			assert.equal(calls.updateAfterRequestLeftQueue.length, 0)
+
+			await waitForCondition(() => calls.updateAfterRequestLeftQueue.length > 0)
+			// Longer than the next retry delay, so a second update would have shown.
+			await new Promise((resolve) => setTimeout(resolve, 300))
+		} finally {
+			Object.defineProperty(browser.storage.local, 'set', { configurable: true, value: writeStorage })
+		}
+
+		assert.equal(calls.updateAfterRequestLeftQueue.length, 1)
+		const [claimed] = await getPendingTransactionsAndMessages()
+		assert.deepEqual(claimed?.deferredSafeSignerReply, { signerReply: SIGNATURE, chainId: SIGNING_CHAIN_ID })
+	})
+
+	test('retries a failed window update without losing the stored claim', async () => {
+		const { calls, confirmationWindow } = createStubConfirmationWindow()
+		let firstUpdateFails = true
+		const failingFirstUpdate: SafeSignerReplyConfirmationWindow = { ...confirmationWindow, updateAfterRequestLeftQueue: async (pending, services) => {
+			if (firstUpdateFails) {
+				firstUpdateFails = false
+				throw new Error('Window update failed')
+			}
+			await confirmationWindow.updateAfterRequestLeftQueue(pending, services)
+		} }
+
+		await assert.rejects(resolveSafeSignature(uniqueRequestIdentifier, SIGNATURE, { services: undefined, getInstalledServices: async () => createServices(2n), websiteTabConnections, confirmationWindow: failingFirstUpdate }), /Window update failed/)
+		await waitForCondition(() => calls.updateAfterRequestLeftQueue.length > 0)
+
+		assert.equal(calls.updateAfterRequestLeftQueue.length, 1)
+		const [claimed] = await getPendingTransactionsAndMessages()
+		assert.deepEqual(claimed?.deferredSafeSignerReply, { signerReply: SIGNATURE, chainId: SIGNING_CHAIN_ID })
+	})
+
 	test('rejects a request still waiting for its signer as no-response without RPC services', async () => {
 		const { calls, confirmationWindow } = createStubConfirmationWindow()
 		await resolvePendingRequestAsNoResponse(uniqueRequestIdentifier, { services: undefined, getInstalledServices: async () => undefined, websiteTabConnections, confirmationWindow })
