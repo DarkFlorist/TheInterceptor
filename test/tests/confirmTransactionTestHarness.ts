@@ -601,6 +601,9 @@ export const pendingTransaction = {
 export async function resetConfirmTransactionTestState() {
 	browserMock.reset()
 	resetFakeSafeContractState()
+	// The active network is the shared simulator's, as it is for installed services, so snapshots read in these flows can be simulated on it.
+	const { changeSimulationMode, getSettings } = await import('../../app/ts/background/settings.js')
+	await changeSimulationMode({ simulationMode: (await getSettings()).simulationMode, rpcNetwork: fakeRpcNetwork })
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [pendingTransaction] })
 	await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
 }

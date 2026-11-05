@@ -13,10 +13,12 @@ import { decodeFunctionDataStrict, encodeAbiValues, encodeFunctionReturn } from 
 import { Multicall3ABI } from '../../app/ts/utils/constants.js'
 import { JsonRpcResponseError } from '../../app/ts/utils/errors.js'
 import { isRecord } from '../../app/ts/utils/runtimeTypeGuards.js'
-import { eth_getBlockByNumber_goerli_8443561_true, eth_simulateV1_dummy_call_result } from '../RPCResponses.js'
-import { confirmedSignerOwnership, createDeferredSignal, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus } from './backgroundEthAccountsTestHarness.js'
+import { eth_getBlockByNumber_goerli_8443561_false, eth_getBlockByNumber_goerli_8443561_true, eth_simulateV1_dummy_call_result } from '../RPCResponses.js'
+import { confirmedSignerOwnership, createDeferredSignal, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
 import { Transaction } from 'micro-eth-signer'
 import { mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
+import { PASSTHROUGH_STATE } from '../../app/ts/types/visualizer-types.js'
+import type { PublishRpcConnectionStatus } from '../../app/ts/background/rpcSlowRequestTracking.js'
 
 const networkA = {
 	name: 'Network A',
@@ -28,6 +30,7 @@ const networkA = {
 	minimized: false,
 } satisfies RpcEntry
 const networkB = { ...networkA, name: 'Network B', chainId: 10n, httpsRpc: 'https://network-b.invalid' } satisfies RpcEntry
+const networkAOnOtherEndpoint = { ...networkA, name: 'Network A on another endpoint', httpsRpc: 'https://network-a-other-endpoint.invalid' } satisfies RpcEntry
 const firstAddress = 0x1111111111111111111111111111111111111111n
 const secondAddress = 0x2222222222222222222222222222222222222222n
 const websiteOrigin = 'https://example.test'
@@ -78,7 +81,7 @@ function createNetworkServices(rpcEntry: RpcEntry) {
 			requests.push(request)
 			await interceptRequest?.(request, requestAbortController)
 			switch (request.method) {
-				case 'eth_getBlockByNumber': return parseRpcResult(eth_getBlockByNumber_goerli_8443561_true)
+				case 'eth_getBlockByNumber': return parseRpcResult(request.params[1] === false ? eth_getBlockByNumber_goerli_8443561_false : eth_getBlockByNumber_goerli_8443561_true)
 				case 'eth_simulateV1': return createSimulateV1Result(request.params[0].blockStateCalls)
 				case 'eth_estimateGas': return '0x5208'
 				case 'eth_blockNumber': return '0x80d6a9'
@@ -215,7 +218,19 @@ async function createApprovedSimulationDapp({ simulationConsumerOpen = false, si
 		confirmTransactionAbortController: new AbortController(),
 		resetSimulationState: async () => undefined,
 	})
-	return { modules, socket, websiteTabConnections, runtimeMessages, sendDappRequest, sendEthSimulateV1, switchToNetworkB, assertRequestSucceeded, getReply, getReplies, createPopupContext }
+	return { modules, socket, messages, websiteTabConnections, runtimeMessages, sendDappRequest, sendEthSimulateV1, switchToNetworkB, assertRequestSucceeded, getReply, getReplies, createPopupContext }
+}
+
+// Subscribes the dapp to newHeads and delivers blocks through the real new-block handler; publishRpcConnectionStatus is the handler's first suspension point.
+async function subscribeDappToNewBlocks(dapp: Awaited<ReturnType<typeof createApprovedSimulationDapp>>, simulationServicesOwner: SimulationServicesOwner, publishRpcConnectionStatus: PublishRpcConnectionStatus = noopPublishRpcConnectionStatus) {
+	const { createNewBlockAttemptCallback } = await import('../../app/ts/background/newBlockHandling.js')
+	const { createEthereumSubscription } = await import('../../app/ts/simulation/services/EthereumSubscriptionService.js')
+	await createEthereumSubscription({ method: 'eth_subscribe', params: ['newHeads'] }, dapp.socket)
+	const handleNewBlock = createNewBlockAttemptCallback({ getSimulationServices: simulationServicesOwner.getCurrent, publishRpcConnectionStatus, websiteTabConnections: dapp.websiteTabConnections })
+	return {
+		deliverNewBlock: async ({ ethereum }: NetworkServices) => await handleNewBlock(await ethereum.getBlock(undefined), ethereum, true),
+		getNewHeads: () => dapp.messages.filter((message) => message.method === 'newHeads'),
+	}
 }
 
 // The switch to network B cleared the simulation stack; the user then adds a transaction to B's stack before the paused request resumes.
@@ -2219,6 +2234,137 @@ describe('network transition snapshot', () => {
 			assert.equal(afterRetry.services, afterFailure.services)
 			assert.equal(installed.length, 2)
 		} finally {
+			retireAll()
+		}
+	})
+
+	test('a snapshot is simulated only on a client of its own network', async () => {
+		const { modules } = await createApprovedSimulationDapp()
+		const { getSimulationProviderForSnapshot, getUpdatedSimulationState } = await import('../../app/ts/background/simulationUpdating.js')
+		await modules.updateInterceptorTransactionStack(() => ({ operations: [createStackedTransaction(1n, networkA.chainId, STACKED_ON_A_RECIPIENT)] }))
+		const { getInstalled, retireAll } = createRecordingServicesOwner(networkA)
+		const otherChainServices = createNetworkServices(networkB)
+		const otherEndpointServices = createNetworkServices(networkAOnOtherEndpoint)
+		try {
+			const { simulation } = await modules.readNetworkState()
+			for (const services of [otherChainServices, otherEndpointServices]) {
+				assert.equal(getSimulationProviderForSnapshot(services.ethereum, simulation), undefined)
+				assert.deepEqual(await getUpdatedSimulationState(services.ethereum, simulation), PASSTHROUGH_STATE)
+				assert.deepEqual(services.requests, [])
+			}
+			const ownServices = getInstalled()
+			assert.equal(getSimulationProviderForSnapshot(ownServices.ethereum, simulation), ownServices.ethereum)
+			assert.equal((await getUpdatedSimulationState(ownServices.ethereum, simulation)).kind, 'simulated')
+			assert.ok(getSimulatedCallRecipients(ownServices).includes(STACKED_ON_A_RECIPIENT))
+		} finally {
+			retireAll()
+			otherChainServices.ethereum.cleanup()
+			otherEndpointServices.ethereum.cleanup()
+		}
+	})
+
+	test('a block of a client that a network switch replaces while the handler is suspended simulates nothing and publishes no newHeads, and the next block of the installed client carries on', async () => {
+		const dapp = await createApprovedSimulationDapp()
+		const { modules, switchToNetworkB } = dapp
+		const { owner, getInstalled, retireAll } = createRecordingServicesOwner(networkA)
+		const statusPublishStarted = createDeferredSignal()
+		const statusPublishRelease = createDeferredSignal()
+		const { deliverNewBlock, getNewHeads } = await subscribeDappToNewBlocks(dapp, owner, async () => {
+			statusPublishStarted.resolve()
+			await statusPublishRelease.promise
+		})
+		const servicesA = getInstalled()
+		try {
+			const blockOfReplacedClient = deliverNewBlock(servicesA)
+			await statusPublishStarted.promise
+			await switchToNetworkB(owner)
+			await addTransactionToNetworkBStack(modules)
+			statusPublishRelease.resolve()
+			await blockOfReplacedClient
+
+			assert.deepEqual(getSimulateV1Requests(servicesA), [])
+			assert.deepEqual(getNewHeads(), [])
+
+			const servicesB = getInstalled()
+			assert.notEqual(servicesB, servicesA)
+			await deliverNewBlock(servicesB)
+			assert.ok(getSimulatedCallRecipients(servicesB).includes(STACKED_ON_B_RECIPIENT))
+			// The live block, then the simulated block of B's stack on top of it.
+			assert.equal(getNewHeads().length, 2)
+			assert.deepEqual(getSimulateV1Requests(servicesA), [])
+			assert.equal(await modules.getLatestUnexpectedError(), undefined)
+		} finally {
+			statusPublishRelease.resolve()
+			retireAll()
+		}
+	})
+
+	test('a block that reads the stack while an endpoint change is in flight simulates nothing on the client that change replaces', async () => {
+		const dapp = await createApprovedSimulationDapp()
+		const { modules, messages } = dapp
+		await modules.updateInterceptorTransactionStack(() => ({ operations: [createStackedTransaction(1n, networkA.chainId, STACKED_ON_A_RECIPIENT)] }))
+		const { owner, getInstalled, retireAll } = createRecordingServicesOwner(networkA)
+		const { deliverNewBlock, getNewHeads } = await subscribeDappToNewBlocks(dapp, owner)
+		const settingsWritten = createDeferredSignal()
+		const transitionRelease = createDeferredSignal()
+		const servicesA = getInstalled()
+		try {
+			// Holds the transition after its settings write, so the handler finds the change committed but its client not yet replaced, and its stack read waits for the lock.
+			const endpointChange = modules.runSettingsTransition(owner, new Map(), {
+				writeSettings: async () => {
+					await modules.changeSimulationMode({ simulationMode: true, rpcNetwork: networkAOnOtherEndpoint })
+					settingsWritten.resolve()
+					await transitionRelease.promise
+					return 'committed'
+				},
+			})
+			await settingsWritten.promise
+			const blockOfReplacedClient = deliverNewBlock(servicesA)
+			// The live block goes out first: the client is still installed, so websites have not been told of any change yet.
+			await waitForPortMessageCount(messages, 'newHeads', 1, 5_000)
+			assert.equal(servicesA.ethereum.isRetired(), false)
+			transitionRelease.resolve()
+			await endpointChange
+			await blockOfReplacedClient
+
+			assert.equal(servicesA.ethereum.isRetired(), true)
+			assert.deepEqual(getSimulateV1Requests(servicesA), [])
+			assert.equal(getNewHeads().length, 1)
+			assert.equal(await modules.getLatestUnexpectedError(), undefined)
+		} finally {
+			transitionRelease.resolve()
+			retireAll()
+		}
+	})
+
+	test('simulated blocks that were computed on a client a network switch retires meanwhile are not published', async () => {
+		const dapp = await createApprovedSimulationDapp()
+		const { modules, switchToNetworkB } = dapp
+		await modules.updateInterceptorTransactionStack(() => ({ operations: [createStackedTransaction(1n, networkA.chainId, STACKED_ON_A_RECIPIENT)] }))
+		const { owner, getInstalled, retireAll } = createRecordingServicesOwner(networkA)
+		const { deliverNewBlock, getNewHeads } = await subscribeDappToNewBlocks(dapp, owner)
+		const simulationStarted = createDeferredSignal()
+		const simulationRelease = createDeferredSignal()
+		const servicesA = getInstalled()
+		servicesA.interceptRequests(async (request) => {
+			if (request.method !== 'eth_simulateV1') return
+			simulationStarted.resolve()
+			await simulationRelease.promise
+		})
+		try {
+			const blockOfReplacedClient = deliverNewBlock(servicesA)
+			await simulationStarted.promise
+			await switchToNetworkB(owner)
+			simulationRelease.resolve()
+			await blockOfReplacedClient
+
+			// The simulation paired A's client with A's stack; only its result arrived after the switch.
+			assert.ok(getSimulatedCallRecipients(servicesA).includes(STACKED_ON_A_RECIPIENT))
+			assert.equal(servicesA.ethereum.isRetired(), true)
+			assert.equal(getNewHeads().length, 1)
+			assert.equal(await modules.getLatestUnexpectedError(), undefined)
+		} finally {
+			simulationRelease.resolve()
 			retireAll()
 		}
 	})

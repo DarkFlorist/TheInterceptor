@@ -88,8 +88,9 @@ describe('active settings concurrency', () => {
 	test('a selection queued behind an endpoint reset uses the installed services', async () => {
 		installBrowserMock()
 		const { activateAddressSelection, changeActiveAddressAndChain, getSettings } = await loadModules()
+		const rpcNetwork = { ...(await getSettings()).activeRpcNetwork, httpsRpc: 'https://installed.example' }
 		const original = createEthereumWithGetBlockCounter({ count: 0 })
-		const installed = createEthereumWithGetBlockCounter({ count: 0 })
+		const installed = createEthereumWithGetBlockCounter({ count: 0 }, { rpcEntry: rpcNetwork })
 		const owner = createTestSimulationServicesOwner(original, () => installed)
 		let oldReads = 0
 		let installedReads = 0
@@ -107,7 +108,6 @@ describe('active settings concurrency', () => {
 			}
 			return await originalSend(message)
 		}
-		const rpcNetwork = { ...(await getSettings()).activeRpcNetwork, httpsRpc: 'https://installed.example' }
 		const safe: SafeEntry = { type: 'safe', name: 'Queued Safe', address: 3n, chainId: rpcNetwork.chainId, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [firstAddress.address] }
 		const first = changeActiveAddressAndChain(owner, new Map(), { simulationMode: true, rpcNetwork })
 		try {

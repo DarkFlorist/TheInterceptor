@@ -6,9 +6,8 @@ import { createPassthroughCompleteVisualizedSimulation, toResolvedSimulationStat
 import { NEW_BLOCK_ABORT, TIME_BETWEEN_BLOCKS } from '../utils/constants.js'
 import { reportUnexpectedError, isExpectedInfrastructureError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
-import { getRpcNetworkChange, isSignerOnlyNetwork } from '../utils/rpcNetworkChange.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { getSimulationProviderForSnapshot, type SimulationSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
+import { getSimulationProviderForSnapshot, servesSnapshotNetwork, type SimulationSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
 import { requestIsSimulationDataConsumerOpen, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getPopupVisualisationFingerprint } from './popupSimulationFingerprint.js'
 import { retainPreviousVisualisation } from '../utils/popupVisualisationLifecycle.js'
@@ -60,11 +59,6 @@ const hasSimulationInputOperations = (simulationState: SimulationState) => (
 
 // What a caller with its own snapshot shows when that snapshot has no visualisation; the stored result is shared by every refresh and may describe another network or stack.
 export const createUnavailableVisualisation = (): CompleteVisualizedSimulation => ({ ...createPassthroughCompleteVisualizedSimulation(0, 'invalid'), simulationUpdatingState: 'failed' })
-
-// Signer-only networks are not simulated, so they keep the previous network's services.
-const servesSnapshotNetwork = (ethereum: EthereumClientService, snapshot: SimulationSnapshot) => (
-	isSignerOnlyNetwork(snapshot.activeRpcNetwork) || !getRpcNetworkChange(snapshot.activeRpcNetwork, ethereum.getRpcEntry()).endpointChanged
-)
 
 // The shared visualisation follows the active network, so a refresh whose snapshot was read before a later committed network change, including a return to the same endpoint, neither cancels, simulates, stores nor broadcasts; the change queues the refresh of its own network. The check is synchronous, so nothing commits between it and the start of the step it guards; a change that commits while a write is in flight has its refresh serialized after that write.
 const snapshotNetworkIsActive = (snapshot: SimulationSnapshot) => snapshot.networkChangeGeneration === getCommittedNetworkChangeGeneration()

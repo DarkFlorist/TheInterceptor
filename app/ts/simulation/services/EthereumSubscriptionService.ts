@@ -49,6 +49,7 @@ const isSameWebsiteSocket = (left: WebsiteSocket, right: WebsiteSocket) => left.
 const filterChangesScope = {}
 const runFilterChangeSerially = createScopedKeyedSerialExecutor<typeof filterChangesScope, string>()
 
+// A network change retires the client before websites hear of the new chain, and the client's blocks describe the replaced network from then on. Each send first checks this with no await in between, so a retired client publishes nothing more for this block and the next block of the installed client carries on.
 export async function sendSubscriptionMessagesForNewBlock(
 	blockNumber: bigint,
 	ethereumClientService: EthereumClientService,
@@ -93,6 +94,7 @@ export async function sendSubscriptionMessagesForNewBlock(
 		switch (subscriptionOrFilter.type) {
 			case 'newHeads': {
 				const newBlock = await getLiveBlock()
+				if (ethereumClientService.isRetired()) return
 
 				sendSubscriptionReplyOrCallBack(websiteTabConnections, subscriptionOrFilter.subscriptionCreatorSocket, {
 					type: 'result',
@@ -102,7 +104,9 @@ export async function sendSubscriptionMessagesForNewBlock(
 				})
 
 				if (isSimulation) {
-					for (const simulatedBlock of await getSimulatedBlocks()) {
+					const simulatedBlocks = await getSimulatedBlocks()
+					if (ethereumClientService.isRetired()) return
+					for (const simulatedBlock of simulatedBlocks) {
 						// post our simulated blocks on top (reorg them)
 						sendSubscriptionReplyOrCallBack(websiteTabConnections, subscriptionOrFilter.subscriptionCreatorSocket, {
 							type: 'result',

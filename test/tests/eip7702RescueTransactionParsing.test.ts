@@ -532,6 +532,8 @@ describe('EIP-7702 rescue transaction parsing', () => {
 		const browserMock = installBrowserMock()
 		try {
 			const { formEthSendTransaction } = await import('../../app/ts/background/windows/confirmTransaction.js')
+			const { changeSimulationMode } = await import('../../app/ts/background/settings.js')
+			await changeSimulationMode({ simulationMode: true, rpcNetwork })
 			const sender = 0x0000000000000000000000000000000000000001n
 			const value = 2n * 10n ** 18n
 			const params = SendTransactionParams.parse({

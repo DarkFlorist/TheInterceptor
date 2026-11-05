@@ -281,7 +281,7 @@ describe('FetchSimulationStack simulation refreshes', () => {
 		try {
 			await harness.openFetchSimulationStack()
 			resetMessageCounts()
-			// Mirrors the simulation-mode new-block handler in background-startup.ts.
+			// Mirrors the simulation-mode new-block handler in newBlockHandling.ts.
 			await act(async () => { await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService) })
 			await settleMessageFlow()
 			assert.deepEqual(messageCounts, { simulationStatePublishes: 1, ethSimulateV1Requests: 1 })

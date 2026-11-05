@@ -79,7 +79,7 @@ export async function readNetworkSnapshot(simulationServicesOwner: Pick<Simulati
 	return await runNetworkTransition(async (reads) => ({ ...await reads.captureNetworkState(), services: simulationServicesOwner.getCurrent() }))
 }
 
-// readNetworkSnapshot without the services, for callers that already hold the services they simulate with, such as the shared visualisation refresh, or for work that changed the stack after its snapshot was read.
+// readNetworkSnapshot without the services, for callers that already hold the services they simulate with, such as the shared visualisation refresh and the new-block handler, or for work that changed the stack after its snapshot was read. This read waits for a network change in progress, so the result can describe a later network than the services held; getSimulationProviderForSnapshot then refuses that pair.
 export async function readNetworkState(): Promise<NetworkState> {
 	return await runNetworkTransition(async (reads) => await reads.captureNetworkState())
 }

@@ -177,10 +177,17 @@ export type NetworkState = {
 // A NetworkState together with the services that were installed when it was read.
 export type NetworkSnapshot = NetworkState & { readonly services: SimulationServices }
 
-export const getSimulationProviderForSnapshot = (ethereum: EthereumClientService, snapshot: SimulationSnapshot) => (
-	isSignerOnlyNetwork(snapshot.activeRpcNetwork) ? undefined : ethereum
+// Whether the client and the snapshot describe the same network. A caller that holds a client and reads a snapshot later can end up with two networks, because that read waits for a network change in progress. Signer-only networks are not simulated, so they keep the previous network's services. Both values are immutable, so the answer stays true for as long as the caller holds them.
+export const servesSnapshotNetwork = (ethereum: EthereumClientService, snapshot: SimulationSnapshot) => (
+	isSignerOnlyNetwork(snapshot.activeRpcNetwork) || !getRpcNetworkChange(snapshot.activeRpcNetwork, ethereum.getRpcEntry()).endpointChanged
 )
 
+// The client that may simulate the snapshot, or undefined if nothing may: a signer-only network has no provider, and a client of another network must not run this snapshot's input.
+export const getSimulationProviderForSnapshot = (ethereum: EthereumClientService, snapshot: SimulationSnapshot) => (
+	isSignerOnlyNetwork(snapshot.activeRpcNetwork) || !servesSnapshotNetwork(ethereum, snapshot) ? undefined : ethereum
+)
+
+// A client of another network simulates nothing and gets the passthrough state, so this function never runs one network's input on another network's client. A caller that must also publish nothing in that case checks servesSnapshotNetwork itself, because passthrough is a valid result on a signer-only network.
 export async function getUpdatedSimulationState(ethereum: EthereumClientService, snapshot: SimulationSnapshot) {
 	const provider = getSimulationProviderForSnapshot(ethereum, snapshot)
 	if (provider === undefined) return PASSTHROUGH_STATE
