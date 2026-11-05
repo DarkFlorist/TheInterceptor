@@ -39,6 +39,8 @@ export function createBoundedRetries<Key>({ baseDelayMs, attemptLimit, scheduleR
 	return {
 		retryAfterFailure,
 		reset,
+		resetAll: () => { for (const key of [...retries.keys()]) reset(key) },
+		getTrackedKeyCount: () => retries.size,
 		budgetLasts: (key: Key) => (retries.get(key)?.failedAttempts ?? 0) < attemptLimit,
 		isCurrent: (key: Key, generation: number) => retries.get(key)?.generation === generation,
 		getScheduledRetryCount: () => [...retries.values()].filter((entry) => entry.timer !== undefined).length,

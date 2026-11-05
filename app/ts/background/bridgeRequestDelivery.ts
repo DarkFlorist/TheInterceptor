@@ -9,10 +9,12 @@ export function acknowledgeAndTrackBridgeRequest(
 	requestId: number,
 	acknowledge: () => void,
 ): boolean {
+	// Only an ordered id takes part in the watermark: a malformed one is acknowledged but never recorded, so it cannot make later requests look already received.
+	const requestIdIsOrdered = Number.isSafeInteger(requestId) && requestId >= 0
 	const latestReceivedRequestId = latestReceivedRequestIds.get(socketIdentifier)
-	const requestWasAlreadyReceived = requestId >= 0 && latestReceivedRequestId !== undefined && requestId <= latestReceivedRequestId
+	const requestWasAlreadyReceived = requestIdIsOrdered && latestReceivedRequestId !== undefined && requestId <= latestReceivedRequestId
 	acknowledge()
 	if (requestWasAlreadyReceived) return false
-	if (requestId >= 0) latestReceivedRequestIds.set(socketIdentifier, requestId)
+	if (requestIdIsOrdered) latestReceivedRequestIds.set(socketIdentifier, requestId)
 	return true
 }

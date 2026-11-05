@@ -37,6 +37,18 @@ describe('bridge request delivery', () => {
 		expect(isHandledBridgeRequestId(1.5, 'eth_sendTransaction')).toBeFalse()
 	})
 
+	test('acknowledges a malformed request ID without recording it, so a later ordered request is handled', () => {
+		for (const malformedRequestId of [1.5, 2 ** 53, Number.POSITIVE_INFINITY, Number.NaN]) {
+			const latestReceivedRequestIds = new Map<string, number>()
+			let acknowledgementCount = 0
+			acknowledgeAndTrackBridgeRequest(latestReceivedRequestIds, 'socket', malformedRequestId, () => acknowledgementCount++)
+			expect(acknowledgementCount).toBe(1)
+			expect(latestReceivedRequestIds.has('socket')).toBeFalse()
+			expect(acknowledgeAndTrackBridgeRequest(latestReceivedRequestIds, 'socket', 1, () => acknowledgementCount++)).toBeTrue()
+			expect(isHandledBridgeRequestId(1, 'eth_sendTransaction')).toBeTrue()
+		}
+	})
+
 	test('does not deduplicate diagnostic request ID -1', () => {
 		const latestReceivedRequestIds = new Map<string, number>()
 		let acknowledgementCount = 0

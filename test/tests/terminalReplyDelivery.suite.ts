@@ -783,9 +783,9 @@ test('approving a simulated transaction answers the website before the window cl
 
 // Waits until no resolution of a request is in flight or awaiting a retry.
 async function waitForResolutionRetriesToFinish() {
-	const { getResolutionBookkeepingSize } = await import('../../app/ts/background/requestResolution.js')
-	for (let attempt = 0; attempt < 200 && getResolutionBookkeepingSize() > 0; attempt++) await new Promise((resolve) => setTimeout(resolve, 25))
-	assert.equal(getResolutionBookkeepingSize(), 0, 'the resolution retries finished')
+	const { getResolutionActivitySize } = await import('../../app/ts/background/requestResolution.js')
+	for (let attempt = 0; attempt < 200 && getResolutionActivitySize() > 0; attempt++) await new Promise((resolve) => setTimeout(resolve, 25))
+	assert.equal(getResolutionActivitySize(), 0, 'the resolution retries finished')
 }
 
 // Closing the confirmation window is a finishing step that is retried, not view work given up on: the reply keeps its window until the window is closed.
@@ -1067,9 +1067,9 @@ test('a reply posted without its delivered mark whose tab then closes is retired
 		assert.equal(getRepliesToWebsite(postedMessages).length, 1)
 		assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
 		assert.deepEqual(await modules.getPendingTerminalReplies(), [])
-		const { getResolutionBookkeepingSize } = await import('../../app/ts/background/requestResolution.js')
+		const { getResolutionActivitySize } = await import('../../app/ts/background/requestResolution.js')
 		const { getTerminalReplyBookkeepingSize } = await import('../../app/ts/background/terminalReplyDelivery.js')
-		assert.equal(getResolutionBookkeepingSize() + getTerminalReplyBookkeepingSize(), 0, 'no bookkeeping is left')
+		assert.equal(getResolutionActivitySize() + getTerminalReplyBookkeepingSize(), 0, 'no bookkeeping is left')
 	} finally {
 		browserMock.setStorageSetHandler(undefined)
 	}
@@ -1492,13 +1492,13 @@ for (const signerResult of signerResults) {
 		assert.deepEqual(getRepliesToWebsite(postedMessages), [], 'nothing was answered before the restart')
 		assert.deepEqual((await modules.getPendingTransactionsAndMessages())[0]?.resolutionInputs?.map((input) => input.kind), ['signerResult', 'decline'])
 
-		// The restarted extension: a fresh resolution module, with nothing in memory, recovers from the saved storage.
-		const restarted = await import(`../../app/ts/background/requestResolution.js?restart=${ encodeURIComponent(signerResult.name) }`)
-		assert.notEqual(restarted.resumeRequest, (await import('../../app/ts/background/requestResolution.js')).resumeRequest, 'the restarted module is a fresh one')
-		restarted.beginStartupRecovery()
-		await withSilencedConsole(async () => await restarted.resumeCommittedRequests(testResolutionContext(websiteTabConnections)))
+		// The restarted extension: with nothing in memory, it recovers from the saved storage.
+		const { beginStartupRecovery, getResolutionActivitySize, resetResolutionState, resumeCommittedRequests } = await import('../../app/ts/background/requestResolution.js')
+		resetResolutionState()
+		beginStartupRecovery()
+		await withSilencedConsole(async () => await resumeCommittedRequests(testResolutionContext(websiteTabConnections)))
 		await withSilencedConsole(waitForResolutionRetriesToFinish)
-		assert.equal(restarted.getResolutionBookkeepingSize(), 0)
+		assert.equal(getResolutionActivitySize(), 0)
 		await assertSettledOnceWithSuccess(postedMessages, result)
 		await assertSignerOutcomePersisted(signerResult.name, data)
 	})
@@ -1743,9 +1743,10 @@ for (const storedInput of ['signer result', 'decline'] as const) {
 			}
 			if (restart) {
 				assert.deepEqual(getRepliesToWebsite(postedMessages), [], 'nothing was answered before the restart')
-				const restarted = await import(`../../app/ts/background/requestResolution.js?refresh-restart=${ encodeURIComponent(storedInput) }`)
-				restarted.beginStartupRecovery()
-				await withSilencedConsole(async () => await restarted.resumeCommittedRequests(testResolutionContext(websiteTabConnections)))
+				const { beginStartupRecovery, resetResolutionState, resumeCommittedRequests } = await import('../../app/ts/background/requestResolution.js')
+				resetResolutionState()
+				beginStartupRecovery()
+				await withSilencedConsole(async () => await resumeCommittedRequests(testResolutionContext(websiteTabConnections)))
 				await withSilencedConsole(waitForResolutionRetriesToFinish)
 			}
 			const replies = getRepliesToWebsite(postedMessages)
@@ -1841,6 +1842,60 @@ test('a replaced port finishing its flush leaves the retry of the port that repl
 	const [reply] = replies
 	assert.equal(isRecord(reply) ? reply.requestId : undefined, 12)
 	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+})
+
+test('a pending-confirmation lock token counts only inside its scope, so a context copy used after it takes the lock', async () => {
+	const { updateConfirmationWindowAfterRemoving, withPendingConfirmationLock } = await import('../../app/ts/background/confirmationWindowLifecycle.js')
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	const confirmationWindow = pendingTransaction.popupOrTabId
+	const removedWindowIds: number[] = []
+	browserMock.setLiveWindowIds([confirmationWindow.id])
+	browserMock.setWindowRemoveHandler(async (windowId) => { removedWindowIds.push(windowId) })
+	const access = (pendingConfirmationLock: { held: boolean }) => ({ refreshConfirmationWindow: async () => true, pendingConfirmationLock })
+	const tabId = uniqueRequestIdentifier.requestSocket.tabId
+
+	// Inside the scope the token stands for the lock, which is not taken again.
+	const scopeToken = await withPendingConfirmationLock(async (lock) => {
+		await updateConfirmationWindowAfterRemoving(confirmationWindow, tabId, access(lock))
+		return lock
+	})
+	assert.equal(scopeToken.held, false)
+	assert.deepEqual(removedWindowIds, [confirmationWindow.id])
+
+	// After it, a copy of the token waits for the lock like anyone else.
+	browserMock.setLiveWindowIds([confirmationWindow.id])
+	let release: () => void = () => undefined
+	const released = new Promise<void>((resolve) => { release = resolve })
+	const otherHolder = withPendingConfirmationLock(async () => await released)
+	const updating = updateConfirmationWindowAfterRemoving(confirmationWindow, tabId, access(scopeToken))
+	await new Promise((resolve) => setTimeout(resolve, 20))
+	assert.deepEqual(removedWindowIds, [confirmationWindow.id], 'the copy waits for the lock')
+	release()
+	await otherHolder
+	await updating
+	assert.deepEqual(removedWindowIds, [confirmationWindow.id, confirmationWindow.id])
+})
+
+test('resetting the resolution state drops the kept intent and the scheduled retries, which the bookkeeping counts', async () => {
+	const { getResolutionActivitySize, getResolutionBookkeepingSize, resetResolutionState } = await import('../../app/ts/background/requestResolution.js')
+	const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
+	// Earlier tests leave startup resets and exhausted budgets, which only a restart drops.
+	resetResolutionState()
+	assert.equal(getResolutionBookkeepingSize(), 0)
+	// The reject's input cannot be written, so it stays recorded and its retry is scheduled.
+	browserMock.setStorageSetHandler(async () => { throw new Error('The input could not be written.') })
+	try {
+		await withSilencedConsole(async () => await rejectRequest(websiteTabConnections))
+		assert.equal(getResolutionActivitySize(), 1, 'the retry is the only activity')
+		assert.equal(getResolutionBookkeepingSize(), 2, 'the recorded input counts besides its retry')
+		resetResolutionState()
+		assert.equal(getResolutionBookkeepingSize(), 0)
+	} finally {
+		browserMock.setStorageSetHandler(undefined)
+	}
+	await new Promise((resolve) => setTimeout(resolve, 100))
+	assert.deepEqual(postedMessages, [], 'the reset cancelled the retry')
+	assert.equal((await modules.getPendingTransactionsAndMessages()).length, 1)
 })
 
 await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))

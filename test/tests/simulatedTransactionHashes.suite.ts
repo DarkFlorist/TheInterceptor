@@ -1366,7 +1366,7 @@ for (const state of restartStates) {
 				const expectedNewReplies = state.entry === 'delivered' ? [] : [{ result: modules.EthereumBytes32.serialize(stacked.signedTransaction.hash) }]
 
 				browserMock.setLiveWindowIds(windowSurvived ? [CONFIRMATION_WINDOW_ID] : [])
-				const { resumeCommittedRequests, getResolutionBookkeepingSize } = await import('../../app/ts/background/requestResolution.js')
+				const { resumeCommittedRequests, getResolutionActivitySize } = await import('../../app/ts/background/requestResolution.js')
 				const { getTerminalReplyBookkeepingSize } = await import('../../app/ts/background/terminalReplyDelivery.js')
 				const startUp = async () => await withSilencedConsole(async () => {
 					await modules.resolvePendingRequestsForMissingConfirmationWindows(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections)
@@ -1388,7 +1388,7 @@ for (const state of restartStates) {
 				assert.deepEqual(await modules.getPendingTerminalReplies(), [], 'the finished request leaves no entry')
 				assert.deepEqual(hashesOf(await getStackedTransactions()), [stacked.signedTransaction.hash], 'the stack keeps the accepted transaction')
 				if (windowSurvived && state.entry !== 'none' && state.windowPending) assert.deepEqual(closedWindows, [CONFIRMATION_WINDOW_ID], 'the window that showed the last request closes')
-				assert.equal(getResolutionBookkeepingSize() + getTerminalReplyBookkeepingSize(), 0, 'no bookkeeping is left')
+				assert.equal(getResolutionActivitySize() + getTerminalReplyBookkeepingSize(), 0, 'no bookkeeping is left')
 			})
 		}
 	}
@@ -1440,9 +1440,9 @@ test('deletes a finished request\'s delivered reply when the first delete fails'
 })
 
 const assertNoResolutionBookkeeping = async () => {
-	const { getResolutionBookkeepingSize } = await import('../../app/ts/background/requestResolution.js')
+	const { getResolutionActivitySize } = await import('../../app/ts/background/requestResolution.js')
 	const { getTerminalReplyBookkeepingSize } = await import('../../app/ts/background/terminalReplyDelivery.js')
-	assert.equal(getResolutionBookkeepingSize() + getTerminalReplyBookkeepingSize(), 0, 'no bookkeeping is left')
+	assert.equal(getResolutionActivitySize() + getTerminalReplyBookkeepingSize(), 0, 'no bookkeeping is left')
 }
 
 // Collects the unhandled promise rejections while running.
@@ -1922,8 +1922,8 @@ test('runs a popup close deferred behind an orphan rejection in the claim holder
 	assert.deepEqual((await modules.getPendingTransactionsAndMessages()).map((pending) => pending.uniqueRequestIdentifier.requestId), [2, 3])
 	assert.deepEqual(getPageResponses(postedMessages, orphan.requestId), [{ error: 4001 }], 'the orphan is rejected once')
 	await withSilencedConsole(async () => await waitForCondition(async () => {
-		const { getResolutionBookkeepingSize } = await import('../../app/ts/background/requestResolution.js')
-		return getResolutionBookkeepingSize() === 0
+		const { getResolutionActivitySize } = await import('../../app/ts/background/requestResolution.js')
+		return getResolutionActivitySize() === 0
 	}))
 	await assertNoResolutionBookkeeping()
 })
@@ -2021,8 +2021,8 @@ test('rejects a request once when its window closes and the finishing first fail
 	assert.equal(failures(), 1)
 	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [{ error: 4001 }])
 	await withSilencedConsole(async () => await waitForCondition(async () => {
-		const { getResolutionBookkeepingSize } = await import('../../app/ts/background/requestResolution.js')
-		return getResolutionBookkeepingSize() === 0
+		const { getResolutionActivitySize } = await import('../../app/ts/background/requestResolution.js')
+		return getResolutionActivitySize() === 0
 	}))
 	await assertNoResolutionBookkeeping()
 })
@@ -2051,16 +2051,16 @@ test('rejects a request once when a close deferred behind a failed accept first 
 	assert.equal(failures(), 1)
 	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [{ error: 4001 }])
 	await withSilencedConsole(async () => await waitForCondition(async () => {
-		const { getResolutionBookkeepingSize } = await import('../../app/ts/background/requestResolution.js')
-		return getResolutionBookkeepingSize() === 0
+		const { getResolutionActivitySize } = await import('../../app/ts/background/requestResolution.js')
+		return getResolutionActivitySize() === 0
 	}))
 	await assertNoResolutionBookkeeping()
 })
 
 const waitForNoResolutionBookkeeping = async () => await withSilencedConsole(async () => await waitForCondition(async () => {
-	const { getResolutionBookkeepingSize } = await import('../../app/ts/background/requestResolution.js')
+	const { getResolutionActivitySize } = await import('../../app/ts/background/requestResolution.js')
 	const { getTerminalReplyBookkeepingSize } = await import('../../app/ts/background/terminalReplyDelivery.js')
-	return getResolutionBookkeepingSize() + getTerminalReplyBookkeepingSize() === 0
+	return getResolutionActivitySize() + getTerminalReplyBookkeepingSize() === 0
 }))
 
 for (const lookup of ['its committed reply', 'the stack'] as const) {
@@ -2147,9 +2147,9 @@ for (const acceptOutcome of ['succeeds', 'fails'] as const) {
 }
 
 const waitForNoResolutionBookkeepingWhileFailing = async () => {
-	const { getResolutionBookkeepingSize } = await import('../../app/ts/background/requestResolution.js')
+	const { getResolutionActivitySize } = await import('../../app/ts/background/requestResolution.js')
 	const deadline = Date.now() + 10_000
-	while (getResolutionBookkeepingSize() > 0) {
+	while (getResolutionActivitySize() > 0) {
 		if (Date.now() > deadline) throw new Error('The retries did not stop')
 		await new Promise((resolve) => setTimeout(resolve, 20))
 	}
@@ -2456,7 +2456,7 @@ test('counts concurrent failures of one request against its one retry budget, wi
 		if ('interceptorErrorDiagnostics' in items) await new Promise((resolve) => setTimeout(resolve, 30))
 		writeStoredItems()
 	})
-	const { getResolutionBookkeepingSize } = await import('../../app/ts/background/requestResolution.js')
+	const { getResolutionActivitySize } = await import('../../app/ts/background/requestResolution.js')
 	try {
 		await withSilencedConsole(async () => {
 			// Two rejects at once, each deferred behind the accept's claim with a failing intent write.
@@ -2464,9 +2464,9 @@ test('counts concurrent failures of one request against its one retry budget, wi
 			await waitForCondition(async () => failedIntentWrites >= 2)
 			await new Promise((resolve) => setTimeout(resolve, 40))
 			// The accept's claim and its deferred decline, with at most one retry timer, which parks on the claim when it comes due.
-			assert.ok(getResolutionBookkeepingSize() <= 3, 'at most one retry timer')
+			assert.ok(getResolutionActivitySize() <= 3, 'at most one retry timer')
 			await new Promise((resolve) => setTimeout(resolve, 500))
-			assert.equal(getResolutionBookkeepingSize(), 2, 'the retry is parked, not polling')
+			assert.equal(getResolutionActivitySize(), 2, 'the retry is parked, not polling')
 		})
 		assert.equal(failedIntentWrites, 2, 'each failure counted once, and no attempts while the request is claimed')
 	} finally {
@@ -2498,7 +2498,7 @@ for (const recovery of ['a new reject', 'startup'] as const) {
 			if ('interceptorErrorDiagnostics' in items) await new Promise((resolve) => setTimeout(resolve, 1_800))
 			writeStoredItems()
 		})
-		const { getResolutionBookkeepingSize } = await import('../../app/ts/background/requestResolution.js')
+		const { getResolutionActivitySize } = await import('../../app/ts/background/requestResolution.js')
 		try {
 			await withSilencedConsole(async () => {
 				await rejectRequest(request, websiteTabConnections)
@@ -2506,7 +2506,7 @@ for (const recovery of ['a new reject', 'startup'] as const) {
 				let quietSince = Date.now()
 				const deadline = Date.now() + 40_000
 				while (Date.now() - quietSince < 2_500 && Date.now() < deadline) {
-					if (getResolutionBookkeepingSize() > 0) quietSince = Date.now()
+					if (getResolutionActivitySize() > 0) quietSince = Date.now()
 					await new Promise((resolve) => setTimeout(resolve, 50))
 				}
 			})

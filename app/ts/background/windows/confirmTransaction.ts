@@ -19,7 +19,7 @@ import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueReques
 import { replyToInterceptedRequestAfterManifestV2Reconnect } from '../messageSending.js'
 import { getQueuedTerminalReply } from '../terminalReplyDelivery.js'
 import { commitAndFinish, declineOrphanedRequestsAtStartup, declinePendingRequests, declineRequest, formRejectMessage, resetRequestRetryBudget, resolveRequestsOfClosedWindow, resumeRequest, submitSignerResult, withResolutionClaim, type ResolutionContext } from '../requestResolution.js'
-import { runConfirmationViewStep, withPendingConfirmationLock } from '../confirmationWindowLifecycle.js'
+import { type PendingConfirmationLock, runConfirmationViewStep, withPendingConfirmationLock } from '../confirmationWindowLifecycle.js'
 import { stringToBytes, keccak256 } from '../../utils/ethereumPrimitives.js'
 import { EthereumBytes32, EthereumQuantity, serialize } from '../../types/wire-types.js'
 import type { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
@@ -640,7 +640,7 @@ const createRequestIdentity = (uniqueRequestIdentifier: UniqueRequestIdentifier)
 
 const openConfirmationWindow = async () => await openPopupOrTab({ url: getHtmlFile('confirmTransaction'), type: 'popup', height: 800, width: 600 })
 // Called under the pending-confirmation lock (confirmationWindowLifecycle.ts). Requests whose window is gone are rejected as for a window the user closed, by resolutions that know the lock is held.
-const getPendingTransactionWindow = async (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections) => {
+const getPendingTransactionWindow = async (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, pendingConfirmationLock: PendingConfirmationLock) => {
 	// Each request is checked against its own window: requests whose window is gone are rejected, and a live confirmation window of another request is reused.
 	let liveWindow: Awaited<ReturnType<typeof getPopupOrTabById>>
 	const orphanedRequests: PendingTransactionOrSignableMessage[] = []
@@ -649,7 +649,7 @@ const getPendingTransactionWindow = async (ethereum: EthereumClientService, toke
 		if (window === undefined) orphanedRequests.push(pending)
 		else liveWindow ??= window
 	}
-	if (orphanedRequests.length > 0) await declinePendingRequests(orphanedRequests, { ...createResolutionContext(ethereum, tokenPriceService, websiteTabConnections), holdsPendingConfirmationLock: true })
+	if (orphanedRequests.length > 0) await declinePendingRequests(orphanedRequests, { ...createResolutionContext(ethereum, tokenPriceService, websiteTabConnections), pendingConfirmationLock })
 	return liveWindow ?? await openConfirmationWindow()
 }
 
@@ -708,8 +708,8 @@ export async function openConfirmTransactionDialogForMessage(
 					safeMessageValidationDetails = isSafeMessageAccountMismatchFailure(error) ? error.safeSignerErrorDetails : undefined
 			}
 		}
-		await withPendingConfirmationLock(async () => {
-			const openedDialog = await getPendingTransactionWindow(ethereumClientService, tokenPriceService, websiteTabConnections)
+		await withPendingConfirmationLock(async (pendingConfirmationLock) => {
+			const openedDialog = await getPendingTransactionWindow(ethereumClientService, tokenPriceService, websiteTabConnections, pendingConfirmationLock)
 			if (openedDialog === undefined) throw new Error('Failed to get pending transaction window!')
 			// A request id that is already pending, a replay or a reused id, gets no second confirmation: everything keyed by the id would mix the two, and the pending request answers the id.
 			if (await getPendingTransactionOrMessageByidentifier(request.uniqueRequestIdentifier) !== undefined) return
@@ -819,14 +819,14 @@ export async function openConfirmTransactionDialogForTransaction(
 		)
 		: formSendRawTransaction(ethereumClientService, effectiveTransactionParams, website, created, transactionIdentifier)
 	silenceChromeUnCaughtPromise(transactionToSimulatePromise)
-	const outcome = await withPendingConfirmationLock(async () => {
+	const outcome = await withPendingConfirmationLock(async (pendingConfirmationLock) => {
 		const finalizedSafePreparation = await safePreparation.finalize(
 			await transactionToSimulatePromise,
 			request.uniqueRequestIdentifier.requestSocket.tabId,
 		)
 		try {
 			const { transactionToSimulate, safeTransaction, approvalStatus: safeSignerMismatch, pendingSafeFields } = finalizedSafePreparation
-			const openedDialog = await getPendingTransactionWindow(ethereumClientService, tokenPriceService, websiteTabConnections)
+			const openedDialog = await getPendingTransactionWindow(ethereumClientService, tokenPriceService, websiteTabConnections, pendingConfirmationLock)
 			if (openedDialog === undefined) return formRejectMessage(METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, 'Failed to get pending transaction window')
 			// A request id that is already pending, a replay or a reused id, gets no second confirmation: everything keyed by the id would mix the two, and the pending request answers the id.
 			if (await getPendingTransactionOrMessageByidentifier(request.uniqueRequestIdentifier) !== undefined) return { success: true }
