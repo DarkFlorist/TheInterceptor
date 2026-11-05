@@ -53,6 +53,83 @@ describe('background eth_accounts', () => {
 		assert.equal(await withSilencedWarnings(async () => await areWeBlocking(unconsentedSocket.tabId, 'unconsented.example')), false)
 	})
 
+	const unusableRpcEntriesWithReadableActiveNetwork = [
+		{ description: 'corrupt', storedRpcEntries: 'corrupt' },
+		{ description: 'empty', storedRpcEntries: [] },
+	]
+
+	const setUpBlockAllWithPersistedConsent = async (websiteOrigin: string) => {
+		const { changeSimulationMode, getRequiredSettings, updateUserAddressBookEntries, updateWebsiteAccess } = await loadModules()
+		const activeAddress = 0x1010101010101010101010101010101010101010n
+		await updateUserAddressBookEntries(() => [{ type: 'contact', name: 'Blocked active address', address: activeAddress, chainId: 'AllChains', entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: false, declarativeNetRequestBlockMode: 'block-all' }])
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: activeAddress })
+		await updateWebsiteAccess(() => [{ website: { websiteOrigin, icon: undefined, title: undefined }, access: true }])
+		return await getRequiredSettings()
+	}
+
+	test.each(unusableRpcEntriesWithReadableActiveNetwork)('blocks a consented tab after a restart while the RPC entries are $description and the active network is readable', async ({ storedRpcEntries }) => {
+		const browserMock = installBrowserMock({ manifestVersion: 3 })
+		const { registerWebsiteConnectionAndReconcileRequestBlocks, areWeBlocking, getTabState, updateDeclarativeNetRequestBlocks } = await loadModules()
+		const { updateExtensionIcon } = await import('../../app/ts/background/iconHandler.js')
+		const { bumpPopupRefreshGeneration } = await import('../../app/ts/background/popupRefreshGeneration.js')
+		const websiteOrigin = 'consented-unusable-entries.example'
+		await setUpBlockAllWithPersistedConsent(websiteOrigin)
+		await browser.storage.local.set({ rpcEntries: storedRpcEntries })
+		const socket = { tabId: 9883, connectionName: 0n }
+		// A restarted service worker has no connections, so none is approved.
+		const websiteTabConnections: WebsiteTabConnections = new Map()
+		await withSilencedWarnings(async () => await updateDeclarativeNetRequestBlocks(websiteTabConnections))
+
+		await withSilencedWarnings(async () => await (await registerWebsiteConnectionAndReconcileRequestBlocks(websiteTabConnections, socket, { port: createPort(socket.tabId).port, socket, websiteOrigin, approved: false, wantsToConnect: false }, true)).requestBlocksReconciliation)
+
+		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [socket.tabId])
+		assert.equal(await withSilencedWarnings(async () => await areWeBlocking(socket.tabId, websiteOrigin)), true)
+		await withSilencedWarnings(async () => await updateExtensionIcon(socket.tabId, websiteOrigin, bumpPopupRefreshGeneration()))
+		const { tabIconDetails } = await getTabState(socket.tabId)
+		assert.equal(tabIconDetails.icon, ICON_NOT_ACTIVE_WITH_SHIELD)
+		assert.match(tabIconDetails.iconReason, /RPC configuration/)
+	})
+
+	test('derives tab blocking from approved connections on a signer-only network, whose empty RPC entries are a ready configuration', async () => {
+		const browserMock = installBrowserMock({ manifestVersion: 3 })
+		const { registerWebsiteConnectionAndReconcileRequestBlocks, setRpcConfiguration } = await loadModules()
+		const websiteOrigin = 'consented-signer-only.example'
+		const { activeRpcNetwork } = await setUpBlockAllWithPersistedConsent(websiteOrigin)
+		await setRpcConfiguration([], { name: 'Signer only', chainId: activeRpcNetwork.chainId + 1n, httpsRpc: undefined, currencyName: 'Ether?', currencyTicker: 'ETH?', primary: false, minimized: true })
+		const socket = { tabId: 9884, connectionName: 0n }
+		const websiteTabConnections: WebsiteTabConnections = new Map()
+
+		await withSilencedWarnings(async () => await (await registerWebsiteConnectionAndReconcileRequestBlocks(websiteTabConnections, socket, { port: createPort(socket.tabId).port, socket, websiteOrigin, approved: false, wantsToConnect: false }, true)).requestBlocksReconciliation)
+
+		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [])
+	})
+
+	test.each(unusableRpcEntriesWithReadableActiveNetwork)('does not approve a connection from a signer handshake or access reconciliation while the RPC entries are $description', async ({ storedRpcEntries }) => {
+		installBrowserMock({ manifestVersion: 3 })
+		const { handleInterceptedRequest, reconcileWebsiteApprovalAccesses, websiteSocketToString } = await loadModules()
+		const websiteOrigin = 'consented-no-grant.example'
+		const settings = await setUpBlockAllWithPersistedConsent(websiteOrigin)
+		await browser.storage.local.set({ rpcEntries: storedRpcEntries })
+		const socket = { tabId: 9885, connectionName: 0n }
+		const { port } = createPort(socket.tabId)
+		const connection = { port, socket, websiteOrigin, approved: false, wantsToConnect: true }
+		const websiteTabConnections: WebsiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: { [websiteSocketToString(socket)]: connection } }]])
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+
+		await withSilencedWarnings(async () => await handleInterceptedRequest(port, websiteOrigin, { websiteOrigin, icon: undefined, title: undefined }, simulationServicesOwner, socket, {
+			interceptorRequest: true,
+			interceptorInternalRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 990, requestSocket: socket },
+			method: 'connected_to_signer',
+			params: [true, 'MetaMask', 2],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus))
+		assert.equal(connection.approved, false)
+
+		await withSilencedWarnings(async () => await reconcileWebsiteApprovalAccesses(websiteTabConnections, settings))
+		assert.equal(connection.approved, false)
+	})
+
 	test('blocks a consented tab registered after the active RPC network becomes unreadable at runtime', async () => {
 		const browserMock = installBrowserMock({ manifestVersion: 3 })
 		const { registerWebsiteConnectionAndReconcileRequestBlocks, areWeBlocking, changeSimulationMode, updateDeclarativeNetRequestBlocks, updateUserAddressBookEntries, updateWebsiteAccess } = await loadModules()

@@ -521,6 +521,17 @@ describe('background eth_accounts', () => {
 		assert.deepEqual(messages.filter((message) => message.method === 'connect').map((message) => message.result), [[`0x${ admittedRpc.chainId.toString(16) }`]])
 	})
 
+	test('does not approve a connection when the RPC entries became corrupt while the request was parked', async () => {
+		installBrowserMock()
+		const { connection, getReply, messages } = await runRequestAcrossActiveRpcChangeBeforeAccessCheck(false, async () => {
+			await browser.storage.local.set({ rpcEntries: 'corrupt' })
+		})
+
+		assert.equal(getReply()?.error?.code, 4900)
+		assert.equal(connection.approved, false)
+		assert.equal(messages.some((message) => message.method === 'connect'), false)
+	})
+
 	test('does not re-approve a connection after a chain switch during the signer account prompt', async () => {
 		installBrowserMock()
 		const { changeActiveAddressAndChain, handleInterceptedRequest } = await loadModules()

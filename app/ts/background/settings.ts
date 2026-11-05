@@ -11,6 +11,7 @@ import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
 import type { BlockTimeManipulation } from '../types/visualizer-types.js'
 import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_BLOCK_MANIPULATION, DEFAULT_RPCS } from '../config/defaults.js'
+import { rpcConfigurationIsReady } from './rpcConfigurationAvailability.js'
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { mergeStoredWebsiteMetadata, sanitizeWebsiteAccess } from '../utils/websiteIcons.js'
 import type { SigningAddressPreference, SigningAddressPreferences } from '../types/signerTypes.js'
@@ -201,9 +202,14 @@ export function requireAvailableSettings(snapshot: SettingsSnapshot): Settings {
 	return snapshot.settings
 }
 
-// Projection for callers that branch on availability themselves.
+// Projection for callers that branch on availability themselves and only need the settings fields. An unavailable RPC configuration that kept a readable active network (corrupt, emptied or unwritable entries) still has settings, so this says nothing about whether the configuration is usable.
 export function settingsIfAvailable(snapshot: SettingsSnapshot): Settings | undefined {
 	return snapshot.status === 'available' ? snapshot.settings : undefined
+}
+
+// Projection for decisions that must treat every unavailable RPC configuration alike, such as granting access or choosing how tabs are blocked: settings only while the RPC configuration is ready.
+export function settingsIfRpcConfigurationReady(snapshot: SettingsSnapshot): Settings | undefined {
+	return rpcConfigurationIsReady(snapshot.rpcConfiguration) ? settingsIfAvailable(snapshot) : undefined
 }
 
 // Projection for granting access: unreadable approvals fail closed to none.

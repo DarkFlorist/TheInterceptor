@@ -7,7 +7,7 @@ import { activateAddressSelection, changeActiveAddressAndChain } from './activeS
 import { getSocketFromPort, isTopFramePort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { setDefaultSignerName, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
 import { getRpcConfigurationState, getRpcNetworkForChain } from './rpcConfigurationStorage.js'
-import { getMetamaskCompatibilityMode, getSettingsSnapshot, settingsIfAvailable, requireAvailableSettings } from './settings.js'
+import { getMetamaskCompatibilityMode, getSettingsSnapshot, settingsIfRpcConfigurationReady, requireAvailableSettings } from './settings.js'
 import { applyWalletSwitchReply } from './walletSwitch.js'
 import { verifyAccess, withSuppressedUnscopedConnectionEventsForSocketAsync } from './accessManagement.js'
 import type { ProviderMessage } from '../utils/requests.js'
@@ -282,7 +282,7 @@ export async function connectedToSigner(_simulationServicesOwner: SimulationServ
 		confirmSignerState(tabConnection, signerProviderGeneration)
 		await setDefaultSignerName(signerName)
 		await sendPopupMessageToOpenWindows({ method: 'popup_signer_name_changed' })
-		const settings = settingsIfAvailable(await getSettingsSnapshot())
+		const settings = settingsIfRpcConfigurationReady(await getSettingsSnapshot())
 		if (settings !== undefined && hasSignerCallbackAccess(websiteTabConnections, socket.tabId, approval)) {
 			if (!signerMissing && (!settings.simulationMode || settings.useSignersAddressAsActiveAddress)) {
 				sendSubscriptionReplyOrCallBackToPort(port, { type: 'result', method: 'request_signer_chainId', result: [] })

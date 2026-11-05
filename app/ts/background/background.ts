@@ -3,7 +3,7 @@ import type { RpcRequestContext } from '../types/confirmationRequest.js'
 import type { InpageScriptRequest, RPCReply, Settings } from '../types/interceptor-messages.js'
 import 'webextension-polyfill'
 import { getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
-import { captureRpcNetwork, getAdmittedRpcNetworkSnapshot, getSettingsSnapshot, updateWebsiteAccess, settingsIfAvailable, approvalsOrNone, requireAvailableSettings, settingsOnAdmittedRpcNetwork } from './settings.js'
+import { captureRpcNetwork, getAdmittedRpcNetworkSnapshot, getSettingsSnapshot, updateWebsiteAccess, settingsIfAvailable, settingsIfRpcConfigurationReady, approvalsOrNone, requireAvailableSettings, settingsOnAdmittedRpcNetwork } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getBlockByHash, getCode, getFilterChanges, getFilterLogs, getLogs, getPermissions, getStorageAt, getTransactionByHash, getTransactionCount, getTransactionReceipt, handleInterceptorError, installNewFilter, maxPriorityFeePerGas, netVersion, personalSign, requestInterceptorSimulatorStack, requestPermissions, sendTransaction, subscribe, switchEthereumChain, ethSimulateV1, feeHistory, uninstallNewFilter, unsubscribe, web3ClientVersion } from './simulationModeHandlers.js'
 import { PASSTHROUGH_STATE, type ResolvedExecutionSimulationState, type ResolvedSimulationInput, toResolvedExecutionSimulationState, toResolvedSimulationInput } from '../types/visualizer-types.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
@@ -566,7 +566,7 @@ export const replyAdmittedRpcNetworkNoLongerLive = (websiteTabConnections: Websi
 
 // A request can be parked on the website lookup or signer prompts after admission, so routing reads one live settings snapshot (simulation mode, signing Safe) and uses it unmixed, and every connection-granting access check runs against such a snapshot. A metadata-only change (name, explorer, list preferences) keeps the chain and endpoint, so the live snapshot still matches the admitted service pair; a chain change invalidates the live selection's chain-dependent decisions for the admitted pair.
 export async function getLiveSettingsOnAdmittedRpcNetwork(admittedSettings: Settings): Promise<LiveSettingsOnAdmittedRpcNetwork> {
-	const liveSettings = settingsIfAvailable(await getSettingsSnapshot())
+	const liveSettings = settingsIfRpcConfigurationReady(await getSettingsSnapshot())
 	if (liveSettings === undefined) return { kind: 'unavailable' }
 	const rpcNetworkChange = getRpcNetworkChange(admittedSettings.activeRpcNetwork, liveSettings.activeRpcNetwork)
 	if (rpcNetworkChange.chainChanged) return { kind: 'chain-changed' }

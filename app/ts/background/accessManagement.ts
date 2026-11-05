@@ -4,7 +4,7 @@ import { requestAccessFromUser } from './windows/interceptorAccess.js'
 import { retrieveWebsiteDetails, updateExtensionIcon } from './iconHandler.js'
 import type { TabConnection, TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { InpageScriptCallBack, Settings } from '../types/interceptor-messages.js'
-import { getSettingsSnapshot, updateWebsiteAccess, settingsIfAvailable, requireReadableApprovals, getWebsiteApprovalsSnapshot, requireAvailableSettings } from './settings.js'
+import { getSettingsSnapshot, updateWebsiteAccess, settingsIfRpcConfigurationReady, requireReadableApprovals, getWebsiteApprovalsSnapshot, requireAvailableSettings } from './settings.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
 import { type WebsiteSocket, getHostWithPort, getTabIfExists, silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { getAllTabStates, updateTabState } from './storageVariables.js'
@@ -26,6 +26,7 @@ import { notifyWebsiteLifecycle } from './websiteLifecycle.js'
 import { hasAccess, hasAddressAccess, type ApprovalState } from './websiteAccessPolicy.js'
 import { getWebsiteActiveAddress } from './websiteActiveAddress.js'
 import { updateWebsiteAccessAndContentScriptInjectionStrategy } from './websiteAccessUpdating.js'
+import { rpcConfigurationIsReady } from './rpcConfigurationAvailability.js'
 
 function setWebsitePortApproval(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, approved: boolean) {
 	const connection = getWebsiteSocketConnection(websiteTabConnections, socket)
@@ -261,20 +262,20 @@ async function getConnectionAccess(websiteTabConnections: WebsiteTabConnections,
 
 // The current persisted settings: active RPC network, active-address fields and approvals. Anything that keeps them from being available is returned instead of thrown, with the failure a committed write's entry point surfaces: an `unavailable` snapshot (the RPC configuration is unavailable, an expected state the RPC status publishes) as the RPC-configuration-unavailable error, and a `rejected` read (an unexpected failure, for example a failed repair write of a corrupt field) as its rejection.
 type AccessReconciliationSettingsRead =
-	| { readonly status: 'available', readonly settings: Settings }
+	| { readonly status: 'available', readonly settings: Settings, readonly rpcConfigurationReady: boolean }
 	| { readonly status: 'unavailable' | 'rejected', readonly failure: unknown }
 
 async function readSettingsForAccessReconciliation(): Promise<AccessReconciliationSettingsRead> {
 	try {
 		const snapshot = await getSettingsSnapshot()
-		if (snapshot.status === 'available') return { status: 'available', settings: snapshot.settings }
+		if (snapshot.status === 'available') return { status: 'available', settings: snapshot.settings, rpcConfigurationReady: rpcConfigurationIsReady(snapshot.rpcConfiguration) }
 	} catch (error: unknown) {
 		return { status: 'rejected', failure: error }
 	}
 	return { status: 'unavailable', failure: createRpcConfigurationUnavailableError() }
 }
 
-// What one reconciliation run applies: the current settings read inside the lock, which may grant, or (when they are unavailable) the caller's committed settings, which may only revoke.
+// What one reconciliation run applies: the current settings read inside the lock, which may grant while the RPC configuration is ready, or (when they are unavailable) the caller's committed settings, which may only revoke.
 type AccessReconciliationInputs = {
 	readonly settings: Settings
 	readonly grantsAllowed: boolean
@@ -342,8 +343,8 @@ const getApprovedTabs = (websiteTabConnections: WebsiteTabConnections) => {
 	}
 	return approvedTabs
 }
-// Without a readable active RPC network a tab's active address cannot be resolved for its chain, and runtime connection approval is not restored either (connections register unapproved and requests are refused before access checks). Tab blocking is a user privacy control that must not depend on RPC availability, so fail closed: block every connected tab that is approved at runtime or whose website has persisted consent, while any active address blocks all external requests.
-const getTabIdsToBlockWithoutActiveRpcNetwork = async (websiteTabConnections: WebsiteTabConnections, websiteAccess: WebsiteAccessArray) => {
+// Without a ready RPC configuration a tab's active address cannot be trusted for its chain, and runtime connection approval is not restored either (connections register unapproved and requests are refused before access checks). Tab blocking is a user privacy control that must not depend on RPC availability, so fail closed: block every connected tab that is approved at runtime or whose website has persisted consent, while any active address blocks all external requests.
+const getTabIdsToBlockWithoutReadyRpcConfiguration = async (websiteTabConnections: WebsiteTabConnections, websiteAccess: WebsiteAccessArray) => {
 	const anyActiveAddressBlocksAll = (await getActiveAddresses()).some((entry) => entry.declarativeNetRequestBlockMode === 'block-all')
 	if (!anyActiveAddressBlocksAll) return []
 	const tabIdsToBlock: number[] = []
@@ -357,14 +358,14 @@ const getTabIdsToBlockWithoutActiveRpcNetwork = async (websiteTabConnections: We
 type RequestBlocks = {
 	readonly tabIdsToBlock: readonly number[]
 	readonly sitesToBlock: readonly string[]
-	// True when the tab set is only a conservative lower bound (active RPC network unreadable); tab blocks that are already applied must then be kept, never lifted.
+	// True when the tab set is only a conservative lower bound (RPC configuration not ready); tab blocks that are already applied must then be kept, never lifted.
 	readonly keepAppliedTabBlocks: boolean
 }
 
 const getSitesToBlock = (websiteAccess: WebsiteAccessArray) => websiteAccess.filter((access) => access.declarativeNetRequestBlockMode === 'block-all').map((acccess) => acccess.website.websiteOrigin)
 
-// The single tab-blocking mode decision: undefined (the RPC configuration has no usable active network) means tab blocking is derived from persisted consent.
-const getSettingsForTabBlocking = async () => settingsIfAvailable(await getSettingsSnapshot())
+// The single tab-blocking mode decision: undefined (the RPC configuration is not ready, even if it kept a readable active network) means tab blocking is derived from persisted consent.
+const getSettingsForTabBlocking = async () => settingsIfRpcConfigurationReady(await getSettingsSnapshot())
 
 const getTabsAndAddressesToBlock = async (websiteTabConnections: WebsiteTabConnections): Promise<RequestBlocks> => {
 	const approvedTabIds = getApprovedTabs(websiteTabConnections)
@@ -372,7 +373,7 @@ const getTabsAndAddressesToBlock = async (websiteTabConnections: WebsiteTabConne
 	if (settings === undefined) {
 		// A fresh read on purpose: when storage is unreadable the snapshot's fail-closed approvals are empty, which would lift applied site blocks, so this read (like getActiveAddresses) rejects and every applied rule stays in place.
 		const websiteAccess = requireReadableApprovals(await getWebsiteApprovalsSnapshot({ repairCorrupt: true }))
-		return { tabIdsToBlock: await getTabIdsToBlockWithoutActiveRpcNetwork(websiteTabConnections, websiteAccess), sitesToBlock: getSitesToBlock(websiteAccess), keepAppliedTabBlocks: true }
+		return { tabIdsToBlock: await getTabIdsToBlockWithoutReadyRpcConfiguration(websiteTabConnections, websiteAccess), sitesToBlock: getSitesToBlock(websiteAccess), keepAppliedTabBlocks: true }
 	}
 	const tabIdsToBlock = (await getActiveAddressesForAllTabs(settings)).filter((tabData) => approvedTabIds.has(tabData.tabId)).filter((tabData) => tabData.activeAddress?.declarativeNetRequestBlockMode === 'block-all').map((tabData) => tabData.tabId)
 	return { tabIdsToBlock, sitesToBlock: getSitesToBlock(requireReadableApprovals(await getWebsiteApprovalsSnapshot({ repairCorrupt: true }))), keepAppliedTabBlocks: false }
@@ -589,7 +590,7 @@ export async function reconcileWebsiteApprovalAccessesCollectingFailures(
 		const currentSettings = await readSettingsForAccessReconciliation()
 		if (currentSettings.status === 'rejected') runFailures.push(currentSettings.failure)
 		const inputs: AccessReconciliationInputs = currentSettings.status === 'available'
-			? { settings: currentSettings.settings, grantsAllowed: true }
+			? { settings: currentSettings.settings, grantsAllowed: currentSettings.rpcConfigurationReady }
 			: { settings: committedSettings, grantsAllowed: false }
 		// Tabs are reconciled concurrently and connections of a tab in order; reconcileConnection never throws, so every connection is reconciled.
 		const tabFailures = await Promise.all([...websiteTabConnections.values()].map(async (tabConnection) => {
