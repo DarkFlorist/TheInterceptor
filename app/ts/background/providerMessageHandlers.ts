@@ -7,7 +7,7 @@ import { activateAddressSelection, changeActiveAddressAndChain } from './activeS
 import { getSocketFromPort, isTopFramePort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { setDefaultSignerName, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
 import { getRpcConfigurationState, getRpcNetworkForChain } from './rpcConfigurationStorage.js'
-import { getMetamaskCompatibilityMode, getSettingsSnapshot, settingsIfRpcConfigurationReady, requireAvailableSettings } from './settings.js'
+import { getLiveSettingsOnAdmittedRpcNetwork, getMetamaskCompatibilityMode, getSettingsSnapshot, settingsIfRpcConfigurationReady, requireAvailableSettings } from './settings.js'
 import { applyWalletSwitchReply } from './walletSwitch.js'
 import { verifyAccess, withSuppressedUnscopedConnectionEventsForSocketAsync } from './accessManagement.js'
 import type { ProviderMessage } from '../utils/requests.js'
@@ -291,9 +291,11 @@ export async function connectedToSigner(_simulationServicesOwner: SimulationServ
 		// Restore cached address consent for ordinary EOAs as well as Safes, even without lifecycle observers.
 		if (settings !== undefined && isTopFrame && approval === 'hasAccess' && activeAddress !== undefined) {
 			const activeAddressEntry = await getActiveAddressEntryForChain(activeAddress, settings.activeRpcNetwork.chainId)
+			// The lookup above awaited, so the restore is decided on a fresh read, with no await after it.
+			const liveSettings = await getLiveSettingsOnAdmittedRpcNetwork(settings)
 			const connection = getWebsiteConnectionForPort(websiteTabConnections, port)
-			if (connection !== undefined) {
-				verifyAccess(websiteTabConnections, socket, false, connection.websiteOrigin, activeAddressEntry, settings)
+			if (liveSettings.kind === 'ready' && connection !== undefined) {
+				verifyAccess(websiteTabConnections, socket, false, connection.websiteOrigin, activeAddressEntry, liveSettings.settings)
 			}
 		}
 		// A reload clears signer accounts. Refresh approved sites independently of Safe consent; publication still checks address access.

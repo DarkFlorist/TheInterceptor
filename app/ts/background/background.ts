@@ -3,7 +3,7 @@ import type { RpcRequestContext } from '../types/confirmationRequest.js'
 import type { InpageScriptRequest, RPCReply, Settings } from '../types/interceptor-messages.js'
 import 'webextension-polyfill'
 import { getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
-import { captureRpcNetwork, getAdmittedRpcNetworkSnapshot, getSettingsSnapshot, updateWebsiteAccess, settingsIfAvailable, settingsIfRpcConfigurationReady, approvalsOrNone, requireAvailableSettings, settingsOnAdmittedRpcNetwork } from './settings.js'
+import { captureRpcNetwork, getAdmittedRpcNetworkSnapshot, getSettingsSnapshot, updateWebsiteAccess, settingsIfAvailable, approvalsOrNone, requireAvailableSettings, settingsOnAdmittedRpcNetwork, getLiveSettingsOnAdmittedRpcNetwork, type AdmittedRpcNetworkNoLongerLive } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getBlockByHash, getCode, getFilterChanges, getFilterLogs, getLogs, getPermissions, getStorageAt, getTransactionByHash, getTransactionCount, getTransactionReceipt, handleInterceptorError, installNewFilter, maxPriorityFeePerGas, netVersion, personalSign, requestInterceptorSimulatorStack, requestPermissions, sendTransaction, subscribe, switchEthereumChain, ethSimulateV1, feeHistory, uninstallNewFilter, unsubscribe, web3ClientVersion } from './simulationModeHandlers.js'
 import { PASSTHROUGH_STATE, type ResolvedExecutionSimulationState, type ResolvedSimulationInput, toResolvedExecutionSimulationState, toResolvedSimulationInput } from '../types/visualizer-types.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
@@ -39,7 +39,6 @@ import { hasAccess as getWebsiteAccessApprovalState, hasAddressAccess as getWebs
 import { replyIfRpcConfigurationIsUnavailable } from './rpcConfigurationRequestGuard.js'
 import { RPC_CONFIGURATION_UNAVAILABLE_ERROR } from '../types/interceptor-reply-messages.js'
 import { isRpcConfigurationUnavailableError } from '../utils/rpcConfigurationError.js'
-import { getRpcNetworkChange } from '../utils/rpcNetworkChange.js'
 
 if (initializeWatchAssetWindowListeners()) {
 	void processWatchAssetQueue(undefined).catch(async (error: unknown) => {
@@ -548,12 +547,6 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 	}
 }
 
-export type AdmittedRpcNetworkNoLongerLive = 'unavailable' | 'chain-changed' | 'endpoint-changed'
-
-type LiveSettingsOnAdmittedRpcNetwork =
-	| { readonly kind: 'ready', readonly settings: Settings }
-	| { readonly kind: AdmittedRpcNetworkNoLongerLive }
-
 const ADMITTED_RPC_NETWORK_NO_LONGER_LIVE_ERRORS = {
 	'unavailable': RPC_CONFIGURATION_UNAVAILABLE_ERROR,
 	'chain-changed': ERROR_ACTIVE_RPC_NETWORK_CHANGED.error,
@@ -562,17 +555,6 @@ const ADMITTED_RPC_NETWORK_NO_LONGER_LIVE_ERRORS = {
 
 export const replyAdmittedRpcNetworkNoLongerLive = (websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, reason: AdmittedRpcNetworkNoLongerLive) => {
 	return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), error: ADMITTED_RPC_NETWORK_NO_LONGER_LIVE_ERRORS[reason] })
-}
-
-// A request can be parked on the website lookup or signer prompts after admission, so routing reads one live settings snapshot (simulation mode, signing Safe) and uses it unmixed, and every connection-granting access check runs against such a snapshot. A metadata-only change (name, explorer, list preferences) keeps the chain and endpoint, so the live snapshot still matches the admitted service pair; a chain change invalidates the live selection's chain-dependent decisions for the admitted pair.
-export async function getLiveSettingsOnAdmittedRpcNetwork(admittedSettings: Settings): Promise<LiveSettingsOnAdmittedRpcNetwork> {
-	const liveSettings = settingsIfRpcConfigurationReady(await getSettingsSnapshot())
-	if (liveSettings === undefined) return { kind: 'unavailable' }
-	const rpcNetworkChange = getRpcNetworkChange(admittedSettings.activeRpcNetwork, liveSettings.activeRpcNetwork)
-	if (rpcNetworkChange.chainChanged) return { kind: 'chain-changed' }
-	// Rejected rather than continued: the admitted service pair still talks to the deselected endpoint (which the user may have left for privacy or reliability), and a signer-only selection's fallback service may serve another chain.
-	if (rpcNetworkChange.endpointChanged) return { kind: 'endpoint-changed' }
-	return { kind: 'ready', settings: liveSettings }
 }
 
 // Storage reads, Safe preparation and wake-status publishing all await after routing is decided, so a signer forward is rechecked against the live simulation mode at the last await before it is posted.

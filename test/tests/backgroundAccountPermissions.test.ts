@@ -4006,18 +4006,22 @@ describe('background eth_accounts', () => {
 
 	test('verifyAccess requires an address decision despite website approval', async () => {
 		installBrowserMock()
-		const { getRequiredSettings, updateWebsiteAccess, verifyAccess } = await loadModules()
+		const { getLiveSettingsOnAdmittedRpcNetwork, getRequiredSettings, updateWebsiteAccess, verifyAccess } = await loadModules()
+		const getGrantSettings = async () => {
+			const liveSettings = await getLiveSettingsOnAdmittedRpcNetwork(await getRequiredSettings())
+			if (liveSettings.kind !== 'ready') throw new Error('Expected a ready RPC configuration')
+			return liveSettings.settings
+		}
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
 		const address = { address: 0x1111111111111111111111111111111111111111n, askForAddressAccess: true, type: 'contact', name: 'Test Address' } as const
 		const socket = { tabId: 1, connectionName: 0n }
 		const websiteTabConnections: WebsiteTabConnections = new Map()
 		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [] }])
-		const settings = await getRequiredSettings()
 
-		assert.equal(verifyAccess(websiteTabConnections, socket, true, websiteOrigin, address, settings), 'askAccess')
+		assert.equal(verifyAccess(websiteTabConnections, socket, true, websiteOrigin, address, await getGrantSettings()), 'askAccess')
 
 		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: address.address, access: false }] }])
-		assert.equal(verifyAccess(websiteTabConnections, socket, true, websiteOrigin, address, await getRequiredSettings()), 'noAccess')
+		assert.equal(verifyAccess(websiteTabConnections, socket, true, websiteOrigin, address, await getGrantSettings()), 'noAccess')
 	})
 })

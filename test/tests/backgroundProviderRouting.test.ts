@@ -532,6 +532,28 @@ describe('background eth_accounts', () => {
 		assert.equal(messages.some((message) => message.method === 'connect'), false)
 	})
 
+	test.each([
+		{ description: 'the RPC entries become corrupt', storedChange: 'corrupt' },
+		{ description: 'the chain changes', storedChange: 'chain' },
+		{ description: 'the endpoint changes', storedChange: 'endpoint' },
+	])('access reconciliation does not grant a connection when $description during its active-address lookup', async ({ storedChange }) => {
+		installBrowserMock()
+		const { getRequiredSettings, reconcileWebsiteApprovalAccesses, setRpcConfiguration } = await loadModules()
+		const { admittedRpc, connection, messages, websiteTabConnections } = await createConsentFreeOnAdmittedChainConnection({ approved: false, simulationMode: true })
+		const committedSettings = await getRequiredSettings()
+		// Read 1 is the request-block update and read 2 the reconciliation's own settings read; the tab state read after it belongs to the connection's address lookup.
+		onFirstTabStateReadAfterSettingsRead(2, async () => {
+			if (storedChange === 'corrupt') return await browser.storage.local.set({ rpcEntries: 'corrupt' })
+			const changedRpc = storedChange === 'chain' ? otherChainRpcOf(admittedRpc) : otherEndpointRpcOf(admittedRpc)
+			await setRpcConfiguration([admittedRpc, changedRpc], changedRpc)
+		})
+
+		await reconcileWebsiteApprovalAccesses(websiteTabConnections, committedSettings)
+
+		assert.equal(connection.approved, false)
+		assert.equal(messages.some((message) => message.method === 'connect' || message.method === 'chainChanged'), false)
+	})
+
 	test('does not re-approve a connection after a chain switch during the signer account prompt', async () => {
 		installBrowserMock()
 		const { changeActiveAddressAndChain, handleInterceptedRequest } = await loadModules()

@@ -4,7 +4,7 @@ import { requestAccessFromUser } from './windows/interceptorAccess.js'
 import { retrieveWebsiteDetails, updateExtensionIcon } from './iconHandler.js'
 import type { TabConnection, WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { InpageScriptCallBack, Settings } from '../types/interceptor-messages.js'
-import { getSettingsSnapshot, updateWebsiteAccess, settingsIfRpcConfigurationReady, requireReadableApprovals, getWebsiteApprovalsSnapshot, requireAvailableSettings } from './settings.js'
+import { getLiveSettingsOnAdmittedRpcNetwork, getSettingsSnapshot, type LiveSettings, updateWebsiteAccess, settingsIfRpcConfigurationReady, requireReadableApprovals, getWebsiteApprovalsSnapshot, requireAvailableSettings } from './settings.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
 import { type WebsiteSocket, getHostWithPort } from '../utils/requests.js'
 import { getAllTabStates } from './storageVariables.js'
@@ -24,7 +24,6 @@ import { notifyWebsiteLifecycle } from './websiteLifecycle.js'
 import { hasAccess, hasAddressAccess, type ApprovalState } from './websiteAccessPolicy.js'
 import { getWebsiteActiveAddress } from './websiteActiveAddress.js'
 import { updateWebsiteAccessAndContentScriptInjectionStrategy } from './websiteAccessUpdating.js'
-import { rpcConfigurationIsReady } from './rpcConfigurationAvailability.js'
 
 function setWebsitePortApproval(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, approved: boolean) {
 	const connection = getWebsiteSocketConnection(websiteTabConnections, socket)
@@ -87,7 +86,8 @@ type VerifyAccessOptions = {
 	readonly ignoreConnectionApproval?: boolean
 }
 
-export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, askAccessIfUnknown: boolean, websiteOrigin: string, requestAccessForAddress: AddressBookEntry | undefined, settings: Settings, options: VerifyAccessOptions = {}): ApprovalState {
+// Can approve the connection and announce the settings' chain to the page, so it takes LiveSettings: call it with no await after getLiveSettingsOnAdmittedRpcNetwork.
+export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, askAccessIfUnknown: boolean, websiteOrigin: string, requestAccessForAddress: AddressBookEntry | undefined, settings: LiveSettings, options: VerifyAccessOptions = {}): ApprovalState {
 	const connection = getWebsiteSocketConnection(websiteTabConnections, socket)
 	if (connection?.approved && options.ignoreConnectionApproval !== true) return 'hasAccess'
 	const access = requestAccessForAddress !== undefined ? hasAddressAccess(settings.websiteAccess, websiteOrigin, requestAccessForAddress) : hasAccess(settings.websiteAccess, websiteOrigin)
@@ -179,10 +179,11 @@ export async function setAccess(website: Website, access: boolean, address: bigi
 	})
 }
 
+// The only code that approves a connection.
 function connectToPort(
 	websiteTabConnections: WebsiteTabConnections,
 	socket: WebsiteSocket,
-	settings: Settings,
+	settings: LiveSettings,
 	connectWithActiveAddress: bigint | undefined,
 ): true {
 	const wasApproved = getWebsiteSocketConnection(websiteTabConnections, socket)?.approved === true
@@ -260,20 +261,20 @@ async function getConnectionAccess(websiteTabConnections: WebsiteTabConnections,
 
 // The current persisted settings: active RPC network, active-address fields and approvals. Anything that keeps them from being available is returned instead of thrown, with the failure a committed write's entry point surfaces: an `unavailable` snapshot (the RPC configuration is unavailable, an expected state the RPC status publishes) as the RPC-configuration-unavailable error, and a `rejected` read (an unexpected failure, for example a failed repair write of a corrupt field) as its rejection.
 type AccessReconciliationSettingsRead =
-	| { readonly status: 'available', readonly settings: Settings, readonly rpcConfigurationReady: boolean }
+	| { readonly status: 'available', readonly settings: Settings }
 	| { readonly status: 'unavailable' | 'rejected', readonly failure: unknown }
 
 async function readSettingsForAccessReconciliation(): Promise<AccessReconciliationSettingsRead> {
 	try {
 		const snapshot = await getSettingsSnapshot()
-		if (snapshot.status === 'available') return { status: 'available', settings: snapshot.settings, rpcConfigurationReady: rpcConfigurationIsReady(snapshot.rpcConfiguration) }
+		if (snapshot.status === 'available') return { status: 'available', settings: snapshot.settings }
 	} catch (error: unknown) {
 		return { status: 'rejected', failure: error }
 	}
 	return { status: 'unavailable', failure: createRpcConfigurationUnavailableError() }
 }
 
-// What one reconciliation run applies: the current settings read inside the lock, which may grant while the RPC configuration is ready, or (when they are unavailable) the caller's committed settings, which may only revoke.
+// What one reconciliation run applies: the current settings read inside the lock, which may grant (each grant still rechecks them immediately before it, see reconcileConnection), or (when they are unavailable) the caller's committed settings, which may only revoke.
 type AccessReconciliationInputs = {
 	readonly settings: Settings
 	readonly grantsAllowed: boolean
@@ -303,7 +304,11 @@ async function reconcileConnection(websiteTabConnections: WebsiteTabConnections,
 	if (access !== 'hasAccess') return disconnectIfApproved(websiteTabConnections, connection)
 	if (connection.approved || !inputs.grantsAllowed) return []
 	try {
-		connectToPort(websiteTabConnections, connection.socket, inputs.settings, activeAddress?.address)
+		// The active-address lookup and the connections before this one awaited, so the grant is decided on a fresh read, with no await after it.
+		const liveSettings = await getLiveSettingsOnAdmittedRpcNetwork(inputs.settings)
+		if (liveSettings.kind !== 'ready' || connection.approved) return []
+		if (getConnectionAccessForAddress(liveSettings.settings.websiteAccess, connection, activeAddress) !== 'hasAccess') return []
+		connectToPort(websiteTabConnections, connection.socket, liveSettings.settings, activeAddress?.address)
 		return []
 	} catch (error: unknown) {
 		return [error]
@@ -533,7 +538,7 @@ export async function reconcileWebsiteApprovalAccessesCollectingFailures(
 		const currentSettings = await readSettingsForAccessReconciliation()
 		if (currentSettings.status === 'rejected') runFailures.push(currentSettings.failure)
 		const inputs: AccessReconciliationInputs = currentSettings.status === 'available'
-			? { settings: currentSettings.settings, grantsAllowed: currentSettings.rpcConfigurationReady }
+			? { settings: currentSettings.settings, grantsAllowed: true }
 			: { settings: committedSettings, grantsAllowed: false }
 		// Tabs are reconciled concurrently and connections of a tab in order; reconcileConnection never throws, so every connection is reconciled.
 		const tabFailures = await Promise.all([...websiteTabConnections.values()].map(async (tabConnection) => {

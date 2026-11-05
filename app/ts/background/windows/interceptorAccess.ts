@@ -4,11 +4,11 @@ import type { InterceptorAccessChangeAddress, InterceptorAccessRefresh, Intercep
 import { createScopedKeyedSerialExecutor, Semaphore } from '../../utils/semaphore.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { getAssociatedAddresses, persistWebsiteAccessChange, updateWebsiteApprovalAccesses, verifyAccess, withSuppressedUnscopedConnectionEventsForSocket, withSuppressedUnscopedConnectionEventsForSocketAsync } from '../accessManagement.js'
-import { type AdmittedRpcNetworkNoLongerLive, getLiveSettingsOnAdmittedRpcNetwork, handleInterceptedRequest, refuseAccess, replyAdmittedRpcNetworkNoLongerLive } from '../background.js'
+import { handleInterceptedRequest, refuseAccess, replyAdmittedRpcNetworkNoLongerLive } from '../background.js'
 import { activateAddressSelection } from '../activeSettings.js'
 import { INTERNAL_CHANNEL_NAME, createInternalMessageListener, getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
 import { getActiveAddressEntryForChain, getActiveAddresses, getWalletActiveAddressEntryForChain } from '../metadataUtils.js'
-import { getSettingsSnapshot, settingsIfAvailable, requireAvailableSettings } from '../settings.js'
+import { type AdmittedRpcNetworkNoLongerLive, getLiveSettingsOnAdmittedRpcNetwork, getSettingsSnapshot, type LiveSettings, settingsIfAvailable, requireAvailableSettings } from '../settings.js'
 import { getTabState, updatePendingAccessRequests, getPendingAccessRequests, clearPendingAccessRequests } from '../storageVariables.js'
 import { doesUniqueRequestIdentifiersMatch, type InterceptedRequest, type WebsiteSocket } from '../../utils/requests.js'
 import { replyToInterceptedRequest, sendSubscriptionReplyOrCallBackToPort } from '../messageSending.js'
@@ -312,7 +312,7 @@ export async function requestAccessFromUser(
 	// check if we need to ask address access or not. If address is put to never need to have address specific permision, we don't need to ask for it
 	const askForAddressAccess = requestAccessToAddress !== undefined && requestAccessToAddress.askForAddressAccess !== false
 	const accessAddress = askForAddressAccess ? requestAccessToAddress : undefined
-	const verifyAccessForCurrentRequest = (currentSettings: Settings) => {
+	const verifyAccessForCurrentRequest = (currentSettings: LiveSettings) => {
 		const verify = () => verifyAccess(
 			websiteTabConnections,
 			socket,

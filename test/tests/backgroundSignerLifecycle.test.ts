@@ -2,6 +2,7 @@ import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import type { TabConnection, WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
 import type { WebsiteSocket } from '../../app/ts/utils/requests.js'
+import type { RpcNetwork } from '../../app/ts/types/rpc.js'
 import { ICON_NOT_ACTIVE, ICON_NOT_ACTIVE_WITH_SHIELD } from '../../app/ts/utils/constants.js'
 import { getWalletSwitchRequestId, confirmedSignerOwnership, createDeferredValue, createEthereumWithGetBlockCounter, createPort, createTestSimulationServicesOwner, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
 
@@ -228,6 +229,154 @@ describe('background eth_accounts', () => {
 		const surfacedFailures = [tabStateFailure, reconciliationFailure].map((failure) => failure instanceof Error ? failure.message : String(failure)).concat(reportedFailures)
 		assert.equal(surfacedFailures.filter((message) => message === 'Initial tab state write failed').length, 1, `surfaced: ${ surfacedFailures.join(' | ') }`)
 		assert.equal(surfacedFailures.filter((message) => message === 'Reconciliation rule read failed').length, 1, `surfaced: ${ surfacedFailures.join(' | ') }`)
+	})
+
+	const connectionEventMethods = ['connect', 'accountsChanged', 'chainChanged']
+	const hasConnectionEvent = (messages: ReturnType<typeof createPort>['messages']) => messages.some((message) => typeof message.method === 'string' && connectionEventMethods.includes(message.method))
+
+	// Runs `change` once, during the first address-book read after the signer name was published: the address lookup that follows the handshake's settings read.
+	const onAddressLookupAfterSignerHandshake = (runtimeMessages: readonly unknown[], change: () => Promise<void>) => {
+		const readStorage = browser.storage.local.get
+		const signerNamePublished = () => runtimeMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_signer_name_changed')
+		let ran = false
+		Object.defineProperty(browser.storage.local, 'get', { configurable: true, value: async (...args: Parameters<typeof readStorage>) => {
+			if (!ran && args[0] === 'userAddressBookEntriesV3' && signerNamePublished()) {
+				ran = true
+				await change()
+			}
+			return await readStorage(...args)
+		} })
+	}
+
+	const otherEndpointOf = (rpc: RpcNetwork) => ({ ...rpc, name: 'Same chain, other endpoint', httpsRpc: 'https://same-chain-other-endpoint.example.test' })
+	const otherChainOf = (rpc: RpcNetwork) => ({ ...rpc, name: 'Other chain', chainId: rpc.chainId + 1n, httpsRpc: 'https://other-chain.example.test' })
+
+	test.each([
+		{ description: 'the RPC configuration fails', storedChange: 'corrupt' },
+		{ description: 'the chain changes', storedChange: 'chain' },
+		{ description: 'the endpoint changes', storedChange: 'endpoint' },
+	])('does not restore cached consent when $description during the signer handshake address lookup', async ({ storedChange }) => {
+		const { runtimeMessages } = installBrowserMock({ manifestVersion: 3 })
+		const { changeSimulationMode, getRequiredSettings, handleInterceptedRequest, setRpcConfiguration, setUseSignersAddressAsActiveAddress, updateTabState, updateWebsiteAccess, websiteSocketToString } = await loadModules()
+		const account = 0x5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5cn
+		const websiteOrigin = 'https://deferred-restore.example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: account })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId, undefined, 0)
+		await updateTabState(socket.tabId, (previous) => ({ ...previous, signerAccounts: [account], activeSigningAddress: account }))
+		const connection = { port, socket, websiteOrigin, approved: false, wantsToConnect: false }
+		const connections: WebsiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: { [websiteSocketToString(socket)]: connection } }]])
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		const { activeRpcNetwork } = await getRequiredSettings()
+		onAddressLookupAfterSignerHandshake(runtimeMessages, async () => {
+			if (storedChange === 'corrupt') return await browser.storage.local.set({ rpcEntries: 'corrupt' })
+			const changedRpc = storedChange === 'chain' ? otherChainOf(activeRpcNetwork) : otherEndpointOf(activeRpcNetwork)
+			await setRpcConfiguration([activeRpcNetwork, changedRpc], changedRpc)
+		})
+
+		await withSilencedWarnings(async () => await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
+			interceptorRequest: true, interceptorInternalRequest: true, usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 13, requestSocket: socket },
+			method: 'connected_to_signer', params: [true, 'MetaMask', 1],
+		}, connections, noopPublishRpcConnectionStatus))
+
+		assert.equal(connection.approved, false)
+		assert.equal(hasConnectionEvent(messages), false)
+	})
+
+	const setUpCachedSafeConsent = async () => {
+		const { changeSimulationMode, getRequiredSettings, setUseSignersAddressAsActiveAddress, updateTabState, updateUserAddressBookEntries, updateWebsiteAccess, websiteSocketToString } = await loadModules()
+		const signer = 0x6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6dn
+		const safeAddress = 0x7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7en
+		const websiteOrigin = 'https://cached-safe.example.test'
+		const { activeRpcNetwork } = await getRequiredSettings()
+		await updateUserAddressBookEntries(() => [{ type: 'safe', name: 'Cached Safe', address: safeAddress, chainId: activeRpcNetwork.chainId, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [signer] }])
+		await changeSimulationMode({ simulationMode: false, activeSigningSafeAddress: safeAddress })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateWebsiteAccess(() => [{ website: { websiteOrigin, icon: undefined, title: undefined }, access: true, addressAccess: [{ address: safeAddress, access: true }] }])
+		const socket = { tabId: 1, connectionName: 0n }
+		await updateTabState(socket.tabId, (previous) => ({ ...previous, signerAccounts: [signer] }))
+		const { port, messages } = createPort(socket.tabId, undefined, 0)
+		const connection = { port, socket, websiteOrigin, approved: false, wantsToConnect: false }
+		const connections: WebsiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: { [websiteSocketToString(socket)]: connection } }]])
+		return { activeRpcNetwork, connection, connections, messages }
+	}
+
+	// Enabling the feature runs the refresh that restores cached Safe consent.
+	const enableSafeAppsCompatibility = async (connections: WebsiteTabConnections, messages: ReturnType<typeof createPort>['messages']) => {
+		const { initializeSafeAppsCompatibility, setSafeAppsCompatibilityMode } = await loadModules()
+		const dispose = await initializeSafeAppsCompatibility(connections)
+		try {
+			await withSilencedWarnings(async () => {
+				await setSafeAppsCompatibilityMode(true)
+				await waitForPortMessageCount(messages, 'safe_apps_compatibility', 1)
+			})
+		} finally {
+			dispose()
+		}
+	}
+
+	test('restores cached Safe consent on a ready configuration', async () => {
+		installBrowserMock({ manifestVersion: 3 })
+		const { connection, connections, messages } = await setUpCachedSafeConsent()
+
+		await enableSafeAppsCompatibility(connections, messages)
+
+		assert.equal(connection.approved, true)
+		assert.equal(hasConnectionEvent(messages), true)
+	})
+
+	test.each([
+		{ description: 'corrupt RPC entries', storedRpcEntries: 'corrupt' },
+		{ description: 'empty RPC entries', storedRpcEntries: [] },
+	])('does not restore cached Safe consent with $description', async ({ storedRpcEntries }) => {
+		installBrowserMock({ manifestVersion: 3 })
+		const { connection, connections, messages } = await setUpCachedSafeConsent()
+		await browser.storage.local.set({ rpcEntries: storedRpcEntries })
+
+		await enableSafeAppsCompatibility(connections, messages)
+
+		assert.equal(connection.approved, false)
+		assert.equal(hasConnectionEvent(messages), false)
+	})
+
+	test('does not restore cached Safe consent when the RPC entries cannot be written', async () => {
+		installBrowserMock({ manifestVersion: 3 })
+		const { connection, connections, messages } = await setUpCachedSafeConsent()
+		await browser.storage.local.remove('rpcEntries')
+		const writeStorage = browser.storage.local.set
+		Object.defineProperty(browser.storage.local, 'set', { configurable: true, value: async (items: Record<string, unknown>) => {
+			if ('rpcEntries' in items) throw new Error('RPC entries write failed')
+			await writeStorage(items)
+		} })
+
+		await enableSafeAppsCompatibility(connections, messages)
+
+		assert.equal(connection.approved, false)
+		assert.equal(hasConnectionEvent(messages), false)
+	})
+
+	test('does not restore cached Safe consent when the chain changes during the Safe lookup', async () => {
+		installBrowserMock({ manifestVersion: 3 })
+		const { setRpcConfiguration } = await loadModules()
+		const { activeRpcNetwork, connection, connections, messages } = await setUpCachedSafeConsent()
+		const readStorage = browser.storage.local.get
+		let ran = false
+		Object.defineProperty(browser.storage.local, 'get', { configurable: true, value: async (...args: Parameters<typeof readStorage>) => {
+			if (!ran && args[0] === 'userAddressBookEntriesV3') {
+				ran = true
+				await setRpcConfiguration([activeRpcNetwork, otherChainOf(activeRpcNetwork)], otherChainOf(activeRpcNetwork))
+			}
+			return await readStorage(...args)
+		} })
+
+		await enableSafeAppsCompatibility(connections, messages)
+
+		assert.equal(connection.approved, false)
+		assert.equal(hasConnectionEvent(messages), false)
 	})
 
 	test('hands over the icon refresh after the first state write of a new tab, so the icon follows that state', async () => {

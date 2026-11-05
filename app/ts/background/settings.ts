@@ -12,6 +12,7 @@ import type { AddressBookEntry } from '../types/addressBookTypes.js'
 import type { BlockTimeManipulation } from '../types/visualizer-types.js'
 import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_BLOCK_MANIPULATION, DEFAULT_RPCS } from '../config/defaults.js'
 import { rpcConfigurationIsReady } from './rpcConfigurationAvailability.js'
+import { getRpcNetworkChange } from '../utils/rpcNetworkChange.js'
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { mergeStoredWebsiteMetadata, sanitizeWebsiteAccess } from '../utils/websiteIcons.js'
 import type { SigningAddressPreference, SigningAddressPreferences } from '../types/signerTypes.js'
@@ -223,6 +224,27 @@ export function approvalsOrNone(snapshot: SettingsSnapshot | WebsiteApprovalsSna
 export function requireReadableApprovals(websiteApprovals: WebsiteApprovalsSnapshot): WebsiteAccessArray {
 	if (websiteApprovals.status === 'unreadable') throw websiteApprovals.error
 	return websiteApprovals.websiteAccess
+}
+
+const liveSettingsMarker = Symbol('liveSettings')
+// Settings proven to come from a ready RPC configuration on the network the caller worked on. Granting a connection takes this type (see verifyAccess), so code that holds plain settings cannot grant. The proof lasts only until the next await: read it immediately before the grant, with no await in between.
+export type LiveSettings = Settings & { readonly [liveSettingsMarker]: true }
+
+export type AdmittedRpcNetworkNoLongerLive = 'unavailable' | 'chain-changed' | 'endpoint-changed'
+
+export type LiveSettingsOnAdmittedRpcNetwork =
+	| { readonly kind: 'ready', readonly settings: LiveSettings }
+	| { readonly kind: AdmittedRpcNetworkNoLongerLive }
+
+// The single check behind every connection grant, and behind routing a request: work can be parked on the website lookup, signer prompts or address lookups after it read its settings, so one live snapshot is read and used unmixed. A metadata-only change (name, explorer, list preferences) keeps the chain and endpoint, so the live snapshot still matches the admitted service pair; a chain change invalidates the live selection's chain-dependent decisions for the admitted pair.
+export async function getLiveSettingsOnAdmittedRpcNetwork(admittedSettings: Settings): Promise<LiveSettingsOnAdmittedRpcNetwork> {
+	const liveSettings = settingsIfRpcConfigurationReady(await getSettingsSnapshot())
+	if (liveSettings === undefined) return { kind: 'unavailable' }
+	const rpcNetworkChange = getRpcNetworkChange(admittedSettings.activeRpcNetwork, liveSettings.activeRpcNetwork)
+	if (rpcNetworkChange.chainChanged) return { kind: 'chain-changed' }
+	// Rejected rather than continued: the admitted service pair still talks to the deselected endpoint (which the user may have left for privacy or reliability), and a signer-only selection's fallback service may serve another chain.
+	if (rpcNetworkChange.endpointChanged) return { kind: 'endpoint-changed' }
+	return { kind: 'ready', settings: { ...liveSettings, [liveSettingsMarker]: true } }
 }
 
 // Projection for an admitted operation that continues on its own network: the persisted fields on the admitted RPC network, undefined when storage is unreadable.
