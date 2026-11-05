@@ -132,6 +132,7 @@ export const JSON_RPC_ERROR_CODE_LIMIT_EXCEEDED = -32005
 // const METAMASK_ERROR_RATE_LIMITED = -32005
 
 export const ERROR_INTERCEPTOR_DISABLED = { error: { code: METAMASK_ERROR_USER_REJECTED_REQUEST, message: 'The Interceptor is disabled' } }
+export const ERROR_SIMULATION_MODE_ENABLED_AFTER_REQUEST = { error: { code: METAMASK_ERROR_BLANKET_ERROR, message: 'The Interceptor switched to simulation mode after this request was made. Reject this request and send it again.' } }
 export const METAMASK_ERROR_ALREADY_PENDING = { error: { code: -32002, message: 'Access request pending already.' } }
 export const ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS = { error: { code: 2, message: 'Interceptor: No active address' } }
 export const METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN = { error: { code: METAMASK_ERROR_PROVIDER_DISCONNECTED, message: 'Interceptor: Not connected to chain' } }

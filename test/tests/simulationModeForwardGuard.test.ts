@@ -2,13 +2,17 @@ import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import type { PublishRpcConnectionStatus } from '../../app/ts/background/rpcSlowRequestTracking.js'
 import type { Website } from '../../app/ts/types/websiteAccessTypes.js'
+import { ERROR_SIMULATION_MODE_ENABLED_AFTER_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED } from '../../app/ts/utils/constants.js'
 import { withSilencedConsole } from './consoleSilence.js'
 import { confirmedSignerOwnership, createDeferredValue, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus } from './backgroundEthAccountsTestHarness.js'
 
 const ACCOUNT = 0x1111111111111111111111111111111111111111n
+const SIMULATION_ONLY_ACCOUNT = 0x2222222222222222222222222222222222222222n
 const WEBSITE_ORIGIN = 'https://forward-guard.example'
 const WEBSITE: Website = { websiteOrigin: WEBSITE_ORIGIN, icon: undefined, title: undefined }
 const SIMULATION_MODE_ADD_CHAIN_ERROR = { code: 10000, message: 'wallet_addEthereumChain not implemented' }
+type RpcCall = { readonly method: string, readonly params: readonly unknown[] }
+const ADD_ETHEREUM_CHAIN: RpcCall = { method: 'wallet_addEthereumChain', params: [{ chainId: '0x2105', chainName: 'Base', nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 }, rpcUrls: ['https://mainnet.base.org'] }] }
 
 async function setUpSigningModeWebsite({ initialBlockPolling = true }: { readonly initialBlockPolling?: boolean } = {}) {
 	const { setStorageHooks, readStoredValue } = installBrowserMock()
@@ -25,32 +29,36 @@ async function setUpSigningModeWebsite({ initialBlockPolling = true }: { readonl
 	} }]])
 	const { ethereum, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 }, { initialBlockPolling })
 	const enableSimulationMode = async () => await modules.changeSimulationMode({ simulationMode: true })
-	const sendAddEthereumChain = async (requestId: number, websitePromise: Promise<Website> | Website = WEBSITE, publishRpcConnectionStatus: PublishRpcConnectionStatus = noopPublishRpcConnectionStatus) => {
+	const sendRequest = async (requestId: number, rpcCall: RpcCall, websitePromise: Promise<Website> | Website = WEBSITE, publishRpcConnectionStatus: PublishRpcConnectionStatus = noopPublishRpcConnectionStatus) => {
 		await modules.handleInterceptedRequest(port, WEBSITE_ORIGIN, websitePromise, simulationServicesOwner, socket, {
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,
 			uniqueRequestIdentifier: { requestId, requestSocket: socket },
-			method: 'wallet_addEthereumChain',
-			params: [{ chainId: '0x2105', chainName: 'Base', nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 }, rpcUrls: ['https://mainnet.base.org'] }],
+			...rpcCall,
 		}, websiteTabConnections, publishRpcConnectionStatus)
 		return messages.filter((message) => message.requestId === requestId)
 	}
-	// Resolves the website metadata only once the request is parked on it, which is right before the settings read used for routing.
-	const sendAddEthereumChainAfterArming = async (requestId: number, armHooks: () => Promise<void>) => {
+	const sendAddEthereumChain = async (requestId: number, websitePromise: Promise<Website> | Website = WEBSITE, publishRpcConnectionStatus: PublishRpcConnectionStatus = noopPublishRpcConnectionStatus) => await sendRequest(requestId, ADD_ETHEREUM_CHAIN, websitePromise, publishRpcConnectionStatus)
+	// Resolves the website metadata only once the request is parked on it, which is after discovery and the access check and right before the settings read used for routing.
+	const sendRequestAfterArming = async (requestId: number, rpcCall: RpcCall, armHooks: () => Promise<void>) => {
 		const website = createDeferredValue<Website>()
-		const replies = sendAddEthereumChain(requestId, website.promise)
+		const replies = sendRequest(requestId, rpcCall, website.promise)
 		await new Promise((resolve) => setTimeout(resolve, 0))
 		await armHooks()
 		website.resolve(WEBSITE)
 		return await replies
 	}
-	return { modules, ethereum, setStorageHooks, readStoredValue, enableSimulationMode, sendAddEthereumChain, sendAddEthereumChainAfterArming }
+	const sendAddEthereumChainAfterArming = async (requestId: number, armHooks: () => Promise<void>) => await sendRequestAfterArming(requestId, ADD_ETHEREUM_CHAIN, armHooks)
+	return { modules, ethereum, messages, setStorageHooks, readStoredValue, enableSimulationMode, sendAddEthereumChain, sendAddEthereumChainAfterArming, sendRequestAfterArming }
 }
 
 function assertAnsweredInSimulationMode(replies: readonly { type?: unknown, error?: unknown }[]) {
 	assert.equal(replies.some((reply) => reply.type === 'forwardToSigner'), false)
 	assert.deepEqual(replies.map((reply) => reply.error), [SIMULATION_MODE_ADD_CHAIN_ERROR])
 }
+
+// getSettings() is the only reader of simulationMode, and after the arming point a request reads the settings once per routing attempt. Handling the request again from the start would read them more often.
+const isSettingsRead = (keys: unknown) => Array.isArray(keys) && keys.includes('simulationMode')
 
 describe('simulation mode forward guard', () => {
 	test('forwards to the signer when simulation mode does not change', async () => {
@@ -123,6 +131,95 @@ describe('simulation mode forward guard', () => {
 			})
 		})
 		assert.equal(repairedOpenedPage, true)
+		assertAnsweredInSimulationMode(replies)
+	})
+
+	test('re-routes a refused forward once, on fresh settings, without handling the request from the start', async () => {
+		const { setStorageHooks, enableSimulationMode, sendAddEthereumChainAfterArming } = await setUpSigningModeWebsite()
+		let routingAttempts = 0
+		const replies = await sendAddEthereumChainAfterArming(8, async () => setStorageHooks({
+			afterGet: async (keys) => {
+				if (isSettingsRead(keys)) routingAttempts++
+				if (keys === 'tabState_1' && routingAttempts === 1) await enableSimulationMode()
+			},
+		}))
+		setStorageHooks({})
+		assert.equal(routingAttempts, 2)
+		assertAnsweredInSimulationMode(replies)
+	})
+
+	test('does not repeat the access check for a refused forward', async () => {
+		const { setStorageHooks, messages, enableSimulationMode, sendRequestAfterArming } = await setUpSigningModeWebsite()
+		const replies = await sendRequestAfterArming(9, { method: 'wallet_getCapabilities', params: [`0x${ ACCOUNT.toString(16) }`] }, async () => setStorageHooks({
+			afterGet: async (keys) => {
+				if (keys !== 'tabState_1') return
+				setStorageHooks({})
+				await enableSimulationMode()
+			},
+		}))
+		// An account identity request ignores the connection approval, so each access check that grants access tells the website it is connected.
+		assert.equal(messages.filter((message) => message.method === 'connect').length, 1)
+		assert.deepEqual(replies.map((reply) => reply.type), ['result'])
+		assert.equal(replies[0]?.error, undefined)
+	})
+
+	test('forwards from the re-route when the fresh settings are back in signing mode', async () => {
+		const { modules, setStorageHooks, enableSimulationMode, sendAddEthereumChainAfterArming } = await setUpSigningModeWebsite()
+		const replies = await sendAddEthereumChainAfterArming(10, async () => setStorageHooks({
+			afterGet: async (keys) => {
+				if (keys !== 'tabState_1') return
+				setStorageHooks({})
+				await enableSimulationMode()
+				await modules.changeSimulationMode({ simulationMode: false })
+			},
+		}))
+		assert.deepEqual(replies.map((reply) => reply.type), ['forwardToSigner'])
+	})
+
+	test('stops at the routing bound and refuses without forwarding when simulation mode keeps being enabled', async () => {
+		const { modules, setStorageHooks, enableSimulationMode, sendAddEthereumChainAfterArming } = await setUpSigningModeWebsite()
+		let routingAttempts = 0
+		const replies = await sendAddEthereumChainAfterArming(11, async () => setStorageHooks({
+			afterGet: async (keys) => {
+				if (isSettingsRead(keys)) routingAttempts++
+				if (keys !== 'tabState_1') return
+				await enableSimulationMode()
+				await modules.changeSimulationMode({ simulationMode: false })
+			},
+		}))
+		setStorageHooks({})
+		assert.equal(routingAttempts, 3)
+		assert.equal(replies.some((reply) => reply.type === 'forwardToSigner'), false)
+		assert.deepEqual(replies.map((reply) => reply.error), [ERROR_SIMULATION_MODE_ENABLED_AFTER_REQUEST.error])
+	})
+
+	test('refuses a re-route onto a simulation address the website has no access to', async () => {
+		const { modules, setStorageHooks, enableSimulationMode, sendAddEthereumChainAfterArming } = await setUpSigningModeWebsite()
+		await modules.setUseSignersAddressAsActiveAddress(false)
+		await modules.changeSimulationMode({ simulationMode: false, activeSimulationAddress: SIMULATION_ONLY_ACCOUNT })
+		const replies = await sendAddEthereumChainAfterArming(12, async () => setStorageHooks({
+			afterGet: async (keys) => {
+				if (keys !== 'tabState_1') return
+				setStorageHooks({})
+				await enableSimulationMode()
+			},
+		}))
+		assert.equal(replies.some((reply) => reply.type === 'forwardToSigner'), false)
+		assert.deepEqual(replies.map((reply) => reply.error?.code), [METAMASK_ERROR_NOT_AUTHORIZED])
+	})
+
+	test('re-routes onto a different simulation address the website has access to', async () => {
+		const { modules, setStorageHooks, enableSimulationMode, sendAddEthereumChainAfterArming } = await setUpSigningModeWebsite()
+		await modules.setUseSignersAddressAsActiveAddress(false)
+		await modules.changeSimulationMode({ simulationMode: false, activeSimulationAddress: SIMULATION_ONLY_ACCOUNT })
+		await modules.updateWebsiteAccess(() => [{ website: WEBSITE, access: true, addressAccess: [{ address: ACCOUNT, access: true }, { address: SIMULATION_ONLY_ACCOUNT, access: true }] }])
+		const replies = await sendAddEthereumChainAfterArming(13, async () => setStorageHooks({
+			afterGet: async (keys) => {
+				if (keys !== 'tabState_1') return
+				setStorageHooks({})
+				await enableSimulationMode()
+			},
+		}))
 		assertAnsweredInSimulationMode(replies)
 	})
 
