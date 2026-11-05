@@ -85,4 +85,16 @@ describe('tryRecoverAddress', () => {
 		const digestOverLibraryLimit = new Uint8Array(8193)
 		await assert.rejects(tryRecoverAddress({ hash: digestOverLibraryLimit, signature }), /input is too large/u)
 	})
+
+	test('rethrows the library digest rejection when the digest and signature also land on the point at infinity', async () => {
+		const digestOverLibraryLimit = new Uint8Array(8193)
+		digestOverLibraryLimit[31] = 1
+		const signature = { r: secp256k1.CURVE.Gx, s: 1n, yParity: 0 }
+		await assert.rejects(tryRecoverAddress({ hash: digestOverLibraryLimit, signature }), /input is too large/u)
+	})
+
+	test('reports invalid scalars as unrecoverable before the library sees the digest', async () => {
+		const digestOverLibraryLimit = new Uint8Array(8193)
+		assert.deepEqual(await tryRecoverAddress({ hash: digestOverLibraryLimit, signature: { r: 0n, s: 1n, yParity: 0 } }), { type: 'unrecoverable' })
+	})
 })

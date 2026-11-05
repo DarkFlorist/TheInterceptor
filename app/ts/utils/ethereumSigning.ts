@@ -230,13 +230,22 @@ const recoversToPointAtInfinity = (digest: Uint8Array, { r, s, yParity }: Signat
 	return secp256k1.ProjectivePoint.BASE.multiplyAndAddUnsafe(noncePoint, negatedDigestScalar, s) === undefined
 }
 
+// For a signature recoversToPointAtInfinity accepted, s * R = hash * G with both sides nonzero, so the opposite nonce point -R sums to -2 * hash * G and never reaches infinity. Recovering from -R therefore runs all of the library's digest checks, whose errors outrank the 'unrecoverable' result, without hitting its own infinity error.
+const assertRecoveryAcceptsDigest = (digest: Uint8Array, signature: SignatureParts) => {
+	recoverAddressFromParts(digest, { ...signature, yParity: 1 - signature.yParity })
+}
+
 export type AddressRecovery = { readonly type: 'recovered', readonly address: Hex } | { readonly type: 'unrecoverable' }
 
 // Like recoverAddress, but reports a signature whose r and s recover to no address as 'unrecoverable' instead of throwing. That is decided from the signature and digest alone, so every error the recovery itself throws is unexpected and propagates.
 export const tryRecoverAddress = async ({ hash, signature }: Parameters<typeof recoverAddress>[0]): Promise<AddressRecovery> => {
 	const digest = bytesFromHexOrBytes(hash)
 	const signatureParts = toSignatureParts(signature)
-	if (!hasRecoverableRAndS(signatureParts) || recoversToPointAtInfinity(digest, signatureParts)) return { type: 'unrecoverable' }
+	if (!hasRecoverableRAndS(signatureParts)) return { type: 'unrecoverable' }
+	if (recoversToPointAtInfinity(digest, signatureParts)) {
+		assertRecoveryAcceptsDigest(digest, signatureParts)
+		return { type: 'unrecoverable' }
+	}
 	return { type: 'recovered', address: recoverAddressFromParts(digest, signatureParts) }
 }
 
