@@ -580,7 +580,7 @@ test('returns the current Safe overlay when a simulation-stack request is confir
 		},
 	}]])
 
-	await modules.fetchSimulationStackRequestConfirmation(simulator.ethereum, (await readNetworkState()).simulation, websiteTabConnections, {
+	await modules.fetchSimulationStackRequestConfirmation(fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService), websiteTabConnections, {
 		method: 'popup_fetchSimulationStackRequestConfirmation',
 		data: {
 			accept: true,

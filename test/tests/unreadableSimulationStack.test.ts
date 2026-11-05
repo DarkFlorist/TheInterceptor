@@ -1,11 +1,11 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { addressString, confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus } from './backgroundEthAccountsTestHarness.js'
+import { addressString, confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, createTestSimulationServicesOwner, installBrowserMock, loadModules, noopPublishRpcConnectionStatus } from './backgroundEthAccountsTestHarness.js'
 
 const account = 0x4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4cn
 const websiteOrigin = 'https://unreadable-stack.example'
 const website = { websiteOrigin, icon: undefined, title: undefined }
-const socket = { tabId: 1, connectionName: 0n }
+const websiteSocket = { tabId: 1, connectionName: 0n }
 
 // Like an IndexedDB failure of the simulation stack: storage.local keeps working, so everything but the stack can still be read.
 function failSimulationStackReads() {
@@ -16,7 +16,7 @@ function failSimulationStackReads() {
 	}
 }
 
-async function createApprovedWebsite(modules: Awaited<ReturnType<typeof loadModules>>) {
+async function createApprovedWebsite(modules: Awaited<ReturnType<typeof loadModules>>, socket = websiteSocket) {
 	const { updateWebsiteAccess, setUseSignersAddressAsActiveAddress, updateTabState, websiteSocketToString, handleInterceptedRequest } = modules
 	await setUseSignersAddressAsActiveAddress(false)
 	await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
@@ -38,6 +38,150 @@ async function createApprovedWebsite(modules: Awaited<ReturnType<typeof loadModu
 	}
 	return { messages, send, simulationServicesOwner, websiteTabConnections }
 }
+
+type Website = Awaited<ReturnType<typeof createApprovedWebsite>>
+
+const dispatchPopup = async (modules: Awaited<ReturnType<typeof loadModules>>, { simulationServicesOwner, websiteTabConnections }: Pick<Website, 'simulationServicesOwner' | 'websiteTabConnections'>, request: Parameters<typeof import('../../app/ts/background/popupMessageDispatcher.js').dispatchPopupMessage>[1]) => {
+	const { dispatchPopupMessage } = await import('../../app/ts/background/popupMessageDispatcher.js')
+	return await dispatchPopupMessage({
+		websiteTabConnections,
+		simulationServicesOwner,
+		settings: await modules.getSettings(),
+		publishRpcConnectionStatus: noopPublishRpcConnectionStatus,
+		simulationAbortController: undefined,
+		confirmTransactionAbortController: new AbortController(),
+		resetSimulationState: async () => undefined,
+	}, request)
+}
+
+// Commits a switch to another chain that cannot finish, and returns how to let its repair succeed.
+async function failNetworkSwitch(modules: Awaited<ReturnType<typeof loadModules>>, failure: 'stack clearing' | 'service installation', websiteTabConnections: Website['websiteTabConnections']) {
+	const original = createEthereumWithGetBlockCounter({ count: 0 })
+	let installationFails = failure === 'service installation'
+	const simulationServicesOwner = createTestSimulationServicesOwner(original, (network) => {
+		if (installationFails) throw new Error('the services cannot be installed')
+		return createEthereumWithGetBlockCounter({ count: 0 }, { rpcEntry: network })
+	})
+	const originalSet = browser.storage.local.set
+	if (failure === 'stack clearing') {
+		browser.storage.local.set = async (items) => {
+			if ('interceptorTransactionStack' in items) throw new Error('the simulation stack cannot be written')
+			return await originalSet(items)
+		}
+	}
+	const rpcNetwork = { ...(await modules.getSettings()).activeRpcNetwork, name: 'Another chain', chainId: 2n, httpsRpc: 'https://another-chain.example' }
+	await assert.rejects(modules.changeActiveAddressAndChain(simulationServicesOwner, websiteTabConnections, { simulationMode: true, rpcNetwork, promptForAccessesIfNeeded: false }))
+	return {
+		simulationServicesOwner,
+		letRepairSucceed: async () => {
+			installationFails = false
+			browser.storage.local.set = originalSet
+			await modules.readNetworkSnapshot(simulationServicesOwner)
+		},
+	}
+}
+
+const waitUntilStored = async <T>(read: () => Promise<T | undefined>) => {
+	while (await read() === undefined) await new Promise((resolve) => setTimeout(resolve, 0))
+	return await read()
+}
+
+describe.each(['stack clearing', 'service installation'] as const)('a rejection in a popup while %s of a network change fails', (failure) => {
+	test('answers a simulation stack request without reading the stack', async () => {
+		installBrowserMock()
+		const modules = await loadModules()
+		await modules.changeSimulationMode({ simulationMode: true, activeSimulationAddress: account })
+		// A decision is remembered per socket, so each case asks from its own.
+		const socket = { tabId: 1, connectionName: failure === 'stack clearing' ? 1n : 2n }
+		const { messages, send, websiteTabConnections } = await createApprovedWebsite(modules, socket)
+		const { getFetchSimulationStackRequestPromise } = await import('../../app/ts/background/storageVariables.js')
+		const request = send(1, 'interceptor_getSimulationStack', ['2.0.0'], true)
+		const stored = await waitUntilStored(getFetchSimulationStackRequestPromise)
+		assert.equal(stored?.simulationOverlayEnabled, true)
+		const { simulationServicesOwner, letRepairSucceed } = await failNetworkSwitch(modules, failure, websiteTabConnections)
+		try {
+			await dispatchPopup(modules, { simulationServicesOwner, websiteTabConnections }, {
+				method: 'popup_fetchSimulationStackRequestConfirmation',
+				data: { accept: false, simulationStackVersion: '2.0.0', uniqueRequestIdentifier: { requestId: 1, requestSocket: socket } },
+			})
+			await request
+			const reply = messages.find((message) => message.requestId === 1)
+			assert.equal(reply?.result, undefined)
+			assert.equal(reply?.error?.code, 4001)
+		} finally {
+			await letRepairSucceed()
+		}
+	})
+
+	test('answers a chain change request', async () => {
+		installBrowserMock()
+		const modules = await loadModules()
+		await modules.changeSimulationMode({ simulationMode: true, activeSimulationAddress: account })
+		const { messages, send, websiteTabConnections } = await createApprovedWebsite(modules)
+		const { getChainChangeConfirmationPromise } = await import('../../app/ts/background/storageVariables.js')
+		const request = send(1, 'wallet_switchEthereumChain', [{ chainId: '0x5' }], true)
+		const stored = await waitUntilStored(getChainChangeConfirmationPromise)
+		if (stored === undefined) throw new Error('missing chain change dialog')
+		const { simulationServicesOwner, letRepairSucceed } = await failNetworkSwitch(modules, failure, websiteTabConnections)
+		try {
+			await dispatchPopup(modules, { simulationServicesOwner, websiteTabConnections }, {
+				method: 'popup_changeChainDialog',
+				data: { rpcNetwork: stored.rpcNetwork, uniqueRequestIdentifier: { requestId: 1, requestSocket: websiteSocket }, accept: false },
+			})
+			await request
+			assert.equal(messages.find((message) => message.requestId === 1)?.error?.code, 4001)
+		} finally {
+			await letRepairSucceed()
+		}
+	})
+
+	test('answers an access request whose dialog moved to another address', async () => {
+		installBrowserMock()
+		const modules = await loadModules()
+		const otherAccount = 0x5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5dn
+		await modules.updateUserAddressBookEntries(() => [{ type: 'contact', name: 'Moved to', address: otherAccount, chainId: 'AllChains', entrySource: 'User', useAsActiveAddress: true }])
+		await modules.changeSimulationMode({ simulationMode: true, activeSimulationAddress: account })
+		const { messages, simulationServicesOwner: initialOwner, websiteTabConnections } = await createApprovedWebsite(modules)
+		await modules.updateWebsiteAccess(() => [])
+		const { getActiveAddressEntryForChain } = await import('../../app/ts/background/metadataUtils.js')
+		const address = await getActiveAddressEntryForChain(account, 1n)
+		await modules.requestAccessFromUser(initialOwner, websiteTabConnections, websiteSocket, website, {
+			interceptorRequest: true, usingInterceptorWithoutSigner: true,
+			uniqueRequestIdentifier: { requestId: 1, requestSocket: websiteSocket }, method: 'eth_requestAccounts',
+		}, address, await modules.getSettings(), address, noopPublishRpcConnectionStatus)
+		const [pending] = await modules.getPendingAccessRequests()
+		if (pending === undefined) throw new Error('missing access request')
+		const { simulationServicesOwner, letRepairSucceed } = await failNetworkSwitch(modules, failure, websiteTabConnections)
+		try {
+			await dispatchPopup(modules, { simulationServicesOwner, websiteTabConnections }, {
+				method: 'popup_interceptorAccess',
+				data: { userReply: 'Rejected', accessRequestId: pending.accessRequestId, requestAccessToAddress: otherAccount, originalRequestAccessToAddress: account },
+			})
+			assert.deepEqual(await modules.getPendingAccessRequests(), [])
+			assert.equal(messages.find((message) => message.requestId === 1)?.error?.code, 4100)
+		} finally {
+			await letRepairSucceed()
+		}
+	})
+})
+
+test('a rejection after a background restart sends the website a rejection, not the stack', async () => {
+	installBrowserMock()
+	const modules = await loadModules()
+	await modules.changeSimulationMode({ simulationMode: true, activeSimulationAddress: account })
+	const { messages, simulationServicesOwner, websiteTabConnections } = await createApprovedWebsite(modules)
+	const { setFetchSimulationStackRequestPromise } = await import('../../app/ts/background/storageVariables.js')
+	const uniqueRequestIdentifier = { requestId: 1, requestSocket: websiteSocket }
+	await setFetchSimulationStackRequestPromise({ website, popupOrTabId: { type: 'popup', id: 1 }, simulationOverlayEnabled: true, simulationStackVersion: '2.0.0', uniqueRequestIdentifier })
+	await dispatchPopup(modules, { simulationServicesOwner, websiteTabConnections }, {
+		method: 'popup_fetchSimulationStackRequestConfirmation',
+		data: { accept: false, simulationStackVersion: '2.0.0', uniqueRequestIdentifier },
+	})
+	const reply = messages.find((message) => message.requestId === 1)
+	assert.equal(reply?.result, undefined)
+	assert.equal(reply?.error?.code, 4001)
+	await setFetchSimulationStackRequestPromise(undefined)
+})
 
 describe('an unreadable simulation stack', () => {
 	test('leaves stack-independent RPCs working and fails simulation-dependent requests explicitly', async () => {
@@ -123,7 +267,7 @@ describe('an unreadable simulation stack', () => {
 			resetSimulationState: async () => undefined,
 		}, {
 			method: 'popup_fetchSimulationStackRequestConfirmation',
-			data: { accept: false, simulationStackVersion: '2.0.0', uniqueRequestIdentifier: { requestId: 1, requestSocket: socket } },
+			data: { accept: false, simulationStackVersion: '2.0.0', uniqueRequestIdentifier: { requestId: 1, requestSocket: websiteSocket } },
 		})
 		await request
 

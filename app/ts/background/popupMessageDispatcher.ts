@@ -67,10 +67,7 @@ const popupMessageHandlers = {
 	popup_requestActiveAddresses: popupMessageHandler('popup_requestActiveAddresses', async () => await requestActiveAddresses()),
 	popup_requestSimulationMode: popupMessageHandler('popup_requestSimulationMode', async () => await requestSimulationMode()),
 	popup_requestLatestUnexpectedError: popupMessageHandler('popup_requestLatestUnexpectedError', async () => await requestLatestUnexpectedError()),
-	popup_fetchSimulationStackRequestConfirmation: popupSnapshotMessageHandler('popup_fetchSimulationStackRequestConfirmation', async (context, request) => {
-		const { ethereum } = context.services
-		return await fetchSimulationStackRequestConfirmation(ethereum, context.simulation, context.websiteTabConnections, request)
-	}),
+	popup_fetchSimulationStackRequestConfirmation: popupMessageHandler('popup_fetchSimulationStackRequestConfirmation', async (context, request) => await fetchSimulationStackRequestConfirmation(context.simulationServicesOwner, context.websiteTabConnections, request)),
 	popup_readyAndListening: popupSnapshotMessageHandler('popup_readyAndListening', async (context, request) => {
 		const { ethereum, tokenPriceService } = context.services
 		return await popupReadyAndListening(ethereum, tokenPriceService, { settings: context.settings, simulation: context.simulation }, context.websiteTabConnections, request.data.page)

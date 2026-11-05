@@ -23,7 +23,8 @@ export type SimulationStackSnapshot = {
 
 type FetchSimulationStackReply = {
 	confirmation: FetchSimulationStackRequestConfirmation
-	snapshot: SimulationStackSnapshot
+	// The stack at confirmation time. A rejection sends no stack, so it has none and is remembered for the stack the dialog opened with.
+	snapshot: SimulationStackSnapshot | undefined
 }
 
 let pendForUserReply: Future<FetchSimulationStackReply> | undefined
@@ -56,6 +57,19 @@ export async function resolveFetchSimulationStackRequest(snapshot: SimulationSta
 	if (data === undefined || !doesUniqueRequestIdentifiersMatch(confirmation.data.uniqueRequestIdentifier, data.uniqueRequestIdentifier)) throw new Error('Unique request identifier mismatch in change chain')
 	const resolved = getSimulationStack(snapshot, data.simulationStackVersion)
 	replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'interceptor_getSimulationStack' as const, result: resolved, uniqueRequestIdentifier: data.uniqueRequestIdentifier })
+	if (openedDialog) await closePopupOrTabById(openedDialog)
+	openedDialog = undefined
+}
+
+// Needs neither a network read nor a simulation, so a website gets its rejection whatever state the stack or the network is in.
+export async function rejectFetchSimulationStackRequest(websiteTabConnections: WebsiteTabConnections, confirmation: FetchSimulationStackRequestConfirmation) {
+	if (pendForUserReply !== undefined) {
+		pendForUserReply.resolve({ confirmation, snapshot: undefined })
+		return
+	}
+	const data = await getFetchSimulationStackRequestPromise()
+	if (data === undefined || !doesUniqueRequestIdentifiersMatch(confirmation.data.uniqueRequestIdentifier, data.uniqueRequestIdentifier)) throw new Error('Unique request identifier mismatch in change chain')
+	replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'interceptor_getSimulationStack' as const, ...userDeniedChange, uniqueRequestIdentifier: data.uniqueRequestIdentifier })
 	if (openedDialog) await closePopupOrTabById(openedDialog)
 	openedDialog = undefined
 }
@@ -153,14 +167,15 @@ export const openFetchSimulationStackDialog = async (
 		}
 		const reply = await replyFuture
 		await setFetchSimulationStackRequestPromise(undefined)
+		const replySnapshot = reply.snapshot ?? initialSnapshot
 		if (reply.confirmation.data.accept) {
 			return {
 				outcome: 'accepted',
-				result: getSimulationStack(reply.snapshot, params.params[0]),
-				simulationStackHash: getSimulationStackHash(reply.snapshot.simulationInput),
+				result: getSimulationStack(replySnapshot, params.params[0]),
+				simulationStackHash: getSimulationStackHash(replySnapshot.simulationInput),
 			}
 		}
-		return getRejectedDialogResult(reply.snapshot)
+		return getRejectedDialogResult(replySnapshot)
 	} finally {
 		removeWindowTabListeners(onCloseWindow, onCloseTab)
 		pendForUserReply = undefined

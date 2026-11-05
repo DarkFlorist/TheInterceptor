@@ -39,7 +39,7 @@ import { getErrorMessage, reportUnexpectedError, isExpectedInfrastructureError }
 import type { ImportSimulationStackReply, RequestAbiAndNameFromBlockExplorer, RequestIdentifyAddress, SetSafeSimulationSigner, UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { getWebsiteCreatedEthereumTransactions } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { computeConfirmationVisualisation, type ConfirmationVisualisationDependencies, updatePopupVisualisationIfNeeded, updatePopupVisualisationState } from './popupVisualisationUpdater.js'
-import { resolveFetchSimulationStackRequest } from './windows/fetchSimulationStack.js'
+import { rejectFetchSimulationStackRequest, resolveFetchSimulationStackRequest } from './windows/fetchSimulationStack.js'
 import { updateChainChangeViewWithPendingRequest } from './windows/changeChain.js'
 import { resolveWatchAsset, updateWatchAssetViewWithPendingRequest } from './windows/watchAsset.js'
 import { updateInterceptorAccessViewWithPendingRequests } from './windows/interceptorAccess.js'
@@ -1208,11 +1208,13 @@ async function buildHomePageUpdate(
 	}
 }
 
-// The reply describes the stack at confirmation time, read together with the confirming popup's settings and services.
-export async function fetchSimulationStackRequestConfirmation(ethereumClientService: EthereumClientService, simulation: SimulationRead, websiteTabConnections: WebsiteTabConnections, confirmation: FetchSimulationStackRequestConfirmation) {
+// An accepted reply describes the stack at confirmation time, read together with the settings and services of that moment. A rejection sends no stack, so it reads and simulates nothing.
+export async function fetchSimulationStackRequestConfirmation(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, confirmation: FetchSimulationStackRequestConfirmation) {
 	const pendingRequest = await getFetchSimulationStackRequestPromise()
 	if (pendingRequest === undefined) throw new Error('The pending simulation stack request is unavailable.')
-	const snapshot = await getUpdatedSimulationStackSnapshot(ethereumClientService, pendingRequest.simulationOverlayEnabled, simulation)
+	if (!confirmation.data.accept) return await rejectFetchSimulationStackRequest(websiteTabConnections, confirmation)
+	const { services, simulation } = await readNetworkSnapshot(simulationServicesOwner)
+	const snapshot = await getUpdatedSimulationStackSnapshot(services.ethereum, pendingRequest.simulationOverlayEnabled, simulation)
 	await resolveFetchSimulationStackRequest(snapshot, websiteTabConnections, confirmation)
 }
 

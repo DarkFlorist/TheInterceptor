@@ -1,4 +1,5 @@
 import { METAMASK_ERROR_ALREADY_PENDING } from '../../utils/constants.js'
+import { reportUnexpectedError } from '../../utils/errors.js'
 import { Future } from '../../utils/future.js'
 import type { InterceptorAccessChangeAddress, InterceptorAccessRefresh, InterceptorAccessReply, Settings, WindowMessage } from '../../types/interceptor-messages.js'
 import { createScopedKeyedSerialExecutor, Semaphore } from '../../utils/semaphore.js'
@@ -466,24 +467,33 @@ async function resolve(simulationServicesOwner: SimulationServicesOwner, website
 		promptForFollowUpAccesses = shouldPromptForFollowUpAccesses
 		const accountRequestSocket = replyCompletesAccountRequest ? request.uniqueRequestIdentifier.requestSocket : undefined
 		const applyAccessReply = async () => {
-			let approvedAddressSelection
-			if (accessReply.userReply === 'Approved' && accessReply.requestAccessToAddress !== undefined) {
-				approvedAddressSelection = await getAllowedAddressSelectionForAccessRequest(pendingAccessRequest, accessReply.requestAccessToAddress, 'pendingEntry')
-			}
+			const approvedAddressSelection = accessReply.userReply === 'Approved' && accessReply.requestAccessToAddress !== undefined
+				? await getAllowedAddressSelectionForAccessRequest(pendingAccessRequest, accessReply.requestAccessToAddress, 'pendingEntry')
+				: undefined
 			if (!userRequestedAddressChange) {
 				await changeAccess(simulationServicesOwner, websiteTabConnections, accessReply, website, false)
 				return
 			}
 			if (accessReply.requestAccessToAddress === undefined) throw new Error('Changed request to page level')
 			await changeAccess(simulationServicesOwner, websiteTabConnections, accessReply, website, false)
-			const settings = await getSettings()
-			const signerAddress = (await getTabState(pendingAccessRequest.socket.tabId)).signerAccounts[0]
-			const selection = approvedAddressSelection ?? await getAllowedAddressSelectionForAccessRequest(pendingAccessRequest, accessReply.requestAccessToAddress, 'pendingEntry')
-			await activateAddressSelection(simulationServicesOwner, websiteTabConnections, selection, {
-				simulationMode: settings.simulationMode,
-				signerAddress,
-				promptForAccessesIfNeeded: false,
-			})
+			const requestedAddress = accessReply.requestAccessToAddress
+			const activateRequestedAddress = async () => {
+				const settings = await getSettings()
+				const signerAddress = (await getTabState(pendingAccessRequest.socket.tabId)).signerAccounts[0]
+				const selection = approvedAddressSelection ?? await getAllowedAddressSelectionForAccessRequest(pendingAccessRequest, requestedAddress, 'pendingEntry')
+				await activateAddressSelection(simulationServicesOwner, websiteTabConnections, selection, {
+					simulationMode: settings.simulationMode,
+					signerAddress,
+					promptForAccessesIfNeeded: false,
+				})
+			}
+			if (accessReply.userReply !== 'Rejected') return await activateRequestedAddress()
+			// The website's answer does not depend on the address the user moved to, so a network that cannot apply the move does not hold the rejection back.
+			try {
+				await activateRequestedAddress()
+			} catch (error: unknown) {
+				await reportUnexpectedError(error)
+			}
 		}
 		if (accountRequestSocket === undefined) {
 			await applyAccessReply()
