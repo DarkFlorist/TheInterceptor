@@ -3,6 +3,7 @@ import { CompoundTimeLock } from '../utils/abi.js'
 import { addressString, bigintSecondsToDate, checksummedAddress, dateToBigintSeconds, stringToUint8Array } from '../utils/bigint.js'
 import { MOCK_ADDRESS } from '../utils/constants.js'
 import type { EthereumClientService } from './services/EthereumClientService.js'
+import { getSimulatedBlockBaseFeePerGas } from './services/simulationBlockParameters.js'
 import { getCompoundGovernanceTimeLockMulticall } from '../utils/ethereumByteCodes.js'
 import * as funtypes from 'funtypes'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
@@ -89,7 +90,7 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 			time: bigintSecondsToDate(eta), // timestamp is set to ETA
 			gasLimit: parentBlock.gasLimit,
 			feeRecipient: parentBlock.miner,
-			baseFeePerGas: parentBlock.baseFeePerGas === undefined ? 15000000n : parentBlock.baseFeePerGas
+			baseFeePerGas: getSimulatedBlockBaseFeePerGas(parentBlock)
 		},
 		stateOverrides: {
 			[addressString(timeLockContract)]: { code: getCompoundGovernanceTimeLockMulticall(), stateDiff: {} }
