@@ -39,7 +39,7 @@ function getImportedSettingsValues(exportedSettings: ExportedSettings): Imported
 
 export async function importSettingsAndAddressBook(exportedSettings: ExportedSettings) {
 	await commitImportedSettings(getImportedSettingsValues(exportedSettings))
-	// The import replaces the whole website access list and this only re-applies it, so it runs without comparing the disabled sites. The import is committed by now, so a failure is reported rather than rethrown to keep the caller's reconciliation running. This stays out of commitImportedSettings because settings.ts importing the content script updater would create an import cycle.
+	// The refresh has one implementation, updateContentScriptInjectionStrategy, which both paths call; only the decision to call it is here, because this write bypasses updateWebsiteAccess. The import replaces the whole website access list and the refresh only re-applies it, so it runs without comparing the disabled sites. The import is committed by now, so a failure is reported rather than rethrown to keep the caller's reconciliation running. This stays out of commitImportedSettings because settings.ts importing the content script updater would create an import cycle.
 	try {
 		await updateContentScriptInjectionStrategy()
 	} catch (error: unknown) {
