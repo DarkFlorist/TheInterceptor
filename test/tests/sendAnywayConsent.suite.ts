@@ -57,6 +57,42 @@ async function getStoredRequest() {
 	return stored
 }
 
+const refreshConfirmMetadata = async () => await modules.refreshPopupConfirmTransactionMetadata(simulator.ethereum, simulator.tokenPriceService, undefined)
+const getConfirmDialogUpdates = () => browserMock.sentMessages.filter((message) => message.method === 'popup_update_confirm_transaction_dialog' || message.method === 'popup_update_confirm_transaction_dialog_pending_transactions')
+
+// Refreshes once as a control, then again with the request resolved right after the refresh persists its result, which is during its awaits and before it reads the queue back.
+async function assertMetadataRefreshSendsNothingOnceRequestIsResolved() {
+	await refreshConfirmMetadata()
+	assert.equal(getConfirmDialogUpdates().length, 2, 'an unresolved request gets both dialog updates')
+
+	browserMock.sentMessages.length = 0
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		writeStoredItems()
+		if ('pendingTransactionsAndMessages' in items) browserMock.storageState.pendingTransactionsAndMessages = []
+	})
+	try {
+		await refreshConfirmMetadata()
+	} finally {
+		browserMock.setStorageSetHandler(undefined)
+	}
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	assert.deepEqual(getConfirmDialogUpdates(), [], 'the popup rejects an empty queue, so nothing is sent')
+}
+
+test('a metadata refresh sends nothing when the transaction is resolved during its awaits', async () => {
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [makeReviewedTransaction(succeeded, false)] })
+	await assertMetadataRefreshSendsNothingOnceRequestIsResolved()
+})
+
+test('a metadata refresh sends nothing when the signature request is resolved during its awaits', async () => {
+	const { websiteTabConnections } = createSignerConnection()
+	const signRequest = { method: 'personal_sign' as const, params: ['0x68656c6c6f', activeAddress] as const }
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, { ...signRequest, interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier }, { kind: 'message', parameters: signRequest }, false, activeAddress, pendingTransaction.website, websiteTabConnections)
+	browserMock.sentMessages.length = 0
+	await assertMetadataRefreshSendsNothingOnceRequestIsResolved()
+})
+
 test('the reviewed-result id ignores approval status, popup window and field order, and changes with the result, request or Safe signer', async () => {
 	const reviewed = makeReviewedTransaction(succeeded, false)
 	const reviewedId = getReviewedResultId(reviewed)

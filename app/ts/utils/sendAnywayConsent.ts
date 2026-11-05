@@ -46,7 +46,7 @@ export const isRejectOnlyTransaction = (pending: SendAnywayConsentInput) => {
 	return pending.type === 'Transaction' && pending.transactionOrMessageCreationStatus === 'Simulated' && getVisualizedTransactionResult(pending.popupVisualisation, pending.transactionIdentifier) === undefined
 }
 
-// Stays the same across re-simulations that only change per-block details, so a ticked override survives them but not a new failure or quarantine reason.
+// Stays the same across re-simulations that only change per-block details, so a ticked override survives them but not a new failure or quarantine reason. It answers whether the user's send-anyway tick still applies, not whether an accept matches the result on screen, which is what the reviewed-result id answers.
 export const getSendAnywayConsentFingerprint = (pending: SendAnywayConsentInput) => {
 	const consent = getSendAnywayConsent(pending)
 	return consent === undefined ? undefined : JSON.stringify(consent)

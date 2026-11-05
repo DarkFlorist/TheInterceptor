@@ -45,7 +45,7 @@ const stringifyCanonically = (value: unknown) => JSON.stringify(value, (_key, ne
 	return nested
 })
 
-// Identifies what the user reviews for a stored pending request. The background stamps each popup copy with it, the popup returns it unchanged with an accept, and the background honours the accept only while the stored request still has that id, so approval-status changes keep it while a changed result, request or signer does not.
+// Identifies what the user reviews for a stored pending request. The background stamps each popup copy with it, the popup returns it unchanged with an accept, and the background honours the accept only while the stored request still has that id, so approval-status changes keep it while a changed result, request or signer does not. It answers whether an accept is for exactly the result on screen, so any shown change invalidates it, per-block re-simulations included, and an accept that races one is refused and needs a re-click on the refreshed result.
 export const getReviewedResultId = (pending: PendingTransactionOrSignableMessage) => {
 	const reviewedContent = Object.fromEntries(Object.entries(pending).filter(([field]) => isReviewedField(field)))
 	return keccak256(stringToBytes(stringifyCanonically(reviewedContent)))
