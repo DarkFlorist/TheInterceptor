@@ -2,7 +2,7 @@ import { getActiveAddress, getActiveAddressesForAllTabs, getWebsiteSocketConnect
 import { getActiveAddressEntryForChain, getActiveAddresses } from './metadataUtils.js'
 import { requestAccessFromUser } from './windows/interceptorAccess.js'
 import { retrieveWebsiteDetails, updateExtensionIcon } from './iconHandler.js'
-import type { TabConnection, WebsiteTabConnections } from '../types/user-interface-types.js'
+import type { TabConnection, TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { InpageScriptCallBack, Settings } from '../types/interceptor-messages.js'
 import { getLiveSettingsOnAdmittedRpcNetwork, getSettingsSnapshot, type LiveSettings, updateWebsiteAccess, settingsIfRpcConfigurationReady, requireReadableApprovals, getWebsiteApprovalsSnapshot, requireAvailableSettings } from './settings.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
@@ -93,13 +93,12 @@ export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socke
 	const access = requestAccessForAddress !== undefined ? hasAddressAccess(settings.websiteAccess, websiteOrigin, requestAccessForAddress) : hasAccess(settings.websiteAccess, websiteOrigin)
 	if (access === 'hasAccess') {
 		const popupRefreshGeneration = bumpPopupRefreshGeneration()
-		connectToPort(
+		void connectToPort(
 			websiteTabConnections,
 			socket,
 			settings,
 			requestAccessForAddress?.address,
-		)
-		void updateExtensionIcon(socket.tabId, websiteOrigin, popupRefreshGeneration).catch((error: unknown) => {
+		).then(async () => await updateExtensionIcon(socket.tabId, websiteOrigin, popupRefreshGeneration)).catch((error: unknown) => {
 			void reportUnexpectedError(error)
 		})
 		return 'hasAccess'
@@ -179,19 +178,19 @@ export async function setAccess(website: Website, access: boolean, address: bigi
 	})
 }
 
-// The only code that approves a connection.
+// The only code that approves a connection. A newly approved tab can need a block that no update installed yet, so the returned promise settles once request blocks are reconciled; it never rejects, a failure is reported.
 function connectToPort(
 	websiteTabConnections: WebsiteTabConnections,
 	socket: WebsiteSocket,
 	settings: LiveSettings,
 	connectWithActiveAddress: bigint | undefined,
-): true {
+): Promise<void> {
 	const wasApproved = getWebsiteSocketConnection(websiteTabConnections, socket)?.approved === true
 	setWebsitePortApproval(websiteTabConnections, socket, true)
 	if (!wasApproved) notifyWebsiteLifecycle(websiteTabConnections.lifecycle?.approvalChanged, socket, true)
-	if (!shouldSendUnscopedConnectionEvents(socket)) return true
-	sendProviderConnectionEventsToPort(websiteTabConnections, socket, settings, connectWithActiveAddress === undefined ? [] : [connectWithActiveAddress])
-	return true
+	if (shouldSendUnscopedConnectionEvents(socket)) sendProviderConnectionEventsToPort(websiteTabConnections, socket, settings, connectWithActiveAddress === undefined ? [] : [connectWithActiveAddress])
+	if (wasApproved) return Promise.resolve()
+	return updateDeclarativeNetRequestBlocks(websiteTabConnections).catch(async (error: unknown) => { await reportUnexpectedError(error) })
 }
 
 export function sendProviderConnectionEventsToPort(
@@ -308,7 +307,7 @@ async function reconcileConnection(websiteTabConnections: WebsiteTabConnections,
 		const liveSettings = await getLiveSettingsOnAdmittedRpcNetwork(inputs.settings)
 		if (liveSettings.kind !== 'ready' || connection.approved) return []
 		if (getConnectionAccessForAddress(liveSettings.settings.websiteAccess, connection, activeAddress) !== 'hasAccess') return []
-		connectToPort(websiteTabConnections, connection.socket, liveSettings.settings, activeAddress?.address)
+		await connectToPort(websiteTabConnections, connection.socket, liveSettings.settings, activeAddress?.address)
 		return []
 	} catch (error: unknown) {
 		return [error]
@@ -361,8 +360,8 @@ const getTabIdsToBlockWithoutReadyRpcConfiguration = async (websiteTabConnection
 type RequestBlocks = {
 	readonly tabIdsToBlock: readonly number[]
 	readonly sitesToBlock: readonly string[]
-	// True when the tab set is only a conservative lower bound (RPC configuration not ready); tab blocks that are already applied must then be kept, never lifted.
-	readonly keepAppliedTabBlocks: boolean
+	// Which tab blocks that are already applied must be kept, never lifted, because the tab set is only a lower bound for them: every one while the RPC configuration is not ready, afterwards those of tabs still waiting for their approval.
+	readonly keepAppliedTabBlock: (tabId: number) => boolean
 }
 
 const getSitesToBlock = (websiteAccess: WebsiteAccessArray) => websiteAccess.filter((access) => access.declarativeNetRequestBlockMode === 'block-all').map((acccess) => acccess.website.websiteOrigin)
@@ -370,16 +369,31 @@ const getSitesToBlock = (websiteAccess: WebsiteAccessArray) => websiteAccess.fil
 // The single tab-blocking mode decision: undefined (the RPC configuration is not ready, even if it kept a readable active network) means tab blocking is derived from persisted consent.
 const getSettingsForTabBlocking = async () => settingsIfRpcConfigurationReady(await getSettingsSnapshot())
 
+// Runtime approvals return only after recovery: a tab registered during an outage, or reconnecting after a restart, is unapproved at first, so approvals alone would lift a block that persisted consent put in place. Such a block stays while the tab's website has that consent and its active address blocks everything or is not known yet; the grant that follows reconciles it (see connectToPort). A restarted worker has no connections yet, so the tab's stored website counts too.
+const getConsentedTabIdsAwaitingApproval = async (websiteTabConnections: WebsiteTabConnections, websiteAccess: WebsiteAccessArray, tabAddresses: readonly { readonly tabId: number, readonly activeAddress: AddressBookEntry | undefined }[]) => {
+	const anyActiveAddressBlocksAll = (await getActiveAddresses()).some((entry) => entry.declarativeNetRequestBlockMode === 'block-all')
+	const addressMayBlockAll = (tabId: number) => {
+		const activeAddress = tabAddresses.find((tabData) => tabData.tabId === tabId)?.activeAddress
+		return activeAddress === undefined ? anyActiveAddressBlocksAll : activeAddress.declarativeNetRequestBlockMode === 'block-all'
+	}
+	const getTabWebsiteOrigins = (tabState: TabState) => [tabState.website?.websiteOrigin, ...Object.values(websiteTabConnections.get(tabState.tabId)?.connections ?? {}).map((connection) => connection.websiteOrigin)]
+	const tabHasConsent = (tabState: TabState) => getTabWebsiteOrigins(tabState).some((websiteOrigin) => websiteOrigin !== undefined && hasAccess(websiteAccess, websiteOrigin) === 'hasAccess')
+	return new Set((await getAllTabStates()).filter((tabState) => addressMayBlockAll(tabState.tabId) && tabHasConsent(tabState)).map((tabState) => tabState.tabId))
+}
+
 const getTabsAndAddressesToBlock = async (websiteTabConnections: WebsiteTabConnections): Promise<RequestBlocks> => {
 	const approvedTabIds = getApprovedTabs(websiteTabConnections)
 	const settings = await getSettingsForTabBlocking()
 	if (settings === undefined) {
 		// A fresh read on purpose: when storage is unreadable the snapshot's fail-closed approvals are empty, which would lift applied site blocks, so this read (like getActiveAddresses) rejects and every applied rule stays in place.
 		const websiteAccess = requireReadableApprovals(await getWebsiteApprovalsSnapshot({ repairCorrupt: true }))
-		return { tabIdsToBlock: await getTabIdsToBlockWithoutReadyRpcConfiguration(websiteTabConnections, websiteAccess), sitesToBlock: getSitesToBlock(websiteAccess), keepAppliedTabBlocks: true }
+		return { tabIdsToBlock: await getTabIdsToBlockWithoutReadyRpcConfiguration(websiteTabConnections, websiteAccess), sitesToBlock: getSitesToBlock(websiteAccess), keepAppliedTabBlock: () => true }
 	}
-	const tabIdsToBlock = (await getActiveAddressesForAllTabs(settings)).filter((tabData) => approvedTabIds.has(tabData.tabId)).filter((tabData) => tabData.activeAddress?.declarativeNetRequestBlockMode === 'block-all').map((tabData) => tabData.tabId)
-	return { tabIdsToBlock, sitesToBlock: getSitesToBlock(requireReadableApprovals(await getWebsiteApprovalsSnapshot({ repairCorrupt: true }))), keepAppliedTabBlocks: false }
+	const tabAddresses = await getActiveAddressesForAllTabs(settings)
+	const websiteAccess = requireReadableApprovals(await getWebsiteApprovalsSnapshot({ repairCorrupt: true }))
+	const tabIdsToBlock = tabAddresses.filter((tabData) => approvedTabIds.has(tabData.tabId)).filter((tabData) => tabData.activeAddress?.declarativeNetRequestBlockMode === 'block-all').map((tabData) => tabData.tabId)
+	const tabIdsAwaitingApproval = await getConsentedTabIdsAwaitingApproval(websiteTabConnections, websiteAccess, tabAddresses)
+	return { tabIdsToBlock, sitesToBlock: getSitesToBlock(websiteAccess), keepAppliedTabBlock: (tabId) => tabIdsAwaitingApproval.has(tabId) }
 }
 
 let webRequestListener: (details: browser.webRequest._OnBeforeRequestDetails) => void = () => undefined
@@ -398,14 +412,14 @@ const getAppliedSiteBlocks = async (): Promise<readonly string[]> => {
 	return (await browser.declarativeNetRequest.getDynamicRules()).flatMap((rule) => rule.condition.initiatorDomains ?? [])
 }
 
-const getTabIdsWithAppliedTabBlocks = async (tabIdsToBlock: readonly number[]) => Array.from(new Set([...await getAppliedTabBlocks(), ...tabIdsToBlock]))
+const withKeptAppliedTabBlocks = async ({ tabIdsToBlock, keepAppliedTabBlock }: RequestBlocks) => Array.from(new Set([...(await getAppliedTabBlocks()).filter(keepAppliedTabBlock), ...tabIdsToBlock]))
 
 const updateDeclarativeNetRequestBlocksSemaphore = new Semaphore(1)
 export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: WebsiteTabConnections) {
 	return await updateDeclarativeNetRequestBlocksSemaphore.execute(async () => {
 		const requestBlocks = await getTabsAndAddressesToBlock(websiteTabConnections)
 		const { sitesToBlock } = requestBlocks
-		const tabIdsToBlock = requestBlocks.keepAppliedTabBlocks ? await getTabIdsWithAppliedTabBlocks(requestBlocks.tabIdsToBlock) : requestBlocks.tabIdsToBlock
+		const tabIdsToBlock = await withKeptAppliedTabBlocks(requestBlocks)
 		const tabBlockIdentifier = tabIdsToBlock.join('|')
 		const siteBlockIdentifier = sitesToBlock.join('|')
 		const tabBlocksChanged = tabBlockIdentifier !== previousTabBlockIdentifier

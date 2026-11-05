@@ -103,6 +103,82 @@ describe('background eth_accounts', () => {
 		assert.match(tabIconDetails.iconReason, /RPC configuration/)
 	})
 
+	// A consented block-all tab registered during an outage: it is blocked, but not approved, when the outage ends.
+	const registerConsentedTabDuringOutage = async (tabId: number, storedRpcEntries: unknown = 'corrupt') => {
+		const { setRpcConfiguration, getRequiredSettings } = await loadModules()
+		const websiteOrigin = `consented-outage-${ tabId.toString() }.example`
+		const { activeRpcNetwork } = await setUpBlockAllWithPersistedConsent(websiteOrigin)
+		await browser.storage.local.set({ rpcEntries: storedRpcEntries })
+		const socket = { tabId, connectionName: 0n }
+		const connection = { port: createPort(socket.tabId).port, socket, websiteOrigin, approved: false, wantsToConnect: false }
+		const websiteTabConnections: WebsiteTabConnections = new Map()
+		await registerConnectionAndSettle(websiteTabConnections, socket, connection, true)
+		const services = createEthereumWithGetBlockCounter({ count: 0 })
+		const simulationServicesOwner = createTestSimulationServicesOwner(services, () => services)
+		const endOutage = async () => await setRpcConfiguration([activeRpcNetwork], activeRpcNetwork)
+		return { activeRpcNetwork, connection, endOutage, getRequiredSettings, simulationServicesOwner, websiteOrigin, websiteTabConnections }
+	}
+
+	test.each([
+		{ path: 'Retry', tabId: 9901 },
+		{ path: 'restoring the default RPC list', tabId: 9902 },
+		{ path: 'saving the RPC list', tabId: 9903 },
+		{ path: 'a later reconciliation after storage reads recover', tabId: 9904 },
+		{ path: 'a service worker restart', tabId: 9905 },
+	] as const)('a tab registered during an outage with persisted consent stays blocked across $path', async ({ path, tabId }) => {
+		const browserMock = installBrowserMock({ manifestVersion: 3 })
+		const { areWeBlocking, publishRpcConfigurationRecovery, setNewRpcList, updateDeclarativeNetRequestBlocks } = await loadModules()
+		const { handlePopupRuntimeMessage } = await import('../../app/ts/background/popupMessageRouting.js')
+		// Only an emptied list can be saved during an outage; a corrupt one is refused.
+		const { activeRpcNetwork, endOutage, getRequiredSettings, simulationServicesOwner, websiteOrigin, websiteTabConnections } = await registerConsentedTabDuringOutage(tabId, path === 'saving the RPC list' ? [] : 'corrupt')
+		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [tabId])
+
+		await withSilencedWarnings(async () => {
+			if (path === 'restoring the default RPC list') return await handlePopupRuntimeMessage(websiteTabConnections, simulationServicesOwner, { method: 'popup_restoreDefaultRpcConfiguration' }, noopPublishRpcConnectionStatus)
+			if (path === 'saving the RPC list') {
+				if (activeRpcNetwork.httpsRpc === undefined) throw new Error('The default network has an endpoint')
+				return await setNewRpcList(simulationServicesOwner, websiteTabConnections, { method: 'popup_set_rpc_list', data: [{ ...activeRpcNetwork, httpsRpc: activeRpcNetwork.httpsRpc }] }, await getRequiredSettings(), publishRpcConfigurationRecovery)
+			}
+			await endOutage()
+			if (path === 'Retry') return await handlePopupRuntimeMessage(websiteTabConnections, simulationServicesOwner, { method: 'popup_retryRpcConfiguration' }, noopPublishRpcConnectionStatus)
+			// A restarted worker has no connections yet; the tab's stored website still identifies it.
+			return await updateDeclarativeNetRequestBlocks(path === 'a service worker restart' ? new Map() : websiteTabConnections)
+		})
+
+		assert.equal(await areWeBlocking(tabId, websiteOrigin), true)
+	})
+
+	test('a block retained across an outage is lifted once the website no longer has consent', async () => {
+		const browserMock = installBrowserMock({ manifestVersion: 3 })
+		const { updateDeclarativeNetRequestBlocks, updateWebsiteAccess } = await loadModules()
+		const { endOutage, websiteTabConnections } = await registerConsentedTabDuringOutage(9906)
+		await endOutage()
+		await updateWebsiteAccess(() => [])
+
+		await updateDeclarativeNetRequestBlocks(websiteTabConnections)
+
+		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [])
+	})
+
+	test('approving a block-all tab outside any reconciliation installs its rule', async () => {
+		const browserMock = installBrowserMock({ manifestVersion: 3 })
+		const { handleInterceptedRequest, websiteSocketToString } = await loadModules()
+		const websiteOrigin = 'approved-later.example'
+		await setUpBlockAllWithPersistedConsent(websiteOrigin)
+		const socket = { tabId: 9907, connectionName: 0n }
+		const { port } = createPort(socket.tabId)
+		const websiteTabConnections: WebsiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: { [websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: false, wantsToConnect: false } } }]])
+		const { updateTabState } = await loadModules()
+		await updateTabState(socket.tabId, (previous) => ({ ...previous, website: { websiteOrigin, icon: undefined, title: undefined } }))
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [])
+
+		await withSilencedWarnings(async () => await handleInterceptedRequest(port, websiteOrigin, { websiteOrigin, icon: undefined, title: undefined }, simulationServicesOwner, socket, { interceptorRequest: true, usingInterceptorWithoutSigner: true, uniqueRequestIdentifier: { requestId: 92, requestSocket: socket }, method: 'eth_chainId', params: [] }, websiteTabConnections, noopPublishRpcConnectionStatus))
+		await new Promise((resolve) => setTimeout(resolve, 10))
+
+		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [socket.tabId])
+	})
+
 	test('derives tab blocking from approved connections on a signer-only network, whose empty RPC entries are a ready configuration', async () => {
 		const browserMock = installBrowserMock({ manifestVersion: 3 })
 		const { setRpcConfiguration } = await loadModules()
