@@ -1,7 +1,7 @@
 import * as assert from 'assert'
 import { describe, spyOn, test } from 'bun:test'
 import * as funtypes from 'funtypes'
-import { type CodecDescriptions, describeJsonDocument, explainValueFailure, getCodecLabel, getObjectFieldCodec, getTupleVariants, indexCodecDescriptions, type ReflectedCodec } from '../../app/ts/utils/funtypesFailureExplanation.js'
+import { type CodecDescriptions, explainValueFailure, getCodecLabel, getObjectFieldCodec, getTupleVariants, indexCodecDescriptions, type ReflectedCodec } from '../../app/ts/utils/funtypesFailureExplanation.js'
 
 // These tests pin the funtypes internals the adapter reads, so a funtypes upgrade that changes them fails here instead of silently degrading invalid-params errors.
 
@@ -103,7 +103,7 @@ describe('funtypes failure explanation', () => {
 		const Settings = funtypes.ReadonlyObject({ version: funtypes.Number })
 		// Rejects every string, so only the explanation decides whether the string holds valid settings.
 		const SettingsText = funtypes.String.withConstraint(() => 'is not settings JSON')
-		const jsonDocument = describeJsonDocument({ name: 'settings', shape: 'a JSON object with a version', codec: Settings, parse: JSON.parse })
+		const jsonDocument = { name: 'settings', shape: 'a JSON object with a version', codec: Settings, parse: JSON.parse }
 		const descriptions = indexCodecDescriptions([{ codec: SettingsText, label: 'settings', expected: 'settings as a JSON string', jsonDocument }])
 		const codec = funtypes.ReadonlyTuple(SettingsText)
 		assert.deepEqual(explain(codec, ['{"version":"1"}'], descriptions), { kind: 'invalidJsonDocument', path: [0], document: jsonDocument, documentProblem: { kind: 'wrongFormat', path: ['version'], expected: 'a number', received: '1' } })
@@ -123,5 +123,18 @@ describe('funtypes failure explanation', () => {
 		assert.equal(shallowlyNested.problem, undefined)
 		assert.equal(deeplyNested.problem, undefined)
 		assert.equal(deeplyNested.parseCount, shallowlyNested.parseCount)
+	})
+
+	test('is only loaded at runtime by the invalid-params reply, so extension pages sharing the type modules do not load it', async () => {
+		const sourceDirectory = new URL('../../app/ts/', import.meta.url).pathname
+		const runtimeImporters: string[] = []
+		for await (const sourceFile of new Bun.Glob('**/*.{ts,tsx}').scan({ cwd: sourceDirectory })) {
+			const source = await Bun.file(`${ sourceDirectory }${ sourceFile }`).text()
+			if (!source.includes('funtypesFailureExplanation.js')) continue
+			// The import scan leaves out erased type imports.
+			const runtimeImports = new Bun.Transpiler({ loader: sourceFile.endsWith('.tsx') ? 'tsx' : 'ts' }).scanImports(source)
+			if (runtimeImports.some((runtimeImport) => runtimeImport.path.endsWith('funtypesFailureExplanation.js'))) runtimeImporters.push(sourceFile)
+		}
+		assert.deepEqual(runtimeImporters, ['background/rpcParseFailureReply.ts'])
 	})
 })

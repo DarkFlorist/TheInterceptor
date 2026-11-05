@@ -35,7 +35,7 @@ function collectNestedCodecs(codec: unknown, collected = new Set<ParseableCodec>
 	return collected
 }
 
-// Counts how often each codec nested in the request codec, or in the JSON object codec of EIP-712 messages, is validated while the readable message is built. The typed data document codec itself is private to eip721.ts and reached only inside the EIP712Message string parser, so its validations are not counted.
+// Counts how often each codec nested in the request codec, or in the JSON object codec of EIP-712 messages, is validated while the readable message is built. The typed data document codec itself is not exported by eip721.ts, so its validations are not counted.
 function getReadableMessageWithParseCounts(method: string, params: unknown[]) {
 	const request = createRequest(method, params)
 	const requestCodec = findEthereumJsonRpcRequestCodec(method)

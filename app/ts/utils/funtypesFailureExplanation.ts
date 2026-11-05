@@ -16,19 +16,20 @@ export type ValueFailure = {
 export type ValuePath = readonly (string | number)[]
 
 // Counts the validations one explanation has requested, including those skipped after the budget ran out. Only getFailureWithinBudget increments it.
-export type ValidationBudget = { validationCount: number }
+type ValidationBudget = { validationCount: number }
 
 // The codec descriptions and the validation budget shared by every step of one explanation.
-export type ExplanationContext = {
+type ExplanationContext = {
 	readonly descriptions: CodecDescriptions
 	readonly budget: ValidationBudget
 }
 
-// A JSON document held in a string. Create it with describeJsonDocument, which keeps the document codec private to the module that defines it.
+// A JSON document held in a string. It is plain data like the rest of a CodecDescription, so type modules describe their codecs with an erased import of this module instead of loading it into every extension page.
 export type JsonDocumentDescription = {
 	readonly name: string
 	readonly shape: string
-	readonly locateDocumentProblem: (context: ExplanationContext, text: string) => { readonly isJson: false } | { readonly isJson: true, readonly problem: ValueProblem | undefined }
+	readonly codec: ReflectedCodec
+	readonly parse: (text: string) => unknown
 }
 
 // How readable errors name a codec and describe the values it accepts. Each description is defined beside the codec it describes.
@@ -295,11 +296,22 @@ const locateProblemIfInvalid = (context: ExplanationContext, node: ValueNode) =>
 	return failure === undefined ? undefined : locateValueProblem(context, node, failure)
 }
 
+// Decodes a JSON document with the document's own parser, which throws a SyntaxError for text that is not JSON.
+function decodeJsonDocument(parse: (text: string) => unknown, text: string): { readonly success: true, readonly value: unknown } | { readonly success: false } {
+	try {
+		return { success: true, value: parse(text) }
+	} catch (error: unknown) {
+		if (error instanceof SyntaxError) return { success: false }
+		throw error
+	}
+}
+
 function explainJsonDocumentFailure(context: ExplanationContext, node: ValueNode, text: string, document: JsonDocumentDescription, failure: ValueFailure): ValueProblem {
-	const documentExplanation = document.locateDocumentProblem(context, text)
-	if (!documentExplanation.isJson) return { kind: 'invalidJsonDocument', path: node.path, document, documentProblem: undefined }
-	if (documentExplanation.problem === undefined) return { kind: 'rejected', path: node.path, reason: failure.message }
-	return { kind: 'invalidJsonDocument', path: node.path, document, documentProblem: documentExplanation.problem }
+	const decodedDocument = decodeJsonDocument(document.parse, text)
+	if (!decodedDocument.success) return { kind: 'invalidJsonDocument', path: node.path, document, documentProblem: undefined }
+	const documentProblem = locateProblemIfInvalid(context, { codec: document.codec, value: decodedDocument.value, path: [] })
+	if (documentProblem === undefined) return { kind: 'rejected', path: node.path, reason: failure.message }
+	return { kind: 'invalidJsonDocument', path: node.path, document, documentProblem }
 }
 
 // Explains why a node failed when its failure key cannot be followed any further. Only codecs that may contain the cause are validated, each at most once.
@@ -335,30 +347,6 @@ function explainFailure(context: ExplanationContext, node: ValueNode, failure: V
 		case 'tuple':
 		case 'array': return rejected
 		default: return wrongFormat()
-	}
-}
-
-// Decodes a JSON document with the document's own parser, which throws a SyntaxError for text that is not JSON.
-function decodeJsonDocument(parse: (text: string) => unknown, text: string): { readonly success: true, readonly value: unknown } | { readonly success: false } {
-	try {
-		return { success: true, value: parse(text) }
-	} catch (error: unknown) {
-		if (error instanceof SyntaxError) return { success: false }
-		throw error
-	}
-}
-
-// Describes strings that hold a JSON document, such as EIP-712 typed data. The document codec is only captured by the returned explanation, so the module defining it does not have to export it.
-export function describeJsonDocument(document: { readonly name: string, readonly shape: string, readonly codec: ReflectedCodec, readonly parse: (text: string) => unknown }): JsonDocumentDescription {
-	const { name, shape, codec, parse } = document
-	return {
-		name,
-		shape,
-		locateDocumentProblem: (context, text) => {
-			const decodedDocument = decodeJsonDocument(parse, text)
-			if (!decodedDocument.success) return { isJson: false }
-			return { isJson: true, problem: locateProblemIfInvalid(context, { codec, value: decodedDocument.value, path: [] }) }
-		},
 	}
 }
 
