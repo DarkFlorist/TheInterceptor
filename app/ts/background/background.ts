@@ -73,7 +73,7 @@ async function handleRPCRequest(
 	safeSigningMode: boolean,
 	activeSafeSigner: bigint | undefined,
 ): Promise<RPCReply> {
-	// Execute on the services and stack captured with the request's settings; the owner is only passed on to network switches and to confirmation flows, which read the services again together with the stack they append to. services, settings and simulation always come from one readNetworkSnapshot call under the network transition lock; keeping them separate parameters rather than one NetworkSnapshot is a deliberate maintainer decision that keeps the existing handler signatures (see NetworkState).
+	// Execute on the services and stack captured with the request's settings; the owner is only passed on to network switches and to confirmation flows, which read the services again together with the stack they append to. See NetworkState for why services, settings and simulation are separate parameters and what keeps them on one network; the lazy simulation below takes the client directly, so it relies on their single read.
 	const { ethereum, tokenPriceService } = services
 	const network = { settings, simulation }
 	let simulationInputPromise: Promise<ResolvedSimulationInput> | undefined

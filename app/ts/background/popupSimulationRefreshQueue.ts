@@ -4,7 +4,7 @@ import type { SimulationServices } from '../simulation/serviceLifecycle.js'
 import { getSimulationProviderForSnapshot, type SimulationSnapshot } from './simulationUpdating.js'
 import { getPopupVisualisationFingerprint } from './popupSimulationFingerprint.js'
 import { stringifyJSONWithBigInts } from '../utils/bigint.js'
-import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
+import { updatePopupVisualisationForSnapshot } from './popupVisualisationUpdater.js'
 
 export type PopupSimulationRefresh = SimulationServices & { readonly invalidateOldState?: boolean }
 export type RevisionedPopupSimulationRefresh = PopupSimulationRefresh & { readonly revision: string | symbol }
@@ -57,7 +57,7 @@ export function createPopupSimulationRefresher<T extends RevisionedPopupSimulati
 }
 
 const refreshRevision = createPopupSimulationRefresher<RevisionedPopupSimulationRefresh & { readonly snapshot: SimulationSnapshot }>(async ({ ethereum, tokenPriceService, invalidateOldState = false, snapshot }) => {
-	const result = await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { invalidateOldState, skipIfUnchanged: !invalidateOldState, snapshot })
+	const result = await updatePopupVisualisationForSnapshot(ethereum, tokenPriceService, snapshot, { invalidateOldState, skipIfUnchanged: !invalidateOldState })
 	return result.simulationUpdatingState !== 'failed' && result.simulationResultState !== 'invalid'
 })
 

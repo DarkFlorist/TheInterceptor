@@ -66,56 +66,77 @@ const snapshotNetworkIsActive = (snapshot: SimulationSnapshot) => snapshot.netwo
 // A refresh without a snapshot of its own reads one under the network transition lock, so its settings and stack describe one network. It reads it before waiting for the visualisation semaphore, which a transition takes while holding its lock to publish a failed provider installation.
 const readSharedRefreshSnapshot = async (snapshot: SimulationSnapshot | undefined) => snapshot ?? (await readNetworkState()).simulation
 
-export type PopupVisualisationOptions = {
+type VisualisationRefreshOptions = {
 	readonly invalidateOldState?: boolean
-	readonly onlyIfNotAlreadyUpdating?: boolean
 	readonly skipIfUnchanged?: boolean
-	// The interactive queue refreshes the shared visualisation with the snapshot its revision was computed from.
-	readonly snapshot?: SimulationSnapshot
 }
 
-// Visibility/throttle-aware refresh of the shared visualisation: callers such as block updates can replace obsolete work without entering the interactive queue. Callers get the stored result; the queue, which supplies a snapshot, gets the result computed for it, or the unavailable state.
-export const updatePopupVisualisationIfNeeded = async (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, { invalidateOldState = false, onlyIfNotAlreadyUpdating = false, skipIfUnchanged = false, snapshot }: PopupVisualisationOptions = {}) => {
+export type PopupVisualisationOptions = VisualisationRefreshOptions & {
+	readonly onlyIfNotAlreadyUpdating?: boolean
+}
+
+// 'not-run': a guard stopped the attempt before it cancelled anything. 'unchanged': the stored visualisation already describes the snapshot's input. 'ran': computed is what the attempt built for its snapshot, undefined if it was superseded or failed.
+type VisualisationRefreshAttempt =
+	| { readonly status: 'not-run' | 'unchanged' }
+	| { readonly status: 'ran', readonly computed: CompleteVisualizedSimulation | undefined }
+
+// The guards of both entry points below, in their order; each entry point only decides what its caller gets for each outcome. A snapshot of undefined is read here, after the consumer probe.
+const attemptVisualisationRefresh = async (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, storedVisualisation: CompleteVisualizedSimulation, snapshot: SimulationSnapshot | undefined, { invalidateOldState = false, skipIfUnchanged = false }: VisualisationRefreshOptions): Promise<VisualisationRefreshAttempt> => {
+	const isSimulationDataConsumerOpenReply = await requestIsSimulationDataConsumerOpen()
+	if (!(isSimulationDataConsumerOpenReply?.data.isOpen === true)) return { status: 'not-run' }
+	const capturedSnapshot = await readSharedRefreshSnapshot(snapshot)
+	// Services captured before a network change must neither simulate the later network's stack nor cancel or invalidate that network's own refresh.
+	if (!servesSnapshotNetwork(ethereum, capturedSnapshot) || !snapshotNetworkIsActive(capturedSnapshot)) return { status: 'not-run' }
+	const provider = getSimulationProviderForSnapshot(ethereum, capturedSnapshot)
+	// Only a completed result may stand in for this refresh: a refresh discarded after its network was replaced can leave the stored result marked updating or invalid, with the same input.
+	const storedResultIsComplete = storedVisualisation.simulationUpdatingState === 'done' && storedVisualisation.simulationResultState === 'done'
+	if (skipIfUnchanged && storedResultIsComplete && storedVisualisation.simulationState.kind === 'simulated' && provider !== undefined) {
+		const currentSimulationInput = await getCurrentSimulationStateInput(provider, capturedSnapshot)
+		const currentFingerprint = getPopupVisualisationFingerprint(currentSimulationInput.simulationStateInput, currentSimulationInput.rpcNetwork, currentSimulationInput.blockNumber)
+		const cachedFingerprint = getPopupVisualisationFingerprint(
+			storedVisualisation.simulationState.value.simulationStateInput,
+			storedVisualisation.simulationState.value.rpcNetwork,
+			storedVisualisation.simulationState.value.blockNumber,
+		)
+		if (currentFingerprint === cachedFingerprint && (capturedSnapshot.numberOfAddressesMadeRich === storedVisualisation.numberOfAddressesMadeRich)) return { status: 'unchanged' }
+	}
+	// The fingerprint check above awaited the provider, so the network is checked again right before cancelling the running refresh.
+	if (!snapshotNetworkIsActive(capturedSnapshot)) return { status: 'not-run' }
+	abortController.abort(NEW_BLOCK_ABORT)
+	abortController = new AbortController()
+	const thisAbortController = abortController
+	return { status: 'ran', computed: await updatePopupVisualisationState(ethereum, tokenPriceService, thisAbortController, false, capturedSnapshot, invalidateOldState) }
+}
+
+// Visibility/throttle-aware refresh of the shared visualisation: callers such as block updates can replace obsolete work without entering the interactive queue. Returns the stored visualisation, whichever refresh wrote it.
+export const updatePopupVisualisationIfNeeded = async (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, { onlyIfNotAlreadyUpdating = false, ...refreshOptions }: PopupVisualisationOptions = {}): Promise<CompleteVisualizedSimulation> => {
 	try {
-		const popupVisualisation = await getPopupVisualisationState()
-		// A caller that supplies a snapshot needs the visualisation of exactly that snapshot, so only global refreshes may reuse the stored result.
-		const mayReuseStoredResult = onlyIfNotAlreadyUpdating && snapshot === undefined
-		if (mayReuseStoredResult && updateSimulationVisualisationSemaphore.getPermits() === 0) return popupVisualisation
-		if (mayReuseStoredResult && popupVisualisation.simulationState.kind === 'simulated') {
-			const ageSeconds = (Date.now()- popupVisualisation.simulationState.value.simulationConductedTimestamp.getTime()) / 1000
-			if (ageSeconds < TIME_BETWEEN_BLOCKS) return popupVisualisation
+		const storedVisualisation = await getPopupVisualisationState()
+		if (onlyIfNotAlreadyUpdating && updateSimulationVisualisationSemaphore.getPermits() === 0) return storedVisualisation
+		if (onlyIfNotAlreadyUpdating && storedVisualisation.simulationState.kind === 'simulated') {
+			const ageSeconds = (Date.now()- storedVisualisation.simulationState.value.simulationConductedTimestamp.getTime()) / 1000
+			if (ageSeconds < TIME_BETWEEN_BLOCKS) return storedVisualisation
 		}
-		const isSimulationDataConsumerOpenReply = await requestIsSimulationDataConsumerOpen()
-		if (!(isSimulationDataConsumerOpenReply?.data.isOpen === true)) return snapshot === undefined ? popupVisualisation : createUnavailableVisualisation()
-		const capturedSnapshot = await readSharedRefreshSnapshot(snapshot)
-		// Services captured before a network change must neither simulate the later network's stack nor cancel or invalidate that network's own refresh.
-		if (!servesSnapshotNetwork(ethereum, capturedSnapshot) || !snapshotNetworkIsActive(capturedSnapshot)) return snapshot === undefined ? popupVisualisation : createUnavailableVisualisation()
-		const provider = getSimulationProviderForSnapshot(ethereum, capturedSnapshot)
-		// Only a completed result may stand in for this refresh: a refresh discarded after its network was replaced can leave the stored result marked updating or invalid, with the same input.
-		const storedResultIsComplete = popupVisualisation.simulationUpdatingState === 'done' && popupVisualisation.simulationResultState === 'done'
-		if (skipIfUnchanged && storedResultIsComplete && popupVisualisation.simulationState.kind === 'simulated' && provider !== undefined) {
-			const currentSimulationInput = await getCurrentSimulationStateInput(provider, capturedSnapshot)
-			const currentFingerprint = getPopupVisualisationFingerprint(currentSimulationInput.simulationStateInput, currentSimulationInput.rpcNetwork, currentSimulationInput.blockNumber)
-			const cachedFingerprint = getPopupVisualisationFingerprint(
-				popupVisualisation.simulationState.value.simulationStateInput,
-				popupVisualisation.simulationState.value.rpcNetwork,
-				popupVisualisation.simulationState.value.blockNumber,
-			)
-			if (currentFingerprint === cachedFingerprint && (capturedSnapshot.numberOfAddressesMadeRich === popupVisualisation.numberOfAddressesMadeRich)) return popupVisualisation
-		}
-		// The fingerprint check above awaited the provider, so the network is checked again right before cancelling the running refresh.
-		if (!snapshotNetworkIsActive(capturedSnapshot)) return snapshot === undefined ? popupVisualisation : createUnavailableVisualisation()
-		abortController.abort(NEW_BLOCK_ABORT)
-		abortController = new AbortController()
-		const thisAbortController = abortController
-		const computed = await updatePopupVisualisationState(ethereum, tokenPriceService, thisAbortController, false, capturedSnapshot, invalidateOldState)
-		// A superseded or failed refresh leaves another refresh's result in storage, which is not this snapshot's.
-		if (snapshot !== undefined) return computed ?? createUnavailableVisualisation()
+		const attempt = await attemptVisualisationRefresh(ethereum, tokenPriceService, storedVisualisation, undefined, refreshOptions)
+		if (attempt.status !== 'ran') return storedVisualisation
 	} catch(error: unknown) {
 		if (!isExpectedInfrastructureError(error)) await reportUnexpectedError(error)
-		if (snapshot !== undefined) return createUnavailableVisualisation()
 	}
 	return await getPopupVisualisationState()
+}
+
+// The same refresh for the interactive queue, which refreshes with the snapshot its revision was computed from and needs that snapshot's visualisation, so it never reuses a merely recent result. Returns the stored visualisation only when it already describes the snapshot's input, otherwise the one built for the snapshot, or the unavailable state.
+export const updatePopupVisualisationForSnapshot = async (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, snapshot: SimulationSnapshot, refreshOptions: VisualisationRefreshOptions = {}): Promise<CompleteVisualizedSimulation> => {
+	try {
+		const storedVisualisation = await getPopupVisualisationState()
+		const attempt = await attemptVisualisationRefresh(ethereum, tokenPriceService, storedVisualisation, snapshot, refreshOptions)
+		if (attempt.status === 'unchanged') return storedVisualisation
+		// A superseded or failed refresh leaves another refresh's result in storage, which is not this snapshot's.
+		return (attempt.status === 'ran' ? attempt.computed : undefined) ?? createUnavailableVisualisation()
+	} catch(error: unknown) {
+		if (!isExpectedInfrastructureError(error)) await reportUnexpectedError(error)
+		return createUnavailableVisualisation()
+	}
 }
 
 export type ConfirmationVisualisationDependencies = {

@@ -304,7 +304,7 @@ export const setGasLimitForTransaction = async (transactionIdentifier: bigint, g
 
 // The services owner lets an accepted simulated confirmation read the installed services together with the stack it appends to.
 export async function resolvePendingTransactionOrMessage(simulationServicesOwner: SimulationServicesOwner, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, network: NetworkState, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, refreshedSafeSignerSelection?: RefreshedSafeSignerSelection) {
-	// ethereum, tokenPriceService and network always come from one readNetworkSnapshot call under the network transition lock; keeping them separate parameters rather than one NetworkSnapshot is a deliberate maintainer decision that keeps the existing handler signatures (see NetworkState); they are joined back into one snapshot here, which holds the settings, stack and services together so they are replaced at once: after this confirmation appends to the stack, later view updates use the snapshot read with that append.
+	// See NetworkState for why these are separate parameters and what keeps them on one network. One snapshot holds them here so they are replaced at once: after this confirmation appends to the stack, later view updates use the snapshot read with that append.
 	let current: NetworkSnapshot = { ...network, services: { ethereum, tokenPriceService } }
 	const updateViewOnCurrentSnapshot = async () => await updateConfirmTransactionView(current.services.ethereum, current.services.tokenPriceService, current)
 	let pendingTransactionOrMessage = await getPendingTransactionOrMessageByidentifier(confirmation.data.uniqueRequestIdentifier)

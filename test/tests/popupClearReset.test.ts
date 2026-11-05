@@ -329,6 +329,7 @@ function assertDefinedEmptyPopupVisualisation(
 }
 
 const {
+	updatePopupVisualisationForSnapshot,
 	updatePopupVisualisationIfNeeded,
 	browserStorageLocalGet,
 	browserStorageLocalSet,
@@ -414,7 +415,9 @@ describe('popup clear reset', () => {
 		fakeEthereum.getBlock = async (...args) => { providerReads++; return await originalBlock(...args) }
 		fakeEthereum.getBlockNumber = async (...args) => { providerReads++; return await originalNumber(...args) }
 		try {
-			const result = await updatePopupVisualisationIfNeeded(fakeEthereum, fakeTokenPriceService, { skipIfUnchanged: true, snapshot })
+			const result = snapshot === undefined
+				? await updatePopupVisualisationIfNeeded(fakeEthereum, fakeTokenPriceService, { skipIfUnchanged: true })
+				: await updatePopupVisualisationForSnapshot(fakeEthereum, fakeTokenPriceService, snapshot, { skipIfUnchanged: true })
 			if (snapshot !== undefined) assert.equal((await getUpdatedSimulationState(fakeEthereum, snapshot)).kind, 'passthrough')
 			assert.equal(providerReads, 0)
 			assert.equal(result.simulationState.kind, 'passthrough')
@@ -522,6 +525,55 @@ describe('popup clear reset', () => {
 		assert.equal(getSimulationStateChangedMessages(browserMock.sentMessages).length, 0)
 	})
 
+	test('a snapshot refresh returns the stored visualisation when it already describes the snapshot input', async () => {
+		browserMock.reset()
+		await browserStorageLocalSet({ independentActiveSimulationAddress: activeAddress, interceptorTransactionStack: { operations: [] } })
+		const { readNetworkState } = await import('../../app/ts/background/networkTransitionLock.js')
+		const { simulation: snapshot } = await readNetworkState()
+		await browserStorageLocalSet({
+			popupVisualisation: {
+				...stalePopupVisualisation,
+				simulationState: { kind: 'simulated', value: { ...stalePopupVisualisation.simulationState.value, simulationStateInput: snapshot.simulationStateInput } },
+			},
+		})
+		const result = await updatePopupVisualisationForSnapshot(fakeEthereum, fakeTokenPriceService, snapshot, { skipIfUnchanged: true })
+		assert.equal(result.simulationId, stalePopupVisualisation.simulationId)
+		assert.equal(result.simulationResultState, 'done')
+		assert.equal(getSimulationStateChangedMessages(browserMock.sentMessages).length, 0)
+	})
+
+	test('without an open consumer the shared refresh returns the stored visualisation and a snapshot refresh the unavailable state', async () => {
+		browserMock.reset()
+		await browserStorageLocalSet({ independentActiveSimulationAddress: activeAddress, interceptorTransactionStack: { operations: [] } })
+		const { readNetworkState } = await import('../../app/ts/background/networkTransitionLock.js')
+		const { simulation: snapshot } = await readNetworkState()
+		await browserStorageLocalSet({ popupVisualisation: stalePopupVisualisation })
+		browserMock.setPopupOpen(false)
+		const shared = await updatePopupVisualisationIfNeeded(fakeEthereum, fakeTokenPriceService)
+		assert.equal(shared.simulationId, stalePopupVisualisation.simulationId)
+		assert.equal(shared.simulationResultState, stalePopupVisualisation.simulationResultState)
+		const forSnapshot = await updatePopupVisualisationForSnapshot(fakeEthereum, fakeTokenPriceService, snapshot)
+		assert.equal(forSnapshot.simulationUpdatingState, 'failed')
+		assert.equal(forSnapshot.simulationResultState, 'invalid')
+	})
+
+	test('a failed snapshot refresh returns the unavailable state rather than what storage still holds', async () => {
+		browserMock.reset()
+		await browserStorageLocalSet({ independentActiveSimulationAddress: activeAddress, interceptorTransactionStack: { operations: [] } })
+		const { readNetworkState } = await import('../../app/ts/background/networkTransitionLock.js')
+		const { simulation: snapshot } = await readNetworkState()
+		await browserStorageLocalSet({ popupVisualisation: stalePopupVisualisation })
+		const originalSet = browser.storage.local.set
+		browser.storage.local.set = async () => { throw new Error('Failed to fetch') }
+		try {
+			const result = await updatePopupVisualisationForSnapshot(fakeEthereum, fakeTokenPriceService, snapshot)
+			assert.equal(result.simulationUpdatingState, 'failed')
+			assert.equal(result.simulationResultState, 'invalid')
+		} finally {
+			browser.storage.local.set = originalSet
+		}
+	})
+
 	test('renders the captured refresh input and rich count after live settings change', async () => {
 		browserMock.reset()
 		await browserStorageLocalSet({ independentActiveSimulationAddress: activeAddress, makeCurrentAddressRich: false, interceptorTransactionStack: { operations: [] } })
@@ -530,7 +582,7 @@ describe('popup clear reset', () => {
 		const { simulation: snapshot } = await readNetworkState()
 		await browserStorageLocalSet({ makeCurrentAddressRich: true })
 		assert.notDeepEqual(await modules.getCurrentSimulationInput(), snapshot.simulationStateInput)
-		const result = await updatePopupVisualisationIfNeeded(fakeEthereum, fakeTokenPriceService, { snapshot })
+		const result = await updatePopupVisualisationForSnapshot(fakeEthereum, fakeTokenPriceService, snapshot)
 		assert.equal(result.numberOfAddressesMadeRich, 0)
 		assert.equal(result.simulationState.kind, 'simulated')
 		if (result.simulationState.kind !== 'simulated') throw new Error('Expected a simulated snapshot')

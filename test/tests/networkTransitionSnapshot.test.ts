@@ -1678,7 +1678,7 @@ describe('network transition snapshot', () => {
 
 	test.each(['to B', 'to B and back to A'] as const)('an invalidating refresh of A that waits for a metadata write while a switch %s commits writes and broadcasts nothing', async (switches) => {
 		const { modules, runtimeMessages } = await createApprovedSimulationDapp({ simulationConsumerOpen: true })
-		const { updatePopupVisualisationIfNeeded } = await import('../../app/ts/background/popupVisualisationUpdater.js')
+		const { updatePopupVisualisationForSnapshot, updatePopupVisualisationIfNeeded } = await import('../../app/ts/background/popupVisualisationUpdater.js')
 		const { updateSimulationMetadata } = await import('../../app/ts/background/simulationUpdating.js')
 		const { MessageToPopup } = await import('../../app/ts/types/interceptor-messages.js')
 		await modules.updateInterceptorTransactionStack(() => ({ operations: [createStackedTransaction(1n, networkA.chainId, STACKED_ON_A_RECIPIENT)] }))
@@ -1695,7 +1695,7 @@ describe('network transition snapshot', () => {
 			await addressBookRead.started
 			// A's invalidating refresh passes its network checks and reads the stored visualisation twice, first to compare and then inside its serialized section; from there it queues its invalidation behind the held update without touching storage again.
 			const refreshReadStoredVisualisation = whenStorageReadsReturned('popupVisualisation', 2)
-			const refresh = updatePopupVisualisationIfNeeded(servicesA.ethereum, servicesA.tokenPriceService, { invalidateOldState: true, snapshot: simulation })
+			const refresh = updatePopupVisualisationForSnapshot(servicesA.ethereum, servicesA.tokenPriceService, simulation, { invalidateOldState: true })
 			await refreshReadStoredVisualisation
 			reportSimulationConsumer(false)
 			const switchToNetwork = async (rpcNetwork: RpcEntry) => await modules.changeActiveAddressAndChain(owner, new Map(), { simulationMode: true, rpcNetwork, promptForAccessesIfNeeded: false })
@@ -1882,12 +1882,12 @@ describe('network transition snapshot', () => {
 
 	test('a refresh whose input is unchanged still runs when a discarded refresh left the stored result updating', async () => {
 		const { modules } = await createApprovedSimulationDapp({ simulationConsumerOpen: true })
-		const { updatePopupVisualisationIfNeeded } = await import('../../app/ts/background/popupVisualisationUpdater.js')
+		const { updatePopupVisualisationForSnapshot } = await import('../../app/ts/background/popupVisualisationUpdater.js')
 		const { owner, retireAll } = createRecordingServicesOwner(networkA)
 		try {
 			// With an empty stack only the made-rich address is simulated, so the stored input matches the snapshot's and the fingerprints agree.
 			const { services, simulation } = await modules.readNetworkSnapshot(owner)
-			await updatePopupVisualisationIfNeeded(services.ethereum, services.tokenPriceService, { invalidateOldState: true, snapshot: simulation })
+			await updatePopupVisualisationForSnapshot(services.ethereum, services.tokenPriceService, simulation, { invalidateOldState: true })
 			const completed = await modules.getPopupVisualisationState()
 			assert.equal(completed.simulationState.kind, 'simulated')
 			// Like a refresh that stored its updating state and was then discarded because its network was replaced, with the same input.
@@ -1895,7 +1895,7 @@ describe('network transition snapshot', () => {
 			const { alwaysWrite } = await import('../../app/ts/utils/largeStateStore.js')
 			await setPopupVisualisationState({ ...completed, simulationId: completed.simulationId + 1, simulationUpdatingState: 'updating' }, alwaysWrite)
 
-			await updatePopupVisualisationIfNeeded(services.ethereum, services.tokenPriceService, { skipIfUnchanged: true, snapshot: simulation })
+			await updatePopupVisualisationForSnapshot(services.ethereum, services.tokenPriceService, simulation, { skipIfUnchanged: true })
 
 			const refreshed = await modules.getPopupVisualisationState()
 			assert.equal(refreshed.simulationUpdatingState, 'done')
