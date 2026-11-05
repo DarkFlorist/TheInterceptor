@@ -1783,4 +1783,64 @@ test('a reject of a message request reusing a request id gets a rejection, not t
 	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
 })
 
+test('a replaced port finishing its flush leaves the retry of the port that replaced it, which delivers its reply once', async () => {
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	const { flushPendingTerminalRepliesForConnectedPortWithRetry } = await import('../../app/ts/background/terminalReplyDelivery.js')
+	const { resumeRequest } = await import('../../app/ts/background/requestResolution.js')
+	const socket = uniqueRequestIdentifier.requestSocket
+	const socketKey = modules.websiteSocketToString(socket)
+	const replyTo = (requestId: number) => ({ ...pendingTransaction.originalRequestParameters, type: 'result' as const, error: { code: METAMASK_ERROR_USER_REJECTED_REQUEST, message: 'User denied transaction signature' }, uniqueRequestIdentifier: { ...uniqueRequestIdentifier, requestId } })
+	const repliesToReplacedPort: unknown[] = []
+	const repliesToCurrentPort: unknown[] = []
+	const replacedPort = createRecordingPort(repliesToReplacedPort)
+	const currentPort = createRecordingPort(repliesToCurrentPort)
+	const connectPort = (port: browser.runtime.Port) => ({ connections: { [socketKey]: { port, socket, websiteOrigin: 'https://example.com', approved: true, wantsToConnect: true } } })
+	const websiteTabConnections = new Map([[socket.tabId, connectPort(replacedPort)]])
+	// The replaced port's flush waits in finishing its delivered reply, as it does for its window cleanup.
+	let signalFinishing: (() => void) | undefined
+	const finishing = new Promise<void>((resolve) => { signalFinishing = resolve })
+	let releaseFinishing: () => void = () => undefined
+	const finishingReleased = new Promise<void>((resolve) => { releaseFinishing = resolve })
+	let holdNextFinishing = true
+	const finishCommittedRequest = async (identifier: typeof uniqueRequestIdentifier, connections: typeof websiteTabConnections) => {
+		if (holdNextFinishing) {
+			holdNextFinishing = false
+			signalFinishing?.()
+			await finishingReleased
+		}
+		return await resumeRequest(identifier, { ...testResolutionContext(connections), automatic: true })
+	}
+
+	await modules.queueTerminalReply(replyTo(11))
+	const replacedFlush = flushPendingTerminalRepliesForConnectedPortWithRetry(websiteTabConnections, socket, replacedPort, finishCommittedRequest)
+	await finishing
+	await modules.queueTerminalReply(replyTo(12))
+	websiteTabConnections.set(socket.tabId, connectPort(currentPort))
+	let failNextCommittedReplyLookup = true
+	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+		if (failNextCommittedReplyLookup && Array.isArray(keys) && keys.includes('pendingTerminalReplies')) {
+			failNextCommittedReplyLookup = false
+			throw new Error('The committed replies could not be read.')
+		}
+		return readStoredItems()
+	})
+	try {
+		assert.equal(await withSilencedConsole(async () => await flushPendingTerminalRepliesForConnectedPortWithRetry(websiteTabConnections, socket, currentPort, finishCommittedRequest)), 0, 'the flush is retried')
+		releaseFinishing()
+		await replacedFlush
+		const deadline = Date.now() + 2_000
+		while (repliesToCurrentPort.length === 0 && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10))
+		await withSilencedConsole(waitForResolutionRetriesToFinish)
+	} finally {
+		releaseFinishing()
+		browserMock.setStorageGetHandler(undefined)
+	}
+	assert.equal(getRepliesToWebsite(repliesToReplacedPort).length, 1)
+	const replies = getRepliesToWebsite(repliesToCurrentPort)
+	assert.equal(replies.length, 1, 'the replacing port gets its reply once, with no further reconnect')
+	const [reply] = replies
+	assert.equal(isRecord(reply) ? reply.requestId : undefined, 12)
+	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+})
+
 await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
