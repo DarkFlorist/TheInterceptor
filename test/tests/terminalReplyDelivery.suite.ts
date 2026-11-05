@@ -1202,6 +1202,36 @@ test.each(['services unavailable', 'services on another chain'] as const)('a co-
 	assert.deepEqual(removedWindowIds, [])
 })
 
+const lastPushedApprovalStatus = () => {
+	const pushed = browserMock.sentMessages.filter((message) => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions').at(-1)?.data
+	const [shownRequest] = isRecord(pushed) && Array.isArray(pushed.pendingTransactionAndSignableMessages) ? pushed.pendingTransactionAndSignableMessages : []
+	return isRecord(shownRequest) && isRecord(shownRequest.approvalStatus) ? shownRequest.approvalStatus.status : undefined
+}
+
+test.each([
+	{ description: 'a wallet rejection', code: 4001, status: 'WaitingForUser' },
+	{ description: 'a wallet error', code: -32000, status: 'SignerError' },
+])('$description on a signature request reaches the popup while services are unavailable', async ({ code, status }) => {
+	const { websiteTabConnections } = connectRequestingWebsite()
+	const signatureRequest = await openMessagesWithFirstAwaitingSafeCoSignature([1], websiteTabConnections)
+	browserMock.sentMessages.length = 0
+
+	await withSilencedConsole(async () => await modules.resolvePendingSignerReply(undefined, async () => undefined, websiteTabConnections, signatureRequest, { success: false, signerProviderGeneration: 0, forwardRequest: { type: 'forwardToSigner', replyWithSignersReply: true, method: 'personal_sign', params: ['0x68656c6c6f', activeAddress], requestId: signatureRequest.requestId }, error: { code, message: 'Wallet refused' } }))
+
+	assert.equal(lastPushedApprovalStatus(), status)
+})
+
+test('a simulated signature that cannot be finished without services reaches the popup as an error', async () => {
+	const { websiteTabConnections } = connectRequestingWebsite()
+	const signatureRequest = await openMessagesWithFirstAwaitingSafeCoSignature([1], websiteTabConnections)
+	await modules.updatePendingTransactionOrMessage(signatureRequest, async (pending) => ({ ...pending, simulationMode: true }))
+	browserMock.sentMessages.length = 0
+
+	await withSilencedConsole(async () => await modules.resolvePendingSignerReply(undefined, async () => undefined, websiteTabConnections, signatureRequest, { success: true, signerProviderGeneration: 0, forwardRequest: { type: 'forwardToSigner', replyWithSignersReply: true, method: 'personal_sign', params: ['0x68656c6c6f', activeAddress], requestId: signatureRequest.requestId }, reply: '0x1234' }))
+
+	assert.equal(lastPushedApprovalStatus(), 'SignerError')
+})
+
 test('a sole co-signature becoming deferred closes its confirmation window', async () => {
 	const { websiteTabConnections } = connectRequestingWebsite()
 	const coSignature = await openMessagesWithFirstAwaitingSafeCoSignature([1], websiteTabConnections)

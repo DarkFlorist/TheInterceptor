@@ -331,6 +331,12 @@ async function publishConfirmationQueueWithoutServices() {
 	return true
 }
 
+// Without services no simulation refresh will show a changed status (and new blocks never refresh signature requests), so the queue is published as it is.
+async function showUpdatedConfirmationQueue(services: ConfirmationServices | undefined) {
+	if (services === undefined) return await publishConfirmationQueueWithoutServices()
+	return await updateConfirmTransactionView(services.ethereum, services.tokenPriceService)
+}
+
 // Updates the confirmation window once a request has left the queue it shows, by being removed or by becoming deferred: the view of how the simulation stack changed (with RPC services), and the queue view, which focuses the website's tab once the queue is empty and closes the window once no shown request is in it. Without RPC services the queue is still published. The website's answer never waits for this view work, so a failure in it is reported instead of reaching the caller.
 async function updateViewAfterPendingRequestRemoved(pending: PendingTransactionOrSignableMessage, services: ConfirmationServices | undefined, simulationStack: SimulationStackChange) {
 	const removedRequestWindow = pending.popupOrTabId
@@ -339,7 +345,7 @@ async function updateViewAfterPendingRequestRemoved(pending: PendingTransactionO
 		if (getConfirmationWindowRequests(await getPendingTransactionsAndMessages()).length === 0) await tryFocusingTabOrWindow({ type: 'tab', id: pending.uniqueRequestIdentifier.requestSocket.tabId })
 	})
 	await runConfirmationViewStep(async () => {
-		const confirmationQueueIsShown = services === undefined ? await publishConfirmationQueueWithoutServices() : await updateConfirmTransactionView(services.ethereum, services.tokenPriceService)
+		const confirmationQueueIsShown = await showUpdatedConfirmationQueue(services)
 		// The website may send its next request as soon as it has this answer. Arriving while the queue is empty, that request opens a window of its own, so this window is closed once no pending request is shown in it rather than only once the queue is empty.
 		const windowShowsAPendingRequest = getConfirmationWindowRequests(await getPendingTransactionsAndMessages()).some((other) => isSamePopupOrTab(other.popupOrTabId, removedRequestWindow))
 		if (!confirmationQueueIsShown || !windowShowsAPendingRequest) await closePopupOrTabById(removedRequestWindow)
@@ -394,7 +400,7 @@ const safeSignerReplyConfirmationWindow: SafeSignerReplyConfirmationWindow = {
 		data: { uniqueRequestIdentifier, action: 'signerIncluded', signerReply },
 	}),
 	updateAfterRequestLeftQueue: async (pending, services) => await updateViewAfterPendingRequestRemoved(pending, services, 'unchanged'),
-	refresh: async (services) => await runConfirmationViewStep(async () => services === undefined ? await publishConfirmationQueueWithoutServices() : await updateConfirmTransactionView(services.ethereum, services.tokenPriceService)),
+	refresh: async (services) => await runConfirmationViewStep(async () => await showUpdatedConfirmationQueue(services)),
 	showSimulationStackChange: async (services, simulationStack) => await runConfirmationViewStep(async () => await showSimulationStackChange(services.ethereum, services.tokenPriceService, simulationStack)),
 }
 
@@ -413,7 +419,7 @@ export async function resolvePendingSignerReply(services: ConfirmationServices |
 			? { status: 'WaitingForUser' as const }
 			: { status: 'SignerError' as const, ...params.error }
 		await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => modifyObject(pending, { approvalStatus }))
-		if (services !== undefined) await updateConfirmTransactionView(services.ethereum, services.tokenPriceService)
+		await runConfirmationViewStep(async () => await showUpdatedConfirmationQueue(services))
 		return
 	}
 	const pending = await getPendingTransactionOrMessage(uniqueRequestIdentifier)
@@ -427,6 +433,7 @@ export async function resolvePendingSignerReply(services: ConfirmationServices |
 	}
 	if (pending.simulationMode) {
 		await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (current) => modifyObject(current, { approvalStatus: { status: 'SignerError', ...RPC_CONFIGURATION_UNAVAILABLE_ERROR } }))
+		await runConfirmationViewStep(async () => await showUpdatedConfirmationQueue(services))
 		return
 	}
 	return await settlePendingTerminalReply(websiteTabConnections, pending, { type: 'result', result: params.reply }, undefined)
