@@ -1,5 +1,6 @@
 import { getRequiredSettings } from './requiredSettings.js'
 import { createEthereumWithGetBlockCounter } from './backgroundEthAccountsTestHarness.js'
+import { DEFAULT_RPCS } from '../../app/ts/config/defaults.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import type { Settings } from '../../app/ts/types/interceptor-messages.js'
@@ -7,6 +8,9 @@ import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-ty
 import type { InterceptedRequest, WebsiteSocket } from '../../app/ts/utils/requests.js'
 
 type Listener = (id: number) => unknown
+
+// requestAccessFromUser refuses settings that are off the live network, so the fixtures use the endpoint of the default network that the empty mock storage resolves to.
+const liveRpcEndpoint = DEFAULT_RPCS[0]?.httpsRpc
 
 // The background module is cached across tests. Preserve its registered listeners while routing them to each test's fresh browser mock.
 const registeredWindowRemovedListeners = new Set<Listener>()
@@ -180,7 +184,7 @@ const createAccessRequestSettings = (): Settings => ({
 	activeRpcNetwork: {
 		name: 'Test RPC',
 		chainId: 1n,
-		httpsRpc: 'https://example.invalid',
+		httpsRpc: liveRpcEndpoint,
 		currencyName: 'Ether',
 		currencyTicker: 'ETH',
 		primary: true,
@@ -249,7 +253,7 @@ describe('interceptor access close handling', () => {
 			activeRpcNetwork: {
 				name: 'Test RPC',
 				chainId: 1n,
-				httpsRpc: 'https://example.invalid',
+				httpsRpc: liveRpcEndpoint,
 				currencyName: 'Ether',
 				currencyTicker: 'ETH',
 				primary: true,
@@ -314,7 +318,7 @@ describe('interceptor access close handling', () => {
 			activeRpcNetwork: {
 				name: 'Test RPC',
 				chainId: 1n,
-				httpsRpc: 'https://example.invalid',
+				httpsRpc: liveRpcEndpoint,
 				currencyName: 'Ether',
 				currencyTicker: 'ETH',
 				primary: true,
@@ -402,7 +406,7 @@ describe('interceptor access close handling', () => {
 			activeRpcNetwork: {
 				name: 'Test RPC',
 				chainId: 1n,
-				httpsRpc: 'https://example.invalid',
+				httpsRpc: liveRpcEndpoint,
 				currencyName: 'Ether',
 				currencyTicker: 'ETH',
 				primary: true,
@@ -473,7 +477,7 @@ describe('interceptor access close handling', () => {
 			activeRpcNetwork: {
 				name: 'Test RPC',
 				chainId: 1n,
-				httpsRpc: 'https://example.invalid',
+				httpsRpc: liveRpcEndpoint,
 				currencyName: 'Ether',
 				currencyTicker: 'ETH',
 				primary: true,

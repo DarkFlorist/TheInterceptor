@@ -466,13 +466,16 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 	}
 	const accountConnectionRequest = isAccountConnectionMethod(request.method)
 	const accountIdentityRequest = isAccountOnlyMethod(request.method)
+	// verifyAccess can approve the connection and announce the settings' chain to the page, so it runs only while the admitted network is still live, with no await after this check.
+	const liveSettingsForAccess = await getLiveSettingsOnAdmittedRpcNetwork(settings)
+	if (liveSettingsForAccess.kind !== 'ready') return replyAdmittedRpcNetworkNoLongerLive(websiteTabConnections, request, liveSettingsForAccess.kind)
 	const verifyRequestAccess = () => verifyAccess(
 		websiteTabConnections,
 		socket,
 		accountConnectionRequest || request.method === 'eth_call' || request.method === 'eth_simulateV1',
 		websiteOrigin,
 		activeAddress,
-		settings,
+		liveSettingsForAccess.settings,
 		{
 			ignoreConnectionApproval: accountIdentityRequest,
 		},
@@ -509,7 +512,10 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 			}
 		}
 		if (refreshedActiveAddress === undefined) return replyWithoutActiveAccount(websiteTabConnections, request)
-		const refreshedAccess = verifyAccess(websiteTabConnections, socket, false, websiteOrigin, refreshedActiveAddress, refreshedSettings, { ignoreConnectionApproval: true })
+		// The signer prompt above can outlast the admitted network, and this verifyAccess can approve the connection just like the first one.
+		const liveSettingsForRefreshedAccess = await getLiveSettingsOnAdmittedRpcNetwork(refreshedSettings)
+		if (liveSettingsForRefreshedAccess.kind !== 'ready') return replyAdmittedRpcNetworkNoLongerLive(websiteTabConnections, request, liveSettingsForRefreshedAccess.kind)
+		const refreshedAccess = verifyAccess(websiteTabConnections, socket, false, websiteOrigin, refreshedActiveAddress, liveSettingsForRefreshedAccess.settings, { ignoreConnectionApproval: true })
 		if (refreshedAccess !== 'hasAccess') return replyWithoutActiveAccount(websiteTabConnections, request)
 		return await handleContentScriptMessage(simulationServicesOwner, admittedSimulationServices, websiteTabConnections, request, await websitePromise, refreshedActiveAddress, refreshedSettings, publishRpcConnectionStatus)
 	}
@@ -542,14 +548,24 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 	}
 }
 
+export type AdmittedRpcNetworkNoLongerLive = 'unavailable' | 'chain-changed' | 'endpoint-changed'
+
 type LiveSettingsOnAdmittedRpcNetwork =
 	| { readonly kind: 'ready', readonly settings: Settings }
-	| { readonly kind: 'unavailable' }
-	| { readonly kind: 'chain-changed' }
-	| { readonly kind: 'endpoint-changed' }
+	| { readonly kind: AdmittedRpcNetworkNoLongerLive }
 
-// A request can be parked on the website lookup or signer prompts after admission, so routing reads one live settings snapshot (simulation mode, signing Safe) and uses it unmixed. A metadata-only change (name, explorer, list preferences) keeps the chain and endpoint, so the live snapshot still matches the admitted service pair; a chain change invalidates the live selection's chain-dependent decisions for the admitted pair.
-async function getLiveSettingsOnAdmittedRpcNetwork(admittedSettings: Settings): Promise<LiveSettingsOnAdmittedRpcNetwork> {
+const ADMITTED_RPC_NETWORK_NO_LONGER_LIVE_ERRORS = {
+	'unavailable': RPC_CONFIGURATION_UNAVAILABLE_ERROR,
+	'chain-changed': ERROR_ACTIVE_RPC_NETWORK_CHANGED.error,
+	'endpoint-changed': ERROR_ACTIVE_RPC_ENDPOINT_CHANGED.error,
+} satisfies Record<AdmittedRpcNetworkNoLongerLive, ErrorWithCodeAndOptionalData>
+
+export const replyAdmittedRpcNetworkNoLongerLive = (websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, reason: AdmittedRpcNetworkNoLongerLive) => {
+	return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), error: ADMITTED_RPC_NETWORK_NO_LONGER_LIVE_ERRORS[reason] })
+}
+
+// A request can be parked on the website lookup or signer prompts after admission, so routing reads one live settings snapshot (simulation mode, signing Safe) and uses it unmixed, and every connection-granting access check runs against such a snapshot. A metadata-only change (name, explorer, list preferences) keeps the chain and endpoint, so the live snapshot still matches the admitted service pair; a chain change invalidates the live selection's chain-dependent decisions for the admitted pair.
+export async function getLiveSettingsOnAdmittedRpcNetwork(admittedSettings: Settings): Promise<LiveSettingsOnAdmittedRpcNetwork> {
 	const liveSettings = settingsIfAvailable(await getSettingsSnapshot())
 	if (liveSettings === undefined) return { kind: 'unavailable' }
 	const rpcNetworkChange = getRpcNetworkChange(admittedSettings.activeRpcNetwork, liveSettings.activeRpcNetwork)
@@ -571,9 +587,7 @@ async function handleContentScriptMessage(simulationServicesOwner: SimulationSer
 	try {
 		const requestWithDefinedParams = getRequestWithDefinedParams(request)
 		const liveSettings = await getLiveSettingsOnAdmittedRpcNetwork(admittedSettings)
-		if (liveSettings.kind === 'unavailable') return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...requestWithDefinedParams, error: RPC_CONFIGURATION_UNAVAILABLE_ERROR })
-		if (liveSettings.kind === 'chain-changed') return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...requestWithDefinedParams, ...ERROR_ACTIVE_RPC_NETWORK_CHANGED })
-		if (liveSettings.kind === 'endpoint-changed') return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...requestWithDefinedParams, ...ERROR_ACTIVE_RPC_ENDPOINT_CHANGED })
+		if (liveSettings.kind !== 'ready') return replyAdmittedRpcNetworkNoLongerLive(websiteTabConnections, request, liveSettings.kind)
 		const { settings } = liveSettings
 		const currentChainEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId)
 		const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)

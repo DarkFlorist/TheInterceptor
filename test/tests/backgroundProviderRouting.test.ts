@@ -429,6 +429,166 @@ describe('background eth_accounts', () => {
 		assert.equal(getReply()?.error, undefined)
 	})
 
+	const consentFreeAddress = 0x3333333333333333333333333333333333333333n
+	const otherChainRpcOf = (admittedRpc: RpcNetwork) => ({ ...admittedRpc, name: 'Other chain', chainId: admittedRpc.chainId + 1n, httpsRpc: 'https://other-chain.example.test' })
+	const otherEndpointRpcOf = (admittedRpc: RpcNetwork) => ({ ...admittedRpc, name: 'Same chain, other endpoint', httpsRpc: 'https://same-chain-other-endpoint.example.test' })
+
+	// The website has page-level access and the address needs no address consent on the admitted chain only, so the same address needs consent on any other chain and access reconciliation unapproves the connection there, while an access check on the admitted chain would still grant it.
+	const createConsentFreeOnAdmittedChainConnection = async ({ approved, simulationMode, onPostMessage }: {
+		readonly approved: boolean
+		readonly simulationMode: boolean
+		readonly onPostMessage?: Parameters<typeof createPort>[1]
+	}) => {
+		const { changeSimulationMode, getRequiredSettings, setUseSignersAddressAsActiveAddress, updateUserAddressBookEntries, updateWebsiteAccess, websiteSocketToString } = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const admittedSettings = await getRequiredSettings()
+		await updateUserAddressBookEntries(() => [{ type: 'contact', name: 'Consent-free on the admitted chain', address: consentFreeAddress, chainId: admittedSettings.activeRpcNetwork.chainId, entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: false }])
+		await changeSimulationMode({ simulationMode, activeSimulationAddress: simulationMode ? consentFreeAddress : undefined, activeSigningAddress: undefined })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: undefined }])
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId, onPostMessage)
+		const connection = { port, socket, websiteOrigin, approved, wantsToConnect: true }
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: { [websiteSocketToString(socket)]: connection } }]])
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		const request = { interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier: { requestId: 7, requestSocket: socket }, method: 'eth_chainId', params: [] }
+		const getReply = () => messages.find((message) => message.method === request.method && message.requestId === request.uniqueRequestIdentifier.requestId)
+		return { admittedRpc: admittedSettings.activeRpcNetwork, connection, getReply, messages, port, request, simulationServicesOwner, socket, website, websiteOrigin, websiteTabConnections }
+	}
+
+	// Runs `onTabStateRead` once, at the first tab state read after the given settings read. Settings reads hold the RPC configuration lock, so an RPC change has to wait for a tab state read, which holds no lock.
+	const onFirstTabStateReadAfterSettingsRead = (settingsRead: number, onTabStateRead: () => Promise<void>) => {
+		let ran = false
+		observeStorageReads(async ({ settingsSnapshotReads, keys }) => {
+			if (ran || settingsSnapshotReads < settingsRead || !keys.includes('tabState_1')) return
+			ran = true
+			await onTabStateRead()
+		})
+	}
+
+	// Applies `changeActiveRpc` after the post-admission settings re-read, while the active address is resolved on the admitted network, then lets the request reach its access check.
+	const runRequestAcrossActiveRpcChangeBeforeAccessCheck = async (approved: boolean, changeActiveRpc: (context: Awaited<ReturnType<typeof createConsentFreeOnAdmittedChainConnection>>) => Promise<void>) => {
+		const { handleInterceptedRequest } = await loadModules()
+		const context = await createConsentFreeOnAdmittedChainConnection({ approved, simulationMode: true })
+		const { port, request, simulationServicesOwner, socket, website, websiteOrigin, websiteTabConnections } = context
+		onFirstTabStateReadAfterSettingsRead(2, async () => await changeActiveRpc(context))
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
+		return context
+	}
+
+	test('does not re-approve a connection that a chain switch unapproved while the request was parked', async () => {
+		installBrowserMock()
+		const { changeActiveAddressAndChain } = await loadModules()
+		let approvedAfterChainSwitch: boolean | undefined
+		const { connection, getReply, messages } = await runRequestAcrossActiveRpcChangeBeforeAccessCheck(true, async ({ admittedRpc, connection, simulationServicesOwner, websiteTabConnections }) => {
+			await changeActiveAddressAndChain(simulationServicesOwner, websiteTabConnections, { simulationMode: true, rpcNetwork: otherChainRpcOf(admittedRpc), promptForAccessesIfNeeded: false })
+			approvedAfterChainSwitch = connection.approved
+		})
+
+		assert.equal(approvedAfterChainSwitch, false)
+		assert.equal(getReply()?.error?.code, 4901)
+		assert.equal(connection.approved, false)
+		assert.equal(messages.some((message) => message.method === 'connect' || message.method === 'chainChanged'), false)
+	})
+
+	test('does not approve a connection when the endpoint changed while the request was parked', async () => {
+		installBrowserMock()
+		const { setRpcConfiguration } = await loadModules()
+		const { connection, getReply, messages } = await runRequestAcrossActiveRpcChangeBeforeAccessCheck(false, async ({ admittedRpc }) => {
+			await setRpcConfiguration([admittedRpc, otherEndpointRpcOf(admittedRpc)], otherEndpointRpcOf(admittedRpc))
+		})
+
+		assert.equal(getReply()?.error?.code, -32603)
+		assert.match(getReply()?.error?.message ?? '', /RPC endpoint changed/)
+		assert.equal(connection.approved, false)
+		assert.equal(messages.some((message) => message.method === 'connect' || message.method === 'chainChanged'), false)
+	})
+
+	test.each([
+		{ description: 'nothing changed', renameActiveRpc: false },
+		{ description: 'only the active RPC network metadata changed', renameActiveRpc: true },
+	])('approves the connection on the admitted network when $description', async ({ renameActiveRpc }) => {
+		installBrowserMock()
+		const { setRpcConfiguration } = await loadModules()
+		const { admittedRpc, connection, getReply, messages } = await runRequestAcrossActiveRpcChangeBeforeAccessCheck(false, async ({ admittedRpc }) => {
+			const renamedRpc = { ...admittedRpc, name: 'Renamed network' }
+			if (renameActiveRpc) await setRpcConfiguration([renamedRpc], renamedRpc)
+		})
+
+		assert.equal(getReply()?.error, undefined)
+		assert.equal(connection.approved, true)
+		assert.deepEqual(messages.filter((message) => message.method === 'connect').map((message) => message.result), [[`0x${ admittedRpc.chainId.toString(16) }`]])
+	})
+
+	test('does not re-approve a connection after a chain switch during the signer account prompt', async () => {
+		installBrowserMock()
+		const { changeActiveAddressAndChain, handleInterceptedRequest } = await loadModules()
+		let messageCountAtChainSwitch: number | undefined
+		let releaseSignerPrompt = async () => undefined as unknown
+		const context = await createConsentFreeOnAdmittedChainConnection({
+			approved: false,
+			simulationMode: false,
+			onPostMessage: (message) => {
+				if (message.method === 'request_signer_to_eth_accounts') void releaseSignerPrompt()
+			},
+		})
+		const { admittedRpc, connection, messages, port, simulationServicesOwner, socket, website, websiteOrigin, websiteTabConnections } = context
+		releaseSignerPrompt = async () => {
+			messageCountAtChainSwitch = messages.length
+			await changeActiveAddressAndChain(simulationServicesOwner, websiteTabConnections, { simulationMode: false, rpcNetwork: otherChainRpcOf(admittedRpc), promptForAccessesIfNeeded: false })
+			return await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
+				interceptorRequest: true,
+				interceptorInternalRequest: true,
+				usingInterceptorWithoutSigner: false,
+				uniqueRequestIdentifier: { requestId: 8, requestSocket: socket },
+				method: 'eth_accounts_reply',
+				params: [{ signerProviderGeneration: 1, type: 'success', accounts: [addressString(consentFreeAddress)], requestAccounts: false }],
+			}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		}
+
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, { interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier: { requestId: 9, requestSocket: socket }, method: 'eth_accounts' }, websiteTabConnections, noopPublishRpcConnectionStatus)
+
+		assert.equal(messages.find((message) => message.method === 'eth_accounts' && message.requestId === 9)?.error?.code, 4901)
+		assert.equal(connection.approved, false)
+		assert.equal(messages.slice(messageCountAtChainSwitch).some((message) => message.method === 'connect'), false)
+	})
+
+	test('does not approve a connection from the access prompt once the request is off the live network', async () => {
+		installBrowserMock()
+		const { getPendingAccessRequests, getRequiredSettings, requestAccessFromUser, setRpcConfiguration } = await loadModules()
+		const { admittedRpc, connection, getReply, messages, request, simulationServicesOwner, socket, website, websiteTabConnections } = await createConsentFreeOnAdmittedChainConnection({ approved: false, simulationMode: true })
+		const admittedSettings = await getRequiredSettings()
+		await setRpcConfiguration([admittedRpc, otherChainRpcOf(admittedRpc)], otherChainRpcOf(admittedRpc))
+
+		await requestAccessFromUser(simulationServicesOwner, websiteTabConnections, socket, website, request, undefined, admittedSettings, undefined, noopPublishRpcConnectionStatus)
+
+		assert.equal(getReply()?.error?.code, 4901)
+		assert.equal(connection.approved, false)
+		assert.equal(messages.some((message) => message.method === 'connect'), false)
+		assert.deepEqual(await getPendingAccessRequests(), [])
+	})
+
+	test('does not approve a connection while registering an access prompt once the request is off the live network', async () => {
+		installBrowserMock()
+		const { getPendingAccessRequests, getRequiredSettings, requestAccessFromUser, setRpcConfiguration, updateWebsiteAccess } = await loadModules()
+		const { admittedRpc, connection, getReply, messages, request, simulationServicesOwner, socket, website, websiteTabConnections } = await createConsentFreeOnAdmittedChainConnection({ approved: false, simulationMode: true })
+		// Undecided for the check before the dialog opens; the grant that lands with the network switch is what the registration re-check would act on.
+		await updateWebsiteAccess(() => [])
+		const admittedSettings = await getRequiredSettings()
+		onFirstTabStateReadAfterSettingsRead(1, async () => {
+			await setRpcConfiguration([admittedRpc, otherChainRpcOf(admittedRpc)], otherChainRpcOf(admittedRpc))
+			await updateWebsiteAccess(() => [{ website, access: true, addressAccess: undefined }])
+		})
+
+		await requestAccessFromUser(simulationServicesOwner, websiteTabConnections, socket, website, request, undefined, admittedSettings, undefined, noopPublishRpcConnectionStatus)
+
+		assert.equal(getReply()?.error?.code, 4901)
+		assert.equal(connection.approved, false)
+		assert.equal(messages.some((message) => message.method === 'connect'), false)
+		assert.deepEqual(await getPendingAccessRequests(), [])
+	})
+
 	test('does not forward to the signer when simulation mode is enabled while the tab state is being read', async () => {
 		installBrowserMock()
 		const tabStateReadStarted = createDeferredValue<void>()
