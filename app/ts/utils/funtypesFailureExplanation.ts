@@ -1,4 +1,4 @@
-// Explains funtypes validation failures by reading codecs and failures through funtypes internals that are not part of its documented API: the codec `tag` names, the `underlying`, `fields`, `alternatives`, `components`, `intersectees`, `element` and `value` members, and the grammar of `Failure.key`. It is written against the exact funtypes version pinned in package.json, and test/tests/funtypesFailureExplanation.test.ts fails when a funtypes upgrade changes these internals.
+// Explains funtypes validation failures by reading codecs and failures through funtypes internals that are not part of its documented API: the codec `tag` names, the `underlying`, `fields`, `alternatives`, `components`, `intersectees`, `element` and `value` members, and the grammar of `Failure.key`. It is written against the exact funtypes version pinned in package.json, and test/tests/funtypesFailureExplanation.test.ts fails when a funtypes upgrade changes these internals. That check lives in the tests, and every funtypes upgrade must pass them, because this module builds a dapp-facing error reply that must fall back to a generic message instead of crashing: nothing here asserts at runtime or at startup, and a tag missing from CODEC_TAGS_BY_HANDLING is simply handled like an opaque leaf.
 import type * as funtypes from 'funtypes'
 
 // The part of a funtypes codec that every codec exposes. Tag-specific reflection members such as `fields` or `alternatives` are read through the runtime-validated accessors below.
@@ -55,10 +55,21 @@ export type ValueProblem =
 // funtypes drops the failure key at unions, so every union the explanation descends into validates the remaining subtree again, which is quadratic in the nesting depth of recursive values such as EIP-712 messages. Capping the validations keeps an explanation within a fixed multiple of one parse of the value.
 const MAX_EXPLANATION_VALIDATIONS = 16
 
-// Codec tags that validate a value with their `underlying` codec before applying their own check. Lazy codecs store a function that returns the underlying codec.
-const WRAPPER_CODEC_TAGS = new Set(['constraint', 'parsed', 'sealed', 'named', 'lazy'])
+// Every funtypes codec tag, by how this module handles it. This is the authoritative list that the tests check funtypes and the real RPC codecs against.
+export const CODEC_TAGS_BY_HANDLING = {
+	// Validate a value with their `underlying` codec before applying their own check. Lazy codecs store a function that returns the underlying codec.
+	wrapper: ['constraint', 'parsed', 'sealed', 'named', 'lazy'],
+	// Hold child codecs in members of their own, which the explanation descends into.
+	composite: ['object', 'record', 'tuple', 'array', 'intersect', 'union'],
+	// Have no child codecs, and are described by name.
+	describedLeaf: ['string', 'number', 'boolean', 'literal', 'never'],
+	// Are explained as a whole, without a label, as "a valid value". Brand does wrap a codec, in `entity`, but is not unwrapped because no RPC codec uses it.
+	opaqueLeaf: ['unknown', 'bigint', 'symbol', 'function', 'enum', 'keyOf', 'instanceof', 'brand'],
+}
 
-const isReflectedCodec = (value: unknown): value is ReflectedCodec => typeof value === 'object'
+const WRAPPER_CODEC_TAGS = new Set(CODEC_TAGS_BY_HANDLING.wrapper)
+
+export const isReflectedCodec = (value: unknown): value is ReflectedCodec => typeof value === 'object'
 	&& value !== null
 	&& 'tag' in value
 	&& typeof value.tag === 'string'

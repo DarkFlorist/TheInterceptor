@@ -23,7 +23,7 @@ export function getMethodSpecificParseFailureReply(request: InterceptedRequest):
 }
 
 // Codecs that invalid-params errors name and describe by their meaning instead of their structure. Each description is defined beside its codec.
-const CODEC_DESCRIPTIONS = indexCodecDescriptions([
+export const CODEC_DESCRIPTIONS = indexCodecDescriptions([
 	EthereumAddressDescription,
 	EthereumQuantityDescription,
 	CanonicalEthereumQuantityDescription,

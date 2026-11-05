@@ -1,7 +1,9 @@
 import * as assert from 'assert'
 import { describe, spyOn, test } from 'bun:test'
 import * as funtypes from 'funtypes'
-import { type CodecDescriptions, explainValueFailure, getCodecLabel, getObjectFieldCodec, getTupleVariants, indexCodecDescriptions, type ReflectedCodec } from '../../app/ts/utils/funtypesFailureExplanation.js'
+import { CODEC_DESCRIPTIONS } from '../../app/ts/background/rpcParseFailureReply.js'
+import { EthereumJsonRpcRequest, WalletRevokePermissions } from '../../app/ts/types/JsonRpc-types.js'
+import { CODEC_TAGS_BY_HANDLING, type CodecDescriptions, explainValueFailure, getCodecLabel, getObjectFieldCodec, getTupleVariants, indexCodecDescriptions, isReflectedCodec, type ReflectedCodec, type ValueProblem } from '../../app/ts/utils/funtypesFailureExplanation.js'
 
 // These tests pin the funtypes internals the adapter reads, so a funtypes upgrade that changes them fails here instead of silently degrading invalid-params errors.
 
@@ -38,6 +40,106 @@ function explainNestedValueWithParseCount(depth: number) {
 	} finally {
 		for (const parseSpy of parseSpies) parseSpy.mockRestore()
 	}
+}
+
+const Counter = funtypes.ReadonlyObject({ count: funtypes.Number })
+const OptionalLabel = funtypes.ReadonlyPartial({ label: funtypes.String })
+const DiscriminatedObject = funtypes.Union(funtypes.ReadonlyObject({ type: funtypes.Literal('a'), count: funtypes.Number }), funtypes.ReadonlyObject({ type: funtypes.Literal('b') }))
+const DiscriminatedTuple = funtypes.Union(funtypes.ReadonlyTuple(funtypes.Literal('a'), funtypes.Number), funtypes.ReadonlyTuple(funtypes.Literal('b')))
+const NoneLiteral = funtypes.Literal('none')
+const ConstrainedCounter = Counter.withConstraint(() => true)
+const ParsedCounter = Counter.withParser({ parse: (value) => ({ success: true, value }) })
+const SealedCounter = funtypes.Sealed(Counter)
+const NamedCounter = funtypes.Named('Counter', Counter)
+const LazyCounter = funtypes.Lazy(() => Counter)
+const IntersectedCounter = funtypes.Intersect(Counter, OptionalLabel)
+const CounterOrNone = funtypes.Union(NoneLiteral, Counter)
+
+const wrongCount: ValueProblem = { kind: 'wrongFormat', path: ['count'], expected: 'a number', received: 'x' }
+const wrongFirstItem: ValueProblem = { kind: 'wrongFormat', path: [0], expected: 'a number', received: 'x' }
+const wrongTopLevelValue = (expected: string, received: unknown): ValueProblem => ({ kind: 'wrongFormat', path: [], expected, received })
+const opaqueLeafSample = (codec: ReflectedCodec) => ({ codec, value: 0, problem: wrongTopLevelValue('a valid value', 0) })
+
+// One codec of every funtypes tag, with the problem the module explains for a value of it.
+const CODEC_SAMPLES: readonly { readonly codec: ReflectedCodec, readonly value: unknown, readonly problem: ValueProblem }[] = [
+	{ codec: ConstrainedCounter, value: { count: 'x' }, problem: wrongCount },
+	{ codec: ParsedCounter, value: { count: 'x' }, problem: wrongCount },
+	{ codec: SealedCounter, value: { count: 'x' }, problem: wrongCount },
+	{ codec: NamedCounter, value: { count: 'x' }, problem: wrongCount },
+	{ codec: LazyCounter, value: { count: 'x' }, problem: wrongCount },
+	{ codec: Counter, value: { count: 'x' }, problem: wrongCount },
+	{ codec: funtypes.ReadonlyRecord(funtypes.String, funtypes.Number), value: { count: 'x' }, problem: wrongCount },
+	{ codec: funtypes.ReadonlyTuple(funtypes.Number), value: ['x'], problem: wrongFirstItem },
+	{ codec: funtypes.ReadonlyArray(funtypes.Number), value: ['x'], problem: wrongFirstItem },
+	{ codec: IntersectedCounter, value: { count: 'x' }, problem: wrongCount },
+	{ codec: CounterOrNone, value: { count: 'x' }, problem: wrongCount },
+	{ codec: funtypes.String, value: 0, problem: wrongTopLevelValue('a string', 0) },
+	{ codec: funtypes.Number, value: 'x', problem: wrongTopLevelValue('a number', 'x') },
+	{ codec: funtypes.Boolean, value: 0, problem: wrongTopLevelValue('a boolean', 0) },
+	{ codec: NoneLiteral, value: 0, problem: wrongTopLevelValue('"none"', 0) },
+	{ codec: funtypes.Never, value: 0, problem: wrongTopLevelValue('no value', 0) },
+	opaqueLeafSample(funtypes.Unknown),
+	opaqueLeafSample(funtypes.BigInt),
+	opaqueLeafSample(funtypes.Symbol),
+	opaqueLeafSample(funtypes.Function),
+	opaqueLeafSample(funtypes.Enum('Color', { Red: 'red' })),
+	opaqueLeafSample(funtypes.KeyOf({ red: 1 })),
+	opaqueLeafSample(funtypes.InstanceOf(Date)),
+	opaqueLeafSample(funtypes.Brand('Name', funtypes.String)),
+]
+
+// The members the module reads, with what each one holds for a codec built from known parts. Lazy codecs are pinned separately because their member is a function.
+const REFLECTED_MEMBERS: readonly { readonly codec: ReflectedCodec, readonly member: string, readonly holds: unknown }[] = [
+	{ codec: ConstrainedCounter, member: 'underlying', holds: Counter },
+	{ codec: ParsedCounter, member: 'underlying', holds: Counter },
+	{ codec: SealedCounter, member: 'underlying', holds: Counter },
+	{ codec: NamedCounter, member: 'underlying', holds: Counter },
+	{ codec: Counter, member: 'fields', holds: { count: funtypes.Number } },
+	{ codec: funtypes.ReadonlyRecord(funtypes.String, Counter), member: 'value', holds: Counter },
+	{ codec: funtypes.ReadonlyTuple(Counter, funtypes.String), member: 'components', holds: [Counter, funtypes.String] },
+	{ codec: funtypes.ReadonlyArray(Counter), member: 'element', holds: Counter },
+	{ codec: IntersectedCounter, member: 'intersectees', holds: [Counter, OptionalLabel] },
+	{ codec: CounterOrNone, member: 'alternatives', holds: [NoneLiteral, Counter] },
+	{ codec: NoneLiteral, member: 'value', holds: 'none' },
+]
+
+// The keys funtypes reports. splitFailureKey and splitRecordFailureKey parse this grammar, and each wrapper has to pass the key of its underlying codec through.
+const FAILURE_KEYS: readonly { readonly codec: ReflectedCodec, readonly value: unknown, readonly key: string | undefined }[] = [
+	{ codec: Counter, value: {}, key: 'count' },
+	{ codec: funtypes.ReadonlyObject({ nested: Counter }), value: { nested: { count: 'x' } }, key: 'nested.count' },
+	{ codec: funtypes.ReadonlyTuple(Counter), value: [{ count: 'x' }], key: '[0].count' },
+	{ codec: funtypes.ReadonlyTuple(Counter), value: [], key: undefined },
+	{ codec: funtypes.ReadonlyArray(funtypes.Number), value: [1, 'x'], key: '[1]' },
+	{ codec: funtypes.ReadonlyRecord(funtypes.String, Counter), value: { 'dotted.key': { count: 'x' } }, key: 'dotted.key.count' },
+	{ codec: IntersectedCounter, value: { count: 'x' }, key: 'count' },
+	{ codec: ConstrainedCounter, value: { count: 'x' }, key: 'count' },
+	{ codec: ParsedCounter, value: { count: 'x' }, key: 'count' },
+	{ codec: SealedCounter, value: { count: 'x' }, key: 'count' },
+	{ codec: SealedCounter, value: { count: 1, extra: 2 }, key: 'extra' },
+	{ codec: NamedCounter, value: { count: 'x' }, key: 'count' },
+	{ codec: LazyCounter, value: { count: 'x' }, key: 'count' },
+	{ codec: CounterOrNone, value: { count: 'x' }, key: undefined },
+	{ codec: DiscriminatedObject, value: { type: 'a', count: 'x' }, key: '<type: "a">.count' },
+	{ codec: DiscriminatedObject, value: { type: 'c' }, key: 'type' },
+	{ codec: DiscriminatedTuple, value: ['a', 'x'], key: '<[0]: "a">.[1]' },
+]
+
+// Every codec reachable from the roots. It scans all members instead of naming them, so a changed funtypes layout cannot hide a tag from this walk; only the function of a lazy codec has to be called by name.
+function collectReachableCodecs(roots: readonly unknown[]) {
+	const codecs = new Set<ReflectedCodec>()
+	const visited = new Set<object>()
+	const visit = (value: unknown): void => {
+		if (typeof value !== 'object' || value === null || visited.has(value)) return
+		visited.add(value)
+		if (isReflectedCodec(value)) {
+			codecs.add(value)
+			const lazyUnderlying: unknown = value.tag === 'lazy' ? Reflect.get(value, 'underlying') : undefined
+			if (typeof lazyUnderlying === 'function') visit(lazyUnderlying())
+		}
+		for (const member of Object.values(value)) visit(member)
+	}
+	for (const root of roots) visit(root)
+	return codecs
 }
 
 describe('funtypes failure explanation', () => {
@@ -123,6 +225,66 @@ describe('funtypes failure explanation', () => {
 		assert.equal(shallowlyNested.problem, undefined)
 		assert.equal(deeplyNested.problem, undefined)
 		assert.equal(deeplyNested.parseCount, shallowlyNested.parseCount)
+	})
+
+	test('classifies every tag met in the RPC request codecs and the documents they hold', () => {
+		// Descriptions are roots because a JSON document codec is only reachable through its description, not through the string codec that holds the document.
+		const reachableCodecs = collectReachableCodecs([EthereumJsonRpcRequest, WalletRevokePermissions, ...CODEC_DESCRIPTIONS.values()])
+		const metTags = new Set([...reachableCodecs].map((codec) => codec.tag))
+		const classifiedTags = new Set(Object.values(CODEC_TAGS_BY_HANDLING).flat())
+		assert.deepEqual([...metTags].filter((tag) => !classifiedTags.has(tag)), [])
+		// Named is the one structural tag the RPC codecs do not use; missing any other means this walk stopped reaching part of the codecs.
+		const structuralTags = [...CODEC_TAGS_BY_HANDLING.wrapper, ...CODEC_TAGS_BY_HANDLING.composite].filter((tag) => tag !== 'named')
+		assert.deepEqual(structuralTags.filter((tag) => !metTags.has(tag)), [])
+		// A branded codec would be explained as an opaque leaf instead of through the codec it wraps, so using one needs unwrapping support first.
+		assert.equal(metTags.has('brand'), false)
+	})
+
+	test('has a sample of exactly the classified tags', () => {
+		const sortedClassifiedTags = Object.values(CODEC_TAGS_BY_HANDLING).flat().sort()
+		assert.deepEqual(CODEC_SAMPLES.map(({ codec }) => codec.tag).sort(), sortedClassifiedTags)
+	})
+
+	test('explains a value of every classified tag through the branch that handles the tag', () => {
+		for (const { codec, value, problem } of CODEC_SAMPLES) {
+			const parseResult = codec.safeParse(value)
+			// funtypes.Unknown accepts every value, so its failure can only be given.
+			const failure = parseResult.success ? { message: 'rejected by an enclosing codec' } : parseResult
+			assert.deepEqual(explainValueFailure(noDescriptions, codec, value, failure), problem, codec.tag)
+		}
+	})
+
+	test('falls back to the generic expectation for a tag it does not classify', () => {
+		const futureCodec: ReflectedCodec = { tag: 'futureCodec', safeParse: (value) => funtypes.String.safeParse(value) }
+		assert.deepEqual(explain(futureCodec, 0), wrongTopLevelValue('a valid value', 0))
+		assert.equal(getCodecLabel(noDescriptions, futureCodec), undefined)
+	})
+
+	test('pins the member layout of every codec it descends into', () => {
+		for (const { codec, member, holds } of REFLECTED_MEMBERS) assert.deepEqual(Reflect.get(codec, member), holds, `${ codec.tag }.${ member }`)
+		const lazyUnderlying: unknown = Reflect.get(LazyCounter, 'underlying')
+		assert.equal(typeof lazyUnderlying === 'function' ? lazyUnderlying() : undefined, Counter)
+		const pinnedTags = [...REFLECTED_MEMBERS.map(({ codec }) => codec.tag), 'lazy']
+		assert.deepEqual(pinnedTags.sort(), [...CODEC_TAGS_BY_HANDLING.wrapper, ...CODEC_TAGS_BY_HANDLING.composite, 'literal'].sort())
+	})
+
+	test('pins the failure key grammar', () => {
+		for (const { codec, value, key } of FAILURE_KEYS) {
+			const parseResult = codec.safeParse(value)
+			assert.equal(parseResult.success, false, `${ codec.tag } should reject ${ JSON.stringify(value) }`)
+			assert.equal(parseResult.success ? undefined : parseResult.key, key)
+		}
+	})
+
+	test('keeps the innermost message while prefixing the failure key', () => {
+		const innerResult = Counter.safeParse({ count: 'x' })
+		const outerResult = funtypes.ReadonlyObject({ nested: Counter }).safeParse({ nested: { count: 'x' } })
+		assert.equal(outerResult.success ? undefined : outerResult.message, innerResult.success ? undefined : innerResult.message)
+	})
+
+	test('does not follow discriminated union keys', () => {
+		const value = { type: 'a', count: 'x' }
+		assert.deepEqual(explain(DiscriminatedObject, value), wrongTopLevelValue('an object', value))
 	})
 
 	test('is only loaded at runtime by the invalid-params reply, so extension pages sharing the type modules do not load it', async () => {
