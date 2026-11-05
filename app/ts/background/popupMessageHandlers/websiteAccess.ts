@@ -1,19 +1,19 @@
 import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
 import type { AllowOrPreventAddressAccessForWebsite, BlockOrAllowExternalRequests, DisableInterceptor, RemoveWebsiteAccess, RemoveWebsiteAddressAccess, RetrieveWebsiteAccess } from '../../types/interceptor-messages.js'
 import type { EthereumAddress } from '../../types/wire-types.js'
-import type { Website } from '../../types/websiteAccessTypes.js'
+import type { Website, WebsiteAccessArray } from '../../types/websiteAccessTypes.js'
 import { getErrorMessage, reportUnexpectedError } from '../../utils/errors.js'
 import { checkAndThrowRuntimeLastError } from '../../utils/requests.js'
-import { updateContentScriptInjectionStrategy } from '../../utils/contentScriptsUpdating.js'
+import { getInterceptorDisabledSites, updateContentScriptInjectionStrategy } from '../../utils/contentScriptsUpdating.js'
+import { replaceElementInReadonlyArray } from '../../utils/typed-arrays.js'
 import { modifyObject } from '../../utils/typescript.js'
-import { setInterceptorDisabledForWebsite, updateWebsiteApprovalAccesses } from '../accessManagement.js'
+import { updateWebsiteApprovalAccesses } from '../accessManagement.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { getLastKnownCurrentTabId } from '../currentTab.js'
 import { getSettings, updateWebsiteAccess } from '../settings.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { getAddressMetadataForAccess } from '../windows/interceptorAccess.js'
 import { searchWebsiteAccess } from '../websiteAccessSearch.js'
-import { updateWebsiteAccessAndDetectDisabledSitesChange } from '../websiteAccessUpdating.js'
 
 const isMissingTabReloadError = (error: unknown) => {
 	const message = getErrorMessage(error)
@@ -47,13 +47,15 @@ export async function reloadConnectedTabs(websiteTabConnections: WebsiteTabConne
 
 type WebsiteAccessFollowUpStep = { readonly name: string, readonly run: () => Promise<void> }
 type StepFailure = { readonly name: string, readonly error: unknown }
+type WebsiteAccessUpdate = (previousWebsiteAccess: WebsiteAccessArray) => WebsiteAccessArray
+type ConnectedTabsReloadPolicy = 'always' | 'whenDisabledSitesChange' | 'never'
 
-export const updateContentScriptInjectionStep: WebsiteAccessFollowUpStep = {
+const updateContentScriptInjectionStep: WebsiteAccessFollowUpStep = {
 	name: 'updating the content script injection',
 	run: async () => await updateContentScriptInjectionStrategy(),
 }
 
-export const reloadConnectedTabsStep = (websiteTabConnections: WebsiteTabConnections): WebsiteAccessFollowUpStep => ({
+const reloadConnectedTabsStep = (websiteTabConnections: WebsiteTabConnections): WebsiteAccessFollowUpStep => ({
 	name: 'reloading connected tabs',
 	run: async () => await reloadConnectedTabs(websiteTabConnections),
 })
@@ -65,7 +67,7 @@ function describeStepFailures(failures: readonly StepFailure[]) {
 }
 
 // Call this once a website-access change is saved. Steps run in order and a failing step does not stop the later ones, so the saved change always reaches open connections. Reload before reconciling so outgoing pages drop their connections before reconciliation can re-prompt them. One failure is rethrown as is; several are thrown together in step order so none hides another.
-export async function runStepsThenReconcileApprovals(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, stepsBeforeReconciliation: readonly WebsiteAccessFollowUpStep[]) {
+async function runStepsThenReconcileApprovals(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, stepsBeforeReconciliation: readonly WebsiteAccessFollowUpStep[]) {
 	const reconcileApprovalsStep: WebsiteAccessFollowUpStep = {
 		name: 'reconciling website approvals',
 		run: async () => { await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true) },
@@ -84,12 +86,36 @@ export async function runStepsThenReconcileApprovals(simulationServicesOwner: Si
 	throw new AggregateError(failures.map(({ error }) => error), describeStepFailures(failures))
 }
 
-export async function disableInterceptor(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: DisableInterceptor) {
-	const disabledSitesChanged = await setInterceptorDisabledForWebsite(parsedRequest.data.website, parsedRequest.data.interceptorDisabled)
+function haveSameDisabledSites(previousWebsiteAccess: WebsiteAccessArray, nextWebsiteAccess: WebsiteAccessArray) {
+	const previousDisabledSites = new Set(getInterceptorDisabledSites(previousWebsiteAccess))
+	const nextDisabledSites = new Set(getInterceptorDisabledSites(nextWebsiteAccess))
+	return previousDisabledSites.size === nextDisabledSites.size && [...previousDisabledSites].every((origin) => nextDisabledSites.has(origin))
+}
+
+// Detecting a disabled sites change and updating the content script injection stay together here, so a caller only states its update and reload policy and cannot leave the injection stale. A failed save throws with no follow-up because nothing was stored.
+export async function applyWebsiteAccessUpdate(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, reloadPolicy: ConnectedTabsReloadPolicy, update: WebsiteAccessUpdate) {
+	let disabledSitesChanged = false
+	await updateWebsiteAccess((previousWebsiteAccess) => {
+		const nextWebsiteAccess = update(previousWebsiteAccess)
+		disabledSitesChanged = !haveSameDisabledSites(previousWebsiteAccess, nextWebsiteAccess)
+		return nextWebsiteAccess
+	})
+	const shouldReloadConnectedTabs = reloadPolicy === 'always' || (reloadPolicy === 'whenDisabledSitesChange' && disabledSitesChanged)
 	await runStepsThenReconcileApprovals(simulationServicesOwner, websiteTabConnections, [
 		...(disabledSitesChanged ? [updateContentScriptInjectionStep] : []),
-		reloadConnectedTabsStep(websiteTabConnections),
+		...(shouldReloadConnectedTabs ? [reloadConnectedTabsStep(websiteTabConnections)] : []),
 	])
+}
+
+const withInterceptorDisabledForWebsite = (website: Website, interceptorDisabled: boolean): WebsiteAccessUpdate => (previousWebsiteAccess) => {
+	const index = previousWebsiteAccess.findIndex((entry) => entry.website.websiteOrigin === website.websiteOrigin)
+	const previousAccess = index !== -1 ? previousWebsiteAccess[index] : undefined
+	if (previousAccess === undefined) return [...previousWebsiteAccess, { website, addressAccess: [], interceptorDisabled }]
+	return replaceElementInReadonlyArray(previousWebsiteAccess, index, { ...previousAccess, interceptorDisabled })
+}
+
+export async function disableInterceptor(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: DisableInterceptor) {
+	await applyWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, 'always', withInterceptorDisabledForWebsite(parsedRequest.data.website, parsedRequest.data.interceptorDisabled))
 	await sendPopupMessageToOpenWindows({ method: 'popup_setDisableInterceptorReply' as const, data: parsedRequest.data })
 }
 
@@ -100,29 +126,23 @@ export async function retrieveWebsiteAccess(parsedRequest: RetrieveWebsiteAccess
 	await sendPopupMessageToOpenWindows({ method: 'popup_retrieveWebsiteAccessReply', data: { websiteAccess, addressAccessMetadata } })
 }
 
-const blockOrAllowWebsiteExternalRequests = async (website: Website, shouldBlock: boolean) => {
-	await updateWebsiteAccess((previousAccessList) => previousAccessList.map((access) => {
-		if (access.website.websiteOrigin !== website.websiteOrigin) return access
-		return modifyObject(access, { declarativeNetRequestBlockMode: shouldBlock ? 'block-all' : 'disabled' })
-	}))
-}
+const withExternalRequestsBlockedOrAllowed = (website: Website, shouldBlock: boolean): WebsiteAccessUpdate => (previousAccessList) => previousAccessList.map((access) => {
+	if (access.website.websiteOrigin !== website.websiteOrigin) return access
+	return modifyObject(access, { declarativeNetRequestBlockMode: shouldBlock ? 'block-all' : 'disabled' })
+})
 
 export async function blockOrAllowExternalRequests(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: BlockOrAllowExternalRequests) {
-	await blockOrAllowWebsiteExternalRequests(parsedRequest.data.website, parsedRequest.data.shouldBlock)
-	await runStepsThenReconcileApprovals(simulationServicesOwner, websiteTabConnections, [reloadConnectedTabsStep(websiteTabConnections)])
+	await applyWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, 'always', withExternalRequestsBlockedOrAllowed(parsedRequest.data.website, parsedRequest.data.shouldBlock))
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }
 
-const removeAddressAccessByAddress = async (websiteOrigin: string, address: EthereumAddress) => {
-	await updateWebsiteAccess((previousAccessList) => previousAccessList.map((access) => {
-		if (access.website.websiteOrigin !== websiteOrigin || !access.addressAccess) return access
-		return modifyObject(access, { addressAccess: access.addressAccess.filter((addressAccess) => addressAccess.address !== address) })
-	}))
-}
+const withoutAddressAccess = (websiteOrigin: string, address: EthereumAddress): WebsiteAccessUpdate => (previousAccessList) => previousAccessList.map((access) => {
+	if (access.website.websiteOrigin !== websiteOrigin || !access.addressAccess) return access
+	return modifyObject(access, { addressAccess: access.addressAccess.filter((addressAccess) => addressAccess.address !== address) })
+})
 
 export async function removeWebsiteAddressAccess(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: RemoveWebsiteAddressAccess) {
-	await removeAddressAccessByAddress(parsedRequest.data.websiteOrigin, parsedRequest.data.address)
-	await runStepsThenReconcileApprovals(simulationServicesOwner, websiteTabConnections, [reloadConnectedTabsStep(websiteTabConnections)])
+	await applyWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, 'always', withoutAddressAccess(parsedRequest.data.websiteOrigin, parsedRequest.data.address))
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }
 
@@ -142,7 +162,6 @@ export async function allowOrPreventAddressAccessForWebsite(websiteTabConnection
 }
 
 export async function removeWebsiteAccess(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: RemoveWebsiteAccess) {
-	const disabledSitesChanged = await updateWebsiteAccessAndDetectDisabledSitesChange((previousAccess) => previousAccess.filter((access) => access.website.websiteOrigin !== parsedRequest.data.websiteOrigin))
-	await runStepsThenReconcileApprovals(simulationServicesOwner, websiteTabConnections, disabledSitesChanged ? [updateContentScriptInjectionStep] : [])
+	await applyWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, 'never', (previousAccess) => previousAccess.filter((access) => access.website.websiteOrigin !== parsedRequest.data.websiteOrigin))
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }

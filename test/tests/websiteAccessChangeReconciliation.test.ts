@@ -43,6 +43,11 @@ async function setUpApprovedConnectionAndOtherTab({ browserMockOptions = {}, int
 			method: 'popup_removeWebsiteAccess',
 			data: { websiteOrigin },
 		})),
+		// Denying access without touching the Interceptor setting leaves the disabled sites as they were, so neither the content script update nor the reload runs.
+		denyAccessInAccessEditor: async () => await withSilencedConsole(async () => await modules.changeInterceptorAccess(simulationServicesOwner, websiteTabConnections, {
+			method: 'popup_changeInterceptorAccess',
+			data: [{ removed: false, oldEntry: websiteAccessEntry, newEntry: { ...websiteAccessEntry, access: false } }],
+		})),
 		// Denying access and disabling the Interceptor in one edit changes the disabled sites, so the content script update and the reload both run.
 		denyAccessAndDisableInterceptorInAccessEditor: async () => await withSilencedConsole(async () => await modules.changeInterceptorAccess(simulationServicesOwner, websiteTabConnections, {
 			method: 'popup_changeInterceptorAccess',
@@ -51,6 +56,10 @@ async function setUpApprovedConnectionAndOtherTab({ browserMockOptions = {}, int
 		disableInterceptor: async () => await withSilencedConsole(async () => await modules.disableInterceptor(simulationServicesOwner, websiteTabConnections, {
 			method: 'popup_setDisableInterceptor',
 			data: { website, interceptorDisabled: true },
+		})),
+		blockExternalRequests: async () => await withSilencedConsole(async () => await modules.blockOrAllowExternalRequests(simulationServicesOwner, websiteTabConnections, {
+			method: 'popup_blockOrAllowExternalRequests',
+			data: { website, shouldBlock: true },
 		})),
 	}
 	const assertConnectionStillApproved = () => {
@@ -241,4 +250,31 @@ describe('disableInterceptor', () => {
 		assert.deepEqual(reloadedTabIds, connectedTabIds)
 		assertConnectionDeApproved()
 	})
+})
+
+describe('applyWebsiteAccessUpdate follow-up steps', () => {
+	const followUpCases = [
+		{ handler: 'removeWebsiteAccess', interceptorDisabled: false, updatesContentScripts: false, reloadsTabs: false },
+		{ handler: 'removeWebsiteAccess', interceptorDisabled: true, updatesContentScripts: true, reloadsTabs: false },
+		{ handler: 'denyAccessInAccessEditor', interceptorDisabled: false, updatesContentScripts: false, reloadsTabs: false },
+		{ handler: 'denyAccessAndDisableInterceptorInAccessEditor', interceptorDisabled: false, updatesContentScripts: true, reloadsTabs: true },
+		{ handler: 'disableInterceptor', interceptorDisabled: false, updatesContentScripts: true, reloadsTabs: true },
+		{ handler: 'disableInterceptor', interceptorDisabled: true, updatesContentScripts: false, reloadsTabs: true },
+		{ handler: 'removeWebsiteAddressAccess', interceptorDisabled: true, updatesContentScripts: false, reloadsTabs: true },
+		{ handler: 'blockExternalRequests', interceptorDisabled: true, updatesContentScripts: false, reloadsTabs: true },
+	] as const
+
+	for (const { handler, interceptorDisabled, updatesContentScripts, reloadsTabs } of followUpCases) {
+		test(`${ handler } on a site with the Interceptor ${ interceptorDisabled ? 'disabled' : 'enabled' } ${ updatesContentScripts ? 'updates' : 'leaves' } the content scripts, ${ reloadsTabs ? 'reloads' : 'does not reload' } the connected tabs and reconciles once`, async () => {
+			const { reloadedTabIds, connectedTabIds, handlers } = await setUpApprovedConnectionAndOtherTab({ interceptorDisabled })
+			const contentScriptInjectionUpdate = mockContentScriptInjectionUpdate()
+			const reconcile = spyOn(await importAccessManagement(), 'updateWebsiteApprovalAccesses')
+
+			await handlers[handler]()
+
+			assert.equal(contentScriptInjectionUpdate.mock.calls.length, updatesContentScripts ? 1 : 0)
+			assert.deepEqual(reloadedTabIds, reloadsTabs ? connectedTabIds : [])
+			assert.equal(reconcile.mock.calls.length, 1)
+		})
+	}
 })
