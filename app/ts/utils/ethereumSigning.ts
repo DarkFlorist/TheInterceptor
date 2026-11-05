@@ -2,7 +2,7 @@ import { concatBytes, hexToBytes, utf8ToBytes } from '@noble/hashes/utils'
 import { addr, eip191Signer } from 'micro-eth-signer'
 import { initSig, sign as signDigestWithMicro } from 'micro-eth-signer/utils.js'
 import { canonicalAbiType, FIXED_BYTES_REGEX, INTEGER_REGEX, parseIntegerString } from './ethereumAbiInternals.js'
-import { bytesFromHex, bytesFromHexOrBytes, ensureHex, isHexString, keccak256, stringToBytes, type Hex } from './ethereumBytes.js'
+import { bytesFromHex, bytesFromHexOrBytes, ensureHex, hexOrUtf8StringToBytes, keccak256, stringToBytes, type Hex } from './ethereumBytes.js'
 import { encodeAbiParameters } from './ethereumPrimitiveCore.js'
 import { normalizeSignatureYParity } from './ethereumSignature.js'
 import { isRecord } from './runtimeTypeGuards.js'
@@ -48,13 +48,7 @@ const bytesFromTypedDataPrimitive = (value: unknown): Uint8Array => {
 	if (value instanceof Uint8Array) return value
 	if (typeof value === 'boolean') return new Uint8Array([value ? 1 : 0])
 	if (typeof value === 'number' || typeof value === 'bigint') return integerToMinimalBytes(value)
-	if (typeof value === 'string') {
-		if (isHexString(value)) {
-			const hex = value.slice(2)
-			return hexToBytes(hex.length % 2 === 0 ? hex : `0${ hex }`)
-		}
-		return utf8ToBytes(value)
-	}
+	if (typeof value === 'string') return hexOrUtf8StringToBytes(value)
 	return utf8ToBytes(String(value))
 }
 
@@ -178,45 +172,71 @@ export const privateKeyToAccount = (privateKey: Hex) => {
 	}
 }
 
-export const recoverAddress = async ({ hash, signature }: {
-	readonly hash: Hex | Uint8Array
-	readonly signature: Hex | {
-		readonly r: Hex | bigint
-		readonly s: Hex | bigint
-		readonly yParity?: number
-		readonly v?: bigint | number
+type SignatureParameter = Hex | {
+	readonly r: Hex | bigint
+	readonly s: Hex | bigint
+	readonly yParity?: number
+	readonly v?: bigint | number
+}
+
+type SignatureParts = { readonly r: bigint, readonly s: bigint, readonly yParity: number }
+
+const toSignatureParts = (signature: SignatureParameter): SignatureParts => typeof signature === 'string'
+	? signatureToParts(signature)
+	: {
+		r: typeof signature.r === 'bigint' ? signature.r : BigInt(signature.r),
+		s: typeof signature.s === 'bigint' ? signature.s : BigInt(signature.s),
+		yParity: normalizeSignatureYParity(signature),
 	}
-}): Promise<Hex> => {
-	const digest = bytesFromHexOrBytes(hash)
-	const normalizedSignature = typeof signature === 'string'
-		? signatureToParts(signature)
-		: {
-			r: typeof signature.r === 'bigint' ? signature.r : BigInt(signature.r),
-			s: typeof signature.s === 'bigint' ? signature.s : BigInt(signature.s),
-			yParity: normalizeSignatureYParity(signature),
-		}
-	const recoveredSignature = initSig({ r: normalizedSignature.r, s: normalizedSignature.s }, normalizedSignature.yParity)
+
+const recoverAddressFromParts = (digest: Uint8Array, signature: SignatureParts): Hex => {
+	const recoveredSignature = initSig({ r: signature.r, s: signature.s }, signature.yParity)
 	return ensureHex(addr.fromPublicKey(recoveredSignature.recoverPublicKey(digest).toBytes(false)), 'recovered address')
 }
 
-// The micro-eth-signer @noble/curves build throws these (including its 'infinify' typo) when r and s cannot be recovered: r or s outside 1..n-1, an r that is not a curve x-coordinate, or a recovery that lands on the point at infinity. This backend knowledge stays next to recoverAddress so callers only see the outcome below.
-const UNRECOVERABLE_SIGNATURE_ERROR_PREFIXES = ['invalid signature r: ', 'invalid signature s: ', 'bad point: is not on curve', 'invalid recovery: point at infinify'] as const
+export const recoverAddress = async ({ hash, signature }: { readonly hash: Hex | Uint8Array, readonly signature: SignatureParameter }): Promise<Hex> => recoverAddressFromParts(bytesFromHexOrBytes(hash), toSignatureParts(signature))
 
-const isUnrecoverableSignatureError = (error: unknown) => error instanceof Error && UNRECOVERABLE_SIGNATURE_ERROR_PREFIXES.some((prefix) => error.message.startsWith(prefix))
+// secp256k1 curve y^2 = x^3 + 7 over the field prime p, with group order n.
+const SECP256K1_FIELD_PRIME = 0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2fn
+const SECP256K1_GROUP_ORDER = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n
+
+const modularPower = (base: bigint, exponent: bigint, modulus: bigint) => {
+	let result = 1n
+	let remainingBase = base % modulus
+	for (let remainingExponent = exponent; remainingExponent > 0n; remainingExponent >>= 1n) {
+		if ((remainingExponent & 1n) === 1n) result = result * remainingBase % modulus
+		remainingBase = remainingBase * remainingBase % modulus
+	}
+	return result
+}
+
+const isSignatureScalar = (value: bigint) => value >= 1n && value < SECP256K1_GROUP_ORDER
+
+// r is the x-coordinate of the signing nonce point, so it names a curve point only if x^3 + 7 is a nonzero square mod p (Euler's criterion; secp256k1 has no point with y = 0).
+const isCurveXCoordinate = (x: bigint) => modularPower(x ** 3n + 7n, (SECP256K1_FIELD_PRIME - 1n) / 2n, SECP256K1_FIELD_PRIME) === 1n
+
+// Checked here rather than inferred from library errors: r and s must be in 1..n-1 and r must be a curve x-coordinate for recovery to have a nonce point to start from.
+const hasRecoverableRAndS = (signature: SignatureParts) => isSignatureScalar(signature.r) && isSignatureScalar(signature.s) && isCurveXCoordinate(signature.r)
+
+// The one unrecoverable case left after hasRecoverableRAndS is a recovery that lands on the point at infinity (s * R = hash * G), which takes curve arithmetic to detect, so it is recognised by the micro-eth-signer @noble/curves error text (including its 'infinify' typo). tryRecoverAddress.test.ts triggers it with a real signature, so a reworded message fails that test instead of silently turning the RPC reply into an internal error.
+const isRecoveryAtInfinityError = (error: unknown) => error instanceof Error && error.message.startsWith('invalid recovery: point at infinify')
 
 export type AddressRecovery = { readonly type: 'recovered', readonly address: Hex } | { readonly type: 'unrecoverable' }
 
 // Like recoverAddress, but reports a signature whose r and s recover to no address as 'unrecoverable' instead of throwing; any other failure is unexpected and still throws.
-export const tryRecoverAddress = async (parameters: Parameters<typeof recoverAddress>[0]): Promise<AddressRecovery> => {
+export const tryRecoverAddress = async ({ hash, signature }: Parameters<typeof recoverAddress>[0]): Promise<AddressRecovery> => {
+	const digest = bytesFromHexOrBytes(hash)
+	const signatureParts = toSignatureParts(signature)
+	if (!hasRecoverableRAndS(signatureParts)) return { type: 'unrecoverable' }
 	try {
-		return { type: 'recovered', address: await recoverAddress(parameters) }
+		return { type: 'recovered', address: recoverAddressFromParts(digest, signatureParts) }
 	} catch (error: unknown) {
-		if (isUnrecoverableSignatureError(error)) return { type: 'unrecoverable' }
+		if (isRecoveryAtInfinityError(error)) return { type: 'unrecoverable' }
 		throw error
 	}
 }
 
-const signatureToParts = (signature: Hex): { readonly r: bigint, readonly s: bigint, readonly yParity: number } => {
+const signatureToParts = (signature: Hex): SignatureParts => {
 	const hex = ensureHex(signature, 'signature').slice(2)
 	if (hex.length !== 130) throw new Error('Signature must be 65 bytes')
 	const recovery = Number.parseInt(hex.slice(128), 16)

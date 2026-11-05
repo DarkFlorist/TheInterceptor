@@ -3,13 +3,19 @@ import { describe, test } from 'bun:test'
 import { secp256k1 } from '@noble/curves/secp256k1'
 import { personalEcRecover } from '../../app/ts/background/personalEcRecoverRpc.js'
 import { getSafeModeRpcPolicyReply } from '../../app/ts/safe/safeRequestPolicy.js'
-import { simulatePersonalSign } from '../../app/ts/simulation/services/simulationPersonalSigning.js'
+import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
+import type { IEthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
+import { getSimulatedMessageSignature, simulatePersonalSign } from '../../app/ts/simulation/services/simulationPersonalSigning.js'
+import { JsonRpcResponse } from '../../app/ts/types/JsonRpc-types.js'
 import type { PersonalSignParams } from '../../app/ts/types/jsonRpc-signing-types.js'
-import type { RpcNetwork } from '../../app/ts/types/rpc.js'
+import type { RpcEntry, RpcNetwork } from '../../app/ts/types/rpc.js'
 import type { SignedMessageTransaction } from '../../app/ts/types/visualizer-types.js'
+import type { Website } from '../../app/ts/types/websiteAccessTypes.js'
 import type { WebsiteSocket } from '../../app/ts/utils/requests.js'
+import { encodeAbiValues } from '../../app/ts/utils/abiRuntime.js'
 import { addressString, bytes32String } from '../../app/ts/utils/bigint.js'
-import { bytesToHex, hashMessage, privateKeyToAccount, stringToBytes } from '../../app/ts/utils/ethereumPrimitives.js'
+import { bytesToHex, hashMessage, keccak256, privateKeyToAccount, stringToBytes } from '../../app/ts/utils/ethereumPrimitives.js'
+import { eth_getBlockByNumber_goerli_8443561_true } from '../RPCResponses.js'
 import { confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, EthereumJsonRpcRequest, installBrowserMock, loadModules, noopPublishRpcConnectionStatus } from './backgroundEthAccountsTestHarness.js'
 
 const privateKey = '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
@@ -36,10 +42,10 @@ const parsePersonalEcRecover = (params: readonly unknown[]) => {
 	return request
 }
 
-const createSignedMessage = (fakeSignedFor: bigint, message: string, socket: WebsiteSocket): SignedMessageTransaction => {
+const createSignedMessage = (fakeSignedFor: bigint, message: string, socket: WebsiteSocket, signingWebsite: Website = website): SignedMessageTransaction => {
 	const originalRequestParameters: PersonalSignParams = { method: 'personal_sign', params: [message, fakeSignedFor] }
 	return {
-		website,
+		website: signingWebsite,
 		created: new Date('2026-10-01T00:00:00.000Z'),
 		activeAddress: fakeSignedFor,
 		fakeSignedFor,
@@ -145,6 +151,40 @@ describe('personal_ecRecover recovery', () => {
 		}
 	})
 
+	test('looks up simulated signers by the hash of the bytes simulated personal_sign actually signed', async () => {
+		const socket = { tabId: 1, connectionName: 0n }
+		const messages = [
+			{ message: helloMessage, signedBytes: '0x68656c6c6f' },
+			{ message: '0x00ff4578616d706c65', signedBytes: '0x00ff4578616d706c65' },
+		] as const
+		for (const { message, signedBytes } of messages) {
+			const signedMessage = createSignedMessage(simulatedSigner, message, socket)
+			const simulatedSigning = await simulatePersonalSign(signedMessage.originalRequestParameters, simulatedSigner)
+			assert.equal(simulatedSigning.messageHash, hashMessage({ raw: signedBytes }), message)
+			// With no stacked messages this is a real recovery, so it proves the simulated signature covers exactly the bytes the reported message hash describes.
+			assert.deepEqual(await personalEcRecover(parsePersonalEcRecover([message, simulatedSigning.signature]), [], websiteOrigin), { type: 'result', method: 'personal_ecRecover', result: mockSimulationKeyAddress }, message)
+			assert.deepEqual(await personalEcRecover(parsePersonalEcRecover([message, simulatedSigning.signature]), [signedMessage], websiteOrigin), { type: 'result', method: 'personal_ecRecover', result: simulatedSigner }, message)
+		}
+	})
+
+	test('keeps simulated signing and recovery decoding of an uppercase 0X prefix separate', async () => {
+		const socket = { tabId: 1, connectionName: 0n }
+		// Simulated personal_sign signs '0X6869' as the bytes 0x6869, as on main.
+		const signedMessage = createSignedMessage(simulatedSigner, '0X6869', socket)
+		const simulatedSigning = await simulatePersonalSign(signedMessage.originalRequestParameters, simulatedSigner)
+		assert.equal(simulatedSigning.messageHash, hashMessage({ raw: '0x6869' }))
+		assert.deepEqual(await personalEcRecover(parsePersonalEcRecover(['0x6869', simulatedSigning.signature]), [], websiteOrigin), { type: 'result', method: 'personal_ecRecover', result: mockSimulationKeyAddress })
+		// Recovering with the canonical '0x6869' finds the stacked '0X6869' signing through the hash of the signed bytes.
+		assert.deepEqual(await personalEcRecover(parsePersonalEcRecover(['0x6869', simulatedSigning.signature]), [signedMessage], websiteOrigin), { type: 'result', method: 'personal_ecRecover', result: simulatedSigner })
+		// Recovery reads '0X6869' as text like MetaMask, so it neither matches the stacked signing nor recovers the bytes 0x6869.
+		const textRecovery = await personalEcRecover(parsePersonalEcRecover(['0X6869', simulatedSigning.signature]), [signedMessage], websiteOrigin)
+		assert.ok(textRecovery.type === 'result' && 'result' in textRecovery)
+		assert.notEqual(textRecovery.result, simulatedSigner)
+		assert.notEqual(textRecovery.result, mockSimulationKeyAddress)
+		const account = privateKeyToAccount(privateKey)
+		assert.deepEqual(await personalEcRecover(parsePersonalEcRecover(['0X6869', await account.signMessage({ message: '0X6869' })]), [], websiteOrigin), { type: 'result', method: 'personal_ecRecover', result: signerAddress })
+	})
+
 	test('maps simulated personal_sign signatures back to the simulated signer', async () => {
 		const socket = { tabId: 1, connectionName: 0n }
 		const signedMessage = createSignedMessage(simulatedSigner, helloMessage, socket)
@@ -211,6 +251,49 @@ describe('personal_ecRecover recovery', () => {
 		const request = parsePersonalEcRecover([helloMessage, await getSimulatedSignature(signedMessage)])
 		assert.deepEqual(await personalEcRecover(request, [signedMessage], 'https://other.example'), { type: 'result', method: 'personal_ecRecover', result: mockSimulationKeyAddress })
 		assert.deepEqual(await personalEcRecover(request, [signedMessage], websiteOrigin), { type: 'result', method: 'personal_ecRecover', result: simulatedSigner })
+	})
+})
+
+describe('simulated signature to signer mapping', () => {
+	const ecRecoverPrecompileAddress = 1n
+	const parentBlockNumber = 8443561n
+	const rpcEntry: RpcEntry = { name: 'Test RPC', chainId: 1n, httpsRpc: 'http://127.0.0.1:8545', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
+	const requestHandler: IEthereumJSONRpcRequestHandler = {
+		rpcUrl: rpcEntry.httpsRpc,
+		clearCache: () => undefined,
+		getChainId: async () => rpcEntry.chainId,
+		jsonRpcRequest: async (request) => {
+			if (request.method !== 'eth_getBlockByNumber') throw new Error(`Unexpected RPC method: ${ request.method }`)
+			const response = JsonRpcResponse.parse(JSON.parse(eth_getBlockByNumber_goerli_8443561_true))
+			if (!('result' in response)) throw new Error('Expected the block fixture to be a success response')
+			return response.result
+		},
+	}
+	const ethereum = new EthereumClientService(requestHandler, async () => undefined, async () => undefined, rpcEntry)
+
+	// The override stores signer addresses in a Solidity mapping at slot 0, keyed by keccak256(messageHash, v, r, s) of each simulated signature.
+	const getEcRecoverOverrideSlot = (messageHash: string, signature: string) => {
+		const signatureKey = keccak256(encodeAbiValues(['bytes32', 'uint8', 'bytes32', 'bytes32'], [messageHash, BigInt(`0x${ signature.slice(130, 132) }`), signature.slice(0, 66), `0x${ signature.slice(66, 130) }`]))
+		return keccak256(encodeAbiValues(['bytes32', 'uint256'], [signatureKey, 0n]))
+	}
+
+	test('the ecRecover precompile override and personal_ecRecover resolve a simulated personal_sign signature to the same signer', async () => {
+		const signedMessage = createSignedMessage(simulatedSigner, helloMessage, { tabId: 1, connectionName: 0n })
+		const simulatedSignature = await getSimulatedMessageSignature(signedMessage)
+		assert.equal(simulatedSignature.signer, simulatedSigner)
+		assert.equal(simulatedSignature.signature, await getSimulatedSignature(signedMessage))
+
+		const prepared = await ethereum.prepareEthSimulateV1Input([{
+			stateOverrides: {},
+			transactions: [],
+			signedMessages: [signedMessage],
+			blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' },
+			simulateWithZeroBaseFee: false,
+		}], parentBlockNumber, undefined)
+		const ecRecoverOverride = prepared.request.params[0].blockStateCalls[0]?.stateOverrides?.[addressString(ecRecoverPrecompileAddress)]
+		assert.deepEqual(ecRecoverOverride?.state, { [getEcRecoverOverrideSlot(simulatedSignature.messageHash, simulatedSignature.signature)]: simulatedSignature.signer })
+
+		assert.deepEqual(await personalEcRecover(parsePersonalEcRecover([helloMessage, simulatedSignature.signature]), [signedMessage], websiteOrigin), { type: 'result', method: 'personal_ecRecover', result: simulatedSignature.signer })
 	})
 })
 
@@ -284,6 +367,19 @@ describe('personal_ecRecover routing', () => {
 		assert.equal((await sendPersonalEcRecover(3, ['Hello world', await getSimulatedSignature(plainTextSignedMessage)]))?.result, '0x1111111111111111111111111111111111111111')
 		assert.equal(getBlockCalls.count, 0)
 		assert.equal(messages.some((message) => message.type === 'forwardToSigner'), false)
+	})
+
+	test('answers the mock key address for a simulated signature another website requested, even from the same tab', async () => {
+		installBrowserMock()
+		const loadedModules = await loadModules()
+		await loadedModules.changeSimulationMode({ simulationMode: true, activeSimulationAddress: simulatedSigner, activeSigningAddress: undefined })
+		await loadedModules.setUseSignersAddressAsActiveAddress(false)
+		await loadedModules.updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: simulatedSigner, access: true }] }])
+		const { socket, sendPersonalEcRecover } = await setUpWebsiteConnection(loadedModules)
+		const otherWebsiteSignedMessage = createSignedMessage(simulatedSigner, helloMessage, socket, { websiteOrigin: 'https://other.example', icon: undefined, title: undefined })
+		await loadedModules.updateInterceptorTransactionStack(() => ({ operations: [{ type: 'Message', signedMessageTransaction: otherWebsiteSignedMessage }] }))
+
+		assert.equal((await sendPersonalEcRecover(1, [helloMessage, await getSimulatedSignature(otherWebsiteSignedMessage)]))?.result, addressString(mockSimulationKeyAddress))
 	})
 
 	test('answers a Safe owner as simulated signer only in simulation mode, never from the Safe signing-mode stack', async () => {
@@ -382,5 +478,51 @@ describe('personal_ecRecover routing', () => {
 			}, JSON.stringify(params))
 		}
 		assert.equal(messages.some((message) => message.type === 'forwardToSigner'), false)
+	})
+})
+
+describe('request simulation view', () => {
+	const stackSignedMessage = async (loadedModules: Awaited<ReturnType<typeof loadModules>>) => {
+		await loadedModules.changeSimulationMode({ simulationMode: true, activeSimulationAddress: simulatedSigner, activeSigningAddress: undefined })
+		const signedMessage = createSignedMessage(simulatedSigner, helloMessage, { tabId: 1, connectionName: 0n })
+		await loadedModules.updateInterceptorTransactionStack(() => ({ operations: [{ type: 'Message', signedMessageTransaction: signedMessage }] }))
+	}
+
+	test('shares the simulation overlay gate between signed messages and the simulation input', async () => {
+		installBrowserMock()
+		const loadedModules = await loadModules()
+		const { createRequestSimulationView } = await import('../../app/ts/background/requestSimulationView.js')
+		const getBlockCalls = { count: 0 }
+		const { ethereum } = createEthereumWithGetBlockCounter(getBlockCalls)
+		await stackSignedMessage(loadedModules)
+
+		const overlayDisabledView = createRequestSimulationView(ethereum, false)
+		assert.deepEqual(await overlayDisabledView.getSimulatedSignedMessages(), [])
+		assert.deepEqual(await overlayDisabledView.getSimulationInput(), { kind: 'passthrough' })
+
+		const overlayEnabledView = createRequestSimulationView(ethereum, true)
+		assert.deepEqual((await overlayEnabledView.getSimulatedSignedMessages()).map((signedMessage) => signedMessage.fakeSignedFor), [simulatedSigner])
+		const simulationInput = await overlayEnabledView.getSimulationInput()
+		assert.ok(simulationInput.kind === 'simulated')
+		assert.deepEqual(simulationInput.value.flatMap((block) => block.signedMessages), await overlayEnabledView.getSimulatedSignedMessages())
+		// A stack of only signed messages needs no RPC preparation.
+		assert.equal(getBlockCalls.count, 0)
+	})
+
+	test('reads signed messages and the simulation input from one stack snapshot per request', async () => {
+		installBrowserMock()
+		const loadedModules = await loadModules()
+		const { createRequestSimulationView } = await import('../../app/ts/background/requestSimulationView.js')
+		const { ethereum } = createEthereumWithGetBlockCounter({ count: 0 })
+		await stackSignedMessage(loadedModules)
+
+		const requestView = createRequestSimulationView(ethereum, true)
+		const signedMessages = await requestView.getSimulatedSignedMessages()
+		await loadedModules.updateInterceptorTransactionStack(() => ({ operations: [] }))
+
+		const simulationInput = await requestView.getSimulationInput()
+		assert.ok(simulationInput.kind === 'simulated')
+		assert.deepEqual(simulationInput.value.flatMap((block) => block.signedMessages), signedMessages)
+		assert.deepEqual(await createRequestSimulationView(ethereum, true).getSimulatedSignedMessages(), [])
 	})
 })

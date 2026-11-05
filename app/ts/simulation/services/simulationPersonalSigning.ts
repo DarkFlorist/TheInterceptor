@@ -1,5 +1,4 @@
 import type { PersonalSignParams, SignMessageParams } from '../../types/jsonRpc-signing-types.js'
-import { RecoverableMessageSignature } from '../../types/JsonRpc-types.js'
 import type { SignedMessageTransaction } from '../../types/visualizer-types.js'
 import type { EthereumAddress } from '../../types/wire-types.js'
 import { bytes32String } from '../../utils/bigint.js'
@@ -11,8 +10,10 @@ const MOCK_PUBLIC_PRIVATE_KEY = 0x1n
 const MOCK_SIMULATION_PRIVATE_KEY = 0x2n
 const ADDRESS_FOR_PRIVATE_KEY_ONE = 0x7E5F4552091A69125d5DfCb7b8C2659029395Bdfn
 
-// The Interceptor signs simulated personal_sign requests itself, so it reads every message one way, as MetaMask does, and the simulation-mode popup shows that same reading.
-export const getMessageHashForPersonalSign = (params: PersonalSignParams) => hashMessage({ raw: getMetaMaskPersonalSignMessageBytes(params.params[0]) })
+// The bytes simulated personal_sign signs. The Interceptor signs these requests itself, so it reads every message one way, as MetaMask does, and the simulation-mode popup shows that same reading. Both the simulated signature and its message hash come from these bytes, so the hash always describes exactly what was signed.
+const getSimulatedPersonalSignBytes = (params: PersonalSignParams) => getMetaMaskPersonalSignMessageBytes(params.params[0])
+
+export const getMessageHashForPersonalSign = (params: PersonalSignParams) => hashMessage({ raw: getSimulatedPersonalSignBytes(params) })
 
 export const simulatePersonalSign = async (params: SignMessageParams, signingAddress: EthereumAddress) => {
 	const account = privateKeyToAccount(bytes32String(signingAddress === ADDRESS_FOR_PRIVATE_KEY_ONE ? MOCK_PUBLIC_PRIVATE_KEY : MOCK_SIMULATION_PRIVATE_KEY))
@@ -27,25 +28,15 @@ export const simulatePersonalSign = async (params: SignMessageParams, signingAdd
 			return { signature, messageHash }
 		}
 		case 'personal_sign': return {
-			signature: await account.signMessage({ message: { raw: getMetaMaskPersonalSignMessageBytes(params.params[0]) } }),
+			signature: await account.signMessage({ message: { raw: getSimulatedPersonalSignBytes(params) } }),
 			messageHash: getMessageHashForPersonalSign(params)
 		}
 		default: assertNever(params)
 	}
 }
 
-const areSameSignatures = (first: RecoverableMessageSignature, second: RecoverableMessageSignature) => first.r === second.r && first.s === second.s && first.yParity === second.yParity
-
-// Simulated personal_sign replies are signed with public mock keys, so recovery resolves them to the simulated signer like the simulation's ecRecover precompile override does. Any page can compute a mock signature, so only messages the requesting website itself simulated-signed match, keeping other websites' signers hidden. For a Safe this signer is its simulation owner, validated against the Safe's public owner list, just as a real owner signature recovers to that owner; Safe signing mode's stack holds no messages, so its wallet-selected owner never reaches this lookup.
-export const findSimulatedPersonalSignSigner = async (signedMessages: readonly SignedMessageTransaction[], messageHash: string, signature: RecoverableMessageSignature, requestingWebsiteOrigin: string) => {
-	// Newest first: one message signed for different simulated signers yields a single shared mock-key signature, so the most recent signing wins.
-	for (const signedMessage of [...signedMessages].reverse()) {
-		const signRequest = signedMessage.originalRequestParameters
-		if (signedMessage.website.websiteOrigin !== requestingWebsiteOrigin) continue
-		// Compares hashes of the signed bytes, so personal_ecRecover's reading of its message string only has to agree with personal_sign's on which bytes were signed, not on how the strings are written.
-		if (signRequest.method !== 'personal_sign' || getMessageHashForPersonalSign(signRequest) !== messageHash) continue
-		const simulatedSignature = RecoverableMessageSignature.parse((await simulatePersonalSign(signRequest, signedMessage.fakeSignedFor)).signature)
-		if (areSameSignatures(simulatedSignature, signature)) return signedMessage.fakeSignedFor
-	}
-	return undefined
+// The single definition of how a simulated signing maps to its signer: the simulation signs with a public mock key, and the resulting message hash and signature stand for the simulated signer. The ecRecover precompile override (EthereumClientService.getBlockStateCall) and personal_ecRecover both resolve simulated signatures through this, each applying its own choice of which signed messages to consider at its call site.
+export const getSimulatedMessageSignature = async (signedMessage: Pick<SignedMessageTransaction, 'originalRequestParameters' | 'fakeSignedFor'>) => {
+	const { messageHash, signature } = await simulatePersonalSign(signedMessage.originalRequestParameters, signedMessage.fakeSignedFor)
+	return { messageHash, signature, signer: signedMessage.fakeSignedFor }
 }
