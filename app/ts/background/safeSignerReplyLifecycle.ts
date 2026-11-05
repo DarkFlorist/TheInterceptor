@@ -4,7 +4,7 @@ import type { SimulationStackChange } from '../types/visualizer-types.js'
 import type { SimulationServices } from '../simulation/serviceLifecycle.js'
 import { EthereumBytes32 } from '../types/wire-types.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
-import { getErrorMessage, JsonRpcResponseError, reportLocalRecovery, reportUnexpectedError } from '../utils/errors.js'
+import { getErrorMessage, JsonRpcResponseError, reportLocalRecovery, reportUnexpectedError, surfaceFailures } from '../utils/errors.js'
 import { isAbiDataDecodeError } from '../utils/ethereumPrimitives.js'
 import { type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString } from '../utils/requests.js'
 import { Semaphore } from '../utils/semaphore.js'
@@ -15,7 +15,7 @@ import { createSafeSignerErrorStatus } from './safeSignerErrors.js'
 import { deferSignatureUnlessAnswered, getPendingSafeProposalStores, getPendingTransactionOrMessage, getPendingTransactionsAndMessages, movePendingSafeProposalToOutbox, removePendingSafeProposalStore, removePendingTransactionOrMessage, updatePendingTransactionOrMessage } from './storageVariables.js'
 import { getPendingTerminalReplies } from './pendingTerminalReplies.js'
 import { attemptQueuedTerminalReplyDelivery, deliverOwnQueuedTerminalReply, deliverQueuedTerminalReplyOnce, queueSafeProposalReplyAndMoveToOutbox, queueTerminalReplyUnlessDeferred } from './terminalReplyDelivery.js'
-import { surfaceIndependentFailures } from './terminalStateRecovery.js'
+import { reportRecoveryItemFailure } from './terminalStateRecovery.js'
 import { runEachIndependently } from '../utils/array.js'
 
 // The confirmation window work the lifecycle asks for. The lifecycle never imports the confirmation window or popup code: windows/confirmTransaction.ts supplies these callbacks, and tests can supply stubs. The website's answer never waits on view work, so each view callback reports its own failures instead of throwing.
@@ -318,7 +318,7 @@ export async function recoverSafeSignerReplies(services: SimulationServices, web
 		// A rejected outbox read is collected after the request failures instead of replacing them.
 		outboxFailures = [outboxReadFailure]
 	}
-	await surfaceIndependentFailures([...requestFailures, ...outboxFailures])
+	await surfaceFailures([...requestFailures, ...outboxFailures], reportRecoveryItemFailure)
 }
 
 // At most one advance on new blocks runs at a time; a block arriving meanwhile skips it.
@@ -338,7 +338,7 @@ export async function advanceSafeSignerRepliesOnNewBlock(services: SimulationSer
 		} catch (passFailure: unknown) {
 			failures.push(passFailure)
 		}
-		await surfaceIndependentFailures(failures)
+		await surfaceFailures(failures, reportRecoveryItemFailure)
 	})()
 	safeSignerReplyAdvancesOnNewBlock.add(advance)
 	try {

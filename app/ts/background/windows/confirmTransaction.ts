@@ -20,13 +20,13 @@ import { replyToInterceptedRequestAfterManifestV2Reconnect } from '../messageSen
 import { deliverOwnQueuedTerminalReply, queueTerminalReplyUnlessDeferred, releaseTerminalReplyReservation } from '../terminalReplyDelivery.js'
 import { prunePendingTerminalRepliesForMissingTabs } from '../pendingTerminalReplies.js'
 import { advanceSafeSignerRepliesOnNewBlock, discardSafeSignature, isOwnedBySafeSignerReplyLifecycle, recoverSafeSignerReplies, resolvePendingRequestAsNoResponse, resolveSafeSignature, type SafeSignerReplyConfirmationWindow, type SafeSignerReplyContext } from '../safeSignerReplyLifecycle.js'
-import { surfaceIndependentFailures } from '../terminalStateRecovery.js'
+import { reportRecoveryItemFailure } from '../terminalStateRecovery.js'
 import { runEachIndependently } from '../../utils/array.js'
 import { getConfirmationWindowRequests } from '../../utils/confirmationQueue.js'
 import { stringToBytes, keccak256 } from '../../utils/ethereumPrimitives.js'
 import { EthereumBytes32, EthereumQuantity, serialize } from '../../types/wire-types.js'
 import type { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
-import { getErrorMessage, JsonRpcResponseError, reportUnexpectedError, isExpectedInfrastructureError, isNewBlockAbort, reportLocalRecovery } from '../../utils/errors.js'
+import { getErrorMessage, JsonRpcResponseError, reportUnexpectedError, isExpectedInfrastructureError, isNewBlockAbort, reportLocalRecovery, surfaceFailures } from '../../utils/errors.js'
 import type { PendingTransactionOrSignableMessage, PopupPendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
 import type { SignMessageParams } from '../../types/jsonRpc-signing-types.js'
 import type { InterceptedRequestForward } from '../../types/interceptor-messages.js'
@@ -449,7 +449,7 @@ export async function recoverPendingConfirmationState(services: ConfirmationServ
 		async () => await resolveRequestsForMissingConfirmationWindows(services, websiteTabConnections),
 		prunePendingTerminalRepliesForMissingTabs,
 	]
-	await surfaceIndependentFailures(await runEachIndependently(phases, async (phase) => await phase()))
+	await surfaceFailures(await runEachIndependently(phases, async (phase) => await phase()), reportRecoveryItemFailure)
 }
 
 // A review refresh is formed from the request as read when the confirmation began, so it is written only while the stored request still awaits the user's review (not waiting for its signer, claimed or answered), keeping the stored signing network; returns whether it was written.

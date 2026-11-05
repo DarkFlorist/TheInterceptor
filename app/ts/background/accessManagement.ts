@@ -17,8 +17,8 @@ import type { AddressBookEntries, AddressBookEntry } from '../types/addressBookT
 import { Semaphore } from '../utils/semaphore.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { mergeStoredWebsiteMetadata } from '../utils/websiteIcons.js'
-import { reportUnexpectedError } from '../utils/errors.js'
-import { throwAfterFollowUp, throwFirstAndReportRest } from './committedWriteReconciliation.js'
+import { reportAsUnexpectedError, reportUnexpectedError, surfaceFailures } from '../utils/errors.js'
+import { throwAfterFollowUp } from './committedWriteReconciliation.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { getActiveAddressForCurrentSignerState, registerWebsiteConnectionAndProvisionallyClaimSignerState } from './signerStateOwnership.js'
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
@@ -554,13 +554,6 @@ async function withAccessReconciliationLock<Result>(websiteTabConnections: Websi
 	return await lock.execute(run)
 }
 
-// Surfaced only after every step ran and the lock is released: thrown (first) and reported (the rest) when the caller handles failures, otherwise all reported, so none is dropped.
-async function surfaceAccessReconciliationFailures(failures: readonly unknown[], throwOnError: boolean) {
-	if (failures.length === 0) return
-	if (throwOnError) return await throwFirstAndReportRest(failures)
-	for (const failure of failures) await reportUnexpectedError(failure)
-}
-
 // The access reconciliation rule. Runs are serialized under accessReconciliationLocks. Access is granted only from the current persisted state read inside the lock: the unpinned settings snapshot (active RPC network and approvals, so connection events use the current network too) and, per connection, tab state, address book and signer state; a run that waited for the lock therefore never applies state older than an earlier run's, and the reconciliation that follows a committed write applies after every run already in flight. Anything that keeps the settings read from producing available settings (an unavailable snapshot or a rejected read) makes the run revoke-only with `committedSettings`, which the caller read after its committed write. Every connection is reconciled, and each step's failure (request-block update, a rejected settings read, active-address lookup, disconnect or connect notification) is collected independently, in order: reconcileWebsiteApprovalAccesses surfaces them itself, and the collecting variant returns them to the committed-write operation's single collector.
 export async function reconcileWebsiteApprovalAccesses(
 	websiteTabConnections: WebsiteTabConnections,
@@ -568,7 +561,8 @@ export async function reconcileWebsiteApprovalAccesses(
 	throwOnError = false,
 ): Promise<WebsiteAccessUpdate> {
 	const { update, failures } = await reconcileWebsiteApprovalAccessesCollectingFailures(websiteTabConnections, committedSettings)
-	await surfaceAccessReconciliationFailures(failures, throwOnError)
+	// Surfaced only after every step ran and the lock is released: thrown (first) and reported (the rest) when the caller handles failures, otherwise all reported, so none is dropped.
+	await surfaceFailures(failures, reportAsUnexpectedError, { throwFirst: throwOnError })
 	return update
 }
 
@@ -732,7 +726,7 @@ async function revokeAffectedApprovalsBecauseSettingsAreUnreadable(websiteTabCon
 // The only entry point for reconciling a committed access-affecting write: `reconcile` runs with the committed settings. When they are not available (an unavailable snapshot or a rejected read, see readSettingsForAccessReconciliation) the change's affected runtime approvals are revoked and request blocks reconciled, then that failure is thrown, and any failure of the revocation reported, without running `reconcile`.
 export async function reconcileCommittedAccessChange<Result>(websiteTabConnections: WebsiteTabConnections, change: CommittedAccessChange, reconcile: (committedSettings: Settings) => Promise<Result>): Promise<Result> {
 	const committedSettings = await readSettingsForAccessReconciliation()
-	if (committedSettings.status !== 'available') return await throwFirstAndReportRest([committedSettings.failure, ...await revokeAffectedApprovalsBecauseSettingsAreUnreadable(websiteTabConnections, getAffectedWebsites(change))])
+	if (committedSettings.status !== 'available') return await surfaceFailures([committedSettings.failure, ...await revokeAffectedApprovalsBecauseSettingsAreUnreadable(websiteTabConnections, getAffectedWebsites(change))], reportAsUnexpectedError)
 	return await reconcile(committedSettings.settings)
 }
 

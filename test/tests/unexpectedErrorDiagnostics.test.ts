@@ -6,8 +6,34 @@ import { installDateMock, installDomMock } from './domMock.js'
 import { withSilencedConsole } from './consoleSilence.js'
 
 const { NEW_BLOCK_ABORT } = await import('../../app/ts/utils/constants.js')
+const { surfaceFailures } = await import('../../app/ts/utils/errors.js')
 const { classifyCaughtError, createInterceptorInternalError, hasInterceptorInternalErrorCode, isExpectedInfrastructureError, shouldSuppressUnexpectedErrorReport } = await import('../../app/ts/utils/errors.js')
 const { createSafeValidationError } = await import('../../app/ts/safe/safeErrors.js')
+
+describe('surfaceFailures', () => {
+	const collectReports = () => {
+		const reported: unknown[] = []
+		return { reported, report: async (failure: unknown) => { reported.push(failure) } }
+	}
+
+	test('does nothing without failures', async () => {
+		const { reported, report } = collectReports()
+		await surfaceFailures([], report)
+		assert.deepEqual(reported, [])
+	})
+
+	test('throws the first failure after reporting the rest in order at the given level', async () => {
+		const { reported, report } = collectReports()
+		await assert.rejects(surfaceFailures(['first', 'second', 'third'], report), (failure: unknown) => failure === 'first')
+		assert.deepEqual(reported, ['second', 'third'])
+	})
+
+	test('reports every failure in order and throws nothing when the caller does not handle failures', async () => {
+		const { reported, report } = collectReports()
+		await surfaceFailures(['first', 'second'], report, { throwFirst: false })
+		assert.deepEqual(reported, ['first', 'second'])
+	})
+})
 
 test('Safe failures use the shared internal error classification mechanism', () => {
 	const error = createSafeValidationError('Select a Safe owner.', 'safe_signer_selection')
