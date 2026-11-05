@@ -1760,4 +1760,27 @@ for (const storedInput of ['signer result', 'decline'] as const) {
 	}
 }
 
+test('a reject of a message request reusing a request id gets a rejection, not the simulated signature of the accepted message before it', async () => {
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
+	const reusedIdentifier = { ...uniqueRequestIdentifier, requestId: -7 }
+	const message = '0x68656c6c6f'
+	const request = { method: 'personal_sign', params: [message, addressString(activeAddress)], interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier: reusedIdentifier }
+	const signRequest = { method: 'personal_sign' as const, params: [message, activeAddress] as const }
+	const website = { websiteOrigin: 'https://example.com', icon: undefined, title: undefined }
+	const openMessage = async () => assert.deepEqual(await withSilencedConsole(async () => await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, request, { kind: 'message', parameters: signRequest }, true, activeAddress, website, websiteTabConnections)), { type: 'doNotReply' })
+	await openMessage()
+	await resolveRequest(websiteTabConnections, { action: 'accept', uniqueRequestIdentifier: reusedIdentifier })
+	await openMessage()
+	await resolveRequest(websiteTabConnections, { action: 'reject', errorString: undefined, uniqueRequestIdentifier: reusedIdentifier })
+
+	const [signature, rejection] = getRepliesToWebsite(postedMessages)
+	if (!isRecord(signature) || !isRecord(rejection) || !isRecord(rejection.error)) throw new Error('Expected a signature, then a rejection')
+	assert.equal(typeof signature.result, 'string')
+	assert.equal(rejection.error.code, METAMASK_ERROR_USER_REJECTED_REQUEST)
+	assert.equal((await modules.getInterceptorTransactionStack()).operations.length, 1, 'the accepted message is untouched')
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+})
+
 await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))

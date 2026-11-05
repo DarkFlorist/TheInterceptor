@@ -35,7 +35,7 @@ import { initializeContentScriptConnectionAfterBackgroundStartup, isIgnorablePor
 import { bumpPopupRefreshGeneration, initializePopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { type CommittedRequestFinisher, flushPendingTerminalRepliesForConnectedPortWithRetry } from './terminalReplyDelivery.js'
 import { createRetriableTerminalStateRecovery } from './terminalStateRecovery.js'
-import { acknowledgeAndTrackBridgeRequest, INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE } from './bridgeRequestDelivery.js'
+import { acknowledgeAndTrackBridgeRequest, INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, isHandledBridgeRequestId } from './bridgeRequestDelivery.js'
 import { registerWebsiteConnectionAndProvisionallyClaimSignerState } from './signerStateOwnership.js'
 import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
 import { initializeTabStateStorage } from './tabStateLifecycle.js'
@@ -185,7 +185,7 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ simulati
 					port.postMessage({ type: INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, requestId: rawMessage.requestId })
 					checkAndThrowRuntimeLastError()
 				})
-				if (!shouldHandleRequest) return
+				if (!shouldHandleRequest || !isHandledBridgeRequestId(rawMessage.requestId, rawMessage.method)) return
 				const { simulationServicesOwner } = await getConnectionInitializationPromise()
 				await pendingRequestLimiter.execute(async () => {
 					const request = {

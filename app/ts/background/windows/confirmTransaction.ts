@@ -635,6 +635,9 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 	return { transaction: { ...transactionWithoutGas, ...await getFeePerGas(transactionDetails.gas), gas: transactionDetails.gas }, ...extraParams, ...simulationOptionsField, success: true }
 }
 
+// The transaction or message identifier of one request, unique even when a page reuses a request id: what is stacked for a request carries it, so finding it on the stack proves this request stacked it (rejectUnlessStacked, accepting again).
+const createRequestIdentity = (uniqueRequestIdentifier: UniqueRequestIdentifier) => EthereumQuantity.parse(keccak256(stringToBytes(`${ getUniqueRequestIdentifierString(uniqueRequestIdentifier) }-${ crypto.randomUUID() }`)))
+
 const openConfirmationWindow = async () => await openPopupOrTab({ url: getHtmlFile('confirmTransaction'), type: 'popup', height: 800, width: 600 })
 // Called under the pending-confirmation lock (confirmationWindowLifecycle.ts). Requests whose window is gone are rejected as for a window the user closed, by resolutions that know the lock is held.
 const getPendingTransactionWindow = async (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections) => {
@@ -673,8 +676,7 @@ export async function openConfirmTransactionDialogForMessage(
 			? 'Select a Gnosis Safe signer for simulation before signing a message.'
 			: 'Select a current Gnosis Safe owner in the signer wallet before signing a message.')
 	}
-	const uniqueRequestIdentifierString = getUniqueRequestIdentifierString(request.uniqueRequestIdentifier)
-	const messageIdentifier = EthereumQuantity.parse(keccak256(stringToBytes(uniqueRequestIdentifierString)))
+	const messageIdentifier = createRequestIdentity(request.uniqueRequestIdentifier)
 	const created = new Date()
 	const safeMessage = transactionParams.method === 'eth_signTypedData_v4' && confirmation.review !== undefined
 		? SafeMessage.parse({ typedData: transactionParams.params[1], review: confirmation.review }) : undefined
@@ -709,6 +711,8 @@ export async function openConfirmTransactionDialogForMessage(
 		await withPendingConfirmationLock(async () => {
 			const openedDialog = await getPendingTransactionWindow(ethereumClientService, tokenPriceService, websiteTabConnections)
 			if (openedDialog === undefined) throw new Error('Failed to get pending transaction window!')
+			// A request id that is already pending, a replay or a reused id, gets no second confirmation: everything keyed by the id would mix the two, and the pending request answers the id.
+			if (await getPendingTransactionOrMessageByidentifier(request.uniqueRequestIdentifier) !== undefined) return
 
 			const pendingMessage = {
 				type: 'SignableMessage' as const,
@@ -768,8 +772,7 @@ export async function openConfirmTransactionDialogForTransaction(
 	website: Website,
 	websiteTabConnections: WebsiteTabConnections,
 ) {
-	const uniqueRequestIdentifierString = getUniqueRequestIdentifierString(request.uniqueRequestIdentifier)
-	const transactionIdentifier = EthereumQuantity.parse(keccak256(stringToBytes(uniqueRequestIdentifierString)))
+	const transactionIdentifier = createRequestIdentity(request.uniqueRequestIdentifier)
 	const created = new Date()
 	if (activeAddress === undefined) return { type: 'result' as const, ...ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS }
 	const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)
@@ -825,6 +828,8 @@ export async function openConfirmTransactionDialogForTransaction(
 			const { transactionToSimulate, safeTransaction, approvalStatus: safeSignerMismatch, pendingSafeFields } = finalizedSafePreparation
 			const openedDialog = await getPendingTransactionWindow(ethereumClientService, tokenPriceService, websiteTabConnections)
 			if (openedDialog === undefined) return formRejectMessage(METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, 'Failed to get pending transaction window')
+			// A request id that is already pending, a replay or a reused id, gets no second confirmation: everything keyed by the id would mix the two, and the pending request answers the id.
+			if (await getPendingTransactionOrMessageByidentifier(request.uniqueRequestIdentifier) !== undefined) return { success: true }
 			markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionConfirmPopupOpened)
 
 			const pendingTransaction = {

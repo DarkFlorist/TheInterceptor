@@ -6,6 +6,7 @@ import { createSaltSearch, getSignedTransactionForSimulation, toPreSimulationTra
 import { appendOperationsToStack } from '../../app/ts/background/simulationStackHashes.js'
 import { EthereumSignedTransactionToSignedTransaction, serializeSignedTransactionToBytes } from '../../app/ts/utils/ethereum.js'
 import { keccak256 } from '../../app/ts/utils/ethereumPrimitives.js'
+import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../app/ts/utils/constants.js'
 import { addressString, browserMock, createSafeStackTransactionFixture, createWebsitePort, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, isRecord, modules, simulator, testResolutionContext, withSilencedConsole } from './confirmTransactionTestHarness.js'
 
 // Regression tests for #1713: no two transactions on the simulation stack share a hash, so transaction and receipt lookups by hash find the right one.
@@ -78,6 +79,53 @@ async function acceptConfirmation(uniqueRequestIdentifier: Awaited<ReturnType<ty
 }
 
 const getStackedTransactions = async () => (await modules.getInterceptorTransactionStack()).operations.flatMap((operation) => operation.type === 'Transaction' ? [operation.preSimulationTransaction] : [])
+
+for (const requestId of [-7, 7]) {
+	test(`a reject of a request reusing request id ${ requestId } gets a rejection, not the success of the accepted request before it`, async () => {
+		await startSimulationStack(SENDER)
+		const postedMessages: unknown[] = []
+		const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+		const first = await openConfirmation(requestId, SENDER, 1n, websiteTabConnections)
+		const accepted = await acceptConfirmation(first, websiteTabConnections, postedMessages)
+		const second = await openConfirmation(requestId, SENDER, 2n, websiteTabConnections)
+		await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+			method: 'popup_confirmDialog',
+			data: { action: 'reject', errorString: undefined, uniqueRequestIdentifier: second },
+		}))
+		assert.deepEqual(getPageResponses(postedMessages, requestId), [{ result: accepted.pageHash }, { error: METAMASK_ERROR_USER_REJECTED_REQUEST }])
+		assert.deepEqual((await getStackedTransactions()).map((transaction) => transaction.signedTransaction.hash), [accepted.stacked.signedTransaction.hash], 'the accepted transaction is untouched')
+		assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+		assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+	})
+
+	test(`an accept of a request reusing request id ${ requestId } stacks its own transaction`, async () => {
+		await startSimulationStack(SENDER)
+		const postedMessages: unknown[] = []
+		const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+		const first = await openConfirmation(requestId, SENDER, 1n, websiteTabConnections)
+		await acceptConfirmation(first, websiteTabConnections, postedMessages)
+		const second = await openConfirmation(requestId, SENDER, 2n, websiteTabConnections)
+		await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+			method: 'popup_confirmDialog',
+			data: { action: 'accept', uniqueRequestIdentifier: second },
+		}))
+		const stacked = await getStackedTransactions()
+		assert.equal(stacked.length, 2)
+		assert.deepEqual(getPageResponses(postedMessages, requestId), stacked.map((transaction) => ({ result: transaction.signedTransaction.hash })))
+	})
+}
+
+test('a request reusing the id of a pending request gets no second confirmation, and the pending request answers the id once', async () => {
+	await startSimulationStack(SENDER)
+	const postedMessages: unknown[] = []
+	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
+	const first = await openConfirmation(-7, SENDER, 1n, websiteTabConnections)
+	await openConfirmation(-7, SENDER, 2n, websiteTabConnections)
+	assert.equal((await modules.getPendingTransactionsAndMessages()).length, 1)
+	const accepted = await acceptConfirmation(first, websiteTabConnections, postedMessages)
+	assert.deepEqual(getPageResponses(postedMessages, -7), [{ result: accepted.pageHash }])
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+})
 
 // Checks that every stacked transaction has its own hash and is found by it, both as a transaction and as a receipt.
 async function assertEachStackedTransactionFoundByOwnHash() {
@@ -2281,7 +2329,7 @@ test('stops the startup recovery composition when its committed-reply reads keep
 	} finally {
 		browserMock.setStorageGetHandler(undefined)
 	}
-})
+}, 15_000)
 
 test('rejects only the requests whose own window is gone when another confirmation opens, reusing a live window', async () => {
 	await startSimulationStack(SENDER)

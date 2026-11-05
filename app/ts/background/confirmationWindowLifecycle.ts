@@ -4,7 +4,15 @@ import { closePopupOrTabById, tryFocusingTabOrWindow } from '../utils/popupOrTab
 import { Semaphore } from '../utils/semaphore.js'
 import { getPendingTransactionsAndMessages } from './storageVariables.js'
 
-// Serializes choosing a confirmation window and registering a request in it with deciding to close a window after its last request (updateConfirmationWindowAfterRemoving). Lock order: this lock, then the hash lock (simulationStackHashes.ts), then the terminal-reply lock (terminalReplyDelivery.ts), then the storage locks. A resolution claim is not a lock: a resolution run while this lock is held (the orphans of getPendingTransactionWindow) is told so and does not take it again, and scheduled retries run without it.
+/**
+ * The lock order of the background, the one place that defines it. A lock may only be taken while holding locks earlier in this list:
+ * 1. the pending-confirmation lock (this module);
+ * 2. the simulation hash lock (simulationStackHashes.ts);
+ * 3. the terminal-reply lock (terminalReplyDelivery.ts) or the input-log lock (requestResolution.ts), which are never held together;
+ * 4. the storage locks (storageVariables.ts), which take no other lock.
+ * A resolution claim is not a lock: a resolution run while the pending-confirmation lock is held (the orphans of getPendingTransactionWindow) is told so and does not take it again, and scheduled retries run without it.
+ */
+// Serializes choosing a confirmation window and registering a request in it with deciding to close a window after its last request (updateConfirmationWindowAfterRemoving).
 const pendingConfirmationSemaphore = new Semaphore(1)
 
 export const withPendingConfirmationLock = async <Result>(work: () => Promise<Result>) => await pendingConfirmationSemaphore.execute(work)

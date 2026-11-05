@@ -1,5 +1,8 @@
 export const INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE = 'interceptor_bridge_acknowledgement'
 
+// A request is handled only under an id that orders it, so it cannot reuse another request's identity: a non-negative safe integer, or the diagnostics' fixed id -1, which is never deduplicated and opens no confirmation.
+export const isHandledBridgeRequestId = (requestId: number, method: string) => Number.isSafeInteger(requestId) && (requestId >= 0 || (requestId === -1 && method === 'InterceptorError'))
+
 export function acknowledgeAndTrackBridgeRequest(
 	latestReceivedRequestIds: Map<string, number>,
 	socketIdentifier: string,

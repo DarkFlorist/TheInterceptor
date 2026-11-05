@@ -4,6 +4,7 @@ import type { InterceptedRequestForward, StoredTerminalReply } from '../types/in
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { PopupOrTabId } from '../types/websiteAccessTypes.js'
 import { simulatePersonalSign } from '../simulation/services/simulationPersonalSigning.js'
+import { createBoundedRetries } from '../utils/boundedRetry.js'
 import { METAMASK_ERROR_BLANKET_ERROR, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import { reportLocalRecovery } from '../utils/errors.js'
 import { type UniqueRequestIdentifier, doesTabExist, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString } from '../utils/requests.js'
@@ -32,15 +33,11 @@ export const formRejectMessage = (code: number, errorString: string) => ({ type:
 
 // A reply a resolution chose for a request whose commitment write failed: finishing the request commits it, so the request keeps that outcome.
 const chosenUncommittedReplies = new Map<string, { readonly reply: InterceptedRequestForward, readonly confirmationWindow: PopupOrTabId }>()
-const FINISHING_RETRY_BASE_DELAY_MS = 50
-const FINISHING_RETRY_LIMIT = 6
+const FINISHING_RETRIES = { baseDelayMs: 50, attemptLimit: 6 }
 // The one retry owner of each request, shared by finishing and declining it: one attempt budget and at most one scheduled retry. A completed resolution drops it; an exhausted budget stays exhausted, so automatic follow-ups (deferrals, finishers) never extend it, and only a user action or startup resets it (resetRequestRetryBudget).
-const requestRetries = new Map<string, { readonly failedAttempts: number, readonly generation: number, readonly timer?: ReturnType<typeof setTimeout> }>()
-const clearRequestRetry = (claim: string) => {
-	clearTimeout(requestRetries.get(claim)?.timer)
-	requestRetries.delete(claim)
-}
-const retryBudgetLasts = (claim: string) => (requestRetries.get(claim)?.failedAttempts ?? 0) < FINISHING_RETRY_LIMIT
+const requestRetries = createBoundedRetries<string>(FINISHING_RETRIES)
+const clearRequestRetry = requestRetries.reset
+const retryBudgetLasts = requestRetries.budgetLasts
 export const resetRequestRetryBudget = (uniqueRequestIdentifier: UniqueRequestIdentifier) => clearRequestRetry(getUniqueRequestIdentifierString(uniqueRequestIdentifier))
 // The requests whose budget startup recovery already reset: the startup recovery's own retries are automatic, so only its first pass over a request gives it a new budget. A startup begins with none (beginStartupRecovery).
 const requestsResetByStartup = new Set<string>()
@@ -78,7 +75,7 @@ async function writeRecordedInputs(uniqueRequestIdentifier: UniqueRequestIdentif
 		recordedInputs.set(claim, { unwritten: afterWrite.unwritten.slice(1), writtenCount: afterWrite.writtenCount + 1 })
 	}
 }
-// Serializes the writes of recorded inputs with reading a stored log for an action's arrival (withResolutionClaim). Lock order: the pending-confirmation lock, then this lock, then the storage locks.
+// Serializes the writes of recorded inputs with reading a stored log for an action's arrival (withResolutionClaim). Its place in the lock order is defined in confirmationWindowLifecycle.ts.
 const inputLogSemaphore = new Semaphore(1)
 // Writes the inputs recorded so far, then runs then, in one turn of the input-log lock whose place is taken synchronously: inputs recorded after this call are written after then ran.
 function writeInputsRecordedSoFar<Result>(uniqueRequestIdentifier: UniqueRequestIdentifier, then: () => Promise<Result>) {
@@ -90,35 +87,20 @@ function writeInputsRecordedSoFar<Result>(uniqueRequestIdentifier: UniqueRequest
 	})
 }
 
-// Schedules the request's one retry for a failed resolution step, unless its budget is exhausted, then reports the failure. The attempt and the timer are reserved synchronously, before the report is awaited, so concurrent failures each count once against the one budget and a timer is never overwritten without being cleared. Each schedule has its own generation: completion or a budget reset deletes the entry, so a stale timer finds its generation gone and does nothing. The retry finishes the request, arbitrating its stored inputs.
-let nextRetryGeneration = 0
+// Schedules the request's one retry for a failed resolution step, unless its budget is exhausted, then reports the failure. The retry finishes the request, arbitrating its stored inputs.
 async function scheduleRequestRetry(uniqueRequestIdentifier: UniqueRequestIdentifier, context: ResolutionContext, error: unknown) {
 	const claim = getUniqueRequestIdentifierString(uniqueRequestIdentifier)
-	const previous = requestRetries.get(claim)
-	clearTimeout(previous?.timer)
-	const failedAttempts = (previous?.failedAttempts ?? 0) + 1
-	const retrying = failedAttempts < FINISHING_RETRY_LIMIT
-	const generation = nextRetryGeneration++
-	requestRetries.set(claim, {
-		failedAttempts,
-		generation,
-		...(!retrying ? {} : {
-			timer: setTimeout(() => {
-				if (requestRetries.get(claim)?.generation !== generation) return
-				requestRetries.set(claim, { failedAttempts, generation })
-				// While another resolution holds the request, the retry is parked on its claim, counting no attempt, and runs once when the claim is released.
-				if (resolutionClaims.has(claim)) {
-					const parked = deferredResolutions.get(claim)
-					deferredResolutions.set(claim, { ...(parked ?? { automaticOnly: true, followUp: false }), parkedRetryGeneration: generation })
-					return
-				}
-				void runRequestRetry(uniqueRequestIdentifier, withoutHeldLocks(context))
-			}, FINISHING_RETRY_BASE_DELAY_MS * 2 ** (failedAttempts - 1)),
-		}),
-	})
-	await reportLocalRecovery(error, retrying
+	await requestRetries.retryAfterFailure(claim, (generation) => {
+		// While another resolution holds the request, the retry is parked on its claim, counting no attempt, and runs once when the claim is released.
+		if (resolutionClaims.has(claim)) {
+			const parked = deferredResolutions.get(claim)
+			deferredResolutions.set(claim, { ...(parked ?? { automaticOnly: true, followUp: false }), parkedRetryGeneration: generation })
+			return
+		}
+		void runRequestRetry(uniqueRequestIdentifier, withoutHeldLocks(context))
+	}, async (retrying) => await reportLocalRecovery(error, retrying
 		? { code: 'request_resolution_retrying', message: 'Retrying the resolution of a request.' }
-		: { code: 'request_resolution_gave_up', message: 'Stopped retrying the resolution of a request until the user acts on it or the extension restarts.' })
+		: { code: 'request_resolution_gave_up', message: 'Stopped retrying the resolution of a request until the user acts on it or the extension restarts.' }))
 }
 
 // A retry of the request, automatic so it passes the budget gate: it finishes the request, and under the claim the stored inputs are arbitrated (resolveKeptInputs).
@@ -253,28 +235,27 @@ async function recordInputAndResolve(uniqueRequestIdentifier: UniqueRequestIdent
 export const submitSignerResult = async (uniqueRequestIdentifier: UniqueRequestIdentifier, signerReply: string, context: ResolutionContext) => await recordInputAndResolve(uniqueRequestIdentifier, { kind: 'signerResult', signerReply }, context)
 
 // The size of the in-memory resolution activity: claims held, follow-ups deferred and retries scheduled (of requests and of bounded work), which is empty whenever no resolution is in flight or awaiting a retry. Intent kept for a later user action or startup (chosen replies, recorded inputs, exhausted budgets) is not activity.
-export const getResolutionBookkeepingSize = () => resolutionClaims.size + deferredResolutions.size + [...requestRetries.values()].filter((retry) => retry.timer !== undefined).length + boundedRetryTimers.size
+export const getResolutionBookkeepingSize = () => resolutionClaims.size + deferredResolutions.size + requestRetries.getScheduledRetryCount() + boundedWorkRetries.getScheduledRetryCount()
 
-// The scheduled retries of runWithBoundedRetry.
-const boundedRetryTimers = new Set<ReturnType<typeof setTimeout>>()
+// The retries of runWithBoundedRetry, one budget for each run of it.
+const boundedWorkRetries = createBoundedRetries<symbol>(FINISHING_RETRIES)
 // Runs work whose effect recovery depends on, so its intent is never dropped before the work succeeded: a failure is reported and the work retried with the finishing's backoff and limit. The first attempt runs in the caller's context; retries run later, without the caller's locks.
-async function runWithBoundedRetry(work: (context: ResolutionContext) => Promise<void>, context: ResolutionContext, failure: { readonly code: string, readonly description: string }, failedAttempts: number): Promise<void> {
-	try {
-		await work(context)
-	} catch (error) {
-		const retrying = failedAttempts + 1 < FINISHING_RETRY_LIMIT
-		// Scheduled before the report is awaited.
-		if (retrying) {
-			const timer = setTimeout(() => {
-				boundedRetryTimers.delete(timer)
-				void runWithBoundedRetry(work, withoutHeldLocks(context), failure, failedAttempts + 1)
-			}, FINISHING_RETRY_BASE_DELAY_MS * 2 ** failedAttempts)
-			boundedRetryTimers.add(timer)
+async function runWithBoundedRetry(work: (context: ResolutionContext) => Promise<void>, firstContext: ResolutionContext, failure: { readonly code: string, readonly description: string }): Promise<void> {
+	const run = Symbol(failure.code)
+	const attempt = async (context: ResolutionContext): Promise<void> => {
+		try {
+			await work(context)
+			boundedWorkRetries.reset(run)
+		} catch (error) {
+			await boundedWorkRetries.retryAfterFailure(run, () => { void attempt(withoutHeldLocks(context)) }, async (retrying) => {
+				if (!retrying) boundedWorkRetries.reset(run)
+				await reportLocalRecovery(error, retrying
+					? { code: `${ failure.code }_retrying`, message: `Retrying ${ failure.description }.` }
+					: { code: `${ failure.code }_gave_up`, message: `Stopped retrying ${ failure.description }; startup recovery handles it.` })
+			})
 		}
-		await reportLocalRecovery(error, retrying
-			? { code: `${ failure.code }_retrying`, message: `Retrying ${ failure.description }.` }
-			: { code: `${ failure.code }_gave_up`, message: `Stopped retrying ${ failure.description }; startup recovery handles it.` })
 	}
+	await attempt(firstContext)
 }
 
 // Lists the closed tab's committed replies and finishes each request.
@@ -285,7 +266,7 @@ export async function finishCommittedRequestsOfClosedTab(tabId: number, context:
 			resetRequestRetryBudget(committedReply.uniqueRequestIdentifier)
 			await resumeRequest(committedReply.uniqueRequestIdentifier, attemptContext)
 		}
-	}, context, { code: 'closed_tab_resolution', description: 'the cleanup of a closed tab\'s committed requests' }, 0)
+	}, context, { code: 'closed_tab_resolution', description: 'the cleanup of a closed tab\'s committed requests' })
 }
 
 // At startup, finishes every request with a committed reply or stored inputs (a decline or a signer result), whatever its confirmation window's state, with a new retry budget.
@@ -365,7 +346,7 @@ export async function withResolutionClaim<Result>(uniqueRequestIdentifier: Uniqu
 		resolutionClaims.delete(claim)
 		const deferred = deferredResolutions.get(claim)
 		deferredResolutions.delete(claim)
-		const parkedRetryIsCurrent = deferred?.parkedRetryGeneration !== undefined && requestRetries.get(claim)?.generation === deferred.parkedRetryGeneration
+		const parkedRetryIsCurrent = deferred?.parkedRetryGeneration !== undefined && requestRetries.isCurrent(claim, deferred.parkedRetryGeneration)
 		if (deferred?.followUp === true) {
 			// Follow-ups only automatic resolutions recorded are automatic, and pass the budget gate; one a user action recorded runs regardless. A parked retry joins them.
 			const followUpContext: ResolutionContext = deferred.automaticOnly ? { ...context, automatic: true } : { refreshConfirmationWindow: context.refreshConfirmationWindow, websiteTabConnections: context.websiteTabConnections, settleSignerResult: context.settleSignerResult, ...(context.holdsPendingConfirmationLock === true ? { holdsPendingConfirmationLock: true } : {}) }
@@ -379,7 +360,7 @@ export async function withResolutionClaim<Result>(uniqueRequestIdentifier: Uniqu
 // Why a request is declined: the user rejected it, or its confirmation window closed. Both answer it with the user's rejection, except a reject of a request that never finished simulating, answered as unprocessable.
 type DeclineReason = Extract<ResolutionInput, { readonly kind: 'decline' }>['reason']
 
-// Answers a request that is declined: a rejection, unless it is already stacked in simulation mode (an accept stacked it and failed before its reply was committed, or its commitment and queued reply were lost), when it gets what accepting gives it: a transaction's stacked hash, a message's simulated signature.
+// Answers a request that is declined: a rejection, unless it is already stacked in simulation mode (an accept stacked it and failed before its reply was committed, or its commitment and queued reply were lost), when it gets what accepting gives it: a transaction's stacked hash, a message's simulated signature. Its identifier is unique to it (createRequestIdentity), so what is found on the stack was stacked by this request, even when a page reused its request id.
 async function rejectUnlessStacked(request: PendingTransactionOrSignableMessage, reason: DeclineReason, context: ResolutionContext) {
 	const rejection = reason === 'reject' && request.transactionOrMessageCreationStatus !== 'Simulated'
 		? formRejectMessage(METAMASK_ERROR_BLANKET_ERROR, 'The Interceptor failed to process the transaction')
@@ -413,13 +394,13 @@ export async function resolveRequestsOfClosedWindow(closedWindow: PopupOrTabId, 
 		const closedWindowRequests = (await getPendingTransactionsAndMessages()).filter((pending) => isSameWindow(closedWindow, pending.popupOrTabId))
 		for (const pending of closedWindowRequests) resetRequestRetryBudget(pending.uniqueRequestIdentifier)
 		await declinePendingRequests(closedWindowRequests, attemptContext)
-	}, context, { code: 'window_close_resolution', description: 'the rejection of requests whose confirmation window closed' }, 0)
+	}, context, { code: 'window_close_resolution', description: 'the rejection of requests whose confirmation window closed' })
 	await runWithBoundedRetry(async (attemptContext) => {
 		for (const strandedReply of (await getPendingTerminalReplies()).filter((reply) => isSameWindow(closedWindow, reply.confirmationWindow))) {
 			resetRequestRetryBudget(strandedReply.uniqueRequestIdentifier)
 			await resumeRequest(strandedReply.uniqueRequestIdentifier, attemptContext)
 		}
-	}, context, { code: 'window_close_finishing', description: 'the finishing of committed requests whose confirmation window closed' }, 0)
+	}, context, { code: 'window_close_finishing', description: 'the finishing of committed requests whose confirmation window closed' })
 }
 
 // At startup, declines the requests whose confirmation window is gone, with a new retry budget.

@@ -7,7 +7,7 @@ import { getInterceptorTransactionStack, getPendingTransactionsAndMessages, upda
 
 const getTransactionHashes = (operations: readonly InterceptorStackOperation[]) => operations.flatMap((operation) => operation.type === 'Transaction' ? [operation.preSimulationTransaction.signedTransaction.hash] : [])
 
-// Serializes each step that allocates hashes against the stack and the pending reservations together with its commit: reserving a confirmation's hash, accepting a confirmation and importing a stack. Lock order: the pending-confirmation lock (confirmTransaction.ts), then this one, then the pending-request and stack storage locks, which take no other lock.
+// Serializes each step that allocates hashes against the stack and the pending reservations together with its commit: reserving a confirmation's hash, accepting a confirmation and importing a stack. Its place in the lock order is defined in confirmationWindowLifecycle.ts.
 const simulationHashSemaphore = new Semaphore(1)
 export const withSimulationHashLock = async <Result>(allocateAndCommit: () => Promise<Result>) => await simulationHashSemaphore.execute(allocateAndCommit)
 
