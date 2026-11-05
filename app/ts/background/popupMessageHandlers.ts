@@ -1,7 +1,7 @@
 import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { readCommittedNetworkChangeGeneration } from './networkTransition.js'
-import { readNetworkSnapshot } from './networkTransitionLock.js'
+import { readNetworkSnapshot, readNetworkSnapshotForTerminalReply } from './networkTransitionLock.js'
 import { getUpdatedSimulationStackSnapshot, getUpdatedSimulationState, requireSimulationSnapshot, type NetworkSnapshot, type NetworkState, type SimulationRead } from './simulationUpdating.js'
 import { getSettings, setUseTabsInsteadOfPopup, setPage, getMakeCurrentAddressRich, setMetamaskCompatibilityMode, setSafeAppsCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, updateMakeCurrentAddressRich, updateFixedMakeMeRichList } from './settings.js'
 import { getPendingTransactionsAndMessages, getTabState, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests, updateTransactionState, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, getSafeTransactionStacks } from './storageVariables.js'
@@ -131,8 +131,9 @@ export async function confirmDialog(simulationServicesOwner: SimulationServicesO
 			return getSafeSignerSelectionFromAccountRefresh(refreshResult)
 		})()
 		: undefined
-	// Wallet account refresh may outlive an RPC switch; resolution starts with the installed services and their settings.
-	const network = await readNetworkSnapshot(simulationServicesOwner)
+	// Wallet account refresh may outlive an RPC switch; resolution starts with the installed services and their settings. A rejection has its outcome already.
+	const rejected = confirmation.data.action === 'reject' || confirmation.data.action === 'noResponse'
+	const network = await (rejected ? readNetworkSnapshotForTerminalReply : readNetworkSnapshot)(simulationServicesOwner)
 	const { ethereum, tokenPriceService } = network.services
 	await resolvePendingTransactionOrMessage(simulationServicesOwner, ethereum, tokenPriceService, network, websiteTabConnections, confirmation, refreshedSafeSignerSelection)
 }

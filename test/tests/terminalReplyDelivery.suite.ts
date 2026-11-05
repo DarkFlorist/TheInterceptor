@@ -4,7 +4,7 @@ import { getLatestUnexpectedError } from '../../app/ts/background/storageVariabl
 import { addressString } from '../../app/ts/utils/bigint.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../app/ts/utils/constants.js'
 import { activeAddress, browserMock, bytes32String, createDisconnectedPort, createRecordingPort, createSafeAddressBookEntry, createSafeTx, createWebsitePort, EIP712Message, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, pendingTransaction, privateKeyToAccount, recipientAddress, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, signedTransaction, simulator, uniqueRequestIdentifier, waitForPendingTransactionsToClear, withSilencedConsole } from './confirmTransactionTestHarness.js'
-import { fixedServicesOwner } from './backgroundEthAccountsTestHarness.js'
+import { createTestSimulationServicesOwner, fixedServicesOwner } from './backgroundEthAccountsTestHarness.js'
 
 // Like a request snapshot, confirmations read the settings together with the simulation stack built from them, under the network transition lock.
 const readNetworkState = async () => await (await import('../../app/ts/background/networkTransitionLock.js')).readNetworkState()
@@ -419,6 +419,126 @@ test('a rejection in the wallet returns the request to the user while the simula
 		const [pending] = await modules.getPendingTransactionsAndMessages()
 		assert.equal(pending?.approvalStatus.status, 'WaitingForUser')
 	})
+})
+
+// The stack stays readable here, so a read that returned it would hand the previous chain's stack to the new network.
+function failSimulationStackWrites() {
+	const originalSet = browser.storage.local.set
+	browser.storage.local.set = async (items) => {
+		if ('interceptorTransactionStack' in items) throw new Error('the simulation stack cannot be written')
+		return await originalSet(items)
+	}
+	return () => { browser.storage.local.set = originalSet }
+}
+
+const switchToAnotherChain = async (owner: ReturnType<typeof fixedServicesOwner>, websiteTabConnections: Parameters<typeof modules.onCloseWindowOrTab>[2]) => {
+	const { changeActiveAddressAndChain } = await import('../../app/ts/background/activeSettings.js')
+	await assert.rejects(changeActiveAddressAndChain(owner, websiteTabConnections, {
+		simulationMode: false,
+		rpcNetwork: { ...fakeRpcNetwork, name: 'Another chain', chainId: fakeRpcNetwork.chainId + 1n, httpsRpc: 'https://another-chain.example' },
+		promptForAccessesIfNeeded: false,
+	}))
+}
+
+const stackedOperation = { type: 'Transaction' as const, preSimulationTransaction: { ...pendingTransaction.transactionToSimulate, signedTransaction } }
+
+const terminalRepliesWhileNetworkChangeIsUnfinished = async (owner: ReturnType<typeof fixedServicesOwner>, port: browser.runtime.Port, postedMessages: readonly unknown[], websiteTabConnections: Parameters<typeof modules.onCloseWindowOrTab>[2]) => {
+	const transactionHash = bytes32String(0x1234n)
+	await withSilencedConsole(async () => {
+		await modules.signerReply(owner, websiteTabConnections, port, createSignerReply({ success: true, reply: transactionHash }), 'hasAccess', activeAddress)
+		await modules.confirmDialog(owner, websiteTabConnections, {
+			method: 'popup_confirmDialog',
+			data: { action: 'reject', errorString: undefined, uniqueRequestIdentifier: { ...uniqueRequestIdentifier, requestId: uniqueRequestIdentifier.requestId + 1 } },
+		})
+	})
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+	const replies = getRepliesToWebsite(postedMessages)
+	const signed = replies.find((reply) => isRecord(reply) && reply.requestId === uniqueRequestIdentifier.requestId)
+	const rejected = replies.find((reply) => isRecord(reply) && reply.requestId === uniqueRequestIdentifier.requestId + 1)
+	if (!isRecord(signed) || !isRecord(rejected) || !isRecord(rejected.error)) throw new Error('missing replies to the website')
+	assert.equal(signed.result, transactionHash)
+	assert.equal(rejected.error.code, METAMASK_ERROR_USER_REJECTED_REQUEST)
+}
+
+const createPendingSignerAndUserRequests = () => [
+	{ ...pendingTransaction, simulationMode: false, approvalStatus: { status: 'WaitingForSigner' } },
+	{ ...pendingTransaction, simulationMode: false, transactionIdentifier: 2n, uniqueRequestIdentifier: { ...uniqueRequestIdentifier, requestId: uniqueRequestIdentifier.requestId + 1 } },
+] as const
+
+test('terminal replies are delivered and simulation stays refused while a network change cannot clear the stack', async () => {
+	await browser.storage.local.set({ simulationMode: false })
+	const { getInterceptorTransactionStack, updateInterceptorTransactionStack } = await import('../../app/ts/background/storageVariables.js')
+	const { readNetworkSnapshot } = await import('../../app/ts/background/networkTransitionLock.js')
+	await updateInterceptorTransactionStack(() => ({ operations: [stackedOperation] }))
+	const owner = fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService)
+	const { port, postedMessages, websiteTabConnections, storePendingRequests } = createConnectionRecordingReplies(createPendingSignerAndUserRequests())
+	await storePendingRequests()
+	const restoreStackWrites = failSimulationStackWrites()
+	try {
+		await withSilencedConsole(async () => await switchToAnotherChain(owner, websiteTabConnections))
+		assert.equal((await getInterceptorTransactionStack()).operations.length, 1)
+		await terminalRepliesWhileNetworkChangeIsUnfinished(owner, port, postedMessages, websiteTabConnections)
+
+		const snapshot = await readNetworkSnapshot(owner)
+		assert.equal(snapshot.settings.activeRpcNetwork.chainId, fakeRpcNetwork.chainId + 1n)
+		assert.equal(snapshot.simulation.kind, 'unavailable')
+		assert.equal((await readNetworkState()).simulation.kind, 'unavailable')
+		const { appendToActiveSimulationStack } = await import('../../app/ts/background/networkTransition.js')
+		await assert.rejects(appendToActiveSimulationStack(owner, stackedOperation, undefined), /An earlier network change committed its settings/u)
+	} finally {
+		restoreStackWrites()
+	}
+	assert.equal((await readNetworkState()).simulation.kind, 'loaded')
+	assert.equal((await getInterceptorTransactionStack()).operations.length, 0)
+})
+
+test('terminal replies are delivered while the committed network\'s services cannot be installed', async () => {
+	await browser.storage.local.set({ simulationMode: false })
+	const { readNetworkSnapshot } = await import('../../app/ts/background/networkTransitionLock.js')
+	let installationFails = true
+	const owner = createTestSimulationServicesOwner({ ethereum: simulator.ethereum, tokenPriceService: simulator.tokenPriceService }, () => {
+		if (installationFails) throw new Error('the services cannot be installed')
+		return { ethereum: simulator.ethereum, tokenPriceService: simulator.tokenPriceService }
+	})
+	const { port, postedMessages, websiteTabConnections, storePendingRequests } = createConnectionRecordingReplies(createPendingSignerAndUserRequests())
+	await storePendingRequests()
+	try {
+		await withSilencedConsole(async () => await switchToAnotherChain(owner, websiteTabConnections))
+		await assert.rejects(readNetworkSnapshot(owner), /An earlier network change committed its settings/u)
+		await terminalRepliesWhileNetworkChangeIsUnfinished(owner, port, postedMessages, websiteTabConnections)
+	} finally {
+		installationFails = false
+	}
+	assert.equal((await readNetworkSnapshot(owner)).simulation.kind, 'loaded')
+})
+
+test('a wallet account change completes while a network change cannot clear the stack', async () => {
+	await browser.storage.local.set({ simulationMode: false })
+	const nextAccount = 0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7an
+	const signerAccountsChanged: unknown[] = []
+	const owner = fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService)
+	const { port, websiteTabConnections } = createConnectionRecordingReplies([])
+	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (previousState) => ({ ...previousState, signerAccounts: [activeAddress], activeSigningAddress: activeAddress }))
+	const connectionsWithLifecycle = Object.assign(websiteTabConnections, { lifecycle: { signerAccountsChanged: (socket: unknown) => { signerAccountsChanged.push(socket) } } })
+	const restoreStackWrites = failSimulationStackWrites()
+	try {
+		await withSilencedConsole(async () => {
+			await switchToAnotherChain(owner, connectionsWithLifecycle)
+			await modules.ethAccountsReply(owner, connectionsWithLifecycle, port, {
+				method: 'eth_accounts_reply',
+				params: [{ signerProviderGeneration: 1, type: 'success', accounts: [addressString(nextAccount)], requestAccounts: false }],
+				interceptorRequest: true,
+				interceptorInternalRequest: true,
+				usingInterceptorWithoutSigner: false,
+				uniqueRequestIdentifier,
+			}, 'hasAccess', activeAddress)
+		})
+		assert.equal(signerAccountsChanged.length, 1)
+	} finally {
+		restoreStackWrites()
+	}
+	assert.equal((await readNetworkState()).simulation.kind, 'loaded')
 })
 
 test('popup close retries outbox cleanup without reposting after direct delivery', async () => {

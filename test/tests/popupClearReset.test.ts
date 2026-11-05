@@ -593,6 +593,27 @@ describe('popup clear reset', () => {
 		assert.equal(getSimulationStateChangedMessages(browserMock.sentMessages).length, 1)
 	})
 
+	test('a network change during the unavailable result\'s persistence keeps it from the popup', async () => {
+		browserMock.reset()
+		await browserStorageLocalSet({ independentActiveSimulationAddress: activeAddress, interceptorTransactionStack: { operations: [] } })
+		const { readNetworkState } = await import('../../app/ts/background/networkTransitionLock.js')
+		const { advanceCommittedNetworkChangeGeneration } = await import('../../app/ts/background/networkChangeGeneration.js')
+		const { queuePopupSimulationRefresh } = await import('../../app/ts/background/popupSimulationRefreshQueue.js')
+		const { simulation: { activeRpcNetwork, activeStackContext, networkChangeGeneration } } = await readNetworkState()
+		await browserStorageLocalSet({ popupVisualisation: stalePopupVisualisation })
+		const originalSet = browser.storage.local.set
+		browser.storage.local.set = async (items) => {
+			await originalSet(items)
+			advanceCommittedNetworkChangeGeneration()
+		}
+		try {
+			await queuePopupSimulationRefresh({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService }, { kind: 'unavailable', error: new Error('Failed to fetch'), activeRpcNetwork, activeStackContext, networkChangeGeneration })
+		} finally {
+			browser.storage.local.set = originalSet
+		}
+		assert.equal(getSimulationStateChangedMessages(browserMock.sentMessages).length, 0)
+	})
+
 	test('renders the captured refresh input and rich count after live settings change', async () => {
 		browserMock.reset()
 		await browserStorageLocalSet({ independentActiveSimulationAddress: activeAddress, makeCurrentAddressRich: false, interceptorTransactionStack: { operations: [] } })

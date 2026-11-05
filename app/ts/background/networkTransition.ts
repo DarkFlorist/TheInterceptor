@@ -14,7 +14,7 @@ import type { Settings } from '../types/interceptor-messages.js'
 import type { ExportedSettings } from '../types/exportedSettingsTypes.js'
 import { getPrimaryRpcForChain, updateInterceptorTransactionStack, updateTransactionState } from './storageVariables.js'
 import { type NetworkSnapshot, readSimulationInputSources, type SimulationRead } from './simulationUpdating.js'
-import { completeUnfinishedNetworkChange, type LockedNetworkReads, recordUnfinishedNetworkChange, runNetworkTransition } from './networkTransitionLock.js'
+import { completeUnfinishedNetworkChange, type LockedNetworkReads, recordUnfinishedNetworkChange, runNetworkTransition, runStackIndependentNetworkTask } from './networkTransitionLock.js'
 import { assertNever } from '../utils/typescript.js'
 import type { InterceptorStackOperation } from '../types/visualizer-types.js'
 import { activeStackContextsEqual, getActiveStackContext, operationBelongsToActiveStackContext, SIMULATION_STACK_CONTEXT } from '../utils/activeStackContext.js'
@@ -81,7 +81,7 @@ async function completeNetworkChangeEffects(change: CommittedNetworkChange) {
 
 // The committed network change generation once any transition in progress has finished, so settings read before this call belong to the returned generation or an earlier one.
 export async function readCommittedNetworkChangeGeneration() {
-	return await runNetworkTransition(async () => getCommittedNetworkChangeGeneration())
+	return await runStackIndependentNetworkTask(async () => getCommittedNetworkChangeGeneration())
 }
 
 const isSameStackOperation = (stacked: InterceptorStackOperation, operation: InterceptorStackOperation) => {
@@ -147,7 +147,7 @@ type SettingsTransition = {
 
 // Runs settings writes that may commit a new network, then applies the committed network in the order of NETWORK_CHANGE_EFFECTS: retire snapshots of the replaced network, install its services, clear the previous chain's stack, notify websites and popups. Each effect is compared with the settings from before the transition. The popup refresh the change needs runs after the lock is released. If the transition fails, every effect that has not succeeded is retried before the lock is released and, if one still fails, kept for the next lock holder; the transition's own error is kept.
 export async function runSettingsTransition(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, transition: SettingsTransition) {
-	const popupRefresh = await runNetworkTransition(async (reads) => {
+	const popupRefresh = await runStackIndependentNetworkTask(async (reads) => {
 		const settingsBeforeTransition = await getSettings()
 		const change: CommittedNetworkChange = { simulationServicesOwner, websiteTabConnections, settingsBeforeTransition, completedEffects: new Set() }
 		try {
@@ -162,7 +162,7 @@ export async function runSettingsTransition(simulationServicesOwner: SimulationS
 			}
 			return await publishCommittedSettingsChange(reads, change, committedSettings)
 		} catch (error) {
-			recordUnfinishedNetworkChange(async () => await completeNetworkChangeEffects(change))
+			recordUnfinishedNetworkChange({ complete: async () => await completeNetworkChangeEffects(change), servicesInstalled: () => change.completedEffects.has('installServices') })
 			try {
 				await completeUnfinishedNetworkChange()
 			} catch (repairError: unknown) {

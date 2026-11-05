@@ -1315,8 +1315,14 @@ describe('network transition snapshot', () => {
 			// The in-lock retry failed too: A's stack is still stored and websites have not been told about B yet.
 			assert.equal((await modules.getInterceptorTransactionStack()).operations.length, 1)
 			assert.deepEqual(getChainChangedResults(), [])
-			// While the repair keeps failing, no snapshot of the inconsistent state is admitted, and the read names the unfinished network change rather than reporting the bare write failure as its own.
-			if (failures === 3) await assert.rejects(modules.readNetworkSnapshot(owner), (error: unknown) => error instanceof Error && error.message.startsWith('An earlier network change committed its settings but could not finish applying them') && error.message.endsWith(failure.message))
+			// While the repair keeps failing, the uncleared stack of A is not admitted as B's: the read still serves B's settings and services, and its simulation names the unfinished network change rather than reporting the bare write failure as its own.
+			if (failures === 3) {
+				const { settings, simulation, services } = await modules.readNetworkSnapshot(owner)
+				assert.equal(settings.activeRpcNetwork.chainId, networkB.chainId)
+				assert.equal(services.ethereum.getRpcEntry().chainId, networkB.chainId)
+				assert.equal(simulation.kind, 'unavailable')
+				assert.ok(simulation.kind === 'unavailable' && simulation.error instanceof Error && simulation.error.message.startsWith('An earlier network change committed its settings but could not finish applying them') && simulation.error.message.endsWith(failure.message))
+			}
 			await assertCommittedNetworkBEffects(modules, owner, getChainChangedResults, 0)
 		} finally {
 			retireAll()

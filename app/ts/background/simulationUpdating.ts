@@ -173,7 +173,7 @@ type SimulationReadIdentity = {
 	readonly networkChangeGeneration: number
 }
 
-// A simulation read whose stack or input sources failed. Settings and services do not depend on them, so only work that uses the stack fails, with this error.
+// A simulation read whose stack or input sources failed, or whose stack an unfinished network change has not cleared. Settings and services do not depend on them, so only work that uses the stack fails, with this error.
 export type UnavailableSimulation = SimulationReadIdentity & {
 	readonly kind: 'unavailable'
 	readonly error: unknown

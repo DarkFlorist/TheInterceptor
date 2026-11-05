@@ -32,7 +32,7 @@ import * as funtypes from 'funtypes'
 import { assertNever, modifyObject } from '../../utils/typescript.js'
 import { simulateGnosisSafeTransactionOnPass } from '../popupMessageHandlers.js'
 import { appendToActiveSimulationStack } from '../networkTransition.js'
-import { readNetworkSnapshot, readNetworkState } from '../networkTransitionLock.js'
+import { readNetworkSnapshotForTerminalReply, readNetworkState } from '../networkTransitionLock.js'
 import type { SimulationServices, SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
 import { activeStackContextsEqual, getActiveStackContext } from '../../utils/activeStackContext.js'
 import { computeConfirmationVisualisation, updatePopupVisualisationIfNeeded } from '../popupVisualisationUpdater.js'
@@ -526,7 +526,7 @@ export async function resolvePendingRequestsForMissingConfirmationWindows(simula
 
 // The network is read here, inside the retry, so a read that fails is retried like a failed rejection rather than losing it.
 const resolveAsNoResponse = async (simulationServicesOwner: SimulationServicesOwner, transaction: PendingTransactionOrSignableMessage, websiteTabConnections: WebsiteTabConnections) => {
-	const network = await readNetworkSnapshot(simulationServicesOwner)
+	const network = await readNetworkSnapshotForTerminalReply(simulationServicesOwner)
 	return await resolvePendingTransactionOrMessage(simulationServicesOwner, network.services.ethereum, network.services.tokenPriceService, network, websiteTabConnections, { method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: transaction.uniqueRequestIdentifier, action: 'noResponse' } })
 }
 

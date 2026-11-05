@@ -162,7 +162,8 @@ async function storeAndBroadcastFailedVisualisation(shouldWrite: () => boolean) 
 			...createPassthroughCompleteVisualizedSimulation(previous.simulationId + 1, 'invalid'),
 			simulationUpdatingState: 'failed',
 		}, shouldWrite)
-		if (status !== 'obsolete') await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState: failed } })
+		// The write awaited storage, so a change that committed meanwhile is checked for again before announcing it.
+		if (status !== 'obsolete' && shouldWrite()) await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState: failed } })
 	})
 }
 
