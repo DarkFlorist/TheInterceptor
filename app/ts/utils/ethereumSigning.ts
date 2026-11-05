@@ -1,5 +1,5 @@
-import { bytesToNumberBE } from '@noble/curves/abstract/utils'
-import { secp256k1 } from '@noble/curves/secp256k1'
+import { secp256k1 } from '@noble/curves/secp256k1.js'
+import { bytesToNumberBE } from '@noble/curves/utils.js'
 import { concatBytes, hexToBytes, utf8ToBytes } from '@noble/hashes/utils'
 import { addr, eip191Signer } from 'micro-eth-signer'
 import { initSig, sign as signDigestWithMicro } from 'micro-eth-signer/utils.js'
@@ -198,36 +198,22 @@ const recoverAddressFromParts = (digest: Uint8Array, signature: SignatureParts):
 
 export const recoverAddress = async ({ hash, signature }: { readonly hash: Hex | Uint8Array, readonly signature: SignatureParameter }): Promise<Hex> => recoverAddressFromParts(bytesFromHexOrBytes(hash), toSignatureParts(signature))
 
-// secp256k1 curve y^2 = x^3 + 7 over the field prime p, with group order n.
-const SECP256K1_FIELD_PRIME = 0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2fn
-const SECP256K1_GROUP_ORDER = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n
+// The same @noble/curves copy micro-eth-signer recovers with, so these checks and the recovery cannot disagree about the curve. tryRecoverAddress.test.ts fails if the two ever resolve to separate copies.
+const { BASE: GENERATOR_POINT, Fn: SCALAR_FIELD, Fp: COORDINATE_FIELD } = secp256k1.Point
 
-const modularPower = (base: bigint, exponent: bigint, modulus: bigint) => {
-	let result = 1n
-	let remainingBase = base % modulus
-	for (let remainingExponent = exponent; remainingExponent > 0n; remainingExponent >>= 1n) {
-		if ((remainingExponent & 1n) === 1n) result = result * remainingBase % modulus
-		remainingBase = remainingBase * remainingBase % modulus
-	}
-	return result
-}
-
-const isSignatureScalar = (value: bigint) => value >= 1n && value < SECP256K1_GROUP_ORDER
-
-// r is the x-coordinate of the signing nonce point, so it names a curve point only if x^3 + 7 is a nonzero square mod p (Euler's criterion; secp256k1 has no point with y = 0).
-const isCurveXCoordinate = (x: bigint) => modularPower(x ** 3n + 7n, (SECP256K1_FIELD_PRIME - 1n) / 2n, SECP256K1_FIELD_PRIME) === 1n
+// r is the x-coordinate of the signing nonce point on y^2 = x^3 + 7, so it names a curve point only if x^3 + 7 is a nonzero square mod p (Euler's criterion; secp256k1 has no point with y = 0).
+const isCurveXCoordinate = (x: bigint) => COORDINATE_FIELD.pow(COORDINATE_FIELD.create(x ** 3n + 7n), (COORDINATE_FIELD.ORDER - 1n) / 2n) === COORDINATE_FIELD.ONE
 
 // Checked here rather than inferred from library errors: r and s must be in 1..n-1 and r must be a curve x-coordinate for recovery to have a nonce point to start from.
-const hasRecoverableRAndS = (signature: SignatureParts) => isSignatureScalar(signature.r) && isSignatureScalar(signature.s) && isCurveXCoordinate(signature.r)
+const hasRecoverableRAndS = (signature: SignatureParts) => SCALAR_FIELD.isValidNot0(signature.r) && SCALAR_FIELD.isValidNot0(signature.s) && isCurveXCoordinate(signature.r)
 
 // ECDSA signs the integer in the leftmost 256 bits of the digest, reduced mod n.
-const digestToScalar = (digest: Uint8Array) => bytesToNumberBE(digest.subarray(0, 32)) % SECP256K1_GROUP_ORDER
+const digestToScalar = (digest: Uint8Array) => SCALAR_FIELD.create(bytesToNumberBE(digest.subarray(0, SCALAR_FIELD.BYTES)))
 
-// Recovery computes r^-1 * (s * R - hash * G), which is the point at infinity exactly when s * R - hash * G is, and multiplyAndAddUnsafe returns undefined for that sum. Call only after hasRecoverableRAndS, which guarantees r names the nonce point R. Keep this on multiplyAndAddUnsafe: in @noble/curves 1.9.1, BASE.multiplyUnsafe is wrong for full-size scalars.
+// Recovery computes r^-1 * (s * R - hash * G), which is the point at infinity exactly when s * R = hash * G. Call only after hasRecoverableRAndS, which guarantees r names the nonce point R.
 const recoversToPointAtInfinity = (digest: Uint8Array, { r, s, yParity }: SignatureParts) => {
-	const noncePoint = secp256k1.ProjectivePoint.fromHex(`0${ 2 + yParity }${ r.toString(16).padStart(64, '0') }`)
-	const negatedDigestScalar = (SECP256K1_GROUP_ORDER - digestToScalar(digest)) % SECP256K1_GROUP_ORDER
-	return secp256k1.ProjectivePoint.BASE.multiplyAndAddUnsafe(noncePoint, negatedDigestScalar, s) === undefined
+	const noncePoint = secp256k1.Point.fromBytes(concatBytes(new Uint8Array([2 + yParity]), COORDINATE_FIELD.toBytes(r)))
+	return noncePoint.multiplyUnsafe(s).equals(GENERATOR_POINT.multiplyUnsafe(digestToScalar(digest)))
 }
 
 // For a signature recoversToPointAtInfinity accepted, s * R = hash * G with both sides nonzero, so the opposite nonce point -R sums to -2 * hash * G and never reaches infinity. Recovering from -R therefore runs all of the library's digest checks, whose errors outrank the 'unrecoverable' result, without hitting its own infinity error.

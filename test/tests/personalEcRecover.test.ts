@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { secp256k1 } from '@noble/curves/secp256k1'
+import { secp256k1 } from '@noble/curves/secp256k1.js'
 import { personalEcRecover } from '../../app/ts/background/personalEcRecoverRpc.js'
 import { getSafeModeRpcPolicyReply } from '../../app/ts/safe/safeRequestPolicy.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
@@ -67,10 +67,10 @@ const toSignatureHex = (r: bigint, s: bigint, yParity: number) => `${ bytes32Str
 
 // With s = 1 and R = hash * G, recovery computes r^-1 * (s * R - hash * G), which is the point at infinity.
 const getSignatureRecoveringToInfinity = (message: string) => {
-	const messageHashScalar = BigInt(hashMessage({ raw: message })) % secp256k1.CURVE.n
-	const compressedR = secp256k1.getPublicKey(messageHashScalar, true)
+	const messageHashScalar = BigInt(hashMessage({ raw: message })) % secp256k1.Point.Fn.ORDER
+	const compressedR = secp256k1.Point.BASE.multiply(messageHashScalar).toBytes(true)
 	const r = BigInt(bytesToHex(compressedR.slice(1)))
-	assert.ok(r < secp256k1.CURVE.n)
+	assert.ok(r < secp256k1.Point.Fn.ORDER)
 	return toSignatureHex(r, 1n, compressedR[0] === 3 ? 1 : 0)
 }
 
@@ -143,7 +143,7 @@ describe('personal_ecRecover recovery', () => {
 		for (const signature of [
 			toSignatureHex(0n, helloS, 0),
 			toSignatureHex(helloR, 0n, 0),
-			toSignatureHex(secp256k1.CURVE.n, helloS, 0),
+			toSignatureHex(secp256k1.Point.Fn.ORDER, helloS, 0),
 			toSignatureHex(5n, helloS, 0),
 			getSignatureRecoveringToInfinity(helloMessage),
 		]) {
