@@ -135,14 +135,14 @@ describe.each(['stack clearing', 'service installation'] as const)('a rejection 
 		}
 	})
 
-	test('answers an access request whose dialog moved to another address', async () => {
+	test.each([['no decision for the website', []], ['page access but no decision for the address', [{ website, access: true, addressAccess: [] }]]] as const)('answers an access request whose dialog moved to another address, with %s', async (_description, websiteAccess) => {
 		installBrowserMock()
 		const modules = await loadModules()
 		const otherAccount = 0x5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5dn
 		await modules.updateUserAddressBookEntries(() => [{ type: 'contact', name: 'Moved to', address: otherAccount, chainId: 'AllChains', entrySource: 'User', useAsActiveAddress: true }])
 		await modules.changeSimulationMode({ simulationMode: true, activeSimulationAddress: account })
 		const { messages, simulationServicesOwner: initialOwner, websiteTabConnections } = await createApprovedWebsite(modules)
-		await modules.updateWebsiteAccess(() => [])
+		await modules.updateWebsiteAccess(() => websiteAccess)
 		const { getActiveAddressEntryForChain } = await import('../../app/ts/background/metadataUtils.js')
 		const address = await getActiveAddressEntryForChain(account, 1n)
 		await modules.requestAccessFromUser(initialOwner, websiteTabConnections, websiteSocket, website, {

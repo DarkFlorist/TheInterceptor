@@ -451,6 +451,7 @@ export async function requestAccessFromUser(
 
 async function resolve(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, accessReply: InterceptorAccessReply, request: InterceptedRequest | undefined, website: Website, publishRpcConnectionStatus: PublishRpcConnectionStatus | undefined, pendingAccessRequest: PendingAccessRequest) {
 	let promptForFollowUpAccesses = false
+	let rejectedAddressMoveFailed = false
 	if (accessReply.userReply === 'noResponse') {
 		if (request !== undefined) refuseAccess(websiteTabConnections, request)
 	} else {
@@ -488,10 +489,12 @@ async function resolve(simulationServicesOwner: SimulationServicesOwner, website
 				})
 			}
 			if (accessReply.userReply !== 'Rejected') return await activateRequestedAddress()
-			// The website's answer does not depend on the address the user moved to, so a network that cannot apply the move does not hold the rejection back.
+			// The website's answer does not depend on the address the user moved to, so a network that cannot apply the move does not hold the rejection back. The active address is then still the one the user did not decide on, so asking about it again would replace the answer.
 			try {
 				await activateRequestedAddress()
 			} catch (error: unknown) {
+				rejectedAddressMoveFailed = true
+				promptForFollowUpAccesses = false
 				await reportUnexpectedError(error)
 			}
 		}
@@ -505,6 +508,9 @@ async function resolve(simulationServicesOwner: SimulationServicesOwner, website
 	const isAffectedEntry = (pending: PendingAccessRequest) => pending.website.websiteOrigin === website.websiteOrigin && (pending.requestAccessToAddress?.address === accessReply.requestAccessToAddress || pending.requestAccessToAddress?.address === accessReply.originalRequestAccessToAddress)
 
 	const pendingRequests = await updatePendingAccessRequests(async (previousPendingAccessRequests) => previousPendingAccessRequests.filter((pending) => !isAffectedEntry(pending)))
+	const affectedEntryWithPendingRequest = pendingRequests.previous.filter((pending): pending is PendingAccessRequest & { request: InterceptedRequest } => isAffectedEntry(pending) && pending.request !== undefined)
+	// A replay would authorize against that undecided active address, so these requests get the rejection directly.
+	if (rejectedAddressMoveFailed) for (const { request: rejectedRequest } of affectedEntryWithPendingRequest) refuseAccess(websiteTabConnections, rejectedRequest)
 
 	if (pendingRequests.current.length > 0) {
 		sendPopupMessageToOpenWindows({ method: 'popup_interceptorAccessDialog', data: { activeAddresses: await getAccessDialogActiveAddresses(), pendingAccessRequests: await withCurrentSignerStates(pendingRequests.current) } })
@@ -516,9 +522,8 @@ async function resolve(simulationServicesOwner: SimulationServicesOwner, website
 		await closePopupOrTabById(openedDialog.popupOrTab)
 		openedDialog = undefined
 	}
-	const affectedEntryWithPendingRequest = pendingRequests.previous.filter((pending): pending is PendingAccessRequest & { request: InterceptedRequest } => isAffectedEntry(pending) && pending.request !== undefined)
 
-	if (affectedEntryWithPendingRequest.length === 0) return { pendingRequestsToReplay: [], promptForFollowUpAccesses }
+	if (rejectedAddressMoveFailed || affectedEntryWithPendingRequest.length === 0) return { pendingRequestsToReplay: [], promptForFollowUpAccesses }
 	if (publishRpcConnectionStatus === undefined) throw new Error('RPC connection status publisher is required to replay intercepted requests.')
 	return { pendingRequestsToReplay: affectedEntryWithPendingRequest, promptForFollowUpAccesses }
 }
