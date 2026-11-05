@@ -5,7 +5,7 @@ import { RpcNetwork } from './rpc.js'
 import { AddressBookEntry } from './addressBookTypes.js'
 import { Website } from './websiteAccessTypes.js'
 import { SignerName } from './signerTypes.js'
-import { EnrichedEIP712, EnrichedEIP712MessageRecord } from './eip721.js'
+import { EIP712Message, EnrichedEIP712, EnrichedEIP712MessageRecord } from './eip721.js'
 import { EnrichedEthereumInputData } from './EnrichedEthereumData.js'
 import { assertNever } from '../utils/typescript.js'
 
@@ -602,7 +602,10 @@ export const VisualizedPersonalSignRequestPermit2SignatureTransfer = funtypes.In
 	funtypes.ReadonlyObject({
 		method: EthSignTyped,
 		type: funtypes.Literal('Permit2SignatureTransfer'),
-		message: Permit2SignatureTransfer,
+		// The full signed typed data, including any witness and its struct types, like `message` in the other variants.
+		message: EIP712Message,
+		// Only the fields Permit2 defines, parsed from `message`. It has no witness value or witness struct types, so it is not the signed payload.
+		permit2TransferWithoutWitness: Permit2SignatureTransfer,
 		// Single token transfers are listed as a one element array so single and batch transfers render the same way.
 		permitted: funtypes.ReadonlyArray(Permit2TokenPermissionsWithAddressBookEntry),
 		spender: AddressBookEntry,

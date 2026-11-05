@@ -12,7 +12,7 @@ function getPermitTokenLabel(entry: AddressBookEntry) {
 }
 
 function getPermit2SignatureTransferName(data: VisualizedPersonalSignRequestPermit2SignatureTransfer) {
-	if (getPermit2SignatureTransferKind(data.message).isBatch) return 'Permit2 batch transfer'
+	if (getPermit2SignatureTransferKind(data.permit2TransferWithoutWitness).isBatch) return 'Permit2 batch transfer'
 	const [permitted] = data.permitted
 	return permitted === undefined ? 'Permit2 transfer' : `${ getPermitTokenLabel(permitted.token) } Permit2 transfer`
 }

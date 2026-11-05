@@ -375,7 +375,7 @@ function Permit2BatchExtraDetails({ permit2Batch, renameAddressCallBack }: { per
 }
 
 function Permit2SignatureTransferExtraDetails({ permit2SignatureTransfer, renameAddressCallBack }: { permit2SignatureTransfer: VisualizedPersonalSignRequestPermit2SignatureTransfer, renameAddressCallBack: RenameAddressCallBack }) {
-	const { domain, message } = permit2SignatureTransfer.message
+	const { domain, message } = permit2SignatureTransfer.permit2TransferWithoutWitness
 	return <>
 		<PermitDomainDetails chainId = { domain.chainId } verifyingContract = { permit2SignatureTransfer.verifyingContract } renameAddressCallBack = { renameAddressCallBack }/>
 		<CellElement text = 'Nonce: '/>

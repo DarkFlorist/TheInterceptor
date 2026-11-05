@@ -209,14 +209,15 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 				...basicParams,
 				rpcNetwork: rpcNetwork.chainId !== parsed.domain.chainId ? await getRpcNetworkForChain(parsed.domain.chainId) : rpcNetwork,
 				type: 'Permit2SignatureTransfer' as const,
-				message: parsed,
+				// `parsed` drops the witness and its struct types, so every rendering of the signed payload comes from the original request like the generic EIP-712 path.
+				message: namedParams.param,
+				permit2TransferWithoutWitness: parsed,
 				account,
 				permitted: await promiseAllMapAbortSafe(transferKind.permitted, async (permission) => ({ ...permission, token: await identifyPermitToken(ethereumClientService, requestAbortController, permission.token) })),
 				spender: await identifyAddress(ethereumClientService, requestAbortController, parsed.message.spender),
 				verifyingContract: await identifyAddress(ethereumClientService, requestAbortController, parsed.domain.verifyingContract),
 				witness: await extractPermit2Witness(ethereumClientService, requestAbortController, namedParams.param, transferKind),
 				...getSigningQuarantineCodes(parsed.domain.chainId, rpcNetwork.chainId, account.address, activeAddressWithMetadata.address, undefined),
-				// The parsed message drops the witness and its struct types, so show the original request like the generic EIP-712 path does.
 				stringifiedMessage: stringifyJSONWithBigInts(namedParams.param, 4),
 				rawMessage: stringifyJSONWithBigInts(namedParams.param),
 				isValidMessage: isValid.valid,
