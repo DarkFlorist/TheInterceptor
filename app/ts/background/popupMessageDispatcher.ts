@@ -11,6 +11,7 @@ import { addressBookPopupMessageHandlers } from './popupMessageHandlerRegistries
 import { settingsPopupMessageHandlers } from './popupMessageHandlerRegistries/settings.js'
 import { safePopupMessageHandlers } from './popupMessageHandlerRegistries/safe.js'
 import { websiteAccessPopupMessageHandlers } from './popupMessageHandlerRegistries/websiteAccess.js'
+import { readNetworkSnapshotForPendingRequest } from './networkTransitionLock.js'
 
 export type { PopupMessageDispatcherContext } from './popupMessageHandlerRegistry.js'
 
@@ -68,9 +69,11 @@ const popupMessageHandlers = {
 	popup_requestSimulationMode: popupMessageHandler('popup_requestSimulationMode', async () => await requestSimulationMode()),
 	popup_requestLatestUnexpectedError: popupMessageHandler('popup_requestLatestUnexpectedError', async () => await requestLatestUnexpectedError()),
 	popup_fetchSimulationStackRequestConfirmation: popupMessageHandler('popup_fetchSimulationStackRequestConfirmation', async (context, request) => await fetchSimulationStackRequestConfirmation(context.simulationServicesOwner, context.websiteTabConnections, request)),
-	popup_readyAndListening: popupSnapshotMessageHandler('popup_readyAndListening', async (context, request) => {
-		const { ethereum, tokenPriceService } = context.services
-		return await popupReadyAndListening(ethereum, tokenPriceService, { settings: context.settings, simulation: context.simulation }, context.websiteTabConnections, request.data.page)
+	popup_readyAndListening: popupMessageHandler('popup_readyAndListening', async (context, request) => {
+		// A dialog that cannot initialise has no buttons to answer its request with.
+		const network = await readNetworkSnapshotForPendingRequest(context.simulationServicesOwner)
+		const { ethereum, tokenPriceService } = network.services
+		return await popupReadyAndListening(ethereum, tokenPriceService, network, context.websiteTabConnections, request.data.page)
 	}),
 	popup_UnexpectedErrorOccured: popupMessageHandler('popup_UnexpectedErrorOccured', async (_context, request) => await reportUnexpectedErrorInWindow(request)),
 	popup_requestInterceptorSimulationInput: popupSnapshotMessageHandler('popup_requestInterceptorSimulationInput', async (context) => {

@@ -431,10 +431,10 @@ function failSimulationStackWrites() {
 	return () => { browser.storage.local.set = originalSet }
 }
 
-const switchToAnotherChain = async (owner: ReturnType<typeof fixedServicesOwner>, websiteTabConnections: Parameters<typeof modules.onCloseWindowOrTab>[2]) => {
+const switchToAnotherChain = async (owner: ReturnType<typeof fixedServicesOwner>, websiteTabConnections: Parameters<typeof modules.onCloseWindowOrTab>[2], simulationMode = false) => {
 	const { changeActiveAddressAndChain } = await import('../../app/ts/background/activeSettings.js')
 	await assert.rejects(changeActiveAddressAndChain(owner, websiteTabConnections, {
-		simulationMode: false,
+		simulationMode,
 		rpcNetwork: { ...fakeRpcNetwork, name: 'Another chain', chainId: fakeRpcNetwork.chainId + 1n, httpsRpc: 'https://another-chain.example' },
 		promptForAccessesIfNeeded: false,
 	}))
@@ -511,6 +511,41 @@ test('terminal replies are delivered while the committed network\'s services can
 		installationFails = false
 	}
 	assert.equal((await readNetworkSnapshot(owner)).simulation.kind, 'loaded')
+})
+
+test('a confirmation dialog initialised while services cannot be installed shows its queue with an unavailable simulation', async () => {
+	await browser.storage.local.set({ simulationMode: true })
+	const { dispatchPopupMessage } = await import('../../app/ts/background/popupMessageDispatcher.js')
+	const { readNetworkSnapshot } = await import('../../app/ts/background/networkTransitionLock.js')
+	let installationFails = true
+	const owner = createTestSimulationServicesOwner({ ethereum: simulator.ethereum, tokenPriceService: simulator.tokenPriceService }, () => {
+		if (installationFails) throw new Error('the services cannot be installed')
+		return { ethereum: simulator.ethereum, tokenPriceService: simulator.tokenPriceService }
+	})
+	const { websiteTabConnections, storePendingRequests } = createConnectionRecordingReplies([pendingTransaction])
+	await storePendingRequests()
+	try {
+		await withSilencedConsole(async () => {
+			await switchToAnotherChain(owner, websiteTabConnections, true)
+			const reply = await dispatchPopupMessage({
+				websiteTabConnections,
+				simulationServicesOwner: owner,
+				settings: await (await import('../../app/ts/background/settings.js')).getSettings(),
+				publishRpcConnectionStatus: async () => undefined,
+				simulationAbortController: undefined,
+				confirmTransactionAbortController: new AbortController(),
+				resetSimulationState: async () => undefined,
+			}, { method: 'popup_readyAndListening', data: { page: 'confirmTransaction' } })
+			if (reply === undefined || !('data' in reply) || !isRecord(reply.data) || !isRecord(reply.data.confirmTransactionBootstrap) || !isRecord(reply.data.confirmTransactionBootstrap.visualizedSimulatorState)) throw new Error('missing confirmation bootstrap')
+			const { pendingTransactionAndSignableMessages, visualizedSimulatorState } = reply.data.confirmTransactionBootstrap
+			assert.ok(Array.isArray(pendingTransactionAndSignableMessages) && pendingTransactionAndSignableMessages.length === 1)
+			assert.equal(visualizedSimulatorState.simulationUpdatingState, 'failed')
+			assert.equal(visualizedSimulatorState.simulationResultState, 'invalid')
+		})
+	} finally {
+		installationFails = false
+	}
+	await readNetworkSnapshot(owner)
 })
 
 test('a wallet account change completes while a network change cannot clear the stack', async () => {

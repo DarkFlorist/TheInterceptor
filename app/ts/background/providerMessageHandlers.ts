@@ -4,7 +4,7 @@ import { ConnectedToSigner, SignerReply, WalletSwitchEthereumChainReply, WatchAs
 import type { TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import { EthereumAccountsReply, EthereumChainReply } from '../types/JsonRpc-types.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
-import { readNetworkSnapshot, readNetworkSnapshotForTerminalReply } from './networkTransitionLock.js'
+import { readNetworkSnapshot, readNetworkSnapshotForPendingRequest } from './networkTransitionLock.js'
 import { getSocketFromPort, isTopFramePort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getRpcNetworkForChain, setDefaultSignerName, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
 import { getMetamaskCompatibilityMode, getSettings } from './settings.js'
@@ -300,7 +300,7 @@ export async function signerReply(simulationServicesOwner: SimulationServicesOwn
 			return doNotReply
 		}
 		// The wallet has already answered, so its answer reaches the request whatever state the network is in.
-		const network = await readNetworkSnapshotForTerminalReply(simulationServicesOwner)
+		const network = await readNetworkSnapshotForPendingRequest(simulationServicesOwner)
 		const { ethereum, tokenPriceService } = network.services
 		const requestSocket = request.uniqueRequestIdentifier.requestSocket
 		const uniqueRequestIdentifier = { requestId: params.forwardRequest.requestId, requestSocket }

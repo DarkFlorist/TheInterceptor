@@ -119,8 +119,8 @@ export async function readNetworkSnapshot(simulationServicesOwner: Pick<Simulati
 	return await runStackIndependentNetworkTask(async (reads) => ({ ...await reads.captureNetworkState(), services: simulationServicesOwner.getCurrent() }))
 }
 
-// For ending a request whose outcome is already known, which must reach the website even while the committed network's services cannot be installed. In that state these services still serve the previous network, so the simulation is unavailable and nothing simulates; they serve only the reply and its view.
-export async function readNetworkSnapshotForTerminalReply(simulationServicesOwner: Pick<SimulationServicesOwner, 'getCurrent'>): Promise<NetworkSnapshot> {
+// For a request that is already pending, whose dialog and known outcome must keep working even while the committed network's services cannot be installed. In that state these services still serve the previous network, so the simulation is unavailable and nothing simulates; they serve only the reply and the dialog.
+export async function readNetworkSnapshotForPendingRequest(simulationServicesOwner: Pick<SimulationServicesOwner, 'getCurrent'>): Promise<NetworkSnapshot> {
 	return await networkTransitionSemaphore.execute(async () => {
 		await retryUnfinishedNetworkChange()
 		return { ...await captureNetworkState(), services: simulationServicesOwner.getCurrent() }

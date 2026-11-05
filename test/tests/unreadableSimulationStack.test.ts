@@ -165,6 +165,34 @@ describe.each(['stack clearing', 'service installation'] as const)('a rejection 
 	})
 })
 
+test('a chain change dialog reloaded while services cannot be installed receives its request', async () => {
+	const { runtimeMessages } = installBrowserMock()
+	const modules = await loadModules()
+	await modules.changeSimulationMode({ simulationMode: true, activeSimulationAddress: account })
+	const { messages, send, websiteTabConnections } = await createApprovedWebsite(modules)
+	const { getChainChangeConfirmationPromise } = await import('../../app/ts/background/storageVariables.js')
+	const request = send(1, 'wallet_switchEthereumChain', [{ chainId: '0x5' }], true)
+	const stored = await waitUntilStored(getChainChangeConfirmationPromise)
+	if (stored === undefined) throw new Error('missing chain change dialog')
+	const { simulationServicesOwner, letRepairSucceed } = await failNetworkSwitch(modules, 'service installation', websiteTabConnections)
+	try {
+		await assert.rejects(modules.readNetworkSnapshot(simulationServicesOwner))
+		runtimeMessages.length = 0
+		const reply = await dispatchPopup(modules, { simulationServicesOwner, websiteTabConnections }, { method: 'popup_readyAndListening', data: { page: 'changeChain' } })
+		assert.deepEqual(reply, { method: 'popup_readyAndListening', data: { popupOrTabId: stored.popupOrTabId, confirmTransactionBootstrap: undefined } })
+		assert.ok(runtimeMessages.some((message) => message.method === 'popup_ChangeChainRequest'))
+
+		await dispatchPopup(modules, { simulationServicesOwner, websiteTabConnections }, {
+			method: 'popup_changeChainDialog',
+			data: { rpcNetwork: stored.rpcNetwork, uniqueRequestIdentifier: { requestId: 1, requestSocket: websiteSocket }, accept: false },
+		})
+		await request
+		assert.equal(messages.find((message) => message.requestId === 1)?.error?.code, 4001)
+	} finally {
+		await letRepairSucceed()
+	}
+})
+
 test('a rejection after a background restart sends the website a rejection, not the stack', async () => {
 	installBrowserMock()
 	const modules = await loadModules()
