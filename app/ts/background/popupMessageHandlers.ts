@@ -445,9 +445,6 @@ export async function setSafeSimulationSigner(
 	return { type: 'SetSafeSimulationSignerReply' as const, ok: true as const }
 }
 
-// Removed entries and entries denied at website level can grant nothing, whatever else they contain.
-export const onlyRevokesInterceptorAccess = (accessChange: ChangeInterceptorAccess) => accessChange.data.every((change) => change.removed || change.newEntry.access === false)
-
 export async function changeInterceptorAccess(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, accessChange: ChangeInterceptorAccess) {
 	const disabledSitesChanged = await updateWebsiteAccessAndContentScriptInjectionStrategy((previousAccess) => {
 		const withEntriesRemoved = previousAccess.filter((acc) => accessChange.data.find((change) => change.newEntry.website.websiteOrigin === acc.website.websiteOrigin)?.removed !== true)

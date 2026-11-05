@@ -71,16 +71,17 @@ export async function blockOrAllowExternalRequests(simulationServicesOwner: Simu
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }
 
-const removeAddressAccessByAddress = async (websiteOrigin: string, address: EthereumAddress) => {
+const removeAddressAccessByAddress = async (websiteOrigin: string, address: EthereumAddress, keepDenial: boolean) => {
 	await updateWebsiteAccess((previousAccessList) => previousAccessList.map((access) => {
 		if (access.website.websiteOrigin !== websiteOrigin || !access.addressAccess) return access
-		return modifyObject(access, { addressAccess: access.addressAccess.filter((addressAccess) => addressAccess.address !== address) })
+		return modifyObject(access, { addressAccess: access.addressAccess.filter((addressAccess) => addressAccess.address !== address || (keepDenial && !addressAccess.access)) })
 	}))
 	return websiteAccessChange(websiteOrigin)
 }
 
-export async function removeWebsiteAddressAccess(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: RemoveWebsiteAddressAccess) {
-	const change = await removeAddressAccessByAddress(parsedRequest.data.websiteOrigin, parsedRequest.data.address)
+// Removing a denial can lift it, which is not a revocation, so `settingsUnavailable` keeps denials until settings are back.
+export async function removeWebsiteAddressAccess(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: RemoveWebsiteAddressAccess, settingsUnavailable: boolean) {
+	const change = await removeAddressAccessByAddress(parsedRequest.data.websiteOrigin, parsedRequest.data.address, settingsUnavailable)
 	await reloadConnectedTabs(websiteTabConnections)
 	await reconcileCommittedAccessChange(websiteTabConnections, change, async (committedSettings) => await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, committedSettings, true))
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })

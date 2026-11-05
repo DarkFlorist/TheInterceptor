@@ -2173,22 +2173,120 @@ describe('background eth_accounts', () => {
 		return { address, connection, readStoredEntry, simulationServicesOwner, website, websiteOrigin, websiteTabConnections }
 	}
 
-	test.each([
-		{ method: 'popup_removeWebsiteAccess' },
-		{ method: 'popup_removeWebsiteAddressAccess' },
-		{ method: 'popup_changeInterceptorAccess' },
-	] as const)('$method applies its revocation with an unreadable active network', async ({ method }) => {
+	test('popup_removeWebsiteAddressAccess removes a grant with an unreadable active network', async () => {
 		installBrowserMock()
-		const { address, connection, readStoredEntry, simulationServicesOwner, website, websiteOrigin, websiteTabConnections } = await setUpStoredAccessThenCorruptActiveNetwork()
-		const message: PopupMessage = method === 'popup_removeWebsiteAccess' ? { method, data: { websiteOrigin } }
-			: method === 'popup_removeWebsiteAddressAccess' ? { method, data: { websiteOrigin, address } }
-				: { method, data: [{ oldEntry: { website, access: true, addressAccess: [{ address, access: true }] }, newEntry: { website, access: true, addressAccess: [{ address, access: true }] }, removed: true }] }
+		const { address, connection, readStoredEntry, simulationServicesOwner, websiteOrigin, websiteTabConnections } = await setUpStoredAccessThenCorruptActiveNetwork()
 
-		await sendPopupMessage(websiteTabConnections, simulationServicesOwner, message)
+		await sendPopupMessage(websiteTabConnections, simulationServicesOwner, { method: 'popup_removeWebsiteAddressAccess', data: { websiteOrigin, address } })
 
-		const storedEntry = await readStoredEntry()
-		assert.equal(storedEntry === undefined || storedEntry.addressAccess?.length === 0, true)
+		assert.deepEqual((await readStoredEntry())?.addressAccess, [])
 		assert.equal(connection.approved, false)
+	})
+
+	test('popup_removeWebsiteAddressAccess keeps a denial with an unreadable active network, because removing it could lift it', async () => {
+		installBrowserMock()
+		const { updateWebsiteAccess } = await loadModules()
+		const { address, readStoredEntry, simulationServicesOwner, website, websiteOrigin, websiteTabConnections } = await setUpStoredAccessThenCorruptActiveNetwork()
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address, access: false }] }])
+
+		await sendPopupMessage(websiteTabConnections, simulationServicesOwner, { method: 'popup_removeWebsiteAddressAccess', data: { websiteOrigin, address } })
+
+		assert.deepEqual((await readStoredEntry())?.addressAccess, [{ address, access: false }])
+	})
+
+	test('whole-entry popup messages are refused with an unreadable active network and change nothing', async () => {
+		installBrowserMock()
+		const { updateWebsiteAccess } = await loadModules()
+		const { address, connection, readStoredEntry, simulationServicesOwner, website, websiteOrigin, websiteTabConnections } = await setUpStoredAccessThenCorruptActiveNetwork()
+		const blockedEntry = { website, access: true, addressAccess: [{ address, access: true }], declarativeNetRequestBlockMode: 'block-all' as const }
+		await updateWebsiteAccess(() => [blockedEntry])
+		const entryBefore = await readStoredEntry()
+		const changeEntry = async (newEntry: { readonly website: typeof website, readonly access: boolean, readonly interceptorDisabled?: boolean, readonly declarativeNetRequestBlockMode?: 'block-all' | 'disabled' }, removed: boolean) => await sendPopupMessage(websiteTabConnections, simulationServicesOwner, { method: 'popup_changeInterceptorAccess', data: [{ oldEntry: blockedEntry, newEntry, removed }] })
+
+		await changeEntry({ website, access: false, interceptorDisabled: true }, false)
+		await changeEntry({ website, access: false, declarativeNetRequestBlockMode: 'disabled' }, false)
+		await changeEntry(blockedEntry, true)
+		await sendPopupMessage(websiteTabConnections, simulationServicesOwner, { method: 'popup_removeWebsiteAccess', data: { websiteOrigin } })
+
+		assert.deepEqual(await readStoredEntry(), entryBefore)
+		assert.equal(connection.approved, true)
+	})
+
+	test('adding a request block with an unreadable active network changes only the block mode', async () => {
+		installBrowserMock()
+		const { address, readStoredEntry, simulationServicesOwner, website, websiteTabConnections } = await setUpStoredAccessThenCorruptActiveNetwork()
+		const entryBefore = await readStoredEntry()
+
+		await sendPopupMessage(websiteTabConnections, simulationServicesOwner, { method: 'popup_blockOrAllowExternalRequests', data: { website: { ...website, title: 'Other title' }, shouldBlock: true } })
+
+		assert.deepEqual(await readStoredEntry(), { ...entryBefore, declarativeNetRequestBlockMode: 'block-all' })
+		assert.deepEqual((await readStoredEntry())?.addressAccess, [{ address, access: true }])
+	})
+
+	// A settings read that rejects, rather than reporting an unavailable configuration, leaves the error as the only trace of the failed step.
+	const rejectEveryRepairOfTheOpenedPage = async <Result,>(run: () => Promise<Result>) => await withStorageWrites(async (items, write) => {
+		if ('openedPageV2' in items) throw new Error('Settings read rejected')
+		await write()
+	}, run)
+
+	test('a rejection is answered and nothing stays pending when the reconciliation settings read rejects, and the error is still thrown', async () => {
+		installBrowserMock()
+		const { changeSimulationMode, getPendingAccessRequests, getWebsiteApprovalsSnapshot, handleInterceptedRequest, resolveInterceptorAccess, setUseSignersAddressAsActiveAddress, websiteSocketToString } = await loadModules()
+		const websiteOrigin = 'https://rejected-repair-failure.example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const account = 0x6363636363636363636363636363636363636363n
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: account })
+		await setUseSignersAddressAsActiveAddress(false)
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: { [websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: false, wantsToConnect: true } } }]])
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, { interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier: { requestId: 62, requestSocket: socket }, method: 'eth_requestAccounts' }, websiteTabConnections, noopPublishRpcConnectionStatus)
+		const pendingRequest = (await getPendingAccessRequests())[0]
+		if (pendingRequest === undefined) throw new Error('Missing access request')
+		await browser.storage.local.set(CORRUPT_OPENED_PAGE)
+		const originalWarn = console.warn
+		console.warn = () => undefined
+
+		await rejectEveryRepairOfTheOpenedPage(async () => await assert.rejects(resolveInterceptorAccess(simulationServicesOwner, websiteTabConnections, { userReply: 'Rejected', accessRequestId: pendingRequest.accessRequestId, requestAccessToAddress: account, originalRequestAccessToAddress: account }, noopPublishRpcConnectionStatus), /Settings read rejected/)).finally(() => { console.warn = originalWarn })
+
+		assert.equal(messages.find((message) => message.method === 'eth_requestAccounts' && message.requestId === 62)?.error?.code, 4100)
+		assert.deepEqual(await getPendingAccessRequests(), [])
+		const approvals = await getWebsiteApprovalsSnapshot({ repairCorrupt: false })
+		assert.equal(approvals.status === 'readable' ? approvals.websiteAccess[0]?.access : undefined, false)
+	})
+
+	test('a rejection is answered and nothing stays pending when the final settings read rejects, and the error is still thrown', async () => {
+		installBrowserMock()
+		const { getPendingAccessRequests, getRequiredSettings, requestAccessFromUser, resolveInterceptorAccess, websiteSocketToString } = await loadModules()
+		const websiteOrigin = 'https://rejected-final-read.example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: { [websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: false, wantsToConnect: true } } }]])
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		// eth_call is not an account connection, so its rejection ends with the follow-up settings read.
+		const request = { interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier: { requestId: 63, requestSocket: socket }, method: 'eth_call', params: [] }
+		await requestAccessFromUser(simulationServicesOwner, websiteTabConnections, socket, website, request, undefined, await getRequiredSettings(), undefined, noopPublishRpcConnectionStatus)
+		const pendingRequest = (await getPendingAccessRequests())[0]
+		if (pendingRequest === undefined) throw new Error('Missing access request')
+		// Closing the dialog is the step just before the follow-up read.
+		const removeWindow = browser.windows.remove
+		const writeStorage = browser.storage.local.set
+		Object.defineProperty(browser.windows, 'remove', { configurable: true, value: async (...args: Parameters<typeof removeWindow>) => {
+			await writeStorage(CORRUPT_OPENED_PAGE)
+			return await removeWindow(...args)
+		} })
+		const originalWarn = console.warn
+		console.warn = () => undefined
+
+		await rejectEveryRepairOfTheOpenedPage(async () => await assert.rejects(resolveInterceptorAccess(simulationServicesOwner, websiteTabConnections, { userReply: 'Rejected', accessRequestId: pendingRequest.accessRequestId, requestAccessToAddress: undefined, originalRequestAccessToAddress: undefined }, noopPublishRpcConnectionStatus), /Settings read rejected/)).finally(() => {
+			console.warn = originalWarn
+			Object.defineProperty(browser.windows, 'remove', { configurable: true, value: removeWindow })
+		})
+
+		assert.equal(messages.find((message) => message.method === 'eth_call' && message.requestId === 63)?.error?.code, 4100)
+		assert.deepEqual(await getPendingAccessRequests(), [])
 	})
 
 	test('preventing address access and adding a request block apply with an unreadable active network', async () => {

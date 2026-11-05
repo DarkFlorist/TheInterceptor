@@ -621,6 +621,11 @@ export async function persistWebsiteAccessChange(
 	promptForAccessesIfNeeded: boolean,
 ): Promise<Settings> {
 	await setAccess(website, access, address)
+	return await reconcilePersistedWebsiteAccess(simulationServicesOwner, websiteTabConnections, website, promptForAccessesIfNeeded)
+}
+
+// The reconciliation of a website access change already stored with setAccess.
+export async function reconcilePersistedWebsiteAccess(simulationServicesOwner: SimulationServicesOwner | undefined, websiteTabConnections: WebsiteTabConnections, website: Website, promptForAccessesIfNeeded: boolean): Promise<Settings> {
 	return await reconcileCommittedAccessChange(websiteTabConnections, { kind: 'website-access', websiteOrigins: [website.websiteOrigin] }, async (committedSettings) => await finalizeWebsiteAccessChange(simulationServicesOwner, websiteTabConnections, committedSettings, promptForAccessesIfNeeded))
 }
 

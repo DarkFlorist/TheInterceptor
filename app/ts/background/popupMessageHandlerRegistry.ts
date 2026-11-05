@@ -89,7 +89,8 @@ const POPUP_ADMISSION_MODE = {
 	popup_changeActiveRpc: 'settings',
 	popup_changeAddOrModifyAddressWindowState: 'rpc-snapshot',
 	popup_changeChainDialog: 'settings',
-	popup_changeInterceptorAccess: 'optional-rpc-snapshot',
+	// Replaces whole entries, which can lift protection; no website request is served while settings are unreadable anyway.
+	popup_changeInterceptorAccess: 'settings',
 	popup_changePage: 'settings',
 	popup_changePreSimulationBlockTimeManipulation: 'rpc-snapshot',
 	popup_clearUnexpectedError: 'recovery',
@@ -121,7 +122,8 @@ const POPUP_ADMISSION_MODE = {
 	popup_refreshSimulation: 'rpc-snapshot',
 	popup_removeAddressBookEntry: 'settings',
 	popup_removeTransactionOrSignedMessage: 'rpc-snapshot',
-	popup_removeWebsiteAccess: 'optional-rpc-snapshot',
+	// Deletes a whole entry, which can lift its blocking policy; no website request is served while settings are unreadable anyway.
+	popup_removeWebsiteAccess: 'settings',
 	popup_removeWebsiteAddressAccess: 'optional-rpc-snapshot',
 	popup_requestAbiAndNameFromBlockExplorer: 'rpc-configuration',
 	popup_requestAccountsFromSigner: 'settings',
