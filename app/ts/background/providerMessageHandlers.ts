@@ -7,7 +7,7 @@ import { activateAddressSelection, changeActiveAddressAndChain } from './activeS
 import { getSocketFromPort, isTopFramePort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { setDefaultSignerName, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
 import { getRpcConfigurationState, getRpcNetworkForChain } from './rpcConfigurationStorage.js'
-import { getLiveSettingsOnAdmittedRpcNetwork, getMetamaskCompatibilityMode, getSettingsSnapshot, settingsIfRpcConfigurationReady, requireAvailableSettings } from './settings.js'
+import { type CapturedRpcNetwork, getLiveSettingsOnAdmittedRpcNetwork, getMetamaskCompatibilityMode, getSettingsSnapshot, settingsIfRpcConfigurationReady, requireAvailableSettings } from './settings.js'
 import { applyWalletSwitchReply } from './walletSwitch.js'
 import { verifyAccess, withSuppressedUnscopedConnectionEventsForSocketAsync } from './accessManagement.js'
 import type { ProviderMessage } from '../utils/requests.js'
@@ -243,7 +243,8 @@ export async function walletSwitchEthereumChainReply(simulationServicesOwner: Si
 	return returnValue
 }
 
-export async function connectedToSigner(_simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState, activeAddress: bigint | undefined) {
+// `addressRpcNetwork` is the network `activeAddress` was resolved on: the address is only valid there, so cached consent is restored only while that network is live.
+export async function connectedToSigner(_simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState, activeAddress: bigint | undefined, addressRpcNetwork: CapturedRpcNetwork | undefined) {
 	const [signerConnected, signerName, signerProviderGeneration] = ConnectedToSigner.parse(request).params
 	const isTopFrame = isTopFramePort(port)
 	const socket = getSocketFromPort(port)
@@ -289,10 +290,10 @@ export async function connectedToSigner(_simulationServicesOwner: SimulationServ
 			}
 		}
 		// Restore cached address consent for ordinary EOAs as well as Safes, even without lifecycle observers.
-		if (settings !== undefined && isTopFrame && approval === 'hasAccess' && activeAddress !== undefined) {
-			const activeAddressEntry = await getActiveAddressEntryForChain(activeAddress, settings.activeRpcNetwork.chainId)
+		if (settings !== undefined && isTopFrame && approval === 'hasAccess' && activeAddress !== undefined && addressRpcNetwork !== undefined) {
+			const activeAddressEntry = await getActiveAddressEntryForChain(activeAddress, addressRpcNetwork.activeRpcNetwork.chainId)
 			// The lookup above awaited, so the restore is decided on a fresh read, with no await after it.
-			const liveSettings = await getLiveSettingsOnAdmittedRpcNetwork(settings)
+			const liveSettings = await getLiveSettingsOnAdmittedRpcNetwork(addressRpcNetwork)
 			const connection = getWebsiteConnectionForPort(websiteTabConnections, port)
 			if (liveSettings.kind === 'ready' && connection !== undefined) {
 				verifyAccess(websiteTabConnections, socket, false, connection.websiteOrigin, activeAddressEntry, liveSettings.settings)

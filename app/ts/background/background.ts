@@ -438,7 +438,8 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 		const providerCallbackActiveAddress = initialActiveAddress !== undefined && getWebsiteAddressAccessApprovalState(websiteAccess, websiteOrigin, initialActiveAddress) === 'hasAccess'
 			? initialActiveAddress.address
 			: undefined
-		const providerHandlerReturn = await providerHandler.func(simulationServicesOwner, websiteTabConnections, port, request, providerCallbackApproval, providerCallbackActiveAddress)
+		const providerCallbackAddressRpcNetwork = initialSettings === undefined ? undefined : captureRpcNetwork(initialSettings)
+		const providerHandlerReturn = await providerHandler.func(simulationServicesOwner, websiteTabConnections, port, request, providerCallbackApproval, providerCallbackActiveAddress, providerCallbackAddressRpcNetwork)
 		if (providerHandlerReturn.type === 'doNotReply') return
 		const message: InpageScriptRequest = { uniqueRequestIdentifier: request.uniqueRequestIdentifier, ...providerHandlerReturn }
 		return replyToInterceptedRequest(websiteTabConnections, message)

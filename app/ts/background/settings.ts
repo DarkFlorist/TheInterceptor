@@ -237,10 +237,10 @@ export type LiveSettingsOnAdmittedRpcNetwork =
 	| { readonly kind: AdmittedRpcNetworkNoLongerLive }
 
 // The single check behind every connection grant, and behind routing a request: work can be parked on the website lookup, signer prompts or address lookups after it read its settings, so one live snapshot is read and used unmixed. A metadata-only change (name, explorer, list preferences) keeps the chain and endpoint, so the live snapshot still matches the admitted service pair; a chain change invalidates the live selection's chain-dependent decisions for the admitted pair.
-export async function getLiveSettingsOnAdmittedRpcNetwork(admittedSettings: Settings): Promise<LiveSettingsOnAdmittedRpcNetwork> {
+export async function getLiveSettingsOnAdmittedRpcNetwork(admitted: Settings | CapturedRpcNetwork): Promise<LiveSettingsOnAdmittedRpcNetwork> {
 	const liveSettings = settingsIfRpcConfigurationReady(await getSettingsSnapshot())
 	if (liveSettings === undefined) return { kind: 'unavailable' }
-	const rpcNetworkChange = getRpcNetworkChange(admittedSettings.activeRpcNetwork, liveSettings.activeRpcNetwork)
+	const rpcNetworkChange = getRpcNetworkChange(admitted.activeRpcNetwork, liveSettings.activeRpcNetwork)
 	if (rpcNetworkChange.chainChanged) return { kind: 'chain-changed' }
 	// Rejected rather than continued: the admitted service pair still talks to the deselected endpoint (which the user may have left for privacy or reliability), and a signer-only selection's fallback service may serve another chain.
 	if (rpcNetworkChange.endpointChanged) return { kind: 'endpoint-changed' }

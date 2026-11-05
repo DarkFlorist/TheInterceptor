@@ -305,6 +305,46 @@ describe('background eth_accounts', () => {
 		return { activeRpcNetwork, connection, connections, messages }
 	}
 
+	const sendSignerHandshake = async ({ connection, connections }: Awaited<ReturnType<typeof setUpCachedSafeConsent>>) => {
+		const { handleInterceptedRequest } = await loadModules()
+		const { port, socket, websiteOrigin } = connection
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		await withSilencedWarnings(async () => await handleInterceptedRequest(port, websiteOrigin, { websiteOrigin, icon: undefined, title: undefined }, simulationServicesOwner, socket, {
+			interceptorRequest: true, interceptorInternalRequest: true, usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 14, requestSocket: socket },
+			method: 'connected_to_signer', params: [true, 'MetaMask', 1],
+		}, connections, noopPublishRpcConnectionStatus))
+	}
+
+	test('restores cached consent for a Safe from a signer handshake when the network does not change', async () => {
+		installBrowserMock({ manifestVersion: 3 })
+		const cachedConsent = await setUpCachedSafeConsent()
+
+		await sendSignerHandshake(cachedConsent)
+
+		assert.equal(cachedConsent.connection.approved, true)
+		assert.equal(hasConnectionEvent(cachedConsent.messages), true)
+	})
+
+	test('does not restore consent for an address picked on another network when the network changes before the handshake reads its settings', async () => {
+		installBrowserMock({ manifestVersion: 3 })
+		const { setRpcConfiguration } = await loadModules()
+		const cachedConsent = await setUpCachedSafeConsent()
+		const { activeRpcNetwork } = cachedConsent
+		const sendRuntimeMessage = browser.runtime.sendMessage
+		// Published just before the handshake's first settings read, and after the Safe was resolved on the original chain.
+		Object.defineProperty(browser.runtime, 'sendMessage', { configurable: true, value: async (...args: Parameters<typeof sendRuntimeMessage>) => {
+			const [message] = args
+			if (typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_signer_name_changed') await setRpcConfiguration([activeRpcNetwork, otherChainOf(activeRpcNetwork)], otherChainOf(activeRpcNetwork))
+			return await sendRuntimeMessage(...args)
+		} })
+
+		await sendSignerHandshake(cachedConsent)
+
+		assert.equal(cachedConsent.connection.approved, false)
+		assert.equal(hasConnectionEvent(cachedConsent.messages), false)
+	})
+
 	// Enabling the feature runs the refresh that restores cached Safe consent.
 	const enableSafeAppsCompatibility = async (connections: WebsiteTabConnections, messages: ReturnType<typeof createPort>['messages']) => {
 		const { initializeSafeAppsCompatibility, setSafeAppsCompatibilityMode } = await loadModules()
