@@ -2223,6 +2223,70 @@ describe('background eth_accounts', () => {
 		assert.deepEqual((await readStoredEntry())?.addressAccess, [{ address, access: true }])
 	})
 
+	// Two requests of one website are affected by one rejection: the first from an approved connection whose port can fail delivery, the second from another tab.
+	const openTwoAffectedAccessRequests = async (onFirstPortMessage: Parameters<typeof createPort>[1]) => {
+		const { getPendingAccessRequests, getRequiredSettings, requestAccessFromUser, updatePendingAccessRequests, websiteSocketToString } = await loadModules()
+		const websiteOrigin = 'https://two-affected-requests.example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const firstSocket = { tabId: 1, connectionName: 0n }
+		const secondSocket = { tabId: 2, connectionName: 0n }
+		const { port: firstPort } = createPort(firstSocket.tabId, onFirstPortMessage)
+		const { port: secondPort, messages: secondPortMessages } = createPort(secondSocket.tabId)
+		const firstConnection = { port: firstPort, socket: firstSocket, websiteOrigin, approved: true, wantsToConnect: true }
+		const websiteTabConnections = new Map([
+			[firstSocket.tabId, { ...confirmedSignerOwnership(firstSocket), connections: { [websiteSocketToString(firstSocket)]: firstConnection } }],
+			[secondSocket.tabId, { ...confirmedSignerOwnership(secondSocket), connections: { [websiteSocketToString(secondSocket)]: { port: secondPort, socket: secondSocket, websiteOrigin, approved: false, wantsToConnect: true } } }],
+		])
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		const firstRequest = { interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier: { requestId: 64, requestSocket: firstSocket }, method: 'eth_requestAccounts' }
+		const secondRequest = { interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier: { requestId: 65, requestSocket: secondSocket }, method: 'eth_requestAccounts' }
+		await requestAccessFromUser(simulationServicesOwner, websiteTabConnections, firstSocket, website, firstRequest, undefined, await getRequiredSettings(), undefined, noopPublishRpcConnectionStatus)
+		await updatePendingAccessRequests(async (previous) => previous.flatMap((pending) => [pending, { ...pending, socket: secondSocket, request: secondRequest, accessRequestId: `${ pending.accessRequestId } second tab` }]))
+		const pendingRequest = (await getPendingAccessRequests())[0]
+		if (pendingRequest === undefined) throw new Error('Missing access request')
+		const closedWindows: number[] = []
+		const removeWindow = browser.windows.remove
+		Object.defineProperty(browser.windows, 'remove', { configurable: true, value: async (windowId: number) => {
+			closedWindows.push(windowId)
+			return await removeWindow(windowId)
+		} })
+		const rejectFirstRequest = async () => {
+			const { resolveInterceptorAccess } = await loadModules()
+			await resolveInterceptorAccess(simulationServicesOwner, websiteTabConnections, { userReply: 'Rejected', accessRequestId: pendingRequest.accessRequestId, requestAccessToAddress: undefined, originalRequestAccessToAddress: undefined }, noopPublishRpcConnectionStatus)
+		}
+		const getSecondRefusal = () => secondPortMessages.find((message) => message.method === 'eth_requestAccounts' && message.requestId === 65)
+		return { closedWindows, firstConnection, getSecondRefusal, rejectFirstRequest }
+	}
+
+	test('a refusal that cannot be delivered skips neither the other refusals, the reconciliation nor the dialog cleanup, and is still thrown', async () => {
+		installBrowserMock()
+		const { getPendingAccessRequests } = await loadModules()
+		const { closedWindows, firstConnection, getSecondRefusal, rejectFirstRequest } = await openTwoAffectedAccessRequests((message) => {
+			if (message.method === 'eth_requestAccounts' && message.requestId === 64) throw new Error('Refusal delivery failed')
+		})
+
+		await assert.rejects(rejectFirstRequest(), /Refusal delivery failed/)
+
+		assert.equal(getSecondRefusal()?.error?.code, 4100)
+		assert.equal(firstConnection.approved, false)
+		assert.deepEqual(await getPendingAccessRequests(), [])
+		assert.equal(closedWindows.length, 1)
+	})
+
+	test('a failed write clearing the pending requests skips neither the refusals, the reconciliation nor the dialog cleanup, and is still thrown', async () => {
+		installBrowserMock()
+		const { closedWindows, firstConnection, getSecondRefusal, rejectFirstRequest } = await openTwoAffectedAccessRequests(undefined)
+
+		await withStorageWrites(async (items, write) => {
+			if ('pendingInterceptorAccessRequests' in items) throw new Error('Pending request write failed')
+			await write()
+		}, async () => await assert.rejects(rejectFirstRequest(), /Pending request write failed/))
+
+		assert.equal(getSecondRefusal()?.error?.code, 4100)
+		assert.equal(firstConnection.approved, false)
+		assert.equal(closedWindows.length, 1)
+	})
+
 	// A settings read that rejects, rather than reporting an unavailable configuration, leaves the error as the only trace of the failed step.
 	const rejectEveryRepairOfTheOpenedPage = async <Result,>(run: () => Promise<Result>) => await withStorageWrites(async (items, write) => {
 		if ('openedPageV2' in items) throw new Error('Settings read rejected')

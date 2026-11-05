@@ -109,7 +109,7 @@ export async function resolveInterceptorAccess(simulationServicesOwner: Simulati
 			requestAccessToAddress: reply.requestAccessToAddress ?? pendingRequest.requestAccessToAddress?.address,
 			originalRequestAccessToAddress: reply.originalRequestAccessToAddress ?? pendingRequest.originalRequestAccessToAddress?.address,
 		}
-		if (replyWithPendingRequestAddresses.userReply === 'Rejected') return { kind: 'rejected' as const, ...await resolveRejection(simulationServicesOwner, websiteTabConnections, replyWithPendingRequestAddresses, pendingRequest) }
+		if (replyWithPendingRequestAddresses.userReply === 'Rejected') return { kind: 'rejected' as const, ...await resolveRejection(simulationServicesOwner, websiteTabConnections, replyWithPendingRequestAddresses, pendingRequest, promises) }
 		return {
 			kind: 'resolved' as const,
 			...await resolve(
@@ -498,8 +498,10 @@ async function activateRequestedAddress(simulationServicesOwner: SimulationServi
 	})
 }
 
+const isAffectedPendingRequest = (accessReply: InterceptorAccessReply, website: Website) => (pending: PendingAccessRequest) => pending.website.websiteOrigin === website.websiteOrigin && (pending.requestAccessToAddress?.address === accessReply.requestAccessToAddress || pending.requestAccessToAddress?.address === accessReply.originalRequestAccessToAddress)
+
 async function removeAffectedPendingRequests(accessReply: InterceptorAccessReply, website: Website) {
-	const isAffectedEntry = (pending: PendingAccessRequest) => pending.website.websiteOrigin === website.websiteOrigin && (pending.requestAccessToAddress?.address === accessReply.requestAccessToAddress || pending.requestAccessToAddress?.address === accessReply.originalRequestAccessToAddress)
+	const isAffectedEntry = isAffectedPendingRequest(accessReply, website)
 	const pendingRequests = await updatePendingAccessRequests(async (previousPendingAccessRequests) => previousPendingAccessRequests.filter((pending) => !isAffectedEntry(pending)))
 	return {
 		remainingRequests: pendingRequests.current,
@@ -519,12 +521,13 @@ async function showRemainingRequestsOrCloseDialog(remainingRequests: readonly Pe
 	}
 }
 
-// A rejection is settled as soon as the denial is stored: the website gets its refusal and nothing stays pending, whatever happens next. Everything after that depends on settings (the reconciliation, the dialog's address list), so it runs afterwards as independent steps whose failures are returned for the caller to surface.
-async function resolveRejection(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, accessReply: InterceptorAccessReply, pendingAccessRequest: PendingAccessRequest) {
+// Once the denial is stored the rejection is committed, so everything after it is an independent step: clearing the pending requests, each website's refusal, the settings-dependent reconciliation and the dialog update. None can skip another, and the failures are returned for the caller to surface. `pendingRequests` is the list the reply was resolved against, read under the same lock, so the refusals and the dialog do not depend on the clearing write.
+async function resolveRejection(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, accessReply: InterceptorAccessReply, pendingAccessRequest: PendingAccessRequest, pendingRequests: readonly PendingAccessRequest[]) {
 	const { request, website } = pendingAccessRequest
 	await setAccess(website, false, accessReply.requestAccessToAddress)
-	const { remainingRequests, affectedRequests } = await removeAffectedPendingRequests(accessReply, website)
-	for (const affectedRequest of affectedRequests) refuseAccess(websiteTabConnections, affectedRequest.request)
+	const isAffected = isAffectedPendingRequest(accessReply, website)
+	const refusals = pendingRequests.filter(isAffected).flatMap(({ request: affectedRequest }) => affectedRequest === undefined ? [] : [async () => refuseAccess(websiteTabConnections, affectedRequest)])
+	let remainingRequests = pendingRequests.filter((pending) => !isAffected(pending))
 	const replyCompletesAccountRequest = request !== undefined && isAccountConnectionMethod(request.method)
 	const reconcile = async () => {
 		await reconcilePersistedWebsiteAccess(simulationServicesOwner, websiteTabConnections, website, false)
@@ -533,6 +536,8 @@ async function resolveRejection(simulationServicesOwner: SimulationServicesOwner
 		await activateRequestedAddress(simulationServicesOwner, websiteTabConnections, accessReply.requestAccessToAddress, pendingAccessRequest, undefined)
 	}
 	const failures = await runEachIndependently([
+		async () => { remainingRequests = [...(await removeAffectedPendingRequests(accessReply, website)).remainingRequests] },
+		...refusals,
 		async () => replyCompletesAccountRequest ? await withSuppressedUnscopedConnectionEventsForSocketAsync(request.uniqueRequestIdentifier.requestSocket, reconcile) : await reconcile(),
 		async () => await showRemainingRequestsOrCloseDialog(remainingRequests),
 	], async (step) => await step())
