@@ -166,6 +166,7 @@ const disabledWebsiteAccess: Settings['websiteAccess'][number] = {
 
 function createDispatcherContext(resetSimulationState: () => Promise<void>): PopupMessageDispatcherContext {
 	const ethereum: EthereumClientService = Object.create(EthereumClientServiceConstructor.prototype)
+	Object.defineProperty(ethereum, 'getRpcEntry', { value: () => settings.activeRpcNetwork })
 	const tokenPriceService: TokenPriceService = Object.create(TokenPriceServiceConstructor.prototype)
 	return {
 		websiteTabConnections: new Map(),

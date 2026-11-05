@@ -3,7 +3,7 @@ import type { RpcConfigurationState } from './rpcConfigurationStorage.js'
 import { getRpcConfigurationState, selectPrimaryRpc, setRpcConfiguration, setRpcList } from './rpcConfigurationStorage.js'
 import type { RpcEntries, RpcEntry, RpcNetwork } from '../types/rpc.js'
 import { createRpcConfigurationUnavailableError } from '../utils/rpcConfigurationError.js'
-import { resolveRpcServicesTarget } from './rpcConfigurationAvailability.js'
+import { resolveRpcServicesTarget, rpcServicesServeNetwork } from './rpcConfigurationAvailability.js'
 import { assertNever } from '../utils/typescript.js'
 
 type RpcListTransitionMode = 'edit' | 'restore-defaults'
@@ -86,8 +86,17 @@ export async function transitionRpcList(
 	if (simulationServicesOwner.getCurrent() === undefined) throw createRpcConfigurationUnavailableError()
 	await setRpcList(rpcEntries)
 	if (rpcEntries.length === 0) return { activeRpcNetwork, publishRecovery: false, forceChainChanged: false, servicesChange: { kind: 'clear' } }
-	const primary = rpcEntries.find((rpc) => rpc.chainId === activeRpcNetwork.chainId && rpc.primary)
-	return { activeRpcNetwork, publishRecovery: false, forceChainChanged: false, servicesChange: { kind: 'keep-running', rpcNetwork: primary } }
+	// A list edit keeps the selection, so services stay on a selected endpoint even when the list's primary for its chain is another one. Changing the selection is a transition of its own (popup_changeActiveRpc). A signer-only selection has no endpoint, so its fallback services follow the list.
+	const fallbackRpc = activeRpcNetwork.httpsRpc === undefined ? rpcEntries.find((rpc) => rpc.chainId === activeRpcNetwork.chainId && rpc.primary) : undefined
+	return { activeRpcNetwork, publishRecovery: false, forceChainChanged: false, servicesChange: { kind: 'keep-running', rpcNetwork: fallbackRpc } }
+}
+
+// For a write that replaces the active network without an active-network transition (a settings import): services move to the stored configuration, unless they already serve it.
+export async function installRpcServicesForStoredConfiguration(simulationServicesOwner: SimulationServicesOwner) {
+	const { servicesChange } = await readRpcConfigurationRetry()
+	const installedServices = simulationServicesOwner.getCurrent()
+	if (servicesChange.kind === 'recover' && installedServices !== undefined && rpcServicesServeNetwork(installedServices, servicesChange.rpcNetwork)) return
+	applyRpcServicesChange(simulationServicesOwner, servicesChange)
 }
 
 // Retry re-reads the stored configuration without writing it. Services pause unless it is ready; a ready configuration resumes them only when it has an RPC endpoint to serve. The services change is returned for the caller to apply (applyRpcServicesChange).

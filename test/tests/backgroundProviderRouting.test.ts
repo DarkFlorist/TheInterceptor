@@ -3,6 +3,7 @@ import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import type { SimulationStateInput } from '../../app/ts/types/visualizer-types.js'
 import { MessageToPopup } from '../../app/ts/types/interceptor-messages.js'
+import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
 import type { PublishRpcConnectionStatus } from '../../app/ts/background/rpcSlowRequestTracking.js'
 import { createDeferredValue, createTestSimulationServicesOwner, addressString, confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, createSafeTx, EthereumJsonRpcRequest, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, safeTxToTypedDataJson, } from './backgroundEthAccountsTestHarness.js'
 
@@ -530,6 +531,66 @@ describe('background eth_accounts', () => {
 
 		assert.equal(reply?.error?.code, 4901)
 		assert.equal(reply?.result, undefined)
+	})
+
+	// Services that install whatever network they are given, so a test can compare them with the stored selection.
+	const createInstallingServicesOwner = () => {
+		const createServicesFor = (network: RpcNetwork) => {
+			const services = createEthereumWithGetBlockCounter({ count: 0 })
+			services.ethereum.getChainId = () => network.chainId
+			if (network.httpsRpc !== undefined) services.ethereum.getRpcEntry = () => ({ ...network, httpsRpc: network.httpsRpc })
+			return services
+		}
+		return createTestSimulationServicesOwner(createEthereumWithGetBlockCounter({ count: 0 }), createServicesFor)
+	}
+
+	const sendEthChainIdRequests = async (simulationServicesOwner: ReturnType<typeof createInstallingServicesOwner>, requestIds: readonly number[]) => {
+		const { changeSimulationMode, handleInterceptedRequest, updateWebsiteAccess, websiteSocketToString } = await loadModules()
+		const website = { websiteOrigin: 'https://after-rpc-change.example', icon: undefined, title: undefined }
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: 1n })
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: 1n, access: true }] }])
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: { [websiteSocketToString(socket)]: { port, socket, websiteOrigin: website.websiteOrigin, approved: true, wantsToConnect: true } } }]])
+		for (const requestId of requestIds) await handleInterceptedRequest(port, website.websiteOrigin, website, simulationServicesOwner, socket, { interceptorRequest: true, usingInterceptorWithoutSigner: true, uniqueRequestIdentifier: { requestId, requestSocket: socket }, method: 'eth_chainId', params: [] }, websiteTabConnections, noopPublishRpcConnectionStatus)
+		return requestIds.map((requestId) => messages.find((message) => message.requestId === requestId))
+	}
+
+	test('saving the RPC list keeps services on a selected endpoint that is not the list primary, and requests keep working', async () => {
+		installBrowserMock()
+		const { changeActiveAddressAndChain, getRequiredSettings, publishRpcConfigurationRecovery, restoreDefaultRpcConfiguration, setNewRpcList } = await loadModules()
+		const owner = createInstallingServicesOwner()
+		const websiteTabConnections: WebsiteTabConnections = new Map()
+		const defaultRpc = (await getRequiredSettings()).activeRpcNetwork
+		if (defaultRpc.httpsRpc === undefined) throw new Error('The default network has an endpoint')
+		const customRpc = { ...defaultRpc, name: 'Custom endpoint', httpsRpc: 'https://custom-endpoint.example.test', primary: false }
+		await changeActiveAddressAndChain(owner, websiteTabConnections, { simulationMode: true, rpcNetwork: customRpc, promptForAccessesIfNeeded: false })
+		await restoreDefaultRpcConfiguration(owner, websiteTabConnections, await getRequiredSettings(), publishRpcConfigurationRecovery)
+
+		await setNewRpcList(owner, websiteTabConnections, { method: 'popup_set_rpc_list', data: [{ ...defaultRpc, name: 'Renamed default' }] }, await getRequiredSettings(), publishRpcConfigurationRecovery)
+
+		assert.equal((await getRequiredSettings()).activeRpcNetwork.httpsRpc, customRpc.httpsRpc)
+		assert.equal(owner.requireCurrent().ethereum.getRpcEntry().httpsRpc, customRpc.httpsRpc)
+		assert.deepEqual((await sendEthChainIdRequests(owner, [71, 72])).map((reply) => reply?.result), ['0x1', '0x1'])
+	})
+
+	test('importing settings installs services for the imported network, and requests keep working', async () => {
+		installBrowserMock()
+		const { exportSettingsAndAddressBook, getRequiredSettings } = await loadModules()
+		const { handlePopupRuntimeMessage } = await import('../../app/ts/background/popupMessageRouting.js')
+		const { ExportedSettings } = await import('../../app/ts/types/exportedSettingsTypes.js')
+		const { PopupMessage } = await import('../../app/ts/types/interceptor-messages.js')
+		const { serialize } = await import('../../app/ts/types/wire-types.js')
+		const owner = createInstallingServicesOwner()
+		const exported = await exportSettingsAndAddressBook()
+		const importedRpc = otherChainRpcOf((await getRequiredSettings()).activeRpcNetwork)
+		const fileContents = JSON.stringify(serialize(ExportedSettings, { ...exported, settings: { ...exported.settings, rpcNetwork: importedRpc } }))
+
+		await handlePopupRuntimeMessage(new Map(), owner, serialize(PopupMessage, { method: 'popup_import_settings', data: { fileContents } }), noopPublishRpcConnectionStatus)
+
+		assert.equal((await getRequiredSettings()).activeRpcNetwork.httpsRpc, importedRpc.httpsRpc)
+		assert.equal(owner.requireCurrent().ethereum.getRpcEntry().httpsRpc, importedRpc.httpsRpc)
+		assert.deepEqual((await sendEthChainIdRequests(owner, [73, 74])).map((reply) => reply?.result), ['0x2', '0x2'])
 	})
 
 	test('does not re-approve a connection that a chain switch unapproved while the request was parked', async () => {

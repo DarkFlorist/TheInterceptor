@@ -5,6 +5,7 @@ import { popupMessageHandler, popupRecoveryMessageHandler, type PopupMessageHand
 import { changeSettings, exportSettings, importSettings, openNewTab, restoreDefaultRpcConfiguration, retryRpcConfiguration, setNewRpcList, settingsOpened } from '../popupMessageHandlers.js'
 import { publishRpcConfigurationRecovery } from '../activeSettings.js'
 import { updateContentScriptInjectionStrategy } from '../../utils/contentScriptsUpdating.js'
+import { installRpcServicesForStoredConfiguration } from '../rpcConfigurationLifecycle.js'
 
 export const settingsPopupMessageHandlers = {
 	popup_requestSettings: popupRecoveryMessageHandler('popup_requestSettings', async (context) => await settingsOpened(context.simulationServicesOwner)),
@@ -20,6 +21,7 @@ export const settingsPopupMessageHandlers = {
 		await reconcileAfterIndependentSteps([
 			async () => await sendPopupMessageToOpenWindows(importSettingsReply),
 			async () => await updateContentScriptInjectionStrategy(),
+			async () => await installRpcServicesForStoredConfiguration(context.simulationServicesOwner),
 		], async () => await reconcileCommittedAccessChangeCollectingFailures(context.websiteTabConnections, { kind: 'settings-import' }, async (importedSettings) => {
 			// Read after the content-script registration so the reconciled and published settings include any access change made meanwhile. The import replaced every website's approvals, so all connections fail closed if settings are unreadable. The reconciliation's failures go to the import's single collector; completing the access update (prompts and icons) reports its own.
 			const { update, failures } = await reconcileWebsiteApprovalAccessesCollectingFailures(context.websiteTabConnections, importedSettings)
