@@ -1,7 +1,8 @@
-import type { RpcNetwork } from '../types/rpc.js'
-import type { SigningAddressPreferences } from '../types/signerTypes.js'
-import type { EthereumAddress } from '../types/wire-types.js'
-import { serializeLocalStorageItems } from '../utils/storageUtils.js'
+import * as funtypes from 'funtypes'
+import { RpcNetwork } from '../types/rpc.js'
+import { SigningAddressPreferences } from '../types/signerTypes.js'
+import { type EthereumAddress, serialize } from '../types/wire-types.js'
+import { presenceAwareOptionalAddress } from '../utils/storageUtils.js'
 
 // Guard state is per JS context and sees only the writes made in that context, so simulation mode is switched only from the background context that forwards to the signer.
 
@@ -14,6 +15,15 @@ export type SimulationModeChanges = {
 }
 
 type SimulationModeWriteOtherItems = { readonly signingAddressPreferences?: SigningAddressPreferences }
+
+// Only the keys this module writes, built from the same field definitions as storageUtils.ts so they are stored identically, which keeps a serializer that accepts simulationMode private to this module.
+const SimulationModeStorageItems = funtypes.Intersect(
+	funtypes.ReadonlyObject({ simulationMode: funtypes.Boolean }),
+	funtypes.ReadonlyPartial({ activeRpcNetwork: RpcNetwork, signingAddressPreferences: SigningAddressPreferences }),
+	presenceAwareOptionalAddress('independentActiveSimulationAddress'),
+	presenceAwareOptionalAddress('activeSigningAddress'),
+	presenceAwareOptionalAddress('activeSigningSafeAddress'),
+)
 
 function getSimulationModeStorageUpdate(changes: SimulationModeChanges) {
 	return {
@@ -59,7 +69,7 @@ export async function waitForSimulationModeEnablingWrites() {
 
 // Private so that the module system keeps writeSimulationModeChanges the single writer: browserStorageLocalSet cannot write simulationMode, and this is the only call that does.
 async function setSimulationModeInStorage(changes: SimulationModeChanges, otherItems: SimulationModeWriteOtherItems) {
-	return await browser.storage.local.set(serializeLocalStorageItems({ ...getSimulationModeStorageUpdate(changes), ...otherItems }))
+	return await browser.storage.local.set(serialize(SimulationModeStorageItems, { ...getSimulationModeStorageUpdate(changes), ...otherItems }))
 }
 
 // The only writer of simulationMode, so the guard above sees every switch into simulation mode.

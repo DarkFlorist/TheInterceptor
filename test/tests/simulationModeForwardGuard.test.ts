@@ -60,6 +60,13 @@ function assertAnsweredInSimulationMode(replies: readonly { type?: unknown, erro
 // getSettings() is the only reader of simulationMode, and after the arming point a request reads the settings once per routing attempt. Handling the request again from the start would read them more often.
 const isSettingsRead = (keys: unknown) => Array.isArray(keys) && keys.includes('simulationMode')
 
+const GUARD_WRITTEN_RPC_NETWORK = { name: 'Guard write RPC', chainId: 8453n, httpsRpc: 'http://127.0.0.1:8545', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
+const GUARD_WRITTEN_SIGNING_PREFERENCES = [{ signerAddress: ACCOUNT, selection: 'signer' as const }]
+const GUARD_WRITE_CASES = [
+	{ description: 'stored addresses', simulationMode: true, activeSimulationAddress: SIMULATION_ONLY_ACCOUNT, activeSigningAddress: ACCOUNT, activeSigningSafeAddress: SIMULATION_ONLY_ACCOUNT },
+	{ description: 'cleared addresses', simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: undefined, activeSigningSafeAddress: undefined },
+]
+
 async function readAppSources() {
 	const sourceDirectory = new URL('../../app/ts/', import.meta.url).pathname
 	const sources: { readonly path: string, readonly source: string }[] = []
@@ -305,6 +312,32 @@ describe('simulation mode forward guard', () => {
 		await enabling
 		assert.deepEqual(guard.postSignerForwardIfAllowed(() => ++posts), { posted: false })
 		assert.equal(posts, 1)
+	})
+
+	test.each(GUARD_WRITE_CASES)('a guard write with $description stores its keys as browserStorageLocalSet does', async ({ simulationMode, activeSimulationAddress, activeSigningAddress, activeSigningSafeAddress }) => {
+		installBrowserMock()
+		const { writeSimulationModeChanges } = await loadModules()
+		const { browserStorageLocalSet } = await import('../../app/ts/utils/storageUtils.js')
+		const writtenKeys = ['activeRpcNetwork', 'independentActiveSimulationAddress', 'activeSigningAddress', 'activeSigningSafeAddress', 'signingAddressPreferences']
+		await browserStorageLocalSet({ activeRpcNetwork: GUARD_WRITTEN_RPC_NETWORK, independentActiveSimulationAddress: activeSimulationAddress, activeSigningAddress, activeSigningSafeAddress, signingAddressPreferences: GUARD_WRITTEN_SIGNING_PREFERENCES })
+		const storedByGenericSetter = await browser.storage.local.get(writtenKeys)
+		await browser.storage.local.remove(writtenKeys)
+		await writeSimulationModeChanges({ simulationMode, rpcNetwork: GUARD_WRITTEN_RPC_NETWORK, activeSimulationAddress, activeSigningAddress, activeSigningSafeAddress }, { signingAddressPreferences: GUARD_WRITTEN_SIGNING_PREFERENCES })
+		assert.deepStrictEqual(await browser.storage.local.get(writtenKeys), storedByGenericSetter)
+	})
+
+	test.each(GUARD_WRITE_CASES)('a guard write with $description reads back through getSettings', async ({ simulationMode, activeSimulationAddress, activeSigningAddress, activeSigningSafeAddress }) => {
+		installBrowserMock()
+		const { getSettings, getSigningAddressPreferences, writeSimulationModeChanges } = await loadModules()
+		const { browserStorageLocalGet } = await import('../../app/ts/utils/storageUtils.js')
+		await writeSimulationModeChanges({ simulationMode, rpcNetwork: GUARD_WRITTEN_RPC_NETWORK, activeSimulationAddress, activeSigningAddress, activeSigningSafeAddress }, { signingAddressPreferences: GUARD_WRITTEN_SIGNING_PREFERENCES })
+		const settings = await getSettings()
+		assert.equal(settings.simulationMode, simulationMode)
+		assert.deepEqual(settings.activeRpcNetwork, GUARD_WRITTEN_RPC_NETWORK)
+		assert.equal(settings.activeSimulationAddress, activeSimulationAddress)
+		assert.equal(settings.activeSigningSafeAddress, activeSigningSafeAddress)
+		assert.equal((await browserStorageLocalGet('activeSigningAddress')).activeSigningAddress, activeSigningAddress)
+		assert.deepEqual(await getSigningAddressPreferences(), GUARD_WRITTEN_SIGNING_PREFERENCES)
 	})
 
 	test('raw storage writes stay in the storage modules and only the guard module writes simulationMode', async () => {

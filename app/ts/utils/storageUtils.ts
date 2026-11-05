@@ -52,7 +52,7 @@ export const RichListElement = funtypes.ReadonlyObject({
 })
 
 // ReadonlyPartial drops a property whose serialized value represents `undefined`. These presence-aware alternatives preserve the distinction between "not stored" and "explicitly cleared", which independent address update paths rely on.
-const presenceAwareOptionalAddress = (propertyName: 'activeSigningAddress' | 'activeSigningSafeAddress' | 'independentActiveSimulationAddress') => funtypes.Union(
+export const presenceAwareOptionalAddress = (propertyName: 'activeSigningAddress' | 'activeSigningSafeAddress' | 'independentActiveSimulationAddress') => funtypes.Union(
 	funtypes.ReadonlyObject({ [propertyName]: EthereumAddressOrMissing })
 		.withConstraint((item) => hasOwnKey(item, propertyName)),
 	funtypes.ReadonlyPartial({ [propertyName]: funtypes.Unknown })
@@ -194,8 +194,6 @@ export async function browserStorageLocalSet(items: LocalStorageItems & { readon
 	const storageItems: LocalStorageItems = items
 	return await browser.storage.local.set(serialize(LocalStorageItems, storageItems))
 }
-
-export const serializeLocalStorageItems = (items: LocalStorageItems) => serialize(LocalStorageItems, items)
 
 const getTabStateKey = (tabId: number): `tabState_${ number }` => `tabState_${ tabId }`
 
