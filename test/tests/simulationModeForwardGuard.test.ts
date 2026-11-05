@@ -60,6 +60,28 @@ function assertAnsweredInSimulationMode(replies: readonly { type?: unknown, erro
 // getSettings() is the only reader of simulationMode, and after the arming point a request reads the settings once per routing attempt. Handling the request again from the start would read them more often.
 const isSettingsRead = (keys: unknown) => Array.isArray(keys) && keys.includes('simulationMode')
 
+async function readAppSources() {
+	const sourceDirectory = new URL('../../app/ts/', import.meta.url).pathname
+	const sources: { readonly path: string, readonly source: string }[] = []
+	for await (const path of new Bun.Glob('**/*.{ts,tsx}').scan({ cwd: sourceDirectory })) {
+		sources.push({ path, source: await Bun.file(`${ sourceDirectory }${ path }`).text() })
+	}
+	return sources
+}
+
+// The argument text of each direct browser.storage.local.set call, found by matching its parentheses.
+function getRawStorageWriteArguments(source: string) {
+	return [...source.matchAll(/\bstorage\s*\.\s*local\s*\.\s*set\s*\(/gu)].map((call) => {
+		const argumentsStart = call.index + call[0].length
+		let argumentsEnd = argumentsStart
+		for (let depth = 1; depth > 0 && argumentsEnd < source.length; argumentsEnd++) {
+			if (source[argumentsEnd] === '(') depth++
+			if (source[argumentsEnd] === ')') depth--
+		}
+		return source.slice(argumentsStart, argumentsEnd - 1)
+	})
+}
+
 describe('simulation mode forward guard', () => {
 	test('forwards to the signer when simulation mode does not change', async () => {
 		const { sendAddEthereumChain } = await setUpSigningModeWebsite()
@@ -286,14 +308,24 @@ describe('simulation mode forward guard', () => {
 	})
 
 	test('only writeSimulationModeChanges writes simulationMode through the storage setter that allows it', async () => {
-		const sourceDirectory = new URL('../../app/ts/', import.meta.url).pathname
-		const callers: string[] = []
-		for await (const path of new Bun.Glob('**/*.{ts,tsx}').scan({ cwd: sourceDirectory })) {
-			const source = await Bun.file(`${ sourceDirectory }${ path }`).text()
+		const callers = (await readAppSources()).flatMap(({ path, source }) => {
 			const calls = source.match(/browserStorageLocalSetWithSimulationMode\(/gu)?.length ?? 0
-			if (calls > 0) callers.push(`${ path }: ${ calls }`)
-		}
+			return calls > 0 ? [`${ path }: ${ calls }`] : []
+		})
 		// One call in settings.ts writeSimulationModeChanges, plus the definition in storageUtils.ts; browserStorageLocalSet rejects simulationMode by type.
 		assert.deepEqual(callers.sort(), ['background/settings.ts: 1', 'utils/storageUtils.ts: 1'])
+	})
+
+	test('raw storage writes stay in the storage modules and none of them names simulationMode', async () => {
+		const rawWrites = (await readAppSources()).flatMap(({ path, source }) => getRawStorageWriteArguments(source).map((writtenItems) => ({ path, writtenItems })))
+		assert.deepEqual([...new Set(rawWrites.map(({ path }) => path))].sort(), ['utils/largeStateStore.ts', 'utils/storageUtils.ts'])
+		assert.deepEqual(rawWrites.filter(({ writtenItems }) => writtenItems.includes('simulationMode')), [])
+	})
+
+	test('browserStorageLocalSet2 cannot write simulationMode because the key is not in its runtype', async () => {
+		const { readStoredValue } = installBrowserMock()
+		const { browserStorageLocalSet2 } = await import('../../app/ts/utils/storageUtils.js')
+		await browserStorageLocalSet2(Object.fromEntries([['simulationMode', true]]))
+		assert.equal(readStoredValue('simulationMode'), undefined)
 	})
 })

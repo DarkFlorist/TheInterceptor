@@ -96,7 +96,7 @@ export async function getSettings() : Promise<Settings> {
 	const openedPagePromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'openedPageV2', defaultPage))
 	const useSignersAddressAsActiveAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'useSignersAddressAsActiveAddress', false))
 	const websiteAccessPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'websiteAccess', []).then(sanitizeWebsiteAccess))
-	// Read without repair: a corrupt simulationMode reads as the default (simulation on) and is left in storage until the next changeSimulationMode(), so no settings read, in the background or in a UI page, writes simulation mode behind the signer-forward guard or overwrites a later switch to signing mode.
+	// This key must stay on the non-repairing path: a repairing read would write simulationMode behind the signer-forward guard, from the background or a UI page, and could overwrite a later switch to signing mode. A corrupt value reads as the default (simulation on) and stays in storage until the next changeSimulationMode(). New keys should use the repairing path, getParsedStorageValueOrDefaultFromItems.
 	const simulationMode = parseStorageValueOrDefaultFromItems(storedItems, 'simulationMode', defaultSimulationMode).value
 	const activeRpcNetworkPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'activeRpcNetwork', defaultRpcs[0]))
 	const [activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork] = await Promise.all([
