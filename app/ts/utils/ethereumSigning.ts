@@ -1,5 +1,3 @@
-import { secp256k1 } from '@noble/curves/secp256k1.js'
-import { bytesToNumberBE } from '@noble/curves/utils.js'
 import { concatBytes, hexToBytes, utf8ToBytes } from '@noble/hashes/utils'
 import { addr, eip191Signer } from 'micro-eth-signer'
 import { initSig, sign as signDigestWithMicro } from 'micro-eth-signer/utils.js'
@@ -174,68 +172,28 @@ export const privateKeyToAccount = (privateKey: Hex) => {
 	}
 }
 
-type SignatureParameter = Hex | {
-	readonly r: Hex | bigint
-	readonly s: Hex | bigint
-	readonly yParity?: number
-	readonly v?: bigint | number
-}
-
-type SignatureParts = { readonly r: bigint, readonly s: bigint, readonly yParity: number }
-
-const toSignatureParts = (signature: SignatureParameter): SignatureParts => typeof signature === 'string'
-	? signatureToParts(signature)
-	: {
-		r: typeof signature.r === 'bigint' ? signature.r : BigInt(signature.r),
-		s: typeof signature.s === 'bigint' ? signature.s : BigInt(signature.s),
-		yParity: normalizeSignatureYParity(signature),
+export const recoverAddress = async ({ hash, signature }: {
+	readonly hash: Hex | Uint8Array
+	readonly signature: Hex | {
+		readonly r: Hex | bigint
+		readonly s: Hex | bigint
+		readonly yParity?: number
+		readonly v?: bigint | number
 	}
-
-const recoverAddressFromParts = (digest: Uint8Array, signature: SignatureParts): Hex => {
-	const recoveredSignature = initSig({ r: signature.r, s: signature.s }, signature.yParity)
+}): Promise<Hex> => {
+	const digest = bytesFromHexOrBytes(hash)
+	const normalizedSignature = typeof signature === 'string'
+		? signatureToParts(signature)
+		: {
+			r: typeof signature.r === 'bigint' ? signature.r : BigInt(signature.r),
+			s: typeof signature.s === 'bigint' ? signature.s : BigInt(signature.s),
+			yParity: normalizeSignatureYParity(signature),
+		}
+	const recoveredSignature = initSig({ r: normalizedSignature.r, s: normalizedSignature.s }, normalizedSignature.yParity)
 	return ensureHex(addr.fromPublicKey(recoveredSignature.recoverPublicKey(digest).toBytes(false)), 'recovered address')
 }
 
-export const recoverAddress = async ({ hash, signature }: { readonly hash: Hex | Uint8Array, readonly signature: SignatureParameter }): Promise<Hex> => recoverAddressFromParts(bytesFromHexOrBytes(hash), toSignatureParts(signature))
-
-// The same @noble/curves copy micro-eth-signer recovers with, so these checks and the recovery cannot disagree about the curve. tryRecoverAddress.test.ts fails if the two ever resolve to separate copies.
-const { BASE: GENERATOR_POINT, Fn: SCALAR_FIELD, Fp: COORDINATE_FIELD } = secp256k1.Point
-
-// r is the x-coordinate of the signing nonce point on y^2 = x^3 + 7, so it names a curve point only if x^3 + 7 is a nonzero square mod p (Euler's criterion; secp256k1 has no point with y = 0).
-const isCurveXCoordinate = (x: bigint) => COORDINATE_FIELD.pow(COORDINATE_FIELD.create(x ** 3n + 7n), (COORDINATE_FIELD.ORDER - 1n) / 2n) === COORDINATE_FIELD.ONE
-
-// Checked here rather than inferred from library errors: r and s must be in 1..n-1 and r must be a curve x-coordinate for recovery to have a nonce point to start from.
-const hasRecoverableRAndS = (signature: SignatureParts) => SCALAR_FIELD.isValidNot0(signature.r) && SCALAR_FIELD.isValidNot0(signature.s) && isCurveXCoordinate(signature.r)
-
-// ECDSA signs the integer in the leftmost 256 bits of the digest, reduced mod n.
-const digestToScalar = (digest: Uint8Array) => SCALAR_FIELD.create(bytesToNumberBE(digest.subarray(0, SCALAR_FIELD.BYTES)))
-
-// Recovery computes r^-1 * (s * R - hash * G), which is the point at infinity exactly when s * R = hash * G. Call only after hasRecoverableRAndS, which guarantees r names the nonce point R.
-const recoversToPointAtInfinity = (digest: Uint8Array, { r, s, yParity }: SignatureParts) => {
-	const noncePoint = secp256k1.Point.fromBytes(concatBytes(new Uint8Array([2 + yParity]), COORDINATE_FIELD.toBytes(r)))
-	return noncePoint.multiplyUnsafe(s).equals(GENERATOR_POINT.multiplyUnsafe(digestToScalar(digest)))
-}
-
-// For a signature recoversToPointAtInfinity accepted, s * R = hash * G with both sides nonzero, so the opposite nonce point -R sums to -2 * hash * G and never reaches infinity. Recovering from -R therefore runs all of the library's digest checks, whose errors outrank the 'unrecoverable' result, without hitting its own infinity error.
-const assertRecoveryAcceptsDigest = (digest: Uint8Array, signature: SignatureParts) => {
-	recoverAddressFromParts(digest, { ...signature, yParity: 1 - signature.yParity })
-}
-
-export type AddressRecovery = { readonly type: 'recovered', readonly address: Hex } | { readonly type: 'unrecoverable' }
-
-// Like recoverAddress, but reports a signature whose r and s recover to no address as 'unrecoverable' instead of throwing. That is decided from the signature and digest alone, so every error the recovery itself throws is unexpected and propagates.
-export const tryRecoverAddress = async ({ hash, signature }: Parameters<typeof recoverAddress>[0]): Promise<AddressRecovery> => {
-	const digest = bytesFromHexOrBytes(hash)
-	const signatureParts = toSignatureParts(signature)
-	if (!hasRecoverableRAndS(signatureParts)) return { type: 'unrecoverable' }
-	if (recoversToPointAtInfinity(digest, signatureParts)) {
-		assertRecoveryAcceptsDigest(digest, signatureParts)
-		return { type: 'unrecoverable' }
-	}
-	return { type: 'recovered', address: recoverAddressFromParts(digest, signatureParts) }
-}
-
-const signatureToParts = (signature: Hex): SignatureParts => {
+const signatureToParts = (signature: Hex): { readonly r: bigint, readonly s: bigint, readonly yParity: number } => {
 	const hex = ensureHex(signature, 'signature').slice(2)
 	if (hex.length !== 130) throw new Error('Signature must be 65 bytes')
 	const recovery = Number.parseInt(hex.slice(128), 16)
