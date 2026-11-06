@@ -3,6 +3,7 @@
 	"description": "Understand Ethereum transactions before risking assets. Simulate actions and spot scams to avoid mistakes before signing anything.",
 	"version": "0.0.0",
 	"manifest_version": 3,
+	"minimum_chrome_version": "123",
 	"action": {
 		"default_popup": "html3/popupV3.html",
 		"default_icon": {

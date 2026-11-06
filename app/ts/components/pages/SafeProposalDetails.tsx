@@ -18,13 +18,13 @@ export function SafeProposalDetails({ safeTx, messageReview }: { safeTx: SafeTx,
 		<p class = 'paragraph'>Atomic Safe batch: all calls execute in order as the Safe. If any call fails, the entire batch reverts.</p>
 		{ decodeSafeBatch(safeTx.message.data).map((call, index) => <div key = { index }>
 			<p class = 'paragraph'>{ index + 1 }. To: { addressString(call.to) }; value: { bigintToDecimalString(call.value, 18n) } ether</p>
-			<p class = 'paragraph' style = 'overflow-wrap: anywhere'>Calldata: { dataStringWith0xStart(call.data) }</p>
+			<p class = 'paragraph safe-proposal-calldata'>Calldata: { dataStringWith0xStart(call.data) }</p>
 		</div>) }
 	</div>
 	if (messageReview === undefined || !matchesSafeMessageApproval(safeTx.message, messageReview)) return <></>
 	return <div class = 'textbox'>
 		<p class = 'paragraph'>On-chain Safe message approval. The message becomes approved only after this Safe transaction is executed.</p>
-		<p class = 'paragraph' style = 'white-space: pre-wrap'>{ messageReview.text }</p>
+		<p class = 'paragraph safe-proposal-message-text'>{ messageReview.text }</p>
 	</div>
 }
 
@@ -48,7 +48,7 @@ export function SafeProposalSigningRequestCard({ safeTransaction, addressMetaDat
 	}
 	return <CollapsibleCard title = 'Gnosis Safe signing request (EIP-712)'>
 		<div class = 'card-content'>
-			<p class = 'paragraph' style = 'color: var(--subtitle-text-color); margin-bottom: 10px'>Your signer wallet is asked to sign this typed data. Compare the fields and hashes with what your hardware signer displays.</p>
+			<p class = 'paragraph safe-proposal-signing-intro'>Your signer wallet is asked to sign this typed data. Compare the fields and hashes with what your hardware signer displays.</p>
 			<SafeTxSigningDetails safeTx = { safeTx } hashes = { hashes } addressBookEntries = { addressBookEntries } rpcNetwork = { rpcNetwork } renameAddressCallBack = { renameAddressCallBack }/>
 		</div>
 	</CollapsibleCard>

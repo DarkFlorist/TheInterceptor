@@ -15,6 +15,7 @@ export type PageDefinition = {
 }
 
 const projectRoot = path.join(path.dirname(url.fileURLToPath(import.meta.url)), '..')
+// The stylesheets every page loads; a later file overrides an earlier one at equal specificity. `interceptor-layout.css` scopes its rules under `:root`, so its classes outrank shared rules of the same weight without relying on being last.
 export const stylesheetFilenames = [
 	'interceptor-framework.css',
 	'interceptor-controls.css',
@@ -22,6 +23,7 @@ export const stylesheetFilenames = [
 	'interceptor-components.css',
 	'interceptor-ui.css',
 	'interceptor-pages.css',
+	'interceptor-layout.css',
 ] as const
 
 export const pageDefinitions: readonly PageDefinition[] = [

@@ -9,32 +9,29 @@ import { SmallAddress } from './address.js'
 import { insertBetweenElements } from './misc.js'
 import { resolveSignal, type SignalOrValue } from '../../utils/signals.js'
 
-const textStyle = 'text-overflow: ellipsis; overflow: hidden;'
-const tupleGroupStyle = 'display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0 0.25em; max-width: 100%; min-width: 0;'
-const tupleFieldStyle = 'display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0 0.125em; max-width: 100%; min-width: 0;'
-export const StringElement = ({ text }: { text: string }) => <p class = 'paragraph' style = { textStyle }>{ text }</p>
+export const StringElement = ({ text }: { text: string }) => <p class = 'paragraph ellipsis'>{ text }</p>
 
 const JsxArray = ( { array }: { array: JSX.Element[] }) => <>
 	<StringElement text = '['/>
-		{ insertBetweenElements(array, <p style = { textStyle } class = 'paragraph'>,&nbsp;</p>) }
+		{ insertBetweenElements(array, <p class = 'paragraph ellipsis'>,&nbsp;</p>) }
 	<StringElement text = ']'/>
 </>
 
-const PureTupleComponent = ({ tuple }: { tuple: readonly SolidityVariable[] }) => <div style = { tupleGroupStyle }>
+const PureTupleComponent = ({ tuple }: { tuple: readonly SolidityVariable[] }) => <div class = 'solidity-tuple'>
 	<StringElement text = '{'/>
-		{ insertBetweenElements(tuple.map((variable, index) => <div key = { index } style = { tupleFieldStyle }>
-			<p style = { textStyle } class = 'paragraph'> { `${ variable.paramName } =` }&nbsp;</p>
+		{ insertBetweenElements(tuple.map((variable, index) => <div key = { index } class = 'solidity-tuple-field'>
+			<p class = 'paragraph ellipsis'> { `${ variable.paramName } =` }&nbsp;</p>
 			<PureSolidityTypeComponent valueType = { variable.typeValue } />
-		</div>), <p style = { textStyle } class = 'paragraph'>,&nbsp;</p>) }
+		</div>), <p class = 'paragraph ellipsis'>,&nbsp;</p>) }
 	<StringElement text = '}'/>
 </div>
 
-const TupleComponentWithAddressBook = ({ tuple, addressMetaData, renameAddressCallBack }: { tuple: readonly SolidityVariable[], addressMetaData: SignalOrValue<readonly AddressBookEntry[]>, renameAddressCallBack: RenameAddressCallBack }) => <div style = { tupleGroupStyle }>
+const TupleComponentWithAddressBook = ({ tuple, addressMetaData, renameAddressCallBack }: { tuple: readonly SolidityVariable[], addressMetaData: SignalOrValue<readonly AddressBookEntry[]>, renameAddressCallBack: RenameAddressCallBack }) => <div class = 'solidity-tuple'>
 	<StringElement text = '{'/>
-		{ insertBetweenElements(tuple.map((variable, index) => <div key = { index } style = { tupleFieldStyle }>
-			<p style = { textStyle } class = 'paragraph'> { `${ variable.paramName } =` }&nbsp;</p>
+		{ insertBetweenElements(tuple.map((variable, index) => <div key = { index } class = 'solidity-tuple-field'>
+			<p class = 'paragraph ellipsis'> { `${ variable.paramName } =` }&nbsp;</p>
 			<EnrichedSolidityTypeComponentWithAddressBook valueType = { variable.typeValue } addressMetaData = { addressMetaData } renameAddressCallBack = { renameAddressCallBack } />
-		</div>), <p style = { textStyle } class = 'paragraph'>,&nbsp;</p>) }
+		</div>), <p class = 'paragraph ellipsis'>,&nbsp;</p>) }
 	<StringElement text = '}'/>
 </div>
 
@@ -42,14 +39,14 @@ function PureSolidityTypeComponent( { valueType }: { valueType: PureGroupedSolid
 	switch(valueType.type) {
 		case 'address': return <StringElement text = { checksummedAddress(valueType.value) } />
 		case 'bool': return <StringElement text = { valueType.value === true ? 'True' : 'False' } />
-		case 'bytes': return <div class = 'textbox' style = 'white-space: normal;'> <p class = 'paragraph'>{ dataStringWith0xStart(valueType.value) }</p> </div>
+		case 'bytes': return <div class = 'textbox text-wrap'> <p class = 'paragraph'>{ dataStringWith0xStart(valueType.value) }</p> </div>
 		case 'fixedBytes': return <StringElement text = { dataStringWith0xStart(valueType.value) } />
 		case 'unsignedInteger':
 		case 'signedInteger': return <StringElement text = { valueType.value.toString() } />
 		case 'string': return <StringElement text = { `"${ valueType.value }"` } />
 		case 'address[]': return <StringElement text = { `[${ valueType.value.map((value) => checksummedAddress(value)).toString() }]` } />
 		case 'bool[]': return <StringElement text = { `[${ valueType.value.map((a) => a === true ? 'True' : 'False' ).toString() }]` } />
-		case 'bytes[]': return <JsxArray array = { valueType.value.map((value, index) => <div key = { index } class = 'textbox' style = 'white-space: normal;'> <p class = 'paragraph'>{ dataStringWith0xStart(value) }</p> </div>) }/>
+		case 'bytes[]': return <JsxArray array = { valueType.value.map((value, index) => <div key = { index } class = 'textbox text-wrap'> <p class = 'paragraph'>{ dataStringWith0xStart(value) }</p> </div>) }/>
 		case 'fixedBytes[]': return <StringElement text = { `[${ valueType.value.toString() }]` } />
 		case 'unsignedInteger[]':
 		case 'signedInteger[]': return <StringElement text = { `[${ valueType.value.toString() }]` } />

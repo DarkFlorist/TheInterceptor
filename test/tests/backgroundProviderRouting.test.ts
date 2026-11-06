@@ -1420,6 +1420,55 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		assert.deepEqual(await getPendingTransactionsAndMessages(), [])
 	})
 
+	for (const simulationMode of [true, false]) test(`${ simulationMode ? 'intercepts' : 'forwards to the wallet' } a signing request on a network without an RPC in ${ simulationMode ? 'simulation' : 'signing' } mode`, async () => {
+		installBrowserMock()
+		const { changeSimulationMode, getPendingTransactionsAndMessages, handleInterceptedRequest, setUseSignersAddressAsActiveAddress, updateTabState, updateWebsiteAccess, websiteSocketToString } = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const account = 0x6262626262626262626262626262626262626262n
+		await changeSimulationMode({
+			simulationMode,
+			rpcNetwork: { name: 'Signer only', chainId: 1n, httpsRpc: undefined, currencyName: 'Ether?', currencyTicker: 'ETH?', primary: false, minimized: true },
+			activeSimulationAddress: account,
+			activeSigningAddress: account,
+		})
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
+		const socket = { tabId: 1, connectionName: 0n }
+		await updateTabState(socket.tabId, (previousState) => ({ ...previousState, signerAccounts: [account], activeSigningAddress: account, signerChain: 1n }))
+		const { port, messages } = createPort(socket.tabId)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		// The signing account has no code and the block number is known, so preparing the confirmation window needs no RPC.
+		const { ethereum: ethereumWithoutBlockNumber, tokenPriceService } = createEthereumWithGetBlockCounter({ count: 0 }, { getCodeResult: new Uint8Array() })
+		const ethereum = new Proxy(ethereumWithoutBlockNumber, { get: (target, property, receiver) => property === 'getBlockNumber' ? async () => 1n : Reflect.get(target, property, receiver) })
+		const simulationServicesOwner = createTestSimulationServicesOwner({ ethereum, tokenPriceService })
+		const request = {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 217, requestSocket: socket },
+			method: 'personal_sign',
+			params: ['0x68656c6c6f', addressString(account)],
+		}
+		// An intercepted request waits for the user in the confirmation window, so the request is not awaited; the test waits until it is either pending or forwarded.
+		void handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
+		const isForwarded = () => messages.some((message) => message.type === 'forwardToSigner' && message.requestId === 217)
+		for (let attempt = 0; attempt < 200 && !isForwarded() && (await getPendingTransactionsAndMessages()).length === 0; attempt++) await new Promise((resolve) => setTimeout(resolve, 5))
+		const pending = await getPendingTransactionsAndMessages()
+		if (simulationMode) {
+			// Without an RPC the simulation mode still intercepts the request instead of letting it reach the wallet.
+			assert.equal(isForwarded(), false)
+			assert.equal(pending.length, 1)
+			assert.equal(pending[0]?.type, 'SignableMessage')
+			assert.equal(pending[0]?.simulationMode, true)
+		} else {
+			// The same predicate decides the popup's 'unsupportedNetwork' protection state.
+			assert.equal(isForwarded(), true)
+			assert.deepEqual(pending, [])
+		}
+	})
+
 	test('never exposes a configured Safe selected from another chain while signing', async () => {
 		installBrowserMock()
 		const {

@@ -105,6 +105,123 @@ function createSnapshot(balance: bigint): SimulationStackSnapshot {
 }
 
 describe('fetch simulation stack freshness', () => {
+	test('keeps a simulation stack request stored before the mode travelled with the request resolvable', async () => {
+		for (const key of Object.keys(storageState)) delete storageState[key]
+		const storage = await import('../../app/ts/background/storageVariables.js')
+		const modules = await modulesPromise
+		// A complete request written by the previous version, which only lacks `simulationMode`, as if the background restarted after the upgrade.
+		const uniqueRequestIdentifier = { requestId: 1, requestSocket: { tabId: 3, connectionName: 5n } }
+		storageState.fetchSimulationStackRequestPromise = { website: { websiteOrigin: 'https://requester.example', icon: undefined, title: undefined }, popupOrTabId: { type: 'popup', id: 1 }, simulationOverlayEnabled: true, simulationStackVersion: '2.0.0', uniqueRequestIdentifier: { requestId: 1, requestSocket: { tabId: 3, connectionName: '0x5' } } }
+		const storedRequest = await storage.getFetchSimulationStackRequestPromise()
+		assert.ok(storedRequest !== undefined)
+		// The mode cannot be recovered, so the page shows the neutral appearance; the request itself and its id are kept.
+		assert.equal(storedRequest.simulationMode, undefined)
+		assert.deepEqual(storedRequest.uniqueRequestIdentifier, uniqueRequestIdentifier)
+		const repliesToWebsite: unknown[] = []
+		const port = { postMessage: (message: unknown) => { repliesToWebsite.push(message) } }
+		const websiteTabConnections = new Map([[3, { connections: { '3-0x5': { port, socket: uniqueRequestIdentifier.requestSocket, websiteOrigin: 'https://requester.example', approved: true, wantsToConnect: false } } }]])
+		await modules.resolveFetchSimulationStackRequest(createSnapshot(1n), websiteTabConnections, {
+			method: 'popup_fetchSimulationStackRequestConfirmation',
+			data: { uniqueRequestIdentifier, accept: true, simulationStackVersion: '2.0.0' },
+		})
+		assert.equal(repliesToWebsite.length, 1)
+		assert.equal(typeof repliesToWebsite[0] === 'object' && repliesToWebsite[0] !== null && 'requestId' in repliesToWebsite[0] && repliesToWebsite[0].requestId, 1)
+		assert.equal(typeof repliesToWebsite[0] === 'object' && repliesToWebsite[0] !== null && 'type' in repliesToWebsite[0] && repliesToWebsite[0].type, 'result')
+		await storage.setFetchSimulationStackRequestPromise(undefined)
+	})
+
+	test('keeps a watch asset request queued before the mode travelled with the request resolvable', async () => {
+		for (const key of Object.keys(storageState)) delete storageState[key]
+		const storage = await import('../../app/ts/background/storageVariables.js')
+		const { resolveWatchAsset } = await import('../../app/ts/background/windows/watchAsset.js')
+		const { StoredWatchAssetRequest } = await import('../../app/ts/types/user-interface-types.js')
+		const token = { type: 'ERC20', name: 'Token', symbol: 'TKN', decimals: 6n, address: 0x1111111111111111111111111111111111111111n, chainId: 1n, entrySource: 'User' } as const
+		const uniqueRequestIdentifier = { requestId: 8, requestSocket: { tabId: 2, connectionName: 3n } }
+		const currentVersionRecord = StoredWatchAssetRequest.serialize({
+			website: { websiteOrigin: 'https://requester.example', icon: undefined, title: undefined },
+			simulationMode: true,
+			popupOrTabId: { type: 'popup', id: 91 },
+			request: { method: 'wallet_watchAsset', params: [{ type: 'ERC20', options: { address: '0x1111111111111111111111111111111111111111', chainId: 1 } }], interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier },
+			requestedAsset: { type: 'ERC20', options: { address: token.address, chainId: 1 } },
+			currentToken: token,
+			token,
+			proposedImageUrl: undefined,
+			selectedImageUri: undefined,
+			imageDownloadError: undefined,
+			forwardToSigner: undefined,
+			forwardingStatus: undefined,
+		})
+		// The same complete record as the previous version wrote it, which only lacks `simulationMode`, as if the background restarted after the upgrade.
+		const { simulationMode: _droppedSimulationMode, ...previousVersionRecord } = currentVersionRecord
+		storageState.pendingWatchAssetRequests = [previousVersionRecord]
+		const [storedRequest] = await storage.getPendingWatchAssetRequests()
+		assert.ok(storedRequest !== undefined)
+		assert.equal(storedRequest.simulationMode, undefined)
+		assert.deepEqual(storedRequest.request.uniqueRequestIdentifier, uniqueRequestIdentifier)
+		let addedToAddressBook: unknown
+		let closedPopupId: number | undefined
+		await resolveWatchAsset(new Map(), { method: 'popup_watchAssetDialog', data: { action: 'add', uniqueRequestIdentifier } }, {
+			getRequests: storage.getPendingWatchAssetRequests,
+			updateRequests: storage.updatePendingWatchAssetRequests,
+			updateAddressBook: async (update) => { addedToAddressBook = update([]) },
+			publishAddressBookChanged: async () => undefined,
+			publish: async () => undefined,
+			closeDialog: async (popupOrTabId) => { closedPopupId = popupOrTabId.id },
+			processQueue: async () => undefined,
+			sendToSigner: () => false,
+		})
+		assert.deepEqual(addedToAddressBook, [token])
+		assert.equal(closedPopupId, 91)
+		assert.deepEqual(storageState.pendingWatchAssetRequests, [])
+	})
+
+	test('treats requests that no longer decode as absent instead of failing every later request', async () => {
+		for (const key of Object.keys(storageState)) delete storageState[key]
+		const storage = await import('../../app/ts/background/storageVariables.js')
+		storageState.fetchSimulationStackRequestPromise = { website: { websiteOrigin: 'https://requester.example', icon: undefined, title: undefined }, simulationStackVersion: '2.0.0' }
+		storageState.pendingWatchAssetRequests = [{ website: { websiteOrigin: 'https://requester.example', icon: undefined, title: undefined } }]
+		// Recovery reports each undecodable record with a warning; they are collected here so the long validation messages stay out of the test output.
+		const originalWarn = console.warn
+		const warnings: unknown[] = []
+		console.warn = (...messages: unknown[]) => { warnings.push(...messages) }
+		try {
+			assert.equal(await storage.getFetchSimulationStackRequestPromise(), undefined)
+			assert.deepEqual(await storage.getPendingWatchAssetRequests(), [])
+			// The next write replaces the undecodable record.
+			assert.deepEqual(await storage.updatePendingWatchAssetRequests((requests) => requests), [])
+			assert.deepEqual(storageState.pendingWatchAssetRequests, [])
+			await storage.setFetchSimulationStackRequestPromise(undefined)
+			assert.equal('fetchSimulationStackRequestPromise' in storageState, false)
+		} finally {
+			console.warn = originalWarn
+		}
+		assert.equal(warnings.includes('Simulation stack request was corrupt:'), true)
+		assert.equal(warnings.includes('Pending watch asset requests was corrupt:'), true)
+	})
+
+	test('propagates a failing storage read instead of writing an empty request queue', async () => {
+		for (const key of Object.keys(storageState)) delete storageState[key]
+		const storage = await import('../../app/ts/background/storageVariables.js')
+		const queuedRecord = { stays: 'untouched' }
+		storageState.pendingWatchAssetRequests = [queuedRecord]
+		const localStorage = Reflect.get(globalThis, 'browser').storage.local
+		const originalGet = localStorage.get
+		const originalSet = localStorage.set
+		const writes: unknown[] = []
+		localStorage.get = async () => { throw new Error('storage read failed') }
+		localStorage.set = async (items: Record<string, unknown>) => { writes.push(items) }
+		try {
+			await assert.rejects(storage.updatePendingWatchAssetRequests((requests) => requests), /storage read failed/)
+			await assert.rejects(storage.getPendingWatchAssetRequests(), /storage read failed/)
+			await assert.rejects(storage.getFetchSimulationStackRequestPromise(), /storage read failed/)
+		} finally {
+			localStorage.get = originalGet
+			localStorage.set = originalSet
+		}
+		assert.deepEqual(writes, [])
+		assert.deepEqual(storageState.pendingWatchAssetRequests, [queuedRecord])
+	})
+
 	test('returns and fingerprints the confirmation-time snapshot', async () => {
 		for (const key of Object.keys(storageState)) delete storageState[key]
 		popupWindowExists = false
@@ -122,8 +239,10 @@ describe('fetch simulation stack freshness', () => {
 			},
 		}
 
+		// Safe signing shows the overlay while the Interceptor is signing for real, so the dialog must be told the mode separately.
 		const pendingResult = modules.openFetchSimulationStackDialog(
 			initialSnapshot,
+			false,
 			true,
 			new Map(),
 			uniqueRequestIdentifier,
@@ -133,6 +252,7 @@ describe('fetch simulation stack freshness', () => {
 		await new Promise((resolve) => setTimeout(resolve, 0))
 		const storedRequest = storageState.fetchSimulationStackRequestPromise
 		assert.equal(typeof storedRequest === 'object' && storedRequest !== null && 'simulationOverlayEnabled' in storedRequest && storedRequest.simulationOverlayEnabled, true)
+		assert.equal(typeof storedRequest === 'object' && storedRequest !== null && 'simulationMode' in storedRequest && storedRequest.simulationMode, false)
 		await modules.resolveFetchSimulationStackRequest(confirmationSnapshot, new Map(), confirmation)
 		const result = await pendingResult
 
@@ -162,17 +282,17 @@ describe('fetch simulation stack freshness', () => {
 			},
 		})
 
-		const firstRequest = modules.openFetchSimulationStackDialogOrGetCachedResult(initialSnapshot, true, new Map(), params, website, createRequest(20), socket)
+		const firstRequest = modules.openFetchSimulationStackDialogOrGetCachedResult(initialSnapshot, true, true, new Map(), params, website, createRequest(20), socket)
 		await modules.resolveFetchSimulationStackRequest(confirmationSnapshot, new Map(), reject(20))
 		const firstResult = await firstRequest
 		assert.ok('error' in firstResult)
 		assert.equal(popupWindowCreationCount, 1)
 
-		const cachedConfirmationResult = await modules.openFetchSimulationStackDialogOrGetCachedResult(confirmationSnapshot, true, new Map(), params, website, createRequest(21), socket)
+		const cachedConfirmationResult = await modules.openFetchSimulationStackDialogOrGetCachedResult(confirmationSnapshot, true, true, new Map(), params, website, createRequest(21), socket)
 		assert.ok('error' in cachedConfirmationResult)
 		assert.equal(popupWindowCreationCount, 1)
 
-		const initialSnapshotRequest = modules.openFetchSimulationStackDialogOrGetCachedResult(initialSnapshot, true, new Map(), params, website, createRequest(22), socket)
+		const initialSnapshotRequest = modules.openFetchSimulationStackDialogOrGetCachedResult(initialSnapshot, true, true, new Map(), params, website, createRequest(22), socket)
 		await modules.resolveFetchSimulationStackRequest(initialSnapshot, new Map(), reject(22))
 		await initialSnapshotRequest
 		assert.equal(popupWindowCreationCount, 2)

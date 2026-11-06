@@ -39,6 +39,7 @@ function createStoredRequest(requestId: number, websiteOrigin = website.websiteO
 	const address = BigInt(tokenAddress) + BigInt(requestId)
 	return {
 		website: { ...website, websiteOrigin },
+		simulationMode: true,
 		popupOrTabId: undefined,
 		request: {
 			...interceptedRequest,
@@ -156,7 +157,7 @@ describe('wallet_watchAsset', () => {
 			const requestWithInvalidDecimals = { ...interceptedRequest, params: [{ type: 'ERC20', options: { address: tokenAddress, chainId: 1, decimals } }] }
 			const parsed = WalletWatchAsset.parse(requestWithInvalidDecimals)
 			let identifyCount = 0
-			const reply = await handleWatchAssetRequest(ethereum, websiteTabConnections, requestWithInvalidDecimals, website, parsed, {
+			const reply = await handleWatchAssetRequest(ethereum, websiteTabConnections, requestWithInvalidDecimals, website, parsed, true, {
 				identifyAddress: async (_ethereum, _abortController, address) => { identifyCount += 1; return { type: 'ERC20', address, name: 'Unexpected', symbol: 'NO', decimals: 18n } },
 				getAddressBookEntries: async () => [],
 				scheduleDialog: () => { throw new Error('Invalid request must not schedule a dialog') },
@@ -277,7 +278,7 @@ describe('wallet_watchAsset', () => {
 		let scheduledDialog: (() => void) | undefined
 		const queuedRequests: StoredWatchAssetRequest[] = []
 		const knownToken = { type: 'ERC20' as const, name: 'Known token', symbol: 'OLD', decimals: 18n, address: BigInt(tokenAddress), chainId: 1n, entrySource: 'User' as const }
-		const reply = await handleWatchAssetRequest(ethereum, websiteTabConnections, requestWithHints, website, parsed, {
+		const reply = await handleWatchAssetRequest(ethereum, websiteTabConnections, requestWithHints, website, parsed, true, {
 			identifyAddress: async (_ethereum, _abortController, address) => ({ type: 'ERC20', address, name: 'Known token', symbol: 'NEW', decimals: 8n, entrySource: 'OnChain' }),
 			getAddressBookEntries: async () => [knownToken],
 			enqueueRequest: async (request) => { queuedRequests.push(request) },
@@ -287,6 +288,8 @@ describe('wallet_watchAsset', () => {
 		expect(reply).toEqual({ type: 'result', method: 'wallet_watchAsset', result: true })
 		expect(queuedRequests).toHaveLength(1)
 		expect(queuedRequests[0]?.currentToken).toEqual(knownToken)
+		// The dialog tints its accent from the mode the request was made in, so the mode travels with the request.
+		expect(queuedRequests[0]?.simulationMode).toBe(true)
 		expect(queuedRequests[0]?.token).toEqual({ ...knownToken, symbol: 'NEW', decimals: 8n })
 		expect(scheduledDialog).toBeFunction()
 	})
@@ -294,7 +297,7 @@ describe('wallet_watchAsset', () => {
 	test('rejects ERC20 hints that differ from verified contract metadata', async () => {
 		const requestWithMismatch = { ...interceptedRequest, params: [{ type: 'ERC20' as const, options: { address: tokenAddress, symbol: 'WRONG', decimals: 8 } }] }
 		const parsed = WalletWatchAsset.parse(requestWithMismatch)
-		const reply = await handleWatchAssetRequest(ethereum, websiteTabConnections, requestWithMismatch, website, parsed, {
+		const reply = await handleWatchAssetRequest(ethereum, websiteTabConnections, requestWithMismatch, website, parsed, true, {
 			identifyAddress: async (_ethereum, _abortController, address) => ({ type: 'ERC20', address, name: 'Token', symbol: 'CHAIN', decimals: 18n, entrySource: 'OnChain' }),
 			getAddressBookEntries: async () => [],
 			scheduleDialog: () => { throw new Error('Invalid request must not schedule a dialog') },
@@ -306,7 +309,7 @@ describe('wallet_watchAsset', () => {
 	test('returns an error to the webpage when verified metadata cannot be stored by the address book', async () => {
 		const parsed = WalletWatchAsset.parse(interceptedRequest)
 		let enqueueCount = 0
-		const reply = await handleWatchAssetRequest(ethereum, websiteTabConnections, interceptedRequest, website, parsed, {
+		const reply = await handleWatchAssetRequest(ethereum, websiteTabConnections, interceptedRequest, website, parsed, true, {
 			identifyAddress: async (_ethereum, _abortController, address) => ({
 				type: 'ERC20',
 				address,
@@ -335,7 +338,7 @@ describe('wallet_watchAsset', () => {
 		const rawRequest = { ...interceptedRequest, params: [{ type: 'ERC20' as const, options: { address: tokenAddress, name: 'Legacy Token', symbol: 'LEGACY', decimals: 8 } }] }
 		const parsed = WalletWatchAsset.parse(rawRequest)
 		const queuedRequests: StoredWatchAssetRequest[] = []
-		const reply = await handleWatchAssetRequest(ethereum, websiteTabConnections, rawRequest, website, parsed, {
+		const reply = await handleWatchAssetRequest(ethereum, websiteTabConnections, rawRequest, website, parsed, true, {
 			identifyAddress: async (_ethereum, _abortController, address) => ({ type: 'contract', address }),
 			loadErc20: async () => ({ success: true, metadata: { name: undefined, symbol: undefined, decimals: undefined } }),
 			getAddressBookEntries: async () => [],
@@ -351,7 +354,7 @@ describe('wallet_watchAsset', () => {
 		const parsed = WalletWatchAsset.parse(interceptedRequest)
 		const existingAddressBook: AddressBookEntries = [{ type: 'contract', address: BigInt(tokenAddress), name: 'Unidentified contract', entrySource: 'User', chainId: 1n, logoUri: 'data:image/png;base64,c2F2ZWQ=' }]
 		const queuedRequests: StoredWatchAssetRequest[] = []
-		const reply = await handleWatchAssetRequest(ethereum, websiteTabConnections, interceptedRequest, website, parsed, {
+		const reply = await handleWatchAssetRequest(ethereum, websiteTabConnections, interceptedRequest, website, parsed, true, {
 			identifyAddress: async (_ethereum, _abortController, address) => ({ type: 'ERC20', address, name: 'Identified', symbol: 'CHAIN', decimals: 18n }),
 			getAddressBookEntries: async () => existingAddressBook,
 			enqueueRequest: async (request) => { queuedRequests.push(request) },
@@ -373,7 +376,7 @@ describe('wallet_watchAsset', () => {
 				? { type, address: BigInt(tokenAddress), name: 'Collectible', symbol: 'NFT', entrySource: 'User' as const, chainId: 1n, watchedTokenIds: [7n] }
 				: { type, address: BigInt(tokenAddress), name: 'Items', symbol: 'ITEM', decimals: undefined, entrySource: 'User' as const, chainId: 1n, watchedTokenIds: [7n] }
 			const queuedRequests: StoredWatchAssetRequest[] = []
-			const reply = await handleWatchAssetRequest(ethereum, websiteTabConnections, rawRequest, website, parsed, {
+			const reply = await handleWatchAssetRequest(ethereum, websiteTabConnections, rawRequest, website, parsed, true, {
 				identifyAddress: async () => collection,
 				loadNft: async () => ({ success: true, metadata: { metadataUri: 'data:application/json,{}', name: undefined, symbol: undefined, decimals: undefined, description: undefined, imageUrl: undefined } }),
 				getAddressBookEntries: async () => [collection],
@@ -391,7 +394,7 @@ describe('wallet_watchAsset', () => {
 		const rawRequest = { ...interceptedRequest, params: [{ type: 'ERC721' as const, options: { address: tokenAddress, tokenId: '1' } }] }
 		const parsed = WalletWatchAsset.parse(rawRequest)
 		const addressBook: AddressBookEntries = []
-		const reply = await handleWatchAssetRequest(ethereum, websiteTabConnections, rawRequest, website, parsed, {
+		const reply = await handleWatchAssetRequest(ethereum, websiteTabConnections, rawRequest, website, parsed, true, {
 			identifyAddress: async (_ethereum, _abortController, address) => ({ type: 'ERC1155', address, name: 'Wrong standard', symbol: 'WRONG', decimals: undefined, entrySource: 'OnChain' }),
 			getAddressBookEntries: async () => addressBook,
 			scheduleDialog: () => { throw new Error('Mismatched request must not schedule a dialog') },
@@ -408,7 +411,7 @@ describe('wallet_watchAsset', () => {
 	test('rejects an unverified non-ERC20 without scheduling a dialog', async () => {
 		const parsed = WalletWatchAsset.parse(interceptedRequest)
 		let scheduled = false
-		const reply = await handleWatchAssetRequest(ethereum, websiteTabConnections, interceptedRequest, website, parsed, {
+		const reply = await handleWatchAssetRequest(ethereum, websiteTabConnections, interceptedRequest, website, parsed, true, {
 			identifyAddress: async (_ethereum, _abortController, address) => ({ type: 'contract', address }),
 			loadErc20: async () => ({ success: false, code: -32602, message: 'The requested address could not be verified as an ERC20 token contract.' }),
 			getAddressBookEntries: async () => [],
@@ -427,7 +430,7 @@ describe('wallet_watchAsset', () => {
 		const parsed = WalletWatchAsset.parse(interceptedRequest)
 		const failure = new Error('RPC transport failed')
 
-		const result = handleWatchAssetRequest(ethereum, websiteTabConnections, interceptedRequest, website, parsed, {
+		const result = handleWatchAssetRequest(ethereum, websiteTabConnections, interceptedRequest, website, parsed, true, {
 			identifyAddress: async () => { throw failure },
 			getAddressBookEntries: async () => [],
 			scheduleDialog: () => { throw new Error('Dialog must not be scheduled') },
@@ -439,7 +442,7 @@ describe('wallet_watchAsset', () => {
 		const rawRequest = { ...interceptedRequest, params: [{ type: 'ERC1046' as const, options: { address: tokenAddress, chainId: 1 } }] }
 		const parsed = WalletWatchAsset.parse(rawRequest)
 		const queuedRequests: StoredWatchAssetRequest[] = []
-		const reply = await handleWatchAssetRequest(ethereum, websiteTabConnections, rawRequest, website, parsed, {
+		const reply = await handleWatchAssetRequest(ethereum, websiteTabConnections, rawRequest, website, parsed, true, {
 			identifyAddress: async (_ethereum, _abortController, address) => ({ type: 'contract', address }),
 			loadErc20: async () => ({ success: true, metadata: { name: undefined, symbol: undefined, decimals: undefined } }),
 			loadErc1046: async () => ({ success: true, metadata: { metadataUri: 'https://tokens.example/token.json', name: 'Metadata Token', symbol: 'META', decimals: 6, description: 'Token metadata', imageUrl: 'https://tokens.example/token.png' } }),
@@ -458,7 +461,7 @@ describe('wallet_watchAsset', () => {
 		const rawRequest = { ...interceptedRequest, params: [{ type: 'ERC1046' as const, options: { address: tokenAddress, chainId: 1 } }] }
 		const parsed = WalletWatchAsset.parse(rawRequest)
 		let scheduled = false
-		const reply = await handleWatchAssetRequest(ethereum, websiteTabConnections, rawRequest, website, parsed, {
+		const reply = await handleWatchAssetRequest(ethereum, websiteTabConnections, rawRequest, website, parsed, true, {
 			identifyAddress: async (_ethereum, _abortController, address) => ({ type: 'contract', address }),
 			loadErc20: async () => ({ success: true, metadata: { name: undefined, symbol: undefined, decimals: undefined } }),
 			loadErc1046: async () => ({ success: true, metadata: { metadataUri: 'https://tokens.example/token.json', name: 'Metadata Token', symbol: 'META', decimals: 256, description: undefined, imageUrl: undefined } }),
@@ -473,7 +476,7 @@ describe('wallet_watchAsset', () => {
 	test('returns MetaMask-compatible NFT ownership errors to the webpage', async () => {
 		const rawRequest = { ...interceptedRequest, params: [{ type: 'ERC721' as const, options: { address: tokenAddress, tokenId: '1' } }] }
 		const parsed = WalletWatchAsset.parse(rawRequest)
-		const reply = await handleWatchAssetRequest(ethereum, websiteTabConnections, rawRequest, website, parsed, {
+		const reply = await handleWatchAssetRequest(ethereum, websiteTabConnections, rawRequest, website, parsed, true, {
 			identifyAddress: async (_ethereum, _abortController, address) => ({ type: 'ERC721', address, name: 'Collection', symbol: 'NFT', entrySource: 'OnChain' }),
 			loadNft: async () => ({ success: false, code: -32000, message: 'The selected address does not own the requested ERC721 token.' }),
 			getAddressBookEntries: async () => [],

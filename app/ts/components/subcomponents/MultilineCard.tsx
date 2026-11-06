@@ -2,6 +2,7 @@ import type { JSX } from 'preact/jsx-runtime'
 import { useSignal } from '@preact/signals'
 import { Tooltip, type TooltipConfig } from './Tooltip.js'
 import { clipboardCopy } from './clipboardcopy.js'
+import { withModifierClass } from '../ui-utils.js'
 import { CopyIcon } from './icons.js'
 
 type MultilineCardProps = {
@@ -9,11 +10,12 @@ type MultilineCardProps = {
 	label: ActionableTextProps
 	note: ActionableTextProps
 	style?: JSX.CSSProperties
+	class?: string
 }
 
-export const MultilineCard = ({ icon, label, note, style }: MultilineCardProps) => {
+export const MultilineCard = ({ icon, label, note, style, class: modifierClass }: MultilineCardProps) => {
 	return (
-		<figure class = 'multiline-card' role = 'figure' style = { style }>
+		<figure class = { withModifierClass('multiline-card', modifierClass) } role = 'figure' style = { style }>
 			<ActionableIcon { ...icon } />
 			<ActionableText { ...label } />
 			<ActionableText { ...note } />

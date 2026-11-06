@@ -1,5 +1,4 @@
 import { useMemo } from 'preact/hooks'
-import type { JSX } from 'preact/jsx-runtime'
 import { addressString } from '../../utils/bigint.js'
 
 function generateIdenticon(options: { address: bigint; size?: number }) {
@@ -86,16 +85,15 @@ function generateIdenticon(options: { address: bigint; size?: number }) {
 }
 
 type SVGBlockieProps = {
-	style?: JSX.CSSProperties
 	address: bigint
 }
 
 // SVGBlockie component can be resized through CSS font size
-export function Blockie({ address, style }: SVGBlockieProps) {
+export function Blockie({ address }: SVGBlockieProps) {
 	const pixelDensity = 8
 	const { imageData, color, spotcolor, bgcolor } = useMemo(() => generateIdenticon({ address, size: pixelDensity }), [address])
 	return (
-		<svg width = '1em' height = '1em' viewBox = '0 0 64 64' xmlns = 'http://www.w3.org/2000/svg' { ...( style ? { style } : {}) }>
+		<svg width = '1em' height = '1em' viewBox = '0 0 64 64' xmlns = 'http://www.w3.org/2000/svg'>
 			{ imageData.map((data, index) => {
 				const fill = data === 0 ? bgcolor : data === 1 ? color : spotcolor
 				const pixelSize = 64 / pixelDensity

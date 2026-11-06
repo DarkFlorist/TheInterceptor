@@ -127,6 +127,7 @@ const freshHomePageUpdate: UpdateHomePage = {
 const fetchSimulationStackRequest: PendingFetchSimulationStackRequestPromise = {
 	website: { websiteOrigin: 'https://requester.example', icon: undefined, title: undefined },
 	popupOrTabId: { type: 'popup', id: 41 },
+	simulationMode: true,
 	simulationOverlayEnabled: true,
 	simulationStackVersion: '2.0.0',
 	uniqueRequestIdentifier: { requestId: 7, requestSocket: { tabId: 3, connectionName: 5n } },

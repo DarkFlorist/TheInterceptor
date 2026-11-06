@@ -141,7 +141,9 @@ describe('address book entry icons', () => {
 		assert.match(iconRule, /border-radius: 50%;/u)
 		assert.match(iconRule, /width: 1em;/u)
 		assert.match(iconRule, /height: 1em;/u)
-		assert.match(iconRule, /color: var\(--black-color\);/u)
+		// The circle has a fixed light hue in both themes, so its letters use a fixed black token instead of a themed text colour
+		assert.match(iconRule, /color: var\(--token-ticker-text-color\);/u)
+		assert.match(css, /--token-ticker-text-color: #000000;/u)
 		assert.match(css, /\.token-ticker-icon::before \{[^}]*content: attr\(data-ticker-text\);/u)
 	})
 
@@ -153,8 +155,11 @@ describe('address book entry icons', () => {
 		assert.match(overlayRule, /overflow: hidden;/u)
 		const tickerRule = css.match(/\.blockie-with-ticker::after \{([\s\S]*?)\n\}/u)?.[1] ?? ''
 		assert.match(tickerRule, /content: attr\(data-ticker-text\);/u)
-		assert.match(tickerRule, /background-color: var\(--black-alpha-d6\);/u)
-		assert.match(tickerRule, /color: var\(--text-color\);/u)
+		// The pill stays dark with white letters in both themes, so it uses fixed tokens instead of the themed overlay and text colours
+		assert.match(tickerRule, /background-color: var\(--blockie-ticker-pill-color\);/u)
+		assert.match(tickerRule, /color: var\(--blockie-ticker-text-color\);/u)
+		assert.match(css, /--blockie-ticker-pill-color: #000000d6;/u)
+		assert.match(css, /--blockie-ticker-text-color: #ffffff;/u)
 		assert.match(css, /\.blockie-with-ticker:is\(\[data-ticker-text\*="M"\], \[data-ticker-text\*="W"\]\)::after \{[^}]*font-size: 0\.34em;/u)
 	})
 

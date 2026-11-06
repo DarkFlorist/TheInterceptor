@@ -1,3 +1,4 @@
+import * as funtypes from 'funtypes'
 import { getRpcEntryIdentityKey } from '../utils/rpcNetworkChange.js'
 import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
@@ -26,6 +27,12 @@ import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addres
 const reportCorruptStoredValue = (label: string) => async (error: unknown) => {
 	console.warn(`${ label } was corrupt:`)
 	console.warn(error)
+}
+
+// Recovers only from a stored value that no longer decodes. A failing storage read is rethrown, so an update never writes the default value over records it could not read.
+const reportUndecodableStoredValue = (label: string) => async (error: unknown) => {
+	if (!(error instanceof funtypes.ValidationError)) throw error
+	await reportCorruptStoredValue(label)(error)
 }
 
 const idsOfOpenedTabsRepository = createStoredValueRepository({
@@ -97,16 +104,25 @@ export async function setChainChangeConfirmationPromise(chainChangeConfirmationP
 	return await browserStorageLocalSet({ chainChangeConfirmationPromise })
 }
 
-export const getFetchSimulationStackRequestPromise = async() => (await browserStorageLocalGet('fetchSimulationStackRequestPromise'))?.fetchSimulationStackRequestPromise ?? undefined
-export async function setFetchSimulationStackRequestPromise(fetchSimulationStackRequestPromise: PendingFetchSimulationStackRequestPromise | undefined) {
-	if (fetchSimulationStackRequestPromise === undefined) return await browserStorageLocalRemove('fetchSimulationStackRequestPromise')
-	return await browserStorageLocalSet({ fetchSimulationStackRequestPromise })
-}
+// A request that no longer decodes is reported and treated as absent, so it cannot block every later request; the next write replaces it. Requests stored before the mode travelled with the request still decode (see PendingFetchSimulationStackRequestPromise).
+const fetchSimulationStackRequestRepository = createStoredValueRepository<PendingFetchSimulationStackRequestPromise | undefined>({
+	read: async () => (await browserStorageLocalGet('fetchSimulationStackRequestPromise')).fetchSimulationStackRequestPromise,
+	write: async (fetchSimulationStackRequestPromise) => {
+		if (fetchSimulationStackRequestPromise === undefined) return await browserStorageLocalRemove('fetchSimulationStackRequestPromise')
+		await browserStorageLocalSet({ fetchSimulationStackRequestPromise })
+	},
+	getDefault: () => undefined,
+	recover: reportUndecodableStoredValue('Simulation stack request'),
+})
+export const getFetchSimulationStackRequestPromise = fetchSimulationStackRequestRepository.get
+export const setFetchSimulationStackRequestPromise = fetchSimulationStackRequestRepository.set
 
 const pendingWatchAssetRequestsRepository = createStoredValueRepository<readonly StoredWatchAssetRequest[]>({
 	read: async () => (await browserStorageLocalGet('pendingWatchAssetRequests')).pendingWatchAssetRequests,
 	write: async (pendingWatchAssetRequests) => { await browserStorageLocalSet({ pendingWatchAssetRequests }) },
 	getDefault: () => [],
+	// Requests that no longer decode are reported and dropped so later requests still queue. Requests queued before the mode travelled with the request still decode (see StoredWatchAssetRequest).
+	recover: reportUndecodableStoredValue('Pending watch asset requests'),
 })
 export const getPendingWatchAssetRequests = pendingWatchAssetRequestsRepository.get
 export async function updatePendingWatchAssetRequests(update: (requests: readonly StoredWatchAssetRequest[]) => readonly StoredWatchAssetRequest[]) {

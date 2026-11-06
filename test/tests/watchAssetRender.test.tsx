@@ -53,6 +53,7 @@ function findNodeByAttribute(node: TestNode, name: string, value: string): TestN
 const pendingRequest: PendingWatchAssetRequest = {
 	website: { websiteOrigin: 'https://dapp.example', title: 'Example dapp', icon: undefined },
 	popupOrTabId: { type: 'popup', id: 1 },
+	simulationMode: true,
 	request: {
 		method: 'wallet_watchAsset',
 		params: [],

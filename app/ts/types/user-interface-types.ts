@@ -91,6 +91,7 @@ export type FirstCardParams = {
 	changeActiveRpc: (rpcEntry: RpcEntry) => Promise<void>
 	rpcNetwork: Signal<RpcNetwork | undefined>
 	simulationMode: Signal<boolean>
+	protection: ReadonlySignal<HomeProtection>
 	changeActiveAddress: () => void
 	makeCurrentAddressRich: Signal<boolean>
 	richList: Signal<readonly EnrichedRichListElement[]>
@@ -103,8 +104,13 @@ export type FirstCardParams = {
 	isFreshHomeDataLoaded: Signal<boolean>
 }
 
+// Whether the Interceptor simulates and reviews the active tab's requests; the popup makes no protection promise unless this is 'active'. A website the user disabled the Interceptor for gets no Interceptor provider ('disabledOnWebsite'). On a network without an RPC, signing mode with a wallet sends requests straight to the wallet ('unsupportedNetwork'), while otherwise requests are still intercepted but cannot be simulated until an RPC is configured ('networkWithoutRpc').
+export type HomeProtection = 'active' | 'disabledOnWebsite' | 'unsupportedNetwork' | 'networkWithoutRpc'
+
 export type SimulationStateParam = {
 	simulationMode: ReadonlySignal<boolean>
+	protection: ReadonlySignal<HomeProtection>
+	signerName: ReadonlySignal<SignerName>
 	simulationAndVisualisationResults: ReadonlySignal<ResolvedSimulationResults>
 	removeTransactionOrSignedMessage: (transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void
 	currentBlockNumber: Signal<bigint | undefined>
@@ -238,8 +244,12 @@ const WatchAssetForwardingStatus = funtypes.Union(
 	funtypes.ReadonlyObject({ status: funtypes.Literal('completed'), accepted: funtypes.Boolean }),
 	funtypes.ReadonlyObject({ status: funtypes.Literal('error'), code: funtypes.Number, message: funtypes.String }),
 )
+// Requests stored before the mode travelled with the request have no simulationMode. They decode with it undefined, which keeps the pending request resolvable; its page then shows the neutral appearance without a mode tint.
+const StoredSimulationMode = funtypes.Union(funtypes.Boolean, funtypes.Undefined)
+
 type WatchAssetRequestDetails = {
 	readonly website: Website
+	readonly simulationMode: boolean | undefined
 	readonly request: InterceptedRequest
 	readonly requestedAsset: WalletWatchAssetParameters
 	readonly currentToken: WatchAssetToken
@@ -257,6 +267,7 @@ type WatchAssetRequestDetails = {
 }
 const WatchAssetRequestDetails: funtypes.Codec<WatchAssetRequestDetails> = funtypes.ReadonlyObject({
 	website: Website,
+	simulationMode: StoredSimulationMode,
 	request: InterceptedRequest,
 	requestedAsset: WalletWatchAssetParameters,
 	currentToken: WatchAssetToken,
@@ -285,6 +296,7 @@ export type PendingFetchSimulationStackRequestPromise = funtypes.Static<typeof P
 export const PendingFetchSimulationStackRequestPromise = funtypes.ReadonlyObject({
 	website: Website,
 	popupOrTabId: PopupOrTabId,
+	simulationMode: StoredSimulationMode,
 	simulationOverlayEnabled: funtypes.Boolean,
 	simulationStackVersion: SimulationStackVersion,
 	uniqueRequestIdentifier: UniqueRequestIdentifier,

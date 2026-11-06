@@ -5,6 +5,9 @@ import { GasFee, type TransactionGasses } from '../SimulationSummary.js'
 import { tokenEventToTokenSymbolParams } from './CatchAllVisualizer.js'
 import type { RpcNetwork } from '../../../types/rpc.js'
 import type { TokenVisualizerResultWithMetadata } from '../../../types/EnrichedEthereumData.js'
+import { isUnlimitedErc20Approval } from '../../../utils/erc20.js'
+import { tokenEventGrantsSpendingRights } from '../../../utils/approvals.js'
+import { getToneClass } from '../../ui-utils.js'
 
 type SimpleTokenApprovalVisualisation = {
 	approval: TokenVisualizerResultWithMetadata
@@ -14,38 +17,39 @@ type SimpleTokenApprovalVisualisation = {
 }
 
 export function SimpleTokenApprovalVisualisation(param: SimpleTokenApprovalVisualisation) {
-	const textColor = 'var(--danger-color)'
-
+	const granted = tokenEventGrantsSpendingRights(param.approval)
+	// A single token's approval is removed by approving the zero address, so there is no spender to show for it.
+	const removesTokenIdApproval = !granted && param.approval.type === 'ERC721'
+	const toneClass = `coin-text--strong ${ getToneClass('coin-text', granted ? 'negative' : 'positive') }`
 	return <div class = 'notification transaction-importance-box'>
-		<span style = 'grid-template-columns: auto auto; display: grid;'>
-			<p class = 'paragraph' style = 'font-size: 28px; font-weight: 500; justify-self: right;'> Allow &nbsp;</p>
-		</span>
-			<div class = 'box' style = 'background-color: var(--alpha-005); box-shadow: unset; margin-bottom: 0px;'>
+		{ removesTokenIdApproval ? <></> : <>
+			<p class = 'summary-label'>{ granted ? 'Allow' : 'Stop allowing' }</p>
+			<div class = 'box summary-leg'>
 				<BigAddress
 					addressBookEntry = { param.approval.to }
 					renameAddressCallBack = { param.renameAddressCallBack }
 				/>
 			</div>
-		<span style = 'grid-template-columns: auto auto; display: grid;'>
-			<p class = 'paragraph' style = 'font-size: 28px; font-weight: 500; justify-self: right;'> To Spend &nbsp;</p>
-		</span>
-		<div class = 'box' style = 'background-color: var(--alpha-005); box-shadow: unset; margin-bottom: 0px;'>
-			<span class = 'log-table' style = 'justify-content: center; column-gap: 5px;'>
-				<div class = 'log-cell' style = 'justify-content: right;'>
-					{ param.approval.type === 'NFT All approval' ?
+		</> }
+		<p class = 'summary-label'>{ removesTokenIdApproval ? 'Remove the approval for' : granted ? 'To spend' : 'From spending' }</p>
+		<div class = 'box summary-leg'>
+			<span class = 'log-table approval-amount-table'>
+				<div class = 'log-cell log-cell--right'>
+					{ /* A removal names the token only: a zero allowance or "NONE" next to "Stop allowing" would read as a contradiction. */ }
+					{ !granted ? <></> : param.approval.type === 'NFT All approval' ?
 						<AllApproval
 							{ ...param.approval }
-							style = { { 'font-weight': '500', color: textColor } }
+							class = { toneClass }
 							fontSize = 'big'
 						/>
-					: <> { 'amount' in param.approval && param.approval.amount >= (2n ** 96n - 1n ) ?
-							<p class = 'ellipsis' style = { `color: ${ textColor }; font-size: 28px; font-weight: 500` }><b>ALL</b></p>
+					: <> { 'amount' in param.approval && isUnlimitedErc20Approval(param.approval.amount) ?
+							<p class = 'ellipsis approval-unlimited-amount'><b>ALL</b></p>
 						:
 							'amount' in param.approval ?
 								<TokenAmount
 									amount = { param.approval.amount }
 									tokenEntry = { param.approval.token }
-									style = { { 'font-weight': '500', color: textColor } }
+									class = { toneClass }
 									fontSize = 'big'
 								/>
 							: <></>
@@ -56,14 +60,14 @@ export function SimpleTokenApprovalVisualisation(param: SimpleTokenApprovalVisua
 						<TokenSymbol
 							{ ...tokenEventToTokenSymbolParams(param.approval) }
 							useFullTokenName = { false }
-							style = { { 'font-weight': '500', color: textColor } }
+							class = { toneClass }
 							renameAddressCallBack = { param.renameAddressCallBack }
 							fontSize = 'big'
 						/>
 					</div>
 				</span>
 			</div>
-			<span class = 'log-table' style = { { display: 'inline-flex', marginTop: '5px' } }>
+			<span class = 'log-table transaction-meta-row summary-meta'>
 				<GasFee tx = { param.transactionGasses } rpcNetwork = { param.rpcNetwork } />
 			</span>
 		</div>

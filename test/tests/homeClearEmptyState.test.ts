@@ -433,6 +433,75 @@ describe('Home popup clear empty state', () => {
 		}
 	})
 
+	// Each phrase promises that the Interceptor simulates or reviews the active tab's requests, which is false while protection is unavailable.
+	const protectionPromises = [/never sent to the chain/, /simulated[^.]*instead of being sent/, /shows what it does before[^.]*signs/, /to be signed and sent to the chain/]
+	const findProtectionPromises = (text: string) => protectionPromises.filter((promise) => promise.test(text)).map((promise) => promise.source)
+	const networkWithoutRpc = { name: 'Unsupported Chain', chainId: 999n, httpsRpc: undefined, currencyName: 'Ether?', currencyTicker: 'ETH?', primary: false, minimized: true }
+	const createTabState = (signerName: TabState['signerName']): TabState => ({
+		tabId: 1,
+		website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
+		signerConnected: signerName === 'MetaMask',
+		signerName,
+		signerAccounts: signerName === 'MetaMask' ? [ACTIVE_ADDRESS] : [],
+		signerAccountError: undefined,
+		signerChain: 1n,
+		tabIconDetails: { icon: ICON_SIMULATING, iconReason: 'Simulating transactions.' },
+		activeSigningAddress: signerName === 'MetaMask' ? ACTIVE_ADDRESS : undefined,
+	})
+	const restoreWebsiteProtection = (params: HomeParams) => { params.interceptorDisabled.value = false }
+	const selectNetworkWithRpc = (params: HomeParams) => { params.rpcNetwork.value = rpcNetwork }
+	// Without an RPC the background (utils/requestRouting.ts) sends requests straight to the wallet only in signing mode with a wallet; otherwise it still intercepts them, so the page must not claim the Interceptor is off.
+	const unprotectedStates = [
+		{ state: 'a disabled website', simulationMode: true, signerName: 'MetaMask', notice: 'Interceptor disabled on this website.', interceptionOff: true, overrides: () => ({ interceptorDisabled: new Signal(true) }), restore: restoreWebsiteProtection },
+		{ state: 'a disabled website', simulationMode: false, signerName: 'MetaMask', notice: 'Interceptor disabled on this website.', interceptionOff: true, overrides: () => ({ interceptorDisabled: new Signal(true) }), restore: restoreWebsiteProtection },
+		{ state: 'a network without an RPC with a wallet', simulationMode: false, signerName: 'MetaMask', notice: 'Interceptor inactive on this network.', interceptionOff: true, overrides: () => ({ rpcNetwork: new Signal(networkWithoutRpc) }), restore: selectNetworkWithRpc },
+		{ state: 'a network without an RPC with a wallet', simulationMode: true, signerName: 'MetaMask', notice: 'No RPC for this network.', interceptionOff: false, overrides: () => ({ rpcNetwork: new Signal(networkWithoutRpc) }), restore: selectNetworkWithRpc },
+		{ state: 'a network without an RPC without a wallet', simulationMode: false, signerName: 'NoSigner', notice: 'No RPC for this network.', interceptionOff: false, overrides: () => ({ rpcNetwork: new Signal(networkWithoutRpc) }), restore: selectNetworkWithRpc },
+	] as const
+	for (const { state, simulationMode, signerName, notice, interceptionOff, overrides, restore } of unprotectedStates) {
+		test(`makes no protection promise anywhere on the page in ${ simulationMode ? 'simulation' : 'signing' } mode on ${ state } and restores it when protection returns`, async () => {
+			const dom = installDomMock()
+			const params = createHomeParams({
+				simulationMode: new Signal(simulationMode),
+				tabState: new Signal<TabState | undefined>(createTabState(signerName)),
+				simVisResults: new Signal<ResolvedSimulationResults>(toResolvedSimulationResults(createEmptySimulationResults())),
+				...overrides(),
+			})
+			try {
+				await act(() => { render(h(Home, params), dom.document.body) })
+				// Let the deferred empty state and hint render before reading the whole page.
+				await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+				const unprotectedText = dom.document.body.textContent ?? ''
+				assert.deepEqual(findProtectionPromises(unprotectedText), [])
+				assert.equal(unprotectedText.includes(notice), true)
+				assert.equal(unprotectedText.includes('neither simulated nor reviewed'), interceptionOff)
+				// The empty state or signing hint is still shown, with the notice instead of a promise.
+				assert.equal(unprotectedText.includes(simulationMode ? 'Nothing simulated yet' : 'Nothing to review'), true)
+				await act(() => { restore(params) })
+				await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+				const protectedText = dom.document.body.textContent ?? ''
+				assert.equal(protectedText.includes(notice), false)
+				assert.equal(protectedText.includes(simulationMode ? 'Transactions are only simulated and are never sent to the chain.' : 'to be signed and sent to the chain'), true)
+				assert.equal(protectedText.includes(simulationMode ? 'Each transaction it sends is simulated and stacked here instead of being sent.' : 'the Interceptor shows what it does before'), true)
+			} finally {
+				render(undefined, dom.document.body)
+				dom.restore()
+			}
+		})
+	}
+
+	test('keeps showing the existing simulation stack on a website the Interceptor is disabled for', async () => {
+		const dom = installDomMock()
+		try {
+			await act(() => { render(h(Home, createHomeParams({ interceptorDisabled: new Signal(true) })), dom.document.body) })
+			assert.equal(dom.document.body.textContent?.includes('Simulation Outcome'), true)
+			assert.deepEqual(findProtectionPromises(dom.document.body.textContent ?? ''), [])
+		} finally {
+			render(undefined, dom.document.body)
+			dom.restore()
+		}
+	})
+
 	for (const selection of ['other chain', 'metadata edit'] as const) test(`selects an RPC with the same URL and a different ${ selection }`, async () => {
 		const dom = installDomMock()
 		const nextRpc = { ...rpcNetwork, name: 'Requested network', chainId: selection === 'other chain' ? rpcNetwork.chainId + 1n : rpcNetwork.chainId }
