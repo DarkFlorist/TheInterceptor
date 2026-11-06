@@ -1933,4 +1933,26 @@ for (const stackedKind of ['transaction', 'message'] as const) {
 	}
 }
 
+test('an action that throws after arbitration refused a stored signer result reaches its caller, with no retry and the request still pending', async () => {
+	const { withResolutionClaim } = await import('../../app/ts/background/requestResolution.js')
+	const { getResolutionActivitySize } = await import('../../app/ts/background/requestResolutionState.js')
+	const { websiteTabConnections } = connectRequestingWebsite()
+	await modules.updateOwnedPendingRequestField(uniqueRequestIdentifier, 'resolutionInputs', async (pending) => ({ ...pending, resolutionInputs: [{ kind: 'signerResult' as const, signerReply: '0x01' }] }))
+	const actionError = new Error('The accept failed.')
+	let refusedSettlements = 0
+	const refusingContext = { ...testResolutionContext(websiteTabConnections), settleSignerResult: async () => {
+		refusedSettlements += 1
+		return false
+	} }
+
+	await assert.rejects(withResolutionClaim(uniqueRequestIdentifier, refusingContext, async () => { throw actionError }), actionError)
+
+	assert.equal(refusedSettlements, 1)
+	assert.equal(getResolutionActivitySize(), 0, 'no retry is scheduled for the action')
+	const [pending] = await modules.getPendingTransactionsAndMessages()
+	assert.deepEqual(pending?.uniqueRequestIdentifier, uniqueRequestIdentifier, 'the request is still pending')
+	assert.deepEqual(pending?.resolutionInputs, [], 'the refused signer result is processed')
+	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+})
+
 await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))

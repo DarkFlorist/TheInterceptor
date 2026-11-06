@@ -314,16 +314,19 @@ export async function withResolutionClaim<Result>(uniqueRequestIdentifier: Uniqu
 			case 'uncommitted': {
 				// The one gate of every claimed outcome: the stored inputs that arrived before this resolution (declines and signer results) are arbitrated first, and the resolution runs only for a request they leave pending and uncommitted.
 				if (Math.min(inputsBefore, (outcome.request.resolutionInputs ?? []).length) === 0) return await resolve(outcome.request)
+				let requestLeftPending: PendingTransactionOrSignableMessage
 				try {
 					const arbitrated = await resolveKeptInputs(outcome.request, context, scope, inputsBefore)
 					const afterArbitration = await getPendingRequest(uniqueRequestIdentifier)
 					if (afterArbitration === undefined || resolutionState.chosenReplies.has(claim) || await getQueuedTerminalReply(uniqueRequestIdentifier) !== undefined) return arbitrated
-					return await resolve(afterArbitration)
+					requestLeftPending = afterArbitration
 				} catch (error) {
 					// An arbitration that throws leaves the stored inputs for the request's retry; the resolution does not run.
 					await scheduleRequestRetry(uniqueRequestIdentifier, context, error)
 					return undefined
 				}
+				// Outside the arbitration's failure handling: a retry only re-arbitrates, so a failing resolution reaches its caller, as it does for a request with no stored inputs.
+				return await resolve(requestLeftPending)
 			}
 			case 'absent': return false
 			case 'finished': return outcome.delivered
