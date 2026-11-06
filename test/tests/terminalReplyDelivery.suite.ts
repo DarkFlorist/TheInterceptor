@@ -783,7 +783,7 @@ test('approving a simulated transaction answers the website before the window cl
 
 // Waits until no resolution of a request is in flight or awaiting a retry.
 async function waitForResolutionRetriesToFinish() {
-	const { getResolutionActivitySize } = await import('../../app/ts/background/requestResolution.js')
+	const { getResolutionActivitySize } = await import('../../app/ts/background/requestResolutionState.js')
 	for (let attempt = 0; attempt < 200 && getResolutionActivitySize() > 0; attempt++) await new Promise((resolve) => setTimeout(resolve, 25))
 	assert.equal(getResolutionActivitySize(), 0, 'the resolution retries finished')
 }
@@ -1067,7 +1067,7 @@ test('a reply posted without its delivered mark whose tab then closes is retired
 		assert.equal(getRepliesToWebsite(postedMessages).length, 1)
 		assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
 		assert.deepEqual(await modules.getPendingTerminalReplies(), [])
-		const { getResolutionActivitySize } = await import('../../app/ts/background/requestResolution.js')
+		const { getResolutionActivitySize } = await import('../../app/ts/background/requestResolutionState.js')
 		const { getTerminalReplyBookkeepingSize } = await import('../../app/ts/background/terminalReplyDelivery.js')
 		assert.equal(getResolutionActivitySize() + getTerminalReplyBookkeepingSize(), 0, 'no bookkeeping is left')
 	} finally {
@@ -1493,7 +1493,8 @@ for (const signerResult of signerResults) {
 		assert.deepEqual((await modules.getPendingTransactionsAndMessages())[0]?.resolutionInputs?.map((input) => input.kind), ['signerResult', 'decline'])
 
 		// The restarted extension: with nothing in memory, it recovers from the saved storage.
-		const { beginStartupRecovery, getResolutionActivitySize, resetResolutionState, resumeCommittedRequests } = await import('../../app/ts/background/requestResolution.js')
+		const { beginStartupRecovery, resumeCommittedRequests } = await import('../../app/ts/background/requestResolution.js')
+		const { getResolutionActivitySize, resetResolutionState } = await import('../../app/ts/background/requestResolutionState.js')
 		resetResolutionState()
 		beginStartupRecovery()
 		await withSilencedConsole(async () => await resumeCommittedRequests(testResolutionContext(websiteTabConnections)))
@@ -1743,7 +1744,8 @@ for (const storedInput of ['signer result', 'decline'] as const) {
 			}
 			if (restart) {
 				assert.deepEqual(getRepliesToWebsite(postedMessages), [], 'nothing was answered before the restart')
-				const { beginStartupRecovery, resetResolutionState, resumeCommittedRequests } = await import('../../app/ts/background/requestResolution.js')
+				const { beginStartupRecovery, resumeCommittedRequests } = await import('../../app/ts/background/requestResolution.js')
+				const { resetResolutionState } = await import('../../app/ts/background/requestResolutionState.js')
 				resetResolutionState()
 				beginStartupRecovery()
 				await withSilencedConsole(async () => await resumeCommittedRequests(testResolutionContext(websiteTabConnections)))
@@ -1877,7 +1879,7 @@ test('a pending-confirmation lock token counts only inside its scope, so a conte
 })
 
 test('resetting the resolution state drops the kept intent and the scheduled retries, which the bookkeeping counts', async () => {
-	const { getResolutionActivitySize, getResolutionBookkeepingSize, resetResolutionState } = await import('../../app/ts/background/requestResolution.js')
+	const { getResolutionActivitySize, getResolutionBookkeepingSize, resetResolutionState } = await import('../../app/ts/background/requestResolutionState.js')
 	const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
 	// Earlier tests leave startup resets and exhausted budgets, which only a restart drops.
 	resetResolutionState()

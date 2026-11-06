@@ -6,7 +6,6 @@ import type { InterceptorStackOperation } from '../types/visualizer-types.js'
 import { EthereumBytes32 } from '../types/wire-types.js'
 import type { PopupOrTabId } from '../types/websiteAccessTypes.js'
 import { simulatePersonalSign } from '../simulation/services/simulationPersonalSigning.js'
-import { createBoundedRetries } from '../utils/boundedRetry.js'
 import { METAMASK_ERROR_BLANKET_ERROR, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import { reportLocalRecovery } from '../utils/errors.js'
 import { type UniqueRequestIdentifier, doesTabExist, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString } from '../utils/requests.js'
@@ -14,18 +13,19 @@ import { Semaphore } from '../utils/semaphore.js'
 import { assertNever } from '../utils/typescript.js'
 import { type ConfirmationWindowAccess, updateConfirmationWindowAfterRemoving } from './confirmationWindowLifecycle.js'
 import { getPendingTerminalReplies } from './pendingTerminalReplies.js'
+import { resolutionState } from './requestResolutionState.js'
 import { getInterceptorTransactionStack, getPendingTransactionsAndMessages, removePendingTransactionOrMessage, updateOwnedPendingRequestField } from './storageVariables.js'
 import { attachTerminalReplyWindow, attemptQueuedTerminalReplyDelivery, forgetTerminalReplyWindow, getQueuedTerminalReply, queueTerminalReply, retireTerminalReply } from './terminalReplyDelivery.js'
 
 /**
- * The resolution of pending requests: how a request gets its terminal outcome and is finished, whatever starts it (a user action in the confirmation window, a closed window or tab, a reconnecting page, a signer's answer, startup). The inputs that decide it, declines and signer results, are stored on the pending request in arrival order (resolutionInputs), so their order survives a restart; the module owns the in-memory resolution state: claims, deferred resolutions, chosen replies, inputs still to be written and each request's one retry budget.
+ * The resolution of pending requests: how a request gets its terminal outcome and is finished, whatever starts it (a user action in the confirmation window, a closed window or tab, a reconnecting page, a signer's answer, startup). The inputs that decide it, declines and signer results, are stored on the pending request in arrival order (resolutionInputs), so their order survives a restart; the in-memory state (claims, deferred resolutions, chosen replies, inputs still to be written and each request's one retry budget) is in requestResolutionState.ts.
  * It needs no simulation services: the steps that do, showing the confirmation queue in a window that still has requests and settling a signer's result, come in the context (refreshConfirmationWindow, settleSignerResult), and a failure in them is retried like any other step.
  */
 
 // automatic marks a resolution no user started (a scheduled retry, a reconnect flush, startup, a follow-up on claim release): it only runs while the request's retry budget lasts (withResolutionClaim).
 export type ResolutionContext = ConfirmationWindowAccess & { readonly websiteTabConnections: WebsiteTabConnections, readonly settleSignerResult: SignerResultSettlement, readonly automatic?: true }
 // Settles a signer's result for a request still pending and uncommitted, run under its claim: it persists what the result stands for and commits the reply (commitAndFinish), or records why the result was refused.
-export type SignerResultSettlement = (request: PendingTransactionOrSignableMessage, signerReply: string, context: ResolutionContext) => Promise<boolean | undefined>
+type SignerResultSettlement = (request: PendingTransactionOrSignableMessage, signerReply: string, context: ResolutionContext) => Promise<boolean | undefined>
 // The context for a retry that runs later: without the caller's locks, and automatic.
 const withoutHeldLocks = ({ pendingConfirmationLock: _pendingConfirmationLock, ...context }: ResolutionContext): ResolutionContext => ({ ...context, automatic: true })
 
@@ -33,33 +33,6 @@ const getPendingRequest = async (uniqueRequestIdentifier: UniqueRequestIdentifie
 
 export const formRejectMessage = (code: number, errorString: string) => ({ type: 'result' as const, error: { code, message: errorString } })
 
-const FINISHING_RETRIES = { baseDelayMs: 50, attemptLimit: 6 }
-// All the module's working state, which a restart loses; resetResolutionState is its reset boundary.
-const resolutionState = {
-	// The requests whose terminal outcome an accept, reject or close has claimed and is carrying out. A claim is taken synchronously, so of racing resolutions of a request exactly one stacks it or replies; the others return false without either. Under the claim, a committed request is only finished (finishCommittedRequest); only an uncommitted pending request gets an outcome chosen (resolve).
-	claims: new Set<string>(),
-	deferredResolutions: new Map<string, DeferredResolution>(),
-	// A reply a resolution chose for a request whose commitment write failed: finishing the request commits it, so the request keeps that outcome.
-	chosenReplies: new Map<string, { readonly reply: InterceptedRequestForward, readonly confirmationWindow: PopupOrTabId }>(),
-	// The inputs recorded for each request, in arrival order, and how many of them were written to its stored log (resolutionInputs). An input is recorded synchronously when it arrives, which fixes its place; a write (writeInputsRecordedSoFar) writes the inputs recorded when it was asked for, in order, and a failed write keeps them for a later one. Dropped once the request is finished or gone.
-	recordedInputs: new Map<string, { readonly unwritten: readonly ResolutionInput[], readonly writtenCount: number }>(),
-	// The one retry owner of each request, shared by finishing and declining it: one attempt budget and at most one scheduled retry. A completed resolution drops it; an exhausted budget stays exhausted, so automatic follow-ups (deferrals, finishers) never extend it, and only a user action or startup resets it (resetRequestRetryBudget).
-	requestRetries: createBoundedRetries<string>(FINISHING_RETRIES),
-	// The retries of runWithBoundedRetry, one budget for each run of it.
-	boundedWorkRetries: createBoundedRetries<symbol>(FINISHING_RETRIES),
-	// The requests whose budget startup recovery already reset: the startup recovery's own retries are automatic, so only its first pass over a request gives it a new budget. A startup begins with none (beginStartupRecovery).
-	requestsResetByStartup: new Set<string>(),
-}
-// Drops all working state and its scheduled retries, as a restart does; the stored requests and replies stay.
-export const resetResolutionState = () => {
-	resolutionState.claims.clear()
-	resolutionState.deferredResolutions.clear()
-	resolutionState.chosenReplies.clear()
-	resolutionState.recordedInputs.clear()
-	resolutionState.requestRetries.resetAll()
-	resolutionState.boundedWorkRetries.resetAll()
-	resolutionState.requestsResetByStartup.clear()
-}
 const clearRequestRetry = resolutionState.requestRetries.reset
 const retryBudgetLasts = resolutionState.requestRetries.budgetLasts
 export const resetRequestRetryBudget = (uniqueRequestIdentifier: UniqueRequestIdentifier) => clearRequestRetry(getUniqueRequestIdentifierString(uniqueRequestIdentifier))
@@ -254,11 +227,6 @@ async function recordInputAndResolve(uniqueRequestIdentifier: UniqueRequestIdent
 // A signer's result for a request (an ordinary signer's result or a Gnosis Safe owner signature): stored until the request's claim processes it, so a busy claim, a failed step or a restart defers it rather than dropping it. The signer is no user, so its result gives the request no new retry budget, but a deferral it records is not automatic-only: it runs on release whatever the budget.
 export const submitSignerResult = async (uniqueRequestIdentifier: UniqueRequestIdentifier, signerReply: string, context: ResolutionContext) => await recordInputAndResolve(uniqueRequestIdentifier, { kind: 'signerResult', signerReply }, context)
 
-// The size of the in-memory resolution activity: claims held, follow-ups deferred and retries scheduled (of requests and of bounded work), which is empty whenever no resolution is in flight or awaiting a retry. Intent kept for a later user action or startup (chosen replies, recorded inputs, exhausted budgets) is not activity.
-export const getResolutionActivitySize = () => resolutionState.claims.size + resolutionState.deferredResolutions.size + resolutionState.requestRetries.getScheduledRetryCount() + resolutionState.boundedWorkRetries.getScheduledRetryCount()
-// The size of all the working state, activity and kept intent alike.
-export const getResolutionBookkeepingSize = () => resolutionState.claims.size + resolutionState.deferredResolutions.size + resolutionState.chosenReplies.size + resolutionState.recordedInputs.size + resolutionState.requestRetries.getTrackedKeyCount() + resolutionState.boundedWorkRetries.getTrackedKeyCount() + resolutionState.requestsResetByStartup.size
-
 // Runs work whose effect recovery depends on, so its intent is never dropped before the work succeeded: a failure is reported and the work retried with the finishing's backoff and limit. The first attempt runs in the caller's context; retries run later, without the caller's locks.
 async function runWithBoundedRetry(work: (context: ResolutionContext) => Promise<void>, firstContext: ResolutionContext, failure: { readonly code: string, readonly description: string }): Promise<void> {
 	const run = Symbol(failure.code)
@@ -304,8 +272,6 @@ export async function resumeCommittedRequests(startupContext: ResolutionContext)
 	}
 }
 
-// What to run for a request once its claim is released, recorded by a resolution that found it claimed, coalesced into one entry. Only data: the claim holder runs it in its own context (which knows whether it holds the pending-confirmation lock). The request is finished again, so that pass sees what changed meanwhile (its requesting tab closing, say, or an input that arrived) and arbitrates the stored inputs: a decline then rejects a request still pending and uncommitted, such as one whose claimed accept failed, and does nothing for one that was resolved. Each follow-up runs once per recording, so the passes stop once nothing records more. automaticOnly: every resolution that recorded it was automatic, so it runs only while the budget lasts. followUp: a resolution recorded work to follow; parkedRetryGeneration: a scheduled retry came due meanwhile, which runs on release if it is still the request's current one. Parked retries collapse into one entry.
-type DeferredResolution = { readonly automaticOnly: boolean, readonly followUp: boolean, readonly parkedRetryGeneration?: number }
 type WhenClaimed = 'finish-again' | 'nothing'
 // arbitratesEveryInput: the claim is taken to arbitrate the stored inputs themselves (resumeRequest), so every stored input counts; any other claim carries an action, which arrives when it takes the claim, and only the inputs stored before it count.
 type ClaimOptions = { readonly whenClaimed?: WhenClaimed, readonly arbitratesEveryInput?: true }

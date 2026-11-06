@@ -199,6 +199,15 @@ export type PendingTransactionOrSignableMessage = PendingSignableMessage | Pendi
 const PendingTransactionOrSignableMessageRuntype: funtypes.Runtype<PendingTransactionOrSignableMessage> = funtypes.Union(PendingSignableMessage, PendingTransaction)
 export const PendingTransactionOrSignableMessage: typeof PendingTransactionOrSignableMessageRuntype = PendingTransactionOrSignableMessageRuntype
 
+// The fields of a pending request that one layer owns, and how each is kept as stored when another writer replaces the request. A new owned field is one more entry here.
+export const OWNED_PENDING_REQUEST_FIELDS = [
+	// Owned by requestResolution.ts.
+	{ field: 'resolutionInputs', keepStored: (stored: PendingTransactionOrSignableMessage, updated: PendingTransactionOrSignableMessage): PendingTransactionOrSignableMessage => ({ ...updated, resolutionInputs: stored.resolutionInputs }) },
+	// Owned by simulationStackHashes.ts, and accepting a transaction that has no reservation yet (confirmTransaction.ts). Only a transaction has one.
+	{ field: 'simulationHashReservation', keepStored: (stored: PendingTransactionOrSignableMessage, updated: PendingTransactionOrSignableMessage): PendingTransactionOrSignableMessage => updated.type === 'Transaction' ? { ...updated, simulationHashReservation: stored.type === 'Transaction' ? stored.simulationHashReservation : undefined } : updated },
+] as const
+export type OwnedPendingRequestField = (typeof OWNED_PENDING_REQUEST_FIELDS)[number]['field']
+
 export type PopupPendingTransactionOrSignableMessage = PopupPendingSignableMessage | PendingTransaction
 const PopupPendingTransactionOrSignableMessageRuntype: funtypes.Runtype<PopupPendingTransactionOrSignableMessage> = funtypes.Union(PopupPendingSignableMessage, PendingTransaction)
 export const PopupPendingTransactionOrSignableMessage: typeof PopupPendingTransactionOrSignableMessageRuntype = PopupPendingTransactionOrSignableMessageRuntype

@@ -9,7 +9,7 @@ import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_RPCS } from '../config/defaults.js'
 import { type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
 import { AddressBookEntry, doAddressBookChainIdsMatch, LegacyErc20TokenEntry, type AddressBookEntries, type ChainIdWithUniversal } from '../types/addressBookTypes.js'
 import type { SignerName } from '../types/signerTypes.js'
-import type { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
+import { OWNED_PENDING_REQUEST_FIELDS, type OwnedPendingRequestField, type PendingAccessRequests, type PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import type { RpcEntries, RpcNetwork } from '../types/rpc.js'
 import { replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
 import { keccak256, namehash, stringToBytes } from '../utils/ethereumPrimitives.js'
@@ -67,13 +67,8 @@ async function updatePendingTransactionOrMessages(update: (pendingTransactionsOr
 	})
 }
 
-// The fields of a pending request that one layer owns: its resolution inputs (requestResolution.ts) and its simulation hash reservation (simulationStackHashes.ts). Only the owner writes one (updateOwnedPendingRequestField); every other update keeps them from the stored request, so a request replaced from a snapshot taken earlier never loses or rewinds them.
-export type OwnedPendingRequestField = 'resolutionInputs' | 'simulationHashReservation'
-function withStoredOwnedFields(stored: PendingTransactionOrSignableMessage, updated: PendingTransactionOrSignableMessage, writtenField: OwnedPendingRequestField | undefined): PendingTransactionOrSignableMessage {
-	const withInputs = writtenField === 'resolutionInputs' ? updated : { ...updated, resolutionInputs: stored.resolutionInputs }
-	if (withInputs.type !== 'Transaction' || writtenField === 'simulationHashReservation') return withInputs
-	return { ...withInputs, simulationHashReservation: stored.type === 'Transaction' ? stored.simulationHashReservation : undefined }
-}
+// Every update of a pending request keeps its owned fields (OWNED_PENDING_REQUEST_FIELDS) as stored, so a request replaced from a snapshot taken earlier never loses or rewinds them. A write to an owned field must therefore go through updateOwnedPendingRequestField: through any other update it is silently reverted.
+const withStoredOwnedFields = (stored: PendingTransactionOrSignableMessage, updated: PendingTransactionOrSignableMessage, writtenField: OwnedPendingRequestField | undefined) => OWNED_PENDING_REQUEST_FIELDS.reduce((merged, { field, keepStored }) => field === writtenField ? merged : keepStored(stored, merged), updated)
 
 async function updatePendingRequest(uniqueRequestIdentifier: UniqueRequestIdentifier, update: (pendingTransactionOrMessage: PendingTransactionOrSignableMessage) => Promise<PendingTransactionOrSignableMessage | undefined>, writtenField: OwnedPendingRequestField | undefined) {
 	await updatePendingTransactionOrMessages(async (pendingTransactionsOrMessages) => {

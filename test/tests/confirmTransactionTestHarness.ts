@@ -2,7 +2,7 @@ import multiSendLibrary from '../fixtures/safe-libraries/MultiSendCallOnly.json'
 import signMessageLibrary from '../fixtures/safe-libraries/SignMessageLib.json'
 import { SAFE_MULTI_SEND_CALL_ONLY, SAFE_SIGN_MESSAGE_LIB } from '../../app/ts/safe/safeDelegateCalls.js'
 import { SAFE_MESSAGE_ABI } from '../../app/ts/safe/safeMessage.js'
-import type { CommittedRequestFinisher } from '../../app/ts/background/terminalReplyDelivery.js'
+import type { CommittedRequestFinisher, flushPendingTerminalRepliesForSocket as flushPendingTerminalRepliesForSocketType } from '../../app/ts/background/terminalReplyDelivery.js'
 import type { WebsiteSocket } from '../../app/ts/utils/requests.js'
 import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
 import { encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
@@ -235,7 +235,8 @@ export async function loadModules() {
 		const { resumeRequest } = await import('../../app/ts/background/requestResolution.js')
 		return await resumeRequest(uniqueRequestIdentifier, { ...confirmTransaction.createResolutionContext(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections), automatic: true })
 	}
-	const flushPendingTerminalRepliesForSocket = async (websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) => await terminalReplyDelivery.flushPendingTerminalRepliesForSocket(websiteTabConnections, socket, finishCommittedRequest)
+	const flushPendingTerminalRepliesWithFinisher: typeof flushPendingTerminalRepliesForSocketType = terminalReplyDelivery.flushPendingTerminalRepliesForSocket
+	const flushPendingTerminalRepliesForSocket = async (websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) => await flushPendingTerminalRepliesWithFinisher(websiteTabConnections, socket, finishCommittedRequest)
 
 	return {
 		EthereumClientService: ethereumClientService.EthereumClientService,

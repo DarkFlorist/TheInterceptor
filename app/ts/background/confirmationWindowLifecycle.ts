@@ -10,6 +10,7 @@ import { getPendingTransactionsAndMessages } from './storageVariables.js'
  * 2. the simulation hash lock (simulationStackHashes.ts);
  * 3. the terminal-reply lock (terminalReplyDelivery.ts) or the input-log lock (requestResolution.ts), which are never held together;
  * 4. the storage locks (storageVariables.ts), which take no other lock.
+ * test/tests/lockOrderBoundaries.test.ts pins which module may take which lock and the known nesting.
  * It is not asserted at runtime: checking it needs to know which locks the current async call holds, and the extension's browser contexts have no async-context tracking, so a check would mean passing lock tokens through every call.
  * A resolution claim is not a lock: a resolution run while the pending-confirmation lock is held (the orphans of getPendingTransactionWindow) is given the lock's token (PendingConfirmationLock) and does not take it again, and scheduled retries run without it.
  */
