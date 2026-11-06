@@ -233,7 +233,7 @@ export async function loadModules() {
 	// As the background composes it (background-startup.ts): a reconnect flush finishes the requests whose replies it delivered, here with the test simulator's services.
 	const finishCommittedRequest: CommittedRequestFinisher = async (uniqueRequestIdentifier, websiteTabConnections) => {
 		const { resumeRequest } = await import('../../app/ts/background/requestResolution.js')
-		return await resumeRequest(uniqueRequestIdentifier, { ...confirmTransaction.createResolutionContext(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections), automatic: true })
+		return await resumeRequest(uniqueRequestIdentifier, confirmTransaction.createResolutionContext(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections), { automatic: true })
 	}
 	const flushPendingTerminalRepliesWithFinisher: typeof flushPendingTerminalRepliesForSocketType = terminalReplyDelivery.flushPendingTerminalRepliesForSocket
 	const flushPendingTerminalRepliesForSocket = async (websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) => await flushPendingTerminalRepliesWithFinisher(websiteTabConnections, socket, finishCommittedRequest)

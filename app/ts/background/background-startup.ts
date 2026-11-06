@@ -56,7 +56,7 @@ function getSimulationServices() {
 // The request resolution gets the simulation services only for its service-dependent steps, showing the confirmation queue in a window and settling a signer's result. Before the services exist those steps fail, and the request's finishing retries them, or startup recovery finishes the request once they exist; every other resolution step needs only storage and the browser.
 const resolutionContext = createResolutionContextWithServices(getSimulationServices, websiteTabConnections)
 // A reconnect flush finishes the requests whose replies it delivered.
-const finishCommittedRequest: CommittedRequestFinisher = async (uniqueRequestIdentifier, connections) => await resumeRequest(uniqueRequestIdentifier, { ...createResolutionContextWithServices(getSimulationServices, connections), automatic: true })
+const finishCommittedRequest: CommittedRequestFinisher = async (uniqueRequestIdentifier, connections) => await resumeRequest(uniqueRequestIdentifier, createResolutionContextWithServices(getSimulationServices, connections), { automatic: true })
 
 async function publishRpcConnectionStatus(method: RpcConnectionStatusChangeMethod, rpcConnectionStatus: DefinedRpcConnectionStatus) {
 	await setRpcConnectionStatus(rpcConnectionStatus)

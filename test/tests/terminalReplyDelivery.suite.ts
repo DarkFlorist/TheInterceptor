@@ -1335,7 +1335,7 @@ for (const signerResult of signerResults) {
 			const { resumeRequest } = await import('../../app/ts/background/requestResolution.js')
 			const holding = signerResult.claimHolder === 'repeated accept'
 				? resolveRequest(websiteTabConnections, { action: 'accept', uniqueRequestIdentifier })
-				: resumeRequest(uniqueRequestIdentifier, { ...testResolutionContext(websiteTabConnections), automatic: true })
+				: resumeRequest(uniqueRequestIdentifier, testResolutionContext(websiteTabConnections), { automatic: true })
 			await paused
 			assert.equal(await resolveRequest(websiteTabConnections, data), false, 'the signer result waits for the claim')
 			resume()
@@ -1811,7 +1811,7 @@ test('a replaced port finishing its flush leaves the retry of the port that repl
 			signalFinishing?.()
 			await finishingReleased
 		}
-		return await resumeRequest(identifier, { ...testResolutionContext(connections), automatic: true })
+		return await resumeRequest(identifier, testResolutionContext(connections), { automatic: true })
 	}
 
 	await modules.queueTerminalReply(replyTo(11))
@@ -1846,19 +1846,19 @@ test('a replaced port finishing its flush leaves the retry of the port that repl
 	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
 })
 
-test('a pending-confirmation lock token counts only inside its scope, so a context copy used after it takes the lock', async () => {
+test('a pending-confirmation lock token counts only inside its scope, so a scope copy used after it takes the lock', async () => {
 	const { updateConfirmationWindowAfterRemoving, withPendingConfirmationLock } = await import('../../app/ts/background/confirmationWindowLifecycle.js')
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 	const confirmationWindow = pendingTransaction.popupOrTabId
 	const removedWindowIds: number[] = []
 	browserMock.setLiveWindowIds([confirmationWindow.id])
 	browserMock.setWindowRemoveHandler(async (windowId) => { removedWindowIds.push(windowId) })
-	const access = (pendingConfirmationLock: { held: boolean }) => ({ refreshConfirmationWindow: async () => true, pendingConfirmationLock })
+	const access = { refreshConfirmationWindow: async () => true }
 	const tabId = uniqueRequestIdentifier.requestSocket.tabId
 
 	// Inside the scope the token stands for the lock, which is not taken again.
 	const scopeToken = await withPendingConfirmationLock(async (lock) => {
-		await updateConfirmationWindowAfterRemoving(confirmationWindow, tabId, access(lock))
+		await updateConfirmationWindowAfterRemoving(confirmationWindow, tabId, access, { pendingConfirmationLock: lock })
 		return lock
 	})
 	assert.equal(scopeToken.held, false)
@@ -1869,7 +1869,7 @@ test('a pending-confirmation lock token counts only inside its scope, so a conte
 	let release: () => void = () => undefined
 	const released = new Promise<void>((resolve) => { release = resolve })
 	const otherHolder = withPendingConfirmationLock(async () => await released)
-	const updating = updateConfirmationWindowAfterRemoving(confirmationWindow, tabId, access(scopeToken))
+	const updating = updateConfirmationWindowAfterRemoving(confirmationWindow, tabId, access, { pendingConfirmationLock: scopeToken })
 	await new Promise((resolve) => setTimeout(resolve, 20))
 	assert.deepEqual(removedWindowIds, [confirmationWindow.id], 'the copy waits for the lock')
 	release()

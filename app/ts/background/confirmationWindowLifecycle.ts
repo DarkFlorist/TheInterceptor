@@ -37,11 +37,13 @@ export async function runConfirmationViewStep(step: () => Promise<unknown>) {
 	}
 }
 
-// How a window update reaches the window: refreshConfirmationWindow shows the confirmation queue in it, and is the only step that needs the simulation services; pendingConfirmationLock is the token of a caller that already holds the pending-confirmation lock.
-export type ConfirmationWindowAccess = { readonly refreshConfirmationWindow: () => Promise<boolean>, readonly pendingConfirmationLock?: PendingConfirmationLock }
+// How a window update reaches the window: refreshConfirmationWindow shows the confirmation queue in it, and is the only step that needs the simulation services.
+export type ConfirmationWindowAccess = { readonly refreshConfirmationWindow: () => Promise<boolean> }
+// The lock a call runs under: the token of a caller that already holds the pending-confirmation lock.
+export type LockScope = { readonly pendingConfirmationLock?: PendingConfirmationLock }
 
 // Updates the confirmation window that showed a removed request: it moves to the next of its own requests, or closes after its last. A window the user already closed counts as closed; any other failure throws, for the finishing to retry. Deciding and closing hold the pending-confirmation lock, as choosing a window and registering a new request in it do, so a request never registers in a window that is being closed: it either registers first, and the window moves to it, or chooses its window after the close and opens a new one. A caller that holds the lock (pendingConfirmationLock) does not take it again.
-export async function updateConfirmationWindowAfterRemoving(confirmationWindow: PopupOrTabId, tabId: number, access: ConfirmationWindowAccess) {
+export async function updateConfirmationWindowAfterRemoving(confirmationWindow: PopupOrTabId, tabId: number, access: ConfirmationWindowAccess, scope: LockScope) {
 	const decideAndUpdate = async () => {
 		const pendingRequests = await getPendingTransactionsAndMessages()
 		// Decided for this window: requests in another window never keep it open.
@@ -53,6 +55,6 @@ export async function updateConfirmationWindowAfterRemoving(confirmationWindow: 
 		if (pendingRequests.length === 0) await runConfirmationViewStep(async () => await tryFocusingTabOrWindow({ type: 'tab', id: tabId }))
 		await closePopupOrTabById(confirmationWindow)
 	}
-	if (access.pendingConfirmationLock?.held === true) await decideAndUpdate()
+	if (scope.pendingConfirmationLock?.held === true) await decideAndUpdate()
 	else await withPendingConfirmationLock(decideAndUpdate)
 }
