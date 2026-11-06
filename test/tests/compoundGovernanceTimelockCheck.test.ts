@@ -78,15 +78,16 @@ const governorReads = simulatedBlock([
 ])
 
 type TimelockReply = (callData: string) => string
+// Compound's Timelock has an empty payable fallback, so a read it does not implement succeeds with nothing instead of reverting.
 const answerOnlyAdmin = (admin: bigint): TimelockReply => (callData) => {
 	if (callData === ADMIN_READ) return encodeFunctionReturn(GovernanceTimelockReadsAbi, 'admin', [addressString(admin)])
-	return revertWith(3, 'execution reverted')(callData)
+	return '0x'
 }
 const answerOnlyHasRole = (isProposer: boolean): TimelockReply => (callData) => {
 	if (callData === IS_GOVERNOR_PROPOSER_READ) return encodeFunctionReturn(GovernanceTimelockReadsAbi, 'hasRole', [isProposer])
-	return revertWith(3, 'execution reverted')(callData)
+	return failWithRpcError(3, 'execution reverted')(callData)
 }
-const revertWith = (code: number, message: string): TimelockReply => () => { throw new JsonRpcResponseError({ jsonrpc: '2.0', id: 1, error: { code, message } }) }
+const failWithRpcError = (code: number, message: string): TimelockReply => () => { throw new JsonRpcResponseError({ jsonrpc: '2.0', id: 1, error: { code, message } }) }
 
 const previewWithTimelockReplying = async (replyToTimelockRead: TimelockReply) => {
 	const simulations: string[] = []
@@ -133,8 +134,8 @@ describe('Compound governance preview timelock check', () => {
 
 	const notTheTimelock: readonly (readonly [string, TimelockReply])[] = [
 		['an address without code, or a contract whose fallback succeeds with nothing', () => '0x'],
-		['a contract reverting with the code Geth and Reth use', revertWith(3, 'execution reverted')],
-		['a contract reverting under another node\'s code', revertWith(-32000, 'VM Exception: Reverted')],
+		['a contract reverting with the code Geth and Reth use', failWithRpcError(3, 'execution reverted')],
+		['a contract reverting under another node\'s code', failWithRpcError(-32000, 'VM Exception: Reverted')],
 		['a reply too short for an address', () => `0x${ '00'.repeat(31) }`],
 		['a Compound Timelock with another admin', answerOnlyAdmin(SOMEONE_ELSE)],
 		['a TimelockController that does not list the governor as proposer', answerOnlyHasRole(false)],
@@ -142,13 +143,13 @@ describe('Compound governance preview timelock check', () => {
 	for (const [name, replyToTimelockRead] of notTheTimelock) {
 		test(`refuses ${ name } before placing any code`, async () => {
 			const { preview, simulations } = await previewWithTimelockReplying(replyToTimelockRead)
-			await assert.rejects(preview, /No outcome is simulated: 0x2222222222222222222222222222222222222222 does not name 0x1111111111111111111111111111111111111111 as its admin or proposer/u)
+			await assert.rejects(preview, /No outcome is simulated: 0x2222222222222222222222222222222222222222 does not name 0x1111111111111111111111111111111111111111 as its admin or proposer, so it cannot be confirmed as this contract's timelock/u)
 			assert.equal(simulations.length, 1)
 		})
 	}
 
 	test('does not call a node failure a wrong timelock', async () => {
-		const rateLimited = await previewWithTimelockReplying(revertWith(-32005, 'rate limited'))
+		const rateLimited = await previewWithTimelockReplying(failWithRpcError(-32005, 'rate limited'))
 		await assert.rejects(rateLimited.preview, /rate limited/u)
 		const connectionLost = await previewWithTimelockReplying(() => { throw new Error('connection lost') })
 		await assert.rejects(connectionLost.preview, /connection lost/u)

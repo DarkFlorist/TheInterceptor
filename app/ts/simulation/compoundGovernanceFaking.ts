@@ -38,7 +38,7 @@ const isGovernorOfTimelock = async (ethereumClientService: EthereumClientService
 // The preview replaces the code at the timelock and runs the proposal from there, spending that address's real balance and tokens, and a governance contract can answer timelock() with any address. So the timelock itself has to name the governor, read from the chain and not the simulation stack. A contract built to answer still passes, but it then runs as itself, so only what it holds or may move can appear.
 const assertTimelockOfGovernor = async (ethereumClientService: EthereumClientService, timeLockContract: EthereumAddress, governanceContract: EthereumAddress, blockNumber: bigint) => {
 	if (await isGovernorOfTimelock(ethereumClientService, timeLockContract, governanceContract, blockNumber)) return
-	throw new Error(`No outcome is simulated: ${ checksummedAddress(timeLockContract) } does not name ${ checksummedAddress(governanceContract) } as its admin or proposer, so it is not this contract's timelock and would not execute this proposal.`)
+	throw new Error(`No outcome is simulated: ${ checksummedAddress(timeLockContract) } does not name ${ checksummedAddress(governanceContract) } as its admin or proposer, so it cannot be confirmed as this contract's timelock.`)
 }
 
 export const simulateCompoundGovernanceExecution = async (ethereumClientService: EthereumClientService, governanceContract: AddressBookEntry, proposalId: EthereumQuantity) => {
