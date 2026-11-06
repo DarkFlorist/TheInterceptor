@@ -360,11 +360,22 @@ function assertSafeTransactionContext(
 	safeAddress: EthereumAddress,
 	safeTx: SafeTx,
 ) {
-	const chainId = ethereum.getChainId()
-	if (chainId === 0n) throw createSafeContractValidationFailure('Gnosis Safe transactions require a chain ID.')
-	if (safeTx.domain.chainId !== chainId) throw createSafeContractValidationFailure('The Gnosis Safe transaction chain ID does not match the selected chain.')
+	assertSafeDomainChainIsConnectedChain(safeTx.domain.chainId, ethereum.getChainId())
 	if (safeTx.domain.verifyingContract !== safeAddress) throw createSafeContractValidationFailure('The Gnosis Safe transaction verifying contract does not match the active Gnosis Safe.')
 	assertInterceptorSafeTransactionPolicy(safeTx)
+}
+
+// The single rule for which chain a SafeTx may be signed or stacked on: its EIP-712 domain fixes the chain it executes on, so that chain must be the connected one, and a connected chain without an ID (0n) never qualifies.
+export function assertSafeDomainChainIsConnectedChain(domainChainId: bigint | undefined, connectedChainId: bigint) {
+	if (connectedChainId === 0n) throw createSafeContractValidationFailure('Gnosis Safe transactions require a chain ID.')
+	if (domainChainId === connectedChainId) return
+	const preparedChain = domainChainId === undefined ? 'an unspecified chain' : `chain ${ domainChainId.toString() }`
+	throw createSafeContractValidationFailure(`This Gnosis Safe transaction was prepared for ${ preparedChain }, but the connected network is chain ${ connectedChainId.toString() }. Prepare it again on the current network.`)
+}
+
+// Proposal-lifecycle guard for the steps (signing, signer refresh, stacking) that act on an already prepared proposal after the network may have changed.
+export function assertSafeProposalChainMatchesConnectedNetwork(ethereum: EthereumClientService, safeTx: SafeTx) {
+	assertSafeDomainChainIsConnectedChain(safeTx.domain.chainId, ethereum.getChainId())
 }
 
 function validateSafeTransactionState(
