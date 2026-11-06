@@ -1,7 +1,6 @@
 import { addressString, addressStringWithout0x } from '../utils/bigint.js'
 import type { AddressBookEntries, AddressBookEntry, Erc20TokenEntry } from '../types/addressBookTypes.js'
 import type { NamedTokenId, SimulationStateInput } from '../types/visualizer-types.js'
-import { tokenMetadata, contractMetadata, erc721Metadata, erc1155Metadata } from '@darkflorist/address-metadata'
 import { getAddress, keccak256, stringToBytes } from '../utils/ethereumPrimitives.js'
 import { ENS_ADDR_REVERSE_NODE, ENS_TOKEN_WRAPPER, ETHEREUM_COIN_ICON, ETHEREUM_LOGS_LOGGER_ADDRESS, MOCK_ADDRESS } from '../utils/constants.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
@@ -23,6 +22,7 @@ import { JsonRpcResponseError, reportLocalRecoveryBestEffort } from '../utils/er
 import { getDeployedContractAddress } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { isValidErc20Decimals } from '../utils/erc20.js'
 import { findActiveAddressBookEntryForChain } from '../utils/activeAddressSelection.js'
+import { getBundledContractMetadata, getBundledErc1155Metadata, getBundledErc721Metadata, getBundledTokenMetadata } from './bundledMetadataLookup.js'
 
 const pathJoin = (parts: string[], sep = '/') => parts.join(sep).replace(new RegExp(sep + '{1,}', 'g'), sep)
 
@@ -80,10 +80,9 @@ async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork 
 		const userEntry = (await getUserAddressBookEntriesForChainIdMorePreciseFirst(chainId)).find((entry) => entry.address === address)
 		if (userEntry !== undefined) return userEntry
 	}
-	const addrString = addressString(address)
 	// bundled @darkflorist/address-metadata entries describe Ethereum mainnet contracts only
 	const useBundledMetadata = chainId === 1n
-	const addressData = useBundledMetadata ? contractMetadata.get(addrString) : undefined
+	const addressData = useBundledMetadata ? getBundledContractMetadata(address) : undefined
 	if (addressData) {
 		const { logoUri, ...rest } = addressData
 		return {
@@ -96,7 +95,7 @@ async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork 
 		}
 	}
 
-	const tokenData = useBundledMetadata ? tokenMetadata.get(addrString) : undefined
+	const tokenData = useBundledMetadata ? getBundledTokenMetadata(address) : undefined
 	if (tokenData) {
 		const { logoUri, ...rest } = tokenData
 		return {
@@ -109,7 +108,7 @@ async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork 
 		}
 	}
 
-	const erc721TokenData = useBundledMetadata ? erc721Metadata.get(addrString) : undefined
+	const erc721TokenData = useBundledMetadata ? getBundledErc721Metadata(address) : undefined
 	if (erc721TokenData) {
 		const { logoUri, ...rest } = erc721TokenData
 		return {
@@ -122,7 +121,7 @@ async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork 
 		}
 	}
 
-	const erc1155TokenData = useBundledMetadata ? erc1155Metadata.get(addrString) : undefined
+	const erc1155TokenData = useBundledMetadata ? getBundledErc1155Metadata(address) : undefined
 	if (erc1155TokenData) {
 		const { logoUri, ...rest } = erc1155TokenData
 		return {
