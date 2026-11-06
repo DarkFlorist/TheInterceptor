@@ -84,6 +84,17 @@ function getInvalidParamsError(method: string, params?: unknown[]) {
 	return reply.error.message
 }
 
+// A typed data request that really failed to parse, for tests that make the explanation of its JSON document throw.
+function createRejectedTypedDataRequest() {
+	const request = createRequest('eth_signTypedData_v4', [address, '{"types":1}'])
+	const requestCodec = findEthereumJsonRpcRequestCodec(request.method)
+	const typedDataDocument = EIP712MessageDescription.jsonDocument
+	if (requestCodec === undefined || typedDataDocument === undefined) throw new Error('eth_signTypedData_v4 should explain its JSON document')
+	const parseResult = requestCodec.safeParse(request)
+	if (parseResult.success) throw new Error('The typed data should fail to parse')
+	return { typedDataDocument, getReply: () => getInvalidRpcParamsReply(request, requestCodec, parseResult) }
+}
+
 describe('readable RPC parse failure replies', () => {
 	test('reports a wrong number of parameters with the expected parameter list', () => {
 		assert.equal(
@@ -235,18 +246,38 @@ describe('readable RPC parse failure replies', () => {
 	})
 
 	test('lets a programming error in the document parser propagate instead of calling the string invalid JSON', () => {
-		const request = createRequest('eth_signTypedData_v4', [address, '{"types":1}'])
-		const requestCodec = findEthereumJsonRpcRequestCodec(request.method)
-		const typedDataDocument = EIP712MessageDescription.jsonDocument
-		if (requestCodec === undefined || typedDataDocument === undefined) throw new Error('eth_signTypedData_v4 should explain its JSON document')
-		const parseResult = requestCodec.safeParse(request)
-		if (parseResult.success) throw new Error('The typed data should fail to parse')
+		const { typedDataDocument, getReply } = createRejectedTypedDataRequest()
 		const parseSpy = spyOn(typedDataDocument, 'parse').mockImplementation(() => { throw new TypeError('a bug in the document parser') })
 		try {
-			assert.throws(() => getInvalidRpcParamsReply(request, requestCodec, parseResult), TypeError)
+			assert.throws(getReply, TypeError)
 			assert.equal(parseSpy.mock.calls.length, 1)
 		} finally {
 			parseSpy.mockRestore()
+		}
+	})
+
+	test('falls back to the method codec failure when validating the document overflows the stack', () => {
+		const { typedDataDocument, getReply } = createRejectedTypedDataRequest()
+		const validationSpy = spyOn(typedDataDocument.codec, 'safeParse').mockImplementation(() => { throw new RangeError('Maximum call stack size exceeded') })
+		try {
+			const reply = getReply()
+			if (reply.type !== 'result' || !('error' in reply)) throw new Error('Expected an error reply')
+			assert.equal(reply.error.code, -32602)
+			assert.equal(reply.error.message, 'Invalid eth_signTypedData_v4 parameters at params.[1]: {"types":1} is not EIP712 message.')
+			assert.equal(validationSpy.mock.calls.length, 1)
+		} finally {
+			validationSpy.mockRestore()
+		}
+	})
+
+	test('lets a programming error while validating the document propagate', () => {
+		const { typedDataDocument, getReply } = createRejectedTypedDataRequest()
+		const validationSpy = spyOn(typedDataDocument.codec, 'safeParse').mockImplementation(() => { throw new TypeError('a bug in the document validation') })
+		try {
+			assert.throws(getReply, TypeError)
+			assert.equal(validationSpy.mock.calls.length, 1)
+		} finally {
+			validationSpy.mockRestore()
 		}
 	})
 
