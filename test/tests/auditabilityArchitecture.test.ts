@@ -142,20 +142,38 @@ async function findFilesUsingNames(names: ReadonlySet<string>) {
 	return filesByName
 }
 
-test('only the outbox module writes the terminal reply outbox, under its own lock', async () => {
+test('only their owning modules can write the terminal reply outbox and the pending requests', async () => {
 	const outboxOwner = 'background/pendingTerminalReplies.ts'
+	const pendingRequestsOwner = 'background/storageVariables.ts'
 	const allowedFilesByName = new Map([
 		// The key itself, however a write would name it: only its schema in storageUtils and its owner.
 		['pendingTerminalReplies', [outboxOwner, 'utils/storageUtils.ts']],
 		// The one write able to store the outbox together with the pending requests.
-		['browserStorageLocalSetAtomically', [outboxOwner, 'utils/storageUtils.ts']],
+		['browserStorageLocalSetTerminalRepliesWithPendingRequests', [outboxOwner, 'utils/storageUtils.ts']],
 		// The only way to run a write under the pending-request lock, which must stay the outbox's single write.
-		['applyPendingRequestInstanceDecision', [outboxOwner, 'background/storageVariables.ts']],
+		['applyPendingRequestInstanceDecision', [outboxOwner, pendingRequestsOwner]],
+		// The pending-requests key: its schema, its owner, the combined write, and a read in the confirmation page, which cannot write it because the writer below is out of its reach.
+		['pendingTransactionsAndMessages', [outboxOwner, pendingRequestsOwner, 'utils/storageUtils.ts', 'components/pages/ConfirmTransaction.tsx']],
+		// The only other write of the pending-requests schema group, which holds no other key.
+		['browserStorageLocalSet2', [pendingRequestsOwner, 'utils/storageUtils.ts']],
 	])
 	const filesByName = await findFilesUsingNames(new Set(allowedFilesByName.keys()))
 	for (const [name, allowedFiles] of allowedFilesByName) {
 		assert.deepEqual([...(filesByName.get(name) ?? [])].sort(), [...allowedFiles].sort(), name)
 	}
+})
+
+test('every pending request decision in storageVariables.ts writes through writePendingRequests', async () => {
+	const path = new URL('../../app/ts/background/storageVariables.ts', import.meta.url).pathname
+	const sourceFile = ts.createSourceFile(path, await Bun.file(path).text(), ts.ScriptTarget.Latest, false, ts.ScriptKind.TS)
+	const writeArguments: string[] = []
+	const visit = (node: ts.Node) => {
+		if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'applyPendingRequestInstanceDecision') writeArguments.push(node.arguments[2]?.getText(sourceFile) ?? 'missing')
+		ts.forEachChild(node, visit)
+	}
+	visit(sourceFile)
+	assert.notEqual(writeArguments.length, 0)
+	assert.deepEqual(new Set(writeArguments), new Set(['writePendingRequests']))
 })
 
 test('Safe signer refresh persistence is isolated from confirmation resolution', () => {

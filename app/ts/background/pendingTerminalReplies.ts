@@ -2,7 +2,7 @@ import type { InterceptedRequestForward } from '../types/interceptor-messages.js
 import { reportLocalRecovery } from '../utils/errors.js'
 import { doesTabExist, doesUniqueRequestIdentifiersMatch, type UniqueRequestIdentifier } from '../utils/requests.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { browserStorageLocalSafeParseGet, browserStorageLocalSet, browserStorageLocalSetAtomically } from '../utils/storageUtils.js'
+import { browserStorageLocalSafeParseGet, browserStorageLocalSet, browserStorageLocalSetTerminalRepliesWithPendingRequests } from '../utils/storageUtils.js'
 import { applyPendingRequestInstanceDecision, type DecidePendingRequestInstance, type PendingRequestInstance } from './storageVariables.js'
 
 const pendingTerminalRepliesSemaphore = new Semaphore(1)
@@ -33,8 +33,9 @@ export async function appendPendingTerminalReplyWithPendingRequestDecision(reply
 	return await pendingTerminalRepliesSemaphore.execute(async () => {
 		const otherReplies = (await getPendingTerminalReplies()).filter((pendingReply) => !doesUniqueRequestIdentifiersMatch(pendingReply.uniqueRequestIdentifier, reply.uniqueRequestIdentifier))
 		const pendingTerminalReplies = [...otherReplies, reply]
+		// This module writes the pending-requests key here because this is the one write that has to commit a reply and its decision together, and the pending-request lock stays private to storageVariables.ts, so the write runs there as an injected write.
 		return await applyPendingRequestInstanceDecision(instance, decide, async (pendingTransactionsAndMessages) => {
-			await browserStorageLocalSetAtomically({ pendingTerminalReplies }, { pendingTransactionsAndMessages })
+			await browserStorageLocalSetTerminalRepliesWithPendingRequests(pendingTerminalReplies, pendingTransactionsAndMessages)
 		})
 	})
 }
