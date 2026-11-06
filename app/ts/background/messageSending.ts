@@ -38,6 +38,13 @@ export function replyToInterceptedRequest(websiteTabConnections: WebsiteTabConne
 	return false
 }
 
+// `afterReplyDelivered` runs only once the reply reached the page, for follow-up messages the page can only interpret after the reply, such as notifications for a subscription id the reply carries.
+export function replyToInterceptedRequestWithFollowUp(websiteTabConnections: WebsiteTabConnections, message: InterceptedRequestForward, afterReplyDelivered: (() => void) | undefined) {
+	const replyDelivered = replyToInterceptedRequest(websiteTabConnections, message)
+	if (replyDelivered === true) afterReplyDelivered?.()
+	return replyDelivered
+}
+
 export async function replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections: WebsiteTabConnections, message: InterceptedRequestForward) {
 	return await attemptDeliveryAfterManifestV2Reconnect(websiteTabConnections, message, () => replyToInterceptedRequest(websiteTabConnections, message))
 }

@@ -157,13 +157,23 @@ const NonForwardingRPCRequestSuccessfullReturnValue = funtypes.Union(
 )
 
 type SubscriptionReturnValue = funtypes.Static<typeof SubscriptionReturnValue>
-const SubscriptionReturnValue = funtypes.ReadonlyObject({
-	method: funtypes.Literal('newHeads'),
-	result: funtypes.ReadonlyObject({
-		subscription: funtypes.String,
-		result: EthereumBlockHeaderWithTransactionHashes
-	})
-})
+const SubscriptionReturnValue = funtypes.Union(
+	funtypes.ReadonlyObject({
+		method: funtypes.Literal('newHeads'),
+		result: funtypes.ReadonlyObject({
+			subscription: funtypes.String,
+			result: EthereumBlockHeaderWithTransactionHashes
+		})
+	}),
+	// Always `false`; see the syncing entry of ethSubscriptionTypes.
+	funtypes.ReadonlyObject({
+		method: funtypes.Literal('syncing'),
+		result: funtypes.ReadonlyObject({
+			subscription: funtypes.String,
+			result: funtypes.Literal(false)
+		})
+	}),
+)
 
 type NonForwardingRPCRequestReturnValue = funtypes.Static<typeof NonForwardingRPCRequestReturnValue>
 const NonForwardingRPCRequestReturnValue = funtypes.Intersect(
