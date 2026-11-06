@@ -3,7 +3,8 @@ import { describe, spyOn, test } from 'bun:test'
 import * as funtypes from 'funtypes'
 import { CODEC_DESCRIPTIONS } from '../../app/ts/background/rpcParseFailureReply.js'
 import { EthereumJsonRpcRequest, WalletRevokePermissions } from '../../app/ts/types/JsonRpc-types.js'
-import { CODEC_TAGS_BY_HANDLING, type CodecDescriptions, explainValueFailure, getCodecLabel, getObjectFieldCodec, getTupleVariants, indexCodecDescriptions, isReflectedCodec, type ReflectedCodec, type ValueProblem } from '../../app/ts/background/funtypesFailureExplanation.js'
+import { CODEC_TAGS_BY_HANDLING, type CodecDescriptions, explainValueFailure, getCodecLabel, getObjectFieldCodec, getTupleVariants, indexCodecDescriptions, isReflectedCodec, type ValueProblem } from '../../app/ts/background/funtypesFailureExplanation.js'
+import type { ReflectedCodec } from '../../app/ts/types/codecDescription.js'
 
 // These tests pin the funtypes internals the adapter reads, so a funtypes upgrade that changes them fails here instead of silently degrading invalid-params errors.
 

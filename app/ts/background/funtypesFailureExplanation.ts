@@ -1,11 +1,5 @@
 // The only adapter over funtypes internals: it explains funtypes validation failures by reading parts of funtypes that are not documented API, namely the codec `tag` names, the `underlying`, `fields`, `alternatives`, `components`, `intersectees`, `element` and `value` members, and the grammar of `Failure.key`. It is written against funtypes 5.1.0, the exact version pinned in package.json, and the layout and grammar pins in test/tests/funtypesFailureExplanation.test.ts are what make a mismatch visible, so every funtypes upgrade must pass them. There is deliberately no runtime or startup check, because this module builds a dapp-facing error reply that must not gain a failure path: a tag missing from CODEC_TAGS_BY_HANDLING is handled like an opaque leaf, and a renamed tag or member or a changed key string does not throw. Such a mismatch usually degrades the reply to the generic `Invalid <method> parameters` message or a vaguer expectation, but a lost `components`, `alternatives` or literal `value` member yields wrong wording such as "expects no parameters", so a failing pin must block the upgrade.
-import type * as funtypes from 'funtypes'
-
-// The part of a funtypes codec that every codec exposes. Tag-specific reflection members such as `fields` or `alternatives` are read through the runtime-validated accessors below.
-export type ReflectedCodec = {
-	readonly tag: string
-	safeParse(value: unknown): funtypes.Result<unknown>
-}
+import type { CodecDescription, JsonDocumentDescription, ReflectedCodec } from '../types/codecDescription.js'
 
 // A funtypes failure of one codec for one value. The key is the path from that value to the failing value, for example `params.[0].to`.
 export type ValueFailure = {
@@ -22,24 +16,6 @@ type ValidationBudget = { validationCount: number }
 type ExplanationContext = {
 	readonly descriptions: CodecDescriptions
 	readonly budget: ValidationBudget
-}
-
-// A JSON document held in a string. It is plain data like the rest of a CodecDescription, so type modules describe their codecs with an erased import of this module instead of loading it into every extension page.
-export type JsonDocumentDescription = {
-	readonly name: string
-	readonly shape: string
-	readonly codec: ReflectedCodec
-	readonly parse: (text: string) => unknown
-}
-
-// How readable errors name a codec and describe the values it accepts. Each description is defined beside the codec it describes.
-export type CodecDescription = {
-	readonly codec: ReflectedCodec
-	readonly label: string
-	// Codecs with an expectation are reported as a whole instead of being inspected structurally.
-	readonly expected?: string
-	// Strings that hold a JSON document are explained inside the decoded document.
-	readonly jsonDocument?: JsonDocumentDescription
 }
 
 export type CodecDescriptions = ReadonlyMap<ReflectedCodec, CodecDescription>

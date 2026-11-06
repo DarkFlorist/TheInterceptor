@@ -1,7 +1,7 @@
 import * as funtypes from 'funtypes'
 import { CanonicalEthereumQuantity, EthereumAccessList, EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumBlockTag, EthereumBytes256, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumSignatureParity, LiteralConverterParserFactory } from './wire-types.js'
 import { areEqualUint8Arrays } from '../utils/typed-arrays.js'
-import type { CodecDescription } from '../background/funtypesFailureExplanation.js'
+import type { CodecDescription } from './codecDescription.js'
 import { hasOwnKey } from '../utils/typescript.js'
 import { EthSimulateV1Params } from './ethSimulate-types.js'
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './jsonRpc-signing-types.js'
