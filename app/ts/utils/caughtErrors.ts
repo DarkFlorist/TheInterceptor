@@ -39,6 +39,12 @@ export function hasInterceptorInternalErrorCode<Code extends string>(error: unkn
 	return error instanceof Error && getInterceptorInternalErrorCode(error) === code
 }
 
+// V8 and JavaScriptCore report an exhausted call stack as a RangeError and SpiderMonkey as an InternalError. Both types also cover other failures, so the message has to match too.
+export function isStackOverflowError(error: unknown) {
+	if (error instanceof RangeError) return error.message.startsWith('Maximum call stack size exceeded')
+	return error instanceof Error && error.name === 'InternalError' && error.message === 'too much recursion'
+}
+
 export function isBrowserFetchTransportError(error: unknown) {
 	const message = getErrorMessage(error)
 	if (message === undefined) return false
