@@ -214,6 +214,27 @@ describe('funtypes failure explanation', () => {
 		assert.deepEqual(explain(codec, ['{"version":1}'], descriptions), { kind: 'rejected', path: [0], reason: 'is not settings JSON' })
 	})
 
+	test('treats any failure of the document parser as a string that does not decode', () => {
+		const Settings = funtypes.ReadonlyObject({ version: funtypes.Number })
+		const SettingsText = funtypes.String.withConstraint(() => 'is not settings JSON')
+		for (const parseError of [new SyntaxError('not JSON'), new RangeError('Maximum call stack size exceeded'), new Error('parser failed')]) {
+			const jsonDocument = { name: 'settings', shape: 'a JSON object', codec: Settings, parse: () => { throw parseError } }
+			const descriptions = indexCodecDescriptions([{ codec: SettingsText, label: 'settings', expected: 'settings as a JSON string', jsonDocument }])
+			assert.deepEqual(explain(SettingsText, '{}', descriptions), { kind: 'invalidJsonDocument', path: [], document: jsonDocument, documentProblem: undefined })
+		}
+	})
+
+	test('gives up on a stack overflow, which nesting that a page controls can cause, but not on a programming error', () => {
+		const explainDocumentThatThrows = (validationError: Error) => {
+			const documentCodec: ReflectedCodec = { tag: 'object', safeParse: () => { throw validationError } }
+			const SettingsText = funtypes.String.withConstraint(() => 'is not settings JSON')
+			const jsonDocument = { name: 'settings', shape: 'a JSON object', codec: documentCodec, parse: JSON.parse }
+			return explain(SettingsText, '{}', indexCodecDescriptions([{ codec: SettingsText, label: 'settings', expected: 'settings as a JSON string', jsonDocument }]))
+		}
+		assert.equal(explainDocumentThatThrows(new RangeError('Maximum call stack size exceeded')), undefined)
+		assert.throws(() => explainDocumentThatThrows(new TypeError('a bug in the explanation')), TypeError)
+	})
+
 	test('explains recursive lazy codecs with one validation per nesting level', () => {
 		const { problem, parseCount } = explainNestedValueWithParseCount(3)
 		assert.deepEqual(problem, { kind: 'wrongFormat', path: ['next', 'next', 'next'], expected: 'a string or an object', received: null })

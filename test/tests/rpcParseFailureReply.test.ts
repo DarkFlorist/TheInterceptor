@@ -221,6 +221,18 @@ describe('readable RPC parse failure replies', () => {
 		}
 	})
 
+	test('stays an invalid-params reply for typed data nested too deeply to decode', () => {
+		// Far past the nesting any engine stack can decode, so the outcome does not depend on the stack size. The failure is given because at this depth the first parse of the request throws before a reply is built.
+		const nestingDepth = 1_000_000
+		const request = createRequest('eth_signTypedData_v4', [address, `${ '['.repeat(nestingDepth) }${ ']'.repeat(nestingDepth) }`])
+		const requestCodec = findEthereumJsonRpcRequestCodec(request.method)
+		if (requestCodec === undefined) throw new Error('eth_signTypedData_v4 should be supported')
+		const reply = getInvalidRpcParamsReply(request, requestCodec, { success: false, message: 'is not EIP712 message', key: 'params.[1]' })
+		if (reply.type !== 'result' || !('error' in reply)) throw new Error('Expected an error reply')
+		assert.equal(reply.error.code, -32602)
+		assert.match(reply.error.message, /^Invalid eth_signTypedData_v4 parameter/)
+	})
+
 	test('falls back to the method codec failure when every field is valid on its own', () => {
 		assert.equal(
 			getInvalidParamsError('eth_sendTransaction', [{ gasPrice: '0x1', maxFeePerGas: '0x1' }]),

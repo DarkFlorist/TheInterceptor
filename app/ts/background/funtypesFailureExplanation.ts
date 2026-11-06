@@ -283,13 +283,12 @@ const locateProblemIfInvalid = (context: ExplanationContext, node: ValueNode) =>
 	return failure === undefined ? undefined : locateValueProblem(context, node, failure)
 }
 
-// Decodes a JSON document with the document's own parser, which throws a SyntaxError for text that is not JSON.
+// Decodes a JSON document with the document's own parser. Any parser failure means the string does not decode, which is all the caller needs: it is a SyntaxError for text that is not JSON, and a RangeError for nesting a page made too deep for the stack.
 function decodeJsonDocument(parse: (text: string) => unknown, text: string): { readonly success: true, readonly value: unknown } | { readonly success: false } {
 	try {
 		return { success: true, value: parse(text) }
-	} catch (error: unknown) {
-		if (error instanceof SyntaxError) return { success: false }
-		throw error
+	} catch {
+		return { success: false }
 	}
 }
 
@@ -337,10 +336,16 @@ function explainFailure(context: ExplanationContext, node: ValueNode, failure: V
 	}
 }
 
-// Explains why a value failed to parse with a codec, given that codec's failure for the value. Returns undefined when the explanation needs more validations than the budget allows, so the caller reports the funtypes failure as it is.
+// Explains why a value failed to parse with a codec, given that codec's failure for the value. Returns undefined when the explanation needs more validations than the budget allows or overflows the stack, so the caller reports the funtypes failure as it is.
 export function explainValueFailure(descriptions: CodecDescriptions, codec: ReflectedCodec, value: unknown, failure: ValueFailure): ValueProblem | undefined {
 	const context: ExplanationContext = { descriptions, budget: { validationCount: 0 } }
-	const problem = locateValueProblem(context, { codec, value, path: [] }, failure)
-	// Skipped validations may have left the explanation pointing at a valid value.
-	return isBudgetExhausted(context.budget) ? undefined : problem
+	try {
+		const problem = locateValueProblem(context, { codec, value, path: [] }, failure)
+		// Skipped validations may have left the explanation pointing at a valid value.
+		return isBudgetExhausted(context.budget) ? undefined : problem
+	} catch (error: unknown) {
+		// funtypes recurses once per nesting level of the values it validates, so a page can overflow the stack here. Only that is caught, so programming errors still surface.
+		if (error instanceof RangeError) return undefined
+		throw error
+	}
 }
