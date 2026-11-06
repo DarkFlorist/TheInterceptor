@@ -1,11 +1,12 @@
 import { EthereumSignedTransactionWithBlockData, EthereumQuantity, type EthereumBlockTag, EthereumData, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, type EthereumBytes32, type EthereumSendableSignedTransaction } from '../../types/wire-types.js'
 import type { IUnsignedTransaction1559 } from '../../utils/ethereum.js'
-import { MAX_BLOCK_CACHE, TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
+import { EIP7708_SYSTEM_ADDRESS, MAX_BLOCK_CACHE, TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
 import { keccak256 } from '../../utils/ethereumPrimitives.js'
 import type { IEthereumJSONRpcRequestHandler } from './EthereumJSONRpcRequestHandler.js'
 import { addressString, bigintSecondsToDate, bytes32String, dataString, dateToBigintSeconds, max } from '../../utils/bigint.js'
 import { type BlockCalls, type BlockOverrides, EthSimulateV1Result, type EthSimulateV1Params } from '../../types/ethSimulate-types.js'
 import { EthGetFeeHistoryResponse, EthGetStorageAtResponse, EthTransactionReceiptResponse, type FeeHistory, type EthGetLogsRequest, EthGetLogsResponse, type PartialEthereumTransaction } from '../../types/JsonRpc-types.js'
+import { recogniseProtocolEthTransferLogs } from './protocolEthTransferLogs.js'
 import { getBlockTimeManipulationSeconds, getSimulatedBlockBaseFeePerGas } from './simulationBlockParameters.js'
 import { simulatePersonalSign } from './simulationPersonalSigning.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../../config/defaults.js'
@@ -128,6 +129,7 @@ export type PreparedEthSimulateV1InputBlock = {
 }
 export type PreparedEthSimulateV1Input = {
 	readonly request: EthSimulateV1Params
+	readonly simulationParentBlockNumber: bigint
 	readonly inputBlocks: readonly PreparedEthSimulateV1InputBlock[]
 	readonly rpcBlocks: readonly SimulationStateInputMinimalDataBlock[]
 	readonly blockOverrides: readonly BlockOverrides[]
@@ -322,6 +324,7 @@ export class EthereumClientService {
 	public readonly ethSimulateV1 = async (blockStateCalls: readonly BlockCalls[], blockTag: EthereumBlockTag, requestAbortController: AbortController | undefined) => {
 		const parentBlock = await this.getBlock(requestAbortController)
 		if (parentBlock === null) throw new Error('The latest block is null')
+		const simulationParentBlockTag = blockTag === parentBlock.number + 1n ? blockTag - 1n : blockTag
 		const call: EthSimulateV1Params = {
 			method: 'eth_simulateV1',
 			params: [{
@@ -329,11 +332,16 @@ export class EthereumClientService {
 				traceTransfers: true,
 				validation: false,
 			},
-			blockTag === parentBlock.number + 1n ? blockTag - 1n : blockTag
+			simulationParentBlockTag
 		] }
-		return await this.ethSimulateV1Request(call, requestAbortController)
+		return await this.recogniseEthTransfers(await this.ethSimulateV1Request(call, requestAbortController), blockStateCalls, simulationParentBlockTag, requestAbortController)
 	}
 
+	private readonly recogniseEthTransfers = async (result: EthSimulateV1Result, blockStateCalls: readonly BlockCalls[], simulationParentBlockTag: EthereumBlockTag, requestAbortController: AbortController | undefined) => {
+		return await recogniseProtocolEthTransferLogs(result, blockStateCalls, async () => await this.getCode(EIP7708_SYSTEM_ADDRESS, simulationParentBlockTag, requestAbortController))
+	}
+
+	// Returns the node's reply as is, because this also answers a website's own eth_simulateV1. The Interceptor's own simulations go through ethSimulateV1 and simulatePrepared.
 	public readonly ethSimulateV1Request = async (request: EthSimulateV1Params, requestAbortController: AbortController | undefined) => {
 		return EthSimulateV1Result.parse(await this.requestHandler.jsonRpcRequest(request, requestAbortController))
 	}
@@ -453,7 +461,9 @@ export class EthereumClientService {
 			return await getBlockStateCall(block, blockOverrideForBlock)
 		}))
 		if (parentBlock === null) throw new Error('The latest block is null')
+		const simulationParentBlockNumber = blockNumber === parentBlock.number + 1n ? blockNumber - 1n : blockNumber
 		return {
+			simulationParentBlockNumber,
 			inputBlocks: preparedBlocks,
 			rpcBlocks,
 			blockOverrides,
@@ -463,7 +473,7 @@ export class EthereumClientService {
 					blockStateCalls,
 					traceTransfers: true,
 					validation: false,
-				}, blockNumber === parentBlock.number + 1n ? blockNumber - 1n : blockNumber] as const,
+				}, simulationParentBlockNumber] as const,
 			},
 		}
 	}
@@ -476,13 +486,12 @@ export class EthereumClientService {
 		const prepared = await this.prepareEthSimulateV1Input(simulationStateInput, blockNumber, requestAbortController)
 		return {
 			prepared,
-			result: EthSimulateV1Result.parse(await this.requestHandler.jsonRpcRequest(prepared.request)),
+			result: await this.recogniseEthTransfers(EthSimulateV1Result.parse(await this.requestHandler.jsonRpcRequest(prepared.request)), prepared.request.params[0].blockStateCalls, prepared.simulationParentBlockNumber, requestAbortController),
 		}
 	}
 
 	public readonly simulate = async (simulationStateInput: SimulationStateInputMinimalData, blockNumber: bigint, requestAbortController: AbortController | undefined): Promise<EthSimulateV1Result> => {
-		const input = await this.ethSimulateV1Input(simulationStateInput, blockNumber, requestAbortController)
-		return EthSimulateV1Result.parse(await this.requestHandler.jsonRpcRequest(input))
+		return (await this.simulatePrepared(simulationStateInput, blockNumber, requestAbortController)).result
 	}
 
 	public readonly web3ClientVersion = async (requestAbortController: AbortController | undefined) => {
