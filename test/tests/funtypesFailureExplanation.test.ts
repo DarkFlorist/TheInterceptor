@@ -214,10 +214,10 @@ describe('funtypes failure explanation', () => {
 		assert.deepEqual(explain(codec, ['{"version":1}'], descriptions), { kind: 'rejected', path: [0], reason: 'is not settings JSON' })
 	})
 
-	test('treats any failure of the document parser as a string that does not decode', () => {
+	test('treats a syntax error or stack overflow of the document parser as a string that does not decode', () => {
 		const Settings = funtypes.ReadonlyObject({ version: funtypes.Number })
 		const SettingsText = funtypes.String.withConstraint(() => 'is not settings JSON')
-		for (const parseError of [new SyntaxError('not JSON'), new RangeError('Maximum call stack size exceeded'), new Error('parser failed')]) {
+		for (const parseError of [new SyntaxError('not JSON'), new RangeError('Maximum call stack size exceeded')]) {
 			const jsonDocument = { name: 'settings', shape: 'a JSON object', codec: Settings, parse: () => { throw parseError } }
 			const descriptions = indexCodecDescriptions([{ codec: SettingsText, label: 'settings', expected: 'settings as a JSON string', jsonDocument }])
 			assert.deepEqual(explain(SettingsText, '{}', descriptions), { kind: 'invalidJsonDocument', path: [], document: jsonDocument, documentProblem: undefined })

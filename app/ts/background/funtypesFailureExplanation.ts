@@ -283,12 +283,13 @@ const locateProblemIfInvalid = (context: ExplanationContext, node: ValueNode) =>
 	return failure === undefined ? undefined : locateValueProblem(context, node, failure)
 }
 
-// Decodes a JSON document with the document's own parser. Any parser failure means the string does not decode, which is all the caller needs: it is a SyntaxError for text that is not JSON, and a RangeError for nesting a page made too deep for the stack.
+// Decodes a JSON document with the document's own parser. A SyntaxError means text that is not JSON and a RangeError means nesting a page made too deep for the stack, so both mean the string does not decode; anything else is a programming error and propagates.
 function decodeJsonDocument(parse: (text: string) => unknown, text: string): { readonly success: true, readonly value: unknown } | { readonly success: false } {
 	try {
 		return { success: true, value: parse(text) }
-	} catch {
-		return { success: false }
+	} catch (error: unknown) {
+		if (error instanceof SyntaxError || error instanceof RangeError) return { success: false }
+		throw error
 	}
 }
 

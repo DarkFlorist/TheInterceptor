@@ -1,6 +1,7 @@
 import * as assert from 'assert'
 import { describe, spyOn, test } from 'bun:test'
 import { getInvalidRpcParamsReply, getMethodSpecificParseFailureReply } from '../../app/ts/background/rpcParseFailureReply.js'
+import { EIP712MessageDescription } from '../../app/ts/types/eip721.js'
 import { EthereumJsonRpcRequest, findEthereumJsonRpcRequestCodec, WalletRevokePermissions } from '../../app/ts/types/JsonRpc-types.js'
 import { JSONEncodeableObject } from '../../app/ts/utils/json.js'
 import type { InterceptedRequest } from '../../app/ts/utils/requests.js'
@@ -231,6 +232,22 @@ describe('readable RPC parse failure replies', () => {
 		if (reply.type !== 'result' || !('error' in reply)) throw new Error('Expected an error reply')
 		assert.equal(reply.error.code, -32602)
 		assert.match(reply.error.message, /^Invalid eth_signTypedData_v4 parameter/)
+	})
+
+	test('lets a programming error in the document parser propagate instead of calling the string invalid JSON', () => {
+		const request = createRequest('eth_signTypedData_v4', [address, '{"types":1}'])
+		const requestCodec = findEthereumJsonRpcRequestCodec(request.method)
+		const typedDataDocument = EIP712MessageDescription.jsonDocument
+		if (requestCodec === undefined || typedDataDocument === undefined) throw new Error('eth_signTypedData_v4 should explain its JSON document')
+		const parseResult = requestCodec.safeParse(request)
+		if (parseResult.success) throw new Error('The typed data should fail to parse')
+		const parseSpy = spyOn(typedDataDocument, 'parse').mockImplementation(() => { throw new TypeError('a bug in the document parser') })
+		try {
+			assert.throws(() => getInvalidRpcParamsReply(request, requestCodec, parseResult), TypeError)
+			assert.equal(parseSpy.mock.calls.length, 1)
+		} finally {
+			parseSpy.mockRestore()
+		}
 	})
 
 	test('falls back to the method codec failure when every field is valid on its own', () => {
