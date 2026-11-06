@@ -48,6 +48,7 @@ const createRpcCall = (logs: readonly RpcLog[]) => ({ status: '0x1', returnData:
 
 const createStubNode = (transactionLogs: readonly RpcLog[], systemAddressCode = '0x', tokenBalanceReturnData = '0x') => {
 	const getCodeRequests: (readonly unknown[])[] = []
+	const getCodeFailure: { error: Error | undefined } = { error: undefined }
 	const balanceTargets: bigint[] = []
 	const handler = {
 		rpcUrl: 'https://stub.invalid',
@@ -58,6 +59,7 @@ const createStubNode = (transactionLogs: readonly RpcLog[], systemAddressCode = 
 				case 'eth_getBlockByNumber': return parentBlock
 				case 'eth_getCode':
 					getCodeRequests.push(request.params)
+					if (getCodeFailure.error !== undefined) throw getCodeFailure.error
 					return systemAddressCode
 				case 'eth_simulateV1': {
 					const calls = request.params[0].blockStateCalls.flatMap((block) => block.calls)
@@ -71,13 +73,15 @@ const createStubNode = (transactionLogs: readonly RpcLog[], systemAddressCode = 
 						if (!isEthBalance) balanceTargets.push(BigInt(query.target))
 						return { success: true, returnData: isEthBalance ? word(SENDER_BALANCE_AFTER) : tokenBalanceReturnData }
 					})
-					return [createRpcBlock([{ ...createRpcCall([]), returnData: encodeFunctionReturn(Multicall3ABI, 'aggregate3', [replies]) }])]
+					// The query runs on top of the resent stack, so a real node also returns the stack's blocks with their logs.
+					const resentStackBlocks = request.params[0].blockStateCalls.slice(0, -1).map((block) => createRpcBlock(block.calls.map(() => createRpcCall(transactionLogs))))
+					return [...resentStackBlocks, createRpcBlock([{ ...createRpcCall([]), returnData: encodeFunctionReturn(Multicall3ABI, 'aggregate3', [replies]) }])]
 				}
 				default: throw new Error(`Unexpected RPC method ${ request.method }`)
 			}
 		},
 	}
-	return { ethereum: new EthereumClientService(handler, async () => undefined, async () => undefined, { name: 'Sepolia', chainId: 11155111n, httpsRpc: handler.rpcUrl, currencyName: 'Sepolia ETH', currencyTicker: 'SEETH', primary: true, minimized: true }), getCodeRequests, balanceTargets }
+	return { ethereum: new EthereumClientService(handler, async () => undefined, async () => undefined, { name: 'Sepolia', chainId: 11155111n, httpsRpc: handler.rpcUrl, currencyName: 'Sepolia ETH', currencyTicker: 'SEETH', primary: true, minimized: true }), getCodeRequests, getCodeFailure, balanceTargets }
 }
 
 const createInputBlock = (stateOverrides: StateOverrides = {}) => ({
@@ -159,10 +163,10 @@ describe('protocol ETH transfer logs', () => {
 			assert.deepEqual(await simulateLogAddresses(createStubNode([createRpcLog()]), overrides), [EIP7708_SYSTEM_ADDRESS])
 		})
 
-		test('a Compound timelock override does not let logs through the direct simulation path', async () => {
+		test('a Compound timelock override keeps logs from the address out of the governance result', async () => {
 			const { ethereum } = createStubNode([createRpcLog()])
-			const stateOverrides = { [addressString(EIP7708_SYSTEM_ADDRESS)]: { code: getCompoundGovernanceTimeLockMulticall() } }
-			const result = await ethereum.ethSimulateV1([{ calls: [{ from: SENDER, to: EIP7708_SYSTEM_ADDRESS }], stateOverrides }], 8443561n, undefined)
+			const blockStateCalls = [{ calls: [{ from: SENDER, to: EIP7708_SYSTEM_ADDRESS }], stateOverrides: { [addressString(EIP7708_SYSTEM_ADDRESS)]: { code: getCompoundGovernanceTimeLockMulticall() } } }]
+			const result = await ethereum.recogniseEthTransfers(await ethereum.ethSimulateV1(blockStateCalls, 8443561n, undefined), blockStateCalls, 8443561n, undefined)
 			assert.deepEqual(getLogAddresses(result[0]?.calls[0]), [EIP7708_SYSTEM_ADDRESS])
 		})
 
@@ -211,15 +215,9 @@ describe('protocol ETH transfer logs', () => {
 	})
 
 	describe('entry points', () => {
-		test('ethSimulateV1 recognises transfers for the direct governance path', async () => {
+		test('recogniseEthTransfers serves the governance path, which simulates directly', async () => {
 			const { ethereum } = createStubNode([createRpcLog()])
-			const result = await ethereum.ethSimulateV1(directSimulationCalls, 8443561n, undefined)
-			assert.deepEqual(getLogAddresses(result[0]?.calls[0]), [ETHEREUM_LOGS_LOGGER_ADDRESS])
-		})
-
-		test('simulate recognises transfers', async () => {
-			const { ethereum } = createStubNode([createRpcLog()])
-			const result = await ethereum.simulate([createInputBlock()], 8443561n, undefined)
+			const result = await ethereum.recogniseEthTransfers(await ethereum.ethSimulateV1(directSimulationCalls, 8443561n, undefined), directSimulationCalls, 8443561n, undefined)
 			assert.deepEqual(getLogAddresses(result[0]?.calls[0]), [ETHEREUM_LOGS_LOGGER_ADDRESS])
 		})
 
@@ -228,6 +226,33 @@ describe('protocol ETH transfer logs', () => {
 			const result = await node.ethereum.ethSimulateV1Request({ method: 'eth_simulateV1', params: [{ blockStateCalls: directSimulationCalls, traceTransfers: true }, 'latest'] }, undefined)
 			assert.deepEqual(getLogAddresses(result[0]?.calls[0]), [EIP7708_SYSTEM_ADDRESS])
 			assert.equal(node.getCodeRequests.length, 0)
+		})
+	})
+
+	describe('the code read', () => {
+		test('happens once for a whole stack, although each balance query resends the stack and its transfer logs', async () => {
+			const node = createStubNode([createRpcLog()])
+			const block = createInputBlock()
+			const secondTransaction = block.transactions.map((transaction) => ({ ...transaction, transactionIdentifier: 101n }))
+			const state = await createSimulationState(node.ethereum, undefined, [{ ...block, transactions: [...block.transactions, ...secondTransaction] }])
+			assert.equal(state.success, true)
+			assert.equal(node.getCodeRequests.length, 1)
+		})
+
+		test('cannot fail a call that does not read logs', async () => {
+			const node = createStubNode([createRpcLog()])
+			node.getCodeFailure.error = new Error('eth_getCode unavailable')
+			const direct = await node.ethereum.ethSimulateV1(directSimulationCalls, 8443561n, undefined)
+			const prepared = await node.ethereum.simulate([createInputBlock()], 8443561n, undefined)
+			assert.deepEqual(getLogAddresses(direct[0]?.calls[0]), [EIP7708_SYSTEM_ADDRESS])
+			assert.deepEqual(getLogAddresses(prepared[0]?.calls[0]), [EIP7708_SYSTEM_ADDRESS])
+			assert.equal(node.getCodeRequests.length, 0)
+		})
+
+		test('failing never relabels a log', async () => {
+			const node = createStubNode([createRpcLog()])
+			node.getCodeFailure.error = new Error('eth_getCode unavailable')
+			await assert.rejects(simulateLogAddresses(node), /eth_getCode unavailable/)
 		})
 	})
 })

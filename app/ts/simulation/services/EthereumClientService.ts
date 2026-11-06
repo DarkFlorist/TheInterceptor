@@ -324,7 +324,6 @@ export class EthereumClientService {
 	public readonly ethSimulateV1 = async (blockStateCalls: readonly BlockCalls[], blockTag: EthereumBlockTag, requestAbortController: AbortController | undefined) => {
 		const parentBlock = await this.getBlock(requestAbortController)
 		if (parentBlock === null) throw new Error('The latest block is null')
-		const simulationParentBlockTag = blockTag === parentBlock.number + 1n ? blockTag - 1n : blockTag
 		const call: EthSimulateV1Params = {
 			method: 'eth_simulateV1',
 			params: [{
@@ -332,16 +331,16 @@ export class EthereumClientService {
 				traceTransfers: true,
 				validation: false,
 			},
-			simulationParentBlockTag
+			blockTag === parentBlock.number + 1n ? blockTag - 1n : blockTag
 		] }
-		return await this.recogniseEthTransfers(await this.ethSimulateV1Request(call, requestAbortController), blockStateCalls, simulationParentBlockTag, requestAbortController)
+		return await this.ethSimulateV1Request(call, requestAbortController)
 	}
 
-	private readonly recogniseEthTransfers = async (result: EthSimulateV1Result, blockStateCalls: readonly BlockCalls[], simulationParentBlockTag: EthereumBlockTag, requestAbortController: AbortController | undefined) => {
-		return await recogniseProtocolEthTransferLogs(result, blockStateCalls, async () => await this.getCode(EIP7708_SYSTEM_ADDRESS, simulationParentBlockTag, requestAbortController))
+	// For results whose logs get read. Other callers, such as balance queries and a website's own eth_simulateV1, keep the node's reply and so never depend on this code read.
+	public readonly recogniseEthTransfers = async (result: EthSimulateV1Result, blockStateCalls: readonly BlockCalls[], simulationParentBlockNumber: bigint, requestAbortController: AbortController | undefined) => {
+		return await recogniseProtocolEthTransferLogs(result, blockStateCalls, async () => await this.getCode(EIP7708_SYSTEM_ADDRESS, simulationParentBlockNumber, requestAbortController))
 	}
 
-	// Returns the node's reply as is, because this also answers a website's own eth_simulateV1. The Interceptor's own simulations go through ethSimulateV1 and simulatePrepared.
 	public readonly ethSimulateV1Request = async (request: EthSimulateV1Params, requestAbortController: AbortController | undefined) => {
 		return EthSimulateV1Result.parse(await this.requestHandler.jsonRpcRequest(request, requestAbortController))
 	}
@@ -491,7 +490,8 @@ export class EthereumClientService {
 	}
 
 	public readonly simulate = async (simulationStateInput: SimulationStateInputMinimalData, blockNumber: bigint, requestAbortController: AbortController | undefined): Promise<EthSimulateV1Result> => {
-		return (await this.simulatePrepared(simulationStateInput, blockNumber, requestAbortController)).result
+		const input = await this.ethSimulateV1Input(simulationStateInput, blockNumber, requestAbortController)
+		return EthSimulateV1Result.parse(await this.requestHandler.jsonRpcRequest(input))
 	}
 
 	public readonly web3ClientVersion = async (requestAbortController: AbortController | undefined) => {

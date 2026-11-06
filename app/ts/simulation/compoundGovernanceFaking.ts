@@ -96,7 +96,8 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 			[addressString(timeLockContract)]: { code: getCompoundGovernanceTimeLockMulticall(), stateDiff: {} }
 		},
 	}]
-	const ethSimulateV1CallResult = (await ethereumClientService.ethSimulateV1(query, parentBlock.number, undefined))[0]?.calls[0]
+	const simulationResult = await ethereumClientService.ethSimulateV1(query, parentBlock.number, undefined)
+	const ethSimulateV1CallResult = (await ethereumClientService.recogniseEthTransfers(simulationResult, query, parentBlock.number, undefined))[0]?.calls[0]
 	if (ethSimulateV1CallResult === undefined) throw new Error('ethSimulateV1 result was undefined')
 	return {
 		ethSimulateV1CallResult,

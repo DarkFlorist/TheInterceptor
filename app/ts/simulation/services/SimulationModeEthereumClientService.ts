@@ -1787,7 +1787,7 @@ const getSimulatedTokenBalances = async (ethereumClientService: EthereumClientSe
 	return multicallReturnData.map((singleCallResult: { readonly success: boolean, readonly returnData: `0x${ string }` }, callIndex: number) => {
 		const balanceQuery = deduplicatedBalanceQueries[callIndex]
 		if (balanceQuery === undefined) throw new Error('aggregate3 failed to get eth balance')
-		// The queried contract chooses this reply: an address without code succeeds with nothing, and any contract can return more than one word. Neither is a balance, and neither may stop the simulation.
+		// The queried contract chooses this reply: an address without code succeeds with nothing, and any contract can return more than one word. Neither is a balance.
 		const parsedBalance = EthereumQuantity.safeParse(singleCallResult.returnData)
 		return {
 			token: balanceQuery.token,
