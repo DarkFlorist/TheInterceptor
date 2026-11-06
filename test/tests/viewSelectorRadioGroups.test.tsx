@@ -97,6 +97,7 @@ describe('ViewSelector radio groups', () => {
 			const radioGroupNames = getRadioGroupNamePerSelector(dom.document.body)
 			assert.equal(radioGroupNames.length, 3)
 			assert.equal(new Set(radioGroupNames).size, 3, `expected unique radio group names, got ${ radioGroupNames.join(', ') }`)
+			assert.equal(radioGroupNames.every((radioGroupName) => radioGroupName?.startsWith(`${ group }-`)), true, `expected ${ group } selectors, got ${ radioGroupNames.join(', ') }`)
 		} finally {
 			render(null, dom.document.body)
 			dom.restore()
