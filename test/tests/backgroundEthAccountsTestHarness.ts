@@ -32,6 +32,8 @@ export function installBrowserMock({ deferFirstChainChangeRemoval = false, manif
 	const chainChangeRemovalStarted = createDeferredSignal()
 	const chainChangeRemovalRelease = createDeferredSignal()
 	let chainChangeRemovalDeferred = false
+	let webRequestListener: ((details: browser.webRequest._OnBeforeRequestDetails) => browser.webRequest.BlockingResponse | void) | undefined
+	const blockedDomains: string[] = []
 	const requestBlockingCalls = {
 		declarativeNetRequestUpdates: 0,
 		webRequestListenerAdds: 0,
@@ -73,6 +75,13 @@ export function installBrowserMock({ deferFirstChainChangeRemoval = false, manif
 				},
 			},
 		},
+		scripting: {
+			getRegisteredContentScripts: async () => [],
+			registerContentScripts: async () => undefined,
+			updateContentScripts: async () => undefined,
+			unregisterContentScripts: async () => undefined,
+		},
+		contentScripts: { register: async () => ({ unregister: async () => undefined }) },
 		tabs: {
 			async query() { return [] },
 			async create() { return { id: 2, active: true } },
@@ -104,7 +113,8 @@ export function installBrowserMock({ deferFirstChainChangeRemoval = false, manif
 		declarativeNetRequest: {
 			async getDynamicRules() { return [] },
 			async getSessionRules() { return [] },
-			async updateDynamicRules() {
+			async updateDynamicRules(parameters: { addRules?: readonly { condition: { initiatorDomains?: readonly string[] } }[] }) {
+				blockedDomains.splice(0, blockedDomains.length, ...(parameters.addRules?.flatMap((rule) => rule.condition.initiatorDomains ?? []) ?? []))
 				requestBlockingCalls.declarativeNetRequestUpdates += 1
 				return undefined
 			},
@@ -115,10 +125,12 @@ export function installBrowserMock({ deferFirstChainChangeRemoval = false, manif
 		},
 		webRequest: {
 			onBeforeRequest: {
-				addListener() {
+				addListener(listener: typeof webRequestListener) {
+					webRequestListener = listener
 					requestBlockingCalls.webRequestListenerAdds += 1
 				},
 				removeListener() {
+					webRequestListener = undefined
 					requestBlockingCalls.webRequestListenerRemovals += 1
 				},
 			},
@@ -130,6 +142,8 @@ export function installBrowserMock({ deferFirstChainChangeRemoval = false, manif
 		waitForDeferredChainChangeRemoval: async () => await chainChangeRemovalStarted.promise,
 		releaseDeferredChainChangeRemoval: chainChangeRemovalRelease.resolve,
 		requestBlockingCalls,
+		blockedDomains,
+		runWebRequest: (details: browser.webRequest._OnBeforeRequestDetails) => webRequestListener?.(details),
 		runtimeMessages,
 		readStoredValue: (key: string) => storageState[key],
 	}

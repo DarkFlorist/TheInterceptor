@@ -1,3 +1,5 @@
+import { getSafeSignerAuthorizedRequestMethods } from '../../safe/safeSignerMethods.js'
+import { getConfirmationSignerRequest } from '../confirmationSignerRequest.js'
 import type { MessageConfirmationRequest, TransactionConfirmationRequest } from '../../types/confirmationRequest.js'
 import { SafeMessage } from '../../safe/safeMessage.js'
 import { isSafeMessageCoSignRequest } from '../../safe/safeRequestPolicy.js'
@@ -23,7 +25,6 @@ import { EthereumBytes32, EthereumQuantity, serialize } from '../../types/wire-t
 import type { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
 import { getErrorMessage, JsonRpcResponseError, reportUnexpectedError, isExpectedInfrastructureError, isNewBlockAbort, reportLocalRecovery } from '../../utils/errors.js'
 import type { PendingTransactionOrSignableMessage, PopupPendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
-import type { SignMessageParams } from '../../types/jsonRpc-signing-types.js'
 import type { InterceptedRequestForward } from '../../types/interceptor-messages.js'
 import type { SimulationStackChange } from '../../types/visualizer-types.js'
 import type { SafeSignerErrorDetails } from '../../types/safeTypes.js'
@@ -36,7 +37,7 @@ import { updatePopupVisualisationIfNeeded } from '../popupVisualisationUpdater.j
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../../utils/popupPerformance.js'
 import type { TokenPriceService } from '../../simulation/services/priceEstimator.js'
 import { closePopupOrTabById, getPopupOrTabById, openPopupOrTab, tryFocusingTabOrWindow } from '../../utils/popupOrTab.js'
-import { getDesiredMaxFeePerGasForBaseFee, getTransactionFeesForBaseFee, hasExplicitMaxFeePerGas } from '../../utils/transactionFees.js'
+import { getRequestedTransactionFees, getDesiredMaxFeePerGasForBaseFee, getTransactionFeesForBaseFee, hasExplicitMaxFeePerGas } from '../../utils/transactionFees.js'
 import { parseSendRawTransaction } from '../../utils/sendRawTransactionParsing.js'
 import { createEip1559Or7702Transaction } from '../../utils/eip7702Authorization.js'
 import { identifyAddress } from '../metadataUtils.js'
@@ -344,8 +345,8 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 	if (safeResolution.pendingChanged) {
 		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async () => pendingTransactionOrMessage)
 	}
-	const signerFacingRequest: SendTransactionParams | SendRawTransactionParams | SignMessageParams = safeResolution.signerFacingRequest
-		?? pendingTransactionOrMessage.originalRequestParameters
+	const signerFacingRequest = safeResolution.signerFacingRequest ?? getConfirmationSignerRequest(pendingTransactionOrMessage)
+	const authorizedRequestMethods = getSafeSignerAuthorizedRequestMethods(getSafePendingFlow(pendingTransactionOrMessage)?.kind, signerFacingRequest.method)
 	// Updates the confirmation window once the request has left the confirmation queue: the view of how the simulation stack changed, and the queue view, which focuses the website's tab once the queue is empty and closes the window once no pending request is shown in it. The website's answer never waits for this view work, so a failure in it is reported instead of reaching the caller.
 	const updateViewAfterPendingRequestRemoved = async (simulationStack: SimulationStackChange) => {
 		const removedRequestWindow = pendingTransactionOrMessage.popupOrTabId
@@ -411,7 +412,7 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 	if (confirmation.data.action === 'accept' && pendingTransactionOrMessage.simulationMode === false) {
 		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'WaitingForSigner' } }))
 		await updateConfirmTransactionView(ethereum, tokenPriceService)
-		const requestWasForwarded = await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, { ...signerFacingRequest, type: 'forwardToSigner', uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
+		const requestWasForwarded = await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, { ...signerFacingRequest, authorizedRequestMethods, type: 'forwardToSigner', uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
 		if (requestWasForwarded) return true
 		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, {
 			approvalStatus: {
@@ -448,7 +449,7 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 			return reply({ type: 'result', result: confirmation.data.signerReply })
 		}
 		await removePendingRequestAndUpdateView()
-		return await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, { ...signerFacingRequest, type: 'forwardToSigner', uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
+		return await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, { ...signerFacingRequest, authorizedRequestMethods, type: 'forwardToSigner', uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
 	}
 	if (confirmation.data.action === 'signerIncluded') throw new Error('Signer included transaction that was in simulation')
 
@@ -581,12 +582,17 @@ export const formSendRawTransaction = async(_ethereumClientService: EthereumClie
 }
 
 export const formEthSendTransaction = async(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, activeAddress: bigint | undefined, website: Website, sendTransactionParams: SendTransactionParams, created: Date, transactionIdentifier: EthereumQuantity, simulationMode = true, gasPayment: TransactionGasPayment = 'transaction-sender'): Promise<WebsiteCreatedEthereumTransactionOrFailed> => {
+	const transactionDetails = sendTransactionParams.params[0]
+	if (activeAddress === undefined) throw new Error('Access to active address is denied')
+	const extraParams = { website, created, originalRequestParameters: sendTransactionParams, transactionIdentifier, error: undefined }
 	const paidByExecutor = gasPayment !== 'transaction-sender'
+	// Safe proposals intentionally simulate the Safe while an owner signs. Ordinary wallet transactions must use the sender the user is reviewing.
+	if (!simulationMode && !paidByExecutor && transactionDetails.from !== undefined && transactionDetails.from !== activeAddress) {
+		return { ...extraParams, success: false, error: { code: METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, message: 'The transaction sender does not match the active signing account.' } }
+	}
 	const simulationState = simulationMode || paidByExecutor
 		? await getUpdatedSimulationState(ethereumClientService, await captureSimulationSnapshot())
 		: PASSTHROUGH_STATE
-	const transactionDetails = sendTransactionParams.params[0]
-	if (activeAddress === undefined) throw new Error('Access to active address is denied')
 	const from = simulationMode && transactionDetails.from !== undefined ? transactionDetails.from : activeAddress
 	// Defined by the Safe layer for a transaction the simulation runs as an executor's call (a Gnosis Safe's own call), so this function picks no Safe-specific option or nonce source itself.
 	const executedCallFormation = getExecutedCallFormation(ethereumClientService, gasPayment)
@@ -603,17 +609,17 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 	if (parentBlock === null) throw new Error('The latest block is null')
 	if (parentBlock !== undefined && parentBlock.baseFeePerGas === undefined) throw new Error(CANNOT_SIMULATE_OFF_LEGACY_BLOCK)
 	const parentBaseFeePerGas = parentBlock?.baseFeePerGas
-	const requestedMaxPriorityFeePerGas = transactionDetails.maxPriorityFeePerGas !== undefined && transactionDetails.maxPriorityFeePerGas !== null ? transactionDetails.maxPriorityFeePerGas : 10n**8n // 0.1 nanoeth/gas
+	const { maxFeePerGas: explicitMaxFeePerGas, maxPriorityFeePerGas: requestedMaxPriorityFeePerGas } = getRequestedTransactionFees(transactionDetails)
 	const maxPriorityFeePerGas = paidByExecutor ? 0n : requestedMaxPriorityFeePerGas
 	const value = transactionDetails.value !== undefined  ? transactionDetails.value : 0n
 	const getFeePerGas = async (gasLimit: bigint) => {
 		if (paidByExecutor) return { maxFeePerGas: 0n, maxPriorityFeePerGas: 0n }
 		if (parentBaseFeePerGas === undefined || balancePromise === undefined) throw new Error('Transaction fee context is unavailable')
-		return getTransactionFeesForBaseFee(parentBaseFeePerGas, maxPriorityFeePerGas, transactionDetails.maxFeePerGas, await balancePromise, value, gasLimit)
+		return getTransactionFeesForBaseFee(parentBaseFeePerGas, maxPriorityFeePerGas, explicitMaxFeePerGas, await balancePromise, value, gasLimit)
 	}
 	const getInitialMaxFeePerGas = () => {
 		if (paidByExecutor) return 0n
-		if (hasExplicitMaxFeePerGas(transactionDetails.maxFeePerGas)) return transactionDetails.maxFeePerGas
+		if (hasExplicitMaxFeePerGas(explicitMaxFeePerGas)) return explicitMaxFeePerGas
 		if (parentBaseFeePerGas === undefined) throw new Error('Transaction fee context is unavailable')
 		return getDesiredMaxFeePerGasForBaseFee(parentBaseFeePerGas, maxPriorityFeePerGas)
 	}
@@ -629,13 +635,6 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 		accessList: transactionDetails.accessList ?? [],
 	}
 	const transactionWithoutGas = await createEip1559Or7702Transaction(transactionWithoutGasBase, transactionDetails)
-	const extraParams = {
-		website,
-		created,
-		originalRequestParameters: sendTransactionParams,
-		transactionIdentifier,
-		error: undefined,
-	}
 	// Carried to the confirmation simulation and the simulation stack, which run the Safe's call through its execTransaction.
 	const simulationOptionsField: { readonly simulationOptions?: TransactionSimulationOptions } = executedCallFormation === undefined ? {} : { simulationOptions: executedCallFormation.simulationOptions }
 	if (transactionDetails.gas === undefined) {
@@ -859,7 +858,8 @@ export async function openConfirmTransactionDialogForTransaction(
 			const pendingTransaction = {
 				type: 'Transaction' as const,
 				popupOrTabId: openedDialog,
-				originalRequestParameters: effectiveTransactionParams,
+				// Preserve an omitted sender so changing accounts can craft a fresh review for the new account.
+				originalRequestParameters: transactionToSimulate.originalRequestParameters,
 				uniqueRequestIdentifier: request.uniqueRequestIdentifier,
 				simulationMode,
 				activeAddress: transactionExecutor,

@@ -1,3 +1,6 @@
+import { getFeeProtectionInput } from '../../app/ts/simulation/feeProtection.js'
+import { getRequestedTransactionFees } from '../../app/ts/utils/transactionFees.js'
+import { feeOops } from '../../app/ts/simulation/protectors/feeOops.js'
 import { describe, test } from 'bun:test'
 import * as assert from 'assert'
 import { authorization as eip7702Authorization } from 'micro-eth-signer'
@@ -1036,6 +1039,25 @@ describe('SimulationModeEthereumClientService', () => {
 			assert.equal(adjustedTransaction.maxPriorityFeePerGas, 5n)
 			assert.equal(requestHandler.ethGetBalanceCalls.length, 1)
 			assert.equal(requestHandler.ethSimulateV1Calls.length, 0)
+		})
+
+		test('stack refreshes preserve an explicit legacy gas price even with insufficient funds', async () => {
+			const parentBlock = await ethereum.getBlock(undefined)
+			const gasPrice = 1000n * 10n ** 9n
+			const transaction = {
+				signedTransaction: mockSignTransaction({ ...exampleTransaction, maxFeePerGas: gasPrice, maxPriorityFeePerGas: gasPrice }),
+				website: { websiteOrigin: 'https://test.example', icon: undefined, title: undefined },
+				created: new Date(),
+				originalRequestParameters: { method: 'eth_sendTransaction', params: [{ gasPrice }] },
+				transactionIdentifier: 42n,
+			} as const
+			const adjusted = getBaseFeeAdjustedTransactions(parentBlock, [transaction], new Map([[transaction.transactionIdentifier, 0n]]))
+			assert.deepEqual(adjusted, [transaction])
+			const refreshed = adjusted[0]
+			assert.ok(refreshed !== undefined)
+			const fees = getFeeProtectionInput(refreshed.signedTransaction, getRequestedTransactionFees({ gasPrice }))
+			assert.equal(fees.comparison, 'total-price')
+			assert.match(await feeOops(fees, { getGasPrice: async () => gasPrice / 10n }, undefined) ?? '', /outrageous fee/)
 		})
 
 		test('getBaseFeeAdjustedTransactions adjusts type-7702 fee-market transactions', async () => {

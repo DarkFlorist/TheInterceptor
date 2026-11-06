@@ -9,4 +9,13 @@ describe('website warning metadata', () => {
 			suggestedAlternative: undefined,
 		})
 	})
+	test('finds compatibility warnings for canonical origins across schemes and ports', () => {
+		const expected = getWebsiteWarningMessage('app.aave.com', true)
+		assert.ok(expected !== undefined)
+		for (const origin of ['https://app.aave.com', 'http://app.aave.com', 'https://app.aave.com:8443']) {
+			assert.deepEqual(getWebsiteWarningMessage(origin, true), expected)
+			assert.equal(getWebsiteWarningMessage(origin, false), undefined)
+		}
+		assert.equal(getWebsiteWarningMessage('https://app.aave.com.attacker.test', true), undefined)
+	})
 })
