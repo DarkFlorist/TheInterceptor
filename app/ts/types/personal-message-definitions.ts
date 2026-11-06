@@ -606,7 +606,7 @@ export const VisualizedPersonalSignRequestPermit2SignatureTransfer = funtypes.In
 	funtypes.ReadonlyObject({
 		method: EthSignTyped,
 		type: funtypes.Literal('Permit2SignatureTransfer'),
-		// Stays the full signed payload so the witness and its struct types survive, and the typed fields are derived at the point of use with `parsePermit2SignatureTransfer` so there is one representation to keep in sync, as the previous review asked. That function is already the single decision on whether the transfer is readable, and the title, card and extra details each only choose their own output for it, so a shared wrapper would not be simpler.
+		// Stays the full signed payload so the witness and its struct types survive, and the typed fields are derived at the point of use with `parsePermit2SignatureTransfer` so there is one representation to keep in sync. That function is already the single decision on whether the transfer is readable, and the title, card and extra details each only choose their own output for it, so a shared wrapper would not be simpler.
 		message: EIP712Message,
 		// Single token transfers are listed as a one element array so single and batch transfers render the same way.
 		permitted: funtypes.ReadonlyArray(Permit2TokenPermissionsWithAddressBookEntry),
