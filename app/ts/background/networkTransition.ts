@@ -5,7 +5,7 @@ import { getRpcEntryIdentityKey, getRpcNetworkChange, isSignerOnlyNetwork } from
 import type { RpcNetwork } from '../types/rpc.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
-import { sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts } from './accessManagement.js'
+import { sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts } from './websiteConnectionEvents.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { advanceCommittedNetworkChangeGeneration, getCommittedNetworkChangeGeneration } from './networkChangeGeneration.js'

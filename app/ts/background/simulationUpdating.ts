@@ -193,8 +193,11 @@ export type NetworkState = {
 	readonly simulation: SimulationRead
 }
 
-// A NetworkState together with the services that were installed when it was read.
-export type NetworkSnapshot = NetworkState & { readonly services: SimulationServices }
+// A NetworkState together with the services that were installed for it when it was read. The marker exists only in the type, so a PendingRequestNetworkSnapshot cannot be passed as one.
+export type NetworkSnapshot = NetworkState & { readonly services: SimulationServices, readonly servicesMayServePreviousNetwork?: false }
+
+// What readNetworkSnapshotForPendingRequest returns: while a network change cannot install its services, these services still serve the previous network and do not match the settings. The simulation is unavailable then, so they serve only the reply and the dialog.
+export type PendingRequestNetworkSnapshot = NetworkState & { readonly services: SimulationServices, readonly servicesMayServePreviousNetwork?: true }
 
 // Whether the client and the snapshot describe the same network. A caller that holds a client and reads a snapshot later can end up with two networks, because that read waits for a network change in progress. Signer-only networks are not simulated, so they keep the previous network's services. Neither the snapshot nor the client's endpoint ever changes, so the answer stays true for as long as the caller holds them. A mismatch skips the work rather than throwing because a caller holding a client meets it on ordinary network switches, and that change queues the refresh of its own network; a throw would report each such switch as an unexpected error. It cannot tell that race from two values wrongly paired from different reads, so such a pairing also passes silently.
 export const servesSnapshotNetwork = (ethereum: EthereumClientService, snapshot: SimulationReadIdentity) => (

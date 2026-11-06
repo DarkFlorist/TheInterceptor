@@ -1329,6 +1329,69 @@ describe('network transition snapshot', () => {
 		}
 	})
 
+	test('a chain switch tells websites after it installed the services and cleared the stack, and before it releases the lock', async () => {
+		installBrowserMock()
+		const modules = await loadModules()
+		await modules.changeSimulationMode({ simulationMode: true, rpcNetwork: networkA })
+		await modules.updateWebsiteAccess(() => [{ website, access: true, addressAccess: undefined }])
+		await modules.updateInterceptorTransactionStack(() => ({ operations: [createStackedTransaction(1n, networkA.chainId, STACKED_ON_A_RECIPIENT)] }))
+		const recording = createRecordingServicesOwner(networkA)
+		const events: string[] = []
+		const owner: SimulationServicesOwner = { getCurrent: recording.owner.getCurrent, reset: (rpcNetwork) => { events.push('services installed'); return recording.owner.reset(rpcNetwork) } }
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port } = createPort(socket.tabId)
+		const websiteTabConnections = new Map([[socket.tabId, { connections: { [modules.websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true } } }]])
+		let readAfterTheLock: Promise<void> | undefined
+		const postMessage = port.postMessage.bind(port)
+		port.postMessage = (message) => {
+			if (message.method === 'chainChanged' || message.method === 'accountsChanged') events.push(`website: ${ message.method }`)
+			// This read queues on the lock while the notifications run, so it finishes only once the transition released it.
+			readAfterTheLock ??= modules.readNetworkSnapshot(owner).then(() => { events.push('lock released') })
+			postMessage(message)
+		}
+		const originalSet = browser.storage.local.set.bind(browser.storage.local)
+		Object.defineProperty(browser.storage.local, 'set', { configurable: true, value: async (items: Record<string, unknown>) => {
+			await originalSet(items)
+			if ('interceptorTransactionStack' in items) events.push('stack cleared')
+		} })
+		try {
+			await modules.changeActiveAddressAndChain(owner, websiteTabConnections, { simulationMode: true, rpcNetwork: networkB, promptForAccessesIfNeeded: false })
+			await readAfterTheLock
+			assert.deepEqual(events, ['services installed', 'stack cleared', 'website: chainChanged', 'website: accountsChanged', 'lock released'])
+		} finally {
+			Object.defineProperty(browser.storage.local, 'set', { configurable: true, value: originalSet })
+			recording.retireAll()
+		}
+	})
+
+	test('a website notification that throws leaves the change unfinished, and its repair delivers the chain once', async () => {
+		installBrowserMock()
+		const modules = await loadModules()
+		await modules.changeSimulationMode({ simulationMode: true, rpcNetwork: networkA })
+		await modules.updateWebsiteAccess(() => [{ website, access: true, addressAccess: undefined }])
+		const { owner, retireAll } = createRecordingServicesOwner(networkA)
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const connection = { port, socket, websiteOrigin, approved: true, wantsToConnect: true }
+		const brokenConnections: Record<string, typeof connection | undefined> = { broken: undefined, [modules.websiteSocketToString(socket)]: connection }
+		const websiteTabConnections = new Map([[socket.tabId, { connections: brokenConnections }]])
+		try {
+			await assert.rejects(modules.changeActiveAddressAndChain(owner, websiteTabConnections, { simulationMode: true, rpcNetwork: networkB, promptForAccessesIfNeeded: false }), /missing connection/u)
+			const unfinished = await modules.readNetworkSnapshot(owner)
+			assert.deepEqual(unfinished.settings.activeRpcNetwork, networkB)
+			assert.equal(unfinished.simulation.kind, 'unavailable')
+			assert.deepEqual(messages.filter((message) => message.method === 'chainChanged'), [])
+
+			delete brokenConnections.broken
+			assert.equal((await modules.readNetworkSnapshot(owner)).simulation.kind, 'loaded')
+			assert.deepEqual(messages.filter((message) => message.method === 'chainChanged').map((message) => message.result), ['0xa'])
+			// The repair owes only the change's own effects; the account notification belongs to the transition that failed.
+			assert.deepEqual(messages.filter((message) => message.method === 'accountsChanged'), [])
+		} finally {
+			retireAll()
+		}
+	})
+
 	test('a network switch releases the transition lock before its popup simulation runs, so requests do not wait for that simulation', async () => {
 		const { modules, switchToNetworkB } = await createApprovedSimulationDapp({ simulationConsumerOpen: true })
 		const recording = createRecordingServicesOwner(networkA)

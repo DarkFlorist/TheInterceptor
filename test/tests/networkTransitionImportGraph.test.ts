@@ -78,8 +78,8 @@ test('network transitions and the popup visualisation layer do not import each o
 	const modulesBelowTransitions = [popupVisualisationUpdater, popupSimulationRefreshQueue, networkTransitionLock]
 	// The transition module publishes failed visualisations, queues popup refreshes and runs in the lock; this also shows that the graph resolves its imports.
 	for (const module of modulesBelowTransitions) assert.ok(graph.get(networkTransition)?.includes(module), `networkTransition.ts imports ${ relative(sourceRoot, module) }`)
-	// The visualisation layer reads network state through the lock module, so no import chain leads from these modules back to the transition module. Any cycle among the transition module and these modules would pass through one of them.
-	for (const module of modulesBelowTransitions) {
+	// The visualisation layer reads network state through the lock module, so no import chain leads from these modules back to the transition module.
+	for (const module of [networkTransition, ...modulesBelowTransitions]) {
 		const cycle = findImportCycle(graph, module)
 		assert.equal(cycle, undefined, `runtime import cycle: ${ cycle?.join(' -> ') }`)
 	}

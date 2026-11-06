@@ -7,7 +7,7 @@ import type { SimulationServicesReader } from '../simulation/serviceLifecycle.js
 import { getSettings } from './settings.js'
 import { getInterceptorTransactionStack } from './storageVariables.js'
 import { getCommittedNetworkChangeGeneration } from './networkChangeGeneration.js'
-import { buildSimulationStateInput, readSimulationInputSources, type NetworkSnapshot, type NetworkState, type SimulationRead, type SimulationSnapshot, type SimulationSnapshotSources, type UnavailableSimulation } from './simulationUpdating.js'
+import { buildSimulationStateInput, readSimulationInputSources, type NetworkSnapshot, type NetworkState, type PendingRequestNetworkSnapshot, type SimulationRead, type SimulationSnapshot, type SimulationSnapshotSources, type UnavailableSimulation } from './simulationUpdating.js'
 
 // The lock that every writer of the active network or of the installed services runs in, and the only place network snapshots are built. networkTransition.ts runs network changes in this lock and leaves here the repair of a change that failed part-way, as a callback, so this module imports neither the transition module nor the popup visualisation layer. The visualisation layer reads network state through this module: networkTransition.ts publishes to that layer, so importing it there would make the modules import each other.
 
@@ -120,7 +120,7 @@ export async function readNetworkSnapshot(simulationServicesOwner: SimulationSer
 }
 
 // For a request that is already pending, whose dialog and known outcome must keep working even while the committed network's services cannot be installed. In that state these services still serve the previous network, so the simulation is unavailable and nothing simulates; they serve only the reply and the dialog.
-export async function readNetworkSnapshotForPendingRequest(simulationServicesOwner: SimulationServicesReader): Promise<NetworkSnapshot> {
+export async function readNetworkSnapshotForPendingRequest(simulationServicesOwner: SimulationServicesReader): Promise<PendingRequestNetworkSnapshot> {
 	return await networkTransitionSemaphore.execute(async () => {
 		await retryUnfinishedNetworkChange()
 		return { ...await captureNetworkState(), services: simulationServicesOwner.getCurrent() }
